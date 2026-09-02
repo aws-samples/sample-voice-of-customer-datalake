@@ -29,6 +29,18 @@ REVERT MAP — each assertion below names the mutation it catches:
       which since #251 is the whole isolation boundary — pinned as raise-vs-return,
       so no rewording of either message can defeat it (issue #398 A.1).
 
+    — also reclassifies the identity branch to `SecretUnreadableError`. That is the
+      one mutation `pytest.raises(ConfigurationError)` cannot see, the narrower type
+      being a SUBCLASS, and it is the availability classification this file spends a
+      whole class on: `BaseIngestor._report_construction_failure` reads
+      `unreadable = isinstance(error, SecretUnreadableError)` and skips
+      `record_failure` for it, so a malformed `SOURCE_PLATFORM` — a human mistake
+      that never self-heals — would be exempt from the breaker and retried on every
+      schedule tick forever. The counted class's other two branches each already
+      carry this assertion (test_a_namespace_miss_is_not_the_unreadable_type,
+      test_a_non_object_payload_is_not_the_unreadable_type); the identity branch was
+      the only one of the three without it.
+
   test_a_missing_or_malformed_identity_raises
     — the same deletion, caught by MESSAGE, over the seven malformed shapes the
       character class rejects. Every one of those ids also misses the namespace, so
@@ -48,11 +60,33 @@ REVERT MAP — each assertion below names the mutation it catches:
       truncation. Mirrors `integrations_handler._validate_source`'s
       `repr(source[:40])`, for the same reason on the write side.
 
-    — and empties `PLUGIN_IDENTIFIER_RULES`, the precondition both of that test's
-      message assertions rest on: `'' in message` is always true, so the pin would
-      go vacuous while its control failed as though the two messages had converged.
+    — and widens the IDENTITY message to name the payload's keys. Held to the same
+      four-part property as the miss message below (both key names and both values),
+      because the two branches' messages are read as a pair and a reader comparing
+      them will assume parity. The keys are the reconnaissance half: answering "your
+      plugin id is malformed" with a list of the other plugins' key names is the
+      mutation the miss-branch entry further down describes, and it survived here
+      while only values were asserted.
+
+  test_the_identity_log_carries_only_the_truncated_preview
+    — attaches the payload to the identity branch's `logger.error(extra=...)`, or
+      logs the raw `plugin_id` in place of the truncated `preview`. The message and
+      the log are separate surfaces: every message assertion above passes while the
+      `extra` grows a copy of the secret, which the miss branch's log test calls the
+      more likely way this regresses. Asserting `extra` by EQUALITY is what makes
+      that so — an added key fails it — and the expected preview is spelled as
+      `repr('a' * 40)` so the 40-char bound is pinned on this surface too.
+
+  test_the_precondition_the_rules_constant_is_not_empty
+    — empties `PLUGIN_IDENTIFIER_RULES`, the precondition the two message
+      assertions above rest on: `'' in message` is always true, so the pin would go
+      vacuous while its control failed as though the two messages had converged.
+      Its own test rather than a line inside the parametrised body, since it is a
+      module-level invariant and does not vary with the seven fixtures.
       `test_the_identity_rule_is_the_one_the_write_path_enforces` pins the REGEX is
-      shared; nothing pinned the prose constant.
+      shared; nothing pinned the prose constant. Note the limit: this makes the
+      vacuity LOUD, it does not repair the pin — what survives an emptied constant
+      is the outcome test above, which reads neither message.
 
   test_a_key_outside_every_plugin_namespace_is_not_returned
     — restores BaseIngestor's "no KNOWN prefix means shared/legacy" branch and
@@ -238,10 +272,17 @@ FOREIGN_ONLY_SECRET = {
 # LOCALS in a traceback (`--tb=long -l`), so a payload built inside a test body
 # would print its values on any failure in that test. This file's discipline is
 # that a refusal's output names the failure mode and nothing else.
+#
+# The prefixed key is spelled out here rather than built with
+# `plugin_secret_prefix(MALFORMED_ID)`: calling the production helper on a
+# deliberately INVALID id at module scope would make the whole file fail at
+# COLLECTION if that helper ever started validating — a plausible hardening of the
+# very boundary this test defends, and a collection error takes every test in this
+# file with it rather than failing one. The test asserts the hand-spelled key really
+# does match the prefix the helper derives, so the two cannot drift.
 MALFORMED_ID = PLUGIN_ID.upper()
-MALFORMED_ID_PREFIX = plugin_secret_prefix(MALFORMED_ID)
 MALFORMED_ID_MATCHING_SECRET = {
-    f'{MALFORMED_ID_PREFIX}api_key': 'mine-key',
+    f'{MALFORMED_ID}_api_key': 'mine-key',
     **FOREIGN_ONLY_SECRET,
 }
 
@@ -344,6 +385,10 @@ class TestANamespaceMissFailsClosed:
         becoming a Secrets Manager key prefix. `'TEST_SOURCE'` is refused by the
         character class, yet `TEST_SOURCE_api_key` is a key a write path that did
         not share that class could have stored.
+
+        The exception CLASS is pinned too, for the reason
+        `test_a_namespace_miss_is_not_the_unreadable_type` gives: `pytest.raises`
+        alone cannot see a reclassification to the narrower subclass.
         """
         # Both halves of the fixture's premise, asserted rather than assumed — with
         # either one broken by a later edit this silently becomes a second
@@ -352,14 +397,29 @@ class TestANamespaceMissFailsClosed:
             f'{MALFORMED_ID!r} must be malformed for this to test the identity guard'
         )
         # The scan's own condition, so "the payload matches" means what the code
-        # means by it.
+        # means by it — and against the prefix the production helper really derives,
+        # which is what keeps the hand-spelled fixture key honest.
+        malformed_prefix = plugin_secret_prefix(MALFORMED_ID)
         assert any(
-            key.startswith(MALFORMED_ID_PREFIX) and len(key) > len(MALFORMED_ID_PREFIX)
+            key.startswith(malformed_prefix) and len(key) > len(malformed_prefix)
             for key in MALFORMED_ID_MATCHING_SECRET
         ), 'the payload must match the malformed prefix, or the miss branch raises instead'
 
-        with pytest.raises(ConfigurationError):
+        with pytest.raises(ConfigurationError) as excinfo:
             filter_plugin_secrets(MALFORMED_ID, MALFORMED_ID_MATCHING_SECRET)
+
+        # A malformed identity comes from SOURCE_PLATFORM: a human wrote it wrong and
+        # it will never self-heal, so it belongs to the COUNTED class.
+        # `_report_construction_failure` skips `record_failure` for the unreadable
+        # type, so classifying this branch as unreadable would exempt a permanent
+        # misconfiguration from the breaker and retry it on every schedule tick
+        # forever. Same argument, and same assertion, as the other two counted
+        # branches.
+        assert not isinstance(excinfo.value, SecretUnreadableError), (
+            'a malformed identity is a permanent misconfiguration, not an unreadable '
+            'secret; the narrower type is exempt from the circuit breaker, so this '
+            'would be retried every tick forever'
+        )
 
     @pytest.mark.parametrize(
         'identity',
@@ -387,12 +447,6 @@ class TestANamespaceMissFailsClosed:
 
         message = str(excinfo.value)
 
-        # The precondition both message assertions rest on, since `'' in anything`
-        # is True and `'' not in anything` is False: an emptied constant would make
-        # the check below pass on all seven fixtures with the guard deleted, and
-        # break the control in a way that reads as "the messages converged".
-        assert PLUGIN_IDENTIFIER_RULES, 'the rules constant must state the rules'
-
         assert PLUGIN_IDENTIFIER_RULES in message, (
             'the refusal must identify a missing or malformed plugin identity and '
             'state the rule it broke; a message that instead reports a missing '
@@ -405,12 +459,37 @@ class TestANamespaceMissFailsClosed:
         # never reaches this branch. And this is the branch that matters most for
         # leakage, being the only refusal that echoes caller-controlled input back
         # into the string.
+        #
+        # All four parts of the property, matching what that class asserts about the
+        # miss message: the KEY NAMES as well as the values. The two messages are
+        # read as a pair, so holding them to different properties invites a reader to
+        # assume parity that is not there — and the key names are the half that turns
+        # a misconfiguration into reconnaissance.
+        assert OTHER_PLUGIN_KEY not in message
         assert OTHER_PLUGIN_VALUE not in message
+        assert UNPREFIXED_KEY not in message
         assert UNPREFIXED_VALUE not in message
         # Reflected input is BOUNDED at 40 characters, mirroring
-        # `integrations_handler._validate_source`'s `repr(source[:40])`. The
-        # `too_long` fixture is 65 `a`s, so a 41st means the truncation went.
+        # `integrations_handler._validate_source`'s `repr(source[:40])`. Meaningful
+        # for the `too_long` fixture (65 `a`s, so a 41st means the truncation went)
+        # and trivially true for the other six, which are all shorter than the bound.
         assert 'a' * 41 not in message
+
+    def test_the_precondition_the_rules_constant_is_not_empty(self):
+        """The constant both message assertions above rest on, since `'' in anything`
+        is True and `'' not in anything` is False. Emptied, the check above would
+        pass on all seven fixtures with the guard deleted, and the control below
+        would fail as though the two messages had converged — so the diagnosis would
+        point at the wrong thing.
+
+        Its own test rather than a line in the parametrised body: it is a
+        module-level invariant that does not vary with the fixtures, and asserting it
+        seven times says nothing more than asserting it once. Note the ceiling — this
+        makes the vacuity LOUD, it does not repair the pin. What survives an emptied
+        constant is `test_a_malformed_identity_is_refused_even_when_its_prefix_would_match`,
+        which reads neither message.
+        """
+        assert PLUGIN_IDENTIFIER_RULES, 'the rules constant must state the rules'
 
     def test_the_control_a_namespace_miss_is_not_reported_as_a_malformed_identity(self):
         """Non-vacuity for the assertion above: it separates the two refusals only
@@ -478,6 +557,31 @@ class TestErrorsRevealTheMisconfigurationAndNothingElse:
         assert OTHER_PLUGIN_KEY not in rendered
         assert OTHER_PLUGIN_VALUE not in rendered
         assert UNPREFIXED_VALUE not in rendered
+
+    def test_the_identity_log_carries_only_the_truncated_preview(self):
+        """The identity branch's log held to the same property as the miss branch's
+        above, on the surface the message assertions cannot see.
+
+        Every assertion in `test_a_missing_or_malformed_identity_raises` reads
+        `str(excinfo.value)`, so an `extra` that grew a copy of the payload would pass
+        all of them — and the sibling test above calls that the more likely way this
+        regresses. Asserted by EQUALITY for that reason: an ADDED key fails it, which
+        a set of `not in` checks against today's fixture values would not.
+
+        The id is the `too_long` fixture, so the expected value spells the 40-char
+        bound out (`repr('a' * 40)`): this pins that the log gets the truncated
+        preview and not the raw identity, which the message test pins separately for
+        its own surface.
+        """
+        with patch('_shared.plugin_secrets.logger') as mock_logger, \
+                pytest.raises(ConfigurationError):
+            filter_plugin_secrets('a' * 65, MIXED_SECRET)
+
+        assert mock_logger.error.call_args_list, (
+            'a malformed identity must be logged, not only raised'
+        )
+        call = mock_logger.error.call_args
+        assert call.kwargs['extra'] == {'plugin_id': repr('a' * 40)}
 
     def test_the_log_control_a_successful_load_logs_nothing(self):
         """Non-vacuity for the assertion above: without this, a refusal logged
