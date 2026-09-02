@@ -179,11 +179,14 @@ FORM_ID_LENGTH = 8
 # Seven of the other eighteen (`&`, `'`, `(`, `)`, `;`, `<`, `>`) are the characters
 # the #379 fix turns on — the quote, parens and semicolon the payload breaks out
 # with, plus the `<`, `>` and `&` `_js_value` escapes for the HTML parser — which is
-# exactly why a hand-written list omits them. (Three of those four do the breaking
-# out in the payload: its `'` closes the string literal, its `)` closes the init call
-# and its `;` starts a second statement, while its `(` is the `alert(` it calls and
-# the `x=('` it re-opens with. `_INJECTION_PAYLOAD`'s comment in the test file is
-# where that decomposition is stated as the module's own.)
+# exactly why a hand-written list omits them. (Only the `'` does the breaking out in
+# the payload itself, closing the string literal the template wrote; its `(` is the
+# `alert(` it calls and the `x=('` it re-opens with, and its `)` and `;` close a call
+# and start a statement only in the bare-argument shape `init('<id>')` it was written
+# for — the template interpolated the id inside an OBJECT LITERAL, where they close
+# nothing and the block does not parse. `a',x:alert(1),y:'` is the same class through
+# the same hole and does run, which is why the fix is the serializer and not a
+# blocklist. `_INJECTION_PAYLOAD`'s comment in the test file states the same.)
 # `"`, `#`, `/`, `?`, `\` and a backtick are the printable-ASCII exceptions: the
 # route admits none of them, so they belong with the tab and the newline below.
 # A non-ASCII character that `\w` does NOT match is likewise not the scan's to
@@ -300,10 +303,13 @@ def _validated_form_id(raw: Any) -> str | None:
     ones (`&`, `'`, `(`, `)`, `;`, `<`, `>`) are the characters the #379 fix turns
     on — the quote, parens and semicolon the payload breaks out with, plus the `<`,
     `>` and `&` `_js_value` escapes for the HTML parser — which is why they are the
-    ones a hand-written list drops. Three of those four do the breaking out in the
-    payload itself (its `'` closes the string literal, its `)` closes the init call
-    and its `;` starts a second statement; its `(` is the `alert(` it calls and the
-    `x=('` it re-opens with). On the other side, `"`, `#`, `/`, `?`, a backslash and
+    ones a hand-written list drops. Only the `'` does the breaking out in the payload
+    itself, closing the string literal the template wrote; its `(` is the `alert(` it
+    calls and the `x=('` it re-opens with, and its `)` and `;` close a call and start
+    a statement only in the bare-argument shape `init('<id>')` it was written for —
+    the template put the id inside an OBJECT LITERAL, where they close nothing and
+    the block does not parse. The hole is real either way: `a',x:alert(1),y:'` needs
+    neither, and runs. On the other side, `"`, `#`, `/`, `?`, a backslash and
     a backtick are the printable-ASCII characters the route does NOT admit, so they
     sit with the tab and the newline below rather than in the scan.
 

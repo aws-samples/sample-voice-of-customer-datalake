@@ -187,11 +187,14 @@ space ! $ % & ' ( ) * + , : ; < = > @ [ ] ^ { | } ~
 `:`, `+`, `@`, `%` and `~` are only the ones easy to remember. Seven of the others —
 `&`, `'`, `(`, `)`, `;`, `<`, `>` — are the characters the #379 fix turns on: the
 quote, parentheses and semicolon the payload breaks out with, plus the `<`, `>` and
-`&` that `_js_value` escapes for the HTML parser. (Three of those four do the
-breaking out in the payload itself — its `'` closes the string literal, its `)`
-closes the init call and its `;` starts a second statement — while its `(` belongs to
-the `alert(` it calls and the `x=('` it re-opens with.) So they read as attack syntax
-rather than as an id someone would seed; they resolved all the same, which makes
+`&` that `_js_value` escapes for the HTML parser. (Only the `'` does the breaking out
+in the payload itself, closing the string literal the template wrote. Its `(` is the
+`alert(` it calls and the `x=('` it re-opens with, and its `)` and `;` close a call
+and start a statement only in the bare-argument shape `init('<id>')` it was written
+for — this template puts the id inside an *object literal*, where they close nothing
+and leave the `<script>` block unparseable. The hole is real either way: the tailored
+`a',x:alert(1),y:'` uses no `)` or `;`, parses, and runs.) So they read as attack
+syntax rather than as an id someone would seed; they resolved all the same, which makes
 `form(1)` and `a;b` as much in scope as `a:b`. Conversely `"`, `#`, `/`, `?`, `\` and
 `` ` `` are the printable-ASCII characters the route does **not** admit, so they
 belong with the tab and newline below.

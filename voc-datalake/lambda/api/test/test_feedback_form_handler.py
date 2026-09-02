@@ -2161,17 +2161,38 @@ class TestTheAnchorCanOnlyEverUpdateAFormThatExists:
 # with a document instead of JSON, unauthenticated, on the API's own origin, and
 # it is designed to be framed on customers' sites. Before this change it
 # interpolated the caller-supplied path segment straight into a `<script>` block
-# and returned 200 without reading the table at all, so
-# `a');alert(document.domain);x=('` — which the route's own pattern accepts — was
-# rendered as executable script.
+# inside handwritten quotes, and returned 200 without reading the table at all — so
+# an id the route's own pattern accepts could close those quotes and be executed as
+# script. `a',x:alert(1),y:'` is the shortest one that does through this exact
+# template (verified by rendering the merge-base f-string and running it); the
+# issue's own `a');alert(document.domain);x=('` was written for a bare-argument call
+# and leaves the object literal unparseable, which is why the constant below carries
+# that distinction rather than the tests resting on the sample's remainder.
 
 # The payload from the issue, kept as one constant because three separate tests
 # assert three different things about the same string: that the ROUTE admits it,
 # that the HANDLER refuses it, and that the SERIALIZER would have made it inert
-# even if it arrived. Its three dangerous characters are the quote that closes the
-# string literal, the `)` that closes the init call and the `;` that starts a
-# second statement.
+# even if it arrived. Its dangerous character is the quote, which closes the string
+# literal the template wrote. The `)` and `;` after it close a call and start a
+# statement in the bare-argument shape `init('<id>')` this string was written for,
+# but the merge-base template interpolates the id inside an OBJECT LITERAL, so
+# through THIS template they close nothing and the `<script>` block does not parse —
+# meaning this exact string would not have executed here. That is a fact about the
+# sample, not about the defect: `a',x:alert(1),y:'` closes the same handwritten
+# quote using neither, parses, and runs. So the assertions below are about the
+# quote reaching a position where it can close a delimiter, which is what
+# `_js_value` removes, rather than about this string's own remainder executing.
 _INJECTION_PAYLOAD = "a');alert(document.domain);x=('"
+
+# The same class tailored to the shape this template actually writes, and the
+# reason the four prose sites can say the hole was real without leaning on the
+# sample above. It closes the handwritten quote and then supplies further OBJECT
+# KEYS rather than statements, so it needs no `)` and no `;`: rendered through the
+# merge-base f-string it parses, and its `alert` runs. Kept beside its sibling
+# because the pair is the point — one string shows the route admits the issue's
+# characters, the other shows the position was exploitable — and a reader who
+# only meets `_INJECTION_PAYLOAD` will conclude the defect was theoretical.
+_EXECUTING_PAYLOAD = "a',x:alert(1),y:'"
 
 
 def _iframe_event(api_gateway_event, form_id: str) -> dict:
@@ -2938,10 +2959,15 @@ class TestEveryJavaScriptValueOnTheIframePageIsSerialized:
         """Quote, `)` and `;` become data: one JSON string, nothing after it.
 
         The failing spelling — `'{form_id}'` — produced
-        `formId: 'a');alert(document.domain);x=('',` i.e. a closed string, a
-        closed call and a second statement. The assertion is therefore about the
-        REMAINDER: a serialized value that consumed the whole text cannot have
-        ended early enough to start anything.
+        `formId: 'a');alert(document.domain);x=('',` i.e. a string the VALUE
+        decided the end of, with its own text after it. In this template that
+        remainder does not parse (the id sits in an object literal, so the `)`
+        closes nothing — see `_INJECTION_PAYLOAD`), which is exactly why the
+        assertion is about the remainder EXISTING rather than about what it does:
+        a value that can put text outside its own literal is the defect, and
+        whether that text happens to be valid JavaScript is the attacker's choice,
+        not the fix's business. A serialized value that consumed the whole text
+        cannot put anything out there at all.
         """
         serialized = feedback_form_handler._js_value(_INJECTION_PAYLOAD)
 
@@ -2966,6 +2992,81 @@ class TestEveryJavaScriptValueOnTheIframePageIsSerialized:
             'an unescaped double quote inside the literal would close the '
             'delimiter the serializer chose, which is the same defect one '
             'delimiter along'
+        )
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_the_payload_that_really_executed_here_is_inert_too(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """The sibling of the case above, and the one the prose rests on.
+
+        `_INJECTION_PAYLOAD` is the issue's sample and it does NOT execute through
+        this template: the id sits inside an object literal, so its `)` closes
+        nothing and the `<script>` block fails to parse. Asserting only that string
+        would leave every "was executable script" claim in `CHANGELOG.md`,
+        `docs/feedback-forms.md` and `_FORM_ID_PATTERN`'s comment resting on a
+        payload that could not have run — which is the defect those four sites were
+        corrected for.
+
+        `_EXECUTING_PAYLOAD` is the same class fitted to the real shape: it closes
+        the handwritten quote and continues with object KEYS, needing neither `)`
+        nor `;`. So this asserts the two properties that make the fix the fix, on
+        the string that actually ran — the id never reaches a page (the format gate
+        refuses it, unread), and had it arrived the serializer would have kept it
+        inside one literal.
+        """
+        # The gate, on the string that was genuinely exploitable rather than on the
+        # sample. Same 404, no read paid for.
+        response = feedback_form_handler.lambda_handler(
+            _iframe_event(api_gateway_event, _EXECUTING_PAYLOAD), lambda_context
+        )
+
+        assert response['statusCode'] == 404
+        assert response['multiValueHeaders']['Content-Type'] != ['text/html']
+        assert 'alert(' not in response['body']
+        mock_table.get_item.assert_not_called()
+
+        # And the serializer behind it, independently: no text escapes the literal,
+        # so there is no position for a further key or statement. This is the
+        # assertion that would still hold if the pattern were widened.
+        serialized = feedback_form_handler._js_value(_EXECUTING_PAYLOAD)
+
+        value, end = json.JSONDecoder().raw_decode(serialized)
+        assert value == _EXECUTING_PAYLOAD
+        assert end == len(serialized), (
+            f'{serialized[end:]!r} is outside the literal — for THIS payload that '
+            'remainder parses, so unlike the issue sample it would really run'
+        )
+
+    @patch('feedback_form_handler.aggregates_table')
+    def test_the_init_argument_is_an_object_literal_not_a_bare_argument(
+        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+    ):
+        """The template shape the corrected decomposition turns on.
+
+        Four prose sites now say the issue payload's `)` and `;` close a call and
+        start a statement only in a bare-argument `init('<id>')`, and that through
+        THIS template they close nothing because the id is inside an object
+        literal — which is why the sample could not have executed here and why
+        `_EXECUTING_PAYLOAD` exists. That is a claim about the page as emitted, so
+        it is asserted on a real render rather than described: were the template
+        ever to become `init('<id>')`, those four paragraphs would be wrong in the
+        direction that understates the sample, and the pair of payload constants
+        would need re-deriving.
+        """
+        form_id = feedback_form_handler._minted_form_id()
+        mock_table.get_item.return_value = {'Item': {'form_id': form_id}}
+
+        page = feedback_form_handler.lambda_handler(
+            _iframe_event(api_gateway_event, form_id), lambda_context
+        )['body']
+        argument = _init_call_argument(page)
+
+        assert argument.lstrip().startswith('{'), (
+            f'the init call now opens with {argument.lstrip()[:40]!r} rather than '
+            'an object literal — re-check the payload decomposition in '
+            'CHANGELOG.md, docs/feedback-forms.md and _FORM_ID_PATTERN, which say '
+            "the sample's `)` closes nothing because of this shape"
         )
 
     def test_a_script_closing_tag_cannot_end_the_element(
@@ -5608,12 +5709,12 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
         pattern does not) and print it, and a check covering only the memorable
         characters is what let the prose stand at six of twenty-four. Seven of the
         rest are the characters the #379 fix turns on — the quote, parens and
-        semicolon the payload breaks out with (three of those four in the payload
-        itself, decomposed at `_INJECTION_PAYLOAD`), plus the `<`, `>` and `&`
-        `_js_value` escapes for the HTML parser — so the `dangerous` loop above
-        asserts those for their own reason and this loop re-covers them deliberately:
-        they are in both sets, and each set's claim should be readable without the
-        other.
+        semicolon the payload breaks out with (only the quote does so in the payload
+        itself, and through this template; decomposed at `_INJECTION_PAYLOAD`), plus
+        the `<`, `>` and `&` `_js_value` escapes for the HTML parser — so the
+        `dangerous` loop above asserts those for their own reason and this loop
+        re-covers them deliberately: they are in both sets, and each set's claim
+        should be readable without the other.
 
         The set's MEMBERSHIP is derived from the installed resolver rather than
         counted, and the derived set is then held against all THREE copies of it —
@@ -5796,9 +5897,9 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
         category: the in-scope set is 24 characters, and the note named six of them,
         so `'form(1)'` and `'a;b'` are sampled beside the named `'a:b'`. Those two
         hold characters the #379 fix turns on — `(`, `)` and `;` are three of the four
-        the payload breaks out with, and the `)` and `;` are two of the three
-        `_INJECTION_PAYLOAD`'s own comment names — which is the reason a list written
-        by hand omits them: they read as attack syntax rather
+        the payload breaks out with, though `_INJECTION_PAYLOAD`'s own comment records
+        that through THIS template only its quote breaks anything — which is the
+        reason a list written by hand omits them: they read as attack syntax rather
         than as an id anyone would seed, and they resolved regardless. The other half
         is asserted too: `"`, `#`, `/`, `?`, a backslash and a backtick are the
         printable-ASCII characters the ROUTE omits, which all three documents state

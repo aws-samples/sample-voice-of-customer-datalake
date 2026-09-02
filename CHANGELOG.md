@@ -63,10 +63,12 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   model call.
 - The public embeddable feedback form page, `GET /feedback-forms/{form_id}/iframe`, no longer
   reflects its form id into the page it returns. The id was interpolated into a `<script>` block
-  inside handwritten quotes, so a path the route's own pattern accepts —
-  `a');alert(document.domain);x=('` — came back as executable script on the API's own origin, to any
-  visitor who could be sent the link (#379). The id is now format-checked before the page is built,
-  every value the page inlines is serialized rather than quoted by hand, and the response carries a
+  inside handwritten quotes, so a path the route's own pattern accepts could close them and be
+  executed as script on the API's own origin, by any visitor who could be sent the link (#379). The
+  issue's own sample, `a');alert(document.domain);x=('`, was written for a bare-argument call and
+  leaves this template's object literal unparseable; `a',x:alert(1),y:'` is the same class through
+  the same hole and does run. The id is now format-checked before the page is built, every value the
+  page inlines is serialized rather than quoted by hand, and the response carries a
   Content-Security-Policy. The page also confirms the form exists first, so an attacker-chosen id no
   longer produces a page at all. Embedding is unaffected: no `frame-ancestors` and no
   `X-Frame-Options` are set, deliberately.
@@ -131,14 +133,18 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   `:`, `+`, `@`, `%`, `~` and a space *within* the id are the memorable ones, not the whole set.
   Seven of the rest — `&`, `'`, `(`, `)`, `;`, `<`, `>` — are the characters the #379 fix turns on:
   the quote, parentheses and semicolon the payload breaks out with, plus the `<`, `>` and `&` that
-  `_js_value` escapes for the HTML parser. (In the payload itself, three of those four do the
-  breaking out — the `'` closes the string literal, the `)` closes the init call and the `;` starts
-  a second statement — while its `(` belongs to the `alert(` it calls and the `x=('` it re-opens
-  with.) That is precisely why a list written by hand omits them — they read as attack syntax rather
-  than as something anyone would seed an id with — and they resolved all the same, so `form(1)` and
-  `a;b` are as much in scope as `a:b`. Going the other way, `"`, `#`, `/`, `?`, `\` and `` ` `` are
-  the printable-ASCII characters the route does **not** admit, so they belong with the tab and the
-  newline below rather than in the scan.
+  `_js_value` escapes for the HTML parser. (Only the `'` does the breaking out in the payload
+  itself: it closes the string literal the template wrote. Its `(` is the `alert(` it calls and the
+  `x=('` it re-opens with, and its `)` and `;` close a call and start a statement only in the
+  bare-argument shape `init('<id>')` the payload was written for — the merge-base template
+  interpolates the id inside an *object literal*, where they close nothing and leave the whole
+  `<script>` block unparseable instead. The class is exploitable regardless, just not by this
+  string: `a',x:alert(1),y:'` needs no `)` or `;` at all, parses, and runs.) That is precisely why a
+  list written by hand omits them — they read as attack syntax rather than as something anyone would
+  seed an id with — and they resolved all the same, so `form(1)` and `a;b` are as much in scope as
+  `a:b`. Going the other way, `"`, `#`, `/`, `?`, `\` and `` ` `` are the printable-ASCII characters
+  the route does **not** admit, so they belong with the tab and the newline below rather than in the
+  scan.
 
   This finds them — the classifier tests the class, so it flags all 24 without needing them named:
 
