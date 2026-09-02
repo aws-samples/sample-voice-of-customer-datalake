@@ -203,10 +203,10 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   categorical one. Those six are spelled out rather than written as the range U+02CA–U+02CF, which
   is not the same set: it also contains U+02CC MODIFIER LETTER LOW VERTICAL LINE and U+02CD MODIFIER
   LETTER LOW MACRON, which are `Lm` and in scope like every other `Lm` character but are not
-  accents, and it misses U+A788, which is. Out of scope despite reading as
-  letters: an id in a script that spells a vowel with a combining mark — Hindi `फॉर्म`, Thai
-  `แบบฟอร์ม`, Arabic `نَموذج` with its fatha — never matched a route, because the mark is `Mc`/`Mn`
-  even where the base character is `Lo`. (Precomposed Korean `피드백` is all `Lo`, and did resolve.)
+  accents, and it misses U+A788, which is. Out of scope despite reading as letters: an id in a
+  script that spells a vowel with a combining mark — Hindi `फॉर्म`, Thai `แบบฟอร์ม`, Arabic `نَموذج`
+  with its fatha — never matched a route, because the mark is `Mc`/`Mn` even where the base
+  character is `Lo`. (Precomposed Korean `피드백` is all `Lo`, and did resolve.)
 
   That is the one edge of this split with a real cost: over-reporting wastes a rename, but reading a
   printed row as out of scope means skipping it, and the row then 404s in production. So `café`,

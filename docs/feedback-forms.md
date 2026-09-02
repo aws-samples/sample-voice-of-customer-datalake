@@ -191,20 +191,21 @@ all the same, which makes `form(1)` and `a;b` as much in scope as `a:b`. Convers
 `"`, `#`, `/`, `?`, `\` and `` ` `` are the printable-ASCII characters the route does
 **not** admit, so they belong with the tab and newline below.
 
-Some shapes are **not** in scope, and not because the scan would miss them — it flags
-them too. They never reached a handler, so they answered 404 before this change as
-well as after: a *tab* or newline inside an id, one of the six printable-ASCII
-characters the route's class omits (`"`, `#`, `/`, `?`, `\`, `` ` ``), and any non-ASCII
-character that `\w` does not match. The route's own capture group is what excludes
-them: the only part of
-it that reaches beyond ASCII is `\w`, which matches any Unicode letter or number, plus
-`_`. Read both sides as Unicode CATEGORIES rather than as lists of glyphs — `\w` is
-`L*` and `N*`, and what it leaves out is marks (`M*`), symbols (`S*`), punctuation
-(`P*`), separators (`Z*`) and format characters (`C*`). So `€`, `°` and an emoji are
-symbols; `—` and `«` are punctuation; U+00A0 and U+3000 are separators; the `e` +
-U+0301 spelling of `é` is a mark; a zero-width joiner is a format character. (`_` is
-inside the validator's own class, so an id holding one is accepted and is in neither
-list; the other connector punctuation — U+FF3F, U+2040, U+203F — is outside `\w`.)
+Some shapes are **not** in scope, and not because the scan would miss them — it
+flags them too. They never reached a handler, so they answered 404 before this
+change as well as after: a *tab* or newline inside an id, one of the six
+printable-ASCII characters the route's class omits (`"`, `#`, `/`, `?`, a
+backslash or a backtick), and any non-ASCII character that `\w` does not match.
+The route's own capture group is what excludes them: the only part of it that
+reaches beyond ASCII is `\w`, which matches any Unicode letter or number, plus
+`_`. Read both sides as Unicode CATEGORIES rather than as lists of glyphs — `\w`
+is `L*` and `N*`, and what it leaves out is marks (`M*`), symbols (`S*`),
+punctuation (`P*`), separators (`Z*`) and format characters (`C*`). So `€`, `°`
+and an emoji are symbols; `—` and `«` are punctuation; U+00A0 and U+3000 are
+separators; the `e` + U+0301 spelling of `é` is a mark; a zero-width joiner is a
+format character. (`_` is inside the validator's own class, so an id holding one
+is accepted and is in neither list; the other connector punctuation — U+FF3F,
+U+2040, U+203F — is outside `\w`.)
 
 The categories matter because the ids an operator is most likely to misfile fall on
 **both** sides. **In** scope though they read as punctuation: a modifier letter (the
