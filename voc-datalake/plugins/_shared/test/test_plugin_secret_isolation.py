@@ -77,6 +77,15 @@ REVERT MAP — each assertion below names the mutation it catches:
       that so — an added key fails it — and the expected preview is spelled as
       `repr('a' * 40)` so the 40-char bound is pinned on this surface too.
 
+    — and, a DISTINCT mutation, leaks the payload through that call's MESSAGE
+      argument instead of its `extra`: `logger.error(f'... {sorted(all_secrets)}')`
+      leaves the `extra` equality above untouched and passed the whole tree. So the
+      whole call is rendered and checked, exactly as the miss branch's log test does
+      for the same reason — the two log surfaces of one branch have to be covered
+      together or the uncovered one is where a leak lands. The identity branch is the
+      one reflecting caller-controlled input, so it is the last place to hold to a
+      weaker property than its sibling.
+
   test_the_precondition_the_rules_constant_is_not_empty
     — empties `PLUGIN_IDENTIFIER_RULES`, the precondition the two message
       assertions above rest on: `'' in message` is always true, so the pin would go
@@ -492,10 +501,12 @@ class TestANamespaceMissFailsClosed:
         assert PLUGIN_IDENTIFIER_RULES, 'the rules constant must state the rules'
 
     def test_the_control_a_namespace_miss_is_not_reported_as_a_malformed_identity(self):
-        """Non-vacuity for the assertion above: it separates the two refusals only
-        while their messages differ. A namespace miss carries a VALID identity, so
-        restating the identity rules there would silently make that assertion pass
-        with the guard deleted.
+        """Non-vacuity for `test_a_missing_or_malformed_identity_raises`'s
+        `PLUGIN_IDENTIFIER_RULES` assertion — named rather than "above", since the
+        rules-constant precondition now sits between the two. That assertion separates
+        the two refusals only while their messages differ: a namespace miss carries a
+        VALID identity, so restating the identity rules there would silently make it
+        pass with the guard deleted.
 
         Deliberately negative only. The POSITIVE half of this message — that it
         names the identity and the expected prefix and nothing else — is asserted by
@@ -572,16 +583,34 @@ class TestErrorsRevealTheMisconfigurationAndNothingElse:
         bound out (`repr('a' * 40)`): this pins that the log gets the truncated
         preview and not the raw identity, which the message test pins separately for
         its own surface.
+
+        `extra` and the MESSAGE argument are two surfaces, so both are checked: the
+        equality covers an added `extra` key, and the rendered whole call covers a
+        message that interpolated the payload — which leaves `extra` untouched and so
+        passes the equality on its own.
         """
         with patch('_shared.plugin_secrets.logger') as mock_logger, \
                 pytest.raises(ConfigurationError):
             filter_plugin_secrets('a' * 65, MIXED_SECRET)
 
-        assert mock_logger.error.call_args_list, (
-            'a malformed identity must be logged, not only raised'
+        assert mock_logger.error.call_count == 1, (
+            'a malformed identity must be logged exactly once: with two calls the '
+            'assertions below would silently move to whichever came last'
         )
         call = mock_logger.error.call_args
-        assert call.kwargs['extra'] == {'plugin_id': repr('a' * 40)}
+        assert call.kwargs['extra'] == {'plugin_id': repr('a' * 40)}, (
+            "the log's structured fields must carry the truncated identity preview "
+            'and nothing else — no copy of the payload, and not the raw identity'
+        )
+        # The message argument, which the equality above cannot see. Same four-part
+        # property, and the same `repr(call)` mechanism, as the miss branch's log test:
+        # interpolating the payload into the message leaves `extra` correct.
+        rendered = repr(call)
+        for leaked in (OTHER_PLUGIN_KEY, OTHER_PLUGIN_VALUE, UNPREFIXED_KEY, UNPREFIXED_VALUE):
+            assert leaked not in rendered, (
+                f'{leaked!r} reached the identity refusal log; the message argument and '
+                '`extra` are separate surfaces and neither may carry secret material'
+            )
 
     def test_the_log_control_a_successful_load_logs_nothing(self):
         """Non-vacuity for the assertion above: without this, a refusal logged
