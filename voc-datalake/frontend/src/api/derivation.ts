@@ -263,24 +263,20 @@ export type DerivationSourceFields = Pick<DerivationSource, 'title' | 'document_
  * A project's documents reduced to what resolving a source needs: document_id →
  * the fields a source displays.
  *
- * BUILT ONCE PER PROJECT COLLECTION PASS AND HANDED BACK IN, which is what this
- * type exists to make possible. `resolveDerivation` used to build one of these on
- * every call, which cost nothing while its only callers resolved one document at a
- * time — and became the whole cost the moment a caller asked about a LIST. The
- * prioritization page calls the lineage classifiers per row and each classifier
- * calls the resolver per document on that row, so one project read of D documents
- * was walked once per (row × document) instead of once: measured inside the page's
- * `useMemo` at 200 rows / 1000 documents, 1644 ms in this container's jsdom
- * (562 ms on the reviewing machine — issue #399 B).
+ * ONE INDEX PER PROJECT READ, NOT PER CALL, and it is the CALLER'S to build and
+ * hold: `resolveDerivation` used to build one on every call, which cost nothing
+ * while its callers resolved one document at a time and became the whole cost the
+ * moment a caller asked about a LIST (issue #399 B — the measurement and the loop
+ * that exposed it are recorded at `ProjectLineageSources`, which is the caller-side
+ * type the fix introduced).
  *
  * A LOOKUP TABLE RATHER THAN AN OPAQUE HANDLE, deliberately: everything a source
- * needs is already normalised into it (`displayString`, so an unreadable title or
- * type is '' and never null — `hasSupersededSource` in
- * pages/Prioritization/rowLineage.ts turns on exactly that), and nothing is
- * memoised behind it, so the index's LIFETIME is its holder's and there is no
- * cache anywhere to invalidate. Build it from `derivationSourceIndex` rather than
- * by hand: a map whose values did not come through that builder can carry a null
- * where every reader expects '', which is the one way to make a resolved source
+ * needs is already normalised into it by `displayString`, so an unreadable title or
+ * type is '' and never null — a distinction consumers turn on. Nothing is memoised
+ * behind it either, so the index's LIFETIME is its holder's and there is no cache
+ * anywhere to invalidate. Build it from `derivationSourceIndex` rather than by
+ * hand: a map whose values did not come through that builder can carry a null where
+ * every reader expects '', which is the one way to make a resolved source
  * indistinguishable from an unresolved one.
  */
 export type DerivationSourceIndex = ReadonlyMap<string, DerivationSourceFields>

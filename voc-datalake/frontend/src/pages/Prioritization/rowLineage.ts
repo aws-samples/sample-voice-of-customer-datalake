@@ -21,11 +21,10 @@
  * source up in an index of the project's documents; these rules are asked per ROW
  * and each of them asks the resolver per DOCUMENT on that row, so an index built
  * inside the resolver was rebuilt (rows × documents × rules) times over one
- * unchanging project read — 1644 ms at 200 rows / 1000 documents in this
- * container's jsdom, 562 ms as reviewed. Every exported rule therefore takes EITHER
- * the document list or a read `projectLineageSources` prepared from it; see
+ * unchanging project read. Every exported rule therefore takes EITHER the document
+ * list or a read `projectLineageSources` prepared from it. See
  * `ProjectLineageSources` for why the index is the caller's to hold rather than a
- * memo inside the shared helper.
+ * memo inside the shared helper, and for the measurement.
  *
  * ROLE-BLIND ON PURPOSE. Every entry of the closed role vocabulary
  * (`DERIVATION_ROLES`: reference, prototype_prd, prototype_prfaq, merge_input) is
@@ -160,13 +159,22 @@ const NO_IDS: readonly string[] = []
  *
  * WHY IT IS THE CALLER'S TO BUILD, and not a memo inside `resolveDerivation`
  * (issue #399 B). These classifiers are called per ROW and each of them calls the
- * resolver per DOCUMENT on that row, so the index the resolver used to build
- * per call was rebuilt (rows × documents × rules) times over one unchanging
- * project read — 1644 ms at 200 rows / 1000 documents in this container's jsdom,
- * 562 ms as reviewed. Passing it in keeps the index's LIFETIME the collection
- * pass's own (`collectRows`), so there is no cache to invalidate when a project
- * read lands, a document is deleted, or a row is recomposed: the next pass builds
- * a new one and the old one is garbage.
+ * resolver per DOCUMENT on that row, so the index the resolver used to build per
+ * call was rebuilt (rows × documents × rules) times over one unchanging project
+ * read. Passing it in keeps the index's LIFETIME the collection pass's own
+ * (`collectRows`), so there is no cache to invalidate when a project read lands, a
+ * document is deleted, or a row is recomposed: the next pass builds a new one and
+ * the old one is garbage.
+ *
+ * THE MEASUREMENT, STATED ONCE HERE because this is the type the fix introduced and
+ * every other site states the invariant instead. At 200 rows / 1000 documents one
+ * `collectRows` pass indexed the same 1000-document list roughly 2,600 times rather
+ * than once, which was 1644 ms and is 615 ms — a 2.7× pass, jsdom under this
+ * container. The same fixture's before was reported at 562 ms on the reviewing
+ * machine (issue #399 B), which is the useful thing to know about the figures: wall
+ * clock here is ~3× a reviewer's and reproduces nowhere, so the RATIO is the
+ * evidence and the invariant above is what the code has to hold. Counted rather
+ * than timed by `prioritizationUtils.indexReuse.test.ts`, for that reason.
  */
 export interface ProjectLineageSources {
   /** The project's documents, as the project read supplied them. */
@@ -203,8 +211,16 @@ export type ProjectLineageRead = readonly unknown[] | ProjectLineageSources
  * `tsc` refuses to narrow a `readonly unknown[]` arm out of (its signature answers
  * `any[]`, and a readonly array is not one) — leaving the list in the prepared
  * branch's type.
+ *
+ * NULLISH IS AN EMPTY READ, not a throw, which restores this module's "no throwing"
+ * contract: `in` raises a `TypeError` on null or undefined, where the pre-#399 B path
+ * bottomed out in `resolveDerivation`'s `projectDocuments = []` default and simply
+ * resolved nothing. Every in-repo call site is typed, so the guard is unreachable
+ * today — but a project detail that has not landed is exactly the shape a component
+ * passes through, and silence is the failure mode every other rule here chose.
  */
 function lineageSourcesOf(project: ProjectLineageRead): ProjectLineageSources {
+  if (project == null) return projectLineageSources([])
   return 'sourceIndex' in project ? project : projectLineageSources(project)
 }
 

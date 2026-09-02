@@ -10,6 +10,19 @@
  * a property of the code and identical on every machine — so the mock below wraps
  * the real builder and changes nothing about the answers.
  *
+ * COUNTING THE INDEX BUILDER ALONE WAS NOT ENOUGH, which is the reason the second
+ * counter below exists. `vi.mock` replaces the binding OTHER modules import;
+ * `resolveDerivation` calls `derivationSourceIndex` through the module-local binding
+ * inside `derivation.ts`, which no mock of this module can reach. So the single most
+ * likely regression — `hasSupersededSource`/`recordsNoLineage` going back to
+ * `resolveDerivation(raw, projectDocuments)`, which is exactly the code #399 B
+ * replaces — rebuilt one index per resolver call and still reported
+ * `indexBuilds.count === 1` (measured: the whole suite stayed green under that
+ * revert). What closes the hole is counting the OTHER side of the seam: every
+ * resolution on this page's path must go through `resolveDerivationAgainst`, so
+ * `resolveDerivation` must be called ZERO times during `collectRows`, and any route
+ * back through it is visible whether or not it happens to rebuild an index.
+ *
  * REVERT MAP:
  *
  *  * `collectRows` passing `project.documents` instead of the prepared
@@ -18,6 +31,13 @@
  *  * `fresherCoherentSelection` passing `projectDocuments` to its nested
  *    `classifySelectionLineage` → the same case (measured: 1 → 2, since one frozen
  *    row's candidate is re-indexed);
+ *  * `hasSupersededSource`/`recordsNoLineage` reverted to their pre-#399 B
+ *    `resolveDerivation(raw, projectDocuments)` — the faithful `git revert` of the
+ *    hot path, with `collectRows`' `projectLineageSources` left in place → "indexes a
+ *    project read once however many rows name it", and ONLY via its
+ *    `resolveDerivationCalls.count` assertion (measured: 11 calls, expected 0; the
+ *    `indexBuilds.count === 1` assertion beside it stays green, which is why that
+ *    assertion is not the one this entry names);
  *  * `projectLineageSources` hoisted out of the details loop, or shared between
  *    projects → "indexes each project read separately", which is the assertion that
  *    stops "once" being satisfied by an index built once for the whole page and
@@ -36,13 +56,23 @@ import { describe, it, expect, vi } from 'vitest'
 import type { PrioritizationRow, Project, ProjectDocument } from '../../api/types'
 
 /**
- * The real builder, wrapped in a counter.
+ * The real builder and the per-call resolver, each wrapped in a counter.
  *
  * `importOriginal` rather than a stub, following `ScraperCard.test.tsx`: the answers
  * must be the production ones, because the control assertions below read the lineage
- * states this fixture is built to produce. Only the call count is observed.
+ * states this fixture is built to produce. Only the call counts are observed.
+ *
+ * TWO COUNTERS BECAUSE ONE OF THEM CANNOT SEE INSIDE `derivation.ts`. This mock
+ * replaces the bindings other modules import, so `indexBuilds` counts the index
+ * builds `rowLineage.ts`/`prioritizationUtils.ts` ask for and NOT the one
+ * `resolveDerivation` makes for itself through its module-local binding.
+ * `resolveDerivationCalls` covers exactly that blind spot: it is the per-call
+ * resolver this optimisation replaces, so on the page's path it must never be
+ * reached at all. See the file docstring for the revert that proved one counter
+ * insufficient.
  */
 const indexBuilds = vi.hoisted(() => ({ count: 0 }))
+const resolveDerivationCalls = vi.hoisted(() => ({ count: 0 }))
 vi.mock('../../api/derivation', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../api/derivation')>()
   return {
@@ -50,6 +80,10 @@ vi.mock('../../api/derivation', async (importOriginal) => {
     derivationSourceIndex: (documents: readonly unknown[]) => {
       indexBuilds.count += 1
       return actual.derivationSourceIndex(documents)
+    },
+    resolveDerivation: (document: unknown, projectDocuments?: readonly unknown[]) => {
+      resolveDerivationCalls.count += 1
+      return actual.resolveDerivation(document, projectDocuments)
     },
   }
 })
@@ -138,6 +172,7 @@ const lineageByRow = (rows: ReturnType<typeof collectRows>) => Object.fromEntrie
 describe('collectRows indexes each project read once', () => {
   it('indexes a project read once however many rows name it', () => {
     indexBuilds.count = 0
+    resolveDerivationCalls.count = 0
 
     const rows = collectRows(ROWS, [{ documents: DOCUMENTS }], [project('p1', 'P1')])
 
@@ -155,6 +190,14 @@ describe('collectRows indexes each project read once', () => {
     // read the same index. Before this change the resolver built one per call, so the
     // same fixture built 13.
     expect(indexBuilds.count).toBe(1)
+    // ZERO, and this is the assertion the count above cannot make. `resolveDerivation`
+    // indexes the project list for ITSELF, through a binding inside `derivation.ts`
+    // that no mock of that module reaches — so a rule going back to
+    // `resolveDerivation(raw, projectDocuments)` rebuilds an index per resolver call
+    // and `indexBuilds.count` still reads 1. Every resolution on this page's path
+    // must go through `resolveDerivationAgainst`, which is a property of the code
+    // and countable here whether or not the route back happens to re-index.
+    expect(resolveDerivationCalls.count).toBe(0)
   })
 
   it('indexes each project read separately', () => {

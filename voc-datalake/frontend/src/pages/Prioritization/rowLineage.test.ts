@@ -97,6 +97,18 @@
  *    version" (the case `lineage.staleReason`'s wording answers to);
  *  * `selectionEntry`'s id requirement deleted → "an unreadable document decides
  *    nothing";
+ *  * `lineageSourcesOf`'s nullish guard deleted (back to a bare `'sourceIndex' in
+ *    project`) → "resolves nothing rather than throwing when the project read is
+ *    missing entirely", which is the module's "no throwing" promise at the one input
+ *    `in` raises a TypeError on;
+ *  * either arm of `ProjectLineageRead` diverging from the other — `lineageSourcesOf`
+ *    ignoring a prepared read's `sourceIndex`, or `fresherCoherentSelection` reading
+ *    `newestOfType` off a different list than its nested classify's index → "answers
+ *    the same for a document list as for a read prepared from it", plus the empty-list
+ *    case beside it. Pinned where the union is DECLARED rather than left to
+ *    `prioritizationUtils.indexReuse.test.ts`, because the "one delegates to the
+ *    other" argument that carries the resolver seam does not carry here: the two arms
+ *    diverge at three separate reads;
  *  * any two `LINEAGE_REASON_KEY` entries cross-wired → "gives each reason the sentence
  *    that describes IT". `tsc` pins that table's COVERAGE (a `Record` over the union)
  *    and "names every state and every reason with a key the catalogue holds" pins that
@@ -196,6 +208,7 @@ import {
   fresherCoherentSelection,
   LINEAGE_REASON_KEY,
   LINEAGE_STYLE,
+  projectLineageSources,
   rowLineageOf,
 } from './rowLineage'
 import type { LineageReason } from './rowLineage'
@@ -753,6 +766,84 @@ describe('a selection of documents reads as coherent, crossing generations, or u
     const direct = doc('prfaq_d', 'prfaq', '2025-01-20', builtFrom('prd_1'))
     expect(classifySelectionLineage([prd2, direct], [prd1, prd2, direct]))
       .toEqual({ state: 'crossGeneration', reason: 'supersededSource' })
+  })
+
+  it('resolves nothing rather than throwing when the project read is missing entirely', () => {
+    // NOT an unreachable branch dressed up as a case: every in-repo call site is typed,
+    // but this module's docstring promises "no throwing" and the rules are reachable
+    // from component code, where a project detail that has not landed is `undefined`
+    // rather than `[]`. `lineageSourcesOf` narrows on `'sourceIndex' in project`, and
+    // `in` raises a TypeError on a nullish value — where the pre-index path bottomed out
+    // in `resolveDerivation`'s `projectDocuments = []` default and simply resolved
+    // nothing. Both spellings, because `== null` is what covers them together.
+    const prfaq = doc('prfaq_1', 'prfaq', '2025-02-01', builtFrom('prd_1'))
+
+    for (const missing of [undefined, null]) {
+      expect(classifySelectionLineage([prfaq], missing as never))
+        .toEqual({ state: 'coherent', reason: 'oneChain' })
+      expect(fresherCoherentSelection([prfaq], missing as never)).toBeNull()
+      expect(rowLineageOf({ is_frozen: true, documents: [prfaq] }, missing as never).stale)
+        .toBe(false)
+    }
+    // The control: `prd_1` is the source this PR/FAQ names, so with a project read that
+    // CARRIES it beside another PRD the same selection crosses generations. The answers
+    // above are therefore "the sources resolved against nothing", not a classifier that
+    // answers `coherent` regardless.
+    const prd1 = doc('prd_1', 'prd', '2025-01-01', builtFromFeedback)
+    const prd2 = doc('prd_2', 'prd', '2025-03-01', builtFromFeedback)
+    expect(classifySelectionLineage([prfaq, prd2], [prd1, prd2, prfaq]))
+      .toEqual({ state: 'crossGeneration', reason: 'supersededSource' })
+  })
+})
+
+describe('the two shapes of project read a rule accepts answer identically', () => {
+  /**
+   * PINNED WHERE THE UNION IS DECLARED, and not left to `collectRows`' coverage. The
+   * equivalence argument that carries `resolveDerivationAgainst` — one function
+   * delegating to the other — does not carry here: `fresherCoherentSelection` reads
+   * `sources.documents` for `newestOfType` and `sources.sourceIndex` for its nested
+   * classify, so the prepared arm and the list arm diverge at three separate reads
+   * rather than one. Each rule is asked both ways over one fixture, and the answers
+   * must be the same object.
+   */
+  const prd1 = doc('prd_1', 'prd', '2025-01-01', builtFromFeedback)
+  const prfaq1 = doc('prfaq_1', 'prfaq', '2025-01-01', builtFrom('prd_1'))
+  const prd2 = doc('prd_2', 'prd', '2025-03-01', builtFrom('prd_1'))
+  const prfaq2 = doc('prfaq_2', 'prfaq', '2025-03-01', builtFrom('prd_2'))
+  const documents = [prd1, prfaq1, prd2, prfaq2]
+
+  it('answers the same for a document list as for a read prepared from it', () => {
+    const prepared = projectLineageSources(documents)
+    // A row crossing generations (its PR/FAQ names the PRD the row's other document
+    // supersedes) AND stale, so all three rules have something to say — asserted as
+    // literals first, so the equalities below are over answers that are not the empty
+    // or default one.
+    const row = { is_frozen: true, documents: [prd2, prfaq1] }
+    expect(classifySelectionLineage(row.documents, documents))
+      .toEqual({ state: 'crossGeneration', reason: 'supersededSource' })
+    expect(fresherCoherentSelection(row.documents, documents)).toEqual(['prd_2', 'prfaq_2'])
+    expect(rowLineageOf(row, documents).stale).toBe(true)
+
+    expect(classifySelectionLineage(row.documents, prepared))
+      .toEqual(classifySelectionLineage(row.documents, documents))
+    expect(fresherCoherentSelection(row.documents, prepared))
+      .toEqual(fresherCoherentSelection(row.documents, documents))
+    expect(rowLineageOf(row, prepared)).toEqual(rowLineageOf(row, documents))
+  })
+
+  it('answers the same for a read prepared from an EMPTY list as for that list', () => {
+    // The other end of the fixture range, and the one that would catch a prepared arm
+    // reading its documents from somewhere other than the read it was given: with no
+    // project documents nothing resolves, so a row that crosses generations above is
+    // merely coherent, and no candidate can be formed.
+    const row = { is_frozen: true, documents: [prd2, prfaq1] }
+    expect(classifySelectionLineage(row.documents, projectLineageSources([])))
+      .toEqual(classifySelectionLineage(row.documents, []))
+    expect(rowLineageOf(row, projectLineageSources([]))).toEqual(rowLineageOf(row, []))
+    // The control that these are the "resolved nothing" answers rather than the
+    // crossing ones, so the equalities are not both reporting the same rich answer.
+    expect(rowLineageOf(row, projectLineageSources([])))
+      .toEqual({ state: 'coherent', reason: 'oneChain', stale: false, fresherDocumentIds: [] })
   })
 })
 

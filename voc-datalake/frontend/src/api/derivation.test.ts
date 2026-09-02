@@ -12,13 +12,18 @@
  *    three origins → "answers exactly what resolveDerivation answers", which pins
  *    a declared, a legacy and an unresolved-source document as whole objects
  *    rather than field by field, because the promise is the whole answer;
- *  * `resolveDerivation` indexing per SOURCE rather than per call, or a memo
- *    creeping in behind it → "builds one index per call and none per source" and
- *    "builds no index of its own when given one", which count the builder's
- *    invocations through a `Map` subclass instead of timing anything. Their
- *    positive control is the first assertion of each: an index that was never
- *    consulted would report zero lookups, so a count of zero constructions could
- *    otherwise be a resolver that reads no index at all.
+ *  * a memo creeping in behind `resolveDerivationAgainst`, or the resolver reading
+ *    the wire a second time instead of the index it was handed → "consults the index
+ *    once per source and holds no state between calls" and "reads what a source is
+ *    from the given index and never from the wire again", which count the index's
+ *    lookups through a `Map` subclass instead of timing anything. Their positive
+ *    control is the first assertion of each — the titles the index actually resolved
+ *    — because a count is otherwise indistinguishable from the silence of a resolver
+ *    that looks nothing up;
+ *  * `derivationSourceIndex` dropping a field a source displays, or keeping an
+ *    entry for a record naming no document → "indexes a document list once for
+ *    every field a source displays", which is what lets `resolved: false` mean "not
+ *    among the documents supplied" rather than "supplied without a title".
  */
 import { describe, it, expect } from 'vitest'
 import {

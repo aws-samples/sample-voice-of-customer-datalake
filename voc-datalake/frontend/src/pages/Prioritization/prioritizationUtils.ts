@@ -75,9 +75,8 @@ export interface PrioritizationRowView {
    * where the row's documents and the project's are both already in hand
    * (`collectRows`), so nothing can look the documents up a second time and
    * disagree with the first — and the source index those lookups go through is
-   * built there ONCE per project read rather than per call, which is what took
-   * the reviewed 200-row / 1000-document fixture from 1644 ms to 615 ms in this
-   * container's jsdom (issue #399 B).
+   * built there ONCE per project read rather than per call (see
+   * `ProjectLineageSources`, issue #399 B, for the measurement).
    *
    * DESCRIBES, NEVER GATES. Every state is scorable and keeps every composition
    * control it would otherwise have; the only thing this decides is what the row
@@ -1558,11 +1557,18 @@ export function collectRows(
    * recorded source against. Both were built inside the per-row loop, over a list
    * that cannot change while it runs, so one project read of D documents was walked
    * once per row — and the index, which the classifiers ask for per row AND per
-   * document on that row, once per (row × document × rule). Measured at 200 rows /
-   * 1000 documents: 1644 ms in this container's jsdom, 562 ms as reviewed in issue
-   * #399 B. Prepared here rather than memoised inside the shared helper so the
+   * document on that row, once per (row × document × rule). ONE SOURCE INDEX PER
+   * PROJECT READ, NOT PER CALL; see `ProjectLineageSources` (issue #399 B) for the
+   * measurement, and `prioritizationUtils.indexReuse.test.ts` for the count that
+   * pins it. Prepared here rather than memoised inside the shared helper so the
    * index's lifetime is this pass's and there is nothing to invalidate — the next
    * call gets a new one from whatever the reads then say.
+   *
+   * PER PROJECT READ AND NOT PER ROW, which is one `Map` and one index MORE than
+   * before for a loaded project no visible row names — `byId` used to be built
+   * lazily inside the loop. Deliberate: `Prioritization.tsx` fans out over exactly
+   * the projects it shows, so the untouched-project case is hypothetical, while the
+   * per-row rebuild was the measured cost.
    */
   const byProject = new Map<string, {
     name: string;
