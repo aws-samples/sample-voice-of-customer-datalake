@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from shared.logging import logger, tracer
 from shared.aws import get_s3_client, get_dynamodb_resource, get_sqs_client
 from shared.api import create_api_resolver, api_handler, DecimalEncoder
-from shared.exceptions import ConfigurationError, ValidationError, NotFoundError, ServiceError
+from shared.exceptions import ApiError, ConfigurationError, ValidationError, NotFoundError, ServiceError
 from shared.indexes import FEEDBACK_BY_ID_INDEX
 
 s3_client = get_s3_client()
@@ -38,6 +38,28 @@ AVAILABLE_BUCKETS = {
 }
 
 app = create_api_resolver()
+
+
+# Client-facing text for an unexpected failure, one message per operation.
+#
+# 🔑 Deliberately free of `str(e)`: the exceptions these blocks catch are boto's,
+# and their text carries internal detail — the FEEDBACK_TABLE name, the pk/sk key
+# structure, the bucket name, an S3 request id. `shared/api.py`'s ServiceError
+# handler returns `ex.message` verbatim to the caller, so interpolating the
+# exception published all of that to anyone who could provoke a 500 (issue #263).
+# The detail is not lost: every site logs it with `logger.exception` first, which
+# is where an operator can correlate it by request id.
+#
+# Each broad `try` in this file also re-raises `ApiError` ahead of its
+# `except Exception`, so a typed ValidationError/NotFoundError raised INSIDE the
+# block keeps its own status instead of being rewrapped as this 500.
+FAILED_LIST = 'Failed to list S3 objects'
+FAILED_PREVIEW = 'Failed to preview file'
+FAILED_SAVE = 'Failed to save file'
+FAILED_DELETE = 'Failed to delete file'
+FAILED_UPDATE_FEEDBACK = 'Failed to update feedback'
+FAILED_DELETE_FEEDBACK = 'Failed to delete feedback'
+FAILED_BUCKET_STATS = 'Failed to read bucket contents'
 
 
 def decimal_to_native(obj):
@@ -119,9 +141,11 @@ def list_s3_objects():
             'prefix': prefix.rstrip('/')
         }
         
+    except ApiError:
+        raise
     except Exception as e:
         logger.exception(f"Failed to list S3 objects: {e}")
-        raise ServiceError(f'Failed to list S3 objects: {str(e)}')
+        raise ServiceError(FAILED_LIST) from e
 
 
 @app.get("/data-explorer/s3/preview")
@@ -190,9 +214,11 @@ def preview_s3_file():
             
     except s3_client.exceptions.NoSuchKey:
         raise NotFoundError('File not found')
+    except ApiError:
+        raise
     except Exception as e:
         logger.exception(f"Failed to preview S3 file: {e}")
-        raise ServiceError(f'Failed to preview file: {str(e)}')
+        raise ServiceError(FAILED_PREVIEW) from e
 
 
 @app.put("/data-explorer/s3")
@@ -244,10 +270,12 @@ def save_s3_file():
                 logger.warning(f"Failed to sync to DynamoDB: {e}")
         
         return {'success': True, 'message': 'File saved', 'key': key, 'synced': synced}
-        
+
+    except ApiError:
+        raise
     except Exception as e:
         logger.exception(f"Failed to save S3 file: {e}")
-        raise ServiceError(f'Failed to save file: {str(e)}')
+        raise ServiceError(FAILED_SAVE) from e
 
 
 @app.delete("/data-explorer/s3")
@@ -271,9 +299,11 @@ def delete_s3_file():
     try:
         s3_client.delete_object(Bucket=bucket_name, Key=key)
         return {'success': True, 'message': 'File deleted', 'key': key}
+    except ApiError:
+        raise
     except Exception as e:
         logger.exception(f"Failed to delete S3 file: {e}")
-        raise ServiceError(f'Failed to delete file: {str(e)}')
+        raise ServiceError(FAILED_DELETE) from e
 
 
 # ============================================
@@ -389,10 +419,17 @@ def save_feedback():
                     logger.warning(f"Failed to sync to S3: {e}")
         
         return {'success': True, 'message': 'Feedback updated', 'synced': synced}
-        
+
+    # 🔑 Ahead of `except Exception`, because the two typed raises this block
+    # contains are the whole point of the route's contract: 'No fields to update'
+    # is a 400 and 'Feedback not found' is a 404. Caught by the catch-all they
+    # both became a 500, so a client could not tell its own bad request from an
+    # outage (issue #263).
+    except ApiError:
+        raise
     except Exception as e:
         logger.exception(f"Failed to update feedback: {e}")
-        raise ServiceError(f'Failed to update feedback: {str(e)}')
+        raise ServiceError(FAILED_UPDATE_FEEDBACK) from e
 
 
 @app.delete("/data-explorer/feedback")
@@ -429,11 +466,11 @@ def delete_feedback():
         
         return {'success': True, 'message': 'Feedback deleted', 'feedback_id': feedback_id}
         
-    except NotFoundError:
+    except ApiError:
         raise
     except Exception as e:
         logger.exception(f"Failed to delete feedback: {e}")
-        raise ServiceError(f'Failed to delete feedback: {str(e)}')
+        raise ServiceError(FAILED_DELETE_FEEDBACK) from e
 
 
 @app.get("/data-explorer/buckets")
@@ -479,8 +516,12 @@ def get_data_stats():
                 bucket_info['folders'] = folders
                 bucket_info['folder_count'] = len(folders)
             except Exception as e:
-                logger.warning(f"Failed to get stats for bucket {bucket_name}: {e}")
-                bucket_info['error'] = str(e)
+                logger.exception(f"Failed to get stats for bucket {bucket_name}: {e}")
+                # Generic, for the same reason as the module constants above: this
+                # field is returned to the caller inside a 200 body, so `str(e)`
+                # here leaked boto text (bucket name, access-denied detail,
+                # request id) just as surely as a ServiceError message would.
+                bucket_info['error'] = FAILED_BUCKET_STATS
             stats['s3']['buckets'].append(bucket_info)
     
     return stats

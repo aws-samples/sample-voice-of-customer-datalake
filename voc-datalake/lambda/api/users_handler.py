@@ -18,13 +18,32 @@ from botocore.exceptions import ClientError, BotoCoreError
 
 from shared.logging import logger, tracer
 from shared.api import create_api_resolver, api_handler, require_admin
-from shared.exceptions import ValidationError, NotFoundError, ServiceError, ConflictError
+from shared.exceptions import ApiError, ValidationError, NotFoundError, ServiceError, ConflictError
 
 # AWS Clients
 cognito = boto3.client('cognito-idp')
 
 # Configuration
 USER_POOL_ID = os.environ.get('USER_POOL_ID', '')
+
+# Client-facing text for an unexpected Cognito failure, one message per operation.
+#
+# 🔑 Every one of these used to be `ServiceError(str(e))`, and `shared/api.py`
+# returns a ServiceError's message verbatim to the caller — so a botocore
+# ClientError published the USER_POOL_ID, the API name, and the Cognito request id
+# to anyone who could provoke a 500 (issue #263). The detail is logged with
+# `logger.exception` at each site instead, which is where an operator needs it.
+#
+# Each block also re-raises `ApiError` ahead of its `except Exception`, so a typed
+# ValidationError/NotFoundError raised inside keeps its own 400/404.
+FAILED_LIST_USERS = 'Failed to list users'
+FAILED_CREATE_USER = 'Failed to create user'
+FAILED_UPDATE_USER = 'Failed to update user'
+FAILED_UPDATE_GROUP = 'Failed to update user group'
+FAILED_RESET_PASSWORD = 'Failed to reset password'
+FAILED_ENABLE_USER = 'Failed to enable user'
+FAILED_DISABLE_USER = 'Failed to disable user'
+FAILED_DELETE_USER = 'Failed to delete user'
 
 app = create_api_resolver()
 
@@ -84,9 +103,11 @@ def list_users():
         
         return {'success': True, 'users': users}
     
+    except ApiError:
+        raise
     except Exception as e:
         logger.exception(f'Error listing users: {e}')
-        raise ServiceError(str(e))
+        raise ServiceError(FAILED_LIST_USERS) from e
 
 
 @app.post('/users')
@@ -157,9 +178,11 @@ def create_user():
     
     except cognito.exceptions.UsernameExistsException:
         raise ConflictError('A user with this email already exists')
+    except ApiError:
+        raise
     except Exception as e:
         logger.exception(f'Error creating user: {e}')
-        raise ServiceError(str(e))
+        raise ServiceError(FAILED_CREATE_USER) from e
 
 
 @app.put('/users/<username>')
@@ -224,9 +247,13 @@ def update_user(username: str):
 
     except cognito.exceptions.UserNotFoundException:
         raise NotFoundError('User not found')
+    # No `except ApiError: raise` here, unlike its siblings: this route already
+    # catches only the AWS error types, so the ValidationError it raises after
+    # admin_get_user ('...must be non-empty') is not swallowed. Widening this to
+    # `except Exception` would need that re-raise added first.
     except (ClientError, BotoCoreError) as e:
         logger.exception(f'Error updating user: {e}')
-        raise ServiceError(str(e))
+        raise ServiceError(FAILED_UPDATE_USER) from e
 
 
 @app.put('/users/<username>/group')
@@ -274,9 +301,11 @@ def update_user_group(username: str):
     
     except cognito.exceptions.UserNotFoundException:
         raise NotFoundError('User not found')
+    except ApiError:
+        raise
     except Exception as e:
         logger.exception(f'Error updating user group: {e}')
-        raise ServiceError(str(e))
+        raise ServiceError(FAILED_UPDATE_GROUP) from e
 
 
 @app.post('/users/<username>/reset-password')
@@ -299,9 +328,11 @@ def reset_user_password(username: str):
     
     except cognito.exceptions.UserNotFoundException:
         raise NotFoundError('User not found')
+    except ApiError:
+        raise
     except Exception as e:
         logger.exception(f'Error resetting password: {e}')
-        raise ServiceError(str(e))
+        raise ServiceError(FAILED_RESET_PASSWORD) from e
 
 
 @app.put('/users/<username>/enable')
@@ -324,9 +355,11 @@ def enable_user(username: str):
     
     except cognito.exceptions.UserNotFoundException:
         raise NotFoundError('User not found')
+    except ApiError:
+        raise
     except Exception as e:
         logger.exception(f'Error enabling user: {e}')
-        raise ServiceError(str(e))
+        raise ServiceError(FAILED_ENABLE_USER) from e
 
 
 @app.put('/users/<username>/disable')
@@ -349,9 +382,11 @@ def disable_user(username: str):
     
     except cognito.exceptions.UserNotFoundException:
         raise NotFoundError('User not found')
+    except ApiError:
+        raise
     except Exception as e:
         logger.exception(f'Error disabling user: {e}')
-        raise ServiceError(str(e))
+        raise ServiceError(FAILED_DISABLE_USER) from e
 
 
 @app.delete('/users/<username>')
@@ -374,9 +409,11 @@ def delete_user(username: str):
     
     except cognito.exceptions.UserNotFoundException:
         raise NotFoundError('User not found')
+    except ApiError:
+        raise
     except Exception as e:
         logger.exception(f'Error deleting user: {e}')
-        raise ServiceError(str(e))
+        raise ServiceError(FAILED_DELETE_USER) from e
 
 
 @api_handler
