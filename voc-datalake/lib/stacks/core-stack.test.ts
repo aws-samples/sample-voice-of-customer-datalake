@@ -749,6 +749,13 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
       }),
     })
     .optional();
+  /** Says what to do when the `aud` condition stops rendering as `{ Ref }`. */
+  const UNREADABLE_POOL_REF = {
+    errorMap: () => ({
+      message:
+        'unreadable Identity Pool reference (a cross-stack import or Fn::GetAtt?) — extend this schema to read it',
+    }),
+  };
   const StatementSchema = z.object({
     Action: ActionOrResourceSchema,
     Resource: ActionOrResourceSchema,
@@ -938,7 +945,15 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
         Action: z.string(),
         Condition: z.object({
           StringEquals: z.object({
-            'cognito-identity.amazonaws.com:aud': z.object({ Ref: z.string() }),
+            // `{ Ref }` is how `identityPool.ref` renders today. A cross-stack
+            // import or an `Fn::GetAtt` on the pool would not, so the shape says
+            // what to do about it rather than surfacing a bare zod type error —
+            // the same treatment `ActionOrResourceSchema` gets, and for the same
+            // reason: the likely way this fires is a legitimate future change.
+            'cognito-identity.amazonaws.com:aud': z.object(
+              { Ref: z.string(UNREADABLE_POOL_REF) },
+              UNREADABLE_POOL_REF,
+            ),
           }),
           'ForAnyValue:StringLike': z.object({
             'cognito-identity.amazonaws.com:amr': z.string(),
