@@ -176,8 +176,10 @@ FORM_ID_LENGTH = 8
 # `[0-9A-Za-z_.-]` that the ROUTE admits, which for ASCII is everything in
 # `[-._~()'!*:@,;=+&$%<> \[\]{}|^]` except `-`, `.` and `_` — 24 characters, of
 # which `:`, `+`, `@`, `%`, `~` and a space inside an id are only the illustrations.
-# Seven of the other eighteen (`&`, `'`, `(`, `)`, `;`, `<`, `>`) are the #379
-# payload's own characters, which is exactly why a hand-written list omits them.
+# Seven of the other eighteen (`&`, `'`, `(`, `)`, `;`, `<`, `>`) are the characters
+# the #379 fix turns on — the quote, parens and semicolon the payload closes its
+# handwritten string literal with, plus the `<`, `>` and `&` `_js_value` escapes for
+# the HTML parser — which is exactly why a hand-written list omits them.
 # `"`, `#`, `/`, `?`, `\` and a backtick are the printable-ASCII exceptions: the
 # route admits none of them, so they belong with the tab and the newline below.
 # A non-ASCII character that `\w` does NOT match is likewise not the scan's to
@@ -291,8 +293,10 @@ def _validated_form_id(raw: Any) -> str | None:
     is every character of `[-._~()'!*:@,;=+&$%<> \\[\\]{}|^]` except `-`, `.` and
     `_` — 24 of them, where `:`, `+`, `@`, `%`, `~` and a SPACE within an id such as
     `'my form'` are illustrations and not the set. Seven of the eighteen unnamed
-    ones (`&`, `'`, `(`, `)`, `;`, `<`, `>`) are the #379 payload's own characters,
-    which is why they are the ones a hand-written list drops. On the other side,
+    ones (`&`, `'`, `(`, `)`, `;`, `<`, `>`) are the characters the #379 fix turns
+    on — the quote, parens and semicolon the payload closes its handwritten string
+    literal with, plus the `<`, `>` and `&` `_js_value` escapes for the HTML parser
+    — which is why they are the ones a hand-written list drops. On the other side,
     `"`, `#`, `/`, `?`, a backslash and a backtick are the printable-ASCII
     characters the route does NOT admit, so they sit with the tab and the newline
     below rather than in the scan.

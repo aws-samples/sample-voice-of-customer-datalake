@@ -185,9 +185,11 @@ space ! $ % & ' ( ) * + , : ; < = > @ [ ] ^ { | } ~
 ```
 
 `:`, `+`, `@`, `%` and `~` are only the ones easy to remember. Seven of the others —
-`&`, `'`, `(`, `)`, `;`, `<`, `>` — are the characters the #379 payload is built from,
-so they read as attack syntax rather than as an id someone would seed; they resolved
-all the same, which makes `form(1)` and `a;b` as much in scope as `a:b`. Conversely
+`&`, `'`, `(`, `)`, `;`, `<`, `>` — are the characters the #379 fix turns on: the
+quote, parentheses and semicolon the payload closes its handwritten string literal
+with, plus the `<`, `>` and `&` that `_js_value` escapes for the HTML parser. So they
+read as attack syntax rather than as an id someone would seed; they resolved all the
+same, which makes `form(1)` and `a;b` as much in scope as `a:b`. Conversely
 `"`, `#`, `/`, `?`, `\` and `` ` `` are the printable-ASCII characters the route does
 **not** admit, so they belong with the tab and newline below.
 

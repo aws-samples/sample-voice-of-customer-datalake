@@ -129,12 +129,14 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   ```
 
   `:`, `+`, `@`, `%`, `~` and a space *within* the id are the memorable ones, not the whole set.
-  Seven of the rest — `&`, `'`, `(`, `)`, `;`, `<`, `>` — are the characters the #379 payload itself
-  is built from, which is precisely why a list written by hand omits them: they read as attack
-  syntax rather than as something anyone would seed an id with. They resolved all the same, so
-  `form(1)` and `a;b` are as much in scope as `a:b`. Going the other way, `"`, `#`, `/`, `?`, `\`
-  and `` ` `` are the printable-ASCII characters the route does **not** admit, so they belong with
-  the tab and the newline below rather than in the scan.
+  Seven of the rest — `&`, `'`, `(`, `)`, `;`, `<`, `>` — are the characters the #379 fix turns on:
+  the quote, parentheses and semicolon the payload closes its handwritten string literal with, plus
+  the `<`, `>` and `&` that `_js_value` escapes for the HTML parser. That is precisely why a list
+  written by hand omits them — they read as attack syntax rather than as something anyone would seed
+  an id with — and they resolved all the same, so `form(1)` and `a;b` are as much in scope as `a:b`.
+  Going the other way, `"`, `#`, `/`, `?`, `\` and `` ` `` are the printable-ASCII characters the
+  route does **not** admit, so they belong with the tab and the newline below rather than in the
+  scan.
 
   This finds them — the classifier tests the class, so it flags all 24 without needing them named:
 
