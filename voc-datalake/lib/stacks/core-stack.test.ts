@@ -749,7 +749,15 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
       }),
     })
     .optional();
-  /** Says what to do when the `aud` condition stops rendering as `{ Ref }`. */
+  /**
+   * Says what to do when the `aud` condition stops rendering readably.
+   *
+   * Scoped to that ONE case on purpose. A missing `aud`, or a hardcoded pool id,
+   * is perfectly readable and is a bypass this case exists to catch — telling
+   * the reader to "extend this schema" there would be advice to widen the guard
+   * until it accepts the regression, so both are let through to the assertion
+   * below and fail on their value instead.
+   */
   const UNREADABLE_POOL_REF = {
     errorMap: () => ({
       message:
@@ -809,6 +817,27 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
     const pools = Object.keys(template.findResources('AWS::Cognito::IdentityPool'));
     expect(pools, 'expected exactly one Identity Pool').toHaveLength(1);
     return pools[0];
+  }
+
+  /**
+   * The pool a trust statement is scoped to, as something the case can diff.
+   *
+   * `identityPool.ref` renders as `{ Ref: <logical id> }`, so that ref is the
+   * value worth comparing. Anything that is not a plain object is READABLE and
+   * is handed back untouched to fail on its value: the condition absent
+   * (`undefined` — assumable by any pool in any account), a hardcoded pool id,
+   * or a list naming others besides this one. Only an object of some OTHER shape
+   * — the `Fn::GetAtt` a cross-stack import would render — is genuinely
+   * unreadable, and it alone gets the "extend this schema" diagnostic, which on
+   * any of the former would be advice to widen the guard until it accepts them.
+   */
+  function audienceOf(audience: unknown): unknown {
+    if (typeof audience !== 'object' || audience === null || Array.isArray(audience)) {
+      return audience;
+    }
+    return z
+      .object({ Ref: z.string(UNREADABLE_POOL_REF) }, UNREADABLE_POOL_REF)
+      .parse(audience).Ref;
   }
 
   /** Every statement that role can act under, however the policy is attached. */
@@ -944,17 +973,14 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
       .object({
         Action: z.string(),
         Condition: z.object({
-          StringEquals: z.object({
-            // `{ Ref }` is how `identityPool.ref` renders today. A cross-stack
-            // import or an `Fn::GetAtt` on the pool would not, so the shape says
-            // what to do about it rather than surfacing a bare zod type error —
-            // the same treatment `ActionOrResourceSchema` gets, and for the same
-            // reason: the likely way this fires is a legitimate future change.
-            'cognito-identity.amazonaws.com:aud': z.object(
-              { Ref: z.string(UNREADABLE_POOL_REF) },
-              UNREADABLE_POOL_REF,
-            ),
-          }),
+          // Read, not constrained: an audience that is missing or is a literal
+          // pool id must fail on its VALUE below, where the message names the
+          // bypass. Constraining the shape here would fail those two at
+          // `.parse()` instead, under the diagnostic for a legitimate future
+          // render change — see `audienceOf()`.
+          StringEquals: z
+            .object({ 'cognito-identity.amazonaws.com:aud': z.unknown() })
+            .optional(),
           'ForAnyValue:StringLike': z.object({
             'cognito-identity.amazonaws.com:amr': z.string(),
           }),
@@ -969,9 +995,11 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
     // assumable via web identity by any Identity Pool in any AWS account — a
     // cross-ACCOUNT bypass, strictly worse than the cross-authorizer one this
     // block is about. Matched against the pool in this template rather than a
-    // literal, so a hardcoded or foreign pool id fails too.
+    // literal, so a hardcoded or foreign pool id fails too, and so does the
+    // condition being absent: `audienceOf(undefined)` is `undefined`, which is
+    // not the logical id.
     expect(
-      assumable.Condition.StringEquals['cognito-identity.amazonaws.com:aud'].Ref,
+      audienceOf(assumable.Condition.StringEquals?.['cognito-identity.amazonaws.com:aud']),
       'the trust must be scoped to THIS Identity Pool',
     ).toBe(identityPoolLogicalId(template));
     // WHO within it: authenticated identities only.
