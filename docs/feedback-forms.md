@@ -186,12 +186,15 @@ space ! $ % & ' ( ) * + , : ; < = > @ [ ] ^ { | } ~
 
 `:`, `+`, `@`, `%` and `~` are only the ones easy to remember. Seven of the others —
 `&`, `'`, `(`, `)`, `;`, `<`, `>` — are the characters the #379 fix turns on: the
-quote, parentheses and semicolon the payload closes its handwritten string literal
-with, plus the `<`, `>` and `&` that `_js_value` escapes for the HTML parser. So they
-read as attack syntax rather than as an id someone would seed; they resolved all the
-same, which makes `form(1)` and `a;b` as much in scope as `a:b`. Conversely
-`"`, `#`, `/`, `?`, `\` and `` ` `` are the printable-ASCII characters the route does
-**not** admit, so they belong with the tab and newline below.
+quote, parentheses and semicolon the payload breaks out with, plus the `<`, `>` and
+`&` that `_js_value` escapes for the HTML parser. (Three of those four do the
+breaking out in the payload itself — its `'` closes the string literal, its `)`
+closes the init call and its `;` starts a second statement — while its `(` belongs to
+the `alert(` it calls and the `x=('` it re-opens with.) So they read as attack syntax
+rather than as an id someone would seed; they resolved all the same, which makes
+`form(1)` and `a;b` as much in scope as `a:b`. Conversely `"`, `#`, `/`, `?`, `\` and
+`` ` `` are the printable-ASCII characters the route does **not** admit, so they
+belong with the tab and newline below.
 
 Some shapes are **not** in scope, and not because the scan would miss them — it
 flags them too. They never reached a handler, so they answered 404 before this

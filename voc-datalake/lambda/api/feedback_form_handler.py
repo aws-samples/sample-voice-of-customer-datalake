@@ -177,9 +177,13 @@ FORM_ID_LENGTH = 8
 # `[-._~()'!*:@,;=+&$%<> \[\]{}|^]` except `-`, `.` and `_` — 24 characters, of
 # which `:`, `+`, `@`, `%`, `~` and a space inside an id are only the illustrations.
 # Seven of the other eighteen (`&`, `'`, `(`, `)`, `;`, `<`, `>`) are the characters
-# the #379 fix turns on — the quote, parens and semicolon the payload closes its
-# handwritten string literal with, plus the `<`, `>` and `&` `_js_value` escapes for
-# the HTML parser — which is exactly why a hand-written list omits them.
+# the #379 fix turns on — the quote, parens and semicolon the payload breaks out
+# with, plus the `<`, `>` and `&` `_js_value` escapes for the HTML parser — which is
+# exactly why a hand-written list omits them. (Three of those four do the breaking
+# out in the payload: its `'` closes the string literal, its `)` closes the init call
+# and its `;` starts a second statement, while its `(` is the `alert(` it calls and
+# the `x=('` it re-opens with. `_INJECTION_PAYLOAD`'s comment in the test file is
+# where that decomposition is stated as the module's own.)
 # `"`, `#`, `/`, `?`, `\` and a backtick are the printable-ASCII exceptions: the
 # route admits none of them, so they belong with the tab and the newline below.
 # A non-ASCII character that `\w` does NOT match is likewise not the scan's to
@@ -294,12 +298,14 @@ def _validated_form_id(raw: Any) -> str | None:
     `_` — 24 of them, where `:`, `+`, `@`, `%`, `~` and a SPACE within an id such as
     `'my form'` are illustrations and not the set. Seven of the eighteen unnamed
     ones (`&`, `'`, `(`, `)`, `;`, `<`, `>`) are the characters the #379 fix turns
-    on — the quote, parens and semicolon the payload closes its handwritten string
-    literal with, plus the `<`, `>` and `&` `_js_value` escapes for the HTML parser
-    — which is why they are the ones a hand-written list drops. On the other side,
-    `"`, `#`, `/`, `?`, a backslash and a backtick are the printable-ASCII
-    characters the route does NOT admit, so they sit with the tab and the newline
-    below rather than in the scan.
+    on — the quote, parens and semicolon the payload breaks out with, plus the `<`,
+    `>` and `&` `_js_value` escapes for the HTML parser — which is why they are the
+    ones a hand-written list drops. Three of those four do the breaking out in the
+    payload itself (its `'` closes the string literal, its `)` closes the init call
+    and its `;` starts a second statement; its `(` is the `alert(` it calls and the
+    `x=('` it re-opens with). On the other side, `"`, `#`, `/`, `?`, a backslash and
+    a backtick are the printable-ASCII characters the route does NOT admit, so they
+    sit with the tab and the newline below rather than in the scan.
 
     The non-ASCII half of that is narrower than "everything non-ASCII" and the
     whitespace half narrower than "whitespace", and both narrowings come from ONE
