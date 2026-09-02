@@ -10,6 +10,7 @@ import re
 import textwrap
 from datetime import datetime
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import boto3
@@ -3311,7 +3312,7 @@ class TestTheAuthenticatedCrudRoutesAreBoundedToo:
     # A VALID `PUT` body, and it has to be: `update_form` 400s on an empty update
     # (`No fields to update`), so a body with nothing in it would produce a refusal
     # that says nothing about the id. What is malformed in these cases is the ID.
-    A_VALID_UPDATE_BODY = {'name': 'pwn'}
+    A_VALID_UPDATE_BODY: ClassVar[dict[str, str]] = {'name': 'pwn'}
 
     @patch('feedback_form_handler.aggregates_table')
     def test_no_crud_route_turns_a_malformed_id_into_a_key(
@@ -5599,9 +5600,16 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
         fix actually turns on is still refused, so a future widening cannot cite
         this one as precedent for `'` or `<`.
 
-        `:`, `+`, `@`, `%`, `é` and `my form` are here for a different reason — they
-        are the exclusions the upgrade notes tell an operator to SCAN for, so they
-        have to be genuinely refused for that instruction to describe the code.
+        The `scanned_ascii` loop is here for a different reason — those are the
+        exclusions the upgrade notes tell an operator to SCAN for, so they have to be
+        genuinely refused for that instruction to describe the code. All 24 of them,
+        not the five the notes name as illustrations: both documents now state that
+        set as a complement (every character the route's capture group admits and this
+        pattern does not) and print it, and a check covering only the memorable
+        characters is what let the prose stand at six of twenty-four. Seven of the
+        rest are the #379 payload's own, so the `dangerous` loop above asserts those
+        for their own reason and this loop re-covers them deliberately: they are in
+        both sets, and each set's claim should be readable without the other.
         `my form` earns its place for the same reason `a:b` has one: a stored id with
         an INTERIOR SPACE resolved before this change (every route keyed
         `f'FORM#{form_id}'` with nothing checked) and answers 404 after it, so it is
@@ -5648,12 +5656,20 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
                 'depends on being outside the class, and admitting `.` must not '
                 'have moved it'
             )
-        for scanned in ('a:b', 'a+b', 'a@b', 'a%b', 'café', 'a~b', 'my form'):
+        scanned_ascii = ' !$%&\'()*+,:;<=>@[]^{|}~'
+        for scanned in [f'a{c}b' for c in scanned_ascii] + ['café', 'my form']:
             assert feedback_form_handler._validated_form_id(scanned) is None, (
                 f'{scanned!r} was accepted — CHANGELOG.md tells an operator to '
                 'scan stored ids for exactly these, so if one is now admitted the '
                 'upgrade note describes a refusal that does not happen'
             )
+        assert len(scanned_ascii) == 24, (
+            f'{len(scanned_ascii)} ASCII characters here, not 24 — both documents '
+            'state the in-scope ASCII set as a COMPLEMENT and then print it, so '
+            'this literal is the copy that has to agree with them. '
+            'test_the_scan_is_scoped_to_ids_a_route_could_actually_resolve is where '
+            'membership is derived off the live resolver rather than listed.'
+        )
 
     def test_the_scan_is_scoped_to_ids_a_route_could_actually_resolve(
         self, feedback_form_handler
@@ -5682,8 +5698,17 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
         enumerating all 0x110000 codepoints — so the reachable loop carries one id
         per `\\w` category (`Ll` `'café'`, `Lm` `'hawaiʼi-form'`, `Lo` `'表単'`,
         `Lt` `'ǅigit'`, `Lu` `'ÉCOLE'`, `Nd` `'form٠a'`, `Nl` `'section-Ⅷ'`, `No`
-        `'surface-m²'`) and the unreachable loop one per class `\\w` excludes
-        (`Mn`, `Mc`, `Me`, `Sc`, `Zs`, `Cf`, `Pc`).
+        `'surface-m²'`) and the unreachable loop one per class `\\w` excludes:
+        every class either document NAMES (`Mn`, `Mc`, `So`, `Pd`, `Pi`, `Pf`, `Zs`,
+        `Cf`, `Sc`), plus `Me`, `Pc`, `Zl` and `Zp`, which they do not name but which
+        are outside `\\w` for the same reason.
+
+        On the ASCII side the same principle applies to the CLASS rather than to a
+        category: the in-scope set is 24 characters, and the note named six of them,
+        so `'form(1)'` and `'a;b'` are sampled beside the named `'a:b'`. Those two
+        hold characters from the #379 payload itself, which is the reason a list
+        written by hand omits them — they read as attack syntax rather than as an id
+        anyone would seed, and they resolved regardless.
 
         Exhaustively rather than representatively, because a partial sample is what
         let the prose go wrong twice. `Lm` and `No` read to a human as punctuation,
@@ -5717,13 +5742,21 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
         path that matches NOTHING — which would report every character as excluded
         and pass an assertion set made only of exclusions.
         """
-        # After the three ASCII cases, one id per `\w` category, so no category
-        # stands in for another: `Ll` `café`, `Lm` `hawaiʼi-form` (U+02BC, an
-        # apostrophe to the eye), `Lo` `表単`, `Lt` `ǅigit`, `Lu` `ÉCOLE`, `Nd`
-        # `form٠a` (ARABIC-INDIC DIGIT ZERO), `Nl` `section-Ⅷ`, `No` `surface-m²`.
-        for reachable in ('my form', '   ', 'a:b', 'café', 'hawaiʼi-form', '表単',
-                          'ǅigit', 'ÉCOLE', 'form٠a', 'section-Ⅷ',
-                          'surface-m²'):
+        # The ASCII cases first. `a:b` is one of the characters both documents name;
+        # `form(1)` and `a;b` are two they do NOT. The in-scope ASCII set is 24
+        # characters, and the seven the #379 payload is built from (`&`, `'`, `(`,
+        # `)`, `;`, `<`, `>`) are exactly the ones a hand-written list drops, because
+        # they read as attack syntax rather than as an id anyone would seed. They
+        # resolved all the same, so sampling only a NAMED character would pin the
+        # note's list rather than the class the classifier actually tests.
+        #
+        # Then one id per `\w` category, so no category stands in for another: `Ll`
+        # `café`, `Lm` `hawaiʼi-form` (U+02BC, an apostrophe to the eye), `Lo`
+        # `表単`, `Lt` `ǅigit`, `Lu` `ÉCOLE`, `Nd` `form٠a` (ARABIC-INDIC DIGIT
+        # ZERO), `Nl` `section-Ⅷ`, `No` `surface-m²`.
+        for reachable in ('my form', '   ', 'a:b', 'form(1)', 'a;b', 'café',
+                          'hawaiʼi-form', '表単', 'ǅigit', 'ÉCOLE',
+                          'form٠a', 'section-Ⅷ', 'surface-m²'):
             admitting = [
                 f'{method} {path}'
                 for method, path, rule in _form_id_route_paths(
@@ -5745,9 +5778,28 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
 
         # One id per class `\w` EXCLUDES, mirroring the per-category loop above so
         # that neither side of the boundary rests on a representative sample:
-        # `form€a` is `Sc`, `form\xa0a` is `Zs`, `cafe\u0301` is `Mn`, the Devanagari
-        # id is `Mc`, `form\u0488a` is `Me`, `form\u200da` is `Cf` (a zero-width
-        # joiner) and `form\uff3fa` is `Pc`.
+        # `form€a` is `Sc`, `form°a` and `form\U0001f600a` are `So`,
+        # `form—a` is `Pd`, `form«a` is `Pi`, `hawai\u2019i-form` is `Pf`,
+        # `form\uff3fa` is `Pc`, `cafe\u0301` is `Mn`, `form\u0488a` is `Me`,
+        # `form\u200da` is `Cf` (a zero-width joiner), `form\xa0a` is `Zs`, and
+        # `form\u2028a` / `form\u2029a` are `Zl` / `Zp`. The Devanagari id carries
+        # BOTH a matra (`Mc`) and a virama (`Mn`) — `['Lo','Mc','Lo','Mn','Lo']` — so
+        # it is the `Mc` sample and is NOT disjoint from the `Mn` one, which is
+        # `cafe\u0301`.
+        #
+        # `So`, `Pd`, `Pi` and `Pf` are in the loop because both documents NAME them:
+        # `€`, `°` and an emoji as symbols, `—` and `«` as punctuation, and U+2019
+        # as the out-of-scope half of the apostrophe look-alike pair. The criterion is
+        # the one this test's docstring states — a class named in either document and
+        # absent here would make their "asserts this split" citation false — and a
+        # selection of only marks, one symbol, one separator and one format character
+        # was in exactly that state.
+        #
+        # `Zl` and `Zp` are the pair NEITHER document's `Z*` illustration covers:
+        # U+2028 LINE SEPARATOR and U+2029 PARAGRAPH SEPARATOR are not `Zs` like the
+        # U+00A0 and U+3000 both documents name, and they are the exact two characters
+        # `_js_value`'s `ensure_ascii=True` exists to escape — so a reader meets them
+        # in both roles and is owed the fact that no route admits them either.
         #
         # `Pc` earns its line because it is the NEAR MISS: `_` is the one `\w`
         # member outside `L*`/`N*`, and `_` is `Pc` — but the REST of `Pc` (U+FF3F
@@ -5770,9 +5822,11 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
         # did. Both documents name `caf\u00e9` in scope without saying which of the
         # two spellings they mean. `\u200d` and `\u0488` would be invisible, or would
         # stack onto the preceding character, in an editor.
-        for unreachable in ('abc\tdef', 'abc\ndef', 'form€a', 'form\xa0a',
-                            'cafe\u0301', 'फॉर्म', 'form\u0488a',
-                            'form\u200da', 'form\uff3fa'):
+        for unreachable in ('abc\tdef', 'abc\ndef', 'form€a', 'form°a',
+                            'form\U0001f600a', 'form—a', 'form«a',
+                            'hawai\u2019i-form', 'form\uff3fa', 'cafe\u0301',
+                            'फॉर्म', 'form\u0488a', 'form\u200da',
+                            'form\xa0a', 'form\u2028a', 'form\u2029a'):
             admitting = [
                 f'{method} {path}'
                 for method, path, rule in _form_id_route_paths(

@@ -168,12 +168,28 @@ are relative-path segments, so a client resolves them away when it joins them on
 the API base and the request addresses a different resource than the one asked for.
 `...`, `.hidden-form` and `form.` are ordinary ids and are accepted.
 
-Ids containing anything else — `:`, `+`, `@`, `%`, `~`, a non-ASCII **letter or
-number** such as `café`, `表単`, `hawaiʼi-form` or `surface-m²`, or a space *within* the
-id — *did* resolve before the change that closed #379 and now answer 404 on all eight
-of their routes. If you seeded or imported form ids by hand, the pre-upgrade scan in
-[CHANGELOG.md](../CHANGELOG.md) finds them (it flags a space as readily as a colon);
-there is no compatibility shim.
+Ids containing anything else *that the route admits* — `a:b`, `form(1)`, `a;b`, a
+non-ASCII **letter or number** such as `café`, `表単`, `hawaiʼi-form` or `surface-m²`,
+or a space *within* the id — *did* resolve before the change that closed #379 and now
+answer 404 on all eight of their routes. If you seeded or imported form ids by hand,
+the pre-upgrade scan in [CHANGELOG.md](../CHANGELOG.md) finds them (it flags a space
+as readily as a colon); there is no compatibility shim.
+
+Read "anything else" as a complement, not as a list of the memorable characters. For
+ASCII the in-scope set is the 24 characters the route's capture group admits and the
+validator does not — everything in `[-._~()'!*:@,;=+&$%<> \[\]{}|^]` except `-`, `.`
+and `_`:
+
+```
+space ! $ % & ' ( ) * + , : ; < = > @ [ ] ^ { | } ~
+```
+
+`:`, `+`, `@`, `%` and `~` are only the ones easy to remember. Seven of the others —
+`&`, `'`, `(`, `)`, `;`, `<`, `>` — are the characters the #379 payload is built from,
+so they read as attack syntax rather than as an id someone would seed; they resolved
+all the same, which makes `form(1)` and `a;b` as much in scope as `a:b`. Conversely
+`"`, `#`, `/`, `?`, `\` and `` ` `` are the printable-ASCII characters the route does
+**not** admit, so they belong with the tab and newline below.
 
 Some shapes are **not** in scope, and not because the scan would miss them — it flags
 them too. They never reached a handler, so they answered 404 before this change as
@@ -194,8 +210,12 @@ The categories matter because the ids an operator is most likely to misfile fall
 Hawaiian ʻokina U+02BB is the same category and equally in scope), a fraction or
 superscript (`half-½-price`, `surface-m²`) and a roman numeral (`section-Ⅷ`) are
 letters and numbers to `\w`, so those rows resolved and need renaming. `Lm` even holds
-five characters *named* as accents (U+02C6 MODIFIER LETTER CIRCUMFLEX ACCENT and
-U+02CA–U+02CF), so `formˆa` is in scope. **Out** of scope though they read as letters:
+characters *named* as accents — U+02C6 MODIFIER LETTER CIRCUMFLEX ACCENT, U+02CA,
+U+02CB, U+02CE, U+02CF and U+A788 MODIFIER LETTER LOW CIRCUMFLEX ACCENT — so `formˆa`
+is in scope. Those six rather than the range U+02CA–U+02CF, which sweeps in U+02CC
+MODIFIER LETTER LOW VERTICAL LINE and U+02CD MODIFIER LETTER LOW MACRON (also `Lm`,
+also in scope, but not accents) and misses U+A788. **Out** of scope though they read as
+letters:
 an id in a script that writes a vowel as a combining mark — Hindi `फॉर्म`, Thai
 `แบบฟอร์ม`, Arabic `نَموذج` — never matched a route, because the mark is `Mc`/`Mn` even
 where the base letter is `Lo`. (Precomposed Korean `피드백` is all `Lo` and did resolve.)

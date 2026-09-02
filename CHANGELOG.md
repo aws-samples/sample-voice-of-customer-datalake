@@ -110,13 +110,33 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   API base, so such an id addressed a different resource rather than a form.
 
   **Check before upgrading if you have hand-seeded or imported form ids.** An id containing anything
-  outside that class — `:`, `+`, `@`, `%`, `~`, a non-ASCII **letter or number**, or a space
-  *within* the id, as in `a:b`, `café`, `hawaiʼi-form`, `surface-m²` or `my form` — *did* resolve on
-  all eight of its routes before this change and now answers `404 Form not found` on all of them.
-  Unlike an id addressed with surrounding whitespace, those rows are genuinely
-  reachable-then-orphaned, so scan the aggregates table for them first and rename any you find
-  (write the record under a new `sk` and repoint the embed snippet; the old row's submissions stay
-  under their original `source_channel`, so also rewrite those if the form's stats matter):
+  outside that class *that the route itself admits* — `a:b`, `form(1)`, `a;b`, `café`,
+  `hawaiʼi-form`, `surface-m²` or `my form` — *did* resolve on all eight of its routes before this
+  change and now answers `404 Form not found` on all of them. Unlike an id addressed with
+  surrounding whitespace, those rows are genuinely reachable-then-orphaned, so scan the aggregates
+  table for them first and rename any you find (write the record under a new `sk` and repoint the
+  embed snippet; the old row's submissions stay under their original `source_channel`, so also
+  rewrite those if the form's stats matter).
+
+  **Read "anything outside that class" as a complement rather than as a list**, because for ASCII
+  the set is 24 characters and every hand-written list of it has been shorter. In scope is any
+  character outside the validator's `[0-9A-Za-z_.-]` that the route's own capture group
+  (`[-._~()'!*:@,;=+&$%<> \[\]{}|^\w]`) admits, which for ASCII means everything in
+  `[-._~()'!*:@,;=+&$%<> \[\]{}|^]` except `-`, `.` and `_`:
+
+  ```
+  space ! $ % & ' ( ) * + , : ; < = > @ [ ] ^ { | } ~
+  ```
+
+  `:`, `+`, `@`, `%`, `~` and a space *within* the id are the memorable ones, not the whole set.
+  Seven of the rest — `&`, `'`, `(`, `)`, `;`, `<`, `>` — are the characters the #379 payload itself
+  is built from, which is precisely why a list written by hand omits them: they read as attack
+  syntax rather than as something anyone would seed an id with. They resolved all the same, so
+  `form(1)` and `a;b` are as much in scope as `a:b`. Going the other way, `"`, `#`, `/`, `?`, `\`
+  and `` ` `` are the printable-ASCII characters the route does **not** admit, so they belong with
+  the tab and the newline below rather than in the scan.
+
+  This finds them — the classifier tests the class, so it flags all 24 without needing them named:
 
   ```bash
   aws dynamodb query --table-name "$AGGREGATES_TABLE" \
@@ -176,9 +196,13 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   modifier letter (`hawaiʼi-form`, whose `ʼ` is U+02BC MODIFIER LETTER APOSTROPHE, visually an ASCII
   `'`; the Hawaiian ʻokina, U+02BB, is the same category and equally in scope), a fraction or
   superscript (`half-½-price`, `surface-m²`) and a roman numeral (`section-Ⅷ`) are all `\w`, so all
-  of them resolved. `Lm` even holds five characters whose Unicode *names* are accents — U+02C6
-  MODIFIER LETTER CIRCUMFLEX ACCENT and U+02CA–U+02CF — so `formˆa` is in scope although "combining
-  accent" describes it in every sense but the categorical one. Out of scope despite reading as
+  of them resolved. `Lm` even holds characters whose Unicode *names* are accents — U+02C6 MODIFIER
+  LETTER CIRCUMFLEX ACCENT, U+02CA, U+02CB, U+02CE, U+02CF and U+A788 MODIFIER LETTER LOW CIRCUMFLEX
+  ACCENT — so `formˆa` is in scope although "combining accent" describes it in every sense but the
+  categorical one. Those six are spelled out rather than written as the range U+02CA–U+02CF, which
+  is not the same set: it also contains U+02CC MODIFIER LETTER LOW VERTICAL LINE and U+02CD MODIFIER
+  LETTER LOW MACRON, which are `Lm` and in scope like every other `Lm` character but are not
+  accents, and it misses U+A788, which is. Out of scope despite reading as
   letters: an id in a script that spells a vowel with a combining mark — Hindi `फॉर्म`, Thai
   `แบบฟอร์ม`, Arabic `نَموذج` with its fatha — never matched a route, because the mark is `Mc`/`Mn`
   even where the base character is `Lo`. (Precomposed Korean `피드백` is all `Lo`, and did resolve.)

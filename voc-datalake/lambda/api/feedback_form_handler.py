@@ -169,16 +169,25 @@ FORM_ID_LENGTH = 8
 # a tag or start a statement, so admitting it moves no character the #379
 # serializer depends on. `test_a_dotted_hand_seeded_form_id_still_resolves` is
 # what fails if it is dropped again, and the remaining exclusions that a route
-# COULD resolve (`:`, `+`, `@`, `%`, a non-ASCII letter or NUMBER, and a space
-# inside an id) are named to an operator with a pre-upgrade scan in CHANGELOG.md's
-# upgrade notes, since for those the 404 is real. A non-ASCII character that `\w`
-# does NOT match is not on that list and is not the scan's to find: the route's
-# capture group reaches past ASCII only through `\w`, which matches any Unicode
-# letter or number — every `L*` and `N*` category, plus `_` — so what it leaves out
-# is marks, symbols, punctuation, separators and format characters. Read both sides
-# as CATEGORIES, because the misfiling risk runs both ways: a modifier letter
-# (`hawaiʼi-form`, and the accent-NAMED U+02C6/U+02CA-U+02CF are `Lm` too) and a
-# fraction (`surface-m²`) are in scope despite reading as punctuation, while a script
+# COULD resolve are named to an operator with a pre-upgrade scan in CHANGELOG.md's
+# upgrade notes, since for those the 404 is real. Those exclusions are a SET rather
+# than a short list, and stating it as a complement is the only way to state it
+# without being short: in scope is any character outside this pattern's own
+# `[0-9A-Za-z_.-]` that the ROUTE admits, which for ASCII is everything in
+# `[-._~()'!*:@,;=+&$%<> \[\]{}|^]` except `-`, `.` and `_` — 24 characters, of
+# which `:`, `+`, `@`, `%`, `~` and a space inside an id are only the illustrations.
+# Seven of the other eighteen (`&`, `'`, `(`, `)`, `;`, `<`, `>`) are the #379
+# payload's own characters, which is exactly why a hand-written list omits them.
+# `"`, `#`, `/`, `?`, `\` and a backtick are the printable-ASCII exceptions: the
+# route admits none of them, so they belong with the tab and the newline below.
+# A non-ASCII character that `\w` does NOT match is likewise not the scan's to
+# find: the route's capture group reaches past ASCII only through `\w`, which
+# matches any Unicode letter or number — every `L*` and `N*` category, plus `_` —
+# so what it leaves out is marks, symbols, punctuation, separators and format
+# characters. Read both sides as CATEGORIES, because the misfiling risk runs both
+# ways: a modifier letter (`hawaiʼi-form`, and characters NAMED as accents are `Lm`
+# too — U+02C6, U+02CA, U+02CB, U+02CE, U+02CF and U+A788) and a fraction
+# (`surface-m²`) are in scope despite reading as punctuation, while a script
 # writing a vowel as a combining mark (Hindi `फॉर्म`) is out of scope despite reading
 # as letters. So `café` resolved while `form€a` never matched a route at all.
 #
@@ -271,13 +280,24 @@ def _validated_form_id(raw: Any) -> str | None:
     routes, and for a hand-seeded row whose id resolved before, that is a reachable
     record becoming unreachable rather than a probe being refused. `.` is admitted
     for exactly that reason (see the pattern above). The characters still outside
-    the class — `:`, `+`, `@`, `%`, `~`, a non-ASCII LETTER OR NUMBER such as
-    `'café'`, and a SPACE within an id such as `'my form'` — are a deliberate
-    narrowing rather than an oversight, and the upgrade path is an operator scan of
-    the aggregates table for `FORM#` ids outside the class, written down in
-    CHANGELOG.md's upgrade notes rather than left for whoever reads the 404.
+    the class are a deliberate narrowing rather than an oversight, and the upgrade
+    path is an operator scan of the aggregates table for `FORM#` ids outside the
+    class, written down in CHANGELOG.md's upgrade notes rather than left for whoever
+    reads the 404.
 
-    That list is narrower than "everything non-ASCII" and than "whitespace", and
+    That set is stated as a COMPLEMENT rather than as a list, because a list of it
+    has been short every time it was written by hand: in scope is any character
+    outside this pattern's `[0-9A-Za-z_.-]` that the ROUTE admits, which for ASCII
+    is every character of `[-._~()'!*:@,;=+&$%<> \\[\\]{}|^]` except `-`, `.` and `_`
+    — 24 of them, where `:`, `+`, `@`, `%`, `~` and a SPACE within an id such as
+    `'my form'` are illustrations and not the set. Seven of the eighteen unnamed
+    ones (`&`, `'`, `(`, `)`, `;`, `<`, `>`) are the #379 payload's own characters,
+    which is why they are the ones a hand-written list drops. On the other side,
+    `"`, `#`, `/`, `?`, a backslash and a backtick are the printable-ASCII
+    characters the route does NOT admit, so they sit with the tab and the newline
+    below rather than in the scan.
+
+    That set is narrower than "everything non-ASCII" and than "whitespace", and
     both narrowings come from ONE fact about the route rather than about this
     pattern: powertools' capture group reaches past ASCII only through `\\w`, which
     matches any Unicode letter or number plus `_`, and it lists a literal space but
@@ -297,9 +317,13 @@ def _validated_form_id(raw: Any) -> str | None:
     to misfile, and it runs in BOTH directions. Routable, hence the scan's to find,
     however much they read as punctuation: a modifier letter (`'hawaiʼi-form'`, whose
     `ʼ` is U+02BC MODIFIER LETTER APOSTROPHE, visually an ASCII quote — as is the
-    Hawaiian ʻokina, U+02BB, which is the same category; and note `Lm` holds five
-    characters NAMED as accents, U+02C6 and U+02CA-U+02CF, so `'formˆa'` is in scope
-    too), a fraction or superscript (`'half-½-price'`, `'surface-m²'`) and a roman
+    Hawaiian ʻokina, U+02BB, which is the same category; and note that characters
+    NAMED as accents are `Lm` too, so `'formˆa'` is in scope. Those are U+02C6,
+    U+02CA, U+02CB, U+02CE, U+02CF and U+A788, spelled out rather than written as
+    the range U+02CA-U+02CF, which also holds U+02CC MODIFIER LETTER LOW VERTICAL
+    LINE and U+02CD MODIFIER LETTER LOW MACRON — `Lm` and in scope like the rest,
+    but not accents), a fraction or superscript (`'half-½-price'`, `'surface-m²'`)
+    and a roman
     numeral (`'section-Ⅷ'`). Unroutable, hence NOT the scan's, however much they read
     as letters: a script that writes a vowel as a combining mark, so Hindi
     `'फॉर्म'`, Thai `'แบบฟอร์ม'` and Arabic `'نَموذج'` never matched a route because the
