@@ -257,15 +257,41 @@ function isEmpty(derivation: DocumentDerivation): boolean {
 }
 
 /** What a source carries once its document was found. */
-type ResolvedSourceFields = Pick<DerivationSource, 'title' | 'document_type'>
+export type DerivationSourceFields = Pick<DerivationSource, 'title' | 'document_type'>
 
 /**
- * Index of document_id → the fields a source displays, over whatever the caller
- * supplied. One index for every resolved field, so a consumer needs one pass
- * over the document list rather than one per field it wants to render.
+ * A project's documents reduced to what resolving a source needs: document_id →
+ * the fields a source displays.
+ *
+ * BUILT ONCE PER PROJECT COLLECTION PASS AND HANDED BACK IN, which is what this
+ * type exists to make possible. `resolveDerivation` used to build one of these on
+ * every call, which cost nothing while its only callers resolved one document at a
+ * time — and became the whole cost the moment a caller asked about a LIST. The
+ * prioritization page calls the lineage classifiers per row and each classifier
+ * calls the resolver per document on that row, so one project read of D documents
+ * was walked once per (row × document) instead of once: measured inside the page's
+ * `useMemo` at 200 rows / 1000 documents, 1644 ms in this container's jsdom
+ * (562 ms on the reviewing machine — issue #399 B).
+ *
+ * A LOOKUP TABLE RATHER THAN AN OPAQUE HANDLE, deliberately: everything a source
+ * needs is already normalised into it (`displayString`, so an unreadable title or
+ * type is '' and never null — `hasSupersededSource` in
+ * pages/Prioritization/rowLineage.ts turns on exactly that), and nothing is
+ * memoised behind it, so the index's LIFETIME is its holder's and there is no
+ * cache anywhere to invalidate. Build it from `derivationSourceIndex` rather than
+ * by hand: a map whose values did not come through that builder can carry a null
+ * where every reader expects '', which is the one way to make a resolved source
+ * indistinguishable from an unresolved one.
  */
-function sourceFieldIndex(documents: readonly unknown[]): Map<string, ResolvedSourceFields> {
-  const index = new Map<string, ResolvedSourceFields>()
+export type DerivationSourceIndex = ReadonlyMap<string, DerivationSourceFields>
+
+/**
+ * Index the documents a source may resolve against — one pass over the list, for
+ * every resolved field at once, so a consumer needs one pass rather than one per
+ * field it wants to render.
+ */
+export function derivationSourceIndex(documents: readonly unknown[]): DerivationSourceIndex {
+  const index = new Map<string, DerivationSourceFields>()
   for (const raw of documents) {
     const record = asRecord(raw)
     if (!record) continue
@@ -299,10 +325,39 @@ function sourceFieldIndex(documents: readonly unknown[]): Map<string, ResolvedSo
  * never a source's sources. A cyclic chain (A built from B, B built from A) is
  * therefore inert — each call returns the other document, once, and there is no
  * traversal to loop.
+ *
+ * ONE DOCUMENT AT A TIME, and a caller asking about a LIST should reach for
+ * `resolveDerivationAgainst` instead: this overload indexes `projectDocuments`
+ * afresh on every call, so asking it about N documents of one project walks that
+ * project's list N times. Kept exactly as it was because that is the right
+ * signature for the callers that hold one document (DocumentsTab), and because
+ * every existing caller's behaviour is this function's contract.
  */
 export function resolveDerivation(
   document: unknown,
   projectDocuments: readonly unknown[] = [],
+): ResolvedDerivation {
+  return resolveDerivationAgainst(document, derivationSourceIndex(projectDocuments))
+}
+
+/**
+ * `resolveDerivation` against an index the caller already built — the same answer,
+ * without the per-call pass over the project's documents.
+ *
+ * THE SAME FUNCTION, not a faster approximation of it: `resolveDerivation` is now
+ * this function plus one `derivationSourceIndex` call, so there is no second
+ * resolution rule that could drift from the first. `derivation.test.ts` pins the
+ * equivalence on a declared, a legacy and an unresolved-source document anyway,
+ * because "one function delegates to the other" is a fact about today's source and
+ * the promise is about the answers.
+ *
+ * @param index Built by `derivationSourceIndex` from the project's documents, and
+ *   owned by whoever built it — see `DerivationSourceIndex` for why this is
+ *   explicit plumbing rather than a memo inside the resolver.
+ */
+export function resolveDerivationAgainst(
+  document: unknown,
+  index: DerivationSourceIndex,
 ): ResolvedDerivation {
   const record = asRecord(document)
   if (!record) return { ...emptyDerivation(), sources: [], origin: 'none' }
@@ -311,7 +366,6 @@ export function resolveDerivation(
   const useDeclared = !isEmpty(declared)
   const derivation = useDeclared ? declared : derivationFromLegacyFields(record)
 
-  const fields = sourceFieldIndex(projectDocuments)
   return {
     ...derivation,
     origin: originOf(derivation, useDeclared),
@@ -319,7 +373,7 @@ export function resolveDerivation(
       // One lookup decides all three: an unresolved source degrades every
       // resolved field to null together, so a consumer cannot render a type
       // without a title or vice versa.
-      const found = fields.get(source.document_id)
+      const found = index.get(source.document_id)
       return {
         document_id: source.document_id,
         role: source.role,
