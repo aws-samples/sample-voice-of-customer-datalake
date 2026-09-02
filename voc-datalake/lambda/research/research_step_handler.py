@@ -12,7 +12,7 @@ from boto3.dynamodb.conditions import Key
 
 # Shared module imports
 from shared.logging import logger, tracer
-from shared.aws import get_dynamodb_resource, BEDROCK_MODEL_ID
+from shared.aws import get_dynamodb_resource
 from shared.api import api_handler
 from shared.converse import converse, BedrockThrottlingError
 from shared.persona_context import personas_prompt_context
@@ -47,13 +47,15 @@ PROJECTS_TABLE = os.environ.get('PROJECTS_TABLE', '')
 feedback_table = None
 projects_table = None
 
-MODEL_ID = BEDROCK_MODEL_ID
+
 def _get_feedback_table():
     """Get feedback table, initializing if needed."""
     global feedback_table
     if feedback_table is None:
         feedback_table = get_feedback_table()
     return feedback_table
+
+
 def _get_projects_table():
     """Get projects table, initializing if needed."""
     global projects_table

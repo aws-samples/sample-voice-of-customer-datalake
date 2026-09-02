@@ -36,6 +36,7 @@ import { z } from 'zod';
 
 import { VocApiStack } from './api-stack';
 import { ManifestSchema } from '../plugin-loader';
+import { allowlistedModelArns } from '../utils/model-allowlist';
 
 /** The only routes that may be served without credentials.
  *
@@ -719,6 +720,66 @@ describe('skipFeedbackFormItemRoutes (transitional upgrade flag)', () => {
   it('is a no-op when absent — the default template keeps the item routes', () => {
     expect(unauthenticatedRoutes(apiTemplate())).toEqual(INTENTIONALLY_PUBLIC_ROUTES);
     expect(apiMethods(apiTemplate()).map((m) => m.route)).toContain('PUT /feedback-forms/{form_id}');
+  });
+});
+
+
+describe('persona Bedrock IAM grants', () => {
+  // These three roles are the CLOSED set of Lambdas whose runtime code can
+  // reach shared/avatar.py, so each needs bedrock:InvokeModel on the whole
+  // allowlist: avatar prompt generation resolves the utility surface at
+  // runtime and persona synthesis the documents surface, and either can be
+  // repointed to any allowlisted id via the picker.
+  //   ProjectsLambdaRole    api/projects_handler.py -> api/projects.py -> shared/avatar.py
+  //   PersonaGeneratorRole
+  //     jobs/persona_generator/handler.py
+  //       -> api/projects.generate_personas -> shared/avatar.py
+  //   PersonaImporterRole
+  //     jobs/persona_importer/handler.py
+  //       -> api/projects.generate_persona_avatar -> shared/avatar.py
+  // document_merger and document_generator ship shared/ inside their bundles
+  // (createJobLambdaCode stages it for every job) but never import avatar.py:
+  // they call shared.converse directly. If a future job starts importing
+  // avatar.py transitively, its role belongs in `roles` below.
+  const StatementSchema = z.object({
+    Action: z.union([z.string(), z.array(z.string())]),
+    Resource: z.unknown(),
+  });
+
+  function statementsForRole(roleName: string): { actions: string[]; resources: string[] }[] {
+    const policies = apiTemplate().findResources('AWS::IAM::Policy');
+    const policy = Object.entries(policies).find(([id]) => id.includes(roleName));
+    expect(policy, `no IAM policy found for ${roleName}`).toBeDefined();
+
+    return z
+      .object({
+        Properties: z.object({
+          PolicyDocument: z.object({ Statement: z.array(StatementSchema) }),
+        }),
+      })
+      .parse(policy?.[1]).Properties.PolicyDocument.Statement
+      .map((s) => {
+        const resources = Array.isArray(s.Resource) ? s.Resource : [s.Resource];
+        return {
+          actions: Array.isArray(s.Action) ? s.Action : [s.Action],
+          resources: resources.filter((r): r is string => typeof r === 'string'),
+        };
+      });
+  }
+
+  it('grants persona roles every allowlisted text model ARN', () => {
+    const expected = allowlistedModelArns('us-east-1', '111111111111');
+    const roles = ['ProjectsLambdaRole', 'PersonaGeneratorRole', 'PersonaImporterRole'];
+
+    for (const role of roles) {
+      const resources = statementsForRole(role)
+        .filter((s) => s.actions.includes('bedrock:InvokeModel'))
+        .flatMap((s) => s.resources);
+
+      for (const arn of expected) {
+        expect(resources, `${role} is missing ${arn}`).toContain(arn);
+      }
+    }
   });
 });
 

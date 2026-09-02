@@ -284,3 +284,96 @@ class TestGenerateAvatarPromptWithLlm:
         result = generate_avatar_prompt_with_llm(persona_data, mock_bedrock)
         
         assert 'Professional headshot' in result
+
+
+class TestGeneratePersonasModelMetadata:
+    """Tests for persona generation model metadata."""
+
+    @staticmethod
+    def _put_item_payloads(table, expected_count):
+        """Every persona put_item payload, not just the final one: a
+        persona_count > 1 run writes one row per persona and asserting only
+        the last call would silently skip the earlier ones. Filtered on
+        llm_metadata so a hypothetical future non-persona row is ignored,
+        while expected_count makes any missing persona metadata stamp fail
+        loudly as a row-count mismatch."""
+        calls = table.put_item.call_args_list
+        assert calls, 'expected put_item to be called'
+        payloads = [
+            c.kwargs['Item'] if c.kwargs.get('Item') is not None else c.args[0]
+            for c in calls
+        ]
+        persona_rows = [p for p in payloads if p.get('llm_metadata')]
+        assert len(persona_rows) == expected_count, (
+            f'expected {expected_count} persona rows, '
+            f'found {len(persona_rows)}'
+        )
+        return persona_rows
+
+    def test_stores_resolved_model_id(self):
+        """Stamps the resolved model, not the global fallback constant."""
+        import projects
+
+        table = MagicMock()
+        table.query.return_value = {'Items': []}
+        feedback_items = [{'feedback_id': 'f1', 'source_platform': 'web'}]
+
+        with patch('projects.projects_table', table), \
+                patch('projects.get_feedback_context', return_value=feedback_items), \
+                patch('projects.format_feedback_for_llm', return_value='feedback'), \
+                patch('projects.get_feedback_statistics', return_value={'total': 1}), \
+                patch('projects.get_persona_generation_steps', return_value=[
+                    {'step_name': projects.PERSONA_SYNTHESIS_STEP},
+                ]), \
+                patch('projects.converse_chain', return_value=[
+                    json.dumps([{'name': 'Ada'}]),
+                ]) as mock_chain, \
+                patch(
+                    'projects.get_active_model_id',
+                    return_value='resolved-model',
+                ) as mock_model_id:
+            projects.generate_personas(
+                'proj-1',
+                {'persona_count': 1, 'generate_avatars': False},
+            )
+
+        # persona_count is 1 in this run: exactly one persona row expected.
+        for stored in self._put_item_payloads(table, 1):
+            assert stored['llm_metadata']['model'] == 'resolved-model'
+        # One resolution per invocation, and the chain is PINNED to it: the
+        # model converse() invokes is the one llm_metadata records.
+        mock_model_id.assert_called_once_with(surface='documents')
+        assert mock_chain.call_args.kwargs['model_id'] == 'resolved-model'
+
+    def test_persona_chain_pin_tolerates_step_model_override(self):
+        """The resolved chain pin keeps metadata aligned without failing the job."""
+        import projects
+
+        table = MagicMock()
+        table.query.return_value = {'Items': []}
+        feedback_items = [{'feedback_id': 'f1', 'source_platform': 'web'}]
+
+        with patch('projects.projects_table', table), \
+                patch('projects.get_feedback_context', return_value=feedback_items), \
+                patch('projects.format_feedback_for_llm', return_value='feedback'), \
+                patch('projects.get_feedback_statistics', return_value={'total': 1}), \
+                patch('projects.get_persona_generation_steps', return_value=[
+                    {
+                        'step_name': projects.PERSONA_SYNTHESIS_STEP,
+                        'model': 'other-model',
+                    },
+                ]), \
+                patch('projects.converse_chain', return_value=[
+                    json.dumps([{'name': 'Ada'}]),
+                ]) as mock_chain, \
+                patch('projects.get_active_model_id', return_value='resolved-model'):
+            projects.generate_personas(
+                'proj-1',
+                {'persona_count': 1, 'generate_avatars': False},
+            )
+
+        # persona_count is 1 in this run: exactly one persona row expected.
+        for stored in self._put_item_payloads(table, 1):
+            assert stored['llm_metadata']['model'] == 'resolved-model'
+        assert mock_chain.call_args.kwargs['model_id'] == 'resolved-model'
+        assert mock_chain.call_args.kwargs['surface'] == 'documents'

@@ -12,7 +12,7 @@ from botocore.exceptions import ClientError
 
 # Shared module imports
 from shared.logging import logger, tracer, metrics
-from shared.aws import get_dynamodb_resource, get_bedrock_client, BEDROCK_MODEL_ID
+from shared.aws import get_dynamodb_resource, get_bedrock_client
 from shared.api import validate_days, MAX_PERSONAS_PER_GENERATION
 from shared.persona_context import personas_prompt_context
 from shared.converse import converse_chain
@@ -38,7 +38,7 @@ from shared.feedback import (
     get_feedback_statistics,
     truncate_feedback_context,
 )
-from shared.model_config import surface_context_window_tokens
+from shared.model_config import get_active_model_id, surface_context_window_tokens
 from shared.avatar import (
     generate_persona_avatar as _generate_persona_avatar,
     get_avatar_cdn_url,
@@ -558,6 +558,14 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
         f"[PERSONA] Context budget: {context_budget} chars, fetch limit: {fetch_limit} items"
     )
 
+    # Resolve the persona-synthesis model ONCE per invocation and pin it on
+    # the chain below (converse_chain forwards it to every step) so the
+    # stored llm_metadata records exactly what was invoked. Two independent
+    # lookups (chain + metadata stamp) could drift if an admin repointed the
+    # 'documents' surface mid-run; one resolution cannot.
+    resolved_model_id = get_active_model_id(surface='documents')
+    logger.info("[PERSONA] Resolved persona model", extra={'model_id': resolved_model_id})
+
     # Get feedback data
     try:
         feedback_items = get_feedback_context(filters, limit=fetch_limit)
@@ -657,7 +665,12 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
         update_progress(20, 'executing_llm_chain')
         
         try:
-            results = converse_chain(chain_steps, progress_callback=lambda p, s: update_progress(p, s), surface='documents')
+            results = converse_chain(
+                chain_steps,
+                progress_callback=lambda p, s: update_progress(p, s),
+                surface='documents',
+                model_id=resolved_model_id,
+            )
             logger.info(f"[PERSONA] LLM chain returned {len(results)} results")
         except Exception as e:
             logger.error(f"[PERSONA] LLM chain execution failed: {e}")
@@ -790,7 +803,7 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
                 'created_at': now,
                 'updated_at': now,
                 'llm_metadata': {
-                    'model': BEDROCK_MODEL_ID,
+                    'model': resolved_model_id,
                     'prompt_version': PERSONA_PROMPT_VERSION,
                     'generation_time_ms': llm_time
                 },

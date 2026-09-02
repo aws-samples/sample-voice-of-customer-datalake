@@ -202,8 +202,6 @@ def generate_avatar_prompt_with_llm(persona_data: dict, bedrock_client) -> str:
     Returns:
         Generated image prompt string
     """
-    from shared.aws import BEDROCK_MODEL_ID
-    
     name = persona_data.get('name', 'Unknown')
     tagline = persona_data.get('tagline', '')
     identity = persona_data.get('identity', {})
@@ -211,12 +209,19 @@ def generate_avatar_prompt_with_llm(persona_data: dict, bedrock_client) -> str:
     age_range = identity.get('age_range', '')
     occupation = identity.get('occupation', '')
     location = identity.get('location', '')
-    
-    # Load prompt config from external file
+    fallback_template = (
+        'Professional headshot of a {occupation}, friendly expression, '
+        'soft studio lighting, neutral background, photorealistic'
+    )
+
+    # Load prompt config before the Bedrock fallback boundary, preserving the
+    # old behaviour: prompt file problems are configuration errors, while model
+    # invocation problems degrade to a deterministic static prompt.
     config = get_avatar_prompt_config()
     system_prompt = config.get('system_prompt', '')
     user_template = config.get('user_prompt_template', '')
-    
+    fallback_template = config.get('fallback_prompt_template', fallback_template)
+
     user_msg = format_prompt(
         user_template,
         name=name,
@@ -228,6 +233,13 @@ def generate_avatar_prompt_with_llm(persona_data: dict, bedrock_client) -> str:
     )
 
     try:
+        # Inside the boundary on purpose: before the per-surface picker this was
+        # a constant that could never fail, so a transient picker (DynamoDB)
+        # problem must degrade to the static fallback prompt exactly like an
+        # invocation failure instead of becoming a new hard-failure path. Import
+        # here too, matching this module's deliberately narrow import graph.
+        from shared.model_config import get_active_model_id
+        model_id = get_active_model_id(surface='utility')
         request_body = {
             'anthropic_version': 'bedrock-2023-05-31',
             'max_tokens': config.get('max_tokens', 200),
@@ -236,7 +248,7 @@ def generate_avatar_prompt_with_llm(persona_data: dict, bedrock_client) -> str:
         }
         
         response = bedrock_client.invoke_model(
-            modelId=BEDROCK_MODEL_ID,
+            modelId=model_id,
             contentType='application/json',
             accept='application/json',
             body=json.dumps(request_body)
@@ -250,8 +262,11 @@ def generate_avatar_prompt_with_llm(persona_data: dict, bedrock_client) -> str:
         
         return result['content'][0]['text'].strip()
     except Exception as e:
-        logger.warning(f"[PERSONA_AVATAR] LLM prompt generation failed: {e}, using fallback")
-        fallback_template = config.get('fallback_prompt_template', 'Professional headshot of a {occupation}, friendly expression, soft studio lighting, neutral background, photorealistic')
+        logger.warning(
+            "[PERSONA_AVATAR] Avatar prompt generation failed in model "
+            f"resolution or Bedrock invocation ({type(e).__name__}: {e}), "
+            "using static fallback prompt"
+        )
         return format_prompt(fallback_template, occupation=occupation or 'professional')
 
 

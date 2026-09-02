@@ -118,6 +118,10 @@ ALLOWED_MODELS = [
 ]
 ALLOWED_MODEL_IDS = {m["id"] for m in ALLOWED_MODELS}
 
+# The text-model picker is intentionally Anthropic-only while avatar.py builds
+# the raw Anthropic Messages invoke_model body for utility-surface prompt
+# generation. Add a provider-aware wrapper before adding a non-Anthropic ID.
+
 # Both capability sets derive from the rows above so a model can never be added
 # to one and forgotten in the other.
 _OMIT_TEMPERATURE_IDS = {m["id"] for m in ALLOWED_MODELS if m["omit_temperature"]}

@@ -29,6 +29,25 @@ class TestConverse:
         assert result == 'Hello, world!'
         mock_client.converse.assert_called_once()
 
+    @patch('shared.converse.get_active_model_id')
+    @patch('shared.converse.get_bedrock_client')
+    def test_explicit_model_id_takes_precedence_over_surface(
+        self, mock_get_client, mock_get_active_model_id
+    ):
+        """Does not resolve the surface when model_id is explicit."""
+        mock_client = MagicMock()
+        mock_client.converse.return_value = {
+            'output': {'message': {'content': [{'text': 'Done'}]}}
+        }
+        mock_get_client.return_value = mock_client
+
+        from shared.converse import converse
+        result = converse('Say hello', surface='documents', model_id='explicit-model')
+
+        assert result == 'Done'
+        mock_get_active_model_id.assert_not_called()
+        assert mock_client.converse.call_args.kwargs['modelId'] == 'explicit-model'
+
     @patch('shared.converse.get_bedrock_client')
     def test_includes_system_prompt(self, mock_get_client):
         """Includes system prompt when provided."""
@@ -465,6 +484,46 @@ class TestConverseChain:
         
         call_args = mock_converse.call_args
         assert call_args.kwargs['thinking_budget'] == 3000
+
+    @patch('shared.converse.converse')
+    def test_pins_explicit_model_id(self, mock_converse):
+        """Forwards an explicit model_id to every step."""
+        mock_converse.side_effect = ['First output', 'Second output']
+
+        from shared.converse import converse_chain
+        steps = [
+            {'system': 'S1', 'user': 'U1'},
+            {'system': 'S2', 'user': 'U2'},
+        ]
+
+        converse_chain(steps, surface='documents', model_id='resolved-model')
+
+        assert [c.kwargs['model_id'] for c in mock_converse.call_args_list] == [
+            'resolved-model',
+            'resolved-model',
+        ]
+        assert [c.kwargs['surface'] for c in mock_converse.call_args_list] == [
+            'documents',
+            'documents',
+        ]
+
+    @patch('shared.converse.converse')
+    def test_chain_model_id_overrides_step_model(self, mock_converse):
+        """A pinned chain model keeps every step on the recorded model."""
+        mock_converse.side_effect = ['First output', 'Second output']
+
+        from shared.converse import converse_chain
+        steps = [
+            {'system': 'S1', 'user': 'U1'},
+            {'system': 'S2', 'user': 'U2', 'model': 'step-model'},
+        ]
+
+        converse_chain(steps, surface='documents', model_id='chain-model')
+
+        assert [c.kwargs['model_id'] for c in mock_converse.call_args_list] == [
+            'chain-model',
+            'chain-model',
+        ]
 
 
 class TestExtractText:
@@ -1070,3 +1129,67 @@ class TestConverseSurfaceRouting:
         )
 
         mock_resolve.assert_called_once_with('prototype')
+
+    @patch('shared.converse.logger')
+    @patch('shared.converse.get_active_model_id')
+    @patch('shared.converse.get_bedrock_client')
+    def test_chain_step_surface_under_pinned_model_id_is_flagged(
+        self, mock_get_client, mock_resolve, mock_logger,
+    ):
+        """A pinned chain model_id beats a per-step surface (explicit model >
+        surface resolution); the inert override is logged, not eaten quietly."""
+        mock_get_client.return_value = self._client()
+
+        from shared.converse import converse_chain
+        result = converse_chain(
+            [{'system': '', 'user': 'a', 'surface': 'prototype'}],
+            surface='documents',
+            model_id='pinned-model',
+        )
+
+        assert result == ['R']
+        mock_resolve.assert_not_called()
+        flagged = [c for c in mock_logger.warning.call_args_list if 'drops inert overrides' in str(c)]
+        assert flagged, 'expected a warning naming the ignored surface override'
+
+    @patch('shared.converse.logger')
+    @patch('shared.converse.get_active_model_id')
+    @patch('shared.converse.get_bedrock_client')
+    def test_chain_step_surface_under_step_model_id_is_flagged(
+        self, mock_get_client, mock_resolve, mock_logger,
+    ):
+        """A step model also beats that step's surface, even with no chain pin."""
+        mock_get_client.return_value = self._client()
+
+        from shared.converse import converse_chain
+        converse_chain(
+            [{'system': '', 'user': 'a', 'surface': 'prototype', 'model': 'step-model'}],
+            surface='documents',
+        )
+
+        mock_resolve.assert_not_called()
+        flagged = [c for c in mock_logger.warning.call_args_list if 'drops inert overrides' in str(c)]
+        assert flagged, 'expected a warning naming the ignored surface override'
+
+    @patch('shared.converse.logger')
+    @patch('shared.converse.get_active_model_id')
+    @patch('shared.converse.get_bedrock_client')
+    def test_chain_step_overrides_under_pinned_model_emit_one_warning(
+        self, mock_get_client, mock_resolve, mock_logger,
+    ):
+        """A step carrying BOTH a model and a surface under a chain pin logs
+        one combined warning naming everything dropped, not one per key."""
+        mock_get_client.return_value = self._client()
+
+        from shared.converse import converse_chain
+        result = converse_chain(
+            [{'system': '', 'user': 'a', 'surface': 'prototype', 'model': 'step-model'}],
+            surface='documents',
+            model_id='pinned-model',
+        )
+
+        assert result == ['R']
+        combined = [c for c in mock_logger.warning.call_args_list if 'drops inert overrides' in str(c)]
+        assert len(combined) == 1, 'expected exactly one combined warning'
+        assert "surface='prototype'" in str(combined[0])
+        assert 'model_id/model' in str(combined[0])

@@ -555,26 +555,40 @@ def converse_chain(
     progress_callback: Callable[[int, str], None] | None = None,
     max_retries: int = DEFAULT_MAX_RETRIES,
     surface: str = DEFAULT_SURFACE,
+    model_id: str | None = None,
 ) -> list[str]:
     """
     Execute a chain of LLM calls, each building on the previous.
-    
+
     Each step can have:
         - system: System prompt
         - user: User message (use {previous} to inject previous result)
         - max_tokens: Max output tokens (default 4096)
         - thinking_budget: Extended thinking budget (default 0 = disabled)
         - step_name: Optional name for progress reporting
+        - model_id/model: Optional explicit model for this step. Used only
+          when the chain itself is not pinned with `model_id`.
         - surface: Optional per-step AI surface override (defaults to the
-          chain-level `surface`)
-    
+          chain-level `surface`). Inert whenever the step's model ends up
+          explicit, because converse() gives an explicit model precedence
+          over surface resolution; that includes every step of a chain
+          called with a pinned `model_id`. Give a step a model or a
+          surface, never both.
+
     Args:
         steps: List of step configurations
         progress_callback: Optional callback(progress: int, step: str) to report progress
         max_retries: Maximum retry attempts for throttling (default: 5)
         surface: AI surface whose configured model the steps resolve to when
             they don't set their own model (default: the neutral fallback).
-    
+        model_id: Explicit model ID pinned across every step (forwarded to
+            converse(), where it takes precedence over step-level model and
+            surface resolution).
+            Callers that stamp "which model ran" into stored metadata resolve
+            once and pin it here, so what was invoked and what was recorded
+            cannot drift. When None, each step resolves from ``surface`` as
+            before.
+
     Returns:
         List of results from each step
     """
@@ -603,6 +617,25 @@ def converse_chain(
         user = step.get('user', '').replace('{previous}', context)
         thinking_budget = step.get('thinking_budget', 0)
         max_tokens = step.get('max_tokens', 4096)
+        step_explicit_model_id = step.get('model_id') or step.get('model')
+        step_model_id = model_id or step_explicit_model_id
+        # An explicit model beats surface resolution inside converse(),
+        # whether that model comes from the chain pin or from the step
+        # itself. Every way this step loses that argument collapses into ONE
+        # warning naming everything dropped, so an operator greps once
+        # instead of matching several near-duplicate lines.
+        inert_overrides = []
+        if step_model_id is not None and step.get('surface'):
+            inert_overrides.append(f"surface='{step['surface']}'")
+        if model_id is not None and step_explicit_model_id:
+            inert_overrides.append('model_id/model')
+        if inert_overrides:
+            winner = ('the chain-pinned model_id' if model_id is not None
+                      else 'the step model_id/model')
+            logger.warning(
+                f"[CHAIN] Step '{step_name}' drops inert overrides "
+                f"({', '.join(inert_overrides)}): {winner} is explicit and wins"
+            )
         
         logger.info(f"[CHAIN] Step '{step_name}' config: max_tokens={max_tokens}, thinking_budget={thinking_budget}")
         logger.info(f"[CHAIN] Step '{step_name}' system_prompt length: {len(system)} chars")
@@ -618,6 +651,7 @@ def converse_chain(
                 surface=step.get('surface', surface),
                 max_retries=max_retries,
                 step_name=step_name,
+                model_id=step_model_id,
             )
             step_elapsed = time.time() - step_start
             logger.info(f"[CHAIN] Step '{step_name}' completed in {step_elapsed:.2f}s, output length: {len(result)} chars")
