@@ -5607,9 +5607,22 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
         set as a complement (every character the route's capture group admits and this
         pattern does not) and print it, and a check covering only the memorable
         characters is what let the prose stand at six of twenty-four. Seven of the
-        rest are the #379 payload's own, so the `dangerous` loop above asserts those
-        for their own reason and this loop re-covers them deliberately: they are in
-        both sets, and each set's claim should be readable without the other.
+        rest are the characters the #379 fix turns on — the quote, parens and
+        semicolon the payload closes its handwritten string literal with, plus the
+        `<`, `>` and `&` `_js_value` escapes for the HTML parser — so the `dangerous`
+        loop above asserts those for their own reason and this loop re-covers them
+        deliberately: they are in both sets, and each set's claim should be readable
+        without the other.
+
+        The set's MEMBERSHIP is derived from the installed resolver rather than
+        counted, and that is the assertion the documents actually rest on: they print
+        this set, and a cardinality check cannot tell a match from a swap. Trading
+        `!` for `"` keeps the count at 24 while replacing a character the route
+        admits with one it does not, and the refusal loop passes either way — the
+        validator refuses both — so the count alone let a genuinely in-scope
+        character disappear from the printed set while asserting a refusal that is
+        true for the wrong reason.
+
         `my form` earns its place for the same reason `a:b` has one: a stored id with
         an INTERIOR SPACE resolved before this change (every route keyed
         `f'FORM#{form_id}'` with nothing checked) and answers 404 after it, so it is
@@ -5663,12 +5676,36 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
                 'scan stored ids for exactly these, so if one is now admitted the '
                 'upgrade note describes a refusal that does not happen'
             )
-        assert len(scanned_ascii) == 24, (
-            f'{len(scanned_ascii)} ASCII characters here, not 24 — both documents '
-            'state the in-scope ASCII set as a COMPLEMENT and then print it, so '
-            'this literal is the copy that has to agree with them. '
-            'test_the_scan_is_scoped_to_ids_a_route_could_actually_resolve is where '
-            'membership is derived off the live resolver rather than listed.'
+        # MEMBERSHIP, not the count: derived off the live resolver rather than
+        # counted, because the two documents print this exact set and a count cannot
+        # tell a swap from a match. Swapping `!` for `"` keeps the length at 24 while
+        # substituting a character the ROUTE does not admit for one it does — the
+        # refusal loop above passes either way, since the validator refuses both, so
+        # the assertion would be true for the wrong reason and one genuinely in-scope
+        # character would drop out of the printed set unnoticed (verified by
+        # mutation). A character is in scope exactly when all eight routes admit it
+        # and this validator refuses it, which is the complement the documents state,
+        # so deriving it is also what keeps the two copies honest.
+        in_scope_ascii = {
+            character
+            for character in map(chr, range(0x20, 0x7f))
+            if feedback_form_handler._validated_form_id(f'a{character}b') is None
+            and all(
+                rule.match(path)
+                for _, path, rule in _form_id_route_paths(
+                    feedback_form_handler, f'a{character}b'
+                )
+            )
+        }
+        assert in_scope_ascii == set(scanned_ascii), (
+            'the in-scope ASCII set derived from the installed resolver is '
+            f'{"".join(sorted(in_scope_ascii))!r}, not the '
+            f'{"".join(sorted(set(scanned_ascii)))!r} listed here — either the '
+            "route's capture group moved, or this literal and the set printed in "
+            'CHANGELOG.md and docs/feedback-forms.md are now wrong. Both documents '
+            'state that set as a COMPLEMENT (every character the route admits and '
+            'this pattern does not) and then print it, so this literal is the copy '
+            'that has to agree with them.'
         )
 
     def test_the_scan_is_scoped_to_ids_a_route_could_actually_resolve(
@@ -5706,9 +5743,10 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
         On the ASCII side the same principle applies to the CLASS rather than to a
         category: the in-scope set is 24 characters, and the note named six of them,
         so `'form(1)'` and `'a;b'` are sampled beside the named `'a:b'`. Those two
-        hold characters from the #379 payload itself, which is the reason a list
-        written by hand omits them — they read as attack syntax rather than as an id
-        anyone would seed, and they resolved regardless. The complement's other half
+        hold characters the #379 fix turns on — `(`, `)` and `;` are three of the
+        four the payload closes its handwritten string literal with — which is the
+        reason a list written by hand omits them: they read as attack syntax rather
+        than as an id anyone would seed, and they resolved regardless. The other half
         is asserted too: `"`, `#`, `/`, `?`, a backslash and a backtick are the
         printable-ASCII characters the ROUTE omits, which all three documents state
         alongside the 24, so they are in the unreachable loop.
@@ -5747,11 +5785,13 @@ class TestTheValidatorIsExactSoNoRouteCanDisagreeWithAnother:
         """
         # The ASCII cases first. `a:b` is one of the characters both documents name;
         # `form(1)` and `a;b` are two they do NOT. The in-scope ASCII set is 24
-        # characters, and the seven the #379 payload is built from (`&`, `'`, `(`,
-        # `)`, `;`, `<`, `>`) are exactly the ones a hand-written list drops, because
-        # they read as attack syntax rather than as an id anyone would seed. They
-        # resolved all the same, so sampling only a NAMED character would pin the
-        # note's list rather than the class the classifier actually tests.
+        # characters, and the seven the #379 fix turns on (`&`, `'`, `(`, `)`, `;`,
+        # `<`, `>` — the quote, parens and semicolon the payload closes its
+        # handwritten string literal with, plus the three `_js_value` escapes for the
+        # HTML parser) are exactly the ones a hand-written list drops, because they
+        # read as attack syntax rather than as an id anyone would seed. They resolved
+        # all the same, so sampling only a NAMED character would pin the note's list
+        # rather than the class the classifier actually tests.
         #
         # Then one id per `\w` category, so no category stands in for another: `Ll`
         # `café`, `Lm` `hawaiʼi-form` (U+02BC, an apostrophe to the eye), `Lo`
