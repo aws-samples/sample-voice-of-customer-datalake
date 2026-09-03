@@ -1,20 +1,21 @@
 /**
- * A completed job refetches the project, not just the jobs list.
+ * A job REACHING a terminal state refetches the project, not just the jobs list.
  *
  * `handleJobStarted` invalidates only `projectJobsKey`, which is right — at that
  * moment there is nothing new to read. The documents arrive later, when the job
- * finishes, and a separate effect in `useProjectData` invalidates `projectKey` for
- * any job that completed in the last ten seconds.
+ * finishes, and a separate effect in `useProjectData` invalidates `projectKey` on
+ * the transition.
  *
- * That effect had no test, and it has just acquired a visible consumer: the
- * Overview prototype card reports "Prototypes built: N" off `data.documents`, so if
- * this stops firing the card silently understates the count until the next window
- * focus or manual reload — the kind of wrong number that is indistinguishable from
- * a build that never ran.
+ * It is a TRANSITION and not a `completed_at` window, which is what this file's
+ * cases now pin. The window compared the writer's clock against the browser's, so a
+ * poll landing a second late skipped the refresh and left the Overview prototype
+ * card understating "Prototypes built: N" until a manual reload — a wrong number
+ * indistinguishable from a build that never ran. It also ignored `failed`, so a
+ * failed build left the "generating" affordances lit.
  *
- * Fake timers are deliberately NOT used here: the effect reads `Date.now()` against
- * `completed_at` and needs no clock control, and fake timers in this suite have
- * leaked across files before (see the note in useProjectData.test.ts).
+ * Fake timers are deliberately NOT used here: the effect compares payloads and needs
+ * no clock control, and fake timers in this suite have leaked across files before
+ * (see the note in useProjectData.test.ts).
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderHook, waitFor } from '@testing-library/react'
@@ -22,7 +23,10 @@ import type { ReactNode } from 'react'
 import {
   describe, it, expect, vi, beforeEach, afterEach,
 } from 'vitest'
-import { useProjectData } from './useProjectData'
+import {
+  JOB_START_POLL_WINDOW_MS, jobsPollInterval, newlyTerminalJobIds, projectJobsKey,
+  useProjectData,
+} from './useProjectData'
 import type { ProjectDocument, ProjectJob } from '../../api/types'
 
 const getProject = vi.fn()
@@ -47,8 +51,12 @@ const prototypeDoc: ProjectDocument = {
 // No `as ProjectJob` on a partial literal: the sibling prototype-card test argues
 // against exactly that in its own header, and a cast is what stops telling the truth
 // once the type gains a field.
-const job = (status: ProjectJob['status'], completedAt: string | undefined): ProjectJob => ({
-  job_id: 'job-1',
+const job = (
+  status: ProjectJob['status'],
+  completedAt: string | undefined,
+  jobId = 'job-1',
+): ProjectJob => ({
+  job_id: jobId,
   job_type: 'build_prototype',
   status,
   progress: status === 'completed' ? 100 : 0,
@@ -93,21 +101,112 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-describe('project refetch on job completion', () => {
-  it('refetches the project when a build completed moments ago', async () => {
-    getJobs.mockResolvedValue({ jobs: [job('completed', new Date().toISOString())] })
+/** The statuses the hook has actually OBSERVED, not merely those it requested. */
+const observedJobStatuses = () => (
+  (queryClient.getQueryData(projectJobsKey('proj-1')) as
+    { jobs?: readonly ProjectJob[] } | undefined)?.jobs ?? []
+).map((entry) => entry.status)
 
+/**
+ * Wait until the hook has observed exactly these job statuses.
+ *
+ * Load-bearing rather than convenience: `waitFor(() => expect(getJobs)
+ * .toHaveBeenCalled())` returns as soon as the request is ISSUED, so re-pointing
+ * the mock straight after it can make the FIRST payload the hook ever sees the
+ * post-transition one — which the seeding rule correctly ignores, and the test
+ * would then be asserting nothing.
+ */
+const awaitObserved = (statuses: readonly ProjectJob['status'][]) =>
+  waitFor(() => expect(observedJobStatuses()).toEqual(statuses))
+
+/**
+ * Read the jobs list again, the way `handleJobStarted` and the poll both do.
+ *
+ * Invalidating rather than waiting out `JOB_POLL_INTERVAL_MS`: the three-second
+ * cadence is not what any case here is about, and waiting for it would put every
+ * assertion past `waitFor`'s default timeout. Fake timers are ruled out by this
+ * file's header.
+ */
+const pollJobsAgain = async (expected: readonly ProjectJob['status'][]) => {
+  await queryClient.invalidateQueries({ queryKey: projectJobsKey('proj-1') })
+  await awaitObserved(expected)
+}
+
+describe('project refetch on terminal job transitions', () => {
+  it('refetches the project when a running build turns completed', async () => {
+    getJobs.mockResolvedValue({ jobs: [job('running', undefined)] })
     renderProjectData()
+    await awaitObserved(['running'])
+
+    getJobs.mockResolvedValue({ jobs: [job('completed', new Date().toISOString())] })
+    await pollJobsAgain(['completed'])
 
     await waitFor(() => expect(getProject.mock.calls.length)
       .toBeGreaterThan(PROJECT_FETCHES_ON_MOUNT))
   })
 
-  it('does not refetch the project for a job that finished long ago', async () => {
-    // Otherwise every mount of a project with any historical job would refetch,
-    // and the ten-second window would not be doing anything.
-    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60_000).toISOString()
-    getJobs.mockResolvedValue({ jobs: [job('completed', twoHoursAgo)] })
+  it('refetches the project when a running build turns failed', async () => {
+    // The window rule never fired for `failed`, so the page kept its "generating"
+    // affordances lit and its counts stale until a manual reload.
+    getJobs.mockResolvedValue({ jobs: [job('running', undefined)] })
+    renderProjectData()
+    await awaitObserved(['running'])
+
+    getJobs.mockResolvedValue({ jobs: [job('failed', new Date().toISOString())] })
+    await pollJobsAgain(['failed'])
+
+    await waitFor(() => expect(getProject.mock.calls.length)
+      .toBeGreaterThan(PROJECT_FETCHES_ON_MOUNT))
+  })
+
+  it('refetches when a completion is only observed after the ten-second window', async () => {
+    // The defect this replaces: `completed_at` compared against the browser clock.
+    // A poll landing late, or a browser clock behind the writer's, skipped it.
+    getJobs.mockResolvedValue({ jobs: [job('running', undefined)] })
+    renderProjectData()
+    await awaitObserved(['running'])
+
+    const longAgo = new Date(Date.now() - 2 * 60 * 60_000).toISOString()
+    getJobs.mockResolvedValue({ jobs: [job('completed', longAgo)] })
+    await pollJobsAgain(['completed'])
+
+    await waitFor(() => expect(getProject.mock.calls.length)
+      .toBeGreaterThan(PROJECT_FETCHES_ON_MOUNT))
+  })
+
+  it('reports each of two concurrent jobs as it settles', async () => {
+    getJobs.mockResolvedValue({
+      jobs: [job('running', undefined, 'job-1'), job('running', undefined, 'job-2')],
+    })
+    renderProjectData()
+    await awaitObserved(['running', 'running'])
+
+    getJobs.mockResolvedValue({
+      jobs: [
+        job('completed', new Date().toISOString(), 'job-1'),
+        job('running', undefined, 'job-2'),
+      ],
+    })
+    await pollJobsAgain(['completed', 'running'])
+    await waitFor(() => expect(getProject.mock.calls.length)
+      .toBe(PROJECT_FETCHES_ON_MOUNT + 1))
+
+    getJobs.mockResolvedValue({
+      jobs: [
+        job('completed', new Date().toISOString(), 'job-1'),
+        job('failed', new Date().toISOString(), 'job-2'),
+      ],
+    })
+    await pollJobsAgain(['completed', 'failed'])
+
+    await waitFor(() => expect(getProject.mock.calls.length)
+      .toBe(PROJECT_FETCHES_ON_MOUNT + 2))
+  })
+
+  it('does not refetch on mount for a project whose jobs already finished', async () => {
+    // Otherwise every project open pays a second project read for history the
+    // mount fetch already reflects.
+    getJobs.mockResolvedValue({ jobs: [job('completed', new Date().toISOString())] })
 
     renderProjectData()
 
@@ -122,5 +221,67 @@ describe('project refetch on job completion', () => {
 
     await waitFor(() => expect(getJobs).toHaveBeenCalled())
     expect(getProject).toHaveBeenCalledTimes(PROJECT_FETCHES_ON_MOUNT)
+  })
+
+  it('does not refetch again while a settled job stays settled', async () => {
+    getJobs.mockResolvedValue({ jobs: [job('running', undefined)] })
+    renderProjectData()
+    await awaitObserved(['running'])
+
+    getJobs.mockResolvedValue({ jobs: [job('completed', new Date().toISOString())] })
+    await pollJobsAgain(['completed'])
+    await waitFor(() => expect(getProject.mock.calls.length)
+      .toBe(PROJECT_FETCHES_ON_MOUNT + 1))
+
+    await pollJobsAgain(['completed'])
+
+    expect(getProject).toHaveBeenCalledTimes(PROJECT_FETCHES_ON_MOUNT + 1)
+  })
+})
+
+describe('newlyTerminalJobIds', () => {
+  it('returns a job the caller has not seen settle', () => {
+    const seen = new Set<string>()
+
+    expect(newlyTerminalJobIds([job('completed', undefined, 'a')], seen)).toEqual(['a'])
+    expect(seen.has('a')).toBe(true)
+  })
+
+  it('returns nothing the second time the same job is reported settled', () => {
+    const seen = new Set<string>()
+    const jobs = [job('failed', undefined, 'a')]
+
+    newlyTerminalJobIds(jobs, seen)
+
+    expect(newlyTerminalJobIds(jobs, seen)).toEqual([])
+  })
+
+  it('forgets a settled job that went back to running so its next finish counts', () => {
+    // `claim_job_execution` moves a failed row back to `running` on redelivery.
+    const seen = new Set<string>()
+    newlyTerminalJobIds([job('failed', undefined, 'a')], seen)
+    newlyTerminalJobIds([job('running', undefined, 'a')], seen)
+
+    expect(newlyTerminalJobIds([job('completed', undefined, 'a')], seen)).toEqual(['a'])
+  })
+
+  it('ignores an entry with no usable job id', () => {
+    expect(newlyTerminalJobIds([job('completed', undefined, '')], new Set())).toEqual([])
+  })
+})
+
+describe('jobsPollInterval', () => {
+  it('stops polling once no live job remains and the start window has closed', () => {
+    const started = 1_000
+    expect(jobsPollInterval(
+      [{ status: 'completed' }, { status: 'failed' }],
+      started,
+      started + JOB_START_POLL_WINDOW_MS,
+    )).toBe(0)
+  })
+
+  it('keeps polling while any job is running or pending', () => {
+    expect(jobsPollInterval([{ status: 'completed' }, { status: 'pending' }], null, 0))
+      .toBeGreaterThan(0)
   })
 })

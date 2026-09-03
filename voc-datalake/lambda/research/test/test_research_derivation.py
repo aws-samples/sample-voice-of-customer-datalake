@@ -15,6 +15,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from .conftest import research_document
+
 SELECTED_IDS = ['doc_a', 'doc_b', 'doc_c', 'doc_d', 'doc_e']
 
 PROJECT_ITEMS = [
@@ -179,7 +181,7 @@ class TestEveryExitCarriesTheDerivation:
 
 
 class TestSaveWritesDerivation:
-    def _save(self, mock_tables, event_extra):
+    def _save(self, table, event_extra):
         from research_step_handler import step_save
         step_save({
             'project_id': 'proj_1',
@@ -191,9 +193,11 @@ class TestSaveWritesDerivation:
             'validation': 'V',
             **event_extra,
         })
-        return mock_tables['projects'].put_item.call_args.kwargs['Item']
+        return research_document(table, 'proj_1')
 
-    def test_persists_the_derivation_it_was_handed(self, mock_tables, mock_job_status):
+    def test_persists_the_derivation_it_was_handed(
+        self, saved_research_table, mock_job_status,
+    ):
         derivation = {
             'sources': USED_SOURCES,
             'selected_document_count': 5,
@@ -202,17 +206,17 @@ class TestSaveWritesDerivation:
             'product_context_included': False,
         }
 
-        item = self._save(mock_tables, {'derivation': derivation})
+        item = self._save(saved_research_table, {'derivation': derivation})
 
         assert item['derivation'] == derivation
 
     def test_an_execution_pinned_to_the_previous_definition_still_saves(
-        self, mock_tables, mock_job_status,
+        self, saved_research_table, mock_job_status,
     ):
         """In-flight executions keep the state machine definition they started
         with, which does not forward the derivation. That must read as "no
         lineage" rather than failing the save."""
-        item = self._save(mock_tables, {})
+        item = self._save(saved_research_table, {})
 
         assert item['derivation'] == {
             'sources': [],

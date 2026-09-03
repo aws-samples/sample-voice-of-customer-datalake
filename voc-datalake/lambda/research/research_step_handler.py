@@ -28,7 +28,10 @@ from shared.feedback import (
 )
 from shared.tables import get_projects_table, get_feedback_table
 from shared.jobs import update_job_status
-from shared.project_writes import put_project_item_and_increment
+from shared.document_versions import (
+    persist_versioned_document,
+    research_base_title,
+)
 from shared.derivation import (
     DERIVATION_FIELD,
     ROLE_REFERENCE,
@@ -426,10 +429,10 @@ def step_save(event: dict) -> dict:
     
     research_question = config.get('question', 'Research')
     filters = config.get('filters', {})
-    
+    base_title = research_base_title(config.get('title'), research_question)
+
     now = datetime.now(timezone.utc).isoformat()
-    research_id = f"research_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-    
+
     # Strict boolean for parity with step_initialize's gating: a foreign
     # "false" string skips the search, so it must not stamp the disclosure.
     # The executed queries flow from step_initialize through the state machine
@@ -494,42 +497,50 @@ Public-web grounding for this report came from the following searches:
     if len(full_report) > max_content_size:
         full_report = full_report[:max_content_size] + "\n\n---\n\n*[Report truncated due to size limits]*"
     
-    # Save to projects table
+    # Save to projects table. Research is a managed versioned document type, so
+    # the shared allocator owns the key, the `(vN)` title and the document_count
+    # bump in one transaction — and `job_id` as the allocation identity makes a
+    # Step Functions retry of this step return the committed document instead of
+    # writing a second one.
     proj_table = _get_projects_table()
+    document_id = ''
+    title = base_title
     if proj_table:
-        item = {
-            'pk': f'PROJECT#{project_id}',
-            'sk': f'RESEARCH#{research_id}',
-            'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
-            'gsi1sk': now,
-            'document_id': research_id,
-            'document_type': 'research',
-            'title': config.get('title', f'Research: {research_question[:50]}'),
-            'question': research_question,
-            'content': full_report,
-            'feedback_count': feedback_count,
-            'job_id': job_id,
-            # Built by step_initialize and threaded through the state machine.
-            # The .get() default covers the rollout skew where an in-flight
-            # execution is still pinned to a definition that does not forward it
-            # (same pattern as web_search_queries): an empty derivation reads as
-            # "no lineage", which is a legitimate answer rather than an error.
-            DERIVATION_FIELD: event.get('derivation') or build_derivation(),
-            'created_at': now,
-        }
-        put_project_item_and_increment(
-            proj_table, project_id, item, 'document_count',
+        item = persist_versioned_document(
+            proj_table,
+            project_id,
+            'research',
+            base_title,
+            job_id,
+            {
+                'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
+                'gsi1sk': now,
+                'question': research_question,
+                'content': full_report,
+                'feedback_count': feedback_count,
+                'job_id': job_id,
+                # Built by step_initialize and threaded through the state machine.
+                # The .get() default covers the rollout skew where an in-flight
+                # execution is still pinned to a definition that does not forward it
+                # (same pattern as web_search_queries): an empty derivation reads as
+                # "no lineage", which is a legitimate answer rather than an error.
+                DERIVATION_FIELD: event.get('derivation') or build_derivation(),
+                'created_at': now,
+            },
         )
-    
-    # Update job as completed
+        document_id = item['document_id']
+        title = item['title']
+
+    # Update job as completed. The stored title, so the job panel and the
+    # Documents tab name the same `(vN)` document.
     update_job_status(
         project_id, job_id, 'completed', 100, 'complete',
-        result={'document_id': research_id, 'title': config.get('title', f'Research: {research_question[:50]}')}
+        result={'document_id': document_id, 'title': title},
     )
-    
+
     return {
         'success': True,
-        'document_id': research_id,
+        'document_id': document_id,
         'feedback_count': feedback_count
     }
 @tracer.capture_method

@@ -317,8 +317,11 @@ def api_run_research(project_id: str):
             input=json.dumps({'job_id': job_id, 'project_id': project_id, 'research_config': research_config})
         )
     else:
-        return run_research(project_id, body)
-    
+        # The job id is the allocation identity on BOTH research paths, so the
+        # fallback and the Step Functions save step cannot allocate two versions
+        # for one request (see shared/document_versions.persist_versioned_document).
+        return run_research(project_id, body, job_id)
+
     return {'success': True, 'job_id': job_id, 'status': 'pending', 'message': 'Research started.'}
 
 

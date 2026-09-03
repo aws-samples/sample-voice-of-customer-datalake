@@ -27,8 +27,16 @@
  */
 import { asRecord, displayString } from './wireRecord'
 
-const VERSION_MANAGED_DOCUMENT_TYPES = new Set(['prd', 'prfaq', 'prototype'])
-const VERSION_MANAGED_SK_PREFIXES = ['PRD#', 'PRFAQ#', 'PROTOTYPE#']
+/**
+ * The types whose `(vN)` identity the backend stores.
+ *
+ * Mirrors `VERSIONED_DOCUMENT_TYPES` in `lambda/shared/document_versions.py`.
+ * Research joined them in the #406 follow-up: it is generated repeatedly for one
+ * question, so an order-derived ordinal would renumber older reports whenever a
+ * newer one arrived.
+ */
+const VERSION_MANAGED_DOCUMENT_TYPES = new Set(['prd', 'prfaq', 'prototype', 'research'])
+const VERSION_MANAGED_SK_PREFIXES = ['PRD#', 'PRFAQ#', 'PROTOTYPE#', 'RESEARCH#']
 
 /**
  * Whether the backend owns this document's canonical title/version series.

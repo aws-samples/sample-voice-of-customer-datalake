@@ -49,11 +49,14 @@ from shared.prototypes import prototype_signed_url
 from shared.tables import get_projects_table, get_feedback_table
 from shared.indexes import PROJECTS_BY_TYPE_INDEX
 from shared.document_versions import (
-    VERSIONED_DOCUMENT_TYPES,
+    get_versioned_document_by_allocation,
+    managed_document_type,
     normalize_document_versions,
     normalized_base_title,
     persist_legacy_document_versions,
+    persist_versioned_document,
     preserve_versioned_document_allocation,
+    research_base_title,
     version_partition_key,
 )
 from shared.project_writes import (
@@ -1878,10 +1881,10 @@ def update_document(project_id: str, document_id: str, body: dict) -> dict:
         raise ServiceError('Stored document has an invalid sort key')
 
     document_type = document.get('document_type')
-    managed = (
-        isinstance(document_type, str)
-        and document_type in VERSIONED_DOCUMENT_TYPES
-    ) or sk.startswith(('PRD#', 'PRFAQ#', 'PROTOTYPE#'))
+    # One shared predicate rather than a local prefix tuple: adding a managed
+    # type (research, #406 follow-up) must not leave this route editing a
+    # managed title as if it were free text.
+    managed = managed_document_type(document) is not None
     is_prototype = (
         document_type == 'prototype'
         or sk.startswith('PROTOTYPE#')
@@ -1977,12 +1980,7 @@ def delete_document(
         {},
     )
 
-    document_type = document.get('document_type')
-    is_managed = (
-        isinstance(document_type, str)
-        and document_type in VERSIONED_DOCUMENT_TYPES
-    ) or sk.startswith(('PRD#', 'PRFAQ#', 'PROTOTYPE#'))
-    if is_managed:
+    if managed_document_type(document) is not None:
         # Persist the complete snapshot before removing one managed row. This
         # keeps surviving legacy siblings on their assigned versions. Counters
         # and assignment rows intentionally remain as allocation history.
@@ -2400,7 +2398,7 @@ def delete_persona(project_id: str, persona_id: str) -> dict:
 
 
 @tracer.capture_method
-def run_research(project_id: str, body: dict) -> dict:
+def run_research(project_id: str, body: dict, allocation_id: str) -> dict:
     """Run deep research analysis on feedback data.
 
     FALLBACK PATH ONLY. ``projects_handler.py`` prefers the Step Functions
@@ -2410,12 +2408,26 @@ def run_research(project_id: str, body: dict) -> dict:
     which has its own ``limit=50`` and its own 50 000-char truncation. That is
     why ``FEEDBACK_LIMIT_RESEARCH`` is left at its historical value here; see
     :func:`generate_prd`.
+
+    ``allocation_id`` is the job id the route already minted. Both research
+    writers pass it, so a retry of either path resolves to the same document key
+    and version instead of allocating a second one.
     """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
-    
+
     research_question = body.get('question', 'What are the main customer pain points?')
-    
+    base_title = research_base_title(body.get('title'), research_question)
+
+    # A committed replay returns the stored document rather than re-running the
+    # LLM chain and allocating a second version. Checked before any Bedrock call
+    # so a client retry after a gateway timeout costs nothing.
+    existing = get_versioned_document_by_allocation(
+        projects_table, project_id, 'research', allocation_id,
+    )
+    if existing is not None:
+        return {'success': True, 'document': existing}
+
     # Get project data - exceptions will propagate
     project_data = get_project(project_id)
     
@@ -2455,8 +2467,7 @@ def run_research(project_id: str, body: dict) -> dict:
         
         # Save research - combine all results into a comprehensive report
         now = datetime.now(timezone.utc).isoformat()
-        research_id = f"research_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-        
+
         # Build comprehensive research report from all steps
         full_report = f"""# Research Report: {research_question}
 
@@ -2489,27 +2500,30 @@ def run_research(project_id: str, body: dict) -> dict:
             full_report = full_report[:max_content_size] + "\n\n---\n\n*[Report truncated due to size limits]*"
             logger.warning(f"Research report truncated from {len(full_report)} to {max_content_size} chars")
         
-        item = {
-            'pk': f'PROJECT#{project_id}',
-            'sk': f'RESEARCH#{research_id}',
-            'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
-            'gsi1sk': now,
-            'document_id': research_id,
-            'document_type': 'research',
-            'title': body.get('title', f'Research: {research_question[:50]}'),
-            'question': research_question,
-            'content': full_report,
-            'feedback_count': len(feedback_items),
-            'created_at': now,
-        }
-        
         logger.info(f"Saving research document, content size: {len(full_report)} chars, feedback items: {len(feedback_items)}")
-        put_project_item_and_increment(
-            projects_table, project_id, item, 'document_count',
+        # Through the shared allocator, exactly as the PRD/PR-FAQ/prototype
+        # writers do: it owns the deterministic key, the atomic counter bump and
+        # the document_count increment in one transaction.
+        item = persist_versioned_document(
+            projects_table,
+            project_id,
+            'research',
+            base_title,
+            allocation_id,
+            {
+                'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
+                'gsi1sk': now,
+                'question': research_question,
+                'content': full_report,
+                'feedback_count': len(feedback_items),
+                'created_at': now,
+            },
         )
-        
+
         return {'success': True, 'document': item}
-        
+
+    except (ValidationError, ServiceError):
+        raise
     except Exception as e:
         logger.exception(f"Research failed: {e}")
         raise ServiceError('Failed to run research. Please try again.')

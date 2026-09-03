@@ -4,7 +4,7 @@
 import {
   useQuery, useMutation, useQueryClient,
 } from '@tanstack/react-query'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { projectsApi } from '../../api/projectsApi'
 import { projectKey } from '../../api/projectQueryKeys'
@@ -94,6 +94,50 @@ export function jobsPollInterval(
   return withinStartWindow ? JOB_POLL_INTERVAL_MS : 0
 }
 
+/** A job that will not change again: its artifacts and counts have settled. */
+export function isTerminalJobStatus(status: ProjectJob['status']): boolean {
+  return status === 'completed' || status === 'failed'
+}
+
+/**
+ * The jobs that reached a terminal state since the last look.
+ *
+ * A TRANSITION, not a timestamp window. The previous rule refetched any job whose
+ * `completed_at` was under ten seconds old, which made the refresh depend on two
+ * clocks agreeing: the writer's `completed_at` and the browser's `Date.now()`. A
+ * poll that landed a second late — or a browser whose clock runs behind the
+ * Lambda's — skipped it, and the page then showed stale Overview counts and a
+ * disabled prototype action until a manual reload. It also ignored `failed`
+ * entirely, so a failed build left the "generating" affordances lit.
+ *
+ * Comparing against what this page has already SEEN needs no clock, fires once per
+ * job, and reports each of several concurrent jobs as it lands.
+ *
+ * @param jobs The jobs list as last fetched.
+ * @param seen Job ids already observed terminal. MUTATED with the new ones, so
+ *   the caller's ref carries them into the next poll.
+ * @returns The ids that are terminal now and were not before.
+ */
+export function newlyTerminalJobIds(
+  jobs: ReadonlyArray<Pick<ProjectJob, 'job_id' | 'status'>>,
+  seen: Set<string>,
+): string[] {
+  const settled: string[] = []
+  for (const job of jobs) {
+    if (typeof job.job_id !== 'string' || job.job_id === '') continue
+    if (!isTerminalJobStatus(job.status)) {
+      // A job id can be re-run (`claim_job_execution` moves a failed row back to
+      // running), so forget it rather than suppressing its next terminal edge.
+      seen.delete(job.job_id)
+      continue
+    }
+    if (seen.has(job.job_id)) continue
+    seen.add(job.job_id)
+    settled.push(job.job_id)
+  }
+  return settled
+}
+
 interface UseProjectDataProps {
   id: string | undefined
   apiEndpoint: string
@@ -179,15 +223,37 @@ export function useProjectData({
     retry: false,
   })
 
-  // When a job completes, refresh project data
+  /**
+   * Every job id this page has already seen reach `completed` or `failed`.
+   *
+   * A ref rather than state: it must not itself trigger a render, and it has to
+   * survive the re-render the invalidation below causes. Reset when the project
+   * changes so one project's history cannot suppress another's first refresh.
+   */
+  const settledJobIds = useRef<Set<string>>(new Set())
+  const sawFirstJobsPayload = useRef(false)
   useEffect(() => {
-    const jobs = jobsData?.jobs ?? []
-    const TEN_SECONDS = 10000
-    const completedRecently = jobs.some((j: ProjectJob) =>
-      j.status === 'completed' && j.completed_at != null && j.completed_at !== '' &&
-      new Date(j.completed_at).getTime() > Date.now() - TEN_SECONDS,
-    )
-    if (completedRecently) {
+    settledJobIds.current = new Set()
+    sawFirstJobsPayload.current = false
+  }, [id])
+
+  /**
+   * A job reaching a terminal state is the moment Overview counts, prototype
+   * enablement, Documents and the completed artifact all become readable — so the
+   * project detail query is invalidated too, not just the jobs list. Failed counts:
+   * it is what turns the "generating" affordances back off.
+   *
+   * The FIRST payload after mount only seeds the set. Its terminal jobs are history
+   * that the project fetch on the same mount already reflects, so refetching for
+   * them would cost every project open a second read and prove nothing.
+   */
+  useEffect(() => {
+    const jobs = jobsData?.jobs
+    if (jobs === undefined) return
+    const settled = newlyTerminalJobIds(jobs, settledJobIds.current)
+    const isFirstPayload = !sawFirstJobsPayload.current
+    sawFirstJobsPayload.current = true
+    if (settled.length > 0 && !isFirstPayload) {
       void queryClient.invalidateQueries({ queryKey: projectKey(id) })
     }
   }, [jobsData, id, queryClient])
