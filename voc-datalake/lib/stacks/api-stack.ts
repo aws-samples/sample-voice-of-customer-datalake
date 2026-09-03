@@ -654,10 +654,17 @@ export class VocApiStack extends VocStack {
     rawDataBucket.grantReadWrite(projectsRole, 'avatars/*');
     // Product context: projects API needs to issue presigned PUT URLs, read extracted text, delete docs.
     rawDataBucket.grantReadWrite(projectsRole, 'projects/*/product_docs/*');
-    // DELETE /projects/{id} sweeps the prototype objects the project owns. The
-    // two actions that sweep needs and no more: it LISTS the prefix (a bucket-level
-    // action, hence the separate statement) and DELETES what it finds. Deliberately
-    // NOT grantReadWrite: this role neither reads nor writes prototype HTML — the
+    // DELETE /projects/{id} sweeps every S3 prefix a project owns. The other two
+    // — projects/*/product_docs/* and avatars/* — need nothing added here: the two
+    // grants above already carry s3:DeleteObject* on those objects and s3:List* on
+    // the bucket, because this role also uploads and deletes them one at a time
+    // through their own routes.
+    //
+    // Prototypes are the exception, and that is why these two statements exist at
+    // all: the role has NO prototype grant otherwise. The two actions that sweep
+    // needs and no more — it LISTS the prefix (a bucket-level action, hence the
+    // separate statement) and DELETES what it finds. Deliberately NOT
+    // grantReadWrite: this role neither reads nor writes prototype HTML — the
     // document generator produces it and the browser fetches it from CloudFront
     // with a signature this role mints from the secret below.
     projectsRole.addToPolicy(new iam.PolicyStatement({

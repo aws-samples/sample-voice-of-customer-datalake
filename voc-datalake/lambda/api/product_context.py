@@ -530,6 +530,24 @@ def interview_turn(project_id: str, body: dict) -> dict:
 DOC_SK_PREFIX = 'PRODUCT_DOC#'
 
 
+def product_docs_project_prefix(project_id: str) -> str:
+    """Every product-doc object one project owns, raw and extracted, and no other's.
+
+    Both halves of the layout live under it: the upload boundary writes
+    `…/product_docs/raw/{doc_id}.{ext}` and the extractor writes
+    `…/product_docs/extracted/{doc_id}.txt`. A project delete has to empty the
+    whole subtree, so the prefix is single-sourced here — the writer of the raw
+    key — rather than re-spelled at the sweep, and
+    `product_doc_extractor/test/test_product_docs_prefix_lockstep.py` pins the
+    extractor's mirror of it (that handler cannot import `shared/`, see its
+    docstring).
+
+    The trailing slash is load-bearing for the sweep: without it `projects/proj_1`
+    also matches `projects/proj_10/...`.
+    """
+    return f'projects/{project_id}/product_docs/'
+
+
 def _doc_pk(project_id: str) -> str:
     return f'PROJECT#{project_id}'
 
@@ -847,7 +865,7 @@ def create_upload_url(project_id: str, body: dict) -> dict:
 
     doc_id = _new_doc_id()
     ext = ALLOWED_CONTENT_TYPES[content_type]
-    s3_raw_key = f'projects/{project_id}/product_docs/raw/{doc_id}.{ext}'
+    s3_raw_key = f'{product_docs_project_prefix(project_id)}raw/{doc_id}.{ext}'
     now = datetime.now(timezone.utc).isoformat()
 
     item = {

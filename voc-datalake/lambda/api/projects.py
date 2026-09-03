@@ -48,6 +48,7 @@ from shared.feedback import (
 )
 from shared.model_config import surface_context_window_tokens
 from shared.avatar import (
+    avatar_object_keys,
     generate_persona_avatar as _generate_persona_avatar,
     get_avatar_cdn_url,
 )
@@ -494,6 +495,11 @@ MAX_CHAT_CONTEXT_SELECTED_DOCUMENTS = 20
 MAX_CHAT_CONTEXT_ID_LENGTH = 128
 DOCUMENT_DELETE_ATTEMPTS = 4
 PROJECT_DELETE_FENCE_ATTEMPTS = 4
+#: S3's hard cap on `delete_objects` keys per request. The prefix sweeps never
+#: reach it (`list_objects_v2` returns at most 1000 keys per page, so a page is
+#: always a legal batch), but the avatar sweep builds its own key list from the
+#: persona rows and has to chunk.
+S3_DELETE_BATCH_SIZE = 1000
 _DOCUMENT_SORT_KEY_PREFIXES = (
     'PRD#',
     'PRFAQ#',
@@ -873,30 +879,28 @@ def _delete_project_job_rows(project_id: str) -> None:
 
 
 @tracer.capture_method
-def _delete_project_prototype_objects(project_id: str) -> None:
-    """Remove every prototype object under this project's S3 prefix.
+def _delete_objects_under_prefix(project_id: str, prefix: str) -> None:
+    """Empty one S3 prefix a project owns, page by page.
 
-    Prototype HTML is the one project artifact that lives outside DynamoDB, and
-    deleting the PROTOTYPE# rows left it in the bucket: signed links minted before
-    the delete kept resolving for the rest of their TTL, and the objects were
-    billed indefinitely. Listing the PREFIX rather than deriving keys from the
-    surviving rows is deliberate — a row lost to a partially failed earlier sweep
-    would otherwise orphan its object forever.
+    Listing the PREFIX rather than deriving keys from the surviving DynamoDB rows
+    is deliberate — a row lost to a partially failed earlier sweep would otherwise
+    orphan its object forever — and it is also what makes a retry resume: each
+    pass lists only what remains.
 
-    Paginated (`list_objects_v2` caps at 1000 keys) and idempotent: a retry lists
-    only what remains. `prototype_project_prefix` supplies the trailing slash that
-    keeps `proj_1` from matching `proj_10`.
+    Paginated because `list_objects_v2` caps at 1000 keys. Every caller passes a
+    prefix ending in `/`, which is load-bearing: `prototypes/proj_1` without it
+    also matches `prototypes/proj_10/...`, so a sweep on the bare id would remove
+    a NEIGHBOUR's objects.
     """
     bucket = os.environ.get('RAW_DATA_BUCKET', '')
     if not bucket:
         logger.warning(
-            'RAW_DATA_BUCKET is not configured; prototype objects were not deleted',
-            extra={'project_id': project_id},
+            'RAW_DATA_BUCKET is not configured; project objects were not deleted',
+            extra={'project_id': project_id, 'prefix': prefix},
         )
         return
 
     client = get_s3_client()
-    prefix = prototype_project_prefix(project_id)
     cursor: str | None = None
     while True:
         arguments = {'Bucket': bucket, 'Prefix': prefix}
@@ -918,9 +922,10 @@ def _delete_project_prototype_objects(project_id: str) -> None:
             errors = response.get('Errors') if isinstance(response, dict) else None
             if errors:
                 logger.warning(
-                    'Some prototype objects could not be deleted; retry the delete',
+                    'Some project objects could not be deleted; retry the delete',
                     extra={
                         'project_id': project_id,
+                        'prefix': prefix,
                         'failed_object_count': len(errors),
                     },
                 )
@@ -929,6 +934,49 @@ def _delete_project_prototype_objects(project_id: str) -> None:
         cursor = listing.get('NextContinuationToken')
         if not isinstance(cursor, str) or not cursor:
             return
+
+
+@tracer.capture_method
+def _delete_project_avatar_objects(project_id: str, persona_ids: list[str]) -> None:
+    """Remove the avatar object of every persona this project owned.
+
+    Avatars are keyed by PERSONA id (`avatars/{persona_id}.{ext}`), not by project,
+    so there is no prefix to sweep — the ids have to be collected from the project
+    partition BEFORE that partition is deleted, and are passed in for exactly that
+    reason.
+
+    `avatar_object_keys` supplies every extension a persona's avatar may occupy
+    rather than the one its stored `avatar_url` names: the key embeds the image
+    format, so a persona regenerated across an `output_format` change can have an
+    object under an older extension that nothing references — precisely the orphan
+    a url-derived key would leave behind. Deleting an absent key is a no-op in S3,
+    so issuing all of them costs one request per 1000 keys and no lookups.
+
+    Chunked at S3's 1000-key `delete_objects` limit. Partial failure is reported
+    for the same reason as the prefix sweeps: the durable work has committed and
+    the tombstone must still be finalized.
+    """
+    bucket = os.environ.get('RAW_DATA_BUCKET', '')
+    if not bucket or not persona_ids:
+        return
+
+    keys = [
+        {'Key': key}
+        for persona_id in persona_ids
+        for key in avatar_object_keys(persona_id)
+    ]
+    client = get_s3_client()
+    for start in range(0, len(keys), S3_DELETE_BATCH_SIZE):
+        response = client.delete_objects(
+            Bucket=bucket,
+            Delete={'Objects': keys[start:start + S3_DELETE_BATCH_SIZE], 'Quiet': True},
+        )
+        errors = response.get('Errors') if isinstance(response, dict) else None
+        if errors:
+            logger.warning(
+                'Some persona avatars could not be deleted; retry the delete',
+                extra={'project_id': project_id, 'failed_object_count': len(errors)},
+            )
 
 
 @tracer.capture_method
@@ -996,6 +1044,13 @@ def _invalidate_project_prototype_cache(project_id: str) -> None:
 def delete_project(project_id: str) -> dict:
     """Retain a tombstone while deleting every project-owned artifact.
 
+    "Every" is the contract the delete-confirmation copy states, so it is the
+    contract here: the project partition, the version partition, the job rows in
+    their own table, and all three S3 prefixes — prototypes, product docs (raw and
+    extracted) and the personas' avatars. `rawDataBucket` has no lifecycle
+    expiration, so an object this misses is billed forever AND stays reachable
+    through its signed URL for the rest of that signature's TTL.
+
     Idempotent and retry-safe end to end. The fence goes down first, so a writer
     either committed before it (and is visible to the strongly consistent scans
     below) or fails after it. Every sweep then deletes only what it still finds,
@@ -1013,17 +1068,41 @@ def delete_project(project_id: str) -> dict:
     # Keep tombstoned META forever. Guarded writers either committed before the
     # fence (and are visible to these strongly consistent scans) or fail after
     # it; retries repeat both idempotent sweeps.
+    #
+    # Avatars are keyed by PERSONA id rather than by project, so unlike the two
+    # prefix sweeps below there is nothing in S3 to list — the ids have to come
+    # from the rows, and only this sweep still sees them. Collected from the sort
+    # key of the same pass rather than by a second query: the page is already in
+    # hand, and re-querying after the delete would find nothing.
+    persona_ids: list[str] = []
     with projects_table.batch_writer() as batch:
         for key in _iter_partition_keys(project_key):
-            if key != meta_key:
-                batch.delete_item(Key=key)
+            if key == meta_key:
+                continue
+            if key['sk'].startswith('PERSONA#'):
+                persona_ids.append(key['sk'].removeprefix('PERSONA#'))
+            batch.delete_item(Key=key)
 
     with projects_table.batch_writer() as batch:
         for key in _iter_partition_keys(version_partition_key(project_id)):
             batch.delete_item(Key=key)
 
     _delete_project_job_rows(project_id)
-    _delete_project_prototype_objects(project_id)
+    # Every S3 prefix the project owns, not just the prototypes. `rawDataBucket`
+    # has no lifecycle expiration, so an object left here is billed indefinitely
+    # AND stays reachable through its signed URL for the rest of that signature's
+    # TTL — the same two arguments that motivated the prototype sweep apply to
+    # product docs and persona avatars, and the delete-confirmation copy tells the
+    # user all of it goes.
+    # Imported here rather than at module scope, matching every other
+    # product_context use in this file: that module is only reachable when the
+    # product-context feature is deployed, and a delete must not fail at cold
+    # start over a prefix string.
+    from product_context import product_docs_project_prefix
+
+    _delete_objects_under_prefix(project_id, prototype_project_prefix(project_id))
+    _delete_objects_under_prefix(project_id, product_docs_project_prefix(project_id))
+    _delete_project_avatar_objects(project_id, persona_ids)
     _invalidate_project_prototype_cache(project_id)
 
     projects_table.update_item(

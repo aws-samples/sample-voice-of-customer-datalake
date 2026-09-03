@@ -187,20 +187,21 @@ class TestUpdateProject:
             update_project('proj-1', {'name': 'Test'})
 
 
-# The two owned-artifact sweeps below reach OTHER services (the jobs table and
-# the prototypes bucket), so they are stubbed in every test here that drives
+# The owned-artifact sweeps below reach OTHER services (the jobs table and the
+# raw-data bucket), so they are stubbed in every test here that drives
 # `delete_project` against a `MagicMock` projects table — those tests assert the
 # projects-partition request shape, and an unstubbed sweep would issue a real
-# Query and a real ListObjectsV2. The sweeps' own behaviour is proven against real
-# DynamoDB and S3 in `test_project_delete_lifecycle_moto.py`.
+# Query, a real ListObjectsV2 and a real DeleteObjects. The sweeps' own behaviour
+# is proven against real DynamoDB and S3 in `test_project_delete_lifecycle_moto.py`.
 class TestDeleteProject:
     """Tests for delete_project function."""
 
-    @patch('projects._delete_project_prototype_objects')
+    @patch('projects._delete_project_avatar_objects')
+    @patch('projects._delete_objects_under_prefix')
     @patch('projects._delete_project_job_rows')
     @patch('projects.projects_table')
     def test_deletes_project_and_version_assignment_partitions(
-        self, mock_table, _jobs_sweep, _prototype_sweep,
+        self, mock_table, _jobs_sweep, _object_sweep, _avatar_sweep,
     ):
         """Deletes project rows, counters, and durable legacy assignments."""
         mock_table.query.side_effect = [
@@ -1021,11 +1022,12 @@ def test_document_delete_repairs_a_stale_zero_count_instead_of_blocking(mock_tab
     assert 'document_count = :observed_count' in update['ConditionExpression']
 
 
-@patch('projects._delete_project_prototype_objects')
+@patch('projects._delete_project_avatar_objects')
+@patch('projects._delete_objects_under_prefix')
 @patch('projects._delete_project_job_rows')
 @patch('projects.projects_table')
 def test_project_delete_retries_fence_when_tombstone_insert_loses(
-    mock_table, _jobs_sweep, _prototype_sweep,
+    mock_table, _jobs_sweep, _object_sweep, _avatar_sweep,
 ):
     conditional = ClientError(
         {

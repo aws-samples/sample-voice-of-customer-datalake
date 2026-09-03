@@ -159,6 +159,22 @@ def get_image_model_config() -> dict:
     }
 
 
+def avatar_object_keys(persona_id: str) -> tuple[str, ...]:
+    """Every S3 key one persona's avatar may occupy, current format or historical.
+
+    The key embeds the image format, so a persona that was regenerated across an
+    `output_format` change can have an object under more than one extension —
+    which is why `_delete_superseded_avatars` exists at all. A caller that has to
+    remove a persona's avatar for good (project delete) needs the SAME inventory,
+    and deriving it there from a stored `avatar_url` would miss exactly the
+    orphans that inventory was written to cover.
+
+    Deleting an absent key is a no-op in S3, so a caller may issue all of these
+    without first checking which one exists.
+    """
+    return tuple(f'avatars/{persona_id}.{extension}' for extension in _HISTORICAL_EXTENSIONS)
+
+
 def _delete_superseded_avatars(s3_client, bucket: str, persona_id: str, keep: str) -> None:
     """Remove this persona's avatar stored under a different extension.
 
@@ -168,15 +184,13 @@ def _delete_superseded_avatars(s3_client, bucket: str, persona_id: str, keep: st
     here must never fail avatar generation, and deleting an absent key is a no-op
     in S3, so this costs nothing when there is nothing to clean.
     """
-    for extension in _HISTORICAL_EXTENSIONS:
-        if extension == keep:
+    for key in avatar_object_keys(persona_id):
+        if key.endswith(f'.{keep}'):
             continue
         try:
-            s3_client.delete_object(Bucket=bucket, Key=f"avatars/{persona_id}.{extension}")
+            s3_client.delete_object(Bucket=bucket, Key=key)
         except Exception as e:  # noqa: BLE001 - cleanup must not break generation
-            logger.warning(
-                f"[PERSONA_AVATAR] Could not remove superseded avatars/{persona_id}.{extension}: {e}"
-            )
+            logger.warning(f"[PERSONA_AVATAR] Could not remove superseded {key}: {e}")
 
 
 def _stable_seed(persona_id: str) -> int:

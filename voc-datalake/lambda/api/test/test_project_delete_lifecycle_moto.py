@@ -2,7 +2,7 @@
 
 `test_projects.py` holds the projects-partition request SHAPE against a MagicMock
 table. That is the one thing a mock is good for and the one thing it cannot answer
-here: whether the sweep actually EMPTIED what it swept. Two of the artifacts a
+here: whether the sweep actually EMPTIED what it swept. Four of the artifacts a
 project owns live outside its DynamoDB partition and were previously left behind:
 
   * **job rows**, in their own table. They sat there until their TTL — up to 30
@@ -11,6 +11,16 @@ project owns live outside its DynamoDB partition and were previously left behind
   * **prototype HTML**, in S3 under `prototypes/{project_id}/`. Deleting the
     `PROTOTYPE#` rows left the objects, so links minted before the delete resolved
     for the rest of their signature TTL and the bytes were billed indefinitely.
+  * **product docs**, in S3 under `projects/{project_id}/product_docs/` — both the
+    raw upload and the extractor's text. `PRODUCT_DOC#` rows are in the project
+    partition and were swept; only the per-document route ever deleted the objects.
+  * **persona avatars**, in S3 at `avatars/{persona_id}.{ext}`. Keyed by PERSONA,
+    so there is no prefix to list and the ids must be read before the rows go.
+
+The last two matter for the same two reasons as the first: `rawDataBucket` has NO
+lifecycle expiration, so unlike a job row nothing eventually collects them, and
+`/avatars/*` and the presigned reads keep resolving for the rest of a signature's
+TTL. The delete-confirmation copy also tells the user all of it goes.
 
 moto rather than a fake: pagination (`LastEvaluatedKey`, `IsTruncated` /
 `NextContinuationToken`) and `delete_objects`' partial-failure envelope are exactly
@@ -29,6 +39,8 @@ from botocore.exceptions import (
     ParamValidationError,
 )
 from moto import mock_aws
+from product_context import product_docs_project_prefix
+from shared.avatar import avatar_object_keys
 from shared.document_versions import version_partition_key
 from shared.project_writes import PROJECT_DELETION_ATTRIBUTE
 from shared.prototypes import prototype_s3_key
@@ -36,6 +48,9 @@ from shared.prototypes import prototype_s3_key
 BUCKET = 'test-raw-data-bucket'
 PROJECT = 'proj-1'
 NEIGHBOUR = 'proj-10'
+# The persona whose avatar the fixture writes. Named here because the avatar sweep
+# is the one that cannot derive its keys from a prefix.
+PERSONA = 'persona_1'
 
 
 def _key_schema() -> dict:
@@ -67,9 +82,28 @@ def deployment():
             'project_id': PROJECT, 'name': 'Doomed', 'document_count': 2,
         })
         projects.put_item(Item={
-            'pk': f'PROJECT#{PROJECT}', 'sk': 'PERSONA#persona_1',
-            'persona_id': 'persona_1',
+            'pk': f'PROJECT#{PROJECT}', 'sk': f'PERSONA#{PERSONA}',
+            'persona_id': PERSONA,
+            'avatar_url': f's3://{BUCKET}/avatars/{PERSONA}.jpeg',
         })
+        # Two extensions for ONE persona: the key embeds the image format, so a
+        # persona regenerated across an `output_format` change leaves an object
+        # under the older extension that its stored `avatar_url` no longer names.
+        # A url-derived sweep would leave exactly that one behind.
+        for extension in ('jpeg', 'png'):
+            s3.put_object(
+                Bucket=BUCKET, Key=f'avatars/{PERSONA}.{extension}', Body=b'avatar',
+            )
+        for kind, name in (('raw', 'doc_1.pdf'), ('extracted', 'doc_1.txt')):
+            projects.put_item(Item={
+                'pk': f'PROJECT#{PROJECT}', 'sk': 'PRODUCT_DOC#doc_1',
+                'doc_id': 'doc_1',
+            })
+            s3.put_object(
+                Bucket=BUCKET,
+                Key=f'{product_docs_project_prefix(PROJECT)}{kind}/{name}',
+                Body=b'product doc',
+            )
         for index in (1, 2):
             projects.put_item(Item={
                 'pk': f'PROJECT#{PROJECT}', 'sk': f'PROTOTYPE#proto_{index}',
@@ -101,6 +135,12 @@ def deployment():
             Key=prototype_s3_key(NEIGHBOUR, 'proto_9'),
             Body=b'<html>neighbour</html>',
         )
+        s3.put_object(
+            Bucket=BUCKET,
+            Key=f'{product_docs_project_prefix(NEIGHBOUR)}raw/doc_9.pdf',
+            Body=b'neighbour product doc',
+        )
+        s3.put_object(Bucket=BUCKET, Key='avatars/persona_9.jpeg', Body=b'neighbour')
         jobs.put_item(Item={
             'pk': f'PROJECT#{NEIGHBOUR}', 'sk': 'JOB#job_9', 'job_id': 'job_9',
         })
@@ -151,6 +191,65 @@ def test_the_delete_empties_every_owned_partition_and_prefix(deployment):
     assert partition(deployment['jobs'], f'PROJECT#{PROJECT}') == []
     assert object_keys(deployment['s3'], 'prototypes/') == [
         prototype_s3_key(NEIGHBOUR, 'proto_9'),
+    ]
+    assert object_keys(deployment['s3'], product_docs_project_prefix(PROJECT)) == []
+    assert object_keys(deployment['s3'], f'avatars/{PERSONA}.') == []
+
+
+def test_both_halves_of_the_product_doc_layout_are_swept(deployment):
+    """`raw/` is the upload and `extracted/` is the extractor's text.
+
+    Two writers, one subtree. Sweeping the `product_docs/` prefix rather than the
+    two leaves means a layout that grows a third kind is covered without a change
+    here — and asserted as a positive control first, so an empty
+    `product_docs/` before the delete could not make this pass vacuously.
+    """
+    prefix = product_docs_project_prefix(PROJECT)
+    assert object_keys(deployment['s3'], prefix) == [
+        f'{prefix}extracted/doc_1.txt', f'{prefix}raw/doc_1.pdf',
+    ]
+
+    assert delete() == {'success': True}
+
+    assert object_keys(deployment['s3'], prefix) == []
+
+
+def test_every_extension_a_persona_avatar_may_occupy_is_deleted(deployment):
+    """The avatar key embeds the image format, so one persona can own two objects.
+
+    A sweep derived from the stored `avatar_url` would delete only the current
+    extension and leave the superseded one billed forever with nothing referencing
+    it — which is the orphan `_delete_superseded_avatars` already exists to fight.
+    Both are present before the delete, which is what makes the emptiness after it
+    a real assertion.
+    """
+    keys = avatar_object_keys(PERSONA)
+    assert object_keys(deployment['s3'], f'avatars/{PERSONA}.') == sorted(
+        [f'avatars/{PERSONA}.jpeg', f'avatars/{PERSONA}.png'],
+    )
+    assert set(keys) >= {f'avatars/{PERSONA}.jpeg', f'avatars/{PERSONA}.png'}
+
+    assert delete() == {'success': True}
+
+    assert object_keys(deployment['s3'], f'avatars/{PERSONA}.') == []
+
+
+def test_another_project_s_product_docs_and_avatars_survive(deployment):
+    """The neighbour owns objects under both new prefixes. Neither may move.
+
+    `projects/proj-1` also matches `projects/proj-10/...` without the trailing
+    slash, and the avatar sweep works from an explicit id list rather than a prefix
+    precisely so it cannot reach a persona it does not own.
+    """
+    delete()
+
+    assert object_keys(
+        deployment['s3'], product_docs_project_prefix(NEIGHBOUR),
+    ) == [f'{product_docs_project_prefix(NEIGHBOUR)}raw/doc_9.pdf']
+    # Only the neighbour's own key, so this fails when the avatar sweep OVERREACHES
+    # and not when it is missing — that is what the sibling case covers.
+    assert object_keys(deployment['s3'], 'avatars/persona_9.') == [
+        'avatars/persona_9.jpeg',
     ]
 
 

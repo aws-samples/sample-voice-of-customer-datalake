@@ -20,7 +20,7 @@
   },
   "deleteModal": {
     "confirm": "Eliminar",
-    "message": "¿Seguro que deseas eliminar este proyecto? Sus personas, documentos, prototipos e historial de trabajos se eliminan de forma permanente. Los enlaces a los prototipos dejan de funcionar; la acción no se puede deshacer.",
+    "message": "¿Seguro que deseas eliminar este proyecto? Sus personas y sus imágenes, documentos, archivos subidos, prototipos e historial de trabajos se eliminan de forma permanente. Los enlaces a los prototipos dejan de funcionar; la acción no se puede deshacer.",
     "title": "Eliminar proyecto"
   },
   "description": "Crea proyectos para generar personas, PRDs y PR/FAQs a partir de comentarios",

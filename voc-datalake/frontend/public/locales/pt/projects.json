@@ -20,7 +20,7 @@
   },
   "deleteModal": {
     "confirm": "Excluir",
-    "message": "Tem certeza de que deseja excluir este projeto? As personas, documentos, protótipos e o histórico de tarefas são todos excluídos permanentemente. Os links dos protótipos param de funcionar; a ação não pode ser desfeita.",
+    "message": "Tem certeza de que deseja excluir este projeto? As personas e as imagens delas, documentos, arquivos enviados, protótipos e o histórico de tarefas são todos excluídos permanentemente. Os links dos protótipos param de funcionar; a ação não pode ser desfeita.",
     "title": "Excluir projeto"
   },
   "description": "Crie projetos para gerar personas, PRDs e PR/FAQs a partir de feedback",
