@@ -588,18 +588,19 @@ def _validated_chat_context_document_ids(raw: object) -> list[str]:
 
 @tracer.capture_method
 def _query_project_chat_items(project_id: str) -> list[dict]:
-    # `created_at` is load-bearing for normalize_document_versions: legacy rows
-    # without stored versions are ordered by creation time before chat summaries.
+    # `created_at` is load-bearing for normalize_document_versions; `status`
+    # preserves compatibility with status-only historical tombstones.
     query = {
         'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}'),
         'ConsistentRead': True,
         'ProjectionExpression': (
-            'pk, sk, project_id, #name, #deleting, persona_id, '
+            'pk, sk, project_id, #name, #status, #deleting, persona_id, '
             'tagline, quotes, goals_motivations, pain_points, avatar_url, '
             'document_id, #type, #title, base_title, #version, created_at'
         ),
         'ExpressionAttributeNames': {
             '#name': 'name',
+            '#status': 'status',
             '#deleting': PROJECT_DELETION_ATTRIBUTE,
             '#type': 'document_type',
             '#title': 'title',

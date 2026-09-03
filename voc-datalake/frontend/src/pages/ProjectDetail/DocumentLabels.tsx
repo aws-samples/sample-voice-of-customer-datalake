@@ -14,7 +14,7 @@ const DOCUMENT_TYPE_STYLES: Record<KnownProjectDocumentType, string> = {
 }
 
 function isKnownDocumentType(type: string): type is KnownProjectDocumentType {
-  return Object.hasOwn(DOCUMENT_TYPE_STYLES, type)
+  return Object.prototype.hasOwnProperty.call(DOCUMENT_TYPE_STYLES, type)
 }
 
 /**
