@@ -67,10 +67,14 @@ const ALLOWED_MEDIA_TYPES = [
 
 export const MAX_MESSAGE_LENGTH = 8_000;
 const MAX_CONTEXT_LENGTH = 500;
-const MAX_ID_LENGTH = 128;
+export const MAX_ID_LENGTH = 128;
 const MAX_ATTACHMENT_NAME_LENGTH = 255;
 const MAX_ATTACHMENT_DATA_LENGTH = 2_800_000;
 export const MAX_PERSONAS_DOCS_ARRAY = 20;
+
+const projectContextIdSchema = z.string()
+  .min(1, 'ID is required')
+  .max(MAX_ID_LENGTH);
 
 export const attachmentSchema = z.object({
   name: z.string().min(1, 'Attachment name is required').max(MAX_ATTACHMENT_NAME_LENGTH),
@@ -109,9 +113,9 @@ export const chatRequestSchema = z.object({
     z.enum(SUPPORTED_LANGUAGES).optional(),
   ),
   // Project chat fields
-  project_id: z.string().max(MAX_ID_LENGTH).optional(),
-  selected_personas: z.array(z.string().max(MAX_ID_LENGTH)).max(MAX_PERSONAS_DOCS_ARRAY).optional(),
-  selected_documents: z.array(z.string().max(MAX_ID_LENGTH)).max(MAX_PERSONAS_DOCS_ARRAY).optional(),
+  project_id: projectContextIdSchema.optional(),
+  selected_personas: z.array(projectContextIdSchema).max(MAX_PERSONAS_DOCS_ARRAY).optional(),
+  selected_documents: z.array(projectContextIdSchema).max(MAX_PERSONAS_DOCS_ARRAY).optional(),
   // Roundtable mode: each selected persona responds in turn
   roundtable: z.boolean().optional(),
   // Opt-in public web search (only honored when the AgentCore web search

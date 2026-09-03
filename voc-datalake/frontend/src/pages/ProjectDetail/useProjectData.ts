@@ -458,11 +458,11 @@ export function useDocumentMutations({
   const updateDocMut = useMutation({
     mutationFn: (data: {
       docId: string;
-      title: string;
+      title?: string;
       content: string
     }) =>
       projectsApi.updateDocument(projectId, data.docId, {
-        title: data.title,
+        ...(data.title === undefined ? {} : { title: data.title }),
         content: data.content,
       }),
     onSuccess: (_result, variables) => {
@@ -470,7 +470,7 @@ export function useDocumentMutations({
       if (selectedDoc?.document_id === variables.docId) {
         setSelectedDoc({
           ...selectedDoc,
-          title: variables.title,
+          ...(variables.title === undefined ? {} : { title: variables.title }),
           content: variables.content,
         })
       }

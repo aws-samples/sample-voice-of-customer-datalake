@@ -2,7 +2,7 @@
   "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
   "stacks": {
     "VocApiStack": {
-      "templateSha256": "ec4ffd2bdd2aae4dd896447f0ec3a9a1bcd8c752c1cf880d8fcd6eeb209b30cf",
+      "templateSha256": "61f06dc8ae37e9ae15ea8794db803f2357d1b08dc49c91224e9d01f85b49494a",
       "names": {
         "physicalNames": [
           "AWS::ApiGateway::Authorizer Name = voc-cognito-authorizer",
@@ -57,6 +57,10 @@
         "exportNames": [],
         "policyResources": [
           "arn:aws:events:us-east-1:111111111111:rule/voc-ingest-*-schedule*",
+          "arn:aws:lambda:us-east-1:111111111111:function/voc-job-document-generator-<AWS::AccountId>-<AWS::Region>",
+          "arn:aws:lambda:us-east-1:111111111111:function/voc-job-document-merger-<AWS::AccountId>-<AWS::Region>",
+          "arn:aws:lambda:us-east-1:111111111111:function/voc-job-persona-generator-<AWS::AccountId>-<AWS::Region>",
+          "arn:aws:lambda:us-east-1:111111111111:function/voc-job-persona-importer-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-ingestor-*",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-ingestor-webscraper-*",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-manual-import-processor-*"

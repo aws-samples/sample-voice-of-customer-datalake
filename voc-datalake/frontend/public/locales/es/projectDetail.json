@@ -515,7 +515,7 @@
     "generatePrfaq": "Generar PR-FAQ",
     "generatePrfaqTitle": "Generar PR-FAQ",
     "newDocTitle": "Título del Nuevo Documento",
-    "newDocTitlePlaceholder": "p. ej., Conserje Virtual PRD v2",
+    "newDocTitlePlaceholder": "p. ej., Conserje Virtual PRD",
     "outputDocType": "Tipo de Documento de Salida",
     "personaCount": "Número de Personas: {{count}}",
     "prd": "PRD",

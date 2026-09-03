@@ -8,8 +8,10 @@ export function getUpdateDocumentTool(): Tool {
     toolSpec: {
       name: 'update_document',
       description:
-        'Update the content of a project document (PRD, PR/FAQ, research, or custom). ' +
-        'Use this when the user asks to edit, modify, add to, or rewrite a document. ' +
+        'Update the content of a textual project document (PRD, PR/FAQ, research, product report, or custom). ' +
+        'Prototype HTML is stored in S3 and must be changed through the prototype revision workflow, not this tool. ' +
+        'PRD and PR/FAQ titles are version-managed and cannot be renamed; generate a new document to start a differently titled series. ' +
+        'Use this when the user asks to edit, modify, add to, or rewrite an editable textual document. ' +
         'Always provide the COMPLETE updated content, not just the changes.',
       inputSchema: {
         json: {
@@ -21,7 +23,8 @@ export function getUpdateDocumentTool(): Tool {
             },
             title: {
               type: 'string',
-              description: 'Updated title (optional, only if the user wants to rename).',
+              description:
+                'Updated title for research, product report, or custom documents only. Version-managed PRD and PR/FAQ titles cannot be renamed.',
             },
             content: {
               type: 'string',
@@ -44,8 +47,8 @@ export function getCreateDocumentTool(): Tool {
     toolSpec: {
       name: 'create_document',
       description:
-        'Create a new document in the project from the conversation. ' +
-        'Use this when the user asks to create a new PRD, PR/FAQ, or custom document.',
+        'Create a new custom document in the project from the conversation. ' +
+        'Every managed or workflow document type must use its dedicated route.',
       inputSchema: {
         json: {
           type: 'object',
@@ -60,8 +63,8 @@ export function getCreateDocumentTool(): Tool {
             },
             document_type: {
               type: 'string',
-              enum: ['prd', 'prfaq', 'custom'],
-              description: 'Type of document to create.',
+              enum: ['custom'],
+              description: 'Custom document; version-managed PRD/PRFAQ use the generation workflow.',
             },
           },
           required: ['title', 'content', 'document_type'],

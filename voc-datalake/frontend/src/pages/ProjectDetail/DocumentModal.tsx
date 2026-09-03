@@ -11,6 +11,7 @@ import remarkGfm from 'remark-gfm'
 interface DocumentModalProps {
   readonly isEditing: boolean
   readonly title: string
+  readonly titleReadOnly?: boolean
   readonly content: string
   readonly isSaving: boolean
   readonly onTitleChange: (title: string) => void
@@ -22,6 +23,7 @@ interface DocumentModalProps {
 export default function DocumentModal({
   isEditing,
   title,
+  titleReadOnly = false,
   content,
   isSaving,
   onTitleChange,
@@ -45,9 +47,10 @@ export default function DocumentModal({
             <input
               type="text"
               value={title}
+              disabled={titleReadOnly}
               onChange={(e) => onTitleChange(e.target.value)}
               placeholder={t('documentModal.titlePlaceholder')}
-              className="w-full px-3 py-2 border rounded-lg"
+              className="w-full px-3 py-2 border rounded-lg disabled:bg-gray-100 disabled:text-gray-600"
             />
           </div>
           <div>

@@ -2,10 +2,11 @@
  * Project Chat context builder.
  * Ported from Python shared/project_chat.py build_chat_context().
  */
-import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { z } from 'zod';
 import { signCloudFrontUrl } from '../lib/cloudfront-signing.js';
-import { ConfigurationError, NotFoundError } from '../lib/errors.js';
+import { NotFoundError } from '../lib/errors.js';
+import { buildDocumentsContext, isPrototypeDocument } from './document-context.js';
 import { fetchRecentFeedback } from './recent-feedback.js';
 import { buildSinglePersonaPrompt } from './persona-prompt.js';
 import {
@@ -17,6 +18,7 @@ import {
 } from './persona-fields.js';
 import { getLanguageInstruction } from './language.js';
 import type { SupportedLanguage } from './language.js';
+import type { ProjectLoader } from './projects-client.js';
 
 // ── Avatar URL helpers ──
 
@@ -29,30 +31,74 @@ function stripTrailingSlashes(value: string): string {
   return value.endsWith('/') ? stripTrailingSlashes(value.slice(0, -1)) : value;
 }
 
+function trustedAvatarCdnUrl(url: string): string | undefined {
+  if (!AVATARS_CDN_URL) return undefined;
+  try {
+    const configured = new URL(stripTrailingSlashes(AVATARS_CDN_URL));
+    const candidate = new URL(url);
+    const pathPrefix = `${stripTrailingSlashes(configured.pathname)}/`;
+    if (
+      candidate.origin !== configured.origin
+      || !candidate.pathname.startsWith(pathPrefix)
+    ) return undefined;
+    return candidate.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+const CLOUDFRONT_AUTH_PARAMS = ['Expires', 'Signature', 'Key-Pair-Id'];
+
+function hasCurrentCloudFrontSignature(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (CLOUDFRONT_AUTH_PARAMS.some(
+      (name) => parsed.searchParams.getAll(name).length !== 1,
+    )) return false;
+    const expires = Number.parseInt(parsed.searchParams.get('Expires') ?? '', 10);
+    return Number.isSafeInteger(expires)
+      && expires > Math.floor(Date.now() / 1000)
+      && Boolean(parsed.searchParams.get('Signature'))
+      && Boolean(parsed.searchParams.get('Key-Pair-Id'));
+  } catch {
+    return false;
+  }
+}
+
+function withoutCloudFrontAuth(url: string): string | undefined {
+  try {
+    const parsed = new URL(url);
+    for (const name of CLOUDFRONT_AUTH_PARAMS) parsed.searchParams.delete(name);
+    return parsed.toString();
+  } catch {
+    return undefined;
+  }
+}
+
 /**
- * Turn the stored `s3://` URI into a SIGNED CloudFront URL (issue #229).
+ * Turn an avatar reference into one valid signed CloudFront URL.
  *
- * `/avatars/*` is restricted by a CloudFront trusted key group, so an unsigned
- * URL would 403 in the browser. Returning undefined when signing is
- * unavailable is deliberate — the SPA falls back to a gradient avatar, whereas
- * a bare URL would just be a broken image AND would mean we had handed out an
- * unauthenticated link.
- *
- * Stored persona rows hold the `s3://` form. The non-`s3://` branch exists for
- * legacy rows that already carry a CDN URL; those are signed as-is, since they
- * point at the same restricted behavior. Nothing is ever passed through
- * unsigned — an unsignable value yields undefined.
+ * The canonical Projects API already signs stored S3 avatar references. Keep a
+ * current, complete signature unchanged; signing it again would duplicate the
+ * reserved auth parameters and invalidate the resource. Legacy unsigned,
+ * partial, or expired CDN URLs are stripped of stale auth before re-signing.
  */
 async function resolveAvatarUrl(url: string | undefined): Promise<string | undefined> {
   if (!url) return undefined;
-  // Legacy rows may already hold a CDN URL. Sign it as-is; it points at the
-  // same restricted behavior.
-  if (!url.startsWith('s3://')) return signCloudFrontUrl(url);
-  if (!AVATARS_CDN_URL) return undefined;
+  if (!url.startsWith('s3://')) {
+    const trustedUrl = trustedAvatarCdnUrl(url);
+    if (!trustedUrl) return undefined;
+    if (hasCurrentCloudFrontSignature(trustedUrl)) return trustedUrl;
+    const unsignedUrl = withoutCloudFrontAuth(trustedUrl);
+    return unsignedUrl ? signCloudFrontUrl(unsignedUrl) : undefined;
+  }
   const parts = url.split('/');
   const filename = parts[parts.length - 1];
   if (!filename) return undefined;
-  return signCloudFrontUrl(`${stripTrailingSlashes(AVATARS_CDN_URL)}/${filename}`);
+  const trustedUrl = trustedAvatarCdnUrl(
+    `${stripTrailingSlashes(AVATARS_CDN_URL)}/${filename}`,
+  );
+  return trustedUrl ? signCloudFrontUrl(trustedUrl) : undefined;
 }
 
 interface ProjectChatContext {
@@ -143,6 +189,8 @@ const projectItemSchema = z.preprocess(nullsToUndefined, z.object({
   document_id: z.string().optional(),
   document_type: z.string().optional(),
   title: z.string().optional(),
+  base_title: z.string().optional(),
+  version: z.number().int().positive().optional(),
   content: z.string().optional(),
   feature_idea: z.string().optional(),
   question: z.string().optional(),
@@ -152,6 +200,15 @@ const projectItemSchema = z.preprocess(nullsToUndefined, z.object({
 export type ProjectItem = z.infer<typeof projectItemSchema>;
 
 // ── Item classification ──
+
+const DOCUMENT_SK_PREFIXES = [
+  'DOC#',
+  'RESEARCH#',
+  'PRD#',
+  'PRFAQ#',
+  'PRODUCT_REPORT#',
+  'PROTOTYPE#',
+];
 
 interface ClassifiedItems {
   project: ProjectItem | null;
@@ -165,8 +222,9 @@ function classifyItems(items: ProjectItem[]): ClassifiedItems {
     const sk = item.sk;
     if (sk === 'META') result.project = item;
     else if (sk.startsWith('PERSONA#')) result.personas.push(item);
-    else if (sk.startsWith('DOC#') || sk.startsWith('RESEARCH#') || sk.startsWith('PRD#') || sk.startsWith('PRFAQ#'))
+    else if (DOCUMENT_SK_PREFIXES.some((prefix) => sk.startsWith(prefix))) {
       result.documents.push(item);
+    }
   }
   return result;
 }
@@ -234,25 +292,6 @@ function buildPersonasContext(personas: ProjectItem[]): string {
   return `\n## 👤 ACTIVE PERSONAS (Respond from their perspective)\n${sections.join('\n')}`;
 }
 
-function buildDocumentsContext(
-  documents: ProjectItem[],
-  selectedDocumentIds: string[],
-): { selectedContent: string; otherDocsList: string[] } {
-  const selectedParts: string[] = [];
-  const otherDocsList: string[] = [];
-  for (const doc of documents) {
-    const docId = doc.document_id ?? '';
-    const docType = (doc.document_type ?? 'doc').toUpperCase();
-    const docTitle = doc.title ?? 'Untitled';
-    if (selectedDocumentIds.includes(docId)) {
-      selectedParts.push(`\n## 📄 DOCUMENT: ${docTitle} (${docType}) [ID: ${docId}]\n\n${doc.content ?? ''}\n\n---\n`);
-    } else {
-      otherDocsList.push(`- ${docType}: ${docTitle} [ID: ${docId}]`);
-    }
-  }
-  return { selectedContent: selectedParts.join(''), otherDocsList };
-}
-
 // ── Feedback fetching ──
 // Extracted to recent-feedback.ts (issue #220): the per-day partition walk,
 // batching, and failure-visibility logic live there. Covered end-to-end via
@@ -267,7 +306,7 @@ function assembleSystemPrompt(
   allPersonas: ProjectItem[],
   otherDocsList: string[],
   feedbackSection: string,
-  selectedDocumentIds: string[],
+  selectedTextDocuments: ProjectItem[],
   documents: ProjectItem[],
   responseLanguage?: SupportedLanguage,
 ): string {
@@ -297,21 +336,32 @@ function assembleSystemPrompt(
     parts.push(`## Available Personas (mention with @ to activate)\n${pNames.join(', ')}\n\n`);
   }
 
-  if (selectedDocumentIds.length > 0) {
-    const docTitles = documents.filter((d) => selectedDocumentIds.includes(d.document_id ?? '')).map((d) => d.title);
+  if (selectedTextDocuments.length > 0) {
+    const docTitles = selectedTextDocuments.map((document) => document.title);
     parts.push(`📄 IMPORTANT: The user has tagged the document(s): ${docTitles.join(', ')}\n`);
     parts.push('You MUST use the document content provided above to answer their question.\n\n');
   }
 
-  // Always tell the AI about document tools — it should be able to edit any project document
-  if (documents.length > 0) {
-    const allDocEntries = documents.map((d) => `- ${(d.document_type ?? 'doc').toUpperCase()}: ${d.title ?? 'Untitled'} [ID: ${d.document_id ?? ''}]`);
-    parts.push(`## 🛠️ Document Tools\n`);
-    parts.push(`You have access to the **update_document** tool to edit any project document and the **create_document** tool to create new ones.\n`);
-    parts.push(`When the user asks you to edit, modify, add to, or rewrite a document, use update_document with the document ID.\n`);
-    parts.push(`All project documents:\n${allDocEntries.join('\n')}\n\n`);
+  const editableDocuments = documents.filter((document) => !isPrototypeDocument(document));
+  const prototypes = documents.filter(isPrototypeDocument);
+  if (editableDocuments.length > 0) {
+    const editableEntries = editableDocuments.map(
+      (document) => `- ${(document.document_type ?? 'doc').toUpperCase()}: ${document.title ?? 'Untitled'} [ID: ${document.document_id ?? ''}]`,
+    );
+    parts.push('## 🛠️ Document Tools\n');
+    parts.push('You can use **update_document** for textual project documents and **create_document** for new custom documents.\n');
+    parts.push('Prototype HTML is not editable through update_document; use the prototype revision workflow instead.\n');
+    parts.push('Editable textual documents:\n');
+    parts.push(`${editableEntries.join('\n')}\n\n`);
   } else {
-    parts.push('You have access to the create_document tool to create new documents when the user asks.\n\n');
+    parts.push('You can use create_document to create new custom documents when the user asks.\n\n');
+  }
+  if (prototypes.length > 0) {
+    const prototypeEntries = prototypes.map(
+      (document) => `- PROTOTYPE: ${document.title ?? 'Untitled'} [ID: ${document.document_id ?? ''}]`,
+    );
+    parts.push('## Available Prototype Artifacts (metadata only; revise through the prototype workflow)\n');
+    parts.push(`${prototypeEntries.join('\n')}\n\n`);
   }
 
   parts.push('You also have access to the search_feedback tool to look up customer feedback when relevant.\n\n');
@@ -343,27 +393,18 @@ export interface RoundtableContext {
 
 export async function buildProjectChatContext(
   docClient: DynamoDBDocumentClient,
-  projectsTable: string,
+  loadProject: ProjectLoader,
   feedbackTable: string,
   projectId: string,
   message: string,
   selectedPersonaIds: string[] = [],
   selectedDocumentIds: string[] = [],
   responseLanguage?: SupportedLanguage,
+  callerSubject?: string,
 ): Promise<ProjectChatContext> {
-  if (!projectsTable) {
-    throw new ConfigurationError('Projects table not configured');
-  }
-
-  const resp = await docClient.send(
-    new QueryCommand({
-      TableName: projectsTable,
-      KeyConditionExpression: 'pk = :pk',
-      ExpressionAttributeValues: { ':pk': `PROJECT#${projectId}` },
-    }),
-  );
-
-  const rawItems = resp.Items ?? [];
+  const rawItems = callerSubject === undefined
+    ? await loadProject(projectId, selectedDocumentIds)
+    : await loadProject(projectId, selectedDocumentIds, callerSubject);
   if (rawItems.length === 0) {
     throw new NotFoundError('Project not found');
   }
@@ -376,10 +417,15 @@ export async function buildProjectChatContext(
   }
 
   const activePersonas = resolveActivePersonas(personas, selectedPersonaIds, message);
-  const { selectedContent, otherDocsList } = buildDocumentsContext(documents, selectedDocumentIds);
+  const {
+    selectedContent,
+    selectedTextDocuments,
+    otherDocsList,
+  } = buildDocumentsContext(documents, selectedDocumentIds);
 
-  // Only fetch feedback if no documents selected
-  const feedback = selectedDocumentIds.length === 0 && feedbackTable
+  // A selected prototype is metadata, not textual grounding. Fall back to
+  // recent feedback whenever no selected textual document supplied content.
+  const feedback = selectedTextDocuments.length === 0 && feedbackTable
     ? await fetchRecentFeedback(docClient, feedbackTable)
     : { count: 0, promptSection: '' };
 
@@ -390,7 +436,7 @@ export async function buildProjectChatContext(
     personas,
     otherDocsList,
     feedback.promptSection,
-    selectedDocumentIds,
+    selectedTextDocuments,
     documents,
     responseLanguage,
   );
@@ -401,7 +447,7 @@ export async function buildProjectChatContext(
   const metadata = {
     mentioned_personas: mentionedPersonas.map((p) => p.name),
     selected_personas: selectedPersonas.map((p) => p.name),
-    referenced_documents: documents.filter((d) => selectedDocumentIds.includes(d.document_id ?? '')).map((d) => d.title),
+    referenced_documents: selectedTextDocuments.map((document) => document.title),
     context: { feedback_count: feedback.count, persona_count: personas.length, document_count: documents.length },
   };
 
@@ -413,27 +459,18 @@ export async function buildProjectChatContext(
 
 export async function buildRoundtableContext(
   docClient: DynamoDBDocumentClient,
-  projectsTable: string,
+  loadProject: ProjectLoader,
   feedbackTable: string,
   projectId: string,
   message: string,
   selectedPersonaIds: string[] = [],
   selectedDocumentIds: string[] = [],
   responseLanguage?: SupportedLanguage,
+  callerSubject?: string,
 ): Promise<RoundtableContext> {
-  if (!projectsTable) {
-    throw new ConfigurationError('Projects table not configured');
-  }
-
-  const resp = await docClient.send(
-    new QueryCommand({
-      TableName: projectsTable,
-      KeyConditionExpression: 'pk = :pk',
-      ExpressionAttributeValues: { ':pk': `PROJECT#${projectId}` },
-    }),
-  );
-
-  const rawItems = resp.Items ?? [];
+  const rawItems = callerSubject === undefined
+    ? await loadProject(projectId, selectedDocumentIds)
+    : await loadProject(projectId, selectedDocumentIds, callerSubject);
   if (rawItems.length === 0) throw new NotFoundError('Project not found');
 
   const items = rawItems.map((raw) => projectItemSchema.parse(raw));
@@ -445,12 +482,19 @@ export async function buildRoundtableContext(
     ? personas.filter((p) => selectedPersonaIds.includes(p.persona_id ?? ''))
     : personas;
 
-  const { selectedContent, otherDocsList } = buildDocumentsContext(documents, selectedDocumentIds);
+  const {
+    selectedContent,
+    selectedTextDocuments,
+    otherDocsList,
+  } = buildDocumentsContext(documents, selectedDocumentIds);
 
-  const feedback = selectedDocumentIds.length === 0 && feedbackTable
+  const feedback = selectedTextDocuments.length === 0 && feedbackTable
     ? await fetchRecentFeedback(docClient, feedbackTable)
     : { count: 0, promptSection: '' };
 
+  const selectedTextDocumentIds = selectedTextDocuments
+    .map((document) => document.document_id)
+    .filter((documentId): documentId is string => typeof documentId === 'string');
   const projectName = project.name ?? 'Project';
 
   // Build per-persona prompts (initial — no previous responses yet).
@@ -464,7 +508,8 @@ export async function buildRoundtableContext(
       avatar_url: await resolveAvatarUrl(p.avatar_url),
       systemPrompt: buildSinglePersonaPrompt(
         projectName, p, selectedContent, otherDocsList,
-        feedback.promptSection, selectedDocumentIds, documents, [], responseLanguage,
+        feedback.promptSection, selectedTextDocumentIds, selectedTextDocuments,
+        [], responseLanguage,
       ),
     })),
   );
@@ -472,9 +517,15 @@ export async function buildRoundtableContext(
   const metadata = {
     roundtable: true,
     persona_count: activePersonas.length,
-    referenced_documents: documents.filter((d) => selectedDocumentIds.includes(d.document_id ?? '')).map((d) => d.title),
+    referenced_documents: selectedTextDocuments.map((document) => document.title),
     context: { feedback_count: feedback.count, persona_count: personas.length, document_count: documents.length },
   };
 
-  return { personas: roundtablePersonas, userMessage: message, metadata, selectedDocumentIds, documents };
+  return {
+    personas: roundtablePersonas,
+    userMessage: message,
+    metadata,
+    selectedDocumentIds: selectedTextDocumentIds,
+    documents,
+  };
 }

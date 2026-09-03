@@ -556,31 +556,28 @@ export type DocTypeFieldPinWouldSeeDrift = MustBeTrue<BothWays<GenerateDocumentB
 // @ts-expect-error the field is narrower than itself plus a member, so NOT equal
 export type DocTypeFieldPinWouldSeeNarrowing = MustBeTrue<BothWays<GenerateDocumentBody['doc_type'], DocType | 'not-a-doc-type'>>
 
+export type KnownProjectDocumentType =
+  | 'prd'
+  | 'prfaq'
+  | 'research'
+  | 'custom'
+  | 'product_report'
+  | 'prototype'
+
 export interface ProjectDocument {
   document_id: string
-  // ⚠️ A SUPERSET of `DocType`, RESTATED as literals rather than referencing it — which
-  // makes it a FIFTH edit a widening of `DocType` needs, stated here because no gate asks
-  // for it. The generator persists this field straight from `doc_type`
-  // (`'document_type': doc_type` at both save paths in
-  // `lambda/jobs/document_generator/handler.py`), so a widened `DocType` produces rows
-  // this union does not admit. Latent rather than absent: `tsc` is clean today only
-  // because nothing assigns a `DocType` into this field, and a one-line probe making the
-  // two meet is a TS2322 (measured).
-  //
-  // `DocType | 'research' | ...` would REMOVE the edit, and was tried. It is not
-  // available: `lambda/api/test/test_kiro_exportable_types_lockstep.py` parses THIS union
-  // as string literals to derive the full document-type set, and a referenced type makes
-  // it read zero members — loudly, but it fails. Teaching that parser to resolve
-  // `DocType` is a different contract's business (Kiro export inclusion, not this route's
-  // allowlist) and belongs beside it, so the ceiling is named here instead — the same
-  // call as the generator and picker ceilings in `lambda/api/test/test_doc_type_lockstep.py`.
-  //
-  // Superset deliberately: `research` and `custom` come from other routes,
-  // `product_report` and `prototype` from their own. So this is NOT a second copy of the
-  // route's contract and must not be pinned against `GENERATED_DOC_TYPES` — the same
-  // reason `suggestDocumentBrief` is left unbound.
-  document_type: 'prd' | 'prfaq' | 'research' | 'custom' | 'product_report' | 'prototype'
+  /**
+   * Runtime wire value. Unknown future types remain visible through fallback UI,
+   * while feature gates use KnownProjectDocumentType inventories explicitly.
+   */
+  document_type: string
+  /** Legacy DynamoDB sort key, retained for records awaiting metadata backfill. */
+  sk?: string
   title: string
+  /** User-supplied series title before the system-managed `(vN)` suffix. */
+  base_title?: string
+  /** Stable, monotonic version within this project/type/base-title series. */
+  version?: number
   // New (S3-only) HTML prototypes have NO `content` — the HTML lives at
   // `prototype_url` on CloudFront. Legacy prototypes (JSON specs, or
   // pre-migration HTML) and all non-prototype document types still use

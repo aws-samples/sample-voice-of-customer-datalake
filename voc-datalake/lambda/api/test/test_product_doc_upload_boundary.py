@@ -27,7 +27,16 @@ def _table(items: list[dict] | None = None) -> MagicMock:
     blow up in `_list_doc_items` for reasons unrelated to the test.
     """
     table = MagicMock()
+    table.name = 'test-projects'
     table.query.return_value = {'Items': items or []}
+
+    def transact_write_items(*, TransactItems):
+        for action in TransactItems:
+            if 'Put' in action:
+                table.put_item(Item=action['Put']['Item'])
+        return {}
+
+    table.meta.client.transact_write_items.side_effect = transact_write_items
     return table
 
 

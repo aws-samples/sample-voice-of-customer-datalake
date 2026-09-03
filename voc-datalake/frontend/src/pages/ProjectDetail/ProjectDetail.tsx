@@ -11,6 +11,7 @@ import {
   useParams, useNavigate,
 } from 'react-router-dom'
 import { projectsApi } from '../../api/projectsApi'
+import { isVersionManagedDocument } from '../../api/documentLineage'
 import { projectKey } from '../../api/projectQueryKeys'
 import { useConfigStore } from '../../store/configStore'
 import JobsSection from './JobsSection'
@@ -173,10 +174,11 @@ export default function ProjectDetail() {
 
   const handleSaveDocument = useCallback(() => {
     if (docModal.editingDoc) {
+      const managedTitle = isVersionManagedDocument(docModal.editingDoc)
       updateDocMut.mutate(
         {
           docId: docModal.editingDoc.document_id,
-          title: docModal.newDocTitle,
+          ...(managedTitle ? {} : { title: docModal.newDocTitle }),
           content: docModal.newDocContent,
         },
         { onSuccess: docModal.resetAfterSave },

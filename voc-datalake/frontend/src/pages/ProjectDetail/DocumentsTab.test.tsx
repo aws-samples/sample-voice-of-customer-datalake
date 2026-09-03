@@ -118,4 +118,61 @@ describe('DocumentsTab', () => {
     await user.click(screen.getByTitle('Delete document'))
     expect(onDeleteDoc).toHaveBeenCalledTimes(1)
   })
+
+  it('shows a prototype canonical title without generic edit or export controls', () => {
+    const onEditDoc = vi.fn()
+    const prototype: ProjectDocument = {
+      document_id: 'prototype-3',
+      document_type: 'prototype',
+      title: 'Checkout prototype (v3)',
+      base_title: 'Checkout prototype',
+      version: 3,
+      content: '<html><body>Checkout</body></html>',
+      prototype_format: 'html',
+      created_at: '2026-09-03T00:00:00Z',
+    }
+
+    renderWithRouter(
+      <DocumentsTab
+        {...defaultProps}
+        documents={[prototype]}
+        selectedDoc={prototype}
+        onEditDoc={onEditDoc}
+      />,
+    )
+
+    expect(screen.getByRole('heading', { level: 2, name: 'Checkout prototype (v3)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Checkout prototype \(v3\)/ })).toBeInTheDocument()
+    expect(screen.queryByTitle('Edit document')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /download options/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /open in new tab/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /download \.html/i })).toBeInTheDocument()
+    expect(screen.getByTitle('Delete document')).toBeInTheDocument()
+    expect(onEditDoc).not.toHaveBeenCalled()
+  })
+
+  it('keeps a dedicated download affordance for inline JSON prototypes', () => {
+    const prototype: ProjectDocument = {
+      document_id: 'prototype-json',
+      document_type: 'prototype',
+      title: 'Legacy prototype (v1)',
+      content: JSON.stringify({
+        title: 'Legacy prototype',
+        screens: [{ id: 'home', heading: 'Home' }],
+      }),
+      created_at: '2026-09-03T00:00:00Z',
+    }
+
+    renderWithRouter(
+      <DocumentsTab
+        {...defaultProps}
+        documents={[prototype]}
+        selectedDoc={prototype}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: /download \.json/i })).toBeInTheDocument()
+    expect(screen.queryByTitle('Edit document')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /download options/i })).not.toBeInTheDocument()
+  })
 })

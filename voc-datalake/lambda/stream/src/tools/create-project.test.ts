@@ -7,8 +7,16 @@ import { executeCreateProject } from './create-project.js';
 function createMockDocClient() {
   const puts: Record<string, unknown>[] = [];
   const client = {
-    send: vi.fn().mockImplementation((cmd: { input?: { Item?: Record<string, unknown> } }) => {
+    send: vi.fn().mockImplementation((cmd: {
+      input?: {
+        Item?: Record<string, unknown>
+        TransactItems?: Array<{ Put?: { Item?: Record<string, unknown> } }>
+      }
+    }) => {
       if (cmd?.input?.Item) puts.push(cmd.input.Item);
+      for (const item of cmd?.input?.TransactItems ?? []) {
+        if (item.Put?.Item) puts.push(item.Put.Item);
+      }
       return Promise.resolve({});
     }),
   } as unknown as import('@aws-sdk/lib-dynamodb').DynamoDBDocumentClient;

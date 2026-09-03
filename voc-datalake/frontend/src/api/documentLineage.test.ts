@@ -7,10 +7,35 @@
  * "numbered at all".
  */
 import { describe, it, expect } from 'vitest'
-import { ordinalByType, resolveRevision } from './documentLineage'
+import { isVersionManagedDocument, ordinalByType, resolveRevision } from './documentLineage'
 
 const OLDER = { document_id: 'zz_prd_old', document_type: 'prd', title: 'Spec', created_at: '2026-01-01T00:00:00Z' }
 const NEWER = { document_id: 'aa_prd_new', document_type: 'prd', title: 'Spec', created_at: '2026-06-01T00:00:00Z' }
+
+describe('isVersionManagedDocument', () => {
+  it.each(['prd', 'prfaq', 'prototype'])('recognizes the current %s type', (documentType) => {
+    expect(isVersionManagedDocument({ document_type: documentType })).toBe(true)
+  })
+
+  it.each(['PRD#legacy', 'PRFAQ#legacy', 'PROTOTYPE#legacy'])(
+    'recognizes the legacy %s sort-key prefix when type metadata is absent',
+    (sortKey) => {
+      expect(isVersionManagedDocument({ sk: sortKey })).toBe(true)
+    },
+  )
+
+  it.each([
+    { document_type: 'research' },
+    { document_type: 'custom' },
+    { document_type: 'product_report' },
+    { sk: 'RESEARCH#legacy' },
+    { sk: 'prototype#wrong-case' },
+    null,
+    [],
+  ])('does not classify an unmanaged or malformed value as managed', (document) => {
+    expect(isVersionManagedDocument(document)).toBe(false)
+  })
+})
 
 describe('ordinalByType', () => {
   it('numbers documents of a type oldest first, regardless of id order', () => {

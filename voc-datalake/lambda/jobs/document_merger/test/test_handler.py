@@ -25,8 +25,9 @@ class TestDocumentMergerHandler:
         self, mock_dynamodb, mock_jobs_table, mock_converse, merge_documents_event, lambda_context
     ):
         """Test that merge fails when less than 2 documents are selected."""
-        from jobs.document_merger.handler import lambda_handler
         from shared.exceptions import ServiceError
+
+        from jobs.document_merger.handler import lambda_handler
         
         # Only one document available
         mock_dynamodb['table'].query.return_value = {
@@ -91,8 +92,16 @@ class TestDocumentMergerHandler:
     ):
         """Test that personas are included in context when selected."""
         mock_items = [
-            {'sk': 'PRD#doc_1', 'document_id': 'doc_1', 'content': 'PRD content'},
-            {'sk': 'PRD#doc_2', 'document_id': 'doc_2', 'content': 'PRD content 2'},
+            {
+                'sk': 'PRD#doc_1', 'document_id': 'doc_1', 'document_type': 'prd',
+                'base_title': 'First PRD', 'version': 1,
+                'title': 'First PRD (v1)', 'content': 'PRD content',
+            },
+            {
+                'sk': 'PRD#doc_2', 'document_id': 'doc_2', 'document_type': 'prd',
+                'base_title': 'Second PRD', 'version': 1,
+                'title': 'Second PRD (v1)', 'content': 'PRD content 2',
+            },
             {'sk': 'PERSONA#persona_1', 'persona_id': 'persona_1', 'name': 'Test User', 'tagline': 'A test persona'},
         ]
         mock_dynamodb['table'].query.return_value = {'Items': mock_items}
@@ -122,3 +131,59 @@ class TestDocumentMergerHandler:
 
         call_kwargs = mock_converse.call_args.kwargs
         assert call_kwargs.get('max_tokens', 0) >= 12000
+
+
+    def test_prototype_output_type_is_rejected_before_model_work(
+        self, mock_dynamodb, mock_jobs_table, mock_converse,
+        merge_documents_event, mock_project_documents, lambda_context,
+    ):
+        """Prototype HTML remains generator-only, never a disguised custom merge."""
+        merge_documents_event['merge_config']['output_type'] = 'prototype'
+
+        from shared.exceptions import ServiceError
+
+        from jobs.document_merger.handler import lambda_handler
+
+        with pytest.raises(ServiceError, match='Document merge failed'):
+            lambda_handler(merge_documents_event, lambda_context)
+
+        mock_dynamodb['table'].query.assert_not_called()
+        mock_converse.assert_not_called()
+        assert mock_dynamodb['transactions'] == []
+
+
+@pytest.mark.parametrize('document_type', ['prd', 'prfaq'])
+def test_managed_merge_replay_returns_before_queries_or_model_work(
+    document_type,
+    mock_dynamodb,
+    mock_jobs_table,
+    mock_converse,
+    merge_documents_event,
+    lambda_context,
+):
+    from unittest.mock import patch
+
+    from jobs.document_merger import handler
+
+    merge_documents_event['merge_config']['output_type'] = document_type
+    existing = {
+        'document_id': f'{document_type}_existing',
+        'title': f'Merged {document_type.upper()} (v1)',
+    }
+    with patch.object(
+        handler,
+        'get_versioned_document_by_allocation',
+        return_value=existing,
+    ) as lookup:
+        result = handler.lambda_handler(merge_documents_event, lambda_context)
+
+    assert result == {'success': True, **existing}
+    lookup.assert_called_once_with(
+        mock_dynamodb['table'],
+        merge_documents_event['project_id'],
+        document_type,
+        merge_documents_event['job_id'],
+    )
+    mock_dynamodb['table'].query.assert_not_called()
+    mock_converse.assert_not_called()
+    assert mock_dynamodb['transactions'] == []

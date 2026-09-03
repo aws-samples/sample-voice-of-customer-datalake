@@ -2,6 +2,7 @@
 // Uses shared fetchApi from client.ts for consistent 401 retry + token refresh
 import { fetchApi } from './client'
 import { getDateBasisBodyParams } from './baseUrl'
+import { normalizeProjectDetail } from './projectDetailSchema'
 import type {
   Project, ProjectDetail, ProjectPersona, ProjectDocument, ProjectJob,
   ProductContext, ProductDoc, ProductInterviewTurnResponse,
@@ -27,7 +28,10 @@ export const projectsApi = {
       body: JSON.stringify(data),
     }),
 
-  getProject: (id: string) => fetchApi<ProjectDetail>(`/projects/${id}`),
+  getProject: async (id: string): Promise<ProjectDetail> => {
+    const raw = await fetchApi<unknown>(`/projects/${id}`)
+    return normalizeProjectDetail(raw)
+  },
 
   updateProject: (id: string, data: Partial<Project>) =>
     fetchApi<{ success: boolean }>(`/projects/${id}`, {
@@ -177,7 +181,7 @@ export const projectsApi = {
   createDocument: (projectId: string, data: {
     title: string;
     content: string;
-    document_type?: string
+    document_type?: 'custom'
   }) =>
     fetchApi<{
       success: boolean;

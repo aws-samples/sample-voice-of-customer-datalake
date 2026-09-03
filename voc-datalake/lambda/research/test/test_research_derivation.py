@@ -35,7 +35,26 @@ USED_SOURCES = [
 def mock_tables():
     mock_fb = MagicMock()
     mock_proj = MagicMock()
+    mock_proj.name = 'test-projects'
     mock_proj.query.return_value = {'Items': PROJECT_ITEMS}
+
+    def transact_write_items(*, TransactItems):
+        for action in TransactItems:
+            put = action.get('Put')
+            if put:
+                mock_proj.put_item(Item=put['Item'])
+            update = action.get('Update')
+            if update:
+                mock_proj.update_item(
+                    Key=update['Key'],
+                    UpdateExpression=update['UpdateExpression'],
+                    ExpressionAttributeValues=update.get(
+                        'ExpressionAttributeValues', {},
+                    ),
+                )
+        return {}
+
+    mock_proj.meta.client.transact_write_items.side_effect = transact_write_items
     with patch('research_step_handler._get_feedback_table', return_value=mock_fb), \
          patch('research_step_handler._get_projects_table', return_value=mock_proj):
         yield {'feedback': mock_fb, 'projects': mock_proj}
