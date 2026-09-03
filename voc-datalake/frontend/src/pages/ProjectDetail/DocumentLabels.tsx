@@ -1,7 +1,21 @@
 import clsx from 'clsx'
+import type { KnownProjectDocumentType } from '../../api/types'
 import type { DocumentOrdinal } from '../../api/documentLineage'
 
 type TFunc = (key: string, opts?: Record<string, unknown>) => string
+
+const DOCUMENT_TYPE_STYLES: Record<KnownProjectDocumentType, string> = {
+  prd: 'bg-blue-100 text-blue-700',
+  prfaq: 'bg-green-100 text-green-700',
+  research: 'bg-amber-100 text-amber-700',
+  custom: 'bg-purple-100 text-purple-700',
+  product_report: 'bg-indigo-100 text-indigo-700',
+  prototype: 'bg-orange-100 text-orange-700',
+}
+
+function isKnownDocumentType(type: string): type is KnownProjectDocumentType {
+  return Object.hasOwn(DOCUMENT_TYPE_STYLES, type)
+}
 
 /**
  * "2 of 3" for a document whose type has more than one.
@@ -26,14 +40,9 @@ export function DocumentOrdinalLabel({
 }
 
 export function DocumentTypeBadge({ type }: { readonly type: string }) {
-  const styles: Record<string, string> = {
-    prd: 'bg-blue-100 text-blue-700',
-    prfaq: 'bg-green-100 text-green-700',
-    custom: 'bg-purple-100 text-purple-700',
-    product_report: 'bg-indigo-100 text-indigo-700',
-    prototype: 'bg-orange-100 text-orange-700',
-  }
-  const style = styles[type] ?? 'bg-amber-100 text-amber-700'
+  const style = isKnownDocumentType(type)
+    ? DOCUMENT_TYPE_STYLES[type]
+    : 'bg-amber-100 text-amber-700'
 
   return (
     <span className={clsx('text-xs font-medium px-2 py-0.5 rounded', style)}>

@@ -151,10 +151,8 @@ describe('normalizeProjectDetail', () => {
     expect(warn).toHaveBeenCalledTimes(4)
     warn.mockRestore()
   })
-})
 
-
-test('preserves an unknown future document type instead of dropping the row', () => {
+  it('preserves an unknown future document type instead of dropping the row', () => {
   const result = normalizeProjectDetail(envelope([], [{
     document_id: 'future-1',
     document_type: 'decision_record',
@@ -167,4 +165,5 @@ test('preserves an unknown future document type instead of dropping the row', ()
       document_type: 'decision_record',
     }),
   ])
+})
 })

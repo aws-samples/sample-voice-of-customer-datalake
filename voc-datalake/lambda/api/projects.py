@@ -588,17 +588,18 @@ def _validated_chat_context_document_ids(raw: object) -> list[str]:
 
 @tracer.capture_method
 def _query_project_chat_items(project_id: str) -> list[dict]:
+    # `created_at` is load-bearing for normalize_document_versions: legacy rows
+    # without stored versions are ordered by creation time before chat summaries.
     query = {
         'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}'),
         'ConsistentRead': True,
         'ProjectionExpression': (
-            'pk, sk, project_id, #name, #status, #deleting, persona_id, '
+            'pk, sk, project_id, #name, #deleting, persona_id, '
             'tagline, quotes, goals_motivations, pain_points, avatar_url, '
             'document_id, #type, #title, base_title, #version, created_at'
         ),
         'ExpressionAttributeNames': {
             '#name': 'name',
-            '#status': 'status',
             '#deleting': PROJECT_DELETION_ATTRIBUTE,
             '#type': 'document_type',
             '#title': 'title',
@@ -617,6 +618,7 @@ def _query_project_chat_items(project_id: str) -> list[dict]:
         query['ExclusiveStartKey'] = cursor
 
 
+@tracer.capture_method
 def get_project_chat_context(
     project_id: str, selected_document_ids: object,
 ) -> dict:
@@ -806,6 +808,7 @@ def _start_project_deletion(
     raise ServiceError('Could not establish the project deletion fence. Please retry.')
 
 
+@tracer.capture_method
 def delete_project(project_id: str) -> dict:
     """Retain a tombstone while deleting every project-owned artifact."""
     if not projects_table:
@@ -2057,6 +2060,10 @@ def delete_document(
             not is_project_tombstone(current_meta)
             and _attempt + 1 < DOCUMENT_DELETE_ATTEMPTS
         ):
+            # The retry re-runs managed preparation intentionally: legacy
+            # migration is assignment/lease-idempotent and allocation-history
+            # preservation is conditional winner-checked. Both have focused
+            # replay tests in shared/test/test_document_versions.py.
             return delete_document(project_id, document_id, _attempt + 1)
         raise ServiceError(
             'Document could not be deleted because the project is being deleted '
