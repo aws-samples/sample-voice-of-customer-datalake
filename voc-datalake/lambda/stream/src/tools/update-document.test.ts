@@ -209,8 +209,15 @@ describe('executeCreateDocument', () => {
     expect(result.documentChange.action).toBe('created');
     expect(result.documentChange.title).toBe('New document');
     expect(result.documentChange.document_id).toMatch(/^doc_/);
-    // PutCommand + UpdateCommand (increment count)
-    expect(docClient.send).toHaveBeenCalledTimes(2);
+    expect(docClient.send).toHaveBeenCalledTimes(1);
+    expect(docClient.send).toHaveBeenCalledWith(expect.objectContaining({
+      input: expect.objectContaining({
+        TransactItems: expect.arrayContaining([
+          expect.objectContaining({ Put: expect.objectContaining({ Item: expect.any(Object) }) }),
+          expect.objectContaining({ Update: expect.any(Object) }),
+        ]),
+      }),
+    }));
   });
 
   it('accepts custom documents and refuses managed PRD types', async () => {
@@ -229,5 +236,42 @@ describe('executeCreateDocument', () => {
 
     expect(custom.documentChange.action).toBe('created');
     expect(managed.content).toContain('Invalid input');
+  });
+});
+
+describe('executeUpdateDocument prototype boundary', () => {
+  it.each([
+    {
+      name: 'canonical prototype type',
+      sk: 'DOC#prototype-1',
+      documentType: 'prototype',
+    },
+    {
+      name: 'legacy prototype sort key',
+      sk: 'PROTOTYPE#prototype-1',
+      documentType: undefined,
+    },
+  ])('rejects a $name before UpdateCommand', async ({ sk, documentType }) => {
+    const docClient = createMockDocClient(() => Promise.resolve({
+      Items: [{
+        pk: 'PROJECT#proj-1',
+        sk,
+        document_id: 'prototype-1',
+        document_type: documentType,
+        title: 'Prototype',
+      }],
+    }));
+
+    await expect(executeUpdateDocument(docClient, 'projects-table', 'proj-1', {
+      document_id: 'prototype-1',
+      content: '<html>changed</html>',
+      summary: 'changed prototype',
+    })).rejects.toMatchObject({
+      name: 'ValidationError',
+      message: expect.stringMatching(/prototype revision workflow/i),
+      statusCode: 400,
+    });
+
+    expect(docClient.send).toHaveBeenCalledTimes(1);
   });
 });

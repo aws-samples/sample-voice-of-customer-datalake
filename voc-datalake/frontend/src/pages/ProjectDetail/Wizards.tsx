@@ -486,10 +486,11 @@ interface MergeWizardProps {
 export function MergeWizard({
   personas, documents, contextConfig, mergeConfig, generating, onContextChange, onMergeConfigChange, onClose, onSubmit,
 }: MergeWizardProps) {
+  const { t } = useTranslation('projectDetail')
   const totalDocs = contextConfig.selectedDocumentIds.length + contextConfig.selectedResearchIds.length
   return (
     <DataSourceWizard
-      title="Remix Documents"
+      title={t('wizards.remixDocuments')}
       accentColor="green"
       icon={<div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center"><Shuffle size={20} className="text-green-600" /></div>}
       personas={personas}
@@ -501,7 +502,7 @@ export function MergeWizard({
       renderFinalStep={() => (
         <div className="space-y-6">
           <div>
-            <h3 className="font-medium mb-3">Output Document Type</h3>
+            <h3 className="font-medium mb-3">{t('wizards.outputDocType')}</h3>
             <div className="grid grid-cols-3 gap-3">
               {(['prfaq', 'prd', 'custom'] as const).map((type) => (
                 <button key={type} onClick={() => onMergeConfigChange({
@@ -514,23 +515,23 @@ export function MergeWizard({
             </div>
           </div>
           <div>
-            <h3 className="font-medium mb-3">New Document Title</h3>
+            <h3 className="font-medium mb-3">{t('wizards.newDocTitle')}</h3>
             <input type="text" value={mergeConfig.title} onChange={(e) => onMergeConfigChange({
               ...mergeConfig,
               title: e.target.value,
-            })} placeholder="e.g., Virtual Concierge" className="w-full px-3 py-2 border rounded-lg" />
+            })} placeholder={t('wizards.newDocTitlePlaceholder')} className="w-full px-3 py-2 border rounded-lg" />
           </div>
           <div>
-            <h3 className="font-medium mb-3">Remix Instructions</h3>
+            <h3 className="font-medium mb-3">{t('wizards.remixInstructions')}</h3>
             <textarea value={mergeConfig.instructions} onChange={(e) => onMergeConfigChange({
               ...mergeConfig,
               instructions: e.target.value,
-            })} placeholder="Describe how to remix..." rows={4} className="w-full px-3 py-2 border rounded-lg" />
+            })} placeholder={t('wizards.remixInstructionsPlaceholder')} rows={4} className="w-full px-3 py-2 border rounded-lg" />
           </div>
           <ContextSummary config={contextConfig} personas={personas} documents={documents} />
           {totalDocs < 2 && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-700">
-              ⚠️ Select at least 2 documents to remix.
+              {t('wizards.selectAtLeast2')}
             </div>
           )}
         </div>
@@ -539,7 +540,7 @@ export function MergeWizard({
       onClose={onClose}
       onSubmit={onSubmit}
       isSubmitting={generating === 'merge'}
-      submitLabel={<><Shuffle size={16} />Remix Documents</>}
+      submitLabel={<><Shuffle size={16} />{t('wizards.submitRemixDocuments')}</>}
     />
   )
 }

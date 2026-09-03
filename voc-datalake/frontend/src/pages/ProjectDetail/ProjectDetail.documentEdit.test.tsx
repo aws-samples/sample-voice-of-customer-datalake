@@ -51,6 +51,15 @@ const managedDocument: ProjectDocument = {
   created_at: '2026-09-01T10:00:00Z',
 }
 
+const legacyManagedDocument: ProjectDocument = {
+  document_id: 'legacy-prfaq-2',
+  document_type: 'custom',
+  sk: 'PRFAQ#legacy-prfaq-2',
+  title: 'Legacy launch (v2)',
+  content: '# Original legacy content',
+  created_at: '2026-09-01T10:00:00Z',
+}
+
 function renderPage() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -69,7 +78,9 @@ function renderPage() {
 describe('ProjectDetail managed document edits', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    useConfigStore.setState({ config: { apiEndpoint: 'https://api.example.com/v1' } })
+    useConfigStore.setState((state) => ({
+      config: { ...state.config, apiEndpoint: 'https://api.example.com/v1' },
+    }))
     mockGetProject.mockResolvedValue({
       project,
       personas: [],
@@ -109,5 +120,33 @@ describe('ProjectDetail managed document edits', () => {
     })
     expect(screen.getByRole('heading', { name: 'Launch (v2)', level: 2 }))
       .toBeInTheDocument()
+  })
+
+  it('uses the legacy managed sort key to protect the title and omit it from updates', async () => {
+    mockGetProject.mockResolvedValue({
+      project,
+      personas: [],
+      documents: [legacyManagedDocument],
+    })
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: /documents/i }))
+    await user.click(screen.getByRole('button', { name: /Legacy launch \(v2\)/ }))
+    await user.click(screen.getByTitle('Edit document'))
+
+    expect(screen.getByPlaceholderText('Document title...')).toBeDisabled()
+    const content = screen.getByPlaceholderText(/Write your document/)
+    await user.clear(content)
+    await user.type(content, '# Edited legacy content')
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+    await waitFor(() => {
+      expect(mockUpdateDocument).toHaveBeenCalledWith(
+        'proj-1',
+        'legacy-prfaq-2',
+        { content: '# Edited legacy content' },
+      )
+    })
   })
 })

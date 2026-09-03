@@ -2758,3 +2758,105 @@ describe('ChatStream canonical project delegation', () => {
     ]);
   });
 });
+
+
+describe('prototype object IAM boundaries', () => {
+  const StatementSchema = z.object({
+    Effect: z.string(),
+    Action: z.union([z.string(), z.array(z.string())]),
+    Resource: z.unknown(),
+  });
+  const PolicySchema = z.object({
+    Properties: z.object({
+      PolicyDocument: z.object({ Statement: z.array(StatementSchema) }),
+    }),
+  });
+
+  function statementsForRole(roleName: string): z.infer<typeof StatementSchema>[] {
+    const policies = apiTemplate().findResources('AWS::IAM::Policy');
+    const policy = Object.entries(policies).find(([logicalId]) => logicalId.includes(roleName));
+    expect(policy, `no IAM policy found for ${roleName}`).toBeDefined();
+    return PolicySchema.parse(policy?.[1]).Properties.PolicyDocument.Statement;
+  }
+
+  it('denies Data Explorer prototype writes without denying reads or other prefixes', () => {
+    const denies = statementsForRole('DataExplorerLambdaRole')
+      .filter((statement) => statement.Effect === 'Deny');
+
+    expect(denies).toHaveLength(1);
+    const actions = Array.isArray(denies[0].Action) ? denies[0].Action : [denies[0].Action];
+    expect(actions.sort()).toEqual(['s3:DeleteObject', 's3:PutObject']);
+    const resources = Array.isArray(denies[0].Resource)
+      ? denies[0].Resource
+      : [denies[0].Resource];
+    expect(resources).toHaveLength(1);
+    expect(JSON.stringify(resources[0])).toContain('prototypes/*');
+  });
+
+  it('keeps the document generator read-write grant scoped to prototype objects', () => {
+    const prototypeStatements = statementsForRole('DocumentGeneratorRole')
+      .filter((statement) => JSON.stringify(statement.Resource).includes('prototypes/*'));
+
+    expect(prototypeStatements.length).toBeGreaterThan(0);
+    const actions = new Set(prototypeStatements.flatMap((statement) => (
+      Array.isArray(statement.Action) ? statement.Action : [statement.Action]
+    )));
+    expect(actions).toContain('s3:GetObject*');
+    expect(actions).toContain('s3:PutObject');
+    expect(actions).toContain('s3:DeleteObject*');
+    expect(actions).not.toContain('s3:*');
+  });
+});
+
+
+function stateMachineDefinitionText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  const joined = z.object({
+    'Fn::Join': z.array(z.unknown()),
+  }).safeParse(value);
+  if (!joined.success) return '';
+  const pieces = joined.data['Fn::Join'][1];
+  if (!Array.isArray(pieces)) return '';
+  return pieces
+    .filter((piece): piece is string => typeof piece === 'string')
+    .join('');
+}
+
+function documentWorkflowDefinition(template: Template): string {
+  const resourceSchema = z.object({
+    Properties: z.object({
+      DefinitionString: z.unknown(),
+    }),
+  });
+  const machines = template.findResources('AWS::StepFunctions::StateMachine');
+  for (const resource of Object.values(machines)) {
+    const parsed = resourceSchema.safeParse(resource);
+    if (!parsed.success) continue;
+    const definition = stateMachineDefinitionText(
+      parsed.data.Properties.DefinitionString,
+    );
+    if (definition.includes('DocGather')) return definition;
+  }
+  throw new Error('Document workflow state machine was not synthesized');
+}
+
+describe('document workflow replay routing', () => {
+  const state: { definition: string } = { definition: '' };
+  beforeAll(() => {
+    state.definition = documentWorkflowDefinition(synthApiTemplate());
+  });
+
+  it('selects the replay marker from the gather Lambda result', () => {
+    expect(state.definition).toContain(
+      '"replayed.$":"$.Payload.replayed"',
+    );
+  });
+
+  it('completes committed replays and runs fresh allocations', () => {
+    expect(state.definition).toContain('"DocumentAlreadyGenerated"');
+    expect(state.definition).toContain(
+      '"Variable":"$.gathered.replayed","BooleanEquals":true,"Next":"DocComplete"',
+    );
+    expect(state.definition).toContain('"Default":"DocStep0"');
+  });
+});

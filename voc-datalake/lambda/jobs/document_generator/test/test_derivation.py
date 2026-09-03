@@ -344,3 +344,74 @@ class TestStepFunctionsPath:
             'visual_document_ids': [],
             'product_context_included': False,
         }
+
+
+class TestStepFunctionsReplay:
+    def test_gather_replay_completes_without_context_or_scratch_writes(
+        self,
+        mock_dynamodb,
+        mock_jobs_table,
+        mock_prompt_steps,
+        mock_s3,
+        sample_job_event,
+        lambda_context,
+    ):
+        from jobs.document_generator import handler
+
+        existing = {'document_id': 'prd_existing', 'title': 'Launch (v1)'}
+        with patch.object(
+            handler,
+            'get_versioned_document_by_allocation',
+            return_value=existing,
+        ):
+            gathered = handler.lambda_handler({
+                'step': 'gather',
+                **sample_job_event,
+                'doc_config': {
+                    'doc_type': 'prd',
+                    'title': 'Launch',
+                    'feature_idea': 'Improve launch',
+                },
+            }, lambda_context)
+
+        assert gathered == {
+            'doc_type': 'prd',
+            'title': 'Launch (v1)',
+            'feature_idea': 'Improve launch',
+            'num_steps': 0,
+            'replayed': True,
+        }
+        mock_dynamodb['table'].query.assert_not_called()
+        mock_prompt_steps['prd'].assert_not_called()
+        mock_s3.put_object.assert_not_called()
+        assert mock_dynamodb['transactions'] == []
+
+    def test_save_retry_returns_committed_allocation_before_scratch_reads(
+        self,
+        mock_dynamodb,
+        mock_jobs_table,
+        mock_s3,
+        sample_job_event,
+        lambda_context,
+    ):
+        from jobs.document_generator import handler
+
+        existing = {'document_id': 'prd_existing', 'title': 'Launch (v1)'}
+        with patch.object(
+            handler,
+            'get_versioned_document_by_allocation',
+            return_value=existing,
+        ):
+            result = handler.lambda_handler({
+                'step': 'save',
+                **sample_job_event,
+                'doc_type': 'prd',
+                'title': 'Launch',
+                'feature_idea': 'Improve launch',
+                'num_steps': 3,
+            }, lambda_context)
+
+        assert result == existing
+        mock_s3.get_object.assert_not_called()
+        mock_s3.delete_objects.assert_not_called()
+        assert mock_dynamodb['transactions'] == []

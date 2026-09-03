@@ -41,6 +41,7 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from boto3.dynamodb.conditions import Key
+from botocore.exceptions import ClientError
 
 from shared.logging import logger, tracer, metrics
 from shared.jobs import job_handler, JobContext, update_job_status
@@ -59,7 +60,11 @@ from shared.derivation import (
     build_derivation,
     derivation_source,
 )
-from shared.document_versions import persist_versioned_document
+from shared.document_versions import (
+    get_versioned_document_by_allocation,
+    persist_versioned_document,
+    versioned_document_id,
+)
 
 # Environment
 PROJECTS_TABLE = os.environ.get('PROJECTS_TABLE', '')
@@ -447,19 +452,40 @@ def _extract_html(raw: str) -> str:
     return s[start:end + len('</html>')].strip()
 
 
-def _put_prototype_html(project_id: str, doc_id: str, html: str) -> None:
-    """Write generated prototype HTML to S3 under the /prototypes/* prefix that
-    the frontendDistribution's second cache behavior serves (core-stack.ts).
-    Prototypes are S3-only — no DynamoDB `content` field is written for new
-    prototypes (see FEATURE-isolated-prototype-hosting.md); only `prototype_url`
-    is persisted on the ProjectDocument item.
+def _put_prototype_html(
+    project_id: str, doc_id: str, html: str,
+) -> dict[str, str]:
+    """Create immutable prototype HTML and return the winning S3 identity.
+
+    A replay may find the object created by an earlier attempt whose DynamoDB
+    transaction did not complete. Conditional conflicts therefore read the
+    existing winner instead of assuming the attempted content won.
     """
-    _s3().put_object(
-        Bucket=SCRATCH_BUCKET,
-        Key=prototype_s3_key(project_id, doc_id),
-        Body=html.encode('utf-8'),
-        ContentType='text/html; charset=utf-8',
-    )
+    s3 = _s3()
+    key = prototype_s3_key(project_id, doc_id)
+    try:
+        response = s3.put_object(
+            Bucket=SCRATCH_BUCKET,
+            Key=key,
+            Body=html.encode('utf-8'),
+            ContentType='text/html; charset=utf-8',
+            IfNoneMatch='*',
+        )
+    except ClientError as error:
+        code = error.response.get('Error', {}).get('Code')
+        if code not in {'PreconditionFailed', 'ConditionalRequestConflict'}:
+            raise
+        response = s3.head_object(Bucket=SCRATCH_BUCKET, Key=key)
+
+    etag = response.get('ETag') if isinstance(response, dict) else None
+    if not isinstance(etag, str) or not etag:
+        raise RuntimeError('S3 did not identify the winning prototype object.')
+
+    identity = {'prototype_etag': etag}
+    version_id = response.get('VersionId')
+    if isinstance(version_id, str) and version_id:
+        identity['prototype_version_id'] = version_id
+    return identity
 
 
 def _get_prototype_html(project_id: str, doc_id: str) -> str:
@@ -774,6 +800,17 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     """
     from shared.converse import converse
 
+    existing = get_versioned_document_by_allocation(
+        projects_table, project_id, 'prototype', job_id,
+    )
+    if existing is not None:
+        ctx.update_progress(100, 'saved')
+        return {
+            'document_id': existing['document_id'],
+            'title': existing['title'],
+        }
+    doc_id = versioned_document_id(project_id, 'prototype', job_id)
+
     # Aimable build: `source_prd_id`/`source_prfaq_id` name the documents to read.
     # Absent — every caller before this existed, and the Overview card when the
     # project has one of each — means the newest of that type, as it always did.
@@ -882,16 +919,23 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     if feedback:
         prior_html = ''
         if base is not None:
-            # New (S3-only) prototypes have no `content` field — read the HTML
-            # back from S3 via prototype_url instead. Old (pre-migration)
-            # prototypes still have `content` inline in DynamoDB; fall back to
-            # that so revising a pre-fix prototype still works.
-            if base.get('prototype_url'):
+            # New prototypes are S3-only and intentionally persist neither HTML
+            # nor a signed URL. Their stable document id always derives the S3
+            # key; legacy inline prototypes continue to fall back to `content`.
+            if base.get('prototype_format') == 'html' or base.get('prototype_url'):
                 try:
-                    prior_html = _get_prototype_html(project_id, base_prototype_id)
-                except Exception as e:
-                    logger.warning(f"Failed to read prior prototype HTML from S3: {e}")
+                    prior_html = _get_prototype_html(
+                        project_id, _document_id_of(base),
+                    )
+                except Exception as error:
                     prior_html = base.get('content', '')
+                    if not prior_html:
+                        raise RuntimeError(
+                            'Failed to read the base prototype HTML from S3.'
+                        ) from error
+                    logger.warning(
+                        f"Failed to read prior prototype HTML from S3; using legacy content: {error}"
+                    )
             else:
                 prior_html = base.get('content', '')
         # Cap the prior HTML so the prompt stays within budget; the model gets
@@ -936,27 +980,19 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
 
     ctx.update_progress(80, 'saving_prototype')
 
-    now_dt = datetime.now(timezone.utc)
-    now = now_dt.isoformat()
-    doc_id = f"prototype_{now_dt.strftime('%Y%m%d%H%M%S')}"
+    now = datetime.now(timezone.utc).isoformat()
 
-    # S3-only storage: the HTML is served directly from the /prototypes/* cache
-    # behavior (core-stack.ts), so DynamoDB only stores the URL, not the content
-    # itself. This also means the frontend's live preview, "Open in new tab",
-    # and "Download .html" never need the raw HTML in memory — they're all URL
-    # consumers now (no more Blob/createObjectURL indirection).
-    _put_prototype_html(project_id, doc_id, html)
+    # S3 remains first so a committed row never points at an object that was not
+    # written. The deterministic key and conditional put make an S3-only partial
+    # attempt safe to replay without overwriting its immutable artifact.
+    prototype_identity = _put_prototype_html(project_id, doc_id, html)
 
     ctx.update_progress(90, 'saving_document')
 
-    item = {
-        'pk': f'PROJECT#{project_id}',
-        'sk': f'PROTOTYPE#{doc_id}',
+    item_fields = {
+        **prototype_identity,
         'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
         'gsi1sk': now,
-        'document_id': doc_id,
-        'document_type': 'prototype',
-        'title': title,
         # NO prototype_url here. `/prototypes/*` is restricted by a CloudFront
         # trusted key group (issue #229), so a usable URL carries a signature
         # and an expiry — persisting one would bake in an expiry that outlives
@@ -1017,16 +1053,18 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
         # Deliberately NOT folded into `derivation`: "this replaces that" is a
         # different relation from "this was built from that" (a held product
         # decision), so the revision fields stay as they are.
-        item['revised_from_id'] = base_prototype_id or None
-        item['revision_feedback'] = feedback[:2000]
-    projects_table.put_item(Item=item)
-    projects_table.update_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'},
-        UpdateExpression='SET document_count = if_not_exists(document_count, :zero) + :one, updated_at = :now',
-        ExpressionAttributeValues={':one': 1, ':zero': 0, ':now': now},
+        item_fields['revised_from_id'] = base_prototype_id or None
+        item_fields['revision_feedback'] = feedback[:2000]
+    item = persist_versioned_document(
+        projects_table,
+        project_id,
+        'prototype',
+        title,
+        job_id,
+        item_fields,
     )
     ctx.update_progress(100, 'saved')
-    return {'document_id': doc_id, 'title': title}
+    return {'document_id': item['document_id'], 'title': item['title']}
 
 
 @job_handler(error_message='Document generation failed')
@@ -1081,6 +1119,15 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, doc_config: dict) 
     if doc_type == 'build_prototype':
         ctx.update_progress(20, 'loading_source_documents')
         return _generate_prototype(ctx, projects_table, project_id, job_id, doc_config)
+
+    existing = get_versioned_document_by_allocation(
+        projects_table, project_id, doc_type, job_id,
+    )
+    if existing is not None:
+        return {
+            'document_id': existing['document_id'],
+            'title': existing['title'],
+        }
 
     feedback_context, personas_context, inputs = _gather_context(
         ctx, projects_table, feedback_table, project_id, doc_config
@@ -1199,7 +1246,27 @@ def _build_steps(project_id: str, job_id: str, doc_config: dict) -> dict:
     ctx.update_progress(10, 'gathering_context')
 
     doc_type = doc_config.get('doc_type', 'prd')
+    title = doc_config.get('title', 'Untitled')
     feature_idea = doc_config.get('feature_idea', '')
+
+    existing = get_versioned_document_by_allocation(
+        projects_table, project_id, doc_type, job_id,
+    )
+    if existing is not None:
+        result = {
+            'document_id': existing['document_id'],
+            'title': existing['title'],
+        }
+        update_job_status(
+            project_id, job_id, 'completed', 100, 'complete', result=result,
+        )
+        return {
+            'doc_type': doc_type,
+            'title': existing['title'],
+            'feature_idea': feature_idea,
+            'num_steps': 0,
+            'replayed': True,
+        }
 
     feedback_context, personas_context, inputs = _gather_context(
         ctx, projects_table, feedback_table, project_id, doc_config
@@ -1233,9 +1300,10 @@ def _build_steps(project_id: str, job_id: str, doc_config: dict) -> dict:
     # scalars — no growing arrays — which keeps every state transition tiny.
     return {
         'doc_type': doc_type,
-        'title': doc_config.get('title', 'Untitled'),
+        'title': title,
         'feature_idea': feature_idea,
         'num_steps': len(chain_steps),
+        'replayed': False,
     }
 
 
@@ -1277,6 +1345,19 @@ def _assemble_and_save(project_id: str, job_id: str, doc_type: str, title: str,
     """save step: read step outputs from S3, assemble the document, persist."""
     dynamodb = get_dynamodb_resource()
     projects_table = dynamodb.Table(PROJECTS_TABLE)
+    existing = get_versioned_document_by_allocation(
+        projects_table, project_id, doc_type, job_id,
+    )
+    if existing is not None:
+        result = {
+            'document_id': existing['document_id'],
+            'title': existing['title'],
+        }
+        update_job_status(
+            project_id, job_id, 'completed', 100, 'complete', result=result,
+        )
+        return result
+
     JobContext(project_id, job_id).update_progress(90, 'saving_document')
 
     results = [_get_text(_scratch_key(job_id, f'result_{i}')) for i in range(num_steps)]
@@ -1386,7 +1467,7 @@ def lambda_handler(event: dict, context) -> dict:
 
     if step is None:
         # Legacy single-invocation path (prototype, product_report, or fallback).
-        return handle_job(event)
+        return handle_job(event, context)
 
     project_id = event['project_id']
     job_id = event['job_id']

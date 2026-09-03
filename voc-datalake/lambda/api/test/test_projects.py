@@ -195,8 +195,17 @@ class TestDeleteProject:
             query.kwargs['ProjectionExpression'] == 'pk, sk'
             for query in mock_table.query.call_args_list
         )
+        assert mock_table.update_item.call_count == 2
+        fence_call, complete_call = [
+            item.kwargs for item in mock_table.update_item.call_args_list
+        ]
+        assert fence_call['Key'] == {'pk': 'PROJECT#proj-1', 'sk': 'META'}
+        assert 'if_not_exists(#deleting, :now)' in fence_call['UpdateExpression']
+        assert 'REMOVE gsi1pk, gsi1sk' in fence_call['UpdateExpression']
+        assert complete_call['ExpressionAttributeValues'][':deleted'] == 'deleted'
+        assert 'deleted_at = if_not_exists' in complete_call['UpdateExpression']
+        assert mock_table.batch_writer.call_count == 2
         batch.delete_item.assert_has_calls([
-            call(Key={'pk': 'PROJECT#proj-1', 'sk': 'META'}),
             call(Key={'pk': 'PROJECT#proj-1', 'sk': 'PERSONA#p1'}),
             call(Key={
                 'pk': 'DOCUMENT_VERSIONS#PROJECT#proj-1', 'sk': 'PRD#counter',
@@ -206,6 +215,7 @@ class TestDeleteProject:
                 'sk': 'LEGACY_ASSIGNMENT#PRD#counter#d1',
             }),
         ])
+        mock_table.delete_item.assert_not_called()
 
     @patch('projects.projects_table', None)
     def test_returns_error_when_table_not_configured(self):
@@ -321,32 +331,44 @@ class TestGenerateAvatarPromptWithLlm:
 class TestDocumentVersionBoundaries:
     """Versioned PRD/PRFAQ behavior at the canonical project API boundary."""
 
+    @patch('shared.document_versions.time.sleep')
     @patch('projects.persist_legacy_document_versions')
     @patch('projects.projects_table')
-    def test_get_project_versions_legacy_same_title_documents_across_pages(
-        self, mock_table, mock_persist,
+    def test_get_project_canonically_versions_legacy_managed_documents_without_writes(
+        self, mock_table, mock_persist, mock_sleep,
     ):
-        from shared.document_versions import normalize_document_versions
-
-        mock_persist.side_effect = (
-            lambda _table, _project_id, documents: normalize_document_versions(documents)
-        )
         mock_table.query.side_effect = [
             {
                 'Items': [
                     {'pk': 'PROJECT#p1', 'sk': 'META', 'project_id': 'p1', 'name': 'Project'},
                     {
-                        'pk': 'PROJECT#p1', 'sk': 'PRD#old', 'document_id': 'old',
+                        'pk': 'PROJECT#p1', 'sk': 'PRD#old', 'document_id': 'prd-old',
                         'document_type': 'prd', 'title': 'Launch', 'created_at': '2026-01-01',
                     },
+                    {
+                        'pk': 'PROJECT#p1', 'sk': 'PRFAQ#old', 'document_id': 'faq-old',
+                        'document_type': 'prfaq', 'title': 'Launch FAQ', 'created_at': '2026-01-01',
+                    },
+                    {
+                        'pk': 'PROJECT#p1', 'sk': 'PROTOTYPE#old', 'document_id': 'prototype-old',
+                        'document_type': 'prototype', 'title': 'Launch App', 'created_at': '2026-01-01',
+                    },
                 ],
-                'LastEvaluatedKey': {'pk': 'PROJECT#p1', 'sk': 'PRD#old'},
+                'LastEvaluatedKey': {'pk': 'PROJECT#p1', 'sk': 'PROTOTYPE#old'},
             },
             {
                 'Items': [
                     {
-                        'pk': 'PROJECT#p1', 'sk': 'PRD#new', 'document_id': 'new',
+                        'pk': 'PROJECT#p1', 'sk': 'PRD#new', 'document_id': 'prd-new',
                         'document_type': 'prd', 'title': 'Launch', 'created_at': '2026-02-01',
+                    },
+                    {
+                        'pk': 'PROJECT#p1', 'sk': 'PRFAQ#new', 'document_id': 'faq-new',
+                        'document_type': 'prfaq', 'title': 'Launch FAQ', 'created_at': '2026-02-01',
+                    },
+                    {
+                        'pk': 'PROJECT#p1', 'sk': 'PROTOTYPE#new', 'document_id': 'prototype-new',
+                        'document_type': 'prototype', 'title': 'Launch App', 'created_at': '2026-02-01',
                     },
                 ],
             },
@@ -356,25 +378,39 @@ class TestDocumentVersionBoundaries:
 
         documents = get_project('p1')['documents']
 
-        assert [(document['title'], document['version']) for document in documents] == [
-            ('Launch (v1)', 1),
-            ('Launch (v2)', 2),
-        ]
-        assert all(document['base_title'] == 'Launch' for document in documents)
+        assert {
+            document['document_id']: (
+                document['base_title'], document['title'], document['version'],
+            )
+            for document in documents
+        } == {
+            'prd-old': ('Launch', 'Launch (v1)', 1),
+            'prd-new': ('Launch', 'Launch (v2)', 2),
+            'faq-old': ('Launch FAQ', 'Launch FAQ (v1)', 1),
+            'faq-new': ('Launch FAQ', 'Launch FAQ (v2)', 2),
+            'prototype-old': ('Launch App', 'Launch App (v1)', 1),
+            'prototype-new': ('Launch App', 'Launch App (v2)', 2),
+        }
         assert mock_table.query.call_count == 2
-        mock_persist.assert_called_once()
+        mock_persist.assert_not_called()
+        mock_sleep.assert_not_called()
+        mock_table.put_item.assert_not_called()
+        mock_table.update_item.assert_not_called()
+        mock_table.delete_item.assert_not_called()
+        mock_table.transact_write_items.assert_not_called()
+        mock_table.meta.client.transact_write_items.assert_not_called()
 
     @pytest.mark.parametrize('document_type', [
-        'prd', 'prfaq', 'PRD', 'research', 'custom ',
+        'prd', 'prfaq', 'prototype', 'research', 'product_report', 'PRD', 'custom ',
     ])
     @patch('projects.projects_table')
-    def test_custom_document_route_refuses_non_custom_types(
+    def test_custom_document_route_refuses_every_non_custom_type_with_workflow_guidance(
         self, mock_table, document_type,
     ):
         from projects import create_document
         from shared.exceptions import ValidationError
 
-        with pytest.raises(ValidationError, match='Only custom documents'):
+        with pytest.raises(ValidationError, match='dedicated route'):
             create_document('p1', {
                 'title': 'Launch',
                 'content': '# Document',
@@ -382,6 +418,189 @@ class TestDocumentVersionBoundaries:
             })
 
         mock_table.put_item.assert_not_called()
+        mock_table.update_item.assert_not_called()
+
+    @patch('projects.projects_table')
+    def test_custom_document_route_still_creates_custom_documents(self, mock_table):
+        mock_table.name = 'test-projects-table'
+        from projects import create_document
+
+        result = create_document('p1', {
+            'title': 'Operator notes',
+            'content': '# Notes',
+            'document_type': 'custom',
+        })
+
+        assert result['success'] is True
+        assert result['document']['document_type'] == 'custom'
+        assert result['document']['title'] == 'Operator notes'
+        assert result['document']['content'] == '# Notes'
+        assert result['document']['sk'].startswith('DOC#doc_')
+        transaction = mock_table.meta.client.transact_write_items.call_args.kwargs[
+            'TransactItems'
+        ]
+        assert transaction[0]['Put']['Item'] == result['document']
+        assert transaction[1]['Update']['ExpressionAttributeNames']['#count'] == (
+            'document_count'
+        )
+        assert 'attribute_not_exists(#deleting)' in transaction[1]['Update'][
+            'ConditionExpression'
+        ]
+
+    @pytest.mark.parametrize(('sk', 'document_type'), [
+        ('PRD#d1', 'prd'),
+        ('PRFAQ#d1', 'prfaq'),
+    ])
+    @patch('projects.projects_table')
+    def test_prd_and_prfaq_content_edits_remain_available(
+        self, mock_table, sk, document_type,
+    ):
+        mock_table.query.return_value = {
+            'Items': [{
+                'pk': 'PROJECT#p1', 'sk': sk, 'document_id': 'd1',
+                'document_type': document_type, 'base_title': 'Launch',
+                'title': 'Launch (v2)', 'version': 2,
+            }],
+        }
+
+        from projects import update_document
+
+        assert update_document('p1', 'd1', {'content': '# edited'}) == {
+            'success': True,
+        }
+        update_call = mock_table.update_item.call_args.kwargs
+        assert update_call['Key'] == {'pk': 'PROJECT#p1', 'sk': sk}
+        assert '#content = :content' in update_call['UpdateExpression']
+        assert update_call['ExpressionAttributeValues'][':content'] == '# edited'
+
+    @patch('projects.projects_table')
+    def test_prototype_content_is_refused_by_generic_update(self, mock_table):
+        mock_table.query.return_value = {
+            'Items': [{
+                'pk': 'PROJECT#p1', 'sk': 'PROTOTYPE#d1', 'document_id': 'd1',
+                'document_type': 'prototype', 'base_title': 'Launch App',
+                'title': 'Launch App (v2)', 'version': 2,
+            }],
+        }
+
+        from projects import update_document
+        from shared.exceptions import ValidationError
+
+        with pytest.raises(ValidationError, match='stored in S3'):
+            update_document('p1', 'd1', {'content': '<html>replacement</html>'})
+
+        mock_table.update_item.assert_not_called()
+
+    @patch('projects.projects_table')
+    def test_prototype_series_is_refused_by_generic_update(self, mock_table):
+        mock_table.query.return_value = {
+            'Items': [{
+                'pk': 'PROJECT#p1', 'sk': 'PROTOTYPE#d1', 'document_id': 'd1',
+                'document_type': 'prototype', 'base_title': 'Launch App',
+                'title': 'Launch App (v2)', 'version': 2,
+            }],
+        }
+
+        from projects import update_document
+        from shared.exceptions import ValidationError
+
+        with pytest.raises(ValidationError, match='cannot change series'):
+            update_document('p1', 'd1', {'title': 'Different App'})
+
+        mock_table.update_item.assert_not_called()
+
+    @patch('projects.preserve_versioned_document_allocation')
+    @patch('projects.persist_legacy_document_versions')
+    @patch('projects.projects_table')
+    def test_managed_delete_migrates_snapshot_and_preserves_generated_allocation(
+        self, mock_table, mock_persist, mock_preserve,
+    ):
+        target = {
+            'pk': 'PROJECT#p1', 'sk': 'PRD#generated', 'document_id': 'generated',
+            'document_type': 'prd', 'base_title': 'Launch', 'title': 'Launch (v2)',
+            'version': 2, 'version_allocation_id': 'allocation-2',
+        }
+        sibling = {
+            'pk': 'PROJECT#p1', 'sk': 'PRD#legacy', 'document_id': 'legacy',
+            'document_type': 'prd', 'title': 'Launch', 'created_at': '2026-01-01',
+        }
+        custom = {
+            'pk': 'PROJECT#p1', 'sk': 'DOC#notes', 'document_id': 'notes',
+            'document_type': 'custom', 'title': 'Notes',
+        }
+        mock_table.name = 'test-projects-table'
+        mock_table.query.return_value = {
+            'Items': [
+                {'pk': 'PROJECT#p1', 'sk': 'META'}, target, sibling, custom,
+            ],
+        }
+        events = MagicMock()
+        events.attach_mock(mock_persist, 'persist')
+        events.attach_mock(mock_preserve, 'preserve')
+        events.attach_mock(
+            mock_table.meta.client.transact_write_items,
+            'transact',
+        )
+
+        from projects import delete_document
+
+        assert delete_document('p1', 'generated') == {'success': True}
+        assert [event[0] for event in events.method_calls] == [
+            'persist', 'preserve', 'transact',
+        ]
+        mock_persist.assert_called_once_with(
+            mock_table, 'p1', [target, sibling, custom],
+        )
+        mock_preserve.assert_called_once_with(mock_table, 'p1', target)
+        transaction = mock_table.meta.client.transact_write_items.call_args.kwargs[
+            'TransactItems'
+        ]
+        assert transaction[0]['Delete']['Key'] == {
+            'pk': 'PROJECT#p1', 'sk': 'PRD#generated',
+        }
+        assert transaction[0]['Delete']['ExpressionAttributeValues'] == {
+            ':document_id': 'generated',
+        }
+        count_update = transaction[1]['Update']
+        assert count_update['Key'] == {'pk': 'PROJECT#p1', 'sk': 'META'}
+        assert 'document_count = document_count - :one' in count_update[
+            'UpdateExpression'
+        ]
+        assert 'attribute_not_exists(#deleting)' in count_update[
+            'ConditionExpression'
+        ]
+
+    @patch('projects.persist_legacy_document_versions')
+    @patch('projects.projects_table')
+    def test_conditional_delete_failure_never_decrements_document_count(
+        self, mock_table, _mock_persist,
+    ):
+        mock_table.name = 'test-projects-table'
+        mock_table.query.return_value = {
+            'Items': [{
+                'pk': 'PROJECT#p1', 'sk': 'PRFAQ#d1', 'document_id': 'd1',
+                'document_type': 'prfaq', 'title': 'Launch FAQ',
+            }],
+        }
+        mock_table.meta.client.transact_write_items.side_effect = ClientError(
+            {
+                'Error': {
+                    'Code': 'TransactionCanceledException',
+                    'Message': 'gone',
+                },
+            },
+            'TransactWriteItems',
+        )
+        mock_table.get_item.return_value = {}
+
+        from projects import delete_document
+        from shared.exceptions import NotFoundError
+
+        with pytest.raises(NotFoundError, match='no longer exists'):
+            delete_document('p1', 'd1')
+
+        mock_table.update_item.assert_not_called()
+        mock_table.delete_item.assert_not_called()
 
     @patch('projects.projects_table')
     def test_point_update_uses_projected_pages_and_stops_at_match(self, mock_table):
@@ -467,7 +686,7 @@ class TestDocumentVersionBoundaries:
         from projects import update_document
         from shared.exceptions import ValidationError
 
-        with pytest.raises(ValidationError, match='cannot be renamed'):
+        with pytest.raises(ValidationError, match='cannot change series'):
             update_document('p1', 'd1', {'title': 'Different series', 'content': '# edited'})
 
         mock_table.update_item.assert_not_called()
@@ -477,7 +696,7 @@ class TestProjectChatContext:
     """Bounded canonical context used by streaming project chat."""
 
     @patch('projects.get_project')
-    def test_returns_all_summaries_and_only_selected_content(self, mock_get_project):
+    def test_returns_redacted_summaries_and_never_inlines_prototypes(self, mock_get_project):
         families = [
             ('PRD#prd', 'prd'),
             ('PRFAQ#faq', 'prfaq'),
@@ -486,30 +705,48 @@ class TestProjectChatContext:
             ('PRODUCT_REPORT#report', 'product_report'),
             ('PROTOTYPE#prototype', 'prototype'),
         ]
+        documents = [
+            {
+                'sk': sk,
+                'document_id': document_type,
+                'document_type': document_type,
+                'title': f'{document_type} title',
+                'base_title': f'{document_type} title',
+                'version': 1,
+                'content': f'{document_type} body',
+                'large_internal_field': 'must not cross',
+            }
+            for sk, document_type in families
+        ]
+        documents[-1].update({
+            'prototype_url': 'https://signed.invalid/prototype.html?Signature=secret',
+            'prototype_s3_uri': 's3://raw/prototypes/p1/prototype.html',
+            'prototype_format': 'html',
+        })
         mock_get_project.return_value = {
-            'project': {'project_id': 'p1', 'name': 'Project'},
-            'personas': [{'persona_id': 'one', 'name': 'One'}],
-            'documents': [
-                {
-                    'sk': sk,
-                    'document_id': document_type,
-                    'document_type': document_type,
-                    'title': f'{document_type} title',
-                    'base_title': f'{document_type} title',
-                    'version': 1,
-                    'content': f'{document_type} body',
-                    'large_internal_field': 'must not cross',
-                }
-                for sk, document_type in families
-            ],
+            'project': {
+                'project_id': 'p1', 'sk': 'META', 'name': 'Project',
+                'description': 'internal project description',
+                'secret_config': 'must not cross',
+            },
+            'personas': [{
+                'persona_id': 'one', 'sk': 'PERSONA#one', 'name': 'One',
+                'tagline': 'Busy buyer', 'identity': {'email': 'secret@example.invalid'},
+            }],
+            'documents': documents,
         }
 
         from projects import get_project_chat_context
 
         result = get_project_chat_context(
-            'p1', ['prd', 'product_report', 'prd'],
+            'p1', ['prd', 'product_report', 'prototype', 'prd'],
         )
 
+        assert result['project'] == {'sk': 'META', 'name': 'Project'}
+        assert result['personas'] == [{
+            'sk': 'PERSONA#one', 'persona_id': 'one', 'name': 'One',
+            'tagline': 'Busy buyer',
+        }]
         assert [document['sk'] for document in result['documents']] == [
             sk for sk, _document_type in families
         ]
@@ -518,21 +755,26 @@ class TestProjectChatContext:
             for document in result['documents']
             if 'content' in document
         } == {'prd', 'product_report'}
-        assert {
-            document['document_id']: document.get('content')
-            for document in result['documents']
-        } == {
-            'prd': 'prd body',
-            'prfaq': None,
-            'research': None,
-            'custom': None,
-            'product_report': 'product_report body',
-            'prototype': None,
-        }
-        assert all(
-            'large_internal_field' not in document
-            for document in result['documents']
+        prototype = next(
+            document for document in result['documents']
+            if document['document_id'] == 'prototype'
         )
+        assert prototype == {
+            'sk': 'PROTOTYPE#prototype',
+            'document_id': 'prototype',
+            'document_type': 'prototype',
+            'title': 'prototype title',
+            'base_title': 'prototype title',
+            'version': 1,
+        }
+        serialized = json.dumps(result)
+        assert 'large_internal_field' not in serialized
+        assert 'prototype_url' not in serialized
+        assert 'prototype_s3_uri' not in serialized
+        assert 'prototype_format' not in serialized
+        assert 'Signature=secret' not in serialized
+        assert 'secret_config' not in serialized
+        assert 'secret@example.invalid' not in serialized
         mock_get_project.assert_called_once_with('p1')
 
     @pytest.mark.parametrize('project_id, selected_document_ids', [
@@ -555,3 +797,57 @@ class TestProjectChatContext:
             get_project_chat_context(project_id, selected_document_ids)
 
         mock_get_project.assert_not_called()
+
+
+@patch('projects.persist_legacy_document_versions')
+@patch('projects.projects_table')
+def test_document_delete_transaction_failure_preserves_document_and_count(
+    mock_table, _mock_persist,
+):
+    document = {
+        'pk': 'PROJECT#p1',
+        'sk': 'PRFAQ#d1',
+        'document_id': 'd1',
+        'document_type': 'prfaq',
+        'title': 'Launch FAQ',
+    }
+    mock_table.name = 'test-projects-table'
+    mock_table.query.return_value = {'Items': [document]}
+    mock_table.get_item.return_value = {'Item': document}
+    mock_table.meta.client.transact_write_items.side_effect = ClientError(
+        {
+            'Error': {
+                'Code': 'TransactionCanceledException',
+                'Message': 'META condition failed',
+            },
+        },
+        'TransactWriteItems',
+    )
+
+    from projects import delete_document
+    from shared.exceptions import ServiceError
+
+    with pytest.raises(ServiceError, match='document count is inconsistent'):
+        delete_document('p1', 'd1')
+
+    mock_table.delete_item.assert_not_called()
+    mock_table.update_item.assert_not_called()
+
+
+@patch('projects.projects_table')
+def test_retained_project_tombstone_is_not_read_as_a_project(mock_table):
+    mock_table.query.return_value = {
+        'Items': [{
+            'pk': 'PROJECT#p1',
+            'sk': 'META',
+            'project_id': 'p1',
+            'status': 'deleted',
+            'deletion_started_at': '2026-09-03T12:00:00+00:00',
+        }],
+    }
+
+    from projects import get_project
+    from shared.exceptions import NotFoundError
+
+    with pytest.raises(NotFoundError, match='metadata not found'):
+        get_project('p1')

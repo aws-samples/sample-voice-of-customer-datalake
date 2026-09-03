@@ -1,12 +1,13 @@
 /**
  * update_document and create_document tool implementations.
- * Allows the AI to edit or create project documents during chat.
+ * Allows the AI to edit textual project documents or create custom documents
+ * during chat. Prototype revisions stay on their dedicated S3-backed workflow.
  */
 import {
   DynamoDBDocumentClient,
   QueryCommand,
   UpdateCommand,
-  PutCommand,
+  TransactWriteCommand,
   type UpdateCommandInput,
 } from '@aws-sdk/lib-dynamodb';
 import { z } from 'zod';
@@ -46,8 +47,8 @@ export interface DocumentChange {
 
 // ── Helpers ──
 
-function isStringRecord(value: unknown): value is Record<string, string> {
-  return typeof value === 'object' && value !== null;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function getString(item: Record<string, unknown>, key: string, fallback = ''): string {
@@ -59,6 +60,46 @@ function hasManagedTitle(item: Record<string, unknown>, sk: string): boolean {
   const documentType = getString(item, 'document_type');
   return documentType === 'prd' || documentType === 'prfaq'
     || sk.startsWith('PRD#') || sk.startsWith('PRFAQ#');
+}
+
+interface DocumentUpdateTarget {
+  sk: string;
+  title: string;
+}
+
+function resolveDocumentUpdateTarget(
+  items: unknown[],
+  documentId: string,
+  requestedTitle: string | undefined,
+): DocumentUpdateTarget {
+  if (items.length === 0) {
+    throw new NotFoundError(`Document '${documentId}' not found in project`);
+  }
+
+  const document = items[0];
+  if (!isRecord(document)) throw new NotFoundError('Invalid document record');
+
+  const sk = getString(document, 'sk');
+  if (!sk) throw new NotFoundError('Invalid document record');
+
+  const isPrototype = getString(document, 'document_type') === 'prototype'
+    || sk.startsWith('PROTOTYPE#');
+  if (isPrototype) {
+    throw new ValidationError(
+      'Prototype HTML is stored in S3 and cannot be edited with update_document. '
+      + 'Use the prototype revision workflow.',
+    );
+  }
+  if (hasManagedTitle(document, sk) && requestedTitle !== undefined) {
+    throw new ValidationError(
+      'Versioned PRD and PR/FAQ titles cannot be renamed. Generate a new document to start a new titled series.',
+    );
+  }
+
+  return {
+    sk,
+    title: requestedTitle ?? getString(document, 'title', 'Untitled'),
+  };
 }
 
 function isConditionalFailure(error: unknown): boolean {
@@ -114,19 +155,7 @@ export async function executeUpdateDocument(
 
   const items = resp.Items ?? [];
   console.log(`update_document: queried PROJECT#${projectId} for doc ${documentId}, found ${items.length} items`);
-  if (items.length === 0) {
-    throw new NotFoundError(`Document '${documentId}' not found in project`);
-  }
-
-  const doc = items[0];
-  if (!isStringRecord(doc)) throw new NotFoundError('Invalid document record');
-  const sk = getString(doc, 'sk');
-  if (hasManagedTitle(doc, sk) && title !== undefined) {
-    throw new ValidationError(
-      'Versioned PRD and PR/FAQ titles cannot be renamed. Generate a new document to start a new titled series.',
-    );
-  }
-  const docTitle = title ?? getString(doc, 'title', 'Untitled');
+  const { sk, title: documentTitle } = resolveDocumentUpdateTarget(items, documentId, title);
   const now = new Date().toISOString();
 
   // Build update expression
@@ -156,10 +185,10 @@ export async function executeUpdateDocument(
   });
 
   return {
-    content: `Successfully updated document "${docTitle}". Changes: ${summary}`,
+    content: `Successfully updated document "${documentTitle}". Changes: ${summary}`,
     documentChange: {
       document_id: documentId,
-      title: docTitle,
+      title: documentTitle,
       action: 'updated',
       summary,
     },
@@ -188,31 +217,45 @@ export async function executeCreateDocument(
   const now = new Date().toISOString();
   const docId = `doc_${now.replaceAll(/[-:T.Z]/g, '').slice(0, 14)}`;
 
+  const item = {
+    pk: `PROJECT#${projectId}`,
+    sk: `DOC#${docId}`,
+    gsi1pk: `PROJECT#${projectId}#DOCUMENTS`,
+    gsi1sk: now,
+    document_id: docId,
+    document_type: docType,
+    title,
+    content,
+    created_at: now,
+    updated_at: now,
+  };
   await docClient.send(
-    new PutCommand({
-      TableName: projectsTable,
-      Item: {
-        pk: `PROJECT#${projectId}`,
-        sk: `DOC#${docId}`,
-        gsi1pk: `PROJECT#${projectId}#DOCUMENTS`,
-        gsi1sk: now,
-        document_id: docId,
-        document_type: docType,
-        title,
-        content,
-        created_at: now,
-        updated_at: now,
-      },
-    }),
-  );
-
-  // Increment document count
-  await docClient.send(
-    new UpdateCommand({
-      TableName: projectsTable,
-      Key: { pk: `PROJECT#${projectId}`, sk: 'META' },
-      UpdateExpression: 'SET document_count = document_count + :one, updated_at = :now',
-      ExpressionAttributeValues: { ':one': 1, ':now': now },
+    new TransactWriteCommand({
+      TransactItems: [
+        {
+          Put: {
+            TableName: projectsTable,
+            Item: item,
+            ConditionExpression: 'attribute_not_exists(pk) AND attribute_not_exists(sk)',
+          },
+        },
+        {
+          Update: {
+            TableName: projectsTable,
+            Key: { pk: `PROJECT#${projectId}`, sk: 'META' },
+            UpdateExpression: (
+              'SET document_count = if_not_exists(document_count, :zero) + :one, '
+              + 'updated_at = :now'
+            ),
+            ConditionExpression: (
+              'attribute_exists(pk) AND attribute_exists(sk) '
+              + 'AND attribute_not_exists(#deleting)'
+            ),
+            ExpressionAttributeNames: { '#deleting': 'deletion_started_at' },
+            ExpressionAttributeValues: { ':zero': 0, ':one': 1, ':now': now },
+          },
+        },
+      ],
     }),
   );
 

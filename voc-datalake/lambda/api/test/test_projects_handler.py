@@ -1334,3 +1334,135 @@ class TestProjectChatContextEndpoint:
         assert response['statusCode'] == 413
         assert 'fewer or smaller documents' in body['message']
         assert len(json.dumps(response).encode('utf-8')) < 1024
+
+
+class TestManagedDocumentTitleBoundaries:
+    @staticmethod
+    def _post(
+        api_gateway_event,
+        lambda_context,
+        path,
+        body,
+        path_params=None,
+    ):
+        from projects_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='POST',
+            path=path,
+            path_params=path_params or {'project_id': 'proj-123'},
+            body=body,
+        )
+        with (
+            patch(
+                'projects_handler.create_job',
+                return_value=('job-1', {}),
+            ) as mock_create_job,
+            patch('projects_handler.invoke_lambda_async') as mock_invoke,
+        ):
+            response = lambda_handler(event, lambda_context)
+        return response, mock_create_job, mock_invoke
+
+    @pytest.mark.parametrize('document_type', ['prd', 'prfaq'])
+    def test_generation_canonicalizes_title_before_job_creation(
+        self, api_gateway_event, lambda_context, document_type,
+    ):
+        response, create_job, invoke = self._post(
+            api_gateway_event,
+            lambda_context,
+            '/projects/proj-123/document',
+            {
+                'doc_type': document_type,
+                'title': '  Checkout   Ｐlan （Ｖ７） ',
+            },
+        )
+
+        assert json.loads(response['body'])['success'] is True
+        config = create_job.call_args.args[3]
+        assert config['title'] == 'Checkout Plan'
+        assert invoke.call_args.args[1]['doc_config']['title'] == 'Checkout Plan'
+
+    @pytest.mark.parametrize('bad_title', [None, [], {}, 7, True, '   '])
+    def test_generation_rejects_invalid_title_before_job_creation(
+        self, api_gateway_event, lambda_context, bad_title,
+    ):
+        response, create_job, invoke = self._post(
+            api_gateway_event,
+            lambda_context,
+            '/projects/proj-123/document',
+            {'doc_type': 'prd', 'title': bad_title},
+        )
+
+        assert response['statusCode'] == 400
+        create_job.assert_not_called()
+        invoke.assert_not_called()
+
+    @pytest.mark.parametrize('document_type', ['prd', 'prfaq'])
+    def test_managed_merge_canonicalizes_title_before_job_creation(
+        self, api_gateway_event, lambda_context, document_type,
+    ):
+        response, create_job, invoke = self._post(
+            api_gateway_event,
+            lambda_context,
+            '/projects/proj-123/documents/merge',
+            {
+                'output_type': document_type,
+                'title': '  Checkout   Ｐlan （Ｖ７） ',
+                'selected_document_ids': ['a', 'b'],
+            },
+        )
+
+        assert json.loads(response['body'])['success'] is True
+        config = create_job.call_args.args[3]
+        assert config['title'] == 'Checkout Plan'
+        assert invoke.call_args.args[1]['merge_config']['title'] == 'Checkout Plan'
+
+    @pytest.mark.parametrize('bad_title', [None, [], {}, 7, True, '   '])
+    def test_managed_merge_rejects_invalid_title_before_job_creation(
+        self, api_gateway_event, lambda_context, bad_title,
+    ):
+        response, create_job, invoke = self._post(
+            api_gateway_event,
+            lambda_context,
+            '/projects/proj-123/documents/merge',
+            {'output_type': 'prd', 'title': bad_title},
+        )
+
+        assert response['statusCode'] == 400
+        create_job.assert_not_called()
+        invoke.assert_not_called()
+
+    def test_custom_merge_title_remains_unmanaged(
+        self, api_gateway_event, lambda_context,
+    ):
+        raw_title = '  Operator Notes (v7) '
+        response, create_job, invoke = self._post(
+            api_gateway_event,
+            lambda_context,
+            '/projects/proj-123/documents/merge',
+            {'output_type': 'custom', 'title': raw_title},
+        )
+
+        assert json.loads(response['body'])['success'] is True
+        assert create_job.call_args.args[3]['title'] == raw_title
+        assert invoke.call_args.args[1]['merge_config']['title'] == raw_title
+
+
+    @pytest.mark.parametrize(
+        'bad_output_type',
+        ['prototype', 'pdf', '', [], {}, 7, True],
+    )
+    def test_merge_rejects_unknown_or_non_string_output_type_before_job_creation(
+        self, api_gateway_event, lambda_context, bad_output_type,
+    ):
+        response, create_job, invoke = self._post(
+            api_gateway_event,
+            lambda_context,
+            '/projects/proj-123/documents/merge',
+            {'output_type': bad_output_type, 'title': 'Notes'},
+        )
+
+        assert response['statusCode'] == 400
+        assert 'output_type' in json.loads(response['body'])['error']
+        create_job.assert_not_called()
+        invoke.assert_not_called()

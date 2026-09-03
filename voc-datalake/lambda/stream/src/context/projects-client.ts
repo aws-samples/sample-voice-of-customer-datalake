@@ -12,19 +12,37 @@ import {
   ValidationError,
 } from '../lib/errors.js';
 
+const nullableString = z.string().nullish();
+
+const projectSchema = z.object({
+  sk: z.literal('META'),
+  name: nullableString,
+});
+
+const personaSchema = z.object({
+  sk: z.string(),
+  persona_id: nullableString,
+  name: nullableString,
+  tagline: nullableString,
+  quotes: z.array(z.unknown()).nullish(),
+  goals_motivations: z.record(z.unknown()).nullish(),
+  pain_points: z.record(z.unknown()).nullish(),
+  avatar_url: nullableString,
+});
+
 const projectDocumentSchema = z.object({
   sk: z.string(),
-  document_id: z.string().optional(),
-  document_type: z.string().optional(),
-  title: z.string().optional(),
-  base_title: z.string().optional(),
-  version: z.number().int().positive().optional(),
-  content: z.string().optional(),
+  document_id: nullableString,
+  document_type: nullableString,
+  title: nullableString,
+  base_title: nullableString,
+  version: z.number().int().positive().nullish(),
+  content: nullableString,
 });
 
 const projectPayloadSchema = z.object({
-  project: z.record(z.unknown()),
-  personas: z.array(z.record(z.unknown())),
+  project: projectSchema,
+  personas: z.array(personaSchema),
   documents: z.array(projectDocumentSchema),
 });
 
@@ -33,6 +51,10 @@ const proxyResponseSchema = z.object({
   body: z.string().optional(),
 });
 
+const callerSubjectSchema = z.string().refine(
+  (value) => value.trim().length > 0,
+  'Authenticated user subject is required for project chat',
+);
 const errorBodySchema = z.object({ message: z.string().optional() }).passthrough();
 const decoder = new TextDecoder();
 const encoder = new TextEncoder();
@@ -40,6 +62,7 @@ const encoder = new TextEncoder();
 export type ProjectLoader = (
   projectId: string,
   selectedDocumentIds: string[],
+  callerSubject?: string,
 ) => Promise<unknown[]>;
 
 interface LambdaInvoker {
@@ -49,6 +72,7 @@ interface LambdaInvoker {
 function proxyEvent(
   projectId: string,
   selectedDocumentIds: string[],
+  callerSubject: string,
 ): Record<string, unknown> {
   const path = `/projects/${encodeURIComponent(projectId)}/chat-context`;
   return {
@@ -60,7 +84,7 @@ function proxyEvent(
     body: JSON.stringify({ selected_document_ids: selectedDocumentIds }),
     headers: { 'Content-Type': 'application/json' },
     requestContext: {
-      authorizer: { claims: { sub: 'chat-stream' } },
+      authorizer: { claims: { sub: callerSubject } },
       stage: 'v1',
     },
     isBase64Encoded: false,
@@ -106,14 +130,20 @@ export function createProjectsLambdaLoader(
   return async (
     projectId: string,
     selectedDocumentIds: string[],
+    callerSubject?: string,
   ): Promise<unknown[]> => {
     if (!functionName) throw new ConfigurationError('Projects function not configured');
+
+    const parsedSubject = callerSubjectSchema.safeParse(callerSubject);
+    if (!parsedSubject.success) {
+      throw new ValidationError(parsedSubject.error.issues[0]?.message ?? 'Invalid caller subject');
+    }
 
     const response = await client.send(new InvokeCommand({
       FunctionName: functionName,
       InvocationType: 'RequestResponse',
       Payload: encoder.encode(JSON.stringify(
-        proxyEvent(projectId, selectedDocumentIds),
+        proxyEvent(projectId, selectedDocumentIds, parsedSubject.data),
       )),
     }));
     if (response.FunctionError) {

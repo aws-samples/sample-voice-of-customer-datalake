@@ -510,7 +510,7 @@
     "generatePrfaq": "PR-FAQ 생성",
     "generatePrfaqTitle": "PR-FAQ 생성",
     "newDocTitle": "새 문서 제목",
-    "newDocTitlePlaceholder": "예: Virtual Concierge PRD v2",
+    "newDocTitlePlaceholder": "예: Virtual Concierge PRD",
     "outputDocType": "출력 문서 유형",
     "personaCount": "페르소나 수: {{count}}",
     "prd": "PRD",

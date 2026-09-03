@@ -26,7 +26,21 @@ describe('createProjectsLambdaLoader', () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it('posts selected IDs and returns only the bounded canonical row shape', async () => {
+  it.each([undefined, '', '   '])(
+    'refuses a missing or blank caller subject before invocation: %j',
+    async (callerSubject) => {
+      const send = vi.fn<(command: InvokeCommand) => Promise<InvocationResponse>>();
+      const loadProject = createProjectsLambdaLoader({ send }, 'voc-projects-api');
+
+      await expect(loadProject('p1', [], callerSubject)).rejects.toMatchObject({
+        name: 'ValidationError',
+        statusCode: 400,
+      });
+      expect(send).not.toHaveBeenCalled();
+    },
+  );
+
+  it('posts selected IDs with the exact caller subject and returns bounded canonical rows', async () => {
     const canonicalDocument = {
       sk: 'PRD#d2',
       document_id: 'd2',
@@ -36,6 +50,17 @@ describe('createProjectsLambdaLoader', () => {
       title: 'Launch (v2)',
       content: '# Launch',
     };
+    const canonicalPersona = {
+      sk: 'PERSONA#one',
+      persona_id: 'one',
+      name: 'Builder',
+      tagline: 'Ships products',
+      quotes: [{ text: 'Make it useful' }],
+      goals_motivations: { primary_goal: 'Ship' },
+      pain_points: { current_challenges: ['Delay'] },
+      avatar_url: null,
+    };
+    const callerSubject = 'cognito-user-42';
     const send = vi.fn((command: InvokeCommand): Promise<InvocationResponse> => {
       expect(command.input.FunctionName).toBe('voc-projects-api');
       expect(command.input.InvocationType).toBe('RequestResponse');
@@ -47,22 +72,37 @@ describe('createProjectsLambdaLoader', () => {
         path: '/projects/p1/chat-context',
         pathParameters: { project_id: 'p1' },
         body: JSON.stringify({ selected_document_ids: ['d2'] }),
-        requestContext: { authorizer: { claims: { sub: 'chat-stream' } } },
+        requestContext: { authorizer: { claims: { sub: callerSubject } } },
       });
+      expect(JSON.stringify(event)).not.toContain('chat-stream');
       return Promise.resolve(proxyResponse(200, {
-        project: { pk: 'PROJECT#p1', sk: 'META', project_id: 'p1' },
-        personas: [{ pk: 'PROJECT#p1', sk: 'PERSONA#one', persona_id: 'one' }],
-        documents: [{ ...canonicalDocument, unexpected_blob: 'must not cross' }],
+        project: {
+          pk: 'PROJECT#p1',
+          sk: 'META',
+          project_id: 'p1',
+          name: 'Launch project',
+          unexpected_project_field: 'must not cross',
+        },
+        personas: [{
+          pk: 'PROJECT#p1',
+          ...canonicalPersona,
+          unexpected_persona_field: 'must not cross',
+        }],
+        documents: [{
+          pk: 'PROJECT#p1',
+          ...canonicalDocument,
+          unexpected_document_field: 'must not cross',
+        }],
       }));
     });
 
     const rows = await createProjectsLambdaLoader(
       { send }, 'voc-projects-api',
-    )('p1', ['d2']);
+    )('p1', ['d2'], callerSubject);
 
     expect(rows).toStrictEqual([
-      { pk: 'PROJECT#p1', sk: 'META', project_id: 'p1' },
-      { pk: 'PROJECT#p1', sk: 'PERSONA#one', persona_id: 'one' },
+      { sk: 'META', name: 'Launch project' },
+      canonicalPersona,
       canonicalDocument,
     ]);
   });
@@ -73,7 +113,7 @@ describe('createProjectsLambdaLoader', () => {
     ));
     const loadProject = createProjectsLambdaLoader({ send }, 'voc-projects-api');
 
-    await expect(loadProject('missing', [])).rejects.toMatchObject({
+    await expect(loadProject('missing', [], 'cognito-user-42')).rejects.toMatchObject({
       name: 'NotFoundError',
       message: 'Project not found',
       statusCode: 404,
@@ -86,7 +126,7 @@ describe('createProjectsLambdaLoader', () => {
     ));
     const loadProject = createProjectsLambdaLoader({ send }, 'voc-projects-api');
 
-    await expect(loadProject('p1', ['large'])).rejects.toMatchObject({
+    await expect(loadProject('p1', ['large'], 'cognito-user-42')).rejects.toMatchObject({
       name: 'ValidationError',
       message: 'Select fewer or smaller documents.',
       statusCode: 400,
@@ -99,7 +139,7 @@ describe('createProjectsLambdaLoader', () => {
     ));
     const loadProject = createProjectsLambdaLoader({ send }, 'voc-projects-api');
 
-    await expect(loadProject('p1', [])).rejects.toThrow(
+    await expect(loadProject('p1', [], 'cognito-user-42')).rejects.toThrow(
       'Projects API returned an invalid project',
     );
   });

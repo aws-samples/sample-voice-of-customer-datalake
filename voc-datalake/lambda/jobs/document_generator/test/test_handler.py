@@ -413,7 +413,15 @@ class TestBuildPrototype:
                 return {'Item': {'name': 'My Project'}}
             if sk.startswith('PROTOTYPE#'):
                 # New-style item: prototype_url present, no inline `content`.
-                return {'Item': {'prototype_url': 'https://cdn.example.com/prototypes/proj_20250101120000/prototype_20260101000000.html'}}
+                return {
+                    'Item': {
+                        'document_id': 'prototype_20260101000000',
+                        'prototype_url': (
+                            'https://cdn.example.com/prototypes/'
+                            'proj_20250101120000/prototype_20260101000000.html'
+                        ),
+                    },
+                }
             if sk == 'PRD#prd_1':
                 # The newest-of-type read ranks over a projection, then fetches the
                 # winner by key — so the double must answer that keyed read too.
@@ -514,3 +522,344 @@ class TestBuildPrototype:
 
         # Should fail before ever attempting the S3 write.
         mock_s3.put_object.assert_not_called()
+
+
+class TestPrototypeVersionReplayAndStorage:
+    """Regression contracts at the prototype allocator/S3 boundary."""
+
+    HTML = '<!DOCTYPE html><html><body><h1>Winner</h1></body></html>'
+
+    @staticmethod
+    def _event(sample_job_event, **config):
+        return {
+            **sample_job_event,
+            'doc_config': {
+                'doc_type': 'build_prototype',
+                'title': 'Test Prototype',
+                **config,
+            },
+        }
+
+    @staticmethod
+    def _wire_source(mock_dynamodb):
+        mock_dynamodb['table'].query.return_value = {
+            'Items': [
+                {
+                    'document_id': 'prd_1',
+                    'content': 'PRD body',
+                    'created_at': '2026-01-01',
+                },
+            ],
+        }
+        mock_dynamodb['table'].get_item.return_value = {
+            'Item': {'name': 'My Project'},
+        }
+
+    def test_completed_replay_returns_before_sources_bedrock_or_s3(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3,
+        sample_job_event, lambda_context,
+    ):
+        from unittest.mock import patch
+
+        from jobs.document_generator import handler
+
+        existing = {
+            'document_id': 'prototype_existing',
+            'title': 'Test Prototype (v1)',
+        }
+        with patch.object(
+            handler,
+            'get_versioned_document_by_allocation',
+            return_value=existing,
+        ) as lookup:
+            result = handler.lambda_handler(
+                self._event(sample_job_event), lambda_context,
+            )
+
+        assert result == {'success': True, **existing}
+        lookup.assert_called_once_with(
+            mock_dynamodb['table'],
+            sample_job_event['project_id'],
+            'prototype',
+            sample_job_event['job_id'],
+        )
+        mock_dynamodb['table'].query.assert_not_called()
+        mock_dynamodb['table'].get_item.assert_not_called()
+        mock_converse.assert_not_called()
+        mock_s3.put_object.assert_not_called()
+        mock_s3.get_object.assert_not_called()
+        mock_s3.head_object.assert_not_called()
+        assert mock_dynamodb['transactions'] == []
+
+    def test_persists_deterministic_s3_identity_in_the_four_item_transaction(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3,
+        sample_job_event, lambda_context,
+    ):
+        from shared.document_versions import versioned_document_id
+
+        from jobs.document_generator.handler import lambda_handler
+
+        self._wire_source(mock_dynamodb)
+        mock_converse.return_value = self.HTML
+        mock_s3.put_object.return_value = {
+            'ETag': '"winning-etag"',
+            'VersionId': 'winning-version',
+        }
+
+        result = lambda_handler(self._event(sample_job_event), lambda_context)
+
+        expected_id = versioned_document_id(
+            sample_job_event['project_id'],
+            'prototype',
+            sample_job_event['job_id'],
+        )
+        expected_key = (
+            f"prototypes/{sample_job_event['project_id']}/{expected_id}.html"
+        )
+        assert result['document_id'] == expected_id
+        assert mock_s3.put_object.call_args.kwargs == {
+            'Bucket': 'test-raw-data-bucket',
+            'Key': expected_key,
+            'Body': self.HTML.encode('utf-8'),
+            'ContentType': 'text/html; charset=utf-8',
+            'IfNoneMatch': '*',
+        }
+
+        assert len(mock_dynamodb['transactions']) == 1
+        transaction = mock_dynamodb['transactions'][0]
+        assert len(transaction) == 4
+        assert set(transaction[0]) <= {'Put', 'Update'}
+        allocation = transaction[1]['Put']['Item']
+        document = transaction[2]['Put']['Item']
+        assert allocation['sk'].startswith('ALLOCATION#PROTOTYPE#')
+        assert allocation['document_id'] == expected_id
+        assert allocation['document_sk'] == f'PROTOTYPE#{expected_id}'
+        assert document['sk'] == f'PROTOTYPE#{expected_id}'
+        assert document['prototype_etag'] == '"winning-etag"'
+        assert document['prototype_version_id'] == 'winning-version'
+        assert transaction[3]['Update']['Key'] == {
+            'pk': f"PROJECT#{sample_job_event['project_id']}",
+            'sk': 'META',
+        }
+
+    @pytest.mark.parametrize(
+        'error_code',
+        ['PreconditionFailed', 'ConditionalRequestConflict'],
+    )
+    def test_conditional_s3_conflict_heads_and_persists_the_winner(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3,
+        sample_job_event, lambda_context, error_code,
+    ):
+        from botocore.exceptions import ClientError
+        from shared.document_versions import versioned_document_id
+
+        from jobs.document_generator.handler import lambda_handler
+
+        self._wire_source(mock_dynamodb)
+        mock_converse.return_value = self.HTML
+        mock_s3.put_object.side_effect = ClientError(
+            {
+                'Error': {
+                    'Code': error_code,
+                    'Message': 'the deterministic object already exists',
+                },
+            },
+            'PutObject',
+        )
+        mock_s3.head_object.return_value = {
+            'ETag': '"existing-etag"',
+            'VersionId': 'existing-version',
+        }
+
+        result = lambda_handler(self._event(sample_job_event), lambda_context)
+
+        expected_id = versioned_document_id(
+            sample_job_event['project_id'],
+            'prototype',
+            sample_job_event['job_id'],
+        )
+        expected_object = {
+            'Bucket': 'test-raw-data-bucket',
+            'Key': (
+                f"prototypes/{sample_job_event['project_id']}/{expected_id}.html"
+            ),
+        }
+        assert result['document_id'] == expected_id
+        mock_s3.head_object.assert_called_once_with(**expected_object)
+        document = mock_dynamodb['transactions'][0][2]['Put']['Item']
+        assert document['prototype_etag'] == '"existing-etag"'
+        assert document['prototype_version_id'] == 'existing-version'
+
+    def test_missing_conflict_winner_identity_fails_before_dynamodb(
+        self, mock_dynamodb, mock_s3,
+    ):
+        from botocore.exceptions import ClientError
+
+        from jobs.document_generator.handler import _put_prototype_html
+
+        mock_s3.put_object.side_effect = ClientError(
+            {
+                'Error': {
+                    'Code': 'PreconditionFailed',
+                    'Message': 'the deterministic object already exists',
+                },
+            },
+            'PutObject',
+        )
+        mock_s3.head_object.return_value = {'VersionId': 'version-without-etag'}
+
+        with pytest.raises(
+            RuntimeError,
+            match='S3 did not identify the winning prototype object',
+        ):
+            _put_prototype_html('project-1', 'prototype-1', self.HTML)
+
+        mock_s3.head_object.assert_called_once_with(
+            Bucket='test-raw-data-bucket',
+            Key='prototypes/project-1/prototype-1.html',
+        )
+        assert mock_dynamodb['transactions'] == []
+
+    def test_revision_reads_current_s3_only_base_without_a_persisted_url(
+        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3,
+        sample_job_event, lambda_context,
+    ):
+        from jobs.document_generator.handler import lambda_handler
+
+        prior = '<!DOCTYPE html><html><body>S3-ONLY BASE</body></html>'
+        mock_dynamodb['table'].query.return_value = {
+            'Items': [
+                {
+                    'document_id': 'prd_1',
+                    'content': 'PRD body',
+                    'created_at': '2026-01-01',
+                },
+            ],
+        }
+
+        def get_item(Key=None, **kwargs):
+            sk = (Key or {}).get('sk', '')
+            if sk == 'META':
+                return {'Item': {'name': 'My Project'}}
+            if sk == 'PROTOTYPE#prototype_s3_only':
+                return {
+                    'Item': {
+                        'document_id': 'prototype_s3_only',
+                        'prototype_format': 'html',
+                        'prototype_etag': '"base-etag"',
+                    },
+                }
+            if sk == 'PRD#prd_1':
+                return {
+                    'Item': {
+                        'document_id': 'prd_1',
+                        'content': 'PRD body',
+                        'created_at': '2026-01-01',
+                    },
+                }
+            return {}
+
+        mock_dynamodb['table'].get_item.side_effect = get_item
+        body = MagicMock()
+        body.read.return_value = prior.encode('utf-8')
+        mock_s3.get_object.return_value = {'Body': body}
+        mock_converse.return_value = self.HTML
+
+        lambda_handler(
+            self._event(
+                sample_job_event,
+                feedback='Revise the existing flow',
+                base_prototype_id='prototype_s3_only',
+            ),
+            lambda_context,
+        )
+
+        mock_s3.get_object.assert_called_once_with(
+            Bucket='test-raw-data-bucket',
+            Key=(
+                'prototypes/proj_20250101120000/'
+                'prototype_s3_only.html'
+            ),
+        )
+        assert 'S3-ONLY BASE' in mock_converse.call_args.kwargs['prompt']
+        document = mock_dynamodb['transactions'][0][2]['Put']['Item']
+        assert document['revised_from_id'] == 'prototype_s3_only'
+        assert 'prototype_url' not in document
+
+
+@pytest.mark.parametrize('document_type', ['prd', 'prfaq'])
+def test_generated_document_replay_returns_before_context_or_model_work(
+    document_type,
+    mock_dynamodb,
+    mock_jobs_table,
+    mock_converse_chain,
+    mock_s3,
+    sample_job_event,
+    lambda_context,
+):
+    from unittest.mock import patch
+
+    from jobs.document_generator import handler
+
+    existing = {
+        'document_id': f'{document_type}_existing',
+        'title': f'Launch {document_type.upper()} (v1)',
+    }
+    event = {
+        **sample_job_event,
+        'doc_config': {
+            'doc_type': document_type,
+            'title': f'Launch {document_type.upper()}',
+        },
+    }
+    with patch.object(
+        handler,
+        'get_versioned_document_by_allocation',
+        return_value=existing,
+    ) as lookup:
+        result = handler.lambda_handler(event, lambda_context)
+
+    assert result == {'success': True, **existing}
+    lookup.assert_called_once_with(
+        mock_dynamodb['table'],
+        sample_job_event['project_id'],
+        document_type,
+        sample_job_event['job_id'],
+    )
+    mock_dynamodb['table'].query.assert_not_called()
+    mock_converse_chain.assert_not_called()
+    mock_s3.get_object.assert_not_called()
+    mock_s3.put_object.assert_not_called()
+    assert mock_dynamodb['transactions'] == []
+
+
+def test_execution_claim_stops_overlapping_direct_delivery_before_bedrock(
+    mock_dynamodb,
+    mock_jobs_table,
+    mock_converse_chain,
+    mock_prompt_steps,
+    prd_generation_event,
+    lambda_context,
+):
+    from unittest.mock import patch
+
+    from jobs.document_generator.handler import lambda_handler
+
+    with (
+        patch(
+            'shared.jobs.claim_job_execution',
+            side_effect=[True, False],
+        ) as claim,
+        patch(
+            'shared.jobs.recover_job_execution_claim',
+            return_value=False,
+        ) as recover,
+    ):
+        first = lambda_handler(prd_generation_event, lambda_context)
+        duplicate = lambda_handler(prd_generation_event, lambda_context)
+
+    assert first['success'] is True
+    assert duplicate == {'success': True, 'skipped': True}
+    assert claim.call_count == 2
+    recover.assert_called_once_with(prd_generation_event, lambda_context)
+    mock_converse_chain.assert_called_once()

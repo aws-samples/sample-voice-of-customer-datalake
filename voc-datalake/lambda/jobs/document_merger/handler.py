@@ -25,7 +25,16 @@ from shared.derivation import (
     build_derivation,
     derivation_source,
 )
-from shared.document_versions import VERSIONED_DOCUMENT_TYPES, persist_versioned_document
+from shared.document_versions import (
+    get_versioned_document_by_allocation,
+    persist_versioned_document,
+)
+from shared.project_writes import put_project_item_and_increment
+
+# Prototype HTML is created only by the prototype generator. Unchecked merger
+# values, including ``prototype``, stay on the custom DOC# path.
+MERGE_OUTPUT_TYPES = ('prd', 'prfaq', 'custom')
+MERGE_VERSIONED_DOCUMENT_TYPES = frozenset({'prd', 'prfaq'})
 
 # Environment
 PROJECTS_TABLE = os.environ.get('PROJECTS_TABLE', '')
@@ -49,10 +58,28 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, merge_config: dict
     projects_table = dynamodb.Table(PROJECTS_TABLE)
     feedback_table = dynamodb.Table(FEEDBACK_TABLE)
     
-    ctx.update_progress(10, 'gathering_documents')
-    
     output_type = merge_config.get('output_type', 'custom')
+    if not isinstance(output_type, str) or output_type not in MERGE_OUTPUT_TYPES:
+        raise ValueError(
+            f'output_type must be one of: {", ".join(MERGE_OUTPUT_TYPES)} '
+            f'(got {type(output_type).__name__})'
+        )
     title = merge_config.get('title', 'Merged Document')
+    document_type = (
+        output_type if output_type in MERGE_VERSIONED_DOCUMENT_TYPES else 'custom'
+    )
+    if document_type in MERGE_VERSIONED_DOCUMENT_TYPES:
+        existing = get_versioned_document_by_allocation(
+            projects_table, project_id, document_type, job_id,
+        )
+        if existing is not None:
+            return {
+                'document_id': existing['document_id'],
+                'title': existing['title'],
+            }
+
+    ctx.update_progress(10, 'gathering_documents')
+
     instructions = merge_config.get('instructions', '')
     selected_doc_ids = merge_config.get('selected_document_ids', [])
     selected_persona_ids = merge_config.get('selected_persona_ids', [])
@@ -142,7 +169,6 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, merge_config: dict
     
     ctx.update_progress(90, 'saving_document')
     now = datetime.now(timezone.utc).isoformat()
-    document_type = output_type if output_type in VERSIONED_DOCUMENT_TYPES else 'custom'
     item_fields = {
         'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
         'gsi1sk': now,
@@ -162,7 +188,7 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, merge_config: dict
         'created_at': now,
     }
 
-    if document_type in VERSIONED_DOCUMENT_TYPES:
+    if document_type in MERGE_VERSIONED_DOCUMENT_TYPES:
         item = persist_versioned_document(
             projects_table,
             project_id,
@@ -181,14 +207,8 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, merge_config: dict
             'document_type': document_type,
             'title': title,
         }
-        projects_table.put_item(Item=item)
-        projects_table.update_item(
-            Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'},
-            UpdateExpression=(
-                'SET document_count = if_not_exists(document_count, :zero) + :one, '
-                'updated_at = :now'
-            ),
-            ExpressionAttributeValues={':one': 1, ':zero': 0, ':now': now},
+        put_project_item_and_increment(
+            projects_table, project_id, item, 'document_count',
         )
 
     return {'document_id': item['document_id'], 'title': item['title']}
@@ -200,4 +220,4 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, merge_config: dict
 def lambda_handler(event: dict, context) -> dict:
     """Lambda entry point."""
     logger.info(f"Document merger invoked with event keys: {list(event.keys())}")
-    return handle_job(event)
+    return handle_job(event, context)

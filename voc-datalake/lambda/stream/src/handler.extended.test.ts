@@ -74,7 +74,7 @@ function makeEvent(body: Record<string, unknown>, path = '/chat/stream', headers
     body: JSON.stringify(body),
     rawPath: path,
     headers: { origin: 'https://example.com', ...headers },
-    requestContext: {},
+    requestContext: { authorizer: { claims: { sub: 'cognito-user-42' } } },
   };
 }
 
@@ -399,6 +399,7 @@ describe('handler - extended', () => {
         [],
         [],
         undefined,
+        'cognito-user-42',
       );
     });
 
@@ -420,6 +421,7 @@ describe('handler - extended', () => {
         expect.any(Array),
         expect.any(Array),
         undefined,
+        'cognito-user-42',
       );
     });
 
@@ -427,7 +429,10 @@ describe('handler - extended', () => {
       const stream = mockStream();
       const event = {
         body: JSON.stringify({ message: 'hello', project_id: 'proj-1' }),
-        requestContext: { http: { path: '/projects/proj-1/chat', method: 'POST' } },
+        requestContext: {
+          http: { path: '/projects/proj-1/chat', method: 'POST' },
+          authorizer: { claims: { sub: 'cognito-user-42' } },
+        },
         headers: {},
       };
 

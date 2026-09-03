@@ -134,3 +134,25 @@ describe('getCreateDocumentTool', () => {
     expect(props.document_type.enum).toStrictEqual(['custom']);
   });
 });
+
+describe('document tool revision contract', () => {
+  it('describes editable text documents, prototype revisions, and complete replacement content', () => {
+    const tool = getUpdateDocumentTool();
+    const description = tool.toolSpec?.description ?? '';
+
+    expect(description).toMatch(
+      /textual project document \(PRD, PR\/FAQ, research, product report, or custom\)/i,
+    );
+    expect(description).toMatch(
+      /Prototype HTML.*prototype revision workflow, not this tool/i,
+    );
+    expect(description).toMatch(/COMPLETE updated content, not just the changes/);
+    expect(tool.toolSpec?.inputSchema?.json).toMatchObject({
+      properties: {
+        content: {
+          description: expect.stringMatching(/full updated document content/i),
+        },
+      },
+    });
+  });
+});

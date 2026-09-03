@@ -877,6 +877,26 @@ export class VocApiStack extends VocStack {
       logGroup: this.createLogGroup('PersonaImporterJobLogs', this.uniqueName('voc-job-persona-importer')),
     });
 
+    // A lease loser self-redelivers once before its own budget becomes too
+    // small, so an owner crash still has a durable post-expiry attempt. Use
+    // deterministic physical-name ARNs instead of Function.grantInvoke: the
+    // function already depends on its role, and a role policy that GetAtts the
+    // function creates a CloudFormation cycle.
+    const grantSelfInvoke = (role: iam.Role, functionName: string) => {
+      role.addToPolicy(new iam.PolicyStatement({
+        actions: ['lambda:InvokeFunction'],
+        resources: [this.formatArn({
+          service: 'lambda',
+          resource: 'function',
+          resourceName: functionName,
+        })],
+      }));
+    };
+    grantSelfInvoke(personaGeneratorRole, this.uniqueName('voc-job-persona-generator'));
+    grantSelfInvoke(documentGeneratorRole, this.uniqueName('voc-job-document-generator'));
+    grantSelfInvoke(documentMergerRole, this.uniqueName('voc-job-document-merger'));
+    grantSelfInvoke(personaImporterRole, this.uniqueName('voc-job-persona-importer'));
+
     // Wire job Lambda function names into the Projects API + grant invoke
     projectsLambda.addEnvironment('PERSONA_GENERATOR_FUNCTION', personaGeneratorLambda.functionName);
     projectsLambda.addEnvironment('DOCUMENT_GENERATOR_FUNCTION', documentGeneratorLambda.functionName);
@@ -1038,6 +1058,11 @@ export class VocApiStack extends VocStack {
     // Data Explorer API
     const dataExplorerRole = this.createLambdaRole('DataExplorerLambdaRole');
     rawDataBucket.grantReadWrite(dataExplorerRole);
+    dataExplorerRole.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.DENY,
+      actions: ['s3:PutObject', 's3:DeleteObject'],
+      resources: [rawDataBucket.arnForObjects('prototypes/*')],
+    }));
     feedbackTable.grantReadWriteData(dataExplorerRole);
     kmsKey.grantEncryptDecrypt(dataExplorerRole);
     dataExplorerRole.addToPolicy(new iam.PolicyStatement({ actions: ['sqs:SendMessage'], resources: [processingQueueArn] }));
@@ -1969,6 +1994,7 @@ exports.handler = async (event) => {
         'title.$': '$.Payload.title',
         'feature_idea.$': '$.Payload.feature_idea',
         'num_steps.$': '$.Payload.num_steps',
+        'replayed.$': '$.Payload.replayed',
       },
     });
 
@@ -2034,11 +2060,15 @@ exports.handler = async (event) => {
             s3.next(save))
       .otherwise(save);
 
-    const definition = gather
-      .next(s0)
+    const generation = s0
       .next(s1)
       .next(s2)
       .next(maybeStep3);
+    const replayChoice = new sfn.Choice(this, 'DocumentAlreadyGenerated')
+      .when(sfn.Condition.booleanEquals('$.gathered.replayed', true), success)
+      .otherwise(generation);
+
+    const definition = gather.next(replayChoice);
 
     return new sfn.StateMachine(this, 'DocumentStateMachine', {
       stateMachineName: this.uniqueName('voc-document-workflow'),

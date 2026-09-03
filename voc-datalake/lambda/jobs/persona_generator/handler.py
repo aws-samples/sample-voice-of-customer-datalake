@@ -38,4 +38,4 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, filters: dict) -> 
 def lambda_handler(event: dict, context) -> dict:
     """Lambda entry point."""
     logger.info(f"Persona generator invoked with event keys: {list(event.keys())}")
-    return handle_job(event)
+    return handle_job(event, context)

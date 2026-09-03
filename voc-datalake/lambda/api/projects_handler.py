@@ -38,6 +38,7 @@ from shared.exceptions import (
     ValidationError,
 )
 from shared.persona_import import validate_import_config
+from shared.document_versions import split_versioned_title
 from shared import mcp_tokens
 
 from aws_lambda_powertools.event_handler import Response, content_types
@@ -387,6 +388,8 @@ DEFAULT_GENERATED_DOC_TYPE = 'prd'
 # prompt rather than writing an unrecognised sort key — a different blast radius,
 # and a separate change if it is wanted.
 GENERATED_DOC_TYPES = ('prd', 'prfaq')
+MERGE_OUTPUT_TYPES = ('prd', 'prfaq', 'custom')
+MANAGED_MERGE_OUTPUT_TYPES = frozenset({'prd', 'prfaq'})
 
 
 def _validated_doc_type(raw: Any) -> str:
@@ -443,7 +446,8 @@ def api_generate_document(project_id: str):
     # Validated BEFORE create_job, so a rejected request leaves no job row
     # describing work nobody will do, and bills no Bedrock call.
     doc_type = _validated_doc_type(body.get('doc_type'))
-    # A COPY, so the resolved value reaches the stored config without rewriting
+    title, _ = split_versioned_title(body.get('title', 'Untitled'))
+    # A COPY, so the resolved values reach the stored config without rewriting
     # the request as received: `json_body` is a cached_property, and mutating it
     # would mean any later read (middleware, an audit log, a second handler
     # read) silently sees this route's rewrite rather than what the caller sent.
@@ -452,7 +456,7 @@ def api_generate_document(project_id: str):
     # `doc_config.get('doc_type', 'prd')` reads an explicit null as null rather
     # than as the default, and a null crashes it on `.upper()` after the job row
     # already exists.
-    doc_config = {**body, 'doc_type': doc_type}
+    doc_config = {**body, 'doc_type': doc_type, 'title': title}
     job_id, _ = create_job(project_id, f'generate_{doc_type}', 'doc_config', doc_config, status='pending')
 
     state_machine_arn = os.environ.get('DOCUMENT_STATE_MACHINE_ARN', '')
@@ -490,14 +494,38 @@ def api_create_document(project_id: str):
 @tracer.capture_method
 def api_merge_documents(project_id: str):
     """Merge multiple documents."""
-    body = app.current_event.json_body or {}
-    job_id, _ = create_job(project_id, 'merge_documents', 'merge_config', body, status='pending')
+    body = _json_object_body()
+    output_type = body.get('output_type', 'custom')
+    if not isinstance(output_type, str) or output_type not in MERGE_OUTPUT_TYPES:
+        raise ValidationError(
+            f'output_type must be one of: {", ".join(MERGE_OUTPUT_TYPES)} '
+            f'(got {type(output_type).__name__})'
+        )
+    merge_config = body
+    if output_type in MANAGED_MERGE_OUTPUT_TYPES:
+        title, _ = split_versioned_title(
+            body.get('title', 'Merged Document'),
+        )
+        merge_config = {**body, 'title': title}
+
+    job_id, _ = create_job(
+        project_id,
+        'merge_documents',
+        'merge_config',
+        merge_config,
+        status='pending',
+    )
     invoke_lambda_async(DOCUMENT_MERGER_FUNCTION, {
         'project_id': project_id,
         'job_id': job_id,
-        'merge_config': body
+        'merge_config': merge_config,
     })
-    return {'success': True, 'job_id': job_id, 'status': 'pending', 'message': 'Document merge started.'}
+    return {
+        'success': True,
+        'job_id': job_id,
+        'status': 'pending',
+        'message': 'Document merge started.',
+    }
 
 
 @app.put("/projects/<project_id>/documents/<document_id>")
@@ -4192,13 +4220,17 @@ def api_build_prototype(project_id: str):
     status, then displays the HTML in an iframe via srcdoc (sandboxed, no
     parent-page access).
     """
-    body = app.current_event.json_body or {}
+    body = _json_object_body()
+    raw_title = body.get('title')
+    title_input = 'Prototype' if raw_title is None or raw_title == '' else raw_title
+    title, _ = split_versioned_title(title_input)
+
     # Read once: it is both a stored field and the switch deciding whether the id
     # list is looked at at all — see `selected_research_ids` below.
     use_research = bool(body.get('use_research'))
     doc_config = {
         'doc_type': 'build_prototype',
-        'title': body.get('title') or 'Prototype',
+        'title': title,
         'response_language': body.get('response_language'),
         # Optional brand targeting (e.g. "UNNI" / a domain). Blank → neutral defaults.
         'brand': body.get('brand'),

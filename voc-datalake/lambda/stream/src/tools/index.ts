@@ -8,9 +8,10 @@ export function getUpdateDocumentTool(): Tool {
     toolSpec: {
       name: 'update_document',
       description:
-        'Update the content of a project document (PRD, PR/FAQ, research, or custom). ' +
+        'Update the content of a textual project document (PRD, PR/FAQ, research, product report, or custom). ' +
+        'Prototype HTML is stored in S3 and must be changed through the prototype revision workflow, not this tool. ' +
         'PRD and PR/FAQ titles are version-managed and cannot be renamed; generate a new document to start a differently titled series. ' +
-        'Use this when the user asks to edit, modify, add to, or rewrite a document. ' +
+        'Use this when the user asks to edit, modify, add to, or rewrite an editable textual document. ' +
         'Always provide the COMPLETE updated content, not just the changes.',
       inputSchema: {
         json: {
@@ -23,7 +24,7 @@ export function getUpdateDocumentTool(): Tool {
             title: {
               type: 'string',
               description:
-                'Updated title for research or custom documents only. Version-managed PRD and PR/FAQ titles cannot be renamed.',
+                'Updated title for research, product report, or custom documents only. Version-managed PRD and PR/FAQ titles cannot be renamed.',
             },
             content: {
               type: 'string',
@@ -47,7 +48,7 @@ export function getCreateDocumentTool(): Tool {
       name: 'create_document',
       description:
         'Create a new custom document in the project from the conversation. ' +
-        'PRDs and PR/FAQs must use document generation so their versions are allocated atomically.',
+        'Every managed or workflow document type must use its dedicated route.',
       inputSchema: {
         json: {
           type: 'object',

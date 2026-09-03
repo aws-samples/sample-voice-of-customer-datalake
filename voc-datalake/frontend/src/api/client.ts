@@ -537,7 +537,7 @@ export const api = {
   getJobs: (projectId: string) => import('./projectsApi').then(m => m.projectsApi.getJobs(projectId)),
   dismissJob: (projectId: string, jobId: string) =>
     import('./projectsApi').then(m => m.projectsApi.dismissJob(projectId, jobId)),
-  createDocument: (projectId: string, data: { title: string; content: string; document_type?: string }) =>
+  createDocument: (projectId: string, data: { title: string; content: string; document_type?: 'custom' }) =>
     import('./projectsApi').then(m => m.projectsApi.createDocument(projectId, data)),
   updateDocument: (projectId: string, documentId: string, data: { title?: string; content?: string }) =>
     import('./projectsApi').then(m => m.projectsApi.updateDocument(projectId, documentId, data)),

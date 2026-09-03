@@ -4,6 +4,7 @@
 import { useTranslation } from 'react-i18next'
 import ConfirmModal from '../../components/ConfirmModal'
 import DocumentModal from './DocumentModal'
+import { isVersionManagedDocument } from '../../api/documentLineage'
 import ImportPersonaModal from './ImportPersonaModal'
 import PersonaEditModal from './PersonaEditModal'
 import type {
@@ -112,7 +113,7 @@ export function DocumentModalWrapper({
     <DocumentModal
       isEditing={!!editingDoc}
       title={title}
-      titleReadOnly={editingDoc?.document_type === 'prd' || editingDoc?.document_type === 'prfaq'}
+      titleReadOnly={editingDoc != null && isVersionManagedDocument(editingDoc)}
       content={content}
       isSaving={isSaving}
       onTitleChange={onTitleChange}

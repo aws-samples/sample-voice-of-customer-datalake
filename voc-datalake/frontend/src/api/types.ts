@@ -579,6 +579,8 @@ export interface ProjectDocument {
   // `product_report` and `prototype` from their own. So this is NOT a second copy of the
   // route's contract and must not be pinned against `GENERATED_DOC_TYPES` — the same
   // reason `suggestDocumentBrief` is left unbound.
+  /** Legacy DynamoDB sort key, retained for records awaiting metadata backfill. */
+  sk?: string
   document_type: 'prd' | 'prfaq' | 'research' | 'custom' | 'product_report' | 'prototype'
   title: string
   /** User-supplied series title before the system-managed `(vN)` suffix. */

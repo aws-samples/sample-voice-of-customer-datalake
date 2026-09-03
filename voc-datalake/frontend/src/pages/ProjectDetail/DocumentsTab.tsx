@@ -12,7 +12,8 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { projectsApi } from '../../api/projectsApi'
 import { resolveDerivation, type DerivationRole, type DerivationSource } from '../../api/derivation'
-import { ordinalByType, resolveRevision, type DocumentOrdinal } from '../../api/documentLineage'
+import { isVersionManagedDocument, ordinalByType, resolveRevision } from '../../api/documentLineage'
+import { DocumentOrdinalLabel, DocumentTypeBadge } from './DocumentLabels'
 import { MAX_SELECTED_PRODUCT_DOC_IDS, MAX_SELECTED_RESEARCH_IDS } from './overviewState'
 import { useTransientFlag } from './useTransientFlag'
 import DocumentExportMenu from '../../components/DocumentExportMenu'
@@ -95,12 +96,10 @@ export default function DocumentsTab({
               >
                 <div className="flex items-center gap-2 mb-1">
                   <DocumentTypeBadge type={d.document_type} />
-                  {/* Persisted PRD/PRFAQ versions already live in the title. The
-                      contextual ordinal remains useful for unversioned document
-                      types such as prototypes, where repeated generic names still
-                      need a stable creation-order discriminator. */}
+                  {/* Canonical managed-document titles already carry their persisted
+                      backend version. Only unmanaged types use a contextual ordinal. */}
                   <DocumentOrdinalLabel
-                    ordinal={d.version === undefined ? ordinals.get(d.document_id) : undefined}
+                    ordinal={isVersionManagedDocument(d) ? undefined : ordinals.get(d.document_id)}
                     t={t}
                   />
                   <span className="text-xs text-gray-400">{format(new Date(d.created_at), 'MMM d')}</span>
@@ -131,14 +130,18 @@ export default function DocumentsTab({
               <div className="flex items-start justify-between mb-4 gap-2">
                 <h2 className="text-xl font-bold">{selectedDoc.title}</h2>
                 <div className="flex items-center gap-2 flex-wrap justify-end">
-                  <DocumentExportMenu document={selectedDoc} project={project} />
-                  <button
-                    onClick={onEditDoc}
-                    className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg"
-                    title={t('documents.editDocument')}
-                  >
-                    <Pencil size={18} />
-                  </button>
+                  {selectedDoc.document_type === 'prototype' ? null : (
+                    <>
+                      <DocumentExportMenu document={selectedDoc} project={project} />
+                      <button
+                        onClick={onEditDoc}
+                        className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg"
+                        title={t('documents.editDocument')}
+                      >
+                        <Pencil size={18} />
+                      </button>
+                    </>
+                  )}
                   <button
                     onClick={onDeleteDoc}
                     disabled={isDeleting}
@@ -869,46 +872,5 @@ function RevisionFooter({
         </p>
       )}
     </section>
-  )
-}
-
-// ── Badges ──────────────────────────────────────────────────────────────────
-
-/**
- * "2 of 3" for a document whose type has more than one.
- *
- * Silent for a type with a single document: "1 of 1" is noise on every PRD in
- * every project that has one, and the number only earns its space once there is
- * something to confuse it with.
- */
-function DocumentOrdinalLabel({
-  ordinal, t,
-}: {
-  readonly ordinal: DocumentOrdinal | undefined
-  readonly t: TFunc
-}) {
-  if (ordinal === undefined || ordinal.total < 2) return null
-
-  return (
-    <span className="text-xs font-medium text-gray-500 flex-shrink-0">
-      {t('documents.ordinal', { ordinal: ordinal.ordinal, total: ordinal.total })}
-    </span>
-  )
-}
-
-function DocumentTypeBadge({ type }: { readonly type: string }) {
-  const styles: Record<string, string> = {
-    prd: 'bg-blue-100 text-blue-700',
-    prfaq: 'bg-green-100 text-green-700',
-    custom: 'bg-purple-100 text-purple-700',
-    product_report: 'bg-indigo-100 text-indigo-700',
-    prototype: 'bg-orange-100 text-orange-700',
-  }
-  const style = styles[type] ?? 'bg-amber-100 text-amber-700'
-
-  return (
-    <span className={clsx('text-xs font-medium px-2 py-0.5 rounded', style)}>
-      {type.toUpperCase().replace('_', ' ')}
-    </span>
   )
 }

@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import DocumentModal from './DocumentModal'
+import { DocumentModalWrapper } from './ProjectModals'
+import type { ProjectDocument } from '../../api/types'
 
 describe('DocumentModal', () => {
   const defaultProps = {
@@ -134,5 +136,50 @@ describe('DocumentModal', () => {
     
     await user.click(screen.getByRole('button', { name: /Create/i }))
     expect(onSave).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('DocumentModalWrapper managed titles', () => {
+  const managedCases: { name: string; document: ProjectDocument }[] = [
+    {
+      name: 'current prototype type',
+      document: {
+        document_id: 'prototype-1',
+        document_type: 'prototype',
+        title: 'Checkout prototype (v2)',
+        content: '<html><body>Checkout</body></html>',
+        created_at: '2026-09-02T00:00:00Z',
+      },
+    },
+    {
+      name: 'legacy managed sort key',
+      document: {
+        document_id: 'legacy-1',
+        document_type: 'custom',
+        sk: 'PROTOTYPE#legacy-1',
+        title: 'Legacy prototype (v1)',
+        content: 'legacy content',
+        created_at: '2026-09-01T00:00:00Z',
+      },
+    },
+  ]
+
+  it.each(managedCases)('keeps the canonical title read-only for $name', ({ document }) => {
+    render(
+      <DocumentModalWrapper
+        showModal={true}
+        editingDoc={document}
+        title={document.title}
+        content={document.content}
+        isSaving={false}
+        onTitleChange={vi.fn()}
+        onContentChange={vi.fn()}
+        onSave={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByPlaceholderText('Document title...')).toBeDisabled()
+    expect(screen.getByPlaceholderText('Document title...')).toHaveValue(document.title)
   })
 })

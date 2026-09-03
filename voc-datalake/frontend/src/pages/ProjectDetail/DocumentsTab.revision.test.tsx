@@ -58,41 +58,38 @@ function renderTab(documents: ProjectDocument[], selected: ProjectDocument | nul
   return onSelectDoc
 }
 
-describe('same-typed documents are distinguishable', () => {
-  it('numbers each document within its own type, oldest first', () => {
-    // The real case: identical badge, identical title, same date. Only the number
-    // separates them.
+describe('document list disambiguation', () => {
+  it('shows canonical prototype titles without contextual ordinals', () => {
     renderTab([
-      doc({ document_id: 'p_a', created_at: '2026-07-10T00:00:00Z' }),
-      doc({ document_id: 'p_b', created_at: '2026-07-10T00:00:00Z' }),
-      doc({ document_id: 'p_c', created_at: '2026-08-08T00:00:00Z' }),
+      doc({ document_id: 'p_1', title: 'Checkout prototype (v1)', version: 1 }),
+      doc({ document_id: 'p_2', title: 'Checkout prototype (v2)', version: 2 }),
     ], null)
 
-    expect(screen.getByText('1 of 3')).toBeInTheDocument()
-    expect(screen.getByText('2 of 3')).toBeInTheDocument()
-    expect(screen.getByText('3 of 3')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Checkout prototype \(v1\)/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Checkout prototype \(v2\)/ })).toBeInTheDocument()
+    expect(screen.queryByText(/of 2/)).not.toBeInTheDocument()
   })
 
-  it('says nothing for a type with a single document', () => {
-    // "1 of 1" would appear on every PRD in every project that has one. The number
-    // only earns its space once there is something to confuse the document with.
+  it('numbers unmanaged documents of one type oldest first', () => {
     renderTab([
-      doc({ document_id: 'prd_1', document_type: 'prd', title: 'Spec' }),
-      doc({ document_id: 'prfaq_1', document_type: 'prfaq', title: 'Launch' }),
-    ], null)
-
-    expect(screen.queryByText('1 of 1')).not.toBeInTheDocument()
-  })
-
-  it('counts types separately, so one type cannot renumber another', () => {
-    renderTab([
-      doc({ document_id: 'prd_1', document_type: 'prd', title: 'Spec', created_at: '2026-01-01T00:00:00Z' }),
-      doc({ document_id: 'prd_2', document_type: 'prd', title: 'Spec', created_at: '2026-02-01T00:00:00Z' }),
-      doc({ document_id: 'p_1' }),
+      doc({ document_id: 'custom_b', document_type: 'custom', title: 'Notes', created_at: '2026-02-01T00:00:00Z' }),
+      doc({ document_id: 'custom_a', document_type: 'custom', title: 'Notes', created_at: '2026-01-01T00:00:00Z' }),
     ], null)
 
     expect(screen.getByText('1 of 2')).toBeInTheDocument()
     expect(screen.getByText('2 of 2')).toBeInTheDocument()
+  })
+
+  it('keeps unmanaged type sequences independent', () => {
+    renderTab([
+      doc({ document_id: 'custom_1', document_type: 'custom', title: 'Notes' }),
+      doc({ document_id: 'custom_2', document_type: 'custom', title: 'Notes' }),
+      doc({ document_id: 'research_1', document_type: 'research', title: 'Research' }),
+    ], null)
+
+    expect(screen.getByText('1 of 2')).toBeInTheDocument()
+    expect(screen.getByText('2 of 2')).toBeInTheDocument()
+    expect(screen.queryByText('1 of 1')).not.toBeInTheDocument()
     expect(screen.queryByText(/of 3/)).not.toBeInTheDocument()
   })
 })

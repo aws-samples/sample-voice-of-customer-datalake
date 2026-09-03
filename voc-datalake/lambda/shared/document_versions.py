@@ -1,6 +1,6 @@
 """Stable version identities and titles for managed project documents.
 
-PRDs and PR/FAQs may be generated repeatedly with the same user-supplied title.
+Managed documents may be generated repeatedly with the same user-supplied title.
 Their version is therefore a stored identity, not a frontend position derived from
 whatever documents still exist.  This module owns both sides of that contract:
 
@@ -29,10 +29,16 @@ from botocore.exceptions import ClientError
 
 from shared.exceptions import ServiceError, ValidationError
 from shared.logging import logger
+from shared.project_writes import PROJECT_DELETION_ATTRIBUTE
+from shared.project_writes import project_meta_key as _project_meta_key
+from shared.project_writes import (
+    project_writable_condition as _project_writable_condition,
+)
 
-VERSIONED_DOCUMENT_TYPES = frozenset({'prd', 'prfaq'})
+VERSIONED_DOCUMENT_TYPES = frozenset({'prd', 'prfaq', 'prototype'})
 VERSION_COUNTER_PREFIX = 'DOCUMENT_VERSIONS#PROJECT#'
 LEGACY_ASSIGNMENT_PREFIX = 'LEGACY_ASSIGNMENT#'
+ALLOCATION_PREFIX = 'ALLOCATION#'
 VERSION_SUFFIX_RE = re.compile(r'\s+\(v([1-9]\d*)\)$', re.IGNORECASE)
 VERSION_WRITE_ATTEMPTS = 4
 VERSION_WRITE_BACKOFF_SECONDS = 0.025
@@ -60,6 +66,11 @@ _TRANSIENT_ERROR_CODES = frozenset({
 def version_partition_key(project_id: str) -> str:
     """Partition containing only *project_id*'s document-version counters."""
     return f'{VERSION_COUNTER_PREFIX}{project_id}'
+
+
+def _project_accepts_writes(table, project_id: str) -> bool:
+    meta = _get_item(table, _project_meta_key(project_id))
+    return bool(meta) and PROJECT_DELETION_ATTRIBUTE not in meta
 
 
 def split_versioned_title(title: object) -> tuple[str, int | None]:
@@ -95,7 +106,7 @@ def canonical_document_title(base_title: str, version: int) -> str:
 
 
 def normalize_document_versions(documents: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Return document copies with deterministic PRD/PRFAQ version metadata.
+    """Return document copies with deterministic managed version metadata.
 
     Persisted versions win.  Unique legacy ``(vN)`` suffixes are reserved next;
     remaining rows receive the lowest unused positive versions in stable
@@ -219,6 +230,7 @@ def _persist_legacy_series(
 
     acquired_floor = _acquire_legacy_migration(
         table,
+        project_id,
         counter_key,
         document_type,
         normalized,
@@ -253,6 +265,7 @@ def _persist_legacy_series(
                 raise ServiceError('Conflicting legacy document version assignment')
             _persist_legacy_identity(
                 table,
+                project_id,
                 counter_key,
                 document_type,
                 normalized,
@@ -413,8 +426,39 @@ def _migration_backoff_seconds(attempt: int) -> float:
     )
 
 
+def _legacy_migration_active(counter: dict[str, Any]) -> bool:
+    owner = counter.get('migration_owner')
+    expires_at = counter.get('migration_expires_at')
+    return (
+        isinstance(owner, str)
+        and bool(owner)
+        and isinstance(expires_at, (int, Decimal))
+        and not isinstance(expires_at, bool)
+        and int(expires_at) >= int(time.time())
+    )
+
+
+def _wait_for_legacy_migration(
+    table, counter_key: dict[str, str],
+) -> dict[str, Any]:
+    deadline = time.monotonic() + LEGACY_MIGRATION_WAIT_SECONDS
+    attempt = 0
+    while True:
+        counter = _get_item(table, counter_key)
+        if not _legacy_migration_active(counter):
+            return counter
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise ServiceError(
+                'Document versions are being initialized. Please retry.'
+            )
+        time.sleep(min(_migration_backoff_seconds(attempt), remaining))
+        attempt += 1
+
+
 def _acquire_legacy_migration(
     table,
+    project_id: str,
     counter_key: dict[str, str],
     document_type: str,
     normalized: str,
@@ -422,6 +466,10 @@ def _acquire_legacy_migration(
     high_water: int,
     owner: str,
 ) -> int:
+    table_name = getattr(table, 'name', None)
+    if not isinstance(table_name, str) or not table_name:
+        raise ValueError('Projects table name is required for legacy migration')
+
     deadline = time.monotonic() + LEGACY_MIGRATION_WAIT_SECONDS
     attempt = 0
     while True:
@@ -436,21 +484,24 @@ def _acquire_legacy_migration(
                 raise ServiceError('Document version counter title mismatch')
 
             if not counter:
-                table.put_item(
-                    Item={
-                        **counter_key,
-                        'document_type': document_type,
-                        'base_title': display_base,
-                        'normalized_base_title': normalized,
-                        'last_version': high_water,
-                        'migration_owner': owner,
-                        'migration_expires_at': expires_at,
-                        'updated_at': now,
+                counter_write = {
+                    'Put': {
+                        'TableName': table_name,
+                        'Item': {
+                            **counter_key,
+                            'document_type': document_type,
+                            'base_title': display_base,
+                            'normalized_base_title': normalized,
+                            'last_version': high_water,
+                            'migration_owner': owner,
+                            'migration_expires_at': expires_at,
+                            'updated_at': now,
+                        },
+                        'ConditionExpression': (
+                            'attribute_not_exists(pk) AND attribute_not_exists(sk)'
+                        ),
                     },
-                    ConditionExpression=(
-                        'attribute_not_exists(pk) AND attribute_not_exists(sk)'
-                    ),
-                )
+                }
             else:
                 expression_values: dict[str, Any] = {
                     ':last': max(observed or 0, high_water),
@@ -465,28 +516,48 @@ def _acquire_legacy_migration(
                 if observed is not None:
                     last_condition = '#last = :observed'
                     expression_values[':observed'] = observed
-                table.update_item(
-                    Key=counter_key,
-                    UpdateExpression=(
-                        'SET #last = :last, base_title = :base, '
-                        'normalized_base_title = :normalized, #owner = :owner, '
-                        '#expires = :expires, updated_at = :now'
-                    ),
-                    ConditionExpression=(
-                        f'{last_condition} AND '
-                        '(attribute_not_exists(#owner) OR '
-                        'attribute_not_exists(#expires) OR #expires < :now_epoch)'
-                    ),
-                    ExpressionAttributeNames={
-                        '#last': 'last_version',
-                        '#owner': 'migration_owner',
-                        '#expires': 'migration_expires_at',
+                counter_write = {
+                    'Update': {
+                        'TableName': table_name,
+                        'Key': counter_key,
+                        'UpdateExpression': (
+                            'SET #last = :last, base_title = :base, '
+                            'normalized_base_title = :normalized, #owner = :owner, '
+                            '#expires = :expires, updated_at = :now'
+                        ),
+                        'ConditionExpression': (
+                            f'{last_condition} AND '
+                            '(attribute_not_exists(#owner) OR '
+                            'attribute_not_exists(#expires) OR #expires < :now_epoch)'
+                        ),
+                        'ExpressionAttributeNames': {
+                            '#last': 'last_version',
+                            '#owner': 'migration_owner',
+                            '#expires': 'migration_expires_at',
+                        },
+                        'ExpressionAttributeValues': expression_values,
                     },
-                    ExpressionAttributeValues=expression_values,
-                )
+                }
+
+            table.meta.client.transact_write_items(TransactItems=[
+                _project_writable_condition(table_name, project_id),
+                counter_write,
+            ])
             return observed or 0
         except ClientError as error:
-            if not (_conditional_failure(error) or _transient(error)):
+            code = error.response.get('Error', {}).get('Code')
+            if code == 'TransactionCanceledException' and not _project_accepts_writes(
+                table, project_id,
+            ):
+                raise ServiceError(
+                    'Project deletion has started; document versions cannot change.'
+                ) from error
+            retryable = (
+                _conditional_failure(error)
+                or code == 'TransactionCanceledException'
+                or _transient(error)
+            )
+            if not retryable:
                 raise
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -653,6 +724,7 @@ def _legacy_document_update(
 
 def _persist_legacy_identity(
     table,
+    project_id: str,
     counter_key: dict[str, str],
     document_type: str,
     normalized: str,
@@ -675,6 +747,7 @@ def _persist_legacy_identity(
     _renew_legacy_migration(table, counter_key, owner)
     now_epoch = int(time.time())
     transaction: list[dict[str, Any]] = [
+        _project_writable_condition(table_name, project_id),
         {
             'ConditionCheck': {
                 'TableName': table_name,
@@ -783,6 +856,239 @@ def _conditional_failure(error: ClientError) -> bool:
     return error.response.get('Error', {}).get('Code') == 'ConditionalCheckFailedException'
 
 
+def versioned_document_id(
+    project_id: str,
+    document_type: str,
+    allocation_id: str,
+) -> str:
+    """Return the validated deterministic id for one allocation.
+
+    The stable allocation id is the authority for retries: every attempt for the
+    same project, managed type, and allocation resolves to the same document key.
+    """
+    if not isinstance(project_id, str) or not project_id.strip():
+        raise ValueError('A project id is required for document persistence')
+    if not isinstance(document_type, str) or document_type not in VERSIONED_DOCUMENT_TYPES:
+        raise ValueError(f'{document_type!r} is not a version-managed document type')
+    if not isinstance(allocation_id, str) or not allocation_id.strip():
+        raise ValueError('A stable document allocation id is required')
+
+    digest = hashlib.sha256(
+        f'{project_id}|{document_type}|{allocation_id}'.encode()
+    ).hexdigest()[:20]
+    return f'{document_type}_{digest}'
+
+
+def _allocation_key(
+    project_id: str,
+    document_type: str,
+    allocation_id: str,
+) -> dict[str, str]:
+    allocation_digest = hashlib.sha256(allocation_id.encode()).hexdigest()
+    return {
+        'pk': version_partition_key(project_id),
+        'sk': f'{ALLOCATION_PREFIX}{document_type.upper()}#{allocation_digest}',
+    }
+
+
+def _document_key(
+    project_id: str,
+    document_type: str,
+    allocation_id: str,
+) -> dict[str, str]:
+    document_id = versioned_document_id(project_id, document_type, allocation_id)
+    return {
+        'pk': f'PROJECT#{project_id}',
+        'sk': f'{document_type.upper()}#{document_id}',
+    }
+
+
+def _allocation_item(
+    project_id: str,
+    document_type: str,
+    allocation_id: str,
+    document: dict[str, Any],
+) -> dict[str, Any]:
+    document_key = _document_key(project_id, document_type, allocation_id)
+    document_id = versioned_document_id(project_id, document_type, allocation_id)
+    version = _positive_int(document.get('version'))
+    base_title = document.get('base_title')
+    title = document.get('title')
+    created_at = document.get('created_at')
+    if (
+        document.get('pk') != document_key['pk']
+        or document.get('sk') != document_key['sk']
+        or document.get('document_id') != document_id
+        or version is None
+        or not isinstance(base_title, str)
+        or not base_title
+        or not isinstance(title, str)
+        or not title
+        or not isinstance(created_at, str)
+        or not created_at
+    ):
+        raise ServiceError('Stored generated document allocation is incomplete')
+    return {
+        **_allocation_key(project_id, document_type, allocation_id),
+        'allocation_id': allocation_id,
+        'document_id': document_id,
+        'document_pk': document_key['pk'],
+        'document_sk': document_key['sk'],
+        'document_type': document_type,
+        'base_title': base_title,
+        'version': version,
+        'title': title,
+        'created_at': created_at,
+    }
+
+
+def _assert_allocation_reference(
+    allocation: dict[str, Any],
+    project_id: str,
+    document_type: str,
+    allocation_id: str,
+) -> None:
+    document_key = _document_key(project_id, document_type, allocation_id)
+    expected = {
+        **_allocation_key(project_id, document_type, allocation_id),
+        'allocation_id': allocation_id,
+        'document_id': versioned_document_id(
+            project_id, document_type, allocation_id,
+        ),
+        'document_pk': document_key['pk'],
+        'document_sk': document_key['sk'],
+        'document_type': document_type,
+    }
+    if any(allocation.get(key) != value for key, value in expected.items()):
+        raise ServiceError('Document allocation history conflict detected')
+
+
+def _assert_allocation_item(
+    allocation: dict[str, Any], expected: dict[str, Any],
+) -> None:
+    if any(allocation.get(key) != value for key, value in expected.items()):
+        raise ServiceError('Document allocation history conflict detected')
+
+
+def _ensure_allocation_history(
+    table,
+    project_id: str,
+    document_type: str,
+    allocation_id: str,
+    document: dict[str, Any],
+) -> None:
+    expected = _allocation_item(
+        project_id, document_type, allocation_id, document,
+    )
+    allocation_key = {
+        'pk': expected['pk'],
+        'sk': expected['sk'],
+    }
+    existing = _get_item(table, allocation_key)
+    if existing:
+        _assert_allocation_item(existing, expected)
+        return
+
+    table_name = getattr(table, 'name', None)
+    if not isinstance(table_name, str) or not table_name:
+        raise ValueError('Projects table name is required for allocation history')
+    try:
+        table.meta.client.transact_write_items(TransactItems=[
+            _project_writable_condition(table_name, project_id),
+            {
+                'Put': {
+                    'TableName': table_name,
+                    'Item': expected,
+                    'ConditionExpression': (
+                        'attribute_not_exists(pk) AND attribute_not_exists(sk)'
+                    ),
+                },
+            },
+        ])
+    except ClientError as error:
+        winner = _get_item(table, allocation_key)
+        if winner:
+            _assert_allocation_item(winner, expected)
+            return
+        if not _project_accepts_writes(table, project_id):
+            raise ServiceError(
+                'Project deletion has started; allocation history cannot change.'
+            ) from error
+        code = error.response.get('Error', {}).get('Code')
+        if _conditional_failure(error) or code == 'TransactionCanceledException':
+            raise ServiceError(
+                'Could not identify the stored document allocation history'
+            ) from error
+        raise
+
+
+def get_versioned_document_by_allocation(
+    table,
+    project_id: str,
+    document_type: str,
+    allocation_id: str,
+) -> dict[str, Any] | None:
+    """Return a committed allocation and reject replay after its deletion."""
+    document_key = _document_key(project_id, document_type, allocation_id)
+    allocation = _get_item(
+        table, _allocation_key(project_id, document_type, allocation_id),
+    )
+    if allocation:
+        _assert_allocation_reference(
+            allocation, project_id, document_type, allocation_id,
+        )
+        document = _existing_document(table, document_key, allocation_id)
+        if document is None:
+            raise ServiceError(
+                'Document allocation was previously deleted and cannot be replayed'
+            )
+        _assert_allocation_item(
+            allocation,
+            _allocation_item(
+                project_id, document_type, allocation_id, document,
+            ),
+        )
+        return document
+
+    document = _existing_document(table, document_key, allocation_id)
+    if document is None:
+        return None
+    _ensure_allocation_history(
+        table, project_id, document_type, allocation_id, document,
+    )
+    return document
+
+
+def preserve_versioned_document_allocation(
+    table,
+    project_id: str,
+    document: dict[str, Any],
+) -> None:
+    """Durably preserve a generated managed document's allocation before delete."""
+    document_type = _managed_document_type(document)
+    allocation_id = document.get('version_allocation_id')
+    if document_type is None or not isinstance(allocation_id, str) or not allocation_id:
+        raise ServiceError('Stored document has no generated allocation to preserve')
+
+    document_key = _document_key(project_id, document_type, allocation_id)
+    if (
+        document.get('pk') != document_key['pk']
+        or document.get('sk') != document_key['sk']
+        or document.get('document_id')
+        != versioned_document_id(project_id, document_type, allocation_id)
+    ):
+        raise ServiceError('Stored generated document allocation is inconsistent')
+
+    current = _existing_document(table, document_key, allocation_id)
+    if current is None:
+        raise ServiceError(
+            'Document disappeared before its allocation history was preserved'
+        )
+    _ensure_allocation_history(
+        table, project_id, document_type, allocation_id, current,
+    )
+
+
 def persist_versioned_document(
     table,
     project_id: str,
@@ -794,45 +1100,43 @@ def persist_versioned_document(
     """Atomically persist one version-managed document and return its item.
 
     ``allocation_id`` must be stable across retries (job id for generated and
-    merged documents).  It produces a deterministic document key, so a timeout
-    after commit is recovered by reading the existing row rather than allocating
-    another version.
+    merged documents). It produces a deterministic document key, while the
+    allocation record remains after deletion so delayed retries cannot recreate
+    a generated document at a later version.
     """
-    if document_type not in VERSIONED_DOCUMENT_TYPES:
-        raise ValueError(f'{document_type!r} is not a version-managed document type')
-    if not isinstance(allocation_id, str) or not allocation_id:
-        raise ValueError('A stable document allocation id is required')
-
+    document_id = versioned_document_id(project_id, document_type, allocation_id)
     requested_base, _ = split_versioned_title(requested_title)
     requested_normalized = normalized_base_title(requested_base)
     table_name = getattr(table, 'name', None)
     if not isinstance(table_name, str) or not table_name:
         raise ValueError('Projects table name is required for document persistence')
 
-    document_id = _document_id(project_id, document_type, allocation_id)
-    document_key = {
-        'pk': f'PROJECT#{project_id}',
-        'sk': f'{document_type.upper()}#{document_id}',
-    }
-    existing = _existing_document(table, document_key, allocation_id)
+    document_key = _document_key(project_id, document_type, allocation_id)
+    existing = get_versioned_document_by_allocation(
+        table, project_id, document_type, allocation_id,
+    )
     if existing is not None:
         return existing
 
     counter_key = _counter_key(project_id, document_type, requested_normalized)
+    # Always discover legacy managed rows before a fresh allocation. During a
+    # rolling deployment, an old writer can add an unversioned sibling after the
+    # counter already exists; persisting it first keeps its visible version
+    # stable and advances the counter before this allocation chooses its number.
+    # Replay already returned above, so committed retries avoid this full query.
+    legacy_documents = _query_project_documents(table, project_id)
+    if any(
+        _managed_document_type(document) is not None
+        and _requires_legacy_persistence(document)
+        for document in legacy_documents
+    ):
+        persist_legacy_document_versions(table, project_id, legacy_documents)
 
     for attempt in range(VERSION_WRITE_ATTEMPTS):
-        counter = _get_item(table, counter_key)
+        counter = _wait_for_legacy_migration(table, counter_key)
         observed_version = _positive_int(counter.get('last_version')) if counter else None
 
         if observed_version is None:
-            legacy_documents = _query_project_documents(table, project_id)
-            if any(
-                _managed_document_type(document) is not None
-                and _requires_legacy_persistence(document)
-                for document in legacy_documents
-            ):
-                persist_legacy_document_versions(table, project_id, legacy_documents)
-                continue
             display_base, high_water = _series_state(
                 legacy_documents, document_type, requested_normalized, requested_base,
             )
@@ -860,13 +1164,22 @@ def persist_versioned_document(
                     'Key': counter_key,
                     'UpdateExpression': 'SET #last = :next, updated_at = :now',
                     'ConditionExpression': (
-                        '#last = :observed AND normalized_base_title = :normalized'
+                        '#last = :observed '
+                        'AND normalized_base_title = :normalized '
+                        'AND (attribute_not_exists(#owner) '
+                        'OR attribute_not_exists(#expires) '
+                        'OR #expires < :now_epoch)'
                     ),
-                    'ExpressionAttributeNames': {'#last': 'last_version'},
+                    'ExpressionAttributeNames': {
+                        '#last': 'last_version',
+                        '#owner': 'migration_owner',
+                        '#expires': 'migration_expires_at',
+                    },
                     'ExpressionAttributeValues': {
                         ':next': candidate_version,
                         ':observed': observed_version,
                         ':normalized': requested_normalized,
+                        ':now_epoch': int(time.time()),
                         ':now': item_fields['created_at'],
                     },
                 },
@@ -882,8 +1195,20 @@ def persist_versioned_document(
             'title': canonical_document_title(display_base, candidate_version),
             'version_allocation_id': allocation_id,
         }
+        allocation = _allocation_item(
+            project_id, document_type, allocation_id, item,
+        )
         transaction = [
             counter_write,
+            {
+                'Put': {
+                    'TableName': table_name,
+                    'Item': allocation,
+                    'ConditionExpression': (
+                        'attribute_not_exists(pk) AND attribute_not_exists(sk)'
+                    ),
+                },
+            },
             {
                 'Put': {
                     'TableName': table_name,
@@ -899,7 +1224,13 @@ def persist_versioned_document(
                         'SET document_count = if_not_exists(document_count, :zero) + :one, '
                         'updated_at = :now'
                     ),
-                    'ConditionExpression': 'attribute_exists(pk) AND attribute_exists(sk)',
+                    'ConditionExpression': (
+                        'attribute_exists(pk) AND attribute_exists(sk) '
+                        'AND attribute_not_exists(#deleting)'
+                    ),
+                    'ExpressionAttributeNames': {
+                        '#deleting': PROJECT_DELETION_ATTRIBUTE,
+                    },
                     'ExpressionAttributeValues': {
                         ':one': 1,
                         ':zero': 0,
@@ -913,10 +1244,27 @@ def persist_versioned_document(
             table.meta.client.transact_write_items(TransactItems=transaction)
             return item
         except ClientError as error:
-            replay = _existing_document(table, document_key, allocation_id)
+            replay = get_versioned_document_by_allocation(
+                table, project_id, document_type, allocation_id,
+            )
             if replay is not None:
                 return replay
-            retryable = _counter_moved(table, counter_key, observed_version) or _transient(error)
+            if (
+                error.response.get('Error', {}).get('Code')
+                == 'TransactionCanceledException'
+                and not _project_accepts_writes(table, project_id)
+            ):
+                raise ServiceError(
+                    'Project deletion has started; documents cannot be created.'
+                ) from error
+            migration_active = _legacy_migration_active(
+                _get_item(table, counter_key),
+            )
+            retryable = (
+                _counter_moved(table, counter_key, observed_version)
+                or migration_active
+                or _transient(error)
+            )
             if retryable and attempt + 1 < VERSION_WRITE_ATTEMPTS:
                 time.sleep(VERSION_WRITE_BACKOFF_SECONDS * (2 ** attempt))
                 continue
@@ -928,7 +1276,7 @@ def persist_versioned_document(
                 raise ServiceError('Could not allocate a document version. Please retry.') from error
             raise
 
-    raise RuntimeError('Document version allocation loop ended unexpectedly')
+    raise ServiceError('Could not allocate a document version. Please retry.')
 
 
 @dataclass(frozen=True, slots=True)
@@ -951,6 +1299,8 @@ def _managed_document_type(document: dict[str, Any]) -> str | None:
         return 'prd'
     if sk.startswith('PRFAQ#'):
         return 'prfaq'
+    if sk.startswith('PROTOTYPE#'):
+        return 'prototype'
     return None
 
 
@@ -968,13 +1318,6 @@ def _positive_int(value: object) -> int | None:
         parsed = int(value)
         return parsed if parsed > 0 else None
     return None
-
-
-def _document_id(project_id: str, document_type: str, allocation_id: str) -> str:
-    digest = hashlib.sha256(
-        f'{project_id}|{document_type}|{allocation_id}'.encode()
-    ).hexdigest()[:20]
-    return f'{document_type}_{digest}'
 
 
 def _counter_key(project_id: str, document_type: str, normalized: str) -> dict[str, str]:

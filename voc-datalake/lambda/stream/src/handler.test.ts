@@ -91,12 +91,18 @@ function mockStream() {
   } as unknown as NodeJS.WritableStream;
 }
 
-function makeEvent(body: Record<string, unknown>, path = '/chat/stream') {
+function makeEvent(
+  body: Record<string, unknown>,
+  path = '/chat/stream',
+  callerSubject: string | null = 'cognito-user-42',
+) {
   return {
     body: JSON.stringify(body),
     rawPath: path,
     headers: { origin: 'https://example.com' },
-    requestContext: {},
+    requestContext: callerSubject === null
+      ? {}
+      : { authorizer: { claims: { sub: callerSubject } } },
   };
 }
 
@@ -183,23 +189,35 @@ describe('handler', () => {
     expect(toolNamesPassedToConverse()).toContain('web_search');
   });
 
-  it('routes to VoC chat when no project_id', async () => {
+  it('keeps non-project VoC chat working without a caller subject', async () => {
     const stream = mockStream();
-    const event = makeEvent({ message: 'hello' });
+    const event = makeEvent({ message: 'hello' }, '/chat/stream', null);
 
     await (handler as StreamHandler)(event, stream);
 
     expect(mockBuildVocChatContext).toHaveBeenCalledOnce();
     expect(mockBuildProjectChatContext).not.toHaveBeenCalled();
+    expect(mockBuildRoundtableContext).not.toHaveBeenCalled();
+    expect(mockSendErrorAndClose).not.toHaveBeenCalled();
   });
 
-  it('routes to project chat when project_id in body', async () => {
+  it('forwards the real event subject to normal project chat', async () => {
     const stream = mockStream();
     const event = makeEvent({ message: 'hello', project_id: 'proj-1' });
 
     await (handler as StreamHandler)(event, stream);
 
-    expect(mockBuildProjectChatContext).toHaveBeenCalledOnce();
+    expect(mockBuildProjectChatContext).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(Function),
+      expect.any(String),
+      'proj-1',
+      'hello',
+      [],
+      [],
+      undefined,
+      'cognito-user-42',
+    );
     expect(mockBuildVocChatContext).not.toHaveBeenCalled();
   });
 
@@ -210,6 +228,54 @@ describe('handler', () => {
     await (handler as StreamHandler)(event, stream);
 
     expect(mockBuildProjectChatContext).toHaveBeenCalledOnce();
+  });
+
+  it('forwards the real event subject to roundtable chat', async () => {
+    const stream = mockStream();
+    const event = makeEvent({
+      message: '@all thoughts?',
+      project_id: 'proj-1',
+      roundtable: true,
+      selected_personas: ['p1'],
+      selected_documents: ['doc-1'],
+    });
+
+    await (handler as StreamHandler)(event, stream);
+
+    expect(mockBuildRoundtableContext).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(Function),
+      expect.any(String),
+      'proj-1',
+      '@all thoughts?',
+      ['p1'],
+      ['doc-1'],
+      undefined,
+      'cognito-user-42',
+    );
+  });
+
+  it.each([
+    { name: 'normal project', roundtable: false, callerSubject: null },
+    { name: 'roundtable', roundtable: true, callerSubject: '   ' },
+  ])('rejects $name chat without a nonblank caller subject', async ({ roundtable, callerSubject }) => {
+    const stream = mockStream();
+    const event = makeEvent({
+      message: 'hello',
+      project_id: 'proj-1',
+      roundtable,
+    }, '/chat/stream', callerSubject);
+
+    await (handler as StreamHandler)(event, stream);
+
+    expect(mockSendErrorAndClose).toHaveBeenCalledWith(
+      stream,
+      'Authenticated user subject is required for project chat',
+      'ValidationError',
+      400,
+    );
+    expect(mockBuildProjectChatContext).not.toHaveBeenCalled();
+    expect(mockBuildRoundtableContext).not.toHaveBeenCalled();
   });
 
   it('sends validation error for empty message', async () => {

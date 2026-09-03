@@ -15,7 +15,12 @@ import type { Message, ContentBlock, ToolResultContentBlock, Tool } from '@aws-s
 import { streamifyResponse, wrapStreamWithHeaders, sendSSE, sendErrorAndClose } from './lib/streaming.js';
 import { isApiError, ValidationError } from './lib/errors.js';
 import { chatRequestSchema, type ChatRequest, type HistoryMessage } from './schema.js';
-import { z } from 'zod';
+import {
+  parseLambdaEvent,
+  requireProjectCallerSubject,
+  resolveProjectId,
+  type LambdaEvent,
+} from './project-route.js';
 import { converseStream } from './bedrock/converse-stream.js';
 import { resolveModelOverride } from './bedrock/model-override.js';
 import { processStreamEvent, createStreamState, type ToolUseBlock } from './bedrock/stream-processor.js';
@@ -56,19 +61,6 @@ const ROUNDTABLE_THINKING_BUDGET = 2000;
 
 // ── Types ──
 
-interface LambdaEvent {
-  body?: string;
-  rawPath?: string;
-  path?: string;
-  requestContext?: {
-    http?: { path?: string; method?: string };
-    resourcePath?: string;
-    authorizer?: { claims?: Record<string, string> };
-  };
-  headers?: Record<string, string>;
-  resource?: string;
-}
-
 interface ContextFilters {
   source?: string;
   category?: string;
@@ -76,25 +68,6 @@ interface ContextFilters {
   days?: number;
   /** 'imported' (default) or 'review' — which date the days window uses. */
   dateBasis?: 'imported' | 'review';
-}
-
-// ── Route helpers ──
-
-function getPath(event: LambdaEvent): string {
-  return (
-    event.rawPath ??
-    event.requestContext?.http?.path ??
-    event.path ??
-    event.resource ??
-    ''
-  );
-}
-
-function extractProjectId(path: string): string | null {
-  const parts = path.split('/').filter(Boolean);
-  const projectsIdx = parts.indexOf('projects');
-  if (projectsIdx >= 0 && projectsIdx + 1 < parts.length) return parts[projectsIdx + 1];
-  return null;
 }
 
 // ── Tool execution helpers ──
@@ -287,6 +260,7 @@ async function handleVocChat(body: ChatRequest, stream: NodeJS.WritableStream): 
 
 async function handleRoundtableChat(
   projectId: string,
+  callerSubject: string,
   body: ChatRequest,
   stream: NodeJS.WritableStream,
 ): Promise<void> {
@@ -299,6 +273,7 @@ async function handleRoundtableChat(
     body.selected_personas ?? [],
     body.selected_documents ?? [],
     body.response_language,
+    callerSubject,
   );
 
   sendSSE(stream, { type: 'metadata', metadata: ctx.metadata });
@@ -389,6 +364,7 @@ Share your own perspective on the user's message in your own voice. Be direct an
 
 async function handleProjectChat(
   projectId: string,
+  callerSubject: string,
   body: ChatRequest,
   stream: NodeJS.WritableStream,
 ): Promise<void> {
@@ -401,6 +377,7 @@ async function handleProjectChat(
     body.selected_personas ?? [],
     body.selected_documents ?? [],
     body.response_language,
+    callerSubject,
   );
 
   sendSSE(stream, { type: 'metadata', metadata: ctx.metadata });
@@ -471,24 +448,6 @@ function deduplicateWebSources(webSources: WebSource[]): WebSource[] {
   });
 }
 
-const lambdaEventSchema = z.object({
-  body: z.string().optional(),
-  rawPath: z.string().optional(),
-  path: z.string().optional(),
-  requestContext: z.object({
-    http: z.object({ path: z.string().optional(), method: z.string().optional() }).optional(),
-    resourcePath: z.string().optional(),
-    authorizer: z.object({ claims: z.record(z.string()).optional() }).optional(),
-  }).optional(),
-  headers: z.record(z.string()).optional(),
-  resource: z.string().optional(),
-}).passthrough();
-
-function parseLambdaEvent(raw: unknown): LambdaEvent {
-  const parsed = lambdaEventSchema.safeParse(raw);
-  return parsed.success ? parsed.data : {};
-}
-
 // ── Request routing ──
 
 async function routeRequest(event: LambdaEvent, stream: NodeJS.WritableStream): Promise<void> {
@@ -502,12 +461,15 @@ async function routeRequest(event: LambdaEvent, stream: NodeJS.WritableStream): 
   const body = parsed.data;
 
   // Route by project_id in body (preferred) or URL path (legacy)
-  const projectId = body.project_id ?? extractProjectId(getPath(event));
+  const projectId = resolveProjectId(event, body.project_id);
 
-  if (projectId && body.roundtable) {
-    await handleRoundtableChat(projectId, body, stream);
-  } else if (projectId) {
-    await handleProjectChat(projectId, body, stream);
+  if (projectId) {
+    const callerSubject = requireProjectCallerSubject(event);
+    if (body.roundtable) {
+      await handleRoundtableChat(projectId, callerSubject, body, stream);
+    } else {
+      await handleProjectChat(projectId, callerSubject, body, stream);
+    }
   } else {
     await handleVocChat(body, stream);
   }

@@ -6,6 +6,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { z } from 'zod';
 import { signCloudFrontUrl } from '../lib/cloudfront-signing.js';
 import { NotFoundError } from '../lib/errors.js';
+import { buildDocumentsContext, isPrototypeDocument } from './document-context.js';
 import { fetchRecentFeedback } from './recent-feedback.js';
 import { buildSinglePersonaPrompt } from './persona-prompt.js';
 import {
@@ -291,25 +292,6 @@ function buildPersonasContext(personas: ProjectItem[]): string {
   return `\n## 👤 ACTIVE PERSONAS (Respond from their perspective)\n${sections.join('\n')}`;
 }
 
-function buildDocumentsContext(
-  documents: ProjectItem[],
-  selectedDocumentIds: string[],
-): { selectedContent: string; otherDocsList: string[] } {
-  const selectedParts: string[] = [];
-  const otherDocsList: string[] = [];
-  for (const doc of documents) {
-    const docId = doc.document_id ?? '';
-    const docType = (doc.document_type ?? 'doc').toUpperCase();
-    const docTitle = doc.title ?? 'Untitled';
-    if (selectedDocumentIds.includes(docId)) {
-      selectedParts.push(`\n## 📄 DOCUMENT: ${docTitle} (${docType}) [ID: ${docId}]\n\n${doc.content ?? ''}\n\n---\n`);
-    } else {
-      otherDocsList.push(`- ${docType}: ${docTitle} [ID: ${docId}]`);
-    }
-  }
-  return { selectedContent: selectedParts.join(''), otherDocsList };
-}
-
 // ── Feedback fetching ──
 // Extracted to recent-feedback.ts (issue #220): the per-day partition walk,
 // batching, and failure-visibility logic live there. Covered end-to-end via
@@ -324,7 +306,7 @@ function assembleSystemPrompt(
   allPersonas: ProjectItem[],
   otherDocsList: string[],
   feedbackSection: string,
-  selectedDocumentIds: string[],
+  selectedTextDocuments: ProjectItem[],
   documents: ProjectItem[],
   responseLanguage?: SupportedLanguage,
 ): string {
@@ -354,21 +336,32 @@ function assembleSystemPrompt(
     parts.push(`## Available Personas (mention with @ to activate)\n${pNames.join(', ')}\n\n`);
   }
 
-  if (selectedDocumentIds.length > 0) {
-    const docTitles = documents.filter((d) => selectedDocumentIds.includes(d.document_id ?? '')).map((d) => d.title);
+  if (selectedTextDocuments.length > 0) {
+    const docTitles = selectedTextDocuments.map((document) => document.title);
     parts.push(`📄 IMPORTANT: The user has tagged the document(s): ${docTitles.join(', ')}\n`);
     parts.push('You MUST use the document content provided above to answer their question.\n\n');
   }
 
-  // Always tell the AI about document tools — it should be able to edit any project document
-  if (documents.length > 0) {
-    const allDocEntries = documents.map((d) => `- ${(d.document_type ?? 'doc').toUpperCase()}: ${d.title ?? 'Untitled'} [ID: ${d.document_id ?? ''}]`);
-    parts.push(`## 🛠️ Document Tools\n`);
-    parts.push(`You have access to the **update_document** tool to edit any project document and the **create_document** tool to create new ones.\n`);
-    parts.push(`When the user asks you to edit, modify, add to, or rewrite a document, use update_document with the document ID.\n`);
-    parts.push(`All project documents:\n${allDocEntries.join('\n')}\n\n`);
+  const editableDocuments = documents.filter((document) => !isPrototypeDocument(document));
+  const prototypes = documents.filter(isPrototypeDocument);
+  if (editableDocuments.length > 0) {
+    const editableEntries = editableDocuments.map(
+      (document) => `- ${(document.document_type ?? 'doc').toUpperCase()}: ${document.title ?? 'Untitled'} [ID: ${document.document_id ?? ''}]`,
+    );
+    parts.push('## 🛠️ Document Tools\n');
+    parts.push('You can use **update_document** for textual project documents and **create_document** for new custom documents.\n');
+    parts.push('Prototype HTML is not editable through update_document; use the prototype revision workflow instead.\n');
+    parts.push('Editable textual documents:\n');
+    parts.push(`${editableEntries.join('\n')}\n\n`);
   } else {
-    parts.push('You have access to the create_document tool to create new documents when the user asks.\n\n');
+    parts.push('You can use create_document to create new custom documents when the user asks.\n\n');
+  }
+  if (prototypes.length > 0) {
+    const prototypeEntries = prototypes.map(
+      (document) => `- PROTOTYPE: ${document.title ?? 'Untitled'} [ID: ${document.document_id ?? ''}]`,
+    );
+    parts.push('## Available Prototype Artifacts (metadata only; revise through the prototype workflow)\n');
+    parts.push(`${prototypeEntries.join('\n')}\n\n`);
   }
 
   parts.push('You also have access to the search_feedback tool to look up customer feedback when relevant.\n\n');
@@ -407,8 +400,11 @@ export async function buildProjectChatContext(
   selectedPersonaIds: string[] = [],
   selectedDocumentIds: string[] = [],
   responseLanguage?: SupportedLanguage,
+  callerSubject?: string,
 ): Promise<ProjectChatContext> {
-  const rawItems = await loadProject(projectId, selectedDocumentIds);
+  const rawItems = callerSubject === undefined
+    ? await loadProject(projectId, selectedDocumentIds)
+    : await loadProject(projectId, selectedDocumentIds, callerSubject);
   if (rawItems.length === 0) {
     throw new NotFoundError('Project not found');
   }
@@ -421,10 +417,15 @@ export async function buildProjectChatContext(
   }
 
   const activePersonas = resolveActivePersonas(personas, selectedPersonaIds, message);
-  const { selectedContent, otherDocsList } = buildDocumentsContext(documents, selectedDocumentIds);
+  const {
+    selectedContent,
+    selectedTextDocuments,
+    otherDocsList,
+  } = buildDocumentsContext(documents, selectedDocumentIds);
 
-  // Only fetch feedback if no documents selected
-  const feedback = selectedDocumentIds.length === 0 && feedbackTable
+  // A selected prototype is metadata, not textual grounding. Fall back to
+  // recent feedback whenever no selected textual document supplied content.
+  const feedback = selectedTextDocuments.length === 0 && feedbackTable
     ? await fetchRecentFeedback(docClient, feedbackTable)
     : { count: 0, promptSection: '' };
 
@@ -435,7 +436,7 @@ export async function buildProjectChatContext(
     personas,
     otherDocsList,
     feedback.promptSection,
-    selectedDocumentIds,
+    selectedTextDocuments,
     documents,
     responseLanguage,
   );
@@ -446,7 +447,7 @@ export async function buildProjectChatContext(
   const metadata = {
     mentioned_personas: mentionedPersonas.map((p) => p.name),
     selected_personas: selectedPersonas.map((p) => p.name),
-    referenced_documents: documents.filter((d) => selectedDocumentIds.includes(d.document_id ?? '')).map((d) => d.title),
+    referenced_documents: selectedTextDocuments.map((document) => document.title),
     context: { feedback_count: feedback.count, persona_count: personas.length, document_count: documents.length },
   };
 
@@ -465,8 +466,11 @@ export async function buildRoundtableContext(
   selectedPersonaIds: string[] = [],
   selectedDocumentIds: string[] = [],
   responseLanguage?: SupportedLanguage,
+  callerSubject?: string,
 ): Promise<RoundtableContext> {
-  const rawItems = await loadProject(projectId, selectedDocumentIds);
+  const rawItems = callerSubject === undefined
+    ? await loadProject(projectId, selectedDocumentIds)
+    : await loadProject(projectId, selectedDocumentIds, callerSubject);
   if (rawItems.length === 0) throw new NotFoundError('Project not found');
 
   const items = rawItems.map((raw) => projectItemSchema.parse(raw));
@@ -478,12 +482,19 @@ export async function buildRoundtableContext(
     ? personas.filter((p) => selectedPersonaIds.includes(p.persona_id ?? ''))
     : personas;
 
-  const { selectedContent, otherDocsList } = buildDocumentsContext(documents, selectedDocumentIds);
+  const {
+    selectedContent,
+    selectedTextDocuments,
+    otherDocsList,
+  } = buildDocumentsContext(documents, selectedDocumentIds);
 
-  const feedback = selectedDocumentIds.length === 0 && feedbackTable
+  const feedback = selectedTextDocuments.length === 0 && feedbackTable
     ? await fetchRecentFeedback(docClient, feedbackTable)
     : { count: 0, promptSection: '' };
 
+  const selectedTextDocumentIds = selectedTextDocuments
+    .map((document) => document.document_id)
+    .filter((documentId): documentId is string => typeof documentId === 'string');
   const projectName = project.name ?? 'Project';
 
   // Build per-persona prompts (initial — no previous responses yet).
@@ -497,7 +508,8 @@ export async function buildRoundtableContext(
       avatar_url: await resolveAvatarUrl(p.avatar_url),
       systemPrompt: buildSinglePersonaPrompt(
         projectName, p, selectedContent, otherDocsList,
-        feedback.promptSection, selectedDocumentIds, documents, [], responseLanguage,
+        feedback.promptSection, selectedTextDocumentIds, selectedTextDocuments,
+        [], responseLanguage,
       ),
     })),
   );
@@ -505,9 +517,15 @@ export async function buildRoundtableContext(
   const metadata = {
     roundtable: true,
     persona_count: activePersonas.length,
-    referenced_documents: documents.filter((d) => selectedDocumentIds.includes(d.document_id ?? '')).map((d) => d.title),
+    referenced_documents: selectedTextDocuments.map((document) => document.title),
     context: { feedback_count: feedback.count, persona_count: personas.length, document_count: documents.length },
   };
 
-  return { personas: roundtablePersonas, userMessage: message, metadata, selectedDocumentIds, documents };
+  return {
+    personas: roundtablePersonas,
+    userMessage: message,
+    metadata,
+    selectedDocumentIds: selectedTextDocumentIds,
+    documents,
+  };
 }

@@ -27,28 +27,52 @@ def mock_dynamodb():
     mock_table.name = 'test-projects-table'
     mock_table.get_item.return_value = {}
     mock_table.query.return_value = {'Items': []}
+    transactions = []
+    version_items = {}
 
-    # Document version persistence uses one low-level transaction. Mirror its
-    # externally observable document and META writes so the existing job tests
-    # keep asserting behavior rather than a particular DynamoDB API surface.
+    def version_get_item(_table, key):
+        """Keep allocator bookkeeping separate from mocked source reads."""
+        return version_items.get((key.get('pk'), key.get('sk')), {})
+
+    # Document version persistence uses one four-item transaction: counter,
+    # allocation history, document, and project META. Mirror every Put/Update so
+    # job tests observe the same externally visible writes while retaining the
+    # raw transaction for atomicity assertions.
     def transact_write_items(*, TransactItems):
+        transactions.append(TransactItems)
         for action in TransactItems:
             put = action.get('Put')
-            if put and str(put.get('Item', {}).get('pk', '')).startswith('PROJECT#'):
-                mock_table.put_item(Item=put['Item'])
+            if put:
+                item = put['Item']
+                version_items[(item.get('pk'), item.get('sk'))] = item
+                mock_table.put_item(Item=item)
             update = action.get('Update')
-            if update and update.get('Key', {}).get('sk') == 'META':
-                mock_table.update_item(
-                    Key=update['Key'],
-                    UpdateExpression=update['UpdateExpression'],
-                    ExpressionAttributeValues=update['ExpressionAttributeValues'],
+            if update:
+                key = update['Key']
+                values = update.get('ExpressionAttributeValues', {})
+                stored = version_items.setdefault(
+                    (key.get('pk'), key.get('sk')), dict(key),
                 )
+                # ponytail: this fake models only counter advancement; switch
+                # these job tests to moto if they need full update semantics.
+                if ':next' in values:
+                    stored['last_version'] = values[':next']
+                kwargs = {
+                    'Key': key,
+                    'UpdateExpression': update['UpdateExpression'],
+                    'ExpressionAttributeValues': values,
+                }
+                if 'ExpressionAttributeNames' in update:
+                    kwargs['ExpressionAttributeNames'] = update['ExpressionAttributeNames']
+                mock_table.update_item(**kwargs)
         return {}
 
     mock_table.meta.client.transact_write_items.side_effect = transact_write_items
     mock_resource.Table.return_value = mock_table
     patchers = [
         patch('shared.aws.get_dynamodb_resource', return_value=mock_resource),
+        patch('shared.document_versions._get_item', side_effect=version_get_item),
+        patch('shared.document_versions._query_project_documents', return_value=[]),
     ]
     # Also patch at handler module level for already-imported modules
     for module_path in [
@@ -59,7 +83,11 @@ def mock_dynamodb():
         patchers.append(patch(module_path, return_value=mock_resource, create=True))
     for p in patchers:
         p.start()
-    yield {'resource': mock_resource, 'table': mock_table}
+    yield {
+        'resource': mock_resource,
+        'table': mock_table,
+        'transactions': transactions,
+    }
     for p in patchers:
         p.stop()
 
@@ -100,6 +128,9 @@ def mock_s3():
     lazily inside other helper functions, not injected.
     """
     mock_client = MagicMock()
+    winner = {'ETag': '"test-etag"', 'VersionId': 'test-version'}
+    mock_client.put_object.return_value = winner
+    mock_client.head_object.return_value = winner
     with patch('jobs.document_generator.handler._s3', return_value=mock_client, create=True):
         yield mock_client
 

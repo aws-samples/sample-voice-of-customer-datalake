@@ -592,3 +592,98 @@ describe('bounded document family metadata', () => {
     );
   });
 });
+
+describe('prototype selection boundaries', () => {
+  const prototype = {
+    pk: 'PROJECT#proj-1',
+    sk: 'PROTOTYPE#prototype-1',
+    document_id: 'prototype-1',
+    document_type: 'prototype',
+    title: 'Checkout prototype',
+    content: '<html>RAW_PROTOTYPE_HTML</html>',
+  };
+  const report = {
+    pk: 'PROJECT#proj-1',
+    sk: 'PRODUCT_REPORT#report-1',
+    document_id: 'report-1',
+    document_type: 'product_report',
+    title: 'Product report',
+    content: '# Grounded product findings',
+  };
+
+  beforeEach(() => vi.clearAllMocks());
+
+  it('keeps a selected prototype metadata-only and falls back to recent feedback', async () => {
+    const feedback = {
+      source_platform: 'feedback-form',
+      sentiment_label: 'negative',
+      category: 'checkout',
+      original_text: 'Checkout feedback remains grounded',
+    };
+    const docClient = createMockDocClient([
+      [projectMeta, prototype],
+      [feedback],
+    ]);
+
+    const context = await buildProjectChatContext(
+      docClient,
+      projectLoaderFor(docClient),
+      'feedback-table',
+      'proj-1',
+      'Review the prototype',
+      [],
+      ['prototype-1'],
+    );
+
+    expect(context.systemPrompt).toContain(
+      'Available Prototype Artifacts (metadata only; revise through the prototype workflow)',
+    );
+    expect(context.systemPrompt).toContain(
+      'PROTOTYPE: Checkout prototype [ID: prototype-1]',
+    );
+    expect(context.systemPrompt).toContain('Checkout feedback remains grounded');
+    expect(context.systemPrompt).not.toContain('RAW_PROTOTYPE_HTML');
+    expect(context.systemPrompt).not.toContain(
+      'You MUST use the document content provided above',
+    );
+    expect(context.metadata.referenced_documents).toStrictEqual([]);
+    expect(context.metadata.context).toStrictEqual(
+      expect.objectContaining({ feedback_count: 1 }),
+    );
+    expect(docClient.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          TableName: 'feedback-table',
+          IndexName: 'gsi1-by-date',
+          KeyConditionExpression: 'gsi1pk = :pk',
+          ScanIndexForward: false,
+          Limit: 30,
+        }),
+      }),
+    );
+  });
+
+  it('returns only actual textual grounding IDs and references from roundtable context', async () => {
+    const docClient = createMockDocClient([
+      [projectMeta, persona1, prototype, report],
+    ]);
+
+    const context = await buildRoundtableContext(
+      docClient,
+      projectLoaderFor(docClient),
+      'feedback-table',
+      'proj-1',
+      'Compare the selected artifacts',
+      ['p1'],
+      ['prototype-1', 'report-1'],
+    );
+
+    expect(context.selectedDocumentIds).toStrictEqual(['report-1']);
+    expect(context.metadata.referenced_documents).toStrictEqual(['Product report']);
+    expect(context.personas[0].systemPrompt).toContain('Grounded product findings');
+    expect(context.personas[0].systemPrompt).toContain(
+      'PROTOTYPE: Checkout prototype [ID: prototype-1]',
+    );
+    expect(context.personas[0].systemPrompt).not.toContain('RAW_PROTOTYPE_HTML');
+  });
+});
