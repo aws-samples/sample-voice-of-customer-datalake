@@ -27,7 +27,7 @@ from shared.api import (
     require_admin,
 )
 from shared.tables import get_jobs_table, get_aggregates_table, get_projects_table
-from shared.jobs import create_job
+from shared.jobs import create_job, update_job_status
 from shared.exceptions import (
     ApiError,
     AuthorizationError,
@@ -320,7 +320,28 @@ def api_run_research(project_id: str):
         # The job id is the allocation identity on BOTH research paths, so the
         # fallback and the Step Functions save step cannot allocate two versions
         # for one request (see shared/document_versions.persist_versioned_document).
-        return run_research(project_id, body, job_id)
+        result = run_research(project_id, body, job_id)
+        # …and the job row has to reach a terminal state on both paths too. The
+        # Step Functions path finishes it in `step_save`; this one used to return
+        # the committed document and leave the row at `pending` until its TTL. The
+        # frontend reads that row: `jobsPollInterval` keeps polling for as long as
+        # anything is `pending`, and `newlyTerminalJobIds` fires the project
+        # refetch on the TRANSITION — so an abandoned `pending` row meant a page
+        # open during a fallback research polled forever and never refreshed.
+        #
+        # `failed` is not written here: a raise propagates to the error handler
+        # with the request, so the caller learns of the failure from the response
+        # rather than from the row. (`step_error` exists because the async path has
+        # no response left to fail.)
+        document = result.get('document') if isinstance(result, dict) else None
+        update_job_status(
+            project_id, job_id, 'completed', 100, 'complete',
+            result={
+                'document_id': (document or {}).get('document_id', ''),
+                'title': (document or {}).get('title', ''),
+            },
+        )
+        return result
 
     return {'success': True, 'job_id': job_id, 'status': 'pending', 'message': 'Research started.'}
 

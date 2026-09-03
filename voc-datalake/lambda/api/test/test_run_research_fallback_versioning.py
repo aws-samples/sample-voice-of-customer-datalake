@@ -8,7 +8,12 @@ identity — otherwise a deployment that lost the state machine would restart th
 
 Real table (moto) rather than a request-shape mock: the version, the title and the
 project's `document_count` all come out of one conditional transaction.
+
+`TestTheFallbackFinishesItsJobRow` covers the other half of the parity: the job row
+the route creates must reach a terminal state on this path too, because the frontend
+polls and refetches off it.
 """
+import json
 from unittest.mock import MagicMock, patch
 
 import boto3
@@ -122,6 +127,80 @@ def test_a_replay_does_not_re_run_the_llm_chain(projects_table):
         projects.run_research('proj-1', {'question': 'Why?', 'title': 'X'}, 'job_a')
 
     chain.assert_not_called()
+
+
+class TestTheFallbackFinishesItsJobRow:
+    """Both research paths leave the job row TERMINAL, not just the async one.
+
+    The Step Functions path finishes the row in `step_save`. The fallback used to
+    return the committed document and leave the row at `pending` until its TTL, and
+    the frontend reads that row: `jobsPollInterval` polls for as long as anything is
+    `pending`, and `newlyTerminalJobIds` fires the project refetch on the
+    TRANSITION — so a page open during a fallback research polled forever and never
+    refreshed. Asserted through the ROUTE, because the route is where the job id and
+    the terminal write meet.
+    """
+
+    @staticmethod
+    def call(api_gateway_event, lambda_context, **overrides):
+        from projects_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='POST',
+            path='/projects/proj-1/research',
+            path_params={'project_id': 'proj-1'},
+            body={'question': 'Why do users churn?', 'title': 'Churn drivers'},
+        )
+        document = {'document_id': 'research_1', 'title': 'Churn drivers (v1)'}
+        research = overrides.get(
+            'research', MagicMock(return_value={'success': True, 'document': document}),
+        )
+        # No RESEARCH_STATE_MACHINE_ARN: the whole point is the fallback branch.
+        with (
+            patch.dict('os.environ', {'RESEARCH_STATE_MACHINE_ARN': ''}),
+            patch('projects_handler.create_job', return_value=('job-1', {})),
+            patch('projects_handler.run_research', research),
+            patch('projects_handler.update_job_status') as status,
+        ):
+            response = lambda_handler(event, lambda_context)
+        return response, status, research
+
+    def test_the_row_reaches_completed_with_the_stored_document(
+        self, api_gateway_event, lambda_context,
+    ):
+        response, status, _ = self.call(api_gateway_event, lambda_context)
+
+        assert json.loads(response['body'])['success'] is True
+        status.assert_called_once()
+        arguments = status.call_args.args
+        assert arguments[0] == 'proj-1'
+        # The id `create_job` minted, which is also the allocation identity.
+        assert arguments[1] == 'job-1'
+        assert arguments[2] == 'completed'
+        assert arguments[3] == 100
+        # The STORED `(vN)` title, so the job panel and the Documents tab name the
+        # same document — the same result shape `step_save` writes.
+        assert status.call_args.kwargs['result'] == {
+            'document_id': 'research_1', 'title': 'Churn drivers (v1)',
+        }
+
+    def test_a_failure_leaves_the_row_alone_because_the_response_carries_it(
+        self, api_gateway_event, lambda_context,
+    ):
+        """No `failed` write here: a raise propagates with the REQUEST.
+
+        The caller learns of the failure from its own response, which is why
+        `step_error` exists only for the async path — that one has no response left
+        to fail. Writing `failed` here would be a second, weaker signal.
+        """
+        from shared.exceptions import ServiceError
+
+        _, status, _ = self.call(
+            api_gateway_event, lambda_context,
+            research=MagicMock(side_effect=ServiceError('Bedrock said no')),
+        )
+
+        status.assert_not_called()
 
 
 def test_the_two_research_writers_agree_on_the_untitled_series_key():

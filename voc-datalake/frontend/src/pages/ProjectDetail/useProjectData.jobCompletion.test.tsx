@@ -24,8 +24,8 @@ import {
   describe, it, expect, vi, beforeEach, afterEach,
 } from 'vitest'
 import {
-  JOB_START_POLL_WINDOW_MS, jobsPollInterval, newlyTerminalJobIds, projectJobsKey,
-  useProjectData,
+  firstPayloadMissesAnArtifact, JOB_START_POLL_WINDOW_MS, jobsPollInterval,
+  newlyTerminalJobIds, projectJobsKey, useProjectData,
 } from './useProjectData'
 import type { ProjectDocument, ProjectJob } from '../../api/types'
 
@@ -214,6 +214,46 @@ describe('project refetch on terminal job transitions', () => {
     expect(getProject).toHaveBeenCalledTimes(PROJECT_FETCHES_ON_MOUNT)
   })
 
+  it('refetches on mount when the first jobs payload names a document the project lacks', async () => {
+    // The interleaving seeding alone would drop: `projectKey` and `projectJobsKey`
+    // are independent queries, so a job can settle BETWEEN the project read
+    // committing server-side and the jobs read committing. Seeding on that payload
+    // suppresses the only invalidation this job will ever get — its id is already
+    // settled, so the next poll reports no transition, and once nothing is live the
+    // poll stops. The page then holds stale Overview counts and a disabled prototype
+    // action until a manual action.
+    getJobs.mockResolvedValue({
+      jobs: [{
+        ...job('completed', new Date().toISOString()),
+        result: { document_id: 'doc-2', title: 'Prototype (v2)' },
+      }],
+    })
+
+    renderProjectData()
+
+    // The mount project fetch returns only `doc-1`, so `doc-2` is the artifact it
+    // missed.
+    await waitFor(() => expect(getProject.mock.calls.length)
+      .toBe(PROJECT_FETCHES_ON_MOUNT + 1))
+  })
+
+  it('does not refetch on mount when the first payload names a document the project has', async () => {
+    // The control for the case above, and the one that keeps the common path at one
+    // read: the same shape of payload, differing only in whether the mount fetch
+    // already contains the artifact.
+    getJobs.mockResolvedValue({
+      jobs: [{
+        ...job('completed', new Date().toISOString()),
+        result: { document_id: prototypeDoc.document_id, title: 'Prototype' },
+      }],
+    })
+
+    renderProjectData()
+
+    await waitFor(() => expect(getJobs).toHaveBeenCalled())
+    expect(getProject).toHaveBeenCalledTimes(PROJECT_FETCHES_ON_MOUNT)
+  })
+
   it('does not refetch the project while the build is still running', async () => {
     getJobs.mockResolvedValue({ jobs: [job('running', undefined)] })
 
@@ -267,6 +307,66 @@ describe('newlyTerminalJobIds', () => {
 
   it('ignores an entry with no usable job id', () => {
     expect(newlyTerminalJobIds([job('completed', undefined, '')], new Set())).toEqual([])
+  })
+})
+
+describe('firstPayloadMissesAnArtifact', () => {
+  const withResult = (
+    result: ProjectJob['result'], status: ProjectJob['status'] = 'completed',
+  ): ProjectJob => ({ ...job(status, new Date().toISOString()), result })
+  const project = {
+    documents: [{ document_id: 'doc-1' }],
+    personas: [{ persona_id: 'persona-1' }],
+  }
+
+  it('is true for a completed job whose document is not in the project payload', () => {
+    expect(firstPayloadMissesAnArtifact([withResult({ document_id: 'doc-2' })], project))
+      .toBe(true)
+  })
+
+  it('is false when the project payload already contains the document', () => {
+    expect(firstPayloadMissesAnArtifact([withResult({ document_id: 'doc-1' })], project))
+      .toBe(false)
+  })
+
+  it('is true for a completed job whose persona is not in the project payload', () => {
+    expect(firstPayloadMissesAnArtifact([withResult({ persona_id: 'persona-2' })], project))
+      .toBe(true)
+  })
+
+  it('is false when the project payload already contains the persona', () => {
+    expect(firstPayloadMissesAnArtifact([withResult({ persona_id: 'persona-1' })], project))
+      .toBe(false)
+  })
+
+  it('is false while the project read is still in flight', () => {
+    // Whatever that read returns will already include the artifact, so there is
+    // nothing to invalidate — and invalidating a query that has never resolved
+    // would refetch it twice on every open.
+    expect(firstPayloadMissesAnArtifact([withResult({ document_id: 'doc-2' })], undefined))
+      .toBe(false)
+  })
+
+  it('is false for a failed job, which produced no artifact to compare', () => {
+    // Its own effect on the page — turning the "generating" affordances off — comes
+    // from the jobs payload being read here, not from the project.
+    expect(firstPayloadMissesAnArtifact(
+      [withResult({ document_id: 'doc-2' }, 'failed')], project,
+    )).toBe(false)
+  })
+
+  it('is false for a completed job whose result names nothing', () => {
+    // The honest answer rather than a refetch on every open: `generate_personas`
+    // reports its personas in `result.personas`, and an empty envelope names no
+    // artifact at all.
+    expect(firstPayloadMissesAnArtifact([withResult({}), withResult(undefined)], project))
+      .toBe(false)
+  })
+
+  it('is false for a still-running job even when its result names a stale id', () => {
+    expect(firstPayloadMissesAnArtifact(
+      [withResult({ document_id: 'doc-2' }, 'running')], project,
+    )).toBe(false)
   })
 })
 

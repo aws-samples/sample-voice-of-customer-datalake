@@ -138,6 +138,55 @@ export function newlyTerminalJobIds(
   return settled
 }
 
+/**
+ * Whether the FIRST jobs payload reports an artifact the project read missed.
+ *
+ * `projectKey` and `projectJobsKey` are two independent queries issued at roughly
+ * the same time, so a job can settle BETWEEN the project read committing
+ * server-side and the jobs read committing. The first jobs payload then reports a
+ * terminal job the mount project fetch did not see — and seeding on that payload
+ * (which is right for the common case, where its terminal jobs are history the
+ * mount fetch already reflects) would suppress the only invalidation that job will
+ * ever get: the next poll finds its id already settled, and if nothing else is live
+ * the poll stops. The page then holds stale Overview counts and a disabled
+ * prototype action until a manual action.
+ *
+ * Answered from the DATA rather than by widening the window back to a clock: a
+ * completed job names the artifact it produced, so "did the project read see it"
+ * is a set membership test. `false` when the project read is still in flight —
+ * whatever it returns will already include the artifact — and `false` for a job
+ * whose result names nothing, which is the honest answer rather than a refetch on
+ * every open.
+ *
+ * @param jobs The first jobs payload.
+ * @param project The project detail already in cache, or undefined if still loading.
+ * @returns Whether the project query should be invalidated despite being seeded.
+ */
+export function firstPayloadMissesAnArtifact(
+  jobs: ReadonlyArray<Pick<ProjectJob, 'job_id' | 'status' | 'result'>>,
+  project: { documents: ReadonlyArray<Pick<ProjectDocument, 'document_id'>>
+    personas: ReadonlyArray<Pick<ProjectPersona, 'persona_id'>> } | undefined,
+): boolean {
+  if (project === undefined) return false
+  const documentIds = new Set(project.documents.map((document) => document.document_id))
+  const personaIds = new Set(project.personas.map((persona) => persona.persona_id))
+  return jobs.some((job) => {
+    // Only `completed`: a `failed` job produced no artifact to compare against, and
+    // its own effect on the page (turning the "generating" affordances off) is
+    // driven by the jobs payload this function is reading, not by the project.
+    if (job.status !== 'completed') return false
+    const documentId = job.result?.document_id
+    if (typeof documentId === 'string' && documentId !== '') {
+      return !documentIds.has(documentId)
+    }
+    const personaId = job.result?.persona_id
+    if (typeof personaId === 'string' && personaId !== '') {
+      return !personaIds.has(personaId)
+    }
+    return false
+  })
+}
+
 interface UseProjectDataProps {
   id: string | undefined
   apiEndpoint: string
@@ -243,9 +292,14 @@ export function useProjectData({
    * project detail query is invalidated too, not just the jobs list. Failed counts:
    * it is what turns the "generating" affordances back off.
    *
-   * The FIRST payload after mount only seeds the set. Its terminal jobs are history
-   * that the project fetch on the same mount already reflects, so refetching for
-   * them would cost every project open a second read and prove nothing.
+   * The FIRST payload after mount only seeds the set — with one exception. Its
+   * terminal jobs are usually history that the project fetch on the same mount
+   * already reflects, so refetching for them would cost every project open a second
+   * read and prove nothing. But the two queries are independent, so a job can settle
+   * between the project read committing and the jobs read committing; when the
+   * payload names an artifact the project does NOT contain, that job's only
+   * invalidation is this one. `firstPayloadMissesAnArtifact` decides from the data,
+   * so the exception costs nothing on the common path.
    */
   useEffect(() => {
     const jobs = jobsData?.jobs
@@ -253,10 +307,13 @@ export function useProjectData({
     const settled = newlyTerminalJobIds(jobs, settledJobIds.current)
     const isFirstPayload = !sawFirstJobsPayload.current
     sawFirstJobsPayload.current = true
-    if (settled.length > 0 && !isFirstPayload) {
+    const shouldInvalidate = isFirstPayload
+      ? firstPayloadMissesAnArtifact(jobs, data)
+      : settled.length > 0
+    if (shouldInvalidate) {
       void queryClient.invalidateQueries({ queryKey: projectKey(id) })
     }
-  }, [jobsData, id, queryClient])
+  }, [jobsData, data, id, queryClient])
 
   /**
    * Replace the prototype links before their signatures lapse.
