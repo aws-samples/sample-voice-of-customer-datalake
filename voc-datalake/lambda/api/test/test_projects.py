@@ -924,3 +924,23 @@ def test_project_delete_retries_fence_when_tombstone_insert_loses(mock_table):
     assert mock_table.batch_writer.call_count == 2
     second_fence = mock_table.update_item.call_args_list[1].kwargs
     assert 'if_not_exists(#deleting, :now)' in second_fence['UpdateExpression']
+
+
+@patch('projects.projects_table')
+def test_chat_context_rejects_a_status_only_historical_tombstone(mock_table):
+    mock_table.query.return_value = {
+        'Items': [{
+            'pk': 'PROJECT#p1',
+            'sk': 'META',
+            'name': 'Deleted project',
+            'status': 'deleted',
+        }],
+    }
+
+    from projects import get_project_chat_context
+    from shared.exceptions import NotFoundError
+
+    with pytest.raises(NotFoundError, match='Project not found'):
+        get_project_chat_context('p1', [])
+
+    mock_table.get_item.assert_not_called()
