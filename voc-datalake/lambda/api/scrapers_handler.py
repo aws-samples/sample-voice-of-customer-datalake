@@ -32,16 +32,12 @@ reader is not told the prefix is fully covered when only this handler is. The
 `ast` pass cannot see across module boundaries, so nothing else would say so.
 """
 
-import ipaddress
 import json
 import os
 import re
-import socket
 import sys
-import urllib.request
 from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import urlparse
 
 # Add shared module to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -49,11 +45,25 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from shared.logging import logger, tracer
 from shared.aws import get_secrets_client, put_secret_json
 from shared.api import create_api_resolver, api_handler, require_admin
+from shared.http_utils import (
+    OutboundUrlBlocked,
+    assert_outbound_url_allowed,
+    fetch_checked_with_retry,
+)
+# The write-time check lives in shared/ because `PUT /integrations/webscraper/
+# credentials` writes the SAME `webscraper_configs` key from a different Lambda,
+# and the two handlers cannot import each other (issue #244).
+from shared.scraper_urls import validate_scraper_config_write
 from shared.tables import get_aggregates_table
 from shared.exceptions import ConfigurationError, ValidationError, ServiceError
 
 from boto3.dynamodb.conditions import Key
+from botocore.exceptions import ClientError
 import boto3
+# For `TooManyRedirects` only: this route does not make requests itself, it goes
+# through `fetch_checked_with_retry`, which raises that transport error for an
+# over-long chain.
+import requests
 
 secretsmanager = get_secrets_client()
 lambda_client = boto3.client("lambda")
@@ -69,67 +79,25 @@ def require_webscraper_function():
 
 app = create_api_resolver()
 
-# Blocked hostnames and IP ranges for SSRF protection
-BLOCKED_HOSTNAMES = {'localhost', 'localhost.localdomain', 'ip6-localhost', 'ip6-loopback'}
-BLOCKED_IP_RANGES = [
-    ipaddress.ip_network('127.0.0.0/8'),       # Loopback
-    ipaddress.ip_network('10.0.0.0/8'),        # Private Class A
-    ipaddress.ip_network('172.16.0.0/12'),     # Private Class B
-    ipaddress.ip_network('192.168.0.0/16'),    # Private Class C
-    ipaddress.ip_network('169.254.0.0/16'),    # Link-local (AWS metadata)
-    ipaddress.ip_network('::1/128'),           # IPv6 loopback
-    ipaddress.ip_network('fc00::/7'),          # IPv6 private
-    ipaddress.ip_network('fe80::/10'),         # IPv6 link-local
-]
-
-
-def validate_url(url: str) -> tuple[bool, str]:
-    """
-    Validate URL to prevent SSRF attacks.
-    Returns (is_valid, error_message).
-    """
-    if not url or not isinstance(url, str):
-        return False, 'URL is required'
-    
-    # Parse URL
-    try:
-        parsed = urlparse(url)
-    except Exception:
-        return False, 'Invalid URL format'
-    
-    # Only allow http/https schemes
-    if parsed.scheme not in ('http', 'https'):
-        return False, 'Only http and https URLs are allowed'
-    
-    # Must have a hostname
-    hostname = parsed.hostname
-    if not hostname:
-        return False, 'URL must have a valid hostname'
-    
-    # Block known dangerous hostnames
-    hostname_lower = hostname.lower()
-    if hostname_lower in BLOCKED_HOSTNAMES:
-        return False, 'Access to localhost is not allowed'
-    
-    # Resolve hostname to IP and check against blocked ranges
-    try:
-        ip_addresses = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
-        for family, _, _, _, sockaddr in ip_addresses:
-            ip_str = sockaddr[0]
-            try:
-                ip = ipaddress.ip_address(ip_str)
-                for blocked_range in BLOCKED_IP_RANGES:
-                    if ip in blocked_range:
-                        return False, 'Access to internal/private IP addresses is not allowed'
-            except ValueError:
-                continue
-    except socket.gaierror:
-        return False, 'Could not resolve hostname'
-    except Exception as e:
-        logger.warning(f"URL validation error: {e}")
-        return False, 'URL validation failed'
-    
-    return True, ''
+# Time budget for the analyze/preview fetch, which runs INSIDE an API Gateway
+# request and so has ~29 s in total however long the Lambda's own timeout is.
+# `fetch_checked_with_retry` may follow up to MAX_REDIRECT_HOPS hops, each with
+# tenacity retries, so a per-request timeout alone bounds nothing useful here:
+# before this budget existed, a chain of slow-but-valid hops overran the
+# integration limit and surfaced as a 504 with no error message instead of the
+# 400/500 this route means to return. The per-hop value stays lower than the
+# total so a single stalled hop cannot consume the whole budget.
+#
+# This is the FETCH share of the ~29 s, not the whole route: `converse` runs
+# afterwards on the same clock and is not budgeted here. `get_bedrock_client` in
+# shared/aws.py uses read_timeout=300, and shared/converse.py retries throttling
+# with `time.sleep` backoff, so the remainder is not free — a 20 s fetch plus a
+# throttled model call still produced the message-less 504 this budget exists to
+# prevent. Whoever changes either number is changing a split, not a ceiling: the
+# two must leave room for the model call, and the per-hop value must stay at or
+# below the total.
+PREVIEW_FETCH_HOP_TIMEOUT_SECONDS = 8
+PREVIEW_FETCH_TOTAL_TIMEOUT_SECONDS = 12
 
 
 @app.get("/scrapers")
@@ -168,12 +136,40 @@ def save_scraper():
     scraper = body.get('scraper')
     if not scraper:
         raise ValidationError('No scraper config provided')
+    if not isinstance(scraper, dict):
+        raise ValidationError('Scraper config must be an object')
+
+    # Read BEFORE checking, so the URL-count cap can tell a `urls` list this
+    # write created from one it is carrying forward untouched. Without the stored
+    # value, a pre-existing over-cap config was refused on every save through
+    # this route — including a change to an unrelated field — and trimming it
+    # needed a save, so deleting the config was the only way out.
+    #
+    # Best-effort: a secret this route cannot read yields no exemption, never a
+    # failed write. The read is repeated inside the try below because that is the
+    # read-modify-write, and this one must not be able to 500 the route. The
+    # exceptions are named rather than caught broadly so a genuine bug here still
+    # surfaces: a missing/denied secret (ClientError), a secret that is not JSON,
+    # and a JSON secret that is not an object are the three shapes this can take.
+    stored_configs = None
+    try:
+        stored_configs = json.loads(
+            secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
+            .get('SecretString', '{}')
+        ).get('webscraper_configs')
+    except (ClientError, ValueError, AttributeError, TypeError, KeyError) as e:
+        logger.warning(f"Could not read stored scraper configs: {e}")
+
+    # BEFORE the try below, so its `except Exception -> ServiceError` cannot
+    # flatten this actionable 400 into an opaque 500. This route serves both
+    # create and update (there is no separate PUT), so one call covers both.
+    validate_scraper_config_write(scraper, stored=stored_configs)
 
     try:
         response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
         secrets = json.loads(response.get('SecretString', '{}'))
         configs = json.loads(secrets.get('webscraper_configs', '[]'))
-        
+
         existing_idx = next((i for i, c in enumerate(configs) if c.get('id') == scraper.get('id')), -1)
         if existing_idx >= 0:
             configs[existing_idx] = scraper
@@ -210,7 +206,23 @@ def delete_scraper(scraper_id: str):
         response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
         secrets = json.loads(response.get('SecretString', '{}'))
         configs = json.loads(secrets.get('webscraper_configs', '[]'))
-        configs = [c for c in configs if c.get('id') != scraper_id]
+        # Compared as a STRING because a stored id may not be one —
+        # `_stored_urls_by_id` in shared/scraper_urls.py guards
+        # `isinstance(..., str)` for the same reason — while a path parameter always
+        # is. A config stored with `id: 7` could not be matched at all, so `DELETE
+        # /scrapers/7` reported success and deleted nothing: measured, all configs
+        # remained. That made it the one shape with no in-app remedy, since an edit
+        # is keyed on the same id.
+        #
+        # An id-less config is deliberately NOT matchable: `str(None)` is 'None', so
+        # comparing it would let `DELETE /scrapers/None` remove a config the caller
+        # never named — and would take a config genuinely stored as the STRING
+        # 'None' with it. Such a config is repaired through the array route instead,
+        # which no longer refuses it (see `_unusable_stored_ids`).
+        configs = [
+            c for c in configs
+            if c.get('id') is None or str(c.get('id')) != scraper_id
+        ]
         secrets['webscraper_configs'] = json.dumps(configs)
         put_secret_json(secretsmanager, SECRETS_ARN, secrets)
         return {'success': True}
@@ -341,18 +353,27 @@ def analyze_url():
     """Use LLM to auto-detect CSS selectors for a URL."""
     body = app.current_event.json_body
     url = body.get('url')
-    
-    # Validate URL to prevent SSRF
-    is_valid, error_message = validate_url(url)
-    if not is_valid:
-        raise ValidationError(error_message)
-    
+
+    # Cheap pre-check so a bad URL is a 400 before any request is attempted.
+    # It is NOT what makes the fetch below safe — fetch_checked_with_retry
+    # re-checks the URL and every redirect target it follows, which is what
+    # closes the check-then-fetch gap in issue #244.
+    try:
+        assert_outbound_url_allowed(url)
+    except OutboundUrlBlocked as e:
+        raise ValidationError(str(e)) from e
+
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36', 'Accept': 'text/html,application/xhtml+xml'}
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=30) as response:
-            html_content = response.read().decode('utf-8', errors='ignore')
-        
+        response = fetch_checked_with_retry(
+            url,
+            headers=headers,
+            timeout=PREVIEW_FETCH_HOP_TIMEOUT_SECONDS,
+            total_timeout=PREVIEW_FETCH_TOTAL_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        html_content = response.text
+
         html_sample = html_content[:50000]
         from shared.converse import converse
         prompt = f"""Analyze this HTML and identify CSS selectors for extracting reviews:\n\n```html\n{html_sample}\n```\n\nReturn JSON with: container_selector, text_selector, rating_selector, author_selector, date_selector, confidence (high/medium/low), detected_reviews_count"""
@@ -366,6 +387,17 @@ def analyze_url():
             raise ServiceError('Could not parse selectors from response')
         selectors = json.loads(json_match.group())
         return {'success': True, 'selectors': selectors}
+    except OutboundUrlBlocked as e:
+        # A redirect into an internal destination is the caller's URL being
+        # refused, not a server fault: 400 with the reason, not an opaque 500.
+        raise ValidationError(str(e)) from e
+    except requests.exceptions.TooManyRedirects as e:
+        # Caught beside the refusal above, not left to the generic handler, so an
+        # over-long chain stays a 400 naming the limit. It is a `RequestException`
+        # — deliberately, since every hop was CLEARED and it is not a security
+        # event — and would otherwise have become an opaque 500 telling the user
+        # nothing about their URL.
+        raise ValidationError(str(e)) from e
     except (ValidationError, ServiceError):
         raise
     except Exception as e:

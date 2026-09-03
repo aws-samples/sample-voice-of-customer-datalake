@@ -57,6 +57,179 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
 
 ### Security
 
+- Scraper configurations are validated against one outbound-URL policy on **write** — both
+  `POST /scrapers` and `PUT /integrations/webscraper/credentials`, which persist the same
+  stored configuration — and re-validated by the scheduled scraper immediately before every
+  request, including each redirect hop. The check previously ran only on the analyze/preview
+  route, nothing forced a preview before saving, and it inspected a URL string while a
+  separate request went out afterwards; so a configuration naming a private, link-local or
+  loopback address could be saved and then fetched on a schedule, and a public URL
+  redirecting to an internal one was followed. Redirects are now followed by the platform
+  rather than the HTTP client, bounded at 5 hops, with the destination re-resolved at each
+  one. A resolver failure, an empty answer, or a host resolving to a mix of public and
+  private addresses is refused rather than allowed. Because the platform now owns the
+  redirect walk, it also owns the credential handling `requests` would have done, so it
+  asks `requests` for that decision instead of restating it: the `Authorization`/`Cookie`
+  headers and the `auth=`/`cookies=` options are dropped together on a host change, a port
+  change and an `https`→`http` downgrade, and kept across a site's own `http`→`https`
+  upgrade. A `Location` header resolving back to the URL that sent it ends the walk and
+  returns that response, rather than re-requesting one page until the hop limit and
+  reporting it as a redirect chain.
+- Each scheduled scraper page fetch is bounded by a 60 second wall-clock budget, not only a
+  per-request timeout. One configuration may name 50 URLs inside a 300 second invocation,
+  and the retried redirect walk on a single stalling host could consume almost all of it —
+  which killed the invocation mid-run, so the final run-status write never happened and the
+  run row stayed at `running` indefinitely. A page exceeding the budget is now skipped with a
+  warning and the configuration's remaining URLs still run.
+  - That budget now bounds the response BODY as well as the requests. A per-request timeout
+    is a per-socket-*read* deadline rather than a total, and the budget was only consulted
+    before a request was dispatched, so an origin sending each chunk just inside the timeout
+    was interrupted by nothing: measured against a real server, a page dripping one byte at a
+    time spent 1.6x its budget — and 4.0x for the preview route — and still succeeded, with
+    wider gaps reaching past the 300 second Lambda timeout. A budgeted fetch now streams and
+    reads the body against the same deadline, and a stall mid-body is reported the same way a
+    connect or read timeout is. The same read caps one response at 10 MiB, counted after
+    decompression so a small declared length cannot expand past it — a 40 MiB page was
+    previously held in full, then again as text and once more as a parse tree, against the
+    scraper's 512 MB.
+  - Reading the body against that deadline is done at a lower level than the HTTP client's
+    own body iterator, which is what makes the bound tight enough to be useful — but that
+    level does not translate its transport errors. A page that sent its headers and then went
+    silent therefore surfaced the underlying library's own timeout type, which is outside the
+    exception hierarchy the rest of the code catches: measured against a real server, such a
+    page escaped the scraper's "this page did not load" handling instead of being skipped with
+    a warning, and was not retried. Those errors are now translated exactly as the HTTP client
+    translates them, so a stall reads the same whether it happens while connecting, while
+    waiting for headers, or midway through the body.
+- The scheduled scraper invocation as a whole is bounded by a 240 second budget as well. A
+  per-page bound does not bound their sum, and the sum is what the 300 second Lambda timeout
+  is compared against: ten stalling paginated URLs spent 450 seconds, and because one
+  invocation runs every configuration that is due, the same overrun was reachable across
+  several configurations rather than within one. The invocation now stops while there is
+  still time to record stopping — how many URLs went unattempted is appended to the run's
+  `errors` and the run reports `completed_with_errors` instead of a `completed` that would
+  hide the truncation — and every configuration stays due for the next run. A configuration
+  the budget truncated keeps its watermark rather than advancing it: marking it as having run
+  left it waiting out its whole frequency, and because its URL list rebuilds in the same
+  order, the next run restarted at the first URL — so a persistently slow prefix starved its
+  own tail on every invocation instead of the skipped URLs being retried. The truncation is
+  recorded as well, and the configuration loop is ordered by it so a configuration that ran out
+  of budget is visited last on the next invocation: holding the watermark alone made that
+  configuration due on every invocation while the budget stopped the loop and stored order
+  reached it first, so one slow site silently prevented every other scraper in the account from
+  running at all — two healthy configurations behind a stalling one were never fetched across 20
+  scheduled invocations. Configurations that have never truncated keep their stored order, and the
+  record is cleared once a configuration completes all of its URLs, so one slow day is not a
+  permanent demotion. The record names the configuration that **spent** the budget rather than
+  the one the shortage was noticed on: a configuration consuming the whole budget while still
+  finishing its own URL list left the next one to discover it, and that one — which had
+  requested nothing — was the one reported as `completed_with_errors` over URLs it never
+  attempted and demoted, while the culprit recorded a clean run and kept first refusal
+  indefinitely. A configuration the budget never let start now writes neither a run row nor a
+  watermark, so it simply stays due. A `ScraperRunBudgetExhausted` metric makes a persistently
+  truncating account alertable, since a scheduled run writes no run row. Relatedly, a page whose fetch
+  never returned a document no longer counts toward the run's page total: a run in which every
+  page timed out previously reported `completed`, no errors and a non-zero page count, which is
+  indistinguishable from an empty healthy run.
+- A stored scraper configuration array containing nothing usable now reports an `error` run
+  rather than completing silently. The unusable entries were filtered out of the loop while the
+  "no configuration" check still read the unfiltered array, so such an array satisfied the check,
+  iterated nothing, and left a manually triggered run's row at `running` with nothing to
+  reconcile it. An unusable entry stored alongside working ones is dropped and logged, and the
+  working ones still run.
+- Exceeding the scraper's redirect limit is now reported as a transport error rather than a
+  blocked destination. Every hop in such a chain has been resolved and cleared, so a wholly
+  public site with a long redirect chain was logging `Blocked outbound URL` at ERROR and
+  emitting the `ScraperOutboundUrlBlocked` metric — which exists to alert on a saved host that
+  has started resolving internally — and so raised an SSRF alert for an event that did not
+  happen. The page is skipped with a warning like any other fetch failure and the preview route
+  still answers 400 naming the limit. Note that the effective redirect limit is 5, where the
+  HTTP client's own default was 30: each hop costs a fresh DNS resolve and check, so a public
+  site needing more hops than that is refused where it previously succeeded.
+- A single unreadable scraper configuration no longer stops every other one. A configuration
+  without an `id`, a `pagination.max_pages` of `"10"`, a `pagination` that is not an object, or
+  an unparseable stored `last_run`/`frequency_minutes` raised out of the scheduled scraping
+  loop, so no configuration in the account ingested at all — and a manually triggered run's row
+  was left at `running` with nothing to reconcile it, the same failure the run budget exists to
+  prevent by a different route. Both write routes now refuse those shapes with a 400 naming the
+  field; the scheduled scraper coerces values already stored, falling back to the defaults an
+  absent value gets and treating an unreadable schedule as due, since never running again is
+  the worse outcome; and the configuration loop reports anything remaining against that
+  configuration alone — logged at ERROR, counted by a new `ScraperConfigUnusable` metric, given
+  a terminal `error` status — and continues. Such a configuration is not recorded as having
+  run, so correcting it does not mean waiting out its frequency.
+  - That report is now scoped to failures the configuration is actually responsible for. The
+    guarded region reaches past the run's own status write, so a failure in the *reporting* —
+    a rejected metric, a throttled status update — was labelled an unusable configuration:
+    measured with two healthy configurations, each got a second terminal `error` row
+    contradicting the `completed` row written moments earlier, over a run whose items were
+    already on their way to the queue, and `ScraperConfigUnusable` fired for both. A failure
+    after the status has been recorded now leaves that status standing and is counted by a
+    separate `ScraperReportingFailed` metric, so the unusable-configuration alarm keeps
+    meaning what it says. The per-scraper item counter is also recorded defensively, since a
+    metric the service will not accept should never cost a run its status.
+- Scraper `pagination` is validated for shape on write: `max_pages` and `start` must be
+  integers and `max_pages` must be between 1 and 50, matching the bounds the editor enforces.
+  The key names no network destination — its URLs derive from `base_url` and carry an
+  already-checked host — but the scheduled scraper computes with those numbers, so a wrongly
+  typed one was accepted by both write routes and then aborted the whole invocation. The bound
+  also limits how many URLs one configuration can cause to be fetched, which the 50-URL cap
+  does not: that counts the URLs a configuration names, and pagination multiplies them. The
+  scheduled scraper now clamps a stored value to the same bounds instead of only coercing its
+  type — which is what the coercion is for, since the write bound postdates the values it
+  guards: a stored `max_pages` of `"100000"` built 100 000 URLs, and larger values exhausted
+  the function's memory before it made a single request, losing the terminal status write and
+  leaving a manually triggered run at `running`.
+- A scraper `id` is now required on write: a non-empty string of at most 128 characters,
+  refused by both write routes with a 400 naming the field. Like `pagination` it names no
+  network destination, but the scraper computes with it — it prefixes every extracted item's
+  id, and that read sits inside the per-item error handler, so a configuration without one
+  fetched all of its pages and then dropped every item while reporting `completed` with no
+  errors and a non-zero page count. That is indistinguishable from a site with nothing new,
+  which is the silent-loss shape this release's page-counting fix was meant to eliminate. The
+  id is also the schedule watermark key — two configurations without one shared a single
+  schedule, so the second never ran — and the per-scraper metric name, which an over-long id
+  pushed past the metrics service's 255-character limit.
+  - The requirement applies to an id a write **creates or changes**, not to one it carries
+    forward. The Settings card saves the whole array at once, so applying it retroactively
+    meant a single configuration stored without an id made every later save fail — including a
+    rename of an unrelated configuration — and that configuration could not be repaired: an
+    id is also what an edit is keyed on. This is the same carry-forward exemption the 50-URL
+    cap has, and for the same reason; a configuration the write *adds* is still refused.
+  - `DELETE /scrapers/<id>` can now remove a configuration stored with a non-string id. It
+    compared the stored value against a path parameter, so one stored as the number `7` could
+    never be matched and the delete reported success while removing nothing — leaving that
+    shape with no in-app remedy at all.
+  - The scheduled scraper is deliberately **more tolerant** than the write path for
+    configurations already stored, because only a *missing* id ever lost data. An id that is a
+    number, empty, or longer than the bound each prefixed its items and ingested normally —
+    the prefix is an interpolation, which accepts any value — so holding stored
+    configurations to the write rule would have stopped ingestion on deploy for an account
+    holding one. A numeric id is now coerced to the string its items already used, an empty or
+    over-long one keeps ingesting (the metric name is truncated instead, since the length
+    never prevented the scraping), and only an id that cannot be one — missing, or a
+    boolean/list/object, which no client produces — is reported as an error.
+- An unreadable scraper schedule is treated as due rather than raising, which now includes a
+  `frequency_minutes` that is not a finite, non-negative number. `NaN` and `Infinity` are
+  valid JSON tokens and computing a next-run time from either raised; the per-configuration
+  guard caught it, so the invocation survived, but that configuration was then skipped on
+  every scheduled invocation indefinitely — never running again, the one direction this
+  fail-open behaviour exists to rule out.
+- A scraper's page list no longer logs a warning for pagination values that are simply absent.
+  `pagination: {"enabled": true}` with no `max_pages` is valid and accepted on write, but it
+  was reported the same way a wrongly typed value is, on every invocation — which buried the
+  signal the warning exists for.
+- A wall-clock fetch budget now bounds the retry backoff as well as the attempts. The backoff
+  sleep between attempts was taken in full and the budget only re-checked once it returned, so
+  a budget could be overrun by up to one backoff interval — enough to push the scraper's run
+  budget past its own limit intermittently.
+- A scraper configuration may name at most 50 URLs in its `urls` list. Each distinct host costs
+  a DNS lookup inside the request that saves it, and both write routes answer through API
+  Gateway's 29 second limit, so an unbounded list returned a timeout with nothing saved instead
+  of a message naming the problem. The limit applies only to a list a write **changes**: a
+  longer list that predates it keeps saving untouched, so one such configuration cannot block
+  edits to the others it is stored alongside. Its destinations are still checked, and adding to
+  it is refused.
 - Plugin secret isolation now fails closed. Each plugin Lambda reads one shared Secrets Manager
   secret whose keys are namespaced `<plugin_id>_<key>`, and — because every ingestion Lambda shares
   one IAM role — that prefix is the only boundary between one plugin's credentials and another's. A
