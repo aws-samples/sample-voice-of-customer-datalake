@@ -39,6 +39,10 @@
   },
   "forQuery": "pour \"{{query}}\"",
   "goToSettings": "Aller aux Paramètres",
+  "header": {
+    "subtitle": "Plateforme unifiée d'intelligence feedback client",
+    "title": "Voix du Client"
+  },
   "loading": "Chargement...",
   "loadMore": "Charger plus",
   "logs": {
@@ -102,8 +106,8 @@
     "neutral": "Neutre",
     "positive": "Positif"
   },
-  "showingOf_one": "Affichage de {{count}} sur {{total}} résultat",
   "showingOf_many": "Affichage de {{count}} sur {{total}} résultats",
+  "showingOf_one": "Affichage de {{count}} sur {{total}} résultat",
   "showingOf_other": "Affichage de {{count}} sur {{total}} résultats",
   "sidebar": {
     "closeMenu": "Fermer le menu",
@@ -121,11 +125,29 @@
     "48hFull": "48 Heures",
     "7d": "7j",
     "7dFull": "7 Jours",
+    "90d": "90j",
+    "90dFull": "90 Jours",
     "apply": "Appliquer",
+    "basisImported": "Date d'import",
+    "basisImportedDescription": "Quand le feedback a été collecté dans la plateforme.",
+    "basisImportedTooltip": "Le filtre porte sur la date de collecte des données, non sur la date de rédaction de l'avis.",
+    "basisLabel": "Filtrer les dates par",
+    "basisReview": "Date de l'avis",
+    "basisReviewDescription": "Quand le client a rédigé le feedback à l'origine.",
+    "basisReviewTooltip": "Le filtre porte sur la date de rédaction de l'avis, non sur sa date d'import.",
+    "basisSelected": "Filtrer les dates par : {{basis}}",
     "cancel": "Annuler",
     "clear": "Effacer",
+    "closeCustomRange": "Fermer la période personnalisée",
     "custom": "Personnalisé",
+    "customRange": "Période personnalisée",
+    "days": "jours",
+    "daysHint": "Saisissez un nombre entier de jours (1–{{max}}).",
+    "daysPlaceholder": "ex. 14",
     "endDate": "Date de fin",
+    "lastDays": "{{count}} derniers jours",
+    "lastNDays": "N derniers jours",
+    "selectCustomRange": "Sélectionner une période personnalisée",
     "selectDateRange": "Sélectionner la période",
     "startDate": "Date de début"
   }

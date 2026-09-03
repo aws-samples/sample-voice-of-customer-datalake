@@ -5,6 +5,7 @@ Handles projects, personas, PRDs, PR/FAQs with multi-step LLM orchestration.
 import json
 import os
 import re
+import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -13,7 +14,13 @@ from botocore.exceptions import ClientError
 
 # Shared module imports
 from shared.logging import logger, tracer, metrics
-from shared.aws import get_dynamodb_resource, get_bedrock_client, BEDROCK_MODEL_ID
+from shared.aws import (
+    BEDROCK_MODEL_ID,
+    get_bedrock_client,
+    get_cloudfront_client,
+    get_dynamodb_resource,
+    get_s3_client,
+)
 from shared.api import validate_days, MAX_PERSONAS_PER_GENERATION
 from shared.persona_context import personas_prompt_context
 from shared.converse import converse_chain
@@ -45,8 +52,8 @@ from shared.avatar import (
     get_avatar_cdn_url,
 )
 
-from shared.prototypes import prototype_signed_url
-from shared.tables import get_projects_table, get_feedback_table
+from shared.prototypes import prototype_project_prefix, prototype_signed_url
+from shared.tables import get_projects_table, get_feedback_table, get_jobs_table
 from shared.indexes import PROJECTS_BY_TYPE_INDEX
 from shared.document_versions import (
     get_versioned_document_by_allocation,
@@ -821,8 +828,167 @@ def _start_project_deletion(
 
 
 @tracer.capture_method
+def _delete_project_job_rows(project_id: str) -> None:
+    """Remove every job row this project owns, page by page.
+
+    The jobs live in their OWN table, so the projects-partition sweep never
+    reached them: a deleted project's rows sat there until their TTL (up to 30
+    days, seven for a failed or completed one). Recreating a project with the same
+    id then showed a stranger's job history, and the panel polled work that no
+    longer had a project.
+
+    Paginated because a busy project can hold more job rows than one query page
+    returns. Absent JOBS_TABLE is not fatal: the rest of the lifecycle still has
+    to run, so it is logged and skipped rather than aborting the delete.
+    """
+    jobs_table = get_jobs_table()
+    if jobs_table is None:
+        logger.warning(
+            'JOBS_TABLE is not configured; project job rows were not deleted',
+            extra={'project_id': project_id},
+        )
+        return
+
+    query: dict = {
+        'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}'),
+        'ConsistentRead': True,
+        'ProjectionExpression': 'pk, sk',
+    }
+    with jobs_table.batch_writer() as batch:
+        while True:
+            response = jobs_table.query(**query)
+            if not isinstance(response, dict):
+                return
+            for item in response.get('Items') or []:
+                if (
+                    isinstance(item, dict)
+                    and isinstance(item.get('pk'), str)
+                    and isinstance(item.get('sk'), str)
+                ):
+                    batch.delete_item(Key={'pk': item['pk'], 'sk': item['sk']})
+            cursor = response.get('LastEvaluatedKey')
+            if not isinstance(cursor, dict) or not cursor:
+                return
+            query['ExclusiveStartKey'] = cursor
+
+
+@tracer.capture_method
+def _delete_project_prototype_objects(project_id: str) -> None:
+    """Remove every prototype object under this project's S3 prefix.
+
+    Prototype HTML is the one project artifact that lives outside DynamoDB, and
+    deleting the PROTOTYPE# rows left it in the bucket: signed links minted before
+    the delete kept resolving for the rest of their TTL, and the objects were
+    billed indefinitely. Listing the PREFIX rather than deriving keys from the
+    surviving rows is deliberate — a row lost to a partially failed earlier sweep
+    would otherwise orphan its object forever.
+
+    Paginated (`list_objects_v2` caps at 1000 keys) and idempotent: a retry lists
+    only what remains. `prototype_project_prefix` supplies the trailing slash that
+    keeps `proj_1` from matching `proj_10`.
+    """
+    bucket = os.environ.get('RAW_DATA_BUCKET', '')
+    if not bucket:
+        logger.warning(
+            'RAW_DATA_BUCKET is not configured; prototype objects were not deleted',
+            extra={'project_id': project_id},
+        )
+        return
+
+    client = get_s3_client()
+    prefix = prototype_project_prefix(project_id)
+    cursor: str | None = None
+    while True:
+        arguments = {'Bucket': bucket, 'Prefix': prefix}
+        if cursor:
+            arguments['ContinuationToken'] = cursor
+        listing = client.list_objects_v2(**arguments)
+        keys = [
+            {'Key': entry['Key']}
+            for entry in (listing.get('Contents') or [])
+            if isinstance(entry, dict) and isinstance(entry.get('Key'), str)
+        ]
+        if keys:
+            response = client.delete_objects(
+                Bucket=bucket, Delete={'Objects': keys, 'Quiet': True},
+            )
+            # Partial failure is normal under throttling. Reported, not raised:
+            # the caller's retry resumes from whatever is still listed, and
+            # failing here would leave the tombstone un-finalized.
+            errors = response.get('Errors') if isinstance(response, dict) else None
+            if errors:
+                logger.warning(
+                    'Some prototype objects could not be deleted; retry the delete',
+                    extra={
+                        'project_id': project_id,
+                        'failed_object_count': len(errors),
+                    },
+                )
+        if not listing.get('IsTruncated'):
+            return
+        cursor = listing.get('NextContinuationToken')
+        if not isinstance(cursor, str) or not cursor:
+            return
+
+
+@tracer.capture_method
+def _invalidate_project_prototype_cache(project_id: str) -> None:
+    """Drop this project's prototype pages from the CloudFront edge cache.
+
+    Deleting the S3 objects is not enough to make a prototype unreachable. The
+    `/prototypes/*` behavior runs CACHING_OPTIMIZED because a prototype is
+    immutable per document id, so a signed URL minted before the delete keeps
+    getting an edge HIT — the object is gone from the bucket while the page still
+    renders for the remainder of the signature's TTL (an hour by default).
+
+    Scoped to `/prototypes/{project_id}/*`: a wildcard over the whole behavior
+    would evict every other project's prototypes as well, and CloudFront bills
+    invalidation paths past a free monthly allowance.
+
+    Best effort by design. This is a cache, not the authority — the bucket is
+    already empty, and a failure here must not leave the tombstone un-finalized
+    on a delete whose durable work has all committed. Absent configuration is the
+    ordinary local/mock case (there is no CloudFront) and is silent.
+    """
+    distribution_id = os.environ.get('PROTOTYPES_DISTRIBUTION_ID', '')
+    if not distribution_id:
+        return
+
+    try:
+        get_cloudfront_client().create_invalidation(
+            DistributionId=distribution_id,
+            InvalidationBatch={
+                'Paths': {
+                    'Quantity': 1,
+                    'Items': [f'/{prototype_project_prefix(project_id)}*'],
+                },
+                # Idempotent per project per delete attempt: a retry within the
+                # same second reuses the reference and CloudFront returns the
+                # existing invalidation rather than creating a second one.
+                'CallerReference': f'delete-{project_id}-{int(time.time())}',
+            },
+        )
+    except ClientError as error:
+        logger.warning(
+            'Prototype cache invalidation failed; deleted prototypes may still '
+            'be served from the edge until their cached copies expire',
+            extra={
+                'project_id': project_id,
+                'error_code': error.response.get('Error', {}).get('Code', 'Unknown'),
+            },
+        )
+
+
+@tracer.capture_method
 def delete_project(project_id: str) -> dict:
-    """Retain a tombstone while deleting every project-owned artifact."""
+    """Retain a tombstone while deleting every project-owned artifact.
+
+    Idempotent and retry-safe end to end. The fence goes down first, so a writer
+    either committed before it (and is visible to the strongly consistent scans
+    below) or fails after it. Every sweep then deletes only what it still finds,
+    which is what lets a retry resume after a partial failure — including one that
+    left the tombstone un-finalized.
+    """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
 
@@ -842,6 +1008,10 @@ def delete_project(project_id: str) -> dict:
     with projects_table.batch_writer() as batch:
         for key in _iter_partition_keys(version_partition_key(project_id)):
             batch.delete_item(Key=key)
+
+    _delete_project_job_rows(project_id)
+    _delete_project_prototype_objects(project_id)
+    _invalidate_project_prototype_cache(project_id)
 
     projects_table.update_item(
         Key=meta_key,

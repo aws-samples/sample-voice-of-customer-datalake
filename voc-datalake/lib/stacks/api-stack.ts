@@ -654,6 +654,35 @@ export class VocApiStack extends VocStack {
     rawDataBucket.grantReadWrite(projectsRole, 'avatars/*');
     // Product context: projects API needs to issue presigned PUT URLs, read extracted text, delete docs.
     rawDataBucket.grantReadWrite(projectsRole, 'projects/*/product_docs/*');
+    // DELETE /projects/{id} sweeps the prototype objects the project owns. The
+    // two actions that sweep needs and no more: it LISTS the prefix (a bucket-level
+    // action, hence the separate statement) and DELETES what it finds. Deliberately
+    // NOT grantReadWrite: this role neither reads nor writes prototype HTML — the
+    // document generator produces it and the browser fetches it from CloudFront
+    // with a signature this role mints from the secret below.
+    projectsRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['s3:DeleteObject'],
+      resources: [rawDataBucket.arnForObjects('prototypes/*')],
+    }));
+    projectsRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['s3:ListBucket'],
+      resources: [rawDataBucket.bucketArn],
+      conditions: { StringLike: { 's3:prefix': ['prototypes/*'] } },
+    }));
+    // Deleting the objects does not make a prototype unreachable: the
+    // /prototypes/* behavior runs CACHING_OPTIMIZED, so a signed URL minted
+    // before the delete keeps getting an edge HIT for the rest of its TTL. The
+    // sweep therefore invalidates /prototypes/{project_id}/* — one action, on this
+    // distribution only. CreateInvalidation cannot be narrowed to a path prefix by
+    // IAM, so the path scoping is the caller's (see
+    // `_invalidate_project_prototype_cache`); GetInvalidation and
+    // ListInvalidations are deliberately absent because nothing reads it back.
+    projectsRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['cloudfront:CreateInvalidation'],
+      resources: [
+        `arn:${cdk.Aws.PARTITION}:cloudfront::${cdk.Aws.ACCOUNT_ID}:distribution/${frontendDistribution.distributionId}`,
+      ],
+    }));
     // Signs the avatar and prototype URLs returned by GET /projects/{id}.
     // Explicit statement rather than secret.grantRead(): that adds a KMS
     // key-policy entry naming this role, and the key lives in CoreStack, so it
@@ -682,6 +711,9 @@ export class VocApiStack extends VocStack {
         RAW_DATA_BUCKET: rawDataBucket.bucketName,
         AVATARS_CDN_URL: avatarsCdnUrl,
         PROTOTYPES_CDN_URL: prototypesCdnUrl,
+        // The distribution whose /prototypes/* cache a project delete evicts.
+        // Absent locally, which the sweep treats as "no CloudFront" and skips.
+        PROTOTYPES_DISTRIBUTION_ID: frontendDistribution.distributionId,
         CDN_SIGNING_SECRET_ARN: cdnSigningSecretArn,
         CDN_SIGNING_KEY_PAIR_ID: cdnSigningKeyPairId,
         ALLOWED_ORIGIN: allowedOrigin,

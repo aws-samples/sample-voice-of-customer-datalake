@@ -2765,6 +2765,7 @@ describe('prototype object IAM boundaries', () => {
     Effect: z.string(),
     Action: z.union([z.string(), z.array(z.string())]),
     Resource: z.unknown(),
+    Condition: z.unknown().optional(),
   });
   const PolicySchema = z.object({
     Properties: z.object({
@@ -2805,6 +2806,54 @@ describe('prototype object IAM boundaries', () => {
     expect(actions).toContain('s3:PutObject');
     expect(actions).toContain('s3:DeleteObject*');
     expect(actions).not.toContain('s3:*');
+  });
+
+  // DELETE /projects/{id} sweeps the prototype objects the project owns, so the
+  // projects role needs exactly two prototype actions and no others. Pinned in
+  // both directions: a grantReadWrite reached for "for consistency" would hand it
+  // read and write access to every other project's prototype HTML, which is the
+  // content `/prototypes/*` exists to keep behind a signature.
+  describe('the projects role prototype sweep grant', () => {
+    const prototypeStatements = () => statementsForRole('ProjectsLambdaRole')
+      .filter((statement) => JSON.stringify(statement).includes('prototypes/'));
+
+    it('grants delete on prototype objects and nothing more on them', () => {
+      const objectStatements = prototypeStatements()
+        .filter((statement) => JSON.stringify(statement.Resource).includes('prototypes/*'));
+
+      expect(objectStatements).toHaveLength(1);
+      const actions = Array.isArray(objectStatements[0].Action)
+        ? objectStatements[0].Action
+        : [objectStatements[0].Action];
+      expect(actions).toEqual(['s3:DeleteObject']);
+      expect(objectStatements[0].Effect).toBe('Allow');
+    });
+
+    it('scopes the bucket-level list to the prototypes prefix', () => {
+      // ListBucket is a BUCKET action, so an unconditioned grant would let this
+      // role enumerate avatars, product docs and every import in the bucket.
+      const listStatements = prototypeStatements()
+        .filter((statement) => (
+          Array.isArray(statement.Action) ? statement.Action : [statement.Action]
+        ).includes('s3:ListBucket'));
+
+      expect(listStatements).toHaveLength(1);
+      expect(JSON.stringify(listStatements[0].Resource)).not.toContain('prototypes/');
+      expect(listStatements[0].Condition).toStrictEqual({
+        StringLike: { 's3:prefix': ['prototypes/*'] },
+      });
+    });
+
+    it('gains no read or write on prototype objects', () => {
+      const actions = new Set(prototypeStatements().flatMap((statement) => (
+        Array.isArray(statement.Action) ? statement.Action : [statement.Action]
+      )));
+
+      for (const forbidden of ['s3:*', 's3:GetObject', 's3:GetObject*', 's3:PutObject']) {
+        expect(actions, `projects role must not carry ${forbidden} on prototypes`)
+          .not.toContain(forbidden);
+      }
+    });
   });
 });
 

@@ -7,6 +7,8 @@ import userEvent from '@testing-library/user-event'
 import { Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TestRouter } from '../../test/test-utils'
+import commonDe from '../../../public/locales/de/common.json'
+import commonEn from '../../../public/locales/en/common.json'
 
 // Mock API before importing component
 const mockGetUrgentFeedback = vi.fn()
@@ -228,10 +230,27 @@ describe('Layout', () => {
   describe('header', () => {
     it('displays Voice of the Customer title', async () => {
       render(<Layout />, { wrapper: createWrapper() })
-      
+
       await waitFor(() => {
         expect(screen.getByText('Voice of the Customer')).toBeInTheDocument()
       })
+    })
+
+    it('renders the title and subtitle from the catalogue, not from JSX literals', async () => {
+      // Both were hardcoded English and stayed English on every page after
+      // switching the deployed app to German. Comparing against the shipped
+      // German catalogue is what an English assertion cannot do: the literal
+      // would satisfy that one.
+      render(<Layout />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByTestId('app-header-title'))
+          .toHaveTextContent(commonEn.header.title)
+      })
+      expect(screen.getByTestId('app-header-subtitle'))
+        .toHaveTextContent(commonEn.header.subtitle)
+      expect(commonDe.header.title).not.toBe(commonEn.header.title)
+      expect(commonDe.header.subtitle).not.toBe(commonEn.header.subtitle)
     })
 
     it('renders TimeRangeSelector component', async () => {
