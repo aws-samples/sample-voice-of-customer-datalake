@@ -2854,6 +2854,32 @@ describe('prototype object IAM boundaries', () => {
           .not.toContain(forbidden);
       }
     });
+
+    // The GRANT, which is a different claim from the request the Python side
+    // pins: `test_it_invalidates_only_this_project_s_prototype_paths` proves the
+    // invalidation asks for one project's paths, and says nothing about whether
+    // the role could have asked for a different distribution's. `resources: ['*']`
+    // is the shape most CloudFront invalidation snippets show, so this is the one
+    // new statement whose over-broad form is easy to reach for by accident.
+    it('scopes the cache invalidation to this distribution and to invalidation alone', () => {
+      const invalidationStatements = statementsForRole('ProjectsLambdaRole')
+        .filter((statement) => (
+          Array.isArray(statement.Action) ? statement.Action : [statement.Action]
+        ).includes('cloudfront:CreateInvalidation'));
+
+      expect(invalidationStatements).toHaveLength(1);
+      const [statement] = invalidationStatements;
+      // No GetInvalidation/ListInvalidations: the delete fires and forgets, and
+      // ListInvalidations is distribution-wide read on other deploys' activity.
+      // Compared as a string because CloudFormation renders a lone action that
+      // way — asserting the array form would pass only by accident of arity.
+      expect(statement.Action).toBe('cloudfront:CreateInvalidation');
+      expect(statement.Effect).toBe('Allow');
+      const resource = JSON.stringify(statement.Resource);
+      expect(resource).toContain(':cloudfront::');
+      expect(resource).toContain('distribution/');
+      expect(resource).not.toBe('"*"');
+    });
   });
 });
 

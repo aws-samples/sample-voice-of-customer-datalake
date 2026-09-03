@@ -7,9 +7,12 @@
  * These two answer questions the backend does not record at all:
  *
  * - **`ordinalByType`** — contextual creation order for document types that do
- *   not persist a version. Managed PRD, PR/FAQ, and prototype versions are
- *   materialized by the backend; callers suppress this fallback via
- *   `isVersionManagedDocument`, including while legacy metadata is backfilled.
+ *   not persist a version. Versions for the MANAGED types are materialized by the
+ *   backend; callers suppress this fallback via `isVersionManagedDocument`,
+ *   including while legacy metadata is backfilled. The set itself is
+ *   `VERSION_MANAGED_DOCUMENT_TYPES` below rather than an enumeration here — it
+ *   has already widened once (research, #406 follow-up), and a prose list in a
+ *   docstring is the copy that silently goes stale when it widens again.
  * - **`resolveRevision`** — "this prototype revises that one". `revised_from_id`
  *   and `revision_feedback` have been written on every feedback-driven prototype
  *   revision since that feature shipped, arrive on every project read, and until

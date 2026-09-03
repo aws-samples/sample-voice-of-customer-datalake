@@ -22,6 +22,12 @@ from unittest.mock import patch
 import boto3
 import pytest
 from boto3.dynamodb.conditions import Key
+from botocore.exceptions import (
+    ClientError,
+    EndpointConnectionError,
+    NoCredentialsError,
+    ParamValidationError,
+)
 from moto import mock_aws
 from shared.document_versions import version_partition_key
 from shared.project_writes import PROJECT_DELETION_ATTRIBUTE
@@ -222,6 +228,54 @@ def test_a_retry_after_a_failed_object_sweep_resumes_and_finishes(deployment):
     )['Item']['status'] == 'deleted'
 
 
+def test_a_reported_partial_failure_is_resumable_and_does_not_abort_the_delete(deployment):
+    """`delete_objects` REPORTS per-key failures instead of raising them.
+
+    The other branch. `test_a_retry_after_a_failed_object_sweep_resumes_and_finishes`
+    covers a RAISED `delete_objects`, which aborts the sweep before the tombstone is
+    finalized. Under throttling S3 instead returns 200 with an `Errors` list naming
+    the keys it did not delete — and the sweep logs and continues, because the
+    durable work has all committed by then and failing would leave the tombstone at
+    `status='deleting'` over an object the next retry will collect anyway.
+
+    Both halves of that claim are asserted: the delete finalizes NOW, and a second
+    delete_project empties the prefix — which is the resumability the "log and
+    continue" choice is trading on.
+    """
+    from projects import delete_project
+
+    real_delete_objects = deployment['s3'].delete_objects
+    calls = {'count': 0}
+
+    def report_failure_once(**kwargs):
+        calls['count'] += 1
+        if calls['count'] == 1:
+            # 200 with an Errors envelope, and the object deliberately LEFT in
+            # place: a response that claimed failure while deleting anyway would
+            # make the second-delete assertion below pass vacuously.
+            return {
+                'Errors': [
+                    {'Key': entry['Key'], 'Code': 'SlowDown', 'Message': 'throttled'}
+                    for entry in kwargs['Delete']['Objects']
+                ],
+            }
+        return real_delete_objects(**kwargs)
+
+    with patch.object(deployment['s3'], 'delete_objects', side_effect=report_failure_once), \
+            patch('projects.get_s3_client', return_value=deployment['s3']):
+        assert delete_project(PROJECT) == {'success': True}
+
+        # Reported, not raised: the tombstone is final even though the object survived.
+        assert deployment['projects'].get_item(
+            Key={'pk': f'PROJECT#{PROJECT}', 'sk': 'META'}, ConsistentRead=True,
+        )['Item']['status'] == 'deleted'
+        assert object_keys(deployment['s3'], f'prototypes/{PROJECT}/') != []
+
+        assert delete_project(PROJECT) == {'success': True}
+
+    assert object_keys(deployment['s3'], f'prototypes/{PROJECT}/') == []
+
+
 def test_more_prototype_objects_than_one_listing_page_are_all_deleted(deployment):
     """`list_objects_v2` caps at 1000 keys; a project can exceed that."""
     from projects import delete_project
@@ -338,14 +392,38 @@ class TestThePrototypeEdgeCacheIsEvicted:
 
         create.assert_not_called()
 
-    def test_a_failed_invalidation_does_not_fail_the_delete(self, deployment):
+    # Every failure mode botocore raises for this call, not just the modelled
+    # service errors. `EndpointConnectionError`, `NoCredentialsError` and
+    # `ParamValidationError` are NOT ClientError subclasses, so a handler catching
+    # only ClientError let them propagate out of `delete_project` and skip the
+    # `update_item` that finalizes the tombstone — leaving the project at
+    # `status='deleting'` with its rows and objects already gone, for a CACHE miss.
+    # The client pins us-east-1 (CloudFront's control plane is global), so a
+    # VPC/DNS hiccup reaching it is the realistic instance of that.
+    @pytest.mark.parametrize('failure', [
+        pytest.param(
+            ClientError(
+                {'Error': {'Code': 'TooManyInvalidationsInProgress'}}, 'CreateInvalidation',
+            ),
+            id='a modelled service error',
+        ),
+        pytest.param(
+            EndpointConnectionError(endpoint_url='https://cloudfront.amazonaws.com'),
+            id='an unreachable endpoint',
+        ),
+        pytest.param(
+            NoCredentialsError(),
+            id='no resolvable credentials',
+        ),
+        pytest.param(
+            ParamValidationError(report='DistributionId is required'),
+            id='a malformed request',
+        ),
+    ])
+    def test_a_failed_invalidation_does_not_fail_the_delete(self, deployment, failure):
         """The bucket is already empty; this is a cache, not the authority."""
-        from botocore.exceptions import ClientError
         from projects import delete_project
 
-        failure = ClientError(
-            {'Error': {'Code': 'TooManyInvalidationsInProgress'}}, 'CreateInvalidation',
-        )
         with patch.dict(os.environ, {'PROTOTYPES_DISTRIBUTION_ID': 'E1DISTRIBUTION'}), \
                 patch('projects.get_cloudfront_client') as factory:
             factory.return_value.create_invalidation.side_effect = failure

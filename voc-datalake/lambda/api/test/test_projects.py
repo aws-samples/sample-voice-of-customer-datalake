@@ -555,6 +555,34 @@ class TestDocumentVersionBoundaries:
 
         mock_table.update_item.assert_not_called()
 
+    @patch('projects.projects_table')
+    def test_the_series_refusal_names_the_type_being_edited(self, mock_table):
+        """The message comes from the DATA, not from a literal list of types.
+
+        It used to enumerate "PRD, PR/FAQ, and prototype", so once research became
+        managed a research rename got a 400 naming three types that excluded the one
+        the user was editing — indistinguishable from a server bug.
+        """
+        mock_table.query.return_value = {
+            'Items': [{
+                'pk': 'PROJECT#p1', 'sk': 'RESEARCH#d1', 'document_id': 'd1',
+                'document_type': 'research', 'base_title': 'Research: churn drivers',
+                'title': 'Research: churn drivers (v2)', 'version': 2,
+            }],
+        }
+
+        from projects import update_document
+        from shared.exceptions import ValidationError
+
+        with pytest.raises(ValidationError, match='cannot change series') as raised:
+            update_document('p1', 'd1', {'title': 'Something else'})
+
+        assert 'research' in str(raised.value)
+        # The stale enumeration named types the user was NOT editing.
+        assert 'PRD' not in str(raised.value)
+        assert 'prototype' not in str(raised.value)
+        mock_table.update_item.assert_not_called()
+
     @patch('projects.preserve_versioned_document_allocation')
     @patch('projects.persist_legacy_document_versions')
     @patch('projects.projects_table')

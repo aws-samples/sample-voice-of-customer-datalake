@@ -968,13 +968,26 @@ def _invalidate_project_prototype_cache(project_id: str) -> None:
                 'CallerReference': f'delete-{project_id}-{int(time.time())}',
             },
         )
-    except ClientError as error:
+    except Exception as error:  # noqa: BLE001 - see the best-effort contract above
+        # `Exception`, not `ClientError`. Several botocore failure modes for this
+        # call sit OUTSIDE the ClientError hierarchy — EndpointConnectionError
+        # (this client pins us-east-1, so a VPC/DNS hiccup reaching the global
+        # control plane lands here), NoCredentialsError and ParamValidationError.
+        # Catching only ClientError let those propagate out of delete_project and
+        # skip the update_item that finalizes the tombstone, leaving the project
+        # at status='deleting' with its rows and objects already gone — for a
+        # CACHE miss. Same reasoning as shared/avatar.py's superseded-object
+        # cleanup and product_context.delete_doc.
         logger.warning(
             'Prototype cache invalidation failed; deleted prototypes may still '
             'be served from the edge until their cached copies expire',
             extra={
                 'project_id': project_id,
-                'error_code': error.response.get('Error', {}).get('Code', 'Unknown'),
+                # Defensive: a non-ClientError has no `response`, and raising
+                # inside the log call would defeat the whole point of this handler.
+                'error_code': (
+                    getattr(error, 'response', None) or {}
+                ).get('Error', {}).get('Code', type(error).__name__),
             },
         )
 
@@ -2054,7 +2067,8 @@ def update_document(project_id: str, document_id: str, body: dict) -> dict:
     # One shared predicate rather than a local prefix tuple: adding a managed
     # type (research, #406 follow-up) must not leave this route editing a
     # managed title as if it were free text.
-    managed = managed_document_type(document) is not None
+    managed_type = managed_document_type(document)
+    managed = managed_type is not None
     is_prototype = (
         document_type == 'prototype'
         or sk.startswith('PROTOTYPE#')
@@ -2069,9 +2083,15 @@ def update_document(project_id: str, document_id: str, body: dict) -> dict:
         if managed:
             stored_title = document.get('base_title') or document.get('title') or 'Untitled'
             if normalized_base_title(body['title']) != normalized_base_title(stored_title):
+                # The type comes from the DATA, not from a literal list. The
+                # literal enumerated PRD, PR/FAQ and prototype, so once research
+                # became managed a research rename got a 400 naming three types
+                # that excluded the one being edited — which reads like a server
+                # bug rather than the rule it is.
                 raise ValidationError(
-                    'Managed PRD, PR/FAQ, and prototype titles cannot change '
-                    'series. Use the dedicated workflow to create a new series.'
+                    'Managed document titles cannot change series '
+                    f"(document_type '{managed_type}'). "
+                    'Use the dedicated workflow to create a new series.'
                 )
         else:
             update_expr += ', title = :title'
