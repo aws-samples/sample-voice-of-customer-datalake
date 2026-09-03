@@ -237,6 +237,66 @@ describe('project refetch on terminal job transitions', () => {
       .toBe(PROJECT_FETCHES_ON_MOUNT + 1))
   })
 
+  it('refetches for the interleaved job even when the jobs payload resolves first', async () => {
+    // The ordering the exception above was written for, and the one it did NOT
+    // survive: the jobs response is the smaller of the two, so it usually lands
+    // while the project read is still in flight. Consuming the first payload then
+    // burned both the flag and the transition on a payload the predicate cannot
+    // answer for (`project === undefined` is not "nothing missing"), and the re-run
+    // once the project arrived found `isFirstPayload === false` with nothing settled.
+    // Measured before the fix: one `getProject` call at a 20ms delay, i.e. the
+    // seed-only behaviour the exception was meant to replace.
+    //
+    // The delay is what makes the ordering a PROPERTY of the test rather than an
+    // accident of `mockResolvedValue` resolving in the same microtask — the two
+    // cases either side of this one depend on that accident, which is why this one
+    // states it explicitly.
+    getProject.mockImplementation(() => new Promise((resolve) => {
+      setTimeout(() => resolve({
+        project: { project_id: 'proj-1', name: 'P' },
+        personas: [],
+        documents: [prototypeDoc],
+      }), 50)
+    }))
+    getJobs.mockResolvedValue({
+      jobs: [{
+        ...job('completed', new Date().toISOString()),
+        result: { document_id: 'doc-2', title: 'Prototype (v2)' },
+      }],
+    })
+
+    renderProjectData()
+
+    await waitFor(() => expect(getProject.mock.calls.length)
+      .toBe(PROJECT_FETCHES_ON_MOUNT + 1))
+  })
+
+  it('does not refetch when the slow project read already contains the artifact', async () => {
+    // The anti-vacuity control for the case above: same deferred ordering, same
+    // shape of payload, differing only in whether the project read missed anything.
+    // Without it, a fix that simply invalidated whenever the jobs payload won the
+    // race would pass the case above while costing every project open a second read.
+    getProject.mockImplementation(() => new Promise((resolve) => {
+      setTimeout(() => resolve({
+        project: { project_id: 'proj-1', name: 'P' },
+        personas: [],
+        documents: [prototypeDoc],
+      }), 50)
+    }))
+    getJobs.mockResolvedValue({
+      jobs: [{
+        ...job('completed', new Date().toISOString()),
+        result: { document_id: prototypeDoc.document_id, title: 'Prototype' },
+      }],
+    })
+
+    renderProjectData()
+
+    await awaitObserved(['completed'])
+    await waitFor(() => expect(getProject).toHaveBeenCalled())
+    expect(getProject).toHaveBeenCalledTimes(PROJECT_FETCHES_ON_MOUNT)
+  })
+
   it('does not refetch on mount when the first payload names a document the project has', async () => {
     // The control for the case above, and the one that keeps the common path at one
     // read: the same shape of payload, differing only in whether the mount fetch
@@ -356,11 +416,35 @@ describe('firstPayloadMissesAnArtifact', () => {
   })
 
   it('is false for a completed job whose result names nothing', () => {
-    // The honest answer rather than a refetch on every open: `generate_personas`
-    // reports its personas in `result.personas`, and an empty envelope names no
-    // artifact at all.
+    // The honest answer rather than a refetch on every open: an empty envelope
+    // names no artifact at all.
     expect(firstPayloadMissesAnArtifact([withResult({}), withResult(undefined)], project))
       .toBe(false)
+  })
+
+  it('is true when a generated persona list contains one the project payload lacks', () => {
+    // `generate_personas` reports a LIST rather than a single id, and it is one of
+    // the jobs a user is most likely to be watching when it lands — so leaving the
+    // list unread left the interleave case open for the commonest job of all.
+    expect(firstPayloadMissesAnArtifact(
+      [withResult({ personas: [{ persona_id: 'persona-2' }] } as ProjectJob['result'])],
+      project,
+    )).toBe(true)
+  })
+
+  it('is false when every generated persona is already in the project payload', () => {
+    expect(firstPayloadMissesAnArtifact(
+      [withResult({ personas: [{ persona_id: 'persona-1' }] } as ProjectJob['result'])],
+      project,
+    )).toBe(false)
+  })
+
+  it('is false for an empty generated persona list', () => {
+    // A job that reported a list and produced nothing names no artifact, so this is
+    // the same "names nothing" answer rather than a refetch.
+    expect(firstPayloadMissesAnArtifact(
+      [withResult({ personas: [] } as ProjectJob['result'])], project,
+    )).toBe(false)
   })
 
   it('is false for a still-running job even when its result names a stale id', () => {

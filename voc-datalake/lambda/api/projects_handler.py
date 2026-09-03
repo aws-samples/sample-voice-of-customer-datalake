@@ -285,6 +285,59 @@ def api_generate_personas(project_id: str):
 # Document Routes
 # ============================================
 
+
+def _finish_research_job_row(project_id: str, job_id: str, result: object) -> None:
+    """Move the synchronous fallback's job row to its terminal state.
+
+    Derived state, written after the document has durably committed — so it must not
+    be able to fail the request. The response is the authority here: the caller
+    already holds the document, and turning a successful research into a 5xx over a
+    row write would leave the client with an error for work that succeeded and no
+    document id to find it by. `shared.jobs.update_job_status` swallows its own
+    `update_item` failures, but it reaches `get_jobs_table()` first, outside that
+    guard. Same best-effort argument as `projects._invalidate_project_cached_objects`.
+
+    A row with no document id is NOT written `completed`. `step_save` raises for the
+    same condition rather than reporting a success whose `document_id` is `''`, and
+    the two writers have to agree: the frontend's `firstPayloadMissesAnArtifact`
+    reads an empty id as "names nothing" and skips the refresh, so a completed row
+    that names no document is a job the page will never reconcile. Left `pending`
+    instead, which is at least true — and unreachable in practice, since
+    `run_research` either returns a committed document or raises.
+    """
+    document = result.get('document') if isinstance(result, dict) else None
+    # `isinstance` rather than `or {}`: a truthy non-dict `document` would make
+    # `.get` an AttributeError inside a helper whose whole point is not to raise.
+    if not isinstance(document, dict):
+        logger.warning(
+            'Research returned no document; leaving the job row un-finalized',
+            extra={'project_id': project_id, 'job_id': job_id},
+        )
+        return
+    document_id = document.get('document_id')
+    if not isinstance(document_id, str) or not document_id:
+        logger.warning(
+            'Research document has no id; leaving the job row un-finalized',
+            extra={'project_id': project_id, 'job_id': job_id},
+        )
+        return
+
+    try:
+        update_job_status(
+            project_id, job_id, 'completed', 100, 'complete',
+            # The STORED title, so the panel and the Documents tab name the same
+            # `(vN)` document — the same result shape `step_save` writes.
+            result={'document_id': document_id, 'title': document.get('title', '')},
+        )
+    except Exception:  # noqa: BLE001 - derived state must not fail a committed write
+        logger.warning(
+            'Could not finalize the research job row; the document is committed and '
+            'was returned to the caller',
+            extra={'project_id': project_id, 'job_id': job_id},
+            exc_info=True,
+        )
+
+
 @app.post("/projects/<project_id>/research")
 @tracer.capture_method
 def api_run_research(project_id: str):
@@ -333,14 +386,7 @@ def api_run_research(project_id: str):
         # with the request, so the caller learns of the failure from the response
         # rather than from the row. (`step_error` exists because the async path has
         # no response left to fail.)
-        document = result.get('document') if isinstance(result, dict) else None
-        update_job_status(
-            project_id, job_id, 'completed', 100, 'complete',
-            result={
-                'document_id': (document or {}).get('document_id', ''),
-                'title': (document or {}).get('title', ''),
-            },
-        )
+        _finish_research_job_row(project_id, job_id, result)
         return result
 
     return {'success': True, 'job_id': job_id, 'status': 'pending', 'message': 'Research started.'}

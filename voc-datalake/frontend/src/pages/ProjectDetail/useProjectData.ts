@@ -153,10 +153,13 @@ export function newlyTerminalJobIds(
  *
  * Answered from the DATA rather than by widening the window back to a clock: a
  * completed job names the artifact it produced, so "did the project read see it"
- * is a set membership test. `false` when the project read is still in flight —
- * whatever it returns will already include the artifact — and `false` for a job
- * whose result names nothing, which is the honest answer rather than a refetch on
- * every open.
+ * is a set membership test. Callers must only ask once the project read has
+ * RESOLVED: `undefined` here is indistinguishable from "nothing was missed", so the
+ * effect below defers consuming the first payload until `data` is present rather
+ * than asking early and getting a false negative.
+ *
+ * `false` for a job whose result names nothing, which is the honest answer rather
+ * than a refetch on every open.
  *
  * @param jobs The first jobs payload.
  * @param project The project detail already in cache, or undefined if still loading.
@@ -182,6 +185,17 @@ export function firstPayloadMissesAnArtifact(
     const personaId = job.result?.persona_id
     if (typeof personaId === 'string' && personaId !== '') {
       return !personaIds.has(personaId)
+    }
+    // `generate_personas` reports a LIST rather than one id, and it is among the
+    // jobs a user is most likely to have the page open for — so the interleave case
+    // has to cover it too. Any one persona the project read missed is enough: the
+    // refetch replaces the whole payload.
+    const personas = job.result?.personas
+    if (Array.isArray(personas)) {
+      return personas.some((persona) => {
+        const id: unknown = persona?.persona_id
+        return typeof id === 'string' && id !== '' && !personaIds.has(id)
+      })
     }
     return false
   })
@@ -300,10 +314,23 @@ export function useProjectData({
    * payload names an artifact the project does NOT contain, that job's only
    * invalidation is this one. `firstPayloadMissesAnArtifact` decides from the data,
    * so the exception costs nothing on the common path.
+   *
+   * Nothing is consumed while `data` is still undefined, and that ordering is the
+   * whole exception. The jobs response is the smaller of the two, so it usually
+   * resolves FIRST; seeding then — before there is a project to compare against —
+   * would burn both the flag and the transition on a payload the predicate cannot
+   * answer for, and the re-run once `data` landed would find nothing left to report.
+   * Returning early leaves both intact, so the seeding happens on the first payload
+   * where BOTH are present, which is the only moment "did the project read see it"
+   * has an answer. `data` is in the dependency array, so its arrival re-runs this.
+   *
+   * The bound: a project read that never resolves at all (it exhausted its retries)
+   * gets no job-driven refetch. That page is already rendering its error state, and
+   * invalidating a query that just failed would only repeat the failure.
    */
   useEffect(() => {
     const jobs = jobsData?.jobs
-    if (jobs === undefined) return
+    if (jobs === undefined || data === undefined) return
     const settled = newlyTerminalJobIds(jobs, settledJobIds.current)
     const isFirstPayload = !sawFirstJobsPayload.current
     sawFirstJobsPayload.current = true

@@ -2875,10 +2875,16 @@ describe('prototype object IAM boundaries', () => {
       // way — asserting the array form would pass only by accident of arity.
       expect(statement.Action).toBe('cloudfront:CreateInvalidation');
       expect(statement.Effect).toBe('Allow');
+      // The ARN is assembled from the CROSS-STACK distribution id, so what is
+      // asserted is that the id SEGMENT is an import — not merely that the whole
+      // string looks arn-shaped. A `not.toBe('"*"')` here could not fail at all once
+      // `toContain(':cloudfront::')` had passed, since that substring does not appear
+      // in `"*"`; and a hardcoded id would satisfy any assertion that only reads the
+      // surrounding literals. The `Fn::ImportValue` immediately after
+      // `distribution/` is the part a wrong grant cannot produce.
       const resource = JSON.stringify(statement.Resource);
       expect(resource).toContain(':cloudfront::');
-      expect(resource).toContain('distribution/');
-      expect(resource).not.toBe('"*"');
+      expect(resource).toMatch(/:distribution\/",\{"Fn::ImportValue"/);
     });
   });
 });

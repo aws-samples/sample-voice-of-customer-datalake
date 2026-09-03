@@ -40,7 +40,7 @@ from botocore.exceptions import (
 )
 from moto import mock_aws
 from product_context import product_docs_project_prefix
-from shared.avatar import avatar_object_keys
+from shared.avatar import AVATAR_OWNER_METADATA_KEY, avatar_object_keys
 from shared.document_versions import version_partition_key
 from shared.project_writes import PROJECT_DELETION_ATTRIBUTE
 from shared.prototypes import prototype_s3_key
@@ -51,6 +51,26 @@ NEIGHBOUR = 'proj-10'
 # The persona whose avatar the fixture writes. Named here because the avatar sweep
 # is the one that cannot derive its keys from a prefix.
 PERSONA = 'persona_1'
+# One persona id held by BOTH projects, which is reachable in production: two
+# personas created in the same wall-clock second in different projects get the same
+# `persona_{YYYYMMDDHHMMSS}`, and therefore the same avatar key.
+SHARED_PERSONA = 'persona_20260101120000'
+# A persona whose avatar object predates the ownership metadata.
+LEGACY_PERSONA = 'persona_legacy'
+
+
+def put_avatar(s3, key: str, owner: str) -> None:
+    """Write an avatar object stamped with its owning project.
+
+    Mirrors what `shared.avatar.generate_persona_avatar` does at write time, which
+    is the only moment the owner is known: the key itself carries no project.
+    """
+    s3.put_object(
+        Bucket=BUCKET,
+        Key=key,
+        Body=b'avatar',
+        Metadata={AVATAR_OWNER_METADATA_KEY: owner},
+    )
 
 
 def _key_schema() -> dict:
@@ -90,15 +110,20 @@ def deployment():
         # persona regenerated across an `output_format` change leaves an object
         # under the older extension that its stored `avatar_url` no longer names.
         # A url-derived sweep would leave exactly that one behind.
+        #
+        # Both carry the owner metadata the avatar WRITER stamps. That is what makes
+        # them deletable: the key space is flat and persona ids are not unique across
+        # projects, so the sweep deletes only what names this project.
         for extension in ('jpeg', 'png'):
-            s3.put_object(
-                Bucket=BUCKET, Key=f'avatars/{PERSONA}.{extension}', Body=b'avatar',
-            )
+            put_avatar(s3, f'avatars/{PERSONA}.{extension}', owner=PROJECT)
+        # One row, two objects. The row is written once — the sweep it feeds is
+        # prefix-based and never reads it, and putting it inside the loop below read
+        # as "two docs" to anyone extending the fixture.
+        projects.put_item(Item={
+            'pk': f'PROJECT#{PROJECT}', 'sk': 'PRODUCT_DOC#doc_1',
+            'doc_id': 'doc_1',
+        })
         for kind, name in (('raw', 'doc_1.pdf'), ('extracted', 'doc_1.txt')):
-            projects.put_item(Item={
-                'pk': f'PROJECT#{PROJECT}', 'sk': 'PRODUCT_DOC#doc_1',
-                'doc_id': 'doc_1',
-            })
             s3.put_object(
                 Bucket=BUCKET,
                 Key=f'{product_docs_project_prefix(PROJECT)}{kind}/{name}',
@@ -140,7 +165,33 @@ def deployment():
             Key=f'{product_docs_project_prefix(NEIGHBOUR)}raw/doc_9.pdf',
             Body=b'neighbour product doc',
         )
-        s3.put_object(Bucket=BUCKET, Key='avatars/persona_9.jpeg', Body=b'neighbour')
+        put_avatar(s3, 'avatars/persona_9.jpeg', owner=NEIGHBOUR)
+        # The COLLISION, and the reason the sweep checks ownership at all: this id is
+        # one this project also used, because `create_persona` and the persona
+        # importer both mint `persona_{YYYYMMDDHHMMSS}` with no project component —
+        # two personas created in the same second in different projects name one
+        # object. The row belongs to the neighbour; only the metadata can say so.
+        put_avatar(s3, f'avatars/{SHARED_PERSONA}.jpeg', owner=NEIGHBOUR)
+        projects.put_item(Item={
+            'pk': f'PROJECT#{NEIGHBOUR}', 'sk': f'PERSONA#{SHARED_PERSONA}',
+            'persona_id': SHARED_PERSONA,
+            'avatar_url': f's3://{BUCKET}/avatars/{SHARED_PERSONA}.jpeg',
+        })
+        projects.put_item(Item={
+            'pk': f'PROJECT#{PROJECT}', 'sk': f'PERSONA#{SHARED_PERSONA}',
+            'persona_id': SHARED_PERSONA,
+            'avatar_url': f's3://{BUCKET}/avatars/{SHARED_PERSONA}.jpeg',
+        })
+        # An avatar with NO owner metadata: written before the ownership stamp
+        # existed. The sweep must decline it rather than guess, because guessing is
+        # what deletes a neighbour's object.
+        s3.put_object(
+            Bucket=BUCKET, Key=f'avatars/{LEGACY_PERSONA}.jpeg', Body=b'legacy avatar',
+        )
+        projects.put_item(Item={
+            'pk': f'PROJECT#{PROJECT}', 'sk': f'PERSONA#{LEGACY_PERSONA}',
+            'persona_id': LEGACY_PERSONA,
+        })
         jobs.put_item(Item={
             'pk': f'PROJECT#{NEIGHBOUR}', 'sk': 'JOB#job_9', 'job_id': 'job_9',
         })
@@ -234,6 +285,56 @@ def test_every_extension_a_persona_avatar_may_occupy_is_deleted(deployment):
     assert object_keys(deployment['s3'], f'avatars/{PERSONA}.') == []
 
 
+def test_an_avatar_a_neighbour_owns_survives_a_shared_persona_id(deployment):
+    """The one sweep whose key space is shared across projects, so ownership is read.
+
+    `avatars/{persona_id}.{ext}` carries no project component, and persona ids are
+    not globally unique: `create_persona` and `jobs/persona_importer/handler.py` both
+    mint `persona_{YYYYMMDDHHMMSS}` with no project part and no randomness, so two
+    personas created in the same second in DIFFERENT projects name ONE object. Both
+    projects hold a `PERSONA#{SHARED_PERSONA}` row here for exactly that reason.
+
+    Deleting on the id alone therefore removed a live avatar from a project nobody
+    deleted, leaving a surviving persona row pointing at a 404 — data loss outside
+    the deleted project, which retry-safety does not excuse. The object's own
+    metadata names its owner, so the sweep can tell them apart.
+    """
+    shared_key = f'avatars/{SHARED_PERSONA}.jpeg'
+    # The positive control: the object exists and the deleted project does claim a
+    # persona by that id, so this cannot pass by the sweep never reaching it.
+    assert object_keys(deployment['s3'], shared_key) == [shared_key]
+    assert any(
+        item['sk'] == f'PERSONA#{SHARED_PERSONA}'
+        for item in partition(deployment['projects'], f'PROJECT#{PROJECT}')
+    )
+
+    assert delete() == {'success': True}
+
+    assert object_keys(deployment['s3'], shared_key) == [shared_key]
+    # And the neighbour's row still names it, which is what made the loss visible.
+    assert any(
+        item['sk'] == f'PERSONA#{SHARED_PERSONA}'
+        for item in partition(deployment['projects'], f'PROJECT#{NEIGHBOUR}')
+    )
+
+
+def test_an_avatar_with_no_recorded_owner_is_left_alone(deployment):
+    """"Cannot tell" is not "mine".
+
+    An object written before the ownership stamp existed answers nothing, and the
+    two readings of that are not symmetric: deleting it risks a neighbour's live
+    avatar, while keeping it costs one orphan in a bucket that has no lifecycle
+    expiration anyway. A regeneration re-stamps the owner and the next delete
+    collects it.
+    """
+    legacy_key = f'avatars/{LEGACY_PERSONA}.jpeg'
+    assert object_keys(deployment['s3'], legacy_key) == [legacy_key]
+
+    assert delete() == {'success': True}
+
+    assert object_keys(deployment['s3'], legacy_key) == [legacy_key]
+
+
 def test_another_project_s_product_docs_and_avatars_survive(deployment):
     """The neighbour owns objects under both new prefixes. Neither may move.
 
@@ -280,9 +381,12 @@ def test_a_neighbouring_project_whose_id_shares_the_prefix_is_untouched(deployme
     assert [item['sk'] for item in partition(
         deployment['jobs'], f'PROJECT#{NEIGHBOUR}',
     )] == ['JOB#job_9']
+    # EVERY row, including the neighbour's persona under the id this project also
+    # used — the shared id is what the avatar sweep has to disambiguate, and its row
+    # is a neighbour row like any other.
     assert [item['sk'] for item in partition(
         deployment['projects'], f'PROJECT#{NEIGHBOUR}',
-    )] == ['META']
+    )] == ['META', f'PERSONA#{SHARED_PERSONA}']
 
 
 def test_repeating_the_delete_is_idempotent(deployment):
@@ -444,17 +548,22 @@ def test_a_delete_still_finalizes_when_no_bucket_is_configured(deployment):
 
 
 class TestThePrototypeEdgeCacheIsEvicted:
-    """An emptied bucket is not an unreachable prototype.
+    """An emptied bucket is not an unreachable object.
 
-    `/prototypes/*` runs CACHING_OPTIMIZED because a prototype is immutable per
-    document id, so a signed URL minted before the delete keeps getting an edge HIT
-    — the object is gone while the page still renders for the rest of the
-    signature's TTL. The delete therefore evicts the project's paths too.
+    Both behaviors that serve deleted bytes — `/prototypes/*` and `/avatars/*` —
+    run CACHING_OPTIMIZED because each object is immutable per id, so a signed URL
+    minted before the delete keeps getting an edge HIT: the object is gone while the
+    page still renders for the rest of the signature's TTL. CACHING_OPTIMIZED also
+    forwards no query string, so the signature is not part of the cache key and a
+    cached copy is shareable across viewers. The delete therefore evicts both.
+
+    Product docs need no entry: they are read through presigned S3 URLs rather than
+    the distribution, so the empty bucket is the whole story for them.
 
     A real CloudFront client is not used: moto's CloudFront support does not model
     invalidation against a distribution created in another stack, and what needs
-    proving is the REQUEST — one narrowly scoped path, on the configured
-    distribution, and never fatal.
+    proving is the REQUEST — narrowly scoped paths, on the configured distribution,
+    and never fatal.
     """
 
     @staticmethod
@@ -474,12 +583,54 @@ class TestThePrototypeEdgeCacheIsEvicted:
         create.assert_called_once()
         batch = create.call_args.kwargs['InvalidationBatch']
         assert create.call_args.kwargs['DistributionId'] == 'E1DISTRIBUTION'
-        assert batch['Paths'] == {
-            'Quantity': 1, 'Items': [f'/prototypes/{PROJECT}/*'],
-        }
+        assert f'/prototypes/{PROJECT}/*' in batch['Paths']['Items']
         # A wildcard over the behavior would evict every OTHER project's
         # prototypes, and invalidation paths are billed past a free allowance.
         assert '/prototypes/*' not in batch['Paths']['Items']
+
+    def test_it_invalidates_the_avatar_paths_it_deleted(self, deployment):
+        """The copy promises the images are gone; the edge has to agree.
+
+        `/avatars/*` is the SAME distribution and the same CACHING_OPTIMIZED policy
+        whose consequence this class exists for, so emptying the bucket left a signed
+        avatar URL resolving from the edge for the rest of its cache lifetime — while
+        the delete confirmation said the images were permanently deleted.
+        """
+        items = self.invalidate().call_args.kwargs['InvalidationBatch']['Paths']['Items']
+
+        # Both extensions, because the sweep deleted both — one object per format the
+        # persona was ever generated under.
+        assert f'/avatars/{PERSONA}.jpeg' in items
+        assert f'/avatars/{PERSONA}.png' in items
+        # NOT a wildcard: avatar keys carry no project component, so `/avatars/*`
+        # would evict every other project's avatars — the same reason the prototype
+        # path names the project rather than the behavior.
+        assert '/avatars/*' not in items
+
+    def test_it_names_no_path_for_an_object_it_did_not_delete(self, deployment):
+        """The batch is what was deleted, not what was considered.
+
+        The neighbour's avatar under the shared persona id was declined by the
+        ownership check, so invalidating its path would evict a live object from the
+        edge — a cache eviction is cheap, but it would mean the batch no longer
+        describes this project's own artifacts.
+        """
+        items = self.invalidate().call_args.kwargs['InvalidationBatch']['Paths']['Items']
+
+        assert f'/avatars/{SHARED_PERSONA}.jpeg' not in items
+        assert f'/avatars/{LEGACY_PERSONA}.jpeg' not in items
+
+    def test_the_quantity_matches_the_paths(self, deployment):
+        """CloudFront rejects a batch whose Quantity disagrees with Items.
+
+        Worth its own case now that the count is variable: it was a literal 1 when
+        the only path was the prototype prefix, and a hardcoded number would fail in
+        production rather than here.
+        """
+        paths = self.invalidate().call_args.kwargs['InvalidationBatch']['Paths']
+
+        assert paths['Quantity'] == len(paths['Items'])
+        assert paths['Quantity'] > 1
 
     def test_it_carries_a_caller_reference(self, deployment):
         batch = self.invalidate().call_args.kwargs['InvalidationBatch']

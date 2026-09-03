@@ -55,6 +55,21 @@ _SUPPORTED_OUTPUT_FORMATS = frozenset({'png', 'jpeg'})
 # object orphaned forever.
 _HISTORICAL_EXTENSIONS = ('png', 'jpeg', 'jpg', 'webp')
 
+# S3 user-metadata key recording which project an avatar object belongs to.
+#
+# The key space `avatars/{persona_id}.{ext}` is FLAT — the only one a project owns
+# that carries no project component — and persona ids are not globally unique:
+# `create_persona` and the persona importer both mint `persona_{YYYYMMDDHHMMSS}`
+# with no project part and no randomness, so two personas created in the same
+# second in DIFFERENT projects name one object. Ownership therefore cannot be
+# inferred from the key, and a project delete that assumed it could would remove a
+# live avatar from a project nobody deleted.
+#
+# Recorded at write time instead, which is the only moment the owner is known for
+# certain. S3 lowercases and prefixes user metadata on the wire; boto3 hands it
+# back under this exact key, so writer and reader must share the constant.
+AVATAR_OWNER_METADATA_KEY = 'project-id'
+
 # Region-pinned image-model clients, cached for the life of the execution
 # environment (one per region, since the region is config-driven). Building a
 # boto3 client costs a botocore session + endpoint resolution, and the persona
@@ -170,9 +185,36 @@ def avatar_object_keys(persona_id: str) -> tuple[str, ...]:
     orphans that inventory was written to cover.
 
     Deleting an absent key is a no-op in S3, so a caller may issue all of these
-    without first checking which one exists.
+    without first checking which one exists — but a caller deleting on BEHALF of a
+    project must still check ownership, because this key space is flat and persona
+    ids are not globally unique. See AVATAR_OWNER_METADATA_KEY.
     """
     return tuple(f'avatars/{persona_id}.{extension}' for extension in _HISTORICAL_EXTENSIONS)
+
+
+def avatar_object_owner(s3_client, bucket: str, key: str) -> str | None:
+    """Which project this avatar object belongs to, or None if it cannot be told.
+
+    `head_object` rather than a tag call: the owner is written as user metadata by
+    the same `put_object` that writes the bytes, so it cannot be present on an
+    object whose upload half-failed, and one HEAD is cheaper than a GET-tagging.
+
+    None means "do not assume ownership" and covers three distinct cases the caller
+    must treat alike: the object does not exist (nothing to own), the object predates
+    this metadata (written before the flat-key-space collision was understood), and
+    the HEAD itself failed. A caller that deletes on None would reintroduce exactly
+    the cross-project deletion this exists to prevent, so the safe reading is the
+    one that leaves an ambiguous object alone.
+    """
+    try:
+        response = s3_client.head_object(Bucket=bucket, Key=key)
+    except Exception:  # noqa: BLE001 - absent or unreadable both mean "cannot tell"
+        return None
+    metadata = response.get('Metadata') if isinstance(response, dict) else None
+    if not isinstance(metadata, dict):
+        return None
+    owner = metadata.get(AVATAR_OWNER_METADATA_KEY)
+    return owner if isinstance(owner, str) and owner else None
 
 
 def _delete_superseded_avatars(s3_client, bucket: str, persona_id: str, keep: str) -> None:
@@ -270,18 +312,28 @@ def generate_avatar_prompt_with_llm(persona_data: dict, bedrock_client) -> str:
 
 
 @tracer.capture_method
-def generate_persona_avatar(persona_data: dict, bedrock_client, s3_bucket: str = None) -> dict:
+def generate_persona_avatar(
+    persona_data: dict,
+    bedrock_client,
+    s3_bucket: str = None,
+    project_id: str | None = None,
+) -> dict:
     """
     Generate an AI avatar image for a persona.
-    
+
     Uses Claude to create an intelligent image prompt from persona data (name, bio, occupation),
     then the configured image model to generate the actual image.
-    
+
     Args:
         persona_data: Dict with name, tagline, identity (bio, age_range, occupation, location), persona_id
         bedrock_client: Bedrock runtime client for Claude calls
         s3_bucket: Optional S3 bucket override, defaults to RAW_DATA_BUCKET env var
-        
+        project_id: The project this persona belongs to, recorded on the object as
+            AVATAR_OWNER_METADATA_KEY. Optional only so existing callers that have
+            no project in hand still generate an avatar; without it the object
+            carries no owner and a project delete will decline to remove it, which
+            is the safe direction (see avatar_object_owner).
+
     Returns:
         dict with 'avatar_url' (S3 URI or None) and 'avatar_prompt' (the prompt used)
     """
@@ -370,15 +422,24 @@ def generate_persona_avatar(persona_data: dict, bedrock_client, s3_bucket: str =
         # Imported inside the function to keep this module's import graph narrow.
         from shared.aws import get_s3_client
         s3_client = get_s3_client()
-        s3_client.put_object(
-            Bucket=s3_bucket,
-            Key=s3_key,
-            Body=image_data,
+        put_arguments = {
+            'Bucket': s3_bucket,
+            'Key': s3_key,
+            'Body': image_data,
             # No jpg/jpeg special case needed: get_image_model_config() has already
             # constrained the format to _SUPPORTED_OUTPUT_FORMATS.
-            ContentType=f"image/{image_format}",
-            CacheControl='public, max-age=31536000, immutable',
-        )
+            'ContentType': f"image/{image_format}",
+            'CacheControl': 'public, max-age=31536000, immutable',
+        }
+        if project_id:
+            # The owner, recorded HERE because this is the only moment it is known
+            # for certain: `avatars/{persona_id}.{ext}` is a flat key space and
+            # persona ids are not globally unique, so a project delete cannot infer
+            # ownership from the key. Omitted rather than written empty when the
+            # caller has no project, so "absent" stays distinguishable from "owned
+            # by nobody" and the delete declines either way.
+            put_arguments['Metadata'] = {AVATAR_OWNER_METADATA_KEY: project_id}
+        s3_client.put_object(**put_arguments)
         # The key embeds the format, so a format change would otherwise leave the
         # persona's previous avatar orphaned in the bucket.
         _delete_superseded_avatars(s3_client, s3_bucket, persona_id, image_format)

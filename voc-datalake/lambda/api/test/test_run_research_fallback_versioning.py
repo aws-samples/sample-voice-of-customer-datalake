@@ -160,7 +160,10 @@ class TestTheFallbackFinishesItsJobRow:
             patch.dict('os.environ', {'RESEARCH_STATE_MACHINE_ARN': ''}),
             patch('projects_handler.create_job', return_value=('job-1', {})),
             patch('projects_handler.run_research', research),
-            patch('projects_handler.update_job_status') as status,
+            patch(
+                'projects_handler.update_job_status',
+                side_effect=overrides.get('status_effect'),
+            ) as status,
         ):
             response = lambda_handler(event, lambda_context)
         return response, status, research
@@ -202,6 +205,130 @@ class TestTheFallbackFinishesItsJobRow:
 
         status.assert_not_called()
 
+    def test_a_failed_row_write_does_not_fail_a_committed_research(
+        self, api_gateway_event, lambda_context,
+    ):
+        """The row is DERIVED state; the response is the authority.
+
+        `update_job_status` runs after the document has durably committed and its
+        result is what the route returns, so letting it raise turned a successful
+        research into a 5xx: the client got an error for work that succeeded, and no
+        document id with which to find it. `shared.jobs.update_job_status` swallows
+        its own `update_item` failures, but it reaches `get_jobs_table()` first,
+        outside that guard — which is the gap this closes.
+
+        The same argument `projects._invalidate_project_cached_objects` makes for the
+        cache, and the reason it is best-effort there too.
+        """
+        response, status, _ = self.call(
+            api_gateway_event, lambda_context,
+            status_effect=RuntimeError('jobs table unreachable'),
+        )
+
+        # It was attempted, so this is not passing because the write was skipped.
+        status.assert_called_once()
+        body = json.loads(response['body'])
+        assert body['success'] is True
+        assert body['document']['document_id'] == 'research_1'
+
+    def test_a_result_with_no_document_is_not_reported_completed(
+        self, api_gateway_event, lambda_context,
+    ):
+        """A `completed` row naming no document is worse than an un-finalized one.
+
+        `step_save` RAISES for this condition rather than reporting a success whose
+        `document_id` is `''`, and the two writers have to agree: the frontend's
+        `firstPayloadMissesAnArtifact` reads an empty id as "names nothing" and skips
+        the refresh, so a completed row with no document is a job the page will never
+        reconcile — a provably wrong success envelope. Left `pending` instead, which
+        is at least true. Unreachable in practice, since `run_research` either
+        returns a committed document or raises.
+        """
+        _, status, _ = self.call(
+            api_gateway_event, lambda_context,
+            research=MagicMock(return_value={'success': True}),
+        )
+
+        status.assert_not_called()
+
+    @pytest.mark.parametrize('result', [
+        pytest.param({'success': True, 'document': 'not-a-dict'}, id='a truthy non-dict document'),
+        pytest.param({'success': True, 'document': None}, id='a null document'),
+        pytest.param({'success': True, 'document': {}}, id='an empty document'),
+        pytest.param({'success': True, 'document': {'document_id': ''}}, id='an empty id'),
+        pytest.param({'success': True, 'document': {'document_id': None}}, id='a null id'),
+        pytest.param('not-a-dict', id='a non-dict result'),
+    ])
+    def test_no_result_shape_can_raise_out_of_the_terminal_write(
+        self, api_gateway_event, lambda_context, result,
+    ):
+        """Every shape that a `(document or {}).get(...)` chain would have raised on.
+
+        This runs after the document has committed, so an AttributeError here would
+        turn a successful research into a 5xx just as surely as a failed write would
+        — which is the failure the case above exists to prevent.
+        """
+        response, status, _ = self.call(
+            api_gateway_event, lambda_context,
+            research=MagicMock(return_value=result),
+        )
+
+        status.assert_not_called()
+        assert response['statusCode'] == 200
+
+
+def test_the_terminal_row_is_actually_stored(projects_table):
+    """The row as a real reader finds it, not the call that wrote it.
+
+    `TestTheFallbackFinishesItsJobRow` patches `update_job_status`, which pins the
+    call SHAPE — the right tool for "did the route decide to finalize" and the wrong
+    one for "did the row commit". This file's own standard is moto for that second
+    question, since `update_job_status` builds an UpdateExpression the patch never
+    executes: a `#status` name it forgot to declare would pass every case above and
+    fail in production.
+    """
+    import boto3
+
+    jobs = boto3.resource('dynamodb', region_name='us-east-1').create_table(
+        TableName='test-jobs',
+        KeySchema=[
+            {'AttributeName': 'pk', 'KeyType': 'HASH'},
+            {'AttributeName': 'sk', 'KeyType': 'RANGE'},
+        ],
+        AttributeDefinitions=[
+            {'AttributeName': 'pk', 'AttributeType': 'S'},
+            {'AttributeName': 'sk', 'AttributeType': 'S'},
+        ],
+        BillingMode='PAY_PER_REQUEST',
+    )
+    jobs.put_item(Item={
+        'pk': 'PROJECT#proj-1', 'sk': 'JOB#job-1',
+        'job_id': 'job-1', 'status': 'pending', 'progress': 0,
+    })
+
+    import projects_handler
+
+    document = {'document_id': 'research_1', 'title': 'Churn drivers (v1)'}
+    with (
+        patch.dict('os.environ', {'RESEARCH_STATE_MACHINE_ARN': ''}),
+        patch.object(projects_handler, 'create_job', return_value=('job-1', {})),
+        patch.object(
+            projects_handler, 'run_research',
+            MagicMock(return_value={'success': True, 'document': document}),
+        ),
+        # Patched at the accessor `shared.jobs` calls, so the real
+        # `update_job_status` runs its real UpdateExpression against a real table.
+        patch('shared.jobs.get_jobs_table', return_value=jobs),
+    ):
+        projects_handler.api_run_research('proj-1')
+
+    stored = jobs.get_item(
+        Key={'pk': 'PROJECT#proj-1', 'sk': 'JOB#job-1'}, ConsistentRead=True,
+    )['Item']
+    assert stored['status'] == 'completed'
+    assert stored['progress'] == 100
+    assert stored['result'] == document
+
 
 def test_the_two_research_writers_agree_on_the_untitled_series_key():
     """One shared helper, so an untitled request cannot land in two series
@@ -217,15 +344,47 @@ def test_the_two_research_writers_agree_on_the_untitled_series_key():
     # than relying on `split_versioned_title` downstream to make it one.
     assert research_base_title('Chosen ', 'What hurts most?') == 'Chosen'
     assert research_base_title('  Chosen', 'What hurts most?') == 'Chosen'
+    # BOTH branches, which the strip above did not cover: a padded QUESTION composed
+    # a different base title from its unpadded form, so the invariant held exactly
+    # where the docstring claimed no strip was needed.
+    assert research_base_title(
+        None, '  What hurts most?  ',
+    ) == research_base_title(None, 'What hurts most?')
+
+
+def test_a_padded_question_does_not_spend_the_quote_budget_on_whitespace():
+    """The strip has to happen BEFORE the slice, not after.
+
+    `RESEARCH_TITLE_QUESTION_CHARS` is how much of the question a generated title may
+    quote. Slicing first would spend part of that budget on leading whitespace, so
+    two spellings of one question would quote different AMOUNTS of it and compose two
+    series — the same defect, reached by the other order.
+    """
+    from shared.document_versions import (
+        RESEARCH_TITLE_QUESTION_CHARS,
+        research_base_title,
+    )
+
+    question = 'x' * RESEARCH_TITLE_QUESTION_CHARS
+
+    assert research_base_title(None, f'   {question}') == research_base_title(None, question)
+    # And the whole question is still quoted, not a shortened prefix of it.
+    assert research_base_title(None, f'   {question}').endswith(question)
 
 
 def test_a_padded_title_lands_in_the_same_series_as_its_unpadded_form(projects_table):
     """`'Churn drivers '` must not open a second series that renders identically.
 
     Both would display as `Churn drivers (v1)`, so the user sees two v1s of one
-    title with no way to tell them apart. Asserted end to end through the real
-    allocator rather than on the helper alone, because that is where the series key
-    is actually decided.
+    title with no way to tell them apart.
+
+    A LOCKSTEP test for a property the allocator owns, not a guard on the strip:
+    `persist_versioned_document` runs the base title through
+    `split_versioned_title`, which trims, so this passes with or without
+    `research_base_title` stripping. What it pins is that the two layers keep
+    agreeing — the guard on the strip itself is
+    `test_the_two_research_writers_agree_on_the_untitled_series_key` above, which
+    asserts the returned value.
     """
     run(projects_table, 'job_a', title='Churn drivers')
     run(projects_table, 'job_b', title='Churn drivers ')

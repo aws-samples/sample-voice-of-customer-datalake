@@ -133,18 +133,29 @@ def research_base_title(requested_title: object, question: object) -> str:
     would restart. Kept here beside :func:`split_versioned_title` because the
     result is a version-series key, not display text.
 
-    Stripped, so the value this returns is already the key it claims to be.
-    ``'Churn drivers '`` and ``'Churn drivers'`` do in fact land in one series
-    today — :func:`persist_versioned_document` runs both through
+    Stripped on BOTH branches, so the value this returns is already the key it
+    claims to be. ``'Churn drivers '`` and ``'Churn drivers'`` do in fact land in
+    one series today — :func:`persist_versioned_document` runs both through
     :func:`split_versioned_title`, which collapses interior whitespace and trims —
     but that makes the guarantee a property of the caller rather than of this
     return value, and a reader who takes the docstring at its word would be wrong.
-    The question fallback needs no strip: it is composed from a slice of an
-    already-non-blank string behind a literal prefix.
+
+    The question is stripped BEFORE the slice, which is the only order that works:
+    stripping afterwards would already have spent part of
+    :data:`RESEARCH_TITLE_QUESTION_CHARS` on leading whitespace, so
+    ``'  Why do users churn?'`` and ``'Why do users churn?'`` would quote different
+    amounts of the same question and compose two different series titles.
+
+    The bound this keeps: the slice counts CODE POINTS, so a boundary landing inside
+    a combining sequence or an astral pair truncates mid-grapheme, and two questions
+    differing only past character 50 share one series. Bounded and pre-existing (the
+    two expressions this consolidated sliced the same way); it matters slightly more
+    now that the value is a series key rather than display text. A grapheme-aware
+    slice would need a dependency this layer does not carry.
     """
     if isinstance(requested_title, str) and requested_title.strip():
         return requested_title.strip()
-    text = question if isinstance(question, str) and question.strip() else 'Research'
+    text = question.strip() if isinstance(question, str) and question.strip() else 'Research'
     return f'Research: {text[:RESEARCH_TITLE_QUESTION_CHARS]}'
 
 
