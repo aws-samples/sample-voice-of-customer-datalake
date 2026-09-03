@@ -214,7 +214,19 @@ describe('executeCreateDocument', () => {
       input: expect.objectContaining({
         TransactItems: expect.arrayContaining([
           expect.objectContaining({ Put: expect.objectContaining({ Item: expect.any(Object) }) }),
-          expect.objectContaining({ Update: expect.any(Object) }),
+          expect.objectContaining({
+            Update: expect.objectContaining({
+              ConditionExpression: expect.stringContaining('#status <> :deletingStatus'),
+              ExpressionAttributeNames: {
+                '#deleting': 'deletion_started_at',
+                '#status': 'status',
+              },
+              ExpressionAttributeValues: expect.objectContaining({
+                ':deletingStatus': 'deleting',
+                ':deletedStatus': 'deleted',
+              }),
+            }),
+          }),
         ]),
       }),
     }));

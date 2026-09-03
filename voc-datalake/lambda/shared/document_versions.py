@@ -29,7 +29,12 @@ from botocore.exceptions import ClientError
 
 from shared.exceptions import ServiceError, ValidationError
 from shared.logging import logger
-from shared.project_writes import PROJECT_DELETION_ATTRIBUTE
+from shared.project_writes import (
+    PROJECT_WRITABLE_ATTRIBUTE_NAMES,
+    PROJECT_WRITABLE_ATTRIBUTE_VALUES,
+    PROJECT_WRITABLE_CONDITION,
+    is_project_tombstone,
+)
 from shared.project_writes import project_meta_key as _project_meta_key
 from shared.project_writes import (
     project_writable_condition as _project_writable_condition,
@@ -70,7 +75,7 @@ def version_partition_key(project_id: str) -> str:
 
 def _project_accepts_writes(table, project_id: str) -> bool:
     meta = _get_item(table, _project_meta_key(project_id))
-    return bool(meta) and PROJECT_DELETION_ATTRIBUTE not in meta
+    return bool(meta) and not is_project_tombstone(meta)
 
 
 def split_versioned_title(title: object) -> tuple[str, int | None]:
@@ -1224,14 +1229,12 @@ def persist_versioned_document(
                         'SET document_count = if_not_exists(document_count, :zero) + :one, '
                         'updated_at = :now'
                     ),
-                    'ConditionExpression': (
-                        'attribute_exists(pk) AND attribute_exists(sk) '
-                        'AND attribute_not_exists(#deleting)'
+                    'ConditionExpression': PROJECT_WRITABLE_CONDITION,
+                    'ExpressionAttributeNames': dict(
+                        PROJECT_WRITABLE_ATTRIBUTE_NAMES,
                     ),
-                    'ExpressionAttributeNames': {
-                        '#deleting': PROJECT_DELETION_ATTRIBUTE,
-                    },
                     'ExpressionAttributeValues': {
+                        **PROJECT_WRITABLE_ATTRIBUTE_VALUES,
                         ':one': 1,
                         ':zero': 0,
                         ':now': item_fields['created_at'],

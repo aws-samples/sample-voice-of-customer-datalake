@@ -7,6 +7,21 @@ from datetime import datetime, timezone
 from typing import Any
 
 PROJECT_DELETION_ATTRIBUTE = 'deletion_started_at'
+PROJECT_TERMINAL_STATUSES = frozenset({'deleting', 'deleted'})
+PROJECT_WRITABLE_CONDITION = (
+    'attribute_exists(pk) AND attribute_exists(sk) '
+    'AND attribute_not_exists(#deleting) '
+    'AND (attribute_not_exists(#status) OR '
+    '(#status <> :deleting_status AND #status <> :deleted_status))'
+)
+PROJECT_WRITABLE_ATTRIBUTE_NAMES = {
+    '#deleting': PROJECT_DELETION_ATTRIBUTE,
+    '#status': 'status',
+}
+PROJECT_WRITABLE_ATTRIBUTE_VALUES = {
+    ':deleting_status': 'deleting',
+    ':deleted_status': 'deleted',
+}
 
 
 def project_meta_key(project_id: str) -> dict[str, str]:
@@ -16,7 +31,7 @@ def project_meta_key(project_id: str) -> dict[str, str]:
 def is_project_tombstone(item: dict[str, Any] | None) -> bool:
     return bool(item) and (
         PROJECT_DELETION_ATTRIBUTE in item
-        or item.get('status') in {'deleting', 'deleted'}
+        or item.get('status') in PROJECT_TERMINAL_STATUSES
     )
 
 
@@ -37,13 +52,13 @@ def project_writable_condition(
         'ConditionCheck': {
             'TableName': table_name,
             'Key': project_meta_key(project_id),
-            'ConditionExpression': (
-                'attribute_exists(pk) AND attribute_exists(sk) '
-                'AND attribute_not_exists(#deleting)'
+            'ConditionExpression': PROJECT_WRITABLE_CONDITION,
+            'ExpressionAttributeNames': dict(
+                PROJECT_WRITABLE_ATTRIBUTE_NAMES,
             ),
-            'ExpressionAttributeNames': {
-                '#deleting': PROJECT_DELETION_ATTRIBUTE,
-            },
+            'ExpressionAttributeValues': dict(
+                PROJECT_WRITABLE_ATTRIBUTE_VALUES,
+            ),
         },
     }
 
@@ -104,15 +119,13 @@ def put_project_item_and_increment(
                     'SET #count = if_not_exists(#count, :zero) + :one, '
                     'updated_at = :now'
                 ),
-                'ConditionExpression': (
-                    'attribute_exists(pk) AND attribute_exists(sk) '
-                    'AND attribute_not_exists(#deleting)'
-                ),
+                'ConditionExpression': PROJECT_WRITABLE_CONDITION,
                 'ExpressionAttributeNames': {
+                    **PROJECT_WRITABLE_ATTRIBUTE_NAMES,
                     '#count': count_attribute,
-                    '#deleting': PROJECT_DELETION_ATTRIBUTE,
                 },
                 'ExpressionAttributeValues': {
+                    **PROJECT_WRITABLE_ATTRIBUTE_VALUES,
                     ':zero': 0,
                     ':one': 1,
                     ':now': now,

@@ -58,6 +58,9 @@ from shared.document_versions import (
 )
 from shared.project_writes import (
     PROJECT_DELETION_ATTRIBUTE,
+    PROJECT_WRITABLE_ATTRIBUTE_NAMES,
+    PROJECT_WRITABLE_ATTRIBUTE_VALUES,
+    PROJECT_WRITABLE_CONDITION,
     is_project_tombstone,
     project_meta_key,
     projects_table_name,
@@ -718,12 +721,21 @@ def update_project(project_id: str, body: dict) -> dict:
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
     
+    status = body.get('status')
+    if 'status' in body and (
+        not isinstance(status, str) or status not in {'active', 'archived'}
+    ):
+        raise ValidationError('Project status must be active or archived')
+
     now = datetime.now(timezone.utc).isoformat()
-    
+
     update_expr = 'SET updated_at = :now'
-    expr_values = {':now': now}
-    expr_names = {'#deleting': PROJECT_DELETION_ATTRIBUTE}
-    
+    expr_values = {
+        **PROJECT_WRITABLE_ATTRIBUTE_VALUES,
+        ':now': now,
+    }
+    expr_names = dict(PROJECT_WRITABLE_ATTRIBUTE_NAMES)
+
     if 'name' in body:
         update_expr += ', #name = :name'
         expr_values[':name'] = body['name']
@@ -733,22 +745,18 @@ def update_project(project_id: str, body: dict) -> dict:
         expr_values[':desc'] = body['description']
     if 'status' in body:
         update_expr += ', #status = :status'
-        expr_values[':status'] = body['status']
-        expr_names['#status'] = 'status'
+        expr_values[':status'] = status
     if 'filters' in body:
         update_expr += ', filters = :filters'
         expr_values[':filters'] = body['filters']
     if 'kiro_export_prompt' in body:
         update_expr += ', kiro_export_prompt = :kiro_prompt'
         expr_values[':kiro_prompt'] = body['kiro_export_prompt']
-    
+
     update_params = {
         'Key': {'pk': f'PROJECT#{project_id}', 'sk': 'META'},
         'UpdateExpression': update_expr,
-        'ConditionExpression': (
-            'attribute_exists(pk) AND attribute_exists(sk) '
-            'AND attribute_not_exists(#deleting)'
-        ),
+        'ConditionExpression': PROJECT_WRITABLE_CONDITION,
         'ExpressionAttributeValues': expr_values,
         'ExpressionAttributeNames': expr_names,
     }
@@ -1266,14 +1274,12 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
         projects_table.update_item(
             Key=project_meta_key(project_id),
             UpdateExpression='SET persona_count = :count, updated_at = :now',
-            ConditionExpression=(
-                'attribute_exists(pk) AND attribute_exists(sk) '
-                'AND attribute_not_exists(#deleting)'
+            ConditionExpression=PROJECT_WRITABLE_CONDITION,
+            ExpressionAttributeNames=dict(
+                PROJECT_WRITABLE_ATTRIBUTE_NAMES,
             ),
-            ExpressionAttributeNames={
-                '#deleting': PROJECT_DELETION_ATTRIBUTE,
-            },
             ExpressionAttributeValues={
+                **PROJECT_WRITABLE_ATTRIBUTE_VALUES,
                 ':count': len(saved_personas),
                 ':now': now,
             },
@@ -1997,6 +2003,7 @@ def delete_document(
     now = datetime.now(timezone.utc).isoformat()
     count_condition = 'attribute_not_exists(document_count)'
     count_values = {
+        **PROJECT_WRITABLE_ATTRIBUTE_VALUES,
         ':remaining': remaining_document_count,
         ':now': now,
     }
@@ -2024,13 +2031,11 @@ def delete_document(
                     'SET document_count = :remaining, updated_at = :now'
                 ),
                 'ConditionExpression': (
-                    'attribute_exists(pk) AND attribute_exists(sk) '
-                    'AND attribute_not_exists(#deleting) '
-                    f'AND {count_condition}'
+                    f'{PROJECT_WRITABLE_CONDITION} AND {count_condition}'
                 ),
-                'ExpressionAttributeNames': {
-                    '#deleting': PROJECT_DELETION_ATTRIBUTE,
-                },
+                'ExpressionAttributeNames': dict(
+                    PROJECT_WRITABLE_ATTRIBUTE_NAMES,
+                ),
                 'ExpressionAttributeValues': count_values,
             },
         },
@@ -2373,14 +2378,17 @@ def delete_persona(project_id: str, persona_id: str) -> dict:
                         'updated_at = :now'
                     ),
                     'ConditionExpression': (
-                        'attribute_exists(pk) AND attribute_exists(sk) '
-                        'AND attribute_not_exists(#deleting) '
+                        f'{PROJECT_WRITABLE_CONDITION} '
                         'AND persona_count >= :one'
                     ),
-                    'ExpressionAttributeNames': {
-                        '#deleting': PROJECT_DELETION_ATTRIBUTE,
+                    'ExpressionAttributeNames': dict(
+                        PROJECT_WRITABLE_ATTRIBUTE_NAMES,
+                    ),
+                    'ExpressionAttributeValues': {
+                        **PROJECT_WRITABLE_ATTRIBUTE_VALUES,
+                        ':one': 1,
+                        ':now': now,
                     },
-                    'ExpressionAttributeValues': {':one': 1, ':now': now},
                 },
             },
         ])

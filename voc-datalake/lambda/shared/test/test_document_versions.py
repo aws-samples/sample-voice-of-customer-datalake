@@ -848,11 +848,20 @@ def test_late_legacy_row_is_persisted_before_next_allocation(
     assert (generated['version'], generated['title']) == (3, 'Launch (v3)')
 
 
-def test_project_deletion_fence_blocks_all_managed_version_writes(projects_table):
+@pytest.mark.parametrize('tombstone', [
+    {'deletion_started_at': '2026-09-01T10:00:00+00:00'},
+    {'status': 'deleting'},
+    {'status': 'deleted'},
+])
+def test_project_deletion_fence_blocks_all_managed_version_writes(
+    projects_table, tombstone,
+):
+    attribute, value = next(iter(tombstone.items()))
     projects_table.update_item(
         Key={'pk': 'PROJECT#p1', 'sk': 'META'},
-        UpdateExpression='SET deletion_started_at = :now',
-        ExpressionAttributeValues={':now': '2026-09-01T10:00:00+00:00'},
+        UpdateExpression='SET #tombstone = :value',
+        ExpressionAttributeNames={'#tombstone': attribute},
+        ExpressionAttributeValues={':value': value},
     )
 
     with pytest.raises(ServiceError, match='Project deletion has started'):
@@ -875,16 +884,25 @@ def test_project_deletion_fence_blocks_all_managed_version_writes(projects_table
     )['Items'] == []
 
 
-def test_project_deletion_fence_blocks_allocation_history_repair(projects_table):
+@pytest.mark.parametrize('tombstone', [
+    {'deletion_started_at': '2026-09-01T10:00:00+00:00'},
+    {'status': 'deleting'},
+    {'status': 'deleted'},
+])
+def test_project_deletion_fence_blocks_allocation_history_repair(
+    projects_table, tombstone,
+):
     original = persist_versioned_document(
         projects_table, 'p1', 'prototype', 'Launch', 'job-history-fence', fields(),
     )
     allocation = _allocation_history(projects_table, 'job-history-fence')
     projects_table.delete_item(Key={'pk': allocation['pk'], 'sk': allocation['sk']})
+    attribute, value = next(iter(tombstone.items()))
     projects_table.update_item(
         Key={'pk': 'PROJECT#p1', 'sk': 'META'},
-        UpdateExpression='SET deletion_started_at = :now',
-        ExpressionAttributeValues={':now': '2026-09-01T10:00:00+00:00'},
+        UpdateExpression='SET #tombstone = :value',
+        ExpressionAttributeNames={'#tombstone': attribute},
+        ExpressionAttributeValues={':value': value},
     )
 
     with pytest.raises(ServiceError, match='Project deletion has started'):

@@ -249,10 +249,21 @@ export async function executeCreateDocument(
             ),
             ConditionExpression: (
               'attribute_exists(pk) AND attribute_exists(sk) '
-              + 'AND attribute_not_exists(#deleting)'
+              + 'AND attribute_not_exists(#deleting) '
+              + 'AND (attribute_not_exists(#status) OR '
+              + '(#status <> :deletingStatus AND #status <> :deletedStatus))'
             ),
-            ExpressionAttributeNames: { '#deleting': 'deletion_started_at' },
-            ExpressionAttributeValues: { ':zero': 0, ':one': 1, ':now': now },
+            ExpressionAttributeNames: {
+              '#deleting': 'deletion_started_at',
+              '#status': 'status',
+            },
+            ExpressionAttributeValues: {
+              ':zero': 0,
+              ':one': 1,
+              ':now': now,
+              ':deletingStatus': 'deleting',
+              ':deletedStatus': 'deleted',
+            },
           },
         },
       ],

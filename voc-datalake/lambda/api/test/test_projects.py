@@ -141,20 +141,48 @@ class TestUpdateProject:
 
     @patch('projects.projects_table')
     def test_updates_project_fields(self, mock_table):
-        """Updates project with new values."""
+        """Updates project with new values behind the complete tombstone fence."""
         from projects import update_project
-        
+
         result = update_project('proj-1', {'name': 'Updated', 'description': 'New desc'})
-        
+
         assert result['success'] is True
-        mock_table.update_item.assert_called_once()
+        update = mock_table.update_item.call_args.kwargs
+        assert '#status <> :deleting_status' in update['ConditionExpression']
+        assert update['ExpressionAttributeNames']['#status'] == 'status'
+        assert update['ExpressionAttributeValues'][':deleting_status'] == 'deleting'
+        assert update['ExpressionAttributeValues'][':deleted_status'] == 'deleted'
+
+    @pytest.mark.parametrize('status', ['active', 'archived'])
+    @patch('projects.projects_table')
+    def test_accepts_public_project_statuses(self, mock_table, status):
+        from projects import update_project
+
+        assert update_project('proj-1', {'status': status}) == {'success': True}
+        values = mock_table.update_item.call_args.kwargs[
+            'ExpressionAttributeValues'
+        ]
+        assert values[':status'] == status
+
+    @pytest.mark.parametrize('status', ['deleting', 'deleted', 'paused', None, 1, []])
+    @patch('projects.projects_table')
+    def test_rejects_reserved_or_invalid_project_statuses(
+        self, mock_table, status,
+    ):
+        from projects import update_project
+        from shared.exceptions import ValidationError
+
+        with pytest.raises(ValidationError, match='active or archived'):
+            update_project('proj-1', {'status': status})
+
+        mock_table.update_item.assert_not_called()
 
     @patch('projects.projects_table', None)
     def test_returns_error_when_table_not_configured(self):
         """Returns error when table not configured."""
         from projects import update_project
         from shared.exceptions import ConfigurationError
-        
+
         with pytest.raises(ConfigurationError):
             update_project('proj-1', {'name': 'Test'})
 
@@ -440,12 +468,20 @@ class TestDocumentVersionBoundaries:
             'TransactItems'
         ]
         assert transaction[0]['Put']['Item'] == result['document']
-        assert transaction[1]['Update']['ExpressionAttributeNames']['#count'] == (
+        count_update = transaction[1]['Update']
+        assert count_update['ExpressionAttributeNames']['#count'] == (
             'document_count'
         )
-        assert 'attribute_not_exists(#deleting)' in transaction[1]['Update'][
+        assert '#status <> :deleting_status' in count_update[
             'ConditionExpression'
         ]
+        assert count_update['ExpressionAttributeNames']['#status'] == 'status'
+        assert count_update['ExpressionAttributeValues'][':deleting_status'] == (
+            'deleting'
+        )
+        assert count_update['ExpressionAttributeValues'][':deleted_status'] == (
+            'deleted'
+        )
 
     @pytest.mark.parametrize(('sk', 'document_type'), [
         ('PRD#d1', 'prd'),
@@ -565,6 +601,16 @@ class TestDocumentVersionBoundaries:
         assert count_update['Key'] == {'pk': 'PROJECT#p1', 'sk': 'META'}
         assert 'document_count = :remaining' in count_update['UpdateExpression']
         assert count_update['ExpressionAttributeValues'][':remaining'] == 2
+        assert count_update['ExpressionAttributeValues'][':deleting_status'] == (
+            'deleting'
+        )
+        assert count_update['ExpressionAttributeValues'][':deleted_status'] == (
+            'deleted'
+        )
+        assert count_update['ExpressionAttributeNames']['#status'] == 'status'
+        assert '#status <> :deleting_status' in count_update[
+            'ConditionExpression'
+        ]
         assert 'attribute_not_exists(document_count)' in count_update[
             'ConditionExpression'
         ]
@@ -944,3 +990,19 @@ def test_chat_context_rejects_a_status_only_historical_tombstone(mock_table):
         get_project_chat_context('p1', [])
 
     mock_table.get_item.assert_not_called()
+
+
+@patch('projects.projects_table')
+def test_persona_delete_transaction_carries_status_tombstone_fence(mock_table):
+    mock_table.name = 'test-projects-table'
+
+    from projects import delete_persona
+
+    assert delete_persona('p1', 'persona-1') == {'success': True}
+    update = mock_table.meta.client.transact_write_items.call_args.kwargs[
+        'TransactItems'
+    ][1]['Update']
+    assert '#status <> :deleting_status' in update['ConditionExpression']
+    assert update['ExpressionAttributeNames']['#status'] == 'status'
+    assert update['ExpressionAttributeValues'][':deleting_status'] == 'deleting'
+    assert update['ExpressionAttributeValues'][':deleted_status'] == 'deleted'
