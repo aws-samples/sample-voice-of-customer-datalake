@@ -152,3 +152,19 @@ describe('normalizeProjectDetail', () => {
     warn.mockRestore()
   })
 })
+
+
+test('preserves an unknown future document type instead of dropping the row', () => {
+  const result = normalizeProjectDetail(envelope([], [{
+    document_id: 'future-1',
+    document_type: 'decision_record',
+    title: 'Architecture decision',
+  }]))
+
+  expect(result.documents).toEqual([
+    expect.objectContaining({
+      document_id: 'future-1',
+      document_type: 'decision_record',
+    }),
+  ])
+})

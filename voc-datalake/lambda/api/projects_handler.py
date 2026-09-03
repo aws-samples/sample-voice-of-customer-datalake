@@ -4330,6 +4330,8 @@ def api_generate_product_report(project_id: str):
 
 def _bounded_chat_context_response(event: dict, result: dict) -> dict:
     path = event.get('path')
+    if not isinstance(path, str):
+        path = event.get('rawPath')
     status_code = result.get('statusCode')
     if (
         not isinstance(path, str)

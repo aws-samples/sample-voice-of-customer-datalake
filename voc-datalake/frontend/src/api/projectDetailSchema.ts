@@ -135,7 +135,7 @@ function withLegacyManagedDocumentType(raw: unknown): unknown {
 
 const ProjectDocumentSchema = z.preprocess(withLegacyManagedDocumentType, z.looseObject({
   document_id: z.string().min(1),
-  document_type: z.enum(['prd', 'prfaq', 'research', 'custom', 'product_report', 'prototype']),
+  document_type: z.string().trim().min(1),
   title: z.string().catch(''),
   base_title: optionalString,
   version: z.number().int().positive().optional().catch(undefined),

@@ -479,6 +479,8 @@ def _iter_partition_keys(partition_key: str) -> Iterator[dict[str, str]]:
 
 MAX_CHAT_CONTEXT_SELECTED_DOCUMENTS = 20
 MAX_CHAT_CONTEXT_ID_LENGTH = 128
+DOCUMENT_DELETE_ATTEMPTS = 4
+PROJECT_DELETE_FENCE_ATTEMPTS = 4
 _DOCUMENT_SORT_KEY_PREFIXES = (
     'PRD#',
     'PRFAQ#',
@@ -585,6 +587,36 @@ def _validated_chat_context_document_ids(raw: object) -> list[str]:
 
 
 @tracer.capture_method
+def _query_project_chat_items(project_id: str) -> list[dict]:
+    query = {
+        'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}'),
+        'ConsistentRead': True,
+        'ProjectionExpression': (
+            'pk, sk, project_id, #name, #status, #deleting, persona_id, '
+            'tagline, quotes, goals_motivations, pain_points, avatar_url, '
+            'document_id, #type, #title, base_title, #version, created_at'
+        ),
+        'ExpressionAttributeNames': {
+            '#name': 'name',
+            '#status': 'status',
+            '#deleting': PROJECT_DELETION_ATTRIBUTE,
+            '#type': 'document_type',
+            '#title': 'title',
+            '#version': 'version',
+        },
+    }
+    items = []
+    while True:
+        response = projects_table.query(**query)
+        page_items = response.get('Items') if isinstance(response, dict) else None
+        if isinstance(page_items, list):
+            items.extend(item for item in page_items if isinstance(item, dict))
+        cursor = response.get('LastEvaluatedKey') if isinstance(response, dict) else None
+        if not isinstance(cursor, dict) or not cursor:
+            return items
+        query['ExclusiveStartKey'] = cursor
+
+
 def get_project_chat_context(
     project_id: str, selected_document_ids: object,
 ) -> dict:
@@ -602,11 +634,28 @@ def get_project_chat_context(
     selected_ids = set(
         _validated_chat_context_document_ids(selected_document_ids)
     )
-    project_data = get_project(project_id)
+    items = _query_project_chat_items(project_id)
+    project = next(
+        (item for item in items if item.get('sk') == 'META'),
+        None,
+    )
+    if project is None or is_project_tombstone(project):
+        raise NotFoundError('Project not found')
+    personas = [
+        item for item in items
+        if isinstance(item.get('sk'), str)
+        and item['sk'].startswith('PERSONA#')
+    ]
+    documents = normalize_document_versions([
+        item for item in items
+        if isinstance(item.get('sk'), str)
+        and item['sk'].startswith(_DOCUMENT_SORT_KEY_PREFIXES)
+    ])
+
     project_summary = {
-        field: project_data['project'][field]
+        field: project[field]
         for field in _CHAT_CONTEXT_PROJECT_FIELDS
-        if field in project_data['project']
+        if field in project
     }
     persona_summaries = [
         {
@@ -614,11 +663,11 @@ def get_project_chat_context(
             for field in _CHAT_CONTEXT_PERSONA_FIELDS
             if field in persona
         }
-        for persona in project_data['personas']
+        for persona in personas
     ]
 
     document_summaries = []
-    for document in project_data['documents']:
+    for document in documents:
         summary = {
             field: document[field]
             for field in _CHAT_CONTEXT_DOCUMENT_FIELDS
@@ -633,14 +682,24 @@ def get_project_chat_context(
                 and document_sk.startswith('PROTOTYPE#')
             )
         )
-        content = document.get('content')
         if (
             not is_prototype
             and isinstance(document_id, str)
             and document_id in selected_ids
-            and isinstance(content, str)
+            and isinstance(document_sk, str)
         ):
-            summary['content'] = content
+            response = projects_table.get_item(
+                Key={'pk': f'PROJECT#{project_id}', 'sk': document_sk},
+                ConsistentRead=True,
+                ProjectionExpression='document_id, content',
+            )
+            selected = response.get('Item') if isinstance(response, dict) else None
+            if (
+                isinstance(selected, dict)
+                and selected.get('document_id') == document_id
+                and isinstance(selected.get('content'), str)
+            ):
+                summary['content'] = selected['content']
         document_summaries.append(summary)
 
     return {
@@ -697,39 +756,35 @@ def update_project(project_id: str, body: dict) -> dict:
 
 
 @tracer.capture_method
-def delete_project(project_id: str) -> dict:
-    """Retain a tombstone while deleting every project-owned artifact."""
-    if not projects_table:
-        raise ConfigurationError('Projects table not configured')
-
-    project_key = f'PROJECT#{project_id}'
-    meta_key = project_meta_key(project_id)
-    now = datetime.now(timezone.utc).isoformat()
-    try:
-        projects_table.update_item(
-            Key=meta_key,
-            UpdateExpression=(
-                'SET #deleting = if_not_exists(#deleting, :now), '
-                '#status = :deleting_status '
-                'REMOVE gsi1pk, gsi1sk'
-            ),
-            ConditionExpression='attribute_exists(pk) AND attribute_exists(sk)',
-            ExpressionAttributeNames={
-                '#deleting': PROJECT_DELETION_ATTRIBUTE,
-                '#status': 'status',
-            },
-            ExpressionAttributeValues={
-                ':now': now,
-                ':deleting_status': 'deleting',
-            },
-        )
-    except ClientError as error:
-        if error.response.get('Error', {}).get('Code') != (
-            'ConditionalCheckFailedException'
-        ):
-            raise
-        # Repair deletes started by an older revision that removed META. The
-        # retained marker prevents delayed events from recreating this id.
+def _start_project_deletion(
+    project_id: str, meta_key: dict[str, str], now: str,
+) -> None:
+    """Atomically install the deletion marker before any destructive sweep."""
+    for _attempt in range(PROJECT_DELETE_FENCE_ATTEMPTS):
+        try:
+            projects_table.update_item(
+                Key=meta_key,
+                UpdateExpression=(
+                    'SET #deleting = if_not_exists(#deleting, :now), '
+                    '#status = :deleting_status '
+                    'REMOVE gsi1pk, gsi1sk'
+                ),
+                ConditionExpression='attribute_exists(pk) AND attribute_exists(sk)',
+                ExpressionAttributeNames={
+                    '#deleting': PROJECT_DELETION_ATTRIBUTE,
+                    '#status': 'status',
+                },
+                ExpressionAttributeValues={
+                    ':now': now,
+                    ':deleting_status': 'deleting',
+                },
+            )
+            return
+        except ClientError as error:
+            if error.response.get('Error', {}).get('Code') != (
+                'ConditionalCheckFailedException'
+            ):
+                raise
         try:
             projects_table.put_item(
                 Item={
@@ -742,11 +797,24 @@ def delete_project(project_id: str) -> dict:
                     'attribute_not_exists(pk) AND attribute_not_exists(sk)'
                 ),
             )
-        except ClientError as put_error:
-            if put_error.response.get('Error', {}).get('Code') != (
+            return
+        except ClientError as error:
+            if error.response.get('Error', {}).get('Code') != (
                 'ConditionalCheckFailedException'
             ):
                 raise
+    raise ServiceError('Could not establish the project deletion fence. Please retry.')
+
+
+def delete_project(project_id: str) -> dict:
+    """Retain a tombstone while deleting every project-owned artifact."""
+    if not projects_table:
+        raise ConfigurationError('Projects table not configured')
+
+    project_key = f'PROJECT#{project_id}'
+    meta_key = project_meta_key(project_id)
+    now = datetime.now(timezone.utc).isoformat()
+    _start_project_deletion(project_id, meta_key, now)
 
     # Keep tombstoned META forever. Guarded writers either committed before the
     # fence (and are visible to these strongly consistent scans) or fail after
@@ -1857,7 +1925,9 @@ def update_document(project_id: str, document_id: str, body: dict) -> dict:
 
 
 @tracer.capture_method
-def delete_document(project_id: str, document_id: str) -> dict:
+def delete_document(
+    project_id: str, document_id: str, _attempt: int = 0,
+) -> dict:
     """Delete one document without discarding version-allocation history."""
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
@@ -1882,23 +1952,32 @@ def delete_document(project_id: str, document_id: str) -> dict:
     ):
         raise ServiceError('Stored document has an invalid sort key')
 
+    project_documents = [
+        item for item in items
+        if isinstance(item, dict)
+        and isinstance(item.get('sk'), str)
+        and item['sk'].startswith(_DOCUMENT_SORT_KEY_PREFIXES)
+    ]
+    remaining_document_count = max(0, len(project_documents) - 1)
+    project_meta = next(
+        (
+            item for item in items
+            if isinstance(item, dict) and item.get('sk') == 'META'
+        ),
+        {},
+    )
+
     document_type = document.get('document_type')
     is_managed = (
         isinstance(document_type, str)
         and document_type in VERSIONED_DOCUMENT_TYPES
     ) or sk.startswith(('PRD#', 'PRFAQ#', 'PROTOTYPE#'))
     if is_managed:
-        complete_documents = [
-            item for item in items
-            if isinstance(item, dict)
-            and isinstance(item.get('sk'), str)
-            and item['sk'].startswith(_DOCUMENT_SORT_KEY_PREFIXES)
-        ]
         # Persist the complete snapshot before removing one managed row. This
         # keeps surviving legacy siblings on their assigned versions. Counters
         # and assignment rows intentionally remain as allocation history.
         persist_legacy_document_versions(
-            projects_table, project_id, complete_documents,
+            projects_table, project_id, project_documents,
         )
         allocation_id = document.get('version_allocation_id')
         if isinstance(allocation_id, str) and allocation_id:
@@ -1906,11 +1985,21 @@ def delete_document(project_id: str, document_id: str) -> dict:
                 projects_table, project_id, document,
             )
 
-    table_name = getattr(projects_table, 'name', None)
-    if not isinstance(table_name, str) or not table_name:
-        raise ConfigurationError('Projects table name not configured')
+    try:
+        table_name = projects_table_name(projects_table)
+    except ValueError as error:
+        raise ConfigurationError('Projects table name not configured') from error
 
     now = datetime.now(timezone.utc).isoformat()
+    count_condition = 'attribute_not_exists(document_count)'
+    count_values = {
+        ':remaining': remaining_document_count,
+        ':now': now,
+    }
+    if 'document_count' in project_meta:
+        count_condition = 'document_count = :observed_count'
+        count_values[':observed_count'] = project_meta['document_count']
+
     transaction = [
         {
             'Delete': {
@@ -1928,17 +2017,17 @@ def delete_document(project_id: str, document_id: str) -> dict:
                 'TableName': table_name,
                 'Key': {'pk': project_key, 'sk': 'META'},
                 'UpdateExpression': (
-                    'SET document_count = document_count - :one, updated_at = :now'
+                    'SET document_count = :remaining, updated_at = :now'
                 ),
                 'ConditionExpression': (
                     'attribute_exists(pk) AND attribute_exists(sk) '
                     'AND attribute_not_exists(#deleting) '
-                    'AND document_count >= :one'
+                    f'AND {count_condition}'
                 ),
                 'ExpressionAttributeNames': {
                     '#deleting': PROJECT_DELETION_ATTRIBUTE,
                 },
-                'ExpressionAttributeValues': {':one': 1, ':now': now},
+                'ExpressionAttributeValues': count_values,
             },
         },
     ]
@@ -1955,9 +2044,23 @@ def delete_document(project_id: str, document_id: str) -> dict:
         ).get('Item')
         if not current or current.get('document_id') != document_id:
             raise NotFoundError('Document no longer exists') from error
+        current_meta_response = projects_table.get_item(
+            Key=project_meta_key(project_id),
+            ConsistentRead=True,
+        )
+        current_meta = (
+            current_meta_response.get('Item')
+            if isinstance(current_meta_response, dict)
+            else None
+        )
+        if (
+            not is_project_tombstone(current_meta)
+            and _attempt + 1 < DOCUMENT_DELETE_ATTEMPTS
+        ):
+            return delete_document(project_id, document_id, _attempt + 1)
         raise ServiceError(
             'Document could not be deleted because the project is being deleted '
-            'or its document count is inconsistent.'
+            'or its document count changed repeatedly.'
         ) from error
 
     return {'success': True}

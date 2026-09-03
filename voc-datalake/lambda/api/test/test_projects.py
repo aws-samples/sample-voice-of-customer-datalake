@@ -563,10 +563,9 @@ class TestDocumentVersionBoundaries:
         }
         count_update = transaction[1]['Update']
         assert count_update['Key'] == {'pk': 'PROJECT#p1', 'sk': 'META'}
-        assert 'document_count = document_count - :one' in count_update[
-            'UpdateExpression'
-        ]
-        assert 'attribute_not_exists(#deleting)' in count_update[
+        assert 'document_count = :remaining' in count_update['UpdateExpression']
+        assert count_update['ExpressionAttributeValues'][':remaining'] == 2
+        assert 'attribute_not_exists(document_count)' in count_update[
             'ConditionExpression'
         ]
 
@@ -695,8 +694,8 @@ class TestDocumentVersionBoundaries:
 class TestProjectChatContext:
     """Bounded canonical context used by streaming project chat."""
 
-    @patch('projects.get_project')
-    def test_returns_redacted_summaries_and_never_inlines_prototypes(self, mock_get_project):
+    @patch('projects.projects_table')
+    def test_returns_redacted_summaries_and_never_inlines_prototypes(self, mock_table):
         families = [
             ('PRD#prd', 'prd'),
             ('PRFAQ#faq', 'prfaq'),
@@ -723,17 +722,28 @@ class TestProjectChatContext:
             'prototype_s3_uri': 's3://raw/prototypes/p1/prototype.html',
             'prototype_format': 'html',
         })
-        mock_get_project.return_value = {
-            'project': {
-                'project_id': 'p1', 'sk': 'META', 'name': 'Project',
-                'description': 'internal project description',
-                'secret_config': 'must not cross',
+        mock_table.query.return_value = {
+            'Items': [
+                {
+                    'pk': 'PROJECT#p1', 'project_id': 'p1', 'sk': 'META',
+                    'name': 'Project', 'description': 'internal project description',
+                    'secret_config': 'must not cross',
+                },
+                {
+                    'pk': 'PROJECT#p1', 'persona_id': 'one',
+                    'sk': 'PERSONA#one', 'name': 'One',
+                    'tagline': 'Busy buyer',
+                    'identity': {'email': 'secret@example.invalid'},
+                },
+                *documents,
+            ],
+        }
+        document_by_sk = {document['sk']: document for document in documents}
+        mock_table.get_item.side_effect = lambda **kwargs: {
+            'Item': {
+                'document_id': document_by_sk[kwargs['Key']['sk']]['document_id'],
+                'content': document_by_sk[kwargs['Key']['sk']]['content'],
             },
-            'personas': [{
-                'persona_id': 'one', 'sk': 'PERSONA#one', 'name': 'One',
-                'tagline': 'Busy buyer', 'identity': {'email': 'secret@example.invalid'},
-            }],
-            'documents': documents,
         }
 
         from projects import get_project_chat_context
@@ -763,7 +773,7 @@ class TestProjectChatContext:
             'sk': 'PROTOTYPE#prototype',
             'document_id': 'prototype',
             'document_type': 'prototype',
-            'title': 'prototype title',
+            'title': 'prototype title (v1)',
             'base_title': 'prototype title',
             'version': 1,
         }
@@ -775,7 +785,12 @@ class TestProjectChatContext:
         assert 'Signature=secret' not in serialized
         assert 'secret_config' not in serialized
         assert 'secret@example.invalid' not in serialized
-        mock_get_project.assert_called_once_with('p1')
+        query = mock_table.query.call_args.kwargs
+        assert query['ConsistentRead'] is True
+        assert 'content' not in query['ProjectionExpression']
+        assert [call.kwargs['Key']['sk'] for call in mock_table.get_item.call_args_list] == [
+            'PRD#prd', 'PRODUCT_REPORT#report',
+        ]
 
     @pytest.mark.parametrize('project_id, selected_document_ids', [
         ('', []),
@@ -786,9 +801,9 @@ class TestProjectChatContext:
         ('p1', [' padded ']),
         ('p1', ['d' * 129]),
     ])
-    @patch('projects.get_project')
+    @patch('projects.projects_table')
     def test_rejects_invalid_bounds_before_reading_project(
-        self, mock_get_project, project_id, selected_document_ids,
+        self, mock_table, project_id, selected_document_ids,
     ):
         from projects import get_project_chat_context
         from shared.exceptions import ValidationError
@@ -796,7 +811,7 @@ class TestProjectChatContext:
         with pytest.raises(ValidationError):
             get_project_chat_context(project_id, selected_document_ids)
 
-        mock_get_project.assert_not_called()
+        mock_table.query.assert_not_called()
 
 
 @patch('projects.persist_legacy_document_versions')
@@ -827,7 +842,7 @@ def test_document_delete_transaction_failure_preserves_document_and_count(
     from projects import delete_document
     from shared.exceptions import ServiceError
 
-    with pytest.raises(ServiceError, match='document count is inconsistent'):
+    with pytest.raises(ServiceError, match='count changed repeatedly'):
         delete_document('p1', 'd1')
 
     mock_table.delete_item.assert_not_called()
@@ -851,3 +866,61 @@ def test_retained_project_tombstone_is_not_read_as_a_project(mock_table):
 
     with pytest.raises(NotFoundError, match='metadata not found'):
         get_project('p1')
+
+
+@patch('projects.projects_table')
+def test_document_delete_repairs_a_stale_zero_count_instead_of_blocking(mock_table):
+    document = {
+        'pk': 'PROJECT#p1',
+        'sk': 'DOC#d1',
+        'document_id': 'd1',
+        'document_type': 'custom',
+        'title': 'Notes',
+    }
+    mock_table.name = 'test-projects-table'
+    mock_table.query.return_value = {
+        'Items': [
+            {'pk': 'PROJECT#p1', 'sk': 'META', 'document_count': 0},
+            document,
+        ],
+    }
+
+    from projects import delete_document
+
+    assert delete_document('p1', 'd1') == {'success': True}
+    update = mock_table.meta.client.transact_write_items.call_args.kwargs[
+        'TransactItems'
+    ][1]['Update']
+    assert update['ExpressionAttributeValues'][':remaining'] == 0
+    assert update['ExpressionAttributeValues'][':observed_count'] == 0
+    assert 'document_count = :observed_count' in update['ConditionExpression']
+
+
+@patch('projects.projects_table')
+def test_project_delete_retries_fence_when_tombstone_insert_loses(mock_table):
+    conditional = ClientError(
+        {
+            'Error': {
+                'Code': 'ConditionalCheckFailedException',
+                'Message': 'raced',
+            },
+        },
+        'UpdateItem',
+    )
+    mock_table.update_item.side_effect = [conditional, {}, {}]
+    mock_table.put_item.side_effect = conditional
+    mock_table.query.side_effect = [
+        {'Items': [{'pk': 'PROJECT#p1', 'sk': 'META'}]},
+        {'Items': []},
+    ]
+    batch = MagicMock()
+    mock_table.batch_writer.return_value.__enter__.return_value = batch
+
+    from projects import delete_project
+
+    assert delete_project('p1') == {'success': True}
+    assert mock_table.update_item.call_count == 3
+    assert mock_table.put_item.call_count == 1
+    assert mock_table.batch_writer.call_count == 2
+    second_fence = mock_table.update_item.call_args_list[1].kwargs
+    assert 'if_not_exists(#deleting, :now)' in second_fence['UpdateExpression']

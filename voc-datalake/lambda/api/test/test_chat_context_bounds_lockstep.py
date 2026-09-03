@@ -30,3 +30,19 @@ def test_selected_document_count_bound_matches_stream():
 
 def test_project_and_document_id_bound_matches_stream():
     assert MAX_CHAT_CONTEXT_ID_LENGTH == _typescript_number('MAX_ID_LENGTH')
+
+
+def test_selected_document_count_bound_is_applied_on_both_sides():
+    projects_source = (
+        Path(__file__).resolve().parents[1] / 'projects.py'
+    ).read_text()
+    assert 'len(raw) > MAX_CHAT_CONTEXT_SELECTED_DOCUMENTS' in projects_source
+    assert '.max(MAX_PERSONAS_DOCS_ARRAY)' in _SCHEMA_SOURCE
+
+
+def test_id_bound_is_applied_on_both_sides():
+    projects_source = (
+        Path(__file__).resolve().parents[1] / 'projects.py'
+    ).read_text()
+    assert 'len(value) > MAX_CHAT_CONTEXT_ID_LENGTH' in projects_source
+    assert '.max(MAX_ID_LENGTH)' in _SCHEMA_SOURCE

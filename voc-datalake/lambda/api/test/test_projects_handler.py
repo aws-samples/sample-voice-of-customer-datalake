@@ -1466,3 +1466,20 @@ class TestManagedDocumentTitleBoundaries:
         assert 'output_type' in json.loads(response['body'])['error']
         create_job.assert_not_called()
         invoke.assert_not_called()
+
+
+def test_chat_context_response_bound_accepts_payload_v2_raw_path():
+    from projects_handler import (
+        MAX_CHAT_CONTEXT_LAMBDA_RESPONSE_BYTES,
+        _bounded_chat_context_response,
+    )
+
+    result = {
+        'statusCode': 200,
+        'body': 'x' * (MAX_CHAT_CONTEXT_LAMBDA_RESPONSE_BYTES + 1),
+    }
+    bounded = _bounded_chat_context_response(
+        {'rawPath': '/projects/p1/chat-context'}, result,
+    )
+
+    assert bounded['statusCode'] == 413
