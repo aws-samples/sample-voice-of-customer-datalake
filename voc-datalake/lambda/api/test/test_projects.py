@@ -848,6 +848,47 @@ class TestProjectChatContext:
             'PRD#prd', 'PRODUCT_REPORT#report',
         ]
 
+    @patch('projects.projects_table')
+    def test_two_legacy_research_reports_get_stable_distinct_versions(self, mock_table):
+        """Research is a managed versioned type (#406 follow-up), so two reports
+        sharing one question must reach the model as `(v1)` and `(v2)` rather than
+        as two documents with the same name.
+
+        Deliberately UNVERSIONED input: these are the rows a project written before
+        research was managed carries. Numbered by `created_at`, so the older report
+        keeps v1 when a newer one arrives — an order-derived label would renumber it.
+        """
+        mock_table.query.return_value = {
+            'Items': [
+                {'pk': 'PROJECT#p1', 'sk': 'META', 'project_id': 'p1', 'name': 'P'},
+                {
+                    'pk': 'PROJECT#p1', 'sk': 'RESEARCH#newer',
+                    'document_id': 'newer', 'document_type': 'research',
+                    'title': 'Churn drivers', 'created_at': '2026-06-01T00:00:00Z',
+                },
+                {
+                    'pk': 'PROJECT#p1', 'sk': 'RESEARCH#older',
+                    'document_id': 'older', 'document_type': 'research',
+                    'title': 'Churn drivers', 'created_at': '2026-01-01T00:00:00Z',
+                },
+            ],
+        }
+
+        from projects import get_project_chat_context
+
+        result = get_project_chat_context('p1', [])
+
+        by_id = {
+            document['document_id']: document for document in result['documents']
+        }
+        assert by_id['older']['title'] == 'Churn drivers (v1)'
+        assert by_id['older']['version'] == 1
+        assert by_id['newer']['title'] == 'Churn drivers (v2)'
+        assert by_id['newer']['version'] == 2
+        assert {document['base_title'] for document in result['documents']} == {
+            'Churn drivers',
+        }
+
     @pytest.mark.parametrize('project_id, selected_document_ids', [
         ('', []),
         ('p' * 129, []),
