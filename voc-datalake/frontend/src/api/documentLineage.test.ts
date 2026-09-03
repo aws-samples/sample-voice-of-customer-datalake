@@ -13,11 +13,14 @@ const OLDER = { document_id: 'zz_prd_old', document_type: 'prd', title: 'Spec', 
 const NEWER = { document_id: 'aa_prd_new', document_type: 'prd', title: 'Spec', created_at: '2026-06-01T00:00:00Z' }
 
 describe('isVersionManagedDocument', () => {
-  it.each(['prd', 'prfaq', 'prototype'])('recognizes the current %s type', (documentType) => {
+  // `research` joined the managed set in the #406 follow-up: it is generated
+  // repeatedly for one question, so an order-derived ordinal renumbered older
+  // reports whenever a newer one arrived.
+  it.each(['prd', 'prfaq', 'prototype', 'research'])('recognizes the current %s type', (documentType) => {
     expect(isVersionManagedDocument({ document_type: documentType })).toBe(true)
   })
 
-  it.each(['PRD#legacy', 'PRFAQ#legacy', 'PROTOTYPE#legacy'])(
+  it.each(['PRD#legacy', 'PRFAQ#legacy', 'PROTOTYPE#legacy', 'RESEARCH#legacy'])(
     'recognizes the legacy %s sort-key prefix when type metadata is absent',
     (sortKey) => {
       expect(isVersionManagedDocument({ sk: sortKey })).toBe(true)
@@ -25,10 +28,9 @@ describe('isVersionManagedDocument', () => {
   )
 
   it.each([
-    { document_type: 'research' },
     { document_type: 'custom' },
     { document_type: 'product_report' },
-    { sk: 'RESEARCH#legacy' },
+    { sk: 'DOC#legacy' },
     { sk: 'prototype#wrong-case' },
     null,
     [],

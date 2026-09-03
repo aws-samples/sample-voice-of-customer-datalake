@@ -120,21 +120,32 @@ describe('ProjectDetail job handover (U9)', () => {
    * document list has to come from useProjectData's completed-job effect.
    */
   it('refetches the project when a job completes, with no component waiting on it', async () => {
-    mockGetJobs.mockResolvedValue({
-      jobs: [{
-        job_id: 'job-1',
-        job_type: 'build_prototype',
-        status: 'completed',
-        progress: 100,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        completed_at: new Date().toISOString(),
-      }],
+    // A TRANSITION, because that is what the effect watches: a payload whose jobs
+    // were already terminal on the FIRST read is history the mount fetch already
+    // reflects, so refetching for it would cost every project open a second read.
+    // See useProjectData.jobCompletion.test.tsx for the whole rule.
+    const job = (status: 'running' | 'completed') => ({
+      job_id: 'job-1',
+      job_type: 'build_prototype' as const,
+      status,
+      progress: status === 'completed' ? 100 : 40,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      ...(status === 'completed' ? { completed_at: new Date().toISOString() } : {}),
     })
+    mockGetJobs.mockResolvedValue({ jobs: [job('running')] })
     renderProjectDetail()
+    await waitFor(() => expect(mockGetJobs).toHaveBeenCalled())
 
-    // Twice: the initial load, then the completed-job effect's invalidation.
-    await waitFor(() => expect(mockGetProject.mock.calls.length).toBeGreaterThan(1))
+    mockGetJobs.mockResolvedValue({ jobs: [job('completed')] })
+
+    // Twice: the initial load, then the terminal-transition effect's
+    // invalidation — reached through the running job's own three-second poll,
+    // which is why the timeout is above `waitFor`'s one-second default.
+    await waitFor(
+      () => expect(mockGetProject.mock.calls.length).toBeGreaterThan(1),
+      { timeout: 8000 },
+    )
   })
 
   it('does not disturb the jobs list when the build fails to start', async () => {
