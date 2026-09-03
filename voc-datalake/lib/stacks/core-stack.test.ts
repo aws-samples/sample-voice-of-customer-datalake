@@ -707,6 +707,324 @@ describe('VocCoreStack CloudFront private asset paths (issue #229)', () => {
 });
 
 /**
+ * Regression guard for issue #254: the Identity Pool's AUTHENTICATED role must
+ * not be able to invoke a Lambda directly.
+ *
+ * The role carried `lambda:InvokeFunction` + `lambda:InvokeFunctionUrl` on
+ * `function:*voc-chat-stream*` from the era when the browser signed a Lambda
+ * Function URL with SigV4. Streaming chat is `POST /chat/stream` on the REST API
+ * now (Cognito authorizer, `Integration.ResponseTransferMode: STREAM`) and the
+ * Function URL is gone — but the grant is not merely dead, it is a bypass: any
+ * signed-in user can exchange their JWT for pool credentials and call the
+ * function directly, skipping the authorizer, per-method throttling, request
+ * validation and access logs.
+ *
+ * Reached through the ROLE ATTACHMENT rather than by logical id, so the case
+ * measures "whatever role a signed-in browser can actually assume" and not
+ * "the construct that happens to be called CognitoAuthenticatedRole". It reads
+ * all three shapes a permission can arrive through whose contents are IN this
+ * template — an inline `Policies` block on the role, a standalone
+ * `AWS::IAM::Policy` naming it, and an `AWS::IAM::ManagedPolicy` naming it from
+ * the policy side — and fails loudly on the one shape it does not read, any
+ * `ManagedPolicyArns` entry, since resolving such a reference is not attempted
+ * whether it points outside the template or at a policy defined in it.
+ */
+describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
+  // Action/Resource are typed rather than `z.unknown()` + a cast: CloudFormation
+  // renders either as a bare string or an array of them, and a shape that is
+  // neither (an `Fn::If`, or the `Fn::Join` a token-bearing ARN renders as) must
+  // STOP this block rather than flow through as an opaque object that
+  // `/^lambda:/` fails to match and `toContain` never substring-searches. The
+  // union throws on it instead, and says what to do about it — a legitimate
+  // future grant on this role is the likely way it fires.
+  //
+  // `NotAction`/`NotResource` fail loudly for the opposite reason: `Allow` +
+  // `NotAction` is a superset of the grant this block guards, and would read as
+  // an empty action set because both fields above are then legitimately absent.
+  const ActionOrResourceSchema = z
+    .union([z.string(), z.array(z.string())], {
+      errorMap: () => ({
+        message:
+          'unreadable Action/Resource shape (an Fn::If or Fn::Join?) — extend this schema to read it',
+      }),
+    })
+    .optional();
+  /**
+   * Says what to do when the `aud` condition stops rendering readably.
+   *
+   * Scoped to that ONE case on purpose. A missing `aud`, or a hardcoded pool id,
+   * is perfectly readable and is a bypass this case exists to catch — telling
+   * the reader to "extend this schema" there would be advice to widen the guard
+   * until it accepts the regression, so both are let through to the assertion
+   * below and fail on their value instead.
+   */
+  const UNREADABLE_POOL_REF = {
+    errorMap: () => ({
+      message:
+        'unreadable Identity Pool reference (a cross-stack import or Fn::GetAtt?) — extend this schema to read it',
+    }),
+  };
+  const StatementSchema = z.object({
+    Action: ActionOrResourceSchema,
+    Resource: ActionOrResourceSchema,
+    NotAction: z.never().optional(),
+    NotResource: z.never().optional(),
+  });
+  const PolicyDocumentSchema = z.object({ Statement: z.array(StatementSchema) });
+
+  /** A rendered `Action`/`Resource`, normalised to a list. */
+  function toList(value: string | string[] | undefined): string[] {
+    if (value === undefined) return [];
+    return typeof value === 'string' ? [value] : value;
+  }
+
+  /**
+   * Does a policy's `Roles` list name this role?
+   *
+   * A same-stack role renders as `{ Ref: <logical id> }`, so the ref is matched
+   * structurally rather than by searching the stringified list — the logical id
+   * appearing in some other position (a `PolicyName`, say) must not count.
+   * Anything else in the list is some OTHER role: this one has no explicit
+   * `roleName` to be referenced by, and it is defined here, not imported.
+   */
+  function namesRole(roles: unknown, logicalId: string): boolean {
+    return z
+      .array(z.unknown())
+      .parse(roles ?? [])
+      .some((entry) => {
+        const ref = z.object({ Ref: z.string() }).safeParse(entry);
+        return ref.success && ref.data.Ref === logicalId;
+      });
+  }
+
+  /** The logical id the Identity Pool hands to a signed-in browser. */
+  function authenticatedRoleLogicalId(template: Template): string {
+    const attachments = Object.values(
+      template.findResources('AWS::Cognito::IdentityPoolRoleAttachment'),
+    );
+    // The attachment itself is the still-required wiring: Amplify's JWT ->
+    // AWS-credentials exchange fails outright without it, so its absence is a
+    // regression and NOT a way for this case to pass by finding no role.
+    expect(attachments, 'expected exactly one IdentityPoolRoleAttachment').toHaveLength(1);
+    const authenticated = z
+      .object({ 'Fn::GetAtt': z.tuple([z.string(), z.literal('Arn')]) })
+      .parse(attachments[0].Properties?.Roles?.authenticated);
+    return authenticated['Fn::GetAtt'][0];
+  }
+
+  /** The logical id of THIS deployment's Identity Pool, for the `aud` condition. */
+  function identityPoolLogicalId(template: Template): string {
+    const pools = Object.keys(template.findResources('AWS::Cognito::IdentityPool'));
+    expect(pools, 'expected exactly one Identity Pool').toHaveLength(1);
+    return pools[0];
+  }
+
+  /**
+   * The pool a trust statement is scoped to, as something the case can diff.
+   *
+   * `identityPool.ref` renders as `{ Ref: <logical id> }`, so that ref is the
+   * value worth comparing. Anything that is not a plain object is READABLE and
+   * is handed back untouched to fail on its value: the condition absent
+   * (`undefined` — assumable by any pool in any account), a hardcoded pool id,
+   * or a list naming others besides this one. Only an object of some OTHER shape
+   * — the `Fn::GetAtt` a cross-stack import would render — is genuinely
+   * unreadable, and it alone gets the "extend this schema" diagnostic, which on
+   * any of the former would be advice to widen the guard until it accepts them.
+   */
+  function audienceOf(audience: unknown): unknown {
+    if (typeof audience !== 'object' || audience === null || Array.isArray(audience)) {
+      return audience;
+    }
+    return z
+      .object({ Ref: z.string(UNREADABLE_POOL_REF) }, UNREADABLE_POOL_REF)
+      .parse(audience).Ref;
+  }
+
+  /** Every statement that role can act under, however the policy is attached. */
+  function authenticatedRoleStatements(template: Template): z.infer<typeof StatementSchema>[] {
+    const logicalId = authenticatedRoleLogicalId(template);
+    const role = template.findResources('AWS::IAM::Role')[logicalId];
+    expect(role, `the attachment names ${logicalId}, which is not a role in this template`)
+      .toBeDefined();
+
+    // ANY `ManagedPolicyArns` entry fails loudly, because this guard does not
+    // follow the reference: an AWS-managed or cross-stack ARN is a string whose
+    // contents are genuinely not in this template, and an in-stack policy attached
+    // with `role.addManagedPolicy()` renders a `{ Ref }` here whose contents ARE
+    // readable — but only by resolving it, which is not done. Failing on both
+    // beats reporting a clean action set that looks clean only because the grant
+    // moved out of the extractor's reach. The one managed-policy form collected
+    // below instead is the POLICY-side `new ManagedPolicy(..., { roles: [role] })`,
+    // which never lands here.
+    expect(
+      role.Properties?.ManagedPolicyArns ?? [],
+      'authenticated role gained a managed policy — inspect it, and extend this guard to read it if it is in-stack',
+    ).toEqual([]);
+
+    // All three IN-TEMPLATE attachment shapes, reduced to a flat list of policy
+    // DOCUMENTS:
+    //   1. an inline `Policies` entry on the role;
+    //   2. a standalone AWS::IAM::Policy naming it (what `addToPolicy()` renders);
+    //   3. an AWS::IAM::ManagedPolicy naming it from the POLICY side, i.e.
+    //      `new iam.ManagedPolicy(..., { roles: [role] })` — which leaves both
+    //      `Policies` and `ManagedPolicyArns` undefined and emits no
+    //      AWS::IAM::Policy, so without this leg a live grant reads as clean.
+    // (2) and (3) are filtered identically: both carry `Roles` and
+    // `PolicyDocument` with the same shapes.
+    const attachedDocuments = (type: string): unknown[] =>
+      Object.values(template.findResources(type))
+        .filter((policy) => namesRole(policy.Properties?.Roles, logicalId))
+        .map((policy) => policy.Properties?.PolicyDocument);
+
+    const documents: unknown[] = [
+      ...z
+        .array(z.object({ PolicyDocument: z.unknown() }))
+        .parse(role.Properties?.Policies ?? [])
+        .map((policy) => policy.PolicyDocument),
+      ...attachedDocuments('AWS::IAM::Policy'),
+      ...attachedDocuments('AWS::IAM::ManagedPolicy'),
+    ];
+
+    return documents.flatMap((document) => PolicyDocumentSchema.parse(document).Statement);
+  }
+
+  it('grants neither lambda:InvokeFunction nor lambda:InvokeFunctionUrl', () => {
+    const statements = authenticatedRoleStatements(synthCoreTemplate());
+
+    // Asserted on the parsed action set, not on a substring of the rendered
+    // template: `lambda:InvokeFunctionUrl` contains `lambda:InvokeFunction` as a
+    // prefix, so a naive `toContain` on JSON cannot tell the two apart, and a
+    // single-action statement renders as a bare string rather than an array.
+    const actions = statements.flatMap((statement) => toList(statement.Action));
+
+    expect(actions, 'a signed-in browser must reach chat only through API Gateway')
+      .not.toContain('lambda:InvokeFunction');
+    expect(actions).not.toContain('lambda:InvokeFunctionUrl');
+    // And nothing else in the lambda: namespace either — `lambda:*` or
+    // `lambda:InvokeAsync` would be the same bypass under a different spelling.
+    expect(actions.filter((action) => /^lambda:|^\*$/.test(action))).toEqual([]);
+  });
+
+  it('names no chat-stream Lambda among its resources', () => {
+    // The complement of the action check, and the one that survives a rename of
+    // the action: the role has no business referencing that function at all.
+    const resources = authenticatedRoleStatements(synthCoreTemplate()).flatMap((statement) =>
+      toList(statement.Resource),
+    );
+
+    for (const resource of resources) {
+      expect(resource).not.toContain('voc-chat-stream');
+    }
+  });
+
+  it('keeps the pool attachment and the federated trust policy intact', () => {
+    // The removal above is a permission removal only. The pool, the role and the
+    // attachment stay — Amplify is configured from `identityPoolId` and the
+    // credential exchange needs an assumable role — so a change that deleted the
+    // role outright would make the two cases above vacuously green.
+    const template = synthCoreTemplate();
+    const role = template.findResources('AWS::IAM::Role')[authenticatedRoleLogicalId(template)];
+
+    // StatementsSchema, not PolicyDocumentSchema: the latter's statement shape
+    // lists Action/Resource and zod strips the rest, which would drop the
+    // `Principal` this case is about.
+    const trust = StatementsSchema.parse(role.Properties?.AssumeRolePolicyDocument);
+    // Every federated statement, not the first one `find()` happens to return:
+    // IAM evaluates a trust document as a UNION, so the trust is only as tight as
+    // its LOOSEST statement. Reading one of them made the guard's outcome depend
+    // on statement ORDER — appending a second federated statement with no `aud`
+    // and `amr: unauthenticated` left this case green while the role became
+    // assumable by anonymous identities from any pool in any AWS account.
+    const federatedStatements = trust.Statement.filter(
+      (statement) =>
+        z
+          .object({ Principal: z.object({ Federated: z.string() }) })
+          .safeParse(statement)
+          .data?.Principal.Federated === 'cognito-identity.amazonaws.com',
+    );
+
+    // Non-empty is the anti-vacuity half — the role must STILL be assumable by
+    // the pool, so deleting it cannot green the cases above. Exactly-one is the
+    // fail-open half: a second federated statement has no legitimate purpose
+    // here, so refusing the shape beats trying to read every way it could widen
+    // the trust, the same stance the `ManagedPolicyArns` guard takes.
+    expect(
+      federatedStatements,
+      'the trust must be exactly one federated statement, and must still have one',
+    ).toHaveLength(1);
+    // And nothing else in the document either. A statement with a NON-federated
+    // principal (`Principal.AWS: '*'` + `sts:AssumeRole`) never matches the
+    // predicate above, so counting only federated statements would not see it,
+    // yet it widens who can assume this role just as much.
+    expect(trust.Statement, 'the trust must carry no statement beyond that one').toHaveLength(1);
+
+    const federated = federatedStatements[0];
+
+    // The assertions carrying weight, read structurally rather than as substrings
+    // of the rendered statement: the presence of a condition KEY says nothing
+    // about its VALUE, so flipping `amr` to `unauthenticated` — handing the role a
+    // signed-in browser assumes to any anonymous pool identity — used to read as
+    // clean here. Every field is typed narrowly on purpose: a shape this cannot
+    // read (an `amr` list, an `Action` array) must stop the case rather than pass
+    // it. Zod strips what it is not told about, so a condition key omitted from
+    // this parse is a condition key this case does not guard: both halves of the
+    // ONE statement asserted above are named, not just the one that regressed.
+    const assumable = z
+      .object({
+        Action: z.string(),
+        Condition: z.object({
+          // Read, not constrained: an audience that is missing or is a literal
+          // pool id must fail on its VALUE below, where the message names the
+          // bypass. Constraining the shape here would fail those two at
+          // `.parse()` instead, under the diagnostic for a legitimate future
+          // render change — see `audienceOf()`.
+          StringEquals: z
+            .object({ 'cognito-identity.amazonaws.com:aud': z.unknown() })
+            .optional(),
+          'ForAnyValue:StringLike': z.object({
+            'cognito-identity.amazonaws.com:amr': z.string(),
+          }),
+        }),
+      })
+      .parse(federated);
+
+    // The mechanism — web identity. "Only that way" is what the two length
+    // assertions above establish, since a second statement could name another.
+    expect(assumable.Action).toBe('sts:AssumeRoleWithWebIdentity');
+    // WHICH pool. Without this, dropping the `aud` condition makes the role
+    // assumable via web identity by any Identity Pool in any AWS account — a
+    // cross-ACCOUNT bypass, strictly worse than the cross-authorizer one this
+    // block is about. Matched against the pool in this template rather than a
+    // literal, so a hardcoded or foreign pool id fails too, and so does the
+    // condition being absent: `audienceOf(undefined)` is `undefined`, which is
+    // not the logical id.
+    expect(
+      audienceOf(assumable.Condition.StringEquals?.['cognito-identity.amazonaws.com:aud']),
+      'the trust must be scoped to THIS Identity Pool',
+    ).toBe(identityPoolLogicalId(template));
+    // WHO within it: authenticated identities only.
+    expect(
+      assumable.Condition['ForAnyValue:StringLike']['cognito-identity.amazonaws.com:amr'],
+      'the trust must admit AUTHENTICATED pool identities only',
+    ).toBe('authenticated');
+  });
+
+  it('leaves no AwsSolutions-IAM5 suppression on the role with no wildcard left to suppress', () => {
+    // The grant's blanket suppression (no `appliesTo`) was removed with it. A
+    // suppression that outlives its finding is worse than none: it silences
+    // whatever wildcard the next edit adds here, and cdk-nag would not complain.
+    //
+    // SCOPE: this reads the suppressions attached to the ROLE RESOURCE. A
+    // stack-level one (`NagSuppressions.addStackSuppressions`) or one on an
+    // ancestor construct lands elsewhere in the template and is not seen here.
+    const template = synthCoreTemplate();
+    const role = template.findResources('AWS::IAM::Role')[authenticatedRoleLogicalId(template)];
+
+    expect(JSON.stringify(role.Metadata ?? {})).not.toContain('AwsSolutions-IAM5');
+  });
+});
+
+/**
  * Regression guard for issue #252: the implicit OAuth grant was enabled
  * alongside authorization-code grant. The implicit grant returns tokens
  * in the URL fragment (browser history / Referer leakage) and cannot be
