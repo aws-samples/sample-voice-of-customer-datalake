@@ -174,3 +174,33 @@ def test_the_job_result_names_the_stored_canonical_title(
     ]
     titles = [call.kwargs['result']['title'] for call in completed]
     assert titles == ['Churn drivers (v1)', 'Churn drivers (v2)']
+
+
+def test_an_unconfigured_projects_table_fails_the_step_instead_of_faking_success(
+    saved_research_table,
+):
+    """No table means no document, so there is no success to report.
+
+    This used to skip the write and still move the job to `completed` with
+    `result={'document_id': '', 'title': base_title}` — a link in the job panel to a
+    document that was never written, and a success envelope that was provably wrong.
+    Raising sends the state machine to `HandleResearchError`, which marks the job
+    `failed` with the message; the CDK definition wires `addCatch` on the save step
+    for exactly this.
+    """
+    from research_step_handler import step_save as save
+    from shared.exceptions import ConfigurationError
+
+    with (
+        patch('research_step_handler._get_projects_table', return_value=None),
+        patch('research_step_handler.update_job_status') as status,
+        pytest.raises(ConfigurationError),
+    ):
+        save(save_event('job_a'))
+
+    # Not `completed` — nor `failed` from here: `step_error` owns that write, and
+    # the state machine's catch is what routes to it.
+    assert [
+        call for call in status.call_args_list if call.args[2] == 'completed'
+    ] == []
+    assert research_rows(saved_research_table) == []

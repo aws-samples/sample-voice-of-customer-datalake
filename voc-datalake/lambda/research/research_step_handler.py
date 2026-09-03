@@ -15,6 +15,7 @@ from shared.logging import logger, tracer
 from shared.aws import get_dynamodb_resource, BEDROCK_MODEL_ID
 from shared.api import api_handler
 from shared.converse import converse, BedrockThrottlingError
+from shared.exceptions import ConfigurationError
 from shared.persona_context import personas_prompt_context
 from shared.prompts import (
     get_research_step_config,
@@ -502,45 +503,51 @@ Public-web grounding for this report came from the following searches:
     # bump in one transaction — and `job_id` as the allocation identity makes a
     # Step Functions retry of this step return the committed document instead of
     # writing a second one.
+    #
+    # An absent table RAISES rather than skipping the write. This step's only
+    # product is the document, so with nowhere to put it there is no success to
+    # report: completing the job with `document_id: ''` gave the panel a link to a
+    # document that was never written, and a provably wrong success envelope is
+    # worse than a failure. The state machine catches this into
+    # `HandleResearchError`, which marks the job `failed` with the message — the
+    # outcome the user can act on.
     proj_table = _get_projects_table()
-    document_id = ''
-    title = base_title
-    if proj_table:
-        item = persist_versioned_document(
-            proj_table,
-            project_id,
-            'research',
-            base_title,
-            job_id,
-            {
-                'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
-                'gsi1sk': now,
-                'question': research_question,
-                'content': full_report,
-                'feedback_count': feedback_count,
-                'job_id': job_id,
-                # Built by step_initialize and threaded through the state machine.
-                # The .get() default covers the rollout skew where an in-flight
-                # execution is still pinned to a definition that does not forward it
-                # (same pattern as web_search_queries): an empty derivation reads as
-                # "no lineage", which is a legitimate answer rather than an error.
-                DERIVATION_FIELD: event.get('derivation') or build_derivation(),
-                'created_at': now,
-            },
-        )
-        document_id = item['document_id']
-        title = item['title']
+    if not proj_table:
+        raise ConfigurationError('Projects table not configured')
+
+    item = persist_versioned_document(
+        proj_table,
+        project_id,
+        'research',
+        base_title,
+        job_id,
+        {
+            'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
+            'gsi1sk': now,
+            'question': research_question,
+            'content': full_report,
+            'feedback_count': feedback_count,
+            'job_id': job_id,
+            # Built by step_initialize and threaded through the state machine.
+            # The .get() default covers the rollout skew where an in-flight
+            # execution is still pinned to a definition that does not forward it
+            # (same pattern as web_search_queries): an empty derivation reads as
+            # "no lineage", which is a legitimate answer rather than an error.
+            DERIVATION_FIELD: event.get('derivation') or build_derivation(),
+            'created_at': now,
+        },
+    )
 
     # Update job as completed. The stored title, so the job panel and the
     # Documents tab name the same `(vN)` document.
     update_job_status(
         project_id, job_id, 'completed', 100, 'complete',
-        result={'document_id': document_id, 'title': title},
+        result={'document_id': item['document_id'], 'title': item['title']},
     )
 
     return {
         'success': True,
-        'document_id': document_id,
+        'document_id': item['document_id'],
         'feedback_count': feedback_count
     }
 @tracer.capture_method

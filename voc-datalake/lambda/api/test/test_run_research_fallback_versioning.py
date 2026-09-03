@@ -213,3 +213,23 @@ def test_the_two_research_writers_agree_on_the_untitled_series_key():
     assert research_base_title('  ', 'What hurts most?') == 'Research: What hurts most?'
     assert research_base_title('Chosen', 'What hurts most?') == 'Chosen'
     assert research_base_title('', '') == 'Research: Research'
+    # Stripped, so the returned value is already the key it claims to be rather
+    # than relying on `split_versioned_title` downstream to make it one.
+    assert research_base_title('Chosen ', 'What hurts most?') == 'Chosen'
+    assert research_base_title('  Chosen', 'What hurts most?') == 'Chosen'
+
+
+def test_a_padded_title_lands_in_the_same_series_as_its_unpadded_form(projects_table):
+    """`'Churn drivers '` must not open a second series that renders identically.
+
+    Both would display as `Churn drivers (v1)`, so the user sees two v1s of one
+    title with no way to tell them apart. Asserted end to end through the real
+    allocator rather than on the helper alone, because that is where the series key
+    is actually decided.
+    """
+    run(projects_table, 'job_a', title='Churn drivers')
+    run(projects_table, 'job_b', title='Churn drivers ')
+
+    assert [row['title'] for row in research_rows(projects_table)] == [
+        'Churn drivers (v1)', 'Churn drivers (v2)',
+    ]

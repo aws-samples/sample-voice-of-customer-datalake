@@ -19,6 +19,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import ProjectDetail from './ProjectDetail'
+import { projectJobsKey } from './useProjectData'
 import { useConfigStore } from '../../store/configStore'
 import type { Project, ProjectDocument } from '../../api/types'
 
@@ -69,19 +70,30 @@ const documents: ProjectDocument[] = [
   },
 ]
 
+/**
+ * Renders the page and hands back the client it rendered through.
+ *
+ * The client is returned so a case can read the jobs list again on demand instead
+ * of waiting out the real three-second poll: the cadence is not what any case here
+ * pins, and a `{ timeout: 8000 }` wait is both slow and timing-dependent in a
+ * suite whose sibling header already warns about timer leakage.
+ */
 function renderProjectDetail() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/projects/proj-1']}>
-        <Routes>
-          <Route path="/projects/:id" element={<ProjectDetail />} />
-        </Routes>
-      </MemoryRouter>
-    </QueryClientProvider>,
-  )
+  return {
+    queryClient,
+    ...render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/projects/proj-1']}>
+          <Routes>
+            <Route path="/projects/:id" element={<ProjectDetail />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    ),
+  }
 }
 
 describe('ProjectDetail job handover (U9)', () => {
@@ -134,18 +146,27 @@ describe('ProjectDetail job handover (U9)', () => {
       ...(status === 'completed' ? { completed_at: new Date().toISOString() } : {}),
     })
     mockGetJobs.mockResolvedValue({ jobs: [job('running')] })
-    renderProjectDetail()
-    await waitFor(() => expect(mockGetJobs).toHaveBeenCalled())
+    const { queryClient } = renderProjectDetail()
+    // Waited on the OBSERVED payload, not on `getJobs` having been called:
+    // `toHaveBeenCalled` returns as soon as the request is issued, so re-pointing
+    // the mock straight after it can make the completed payload the first one the
+    // hook ever sees — which the seeding rule correctly ignores, and the assertion
+    // below would then hold for the wrong reason.
+    const observedStatuses = () => (
+      (queryClient.getQueryData(projectJobsKey('proj-1')) as
+        { jobs?: readonly { status: string }[] } | undefined)?.jobs ?? []
+    ).map((entry) => entry.status)
+    await waitFor(() => expect(observedStatuses()).toEqual(['running']))
 
     mockGetJobs.mockResolvedValue({ jobs: [job('completed')] })
+    // Read again the way the poll does, rather than waiting out the real
+    // three-second cadence: this case is about the effect firing on the
+    // transition, not about when the next poll happens.
+    await queryClient.invalidateQueries({ queryKey: projectJobsKey('proj-1') })
+    await waitFor(() => expect(observedStatuses()).toEqual(['completed']))
 
-    // Twice: the initial load, then the terminal-transition effect's
-    // invalidation — reached through the running job's own three-second poll,
-    // which is why the timeout is above `waitFor`'s one-second default.
-    await waitFor(
-      () => expect(mockGetProject.mock.calls.length).toBeGreaterThan(1),
-      { timeout: 8000 },
-    )
+    // Twice: the initial load, then the terminal-transition effect's invalidation.
+    await waitFor(() => expect(mockGetProject.mock.calls.length).toBeGreaterThan(1))
   })
 
   it('does not disturb the jobs list when the build fails to start', async () => {

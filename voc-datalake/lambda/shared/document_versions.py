@@ -132,9 +132,18 @@ def research_base_title(requested_title: object, question: object) -> str:
     project would carry two series for one question and the ``(vN)`` numbering
     would restart. Kept here beside :func:`split_versioned_title` because the
     result is a version-series key, not display text.
+
+    Stripped, so the value this returns is already the key it claims to be.
+    ``'Churn drivers '`` and ``'Churn drivers'`` do in fact land in one series
+    today — :func:`persist_versioned_document` runs both through
+    :func:`split_versioned_title`, which collapses interior whitespace and trims —
+    but that makes the guarantee a property of the caller rather than of this
+    return value, and a reader who takes the docstring at its word would be wrong.
+    The question fallback needs no strip: it is composed from a slice of an
+    already-non-blank string behind a literal prefix.
     """
     if isinstance(requested_title, str) and requested_title.strip():
-        return requested_title
+        return requested_title.strip()
     text = question if isinstance(question, str) and question.strip() else 'Research'
     return f'Research: {text[:RESEARCH_TITLE_QUESTION_CHARS]}'
 
