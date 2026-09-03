@@ -167,11 +167,10 @@ export default function DocumentExportMenu({
     return () => window.document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // New (S3-only) HTML prototypes have no `content` field — the HTML lives at
-  // `prototype_url` on CloudFront, not inline. Text-based export (copy/Kiro/
-  // markdown/txt/PDF) doesn't make sense for a rendered prototype, so hide
-  // this menu entirely for that case rather than exporting empty/garbage text.
-  if (!doc || (doc.document_type === 'prototype' && doc.prototype_url)) return null
+  // Prototype artifacts own their open/download controls in PrototypeView. Raw
+  // prototype content is never a prose or Kiro export, including legacy inline
+  // HTML/JSON prototypes that do not have a prototype_url.
+  if (!doc || doc.document_type === 'prototype') return null
 
   const copyContent = async () => {
     await navigator.clipboard.writeText(doc.content ?? '')

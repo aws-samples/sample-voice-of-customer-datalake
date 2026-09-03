@@ -100,6 +100,19 @@ describe('getUpdateDocumentTool', () => {
     const schema = tool.toolSpec?.inputSchema?.json as Record<string, unknown>;
     expect(schema.required).toStrictEqual(['document_id', 'content', 'summary']);
   });
+
+  it('tells the model that managed PRD and PR/FAQ titles cannot be renamed', () => {
+    const tool = getUpdateDocumentTool();
+
+    expect(tool.toolSpec?.description).toMatch(/PRD and PR\/FAQ titles.*cannot be renamed/i);
+    expect(tool.toolSpec?.inputSchema?.json).toMatchObject({
+      properties: {
+        title: {
+          description: expect.stringMatching(/PRD and PR\/FAQ titles.*cannot be renamed/i),
+        },
+      },
+    });
+  });
 });
 
 describe('getCreateDocumentTool', () => {
@@ -118,6 +131,28 @@ describe('getCreateDocumentTool', () => {
     const tool = getCreateDocumentTool();
     const schema = tool.toolSpec?.inputSchema?.json as Record<string, unknown>;
     const props = schema.properties as Record<string, Record<string, unknown>>;
-    expect(props.document_type.enum).toStrictEqual(['prd', 'prfaq', 'custom']);
+    expect(props.document_type.enum).toStrictEqual(['custom']);
+  });
+});
+
+describe('document tool revision contract', () => {
+  it('describes editable text documents, prototype revisions, and complete replacement content', () => {
+    const tool = getUpdateDocumentTool();
+    const description = tool.toolSpec?.description ?? '';
+
+    expect(description).toMatch(
+      /textual project document \(PRD, PR\/FAQ, research, product report, or custom\)/i,
+    );
+    expect(description).toMatch(
+      /Prototype HTML.*prototype revision workflow, not this tool/i,
+    );
+    expect(description).toMatch(/COMPLETE updated content, not just the changes/);
+    expect(tool.toolSpec?.inputSchema?.json).toMatchObject({
+      properties: {
+        content: {
+          description: expect.stringMatching(/full updated document content/i),
+        },
+      },
+    });
   });
 });

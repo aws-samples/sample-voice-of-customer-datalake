@@ -2681,3 +2681,182 @@ describe('unauthorized gateway response', () => {
     expect(exposed).toContain('www-authenticate');
   });
 });
+
+
+describe('ChatStream canonical project delegation', () => {
+  const FunctionSchema = z.object({
+    Properties: z.object({
+      Environment: z.object({ Variables: z.record(z.unknown()) }),
+      Role: z.object({ 'Fn::GetAtt': z.tuple([z.string(), z.string()]) }),
+    }),
+  });
+  const StatementSchema = z.object({
+    Action: z.union([z.string(), z.array(z.string())]),
+    Resource: z.unknown(),
+  });
+  const PolicySchema = z.object({
+    Properties: z.object({
+      Roles: z.array(z.object({ Ref: z.string() })),
+      PolicyDocument: z.object({ Statement: z.array(StatementSchema) }),
+    }),
+  });
+
+  it('injects the Projects function and may invoke only that canonical reader', () => {
+    const functions = Object.entries(
+      apiTemplate().findResources('AWS::Lambda::Function'),
+    );
+    const parsedFunctions = functions.flatMap(([logicalId, resource]) => {
+      const parsed = FunctionSchema.safeParse(resource);
+      return parsed.success ? [{ logicalId, properties: parsed.data.Properties }] : [];
+    });
+    const chat = parsedFunctions.find(
+      ({ properties }) => properties.Environment.Variables.BEDROCK_MODEL_ID
+        === 'global.anthropic.claude-sonnet-5',
+    );
+    const projects = parsedFunctions.find(
+      ({ properties }) => properties.Environment.Variables.POWERTOOLS_SERVICE_NAME
+        === 'voc-projects-api',
+    );
+    expect(chat, 'ChatStream Lambda not found').toBeDefined();
+    expect(projects, 'Projects API Lambda not found').toBeDefined();
+    if (!chat || !projects) return;
+
+    expect(chat.properties.Environment.Variables.PROJECTS_FUNCTION).toStrictEqual({
+      Ref: projects.logicalId,
+    });
+
+    const chatRoleId = chat.properties.Role['Fn::GetAtt'][0];
+    const statements = Object.values(
+      apiTemplate().findResources('AWS::IAM::Policy'),
+    ).flatMap((resource) => {
+      const parsed = PolicySchema.safeParse(resource);
+      if (!parsed.success) return [];
+      const attached = parsed.data.Properties.Roles.some(
+        (role) => role.Ref === chatRoleId,
+      );
+      return attached ? parsed.data.Properties.PolicyDocument.Statement : [];
+    });
+    const invokeStatements = statements.filter((statement) => {
+      const actions = Array.isArray(statement.Action)
+        ? statement.Action
+        : [statement.Action];
+      return actions.includes('lambda:InvokeFunction');
+    });
+
+    expect(invokeStatements).toHaveLength(1);
+    expect(invokeStatements[0].Resource).toStrictEqual([
+      { 'Fn::GetAtt': [projects.logicalId, 'Arn'] },
+      {
+        'Fn::Join': [
+          '',
+          [
+            { 'Fn::GetAtt': [projects.logicalId, 'Arn'] },
+            ':*',
+          ],
+        ],
+      },
+    ]);
+  });
+});
+
+
+describe('prototype object IAM boundaries', () => {
+  const StatementSchema = z.object({
+    Effect: z.string(),
+    Action: z.union([z.string(), z.array(z.string())]),
+    Resource: z.unknown(),
+  });
+  const PolicySchema = z.object({
+    Properties: z.object({
+      PolicyDocument: z.object({ Statement: z.array(StatementSchema) }),
+    }),
+  });
+
+  function statementsForRole(roleName: string): z.infer<typeof StatementSchema>[] {
+    const policies = apiTemplate().findResources('AWS::IAM::Policy');
+    const policy = Object.entries(policies).find(([logicalId]) => logicalId.includes(roleName));
+    expect(policy, `no IAM policy found for ${roleName}`).toBeDefined();
+    return PolicySchema.parse(policy?.[1]).Properties.PolicyDocument.Statement;
+  }
+
+  it('denies Data Explorer prototype writes without denying reads or other prefixes', () => {
+    const denies = statementsForRole('DataExplorerLambdaRole')
+      .filter((statement) => statement.Effect === 'Deny');
+
+    expect(denies).toHaveLength(1);
+    const actions = Array.isArray(denies[0].Action) ? denies[0].Action : [denies[0].Action];
+    expect(actions.sort()).toEqual(['s3:DeleteObject', 's3:PutObject']);
+    const resources = Array.isArray(denies[0].Resource)
+      ? denies[0].Resource
+      : [denies[0].Resource];
+    expect(resources).toHaveLength(1);
+    expect(JSON.stringify(resources[0])).toContain('prototypes/*');
+  });
+
+  it('keeps the document generator read-write grant scoped to prototype objects', () => {
+    const prototypeStatements = statementsForRole('DocumentGeneratorRole')
+      .filter((statement) => JSON.stringify(statement.Resource).includes('prototypes/*'));
+
+    expect(prototypeStatements.length).toBeGreaterThan(0);
+    const actions = new Set(prototypeStatements.flatMap((statement) => (
+      Array.isArray(statement.Action) ? statement.Action : [statement.Action]
+    )));
+    expect(actions).toContain('s3:GetObject*');
+    expect(actions).toContain('s3:PutObject');
+    expect(actions).toContain('s3:DeleteObject*');
+    expect(actions).not.toContain('s3:*');
+  });
+});
+
+
+function stateMachineDefinitionText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  const joined = z.object({
+    'Fn::Join': z.array(z.unknown()),
+  }).safeParse(value);
+  if (!joined.success) return '';
+  const pieces = joined.data['Fn::Join'][1];
+  if (!Array.isArray(pieces)) return '';
+  return pieces
+    .filter((piece): piece is string => typeof piece === 'string')
+    .join('');
+}
+
+function documentWorkflowDefinition(template: Template): string {
+  const resourceSchema = z.object({
+    Properties: z.object({
+      DefinitionString: z.unknown(),
+    }),
+  });
+  const machines = template.findResources('AWS::StepFunctions::StateMachine');
+  for (const resource of Object.values(machines)) {
+    const parsed = resourceSchema.safeParse(resource);
+    if (!parsed.success) continue;
+    const definition = stateMachineDefinitionText(
+      parsed.data.Properties.DefinitionString,
+    );
+    if (definition.includes('DocGather')) return definition;
+  }
+  throw new Error('Document workflow state machine was not synthesized');
+}
+
+describe('document workflow replay routing', () => {
+  const state: { definition: string } = { definition: '' };
+  beforeAll(() => {
+    state.definition = documentWorkflowDefinition(synthApiTemplate());
+  });
+
+  it('selects the replay marker from the gather Lambda result', () => {
+    expect(state.definition).toContain(
+      '"replayed.$":"$.Payload.replayed"',
+    );
+  });
+
+  it('completes committed replays and runs fresh allocations', () => {
+    expect(state.definition).toContain('"DocumentAlreadyGenerated"');
+    expect(state.definition).toContain(
+      '"Variable":"$.gathered.replayed","BooleanEquals":true,"Next":"DocComplete"',
+    );
+    expect(state.definition).toContain('"Default":"DocStep0"');
+  });
+});

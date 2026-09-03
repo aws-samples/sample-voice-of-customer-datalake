@@ -25,6 +25,7 @@ from shared.prompts import PERSONA_IMPORT_PROMPTS, format_prompt, load_prompt_fi
 from shared.image_limits import converse_image_format
 from shared.aws import get_dynamodb_resource, get_bedrock_client
 from shared.model_config import get_active_model_id
+from shared.project_writes import put_project_item_and_increment
 from api.projects import generate_persona_avatar
 
 # Environment
@@ -187,11 +188,8 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, import_config: dic
     
     ctx.update_progress(90, 'saving_persona')
     
-    projects_table.put_item(Item=item)
-    projects_table.update_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'},
-        UpdateExpression='SET persona_count = persona_count + :one, updated_at = :now',
-        ExpressionAttributeValues={':one': 1, ':now': now}
+    put_project_item_and_increment(
+        projects_table, project_id, item, 'persona_count',
     )
     
     persona_name = item.get('name', 'Imported Persona')
@@ -211,4 +209,4 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, import_config: dic
 def lambda_handler(event: dict, context) -> dict:
     """Lambda entry point."""
     logger.info(f"Persona importer invoked with event keys: {list(event.keys())}")
-    return handle_job(event)
+    return handle_job(event, context)

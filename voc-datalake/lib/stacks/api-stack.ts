@@ -877,6 +877,26 @@ export class VocApiStack extends VocStack {
       logGroup: this.createLogGroup('PersonaImporterJobLogs', this.uniqueName('voc-job-persona-importer')),
     });
 
+    // A lease loser self-redelivers once before its own budget becomes too
+    // small, so an owner crash still has a durable post-expiry attempt. Use
+    // deterministic physical-name ARNs instead of Function.grantInvoke: the
+    // function already depends on its role, and a role policy that GetAtts the
+    // function creates a CloudFormation cycle.
+    const grantSelfInvoke = (role: iam.Role, functionName: string) => {
+      role.addToPolicy(new iam.PolicyStatement({
+        actions: ['lambda:InvokeFunction'],
+        resources: [this.formatArn({
+          service: 'lambda',
+          resource: 'function',
+          resourceName: functionName,
+        })],
+      }));
+    };
+    grantSelfInvoke(personaGeneratorRole, this.uniqueName('voc-job-persona-generator'));
+    grantSelfInvoke(documentGeneratorRole, this.uniqueName('voc-job-document-generator'));
+    grantSelfInvoke(documentMergerRole, this.uniqueName('voc-job-document-merger'));
+    grantSelfInvoke(personaImporterRole, this.uniqueName('voc-job-persona-importer'));
+
     // Wire job Lambda function names into the Projects API + grant invoke
     projectsLambda.addEnvironment('PERSONA_GENERATOR_FUNCTION', personaGeneratorLambda.functionName);
     projectsLambda.addEnvironment('DOCUMENT_GENERATOR_FUNCTION', documentGeneratorLambda.functionName);
@@ -913,6 +933,7 @@ export class VocApiStack extends VocStack {
       timeout: cdk.Duration.minutes(5),
       environment: {
         PROJECTS_TABLE: projectsTable.tableName,
+        PROJECTS_FUNCTION: projectsLambda.functionName,
         FEEDBACK_TABLE: feedbackTable.tableName,
         AGGREGATES_TABLE: aggregatesTable.tableName,
         // Streaming-chat ('chat' surface) default when no override is set.
@@ -933,12 +954,14 @@ export class VocApiStack extends VocStack {
           '@aws-sdk/*',
           '@smithy/*',
         ],
-        // The web-search SigV4 client imports these directly; bundle them so
-        // it runs against the pinned versions from package.json instead of
-        // whatever the managed runtime's SDK happens to hoist (transitive
-        // availability is not a documented contract). They are tiny.
+        // These modules are imported directly at runtime. Bundle their pinned
+        // versions instead of relying on whatever SDK the managed runtime
+        // happens to hoist: web-search signing uses the Smithy modules and
+        // credential provider; canonical project reads use client-lambda.
+        // The packages are small.
         nodeModules: [
           '@aws-sdk/credential-provider-node',
+          '@aws-sdk/client-lambda',
           '@smithy/protocol-http',
           '@smithy/signature-v4',
           // Reads the CloudFront URL-signing key. Pinned here for the same
@@ -983,6 +1006,9 @@ export class VocApiStack extends VocStack {
       ],
       resources: [projectsTable.tableArn, `${projectsTable.tableArn}/index/*`],
     }));
+    // Canonical project reads, including one-time legacy version persistence,
+    // stay owned by the Python Projects API rather than being reimplemented here.
+    projectsLambda.grantInvoke(chatStreamLambda);
     kmsKey.grantDecrypt(chatStreamLambda);
 
     // Web search tool (AgentCore Gateway) — optional, opt-in per request.
@@ -1002,6 +1028,11 @@ export class VocApiStack extends VocStack {
     }
 
     NagSuppressions.addResourceSuppressions(chatStreamLambda, [
+      {
+        id: 'AwsSolutions-IAM5',
+        reason: 'CDK grantInvoke includes qualified versions/aliases, so the wildcard is scoped to ProjectsApi only; ChatStream uses it for the canonical bounded project-context contract.',
+        appliesTo: [{ regex: '/Resource::<.*ProjectsApi.*\\.Arn>:\\*/' }],
+      },
       { id: 'AwsSolutions-L1', reason: 'Node.js 22 is the target runtime for the streaming Lambda — latest stable LTS' },
     ], true);
 
@@ -1027,6 +1058,11 @@ export class VocApiStack extends VocStack {
     // Data Explorer API
     const dataExplorerRole = this.createLambdaRole('DataExplorerLambdaRole');
     rawDataBucket.grantReadWrite(dataExplorerRole);
+    dataExplorerRole.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.DENY,
+      actions: ['s3:PutObject', 's3:DeleteObject'],
+      resources: [rawDataBucket.arnForObjects('prototypes/*')],
+    }));
     feedbackTable.grantReadWriteData(dataExplorerRole);
     kmsKey.grantEncryptDecrypt(dataExplorerRole);
     dataExplorerRole.addToPolicy(new iam.PolicyStatement({ actions: ['sqs:SendMessage'], resources: [processingQueueArn] }));
@@ -1958,6 +1994,7 @@ exports.handler = async (event) => {
         'title.$': '$.Payload.title',
         'feature_idea.$': '$.Payload.feature_idea',
         'num_steps.$': '$.Payload.num_steps',
+        'replayed.$': '$.Payload.replayed',
       },
     });
 
@@ -2023,11 +2060,15 @@ exports.handler = async (event) => {
             s3.next(save))
       .otherwise(save);
 
-    const definition = gather
-      .next(s0)
+    const generation = s0
       .next(s1)
       .next(s2)
       .next(maybeStep3);
+    const replayChoice = new sfn.Choice(this, 'DocumentAlreadyGenerated')
+      .when(sfn.Condition.booleanEquals('$.gathered.replayed', true), success)
+      .otherwise(generation);
+
+    const definition = gather.next(replayChoice);
 
     return new sfn.StateMachine(this, 'DocumentStateMachine', {
       stateMachineName: this.uniqueName('voc-document-workflow'),

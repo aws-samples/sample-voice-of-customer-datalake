@@ -510,7 +510,7 @@
     "generatePrfaq": "生成 PR-FAQ",
     "generatePrfaqTitle": "生成 PR-FAQ",
     "newDocTitle": "新文档标题",
-    "newDocTitlePlaceholder": "例如：虚拟礼宾 PRD v2",
+    "newDocTitlePlaceholder": "例如：虚拟礼宾 PRD",
     "outputDocType": "输出文档类型",
     "personaCount": "用户角色数量：{{count}}",
     "prd": "PRD",

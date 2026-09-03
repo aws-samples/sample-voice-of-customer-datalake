@@ -1048,11 +1048,13 @@ export class VocCoreStack extends VocStack {
       description: 'Role for authenticated Cognito Identity Pool users',
     });
 
-    // NO PERMISSIONS BY DESIGN: nothing a signed-in browser does uses these
-    // credentials — chat streams over `POST /chat/stream` behind the Cognito
-    // authorizer, private CDN paths use signed URLs the API mints. The pool and
-    // role are retained because Amplify is configured from `identityPoolId` and
-    // the JWT -> credentials exchange needs an assumable role. See issue #254.
+    // NO PERMISSIONS BY DESIGN: Amplify still exchanges the User Pool session
+    // for Identity Pool credentials, but application code does not consume them
+    // or call AWS services with them. Chat streams over `POST /chat/stream` behind
+    // the Cognito authorizer, and private CDN paths use signed URLs the API mints.
+    // The pool and role are retained because Amplify is configured from
+    // `identityPoolId` and the JWT -> credentials exchange needs an assumable
+    // role. See issue #254.
 
     // Attach role to Identity Pool
     new cognito.CfnIdentityPoolRoleAttachment(this, 'IdentityPoolRoleAttachment', {

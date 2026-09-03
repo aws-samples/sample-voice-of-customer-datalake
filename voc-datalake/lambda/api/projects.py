@@ -5,6 +5,7 @@ Handles projects, personas, PRDs, PR/FAQs with multi-step LLM orchestration.
 import json
 import os
 import re
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from boto3.dynamodb.conditions import Key
@@ -47,6 +48,25 @@ from shared.avatar import (
 from shared.prototypes import prototype_signed_url
 from shared.tables import get_projects_table, get_feedback_table
 from shared.indexes import PROJECTS_BY_TYPE_INDEX
+from shared.document_versions import (
+    VERSIONED_DOCUMENT_TYPES,
+    normalize_document_versions,
+    normalized_base_title,
+    persist_legacy_document_versions,
+    preserve_versioned_document_allocation,
+    version_partition_key,
+)
+from shared.project_writes import (
+    PROJECT_DELETION_ATTRIBUTE,
+    PROJECT_WRITABLE_ATTRIBUTE_NAMES,
+    PROJECT_WRITABLE_ATTRIBUTE_VALUES,
+    PROJECT_WRITABLE_CONDITION,
+    is_project_tombstone,
+    project_meta_key,
+    projects_table_name,
+    put_project_item,
+    put_project_item_and_increment,
+)
 
 # Default instructions used when a project has not set its own kiro_export_prompt.
 # Kept here — ONE definition only — so both _build_steering_file and the
@@ -273,6 +293,8 @@ def list_projects() -> dict:
     
     projects = []
     for item in response.get('Items', []):
+        if is_project_tombstone(item):
+            continue
         project_id = item.get('project_id')
         
         # Query actual items to get accurate counts
@@ -330,8 +352,11 @@ def create_project(body: dict) -> dict:
         'kiro_export_prompt': body.get('kiro_export_prompt', ''),
     }
     
-    projects_table.put_item(Item=item)
-    
+    projects_table.put_item(
+        Item=item,
+        ConditionExpression='attribute_not_exists(pk) AND attribute_not_exists(sk)',
+    )
+
     return {'success': True, 'project': item}
 
 
@@ -373,18 +398,130 @@ def _with_signed_prototype_url(item: dict, project_id: str) -> dict:
     return item
 
 
+def _query_partition_items(partition_key: str) -> list[dict]:
+    """Read one complete projects-table partition, following every page."""
+    items = []
+    query = {
+        'KeyConditionExpression': Key('pk').eq(partition_key),
+        'ConsistentRead': True,
+    }
+    while True:
+        response = projects_table.query(**query)
+        if not isinstance(response, dict):
+            return items
+        page_items = response.get('Items')
+        if isinstance(page_items, list):
+            items.extend(page_items)
+        cursor = response.get('LastEvaluatedKey')
+        if not isinstance(cursor, dict) or not cursor:
+            return items
+        query['ExclusiveStartKey'] = cursor
+
+
+def _find_document(project_id: str, document_id: str) -> dict | None:
+    """Find one document using projected pages and stop at the first match."""
+    query = {
+        'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}'),
+        'ConsistentRead': True,
+        'ProjectionExpression': (
+            'pk, sk, document_id, #type, #title, base_title, #version'
+        ),
+        'ExpressionAttributeNames': {
+            '#type': 'document_type',
+            '#title': 'title',
+            '#version': 'version',
+        },
+    }
+    while True:
+        response = projects_table.query(**query)
+        if not isinstance(response, dict):
+            return None
+        page_items = response.get('Items')
+        if isinstance(page_items, list):
+            match = next(
+                (
+                    item for item in page_items
+                    if isinstance(item, dict)
+                    and item.get('document_id') == document_id
+                ),
+                None,
+            )
+            if match is not None:
+                return match
+        cursor = response.get('LastEvaluatedKey')
+        if not isinstance(cursor, dict) or not cursor:
+            return None
+        query['ExclusiveStartKey'] = cursor
+
+
+def _iter_partition_keys(partition_key: str) -> Iterator[dict[str, str]]:
+    """Yield only primary keys from a complete partition query."""
+    query = {
+        'KeyConditionExpression': Key('pk').eq(partition_key),
+        'ConsistentRead': True,
+        'ProjectionExpression': 'pk, sk',
+    }
+    while True:
+        response = projects_table.query(**query)
+        if not isinstance(response, dict):
+            return
+        page_items = response.get('Items')
+        if isinstance(page_items, list):
+            for item in page_items:
+                if (
+                    isinstance(item, dict)
+                    and isinstance(item.get('pk'), str)
+                    and isinstance(item.get('sk'), str)
+                ):
+                    yield {'pk': item['pk'], 'sk': item['sk']}
+        cursor = response.get('LastEvaluatedKey')
+        if not isinstance(cursor, dict) or not cursor:
+            return
+        query['ExclusiveStartKey'] = cursor
+
+
+MAX_CHAT_CONTEXT_SELECTED_DOCUMENTS = 20
+MAX_CHAT_CONTEXT_ID_LENGTH = 128
+DOCUMENT_DELETE_ATTEMPTS = 4
+PROJECT_DELETE_FENCE_ATTEMPTS = 4
+_DOCUMENT_SORT_KEY_PREFIXES = (
+    'PRD#',
+    'PRFAQ#',
+    'RESEARCH#',
+    'DOC#',
+    'PRODUCT_REPORT#',
+    'PROTOTYPE#',
+)
+_CHAT_CONTEXT_PROJECT_FIELDS = ('sk', 'name')
+_CHAT_CONTEXT_PERSONA_FIELDS = (
+    'sk',
+    'persona_id',
+    'name',
+    'tagline',
+    'quotes',
+    'goals_motivations',
+    'pain_points',
+    'avatar_url',
+)
+_CHAT_CONTEXT_DOCUMENT_FIELDS = (
+    'sk',
+    'document_id',
+    'document_type',
+    'title',
+    'base_title',
+    'version',
+)
+
+
 @tracer.capture_method
 def get_project(project_id: str) -> dict:
     """Get a project with all its data."""
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
     
-    # Get all items for this project
-    response = projects_table.query(
-        KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}')
-    )
-    
-    items = response.get('Items', [])
+    # Read the complete partition before assigning legacy versions. A partial
+    # collection can give two same-title documents the same apparent position.
+    items = _query_partition_items(f'PROJECT#{project_id}')
     if not items:
         raise NotFoundError('Project not found')
     
@@ -403,9 +540,13 @@ def get_project(project_id: str) -> dict:
             personas.append(item)
         elif sk.startswith('PRD#') or sk.startswith('PRFAQ#') or sk.startswith('RESEARCH#') or sk.startswith('DOC#') or sk.startswith('PRODUCT_REPORT#') or sk.startswith('PROTOTYPE#'):
             documents.append(_with_signed_prototype_url(item, project_id))
-    
-    if not project:
+
+    if not project or is_project_tombstone(project):
         raise NotFoundError('Project metadata not found')
+
+    # Normalize copies for this response only. GET must remain read-only and
+    # latency-bounded; durable legacy assignment happens on managed mutations.
+    documents = normalize_document_versions(documents)
 
     # Inject the default at read time so both consumers (the steering-file editor
     # and the per-document "Copy to Kiro" action) always agree on the fallback
@@ -421,18 +562,180 @@ def get_project(project_id: str) -> dict:
     }
 
 
+def _validated_chat_context_document_ids(raw: object) -> list[str]:
+    if not isinstance(raw, list):
+        raise ValidationError('selected_document_ids must be an array')
+    if len(raw) > MAX_CHAT_CONTEXT_SELECTED_DOCUMENTS:
+        raise ValidationError(
+            f'Select at most {MAX_CHAT_CONTEXT_SELECTED_DOCUMENTS} documents'
+        )
+
+    selected: list[str] = []
+    seen: set[str] = set()
+    for value in raw:
+        if (
+            not isinstance(value, str)
+            or not value
+            or value != value.strip()
+            or len(value) > MAX_CHAT_CONTEXT_ID_LENGTH
+        ):
+            raise ValidationError(
+                'Each selected document id must be a non-empty string of at most '
+                f'{MAX_CHAT_CONTEXT_ID_LENGTH} characters'
+            )
+        if value not in seen:
+            seen.add(value)
+            selected.append(value)
+    return selected
+
+
+@tracer.capture_method
+def _query_project_chat_items(project_id: str) -> list[dict]:
+    # `created_at` is load-bearing for normalize_document_versions; `status`
+    # preserves compatibility with status-only historical tombstones.
+    query = {
+        'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}'),
+        'ConsistentRead': True,
+        'ProjectionExpression': (
+            'pk, sk, project_id, #name, #status, #deleting, persona_id, '
+            'tagline, quotes, goals_motivations, pain_points, avatar_url, '
+            'document_id, #type, #title, base_title, #version, created_at'
+        ),
+        'ExpressionAttributeNames': {
+            '#name': 'name',
+            '#status': 'status',
+            '#deleting': PROJECT_DELETION_ATTRIBUTE,
+            '#type': 'document_type',
+            '#title': 'title',
+            '#version': 'version',
+        },
+    }
+    items = []
+    while True:
+        response = projects_table.query(**query)
+        page_items = response.get('Items') if isinstance(response, dict) else None
+        if isinstance(page_items, list):
+            items.extend(item for item in page_items if isinstance(item, dict))
+        cursor = response.get('LastEvaluatedKey') if isinstance(response, dict) else None
+        if not isinstance(cursor, dict) or not cursor:
+            return items
+        query['ExclusiveStartKey'] = cursor
+
+
+@tracer.capture_method
+def get_project_chat_context(
+    project_id: str, selected_document_ids: object,
+) -> dict:
+    """Canonical project context bounded for synchronous Lambda transport."""
+    if (
+        not isinstance(project_id, str)
+        or not project_id
+        or project_id != project_id.strip()
+        or len(project_id) > MAX_CHAT_CONTEXT_ID_LENGTH
+    ):
+        raise ValidationError(
+            f'project_id must be 1-{MAX_CHAT_CONTEXT_ID_LENGTH} characters'
+        )
+
+    selected_ids = set(
+        _validated_chat_context_document_ids(selected_document_ids)
+    )
+    items = _query_project_chat_items(project_id)
+    project = next(
+        (item for item in items if item.get('sk') == 'META'),
+        None,
+    )
+    if project is None or is_project_tombstone(project):
+        raise NotFoundError('Project not found')
+    personas = [
+        item for item in items
+        if isinstance(item.get('sk'), str)
+        and item['sk'].startswith('PERSONA#')
+    ]
+    documents = normalize_document_versions([
+        item for item in items
+        if isinstance(item.get('sk'), str)
+        and item['sk'].startswith(_DOCUMENT_SORT_KEY_PREFIXES)
+    ])
+
+    project_summary = {
+        field: project[field]
+        for field in _CHAT_CONTEXT_PROJECT_FIELDS
+        if field in project
+    }
+    persona_summaries = [
+        {
+            field: persona[field]
+            for field in _CHAT_CONTEXT_PERSONA_FIELDS
+            if field in persona
+        }
+        for persona in personas
+    ]
+
+    document_summaries = []
+    for document in documents:
+        summary = {
+            field: document[field]
+            for field in _CHAT_CONTEXT_DOCUMENT_FIELDS
+            if field in document
+        }
+        document_id = document.get('document_id')
+        document_sk = document.get('sk')
+        is_prototype = (
+            document.get('document_type') == 'prototype'
+            or (
+                isinstance(document_sk, str)
+                and document_sk.startswith('PROTOTYPE#')
+            )
+        )
+        if (
+            not is_prototype
+            and isinstance(document_id, str)
+            and document_id in selected_ids
+            and isinstance(document_sk, str)
+        ):
+            response = projects_table.get_item(
+                Key={'pk': f'PROJECT#{project_id}', 'sk': document_sk},
+                ConsistentRead=True,
+                ProjectionExpression='document_id, content',
+            )
+            selected = response.get('Item') if isinstance(response, dict) else None
+            if (
+                isinstance(selected, dict)
+                and selected.get('document_id') == document_id
+                and isinstance(selected.get('content'), str)
+            ):
+                summary['content'] = selected['content']
+        document_summaries.append(summary)
+
+    return {
+        'project': project_summary,
+        'personas': persona_summaries,
+        'documents': document_summaries,
+    }
+
+
 @tracer.capture_method
 def update_project(project_id: str, body: dict) -> dict:
     """Update a project."""
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
     
+    status = body.get('status')
+    if 'status' in body and (
+        not isinstance(status, str) or status not in {'active', 'archived'}
+    ):
+        raise ValidationError('Project status must be active or archived')
+
     now = datetime.now(timezone.utc).isoformat()
-    
+
     update_expr = 'SET updated_at = :now'
-    expr_values = {':now': now}
-    expr_names = {}
-    
+    expr_values = {
+        **PROJECT_WRITABLE_ATTRIBUTE_VALUES,
+        ':now': now,
+    }
+    expr_names = dict(PROJECT_WRITABLE_ATTRIBUTE_NAMES)
+
     if 'name' in body:
         update_expr += ', #name = :name'
         expr_values[':name'] = body['name']
@@ -442,22 +745,21 @@ def update_project(project_id: str, body: dict) -> dict:
         expr_values[':desc'] = body['description']
     if 'status' in body:
         update_expr += ', #status = :status'
-        expr_values[':status'] = body['status']
-        expr_names['#status'] = 'status'
+        expr_values[':status'] = status
     if 'filters' in body:
         update_expr += ', filters = :filters'
         expr_values[':filters'] = body['filters']
     if 'kiro_export_prompt' in body:
         update_expr += ', kiro_export_prompt = :kiro_prompt'
         expr_values[':kiro_prompt'] = body['kiro_export_prompt']
-    
+
     update_params = {
         'Key': {'pk': f'PROJECT#{project_id}', 'sk': 'META'},
         'UpdateExpression': update_expr,
+        'ConditionExpression': PROJECT_WRITABLE_CONDITION,
         'ExpressionAttributeValues': expr_values,
+        'ExpressionAttributeNames': expr_names,
     }
-    if expr_names:
-        update_params['ExpressionAttributeNames'] = expr_names
     
     projects_table.update_item(**update_params)
     
@@ -465,21 +767,95 @@ def update_project(project_id: str, body: dict) -> dict:
 
 
 @tracer.capture_method
+def _start_project_deletion(
+    project_id: str, meta_key: dict[str, str], now: str,
+) -> None:
+    """Atomically install the deletion marker before any destructive sweep."""
+    for _attempt in range(PROJECT_DELETE_FENCE_ATTEMPTS):
+        try:
+            projects_table.update_item(
+                Key=meta_key,
+                UpdateExpression=(
+                    'SET #deleting = if_not_exists(#deleting, :now), '
+                    '#status = :deleting_status '
+                    'REMOVE gsi1pk, gsi1sk'
+                ),
+                ConditionExpression='attribute_exists(pk) AND attribute_exists(sk)',
+                ExpressionAttributeNames={
+                    '#deleting': PROJECT_DELETION_ATTRIBUTE,
+                    '#status': 'status',
+                },
+                ExpressionAttributeValues={
+                    ':now': now,
+                    ':deleting_status': 'deleting',
+                },
+            )
+            return
+        except ClientError as error:
+            if error.response.get('Error', {}).get('Code') != (
+                'ConditionalCheckFailedException'
+            ):
+                raise
+        try:
+            projects_table.put_item(
+                Item={
+                    **meta_key,
+                    'project_id': project_id,
+                    'status': 'deleting',
+                    PROJECT_DELETION_ATTRIBUTE: now,
+                },
+                ConditionExpression=(
+                    'attribute_not_exists(pk) AND attribute_not_exists(sk)'
+                ),
+            )
+            return
+        except ClientError as error:
+            if error.response.get('Error', {}).get('Code') != (
+                'ConditionalCheckFailedException'
+            ):
+                raise
+    raise ServiceError('Could not establish the project deletion fence. Please retry.')
+
+
+@tracer.capture_method
 def delete_project(project_id: str) -> dict:
-    """Delete a project and all its data."""
+    """Retain a tombstone while deleting every project-owned artifact."""
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
-    
-    # Get all items for this project
-    response = projects_table.query(
-        KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}')
-    )
-    
-    # Delete all items
+
+    project_key = f'PROJECT#{project_id}'
+    meta_key = project_meta_key(project_id)
+    now = datetime.now(timezone.utc).isoformat()
+    _start_project_deletion(project_id, meta_key, now)
+
+    # Keep tombstoned META forever. Guarded writers either committed before the
+    # fence (and are visible to these strongly consistent scans) or fail after
+    # it; retries repeat both idempotent sweeps.
     with projects_table.batch_writer() as batch:
-        for item in response.get('Items', []):
-            batch.delete_item(Key={'pk': item['pk'], 'sk': item['sk']})
-    
+        for key in _iter_partition_keys(project_key):
+            if key != meta_key:
+                batch.delete_item(Key=key)
+
+    with projects_table.batch_writer() as batch:
+        for key in _iter_partition_keys(version_partition_key(project_id)):
+            batch.delete_item(Key=key)
+
+    projects_table.update_item(
+        Key=meta_key,
+        UpdateExpression=(
+            'SET #status = :deleted, deleted_at = if_not_exists(deleted_at, :now)'
+        ),
+        ConditionExpression='attribute_exists(#deleting)',
+        ExpressionAttributeNames={
+            '#deleting': PROJECT_DELETION_ATTRIBUTE,
+            '#status': 'status',
+        },
+        ExpressionAttributeValues={
+            ':deleted': 'deleted',
+            ':now': now,
+        },
+    )
+
     return {'success': True}
 
 
@@ -889,16 +1265,24 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
         # the LLM's order regardless of avatar completion order.
         for i, (persona_id, persona, item) in enumerate(persona_items):
             logger.info(f"[PERSONA] Saving persona {i+1}/{len(persona_items)}: {persona.get('name', 'unnamed')}")
-            projects_table.put_item(Item=item)
+            put_project_item(projects_table, project_id, item)
             saved_personas.append(item)
             logger.info(f"[PERSONA] Saved persona: {persona.get('name')}")
 
         # Set persona count to the new total (we cleared the old set above, so
         # this is a replace, not an increment — keeps the count accurate).
         projects_table.update_item(
-            Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'},
+            Key=project_meta_key(project_id),
             UpdateExpression='SET persona_count = :count, updated_at = :now',
-            ExpressionAttributeValues={':count': len(saved_personas), ':now': now}
+            ConditionExpression=PROJECT_WRITABLE_CONDITION,
+            ExpressionAttributeNames=dict(
+                PROJECT_WRITABLE_ATTRIBUTE_NAMES,
+            ),
+            ExpressionAttributeValues={
+                **PROJECT_WRITABLE_ATTRIBUTE_VALUES,
+                ':count': len(saved_personas),
+                ':now': now,
+            },
         )
         
         overall_elapsed = time.time() - overall_start
@@ -1054,13 +1438,8 @@ def generate_prd(project_id: str, body: dict) -> dict:
             },
             'created_at': now,
         }
-        projects_table.put_item(Item=item)
-        
-        # Update document count
-        projects_table.update_item(
-            Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'},
-            UpdateExpression='SET document_count = document_count + :one, updated_at = :now',
-            ExpressionAttributeValues={':one': 1, ':now': now}
+        put_project_item_and_increment(
+            projects_table, project_id, item, 'document_count',
         )
         
         return {'success': True, 'document': item}
@@ -1429,13 +1808,8 @@ def generate_prfaq(project_id: str, body: dict) -> dict:
             },
             'created_at': now,
         }
-        projects_table.put_item(Item=item)
-        
-        # Update document count
-        projects_table.update_item(
-            Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'},
-            UpdateExpression='SET document_count = document_count + :one, updated_at = :now',
-            ExpressionAttributeValues={':one': 1, ':now': now}
+        put_project_item_and_increment(
+            projects_table, project_id, item, 'document_count',
         )
         
         return {'success': True, 'document': item}
@@ -1454,7 +1828,12 @@ def create_document(project_id: str, body: dict) -> dict:
     title = body.get('title', 'Untitled Document')
     content = body.get('content', '')
     document_type = body.get('document_type', 'custom')
-    
+
+    if document_type != 'custom':
+        raise ValidationError(
+            'Only custom documents can be created directly. Every managed or '
+            'workflow document type must use its dedicated route.'
+        )
     if not content:
         raise ValidationError('Content is required')
     
@@ -1474,13 +1853,8 @@ def create_document(project_id: str, body: dict) -> dict:
         'updated_at': now,
     }
     
-    projects_table.put_item(Item=item)
-    
-    # Update document count
-    projects_table.update_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'},
-        UpdateExpression='SET document_count = document_count + :one, updated_at = :now',
-        ExpressionAttributeValues={':one': 1, ':now': now}
+    put_project_item_and_increment(
+        projects_table, project_id, item, 'document_count',
     )
     
     return {'success': True, 'document': item}
@@ -1488,81 +1862,220 @@ def create_document(project_id: str, body: dict) -> dict:
 
 @tracer.capture_method
 def update_document(project_id: str, document_id: str, body: dict) -> dict:
-    """Update a document."""
-    from boto3.dynamodb.conditions import Attr
-    
+    """Update content while preserving managed document version identity."""
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
-    
+
+    document = _find_document(project_id, document_id)
+    if document is None:
+        raise NotFoundError('Document not found')
+
+    sk = document.get('sk')
+    if (
+        not isinstance(sk, str)
+        or not sk.startswith(_DOCUMENT_SORT_KEY_PREFIXES)
+    ):
+        raise ServiceError('Stored document has an invalid sort key')
+
+    document_type = document.get('document_type')
+    managed = (
+        isinstance(document_type, str)
+        and document_type in VERSIONED_DOCUMENT_TYPES
+    ) or sk.startswith(('PRD#', 'PRFAQ#', 'PROTOTYPE#'))
+    is_prototype = (
+        document_type == 'prototype'
+        or sk.startswith('PROTOTYPE#')
+    )
+
     now = datetime.now(timezone.utc).isoformat()
-    
     update_expr = 'SET updated_at = :now'
-    expr_values = {':now': now}
+    expr_values = {':now': now, ':document_id': document_id}
     expr_names = {}
-    
+
     if 'title' in body:
-        update_expr += ', title = :title'
-        expr_values[':title'] = body['title']
+        if managed:
+            stored_title = document.get('base_title') or document.get('title') or 'Untitled'
+            if normalized_base_title(body['title']) != normalized_base_title(stored_title):
+                raise ValidationError(
+                    'Managed PRD, PR/FAQ, and prototype titles cannot change '
+                    'series. Use the dedicated workflow to create a new series.'
+                )
+        else:
+            update_expr += ', title = :title'
+            expr_values[':title'] = body['title']
     if 'content' in body:
+        if is_prototype:
+            raise ValidationError(
+                'Prototype content is stored in S3 and cannot be updated through '
+                'generic document CRUD. Use the prototype revision workflow.'
+            )
         update_expr += ', #content = :content'
         expr_values[':content'] = body['content']
         expr_names['#content'] = 'content'
-    
-    # Find the SK for this document
-    response = projects_table.query(
-        KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}'),
-        FilterExpression=Attr('document_id').eq(document_id)
-    )
-    
-    items = response.get('Items', [])
-    if not items:
-        raise NotFoundError('Document not found')
-    
-    sk = items[0].get('sk')
-    
+
     update_params = {
         'Key': {'pk': f'PROJECT#{project_id}', 'sk': sk},
         'UpdateExpression': update_expr,
+        'ConditionExpression': (
+            'attribute_exists(pk) AND attribute_exists(sk) '
+            'AND document_id = :document_id'
+        ),
         'ExpressionAttributeValues': expr_values,
     }
     if expr_names:
         update_params['ExpressionAttributeNames'] = expr_names
-    
-    projects_table.update_item(**update_params)
-    
+
+    try:
+        projects_table.update_item(**update_params)
+    except ClientError as error:
+        if error.response.get('Error', {}).get('Code') == 'ConditionalCheckFailedException':
+            raise NotFoundError('Document no longer exists') from error
+        raise
     return {'success': True}
 
 
 @tracer.capture_method
-def delete_document(project_id: str, document_id: str) -> dict:
-    """Delete a document."""
-    from boto3.dynamodb.conditions import Attr
-    
+def delete_document(
+    project_id: str, document_id: str, _attempt: int = 0,
+) -> dict:
+    """Delete one document without discarding version-allocation history."""
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
-    
-    # Find the SK for this document
-    response = projects_table.query(
-        KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}'),
-        FilterExpression=Attr('document_id').eq(document_id)
+
+    project_key = f'PROJECT#{project_id}'
+    items = _query_partition_items(project_key)
+    document = next(
+        (
+            item for item in items
+            if isinstance(item, dict)
+            and item.get('document_id') == document_id
+        ),
+        None,
     )
-    
-    items = response.get('Items', [])
-    if not items:
+    if document is None:
         raise NotFoundError('Document not found')
-    
-    sk = items[0].get('sk')
-    
-    projects_table.delete_item(Key={'pk': f'PROJECT#{project_id}', 'sk': sk})
-    
-    # Update document count
-    now = datetime.now(timezone.utc).isoformat()
-    projects_table.update_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'},
-        UpdateExpression='SET document_count = document_count - :one, updated_at = :now',
-        ExpressionAttributeValues={':one': 1, ':now': now}
+
+    sk = document.get('sk')
+    if (
+        not isinstance(sk, str)
+        or not sk.startswith(_DOCUMENT_SORT_KEY_PREFIXES)
+    ):
+        raise ServiceError('Stored document has an invalid sort key')
+
+    project_documents = [
+        item for item in items
+        if isinstance(item, dict)
+        and isinstance(item.get('sk'), str)
+        and item['sk'].startswith(_DOCUMENT_SORT_KEY_PREFIXES)
+    ]
+    remaining_document_count = max(0, len(project_documents) - 1)
+    project_meta = next(
+        (
+            item for item in items
+            if isinstance(item, dict) and item.get('sk') == 'META'
+        ),
+        {},
     )
-    
+
+    document_type = document.get('document_type')
+    is_managed = (
+        isinstance(document_type, str)
+        and document_type in VERSIONED_DOCUMENT_TYPES
+    ) or sk.startswith(('PRD#', 'PRFAQ#', 'PROTOTYPE#'))
+    if is_managed:
+        # Persist the complete snapshot before removing one managed row. This
+        # keeps surviving legacy siblings on their assigned versions. Counters
+        # and assignment rows intentionally remain as allocation history.
+        persist_legacy_document_versions(
+            projects_table, project_id, project_documents,
+        )
+        allocation_id = document.get('version_allocation_id')
+        if isinstance(allocation_id, str) and allocation_id:
+            preserve_versioned_document_allocation(
+                projects_table, project_id, document,
+            )
+
+    try:
+        table_name = projects_table_name(projects_table)
+    except ValueError as error:
+        raise ConfigurationError('Projects table name not configured') from error
+
+    now = datetime.now(timezone.utc).isoformat()
+    count_condition = 'attribute_not_exists(document_count)'
+    count_values = {
+        **PROJECT_WRITABLE_ATTRIBUTE_VALUES,
+        ':remaining': remaining_document_count,
+        ':now': now,
+    }
+    if 'document_count' in project_meta:
+        count_condition = 'document_count = :observed_count'
+        count_values[':observed_count'] = project_meta['document_count']
+
+    transaction = [
+        {
+            'Delete': {
+                'TableName': table_name,
+                'Key': {'pk': project_key, 'sk': sk},
+                'ConditionExpression': (
+                    'attribute_exists(pk) AND attribute_exists(sk) '
+                    'AND document_id = :document_id'
+                ),
+                'ExpressionAttributeValues': {':document_id': document_id},
+            },
+        },
+        {
+            'Update': {
+                'TableName': table_name,
+                'Key': {'pk': project_key, 'sk': 'META'},
+                'UpdateExpression': (
+                    'SET document_count = :remaining, updated_at = :now'
+                ),
+                'ConditionExpression': (
+                    f'{PROJECT_WRITABLE_CONDITION} AND {count_condition}'
+                ),
+                'ExpressionAttributeNames': dict(
+                    PROJECT_WRITABLE_ATTRIBUTE_NAMES,
+                ),
+                'ExpressionAttributeValues': count_values,
+            },
+        },
+    ]
+    try:
+        projects_table.meta.client.transact_write_items(
+            TransactItems=transaction,
+        )
+    except ClientError as error:
+        if error.response.get('Error', {}).get('Code') != 'TransactionCanceledException':
+            raise
+        current = projects_table.get_item(
+            Key={'pk': project_key, 'sk': sk},
+            ConsistentRead=True,
+        ).get('Item')
+        if not current or current.get('document_id') != document_id:
+            raise NotFoundError('Document no longer exists') from error
+        current_meta_response = projects_table.get_item(
+            Key=project_meta_key(project_id),
+            ConsistentRead=True,
+        )
+        current_meta = (
+            current_meta_response.get('Item')
+            if isinstance(current_meta_response, dict)
+            else None
+        )
+        if (
+            not is_project_tombstone(current_meta)
+            and _attempt + 1 < DOCUMENT_DELETE_ATTEMPTS
+        ):
+            # The retry re-runs managed preparation intentionally: legacy
+            # migration is assignment/lease-idempotent and allocation-history
+            # preservation is conditional winner-checked. Both have focused
+            # replay tests in shared/test/test_document_versions.py.
+            return delete_document(project_id, document_id, _attempt + 1)
+        raise ServiceError(
+            'Document could not be deleted because the project is being deleted '
+            'or its document count changed repeatedly.'
+        ) from error
+
     return {'success': True}
 
 
@@ -1601,13 +2114,8 @@ def create_persona(project_id: str, body: dict) -> dict:
         'updated_at': now,
     }
     
-    projects_table.put_item(Item=item)
-    
-    # Update persona count
-    projects_table.update_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'},
-        UpdateExpression='SET persona_count = persona_count + :one, updated_at = :now',
-        ExpressionAttributeValues={':one': 1, ':now': now}
+    put_project_item_and_increment(
+        projects_table, project_id, item, 'persona_count',
     )
     
     return {'success': True, 'persona': item}
@@ -1648,6 +2156,7 @@ def update_persona(project_id: str, persona_id: str, body: dict) -> dict:
     update_params = {
         'Key': {'pk': f'PROJECT#{project_id}', 'sk': f'PERSONA#{persona_id}'},
         'UpdateExpression': update_expr,
+        'ConditionExpression': 'attribute_exists(pk) AND attribute_exists(sk)',
         'ExpressionAttributeValues': expr_values,
     }
     if expr_names:
@@ -1687,6 +2196,7 @@ def add_persona_note(project_id: str, persona_id: str, body: dict) -> dict:
         projects_table.update_item(
             Key={'pk': f'PROJECT#{project_id}', 'sk': f'PERSONA#{persona_id}'},
             UpdateExpression='SET research_notes = list_append(if_not_exists(research_notes, :empty), :note), updated_at = :now',
+            ConditionExpression='attribute_exists(pk) AND attribute_exists(sk)',
             ExpressionAttributeValues={
                 ':note': [new_note],
                 ':empty': [],
@@ -1822,6 +2332,7 @@ def regenerate_persona_avatar(project_id: str, persona_id: str) -> dict:
     projects_table.update_item(
         Key={'pk': f'PROJECT#{project_id}', 'sk': f'PERSONA#{persona_id}'},
         UpdateExpression='SET avatar_url = :url, avatar_prompt = :prompt, updated_at = :now',
+        ConditionExpression='attribute_exists(pk) AND attribute_exists(sk)',
         ExpressionAttributeValues={
             ':url': avatar_result['avatar_url'],
             ':prompt': avatar_result['avatar_prompt'],
@@ -1843,17 +2354,44 @@ def delete_persona(project_id: str, persona_id: str) -> dict:
         raise ConfigurationError('Projects table not configured')
     
     try:
-        projects_table.delete_item(
-            Key={'pk': f'PROJECT#{project_id}', 'sk': f'PERSONA#{persona_id}'}
-        )
-        
-        # Update persona count
         now = datetime.now(timezone.utc).isoformat()
-        projects_table.update_item(
-            Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'},
-            UpdateExpression='SET persona_count = persona_count - :one, updated_at = :now',
-            ExpressionAttributeValues={':one': 1, ':now': now}
-        )
+        table_name = projects_table_name(projects_table)
+        projects_table.meta.client.transact_write_items(TransactItems=[
+            {
+                'Delete': {
+                    'TableName': table_name,
+                    'Key': {
+                        'pk': f'PROJECT#{project_id}',
+                        'sk': f'PERSONA#{persona_id}',
+                    },
+                    'ConditionExpression': (
+                        'attribute_exists(pk) AND attribute_exists(sk)'
+                    ),
+                },
+            },
+            {
+                'Update': {
+                    'TableName': table_name,
+                    'Key': project_meta_key(project_id),
+                    'UpdateExpression': (
+                        'SET persona_count = persona_count - :one, '
+                        'updated_at = :now'
+                    ),
+                    'ConditionExpression': (
+                        f'{PROJECT_WRITABLE_CONDITION} '
+                        'AND persona_count >= :one'
+                    ),
+                    'ExpressionAttributeNames': dict(
+                        PROJECT_WRITABLE_ATTRIBUTE_NAMES,
+                    ),
+                    'ExpressionAttributeValues': {
+                        **PROJECT_WRITABLE_ATTRIBUTE_VALUES,
+                        ':one': 1,
+                        ':now': now,
+                    },
+                },
+            },
+        ])
         
         return {'success': True}
     except Exception as e:
@@ -1966,13 +2504,8 @@ def run_research(project_id: str, body: dict) -> dict:
         }
         
         logger.info(f"Saving research document, content size: {len(full_report)} chars, feedback items: {len(feedback_items)}")
-        projects_table.put_item(Item=item)
-        
-        # Update document count
-        projects_table.update_item(
-            Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'},
-            UpdateExpression='SET document_count = document_count + :one, updated_at = :now',
-            ExpressionAttributeValues={':one': 1, ':now': now}
+        put_project_item_and_increment(
+            projects_table, project_id, item, 'document_count',
         )
         
         return {'success': True, 'document': item}

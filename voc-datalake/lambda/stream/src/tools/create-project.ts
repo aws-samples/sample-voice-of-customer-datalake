@@ -10,7 +10,7 @@
  * lambda/api/product_context.py (sk='PRODUCT_CONTEXT' item) so the project
  * shows up in the normal Projects list and Product tab.
  */
-import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
 import { z } from 'zod';
 import { ConfigurationError } from '../lib/errors.js';
 
@@ -67,34 +67,29 @@ export async function executeCreateProject(
   // Match projects.py id format: proj_YYYYMMDDHHMMSS
   const projectId = `proj_${now.replaceAll(/[-:T.Z]/g, '').slice(0, 14)}`;
 
-  // 1) Project META — same shape as projects.py::create_project so it lists normally.
-  await docClient.send(
-    new PutCommand({
-      TableName: projectsTable,
-      Item: {
-        pk: `PROJECT#${projectId}`,
-        sk: 'META',
-        gsi1pk: 'TYPE#PROJECT',
-        gsi1sk: now,
-        project_id: projectId,
-        name: input.name,
-        description: input.description ?? '',
-        status: 'active',
-        created_at: now,
-        updated_at: now,
-        persona_count: 0,
-        document_count: 0,
-        filters: {},
-        kiro_export_prompt: '',
-      },
-    }),
-  );
+  const metaItem = {
+    pk: `PROJECT#${projectId}`,
+    sk: 'META',
+    gsi1pk: 'TYPE#PROJECT',
+    gsi1sk: now,
+    project_id: projectId,
+    name: input.name,
+    description: input.description ?? '',
+    status: 'active',
+    created_at: now,
+    updated_at: now,
+    persona_count: 0,
+    document_count: 0,
+    filters: {},
+    kiro_export_prompt: '',
+  };
 
-  // 2) Optional PRODUCT_CONTEXT seed — only the fields the model actually drafted.
+  // Optional PRODUCT_CONTEXT seed — only the fields the model actually drafted.
   const seeded: string[] = [];
   const contextItem: Record<string, unknown> = {
     pk: `PROJECT#${projectId}`,
     sk: 'PRODUCT_CONTEXT',
+    created_at: now,
     updated_at: now,
   };
   for (const field of PRODUCT_CONTEXT_FIELDS) {
@@ -104,9 +99,27 @@ export async function executeCreateProject(
       seeded.push(field);
     }
   }
-  if (seeded.length > 0) {
-    await docClient.send(new PutCommand({ TableName: projectsTable, Item: contextItem }));
-  }
+
+  await docClient.send(new TransactWriteCommand({
+    TransactItems: [
+      {
+        Put: {
+          TableName: projectsTable,
+          Item: metaItem,
+          ConditionExpression: 'attribute_not_exists(pk) AND attribute_not_exists(sk)',
+        },
+      },
+      ...(seeded.length > 0
+        ? [{
+          Put: {
+            TableName: projectsTable,
+            Item: contextItem,
+            ConditionExpression: 'attribute_not_exists(pk) AND attribute_not_exists(sk)',
+          },
+        }]
+        : []),
+    ],
+  }));
 
   const seedNote = seeded.length > 0
     ? ` Seeded product context: ${seeded.join(', ')}.`

@@ -75,6 +75,21 @@ describe('locale parity', () => {
     expect(namespaces.length).toBeGreaterThan(0)
   })
 
+  it('keeps every remix wizard key in all eight real catalogs', () => {
+    const required = [
+      'wizards.remixDocuments',
+      'wizards.remixInstructions',
+      'wizards.remixInstructionsPlaceholder',
+      'wizards.selectAtLeast2',
+      'wizards.submitRemixDocuments',
+    ]
+    for (const locale of [REFERENCE_LOCALE, ...locales]) {
+      const keys = collectKeys(readNamespace(locale, 'projectDetail.json')).base
+      const missing = required.filter((key) => !keys.has(key))
+      expect({ locale, missing }).toStrictEqual({ locale, missing: [] })
+    }
+  })
+
   for (const namespace of namespaces) {
     it(`${namespace} has the same keys in every locale`, () => {
       const reference = collectKeys(readNamespace(REFERENCE_LOCALE, namespace))
