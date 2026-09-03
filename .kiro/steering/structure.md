@@ -263,7 +263,7 @@ embeddable widget calls from the customer's own site.
 > | Route | Rate / burst | Why |
 > |---|---|---|
 > | `POST /submit` | **20 rps / 40** | Each submission enqueues a record that drives Comprehend, Translate and a Bedrock invocation in the processor — a per-request model call against a shared quota |
-> | `GET /config`, `GET /iframe` | **100 rps / 200** | Fetched on every page load of every embed; cheap (one `get_item`, and a static HTML render, respectively) |
+> | `GET /config`, `GET /iframe` | **100 rps / 200** | Fetched on every page load of every embed; cheap (one `get_item` each — `iframe` reads the same record to confirm the form exists (#379) — plus a static HTML render for `iframe`) |
 >
 > The method-setting keys spell the variable `{form_id}` — the resource is created
 > as `addResource('{form_id}')`, so that is the path to look for in the template,

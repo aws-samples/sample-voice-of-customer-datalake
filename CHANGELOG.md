@@ -151,6 +151,29 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   `prfaq` before creating the job. The field steered the job type, the execution path and the
   generated document's DynamoDB sort key straight from the request body, and each attempt billed a
   model call.
+- The public embeddable feedback form page, `GET /feedback-forms/{form_id}/iframe`, no longer
+  reflects its form id into the page it returns. The id was interpolated into a `<script>` block
+  inside handwritten quotes, so a path the route's own pattern accepts could close them and be
+  executed as script on the API's own origin, by any visitor who could be sent the link (#379). The
+  issue's own sample, `a');alert(document.domain);x=('`, was written for a bare-argument call and
+  leaves this template's object literal unparseable; `a',x:alert(1),y:'` is the same class through
+  the same hole and does run. The id is now format-checked before the page is built, every value the
+  page inlines is serialized rather than quoted by hand, and the response carries a
+  Content-Security-Policy. The page also confirms the form exists first, so an attacker-chosen id no
+  longer produces a page at all. Embedding is unaffected: no `frame-ancestors` and no
+  `X-Frame-Options` are set, deliberately.
+- Every route that takes a form id out of the URL now checks its format before reading or writing,
+  so a probe or an unbounded path segment costs no DynamoDB call on the unauthenticated ones.
+- `PUT /feedback-forms/{form_id}` no longer creates a record. The write was an unconditional
+  `UpdateItem`, which is an upsert, so a request naming an id the table did not hold created a row
+  with no `form_id` of its own — one that read back with an empty id and could not afterwards be
+  addressed or deleted by id. It is now conditional on the form existing.
+- `POST /feedback-forms` can no longer overwrite an existing form. The write was an unconditional
+  `PutItem`, which replaces whatever is stored at the same key, so a minted id that collided with a
+  form already there would have replaced it — that form's `enabled` flag, theme and document link
+  gone, reported as a successful create. Unreachable by a caller, since the id is minted rather than
+  taken from the request, so it required a collision between two draws; the write is now conditional
+  on the id being free and a collision answers 500 instead of losing the form.
 
 ### Upgrade notes
 
@@ -208,6 +231,152 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   previously started a default `prd` generation. Unparseable JSON is a 400 too, where it was
   previously a 500. A body that is absent altogether, a literal JSON `null`, or zero-length
   (`Content-Length: 0`), still means "generate a PRD with the defaults" and is unchanged.
+- **A feedback form id that this service could not have issued now answers 404 on every route that
+  takes one out of the URL**, before any read. Ids are at most 64 characters of letters, digits, `_`,
+  `-` and `.`, so an id containing anything else — a space, for instance — answers 404: ` abc123` is
+  refused on its format. **No migration is needed for an id that was merely ADDRESSED with
+  surrounding whitespace**, and only for that case: no route ever resolved ` abc123` to `abc123`, so
+  the space was always part of the key and the record under `abc123` is reached exactly as it was.
+  That argument is about a caller's typo, and it does not extend to a form whose *stored* id contains
+  whitespace — see the scan below, which covers those. Forms created through this platform are
+  unaffected — the ids it mints are 8 hex characters — and hand-seeded ids like `website-form` and
+  `acme.website` still work. The two exceptions are `.` and `..` on their own, which are refused
+  because they are relative-path segments: a client resolves them away when it joins them onto the
+  API base, so such an id addressed a different resource rather than a form.
+
+  **Check before upgrading if you have hand-seeded or imported form ids.** An id containing anything
+  outside that class *that the route itself admits* — `a:b`, `form(1)`, `a;b`, `café`,
+  `hawaiʼi-form`, `surface-m²` or `my form` — *did* resolve on all eight of its routes before this
+  change and now answers `404 Form not found` on all of them. Unlike an id addressed with
+  surrounding whitespace, those rows are genuinely reachable-then-orphaned, so scan the aggregates
+  table for them first and rename any you find (write the record under a new `sk` and repoint the
+  embed snippet; the old row's submissions stay under their original `source_channel`, so also
+  rewrite those if the form's stats matter).
+
+  **Read "anything outside that class" as a complement rather than as a list**, because for ASCII
+  the set is 24 characters and every hand-written list of it has been shorter. In scope is any
+  character outside the validator's `[0-9A-Za-z_.-]` that the route's own capture group
+  (`[-._~()'!*:@,;=+&$%<> \[\]{}|^\w]`) admits, which for ASCII means everything in
+  `[-._~()'!*:@,;=+&$%<> \[\]{}|^]` except `-`, `.` and `_`:
+
+  ```
+  space ! $ % & ' ( ) * + , : ; < = > @ [ ] ^ { | } ~
+  ```
+
+  `:`, `+`, `@`, `%`, `~` and a space *within* the id are the memorable ones, not the whole set.
+  Seven of the rest — `&`, `'`, `(`, `)`, `;`, `<`, `>` — are the characters the #379 fix turns on:
+  the quote, parentheses and semicolon the payload breaks out with, plus the `<`, `>` and `&` that
+  `_js_value` escapes for the HTML parser. (Only the `'` does the breaking out in the payload
+  itself: it closes the string literal the template wrote. Its `(` is the `alert(` it calls and the
+  `x=('` it re-opens with, and its `)` and `;` close a call and start a statement only in the
+  bare-argument shape `init('<id>')` the payload was written for — the merge-base template
+  interpolates the id inside an *object literal*, where they close nothing and leave the whole
+  `<script>` block unparseable instead. The class is exploitable regardless, just not by this
+  string: `a',x:alert(1),y:'` needs no `)` or `;` at all, parses, and runs.) That is precisely why a
+  list written by hand omits them — they read as attack syntax rather than as something anyone would
+  seed an id with — and they resolved all the same, so `form(1)` and `a;b` are as much in scope as
+  `a:b`. Going the other way, `"`, `#`, `/`, `?`, `\` and `` ` `` are the printable-ASCII characters
+  the route does **not** admit, so they belong with the tab and the newline below rather than in the
+  scan.
+
+  This finds them — the classifier tests the class, so it flags all 24 without needing them named:
+
+  ```bash
+  aws dynamodb query --table-name "$AGGREGATES_TABLE" \
+    --key-condition-expression 'pk = :pk' \
+    --expression-attribute-values '{":pk":{"S":"FEEDBACK_FORM"}}' \
+    --projection-expression 'sk' --output json --query 'Items[].sk.S' \
+  | jq -r '.[]' | sed 's/^FORM#//' \
+  | awk 'length($0) && (length($0) > 64 || $0 !~ /^[0-9A-Za-z_.-]+$/ || $0 == "." || $0 == "..")'
+  ```
+
+  No output means nothing to do. Any line printed is a form whose routes will start answering 404.
+  (`jq` is the same tool `voc-datalake/frontend/scripts/deploy.sh` already needs, so a machine that
+  can deploy this stack can run the scan.)
+
+  Four things about that command are deliberate. It is a `query` rather than a `scan`, because `pk`
+  is the table's partition key and `FEEDBACK_FORM` is one whole partition — the same read
+  `list_forms` makes in `lambda/api/feedback_form_handler.py`, for the same reason. This table is
+  shared: it also holds `METRIC#`, `LOGS#`, `PROJECT#`, `SOURCE#`, `SOURCE_RUN#`, `SCRAPER#`,
+  `SCRAPER_RUN#`, `MANUAL_IMPORT#`, `SETTINGS#` and `VOTING_SESSION` partitions, and the
+  `METRIC#`/`LOGS#` rows are per-day, so on a deployment with history the forms are a small minority
+  and a filtered `scan` would read — and bill for — overwhelmingly rows it then discards. Cost is
+  the whole of that argument: walked to the end, which the auto-pagination noted below is what
+  ensures, a filtered `scan` prints exactly the same lines. Next, it asks for `--output json` and
+  splits with `jq` rather than `--output text | tr '\t' '\n'`, because the classifier has to agree
+  with the code's own check on every *stored* shape and `tr` cannot tell a separator tab from a tab
+  inside an id: `--output text` separates values with tabs, so `FORM#abc<TAB>def` would arrive as
+  the two lines `abc` and `def` and be classified as two ids that are not the one stored.
+  `length($0) &&` is there for the whitespace-only id — `awk` splits fields on whitespace, so the
+  more idiomatic `NF` is 0 for an id of nothing but spaces, which the routes refuse and the scan
+  therefore has to flag, while `length($0)` skips only the genuinely empty string. (It also skips an
+  `sk` of exactly `FORM#`, an empty id, and that is correct to skip: an empty path segment does not
+  match the route, so such a row was never served by any of the eight and its status is unchanged.)
+  And it relies on the AWS CLI's default auto-pagination to walk a table larger than one page — if
+  you disable that (`--no-paginate`, `--max-items`, or `AWS_PAGER`/CLI config changes), the silence
+  covers only the first page. That truncated case is the only one in which the `query` is safer
+  rather than merely cheaper, and it is worth knowing which way: DynamoDB applies its 1 MB page
+  limit *before* a filter expression, so a truncated filtered `scan` can report zero matches from
+  pages that held none, whereas a truncated `query` has at least read only rows that could match.
+  Run to completion neither is misleading, which is why cost carries the choice above.
+
+  What the scan does **not** need to find, so that its silence means what it says: an id containing
+  a literal tab or newline, one of the six printable-ASCII characters the route's class omits (`"`,
+  `#`, `/`, `?`, `\`, `` ` ``), or a non-ASCII character that `\w` does not match. None of those can
+  occur in an id any route ever resolved, because the route's own capture group admits only
+  `[-._~()'!*:@,;=+&$%<> \[\]{}|^\w]`, and `\w` — the one member of that class that reaches beyond
+  ASCII — matches any Unicode **letter or number**, plus `_`. Take that as the `L*` and `N*`
+  CATEGORIES rather than as "a letter or a digit", and take the other side as the complement rather
+  than as a list of glyphs: what `\w` leaves out is **marks** (`M*`), **symbols** (`S*`),
+  **punctuation** (`P*`), **separators** (`Z*`) and **format characters** (`C*`). `€` and `°` are
+  symbols, `—` and `«` are punctuation, an emoji is a symbol, U+00A0 (NBSP) and U+3000 are
+  separators, a combining accent is a mark, and a zero-width joiner or a soft hyphen is a format
+  character. (`_` is inside the validator's *own* class, so an id holding one is accepted rather
+  than refused and appears in neither list. It really is the single exception to `L*`/`N*` — the
+  other connector punctuation, U+FF3F, U+2040 and U+203F, is outside `\w` like the rest of `P*`.)
+
+  Reading the categories rather than the gloss matters because the shapes an operator is most likely
+  to misfile fall on **both** sides of that line. In scope despite reading as punctuation: a
+  modifier letter (`hawaiʼi-form`, whose `ʼ` is U+02BC MODIFIER LETTER APOSTROPHE, visually an ASCII
+  `'`; the Hawaiian ʻokina, U+02BB, is the same category and equally in scope), a fraction or
+  superscript (`half-½-price`, `surface-m²`) and a roman numeral (`section-Ⅷ`) are all `\w`, so all
+  of them resolved. `Lm` even holds characters whose Unicode *names* are accents — U+02C6 MODIFIER
+  LETTER CIRCUMFLEX ACCENT, U+02CA, U+02CB, U+02CE, U+02CF and U+A788 MODIFIER LETTER LOW CIRCUMFLEX
+  ACCENT — so `formˆa` is in scope although "combining accent" describes it in every sense but the
+  categorical one. Those six are spelled out rather than written as the range U+02CA–U+02CF, which
+  is not the same set: it also contains U+02CC MODIFIER LETTER LOW VERTICAL LINE and U+02CD MODIFIER
+  LETTER LOW MACRON, which are `Lm` and in scope like every other `Lm` character but are not
+  accents, and it misses U+A788, which is. Out of scope despite reading as letters: an id in a
+  script that spells a vowel with a combining mark — Hindi `फॉर्म`, Thai `แบบฟอร์ม`, Arabic `نَموذج`
+  with its fatha — never matched a route, because the mark is `Mc`/`Mn` even where the base
+  character is `Lo`. (Precomposed Korean `피드백` is all `Lo`, and did resolve.)
+
+  That is the one edge of this split with a real cost: over-reporting wastes a rename, but reading a
+  printed row as out of scope means skipping it, and the row then 404s in production. So `café`,
+  `表単`, `hawaiʼi-form`, `surface-m²` and `section-Ⅷ` did resolve and are in scope above, while
+  `form€a`, `form\xa0a` and `फॉर्म` never matched a route at all: those rows answered 404 before this
+  change as well as after and are not reachable-then-orphaned. The same `\w` fact is why a space is
+  in scope but a tab is not — the class lists a literal space and `\w` covers neither — and why a
+  *decomposed* spelling of an accented id was never routable while its composed form was: a
+  combining accent is a mark, so NFD `café` (`e` + U+0301) is unreachable where NFC `café` (U+00E9)
+  resolved. One look-alike pair is worth naming for the same reason: `hawai’i-form` spelled with
+  U+2019 RIGHT SINGLE QUOTATION MARK is punctuation and never resolved, while the U+02BC and U+02BB
+  spellings are letters and did — the apostrophe glyphs land on both sides, so a printed row cannot
+  be triaged by eye. The scan still *flags* every one of these, which is the safe direction (it
+  over-reports rather than misses), and it is also why the tab example above is about the classifier
+  disagreeing with the code rather than about a form being missed.
+  `test_the_scan_is_scoped_to_ids_a_route_could_actually_resolve` asserts this split off the
+  installed resolver, sampling each of the eight `\w` categories on the in-scope side and a mark, a
+  symbol, a separator, a format character and connector punctuation on the other, so a powertools
+  upgrade that moved the class fails a test rather than silently making this paragraph wrong.
+- **`POST /feedback-forms/{form_id}/submit` reports a malformed id ahead of an invalid body.** A
+  request carrying both a bad id and an empty `text` now answers `404 Form not found` where it
+  answered `400 Feedback text is required`; the id is wrong regardless of the body, and this route
+  had to refuse before enqueueing anything. A well-formed id with an empty `text` still answers 400.
+- **`PUT /feedback-forms/{form_id}` answers 404 for a form that does not exist**, instead of creating
+  one. Create through `POST /feedback-forms`, which mints the id. Any phantom rows an earlier version
+  created are visible in `GET /feedback-forms` as entries with an empty `form_id`; they have to be
+  removed directly from the aggregates table, since no route can address them by id.
 
 ## [0.2.0] - 2026-08-19
 
