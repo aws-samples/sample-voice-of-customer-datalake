@@ -6,6 +6,8 @@ from pathlib import Path
 from shared.project_writes import (
     PROJECT_DELETION_ATTRIBUTE,
     PROJECT_TERMINAL_STATUSES,
+    PROJECT_WRITABLE_ATTRIBUTE_VALUES,
+    PROJECT_WRITABLE_CONDITION,
 )
 
 _STREAM_TOOL = (
@@ -17,11 +19,23 @@ _STREAM_TOOL = (
 )
 
 
+def test_python_write_fence_matches_python_tombstone_contract():
+    assert set(PROJECT_WRITABLE_ATTRIBUTE_VALUES.values()) == set(
+        PROJECT_TERMINAL_STATUSES,
+    )
+    for placeholder in PROJECT_WRITABLE_ATTRIBUTE_VALUES:
+        assert placeholder in PROJECT_WRITABLE_CONDITION
+
+
 def test_stream_create_fence_matches_python_tombstone_contract():
     source = _STREAM_TOOL.read_text(encoding='utf-8')
-    create_source = source.split(
-        'export async function executeCreateDocument', 1,
-    )[1]
+    match = re.search(
+        r'export async function executeCreateDocument\b(?P<body>.*?)(?=^export |\Z)',
+        source,
+        re.DOTALL | re.MULTILINE,
+    )
+    assert match is not None, 'executeCreateDocument export not found'
+    create_source = match.group('body')
     placeholders = dict(re.findall(
         r"'(:\w+Status)': '([^']+)'",
         create_source,
