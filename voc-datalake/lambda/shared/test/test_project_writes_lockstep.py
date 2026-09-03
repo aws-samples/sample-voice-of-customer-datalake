@@ -24,7 +24,10 @@ def test_python_write_fence_matches_python_tombstone_contract():
         PROJECT_TERMINAL_STATUSES,
     )
     for placeholder in PROJECT_WRITABLE_ATTRIBUTE_VALUES:
-        assert placeholder in PROJECT_WRITABLE_CONDITION
+        assert re.search(
+            rf'#status <> {re.escape(placeholder)}\b',
+            PROJECT_WRITABLE_CONDITION,
+        )
 
 
 def test_stream_create_fence_matches_python_tombstone_contract():
