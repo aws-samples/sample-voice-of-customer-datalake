@@ -510,7 +510,11 @@ Public-web grounding for this report came from the following searches:
     # document that was never written, and a provably wrong success envelope is
     # worse than a failure. The state machine catches this into
     # `HandleResearchError`, which marks the job `failed` with the message — the
-    # outcome the user can act on.
+    # outcome the user can act on. That routing is what makes the raise better than
+    # the old fake success rather than worse, so it is pinned CDK-side by
+    # `processing-stack-consolidated.test.ts`'s "routes ANY save-step failure"
+    # case: a catch listing named error types instead of `States.ALL` would leave
+    # the job `pending` until its TTL, and nothing here could tell.
     proj_table = _get_projects_table()
     if not proj_table:
         raise ConfigurationError('Projects table not configured')

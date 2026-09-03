@@ -658,19 +658,28 @@ export class VocApiStack extends VocStack {
     // — projects/*/product_docs/* and avatars/* — need nothing added here: the two
     // grants above already carry s3:DeleteObject* on those objects and s3:List* on
     // the bucket, because this role also uploads and deletes them one at a time
-    // through their own routes.
+    // through their own routes. (The avatar sweep additionally needs s3:GetObject*
+    // to read each object's owner before deleting it, since the avatars/ key space
+    // carries no project component; that too is already in the grant above.)
     //
-    // Prototypes are the exception, and that is why these two statements exist at
-    // all: the role has NO prototype grant otherwise. The two actions that sweep
-    // needs and no more — it LISTS the prefix (a bucket-level action, hence the
-    // separate statement) and DELETES what it finds. Deliberately NOT
-    // grantReadWrite: this role neither reads nor writes prototype HTML — the
-    // document generator produces it and the browser fetches it from CloudFront
+    // Prototypes are the exception, and that is why the DeleteObject statement
+    // exists at all: the role has NO prototype grant otherwise, and deliberately
+    // not a grantReadWrite — this role neither reads nor writes prototype HTML.
+    // The document generator produces it and the browser fetches it from CloudFront
     // with a signature this role mints from the secret below.
     projectsRole.addToPolicy(new iam.PolicyStatement({
       actions: ['s3:DeleteObject'],
       resources: [rawDataBucket.arnForObjects('prototypes/*')],
     }));
+    // The ListBucket condition narrows nothing TODAY and is not pretending to: the
+    // two grantReadWrite calls above already render an unconditioned `s3:List*` on
+    // the bucket ARN, so this role can already enumerate every prefix. It is kept
+    // as the statement the prototype sweep's own listing depends on, so that
+    // tightening or removing either grantReadWrite — both of which exist for
+    // routes unrelated to this sweep — cannot silently take the sweep's list
+    // permission with it. The cost is a few policy bytes, well inside the quota
+    // guards below; the alternative is a sweep whose permission is a side effect of
+    // an unrelated grant.
     projectsRole.addToPolicy(new iam.PolicyStatement({
       actions: ['s3:ListBucket'],
       resources: [rawDataBucket.bucketArn],

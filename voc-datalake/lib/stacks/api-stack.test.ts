@@ -2808,6 +2808,34 @@ describe('prototype object IAM boundaries', () => {
     expect(actions).not.toContain('s3:*');
   });
 
+  it('lets the projects role read an avatar object before deleting it', () => {
+    // The avatar sweep is the only one that must CHECK before it deletes: the
+    // `avatars/` key space carries no project component and persona ids are not
+    // unique across projects, so it reads each object's recorded owner via
+    // `head_object` and skips a neighbour's. That needs `s3:GetObject*` on the same
+    // objects `s3:DeleteObject*` covers.
+    //
+    // No new statement was added for it — the pre-existing `grantReadWrite(avatars/*)`
+    // already carries both, because this role also serves avatar reads and the
+    // regenerate route. Asserted anyway, and here rather than in a comment: that
+    // grant exists for reasons unrelated to the sweep, so tightening it (dropping
+    // read, say, if signing ever moved) would break the ownership check with no
+    // other signal, and the failure mode is a delete that silently stops removing
+    // avatars.
+    const avatarStatements = statementsForRole('ProjectsLambdaRole')
+      .filter((statement) => JSON.stringify(statement.Resource).includes('avatars/*'));
+
+    expect(avatarStatements.length).toBeGreaterThan(0);
+    const actions = new Set(avatarStatements.flatMap((statement) => (
+      Array.isArray(statement.Action) ? statement.Action : [statement.Action]
+    )));
+    expect(actions, 'head_object needs GetObject on the avatar objects')
+      .toContain('s3:GetObject*');
+    expect(actions, 'the sweep still has to delete what it confirms it owns')
+      .toContain('s3:DeleteObject*');
+    expect(actions).not.toContain('s3:*');
+  });
+
   // DELETE /projects/{id} sweeps the prototype objects the project owns, so the
   // projects role needs exactly two prototype actions and no others. Pinned in
   // both directions: a grantReadWrite reached for "for consistency" would hand it

@@ -27,6 +27,7 @@ import {
   firstPayloadMissesAnArtifact, JOB_START_POLL_WINDOW_MS, jobsPollInterval,
   newlyTerminalJobIds, projectJobsKey, useProjectData,
 } from './useProjectData'
+import { awaitObservedJobStatuses } from '../../test/observedJobs'
 import type { ProjectDocument, ProjectJob } from '../../api/types'
 
 const getProject = vi.fn()
@@ -101,23 +102,17 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-/** The statuses the hook has actually OBSERVED, not merely those it requested. */
-const observedJobStatuses = () => (
-  (queryClient.getQueryData(projectJobsKey('proj-1')) as
-    { jobs?: readonly ProjectJob[] } | undefined)?.jobs ?? []
-).map((entry) => entry.status)
-
 /**
  * Wait until the hook has observed exactly these job statuses.
  *
- * Load-bearing rather than convenience: `waitFor(() => expect(getJobs)
- * .toHaveBeenCalled())` returns as soon as the request is ISSUED, so re-pointing
- * the mock straight after it can make the FIRST payload the hook ever sees the
- * post-transition one — which the seeding rule correctly ignores, and the test
- * would then be asserting nothing.
+ * The reasoning for why this is load-bearing rather than convenience — and why
+ * `waitFor(() => expect(getJobs).toHaveBeenCalled())` would make several cases here
+ * assert nothing — lives with the helper, in `src/test/observedJobs.ts`. It was
+ * duplicated verbatim between this file and `ProjectDetail.jobHandover.test.tsx`
+ * with the explanation in only one of them.
  */
 const awaitObserved = (statuses: readonly ProjectJob['status'][]) =>
-  waitFor(() => expect(observedJobStatuses()).toEqual(statuses))
+  awaitObservedJobStatuses(queryClient, 'proj-1', statuses)
 
 /**
  * Read the jobs list again, the way `handleJobStarted` and the poll both do.

@@ -20,6 +20,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import ProjectDetail from './ProjectDetail'
 import { projectJobsKey } from './useProjectData'
+import { awaitObservedJobStatuses } from '../../test/observedJobs'
 import { useConfigStore } from '../../store/configStore'
 import type { Project, ProjectDocument } from '../../api/types'
 
@@ -147,23 +148,17 @@ describe('ProjectDetail job handover (U9)', () => {
     })
     mockGetJobs.mockResolvedValue({ jobs: [job('running')] })
     const { queryClient } = renderProjectDetail()
-    // Waited on the OBSERVED payload, not on `getJobs` having been called:
-    // `toHaveBeenCalled` returns as soon as the request is issued, so re-pointing
-    // the mock straight after it can make the completed payload the first one the
-    // hook ever sees — which the seeding rule correctly ignores, and the assertion
-    // below would then hold for the wrong reason.
-    const observedStatuses = () => (
-      (queryClient.getQueryData(projectJobsKey('proj-1')) as
-        { jobs?: readonly { status: string }[] } | undefined)?.jobs ?? []
-    ).map((entry) => entry.status)
-    await waitFor(() => expect(observedStatuses()).toEqual(['running']))
+    // Waited on the OBSERVED payload, not on `getJobs` having been called — see
+    // `src/test/observedJobs.ts` for why that distinction decides whether this case
+    // asserts anything at all.
+    await awaitObservedJobStatuses(queryClient, 'proj-1', ['running'])
 
     mockGetJobs.mockResolvedValue({ jobs: [job('completed')] })
     // Read again the way the poll does, rather than waiting out the real
     // three-second cadence: this case is about the effect firing on the
     // transition, not about when the next poll happens.
     await queryClient.invalidateQueries({ queryKey: projectJobsKey('proj-1') })
-    await waitFor(() => expect(observedStatuses()).toEqual(['completed']))
+    await awaitObservedJobStatuses(queryClient, 'proj-1', ['completed'])
 
     // Twice: the initial load, then the terminal-transition effect's invalidation.
     await waitFor(() => expect(mockGetProject.mock.calls.length).toBeGreaterThan(1))
