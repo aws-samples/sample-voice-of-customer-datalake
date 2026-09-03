@@ -7,7 +7,12 @@ from datetime import datetime, timezone
 from typing import Any
 
 PROJECT_DELETION_ATTRIBUTE = 'deletion_started_at'
-PROJECT_TERMINAL_STATUSES = frozenset({'deleting', 'deleted'})
+PROJECT_DELETING_STATUS = 'deleting'
+PROJECT_DELETED_STATUS = 'deleted'
+PROJECT_TERMINAL_STATUSES = frozenset({
+    PROJECT_DELETING_STATUS,
+    PROJECT_DELETED_STATUS,
+})
 PROJECT_WRITABLE_CONDITION = (
     'attribute_exists(pk) AND attribute_exists(sk) '
     'AND attribute_not_exists(#deleting) '
@@ -19,8 +24,8 @@ PROJECT_WRITABLE_ATTRIBUTE_NAMES = {
     '#status': 'status',
 }
 PROJECT_WRITABLE_ATTRIBUTE_VALUES = {
-    ':deleting_status': 'deleting',
-    ':deleted_status': 'deleted',
+    ':deleting_status': PROJECT_DELETING_STATUS,
+    ':deleted_status': PROJECT_DELETED_STATUS,
 }
 
 
