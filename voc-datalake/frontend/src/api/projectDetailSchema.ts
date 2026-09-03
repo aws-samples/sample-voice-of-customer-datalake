@@ -121,6 +121,14 @@ const ProjectPersonaSchema = z.looseObject({
   source_breakdown: z.record(z.string(), z.number()).optional().catch(undefined),
 })
 
+/**
+ * Sort-key stems the backend manages versions for, lower-cased.
+ *
+ * Mirrors `MANAGED_SORT_KEY_PREFIXES` in `lambda/shared/document_versions.py`;
+ * `research` joined the set in the #406 follow-up.
+ */
+const LEGACY_MANAGED_TYPES = new Set(['prd', 'prfaq', 'prototype', 'research'])
+
 function withLegacyManagedDocumentType(raw: unknown): unknown {
   const record = asRecord(raw)
   if (record === null || typeof record.document_type === 'string') return raw
@@ -128,7 +136,7 @@ function withLegacyManagedDocumentType(raw: unknown): unknown {
   const sortKey = typeof record.sk === 'string' ? record.sk : ''
   const separator = sortKey.indexOf('#')
   const legacyType = (separator === -1 ? '' : sortKey.slice(0, separator)).toLowerCase()
-  if (legacyType !== 'prd' && legacyType !== 'prfaq' && legacyType !== 'prototype') return raw
+  if (!LEGACY_MANAGED_TYPES.has(legacyType)) return raw
 
   return { ...record, document_type: legacyType }
 }

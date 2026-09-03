@@ -20,7 +20,7 @@
   },
   "deleteModal": {
     "confirm": "Supprimer",
-    "message": "Êtes-vous sûr de vouloir supprimer ce projet ? Toutes les personas et documents seront définitivement supprimés.",
+    "message": "Voulez-vous vraiment supprimer ce projet ? Ses personas et leurs images, documents, fichiers importés, prototypes et son historique de tâches sont tous définitivement supprimés. Les liens vers les prototypes cessent de fonctionner ; l’action est irréversible.",
     "title": "Supprimer le projet"
   },
   "description": "Créez des projets pour générer des personas, PRDs et PR/FAQs à partir des retours",

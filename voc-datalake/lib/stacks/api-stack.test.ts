@@ -2765,6 +2765,7 @@ describe('prototype object IAM boundaries', () => {
     Effect: z.string(),
     Action: z.union([z.string(), z.array(z.string())]),
     Resource: z.unknown(),
+    Condition: z.unknown().optional(),
   });
   const PolicySchema = z.object({
     Properties: z.object({
@@ -2805,6 +2806,114 @@ describe('prototype object IAM boundaries', () => {
     expect(actions).toContain('s3:PutObject');
     expect(actions).toContain('s3:DeleteObject*');
     expect(actions).not.toContain('s3:*');
+  });
+
+  it('lets the projects role read an avatar object before deleting it', () => {
+    // The avatar sweep is the only one that must CHECK before it deletes: the
+    // `avatars/` key space carries no project component and persona ids are not
+    // unique across projects, so it reads each object's recorded owner via
+    // `head_object` and skips a neighbour's. That needs `s3:GetObject*` on the same
+    // objects `s3:DeleteObject*` covers.
+    //
+    // No new statement was added for it — the pre-existing `grantReadWrite(avatars/*)`
+    // already carries both, because this role also serves avatar reads and the
+    // regenerate route. Asserted anyway, and here rather than in a comment: that
+    // grant exists for reasons unrelated to the sweep, so tightening it (dropping
+    // read, say, if signing ever moved) would break the ownership check with no
+    // other signal, and the failure mode is a delete that silently stops removing
+    // avatars.
+    const avatarStatements = statementsForRole('ProjectsLambdaRole')
+      .filter((statement) => JSON.stringify(statement.Resource).includes('avatars/*'));
+
+    expect(avatarStatements.length).toBeGreaterThan(0);
+    const actions = new Set(avatarStatements.flatMap((statement) => (
+      Array.isArray(statement.Action) ? statement.Action : [statement.Action]
+    )));
+    expect(actions, 'head_object needs GetObject on the avatar objects')
+      .toContain('s3:GetObject*');
+    expect(actions, 'the sweep still has to delete what it confirms it owns')
+      .toContain('s3:DeleteObject*');
+    expect(actions).not.toContain('s3:*');
+  });
+
+  // DELETE /projects/{id} sweeps the prototype objects the project owns, so the
+  // projects role needs exactly two prototype actions and no others. Pinned in
+  // both directions: a grantReadWrite reached for "for consistency" would hand it
+  // read and write access to every other project's prototype HTML, which is the
+  // content `/prototypes/*` exists to keep behind a signature.
+  describe('the projects role prototype sweep grant', () => {
+    const prototypeStatements = () => statementsForRole('ProjectsLambdaRole')
+      .filter((statement) => JSON.stringify(statement).includes('prototypes/'));
+
+    it('grants delete on prototype objects and nothing more on them', () => {
+      const objectStatements = prototypeStatements()
+        .filter((statement) => JSON.stringify(statement.Resource).includes('prototypes/*'));
+
+      expect(objectStatements).toHaveLength(1);
+      const actions = Array.isArray(objectStatements[0].Action)
+        ? objectStatements[0].Action
+        : [objectStatements[0].Action];
+      expect(actions).toEqual(['s3:DeleteObject']);
+      expect(objectStatements[0].Effect).toBe('Allow');
+    });
+
+    it('scopes the bucket-level list to the prototypes prefix', () => {
+      // ListBucket is a BUCKET action, so an unconditioned grant would let this
+      // role enumerate avatars, product docs and every import in the bucket.
+      const listStatements = prototypeStatements()
+        .filter((statement) => (
+          Array.isArray(statement.Action) ? statement.Action : [statement.Action]
+        ).includes('s3:ListBucket'));
+
+      expect(listStatements).toHaveLength(1);
+      expect(JSON.stringify(listStatements[0].Resource)).not.toContain('prototypes/');
+      expect(listStatements[0].Condition).toStrictEqual({
+        StringLike: { 's3:prefix': ['prototypes/*'] },
+      });
+    });
+
+    it('gains no read or write on prototype objects', () => {
+      const actions = new Set(prototypeStatements().flatMap((statement) => (
+        Array.isArray(statement.Action) ? statement.Action : [statement.Action]
+      )));
+
+      for (const forbidden of ['s3:*', 's3:GetObject', 's3:GetObject*', 's3:PutObject']) {
+        expect(actions, `projects role must not carry ${forbidden} on prototypes`)
+          .not.toContain(forbidden);
+      }
+    });
+
+    // The GRANT, which is a different claim from the request the Python side
+    // pins: `test_it_invalidates_only_this_project_s_prototype_paths` proves the
+    // invalidation asks for one project's paths, and says nothing about whether
+    // the role could have asked for a different distribution's. `resources: ['*']`
+    // is the shape most CloudFront invalidation snippets show, so this is the one
+    // new statement whose over-broad form is easy to reach for by accident.
+    it('scopes the cache invalidation to this distribution and to invalidation alone', () => {
+      const invalidationStatements = statementsForRole('ProjectsLambdaRole')
+        .filter((statement) => (
+          Array.isArray(statement.Action) ? statement.Action : [statement.Action]
+        ).includes('cloudfront:CreateInvalidation'));
+
+      expect(invalidationStatements).toHaveLength(1);
+      const [statement] = invalidationStatements;
+      // No GetInvalidation/ListInvalidations: the delete fires and forgets, and
+      // ListInvalidations is distribution-wide read on other deploys' activity.
+      // Compared as a string because CloudFormation renders a lone action that
+      // way — asserting the array form would pass only by accident of arity.
+      expect(statement.Action).toBe('cloudfront:CreateInvalidation');
+      expect(statement.Effect).toBe('Allow');
+      // The ARN is assembled from the CROSS-STACK distribution id, so what is
+      // asserted is that the id SEGMENT is an import — not merely that the whole
+      // string looks arn-shaped. A `not.toBe('"*"')` here could not fail at all once
+      // `toContain(':cloudfront::')` had passed, since that substring does not appear
+      // in `"*"`; and a hardcoded id would satisfy any assertion that only reads the
+      // surrounding literals. The `Fn::ImportValue` immediately after
+      // `distribution/` is the part a wrong grant cannot produce.
+      const resource = JSON.stringify(statement.Resource);
+      expect(resource).toContain(':cloudfront::');
+      expect(resource).toMatch(/:distribution\/",\{"Fn::ImportValue"/);
+    });
   });
 });
 

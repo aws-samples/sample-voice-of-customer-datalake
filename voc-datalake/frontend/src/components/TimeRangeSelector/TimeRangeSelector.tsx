@@ -13,44 +13,53 @@
  */
 
 import { useState, useRef, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useConfigStore } from '../../store/configStore'
 import type { DateBasis } from '../../api/types'
 import { Calendar, X, ChevronDown, Check } from 'lucide-react'
 import clsx from 'clsx'
 
+/**
+ * The presets, each carrying the KEYS for its two labels rather than the labels.
+ *
+ * Every visible string in this component used to be an English literal, so the
+ * range buttons, the date-basis picker and the custom-range dialog all stayed in
+ * English after switching the deployed app to German — while the rest of the
+ * header translated. `timeRange.*` in `common.json` already held half of these
+ * keys and nothing read them.
+ */
 const ranges = [
-  { value: '24h', label: '24h', fullLabel: '24 Hours' },
-  { value: '48h', label: '48h', fullLabel: '48 Hours' },
-  { value: '7d', label: '7d', fullLabel: '7 Days' },
-  { value: '30d', label: '30d', fullLabel: '30 Days' },
-  { value: 'all', label: '90d', fullLabel: '90 Days' },
-  { value: 'custom', label: 'Custom', fullLabel: 'Custom' },
+  { value: '24h', labelKey: 'timeRange.24h', fullLabelKey: 'timeRange.24hFull' },
+  { value: '48h', labelKey: 'timeRange.48h', fullLabelKey: 'timeRange.48hFull' },
+  { value: '7d', labelKey: 'timeRange.7d', fullLabelKey: 'timeRange.7dFull' },
+  { value: '30d', labelKey: 'timeRange.30d', fullLabelKey: 'timeRange.30dFull' },
+  // `all` is the 90-day preset: the aggregates TTL is 90 days, so "all" IS 90d.
+  { value: 'all', labelKey: 'timeRange.90d', fullLabelKey: 'timeRange.90dFull' },
+  { value: 'custom', labelKey: 'timeRange.custom', fullLabelKey: 'timeRange.custom' },
 ] as const
 
 // The two dates every feedback item carries. The time range window applies to
 // whichever one is selected here.
 const DATE_BASIS_OPTIONS: ReadonlyArray<{
   value: DateBasis
-  label: string
-  description: string
+  labelKey: string
+  descriptionKey: string
+  /** Tooltip clarifying which date the current window filters by. */
+  tooltipKey: string
 }> = [
   {
     value: 'imported',
-    label: 'Imported date',
-    description: 'When the feedback was collected into the platform.',
+    labelKey: 'timeRange.basisImported',
+    descriptionKey: 'timeRange.basisImportedDescription',
+    tooltipKey: 'timeRange.basisImportedTooltip',
   },
   {
     value: 'review',
-    label: 'Review date',
-    description: 'When the customer originally wrote the feedback.',
+    labelKey: 'timeRange.basisReview',
+    descriptionKey: 'timeRange.basisReviewDescription',
+    tooltipKey: 'timeRange.basisReviewTooltip',
   },
 ]
-
-// Tooltip clarifying which date the current window filters by.
-const BASIS_TOOLTIPS: Record<DateBasis, string> = {
-  imported: 'Filtering by when data was collected, not when the review was written.',
-  review: 'Filtering by when the review was written, not when it was imported.',
-}
 
 // Upper bound for the custom lookback. Capped at 90 days to match the widest
 // preset and the aggregates 90-day TTL: the metrics categories/sentiment
@@ -68,6 +77,7 @@ function parseDaysInput(value: string): number | null {
 }
 
 export default function TimeRangeSelector() {
+  const { t } = useTranslation()
   const { timeRange, setTimeRange, customDays, setCustomDays, dateBasis, setDateBasis } = useConfigStore()
   const [showPicker, setShowPicker] = useState(false)
   const [showDropdown, setShowDropdown] = useState(false)
@@ -134,22 +144,24 @@ export default function TimeRangeSelector() {
   }
 
   const currentBasis = DATE_BASIS_OPTIONS.find(o => o.value === dateBasis) ?? DATE_BASIS_OPTIONS[0]
-  const basisTooltip = BASIS_TOOLTIPS[currentBasis.value]
+  const basisTooltip = t(currentBasis.tooltipKey)
 
-  const customLabel = customDays ? `Last ${customDays} days` : null
+  const customLabel = customDays ? t('timeRange.lastDays', { count: customDays }) : null
 
   const getDisplayLabel = () => {
     if (timeRange === 'custom' && customLabel) {
       return customLabel
     }
-    return ranges.find(r => r.value === timeRange)?.label || '7d'
+    const preset = ranges.find(r => r.value === timeRange)
+    return t(preset?.labelKey ?? 'timeRange.7d')
   }
 
   const getCurrentFullLabel = () => {
     if (timeRange === 'custom' && customLabel) {
       return customLabel
     }
-    return ranges.find(r => r.value === timeRange)?.fullLabel || '7 Days'
+    const preset = ranges.find(r => r.value === timeRange)
+    return t(preset?.fullLabelKey ?? 'timeRange.7dFull')
   }
 
   return (
@@ -162,10 +174,11 @@ export default function TimeRangeSelector() {
           title={basisTooltip}
           aria-expanded={showBasisPicker}
           aria-haspopup="listbox"
-          aria-label={`Filter dates by: ${currentBasis.label}`}
+          aria-label={t('timeRange.basisSelected', { basis: t(currentBasis.labelKey) })}
+          data-testid="date-basis-toggle"
         >
           <Calendar size={16} aria-hidden="true" />
-          <span className="whitespace-nowrap">{currentBasis.label}</span>
+          <span className="whitespace-nowrap">{t(currentBasis.labelKey)}</span>
           <ChevronDown
             size={14}
             className={clsx('transition-transform', showBasisPicker && 'rotate-180')}
@@ -177,12 +190,12 @@ export default function TimeRangeSelector() {
           <div
             className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 w-72"
             role="listbox"
-            aria-label="Filter dates by"
+            aria-label={t('timeRange.basisLabel')}
           >
             <p className="px-4 pt-2 pb-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">
-              Filter dates by
+              {t('timeRange.basisLabel')}
             </p>
-            {DATE_BASIS_OPTIONS.map(({ value, label, description }) => (
+            {DATE_BASIS_OPTIONS.map(({ value, labelKey, descriptionKey }) => (
               <button
                 key={value}
                 onClick={() => handleBasisSelect(value)}
@@ -199,9 +212,9 @@ export default function TimeRangeSelector() {
                       'block text-sm font-medium',
                       dateBasis === value ? 'text-blue-700' : 'text-gray-900'
                     )}>
-                      {label}
+                      {t(labelKey)}
                     </span>
-                    <span className="block text-xs text-gray-500 mt-0.5">{description}</span>
+                    <span className="block text-xs text-gray-500 mt-0.5">{t(descriptionKey)}</span>
                   </span>
                   {dateBasis === value && (
                     <Check size={16} className="text-blue-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
@@ -231,7 +244,7 @@ export default function TimeRangeSelector() {
             className="absolute top-full right-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[200px]"
             role="listbox"
           >
-            {ranges.map(({ value, fullLabel }) => (
+            {ranges.map(({ value, fullLabelKey }) => (
               <button
                 key={value}
                 onClick={() => handleRangeClick(value)}
@@ -244,15 +257,15 @@ export default function TimeRangeSelector() {
                     : 'text-gray-700 hover:bg-gray-50 active:bg-gray-100'
                 )}
               >
-                {value === 'custom' && customLabel ? getCurrentFullLabel() : fullLabel}
+                {value === 'custom' && customLabel ? getCurrentFullLabel() : t(fullLabelKey)}
               </button>
             ))}
             {/* Date-basis section (imported date vs review date) */}
-            <div className="border-t border-gray-100 mt-1 pt-1" role="group" aria-label="Filter dates by">
+            <div className="border-t border-gray-100 mt-1 pt-1" role="group" aria-label={t('timeRange.basisLabel')}>
               <p className="px-4 pt-1 pb-0.5 text-[11px] font-medium uppercase tracking-wide text-gray-400">
-                Filter dates by
+                {t('timeRange.basisLabel')}
               </p>
-              {DATE_BASIS_OPTIONS.map(({ value, label }) => (
+              {DATE_BASIS_OPTIONS.map(({ value, labelKey }) => (
                 <button
                   key={value}
                   onClick={() => handleBasisSelect(value)}
@@ -264,7 +277,7 @@ export default function TimeRangeSelector() {
                       : 'text-gray-700 hover:bg-gray-50 active:bg-gray-100'
                   )}
                 >
-                  {label}
+                  {t(labelKey)}
                   {dateBasis === value && <Check size={16} className="flex-shrink-0" aria-hidden="true" />}
                 </button>
               ))}
@@ -275,7 +288,7 @@ export default function TimeRangeSelector() {
 
       {/* Desktop: Button group */}
       <div className="hidden sm:flex bg-gray-100 rounded-lg p-1">
-        {ranges.map(({ value, label }) => (
+        {ranges.map(({ value, labelKey }) => (
           <button
             key={value}
             onClick={() => handleRangeClick(value)}
@@ -286,7 +299,7 @@ export default function TimeRangeSelector() {
                 : 'text-gray-600 hover:text-gray-900'
             )}
           >
-            {value === 'custom' && customLabel ? getDisplayLabel() : label}
+            {value === 'custom' && customLabel ? getDisplayLabel() : t(labelKey)}
           </button>
         ))}
       </div>
@@ -297,14 +310,14 @@ export default function TimeRangeSelector() {
           ref={pickerRef}
           className="fixed sm:absolute inset-x-4 sm:inset-x-auto bottom-4 sm:bottom-auto sm:top-full sm:right-0 sm:mt-2 bg-white rounded-xl sm:rounded-lg shadow-xl border border-gray-200 p-4 z-50 sm:w-auto sm:min-w-[280px] sm:max-w-[320px]"
           role="dialog"
-          aria-label="Select custom range"
+          aria-label={t('timeRange.selectCustomRange')}
         >
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-medium text-gray-900">Custom range</h3>
+            <h3 className="font-medium text-gray-900">{t('timeRange.customRange')}</h3>
             <button 
               onClick={() => setShowPicker(false)} 
               className="text-gray-400 hover:text-gray-600 p-2 -m-2 touch-manipulation"
-              aria-label="Close custom range"
+              aria-label={t('timeRange.closeCustomRange')}
             >
               <X size={20} />
             </button>
@@ -312,7 +325,7 @@ export default function TimeRangeSelector() {
 
           <div>
             <label htmlFor="custom-days" className="block text-sm text-gray-600 mb-1.5">
-              Last N days
+              {t('timeRange.lastNDays')}
             </label>
             <div className="flex items-center gap-2">
               <input
@@ -324,13 +337,14 @@ export default function TimeRangeSelector() {
                 value={daysInput}
                 onChange={(e) => setDaysInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleApplyCustom() }}
-                placeholder="e.g. 14"
+                name="custom-days"
+                placeholder={t('timeRange.daysPlaceholder')}
                 className="w-full px-3 py-2.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base sm:text-sm"
               />
-              <span className="text-sm text-gray-500 whitespace-nowrap">days</span>
+              <span className="text-sm text-gray-500 whitespace-nowrap">{t('timeRange.days')}</span>
             </div>
             <p className="mt-1.5 text-xs text-gray-400">
-              Enter a whole number of days (1–{MAX_CUSTOM_DAYS}).
+              {t('timeRange.daysHint', { max: MAX_CUSTOM_DAYS })}
             </p>
           </div>
 
@@ -340,7 +354,7 @@ export default function TimeRangeSelector() {
                 onClick={handleClearCustom}
                 className="text-sm text-red-600 hover:text-red-700 py-2 touch-manipulation"
               >
-                Clear
+                {t('timeRange.clear')}
               </button>
             )}
             <div className="flex gap-2 ml-auto">
@@ -348,14 +362,14 @@ export default function TimeRangeSelector() {
                 onClick={() => setShowPicker(false)}
                 className="px-4 py-2.5 sm:py-1.5 text-sm text-gray-600 hover:text-gray-900 touch-manipulation"
               >
-                Cancel
+                {t('timeRange.cancel')}
               </button>
               <button
                 onClick={handleApplyCustom}
                 disabled={parsedDays === null}
                 className="px-5 py-2.5 sm:py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
               >
-                Apply
+                {t('timeRange.apply')}
               </button>
             </div>
           </div>

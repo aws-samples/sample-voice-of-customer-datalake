@@ -60,6 +60,17 @@ function suffixedKeysOf(value: unknown, prefix = '', out: Set<string> = new Set(
   return out
 }
 
+/** Every leaf string in a catalogue, as `[dotted.key, value]`. */
+function stringEntries(value: unknown, prefix = '', out: [string, string][] = []): [string, string][] {
+  if (typeof value !== 'object' || value === null) return out
+  for (const [key, child] of Object.entries(value)) {
+    const path = `${prefix}${key}`
+    if (typeof child === 'string') out.push([path, child])
+    else stringEntries(child, `${path}.`, out)
+  }
+  return out
+}
+
 // Stray files (a .DS_Store, a README) must not masquerade as locales.
 const locales = fs.readdirSync(LOCALES_DIR, { withFileTypes: true })
   .filter((entry) => entry.isDirectory() && entry.name !== REFERENCE_LOCALE)
@@ -87,6 +98,73 @@ describe('locale parity', () => {
       const keys = collectKeys(readNamespace(locale, 'projectDetail.json')).base
       const missing = required.filter((key) => !keys.has(key))
       expect({ locale, missing }).toStrictEqual({ locale, missing: [] })
+    }
+  })
+
+  it('keeps every global-chrome key in all eight real catalogs', () => {
+    // The four surfaces a deployed German run found still in English. Named
+    // explicitly rather than left to the parity sweep below, which only proves
+    // the catalogues AGREE — eight catalogues that all lack a key agree perfectly.
+    const required = [
+      'header.title',
+      'header.subtitle',
+      'timeRange.90d',
+      'timeRange.90dFull',
+      'timeRange.basisLabel',
+      'timeRange.basisSelected',
+      'timeRange.basisImported',
+      'timeRange.basisImportedDescription',
+      'timeRange.basisImportedTooltip',
+      'timeRange.basisReview',
+      'timeRange.basisReviewDescription',
+      'timeRange.basisReviewTooltip',
+      'timeRange.customRange',
+      'timeRange.selectCustomRange',
+      'timeRange.closeCustomRange',
+      'timeRange.lastNDays',
+      'timeRange.lastDays',
+      'timeRange.days',
+      'timeRange.daysHint',
+      'timeRange.daysPlaceholder',
+    ]
+    for (const locale of [REFERENCE_LOCALE, ...locales]) {
+      const keys = collectKeys(readNamespace(locale, 'common.json')).base
+      const missing = required.filter((key) => !keys.has(key))
+      expect({ locale, missing }).toStrictEqual({ locale, missing: [] })
+    }
+  })
+
+  it('never translates a canonical (vN) document suffix', () => {
+    // A managed document's `(vN)` is STORED IDENTITY, minted by
+    // `shared/document_versions.canonical_document_title` and matched back by
+    // `VERSION_SUFFIX_RE`. A catalogue that localized it — "(V1)", "（v1）",
+    // "(Version 1)" — would make the displayed title stop round-tripping, and a
+    // reviewer citing "PRD (v2)" would be naming a document the backend cannot
+    // find. So the suffix must appear in NO catalogue value at all: it is data
+    // arriving on the wire, never chrome this bundle composes.
+    const suffix = /\(\s*v(?:ersion)?\s*\d+\s*\)/i
+    for (const locale of [REFERENCE_LOCALE, ...locales]) {
+      for (const namespace of namespaces) {
+        const offenders = stringEntries(readNamespace(locale, namespace))
+          .filter(([, value]) => suffix.test(value))
+          .map(([key]) => key)
+          .sort()
+        expect({ locale, namespace, offenders })
+          .toStrictEqual({ locale, namespace, offenders: [] })
+      }
+    }
+  })
+
+  it('would flag a translated version suffix, so the guard above is not vacuous', () => {
+    // The complement: an empty `offenders` list has to mean "nothing localizes a
+    // vN", not "the detector never matches anything".
+    const suffix = /\(\s*v(?:ersion)?\s*\d+\s*\)/i
+    for (const localized of ['Anforderungsdokument (v1)', 'PRD (Version 2)', 'PRD (V10)']) {
+      expect(suffix.test(localized), localized).toBe(true)
+    }
+    // ...and ordinary copy that merely contains a parenthesis is not flagged.
+    for (const innocent of ['Delete (permanent)', 'Last 14 days', 'v1 of the plan']) {
+      expect(suffix.test(innocent), innocent).toBe(false)
     }
   })
 

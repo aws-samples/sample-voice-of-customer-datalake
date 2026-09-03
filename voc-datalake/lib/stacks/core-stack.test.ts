@@ -888,6 +888,49 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
     return documents.flatMap((document) => PolicyDocumentSchema.parse(document).Statement);
   }
 
+  it('can still read statements off a role that has them', () => {
+    // The positive control the two cases below need. With the grant removed,
+    // `authenticatedRoleStatements()` legitimately returns `[]` — so both of them
+    // now pass on an empty list, and would keep passing if any of the three
+    // attachment legs silently stopped finding policies (a CDK change to how
+    // `addToPolicy` renders, say). The trust-policy case guards that the ROLE
+    // still exists; it says nothing about whether the extractor can see a grant.
+    //
+    // Run over the same `AWS::IAM::Policy` + `namesRole` + `PolicyDocumentSchema`
+    // path, pointed at whichever other role in this template does carry statements.
+    // If this fails, the two guards below have gone decorative and the finding they
+    // protect is unguarded — which is exactly what an all-clear cannot show.
+    const template = synthCoreTemplate();
+    const policies = Object.values(template.findResources('AWS::IAM::Policy'));
+    const authenticated = authenticatedRoleLogicalId(template);
+    const otherRoleRefs = policies
+      .flatMap((policy) => z.array(z.unknown()).parse(policy.Properties?.Roles ?? []))
+      .map((entry) => z.object({ Ref: z.string() }).safeParse(entry))
+      .filter((parsed) => parsed.success)
+      .map((parsed) => parsed.data.Ref)
+      .filter((ref) => ref !== authenticated);
+    expect(otherRoleRefs.length, 'this template must have another role with a policy')
+      .toBeGreaterThan(0);
+
+    // A looser statement shape than `PolicyDocumentSchema` on purpose. That schema
+    // requires `Resource` to be a string or string array, which is right for the
+    // role under test but not for an arbitrary neighbour: an ARN built by
+    // `Fn::GetAtt` renders as an object, and parsing it here would fail this
+    // control for a reason that has nothing to do with what it is checking. The
+    // claim is that the DOCUMENT and STATEMENT LIST are reachable — which is the
+    // part shared with the guards below — so `Action` is the only field read.
+    const statements = policies
+      .filter((policy) => namesRole(policy.Properties?.Roles, otherRoleRefs[0]))
+      .flatMap((policy) => z
+        .object({ Statement: z.array(z.object({ Action: ActionOrResourceSchema })) })
+        .parse(policy.Properties?.PolicyDocument).Statement);
+
+    expect(statements.length, 'the extractor reads statements when statements are there')
+      .toBeGreaterThan(0);
+    expect(statements.flatMap((statement) => toList(statement.Action)).length)
+      .toBeGreaterThan(0);
+  });
+
   it('grants neither lambda:InvokeFunction nor lambda:InvokeFunctionUrl', () => {
     const statements = authenticatedRoleStatements(synthCoreTemplate());
 

@@ -30,6 +30,7 @@ import {
   Menu,
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { getDateRangeParams } from '../../api/client'
 import { useSummaryQuery } from '../../hooks/useSummaryQuery'
 import { useConfigStore } from '../../store/configStore'
@@ -81,6 +82,10 @@ function isNavItemVisible(item: NavItem, isAdmin: boolean): boolean {
 
 // Main header component
 function MainHeader({ onOpenMenu }: Readonly<{ onOpenMenu: () => void }>) {
+  // The header title, subtitle and hamburger label were the last hardcoded
+  // strings in the global chrome: switching the deployed app to German left them
+  // in English on every page. `sidebar.openMenu` already existed for this button.
+  const { t } = useTranslation()
   return (
     <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4 flex-shrink-0">
       <div className="flex items-center justify-between gap-4 mb-2 sm:mb-3">
@@ -88,13 +93,13 @@ function MainHeader({ onOpenMenu }: Readonly<{ onOpenMenu: () => void }>) {
           <button
             onClick={onOpenMenu}
             className="p-2 -ml-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg lg:hidden"
-            aria-label="Open menu"
+            aria-label={t('sidebar.openMenu')}
           >
             <Menu size={24} />
           </button>
           <div className="min-w-0">
-            <h2 className="text-base sm:text-lg font-semibold text-gray-900 truncate">Voice of the Customer</h2>
-            <p className="text-xs sm:text-sm text-gray-500 mt-0.5 hidden sm:block">Unified customer feedback intelligence platform</p>
+            <h2 data-testid="app-header-title" className="text-base sm:text-lg font-semibold text-gray-900 truncate">{t('header.title')}</h2>
+            <p data-testid="app-header-subtitle" className="text-xs sm:text-sm text-gray-500 mt-0.5 hidden sm:block">{t('header.subtitle')}</p>
           </div>
         </div>
         <TimeRangeSelector />

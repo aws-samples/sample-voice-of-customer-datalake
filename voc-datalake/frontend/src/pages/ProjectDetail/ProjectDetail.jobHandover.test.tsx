@@ -19,6 +19,8 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import ProjectDetail from './ProjectDetail'
+import { projectJobsKey } from './useProjectData'
+import { awaitObservedJobStatuses } from '../../test/observedJobs'
 import { useConfigStore } from '../../store/configStore'
 import type { Project, ProjectDocument } from '../../api/types'
 
@@ -69,19 +71,30 @@ const documents: ProjectDocument[] = [
   },
 ]
 
+/**
+ * Renders the page and hands back the client it rendered through.
+ *
+ * The client is returned so a case can read the jobs list again on demand instead
+ * of waiting out the real three-second poll: the cadence is not what any case here
+ * pins, and a `{ timeout: 8000 }` wait is both slow and timing-dependent in a
+ * suite whose sibling header already warns about timer leakage.
+ */
 function renderProjectDetail() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/projects/proj-1']}>
-        <Routes>
-          <Route path="/projects/:id" element={<ProjectDetail />} />
-        </Routes>
-      </MemoryRouter>
-    </QueryClientProvider>,
-  )
+  return {
+    queryClient,
+    ...render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/projects/proj-1']}>
+          <Routes>
+            <Route path="/projects/:id" element={<ProjectDetail />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    ),
+  }
 }
 
 describe('ProjectDetail job handover (U9)', () => {
@@ -120,20 +133,34 @@ describe('ProjectDetail job handover (U9)', () => {
    * document list has to come from useProjectData's completed-job effect.
    */
   it('refetches the project when a job completes, with no component waiting on it', async () => {
-    mockGetJobs.mockResolvedValue({
-      jobs: [{
-        job_id: 'job-1',
-        job_type: 'build_prototype',
-        status: 'completed',
-        progress: 100,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        completed_at: new Date().toISOString(),
-      }],
+    // A TRANSITION, because that is what the effect watches: a payload whose jobs
+    // were already terminal on the FIRST read is history the mount fetch already
+    // reflects, so refetching for it would cost every project open a second read.
+    // See useProjectData.jobCompletion.test.tsx for the whole rule.
+    const job = (status: 'running' | 'completed') => ({
+      job_id: 'job-1',
+      job_type: 'build_prototype' as const,
+      status,
+      progress: status === 'completed' ? 100 : 40,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      ...(status === 'completed' ? { completed_at: new Date().toISOString() } : {}),
     })
-    renderProjectDetail()
+    mockGetJobs.mockResolvedValue({ jobs: [job('running')] })
+    const { queryClient } = renderProjectDetail()
+    // Waited on the OBSERVED payload, not on `getJobs` having been called — see
+    // `src/test/observedJobs.ts` for why that distinction decides whether this case
+    // asserts anything at all.
+    await awaitObservedJobStatuses(queryClient, 'proj-1', ['running'])
 
-    // Twice: the initial load, then the completed-job effect's invalidation.
+    mockGetJobs.mockResolvedValue({ jobs: [job('completed')] })
+    // Read again the way the poll does, rather than waiting out the real
+    // three-second cadence: this case is about the effect firing on the
+    // transition, not about when the next poll happens.
+    await queryClient.invalidateQueries({ queryKey: projectJobsKey('proj-1') })
+    await awaitObservedJobStatuses(queryClient, 'proj-1', ['completed'])
+
+    // Twice: the initial load, then the terminal-transition effect's invalidation.
     await waitFor(() => expect(mockGetProject.mock.calls.length).toBeGreaterThan(1))
   })
 
