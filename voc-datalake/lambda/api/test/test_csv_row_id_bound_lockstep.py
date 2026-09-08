@@ -43,12 +43,14 @@ SCHEMA_PATTERN = r'^MAX_ID_LENGTH\s*=\s*(\d+)'
 # different bound (MAX_URL_LENGTH, a literal) while MAX_ID_LENGTH stays 256, and
 # the numeric assertion below would still pass while the field it describes had
 # moved out from under it.
-# Deliberately unanchored after the bound: a later `description=...` or a
-# trailing comma leaves the guarantee intact, so requiring the closing paren here
-# would only produce a failure that says nothing is wrong.
+# The bound must be the constant ITSELF, not an expression over it: `[,)]` is the
+# complete set of things that may legally follow a keyword argument's value, so
+# this accepts a later `description=...` or a trailing comma while rejecting
+# `MAX_ID_LENGTH // 2`, which would move the real bound while leaving every
+# number in both files untouched.
 SCHEMA_FIELD_PATTERN = (
     r'^\s*csv_row_id:\s*Optional\[str\]\s*=\s*Field\(\s*None\s*,\s*'
-    r'max_length\s*=\s*MAX_ID_LENGTH\b'
+    r'max_length\s*=\s*MAX_ID_LENGTH\s*[,)]'
 )
 
 
