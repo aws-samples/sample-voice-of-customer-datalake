@@ -33,7 +33,9 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   row itself — its `id`, text, rating, date, author, title, url and its own `source` column — so two
   files that reuse a number no longer conflict, while re-uploading an unchanged file still stores
   nothing new. A row with no `id` of its own also counts its position in the file, so a survey
-  export whose free-text answers repeat verbatim keeps one record per answer.
+  export whose free-text answers repeat verbatim keeps one record per answer — which does mean that
+  reordering a file re-imports the rows in it that carry no `id`, while rows that carry one are
+  unaffected.
 
   Two consequences are worth knowing before you re-import. Identity now follows a row's content, so
   re-uploading a file with a corrected row stores that row a second time instead of replacing the

@@ -225,6 +225,49 @@ class TestCsvParsing:
         assert items[0]['csv_row_id'] == '4711'
         assert items[0]['id'] != '4711'  # not usable as the item id
 
+    def test_imports_the_row_but_drops_an_over_long_identifier(self):
+        """
+        `csv_row_id` is informational and bounded by the message schema. An
+        identifier past that bound must not reject an otherwise importable row,
+        and must not be truncated either — a partial id would not match what an
+        operator searches for.
+        """
+        from manual_import_handler import MAX_CSV_ROW_ID_LENGTH, _parse_csv_to_items
+        long_id = 'x' * (MAX_CSV_ROW_ID_LENGTH + 1)
+        items, warnings = _parse_csv_to_items(f'id,text\n{long_id},hello\n', 'w')
+        assert len(items) == 1
+        assert items[0]['csv_row_id'] == ''
+        assert any('exceeds' in w for w in warnings)
+
+    def test_keeps_an_identifier_exactly_at_the_length_bound(self):
+        from manual_import_handler import MAX_CSV_ROW_ID_LENGTH, _parse_csv_to_items
+        at_bound = 'x' * MAX_CSV_ROW_ID_LENGTH
+        items, warnings = _parse_csv_to_items(f'id,text\n{at_bound},hello\n', 'w')
+        assert items[0]['csv_row_id'] == at_bound
+        assert warnings == []
+
+    def test_over_long_identifier_still_keys_the_row_at_full_length(self):
+        """Dropping the informational copy must not weaken identity."""
+        from manual_import_handler import MAX_CSV_ROW_ID_LENGTH, _parse_csv_to_items
+        base = 'x' * (MAX_CSV_ROW_ID_LENGTH + 1)
+        one, _ = _parse_csv_to_items(f'id,text\n{base}a,hello\n', 'w')
+        two, _ = _parse_csv_to_items(f'id,text\n{base}b,hello\n', 'w')
+        assert one[0]['csv_row_id'] == two[0]['csv_row_id'] == ''
+        assert one[0]['id'] != two[0]['id']
+
+    def test_mixed_file_keys_only_the_id_less_rows_by_position(self):
+        """
+        A file where only some rows carry an id: reordering re-keys the blank
+        ones and leaves the identified ones alone.
+        """
+        from manual_import_handler import _parse_csv_to_items
+        forward, _ = _parse_csv_to_items('id,text\n7,has id\n,no id\n', 'w')
+        reverse, _ = _parse_csv_to_items('id,text\n,no id\n7,has id\n', 'w')
+        by_text_forward = {i['text']: i['id'] for i in forward}
+        by_text_reverse = {i['text']: i['id'] for i in reverse}
+        assert by_text_forward['has id'] == by_text_reverse['has id']
+        assert by_text_forward['no id'] != by_text_reverse['no id']
+
     def test_preserves_row_ids_when_rows_are_reordered(self):
         from manual_import_handler import _parse_csv_to_items
         forward, _ = _parse_csv_to_items('id,text\n1,hello\n2,world\n', 's')

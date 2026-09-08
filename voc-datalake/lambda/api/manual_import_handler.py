@@ -359,6 +359,12 @@ MAX_JSON_UPLOAD_ITEMS = 50000
 
 MAX_CSV_BYTES = 10 * 1024 * 1024  # 10 MB
 
+# Bound on the informational copy of a row's own identifier. Mirrors
+# `IngestMessage.csv_row_id`'s max_length: this Lambda's bundle does not include
+# the plugin schema package, so the value is restated rather than imported. Keep
+# the two in step — exceeding the model's bound would reject the whole message.
+MAX_CSV_ROW_ID_LENGTH = 256
+
 
 # ── CSV row identity ────────────────────────────────────────────────────────
 #
@@ -508,12 +514,24 @@ def _parse_csv_to_items(csv_text: str, default_source: str) -> tuple[list[dict],
 
         created_at = created_at_raw or datetime.now(timezone.utc).isoformat()
 
+        # The customer's own row identifier, kept so an operator can still answer
+        # "find the record for review_id 4711". It is deliberately NOT the item
+        # id: it is unique only within one file. The fingerprint above consumed
+        # it at full length; this carried copy is informational and has to fit
+        # the message schema's bound. An over-long value is dropped rather than
+        # truncated, because a truncated identifier would not match what an
+        # operator searches for — and dropping it must not cost us the row.
+        csv_row_id = source_id
+        if len(csv_row_id) > MAX_CSV_ROW_ID_LENGTH:
+            warnings.append(
+                f'row {idx}: id exceeds {MAX_CSV_ROW_ID_LENGTH} characters — '
+                'not kept for lookup, row imported'
+            )
+            csv_row_id = ''
+
         items.append({
             'id': feedback_id,
-            # The customer's own row identifier, kept so an operator can still
-            # answer "find the record for review_id 4711". It is deliberately
-            # NOT the item id: it is unique only within one file.
-            'csv_row_id': source_id,
+            'csv_row_id': csv_row_id,
             'text': text,
             'rating': rating,
             'author': author,
