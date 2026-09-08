@@ -38,6 +38,15 @@ HANDLER_SOURCE = 'lambda/api/manual_import_handler.py'
 SCHEMA_SOURCE = 'plugins/_shared/schemas.py'
 HANDLER_PATTERN = r'^MAX_CSV_ROW_ID_LENGTH\s*=\s*(\d+)'
 SCHEMA_PATTERN = r'^MAX_ID_LENGTH\s*=\s*(\d+)'
+# Which constant the schema field actually points at. Comparing the two numbers
+# is not enough on its own: `csv_row_id` could be re-declared against a
+# different bound (MAX_URL_LENGTH, a literal) while MAX_ID_LENGTH stays 256, and
+# the numeric assertion below would still pass while the field it describes had
+# moved out from under it.
+SCHEMA_FIELD_PATTERN = (
+    r'^\s*csv_row_id:\s*Optional\[str\]\s*=\s*Field\(\s*None\s*,\s*'
+    r'max_length\s*=\s*MAX_ID_LENGTH\s*\)'
+)
 
 
 def _read(relative: str) -> str:
@@ -70,6 +79,22 @@ def test_the_handler_never_carries_an_identifier_the_schema_would_reject():
         f'The schema is the enforcing side, and it refuses the whole message: an '
         f'over-long identifier would cost the row itself, for a field that only '
         f'exists to make the row findable.'
+    )
+
+
+def test_the_schema_field_is_still_bounded_by_the_constant_compared_above():
+    """Closes the gap the numeric assertion alone leaves: `csv_row_id` could be
+    re-declared against some other bound while `MAX_ID_LENGTH` keeps its value,
+    and the comparison would go on passing about a number nothing reads."""
+    source = _read(SCHEMA_SOURCE)
+
+    assert re.search(SCHEMA_FIELD_PATTERN, source, re.MULTILINE), (
+        f'csv_row_id in {SCHEMA_SOURCE} is no longer declared as '
+        f'`Optional[str] = Field(None, max_length=MAX_ID_LENGTH)`. The numeric '
+        f'lockstep above compares MAX_ID_LENGTH, so if this field now takes its '
+        f'bound from somewhere else that comparison is measuring the wrong '
+        f'thing — point the field back at MAX_ID_LENGTH, or update both this '
+        f'pattern and SCHEMA_PATTERN together.'
     )
 
 
