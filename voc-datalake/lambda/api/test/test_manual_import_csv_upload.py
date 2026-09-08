@@ -6,6 +6,8 @@ Regression intent (fail-on-revert):
 - Reverting MAX_JSON_UPLOAD_ITEMS to 500 fails test_upload_cap_is_50000.
 - Reverting _send_items_to_sqs to per-item send_message fails the batching tests.
 - Removing the /scrapers/manual/csv-upload route fails every TestCsvUploadEndpoint test.
+- Reusing an explicit source ID for different CSV rows must not collapse them.
+- Exact re-uploads and row reordering must preserve deterministic row IDs.
 """
 import json
 from unittest.mock import patch, MagicMock
@@ -99,7 +101,7 @@ class TestCsvParsing:
         items, warnings = _parse_csv_to_items(CSV_BASIC, 'csv_upload')
         assert len(items) == 2
         assert warnings == []
-        assert items[0]['id'] == '1'
+        assert items[0]['id'] == 'c29620c3acab1a13e1b27dd4a18aaabe'
         assert items[0]['text'] == 'Great app, fast and reliable'
         assert items[0]['rating'] == 5
         assert items[0]['source'] == 'app_review'
@@ -121,17 +123,37 @@ class TestCsvParsing:
         assert len(items) == 2
         assert items[0]['id'] and items[1]['id']
         assert items[0]['id'] != items[1]['id']
-        # deterministic: same input -> same ids
+        # deterministic: same input -> same ids, even though missing dates use now
         again, _ = _parse_csv_to_items(csv_text, 's')
         assert [i['id'] for i in again] == [i['id'] for i in items]
 
-    def test_skips_empty_text_and_duplicate_ids_with_warnings(self):
+    def test_keeps_different_rows_that_reuse_an_explicit_id(self):
         from manual_import_handler import _parse_csv_to_items
-        csv_text = 'id,text\n1,hello\n2,\n1,world\n'
+        cloud, cloud_warnings = _parse_csv_to_items(
+            'id,text,date,url\n1,Cloud review,2026-09-01,https://example.com/cloud\n',
+            'workshop',
+        )
+        agentic, agentic_warnings = _parse_csv_to_items(
+            'id,text,date,url\n1,Agentic review,2026-09-02,https://example.com/agentic\n',
+            'workshop',
+        )
+        assert cloud_warnings == []
+        assert agentic_warnings == []
+        assert cloud[0]['id'] != agentic[0]['id']
+
+    def test_preserves_row_ids_when_rows_are_reordered(self):
+        from manual_import_handler import _parse_csv_to_items
+        forward, _ = _parse_csv_to_items('id,text\n1,hello\n2,world\n', 's')
+        reverse, _ = _parse_csv_to_items('id,text\n2,world\n1,hello\n', 's')
+        assert {i['text']: i['id'] for i in forward} == {i['text']: i['id'] for i in reverse}
+
+    def test_skips_empty_text_and_exact_duplicate_rows_with_warnings(self):
+        from manual_import_handler import _parse_csv_to_items
+        csv_text = 'id,text\n1,hello\n2,\n1,world\n1,hello\n'
         items, warnings = _parse_csv_to_items(csv_text, 's')
-        assert len(items) == 1
+        assert [i['text'] for i in items] == ['hello', 'world']
         assert any('empty text' in w for w in warnings)
-        assert any('duplicate id' in w for w in warnings)
+        assert any('duplicate row' in w for w in warnings)
 
     def test_bad_rating_warns_and_leaves_blank(self):
         from manual_import_handler import _parse_csv_to_items
@@ -183,11 +205,13 @@ class TestCsvUploadEndpoint:
         assert put_kwargs['ContentType'].startswith('text/csv')
         # message shape matches the processing pipeline contract
         entries = mock_sqs.send_message_batch.call_args.kwargs['Entries']
-        msg = json.loads(entries[0]['MessageBody'])
-        assert msg['source_platform'] == 'manual_import'
-        assert msg['ingestion_method'] == 'csv_upload'
-        assert msg['text'] == 'Great app, fast and reliable'
-        assert msg['s3_raw_uri'] == body['s3_uri']
+        messages = [json.loads(entry['MessageBody']) for entry in entries]
+        assert messages[0]['id'] == 'c29620c3acab1a13e1b27dd4a18aaabe'
+        assert messages[0]['source_platform'] == 'manual_import'
+        assert messages[0]['ingestion_method'] == 'csv_upload'
+        assert messages[0]['text'] == 'Great app, fast and reliable'
+        assert messages[0]['s3_raw_uri'] == body['s3_uri']
+        assert messages[0]['id'] != messages[1]['id']
 
     def test_rejects_missing_csv_text(self, api_gateway_event, lambda_context):
         from manual_import_handler import lambda_handler

@@ -393,8 +393,8 @@ def _send_items_to_sqs(messages: list[dict], label: str = 'row') -> tuple[int, l
 def _parse_csv_to_items(csv_text: str, default_source: str) -> tuple[list[dict], list[str]]:
     """Parse CSV text into the same item shape as json_upload. Returns (items, warnings)."""
     import csv as _csv
-    import io
     import hashlib
+    import io
 
     warnings: list[str] = []
     items: list[dict] = []
@@ -408,37 +408,58 @@ def _parse_csv_to_items(csv_text: str, default_source: str) -> tuple[list[dict],
     headers = {h.strip().lower(): h for h in reader.fieldnames if h}
 
     def col(row: dict, *names: str) -> str:
-        for n in names:
-            actual = headers.get(n)
+        for name in names:
+            actual = headers.get(name)
             if actual is not None:
-                v = row.get(actual)
-                if v is not None and str(v).strip():
-                    return str(v).strip()
+                value = row.get(actual)
+                if value is not None and str(value).strip():
+                    return str(value).strip()
         return ''
+
+    def row_id(*fields: str) -> str:
+        """Return the versioned identity contract for one normalized CSV row."""
+        payload = json.dumps(
+            ['csv-row-v1', *fields],
+            ensure_ascii=False,
+            separators=(',', ':'),
+        )
+        return hashlib.sha256(payload.encode('utf-8')).hexdigest()[:32]
 
     if 'text' not in headers and 'review' not in headers and 'comment' not in headers and 'feedback' not in headers:
         raise ValidationError(
             'CSV must include a "text" column (also accepted: review / comment / feedback)'
         )
 
-    seen_ids: set[str] = set()
+    seen_row_ids: set[str] = set()
     for idx, row in enumerate(reader, start=1):
         text = col(row, 'text', 'review', 'comment', 'feedback')
         if not text:
             warnings.append(f'row {idx}: empty text — skipped')
             continue
 
-        # Synthesize a stable id when missing so the dedupe layer doesn't reject the row.
-        source_id = col(row, 'id', 'review_id') or hashlib.sha1(
-            f'{text[:200]}|{idx}'.encode()
-        ).hexdigest()[:32]
-
-        if source_id in seen_ids:
-            warnings.append(f'row {idx}: duplicate id "{source_id}" — skipped')
-            continue
-        seen_ids.add(source_id)
-
+        source_id = col(row, 'id', 'review_id')
         rating_raw = col(row, 'rating', 'stars', 'score')
+        created_at_raw = col(row, 'date', 'timestamp', 'created_at')
+        author = col(row, 'author', 'user', 'user_id', 'name')
+        title = col(row, 'title', 'subject')
+        url = col(row, 'url', 'link')
+        source = col(row, 'source', 'source_channel') or default_source
+        feedback_id = row_id(
+            source_id,
+            text,
+            rating_raw,
+            created_at_raw,
+            author,
+            title,
+            url,
+            source,
+        )
+
+        if feedback_id in seen_row_ids:
+            warnings.append(f'row {idx}: duplicate row — skipped')
+            continue
+        seen_row_ids.add(feedback_id)
+
         rating: int | None = None
         if rating_raw:
             try:
@@ -446,16 +467,15 @@ def _parse_csv_to_items(csv_text: str, default_source: str) -> tuple[list[dict],
             except (ValueError, TypeError):
                 warnings.append(f'row {idx}: rating "{rating_raw}" is not a number — left blank')
 
-        created_at = col(row, 'date', 'timestamp', 'created_at') or datetime.now(timezone.utc).isoformat()
-        source = col(row, 'source', 'source_channel') or default_source
+        created_at = created_at_raw or datetime.now(timezone.utc).isoformat()
 
         items.append({
-            'id': source_id,
+            'id': feedback_id,
             'text': text,
             'rating': rating,
-            'author': col(row, 'author', 'user', 'user_id', 'name'),
-            'title': col(row, 'title', 'subject'),
-            'url': col(row, 'url', 'link'),
+            'author': author,
+            'title': title,
+            'url': url,
             'timestamp': created_at,
             'source': source,
         })
