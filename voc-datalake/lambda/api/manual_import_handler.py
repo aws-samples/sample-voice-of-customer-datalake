@@ -3,6 +3,9 @@ Manual Import API Lambda - Handles /scrapers/manual/*
 Allows users to paste raw review text and have it parsed by LLM.
 """
 
+import csv
+import hashlib
+import io
 import json
 import os
 import sys
@@ -357,6 +360,49 @@ MAX_JSON_UPLOAD_ITEMS = 50000
 MAX_CSV_BYTES = 10 * 1024 * 1024  # 10 MB
 
 
+# ── CSV row identity ────────────────────────────────────────────────────────
+#
+# The processor derives BOTH its idempotency key and its DynamoDB item key from
+# `source_platform + id`, and `source_platform` is the constant 'manual_import'
+# for every CSV upload. The id emitted here is therefore the only thing that
+# separates one imported row from another — including rows in a different file
+# that reuse the same `id` column value, which is what made two files numbered
+# 1..400 collapse into a single 400-row set.
+#
+# Identity is a SHA-256 over the version tag followed by these fields, in this
+# order. Both the order and the normalization are a PERSISTED CONTRACT: rows
+# already stored were keyed with this recipe, so changing it re-keys them and
+# every prior upload would re-import as new records. Add a new version tag
+# instead of editing v1.
+CSV_ROW_ID_VERSION = 'csv-row-v1'
+CSV_ROW_ID_FIELDS = (
+    'source_id',   # the row's own id/review_id column; '' when absent
+    'row_index',   # 1-based position; '' when the row HAS an id
+    'text',
+    'rating',
+    'created_at',  # the row's own date column, NOT the import-time default
+    'author',
+    'title',
+    'url',
+    'source',      # the row's own source column, NOT the request default_source
+)
+
+
+def _csv_row_id(fields: dict[str, str]) -> str:
+    """
+    Return the identity of one CSV row from its normalized column values.
+
+    Raises KeyError when a field named in the contract is missing, so a partial
+    call fails at the first test rather than silently keying rows differently.
+    """
+    payload = json.dumps(
+        [CSV_ROW_ID_VERSION, *(fields[name] for name in CSV_ROW_ID_FIELDS)],
+        ensure_ascii=False,
+        separators=(',', ':'),
+    )
+    return hashlib.sha256(payload.encode('utf-8')).hexdigest()[:32]
+
+
 def _send_items_to_sqs(messages: list[dict], label: str = 'row') -> tuple[int, list[str]]:
     """
     Push messages to the processing queue using SendMessageBatch (10 per call).
@@ -392,15 +438,11 @@ def _send_items_to_sqs(messages: list[dict], label: str = 'row') -> tuple[int, l
 
 def _parse_csv_to_items(csv_text: str, default_source: str) -> tuple[list[dict], list[str]]:
     """Parse CSV text into the same item shape as json_upload. Returns (items, warnings)."""
-    import csv as _csv
-    import hashlib
-    import io
-
     warnings: list[str] = []
     items: list[dict] = []
 
     # csv.DictReader handles quoted commas, embedded newlines, and BOM.
-    reader = _csv.DictReader(io.StringIO(csv_text))
+    reader = csv.DictReader(io.StringIO(csv_text))
     if not reader.fieldnames:
         raise ValidationError('CSV is empty or has no header row')
 
@@ -415,15 +457,6 @@ def _parse_csv_to_items(csv_text: str, default_source: str) -> tuple[list[dict],
                 if value is not None and str(value).strip():
                     return str(value).strip()
         return ''
-
-    def row_id(*fields: str) -> str:
-        """Return the versioned identity contract for one normalized CSV row."""
-        payload = json.dumps(
-            ['csv-row-v1', *fields],
-            ensure_ascii=False,
-            separators=(',', ':'),
-        )
-        return hashlib.sha256(payload.encode('utf-8')).hexdigest()[:32]
 
     if 'text' not in headers and 'review' not in headers and 'comment' not in headers and 'feedback' not in headers:
         raise ValidationError(
@@ -443,17 +476,23 @@ def _parse_csv_to_items(csv_text: str, default_source: str) -> tuple[list[dict],
         author = col(row, 'author', 'user', 'user_id', 'name')
         title = col(row, 'title', 'subject')
         url = col(row, 'url', 'link')
-        source = col(row, 'source', 'source_channel') or default_source
-        feedback_id = row_id(
-            source_id,
-            text,
-            rating_raw,
-            created_at_raw,
-            author,
-            title,
-            url,
-            source,
-        )
+        source_column = col(row, 'source', 'source_channel')
+
+        feedback_id = _csv_row_id({
+            'source_id': source_id,
+            # A row carrying an id is identified by it, so the file can be
+            # reordered without re-keying. A row without one has nothing but
+            # its position to distinguish it, so two rows reading "Good" stay
+            # two rows instead of collapsing into one.
+            'row_index': '' if source_id else str(idx),
+            'text': text,
+            'rating': rating_raw,
+            'created_at': created_at_raw,
+            'author': author,
+            'title': title,
+            'url': url,
+            'source': source_column,
+        })
 
         if feedback_id in seen_row_ids:
             warnings.append(f'row {idx}: duplicate row — skipped')
@@ -471,13 +510,17 @@ def _parse_csv_to_items(csv_text: str, default_source: str) -> tuple[list[dict],
 
         items.append({
             'id': feedback_id,
+            # The customer's own row identifier, kept so an operator can still
+            # answer "find the record for review_id 4711". It is deliberately
+            # NOT the item id: it is unique only within one file.
+            'csv_row_id': source_id,
             'text': text,
             'rating': rating,
             'author': author,
             'title': title,
             'url': url,
             'timestamp': created_at,
-            'source': source,
+            'source': source_column or default_source,
         })
 
     return items, warnings
@@ -539,6 +582,7 @@ def csv_upload():
     messages = [
         {
             'id': item['id'],
+            'csv_row_id': item.get('csv_row_id') or None,
             'source_platform': 'manual_import',
             'source_channel': item['source'],
             'ingestion_method': 'csv_upload',

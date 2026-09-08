@@ -22,6 +22,27 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
 
 ### Fixed
 
+- A CSV upload no longer overwrites an earlier one whose `id` column covered the same numbers.
+  A row's identity was the `id` column value as written, and every CSV upload enters the pipeline
+  under the single `source_platform` of `manual_import`, from which the processor derives both its
+  idempotency key and its DynamoDB key. Row `1` of one file was therefore the same stored record as
+  row `1` of every other file, so importing two 400-row exports each numbered `1..400` left 400
+  records holding an arbitrary mixture of the two. Nothing reported the loss: both files were
+  archived, and each upload answered with its own full row count, because that count is what the
+  queue accepted rather than what was ultimately stored. Rows are now identified by a hash of the
+  row itself — its `id`, text, rating, date, author, title, url and its own `source` column — so two
+  files that reuse a number no longer conflict, while re-uploading an unchanged file still stores
+  nothing new. A row with no `id` of its own also counts its position in the file, so a survey
+  export whose free-text answers repeat verbatim keeps one record per answer.
+
+  Two consequences are worth knowing before you re-import. Identity now follows a row's content, so
+  re-uploading a file with a corrected row stores that row a second time instead of replacing the
+  first; correct the data at the source and delete the earlier import rather than uploading over it.
+  And rows imported before this release carry keys from the old scheme, so an environment that
+  already holds a collided import should delete those records before importing the files again —
+  importing on top of them leaves both generations in place. The `id` column each row carried is now
+  kept on the record as `csv_row_id`, so a record can still be traced back to the row it came from.
+
 - Feedback aggregation is now idempotent under DynamoDB Streams redelivery: the aggregate counter
   updates and a per-stream-event claim commit in one DynamoDB transaction, so replaying an event is
   a no-op instead of moving every counter a second time. `AggregateRecordReplayed` reports those
