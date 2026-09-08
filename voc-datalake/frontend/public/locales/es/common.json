@@ -39,6 +39,10 @@
   },
   "forQuery": "para \"{{query}}\"",
   "goToSettings": "Ir a Configuración",
+  "header": {
+    "subtitle": "Plataforma unificada de inteligencia de feedback del cliente",
+    "title": "Voz del Cliente"
+  },
   "loading": "Cargando...",
   "loadMore": "Cargar más",
   "logs": {
@@ -102,8 +106,8 @@
     "neutral": "Neutro",
     "positive": "Positivo"
   },
-  "showingOf_one": "Mostrando {{count}} de {{total}} resultado",
   "showingOf_many": "Mostrando {{count}} de {{total}} resultados",
+  "showingOf_one": "Mostrando {{count}} de {{total}} resultado",
   "showingOf_other": "Mostrando {{count}} de {{total}} resultados",
   "sidebar": {
     "closeMenu": "Cerrar menú",
@@ -121,11 +125,29 @@
     "48hFull": "48 Horas",
     "7d": "7d",
     "7dFull": "7 Días",
+    "90d": "90d",
+    "90dFull": "90 Días",
     "apply": "Aplicar",
+    "basisImported": "Fecha de importación",
+    "basisImportedDescription": "Cuándo se recopiló el feedback en la plataforma.",
+    "basisImportedTooltip": "Se filtra por cuándo se recopilaron los datos, no por cuándo se escribió la opinión.",
+    "basisLabel": "Filtrar fechas por",
+    "basisReview": "Fecha de la opinión",
+    "basisReviewDescription": "Cuándo escribió el cliente el feedback originalmente.",
+    "basisReviewTooltip": "Se filtra por cuándo se escribió la opinión, no por cuándo se importó.",
+    "basisSelected": "Filtrar fechas por: {{basis}}",
     "cancel": "Cancelar",
     "clear": "Limpiar",
+    "closeCustomRange": "Cerrar rango personalizado",
     "custom": "Personalizado",
+    "customRange": "Rango personalizado",
+    "days": "días",
+    "daysHint": "Introduce un número entero de días (1–{{max}}).",
+    "daysPlaceholder": "p. ej. 14",
     "endDate": "Fecha fin",
+    "lastDays": "Últimos {{count}} días",
+    "lastNDays": "Últimos N días",
+    "selectCustomRange": "Seleccionar rango personalizado",
     "selectDateRange": "Seleccionar rango de fechas",
     "startDate": "Fecha inicio"
   }

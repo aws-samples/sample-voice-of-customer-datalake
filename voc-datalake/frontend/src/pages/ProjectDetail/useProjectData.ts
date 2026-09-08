@@ -4,7 +4,7 @@
 import {
   useQuery, useMutation, useQueryClient,
 } from '@tanstack/react-query'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { projectsApi } from '../../api/projectsApi'
 import { projectKey } from '../../api/projectQueryKeys'
@@ -94,6 +94,113 @@ export function jobsPollInterval(
   return withinStartWindow ? JOB_POLL_INTERVAL_MS : 0
 }
 
+/** A job that will not change again: its artifacts and counts have settled. */
+export function isTerminalJobStatus(status: ProjectJob['status']): boolean {
+  return status === 'completed' || status === 'failed'
+}
+
+/**
+ * The jobs that reached a terminal state since the last look.
+ *
+ * A TRANSITION, not a timestamp window. The previous rule refetched any job whose
+ * `completed_at` was under ten seconds old, which made the refresh depend on two
+ * clocks agreeing: the writer's `completed_at` and the browser's `Date.now()`. A
+ * poll that landed a second late — or a browser whose clock runs behind the
+ * Lambda's — skipped it, and the page then showed stale Overview counts and a
+ * disabled prototype action until a manual reload. It also ignored `failed`
+ * entirely, so a failed build left the "generating" affordances lit.
+ *
+ * Comparing against what this page has already SEEN needs no clock, fires once per
+ * job, and reports each of several concurrent jobs as it lands.
+ *
+ * @param jobs The jobs list as last fetched.
+ * @param seen Job ids already observed terminal. MUTATED with the new ones, so
+ *   the caller's ref carries them into the next poll.
+ * @returns The ids that are terminal now and were not before.
+ */
+export function newlyTerminalJobIds(
+  jobs: ReadonlyArray<Pick<ProjectJob, 'job_id' | 'status'>>,
+  seen: Set<string>,
+): string[] {
+  const settled: string[] = []
+  for (const job of jobs) {
+    if (typeof job.job_id !== 'string' || job.job_id === '') continue
+    if (!isTerminalJobStatus(job.status)) {
+      // A job id can be re-run (`claim_job_execution` moves a failed row back to
+      // running), so forget it rather than suppressing its next terminal edge.
+      seen.delete(job.job_id)
+      continue
+    }
+    if (seen.has(job.job_id)) continue
+    seen.add(job.job_id)
+    settled.push(job.job_id)
+  }
+  return settled
+}
+
+/**
+ * Whether the FIRST jobs payload reports an artifact the project read missed.
+ *
+ * `projectKey` and `projectJobsKey` are two independent queries issued at roughly
+ * the same time, so a job can settle BETWEEN the project read committing
+ * server-side and the jobs read committing. The first jobs payload then reports a
+ * terminal job the mount project fetch did not see — and seeding on that payload
+ * (which is right for the common case, where its terminal jobs are history the
+ * mount fetch already reflects) would suppress the only invalidation that job will
+ * ever get: the next poll finds its id already settled, and if nothing else is live
+ * the poll stops. The page then holds stale Overview counts and a disabled
+ * prototype action until a manual action.
+ *
+ * Answered from the DATA rather than by widening the window back to a clock: a
+ * completed job names the artifact it produced, so "did the project read see it"
+ * is a set membership test. Callers must only ask once the project read has
+ * RESOLVED: `undefined` here is indistinguishable from "nothing was missed", so the
+ * effect below defers consuming the first payload until `data` is present rather
+ * than asking early and getting a false negative.
+ *
+ * `false` for a job whose result names nothing, which is the honest answer rather
+ * than a refetch on every open.
+ *
+ * @param jobs The first jobs payload.
+ * @param project The project detail already in cache, or undefined if still loading.
+ * @returns Whether the project query should be invalidated despite being seeded.
+ */
+export function firstPayloadMissesAnArtifact(
+  jobs: ReadonlyArray<Pick<ProjectJob, 'job_id' | 'status' | 'result'>>,
+  project: { documents: ReadonlyArray<Pick<ProjectDocument, 'document_id'>>
+    personas: ReadonlyArray<Pick<ProjectPersona, 'persona_id'>> } | undefined,
+): boolean {
+  if (project === undefined) return false
+  const documentIds = new Set(project.documents.map((document) => document.document_id))
+  const personaIds = new Set(project.personas.map((persona) => persona.persona_id))
+  return jobs.some((job) => {
+    // Only `completed`: a `failed` job produced no artifact to compare against, and
+    // its own effect on the page (turning the "generating" affordances off) is
+    // driven by the jobs payload this function is reading, not by the project.
+    if (job.status !== 'completed') return false
+    const documentId = job.result?.document_id
+    if (typeof documentId === 'string' && documentId !== '') {
+      return !documentIds.has(documentId)
+    }
+    const personaId = job.result?.persona_id
+    if (typeof personaId === 'string' && personaId !== '') {
+      return !personaIds.has(personaId)
+    }
+    // `generate_personas` reports a LIST rather than one id, and it is among the
+    // jobs a user is most likely to have the page open for — so the interleave case
+    // has to cover it too. Any one persona the project read missed is enough: the
+    // refetch replaces the whole payload.
+    const personas = job.result?.personas
+    if (Array.isArray(personas)) {
+      return personas.some((persona) => {
+        const id: unknown = persona?.persona_id
+        return typeof id === 'string' && id !== '' && !personaIds.has(id)
+      })
+    }
+    return false
+  })
+}
+
 interface UseProjectDataProps {
   id: string | undefined
   apiEndpoint: string
@@ -179,18 +286,61 @@ export function useProjectData({
     retry: false,
   })
 
-  // When a job completes, refresh project data
+  /**
+   * Every job id this page has already seen reach `completed` or `failed`.
+   *
+   * A ref rather than state: it must not itself trigger a render, and it has to
+   * survive the re-render the invalidation below causes. Reset when the project
+   * changes so one project's history cannot suppress another's first refresh.
+   */
+  const settledJobIds = useRef<Set<string>>(new Set())
+  const sawFirstJobsPayload = useRef(false)
   useEffect(() => {
-    const jobs = jobsData?.jobs ?? []
-    const TEN_SECONDS = 10000
-    const completedRecently = jobs.some((j: ProjectJob) =>
-      j.status === 'completed' && j.completed_at != null && j.completed_at !== '' &&
-      new Date(j.completed_at).getTime() > Date.now() - TEN_SECONDS,
-    )
-    if (completedRecently) {
+    settledJobIds.current = new Set()
+    sawFirstJobsPayload.current = false
+  }, [id])
+
+  /**
+   * A job reaching a terminal state is the moment Overview counts, prototype
+   * enablement, Documents and the completed artifact all become readable — so the
+   * project detail query is invalidated too, not just the jobs list. Failed counts:
+   * it is what turns the "generating" affordances back off.
+   *
+   * The FIRST payload after mount only seeds the set — with one exception. Its
+   * terminal jobs are usually history that the project fetch on the same mount
+   * already reflects, so refetching for them would cost every project open a second
+   * read and prove nothing. But the two queries are independent, so a job can settle
+   * between the project read committing and the jobs read committing; when the
+   * payload names an artifact the project does NOT contain, that job's only
+   * invalidation is this one. `firstPayloadMissesAnArtifact` decides from the data,
+   * so the exception costs nothing on the common path.
+   *
+   * Nothing is consumed while `data` is still undefined, and that ordering is the
+   * whole exception. The jobs response is the smaller of the two, so it usually
+   * resolves FIRST; seeding then — before there is a project to compare against —
+   * would burn both the flag and the transition on a payload the predicate cannot
+   * answer for, and the re-run once `data` landed would find nothing left to report.
+   * Returning early leaves both intact, so the seeding happens on the first payload
+   * where BOTH are present, which is the only moment "did the project read see it"
+   * has an answer. `data` is in the dependency array, so its arrival re-runs this.
+   *
+   * The bound: a project read that never resolves at all (it exhausted its retries)
+   * gets no job-driven refetch. That page is already rendering its error state, and
+   * invalidating a query that just failed would only repeat the failure.
+   */
+  useEffect(() => {
+    const jobs = jobsData?.jobs
+    if (jobs === undefined || data === undefined) return
+    const settled = newlyTerminalJobIds(jobs, settledJobIds.current)
+    const isFirstPayload = !sawFirstJobsPayload.current
+    sawFirstJobsPayload.current = true
+    const shouldInvalidate = isFirstPayload
+      ? firstPayloadMissesAnArtifact(jobs, data)
+      : settled.length > 0
+    if (shouldInvalidate) {
       void queryClient.invalidateQueries({ queryKey: projectKey(id) })
     }
-  }, [jobsData, id, queryClient])
+  }, [jobsData, data, id, queryClient])
 
   /**
    * Replace the prototype links before their signatures lapse.

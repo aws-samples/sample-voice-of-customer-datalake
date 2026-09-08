@@ -1,7 +1,10 @@
 """Tests for research step functions (initialize, analyze, synthesize, validate, save)."""
-import pytest
-from unittest.mock import patch, MagicMock
 from decimal import Decimal
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from .conftest import research_document
 
 
 @pytest.fixture
@@ -331,7 +334,7 @@ class TestStepValidate:
 
 class TestStepSave:
 
-    def test_successful_save(self, mock_tables, mock_job_status):
+    def test_successful_save(self, saved_research_table, mock_job_status):
         from research_step_handler import step_save
 
         event = {
@@ -344,12 +347,20 @@ class TestStepSave:
         result = step_save(event)
 
         assert result['success'] is True
-        assert 'document_id' in result
         assert result['feedback_count'] == 10
-        mock_tables['projects'].put_item.assert_called_once()
-        mock_tables['projects'].update_item.assert_called_once()
+        document = research_document(saved_research_table)
+        assert result['document_id'] == document['document_id']
+        # Research is a managed versioned type: identity is stored, not derived.
+        assert document['base_title'] == 'Test'
+        assert document['version'] == 1
+        assert document['title'] == 'Test (v1)'
+        assert document['version_allocation_id'] == 'j1'
+        meta = saved_research_table.get_item(
+            Key={'pk': 'PROJECT#p1', 'sk': 'META'}, ConsistentRead=True,
+        )['Item']
+        assert meta['document_count'] == 1
 
-    def test_truncates_large_report(self, mock_tables, mock_job_status):
+    def test_truncates_large_report(self, saved_research_table, mock_job_status):
         from research_step_handler import step_save
 
         event = {
@@ -363,8 +374,7 @@ class TestStepSave:
 
         result = step_save(event)
         assert result['success'] is True
-        put_call = mock_tables['projects'].put_item.call_args
-        content = put_call.kwargs['Item']['content']
+        content = research_document(saved_research_table)['content']
         assert len(content) <= 360000
 
 
@@ -588,44 +598,44 @@ class TestStepSaveWebSearchNote:
             event['web_search_queries'] = web_search_queries
         return event
 
-    def test_report_notes_web_search_when_enabled(self, mock_tables, mock_job_status):
+    def test_report_notes_web_search_when_enabled(self, saved_research_table, mock_job_status):
         """Executions pinned to a pre-#207 state-machine definition don't pass
         web_search_queries — the header must still disclose 'enabled'."""
         from research_step_handler import step_save
 
         step_save(self._event(use_web_search=True))
 
-        saved = mock_tables['projects'].put_item.call_args.kwargs['Item']
+        saved = research_document(saved_research_table)
         assert 'Web search: enabled' in saved['content']
 
-    def test_report_discloses_query_count_and_lists_searches(self, mock_tables, mock_job_status):
+    def test_report_discloses_query_count_and_lists_searches(self, saved_research_table, mock_job_status):
         from research_step_handler import step_save
 
         step_save(self._event(use_web_search=True, web_search_queries=['acme churn 2026', 'app redesign backlash']))
 
-        saved = mock_tables['projects'].put_item.call_args.kwargs['Item']
+        saved = research_document(saved_research_table)
         assert 'Web search: enabled (2 queries)' in saved['content']
         assert '## Web Searches' in saved['content']
         assert '1. "acme churn 2026"' in saved['content']
         assert '2. "app redesign backlash"' in saved['content']
 
-    def test_single_query_disclosed_in_singular(self, mock_tables, mock_job_status):
+    def test_single_query_disclosed_in_singular(self, saved_research_table, mock_job_status):
         from research_step_handler import step_save
 
         step_save(self._event(use_web_search=True, web_search_queries=['acme churn 2026']))
 
-        saved = mock_tables['projects'].put_item.call_args.kwargs['Item']
+        saved = research_document(saved_research_table)
         assert 'Web search: enabled (1 query)' in saved['content']
 
-    def test_report_silent_when_disabled(self, mock_tables, mock_job_status):
+    def test_report_silent_when_disabled(self, saved_research_table, mock_job_status):
         from research_step_handler import step_save
 
         step_save(self._event(use_web_search=False))
 
-        saved = mock_tables['projects'].put_item.call_args.kwargs['Item']
+        saved = research_document(saved_research_table)
         assert 'Web search' not in saved['content']
 
-    def test_report_silent_for_string_false(self, mock_tables, mock_job_status):
+    def test_report_silent_for_string_false(self, saved_research_table, mock_job_status):
         """Disclosure parity with the strict gating in step_initialize: a
         foreign \"false\" string skips the search, so the report must not
         claim web search was used — even if a queries list is present."""
@@ -633,27 +643,27 @@ class TestStepSaveWebSearchNote:
 
         step_save(self._event(use_web_search='false', web_search_queries=['q']))
 
-        saved = mock_tables['projects'].put_item.call_args.kwargs['Item']
+        saved = research_document(saved_research_table)
         assert 'Web search' not in saved['content']
         assert '## Web Searches' not in saved['content']
 
-    def test_non_string_queries_are_ignored_in_disclosure(self, mock_tables, mock_job_status):
+    def test_non_string_queries_are_ignored_in_disclosure(self, saved_research_table, mock_job_status):
         """State-machine input is an unvalidated boundary; junk entries must
         not crash the save step or leak into the report."""
         from research_step_handler import step_save
 
         step_save(self._event(use_web_search=True, web_search_queries=[None, 42, '  ', 'real query']))
 
-        saved = mock_tables['projects'].put_item.call_args.kwargs['Item']
+        saved = research_document(saved_research_table)
         assert 'Web search: enabled (1 query)' in saved['content']
         assert '1. "real query"' in saved['content']
 
-    def test_multiline_query_is_flattened_in_disclosure(self, mock_tables, mock_job_status):
+    def test_multiline_query_is_flattened_in_disclosure(self, saved_research_table, mock_job_status):
         """Queries land verbatim in report markdown — embedded newlines must
         not break the numbered-list layout."""
         from research_step_handler import step_save
 
         step_save(self._event(use_web_search=True, web_search_queries=['line one\nline   two']))
 
-        saved = mock_tables['projects'].put_item.call_args.kwargs['Item']
+        saved = research_document(saved_research_table)
         assert '1. "line one line two"' in saved['content']

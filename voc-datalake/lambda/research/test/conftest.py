@@ -3,9 +3,11 @@ Pytest fixtures for research handler tests.
 """
 import os
 import sys
-import pytest
-from unittest.mock import MagicMock, patch
 from decimal import Decimal
+from unittest.mock import MagicMock, patch
+
+import boto3
+import pytest
 
 # Add research module and shared module to path
 research_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -151,3 +153,67 @@ def lambda_context():
     context.log_stream_name = '2026/01/09/[$LATEST]test'
     context.get_remaining_time_in_millis = lambda: 300000
     return context
+
+
+@pytest.fixture
+def saved_research_table():
+    """A real DynamoDB projects table for the save step.
+
+    ``step_save`` now writes through ``shared.document_versions``, whose
+    allocation is one ``transact_write_items`` over a version counter, an
+    allocation row, the document and the project's ``document_count``. A
+    MagicMock table can echo the request shape but cannot honour the condition
+    expressions those four writes depend on, so the version and title a save
+    produces would not be proven by one. moto runs the transaction for real.
+
+    Yields the boto3 Table; ``research_document`` reads the stored row back.
+    """
+    from moto import mock_aws
+
+    with mock_aws():
+        table = boto3.resource('dynamodb', region_name='us-east-1').create_table(
+            TableName='test-projects',
+            KeySchema=[
+                {'AttributeName': 'pk', 'KeyType': 'HASH'},
+                {'AttributeName': 'sk', 'KeyType': 'RANGE'},
+            ],
+            AttributeDefinitions=[
+                {'AttributeName': 'pk', 'AttributeType': 'S'},
+                {'AttributeName': 'sk', 'AttributeType': 'S'},
+            ],
+            BillingMode='PAY_PER_REQUEST',
+        )
+        table.put_item(Item={
+            'pk': 'PROJECT#p1',
+            'sk': 'META',
+            'project_id': 'p1',
+            'document_count': 0,
+        })
+        table.put_item(Item={
+            'pk': 'PROJECT#proj_1',
+            'sk': 'META',
+            'project_id': 'proj_1',
+            'document_count': 0,
+        })
+        with patch(
+            'research_step_handler._get_projects_table', return_value=table,
+        ), patch(
+            'research_step_handler._get_feedback_table', return_value=MagicMock(),
+        ):
+            yield table
+
+
+def research_document(table, project_id: str = 'p1') -> dict:
+    """The one RESEARCH# row a save step wrote, read back from the table."""
+    from boto3.dynamodb.conditions import Key
+
+    items = table.query(
+        KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}'),
+        ConsistentRead=True,
+    )['Items']
+    documents = [
+        item for item in items
+        if str(item.get('sk', '')).startswith('RESEARCH#')
+    ]
+    assert len(documents) == 1, f'expected one research row, got {len(documents)}'
+    return documents[0]

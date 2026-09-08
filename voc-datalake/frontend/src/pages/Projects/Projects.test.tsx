@@ -279,6 +279,47 @@ describe('Projects', () => {
       expect(createButton).toBeDisabled()
     })
 
+    it('names both create fields programmatically and gives them stable ids', async () => {
+      // Both labels were decorative: no `htmlFor`, so both fields reached a
+      // screen reader as an unnamed "edit text" and clicking the visible text did
+      // not focus the field. `getByLabelText` is the assertion a `getByText` on
+      // the same heading could not make.
+      const user = userEvent.setup()
+
+      render(<Projects />, { wrapper: createWrapper() })
+      await user.click(screen.getByRole('button', { name: /New Project/i }))
+
+      const name = screen.getByLabelText('Project Name')
+      const description = screen.getByLabelText('Description')
+      expect(name).toHaveAttribute('id', 'new-project-name')
+      expect(name).toHaveAttribute('name', 'new-project-name')
+      expect(description).toHaveAttribute('id', 'new-project-description')
+      expect(description).toHaveAttribute('name', 'new-project-description')
+    })
+
+    it('focuses the name field when its label is clicked', async () => {
+      const user = userEvent.setup()
+
+      render(<Projects />, { wrapper: createWrapper() })
+      await user.click(screen.getByRole('button', { name: /New Project/i }))
+      await user.click(screen.getByText('Project Name'))
+
+      expect(screen.getByLabelText('Project Name')).toHaveFocus()
+    })
+
+    it('keeps the two fields reachable in order by keyboard alone', async () => {
+      // Adding an id must not have introduced a tabindex or a wrapper that
+      // reorders the tab sequence.
+      const user = userEvent.setup()
+
+      render(<Projects />, { wrapper: createWrapper() })
+      await user.click(screen.getByRole('button', { name: /New Project/i }))
+      screen.getByLabelText('Project Name').focus()
+      await user.tab()
+
+      expect(screen.getByLabelText('Description')).toHaveFocus()
+    })
+
     it('closes modal when Cancel is clicked', async () => {
       const user = userEvent.setup()
       

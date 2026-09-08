@@ -59,16 +59,23 @@ export function PersonaWizard({
       hideDataSources={PERSONA_HIDDEN_DATA_SOURCES}
       renderFinalStep={() => (
         <div className="space-y-6">
+          {/*
+            `label htmlFor` rather than a styled `h3`. These headings LOOKED like
+            labels but were attached to nothing, so a screen reader announced each
+            wizard field as an unnamed control and clicking the heading did not
+            focus it. The visible text and the class list are unchanged; only the
+            element and the association are.
+          */}
           <div>
-            <h3 className="font-medium mb-3">Number of Personas: {personaConfig.personaCount}</h3>
-            <input type="range" min={1} max={7} value={personaConfig.personaCount} onChange={(e) => onPersonaConfigChange({
+            <label htmlFor="persona-count" className="block font-medium mb-3">Number of Personas: {personaConfig.personaCount}</label>
+            <input id="persona-count" name="persona-count" type="range" min={1} max={7} value={personaConfig.personaCount} onChange={(e) => onPersonaConfigChange({
               ...personaConfig,
               personaCount: +e.target.value,
             })} className="w-full" />
           </div>
           <div>
-            <h3 className="font-medium mb-3">Custom Instructions (Optional)</h3>
-            <textarea value={personaConfig.customInstructions} onChange={(e) => onPersonaConfigChange({
+            <label htmlFor="persona-instructions" className="block font-medium mb-3">Custom Instructions (Optional)</label>
+            <textarea id="persona-instructions" name="persona-instructions" value={personaConfig.customInstructions} onChange={(e) => onPersonaConfigChange({
               ...personaConfig,
               customInstructions: e.target.value,
             })} placeholder="e.g., Focus on business travelers..." rows={4} className="w-full px-3 py-2 border rounded-lg" />
@@ -161,7 +168,7 @@ export function ResearchWizard({
         <div className="space-y-6">
           <div>
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-medium">Research Question</h3>
+              <label htmlFor="research-question" className="font-medium">Research Question</label>
               <button
                 type="button"
                 onClick={onSuggest}
@@ -175,7 +182,7 @@ export function ResearchWizard({
                   : t('wizards.researchSuggest', { defaultValue: 'AI suggest' })}
               </button>
             </div>
-            <textarea value={researchConfig.question} onChange={(e) => onResearchConfigChange({
+            <textarea id="research-question" name="research-question" value={researchConfig.question} onChange={(e) => onResearchConfigChange({
               ...researchConfig,
               question: e.target.value,
             })} placeholder="e.g., What are the main pain points..." rows={4} className="w-full px-3 py-2 border rounded-lg" />
@@ -198,8 +205,8 @@ export function ResearchWizard({
             ) : null}
           </div>
           <div>
-            <h3 className="font-medium mb-3">Research Title</h3>
-            <input type="text" value={researchConfig.title} onChange={(e) => onResearchConfigChange({
+            <label htmlFor="research-title" className="block font-medium mb-3">Research Title</label>
+            <input id="research-title" name="research-title" type="text" value={researchConfig.title} onChange={(e) => onResearchConfigChange({
               ...researchConfig,
               title: e.target.value,
             })} placeholder="e.g., Delivery Pain Points Analysis" className="w-full px-3 py-2 border rounded-lg" />
@@ -385,7 +392,7 @@ export function DocWizard({
           </div>
           <div>
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-medium">{t('wizards.featureTitle', { defaultValue: 'Feature/Product Title' })}</h3>
+              <label htmlFor="doc-title" className="font-medium">{t('wizards.featureTitle', { defaultValue: 'Feature/Product Title' })}</label>
               <button
                 type="button"
                 onClick={onSuggestBrief}
@@ -399,15 +406,15 @@ export function DocWizard({
                   : t('wizards.briefButton', { defaultValue: 'AI draft' })}
               </button>
             </div>
-            <input type="text" value={docConfig.title} onChange={(e) => onDocConfigChange({
+            <input id="doc-title" name="doc-title" type="text" value={docConfig.title} onChange={(e) => onDocConfigChange({
               ...docConfig,
               title: e.target.value,
             })} placeholder={t('wizards.featureTitlePlaceholder', { defaultValue: 'e.g., Real-time Delivery Tracking' })} className="w-full px-3 py-2 border rounded-lg" />
             {briefError ? <p className="text-xs text-red-600 mt-1">{briefError}</p> : null}
           </div>
           <div>
-            <h3 className="font-medium mb-3">{t('wizards.featureDescription', { defaultValue: 'Feature Description' })}</h3>
-            <textarea value={docConfig.featureIdea} onChange={(e) => onDocConfigChange({
+            <label htmlFor="doc-feature-idea" className="block font-medium mb-3">{t('wizards.featureDescription', { defaultValue: 'Feature Description' })}</label>
+            <textarea id="doc-feature-idea" name="doc-feature-idea" value={docConfig.featureIdea} onChange={(e) => onDocConfigChange({
               ...docConfig,
               featureIdea: e.target.value,
             })} placeholder={t('wizards.featureDescriptionPlaceholder', { defaultValue: 'Describe the feature...' })} rows={3} className="w-full px-3 py-2 border rounded-lg" />
@@ -443,11 +450,17 @@ export function DocWizard({
                         {index + 1}
                       </span>
                       <div className="flex-1">
-                        <h4 className="font-medium text-gray-900">{q.title}</h4>
-                        <p className="text-xs text-gray-500 mt-0.5">{q.description}</p>
+                        <label htmlFor={`customer-question-${index}`} className="block font-medium text-gray-900">{q.title}</label>
+                        <p id={`customer-question-${index}-hint`} className="text-xs text-gray-500 mt-0.5">{q.description}</p>
                       </div>
                     </div>
                     <textarea
+                      id={`customer-question-${index}`}
+                      name={`customer-question-${index}`}
+                      // The description is guidance a sighted user reads beside the
+                      // field, so it is announced as a description rather than
+                      // folded into the name.
+                      aria-describedby={`customer-question-${index}-hint`}
                       value={docConfig.customerQuestions[index] ?? ''}
                       onChange={(e) => updateQuestion(index, e.target.value)}
                       placeholder={q.placeholder}
@@ -515,15 +528,15 @@ export function MergeWizard({
             </div>
           </div>
           <div>
-            <h3 className="font-medium mb-3">{t('wizards.newDocTitle')}</h3>
-            <input type="text" value={mergeConfig.title} onChange={(e) => onMergeConfigChange({
+            <label htmlFor="merge-title" className="block font-medium mb-3">{t('wizards.newDocTitle')}</label>
+            <input id="merge-title" name="merge-title" type="text" value={mergeConfig.title} onChange={(e) => onMergeConfigChange({
               ...mergeConfig,
               title: e.target.value,
             })} placeholder={t('wizards.newDocTitlePlaceholder')} className="w-full px-3 py-2 border rounded-lg" />
           </div>
           <div>
-            <h3 className="font-medium mb-3">{t('wizards.remixInstructions')}</h3>
-            <textarea value={mergeConfig.instructions} onChange={(e) => onMergeConfigChange({
+            <label htmlFor="merge-instructions" className="block font-medium mb-3">{t('wizards.remixInstructions')}</label>
+            <textarea id="merge-instructions" name="merge-instructions" value={mergeConfig.instructions} onChange={(e) => onMergeConfigChange({
               ...mergeConfig,
               instructions: e.target.value,
             })} placeholder={t('wizards.remixInstructionsPlaceholder')} rows={4} className="w-full px-3 py-2 border rounded-lg" />

@@ -652,6 +652,41 @@ class TestProjections:
         assert "prototype_s3_uri" not in serialized
         assert "Signature=secret" not in serialized
 
+    def test_a_research_report_carries_its_stored_title_and_version(self):
+        """Research is a managed versioned type (#406 follow-up), so an MCP client
+        must see the STORED `(vN)` identity rather than a bare question title —
+        otherwise a client citing "Churn drivers (v2)" names a document the route
+        cannot resolve. The projection is generic, which is what makes this a
+        contract test rather than a second code path.
+        """
+        fake = _FakeLambda({f"/projects/{_PROJECT}": {
+            "project": {"name": "P"},
+            "personas": [],
+            "documents": [{
+                "sk": "RESEARCH#research_abc",
+                "document_id": "research_abc",
+                "document_type": "research",
+                "title": "Churn drivers (v2)",
+                "base_title": "Churn drivers",
+                "version": 2,
+                "content": "SECRET-REPORT" * 100,
+            }],
+        }})
+
+        payload = _call(
+            "get_project", {"project_id": _PROJECT}, fake,
+        )["result"]["structuredContent"]
+
+        assert payload["documents"] == [{
+            "document_id": "research_abc",
+            "title": "Churn drivers (v2)",
+            "type": "research",
+            "base_title": "Churn drivers",
+            "version": 2,
+            "kind": "research",
+        }]
+        assert "SECRET-REPORT" not in json.dumps(payload)
+
     def test_get_project_schema_declares_additive_managed_identity_fields(self):
         tool = next(tool for tool in mcp_handler.MCP_TOOLS if tool["name"] == "get_project")
         document_properties = (

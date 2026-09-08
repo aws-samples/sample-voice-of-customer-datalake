@@ -120,6 +120,31 @@ describe('research state machine wiring (issue #157)', () => {
     expect(state.definition).toContain('"derivation.$":"$.Payload.derivation"');
     expect(state.definition).toContain('"derivation.$":"$.initialize_result.derivation"');
   });
+
+  it('routes ANY save-step failure to HandleResearchError, not just service errors', () => {
+    // `step_save` RAISES `ConfigurationError` when the projects table is absent,
+    // rather than reporting `completed` with an empty `document_id` — a provably
+    // wrong success envelope the job panel would render as a link to a document
+    // that was never written. That choice is only better than the old one if the
+    // raise reaches a state that marks the job `failed`: otherwise the job sits at
+    // `pending` until its TTL, which is a worse outcome, not a better one.
+    //
+    // So the catch is asserted here, in the definition, because the Python side
+    // cannot see it. `States.ALL` specifically: a catch listing named error types
+    // would not match a Lambda runtime error carrying the exception's own name.
+    const states: unknown = JSON.parse(state.definition).States;
+    expect(states).toBeTypeOf('object');
+    const save = (states as Record<string, { Catch?: { ErrorEquals?: string[]; Next?: string }[] }>)
+      .SaveResearchResults;
+    expect(save, 'the definition must still have a SaveResearchResults state').toBeDefined();
+
+    expect(save.Catch).toEqual([
+      { ErrorEquals: ['States.ALL'], ResultPath: '$.error', Next: 'HandleResearchError' },
+    ]);
+    // And the target state exists — otherwise the catch names nothing and this
+    // whole case would pass against a definition that cannot route anywhere.
+    expect(states).toHaveProperty('HandleResearchError');
+  });
 });
 
 /** Narrow a CloudFormation resource to its Properties without a bare cast. */

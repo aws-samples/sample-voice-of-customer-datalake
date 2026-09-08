@@ -114,8 +114,19 @@ def chain():
 @pytest.fixture
 def avatars():
     """Mock the avatar call, echoing the persona id back in the URL so a
-    result attached to the wrong persona is visible."""
-    def make(persona_data):
+    result attached to the wrong persona is visible.
+
+    `project_id` is NAMED rather than swallowed by a `**kwargs`, and asserted: it is
+    what the writer stamps on the object so a project delete can tell its own avatars
+    from a neighbour's in a key space that carries no project. An avatar written
+    without it is one the delete declines to remove, so a catch-all would keep this
+    double green while the ownership stamp silently stopped being written.
+    """
+    def make(persona_data, project_id=None):
+        assert project_id, (
+            'the avatar writer needs the owning project, or the object carries no '
+            'owner and a project delete cannot claim it'
+        )
         persona_id = persona_data['persona_id']
         return {
             'avatar_url': f's3://bucket/avatars/{persona_id}.jpeg',
@@ -285,7 +296,7 @@ class TestAvatarConcurrency:
 
         barrier = threading.Barrier(3)
 
-        def make(persona_data):
+        def make(persona_data, project_id=None):
             barrier.wait(timeout=self.BARRIER_TIMEOUT)
             return {
                 'avatar_url': f"s3://bucket/avatars/{persona_data['persona_id']}.jpeg",
@@ -312,7 +323,7 @@ class TestAvatarConcurrency:
 
         barrier = threading.Barrier(4)
 
-        def make(persona_data):
+        def make(persona_data, project_id=None):
             barrier.wait(timeout=0.4)
             return {'avatar_url': 's3://bucket/x.jpeg', 'avatar_prompt': 'p'}
 
@@ -343,7 +354,7 @@ class TestAvatarConcurrency:
         completed: list[str] = []
         completed_lock = threading.Lock()
 
-        def make(persona_data):
+        def make(persona_data, project_id=None):
             name = persona_data['name']
             position = order.index(name)
             # Wait for the NEXT persona to finish first; the last one runs immediately.
@@ -384,7 +395,7 @@ class TestAvatarConcurrency:
     ):
         from api.projects import generate_personas
 
-        def make(persona_data):
+        def make(persona_data, project_id=None):
             if persona_data['name'] == 'B Two':
                 raise RuntimeError('image model refused')
             return {

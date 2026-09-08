@@ -40,7 +40,17 @@ from shared.project_writes import (
     project_writable_condition as _project_writable_condition,
 )
 
-VERSIONED_DOCUMENT_TYPES = frozenset({'prd', 'prfaq', 'prototype'})
+VERSIONED_DOCUMENT_TYPES = frozenset({'prd', 'prfaq', 'prototype', 'research'})
+
+#: Sort-key prefix that identifies each managed type on a legacy row that never
+#: stored ``document_type``. Single-sourced here so a new managed type cannot be
+#: recognised by one half of the contract and not the other.
+MANAGED_SORT_KEY_PREFIXES: dict[str, str] = {
+    'PRD#': 'prd',
+    'PRFAQ#': 'prfaq',
+    'PROTOTYPE#': 'prototype',
+    'RESEARCH#': 'research',
+}
 VERSION_COUNTER_PREFIX = 'DOCUMENT_VERSIONS#PROJECT#'
 LEGACY_ASSIGNMENT_PREFIX = 'LEGACY_ASSIGNMENT#'
 ALLOCATION_PREFIX = 'ALLOCATION#'
@@ -108,6 +118,56 @@ def canonical_document_title(base_title: str, version: int) -> str:
         raise ValueError('Document version must be a positive integer')
     clean_base, _ = split_versioned_title(base_title)
     return f'{clean_base} (v{version})'
+
+
+#: How much of a research question a generated fallback title may quote.
+RESEARCH_TITLE_QUESTION_CHARS = 50
+
+
+def research_base_title(requested_title: object, question: object) -> str:
+    """The series title a research report belongs to.
+
+    Both live research writers (the Step Functions save step and the synchronous
+    fallback) must derive the SAME base title from the same request, or one
+    project would carry two series for one question and the ``(vN)`` numbering
+    would restart. Kept here beside :func:`split_versioned_title` because the
+    result is a version-series key, not display text.
+
+    Stripped on BOTH branches, so the value this returns is already the key it
+    claims to be. ``'Churn drivers '`` and ``'Churn drivers'`` do in fact land in
+    one series today — :func:`persist_versioned_document` runs both through
+    :func:`split_versioned_title`, which collapses interior whitespace and trims —
+    but that makes the guarantee a property of the caller rather than of this
+    return value, and a reader who takes the docstring at its word would be wrong.
+
+    The question is stripped BEFORE the slice, which is the only order that works:
+    stripping afterwards would already have spent part of
+    :data:`RESEARCH_TITLE_QUESTION_CHARS` on leading whitespace, so
+    ``'  Why do users churn?'`` and ``'Why do users churn?'`` would quote different
+    amounts of the same question and compose two different series titles.
+
+    The bound this keeps: the slice counts CODE POINTS, so a boundary landing inside
+    a combining sequence or an astral pair truncates mid-grapheme, and two questions
+    differing only past character 50 share one series. Bounded and pre-existing (the
+    two expressions this consolidated sliced the same way); it matters slightly more
+    now that the value is a series key rather than display text. A grapheme-aware
+    slice would need a dependency this layer does not carry.
+    """
+    if isinstance(requested_title, str) and requested_title.strip():
+        return requested_title.strip()
+    text = question.strip() if isinstance(question, str) and question.strip() else 'Research'
+    return f'Research: {text[:RESEARCH_TITLE_QUESTION_CHARS]}'
+
+
+def managed_document_type(document: dict[str, Any]) -> str | None:
+    """The managed type this stored row belongs to, or ``None``.
+
+    The one predicate every caller shares, so widening
+    :data:`VERSIONED_DOCUMENT_TYPES` cannot leave a route treating a managed row
+    as an unmanaged one. Reads ``document_type`` first and falls back to the sort
+    key for legacy rows that never stored it.
+    """
+    return _managed_document_type(document)
 
 
 def normalize_document_versions(documents: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1298,12 +1358,9 @@ def _managed_document_type(document: dict[str, Any]) -> str | None:
     if document_type in VERSIONED_DOCUMENT_TYPES:
         return str(document_type)
     sk = str(document.get('sk') or '')
-    if sk.startswith('PRD#'):
-        return 'prd'
-    if sk.startswith('PRFAQ#'):
-        return 'prfaq'
-    if sk.startswith('PROTOTYPE#'):
-        return 'prototype'
+    for prefix, managed_type in MANAGED_SORT_KEY_PREFIXES.items():
+        if sk.startswith(prefix):
+            return managed_type
     return None
 
 

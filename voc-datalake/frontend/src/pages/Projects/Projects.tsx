@@ -219,9 +219,19 @@ export default function Projects() {
         <div className="bg-white rounded-t-xl sm:rounded-xl p-4 sm:p-6 w-full sm:max-w-md max-h-[90vh] overflow-y-auto">
           <h2 className="text-lg font-semibold mb-4">{t('createModal.title')}</h2>
           <div className="space-y-4">
+            {/*
+              `htmlFor`/`id` pairs plus a `name`, not decorative labels. Without
+              the pair a screen reader announces "edit text, blank" for both
+              fields — the visible text is not attached to anything — and clicking
+              the label does not focus the field. `name` is what a form
+              serialization or a password manager reads, and what makes these
+              fields addressable in a browser test.
+            */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('createModal.nameLabel')}</label>
+              <label htmlFor="new-project-name" className="block text-sm font-medium text-gray-700 mb-1">{t('createModal.nameLabel')}</label>
               <input
+                id="new-project-name"
+                name="new-project-name"
                 type="text"
                 value={newProject.name}
                 onChange={(e) => setNewProject({
@@ -233,8 +243,10 @@ export default function Projects() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('createModal.descriptionLabel')}</label>
+              <label htmlFor="new-project-description" className="block text-sm font-medium text-gray-700 mb-1">{t('createModal.descriptionLabel')}</label>
               <textarea
+                id="new-project-description"
+                name="new-project-description"
                 value={newProject.description}
                 onChange={(e) => setNewProject({
                   ...newProject,

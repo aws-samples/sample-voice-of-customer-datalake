@@ -53,14 +53,14 @@ describe('MergeWizard translations', () => {
       .toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 3, name: 'projectDetail:wizards.outputDocType' }))
       .toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 3, name: 'projectDetail:wizards.newDocTitle' }))
-      .toBeInTheDocument()
-    expect(screen.getByPlaceholderText('projectDetail:wizards.newDocTitlePlaceholder'))
-      .toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 3, name: 'projectDetail:wizards.remixInstructions' }))
-      .toBeInTheDocument()
-    expect(screen.getByPlaceholderText('projectDetail:wizards.remixInstructionsPlaceholder'))
-      .toBeInTheDocument()
+    // `getByLabelText`, not `getByRole('heading')`: these two are now real
+    // `<label htmlFor>` elements rather than styled `h3`s, so this asserts the
+    // stronger property — the translated text is the field's ACCESSIBLE NAME,
+    // not merely present somewhere on the page.
+    expect(screen.getByLabelText('projectDetail:wizards.newDocTitle'))
+      .toHaveAttribute('placeholder', 'projectDetail:wizards.newDocTitlePlaceholder')
+    expect(screen.getByLabelText('projectDetail:wizards.remixInstructions'))
+      .toHaveAttribute('placeholder', 'projectDetail:wizards.remixInstructionsPlaceholder')
     expect(screen.getByText('projectDetail:wizards.selectAtLeast2')).toBeInTheDocument()
     expect(screen.getByText('projectDetail:wizards.submitRemixDocuments')).toBeInTheDocument()
   })

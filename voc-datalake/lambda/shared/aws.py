@@ -16,6 +16,7 @@ _sqs_client = None
 _secrets_client = None
 _bedrock_client = None
 _lambda_client = None
+_cloudfront_client = None
 
 
 def get_dynamodb_resource():
@@ -105,6 +106,19 @@ def get_lambda_client():
     if _lambda_client is None:
         _lambda_client = boto3.client("lambda")
     return _lambda_client
+
+
+def get_cloudfront_client():
+    """Get shared CloudFront client with connection reuse.
+
+    `us-east-1` explicitly: CloudFront is a global service whose control plane
+    lives only there, so a Lambda deployed in any other region gets an endpoint
+    that does not resolve without this.
+    """
+    global _cloudfront_client
+    if _cloudfront_client is None:
+        _cloudfront_client = boto3.client("cloudfront", region_name="us-east-1")
+    return _cloudfront_client
 
 
 def invoke_lambda_async(function_name: str, payload: dict) -> dict:

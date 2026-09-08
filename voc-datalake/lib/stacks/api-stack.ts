@@ -654,6 +654,51 @@ export class VocApiStack extends VocStack {
     rawDataBucket.grantReadWrite(projectsRole, 'avatars/*');
     // Product context: projects API needs to issue presigned PUT URLs, read extracted text, delete docs.
     rawDataBucket.grantReadWrite(projectsRole, 'projects/*/product_docs/*');
+    // DELETE /projects/{id} sweeps every S3 prefix a project owns. The other two
+    // — projects/*/product_docs/* and avatars/* — need nothing added here: the two
+    // grants above already carry s3:DeleteObject* on those objects and s3:List* on
+    // the bucket, because this role also uploads and deletes them one at a time
+    // through their own routes. (The avatar sweep additionally needs s3:GetObject*
+    // to read each object's owner before deleting it, since the avatars/ key space
+    // carries no project component; that too is already in the grant above.)
+    //
+    // Prototypes are the exception, and that is why the DeleteObject statement
+    // exists at all: the role has NO prototype grant otherwise, and deliberately
+    // not a grantReadWrite — this role neither reads nor writes prototype HTML.
+    // The document generator produces it and the browser fetches it from CloudFront
+    // with a signature this role mints from the secret below.
+    projectsRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['s3:DeleteObject'],
+      resources: [rawDataBucket.arnForObjects('prototypes/*')],
+    }));
+    // The ListBucket condition narrows nothing TODAY and is not pretending to: the
+    // two grantReadWrite calls above already render an unconditioned `s3:List*` on
+    // the bucket ARN, so this role can already enumerate every prefix. It is kept
+    // as the statement the prototype sweep's own listing depends on, so that
+    // tightening or removing either grantReadWrite — both of which exist for
+    // routes unrelated to this sweep — cannot silently take the sweep's list
+    // permission with it. The cost is a few policy bytes, well inside the quota
+    // guards below; the alternative is a sweep whose permission is a side effect of
+    // an unrelated grant.
+    projectsRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['s3:ListBucket'],
+      resources: [rawDataBucket.bucketArn],
+      conditions: { StringLike: { 's3:prefix': ['prototypes/*'] } },
+    }));
+    // Deleting the objects does not make a prototype unreachable: the
+    // /prototypes/* behavior runs CACHING_OPTIMIZED, so a signed URL minted
+    // before the delete keeps getting an edge HIT for the rest of its TTL. The
+    // sweep therefore invalidates /prototypes/{project_id}/* — one action, on this
+    // distribution only. CreateInvalidation cannot be narrowed to a path prefix by
+    // IAM, so the path scoping is the caller's (see
+    // `_invalidate_project_prototype_cache`); GetInvalidation and
+    // ListInvalidations are deliberately absent because nothing reads it back.
+    projectsRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['cloudfront:CreateInvalidation'],
+      resources: [
+        `arn:${cdk.Aws.PARTITION}:cloudfront::${cdk.Aws.ACCOUNT_ID}:distribution/${frontendDistribution.distributionId}`,
+      ],
+    }));
     // Signs the avatar and prototype URLs returned by GET /projects/{id}.
     // Explicit statement rather than secret.grantRead(): that adds a KMS
     // key-policy entry naming this role, and the key lives in CoreStack, so it
@@ -682,6 +727,9 @@ export class VocApiStack extends VocStack {
         RAW_DATA_BUCKET: rawDataBucket.bucketName,
         AVATARS_CDN_URL: avatarsCdnUrl,
         PROTOTYPES_CDN_URL: prototypesCdnUrl,
+        // The distribution whose /prototypes/* cache a project delete evicts.
+        // Absent locally, which the sweep treats as "no CloudFront" and skips.
+        PROTOTYPES_DISTRIBUTION_ID: frontendDistribution.distributionId,
         CDN_SIGNING_SECRET_ARN: cdnSigningSecretArn,
         CDN_SIGNING_KEY_PAIR_ID: cdnSigningKeyPairId,
         ALLOWED_ORIGIN: allowedOrigin,

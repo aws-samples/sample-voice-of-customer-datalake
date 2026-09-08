@@ -18,7 +18,7 @@
   },
   "deleteModal": {
     "confirm": "Löschen",
-    "message": "Sind Sie sicher, dass Sie dieses Projekt löschen möchten? Alle Personas und Dokumente werden dauerhaft gelöscht.",
+    "message": "Möchten Sie dieses Projekt wirklich löschen? Personas samt ihren Bildern, Dokumente, hochgeladene Dateien, Prototypen und der Auftragsverlauf werden alle dauerhaft gelöscht. Prototyp-Links funktionieren danach nicht mehr; die Aktion kann nicht rückgängig gemacht werden.",
     "title": "Projekt löschen"
   },
   "description": "Erstellen Sie Projekte, um Personas, PRDs und PR/FAQs aus Feedback zu erstellen",

@@ -1,12 +1,16 @@
 /**
  * @fileoverview Tests for Layout component.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import i18next, { createInstance } from 'i18next'
+import { I18nextProvider } from 'react-i18next'
 import { Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TestRouter } from '../../test/test-utils'
+import commonDe from '../../../public/locales/de/common.json'
+import commonEn from '../../../public/locales/en/common.json'
 
 // Mock API before importing component
 const mockGetUrgentFeedback = vi.fn()
@@ -101,6 +105,29 @@ function createWrapper(
     </QueryClientProvider>
   )
 }
+
+/**
+ * A German instance for the one case that has to RENDER in German.
+ *
+ * NOT `.use(initReactI18next)`: that plugin re-points the shared `i18next`
+ * singleton `src/test/setup.ts` initialized in English for the whole suite, so
+ * every other case in this file — and every other file in the same worker — would
+ * render in German. `I18nextProvider` passes this instance explicitly, which makes
+ * the plugin unnecessary as well as harmful. Same construction as
+ * `TimeRangeSelector.localization.test.tsx`.
+ */
+const german = createInstance()
+
+beforeAll(async () => {
+  await german.init({
+    lng: 'de',
+    fallbackLng: false,
+    defaultNS: 'common',
+    ns: ['common'],
+    resources: { de: { common: commonDe } },
+    interpolation: { escapeValue: false },
+  })
+})
 
 describe('Layout', () => {
   beforeEach(() => {
@@ -228,10 +255,41 @@ describe('Layout', () => {
   describe('header', () => {
     it('displays Voice of the Customer title', async () => {
       render(<Layout />, { wrapper: createWrapper() })
-      
+
       await waitFor(() => {
         expect(screen.getByText('Voice of the Customer')).toBeInTheDocument()
       })
+    })
+
+    it('renders the title and subtitle from the catalogue, not from JSX literals', async () => {
+      // RENDERED in German, not merely compared against the German catalogue.
+      // Both strings were hardcoded English and stayed English on every page after
+      // switching the deployed app to German — and an English assertion passes
+      // against exactly that literal, so it cannot be the proof. The catalogue is
+      // the shipped `de` file, so a key added to `en` alone fails here too.
+      render(
+        <I18nextProvider i18n={german}><Layout /></I18nextProvider>,
+        { wrapper: createWrapper() },
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId('app-header-title'))
+          .toHaveTextContent(commonDe.header.title)
+      })
+      expect(screen.getByTestId('app-header-subtitle'))
+        .toHaveTextContent(commonDe.header.subtitle)
+      // The negative half: the English literal is gone, which is the defect.
+      expect(screen.getByTestId('app-header-title'))
+        .not.toHaveTextContent(commonEn.header.title)
+      expect(screen.getByTestId('app-header-subtitle'))
+        .not.toHaveTextContent(commonEn.header.subtitle)
+    })
+
+    it('keeps the default English instance untouched by the German fixture', () => {
+      // Guards the guard: `createInstance` must not have re-pointed the shared
+      // `i18next` singleton that every other case in this file renders through —
+      // the English title case above would then be asserting German.
+      expect(i18next.language).not.toBe('de')
     })
 
     it('renders TimeRangeSelector component', async () => {

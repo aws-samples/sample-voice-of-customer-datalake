@@ -5,6 +5,7 @@ Handles projects, personas, PRDs, PR/FAQs with multi-step LLM orchestration.
 import json
 import os
 import re
+import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -13,7 +14,13 @@ from botocore.exceptions import ClientError
 
 # Shared module imports
 from shared.logging import logger, tracer, metrics
-from shared.aws import get_dynamodb_resource, get_bedrock_client, BEDROCK_MODEL_ID
+from shared.aws import (
+    BEDROCK_MODEL_ID,
+    get_bedrock_client,
+    get_cloudfront_client,
+    get_dynamodb_resource,
+    get_s3_client,
+)
 from shared.api import validate_days, MAX_PERSONAS_PER_GENERATION
 from shared.persona_context import personas_prompt_context
 from shared.converse import converse_chain
@@ -41,19 +48,24 @@ from shared.feedback import (
 )
 from shared.model_config import surface_context_window_tokens
 from shared.avatar import (
+    avatar_object_keys,
+    avatar_object_owner,
     generate_persona_avatar as _generate_persona_avatar,
     get_avatar_cdn_url,
 )
 
-from shared.prototypes import prototype_signed_url
-from shared.tables import get_projects_table, get_feedback_table
+from shared.prototypes import prototype_project_prefix, prototype_signed_url
+from shared.tables import get_projects_table, get_feedback_table, get_jobs_table
 from shared.indexes import PROJECTS_BY_TYPE_INDEX
 from shared.document_versions import (
-    VERSIONED_DOCUMENT_TYPES,
+    get_versioned_document_by_allocation,
+    managed_document_type,
     normalize_document_versions,
     normalized_base_title,
     persist_legacy_document_versions,
+    persist_versioned_document,
     preserve_versioned_document_allocation,
+    research_base_title,
     version_partition_key,
 )
 from shared.project_writes import (
@@ -247,18 +259,27 @@ AVATAR_MAX_CONCURRENCY = MAX_PERSONAS_PER_GENERATION
 PERSONA_PROMPT_VERSION = '2.1.0'
 
 
-def generate_persona_avatar(persona_data: dict, s3_bucket: str | None = None) -> dict:
+def generate_persona_avatar(
+    persona_data: dict,
+    s3_bucket: str | None = None,
+    project_id: str | None = None,
+) -> dict:
     """Wrapper for shared avatar generation that provides the bedrock client.
-    
+
     Args:
         persona_data: Dict with persona info (name, tagline, identity, persona_id)
         s3_bucket: Optional S3 bucket override
-        
+        project_id: The owning project, recorded on the S3 object so a project
+            delete can tell its own avatars from a neighbour's — the key space is
+            flat and persona ids are not unique across projects.
+
     Returns:
         dict with 'avatar_url' and 'avatar_prompt'
     """
     bedrock_client = get_bedrock_client()
-    return _generate_persona_avatar(persona_data, bedrock_client, s3_bucket)
+    return _generate_persona_avatar(
+        persona_data, bedrock_client, s3_bucket, project_id=project_id,
+    )
 
 
 def get_feedback_context(filters: dict, limit: int = 50) -> list[dict]:
@@ -484,6 +505,11 @@ MAX_CHAT_CONTEXT_SELECTED_DOCUMENTS = 20
 MAX_CHAT_CONTEXT_ID_LENGTH = 128
 DOCUMENT_DELETE_ATTEMPTS = 4
 PROJECT_DELETE_FENCE_ATTEMPTS = 4
+#: S3's hard cap on `delete_objects` keys per request. The prefix sweeps never
+#: reach it (`list_objects_v2` returns at most 1000 keys per page, so a page is
+#: always a legal batch), but the avatar sweep builds its own key list from the
+#: persona rows and has to chunk.
+S3_DELETE_BATCH_SIZE = 1000
 _DOCUMENT_SORT_KEY_PREFIXES = (
     'PRD#',
     'PRFAQ#',
@@ -818,10 +844,326 @@ def _start_project_deletion(
 
 
 @tracer.capture_method
+def _delete_project_job_rows(project_id: str) -> None:
+    """Remove every job row this project owns, page by page.
+
+    The jobs live in their OWN table, so the projects-partition sweep never
+    reached them: a deleted project's rows sat there until their TTL (up to 30
+    days, seven for a failed or completed one). Recreating a project with the same
+    id then showed a stranger's job history, and the panel polled work that no
+    longer had a project.
+
+    Paginated because a busy project can hold more job rows than one query page
+    returns. Absent JOBS_TABLE is not fatal: the rest of the lifecycle still has
+    to run, so it is logged and skipped rather than aborting the delete.
+    """
+    jobs_table = get_jobs_table()
+    if jobs_table is None:
+        logger.warning(
+            'JOBS_TABLE is not configured; project job rows were not deleted',
+            extra={'project_id': project_id},
+        )
+        return
+
+    query: dict = {
+        'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}'),
+        'ConsistentRead': True,
+        'ProjectionExpression': 'pk, sk',
+    }
+    with jobs_table.batch_writer() as batch:
+        while True:
+            response = jobs_table.query(**query)
+            if not isinstance(response, dict):
+                return
+            for item in response.get('Items') or []:
+                if (
+                    isinstance(item, dict)
+                    and isinstance(item.get('pk'), str)
+                    and isinstance(item.get('sk'), str)
+                ):
+                    batch.delete_item(Key={'pk': item['pk'], 'sk': item['sk']})
+            cursor = response.get('LastEvaluatedKey')
+            if not isinstance(cursor, dict) or not cursor:
+                return
+            query['ExclusiveStartKey'] = cursor
+
+
+@tracer.capture_method
+def _delete_objects_under_prefix(project_id: str, prefix: str) -> None:
+    """Empty one S3 prefix a project owns, page by page.
+
+    Listing the PREFIX rather than deriving keys from the surviving DynamoDB rows
+    is deliberate — a row lost to a partially failed earlier sweep would otherwise
+    orphan its object forever — and it is also what makes a retry resume: each
+    pass lists only what remains.
+
+    Paginated because `list_objects_v2` caps at 1000 keys. Every caller passes a
+    prefix ending in `/`, which is load-bearing: `prototypes/proj_1` without it
+    also matches `prototypes/proj_10/...`, so a sweep on the bare id would remove
+    a NEIGHBOUR's objects.
+    """
+    bucket = os.environ.get('RAW_DATA_BUCKET', '')
+    if not bucket:
+        logger.warning(
+            'RAW_DATA_BUCKET is not configured; project objects were not deleted',
+            extra={'project_id': project_id, 'prefix': prefix},
+        )
+        return
+
+    client = get_s3_client()
+    cursor: str | None = None
+    while True:
+        arguments = {'Bucket': bucket, 'Prefix': prefix}
+        if cursor:
+            arguments['ContinuationToken'] = cursor
+        listing = client.list_objects_v2(**arguments)
+        keys = [
+            {'Key': entry['Key']}
+            for entry in (listing.get('Contents') or [])
+            if isinstance(entry, dict) and isinstance(entry.get('Key'), str)
+        ]
+        if keys:
+            response = client.delete_objects(
+                Bucket=bucket, Delete={'Objects': keys, 'Quiet': True},
+            )
+            # Partial failure is normal under throttling. Reported, not raised:
+            # the caller's retry resumes from whatever is still listed, and
+            # failing here would leave the tombstone un-finalized.
+            errors = response.get('Errors') if isinstance(response, dict) else None
+            if errors:
+                logger.warning(
+                    'Some project objects could not be deleted; retry the delete',
+                    extra={
+                        'project_id': project_id,
+                        'prefix': prefix,
+                        'failed_object_count': len(errors),
+                    },
+                )
+        if not listing.get('IsTruncated'):
+            return
+        cursor = listing.get('NextContinuationToken')
+        if not isinstance(cursor, str) or not cursor:
+            return
+
+
+@tracer.capture_method
+def _delete_project_avatar_objects(project_id: str, persona_ids: list[str]) -> list[str]:
+    """Remove the avatar object of every persona this project OWNS.
+
+    Avatars are keyed by PERSONA id (`avatars/{persona_id}.{ext}`), not by project,
+    so there is no prefix to sweep — the ids have to be collected from the project
+    partition BEFORE that partition is deleted, and are passed in for exactly that
+    reason.
+
+    "Owns" is checked, not assumed, and this is the one sweep that has to. The key
+    space is FLAT, and persona ids are not globally unique: `create_persona` and the
+    persona importer both mint `persona_{YYYYMMDDHHMMSS}` with no project component
+    and no randomness, so two personas created in the same second in DIFFERENT
+    projects name one object. Deleting on the id alone would then remove an avatar
+    from a project nobody deleted, leaving a live persona row pointing at a 404 —
+    data loss in a surviving project, which no amount of retry-safety here excuses.
+    So each candidate's owner is read from the object's own metadata
+    (`avatar_object_owner`) and only a match is deleted. An object that cannot
+    answer — absent, or written before this metadata existed — is LEFT, because the
+    alternative is the cross-project deletion above; the cost is an orphan in a
+    bucket that already had them, and a regeneration re-stamps the owner.
+
+    `avatar_object_keys` supplies every extension a persona's avatar may occupy
+    rather than the one its stored `avatar_url` names: the key embeds the image
+    format, so a persona regenerated across an `output_format` change can have an
+    object under an older extension that nothing references — precisely the orphan
+    a url-derived key would leave behind.
+
+    Chunked at S3's 1000-key `delete_objects` limit. Partial failure is reported
+    for the same reason as the prefix sweeps: the durable work has committed and
+    the tombstone must still be finalized.
+
+    :returns: The keys this project owned and asked S3 to delete, so the caller can
+        invalidate exactly those paths at the edge.
+    """
+    bucket = os.environ.get('RAW_DATA_BUCKET', '')
+    if not bucket:
+        logger.warning(
+            'RAW_DATA_BUCKET is not configured; persona avatars were not deleted',
+            extra={'project_id': project_id},
+        )
+        return []
+    if not persona_ids:
+        return []
+
+    client = get_s3_client()
+    owned: list[str] = []
+    skipped = 0
+    for persona_id in persona_ids:
+        for key in avatar_object_keys(persona_id):
+            owner = avatar_object_owner(client, bucket, key)
+            if owner == project_id:
+                owned.append(key)
+            elif owner is not None:
+                # A neighbour's object under an id this project also used. Never
+                # deleted, and worth a log line: it is the collision itself
+                # becoming observable.
+                skipped += 1
+    if skipped:
+        logger.warning(
+            'Some avatar objects are owned by another project and were kept',
+            extra={'project_id': project_id, 'foreign_object_count': skipped},
+        )
+    if not owned:
+        return []
+
+    for start in range(0, len(owned), S3_DELETE_BATCH_SIZE):
+        response = client.delete_objects(
+            Bucket=bucket,
+            Delete={
+                'Objects': [{'Key': key} for key in owned[start:start + S3_DELETE_BATCH_SIZE]],
+                'Quiet': True,
+            },
+        )
+        errors = response.get('Errors') if isinstance(response, dict) else None
+        if errors:
+            logger.warning(
+                'Some persona avatars could not be deleted; retry the delete',
+                extra={'project_id': project_id, 'failed_object_count': len(errors)},
+            )
+    return owned
+
+
+def _persona_id_from_sort_key(sk: str) -> str | None:
+    """The persona id a `PERSONA#{id}` sort key names, or None if it names none.
+
+    An EXACT shape, not just the prefix. Every writer today spells exactly
+    `PERSONA#{persona_id}` with no further segment, so a `removeprefix` was correct
+    — but the sweep this feeds is the one that reaches a key space shared across
+    projects, and it now spends a `head_object` per candidate key. A future
+    `PERSONA#{id}#NOTE#{n}` sub-row would silently yield the bogus id `{id}#NOTE#{n}`
+    and buy four HEADs for keys that cannot exist. Stated rather than assumed, so
+    adding a sub-row shape does not quietly change what this returns.
+    """
+    if not sk.startswith('PERSONA#'):
+        return None
+    persona_id = sk.removeprefix('PERSONA#')
+    if not persona_id or '#' in persona_id:
+        return None
+    return persona_id
+
+
+def _botocore_error_code(error: BaseException) -> str:
+    """The AWS error code behind a botocore failure, or the exception's class name.
+
+    Written to be unable to raise, because its only callers are best-effort handlers
+    whose whole contract is that nothing escapes them — an exception thrown while
+    LOGGING a swallowed exception would defeat the swallow entirely.
+
+    That means every hop is checked rather than defaulted. `ClientError.response` is
+    a dict, but the non-`ClientError` failures these handlers exist to catch
+    (`EndpointConnectionError`, `NoCredentialsError`, `ParamValidationError`) have no
+    `response` at all, and a botocore-shaped object with `response['Error']` present
+    but `None` — or a string — would make `.get` on it an AttributeError. `or {}`
+    does not cover a non-mapping, so `isinstance` does.
+    """
+    response = getattr(error, 'response', None)
+    if not isinstance(response, dict):
+        return type(error).__name__
+    detail = response.get('Error')
+    if not isinstance(detail, dict):
+        return type(error).__name__
+    code = detail.get('Code')
+    return code if isinstance(code, str) and code else type(error).__name__
+
+
+@tracer.capture_method
+def _invalidate_project_cached_objects(project_id: str, paths: list[str]) -> None:
+    """Drop this project's deleted objects from the CloudFront edge cache.
+
+    Deleting the S3 objects is not enough to make them unreachable. Both behaviors
+    that serve them — `/prototypes/*` and `/avatars/*` — run CACHING_OPTIMIZED
+    because each object is immutable per id, so a signed URL minted before the
+    delete keeps getting an edge HIT: the object is gone from the bucket while the
+    page still renders for the remainder of the signature's TTL (an hour by
+    default). CACHING_OPTIMIZED also forwards no query string, so the signature is
+    not part of the cache key and a cached copy is shareable across viewers.
+
+    Every path is EXPLICIT and project-scoped: `/prototypes/{project_id}/*` for the
+    prototypes, and one entry per avatar key actually deleted. A wildcard over
+    `/avatars/*` would evict every other project's avatars — the same reason the
+    prototype path names the project rather than the behavior — and avatars carry no
+    project component in their key, so there is no narrower wildcard to use.
+
+    One `create_invalidation` for all of them: CloudFront takes a batch, and the
+    free monthly allowance is counted per path either way.
+
+    Best effort by design. This is a cache, not the authority — the bucket is
+    already empty, and a failure here must not leave the tombstone un-finalized
+    on a delete whose durable work has all committed. Absent configuration is the
+    ordinary local/mock case (there is no CloudFront) and is silent.
+    """
+    distribution_id = os.environ.get('PROTOTYPES_DISTRIBUTION_ID', '')
+    if not distribution_id or not paths:
+        return
+
+    try:
+        get_cloudfront_client().create_invalidation(
+            DistributionId=distribution_id,
+            InvalidationBatch={
+                # Quantity must equal len(Items) or CloudFront rejects the batch,
+                # so it is derived rather than written.
+                'Paths': {'Quantity': len(paths), 'Items': paths},
+                # Idempotent per project per delete attempt: a retry within the
+                # same second reuses the reference and CloudFront returns the
+                # existing invalidation rather than creating a second one.
+                'CallerReference': f'delete-{project_id}-{int(time.time())}',
+            },
+        )
+    except Exception as error:  # noqa: BLE001 - see the best-effort contract above
+        # `Exception`, not `ClientError`. Several botocore failure modes for this
+        # call sit OUTSIDE the ClientError hierarchy — EndpointConnectionError
+        # (this client pins us-east-1, so a VPC/DNS hiccup reaching the global
+        # control plane lands here), NoCredentialsError and ParamValidationError.
+        # Catching only ClientError let those propagate out of delete_project and
+        # skip the update_item that finalizes the tombstone, leaving the project
+        # at status='deleting' with its rows and objects already gone — for a
+        # CACHE miss. Same reasoning as shared/avatar.py's superseded-object
+        # cleanup and product_context.delete_doc.
+        logger.warning(
+            'Cache invalidation failed; deleted prototypes and avatars may still '
+            'be served from the edge until their cached copies expire',
+            extra={
+                'project_id': project_id,
+                'error_code': _botocore_error_code(error),
+            },
+        )
+
+
+@tracer.capture_method
 def delete_project(project_id: str) -> dict:
-    """Retain a tombstone while deleting every project-owned artifact."""
+    """Retain a tombstone while deleting every project-owned artifact.
+
+    "Every" is the contract the delete-confirmation copy states, so it is the
+    contract here: the project partition, the version partition, the job rows in
+    their own table, and all three S3 prefixes — prototypes, product docs (raw and
+    extracted) and the personas' avatars. `rawDataBucket` has no lifecycle
+    expiration, so an object this misses is billed forever AND stays reachable
+    through its signed URL for the rest of that signature's TTL.
+
+    Idempotent and retry-safe end to end. The fence goes down first, so a writer
+    either committed before it (and is visible to the strongly consistent scans
+    below) or fails after it. Every sweep then deletes only what it still finds,
+    which is what lets a retry resume after a partial failure — including one that
+    left the tombstone un-finalized.
+    """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
+
+    # Function-scoped rather than module-scoped, matching every other
+    # product_context use in this file: that module is only reachable when the
+    # product-context feature is deployed, and a cold start must not fail over a
+    # prefix string. Hoisted to the TOP of the function, though, and that placement
+    # is the point — down beside the sweeps it sat after the rows were already gone
+    # and before the tombstone was finalized, so an import failure would have
+    # produced exactly the stranded status='deleting' project the deferral is meant
+    # to avoid. Up here nothing has been deleted yet, so the failure is clean.
+    from product_context import product_docs_project_prefix
 
     project_key = f'PROJECT#{project_id}'
     meta_key = project_meta_key(project_id)
@@ -831,14 +1173,48 @@ def delete_project(project_id: str) -> dict:
     # Keep tombstoned META forever. Guarded writers either committed before the
     # fence (and are visible to these strongly consistent scans) or fail after
     # it; retries repeat both idempotent sweeps.
+    #
+    # Avatars are keyed by PERSONA id rather than by project, so unlike the two
+    # prefix sweeps below there is nothing in S3 to list — the ids have to come
+    # from the rows, and only this sweep still sees them. Collected from the sort
+    # key of the same pass rather than by a second query: the page is already in
+    # hand, and re-querying after the delete would find nothing.
+    persona_ids: list[str] = []
     with projects_table.batch_writer() as batch:
         for key in _iter_partition_keys(project_key):
-            if key != meta_key:
-                batch.delete_item(Key=key)
+            if key == meta_key:
+                continue
+            persona_id = _persona_id_from_sort_key(key['sk'])
+            if persona_id is not None:
+                persona_ids.append(persona_id)
+            batch.delete_item(Key=key)
 
     with projects_table.batch_writer() as batch:
         for key in _iter_partition_keys(version_partition_key(project_id)):
             batch.delete_item(Key=key)
+
+    _delete_project_job_rows(project_id)
+    # Every S3 prefix the project owns, not just the prototypes. `rawDataBucket`
+    # has no lifecycle expiration, so an object left here is billed indefinitely
+    # AND stays reachable through its signed URL for the rest of that signature's
+    # TTL — the same two arguments that motivated the prototype sweep apply to
+    # product docs and persona avatars, and the delete-confirmation copy tells the
+    # user all of it goes.
+    _delete_objects_under_prefix(project_id, prototype_project_prefix(project_id))
+    _delete_objects_under_prefix(project_id, product_docs_project_prefix(project_id))
+    deleted_avatar_keys = _delete_project_avatar_objects(project_id, persona_ids)
+    # Emptying the bucket does not make a CDN-served object unreachable, so the two
+    # prefixes that ARE served through CloudFront are evicted: the prototypes, and
+    # the avatar keys this project actually owned. Product docs need no entry — they
+    # are read through presigned S3 URLs rather than the distribution, so the empty
+    # bucket is already the whole story for them.
+    _invalidate_project_cached_objects(
+        project_id,
+        [
+            f'/{prototype_project_prefix(project_id)}*',
+            *(f'/{key}' for key in deleted_avatar_keys),
+        ],
+    )
 
     projects_table.update_item(
         Key=meta_key,
@@ -1201,7 +1577,9 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
             # is true of some X-Ray setups and has been raised against this block
             # repeatedly.
             def _avatar_for(persona_id: str, persona: dict) -> dict:
-                return generate_persona_avatar({'persona_id': persona_id, **persona})
+                return generate_persona_avatar(
+                    {'persona_id': persona_id, **persona}, project_id=project_id,
+                )
 
             def _count_avatar_failure(persona_id: str, reason: str) -> None:
                 """Record one persona ending up without an avatar.
@@ -1878,10 +2256,11 @@ def update_document(project_id: str, document_id: str, body: dict) -> dict:
         raise ServiceError('Stored document has an invalid sort key')
 
     document_type = document.get('document_type')
-    managed = (
-        isinstance(document_type, str)
-        and document_type in VERSIONED_DOCUMENT_TYPES
-    ) or sk.startswith(('PRD#', 'PRFAQ#', 'PROTOTYPE#'))
+    # One shared predicate rather than a local prefix tuple: adding a managed
+    # type (research, #406 follow-up) must not leave this route editing a
+    # managed title as if it were free text.
+    managed_type = managed_document_type(document)
+    managed = managed_type is not None
     is_prototype = (
         document_type == 'prototype'
         or sk.startswith('PROTOTYPE#')
@@ -1896,9 +2275,15 @@ def update_document(project_id: str, document_id: str, body: dict) -> dict:
         if managed:
             stored_title = document.get('base_title') or document.get('title') or 'Untitled'
             if normalized_base_title(body['title']) != normalized_base_title(stored_title):
+                # The type comes from the DATA, not from a literal list. The
+                # literal enumerated PRD, PR/FAQ and prototype, so once research
+                # became managed a research rename got a 400 naming three types
+                # that excluded the one being edited — which reads like a server
+                # bug rather than the rule it is.
                 raise ValidationError(
-                    'Managed PRD, PR/FAQ, and prototype titles cannot change '
-                    'series. Use the dedicated workflow to create a new series.'
+                    'Managed document titles cannot change series '
+                    f"(document_type '{managed_type}'). "
+                    'Use the dedicated workflow to create a new series.'
                 )
         else:
             update_expr += ', title = :title'
@@ -1977,12 +2362,7 @@ def delete_document(
         {},
     )
 
-    document_type = document.get('document_type')
-    is_managed = (
-        isinstance(document_type, str)
-        and document_type in VERSIONED_DOCUMENT_TYPES
-    ) or sk.startswith(('PRD#', 'PRFAQ#', 'PROTOTYPE#'))
-    if is_managed:
+    if managed_document_type(document) is not None:
         # Persist the complete snapshot before removing one managed row. This
         # keeps surviving legacy siblings on their assigned versions. Counters
         # and assignment rows intentionally remain as allocation history.
@@ -2321,8 +2701,10 @@ def regenerate_persona_avatar(project_id: str, persona_id: str) -> dict:
     if not item:
         raise NotFoundError('Persona not found')
     
-    # Generate new avatar
-    avatar_result = generate_persona_avatar(item)
+    # Generate new avatar. The project id goes onto the object: a regeneration is
+    # the one avatar write whose persona already exists, so an object that predates
+    # the ownership metadata gets it the next time this route runs.
+    avatar_result = generate_persona_avatar(item, project_id=project_id)
     
     if not avatar_result.get('avatar_url'):
         raise ServiceError('Avatar generation failed')
@@ -2400,7 +2782,7 @@ def delete_persona(project_id: str, persona_id: str) -> dict:
 
 
 @tracer.capture_method
-def run_research(project_id: str, body: dict) -> dict:
+def run_research(project_id: str, body: dict, allocation_id: str) -> dict:
     """Run deep research analysis on feedback data.
 
     FALLBACK PATH ONLY. ``projects_handler.py`` prefers the Step Functions
@@ -2410,12 +2792,26 @@ def run_research(project_id: str, body: dict) -> dict:
     which has its own ``limit=50`` and its own 50 000-char truncation. That is
     why ``FEEDBACK_LIMIT_RESEARCH`` is left at its historical value here; see
     :func:`generate_prd`.
+
+    ``allocation_id`` is the job id the route already minted. Both research
+    writers pass it, so a retry of either path resolves to the same document key
+    and version instead of allocating a second one.
     """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
-    
+
     research_question = body.get('question', 'What are the main customer pain points?')
-    
+    base_title = research_base_title(body.get('title'), research_question)
+
+    # A committed replay returns the stored document rather than re-running the
+    # LLM chain and allocating a second version. Checked before any Bedrock call
+    # so a client retry after a gateway timeout costs nothing.
+    existing = get_versioned_document_by_allocation(
+        projects_table, project_id, 'research', allocation_id,
+    )
+    if existing is not None:
+        return {'success': True, 'document': existing}
+
     # Get project data - exceptions will propagate
     project_data = get_project(project_id)
     
@@ -2455,8 +2851,7 @@ def run_research(project_id: str, body: dict) -> dict:
         
         # Save research - combine all results into a comprehensive report
         now = datetime.now(timezone.utc).isoformat()
-        research_id = f"research_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-        
+
         # Build comprehensive research report from all steps
         full_report = f"""# Research Report: {research_question}
 
@@ -2489,27 +2884,30 @@ def run_research(project_id: str, body: dict) -> dict:
             full_report = full_report[:max_content_size] + "\n\n---\n\n*[Report truncated due to size limits]*"
             logger.warning(f"Research report truncated from {len(full_report)} to {max_content_size} chars")
         
-        item = {
-            'pk': f'PROJECT#{project_id}',
-            'sk': f'RESEARCH#{research_id}',
-            'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
-            'gsi1sk': now,
-            'document_id': research_id,
-            'document_type': 'research',
-            'title': body.get('title', f'Research: {research_question[:50]}'),
-            'question': research_question,
-            'content': full_report,
-            'feedback_count': len(feedback_items),
-            'created_at': now,
-        }
-        
         logger.info(f"Saving research document, content size: {len(full_report)} chars, feedback items: {len(feedback_items)}")
-        put_project_item_and_increment(
-            projects_table, project_id, item, 'document_count',
+        # Through the shared allocator, exactly as the PRD/PR-FAQ/prototype
+        # writers do: it owns the deterministic key, the atomic counter bump and
+        # the document_count increment in one transaction.
+        item = persist_versioned_document(
+            projects_table,
+            project_id,
+            'research',
+            base_title,
+            allocation_id,
+            {
+                'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
+                'gsi1sk': now,
+                'question': research_question,
+                'content': full_report,
+                'feedback_count': len(feedback_items),
+                'created_at': now,
+            },
         )
-        
+
         return {'success': True, 'document': item}
-        
+
+    except (ValidationError, ServiceError):
+        raise
     except Exception as e:
         logger.exception(f"Research failed: {e}")
         raise ServiceError('Failed to run research. Please try again.')

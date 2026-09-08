@@ -187,11 +187,22 @@ class TestUpdateProject:
             update_project('proj-1', {'name': 'Test'})
 
 
+# The owned-artifact sweeps below reach OTHER services (the jobs table and the
+# raw-data bucket), so they are stubbed in every test here that drives
+# `delete_project` against a `MagicMock` projects table — those tests assert the
+# projects-partition request shape, and an unstubbed sweep would issue a real
+# Query, a real ListObjectsV2 and a real DeleteObjects. The sweeps' own behaviour
+# is proven against real DynamoDB and S3 in `test_project_delete_lifecycle_moto.py`.
 class TestDeleteProject:
     """Tests for delete_project function."""
 
+    @patch('projects._delete_project_avatar_objects')
+    @patch('projects._delete_objects_under_prefix')
+    @patch('projects._delete_project_job_rows')
     @patch('projects.projects_table')
-    def test_deletes_project_and_version_assignment_partitions(self, mock_table):
+    def test_deletes_project_and_version_assignment_partitions(
+        self, mock_table, _jobs_sweep, _object_sweep, _avatar_sweep,
+    ):
         """Deletes project rows, counters, and durable legacy assignments."""
         mock_table.query.side_effect = [
             {
@@ -545,6 +556,34 @@ class TestDocumentVersionBoundaries:
 
         mock_table.update_item.assert_not_called()
 
+    @patch('projects.projects_table')
+    def test_the_series_refusal_names_the_type_being_edited(self, mock_table):
+        """The message comes from the DATA, not from a literal list of types.
+
+        It used to enumerate "PRD, PR/FAQ, and prototype", so once research became
+        managed a research rename got a 400 naming three types that excluded the one
+        the user was editing — indistinguishable from a server bug.
+        """
+        mock_table.query.return_value = {
+            'Items': [{
+                'pk': 'PROJECT#p1', 'sk': 'RESEARCH#d1', 'document_id': 'd1',
+                'document_type': 'research', 'base_title': 'Research: churn drivers',
+                'title': 'Research: churn drivers (v2)', 'version': 2,
+            }],
+        }
+
+        from projects import update_document
+        from shared.exceptions import ValidationError
+
+        with pytest.raises(ValidationError, match='cannot change series') as raised:
+            update_document('p1', 'd1', {'title': 'Something else'})
+
+        assert 'research' in str(raised.value)
+        # The stale enumeration named types the user was NOT editing.
+        assert 'PRD' not in str(raised.value)
+        assert 'prototype' not in str(raised.value)
+        mock_table.update_item.assert_not_called()
+
     @patch('projects.preserve_versioned_document_allocation')
     @patch('projects.persist_legacy_document_versions')
     @patch('projects.projects_table')
@@ -838,6 +877,47 @@ class TestProjectChatContext:
             'PRD#prd', 'PRODUCT_REPORT#report',
         ]
 
+    @patch('projects.projects_table')
+    def test_two_legacy_research_reports_get_stable_distinct_versions(self, mock_table):
+        """Research is a managed versioned type (#406 follow-up), so two reports
+        sharing one question must reach the model as `(v1)` and `(v2)` rather than
+        as two documents with the same name.
+
+        Deliberately UNVERSIONED input: these are the rows a project written before
+        research was managed carries. Numbered by `created_at`, so the older report
+        keeps v1 when a newer one arrives — an order-derived label would renumber it.
+        """
+        mock_table.query.return_value = {
+            'Items': [
+                {'pk': 'PROJECT#p1', 'sk': 'META', 'project_id': 'p1', 'name': 'P'},
+                {
+                    'pk': 'PROJECT#p1', 'sk': 'RESEARCH#newer',
+                    'document_id': 'newer', 'document_type': 'research',
+                    'title': 'Churn drivers', 'created_at': '2026-06-01T00:00:00Z',
+                },
+                {
+                    'pk': 'PROJECT#p1', 'sk': 'RESEARCH#older',
+                    'document_id': 'older', 'document_type': 'research',
+                    'title': 'Churn drivers', 'created_at': '2026-01-01T00:00:00Z',
+                },
+            ],
+        }
+
+        from projects import get_project_chat_context
+
+        result = get_project_chat_context('p1', [])
+
+        by_id = {
+            document['document_id']: document for document in result['documents']
+        }
+        assert by_id['older']['title'] == 'Churn drivers (v1)'
+        assert by_id['older']['version'] == 1
+        assert by_id['newer']['title'] == 'Churn drivers (v2)'
+        assert by_id['newer']['version'] == 2
+        assert {document['base_title'] for document in result['documents']} == {
+            'Churn drivers',
+        }
+
     @pytest.mark.parametrize('project_id, selected_document_ids', [
         ('', []),
         ('p' * 129, []),
@@ -942,8 +1022,13 @@ def test_document_delete_repairs_a_stale_zero_count_instead_of_blocking(mock_tab
     assert 'document_count = :observed_count' in update['ConditionExpression']
 
 
+@patch('projects._delete_project_avatar_objects')
+@patch('projects._delete_objects_under_prefix')
+@patch('projects._delete_project_job_rows')
 @patch('projects.projects_table')
-def test_project_delete_retries_fence_when_tombstone_insert_loses(mock_table):
+def test_project_delete_retries_fence_when_tombstone_insert_loses(
+    mock_table, _jobs_sweep, _object_sweep, _avatar_sweep,
+):
     conditional = ClientError(
         {
             'Error': {

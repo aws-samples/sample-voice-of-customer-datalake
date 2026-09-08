@@ -179,9 +179,13 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, import_config: dic
         'updated_at': now,
     }
     
-    # Generate avatar
+    # Generate avatar. `project_id` is what lets a project delete tell this avatar
+    # apart from a neighbour's: the id above carries no project component, so two
+    # imports in the same second under different projects name one S3 object.
     avatar_data = {'persona_id': persona_id, **item}
-    avatar_result = generate_persona_avatar(avatar_data, RAW_DATA_BUCKET)
+    avatar_result = generate_persona_avatar(
+        avatar_data, RAW_DATA_BUCKET, project_id=project_id,
+    )
     if avatar_result.get('avatar_url'):
         item['avatar_url'] = avatar_result['avatar_url']
         item['avatar_prompt'] = avatar_result.get('avatar_prompt', '')

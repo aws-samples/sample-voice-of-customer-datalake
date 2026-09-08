@@ -20,10 +20,24 @@ import os
 # importer does have the layer; this keeps that from being load-bearing.)
 
 
+def prototype_project_prefix(project_id: str) -> str:
+    """Every prototype object one project owns, and nothing another owns.
+
+    The trailing slash is load-bearing: without it `prototypes/proj_1` also
+    matches `prototypes/proj_10/...`, so a delete sweep listing on the bare id
+    would remove another project's prototypes. Shared with
+    :func:`prototype_s3_key` so the writer's layout and the sweep's prefix cannot
+    drift apart.
+    """
+    if not isinstance(project_id, str) or not project_id.strip():
+        raise ValueError('A project id is required to address prototype objects')
+    return f"prototypes/{project_id}/"
+
+
 def prototype_s3_key(project_id: str, doc_id: str) -> str:
     """S3 key for a generated prototype's HTML, under the `/prototypes/*` prefix
     that the frontend distribution's cache behavior serves."""
-    return f"prototypes/{project_id}/{doc_id}.html"
+    return f"{prototype_project_prefix(project_id)}{doc_id}.html"
 
 
 def prototype_signed_url(project_id: str, doc_id: str, cdn_url: str | None = None) -> str | None:
