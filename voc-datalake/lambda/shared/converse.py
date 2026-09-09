@@ -5,14 +5,20 @@ Provides a unified interface for LLM interactions with optional tool use.
 
 import random
 import time
-from typing import Callable
-from botocore.exceptions import ClientError
+from typing import Callable, TypeVar
+from botocore.exceptions import ClientError, ReadTimeoutError
 from shared.logging import logger
 from shared.aws import get_bedrock_client
 from shared.model_config import (
     get_active_model_id, omits_temperature, uses_adaptive_thinking, DEFAULT_SURFACE,
 )
 
+
+# Whatever the wrapped Bedrock call returns, so bedrock_call_with_retry does not
+# flatten it to `object`: its callers read the response directly (`.get('output')`,
+# `['body'].read()`) now that none of them guards against None, and a return type
+# that hid the shape would invite those guards straight back.
+_CallResult = TypeVar('_CallResult')
 
 # Retry configuration
 DEFAULT_MAX_RETRIES = 5
@@ -397,28 +403,58 @@ def converse(
         raise
 
 
-def _converse_with_retry(
-    client,
-    kwargs: dict,
+def bedrock_call_with_retry(
+    call: Callable[[], _CallResult],
     max_retries: int = DEFAULT_MAX_RETRIES,
     raise_on_throttle: bool = True,
     step_name: str = "unknown",
-) -> dict:
-    """
-    Invoke Bedrock converse with exponential backoff retry, returning the raw response.
+    call_label: str = "the Bedrock call",
+) -> _CallResult | None:
+    """Run *call*, retrying only the failures a second attempt can actually fix.
+
+    THE POLICY LIVES HERE because botocore cannot express it: **retry a throttle,
+    never retry a read timeout.** A 429 costs a round trip and no generation, so
+    retrying it with backoff is nearly free. A read timeout means the generation
+    itself outran the client's patience, and an identical request cannot go faster
+    with less time left — see BEDROCK_READ_TIMEOUT_SECONDS in shared/aws.py, whose
+    retry budget is 1 for exactly this reason. botocore's own retries could not
+    tell those two apart, and retried both.
+
+    Exposed (not underscore-private) for the RAW client callers: the product
+    interview turn, persona import and manual-import classification each build
+    their own Converse/InvokeModel request because they carry a tool config, an
+    image block or an Anthropic-native body that the text-only `converse()` helper
+    does not take. They previously leaned on botocore's attempts, which is not a
+    policy anyone chose — dropping those to 1 would otherwise have left them
+    surfacing the first 429 with no backoff anywhere.
 
     Args:
-        client: Bedrock runtime client
-        kwargs: Arguments for client.converse()
-        max_retries: Maximum retry attempts
-        raise_on_throttle: If True, raise BedrockThrottlingError after max retries
-        step_name: Name of the current step for logging
+        call: Zero-argument callable performing ONE Bedrock request. Called again
+            per retry, so it must be safe to re-run (build the request outside).
+        max_retries: Maximum attempts, including the first. Every caller passes a
+            literal or takes the default — nothing derives it from configuration or
+            the environment (the research prompt templates carry `max_tokens`, not
+            this), so the 0 case below is a programming error rather than something
+            a settings row can produce.
+        raise_on_throttle: If True, raise BedrockThrottlingError once throttling
+            has exhausted the attempts. If False, return None instead.
+        step_name: Name of the current step, for logging.
+        call_label: What is being called, for logging.
 
     Returns:
-        Raw Bedrock converse response dict
+        Whatever *call* returns. **None ONLY when raise_on_throttle=False** — with
+        the default this either returns a result or raises, so callers do not need
+        to guard against None. That is a total contract on purpose: three call
+        sites each inventing their own None check is how one of them ends up
+        without it, and the failure there is a TypeError on the next line instead
+        of a diagnosis.
 
     Raises:
-        BedrockThrottlingError: If throttled after max retries and raise_on_throttle=True
+        BedrockThrottlingError: If throttling exhausted the attempts and
+            raise_on_throttle=True — including the degenerate max_retries=0, where
+            no attempt was made at all. A caller error must fail loudly rather
+            than return an empty result that reads like a Bedrock answer.
+        ReadTimeoutError: Immediately, on the first read timeout, unretried
         ClientError: For non-retryable AWS errors
     """
     last_exception = None
@@ -428,23 +464,15 @@ def _converse_with_retry(
         attempt_start = time.time()
 
         try:
-            logger.info(f"[BEDROCK] Calling client.converse() for step '{step_name}'...")
-            response = client.converse(**kwargs)
+            logger.info(f"[BEDROCK] Calling {call_label} for step '{step_name}'...")
+            result = call()
             attempt_elapsed = time.time() - attempt_start
-
-            # Log response metadata
-            usage = response.get('usage', {})
-            stop_reason = response.get('stopReason', 'unknown')
-            input_tokens = usage.get('inputTokens', 0)
-            output_tokens = usage.get('outputTokens', 0)
-
             logger.info(f"[BEDROCK] Response received for step '{step_name}' in {attempt_elapsed:.2f}s")
-            logger.info(f"[BEDROCK] Usage: input_tokens={input_tokens}, output_tokens={output_tokens}, stop_reason={stop_reason}")
 
             if attempt > 0:
                 logger.info(f"[BEDROCK] Bedrock succeeded after {attempt + 1} attempts for step '{step_name}'")
 
-            return response
+            return result
 
         except ClientError as e:
             attempt_elapsed = time.time() - attempt_start
@@ -474,6 +502,32 @@ def _converse_with_retry(
                 logger.error(f"[BEDROCK] Non-retryable error for step '{step_name}': {error_code} - {error_message}")
                 raise
 
+        except ReadTimeoutError:
+            # NOT retried, deliberately — and this branch is what keeps the
+            # one-attempt budget in shared/aws.py from being undone here.
+            #
+            # `converse` is non-streaming, so a read timeout means the generation
+            # needed longer than the client was willing to wait. The identical
+            # request will not run faster on a second try, and each retry
+            # re-submits the prompt and re-pays for a full abandoned generation
+            # while spending time this invocation no longer has. Retrying would
+            # simply move the old 3 × 300 = 900 collision up one layer and make it
+            # 5 × 840, i.e. the same bug with a bigger multiplier.
+            #
+            # Raised rather than swallowed so the caller's own failure path runs
+            # (shared/jobs.py records the job `failed`), and logged HERE because
+            # the read timeout is the one attempt outcome the application would
+            # otherwise never name — it is not a ClientError and carries no error
+            # code to triage from.
+            attempt_elapsed = time.time() - attempt_start
+            logger.error(
+                f"[BEDROCK] Read timeout for step '{step_name}' after "
+                f"{attempt_elapsed:.2f}s — not retried: a non-streaming generation "
+                f"that exceeded the read budget will exceed it again. Reduce "
+                f"max_tokens for this step or split it."
+            )
+            raise
+
         except Exception as e:
             attempt_elapsed = time.time() - attempt_start
             last_exception = e
@@ -490,13 +544,69 @@ def _converse_with_retry(
                 logger.error(f"[BEDROCK] Step '{step_name}' failed after {max_retries} attempts: {e}")
                 raise
 
-    # Should not reach here, but handle gracefully
+    # Reached when the attempts ran out without a result: throttling with
+    # raise_on_throttle=False, or the degenerate max_retries=0 where the loop never
+    # ran and `last_exception` is therefore None.
     logger.error(f"[BEDROCK] Step '{step_name}' exhausted all retries without success")
-    if raise_on_throttle and last_exception:  # pragma: no cover — defensive guard; retryable errors raise inside the loop
+    if raise_on_throttle:
+        # Not conditional on last_exception: with max_retries=0 there is none, and
+        # returning None there would hand a caller who cannot expect it (see the
+        # contract above) something that reads like an empty Bedrock answer.
+        cause = f': {last_exception}' if last_exception else ' (no attempt was made)'
         raise BedrockThrottlingError(
-            f"Bedrock failed after {max_retries} retries for step '{step_name}': {last_exception}"
+            f"Bedrock failed after {max_retries} retries for step '{step_name}'{cause}"
         )
-    return {}
+    return None
+
+
+def _converse_with_retry(
+    client,
+    kwargs: dict,
+    max_retries: int = DEFAULT_MAX_RETRIES,
+    raise_on_throttle: bool = True,
+    step_name: str = "unknown",
+) -> dict:
+    """
+    Invoke Bedrock converse with exponential backoff retry, returning the raw response.
+
+    The retry POLICY is bedrock_call_with_retry's; this adds the response logging
+    that only a Converse reply has, and keeps the `{}` empty return the callers
+    below are written against.
+
+    Args:
+        client: Bedrock runtime client
+        kwargs: Arguments for client.converse()
+        max_retries: Maximum retry attempts
+        raise_on_throttle: If True, raise BedrockThrottlingError after max retries
+        step_name: Name of the current step for logging
+
+    Returns:
+        Raw Bedrock converse response dict, or {} when retries were exhausted
+        with raise_on_throttle=False.
+
+    Raises:
+        BedrockThrottlingError: If throttled after max retries and raise_on_throttle=True
+        ClientError: For non-retryable AWS errors
+    """
+    response = bedrock_call_with_retry(
+        lambda: client.converse(**kwargs),
+        max_retries=max_retries,
+        raise_on_throttle=raise_on_throttle,
+        step_name=step_name,
+        call_label='client.converse()',
+    )
+    if not isinstance(response, dict):
+        return {}
+
+    usage = response.get('usage', {})
+    stop_reason = response.get('stopReason', 'unknown')
+    input_tokens = usage.get('inputTokens', 0)
+    output_tokens = usage.get('outputTokens', 0)
+    logger.info(
+        f"[BEDROCK] Usage: input_tokens={input_tokens}, output_tokens={output_tokens}, "
+        f"stop_reason={stop_reason}"
+    )
+    return response
 
 
 def _invoke_with_retry(

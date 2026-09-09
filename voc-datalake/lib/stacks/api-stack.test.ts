@@ -36,6 +36,10 @@ import { z } from 'zod';
 
 import { VocApiStack } from './api-stack';
 import { ManifestSchema } from '../plugin-loader';
+import {
+  BEDROCK_FAILURE_RECORDING_RESERVE_SECONDS,
+  pythonIntConstant,
+} from '../test-support/cross-language-invariants';
 
 /** The only routes that may be served without credentials.
  *
@@ -2858,5 +2862,144 @@ describe('document workflow replay routing', () => {
       '"Variable":"$.gathered.replayed","BooleanEquals":true,"Next":"DocComplete"',
     );
     expect(state.definition).toContain('"Default":"DocStep0"');
+  });
+});
+
+describe('the Bedrock generation budget fits the job Lambdas', () => {
+  // The bug this pins was arithmetic split across two files: shared/aws.py built
+  // the ONE cached Bedrock client with read_timeout=300 and max_attempts=3, and
+  // the job functions below are configured for 15 minutes. 3 x 300 = 900, so a
+  // generation needing more than five minutes could not succeed at all — two
+  // abandoned attempts, each re-paying for a full generation, then killed
+  // mid-third. Measured live on a prototype build, where the application log read
+  // "Attempt 1/5" for the whole 900 s because botocore retried BELOW
+  // shared/converse.py's own loop.
+  //
+  // Neither file could catch it alone, which is the reason this test exists here:
+  // the Python side pins the values and their product (lambda/shared/test/
+  // test_aws.py), and this side pins the product against the timeouts actually
+  // synthesized. Same shape as the delegation-timeout suite above.
+  //
+  // Matched on LOGICAL ID, not FunctionName: uniqueName() builds names from the
+  // Aws.ACCOUNT_ID/Aws.REGION pseudo-parameters, so FunctionName synthesizes to
+  // an Fn::Join rather than a comparable string.
+  const JOB_CONSTRUCT_IDS = [
+    'PersonaGeneratorJob',
+    'DocumentGeneratorJob',
+    'DocumentMergerJob',
+    'PersonaImporterJob',
+  ];
+
+  // The two that run a FULL-LENGTH generation, and the pair the read budget is
+  // sized against: `build_prototype` asks for 32000 tokens on this generator, and
+  // persona generation is the other 15-minute caller. `voc-research-step` in
+  // ProcessingStack is the third, pinned at the same 900 s by its own suite.
+  const LONG_GENERATION_JOB_IDS = ['DocumentGeneratorJob', 'PersonaGeneratorJob'];
+
+  const JobFunctionSchema = z.object({ Timeout: z.number() });
+
+  /** Each named function's logical id and timeout, validated rather than assumed. */
+  const jobFunctions = (constructIds: string[] = JOB_CONSTRUCT_IDS) => {
+    const functions = Object.entries(apiTemplate().findResources('AWS::Lambda::Function'));
+    return constructIds.map((constructId) => {
+      const matches = functions.filter(([logicalId]) => logicalId.startsWith(constructId));
+      // Count FIRST: a renamed construct must read as "not found", not as a
+      // vacuous pass over an empty list.
+      expect(matches, `expected exactly one ${constructId}`).toHaveLength(1);
+      return {
+        constructId,
+        logicalId: matches[0][0],
+        timeout: JobFunctionSchema.parse(matches[0][1].Properties).Timeout,
+      };
+    });
+  };
+
+  /** read_timeout x max_attempts, read from the Python that configures the client. */
+  const bedrockMaxAttempts = () =>
+    pythonIntConstant('BEDROCK_MAX_ATTEMPTS', 'lambda', 'shared', 'aws.py');
+  const bedrockBudgetSeconds = () =>
+    pythonIntConstant('BEDROCK_READ_TIMEOUT_SECONDS', 'lambda', 'shared', 'aws.py') *
+    bedrockMaxAttempts();
+
+  it('fires before the long-generation jobs are killed, with time to record the failure', () => {
+    const budget = bedrockBudgetSeconds();
+
+    for (const fn of jobFunctions(LONG_GENERATION_JOB_IDS)) {
+      // Strictly less than, not "fits": a budget that merely EQUALS the ceiling
+      // is the original bug exactly. The invocation has to outlive its own read
+      // timeout far enough for shared/jobs.py to write the job `failed`, or a slow
+      // generation is a silent kill and a job row stuck on `running` forever.
+      expect(budget, `${fn.constructId} runs ${fn.timeout}s; the Bedrock read budget is ${budget}s`)
+        .toBeLessThan(fn.timeout - BEDROCK_FAILURE_RECORDING_RESERVE_SECONDS);
+    }
+  });
+
+  it('classifies every job Lambda as one the read timeout binds inside, or one it does not', () => {
+    // ONE cached client serves the 30 s API handlers, the 5-10 minute
+    // importer/merger jobs and the 15-minute generators, so "the budget is below
+    // every caller's timeout" is not achievable: a per-caller read timeout needs a
+    // keyed client cache plus the caller's remaining time plumbed through
+    // converse(), which nothing passes today.
+    //
+    // Rather than leave that asymmetry as prose, it is enumerated. A job Lambda is
+    // in exactly one band, and a new one — or a timeout change that moves an
+    // existing one across the line — fails here and has to be classified in review
+    // instead of quietly inheriting whichever behaviour it happens to get.
+    //
+    // Band 2 is not a regression introduced by the budget: at the previous 300 x 3
+    // the merger's first read timeout did not surface either, because botocore had
+    // already started attempt 2 when the function was killed. What band 2 costs is
+    // the DIAGNOSIS — the row stays `running` rather than going `failed` — and that
+    // is the separately documented job-timeout defect, whose fix (a remaining-time
+    // guard) covers OOM and every other kill too, so a read-timeout-shaped fix here
+    // would only be a partial one.
+    const budget = bedrockBudgetSeconds();
+    const bands = { bindsInside: [] as string[], killedAtItsOwnCeiling: [] as string[] };
+
+    for (const fn of jobFunctions()) {
+      const band = budget < fn.timeout - BEDROCK_FAILURE_RECORDING_RESERVE_SECONDS
+        ? 'bindsInside'
+        : 'killedAtItsOwnCeiling';
+      bands[band].push(fn.constructId);
+    }
+
+    expect(bands).toEqual({
+      // 15-minute generations: the read timeout fires first and the job records `failed`.
+      bindsInside: ['PersonaGeneratorJob', 'DocumentGeneratorJob'],
+      // 10- and 5-minute jobs: their own timeout is reached first. Safe because the
+      // budget is ONE attempt, so nothing is spent on a retry that cannot help.
+      killedAtItsOwnCeiling: ['DocumentMergerJob', 'PersonaImporterJob'],
+    });
+  });
+
+  it('never multiplies inside a caller too short for the read timeout to bind', () => {
+    // The property that makes one shared budget safe for band 2 above: a single
+    // attempt, so no caller is ever handed a MULTIPLE of the read timeout. This is
+    // the assertion that fails if someone restores botocore's retries.
+    expect(bedrockMaxAttempts(), 'shared/aws.py must make exactly one Bedrock attempt: more than '
+      + 'one makes the budget a MULTIPLE of the read timeout, which is how 300 x 3 came to equal '
+      + 'the 900s job ceiling').toBe(1);
+  });
+
+  it('does not retry the whole generation behind the caller', () => {
+    // These four are invoked with InvocationType='Event', and AWS re-drives a
+    // failed async invocation twice more by default — the second multiplier that
+    // turned one 15-minute kill into ~45 minutes of Opus generations. A missing
+    // EventInvokeConfig is indistinguishable from the default at a glance, which
+    // is why the resource is asserted to EXIST rather than just to be zero.
+    const configs = Object.values(apiTemplate().findResources('AWS::Lambda::EventInvokeConfig'))
+      .map((resource) => z.object({
+        Properties: z.object({
+          FunctionName: RefSchema,
+          MaximumRetryAttempts: z.number(),
+        }),
+      }).parse(resource).Properties);
+
+    for (const fn of jobFunctions()) {
+      const config = configs.find((c) => c.FunctionName.Ref === fn.logicalId);
+      expect(config, `${fn.constructId} has no EventInvokeConfig, so AWS retries it twice`)
+        .toBeDefined();
+      expect(config?.MaximumRetryAttempts, `${fn.constructId} async retries`).toBe(0);
+    }
   });
 });

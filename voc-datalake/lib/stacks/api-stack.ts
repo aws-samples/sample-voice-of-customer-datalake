@@ -726,6 +726,36 @@ export class VocApiStack extends VocStack {
     // Persona avatar image model — see model-allowlist.ts for its EOL deadline.
     const avatarImageModelResource = imageModelArn();
 
+    // Every job Lambda below is invoked with InvocationType='Event' (see
+    // shared/aws.py::invoke_lambda_async), and AWS re-drives a FAILED async
+    // invocation twice more by default, silently. That default is what turned one
+    // prototype click into ~45 minutes: the function was killed at its own 15-min
+    // ceiling, then re-run twice from scratch, each attempt re-writing the same
+    // job row's progress so the UI looked like one job making no headway. Measured
+    // live — a second START with the SAME request id is the signature.
+    //
+    // Zero, because an LLM generation is neither cheap nor idempotent and a retry
+    // here buys nothing: the work restarts from the beginning with the same inputs
+    // that just failed, and shared/jobs.py already records the job `failed` for
+    // the UI to render, so the user can retry deliberately and see why. A hidden
+    // retry only multiplies cost and delays the diagnosis.
+    //
+    // NOT a substitute for a failure destination — routing exhausted async
+    // invocations somewhere durable is tracked separately (#253). This only stops
+    // the multiplier. And it does not affect the Step Functions path for PRD/PR-FAQ:
+    // an EventInvokeConfig governs async invocations only, so createDocumentStateMachine's
+    // own explicit, VISIBLE retries below are untouched.
+    //
+    // Scoped to these four on purpose. The other async targets in this app keep the
+    // AWS default, because for them a re-drive is a benefit rather than a repeated
+    // bill: `voc-manual-import-processor` re-does bounded, content-keyed work that
+    // the processor's idempotency records already de-duplicate, and the scraper and
+    // integration invocations are watermark-driven, so repeating one fetches from
+    // where it left off. What sets these four apart is that ONE invocation is ONE
+    // large generation: a re-drive re-pays for it in full and cannot succeed for a
+    // reason the first attempt failed on.
+    const JOB_ASYNC_RETRY_ATTEMPTS = 0;
+
     // Persona Generator Job Lambda
     const personaGeneratorRole = this.createLambdaRole('PersonaGeneratorRole');
     feedbackTable.grantReadData(personaGeneratorRole);
@@ -748,6 +778,7 @@ export class VocApiStack extends VocStack {
       role: personaGeneratorRole,
       timeout: cdk.Duration.minutes(15),
       memorySize: 1024,
+      retryAttempts: JOB_ASYNC_RETRY_ATTEMPTS,
       environment: {
         PROJECTS_TABLE: projectsTable.tableName,
         FEEDBACK_TABLE: feedbackTable.tableName,
@@ -792,6 +823,7 @@ export class VocApiStack extends VocStack {
       role: documentGeneratorRole,
       timeout: cdk.Duration.minutes(15),
       memorySize: 1024,
+      retryAttempts: JOB_ASYNC_RETRY_ATTEMPTS,
       environment: {
         PROJECTS_TABLE: projectsTable.tableName,
         FEEDBACK_TABLE: feedbackTable.tableName,
@@ -830,6 +862,7 @@ export class VocApiStack extends VocStack {
       role: documentMergerRole,
       timeout: cdk.Duration.minutes(10),
       memorySize: 1024,
+      retryAttempts: JOB_ASYNC_RETRY_ATTEMPTS,
       environment: {
         PROJECTS_TABLE: projectsTable.tableName,
         FEEDBACK_TABLE: feedbackTable.tableName,
@@ -864,6 +897,7 @@ export class VocApiStack extends VocStack {
       role: personaImporterRole,
       timeout: cdk.Duration.minutes(5),
       memorySize: 512,
+      retryAttempts: JOB_ASYNC_RETRY_ATTEMPTS,
       environment: {
         PROJECTS_TABLE: projectsTable.tableName,
         AGGREGATES_TABLE: aggregatesTable.tableName,

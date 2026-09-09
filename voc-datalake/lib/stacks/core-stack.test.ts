@@ -8,12 +8,18 @@
  * Pre-#105 environments deploy with `-c omitUserPoolUsernameConfiguration=true`
  * to keep their pool untouched; greenfield keeps case-insensitive sign-in.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import * as cdk from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { z } from 'zod';
 import { VocCoreStack } from './core-stack';
 import { ALLOWED_MODEL_IDS, MAX_IMAGE_BYTES, MAX_IMAGE_DIMENSION_PX } from '../utils/model-allowlist';
+import {
+  BEDROCK_FAILURE_RECORDING_RESERVE_SECONDS,
+  pythonIntConstant,
+} from '../test-support/cross-language-invariants';
 // The same fixed synth environment and committed feature flags the whole-app
 // harness uses, imported rather than re-declared: a second copy of either drifts
 // silently. Importing costs nothing at module load — synth-app.ts only shells out
@@ -1124,6 +1130,30 @@ describe('VocCoreStack product doc extractor', () => {
     // would start marking SUCCESSFUL extractions as failed.
     expect(fn.Timeout).toBe(120);
     expect(fn.MemorySize).toBeGreaterThanOrEqual(512);
+  });
+
+  it('gives its Bedrock client a budget that fits inside that timeout', () => {
+    // This handler builds its OWN Bedrock client — it is stdlib+boto3 only, so it
+    // cannot import shared/aws.py — and botocore's defaults are wrong here in the
+    // same way the shared client's old ones were: a 60 s read timeout with the
+    // default retry budget can outlast this function's 120 s ceiling, so the last
+    // attempt is always killed in flight. That is a guaranteed-doomed retry, not
+    // a diagnosis, and it is exactly the collision that cost 45 minutes on the
+    // prototype path (see lib/stacks/api-stack.test.ts for the job-Lambda half).
+    //
+    // Read from the handler source because the two numbers that collide live in
+    // different languages and different files; nothing else can see both.
+    const budget =
+      pythonIntConstant('BEDROCK_READ_TIMEOUT_SECONDS', 'lambda', 'product_doc_extractor', 'handler.py') *
+      pythonIntConstant('BEDROCK_MAX_ATTEMPTS', 'lambda', 'product_doc_extractor', 'handler.py');
+    const fn = extractorFunction();
+
+    // The same reserve the shared client's guard requires, for the same reason:
+    // "fits" is not enough, the invocation also has to outlive its own read timeout
+    // long enough to record the failure it hit (`_mark_failed` here). A budget that
+    // merely lands under the ceiling turns a slow description into a silent kill.
+    expect(budget, `the extractor waits up to ${budget}s on Bedrock but runs for ${fn.Timeout}s`)
+      .toBeLessThan(fn.Timeout - BEDROCK_FAILURE_RECORDING_RESERVE_SECONDS);
   });
 
   it('ships without a bundled layer, so CoreStack stays container-free', () => {

@@ -31,6 +31,7 @@ from shared.logging import logger, tracer
 from shared.aws import get_dynamodb_resource, get_bedrock_client
 from shared.image_limits import IMAGE_CONTENT_TYPE_EXTENSIONS, MAX_IMAGE_BYTES
 from shared.model_config import get_active_model_id, omits_temperature
+from shared.converse import bedrock_call_with_retry
 from shared.project_writes import (
     put_project_item,
     put_project_item_and_increment,
@@ -482,14 +483,24 @@ def interview_turn(project_id: str, body: dict) -> dict:
     if not omits_temperature(model):
         inference_config['temperature'] = 0.3
     try:
-        resp = client.converse(
-            modelId=model,
-            messages=messages,
-            system=[{'text': system_prompt}],
-            inferenceConfig=inference_config,
-            toolConfig={'tools': [_build_interview_tool()]},
+        # Through the shared retry policy, not bare: this raw call does not go
+        # through converse(), so without it the FIRST throttle would become a
+        # user-visible "AI interview unavailable" — the shared client makes one
+        # botocore attempt by design (see BEDROCK_READ_TIMEOUT_SECONDS).
+        resp = bedrock_call_with_retry(
+            lambda: client.converse(
+                modelId=model,
+                messages=messages,
+                system=[{'text': system_prompt}],
+                inferenceConfig=inference_config,
+                toolConfig={'tools': [_build_interview_tool()]},
+            ),
+            step_name='interview_turn',
         )
     except Exception as e:
+        # Covers sustained throttling too: bedrock_call_with_retry raises rather
+        # than returning None while raise_on_throttle is left at its default, so
+        # there is no empty-result case to check for below.
         logger.exception(f'Interview Bedrock call failed: {e}')
         raise ServiceError('AI interview unavailable. Please try again.')
 

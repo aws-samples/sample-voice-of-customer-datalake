@@ -22,6 +22,32 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
 
 ### Fixed
 
+- A generation that needs more than five minutes of model time now succeeds, instead of failing three
+  times over and reporting nothing. The shared Bedrock client waited five minutes for a response and
+  then retried twice by itself, so its real budget was fifteen minutes — exactly the ceiling of the
+  job functions that build prototypes, documents, personas and research. A long generation therefore
+  had no path to success: it was abandoned and restarted twice, each attempt re-paying for a full
+  generation, and the function was killed part-way through the third with nothing to show while the
+  job still read as running. Those retries also happened below the platform's own retry loop, so the
+  logs said "attempt 1 of 5" for the entire fifteen minutes and the run looked like one slow call.
+  The client now makes a single attempt and waits fourteen minutes for it, and a read timeout is
+  reported and recorded as a failed job rather than retried into the ceiling. Prototype builds are
+  where this was measured, because they ask for the largest output, but every Bedrock surface shared
+  the same client and the same ceiling.
+  Two of the shorter jobs — merging documents at ten minutes, importing a persona at five — are
+  bounded by their own limit rather than by that fourteen minutes, so a generation longer than their
+  own budget still ends without an explanation attached to it, exactly as it did before. Retrying a
+  throttled request is unaffected everywhere: that is worth a second attempt and is still made, with
+  backoff, by the platform rather than by the AWS client underneath it.
+- A failed prototype build no longer costs up to three quarters of an hour. The job functions are
+  invoked asynchronously, where AWS re-runs a failed invocation twice more by default, so one click
+  became roughly forty-five minutes of model work — invisible, because each re-run wrote progress to
+  the same job row and looked like the first attempt making none. A failure is now reported once, and
+  retrying is the reader's decision.
+- The product-document extractor, which builds its own Bedrock client, had the same collision at a
+  smaller scale: it waited sixty seconds for an image description with retries behind it, against a
+  two-minute function, so its final attempt was always cut off. It now waits eighty seconds once,
+  which also lets a slow description finish where it previously gave up.
 - A CSV upload no longer overwrites an earlier one whose `id` column covered the same numbers.
   A row's identity was the `id` column value as written, and every CSV upload enters the pipeline
   under the single `source_platform` of `manual_import`, from which the processor derives both its
