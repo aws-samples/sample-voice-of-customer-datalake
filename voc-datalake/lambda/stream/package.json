@@ -26,7 +26,7 @@
     "@eslint-community/eslint-plugin-eslint-comments": "^4.7.1",
     "@types/aws-lambda": "^8.10.145",
     "@types/node": "^22.0.0",
-    "@vitest/coverage-v8": "^4.1.0",
+    "@vitest/coverage-v8": "^4.1.11",
     "@vitest/eslint-plugin": "^1.6.13",
     "eslint": "^10.1.0",
     "eslint-plugin-import-x": "^4.16.2",
@@ -38,6 +38,6 @@
     "globals": "^17.4.0",
     "typescript": "~5.7.0",
     "typescript-eslint": "^8.57.1",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.11"
   }
 }
