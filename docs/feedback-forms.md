@@ -6,7 +6,7 @@ Feedback Forms allow you to collect customer feedback directly through embeddabl
 
 The VoC platform provides a customizable feedback form system that:
 
-- Embeds on any website via iframe or JavaScript widget
+- Embeds on any website via an iframe
 - Supports multiple forms with different configurations
 - Routes feedback directly to the processing pipeline
 - Allows pre-categorization for targeted feedback collection
@@ -15,7 +15,7 @@ The VoC platform provides a customizable feedback form system that:
 
 ### Via the Dashboard
 
-1. Navigate to **Settings** → **Feedback Forms**
+1. Navigate to **Feedback Forms** in the main sidebar
 2. Click **Create New Form**
 3. Configure the form settings:
    - **Name**: Internal identifier for the form
@@ -53,7 +53,7 @@ endpoint — see the note in [API Endpoints](#api-endpoints).
 
 ## Embedding Forms
 
-### Option 1: Iframe
+Embed the form with an iframe. This is the snippet to hand to customers:
 
 ```html
 <iframe 
@@ -64,19 +64,18 @@ endpoint — see the note in [API Endpoints](#api-endpoints).
 </iframe>
 ```
 
-### Option 2: JavaScript Widget
+The iframe route returns a self-contained HTML page: the Lambda inlines
+`lambda/api/static/feedback-widget.js` into it and calls `VoCFeedbackForm.init`
+with the form's `config` and `submit` endpoints already wired, so nothing else
+needs loading.
 
-```html
-<div id="voc-feedback-form"></div>
-<script src="https://your-api.execute-api.region.amazonaws.com/v1/feedback-forms/{form_id}/widget.js"></script>
-<script>
-  VoCFeedbackForm.init({
-    container: '#voc-feedback-form',
-    apiEndpoint: 'https://your-api.execute-api.region.amazonaws.com/v1',
-    formId: '{form_id}'
-  });
-</script>
-```
+There is no standalone `widget.js` script to load. That path is registered
+nowhere — not by the handler and not by the API — so a
+`<script src=".../widget.js">` tag never reaches the application at all and gets
+a `403 Missing Authentication Token` back from API Gateway, not the widget. The
+403 means "no such route" here rather than "not allowed": per-form paths are
+declared one by one instead of behind a catch-all, so an unregistered one has
+nothing to answer it.
 
 ## Pre-Categorization
 
@@ -115,6 +114,62 @@ Customize the form appearance:
 | GET | `/feedback-forms/{id}/config` | Public config endpoint. **Unauthenticated** and fetched cross-origin by the embedded widget, so it returns only the widget-rendering fields, via a separate allowlist (`item_to_widget_config` in `lambda/api/feedback_form_handler.py`) rather than the projection the authenticated routes use. It never returns internal identifiers such as `project_id` / `document_id`. |
 | POST | `/feedback-forms/{id}/submit` | Submit feedback |
 | GET | `/feedback-forms/{id}/iframe` | Embeddable HTML page |
+
+### Rate limits on the three public routes
+
+The three unauthenticated routes carry per-method rate limits, set as API Gateway
+stage method settings in `voc-datalake/lib/stacks/api-stack.ts`. They are worth
+knowing before you embed the widget, because they are observable from your page:
+
+<!-- These figures are LOCKSTEPPED against the stack: `the public feedback-form
+     routes` in voc-datalake/lib/stacks/api-stack.test.ts parses every line here
+     that names a route and states a rate, and fails if it disagrees with what
+     api-stack.ts deploys. So edit them only alongside the stack.
+
+     Write a pair as `<rate> req/s, burst <burst>` or `<rate> rps / <burst>`. The
+     parser anchors the burst to the `, burst ` or the `/` immediately after the
+     rate, deliberately, so that a row stating no burst yields nothing and fails
+     loudly rather than adopting an unrelated later number. `(burst N)` or "with a
+     burst of N" will NOT parse and the failure will say the row states no pair.
+
+     Prose ABOUT throughput is fine and is not judged — a line is only checked if
+     it carries digits immediately before a per-second unit. -->
+
+| Route | Rate / burst |
+|-------|--------------|
+| `GET /feedback-forms/{id}/config` | 100 req/s, burst 200 |
+| `GET /feedback-forms/{id}/iframe` | 100 req/s, burst 200 |
+| `POST /feedback-forms/{id}/submit` | 20 req/s, burst 40 |
+
+`submit` is the tighter one because each submission enqueues a record that drives
+Comprehend, Translate and a Bedrock model invocation downstream. The two reads are
+cheap — one `get_item`, and a static HTML render — so they are held at the higher
+pair, sized for widget page-view traffic rather than for submissions.
+
+These figures are **pinned against the synthesized template** by a lockstep case in
+`voc-datalake/lib/stacks/api-stack.test.ts`, so tuning the numbers in `api-stack.ts`
+without updating this table fails the CDK suite. The stack is the source of truth;
+this table cannot silently go stale.
+
+Two properties surprise people:
+
+- **A limit is per route, not per form or per caller.** The method setting keys on
+  the path with the form id left as a variable, so one ceiling is shared across
+  every form in the deployment and every visitor. 100 req/s is therefore the
+  *aggregate* widget page-view rate a deployment supports, across all embeds.
+- **A throttled request never names the limit, and each of the three routes fails
+  differently.** Nothing surfaces "429" to the visitor, so all three symptoms are
+  easy to misattribute:
+
+  | Route | What a 429 looks like |
+  |-------|-----------------------|
+  | `GET /config` | The widget renders a flat `Feedback form unavailable.` in the container, with no retry — the *same* message a deliberately disabled form produces |
+  | `POST /submit` | A modal `Failed to submit.` alert instead, with the visitor's typed feedback still in the form. Retryable: they can press submit again |
+  | `GET /iframe` | No widget code runs at all — the browser navigates here directly, so this is a raw API Gateway error page inside your `<iframe>`, i.e. a broken frame |
+
+  If a busy page shows any of these intermittently, suspect the rate limit before
+  the form's state; the fix is raising the number in `api-stack.ts`, not a change
+  on the page.
 
 ## Processing Pipeline
 
@@ -157,4 +212,6 @@ Custom field values are stored in the feedback metadata.
 
 ## CORS Configuration
 
-The feedback form endpoints allow cross-origin requests by default to support embedding on external websites. To restrict origins, set the `ALLOWED_ORIGIN` environment variable on the Lambda function.
+The three public endpoints intentionally allow cross-origin requests from any origin so the widget can be embedded on customer-owned sites. `FeedbackFormApi` therefore uses `ALLOWED_ORIGIN=*`; changing the Lambda environment variable alone is not a supported per-form origin policy.
+
+The security boundary is the narrow public route set (`config`, `iframe`, and `submit`), strict response projection, input validation, and the per-route throttles above. All form management, submission reads, and statistics routes require Cognito authentication. If a deployment needs an origin allowlist, implement and test it as an API change that preserves the intended embed sites rather than editing the deployed environment by hand.

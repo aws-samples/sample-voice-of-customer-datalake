@@ -7,24 +7,50 @@
  * directly rather than through a re-export here.
  */
 import type { ProjectItem } from './project-context.js';
+import {
+  bulletList,
+  personaFrustrations,
+  personaGoals,
+  personaNeeds,
+  personaVoice,
+} from './persona-fields.js';
 import { getLanguageInstruction } from './language.js';
 import type { SupportedLanguage } from './language.js';
 
-/** The persona's identity block: who they are, what drives them, how to speak. */
+/** The persona's identity block: who they are, what drives them, how to speak.
+ *
+ * 🔴 This was the worst instance of the phantom-key defect: it reads
+ * `persona.goals` / `.frustrations` / `.needs` / `.quote`, none of which any
+ * writer produces, so the model was instructed to BE a persona and then handed an
+ * empty identity — "**Your Goals:**" with nothing under it. It answered anyway,
+ * inventing a character. Field paths now come from persona-fields.js.
+ */
 function personaIdentitySection(projectName: string, persona: ProjectItem): string {
-  const bullets = (values: string[] | undefined): string =>
-    (values ?? []).slice(0, 4).map((value) => `- ${value}`).join('\n');
-
-  return [
+  const parts = [
     `You are "${persona.name}" — a customer persona in the project "${projectName}".\n`,
-    `Your tagline: "${persona.tagline ?? ''}"\n`,
-    `Your voice: "${persona.quote ?? ''}"\n\n`,
-    `**Your Goals:**\n${bullets(persona.goals)}\n\n`,
-    `**Your Frustrations:**\n${bullets(persona.frustrations)}\n\n`,
-    `**Your Needs:**\n${bullets(persona.needs)}\n\n`,
-    'Respond in first person AS this persona. Use "I think...", "As someone who...", etc. Be concise — keep your response to 2-4 paragraphs.\n',
+  ];
+  if (persona.tagline) parts.push(`Your tagline: "${persona.tagline}"\n`);
+
+  // Each block is omitted when empty rather than rendered as a bare header: an
+  // empty "**Your Goals:**" tells the persona it wants nothing, which is worse
+  // than saying nothing about goals at all.
+  const voice = personaVoice(persona);
+  if (voice) parts.push(`Your voice: "${voice}"\n`);
+
+  const goals = personaGoals(persona);
+  if (goals.length) parts.push(`\n**Your Goals:**\n${bulletList(goals)}\n`);
+
+  const frustrations = personaFrustrations(persona);
+  if (frustrations.length) parts.push(`\n**Your Frustrations:**\n${bulletList(frustrations)}\n`);
+
+  const needs = personaNeeds(persona);
+  if (needs.length) parts.push(`\n**What You Need:**\n${bulletList(needs)}\n`);
+
+  parts.push(
+    '\nRespond in first person AS this persona. Use "I think...", "As someone who...", etc. Be concise — keep your response to 2-4 paragraphs.\n',
     'You are in a roundtable discussion with other customer personas. Speak naturally, share your honest opinion, and don\'t hold back. If you disagree with someone, say so directly.\n\n',
-  ].join('');
+  );
+  return parts.join('');
 }
 
 export function buildSinglePersonaPrompt(

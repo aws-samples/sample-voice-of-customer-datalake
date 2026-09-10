@@ -6,6 +6,8 @@ Provides pre-configured clients with connection reuse.
 import json
 import boto3
 from functools import lru_cache
+from typing import Final
+from shared.exceptions import ValidationError
 from shared.logging import logger
 
 # Module-level clients for connection reuse across invocations
@@ -25,9 +27,33 @@ def get_dynamodb_resource():
     return _dynamodb_resource
 
 
+def is_conditional_check_failure(error: Exception) -> bool:
+    """True for DynamoDB's ConditionalCheckFailedException, however it arrives.
+
+    The error CODE in the response is the dependable signal — boto3's resource
+    layer raises a dynamically-built ClientError subclass, so its type name is a
+    botocore implementation detail. The type name is checked as well because a
+    test double raises the named exception with no response payload.
+
+    ONE copy, here, because every conditional write in this app needs the same
+    predicate and each caller reaches it through a different failure path: a
+    refused write is the EXPECTED outcome of a guarded update (a decrement with
+    nothing to decrement, a status write against a record already terminal), so
+    misclassifying it swallows a real error or raises on a benign one. A second
+    copy is how the next arrival path for this exception gets fixed in one place
+    and missed in the other. `product_doc_extractor/handler.py` cannot import
+    this — it is stdlib+boto3 only by design, see its module docstring — and
+    keeps its own copy with a comment pointing here.
+    """
+    response = getattr(error, 'response', None)
+    code = (response.get('Error') or {}).get('Code') if isinstance(response, dict) else None
+    return (code == 'ConditionalCheckFailedException'
+            or type(error).__name__ == 'ConditionalCheckFailedException')
+
+
 def get_s3_client():
     """Get shared S3 client with connection reuse.
-    
+
     Configured with Signature Version 4 for KMS-encrypted bucket compatibility.
     """
     global _s3_client
@@ -56,19 +82,51 @@ def get_secrets_client():
     return _secrets_client
 
 
+# ── Bedrock generation budget ────────────────────────────────────────────────
+# THE INVARIANT: these two numbers MULTIPLY, and the product must stay under the
+# timeout of the Lambda making the call. At 300 x 3 it was 900 s — exactly the
+# 15-minute job ceiling — so a generation needing over five minutes had no path to
+# success and paid for three abandoned ones on the way. Pinned across both
+# languages in lib/stacks/api-stack.test.ts and lambda/shared/test/test_aws.py,
+# because no single file can see both halves.
+#
+# Why the retry budget is 1, since a longer timeout alone would not do it:
+#   * `converse` is NON-STREAMING, so the socket is idle until the generation
+#     finishes. A read timeout measures "big", not "broken", and retrying a request
+#     that just consumed the whole timeout cannot succeed with less time left.
+#   * botocore retries BELOW shared/converse.py's own loop, so its attempts are
+#     invisible in the application log. `bedrock_call_with_retry` there is the one
+#     policy that can tell a throttle (retry, nearly free) from a read timeout (do
+#     not); botocore's single attempt budget covers both and cannot.
+#   * One attempt keeps ONE cached client safe for callers of every length: the
+#     budget equals the read timeout for everyone, so nobody is handed a multiple
+#     of it. Shorter callers reach their own ceiling first, as they already did.
+#
+# `mode: 'standard'` is explicit because there max_attempts counts TOTAL attempts;
+# legacy mode's reading of the same key is ambiguous. Same shape as
+# shared/mcp_delegate.py. The 60 s left under the 900 s ceiling is for the handler
+# to record the failure (shared/jobs.py writing the job `failed`) instead of being
+# killed mid-flight.
+BEDROCK_READ_TIMEOUT_SECONDS: Final = 840
+BEDROCK_MAX_ATTEMPTS: Final = 1
+BEDROCK_CONNECT_TIMEOUT_SECONDS: Final = 10
+
+
 def get_bedrock_client():
     """Get shared Bedrock Runtime client with connection reuse.
-    
-    Uses extended read timeout (5 minutes) to handle long LLM responses
-    that can take 2-3 minutes for complex persona generation tasks.
+
+    ONE cached client serves every Bedrock surface — documents, prototypes,
+    personas, research, chat, category generation, scrapers — so its read/retry
+    budget is sized for the longest-running of them. See
+    BEDROCK_READ_TIMEOUT_SECONDS above for why the retry budget is 1.
     """
     global _bedrock_client
     if _bedrock_client is None:
         from botocore.config import Config
         config = Config(
-            read_timeout=300,  # 5 minutes for long LLM responses
-            connect_timeout=10,
-            retries={'max_attempts': 3}
+            read_timeout=BEDROCK_READ_TIMEOUT_SECONDS,
+            connect_timeout=BEDROCK_CONNECT_TIMEOUT_SECONDS,
+            retries={'max_attempts': BEDROCK_MAX_ATTEMPTS, 'mode': 'standard'},
         )
         _bedrock_client = boto3.client("bedrock-runtime", config=config)
     return _bedrock_client
@@ -129,6 +187,47 @@ def get_secret(secret_arn: str) -> dict:
 def clear_secret_cache():
     """Clear the secret cache. Useful for testing or forced refresh."""
     get_secret.cache_clear()
+
+
+# Secrets Manager rejects a SecretString over 65,536 bytes.
+SECRET_STRING_MAX_BYTES = 65536
+
+
+def put_secret_json(client, secret_arn: str, secrets: dict) -> None:
+    """Serialize *secrets* and write it via *client*, refusing an over-limit payload.
+
+    Every writer of the shared API-credentials secret does read-modify-write on
+    ONE JSON blob, so the bound that actually matters is the SERIALIZED TOTAL,
+    not any single value. Capping values individually gets it wrong in both
+    directions: N values under the per-value cap still add up past the service
+    limit, and a legitimately large single value (the webscraper ``configs``
+    array grows with every scraper a user adds) is refused though it fits.
+
+    Checking here rather than at each call site is deliberate — this is the one
+    choke point all five writers pass through, so the guard cannot be missed by
+    a new one, and the caller that grows the blob is not always the caller that
+    would have hit the limit.
+
+    *client* is passed in rather than resolved through get_secrets_client(). Each
+    handler already holds a module-level client, and that attribute is the seam
+    every existing test patches; resolving a second one here would write for real
+    under a test that believes it mocked the write.
+
+    Raises:
+        ValidationError: If the serialized secret exceeds the service limit.
+            A 400 naming the size beats the opaque 500 that ``put_secret_value``
+            raising ``InvalidParameterException`` produces, and it is raised
+            BEFORE the write so the stored secret is left untouched.
+    """
+    payload = json.dumps(secrets)
+    size = len(payload.encode())
+    if size > SECRET_STRING_MAX_BYTES:
+        raise ValidationError(
+            f'Configuration is too large to store: {size} bytes exceeds the '
+            f'{SECRET_STRING_MAX_BYTES}-byte limit. Remove some entries and retry.'
+        )
+
+    client.put_secret_value(SecretId=secret_arn, SecretString=payload)
 
 
 # Default Bedrock model — Claude Sonnet 5 global cross-region inference profile.

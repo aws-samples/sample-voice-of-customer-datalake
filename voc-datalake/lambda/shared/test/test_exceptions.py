@@ -6,6 +6,7 @@ from shared.exceptions import (
     ValidationError,
     NotFoundError,
     ConfigurationError,
+    SecretUnreadableError,
     ServiceError,
     AuthorizationError,
     ConflictError,
@@ -65,9 +66,31 @@ class TestConfigurationError:
         assert isinstance(error, ApiError)
 
 
+class TestSecretUnreadableError:
+    """Tests for SecretUnreadableError."""
+
+    def test_status_code_is_500(self):
+        error = SecretUnreadableError('Secret could not be read')
+        assert error.status_code == 500
+
+    def test_inherits_from_configuration_error(self):
+        """The subclassing is the compatibility promise, not an implementation
+        detail: `BaseIngestor.__init__` and every plugin handler catch
+        `ConfigurationError`, so a sibling type would escape all of them and turn a
+        handled misconfiguration into an unhandled crash. It is also why no separate
+        `@app.exception_handler` is registered — Powertools resolves one by walking
+        the MRO, so the ConfigurationError handler already returns this 500."""
+        error = SecretUnreadableError('Throttled')
+        assert isinstance(error, ConfigurationError)
+
+    def test_inherits_from_api_error(self):
+        error = SecretUnreadableError('Throttled')
+        assert isinstance(error, ApiError)
+
+
 class TestServiceError:
     """Tests for ServiceError."""
-    
+
     def test_status_code_is_500(self):
         error = ServiceError('DynamoDB operation failed')
         assert error.status_code == 500

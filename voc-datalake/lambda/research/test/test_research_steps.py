@@ -9,6 +9,25 @@ def mock_tables():
     """Mock both feedback and projects tables."""
     mock_fb = MagicMock()
     mock_proj = MagicMock()
+    mock_proj.name = 'test-projects'
+
+    def transact_write_items(*, TransactItems):
+        for action in TransactItems:
+            put = action.get('Put')
+            if put:
+                mock_proj.put_item(Item=put['Item'])
+            update = action.get('Update')
+            if update:
+                mock_proj.update_item(
+                    Key=update['Key'],
+                    UpdateExpression=update['UpdateExpression'],
+                    ExpressionAttributeValues=update.get(
+                        'ExpressionAttributeValues', {},
+                    ),
+                )
+        return {}
+
+    mock_proj.meta.client.transact_write_items.side_effect = transact_write_items
     with patch('research_step_handler._get_feedback_table', return_value=mock_fb), \
          patch('research_step_handler._get_projects_table', return_value=mock_proj):
         yield {'feedback': mock_fb, 'projects': mock_proj}
@@ -118,7 +137,13 @@ class TestStepInitialize:
         mock_tables['projects'].query.return_value = {
             'Items': [
                 {'sk': 'PERSONA#p1', 'persona_id': 'p1', 'name': 'User A',
-                 'tagline': 'Tag', 'goals': ['g1'], 'frustrations': ['f1'], 'quote': 'Q'},
+                 'tagline': 'Tag',
+                 # Canonical shape. Was flat `goals`/`frustrations`/`quote`, none
+                 # of which any writer produces, so the assertion below (name
+                 # only) passed while the research prompt got empty headings.
+                 'goals_motivations': {'primary_goal': 'g1'},
+                 'pain_points': {'current_challenges': ['f1']},
+                 'quotes': [{'text': 'Q'}]},
             ]
         }
 
@@ -131,7 +156,13 @@ class TestStepInitialize:
         }
 
         result = step_initialize(event)
-        assert 'User A' in result['personas_context']
+        personas_context = result['personas_context']
+        assert 'User A' in personas_context
+        # The name alone was the whole assertion, and it passes whether or not the
+        # persona's content arrives. Reverting to `p.get('goals', [])` fails these.
+        assert 'g1' in personas_context, 'the persona goal never reached the prompt'
+        assert 'f1' in personas_context, 'the persona frustration never reached the prompt'
+        assert 'Q' in personas_context, 'the persona quote never reached the prompt'
 
     @patch('research_step_handler.get_feedback_context')
     @patch('research_step_handler.format_feedback_for_llm', return_value='fb')

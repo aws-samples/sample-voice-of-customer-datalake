@@ -13,9 +13,10 @@ from typing import Any
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer, metrics
-from shared.aws import get_sqs_client, get_secret
+from shared.aws import clear_secret_cache, get_sqs_client, get_secret
 
 from .audit import emit_audit_event
+from .plugin_secrets import filter_plugin_secrets
 from .sqs_utils import send_messages_to_queue
 
 __all__ = ["BaseWebhook", "logger", "tracer", "metrics"]
@@ -37,22 +38,35 @@ class BaseWebhook(ABC):
         self._sqs = get_sqs_client()
 
     def _load_secrets(self) -> dict:
-        """Load secrets from Secrets Manager with plugin prefix filtering."""
+        """Load this plugin's secrets from the shared secret, prefix stripped.
+
+        Same choke point as ``BaseIngestor._load_secrets`` — one implementation in
+        ``_shared/plugin_secrets.py`` — so the webhook path cannot keep failing
+        open after the ingestor path was fixed (issue #251). A webhook is the more
+        exposed of the two: its Lambda is reachable from the internet with no
+        Cognito authorizer in front of it.
+
+        The identity comes from ``SOURCE_PLATFORM``, which ``createWebhookLambda``
+        sets alongside ``PLUGIN_ID`` — it previously set only the latter, so this
+        read saw ``''`` and every delivery would have died on a message about a
+        malformed identity rather than the missing variable. Pinned by
+        'SOURCE_PLATFORM' in ``lib/stacks/api-stack-webhook-env.test.ts``.
+        """
         if not SECRETS_ARN:
             logger.warning("SECRETS_ARN not configured")
             return {}
-        
+
         all_secrets = get_secret(SECRETS_ARN)
-        
-        # Filter to only keys prefixed with this plugin's ID
-        prefix = f"{self.source_platform}_"
-        filtered = {}
-        for key, value in all_secrets.items():
-            if key.startswith(prefix):
-                clean_key = key[len(prefix):]
-                filtered[clean_key] = value
-        
-        return filtered if filtered else all_secrets
+        if not all_secrets:
+            # Evict the memoized empty payload before refusing on it — see the
+            # same branch in `BaseIngestor._load_secrets` for why `get_secret`
+            # caching a failed read would otherwise wedge the warm container. A
+            # webhook has no manual "Run now" to clear the cache at all, so
+            # without this the only recovery is a container recycle while the
+            # provider's retries expire.
+            clear_secret_cache()
+
+        return filter_plugin_secrets(self.source_platform, all_secrets)
 
     @abstractmethod
     def parse_webhook_payload(self, body: dict, headers: dict) -> list[dict]:

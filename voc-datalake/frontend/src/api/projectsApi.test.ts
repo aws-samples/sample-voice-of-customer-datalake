@@ -12,6 +12,14 @@ vi.mock('../store/configStore', () => ({
   },
 }))
 
+vi.mock('../runtimeConfig', () => ({
+  isConfigLoaded: vi.fn(() => true),
+  getRuntimeConfig: vi.fn(() => ({
+    apiEndpoint: 'https://api.example.com',
+    cognito: { userPoolId: 'pool-1', clientId: 'client-1', region: 'us-east-1', identityPoolId: 'id-pool' },
+  })),
+}))
+
 vi.mock('../services/auth', () => ({
   authService: {
     isConfigured: vi.fn(() => true),
@@ -92,8 +100,8 @@ describe('projectsApi', () => {
   })
 
   describe('getProject', () => {
-    it('fetches single project by ID', async () => {
-      const mockProject = { project_id: 'p1', name: 'Project 1', personas: [], documents: [] }
+    it('normalizes the project detail response after fetching by ID', async () => {
+      const mockProject = { project: { project_id: 'p1' }, personas: [], documents: [] }
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve(mockProject),
@@ -105,7 +113,20 @@ describe('projectsApi', () => {
         'https://api.example.com/projects/p1',
         expect.any(Object)
       )
-      expect(result).toStrictEqual(mockProject)
+      expect(result).toMatchObject({
+        project: {
+          project_id: 'p1',
+          name: '',
+          description: '',
+          status: 'active',
+          created_at: '',
+          updated_at: '',
+          persona_count: 0,
+          document_count: 0,
+        },
+        personas: [],
+        documents: [],
+      })
     })
   })
 
@@ -454,7 +475,9 @@ describe('projectsApi', () => {
 
   describe('createDocument', () => {
     it('sends POST request with document data', async () => {
-      const data = { title: 'New Document', content: '# Content', document_type: 'custom' }
+      const data: Parameters<typeof projectsApi.createDocument>[1] = {
+        title: 'New Document', content: '# Content', document_type: 'custom',
+      }
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve({ success: true, document: { ...data, document_id: 'd1' } }),

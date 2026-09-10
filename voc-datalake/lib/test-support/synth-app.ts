@@ -13,6 +13,8 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { z } from 'zod';
+
 import type { NameInventory } from './name-inventory';
 
 const PROJECT_ROOT = join(__dirname, '..', '..');
@@ -40,18 +42,142 @@ export interface Baseline {
 }
 
 /**
+ * The `context` block cdk.json commits.
+ *
+ * Two subjects, two behaviours, and they are easy to conflate: `{}` is returned
+ * when the `context` KEY is absent or is not an object, but an error PROPAGATES
+ * when cdk.json ITSELF cannot be read or parsed — a missing file throws `ENOENT`
+ * and unparseable JSON throws `SyntaxError`.
+ *
+ * Throwing there is deliberate, so do not wrap this in a try/catch. A silent `{}`
+ * would send every dependent synth back to the bare-`App` context shape, which is
+ * exactly the state the S3 log-delivery and IAM statement-count assertions in
+ * lib/stacks/core-stack.test.ts exist to rule out: both would then describe a
+ * template no deploy of this project produces, and both would still pass.
+ */
+function cdkJsonContext(): Record<string, unknown> {
+  const cdkJson: unknown = JSON.parse(readFileSync(join(PROJECT_ROOT, 'cdk.json'), 'utf8'));
+  return isRecord(cdkJson) && isRecord(cdkJson.context) ? cdkJson.context : {};
+}
+
+/**
+ * The same block, read strictly, for the two suites that use it as an ORACLE.
+ *
+ * A second body rather than a delegation to {@link cdkJsonContext}, and the
+ * independence is load-bearing: both callers compare a value
+ * {@link committedFeatureFlags} derives FROM `cdkJsonContext()` against this read,
+ * so `return cdkJsonContext()` here would reduce them to `f(x) === f(x)`.
+ * Exported so there is one such body rather than the byte-identical copy each
+ * suite used to hold — which is also what makes the merge tempting now that both
+ * live in this file.
+ *
+ * That merge passed the ENTIRE suite when measured, and typechecks and lints clean.
+ * Hence `cdkJsonContextStrict` in synth-app.test.ts, which is what now catches it.
+ * Strict at all because an oracle that degrades to `{}` satisfies its own
+ * comparison.
+ *
+ * @param cdkJsonPath file to read, defaulting to the project's cdk.json.
+ *                    Injectable for the same reason {@link committedFeatureFlags}
+ *                    takes its context, and it is the seam that makes the merge
+ *                    detectable: a delegating body ignores this argument, so any
+ *                    fixture whose `context` differs from the committed one
+ *                    diverges. No production caller passes it.
+ */
+export function cdkJsonContextStrict(
+  cdkJsonPath: string = join(PROJECT_ROOT, 'cdk.json'),
+): Record<string, unknown> {
+  return z
+    .object({ context: z.record(z.string(), z.unknown()) })
+    .parse(JSON.parse(readFileSync(cdkJsonPath, 'utf8')))
+    .context;
+}
+
+/**
+ * Only the CDK FEATURE FLAGS cdk.json commits — no project-level context.
+ *
+ * Read rather than listed because several flags change the SHAPE of a
+ * synthesized template and not merely its details: `@aws-cdk/aws-iam:minimizePolicies`
+ * merges IAM statements, and `@aws-cdk/aws-s3:serverAccessLogsUseBucketPolicy`
+ * decides whether S3 log delivery is granted by a statement on the destination's
+ * bucket policy or by a `LogDeliveryWrite` ACL. A synth that omits them asserts
+ * against a template no deploy of this project produces, and a synth that
+ * hard-codes a copy of them drifts from cdk.json with nothing failing.
+ *
+ * Exported for lib/stacks/core-stack.test.ts, which wants exactly this and
+ * deliberately NOT the project context {@link baseContext} adds: that suite has
+ * cases asserting CDK's own DEFAULTS — `sets case-insensitive sign-in by default
+ * (greenfield)` relies on `omitUserPoolUsernameConfiguration` being unset — and a
+ * project `-c` default reaching them would silently invert what they measure.
+ *
+ * The `@aws-cdk` prefix is a deliberate HEURISTIC for "is a feature flag", NOT a
+ * structural guarantee. It is a no-op on cdk.json as committed today — every key
+ * there is `@aws-cdk`-prefixed — and a barrier against a project key added later.
+ * That no-op is a MEASUREMENT, not something a test holds: the assertion in
+ * `spreads CDK feature flags only…` is a conjunction, failing only once cdk.json
+ * holds an unprefixed key AND this filter has stopped dropping it, so a project
+ * key committed on its own leaves that suite green. Its own comment says so.
+ *
+ * Two known edges below, both recorded because a reader who takes the rule as
+ * exact draws the wrong conclusion at either one. No count appears in them on
+ * purpose: `aws-cdk-lib` is a caret range, so any figure would go stale on an
+ * `npm update` with no committed file changing. Each claim is instead either
+ * pointed at the assertion that pins it or dated as a measurement.
+ *
+ * 1. Exactly one flag in `cx-api`'s `FLAGS` registry, `aws-cdk:enableDiffNoFail`,
+ *    is not `@aws-cdk`-prefixed. Were cdk.json to commit it, this filter would
+ *    drop it as project context while {@link baseContext} kept it, so the two
+ *    would synthesize from different flag sets. Inert: the flag only selects
+ *    `cdk diff`'s exit code and cannot alter a synthesized template, so no
+ *    assertion in lib/stacks/core-stack.test.ts moves. The "exactly one" is
+ *    ASSERTED — `would drop aws-cdk:enableDiffNoFail…` in synth-app.test.ts — so a
+ *    CDK upgrade that adds a second unprefixed flag fails there rather than
+ *    leaving this paragraph quietly wrong.
+ * 2. Filtering by `key in cx.FLAGS` instead is not a fix, because the registry is
+ *    not a superset of what a project may commit:
+ *    `@aws-cdk/aws-iam:standardizedServicePrincipals` IS committed here but has
+ *    expired out of `FLAGS`, so a registry predicate would drop it. Also asserted,
+ *    by `cannot use cx-api FLAGS as the predicate instead…`. Inert too — the flag
+ *    has no runtime effect in aws-cdk-lib 2.261.0 (zero references in any `.js`
+ *    under the package, only a doc comment in aws-iam/lib/principals.d.ts; CDK v2
+ *    applies the standardized behaviour unconditionally), and dropping it left
+ *    VocCoreStack's template byte-identical. That last one is a MEASUREMENT taken
+ *    at 2.261.0, not an assertion: pinning the template here would duplicate what
+ *    baseline.json's hash already guards, and would move on the next unrelated
+ *    change to this stack.
+ *
+ * So BOTH edges are inert, for different reasons, and neither predicate is exact.
+ * The prefix rule is preferred because it errs toward passing keys THROUGH — not
+ * because a registry predicate would break a real deploy.
+ *
+ * @param context context to filter, defaulting to cdk.json's. Injectable so the
+ *                filter itself is directly testable — with cdk.json holding no
+ *                project key, deleting the filter changes nothing observable, so
+ *                a test that reads only the real file cannot detect its removal.
+ *                See `committedFeatureFlags` in synth-app.test.ts.
+ */
+export function committedFeatureFlags(
+  context: Record<string, unknown> = cdkJsonContext(),
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(context).filter(([key]) => key.startsWith('@aws-cdk')),
+  );
+}
+
+/**
  * Context every synth here uses. Mirrors cdk.json + cdk.context.json (the
  * committed project defaults, i.e. what a real deploy gets) plus the two
  * escape hatches template assertions always want: no Docker bundling and no
  * frontend-freshness check.
+ *
+ * Unfiltered on purpose, unlike {@link committedFeatureFlags}: this one models a
+ * real deploy of the whole app, so a project key committed to either file has to
+ * reach it.
  */
 function baseContext(): Record<string, unknown> {
-  const cdkJson: unknown = JSON.parse(readFileSync(join(PROJECT_ROOT, 'cdk.json'), 'utf8'));
   const committed: unknown = JSON.parse(readFileSync(join(PROJECT_ROOT, 'cdk.context.json'), 'utf8'));
-  const featureFlags = isRecord(cdkJson) && isRecord(cdkJson.context) ? cdkJson.context : {};
   const projectContext = isRecord(committed) ? committed : {};
   return {
-    ...featureFlags,
+    ...cdkJsonContext(),
     ...projectContext,
     'aws:cdk:bundling-stacks': [],
     skipFrontendBuildCheck: true,

@@ -20,6 +20,8 @@ import sys
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
+from _shared.test.scoped_secret import scoped_secret
+
 _PLUGINS_DIR = os.path.dirname(os.path.abspath(__file__))
 ANDROID_DIR = os.path.join(_PLUGINS_DIR, "app_reviews_android", "ingestor")
 IOS_DIR = os.path.join(_PLUGINS_DIR, "app_reviews_ios", "ingestor")
@@ -33,7 +35,7 @@ def _patched_aws():
     with patch("_shared.base_ingestor.get_dynamodb_resource") as mock_dynamo, \
             patch("_shared.base_ingestor.get_s3_client"), \
             patch("_shared.base_ingestor.get_sqs_client"), \
-            patch("_shared.base_ingestor.get_secret", return_value={}):
+            patch("_shared.base_ingestor.get_secret", return_value=scoped_secret()):
         mock_dynamo.return_value.Table.return_value = MagicMock()
         yield
 

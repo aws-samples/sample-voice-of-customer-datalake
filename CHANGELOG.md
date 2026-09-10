@@ -7,8 +7,272 @@ Versions are `0.x` on purpose: this is a sample platform whose interfaces still 
 releases, so a minor bump may carry changes that would be breaking in a `1.x` project. Read the
 **Upgrade notes** of each release before deploying over an existing stack.
 
-The version recorded here is the one in the `package.json` files. It is **not** what the dashboard
-displays: the UI's build identifier is the short git commit SHA, injected at build time.
+The frontend build identifier is the short git commit SHA injected at build time; it is separate from the platform package version.
+
+## [Unreleased]
+
+## [0.3.0] - 2026-09-10
+
+### Added
+
+- Persistent managed version series for PRDs, PR/FAQs, and prototypes. A stable allocation id makes retries return the same artifact; version counters and allocation history prevent a deleted version from being silently reused. Legacy managed documents are normalized into the same series, and the Documents tab exposes revision and derivation lineage.
+- An expanded prioritization-row lifecycle: reviewers can compose additional project/document combinations and recompose them until the first value-bearing ballot freezes the concrete selection. Admins can atomically delete an eligible non-default row with at most 98 ballots; larger room-vote rows are retained rather than partially deleted. Lineage indicators distinguish coherent and cross-generation selections, and frozen rows can advise when a strictly newer combination exists without blocking scoring.
+- Scoped read-only MCP access with explicit `feedback:read`, `metrics:read`, and `projects:read` grants; workspace or project-set reach; optional expiry; credential-filtered `tools/list`; protocol/output-schema conformance; and eleven delegated tools covering feedback, metrics, projects, personas, and jobs. See [Project Workspace](docs/project-workspace.md#mcp-access).
+
+- An expanded prioritization row can enlarge the prototype it is showing to fill the viewport, in
+  place, so a pitch session can look at the artifact without leaving the sliders, the team's numbers
+  and the room vote behind on the page. Escape, the visible Close control and a click outside all
+  return to the row. Offered for every prototype the row renders, including a legacy inline one and a
+  JSON spec, neither of which has an address that "Open in new tab" could use.
+
+### Changed
+
+- Aggregate reads now report lower-bound/partial windows instead of presenting capped data as complete, and persona metrics bucket by archetype rather than display name. DynamoDB Stream `REMOVE` and `MODIFY` records reverse or rebucket counters without recreating aggregate rows that have aged out.
+- Chat feedback tools search up to 90 days and disclose truncation. Persona prompts and imports use the same stored field vocabulary as their writers, so generated artifacts and chat no longer lose structured persona content.
+
+### Fixed
+
+- A generation that needs more than five minutes of model time now succeeds, instead of failing three
+  times over and reporting nothing. The shared Bedrock client waited five minutes for a response and
+  then retried twice by itself, so its real budget was fifteen minutes — exactly the ceiling of the
+  job functions that build prototypes, documents, personas and research. A long generation therefore
+  had no path to success: it was abandoned and restarted twice, each attempt re-paying for a full
+  generation, and the function was killed part-way through the third with nothing to show while the
+  job still read as running. Those retries also happened below the platform's own retry loop, so the
+  logs said "attempt 1 of 5" for the entire fifteen minutes and the run looked like one slow call.
+  The client now makes a single attempt and waits fourteen minutes for it, and a read timeout is
+  reported and recorded as a failed job rather than retried into the ceiling. Prototype builds are
+  where this was measured, because they ask for the largest output, but every Bedrock surface shared
+  the same client and the same ceiling.
+  Two of the shorter jobs — merging documents at ten minutes, importing a persona at five — are
+  bounded by their own limit rather than by that fourteen minutes, so a generation longer than their
+  own budget still ends without an explanation attached to it, exactly as it did before. Retrying a
+  throttled request is unaffected everywhere: that is worth a second attempt and is still made, with
+  backoff, by the platform rather than by the AWS client underneath it.
+- A failed prototype build no longer costs up to three quarters of an hour. The job functions are
+  invoked asynchronously, where AWS re-runs a failed invocation twice more by default, so one click
+  became roughly forty-five minutes of model work — invisible, because each re-run wrote progress to
+  the same job row and looked like the first attempt making none. A failure is now reported once, and
+  retrying is the reader's decision.
+- The product-document extractor, which builds its own Bedrock client, had the same collision at a
+  smaller scale: it waited sixty seconds for an image description with retries behind it, against a
+  two-minute function, so its final attempt was always cut off. It now waits eighty seconds once,
+  which also lets a slow description finish where it previously gave up.
+- A CSV upload no longer overwrites an earlier one whose `id` column covered the same numbers.
+  A row's identity was the `id` column value as written, and every CSV upload enters the pipeline
+  under the single `source_platform` of `manual_import`, from which the processor derives both its
+  idempotency key and its DynamoDB key. Row `1` of one file was therefore the same stored record as
+  row `1` of every other file, so importing two 400-row exports each numbered `1..400` left 400
+  records holding an arbitrary mixture of the two. Nothing reported the loss: both files were
+  archived, and each upload answered with its own full row count, because that count is what the
+  queue accepted rather than what was ultimately stored. Rows are now identified by a hash of the
+  row itself — its `id`, text, rating, date, author, title, url and its own `source` column — so two
+  files that reuse a number no longer conflict, while re-uploading an unchanged file still stores
+  nothing new. A row with no `id` of its own also counts its position in the file, so a survey
+  export whose free-text answers repeat verbatim keeps one record per answer — which does mean that
+  reordering a file re-imports the rows in it that carry no `id`, while rows that carry one are
+  unaffected.
+
+  Two consequences are worth knowing before you re-import. Identity now follows a row's content, so
+  re-uploading a file with a corrected row stores that row a second time instead of replacing the
+  first; correct the data at the source and delete the earlier import rather than uploading over it.
+  And rows imported before this release carry keys from the old scheme, so an environment that
+  already holds a collided import should delete those records before importing the files again —
+  importing on top of them leaves both generations in place. The `id` column each row carried is now
+  kept on the record as `csv_row_id`, so a record can still be traced back to the row it came from.
+
+- Feedback aggregation is now idempotent under DynamoDB Streams redelivery: the aggregate counter
+  updates and a per-stream-event claim commit in one DynamoDB transaction, so replaying an event is
+  a no-op instead of moving every counter a second time. `AggregateRecordReplayed` reports those
+  skips and `AggregateTransactionConflicted` reports bounded in-process retries on hot rows.
+- Shared modal dialogs now honour Escape and keep Tab inside themselves while focus is in a nested
+  same-origin `<iframe>`. Keys pressed inside a frame are raised in the frame's own document and
+  never reached the dialog, so any modal embedding one (the prototype overlay above) could not be
+  dismissed from the keyboard once a reader clicked into its content. A frame the page cannot read
+  into — cross-origin, or sandboxed without `allow-same-origin` — still cannot be observed, so
+  dialogs embedding one must offer a visible dismiss control. One further exception is known and
+  tracked as #386: a frame whose content rewrites itself with `document.open()` keeps the same
+  document object while a compliant browser erases the listeners on it, so the dialog believes it is
+  still listening there.
+- Tab can now reach the controls inside a dialog's nested `<iframe>`. Descending into a frame is the
+  browser's default action for a Tab pressed while the frame itself has focus, and the focus trap
+  cancelled that action whenever the frame was the dialog's last focusable — which is the prototype
+  overlay's shape — so focus bounced between the dialog's own controls and every link inside the
+  artifact was unreachable by keyboard. A frame the page cannot read into, or one with nothing
+  focusable in it, keeps the old behaviour: there would be nothing inside it to bring focus back out.
+  This holds at any depth, so a prototype that embeds a frame of its own — a map, a video, a
+  documentation pane — is reachable too, and leaving such a frame continues through the prototype's
+  own content rather than jumping out of the artifact to the dialog's controls.
+- Tabbing through a large prototype inside a dialog no longer slows down with the size of the
+  prototype. Each keypress measured the whole embedded document to decide whether the key was leaving
+  it — for a 400-control page, 2800 style resolutions per keystroke, nearly all of it to conclude that
+  the key was an ordinary one the dialog should ignore. The question is now answered from the first
+  control the key can still reach.
+- A dialog whose embedded content replaces a frame of its own no longer accumulates one DOM observer
+  per replacement. Each nested document is watched so that keyboard handling follows frames the
+  content inserts itself, and a watcher for a document that had been swapped away was held until the
+  dialog closed, keeping the discarded document alive with it. Watchers are now dropped as soon as
+  their document leaves the frame tree.
+
+### Security
+
+- Cognito tokens are sent only to trusted application origins, so a user-entered external URL cannot receive the session token through a frontend request.
+- The browser-assumable Identity Pool role no longer has direct Lambda invoke permission; authenticated application traffic goes through the authorized API routes.
+- The three public feedback-form routes have explicit API Gateway throttles: higher read capacity for config/iframe traffic and a tighter submission ceiling for the downstream AI pipeline.
+- The CloudFront website bucket now writes server access logs to a dedicated encrypted log bucket.
+- Plugin secret isolation now fails closed. Each plugin Lambda reads one shared Secrets Manager
+  secret whose keys are namespaced `<plugin_id>_<key>`, and — because every ingestion Lambda shares
+  one IAM role — that prefix is the only boundary between one plugin's credentials and another's. A
+  prefix matching zero keys previously returned the **complete** shared secret, on the theory that
+  such a plugin predated prefixing; the effect was that a typo in a plugin id, the input most likely
+  to be wrong, produced the maximally permissive outcome. It now raises, naming the plugin and the
+  prefix it expected and nothing else. The hand-maintained plugin-id list the filter needed is gone
+  with it: forgetting to add a plugin there reclassified its keys as "shared" and leaked them into
+  every other plugin.
+- A webhook Lambda is now deployed with the environment variable its code reads for the plugin
+  identity (`SOURCE_PLATFORM`, which only the ingestor Lambda carried). Combined with the above,
+  a deployed webhook would otherwise have failed on every delivery.
+- A Secrets Manager read that fails no longer counts against a plugin's circuit breaker. The
+  fail-closed change above turned an unreadable secret into a refusal to start, and a refusal was
+  counted as a plugin failure — but a read that failed is indistinguishable from an empty secret
+  (the client error is logged and discarded), so a handful of throttles inside the breaker's window
+  would disable a healthy plugin's ingestion schedule, which nothing re-enables automatically. An
+  unreadable secret is now reported without being counted: the `plugin.failed` audit event still
+  fires, and the run record moves to `error` on a *manual* run — a scheduled run has no run record
+  to move, so an alarm on the `Refusing to load plugin secrets` log line is the escalation path for
+  that case, and the exemption depends on it existing (see `docs/plugin-architecture.md`). Only a
+  genuine misconfiguration — a malformed plugin id, a namespace holding no keys, or a secret whose
+  body is not a JSON object — can trip the breaker.
+- Every route taking a `{source}` path parameter now requires `source` to be a plugin that exists.
+  Validating only its *form* left a cross-plugin credential write open, because the colliding value
+  is itself well-formed: `source=app_reviews` with key `ios_app_id` stored `app_reviews_ios_app_id`,
+  which `app_reviews_ios`'s next run then consumed as its own `app_id`. The synth-time guard on
+  colliding plugin ids does not reach this — a colliding *stored key* needs no colliding manifest —
+  so the namespace a request may address is now restricted to the manifest-derived ids CDK already
+  hands this Lambda. It fails open if that variable is unavailable, so one bad environment variable
+  cannot break credential management outright. `source` also reached an ingestor Lambda name and an
+  EventBridge rule name unvalidated on the `/sources/{source}/*` routes.
+- `GET /sources/status` validates the sources it takes from the query string. It is the only route
+  whose source is not a path parameter, so the guard above did not reach it, and both of its
+  branches derived a resource from an arbitrary value: `?sources=` named EventBridge rules it
+  called `describe_rule` on — reflecting each rule name back, so an arbitrary value could enumerate
+  rules and learn the naming convention — and `?run_status=` queried an arbitrary `SOURCE_RUN#`
+  partition. The `?run_status=` branch now answers 400 for a source that is not a plugin. The
+  `?sources=` branch reports such a source as `{'enabled': false, 'exists': false}` rather than
+  raising, because it answers about several sources at once and one unknown name must not fail the
+  whole response — and because its own default list contains `manual_import`, a legitimate source
+  platform that deliberately has no plugin manifest. That is the same answer as before for every
+  request the UI sends, since a schedule rule only ever exists per plugin. The `?sources=` list is
+  also de-duplicated and capped now: validation bounds *which* rules may be described but not how
+  *many* calls are made, and one valid name repeated 500 times issued 500 `describe_rule` calls while
+  overwriting the same response entry each time — the caller chose the AWS call count against a fixed
+  result, on an API throttled per account and shared with the rest of the stack. It is the only read
+  in this handler that fans out one AWS call per list element.
+- `POST`/`DELETE /integrations/{source}/apps`, `POST /sources/{source}/run` and
+  `PUT /sources/{source}/enable|disable` now require the caller to be in the `admins` group. Only
+  the two credentials routes were gated, so the boundary depended on which key a write happened to
+  land under: a caller whose only group was `users` could write `{source}_configs` on the same shared
+  Secrets Manager secret, invoke an ingestor (a billed third-party fetch, in a loop), and disable a
+  plugin's ingestion schedule — which nothing re-enables automatically. `GET /integrations/{source}/apps`
+  stays open deliberately: the Scrapers page lists app configs for every authenticated user, and a
+  config holds a public app-store id and a display name rather than a credential. On that page the
+  Run, Add, Save and Delete controls and the schedule toggle are now disabled for a non-admin, with
+  the reason on hover, rather than issuing a request that 403s — and so is the Enabled toggle on the
+  Settings page's source cards, which is the other UI caller of `enable|disable`.
+- `Save to Secrets Manager` on the Settings page's source cards is now disabled for a non-admin.
+  `PUT /integrations/{source}/credentials` behind it was already admin-gated, so unlike the toggle
+  above this was not a regression — the control had always behaved this way, and it was the last
+  ungated UI entrance to an admin-gated route. It was also the least visible failure of the set:
+  that mutation has an `onSuccess` but no `onError`, so the 403 rendered no message and the button
+  merely never became `Saved!` — a non-admin typed a credential, clicked Save, and got no indication
+  it had been refused. The credential fields stay editable and `Test` stays available, because
+  `POST /integrations/{source}/test` is not gated and a non-admin can already read those fields.
+- `POST /scrapers`, `DELETE /scrapers/{scraper_id}` and `POST /scrapers/{scraper_id}/run` now require
+  the `admins` group. No route in that handler had a gate, while two of them `put_secret_json` the
+  SAME shared API-credentials secret the credentials routes protect — rewriting `webscraper_configs`,
+  a key the webscraper ingestor consumes, so an unprivileged write steered which URLs got fetched —
+  and the third invoked that ingestor, a billed third-party fetch callable in a loop. Gating only the
+  `{source}` routes above would have left the boundary depending on which handler a write arrived
+  through rather than on what it changed. The `GET` routes and `POST /scrapers/analyze-url` stay open
+  to match the read/write split, and the Run and Delete controls on each scraper card are now disabled
+  for a non-admin — as is **Save in the scraper editor**, which is the only UI entrance to
+  `POST /scrapers` and was the worst of the three: the editor closed as though the change had been
+  stored, because it closes unconditionally and its mutation surfaces no error, so a non-admin's edit
+  was discarded silently. `scraper_id` is deliberately not allowlisted the way `{source}` is: it is
+  not a plugin id and reaches no secret key or function name, only a `SCRAPER_RUN#` partition and the
+  invoke payload, where the webscraper resolves it against its own configured list. `/scrapers/manual/*`
+  is a **second** handler and is deliberately not covered: those routes write feedback content into
+  the ingestion pipeline and reach neither the shared secret nor any plugin resource, which is the
+  basis on which the three above were gated — see `docs/plugin-architecture.md`.
+- A plugin's `plugin.failed` audit event is no longer lost when the circuit breaker's own DynamoDB
+  lookup fails. The three reporting steps for a construction failure shared one `try`, and
+  `record_failure` is not exception-safe on its first line (it resolves its table in a property,
+  outside its own `try`), so a failure there skipped the audit event — in exactly the correlated
+  case where the same DynamoDB trouble affects both, and on a scheduled run that event is the only
+  signal the failure leaves anywhere. Each step is now guarded independently.
+- `POST /projects/{project_id}/document` validates `doc_type` against an allowlist of `prd` and
+  `prfaq` before creating the job. The field steered the job type, the execution path and the
+  generated document's DynamoDB sort key straight from the request body, and each attempt billed a
+  model call.
+
+### Upgrade notes
+
+- **Reissue MCP credentials created before domain scopes and reach were introduced.** Missing or malformed scopes now grant nothing rather than falling back to the former broad `read` behavior. A legacy row that has valid scopes but no reach is interpreted as workspace-wide for backward compatibility; reissue it with the intended `workspace` or `project-set` reach.
+- **Existing aggregate drift is not repaired automatically.** Transactional INSERT deduplication and reversal logic prevent new classes of drift, but counters already stored remain unchanged. Follow [Rebuilding aggregates for a window](docs/processing-pipeline.md#rebuilding-aggregates-for-a-window) and write absolute values rather than replaying deltas.
+- **A plugin must declare at least one key in its manifest's `secrets` block.** Following the
+  fail-closed change above, a plugin whose namespace holds no key in the shared secret raises a
+  `ConfigurationError` when its Lambda is constructed, rather than silently receiving every other
+  plugin's keys. Every plugin shipped in this repo declares at least one key and CDK seeds them all
+  at deploy time, so no bundled plugin is affected; a custom plugin declaring none must add a key,
+  or override `_load_secrets` to return `{}` — a deliberate opt-out of the boundary. Declining to
+  *read* `self.secrets` does not avoid the raise: both base classes call `self._load_secrets()` in
+  `__init__`, before any subclass body runs. A test over the manifests now fails in CI
+  rather than letting this surface in a deployed Lambda. Any onboarding notes telling a plugin
+  author to register their prefix in `_get_known_prefixes()` are obsolete — that function no longer
+  exists, and registration was never needed for a correctly prefixed key.
+- **A plugin id may no longer be a prefix of another plugin id** (`app_reviews` alongside
+  `app_reviews_ios`). Secret keys are matched by string prefix, so the shorter id would receive the
+  longer one's credentials. `cdk synth` now refuses such a pair, which is the only point at which
+  the whole id set is known. No bundled pair collides.
+- **`source` on every `{source}` route must now be a configured plugin id.** A request naming a
+  well-formed but non-existent source (`app_reviews`, `webscraper_admin`) is answered 400 instead of
+  reading or writing that namespace, invoking `voc-ingestor-<source>` or toggling
+  `voc-ingest-<source>-schedule`. Anything addressing a real plugin id is unaffected, which is every
+  call the web app makes; a script that relied on an arbitrary namespace must use the owning plugin's
+  id. Neither this nor the synth-time id guard is retroactive: a key stored by a pre-upgrade write
+  survives in the shared secret and is still read by whichever plugin's namespace it landed in.
+  A deployment where an arbitrary `source` was used should delete the stale keys by hand.
+- **`GET /sources/status?sources=` accepts at most 50 distinct sources per request** and answers 400
+  above that. Counted after de-duplication, so repeating one name is not what trips it, and set well
+  above both the five plugin manifests and the route's own three-source default — the web app asks
+  for at most one source at a time, so no UI call approaches it. A caller passing the same source
+  more than once still receives the identical response; only the redundant `describe_rule` calls are
+  gone.
+- **Triggering a run, toggling a schedule, and writing or deleting an app config now require the
+  `admins` group.** A caller in `users` alone receives 403 on `POST /sources/{source}/run`,
+  `PUT /sources/{source}/enable|disable` and `POST`/`DELETE /integrations/{source}/apps`. Listing app
+  configs (`GET /integrations/{source}/apps`) is unchanged and still open to any authenticated
+  caller. A non-admin who previously used the Scrapers page to run a source or edit an app config now
+  sees those controls disabled; a script doing the same needs admin credentials. The same applies to
+  the scraper routes: `POST /scrapers`, `DELETE /scrapers/{scraper_id}` and
+  `POST /scrapers/{scraper_id}/run` answer 403 outside the `admins` group, while `GET /scrapers`, the
+  status and run-history reads and `POST /scrapers/analyze-url` stay open. On the Settings page the
+  Enabled toggle is now disabled for a non-admin, where it previously issued a request that failed
+  silently — as is `Save to Secrets Manager` on the same card, whose route was already admin-gated
+  but whose refusal rendered no message at all — and in the scraper editor so is Save, where the
+  modal previously closed as though the edit had been saved. The manual-import routes
+  (`/scrapers/manual/*`, a different Lambda) are unaffected and stay open to any authenticated caller.
+- **`POST /projects/{project_id}/document` now answers 400 for any `doc_type` other than `prd` or
+  `prfaq`.** Matched exactly, with no case folding or trimming, so `PRD` and `" prd"` are refused
+  too. Previously accepted values that now fail: `build_prototype`, `product_report` and the empty
+  string. The web app is unaffected — it only ever sends the two accepted values — but a script or
+  integration calling this route directly may need updating. `build_prototype` and `product_report`
+  have their own routes (`POST .../build-prototype`, `POST .../product-report`); use those instead.
+- **The same route now answers 400 when the request body is present but is not a JSON object** —
+  an array, string, number or boolean, including the falsy ones (`[]`, `false`, `0`, `""`). These
+  previously started a default `prd` generation. Unparseable JSON is a 400 too, where it was
+  previously a 500. A body that is absent altogether, a literal JSON `null`, or zero-length
+  (`Content-Length: 0`), still means "generate a PRD with the defaults" and is unchanged.
 
 ## [0.2.0] - 2026-08-19
 
@@ -144,8 +408,10 @@ customer feedback on AWS.
 - Encryption at rest with a customer-managed KMS key, and cdk-nag suppressions recorded where AWS
   services do not support resource-level permissions.
 
-<!-- These point at commit ranges rather than release tags, because no version tags exist yet.
-     Re-point them at /releases/tag/vX.Y.Z once releases are cut. -->
+<!-- Version 0.3.0 and later use release tags. Historical 0.1/0.2 links remain
+     fixed commit ranges because those releases were not tagged. -->
 
-[0.2.0]: https://github.com/aws-samples/sample-voice-of-customer-datalake/compare/0b785a87...main
+[Unreleased]: https://github.com/aws-samples/sample-voice-of-customer-datalake/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/aws-samples/sample-voice-of-customer-datalake/releases/tag/v0.3.0
+[0.2.0]: https://github.com/aws-samples/sample-voice-of-customer-datalake/compare/0b785a87...a7a976b0
 [0.1.0]: https://github.com/aws-samples/sample-voice-of-customer-datalake/commit/0b785a87

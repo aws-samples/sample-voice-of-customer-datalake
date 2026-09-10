@@ -1,38 +1,30 @@
 # Data Lake Structure
 
-This document describes the VoC data lake architecture, including S3 storage structure, DynamoDB tables, and the Data Explorer feature.
+This document describes the VoC data lake architecture, including S3 storage, DynamoDB tables, and the Data Explorer.
 
 ## Overview
 
-The VoC platform stores data in two primary locations:
-
-1. **S3 Raw Data Bucket** - Immutable raw data from all sources
-2. **DynamoDB Tables** - Processed, queryable feedback data
+The platform stores a raw source archive and generated binary assets in S3. DynamoDB holds processed feedback, aggregates, project artifacts, jobs, conversations, and idempotency state.
 
 ## S3 Raw Data Structure
 
-Raw data is stored in S3 with a partitioned folder structure:
+Raw feedback is partitioned by source and ingestion date:
 
 ```
 s3://voc-raw-data-bucket/
 └── raw/
     └── {source_platform}/
-        └── {year}/
-            └── {month}/
-                └── {day}/
-                    └── {item_id}.json
+        └── {year}/{month}/{day}/{item_id}.json
 ```
 
-### Example Paths
+Example paths:
 
 ```
 raw/webscraper/2026/01/08/abc123def456.json
 raw/feedback_form/2026/01/08/uuid-here.json
 ```
 
-### Raw Data File Format
-
-Each JSON file contains:
+The raw envelope written by ingestors is:
 
 ```json
 {
@@ -46,156 +38,118 @@ Each JSON file contains:
     "text": "The feedback content",
     "rating": 4.5,
     "created_at": "2026-01-07T15:00:00Z",
-    "url": "https://source.com/review/123",
-    "author": "John D."
+    "url": "https://source.example/review/123",
+    "author": "Example reviewer"
   }
 }
 ```
 
-### Partitioning Strategy
-
-Data is partitioned by:
-
-1. **Source platform** - Isolates data by origin
-2. **Date** - Year/month/day hierarchy for efficient queries
-3. **Item ID** - Deterministic filename prevents duplicates
+The bucket is not versioned. Authorized Data Explorer users can overwrite or delete raw keys, so “archive” describes the normal ingestion path, not an immutability guarantee. Other prefixes store project uploads, extracted product context, persona avatars, and generated prototype assets.
 
 ## DynamoDB Tables
 
-### Feedback Table
+All tables use on-demand capacity and customer-managed KMS encryption. Table names include the deployment namespace, account, and region.
 
-Primary table for processed feedback:
+| Table | Primary key | Purpose |
+|-------|-------------|---------|
+| Feedback | `pk=SOURCE#<platform>`, `sk=FEEDBACK#<id>` | Processed feedback and enrichment |
+| Aggregates | `pk`, `sk` | Daily metrics, settings, logs, form configs, scraper runs, ballots, and voting sessions |
+| Watermarks | `source` | Per-source ingestion progress |
+| Projects | `pk`, `sk` | Project metadata, personas, artifacts, prioritization rows, MCP credentials, and managed-version state |
+| Jobs | `pk=PROJECT#<id>`, `sk=JOB#<id>` | Long-running research and generation jobs |
+| Conversations | `pk=USER#<subject>`, `sk=CONV#<id>` | Authenticated chat history; current writes do not set TTL |
+| Idempotency | `id` | Processor and aggregator retry claims |
 
-| Key | Type | Description |
-|-----|------|-------------|
-| `pk` | Partition | `SOURCE#{source_platform}` |
-| `sk` | Sort | `FEEDBACK#{feedback_id}` |
+### Feedback table indexes
 
-#### Global Secondary Indexes
+| Index | Partition key | Sort key | Use case |
+|-------|---------------|----------|----------|
+| `gsi1-by-date` | `DATE#<date>` | `<timestamp>#<id>` | Date-window queries |
+| `gsi2-by-category` | `CATEGORY#<category>` | `<score>#<timestamp>` | Category queries |
+| `gsi3-by-urgency` | `URGENCY#<urgency>` | `<timestamp>` | Urgent-item queries |
+| `gsi4-by-feedback-id` | `feedback_id` | — | Direct lookup independent of source partition |
 
-| GSI | Partition Key | Sort Key | Use Case |
-|-----|---------------|----------|----------|
-| GSI1 | `DATE#{date}` | `{timestamp}#{id}` | Query by date |
-| GSI2 | `CATEGORY#{category}` | `{score}#{timestamp}` | Query by category |
-| GSI3 | `URGENCY#{urgency}` | `{timestamp}` | Query urgent items |
+Feedback items receive a one-year `ttl` when processed. DynamoDB expiry is asynchronous; consumers must not assume an item disappears exactly at the deadline.
 
-### Aggregates Table
+### Aggregates table
 
-Stores aggregated data, settings, and logs:
+Common key families include:
 
-| Key Pattern | Description |
-|-------------|-------------|
-| `SETTINGS#*` | Configuration data |
-| `LOGS#*` | Processing logs |
-| `SCRAPER_RUN#*` | Scraper execution history |
-| `FEEDBACK_FORM` | Form configurations |
+| Key pattern | Purpose |
+|-------------|---------|
+| `METRIC#*` | Pre-computed daily counters and averages |
+| `SETTINGS#*` | Brand, category, and model configuration |
+| `LOGS#*` | Validation and processing logs |
+| `FEEDBACK_FORM*` | Feedback-form configuration and statistics |
+| `SCRAPER_RUN#*` | Scraper run state |
 
-### Watermarks Table
+Metric rows are retained for 90 days. Settings and other durable configuration rows omit TTL. See [Processing Pipeline](processing-pipeline.md#rebuilding-aggregates-for-a-window) before repairing counters.
 
-Tracks ingestion progress per source:
+### Projects table
 
-| Key | Value |
-|-----|-------|
-| `{source}#{key}` | Last processed ID or timestamp |
+A project uses `pk=PROJECT#<project_id>`. Its sort keys include `META`, `PERSONA#<id>`, managed artifact prefixes such as `PRD#`, `PRFAQ#`, and `PROTOTYPE#`, uploaded `DOC#` rows, and prioritization state.
+
+PRDs, PR/FAQs, and prototypes have internal version state in a separate partition:
+
+```
+pk = DOCUMENT_VERSIONS#PROJECT#<project_id>
+sk = <DOCUMENT_TYPE>#<title-digest>                 # series counter
+sk = ALLOCATION#<DOCUMENT_TYPE>#<allocation-digest> # durable allocation history
+```
+
+These rows preserve monotonic version numbers and retry identity. They deliberately survive document deletion; deleting or rewriting them can make delayed retries conflict or reuse version numbers. Manage artifacts through the application/API, not by deleting internal rows directly.
+
+### Jobs, conversations, and idempotency
+
+- Job rows use TTL. Completed and failed jobs remain available briefly for progress and diagnostics.
+- Conversations are partitioned by authenticated user. Although the table has a `ttl` attribute configured, current conversation writes omit it, so rows persist until explicitly deleted or the stack is destroyed.
+- Idempotency rows use the `expiration` TTL attribute. Processor and aggregator keys share the table but use distinct namespaces.
 
 ## Data Explorer
 
-The Data Explorer provides a UI for browsing and managing data lake contents.
+The Data Explorer browses the raw-data bucket and edits selected S3 or feedback records. It is an operational/debugging surface, not a replacement for project and version APIs.
 
-### Features
-
-- **S3 Browser**: Navigate folders, preview files, edit JSON
-- **Feedback Editor**: View and modify processed feedback
-- **Sync**: Push changes between S3 and DynamoDB
-
-### Available Buckets
-
-| Bucket | Description |
-|--------|-------------|
-| `raw-data` | VoC raw feedback data |
-
-### API Endpoints
+### API endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/data-explorer/buckets` | List available buckets |
+| GET | `/data-explorer/buckets` | List available logical buckets |
 | GET | `/data-explorer/s3` | List S3 objects |
 | GET | `/data-explorer/s3/preview` | Preview file content |
-| PUT | `/data-explorer/s3` | Create/update file |
-| DELETE | `/data-explorer/s3` | Delete file |
-| PUT | `/data-explorer/feedback` | Update feedback record |
-| DELETE | `/data-explorer/feedback` | Delete feedback record |
-| GET | `/data-explorer/stats` | Get data lake statistics |
-
-### Syncing Data
-
-When editing data, you can sync changes:
-
-- **S3 → DynamoDB**: Edit raw data and reprocess through the pipeline
-- **DynamoDB → S3**: Update processed data and sync back to raw storage
+| PUT | `/data-explorer/s3` | Create/update a file, optionally reprocess it |
+| DELETE | `/data-explorer/s3` | Delete a file |
+| PUT | `/data-explorer/feedback` | Update a feedback record |
+| DELETE | `/data-explorer/feedback` | Delete a feedback record |
+| GET | `/data-explorer/stats` | Get data-lake statistics |
 
 ## Data Flow
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   Plugin    │────▶│  S3 Raw     │     │  DynamoDB   │
-│  Ingestor   │     │  Storage    │     │  Feedback   │
-└─────────────┘     └─────────────┘     └─────────────┘
-                           │                   ▲
-                           ▼                   │
-                    ┌─────────────┐     ┌─────────────┐
-                    │    SQS      │────▶│  Processor  │
-                    │   Queue     │     │   Lambda    │
-                    └─────────────┘     └─────────────┘
+External source → Ingestor/API → S3 raw archive → SQS → Processor → Feedback table
+                                                           │
+                                                           └→ DynamoDB Stream → Aggregates
+Projects UI/API → Jobs → Bedrock → Projects table + S3 artifact assets
 ```
-
-1. **Ingestor** fetches data from source
-2. **Raw data** stored in S3 (immutable archive)
-3. **Message** sent to SQS queue
-4. **Processor** enriches with LLM analysis
-5. **Processed data** stored in DynamoDB
 
 ## Retention
 
-- **S3 Raw Data**: Retained indefinitely (configure lifecycle rules as needed)
-- **DynamoDB Feedback**: 1 year TTL (configurable)
-- **Processing Logs**: 7 days TTL
+- **S3 raw data and project assets:** normally retained, but authorized APIs can overwrite/delete objects and configured lifecycle/application policies may remove them.
+- **Feedback:** one-year TTL from processing.
+- **Daily aggregate metrics:** 90-day TTL.
+- **Processing logs:** seven-day TTL.
+- **Jobs and idempotency:** item-specific TTL appropriate to progress visibility or retry guarantees.
+- **Conversations:** no automatic expiry on current writes; delete through the application/API when no longer needed.
 
-## Querying Data
+## Querying Feedback
 
-### By Date Range
+Use indexes rather than scans. For example, a date partition query uses `gsi1-by-date`:
 
 ```python
 response = table.query(
-    IndexName='gsi1',
+    IndexName='gsi1-by-date',
     KeyConditionExpression='gsi1pk = :pk',
-    ExpressionAttributeValues={':pk': f'DATE#2026-01-08'}
+    ExpressionAttributeValues={':pk': 'DATE#2026-01-08'},
 )
 ```
 
-### By Category
-
-```python
-response = table.query(
-    IndexName='gsi2',
-    KeyConditionExpression='gsi2pk = :pk',
-    ExpressionAttributeValues={':pk': 'CATEGORY#product_quality'}
-)
-```
-
-### By Source
-
-```python
-response = table.query(
-    KeyConditionExpression='pk = :pk',
-    ExpressionAttributeValues={':pk': 'SOURCE#webscraper'}
-)
-```
-
-## Best Practices
-
-1. **Use GSIs for queries**: Avoid table scans
-2. **Leverage partitioning**: Query specific date ranges
-3. **Keep raw data immutable**: Edit processed data, not raw
-4. **Monitor storage costs**: Set up S3 lifecycle policies
-5. **Use Data Explorer for debugging**: Preview and edit data easily
+Use the application APIs where possible: they enforce authorization, pagination ceilings, partial-window reporting, and project tombstones that a direct table read bypasses.

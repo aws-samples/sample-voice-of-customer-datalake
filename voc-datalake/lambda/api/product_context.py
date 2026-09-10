@@ -31,6 +31,11 @@ from shared.logging import logger, tracer
 from shared.aws import get_dynamodb_resource, get_bedrock_client
 from shared.image_limits import IMAGE_CONTENT_TYPE_EXTENSIONS, MAX_IMAGE_BYTES
 from shared.model_config import get_active_model_id, omits_temperature
+from shared.converse import bedrock_call_with_retry
+from shared.project_writes import (
+    put_project_item,
+    put_project_item_and_increment,
+)
 from shared.exceptions import (
     ConfigurationError, NotFoundError, ValidationError, ServiceError,
 )
@@ -330,7 +335,7 @@ def update_context(project_id: str, body: dict) -> dict:
         }
         base.update(_empty_context())
         base.update(patch)
-        projects_table.put_item(Item=base)
+        put_project_item(projects_table, project_id, base)
         return get_context(project_id)
 
     if not patch:
@@ -338,6 +343,7 @@ def update_context(project_id: str, body: dict) -> dict:
         projects_table.update_item(
             Key={'pk': f'PROJECT#{project_id}', 'sk': CONTEXT_SK},
             UpdateExpression='SET updated_at = :now',
+            ConditionExpression='attribute_exists(pk) AND attribute_exists(sk)',
             ExpressionAttributeValues={':now': now},
         )
         return get_context(project_id)
@@ -356,6 +362,7 @@ def update_context(project_id: str, body: dict) -> dict:
     projects_table.update_item(
         Key={'pk': f'PROJECT#{project_id}', 'sk': CONTEXT_SK},
         UpdateExpression='SET ' + ', '.join(set_parts),
+        ConditionExpression='attribute_exists(pk) AND attribute_exists(sk)',
         ExpressionAttributeValues=expr_vals,
         ExpressionAttributeNames=expr_names,
     )
@@ -476,14 +483,24 @@ def interview_turn(project_id: str, body: dict) -> dict:
     if not omits_temperature(model):
         inference_config['temperature'] = 0.3
     try:
-        resp = client.converse(
-            modelId=model,
-            messages=messages,
-            system=[{'text': system_prompt}],
-            inferenceConfig=inference_config,
-            toolConfig={'tools': [_build_interview_tool()]},
+        # Through the shared retry policy, not bare: this raw call does not go
+        # through converse(), so without it the FIRST throttle would become a
+        # user-visible "AI interview unavailable" — the shared client makes one
+        # botocore attempt by design (see BEDROCK_READ_TIMEOUT_SECONDS).
+        resp = bedrock_call_with_retry(
+            lambda: client.converse(
+                modelId=model,
+                messages=messages,
+                system=[{'text': system_prompt}],
+                inferenceConfig=inference_config,
+                toolConfig={'tools': [_build_interview_tool()]},
+            ),
+            step_name='interview_turn',
         )
     except Exception as e:
+        # Covers sustained throttling too: bedrock_call_with_retry raises rather
+        # than returning None while raise_on_throttle is left at its default, so
+        # there is no empty-result case to check for below.
         logger.exception(f'Interview Bedrock call failed: {e}')
         raise ServiceError('AI interview unavailable. Please try again.')
 
@@ -858,7 +875,7 @@ def create_upload_url(project_id: str, body: dict) -> dict:
         'extracted_chars': 0,
         'created_at': now,
     }
-    projects_table.put_item(Item=item)
+    put_project_item(projects_table, project_id, item)
 
     presigned = _s3().generate_presigned_url(
         ClientMethod='put_object',
@@ -1050,11 +1067,8 @@ def generate_report(project_id: str, body: dict) -> dict:
         ),
         'created_at': now,
     }
-    projects_table.put_item(Item=item)
-    projects_table.update_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'},
-        UpdateExpression='SET document_count = if_not_exists(document_count, :zero) + :one, updated_at = :now',
-        ExpressionAttributeValues={':one': 1, ':zero': 0, ':now': now},
+    put_project_item_and_increment(
+        projects_table, project_id, item, 'document_count',
     )
     return {'success': True, 'document': item}
 

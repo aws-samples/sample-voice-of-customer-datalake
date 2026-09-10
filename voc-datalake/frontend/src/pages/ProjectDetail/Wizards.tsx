@@ -12,7 +12,7 @@ import DataSourceWizard from '../../components/DataSourceWizard'
 import ContextSummary from '../../components/DataSourceWizard/ContextSummary'
 import { isWebSearchAvailable } from '../../runtimeConfig'
 import type {
-  PersonaToolConfig, ResearchToolConfig, DocToolConfig, MergeToolConfig,
+  PersonaToolConfig, ResearchToolConfig, DocToolConfig, MergeToolConfig, DocType,
 } from './types'
 import type {
   ProjectPersona, ProjectDocument,
@@ -242,7 +242,34 @@ export function DocWizard({
   const hasPrfaq = docTypes.includes('prfaq')
   const hasPrd = docTypes.includes('prd')
 
-  const toggleDocType = (type: 'prd' | 'prfaq') => {
+  // `DocType`, not a respelt `'prd' | 'prfaq'` — a convention here, not something a
+  // test enforces: the lockstep test reads only the `DocType` declaration and the two
+  // api/ clients, never this file. Widening THIS annotation past `DocType` is caught,
+  // by the compiler at the `includes`/spread sites below, since `docConfig.docTypes`
+  // is `DocType[]`.
+  //
+  // ⚠️ The REVERSE is not caught, and it is the direction that actually happens: if
+  // `DocType` and `GENERATED_DOC_TYPES` are widened together, nothing here fails.
+  // `tsc` is fine with a narrower argument to `includes`/`filter`, so the picker
+  // silently keeps offering the old set — measured: adding a third member to both
+  // leaves `tsc -b` clean and every lockstep test green with this file untouched.
+  // Adding a doc type therefore means editing this file too, in four places that name
+  // their members as literals: `hasPrfaq`/`hasPrd` above, the two `toggleDocType('…')`
+  // buttons in `renderFinalStep`, the `bothSelected`/`singleTitle`/`singleSubmitLabel`
+  // copy, which is written as a PRD-or-PR-FAQ binary — a third member would fall into
+  // its PR-FAQ branch and be labelled as one — and `onSuggestBrief`'s
+  // `doc_type: … includes('prd') ? 'prd' : 'prfaq'`, the same binary against a
+  // DIFFERENT route: a third member selected alone asks `suggest-brief` for a PR-FAQ
+  // brief, so the AI-drafted title and description come back framed as a PR-FAQ for a
+  // document that is not one. That call is the only place the picker's set meets
+  // `suggestDocumentBrief`'s, which is deliberately left unbound to `DocType` (its
+  // signature and the reason sit at `api/projectsApi.ts`), so it needs naming rather
+  // than leaving implied by "unbound".
+  //
+  // The lockstep test's module docstring carries the same list as the FOURTH edit a
+  // widening needs, so a widener reading either place learns it; keep the two
+  // consistent (issue #381).
+  const toggleDocType = (type: DocType) => {
     const next = docTypes.includes(type)
       ? docTypes.filter((d) => d !== type)
       : [...docTypes, type]
@@ -459,10 +486,11 @@ interface MergeWizardProps {
 export function MergeWizard({
   personas, documents, contextConfig, mergeConfig, generating, onContextChange, onMergeConfigChange, onClose, onSubmit,
 }: MergeWizardProps) {
+  const { t } = useTranslation('projectDetail')
   const totalDocs = contextConfig.selectedDocumentIds.length + contextConfig.selectedResearchIds.length
   return (
     <DataSourceWizard
-      title="Remix Documents"
+      title={t('wizards.remixDocuments')}
       accentColor="green"
       icon={<div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center"><Shuffle size={20} className="text-green-600" /></div>}
       personas={personas}
@@ -474,7 +502,7 @@ export function MergeWizard({
       renderFinalStep={() => (
         <div className="space-y-6">
           <div>
-            <h3 className="font-medium mb-3">Output Document Type</h3>
+            <h3 className="font-medium mb-3">{t('wizards.outputDocType')}</h3>
             <div className="grid grid-cols-3 gap-3">
               {(['prfaq', 'prd', 'custom'] as const).map((type) => (
                 <button key={type} onClick={() => onMergeConfigChange({
@@ -487,23 +515,23 @@ export function MergeWizard({
             </div>
           </div>
           <div>
-            <h3 className="font-medium mb-3">New Document Title</h3>
+            <h3 className="font-medium mb-3">{t('wizards.newDocTitle')}</h3>
             <input type="text" value={mergeConfig.title} onChange={(e) => onMergeConfigChange({
               ...mergeConfig,
               title: e.target.value,
-            })} placeholder="e.g., Virtual Concierge PRD v2" className="w-full px-3 py-2 border rounded-lg" />
+            })} placeholder={t('wizards.newDocTitlePlaceholder')} className="w-full px-3 py-2 border rounded-lg" />
           </div>
           <div>
-            <h3 className="font-medium mb-3">Remix Instructions</h3>
+            <h3 className="font-medium mb-3">{t('wizards.remixInstructions')}</h3>
             <textarea value={mergeConfig.instructions} onChange={(e) => onMergeConfigChange({
               ...mergeConfig,
               instructions: e.target.value,
-            })} placeholder="Describe how to remix..." rows={4} className="w-full px-3 py-2 border rounded-lg" />
+            })} placeholder={t('wizards.remixInstructionsPlaceholder')} rows={4} className="w-full px-3 py-2 border rounded-lg" />
           </div>
           <ContextSummary config={contextConfig} personas={personas} documents={documents} />
           {totalDocs < 2 && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-700">
-              ⚠️ Select at least 2 documents to remix.
+              {t('wizards.selectAtLeast2')}
             </div>
           )}
         </div>
@@ -512,7 +540,7 @@ export function MergeWizard({
       onClose={onClose}
       onSubmit={onSubmit}
       isSubmitting={generating === 'merge'}
-      submitLabel={<><Shuffle size={16} />Remix Documents</>}
+      submitLabel={<><Shuffle size={16} />{t('wizards.submitRemixDocuments')}</>}
     />
   )
 }

@@ -80,6 +80,7 @@
     },
     "settings": "Configuración"
   },
+  "partialCountsHint": "Aproximado: no se pudo leer el periodo completo, los recuentos son un límite inferior",
   "partialWindowHint": "acota los filtros para verlos todos",
   "problemAnalysisPage": {
     "emptyHint": "Prueba a ampliar el rango de tiempo o ajustar los filtros",

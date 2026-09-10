@@ -37,23 +37,34 @@ describe('configStore', () => {
   })
 
   describe('setConfig', () => {
-    it('sets API endpoint correctly', () => {
-      const { setConfig } = useConfigStore.getState()
+    it('sets API endpoint correctly when origin is trusted', () => {
+      // With config loaded, the runtime endpoint's origin is allowed.
+      vi.mocked(runtimeConfig.isConfigLoaded).mockReturnValue(true)
+      vi.mocked(runtimeConfig.getRuntimeConfig).mockReturnValue({
+        apiEndpoint: 'https://api.example.com/v1',
+        cognito: { userPoolId: 'pool-123', clientId: 'client-123', region: 'us-east-1' }
+      })
 
-      setConfig({ apiEndpoint: 'https://api.example.com' })
+      const { setConfig } = useConfigStore.getState()
+      setConfig({ apiEndpoint: 'https://api.example.com/v1' })
 
       const { config } = useConfigStore.getState()
-      expect(config.apiEndpoint).toBe('https://api.example.com')
+      expect(config.apiEndpoint).toBe('https://api.example.com/v1')
     })
 
     it('preserves existing config when updating partial config', () => {
-      const { setConfig } = useConfigStore.getState()
+      vi.mocked(runtimeConfig.isConfigLoaded).mockReturnValue(true)
+      vi.mocked(runtimeConfig.getRuntimeConfig).mockReturnValue({
+        apiEndpoint: 'https://api.example.com/v1',
+        cognito: { userPoolId: 'pool-123', clientId: 'client-123', region: 'us-east-1' }
+      })
 
-      setConfig({ apiEndpoint: 'https://api.example.com', brandName: 'TestBrand' })
+      const { setConfig } = useConfigStore.getState()
+      setConfig({ apiEndpoint: 'https://api.example.com/v1', brandName: 'TestBrand' })
       setConfig({ brandName: 'UpdatedBrand' })
 
       const { config } = useConfigStore.getState()
-      expect(config.apiEndpoint).toBe('https://api.example.com')
+      expect(config.apiEndpoint).toBe('https://api.example.com/v1')
       expect(config.brandName).toBe('UpdatedBrand')
     })
 
@@ -175,7 +186,12 @@ describe('configStore', () => {
       vi.mocked(runtimeConfig.isConfigLoaded).mockReturnValue(false)
 
       const { syncWithRuntimeConfig, setConfig } = useConfigStore.getState()
-      setConfig({ apiEndpoint: 'https://local-api.example.com' })
+      // setConfig with a foreign URL: in a live app with config loaded this
+      // would be rejected; here config is NOT loaded so the boundary validator
+      // cannot build an allowlist — it will discard the value too.
+      useConfigStore.setState((state) => ({
+        config: { ...state.config, apiEndpoint: 'https://local-api.example.com' },
+      }))
       syncWithRuntimeConfig()
 
       const { config } = useConfigStore.getState()
@@ -189,15 +205,110 @@ describe('configStore', () => {
         cognito: { userPoolId: 'pool-123', clientId: 'client-123', region: 'us-east-1' }
       })
 
-      const { syncWithRuntimeConfig, setConfig } = useConfigStore.getState()
-      setConfig({ apiEndpoint: 'https://same-api.example.com' })
-      
+      // Bypass the store boundary to set the same value as runtime config.
+      useConfigStore.setState((state) => ({
+        config: { ...state.config, apiEndpoint: 'https://same-api.example.com' },
+      }))
+
+      const { syncWithRuntimeConfig } = useConfigStore.getState()
       const setStateSpy = vi.spyOn(useConfigStore, 'setState')
       syncWithRuntimeConfig()
 
       // setState should not be called since endpoints match
       expect(setStateSpy).not.toHaveBeenCalled()
       setStateSpy.mockRestore()
+    })
+
+    it('overwrites a stale out-of-allowlist value already persisted in the store', () => {
+      // This is the realistic attack scenario: the user previously saved a
+      // foreign URL and it is sitting in localStorage. On next load the app
+      // syncs with runtime config, which must win.
+      vi.mocked(runtimeConfig.isConfigLoaded).mockReturnValue(true)
+      vi.mocked(runtimeConfig.getRuntimeConfig).mockReturnValue({
+        apiEndpoint: 'https://real-api.example.com',
+        cognito: { userPoolId: 'pool-123', clientId: 'client-123', region: 'us-east-1' }
+      })
+
+      // Force-write a foreign value directly (bypassing setConfig validation),
+      // simulating a value that was persisted by an earlier build.
+      useConfigStore.setState((state) => ({
+        config: { ...state.config, apiEndpoint: 'https://attacker.example.com/steal' },
+      }))
+
+      expect(useConfigStore.getState().config.apiEndpoint).toBe('https://attacker.example.com/steal')
+
+      const { syncWithRuntimeConfig } = useConfigStore.getState()
+      syncWithRuntimeConfig()
+
+      // The foreign value must have been replaced by the runtime config endpoint.
+      expect(useConfigStore.getState().config.apiEndpoint).toBe('https://real-api.example.com')
+    })
+  })
+
+  describe('setConfig — store boundary validation (issue #262)', () => {
+    it('DOES accept an endpoint that matches the runtime config origin (positive case)', () => {
+      vi.mocked(runtimeConfig.isConfigLoaded).mockReturnValue(true)
+      vi.mocked(runtimeConfig.getRuntimeConfig).mockReturnValue({
+        apiEndpoint: 'https://trusted-api.example.com/v1',
+        cognito: { userPoolId: 'pool-123', clientId: 'client-123', region: 'us-east-1' }
+      })
+
+      const { setConfig } = useConfigStore.getState()
+      setConfig({ apiEndpoint: 'https://trusted-api.example.com/v1' })
+
+      expect(useConfigStore.getState().config.apiEndpoint).toBe('https://trusted-api.example.com/v1')
+    })
+
+    it('discards a foreign apiEndpoint (out-of-allowlist value cannot be persisted)', () => {
+      vi.mocked(runtimeConfig.isConfigLoaded).mockReturnValue(true)
+      vi.mocked(runtimeConfig.getRuntimeConfig).mockReturnValue({
+        apiEndpoint: 'https://trusted-api.example.com/v1',
+        cognito: { userPoolId: 'pool-123', clientId: 'client-123', region: 'us-east-1' }
+      })
+
+      // Set a trusted value first so we have a reference baseline.
+      useConfigStore.setState((state) => ({
+        config: { ...state.config, apiEndpoint: 'https://trusted-api.example.com/v1' },
+      }))
+
+      const { setConfig } = useConfigStore.getState()
+      setConfig({ apiEndpoint: 'https://attacker.example.com/steal' })
+
+      // The foreign endpoint must have been silently discarded.
+      expect(useConfigStore.getState().config.apiEndpoint).toBe('https://trusted-api.example.com/v1')
+    })
+
+    it('still updates other fields when apiEndpoint is out-of-allowlist', () => {
+      vi.mocked(runtimeConfig.isConfigLoaded).mockReturnValue(true)
+      vi.mocked(runtimeConfig.getRuntimeConfig).mockReturnValue({
+        apiEndpoint: 'https://trusted-api.example.com/v1',
+        cognito: { userPoolId: 'pool-123', clientId: 'client-123', region: 'us-east-1' }
+      })
+
+      const { setConfig } = useConfigStore.getState()
+      setConfig({ apiEndpoint: 'https://attacker.example.com/steal', brandName: 'My Brand' })
+
+      const { config } = useConfigStore.getState()
+      // apiEndpoint discarded, brandName updated.
+      expect(config.apiEndpoint).toBe('')
+      expect(config.brandName).toBe('My Brand')
+    })
+
+    it('accepts an empty string (the "not configured" sentinel)', () => {
+      vi.mocked(runtimeConfig.isConfigLoaded).mockReturnValue(true)
+      vi.mocked(runtimeConfig.getRuntimeConfig).mockReturnValue({
+        apiEndpoint: 'https://trusted-api.example.com/v1',
+        cognito: { userPoolId: 'pool-123', clientId: 'client-123', region: 'us-east-1' }
+      })
+
+      useConfigStore.setState((state) => ({
+        config: { ...state.config, apiEndpoint: 'https://trusted-api.example.com/v1' },
+      }))
+
+      const { setConfig } = useConfigStore.getState()
+      setConfig({ apiEndpoint: '' })
+
+      expect(useConfigStore.getState().config.apiEndpoint).toBe('')
     })
   })
 })

@@ -92,13 +92,21 @@ export function useFeedbackListData(
   filters: CategoryFiltersState,
   apiEndpoint: string
 ): FeedbackListData {
-  const isSearching = filters.searchText.length >= SEARCH_MIN_CHARS
+  // TRIMMED, and measured on the same string the server measures.
+  //
+  // `/feedback/search` trims `q` before applying its own minimum and now REFUSES
+  // a present-but-too-short term instead of answering an empty success. Gating on
+  // raw `.length` would send `"a "` — two characters here, one there — and the
+  // user would see an error from an ordinary typing sequence. Sending the trimmed
+  // value too keeps the cache key, the request and the server's view identical.
+  const searchText = filters.searchText.trim()
+  const isSearching = searchText.length >= SEARCH_MIN_CHARS
   const enabled = computeEnabledQueries(apiEndpoint, isSearching, filters.showUrgentOnly)
   const commonParams = buildCommonParams(dateParams, filters)
 
   const searchQuery = useQuery({
-    queryKey: ['categories-feedback-search', filters.searchText, commonParams],
-    queryFn: () => api.searchFeedback({ q: filters.searchText, ...commonParams }),
+    queryKey: ['categories-feedback-search', searchText, commonParams],
+    queryFn: () => api.searchFeedback({ q: searchText, ...commonParams }),
     enabled: enabled.search,
   })
 

@@ -80,6 +80,7 @@
     },
     "settings": "Paramètres"
   },
+  "partialCountsHint": "Approximatif : la période complète n'a pas pu être lue, les décomptes sont une borne inférieure",
   "partialWindowHint": "affinez les filtres pour tout voir",
   "problemAnalysisPage": {
     "emptyHint": "Essayez d'élargir la plage de temps ou d'ajuster les filtres",

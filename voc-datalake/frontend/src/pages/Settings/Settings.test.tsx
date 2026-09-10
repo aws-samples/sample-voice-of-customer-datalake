@@ -9,7 +9,7 @@
  * - Logs tab: Validation/processing logs
  * - Users tab: User administration (admin only)
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -194,26 +194,99 @@ describe('Settings', () => {
   })
 
   describe('brand tab - API configuration section', () => {
-    it('displays API Configuration heading', () => {
+    it('displays API Configuration heading in development mode', () => {
+      // In vitest, import.meta.env.DEV is true by default.
       render(<Settings />, { wrapper: createWrapper() })
-      
+
+      // Assert it renders with the same query we use in the production test —
+      // this proves the query WOULD find it if present.
       expect(screen.getByText('API Configuration')).toBeInTheDocument()
     })
 
     it('shows Connected indicator when API is configured', () => {
       render(<Settings />, { wrapper: createWrapper() })
-      
+
       expect(screen.getByText(/Connected/i)).toBeInTheDocument()
     })
 
     it('expands API config when clicked', async () => {
       const user = userEvent.setup()
       render(<Settings />, { wrapper: createWrapper() })
-      
+
       // Click to expand API config
       await user.click(screen.getByText('API Configuration'))
-      
+
       expect(screen.getByPlaceholderText(/your-api-id.execute-api/i)).toBeInTheDocument()
+    })
+  })
+
+  describe('brand tab - API configuration section (production mode gate)', () => {
+    afterEach(() => {
+      // Restore any stubbed env vars so later tests in this file always run
+      // under the default (DEV = true) Vitest environment.
+      vi.unstubAllEnvs()
+    })
+
+    it('hides API Configuration section when import.meta.env.DEV is false', () => {
+      vi.stubEnv('DEV', false)
+
+      render(<Settings />, { wrapper: createWrapper() })
+
+      // The editable endpoint field must NOT be present in a production build.
+      expect(screen.queryByText('API Configuration')).not.toBeInTheDocument()
+      // The URL input is definitely absent.
+      expect(screen.queryByPlaceholderText(/your-api-id.execute-api/i)).not.toBeInTheDocument()
+    })
+
+    it('shows API Configuration section when import.meta.env.DEV is true', () => {
+      // Confirm positive case with the same query, proving the test is not vacuous.
+      vi.stubEnv('DEV', true)
+
+      render(<Settings />, { wrapper: createWrapper() })
+
+      expect(screen.getByText('API Configuration')).toBeInTheDocument()
+    })
+
+    /**
+     * The claim of the fix, asserted end-to-end rather than inferred from three
+     * files: in a production build there is no path from user input to a
+     * persisted endpoint, because the only control that could originate one is
+     * not rendered.
+     *
+     * The layers below this still matter — a stale value persisted by a pre-fix
+     * build reaches `setConfig` and `getAuthHeaders` without passing through
+     * any UI — so this is not an argument that layer 2 is dead code.
+     */
+    it('offers no control that can originate an endpoint in a production build', async () => {
+      vi.stubEnv('DEV', false)
+      const user = userEvent.setup()
+
+      render(<Settings />, { wrapper: createWrapper() })
+
+      // No editable endpoint control is rendered, nor the disclosure that
+      // reveals one. Asserting the disclosure matters: the section is collapsed
+      // by default when an endpoint is already set, so checking only for the
+      // input would pass even with the gate removed.
+      expect(screen.queryByText('API Configuration')).not.toBeInTheDocument()
+      expect(screen.queryByPlaceholderText(/your-api-id.execute-api/i)).not.toBeInTheDocument()
+      expect(document.querySelector('input[type="url"]')).toBeNull()
+
+      // Saving brand fields still works and carries only the endpoint the app
+      // already held — never a user-originated one.
+      await user.click(screen.getByRole('button', { name: /Save Changes/i }))
+
+      await waitFor(() => {
+        expect(mockSetConfig).toHaveBeenCalled()
+      })
+      // Only the writes that carry an endpoint are relevant; brand-only writes
+      // omit the field entirely and leave the persisted value untouched.
+      const writtenEndpoints = mockSetConfig.mock.calls
+        .map(([written]) => written.apiEndpoint)
+        .filter((endpoint: unknown) => endpoint !== undefined)
+      expect(writtenEndpoints.length).toBeGreaterThan(0)
+      expect(writtenEndpoints).toEqual(
+        writtenEndpoints.map(() => 'https://api.example.com'),
+      )
     })
   })
 

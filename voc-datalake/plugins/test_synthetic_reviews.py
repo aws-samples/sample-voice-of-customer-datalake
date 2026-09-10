@@ -8,15 +8,23 @@ import json
 from contextlib import contextmanager
 from unittest.mock import patch, MagicMock
 
+from _shared.test.scoped_secret import scoped_secret
 
 
 @contextmanager
 def _make_ingestor(secrets: dict):
-    """Instantiate SyntheticReviewsIngestor with AWS deps + secrets mocked."""
+    """Instantiate SyntheticReviewsIngestor with AWS deps + secrets mocked.
+
+    The stored secret is keyed `<plugin_id>_<field>`; the handler consumes the
+    STRIPPED names, so these tests declare the stripped ones and `scoped_secret`
+    re-keys them into the namespace the base class will accept. They used to be
+    passed through unprefixed and arrived intact only because a namespace miss
+    returned the whole secret — the fail-open path issue #251 removed.
+    """
     with patch('_shared.base_ingestor.get_dynamodb_resource') as mock_dynamo, \
             patch('_shared.base_ingestor.get_s3_client'), \
             patch('_shared.base_ingestor.get_sqs_client'), \
-            patch('_shared.base_ingestor.get_secret', return_value=secrets):
+            patch('_shared.base_ingestor.get_secret', return_value=scoped_secret(**secrets)):
         mock_dynamo.return_value.Table.return_value = MagicMock()
         from synthetic_reviews.ingestor.handler import SyntheticReviewsIngestor
         yield SyntheticReviewsIngestor()

@@ -17,6 +17,7 @@ from shared.exceptions import (
     ValidationError,
     NotFoundError,
     ConfigurationError,
+    SecretUnreadableError,
     ServiceError,
     AuthorizationError,
     ConflictError,
@@ -53,12 +54,58 @@ def decimal_default(obj):
 # raising this ceiling used to silently halve the fan-out benefit while every test passed.
 MAX_PERSONAS_PER_GENERATION = 10
 
+# The shortest text search `/feedback/search` will run. Lives here, beside
+# MAX_PERSONAS_PER_GENERATION and for the same reason, because THREE places size
+# themselves against it and two of them are in other files: the route that
+# enforces it, the MCP tool's `inputSchema.minLength` plus the sentence in its
+# description that states it, and the frontend's own `SEARCH_MIN_CHARS` gate.
+#
+# 🔑 The bound was previously the bare literal `2` in the route and a claim in
+# English in the MCP tool description, with nothing declaring it — so the tool
+# advertised "must be at least 2 characters" while its schema accepted `"a"`, the
+# route answered `{'count': 0}` to it, and a model read that as "no customer
+# mentioned this". A prose promise cannot fail CI.
+SEARCH_QUERY_MIN_LENGTH = 2
+
+# The longest window any route will honour, and `validate_days`' ceiling.
+#
+# Named rather than left as a bare default in the signature because it is now
+# COUPLED to infrastructure: `/feedback/search` walks one DynamoDB query per day
+# partition (gsi1-by-date is partitioned BY DAY), so the widest window a caller
+# can ask for decides the worst-case duration of that route — and therefore
+# whether the metrics Lambda's timeout and API Gateway's 29 s integration limit
+# still cover it. `api-stack.test.ts` § "the search fan-out fits the metrics
+# timeout" READS this value and fails if raising it outgrows the budget.
+MAX_FEEDBACK_WINDOW_DAYS = 365
+
+# How long a pre-computed aggregate row survives, in days.
+#
+# The aggregator stamps a TTL on every counter and average row it writes
+# (`aggregator/handler.py`'s `update_counter`/`update_average`, `ttl_days`), and
+# DynamoDB deletes the row once it passes. So this is not a tuning knob: it is
+# the widest window the aggregate partitions can answer COMPLETELY.
+#
+# 🔑 It is declared here, beside MAX_FEEDBACK_WINDOW_DAYS, because the two are
+# in tension and nothing used to say so. `validate_days` admits up to 365 while
+# aggregates only reach back ~90, so `/metrics/*?days=365` reads a partition
+# whose older rows no longer exist and answers with a total that under-reports
+# by however much has expired — silently, because the read itself succeeds and
+# returns rows. `metrics_handler` now compares the requested window against this
+# value and reports `is_partial` when it is wider.
+#
+# The aggregator OWNS the value; this is the consumer's copy of it, and
+# `lambda/api/test/test_aggregate_retention_lockstep.py` reads the aggregator's
+# `ttl_days` default via `inspect.signature` and fails if the two drift. Shorten
+# the TTL there without shortening this and the endpoints go back to asserting
+# completeness over a window the data no longer covers.
+AGGREGATE_RETENTION_DAYS = 90
+
 
 def validate_days(
     value: str | int | None,
     default: int = 7,
     min_val: int = 1,
-    max_val: int = 365
+    max_val: int = MAX_FEEDBACK_WINDOW_DAYS
 ) -> int:
     """Validate and bound days parameter. Convenience wrapper around validate_int."""
     return validate_int(value, default=default, min_val=min_val, max_val=max_val)
@@ -282,6 +329,11 @@ def _register_exception_handlers(app: APIGatewayRestResolver) -> None:
             body=json.dumps({'success': False, 'error': ex.message})
         )
     
+    # Intentionally covers the SecretUnreadableError SUBCLASS too, with no handler
+    # of its own: Powertools resolves a handler by walking `exp_type.__mro__`, and
+    # the HTTP answer is the same 500 — only callers that must decide whether to
+    # COUNT the failure (see BaseIngestor._report_construction_failure) care which
+    # of the two it is.
     @app.exception_handler(ConfigurationError)
     def handle_configuration_error(ex: ConfigurationError):
         logger.error(f"Configuration error: {ex.message}")
@@ -361,6 +413,7 @@ __all__ = [
     'validate_bool',
     'validate_date_basis',
     'MAX_PERSONAS_PER_GENERATION',
+    'AGGREGATE_RETENTION_DAYS',
     'DATE_BASIS_IMPORTED',
     'DATE_BASIS_REVIEW',
     'create_cors_config',
@@ -376,6 +429,7 @@ __all__ = [
     'ValidationError',
     'NotFoundError',
     'ConfigurationError',
+    'SecretUnreadableError',
     'ServiceError',
     'AuthorizationError',
     'ConflictError',

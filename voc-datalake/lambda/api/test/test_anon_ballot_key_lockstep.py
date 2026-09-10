@@ -56,7 +56,9 @@ reading text needs neither the AWS-shaped Python import graph nor a bundler.
 
 Pattern follows test_visual_selection_bound_lockstep.py (same directory).
 """
+import io
 import re
+import tokenize
 from pathlib import Path
 
 BALLOTS_SOURCE = 'lambda/api/ballots_handler.py'
@@ -272,6 +274,28 @@ class TestABallotNeverCarriesAnExpiry:
             f'failed to strip _write_ballot\'s docstring in {BALLOTS_SOURCE}; this '
             f'test would otherwise assert against prose rather than code.'
         )
+        # COMMENTS ARE PROSE TOO, and stripped for the same reason. `ttl` is asserted
+        # as a bare substring rather than as an attribute reference — which is the
+        # right direction for a guard against an expiry reaching this write, since it
+        # catches every spelling — but it also matches the three letters inside an
+        # ordinary English word, so a comment explaining WHY a cancellation is
+        # retried ("thro-ttl-ing") failed this test while the code was correct. A
+        # lockstep test that fails on a comment is one that gets deleted rather than
+        # heeded.
+        #
+        # Stripped by the TOKENIZER, not by a regex. `re.sub(r'#[^\n]*', ...)` cuts
+        # from the first '#' on a line, and this function's expression attribute
+        # names ('#frozen_at', '#ballot_writes') live INSIDE string literals — a
+        # regex strip erased them to end-of-line, code and all, so an expiry
+        # spelled `'#ttl': 'ttl'` would have been deleted before the assertion
+        # looked. That is the guard silently blind to exactly the aliased spelling
+        # DynamoDB expressions use; the tokenizer knows a COMMENT from a STRING.
+        tokens = [
+            token
+            for token in tokenize.generate_tokens(io.StringIO(body).readline)
+            if token.type != tokenize.COMMENT
+        ]
+        body = tokenize.untokenize(tokens)
         assert ttl_attribute not in body, (
             f'_write_ballot sets {ttl_attribute!r}. The aggregates table expires any '
             f'item carrying it, so ballots would disappear from the team score '

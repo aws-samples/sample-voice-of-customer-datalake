@@ -57,12 +57,28 @@ void i18n.use(initReactI18next).init({
   react: { useSuspense: false },
 })
 
+// The real jsdom Location, captured before any suite can replace it.
+// Vitest shares one jsdom environment across all test files
+// (`poolOptions.forks.singleFork`), and several suites swap `window.location`
+// for partial stubs — e.g. `{ reload }` or `{ replace }` with no `origin`. A
+// suite that does not restore it poisons every later file: code resolving a URL
+// against the document origin (the trusted-origin check, issue #262) then sees
+// no origin and fails for a reason unrelated to what is under test.
+// Restoring here makes that structural, so it also holds for suites not yet
+// written rather than only for the ones that remember to clean up.
+const originalLocation = window.location
+
 // Cleanup DOM and reset mock call history after each test.
 // Clearing mocks prevents test order dependencies where assertions on
 // call counts pick up calls made by previous tests.
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
+  Object.defineProperty(window, 'location', {
+    value: originalLocation,
+    writable: true,
+    configurable: true,
+  })
 })
 
 // Mock window.matchMedia for responsive components

@@ -1,3 +1,13 @@
+// ⚠️ This file is at the `max-lines` boundary: 599 counted lines against the limit of
+// 600 in eslint.config.js. ONE more line of code fails lint, and the error will name a
+// line number near the end of the file rather than whatever was added, so the next
+// person to add one learns it here instead of from a confusing failure.
+//
+// Comments and blank lines are FREE — the rule is configured `skipBlankLines: true,
+// skipComments: true` — so documentation costs nothing and only code counts. To
+// reclaim room, the `// Re-export all types for backward compatibility` block below is
+// the obvious candidate: this file is a thin wrapper whose methods mostly delegate via
+// `import('./projectsApi')`.
 import { authService } from '../services/auth'
 import { endExpiredSession } from '../services/sessionExpiry'
 import { getBaseUrl, getAuthHeaders, getDaysFromRange, getDateBasisBodyParams, ALL_TIME_DAYS } from './baseUrl'
@@ -10,6 +20,7 @@ import type {
   SentimentBreakdown,
   CategoryBreakdown,
   SourceBreakdown,
+  PersonaBreakdown,
   IntegrationStatus,
   ScraperConfig,
   ScraperTemplate,
@@ -30,6 +41,9 @@ import type {
   LogsSummary,
   ApiToken,
   CreateApiTokenResponse,
+  // The document-generation request body, shared with the `projectsApi` method
+  // this file's wrapper forwards to; see its declaration in `./types`.
+  GenerateDocumentBody,
 } from './types'
 
 // Re-export all types for backward compatibility
@@ -42,6 +56,7 @@ export type {
   SentimentBreakdown,
   CategoryBreakdown,
   SourceBreakdown,
+  PersonaBreakdown,
   IntegrationStatus,
   ScraperConfig,
   ScraperTemplate,
@@ -84,13 +99,25 @@ export interface DateRangeParams {
   date_basis?: DateBasis
 }
 
-function buildHeaders(existingHeaders?: HeadersInit): Record<string, string> {
+/**
+ * Build request headers for `targetUrl`, including Authorization when its
+ * origin is trusted.
+ *
+ * `targetUrl` is required and comes first for the same reason it does in
+ * {@link getAuthHeaders}: the origin check is the point of this function, so a
+ * call site that forgets the URL must not compile.
+ */
+function buildHeaders(targetUrl: string, existingHeaders?: HeadersInit): Record<string, string> {
   const extra = existingHeaders ? Object.fromEntries(Object.entries(existingHeaders)) : undefined
-  return getAuthHeaders(extra)
+  return getAuthHeaders(targetUrl, extra)
 }
 
 import { z } from 'zod'
 import { normalizeFeedbackItem, normalizeFeedbackItems } from './feedbackSchema'
+import {
+  CreateApiTokenResponseSchema, normalizeApiTokens,
+  type McpScope, type ReadReach,
+} from './mcpTokenSchema'
 
 // API response parser using Zod for runtime validation
 // This satisfies the no-type-assertions rule
@@ -106,17 +133,16 @@ export async function parseJsonResponse<T>(response: Response): Promise<T> {
 }
 
 async function handleUnauthorized<T>(
-  endpoint: string,
+  fullUrl: string,
   options: RequestInit | undefined,
-  headers: Record<string, string>,
-  baseUrl: string
 ): Promise<T> {
   await authService.refreshSession()
-  const newIdToken = authService.getIdToken()
-  if (newIdToken) {
-    headers['Authorization'] = newIdToken
-  }
-  const retryResponse = await fetch(`${baseUrl}${endpoint}`, { ...options, headers })
+  // Rebuild headers through buildHeaders so the origin check fires on the
+  // retry path too — this prevents an attacker-controlled server from
+  // receiving the refreshed token by responding 401 to the first request.
+  // The stream client (streamClient.ts) already does the same via postStream.
+  const retryHeaders = buildHeaders(fullUrl, options?.headers)
+  const retryResponse = await fetch(fullUrl, { ...options, headers: retryHeaders })
   if (!retryResponse.ok) {
     throw new Error(`API Error: ${retryResponse.status}`)
   }
@@ -125,9 +151,10 @@ async function handleUnauthorized<T>(
 
 export async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const baseUrl = getBaseUrl()
-  const headers = buildHeaders(options?.headers)
-  
-  const response = await fetch(`${baseUrl}${endpoint}`, { ...options, headers })
+  const fullUrl = `${baseUrl}${endpoint}`
+  const headers = buildHeaders(fullUrl, options?.headers)
+
+  const response = await fetch(fullUrl, { ...options, headers })
   
   if (response.ok) {
     return parseJsonResponse<T>(response)
@@ -135,7 +162,7 @@ export async function fetchApi<T>(endpoint: string, options?: RequestInit): Prom
   
   if (response.status === 401) {
     try {
-      return await handleUnauthorized<T>(endpoint, options, headers, baseUrl)
+      return await handleUnauthorized<T>(fullUrl, options)
     } catch {
       // Carries the reason to /login so the user is told the session ended,
       // instead of meeting a bare login form after a working-looking app.
@@ -177,8 +204,33 @@ export const api = {
   },
   
   searchFeedback: async (params: { q: string; days?: number; date_basis?: DateBasis; limit?: number; source?: string; sentiment?: string; category?: string }) => {
-    const searchParams = buildSearchParams(params)
-    const res = await fetchApi<{ count: number; items: FeedbackItem[]; entities: EntitiesResponse['entities']; query: string }>(`/feedback/search?${searchParams}`)
+    // `q` trimmed HERE, at the single boundary every caller goes through, so the
+    // string that is SENT is the string the route measures.
+    //
+    // `/feedback/search` trims before applying `SEARCH_QUERY_MIN_LENGTH` and
+    // refuses a present-but-too-short term with a 400, so a caller passing `"a "`
+    // through untrimmed would have the server measure something different from
+    // what the caller measured.
+    //
+    // ⚠️ Precisely what this does and does not buy: it normalises the VALUE, not
+    // the DECISION. A caller that gates on raw `.length` will still let `"a "`
+    // past its own gate, and this boundary will faithfully send `q=a` and get a
+    // 400. Only a caller's own TRIMMED gate prevents that — `useFeedbackListData`
+    // has one, and `test_search_minimum_lockstep.py` pins its constant to the
+    // route's.
+    //
+    // A too-short term is deliberately NOT short-circuited into an empty result
+    // here, because returning `count: 0` for a search that never ran is the same
+    // ambiguity the route was fixed to stop producing — moving it from the server
+    // to the client would not make it honest. A loud 400 beats a quiet zero.
+    const searchParams = buildSearchParams({ ...params, q: params.q.trim() })
+    // `is_partial_window` declared, not merely surviving the spread below: the
+    // route sets it when the candidate scan stops on its soft cap, and
+    // `extractTotals` already reads that key for the search branch, so the "N+"
+    // display works either way. Declaring it is what tells the next reader the
+    // field is real rather than incidental.
+    const res = await fetchApi<{ count: number; items: FeedbackItem[]; entities: EntitiesResponse['entities']; query: string; is_partial_window?: boolean }>(`/feedback/search?${searchParams}`)
+
     return { ...res, items: normalizeFeedbackItems(res.items) }
   },
   
@@ -213,7 +265,7 @@ export const api = {
   },
   getPersonas: (range: DateRangeParams, source?: string) => {
     const searchParams = buildSearchParams({ ...range, source })
-    return fetchApi<{ period_days: number; personas: Record<string, number> }>(`/metrics/personas?${searchParams}`)
+    return fetchApi<PersonaBreakdown>(`/metrics/personas?${searchParams}`)
   },
   
   // Chat
@@ -467,8 +519,17 @@ export const api = {
     import('./projectsApi').then(m => m.projectsApi.importPersona(projectId, data)),
   runResearch: (projectId: string, data: { question: string; title?: string; sources?: string[]; categories?: string[]; sentiments?: string[]; days?: number; selected_persona_ids?: string[]; selected_document_ids?: string[] }) =>
     import('./projectsApi').then(m => m.projectsApi.runResearch(projectId, data)),
-  generateDocument: (projectId: string, data: { doc_type: 'prd' | 'prfaq'; title: string; feature_idea: string; data_sources: { feedback: boolean; personas: boolean; documents: boolean; research: boolean }; selected_persona_ids: string[]; selected_document_ids: string[]; feedback_sources: string[]; feedback_categories: string[]; days: number; customer_questions?: string[] }) =>
+  // Keep this signature on ONE line, and keep `data` taking the shared type by name:
+  // test_doc_type_lockstep.py matches it as exact text, and requires EVERY declaration
+  // of generateDocument to take `GenerateDocumentBody` (a ratio, because a mere
+  // substring search was satisfied by an unrelated occurrence while the real
+  // parameter was respelled inline — issue #381).
+  generateDocument: (projectId: string, data: GenerateDocumentBody) =>
     import('./projectsApi').then(m => m.projectsApi.generateDocument(projectId, data)),
+  // `output_type` is a DIFFERENT contract from `DocType`, not a copy that was
+  // missed: POST .../documents/merge takes a third value (`custom`) and the merger
+  // reads it unchecked (`lambda/jobs/document_merger/handler.py`), so it is not
+  // bound to the document route's allowlist. Widening it is a separate change.
   mergeDocuments: (projectId: string, data: { output_type: 'prd' | 'prfaq' | 'custom'; title: string; instructions: string; selected_document_ids: string[]; selected_persona_ids?: string[]; use_feedback?: boolean; feedback_sources?: string[]; feedback_categories?: string[]; days?: number }) =>
     import('./projectsApi').then(m => m.projectsApi.mergeDocuments(projectId, data)),
   getJobStatus: (projectId: string, jobId: string) =>
@@ -476,7 +537,7 @@ export const api = {
   getJobs: (projectId: string) => import('./projectsApi').then(m => m.projectsApi.getJobs(projectId)),
   dismissJob: (projectId: string, jobId: string) =>
     import('./projectsApi').then(m => m.projectsApi.dismissJob(projectId, jobId)),
-  createDocument: (projectId: string, data: { title: string; content: string; document_type?: string }) =>
+  createDocument: (projectId: string, data: { title: string; content: string; document_type?: 'custom' }) =>
     import('./projectsApi').then(m => m.projectsApi.createDocument(projectId, data)),
   updateDocument: (projectId: string, documentId: string, data: { title?: string; content?: string }) =>
     import('./projectsApi').then(m => m.projectsApi.updateDocument(projectId, documentId, data)),
@@ -746,15 +807,17 @@ export const api = {
       method: 'DELETE'
     }),
 
-  // Project API tokens (used by the McpAccessTab to gate MCP server access)
-  createApiToken: (projectId: string, data: { name: string; scope: 'read' | 'read-write'; expires_in_days?: number }) =>
-    fetchApi<CreateApiTokenResponse>(`/projects/${projectId}/api-tokens`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
+  // Project API tokens (McpAccessTab). Both responses pass through the lenient
+  // Zod normalizers rather than being trusted to match the declared types: a
+  // token row states what a credential may DO, so a drifted field would make
+  // the UI describe a credential's reach differently from how it is enforced.
+  // `scopes` is REQUIRED, mirroring the route: defaulting it server-side would
+  // make the laziest request mint the widest credential.
+  createApiToken: (projectId: string, data: { name: string; scopes: McpScope[]; read_reach?: ReadReach; expires_in_days?: number }): Promise<CreateApiTokenResponse> =>
+    fetchApi<unknown>(`/projects/${projectId}/api-tokens`, { method: 'POST', body: JSON.stringify(data) }).then((raw) => CreateApiTokenResponseSchema.parse(raw)),
 
-  listApiTokens: (projectId: string) =>
-    fetchApi<{ success: boolean; tokens: ApiToken[] }>(`/projects/${projectId}/api-tokens`),
+  listApiTokens: (projectId: string): Promise<{ tokens: ApiToken[] }> =>
+    fetchApi<{ tokens?: unknown }>(`/projects/${projectId}/api-tokens`).then((raw) => ({ tokens: normalizeApiTokens(raw?.tokens) })),
 
   deleteApiToken: (projectId: string, tokenId: string) =>
     fetchApi<{ success: boolean; message: string }>(`/projects/${projectId}/api-tokens/${tokenId}`, {

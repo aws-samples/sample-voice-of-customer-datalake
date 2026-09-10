@@ -180,6 +180,22 @@ export class VocProcessingStack extends VocStack {
       memorySize: 512,
       environment: {
         AGGREGATES_TABLE: aggregatesTable.tableName,
+        // The dedupe marker for one stream record (issue #264). Streams deliver
+        // at-least-once and this event source sets `retryAttempts: 3` with
+        // `reportBatchItemFailures: true`, so a batch that partially fails
+        // re-presents records whose counter updates (one per dimension, plus the
+        // running average) already landed — permanently, since nothing recomputes a
+        // counter from source. The aggregator claims each record's `eventID` in this
+        // table INSIDE the same TransactWriteItems as the counters, so the claim and
+        // the counters commit together or not at all.
+        //
+        // The shared `processingRole` is already granted this table
+        // (`idempotencyTable.grantReadWriteData` above, for the processor), so this
+        // is an environment change alone: without the NAME the function cannot
+        // reach a table it already has permission on. Absent, the handler logs a
+        // warning and applies counters non-transactionally, which is the
+        // pre-#264 behaviour rather than an outage.
+        IDEMPOTENCY_TABLE: idempotencyTable.tableName,
         POWERTOOLS_SERVICE_NAME: 'voc-aggregator',
         LOG_LEVEL: 'INFO',
       },

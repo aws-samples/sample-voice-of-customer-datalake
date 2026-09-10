@@ -10,6 +10,7 @@ import {
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { scrapersApi } from '../../api/scrapersApi'
+import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import {
   FREQUENCY_OPTIONS, DEFAULT_SCRAPER,
 } from './constants'
@@ -20,6 +21,21 @@ import type {
 interface ScraperEditorProps {
   readonly scraper: ScraperConfig | null
   readonly template?: ScraperTemplate | null
+  /**
+   * Whether the current user is an admin. Save reaches `POST /scrapers` — through
+   * `Scrapers.handleSaveScraper` → `saveMutation` → `scrapersApi.saveScraper` — and
+   * that route is admin-gated server-side, so Save is disabled rather than allowed
+   * to fire a 403.
+   *
+   * The gate belongs HERE and not only on the controls that open this editor,
+   * because the failure was silent: `handleSaveScraper` closes the editor
+   * unconditionally and `saveMutation` carries no `onError`, so a non-admin's
+   * discarded edit presented as success. Nothing else in the form is gated — a
+   * non-admin can already read every field through `GET /scrapers`, which stays
+   * deliberately open, so for them this is a viewer and Save was the one control
+   * that lied.
+   */
+  readonly isAdmin: boolean
   readonly onSave: (scraper: ScraperConfig) => void
   readonly onClose: () => void
 }
@@ -59,7 +75,7 @@ function buildInitialConfig(scraper: ScraperConfig | null, template: ScraperTemp
 }
 
 export default function ScraperEditor({
-  scraper, template, onSave, onClose,
+  scraper, template, isAdmin, onSave, onClose,
 }: ScraperEditorProps) {
   const { t } = useTranslation('scrapers')
   const [config, setConfig] = useState<ScraperConfig>(() => buildInitialConfig(scraper, template))
@@ -159,7 +175,7 @@ export default function ScraperEditor({
 
         <div className="p-3 sm:p-4 border-t flex flex-col-reverse sm:flex-row justify-end gap-2">
           <button onClick={onClose} className="btn btn-secondary text-sm">{t('editor.cancel')}</button>
-          <button onClick={handleSave} className="btn btn-primary flex items-center justify-center gap-2 text-sm">
+          <button onClick={handleSave} disabled={!isAdmin} title={isAdmin ? undefined : ADMIN_ONLY_TITLE} className="btn btn-primary flex items-center justify-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed">
             <Save size={16} /> {t('editor.save')}
           </button>
         </div>

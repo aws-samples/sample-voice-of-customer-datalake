@@ -17,8 +17,12 @@ from unittest.mock import patch, MagicMock
 PROJECT_DATA = {
     'project': {'project_id': 'proj-1', 'name': 'Test', 'filters': {'days': 30}},
     'personas': [{
-        'name': 'Kim Jisu', 'tagline': 'Power user', 'quote': 'I love it',
-        'goals': ['speed'], 'frustrations': ['crashes'],
+        # Canonical shape; was flat `quote`/`goals`/`frustrations`, which no
+        # writer produces.
+        'name': 'Kim Jisu', 'tagline': 'Power user',
+        'quotes': [{'text': 'I love it'}],
+        'goals_motivations': {'primary_goal': 'speed'},
+        'pain_points': {'current_challenges': ['crashes']},
     }],
 }
 

@@ -83,7 +83,11 @@ export const mockNeutralFeedbackItem: FeedbackItem = {
   urgency: 'low',
   impact_area: 'operations',
   persona_name: 'Casual User',
-  persona_type: 'standard',
+  // A value the enrichment contract declares, like the two fixtures above. `standard`
+  // was not one, and since the persona axis closed to PERSONA_ARCHETYPES an
+  // out-of-contract value is counted as `unknown` — so a fixture carrying one is a
+  // fixture developed against a value space production no longer produces.
+  persona_type: 'existing_customer',
 }
 
 /**

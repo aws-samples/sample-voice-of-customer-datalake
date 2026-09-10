@@ -77,6 +77,7 @@
     },
     "settings": "Einstellungen"
   },
+  "partialCountsHint": "Näherungswert: Der gesamte Zeitraum konnte nicht gelesen werden, die Zahlen sind eine Untergrenze",
   "partialWindowHint": "Filter eingrenzen, um alle zu sehen",
   "problemAnalysisPage": {
     "emptyHint": "Erweitere den Zeitraum oder passe die Filter an",

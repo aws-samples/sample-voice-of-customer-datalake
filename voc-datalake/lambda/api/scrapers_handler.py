@@ -1,6 +1,35 @@
 """
 Scrapers API Lambda - Handles /scrapers/*
 Manages web scraper configurations and runs.
+
+Read/write split, matching `integrations_handler`: the three routes that MUTATE
+are admin-gated, the reads are not. `POST /scrapers` and
+`DELETE /scrapers/<scraper_id>` both `put_secret_json` the SAME shared
+API-credentials secret that `integrations_handler` writes — they rewrite
+`webscraper_configs`, a key the webscraper ingestor consumes, so an unprivileged
+write steers which URLs get fetched. `POST /scrapers/<scraper_id>/run` invokes
+that ingestor: a billed third-party fetch against whatever rate limit the target
+grants, callable in a loop.
+
+Gating only the `integrations_handler` half of that secret would have made the
+boundary depend on which handler a write arrived through rather than on what it
+changed, which is the same asymmetry issue #251's fix closed one file over. The
+`GET` routes and `POST /scrapers/analyze-url` stay open: they return a scraper's
+own configuration and run history to an authenticated user, which the Scrapers
+page renders for everyone. Pinned by
+`test/test_scrapers_security.py::TestEveryScraperWriteIsAdminGated`, which parses
+the decorators so a route added later cannot quietly arrive ungated.
+
+SCOPE — the split above is THIS MODULE's, not the `/scrapers/*` URL prefix's. Five
+more routes under that prefix live in `manual_import_handler.py`
+(`/scrapers/manual/parse`, `.../parse/<job_id>`, `.../confirm`, `.../csv-upload`,
+`.../json-upload`) and none of them calls `require_admin`. That is a DIFFERENT
+question rather than the same gap: those routes write feedback CONTENT into the
+pipeline (S3 plus the enrichment queue) and touch neither the shared secret nor
+any plugin resource, which is why they were not folded into this change — see
+`test/test_scrapers_security.py`, whose inventory case asserts that boundary so a
+reader is not told the prefix is fully covered when only this handler is. The
+`ast` pass cannot see across module boundaries, so nothing else would say so.
 """
 
 import ipaddress
@@ -18,8 +47,8 @@ from urllib.parse import urlparse
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer
-from shared.aws import get_secrets_client
-from shared.api import create_api_resolver, api_handler
+from shared.aws import get_secrets_client, put_secret_json
+from shared.api import create_api_resolver, api_handler, require_admin
 from shared.tables import get_aggregates_table
 from shared.exceptions import ConfigurationError, ValidationError, ServiceError
 
@@ -122,7 +151,16 @@ def list_scrapers():
 @app.post("/scrapers")
 @tracer.capture_method
 def save_scraper():
-    """Save a scraper configuration."""
+    """Save a scraper configuration.
+
+    Admin-gated: `put_secret_json` on the shared API-credentials secret, with
+    content the caller supplied. `webscraper_configs` holds the URLs the
+    webscraper ingestor fetches, so an unprivileged write both mutates the same
+    secret `integrations_handler`'s credentials routes protect and steers what
+    gets scraped. Measured ungated as a `users`-group caller: 200, one
+    `put_secret_json`.
+    """
+    require_admin(app.current_event.raw_event)
     if not SECRETS_ARN:
         raise ConfigurationError('Secrets not configured')
     
@@ -143,8 +181,13 @@ def save_scraper():
             configs.append(scraper)
         
         secrets['webscraper_configs'] = json.dumps(configs)
-        secretsmanager.put_secret_value(SecretId=SECRETS_ARN, SecretString=json.dumps(secrets))
+        put_secret_json(secretsmanager, SECRETS_ARN, secrets)
         return {'success': True, 'scraper': scraper}
+    except ValidationError:
+        # put_secret_json refuses an over-limit secret. That is a 400 the user
+        # can act on ("remove some scrapers"), so it must not be flattened into
+        # the generic 500 below.
+        raise
     except Exception as e:
         logger.exception(f"Failed to save scraper: {e}")
         raise ServiceError('Failed to save scraper configuration')
@@ -153,7 +196,14 @@ def save_scraper():
 @app.delete("/scrapers/<scraper_id>")
 @tracer.capture_method
 def delete_scraper(scraper_id: str):
-    """Delete a scraper configuration."""
+    """Delete a scraper configuration.
+
+    Admin-gated for the same reason as the POST above — it writes the shared
+    secret — and additionally because it is destructive: it rewrites
+    `webscraper_configs` with one entry removed, which stops that site being
+    scraped and cannot be undone from the run history.
+    """
+    require_admin(app.current_event.raw_event)
     if not SECRETS_ARN:
         raise ConfigurationError('Secrets not configured')
     try:
@@ -162,8 +212,15 @@ def delete_scraper(scraper_id: str):
         configs = json.loads(secrets.get('webscraper_configs', '[]'))
         configs = [c for c in configs if c.get('id') != scraper_id]
         secrets['webscraper_configs'] = json.dumps(configs)
-        secretsmanager.put_secret_value(SecretId=SECRETS_ARN, SecretString=json.dumps(secrets))
+        put_secret_json(secretsmanager, SECRETS_ARN, secrets)
         return {'success': True}
+    except ValidationError:
+        # A delete only ever SHRINKS this key, so the size guard cannot fire on
+        # what this route adds. It can still fire on a secret that was ALREADY
+        # over the limit — written before the guard existed — and that is exactly
+        # the caller who is deleting to get back under it. Flattening that into a
+        # 500 would hide the one message telling them what to do.
+        raise
     except Exception as e:
         logger.exception(f"Failed to delete scraper: {e}")
         raise ServiceError('Failed to delete scraper configuration')
@@ -210,7 +267,21 @@ def get_templates():
 @app.post("/scrapers/<scraper_id>/run")
 @tracer.capture_method
 def run_scraper(scraper_id: str):
-    """Trigger a scraper run."""
+    """Trigger a scraper run.
+
+    Admin-gated for the reason `integrations_handler.run_source` is: this invokes
+    the webscraper Lambda, so every call is a billed fetch against a third party's
+    rate limit, and ungated it was callable in a loop by anyone with an account —
+    measured, 200 with a real `lambda:Invoke` and a `SCRAPER_RUN#` row written.
+
+    `scraper_id` is NOT validated against an allowlist, unlike `<source>` in
+    `integrations_handler`: it is not a plugin id and never becomes a secret key
+    or a function name. It reaches one `SCRAPER_RUN#` partition and the invoke
+    PAYLOAD, where the webscraper resolves it against its own configured list, so
+    an unknown id is a run that finds nothing rather than a namespace a caller
+    chose. The admin gate is what bounds who can write those partitions.
+    """
+    require_admin(app.current_event.raw_event)
     execution_id = f"run_{scraper_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
     try:
         table = get_aggregates_table()

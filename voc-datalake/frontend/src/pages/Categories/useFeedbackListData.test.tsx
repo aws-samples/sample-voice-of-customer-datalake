@@ -262,3 +262,65 @@ describe('useFeedbackListData', () => {
     })
   })
 })
+
+describe('the search gate measures what the server measures', () => {
+  it('does not search when the term trims below the minimum', async () => {
+    // `/feedback/search` trims `q` and now REFUSES a present-but-too-short term
+    // with a 400 instead of answering an empty success. Gating on raw `.length`
+    // made `"a "` two characters here and one there, so an ordinary typing
+    // sequence produced a server error. Nothing should leave the client.
+    const { result } = renderData({ ...baseFilters, searchText: 'a ' })
+
+    await waitFor(() => expect(result.current.isSearching).toBe(false))
+    expect(mockSearchFeedback).not.toHaveBeenCalled()
+  })
+
+  it('sends the trimmed term so the client and the route agree on its length', async () => {
+    renderData({ ...baseFilters, searchText: '  delivery  ' })
+
+    await waitFor(() => expect(mockSearchFeedback).toHaveBeenCalled())
+    expect(mockSearchFeedback.mock.calls[0][0]).toMatchObject({ q: 'delivery' })
+  })
+
+  it('still searches when only the interior has spaces', async () => {
+    renderData({ ...baseFilters, searchText: 'slow delivery' })
+
+    await waitFor(() => expect(mockSearchFeedback).toHaveBeenCalled())
+    expect(mockSearchFeedback.mock.calls[0][0]).toMatchObject({ q: 'slow delivery' })
+  })
+})
+
+describe('a truncated search window reaches the display', () => {
+  it('reports isPartialWindow from the search response', async () => {
+    // The route sets `is_partial_window` when the candidate scan stops on its
+    // soft cap. Without this the dashboard would show a bare count for a
+    // truncated scan — the same ambiguity the MCP tool was fixed for.
+    mockSearchFeedback.mockResolvedValue({
+      count: 1, items: [makeItem()], is_partial_window: true,
+    })
+
+    const { result } = renderData({ ...baseFilters, searchText: 'delivery' })
+
+    await waitFor(() => expect(result.current.isPartialWindow).toBe(true))
+  })
+
+  it('reports a complete search window as complete', async () => {
+    mockSearchFeedback.mockResolvedValue({
+      count: 1, items: [makeItem()], is_partial_window: false,
+    })
+
+    const { result } = renderData({ ...baseFilters, searchText: 'delivery' })
+
+    await waitFor(() => expect(result.current.filteredFeedback).toHaveLength(1))
+    expect(result.current.isPartialWindow).toBe(false)
+  })
+
+  it('treats a route that omits the flag as complete', async () => {
+    mockSearchFeedback.mockResolvedValue({ count: 1, items: [makeItem()] })
+
+    const { result } = renderData({ ...baseFilters, searchText: 'delivery' })
+
+    await waitFor(() => expect(result.current.filteredFeedback).toHaveLength(1))
+    expect(result.current.isPartialWindow).toBe(false)
+  })
+})

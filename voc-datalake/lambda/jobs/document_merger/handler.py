@@ -18,12 +18,23 @@ from shared.jobs import job_handler, JobContext
 from shared.aws import get_dynamodb_resource
 from shared.converse import converse
 from shared.feedback import query_feedback_by_date
+from shared.persona_context import personas_prompt_context
 from shared.derivation import (
     DERIVATION_FIELD,
     ROLE_MERGE_INPUT,
     build_derivation,
     derivation_source,
 )
+from shared.document_versions import (
+    get_versioned_document_by_allocation,
+    persist_versioned_document,
+)
+from shared.project_writes import put_project_item_and_increment
+
+# Prototype HTML is created only by the prototype generator. Unchecked merger
+# values, including ``prototype``, stay on the custom DOC# path.
+MERGE_OUTPUT_TYPES = ('prd', 'prfaq', 'custom')
+MERGE_VERSIONED_DOCUMENT_TYPES = frozenset({'prd', 'prfaq'})
 
 # Environment
 PROJECTS_TABLE = os.environ.get('PROJECTS_TABLE', '')
@@ -47,10 +58,28 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, merge_config: dict
     projects_table = dynamodb.Table(PROJECTS_TABLE)
     feedback_table = dynamodb.Table(FEEDBACK_TABLE)
     
-    ctx.update_progress(10, 'gathering_documents')
-    
     output_type = merge_config.get('output_type', 'custom')
+    if not isinstance(output_type, str) or output_type not in MERGE_OUTPUT_TYPES:
+        raise ValueError(
+            f'output_type must be one of: {", ".join(MERGE_OUTPUT_TYPES)} '
+            f'(got {type(output_type).__name__})'
+        )
     title = merge_config.get('title', 'Merged Document')
+    document_type = (
+        output_type if output_type in MERGE_VERSIONED_DOCUMENT_TYPES else 'custom'
+    )
+    if document_type in MERGE_VERSIONED_DOCUMENT_TYPES:
+        existing = get_versioned_document_by_allocation(
+            projects_table, project_id, document_type, job_id,
+        )
+        if existing is not None:
+            return {
+                'document_id': existing['document_id'],
+                'title': existing['title'],
+            }
+
+    ctx.update_progress(10, 'gathering_documents')
+
     instructions = merge_config.get('instructions', '')
     selected_doc_ids = merge_config.get('selected_document_ids', [])
     selected_persona_ids = merge_config.get('selected_persona_ids', [])
@@ -87,12 +116,17 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, merge_config: dict
         personas = [i for i in all_items if i.get('sk', '').startswith('PERSONA#')]
         selected_personas = [p for p in personas if p.get('persona_id') in selected_persona_ids]
         if selected_personas:
-            persona_text = "## USER PERSONAS FOR CONTEXT\n\n"
+            # Was reading phantom `goals`/`frustrations`, so every merged document
+            # carried persona headings with empty values. Field paths live in
+            # shared/persona_context.py.
+            persona_text = personas_prompt_context(
+                selected_personas, header="## USER PERSONAS FOR CONTEXT"
+            )
             for p in selected_personas:
-                persona_text += f"**{p.get('name')}**: {p.get('tagline', '')}\n- Goals: {', '.join(p.get('goals', [])[:3])}\n- Frustrations: {', '.join(p.get('frustrations', [])[:3])}\n\n"
                 if p.get('persona_id'):
                     used_persona_ids.append(p['persona_id'])
-            context_parts.append(persona_text)
+            if persona_text:
+                context_parts.append(persona_text)
     
     if use_feedback:
         ctx.update_progress(40, 'fetching_feedback')
@@ -135,17 +169,9 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, merge_config: dict
     
     ctx.update_progress(90, 'saving_document')
     now = datetime.now(timezone.utc).isoformat()
-    doc_type_prefix = output_type if output_type in ['prd', 'prfaq'] else 'doc'
-    doc_id = f"{doc_type_prefix}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-    
-    projects_table.put_item(Item={
-        'pk': f'PROJECT#{project_id}',
-        'sk': f'{doc_type_prefix.upper()}#{doc_id}',
+    item_fields = {
         'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
         'gsi1sk': now,
-        'document_id': doc_id,
-        'document_type': output_type if output_type in ['prd', 'prfaq'] else 'custom',
-        'title': title,
         'content': content,
         'job_id': job_id,
         # Unchanged: the requested ids, in the merger's own long-standing shape.
@@ -160,14 +186,32 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, merge_config: dict
             persona_ids=used_persona_ids,
         ),
         'created_at': now,
-    })
-    projects_table.update_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'},
-        UpdateExpression='SET document_count = document_count + :one, updated_at = :now',
-        ExpressionAttributeValues={':one': 1, ':now': now}
-    )
-    
-    return {'document_id': doc_id, 'title': title}
+    }
+
+    if document_type in MERGE_VERSIONED_DOCUMENT_TYPES:
+        item = persist_versioned_document(
+            projects_table,
+            project_id,
+            document_type,
+            title,
+            job_id,
+            item_fields,
+        )
+    else:
+        doc_id = f"doc_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+        item = {
+            **item_fields,
+            'pk': f'PROJECT#{project_id}',
+            'sk': f'DOC#{doc_id}',
+            'document_id': doc_id,
+            'document_type': document_type,
+            'title': title,
+        }
+        put_project_item_and_increment(
+            projects_table, project_id, item, 'document_count',
+        )
+
+    return {'document_id': item['document_id'], 'title': item['title']}
 
 
 @logger.inject_lambda_context
@@ -176,4 +220,4 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, merge_config: dict
 def lambda_handler(event: dict, context) -> dict:
     """Lambda entry point."""
     logger.info(f"Document merger invoked with event keys: {list(event.keys())}")
-    return handle_job(event)
+    return handle_job(event, context)

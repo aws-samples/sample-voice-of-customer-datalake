@@ -5,7 +5,7 @@ update_credentials no-secrets, run_source, sources_status with custom sources,
 enable/disable error paths.
 """
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 
 class TestBuildRuleName:
@@ -26,15 +26,24 @@ class TestBuildRuleName:
             assert name == 'voc-ingest-webscraper-schedule'
 
 
-class TestGetCredentialsFallback:
-    """Cover unprefixed key fallback in get_credentials."""
+class TestGetCredentialsNoFallback:
+    """Verify that the unprefixed fallback has been removed from get_credentials.
+
+    The fallback was removed in issue #261: a key stored at the top level
+    (without a source prefix) must NOT be returned when a caller requests it
+    through a specific source's credentials endpoint.
+    """
 
     @patch('integrations_handler.secretsmanager')
-    def test_falls_back_to_unprefixed_key(self, mock_secrets, api_gateway_event, lambda_context):
-        """Cover the fallback branch where unprefixed key is used."""
+    def test_does_not_fall_back_to_unprefixed_key(self, mock_secrets, api_gateway_event, lambda_context):
+        """An unprefixed key in the secret is NOT returned for a source request.
+
+        Regression guard: reverting the fallback removal would make this test
+        return {'api_key': 'fallback-value'} instead of {}.
+        """
         mock_secrets.get_secret_value.return_value = {
             'SecretString': json.dumps({
-                'api_key': 'fallback-value',  # unprefixed key
+                'api_key': 'fallback-value',  # unprefixed — belongs to another feature
             })
         }
         from integrations_handler import lambda_handler
@@ -46,8 +55,10 @@ class TestGetCredentialsFallback:
         )
         response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
+        # The prefixed key 'webscraper_api_key' is not in the secret, so the
+        # result must be empty — the bare 'api_key' must NOT be returned.
         assert response['statusCode'] == 200
-        assert body == {'api_key': 'fallback-value'}
+        assert body == {}
 
 
 class TestUpdateCredentialsEdgeCases:

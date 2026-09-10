@@ -15,7 +15,7 @@ import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import * as path from 'path';
 import { Construct } from 'constructs';
 import { NagSuppressions } from 'cdk-nag';
-import { loadPlugins, getEnabledPlugins, getPluginsWithWebhook, capitalize, type PluginManifest } from '../plugin-loader';
+import { loadPlugins, getEnabledPlugins, getPluginsWithWebhook, aggregateSecretsByPlugin, capitalize, type PluginManifest } from '../plugin-loader';
 import { assertFrontendBuildFresh } from '../utils/assert-frontend-build';
 import { cdkCustomResourceSuppressions, apiGatewayRequestValidationSuppressions, publicFeedbackEndpointSuppressions, publicBallotEndpointSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, marketplaceSuppressions } from '../utils/nag-suppressions';
 import { allowlistedModelArns, imageModelArn } from '../utils/model-allowlist';
@@ -23,6 +23,76 @@ import { pythonLayerCode } from '../utils/python-layer-bundling';
 import { PY_LAMBDA_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
 import { VocStack, VocStackProps } from '../utils/voc-stack';
 import { SOURCE_PLACEHOLDER } from '../utils/naming';
+
+/**
+ * The MCP transport headers a browser-based client may send.
+ *
+ * These are read and VALIDATED by `mcp_handler.py` (`TRANSPORT_HEADERS` there),
+ * and a browser's preflight on this API is answered by API Gateway's generated
+ * OPTIONS mock rather than by the Lambda — so the handler allowing them in its own
+ * CORS response was not enough. Omitted here, a browser-based client that sends
+ * `MCP-Protocol-Version` was blocked by its own preflight before the handler ever
+ * saw the request: a rule the server enforces against a header no browser could
+ * deliver.
+ *
+ * Spelled the way the spec spells them (`Mcp-Method`, not `MCP-Method`). CORS
+ * header matching is case-insensitive, so this is about agreeing with the spec
+ * rather than about function.
+ *
+ * Kept in lockstep with the Python constant by 'mcp transport headers' in
+ * api-stack.test.ts, which reads `TRANSPORT_HEADERS` out of the handler source —
+ * the same cross-language pattern the `MCP_TOKEN_PK` test already uses.
+ */
+const MCP_TRANSPORT_HEADERS = ['MCP-Protocol-Version', 'Mcp-Method', 'Mcp-Name'];
+
+/**
+ * Every header this API accepts on a cross-origin request, declared ONCE.
+ *
+ * The list was previously written out four times — the preflight options plus
+ * three gateway responses — which is how a header comes to be allowed on the
+ * preflight and refused on the error path, or vice versa. The string form below is
+ * derived from this array rather than typed again.
+ */
+const CORS_ALLOW_HEADERS = [
+  'Content-Type',
+  'Authorization',
+  'X-Requested-With',
+  'X-Amz-Date',
+  'X-Amz-Security-Token',
+  ...MCP_TRANSPORT_HEADERS,
+];
+
+/**
+ * The same list in the single-quoted form an API Gateway response header takes.
+ * Derived, so the four places that state it cannot disagree.
+ */
+const CORS_ALLOW_HEADERS_VALUE = `'${CORS_ALLOW_HEADERS.join(',')}'`;
+
+/**
+ * Response headers a browser-based client is allowed to READ.
+ *
+ * None of these is CORS-safelisted, so without this list a browser receives them
+ * and hides them from the page — the failure `WWW-Authenticate` already documents.
+ * `Vary` joins it because `mcp_handler.py` now sends `Vary: Authorization` on every
+ * response (its answers depend on the credential), and a header stating that fact
+ * which the client cannot read states it to nobody.
+ *
+ * `Allow` is the same failure on the header that says what to RETRY WITH: the handler
+ * attaches it to every 405 and resolves it per resource, so a `DELETE` on the
+ * autoseed path is told `GET` rather than `POST` — and a browser-based client
+ * received the refusal with that instruction stripped out.
+ *
+ * `Content-Type` stays because the frontend reads it.
+ *
+ * Kept in lockstep with `mcp_handler.CORS_HEADERS['Access-Control-Expose-Headers']`
+ * by 'mcp transport headers reach a browser' in api-stack.test.ts: the handler's own
+ * responses carry its list and gateway-GENERATED ones carry this, so a header
+ * exposed by one and not the other is readable on some answers and not others.
+ */
+const CORS_EXPOSE_HEADERS = ['Content-Type', 'WWW-Authenticate', 'Vary', 'Allow'];
+
+/** The same list in the single-quoted form an API Gateway response header takes. */
+const CORS_EXPOSE_HEADERS_VALUE = `'${CORS_EXPOSE_HEADERS.join(',')}'`;
 
 export interface VocApiStackProps extends VocStackProps {
   // Core stack resources
@@ -192,6 +262,18 @@ export class VocApiStack extends VocStack {
     });
 
     // Integrations API
+    //
+    // The plugin manifests are read here, at synth time, and the SECRET DEFAULTS
+    // they declare are handed to the integrations handler as one env var. That
+    // handler needs them for two things it cannot otherwise know: which sources
+    // exist, and which stored values a human actually entered rather than
+    // inherited from the deploy. `allPlugins`, not the enabled subset — this must
+    // mirror what ingestion-stack's createApiSecrets() actually seeded, and that
+    // seeds every plugin regardless of pluginStatus.
+    const pluginsDir = path.join(__dirname, '../../plugins');
+    const allPlugins = loadPlugins(pluginsDir);
+    const pluginSecretDefaults = aggregateSecretsByPlugin(allPlugins);
+
     const integrationsRole = this.createLambdaRole('IntegrationsLambdaRole');
     integrationsRole.addToPolicy(new iam.PolicyStatement({
       actions: ['secretsmanager:GetSecretValue', 'secretsmanager:PutSecretValue'],
@@ -228,7 +310,7 @@ export class VocApiStack extends VocStack {
       // the name in Python from DEPLOY_ACCOUNT_ID/DEPLOY_REGION would, under a
       // prefix, invoke a function that does not exist — a ResourceNotFound the
       // user experiences as "the scraper runs but pulls no reviews".
-      environment: { SECRETS_ARN: secretsArn, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-integrations-api', LOG_LEVEL: 'INFO', DEPLOY_ACCOUNT_ID: cdk.Aws.ACCOUNT_ID, DEPLOY_REGION: cdk.Aws.REGION, ...this.prefixOnlyEnv({
+      environment: { SECRETS_ARN: secretsArn, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-integrations-api', LOG_LEVEL: 'INFO', DEPLOY_ACCOUNT_ID: cdk.Aws.ACCOUNT_ID, DEPLOY_REGION: cdk.Aws.REGION, PLUGIN_SECRET_DEFAULTS: JSON.stringify(pluginSecretDefaults), ...this.prefixOnlyEnv({
         INGESTOR_FUNCTION_NAME_PATTERN: this.uniqueNamePattern(`voc-ingestor-${SOURCE_PLACEHOLDER}`),
         INGEST_SCHEDULE_RULE_NAME_PATTERN: this.uniqueNamePattern(`voc-ingest-${SOURCE_PLACEHOLDER}-schedule`),
       }), AGGREGATES_TABLE: aggregatesTable.tableName },
@@ -412,7 +494,54 @@ export class VocApiStack extends VocStack {
       role: feedbackFormRole,
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
-      environment: { AGGREGATES_TABLE: aggregatesTable.tableName, FEEDBACK_TABLE: feedbackTable.tableName, PROCESSING_QUEUE_URL: processingQueueUrl, BRAND_NAME: brandName, POWERTOOLS_SERVICE_NAME: 'voc-feedback-form-api', LOG_LEVEL: 'INFO' },
+      environment: {
+        AGGREGATES_TABLE: aggregatesTable.tableName,
+        FEEDBACK_TABLE: feedbackTable.tableName,
+        PROCESSING_QUEUE_URL: processingQueueUrl,
+        BRAND_NAME: brandName,
+        // '*', DELIBERATELY, and the one Lambda in this stack that gets it rather
+        // than `allowedOrigin`. The three public routes below
+        // (/feedback-forms/{form_id}/config, /submit, /iframe) are fetched by
+        // lambda/api/static/feedback-widget.js running on the CUSTOMER's own site,
+        // so the Origin the browser sends is a domain this stack has never heard
+        // of and cannot enumerate. Any single value here would break every embed.
+        //
+        // Stated HERE rather than left to the handler's own
+        // `os.environ.get('ALLOWED_ORIGIN', '*')` fallback: the effective value was
+        // already '*', but it arrived from a Python default, so a reader of this
+        // stack saw an omission where 14 other Lambdas name the variable. This
+        // makes the wildcard a recorded decision. Compare the ballots Lambda
+        // below, whose comment records the opposite choice for the same reason.
+        //
+        // The permissiveness is bounded by the ROUTES, not by this variable: every
+        // other route on this function carries the Cognito authorizer and is
+        // refused before the handler runs, and a CORS header never grants access
+        // to a caller that is not a browser anyway.
+        //
+        // TWO CONSEQUENCES, both deliberate and both out of scope to fix here:
+        //
+        // 1. This is the ONE Lambda in this stack whose CORS origin is
+        //    INDEPENDENT OF THE `environment` CONTEXT. Every other API Lambda
+        //    takes `allowedOrigin`, which is `isDev ? '*' : https://<frontend>`
+        //    (see its declaration above), so `-c environment=dev` moves all of
+        //    them and has no effect whatsoever on this one. Nothing at deploy
+        //    time can tighten this value; changing it means editing this line.
+        //    Worth knowing before adding a deployment-time CORS control and
+        //    expecting it to cover the widget.
+        //
+        // 2. The wildcard is FUNCTION-WIDE, not route-wide. This function also
+        //    serves the authenticated /feedback-forms, /{form_id}, /submissions
+        //    and /stats routes, so their responses carry '*' too — which is the
+        //    very reasoning the ballots Lambda's comment uses to REJECT '*' for
+        //    itself. The paragraph above is why that is safe rather than why it
+        //    is tidy: the honest shape is two variables (ALLOWED_ORIGIN = the
+        //    site origin, plus a PUBLIC_ALLOWED_ORIGIN = '*' returned only on the
+        //    three widget responses), which is a feedback_form_handler.py change
+        //    and therefore a follow-up, not part of a CDK-only change.
+        ALLOWED_ORIGIN: '*',
+        POWERTOOLS_SERVICE_NAME: 'voc-feedback-form-api',
+        LOG_LEVEL: 'INFO',
+      },
       layers: [apiLayer],
       logGroup: this.createLogGroup('FeedbackFormApiLogs', this.uniqueName('voc-feedback-form-api')),
     });
@@ -441,6 +570,14 @@ export class VocApiStack extends VocStack {
     // caller who found a flaw in it still cannot enumerate the table or erase
     // anybody's vote. `ballots Lambda IAM grants` in api-stack.test.ts pins both
     // the three actions and the absence of the rest.
+    //
+    // `UpdateItem` also covers the ballot write's TRANSACTION, and no fourth action
+    // is needed for it. `TransactWriteItems` is authorised per PARTICIPANT rather
+    // than as an action of its own, and both of that transaction's participants are
+    // `Update` — the ballot record, and the row's freeze mark plus the counter a row
+    // delete fences on. It needs no `ConditionCheckItem`, because the row's condition
+    // rides on its own `Update` rather than on a separate `ConditionCheck`; that
+    // shape is what keeps this role at three actions.
     const ballotsRole = this.createLambdaRole('BallotsLambdaRole');
     aggregatesTable.grant(ballotsRole, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem');
     kmsKey.grantEncryptDecrypt(ballotsRole);
@@ -589,6 +726,36 @@ export class VocApiStack extends VocStack {
     // Persona avatar image model — see model-allowlist.ts for its EOL deadline.
     const avatarImageModelResource = imageModelArn();
 
+    // Every job Lambda below is invoked with InvocationType='Event' (see
+    // shared/aws.py::invoke_lambda_async), and AWS re-drives a FAILED async
+    // invocation twice more by default, silently. That default is what turned one
+    // prototype click into ~45 minutes: the function was killed at its own 15-min
+    // ceiling, then re-run twice from scratch, each attempt re-writing the same
+    // job row's progress so the UI looked like one job making no headway. Measured
+    // live — a second START with the SAME request id is the signature.
+    //
+    // Zero, because an LLM generation is neither cheap nor idempotent and a retry
+    // here buys nothing: the work restarts from the beginning with the same inputs
+    // that just failed, and shared/jobs.py already records the job `failed` for
+    // the UI to render, so the user can retry deliberately and see why. A hidden
+    // retry only multiplies cost and delays the diagnosis.
+    //
+    // NOT a substitute for a failure destination — routing exhausted async
+    // invocations somewhere durable is tracked separately (#253). This only stops
+    // the multiplier. And it does not affect the Step Functions path for PRD/PR-FAQ:
+    // an EventInvokeConfig governs async invocations only, so createDocumentStateMachine's
+    // own explicit, VISIBLE retries below are untouched.
+    //
+    // Scoped to these four on purpose. The other async targets in this app keep the
+    // AWS default, because for them a re-drive is a benefit rather than a repeated
+    // bill: `voc-manual-import-processor` re-does bounded, content-keyed work that
+    // the processor's idempotency records already de-duplicate, and the scraper and
+    // integration invocations are watermark-driven, so repeating one fetches from
+    // where it left off. What sets these four apart is that ONE invocation is ONE
+    // large generation: a re-drive re-pays for it in full and cannot succeed for a
+    // reason the first attempt failed on.
+    const JOB_ASYNC_RETRY_ATTEMPTS = 0;
+
     // Persona Generator Job Lambda
     const personaGeneratorRole = this.createLambdaRole('PersonaGeneratorRole');
     feedbackTable.grantReadData(personaGeneratorRole);
@@ -611,6 +778,7 @@ export class VocApiStack extends VocStack {
       role: personaGeneratorRole,
       timeout: cdk.Duration.minutes(15),
       memorySize: 1024,
+      retryAttempts: JOB_ASYNC_RETRY_ATTEMPTS,
       environment: {
         PROJECTS_TABLE: projectsTable.tableName,
         FEEDBACK_TABLE: feedbackTable.tableName,
@@ -655,6 +823,7 @@ export class VocApiStack extends VocStack {
       role: documentGeneratorRole,
       timeout: cdk.Duration.minutes(15),
       memorySize: 1024,
+      retryAttempts: JOB_ASYNC_RETRY_ATTEMPTS,
       environment: {
         PROJECTS_TABLE: projectsTable.tableName,
         FEEDBACK_TABLE: feedbackTable.tableName,
@@ -693,6 +862,7 @@ export class VocApiStack extends VocStack {
       role: documentMergerRole,
       timeout: cdk.Duration.minutes(10),
       memorySize: 1024,
+      retryAttempts: JOB_ASYNC_RETRY_ATTEMPTS,
       environment: {
         PROJECTS_TABLE: projectsTable.tableName,
         FEEDBACK_TABLE: feedbackTable.tableName,
@@ -727,6 +897,7 @@ export class VocApiStack extends VocStack {
       role: personaImporterRole,
       timeout: cdk.Duration.minutes(5),
       memorySize: 512,
+      retryAttempts: JOB_ASYNC_RETRY_ATTEMPTS,
       environment: {
         PROJECTS_TABLE: projectsTable.tableName,
         AGGREGATES_TABLE: aggregatesTable.tableName,
@@ -739,6 +910,26 @@ export class VocApiStack extends VocStack {
       layers: [apiLayer],
       logGroup: this.createLogGroup('PersonaImporterJobLogs', this.uniqueName('voc-job-persona-importer')),
     });
+
+    // A lease loser self-redelivers once before its own budget becomes too
+    // small, so an owner crash still has a durable post-expiry attempt. Use
+    // deterministic physical-name ARNs instead of Function.grantInvoke: the
+    // function already depends on its role, and a role policy that GetAtts the
+    // function creates a CloudFormation cycle.
+    const grantSelfInvoke = (role: iam.Role, functionName: string) => {
+      role.addToPolicy(new iam.PolicyStatement({
+        actions: ['lambda:InvokeFunction'],
+        resources: [this.formatArn({
+          service: 'lambda',
+          resource: 'function',
+          resourceName: functionName,
+        })],
+      }));
+    };
+    grantSelfInvoke(personaGeneratorRole, this.uniqueName('voc-job-persona-generator'));
+    grantSelfInvoke(documentGeneratorRole, this.uniqueName('voc-job-document-generator'));
+    grantSelfInvoke(documentMergerRole, this.uniqueName('voc-job-document-merger'));
+    grantSelfInvoke(personaImporterRole, this.uniqueName('voc-job-persona-importer'));
 
     // Wire job Lambda function names into the Projects API + grant invoke
     projectsLambda.addEnvironment('PERSONA_GENERATOR_FUNCTION', personaGeneratorLambda.functionName);
@@ -776,6 +967,7 @@ export class VocApiStack extends VocStack {
       timeout: cdk.Duration.minutes(5),
       environment: {
         PROJECTS_TABLE: projectsTable.tableName,
+        PROJECTS_FUNCTION: projectsLambda.functionName,
         FEEDBACK_TABLE: feedbackTable.tableName,
         AGGREGATES_TABLE: aggregatesTable.tableName,
         // Streaming-chat ('chat' surface) default when no override is set.
@@ -796,12 +988,14 @@ export class VocApiStack extends VocStack {
           '@aws-sdk/*',
           '@smithy/*',
         ],
-        // The web-search SigV4 client imports these directly; bundle them so
-        // it runs against the pinned versions from package.json instead of
-        // whatever the managed runtime's SDK happens to hoist (transitive
-        // availability is not a documented contract). They are tiny.
+        // These modules are imported directly at runtime. Bundle their pinned
+        // versions instead of relying on whatever SDK the managed runtime
+        // happens to hoist: web-search signing uses the Smithy modules and
+        // credential provider; canonical project reads use client-lambda.
+        // The packages are small.
         nodeModules: [
           '@aws-sdk/credential-provider-node',
+          '@aws-sdk/client-lambda',
           '@smithy/protocol-http',
           '@smithy/signature-v4',
           // Reads the CloudFront URL-signing key. Pinned here for the same
@@ -846,6 +1040,9 @@ export class VocApiStack extends VocStack {
       ],
       resources: [projectsTable.tableArn, `${projectsTable.tableArn}/index/*`],
     }));
+    // Canonical project reads, including one-time legacy version persistence,
+    // stay owned by the Python Projects API rather than being reimplemented here.
+    projectsLambda.grantInvoke(chatStreamLambda);
     kmsKey.grantDecrypt(chatStreamLambda);
 
     // Web search tool (AgentCore Gateway) — optional, opt-in per request.
@@ -865,6 +1062,11 @@ export class VocApiStack extends VocStack {
     }
 
     NagSuppressions.addResourceSuppressions(chatStreamLambda, [
+      {
+        id: 'AwsSolutions-IAM5',
+        reason: 'CDK grantInvoke includes qualified versions/aliases, so the wildcard is scoped to ProjectsApi only; ChatStream uses it for the canonical bounded project-context contract.',
+        appliesTo: [{ regex: '/Resource::<.*ProjectsApi.*\\.Arn>:\\*/' }],
+      },
       { id: 'AwsSolutions-L1', reason: 'Node.js 22 is the target runtime for the streaming Lambda — latest stable LTS' },
     ], true);
 
@@ -890,6 +1092,11 @@ export class VocApiStack extends VocStack {
     // Data Explorer API
     const dataExplorerRole = this.createLambdaRole('DataExplorerLambdaRole');
     rawDataBucket.grantReadWrite(dataExplorerRole);
+    dataExplorerRole.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.DENY,
+      actions: ['s3:PutObject', 's3:DeleteObject'],
+      resources: [rawDataBucket.arnForObjects('prototypes/*')],
+    }));
     feedbackTable.grantReadWriteData(dataExplorerRole);
     kmsKey.grantEncryptDecrypt(dataExplorerRole);
     dataExplorerRole.addToPolicy(new iam.PolicyStatement({ actions: ['sqs:SendMessage'], resources: [processingQueueArn] }));
@@ -918,8 +1125,8 @@ export class VocApiStack extends VocStack {
     // ============================================
     // WEBHOOKS
     // ============================================
-    const pluginsDir = path.join(__dirname, '../../plugins');
-    const allPlugins = loadPlugins(pluginsDir);
+    // allPlugins is loaded once, up where the integrations Lambda needs its
+    // secret defaults.
     const enabledPlugins = getEnabledPlugins(allPlugins, props.enabledSources);
     const webhookPlugins = getPluginsWithWebhook(enabledPlugins);
 
@@ -940,6 +1147,139 @@ export class VocApiStack extends VocStack {
     // API GATEWAY
     // ============================================
 
+    // One-shot flag for upgrading an environment that still has the old
+    // /feedback-forms/{proxy+}. Read HERE, above the RestApi, because it decides
+    // two things that are declared far apart: whether the `{form_id}` item
+    // resources are created at all (see /feedback-forms/* below, which is where
+    // the flag is explained in full) and whether this stage carries method
+    // settings for the three public routes under them.
+    // Read ONCE into a const — the value is compared twice, not fetched twice.
+    // `true` and `'true'` are the accepted spellings ('TRUE', '1', 'yes' are
+    // "off"); "off" means "deploy the routes", so a typo fails loudly on the
+    // first upgrade deploy rather than skipping the step silently.
+    const skipFeedbackFormItemRoutesContext: unknown = this.node.tryGetContext('skipFeedbackFormItemRoutes');
+    const skipFeedbackFormItemRoutes =
+      skipFeedbackFormItemRoutesContext === true || skipFeedbackFormItemRoutesContext === 'true';
+
+    /** 20 rps / burst 40 — the pair for an unauthenticated method whose
+     *  LEGITIMATE demand is bounded and whose per-request cost is not. Both
+     *  ballot methods (a room is capped at MAX_BALLOT_CAP ballots, one per
+     *  attendee) and the widget's `submit` (see its own comment below).
+     *
+     *  Named once so those entries cannot drift apart by a typo in a number, and
+     *  ANNOTATED so a typo in a property NAME is a compile error too: without the
+     *  annotation the object literal is not fresh at its use sites, excess-property
+     *  checking never fires, and a `throttlingBurstLmit` would deploy a rate limit
+     *  with the burst left at the account default.
+     *
+     *  Deliberately NOT shared with the /mcp entries, which carry the same two
+     *  numbers by coincidence and for a different reason (a bearer-token brute
+     *  force, not an anonymous caller) — see the comment on them below. Tuning
+     *  one of the two sets should not silently move the other.
+     *
+     *  Deliberately NOT shared with the two widget READS either, whose demand is
+     *  a third party's page-view rate — see publicWidgetReadThrottle.
+     *
+     *  NOTHING OBSERVES THIS CEILING — see the note on `methodOptions` below,
+     *  where both pairs are applied.
+     *
+     *  WHAT THIS PAIR DOES NOT CLOSE, for the widget's `submit`: it is a RATE
+     *  ceiling, not a bound on lifetime volume, and the two members of this pair
+     *  are not alike in that respect. A ballot submission has two stopping
+     *  conditions beyond the rate — a room is capped at MAX_BALLOT_CAP ballots,
+     *  and the session itself can be closed — so 20 rps is a backstop on a
+     *  quantity already bounded elsewhere. A feedback form has NEITHER: no cap on
+     *  submissions and no closable window, so 20 rps sustained is ~1.7M
+     *  submissions/day, indefinitely, from an anonymous caller. Closing that
+     *  needs a PER-FORM SUBMISSION CAP, which is durable per-form state rather
+     *  than a gateway setting (where the counter lives, what resets it, what the
+     *  widget shows when it trips) and so is a separate design, not a number to
+     *  tune here. Recorded because it is the one follow-up that addresses the
+     *  asymmetry this ceiling only narrows. */
+    const publicRouteThrottle: apigateway.MethodDeploymentOptions = {
+      throttlingRateLimit: 20,
+      throttlingBurstLimit: 40,
+    };
+
+    /** 100 rps / burst 200 for the two widget READS — `config` and `iframe`.
+     *
+     *  A DIFFERENT pair from publicRouteThrottle, on purpose. The 20 rps figure is
+     *  argued from a bounded room: MAX_BALLOT_CAP attendees submitting once each,
+     *  so 20 rps is ~30x the need. Nothing in that argument transfers here.
+     *  `config` is fetched by feedback-widget.js on EVERY PAGE LOAD of every
+     *  customer page carrying the widget, and `iframe` on every iframe render, so
+     *  the legitimate demand is a third party's traffic, which this stack cannot
+     *  bound and does not get told about. A stage method setting is keyed by PATH,
+     *  with `{form_id}` as a variable, so the ceiling is shared across every form
+     *  in the deployment AND every caller — one busy embed spends the whole
+     *  budget.
+     *
+     *  WHAT A 429 LOOKS LIKE DIFFERS BY ROUTE, which matters because none of the
+     *  three symptoms names the rate limit and two are easy to misattribute
+     *  (traced through lambda/api/static/feedback-widget.js):
+     *    - `config`: the widget shows a flat "Feedback form unavailable.", with no
+     *      retry. Note the mechanism — `r.json()` SUCCEEDS on the gateway's error
+     *      body, so `data.success` is merely falsy and control reaches that string
+     *      rather than the `.catch` ("Failed to load form."). It is byte-identical
+     *      to what a deliberately DISABLED form renders.
+     *    - `submit`: a modal `alert('Failed to submit.')` instead, on a different
+     *      code path — and the visitor has already typed their feedback. It is
+     *      retryable (`isSubmitting` is reset), unlike the reads.
+     *    - `iframe`: NO widget code runs at all. The browser navigates to this
+     *      route directly, so a 429 is a raw API Gateway error page inside the
+     *      customer's iframe — a broken frame, not any widget string.
+     *
+     *  So the number is stated as what it is: 100 rps is the AGGREGATE widget
+     *  page-view rate this deployment supports — ~8.6M/day across all embeds —
+     *  and it is the ceiling these routes already had, since it equals the stage
+     *  default. Restating it here rather than letting them ride that default is
+     *  the point: it pins the reads' ceiling to the demand THEY have, so a later
+     *  decision to tighten the stage-wide default cannot silently squeeze a
+     *  customer's page.
+     *
+     *  Cost is the reason this can be the generous side of the pair: `config` is
+     *  one get_item, and `iframe` touches no AWS service at all — it interpolates
+     *  form_id into a static HTML shell around a module-cached widget script.
+     *
+     *  CACHING, not a throttle, is the right primary control for `iframe`: the
+     *  response is a pure function of form_id and host. It is not adopted here
+     *  because both available forms are out of a CDK-only change — an API Gateway
+     *  cache is a priced cluster on the stage, and a Cache-Control header is a
+     *  feedback_form_handler.py change. Recorded so nobody reads the throttle as
+     *  evidence that the route is uncacheable.
+     *
+     *  DO NOT CACHE `iframe` BEFORE ESCAPING ITS INPUT — issue #379. That route
+     *  reflects caller-supplied input into its response unescaped, so caching
+     *  would turn a reflected flaw into a stored one served to every subsequent
+     *  visitor. The escaping is therefore a PRECONDITION of the caching follow-up,
+     *  not a parallel cleanup. Pre-existing and out of scope for a CDK-only
+     *  change; the constraint is recorded HERE because this is where the next
+     *  reader decides to implement the caching, and the mechanism and fix are in
+     *  #379 rather than restated here — one description to keep correct, and it
+     *  stops this comment asserting a live vulnerability after #379 is closed.
+     *
+     *  NOTHING OBSERVES THIS CEILING EITHER — see the note on `methodOptions`
+     *  below, where both pairs are applied. */
+    const publicWidgetReadThrottle: apigateway.MethodDeploymentOptions = {
+      throttlingRateLimit: 100,
+      throttlingBurstLimit: 200,
+    };
+
+    // The three public feedback-form methods, keyed as
+    // `{resource path}/{METHOD}`. CONDITIONAL on the flag above: when it is set
+    // the `{form_id}` subtree is not created, and a method setting naming a path
+    // that does not exist is not an error — API Gateway simply never applies it —
+    // but it is a claim in the template about routes this deploy does not serve.
+    // Omitting them keeps the transitional stage honest, and keeps the lockstep
+    // test ("every key names a wired method") true for both shapes rather than
+    // only the default one.
+    const publicFeedbackFormMethodOptions: Record<string, apigateway.MethodDeploymentOptions> =
+      skipFeedbackFormItemRoutes ? {} : {
+        '/feedback-forms/{form_id}/config/GET': publicWidgetReadThrottle,
+        '/feedback-forms/{form_id}/submit/POST': publicRouteThrottle,
+        '/feedback-forms/{form_id}/iframe/GET': publicWidgetReadThrottle,
+      };
+
     // API Gateway CloudWatch Logs
     const apiLogGroup = new logs.LogGroup(this, 'ApiGatewayLogs', {
       logGroupName: `/aws/apigateway/${this.uniqueName('voc-analytics-api')}`,
@@ -954,11 +1294,31 @@ export class VocApiStack extends VocStack {
         stageName: 'v1',
         throttlingRateLimit: 100,
         throttlingBurstLimit: 200,
-        // Tighter limits on the two UNAUTHENTICATED ballot methods (see
-        // /voting-sessions/* below). Each request costs a DynamoDB read even for a
-        // session id that does not exist, and nothing in front of them asks who is
-        // calling — the session token is checked inside the handler, which means
-        // the cost is paid before the refusal.
+        // An EXPLICIT limit on every UNAUTHENTICATED method — the two ballot
+        // methods (see /voting-sessions/* below) and the three feedback-form
+        // widget methods (see /feedback-forms/* below). Each request costs a
+        // DynamoDB read even for an id that does not exist, and nothing in front
+        // of them asks who is calling — the session token, or the form's own
+        // state, is checked inside the handler, which means the cost is paid
+        // before the refusal.
+        //
+        // "Explicit" rather than "tighter", because the five are not all at one
+        // number. The criterion that splits them is BOUNDED vs UNBOUNDED
+        // legitimate demand, not read vs write and not cost — which matters
+        // because /voting-sessions/{session_id}/config/GET is at 20/40 and is a
+        // pure read (get_ballot_config: one get_item and a narrow projection, no
+        // write and no model call), so a cost-based reading would move it to the
+        // wrong side of its own rule:
+        //   - BOUNDED demand, held below the stage default at 20/40: the two
+        //     BALLOT methods, capped by a room of MAX_BALLOT_CAP attendees, and
+        //     the widget's `submit`, which additionally buys a Bedrock invocation
+        //     downstream per request.
+        //   - UNBOUNDED demand, restating the default's 100/200 as a limit of
+        //     their own: the two widget READS, whose callers are a third party's
+        //     page views — a rate this stack cannot bound and is not told about.
+        // Stating a value that equals the default is not a no-op: it decouples
+        // those two from a stage-wide number that may be tuned for entirely
+        // unrelated reasons.
         //
         // As STAGE METHOD SETTINGS rather than as a usage plan, which is what the
         // /mcp route uses: a usage plan's throttle binds per API KEY, and these
@@ -966,13 +1326,81 @@ export class VocApiStack extends VocStack {
         // never apply to the requests that matter. Method settings are keyed by
         // path and apply to every caller.
         //
-        // 20/s with a burst of 40 is roughly 30x what the feature needs — a room
-        // is bounded by MAX_BALLOT_CAP (200) ballots and submits once each — while
-        // still cutting a scripted flood down to something a single small table
-        // absorbs.
+        // The rationale for each pair lives on the CONSTANT that carries it —
+        // publicRouteThrottle and publicWidgetReadThrottle above — so there is one
+        // authoritative explanation per pair rather than a general one here that
+        // fits only some of the entries. For the two BALLOT entries specifically:
+        // 20/s with a burst of 40 is roughly 30x what the feature needs, since a
+        // room is bounded by MAX_BALLOT_CAP (200) ballots and submits once each,
+        // while still cutting a scripted flood down to something a single small
+        // table absorbs. That argument is about a bounded room and does NOT
+        // generalise to the widget reads below.
+        //
+        // NOTHING OBSERVES ANY OF THESE CEILINGS. There is no CloudWatch alarm
+        // and no metric filter anywhere in this stack, so a wrongly-sized limit
+        // produces no signal on the operator's side: each budget is shared
+        // deployment-wide and can be spent by traffic this account does not own or
+        // see, and a breach reaches the customer as one of three symptoms that
+        // name neither the limit nor each other (per route — see
+        // publicWidgetReadThrottle: "Feedback form unavailable." on `config`,
+        // indistinguishable from a disabled form; an alert box on `submit`; a
+        // broken frame on `iframe`), so support looks for the wrong cause in all
+        // three. Not a regression — these routes had no alarm at the stage default
+        // either — and out of scope for a throttle change, but it is what would
+        // make these numbers tunable in practice rather than only in principle. A
+        // single alarm on the stage's 4XXError, or better a ThrottledRequests one,
+        // is the smallest useful follow-up: smaller than the per-form submission
+        // cap (see publicRouteThrottle) or the iframe caching (see
+        // publicWidgetReadThrottle). It is not added here because an alarm needs a
+        // destination to be worth anything and this stack has no SNS topic or
+        // notification path to attach one to.
         methodOptions: {
-          '/voting-sessions/{session_id}/config/GET': { throttlingRateLimit: 20, throttlingBurstLimit: 40 },
-          '/voting-sessions/{session_id}/submit/POST': { throttlingRateLimit: 20, throttlingBurstLimit: 40 },
+          '/voting-sessions/{session_id}/config/GET': publicRouteThrottle,
+          '/voting-sessions/{session_id}/submit/POST': publicRouteThrottle,
+          // The three feedback-form widget methods, which were the only members
+          // of the public set still riding the stage default — see
+          // INTENTIONALLY_PUBLIC_ROUTES in api-stack.test.ts for the full list
+          // of five. TWO different pairs, not one: `submit` joins the ballots at
+          // 20/40, while `config` and `iframe` are stated at the stage default's
+          // 100/200 because their legitimate demand is a customer's page-view
+          // rate rather than a bounded room. The full argument for the split is
+          // on publicRouteThrottle / publicWidgetReadThrottle above.
+          //
+          // `submit` is the one that earns the tighter pair, and the reason is
+          // DOWNSTREAM rather than local. In the handler
+          // (submit_form_feedback in lambda/api/feedback_form_handler.py) one
+          // request costs three operations: a get_item for the form, an optional
+          // conditional update_item to anchor its brand (_anchor_form_brand), and
+          // an SQS send_message. It never writes the feedback table — and cannot:
+          // this role holds feedbackTable.grantReadData only (see above).
+          //
+          // The write happens in lambda/processor/handler.py, off the queue, and
+          // it does not arrive alone: each enqueued record drives Comprehend
+          // language detection, a Translate call, Comprehend sentiment AND a
+          // Bedrock LLM invocation (invoke_bedrock_llm). So an anonymous caller
+          // at this ceiling buys a per-request model invocation against a shared
+          // account quota — which is the real reason 20 rps rather than any
+          // DynamoDB cost, and the thing to weigh before raising it.
+          //
+          // This is an UPSTREAM BACKSTOP, not a bound on model consumption, and
+          // the difference matters to anyone tuning it. The queue decouples the
+          // two: `submit` only enqueues, and the processor is an SQS event source
+          // (batchSize 10, no maxConcurrency and no reservedConcurrentExecutions
+          // anywhere in these stacks), so what actually paces Bedrock is Lambda's
+          // account concurrency draining the queue. This ceiling bounds the
+          // STEADY-STATE arrival rate; it does not bound the burst a filled queue
+          // replays, and 20 rps sustained is still ~1.7M invocations/day. The
+          // effective control is consumer-side — maxConcurrency on the event
+          // source, or reservedConcurrentExecutions on the processor — and that is
+          // a processing-stack change, so it is DEFERRED rather than considered
+          // covered here. Recorded so the Bedrock argument above is not read as
+          // bottoming out at API Gateway.
+          //
+          // Keys are spelled `{form_id}`, matching
+          // `feedbackFormsResource.addResource('{form_id}')`, and are omitted
+          // entirely when skipFeedbackFormItemRoutes is set (see
+          // publicFeedbackFormMethodOptions above).
+          ...publicFeedbackFormMethodOptions,
           // The MCP endpoint gets the same treatment for the same reason: its
           // caller holds a bearer token, not a Cognito session, and an invalid
           // token still costs a DynamoDB Query before the 401. This REPLACES the
@@ -1009,8 +1437,8 @@ export class VocApiStack extends VocStack {
       defaultCorsPreflightOptions: {
         allowOrigins: apigateway.Cors.ALL_ORIGINS,
         allowMethods: apigateway.Cors.ALL_METHODS,
-        allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Amz-Date', 'X-Amz-Security-Token'],
-        exposeHeaders: ['Content-Type'],
+        allowHeaders: CORS_ALLOW_HEADERS,
+        exposeHeaders: CORS_EXPOSE_HEADERS,
       },
       cloudWatchRoleRemovalPolicy: cdk.RemovalPolicy.DESTROY
     });
@@ -1020,11 +1448,11 @@ export class VocApiStack extends VocStack {
     // Gateway responses for CORS on errors
     this.api.addGatewayResponse('Default4XX', {
       type: apigateway.ResponseType.DEFAULT_4XX,
-      responseHeaders: { 'Access-Control-Allow-Origin': "'*'", 'Access-Control-Allow-Headers': "'Content-Type,Authorization,X-Requested-With,X-Amz-Date,X-Amz-Security-Token'", 'Access-Control-Allow-Methods': "'GET,POST,PUT,DELETE,OPTIONS'" },
+      responseHeaders: { 'Access-Control-Allow-Origin': "'*'", 'Access-Control-Allow-Headers': CORS_ALLOW_HEADERS_VALUE, 'Access-Control-Allow-Methods': "'GET,POST,PUT,DELETE,OPTIONS'" },
     });
     this.api.addGatewayResponse('Default5XX', {
       type: apigateway.ResponseType.DEFAULT_5XX,
-      responseHeaders: { 'Access-Control-Allow-Origin': "'*'", 'Access-Control-Allow-Headers': "'Content-Type,Authorization,X-Requested-With,X-Amz-Date,X-Amz-Security-Token'", 'Access-Control-Allow-Methods': "'GET,POST,PUT,DELETE,OPTIONS'" },
+      responseHeaders: { 'Access-Control-Allow-Origin': "'*'", 'Access-Control-Allow-Headers': CORS_ALLOW_HEADERS_VALUE, 'Access-Control-Allow-Methods': "'GET,POST,PUT,DELETE,OPTIONS'" },
     });
     // API-WIDE, deliberately: this fires on every gateway-GENERATED 401 —
     // the MCP token authorizer refusing a malformed Bearer shape, AND the
@@ -1042,10 +1470,16 @@ export class VocApiStack extends VocStack {
       type: apigateway.ResponseType.UNAUTHORIZED,
       responseHeaders: {
         'Access-Control-Allow-Origin': "'*'",
-        'Access-Control-Allow-Headers': "'Content-Type,Authorization,X-Requested-With,X-Amz-Date,X-Amz-Security-Token'",
+        'Access-Control-Allow-Headers': CORS_ALLOW_HEADERS_VALUE,
         'Access-Control-Allow-Methods': "'GET,POST,PUT,DELETE,OPTIONS'",
         'WWW-Authenticate': '\'Bearer error="invalid_token"\'',
-        'Access-Control-Expose-Headers': "'WWW-Authenticate'",
+        'Access-Control-Expose-Headers': CORS_EXPOSE_HEADERS_VALUE,
+        // A 401 is the most credential-dependent answer this API gives, and it is
+        // produced by the authorizer rather than by the Lambda — so the `Vary`
+        // mcp_handler sends on its own responses does not reach it. Without this, an
+        // intermediary could cache the authorizer's 401 against the endpoint alone
+        // and serve it to a request carrying a perfectly good credential.
+        'Vary': "'Authorization'",
       },
     });
 
@@ -1195,12 +1629,16 @@ export class VocApiStack extends VocStack {
     feedbackFormsResource.addMethod('GET', feedbackFormIntegration, authMethodOptions);
     feedbackFormsResource.addMethod('POST', feedbackFormIntegration, authMethodOptions);
 
-    // One-shot flag for upgrading an environment that still has the old
-    // /feedback-forms/{proxy+}. CloudFormation creates new resources before
-    // deleting old ones inside a single update, so {form_id} and {proxy+} would
-    // exist together and API Gateway rejects two variable path parts at one
-    // level. Deploy once with -c skipFeedbackFormItemRoutes=true to retire the
-    // proxy, then deploy again without it to create these routes.
+    // `skipFeedbackFormItemRoutes` — the one-shot flag for upgrading an
+    // environment that still has the old /feedback-forms/{proxy+}. Read above the
+    // RestApi (it also gates this subtree's stage method settings); this is the
+    // branch it exists for.
+    //
+    // CloudFormation creates new resources before deleting old ones inside a
+    // single update, so {form_id} and {proxy+} would exist together and API
+    // Gateway rejects two variable path parts at one level. Deploy once with
+    // -c skipFeedbackFormItemRoutes=true to retire the proxy, then deploy again
+    // without it to create these routes.
     //
     // Absent (the default, and always for fresh deployments) this is a no-op —
     // the synthesized template is identical either way. Never leave it set:
@@ -1212,10 +1650,6 @@ export class VocApiStack extends VocStack {
     // two-deploy upgrade, delete the flag, this branch and its tests — a
     // permanently available "skip the authorization-bearing routes" switch is a
     // footgun once nothing needs it.
-    const skipFeedbackFormItemRoutes =
-      this.node.tryGetContext('skipFeedbackFormItemRoutes') === true
-      || this.node.tryGetContext('skipFeedbackFormItemRoutes') === 'true';
-
     if (skipFeedbackFormItemRoutes) {
       cdk.Annotations.of(this).addWarningV2(
         'voc:skipFeedbackFormItemRoutes',
@@ -1231,6 +1665,20 @@ export class VocApiStack extends VocStack {
       feedbackFormItem.addResource('stats').addMethod('GET', feedbackFormIntegration, authMethodOptions);
 
       // Intentionally unauthenticated: the widget runs on the customer's own site.
+      //
+      // These three are named in INTENTIONALLY_PUBLIC_ROUTES in api-stack.test.ts,
+      // and all three carry an EXPLICIT pair in `deployOptions.methodOptions` at
+      // the top of this stack — keyed by these exact paths, and pinned against
+      // them by a test, because a mistyped key throttles nothing and says nothing.
+      //
+      // Two pairs, not one, and only ONE of them is below the stage default:
+      // `submit` is held at 20/40 (a per-request Bedrock invocation downstream),
+      // while `config` and `iframe` RESTATE the stage default's 100/200 as a
+      // ceiling of their own. Restating it is not redundant with the default —
+      // it pins the two reads to the demand THEY have (a customer's page-view
+      // rate), so a later tightening of the stage-wide number cannot silently
+      // squeeze a third party's page. See publicWidgetReadThrottle for the full
+      // argument before deleting either entry as duplicative.
       const publicFeedbackFormMethods = [
         feedbackFormItem.addResource('config').addMethod('GET', feedbackFormIntegration),
         feedbackFormItem.addResource('submit').addMethod('POST', feedbackFormIntegration),
@@ -1305,20 +1753,50 @@ export class VocApiStack extends VocStack {
     // MCP SERVER API (public — auth via Bearer token authorizer)
     // ============================================
     const mcpRole = this.createLambdaRole('McpLambdaRole');
-    feedbackTable.grantReadData(mcpRole);
-    aggregatesTable.grantReadData(mcpRole);
-    // TWO ACTIONS on the projects table, not `grantReadWriteData`. The handler
-    // Queries token rows (auth) and project/persona rows (the get_project and
-    // list_personas tools), and UpdateItems exactly one attribute (last_used_at).
-    // The convenience grant would additionally hand over PutItem, DeleteItem,
-    // Scan and both batch APIs across the WHOLE table — every persona, PRD,
-    // PR/FAQ and prototype — on the ONE function in this stack that is reachable
-    // with a bearer token instead of a Cognito session. The absent actions are
-    // what enforce read-only-ness rather than remember it; same reasoning as the
-    // ballots role above, and `mcp Lambda IAM grants` in api-stack.test.ts pins
-    // the exact set.
-    projectsTable.grant(mcpRole, 'dynamodb:Query', 'dynamodb:UpdateItem');
-    // EncryptDecrypt, not just Decrypt: the narrow grant above no longer brings
+    // NO feedback-table grant and NO aggregates-table grant. The MCP function is
+    // a protocol adapter now: every tool's data comes from the domain function
+    // that already owns the route, so this role holds the permission to CALL
+    // those functions instead of the permission to read what they read. That is
+    // the whole point of the delegation change — a single function accumulating
+    // the union of every domain's permissions is what the 20 KB role-policy
+    // ceiling eventually refuses, silently and only at deploy time.
+    //
+    // Written out rather than `grantInvoke`, which additionally grants
+    // `<fn>.Arn:*` — every published version and alias. The adapter invokes by
+    // unqualified function name, which `$LATEST` serves and the unqualified ARN
+    // authorizes, so the wildcard buys nothing and costs a cdk-nag IAM5
+    // suppression. Two exact ARNs and no suppression is the smaller statement
+    // and the smaller grant.
+    mcpRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['lambda:InvokeFunction'],
+      resources: [metricsLambda.functionArn, projectsLambda.functionArn],
+    }));
+
+    // The token keyspace, and nothing else on the table.
+    //
+    // Two actions (Query for the credential lookup, UpdateItem for last_used_at)
+    // AND a partition condition, which is new: authentication is the only reason
+    // this function touches DynamoDB at all now, so the grant can finally say so.
+    // `dynamodb:LeadingKeys` restricts every request to items whose partition key
+    // is the token partition, so even the two granted actions cannot reach a
+    // PROJECT#... row — the function that is reachable with a bearer token rather
+    // than a Cognito session can no longer read a persona, a PRD, a PR/FAQ or a
+    // prototype through its own credentials, only through a domain function that
+    // applies that route's own rules.
+    //
+    // `ForAllValues:` is required rather than stylistic: LeadingKeys is a
+    // multi-valued condition key, and the plain StringEquals form would not
+    // constrain a request that presents several keys.
+    //
+    // The literal must match shared/mcp_tokens.py's MCP_TOKEN_PK — pinned by
+    // 'mcp Lambda IAM grants' in api-stack.test.ts, which reads the Python
+    // constant rather than repeating the string.
+    mcpRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['dynamodb:Query', 'dynamodb:UpdateItem'],
+      resources: [projectsTable.tableArn],
+      conditions: { 'ForAllValues:StringEquals': { 'dynamodb:LeadingKeys': ['MCPTOKEN'] } },
+    }));
+    // EncryptDecrypt, not just Decrypt: the narrow grant above does not bring
     // the table's KMS permissions along the way grantReadWriteData did, and the
     // last_used_at UpdateItem is a write to a KMS-encrypted table. Same pairing
     // as the ballots role.
@@ -1334,9 +1812,19 @@ export class VocApiStack extends VocStack {
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
       environment: {
+        // The token table only. FEEDBACK_TABLE and AGGREGATES_TABLE are gone
+        // with the in-process tools that read them: the handler resolves every
+        // tool through the two function names below instead. Leaving the table
+        // names behind would advertise an access this role no longer has.
         PROJECTS_TABLE: projectsTable.tableName,
-        FEEDBACK_TABLE: feedbackTable.tableName,
-        AGGREGATES_TABLE: aggregatesTable.tableName,
+        // The delegation targets. Handed down from the infrastructure exactly as
+        // PERSONA_GENERATOR_FUNCTION and MANUAL_IMPORT_PROCESSOR_FUNCTION are,
+        // rather than rebuilt in Python from account/region — under a
+        // deploymentPrefix a reconstructed name names a function that does not
+        // exist, and the failure arrives as a tool that mysteriously returns
+        // nothing. mcp_handler.py reads these two keys via _DOMAIN_FUNCTION_ENV.
+        METRICS_FUNCTION: metricsLambda.functionName,
+        PROJECTS_FUNCTION: projectsLambda.functionName,
         // NOT used for CORS here (MCP clients are not browsers, the handler
         // answers Access-Control-Allow-Origin: *). It is the allowlist for the
         // MCP spec's DNS-rebinding guard: a request that CARRIES an Origin
@@ -1540,6 +2028,7 @@ exports.handler = async (event) => {
         'title.$': '$.Payload.title',
         'feature_idea.$': '$.Payload.feature_idea',
         'num_steps.$': '$.Payload.num_steps',
+        'replayed.$': '$.Payload.replayed',
       },
     });
 
@@ -1605,11 +2094,15 @@ exports.handler = async (event) => {
             s3.next(save))
       .otherwise(save);
 
-    const definition = gather
-      .next(s0)
+    const generation = s0
       .next(s1)
       .next(s2)
       .next(maybeStep3);
+    const replayChoice = new sfn.Choice(this, 'DocumentAlreadyGenerated')
+      .when(sfn.Condition.booleanEquals('$.gathered.replayed', true), success)
+      .otherwise(generation);
+
+    const definition = gather.next(replayChoice);
 
     return new sfn.StateMachine(this, 'DocumentStateMachine', {
       stateMachineName: this.uniqueName('voc-document-workflow'),
@@ -1661,6 +2154,18 @@ exports.handler = async (event) => {
         FEEDBACK_TABLE: feedbackTableName,
         SECRETS_ARN: secretsArn,
         BRAND_NAME: brandName,
+        // BOTH names, matching createIngestorLambda in ingestion-stack.ts.
+        // `base_webhook.py` reads SOURCE_PLATFORM for the plugin identity it
+        // scopes the shared secret by, and since issue #251 an empty identity is
+        // a hard ConfigurationError at construction — so with only PLUGIN_ID set
+        // every delivery to a deployed webhook would have failed, on a message
+        // blaming the identity rather than the missing variable. Latent until a
+        // manifest declares `infrastructure.webhook` (none does yet), which is
+        // exactly why it would have surfaced as a deploy-time mystery. Pinned by
+        // 'SOURCE_PLATFORM' in api-stack-webhook-env.test.ts — that latency is
+        // also why it needs its own file: api-stack.test.ts's fixtures read the
+        // real manifests and so synthesize no webhook Lambda to assert against.
+        SOURCE_PLATFORM: plugin.id,
         PLUGIN_ID: plugin.id,
         POWERTOOLS_SERVICE_NAME: `voc-webhook-${plugin.id}`,
         LOG_LEVEL: 'INFO',

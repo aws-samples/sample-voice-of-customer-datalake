@@ -54,7 +54,9 @@ const mockFeedback = {
   urgency: 'low',
   rating: 5,
   persona_name: 'Happy Customer',
-  persona_type: 'loyal',
+  // A contract archetype: `loyal` is not one, and the persona axis now counts any
+  // value outside PERSONA_ARCHETYPES as `unknown`.
+  persona_type: 'advocate',
   problem_summary: null,
   problem_root_cause_hypothesis: null,
   suggested_response: 'Thank you for your feedback!',

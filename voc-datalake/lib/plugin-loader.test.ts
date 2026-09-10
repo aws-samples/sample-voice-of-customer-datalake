@@ -152,6 +152,76 @@ describe('Plugin Loader', () => {
     });
   });
 
+  /**
+   * A plugin id becomes a Secrets Manager key namespace (`<plugin_id>_<key>`), and
+   * both readers of that secret match the namespace by plain string prefix — the
+   * runtime one in `plugins/_shared/plugin_secrets.py`, which is the ENTIRE
+   * isolation boundary between plugins because all ingestion Lambdas share one IAM
+   * role, and the status one in `integrations_handler.get_credentials`.
+   *
+   * Neither can see the other ids, by design: since issue #251 a plugin Lambda
+   * holds no list of its siblings' prefixes (keeping one is what let a plugin's
+   * keys be reclassified as "shared" and leak into every other plugin). So synth
+   * is the only vantage point from which a colliding pair can be refused, and this
+   * is the guard that does it.
+   */
+  describe('plugin id namespace collisions', () => {
+    /** Mock two manifests, returning each by the path being read. */
+    function mockTwoPlugins(first: string, second: string) {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readdirSync.mockReturnValue(mockDirents(first, second));
+      mockFs.readFileSync.mockImplementation((p) => JSON.stringify({
+        id: String(p).includes(`/${second}/`) ? second : first,
+        name: 'Plugin',
+        icon: '📦',
+        infrastructure: { ingestor: { enabled: true } },
+        secrets: { api_key: '' },
+      }));
+    }
+
+    it('rejects an id that is a namespace prefix of another id', async () => {
+      // The concrete hazard, not an abstract one: `app_reviews_ios` ships today,
+      // and `app_reviews` is a plausible future id for a combined plugin. It would
+      // silently receive every `app_reviews_ios_*` key under a mangled name
+      // (`app_reviews_ios_app_id` arriving as `ios_app_id`).
+      mockTwoPlugins('app_reviews', 'app_reviews_ios');
+
+      const { loadPlugins } = await import('./plugin-loader');
+
+      expect(() => loadPlugins('/test/plugins')).toThrow();
+    });
+
+    it('accepts ids that merely share a leading substring', async () => {
+      // Non-vacuity, and the property the guard must not overreach on: the
+      // boundary is the `_` separator, so `app_reviewsx` is NOT inside
+      // `app_reviews`'s namespace and must still load. A guard written as a bare
+      // `startsWith(id)` would reject this pair and block a legitimate plugin.
+      mockTwoPlugins('app_reviews', 'app_reviewsx');
+
+      const { loadPlugins } = await import('./plugin-loader');
+
+      expect(loadPlugins('/test/plugins').map((p) => p.id).sort())
+        .toEqual(['app_reviews', 'app_reviewsx']);
+    });
+
+    it('names both ids in the error, so the fix is not a guessing game', async () => {
+      mockTwoPlugins('app_reviews', 'app_reviews_ios');
+
+      const { loadPlugins } = await import('./plugin-loader');
+      const errors: string[] = [];
+      const spy = vi.spyOn(console, 'error').mockImplementation((...args) => {
+        errors.push(args.map(String).join(' '));
+      });
+
+      expect(() => loadPlugins('/test/plugins')).toThrow();
+      spy.mockRestore();
+
+      const combined = errors.join('\n');
+      expect(combined).toContain('app_reviews');
+      expect(combined).toContain('app_reviews_ios');
+    });
+  });
+
   describe('Manifest Schema Validation', () => {
     it('rejects invalid plugin ID format', async () => {
       mockFs.existsSync.mockReturnValue(true);
@@ -376,6 +446,58 @@ describe('Plugin Loader', () => {
       expect(result).toHaveProperty('webscraper_api_key');
       expect(result).toHaveProperty('webscraper_configs');
       expect(result).toHaveProperty('custom_source_api_key');
+    });
+
+    it('aggregateSecretsByPlugin keys the same defaults by plugin instead of flattening', async () => {
+      const { aggregateSecretsByPlugin, aggregateSecrets } = await import('./plugin-loader');
+
+      const plugins = [
+        { id: 'webscraper', secrets: { configs: '[]' } },
+        { id: 'app_reviews_ios', secrets: { app_id: '', sort_by: 'most_recent' } },
+      ] as unknown as Parameters<typeof aggregateSecretsByPlugin>[0];
+
+      expect(aggregateSecretsByPlugin(plugins)).toEqual({
+        webscraper: { configs: '[]' },
+        app_reviews_ios: { app_id: '', sort_by: 'most_recent' },
+      });
+
+      // The two shapes must describe the same defaults. This is what lets the
+      // integrations handler decide whether a stored value was seeded by the
+      // deploy or entered by a human: if the nested form ever drifted from the
+      // flat form that actually seeds the secret, every comparison it makes
+      // would be against the wrong baseline.
+      const flat = aggregateSecrets(plugins);
+      const flattenedAgain = Object.fromEntries(
+        Object.entries(aggregateSecretsByPlugin(plugins)).flatMap(([id, keys]) =>
+          Object.entries(keys).map(([key, value]) => [`${id}_${key}`, value])
+        )
+      );
+      expect(flattenedAgain).toEqual(flat);
+    });
+
+    it('aggregateSecretsByPlugin lists a plugin that declares no secrets', async () => {
+      const { aggregateSecretsByPlugin } = await import('./plugin-loader');
+
+      // The key set doubles as "which sources exist", so a plugin with nothing
+      // to configure must still appear — otherwise it silently vanishes from
+      // GET /integrations/status.
+      const plugins = [{ id: 'no_config_plugin' }] as unknown as Parameters<
+        typeof aggregateSecretsByPlugin
+      >[0];
+
+      expect(aggregateSecretsByPlugin(plugins)).toEqual({ no_config_plugin: {} });
+    });
+
+    it('aggregateSecretsByPlugin does not alias the manifest it read', async () => {
+      const { aggregateSecretsByPlugin } = await import('./plugin-loader');
+
+      const manifest = { id: 'p', secrets: { a: '1' } };
+      const result = aggregateSecretsByPlugin([manifest] as unknown as Parameters<
+        typeof aggregateSecretsByPlugin
+      >[0]);
+      result.p.a = 'mutated';
+
+      expect(manifest.secrets.a).toBe('1');
     });
 
     it('getEnabledPlugins filters by enabled sources', async () => {

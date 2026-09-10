@@ -3,6 +3,9 @@ Manual Import API Lambda - Handles /scrapers/manual/*
 Allows users to paste raw review text and have it parsed by LLM.
 """
 
+import csv
+import hashlib
+import io
 import json
 import os
 import sys
@@ -356,6 +359,55 @@ MAX_JSON_UPLOAD_ITEMS = 50000
 
 MAX_CSV_BYTES = 10 * 1024 * 1024  # 10 MB
 
+# Bound on the informational copy of a row's own identifier. Mirrors
+# `IngestMessage.csv_row_id`'s max_length: this Lambda's bundle does not include
+# the plugin schema package, so the value is restated rather than imported. Keep
+# the two in step — exceeding the model's bound would reject the whole message.
+MAX_CSV_ROW_ID_LENGTH = 256
+
+
+# ── CSV row identity ────────────────────────────────────────────────────────
+#
+# The processor derives BOTH its idempotency key and its DynamoDB item key from
+# `source_platform + id`, and `source_platform` is the constant 'manual_import'
+# for every CSV upload. The id emitted here is therefore the only thing that
+# separates one imported row from another — including rows in a different file
+# that reuse the same `id` column value, which is what made two files numbered
+# 1..400 collapse into a single 400-row set.
+#
+# Identity is a SHA-256 over the version tag followed by these fields, in this
+# order. Both the order and the normalization are a PERSISTED CONTRACT: rows
+# already stored were keyed with this recipe, so changing it re-keys them and
+# every prior upload would re-import as new records. Add a new version tag
+# instead of editing v1.
+CSV_ROW_ID_VERSION = 'csv-row-v1'
+CSV_ROW_ID_FIELDS = (
+    'source_id',   # the row's own id/review_id column; '' when absent
+    'row_index',   # 1-based position; '' when the row HAS an id
+    'text',
+    'rating',
+    'created_at',  # the row's own date column, NOT the import-time default
+    'author',
+    'title',
+    'url',
+    'source',      # the row's own source column, NOT the request default_source
+)
+
+
+def _csv_row_id(fields: dict[str, str]) -> str:
+    """
+    Return the identity of one CSV row from its normalized column values.
+
+    Raises KeyError when a field named in the contract is missing, so a partial
+    call fails at the first test rather than silently keying rows differently.
+    """
+    payload = json.dumps(
+        [CSV_ROW_ID_VERSION, *(fields[name] for name in CSV_ROW_ID_FIELDS)],
+        ensure_ascii=False,
+        separators=(',', ':'),
+    )
+    return hashlib.sha256(payload.encode('utf-8')).hexdigest()[:32]
+
 
 def _send_items_to_sqs(messages: list[dict], label: str = 'row') -> tuple[int, list[str]]:
     """
@@ -392,15 +444,11 @@ def _send_items_to_sqs(messages: list[dict], label: str = 'row') -> tuple[int, l
 
 def _parse_csv_to_items(csv_text: str, default_source: str) -> tuple[list[dict], list[str]]:
     """Parse CSV text into the same item shape as json_upload. Returns (items, warnings)."""
-    import csv as _csv
-    import io
-    import hashlib
-
     warnings: list[str] = []
     items: list[dict] = []
 
     # csv.DictReader handles quoted commas, embedded newlines, and BOM.
-    reader = _csv.DictReader(io.StringIO(csv_text))
+    reader = csv.DictReader(io.StringIO(csv_text))
     if not reader.fieldnames:
         raise ValidationError('CSV is empty or has no header row')
 
@@ -408,12 +456,12 @@ def _parse_csv_to_items(csv_text: str, default_source: str) -> tuple[list[dict],
     headers = {h.strip().lower(): h for h in reader.fieldnames if h}
 
     def col(row: dict, *names: str) -> str:
-        for n in names:
-            actual = headers.get(n)
+        for name in names:
+            actual = headers.get(name)
             if actual is not None:
-                v = row.get(actual)
-                if v is not None and str(v).strip():
-                    return str(v).strip()
+                value = row.get(actual)
+                if value is not None and str(value).strip():
+                    return str(value).strip()
         return ''
 
     if 'text' not in headers and 'review' not in headers and 'comment' not in headers and 'feedback' not in headers:
@@ -421,24 +469,42 @@ def _parse_csv_to_items(csv_text: str, default_source: str) -> tuple[list[dict],
             'CSV must include a "text" column (also accepted: review / comment / feedback)'
         )
 
-    seen_ids: set[str] = set()
+    seen_row_ids: set[str] = set()
     for idx, row in enumerate(reader, start=1):
         text = col(row, 'text', 'review', 'comment', 'feedback')
         if not text:
             warnings.append(f'row {idx}: empty text — skipped')
             continue
 
-        # Synthesize a stable id when missing so the dedupe layer doesn't reject the row.
-        source_id = col(row, 'id', 'review_id') or hashlib.sha1(
-            f'{text[:200]}|{idx}'.encode()
-        ).hexdigest()[:32]
-
-        if source_id in seen_ids:
-            warnings.append(f'row {idx}: duplicate id "{source_id}" — skipped')
-            continue
-        seen_ids.add(source_id)
-
+        source_id = col(row, 'id', 'review_id')
         rating_raw = col(row, 'rating', 'stars', 'score')
+        created_at_raw = col(row, 'date', 'timestamp', 'created_at')
+        author = col(row, 'author', 'user', 'user_id', 'name')
+        title = col(row, 'title', 'subject')
+        url = col(row, 'url', 'link')
+        source_column = col(row, 'source', 'source_channel')
+
+        feedback_id = _csv_row_id({
+            'source_id': source_id,
+            # A row carrying an id is identified by it, so the file can be
+            # reordered without re-keying. A row without one has nothing but
+            # its position to distinguish it, so two rows reading "Good" stay
+            # two rows instead of collapsing into one.
+            'row_index': '' if source_id else str(idx),
+            'text': text,
+            'rating': rating_raw,
+            'created_at': created_at_raw,
+            'author': author,
+            'title': title,
+            'url': url,
+            'source': source_column,
+        })
+
+        if feedback_id in seen_row_ids:
+            warnings.append(f'row {idx}: duplicate row — skipped')
+            continue
+        seen_row_ids.add(feedback_id)
+
         rating: int | None = None
         if rating_raw:
             try:
@@ -446,18 +512,33 @@ def _parse_csv_to_items(csv_text: str, default_source: str) -> tuple[list[dict],
             except (ValueError, TypeError):
                 warnings.append(f'row {idx}: rating "{rating_raw}" is not a number — left blank')
 
-        created_at = col(row, 'date', 'timestamp', 'created_at') or datetime.now(timezone.utc).isoformat()
-        source = col(row, 'source', 'source_channel') or default_source
+        created_at = created_at_raw or datetime.now(timezone.utc).isoformat()
+
+        # The customer's own row identifier, kept so an operator can still answer
+        # "find the record for review_id 4711". It is deliberately NOT the item
+        # id: it is unique only within one file. The fingerprint above consumed
+        # it at full length; this carried copy is informational and has to fit
+        # the message schema's bound. An over-long value is dropped rather than
+        # truncated, because a truncated identifier would not match what an
+        # operator searches for — and dropping it must not cost us the row.
+        csv_row_id = source_id
+        if len(csv_row_id) > MAX_CSV_ROW_ID_LENGTH:
+            warnings.append(
+                f'row {idx}: id exceeds {MAX_CSV_ROW_ID_LENGTH} characters — '
+                'not kept for lookup, row imported'
+            )
+            csv_row_id = ''
 
         items.append({
-            'id': source_id,
+            'id': feedback_id,
+            'csv_row_id': csv_row_id,
             'text': text,
             'rating': rating,
-            'author': col(row, 'author', 'user', 'user_id', 'name'),
-            'title': col(row, 'title', 'subject'),
-            'url': col(row, 'url', 'link'),
+            'author': author,
+            'title': title,
+            'url': url,
             'timestamp': created_at,
-            'source': source,
+            'source': source_column or default_source,
         })
 
     return items, warnings
@@ -519,6 +600,7 @@ def csv_upload():
     messages = [
         {
             'id': item['id'],
+            'csv_row_id': item.get('csv_row_id') or None,
             'source_platform': 'manual_import',
             'source_channel': item['source'],
             'ingestion_method': 'csv_upload',

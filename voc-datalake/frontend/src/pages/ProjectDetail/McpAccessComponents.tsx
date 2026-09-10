@@ -10,6 +10,10 @@ import { useTranslation } from 'react-i18next'
 import {
   TOKEN_EXPIRY_CHOICES, isTokenExpiryChoice, tokenExpiryState, type TokenExpiryChoice,
 } from './tokenExpiry'
+import {
+  MCP_SCOPES, OFFERED_READ_REACHES, isReadReach,
+  type McpScope, type ReadReach,
+} from '../../api/mcpTokenSchema'
 import type { ApiToken } from '../../api/types'
 
 // ---------------------------------------------------------------------------
@@ -98,20 +102,22 @@ export function NewTokenBanner({
 
 interface CreateTokenFormProps {
   readonly tokenName: string
-  readonly tokenScope: 'read' | 'read-write'
+  readonly tokenScopes: readonly McpScope[]
+  readonly tokenReach: ReadReach
   readonly tokenExpiry: TokenExpiryChoice
   readonly isCreating: boolean
   readonly error?: string
   readonly onNameChange: (name: string) => void
-  readonly onScopeChange: (scope: 'read' | 'read-write') => void
+  readonly onToggleScope: (scope: McpScope) => void
+  readonly onReachChange: (reach: ReadReach) => void
   readonly onExpiryChange: (expiry: TokenExpiryChoice) => void
   readonly onSubmit: () => void
   readonly onCancel: () => void
 }
 
 export function CreateTokenForm({
-  tokenName, tokenScope, tokenExpiry, isCreating, error,
-  onNameChange, onScopeChange, onExpiryChange, onSubmit, onCancel,
+  tokenName, tokenScopes, tokenReach, tokenExpiry, isCreating, error,
+  onNameChange, onToggleScope, onReachChange, onExpiryChange, onSubmit, onCancel,
 }: CreateTokenFormProps) {
   const { t } = useTranslation('projectDetail')
   return (
@@ -122,14 +128,63 @@ export function CreateTokenForm({
           <label htmlFor="token-name" className="block text-sm font-medium text-gray-700 mb-1">{t('mcp.tokenName')}</label>
           <input id="token-name" type="text" value={tokenName} onChange={(e) => onNameChange(e.target.value)} placeholder={t('mcp.tokenNamePlaceholder')} className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
         </div>
+        {/* Per-domain scopes, as checkboxes rather than one select: they are
+            independent grants, so a credential can read feedback without
+            reading anybody's product strategy. A fieldset (not a label+input)
+            because the group has one caption for several controls. */}
+        <fieldset>
+          <legend className="block text-sm font-medium text-gray-700 mb-1">{t('mcp.scopes')}</legend>
+          <div className="space-y-1">
+            {MCP_SCOPES.map((scope) => (
+              <label key={scope} className="flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={tokenScopes.includes(scope)}
+                  onChange={() => onToggleScope(scope)}
+                  className="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span>
+                  <span className="font-mono text-xs">{scope}</span>
+                  {/* The locale key is the UNDERSCORE form of the scope, because
+                      a colon is i18next's namespace separator: keyed as
+                      `feedback:read`, the lookup was parsed as namespace
+                      `mcp.scopeDesc.feedback` + key `read` and rendered the
+                      literal word "read" under every checkbox (found in a
+                      browser; the API battery cannot see render-time faults).
+
+                      Fixed on the KEY side rather than with `nsSeparator: false`
+                      — globally or per call — because this app DEPENDS on that
+                      separator: `SCORABLE_TYPE_META` resolves
+                      `prioritization:docType.prd`, and disabling it would make
+                      the Prioritization badge and the Feedback Forms document
+                      picker render raw key paths (see i18n/options.ts). A
+                      per-call option would also leave the next colon key to
+                      rediscover this. `i18nKeys.test.ts` now fails on ANY locale
+                      key containing a colon, so the class cannot come back. */}
+                  <span className="text-gray-500 block text-xs">
+                    {t(`mcp.scopeDesc.${scope.replace(':', '_')}`)}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        {/* The reach axis. Independent of scope: scope says WHICH data, reach
+            says HOW FAR. The workspace warning is deliberate — it is the
+            default, and it reaches every other project's unreleased documents
+            plus the whole feedback corpus. */}
         <div>
-          <label htmlFor="token-scope" className="block text-sm font-medium text-gray-700 mb-1">{t('mcp.scope')}</label>
-          <select id="token-scope" value={tokenScope} onChange={(e) => {
-            const val = e.target.value; if (val === 'read' || val === 'read-write') onScopeChange(val)
+          <label htmlFor="token-reach" className="block text-sm font-medium text-gray-700 mb-1">{t('mcp.readReach')}</label>
+          <select id="token-reach" value={tokenReach} onChange={(e) => {
+            if (isReadReach(e.target.value)) onReachChange(e.target.value)
           }} className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
-            <option value="read">{t('mcp.scopeRead')}</option>
-            <option value="read-write">{t('mcp.scopeReadWrite')}</option>
+            {OFFERED_READ_REACHES.map((reach) => (
+              <option key={reach} value={reach}>{t(`mcp.reachOption.${reach}`)}</option>
+            ))}
           </select>
+          <p className={clsx('text-xs mt-1', tokenReach === 'workspace' ? 'text-amber-700' : 'text-gray-500')}>
+            {t(`mcp.reachHint.${tokenReach}`)}
+          </p>
         </div>
         <div>
           <label htmlFor="token-expiry" className="block text-sm font-medium text-gray-700 mb-1">{t('mcp.expiry')}</label>
@@ -146,7 +201,10 @@ export function CreateTokenForm({
         {error != null && error !== '' ? <div className="flex items-center gap-2 text-sm text-red-600"><AlertCircle size={14} />{error}</div> : null}
         <div className="flex gap-2 justify-end">
           <button onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">{t('mcp.cancel')}</button>
-          <button onClick={onSubmit} disabled={tokenName.trim() === '' || isCreating} className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">
+          {/* Disabled with no scopes: the backend refuses an empty set (a
+              credential that grants nothing is not worth minting), so the form
+              must not let the request be sent to fail. */}
+          <button onClick={onSubmit} disabled={tokenName.trim() === '' || tokenScopes.length === 0 || isCreating} className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">
             {isCreating ? t('mcp.generating') : t('mcp.generate')}
           </button>
         </div>
@@ -230,9 +288,18 @@ export function TokenRow({
         <Key size={16} className="text-gray-400 flex-shrink-0" />
         <div className="min-w-0">
           <p className="text-sm font-medium truncate">{token.name}</p>
-          <div className="flex items-center gap-3 text-xs text-gray-500 mt-0.5">
-            <span className={clsx('inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium', token.scope === 'read' ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700')}>
-              <Shield size={10} />{token.scope}
+          <div className="flex items-center gap-3 text-xs text-gray-500 mt-0.5 flex-wrap">
+            {/* Reach is badged, and amber when it is workspace-wide: that is
+                the default, so the list is where someone notices a credential
+                reaches further than they assumed. */}
+            <span className={clsx(
+              'inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium',
+              token.read_reach === 'workspace' ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700',
+            )}>
+              <Shield size={10} />{t(`mcp.reachBadge.${token.read_reach}`)}
+            </span>
+            <span className="font-mono text-[10px] text-gray-500">
+              {token.scopes.length > 0 ? token.scopes.join(' ') : t('mcp.noScopes')}
             </span>
             <span className="flex items-center gap-1"><Clock size={10} />{t('mcp.createdDate', { date: new Date(token.created_at).toLocaleDateString() })}</span>
             {token.last_used_at != null && token.last_used_at !== '' ? <span className="text-gray-400">{t('mcp.lastUsed', { date: new Date(token.last_used_at).toLocaleDateString() })}</span> : null}

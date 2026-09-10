@@ -23,7 +23,12 @@ const mockFeedback = [
     impact_area: 'operations',
     problem_summary: 'Customer experiencing significant delivery delay',
     direct_customer_quote: 'Ordered 2 weeks ago and still waiting',
+    // Both persona fields, as the real processor writes them. The persona METRICS
+    // axis buckets by `persona_type` — a closed enum — because `persona_name` is
+    // legitimately null for the anonymous feedback that is most of a real corpus;
+    // see the note beside PERSONA_FIELD in lambda/shared/feedback.py.
     persona_name: 'Impatient Shopper',
+    persona_type: 'churn_risk',
     // Written today, imported today
     source_created_at: new Date().toISOString(),
     processed_at: new Date().toISOString(),
@@ -45,6 +50,7 @@ const mockFeedback = [
     // optional fields are omitted rather than null.
     direct_customer_quote: 'resolved my issue within minutes',
     persona_name: 'Satisfied Customer',
+    persona_type: 'advocate',
     // Written 3 days ago, imported today
     source_created_at: daysAgo(3),
     processed_at: new Date().toISOString(),
@@ -65,6 +71,7 @@ const mockFeedback = [
     problem_summary: 'Multiple defective products received',
     direct_customer_quote: 'last 3 orders had defects',
     persona_name: 'Repeat Customer',
+    persona_type: 'existing_customer',
     // Old backfilled review: written ~400 days ago, imported today.
     // Visible under the imported basis, filtered out under the review basis.
     source_created_at: daysAgo(400),
@@ -446,7 +453,27 @@ const handlers = {
         keywords: {},
         categories: countBy(i => i.category),
         issues: countBy(i => i.problem_summary),
-        personas: countBy(i => i.persona_name),
+        // The ARCHETYPE, matching `shared/feedback.py::persona_bucket`: both of the
+        // real route's branches bucket by `persona_type`, and an item with none
+        // counts as `unknown` rather than being dropped, so the persona map sums to
+        // `feedback_count`.
+        //
+        // 🔑 THIS COPY IS DELIBERATELY NOT PINNED, and may be edited freely. The
+        // Python side declares the field, the empty value and the archetype enum once
+        // in `shared/feedback.py` and forbids either Lambda from spelling them inline,
+        // because a drift there is a WRONG NUMBER served to a caller. A Node dev stub
+        // serves no production traffic, so a drift here costs a confusing afternoon —
+        // not a wrong answer — and it cannot import from `lambda/shared/`. The trade
+        // is that this file has to be followed by hand when the axis moves, which is
+        // what happened to it: it bucketed on `persona_name` for one round, so local
+        // dev was written against a value space production had stopped producing.
+        //
+        // The one thing it does NOT reproduce is the enum closure — an out-of-contract
+        // `persona_type` gets its own bucket here and would be counted as `unknown` by
+        // the real route. Every fixture above uses a declared archetype, so the two
+        // agree in practice; if a fixture ever needs an out-of-contract value, add the
+        // membership test rather than leaving the stub disagreeing.
+        personas: countBy(i => i.persona_type || 'unknown'),
         sources: countBy(i => i.source_platform),
       },
     };
@@ -495,12 +522,16 @@ const handlers = {
   }),
   'GET /metrics/personas': () => ({
     period_days: 7,
+    // The closed archetype enum the real route now returns
+    // (`existing_customer|prospect|churn_risk|advocate|unknown`), not free-text
+    // names — a stub returning names would have the dashboard developed against a
+    // value space production no longer produces.
     personas: {
-      'Impatient Shopper': 234,
-      'Price-Sensitive Buyer': 198,
-      'Quality Seeker': 167,
-      'First-Time Customer': 145,
-      'Loyal Customer': 123,
+      existing_customer: 234,
+      churn_risk: 198,
+      prospect: 167,
+      advocate: 145,
+      unknown: 123,
     },
   }),
   'POST /chat': () => ({

@@ -77,6 +77,7 @@
     },
     "settings": "Settings"
   },
+  "partialCountsHint": "Approximate: the full window could not be read, counts are a lower bound",
   "partialWindowHint": "narrow filters to see all",
   "problemAnalysisPage": {
     "emptyHint": "Try expanding the time range or adjusting filters",

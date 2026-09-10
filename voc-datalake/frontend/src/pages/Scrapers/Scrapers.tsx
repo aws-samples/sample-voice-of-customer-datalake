@@ -17,6 +17,7 @@ import { api } from '../../api/client'
 import { scrapersApi } from '../../api/scrapersApi'
 import ConfirmModal from '../../components/ConfirmModal'
 import { getPluginManifests, getSyntheticPlugins } from '../../plugins'
+import { useIsAdmin } from '../../store/authStore'
 import { useConfigStore } from '../../store/configStore'
 import { useManualImportStore } from '../../store/manualImportStore'
 import { AppConfigCard } from './AppConfigComponents'
@@ -43,9 +44,14 @@ function getAppConfigPlugins(): PluginManifest[] {
 }
 
 function AppConfigList({
-  plugins, onEditPlugin, onDeleteApp, onRunApp,
+  plugins, isAdmin, onEditPlugin, onDeleteApp, onRunApp,
 }: {
   readonly plugins: PluginManifest[];
+  /** `POST /sources/{source}/run` and `DELETE /integrations/{source}/apps/{id}` are
+   *  admin-gated server-side, so the Run and Delete controls on each card are
+   *  disabled for a non-admin rather than firing a 403. Listing the configs is
+   *  deliberately NOT gated — that is why this list still renders for everyone. */
+  readonly isAdmin: boolean
   readonly onEditPlugin: (p: PluginManifest) => void
   readonly onDeleteApp: (pluginId: string, appId: string) => void;
   readonly onRunApp: (pluginId: string, appIdentifier: string) => void
@@ -171,7 +177,7 @@ function AppConfigList({
       {allApps.map(({
         app, plugin,
       }) => (
-        <AppConfigCard key={`${plugin.id}-${app.id}`} app={app} plugin={plugin}
+        <AppConfigCard key={`${plugin.id}-${app.id}`} app={app} plugin={plugin} isAdmin={isAdmin}
           onEdit={() => onEditPlugin(plugin)} onDelete={() => onDeleteApp(plugin.id, app.id)}
           onRun={() => handleRun(plugin.id, getAppIdentifier(app, plugin.id))}
           isRunning={runningApps.has(`${plugin.id}-${getAppIdentifier(app, plugin.id)}`)}
@@ -218,10 +224,11 @@ function useScraperMutations() {
 }
 
 function ScrapersContent({
-  scrapers, isLoading, appConfigPlugins, syntheticPlugins, onRefresh, onShowTemplates, onEdit, onDelete, onRun, onEditPlugin, onDeleteApp, onRunApp, onGenerate,
+  scrapers, isLoading, appConfigPlugins, syntheticPlugins, isAdmin, onRefresh, onShowTemplates, onEdit, onDelete, onRun, onEditPlugin, onDeleteApp, onRunApp, onGenerate,
 }: {
   readonly scrapers: ScraperConfig[]
   readonly isLoading: boolean
+  readonly isAdmin: boolean
   readonly appConfigPlugins: PluginManifest[]
   readonly syntheticPlugins: PluginManifest[]
   readonly onRefresh: () => void
@@ -256,9 +263,9 @@ function ScrapersContent({
       {isLoading ? <div className="flex items-center justify-center py-12"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /></div> : null}
       {!isLoading && (
         <div className="grid gap-4">
-          <AppConfigList plugins={appConfigPlugins} onEditPlugin={onEditPlugin} onDeleteApp={onDeleteApp} onRunApp={onRunApp} />
+          <AppConfigList plugins={appConfigPlugins} isAdmin={isAdmin} onEditPlugin={onEditPlugin} onDeleteApp={onDeleteApp} onRunApp={onRunApp} />
           {scrapers.map((scraper) => (
-            <ScraperCard key={scraper.id} scraper={scraper} onEdit={() => onEdit(scraper)} onDelete={() => onDelete(scraper.id)} onRun={() => onRun(scraper.id)} />
+            <ScraperCard key={scraper.id} scraper={scraper} isAdmin={isAdmin} onEdit={() => onEdit(scraper)} onDelete={() => onDelete(scraper.id)} onRun={() => onRun(scraper.id)} />
           ))}
           {syntheticPlugins.length > 0 ? (
             <section aria-label={t('syntheticCard.sectionTitle')}>
@@ -280,6 +287,7 @@ function ScrapersContent({
 export default function Scrapers() {
   const { t } = useTranslation('scrapers')
   const { config } = useConfigStore()
+  const isAdmin = useIsAdmin()
   const { setIsModalOpen } = useManualImportStore()
   const [editingScraper, setEditingScraper] = useState<ScraperConfig | null>(null)
   const [isCreating, setIsCreating] = useState(false)
@@ -378,6 +386,7 @@ export default function Scrapers() {
         isLoading={isLoading}
         appConfigPlugins={appConfigPlugins}
         syntheticPlugins={syntheticPlugins}
+        isAdmin={isAdmin}
         onRefresh={() => void refetch()}
         onShowTemplates={() => setShowTemplates(true)}
         onEdit={setEditingScraper}
@@ -408,11 +417,13 @@ export default function Scrapers() {
 
       {selectedPlugin == null ? null : <PluginConfigModal
         plugin={selectedPlugin}
+        isAdmin={isAdmin}
         onClose={() => setSelectedPlugin(null)}
       />}
 
       {selectedGenerator == null ? null : <GeneratorConfigModal
         plugin={selectedGenerator}
+        isAdmin={isAdmin}
         onClose={() => {
           setSelectedGenerator(null)
           // Refresh synthetic cards so a just-finished run shows immediately.
@@ -420,7 +431,7 @@ export default function Scrapers() {
         }}
       />}
 
-      {(isCreating || editingScraper != null) ? <ScraperEditor scraper={editingScraper} template={selectedTemplate} onSave={handleSaveScraper} onClose={handleCloseEditor} /> : null}
+      {(isCreating || editingScraper != null) ? <ScraperEditor scraper={editingScraper} template={selectedTemplate} isAdmin={isAdmin} onSave={handleSaveScraper} onClose={handleCloseEditor} /> : null}
 
       {deleteScraperId != null && deleteScraperId !== '' ? <ConfirmModal
         isOpen={deleteScraperId !== ''}

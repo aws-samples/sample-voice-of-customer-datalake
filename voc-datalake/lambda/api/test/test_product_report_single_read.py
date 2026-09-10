@@ -67,6 +67,28 @@ def _fake_s3(bodies: dict[str, str] | None = None) -> MagicMock:
     return s3
 
 
+def _wire_transactions(table: MagicMock) -> None:
+    table.name = 'test-projects'
+
+    def transact_write_items(*, TransactItems):
+        for action in TransactItems:
+            put = action.get('Put')
+            if put:
+                table.put_item(Item=put['Item'])
+            update = action.get('Update')
+            if update:
+                table.update_item(
+                    Key=update['Key'],
+                    UpdateExpression=update['UpdateExpression'],
+                    ExpressionAttributeValues=update.get(
+                        'ExpressionAttributeValues', {},
+                    ),
+                )
+        return {}
+
+    table.meta.client.transact_write_items.side_effect = transact_write_items
+
+
 def _run_report(table: MagicMock, ctx: dict, s3: MagicMock | None = None) -> dict:
     """Run generate_report and return {'result', 'prompt', 'item'}.
 
@@ -77,6 +99,7 @@ def _run_report(table: MagicMock, ctx: dict, s3: MagicMock | None = None) -> dic
     import product_context
     import shared.converse
 
+    _wire_transactions(table)
     with patch.dict(os.environ, {'RAW_DATA_BUCKET': 'test-bucket'}), \
             patch.object(product_context, 'projects_table', table), \
             patch.object(product_context, 'get_context', return_value=ctx), \
