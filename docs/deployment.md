@@ -6,7 +6,7 @@ This guide covers how to deploy the VoC (Voice of Customer) platform, including 
 
 - **AWS CLI** configured with appropriate credentials
 - **Node.js** 18+ and npm
-- **Python** 3.12+ (for Lambda functions)
+- **Python** 3.14+ (for Lambda functions)
 - **Docker or Finch** (for building Lambda layers and CDK asset bundling)
 
 ## Project Structure
@@ -48,7 +48,7 @@ Always run quality checks before deploying:
 
 ```bash
 # From project root
-npm run lint         # frontend + stream ESLint, and ruff over lambda/ + plugins/
+npm run lint         # frontend + stream ESLint, and ruff over lambda/ + plugins/ + scripts/
 npm run typecheck    # frontend TypeScript only
 npm run test         # frontend Vitest only
 
@@ -60,7 +60,7 @@ npm run check        # lint + typecheck:all + test + test:cdk + test:stream + te
 
 | Command | Covers |
 |---------|--------|
-| `npm run lint` | `lint:frontend` + `lint:stream` (ESLint) + `lint:python` (ruff over `lambda/`, `plugins/`) |
+| `npm run lint` | `lint:frontend` + `lint:stream` (ESLint) + `lint:python` (ruff over `lambda/`, `plugins/`, and `scripts/`) |
 | `npm run typecheck` | Frontend only — use `typecheck:all` for frontend + CDK + stream |
 | `npm run test` | Frontend Vitest only |
 | `npm run test:cdk` | CDK Vitest (`voc-datalake`) |
@@ -210,7 +210,7 @@ The platform consists of 4 core stacks plus 1 AI-enablement stack.
 | `VocCoreStack` | DynamoDB tables, KMS, S3 buckets, Cognito, CloudFront | None |
 | `VocIngestionStack` | Plugin Lambdas, EventBridge schedules, SQS, Secrets | Core |
 | `VocProcessingStack` | Processor, Aggregator, Step Functions, Bedrock | Core, Ingestion |
-| `VocApiStack` | API Gateway, API Lambdas, Webhooks, WAF | Core, Ingestion, Processing |
+| `VocApiStack` | API Gateway, domain-specific API Lambdas, Webhooks | Core, Ingestion, Processing |
 | `VocWebSearchStack` (AI enablement) | **Two independently switchable halves in one us-east-1 stack:** (a) the AgentCore Gateway for public web search — on by default, opt out via `enableWebSearch: false`; (b) Bedrock model access / Anthropic use-case submission — created only when `anthropicUseCase` is set in `cdk.context.json`. The stack is not created at all when both are off. Always deploys to us-east-1: the web-search connector exists only there, and `PutUseCaseForModelAccess` works only there. **Upgrade note:** existing non-us-east-1 deployments must bootstrap us-east-1 once (`cdk bootstrap aws://ACCOUNT_ID/us-east-1`) or set the opt-out flag | None |
 
 ### Deploy All Stacks
@@ -681,7 +681,7 @@ jobs:
           
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.14'
           
       - name: Install dependencies
         run: npm run install:all
