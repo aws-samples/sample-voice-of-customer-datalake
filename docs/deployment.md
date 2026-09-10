@@ -791,6 +791,16 @@ inlines it into the HTML page returned by `/feedback-forms/{form_id}/iframe`
 embed path — see [Feedback Forms](feedback-forms.md) for the snippet to hand to
 customers.
 
+Operationally, that route now reads the aggregates table to confirm the form
+exists before rendering (#379), so it has a dependency it did not have: a
+DynamoDB failure answers `500`, which arrives as a raw API Gateway error page
+**inside the customer's frame** with no widget message and no retry, where the
+route previously served a working page having read nothing. It also answers 404
+for a form the table does not hold. Both are triaged from
+[Feedback Forms](feedback-forms.md#embedding-forms), which lists what makes an
+embed that used to work start showing an error frame; the read failure is
+counted by the `FeedbackFormReadFailed` metric.
+
 A second, stale copy used to be published to the CDN from
 `frontend/public/feedback-widget.js`. It called the retired `/feedback-form/*`
 (singular) routes and had no callers, so it was deleted. If an old integration

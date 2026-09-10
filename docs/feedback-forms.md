@@ -69,6 +69,41 @@ The iframe route returns a self-contained HTML page: the Lambda inlines
 with the form's `config` and `submit` endpoints already wired, so nothing else
 needs loading.
 
+It answers **404 both for a form id the service could not have issued and for one
+that is not in the table** — the same answer for either, so the response tells an
+anonymous caller nothing about which. Every route that takes a form id out of the
+URL format-checks it before reading anything, so a malformed one is refused rather
+than looked up; see
+[how a form id is checked](#how-a-form-id-is-checked-on-every-one-of-those-routes).
+
+The iframe route carries one extra concern, because it is the only route in the
+API that returns HTML, on the API's own origin, and its page is framed on
+third-party sites: every value written into that page's script is serialized with
+`json.dumps` rather than quoted by hand, **and** the characters the HTML parser
+acts on (`<`, `>`, `&`) are escaped on top of that — a `</script>` sequence ends
+the script element even inside a JavaScript string, which serializing alone does
+not prevent (issue #379). If you are extending the page, reaching for
+`json.dumps` is half the mechanism; `_js_value` in
+`voc-datalake/lambda/api/feedback_form_handler.py` is the one place to emit a
+value from, and its docstring says why.
+
+If an embed that used to work starts showing an error frame, check that the form
+still exists before suspecting the
+[rate limits](#rate-limits-on-the-three-public-routes). Two other causes to know
+about:
+
+- **The page now depends on a table read.** It confirms the form exists before
+  rendering, so a DynamoDB failure answers `500` — a raw API Gateway error page
+  inside the frame — where the route previously served a working page having read
+  nothing.
+- **The page sets a Content-Security-Policy.** It permits inline script and
+  style, and network access to the API's own origin, which is everything the
+  widget uses; it names no `img-src`, `font-src` or `frame-src`, so an asset added
+  to the widget later would be blocked until the policy names it. It deliberately
+  sets **no `frame-ancestors` and no `X-Frame-Options`**, because either would
+  refuse the embed this route exists for — if a proxy or CDN in front of the API
+  adds one, the frame will be blank on every customer site.
+
 There is no standalone `widget.js` script to load. That path is registered
 nowhere — not by the handler and not by the API — so a
 `<script src=".../widget.js">` tag never reaches the application at all and gets
@@ -115,6 +150,108 @@ Customize the form appearance:
 | POST | `/feedback-forms/{id}/submit` | Submit feedback |
 | GET | `/feedback-forms/{id}/iframe` | Embeddable HTML page |
 
+### How a form id is checked, on every one of those routes
+
+Every route above that takes an id out of the URL checks its **format** before it
+reads or writes anything: an id that this service could not have issued answers
+`404 Form not found` without a lookup. Ids are up to 64 characters of letters,
+digits, `_`, `-` and `.`. Anything else is refused on its format, so ` abc123` is a
+404 — and it never addressed `abc123` in the first place: the space was always part
+of the key, so nothing that resolved through `abc123` has stopped resolving. That
+covers an id *addressed* with surrounding whitespace and nothing more: a form whose
+**stored** id contains a space, like `my form`, did resolve before and now answers
+404, so it is one of the ids the pre-upgrade scan below is for.
+
+`.` is inside that class so that a hand-seeded id written like a domain
+(`acme.website`) keeps working, but `.` and `..` **on their own** are refused: they
+are relative-path segments, so a client resolves them away when it joins them onto
+the API base and the request addresses a different resource than the one asked for.
+`...`, `.hidden-form` and `form.` are ordinary ids and are accepted.
+
+Ids containing anything else *that the route admits* — `a:b`, `form(1)`, `a;b`, a
+non-ASCII **letter or number** such as `café`, `表単`, `hawaiʼi-form` or `surface-m²`,
+or a space *within* the id — *did* resolve before the change that closed #379 and now
+answer 404 on all eight of their routes. If you seeded or imported form ids by hand,
+the pre-upgrade scan in [CHANGELOG.md](../CHANGELOG.md) finds them (it flags a space
+as readily as a colon); there is no compatibility shim.
+
+Read "anything else" as a complement, not as a list of the memorable characters. For
+ASCII the in-scope set is the 24 characters the route's capture group admits and the
+validator does not — everything in `[-._~()'!*:@,;=+&$%<> \[\]{}|^]` except `-`, `.`
+and `_`:
+
+```
+space ! $ % & ' ( ) * + , : ; < = > @ [ ] ^ { | } ~
+```
+
+`:`, `+`, `@`, `%` and `~` are only the ones easy to remember. Seven of the others —
+`&`, `'`, `(`, `)`, `;`, `<`, `>` — are the characters the #379 fix turns on: the
+quote, parentheses and semicolon the payload breaks out with, plus the `<`, `>` and
+`&` that `_js_value` escapes for the HTML parser. (Only the `'` does the breaking out
+in the payload itself, closing the string literal the template wrote. Its `(` is the
+`alert(` it calls and the `x=('` it re-opens with, and its `)` and `;` close a call
+and start a statement only in the bare-argument shape `init('<id>')` it was written
+for — this template puts the id inside an *object literal*, where they close nothing
+and leave the `<script>` block unparseable. The hole is real either way: the tailored
+`a',x:alert(1),y:'` uses no `)` or `;`, parses, and runs.) So they read as attack
+syntax rather than as an id someone would seed; they resolved all the same, which makes
+`form(1)` and `a;b` as much in scope as `a:b`. Conversely `"`, `#`, `/`, `?`, `\` and
+`` ` `` are the printable-ASCII characters the route does **not** admit, so they
+belong with the tab and newline below.
+
+Some shapes are **not** in scope, and not because the scan would miss them — it
+flags them too. They never reached a handler, so they answered 404 before this
+change as well as after: a *tab* or newline inside an id, one of the six
+printable-ASCII characters the route's class omits (`"`, `#`, `/`, `?`, a
+backslash or a backtick), and any non-ASCII character that `\w` does not match.
+The route's own capture group is what excludes them: the only part of it that
+reaches beyond ASCII is `\w`, which matches any Unicode letter or number, plus
+`_`. Read both sides as Unicode CATEGORIES rather than as lists of glyphs — `\w`
+is `L*` and `N*`, and what it leaves out is marks (`M*`), symbols (`S*`),
+punctuation (`P*`), separators (`Z*`) and format characters (`C*`). So `€`, `°`
+and an emoji are symbols; `—` and `«` are punctuation; U+00A0 and U+3000 are
+separators; the `e` + U+0301 spelling of `é` is a mark; a zero-width joiner is a
+format character. (`_` is inside the validator's own class, so an id holding one
+is accepted and is in neither list; the other connector punctuation — U+FF3F,
+U+2040, U+203F — is outside `\w`.)
+
+The categories matter because the ids an operator is most likely to misfile fall on
+**both** sides. **In** scope though they read as punctuation: a modifier letter (the
+`ʼ` of `hawaiʼi-form`, U+02BC MODIFIER LETTER APOSTROPHE, visually an ASCII `'`; the
+Hawaiian ʻokina U+02BB is the same category and equally in scope), a fraction or
+superscript (`half-½-price`, `surface-m²`) and a roman numeral (`section-Ⅷ`) are
+letters and numbers to `\w`, so those rows resolved and need renaming. `Lm` even holds
+characters *named* as accents — U+02C6 MODIFIER LETTER CIRCUMFLEX ACCENT, U+02CA,
+U+02CB, U+02CE, U+02CF and U+A788 MODIFIER LETTER LOW CIRCUMFLEX ACCENT — so `formˆa`
+is in scope. Those six rather than the range U+02CA–U+02CF, which sweeps in U+02CC
+MODIFIER LETTER LOW VERTICAL LINE and U+02CD MODIFIER LETTER LOW MACRON (also `Lm`,
+also in scope, but not accents) and misses U+A788. **Out** of scope though they read as
+letters:
+an id in a script that writes a vowel as a combining mark — Hindi `फॉर्म`, Thai
+`แบบฟอร์ม`, Arabic `نَموذج` — never matched a route, because the mark is `Mc`/`Mn` even
+where the base letter is `Lo`. (Precomposed Korean `피드백` is all `Lo` and did resolve.)
+Misreading an in-scope row as out of scope is the costly direction: the rename is
+skipped and the row 404s in production. Note too that the apostrophe glyphs straddle
+the line — `hawai’i-form` with U+2019 is punctuation and never resolved — so a printed
+row cannot be triaged by eye. That same `\w` fact is why an ASCII space *is* in scope
+while a tab is not: the class lists a literal space, and `\w` covers neither.
+
+Two consequences are worth knowing if you integrate against these routes, both new
+in the change that closed #379:
+
+- **`POST /{id}/submit` reports a bad id ahead of a bad body.** A request carrying
+  both a malformed id and an invalid body — an empty `text`, say — now answers
+  `404 Form not found` where it previously answered
+  `400 Feedback text is required`. This is deliberate: the id is wrong regardless
+  of what the body contains, and the check has to come first because this is the
+  one public route that enqueues work. A well-formed id with an empty `text` still
+  answers 400, unchanged.
+- **`PUT /{id}` no longer creates a form.** It updates an existing one and answers
+  `404 Form not found` for an id the table does not hold. Previously the underlying
+  write was an upsert, so a `PUT` to an unknown id silently created a record with
+  no `form_id` of its own — an unaddressable row in the list. Use
+  `POST /feedback-forms` to create a form; it mints the id.
+
 ### Rate limits on the three public routes
 
 The three unauthenticated routes carry per-method rate limits, set as API Gateway
@@ -143,8 +280,9 @@ knowing before you embed the widget, because they are observable from your page:
 
 `submit` is the tighter one because each submission enqueues a record that drives
 Comprehend, Translate and a Bedrock model invocation downstream. The two reads are
-cheap — one `get_item`, and a static HTML render — so they are held at the higher
-pair, sized for widget page-view traffic rather than for submissions.
+cheap — one `get_item` each, and for `iframe` a static HTML render on top of it —
+so they are held at the higher pair, sized for widget page-view traffic rather
+than for submissions.
 
 These figures are **pinned against the synthesized template** by a lockstep case in
 `voc-datalake/lib/stacks/api-stack.test.ts`, so tuning the numbers in `api-stack.ts`
