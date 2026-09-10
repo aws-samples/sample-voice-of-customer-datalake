@@ -18,6 +18,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer, metrics
 from shared.exceptions import ConfigurationError, SecretUnreadableError
+# The UNCHECKED fetch: no outbound-URL policy, and requests follows redirects
+# itself. Correct for a code-constructed endpoint (the app-review and synthetic
+# ingestors' fixed API URLs); an ingestor whose URL comes from a stored
+# configuration must import `fetch_checked_with_retry` from shared.http_utils
+# instead, as the webscraper does (issue #244).
 from shared.http_utils import fetch_with_retry
 from shared.aws import (
     clear_secret_cache,
@@ -31,7 +36,8 @@ from .audit import emit_audit_event
 from .plugin_secrets import filter_plugin_secrets
 from .sqs_utils import send_messages_to_queue
 
-# Re-export for backwards compatibility with existing handlers
+# Re-export for backwards compatibility with existing handlers. `fetch_with_retry`
+# is the unchecked fetch — see the caveat on its import above.
 __all__ = ["BaseIngestor", "logger", "tracer", "metrics", "fetch_with_retry"]
 
 # Configuration from environment

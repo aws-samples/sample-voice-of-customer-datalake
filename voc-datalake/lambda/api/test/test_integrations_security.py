@@ -2313,3 +2313,129 @@ class TestTheStatusRouteDoesNotFanOutPerDuplicate:
 
         assert response['statusCode'] == 200
         assert set(body['sources']) == {'webscraper', 'manual_import', 's3_import'}
+
+
+
+
+class TestWebscraperConfigsWritePath:
+    """
+    `PUT /integrations/webscraper/credentials` is the SECOND write path into
+    `webscraper_configs` (issue #244).
+
+    The Settings webscraper card saves the whole scraper array through this route
+    as one `configs` string. `POST /scrapers` gained the outbound-URL check first
+    and this route did not, so the same internal destination stayed reachable
+    through a different route — the original bug in a new place. The check itself
+    lives in `shared/scraper_urls.py` and is covered by
+    `lambda/shared/test/test_scraper_urls.py`; what is asserted here is that this
+    route calls it, and that nothing is persisted when it refuses.
+    """
+
+    @staticmethod
+    def _put(api_gateway_event, lambda_context, body, source='webscraper'):
+        from integrations_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='PUT',
+            path=f'/integrations/{source}/credentials',
+            path_params={'source': source},
+        )
+        event['body'] = json.dumps(body)
+        return lambda_handler(event, lambda_context)
+
+    @patch('integrations_handler.secretsmanager')
+    def test_refuses_a_configs_array_naming_an_internal_destination(
+        self, mock_secrets, api_gateway_event, lambda_context
+    ):
+        mock_secrets.get_secret_value.return_value = {'SecretString': json.dumps({})}
+        configs = json.dumps([
+            {'id': 's1', 'base_url': 'http://169.254.169.254/latest/meta-data/'},
+        ])
+
+        response = self._put(api_gateway_event, lambda_context, {'configs': configs})
+
+        assert response['statusCode'] == 400, response['body']
+        assert 'internal/private' in json.loads(response['body'])['error']
+        # The secret is READ before the check — that is how the URL-count cap
+        # tells a list this write created from one it carries forward — but the
+        # refusal still happens before any write, which is the property that
+        # matters.
+        mock_secrets.put_secret_value.assert_not_called()
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('integrations_handler.secretsmanager')
+    def test_refuses_a_configs_array_whose_host_resolves_internally(
+        self, mock_secrets, mock_resolve, api_gateway_event, lambda_context
+    ):
+        """The gap a string denylist cannot close, on this route too."""
+        mock_resolve.return_value = [(2, 1, 6, '', ('10.1.2.3', 80))]
+        mock_secrets.get_secret_value.return_value = {'SecretString': json.dumps({})}
+        configs = json.dumps([{'id': 's1', 'base_url': 'https://sneaky.example/'}])
+
+        response = self._put(api_gateway_event, lambda_context, {'configs': configs})
+
+        assert response['statusCode'] == 400, response['body']
+        mock_secrets.put_secret_value.assert_not_called()
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('integrations_handler.secretsmanager')
+    def test_saves_a_configs_array_of_public_destinations(
+        self, mock_secrets, mock_resolve, api_gateway_event, lambda_context
+    ):
+        """Positive control: the Settings card's ordinary save still works."""
+        mock_resolve.return_value = [(2, 1, 6, '', ('93.184.216.34', 80))]
+        mock_secrets.get_secret_value.return_value = {'SecretString': json.dumps({})}
+        configs = json.dumps([{'id': 's1', 'base_url': 'https://reviews.example.com/'}])
+
+        response = self._put(api_gateway_event, lambda_context, {'configs': configs})
+
+        assert response['statusCode'] == 200, response['body']
+        written = json.loads(mock_secrets.put_secret_value.call_args.kwargs['SecretString'])
+        assert written['webscraper_configs'] == configs
+
+    @patch('shared.http_utils.socket.getaddrinfo')
+    @patch('integrations_handler.secretsmanager')
+    def test_leaves_other_sources_alone(
+        self, mock_secrets, mock_resolve, api_gateway_event, lambda_context
+    ):
+        """
+        Only the webscraper's `configs` names destinations the platform fetches
+        on a schedule. Applying a URL policy to every source's every value would
+        refuse `sort_by` and `app_name`.
+        """
+        mock_secrets.get_secret_value.return_value = {'SecretString': json.dumps({})}
+
+        response = self._put(
+            api_gateway_event, lambda_context,
+            {'configs': 'not-json-at-all'},
+            source='app_reviews_ios',
+        )
+
+        assert response['statusCode'] == 200, response['body']
+        mock_resolve.assert_not_called()
+
+    @patch('integrations_handler.secretsmanager')
+    def test_refuses_a_configs_value_that_is_not_json(
+        self, mock_secrets, api_gateway_event, lambda_context
+    ):
+        """
+        The ingestor logs a JSONDecodeError and scrapes nothing for a broken
+        array, so storing one is a silently dead integration.
+        """
+        mock_secrets.get_secret_value.return_value = {'SecretString': json.dumps({})}
+
+        response = self._put(
+            api_gateway_event, lambda_context, {'configs': '[{"id": '},
+        )
+
+        assert response['statusCode'] == 400, response['body']
+        mock_secrets.put_secret_value.assert_not_called()
+
+    def test_uses_the_shared_check_rather_than_its_own(self):
+        """Issue #244's requirement: one implementation, not one per route."""
+        import integrations_handler
+        from shared import scraper_urls
+
+        assert integrations_handler.validate_scraper_configs_json is (
+            scraper_urls.validate_scraper_configs_json
+        )

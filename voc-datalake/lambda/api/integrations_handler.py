@@ -18,6 +18,7 @@ from shared.exceptions import (
 )
 from shared.logging import logger, tracer
 from shared.plugin_identity import PLUGIN_IDENTIFIER_RULES, is_valid_plugin_identifier
+from shared.scraper_urls import validate_scraper_configs_json
 
 secretsmanager = get_secrets_client()
 events_client = boto3.client("events")
@@ -92,6 +93,14 @@ app = create_api_resolver()
 #   • At most MAX_CREDENTIAL_KEYS_PER_REQUEST keys per write request.
 #   • At most MAX_SOURCES_PER_STATUS_REQUEST distinct sources per status request.
 MAX_CREDENTIAL_KEYS_PER_REQUEST = 20
+
+# The one source whose stored value names network destinations the platform will
+# fetch on a schedule. Its `configs` key becomes `webscraper_configs`, the same
+# key `POST /scrapers` writes, and the ingestor reads it after prefix stripping as
+# plain `configs` (`_load_scraper_configs`). Named here so the write below applies
+# the outbound-URL policy to it — see the call site.
+WEBSCRAPER_SOURCE = 'webscraper'
+WEBSCRAPER_CONFIGS_KEY = 'configs'
 
 # `GET /sources/status?sources=a,b,c` issues one `describe_rule` per element, so
 # unlike every other read in this handler its AWS call count is chosen by the
@@ -529,6 +538,26 @@ def update_credentials(source: str):
         secrets = json.loads(response.get('SecretString', '{}'))
 
         prefix = f"{source}_"
+
+        # This route is the SECOND write path into `webscraper_configs` — the
+        # Settings webscraper card saves the whole array through it as one
+        # `configs` string, so checking only `POST /scrapers` left the same
+        # internal destination reachable through a different route (issue #244).
+        # The check is the one in shared/scraper_urls.py, not a second
+        # implementation, and it runs before anything is WRITTEN, so a refusal
+        # persists nothing.
+        #
+        # The stored value is handed over so the URL-count cap can tell a list
+        # this write created from one it is carrying forward untouched. Without
+        # it, one pre-existing over-cap config blocked saving every other config
+        # in the array. Reading the secret first is what makes that comparison
+        # possible; the ValidationError is re-raised unflattened below.
+        if source == WEBSCRAPER_SOURCE and WEBSCRAPER_CONFIGS_KEY in body:
+            validate_scraper_configs_json(
+                body[WEBSCRAPER_CONFIGS_KEY],
+                stored=secrets.get(f"{prefix}{WEBSCRAPER_CONFIGS_KEY}"),
+            )
+
         for key, value in body.items():
             # Falsy values (null/empty string) are skipped — sending null or ""
             # does NOT delete the key.  Credential deletion is not currently

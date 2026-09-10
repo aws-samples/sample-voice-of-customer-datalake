@@ -551,10 +551,134 @@ Appends `?page=1`, `?page=2`, etc. to the URL.
 
 ### Security
 
-URL validation prevents SSRF attacks:
-- Only `http://` and `https://` schemes allowed
-- Blocked: localhost, private IP ranges, link-local addresses
-- Hostname resolution checked against blocked ranges
+One outbound-URL policy, in `lambda/shared/http_utils.py`, guards every scraper
+request against SSRF. Shared by the API and the plugin — both deployment bundles
+already stage `lambda/shared` — so there is one implementation, not one per caller.
+
+Applied at three points:
+- **On save**: `POST /scrapers` and `PUT /integrations/webscraper/credentials` (both
+  write the same `webscraper_configs` key), so an internal target cannot be scheduled.
+- **On preview**: `POST /scrapers/analyze-url`, before anything reaches Bedrock.
+- **At fetch time**: the scheduled ingestor re-checks each URL immediately before the
+  request, and again for every redirect hop — a saved host can start resolving
+  internally after it was approved.
+
+The policy itself:
+- Only `http`/`https`; URLs with embedded credentials and `localhost` aliases refused.
+- The hostname is resolved and the URL is refused if **any** answer is non-global:
+  loopback, private, link-local (including `169.254.169.254`), multicast,
+  unspecified, reserved, IPv6 site-local (`fec0::/10`), and IPv4 tunnelled inside
+  IPv6 (v4-mapped, 6to4, Teredo).
+- Fails closed: a resolver failure, an empty answer, or a mixed public/private answer
+  set is a refusal — the HTTP client picks the address from the set, not the platform.
+- Redirects are followed by the platform, never by the HTTP client, bounded at 5 hops.
+  Credentials (`Authorization`/`Cookie` headers and the `auth=`/`cookies=` options) are
+  dropped on exactly the hops `requests.should_strip_auth` drops them on — that call is
+  delegated, not reimplemented, so a host or port change and an `https`→`http`
+  downgrade drop them while a same-host `http`→`https` upgrade does not. A `Location`
+  resolving back to the requesting URL ends the walk instead of consuming the hops.
+- Each scheduled page fetch carries a 60 s wall-clock budget as well as a 15 s
+  per-request timeout. The budget bounds the response **body** too: a per-request
+  timeout is a per-socket-*read* deadline, so an origin dripping just inside it
+  overran the budget by 1.6x (4.0x on the preview route) and still returned 200 —
+  measured against a real server. A budgeted fetch streams and reads the body against
+  the same deadline, reporting a mid-body stall as the transport failure it is, and
+  caps one response at 10 MiB counted after decompression. The **invocation** as a
+  whole carries a 240 s budget on top
+  of it. The Lambda has 300 s, one configuration may name 50 URLs and one invocation
+  processes every due configuration, so a per-page bound alone still summed past the
+  limit — which loses the final run-status write and leaves the run row at `running`.
+  Exhausting the run budget stops the invocation, records how many URLs went
+  unattempted in the run's `errors`, and reports `completed_with_errors`. Every
+  configuration then stays due for the next schedule: the ones never reached were never
+  written, and the truncated one has its watermark **held** — advancing it would mark a
+  configuration whose URLs went unattempted as having just run, and since the URL list
+  rebuilds in the same order, a persistently slow prefix would starve its own tail on
+  every invocation rather than retrying it. That retry re-walks the list from the start
+  rather than resuming. A page that never loaded is not counted toward `pages_scraped`,
+  so a wholly failed run cannot read as an empty healthy one.
+- Staying due is not the same as getting to run, so the truncation is also **recorded**
+  and the configuration loop is ordered by it: a configuration that ran out of budget
+  last time is visited **last** this time. Without that, the three behaviours above
+  compose into a total halt — a configuration held as due is due on every invocation, the
+  budget stops the loop, and stored order reached it first every time, so one slow site
+  silently halted ingestion for every other scraper in the account (measured: 0 of 2
+  healthy configurations reached across 20 scheduled invocations). Configurations that
+  have never truncated keep their stored order, and the marker is cleared once a
+  configuration gets through all of its URLs, so one slow day does not demote it
+  permanently. The marker names the configuration that **spent** the budget, not the one
+  that discovered it was gone: a configuration exhausting the budget while still finishing
+  its own URL list leaves the next one to find nothing left, and that one has requested
+  nothing — so it writes no run row and no watermark, staying due, instead of reporting
+  "N URL(s) not attempted" about itself and being demoted in the culprit's place.
+  A `ScraperRunBudgetExhausted` metric
+  makes a persistently truncating account alertable — for a scheduled run the run row is
+  not written at all, so the logs and this metric are the only signal.
+- A stored configuration array with no usable entry reports an `error` run instead of
+  iterating nothing, so a manual run's row is not abandoned at `running`; an unusable entry
+  beside working ones is dropped and logged at ERROR and the working ones still run.
+- Exceeding the 5-hop bound is reported as a **transport** error, not a blocked
+  destination: every hop in such a chain was resolved and cleared, so reporting it as a
+  refusal fired the SSRF metric for a site that was merely long-winded. Note the
+  effective redirect limit is 5 where the HTTP client's own default was 30, so a public
+  site needing more hops is now refused.
+- One unreadable configuration costs that configuration, never the invocation. A missing
+  `id`, a `pagination.max_pages` of `'10'`, a non-dict `pagination` or an unparseable
+  stored `last_run`/`frequency_minutes` used to raise out of the scraping loop, so **no**
+  configuration in the account ingested and a manual run's row was again left at
+  `running`. Closed in three places: the write routes refuse those shapes (an actionable
+  400 naming the field), the scheduled reader coerces them for values already stored —
+  falling back to the same defaults an absent value gets, and treating an unreadable
+  schedule as *due* since never running again is the worse direction — and the
+  configuration loop catches anything remaining, logs at ERROR, emits
+  `ScraperConfigUnusable`, writes a terminal `error` status and continues to the next
+  configuration. An unusable configuration records no `last_run`, so fixing it does not
+  mean waiting out its frequency. That attribution stops at the run's own status write:
+  a failure after it — a rejected metric, a throttled update — leaves the recorded status
+  standing and emits `ScraperReportingFailed` instead, because it previously appended a
+  contradictory `error` row and fired `ScraperConfigUnusable` over a run that succeeded.
+- `pagination` names no destination — its URLs are built from `base_url` and so carry a
+  host already checked — but its **shape** is validated on write, because the scheduled
+  reader does arithmetic with those numbers: `max_pages` and `start` must be integers,
+  `max_pages` within 1-50, matching the bounds the editor already enforces. That also
+  bounds the number of URLs one configuration can cause to be fetched, which the 50-URL
+  cap does not: the cap counts URLs a configuration *names*, and pagination multiplies
+  them. The scheduled reader **clamps** stored values to the same bounds — shared as one
+  constant, not restated — rather than only coercing their type: a stored `max_pages` of
+  `'100000'` built 100 000 URLs and larger values exhausted the function's 512 MB before
+  any request, which loses the terminal status write and strands a manual run at
+  `running`. That is the population the coercion exists for, since the write bound
+  postdates those values.
+- `id` is required on write: a non-empty string of at most 128 characters. It names no
+  destination, but it prefixes every extracted item's id, and that read is inside
+  `_scrape_page`'s per-item `except Exception` — so a configuration without one fetched
+  every page and then dropped every item while reporting `status: 'completed'`,
+  `errors: []` and a non-zero page count, which is indistinguishable from an empty but
+  healthy run. It is also the watermark key (two id-less configurations collided on one
+  schedule) and the `Scraper_<id>_Items` metric name, which a 300-character id pushed
+  past the 255-character limit. Enforced on an id a write **creates or changes** only —
+  one stored without an id otherwise blocked every save through the whole-array route,
+  including edits to unrelated configurations, and could not be repaired because an edit
+  is keyed on the id; `DELETE /scrapers/<id>` now also matches a stored non-string id,
+  which it could not before. For configurations already stored the scheduled reader is
+  deliberately more tolerant: only a *missing* id lost data, since the prefix is an
+  interpolation and a numeric, empty or over-long id each ingested normally, so those are
+  coerced or tolerated (the metric name is truncated instead) and only an id that cannot
+  be one at all is reported as an error.
+- An unreadable schedule is treated as *due*, including a `frequency_minutes` that is
+  not a finite, non-negative number. `NaN` and `Infinity` are valid JSON and computing
+  a next-run time from either raised, which the per-configuration guard turned into that
+  configuration being skipped on every invocation indefinitely — the one direction this
+  fail-open stance exists to rule out.
+- At most 50 URLs per configuration's `urls`, resolved once per distinct host within one
+  write — each lookup is synchronous inside a request bounded by API Gateway's 29 s
+  limit. Enforced only on a list the write changes, so a pre-existing longer list keeps
+  saving and cannot block edits to configurations stored alongside it; its destinations
+  are still checked and growing it is refused.
+
+**Residual risk**: the hostname is resolved by the check and again by the HTTP client,
+so DNS rebinding across the two lookups is narrowed, not closed. Closing it requires
+pinning the validated address, which is not done today.
 
 ### Deduplication
 
