@@ -45,6 +45,109 @@ class TestIngestMessageValidation:
         assert result.author == 'John Doe'
         assert result.title == 'Review Title'
 
+    @pytest.mark.parametrize(
+        ('manual_fields', 'expected'),
+        [
+            (
+                {
+                    'source_origin': 'g2',
+                    'source_channel': 'g2',
+                    'source_url': 'https://www.g2.com/products/example/reviews',
+                    'url': 'https://www.g2.com/products/example/reviews',
+                    'ingestion_method': 'manual',
+                    'manual_import_job_id': '68d6fcf5-5f19-4983-9e1c-38c17fdb7c90',
+                    's3_raw_uri': 's3://raw-data/manual_import/job.json',
+                },
+                {
+                    'ingestion_method': 'manual',
+                    'source_origin': 'g2',
+                    'source_url': 'https://www.g2.com/products/example/reviews',
+                    'manual_import_job_id': '68d6fcf5-5f19-4983-9e1c-38c17fdb7c90',
+                },
+            ),
+            (
+                {
+                    'source_channel': 'store_reviews',
+                    'ingestion_method': 'csv_upload',
+                    'csv_row_id': 'source-row-1',
+                    's3_raw_uri': 's3://raw-data/csv_upload/job.csv',
+                },
+                {'ingestion_method': 'csv_upload'},
+            ),
+            (
+                {
+                    'source_channel': 'support',
+                    'ingestion_method': 'json_upload',
+                    'metadata': {'external_ticket': 'ticket-123'},
+                    's3_raw_uri': 's3://raw-data/json_upload/job.json',
+                },
+                {'ingestion_method': 'json_upload'},
+            ),
+        ],
+    )
+    def test_accepts_messages_from_each_manual_import_path(self, manual_fields, expected):
+        """Keeps the strict schema aligned with all three manual-import producers."""
+        from _shared.schemas import validate_message
+
+        raw = {
+            'id': 'manual-message-123',
+            'source_platform': 'manual_import',
+            'text': 'Imported customer feedback',
+            'created_at': '2026-01-01T12:00:00Z',
+            **manual_fields,
+        }
+
+        result = validate_message(raw)
+
+        for field, value in expected.items():
+            assert getattr(result, field) == value
+
+    def test_rejects_oversized_manual_import_provenance(self):
+        """Bounds provenance supplied by the manual-import pipeline."""
+        from _shared.schemas import (
+            MAX_ID_LENGTH,
+            MAX_INGESTION_METHOD_LENGTH,
+            MessageValidationError,
+            validate_message,
+        )
+
+        bounds = {
+            'ingestion_method': MAX_INGESTION_METHOD_LENGTH,
+            'source_origin': MAX_ID_LENGTH,
+            'manual_import_job_id': MAX_ID_LENGTH,
+        }
+        for field, limit in bounds.items():
+            raw = {
+                'id': 'manual-message-123',
+                'source_platform': 'manual_import',
+                'text': 'Imported customer feedback',
+                'created_at': '2026-01-01T12:00:00Z',
+                field: 'x' * (limit + 1),
+            }
+
+            with pytest.raises(MessageValidationError):
+                validate_message(raw)
+
+    def test_sanitizes_manual_import_provenance(self):
+        """Strips whitespace and control characters from provenance strings."""
+        from _shared.schemas import validate_message
+
+        raw = {
+            'id': 'manual-message-123',
+            'source_platform': 'manual_import',
+            'text': 'Imported customer feedback',
+            'created_at': '2026-01-01T12:00:00Z',
+            'ingestion_method': '  csv\x00_upload  ',
+            'source_origin': '  g2\x1f  ',
+            'manual_import_job_id': '  job\x7f-123  ',
+        }
+
+        result = validate_message(raw)
+
+        assert result.ingestion_method == 'csv_upload'
+        assert result.source_origin == 'g2'
+        assert result.manual_import_job_id == 'job-123'
+
     def test_rejects_message_without_id(self):
         """Raises error when id missing."""
         from _shared.schemas import validate_message, MessageValidationError

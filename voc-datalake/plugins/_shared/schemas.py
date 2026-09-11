@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 MAX_TEXT_LENGTH = 50_000  # 50KB max for feedback text
 MAX_ID_LENGTH = 256
 MAX_URL_LENGTH = 2048
+MAX_INGESTION_METHOD_LENGTH = 64
 MAX_METADATA_KEYS = 20
 MAX_METADATA_VALUE_LENGTH = 1000
 
@@ -118,8 +119,12 @@ class IngestMessage(BaseModel):
     csv_row_id: Optional[str] = Field(None, max_length=MAX_ID_LENGTH)
     rating: Optional[float] = Field(None, ge=1, le=5)
     url: Optional[str] = Field(None, max_length=MAX_URL_LENGTH)
+    source_url: str | None = Field(None, max_length=MAX_URL_LENGTH)
     source_channel: Optional[str] = Field(None, max_length=64)
     channel: Optional[str] = Field(None, max_length=64)  # Alias for source_channel
+    ingestion_method: str | None = Field(None, max_length=MAX_INGESTION_METHOD_LENGTH)
+    source_origin: str | None = Field(None, max_length=MAX_ID_LENGTH)
+    manual_import_job_id: str | None = Field(None, max_length=MAX_ID_LENGTH)
     author: Optional[str] = Field(None, max_length=256)
     title: Optional[str] = Field(None, max_length=500)
     language: Optional[str] = Field(None, pattern=r"^[a-z]{2}(-[A-Z]{2})?$")
@@ -135,7 +140,10 @@ class IngestMessage(BaseModel):
     is_update: Optional[bool] = None
     is_deleted: Optional[bool] = None
 
-    @field_validator("id", "csv_row_id", "source_platform", "source_channel", "channel", "author", "title")
+    @field_validator(
+        "id", "csv_row_id", "source_platform", "source_channel", "channel",
+        "ingestion_method", "source_origin", "manual_import_job_id", "author", "title",
+    )
     @classmethod
     def sanitize_string(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
@@ -153,7 +161,7 @@ class IngestMessage(BaseModel):
         v = re.sub(r"\n{3,}", "\n\n", v)
         return v.strip()
 
-    @field_validator("url")
+    @field_validator("url", "source_url")
     @classmethod
     def validate_url(cls, v: Optional[str]) -> Optional[str]:
         if v is None or v == "":
