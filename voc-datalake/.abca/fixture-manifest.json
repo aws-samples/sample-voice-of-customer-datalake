@@ -1,0 +1,21 @@
+{
+  "schema": "verification.fixture.v1",
+  "capabilities": [
+    "seed.prioritization-lineage"
+  ],
+  "expectations": {
+    "seed.prioritization-lineage": {
+      "documentRoles": [
+        "scorable_prd"
+      ],
+      "rowRoles": [
+        "default_row"
+      ],
+      "counts": {
+        "projects": 1,
+        "documents": 1,
+        "rows": 1
+      }
+    }
+  }
+}
