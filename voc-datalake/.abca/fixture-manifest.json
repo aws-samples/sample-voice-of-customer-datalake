@@ -1,15 +1,15 @@
 {
   "schema": "verification.fixture.v1",
   "capabilities": [
-    "seed.prioritization-lineage"
+    "seed.prioritization-baseline"
   ],
   "expectations": {
-    "seed.prioritization-lineage": {
+    "seed.prioritization-baseline": {
       "documentRoles": [
         "scorable_prd"
       ],
       "rowRoles": [
-        "default_row"
+        "baseline_row"
       ],
       "counts": {
         "projects": 1,
