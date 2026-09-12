@@ -75,8 +75,13 @@ class TestProviderRequest:
                 parse_provider_request(_request(**overrides))
 
     def test_manifest_declares_shape_but_no_provider_authority(self):
+        # ABCA reads this contract from the REPOSITORY root, not the app root: its
+        # courier resolves `.abca/fixture-manifest.json` against the Git worktree
+        # root. A manifest under `voc-datalake/` is invisible to it, and absence
+        # fails closed silently, so keep this path anchored at the repo root.
+        repository_root = Path(__file__).parents[4]
         manifest = json.loads(
-            (Path(__file__).parents[3] / '.abca' / 'fixture-manifest.json').read_text()
+            (repository_root / '.abca' / 'fixture-manifest.json').read_text()
         )
         assert manifest == {
             'schema': 'verification.fixture.v1',
