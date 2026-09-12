@@ -20,7 +20,10 @@ import { assertFrontendBuildFresh } from '../utils/assert-frontend-build';
 import { cdkCustomResourceSuppressions, apiGatewayRequestValidationSuppressions, publicFeedbackEndpointSuppressions, publicBallotEndpointSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, marketplaceSuppressions } from '../utils/nag-suppressions';
 import { allowlistedModelArns, imageModelArn } from '../utils/model-allowlist';
 import { pythonLayerCode } from '../utils/python-layer-bundling';
-import { PY_LAMBDA_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
+import {
+  PY_LAMBDA_ASSET_EXCLUDES,
+  VERIFICATION_FIXTURE_PROVIDER_ASSET_EXCLUDES,
+} from '../utils/lambda-asset-excludes';
 import { VocStack, VocStackProps } from '../utils/voc-stack';
 import { SOURCE_PLACEHOLDER } from '../utils/naming';
 
@@ -207,9 +210,20 @@ export class VocApiStack extends VocStack {
      * @returns Lambda Code asset with only the required files
      */
     const createApiLambdaCode = (handlerFileName: string): lambda.Code => {
+      const providerSourceExcludes = handlerFileName === 'verification_fixture_provider.py'
+        ? []
+        : VERIFICATION_FIXTURE_PROVIDER_ASSET_EXCLUDES;
       return lambda.Code.fromAsset('lambda', {
-        // Stages only api/ + shared/ — everything else is hash noise.
-        exclude: [...PY_LAMBDA_ASSET_EXCLUDES, '/aggregator/', '/jobs/', '/processor/', '/research/'],
+        // Stages only api/ + shared/ — everything else is hash noise. The
+        // provider source affects only its own bundle, not every API Lambda.
+        exclude: [
+          ...PY_LAMBDA_ASSET_EXCLUDES,
+          ...providerSourceExcludes,
+          '/aggregator/',
+          '/jobs/',
+          '/processor/',
+          '/research/',
+        ],
         ignoreMode: cdk.IgnoreMode.GIT,
         bundling: {
           image: lambda.Runtime.PYTHON_3_14.bundlingImage,
@@ -772,7 +786,14 @@ export class VocApiStack extends VocStack {
     const createJobLambdaCode = (jobFolder: string): lambda.Code => {
       return lambda.Code.fromAsset('lambda', {
         // Stages only jobs/ + api/ (projects.py, product_context.py, prompts) + shared/.
-        exclude: [...PY_LAMBDA_ASSET_EXCLUDES, '/aggregator/', '/processor/', '/research/'],
+        // The private provider is not part of any ordinary job payload.
+        exclude: [
+          ...PY_LAMBDA_ASSET_EXCLUDES,
+          ...VERIFICATION_FIXTURE_PROVIDER_ASSET_EXCLUDES,
+          '/aggregator/',
+          '/processor/',
+          '/research/',
+        ],
         ignoreMode: cdk.IgnoreMode.GIT,
         bundling: {
           image: lambda.Runtime.PYTHON_3_14.bundlingImage,
