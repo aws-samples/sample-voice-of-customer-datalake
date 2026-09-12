@@ -9,12 +9,19 @@ import boto3
 import pytest
 from botocore.exceptions import ClientError
 from moto import mock_aws
-from shared.exceptions import ConflictError, ServiceError, ValidationError
+from shared.exceptions import (
+    ApiError,
+    ConfigurationError,
+    ConflictError,
+    ServiceError,
+    ValidationError,
+)
 from verification_fixture_provider import (
     CAPABILITY,
     REQUEST_SCHEMA,
     RESULT_SCHEMA,
     _transact,
+    lambda_handler,
     parse_provider_request,
     probe_fixture,
     setup_fixture,
@@ -267,3 +274,74 @@ class TestProviderLifecycle:
         assert renewed['expires_at'] > first['expires_at']
         assert len(_items(projects)) == 2
         assert len(_items(aggregates)) == 1
+
+
+class TestLambdaHandler:
+    """The Lambda boundary: every failure must leave as a closed result envelope.
+
+    ABCA classifies outcomes from `error_code`, so a mapping regression here turns a
+    permanent rejection into a retryable one (or the reverse) without any test failing
+    further down.
+    """
+
+    @pytest.mark.parametrize(
+        ('error', 'expected_code'),
+        [
+            (ValidationError('bad subject'), 'validation'),
+            (ConfigurationError('missing table'), 'configuration'),
+            (ConflictError('someone else owns it'), 'conflict'),
+            (ServiceError('dynamo said no'), 'service'),
+            # An ApiError subclass nobody mapped must degrade to 'service', never crash.
+            (ApiError('unmapped'), 'service'),
+        ],
+    )
+    def test_maps_each_api_error_to_its_closed_code(self, error, expected_code, lambda_context):
+        with patch('verification_fixture_provider.parse_provider_request', side_effect=error):
+            result = lambda_handler(_request(), lambda_context)
+        assert result == {
+            'schema': RESULT_SCHEMA,
+            'operation': 'setup',
+            'capability': CAPABILITY,
+            'success': False,
+            'error_code': expected_code,
+        }
+
+    def test_unexpected_exception_becomes_internal_not_a_raise(self, lambda_context):
+        with patch(
+            'verification_fixture_provider.parse_provider_request',
+            side_effect=RuntimeError('boom'),
+        ):
+            result = lambda_handler(_request('probe'), lambda_context)
+        assert result['success'] is False
+        assert result['error_code'] == 'internal'
+        assert result['operation'] == 'probe'
+
+    def test_rejected_operation_is_reported_as_unknown_not_echoed(self, lambda_context):
+        """The envelope must never reflect an unvalidated operation back to the caller."""
+        result = lambda_handler(_request(operation='execute'), lambda_context)
+        assert result['operation'] == 'unknown'
+        assert result['error_code'] == 'validation'
+
+    def test_non_dict_event_is_rejected_without_touching_operation(self, lambda_context):
+        result = lambda_handler(['not', 'a', 'dict'], lambda_context)
+        assert result['operation'] == 'unknown'
+        assert result['success'] is False
+
+    @pytest.mark.parametrize(
+        ('operation', 'target'),
+        [
+            ('setup', 'setup_fixture'),
+            ('probe', 'probe_fixture'),
+            ('teardown', 'teardown_fixture'),
+        ],
+    )
+    def test_dispatches_each_operation_to_its_own_function(
+        self, operation, target, lambda_context,
+    ):
+        request = _request(operation)
+        sentinel = {'schema': RESULT_SCHEMA, 'operation': operation, 'success': True}
+        with patch(
+            'verification_fixture_provider.parse_provider_request', return_value=request,
+        ), patch(f'verification_fixture_provider.{target}', return_value=sentinel) as dispatched:
+            assert lambda_handler(request, lambda_context) is sentinel
+        dispatched.assert_called_once_with(request)

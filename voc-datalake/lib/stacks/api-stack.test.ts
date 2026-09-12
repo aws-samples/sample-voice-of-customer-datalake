@@ -92,7 +92,11 @@ function discoverPluginIds(): string[] {
     .sort();
 }
 
-function synthApiTemplate(context: Record<string, unknown> = {}, enabledSources: string[] = []): Template {
+function synthApiTemplate(
+  context: Record<string, unknown> = {},
+  enabledSources: string[] = [],
+  deploymentPrefix?: string,
+): Template {
   // Skip asset bundling (Docker) and the frontend-freshness guard — template
   // assertions only need structure, and the check would make the suite depend
   // on whether frontend/dist happens to be newer than frontend/src.
@@ -111,6 +115,7 @@ function synthApiTemplate(context: Record<string, unknown> = {}, enabledSources:
 
   const stack = new VocApiStack(app, 'TestApiStack', {
     env,
+    deploymentPrefix,
     feedbackTable: table('Feedback'),
     aggregatesTable: table('Aggregates'),
     projectsTable: table('Projects'),
@@ -160,6 +165,17 @@ function apiTemplate(): Template {
 function apiTemplateAllPlugins(): Template {
   cachedAllPlugins ??= synthApiTemplate({}, discoverPluginIds());
   return cachedAllPlugins;
+}
+
+/**
+ * A PREFIXED (side-by-side) deployment. Verification-only infrastructure exists
+ * only in this shape — a default deploy must stay byte-identical, which is what
+ * lib/app-baseline.test.ts asserts.
+ */
+let cachedPrefixed: Template | undefined;
+function apiTemplatePrefixed(): Template {
+  cachedPrefixed ??= synthApiTemplate({}, [], 'b');
+  return cachedPrefixed;
 }
 
 /** The transitional first-deploy shape. */
@@ -3005,12 +3021,25 @@ describe('the Bedrock generation budget fits the job Lambdas', () => {
 });
 
 
-it('private fixture provider has exact shape, table IAM, output, and no public endpoint', () => {
-  const template = apiTemplate();
-  const functions = template.findResources('AWS::Lambda::Function');
-  const providerEntry = Object.entries(functions).find(([, resource]) =>
+/** The provider writes to the live data tables, so a normal install must not have one. */
+function fixtureProviderEntry(template: Template): [string, unknown] | undefined {
+  return Object.entries(template.findResources('AWS::Lambda::Function')).find(([, resource]) =>
     (resource as { Properties?: { Handler?: string } }).Properties?.Handler
       === 'verification_fixture_provider.lambda_handler');
+}
+
+it('omits the fixture provider entirely from a default (unprefixed) deployment', () => {
+  const template = apiTemplate();
+  expect(fixtureProviderEntry(template)).toBeUndefined();
+  const outputs = (template.toJSON().Outputs ?? {}) as Record<string, unknown>;
+  expect(outputs.VerificationFixtureProviderArn).toBeUndefined();
+  // Nothing may reference the provider's role or log group either.
+  expect(JSON.stringify(template.toJSON())).not.toContain('voc-fixture-provider');
+});
+
+it('private fixture provider has exact shape, table IAM, output, and no public endpoint', () => {
+  const template = apiTemplatePrefixed();
+  const providerEntry = fixtureProviderEntry(template);
   expect(providerEntry).toBeDefined();
   if (!providerEntry) return;
   const [providerLogicalId, provider] = providerEntry;

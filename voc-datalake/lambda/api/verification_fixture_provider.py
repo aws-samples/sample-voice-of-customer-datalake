@@ -190,7 +190,7 @@ def _transact(
             reason_codes = {
                 reason.get('Code')
                 for reason in reasons
-                if isinstance(reasons, list) and isinstance(reason, dict)
+                if isinstance(reason, dict)
             } if isinstance(reasons, list) else set()
             if 'ConditionalCheckFailed' in reason_codes:
                 raise ConflictError(collision_message) from error
@@ -336,7 +336,10 @@ def setup_fixture(request: dict[str, str], *, now: datetime | None = None) -> di
     if not reused:
         ttl = int((current + timedelta(seconds=FIXTURE_TTL_SECONDS)).timestamp())
         expires_at = datetime.fromtimestamp(ttl, timezone.utc).isoformat()
-    assert expires_at is not None and ttl is not None
+    if expires_at is None or ttl is None:
+        # `assert` would vanish under `python -O`, leaving the records below to be
+        # built from None and fail far from the cause.
+        raise ServiceError('fixture expiry could not be resolved')
     ids, project_items, aggregate_items = _records(request, expires_at=expires_at, ttl=ttl)
     _transact(
         projects.meta.client,
