@@ -15,7 +15,8 @@
         "projects": 1,
         "documents": 1,
         "rows": 1
-      }
+      },
+      "providerProtocol": "verification.fixture.provider.request.v1"
     }
   }
 }

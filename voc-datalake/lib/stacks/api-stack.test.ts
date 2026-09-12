@@ -3003,3 +3003,84 @@ describe('the Bedrock generation budget fits the job Lambdas', () => {
     }
   });
 });
+
+
+it('private fixture provider has exact shape, table IAM, output, and no public endpoint', () => {
+  const template = apiTemplate();
+  const functions = template.findResources('AWS::Lambda::Function');
+  const providerEntry = Object.entries(functions).find(([, resource]) =>
+    (resource as { Properties?: { Handler?: string } }).Properties?.Handler
+      === 'verification_fixture_provider.lambda_handler');
+  expect(providerEntry).toBeDefined();
+  if (!providerEntry) return;
+  const [providerLogicalId, provider] = providerEntry;
+  const props = (provider as { Properties: Record<string, unknown> }).Properties;
+  expect(props.Runtime).toBe('python3.14');
+  expect(props.MemorySize).toBe(256);
+  expect(props.Timeout).toBe(30);
+  expect(props.Architectures).toEqual(['arm64']);
+  const variables = (props.Environment as { Variables: Record<string, unknown> }).Variables;
+  expect(Object.keys(variables).sort()).toEqual([
+    'AGGREGATES_TABLE', 'LOG_LEVEL', 'POWERTOOLS_SERVICE_NAME', 'PROJECTS_TABLE',
+  ]);
+  expect(variables.POWERTOOLS_SERVICE_NAME).toBe('voc-fixture-provider');
+  expect(variables.LOG_LEVEL).toBe('INFO');
+  expect(JSON.stringify(variables.PROJECTS_TABLE)).toMatch(/Projects/);
+  expect(JSON.stringify(variables.AGGREGATES_TABLE)).toMatch(/Aggregates/);
+
+  const roleRef = (props.Role as { 'Fn::GetAtt': [string, string] })['Fn::GetAtt'][0];
+  const policies = template.findResources('AWS::IAM::Policy');
+  const statements = Object.values(policies).flatMap((resource) => {
+    const policy = resource as {
+      Properties?: {
+        Roles?: Array<{ Ref?: string }>;
+        PolicyDocument?: { Statement?: Array<Record<string, unknown>> };
+      };
+    };
+    return policy.Properties?.Roles?.some((role) => role.Ref === roleRef)
+      ? policy.Properties.PolicyDocument?.Statement ?? []
+      : [];
+  });
+  const dynamo = statements.filter((statement) =>
+    JSON.stringify(statement.Resource).includes('Projects')
+    || JSON.stringify(statement.Resource).includes('Aggregates'));
+  const actions = new Set(dynamo.flatMap((statement) =>
+    Array.isArray(statement.Action) ? statement.Action as string[] : [String(statement.Action)]));
+  expect([...actions].sort()).toEqual([
+    'dynamodb:DeleteItem', 'dynamodb:GetItem', 'dynamodb:PutItem',
+  ]);
+  const kms = statements.filter((statement) => {
+    const statementActions = Array.isArray(statement.Action)
+      ? statement.Action as string[]
+      : [String(statement.Action)];
+    return statementActions.some((action) => action.startsWith('kms:'));
+  });
+  const kmsActions = new Set(kms.flatMap((statement) =>
+    Array.isArray(statement.Action) ? statement.Action as string[] : [String(statement.Action)]));
+  expect([...kmsActions].sort()).toEqual([
+    'kms:Decrypt',
+    'kms:DescribeKey',
+    'kms:Encrypt',
+    'kms:GenerateDataKey',
+    'kms:GenerateDataKeyWithoutPlaintext',
+    'kms:ReEncryptFrom',
+    'kms:ReEncryptTo',
+  ]);
+  const kmsPolicy = JSON.stringify(kms);
+  expect(kmsPolicy).toContain('kms:ViaService');
+  expect(kmsPolicy).toContain('kms:CallerAccount');
+  expect(kmsPolicy).toContain('kms:EncryptionContext:aws:dynamodb:tableName');
+  expect(kmsPolicy).toMatch(/Projects/);
+  expect(kmsPolicy).toMatch(/Aggregates/);
+  expect(dynamo.some((statement) => JSON.stringify(statement.Action).includes('Query'))).toBe(false);
+  expect(dynamo.some((statement) => JSON.stringify(statement.Action).includes('Scan'))).toBe(false);
+  expect(dynamo.some((statement) => JSON.stringify(statement.Action).includes('UpdateItem'))).toBe(false);
+
+  const outputs = template.toJSON().Outputs as Record<string, { Value?: unknown }>;
+  expect(outputs.VerificationFixtureProviderArn?.Value).toEqual({
+    'Fn::GetAtt': [providerLogicalId, 'Arn'],
+  });
+  expect(Object.keys(template.findResources('AWS::Lambda::Url'))).toHaveLength(0);
+  const methods = JSON.stringify(template.findResources('AWS::ApiGateway::Method'));
+  expect(methods.includes(providerLogicalId)).toBe(false);
+});

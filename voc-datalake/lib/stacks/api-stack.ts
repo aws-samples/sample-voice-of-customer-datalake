@@ -692,6 +692,82 @@ export class VocApiStack extends VocStack {
       logGroup: this.createLogGroup('ProjectsApiLogs', this.uniqueName('voc-projects-api')),
     });
 
+    // Private, target-owned fixture provider. No API route, Cognito authorizer,
+    // Function URL, frontend config, or model access: ABCA may invoke one closed
+    // setup/probe/teardown contract, while VoC retains every storage key/item rule.
+    const verificationFixtureProviderRole = this.createLambdaRole(
+      'VerificationFixtureProviderRole',
+    );
+    projectsTable.grant(
+      verificationFixtureProviderRole,
+      'dynamodb:GetItem',
+      'dynamodb:PutItem',
+      'dynamodb:DeleteItem',
+    );
+    aggregatesTable.grant(
+      verificationFixtureProviderRole,
+      'dynamodb:GetItem',
+      'dynamodb:PutItem',
+      'dynamodb:DeleteItem',
+    );
+    const verificationKmsViaDynamo = {
+      StringEquals: {
+        'kms:ViaService': `dynamodb.${this.region}.${this.urlSuffix}`,
+        'kms:CallerAccount': this.account,
+      },
+    };
+    const verificationKmsTableContext = {
+      ...verificationKmsViaDynamo,
+      'ForAnyValue:StringEquals': {
+        'kms:EncryptionContext:aws:dynamodb:tableName': [
+          projectsTable.tableName,
+          aggregatesTable.tableName,
+        ],
+      },
+    };
+    verificationFixtureProviderRole.addToPolicy(new iam.PolicyStatement({
+      actions: [
+        'kms:Decrypt',
+        'kms:Encrypt',
+        'kms:ReEncryptFrom',
+        'kms:ReEncryptTo',
+        'kms:GenerateDataKey',
+        'kms:GenerateDataKeyWithoutPlaintext',
+      ],
+      resources: [kmsKey.keyArn],
+      conditions: verificationKmsTableContext,
+    }));
+    verificationFixtureProviderRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['kms:DescribeKey'],
+      resources: [kmsKey.keyArn],
+      conditions: verificationKmsViaDynamo,
+    }));
+    const verificationFixtureProvider = new lambda.Function(
+      this,
+      'VerificationFixtureProvider',
+      {
+        functionName: this.uniqueName('voc-fixture-provider'),
+        runtime: lambda.Runtime.PYTHON_3_14,
+        architecture: lambda.Architecture.ARM_64,
+        handler: 'verification_fixture_provider.lambda_handler',
+        code: createApiLambdaCode('verification_fixture_provider.py'),
+        role: verificationFixtureProviderRole,
+        timeout: cdk.Duration.seconds(30),
+        memorySize: 256,
+        environment: {
+          PROJECTS_TABLE: projectsTable.tableName,
+          AGGREGATES_TABLE: aggregatesTable.tableName,
+          POWERTOOLS_SERVICE_NAME: 'voc-fixture-provider',
+          LOG_LEVEL: 'INFO',
+        },
+        layers: [apiLayer],
+        logGroup: this.createLogGroup(
+          'VerificationFixtureProviderLogs',
+          this.uniqueName('voc-fixture-provider'),
+        ),
+      },
+    );
+
     // ── Async job Lambdas (persona/document generation) invoked by the Projects API ──
     const createJobLambdaCode = (jobFolder: string): lambda.Code => {
       return lambda.Code.fromAsset('lambda', {
@@ -1958,6 +2034,10 @@ exports.handler = async (event) => {
     new cdk.CfnOutput(this, 'WebhookPlugins', { value: webhookPlugins.map(p => p.id).join(',') });
     new cdk.CfnOutput(this, 'CognitoUserPoolId', { value: userPool.userPoolId, description: 'Cognito User Pool ID' });
     new cdk.CfnOutput(this, 'CognitoClientId', { value: userPoolClient.userPoolClientId, description: 'Cognito User Pool Client ID' });
+    new cdk.CfnOutput(this, 'VerificationFixtureProviderArn', {
+      value: verificationFixtureProvider.functionArn,
+      description: 'Private target-owned ABCA fixture provider ARN',
+    });
     new cdk.CfnOutput(this, 'WebSearchAvailable', {
       value: webSearch !== undefined ? 'true' : 'false',
       description: 'Whether the AgentCore web search gateway is deployed (drives the frontend feature flag)',
