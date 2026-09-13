@@ -393,9 +393,11 @@ cdk deploy --all -c deploymentPrefix=b -c enableVerificationFixtureProvider=true
 The value must be an IAM role or user ARN; anything else fails at synth rather
 than deploying a policy that grants nobody. Fixture rows are indexed like ordinary projects
 on purpose, so the fixture exercises the real read paths, and they are excluded
-from the project list *and* from the prioritization read by the
-`verification_fixture_id` marker (`is_verification_fixture` in
-`lambda/shared/project_writes.py`).
+from the project list *and* from the one read that enumerates the prioritization
+partition, by the `verification_fixture_id` marker (`is_verification_fixture` in
+`lambda/shared/project_writes.py`). Every other access to that partition is by
+exact key — voting sessions and ballot writes name a single row — so those are
+unaffected by design.
 
 Cleanup is an explicit teardown call, and the TTL backstop is **partial**: the
 provider stamps a `ttl` attribute on every record, but only the Aggregates table

@@ -108,6 +108,23 @@ describe('asset staging sites use the shared lists in GIT ignore mode', () => {
     });
   });
 
+  /**
+   * Source text, deliberately, and it is worth saying why rather than leaving it
+   * looking like laziness.
+   *
+   * The invariant is that the provider's own file is excluded from every OTHER
+   * function's staged input, and not from its own. That exclude list is a
+   * synth-time input: it decides which files are hashed, then leaves no trace in
+   * the template. So there is nothing in the synthesized output to assert against
+   * — a template-level check on asset keys looks stronger and is vacuous, because
+   * the bundling command already embeds `handlerFileName`, giving every api
+   * function a distinct asset hash whether or not this exclusion exists.
+   *
+   * The assertion that would be behavioral is a two-synth comparison: synthesize,
+   * edit the provider source on disk, synthesize again, and require every other
+   * function's asset hash to be unchanged while the provider's moves. That is the
+   * real statement, and worth building if this exclusion grows siblings.
+   */
   it('provider-only source feeds its bundle but not ordinary API/job fingerprints', () => {
     const source = fs.readFileSync(path.join(stacksDir, 'api-stack.ts'), 'utf8');
     expect(source).toContain("handlerFileName === 'verification_fixture_provider.py'");

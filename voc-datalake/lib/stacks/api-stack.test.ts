@@ -3117,6 +3117,11 @@ describe('the optional invoker ARN narrows invoke to one principal', () => {
     ['not an arn', 'my-verification-role'],
     ['a non-IAM arn', 'arn:aws:lambda:us-east-1:111122223333:function:x'],
     ['a wildcard account', 'arn:aws:iam::*:role/x'],
+    // IAM rejects these at deploy time, so synth must reject them first.
+    ['a wildcard path', 'arn:aws:iam::111122223333:role/*'],
+    ['a wildcard inside the path', 'arn:aws:iam::111122223333:role/team-*'],
+    ['trailing junk after the arn', 'arn:aws:iam::111122223333:role/x extra'],
+    ['an empty role name', 'arn:aws:iam::111122223333:role/'],
     ['a non-string', 42],
   ])('fails at synth given %s rather than deploying a useless policy', (_label, value) => {
     expect(() => synthApiTemplate(

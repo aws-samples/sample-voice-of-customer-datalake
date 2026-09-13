@@ -802,8 +802,12 @@ export class VocApiStack extends VocStack {
       // than producing a policy that silently grants nobody.
       const invokerArn: unknown = this.node.tryGetContext('verificationFixtureInvokerArn');
       if (invokerArn !== undefined && invokerArn !== '') {
+        // Anchored at both ends, and `*` is rejected anywhere in the path: IAM
+        // refuses a wildcard-path principal at DEPLOY time, so accepting one here
+        // would break the promise that a bad value fails at synth -- and
+        // `role/*` reads like a deliberate broad grant rather than a mistake.
         if (typeof invokerArn !== 'string'
-          || !/^arn:[a-z0-9-]+:iam::\d{12}:(role|user)\/.+/.test(invokerArn)) {
+          || !/^arn:[a-z0-9-]+:iam::\d{12}:(role|user)\/[^*\s]+$/.test(invokerArn)) {
           throw new Error(
             'verificationFixtureInvokerArn must be an IAM role or user ARN, got '
             + JSON.stringify(invokerArn),

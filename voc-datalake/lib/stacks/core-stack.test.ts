@@ -1281,24 +1281,31 @@ describe('VocCoreStack product doc extractor', () => {
  * writer of `ttl` to Projects.
  */
 describe('DynamoDB TTL, as the verification fixture relies on it', () => {
-  const tables = () => Object.values(synthCoreTemplate().findResources('AWS::DynamoDB::Table'));
-
-  const tableNamed = (fragment: string) => tables().filter((resource) => {
-    const props = (resource as { Properties?: { TableName?: unknown } }).Properties ?? {};
-    return JSON.stringify(props.TableName ?? '').includes(fragment);
-  });
+  /**
+   * Bound by CONSTRUCT ID, not by a substring of the resolved TableName: names
+   * carry an account/region/prefix and more than one could contain "projects",
+   * which would silently bind this assertion to the wrong table.
+   */
+  const ttlOf = (constructId: string) => {
+    const entries = Object.entries(synthCoreTemplate().findResources('AWS::DynamoDB::Table'))
+      .filter(([logicalId]) => logicalId.startsWith(constructId));
+    expect(entries, `expected exactly one ${constructId}`).toHaveLength(1);
+    return (entries[0][1] as { Properties: Record<string, unknown> })
+      .Properties.TimeToLiveSpecification;
+  };
 
   it('expires Aggregates rows on the `ttl` attribute', () => {
-    const [aggregates] = tableNamed('aggregates');
-    expect(aggregates, 'no table whose name contains "aggregates"').toBeDefined();
-    expect((aggregates as { Properties: Record<string, unknown> }).Properties
-      .TimeToLiveSpecification).toEqual({ AttributeName: 'ttl', Enabled: true });
+    expect(ttlOf('AggregatesTable')).toEqual({ AttributeName: 'ttl', Enabled: true });
   });
 
   it('does NOT expire Projects rows, so fixture cleanup depends on teardown', () => {
-    const [projects] = tableNamed('projects');
-    expect(projects, 'no table whose name contains "projects"').toBeDefined();
-    expect((projects as { Properties: Record<string, unknown> }).Properties
-      .TimeToLiveSpecification).toBeUndefined();
+    expect(
+      ttlOf('ProjectsTable'),
+      'Projects gained a TTL. That may well be an improvement, but it is a '
+      + 'deliberate one: it starts expiring every item in the table carrying a '
+      + 'stale `ttl`, and it changes how the verification fixture is cleaned up. '
+      + 'Update this case, docs/deployment.md and the header of '
+      + 'lambda/api/verification_fixture_provider.py together.',
+    ).toBeUndefined();
   });
 });
