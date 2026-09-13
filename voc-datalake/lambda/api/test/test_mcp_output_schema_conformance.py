@@ -388,9 +388,28 @@ _LEGACY_FEEDBACK_ROW = {"id": "legacy-1", "original_text": "arrived late"}
 # One document per storage prefix, keyed by sort key exactly as
 # `projects.get_project` returns them (asserted against the real route by
 # `test_mcp_delegation.py::test_the_document_sort_key_is_still_there`). All six
-# kinds, because the in-process tool recognised two of them.
+# kinds, because the in-process tool recognised two of them. Managed samples
+# carry the additive canonical series identity published in MCP 3.9.0.
+_DOCUMENT_TYPES = {
+    'PRD#': 'prd',
+    'PRFAQ#': 'prfaq',
+    'RESEARCH#': 'research',
+    'DOC#': 'custom',
+    'PRODUCT_REPORT#': 'product_report',
+    'PROTOTYPE#': 'prototype',
+}
 _DOCUMENTS = [
-    {"sk": f"{prefix}{i}", "document_id": f"doc_2026081914300{i}", "title": f"doc {i}"}
+    {
+        "sk": f"{prefix}{i}",
+        "document_id": f"doc_2026081914300{i}",
+        "document_type": _DOCUMENT_TYPES[prefix],
+        "title": f"doc {i}",
+        **(
+            {"base_title": f"doc {i}", "version": i + 1}
+            if _DOCUMENT_TYPES[prefix] in {"prd", "prfaq", "prototype"}
+            else {}
+        ),
+    }
     for i, prefix in enumerate(mcp_handler._DOCUMENT_KINDS)
 ]
 

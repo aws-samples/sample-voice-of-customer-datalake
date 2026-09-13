@@ -66,10 +66,9 @@ import type { ReactElement, ReactNode } from 'react'
 /**
  * The trigger, and the full-viewport dialog it opens.
  *
- * @param documentTitle the prototype document's own title, shown beside the
- *   heading so the dialog names the artifact on screen rather than only its kind.
- *   Optional: a prototype is not required to carry one, and the heading alone
- *   still gives the dialog a non-empty accessible name.
+ * @param documentTitle the prototype document's own canonical title, used as
+ *   the visible and accessible dialog heading. Optional only for legacy data;
+ *   the generic artifact kind remains the fallback.
  * @param children the prototype, as the caller already renders it in the row.
  *   Sized by this component's container, so pass a frame that fills its box.
  */
@@ -140,14 +139,7 @@ export default function PrototypeEnlargeButton({
               of ellipsising. Same shape as the `min-h-0` below, on the other axis —
               and the `flex-1 min-w-0 … truncate` pattern CategoriesManager uses. */}
           <h3 id={headingId} className="font-medium text-gray-900 truncate min-w-0 flex-1">
-            {t('prioritization:preview.prototypeTitle', { defaultValue: 'Prototype' })}
-            {/* The artifact's own name, inside the heading rather than beside it, so
-                it is part of the dialog's accessible name instead of a second label
-                a screen reader reaches only by exploring. Omitted when the document
-                carries no title — an empty span would leave a stray separator. */}
-            {documentTitle ? (
-              <span className="ml-2 font-normal text-sm text-gray-500">{documentTitle}</span>
-            ) : null}
+            {documentTitle || t('prioritization:preview.prototypeTitle', { defaultValue: 'Prototype' })}
           </h3>
           {/* Visible, and the panel's first focusable so this is where the shell
               puts focus on open. The shell's own ways out — Escape and an overlay

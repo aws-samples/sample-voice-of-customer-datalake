@@ -68,7 +68,16 @@ FEEDBACK_ITEMS = [
 @pytest.fixture
 def projects_table():
     table = MagicMock()
+    table.name = 'test-projects'
     table.query.return_value = {'Items': []}
+
+    def transact_write_items(*, TransactItems):
+        for action in TransactItems:
+            if 'Put' in action:
+                table.put_item(Item=action['Put']['Item'])
+        return {}
+
+    table.meta.client.transact_write_items.side_effect = transact_write_items
     with patch('api.projects.projects_table', table):
         yield table
 

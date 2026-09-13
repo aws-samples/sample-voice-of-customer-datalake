@@ -2,7 +2,7 @@
   "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
   "stacks": {
     "VocApiStack": {
-      "templateSha256": "ec4ffd2bdd2aae4dd896447f0ec3a9a1bcd8c752c1cf880d8fcd6eeb209b30cf",
+      "templateSha256": "1beac3e41a2ba0dcb4cbd68a5138efc83a787aebc3235e7d744b074ec0a9f1cc",
       "names": {
         "physicalNames": [
           "AWS::ApiGateway::Authorizer Name = voc-cognito-authorizer",
@@ -57,6 +57,10 @@
         "exportNames": [],
         "policyResources": [
           "arn:aws:events:us-east-1:111111111111:rule/voc-ingest-*-schedule*",
+          "arn:aws:lambda:us-east-1:111111111111:function/voc-job-document-generator-<AWS::AccountId>-<AWS::Region>",
+          "arn:aws:lambda:us-east-1:111111111111:function/voc-job-document-merger-<AWS::AccountId>-<AWS::Region>",
+          "arn:aws:lambda:us-east-1:111111111111:function/voc-job-persona-generator-<AWS::AccountId>-<AWS::Region>",
+          "arn:aws:lambda:us-east-1:111111111111:function/voc-job-persona-importer-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-ingestor-*",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-ingestor-webscraper-*",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-manual-import-processor-*"
@@ -87,7 +91,7 @@
       }
     },
     "VocCoreStack": {
-      "templateSha256": "12ddceb388eaa744402d9b135f247cfaeae1bf68b74ef6656340ebd0d63117c1",
+      "templateSha256": "aa5ab6f599c7b1ad4556bad293ebe17ef36483d17728daabfd3c8f4841140410",
       "names": {
         "physicalNames": [
           "AWS::Cognito::IdentityPool IdentityPoolName = voc-identity-pool-<AWS::AccountId>-<AWS::Region>",
@@ -142,9 +146,7 @@
           "VocCoreStack:ExportsOutputRefWebsiteBucket75C24D94B5689ED3",
           "VocFrontendDomainName"
         ],
-        "policyResources": [
-          "arn:aws:lambda:us-east-1:111111111111:function:*voc-chat-stream*"
-        ],
+        "policyResources": [],
         "environmentNames": [
           "SERVICE_NAME = voc-product-doc-extractor"
         ]

@@ -17,6 +17,7 @@ passes for the wrong reason:
     build_product_context_block depends on the second one.
 """
 import pytest
+from unittest.mock import patch
 
 from .conftest import (
     DOCUMENTS_DEFAULT_MODEL,
@@ -773,3 +774,67 @@ class TestExtractionPrompt:
         assert 'Corner radius' in prompt
         # Offline-first: the prototype can only use the system font stack.
         assert 'Do NOT name a webfont' in prompt
+
+
+class TestTheBedrockClientBudget:
+    """The client factory itself, which nothing else in this suite exercises.
+
+    Every other test injects a fake into `_clients`, so `_bedrock()` never runs —
+    which is exactly how a dropped `config=` argument would go unnoticed. The
+    constants would still be there for the CDK-side guard in core-stack.test.ts to
+    read and compare against this function's 120 s timeout, and that guard would
+    still pass while the deployed client quietly used botocore's defaults again.
+    So this asserts what reaches boto3, not what the constants say.
+
+    Why it matters here: botocore's defaults are a 60 s read timeout with retries
+    behind it, which can outlast this function's own 120 s ceiling — the last
+    attempt is then always killed in flight, a guaranteed-doomed retry rather than
+    a diagnosis. Same collision that cost 45 minutes on the prototype path; the
+    numbers are duplicated from shared/aws.py on purpose, because this handler is
+    stdlib+boto3 only and cannot import it.
+    """
+
+    @staticmethod
+    def _build(extractor, times: int = 1):
+        """Call `_bedrock()` `times` over a patched boto3 and return (clients, mock)."""
+        with patch.object(extractor, 'boto3') as mock_boto3:
+            clients = [extractor._bedrock() for _ in range(times)]
+        return clients, mock_boto3
+
+    @classmethod
+    def _captured_config(cls, extractor):
+        _, mock_boto3 = cls._build(extractor)
+        call = mock_boto3.client.call_args
+        assert call.args[0] == 'bedrock-runtime'
+        return call.kwargs['config']
+
+    def test_waits_and_retries_exactly_as_declared(self, extractor):
+        config = self._captured_config(extractor)
+
+        assert config.read_timeout == extractor.BEDROCK_READ_TIMEOUT_SECONDS
+        assert config.connect_timeout == extractor.BEDROCK_CONNECT_TIMEOUT_SECONDS
+        assert config.retries['max_attempts'] == extractor.BEDROCK_MAX_ATTEMPTS
+
+    def test_makes_one_attempt_in_standard_mode(self, extractor):
+        """`max_attempts` counts TOTAL attempts in standard mode.
+
+        Legacy mode's reading of the same key is ambiguous, so the mode is stated
+        rather than inherited — otherwise `max_attempts: 1` is not provably one
+        attempt, and the budget compared against the Lambda timeout is a lower
+        bound instead of the budget.
+        """
+        config = self._captured_config(extractor)
+
+        assert config.retries['mode'] == 'standard'
+        assert extractor.BEDROCK_MAX_ATTEMPTS == 1
+
+    def test_the_client_is_built_once_and_cached(self, extractor):
+        """The cache is what makes a per-invocation client construction free.
+
+        Asserted because the config now arrives through a lazily-imported Config
+        object: an accidental rebuild per call would construct one per image.
+        """
+        (first, second), mock_boto3 = self._build(extractor, times=2)
+
+        assert first is second
+        assert mock_boto3.client.call_count == 1

@@ -483,7 +483,12 @@ ASSUMED_PROTOCOL_VERSION = "2025-03-26"
 # `_DATE_BASIS_ARG` instead of restating their literals, because four tools forward
 # the same parameters to the same routes. The published values are byte-identical, so
 # the fingerprint moves for the five additions alone.
-MCP_SERVER_VERSION = "3.8.0"
+#
+# 3.9.0 ADDS managed document identity to `get_project`: each document now reads
+# `type` from its persisted `document_type` and may expose `base_title` and a
+# positive stored `version`. Bodies, prototype HTML, and signed URLs remain
+# excluded. This is additive, so it is a minor bump under the rule above.
+MCP_SERVER_VERSION = "3.9.0"
 
 
 # ============================================
@@ -2551,7 +2556,19 @@ _TOOL_DECLARATIONS = [
                         "properties": {
                             "document_id": {"type": "string"},
                             "title": {"type": "string"},
-                            "type": {"type": "string"},
+                            "type": {
+                                "type": "string",
+                                "description": "Persisted document_type",
+                            },
+                            "base_title": {
+                                "type": "string",
+                                "description": "Unversioned series title, when managed",
+                            },
+                            "version": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "description": "Stored managed-document version, when present",
+                            },
                             "kind": {
                                 "type": "string",
                                 "enum": sorted(set(_DOCUMENT_KINDS.values())) + [""],
@@ -3328,6 +3345,22 @@ def _as_int(value: Any, default: Any = 0) -> int:
     return 0
 
 
+def _project_document(document: dict) -> dict[str, Any]:
+    """Project document metadata without content or transient URLs."""
+    projected: dict[str, Any] = {
+        'document_id': _as_string(document.get('document_id')),
+        'title': _as_string(document.get('title')),
+        'type': _as_string(document.get('document_type')),
+        'kind': _document_kind(document),
+    }
+    if document.get('base_title') is not None:
+        projected['base_title'] = _as_string(document.get('base_title'))
+    version = _as_int(document.get('version'))
+    if version > 0:
+        projected['version'] = version
+    return projected
+
+
 def _within_declared_bounds(tool: str, argument: str, args: dict, default: Any) -> int:
     """A requested page value, held inside the bounds its own `inputSchema` declares.
 
@@ -3581,11 +3614,7 @@ def _tool_get_project(args: dict, token_info: dict) -> ToolResult:
              "tagline": _as_string(p.get('tagline'))}
             for p in personas
         ],
-        "documents": [
-            {"document_id": _as_string(d.get('document_id')), "title": _as_string(d.get('title')),
-             "type": _as_string(d.get('type')), "kind": _document_kind(d)}
-            for d in documents
-        ],
+        "documents": [_project_document(document) for document in documents],
     })
 
 

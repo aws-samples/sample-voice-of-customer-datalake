@@ -2,6 +2,7 @@
 Tests for shared/jobs.py - Job utilities.
 """
 import pytest
+from botocore.exceptions import ClientError
 from unittest.mock import MagicMock, patch
 
 
@@ -341,3 +342,173 @@ class TestJobHandler:
         error_arg = mock_update.call_args[1]['error']
         # Error message should be truncated
         assert len(error_arg) < 250  # 'Job failed: ' + 200 chars max
+
+
+class TestJobExecutionClaim:
+    @staticmethod
+    def _context(remaining_ms=12_345):
+        context = MagicMock()
+        context.get_remaining_time_in_millis.return_value = remaining_ms
+        context.aws_request_id = 'request-1'
+        return context
+
+    @patch('shared.jobs.get_jobs_table')
+    @patch('shared.jobs.datetime')
+    def test_claim_uses_lambda_deadline_and_atomic_status_condition(
+        self, mock_datetime, mock_get_jobs_table,
+    ):
+        from datetime import datetime, timezone
+
+        from shared.jobs import (
+            EXECUTION_LEASE_SKEW_SECONDS,
+            claim_job_execution,
+        )
+        now = datetime(2026, 9, 3, 12, 0, tzinfo=timezone.utc)
+        mock_datetime.now.return_value = now
+        table = MagicMock()
+        mock_get_jobs_table.return_value = table
+
+        assert claim_job_execution('p1', 'j1', self._context()) is True
+
+        request = table.update_item.call_args.kwargs
+        assert request['Key'] == {'pk': 'PROJECT#p1', 'sk': 'JOB#j1'}
+        assert request['ExpressionAttributeValues'][':lease'] == int(
+            now.timestamp(),
+        ) + 13 + EXECUTION_LEASE_SKEW_SECONDS
+        assert request['ExpressionAttributeValues'][':owner'] == 'request-1'
+        assert '#status = :pending' in request['ConditionExpression']
+        assert 'execution_lease_until <= :now_epoch' in request[
+            'ConditionExpression'
+        ]
+
+    @patch('shared.jobs.get_jobs_table')
+    def test_active_or_completed_job_loses_claim_without_error(
+        self, mock_get_jobs_table,
+    ):
+        from shared.jobs import claim_job_execution
+
+        table = MagicMock()
+        table.update_item.side_effect = ClientError(
+            {
+                'Error': {
+                    'Code': 'ConditionalCheckFailedException',
+                    'Message': 'already claimed',
+                },
+            },
+            'UpdateItem',
+        )
+        mock_get_jobs_table.return_value = table
+
+        assert claim_job_execution('p1', 'j1', self._context()) is False
+
+    @patch('shared.jobs.get_jobs_table')
+    def test_nonconditional_claim_error_propagates(self, mock_get_jobs_table):
+        from shared.jobs import claim_job_execution
+
+        table = MagicMock()
+        table.update_item.side_effect = ClientError(
+            {'Error': {'Code': 'AccessDeniedException', 'Message': 'denied'}},
+            'UpdateItem',
+        )
+        mock_get_jobs_table.return_value = table
+
+        with pytest.raises(ClientError):
+            claim_job_execution('p1', 'j1', self._context())
+
+    @patch('shared.jobs.recover_job_execution_claim', return_value=False)
+    @patch('shared.jobs.claim_job_execution', return_value=False)
+    @patch('shared.jobs.update_job_status')
+    def test_decorator_skips_duplicate_before_body_or_status_writes(
+        self, mock_update, mock_claim, mock_recover,
+    ):
+        from shared.jobs import JobContext, job_handler
+
+        body = MagicMock(return_value={'result': 'unexpected'})
+
+        @job_handler(error_message='failed')
+        def test_job(
+            ctx: JobContext, project_id: str, job_id: str, config: dict,
+        ) -> dict:
+            return body(ctx, project_id, job_id, config)
+
+        context = self._context()
+        result = test_job({
+            'project_id': 'p1',
+            'job_id': 'j1',
+            'config': {},
+        }, context)
+
+        assert result == {'success': True, 'skipped': True}
+        mock_claim.assert_called_once_with('p1', 'j1', context)
+        mock_recover.assert_called_once_with({
+            'project_id': 'p1',
+            'job_id': 'j1',
+            'config': {},
+        }, context)
+        body.assert_not_called()
+        mock_update.assert_not_called()
+
+
+class TestJobExecutionRecovery:
+    @staticmethod
+    def _context(*remaining_ms):
+        context = MagicMock()
+        context.get_remaining_time_in_millis.side_effect = remaining_ms
+        context.invoked_function_arn = 'arn:aws:lambda:us-east-1:1:function:job'
+        context.function_name = 'job'
+        return context
+
+    @patch('shared.jobs.get_jobs_table')
+    def test_completed_owner_is_a_terminal_noop(self, mock_get_jobs_table):
+        from shared.jobs import recover_job_execution_claim
+
+        table = MagicMock()
+        table.get_item.return_value = {'Item': {'status': 'completed'}}
+        mock_get_jobs_table.return_value = table
+
+        assert recover_job_execution_claim(
+            {'project_id': 'p1', 'job_id': 'j1'},
+            self._context(100_000),
+        ) is False
+
+    @patch('shared.jobs.invoke_lambda_async')
+    @patch('shared.jobs.get_jobs_table')
+    def test_active_waiter_self_redelivers_before_budget_is_too_small(
+        self, mock_get_jobs_table, mock_invoke,
+    ):
+        from shared.jobs import recover_job_execution_claim
+
+        event = {'project_id': 'p1', 'job_id': 'j1', 'config': {'x': 1}}
+        table = MagicMock()
+        table.get_item.return_value = {
+            'Item': {
+                'status': 'running',
+                'execution_lease_until': 9_999_999_999,
+            },
+        }
+        mock_get_jobs_table.return_value = table
+        context = self._context(100_000, 90_000)
+
+        assert recover_job_execution_claim(event, context) is False
+        mock_invoke.assert_called_once_with(
+            'arn:aws:lambda:us-east-1:1:function:job', event,
+        )
+
+    @patch('shared.jobs.claim_job_execution', return_value=True)
+    @patch('shared.jobs.get_jobs_table')
+    def test_expired_owner_is_reclaimed_when_budget_is_fresh(
+        self, mock_get_jobs_table, mock_claim,
+    ):
+        from shared.jobs import recover_job_execution_claim
+
+        table = MagicMock()
+        table.get_item.return_value = {
+            'Item': {'status': 'running', 'execution_lease_until': 0},
+        }
+        mock_get_jobs_table.return_value = table
+        context = self._context(100_000, 100_000)
+
+        assert recover_job_execution_claim(
+            {'project_id': 'p1', 'job_id': 'j1'}, context,
+        ) is True
+        mock_claim.assert_called_once_with('p1', 'j1', context)

@@ -292,6 +292,13 @@ describe('offering to enlarge a row\'s prototype', () => {
     expect(screen.getByText(lifetimeHint)).toBeInTheDocument()
   })
 
+  it('shows the canonical prototype title in the expanded panel', async () => {
+    await expandRow()
+
+    expect(await screen.findByRole('heading', { level: 4, name: PROTOTYPE_TITLE }))
+      .toBeInTheDocument()
+  })
+
   it('renders nothing enlarged until the control is used', async () => {
     await expandRow()
 
@@ -307,9 +314,7 @@ describe('the enlarged prototype', () => {
     expect(dialog).toHaveAttribute('aria-modal', 'true')
     // Non-empty and derived from the heading on screen, so the name cannot drift
     // from what a sighted viewer reads.
-    expect(dialog).toHaveAccessibleName(
-      new RegExp(`${escapeRegExp(t('prioritization:preview.prototypeTitle'))}.*${escapeRegExp(PROTOTYPE_TITLE)}`),
-    )
+    expect(dialog).toHaveAccessibleName(PROTOTYPE_TITLE)
   })
 
   it('moves focus into the dialog when it opens', async () => {

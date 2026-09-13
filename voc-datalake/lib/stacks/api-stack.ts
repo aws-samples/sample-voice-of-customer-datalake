@@ -20,7 +20,10 @@ import { assertFrontendBuildFresh } from '../utils/assert-frontend-build';
 import { cdkCustomResourceSuppressions, apiGatewayRequestValidationSuppressions, publicFeedbackEndpointSuppressions, publicBallotEndpointSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, marketplaceSuppressions } from '../utils/nag-suppressions';
 import { allowlistedModelArns, imageModelArn } from '../utils/model-allowlist';
 import { pythonLayerCode } from '../utils/python-layer-bundling';
-import { PY_LAMBDA_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
+import {
+  PY_LAMBDA_ASSET_EXCLUDES,
+  VERIFICATION_FIXTURE_PROVIDER_ASSET_EXCLUDES,
+} from '../utils/lambda-asset-excludes';
 import { VocStack, VocStackProps } from '../utils/voc-stack';
 import { SOURCE_PLACEHOLDER } from '../utils/naming';
 
@@ -207,9 +210,20 @@ export class VocApiStack extends VocStack {
      * @returns Lambda Code asset with only the required files
      */
     const createApiLambdaCode = (handlerFileName: string): lambda.Code => {
+      const providerSourceExcludes = handlerFileName === 'verification_fixture_provider.py'
+        ? []
+        : VERIFICATION_FIXTURE_PROVIDER_ASSET_EXCLUDES;
       return lambda.Code.fromAsset('lambda', {
-        // Stages only api/ + shared/ — everything else is hash noise.
-        exclude: [...PY_LAMBDA_ASSET_EXCLUDES, '/aggregator/', '/jobs/', '/processor/', '/research/'],
+        // Stages only api/ + shared/ — everything else is hash noise. The
+        // provider source affects only its own bundle, not every API Lambda.
+        exclude: [
+          ...PY_LAMBDA_ASSET_EXCLUDES,
+          ...providerSourceExcludes,
+          '/aggregator/',
+          '/jobs/',
+          '/processor/',
+          '/research/',
+        ],
         ignoreMode: cdk.IgnoreMode.GIT,
         bundling: {
           image: lambda.Runtime.PYTHON_3_14.bundlingImage,
@@ -692,11 +706,138 @@ export class VocApiStack extends VocStack {
       logGroup: this.createLogGroup('ProjectsApiLogs', this.uniqueName('voc-projects-api')),
     });
 
+    // Verification-only infrastructure, behind TWO independent conditions.
+    //
+    // A prefix alone is not enough. `deploymentPrefix` means "this is a
+    // side-by-side copy" — a PRODUCTION slot can be one too — so topology must
+    // not be the only thing standing between a live table and a Lambda that can
+    // delete rows in it. The capability must also be asked for by intent.
+    // Requiring both also keeps `no prefix means byte-identical`
+    // (lib/app-baseline.test.ts) true for every default deploy.
+    //
+    // Read ONCE, and accept only `true`/`'true'` as with skipUseCaseSubmission
+    // (CLI context always arrives as a string). Anything else is off, and off
+    // means "no provider" — so a typo drops the fixture capability and the
+    // verification run fails closed and loudly, which is the safe direction.
+    const fixtureProviderContext: unknown = this.node.tryGetContext('enableVerificationFixtureProvider');
+    const enableVerificationFixtureProvider =
+      fixtureProviderContext === true || fixtureProviderContext === 'true';
+    if (this.deploymentPrefix && enableVerificationFixtureProvider) {
+      // Private, target-owned fixture provider. No API route, Cognito authorizer,
+      // Function URL, frontend config, or model access: ABCA may invoke one closed
+      // setup/probe/teardown contract, while VoC retains every storage key/item rule.
+      const verificationFixtureProviderRole = this.createLambdaRole(
+        'VerificationFixtureProviderRole',
+      );
+      // Scoped to the two TABLE ARNs and nothing else. `Table.grant()` would
+      // also add `<table>/index/*` because these tables carry GSIs, but the
+      // provider only ever touches exact keys — it never queries an index — so
+      // the wildcard would be unused privilege and an AwsSolutions-IAM5 finding.
+      verificationFixtureProviderRole.addToPolicy(new iam.PolicyStatement({
+        actions: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:DeleteItem'],
+        resources: [projectsTable.tableArn, aggregatesTable.tableArn],
+      }));
+      const verificationKmsViaDynamo = {
+        StringEquals: {
+          'kms:ViaService': `dynamodb.${this.region}.${this.urlSuffix}`,
+          'kms:CallerAccount': this.account,
+        },
+      };
+      const verificationKmsTableContext = {
+        ...verificationKmsViaDynamo,
+        'ForAnyValue:StringEquals': {
+          'kms:EncryptionContext:aws:dynamodb:tableName': [
+            projectsTable.tableName,
+            aggregatesTable.tableName,
+          ],
+        },
+      };
+      verificationFixtureProviderRole.addToPolicy(new iam.PolicyStatement({
+        actions: [
+          'kms:Decrypt',
+          'kms:Encrypt',
+          'kms:ReEncryptFrom',
+          'kms:ReEncryptTo',
+          'kms:GenerateDataKey',
+          'kms:GenerateDataKeyWithoutPlaintext',
+        ],
+        resources: [kmsKey.keyArn],
+        conditions: verificationKmsTableContext,
+      }));
+      verificationFixtureProviderRole.addToPolicy(new iam.PolicyStatement({
+        actions: ['kms:DescribeKey'],
+        resources: [kmsKey.keyArn],
+        conditions: verificationKmsViaDynamo,
+      }));
+      const verificationFixtureProvider = new lambda.Function(
+        this,
+        'VerificationFixtureProvider',
+        {
+          functionName: this.uniqueName('voc-fixture-provider'),
+          runtime: lambda.Runtime.PYTHON_3_14,
+          architecture: lambda.Architecture.ARM_64,
+          handler: 'verification_fixture_provider.lambda_handler',
+          code: createApiLambdaCode('verification_fixture_provider.py'),
+          role: verificationFixtureProviderRole,
+          timeout: cdk.Duration.seconds(30),
+          memorySize: 256,
+          environment: {
+            PROJECTS_TABLE: projectsTable.tableName,
+            AGGREGATES_TABLE: aggregatesTable.tableName,
+            POWERTOOLS_SERVICE_NAME: 'voc-fixture-provider',
+            LOG_LEVEL: 'INFO',
+          },
+          layers: [apiLayer],
+          logGroup: this.createLogGroup(
+            'VerificationFixtureProviderLogs',
+            this.uniqueName('voc-fixture-provider'),
+          ),
+        },
+      );
+
+      // Optional narrowing. Without this, invoke is governed only by identity
+      // policies, which for a same-account caller means anyone holding
+      // lambda:InvokeFunction on this ARN. Supplying the harness's role pins it
+      // to exactly one principal. Validated here so a typo fails at synth rather
+      // than producing a policy that silently grants nobody.
+      const invokerArn: unknown = this.node.tryGetContext('verificationFixtureInvokerArn');
+      if (invokerArn !== undefined && invokerArn !== '') {
+        // Anchored at both ends, and BOTH IAM wildcards (`*` and `?`) are
+        // rejected anywhere in the path. IAM refuses a wildcard-path principal at
+        // DEPLOY time, so accepting one here would break the promise that a bad
+        // value fails at synth -- and `role/*` reads like a deliberate broad grant
+        // rather than a mistake.
+        if (typeof invokerArn !== 'string'
+          || !/^arn:[a-z0-9-]+:iam::\d{12}:(role|user)\/[^*?\s]+$/.test(invokerArn)) {
+          throw new Error(
+            'verificationFixtureInvokerArn must be an IAM role or user ARN, got '
+            + JSON.stringify(invokerArn),
+          );
+        }
+        verificationFixtureProvider.addPermission('VerificationFixtureInvoker', {
+          principal: new iam.ArnPrincipal(invokerArn),
+          action: 'lambda:InvokeFunction',
+        });
+      }
+
+      new cdk.CfnOutput(this, 'VerificationFixtureProviderArn', {
+        value: verificationFixtureProvider.functionArn,
+        description: 'Private target-owned ABCA fixture provider ARN',
+      });
+    }
+
     // ── Async job Lambdas (persona/document generation) invoked by the Projects API ──
     const createJobLambdaCode = (jobFolder: string): lambda.Code => {
       return lambda.Code.fromAsset('lambda', {
         // Stages only jobs/ + api/ (projects.py, product_context.py, prompts) + shared/.
-        exclude: [...PY_LAMBDA_ASSET_EXCLUDES, '/aggregator/', '/processor/', '/research/'],
+        // The private provider is not part of any ordinary job payload.
+        exclude: [
+          ...PY_LAMBDA_ASSET_EXCLUDES,
+          ...VERIFICATION_FIXTURE_PROVIDER_ASSET_EXCLUDES,
+          '/aggregator/',
+          '/processor/',
+          '/research/',
+        ],
         ignoreMode: cdk.IgnoreMode.GIT,
         bundling: {
           image: lambda.Runtime.PYTHON_3_14.bundlingImage,
@@ -726,6 +867,36 @@ export class VocApiStack extends VocStack {
     // Persona avatar image model — see model-allowlist.ts for its EOL deadline.
     const avatarImageModelResource = imageModelArn();
 
+    // Every job Lambda below is invoked with InvocationType='Event' (see
+    // shared/aws.py::invoke_lambda_async), and AWS re-drives a FAILED async
+    // invocation twice more by default, silently. That default is what turned one
+    // prototype click into ~45 minutes: the function was killed at its own 15-min
+    // ceiling, then re-run twice from scratch, each attempt re-writing the same
+    // job row's progress so the UI looked like one job making no headway. Measured
+    // live — a second START with the SAME request id is the signature.
+    //
+    // Zero, because an LLM generation is neither cheap nor idempotent and a retry
+    // here buys nothing: the work restarts from the beginning with the same inputs
+    // that just failed, and shared/jobs.py already records the job `failed` for
+    // the UI to render, so the user can retry deliberately and see why. A hidden
+    // retry only multiplies cost and delays the diagnosis.
+    //
+    // NOT a substitute for a failure destination — routing exhausted async
+    // invocations somewhere durable is tracked separately (#253). This only stops
+    // the multiplier. And it does not affect the Step Functions path for PRD/PR-FAQ:
+    // an EventInvokeConfig governs async invocations only, so createDocumentStateMachine's
+    // own explicit, VISIBLE retries below are untouched.
+    //
+    // Scoped to these four on purpose. The other async targets in this app keep the
+    // AWS default, because for them a re-drive is a benefit rather than a repeated
+    // bill: `voc-manual-import-processor` re-does bounded, content-keyed work that
+    // the processor's idempotency records already de-duplicate, and the scraper and
+    // integration invocations are watermark-driven, so repeating one fetches from
+    // where it left off. What sets these four apart is that ONE invocation is ONE
+    // large generation: a re-drive re-pays for it in full and cannot succeed for a
+    // reason the first attempt failed on.
+    const JOB_ASYNC_RETRY_ATTEMPTS = 0;
+
     // Persona Generator Job Lambda
     const personaGeneratorRole = this.createLambdaRole('PersonaGeneratorRole');
     feedbackTable.grantReadData(personaGeneratorRole);
@@ -748,6 +919,7 @@ export class VocApiStack extends VocStack {
       role: personaGeneratorRole,
       timeout: cdk.Duration.minutes(15),
       memorySize: 1024,
+      retryAttempts: JOB_ASYNC_RETRY_ATTEMPTS,
       environment: {
         PROJECTS_TABLE: projectsTable.tableName,
         FEEDBACK_TABLE: feedbackTable.tableName,
@@ -792,6 +964,7 @@ export class VocApiStack extends VocStack {
       role: documentGeneratorRole,
       timeout: cdk.Duration.minutes(15),
       memorySize: 1024,
+      retryAttempts: JOB_ASYNC_RETRY_ATTEMPTS,
       environment: {
         PROJECTS_TABLE: projectsTable.tableName,
         FEEDBACK_TABLE: feedbackTable.tableName,
@@ -830,6 +1003,7 @@ export class VocApiStack extends VocStack {
       role: documentMergerRole,
       timeout: cdk.Duration.minutes(10),
       memorySize: 1024,
+      retryAttempts: JOB_ASYNC_RETRY_ATTEMPTS,
       environment: {
         PROJECTS_TABLE: projectsTable.tableName,
         FEEDBACK_TABLE: feedbackTable.tableName,
@@ -864,6 +1038,7 @@ export class VocApiStack extends VocStack {
       role: personaImporterRole,
       timeout: cdk.Duration.minutes(5),
       memorySize: 512,
+      retryAttempts: JOB_ASYNC_RETRY_ATTEMPTS,
       environment: {
         PROJECTS_TABLE: projectsTable.tableName,
         AGGREGATES_TABLE: aggregatesTable.tableName,
@@ -876,6 +1051,26 @@ export class VocApiStack extends VocStack {
       layers: [apiLayer],
       logGroup: this.createLogGroup('PersonaImporterJobLogs', this.uniqueName('voc-job-persona-importer')),
     });
+
+    // A lease loser self-redelivers once before its own budget becomes too
+    // small, so an owner crash still has a durable post-expiry attempt. Use
+    // deterministic physical-name ARNs instead of Function.grantInvoke: the
+    // function already depends on its role, and a role policy that GetAtts the
+    // function creates a CloudFormation cycle.
+    const grantSelfInvoke = (role: iam.Role, functionName: string) => {
+      role.addToPolicy(new iam.PolicyStatement({
+        actions: ['lambda:InvokeFunction'],
+        resources: [this.formatArn({
+          service: 'lambda',
+          resource: 'function',
+          resourceName: functionName,
+        })],
+      }));
+    };
+    grantSelfInvoke(personaGeneratorRole, this.uniqueName('voc-job-persona-generator'));
+    grantSelfInvoke(documentGeneratorRole, this.uniqueName('voc-job-document-generator'));
+    grantSelfInvoke(documentMergerRole, this.uniqueName('voc-job-document-merger'));
+    grantSelfInvoke(personaImporterRole, this.uniqueName('voc-job-persona-importer'));
 
     // Wire job Lambda function names into the Projects API + grant invoke
     projectsLambda.addEnvironment('PERSONA_GENERATOR_FUNCTION', personaGeneratorLambda.functionName);
@@ -913,6 +1108,7 @@ export class VocApiStack extends VocStack {
       timeout: cdk.Duration.minutes(5),
       environment: {
         PROJECTS_TABLE: projectsTable.tableName,
+        PROJECTS_FUNCTION: projectsLambda.functionName,
         FEEDBACK_TABLE: feedbackTable.tableName,
         AGGREGATES_TABLE: aggregatesTable.tableName,
         // Streaming-chat ('chat' surface) default when no override is set.
@@ -933,12 +1129,14 @@ export class VocApiStack extends VocStack {
           '@aws-sdk/*',
           '@smithy/*',
         ],
-        // The web-search SigV4 client imports these directly; bundle them so
-        // it runs against the pinned versions from package.json instead of
-        // whatever the managed runtime's SDK happens to hoist (transitive
-        // availability is not a documented contract). They are tiny.
+        // These modules are imported directly at runtime. Bundle their pinned
+        // versions instead of relying on whatever SDK the managed runtime
+        // happens to hoist: web-search signing uses the Smithy modules and
+        // credential provider; canonical project reads use client-lambda.
+        // The packages are small.
         nodeModules: [
           '@aws-sdk/credential-provider-node',
+          '@aws-sdk/client-lambda',
           '@smithy/protocol-http',
           '@smithy/signature-v4',
           // Reads the CloudFront URL-signing key. Pinned here for the same
@@ -983,6 +1181,9 @@ export class VocApiStack extends VocStack {
       ],
       resources: [projectsTable.tableArn, `${projectsTable.tableArn}/index/*`],
     }));
+    // Canonical project reads, including one-time legacy version persistence,
+    // stay owned by the Python Projects API rather than being reimplemented here.
+    projectsLambda.grantInvoke(chatStreamLambda);
     kmsKey.grantDecrypt(chatStreamLambda);
 
     // Web search tool (AgentCore Gateway) — optional, opt-in per request.
@@ -1002,6 +1203,11 @@ export class VocApiStack extends VocStack {
     }
 
     NagSuppressions.addResourceSuppressions(chatStreamLambda, [
+      {
+        id: 'AwsSolutions-IAM5',
+        reason: 'CDK grantInvoke includes qualified versions/aliases, so the wildcard is scoped to ProjectsApi only; ChatStream uses it for the canonical bounded project-context contract.',
+        appliesTo: [{ regex: '/Resource::<.*ProjectsApi.*\\.Arn>:\\*/' }],
+      },
       { id: 'AwsSolutions-L1', reason: 'Node.js 22 is the target runtime for the streaming Lambda — latest stable LTS' },
     ], true);
 
@@ -1027,6 +1233,11 @@ export class VocApiStack extends VocStack {
     // Data Explorer API
     const dataExplorerRole = this.createLambdaRole('DataExplorerLambdaRole');
     rawDataBucket.grantReadWrite(dataExplorerRole);
+    dataExplorerRole.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.DENY,
+      actions: ['s3:PutObject', 's3:DeleteObject'],
+      resources: [rawDataBucket.arnForObjects('prototypes/*')],
+    }));
     feedbackTable.grantReadWriteData(dataExplorerRole);
     kmsKey.grantEncryptDecrypt(dataExplorerRole);
     dataExplorerRole.addToPolicy(new iam.PolicyStatement({ actions: ['sqs:SendMessage'], resources: [processingQueueArn] }));
@@ -1958,6 +2169,7 @@ exports.handler = async (event) => {
         'title.$': '$.Payload.title',
         'feature_idea.$': '$.Payload.feature_idea',
         'num_steps.$': '$.Payload.num_steps',
+        'replayed.$': '$.Payload.replayed',
       },
     });
 
@@ -2023,11 +2235,15 @@ exports.handler = async (event) => {
             s3.next(save))
       .otherwise(save);
 
-    const definition = gather
-      .next(s0)
+    const generation = s0
       .next(s1)
       .next(s2)
       .next(maybeStep3);
+    const replayChoice = new sfn.Choice(this, 'DocumentAlreadyGenerated')
+      .when(sfn.Condition.booleanEquals('$.gathered.replayed', true), success)
+      .otherwise(generation);
+
+    const definition = gather.next(replayChoice);
 
     return new sfn.StateMachine(this, 'DocumentStateMachine', {
       stateMachineName: this.uniqueName('voc-document-workflow'),

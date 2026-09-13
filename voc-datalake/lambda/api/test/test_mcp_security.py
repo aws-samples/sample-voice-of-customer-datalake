@@ -2040,10 +2040,22 @@ class TestProjectsTableUsageMatchesNarrowGrant:
         get_project_calls = self._table_calls(
             inspect.getsource(projects_module.get_project)
         )
-        assert get_project_calls == {"query"}, (
-            f"projects.get_project (reached via autoseed) touches "
-            f"projects_table via {get_project_calls - granted}, or the scan "
-            f"went blind (saw {get_project_calls})"
+        assert get_project_calls == set(), (
+            "projects.get_project now touches projects_table directly; its "
+            f"paginated read should stay in the audited helper (saw {get_project_calls})"
+        )
+        query_helper_src = inspect.getsource(projects_module._query_partition_items)
+        query_helper_calls = self._table_calls(query_helper_src)
+        assert query_helper_calls == {"query"}, (
+            "projects._query_partition_items (reached by get_project/autoseed) "
+            f"must use only the granted Query action (saw {query_helper_calls})"
+        )
+        get_project_callees = self._called_names(
+            inspect.getsource(projects_module.get_project)
+        )
+        assert "_query_partition_items" in get_project_callees, (
+            "projects.get_project no longer delegates its table read to the "
+            "paginated helper audited above"
         )
 
         # autoseed_project itself: no direct table call, AND every DIRECT

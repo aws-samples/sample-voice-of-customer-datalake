@@ -6,7 +6,7 @@ This guide covers how to deploy the VoC (Voice of Customer) platform, including 
 
 - **AWS CLI** configured with appropriate credentials
 - **Node.js** 18+ and npm
-- **Python** 3.12+ (for Lambda functions)
+- **Python** 3.14+ (for Lambda functions)
 - **Docker or Finch** (for building Lambda layers and CDK asset bundling)
 
 ## Project Structure
@@ -48,7 +48,7 @@ Always run quality checks before deploying:
 
 ```bash
 # From project root
-npm run lint         # frontend + stream ESLint, and ruff over lambda/ + plugins/
+npm run lint         # frontend + stream ESLint, and ruff over lambda/ + plugins/ + scripts/
 npm run typecheck    # frontend TypeScript only
 npm run test         # frontend Vitest only
 
@@ -60,7 +60,7 @@ npm run check        # lint + typecheck:all + test + test:cdk + test:stream + te
 
 | Command | Covers |
 |---------|--------|
-| `npm run lint` | `lint:frontend` + `lint:stream` (ESLint) + `lint:python` (ruff over `lambda/`, `plugins/`) |
+| `npm run lint` | `lint:frontend` + `lint:stream` (ESLint) + `lint:python` (ruff over `lambda/`, `plugins/`, and `scripts/`) |
 | `npm run typecheck` | Frontend only — use `typecheck:all` for frontend + CDK + stream |
 | `npm run test` | Frontend Vitest only |
 | `npm run test:cdk` | CDK Vitest (`voc-datalake`) |
@@ -210,7 +210,7 @@ The platform consists of 4 core stacks plus 1 AI-enablement stack.
 | `VocCoreStack` | DynamoDB tables, KMS, S3 buckets, Cognito, CloudFront | None |
 | `VocIngestionStack` | Plugin Lambdas, EventBridge schedules, SQS, Secrets | Core |
 | `VocProcessingStack` | Processor, Aggregator, Step Functions, Bedrock | Core, Ingestion |
-| `VocApiStack` | API Gateway, API Lambdas, Webhooks, WAF | Core, Ingestion, Processing |
+| `VocApiStack` | API Gateway, domain-specific API Lambdas, Webhooks | Core, Ingestion, Processing |
 | `VocWebSearchStack` (AI enablement) | **Two independently switchable halves in one us-east-1 stack:** (a) the AgentCore Gateway for public web search — on by default, opt out via `enableWebSearch: false`; (b) Bedrock model access / Anthropic use-case submission — created only when `anthropicUseCase` is set in `cdk.context.json`. The stack is not created at all when both are off. Always deploys to us-east-1: the web-search connector exists only there, and `PutUseCaseForModelAccess` works only there. **Upgrade note:** existing non-us-east-1 deployments must bootstrap us-east-1 once (`cdk bootstrap aws://ACCOUNT_ID/us-east-1`) or set the opt-out flag | None |
 
 ### Deploy All Stacks
@@ -347,6 +347,63 @@ but both are worth knowing before running several copies:
   `voc-mcp-token-authorizer`). Deliberate: those names only have to be unique
   inside their own RestApi, and each deployment has its own, so prefixing them
   would add churn without preventing a collision.
+
+### Verification fixture provider (opt-in, never on production)
+
+`.abca/fixture-manifest.json` at the repository root is this repo's contract with
+[ABCA](https://github.com/aws-samples/sample-autonomous-cloud-coding-agents), an
+autonomous coding-agent harness that deploys a pull request to a throwaway slot
+and verifies it. The manifest is **declaration only** — it states which fixture
+capability the repo offers, the shape of the records, and a protocol version. It
+carries no ARN, IAM, secret, table name or write recipe, so a commit cannot grant
+itself privileged access by editing it.
+
+The half that *has* authority is a private Lambda, `voc-fixture-provider`
+(`lambda/api/verification_fixture_provider.py`), which seeds and removes a
+deterministic prioritization baseline. It can **write and delete rows in the live
+Projects and Aggregates tables**, so it is created only when *both* of these hold:
+
+```bash
+cdk deploy --all -c deploymentPrefix=b -c enableVerificationFixtureProvider=true
+```
+
+- `deploymentPrefix` — a throwaway side-by-side copy, never the primary deployment.
+- `enableVerificationFixtureProvider` — explicit intent. Accepts only `true` or
+  `"true"`; `TRUE`, `1`, `yes` and anything else mean off.
+
+**Never set `enableVerificationFixtureProvider` on a production deployment.** The
+prefix alone is not a safeguard: a production copy can also be prefixed, which is
+why the flag exists as a second, independent condition. Omit it and the function,
+its role, its table and KMS grants, its log group and its ARN output do not exist
+at all — a default `cdk deploy` is byte-identical with and without this feature
+(`lib/app-baseline.test.ts` asserts exactly that).
+
+The provider has no API Gateway route, Function URL, Cognito authorizer, frontend
+configuration or model access; it is reachable only by direct
+`lambda:InvokeFunction`. By default that is governed by identity policies alone,
+which for a same-account caller means any principal holding that permission on the
+ARN. To pin it to exactly one caller, pass its role ARN and a resource-based
+policy is attached:
+
+```bash
+cdk deploy --all -c deploymentPrefix=b -c enableVerificationFixtureProvider=true \
+  -c verificationFixtureInvokerArn=arn:aws:iam::111122223333:role/my-verification-role
+```
+
+The value must be an IAM role or user ARN; anything else fails at synth rather
+than deploying a policy that grants nobody. Fixture rows are indexed like ordinary projects
+on purpose, so the fixture exercises the real read paths, and they are excluded
+from the project list *and* from the one read that enumerates the prioritization
+partition, by the `verification_fixture_id` marker (`is_verification_fixture` in
+`lambda/shared/project_writes.py`). Every other access to that partition is by
+exact key — voting sessions and ballot writes name a single row — so those are
+unaffected by design.
+
+Cleanup is an explicit teardown call, and the TTL backstop is **partial**: the
+provider stamps a `ttl` attribute on every record, but only the Aggregates table
+has TTL enabled, so the prioritization row expires on its own while the fixture's
+project and document rows do not. An abandoned fixture therefore needs its
+teardown; `lib/stacks/core-stack.test.ts` pins both halves of that asymmetry.
 
 ### Stack Deployment Order
 
@@ -681,7 +738,7 @@ jobs:
           
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.14'
           
       - name: Install dependencies
         run: npm run install:all

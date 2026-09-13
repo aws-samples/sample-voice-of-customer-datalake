@@ -1070,3 +1070,69 @@ class TestConverseSurfaceRouting:
         )
 
         mock_resolve.assert_called_once_with('prototype')
+
+
+class TestReadTimeoutIsNotRetried:
+    """A read timeout is a size verdict here, not a transient fault.
+
+    `converse` is non-streaming, so the socket is legitimately idle for the whole
+    generation and a read timeout means "this generation needed longer than the
+    client would wait". The identical request will not run faster on a second
+    attempt, and each retry re-submits the prompt and re-pays for a full abandoned
+    generation while spending time the invocation no longer has.
+
+    This is the guard on the fix for the 900 s collision, not decoration: dropping
+    botocore's own three attempts (shared/aws.py) only helps while THIS loop does
+    not take them over. Delete the branch and one read timeout becomes five doomed
+    generations — the same defect one layer up, with a bigger multiplier.
+    """
+
+    ENDPOINT = 'https://bedrock-runtime.us-east-1.amazonaws.com'
+
+    @patch('shared.converse.time.sleep')
+    @patch('shared.converse.get_bedrock_client')
+    def test_a_read_timeout_raises_after_exactly_one_attempt(self, mock_get_client, mock_sleep):
+        from botocore.exceptions import ReadTimeoutError
+
+        mock_client = MagicMock()
+        mock_client.converse.side_effect = ReadTimeoutError(endpoint_url=self.ENDPOINT)
+        mock_get_client.return_value = mock_client
+
+        from shared.converse import converse
+
+        with pytest.raises(ReadTimeoutError):
+            converse('Test', max_retries=5)
+
+        assert mock_client.converse.call_count == 1, (
+            'a read timeout was retried; five attempts at the read timeout is the '
+            'same unsatisfiable budget the client config was fixed to remove'
+        )
+        # No backoff either: sleeping before a retry that must not happen is the
+        # symptom that the raise was added without removing the retry path.
+        mock_sleep.assert_not_called()
+
+    @patch('shared.converse.time.sleep')
+    @patch('shared.converse.get_bedrock_client')
+    def test_a_connect_timeout_is_still_retried(self, mock_get_client, mock_sleep):
+        """The control, so the branch above is narrow rather than "nothing retries".
+
+        A connect timeout costs 10 s and no generation at all — it is the transient
+        fault a retry is FOR. `ConnectTimeoutError` is a sibling of
+        `ReadTimeoutError` in botocore, not a subclass, so catching one must not
+        quietly catch the other; nothing in the type hierarchy prevents that
+        mistake, hence this test.
+        """
+        from botocore.exceptions import ConnectTimeoutError
+
+        mock_client = MagicMock()
+        mock_client.converse.side_effect = [
+            ConnectTimeoutError(endpoint_url=self.ENDPOINT),
+            {'output': {'message': {'content': [{'text': 'Success'}]}}},
+        ]
+        mock_get_client.return_value = mock_client
+
+        from shared.converse import converse
+        result = converse('Test', max_retries=5)
+
+        assert result == 'Success'
+        assert mock_client.converse.call_count == 2

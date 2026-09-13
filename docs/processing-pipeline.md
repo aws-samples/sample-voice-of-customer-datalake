@@ -193,15 +193,15 @@ Return ONLY this JSON structure:
 
 ### Changing the Model
 
-Set the `BEDROCK_MODEL_ID` environment variable:
+Model selection is configuration-driven; do not set `BEDROCK_MODEL_ID` directly on a Lambda. In **Settings → AI Models**, an administrator can choose a curated Claude model per surface (chat, documents, prototypes, enrichment, and utilities). The shared `model_config.py` resolver applies those choices to every caller.
 
-```
-# Default (cost-efficient for high volume)
-BEDROCK_MODEL_ID=global.anthropic.claude-haiku-4-5-20251001-v1:0
+For accounts that can invoke only one model, pin the deployment-wide default at deploy time:
 
-# Higher quality (more expensive)
-BEDROCK_MODEL_ID=anthropic.claude-3-sonnet-20240229-v1:0
+```bash
+cdk deploy --all -c defaultModelId=global.anthropic.claude-sonnet-4-6
 ```
+
+The id must be in the curated allowlist, the pin is write-once, and later per-surface admin choices still take precedence. See [Pinning All AI Surfaces to One Model](deployment.md#pinning-all-ai-surfaces-to-one-model) for account-access checks and upgrade behavior.
 
 ## Error Handling
 
