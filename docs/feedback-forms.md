@@ -15,7 +15,7 @@ The VoC platform provides a customizable feedback form system that:
 
 ### Via the Dashboard
 
-1. Navigate to **Settings** → **Feedback Forms**
+1. Navigate to **Feedback Forms** in the main sidebar
 2. Click **Create New Form**
 3. Configure the form settings:
    - **Name**: Internal identifier for the form
@@ -212,4 +212,6 @@ Custom field values are stored in the feedback metadata.
 
 ## CORS Configuration
 
-The feedback form endpoints allow cross-origin requests by default to support embedding on external websites. To restrict origins, set the `ALLOWED_ORIGIN` environment variable on the Lambda function.
+The three public endpoints intentionally allow cross-origin requests from any origin so the widget can be embedded on customer-owned sites. `FeedbackFormApi` therefore uses `ALLOWED_ORIGIN=*`; changing the Lambda environment variable alone is not a supported per-form origin policy.
+
+The security boundary is the narrow public route set (`config`, `iframe`, and `submit`), strict response projection, input validation, and the per-route throttles above. All form management, submission reads, and statistics routes require Cognito authentication. If a deployment needs an origin allowlist, implement and test it as an API change that preserves the intended embed sites rather than editing the deployed environment by hand.

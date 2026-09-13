@@ -6,10 +6,10 @@
  * "what was this built FROM" (one `derivation` map, written by the backend).
  * These two answer questions the backend does not record at all:
  *
- * - **`ordinalByType`** — "PRD 2 of 3". Nothing stores a version. Creation order
- *   within a type is the whole answer, so a stored counter would only be needed
- *   if documents could be reordered or superseded out of creation order, which
- *   they cannot.
+ * - **`ordinalByType`** — contextual creation order for document types that do
+ *   not persist a version. Managed PRD, PR/FAQ, and prototype versions are
+ *   materialized by the backend; callers suppress this fallback via
+ *   `isVersionManagedDocument`, including while legacy metadata is backfilled.
  * - **`resolveRevision`** — "this prototype revises that one". `revised_from_id`
  *   and `revision_feedback` have been written on every feedback-driven prototype
  *   revision since that feature shipped, arrive on every project read, and until
@@ -26,6 +26,23 @@
  * @module api/documentLineage
  */
 import { asRecord, displayString } from './wireRecord'
+
+const VERSION_MANAGED_DOCUMENT_TYPES = new Set(['prd', 'prfaq', 'prototype'])
+const VERSION_MANAGED_SK_PREFIXES = ['PRD#', 'PRFAQ#', 'PROTOTYPE#']
+
+/**
+ * Whether the backend owns this document's canonical title/version series.
+ *
+ * Type is the current contract; the sort-key fallback keeps legacy rows managed
+ * before backfilled metadata (including `version`) has reached the client.
+ */
+export function isVersionManagedDocument(document: unknown): boolean {
+  const record = asRecord(document)
+  if (record === null) return false
+  if (VERSION_MANAGED_DOCUMENT_TYPES.has(displayString(record.document_type))) return true
+  const sortKey = displayString(record.sk)
+  return VERSION_MANAGED_SK_PREFIXES.some((prefix) => sortKey.startsWith(prefix))
+}
 
 /** Where a document sits in the creation order of its own type. */
 export interface DocumentOrdinal {

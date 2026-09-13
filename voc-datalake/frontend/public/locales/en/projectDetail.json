@@ -510,7 +510,7 @@
     "generatePrfaq": "Generate PR-FAQ",
     "generatePrfaqTitle": "Generate PR-FAQ",
     "newDocTitle": "New Document Title",
-    "newDocTitlePlaceholder": "e.g., Virtual Concierge PRD v2",
+    "newDocTitlePlaceholder": "e.g., Virtual Concierge PRD",
     "outputDocType": "Output Document Type",
     "personaCount": "Number of Personas: {{count}}",
     "prd": "PRD",

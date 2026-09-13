@@ -615,17 +615,56 @@ class TestProjections:
             mcp_handler._DOCUMENT_KINDS.values()
         )
 
-    def test_document_bodies_are_never_inlined(self):
-        """A prototype body is hundreds of kilobytes; listing is the contract."""
+    def test_document_projection_keeps_managed_identity_without_body_or_url(self):
         fake = _FakeLambda({f"/projects/{_PROJECT}": {
             "project": {"name": "P"},
             "personas": [],
-            "documents": [{"sk": "PRD#1", "document_id": "d1", "title": "t",
-                           "content": "SECRET-BODY" * 100}],
+            "documents": [{
+                "sk": "PROTOTYPE#1",
+                "document_id": "prototype-1",
+                "document_type": "prototype",
+                "title": "Checkout (v3)",
+                "base_title": "Checkout",
+                "version": 3,
+                "content": "SECRET-BODY" * 100,
+                "prototype_url": "https://signed.invalid/prototype.html?Signature=secret",
+                "prototype_s3_uri": "s3://raw/prototypes/p1/prototype-1.html",
+                "internal_generation_prompt": "SECRET-PROMPT",
+            }],
         }})
-        result = _call("get_project", {"project_id": _PROJECT}, fake)
 
-        assert "SECRET-BODY" not in json.dumps(result)
+        payload = _call(
+            "get_project", {"project_id": _PROJECT}, fake,
+        )["result"]["structuredContent"]
+
+        assert payload["documents"] == [{
+            "document_id": "prototype-1",
+            "title": "Checkout (v3)",
+            "type": "prototype",
+            "base_title": "Checkout",
+            "version": 3,
+            "kind": "prototype",
+        }]
+        serialized = json.dumps(payload)
+        assert "SECRET-BODY" not in serialized
+        assert "SECRET-PROMPT" not in serialized
+        assert "prototype_url" not in serialized
+        assert "prototype_s3_uri" not in serialized
+        assert "Signature=secret" not in serialized
+
+    def test_get_project_schema_declares_additive_managed_identity_fields(self):
+        tool = next(tool for tool in mcp_handler.MCP_TOOLS if tool["name"] == "get_project")
+        document_properties = (
+            tool["outputSchema"]["properties"]["documents"]["items"]["properties"]
+        )
+
+        assert document_properties["type"] == {
+            "type": "string",
+            "description": "Persisted document_type",
+        }
+        assert document_properties["base_title"]["type"] == "string"
+        assert document_properties["version"]["type"] == "integer"
+        assert document_properties["version"]["minimum"] == 1
 
     def test_every_reported_persona_section_carries_its_content(self):
         """The seven content sections of `schemas/persona.schema.json`.
@@ -1113,7 +1152,7 @@ class TestStructuredOutput:
         serialized = json.dumps(shapes, sort_keys=True)
         fingerprint = hashlib.sha256(serialized.encode("utf-8")).hexdigest()[:16]
 
-        assert (mcp_handler.MCP_SERVER_VERSION, fingerprint) == ("3.8.0", "1694a93761ac16a8"), (
+        assert (mcp_handler.MCP_SERVER_VERSION, fingerprint) == ("3.9.0", "92ce4c2d00757578"), (
             "a tool's published declaration changed. Move MCP_SERVER_VERSION — minor "
             "for an added field, MAJOR for a removal or a retype, because a client "
             "validates structuredContent against these schemas and caches the whole "

@@ -98,7 +98,10 @@ export function useMentions(
       return filtered
     }
     if (mentionState.type === 'document') {
-      return documents.filter((d) => d.title.toLowerCase().includes(mentionState.filter))
+      // Prototype artifacts stay in their dedicated viewer/revision flow; chat
+      // receives neither their raw content nor an id that could request it.
+      return documents.filter((d) =>
+        d.document_type !== 'prototype' && d.title.toLowerCase().includes(mentionState.filter))
     }
     return []
   }, [mentionState.type, mentionState.filter, personas, documents])

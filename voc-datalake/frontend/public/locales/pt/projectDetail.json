@@ -515,7 +515,7 @@
     "generatePrfaq": "Gerar PR-FAQ",
     "generatePrfaqTitle": "Gerar PR-FAQ",
     "newDocTitle": "Novo Título do Documento",
-    "newDocTitlePlaceholder": "ex: Virtual Concierge PRD v2",
+    "newDocTitlePlaceholder": "ex: Virtual Concierge PRD",
     "outputDocType": "Tipo de Documento de Saída",
     "personaCount": "Número de Personas: {{count}}",
     "prd": "PRD",

@@ -52,6 +52,14 @@ export const PY_LAMBDA_ASSET_EXCLUDES = [
 ];
 
 /**
+ * Provider-only source must not churn every API/job Lambda rooted at `lambda/`.
+ * The provider bundle intentionally omits this exclusion so its own edits deploy.
+ */
+export const VERIFICATION_FIXTURE_PROVIDER_ASSET_EXCLUDES = [
+  '/api/verification_fixture_provider.py',
+];
+
+/**
  * Excludes for one plugin-ingestor bundle, which must stage from the
  * PROJECT ROOT (it copies plugins/<id>/ingestor + plugins/_shared +
  * lambda/shared). Only those three trees may influence the asset hash:

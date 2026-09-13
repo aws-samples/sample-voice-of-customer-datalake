@@ -1048,31 +1048,13 @@ export class VocCoreStack extends VocStack {
       description: 'Role for authenticated Cognito Identity Pool users',
     });
 
-    // Grant permission to invoke chat stream Lambda Function URL
-    // Use wildcard to avoid circular dependency (specific Lambda is in ApiStack)
-    this.authenticatedRole.addToPolicy(new iam.PolicyStatement({
-      actions: ['lambda:InvokeFunctionUrl', 'lambda:InvokeFunction'],
-      resources: [`arn:aws:lambda:${this.region}:${this.account}:function:*${this.prefixed('voc-chat-stream')}*`],
-    }));
-
-    // Suppress wildcard warning - necessary to avoid circular dependency.
-    //
-    // No `appliesTo`, so it is blanket over this role and stays matching whatever
-    // the ARN above resolves to — including the prefixed form. That is why it
-    // needs no prefix threading, unlike pluginSystemSuppressions(), whose
-    // `appliesTo` regexes quote the concrete ARN and therefore must be a function
-    // of the prefix. Were that to change here, the zero-warnings assertion over
-    // the PREFIXED synth in lib/app-deployment-prefix.test.ts would catch it.
-    NagSuppressions.addResourceSuppressions(
-      this.authenticatedRole,
-      [
-        {
-          id: 'AwsSolutions-IAM5',
-          reason: 'Wildcard required to avoid circular dependency between CoreStack and ApiStack. Lambda name pattern ensures least-privilege.',
-        },
-      ],
-      true
-    );
+    // NO PERMISSIONS BY DESIGN: Amplify still exchanges the User Pool session
+    // for Identity Pool credentials, but application code does not consume them
+    // or call AWS services with them. Chat streams over `POST /chat/stream` behind
+    // the Cognito authorizer, and private CDN paths use signed URLs the API mints.
+    // The pool and role are retained because Amplify is configured from
+    // `identityPoolId` and the JWT -> credentials exchange needs an assumable
+    // role. See issue #254.
 
     // Attach role to Identity Pool
     new cognito.CfnIdentityPoolRoleAttachment(this, 'IdentityPoolRoleAttachment', {

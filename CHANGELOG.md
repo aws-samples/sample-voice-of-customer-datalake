@@ -7,12 +7,17 @@ Versions are `0.x` on purpose: this is a sample platform whose interfaces still 
 releases, so a minor bump may carry changes that would be breaking in a `1.x` project. Read the
 **Upgrade notes** of each release before deploying over an existing stack.
 
-The version recorded here is the one in the `package.json` files. It is **not** what the dashboard
-displays: the UI's build identifier is the short git commit SHA, injected at build time.
+The frontend build identifier is the short git commit SHA injected at build time; it is separate from the platform package version.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-10
+
 ### Added
+
+- Persistent managed version series for PRDs, PR/FAQs, and prototypes. A stable allocation id makes retries return the same artifact; version counters and allocation history prevent a deleted version from being silently reused. Legacy managed documents are normalized into the same series, and the Documents tab exposes revision and derivation lineage.
+- An expanded prioritization-row lifecycle: reviewers can compose additional project/document combinations and recompose them until the first value-bearing ballot freezes the concrete selection. Admins can atomically delete an eligible non-default row with at most 98 ballots; larger room-vote rows are retained rather than partially deleted. Lineage indicators distinguish coherent and cross-generation selections, and frozen rows can advise when a strictly newer combination exists without blocking scoring.
+- Scoped read-only MCP access with explicit `feedback:read`, `metrics:read`, and `projects:read` grants; workspace or project-set reach; optional expiry; credential-filtered `tools/list`; protocol/output-schema conformance; and eleven delegated tools covering feedback, metrics, projects, personas, and jobs. See [Project Workspace](docs/project-workspace.md#mcp-access).
 
 - An expanded prioritization row can enlarge the prototype it is showing to fill the viewport, in
   place, so a pitch session can look at the artifact without leaving the sliders, the team's numbers
@@ -20,7 +25,61 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
   return to the row. Offered for every prototype the row renders, including a legacy inline one and a
   JSON spec, neither of which has an address that "Open in new tab" could use.
 
+### Changed
+
+- Aggregate reads now report lower-bound/partial windows instead of presenting capped data as complete, and persona metrics bucket by archetype rather than display name. DynamoDB Stream `REMOVE` and `MODIFY` records reverse or rebucket counters without recreating aggregate rows that have aged out.
+- Chat feedback tools search up to 90 days and disclose truncation. Persona prompts and imports use the same stored field vocabulary as their writers, so generated artifacts and chat no longer lose structured persona content.
+
 ### Fixed
+
+- A generation that needs more than five minutes of model time now succeeds, instead of failing three
+  times over and reporting nothing. The shared Bedrock client waited five minutes for a response and
+  then retried twice by itself, so its real budget was fifteen minutes — exactly the ceiling of the
+  job functions that build prototypes, documents, personas and research. A long generation therefore
+  had no path to success: it was abandoned and restarted twice, each attempt re-paying for a full
+  generation, and the function was killed part-way through the third with nothing to show while the
+  job still read as running. Those retries also happened below the platform's own retry loop, so the
+  logs said "attempt 1 of 5" for the entire fifteen minutes and the run looked like one slow call.
+  The client now makes a single attempt and waits fourteen minutes for it, and a read timeout is
+  reported and recorded as a failed job rather than retried into the ceiling. Prototype builds are
+  where this was measured, because they ask for the largest output, but every Bedrock surface shared
+  the same client and the same ceiling.
+  Two of the shorter jobs — merging documents at ten minutes, importing a persona at five — are
+  bounded by their own limit rather than by that fourteen minutes, so a generation longer than their
+  own budget still ends without an explanation attached to it, exactly as it did before. Retrying a
+  throttled request is unaffected everywhere: that is worth a second attempt and is still made, with
+  backoff, by the platform rather than by the AWS client underneath it.
+- A failed prototype build no longer costs up to three quarters of an hour. The job functions are
+  invoked asynchronously, where AWS re-runs a failed invocation twice more by default, so one click
+  became roughly forty-five minutes of model work — invisible, because each re-run wrote progress to
+  the same job row and looked like the first attempt making none. A failure is now reported once, and
+  retrying is the reader's decision.
+- The product-document extractor, which builds its own Bedrock client, had the same collision at a
+  smaller scale: it waited sixty seconds for an image description with retries behind it, against a
+  two-minute function, so its final attempt was always cut off. It now waits eighty seconds once,
+  which also lets a slow description finish where it previously gave up.
+- A CSV upload no longer overwrites an earlier one whose `id` column covered the same numbers.
+  A row's identity was the `id` column value as written, and every CSV upload enters the pipeline
+  under the single `source_platform` of `manual_import`, from which the processor derives both its
+  idempotency key and its DynamoDB key. Row `1` of one file was therefore the same stored record as
+  row `1` of every other file, so importing two 400-row exports each numbered `1..400` left 400
+  records holding an arbitrary mixture of the two. Nothing reported the loss: both files were
+  archived, and each upload answered with its own full row count, because that count is what the
+  queue accepted rather than what was ultimately stored. Rows are now identified by a hash of the
+  row itself — its `id`, text, rating, date, author, title, url and its own `source` column — so two
+  files that reuse a number no longer conflict, while re-uploading an unchanged file still stores
+  nothing new. A row with no `id` of its own also counts its position in the file, so a survey
+  export whose free-text answers repeat verbatim keeps one record per answer — which does mean that
+  reordering a file re-imports the rows in it that carry no `id`, while rows that carry one are
+  unaffected.
+
+  Two consequences are worth knowing before you re-import. Identity now follows a row's content, so
+  re-uploading a file with a corrected row stores that row a second time instead of replacing the
+  first; correct the data at the source and delete the earlier import rather than uploading over it.
+  And rows imported before this release carry keys from the old scheme, so an environment that
+  already holds a collided import should delete those records before importing the files again —
+  importing on top of them leaves both generations in place. The `id` column each row carried is now
+  kept on the record as `csv_row_id`, so a record can still be traced back to the row it came from.
 
 - Feedback aggregation is now idempotent under DynamoDB Streams redelivery: the aggregate counter
   updates and a per-stream-event claim commit in one DynamoDB transaction, so replaying an event is
@@ -57,6 +116,10 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
 
 ### Security
 
+- Cognito tokens are sent only to trusted application origins, so a user-entered external URL cannot receive the session token through a frontend request.
+- The browser-assumable Identity Pool role no longer has direct Lambda invoke permission; authenticated application traffic goes through the authorized API routes.
+- The three public feedback-form routes have explicit API Gateway throttles: higher read capacity for config/iframe traffic and a tighter submission ceiling for the downstream AI pipeline.
+- The CloudFront website bucket now writes server access logs to a dedicated encrypted log bucket.
 - Plugin secret isolation now fails closed. Each plugin Lambda reads one shared Secrets Manager
   secret whose keys are namespaced `<plugin_id>_<key>`, and — because every ingestion Lambda shares
   one IAM role — that prefix is the only boundary between one plugin's credentials and another's. A
@@ -154,6 +217,8 @@ displays: the UI's build identifier is the short git commit SHA, injected at bui
 
 ### Upgrade notes
 
+- **Reissue MCP credentials created before domain scopes and reach were introduced.** Missing or malformed scopes now grant nothing rather than falling back to the former broad `read` behavior. A legacy row that has valid scopes but no reach is interpreted as workspace-wide for backward compatibility; reissue it with the intended `workspace` or `project-set` reach.
+- **Existing aggregate drift is not repaired automatically.** Transactional INSERT deduplication and reversal logic prevent new classes of drift, but counters already stored remain unchanged. Follow [Rebuilding aggregates for a window](docs/processing-pipeline.md#rebuilding-aggregates-for-a-window) and write absolute values rather than replaying deltas.
 - **A plugin must declare at least one key in its manifest's `secrets` block.** Following the
   fail-closed change above, a plugin whose namespace holds no key in the shared secret raises a
   `ConfigurationError` when its Lambda is constructed, rather than silently receiving every other
@@ -343,8 +408,10 @@ customer feedback on AWS.
 - Encryption at rest with a customer-managed KMS key, and cdk-nag suppressions recorded where AWS
   services do not support resource-level permissions.
 
-<!-- These point at commit ranges rather than release tags, because no version tags exist yet.
-     Re-point them at /releases/tag/vX.Y.Z once releases are cut. -->
+<!-- Version 0.3.0 and later use release tags. Historical 0.1/0.2 links remain
+     fixed commit ranges because those releases were not tagged. -->
 
-[0.2.0]: https://github.com/aws-samples/sample-voice-of-customer-datalake/compare/0b785a87...main
+[Unreleased]: https://github.com/aws-samples/sample-voice-of-customer-datalake/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/aws-samples/sample-voice-of-customer-datalake/releases/tag/v0.3.0
+[0.2.0]: https://github.com/aws-samples/sample-voice-of-customer-datalake/compare/0b785a87...a7a976b0
 [0.1.0]: https://github.com/aws-samples/sample-voice-of-customer-datalake/commit/0b785a87

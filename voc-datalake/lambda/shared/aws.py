@@ -6,6 +6,7 @@ Provides pre-configured clients with connection reuse.
 import json
 import boto3
 from functools import lru_cache
+from typing import Final
 from shared.exceptions import ValidationError
 from shared.logging import logger
 
@@ -81,19 +82,51 @@ def get_secrets_client():
     return _secrets_client
 
 
+# ── Bedrock generation budget ────────────────────────────────────────────────
+# THE INVARIANT: these two numbers MULTIPLY, and the product must stay under the
+# timeout of the Lambda making the call. At 300 x 3 it was 900 s — exactly the
+# 15-minute job ceiling — so a generation needing over five minutes had no path to
+# success and paid for three abandoned ones on the way. Pinned across both
+# languages in lib/stacks/api-stack.test.ts and lambda/shared/test/test_aws.py,
+# because no single file can see both halves.
+#
+# Why the retry budget is 1, since a longer timeout alone would not do it:
+#   * `converse` is NON-STREAMING, so the socket is idle until the generation
+#     finishes. A read timeout measures "big", not "broken", and retrying a request
+#     that just consumed the whole timeout cannot succeed with less time left.
+#   * botocore retries BELOW shared/converse.py's own loop, so its attempts are
+#     invisible in the application log. `bedrock_call_with_retry` there is the one
+#     policy that can tell a throttle (retry, nearly free) from a read timeout (do
+#     not); botocore's single attempt budget covers both and cannot.
+#   * One attempt keeps ONE cached client safe for callers of every length: the
+#     budget equals the read timeout for everyone, so nobody is handed a multiple
+#     of it. Shorter callers reach their own ceiling first, as they already did.
+#
+# `mode: 'standard'` is explicit because there max_attempts counts TOTAL attempts;
+# legacy mode's reading of the same key is ambiguous. Same shape as
+# shared/mcp_delegate.py. The 60 s left under the 900 s ceiling is for the handler
+# to record the failure (shared/jobs.py writing the job `failed`) instead of being
+# killed mid-flight.
+BEDROCK_READ_TIMEOUT_SECONDS: Final = 840
+BEDROCK_MAX_ATTEMPTS: Final = 1
+BEDROCK_CONNECT_TIMEOUT_SECONDS: Final = 10
+
+
 def get_bedrock_client():
     """Get shared Bedrock Runtime client with connection reuse.
-    
-    Uses extended read timeout (5 minutes) to handle long LLM responses
-    that can take 2-3 minutes for complex persona generation tasks.
+
+    ONE cached client serves every Bedrock surface — documents, prototypes,
+    personas, research, chat, category generation, scrapers — so its read/retry
+    budget is sized for the longest-running of them. See
+    BEDROCK_READ_TIMEOUT_SECONDS above for why the retry budget is 1.
     """
     global _bedrock_client
     if _bedrock_client is None:
         from botocore.config import Config
         config = Config(
-            read_timeout=300,  # 5 minutes for long LLM responses
-            connect_timeout=10,
-            retries={'max_attempts': 3}
+            read_timeout=BEDROCK_READ_TIMEOUT_SECONDS,
+            connect_timeout=BEDROCK_CONNECT_TIMEOUT_SECONDS,
+            retries={'max_attempts': BEDROCK_MAX_ATTEMPTS, 'mode': 'standard'},
         )
         _bedrock_client = boto3.client("bedrock-runtime", config=config)
     return _bedrock_client

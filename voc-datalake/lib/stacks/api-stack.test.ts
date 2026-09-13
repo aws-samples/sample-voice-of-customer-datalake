@@ -23,7 +23,10 @@ import { join } from 'node:path';
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import * as cdk from 'aws-cdk-lib';
-import { Template } from 'aws-cdk-lib/assertions';
+import { Annotations, Match, Template } from 'aws-cdk-lib/assertions';
+import { AwsSolutionsChecks, NagSuppressions } from 'cdk-nag';
+
+import { lambdaBasicExecutionRoleSuppressions } from '../utils/nag-suppressions';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as s3 from 'aws-cdk-lib/aws-s3';
@@ -36,6 +39,10 @@ import { z } from 'zod';
 
 import { VocApiStack } from './api-stack';
 import { ManifestSchema } from '../plugin-loader';
+import {
+  BEDROCK_FAILURE_RECORDING_RESERVE_SECONDS,
+  pythonIntConstant,
+} from '../test-support/cross-language-invariants';
 
 /** The only routes that may be served without credentials.
  *
@@ -88,7 +95,12 @@ function discoverPluginIds(): string[] {
     .sort();
 }
 
-function synthApiTemplate(context: Record<string, unknown> = {}, enabledSources: string[] = []): Template {
+function buildApiStack(
+  context: Record<string, unknown> = {},
+  enabledSources: string[] = [],
+  deploymentPrefix?: string,
+  aspects: cdk.IAspect[] = [],
+): VocApiStack {
   // Skip asset bundling (Docker) and the frontend-freshness guard — template
   // assertions only need structure, and the check would make the suite depend
   // on whether frontend/dist happens to be newer than frontend/src.
@@ -98,15 +110,29 @@ function synthApiTemplate(context: Record<string, unknown> = {}, enabledSources:
   const env = { account: '111111111111', region: 'us-east-1' };
   const deps = new cdk.Stack(app, 'TestDeps', { env });
 
-  const table = (id: string) => new dynamodb.Table(deps, id, {
-    partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
-    sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
-  });
+  // The real Projects/Aggregates tables carry GSIs, and that detail is
+  // load-bearing for IAM assertions: `Table.grant()` expands to the table ARN
+  // *plus* `<table>/index/*` only when an index exists. Without one here, a
+  // wide grant and a table-scoped statement synthesize identically and every
+  // wildcard assertion in this file is vacuous.
+  const table = (id: string) => {
+    const created = new dynamodb.Table(deps, id, {
+      partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
+    });
+    created.addGlobalSecondaryIndex({
+      indexName: 'gsi1',
+      partitionKey: { name: 'gsi1pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'gsi1sk', type: dynamodb.AttributeType.STRING },
+    });
+    return created;
+  };
   const userPool = new cognito.UserPool(deps, 'UserPool');
   const websiteBucket = new s3.Bucket(deps, 'Website');
 
   const stack = new VocApiStack(app, 'TestApiStack', {
     env,
+    deploymentPrefix,
     feedbackTable: table('Feedback'),
     aggregatesTable: table('Aggregates'),
     projectsTable: table('Projects'),
@@ -138,7 +164,17 @@ function synthApiTemplate(context: Record<string, unknown> = {}, enabledSources:
     enabledSources,
   });
 
-  return Template.fromStack(stack);
+  // Added after construction but before any synth, which is when aspects run.
+  for (const aspect of aspects) cdk.Aspects.of(app).add(aspect);
+  return stack;
+}
+
+function synthApiTemplate(
+  context: Record<string, unknown> = {},
+  enabledSources: string[] = [],
+  deploymentPrefix?: string,
+): Template {
+  return Template.fromStack(buildApiStack(context, enabledSources, deploymentPrefix));
 }
 
 // Synthesizing is the expensive part of the suite and most tests want the same
@@ -156,6 +192,18 @@ function apiTemplate(): Template {
 function apiTemplateAllPlugins(): Template {
   cachedAllPlugins ??= synthApiTemplate({}, discoverPluginIds());
   return cachedAllPlugins;
+}
+
+/**
+ * The only shape carrying verification-only infrastructure: a prefixed
+ * (side-by-side) deployment that ALSO opts in explicitly. Both are required —
+ * a prefixed production slot must not get it by topology alone — and a default
+ * deploy must stay byte-identical, which lib/app-baseline.test.ts asserts.
+ */
+let cachedPrefixed: Template | undefined;
+function apiTemplatePrefixed(): Template {
+  cachedPrefixed ??= synthApiTemplate({ enableVerificationFixtureProvider: true }, [], 'b');
+  return cachedPrefixed;
 }
 
 /** The transitional first-deploy shape. */
@@ -2680,4 +2728,514 @@ describe('unauthorized gateway response', () => {
       .replace(/^'|'$/g, '').split(',').map((h) => h.trim().toLowerCase());
     expect(exposed).toContain('www-authenticate');
   });
+});
+
+
+describe('ChatStream canonical project delegation', () => {
+  const FunctionSchema = z.object({
+    Properties: z.object({
+      Environment: z.object({ Variables: z.record(z.unknown()) }),
+      Role: z.object({ 'Fn::GetAtt': z.tuple([z.string(), z.string()]) }),
+    }),
+  });
+  const StatementSchema = z.object({
+    Action: z.union([z.string(), z.array(z.string())]),
+    Resource: z.unknown(),
+  });
+  const PolicySchema = z.object({
+    Properties: z.object({
+      Roles: z.array(z.object({ Ref: z.string() })),
+      PolicyDocument: z.object({ Statement: z.array(StatementSchema) }),
+    }),
+  });
+
+  it('injects the Projects function and may invoke only that canonical reader', () => {
+    const functions = Object.entries(
+      apiTemplate().findResources('AWS::Lambda::Function'),
+    );
+    const parsedFunctions = functions.flatMap(([logicalId, resource]) => {
+      const parsed = FunctionSchema.safeParse(resource);
+      return parsed.success ? [{ logicalId, properties: parsed.data.Properties }] : [];
+    });
+    const chat = parsedFunctions.find(
+      ({ properties }) => properties.Environment.Variables.BEDROCK_MODEL_ID
+        === 'global.anthropic.claude-sonnet-5',
+    );
+    const projects = parsedFunctions.find(
+      ({ properties }) => properties.Environment.Variables.POWERTOOLS_SERVICE_NAME
+        === 'voc-projects-api',
+    );
+    expect(chat, 'ChatStream Lambda not found').toBeDefined();
+    expect(projects, 'Projects API Lambda not found').toBeDefined();
+    if (!chat || !projects) return;
+
+    expect(chat.properties.Environment.Variables.PROJECTS_FUNCTION).toStrictEqual({
+      Ref: projects.logicalId,
+    });
+
+    const chatRoleId = chat.properties.Role['Fn::GetAtt'][0];
+    const statements = Object.values(
+      apiTemplate().findResources('AWS::IAM::Policy'),
+    ).flatMap((resource) => {
+      const parsed = PolicySchema.safeParse(resource);
+      if (!parsed.success) return [];
+      const attached = parsed.data.Properties.Roles.some(
+        (role) => role.Ref === chatRoleId,
+      );
+      return attached ? parsed.data.Properties.PolicyDocument.Statement : [];
+    });
+    const invokeStatements = statements.filter((statement) => {
+      const actions = Array.isArray(statement.Action)
+        ? statement.Action
+        : [statement.Action];
+      return actions.includes('lambda:InvokeFunction');
+    });
+
+    expect(invokeStatements).toHaveLength(1);
+    expect(invokeStatements[0].Resource).toStrictEqual([
+      { 'Fn::GetAtt': [projects.logicalId, 'Arn'] },
+      {
+        'Fn::Join': [
+          '',
+          [
+            { 'Fn::GetAtt': [projects.logicalId, 'Arn'] },
+            ':*',
+          ],
+        ],
+      },
+    ]);
+  });
+});
+
+
+describe('prototype object IAM boundaries', () => {
+  const StatementSchema = z.object({
+    Effect: z.string(),
+    Action: z.union([z.string(), z.array(z.string())]),
+    Resource: z.unknown(),
+  });
+  const PolicySchema = z.object({
+    Properties: z.object({
+      PolicyDocument: z.object({ Statement: z.array(StatementSchema) }),
+    }),
+  });
+
+  function statementsForRole(roleName: string): z.infer<typeof StatementSchema>[] {
+    const policies = apiTemplate().findResources('AWS::IAM::Policy');
+    const policy = Object.entries(policies).find(([logicalId]) => logicalId.includes(roleName));
+    expect(policy, `no IAM policy found for ${roleName}`).toBeDefined();
+    return PolicySchema.parse(policy?.[1]).Properties.PolicyDocument.Statement;
+  }
+
+  it('denies Data Explorer prototype writes without denying reads or other prefixes', () => {
+    const denies = statementsForRole('DataExplorerLambdaRole')
+      .filter((statement) => statement.Effect === 'Deny');
+
+    expect(denies).toHaveLength(1);
+    const actions = Array.isArray(denies[0].Action) ? denies[0].Action : [denies[0].Action];
+    expect(actions.sort()).toEqual(['s3:DeleteObject', 's3:PutObject']);
+    const resources = Array.isArray(denies[0].Resource)
+      ? denies[0].Resource
+      : [denies[0].Resource];
+    expect(resources).toHaveLength(1);
+    expect(JSON.stringify(resources[0])).toContain('prototypes/*');
+  });
+
+  it('keeps the document generator read-write grant scoped to prototype objects', () => {
+    const prototypeStatements = statementsForRole('DocumentGeneratorRole')
+      .filter((statement) => JSON.stringify(statement.Resource).includes('prototypes/*'));
+
+    expect(prototypeStatements.length).toBeGreaterThan(0);
+    const actions = new Set(prototypeStatements.flatMap((statement) => (
+      Array.isArray(statement.Action) ? statement.Action : [statement.Action]
+    )));
+    expect(actions).toContain('s3:GetObject*');
+    expect(actions).toContain('s3:PutObject');
+    expect(actions).toContain('s3:DeleteObject*');
+    expect(actions).not.toContain('s3:*');
+  });
+});
+
+
+function stateMachineDefinitionText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  const joined = z.object({
+    'Fn::Join': z.array(z.unknown()),
+  }).safeParse(value);
+  if (!joined.success) return '';
+  const pieces = joined.data['Fn::Join'][1];
+  if (!Array.isArray(pieces)) return '';
+  return pieces
+    .filter((piece): piece is string => typeof piece === 'string')
+    .join('');
+}
+
+function documentWorkflowDefinition(template: Template): string {
+  const resourceSchema = z.object({
+    Properties: z.object({
+      DefinitionString: z.unknown(),
+    }),
+  });
+  const machines = template.findResources('AWS::StepFunctions::StateMachine');
+  for (const resource of Object.values(machines)) {
+    const parsed = resourceSchema.safeParse(resource);
+    if (!parsed.success) continue;
+    const definition = stateMachineDefinitionText(
+      parsed.data.Properties.DefinitionString,
+    );
+    if (definition.includes('DocGather')) return definition;
+  }
+  throw new Error('Document workflow state machine was not synthesized');
+}
+
+describe('document workflow replay routing', () => {
+  const state: { definition: string } = { definition: '' };
+  beforeAll(() => {
+    state.definition = documentWorkflowDefinition(synthApiTemplate());
+  });
+
+  it('selects the replay marker from the gather Lambda result', () => {
+    expect(state.definition).toContain(
+      '"replayed.$":"$.Payload.replayed"',
+    );
+  });
+
+  it('completes committed replays and runs fresh allocations', () => {
+    expect(state.definition).toContain('"DocumentAlreadyGenerated"');
+    expect(state.definition).toContain(
+      '"Variable":"$.gathered.replayed","BooleanEquals":true,"Next":"DocComplete"',
+    );
+    expect(state.definition).toContain('"Default":"DocStep0"');
+  });
+});
+
+describe('the Bedrock generation budget fits the job Lambdas', () => {
+  // The bug this pins was arithmetic split across two files: shared/aws.py built
+  // the ONE cached Bedrock client with read_timeout=300 and max_attempts=3, and
+  // the job functions below are configured for 15 minutes. 3 x 300 = 900, so a
+  // generation needing more than five minutes could not succeed at all — two
+  // abandoned attempts, each re-paying for a full generation, then killed
+  // mid-third. Measured live on a prototype build, where the application log read
+  // "Attempt 1/5" for the whole 900 s because botocore retried BELOW
+  // shared/converse.py's own loop.
+  //
+  // Neither file could catch it alone, which is the reason this test exists here:
+  // the Python side pins the values and their product (lambda/shared/test/
+  // test_aws.py), and this side pins the product against the timeouts actually
+  // synthesized. Same shape as the delegation-timeout suite above.
+  //
+  // Matched on LOGICAL ID, not FunctionName: uniqueName() builds names from the
+  // Aws.ACCOUNT_ID/Aws.REGION pseudo-parameters, so FunctionName synthesizes to
+  // an Fn::Join rather than a comparable string.
+  const JOB_CONSTRUCT_IDS = [
+    'PersonaGeneratorJob',
+    'DocumentGeneratorJob',
+    'DocumentMergerJob',
+    'PersonaImporterJob',
+  ];
+
+  // The two that run a FULL-LENGTH generation, and the pair the read budget is
+  // sized against: `build_prototype` asks for 32000 tokens on this generator, and
+  // persona generation is the other 15-minute caller. `voc-research-step` in
+  // ProcessingStack is the third, pinned at the same 900 s by its own suite.
+  const LONG_GENERATION_JOB_IDS = ['DocumentGeneratorJob', 'PersonaGeneratorJob'];
+
+  const JobFunctionSchema = z.object({ Timeout: z.number() });
+
+  /** Each named function's logical id and timeout, validated rather than assumed. */
+  const jobFunctions = (constructIds: string[] = JOB_CONSTRUCT_IDS) => {
+    const functions = Object.entries(apiTemplate().findResources('AWS::Lambda::Function'));
+    return constructIds.map((constructId) => {
+      const matches = functions.filter(([logicalId]) => logicalId.startsWith(constructId));
+      // Count FIRST: a renamed construct must read as "not found", not as a
+      // vacuous pass over an empty list.
+      expect(matches, `expected exactly one ${constructId}`).toHaveLength(1);
+      return {
+        constructId,
+        logicalId: matches[0][0],
+        timeout: JobFunctionSchema.parse(matches[0][1].Properties).Timeout,
+      };
+    });
+  };
+
+  /** read_timeout x max_attempts, read from the Python that configures the client. */
+  const bedrockMaxAttempts = () =>
+    pythonIntConstant('BEDROCK_MAX_ATTEMPTS', 'lambda', 'shared', 'aws.py');
+  const bedrockBudgetSeconds = () =>
+    pythonIntConstant('BEDROCK_READ_TIMEOUT_SECONDS', 'lambda', 'shared', 'aws.py') *
+    bedrockMaxAttempts();
+
+  it('fires before the long-generation jobs are killed, with time to record the failure', () => {
+    const budget = bedrockBudgetSeconds();
+
+    for (const fn of jobFunctions(LONG_GENERATION_JOB_IDS)) {
+      // Strictly less than, not "fits": a budget that merely EQUALS the ceiling
+      // is the original bug exactly. The invocation has to outlive its own read
+      // timeout far enough for shared/jobs.py to write the job `failed`, or a slow
+      // generation is a silent kill and a job row stuck on `running` forever.
+      expect(budget, `${fn.constructId} runs ${fn.timeout}s; the Bedrock read budget is ${budget}s`)
+        .toBeLessThan(fn.timeout - BEDROCK_FAILURE_RECORDING_RESERVE_SECONDS);
+    }
+  });
+
+  it('classifies every job Lambda as one the read timeout binds inside, or one it does not', () => {
+    // ONE cached client serves the 30 s API handlers, the 5-10 minute
+    // importer/merger jobs and the 15-minute generators, so "the budget is below
+    // every caller's timeout" is not achievable: a per-caller read timeout needs a
+    // keyed client cache plus the caller's remaining time plumbed through
+    // converse(), which nothing passes today.
+    //
+    // Rather than leave that asymmetry as prose, it is enumerated. A job Lambda is
+    // in exactly one band, and a new one — or a timeout change that moves an
+    // existing one across the line — fails here and has to be classified in review
+    // instead of quietly inheriting whichever behaviour it happens to get.
+    //
+    // Band 2 is not a regression introduced by the budget: at the previous 300 x 3
+    // the merger's first read timeout did not surface either, because botocore had
+    // already started attempt 2 when the function was killed. What band 2 costs is
+    // the DIAGNOSIS — the row stays `running` rather than going `failed` — and that
+    // is the separately documented job-timeout defect, whose fix (a remaining-time
+    // guard) covers OOM and every other kill too, so a read-timeout-shaped fix here
+    // would only be a partial one.
+    const budget = bedrockBudgetSeconds();
+    const bands = { bindsInside: [] as string[], killedAtItsOwnCeiling: [] as string[] };
+
+    for (const fn of jobFunctions()) {
+      const band = budget < fn.timeout - BEDROCK_FAILURE_RECORDING_RESERVE_SECONDS
+        ? 'bindsInside'
+        : 'killedAtItsOwnCeiling';
+      bands[band].push(fn.constructId);
+    }
+
+    expect(bands).toEqual({
+      // 15-minute generations: the read timeout fires first and the job records `failed`.
+      bindsInside: ['PersonaGeneratorJob', 'DocumentGeneratorJob'],
+      // 10- and 5-minute jobs: their own timeout is reached first. Safe because the
+      // budget is ONE attempt, so nothing is spent on a retry that cannot help.
+      killedAtItsOwnCeiling: ['DocumentMergerJob', 'PersonaImporterJob'],
+    });
+  });
+
+  it('never multiplies inside a caller too short for the read timeout to bind', () => {
+    // The property that makes one shared budget safe for band 2 above: a single
+    // attempt, so no caller is ever handed a MULTIPLE of the read timeout. This is
+    // the assertion that fails if someone restores botocore's retries.
+    expect(bedrockMaxAttempts(), 'shared/aws.py must make exactly one Bedrock attempt: more than '
+      + 'one makes the budget a MULTIPLE of the read timeout, which is how 300 x 3 came to equal '
+      + 'the 900s job ceiling').toBe(1);
+  });
+
+  it('does not retry the whole generation behind the caller', () => {
+    // These four are invoked with InvocationType='Event', and AWS re-drives a
+    // failed async invocation twice more by default — the second multiplier that
+    // turned one 15-minute kill into ~45 minutes of Opus generations. A missing
+    // EventInvokeConfig is indistinguishable from the default at a glance, which
+    // is why the resource is asserted to EXIST rather than just to be zero.
+    const configs = Object.values(apiTemplate().findResources('AWS::Lambda::EventInvokeConfig'))
+      .map((resource) => z.object({
+        Properties: z.object({
+          FunctionName: RefSchema,
+          MaximumRetryAttempts: z.number(),
+        }),
+      }).parse(resource).Properties);
+
+    for (const fn of jobFunctions()) {
+      const config = configs.find((c) => c.FunctionName.Ref === fn.logicalId);
+      expect(config, `${fn.constructId} has no EventInvokeConfig, so AWS retries it twice`)
+        .toBeDefined();
+      expect(config?.MaximumRetryAttempts, `${fn.constructId} async retries`).toBe(0);
+    }
+  });
+});
+
+
+/** The provider writes to the live data tables, so a normal install must not have one. */
+function fixtureProviderEntry(template: Template): [string, unknown] | undefined {
+  return Object.entries(template.findResources('AWS::Lambda::Function')).find(([, resource]) =>
+    (resource as { Properties?: { Handler?: string } }).Properties?.Handler
+      === 'verification_fixture_provider.lambda_handler');
+}
+
+/**
+ * Both conditions are load-bearing, so both single-condition shapes are tested.
+ * A prefixed PRODUCTION slot is the case that makes topology alone unsafe, and
+ * the flag alone must not smuggle the provider into a default deployment.
+ */
+describe('the fixture provider is absent unless a prefixed deployment opts in', () => {
+  it.each([
+    ['neither a prefix nor the flag', undefined, {}],
+    ['a prefix but no flag', 'b', {}],
+    ['the flag but no prefix', undefined, { enableVerificationFixtureProvider: true }],
+  ])('creates nothing given %s', (_label, prefix, context) => {
+    const template = prefix === undefined && Object.keys(context).length === 0
+      ? apiTemplate()
+      : synthApiTemplate(context, [], prefix);
+    expect(fixtureProviderEntry(template)).toBeUndefined();
+    const outputs = (template.toJSON().Outputs ?? {}) as Record<string, unknown>;
+    expect(outputs.VerificationFixtureProviderArn).toBeUndefined();
+    // No role, policy or log group may survive either.
+    expect(JSON.stringify(template.toJSON())).not.toContain('voc-fixture-provider');
+  });
+
+  it('rejects truthy-looking spellings that are not the accepted ones', () => {
+    for (const value of ['TRUE', '1', 'yes', 'on', false] as unknown[]) {
+      const template = synthApiTemplate({ enableVerificationFixtureProvider: value }, [], 'b');
+      // Same three assertions as the shapes above: a partial leak (role or log
+      // group created while the function is skipped) must fail here too.
+      expect(fixtureProviderEntry(template)).toBeUndefined();
+      const outputs = (template.toJSON().Outputs ?? {}) as Record<string, unknown>;
+      expect(outputs.VerificationFixtureProviderArn).toBeUndefined();
+      expect(JSON.stringify(template.toJSON())).not.toContain('voc-fixture-provider');
+    }
+  });
+});
+
+describe('the optional invoker ARN narrows invoke to one principal', () => {
+  const enabled = { enableVerificationFixtureProvider: true };
+
+  // The template carries ~105 API Gateway permissions; only the provider's matter.
+  const invokerPermissions = (template: Template) =>
+    Object.entries(template.findResources('AWS::Lambda::Permission'))
+      .filter(([logicalId]) => logicalId.includes('VerificationFixtureInvoker'));
+
+  it('attaches no resource policy when no ARN is supplied', () => {
+    expect(invokerPermissions(apiTemplatePrefixed())).toEqual([]);
+  });
+
+  it('attaches a permission for exactly the supplied role', () => {
+    const arn = 'arn:aws:iam::111122223333:role/my-verification-role';
+    const permissions = invokerPermissions(synthApiTemplate(
+      { ...enabled, verificationFixtureInvokerArn: arn }, [], 'b',
+    ));
+    expect(permissions).toHaveLength(1);
+    const props = (permissions[0][1] as { Properties: Record<string, unknown> }).Properties;
+    expect(props.Action).toBe('lambda:InvokeFunction');
+    expect(props.Principal).toBe(arn);
+  });
+
+  it.each([
+    ['not an arn', 'my-verification-role'],
+    ['a non-IAM arn', 'arn:aws:lambda:us-east-1:111122223333:function:x'],
+    ['a wildcard account', 'arn:aws:iam::*:role/x'],
+    // IAM rejects these at deploy time, so synth must reject them first.
+    ['a wildcard path', 'arn:aws:iam::111122223333:role/*'],
+    ['a wildcard inside the path', 'arn:aws:iam::111122223333:role/team-*'],
+    // `?` is an IAM wildcard too, and just as invalid in a principal.
+    ['a single-character wildcard', 'arn:aws:iam::111122223333:role/te?m'],
+    ['trailing junk after the arn', 'arn:aws:iam::111122223333:role/x extra'],
+    ['an empty role name', 'arn:aws:iam::111122223333:role/'],
+    ['a non-string', 42],
+  ])('fails at synth given %s rather than deploying a useless policy', (_label, value) => {
+    expect(() => synthApiTemplate(
+      { ...enabled, verificationFixtureInvokerArn: value }, [], 'b',
+    )).toThrow(/verificationFixtureInvokerArn/);
+  });
+});
+
+/**
+ * Gating the provider behind prefix+flag moved its IAM out of the shape that
+ * `npm run cdk:nag` synthesizes (the default app, no prefix), so nothing in CI
+ * would have reported a wildcard on it. This runs cdk-nag over the shape that
+ * DOES contain it, which is the only place those findings can appear.
+ */
+it('leaves no unsuppressed cdk-nag finding on the fixture provider', () => {
+  const stack = buildApiStack(
+    { enableVerificationFixtureProvider: true }, [], 'b', [new AwsSolutionsChecks()],
+  );
+  // Mirror ONLY the suppression bin/voc-datalake.ts applies for the shared
+  // createLambdaRole helper's AWSLambdaBasicExecutionRole. Deliberately not the
+  // rest of that file's list: every other rule — IAM5 wildcards above all —
+  // must still be able to fail this case.
+  NagSuppressions.addStackSuppressions(stack, lambdaBasicExecutionRoleSuppressions, true);
+  const annotations = Annotations.fromStack(stack);
+  const provider = [...annotations.findError('*', Match.anyValue()),
+    ...annotations.findWarning('*', Match.anyValue())]
+    .filter((annotation) => annotation.id.includes('VerificationFixtureProvider'))
+    .map((annotation) => `${annotation.id} ${JSON.stringify(annotation.entry.data)}`);
+  expect(provider, `unsuppressed findings:\n${provider.join('\n')}`).toEqual([]);
+});
+
+it('private fixture provider has exact shape, table IAM, output, and no public endpoint', () => {
+  const template = apiTemplatePrefixed();
+  const providerEntry = fixtureProviderEntry(template);
+  expect(providerEntry).toBeDefined();
+  if (!providerEntry) return;
+  const [providerLogicalId, provider] = providerEntry;
+  const props = (provider as { Properties: Record<string, unknown> }).Properties;
+  expect(props.Runtime).toBe('python3.14');
+  expect(props.MemorySize).toBe(256);
+  expect(props.Timeout).toBe(30);
+  expect(props.Architectures).toEqual(['arm64']);
+  const variables = (props.Environment as { Variables: Record<string, unknown> }).Variables;
+  expect(Object.keys(variables).sort()).toEqual([
+    'AGGREGATES_TABLE', 'LOG_LEVEL', 'POWERTOOLS_SERVICE_NAME', 'PROJECTS_TABLE',
+  ]);
+  expect(variables.POWERTOOLS_SERVICE_NAME).toBe('voc-fixture-provider');
+  expect(variables.LOG_LEVEL).toBe('INFO');
+  expect(JSON.stringify(variables.PROJECTS_TABLE)).toMatch(/Projects/);
+  expect(JSON.stringify(variables.AGGREGATES_TABLE)).toMatch(/Aggregates/);
+
+  const roleRef = (props.Role as { 'Fn::GetAtt': [string, string] })['Fn::GetAtt'][0];
+  const policies = template.findResources('AWS::IAM::Policy');
+  const statements = Object.values(policies).flatMap((resource) => {
+    const policy = resource as {
+      Properties?: {
+        Roles?: Array<{ Ref?: string }>;
+        PolicyDocument?: { Statement?: Array<Record<string, unknown>> };
+      };
+    };
+    return policy.Properties?.Roles?.some((role) => role.Ref === roleRef)
+      ? policy.Properties.PolicyDocument?.Statement ?? []
+      : [];
+  });
+  const dynamo = statements.filter((statement) =>
+    JSON.stringify(statement.Resource).includes('Projects')
+    || JSON.stringify(statement.Resource).includes('Aggregates'));
+  const actions = new Set(dynamo.flatMap((statement) =>
+    Array.isArray(statement.Action) ? statement.Action as string[] : [String(statement.Action)]));
+  expect([...actions].sort()).toEqual([
+    'dynamodb:DeleteItem', 'dynamodb:GetItem', 'dynamodb:PutItem',
+  ]);
+  const kms = statements.filter((statement) => {
+    const statementActions = Array.isArray(statement.Action)
+      ? statement.Action as string[]
+      : [String(statement.Action)];
+    return statementActions.some((action) => action.startsWith('kms:'));
+  });
+  const kmsActions = new Set(kms.flatMap((statement) =>
+    Array.isArray(statement.Action) ? statement.Action as string[] : [String(statement.Action)]));
+  expect([...kmsActions].sort()).toEqual([
+    'kms:Decrypt',
+    'kms:DescribeKey',
+    'kms:Encrypt',
+    'kms:GenerateDataKey',
+    'kms:GenerateDataKeyWithoutPlaintext',
+    'kms:ReEncryptFrom',
+    'kms:ReEncryptTo',
+  ]);
+  const kmsPolicy = JSON.stringify(kms);
+  expect(kmsPolicy).toContain('kms:ViaService');
+  expect(kmsPolicy).toContain('kms:CallerAccount');
+  expect(kmsPolicy).toContain('kms:EncryptionContext:aws:dynamodb:tableName');
+  expect(kmsPolicy).toMatch(/Projects/);
+  expect(kmsPolicy).toMatch(/Aggregates/);
+  expect(dynamo.some((statement) => JSON.stringify(statement.Action).includes('Query'))).toBe(false);
+  expect(dynamo.some((statement) => JSON.stringify(statement.Action).includes('Scan'))).toBe(false);
+  expect(dynamo.some((statement) => JSON.stringify(statement.Action).includes('UpdateItem'))).toBe(false);
+
+  // Scoped to the two TABLE ARNs, never `<table>/index/*`. Asserting only the
+  // actions (as this case first did) would pass while the resource set was wide.
+  for (const statement of dynamo) {
+    const resources = Array.isArray(statement.Resource) ? statement.Resource : [statement.Resource];
+    expect(JSON.stringify(resources)).not.toContain('index/');
+    expect(resources.length).toBe(2);
+  }
+
+  const outputs = template.toJSON().Outputs as Record<string, { Value?: unknown }>;
+  expect(outputs.VerificationFixtureProviderArn?.Value).toEqual({
+    'Fn::GetAtt': [providerLogicalId, 'Arn'],
+  });
+  expect(Object.keys(template.findResources('AWS::Lambda::Url'))).toHaveLength(0);
+  const methods = JSON.stringify(template.findResources('AWS::ApiGateway::Method'));
+  expect(methods.includes(providerLogicalId)).toBe(false);
 });

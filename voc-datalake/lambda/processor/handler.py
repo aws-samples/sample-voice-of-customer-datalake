@@ -526,6 +526,13 @@ def process_feedback(raw_record: dict, idempotency_key: str = None) -> dict:
         # Data fields
         'feedback_id': feedback_id,
         'source_id': raw_record.get('id', ''),
+        # The identifier the source's own export carried, when it is not usable
+        # as the item id because it is only unique within one file (CSV upload).
+        # Optional: absent for every other source, and left out of the item
+        # entirely by the "Remove None values" comprehension at the end of this
+        # function — keep that step if this block is refactored, or sources that
+        # send no identifier start writing null attributes.
+        'csv_row_id': raw_record.get('csv_row_id'),
         'source_platform': source_platform,
         'source_channel': raw_record.get('source_channel', 'unknown'),
         # Ingestion-path provenance (e.g. 'manual', 'csv_upload', 'json_upload').

@@ -555,3 +555,47 @@ class TestOptionalExtraSources:
         assert response['statusCode'] == 200
         assert config['selected_research_ids'] == []
         invoke.assert_called_once()
+
+
+class TestPrototypeTitleBoundary:
+    @pytest.mark.parametrize('title', [
+        pytest.param([], id='list'),
+        pytest.param({'title': 'Prototype'}, id='object'),
+        pytest.param(7, id='number'),
+        pytest.param(True, id='boolean'),
+        pytest.param('   ', id='whitespace'),
+    ])
+    def test_invalid_title_is_rejected_before_source_reads_or_job_creation(
+        self, build_prototype, title,
+    ):
+        response, config, table, invoke = build_prototype({
+            'title': title,
+            'source_prd_id': 'prd_1',
+        })
+
+        assert response['statusCode'] == 400
+        assert 'title' in json.loads(response['body'])['error'].lower()
+        assert config is None
+        table.get_item.assert_not_called()
+        invoke.assert_not_called()
+
+    def test_terminal_version_suffix_is_stripped_before_job_creation(self, build_prototype):
+        response, config, _table, invoke = build_prototype({
+            'title': '  Checkout   Prototype (v7)  ',
+        })
+
+        assert response['statusCode'] == 200
+        assert config['title'] == 'Checkout Prototype'
+        assert invoke.call_args.args[1]['doc_config']['title'] == 'Checkout Prototype'
+
+    @pytest.mark.parametrize('body', [
+        pytest.param({}, id='absent'),
+        pytest.param({'title': None}, id='null'),
+        pytest.param({'title': ''}, id='empty'),
+    ])
+    def test_missing_title_preserves_the_prototype_default(self, build_prototype, body):
+        response, config, _table, invoke = build_prototype(body)
+
+        assert response['statusCode'] == 200
+        assert config['title'] == 'Prototype'
+        assert invoke.call_args.args[1]['doc_config']['title'] == 'Prototype'
