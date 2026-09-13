@@ -23,7 +23,10 @@ import { join } from 'node:path';
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import * as cdk from 'aws-cdk-lib';
-import { Template } from 'aws-cdk-lib/assertions';
+import { Annotations, Match, Template } from 'aws-cdk-lib/assertions';
+import { AwsSolutionsChecks, NagSuppressions } from 'cdk-nag';
+
+import { lambdaBasicExecutionRoleSuppressions } from '../utils/nag-suppressions';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as s3 from 'aws-cdk-lib/aws-s3';
@@ -92,11 +95,12 @@ function discoverPluginIds(): string[] {
     .sort();
 }
 
-function synthApiTemplate(
+function buildApiStack(
   context: Record<string, unknown> = {},
   enabledSources: string[] = [],
   deploymentPrefix?: string,
-): Template {
+  aspects: cdk.IAspect[] = [],
+): VocApiStack {
   // Skip asset bundling (Docker) and the frontend-freshness guard — template
   // assertions only need structure, and the check would make the suite depend
   // on whether frontend/dist happens to be newer than frontend/src.
@@ -106,10 +110,23 @@ function synthApiTemplate(
   const env = { account: '111111111111', region: 'us-east-1' };
   const deps = new cdk.Stack(app, 'TestDeps', { env });
 
-  const table = (id: string) => new dynamodb.Table(deps, id, {
-    partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
-    sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
-  });
+  // The real Projects/Aggregates tables carry GSIs, and that detail is
+  // load-bearing for IAM assertions: `Table.grant()` expands to the table ARN
+  // *plus* `<table>/index/*` only when an index exists. Without one here, a
+  // wide grant and a table-scoped statement synthesize identically and every
+  // wildcard assertion in this file is vacuous.
+  const table = (id: string) => {
+    const created = new dynamodb.Table(deps, id, {
+      partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
+    });
+    created.addGlobalSecondaryIndex({
+      indexName: 'gsi1',
+      partitionKey: { name: 'gsi1pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'gsi1sk', type: dynamodb.AttributeType.STRING },
+    });
+    return created;
+  };
   const userPool = new cognito.UserPool(deps, 'UserPool');
   const websiteBucket = new s3.Bucket(deps, 'Website');
 
@@ -147,7 +164,17 @@ function synthApiTemplate(
     enabledSources,
   });
 
-  return Template.fromStack(stack);
+  // Added after construction but before any synth, which is when aspects run.
+  for (const aspect of aspects) cdk.Aspects.of(app).add(aspect);
+  return stack;
+}
+
+function synthApiTemplate(
+  context: Record<string, unknown> = {},
+  enabledSources: string[] = [],
+  deploymentPrefix?: string,
+): Template {
+  return Template.fromStack(buildApiStack(context, enabledSources, deploymentPrefix));
 }
 
 // Synthesizing is the expensive part of the suite and most tests want the same
@@ -3053,9 +3080,37 @@ describe('the fixture provider is absent unless a prefixed deployment opts in', 
   it('rejects truthy-looking spellings that are not the accepted ones', () => {
     for (const value of ['TRUE', '1', 'yes', 'on', false] as unknown[]) {
       const template = synthApiTemplate({ enableVerificationFixtureProvider: value }, [], 'b');
+      // Same three assertions as the shapes above: a partial leak (role or log
+      // group created while the function is skipped) must fail here too.
       expect(fixtureProviderEntry(template)).toBeUndefined();
+      const outputs = (template.toJSON().Outputs ?? {}) as Record<string, unknown>;
+      expect(outputs.VerificationFixtureProviderArn).toBeUndefined();
+      expect(JSON.stringify(template.toJSON())).not.toContain('voc-fixture-provider');
     }
   });
+});
+
+/**
+ * Gating the provider behind prefix+flag moved its IAM out of the shape that
+ * `npm run cdk:nag` synthesizes (the default app, no prefix), so nothing in CI
+ * would have reported a wildcard on it. This runs cdk-nag over the shape that
+ * DOES contain it, which is the only place those findings can appear.
+ */
+it('leaves no unsuppressed cdk-nag finding on the fixture provider', () => {
+  const stack = buildApiStack(
+    { enableVerificationFixtureProvider: true }, [], 'b', [new AwsSolutionsChecks()],
+  );
+  // Mirror ONLY the suppression bin/voc-datalake.ts applies for the shared
+  // createLambdaRole helper's AWSLambdaBasicExecutionRole. Deliberately not the
+  // rest of that file's list: every other rule — IAM5 wildcards above all —
+  // must still be able to fail this case.
+  NagSuppressions.addStackSuppressions(stack, lambdaBasicExecutionRoleSuppressions, true);
+  const annotations = Annotations.fromStack(stack);
+  const provider = [...annotations.findError('*', Match.anyValue()),
+    ...annotations.findWarning('*', Match.anyValue())]
+    .filter((annotation) => annotation.id.includes('VerificationFixtureProvider'))
+    .map((annotation) => `${annotation.id} ${JSON.stringify(annotation.entry.data)}`);
+  expect(provider, `unsuppressed findings:\n${provider.join('\n')}`).toEqual([]);
 });
 
 it('private fixture provider has exact shape, table IAM, output, and no public endpoint', () => {
@@ -3125,6 +3180,14 @@ it('private fixture provider has exact shape, table IAM, output, and no public e
   expect(dynamo.some((statement) => JSON.stringify(statement.Action).includes('Query'))).toBe(false);
   expect(dynamo.some((statement) => JSON.stringify(statement.Action).includes('Scan'))).toBe(false);
   expect(dynamo.some((statement) => JSON.stringify(statement.Action).includes('UpdateItem'))).toBe(false);
+
+  // Scoped to the two TABLE ARNs, never `<table>/index/*`. Asserting only the
+  // actions (as this case first did) would pass while the resource set was wide.
+  for (const statement of dynamo) {
+    const resources = Array.isArray(statement.Resource) ? statement.Resource : [statement.Resource];
+    expect(JSON.stringify(resources)).not.toContain('index/');
+    expect(resources.length).toBe(2);
+  }
 
   const outputs = template.toJSON().Outputs as Record<string, { Value?: unknown }>;
   expect(outputs.VerificationFixtureProviderArn?.Value).toEqual({

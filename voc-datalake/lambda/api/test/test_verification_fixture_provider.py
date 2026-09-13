@@ -9,6 +9,7 @@ import boto3
 import pytest
 from botocore.exceptions import ClientError
 from moto import mock_aws
+from shared.project_writes import VERIFICATION_FIXTURE_ATTRIBUTE, is_verification_fixture
 from shared.exceptions import (
     ApiError,
     ConfigurationError,
@@ -18,6 +19,8 @@ from shared.exceptions import (
 )
 from verification_fixture_provider import (
     CAPABILITY,
+    FIXTURE_TTL_SECONDS,
+    RENEWAL_MARGIN_SECONDS,
     REQUEST_SCHEMA,
     RESULT_SCHEMA,
     _transact,
@@ -274,6 +277,70 @@ class TestProviderLifecycle:
         assert renewed['expires_at'] > first['expires_at']
         assert len(_items(projects)) == 2
         assert len(_items(aggregates)) == 1
+
+    @mock_aws
+    def test_renews_a_fixture_that_is_live_but_inside_the_margin(self):
+        """Reusing a nearly-expired fixture would hand the caller records that
+        DynamoDB can delete part-way through the run, so the expiry moves forward
+        while the request-derived identity stays put."""
+        projects, aggregates = _tables()
+        now = datetime(2026, 9, 11, 10, 0, tzinfo=timezone.utc)
+        inside = now + timedelta(seconds=FIXTURE_TTL_SECONDS - RENEWAL_MARGIN_SECONDS // 2)
+        with (
+            patch('verification_fixture_provider.get_projects_table', return_value=projects),
+            patch('verification_fixture_provider.get_aggregates_table', return_value=aggregates),
+        ):
+            first = setup_fixture(_request('setup'), now=now)
+            renewed = setup_fixture(_request('setup'), now=inside)
+
+        assert renewed['expires_at'] > first['expires_at'], 'expiry must move forward'
+        for key in ('fixture_id', 'project_id', 'document_ids', 'row_ids'):
+            assert renewed[key] == first[key], f'renewal must not change {key}'
+        # Renewal rewrites in place: still exactly one project, document and row.
+        assert len(_items(projects)) == 2
+        assert len(_items(aggregates)) == 1
+
+    @mock_aws
+    def test_reuse_just_outside_the_margin_keeps_the_original_expiry(self):
+        """The boundary case that proves the margin is doing the deciding, not
+        merely that any second setup renews."""
+        projects, aggregates = _tables()
+        now = datetime(2026, 9, 11, 10, 0, tzinfo=timezone.utc)
+        outside = now + timedelta(seconds=FIXTURE_TTL_SECONDS - RENEWAL_MARGIN_SECONDS - 60)
+        with (
+            patch('verification_fixture_provider.get_projects_table', return_value=projects),
+            patch('verification_fixture_provider.get_aggregates_table', return_value=aggregates),
+        ):
+            first = setup_fixture(_request('setup'), now=now)
+            reused = setup_fixture(_request('setup'), now=outside)
+
+        assert reused['state'] == 'reused'
+        assert reused['expires_at'] == first['expires_at']
+
+    @mock_aws
+    def test_every_record_carries_the_marker_the_project_list_filters_on(self):
+        """Lockstep with lambda/shared/project_writes.py.
+
+        The fixture is deliberately indexed like a real project, so this marker is
+        the ONLY thing keeping it out of the human-facing project list. Renaming it
+        on either side silently un-hides verification data, and no other test in
+        either module would fail.
+        """
+        projects, aggregates = _tables()
+        now = datetime(2026, 9, 11, 10, 0, tzinfo=timezone.utc)
+        with (
+            patch('verification_fixture_provider.get_projects_table', return_value=projects),
+            patch('verification_fixture_provider.get_aggregates_table', return_value=aggregates),
+        ):
+            setup_fixture(_request('setup'), now=now)
+
+        written = _items(projects) + _items(aggregates)
+        assert written, 'setup must have written something to assert on'
+        for item in written:
+            assert VERIFICATION_FIXTURE_ATTRIBUTE in item, item.get('sk')
+        assert all(is_verification_fixture(item) for item in written)
+        # And the ordinary project-list predicate agrees about a real project.
+        assert not is_verification_fixture({'pk': 'PROJECT#real', 'sk': 'META'})
 
 
 class TestLambdaHandler:

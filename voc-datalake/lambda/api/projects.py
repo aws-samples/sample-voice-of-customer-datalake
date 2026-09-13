@@ -62,6 +62,7 @@ from shared.project_writes import (
     PROJECT_WRITABLE_ATTRIBUTE_VALUES,
     PROJECT_WRITABLE_CONDITION,
     is_project_tombstone,
+    is_verification_fixture,
     project_meta_key,
     projects_table_name,
     put_project_item,
@@ -294,6 +295,11 @@ def list_projects() -> dict:
     projects = []
     for item in response.get('Items', []):
         if is_project_tombstone(item):
+            continue
+        # Verification fixtures are indexed like real projects on purpose, so the
+        # fixture exercises the real read paths. Hide them from the LIST only —
+        # excluding them from the by-id reads below would defeat that purpose.
+        if is_verification_fixture(item):
             continue
         project_id = item.get('project_id')
         

@@ -348,6 +348,44 @@ but both are worth knowing before running several copies:
   inside their own RestApi, and each deployment has its own, so prefixing them
   would add churn without preventing a collision.
 
+### Verification fixture provider (opt-in, never on production)
+
+`.abca/fixture-manifest.json` at the repository root is this repo's contract with
+[ABCA](https://github.com/aws-samples/sample-autonomous-cloud-coding-agents), an
+autonomous coding-agent harness that deploys a pull request to a throwaway slot
+and verifies it. The manifest is **declaration only** — it states which fixture
+capability the repo offers, the shape of the records, and a protocol version. It
+carries no ARN, IAM, secret, table name or write recipe, so a commit cannot grant
+itself privileged access by editing it.
+
+The half that *has* authority is a private Lambda, `voc-fixture-provider`
+(`lambda/api/verification_fixture_provider.py`), which seeds and removes a
+deterministic prioritization baseline. It can **write and delete rows in the live
+Projects and Aggregates tables**, so it is created only when *both* of these hold:
+
+```bash
+cdk deploy --all -c deploymentPrefix=b -c enableVerificationFixtureProvider=true
+```
+
+- `deploymentPrefix` — a throwaway side-by-side copy, never the primary deployment.
+- `enableVerificationFixtureProvider` — explicit intent. Accepts only `true` or
+  `"true"`; `TRUE`, `1`, `yes` and anything else mean off.
+
+**Never set `enableVerificationFixtureProvider` on a production deployment.** The
+prefix alone is not a safeguard: a production copy can also be prefixed, which is
+why the flag exists as a second, independent condition. Omit it and the function,
+its role, its table and KMS grants, its log group and its ARN output do not exist
+at all — a default `cdk deploy` is byte-identical with and without this feature
+(`lib/app-baseline.test.ts` asserts exactly that).
+
+The provider has no API Gateway route, Function URL, Cognito authorizer, frontend
+configuration or model access; it is reachable only by direct `lambda:InvokeFunction`
+from a caller the operator grants. Fixture rows are indexed like ordinary projects
+on purpose, so the fixture exercises the real read paths, and they are excluded
+from the project list by the `verification_fixture_id` marker
+(`is_verification_fixture` in `lambda/shared/project_writes.py`). Records also
+carry a TTL and are removed by an explicit teardown call.
+
 ### Stack Deployment Order
 
 Due to dependencies, stacks should be deployed in this order:

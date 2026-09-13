@@ -19,6 +19,10 @@ PROJECT_WRITABLE_CONDITION = (
     'AND (attribute_not_exists(#status) OR '
     '(#status <> :deleting_status AND #status <> :deleted_status))'
 )
+# Written by lambda/api/verification_fixture_provider.py on every fixture record.
+# Keep the two in lockstep: renaming it there without renaming it here makes
+# fixture projects visible in the ordinary project list.
+VERIFICATION_FIXTURE_ATTRIBUTE = 'verification_fixture_id'
 PROJECT_WRITABLE_ATTRIBUTE_NAMES = {
     '#deleting': PROJECT_DELETION_ATTRIBUTE,
     '#status': 'status',
@@ -38,6 +42,17 @@ def is_project_tombstone(item: dict[str, Any] | None) -> bool:
         PROJECT_DELETION_ATTRIBUTE in item
         or item.get('status') in PROJECT_TERMINAL_STATUSES
     )
+
+
+def is_verification_fixture(item: dict[str, Any] | None) -> bool:
+    """Rows seeded by the ABCA verification fixture provider.
+
+    Those rows are indexed like ordinary projects — they have to be, because the
+    point of the fixture is to exercise the real read paths — so nothing but this
+    marker distinguishes them. Anything rendering a project list to a human must
+    skip them, or a verification run shows up as somebody's project.
+    """
+    return bool(item) and VERIFICATION_FIXTURE_ATTRIBUTE in item
 
 
 def projects_table_name(table) -> str:

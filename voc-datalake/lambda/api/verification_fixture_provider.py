@@ -3,6 +3,12 @@
 Direct Lambda invocation only: no API Gateway route, Cognito authorizer, browser
 session, or target-controlled recipe. ABCA supplies one closed durable subject;
 this provider owns every VoC key, item shape, relationship and cleanup rule.
+
+No Metrics decorator, deliberately. Powertools Metrics publishes into the shared
+"VoC" CloudWatch namespace that carries production KPIs, and this handler runs
+only during verification -- emitting there would contaminate the dashboards a
+verification run is supposed to leave untouched. Logs and traces are enough to
+debug it, and 16 of the 19 handlers in lambda/api/ also opt out.
 """
 
 from __future__ import annotations
@@ -29,6 +35,10 @@ REQUEST_SCHEMA = 'verification.fixture.provider.request.v1'
 RESULT_SCHEMA = 'verification.fixture.provider.result.v1'
 CAPABILITY = 'seed.prioritization-baseline'
 FIXTURE_TTL_SECONDS = 6 * 60 * 60
+# Reusing a fixture whose TTL is nearly up would hand the caller records that can
+# be deleted mid-run, so anything inside this margin is renewed rather than reused.
+# Must exceed the longest single verification run; one hour of a six-hour lifetime.
+RENEWAL_MARGIN_SECONDS = 60 * 60
 TRANSACTION_ATTEMPTS = 3
 PRIORITIZATION_PK = 'PRIORITIZATION'
 
@@ -206,11 +216,11 @@ def _transact(
 
 def _records(
     request: dict[str, str],
+    ids: dict[str, Any],
     *,
     expires_at: str,
     ttl: int,
-) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
-    ids = _ids(request)
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     fixture_id = ids['fixture_id']
     project_id = ids['project_id']
     document_id = ids['document_ids']['scorable_prd']
@@ -265,7 +275,7 @@ def _records(
         'ttl': ttl,
         **ownership,
     }]
-    return ids, project_items, aggregate_items
+    return project_items, aggregate_items
 
 
 def _existing_expiry(
@@ -286,10 +296,16 @@ def _existing_expiry(
     expires_at, ttl = item.get('fixture_expires_at'), item.get('ttl')
     if not isinstance(expires_at, str) or not isinstance(ttl, Number):
         raise ConflictError('Owned fixture metadata is incomplete')
-    if int(ttl) <= int(now.timestamp()):
-        # DynamoDB TTL deletion is asynchronous. An expired META item may remain
-        # visible after siblings disappear; treat it as a new generation and
-        # atomically repair all three records with a fresh expiry.
+    if int(ttl) <= int(now.timestamp()) + RENEWAL_MARGIN_SECONDS:
+        # Two cases, one repair. Either the TTL already passed — DynamoDB deletes
+        # asynchronously, so an expired META item can still be visible after its
+        # siblings vanish — or it is close enough that a caller reusing the
+        # fixture now could have its records deleted part-way through the run.
+        # Both are fixed by treating this as a new generation: return "not
+        # reused" so the caller mints a fresh expiry and atomically rewrites all
+        # three records. The owner condition still fences other subjects out, and
+        # the identity (ids) is derived from the request, so a renewal keeps the
+        # same project/document/row keys and only moves the expiry forward.
         return False, None, None
     return True, expires_at, int(ttl)
 
@@ -340,7 +356,7 @@ def setup_fixture(request: dict[str, str], *, now: datetime | None = None) -> di
         # `assert` would vanish under `python -O`, leaving the records below to be
         # built from None and fail far from the cause.
         raise ServiceError('fixture expiry could not be resolved')
-    ids, project_items, aggregate_items = _records(request, expires_at=expires_at, ttl=ttl)
+    project_items, aggregate_items = _records(request, ids, expires_at=expires_at, ttl=ttl)
     _transact(
         projects.meta.client,
         [

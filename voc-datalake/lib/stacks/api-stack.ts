@@ -729,18 +729,14 @@ export class VocApiStack extends VocStack {
       const verificationFixtureProviderRole = this.createLambdaRole(
         'VerificationFixtureProviderRole',
       );
-      projectsTable.grant(
-        verificationFixtureProviderRole,
-        'dynamodb:GetItem',
-        'dynamodb:PutItem',
-        'dynamodb:DeleteItem',
-      );
-      aggregatesTable.grant(
-        verificationFixtureProviderRole,
-        'dynamodb:GetItem',
-        'dynamodb:PutItem',
-        'dynamodb:DeleteItem',
-      );
+      // Scoped to the two TABLE ARNs and nothing else. `Table.grant()` would
+      // also add `<table>/index/*` because these tables carry GSIs, but the
+      // provider only ever touches exact keys — it never queries an index — so
+      // the wildcard would be unused privilege and an AwsSolutions-IAM5 finding.
+      verificationFixtureProviderRole.addToPolicy(new iam.PolicyStatement({
+        actions: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:DeleteItem'],
+        resources: [projectsTable.tableArn, aggregatesTable.tableArn],
+      }));
       const verificationKmsViaDynamo = {
         StringEquals: {
           'kms:ViaService': `dynamodb.${this.region}.${this.urlSuffix}`,
