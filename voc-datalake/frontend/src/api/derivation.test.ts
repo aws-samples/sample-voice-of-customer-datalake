@@ -5,14 +5,36 @@
  *
  * Every expectation is a literal — nothing here is derived from the code under
  * test.
+ *
+ * REVERT MAP for the prebuilt-index seam (issue #399 B):
+ *
+ *  * `resolveDerivationAgainst` diverging from `resolveDerivation` in ANY of the
+ *    three origins → "answers exactly what resolveDerivation answers", which pins
+ *    a declared, a legacy and an unresolved-source document as whole objects
+ *    rather than field by field, because the promise is the whole answer;
+ *  * a memo creeping in behind `resolveDerivationAgainst`, or the resolver reading
+ *    the wire a second time instead of the index it was handed → "consults the index
+ *    once per source and holds no state between calls" and "reads what a source is
+ *    from the given index and never from the wire again", which count the index's
+ *    lookups through a `Map` subclass instead of timing anything. Their positive
+ *    control is the first assertion of each — the titles the index actually resolved
+ *    — because a count is otherwise indistinguishable from the silence of a resolver
+ *    that looks nothing up;
+ *  * `derivationSourceIndex` dropping a field a source displays, or keeping an
+ *    entry for a record naming no document → "indexes a document list once for
+ *    every field a source displays", which is what lets `resolved: false` mean "not
+ *    among the documents supplied" rather than "supplied without a title".
  */
 import { describe, it, expect } from 'vitest'
 import {
   DERIVATION_ROLES,
+  derivationSourceIndex,
   emptyDerivation,
   normalizeDerivation,
   resolveDerivation,
+  resolveDerivationAgainst,
 } from './derivation'
+import type { DerivationSourceFields } from './derivation'
 
 const PRD = { document_id: 'prd_1', document_type: 'prd', title: 'Onboarding PRD' }
 const PRFAQ = { document_id: 'prfaq_1', document_type: 'prfaq', title: 'Onboarding PR/FAQ' }
@@ -508,5 +530,104 @@ describe('a cyclic reference chain', () => {
     expect(resolveDerivation(self, [self]).sources).toEqual([
       { document_id: 'self', role: 'reference', title: 'Self', document_type: 'prd', resolved: true },
     ])
+  })
+})
+
+describe('resolving against an index the caller already built', () => {
+  const DOCUMENTS = [PRD, PRFAQ]
+
+  /**
+   * One document per origin the contract distinguishes, plus the shape whose
+   * sources do NOT resolve — which is the case an index can get wrong in a way the
+   * other two cannot, because a missing entry and an empty one are what `resolved`
+   * tells apart.
+   */
+  const BY_ORIGIN = {
+    declared: {
+      document_id: 'prototype_1',
+      derivation: {
+        sources: [
+          { document_id: 'prd_1', role: 'prototype_prd' },
+          { document_id: 'prfaq_1', role: 'prototype_prfaq' },
+        ],
+        selected_document_count: 3,
+        feedback_count: 7,
+        persona_ids: ['persona_1'],
+        visual_document_ids: ['vis_1'],
+        product_context_included: true,
+      },
+    },
+    legacy: { document_id: 'merge_1', source_documents: ['prd_1', 'prfaq_1'] },
+    unresolved: { document_id: 'merge_2', source_documents: ['deleted_1'] },
+    none: { document_id: 'handwritten_1', title: 'Typed by hand' },
+  }
+
+  it('answers exactly what resolveDerivation answers', () => {
+    // WHOLE OBJECTS, not fields: the promise of the seam is the whole answer, and a
+    // per-field comparison is the one that lets `origin` or `resolved` drift. Asked
+    // of all four origins — declared, legacy, a source the project no longer holds,
+    // and nothing recoverable — because each takes a different path to the index.
+    const index = derivationSourceIndex(DOCUMENTS)
+    for (const [origin, document] of Object.entries(BY_ORIGIN)) {
+      expect(resolveDerivationAgainst(document, index), origin)
+        .toEqual(resolveDerivation(document, DOCUMENTS))
+    }
+    // The control: the four documents really do exercise the three origins, so the
+    // equality above is over answers that DIFFER rather than four empty ones.
+    expect(Object.values(BY_ORIGIN).map((d) => resolveDerivation(d, DOCUMENTS).origin))
+      .toEqual(['declared', 'legacy', 'legacy', 'none'])
+  })
+
+  it('reads what a source is from the given index and never from the wire again', () => {
+    // The decisive case for "the index is the caller's": an index disagreeing with
+    // any document list, so an answer carrying its titles could not have come from
+    // re-indexing anything. A resolver that rebuilt internally has no list to
+    // rebuild from here and would report both sources unresolved.
+    const index = new Map<string, DerivationSourceFields>([
+      ['prd_1', { title: 'Indexed PRD', document_type: 'prd' }],
+      ['prfaq_1', { title: 'Indexed PR/FAQ', document_type: 'prfaq' }],
+    ])
+
+    expect(resolveDerivationAgainst(BY_ORIGIN.legacy, index).sources).toEqual([
+      { document_id: 'prd_1', role: 'merge_input', title: 'Indexed PRD', document_type: 'prd', resolved: true },
+      { document_id: 'prfaq_1', role: 'merge_input', title: 'Indexed PR/FAQ', document_type: 'prfaq', resolved: true },
+    ])
+  })
+
+  it('consults the index once per source and holds no state between calls', () => {
+    // Counted rather than timed, so the assertion is about the work done and not
+    // about this machine: a Map that records every lookup. Two calls over one index
+    // is the shape the prioritization page's loop takes, and the second must cost
+    // the same as the first — a resolver caching its answers would show fewer
+    // lookups on the second pass and start reporting a document deleted between two
+    // reads as still present.
+    const lookups: string[] = []
+    class CountingIndex extends Map<string, DerivationSourceFields> {
+      override get(id: string): DerivationSourceFields | undefined {
+        lookups.push(id)
+        return super.get(id)
+      }
+    }
+    const index = new CountingIndex(derivationSourceIndex(DOCUMENTS))
+
+    const first = resolveDerivationAgainst(BY_ORIGIN.declared, index)
+    const second = resolveDerivationAgainst(BY_ORIGIN.declared, index)
+
+    // The positive control: the index WAS the source of the answer, so the count
+    // below is a real measurement rather than the silence of a resolver that never
+    // looked anything up.
+    expect(first.sources.map((s) => s.title)).toEqual(['Onboarding PRD', 'Onboarding PR/FAQ'])
+    expect(second).toEqual(first)
+    expect(lookups).toEqual(['prd_1', 'prfaq_1', 'prd_1', 'prfaq_1'])
+  })
+
+  it('indexes a document list once for every field a source displays', () => {
+    // One entry per readable document, carrying both resolved fields, and nothing
+    // for a record naming no document — which is what lets `resolved: false` mean
+    // "not among the documents supplied" rather than "supplied without a title".
+    const index = derivationSourceIndex([PRD, { title: 'No id' }, null, 'garbage', { document_id: '' }])
+
+    expect([...index.keys()]).toEqual(['prd_1'])
+    expect(index.get('prd_1')).toEqual({ title: 'Onboarding PRD', document_type: 'prd' })
   })
 })
