@@ -3120,6 +3120,8 @@ describe('the optional invoker ARN narrows invoke to one principal', () => {
     // IAM rejects these at deploy time, so synth must reject them first.
     ['a wildcard path', 'arn:aws:iam::111122223333:role/*'],
     ['a wildcard inside the path', 'arn:aws:iam::111122223333:role/team-*'],
+    // `?` is an IAM wildcard too, and just as invalid in a principal.
+    ['a single-character wildcard', 'arn:aws:iam::111122223333:role/te?m'],
     ['trailing junk after the arn', 'arn:aws:iam::111122223333:role/x extra'],
     ['an empty role name', 'arn:aws:iam::111122223333:role/'],
     ['a non-string', 42],
