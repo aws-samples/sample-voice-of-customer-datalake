@@ -547,6 +547,59 @@ class TestProcessFeedback:
     @patch('processor.handler.translate_text')
     @patch('processor.handler.detect_language')
     @patch('processor.handler.check_duplicate')
+    def test_persists_csv_row_id_when_sent(
+        self, mock_check_dup, mock_detect, mock_translate, mock_sentiment, mock_llm,
+        sample_sqs_record, sample_llm_insights
+    ):
+        """
+        A CSV `id` column is unique only within its file, so it cannot key the
+        item — but an operator still needs to look a record up by it, so it is
+        persisted alongside the derived id rather than discarded.
+        """
+        from processor.handler import process_feedback
+
+        mock_check_dup.return_value = False
+        mock_detect.return_value = 'en'
+        mock_translate.return_value = sample_sqs_record['text']
+        mock_sentiment.return_value = {'label': 'positive', 'score': 0.8}
+        mock_llm.return_value = {'insights': sample_llm_insights, 'metadata': {}}
+
+        sample_sqs_record['csv_row_id'] = '4711'
+
+        result = process_feedback(sample_sqs_record)
+
+        assert result['csv_row_id'] == '4711'
+        assert result['source_id'] != '4711'
+
+    @patch('processor.handler.invoke_bedrock_llm')
+    @patch('processor.handler.get_comprehend_sentiment')
+    @patch('processor.handler.translate_text')
+    @patch('processor.handler.detect_language')
+    @patch('processor.handler.check_duplicate')
+    def test_omits_csv_row_id_when_not_sent(
+        self, mock_check_dup, mock_detect, mock_translate, mock_sentiment, mock_llm,
+        sample_sqs_record, sample_llm_insights
+    ):
+        """Non-CSV sources must not gain an empty provenance field."""
+        from processor.handler import process_feedback
+
+        mock_check_dup.return_value = False
+        mock_detect.return_value = 'en'
+        mock_translate.return_value = sample_sqs_record['text']
+        mock_sentiment.return_value = {'label': 'positive', 'score': 0.8}
+        mock_llm.return_value = {'insights': sample_llm_insights, 'metadata': {}}
+
+        assert 'csv_row_id' not in sample_sqs_record
+
+        result = process_feedback(sample_sqs_record)
+
+        assert 'csv_row_id' not in result
+
+    @patch('processor.handler.invoke_bedrock_llm')
+    @patch('processor.handler.get_comprehend_sentiment')
+    @patch('processor.handler.translate_text')
+    @patch('processor.handler.detect_language')
+    @patch('processor.handler.check_duplicate')
     def test_uses_preset_category_when_provided(
         self, mock_check_dup, mock_detect, mock_translate, mock_sentiment, mock_llm, 
         sample_sqs_record, sample_llm_insights

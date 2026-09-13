@@ -46,29 +46,18 @@ def _read(relative: str) -> str:
 
 
 def _all_document_types() -> frozenset[str]:
-    """Parse the document_type union from frontend/src/api/types.ts.
-
-    Matches a line like:
-        document_type: 'prd' | 'prfaq' | 'research' | 'custom' | 'product_report' | 'prototype'
-    and returns the set of type string values.
-
-    This is the authoritative source: adding a 7th type to the TypeScript union
-    causes this helper to return a 7-element set, and the complementarity test
-    then fails until KIRO_EXPORT_EXCLUDED_TYPES or KIRO_EXPORTABLE_DOC_TYPES is
-    updated to account for it.
-    """
+    """Parse the known product document-type inventory from types.ts."""
     source = _read(TYPES_TS_SOURCE)
     matches = re.findall(
-        r"document_type\s*:\s*((?:'[^']+'(?:\s*\|\s*)?)+)",
+        r"export type KnownProjectDocumentType\s*=\s*"
+        r"((?:\|?\s*'[^']+'\s*)+)",
         source,
     )
     assert len(matches) == 1, (
-        f"Expected exactly one 'document_type' union in {TYPES_TS_SOURCE}; "
-        f"found {len(matches)}. If another interface also declares document_type, "
-        f"anchor the regex to the ProjectDocument interface block."
+        f'Expected exactly one KnownProjectDocumentType union in '
+        f'{TYPES_TS_SOURCE}; found {len(matches)}.'
     )
-    raw = matches[0]
-    return frozenset(re.findall(r"'([^']+)'", raw))
+    return frozenset(re.findall(r"'([^']+)'", matches[0]))
 
 
 def _backend_excluded_types() -> frozenset[str]:

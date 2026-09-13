@@ -28,6 +28,7 @@ from shared.feedback import (
 )
 from shared.tables import get_projects_table, get_feedback_table
 from shared.jobs import update_job_status
+from shared.project_writes import put_project_item_and_increment
 from shared.derivation import (
     DERIVATION_FIELD,
     ROLE_REFERENCE,
@@ -516,13 +517,8 @@ Public-web grounding for this report came from the following searches:
             DERIVATION_FIELD: event.get('derivation') or build_derivation(),
             'created_at': now,
         }
-        proj_table.put_item(Item=item)
-        
-        # Update document count
-        proj_table.update_item(
-            Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'},
-            UpdateExpression='SET document_count = document_count + :one, updated_at = :now',
-            ExpressionAttributeValues={':one': 1, ':now': now}
+        put_project_item_and_increment(
+            proj_table, project_id, item, 'document_count',
         )
     
     # Update job as completed

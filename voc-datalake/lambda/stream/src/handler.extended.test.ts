@@ -74,7 +74,7 @@ function makeEvent(body: Record<string, unknown>, path = '/chat/stream', headers
     body: JSON.stringify(body),
     rawPath: path,
     headers: { origin: 'https://example.com', ...headers },
-    requestContext: {},
+    requestContext: { authorizer: { claims: { sub: 'cognito-user-42' } } },
   };
 }
 
@@ -152,6 +152,7 @@ describe('handler - extended', () => {
 
   describe('tool loop execution', () => {
     it('executes tool when Bedrock returns tool_use stop reason', async () => {
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       // First call: Bedrock requests a tool
       // Second call: Bedrock responds with text after tool result
       let callCount = 0;
@@ -167,7 +168,7 @@ describe('handler - extended', () => {
             };
             yield {
               contentBlockDelta: {
-                delta: { toolUse: { input: '{"query":"delivery"}' } },
+                delta: { toolUse: { input: '{"query":"secret-document-content"}' } },
                 contentBlockIndex: 0,
               },
             };
@@ -184,10 +185,17 @@ describe('handler - extended', () => {
       const stream = mockStream();
       const event = makeEvent({ message: 'show delivery feedback' });
 
-      await (handler as StreamHandler)(event, stream);
+      try {
+        await (handler as StreamHandler)(event, stream);
 
-      expect(mockExecuteTool).toHaveBeenCalledOnce();
-      expect(mockConverseStream).toHaveBeenCalledTimes(2);
+        expect(mockExecuteTool).toHaveBeenCalledOnce();
+        expect(mockConverseStream).toHaveBeenCalledTimes(2);
+        const logOutput = logSpy.mock.calls.flat().join(' ');
+        expect(logOutput).toContain('search_feedback');
+        expect(logOutput).not.toContain('secret-document-content');
+      } finally {
+        logSpy.mockRestore();
+      }
     });
 
     it('stops after MAX_TOOL_LOOPS iterations', async () => {
@@ -384,13 +392,14 @@ describe('handler - extended', () => {
 
       expect(mockBuildProjectChatContext).toHaveBeenCalledWith(
         expect.anything(),
-        expect.any(String),
+        expect.any(Function),
         expect.any(String),
         'my-proj-123',
         'hello',
         [],
         [],
         undefined,
+        'cognito-user-42',
       );
     });
 
@@ -405,13 +414,14 @@ describe('handler - extended', () => {
 
       expect(mockBuildProjectChatContext).toHaveBeenCalledWith(
         expect.anything(),
-        expect.any(String),
+        expect.any(Function),
         expect.any(String),
         'body-proj',
         expect.any(String),
         expect.any(Array),
         expect.any(Array),
         undefined,
+        'cognito-user-42',
       );
     });
 
@@ -419,7 +429,10 @@ describe('handler - extended', () => {
       const stream = mockStream();
       const event = {
         body: JSON.stringify({ message: 'hello', project_id: 'proj-1' }),
-        requestContext: { http: { path: '/projects/proj-1/chat', method: 'POST' } },
+        requestContext: {
+          http: { path: '/projects/proj-1/chat', method: 'POST' },
+          authorizer: { claims: { sub: 'cognito-user-42' } },
+        },
         headers: {},
       };
 

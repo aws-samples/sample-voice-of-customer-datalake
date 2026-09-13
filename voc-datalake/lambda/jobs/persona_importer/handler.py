@@ -24,7 +24,9 @@ from shared.persona_import import validate_import_config
 from shared.prompts import PERSONA_IMPORT_PROMPTS, format_prompt, load_prompt_file
 from shared.image_limits import converse_image_format
 from shared.aws import get_dynamodb_resource, get_bedrock_client
+from shared.converse import bedrock_call_with_retry
 from shared.model_config import get_active_model_id
+from shared.project_writes import put_project_item_and_increment
 from api.projects import generate_persona_avatar
 
 # Environment
@@ -121,14 +123,21 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, import_config: dic
     # nothing to omit for temperature-restricted models.
     model_id = get_active_model_id('documents')
     logger.info(f"[IMPORT_PERSONA_JOB] Invoking Bedrock with model {model_id}")
-    response = bedrock.converse(
-        modelId=model_id,
-        system=[{'text': system_prompt}],
-        messages=[{'role': 'user', 'content': converse_content}],
-        # From the template too, so the budget lives beside the schema it has to
-        # produce rather than as a literal here that nobody updates when the
-        # schema grows.
-        inferenceConfig={'maxTokens': prompt_config['max_tokens']}
+    # Through the shared retry policy, because this raw call does not go through
+    # converse() and the shared client makes one botocore attempt by design (see
+    # BEDROCK_READ_TIMEOUT_SECONDS): without it a single throttle would fail the
+    # import job outright, and this surface is reached straight after an upload.
+    response = bedrock_call_with_retry(
+        lambda: bedrock.converse(
+            modelId=model_id,
+            system=[{'text': system_prompt}],
+            messages=[{'role': 'user', 'content': converse_content}],
+            # From the template too, so the budget lives beside the schema it has
+            # to produce rather than as a literal here that nobody updates when
+            # the schema grows.
+            inferenceConfig={'maxTokens': prompt_config['max_tokens']}
+        ),
+        step_name='import_persona',
     )
     
     response_text = response.get('output', {}).get('message', {}).get('content', [{}])[0].get('text', '')
@@ -187,11 +196,8 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, import_config: dic
     
     ctx.update_progress(90, 'saving_persona')
     
-    projects_table.put_item(Item=item)
-    projects_table.update_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'},
-        UpdateExpression='SET persona_count = persona_count + :one, updated_at = :now',
-        ExpressionAttributeValues={':one': 1, ':now': now}
+    put_project_item_and_increment(
+        projects_table, project_id, item, 'persona_count',
     )
     
     persona_name = item.get('name', 'Imported Persona')
@@ -211,4 +217,4 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, import_config: dic
 def lambda_handler(event: dict, context) -> dict:
     """Lambda entry point."""
     logger.info(f"Persona importer invoked with event keys: {list(event.keys())}")
-    return handle_job(event)
+    return handle_job(event, context)

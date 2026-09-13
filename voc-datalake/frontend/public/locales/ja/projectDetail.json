@@ -510,7 +510,7 @@
     "generatePrfaq": "PR-FAQ を生成",
     "generatePrfaqTitle": "PR-FAQ を生成",
     "newDocTitle": "新しいドキュメントタイトル",
-    "newDocTitlePlaceholder": "例：Virtual Concierge PRD v2",
+    "newDocTitlePlaceholder": "例：Virtual Concierge PRD",
     "outputDocType": "出力ドキュメントタイプ",
     "personaCount": "ペルソナ数: {{count}}",
     "prd": "PRD",

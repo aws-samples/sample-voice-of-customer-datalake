@@ -638,7 +638,7 @@ function PrototypePanelHeader({
       <div className="flex items-center justify-between mt-2 gap-3">
         <h4 className="font-medium text-gray-900 flex items-center gap-1.5">
           <Wand2 size={14} className="text-orange-500" />
-          {t('preview.prototypeTitle', { defaultValue: 'Prototype' })}
+          {documentTitle || t('preview.prototypeTitle', { defaultValue: 'Prototype' })}
         </h4>
         <span className="flex items-center gap-3 text-xs flex-shrink-0">
           {url ? <PrototypeLinkActions url={url} noteId={noteId} /> : null}
