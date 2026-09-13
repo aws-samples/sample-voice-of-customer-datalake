@@ -1262,3 +1262,43 @@ describe('VocCoreStack product doc extractor', () => {
     expect(env).not.toHaveProperty('POWERTOOLS_SERVICE_NAME');
   });
 });
+
+/**
+ * TTL is configured per table, and the two tables the ABCA verification fixture
+ * writes to disagree — which decides how that fixture gets cleaned up.
+ *
+ * `verification_fixture_provider.py` stamps a `ttl` attribute on every record it
+ * writes, to both tables. On Aggregates that attribute is live and DynamoDB will
+ * expire the row. On Projects there is no TTL specification at all, so the same
+ * attribute is inert and an abandoned fixture project/document would persist
+ * until an explicit teardown removes it.
+ *
+ * Pinned here because it is invisible at the call site: the provider writes the
+ * attribute identically for both, and nothing in that module reveals that only
+ * one of them honours it. Enabling TTL on Projects would change that, and would
+ * also start expiring any OTHER item in that table carrying a stale `ttl` — so it
+ * is a deliberate decision, not a tidy-up. Today the fixture provider is the only
+ * writer of `ttl` to Projects.
+ */
+describe('DynamoDB TTL, as the verification fixture relies on it', () => {
+  const tables = () => Object.values(synthCoreTemplate().findResources('AWS::DynamoDB::Table'));
+
+  const tableNamed = (fragment: string) => tables().filter((resource) => {
+    const props = (resource as { Properties?: { TableName?: unknown } }).Properties ?? {};
+    return JSON.stringify(props.TableName ?? '').includes(fragment);
+  });
+
+  it('expires Aggregates rows on the `ttl` attribute', () => {
+    const [aggregates] = tableNamed('aggregates');
+    expect(aggregates, 'no table whose name contains "aggregates"').toBeDefined();
+    expect((aggregates as { Properties: Record<string, unknown> }).Properties
+      .TimeToLiveSpecification).toEqual({ AttributeName: 'ttl', Enabled: true });
+  });
+
+  it('does NOT expire Projects rows, so fixture cleanup depends on teardown', () => {
+    const [projects] = tableNamed('projects');
+    expect(projects, 'no table whose name contains "projects"').toBeDefined();
+    expect((projects as { Properties: Record<string, unknown> }).Properties
+      .TimeToLiveSpecification).toBeUndefined();
+  });
+});

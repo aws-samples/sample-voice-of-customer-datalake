@@ -49,8 +49,16 @@ def is_verification_fixture(item: dict[str, Any] | None) -> bool:
 
     Those rows are indexed like ordinary projects — they have to be, because the
     point of the fixture is to exercise the real read paths — so nothing but this
-    marker distinguishes them. Anything rendering a project list to a human must
-    skip them, or a verification run shows up as somebody's project.
+    marker distinguishes them. Anything enumerating projects or prioritization
+    rows for a human must skip them, or a verification run shows up as somebody's
+    project.
+
+    Keyed on PRESENCE of the attribute, not on its value. That is safe only while
+    no ordinary write path can set it: every project write here is
+    attribute-restricted (see PROJECT_WRITABLE_ATTRIBUTE_NAMES), and the fixture
+    provider is the sole writer. If a future route ever accepts arbitrary
+    attributes, this predicate becomes a way to hide a project from its owner —
+    switch it to matching a known fixture id at that point.
     """
     return bool(item) and VERIFICATION_FIXTURE_ATTRIBUTE in item
 

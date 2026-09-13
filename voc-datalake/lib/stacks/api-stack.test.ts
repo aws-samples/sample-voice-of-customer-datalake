@@ -3090,6 +3090,41 @@ describe('the fixture provider is absent unless a prefixed deployment opts in', 
   });
 });
 
+describe('the optional invoker ARN narrows invoke to one principal', () => {
+  const enabled = { enableVerificationFixtureProvider: true };
+
+  // The template carries ~105 API Gateway permissions; only the provider's matter.
+  const invokerPermissions = (template: Template) =>
+    Object.entries(template.findResources('AWS::Lambda::Permission'))
+      .filter(([logicalId]) => logicalId.includes('VerificationFixtureInvoker'));
+
+  it('attaches no resource policy when no ARN is supplied', () => {
+    expect(invokerPermissions(apiTemplatePrefixed())).toEqual([]);
+  });
+
+  it('attaches a permission for exactly the supplied role', () => {
+    const arn = 'arn:aws:iam::111122223333:role/my-verification-role';
+    const permissions = invokerPermissions(synthApiTemplate(
+      { ...enabled, verificationFixtureInvokerArn: arn }, [], 'b',
+    ));
+    expect(permissions).toHaveLength(1);
+    const props = (permissions[0][1] as { Properties: Record<string, unknown> }).Properties;
+    expect(props.Action).toBe('lambda:InvokeFunction');
+    expect(props.Principal).toBe(arn);
+  });
+
+  it.each([
+    ['not an arn', 'my-verification-role'],
+    ['a non-IAM arn', 'arn:aws:lambda:us-east-1:111122223333:function:x'],
+    ['a wildcard account', 'arn:aws:iam::*:role/x'],
+    ['a non-string', 42],
+  ])('fails at synth given %s rather than deploying a useless policy', (_label, value) => {
+    expect(() => synthApiTemplate(
+      { ...enabled, verificationFixtureInvokerArn: value }, [], 'b',
+    )).toThrow(/verificationFixtureInvokerArn/);
+  });
+});
+
 /**
  * Gating the provider behind prefix+flag moved its IAM out of the shape that
  * `npm run cdk:nag` synthesizes (the default app, no prefix), so nothing in CI

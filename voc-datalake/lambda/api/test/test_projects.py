@@ -65,6 +65,37 @@ class TestListProjects:
         
         assert 'projects' in result
 
+    @patch('projects.projects_table')
+    def test_skips_verification_fixture_projects(self, mock_table):
+        """A verification fixture must never reach a human's project list.
+
+        Fixture rows are indexed exactly like real projects, on purpose, so the
+        fixture exercises the real read paths. This filter is therefore the only
+        thing separating them, and reverting it has to fail right here.
+        """
+        from shared.project_writes import VERIFICATION_FIXTURE_ATTRIBUTE
+
+        mock_table.query.side_effect = [
+            {'Items': [
+                {'project_id': 'real-1', 'name': 'Real', 'created_at': '2026-01-02'},
+                {
+                    'project_id': 'fixture-1',
+                    'name': 'ABCA baseline fixture',
+                    'created_at': '2026-01-01',
+                    VERIFICATION_FIXTURE_ATTRIBUTE: 'abca-fixture-1',
+                },
+            ]},
+            # Only the surviving project reaches the per-project counts query, so
+            # an unfiltered list also exhausts this side_effect.
+            {'Items': [{'sk': 'META'}]},
+        ]
+
+        from projects import list_projects
+
+        result = list_projects()
+
+        assert [p.get('project_id') for p in result['projects']] == ['real-1']
+
     @patch('projects.projects_table', None)
     def test_returns_empty_when_table_not_configured(self):
         """Returns empty list when table not configured."""

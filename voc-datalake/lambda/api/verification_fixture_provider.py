@@ -39,6 +39,11 @@ FIXTURE_TTL_SECONDS = 6 * 60 * 60
 # be deleted mid-run, so anything inside this margin is renewed rather than reused.
 # Must exceed the longest single verification run; one hour of a six-hour lifetime.
 RENEWAL_MARGIN_SECONDS = 60 * 60
+# ⚠ The `ttl` attribute written below is only HONOURED on the Aggregates table.
+# The Projects table has no TimeToLiveSpecification, so the identical attribute on
+# the project and document records is inert and those two rows are removed only by
+# an explicit teardown. Do not treat TTL as the cleanup mechanism for this fixture.
+# lib/stacks/core-stack.test.ts pins both halves of that asymmetry.
 TRANSACTION_ATTEMPTS = 3
 PRIORITIZATION_PK = 'PRIORITIZATION'
 

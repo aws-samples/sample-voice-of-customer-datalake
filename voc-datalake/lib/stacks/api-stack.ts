@@ -795,6 +795,26 @@ export class VocApiStack extends VocStack {
         },
       );
 
+      // Optional narrowing. Without this, invoke is governed only by identity
+      // policies, which for a same-account caller means anyone holding
+      // lambda:InvokeFunction on this ARN. Supplying the harness's role pins it
+      // to exactly one principal. Validated here so a typo fails at synth rather
+      // than producing a policy that silently grants nobody.
+      const invokerArn: unknown = this.node.tryGetContext('verificationFixtureInvokerArn');
+      if (invokerArn !== undefined && invokerArn !== '') {
+        if (typeof invokerArn !== 'string'
+          || !/^arn:[a-z0-9-]+:iam::\d{12}:(role|user)\/.+/.test(invokerArn)) {
+          throw new Error(
+            'verificationFixtureInvokerArn must be an IAM role or user ARN, got '
+            + JSON.stringify(invokerArn),
+          );
+        }
+        verificationFixtureProvider.addPermission('VerificationFixtureInvoker', {
+          principal: new iam.ArnPrincipal(invokerArn),
+          action: 'lambda:InvokeFunction',
+        });
+      }
+
       new cdk.CfnOutput(this, 'VerificationFixtureProviderArn', {
         value: verificationFixtureProvider.functionArn,
         description: 'Private target-owned ABCA fixture provider ARN',

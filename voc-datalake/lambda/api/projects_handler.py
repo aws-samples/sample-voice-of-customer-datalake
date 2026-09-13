@@ -39,6 +39,7 @@ from shared.exceptions import (
 )
 from shared.persona_import import validate_import_config
 from shared.document_versions import split_versioned_title
+from shared.project_writes import is_verification_fixture
 from shared import mcp_tokens
 
 from aws_lambda_powertools.event_handler import Response, content_types
@@ -3175,6 +3176,13 @@ def api_get_prioritization_scores():
             legacy_scores = stored if isinstance(stored, dict) else {}
             continue
         if sk.startswith(ROW_SK_PREFIX):
+            # Verification fixture rows are written into this partition on purpose,
+            # so the fixture exercises the real read paths — which means this walk
+            # picks them up like any other row. Skip them here for the same reason
+            # `list_projects` does: a verification run must not appear in anyone's
+            # prioritization. The fixture's own probe reads by exact key, not here.
+            if is_verification_fixture(item):
+                continue
             row_id = sk[len(ROW_SK_PREFIX):]
             if row_id:
                 rows_by_id[row_id] = item

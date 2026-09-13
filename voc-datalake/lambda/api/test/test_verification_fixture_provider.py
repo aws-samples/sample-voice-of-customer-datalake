@@ -9,7 +9,6 @@ import boto3
 import pytest
 from botocore.exceptions import ClientError
 from moto import mock_aws
-from shared.project_writes import VERIFICATION_FIXTURE_ATTRIBUTE, is_verification_fixture
 from shared.exceptions import (
     ApiError,
     ConfigurationError,
@@ -17,6 +16,7 @@ from shared.exceptions import (
     ServiceError,
     ValidationError,
 )
+from shared.project_writes import VERIFICATION_FIXTURE_ATTRIBUTE, is_verification_fixture
 from verification_fixture_provider import (
     CAPABILITY,
     FIXTURE_TTL_SECONDS,

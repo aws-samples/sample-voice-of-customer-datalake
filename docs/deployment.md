@@ -379,12 +379,29 @@ at all — a default `cdk deploy` is byte-identical with and without this featur
 (`lib/app-baseline.test.ts` asserts exactly that).
 
 The provider has no API Gateway route, Function URL, Cognito authorizer, frontend
-configuration or model access; it is reachable only by direct `lambda:InvokeFunction`
-from a caller the operator grants. Fixture rows are indexed like ordinary projects
+configuration or model access; it is reachable only by direct
+`lambda:InvokeFunction`. By default that is governed by identity policies alone,
+which for a same-account caller means any principal holding that permission on the
+ARN. To pin it to exactly one caller, pass its role ARN and a resource-based
+policy is attached:
+
+```bash
+cdk deploy --all -c deploymentPrefix=b -c enableVerificationFixtureProvider=true \
+  -c verificationFixtureInvokerArn=arn:aws:iam::111122223333:role/my-verification-role
+```
+
+The value must be an IAM role or user ARN; anything else fails at synth rather
+than deploying a policy that grants nobody. Fixture rows are indexed like ordinary projects
 on purpose, so the fixture exercises the real read paths, and they are excluded
-from the project list by the `verification_fixture_id` marker
-(`is_verification_fixture` in `lambda/shared/project_writes.py`). Records also
-carry a TTL and are removed by an explicit teardown call.
+from the project list *and* from the prioritization read by the
+`verification_fixture_id` marker (`is_verification_fixture` in
+`lambda/shared/project_writes.py`).
+
+Cleanup is an explicit teardown call, and the TTL backstop is **partial**: the
+provider stamps a `ttl` attribute on every record, but only the Aggregates table
+has TTL enabled, so the prioritization row expires on its own while the fixture's
+project and document rows do not. An abandoned fixture therefore needs its
+teardown; `lib/stacks/core-stack.test.ts` pins both halves of that asymmetry.
 
 ### Stack Deployment Order
 

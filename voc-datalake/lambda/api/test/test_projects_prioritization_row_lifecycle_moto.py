@@ -202,6 +202,40 @@ class TestTheRowLifecycleAgainstARealTable:
         assert ballot['notes'] == 'ship it'
 
     @mock_aws
+    def test_a_verification_fixture_row_is_not_returned_to_a_reviewer(
+        self, lambda_context
+    ):
+        """The fixture writes a `ROW#` item into this very partition, on purpose, so
+        that it exercises the real read paths. This GET walks the whole partition,
+        so the marker filter is the only thing keeping a verification run out of
+        somebody's prioritization. Reverting that filter has to fail here.
+        """
+        from shared.project_writes import VERIFICATION_FIXTURE_ATTRIBUTE
+
+        aggregates, projects = _table('aggr'), _seeded_project(_table('projects'))
+        _, created = _call(aggregates, projects, lambda_context, 'POST',
+                           '/projects/prioritization/rows/compose',
+                           {'project_id': 'p1', 'document_ids': ['d1']})
+        real_row_id = created['row']['row_id']
+        # Exactly what verification_fixture_provider._records writes, minus the
+        # fields this read does not look at.
+        aggregates.put_item(Item={
+            'pk': PARTITION, 'sk': 'ROW#abca-fixture-row',
+            'row_id': 'abca-fixture-row', 'project_id': 'abca-fixture-project',
+            'document_ids': ['abca-fixture-doc'],
+            VERIFICATION_FIXTURE_ATTRIBUTE: 'abca-fixture-1',
+        })
+
+        status, body = _call(aggregates, projects, lambda_context,
+                            'GET', '/projects/prioritization')
+
+        assert status == 200
+        assert real_row_id in body['rows'], 'a real row must still be returned'
+        assert 'abca-fixture-row' not in body['rows']
+        assert 'abca-fixture-row' not in body['aggregates']
+        assert 'abca-fixture-row' not in body['scores']
+
+    @mock_aws
     def test_the_freeze_mark_records_the_first_ballot_and_no_later_one(
         self, lambda_context
     ):
