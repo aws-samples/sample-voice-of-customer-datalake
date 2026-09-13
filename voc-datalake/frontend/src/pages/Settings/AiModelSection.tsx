@@ -10,6 +10,9 @@
  * Free-form model IDs are rejected server-side, and the PUT is admin-gated
  * server-side too (not just hidden in the UI).
  *
+ * The Automatic label follows the resolver's precedence, not just the surface
+ * default — see the comment on `pinnedId` below (issue #275).
+ *
  * Model NAMES are product names (identical in every language), so they render
  * from the server-provided `label` and are intentionally NOT in locale files —
  * the i18n gate rejects same-as-English values. Surface labels/descriptions and
@@ -113,20 +116,37 @@ function AiModelSectionBody({ data, isLoading, isError, isSaving, savedSurface, 
   // Model id → display label (product name, served by the backend).
   const labelForId = new Map(data.available_models.map((model) => [model.id, model.label]))
 
+  // 🔑 The deployment-wide pin (`settings.model_id`, seeded by
+  // `-c defaultModelId=<id>`) outranks every surface's built-in default in
+  // shared/model_config.py: per-surface override > global pin > SURFACE_DEFAULTS.
+  // Labelling Automatic from `surface.default_id` alone — which is what this did
+  // before #275 — made a pinned deployment advertise a model it never invokes,
+  // and invited an admin to "correct" it by explicitly selecting the advertised
+  // model, which in a workshop account cannot be invoked at all. Truthiness, not
+  // `?? null`: the field can arrive absent or as '' from an older payload, and
+  // neither is a pin. Tests: 'names the deployment-wide pin in every Automatic
+  // option' and 'ignores an empty-string pin and keeps the surface default'.
+  const pinnedId = data.model_id ? data.model_id : null
+
   return (
     <fieldset className="space-y-3" disabled={isSaving}>
       <legend className="sr-only">{t('aiModel.title')}</legend>
-      {data.surfaces.map((surface) => (
-        <SurfaceRow
-          key={surface.key}
-          surfaceKey={surface.key}
-          selected={surface.selected}
-          defaultLabel={labelForId.get(surface.default_id) ?? surface.default_id}
-          models={data.available_models}
-          justSaved={savedSurface === surface.key}
-          onSelect={(modelId) => onSelect(surface.key, modelId)}
-        />
-      ))}
+      {data.surfaces.map((surface) => {
+        // What Automatic actually resolves to for this surface. The pin does not
+        // touch `selected`: a stored per-surface choice still outranks it.
+        const effectiveId = pinnedId ?? surface.default_id
+        return (
+          <SurfaceRow
+            key={surface.key}
+            surfaceKey={surface.key}
+            selected={surface.selected}
+            automaticLabel={labelForId.get(effectiveId) ?? effectiveId}
+            models={data.available_models}
+            justSaved={savedSurface === surface.key}
+            onSelect={(modelId) => onSelect(surface.key, modelId)}
+          />
+        )
+      })}
     </fieldset>
   )
 }
@@ -134,13 +154,14 @@ function AiModelSectionBody({ data, isLoading, isError, isSaving, savedSurface, 
 interface SurfaceRowProps {
   readonly surfaceKey: string
   readonly selected: string | null
-  readonly defaultLabel: string
+  /** Label for the model Automatic resolves to — the global pin when one is deployed. */
+  readonly automaticLabel: string
   readonly models: ModelSettings['available_models']
   readonly justSaved: boolean
   readonly onSelect: (modelId: string | null) => void
 }
 
-function SurfaceRow({ surfaceKey, selected, defaultLabel, models, justSaved, onSelect }: SurfaceRowProps) {
+function SurfaceRow({ surfaceKey, selected, automaticLabel, models, justSaved, onSelect }: SurfaceRowProps) {
   const { t } = useTranslation('settings')
   const selectId = `ai-model-${surfaceKey}`
   return (
@@ -163,7 +184,7 @@ function SurfaceRow({ surfaceKey, selected, defaultLabel, models, justSaved, onS
           value={selected ?? ''}
           onChange={(event) => onSelect(event.target.value === '' ? null : event.target.value)}
         >
-          <option value="">{t('aiModel.automaticOption', { model: defaultLabel })}</option>
+          <option value="">{t('aiModel.automaticOption', { model: automaticLabel })}</option>
           {models.map((model) => (
             <option key={model.id} value={model.id}>{model.label}</option>
           ))}
