@@ -20,7 +20,10 @@ import { assertFrontendBuildFresh } from '../utils/assert-frontend-build';
 import { cdkCustomResourceSuppressions, apiGatewayRequestValidationSuppressions, publicFeedbackEndpointSuppressions, publicBallotEndpointSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, marketplaceSuppressions } from '../utils/nag-suppressions';
 import { allowlistedModelArns, imageModelArn } from '../utils/model-allowlist';
 import { pythonLayerCode } from '../utils/python-layer-bundling';
-import { PY_LAMBDA_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
+import {
+  PY_LAMBDA_ASSET_EXCLUDES,
+  VERIFICATION_FIXTURE_PROVIDER_ASSET_EXCLUDES,
+} from '../utils/lambda-asset-excludes';
 import { VocStack, VocStackProps } from '../utils/voc-stack';
 import { SOURCE_PLACEHOLDER } from '../utils/naming';
 
@@ -207,9 +210,20 @@ export class VocApiStack extends VocStack {
      * @returns Lambda Code asset with only the required files
      */
     const createApiLambdaCode = (handlerFileName: string): lambda.Code => {
+      const providerSourceExcludes = handlerFileName === 'verification_fixture_provider.py'
+        ? []
+        : VERIFICATION_FIXTURE_PROVIDER_ASSET_EXCLUDES;
       return lambda.Code.fromAsset('lambda', {
-        // Stages only api/ + shared/ — everything else is hash noise.
-        exclude: [...PY_LAMBDA_ASSET_EXCLUDES, '/aggregator/', '/jobs/', '/processor/', '/research/'],
+        // Stages only api/ + shared/ — everything else is hash noise. The
+        // provider source affects only its own bundle, not every API Lambda.
+        exclude: [
+          ...PY_LAMBDA_ASSET_EXCLUDES,
+          ...providerSourceExcludes,
+          '/aggregator/',
+          '/jobs/',
+          '/processor/',
+          '/research/',
+        ],
         ignoreMode: cdk.IgnoreMode.GIT,
         bundling: {
           image: lambda.Runtime.PYTHON_3_14.bundlingImage,
@@ -692,11 +706,138 @@ export class VocApiStack extends VocStack {
       logGroup: this.createLogGroup('ProjectsApiLogs', this.uniqueName('voc-projects-api')),
     });
 
+    // Verification-only infrastructure, behind TWO independent conditions.
+    //
+    // A prefix alone is not enough. `deploymentPrefix` means "this is a
+    // side-by-side copy" — a PRODUCTION slot can be one too — so topology must
+    // not be the only thing standing between a live table and a Lambda that can
+    // delete rows in it. The capability must also be asked for by intent.
+    // Requiring both also keeps `no prefix means byte-identical`
+    // (lib/app-baseline.test.ts) true for every default deploy.
+    //
+    // Read ONCE, and accept only `true`/`'true'` as with skipUseCaseSubmission
+    // (CLI context always arrives as a string). Anything else is off, and off
+    // means "no provider" — so a typo drops the fixture capability and the
+    // verification run fails closed and loudly, which is the safe direction.
+    const fixtureProviderContext: unknown = this.node.tryGetContext('enableVerificationFixtureProvider');
+    const enableVerificationFixtureProvider =
+      fixtureProviderContext === true || fixtureProviderContext === 'true';
+    if (this.deploymentPrefix && enableVerificationFixtureProvider) {
+      // Private, target-owned fixture provider. No API route, Cognito authorizer,
+      // Function URL, frontend config, or model access: ABCA may invoke one closed
+      // setup/probe/teardown contract, while VoC retains every storage key/item rule.
+      const verificationFixtureProviderRole = this.createLambdaRole(
+        'VerificationFixtureProviderRole',
+      );
+      // Scoped to the two TABLE ARNs and nothing else. `Table.grant()` would
+      // also add `<table>/index/*` because these tables carry GSIs, but the
+      // provider only ever touches exact keys — it never queries an index — so
+      // the wildcard would be unused privilege and an AwsSolutions-IAM5 finding.
+      verificationFixtureProviderRole.addToPolicy(new iam.PolicyStatement({
+        actions: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:DeleteItem'],
+        resources: [projectsTable.tableArn, aggregatesTable.tableArn],
+      }));
+      const verificationKmsViaDynamo = {
+        StringEquals: {
+          'kms:ViaService': `dynamodb.${this.region}.${this.urlSuffix}`,
+          'kms:CallerAccount': this.account,
+        },
+      };
+      const verificationKmsTableContext = {
+        ...verificationKmsViaDynamo,
+        'ForAnyValue:StringEquals': {
+          'kms:EncryptionContext:aws:dynamodb:tableName': [
+            projectsTable.tableName,
+            aggregatesTable.tableName,
+          ],
+        },
+      };
+      verificationFixtureProviderRole.addToPolicy(new iam.PolicyStatement({
+        actions: [
+          'kms:Decrypt',
+          'kms:Encrypt',
+          'kms:ReEncryptFrom',
+          'kms:ReEncryptTo',
+          'kms:GenerateDataKey',
+          'kms:GenerateDataKeyWithoutPlaintext',
+        ],
+        resources: [kmsKey.keyArn],
+        conditions: verificationKmsTableContext,
+      }));
+      verificationFixtureProviderRole.addToPolicy(new iam.PolicyStatement({
+        actions: ['kms:DescribeKey'],
+        resources: [kmsKey.keyArn],
+        conditions: verificationKmsViaDynamo,
+      }));
+      const verificationFixtureProvider = new lambda.Function(
+        this,
+        'VerificationFixtureProvider',
+        {
+          functionName: this.uniqueName('voc-fixture-provider'),
+          runtime: lambda.Runtime.PYTHON_3_14,
+          architecture: lambda.Architecture.ARM_64,
+          handler: 'verification_fixture_provider.lambda_handler',
+          code: createApiLambdaCode('verification_fixture_provider.py'),
+          role: verificationFixtureProviderRole,
+          timeout: cdk.Duration.seconds(30),
+          memorySize: 256,
+          environment: {
+            PROJECTS_TABLE: projectsTable.tableName,
+            AGGREGATES_TABLE: aggregatesTable.tableName,
+            POWERTOOLS_SERVICE_NAME: 'voc-fixture-provider',
+            LOG_LEVEL: 'INFO',
+          },
+          layers: [apiLayer],
+          logGroup: this.createLogGroup(
+            'VerificationFixtureProviderLogs',
+            this.uniqueName('voc-fixture-provider'),
+          ),
+        },
+      );
+
+      // Optional narrowing. Without this, invoke is governed only by identity
+      // policies, which for a same-account caller means anyone holding
+      // lambda:InvokeFunction on this ARN. Supplying the harness's role pins it
+      // to exactly one principal. Validated here so a typo fails at synth rather
+      // than producing a policy that silently grants nobody.
+      const invokerArn: unknown = this.node.tryGetContext('verificationFixtureInvokerArn');
+      if (invokerArn !== undefined && invokerArn !== '') {
+        // Anchored at both ends, and BOTH IAM wildcards (`*` and `?`) are
+        // rejected anywhere in the path. IAM refuses a wildcard-path principal at
+        // DEPLOY time, so accepting one here would break the promise that a bad
+        // value fails at synth -- and `role/*` reads like a deliberate broad grant
+        // rather than a mistake.
+        if (typeof invokerArn !== 'string'
+          || !/^arn:[a-z0-9-]+:iam::\d{12}:(role|user)\/[^*?\s]+$/.test(invokerArn)) {
+          throw new Error(
+            'verificationFixtureInvokerArn must be an IAM role or user ARN, got '
+            + JSON.stringify(invokerArn),
+          );
+        }
+        verificationFixtureProvider.addPermission('VerificationFixtureInvoker', {
+          principal: new iam.ArnPrincipal(invokerArn),
+          action: 'lambda:InvokeFunction',
+        });
+      }
+
+      new cdk.CfnOutput(this, 'VerificationFixtureProviderArn', {
+        value: verificationFixtureProvider.functionArn,
+        description: 'Private target-owned ABCA fixture provider ARN',
+      });
+    }
+
     // ── Async job Lambdas (persona/document generation) invoked by the Projects API ──
     const createJobLambdaCode = (jobFolder: string): lambda.Code => {
       return lambda.Code.fromAsset('lambda', {
         // Stages only jobs/ + api/ (projects.py, product_context.py, prompts) + shared/.
-        exclude: [...PY_LAMBDA_ASSET_EXCLUDES, '/aggregator/', '/processor/', '/research/'],
+        // The private provider is not part of any ordinary job payload.
+        exclude: [
+          ...PY_LAMBDA_ASSET_EXCLUDES,
+          ...VERIFICATION_FIXTURE_PROVIDER_ASSET_EXCLUDES,
+          '/aggregator/',
+          '/processor/',
+          '/research/',
+        ],
         ignoreMode: cdk.IgnoreMode.GIT,
         bundling: {
           image: lambda.Runtime.PYTHON_3_14.bundlingImage,

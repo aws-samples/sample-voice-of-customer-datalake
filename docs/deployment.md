@@ -348,6 +348,63 @@ but both are worth knowing before running several copies:
   inside their own RestApi, and each deployment has its own, so prefixing them
   would add churn without preventing a collision.
 
+### Verification fixture provider (opt-in, never on production)
+
+`.abca/fixture-manifest.json` at the repository root is this repo's contract with
+[ABCA](https://github.com/aws-samples/sample-autonomous-cloud-coding-agents), an
+autonomous coding-agent harness that deploys a pull request to a throwaway slot
+and verifies it. The manifest is **declaration only** — it states which fixture
+capability the repo offers, the shape of the records, and a protocol version. It
+carries no ARN, IAM, secret, table name or write recipe, so a commit cannot grant
+itself privileged access by editing it.
+
+The half that *has* authority is a private Lambda, `voc-fixture-provider`
+(`lambda/api/verification_fixture_provider.py`), which seeds and removes a
+deterministic prioritization baseline. It can **write and delete rows in the live
+Projects and Aggregates tables**, so it is created only when *both* of these hold:
+
+```bash
+cdk deploy --all -c deploymentPrefix=b -c enableVerificationFixtureProvider=true
+```
+
+- `deploymentPrefix` — a throwaway side-by-side copy, never the primary deployment.
+- `enableVerificationFixtureProvider` — explicit intent. Accepts only `true` or
+  `"true"`; `TRUE`, `1`, `yes` and anything else mean off.
+
+**Never set `enableVerificationFixtureProvider` on a production deployment.** The
+prefix alone is not a safeguard: a production copy can also be prefixed, which is
+why the flag exists as a second, independent condition. Omit it and the function,
+its role, its table and KMS grants, its log group and its ARN output do not exist
+at all — a default `cdk deploy` is byte-identical with and without this feature
+(`lib/app-baseline.test.ts` asserts exactly that).
+
+The provider has no API Gateway route, Function URL, Cognito authorizer, frontend
+configuration or model access; it is reachable only by direct
+`lambda:InvokeFunction`. By default that is governed by identity policies alone,
+which for a same-account caller means any principal holding that permission on the
+ARN. To pin it to exactly one caller, pass its role ARN and a resource-based
+policy is attached:
+
+```bash
+cdk deploy --all -c deploymentPrefix=b -c enableVerificationFixtureProvider=true \
+  -c verificationFixtureInvokerArn=arn:aws:iam::111122223333:role/my-verification-role
+```
+
+The value must be an IAM role or user ARN; anything else fails at synth rather
+than deploying a policy that grants nobody. Fixture rows are indexed like ordinary projects
+on purpose, so the fixture exercises the real read paths, and they are excluded
+from the project list *and* from the one read that enumerates the prioritization
+partition, by the `verification_fixture_id` marker (`is_verification_fixture` in
+`lambda/shared/project_writes.py`). Every other access to that partition is by
+exact key — voting sessions and ballot writes name a single row — so those are
+unaffected by design.
+
+Cleanup is an explicit teardown call, and the TTL backstop is **partial**: the
+provider stamps a `ttl` attribute on every record, but only the Aggregates table
+has TTL enabled, so the prioritization row expires on its own while the fixture's
+project and document rows do not. An abandoned fixture therefore needs its
+teardown; `lib/stacks/core-stack.test.ts` pins both halves of that asymmetry.
+
 ### Stack Deployment Order
 
 Due to dependencies, stacks should be deployed in this order:

@@ -23,7 +23,10 @@ import { join } from 'node:path';
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import * as cdk from 'aws-cdk-lib';
-import { Template } from 'aws-cdk-lib/assertions';
+import { Annotations, Match, Template } from 'aws-cdk-lib/assertions';
+import { AwsSolutionsChecks, NagSuppressions } from 'cdk-nag';
+
+import { lambdaBasicExecutionRoleSuppressions } from '../utils/nag-suppressions';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as s3 from 'aws-cdk-lib/aws-s3';
@@ -92,7 +95,12 @@ function discoverPluginIds(): string[] {
     .sort();
 }
 
-function synthApiTemplate(context: Record<string, unknown> = {}, enabledSources: string[] = []): Template {
+function buildApiStack(
+  context: Record<string, unknown> = {},
+  enabledSources: string[] = [],
+  deploymentPrefix?: string,
+  aspects: cdk.IAspect[] = [],
+): VocApiStack {
   // Skip asset bundling (Docker) and the frontend-freshness guard — template
   // assertions only need structure, and the check would make the suite depend
   // on whether frontend/dist happens to be newer than frontend/src.
@@ -102,15 +110,29 @@ function synthApiTemplate(context: Record<string, unknown> = {}, enabledSources:
   const env = { account: '111111111111', region: 'us-east-1' };
   const deps = new cdk.Stack(app, 'TestDeps', { env });
 
-  const table = (id: string) => new dynamodb.Table(deps, id, {
-    partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
-    sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
-  });
+  // The real Projects/Aggregates tables carry GSIs, and that detail is
+  // load-bearing for IAM assertions: `Table.grant()` expands to the table ARN
+  // *plus* `<table>/index/*` only when an index exists. Without one here, a
+  // wide grant and a table-scoped statement synthesize identically and every
+  // wildcard assertion in this file is vacuous.
+  const table = (id: string) => {
+    const created = new dynamodb.Table(deps, id, {
+      partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
+    });
+    created.addGlobalSecondaryIndex({
+      indexName: 'gsi1',
+      partitionKey: { name: 'gsi1pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'gsi1sk', type: dynamodb.AttributeType.STRING },
+    });
+    return created;
+  };
   const userPool = new cognito.UserPool(deps, 'UserPool');
   const websiteBucket = new s3.Bucket(deps, 'Website');
 
   const stack = new VocApiStack(app, 'TestApiStack', {
     env,
+    deploymentPrefix,
     feedbackTable: table('Feedback'),
     aggregatesTable: table('Aggregates'),
     projectsTable: table('Projects'),
@@ -142,7 +164,17 @@ function synthApiTemplate(context: Record<string, unknown> = {}, enabledSources:
     enabledSources,
   });
 
-  return Template.fromStack(stack);
+  // Added after construction but before any synth, which is when aspects run.
+  for (const aspect of aspects) cdk.Aspects.of(app).add(aspect);
+  return stack;
+}
+
+function synthApiTemplate(
+  context: Record<string, unknown> = {},
+  enabledSources: string[] = [],
+  deploymentPrefix?: string,
+): Template {
+  return Template.fromStack(buildApiStack(context, enabledSources, deploymentPrefix));
 }
 
 // Synthesizing is the expensive part of the suite and most tests want the same
@@ -160,6 +192,18 @@ function apiTemplate(): Template {
 function apiTemplateAllPlugins(): Template {
   cachedAllPlugins ??= synthApiTemplate({}, discoverPluginIds());
   return cachedAllPlugins;
+}
+
+/**
+ * The only shape carrying verification-only infrastructure: a prefixed
+ * (side-by-side) deployment that ALSO opts in explicitly. Both are required —
+ * a prefixed production slot must not get it by topology alone — and a default
+ * deploy must stay byte-identical, which lib/app-baseline.test.ts asserts.
+ */
+let cachedPrefixed: Template | undefined;
+function apiTemplatePrefixed(): Template {
+  cachedPrefixed ??= synthApiTemplate({ enableVerificationFixtureProvider: true }, [], 'b');
+  return cachedPrefixed;
 }
 
 /** The transitional first-deploy shape. */
@@ -3002,4 +3046,196 @@ describe('the Bedrock generation budget fits the job Lambdas', () => {
       expect(config?.MaximumRetryAttempts, `${fn.constructId} async retries`).toBe(0);
     }
   });
+});
+
+
+/** The provider writes to the live data tables, so a normal install must not have one. */
+function fixtureProviderEntry(template: Template): [string, unknown] | undefined {
+  return Object.entries(template.findResources('AWS::Lambda::Function')).find(([, resource]) =>
+    (resource as { Properties?: { Handler?: string } }).Properties?.Handler
+      === 'verification_fixture_provider.lambda_handler');
+}
+
+/**
+ * Both conditions are load-bearing, so both single-condition shapes are tested.
+ * A prefixed PRODUCTION slot is the case that makes topology alone unsafe, and
+ * the flag alone must not smuggle the provider into a default deployment.
+ */
+describe('the fixture provider is absent unless a prefixed deployment opts in', () => {
+  it.each([
+    ['neither a prefix nor the flag', undefined, {}],
+    ['a prefix but no flag', 'b', {}],
+    ['the flag but no prefix', undefined, { enableVerificationFixtureProvider: true }],
+  ])('creates nothing given %s', (_label, prefix, context) => {
+    const template = prefix === undefined && Object.keys(context).length === 0
+      ? apiTemplate()
+      : synthApiTemplate(context, [], prefix);
+    expect(fixtureProviderEntry(template)).toBeUndefined();
+    const outputs = (template.toJSON().Outputs ?? {}) as Record<string, unknown>;
+    expect(outputs.VerificationFixtureProviderArn).toBeUndefined();
+    // No role, policy or log group may survive either.
+    expect(JSON.stringify(template.toJSON())).not.toContain('voc-fixture-provider');
+  });
+
+  it('rejects truthy-looking spellings that are not the accepted ones', () => {
+    for (const value of ['TRUE', '1', 'yes', 'on', false] as unknown[]) {
+      const template = synthApiTemplate({ enableVerificationFixtureProvider: value }, [], 'b');
+      // Same three assertions as the shapes above: a partial leak (role or log
+      // group created while the function is skipped) must fail here too.
+      expect(fixtureProviderEntry(template)).toBeUndefined();
+      const outputs = (template.toJSON().Outputs ?? {}) as Record<string, unknown>;
+      expect(outputs.VerificationFixtureProviderArn).toBeUndefined();
+      expect(JSON.stringify(template.toJSON())).not.toContain('voc-fixture-provider');
+    }
+  });
+});
+
+describe('the optional invoker ARN narrows invoke to one principal', () => {
+  const enabled = { enableVerificationFixtureProvider: true };
+
+  // The template carries ~105 API Gateway permissions; only the provider's matter.
+  const invokerPermissions = (template: Template) =>
+    Object.entries(template.findResources('AWS::Lambda::Permission'))
+      .filter(([logicalId]) => logicalId.includes('VerificationFixtureInvoker'));
+
+  it('attaches no resource policy when no ARN is supplied', () => {
+    expect(invokerPermissions(apiTemplatePrefixed())).toEqual([]);
+  });
+
+  it('attaches a permission for exactly the supplied role', () => {
+    const arn = 'arn:aws:iam::111122223333:role/my-verification-role';
+    const permissions = invokerPermissions(synthApiTemplate(
+      { ...enabled, verificationFixtureInvokerArn: arn }, [], 'b',
+    ));
+    expect(permissions).toHaveLength(1);
+    const props = (permissions[0][1] as { Properties: Record<string, unknown> }).Properties;
+    expect(props.Action).toBe('lambda:InvokeFunction');
+    expect(props.Principal).toBe(arn);
+  });
+
+  it.each([
+    ['not an arn', 'my-verification-role'],
+    ['a non-IAM arn', 'arn:aws:lambda:us-east-1:111122223333:function:x'],
+    ['a wildcard account', 'arn:aws:iam::*:role/x'],
+    // IAM rejects these at deploy time, so synth must reject them first.
+    ['a wildcard path', 'arn:aws:iam::111122223333:role/*'],
+    ['a wildcard inside the path', 'arn:aws:iam::111122223333:role/team-*'],
+    // `?` is an IAM wildcard too, and just as invalid in a principal.
+    ['a single-character wildcard', 'arn:aws:iam::111122223333:role/te?m'],
+    ['trailing junk after the arn', 'arn:aws:iam::111122223333:role/x extra'],
+    ['an empty role name', 'arn:aws:iam::111122223333:role/'],
+    ['a non-string', 42],
+  ])('fails at synth given %s rather than deploying a useless policy', (_label, value) => {
+    expect(() => synthApiTemplate(
+      { ...enabled, verificationFixtureInvokerArn: value }, [], 'b',
+    )).toThrow(/verificationFixtureInvokerArn/);
+  });
+});
+
+/**
+ * Gating the provider behind prefix+flag moved its IAM out of the shape that
+ * `npm run cdk:nag` synthesizes (the default app, no prefix), so nothing in CI
+ * would have reported a wildcard on it. This runs cdk-nag over the shape that
+ * DOES contain it, which is the only place those findings can appear.
+ */
+it('leaves no unsuppressed cdk-nag finding on the fixture provider', () => {
+  const stack = buildApiStack(
+    { enableVerificationFixtureProvider: true }, [], 'b', [new AwsSolutionsChecks()],
+  );
+  // Mirror ONLY the suppression bin/voc-datalake.ts applies for the shared
+  // createLambdaRole helper's AWSLambdaBasicExecutionRole. Deliberately not the
+  // rest of that file's list: every other rule — IAM5 wildcards above all —
+  // must still be able to fail this case.
+  NagSuppressions.addStackSuppressions(stack, lambdaBasicExecutionRoleSuppressions, true);
+  const annotations = Annotations.fromStack(stack);
+  const provider = [...annotations.findError('*', Match.anyValue()),
+    ...annotations.findWarning('*', Match.anyValue())]
+    .filter((annotation) => annotation.id.includes('VerificationFixtureProvider'))
+    .map((annotation) => `${annotation.id} ${JSON.stringify(annotation.entry.data)}`);
+  expect(provider, `unsuppressed findings:\n${provider.join('\n')}`).toEqual([]);
+});
+
+it('private fixture provider has exact shape, table IAM, output, and no public endpoint', () => {
+  const template = apiTemplatePrefixed();
+  const providerEntry = fixtureProviderEntry(template);
+  expect(providerEntry).toBeDefined();
+  if (!providerEntry) return;
+  const [providerLogicalId, provider] = providerEntry;
+  const props = (provider as { Properties: Record<string, unknown> }).Properties;
+  expect(props.Runtime).toBe('python3.14');
+  expect(props.MemorySize).toBe(256);
+  expect(props.Timeout).toBe(30);
+  expect(props.Architectures).toEqual(['arm64']);
+  const variables = (props.Environment as { Variables: Record<string, unknown> }).Variables;
+  expect(Object.keys(variables).sort()).toEqual([
+    'AGGREGATES_TABLE', 'LOG_LEVEL', 'POWERTOOLS_SERVICE_NAME', 'PROJECTS_TABLE',
+  ]);
+  expect(variables.POWERTOOLS_SERVICE_NAME).toBe('voc-fixture-provider');
+  expect(variables.LOG_LEVEL).toBe('INFO');
+  expect(JSON.stringify(variables.PROJECTS_TABLE)).toMatch(/Projects/);
+  expect(JSON.stringify(variables.AGGREGATES_TABLE)).toMatch(/Aggregates/);
+
+  const roleRef = (props.Role as { 'Fn::GetAtt': [string, string] })['Fn::GetAtt'][0];
+  const policies = template.findResources('AWS::IAM::Policy');
+  const statements = Object.values(policies).flatMap((resource) => {
+    const policy = resource as {
+      Properties?: {
+        Roles?: Array<{ Ref?: string }>;
+        PolicyDocument?: { Statement?: Array<Record<string, unknown>> };
+      };
+    };
+    return policy.Properties?.Roles?.some((role) => role.Ref === roleRef)
+      ? policy.Properties.PolicyDocument?.Statement ?? []
+      : [];
+  });
+  const dynamo = statements.filter((statement) =>
+    JSON.stringify(statement.Resource).includes('Projects')
+    || JSON.stringify(statement.Resource).includes('Aggregates'));
+  const actions = new Set(dynamo.flatMap((statement) =>
+    Array.isArray(statement.Action) ? statement.Action as string[] : [String(statement.Action)]));
+  expect([...actions].sort()).toEqual([
+    'dynamodb:DeleteItem', 'dynamodb:GetItem', 'dynamodb:PutItem',
+  ]);
+  const kms = statements.filter((statement) => {
+    const statementActions = Array.isArray(statement.Action)
+      ? statement.Action as string[]
+      : [String(statement.Action)];
+    return statementActions.some((action) => action.startsWith('kms:'));
+  });
+  const kmsActions = new Set(kms.flatMap((statement) =>
+    Array.isArray(statement.Action) ? statement.Action as string[] : [String(statement.Action)]));
+  expect([...kmsActions].sort()).toEqual([
+    'kms:Decrypt',
+    'kms:DescribeKey',
+    'kms:Encrypt',
+    'kms:GenerateDataKey',
+    'kms:GenerateDataKeyWithoutPlaintext',
+    'kms:ReEncryptFrom',
+    'kms:ReEncryptTo',
+  ]);
+  const kmsPolicy = JSON.stringify(kms);
+  expect(kmsPolicy).toContain('kms:ViaService');
+  expect(kmsPolicy).toContain('kms:CallerAccount');
+  expect(kmsPolicy).toContain('kms:EncryptionContext:aws:dynamodb:tableName');
+  expect(kmsPolicy).toMatch(/Projects/);
+  expect(kmsPolicy).toMatch(/Aggregates/);
+  expect(dynamo.some((statement) => JSON.stringify(statement.Action).includes('Query'))).toBe(false);
+  expect(dynamo.some((statement) => JSON.stringify(statement.Action).includes('Scan'))).toBe(false);
+  expect(dynamo.some((statement) => JSON.stringify(statement.Action).includes('UpdateItem'))).toBe(false);
+
+  // Scoped to the two TABLE ARNs, never `<table>/index/*`. Asserting only the
+  // actions (as this case first did) would pass while the resource set was wide.
+  for (const statement of dynamo) {
+    const resources = Array.isArray(statement.Resource) ? statement.Resource : [statement.Resource];
+    expect(JSON.stringify(resources)).not.toContain('index/');
+    expect(resources.length).toBe(2);
+  }
+
+  const outputs = template.toJSON().Outputs as Record<string, { Value?: unknown }>;
+  expect(outputs.VerificationFixtureProviderArn?.Value).toEqual({
+    'Fn::GetAtt': [providerLogicalId, 'Arn'],
+  });
+  expect(Object.keys(template.findResources('AWS::Lambda::Url'))).toHaveLength(0);
+  const methods = JSON.stringify(template.findResources('AWS::ApiGateway::Method'));
+  expect(methods.includes(providerLogicalId)).toBe(false);
 });
