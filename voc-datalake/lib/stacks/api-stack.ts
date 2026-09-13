@@ -706,11 +706,23 @@ export class VocApiStack extends VocStack {
       logGroup: this.createLogGroup('ProjectsApiLogs', this.uniqueName('voc-projects-api')),
     });
 
-    // Verification-only infrastructure: created ONLY in a PREFIXED deployment.
-    // `no prefix means byte-identical` (lib/app-baseline.test.ts) is the invariant
-    // that keeps a normal install of this sample free of a component whose whole
-    // purpose is to write and delete rows in the live Projects/Aggregates tables.
-    if (this.deploymentPrefix) {
+    // Verification-only infrastructure, behind TWO independent conditions.
+    //
+    // A prefix alone is not enough. `deploymentPrefix` means "this is a
+    // side-by-side copy" — a PRODUCTION slot can be one too — so topology must
+    // not be the only thing standing between a live table and a Lambda that can
+    // delete rows in it. The capability must also be asked for by intent.
+    // Requiring both also keeps `no prefix means byte-identical`
+    // (lib/app-baseline.test.ts) true for every default deploy.
+    //
+    // Read ONCE, and accept only `true`/`'true'` as with skipUseCaseSubmission
+    // (CLI context always arrives as a string). Anything else is off, and off
+    // means "no provider" — so a typo drops the fixture capability and the
+    // verification run fails closed and loudly, which is the safe direction.
+    const fixtureProviderContext: unknown = this.node.tryGetContext('enableVerificationFixtureProvider');
+    const enableVerificationFixtureProvider =
+      fixtureProviderContext === true || fixtureProviderContext === 'true';
+    if (this.deploymentPrefix && enableVerificationFixtureProvider) {
       // Private, target-owned fixture provider. No API route, Cognito authorizer,
       // Function URL, frontend config, or model access: ABCA may invoke one closed
       // setup/probe/teardown contract, while VoC retains every storage key/item rule.

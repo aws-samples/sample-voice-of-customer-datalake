@@ -168,13 +168,14 @@ function apiTemplateAllPlugins(): Template {
 }
 
 /**
- * A PREFIXED (side-by-side) deployment. Verification-only infrastructure exists
- * only in this shape — a default deploy must stay byte-identical, which is what
- * lib/app-baseline.test.ts asserts.
+ * The only shape carrying verification-only infrastructure: a prefixed
+ * (side-by-side) deployment that ALSO opts in explicitly. Both are required —
+ * a prefixed production slot must not get it by topology alone — and a default
+ * deploy must stay byte-identical, which lib/app-baseline.test.ts asserts.
  */
 let cachedPrefixed: Template | undefined;
 function apiTemplatePrefixed(): Template {
-  cachedPrefixed ??= synthApiTemplate({}, [], 'b');
+  cachedPrefixed ??= synthApiTemplate({ enableVerificationFixtureProvider: true }, [], 'b');
   return cachedPrefixed;
 }
 
@@ -3028,13 +3029,33 @@ function fixtureProviderEntry(template: Template): [string, unknown] | undefined
       === 'verification_fixture_provider.lambda_handler');
 }
 
-it('omits the fixture provider entirely from a default (unprefixed) deployment', () => {
-  const template = apiTemplate();
-  expect(fixtureProviderEntry(template)).toBeUndefined();
-  const outputs = (template.toJSON().Outputs ?? {}) as Record<string, unknown>;
-  expect(outputs.VerificationFixtureProviderArn).toBeUndefined();
-  // Nothing may reference the provider's role or log group either.
-  expect(JSON.stringify(template.toJSON())).not.toContain('voc-fixture-provider');
+/**
+ * Both conditions are load-bearing, so both single-condition shapes are tested.
+ * A prefixed PRODUCTION slot is the case that makes topology alone unsafe, and
+ * the flag alone must not smuggle the provider into a default deployment.
+ */
+describe('the fixture provider is absent unless a prefixed deployment opts in', () => {
+  it.each([
+    ['neither a prefix nor the flag', undefined, {}],
+    ['a prefix but no flag', 'b', {}],
+    ['the flag but no prefix', undefined, { enableVerificationFixtureProvider: true }],
+  ])('creates nothing given %s', (_label, prefix, context) => {
+    const template = prefix === undefined && Object.keys(context).length === 0
+      ? apiTemplate()
+      : synthApiTemplate(context, [], prefix);
+    expect(fixtureProviderEntry(template)).toBeUndefined();
+    const outputs = (template.toJSON().Outputs ?? {}) as Record<string, unknown>;
+    expect(outputs.VerificationFixtureProviderArn).toBeUndefined();
+    // No role, policy or log group may survive either.
+    expect(JSON.stringify(template.toJSON())).not.toContain('voc-fixture-provider');
+  });
+
+  it('rejects truthy-looking spellings that are not the accepted ones', () => {
+    for (const value of ['TRUE', '1', 'yes', 'on', false] as unknown[]) {
+      const template = synthApiTemplate({ enableVerificationFixtureProvider: value }, [], 'b');
+      expect(fixtureProviderEntry(template)).toBeUndefined();
+    }
+  });
 });
 
 it('private fixture provider has exact shape, table IAM, output, and no public endpoint', () => {
