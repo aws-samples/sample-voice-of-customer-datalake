@@ -13,6 +13,7 @@
     "test": "vitest",
     "test:watch": "vitest --watch",
     "test:coverage": "vitest --coverage",
+    "test:i18n-scripts": "node scripts/i18n-check.test.mjs && node scripts/set-nested.test.mjs",
     "test:ui": "vitest --ui",
     "typecheck": "tsc -b --noEmit",
     "typecheck:tests": "tsc --noEmit -p tsconfig.test.json",
