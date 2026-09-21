@@ -2,7 +2,7 @@
 name: quick-ai-plc
 display_name: "AIDLC: Discovery Workshop"
 icon: "🚀"
-version: "1.3.0"
+version: "1.3.1"
 description: >-
   AIDLC: Discovery — end-to-end discovery workshop, from customer signals to
   validated product concepts. Use when the user wants to run a VoC or

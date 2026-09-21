@@ -2,6 +2,16 @@
 
 All notable changes to the AIDLC: Discovery Workshop skill package.
 
+## 1.3.1 — 2026-09-21
+
+Fixes from the first live install on Quick Desktop.
+
+### Added
+- `## Overview` section in `SKILL.md` — Quick's skill validator requires it and rejected the save until its assistant injected one; the package now ships it.
+
+### Fixed
+- The Conductor also checks `scripts/config.default.md` for the configuration file, where Quick's skill-save tool places it on some install paths.
+
 ## 1.3.0 — 2026-09-21
 
 Consistency release.
