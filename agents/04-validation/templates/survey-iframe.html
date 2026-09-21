@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{SURVEY_TITLE}}</title>
+  <style>
+    :root {
+      --primary: {{PRIMARY_COLOR}};
+      --bg: {{BACKGROUND_COLOR}};
+      --text: {{TEXT_COLOR}};
+      --border-radius: {{BORDER_RADIUS}};
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 2rem;
+      max-width: 640px;
+      margin: 0 auto;
+      line-height: 1.6;
+    }
+    .survey-header {
+      margin-bottom: 2rem;
+      text-align: center;
+    }
+    .survey-header h1 {
+      font-size: 1.5rem;
+      margin-bottom: 0.5rem;
+      color: var(--text);
+    }
+    .survey-header p {
+      color: #6B7280;
+      font-size: 0.9rem;
+    }
+    .question {
+      margin-bottom: 1.5rem;
+      padding: 1.25rem;
+      background: #F9FAFB;
+      border-radius: var(--border-radius);
+      border: 1px solid #E5E7EB;
+    }
+    .question label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+      font-size: 0.95rem;
+    }
+    .question .required { color: #EF4444; }
+    
+    /* Rating Stars */
+    .stars { display: flex; gap: 0.25rem; }
+    .stars input { display: none; }
+    .stars label {
+      font-size: 1.75rem;
+      cursor: pointer;
+      color: #D1D5DB;
+      transition: color 0.15s;
+      font-weight: normal;
+    }
+    .stars label:hover,
+    .stars label:hover ~ label,
+    .stars input:checked ~ label { color: #F59E0B; }
+    
+    /* Text Input */
+    textarea, input[type="text"], input[type="email"] {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid #D1D5DB;
+      border-radius: calc(var(--border-radius) / 2);
+      font-size: 0.9rem;
+      font-family: inherit;
+      resize: vertical;
+      min-height: 80px;
+    }
+    textarea:focus, input:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+    
+    /* Multiple Choice */
+    .options { display: flex; flex-direction: column; gap: 0.5rem; }
+    .options label {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 0.75rem;
+      border-radius: calc(var(--border-radius) / 2);
+      cursor: pointer;
+      font-weight: normal;
+      transition: background 0.15s;
+    }
+    .options label:hover { background: #F3F4F6; }
+    .options input[type="radio"],
+    .options input[type="checkbox"] {
+      accent-color: var(--primary);
+    }
+    
+    /* NPS Scale */
+    .nps { display: flex; gap: 0.25rem; justify-content: space-between; }
+    .nps label {
+      width: 2.5rem;
+      height: 2.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #D1D5DB;
+      border-radius: calc(var(--border-radius) / 2);
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.85rem;
+      transition: all 0.15s;
+    }
+    .nps input { display: none; }
+    .nps input:checked + label,
+    .nps label:hover {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+    }
+    .nps-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: #9CA3AF;
+      margin-top: 0.25rem;
+    }
+    
+    /* Submit */
+    .submit-btn {
+      display: block;
+      width: 100%;
+      padding: 0.875rem;
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: var(--border-radius);
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      margin-top: 1rem;
+    }
+    .submit-btn:hover { opacity: 0.9; }
+    .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    
+    /* Success State */
+    .success {
+      text-align: center;
+      padding: 3rem 1rem;
+    }
+    .success .checkmark {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+    }
+    .success h2 { margin-bottom: 0.5rem; }
+    .success p { color: #6B7280; }
+    
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div id="survey-form">
+    <div class="survey-header">
+      <h1>{{SURVEY_TITLE}}</h1>
+      <p>{{SURVEY_DESCRIPTION}}</p>
+    </div>
+    
+    <form id="feedback-form">
+      <!-- Questions will be injected here -->
+      {{QUESTIONS_HTML}}
+      
+      <button type="submit" class="submit-btn">{{SUBMIT_BUTTON_TEXT}}</button>
+    </form>
+  </div>
+  
+  <div id="success-state" class="success hidden">
+    <div class="checkmark">✓</div>
+    <h2>{{SUCCESS_MESSAGE}}</h2>
+    <p>Your response has been recorded.</p>
+  </div>
+
+  <script>
+    document.getElementById('feedback-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const formData = new FormData(this);
+      const data = Object.fromEntries(formData.entries());
+      
+      // Log response (in production: POST to endpoint)
+      console.log('Survey response:', JSON.stringify(data, null, 2));
+      
+      // Show success state
+      document.getElementById('survey-form').classList.add('hidden');
+      document.getElementById('success-state').classList.remove('hidden');
+    });
+  </script>
+</body>
+</html>

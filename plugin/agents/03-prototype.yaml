@@ -1,0 +1,7 @@
+name: "Prototyping Agent"
+description: "Phase 3 orchestrator — creates testable artifacts: clickable HTML prototypes, IDE export packages, and optional surveys and persona avatars."
+instructions_file: "skills/quick-ai-plc/agents/03-prototype/AGENT.md"
+skills:
+  - quick-ai-plc
+spaces:
+  - voc-data-lake

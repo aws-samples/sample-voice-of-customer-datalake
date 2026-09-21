@@ -1,0 +1,20 @@
+# Build output
+dist/
+
+# Local build staging
+.tmp/
+
+# Python test artifacts
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# Editor
+*.swp
+*.swo
+*~
+
+# User-specific config (created from config.default.md)
+config.md

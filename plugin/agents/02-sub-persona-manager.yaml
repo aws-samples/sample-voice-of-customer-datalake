@@ -1,0 +1,7 @@
+name: "Persona Manager"
+description: "Sub-agent (Phase 2) — generates synthetic personas from VoC data with behavioral segmentation, 8-section profiles, and data-backed confidence scores."
+instructions_file: "skills/quick-ai-plc/agents/02-ideation/sub-persona-manager/AGENT.md"
+skills:
+  - quick-ai-plc
+spaces:
+  - voc-data-lake

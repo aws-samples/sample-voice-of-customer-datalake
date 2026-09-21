@@ -1,0 +1,7 @@
+name: "Working Backwards"
+description: "Sub-agent (Phase 2) — guides the user through Amazon's Working Backwards process: feature description, press release, customer FAQ, and internal FAQ."
+instructions_file: "skills/quick-ai-plc/agents/02-ideation/sub-working-backwards/AGENT.md"
+skills:
+  - quick-ai-plc
+spaces:
+  - voc-data-lake

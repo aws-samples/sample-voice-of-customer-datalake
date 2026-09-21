@@ -1,0 +1,7 @@
+name: "Competitive Research Analyst"
+description: "Sub-agent (Phase 1) — analyzes competitor intelligence and produces competitive positioning recommendations."
+instructions_file: "skills/quick-ai-plc/agents/01-signal-analyzer/sub-competitive-research-analyst/AGENT.md"
+skills:
+  - quick-ai-plc
+spaces:
+  - voc-data-lake

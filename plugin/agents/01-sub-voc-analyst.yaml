@@ -1,0 +1,7 @@
+name: "VoC Analytics Agent"
+description: "Sub-agent (Phase 1) — analyzes customer feedback from the knowledge base: detects language, sentiment, categories, urgency, root causes, and persona signals."
+instructions_file: "skills/quick-ai-plc/agents/01-signal-analyzer/sub-voc-analyst/AGENT.md"
+skills:
+  - quick-ai-plc
+spaces:
+  - voc-data-lake

@@ -1,0 +1,7 @@
+name: "Signal Analyzer"
+description: "Phase 1 orchestrator — coordinates VoC analytics, market research, and competitive research sub-agents to produce a consolidated Signal Summary and research hypotheses."
+instructions_file: "skills/quick-ai-plc/agents/01-signal-analyzer/AGENT.md"
+skills:
+  - quick-ai-plc
+spaces:
+  - voc-data-lake

@@ -1,0 +1,7 @@
+name: "Prioritize"
+description: "Sub-agent (Phase 2) — evaluates and ranks solution candidates using Impact, Time-to-Market, Fit, and Confidence scoring to produce a recommended build order."
+instructions_file: "skills/quick-ai-plc/agents/02-ideation/sub-prioritize/AGENT.md"
+skills:
+  - quick-ai-plc
+spaces:
+  - voc-data-lake

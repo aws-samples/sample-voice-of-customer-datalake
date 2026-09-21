@@ -1,0 +1,7 @@
+name: "Validation Agent"
+description: "Phase 4 orchestrator — tests assumptions and prioritizes action through validation surveys, problem scoring (Frequency + Severity + Reach), and critical research review."
+instructions_file: "skills/quick-ai-plc/agents/04-validation/AGENT.md"
+skills:
+  - quick-ai-plc
+spaces:
+  - voc-data-lake
