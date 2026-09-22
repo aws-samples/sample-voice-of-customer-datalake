@@ -28,6 +28,8 @@ The unzipped folder is named `sample-voice-of-customer-datalake-v2/`. Both forms
 2. Select the package folder (the clone or the unzipped ZIP). Quick expects `plugin.json`, `skills/`, `mcps.json`, and `tasks.json` directly under the selected folder, which is what the repository root provides.
 3. Confirm that `List my skills` shows `aidlc-discovery`.
 
+> **Note:** this folder-import path has not yet been re-verified against the new multi-harness layout (extra root entries such as `.claude-plugin/` and `tests/`). If the import rejects the folder, use the copy-the-skill fallback below and please open an issue.
+
 Importing the folder provisions the complete single-skill Conductor. It does not create Chat Agents; see [Optional: Dedicated Phase and Specialist Agents](#optional-dedicated-phase-and-specialist-agents).
 
 Fallbacks, in order of preference:
@@ -102,7 +104,7 @@ Create dedicated agents only when you need independent phase entry points, stand
 
 | Harness | Setup |
 |---------|-------|
-| **Kiro** | [`.kiro/agents/`](.kiro/agents/) ships 11 agent definitions. They load automatically when this repository is opened as a trusted workspace; to use them elsewhere, copy the folder's files into `~/.kiro/agents/` (global) or another workspace's `.kiro/agents/` together with the skill. Each agent's `prompt` is the matching `AGENT.md`; the Phase 1 and Phase 2 orchestrators list their specialists under `toolsSettings.subagent.availableAgents`. |
+| **Kiro** | [`.kiro/agents/`](.kiro/agents/) ships 11 agent definitions. They load automatically when this repository is opened as a trusted workspace — the recommended way to use them. Each agent's `prompt` is the matching `AGENT.md` (referenced relative to the agent file, `file://../../skills/…`); the Phase 1 and Phase 2 orchestrators list their specialists under `toolsSettings.subagent.availableAgents`. To use them in **another workspace**, copy both `skills/aidlc-discovery/` and `.kiro/agents/` into it at the same relative positions. For a **global** install the relative depth changes, so rewrite the paths while copying:<br>`mkdir -p ~/.kiro/agents && cp -R skills/aidlc-discovery ~/.kiro/skills/`<br>`for f in .kiro/agents/*.json; do sed -e 's\|file://../../skills/\|file://../skills/\|' -e 's\|skill://skills/\|skill://~/.kiro/skills/\|' "$f" > ~/.kiro/agents/$(basename "$f"); done` |
 | **Claude Code** | [`agents/`](agents/) ships the same 11 agents. Installed as a plugin they appear as `aidlc-discovery:aidlc-signal-analyzer`, `aidlc-discovery:aidlc-ideation`, and so on; the orchestrators delegate to their specialists with the Agent tool. |
 | **Amazon Quick** | Create Chat Agents by hand; see [Workshop Setup](WORKSHOP-SETUP.md#optional-dedicated-phase-and-specialist-agents). Quick's plugin import does not create agents. |
 

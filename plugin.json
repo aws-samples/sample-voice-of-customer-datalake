@@ -7,7 +7,8 @@
     "name": "AWS Samples",
     "url": "https://github.com/aws-samples"
   },
-  "repository": "https://github.com/aws-samples/sample-voice-of-customer-datalake/tree/v2",
+  "homepage": "https://github.com/aws-samples/sample-voice-of-customer-datalake/tree/v2",
+  "repository": "https://github.com/aws-samples/sample-voice-of-customer-datalake",
   "license": "MIT-0",
   "keywords": [
     "aidlc",

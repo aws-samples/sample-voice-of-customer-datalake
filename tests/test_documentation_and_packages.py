@@ -23,7 +23,7 @@ PLUGIN_NAME = "aidlc-discovery"
 LINK_PATTERN = re.compile(r"(?<!!)\[[^]]*\]\(([^)]+)\)")
 HEADING_PATTERN = re.compile(r"^#{1,6}\s+(.+?)\s*$")
 EXTERNAL_PREFIXES = ("http://", "https://", "mailto:")
-SKIP_DIRS = {".git", ".tmp", "dist", "__pycache__"}
+SKIP_DIRS = {".git", ".tmp", "__pycache__"}
 
 # Agent Plugins 1.0.0 §5.5 and Agent Skills `name` constraints.
 AGENT_PLUGINS_NAME = re.compile(r"^(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$")

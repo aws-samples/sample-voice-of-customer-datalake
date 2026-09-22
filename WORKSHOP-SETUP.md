@@ -74,10 +74,10 @@ For each one, ask Quick to create an agent and use the linked file as its instru
 
 | Agent | Instructions |
 |-------|--------------|
-| Signal Analyzer | [`agents/01-signal-analyzer/AGENT.md`](skills/aidlc-discovery/agents/01-signal-analyzer/AGENT.md) |
-| Ideation Agent | [`agents/02-ideation/AGENT.md`](skills/aidlc-discovery/agents/02-ideation/AGENT.md) |
-| Prototyping Agent | [`agents/03-prototype/AGENT.md`](skills/aidlc-discovery/agents/03-prototype/AGENT.md) |
-| Validation Agent | [`agents/04-validation/AGENT.md`](skills/aidlc-discovery/agents/04-validation/AGENT.md) |
+| Signal Analyzer | [`skills/aidlc-discovery/agents/01-signal-analyzer/AGENT.md`](skills/aidlc-discovery/agents/01-signal-analyzer/AGENT.md) |
+| Ideation Agent | [`skills/aidlc-discovery/agents/02-ideation/AGENT.md`](skills/aidlc-discovery/agents/02-ideation/AGENT.md) |
+| Prototyping Agent | [`skills/aidlc-discovery/agents/03-prototype/AGENT.md`](skills/aidlc-discovery/agents/03-prototype/AGENT.md) |
+| Validation Agent | [`skills/aidlc-discovery/agents/04-validation/AGENT.md`](skills/aidlc-discovery/agents/04-validation/AGENT.md) |
 
 Creating only these four agents does **not** enable parallel specialist delegation.
 
