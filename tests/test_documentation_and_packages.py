@@ -245,6 +245,19 @@ class DedicatedAgentTests(unittest.TestCase):
             self.assertIsNotNone(match, path.name)
             self.assertTrue((ROOT / match.group(1)).is_file(), match.group(1))
 
+    def test_install_md_global_recipe_matches_shipped_agent_paths(self) -> None:
+        """The documented sed rewrite must keep matching the shipped prefixes.
+
+        INSTALL.md tells global installers to rewrite file://../../skills/ to
+        file://../skills/; if the shipped prompt prefix or the documented
+        expression drifts, the recipe silently ships broken agents.
+        """
+        install = (ROOT / "INSTALL.md").read_text(encoding="utf-8")
+        self.assertIn("s\\|file://../../skills/\\|file://../skills/\\|", install)
+        for path in sorted((ROOT / ".kiro" / "agents").glob("*.json")):
+            prompt = json.loads(path.read_text(encoding="utf-8"))["prompt"]
+            self.assertTrue(prompt.startswith("file://../../skills/"), f"{path.name}: {prompt}")
+
     @unittest.skipUnless(shutil.which("kiro-cli"), "kiro-cli not installed")
     def test_kiro_cli_accepts_every_agent(self) -> None:
         for path in sorted((ROOT / ".kiro" / "agents").glob("*.json")):

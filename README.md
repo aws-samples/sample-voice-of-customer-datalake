@@ -14,7 +14,7 @@ The repository root is the installable package for all three harnesses at once. 
 | **Kiro** (IDE and CLI) | `plugin.json` ([Agent Plugins](https://agent-plugins.org/) fields) + `skills/` | Powers panel, or the skill folder alone |
 | **Claude Code** | `.claude-plugin/plugin.json` + `skills/` + `agents/` | Plugin marketplace, `--plugin-dir`, or `--plugin-url` |
 
-The single `plugin.json` carries both the Agent Plugins fields and Quick's; the Agent Plugins specification requires clients to ignore fields they do not define. The skill itself follows the [Agent Skills](https://agentskills.io/) standard.
+The Quick folder-import path is pending re-verification on this layout (see [INSTALL](INSTALL.md#amazon-quick)). The single `plugin.json` carries both the Agent Plugins fields and Quick's; the Agent Plugins specification requires clients to ignore fields they do not define. The skill itself follows the [Agent Skills](https://agentskills.io/) standard.
 
 ## Start Here
 
