@@ -252,8 +252,10 @@ class DedicatedAgentTests(unittest.TestCase):
         file://../skills/; if the shipped prompt prefix or the documented
         expression drifts, the recipe silently ships broken agents.
         """
-        install = (ROOT / "INSTALL.md").read_text(encoding="utf-8")
-        self.assertIn("s\\|file://../../skills/\\|file://../skills/\\|", install)
+        # Normalize the markdown table's pipe escaping so the assertion pins
+        # the command itself, not the table formatting.
+        install = (ROOT / "INSTALL.md").read_text(encoding="utf-8").replace("\\|", "|")
+        self.assertIn("s|file://../../skills/|file://../skills/|", install)
         for path in sorted((ROOT / ".kiro" / "agents").glob("*.json")):
             prompt = json.loads(path.read_text(encoding="utf-8"))["prompt"]
             self.assertTrue(prompt.startswith("file://../../skills/"), f"{path.name}: {prompt}")
