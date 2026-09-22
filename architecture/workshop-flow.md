@@ -89,7 +89,7 @@ Both topologies can use these target paths, allowing a team to add advanced agen
 ## Related Documentation
 
 - [Project overview](../README.md)
-- [Install the recommended single-skill package](../INSTALL.md#recommended-install-the-full-single-skill-package)
+- [Install the recommended single-skill package](../INSTALL.md)
 - [Workshop participant setup](../WORKSHOP-SETUP.md)
 - [Optional Phase 1 dedicated-agent architecture](phase1-signal-analyzer.md)
-- [Canonical Workshop Conductor workflow](../SKILL.md#workflow)
+- [Canonical Workshop Conductor workflow](../skills/quick-aidlc-discovery/SKILL.md#workflow)

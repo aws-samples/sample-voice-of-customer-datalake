@@ -1,0 +1,13 @@
+{
+  "name": "aidlc-design-thinking",
+  "description": "Design Thinking — AIDLC Phase 2 specialist placeholder: Design Thinking methodology is not implemented yet; the agent explains the gap and points to the implemented specialists.",
+  "prompt": "file://../../skills/quick-aidlc-discovery/agents/02-ideation/sub-design-thinking/AGENT.md",
+  "tools": [
+    "read",
+    "write",
+    "shell"
+  ],
+  "resources": [
+    "skill://skills/quick-aidlc-discovery/SKILL.md"
+  ]
+}

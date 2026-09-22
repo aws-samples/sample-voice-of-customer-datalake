@@ -1,7 +1,0 @@
-name: "Prototyping Agent"
-description: "Phase 3 orchestrator — creates testable artifacts: clickable HTML prototypes, IDE export packages, and optional surveys and persona avatars."
-instructions_file: "skills/quick-aidlc-discovery/agents/03-prototype/AGENT.md"
-skills:
-  - quick-aidlc-discovery
-spaces:
-  - voc-data-lake

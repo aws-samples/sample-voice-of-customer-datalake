@@ -1,0 +1,23 @@
+{
+  "name": "aidlc-signal-analyzer",
+  "description": "Signal Analyzer — AIDLC Phase 1 orchestrator: coordinates the VoC, market-research, and competitive-research analysts to produce a consolidated Signal Summary and research hypotheses. Use for 'analyze customer signals', 'analyze voc data', or to start Phase 1 of a discovery workshop.",
+  "prompt": "file://../../skills/quick-aidlc-discovery/agents/01-signal-analyzer/AGENT.md",
+  "tools": [
+    "read",
+    "write",
+    "shell",
+    "subagent"
+  ],
+  "resources": [
+    "skill://skills/quick-aidlc-discovery/SKILL.md"
+  ],
+  "toolsSettings": {
+    "subagent": {
+      "availableAgents": [
+        "aidlc-voc-analyst",
+        "aidlc-market-research-analyst",
+        "aidlc-competitive-research-analyst"
+      ]
+    }
+  }
+}

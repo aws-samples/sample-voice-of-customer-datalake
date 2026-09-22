@@ -1,0 +1,13 @@
+{
+  "name": "aidlc-competitive-research-analyst",
+  "description": "Competitive Research Analyst — AIDLC Phase 1 specialist: analyzes competitor intelligence and produces competitive positioning recommendations.",
+  "prompt": "file://../../skills/quick-aidlc-discovery/agents/01-signal-analyzer/sub-competitive-research-analyst/AGENT.md",
+  "tools": [
+    "read",
+    "write",
+    "shell"
+  ],
+  "resources": [
+    "skill://skills/quick-aidlc-discovery/SKILL.md"
+  ]
+}

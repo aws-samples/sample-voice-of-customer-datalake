@@ -2,6 +2,29 @@
 
 All notable changes to the AIDLC: Discovery Workshop skill package.
 
+## 1.5.0 — 2026-09-22
+
+Multi-harness package: the repository root is now directly installable in Amazon Quick, Kiro, and Claude Code. No build step.
+
+### Added
+- **Kiro support.** Root `plugin.json` carries the [Agent Plugins 1.0.0](https://agent-plugins.org/) fields (`$schema`, kebab-case `name`, `author`, `keywords`, …) so the repository installs as a Kiro power from its GitHub URL or a folder; the skill alone imports from `…/tree/v2/skills/quick-aidlc-discovery`. The Agent Plugins specification requires clients to ignore the Quick-specific fields that share the file.
+- **Claude Code support.** `.claude-plugin/plugin.json` (plugin `aidlc-discovery`) and `.claude-plugin/marketplace.json` make the branch its own single-plugin marketplace: `claude plugin marketplace add aws-samples/sample-voice-of-customer-datalake@v2`, or `claude --plugin-dir` / `--plugin-url` for one session.
+- **Dedicated agents that actually run.** `.kiro/agents/` (11 JSON agents; `prompt` points at the phase and specialist `AGENT.md`, orchestrators list their specialists as available sub-agents) and `.claude/agents/` (the same 11 as plugin subagents). They replace the Quick agent YAML experiments, which Quick's import ignored.
+- `SKILL.md` gains the Agent Skills fields `license`, `compatibility`, and `metadata` (version, author) and a **Working Across Harnesses** section mapping each capability to the Quick, Kiro, and Claude Code tool.
+- Tests now pin the package contract of all three loaders (manifest fields and name regexes, skill frontmatter limits, `## Overview`, harness-neutral prose, reference-prompt existence, agent/prompt resolution) and run `kiro-cli agent validate` / `claude plugin validate` when those CLIs are present.
+
+### Changed
+- **Layout.** `SKILL.md`, `agents/`, `knowledge-base/`, and `config.default.md` moved into `skills/quick-aidlc-discovery/`; `plugin.json`, `mcps.json`, and `tasks.json` moved from `plugin/` to the root. Every reference inside `SKILL.md` was already skill-root-relative and is unchanged. `architecture/` and the guides stay at the root and link into the skill folder.
+- **Quick installation** is now Plugins → Import folder on the cloned repository or the unzipped GitHub branch ZIP; the ZIP replaces the workshop archive. The plugin is listed under the Agent Plugins name `aidlc-discovery`.
+- Workflow steps name capabilities instead of Quick tool names; the seven prompts that said "Space", "Quick cannot host a server", or `open_in_session_tab` now name the harness or speak generically. Configuration and artifacts are written to the user's working folder, never into the installed skill (Kiro and Claude Code install into caches).
+- `version` in `SKILL.md` lives under `metadata`, where the Agent Skills standard puts it.
+
+### Removed
+- `build-plugin.sh`, `build-workshop-zip.sh`, and the `plugin/` packaging sources, including the 11 agent YAML descriptors and the `.qplugin` archive (current Quick builds hang on file import; folder import is the supported path).
+
+### Known open checks
+- Quick's folder importer has not yet been exercised against the extra root entries (`.claude-plugin/`, `.kiro/`, `README.md`, `tests/`) or the additional manifest keys; Kiro's and Claude Code's tolerance of the Quick-only frontmatter keys (`display_name`, `icon`, `tools`, `patterns`) is undocumented. If a strict loader skips the skill, the spec-only frontmatter is the fallback.
+
 ## 1.4.0 — 2026-09-21
 
 ### Changed

@@ -1,0 +1,13 @@
+{
+  "name": "aidlc-validation",
+  "description": "Validation Agent — AIDLC Phase 4 orchestrator: tests assumptions and prioritizes action through validation surveys, problem scoring (Frequency + Severity + Reach), a results dashboard, and critical research review.",
+  "prompt": "file://../../skills/quick-aidlc-discovery/agents/04-validation/AGENT.md",
+  "tools": [
+    "read",
+    "write",
+    "shell"
+  ],
+  "resources": [
+    "skill://skills/quick-aidlc-discovery/SKILL.md"
+  ]
+}
