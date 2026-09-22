@@ -1,7 +1,7 @@
 {
   "name": "aidlc-ideation",
   "description": "Ideation Agent — AIDLC Phase 2 orchestrator: turns signals into product concepts by coordinating persona generation, Working Backwards documents, prioritization, and PRD creation. Use for 'generate personas', 'generate prfaq', 'generate prd'.",
-  "prompt": "file://../../skills/quick-aidlc-discovery/agents/02-ideation/AGENT.md",
+  "prompt": "file://../../skills/aidlc-discovery/agents/02-ideation/AGENT.md",
   "tools": [
     "read",
     "write",
@@ -9,7 +9,7 @@
     "subagent"
   ],
   "resources": [
-    "skill://skills/quick-aidlc-discovery/SKILL.md"
+    "skill://skills/aidlc-discovery/SKILL.md"
   ],
   "toolsSettings": {
     "subagent": {

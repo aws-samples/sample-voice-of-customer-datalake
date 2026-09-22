@@ -1,13 +1,13 @@
 {
   "name": "aidlc-voc-analyst",
   "description": "VoC Analytics Agent — AIDLC Phase 1 specialist: analyzes customer feedback (language, sentiment, categories, urgency, root causes, persona signals, key quotes) and writes a VoC analysis report.",
-  "prompt": "file://../../skills/quick-aidlc-discovery/agents/01-signal-analyzer/sub-voc-analyst/AGENT.md",
+  "prompt": "file://../../skills/aidlc-discovery/agents/01-signal-analyzer/sub-voc-analyst/AGENT.md",
   "tools": [
     "read",
     "write",
     "shell"
   ],
   "resources": [
-    "skill://skills/quick-aidlc-discovery/SKILL.md"
+    "skill://skills/aidlc-discovery/SKILL.md"
   ]
 }

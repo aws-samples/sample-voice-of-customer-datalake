@@ -1,5 +1,5 @@
 ---
-name: quick-aidlc-discovery
+name: aidlc-discovery
 description: >-
   AIDLC: Discovery — end-to-end discovery workshop, from customer signals to
   validated product concepts. Use when the user wants to run a VoC or

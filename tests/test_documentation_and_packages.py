@@ -16,7 +16,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SKILL_NAME = "quick-aidlc-discovery"
+SKILL_NAME = "aidlc-discovery"
 SKILL_DIR = ROOT / "skills" / SKILL_NAME
 PLUGIN_NAME = "aidlc-discovery"
 
@@ -49,6 +49,7 @@ LEGACY_GUIDANCE = (
     "build-plugin.sh",
     "build-workshop-zip.sh",
     "quick-ai-plc/",
+    "quick-aidlc-discovery/",
 )
 GUIDANCE_FILES = (
     "README.md",

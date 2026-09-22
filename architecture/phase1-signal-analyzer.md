@@ -52,10 +52,10 @@ This topology adds separate specialist reports and explicit Phase 1 research hyp
 
 | Agent | Role | Knowledge access | Instructions |
 |-------|------|------------------|--------------|
-| Signal Analyzer | Coordinates Phase 1, consolidates reports, generates hypotheses | Reads and writes the `voc-data-lake` knowledge base | [`agents/01-signal-analyzer/AGENT.md`](../skills/quick-aidlc-discovery/agents/01-signal-analyzer/AGENT.md) |
-| VoC Analytics | Analyzes feedback, sentiment, themes, urgency, and quotes | VoC data, normally read-only | [`sub-voc-analyst/AGENT.md`](../skills/quick-aidlc-discovery/agents/01-signal-analyzer/sub-voc-analyst/AGENT.md) |
-| Market Research Analyst | Extracts trends and product recommendations from research | `market-research/` | [`sub-market-research-analyst/AGENT.md`](../skills/quick-aidlc-discovery/agents/01-signal-analyzer/sub-market-research-analyst/AGENT.md) |
-| Competitive Research Analyst | Identifies competitive gaps, threats, and options | `competitive-intel/` | [`sub-competitive-research-analyst/AGENT.md`](../skills/quick-aidlc-discovery/agents/01-signal-analyzer/sub-competitive-research-analyst/AGENT.md) |
+| Signal Analyzer | Coordinates Phase 1, consolidates reports, generates hypotheses | Reads and writes the `voc-data-lake` knowledge base | [`agents/01-signal-analyzer/AGENT.md`](../skills/aidlc-discovery/agents/01-signal-analyzer/AGENT.md) |
+| VoC Analytics | Analyzes feedback, sentiment, themes, urgency, and quotes | VoC data, normally read-only | [`sub-voc-analyst/AGENT.md`](../skills/aidlc-discovery/agents/01-signal-analyzer/sub-voc-analyst/AGENT.md) |
+| Market Research Analyst | Extracts trends and product recommendations from research | `market-research/` | [`sub-market-research-analyst/AGENT.md`](../skills/aidlc-discovery/agents/01-signal-analyzer/sub-market-research-analyst/AGENT.md) |
+| Competitive Research Analyst | Identifies competitive gaps, threats, and options | `competitive-intel/` | [`sub-competitive-research-analyst/AGENT.md`](../skills/aidlc-discovery/agents/01-signal-analyzer/sub-competitive-research-analyst/AGENT.md) |
 
 ### Signal Analyzer responsibilities
 
@@ -210,4 +210,4 @@ For the advanced topology:
 - [Installation guide](../INSTALL.md)
 - [Workshop setup, including advanced agents](../WORKSHOP-SETUP.md#optional-dedicated-phase-and-specialist-agents)
 - [Topology-neutral workshop flow](workshop-flow.md)
-- [Canonical single-skill Conductor](../skills/quick-aidlc-discovery/SKILL.md)
+- [Canonical single-skill Conductor](../skills/aidlc-discovery/SKILL.md)

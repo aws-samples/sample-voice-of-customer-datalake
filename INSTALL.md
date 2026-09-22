@@ -1,6 +1,6 @@
 # Installation Guide: AIDLC: Discovery Workshop
 
-The repository root is the installable package for **Amazon Quick**, **Kiro**, and **Claude Code**. Pick your harness below; every path installs the same complete `quick-aidlc-discovery` skill (Conductor, reference prompts, templates, sample data, and configuration template). Dedicated agents are optional additions, not prerequisites.
+The repository root is the installable package for **Amazon Quick**, **Kiro**, and **Claude Code**. Pick your harness below; every path installs the same complete `aidlc-discovery` skill (Conductor, reference prompts, templates, sample data, and configuration template). Dedicated agents are optional additions, not prerequisites.
 
 - Running a workshop now? Follow the section for your harness, then [Post-Install Setup](#post-install-setup).
 - Preparing an event? Share the shorter [Workshop Setup handout](WORKSHOP-SETUP.md).
@@ -26,7 +26,7 @@ The unzipped folder is named `sample-voice-of-customer-datalake-v2/`. Both forms
 
 1. Open **Agents & skills → Plugins** and choose **Import folder**.
 2. Select the package folder (the clone or the unzipped ZIP). Quick expects `plugin.json`, `skills/`, `mcps.json`, and `tasks.json` directly under the selected folder, which is what the repository root provides.
-3. Confirm that `List my skills` shows `quick-aidlc-discovery`.
+3. Confirm that `List my skills` shows `aidlc-discovery`.
 
 Importing the folder provisions the complete single-skill Conductor. It does not create Chat Agents; see [Optional: Dedicated Phase and Specialist Agents](#optional-dedicated-phase-and-specialist-agents).
 
@@ -35,27 +35,27 @@ Fallbacks, in order of preference:
 - **Copy the skill folder** into your profile and restart Quick:
 
   ```bash
-  cp -R skills/quick-aidlc-discovery ~/.quickwork/profiles/<profile-id>/skills/quick-aidlc-discovery
+  cp -R skills/aidlc-discovery ~/.quickwork/profiles/<profile-id>/skills/aidlc-discovery
   ```
 
   Find the active profile ID under **Settings → About**. If the destination already exists, remove or rename it first so the copy does not nest.
 - **Upload `SKILL.md` only** (Settings → Capabilities → Skills → Create skill → Upload skill file). This is a partial installation: the reference prompts, templates, and sample data are unavailable.
 
-If you previously installed the skill under an older id (`quick-ai-plc`), remove that entry so the two do not both trigger.
+If you previously installed the skill under an older id (`quick-ai-plc` or `quick-aidlc-discovery`), remove that entry so the two do not both trigger.
 
 ## Kiro (IDE and CLI)
 
 Kiro reads the same files on both surfaces. Choose one of:
 
 - **As a power (recommended, one click):** Powers panel → **Add Custom Power** → **Import power from GitHub** and enter the repository URL, or **Import power from a folder** and select the package folder. The power exposes the skill and activates on the `plugin.json` keywords (`aidlc`, `discovery workshop`, `voc`, …). Powers are global (`~/.kiro/powers/`) and are usable from Kiro CLI v3 once installed from the IDE.
-- **As a skill only:** Agent Steering & Skills panel → **+** → **Import a skill** → GitHub URL `https://github.com/aws-samples/sample-voice-of-customer-datalake/tree/v2/skills/quick-aidlc-discovery`, or a local folder. Kiro's importer needs the skill subfolder, not the repository root. Equivalent manual step:
+- **As a skill only:** Agent Steering & Skills panel → **+** → **Import a skill** → GitHub URL `https://github.com/aws-samples/sample-voice-of-customer-datalake/tree/v2/skills/aidlc-discovery`, or a local folder. Kiro's importer needs the skill subfolder, not the repository root. Equivalent manual step:
 
   ```bash
-  cp -R skills/quick-aidlc-discovery ~/.kiro/skills/quick-aidlc-discovery   # every workspace
-  cp -R skills/quick-aidlc-discovery .kiro/skills/quick-aidlc-discovery     # this workspace only
+  cp -R skills/aidlc-discovery ~/.kiro/skills/aidlc-discovery   # every workspace
+  cp -R skills/aidlc-discovery .kiro/skills/aidlc-discovery     # this workspace only
   ```
 
-Verify with `/quick-aidlc-discovery` in the slash-command list. Kiro triggers the skill from its `description`; the trigger phrases are listed there.
+Verify with `/aidlc-discovery` in the slash-command list. Kiro triggers the skill from its `description`; the trigger phrases are listed there.
 
 ## Claude Code
 
@@ -69,13 +69,13 @@ claude --plugin-dir /path/to/package-folder
 claude --plugin-url https://github.com/aws-samples/sample-voice-of-customer-datalake/archive/refs/heads/v2.zip
 ```
 
-The skill is available as `/aidlc-discovery:quick-aidlc-discovery` (and as `/quick-aidlc-discovery` while no other command uses that name). The 11 dedicated agents load as `aidlc-discovery:<agent>` subagents; see below. Validate a local checkout with `claude plugin validate .`.
+The skill is available as `/aidlc-discovery:aidlc-discovery` (and as `/aidlc-discovery` while no other command uses that name). The 11 dedicated agents load as `aidlc-discovery:<agent>` subagents; see below. Validate a local checkout with `claude plugin validate .`.
 
 ## Post-Install Setup
 
 ### 1. Configure data paths
 
-Copy [`skills/quick-aidlc-discovery/config.default.md`](skills/quick-aidlc-discovery/config.default.md) to `config.md` **in your working folder** (the Kiro workspace, the Claude Code project, or the folder you grant to Quick) and set:
+Copy [`skills/aidlc-discovery/config.default.md`](skills/aidlc-discovery/config.default.md) to `config.md` **in your working folder** (the Kiro workspace, the Claude Code project, or the folder you grant to Quick) and set:
 
 - `data_folder`—VoC feedback data such as JSON, CSV, or Excel files;
 - `research_folder`—market research such as PDF or DOCX files; and
@@ -98,7 +98,7 @@ The Conductor confirms scope and guides the conversation through Signals, Ideati
 
 ## Optional: Dedicated Phase and Specialist Agents
 
-Create dedicated agents only when you need independent phase entry points, standalone specialists, separate knowledge scopes, or parallel delegation. All three harnesses use the same 11 `AGENT.md` instruction files under [`skills/quick-aidlc-discovery/agents/`](skills/quick-aidlc-discovery/agents/).
+Create dedicated agents only when you need independent phase entry points, standalone specialists, separate knowledge scopes, or parallel delegation. All three harnesses use the same 11 `AGENT.md` instruction files under [`skills/aidlc-discovery/agents/`](skills/aidlc-discovery/agents/).
 
 | Harness | Setup |
 |---------|-------|
@@ -124,11 +124,11 @@ The skill accepts text-based feedback in JSON, CSV, Excel, PDF, DOCX, or plain t
 ]
 ```
 
-Sample data ships with the skill at [`skills/quick-aidlc-discovery/knowledge-base/voc-data/example-feedback.json`](skills/quick-aidlc-discovery/knowledge-base/voc-data/example-feedback.json).
+Sample data ships with the skill at [`skills/aidlc-discovery/knowledge-base/voc-data/example-feedback.json`](skills/aidlc-discovery/knowledge-base/voc-data/example-feedback.json).
 
 ## Verify the Installation
 
-1. Confirm the skill is registered (`List my skills` in Quick; `/quick-aidlc-discovery` in Kiro or Claude Code).
+1. Confirm the skill is registered (`List my skills` in Quick; `/aidlc-discovery` in Kiro or Claude Code).
 2. Say `Start a VoC workshop` and confirm the Conductor begins initialization.
 3. Point it to the included sample data or an accessible data folder.
 4. Generate a Signal Analysis Report and confirm that the output is saved under the configured project path in your working folder.
@@ -141,4 +141,4 @@ Agent creation is not required to pass this verification.
 - [Workshop participant and facilitator setup](WORKSHOP-SETUP.md)
 - [Workshop phase flow](architecture/workshop-flow.md)
 - [Optional Phase 1 dedicated-agent architecture](architecture/phase1-signal-analyzer.md)
-- [Canonical Conductor skill](skills/quick-aidlc-discovery/SKILL.md)
+- [Canonical Conductor skill](skills/aidlc-discovery/SKILL.md)

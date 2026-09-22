@@ -33,17 +33,17 @@ For an event-ready participant handout, use [Workshop Setup](WORKSHOP-SETUP.md).
 | **3. Prototyping** | Create a clickable HTML prototype and IDE export | Testable artifacts and a draft survey when useful |
 | **4. Validation** | Run surveys, assess hypotheses, and prioritize problems | Validated backlog |
 
-Each phase can run independently, but the Conductor maintains context and links artifacts when you run the lifecycle end to end. The canonical behavior is defined in [`skills/quick-aidlc-discovery/SKILL.md`](skills/quick-aidlc-discovery/SKILL.md).
+Each phase can run independently, but the Conductor maintains context and links artifacts when you run the lifecycle end to end. The canonical behavior is defined in [`skills/aidlc-discovery/SKILL.md`](skills/aidlc-discovery/SKILL.md).
 
 ## Recommended Execution Model: One Skill
 
-The **recommended default** is the `quick-aidlc-discovery` skill. Its Workshop Conductor guides one conversation through all four phases and uses the included phase prompts as references. You do not need to create agents to run the full workshop.
+The **recommended default** is the `aidlc-discovery` skill. Its Workshop Conductor guides one conversation through all four phases and uses the included phase prompts as references. You do not need to create agents to run the full workshop.
 
 ```text
 User
   |
   v
-Workshop Conductor (`quick-aidlc-discovery`)
+Workshop Conductor (`aidlc-discovery`)
   |-- Phase 1: Signals
   |-- Phase 2: Ideation
   |-- Phase 3: Prototyping
@@ -53,7 +53,7 @@ Workshop Conductor (`quick-aidlc-discovery`)
 Shared data and project artifacts
 ```
 
-It reads the included prompts under [`skills/quick-aidlc-discovery/agents/`](skills/quick-aidlc-discovery/agents/) as references and performs the work inline in one conversation. The steps name capabilities (search the corpus, read PDF/DOCX, run Python, write files, preview HTML); the skill maps each one to the tool the current harness provides.
+It reads the included prompts under [`skills/aidlc-discovery/agents/`](skills/aidlc-discovery/agents/) as references and performs the work inline in one conversation. The steps name capabilities (search the corpus, read PDF/DOCX, run Python, write files, preview HTML); the skill maps each one to the tool the current harness provides.
 
 ## Optional Advanced Execution Model: Dedicated Agents
 
@@ -79,9 +79,9 @@ voc-data-lake/
 `-- projects/          generated workshop artifacts
 ```
 
-Artifacts go to the configured `output_folder` (default `knowledge-base/projects/[project]/` with phase-specific subfolders) **in your working folder**, never inside the installed skill. Copy [`skills/quick-aidlc-discovery/config.default.md`](skills/quick-aidlc-discovery/config.default.md) to `config.md` in your working folder to preconfigure data, research, and output paths.
+Artifacts go to the configured `output_folder` (default `knowledge-base/projects/[project]/` with phase-specific subfolders) **in your working folder**, never inside the installed skill. Copy [`skills/aidlc-discovery/config.default.md`](skills/aidlc-discovery/config.default.md) to `config.md` in your working folder to preconfigure data, research, and output paths.
 
-Supported inputs include JSON, CSV, Excel, PDF, DOCX, and plain text. Sample feedback ships with the skill at [`skills/quick-aidlc-discovery/knowledge-base/voc-data/example-feedback.json`](skills/quick-aidlc-discovery/knowledge-base/voc-data/example-feedback.json).
+Supported inputs include JSON, CSV, Excel, PDF, DOCX, and plain text. Sample feedback ships with the skill at [`skills/aidlc-discovery/knowledge-base/voc-data/example-feedback.json`](skills/aidlc-discovery/knowledge-base/voc-data/example-feedback.json).
 
 ## Repository Guide
 
@@ -89,7 +89,7 @@ Supported inputs include JSON, CSV, Excel, PDF, DOCX, and plain text. Sample fee
 |------|---------|
 | [`INSTALL.md`](INSTALL.md) | Installation and configuration for Amazon Quick, Kiro, and Claude Code |
 | [`WORKSHOP-SETUP.md`](WORKSHOP-SETUP.md) | Short participant and facilitator handout |
-| [`skills/quick-aidlc-discovery/`](skills/quick-aidlc-discovery/) | The skill: `SKILL.md`, reference prompts, sample data, configuration template |
+| [`skills/aidlc-discovery/`](skills/aidlc-discovery/) | The skill: `SKILL.md`, reference prompts, sample data, configuration template |
 | [`plugin.json`](plugin.json), [`mcps.json`](mcps.json), [`tasks.json`](tasks.json) | Package manifest for Kiro (Agent Plugins) and Amazon Quick (v0.1) |
 | [`.claude-plugin/`](.claude-plugin/) | Claude Code plugin manifest and single-plugin marketplace |
 | [`.kiro/agents/`](.kiro/agents/), [`.claude/agents/`](.claude/agents/) | Optional dedicated agents for Kiro and Claude Code |
@@ -102,7 +102,7 @@ Supported inputs include JSON, CSV, Excel, PDF, DOCX, and plain text. Sample fee
 
 | Check | How |
 |-------|-----|
-| Skill registration | Quick: `List my skills` shows `quick-aidlc-discovery`. Kiro and Claude Code: `/quick-aidlc-discovery` appears in the slash-command list |
+| Skill registration | Quick: `List my skills` shows `aidlc-discovery`. Kiro and Claude Code: `/aidlc-discovery` appears in the slash-command list |
 | Trigger | `Start a VoC workshop` enters workshop initialization |
 | Data access | `Search my VoC data for delivery complaints` finds accessible data |
 | Configuration | Confirm the paths in `config.md`, if you created it |

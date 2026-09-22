@@ -1,13 +1,13 @@
 {
   "name": "aidlc-persona-manager",
   "description": "Persona Manager — AIDLC Phase 2 specialist: generates synthetic personas from VoC data with behavioral segmentation, 8-section profiles, and data-backed confidence scores.",
-  "prompt": "file://../../skills/quick-aidlc-discovery/agents/02-ideation/sub-persona-manager/AGENT.md",
+  "prompt": "file://../../skills/aidlc-discovery/agents/02-ideation/sub-persona-manager/AGENT.md",
   "tools": [
     "read",
     "write",
     "shell"
   ],
   "resources": [
-    "skill://skills/quick-aidlc-discovery/SKILL.md"
+    "skill://skills/aidlc-discovery/SKILL.md"
   ]
 }
