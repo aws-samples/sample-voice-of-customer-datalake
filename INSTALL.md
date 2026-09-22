@@ -103,7 +103,7 @@ Create dedicated agents only when you need independent phase entry points, stand
 | Harness | Setup |
 |---------|-------|
 | **Kiro** | [`.kiro/agents/`](.kiro/agents/) ships 11 agent definitions. They load automatically when this repository is opened as a trusted workspace; to use them elsewhere, copy the folder's files into `~/.kiro/agents/` (global) or another workspace's `.kiro/agents/` together with the skill. Each agent's `prompt` is the matching `AGENT.md`; the Phase 1 and Phase 2 orchestrators list their specialists under `toolsSettings.subagent.availableAgents`. |
-| **Claude Code** | [`.claude/agents/`](.claude/agents/) ships the same 11 agents. Installed as a plugin they appear as `aidlc-discovery:aidlc-signal-analyzer`, `aidlc-discovery:aidlc-ideation`, and so on; the orchestrators delegate to their specialists with the Agent tool. |
+| **Claude Code** | [`agents/`](agents/) ships the same 11 agents. Installed as a plugin they appear as `aidlc-discovery:aidlc-signal-analyzer`, `aidlc-discovery:aidlc-ideation`, and so on; the orchestrators delegate to their specialists with the Agent tool. |
 | **Amazon Quick** | Create Chat Agents by hand; see [Workshop Setup](WORKSHOP-SETUP.md#optional-dedicated-phase-and-specialist-agents). Quick's plugin import does not create agents. |
 
 Read the [Phase 1 dedicated-agent architecture](architecture/phase1-signal-analyzer.md) before choosing the additional setup. Both topologies cover the same workshop lifecycle and target the same core phase outputs; dedicated specialists can add separate reports and hypotheses.

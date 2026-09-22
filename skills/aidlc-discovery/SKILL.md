@@ -1,23 +1,13 @@
 ---
 name: aidlc-discovery
-description: >-
-  AIDLC: Discovery — end-to-end discovery workshop, from customer signals to
-  validated product concepts. Use when the user wants to run a VoC or
-  discovery workshop, analyze customer signals, generate personas, create
-  PR/FAQ or PRD documents, build prototypes, or prioritize problems from
-  feedback data. Triggers on: 'start voc workshop', 'aidlc', 'aidlc-discovery',
-  'run workshop', 'analyze customer signals', 'analyze voc data',
-  'generate personas', 'generate prfaq', 'generate prd', 'create survey',
-  'prioritize problems', 'what should we build'.
+description: "AIDLC: Discovery — end-to-end discovery workshop, from customer signals to validated product concepts. Use when the user wants to run a VoC or discovery workshop, analyze customer signals, generate personas, create PR/FAQ or PRD documents, build prototypes, or prioritize problems from feedback data. Triggers on: 'start voc workshop', 'aidlc', 'aidlc-discovery', 'run workshop', 'analyze customer signals', 'analyze voc data', 'generate personas', 'generate prfaq', 'generate prd', 'create survey', 'prioritize problems', 'what should we build'."
 license: MIT-0
-compatibility: >-
-  Runs in Amazon Quick Desktop, Kiro (IDE and CLI), and Claude Code. Needs
-  read/write access to the user's working folder and a Python 3 runtime for
-  aggregation; PDF and DOCX input uses the harness's document reader or Python.
+compatibility: "Runs in Amazon Quick Desktop, Kiro (IDE and CLI), and Claude Code. Needs read/write access to the user's working folder and a Python 3 runtime for aggregation; PDF and DOCX input uses the harness's document reader or Python."
 metadata:
   version: "1.5.0"
   author: "AWS Samples"
   homepage: "https://github.com/aws-samples/sample-voice-of-customer-datalake/tree/v2"
+# Keep description and compatibility on one line: Kiro's skill reader does not unfold YAML block scalars.
 # The fields below are read by Amazon Quick; other harnesses ignore them.
 display_name: "AIDLC: Discovery Workshop"
 icon: "🚀"

@@ -9,7 +9,7 @@ Multi-harness package: the repository root is now directly installable in Amazon
 ### Added
 - **Kiro support.** Root `plugin.json` carries the [Agent Plugins 1.0.0](https://agent-plugins.org/) fields (`$schema`, kebab-case `name`, `author`, `keywords`, …) so the repository installs as a Kiro power from its GitHub URL or a folder; the skill alone imports from `…/tree/v2/skills/aidlc-discovery`. The Agent Plugins specification requires clients to ignore the Quick-specific fields that share the file.
 - **Claude Code support.** `.claude-plugin/plugin.json` (plugin `aidlc-discovery`) and `.claude-plugin/marketplace.json` make the branch its own single-plugin marketplace: `claude plugin marketplace add aws-samples/sample-voice-of-customer-datalake@v2`, or `claude --plugin-dir` / `--plugin-url` for one session.
-- **Dedicated agents that actually run.** `.kiro/agents/` (11 JSON agents; `prompt` points at the phase and specialist `AGENT.md`, orchestrators list their specialists as available sub-agents) and `.claude/agents/` (the same 11 as plugin subagents). They replace the Quick agent YAML experiments, which Quick's import ignored.
+- **Dedicated agents that actually run.** `.kiro/agents/` (11 JSON agents; `prompt` points at the phase and specialist `AGENT.md`, orchestrators list their specialists as available sub-agents) and `agents/` (the same 11 as plugin subagents). They replace the Quick agent YAML experiments, which Quick's import ignored.
 - `SKILL.md` gains the Agent Skills fields `license`, `compatibility`, and `metadata` (version, author) and a **Working Across Harnesses** section mapping each capability to the Quick, Kiro, and Claude Code tool.
 - Tests now pin the package contract of all three loaders (manifest fields and name regexes, skill frontmatter limits, `## Overview`, harness-neutral prose, reference-prompt existence, agent/prompt resolution) and run `kiro-cli agent validate` / `claude plugin validate` when those CLIs are present.
 
@@ -23,8 +23,12 @@ Multi-harness package: the repository root is now directly installable in Amazon
 ### Removed
 - `build-plugin.sh`, `build-workshop-zip.sh`, and the `plugin/` packaging sources, including the 11 agent YAML descriptors and the `.qplugin` archive (current Quick builds hang on file import; folder import is the supported path).
 
+### Verified
+- **Claude Code 2.1.261** (`claude --plugin-dir <repo root>`): plugin loads as `aidlc-discovery` 1.5.0 with 1 skill and 11 agents; `claude plugin validate . --strict` passes; a headless session invoked the skill, resolved its skill-root-relative reference prompts and the bundled sample data, and read the harness table. The Quick-only frontmatter keys are tolerated. Two contract facts learned: plugin agents load only from the default root `agents/` directory (a manifest `agents` list validates but loads nothing), and the `skills/` validator passes even malformed frontmatter, so validation is not evidence of loading.
+- **Kiro CLI 2.23** from the repository root: every `.kiro/agents/*.json` loads with its `prompt: file://../../skills/…/AGENT.md`; `resources: ["skill://skills/aidlc-discovery/SKILL.md"]` exposes the skill (confirmed with a no-resource negative control); the skill body loads with the Quick-only keys present. Kiro's skill reader does **not** unfold YAML block scalars — a `description: >-` reached the model as the literal `>-` — so `description` and `compatibility` are single-line strings (guarded by a test).
+
 ### Known open checks
-- Quick's folder importer has not yet been exercised against the extra root entries (`.claude-plugin/`, `.kiro/`, `README.md`, `tests/`) or the additional manifest keys; Kiro's and Claude Code's tolerance of the Quick-only frontmatter keys (`display_name`, `icon`, `tools`, `patterns`) is undocumented. If a strict loader skips the skill, the spec-only frontmatter is the fallback.
+- Quick's folder importer has not yet been exercised against the new root (extra entries `.claude-plugin/`, `.kiro/`, `agents/`, `README.md`, `tests/`; additional manifest keys; kebab-case `name`). The Kiro IDE skill and power loaders were not exercised separately from the CLI.
 
 ## 1.4.0 — 2026-09-21
 

@@ -11,6 +11,12 @@
   "homepage": "https://github.com/aws-samples/sample-voice-of-customer-datalake/tree/v2",
   "repository": "https://github.com/aws-samples/sample-voice-of-customer-datalake",
   "license": "MIT-0",
-  "keywords": ["aidlc", "discovery workshop", "voice of the customer", "personas", "prfaq", "prd"],
-  "agents": "./.claude/agents/"
+  "keywords": [
+    "aidlc",
+    "discovery workshop",
+    "voice of the customer",
+    "personas",
+    "prfaq",
+    "prd"
+  ]
 }

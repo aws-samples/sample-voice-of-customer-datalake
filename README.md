@@ -12,7 +12,7 @@ The repository root is the installable package for all three harnesses at once. 
 |---------|----------------------------------------|----------------|
 | **Amazon Quick** | `plugin.json` (v0.1 fields) + `skills/` + `mcps.json` + `tasks.json` | Plugins → Import folder |
 | **Kiro** (IDE and CLI) | `plugin.json` ([Agent Plugins](https://agent-plugins.org/) fields) + `skills/` | Powers panel, or the skill folder alone |
-| **Claude Code** | `.claude-plugin/plugin.json` + `skills/` + `.claude/agents/` | Plugin marketplace, `--plugin-dir`, or `--plugin-url` |
+| **Claude Code** | `.claude-plugin/plugin.json` + `skills/` + `agents/` | Plugin marketplace, `--plugin-dir`, or `--plugin-url` |
 
 The single `plugin.json` carries both the Agent Plugins fields and Quick's; the Agent Plugins specification requires clients to ignore fields they do not define. The skill itself follows the [Agent Skills](https://agentskills.io/) standard.
 
@@ -62,7 +62,7 @@ Add dedicated phase or specialist agents only when you need independent entry po
 | Harness | Where the agents are | Delegation |
 |---------|----------------------|------------|
 | **Kiro** | [`.kiro/agents/`](.kiro/agents/) — 11 agents whose `prompt` points at the phase and specialist `AGENT.md` files | Native: the Phase 1 and Phase 2 orchestrators list their specialists as available sub-agents |
-| **Claude Code** | [`.claude/agents/`](.claude/agents/) — the same 11 agents as plugin subagents (`aidlc-discovery:<name>`) | Native: orchestrators delegate with the Agent tool |
+| **Claude Code** | [`agents/`](agents/) — the same 11 agents as plugin subagents (`aidlc-discovery:<name>`) | Native: orchestrators delegate with the Agent tool |
 | **Amazon Quick** | Create Chat Agents by hand from the same `AGENT.md` files | Manual wiring; see [Workshop Setup](WORKSHOP-SETUP.md#optional-dedicated-phase-and-specialist-agents) |
 
 The topologies cover the same workshop lifecycle and target the same core phase outputs. Dedicated agents change routing, isolation, and delegation; they can also produce separate specialist reports and Phase 1 research hypotheses. The [Phase 1 dedicated-agent architecture](architecture/phase1-signal-analyzer.md) explains the additional outputs and trade-offs.
@@ -92,7 +92,7 @@ Supported inputs include JSON, CSV, Excel, PDF, DOCX, and plain text. Sample fee
 | [`skills/aidlc-discovery/`](skills/aidlc-discovery/) | The skill: `SKILL.md`, reference prompts, sample data, configuration template |
 | [`plugin.json`](plugin.json), [`mcps.json`](mcps.json), [`tasks.json`](tasks.json) | Package manifest for Kiro (Agent Plugins) and Amazon Quick (v0.1) |
 | [`.claude-plugin/`](.claude-plugin/) | Claude Code plugin manifest and single-plugin marketplace |
-| [`.kiro/agents/`](.kiro/agents/), [`.claude/agents/`](.claude/agents/) | Optional dedicated agents for Kiro and Claude Code |
+| [`.kiro/agents/`](.kiro/agents/), [`agents/`](agents/) | Optional dedicated agents for Kiro and Claude Code |
 | [`architecture/workshop-flow.md`](architecture/workshop-flow.md) | Topology-neutral lifecycle and phase transitions |
 | [`architecture/phase1-signal-analyzer.md`](architecture/phase1-signal-analyzer.md) | Optional advanced Phase 1 agent topology |
 | [`tests/`](tests/) | Package-shape and documentation regression checks (`python3 -m unittest discover tests`) |

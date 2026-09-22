@@ -64,7 +64,7 @@ This does not change the execution model: one Conductor still runs the complete 
 
 This advanced topology is not required for the workshop. Add it only when you need independent phase entry points, standalone analysts, separate knowledge scopes, or parallel delegation.
 
-**Kiro and Claude Code** ship the agents ready-made: [`.kiro/agents/`](.kiro/agents/) and [`.claude/agents/`](.claude/agents/) each define the four phase orchestrators and seven specialists, pointing at the instruction files below, with delegation wired for the Phase 1 and Phase 2 orchestrators. See the [installation guide](INSTALL.md#optional-dedicated-phase-and-specialist-agents).
+**Kiro and Claude Code** ship the agents ready-made: [`.kiro/agents/`](.kiro/agents/) and [`agents/`](agents/) each define the four phase orchestrators and seven specialists, pointing at the instruction files below, with delegation wired for the Phase 1 and Phase 2 orchestrators. See the [installation guide](INSTALL.md#optional-dedicated-phase-and-specialist-agents).
 
 **Amazon Quick** requires creating the agents by hand. Prerequisite: install the full package first.
 

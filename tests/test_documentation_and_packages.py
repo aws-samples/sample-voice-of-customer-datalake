@@ -150,9 +150,10 @@ class PackageShapeTests(unittest.TestCase):
     def test_claude_manifest_and_marketplace(self) -> None:
         self.assertEqual(PLUGIN_NAME, self.claude_manifest["name"])
         self.assertRegex(self.claude_manifest["name"], AGENT_SKILLS_NAME)
-        agents_path = self.claude_manifest["agents"]
-        self.assertTrue(agents_path.startswith("./"), agents_path)
-        self.assertTrue((ROOT / agents_path).is_dir(), agents_path)
+        # Claude Code 2.1.261 loads plugin agents only from the default root
+        # agents/ directory; a manifest `agents` list validates but yields 0 agents.
+        self.assertNotIn("agents", self.claude_manifest)
+        self.assertEqual(11, len(list((ROOT / "agents").glob("*.md"))))
         entry = self.marketplace["plugins"][0]
         self.assertEqual(PLUGIN_NAME, entry["name"])
         self.assertEqual("./", entry["source"])
@@ -173,6 +174,9 @@ class PackageShapeTests(unittest.TestCase):
         self.assertTrue(0 < len(self.frontmatter["description"]) <= 1024, len(self.frontmatter["description"]))
         self.assertLessEqual(len(self.frontmatter["compatibility"]), 500)
         self.assertIn("license", self.frontmatter)
+        # Kiro CLI 2.23 hands the model the literal `>-` of a folded block as the
+        # description, so triggering silently breaks: keep these fields one-line.
+        self.assertIsNone(re.search(r"^(?:description|compatibility): *[>|]", self.skill_text, re.M))
         self.assertIn("## Overview", self.skill_text)  # Quick's validator requires it
         self.assertLess(self.skill_text.count("\n"), 500)
 
@@ -198,9 +202,11 @@ class PackageShapeTests(unittest.TestCase):
         self.assertTrue((SKILL_DIR / "config.default.md").is_file())
         self.assertTrue((SKILL_DIR / "knowledge-base" / "voc-data" / "example-feedback.json").is_file())
 
-    def test_no_stray_markdown_where_claude_scans_for_agents(self) -> None:
-        # A root agents/ directory would be scanned recursively by Claude Code.
-        self.assertFalse((ROOT / "agents").exists())
+    def test_root_agents_dir_holds_only_claude_subagents(self) -> None:
+        # Claude Code scans agents/ recursively and registers every .md as a
+        # subagent, so the phase-prompt tree must stay inside the skill folder.
+        stray = [p for p in (ROOT / "agents").rglob("*") if p.is_file() and (p.suffix != ".md" or p.parent != ROOT / "agents")]
+        self.assertEqual([], stray)
         self.assertFalse((ROOT / "SKILL.md").exists())
 
 
@@ -209,7 +215,7 @@ class DedicatedAgentTests(unittest.TestCase):
 
     def test_kiro_and_claude_agent_sets_match(self) -> None:
         kiro = sorted(p.stem for p in (ROOT / ".kiro" / "agents").glob("*.json"))
-        claude = sorted(p.stem for p in (ROOT / ".claude" / "agents").glob("*.md"))
+        claude = sorted(p.stem for p in (ROOT / "agents").glob("*.md"))
         self.assertEqual(kiro, claude)
         self.assertEqual(11, len(kiro))
 
@@ -230,7 +236,7 @@ class DedicatedAgentTests(unittest.TestCase):
                 self.assertTrue(set(subs) <= names, set(subs) - names)
 
     def test_claude_agents_resolve_prompt(self) -> None:
-        for path in sorted((ROOT / ".claude" / "agents").glob("*.md")):
+        for path in sorted((ROOT / "agents").glob("*.md")):
             text = path.read_text(encoding="utf-8")
             fields = skill_frontmatter(text)
             self.assertEqual(path.stem, fields["name"])
