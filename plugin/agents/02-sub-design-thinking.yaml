@@ -1,7 +1,7 @@
 name: "Design Thinking"
 description: "Sub-agent (Phase 2) — placeholder for future Design Thinking methodology integration."
-instructions_file: "skills/quick-ai-plc/agents/02-ideation/sub-design-thinking/AGENT.md"
+instructions_file: "skills/quick-aidlc-discovery/agents/02-ideation/sub-design-thinking/AGENT.md"
 skills:
-  - quick-ai-plc
+  - quick-aidlc-discovery
 spaces:
   - voc-data-lake

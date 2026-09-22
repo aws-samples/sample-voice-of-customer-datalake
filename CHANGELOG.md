@@ -2,6 +2,12 @@
 
 All notable changes to the AIDLC: Discovery Workshop skill package.
 
+## 1.4.0 — 2026-09-21
+
+### Changed
+- **Skill id renamed `quick-ai-plc` → `quick-aidlc-discovery`** to align the identifier with the AIDLC: Discovery brand (the `quick` prefix is kept). The rename covers the SKILL.md `name`, both build scripts, the packaged folder names, the agent YAML definitions, the tests, and every documentation reference. Existing installs under the old id are not updated in place: install the new skill and remove the old entry.
+- Trigger aliases consolidated on `aidlc` / `aidlc-discovery`.
+
 ## 1.3.1 — 2026-09-21
 
 Fixes from the first live install on Quick Desktop.

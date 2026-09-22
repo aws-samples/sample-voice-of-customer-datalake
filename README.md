@@ -6,7 +6,7 @@
 
 This branch is **AIDLC: Discovery**, the lightweight, prompt-only edition of the [Voice of the Customer Data Lake](https://github.com/aws-samples/sample-voice-of-customer-datalake/tree/main) platform that lives on `main`. The platform automates this lifecycle as a serverless AWS deployment; this edition runs the same discovery methodology as a single skill inside Amazon Quick, with support for other AI harnesses planned. The two share the VoC data model and the analysis, persona, PR/FAQ, and PRD prompt lineage.
 
-The **recommended default** is the `quick-ai-plc` skill package. Its Workshop Conductor guides one conversation through all four phases and uses the included phase prompts as references. You do not need to create a collection of agents to run the full workshop.
+The **recommended default** is the `quick-aidlc-discovery` skill package. Its Workshop Conductor guides one conversation through all four phases and uses the included phase prompts as references. You do not need to create a collection of agents to run the full workshop.
 
 ## Start Here
 
@@ -35,7 +35,7 @@ The single-skill Conductor is the complete workshop, not a reduced or introducto
 User
   |
   v
-Workshop Conductor (`quick-ai-plc`)
+Workshop Conductor (`quick-aidlc-discovery`)
   |-- Phase 1: Signals
   |-- Phase 2: Ideation
   |-- Phase 3: Prototyping
@@ -47,7 +47,7 @@ Shared data and project artifacts
 
 It reads the included prompts under [`agents/`](agents/) as references and performs the work inline in one conversation. This is the best starting point for workshops, solo use, cross-organization sharing, and most teams because it has the least setup while preserving the full four-phase lifecycle.
 
-You may optionally create one dedicated **AIDLC: Discovery Workshop** Chat Agent with the `quick-ai-plc` skill to get a permanent sidebar entry. That remains the single-skill topology; it does not require phase or specialist agents. See [Optional: add a dedicated Conductor Chat Agent](INSTALL.md#optional-add-a-dedicated-conductor-chat-agent).
+You may optionally create one dedicated **AIDLC: Discovery Workshop** Chat Agent with the `quick-aidlc-discovery` skill to get a permanent sidebar entry. That remains the single-skill topology; it does not require phase or specialist agents. See [Optional: add a dedicated Conductor Chat Agent](INSTALL.md#optional-add-a-dedicated-conductor-chat-agent).
 
 ## Optional Advanced Execution Model: Dedicated Agents
 
@@ -61,7 +61,7 @@ Add dedicated phase or specialist agents only when you need one of these capabil
 
 | Topology | What is installed | Recommendation |
 |----------|-------------------|----------------|
-| **Single-skill Conductor** | One complete `quick-ai-plc` package; optionally attached to one Chat Agent | **Default. Start here.** |
+| **Single-skill Conductor** | One complete `quick-aidlc-discovery` package; optionally attached to one Chat Agent | **Default. Start here.** |
 | **Dedicated phase agents** | Four phase agents in addition to the skill | Optional for independent phase entry points |
 | **Full specialist topology** | Four phase agents plus the available Phase 1 and Phase 2 specialists | Optional for scoped or parallel delegation |
 
@@ -134,7 +134,7 @@ After installing the full single-skill package:
 
 | Check | How |
 |-------|-----|
-| Skill registration | `List my skills` should show `quick-ai-plc` |
+| Skill registration | `List my skills` should show `quick-aidlc-discovery` |
 | Trigger | `Start a VoC workshop` should enter workshop initialization |
 | Data access | `Search my VoC data for delivery complaints` should find accessible data |
 | Configuration | Confirm the paths in `config.md`, if you created it |

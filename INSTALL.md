@@ -1,6 +1,6 @@
 # Installation Guide: AIDLC: Discovery Workshop
 
-The **recommended setup** installs the complete `quick-ai-plc` skill package. One Workshop Conductor then runs all four phases in a single conversation. Dedicated phase agents and native plugin packaging are optional additions, not prerequisites.
+The **recommended setup** installs the complete `quick-aidlc-discovery` skill package. One Workshop Conductor then runs all four phases in a single conversation. Dedicated phase agents and native plugin packaging are optional additions, not prerequisites.
 
 - Running a workshop now? Start with [Recommended: Install the Full Single-Skill Package](#recommended-install-the-full-single-skill-package).
 - Preparing an event? Share the shorter [Workshop Setup handout](WORKSHOP-SETUP.md).
@@ -8,17 +8,17 @@ The **recommended setup** installs the complete `quick-ai-plc` skill package. On
 
 ## Recommended: Install the Full Single-Skill Package
 
-Install the entire `quick-ai-plc/` directory so the Conductor can use its nested reference prompts, templates, sample data, and configuration.
+Install the entire `quick-aidlc-discovery/` directory so the Conductor can use its nested reference prompts, templates, sample data, and configuration.
 
 ### Option 1: Import from a repository URL
 
 In **Settings → Capabilities → Skills → Create → Import URL**, paste the repository URL when prompted. You can also ask in an Amazon Quick chat:
 
 ```text
-Install quick-ai-plc from this repository URL: <repository-url>
+Install quick-aidlc-discovery from this repository URL: <repository-url>
 ```
 
-Confirm that Quick registers the `quick-ai-plc` skill and includes the package contents, not only `SKILL.md`.
+Confirm that Quick registers the `quick-aidlc-discovery` skill and includes the package contents, not only `SKILL.md`.
 
 ### Option 2: Install the workshop ZIP
 
@@ -28,20 +28,20 @@ For events or offline sharing, build or obtain `aidlc-discovery.zip`:
 ./build-workshop-zip.sh
 ```
 
-Unzip it, then install the included `quick-ai-plc/` directory. Participant instructions are at [`quick-ai-plc/WORKSHOP-SETUP.md`](WORKSHOP-SETUP.md) inside the archive so all documentation links keep working.
+Unzip it, then install the included `quick-aidlc-discovery/` directory. Participant instructions are at [`quick-aidlc-discovery/WORKSHOP-SETUP.md`](WORKSHOP-SETUP.md) inside the archive so all documentation links keep working.
 
 ### Option 3: Copy the package folder
 
 From the parent directory of a cloned repository:
 
 ```bash
-cp -R QuickAIPLC ~/.quickwork/profiles/<profile-id>/skills/quick-ai-plc
+cp -R QuickAIPLC ~/.quickwork/profiles/<profile-id>/skills/quick-aidlc-discovery
 ```
 
 From the root of an unpacked workshop ZIP:
 
 ```bash
-cp -R quick-ai-plc ~/.quickwork/profiles/<profile-id>/skills/quick-ai-plc
+cp -R quick-aidlc-discovery ~/.quickwork/profiles/<profile-id>/skills/quick-aidlc-discovery
 ```
 
 Find the active profile ID under **Settings → About**, then restart Quick after copying. If the destination already exists, remove or rename the previous installation first so the copy does not create a nested directory.
@@ -91,7 +91,7 @@ The Conductor confirms scope and guides the conversation through Signals, Ideati
 If you want a permanent sidebar entry, attach the installed skill to one Chat Agent:
 
 ```text
-Create an agent called "AIDLC: Discovery Workshop" with the quick-ai-plc skill
+Create an agent called "AIDLC: Discovery Workshop" with the quick-aidlc-discovery skill
 ```
 
 This is still the recommended single-skill topology. The Chat Agent is only a dedicated entry point; it does not require phase agents or specialist delegation.
@@ -147,7 +147,7 @@ Sample data is available at [`knowledge-base/voc-data/example-feedback.json`](kn
 
 ## Verify the Installation
 
-1. Ask `List my skills` and confirm `quick-ai-plc` is present.
+1. Ask `List my skills` and confirm `quick-aidlc-discovery` is present.
 2. Say `Start a VoC workshop` and confirm the Conductor begins initialization.
 3. Point it to the included sample data or an accessible data folder.
 4. Generate a Signal Analysis Report and confirm that the output is saved under the configured project path.

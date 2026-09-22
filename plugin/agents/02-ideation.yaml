@@ -1,7 +1,7 @@
 name: "Ideation Agent"
 description: "Phase 2 orchestrator — transforms signals into product concepts by coordinating persona generation, working backwards documents, prioritization, and PRD creation."
-instructions_file: "skills/quick-ai-plc/agents/02-ideation/AGENT.md"
+instructions_file: "skills/quick-aidlc-discovery/agents/02-ideation/AGENT.md"
 skills:
-  - quick-ai-plc
+  - quick-aidlc-discovery
 spaces:
   - voc-data-lake

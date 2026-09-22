@@ -1,6 +1,6 @@
 # Workshop Setup—AIDLC: Discovery
 
-Use the full `quick-ai-plc` skill package for workshops. One Workshop Conductor runs Signals, Ideation, Prototyping, and Validation in a single conversation; participants do not need to create phase or specialist agents.
+Use the full `quick-aidlc-discovery` skill package for workshops. One Workshop Conductor runs Signals, Ideation, Prototyping, and Validation in a single conversation; participants do not need to create phase or specialist agents.
 
 For all installation methods and configuration details, see the [installation guide](INSTALL.md).
 
@@ -15,25 +15,25 @@ Use one of these methods:
 - import the repository URL under **Settings → Capabilities → Skills → Create → Import URL**; or
 - download and unzip `aidlc-discovery.zip` supplied by the facilitator.
 
-The workshop ZIP contains a `quick-ai-plc/` directory with the Conductor, all nested reference prompts, templates, documentation, and sample data. This handout is included as `quick-ai-plc/WORKSHOP-SETUP.md` so its links resolve inside the archive.
+The workshop ZIP contains a `quick-aidlc-discovery/` directory with the Conductor, all nested reference prompts, templates, documentation, and sample data. This handout is included as `quick-aidlc-discovery/WORKSHOP-SETUP.md` so its links resolve inside the archive.
 
-### Step 2: Install `quick-ai-plc/`
+### Step 2: Install `quick-aidlc-discovery/`
 
 Ask Quick to install the skill from the unzipped package directory:
 
 ```text
-Install the skill from /absolute/path/to/quick-ai-plc
+Install the skill from /absolute/path/to/quick-aidlc-discovery
 ```
 
 If folder installation is unavailable, copy the directory manually from the unpacked archive root:
 
 ```bash
-cp -R quick-ai-plc ~/.quickwork/profiles/<profile-id>/skills/quick-ai-plc
+cp -R quick-aidlc-discovery ~/.quickwork/profiles/<profile-id>/skills/quick-aidlc-discovery
 ```
 
 Find the active profile ID under **Settings → About**, then restart Quick after copying. If the destination already exists, remove or rename the previous installation first so the copy does not create a nested directory.
 
-Uploading only `quick-ai-plc/SKILL.md` is a last-resort fallback. It registers the Conductor but omits the reference prompts and templates that provide the full workshop detail.
+Uploading only `quick-aidlc-discovery/SKILL.md` is a last-resort fallback. It registers the Conductor but omits the reference prompts and templates that provide the full workshop detail.
 
 ### Step 3: Grant data access
 
@@ -64,7 +64,7 @@ You can also bring feedback in JSON, CSV, Excel, PDF, DOCX, or plain-text format
 Participants who want a permanent sidebar entry can create one Chat Agent that carries the same skill:
 
 ```text
-Create an agent called "AIDLC: Discovery Workshop" with the quick-ai-plc skill
+Create an agent called "AIDLC: Discovery Workshop" with the quick-aidlc-discovery skill
 ```
 
 This does not change the execution model: one Conductor still runs the complete lifecycle.
@@ -73,7 +73,7 @@ This does not change the execution model: one Conductor still runs the complete 
 
 This advanced topology is not required for the workshop. Add it only when you need independent phase entry points, standalone analysts, separate knowledge scopes, independently testable instructions, or parallel delegation.
 
-**Prerequisite:** install the full `quick-ai-plc` package first.
+**Prerequisite:** install the full `quick-aidlc-discovery` package first.
 
 ### Level 1: Four dedicated phase agents
 

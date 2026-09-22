@@ -32,7 +32,7 @@ fi
 OUTPUT_FILE="${SCRIPT_DIR}/dist/${PLUGIN_NAME}.qplugin"
 OUTPUT_DIR="${SCRIPT_DIR}/dist/${PLUGIN_NAME}"
 BUILD_ROOT="${SCRIPT_DIR}/.tmp"
-SKILL_ID="quick-ai-plc"
+SKILL_ID="quick-aidlc-discovery"
 
 mkdir -p "${BUILD_ROOT}"
 BUILD_DIR=$(mktemp -d "${BUILD_ROOT}/plugin.XXXXXX")

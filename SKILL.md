@@ -1,14 +1,14 @@
 ---
-name: quick-ai-plc
+name: quick-aidlc-discovery
 display_name: "AIDLC: Discovery Workshop"
 icon: "🚀"
-version: "1.3.1"
+version: "1.4.0"
 description: >-
   AIDLC: Discovery — end-to-end discovery workshop, from customer signals to
   validated product concepts. Use when the user wants to run a VoC or
   discovery workshop, analyze customer signals, generate personas, create
   PR/FAQ or PRD documents, build prototypes, or prioritize problems from
-  feedback data. Triggers on: 'start voc workshop', 'aidlc', 'ai-pdlc',
+  feedback data. Triggers on: 'start voc workshop', 'aidlc', 'aidlc-discovery',
   'run workshop', 'analyze customer signals', 'analyze voc data',
   'generate personas', 'generate prfaq', 'generate prd', 'create survey',
   'prioritize problems', 'what should we build'.
@@ -16,7 +16,7 @@ tools: [file_rag_search, file_read, file_read_pdf, file_read_docx, run_python, f
 patterns:
   - pattern: '(?i)\b(?:start|run|begin|launch)\b.{0,30}?\bworkshop\b'
     confidence: 0.90
-  - pattern: '(?i)\baidlc\b|\bai-?pdlc\b|\bai-plc\b'
+  - pattern: '(?i)\baidlc\b'
     confidence: 0.85
   - pattern: '(?i)\b(?:analyze|analyse)\b.{0,15}?\b(?:customer signals|voc data|market research|customer feedback)\b'
     confidence: 0.85

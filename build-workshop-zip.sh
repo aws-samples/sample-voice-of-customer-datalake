@@ -7,14 +7,14 @@
 # Prerequisites: zip and rsync
 #
 # Archive layout:
-#   quick-ai-plc/                 complete, link-stable skill package
+#   quick-aidlc-discovery/                 complete, link-stable skill package
 #       ├── WORKSHOP-SETUP.md     participant instructions
 #       ├── SKILL.md
 #       ├── agents/...
 #       ├── architecture/...
 #       └── knowledge-base/...    includes sample data
 #
-# Participants open quick-ai-plc/WORKSHOP-SETUP.md, then copy quick-ai-plc/
+# Participants open quick-aidlc-discovery/WORKSHOP-SETUP.md, then copy quick-aidlc-discovery/
 # into ~/.quickwork/profiles/<id>/skills/.
 
 set -euo pipefail
@@ -35,7 +35,7 @@ BUILD_ROOT="${SCRIPT_DIR}/.tmp"
 
 mkdir -p "${BUILD_ROOT}"
 BUILD_DIR=$(mktemp -d "${BUILD_ROOT}/workshop.XXXXXX")
-SKILL_DIR="${BUILD_DIR}/quick-ai-plc"
+SKILL_DIR="${BUILD_DIR}/quick-aidlc-discovery"
 
 cleanup() {
     rm -rf "${BUILD_DIR}"
@@ -74,5 +74,5 @@ echo "   Output: ${OUTPUT_FILE}"
 echo "   Size:   ${FILE_SIZE}"
 echo ""
 echo "Distribution options: email, shared drive, USB, or a presigned URL."
-echo "Participants: unzip → open quick-ai-plc/WORKSHOP-SETUP.md → install quick-ai-plc/."
+echo "Participants: unzip → open quick-aidlc-discovery/WORKSHOP-SETUP.md → install quick-aidlc-discovery/."
 echo ""

@@ -134,7 +134,7 @@ class DocumentationAndPackageTests(unittest.TestCase):
 
     def test_single_skill_is_the_documented_default(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        self.assertIn("The **recommended default** is the `quick-ai-plc` skill", readme)
+        self.assertIn("The **recommended default** is the `quick-aidlc-discovery` skill", readme)
         self.assertIn("Execution topology and distribution are separate choices", readme)
 
     def test_current_guidance_avoids_legacy_mode_labels(self) -> None:
@@ -148,10 +148,10 @@ class DocumentationAndPackageTests(unittest.TestCase):
 
     def test_workshop_archive_preserves_documentation_links(self) -> None:
         self.assertTrue(WORKSHOP_ARCHIVE.is_file())
-        assert_archive_links_resolve(self, WORKSHOP_ARCHIVE, "quick-ai-plc/")
+        assert_archive_links_resolve(self, WORKSHOP_ARCHIVE, "quick-aidlc-discovery/")
         with ZipFile(WORKSHOP_ARCHIVE) as zipped:
-            self.assertIn("quick-ai-plc/WORKSHOP-SETUP.md", zipped.namelist())
-            self.assertIn("quick-ai-plc/SKILL.md", zipped.namelist())
+            self.assertIn("quick-aidlc-discovery/WORKSHOP-SETUP.md", zipped.namelist())
+            self.assertIn("quick-aidlc-discovery/SKILL.md", zipped.namelist())
 
     def test_workshop_archive_excludes_development_artifacts(self) -> None:
         with ZipFile(WORKSHOP_ARCHIVE) as zipped:
@@ -159,7 +159,7 @@ class DocumentationAndPackageTests(unittest.TestCase):
         offending = [
             name
             for name in names
-            if name.startswith("quick-ai-plc/tests/")
+            if name.startswith("quick-aidlc-discovery/tests/")
             or "__pycache__" in name
             or name.endswith((".pyc", ".gitkeep", "build-plugin.sh", "build-workshop-zip.sh"))
         ]
@@ -168,7 +168,7 @@ class DocumentationAndPackageTests(unittest.TestCase):
     def test_plugin_outputs_equivalent_importable_folder_and_archive(self) -> None:
         self.assertTrue(PLUGIN_DIRECTORY.is_dir())
         self.assertTrue(PLUGIN_ARCHIVE.is_file())
-        assert_archive_links_resolve(self, PLUGIN_ARCHIVE, "skills/quick-ai-plc/")
+        assert_archive_links_resolve(self, PLUGIN_ARCHIVE, "skills/quick-aidlc-discovery/")
 
         folder_files = {
             path.relative_to(PLUGIN_DIRECTORY).as_posix()
@@ -187,11 +187,11 @@ class DocumentationAndPackageTests(unittest.TestCase):
         self.assertEqual("0.1", manifest["format_version"])
         self.assertFalse((PLUGIN_DIRECTORY / "agents").exists())
         self.assertTrue(
-            (PLUGIN_DIRECTORY / "skills" / "quick-ai-plc" / "SKILL.md").is_file()
+            (PLUGIN_DIRECTORY / "skills" / "quick-aidlc-discovery" / "SKILL.md").is_file()
         )
-        self.assertFalse((PLUGIN_DIRECTORY / "skills" / "quick-ai-plc" / "tests").exists())
+        self.assertFalse((PLUGIN_DIRECTORY / "skills" / "quick-aidlc-discovery" / "tests").exists())
         self.assertFalse(
-            (PLUGIN_DIRECTORY / "skills" / "quick-ai-plc" / "build-workshop-zip.sh").exists()
+            (PLUGIN_DIRECTORY / "skills" / "quick-aidlc-discovery" / "build-workshop-zip.sh").exists()
         )
         self.assertFalse(any(PLUGIN_DIRECTORY.rglob("*.pyc")))
 
