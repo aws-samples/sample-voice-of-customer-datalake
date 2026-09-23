@@ -1,7 +1,0 @@
-name: "Market Research Analyst"
-description: "Sub-agent (Phase 1) — analyzes market research reports (PDF, DOCX, Excel) and produces product recommendations with trends and competitive signals."
-instructions_file: "skills/quick-aidlc-discovery/agents/01-signal-analyzer/sub-market-research-analyst/AGENT.md"
-skills:
-  - quick-aidlc-discovery
-spaces:
-  - voc-data-lake

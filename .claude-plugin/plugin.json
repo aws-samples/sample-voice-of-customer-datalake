@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "aidlc-discovery",
+  "displayName": "AIDLC: Discovery Workshop",
+  "version": "1.5.0",
+  "description": "AIDLC: Discovery — end-to-end discovery workshop, from customer signals to validated product concepts. One Conductor skill runs Signals, Ideation, Prototyping, and Validation; optional phase and specialist subagents are included.",
+  "author": {
+    "name": "AWS Samples",
+    "url": "https://github.com/aws-samples"
+  },
+  "homepage": "https://github.com/aws-samples/sample-voice-of-customer-datalake/tree/v2",
+  "repository": "https://github.com/aws-samples/sample-voice-of-customer-datalake",
+  "license": "MIT-0",
+  "keywords": [
+    "aidlc",
+    "discovery workshop",
+    "voice of the customer",
+    "personas",
+    "prfaq",
+    "prd"
+  ]
+}

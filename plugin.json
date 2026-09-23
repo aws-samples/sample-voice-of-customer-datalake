@@ -1,0 +1,28 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "aidlc-discovery",
+  "version": "1.5.0",
+  "description": "AIDLC: Discovery — end-to-end discovery workshop, from customer signals to validated product concepts. Packages the complete single-skill Conductor with its phase and specialist reference prompts for VoC analysis, persona generation, PR/FAQ creation, PRD crafting, prototyping, and validation surveys.",
+  "author": {
+    "name": "AWS Samples",
+    "url": "https://github.com/aws-samples"
+  },
+  "homepage": "https://github.com/aws-samples/sample-voice-of-customer-datalake/tree/v2",
+  "repository": "https://github.com/aws-samples/sample-voice-of-customer-datalake",
+  "license": "MIT-0",
+  "keywords": [
+    "aidlc",
+    "discovery workshop",
+    "voice of the customer",
+    "voc",
+    "customer signals",
+    "personas",
+    "prfaq",
+    "prd",
+    "prototype",
+    "survey"
+  ],
+  "id": "aidlc-discovery",
+  "format_version": "0.1",
+  "created_at": "2026-09-22T00:00:00Z"
+}

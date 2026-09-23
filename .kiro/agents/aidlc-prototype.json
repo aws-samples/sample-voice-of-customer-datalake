@@ -1,0 +1,13 @@
+{
+  "name": "aidlc-prototype",
+  "description": "Prototyping Agent — AIDLC Phase 3 orchestrator: creates testable artifacts — a clickable single-file HTML prototype, an export package for AI coding IDEs, and optional surveys.",
+  "prompt": "file://../../skills/aidlc-discovery/agents/03-prototype/AGENT.md",
+  "tools": [
+    "read",
+    "write",
+    "shell"
+  ],
+  "resources": [
+    "skill://skills/aidlc-discovery/SKILL.md"
+  ]
+}

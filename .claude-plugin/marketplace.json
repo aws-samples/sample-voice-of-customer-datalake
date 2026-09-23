@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "voc-datalake",
+  "description": "Plugins from the Voice of the Customer Data Lake project: AIDLC: Discovery Workshop.",
+  "owner": {
+    "name": "AWS Samples",
+    "url": "https://github.com/aws-samples"
+  },
+  "plugins": [
+    {
+      "name": "aidlc-discovery",
+      "source": "./",
+      "description": "AIDLC: Discovery — end-to-end discovery workshop, from customer signals to validated product concepts.",
+      "category": "productivity",
+      "tags": ["aidlc", "discovery", "voc", "workshop"]
+    }
+  ]
+}

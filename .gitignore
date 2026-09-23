@@ -1,7 +1,4 @@
-# Build output
-dist/
-
-# Local build staging
+# Local scratch
 .tmp/
 
 # Python test artifacts

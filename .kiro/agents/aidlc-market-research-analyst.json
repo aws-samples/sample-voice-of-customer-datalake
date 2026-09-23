@@ -1,0 +1,13 @@
+{
+  "name": "aidlc-market-research-analyst",
+  "description": "Market Research Analyst — AIDLC Phase 1 specialist: reads market research documents (PDF, DOCX, Excel) and produces product recommendations with trends and competitive signals.",
+  "prompt": "file://../../skills/aidlc-discovery/agents/01-signal-analyzer/sub-market-research-analyst/AGENT.md",
+  "tools": [
+    "read",
+    "write",
+    "shell"
+  ],
+  "resources": [
+    "skill://skills/aidlc-discovery/SKILL.md"
+  ]
+}

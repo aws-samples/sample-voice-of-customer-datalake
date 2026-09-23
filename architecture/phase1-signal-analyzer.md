@@ -2,7 +2,7 @@
 
 > This page documents an advanced dedicated-agent implementation of Phase 1. The [recommended single-skill Conductor](../README.md#recommended-execution-model-one-skill) performs the complete core signal-analysis phase inline and requires much less setup.
 
-Use dedicated agents only when you need standalone analysts, separate knowledge scopes, independent agent testing, separate specialist reports, or parallel delegation. For normal workshops and most individual use, install the [full single-skill package](../INSTALL.md#recommended-install-the-full-single-skill-package) and let the Conductor run Phase 1 in the main conversation.
+Use dedicated agents only when you need standalone analysts, separate knowledge scopes, independent agent testing, separate specialist reports, or parallel delegation. For normal workshops and most individual use, [install the skill](../INSTALL.md) and let the Conductor run Phase 1 in the main conversation.
 
 ## Execution Choices
 
@@ -52,10 +52,10 @@ This topology adds separate specialist reports and explicit Phase 1 research hyp
 
 | Agent | Role | Knowledge access | Instructions |
 |-------|------|------------------|--------------|
-| Signal Analyzer | Coordinates Phase 1, consolidates reports, generates hypotheses | Reads and writes the `voc-data-lake` Space | [`agents/01-signal-analyzer/AGENT.md`](../agents/01-signal-analyzer/AGENT.md) |
-| VoC Analytics | Analyzes feedback, sentiment, themes, urgency, and quotes | VoC data, normally read-only | [`sub-voc-analyst/AGENT.md`](../agents/01-signal-analyzer/sub-voc-analyst/AGENT.md) |
-| Market Research Analyst | Extracts trends and product recommendations from research | `market-research/` | [`sub-market-research-analyst/AGENT.md`](../agents/01-signal-analyzer/sub-market-research-analyst/AGENT.md) |
-| Competitive Research Analyst | Identifies competitive gaps, threats, and options | `competitive-intel/` | [`sub-competitive-research-analyst/AGENT.md`](../agents/01-signal-analyzer/sub-competitive-research-analyst/AGENT.md) |
+| Signal Analyzer | Coordinates Phase 1, consolidates reports, generates hypotheses | Reads and writes the `voc-data-lake` knowledge base | [`agents/01-signal-analyzer/AGENT.md`](../skills/aidlc-discovery/agents/01-signal-analyzer/AGENT.md) |
+| VoC Analytics | Analyzes feedback, sentiment, themes, urgency, and quotes | VoC data, normally read-only | [`sub-voc-analyst/AGENT.md`](../skills/aidlc-discovery/agents/01-signal-analyzer/sub-voc-analyst/AGENT.md) |
+| Market Research Analyst | Extracts trends and product recommendations from research | `market-research/` | [`sub-market-research-analyst/AGENT.md`](../skills/aidlc-discovery/agents/01-signal-analyzer/sub-market-research-analyst/AGENT.md) |
+| Competitive Research Analyst | Identifies competitive gaps, threats, and options | `competitive-intel/` | [`sub-competitive-research-analyst/AGENT.md`](../skills/aidlc-discovery/agents/01-signal-analyzer/sub-competitive-research-analyst/AGENT.md) |
 
 ### Signal Analyzer responsibilities
 
@@ -122,7 +122,7 @@ The orchestrator should omit a specialist task when the corresponding data sourc
 ## Knowledge Base Structure
 
 ```text
-QuickSuite Space: voc-data-lake/
+voc-data-lake/            (a Quick Space, or a data folder in Kiro / Claude Code)
 |-- voc-data/
 |   |-- feedback-2026-q1.json
 |   `-- support-tickets/
@@ -210,4 +210,4 @@ For the advanced topology:
 - [Installation guide](../INSTALL.md)
 - [Workshop setup, including advanced agents](../WORKSHOP-SETUP.md#optional-dedicated-phase-and-specialist-agents)
 - [Topology-neutral workshop flow](workshop-flow.md)
-- [Canonical single-skill Conductor](../SKILL.md)
+- [Canonical single-skill Conductor](../skills/aidlc-discovery/SKILL.md)
