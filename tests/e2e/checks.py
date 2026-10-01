@@ -26,6 +26,10 @@ BRIEF_LIMIT = 200_000
 # Salesforce opportunity IDs start with the 006 key prefix (15 or 18 characters).
 OPPORTUNITY_ID = re.compile(r"\b006[A-Za-z0-9]{12}(?:[A-Za-z0-9]{3})?\b")
 EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+# Reserved for documentation (RFC 2606, RFC 6761), so never a customer's address:
+# prototypes use them as form placeholders, for example "teammate@example.com".
+RESERVED_EMAIL_DOMAIN = re.compile(r"@(?:[A-Za-z0-9-]+\.)*(?:example\.(?:com|net|org)|example|invalid|test|localhost)$",
+                                   re.I)
 START_COMMAND = re.compile(r"/aidlc (?:workshop|classic)\b")
 
 
@@ -104,7 +108,8 @@ def check_discovery(workspace: Path, project: str, reference: str, transcript: s
     checks.append(Check("D06", "No opportunity IDs in artifacts", not leaks, ", ".join(leaks)))
 
     emails = sorted({f"{p.name}: {m}" for p in project_files(project_dir) if p.suffix in {".md", ".html"}
-                     for m in EMAIL.findall(p.read_text(encoding="utf-8", errors="ignore"))})
+                     for m in EMAIL.findall(p.read_text(encoding="utf-8", errors="ignore"))
+                     if not RESERVED_EMAIL_DOMAIN.search(m)})
     checks.append(Check("D07", "No email addresses in artifacts", not emails, "; ".join(emails[:5])))
 
     names = persona_names(brief)

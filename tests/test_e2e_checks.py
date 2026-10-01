@@ -85,8 +85,16 @@ class DiscoveryChecksTests(unittest.TestCase):
 
     def test_opportunity_id_and_email_leaks_fail(self) -> None:
         with self.brief.open("a", encoding="utf-8") as f:
-            f.write("\nOpportunity 006Ab00000XyZ12AAB, owner jane@example.com\n")
+            f.write("\nOpportunity 006Ab00000XyZ12AAB, owner jane.doe@anycompany.com\n")
         self.assertTrue({"D06", "D07"} <= self.failed())
+
+    def test_reserved_placeholder_email_passes(self) -> None:
+        (self.ws / "discovery" / PROJECT / "prototype" / "index.html").write_text(
+            '<input placeholder="teammate@example.com"><input placeholder="a@b.example.org">', encoding="utf-8")
+        self.assertNotIn("D07", self.failed())
+        with self.brief.open("a", encoding="utf-8") as f:
+            f.write("\nContact ops@example.com.au\n")
+        self.assertIn("D07", self.failed())
 
     def test_wrong_reference_and_missing_gitignore_fail(self) -> None:
         (self.ws / ".gitignore").unlink()

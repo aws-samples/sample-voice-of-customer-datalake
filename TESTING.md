@@ -92,7 +92,7 @@ The checks:
 | D01 | Every required artifact listed in the Handoff prompt exists, including at least two personas |
 | D02–D04 | The brief exists, has the 12 sections in order, and is under 200,000 characters |
 | D05 | The brief carries the configured engagement reference |
-| D06–D07 | No opportunity ID or email address appears in any artifact |
+| D06–D07 | No opportunity ID or email address appears in any artifact (placeholders on reserved domains such as `example.com` are allowed) |
 | D08 | Every persona named in the brief is in `aidlc/knowledge/aidlc-product-agent/discovery-personas.md` |
 | D09 | `.gitignore` excludes `discovery/data/` |
 | D10 | Handoff did not start AI-DLC |
