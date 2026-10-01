@@ -75,7 +75,7 @@ For each one, ask Quick to create an agent and use the linked file as its instru
 | Agent | Instructions |
 |-------|--------------|
 | Signal Analyzer | [`skills/aidlc-discovery/agents/01-signal-analyzer/AGENT.md`](skills/aidlc-discovery/agents/01-signal-analyzer/AGENT.md) |
-| Ideation Agent | [`skills/aidlc-discovery/agents/02-ideation/AGENT.md`](skills/aidlc-discovery/agents/02-ideation/AGENT.md) |
+| Ideation Agent | [`skills/aidlc-discovery/agents/02-working-backwards/AGENT.md`](skills/aidlc-discovery/agents/02-working-backwards/AGENT.md) |
 | Prototype Agent | [`skills/aidlc-discovery/agents/03-prototype/AGENT.md`](skills/aidlc-discovery/agents/03-prototype/AGENT.md) |
 | Validation Agent | [`skills/aidlc-discovery/agents/04-validation/AGENT.md`](skills/aidlc-discovery/agents/04-validation/AGENT.md) |
 
@@ -90,10 +90,10 @@ Create only the specialists required by your use case, assign their data access,
 | VoC Analytics | [`sub-voc-analyst/AGENT.md`](skills/aidlc-discovery/agents/01-signal-analyzer/sub-voc-analyst/AGENT.md) | Implemented |
 | Market Research Analyst | [`sub-market-research-analyst/AGENT.md`](skills/aidlc-discovery/agents/01-signal-analyzer/sub-market-research-analyst/AGENT.md) | Implemented |
 | Competitive Research Analyst | [`sub-competitive-research-analyst/AGENT.md`](skills/aidlc-discovery/agents/01-signal-analyzer/sub-competitive-research-analyst/AGENT.md) | Implemented |
-| Persona Manager | [`sub-persona-manager/AGENT.md`](skills/aidlc-discovery/agents/02-ideation/sub-persona-manager/AGENT.md) | Implemented |
-| Working Backwards | [`sub-working-backwards/AGENT.md`](skills/aidlc-discovery/agents/02-ideation/sub-working-backwards/AGENT.md) | Implemented |
-| Prioritize | [`sub-prioritize/AGENT.md`](skills/aidlc-discovery/agents/02-ideation/sub-prioritize/AGENT.md) | Implemented |
-| Design Thinking | [`sub-design-thinking/AGENT.md`](skills/aidlc-discovery/agents/02-ideation/sub-design-thinking/AGENT.md) | Placeholder—do not rely on it |
+| Persona Manager | [`sub-persona-manager/AGENT.md`](skills/aidlc-discovery/agents/02-working-backwards/sub-persona-manager/AGENT.md) | Implemented |
+| PR/FAQ Writer | [`sub-prfaq-writer/AGENT.md`](skills/aidlc-discovery/agents/02-working-backwards/sub-prfaq-writer/AGENT.md) | Implemented |
+| Prioritize | [`sub-prioritize/AGENT.md`](skills/aidlc-discovery/agents/02-working-backwards/sub-prioritize/AGENT.md) | Implemented |
+| Design Thinking | [`sub-design-thinking/AGENT.md`](skills/aidlc-discovery/agents/02-working-backwards/sub-design-thinking/AGENT.md) | Placeholder—do not rely on it |
 
 Parallel Phase 1 analysis requires the three Phase 1 specialists plus orchestration wiring. The [Phase 1 dedicated-agent architecture](architecture/phase1-signal-analyzer.md) provides the conceptual task flow and pseudocode.
 

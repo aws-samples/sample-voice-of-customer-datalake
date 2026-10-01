@@ -15,7 +15,8 @@ Discovery hands off to AI-DLC. A major release: the default output folder moves 
 - **End-to-end tests** ([TESTING.md](TESTING.md)). `tests/e2e/run_e2e.py` runs the workshop in Claude Code or Kiro CLI on the sample data, a missing-PRD negative test, and the AI-DLC handoff up to Requirements Analysis, then writes a pass/fail report from deterministic checks (`tests/e2e/checks.py`). `.github/workflows/e2e.yml` runs the contract tests on every pull request and the live run on the `e2e` label, `v2*` tags, or manual dispatch, on Amazon Bedrock through GitHub OIDC.
 
 ### Changed
-- **Phase names.** Signals, Working Backwards, Prototype, Validate, Handoff. Phase 2 is no longer called Ideation, to avoid confusion with the AI-DLC phase it replaces. Internal folder and agent ids (`02-ideation`, `aidlc-ideation`) are unchanged so existing installs keep working.
+- **Phase names.** Signals, Working Backwards, Prototype, Validate, Handoff. Phase 2 is no longer called Ideation, to avoid confusion with the AI-DLC phase it replaces.
+- **Agent and folder ids.** The Phase 2 orchestrator `aidlc-ideation` is now `aidlc-working-backwards`, and the PR/FAQ sub-agent that used that name is now `aidlc-prfaq-writer`. The phase folder `agents/02-ideation/` is now `agents/02-working-backwards/`, and `sub-working-backwards/` is now `sub-prfaq-writer/`. Existing Kiro agent copies and Quick Chat Agents that point at the old paths must be recreated; Claude Code plugin installs update with the plugin.
 - **Validate** is an evidence review on the day: hypotheses it cannot confirm stay open and go into the brief; it never waits for survey results.
 - **Artifact layout.** Artifacts default to `discovery/[project]/{signals,working-backwards,prototype,validate,handoff}/` in the working folder, with raw feedback in `discovery/data/`. Personas moved under `working-backwards/personas/`.
 - The Conductor flags a sample-data run as a demonstration.

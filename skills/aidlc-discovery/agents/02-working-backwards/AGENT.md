@@ -11,13 +11,13 @@ You take the results from Phase 1 (Signal Summary, Hypotheses, Research) and gui
 | Agent | Task | When |
 |-------|------|------|
 | **Persona Manager** | Generate synthetic personas from Phase-1 signals (also simulate personas / run panels) | **Early** — personas feed PRFAQ + PRD, so create them before those steps |
-| **Working Backwards Agent** | Conducts the 5-question dialog → WB document; also owns `feature-description` + `prfaq-generation` | Default entry point for defining the concept (Steps 2–4) |
+| **PR/FAQ Writer** | Conducts the 5-question dialog → WB document; also owns `feature-description` + `prfaq-generation` | Default entry point for defining the concept (Steps 2–4) |
 | **Design Thinking Agent** | Alternative methodology to Working Backwards (Empathize → Define → Ideate → Prototype → Test) | Optional alternative entry point — ⚠️ placeholder, not yet implemented |
 | **Prioritize Agent** | Rank candidate projects/features (Impact / Time-to-Market / Strategic-Fit / Confidence) + ROI | **End of Working Backwards** — once one or more projects/PRDs exist (cross-project decision) |
 
 > Skill the orchestrator runs directly (not a sub-agent): `prd-generation`.
-> `feature-description` and `prfaq-generation` belong to the **Working Backwards
-> sub-agent** (they live under `sub-working-backwards/skills/`) — Steps 2–4
+> `feature-description` and `prfaq-generation` belong to the **PR/FAQ Writer
+> sub-agent** (they live under `sub-prfaq-writer/skills/`) — Steps 2–4
 > delegate to it.
 
 ## Workflow
@@ -34,19 +34,19 @@ Signal Summary + Research (Phase 1)
                     │
                     ▼
 ┌─────────────────────────────────────┐
-│  2. Working Backwards Dialog        │  ← Sub-Agent "Working Backwards"
+│  2. Working Backwards Dialog        │  ← Sub-Agent "PR/FAQ Writer"
 │     (5 Questions → WB Document)     │     (alt: Design Thinking — placeholder)
 └───────────────────┬─────────────────┘
                     │
                     ▼
 ┌─────────────────────────────────────┐
-│  3. Feature Description             │  ← Sub-Agent "Working Backwards"
+│  3. Feature Description             │  ← Sub-Agent "PR/FAQ Writer"
 │     (Agent proposes, User refines)  │     (skill: feature-description)
 └───────────────────┬─────────────────┘
                     │
                     ▼
 ┌─────────────────────────────────────┐
-│  4. PRFAQ Generation                │  ← Sub-Agent "Working Backwards"
+│  4. PRFAQ Generation                │  ← Sub-Agent "PR/FAQ Writer"
 │     Input: WB-Doc + Feature +       │     (skill: prfaq-generation)
 │            Personas                 │
 └───────────────────┬─────────────────┘
@@ -76,21 +76,21 @@ Signal Summary + Research (Phase 1)
 - Result: persona documents in `discovery/[project]/working-backwards/personas/`.
 
 ### Step 2: Working Backwards Dialog (Sub-Agent)
-- Delegate to the **Working Backwards Agent** — a structured 5-question dialog.
+- Delegate to the **PR/FAQ Writer** — a structured 5-question dialog.
 - Result: a Working Backwards Document (Markdown).
 - *Alternative entry point:* the **Design Thinking Agent** (Empathize → Test) can
   replace this step. ⚠️ Placeholder — not yet implemented; default to Working
   Backwards.
 
-### Step 3: Feature Description (Sub-Agent: Working Backwards)
-- Delegate to the **Working Backwards Agent** (skill: `feature-description`).
+### Step 3: Feature Description (Sub-Agent: PR/FAQ Writer)
+- Delegate to the **PR/FAQ Writer** (skill: `feature-description`).
 - Based on the WB document, propose 3-5 feature ideas
 - User selects/refines a feature idea
 - Create a structured feature description
 - Format: Name, Problem, Solution, Target Audience, Success Criteria
 
-### Step 4: PRFAQ (Sub-Agent: Working Backwards)
-- Delegate to the **Working Backwards Agent** (skill: `prfaq-generation`).
+### Step 4: PRFAQ (Sub-Agent: PR/FAQ Writer)
+- Delegate to the **PR/FAQ Writer** (skill: `prfaq-generation`).
 - **Input:** WB Document + Feature Description + Personas (from Step 1)
 - **Process:** 4-step LLM chain (Customer Thinking → Press Release → Customer FAQ → Internal FAQ)
 - **Output:** Complete PR/FAQ Document (Amazon Working Backwards Format)

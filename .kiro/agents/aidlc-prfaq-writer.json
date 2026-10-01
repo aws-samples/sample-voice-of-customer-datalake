@@ -1,0 +1,13 @@
+{
+  "name": "aidlc-prfaq-writer",
+  "description": "PR/FAQ Writer — AIDLC: Discovery Phase 2 specialist: guides Amazon's Working Backwards process — feature description, press release, customer FAQ, and internal FAQ.",
+  "prompt": "file://../../skills/aidlc-discovery/agents/02-working-backwards/sub-prfaq-writer/AGENT.md",
+  "tools": [
+    "read",
+    "write",
+    "shell"
+  ],
+  "resources": [
+    "skill://skills/aidlc-discovery/SKILL.md"
+  ]
+}

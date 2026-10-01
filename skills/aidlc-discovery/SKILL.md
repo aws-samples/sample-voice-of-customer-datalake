@@ -106,15 +106,15 @@ Actions available. Personas (at least two), the PR/FAQ, and the PRD are required
 1. **Generate Research Document** — Themes & patterns → actionable findings → validate against data.
    - Reference prompt: `agents/01-signal-analyzer/skills/research-analysis.md`
 2. **Generate Synthetic Personas** (1-10) — Behavioral segmentation → 8-section profiles → confidence validation.
-   - Reference prompt: `agents/02-ideation/sub-persona-manager/skills/persona-generation.md`
+   - Reference prompt: `agents/02-working-backwards/sub-persona-manager/skills/persona-generation.md`
 3. **Generate PR/FAQ** — Customer thinking → Press Release → Customer FAQ (5-7) → Internal FAQ (5-7).
-   - Reference prompt: `agents/02-ideation/sub-working-backwards/skills/prfaq-generation.md`
+   - Reference prompt: `agents/02-working-backwards/sub-prfaq-writer/skills/prfaq-generation.md`
 4. **Craft PRD** — Problem analysis → solution design → full PRD (executive summary through timeline).
-   - Reference prompt: `agents/02-ideation/skills/prd-generation.md`
+   - Reference prompt: `agents/02-working-backwards/skills/prd-generation.md`
 5. **Work Backwards** — 5-Questions document and feature description that ground the PR/FAQ.
-   - Reference prompts: `agents/02-ideation/sub-working-backwards/skills/wb-document.md`, `agents/02-ideation/sub-working-backwards/skills/feature-description.md`
+   - Reference prompts: `agents/02-working-backwards/sub-prfaq-writer/skills/wb-document.md`, `agents/02-working-backwards/sub-prfaq-writer/skills/feature-description.md`
 6. **Score & Prioritize Ideas** — Weighted Impact / Time-to-Market / Strategic-Fit / Confidence matrix, with optional ROI analysis.
-   - Reference prompt: `agents/02-ideation/sub-prioritize/skills/roi-analyzer.md`
+   - Reference prompt: `agents/02-working-backwards/sub-prioritize/skills/roi-analyzer.md`
 
 ---
 
