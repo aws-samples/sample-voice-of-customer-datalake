@@ -255,6 +255,8 @@ def main() -> int:
     if args.harness == "kiro":
         install_skill_for_kiro(ws)
 
+    # The commit under test is the one checked out when the run starts.
+    commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
     harness = Harness(args)
     started = time.monotonic()
     results: dict[str, list[checks.Check]] = {}
@@ -264,7 +266,6 @@ def main() -> int:
             continue
         results[leg] = LEGS[leg](harness, ws, out)
 
-    commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
     counts = checks.count_outcomes([c for leg_checks in results.values() for c in leg_checks])
     passed = counts["fail"] == 0
     meta = {
