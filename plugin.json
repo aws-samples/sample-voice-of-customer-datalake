@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "aidlc-discovery",
-  "version": "1.5.0",
-  "description": "AIDLC: Discovery — end-to-end discovery workshop, from customer signals to validated product concepts. Packages the complete single-skill Conductor with its phase and specialist reference prompts for VoC analysis, persona generation, PR/FAQ creation, PRD crafting, prototyping, and validation surveys.",
+  "version": "1.6.0",
+  "description": "AIDLC: Discovery — end-to-end discovery workshop, from customer signals to a Discovery brief that starts AI-DLC Inception. Packages the complete single-skill Conductor with its phase and specialist reference prompts for VoC analysis, persona generation, PR/FAQ creation, PRD crafting, prototyping, validation, and the AI-DLC handoff.",
   "author": {
     "name": "AWS Samples",
     "url": "https://github.com/aws-samples"

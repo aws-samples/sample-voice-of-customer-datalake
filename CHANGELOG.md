@@ -2,6 +2,26 @@
 
 All notable changes to the AIDLC: Discovery Workshop skill package.
 
+## 1.6.0 — 2026-10-01
+
+Discovery hands off to AI-DLC. Discovery now takes the place of AI-DLC's own Ideation phase and ends with a Discovery brief, the single document a team uses to start [AI-DLC](https://github.com/awslabs/aidlc-workflows) 2.10.0 or later at Inception.
+
+### Added
+- **Phase 5: Handoff.** Replaces Wrap-up. It checks that the required artifacts exist (Signal Analysis Report, at least two personas, PR/FAQ, PRD, HTML prototype, prioritized problems with open hypotheses, and the current-product map when a codebase exists), then writes `discovery/[project]/handoff/discovery-brief.md` from a 12-section template under AI-DLC's 200,000-character document limit. It also writes the personas to `aidlc/knowledge/aidlc-product-agent/discovery-personas.md`, adds `discovery/data/` to `.gitignore`, and prints the `/aidlc workshop` or `/aidlc classic` start command without starting AI-DLC. Reference prompt: `agents/05-handoff/skills/discovery-brief.md`.
+- **Current-product map** (`agents/01-signal-analyzer/skills/current-product-map.md`): a read-only, product-level map of what the existing product does, read from its codebase. Runs only when a codebase exists, usually as pre-work; never blocks.
+- **In-codebase prototype** (`agents/03-prototype/skills/codebase-prototype.md`): an optional, disposable prototype on a throwaway `discovery/prototype` branch that is never merged.
+- **Engagement reference.** The brief carries the intake record number only; opportunity IDs never enter the customer's repository.
+
+### Changed
+- **Phase names.** Signals, Working Backwards, Prototype, Validate, Handoff. Phase 2 is no longer called Ideation, to avoid confusion with the AI-DLC phase it replaces. Internal folder and agent ids (`02-ideation`, `aidlc-ideation`) are unchanged so existing installs keep working.
+- **Validate** is an evidence review on the day: hypotheses it cannot confirm stay open and go into the brief; it never waits for survey results.
+- **Artifact layout.** Artifacts default to `discovery/[project]/{signals,working-backwards,prototype,validate,handoff}/` in the working folder, with raw feedback in `discovery/data/`. Personas moved under `working-backwards/personas/`.
+- The Conductor flags a sample-data run as a demonstration.
+
+### Removed
+- **IDE exporter** (`agents/03-prototype/skills/ide-exporter.md`). Its Kiro, Claude Code, Codex, and Cursor bundles bypassed AI-DLC; AI-DLC already runs in those harnesses and reads the Discovery brief.
+- Persona avatar generation.
+
 ## 1.5.0 — 2026-09-22
 
 Multi-harness package: the repository root is now directly installable in Amazon Quick, Kiro, and Claude Code. No build step.

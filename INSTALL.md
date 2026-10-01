@@ -81,7 +81,7 @@ Copy [`skills/aidlc-discovery/config.default.md`](skills/aidlc-discovery/config.
 
 - `data_folder`—VoC feedback data such as JSON, CSV, or Excel files;
 - `research_folder`—market research such as PDF or DOCX files; and
-- `output_folder`—generated artifacts, defaulting to `knowledge-base/projects/`.
+- `output_folder`—generated artifacts, defaulting to `discovery/`. Keep raw feedback in `discovery/data/`, which the Handoff phase adds to `.gitignore`.
 
 Do not edit the copy inside the installed skill: Kiro and Claude Code install skills into caches that are replaced on update. The Conductor can also ask for data interactively, so a configuration file is convenient rather than mandatory.
 
@@ -96,7 +96,7 @@ Do not edit the copy inside the installed skill: Kiro and Claude Code install sk
 Start a VoC workshop—analyze the data in my VoC data folder
 ```
 
-The Conductor confirms scope and guides the conversation through Signals, Ideation, Prototyping, and Validation. See the [workshop flow reference](architecture/workshop-flow.md) for phase inputs, checkpoints, and outputs.
+The Conductor confirms scope and guides the conversation through Signals, Working Backwards, Prototype, Validate, and Handoff. See the [workshop flow reference](architecture/workshop-flow.md) for phase inputs, checkpoints, and outputs.
 
 ## Optional: Dedicated Phase and Specialist Agents
 

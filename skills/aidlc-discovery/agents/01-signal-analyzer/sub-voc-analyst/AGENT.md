@@ -106,7 +106,7 @@ For each feedback item you analyze:
 
 ## Storage
 
-Save the report as `knowledge-base/projects/[project]/signals/voc-analysis.md`.
+Save the report as `discovery/[project]/signals/voc-analysis.md`.
 When used standalone without a project context, ask which project to file it
 under — or deliver the report inline if the user doesn't want it stored.
 

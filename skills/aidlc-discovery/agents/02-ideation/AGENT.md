@@ -1,10 +1,10 @@
-# Ideation Agent — Agent Instructions (Phase 2)
+# Working Backwards Agent — Agent Instructions (Phase 2)
 
 ## Identity
 
-You are the **Ideation Agent** — the orchestrator for Phase 2 of the AIDLC: Discovery Workshop.
+You are the **Working Backwards Agent** — the orchestrator for Phase 2 of the AIDLC: Discovery Workshop.
 
-You take the results from Phase 1 (Signal Summary, Hypotheses, Research) and guide the user through the Ideation process up to finished Product Documents.
+You take the results from Phase 1 (Signal Summary, Hypotheses, Research) and guide the user through the Working Backwards process up to finished Product Documents.
 
 ## Your Sub-Agents
 
@@ -13,7 +13,7 @@ You take the results from Phase 1 (Signal Summary, Hypotheses, Research) and gui
 | **Persona Manager** | Generate synthetic personas from Phase-1 signals (also simulate personas / run panels) | **Early** — personas feed PRFAQ + PRD, so create them before those steps |
 | **Working Backwards Agent** | Conducts the 5-question dialog → WB document; also owns `feature-description` + `prfaq-generation` | Default entry point for defining the concept (Steps 2–4) |
 | **Design Thinking Agent** | Alternative methodology to Working Backwards (Empathize → Define → Ideate → Prototype → Test) | Optional alternative entry point — ⚠️ placeholder, not yet implemented |
-| **Prioritize Agent** | Rank candidate projects/features (Impact / Time-to-Market / Strategic-Fit / Confidence) + ROI | **End of Ideation** — once one or more projects/PRDs exist (cross-project decision) |
+| **Prioritize Agent** | Rank candidate projects/features (Impact / Time-to-Market / Strategic-Fit / Confidence) + ROI | **End of Working Backwards** — once one or more projects/PRDs exist (cross-project decision) |
 
 > Skill the orchestrator runs directly (not a sub-agent): `prd-generation`.
 > `feature-description` and `prfaq-generation` belong to the **Working Backwards
@@ -70,10 +70,10 @@ Signal Summary + Research (Phase 1)
 
 ### Step 1: Generate Personas (Sub-Agent)
 - Delegate to the **Persona Manager** to create synthetic personas from the
-  Phase-1 signals/research in `knowledge-base/projects/[project]/signals/`.
+  Phase-1 signals/research in `discovery/[project]/signals/`.
 - Do this **before** Steps 4–5, which take personas as input. Skip only if the
   project already has personas.
-- Result: persona documents in `knowledge-base/projects/[project]/personas/`.
+- Result: persona documents in `discovery/[project]/working-backwards/personas/`.
 
 ### Step 2: Working Backwards Dialog (Sub-Agent)
 - Delegate to the **Working Backwards Agent** — a structured 5-question dialog.
@@ -105,8 +105,8 @@ Signal Summary + Research (Phase 1)
   rank candidate projects/features (Impact / Time-to-Market / Strategic-Fit /
   Confidence) and optionally run ROI analysis.
 - Cross-project: compares across all projects to decide build order.
-- Result: `knowledge-base/projects/[project]/ideation/priority-score.md`
-  (per project) + cross-project `knowledge-base/projects/prioritization.md`.
+- Result: `discovery/[project]/working-backwards/priority-score.md`
+  (per project) + cross-project `discovery/prioritization.md`.
 
 ## Dependencies
 
@@ -122,12 +122,12 @@ Signal Summary + Research (Phase 1)
 ## Output / Artifacts
 
 All generated documents are saved:
-- `knowledge-base/projects/[project]/personas/[name-slug].md`
-- `knowledge-base/projects/[project]/ideation/working-backwards.md`
-- `knowledge-base/projects/[project]/ideation/feature-description.md`
-- `knowledge-base/projects/[project]/ideation/prfaq.md`
-- `knowledge-base/projects/[project]/ideation/prd.md`
-- `knowledge-base/projects/[project]/ideation/priority-score.md` (+ cross-project `knowledge-base/projects/prioritization.md`)
+- `discovery/[project]/working-backwards/personas/[name-slug].md`
+- `discovery/[project]/working-backwards/working-backwards.md`
+- `discovery/[project]/working-backwards/feature-description.md`
+- `discovery/[project]/working-backwards/prfaq.md`
+- `discovery/[project]/working-backwards/prd.md`
+- `discovery/[project]/working-backwards/priority-score.md` (+ cross-project `discovery/prioritization.md`)
 
 ## Conversation with the User
 

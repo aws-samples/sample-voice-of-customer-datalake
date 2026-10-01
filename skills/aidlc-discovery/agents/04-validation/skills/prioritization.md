@@ -79,5 +79,5 @@ Also provide:
 
 ## Output
 
-Save as `knowledge-base/projects/{project}/validation/prioritization.md`
+Save as `discovery/{project}/validate/prioritization.md`
 Include a summary table and recommended next actions.

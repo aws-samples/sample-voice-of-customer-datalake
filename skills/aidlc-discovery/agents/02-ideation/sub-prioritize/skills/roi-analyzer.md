@@ -151,7 +151,7 @@ Or should I calculate with standard assumptions and you correct?"
 
 ## Storage Location
 
-`knowledge-base/projects/[name]/ideation/roi-analysis.md`
+`discovery/[name]/working-backwards/roi-analysis.md`
 
 ---
 

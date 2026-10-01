@@ -1,6 +1,6 @@
 # AIDLC: Discovery Workshop
 
-> Run the discovery phase of the AI-Driven Development Lifecycle (AIDLC) — from customer signals to validated product concepts — with one skill that installs into Amazon Quick, Kiro, or Claude Code.
+> Run the discovery phase of the AI-Driven Development Lifecycle (AIDLC) — from customer signals to a Discovery brief that starts [AI-DLC](https://github.com/awslabs/aidlc-workflows) at Inception — with one skill that installs into Amazon Quick, Kiro, or Claude Code.
 
 ## About This Branch (v2)
 
@@ -28,16 +28,19 @@ For an event-ready participant handout, use [Workshop Setup](WORKSHOP-SETUP.md).
 
 | Phase | Activity | Typical output |
 |-------|----------|----------------|
-| **1. Signals** | Analyze VoC data and supporting research | Signal Analysis Report |
-| **2. Ideation** | Generate research, personas, PR/FAQ, and PRD documents | Product documents |
-| **3. Prototyping** | Create a clickable HTML prototype and IDE export | Testable artifacts and a draft survey when useful |
-| **4. Validation** | Run surveys, assess hypotheses, and prioritize problems | Validated backlog |
+| **1. Signals** | Analyze VoC data and supporting research; map the current product when a codebase exists | Signal Analysis Report |
+| **2. Working Backwards** | Generate personas, PR/FAQ, and PRD documents | Product documents |
+| **3. Prototype** | Create a clickable HTML prototype | Testable prototype and a draft survey when useful |
+| **4. Validate** | Challenge assumptions and prioritize problems | Prioritized problems with open hypotheses |
+| **5. Handoff** | Package the outputs for AI-DLC | Discovery brief |
+
+Discovery takes the place of AI-DLC's own Ideation phase. The team then starts AI-DLC 2.10.0 or later in the same repository with `/aidlc workshop` (facilitated) or `/aidlc classic` (on its own), pointing at `discovery/[project]/handoff/discovery-brief.md`. See [Handoff to AI-DLC](architecture/workshop-flow.md#handoff-to-ai-dlc).
 
 Each phase can run independently, but the Conductor maintains context and links artifacts when you run the lifecycle end to end. The canonical behavior is defined in [`skills/aidlc-discovery/SKILL.md`](skills/aidlc-discovery/SKILL.md).
 
 ## Recommended Execution Model: One Skill
 
-The **recommended default** is the `aidlc-discovery` skill. Its Workshop Conductor guides one conversation through all four phases and uses the included phase prompts as references. You do not need to create agents to run the full workshop.
+The **recommended default** is the `aidlc-discovery` skill. Its Workshop Conductor guides one conversation through all five phases and uses the included phase prompts as references. You do not need to create agents to run the full workshop.
 
 ```text
 User
@@ -45,9 +48,10 @@ User
   v
 Workshop Conductor (`aidlc-discovery`)
   |-- Phase 1: Signals
-  |-- Phase 2: Ideation
-  |-- Phase 3: Prototyping
-  `-- Phase 4: Validation
+  |-- Phase 2: Working Backwards
+  |-- Phase 3: Prototype
+  |-- Phase 4: Validate
+  `-- Phase 5: Handoff  --> Discovery brief --> AI-DLC Inception
          |
          v
 Shared data and project artifacts
@@ -79,7 +83,7 @@ voc-data-lake/
 `-- projects/          generated workshop artifacts
 ```
 
-Artifacts go to the configured `output_folder` (default `knowledge-base/projects/[project]/` with phase-specific subfolders) **in your working folder**, never inside the installed skill. Copy [`skills/aidlc-discovery/config.default.md`](skills/aidlc-discovery/config.default.md) to `config.md` in your working folder to preconfigure data, research, and output paths.
+Artifacts go to the configured `output_folder` (default `discovery/[project]/` with phase-specific subfolders) **in your working folder**, never inside the installed skill. Copy [`skills/aidlc-discovery/config.default.md`](skills/aidlc-discovery/config.default.md) to `config.md` in your working folder to preconfigure data, research, and output paths.
 
 Supported inputs include JSON, CSV, Excel, PDF, DOCX, and plain text. Sample feedback ships with the skill at [`skills/aidlc-discovery/knowledge-base/voc-data/example-feedback.json`](skills/aidlc-discovery/knowledge-base/voc-data/example-feedback.json).
 
@@ -113,9 +117,10 @@ Agent creation is not part of the default success criteria.
 ## Implementation Status
 
 - [x] Phase 1: Signals—VoC analysis, supporting research, metrics, and optional dedicated specialist workflows
-- [x] Phase 2: Ideation—research, personas, Working Backwards, prioritization, PR/FAQ, and PRD
-- [x] Phase 3: Prototyping—HTML prototype, IDE export, and optional draft survey
-- [x] Phase 4: Validation—surveys, results dashboard, and problem prioritization
+- [x] Phase 2: Working Backwards—research, personas, prioritization, PR/FAQ, and PRD
+- [x] Phase 3: Prototype—HTML prototype, optional in-codebase prototype, and optional draft survey
+- [x] Phase 4: Validate—assumption review, problem prioritization, surveys, and results dashboard
+- [x] Phase 5: Handoff—required-artifact check, Discovery brief, and AI-DLC start command
 
 ### Known limitation
 

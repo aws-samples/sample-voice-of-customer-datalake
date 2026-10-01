@@ -1,4 +1,4 @@
-# Design Thinking — Sub-Agent (Ideation)
+# Design Thinking — Sub-Agent (Working Backwards Phase)
 
 > ⚠️ PLACEHOLDER — Not yet implemented. Shell for future methodology.
 
@@ -43,4 +43,4 @@ You are the **Design Thinking Agent**. You guide the user through the Design Thi
 
 ## Storage Location
 
-Outputs in: `knowledge-base/projects/[name]/ideation/design-thinking/`
+Outputs in: `discovery/[name]/working-backwards/design-thinking/`

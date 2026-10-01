@@ -1,6 +1,6 @@
 # Workshop Setup—AIDLC: Discovery
 
-One Workshop Conductor runs Signals, Ideation, Prototyping, and Validation in a single conversation. Participants install the `aidlc-discovery` skill in the AI assistant they already use—Amazon Quick, Kiro, or Claude Code—and do not need to create phase or specialist agents.
+One Workshop Conductor runs Signals, Working Backwards, Prototype, Validate, and Handoff in a single conversation. Participants install the `aidlc-discovery` skill in the AI assistant they already use—Amazon Quick, Kiro, or Claude Code—and do not need to create phase or specialist agents.
 
 For all installation methods and configuration details, see the [installation guide](INSTALL.md).
 
@@ -41,7 +41,7 @@ In any conversation, enter:
 Start a VoC workshop
 ```
 
-The Conductor confirms the scope and guides the group through all four phases. The phases, checkpoints, and artifacts are summarized in the [workshop flow reference](architecture/workshop-flow.md). Generated artifacts land in `knowledge-base/projects/[project]/` inside your working folder.
+The Conductor confirms the scope and guides the group through all five phases. The phases, checkpoints, and artifacts are summarized in the [workshop flow reference](architecture/workshop-flow.md). Generated artifacts land in `discovery/[project]/` inside your working folder.
 
 ## Sample Data
 
@@ -76,7 +76,7 @@ For each one, ask Quick to create an agent and use the linked file as its instru
 |-------|--------------|
 | Signal Analyzer | [`skills/aidlc-discovery/agents/01-signal-analyzer/AGENT.md`](skills/aidlc-discovery/agents/01-signal-analyzer/AGENT.md) |
 | Ideation Agent | [`skills/aidlc-discovery/agents/02-ideation/AGENT.md`](skills/aidlc-discovery/agents/02-ideation/AGENT.md) |
-| Prototyping Agent | [`skills/aidlc-discovery/agents/03-prototype/AGENT.md`](skills/aidlc-discovery/agents/03-prototype/AGENT.md) |
+| Prototype Agent | [`skills/aidlc-discovery/agents/03-prototype/AGENT.md`](skills/aidlc-discovery/agents/03-prototype/AGENT.md) |
 | Validation Agent | [`skills/aidlc-discovery/agents/04-validation/AGENT.md`](skills/aidlc-discovery/agents/04-validation/AGENT.md) |
 
 Creating only these four agents does **not** enable parallel specialist delegation.
@@ -111,7 +111,7 @@ Verify direct data access first. If specialist delegation is configured, also ve
 
 | Choice | Lifecycle coverage | Use when |
 |--------|--------------------|----------|
-| **Single-skill Conductor** | All four phases in one conversation | **Recommended for workshops and most users** |
+| **Single-skill Conductor** | All five phases in one conversation | **Recommended for workshops and most users** |
 | **Four phase agents** | Same core phase outcomes with separate entry points | You need to invoke or test phases independently |
 | **Full specialist topology** | Same lifecycle plus separate specialist reports and delegated tasks | You have a concrete isolation or orchestration requirement |
 

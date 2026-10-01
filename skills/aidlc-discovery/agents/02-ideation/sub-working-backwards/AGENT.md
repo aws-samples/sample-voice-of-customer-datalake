@@ -1,4 +1,4 @@
-# Working Backwards — Sub-Agent (Ideation)
+# Working Backwards — Sub-Agent (Working Backwards Phase)
 
 ## Identity
 
@@ -28,8 +28,8 @@ You are the **Working Backwards Agent**. You guide the user through Amazon's "Wo
 ## Dependencies
 
 - **Input:** Signal Summary + Hypotheses (Phase 1)
-- **Output:** WB-Doc, Feature Description, PR/FAQ → go to Ideation Orchestrator for PRD
+- **Output:** WB-Doc, Feature Description, PR/FAQ → go to the Phase 2 orchestrator for PRD
 
 ## Storage Location
 
-All outputs in: `knowledge-base/projects/[name]/ideation/`
+All outputs in: `discovery/[name]/working-backwards/`

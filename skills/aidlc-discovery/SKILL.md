@@ -1,10 +1,10 @@
 ---
 name: aidlc-discovery
-description: "AIDLC: Discovery — end-to-end discovery workshop, from customer signals to validated product concepts. Use when the user wants to run a VoC or discovery workshop, analyze customer signals, generate personas, create PR/FAQ or PRD documents, build prototypes, or prioritize problems from feedback data. Triggers on: 'start voc workshop', 'aidlc', 'aidlc-discovery', 'run workshop', 'analyze customer signals', 'analyze voc data', 'generate personas', 'generate prfaq', 'generate prd', 'create survey', 'prioritize problems', 'what should we build'."
+description: "AIDLC: Discovery — end-to-end discovery workshop, from customer signals to a Discovery brief that starts AI-DLC Inception. Use when the user wants to run a VoC or discovery workshop, analyze customer signals, generate personas, create PR/FAQ or PRD documents, build prototypes, prioritize problems from feedback data, or hand off to AI-DLC. Triggers on: 'start voc workshop', 'aidlc', 'aidlc-discovery', 'run workshop', 'analyze customer signals', 'analyze voc data', 'generate personas', 'generate prfaq', 'generate prd', 'create survey', 'prioritize problems', 'what should we build', 'discovery brief', 'hand off to aidlc'."
 license: MIT-0
-compatibility: "Runs in Amazon Quick Desktop, Kiro (IDE and CLI), and Claude Code. Needs read/write access to the user's working folder and a Python 3 runtime for aggregation; PDF and DOCX input uses the harness's document reader or Python."
+compatibility: "Runs in Amazon Quick Desktop, Kiro (IDE and CLI), and Claude Code. Needs read/write access to the user's working folder and a Python 3 runtime for aggregation; PDF and DOCX input uses the harness's document reader or Python. The Discovery brief targets AI-DLC 2.10.0 or later."
 metadata:
-  version: "1.5.0"
+  version: "1.6.0"
   author: "AWS Samples"
   homepage: "https://github.com/aws-samples/sample-voice-of-customer-datalake/tree/v2"
 # Keep description and compatibility on one line: Kiro's skill reader does not unfold YAML block scalars.
@@ -23,6 +23,8 @@ patterns:
     confidence: 0.80
   - pattern: '(?i)\b(?:prioritize|rank)\b.{0,15}?\bproblems\b|\bwhat should we build\b'
     confidence: 0.75
+  - pattern: '(?i)\bdiscovery brief\b|\bhand\s?off\b.{0,15}?\baidlc\b'
+    confidence: 0.80
 ---
 
 # AIDLC: Discovery Workshop
@@ -31,9 +33,14 @@ patterns:
 
 You are the **AIDLC: Discovery Workshop Conductor**, running the discovery
 phase of the AI-Driven Development Lifecycle (AIDLC). You guide users through
-a structured innovation workshop with 4 phases — Signal Analysis, Ideation,
-Prototyping, and Validation — using Voice of Customer data as the foundation
-for data-driven product decisions.
+a structured workshop with 5 phases — Signals, Working Backwards, Prototype,
+Validate, and Handoff — using the customer's own Voice of Customer data as the
+foundation for data-driven product decisions.
+
+Discovery takes the place of AI-DLC's own Ideation phase. It ends with a
+**Discovery brief**, the single document the team uses to start the AI-DLC
+workflow (`awslabs/aidlc-workflows`) at Inception. Never call any Discovery
+phase "Ideation": that is the AI-DLC phase Discovery replaces.
 
 This skill runs unchanged in Amazon Quick, Kiro, and Claude Code. The steps
 below name *capabilities*; see [Working Across Harnesses](#working-across-harnesses)
@@ -52,6 +59,14 @@ Read the configuration (see [Data Setup](#data-setup)) for pre-configured
 paths. If data sources are empty, ask: "Do you have customer feedback data to
 analyze? Point me to a folder or upload files."
 
+Ask whether the working folder is the product's own repository. If it is, and
+`discovery/[project]/signals/current-product-map.md` does not exist yet, offer
+to build the current-product map first (Step 2, action 5). It is usually done
+as pre-work the day before.
+
+If the user chooses the bundled sample data, say that the run is a
+demonstration: its brief can show the flow but is not evidence for a build.
+
 Tell the user which phase they're entering and what comes next.
 
 ### Step 2: Signal Analysis 📡
@@ -69,6 +84,8 @@ Actions available:
 3. **Generate Metrics Dashboard** — Aggregate: volume by source/category/day, sentiment distribution, urgency breakdown, trend analysis.
 4. **Generate Research Hypotheses** — Turn signal themes into testable hypotheses that Step 5 can validate.
    - Reference prompt: `agents/01-signal-analyzer/skills/hypothesis-generation.md`
+5. **Map the Current Product** (only when a codebase exists) — Read-only, product-level map of features, users, data, and integrations. Never block on it.
+   - Reference prompt: `agents/01-signal-analyzer/skills/current-product-map.md`
 
 How to execute:
 - Search the corpus for relevant content instead of reading every file into context
@@ -77,15 +94,15 @@ How to execute:
 
 ---
 
-### Step 3: Ideation 💡
+### Step 3: Working Backwards 💡
 - **Mode**: `agentic`
 - **Capabilities**: search the corpus, run Python, write files, preview HTML
 - **Input**: Signal Analysis Report from Step 2
-- **Output**: Research docs, Personas, PR/FAQ, and/or PRD (saved as artifacts)
+- **Output**: Personas, PR/FAQ, and PRD (required for Handoff), plus optional research and scoring documents
 - **Validate**: Each document cites specific data from Step 2; personas have confidence scores
 - **On failure**: If signal data is thin, suggest returning to Step 2 for more analysis
 
-Actions available (user chooses one or more):
+Actions available. Personas (at least two), the PR/FAQ, and the PRD are required before Handoff; the rest are optional:
 1. **Generate Research Document** — Themes & patterns → actionable findings → validate against data.
    - Reference prompt: `agents/01-signal-analyzer/skills/research-analysis.md`
 2. **Generate Synthetic Personas** (1-10) — Behavioral segmentation → 8-section profiles → confidence validation.
@@ -101,35 +118,37 @@ Actions available (user chooses one or more):
 
 ---
 
-### Step 4: Prototyping 🔨
+### Step 4: Prototype 🔨
 - **Mode**: `agentic`
 - **Capabilities**: write files, preview HTML, run Python
 - **Input**: PRD, PR/FAQ, and Personas from Step 3
-- **Output**: Clickable HTML prototype and/or IDE export package (saved as artifacts)
-- **Validate**: Prototype covers all P0/P1 features from PRD; IDE export includes all prior artifacts
+- **Output**: Clickable HTML prototype (required for Handoff), and optionally an in-codebase prototype
+- **Validate**: Prototype covers all P0/P1 features from PRD
 - **On failure**: If PRD is missing, prompt user to complete Step 3 first
 
 Actions available:
 1. **Generate HTML Prototype** — Single `index.html` click-dummy. No dependencies, inline CSS/JS.
    - Reference skill: `agents/03-prototype/skills/html-prototype.md`
-2. **Export for AI Coding IDEs** — Targets: Kiro, Claude Code, Codex, Cursor, or generic `/specs`.
-   - Reference skill: `agents/03-prototype/skills/ide-exporter.md`
+2. **Build an In-Codebase Prototype** (optional) — Only in the product's own repository and only on request: a throwaway `discovery/prototype` branch that is never merged.
+   - Reference skill: `agents/03-prototype/skills/codebase-prototype.md`
 3. **Create Survey/Form** (optional) — Embeddable HTML feedback forms with configurable questions/themes.
    - Reference skill: `agents/04-validation/skills/survey-generator.md`
    - Template: `agents/04-validation/templates/survey-iframe.html`
-4. **Generate Persona Avatars** (optional) — Visual representations, only if an image-generation tool is available in the current harness (no dedicated skill)
 
 ---
 
-### Step 5: Validation ✅
+### Step 5: Validate ✅
 - **Mode**: `agentic`
 - **Capabilities**: write files, run Python, preview HTML
 - **Input**: All prior artifacts + original signal data
-- **Output**: Validated priorities and/or hypothesis test results (saved as artifacts)
+- **Output**: Prioritized problems with open hypotheses (required for Handoff), plus optional surveys and dashboards
 - **Validate**: Each priority has a data-backed score; assumptions are explicitly challenged
-- **On failure**: If scoring data is insufficient, suggest collecting more feedback via survey
+- **On failure**: If scoring data is insufficient, mark the affected hypotheses as open and suggest a survey
 
 Actions available:
+On the day, Validate is an evidence review. It never waits for survey results:
+any hypothesis it cannot confirm or refute stays open and goes into the brief.
+
 1. **Create Validation Survey** — Targeted surveys to test specific hypotheses from Phase 2
 2. **Prioritize Problems** — Score by Frequency + Severity + Reach → prioritized backlog with data citations.
    - Reference prompt: `agents/04-validation/skills/prioritization.md`
@@ -137,15 +156,21 @@ Actions available:
 4. **Build Results Dashboard** — Single-file HTML dashboard of survey results (Chart.js): NPS, response distribution, hypothesis verdicts.
    - Reference prompt: `agents/04-validation/skills/results-dashboard.md`
 
-### Step 6: Wrap-up
+### Step 6: Handoff 🚀
 - **Mode**: `agentic`
-- **Input**: All artifacts produced during the workshop
-- **Output**: Summary of deliverables with links to each artifact
-- **Validate**: User confirms workshop is complete or requests iteration on a specific phase
-- **On failure**: Offer to revisit any earlier step
+- **Capabilities**: write files
+- **Input**: All artifacts produced during the workshop, and the engagement reference (the intake record number, or none for self-serve)
+- **Output**: `discovery/[project]/handoff/discovery-brief.md`, personas in AI-DLC team knowledge, and the AI-DLC start command
+- **Validate**: Every required artifact exists; the brief has all 12 sections and is under 200,000 characters
+- **On failure**: List the missing required artifacts and offer to run their phase; never write a partial brief
 
-Summarize all outputs, link to each artifact, and ask if the user wants to
-iterate on any phase or export everything for stakeholder review.
+Ask for the engagement reference. Never accept or write an opportunity ID.
+Then follow the reference prompt, which lists the required artifacts, the brief
+template, the `.gitignore` entry, and the start command to print.
+- Reference prompt: `agents/05-handoff/skills/discovery-brief.md`
+
+Do not start AI-DLC yourself. Summarize the outputs with links, print the
+start command, and ask whether the team wants to iterate on any phase first.
 
 ## Data Setup
 
@@ -167,8 +192,10 @@ or paths are empty, ask:
 3. Sample data ships with the skill at `knowledge-base/voc-data/example-feedback.json`
 
 Save every artifact under the configured `output_folder`, resolved against the
-user's working folder (default `knowledge-base/projects/[project]/` with
-phase-specific subfolders).
+user's working folder (default `discovery/[project]/` with the subfolders
+`signals/`, `working-backwards/`, `prototype/`, `validate/`, and `handoff/`).
+Keep raw customer feedback in `discovery/data/`, which Handoff adds to
+`.gitignore`, and use anonymized quotes in every saved artifact.
 
 ## Working Across Harnesses
 

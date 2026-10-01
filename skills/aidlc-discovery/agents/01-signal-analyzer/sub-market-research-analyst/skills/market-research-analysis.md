@@ -31,4 +31,4 @@ Provide:
 ## Output
 
 Feeds the Market Research Report (see `../AGENT.md` for the full report format).
-Save as: `knowledge-base/projects/[project]/signals/market-research.md`
+Save as: `discovery/[project]/signals/market-research.md`
