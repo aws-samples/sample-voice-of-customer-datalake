@@ -165,8 +165,7 @@ def leg_aidlc(h: Harness, ws: Path, out: Path) -> list[checks.Check]:
     answer = (PROMPTS / "aidlc-answer.md").read_text(encoding="utf-8")
     h.run(ws, start, out, "aidlc", plugin=False, env=env)
     for turn in range(1, h.args.aidlc_turns + 1):
-        record = checks.active_record(ws)
-        if record and (record / "inception" / "requirements-analysis").is_dir():
+        if checks.requirements_outputs(checks.active_record(ws)):
             break
         log(f"aidlc: turn {turn}, Requirements Analysis not reached yet")
         h.run(ws, answer, out, "aidlc", resume=True, plugin=False, env=env)

@@ -142,10 +142,27 @@ class AidlcChecksTests(unittest.TestCase):
             (ra / "requirements-analysis-questions.md").write_text("## Q1. What does Marcus need?\n", encoding="utf-8")
             self.assertEqual([], [c.id for c in checks.check_aidlc(ws, PROJECT) if not c.passed])
 
+            (record / ".aidlc-engine" / "document-input-path").write_text(
+                f"{ws / 'discovery' / PROJECT / 'handoff' / 'discovery-brief.md'}\n", encoding="utf-8")
+            self.assertEqual([], [c.id for c in checks.check_aidlc(ws, PROJECT) if not c.passed])
+
             (record / "ideation").mkdir()
             (ra / "requirements-analysis-questions.md").write_text("## Q1. Generic question\n", encoding="utf-8")
             failed = {c.id for c in checks.check_aidlc(ws, PROJECT) if not c.passed}
             self.assertEqual({"A04", "A06"}, failed)
+
+    def test_learnings_diary_alone_is_not_requirements_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = Path(tmp)
+            intents = ws / "aidlc" / "spaces" / "default" / "intents"
+            for name in ("261001-sample", "261001-zzz-older"):
+                (intents / name / "inception" / "requirements-analysis").mkdir(parents=True)
+                (intents / name / "aidlc-state.md").write_text("- **Scope**: classic\n", encoding="utf-8")
+            (intents / "active-intent").write_text("261001-sample\n", encoding="utf-8")
+            record = checks.active_record(ws)
+            self.assertEqual("261001-sample", record.name)
+            (record / "inception" / "requirements-analysis" / "memory.md").write_text("# Diary\n", encoding="utf-8")
+            self.assertEqual([], checks.requirements_outputs(record))
 
 
 if __name__ == "__main__":

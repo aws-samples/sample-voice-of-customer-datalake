@@ -172,8 +172,25 @@ def state_field(state: str, field: str) -> str:
 
 
 def active_record(workspace: Path) -> Path | None:
-    intents = sorted((workspace / "aidlc" / "spaces").glob("*/intents/*/aidlc-state.md"))
-    return intents[-1].parent if intents else None
+    """Follow AI-DLC's intent cursor (aidlc-lib.ts activeIntent, 2.10.0), else the newest record."""
+    intents = workspace / "aidlc" / "spaces" / active_space(workspace) / "intents"
+    cursor = intents / "active-intent"
+    if cursor.is_file():
+        record = intents / cursor.read_text(encoding="utf-8").strip()
+        if (record / "aidlc-state.md").is_file():
+            return record
+    records = sorted(intents.glob("*/aidlc-state.md"))
+    return records[-1].parent if records else None
+
+
+# The files Requirements Analysis writes (requirements-analysis.md, 2.10.0). The stage folder
+# can exist earlier, holding only the learnings diary memory.md.
+REQUIREMENTS_OUTPUTS = ("requirements-analysis-questions.md", "requirements.md")
+
+
+def requirements_outputs(record: Path | None) -> list[Path]:
+    folder = record / "inception" / "requirements-analysis" if record else None
+    return [folder / name for name in REQUIREMENTS_OUTPUTS if folder and (folder / name).is_file()]
 
 
 def check_aidlc(workspace: Path, project: str) -> list[Check]:
@@ -187,16 +204,17 @@ def check_aidlc(workspace: Path, project: str) -> list[Check]:
 
     pointer = record / ".aidlc-engine" / "document-input-path"
     value = pointer.read_text(encoding="utf-8").strip() if pointer.is_file() else ""
+    # AI-DLC accepts a relative or an absolute path here, resolved from the project root.
+    points_at_brief = bool(value) and (workspace / value).resolve() == (workspace / brief_rel).resolve()
     checks.append(Check("A02", "AI-DLC recorded the brief as its document input",
-                        value.lstrip("./") == brief_rel, value or "document-input-path missing"))
+                        points_at_brief, value or "document-input-path missing"))
 
     state = (record / "aidlc-state.md").read_text(encoding="utf-8")
     scope = state_field(state, "Scope")
     checks.append(Check("A03", "Workflow runs a profile that skips Ideation", scope in {"classic", "workshop"}, scope))
     checks.append(Check("A04", "AI-DLC did not run its own Ideation", not (record / "ideation").exists()))
 
-    inception = record / "inception" / "requirements-analysis"
-    outputs = sorted(inception.glob("*.md")) if inception.is_dir() else []
+    outputs = requirements_outputs(record)
     checks.append(Check("A05", "Requirements Analysis produced questions or requirements", bool(outputs),
                         ", ".join(p.name for p in outputs)))
 
