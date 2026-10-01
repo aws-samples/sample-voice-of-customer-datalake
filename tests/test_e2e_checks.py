@@ -67,7 +67,7 @@ class DiscoveryChecksTests(unittest.TestCase):
 
     def test_valid_workspace_passes_every_check(self) -> None:
         self.assertEqual(set(), self.failed())
-        self.assertEqual(13, len(checks.check_discovery(self.ws, PROJECT, REFERENCE, TRANSCRIPT)))
+        self.assertEqual(14, len(checks.check_discovery(self.ws, PROJECT, REFERENCE, TRANSCRIPT)))
 
     def test_parsed_contract_matches_the_handoff_prompt(self) -> None:
         self.assertEqual(12, len(checks.brief_sections()))
@@ -112,6 +112,19 @@ class DiscoveryChecksTests(unittest.TestCase):
         space = self.ws / "aidlc" / "spaces" / "default" / "knowledge"
         space.rename(self.ws / "aidlc" / "knowledge")
         self.assertIn("D08", self.failed())
+
+    def test_data_files_and_scripts_in_the_project_folder_fail(self) -> None:
+        signals = self.ws / "discovery" / PROJECT / "signals"
+        (self.ws / "discovery" / "data").mkdir(parents=True)
+        (self.ws / "discovery" / "data" / "enriched.json").write_text("[]", encoding="utf-8")
+        (self.ws / "discovery" / "data" / "enrich.py").write_text("", encoding="utf-8")
+        self.assertNotIn("D14", self.failed())
+        for name in ("voc-analysis.json", "enrich.py", "Export.XLSX"):
+            path = signals / name
+            path.write_text("[]", encoding="utf-8")
+            self.assertIn("D14", self.failed(), name)
+            path.unlink()
+        self.assertNotIn("D14", self.failed())
 
     def test_external_script_in_prototype_fails(self) -> None:
         (self.ws / "discovery" / PROJECT / "prototype" / "index.html").write_text(

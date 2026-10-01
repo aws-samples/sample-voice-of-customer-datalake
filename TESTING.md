@@ -26,7 +26,7 @@ Needs only Python 3.10 or later. `tests/test_documentation_and_packages.py` cove
 
 | Leg | What happens | Checks |
 |-----|--------------|--------|
-| `discovery` | The harness runs all five phases with the prompt in [`tests/e2e/prompts/discovery.md`](tests/e2e/prompts/discovery.md) | D01–D13 |
+| `discovery` | The harness runs all five phases with the prompt in [`tests/e2e/prompts/discovery.md`](tests/e2e/prompts/discovery.md) | D01–D14 |
 | `missing-prd` | On a copy of that workspace with the PRD and brief deleted, the harness runs only the Handoff | N01–N02 |
 | `aidlc` | `aidlc config` sets up AI-DLC in the workspace, then `/aidlc classic` starts from the brief; the runner answers each gate with [`tests/e2e/prompts/aidlc-answer.md`](tests/e2e/prompts/aidlc-answer.md) until Requirements Analysis writes its output, up to `--aidlc-turns` | A00–A06 |
 
@@ -102,6 +102,7 @@ The checks:
 | D11 | The brief's artifact links resolve |
 | D12 | The HTML prototype loads no external scripts |
 | D13 | The session printed an `/aidlc workshop` or `/aidlc classic` command with the brief path |
+| D14 | `discovery/<project>/` holds no data files or scripts (`.json`, `.csv`, `.xlsx`, `.xls`, `.py`, `.js`, `.sh`): per-item data and helper scripts belong in `discovery/data/` |
 | N01–N02 | Without the PRD, Handoff wrote no brief and named the PRD as missing |
 | A00 | AI-DLC 2.10.0 or later is installed |
 | A01–A02 | AI-DLC created an intent and recorded the brief as its document input |
@@ -110,7 +111,7 @@ The checks:
 
 Each check ends in one of three outcomes: ✅ pass, ❌ fail, or ⚠️ unverified. Unverified means the check found no evidence either way, for example A06 when neither the log nor the transcript holds the directive. It does not fail the run, but it is not a pass: the summary line counts it apart, and `report.md` and `report.json` list it in its own section. Verify it by hand.
 
-When a check fails, open its detail in `report.md`, then the transcript for that leg. A failure in D01–D13 points at the skill prompts; a failure in A01–A06 usually means AI-DLC changed its input contract, so compare against its release notes before changing the brief.
+When a check fails, open its detail in `report.md`, then the transcript for that leg. A failure in D01–D14 points at the skill prompts; a failure in A01–A06 usually means AI-DLC changed its input contract, so compare against its release notes before changing the brief.
 
 ### Run it in GitHub Actions
 
