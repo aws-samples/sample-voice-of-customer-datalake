@@ -110,8 +110,12 @@ session, often days later.
 
 ```text
 aidlc config --harness <claude | kiro | kiro-ide | codex | cursor | opencode | copilot>
-/aidlc workshop Build [product or feature name] from the Discovery brief at discovery/[project]/handoff/discovery-brief.md (engagement [intake record])
+/aidlc workshop Read ./discovery/[project]/handoff/discovery-brief.md and build what it describes, [product or feature name] (engagement [intake record])
 ```
+
+Keep the brief as the only file the command names. This is the form AI-DLC
+documents for starting from a document, so that Requirements Analysis reads
+the brief as its single input document.
 
 Use `/aidlc classic` instead of `/aidlc workshop` when the team continues on
 its own after the engagement. In Amazon Quick, which does not run AI-DLC, tell

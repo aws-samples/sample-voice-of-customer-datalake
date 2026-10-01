@@ -199,8 +199,8 @@ def leg_aidlc(h: Harness, ws: Path, out: Path) -> list[checks.Check]:
     git(ws, "add", "-A")
     git(ws, "-c", "user.name=e2e", "-c", "user.email=e2e@example.invalid", "commit", "-q", "-m", "Discovery output")
     p, ref = h.args.project, h.args.reference
-    start = (f"/aidlc classic Build the product described in the Discovery brief at "
-             f"discovery/{p}/handoff/discovery-brief.md (engagement {ref})")
+    # The form the Handoff prints (discovery-brief.md, Finish), with the classic profile.
+    start = f"/aidlc classic Read ./discovery/{p}/handoff/discovery-brief.md and build what it describes (engagement {ref})"
     env = {"AIDLC_DISABLE_SUMMARY_CONFIRMATION": "1", "AIDLC_DISABLE_LEARNINGS": "1", **install_aidlc_shim(out)}
     answer = (PROMPTS / "aidlc-answer.md").read_text(encoding="utf-8")
     h.run(ws, start, out, "aidlc", plugin=False, env=env)
