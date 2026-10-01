@@ -165,5 +165,17 @@ class AidlcChecksTests(unittest.TestCase):
             self.assertEqual([], checks.requirements_outputs(record))
 
 
+class RunnerTests(unittest.TestCase):
+    def test_session_cost_is_the_running_total_not_a_sum(self) -> None:
+        import json
+        import run_e2e
+        events = [{"type": "assistant", "message": {"content": [{"type": "text", "text": "Q1?"}]}},
+                  {"type": "result", "result": "first", "total_cost_usd": 3.34},
+                  {"type": "result", "result": "woken by a subagent", "total_cost_usd": 3.38}]
+        text, cost = run_e2e.stream_text("\n".join(json.dumps(e) for e in events))
+        self.assertAlmostEqual(3.38, cost)
+        self.assertIn("woken by a subagent", text)
+
+
 if __name__ == "__main__":
     unittest.main()

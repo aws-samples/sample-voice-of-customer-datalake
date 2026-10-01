@@ -60,7 +60,11 @@ def prepare_workspace(workspace: Path, project: str, reference: str) -> None:
 
 
 def stream_text(raw: str) -> tuple[str, float]:
-    """Return assistant text and total cost from Claude Code stream-json output."""
+    """Return assistant text and total cost from Claude Code stream-json output.
+
+    A session emits a result event each time background subagents wake the main
+    thread, and every one carries the session's running total, so take the largest.
+    """
     texts, cost = [], 0.0
     for line in raw.splitlines():
         try:
@@ -73,7 +77,7 @@ def stream_text(raw: str) -> tuple[str, float]:
                     texts.append(block["text"])
         elif event.get("type") == "result":
             texts.append(str(event.get("result", "")))
-            cost += float(event.get("total_cost_usd") or 0)
+            cost = max(cost, float(event.get("total_cost_usd") or 0))
     return "\n".join(texts), cost
 
 
