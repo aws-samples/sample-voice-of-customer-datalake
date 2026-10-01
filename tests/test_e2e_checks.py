@@ -128,6 +128,20 @@ class MissingPrdChecksTests(unittest.TestCase):
             self.assertFalse(checks.check_missing_prd(ws, PROJECT, "Missing: PRD")[0].passed)
 
 
+PERSONAS_KNOWLEDGE = "aidlc/spaces/default/knowledge/aidlc-product-agent/discovery-personas.md"
+
+
+def stream_json(tool_output: str) -> str:
+    """One Claude Code stream-json line carrying a tool result."""
+    import json
+    return json.dumps({"type": "user", "message": {"content": [{"type": "tool_result", "content": tool_output}]}})
+
+
+ENGINE_DIRECTIVE = stream_json(
+    '{"kind":"run-stage","stage":"requirements-analysis","lead_agent":"aidlc-product-agent","mode":"inline",'
+    f'"inline_context_paths":[".claude/agents/aidlc-product-agent.md","{PERSONAS_KNOWLEDGE}"],"gate":true}}')
+
+
 class AidlcChecksTests(unittest.TestCase):
     def test_record_that_used_the_brief_passes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -140,16 +154,36 @@ class AidlcChecksTests(unittest.TestCase):
             ra = record / "inception" / "requirements-analysis"
             ra.mkdir(parents=True)
             (ra / "requirements-analysis-questions.md").write_text("## Q1. What does Marcus need?\n", encoding="utf-8")
-            self.assertEqual([], [c.id for c in checks.check_aidlc(ws, PROJECT) if not c.passed])
+            self.assertEqual([], [c.id for c in checks.check_aidlc(ws, PROJECT, ENGINE_DIRECTIVE) if not c.passed])
 
             (record / ".aidlc-engine" / "document-input-path").write_text(
                 f"{ws / 'discovery' / PROJECT / 'handoff' / 'discovery-brief.md'}\n", encoding="utf-8")
-            self.assertEqual([], [c.id for c in checks.check_aidlc(ws, PROJECT) if not c.passed])
+            self.assertEqual([], [c.id for c in checks.check_aidlc(ws, PROJECT, ENGINE_DIRECTIVE) if not c.passed])
 
             (record / "ideation").mkdir()
             (ra / "requirements-analysis-questions.md").write_text("## Q1. Generic question\n", encoding="utf-8")
-            failed = {c.id for c in checks.check_aidlc(ws, PROJECT) if not c.passed}
-            self.assertEqual({"A04", "A06"}, failed)
+            failed = {c.id for c in checks.check_aidlc(ws, PROJECT, ENGINE_DIRECTIVE) if not c.passed}
+            self.assertEqual({"A04"}, failed)
+
+    def test_personas_must_be_in_the_requirements_analysis_directive(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = build_workspace(Path(tmp))
+            record = ws / "aidlc" / "spaces" / "default" / "intents" / "261001-sample"
+            record.mkdir(parents=True)
+            (record / "aidlc-state.md").write_text("- **Scope**: classic\n", encoding="utf-8")
+
+            def a06(transcript: str) -> bool:
+                return next(c for c in checks.check_aidlc(ws, PROJECT, transcript) if c.id == "A06").passed
+
+            self.assertTrue(a06(ENGINE_DIRECTIVE))
+            reprinted = (f"{{'kind': 'run-stage', 'stage': 'requirements-analysis', "
+                         f"'inline_context_paths': ['.claude/agents/aidlc-product-agent.md', '{PERSONAS_KNOWLEDGE}']}}")
+            self.assertTrue(a06(stream_json(reprinted)))
+            other_stage = ENGINE_DIRECTIVE.replace("requirements-analysis", "practices-discovery")
+            without = stream_json('{"stage":"requirements-analysis","inline_context_paths":[".claude/agents/x.md"]}')
+            brief_mention = stream_json(f"Full personas are in AI-DLC team knowledge: `{PERSONAS_KNOWLEDGE}`.")
+            for transcript in ("", other_stage, without, brief_mention):
+                self.assertFalse(a06(transcript), transcript[:60])
 
     def test_learnings_diary_alone_is_not_requirements_output(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

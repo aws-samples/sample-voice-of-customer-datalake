@@ -181,7 +181,8 @@ def leg_aidlc(h: Harness, ws: Path, out: Path) -> list[checks.Check]:
             break
         log(f"aidlc: turn {turn}, Requirements Analysis not reached yet")
         h.run(ws, answer, out, "aidlc", resume=True, plugin=False, env=env)
-    return checks.check_aidlc(ws, p)
+    transcript = (out / "aidlc.transcript.jsonl") if h.args.harness == "claude" else (out / "aidlc.transcript.txt")
+    return checks.check_aidlc(ws, p, transcript.read_text(encoding="utf-8", errors="ignore"))
 
 
 LEGS = {"discovery": leg_discovery, "missing-prd": leg_missing_prd, "aidlc": leg_aidlc}

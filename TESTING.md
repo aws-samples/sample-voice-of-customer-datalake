@@ -103,7 +103,7 @@ The checks:
 | A00 | AI-DLC 2.10.0 or later is installed |
 | A01–A02 | AI-DLC created an intent and recorded the brief as its document input |
 | A03–A04 | The intent runs `classic` or `workshop` and AI-DLC did not run its own Ideation |
-| A05–A06 | Requirements Analysis wrote output, and that output names a persona from the brief |
+| A05–A06 | Requirements Analysis wrote its questions or requirements, and its directive loaded the Discovery personas from team knowledge (read from the `aidlc` transcript) |
 
 When a check fails, open its detail in `report.md`, then the transcript for that leg. A failure in D01–D13 points at the skill prompts; a failure in A01–A06 usually means AI-DLC changed its input contract, so compare against its release notes before changing the brief.
 

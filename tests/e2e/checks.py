@@ -6,7 +6,7 @@ Handoff reference prompt, so the prompt stays the single source of truth.
 
 Standalone use:
     python3 tests/e2e/checks.py discovery <workspace> --project <name> --reference <ref> [--transcript <file>]
-    python3 tests/e2e/checks.py aidlc <workspace> --project <name>
+    python3 tests/e2e/checks.py aidlc <workspace> --project <name> --transcript <file>
     python3 tests/e2e/checks.py missing-prd <workspace> --project <name> --transcript <file>
 """
 
@@ -193,7 +193,35 @@ def requirements_outputs(record: Path | None) -> list[Path]:
     return [folder / name for name in REQUIREMENTS_OUTPUTS if folder and (folder / name).is_file()]
 
 
-def check_aidlc(workspace: Path, project: str) -> list[Check]:
+def transcript_strings(raw: str) -> str:
+    """Decode every string in Claude Code stream-json lines, so tool output is searchable; keep other lines as is."""
+    out: list[str] = []
+
+    def walk(value: object) -> None:
+        if isinstance(value, str):
+            out.append(value)
+        elif isinstance(value, dict):
+            for item in value.values():
+                walk(item)
+        elif isinstance(value, list):
+            for item in value:
+                walk(item)
+
+    for line in raw.splitlines():
+        try:
+            walk(json.loads(line))
+        except json.JSONDecodeError:
+            out.append(line)
+    return "\n".join(out)
+
+
+# The engine hands each stage a run-stage directive whose inline_context_paths include the
+# lead agent's team knowledge (aidlc-orchestrate.ts:3539-3563, 2.10.0). Nothing on disk keeps
+# that list, so read it from the transcript: as the engine's JSON, or re-printed by the model.
+RA_DIRECTIVE = re.compile(r"""["']stage["']:\s*["']requirements-analysis["'][^{}]*?["']inline_context_paths["']:\s*\[([^\]]*)\]""")
+
+
+def check_aidlc(workspace: Path, project: str, transcript: str = "") -> list[Check]:
     brief_rel = f"discovery/{project}/handoff/discovery-brief.md"
     brief = (workspace / brief_rel).read_text(encoding="utf-8")
     record = active_record(workspace)
@@ -218,11 +246,12 @@ def check_aidlc(workspace: Path, project: str) -> list[Check]:
     checks.append(Check("A05", "Requirements Analysis produced questions or requirements", bool(outputs),
                         ", ".join(p.name for p in outputs)))
 
+    personas = str((team_knowledge(workspace) / "aidlc-product-agent" / "discovery-personas.md").relative_to(workspace))
+    loaded = any(personas in paths for paths in RA_DIRECTIVE.findall(transcript_strings(transcript)))
     text = "\n".join(p.read_text(encoding="utf-8") for p in outputs)
-    names = persona_names(brief)
-    used = [n for n in names if n.split()[0] in text]
-    checks.append(Check("A06", "Requirements Analysis used the brief (persona names appear)", bool(used),
-                        f"found {used} of {names}"))
+    named = [n for n in persona_names(brief) if n.split()[0] in text]
+    checks.append(Check("A06", "Requirements Analysis loaded the Discovery personas", loaded,
+                        f"{personas} {'in' if loaded else 'not in'} the directive; persona names in output: {named}"))
     return checks
 
 
@@ -247,7 +276,7 @@ def main() -> int:
     elif args.leg == "missing-prd":
         checks = check_missing_prd(args.workspace, args.project, transcript)
     else:
-        checks = check_aidlc(args.workspace, args.project)
+        checks = check_aidlc(args.workspace, args.project, transcript)
     print(summarize(args.leg, checks))
     print(json.dumps([asdict(c) for c in checks], indent=2))
     return 0 if all(c.passed for c in checks) else 1
