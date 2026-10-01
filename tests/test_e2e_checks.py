@@ -258,6 +258,22 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual([["engine", "orchestrate", "next"]], [json.loads(line)["argv"] for line in lines])
             self.assertEqual(next_call.stdout, json.loads(lines[0])["stdout"])
 
+    def test_missing_prd_copy_drops_done_lines_from_project_status(self) -> None:
+        import run_e2e
+        text = ("# Project\nstatus: \"completed\"\nEngagement: E2E-0001\n| 2. Working Backwards | `prd.md` |\n"
+                "| 5. Handoff | Done |\n- **Personas:** 3\n")
+        self.assertEqual("# Project\nEngagement: E2E-0001\n- **Personas:** 3\n", run_e2e.without_done_lines(text))
+
+    def test_session_cost_is_the_running_total_not_a_sum(self) -> None:
+        import json
+        import run_e2e
+        events = [{"type": "assistant", "message": {"content": [{"type": "text", "text": "Q1?"}]}},
+                  {"type": "result", "result": "first", "session_id": "a", "total_cost_usd": 3.34},
+                  {"type": "result", "result": "woken by a subagent", "session_id": "a", "total_cost_usd": 3.38},
+                  {"type": "result", "result": "other", "session_id": "b", "total_cost_usd": 0.5}]
+        text, costs = run_e2e.stream_text("\n".join(json.dumps(e) for e in events))
+        self.assertEqual({"a": 3.38, "b": 0.5}, costs)
+        self.assertIn("woken by a subagent", text)
 
 
 if __name__ == "__main__":

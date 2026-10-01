@@ -152,6 +152,14 @@ def install_aidlc_shim(out: Path) -> dict[str, str]:
             "E2E_ORCHESTRATE_LOG": str(out / "aidlc.orchestrate.jsonl")}
 
 
+# PROJECT.md is free-form; these lines report the PRD or the Handoff as done.
+DONE_LINE = re.compile(r"handoff|handed off|discovery-brief|prd\.md|^\s*status:", re.I)
+
+
+def without_done_lines(text: str) -> str:
+    return "".join(line for line in text.splitlines(keepends=True) if not DONE_LINE.search(line))
+
+
 def aidlc_version() -> tuple[int, ...]:
     try:
         output = subprocess.run(["aidlc", "--version"], capture_output=True, text=True, timeout=30).stdout
@@ -173,6 +181,9 @@ def leg_missing_prd(h: Harness, ws: Path, out: Path) -> list[checks.Check]:
     project = copy / "discovery" / h.args.project
     (project / "working-backwards" / "prd.md").unlink(missing_ok=True)
     shutil.rmtree(project / "handoff", ignore_errors=True)
+    status = project / "PROJECT.md"
+    if status.is_file():
+        status.write_text(without_done_lines(status.read_text(encoding="utf-8")), encoding="utf-8")
     text = h.run(copy, (PROMPTS / "handoff-only.md").read_text(encoding="utf-8"), out, "missing-prd")
     return checks.check_missing_prd(copy, h.args.project, text)
 
