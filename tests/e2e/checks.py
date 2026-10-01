@@ -73,6 +73,17 @@ def project_files(project_dir: Path) -> list[Path]:
     return [p for p in project_dir.rglob("*") if p.is_file()]
 
 
+def active_space(workspace: Path) -> str:
+    pointer = workspace / "aidlc" / "active-space"
+    name = pointer.read_text(encoding="utf-8").strip() if pointer.is_file() else ""
+    return name or "default"
+
+
+def team_knowledge(workspace: Path) -> Path:
+    """AI-DLC loads team knowledge only from the active space (aidlc-orchestrate.ts, 2.10.0)."""
+    return workspace / "aidlc" / "spaces" / active_space(workspace) / "knowledge"
+
+
 def check_discovery(workspace: Path, project: str, reference: str, transcript: str = "") -> list[Check]:
     project_dir = workspace / "discovery" / project
     brief_path = project_dir / "handoff" / "discovery-brief.md"
@@ -113,7 +124,7 @@ def check_discovery(workspace: Path, project: str, reference: str, transcript: s
     checks.append(Check("D07", "No email addresses in artifacts", not emails, "; ".join(emails[:5])))
 
     names = persona_names(brief)
-    knowledge = workspace / "aidlc" / "knowledge" / "aidlc-product-agent" / "discovery-personas.md"
+    knowledge = team_knowledge(workspace) / "aidlc-product-agent" / "discovery-personas.md"
     knowledge_text = knowledge.read_text(encoding="utf-8") if knowledge.is_file() else ""
     absent = [n for n in names if n not in knowledge_text]
     checks.append(Check("D08", "Personas written to AI-DLC team knowledge",
@@ -124,9 +135,11 @@ def check_discovery(workspace: Path, project: str, reference: str, transcript: s
     ignored = gitignore.is_file() and "discovery/data/" in gitignore.read_text(encoding="utf-8")
     checks.append(Check("D09", ".gitignore excludes discovery/data/", ignored))
 
-    started = (workspace / "aidlc" / "spaces").exists()
-    checks.append(Check("D10", "Handoff did not start AI-DLC", not started,
-                        "aidlc/spaces/ exists" if started else ""))
+    # Handoff writes only team knowledge under aidlc/; anything else means AI-DLC was set up or started.
+    aidlc_dir = workspace / "aidlc"
+    started = sorted(str(p.relative_to(workspace)) for p in aidlc_dir.rglob("*") if p.is_file()
+                     and team_knowledge(workspace) not in p.parents)
+    checks.append(Check("D10", "Handoff did not start AI-DLC", not started, ", ".join(started[:3])))
 
     links = re.findall(r"\]\(([^)#]+)\)", section(brief, "Full artifacts"))
     broken = [link for link in links if not (brief_path.parent / link).resolve().exists()]

@@ -311,7 +311,7 @@ class HandoffContractTests(unittest.TestCase):
     """The Discovery brief is the contract with AI-DLC; pin its shape.
 
     AI-DLC 2.10.0 reads one UTF-8 document of at most 200,000 characters at
-    Inception, and loads team knowledge from aidlc/knowledge/<agent>/. A drift
+    Inception, and loads team knowledge from aidlc/spaces/<space>/knowledge/<agent>/. A drift
     here silently breaks the handoff on the AI-DLC side.
     """
 
@@ -346,7 +346,7 @@ class HandoffContractTests(unittest.TestCase):
         for text in (self.brief, self.skill_text):
             self.assertIn("2.10.0", text)
         self.assertIn("200,000", self.brief)
-        self.assertIn("aidlc/knowledge/aidlc-product-agent/", self.brief)
+        self.assertIn("aidlc/spaces/[space]/knowledge/aidlc-product-agent/", self.brief)
         self.assertIn("/aidlc workshop", self.brief)
         self.assertIn("/aidlc classic", self.brief)
         self.assertIn("discovery/data/", self.brief)

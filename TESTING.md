@@ -93,9 +93,9 @@ The checks:
 | D02–D04 | The brief exists, has the 12 sections in order, and is under 200,000 characters |
 | D05 | The brief carries the configured engagement reference |
 | D06–D07 | No opportunity ID or email address appears in any artifact (placeholders on reserved domains such as `example.com` are allowed) |
-| D08 | Every persona named in the brief is in `aidlc/knowledge/aidlc-product-agent/discovery-personas.md` |
+| D08 | Every persona named in the brief is in `aidlc/spaces/default/knowledge/aidlc-product-agent/discovery-personas.md` |
 | D09 | `.gitignore` excludes `discovery/data/` |
-| D10 | Handoff did not start AI-DLC |
+| D10 | Handoff did not start AI-DLC: nothing under `aidlc/` except that team knowledge |
 | D11 | The brief's artifact links resolve |
 | D12 | The HTML prototype loads no external scripts |
 | D13 | The session printed an `/aidlc workshop` or `/aidlc classic` command with the brief path |

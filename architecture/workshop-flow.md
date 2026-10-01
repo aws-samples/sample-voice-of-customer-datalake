@@ -96,7 +96,7 @@ same repository, in a profile that skips AI-DLC's Ideation phase:
 | Team continues on its own | `/aidlc classic` |
 
 AI-DLC Requirements Analysis reads the brief as its primary input, and the
-personas Handoff writes to `aidlc/knowledge/aidlc-product-agent/` load into
+personas Handoff writes to `aidlc/spaces/[space]/knowledge/aidlc-product-agent/` load into
 AI-DLC's product agent automatically.
 
 ## Facilitation Principles

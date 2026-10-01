@@ -9,7 +9,9 @@ Ideation phase, and AI-DLC Requirements Analysis reads it as its primary input.
 Supported AI-DLC: **2.10.0 or later** (`awslabs/aidlc-workflows`). The brief
 relies on AI-DLC's single-document input (UTF-8 text, at most 200,000
 characters), the `workshop` and `classic` profiles, and the team-knowledge
-folder `aidlc/knowledge/aidlc-product-agent/`.
+folder `aidlc/spaces/[space]/knowledge/aidlc-product-agent/`. AI-DLC's guide
+shortens that folder to `aidlc/knowledge/`, but it loads team knowledge only
+from the space.
 
 ## Required Artifacts
 
@@ -93,9 +95,11 @@ Relative links to every artifact under discovery/[project]/.
 
 ## Also Write
 
-- `aidlc/knowledge/aidlc-product-agent/discovery-personas.md` — all personas
-  in full, so AI-DLC's product agent loads them automatically. Create the
-  folder if it does not exist.
+- `aidlc/spaces/[space]/knowledge/aidlc-product-agent/discovery-personas.md` —
+  all personas in full, so AI-DLC's product agent loads them automatically.
+  `[space]` is the name in `aidlc/active-space` if that file exists, otherwise
+  `default`. Create the folders if they do not exist; `aidlc config` keeps them.
+  Write nothing else under `aidlc/`.
 - `.gitignore` — add `discovery/data/` so raw customer feedback is never
   committed. Create the file if it does not exist.
 

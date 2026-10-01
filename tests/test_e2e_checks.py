@@ -43,7 +43,7 @@ def build_workspace(root: Path) -> Path:
     handoff = project / "handoff"
     handoff.mkdir(parents=True, exist_ok=True)
     (handoff / "discovery-brief.md").write_text(brief, encoding="utf-8")
-    knowledge = root / "aidlc" / "knowledge" / "aidlc-product-agent"
+    knowledge = root / "aidlc" / "spaces" / "default" / "knowledge" / "aidlc-product-agent"
     knowledge.mkdir(parents=True)
     (knowledge / "discovery-personas.md").write_text("\n".join(f"# {n}" for n in PERSONAS), encoding="utf-8")
     (root / ".gitignore").write_text("discovery/data/\n", encoding="utf-8")
@@ -102,9 +102,16 @@ class DiscoveryChecksTests(unittest.TestCase):
         self.assertTrue({"D05", "D09"} <= failed)
 
     def test_started_aidlc_and_missing_command_fail(self) -> None:
-        (self.ws / "aidlc" / "spaces").mkdir(parents=True)
+        memory = self.ws / "aidlc" / "spaces" / "default" / "memory"
+        memory.mkdir(parents=True)
+        (memory / "project.md").write_text("# Project\n", encoding="utf-8")
         failed = {c.id for c in checks.check_discovery(self.ws, PROJECT, REFERENCE, "no command") if not c.passed}
         self.assertTrue({"D10", "D13"} <= failed)
+
+    def test_personas_outside_the_space_fail(self) -> None:
+        space = self.ws / "aidlc" / "spaces" / "default" / "knowledge"
+        space.rename(self.ws / "aidlc" / "knowledge")
+        self.assertIn("D08", self.failed())
 
     def test_external_script_in_prototype_fails(self) -> None:
         (self.ws / "discovery" / PROJECT / "prototype" / "index.html").write_text(
