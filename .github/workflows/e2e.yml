@@ -1,0 +1,113 @@
+# AIDLC: Discovery tests. See TESTING.md.
+#
+# contract  Free. Package-shape, handoff-contract, and checker self-tests on every
+#           pull request and push to v2.
+# live      Paid. A real Claude Code session on Amazon Bedrock runs the unattended
+#           workshop, the missing-PRD negative test, and the AI-DLC handoff. Runs
+#           when a pull request carries the `e2e` label, on v2* tags, and on manual
+#           dispatch (manual dispatch appears once this file is on the default branch).
+#
+# The live job needs a GitHub environment named `e2e` with:
+#   secret AWS_E2E_ROLE_ARN  IAM role trusted for this repository through GitHub OIDC,
+#                            allowed bedrock:InvokeModel* on the models below
+#   var    AWS_REGION        Bedrock region (default us-east-1)
+#   var    E2E_MODEL         optional Claude Code --model value
+#
+# User-supplied inputs reach shell steps only through env variables.
+name: e2e
+
+on:
+  pull_request:
+    branches: [v2]
+    types: [opened, synchronize, reopened, labeled]
+  push:
+    branches: [v2]
+    tags: ["v2*"]
+  workflow_dispatch:
+    inputs:
+      legs:
+        description: "Legs to run: discovery, missing-prd, aidlc"
+        default: "discovery,missing-prd,aidlc"
+      budget_usd:
+        description: "Claude Code cost cap per session (USD)"
+        default: "25"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AIDLC_VERSION: "2.10.0"
+  CLAUDE_CODE_VERSION: "2.1.286"
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 -m unittest discover tests -v
+
+  live:
+    needs: contract
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.ref, 'refs/tags/v2') ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       contains(github.event.pull_request.labels.*.name, 'e2e'))
+    runs-on: ubuntu-latest
+    environment: e2e
+    timeout-minutes: 150
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Claude Code
+        run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+
+      - name: Install AI-DLC (checksum-verified installer)
+        run: |
+          curl -fsSL -o install.sh "https://github.com/awslabs/aidlc-workflows/releases/download/v${AIDLC_VERSION}/install.sh"
+          sh install.sh --version "${AIDLC_VERSION}" --quiet --yes
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_E2E_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          role-duration-seconds: 10800
+
+      - name: Run end-to-end legs
+        env:
+          CLAUDE_CODE_USE_BEDROCK: "1"
+          LEGS: ${{ inputs.legs || 'discovery,missing-prd,aidlc' }}
+          BUDGET: ${{ inputs.budget_usd || '25' }}
+          MODEL: ${{ vars.E2E_MODEL }}
+        run: |
+          aidlc --version
+          git config --global user.name "e2e" && git config --global user.email "e2e@example.invalid"
+          python3 tests/e2e/run_e2e.py --harness claude --isolated --legs "$LEGS" \
+            --budget-usd "$BUDGET" --out .e2e/run ${MODEL:+--model "$MODEL"}
+
+      - name: Upload run (workspace, transcripts, report)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-${{ github.run_id }}
+          path: .e2e/run
+          retention-days: 14

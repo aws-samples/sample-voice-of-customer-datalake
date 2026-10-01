@@ -11,6 +11,8 @@ Discovery hands off to AI-DLC. A major release: the default output folder moves 
 - **Current-product map** (`agents/01-signal-analyzer/skills/current-product-map.md`): a read-only, product-level map of what the existing product does, read from its codebase. Runs only when a codebase exists, usually as pre-work; never blocks.
 - **In-codebase prototype** (`agents/03-prototype/skills/codebase-prototype.md`): an optional, disposable prototype on a throwaway `discovery/prototype` branch that is never merged.
 - **Engagement reference.** The brief carries the intake record number only; opportunity IDs never enter the customer's repository.
+- **Unattended mode** (`unattended: true` in `config.md`, with `project` and `engagement_reference`): the Conductor runs every phase without questions, for automated tests and demonstrations.
+- **End-to-end tests** ([TESTING.md](TESTING.md)). `tests/e2e/run_e2e.py` runs the workshop in Claude Code or Kiro CLI on the sample data, a missing-PRD negative test, and the AI-DLC handoff up to Requirements Analysis, then writes a pass/fail report from deterministic checks (`tests/e2e/checks.py`). `.github/workflows/e2e.yml` runs the contract tests on every pull request and the live run on the `e2e` label, `v2*` tags, or manual dispatch, on Amazon Bedrock through GitHub OIDC.
 
 ### Changed
 - **Phase names.** Signals, Working Backwards, Prototype, Validate, Handoff. Phase 2 is no longer called Ideation, to avoid confusion with the AI-DLC phase it replaces. Internal folder and agent ids (`02-ideation`, `aidlc-ideation`) are unchanged so existing installs keep working.

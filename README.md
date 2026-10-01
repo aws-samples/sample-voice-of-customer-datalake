@@ -99,7 +99,8 @@ Supported inputs include JSON, CSV, Excel, PDF, DOCX, and plain text. Sample fee
 | [`.kiro/agents/`](.kiro/agents/), [`agents/`](agents/) | Optional dedicated agents for Kiro and Claude Code |
 | [`architecture/workshop-flow.md`](architecture/workshop-flow.md) | Topology-neutral lifecycle and phase transitions |
 | [`architecture/phase1-signal-analyzer.md`](architecture/phase1-signal-analyzer.md) | Optional advanced Phase 1 agent topology |
-| [`tests/`](tests/) | Package-shape and documentation regression checks (`python3 -m unittest discover tests`) |
+| [`tests/`](tests/) | Contract tests (`python3 -m unittest discover tests`) and the live end-to-end runner in [`tests/e2e/`](tests/e2e/) |
+| [`TESTING.md`](TESTING.md) | How to test locally and in GitHub Actions, and how to read the results |
 | [`CHANGELOG.md`](CHANGELOG.md) | Release history |
 
 ## Verify the Setup

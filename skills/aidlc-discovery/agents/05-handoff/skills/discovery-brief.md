@@ -43,8 +43,9 @@ The problem in two or three sentences, then the top signals with frequency,
 severity, and reach, each with one anonymized customer quote.
 
 ## 3. Target customers and personas
-One paragraph per persona: who they are, the job they need done, and their
-main pain. Full personas are in AI-DLC team knowledge.
+One paragraph per persona, starting with the persona's name in bold: who they
+are, the job they need done, and their main pain. Full personas are in AI-DLC
+team knowledge.
 
 ## 4. PR/FAQ summary
 The press-release headline, the customer benefit, and the three FAQ answers

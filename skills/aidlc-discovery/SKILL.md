@@ -219,6 +219,18 @@ cannot start servers. Generated HTML (prototypes, surveys, dashboards) is a
 file to open locally in every harness; none of them hosts a submission
 backend for surveys.
 
+## Unattended Runs
+
+When the configuration sets `unattended: true`, run every phase without
+stopping: skip the phase checkpoints and confirmations, use the configured
+`project` and `engagement_reference`, choose the defaults the reference prompts
+give (three personas, all P0/P1 features, no optional actions), and finish with
+the Handoff. Never ask a question in this mode; record each choice you made in
+`discovery/[project]/PROJECT.md` under `## Unattended choices`. The Handoff
+rules still apply in full: a missing required artifact stops the run with the
+list of what is missing, and AI-DLC is never started. This mode exists for
+automated tests and demonstrations, not for facilitated engagements.
+
 ## Conversation Style
 
 - Always state the current phase and step clearly

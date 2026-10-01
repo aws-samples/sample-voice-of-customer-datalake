@@ -24,6 +24,19 @@ output_folder: "discovery/"
 doc_format: "markdown"  # markdown | docx
 ```
 
+## Run Settings
+
+```yaml
+# Project folder name under output_folder (empty: ask)
+project: ""
+
+# Intake record number for the Discovery brief (empty: ask; "Self-serve" for self-serve runs)
+engagement_reference: ""
+
+# true: run all phases without checkpoints or questions (automated tests only)
+unattended: false
+```
+
 ## Analysis Settings
 
 ```yaml
