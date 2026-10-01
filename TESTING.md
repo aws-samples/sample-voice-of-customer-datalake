@@ -102,7 +102,7 @@ The checks:
 | D11 | The brief's artifact links resolve |
 | D12 | The HTML prototype loads no external scripts |
 | D13 | The session printed an `/aidlc workshop` or `/aidlc classic` command with the brief path |
-| D14 | `discovery/<project>/` holds no data files or scripts (`.json`, `.csv`, `.xlsx`, `.xls`, `.py`, `.js`, `.sh`): per-item data and helper scripts belong in `discovery/data/` |
+| D14 | `discovery/<project>/` holds no data files (`.json`, `.csv`, `.xlsx`, `.xls`), and nothing under `discovery/` is a script (`.py`, `.js`, `.ts`, `.sh`). Per-item data belongs in `discovery/data/`; helper scripts are not saved, because AI-DLC treats a folder with a script as an existing codebase |
 | N01–N02 | Without the PRD, Handoff wrote no brief and named the PRD as missing |
 | A00 | AI-DLC 2.10.0 or later is installed |
 | A01–A02 | AI-DLC created an intent and recorded the brief as its document input |

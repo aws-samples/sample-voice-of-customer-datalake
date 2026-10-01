@@ -197,9 +197,10 @@ user's working folder (default `discovery/[project]/` with the subfolders
 Keep raw customer feedback in `discovery/data/`, which Handoff adds to
 `.gitignore`, and use anonymized quotes in every saved artifact.
 
-Per-item working files, intermediate data, and helper scripts go under
-`discovery/data/`, or are not saved at all. That includes per-item analysis
-results and the scripts that produce or aggregate them. Under
+Per-item working files and intermediate data, such as per-item analysis
+results, go under `discovery/data/` or are not saved at all. Run helper
+scripts without saving them anywhere in the working folder: AI-DLC treats a
+folder with a script in it as an existing codebase. Under
 `discovery/[project]/`, save only summarized, anonymized artifacts: Markdown
 documents and the generated HTML.
 

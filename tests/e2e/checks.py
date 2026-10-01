@@ -31,8 +31,11 @@ EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 RESERVED_EMAIL_DOMAIN = re.compile(r"@(?:[A-Za-z0-9-]+\.)*(?:example\.(?:com|net|org)|example|invalid|test|localhost)$",
                                    re.I)
 START_COMMAND = re.compile(r"/aidlc (?:workshop|classic)\b")
-# Per-item data and helper scripts belong in discovery/data/ (SKILL.md, Data Setup).
-WORKING_FILE_SUFFIXES = {".json", ".csv", ".xlsx", ".xls", ".py", ".js", ".sh"}
+# Per-item data belongs in discovery/data/, and helper scripts nowhere in the working folder
+# (SKILL.md, Data Setup). AI-DLC 2.10.0 counts a folder up to three levels down with a .py,
+# .js, or .ts file as an existing codebase (aidlc-utility.ts:5789, 6157-6205).
+DATA_SUFFIXES = {".json", ".csv", ".xlsx", ".xls"}
+SCRIPT_SUFFIXES = {".py", ".js", ".ts", ".sh"}
 
 
 @dataclass
@@ -176,9 +179,12 @@ def check_discovery(workspace: Path, project: str, reference: str, transcript: s
         printed = bool(START_COMMAND.search(transcript)) and "discovery-brief.md" in transcript
         checks.append(Check("D13", "Start command printed with the brief path", printed))
 
-    working = sorted(str(p.relative_to(project_dir)) for p in project_files(project_dir)
-                     if p.suffix.lower() in WORKING_FILE_SUFFIXES)
-    checks.append(Check("D14", "No data files or scripts in the project folder", not working, ", ".join(working)))
+    working = sorted({str(p.relative_to(workspace)) for p in project_files(project_dir)
+                      if p.suffix.lower() in DATA_SUFFIXES | SCRIPT_SUFFIXES}
+                     | {str(p.relative_to(workspace)) for p in project_files(workspace / "discovery")
+                        if p.suffix.lower() in SCRIPT_SUFFIXES})
+    checks.append(Check("D14", "No data files in the project folder and no scripts under discovery/", not working,
+                        ", ".join(working)))
     return checks
 
 

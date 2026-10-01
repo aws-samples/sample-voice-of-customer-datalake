@@ -123,14 +123,15 @@ class DiscoveryChecksTests(unittest.TestCase):
 
     def test_data_files_and_scripts_in_the_project_folder_fail(self) -> None:
         signals = self.ws / "discovery" / PROJECT / "signals"
-        (self.ws / "discovery" / "data").mkdir(parents=True)
-        (self.ws / "discovery" / "data" / "enriched.json").write_text("[]", encoding="utf-8")
-        (self.ws / "discovery" / "data" / "enrich.py").write_text("", encoding="utf-8")
+        data = self.ws / "discovery" / "data"
+        data.mkdir(parents=True)
+        (data / "enriched.json").write_text("[]", encoding="utf-8")
         self.assertNotIn("D14", self.failed())
-        for name in ("voc-analysis.json", "enrich.py", "Export.XLSX"):
-            path = signals / name
+        for path in (signals / "voc-analysis.json", signals / "enrich.py", signals / "Export.XLSX",
+                     data / "aggregate.py", data / "work" / "analyze.py"):
+            path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("[]", encoding="utf-8")
-            self.assertIn("D14", self.failed(), name)
+            self.assertIn("D14", self.failed(), path.name)
             path.unlink()
         self.assertNotIn("D14", self.failed())
 
