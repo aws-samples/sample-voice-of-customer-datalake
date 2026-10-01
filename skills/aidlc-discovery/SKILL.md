@@ -197,6 +197,12 @@ user's working folder (default `discovery/[project]/` with the subfolders
 Keep raw customer feedback in `discovery/data/`, which Handoff adds to
 `.gitignore`, and use anonymized quotes in every saved artifact.
 
+Per-item working files, intermediate data, and helper scripts go under
+`discovery/data/`, or are not saved at all. That includes per-item analysis
+results and the scripts that produce or aggregate them. Under
+`discovery/[project]/`, save only summarized, anonymized artifacts: Markdown
+documents and the generated HTML.
+
 ## Working Across Harnesses
 
 Reference prompts are bundled with this skill and are always addressed

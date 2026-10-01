@@ -44,6 +44,10 @@ Return ONLY this JSON structure:
 }
 ```
 
+Keep the per-item results, and any script that produces or aggregates them,
+under `discovery/data/`, or do not save them. Only the summary report goes
+under `discovery/[project]/signals/`.
+
 ## Batch Aggregation Prompt
 
 ### System Prompt
