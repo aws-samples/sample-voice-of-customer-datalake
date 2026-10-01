@@ -1,66 +1,103 @@
 # Workshop Flow Reference
 
-This lifecycle is independent of execution topology. The [recommended single-skill Conductor](../README.md#recommended-execution-model-one-skill) runs all four phases in one conversation; [dedicated phase and specialist agents](../WORKSHOP-SETUP.md#optional-dedicated-phase-and-specialist-agents) are an optional routing model for advanced needs.
+This lifecycle is independent of execution topology. The [recommended single-skill Conductor](../README.md#recommended-execution-model-one-skill) runs all five phases in one conversation; [dedicated phase and specialist agents](../WORKSHOP-SETUP.md#optional-dedicated-phase-and-specialist-agents) are an optional routing model for advanced needs.
 
 ## Standard Workshop Sequence
 
+Discovery takes the place of AI-DLC's own Ideation phase. It runs in the
+product engineering team's own repository and ends with a Discovery brief that
+starts the AI-DLC workflow at Inception.
+
 ```text
++--------------------------------------------------------------------+
+| Pre-work (the day before, about 1 hour)                            |
+|                                                                    |
+| - Load the team's own customer feedback into discovery/data/       |
+| - Map the current product from its codebase, when one exists       |
 +--------------------------------------------------------------------+
 | Phase 1: SIGNALS (1-2 hours)                                       |
 |                                                                    |
 | - Load and analyze VoC data                                        |
 | - Analyze supporting research documents                            |
-| - Generate a metrics view                                          |
+| - Generate a metrics view and research hypotheses                  |
 | - Identify top themes and pain points                              |
 |                                                                    |
-| Deliverable: Signal Analysis Report                                |
+| Deliverables: Signal Analysis Report (+ current-product map)       |
 +--------------------------------------------------------------------+
-| Phase 2: IDEATION (2-3 hours)                                      |
+| Phase 2: WORKING BACKWARDS (2-3 hours)                             |
 |                                                                    |
 | - Generate synthetic personas                                      |
-| - Research top problems                                            |
-| - Draft a PR/FAQ using Working Backwards                           |
-| - Craft a PRD                                                      |
+| - Research top problems and score ideas                            |
+| - Draft a PR/FAQ, then craft a PRD                                 |
 |                                                                    |
-| Deliverables: Research + Personas + PR/FAQ + PRD                   |
+| Deliverables: Personas + PR/FAQ + PRD                              |
 +--------------------------------------------------------------------+
-| Phase 3: PROTOTYPING (about 1 hour)                                |
+| Phase 3: PROTOTYPE (about 1 hour)                                  |
 |                                                                    |
 | - Build a clickable, self-contained HTML prototype                 |
-| - Export artifacts for AI coding IDEs                              |
-| - Draft a validation survey when useful                           |
+| - Optionally, a disposable in-codebase prototype on a branch       |
+| - Draft a validation survey when useful                            |
 |                                                                    |
-| Deliverables: HTML prototype + IDE export + optional draft survey  |
+| Deliverables: HTML prototype (+ optional draft survey)             |
 +--------------------------------------------------------------------+
-| Phase 4: VALIDATION (ongoing)                                      |
+| Phase 4: VALIDATE (about 1 hour on the day)                        |
 |                                                                    |
-| - Finalize and distribute surveys                                  |
-| - Analyze responses                                                |
+| - Challenge assumptions against the evidence                       |
 | - Prioritize problems by frequency, severity, and reach            |
-| - Validate or invalidate hypotheses                                |
+| - Keep unconfirmed hypotheses open; never wait for surveys         |
 |                                                                    |
-| Deliverables: Prioritized backlog + validated hypotheses           |
+| Deliverables: Prioritized problems + open hypotheses               |
++--------------------------------------------------------------------+
+| Phase 5: HANDOFF (about 30 minutes)                                |
+|                                                                    |
+| - Check that every required artifact exists                        |
+| - Write the Discovery brief and AI-DLC team knowledge              |
+| - Print the AI-DLC start command                                   |
+|                                                                    |
+| Deliverable: discovery/[project]/handoff/discovery-brief.md        |
 +--------------------------------------------------------------------+
 ```
 
-The durations are facilitation estimates, not installation times. Each phase can also run independently. A survey can be drafted while prototyping and then finalized, distributed, and analyzed during validation.
+The durations are facilitation estimates, not installation times. Each phase
+can also run independently. Surveys drafted during Prototype can be
+distributed after the engagement; their results never block the Handoff.
 
 ## Phase Transitions
 
-### Signals to Ideation
+### Signals to Working Backwards
 
 - **Requires:** at least one data source analyzed.
-- **Checkpoint:** "Here are the top signals and supporting evidence. Are we ready to ideate?"
+- **Checkpoint:** "Here are the top signals and supporting evidence. Are we ready to work backwards from the customer?"
 
-### Ideation to Prototyping
+### Working Backwards to Prototype
 
 - **Requires:** at least personas or a product concept; prototypes work best when a PRD is available.
 - **Checkpoint:** "We have the audience and concept defined. Are we ready to prototype?"
 
-### Prototyping to Validation
+### Prototype to Validate
 
 - **Requires:** at least a prototype, testable hypothesis, or draft survey.
-- **Checkpoint:** "The test artifact is ready. Do we want to review it before collecting feedback?"
+- **Checkpoint:** "The test artifact is ready. Shall we challenge it against the evidence?"
+
+### Validate to Handoff
+
+- **Requires:** every required artifact: Signal Analysis Report, at least two personas, PR/FAQ, PRD, HTML prototype, and prioritized problems with open hypotheses (plus the current-product map when a codebase exists).
+- **Checkpoint:** "Everything AI-DLC needs is ready. Shall I write the Discovery brief?"
+
+## Handoff to AI-DLC
+
+The Discovery brief is the only input the next motion needs. The team starts
+[AI-DLC](https://github.com/awslabs/aidlc-workflows) 2.10.0 or later in the
+same repository, in a profile that skips AI-DLC's Ideation phase:
+
+| Next motion | AI-DLC profile |
+|-------------|----------------|
+| Facilitated AI-DLC workshop | `/aidlc workshop` |
+| Team continues on its own | `/aidlc classic` |
+
+AI-DLC Requirements Analysis reads the brief as its primary input, and the
+personas Handoff writes to `aidlc/spaces/[space]/knowledge/aidlc-product-agent/` load into
+AI-DLC's product agent automatically.
 
 ## Facilitation Principles
 
@@ -69,19 +106,21 @@ The durations are facilitation estimates, not installation times. Each phase can
 - Ask before generating long documents.
 - Cite source data and direct customer quotes in recommendations.
 - Separate observed evidence from hypotheses and assumptions.
-- Target `knowledge-base/projects/[project]/` for saved artifacts.
+- Target `discovery/[project]/` for saved artifacts.
 - Summarize outputs and ask for confirmation at every phase transition.
 - Offer stakeholder-friendly exports when requested.
 
 ## Standard Artifact Targets
 
 ```text
-knowledge-base/projects/[project]/
-|-- signals/
-|-- personas/
-|-- ideation/
-|-- prototype/
-`-- validation/
+discovery/
+|-- data/                (raw feedback, kept out of git)
+`-- [project]/
+    |-- signals/
+    |-- working-backwards/
+    |-- prototype/
+    |-- validate/
+    `-- handoff/
 ```
 
 Both topologies can use these target paths, allowing a team to add advanced agents later without reorganizing existing workshop artifacts.

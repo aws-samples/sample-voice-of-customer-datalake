@@ -23,7 +23,7 @@ PLUGIN_NAME = "aidlc-discovery"
 LINK_PATTERN = re.compile(r"(?<!!)\[[^]]*\]\(([^)]+)\)")
 HEADING_PATTERN = re.compile(r"^#{1,6}\s+(.+?)\s*$")
 EXTERNAL_PREFIXES = ("http://", "https://", "mailto:")
-SKIP_DIRS = {".git", ".tmp", "__pycache__"}
+SKIP_DIRS = {".git", ".tmp", ".e2e", "__pycache__"}  # .e2e holds end-to-end runs (gitignored)
 
 # Agent Plugins 1.0.0 §5.5 and Agent Skills `name` constraints.
 AGENT_PLUGINS_NAME = re.compile(r"^(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$")
@@ -305,6 +305,84 @@ class DocumentationTests(unittest.TestCase):
                         markdown_anchors(target.read_text(encoding="utf-8")),
                         f"{source.relative_to(ROOT)} links to missing anchor {destination}",
                     )
+
+
+class HandoffContractTests(unittest.TestCase):
+    """The Discovery brief is the contract with AI-DLC; pin its shape.
+
+    AI-DLC 2.10.0 reads one UTF-8 document of at most 200,000 characters at
+    Inception, and loads team knowledge from aidlc/spaces/<space>/knowledge/<agent>/. A drift
+    here silently breaks the handoff on the AI-DLC side.
+    """
+
+    BRIEF_SKILL = SKILL_DIR / "agents" / "05-handoff" / "skills" / "discovery-brief.md"
+    BRIEF_SECTIONS = (
+        "Engagement reference",
+        "Problem and evidence",
+        "Target customers and personas",
+        "PR/FAQ summary",
+        "Success metrics",
+        "Scope",
+        "Prioritized backlog",
+        "Prototype screens and user flows",
+        "Current product",
+        "Constraints",
+        "Open hypotheses and assumptions",
+        "Full artifacts",
+    )
+    PHASE_STEPS = ("Signal Analysis", "Working Backwards", "Prototype", "Validate", "Handoff")
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.brief = cls.BRIEF_SKILL.read_text(encoding="utf-8")
+        cls.skill_text = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
+
+    def test_brief_template_has_the_twelve_sections_in_order(self) -> None:
+        template = self.brief.split("## Brief Template", 1)[1].split("## Rules", 1)[0]
+        headings = re.findall(r"^## \d+\. (.+)$", template, re.M)
+        self.assertEqual(list(self.BRIEF_SECTIONS), headings)
+
+    def test_brief_targets_a_supported_aidlc_contract(self) -> None:
+        for text in (self.brief, self.skill_text):
+            self.assertIn("2.10.0", text)
+        self.assertIn("200,000", self.brief)
+        self.assertIn("aidlc/spaces/[space]/knowledge/aidlc-product-agent/", self.brief)
+        self.assertIn("/aidlc workshop", self.brief)
+        self.assertIn("/aidlc classic", self.brief)
+        self.assertIn("discovery/data/", self.brief)
+
+    def test_required_artifacts_are_produced_by_a_phase_prompt(self) -> None:
+        table = self.brief.split("## Required Artifacts", 1)[1].split("## Brief Template", 1)[0]
+        paths = re.findall(r"\| `([^`]+)` \|", table)
+        self.assertGreaterEqual(len(paths), 7)
+        producers = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in SKILL_DIR.rglob("*.md")
+            if path != self.BRIEF_SKILL
+        )
+        # Prompts use [project], {project}, and [name] for the same placeholder.
+        producers = producers.replace("{project}", "[project]").replace("discovery/[name]/", "discovery/[project]/")
+        for relative in paths:
+            expected = "discovery/[project]/" + relative.replace("*.md", "")
+            self.assertTrue(expected in producers, f"no phase prompt writes {relative}")
+
+    def test_conductor_runs_five_phases_ending_in_handoff(self) -> None:
+        titles = re.findall(r"^### Step \d+: (.+)$", self.skill_text, re.M)
+        steps = [re.sub(r"[^\x00-\x7f]+", "", title).strip() for title in titles]
+        self.assertEqual("Initialize Workshop", steps[0])
+        self.assertEqual(list(self.PHASE_STEPS), steps[1:])
+        self.assertIn("agents/05-handoff/skills/discovery-brief.md", self.skill_text)
+
+    def test_handoff_never_writes_an_opportunity_id(self) -> None:
+        self.assertIn("No opportunity IDs", self.brief)
+        self.assertIn("Never accept or write an opportunity ID", self.skill_text)
+
+    def test_ide_exporter_is_gone(self) -> None:
+        self.assertFalse((SKILL_DIR / "agents" / "03-prototype" / "skills" / "ide-exporter.md").exists())
+        for source in repository_markdown():
+            if source.name == "CHANGELOG.md":
+                continue
+            self.assertNotIn("ide-exporter", source.read_text(encoding="utf-8"), source.relative_to(ROOT))
 
 
 if __name__ == "__main__":

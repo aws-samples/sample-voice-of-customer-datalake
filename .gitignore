@@ -15,3 +15,6 @@ __pycache__/
 
 # User-specific config (created from config.default.md)
 config.md
+
+# End-to-end test runs (tests/e2e/run_e2e.py)
+.e2e/

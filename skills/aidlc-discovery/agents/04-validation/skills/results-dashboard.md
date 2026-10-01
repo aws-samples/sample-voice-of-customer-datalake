@@ -122,7 +122,7 @@ Output: One HTML file with inline Chart.js.
 
 ## Output
 
-- `knowledge-base/projects/[name]/validation/dashboard.html` — Interactive Dashboard
+- `discovery/[name]/validate/dashboard.html` — Interactive Dashboard
 - Open the file for a live preview (Quick: `open_in_session_tab`; Kiro/Claude Code: open it in the editor or browser)
 
 ## Technical Details

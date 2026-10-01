@@ -2,6 +2,29 @@
 
 All notable changes to the AIDLC: Discovery Workshop skill package.
 
+## 2.0.0 — 2026-10-01
+
+Discovery hands off to AI-DLC. A major release: the default output folder moves from `knowledge-base/projects/` to `discovery/`, the IDE exporter is removed, and Wrap-up becomes a Handoff phase that requires its artifacts. Discovery now takes the place of AI-DLC's own Ideation phase and ends with a Discovery brief, the single document a team uses to start [AI-DLC](https://github.com/awslabs/aidlc-workflows) 2.10.0 or later at Inception.
+
+### Added
+- **Phase 5: Handoff.** Replaces Wrap-up. It checks that the required artifacts exist (Signal Analysis Report, at least two personas, PR/FAQ, PRD, HTML prototype, prioritized problems with open hypotheses, and the current-product map when a codebase exists), then writes `discovery/[project]/handoff/discovery-brief.md` from a 12-section template under AI-DLC's 200,000-character document limit. It also writes the personas to `aidlc/spaces/[space]/knowledge/aidlc-product-agent/discovery-personas.md` (the `default` space unless `aidlc/active-space` names another), adds `discovery/data/` to `.gitignore`, and prints the `/aidlc workshop` or `/aidlc classic` start command without starting AI-DLC. Reference prompt: `agents/05-handoff/skills/discovery-brief.md`.
+- **Current-product map** (`agents/01-signal-analyzer/skills/current-product-map.md`): a read-only, product-level map of what the existing product does, read from its codebase. Runs only when a codebase exists, usually as pre-work; never blocks.
+- **In-codebase prototype** (`agents/03-prototype/skills/codebase-prototype.md`): an optional, disposable prototype on a throwaway `discovery/prototype` branch that is never merged.
+- **Engagement reference.** The brief carries the intake record number only; opportunity IDs never enter the customer's repository.
+- **Unattended mode** (`unattended: true` in `config.md`, with `project` and `engagement_reference`): the Conductor runs every phase without questions, for automated tests and demonstrations.
+- **End-to-end tests** ([TESTING.md](TESTING.md)). `tests/e2e/run_e2e.py` runs the workshop in Claude Code or Kiro CLI on the sample data, a missing-PRD negative test, and the AI-DLC handoff up to Requirements Analysis, then writes a pass/fail report from deterministic checks (`tests/e2e/checks.py`). `.github/workflows/e2e.yml` runs the contract tests on every pull request and the live run on the `e2e` label, `v2*` tags, or manual dispatch, on Amazon Bedrock through GitHub OIDC.
+
+### Changed
+- **Phase names.** Signals, Working Backwards, Prototype, Validate, Handoff. Phase 2 is no longer called Ideation, to avoid confusion with the AI-DLC phase it replaces.
+- **Agent and folder ids.** The Phase 2 orchestrator `aidlc-ideation` is now `aidlc-working-backwards`, and the PR/FAQ sub-agent that used that name is now `aidlc-prfaq-writer`. The phase folder `agents/02-ideation/` is now `agents/02-working-backwards/`, and `sub-working-backwards/` is now `sub-prfaq-writer/`. Existing Kiro agent copies and Quick Chat Agents that point at the old paths must be recreated; Claude Code plugin installs update with the plugin.
+- **Validate** is an evidence review on the day: hypotheses it cannot confirm stay open and go into the brief; it never waits for survey results.
+- **Artifact layout.** Artifacts default to `discovery/[project]/{signals,working-backwards,prototype,validate,handoff}/` in the working folder, with raw feedback in `discovery/data/`. Personas moved under `working-backwards/personas/`.
+- The Conductor flags a sample-data run as a demonstration.
+
+### Removed
+- **IDE exporter** (`agents/03-prototype/skills/ide-exporter.md`). Its Kiro, Claude Code, Codex, and Cursor bundles bypassed AI-DLC; AI-DLC already runs in those harnesses and reads the Discovery brief.
+- Persona avatar generation.
+
 ## 1.5.0 — 2026-09-22
 
 Multi-harness package: the repository root is now directly installable in Amazon Quick, Kiro, and Claude Code. No build step.

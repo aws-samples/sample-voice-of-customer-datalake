@@ -99,4 +99,4 @@ Format as a professional document in Markdown.
 
 ## Final Output
 
-Save as `knowledge-base/projects/{project}/ideation/prd.md`
+Save as `discovery/{project}/working-backwards/prd.md`

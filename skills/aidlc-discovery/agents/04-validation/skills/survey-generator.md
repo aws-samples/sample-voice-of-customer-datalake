@@ -163,7 +163,7 @@ Build a self-contained, styled HTML form from the JSON configuration using [`../
 
 Deliverables:
 
-- standalone HTML at `knowledge-base/projects/[name]/validation/survey-[topic].html`;
+- standalone HTML at `discovery/[name]/validate/survey-[topic].html`;
 - iframe embed code for use after the HTML is published; and
 - an immediate preview in a Session Tab.
 
@@ -195,4 +195,4 @@ Tests hypothesis: [H2]
 Validated when: more than 60% Agree or Strongly Agree
 ```
 
-Save the result to `knowledge-base/projects/[name]/validation/survey-[topic].md`.
+Save the result to `discovery/[name]/validate/survey-[topic].md`.

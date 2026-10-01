@@ -82,7 +82,7 @@ User: "Compare the findings from Report A and B"
 
 ## Storage
 
-Save the report as `knowledge-base/projects/[project]/signals/market-research.md`.
+Save the report as `discovery/[project]/signals/market-research.md`.
 When used standalone without a project context, ask which project to file it
 under — or deliver the report inline if the user doesn't want it stored.
 

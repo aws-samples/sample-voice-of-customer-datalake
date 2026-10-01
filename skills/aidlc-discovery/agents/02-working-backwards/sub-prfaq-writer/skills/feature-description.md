@@ -83,7 +83,7 @@ After the user has chosen, create a structured description:
 
 ## Storage Location
 
-`knowledge-base/projects/[project]/ideation/feature-description.md`
+`discovery/[project]/working-backwards/feature-description.md`
 
 ## Important
 

@@ -6,7 +6,7 @@ Score and rank identified problems by impact and effort to produce a prioritized
 > **Scope — this ranks PROBLEMS.** It scores raw customer **problems** (from VoC
 > feedback) into a backlog, using Frequency + Severity + Reach (1–10, summed, max
 > 30). It is **distinct from** the Phase-2 Prioritize sub-agent
-> (`agents/02-ideation/sub-prioritize/AGENT.md`), which ranks finished
+> (`agents/02-working-backwards/sub-prioritize/AGENT.md`), which ranks finished
 > **projects/features** (PRFAQ/PRD) by Impact / Time-to-Market / Strategic-Fit /
 > Confidence to decide build order. Different object, phase, and formula — the two
 > are complementary, not redundant.
@@ -79,5 +79,5 @@ Also provide:
 
 ## Output
 
-Save as `knowledge-base/projects/{project}/validation/prioritization.md`
+Save as `discovery/{project}/validate/prioritization.md`
 Include a summary table and recommended next actions.

@@ -1,0 +1,1 @@
+Use the aidlc-discovery skill, unattended as configured in config.md, to run only the Handoff phase for the project in config.md. Do not regenerate any earlier artifact. If a required artifact is missing, stop and list what is missing.

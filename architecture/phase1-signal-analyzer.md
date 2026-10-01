@@ -202,7 +202,7 @@ For the advanced topology:
 3. Test the Signal Analyzer with one specialist before enabling all three.
 4. Verify task results return to the orchestrator.
 5. Confirm the consolidated report cross-references the specialist findings.
-6. Confirm outputs are written to `knowledge-base/projects/[project]/signals/`.
+6. Confirm outputs are written to `discovery/[project]/signals/`.
 
 ## Related Documentation
 

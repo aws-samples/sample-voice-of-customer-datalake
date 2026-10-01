@@ -78,8 +78,8 @@ If the user wants to deepen hypotheses:
 
 ### Storage
 All generated reports are stored in the Knowledge Base:
-- `knowledge-base/projects/[project]/signals/signal-summary.md`
-- `knowledge-base/projects/[project]/signals/hypotheses.md`
+- `discovery/[project]/signals/signal-summary.md`
+- `discovery/[project]/signals/hypotheses.md`
 
 ## Important Rules
 
