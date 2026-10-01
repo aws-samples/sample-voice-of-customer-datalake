@@ -2,9 +2,9 @@
 
 All notable changes to the AIDLC: Discovery Workshop skill package.
 
-## 1.6.0 — 2026-10-01
+## 2.0.0 — 2026-10-01
 
-Discovery hands off to AI-DLC. Discovery now takes the place of AI-DLC's own Ideation phase and ends with a Discovery brief, the single document a team uses to start [AI-DLC](https://github.com/awslabs/aidlc-workflows) 2.10.0 or later at Inception.
+Discovery hands off to AI-DLC. A major release: the default output folder moves from `knowledge-base/projects/` to `discovery/`, the IDE exporter is removed, and Wrap-up becomes a Handoff phase that requires its artifacts. Discovery now takes the place of AI-DLC's own Ideation phase and ends with a Discovery brief, the single document a team uses to start [AI-DLC](https://github.com/awslabs/aidlc-workflows) 2.10.0 or later at Inception.
 
 ### Added
 - **Phase 5: Handoff.** Replaces Wrap-up. It checks that the required artifacts exist (Signal Analysis Report, at least two personas, PR/FAQ, PRD, HTML prototype, prioritized problems with open hypotheses, and the current-product map when a codebase exists), then writes `discovery/[project]/handoff/discovery-brief.md` from a 12-section template under AI-DLC's 200,000-character document limit. It also writes the personas to `aidlc/knowledge/aidlc-product-agent/discovery-personas.md`, adds `discovery/data/` to `.gitignore`, and prints the `/aidlc workshop` or `/aidlc classic` start command without starting AI-DLC. Reference prompt: `agents/05-handoff/skills/discovery-brief.md`.

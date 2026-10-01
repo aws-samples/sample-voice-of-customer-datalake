@@ -4,7 +4,7 @@ description: "AIDLC: Discovery — end-to-end discovery workshop, from customer 
 license: MIT-0
 compatibility: "Runs in Amazon Quick Desktop, Kiro (IDE and CLI), and Claude Code. Needs read/write access to the user's working folder and a Python 3 runtime for aggregation; PDF and DOCX input uses the harness's document reader or Python. The Discovery brief targets AI-DLC 2.10.0 or later."
 metadata:
-  version: "1.6.0"
+  version: "2.0.0"
   author: "AWS Samples"
   homepage: "https://github.com/aws-samples/sample-voice-of-customer-datalake/tree/v2"
 # Keep description and compatibility on one line: Kiro's skill reader does not unfold YAML block scalars.

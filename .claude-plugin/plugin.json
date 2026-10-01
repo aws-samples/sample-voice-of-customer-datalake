@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "aidlc-discovery",
   "displayName": "AIDLC: Discovery Workshop",
-  "version": "1.6.0",
+  "version": "2.0.0",
   "description": "AIDLC: Discovery — end-to-end discovery workshop, from customer signals to a Discovery brief that starts AI-DLC Inception. One Conductor skill runs Signals, Working Backwards, Prototype, Validate, and Handoff; optional phase and specialist subagents are included.",
   "author": {
     "name": "AWS Samples",
