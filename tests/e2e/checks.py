@@ -83,7 +83,10 @@ def section(text: str, title: str) -> str:
 
 
 def persona_names(brief: str) -> list[str]:
-    return re.findall(r"^\*\*([^*]+)\*\*", section(brief, "Target customers and personas"), re.M)
+    """The bold name that opens each persona paragraph, without a title the model may add after it
+    ("Dana Okafor, The Adoption Champion" or "Dana Okafor — The Adoption Champion")."""
+    bold = re.findall(r"^\*\*([^*]+)\*\*", section(brief, "Target customers and personas"), re.M)
+    return [re.split(r"\s+[—–-]\s+|,\s+|:\s*|\s+\(", b, maxsplit=1)[0].strip() for b in bold]
 
 
 def project_files(project_dir: Path) -> list[Path]:

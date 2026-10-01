@@ -74,6 +74,14 @@ class DiscoveryChecksTests(unittest.TestCase):
         self.assertIn("working-backwards/prd.md", checks.required_artifacts())
         self.assertNotIn("signals/current-product-map.md", checks.required_artifacts())
 
+    def test_persona_titles_after_the_name_do_not_matter(self) -> None:
+        text = self.brief.read_text(encoding="utf-8")
+        for separator in (", The Reporter", " — The Reporter", ": The Reporter", " (medium confidence)"):
+            self.brief.write_text(text.replace("**Marcus Rivera**", f"**Marcus Rivera{separator}**"), encoding="utf-8")
+            self.assertNotIn("D08", self.failed(), separator)
+        self.brief.write_text(text.replace("**Marcus Rivera**", "**Marcus Rivero, The Reporter**"), encoding="utf-8")
+        self.assertIn("D08", self.failed())
+
     def test_missing_prd_fails_required_artifacts(self) -> None:
         (self.ws / "discovery" / PROJECT / "working-backwards" / "prd.md").unlink()
         self.assertIn("D01", self.failed())
