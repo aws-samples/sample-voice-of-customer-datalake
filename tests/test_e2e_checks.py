@@ -172,18 +172,54 @@ class AidlcChecksTests(unittest.TestCase):
             record.mkdir(parents=True)
             (record / "aidlc-state.md").write_text("- **Scope**: classic\n", encoding="utf-8")
 
-            def a06(transcript: str) -> bool:
-                return next(c for c in checks.check_aidlc(ws, PROJECT, transcript) if c.id == "A06").passed
+            def a06(transcript: str = "", log: str = "") -> str:
+                return next(c for c in checks.check_aidlc(ws, PROJECT, transcript, log) if c.id == "A06").outcome
 
-            self.assertTrue(a06(ENGINE_DIRECTIVE))
+            # Transcript fallback: the engine's JSON, or the directive re-printed by the model.
+            self.assertEqual("pass", a06(ENGINE_DIRECTIVE))
             reprinted = (f"{{'kind': 'run-stage', 'stage': 'requirements-analysis', "
                          f"'inline_context_paths': ['.claude/agents/aidlc-product-agent.md', '{PERSONAS_KNOWLEDGE}']}}")
-            self.assertTrue(a06(stream_json(reprinted)))
-            other_stage = ENGINE_DIRECTIVE.replace("requirements-analysis", "practices-discovery")
+            self.assertEqual("pass", a06(stream_json(reprinted)))
             without = stream_json('{"stage":"requirements-analysis","inline_context_paths":[".claude/agents/x.md"]}')
+            self.assertEqual("fail", a06(without))
+            # No directive anywhere is unverified, not a pass; a mention of the path in the brief is not a directive.
+            other_stage = ENGINE_DIRECTIVE.replace("requirements-analysis", "practices-discovery")
             brief_mention = stream_json(f"Full personas are in AI-DLC team knowledge: `{PERSONAS_KNOWLEDGE}`.")
-            for transcript in ("", other_stage, without, brief_mention):
-                self.assertFalse(a06(transcript), transcript[:60])
+            for transcript in ("", other_stage, brief_mention):
+                self.assertEqual("unverified", a06(transcript), transcript[:60])
+
+    def test_orchestrate_log_is_read_first(self) -> None:
+        import json
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = build_workspace(Path(tmp))
+            record = ws / "aidlc" / "spaces" / "default" / "intents" / "261001-sample"
+            record.mkdir(parents=True)
+            (record / "aidlc-state.md").write_text("- **Scope**: classic\n", encoding="utf-8")
+
+            def logged(paths: list[str]) -> str:
+                directive = {"kind": "run-stage", "stage": "requirements-analysis", "inline_context_paths": paths}
+                report = {"argv": ["engine", "orchestrate", "report"], "exit": 0, "stdout": "State advanced"}
+                return "\n".join(json.dumps(e) for e in (
+                    report, {"argv": ["engine", "orchestrate", "next"], "exit": 0, "stdout": json.dumps(directive)}))
+
+            def a06(transcript: str = "", log: str = "") -> checks.Check:
+                return next(c for c in checks.check_aidlc(ws, PROJECT, transcript, log) if c.id == "A06")
+
+            passed = a06(log=logged([".claude/agents/aidlc-product-agent.md", PERSONAS_KNOWLEDGE]))
+            self.assertEqual("pass", passed.outcome)
+            self.assertIn("orchestrate log", passed.detail)
+            # The log wins over the transcript, so a printed directive cannot hide a wrong one.
+            self.assertEqual("fail", a06(ENGINE_DIRECTIVE, logged([".claude/agents/x.md"])).outcome)
+            fallback = a06(ENGINE_DIRECTIVE, log="")
+            self.assertEqual("pass", fallback.outcome)
+            self.assertIn("transcript (fallback)", fallback.detail)
+
+    def test_unverified_is_counted_apart_and_does_not_fail(self) -> None:
+        results = [checks.Check("A05", "x", True), checks.Check("A06", "y", False, "no evidence", unverified=True)]
+        self.assertEqual({"pass": 1, "fail": 0, "unverified": 1}, checks.count_outcomes(results))
+        self.assertIn("⚠️ A06", checks.summarize("aidlc", results))
+        self.assertIn("Unverified (not a pass)", checks.summarize_unverified({"aidlc": results}))
+        self.assertEqual("", checks.summarize_unverified({"aidlc": results[:1]}))
 
     def test_learnings_diary_alone_is_not_requirements_output(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -200,16 +236,28 @@ class AidlcChecksTests(unittest.TestCase):
 
 
 class RunnerTests(unittest.TestCase):
-    def test_session_cost_is_the_running_total_not_a_sum(self) -> None:
+    def test_aidlc_shim_logs_orchestrate_and_passes_output_through(self) -> None:
         import json
+        import os
+        import subprocess
         import run_e2e
-        events = [{"type": "assistant", "message": {"content": [{"type": "text", "text": "Q1?"}]}},
-                  {"type": "result", "result": "first", "session_id": "a", "total_cost_usd": 3.34},
-                  {"type": "result", "result": "woken by a subagent", "session_id": "a", "total_cost_usd": 3.38},
-                  {"type": "result", "result": "other", "session_id": "b", "total_cost_usd": 0.5}]
-        text, costs = run_e2e.stream_text("\n".join(json.dumps(e) for e in events))
-        self.assertEqual({"a": 3.38, "b": 0.5}, costs)
-        self.assertIn("woken by a subagent", text)
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            real = out / "real-aidlc"
+            real.write_text('#!/bin/sh\necho "{\\"args\\": \\"$*\\"}"\nexit 3\n', encoding="utf-8")
+            real.chmod(0o755)
+            env = {**os.environ, **run_e2e.install_aidlc_shim(out), "E2E_AIDLC_REAL": str(real)}
+
+            def aidlc(*args: str) -> subprocess.CompletedProcess:
+                return subprocess.run(["aidlc", *args], env=env, capture_output=True, text=True)
+
+            next_call = aidlc("engine", "orchestrate", "next")
+            self.assertEqual((3, '{"args": "engine orchestrate next"}\n'), (next_call.returncode, next_call.stdout))
+            self.assertEqual(3, aidlc("engine", "hook", "stop").returncode)
+            lines = (out / "aidlc.orchestrate.jsonl").read_text(encoding="utf-8").splitlines()
+            self.assertEqual([["engine", "orchestrate", "next"]], [json.loads(line)["argv"] for line in lines])
+            self.assertEqual(next_call.stdout, json.loads(lines[0])["stdout"])
+
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ Handoff reference prompt, so the prompt stays the single source of truth.
 
 Standalone use:
     python3 tests/e2e/checks.py discovery <workspace> --project <name> --reference <ref> [--transcript <file>]
-    python3 tests/e2e/checks.py aidlc <workspace> --project <name> --transcript <file>
+    python3 tests/e2e/checks.py aidlc <workspace> --project <name> --transcript <file> [--orchestrate-log <file>]
     python3 tests/e2e/checks.py missing-prd <workspace> --project <name> --transcript <file>
 """
 
@@ -35,10 +35,25 @@ START_COMMAND = re.compile(r"/aidlc (?:workshop|classic)\b")
 
 @dataclass
 class Check:
+    """One check. An unverified check could not be decided from the evidence: it is
+    neither a pass nor a failure, and the report lists it separately."""
+
     id: str
     name: str
     passed: bool
     detail: str = ""
+    unverified: bool = False
+
+    @property
+    def outcome(self) -> str:
+        return "unverified" if self.unverified else "pass" if self.passed else "fail"
+
+
+OUTCOME_ICON = {"pass": "✅", "fail": "❌", "unverified": "⚠️"}
+
+
+def count_outcomes(checks: list[Check]) -> dict[str, int]:
+    return {outcome: sum(c.outcome == outcome for c in checks) for outcome in OUTCOME_ICON}
 
 
 def required_artifacts() -> list[str]:
@@ -221,7 +236,30 @@ def transcript_strings(raw: str) -> str:
 RA_DIRECTIVE = re.compile(r"""["']stage["']:\s*["']requirements-analysis["'][^{}]*?["']inline_context_paths["']:\s*\[([^\]]*)\]""")
 
 
-def check_aidlc(workspace: Path, project: str, transcript: str = "") -> list[Check]:
+def logged_directive_paths(orchestrate_log: str) -> list[list[str]]:
+    """Return inline_context_paths of every requirements-analysis directive in the aidlc shim's log."""
+    found: list[list[str]] = []
+
+    def walk(value: object) -> None:
+        if isinstance(value, dict):
+            if value.get("kind") == "run-stage" and value.get("stage") == "requirements-analysis":
+                found.append([str(p) for p in value.get("inline_context_paths") or []])
+            for item in value.values():
+                walk(item)
+        elif isinstance(value, list):
+            for item in value:
+                walk(item)
+
+    for line in orchestrate_log.splitlines():
+        try:
+            stdout = json.loads(line).get("stdout", "")
+            walk(json.loads(stdout))
+        except (json.JSONDecodeError, AttributeError):
+            continue
+    return found
+
+
+def check_aidlc(workspace: Path, project: str, transcript: str = "", orchestrate_log: str = "") -> list[Check]:
     brief_rel = f"discovery/{project}/handoff/discovery-brief.md"
     brief = (workspace / brief_rel).read_text(encoding="utf-8")
     record = active_record(workspace)
@@ -247,18 +285,36 @@ def check_aidlc(workspace: Path, project: str, transcript: str = "") -> list[Che
                         ", ".join(p.name for p in outputs)))
 
     personas = str((team_knowledge(workspace) / "aidlc-product-agent" / "discovery-personas.md").relative_to(workspace))
-    loaded = any(personas in paths for paths in RA_DIRECTIVE.findall(transcript_strings(transcript)))
     text = "\n".join(p.read_text(encoding="utf-8") for p in outputs)
     named = [n for n in persona_names(brief) if n.split()[0] in text]
-    checks.append(Check("A06", "Requirements Analysis loaded the Discovery personas", loaded,
-                        f"{personas} {'in' if loaded else 'not in'} the directive; persona names in output: {named}"))
+    name = "Requirements Analysis loaded the Discovery personas"
+    logged = logged_directive_paths(orchestrate_log)
+    printed = [] if logged else RA_DIRECTIVE.findall(transcript_strings(transcript))
+    if not logged and not printed:
+        checks.append(Check("A06", name, False, "no requirements-analysis directive in the orchestrate log or the "
+                            f"transcript; persona names in output: {named}", unverified=True))
+        return checks
+    source = "orchestrate log" if logged else "transcript (fallback)"
+    loaded = any(personas in paths for paths in logged or printed)
+    checks.append(Check("A06", name, loaded, f"{personas} {'in' if loaded else 'not in'} the directive, from the "
+                        f"{source}; persona names in output: {named}"))
     return checks
 
 
 def summarize(title: str, checks: list[Check]) -> str:
     lines = [f"### {title}", "", "| | Check | Detail |", "|---|---|---|"]
     for c in checks:
-        lines.append(f"| {'✅' if c.passed else '❌'} {c.id} | {c.name} | {c.detail.replace('|', '/')[:200]} |")
+        lines.append(f"| {OUTCOME_ICON[c.outcome]} {c.id} | {c.name} | {c.detail.replace('|', '/')[:200]} |")
+    return "\n".join(lines) + "\n"
+
+
+def summarize_unverified(results: dict[str, list[Check]]) -> str:
+    rows = [(leg, c) for leg, cs in results.items() for c in cs if c.unverified]
+    if not rows:
+        return ""
+    lines = ["### ⚠️ Unverified (not a pass)", "", "These checks found no evidence either way. Verify them by hand.", "",
+             "| Leg | Check | Reason |", "|---|---|---|"]
+    lines += [f"| {leg} | {c.id} {c.name} | {c.detail.replace('|', '/')[:200]} |" for leg, c in rows]
     return "\n".join(lines) + "\n"
 
 
@@ -269,6 +325,7 @@ def main() -> int:
     parser.add_argument("--project", required=True)
     parser.add_argument("--reference", default="")
     parser.add_argument("--transcript", type=Path)
+    parser.add_argument("--orchestrate-log", type=Path, help="aidlc leg: <run>/aidlc.orchestrate.jsonl")
     args = parser.parse_args()
     transcript = args.transcript.read_text(encoding="utf-8", errors="ignore") if args.transcript else ""
     if args.leg == "discovery":
@@ -276,10 +333,13 @@ def main() -> int:
     elif args.leg == "missing-prd":
         checks = check_missing_prd(args.workspace, args.project, transcript)
     else:
-        checks = check_aidlc(args.workspace, args.project, transcript)
+        log = args.orchestrate_log.read_text(encoding="utf-8") if args.orchestrate_log else ""
+        checks = check_aidlc(args.workspace, args.project, transcript, log)
     print(summarize(args.leg, checks))
-    print(json.dumps([asdict(c) for c in checks], indent=2))
-    return 0 if all(c.passed for c in checks) else 1
+    print(summarize_unverified({args.leg: checks}))
+    print(json.dumps([{**asdict(c), "outcome": c.outcome} for c in checks], indent=2))
+    print(count_outcomes(checks))
+    return 1 if count_outcomes(checks)["fail"] else 0
 
 
 if __name__ == "__main__":

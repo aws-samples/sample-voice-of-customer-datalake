@@ -72,6 +72,8 @@ Running the checks again without the harness is free:
 
 ```bash
 python3 tests/e2e/checks.py discovery .e2e/<run>/workspace --project anycompany-e2e --reference E2E-0001
+python3 tests/e2e/checks.py aidlc .e2e/<run>/workspace --project anycompany-e2e \
+  --transcript .e2e/<run>/aidlc.transcript.jsonl --orchestrate-log .e2e/<run>/aidlc.orchestrate.jsonl
 ```
 
 ### Read the results
@@ -80,10 +82,11 @@ Each run folder contains:
 
 | File | Contents |
 |------|----------|
-| `report.md` | Pass or fail per check, with details, the harness, the model, the AI-DLC version, the commit, the duration, and the cost |
+| `report.md` | The outcome of each check, with details, the harness, the model, the AI-DLC version, the commit, the duration, and the cost |
 | `report.json` | The same data, for tooling |
 | `workspace/` | Everything the harness wrote, including `discovery/anycompany-e2e/` and, after the `aidlc` leg, the AI-DLC record under `aidlc/spaces/` |
 | `<leg>.transcript.jsonl` (Claude Code) or `.txt` (Kiro) | The raw session output |
+| `aidlc.orchestrate.jsonl` | Every `aidlc engine orchestrate` call in the `aidlc` leg and its output. During that leg the runner puts a small `aidlc` wrapper (`tests/e2e/aidlc_shim.py`, in `bin/`) first on PATH, which logs these calls and changes nothing else. |
 
 The checks:
 
@@ -103,7 +106,9 @@ The checks:
 | A00 | AI-DLC 2.10.0 or later is installed |
 | A01–A02 | AI-DLC created an intent and recorded the brief as its document input |
 | A03–A04 | The intent runs `classic` or `workshop` and AI-DLC did not run its own Ideation |
-| A05–A06 | Requirements Analysis wrote its questions or requirements, and its directive loaded the Discovery personas from team knowledge (read from the `aidlc` transcript) |
+| A05–A06 | Requirements Analysis wrote its questions or requirements, and its directive loaded the Discovery personas from team knowledge. A06 reads the directive from `aidlc.orchestrate.jsonl`, and from the transcript if the log has none. |
+
+Each check ends in one of three outcomes: ✅ pass, ❌ fail, or ⚠️ unverified. Unverified means the check found no evidence either way, for example A06 when neither the log nor the transcript holds the directive. It does not fail the run, but it is not a pass: the summary line counts it apart, and `report.md` and `report.json` list it in its own section. Verify it by hand.
 
 When a check fails, open its detail in `report.md`, then the transcript for that leg. A failure in D01–D13 points at the skill prompts; a failure in A01–A06 usually means AI-DLC changed its input contract, so compare against its release notes before changing the brief.
 

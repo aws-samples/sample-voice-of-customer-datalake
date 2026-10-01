@@ -8,9 +8,13 @@ Legs, run in this order when selected:
 Each run writes to --out (default .e2e/<timestamp>/):
   workspace/             the scratch repository the harness worked in
   <leg>.transcript.*     raw harness output
+  aidlc.orchestrate.jsonl every `aidlc engine orchestrate` call and its output, logged by aidlc_shim.py
+  bin/aidlc              the shim, first on PATH during the aidlc leg
   report.md, report.json check results; report.md is also appended to $GITHUB_STEP_SUMMARY
 
-Exit code 0 means every selected check passed. See TESTING.md.
+Exit code 0 means no selected check failed. Unverified checks (⚠️) found no evidence
+either way: they do not fail the run, and the report lists them in their own section.
+See TESTING.md.
 """
 
 from __future__ import annotations
@@ -115,7 +119,7 @@ class Harness:
             cmd.append(prompt)
         log(f"{name}: {a.harness} ({'continue' if resume else 'new session'})")
         started = time.monotonic()
-        result = subprocess.run(cmd, cwd=workspace, capture_output=True, text=True,
+        result = subprocess.run(cmd, cwd=workspace, stdin=subprocess.DEVNULL, capture_output=True, text=True,
                                 timeout=a.timeout_minutes * 60, env={**os.environ, **(env or {})})
         raw = result.stdout + ("\n[stderr]\n" + result.stderr if result.stderr else "")
         suffix = "jsonl" if a.harness == "claude" else "txt"
@@ -133,6 +137,19 @@ def install_skill_for_kiro(workspace: Path) -> None:
     target = workspace / ".kiro" / "skills" / "aidlc-discovery"
     if not target.exists():
         shutil.copytree(ROOT / "skills" / "aidlc-discovery", target)
+
+
+def install_aidlc_shim(out: Path) -> dict[str, str]:
+    """Put aidlc_shim.py first on PATH and return the environment that turns it on."""
+    real = shutil.which("aidlc")
+    bin_dir = out / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    shim = bin_dir / "aidlc"
+    shim.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{Path(__file__).resolve().parent / "aidlc_shim.py"}" "$@"\n',
+                    encoding="utf-8")
+    shim.chmod(0o755)
+    return {"PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}", "E2E_AIDLC_REAL": str(real),
+            "E2E_ORCHESTRATE_LOG": str(out / "aidlc.orchestrate.jsonl")}
 
 
 def aidlc_version() -> tuple[int, ...]:
@@ -173,7 +190,7 @@ def leg_aidlc(h: Harness, ws: Path, out: Path) -> list[checks.Check]:
     p, ref = h.args.project, h.args.reference
     start = (f"/aidlc classic Build the product described in the Discovery brief at "
              f"discovery/{p}/handoff/discovery-brief.md (engagement {ref})")
-    env = {"AIDLC_DISABLE_SUMMARY_CONFIRMATION": "1", "AIDLC_DISABLE_LEARNINGS": "1"}
+    env = {"AIDLC_DISABLE_SUMMARY_CONFIRMATION": "1", "AIDLC_DISABLE_LEARNINGS": "1", **install_aidlc_shim(out)}
     answer = (PROMPTS / "aidlc-answer.md").read_text(encoding="utf-8")
     h.run(ws, start, out, "aidlc", plugin=False, env=env)
     for turn in range(1, h.args.aidlc_turns + 1):
@@ -182,7 +199,9 @@ def leg_aidlc(h: Harness, ws: Path, out: Path) -> list[checks.Check]:
         log(f"aidlc: turn {turn}, Requirements Analysis not reached yet")
         h.run(ws, answer, out, "aidlc", resume=True, plugin=False, env=env)
     transcript = (out / "aidlc.transcript.jsonl") if h.args.harness == "claude" else (out / "aidlc.transcript.txt")
-    return checks.check_aidlc(ws, p, transcript.read_text(encoding="utf-8", errors="ignore"))
+    orchestrate = out / "aidlc.orchestrate.jsonl"
+    return checks.check_aidlc(ws, p, transcript.read_text(encoding="utf-8", errors="ignore"),
+                              orchestrate.read_text(encoding="utf-8") if orchestrate.is_file() else "")
 
 
 LEGS = {"discovery": leg_discovery, "missing-prd": leg_missing_prd, "aidlc": leg_aidlc}
@@ -227,27 +246,35 @@ def main() -> int:
     started = time.monotonic()
     results: dict[str, list[checks.Check]] = {}
     for leg in [name for name in LEGS if name in legs]:
-        if leg != "discovery" and "discovery" in results and not all(c.passed for c in results["discovery"]):
+        if leg != "discovery" and "discovery" in results and checks.count_outcomes(results["discovery"])["fail"]:
             results[leg] = [checks.Check(f"{leg}-skipped", "Skipped: the discovery leg failed", False)]
             continue
         results[leg] = LEGS[leg](harness, ws, out)
 
     commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
-    passed = all(c.passed for leg_checks in results.values() for c in leg_checks)
+    counts = checks.count_outcomes([c for leg_checks in results.values() for c in leg_checks])
+    passed = counts["fail"] == 0
     meta = {
-        "passed": passed, "harness": args.harness, "model": args.model or "default", "commit": commit,
+        "passed": passed, "checks": f"{counts['pass']} passed, {counts['fail']} failed, {counts['unverified']} unverified",
+        "harness": args.harness, "model": args.model or "default", "commit": commit,
         "aidlc": ".".join(map(str, aidlc_version())) or "not installed",
         "date": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "minutes": round((time.monotonic() - started) / 60, 1), "cost_usd": round(harness.cost, 2),
         "workspace": str(ws),
     }
-    report = [f"## AIDLC: Discovery end-to-end {'✅ passed' if passed else '❌ failed'}", "",
+    verdict = ("❌ failed" if not passed else
+               f"⚠️ passed with {counts['unverified']} unverified" if counts["unverified"] else "✅ passed")
+    report = [f"## AIDLC: Discovery end-to-end {verdict}", "",
               " | ".join(f"**{k}**: {v}" for k, v in meta.items() if k not in {"passed", "workspace"}), ""]
     report += [checks.summarize(leg, leg_checks) for leg, leg_checks in results.items()]
+    report.append(checks.summarize_unverified(results))
     markdown = "\n".join(report)
     (out / "report.md").write_text(markdown, encoding="utf-8")
+    unverified = [{"leg": leg, **asdict(c)} for leg, cs in results.items() for c in cs if c.unverified]
     (out / "report.json").write_text(json.dumps(
-        {**meta, "legs": {leg: [asdict(c) for c in cs] for leg, cs in results.items()}}, indent=2), encoding="utf-8")
+        {**meta, "counts": counts, "unverified": unverified,
+         "legs": {leg: [{**asdict(c), "outcome": c.outcome} for c in cs] for leg, cs in results.items()}},
+        indent=2), encoding="utf-8")
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
             f.write(markdown + "\n")
