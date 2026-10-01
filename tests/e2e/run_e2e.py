@@ -59,13 +59,14 @@ def prepare_workspace(workspace: Path, project: str, reference: str) -> None:
     )
 
 
-def stream_text(raw: str) -> tuple[str, float]:
-    """Return assistant text and total cost from Claude Code stream-json output.
+def stream_text(raw: str) -> tuple[str, dict[str, float]]:
+    """Return assistant text and the cost so far of each session in Claude Code stream-json output.
 
-    A session emits a result event each time background subagents wake the main
-    thread, and every one carries the session's running total, so take the largest.
+    total_cost_usd is a session's running total: it is repeated on the result event
+    emitted each time background subagents wake the main thread, and it carries over
+    to --continue. So keep the largest value per session id.
     """
-    texts, cost = [], 0.0
+    texts, costs = [], {}
     for line in raw.splitlines():
         try:
             event = json.loads(line)
@@ -77,14 +78,19 @@ def stream_text(raw: str) -> tuple[str, float]:
                     texts.append(block["text"])
         elif event.get("type") == "result":
             texts.append(str(event.get("result", "")))
-            cost = max(cost, float(event.get("total_cost_usd") or 0))
-    return "\n".join(texts), cost
+            session = str(event.get("session_id", ""))
+            costs[session] = max(costs.get(session, 0.0), float(event.get("total_cost_usd") or 0))
+    return "\n".join(texts), costs
 
 
 class Harness:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
-        self.cost = 0.0
+        self.sessions: dict[str, float] = {}
+
+    @property
+    def cost(self) -> float:
+        return sum(self.sessions.values())
 
     def run(self, workspace: Path, prompt: str, out: Path, name: str, *, resume: bool = False, plugin: bool = True,
             env: dict[str, str] | None = None) -> str:
@@ -115,9 +121,11 @@ class Harness:
         suffix = "jsonl" if a.harness == "claude" else "txt"
         with (out / f"{name}.transcript.{suffix}").open("a", encoding="utf-8") as f:
             f.write(raw + "\n")
-        text, cost = stream_text(result.stdout) if a.harness == "claude" else (result.stdout, 0.0)
-        self.cost += cost
-        log(f"{name}: exit {result.returncode} in {time.monotonic() - started:.0f}s, cost ${cost:.2f}")
+        text, costs = stream_text(result.stdout) if a.harness == "claude" else (result.stdout, {})
+        before = self.cost
+        for session, total in costs.items():
+            self.sessions[session] = max(self.sessions.get(session, 0.0), total)
+        log(f"{name}: exit {result.returncode} in {time.monotonic() - started:.0f}s, cost ${self.cost - before:.2f}")
         return text
 
 

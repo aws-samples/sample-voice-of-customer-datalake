@@ -170,10 +170,11 @@ class RunnerTests(unittest.TestCase):
         import json
         import run_e2e
         events = [{"type": "assistant", "message": {"content": [{"type": "text", "text": "Q1?"}]}},
-                  {"type": "result", "result": "first", "total_cost_usd": 3.34},
-                  {"type": "result", "result": "woken by a subagent", "total_cost_usd": 3.38}]
-        text, cost = run_e2e.stream_text("\n".join(json.dumps(e) for e in events))
-        self.assertAlmostEqual(3.38, cost)
+                  {"type": "result", "result": "first", "session_id": "a", "total_cost_usd": 3.34},
+                  {"type": "result", "result": "woken by a subagent", "session_id": "a", "total_cost_usd": 3.38},
+                  {"type": "result", "result": "other", "session_id": "b", "total_cost_usd": 0.5}]
+        text, costs = run_e2e.stream_text("\n".join(json.dumps(e) for e in events))
+        self.assertEqual({"a": 3.38, "b": 0.5}, costs)
         self.assertIn("woken by a subagent", text)
 
 
