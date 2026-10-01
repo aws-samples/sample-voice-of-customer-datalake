@@ -228,7 +228,9 @@ def main() -> int:
     parser.add_argument("--project", default="anycompany-e2e")
     parser.add_argument("--reference", default="E2E-0001")
     parser.add_argument("--model", help="harness model id (default: the harness default)")
-    parser.add_argument("--budget-usd", type=float, default=25.0, help="Claude Code cost cap per session")
+    parser.add_argument("--budget-usd", type=float, default=25.0,
+                        help="Claude Code cost cap for each harness session. The aidlc leg is one session, "
+                             "resumed each turn, so its cap covers the whole leg")
     parser.add_argument("--timeout-minutes", type=int, default=60, help="per harness session")
     parser.add_argument("--aidlc-turns", type=int, default=8, help="max follow-up turns in the AI-DLC leg")
     parser.add_argument("--isolated", action="store_true",

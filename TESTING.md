@@ -66,7 +66,7 @@ python3 tests/e2e/run_e2e.py --harness kiro
 python3 tests/e2e/run_e2e.py --legs aidlc --workspace .e2e/<run>/workspace
 ```
 
-Useful options: `--model`, `--budget-usd` (Claude Code cost cap per session), `--timeout-minutes` (per session), `--isolated` (Claude Code ignores your user settings and plugins, as in CI), and `--out`. Run `python3 tests/e2e/run_e2e.py --help` for all of them. Runs go to `.e2e/`, which git ignores.
+Useful options: `--model`, `--budget-usd` (Claude Code cost cap for each harness session; the `aidlc` leg is one session resumed at every turn, so its cap covers the whole leg), `--timeout-minutes` (per session), `--isolated` (Claude Code ignores your user settings and plugins, as in CI), and `--out`. Run `python3 tests/e2e/run_e2e.py --help` for all of them. Runs go to `.e2e/`, which git ignores.
 
 Running the checks again without the harness is free:
 
