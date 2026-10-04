@@ -1,0 +1,9 @@
+{
+  // Type-checks what tsconfig.json leaves out: the ts-node scripts that package.json runs and the
+  // vitest config. No emit: `npm run build` keeps compiling only lib/ and bin/.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["scripts/**/*.ts", "vitest.config.ts"]
+}

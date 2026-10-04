@@ -1,0 +1,15 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  // The Lambda handler: lib/stacks/api-stack.ts bundles this file with esbuild (`entry:`).
+  "entry": ["src/handler.ts!"],
+  "project": [
+    "src/**/*.ts!",
+    "!src/**/*.{spec,test}.ts!",
+    "!src/**/*-fixtures.ts!",
+    "!src/**/__fixtures__/**!"
+  ],
+  // Off: an export only its own file uses is a finding (nothing imports it, not even a spec).
+  // ../../../scripts/knip-production.mjs turns it back on for --production, where an export its own
+  // file uses and a spec imports is a testing seam.
+  "ignoreExportsUsedInFile": false
+}
