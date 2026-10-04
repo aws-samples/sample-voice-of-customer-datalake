@@ -15,7 +15,7 @@
     "lint:python": "cd voc-datalake && .venv/bin/python -m ruff check lambda plugins scripts",
     "typecheck": "npm run typecheck --prefix voc-datalake/frontend",
     "typecheck:tests": "npm run typecheck:tests --prefix voc-datalake/frontend",
-    "typecheck:cdk": "cd voc-datalake && npx tsc --noEmit && npx tsc -p tsconfig.tools.json",
+    "typecheck:cdk": "cd voc-datalake && npx tsc --noEmit && npx tsc -p tsconfig.tools.json --noEmit",
     "typecheck:stream": "cd voc-datalake/lambda/stream && npx tsc --noEmit",
     "typecheck:all": "npm run typecheck && npm run typecheck:cdk && npm run typecheck:stream",
     "test": "npm run test --prefix voc-datalake/frontend -- --run",

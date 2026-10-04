@@ -11,6 +11,11 @@ import process from 'node:process';
 // The package's own typescript reads the JSONC (comments allowed).
 const ts = createRequire(path.join(process.cwd(), 'package.json'))('typescript');
 const file = path.join(process.cwd(), 'knip.jsonc');
-const { config } = ts.parseConfigFileTextToJson(file, readFileSync(file, 'utf8'));
+const { config, error } = ts.parseConfigFileTextToJson(file, readFileSync(file, 'utf8'));
+// A malformed knip.jsonc must fail the run: spreading `undefined` would silently analyse knip's defaults.
+if (error || typeof config !== 'object' || config === null) {
+  const detail = error ? ts.flattenDiagnosticMessageText(error.messageText, '\n') : 'not a JSON object';
+  throw new Error(`knip-production: cannot read ${file}: ${detail}`);
+}
 
 export default { ...config, ignoreExportsUsedInFile: true };

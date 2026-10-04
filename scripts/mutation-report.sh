@@ -28,7 +28,7 @@ py_changed() {
     esac
   done | sort -u
 }
-for module in $(py_changed); do
+while IFS= read -r module <&3; do
   stem="$(basename "$module" .py)"
   tests="$(git ls-files "$PY_ROOT/*test_${stem//-/_}.py" | sed "s|^$PY_ROOT/||" | tr '\n' ' ')"
   if [[ -z "$tests" ]]; then echo "--- $module: NO TESTS (a finding)"; continue; fi
@@ -38,7 +38,7 @@ for module in $(py_changed); do
   # shellcheck disable=SC2086
   bash "$PY_ROOT/scripts/mutate-python.sh" ${scope[@]+"${scope[@]}"} "${module#"$PY_ROOT"/}" $tests \
     || echo "    (tests fail unmutated, or no changed lines)"
-done
+done 3< <(py_changed)   # fd 3: mutmut and stryker read stdin and would eat the list
 
 # ---- TypeScript: file -> its spec beside it; Stryker line ranges per changed hunk ----
 # Each package holds its own stryker.config.mjs. The CDK package's directory contains the other two,
@@ -55,7 +55,7 @@ ts_changed() {
       done | sort -u
 }
 for pkg in voc-datalake voc-datalake/frontend voc-datalake/lambda/stream; do
-  for file in $(ts_changed "$pkg"); do
+  while IFS= read -r file <&3; do
     ext="${file##*.}"; spec_a="${file%.*}.spec.$ext"; spec_b="${file%.*}.test.$ext"
     if [[ ! -f "$spec_a" && ! -f "$spec_b" ]]; then echo "--- $file: NO SPEC (a finding)"; continue; fi
     relative="${file#"$pkg"/}"
@@ -68,5 +68,5 @@ for pkg in voc-datalake voc-datalake/frontend voc-datalake/lambda/stream; do
     if [[ -z "$target" ]]; then echo "--- $file: only deletions"; continue; fi
     echo "--- $file ($target)"
     (cd "$pkg" && npx stryker run --mutate "$target") | grep -E '^\[Survived\]|^[-+] |^ *[A-Za-z].*\|' || true
-  done
+  done 3< <(ts_changed "$pkg")
 done

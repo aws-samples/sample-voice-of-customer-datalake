@@ -40,10 +40,18 @@ const PENDING_SUPPRESSION = {
   ],
 }
 
-// Spec files are linted only under QUALITY_BASELINE until their findings are fixed: the suite
-// carries a backlog, and #374's guard below is the one spec in the gate today.
-const SPECS_PENDING = true
-const lintSpecs = QUALITY_BASELINE || !SPECS_PENDING
+// Spec files this package does not lint yet: the suite carries a backlog (counted under
+// QUALITY_BASELINE=1, which lints them). Same contract as the PENDING_* maps: delete this list in the
+// change that brings the specs' count to zero; never add a glob back.
+const PENDING_SPEC_IGNORES = [
+  '**/*.test.ts',
+  // #374 argues that an asset survived in `public/` because no gate read it. The guard that now
+  // reads `public/` is itself a `*.test.ts`, so shipping it under this ignore would repeat the
+  // finding it exists to prevent: it is the one spec in the gate today.
+  '!src/publicAssets.test.ts',
+  '**/*.test.tsx',
+  'src/test/**/*',
+]
 
 export default tseslint.config(
   {
@@ -54,17 +62,7 @@ export default tseslint.config(
       '.stryker-tmp/**',
       'reports/**',
       'mock-server.js',
-      ...(lintSpecs
-        ? []
-        : [
-            '**/*.test.ts',
-            // #374 argues that an asset survived in `public/` because no gate read it.
-            // The guard that now reads `public/` is itself a `*.test.ts`, so shipping
-            // it under this ignore would repeat the finding it exists to prevent.
-            '!src/publicAssets.test.ts',
-            '**/*.test.tsx',
-            'src/test/**/*',
-          ]),
+      ...(QUALITY_BASELINE ? [] : PENDING_SPEC_IGNORES),
       'vitest.config.ts',
       'stryker.config.mjs',
     ],
