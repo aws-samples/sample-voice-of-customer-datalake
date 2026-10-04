@@ -1,0 +1,23 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  // cdk.json's "app" runs bin/voc-datalake.ts; package.json scripts name the ts-node scripts.
+  "entry": ["bin/voc-datalake.ts!", "scripts/*.{ts,mjs}!"],
+  "project": [
+    "bin/**/*.ts!",
+    "lib/**/*.ts!",
+    "scripts/**/*.{ts,mjs}!",
+    "!lib/**/*.{spec,test}.ts!",
+    "!lib/**/*-fixtures.ts!",
+    "!lib/test-support/**!"
+  ],
+  // Off: an export only its own file uses is a finding (nothing imports it, not even a spec).
+  // ../scripts/knip-production.mjs turns it back on for --production, where an export its own file
+  // uses and a spec imports is a testing seam.
+  "ignoreExportsUsedInFile": false,
+  // frontend/ and lambda/stream/ are separate packages (own package.json, own knip.jsonc); the
+  // project globs above already keep them out of this run.
+  "ignoreDependencies": [
+    // Not imported: aws-cdk-lib's NodejsFunction shells out to it to bundle lambda/stream.
+    "esbuild"
+  ]
+}

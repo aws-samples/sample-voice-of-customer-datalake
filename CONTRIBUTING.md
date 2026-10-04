@@ -40,6 +40,26 @@ GitHub provides additional document on [forking a repository](https://help.githu
 [creating a pull request](https://help.github.com/articles/creating-a-pull-request/).
 
 
+## Quality gates
+`npm run validate` (`scripts/validate.sh`) runs every enforced gate: ruff, tsc for each TypeScript program,
+ESLint in each package (`voc-datalake/`, `frontend/`, `lambda/stream/`, sharing `eslint-rules/quality-gates.mjs`),
+pytest and vitest. CI (`.github/workflows/quality-gates.yml`) runs that script and nothing else. Each gate allows zero findings.
+
+Gates whose existing findings are not fixed yet are listed as pending: the `PENDING` block in `voc-datalake/ruff.toml`
+and the `PENDING_*` maps and lists in each `eslint.config` (including the frontend's `PENDING_SPEC_IGNORES`, the specs it
+does not lint yet). `npm run quality:baseline` counts them, together with vulture, knip,
+pyright, jscpd and `noUncheckedIndexedAccess`; CI prints those counts after `validate.sh` (informational, never
+failing), so a PR that raises one shows it in its own log. A pending gate moves into `validate.sh` in the change that brings it to
+zero. That list only shrinks:
+
+- Never add a pending entry, raise a limit (complexity 12, depth 3, 400 lines, 700 spec lines, 4 expects, 0 clones, vulture 60 %),
+  or add a suppression comment (`eslint-disable`, `@ts-ignore`, blanket `# noqa`, `# type: ignore`). Fix the code
+  or make the type tell the truth.
+- Export only what another module imports. A function or export that only a test uses is dead.
+- Before merging, run `npm run mutation:report -- origin/development` and resolve every survivor it prints: kill it with
+  a test, delete the statement it proves has no effect, or mark it equivalent with the reason.
+
+
 ## Finding contributions to work on
 Looking at the existing issues is a great way to find something to contribute on. As our projects, by default, use the default GitHub issue labels (enhancement/bug/duplicate/help wanted/invalid/question/wontfix), looking at any 'help wanted' issues is a great place to start.
 

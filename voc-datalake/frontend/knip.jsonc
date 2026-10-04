@@ -1,0 +1,22 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  // The files the bundler starts from. index.html is read for its <script> tags.
+  "entry": ["index.html!", "src/main.tsx!"],
+  "project": [
+    "src/**/*.{ts,tsx}!",
+    "!src/**/*.{spec,test}.{ts,tsx}!",
+    "!src/**/*-fixtures.{ts,tsx}!",
+    "!src/test/**!",
+    "scripts/**/*.{js,mjs,ts}"
+  ],
+  // Off: an export only its own file uses is a finding (nothing imports it, not even a spec).
+  // ../../scripts/knip-production.mjs turns it back on for --production, where an export its own file
+  // uses and a spec imports is a testing seam.
+  "ignoreExportsUsedInFile": false,
+  "ignoreDependencies": [
+    // Not imported from JS: src/index.css loads it with `@import "tailwindcss"`.
+    "tailwindcss",
+    // Not imported: the i18n:extract script runs it through npx, configured by i18next-parser.config.js.
+    "i18next-parser"
+  ]
+}

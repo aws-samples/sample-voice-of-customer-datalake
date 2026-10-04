@@ -1,0 +1,15 @@
+# Tool configuration only: this directory is not an installable Python package.
+# ruff is configured in ruff.toml and pytest in pytest.ini (both take precedence
+# over this file), so only the tools that read nothing else live here.
+
+[tool.vulture]
+paths = ["lambda", "plugins", "scripts"]
+# vulture scores every unused function, class, attribute and variable at exactly 60 %; a higher floor cannot report a dead function.
+min_confidence = 60
+sort_by_size = true
+# Only real entry points and named seams that production defines and only tests call, each with a comment.
+ignore_names = []
+# Do NOT list your own route/handler decorators here: they would hide every dead handler.
+ignore_decorators = ["@pytest.fixture"]
+# No `exclude` here on purpose: vulture's CLI flags REPLACE pyproject values, and
+# scripts/lint-python.sh passes the excludes (they are what its two passes differ in).

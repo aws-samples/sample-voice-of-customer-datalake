@@ -1,9 +1,57 @@
 import tseslint from 'typescript-eslint'
 import eslintComments from '@eslint-community/eslint-plugin-eslint-comments/configs'
 import sonarjs from 'eslint-plugin-sonarjs'
+import unicorn from 'eslint-plugin-unicorn'
+import vitest from '@vitest/eslint-plugin'
 import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
 import globals from 'globals'
+import noReExports from '../../eslint-rules/no-re-exports.mjs'
+import {
+  QUALITY_BASELINE,
+  SOURCE_RULES,
+  SPEC_FILES,
+  SPEC_RULES,
+  SUPPRESSION_RULES,
+  withPending,
+} from '../../eslint-rules/quality-gates.mjs'
+
+// Rules of the shared quality-gate set (../../eslint-rules/quality-gates.mjs) whose findings in
+// this package are not fixed yet, each with the setting this package enforced before ('off' when
+// it had none). Delete an entry in the change that brings its count to zero; never add one back.
+const PENDING_SOURCE = {
+  'max-lines': ['error', { max: 600, skipBlankLines: true, skipComments: true }],
+  'custom/no-re-exports': 'off',
+  '@typescript-eslint/no-unnecessary-condition': 'off',
+  '@typescript-eslint/no-unnecessary-template-expression': 'off',
+  '@typescript-eslint/no-redundant-type-constituents': 'off',
+  '@typescript-eslint/prefer-nullish-coalescing': 'off',
+  '@typescript-eslint/prefer-optional-chain': 'off',
+  'no-useless-return': 'off',
+  'unicorn/no-useless-spread': 'off',
+  'unicorn/no-useless-fallback-in-spread': 'off',
+  '@typescript-eslint/no-floating-promises': 'off',
+}
+const PENDING_SPEC = {}
+const PENDING_SUPPRESSION = {
+  '@eslint-community/eslint-comments/no-use': [
+    'error',
+    { allow: ['eslint-disable', 'eslint-enable', 'eslint-disable-next-line'] },
+  ],
+}
+
+// Spec files this package does not lint yet: the suite carries a backlog (counted under
+// QUALITY_BASELINE=1, which lints them). Same contract as the PENDING_* maps: delete this list in the
+// change that brings the specs' count to zero; never add a glob back.
+const PENDING_SPEC_IGNORES = [
+  '**/*.test.ts',
+  // #374 argues that an asset survived in `public/` because no gate read it. The guard that now
+  // reads `public/` is itself a `*.test.ts`, so shipping it under this ignore would repeat the
+  // finding it exists to prevent: it is the one spec in the gate today.
+  '!src/publicAssets.test.ts',
+  '**/*.test.tsx',
+  'src/test/**/*',
+]
 
 export default tseslint.config(
   {
@@ -11,35 +59,25 @@ export default tseslint.config(
       'dist/**',
       'node_modules/**',
       'coverage/**',
+      '.stryker-tmp/**',
+      'reports/**',
       'mock-server.js',
-      '**/*.test.ts',
-      // #374 argues that an asset survived in `public/` because no gate read it.
-      // The guard that now reads `public/` is itself a `*.test.ts`, so shipping
-      // it under this ignore would repeat the finding it exists to prevent. One
-      // negated path rather than un-ignoring every test file: the rest of the
-      // suite carries a backlog whose cleanup is not this change.
-      '!src/publicAssets.test.ts',
-      '**/*.test.tsx',
-      'src/test/**/*',
+      ...(QUALITY_BASELINE ? [] : PENDING_SPEC_IGNORES),
       'vitest.config.ts',
+      'stryker.config.mjs',
     ],
   },
   ...tseslint.configs.recommended,
   eslintComments.recommended,
-  {
-    rules: {
-      '@eslint-community/eslint-comments/no-use': [
-        'error',
-        { allow: ['eslint-disable', 'eslint-enable', 'eslint-disable-next-line'] },
-      ],
-    },
-  },
+  { rules: withPending(SUPPRESSION_RULES, PENDING_SUPPRESSION) },
   sonarjs.configs.recommended,
   {
     files: ['**/*.ts', '**/*.tsx'],
     plugins: {
       'react-hooks': reactHooks,
       'react-refresh': reactRefresh,
+      unicorn,
+      custom: { rules: { 'no-re-exports': noReExports } },
     },
     languageOptions: {
       ecmaVersion: 2020,
@@ -66,25 +104,13 @@ export default tseslint.config(
           message: 'Use const. Avoid mutation.',
         },
       ],
-      'prefer-const': 'error',
-      'no-var': 'error',
       // No any types
-      '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-unsafe-assignment': 'error',
       '@typescript-eslint/no-unsafe-member-access': 'error',
       '@typescript-eslint/no-unsafe-call': 'error',
       '@typescript-eslint/no-unsafe-return': 'error',
-      // No type assertions - fix the types instead
-      '@typescript-eslint/consistent-type-assertions': [
-        'error',
-        { assertionStyle: 'never' },
-      ],
-      // No non-null assertions
-      '@typescript-eslint/no-non-null-assertion': 'error',
-      // Complexity limits
-      'max-lines': ['error', { max: 600, skipBlankLines: true, skipComments: true }],
-      'max-depth': ['error', 3],
-      complexity: ['error', 12],
+      // Shared quality-gate set: size, escape hatches, re-exports, unnecessary logic, promises
+      ...withPending(SOURCE_RULES, PENDING_SOURCE),
       // Naming conventions
       '@typescript-eslint/naming-convention': [
         'error',
@@ -118,27 +144,22 @@ export default tseslint.config(
     },
   },
   {
-    // The un-ignored guard (see the negated pattern above) is the one linted file
-    // that `tsconfig.app.json` excludes, so the project service cannot type it and
-    // every type-aware rule would report a parse error instead of a finding. Point
-    // it at `tsconfig.test.json`, which does include `src/**/*.test.ts`, rather
-    // than widening the app project to cover tests.
+    // Specs and `src/test/**` are excluded from `tsconfig.app.json`, so the project service cannot
+    // type them and every type-aware rule would report a parse error instead of a finding. Point
+    // them at `tsconfig.test.json`, which includes all of `src`, rather than widening the app project.
     //
-    // It also runs in node, not a browser: it shells out to `git` and reads
-    // `__dirname`.
-    //
-    // ⚠️ This buys LINT coverage, not typecheck coverage. `npm run typecheck` runs
-    // against `tsconfig.app.json`, which still excludes tests, so this file's types
-    // are checked only as a side effect of ESLint's project service resolving
-    // `tsconfig.test.json` here. A type error in it fails `lint`, not `typecheck`.
-    files: ['src/publicAssets.test.ts'],
+    // ⚠️ This buys LINT coverage, not typecheck coverage: `npm run typecheck` runs against
+    // `tsconfig.app.json`, so a type error in a spec fails `lint` (or `typecheck:tests`), not `typecheck`.
+    files: [...SPEC_FILES, 'src/test/**/*'],
+    plugins: { vitest },
     languageOptions: {
-      globals: globals.node,
+      globals: { ...globals.browser, ...globals.node, ...vitest.environments.env.globals },
       parserOptions: {
         projectService: false,
         project: ['./tsconfig.test.json'],
         tsconfigRootDir: import.meta.dirname,
       },
     },
+    rules: withPending(SPEC_RULES, PENDING_SPEC),
   },
 )

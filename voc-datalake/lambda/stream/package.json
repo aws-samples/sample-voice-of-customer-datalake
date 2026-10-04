@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src/",
+    "lint": "eslint . --max-warnings 0",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest --run --coverage"
@@ -24,11 +24,13 @@
     "zod": "^3.24.0"
   },
   "devDependencies": {
-    "@eslint-community/eslint-plugin-eslint-comments": "^4.7.1",
+    "@eslint-community/eslint-plugin-eslint-comments": "4.7.2",
+    "@stryker-mutator/core": "10.0.0",
+    "@stryker-mutator/vitest-runner": "10.0.0",
     "@types/aws-lambda": "^8.10.145",
     "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "^4.1.0",
-    "@vitest/eslint-plugin": "^1.6.13",
+    "@vitest/eslint-plugin": "1.6.27",
     "eslint": "^10.1.0",
     "eslint-plugin-import-x": "^4.16.2",
     "eslint-plugin-promise": "^7.2.1",
@@ -37,8 +39,9 @@
     "eslint-plugin-unicorn": "^63.0.0",
     "eslint-plugin-unused-imports": "^4.4.1",
     "globals": "^17.4.0",
+    "knip": "6.37.0",
     "typescript": "~5.7.0",
-    "typescript-eslint": "^8.57.1",
+    "typescript-eslint": "8.67.0",
     "vitest": "^4.1.0"
   }
 }

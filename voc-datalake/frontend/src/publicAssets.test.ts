@@ -192,7 +192,7 @@ describe('frontend public/ inventory', () => {
     // which is what a reader acts on. Both sides sorted: comparing a sorted actual
     // against the literal order reported a legitimately-added entry as simultaneously
     // unexpected (+) and missing (-), which reads as a bug in the guard.
-    expect(actual).toEqual([...EXPECTED_PUBLIC_ENTRIES].sort(byName))
+    expect(actual).toStrictEqual([...EXPECTED_PUBLIC_ENTRIES].sort(byName))
   })
 
   it('publishes no JavaScript anywhere in the tree, which would be served unbundled and unlinted', () => {
@@ -210,7 +210,7 @@ describe('frontend public/ inventory', () => {
       /\.[cm]?[jt]sx?$/i.test(p),
     ).sort(byName)
 
-    expect(scripts).toEqual([])
+    expect(scripts).toStrictEqual([])
   })
 
   it('declares the permitted file types for every allowlisted directory', () => {
@@ -231,7 +231,7 @@ describe('frontend public/ inventory', () => {
     expect(
       undeclared,
       'allowlisted directories with no NESTED_ALLOWED_EXTENSIONS entry — say which file types may be published from each',
-    ).toEqual([])
+    ).toStrictEqual([])
   })
 
   it('declares file types only for directories that still exist', () => {
@@ -247,7 +247,7 @@ describe('frontend public/ inventory', () => {
     expect(
       stale,
       'NESTED_ALLOWED_EXTENSIONS keys that are not directories tracked under public/ — delete the entry, or fix the name',
-    ).toEqual([])
+    ).toStrictEqual([])
   })
 
   it('publishes only the declared file types inside allowlisted directories', () => {
@@ -267,6 +267,6 @@ describe('frontend public/ inventory', () => {
       })
       .sort(byName)
 
-    expect(unexpected).toEqual([])
+    expect(unexpected).toStrictEqual([])
   })
 })

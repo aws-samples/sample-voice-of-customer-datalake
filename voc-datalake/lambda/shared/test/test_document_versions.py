@@ -286,6 +286,11 @@ def test_competing_allocations_receive_unique_versions(projects_table):
     original = client.transact_write_items
     barrier = threading.Barrier(2)
     call_lock = threading.Lock()
+    # DynamoDB serializes transactions; moto does not (two transactions released together by the
+    # barrier can each fail the other's condition and both roll back, which made this test flaky on
+    # CI). The barrier still makes both writers observe the same counter first; this lock only
+    # stands in for DynamoDB's serializable commit.
+    transaction_lock = threading.Lock()
     calls = 0
 
     def synchronize_first_attempts(**kwargs):
@@ -295,7 +300,8 @@ def test_competing_allocations_receive_unique_versions(projects_table):
             current_call = calls
         if current_call <= 2:
             barrier.wait(timeout=5)
-        return original(**kwargs)
+        with transaction_lock:
+            return original(**kwargs)
 
     with (
         patch.object(client, 'transact_write_items', side_effect=synchronize_first_attempts),

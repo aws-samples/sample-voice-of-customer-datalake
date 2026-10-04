@@ -2,9 +2,9 @@
   "name": "voc-datalake",
   "version": "0.3.0",
   "description": "Voice of the Customer Data Lake - AWS CDK Infrastructure",
-  "main": "index.js",
   "scripts": {
     "build": "tsc",
+    "lint": "eslint . --max-warnings 0",
     "watch": "tsc -w",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -42,14 +42,23 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@eslint-community/eslint-plugin-eslint-comments": "4.7.2",
+    "@stryker-mutator/core": "10.0.0",
+    "@stryker-mutator/vitest-runner": "10.0.0",
     "@types/node": "^22.19.3",
+    "@vitest/eslint-plugin": "1.6.27",
     "aws-cdk": "^2.1131.0",
     "aws-cdk-lib": "^2.261.0",
     "cdk-nag": "^2.37.55",
     "constructs": "^10.4.3",
     "esbuild": "0.28.1",
+    "eslint": "9.39.5",
+    "eslint-plugin-sonarjs": "4.0.2",
+    "eslint-plugin-unicorn": "63.0.0",
+    "knip": "6.37.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
+    "typescript-eslint": "8.67.0",
     "vitest": "^4.0.16"
   }
 }

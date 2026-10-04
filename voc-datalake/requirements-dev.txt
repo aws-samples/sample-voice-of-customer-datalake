@@ -27,12 +27,17 @@ aws-lambda-powertools>=3.0.0
 # client's does today.
 jsonschema>=4.23.0,<5
 
-# Code quality — ruff is the only Python linter; the root gate runs
-# `ruff check lambda plugins scripts` (config in ruff.toml, issue #201)
+# Quality gates (scripts/validate.sh at the repo root runs every one of them).
 #
-# Uncapped deliberately, but note the consequence: ruff enables more rules by
-# default over time, so the raw finding count moves with the version (4 under
-# 0.15.0, 518 under 0.16.4 — mostly I001/BLE001/UP045, all pre-existing). The
-# invariant is "no new findings against the same version", not an absolute number.
-# ruff.toml's header carries the measurements.
-ruff>=0.15.0
+# ruff is the only Python linter (config in ruff.toml). It is pinned exactly: ruff
+# enables more rules by default between minors (5 findings under 0.15.11, 513
+# under 0.16.10 on the same tree), so an uncapped pin made the gate's count move
+# with whatever pip resolved. ruff.toml now selects its rules explicitly as well.
+ruff==0.15.11
+# Dead code: functions, classes and variables nothing uses (config in pyproject.toml).
+vulture==2.16
+# mutmut 2.x on purpose: it mutates the named file in place and runs the tests you give it
+# (scripts/mutate-python.sh). Not a gate: a report on what a change touched.
+mutmut==2.5.1
+# mutmut's `patch` extra, exactly: `scripts/mutate-python.sh --patch` reads the diff with it.
+whatthepatch==0.0.6

@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['lib/**/*.test.ts'],
+    include: ['lib/**/*.test.ts', 'scripts/**/*.test.ts'],
     // The default timeout stays put deliberately. Only the two out-of-process
     // synth suites need longer, and they set it per-`describe` — raising it
     // globally would make an unrelated hung test in any of the other suites take

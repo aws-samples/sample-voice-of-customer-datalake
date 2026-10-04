@@ -1,52 +1,17 @@
-# Python lint configuration (issue #201).
+# Python lint configuration (issue #201; rule set from the quality-gate brief).
 #
-# The root gate is `ruff check lambda plugins scripts`, run from this directory
-# by `lint:python` in the repo-root package.json.
+# The gate is `ruff check lambda plugins scripts`, run from this directory by
+# `lint:python` in the repo-root package.json and by scripts/validate.sh.
 #
-# What the baseline actually is, measured
-# --------------------------------------
-# The intended rule set is ruff's historical defaults — pyflakes `F` plus
-# pycodestyle errors `E4`/`E7`/`E9`. Against THAT set the tree carries 4
-# pre-existing `E402`s (3 in `lambda/conftest.py`, 1 in
-# `lambda/api/test/conftest.py`), where imports deliberately follow `sys.path`
-# setup. So the baseline is 4, not zero; an earlier version of this comment said
-# "keep it at zero", which was never true.
+# The rule set is selected explicitly and ruff is pinned exactly in
+# requirements-dev.txt, so the finding count no longer moves with ruff's own
+# defaults (it went from 4 to 518 between 0.15.0 and 0.16.4 on the same tree).
 #
-# The raw count also depends on ruff's own version, because `requirements-dev.txt`
-# declares an uncapped `ruff>=0.15.0` and ruff enables more rules by default over
-# time:
-#
-#   ruff 0.15.0  ->   4 errors
-#   ruff 0.16.4  -> 518 errors  (197 I001, 150 BLE001, 30 UP045, ...)
-#
-# Restricting to the documented set (`--select F,E4,E7,E9`) gives 4 under both.
-# All of that is pre-existing and independent of the `scripts` addition:
-# `ruff check lambda plugins` on `development` is also 518 under 0.16.4, and
-# `ruff check scripts` alone is clean under both versions — so widening the path
-# was a zero-error delta.
-#
-# The invariant to hold, therefore, is "no NEW findings", compared against the
-# same ruff version — not an absolute count. Pinning the rule set here with an
-# explicit `[lint] select`, or capping ruff's minor, would make an absolute number
-# reproducible; both are repo-wide policy changes rather than something the MCP
-# gate should decide, so they are left as follow-ups.
-#
-# Why `scripts` is in the path
-# ----------------------------
-# `scripts/mcp_gate.py` decides whether the MCP CI gate passes, and it was
-# previously outside every lint and test surface here: `pytest.ini` sets
-# `testpaths = lambda plugins`, so it was never collected, and the lint gate named
-# only `lambda plugins`, so it was never linted. A one-token edit making the gate
-# report success unconditionally would have been flagged by nothing.
-#
-# Both halves now run through explicit local/manual paths, which is worth being
-# clear about. `lambda/shared/test/test_mcp_gate_audit.py` unit-tests the file
-# under local `test:backend` and the manually-dispatched MCP workflow. The lint
-# half runs when someone invokes `npm run lint` or `npm run check`; no automatic
-# GitHub trigger invokes either half while the MCP workflow is manual-only. If
-# its pull-request/development triggers are re-enabled later, the test half
-# becomes automatic again while lint remains part of the local full check.
+# `scripts` is in the path because `scripts/mcp_gate.py` decides whether the MCP
+# CI gate passes; `lambda/shared/test/test_mcp_gate_audit.py` unit-tests it.
 
+target-version = "py312"
+line-length = 120
 extend-exclude = [
     # Vendored third-party code: local layer build output from
     # scripts/build-layers.sh (bs4, six, ...). Never lint, never fix.
@@ -55,4 +20,86 @@ extend-exclude = [
     "node_modules",
     "frontend",
     "dist",
+    ".venv",
+    "build",
 ]
+
+[lint]
+select = [
+    "F", "E", "W", "I", "B", "UP", "SIM", "RUF",   # correctness, imports (F401), modernisation, simplification
+    "ARG",                                           # unused arguments (dead parameters)
+    "RET", "PIE", "C4", "PERF", "PLW0108",           # returns, placeholders, comprehensions, loops, lambda wrappers
+    "PLR1714", "PLR5501", "PLR1730",                 # `x == a or x == b`, `else: if`, hand-written min/max
+    "FURB110", "FURB171", "FURB188",                 # `a if a else b`, `x in (y,)`, slice instead of removeprefix
+    "ERA001",                                        # commented-out code
+    "C901", "PLR0911", "PLR0912", "PLR0915",         # complexity, returns, branches, statements per function
+    "S", "BLE001", "TRY002", "TRY300", "TRY301", "TRY400", "T20", "PT",
+]
+ignore = [
+    "E501", "SIM108",
+    # PENDING: rules selected above whose pre-existing findings are not fixed yet.
+    # Each entry is removed by the change that brings its count to zero; never add
+    # one back. `npm run quality:baseline` prints the current count of each.
+    #   PENDING-BEGIN (rule codes, then each one's count when it was pended)
+    "ARG001", "ARG002", "ARG003", "ARG004", "ARG005",
+    #     ARG001=104 ARG002=768 ARG003=1 ARG004=4 ARG005=19
+    "B007", "B017", "B904", "B905",
+    #     B007=2 B017=1 B904=77 B905=2
+    "BLE001",
+    #     BLE001=149
+    "C401", "C408", "C416", "C420", "C901",
+    #     C401=3 C408=1 C416=1 C420=7 C901=30
+    "E402",
+    #     E402=4 (already failing `lint:python` before this change)
+    "ERA001",
+    #     ERA001=41
+    "F403",
+    #     F403=1 (already failing `lint:python` before this change)
+    "FURB110",
+    #     FURB110=10
+    "I001",
+    #     I001=193
+    "PERF401",
+    #     PERF401=22
+    "PIE790", "PIE810",
+    #     PIE790=4 PIE810=2
+    "PLR0911", "PLR0912", "PLR0915",
+    #     PLR0911=6 PLR0912=11 PLR0915=9
+    "PLW0108",
+    #     PLW0108=3
+    "PT001", "PT006", "PT011", "PT012", "PT018", "PT019",
+    #     PT001=1 PT006=33 PT011=2 PT012=3 PT018=23 PT019=18
+    "RET504", "RET505", "RET506", "RET507",
+    #     RET504=4 RET505=5 RET506=1 RET507=1
+    "RUF001", "RUF002", "RUF003", "RUF005", "RUF010", "RUF012", "RUF013", "RUF019", "RUF022", "RUF046", "RUF059", "RUF100",
+    #     RUF001=12 RUF002=7 RUF003=10 RUF005=16 RUF010=10 RUF012=6 RUF013=24 RUF019=1 RUF022=4 RUF046=1 RUF059=3 RUF100=10
+    "S102", "S105", "S110", "S303", "S310", "S311", "S314", "S603", "S608",
+    #     S102=1 S105=4 S110=5 S303=2 S310=2 S311=3 S314=1 S603=2 S608=1
+    "SIM105", "SIM110", "SIM117", "SIM118", "SIM300",
+    #     SIM105=2 SIM110=1 SIM117=11 SIM118=2 SIM300=27
+    "TRY002", "TRY300", "TRY301", "TRY400",
+    #     TRY002=2 TRY300=80 TRY301=20 TRY400=2
+    "UP015", "UP017", "UP035", "UP045", "UP047",
+    #     UP015=1 UP017=203 UP035=10 UP045=31 UP047=1
+    "W291", "W293",
+    #     W291=24 W293=2233
+    #   PENDING-END
+]
+# Framework callbacks that must accept an argument and usually ignore it go here, by name, and nowhere else.
+# `context`: the Lambda runtime's second handler argument.
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?)|context)$"
+
+[lint.mccabe]
+max-complexity = 12
+
+[lint.pylint]
+max-branches = 15
+max-statements = 60
+max-returns = 8
+
+[lint.per-file-ignores]
+# Tests assert (S101) and hold fake secrets (S105/S106). Nothing else is exempt: an unused argument in a test is dead too.
+"**/test_*.py" = ["S101", "S105", "S106"]
+"**/*_test.py" = ["S101", "S105", "S106"]
+"**/conftest.py" = ["S101", "S105"]
+"scripts/**" = ["T201"]     # scripts talk to a terminal
