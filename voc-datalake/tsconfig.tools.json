@@ -1,9 +1,15 @@
 {
-  // Type-checks what tsconfig.json leaves out: the ts-node scripts that package.json runs and the
-  // vitest config. No emit: `npm run build` keeps compiling only lib/ and bin/.
+  // Type-checks what tsconfig.json leaves out: the ts-node scripts that package.json runs, the
+  // vitest config, and the repo-root ESLint gate code (../eslint-rules, plain JS checked through
+  // its JSDoc). No emit: `npm run build` keeps compiling only lib/ and bin/.
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "noEmit": true
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": true,
+    "rootDir": "..",
+    // ../eslint-rules has no node_modules: resolve its type-only imports from this package's.
+    "paths": { "eslint": ["./node_modules/eslint"], "estree": ["./node_modules/@types/estree"] }
   },
-  "include": ["scripts/**/*.ts", "vitest.config.ts"]
+  "include": ["scripts/**/*.ts", "vitest.config.ts", "../eslint-rules/*.mjs"]
 }

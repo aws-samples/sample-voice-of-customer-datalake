@@ -51,7 +51,9 @@ export const SOURCE_RULES = {
 
 /** Rules for spec files (`*.test.ts(x)`, `*.spec.ts(x)`). */
 export const SPEC_RULES = {
-  'max-lines': ['error', { max: 730, skipBlankLines: true, skipComments: true }],
+  // The streaming Lambda's spec ceiling before this shared set existed; its largest spec
+  // (src/tools/search-feedback.test.ts) sits at exactly 700. Lower it as specs are split; never raise it.
+  'max-lines': ['error', { max: 700, skipBlankLines: true, skipComments: true }],
   // a test that asserts nothing passes whatever the code does
   'vitest/expect-expect': ['error', { assertFunctionNames: ['expect', 'expect*'] }],
   'vitest/valid-expect': ['error', { maxArgs: 2 }],
@@ -75,6 +77,15 @@ export const SUPPRESSION_RULES = {
 
 export const SPEC_FILES = ['**/*.spec.ts', '**/*.spec.tsx', '**/*.test.ts', '**/*.test.tsx'];
 
+/**
+ * @typedef {import('eslint').Linter.RuleEntry} RuleEntry
+ * @typedef {Record<string, RuleEntry>} RuleSet
+ */
+
+/**
+ * @param {RuleEntry} setting
+ * @returns {RuleEntry}
+ */
 function asWarning(setting) {
   return Array.isArray(setting) ? ['warn', ...setting.slice(1)] : 'warn';
 }
@@ -83,14 +94,19 @@ function asWarning(setting) {
  * `rules` with every rule named in `pending` replaced: by the package's previous setting in a normal
  * run, or by the target setting at 'warn' under QUALITY_BASELINE=1. Throws on a pending name the
  * rule set does not contain, so a stale entry cannot outlive the rule it pends.
+ *
+ * @param {RuleSet} rules
+ * @param {RuleSet} pending
+ * @returns {RuleSet}
  */
 export function withPending(rules, pending) {
   const result = { ...rules };
   for (const [name, previous] of Object.entries(pending)) {
-    if (!(name in rules)) {
+    const target = rules[name];
+    if (target === undefined) {
       throw new Error(`quality-gates: pending rule '${name}' is not in this rule set`);
     }
-    result[name] = QUALITY_BASELINE ? asWarning(rules[name]) : previous;
+    result[name] = QUALITY_BASELINE ? asWarning(target) : previous;
   }
   return result;
 }
@@ -99,6 +115,9 @@ export function withPending(rules, pending) {
  * For a rule that comes from a preset (tseslint/sonarjs recommended) rather than this file: the
  * overrides that switch a pending rule off in a normal run, and nothing under QUALITY_BASELINE, so
  * the preset's own setting applies and the baseline counts its findings.
+ *
+ * @param {string[]} names
+ * @returns {RuleSet}
  */
 export function pendingPresetRules(names) {
   return QUALITY_BASELINE ? {} : Object.fromEntries(names.map((name) => [name, 'off']));

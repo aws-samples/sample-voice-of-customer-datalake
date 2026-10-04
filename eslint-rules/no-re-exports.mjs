@@ -1,15 +1,38 @@
+// Plain JS (each package loads it from its own eslint.config), type-checked through this JSDoc by
+// voc-datalake/tsconfig.tools.json and tested in voc-datalake/scripts/quality-gate-rules.test.ts.
+
+/**
+ * @param {import('eslint').Scope.Scope} scope
+ * @param {string} name
+ * @returns {import('eslint').Scope.Variable | undefined}
+ */
 function findVariable(scope, name) {
   const found = scope.set.get(name);
   if (found) return found;
   return scope.upper ? findVariable(scope.upper, name) : undefined;
 }
 
+/**
+ * @param {{ type: string } | null | undefined} node
+ * @returns {node is import('estree').Identifier}
+ */
+function isIdentifier(node) {
+  return node?.type === 'Identifier';
+}
+
+/**
+ * @param {import('eslint').Rule.RuleContext} context
+ * @param {import('estree').Node} node
+ * @param {{ type: string } | null | undefined} identifier
+ * @returns {identifier is import('estree').Identifier}
+ */
 function isImported(context, node, identifier) {
-  if (identifier?.type !== 'Identifier') return false;
+  if (!isIdentifier(identifier)) return false;
   const variable = findVariable(context.sourceCode.getScope(node), identifier.name);
   return Boolean(variable?.defs.some((definition) => definition.type === 'ImportBinding'));
 }
 
+/** @type {import('eslint').Rule.RuleModule} */
 export default {
   meta: {
     type: 'problem',
@@ -21,7 +44,9 @@ export default {
     schema: [],
   },
   create(context) {
-    const reportFrom = (node) => context.report({ node, messageId: 'reExportFrom', data: { source: node.source.value } });
+    /** @param {import('estree').ExportAllDeclaration | import('estree').ExportNamedDeclaration} node */
+    const reportFrom = (node) =>
+      context.report({ node, messageId: 'reExportFrom', data: { source: String(node.source?.value) } });
     return {
       ExportAllDeclaration: reportFrom,
       ExportNamedDeclaration(node) {
