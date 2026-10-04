@@ -60,3 +60,12 @@ jobs:
 
       - name: Validate
         run: bash scripts/validate.sh
+
+      # The pending gates' counts (scripts/quality-baseline.sh), so a PR that raises one shows it in its
+      # own log. A measurement, not a gate: it never fails the job, and it runs even when Validate failed.
+      - name: Quality baseline (informational)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: |
+          bash scripts/quality-baseline.sh | tee "$RUNNER_TEMP/baseline.txt"
+          { echo '```text'; cat "$RUNNER_TEMP/baseline.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

@@ -46,11 +46,13 @@ ESLint in each package (`voc-datalake/`, `frontend/`, `lambda/stream/`, sharing 
 pytest and vitest. CI (`.github/workflows/quality-gates.yml`) runs that script and nothing else. Each gate allows zero findings.
 
 Gates whose existing findings are not fixed yet are listed as pending: the `PENDING` block in `voc-datalake/ruff.toml`
-and the `PENDING_*` maps in each `eslint.config`. `npm run quality:baseline` counts them, together with vulture, knip,
-pyright, jscpd and `noUncheckedIndexedAccess`. A pending gate moves into `validate.sh` in the change that brings it to
+and the `PENDING_*` maps and lists in each `eslint.config` (including the frontend's `PENDING_SPEC_IGNORES`, the specs it
+does not lint yet). `npm run quality:baseline` counts them, together with vulture, knip,
+pyright, jscpd and `noUncheckedIndexedAccess`; CI prints those counts after `validate.sh` (informational, never
+failing), so a PR that raises one shows it in its own log. A pending gate moves into `validate.sh` in the change that brings it to
 zero. That list only shrinks:
 
-- Never add a pending entry, raise a limit (complexity 12, depth 3, 400 lines, 4 expects, 0 clones, vulture 60 %),
+- Never add a pending entry, raise a limit (complexity 12, depth 3, 400 lines, 700 spec lines, 4 expects, 0 clones, vulture 60 %),
   or add a suppression comment (`eslint-disable`, `@ts-ignore`, blanket `# noqa`, `# type: ignore`). Fix the code
   or make the type tell the truth.
 - Export only what another module imports. A function or export that only a test uses is dead.
