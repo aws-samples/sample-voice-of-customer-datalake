@@ -27,13 +27,15 @@ step "ruff";                              (cd "$CDK" && ruff check lambda plugin
 step "tsc: frontend app + node configs";  (cd "$FRONTEND" && npx tsc -b --noEmit)
 step "tsc: stream Lambda";                (cd "$STREAM" && npx tsc --noEmit)
 step "tsc: CDK app";                      (cd "$CDK" && npx tsc -p tsconfig.json --noEmit)
-step "tsc: CDK scripts + configs";        (cd "$CDK" && npx tsc -p tsconfig.tools.json)
+step "tsc: CDK scripts + configs";        (cd "$CDK" && npx tsc -p tsconfig.tools.json --noEmit)
 step "eslint: CDK app";                   (cd "$CDK" && npx eslint . --max-warnings 0)
 step "eslint: frontend";                  (cd "$FRONTEND" && npx eslint . --max-warnings 0)
 step "eslint: stream Lambda";             (cd "$STREAM" && npx eslint . --max-warnings 0)
 
 # ---- Tests ----
 step "pytest";                            (cd "$CDK" && "$PYTHON_BIN" -m pytest -q --no-header --tb=short -p no:cacheprovider)
+# The CDK stacks stage frontend/dist as an asset, so the CDK suite needs a built frontend.
+step "vite build: frontend";              (cd "$FRONTEND" && npx vite build --logLevel warn)
 step "vitest: CDK app";                   (cd "$CDK" && npx vitest run)
 step "vitest: stream Lambda";             (cd "$STREAM" && npx vitest run)
 step "vitest: frontend";                  (cd "$FRONTEND" && npx vitest run)
