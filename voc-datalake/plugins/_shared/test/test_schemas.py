@@ -93,7 +93,7 @@ class TestIngestMessageValidation:
             'id': 'manual-message-123',
             'source_platform': 'manual_import',
             'text': 'Imported customer feedback',
-            'created_at': '2026-01-01T12:00:00Z',
+            'created_at': '2025-01-01T12:00:00Z',
             **manual_fields,
         }
 
@@ -102,31 +102,32 @@ class TestIngestMessageValidation:
         for field, value in expected.items():
             assert getattr(result, field) == value
 
-    def test_rejects_oversized_manual_import_provenance(self):
+    @pytest.mark.parametrize(
+        ('field', 'limit_name'),
+        [
+            ('ingestion_method', 'MAX_INGESTION_METHOD_LENGTH'),
+            ('source_origin', 'MAX_ID_LENGTH'),
+            ('manual_import_job_id', 'MAX_ID_LENGTH'),
+        ],
+    )
+    @pytest.mark.parametrize('overflow', [False, True])
+    def test_manual_import_provenance_bounds(self, field, limit_name, overflow):
         """Bounds provenance supplied by the manual-import pipeline."""
-        from _shared.schemas import (
-            MAX_ID_LENGTH,
-            MAX_INGESTION_METHOD_LENGTH,
-            MessageValidationError,
-            validate_message,
-        )
+        from _shared import schemas
 
-        bounds = {
-            'ingestion_method': MAX_INGESTION_METHOD_LENGTH,
-            'source_origin': MAX_ID_LENGTH,
-            'manual_import_job_id': MAX_ID_LENGTH,
+        limit = getattr(schemas, limit_name)
+        raw = {
+            'id': 'manual-message-123',
+            'source_platform': 'manual_import',
+            'text': 'Imported customer feedback',
+            'created_at': '2025-01-01T12:00:00Z',
+            field: 'x' * (limit + int(overflow)),
         }
-        for field, limit in bounds.items():
-            raw = {
-                'id': 'manual-message-123',
-                'source_platform': 'manual_import',
-                'text': 'Imported customer feedback',
-                'created_at': '2026-01-01T12:00:00Z',
-                field: 'x' * (limit + 1),
-            }
-
-            with pytest.raises(MessageValidationError):
-                validate_message(raw)
+        if overflow:
+            with pytest.raises(schemas.MessageValidationError):
+                schemas.validate_message(raw)
+        else:
+            assert getattr(schemas.validate_message(raw), field) == raw[field]
 
     def test_sanitizes_manual_import_provenance(self):
         """Strips whitespace and control characters from provenance strings."""
@@ -136,7 +137,7 @@ class TestIngestMessageValidation:
             'id': 'manual-message-123',
             'source_platform': 'manual_import',
             'text': 'Imported customer feedback',
-            'created_at': '2026-01-01T12:00:00Z',
+            'created_at': '2025-01-01T12:00:00Z',
             'ingestion_method': '  csv\x00_upload  ',
             'source_origin': '  g2\x1f  ',
             'manual_import_job_id': '  job\x7f-123  ',
@@ -147,6 +148,57 @@ class TestIngestMessageValidation:
         assert result.ingestion_method == 'csv_upload'
         assert result.source_origin == 'g2'
         assert result.manual_import_job_id == 'job-123'
+
+    @pytest.mark.parametrize('field', ['url', 'source_url'])
+    @pytest.mark.parametrize(
+        ('value', 'expected'),
+        [
+            ('  https://example.com/review\x00\x1f\x7f\t\r\n  ',
+             'https://example.com/review'),
+            (' \t\x00 ', None),
+        ],
+    )
+    def test_sanitizes_manual_import_urls(self, field, value, expected):
+        from _shared.schemas import validate_message
+
+        raw = {
+            'id': 'manual-message-123',
+            'source_platform': 'manual_import',
+            'text': 'Imported customer feedback',
+            'created_at': '2025-01-01T12:00:00Z',
+            field: value,
+        }
+        assert getattr(validate_message(raw), field) == expected
+
+    def test_provenance_keeps_schema_strict_without_restricting_methods(self):
+        from _shared.schemas import MessageValidationError, validate_message
+
+        raw = {
+            'id': 'manual-message-123',
+            'source_platform': 'manual_import',
+            'text': 'Imported customer feedback',
+            'created_at': '2025-01-01T12:00:00Z',
+            'ingestion_method': 'partner_upload',
+        }
+        assert validate_message(raw).ingestion_method == 'partner_upload'
+        raw['unexpected_provenance'] = 'unknown'
+        with pytest.raises(MessageValidationError, match='unexpected_provenance'):
+            validate_message(raw)
+
+    def test_preserves_distinct_review_and_source_urls(self):
+        from _shared.schemas import validate_message
+
+        raw = {
+            'id': 'manual-message-123',
+            'source_platform': 'manual_import',
+            'text': 'Imported customer feedback',
+            'created_at': '2025-01-01T12:00:00Z',
+            'url': 'https://example.com/reviews/123',
+            'source_url': 'https://example.com/reviews',
+        }
+        result = validate_message(raw)
+        assert result.url == raw['url']
+        assert result.source_url == raw['source_url']
 
     def test_rejects_message_without_id(self):
         """Raises error when id missing."""

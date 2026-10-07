@@ -119,12 +119,13 @@ class IngestMessage(BaseModel):
     csv_row_id: Optional[str] = Field(None, max_length=MAX_ID_LENGTH)
     rating: Optional[float] = Field(None, ge=1, le=5)
     url: Optional[str] = Field(None, max_length=MAX_URL_LENGTH)
-    source_url: str | None = Field(None, max_length=MAX_URL_LENGTH)
+    source_url: Optional[str] = Field(None, max_length=MAX_URL_LENGTH)
     source_channel: Optional[str] = Field(None, max_length=64)
     channel: Optional[str] = Field(None, max_length=64)  # Alias for source_channel
-    ingestion_method: str | None = Field(None, max_length=MAX_INGESTION_METHOD_LENGTH)
-    source_origin: str | None = Field(None, max_length=MAX_ID_LENGTH)
-    manual_import_job_id: str | None = Field(None, max_length=MAX_ID_LENGTH)
+    # Provenance, not a routing enum: plugins may introduce additional methods.
+    ingestion_method: Optional[str] = Field(None, max_length=MAX_INGESTION_METHOD_LENGTH)
+    source_origin: Optional[str] = Field(None, max_length=MAX_ID_LENGTH)
+    manual_import_job_id: Optional[str] = Field(None, max_length=MAX_ID_LENGTH)
     author: Optional[str] = Field(None, max_length=256)
     title: Optional[str] = Field(None, max_length=500)
     language: Optional[str] = Field(None, pattern=r"^[a-z]{2}(-[A-Z]{2})?$")
@@ -164,7 +165,10 @@ class IngestMessage(BaseModel):
     @field_validator("url", "source_url")
     @classmethod
     def validate_url(cls, v: Optional[str]) -> Optional[str]:
-        if v is None or v == "":
+        if v is None:
+            return None
+        v = re.sub(r"[\x00-\x1f\x7f]", "", v).strip()
+        if v == "":
             return None
         if not v.startswith(("http://", "https://")):
             raise ValueError("URL must start with http:// or https://")
