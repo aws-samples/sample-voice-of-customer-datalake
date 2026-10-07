@@ -63,4 +63,4 @@ For EACH hypothesis, provide:
 
 ## Output
 
-Save as: `knowledge-base/projects/[project]/signals/hypotheses.md`
+Save as: `discovery/[project]/signals/hypotheses.md`

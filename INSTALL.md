@@ -81,7 +81,7 @@ Copy [`skills/aidlc-discovery/config.default.md`](skills/aidlc-discovery/config.
 
 - `data_folder`—VoC feedback data such as JSON, CSV, or Excel files;
 - `research_folder`—market research such as PDF or DOCX files; and
-- `output_folder`—generated artifacts, defaulting to `knowledge-base/projects/`.
+- `output_folder`—generated artifacts, defaulting to `discovery/`. Keep raw feedback in `discovery/data/`, which the Handoff phase adds to `.gitignore`.
 
 Do not edit the copy inside the installed skill: Kiro and Claude Code install skills into caches that are replaced on update. The Conductor can also ask for data interactively, so a configuration file is convenient rather than mandatory.
 
@@ -96,7 +96,7 @@ Do not edit the copy inside the installed skill: Kiro and Claude Code install sk
 Start a VoC workshop—analyze the data in my VoC data folder
 ```
 
-The Conductor confirms scope and guides the conversation through Signals, Ideation, Prototyping, and Validation. See the [workshop flow reference](architecture/workshop-flow.md) for phase inputs, checkpoints, and outputs.
+The Conductor confirms scope and guides the conversation through Signals, Working Backwards, Prototype, Validate, and Handoff. See the [workshop flow reference](architecture/workshop-flow.md) for phase inputs, checkpoints, and outputs.
 
 ## Optional: Dedicated Phase and Specialist Agents
 
@@ -105,7 +105,7 @@ Create dedicated agents only when you need independent phase entry points, stand
 | Harness | Setup |
 |---------|-------|
 | **Kiro** | [`.kiro/agents/`](.kiro/agents/) ships 11 agent definitions. They load automatically when this repository is opened as a trusted workspace — the recommended way to use them. Each agent's `prompt` is the matching `AGENT.md` (referenced relative to the agent file, `file://../../skills/…`); the Phase 1 and Phase 2 orchestrators list their specialists under `toolsSettings.subagent.availableAgents`. To use them in **another workspace**, copy both `skills/aidlc-discovery/` and `.kiro/agents/` into it at the same relative positions. For a **global** install the relative depth of the `prompt` changes, so rewrite it while copying (the skill itself is picked up from `~/.kiro/skills/` automatically, and the copied agents' now-unresolvable `skill://skills/…` resource entry is tolerated — both verified in an isolated `KIRO_HOME`):<br>`mkdir -p ~/.kiro/agents ~/.kiro/skills && cp -R skills/aidlc-discovery ~/.kiro/skills/`<br>`for f in .kiro/agents/*.json; do sed 's\|file://../../skills/\|file://../skills/\|' "$f" > ~/.kiro/agents/$(basename "$f"); done` |
-| **Claude Code** | [`agents/`](agents/) ships the same 11 agents. Installed as a plugin they appear as `aidlc-discovery:aidlc-signal-analyzer`, `aidlc-discovery:aidlc-ideation`, and so on; the orchestrators delegate to their specialists with the Agent tool. |
+| **Claude Code** | [`agents/`](agents/) ships the same 11 agents. Installed as a plugin they appear as `aidlc-discovery:aidlc-signal-analyzer`, `aidlc-discovery:aidlc-working-backwards`, and so on; the orchestrators delegate to their specialists with the Agent tool. |
 | **Amazon Quick** | Create Chat Agents by hand; see [Workshop Setup](WORKSHOP-SETUP.md#optional-dedicated-phase-and-specialist-agents). Quick's plugin import does not create agents. |
 
 Read the [Phase 1 dedicated-agent architecture](architecture/phase1-signal-analyzer.md) before choosing the additional setup. Both topologies cover the same workshop lifecycle and target the same core phase outputs; dedicated specialists can add separate reports and hypotheses.

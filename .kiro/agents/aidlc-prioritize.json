@@ -1,7 +1,7 @@
 {
   "name": "aidlc-prioritize",
   "description": "Prioritize — AIDLC Phase 2 specialist: scores and ranks solution candidates by Impact, Time-to-Market, Strategic Fit, and Confidence to recommend a build order.",
-  "prompt": "file://../../skills/aidlc-discovery/agents/02-ideation/sub-prioritize/AGENT.md",
+  "prompt": "file://../../skills/aidlc-discovery/agents/02-working-backwards/sub-prioritize/AGENT.md",
   "tools": [
     "read",
     "write",

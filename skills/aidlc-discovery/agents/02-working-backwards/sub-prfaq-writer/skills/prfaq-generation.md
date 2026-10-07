@@ -134,4 +134,4 @@ After all 4 steps, combine into a single document with sections:
 2. Customer FAQ
 3. Internal FAQ
 
-Save as `knowledge-base/projects/{project}/ideation/prfaq.md`
+Save as `discovery/{project}/working-backwards/prfaq.md`

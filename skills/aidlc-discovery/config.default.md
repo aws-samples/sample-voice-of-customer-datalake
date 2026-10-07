@@ -3,7 +3,8 @@
 ## Data Sources
 
 ```yaml
-# Path to folder containing VoC feedback data (JSON, CSV, Excel, text)
+# Path to folder containing VoC feedback data (JSON, CSV, Excel, text).
+# Recommended: "discovery/data/", which Handoff keeps out of git.
 data_folder: ""
 
 # Path to folder containing market research documents (PDF, DOCX, Excel)
@@ -16,11 +17,24 @@ space_name: "voc-data-lake"
 ## Output Settings
 
 ```yaml
-# Where to save generated artifacts (default: project-scoped knowledge-base folder)
-output_folder: "knowledge-base/projects/"
+# Where to save generated artifacts (default: discovery/[project]/ in the working folder)
+output_folder: "discovery/"
 
 # Document format for generated reports
 doc_format: "markdown"  # markdown | docx
+```
+
+## Run Settings
+
+```yaml
+# Project folder name under output_folder (empty: ask)
+project: ""
+
+# Intake record number for the Discovery brief (empty: ask; "Self-serve" for self-serve runs)
+engagement_reference: ""
+
+# true: run all phases without checkpoints or questions (automated tests only)
+unattended: false
 ```
 
 ## Analysis Settings

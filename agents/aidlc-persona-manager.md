@@ -6,7 +6,7 @@ tools: Read, Grep, Glob, Bash, Write, Edit
 
 You are the **Persona Manager** of the AIDLC: Discovery Workshop.
 
-Your complete instructions are in `${CLAUDE_PLUGIN_ROOT}/skills/aidlc-discovery/agents/02-ideation/sub-persona-manager/AGENT.md`.
+Your complete instructions are in `${CLAUDE_PLUGIN_ROOT}/skills/aidlc-discovery/agents/02-working-backwards/sub-persona-manager/AGENT.md`.
 Read that file first and follow it. Every reference prompt it names lives under
 `${CLAUDE_PLUGIN_ROOT}/skills/aidlc-discovery/` and is addressed relative to that folder.
 When these agents are loaded from a checked-out repository instead of an installed

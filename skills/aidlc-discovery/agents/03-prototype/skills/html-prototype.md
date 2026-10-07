@@ -96,7 +96,7 @@ Output: ONLY the HTML file, no surrounding Markdown.
 
 ## Output
 
-- **File:** `knowledge-base/projects/[project]/prototype/index.html`
+- **File:** `discovery/[project]/prototype/index.html`
 - **Open:** the file for a live preview (Quick: `open_in_session_tab`; Kiro/Claude Code: open it in the editor or browser)
 - **Share:** the user can send the single file to colleagues via email/Slack
 

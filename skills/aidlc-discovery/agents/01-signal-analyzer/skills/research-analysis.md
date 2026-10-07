@@ -101,4 +101,4 @@ Provide a final validated research report with:
 
 ## Final Output
 
-Save as `knowledge-base/projects/{project}/signals/research-{title}.md`
+Save as `discovery/{project}/signals/research-{title}.md`

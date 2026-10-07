@@ -1,6 +1,6 @@
 # Workshop Setup—AIDLC: Discovery
 
-One Workshop Conductor runs Signals, Ideation, Prototyping, and Validation in a single conversation. Participants install the `aidlc-discovery` skill in the AI assistant they already use—Amazon Quick, Kiro, or Claude Code—and do not need to create phase or specialist agents.
+One Workshop Conductor runs Signals, Working Backwards, Prototype, Validate, and Handoff in a single conversation. Participants install the `aidlc-discovery` skill in the AI assistant they already use—Amazon Quick, Kiro, or Claude Code—and do not need to create phase or specialist agents.
 
 For all installation methods and configuration details, see the [installation guide](INSTALL.md).
 
@@ -41,7 +41,7 @@ In any conversation, enter:
 Start a VoC workshop
 ```
 
-The Conductor confirms the scope and guides the group through all four phases. The phases, checkpoints, and artifacts are summarized in the [workshop flow reference](architecture/workshop-flow.md). Generated artifacts land in `knowledge-base/projects/[project]/` inside your working folder.
+The Conductor confirms the scope and guides the group through all five phases. The phases, checkpoints, and artifacts are summarized in the [workshop flow reference](architecture/workshop-flow.md). Generated artifacts land in `discovery/[project]/` inside your working folder.
 
 ## Sample Data
 
@@ -75,8 +75,8 @@ For each one, ask Quick to create an agent and use the linked file as its instru
 | Agent | Instructions |
 |-------|--------------|
 | Signal Analyzer | [`skills/aidlc-discovery/agents/01-signal-analyzer/AGENT.md`](skills/aidlc-discovery/agents/01-signal-analyzer/AGENT.md) |
-| Ideation Agent | [`skills/aidlc-discovery/agents/02-ideation/AGENT.md`](skills/aidlc-discovery/agents/02-ideation/AGENT.md) |
-| Prototyping Agent | [`skills/aidlc-discovery/agents/03-prototype/AGENT.md`](skills/aidlc-discovery/agents/03-prototype/AGENT.md) |
+| Ideation Agent | [`skills/aidlc-discovery/agents/02-working-backwards/AGENT.md`](skills/aidlc-discovery/agents/02-working-backwards/AGENT.md) |
+| Prototype Agent | [`skills/aidlc-discovery/agents/03-prototype/AGENT.md`](skills/aidlc-discovery/agents/03-prototype/AGENT.md) |
 | Validation Agent | [`skills/aidlc-discovery/agents/04-validation/AGENT.md`](skills/aidlc-discovery/agents/04-validation/AGENT.md) |
 
 Creating only these four agents does **not** enable parallel specialist delegation.
@@ -90,10 +90,10 @@ Create only the specialists required by your use case, assign their data access,
 | VoC Analytics | [`sub-voc-analyst/AGENT.md`](skills/aidlc-discovery/agents/01-signal-analyzer/sub-voc-analyst/AGENT.md) | Implemented |
 | Market Research Analyst | [`sub-market-research-analyst/AGENT.md`](skills/aidlc-discovery/agents/01-signal-analyzer/sub-market-research-analyst/AGENT.md) | Implemented |
 | Competitive Research Analyst | [`sub-competitive-research-analyst/AGENT.md`](skills/aidlc-discovery/agents/01-signal-analyzer/sub-competitive-research-analyst/AGENT.md) | Implemented |
-| Persona Manager | [`sub-persona-manager/AGENT.md`](skills/aidlc-discovery/agents/02-ideation/sub-persona-manager/AGENT.md) | Implemented |
-| Working Backwards | [`sub-working-backwards/AGENT.md`](skills/aidlc-discovery/agents/02-ideation/sub-working-backwards/AGENT.md) | Implemented |
-| Prioritize | [`sub-prioritize/AGENT.md`](skills/aidlc-discovery/agents/02-ideation/sub-prioritize/AGENT.md) | Implemented |
-| Design Thinking | [`sub-design-thinking/AGENT.md`](skills/aidlc-discovery/agents/02-ideation/sub-design-thinking/AGENT.md) | Placeholder—do not rely on it |
+| Persona Manager | [`sub-persona-manager/AGENT.md`](skills/aidlc-discovery/agents/02-working-backwards/sub-persona-manager/AGENT.md) | Implemented |
+| PR/FAQ Writer | [`sub-prfaq-writer/AGENT.md`](skills/aidlc-discovery/agents/02-working-backwards/sub-prfaq-writer/AGENT.md) | Implemented |
+| Prioritize | [`sub-prioritize/AGENT.md`](skills/aidlc-discovery/agents/02-working-backwards/sub-prioritize/AGENT.md) | Implemented |
+| Design Thinking | [`sub-design-thinking/AGENT.md`](skills/aidlc-discovery/agents/02-working-backwards/sub-design-thinking/AGENT.md) | Placeholder—do not rely on it |
 
 Parallel Phase 1 analysis requires the three Phase 1 specialists plus orchestration wiring. The [Phase 1 dedicated-agent architecture](architecture/phase1-signal-analyzer.md) provides the conceptual task flow and pseudocode.
 
@@ -111,7 +111,7 @@ Verify direct data access first. If specialist delegation is configured, also ve
 
 | Choice | Lifecycle coverage | Use when |
 |--------|--------------------|----------|
-| **Single-skill Conductor** | All four phases in one conversation | **Recommended for workshops and most users** |
+| **Single-skill Conductor** | All five phases in one conversation | **Recommended for workshops and most users** |
 | **Four phase agents** | Same core phase outcomes with separate entry points | You need to invoke or test phases independently |
 | **Full specialist topology** | Same lifecycle plus separate specialist reports and delegated tasks | You have a concrete isolation or orchestration requirement |
 

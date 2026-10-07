@@ -1,6 +1,6 @@
 # Research Hypotheses — AnyCompany Insights Platform
 
-**Phase:** 1 → feeds Phase 2 (Ideation)
+**Phase:** 1 → feeds Phase 2 (Working Backwards)
 Derived from `signals/signal-summary.md`. Each hypothesis is testable in Phase 4
 (Validation).
 

@@ -199,4 +199,4 @@ At the end of the dialog you create this document:
 
 ## Storage Location
 
-`knowledge-base/projects/[project]/ideation/working-backwards.md`
+`discovery/[project]/working-backwards/working-backwards.md`

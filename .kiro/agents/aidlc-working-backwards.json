@@ -1,13 +1,24 @@
 {
   "name": "aidlc-working-backwards",
-  "description": "Working Backwards — AIDLC Phase 2 specialist: guides Amazon's Working Backwards process — feature description, press release, customer FAQ, and internal FAQ.",
-  "prompt": "file://../../skills/aidlc-discovery/agents/02-ideation/sub-working-backwards/AGENT.md",
+  "description": "Working Backwards Agent — AIDLC: Discovery Phase 2 orchestrator: turns signals into product concepts by coordinating persona generation, Working Backwards documents, prioritization, and PRD creation. Use for 'generate personas', 'generate prfaq', 'generate prd'.",
+  "prompt": "file://../../skills/aidlc-discovery/agents/02-working-backwards/AGENT.md",
   "tools": [
     "read",
     "write",
-    "shell"
+    "shell",
+    "subagent"
   ],
   "resources": [
     "skill://skills/aidlc-discovery/SKILL.md"
-  ]
+  ],
+  "toolsSettings": {
+    "subagent": {
+      "availableAgents": [
+        "aidlc-persona-manager",
+        "aidlc-prfaq-writer",
+        "aidlc-prioritize",
+        "aidlc-design-thinking"
+      ]
+    }
+  }
 }

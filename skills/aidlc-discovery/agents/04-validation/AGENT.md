@@ -106,11 +106,11 @@ User: "Which hypotheses are validated?"
 ## Output / Artifacts
 
 All project-bound:
-- `knowledge-base/projects/[name]/validation/survey-[topic].html` — Survey Preview
-- `knowledge-base/projects/[name]/validation/survey-[topic].md` — Question list (Copy-Paste)
-- `knowledge-base/projects/[name]/validation/responses.csv` — Imported responses
-- `knowledge-base/projects/[name]/validation/dashboard.html` — Results Dashboard
-- `knowledge-base/projects/[name]/validation/prioritization.md` — Prioritized Backlog
+- `discovery/[name]/validate/survey-[topic].html` — Survey Preview
+- `discovery/[name]/validate/survey-[topic].md` — Question list (Copy-Paste)
+- `discovery/[name]/validate/responses.csv` — Imported responses
+- `discovery/[name]/validate/dashboard.html` — Results Dashboard
+- `discovery/[name]/validate/prioritization.md` — Prioritized Backlog
 
 ## Important Rules
 
