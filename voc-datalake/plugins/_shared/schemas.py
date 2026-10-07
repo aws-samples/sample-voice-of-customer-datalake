@@ -103,7 +103,15 @@ class MessageMetadata(BaseModel):
 # ============================================
 
 class IngestMessage(BaseModel):
-    """Schema for messages sent to processing queue."""
+    """Schema for messages sent to processing queue.
+
+    URL contract for every producer: a single supplied link is exposed as both
+    ``url`` and ``source_url``; two supplied links retain their distinct values.
+    Field presence in validated output is therefore not producer provenance.
+    Use the original payload to determine which links the producer supplied.
+    Embedded ASCII control characters invalidate the message; normalizers do
+    not repair malformed links. See plugins/_template/README.md.
+    """
     model_config = {"extra": "forbid"}  # Reject unknown fields
     
     # Required fields
@@ -183,9 +191,11 @@ class IngestMessage(BaseModel):
     @model_validator(mode="after")
     def backfill_missing_url(self) -> "IngestMessage":
         """Expose a lone validated link through either consumer field."""
-        if self.url is None:
+        # Assign only when filling a real gap. If assignment validation is
+        # enabled, the nested validation sees no gap and does not assign again.
+        if self.url is None and self.source_url is not None:
             self.url = self.source_url
-        if self.source_url is None:
+        if self.source_url is None and self.url is not None:
             self.source_url = self.url
         return self
 

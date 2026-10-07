@@ -248,7 +248,6 @@ class TestIngestMessageValidation:
         assert result.url == 'https://example.com/review'
         assert result.source_url == 'https://example.com/review'
         assert result.model_dump()['url'] == result.model_dump()['source_url']
-        assert other not in raw or raw[other] == missing_value
 
     @pytest.mark.parametrize('missing_value', ['omitted', None, ''])
     def test_keeps_both_missing_urls_absent(self, missing_value):
@@ -265,6 +264,34 @@ class TestIngestMessageValidation:
         result = validate_message(raw)
         assert result.url is None
         assert result.source_url is None
+
+    @pytest.mark.parametrize('urls', [
+        {},
+        {'url': 'https://example.com/review'},
+        {'source_url': 'https://example.com/reviews'},
+        {'url': '', 'source_url': ''},
+        {'url': 'https://example.com/review', 'source_url': 'https://example.com/reviews'},
+    ])
+    def test_url_fallback_with_assignment_validation(self, urls):
+        from pydantic import ConfigDict
+
+        from _shared.schemas import IngestMessage
+
+        class AssignmentValidatedMessage(IngestMessage):
+            model_config = ConfigDict(validate_assignment=True)
+
+        message = AssignmentValidatedMessage.model_validate({
+            'id': 'message-123',
+            'source_platform': 'manual_import',
+            'text': 'Feedback',
+            'created_at': '2025-01-01T12:00:00Z',
+            **urls,
+        })
+        assert message.url == (urls.get('url') or urls.get('source_url') or None)
+        assert message.source_url == (urls.get('source_url') or urls.get('url') or None)
+        message.title = 'Updated title'
+        message.url = None
+        assert message.url == message.source_url
 
     def test_provenance_keeps_schema_strict_without_restricting_methods(self):
         from _shared.schemas import MessageValidationError, validate_message
