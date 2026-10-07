@@ -118,6 +118,8 @@ class IngestMessage(BaseModel):
     # cannot key the item — see CSV_ROW_ID_FIELDS in manual_import_handler).
     csv_row_id: Optional[str] = Field(None, max_length=MAX_ID_LENGTH)
     rating: Optional[float] = Field(None, ge=1, le=5)
+    # Keep distinct review/source links; use the supplied link as a fallback
+    # only when its counterpart is absent or explicitly empty.
     url: Optional[str] = Field(None, max_length=MAX_URL_LENGTH)
     source_url: Optional[str] = Field(None, max_length=MAX_URL_LENGTH)
     source_channel: Optional[str] = Field(None, max_length=64)
@@ -162,17 +164,30 @@ class IngestMessage(BaseModel):
         v = re.sub(r"\n{3,}", "\n\n", v)
         return v.strip()
 
-    @field_validator("url", "source_url")
+    @field_validator("url", "source_url", mode="before")
     @classmethod
     def validate_url(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
+        if v is None or v == "":
             return None
-        v = re.sub(r"[\x00-\x1f\x7f]", "", v).strip()
-        if v == "":
-            return None
+        if not isinstance(v, str):
+            return v  # Let Pydantic report invalid field types.
+        # Trim surrounding whitespace before Field checks the length bound.
+        # Reject remaining controls instead of joining separate URL fragments.
+        v = v.strip()
+        if re.search(r"[\x00-\x1f\x7f]", v):
+            raise ValueError("URL must not contain control characters")
         if not v.startswith(("http://", "https://")):
             raise ValueError("URL must start with http:// or https://")
         return v
+
+    @model_validator(mode="after")
+    def backfill_missing_url(self) -> "IngestMessage":
+        """Expose a lone validated link through either consumer field."""
+        if self.url is None:
+            self.url = self.source_url
+        if self.source_url is None:
+            self.source_url = self.url
+        return self
 
     @model_validator(mode="after")
     def validate_created_at_not_future(self) -> "IngestMessage":

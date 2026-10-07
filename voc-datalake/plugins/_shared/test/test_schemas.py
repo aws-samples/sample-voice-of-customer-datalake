@@ -153,9 +153,10 @@ class TestIngestMessageValidation:
     @pytest.mark.parametrize(
         ('value', 'expected'),
         [
-            ('  https://example.com/review\x00\x1f\x7f\t\r\n  ',
+            ('  \t https://example.com/review \r\n  ',
              'https://example.com/review'),
-            (' \t\x00 ', None),
+            ('', None),
+            (None, None),
         ],
     )
     def test_sanitizes_manual_import_urls(self, field, value, expected):
@@ -169,6 +170,101 @@ class TestIngestMessageValidation:
             field: value,
         }
         assert getattr(validate_message(raw), field) == expected
+
+    @pytest.mark.parametrize('field', ['url', 'source_url'])
+    @pytest.mark.parametrize('control', [chr(i) for i in range(32)] + ['\x7f'])
+    def test_rejects_embedded_url_controls(self, field, control):
+        from _shared.schemas import MessageValidationError, validate_message
+
+        raw = {
+            'id': 'manual-message-123',
+            'source_platform': 'manual_import',
+            'text': 'Imported customer feedback',
+            'created_at': '2025-01-01T12:00:00Z',
+            field: f'https://a.example/x{control}https://evil.example',
+        }
+        with pytest.raises(MessageValidationError, match='control characters'):
+            validate_message(raw)
+
+    @pytest.mark.parametrize('field', ['url', 'source_url'])
+    @pytest.mark.parametrize('value', ['   ', ' \t\r\n ', 123, [], 'ftp://example.com'])
+    def test_rejects_invalid_url_before_fallback(self, field, value):
+        from _shared.schemas import MessageValidationError, validate_message
+
+        other = 'source_url' if field == 'url' else 'url'
+        raw = {
+            'id': 'manual-message-123',
+            'source_platform': 'manual_import',
+            'text': 'Imported customer feedback',
+            'created_at': '2025-01-01T12:00:00Z',
+            field: value,
+            other: 'https://example.com/review',
+        }
+        with pytest.raises(MessageValidationError, match=field):
+            validate_message(raw)
+
+    @pytest.mark.parametrize('field', ['url', 'source_url'])
+    @pytest.mark.parametrize('overflow', [False, True])
+    def test_url_length_is_checked_after_trimming(self, field, overflow):
+        from _shared.schemas import (
+            MAX_URL_LENGTH,
+            MessageValidationError,
+            validate_message,
+        )
+
+        prefix = 'https://example.com/'
+        url = prefix + 'x' * (MAX_URL_LENGTH - len(prefix) + int(overflow))
+        raw = {
+            'id': 'manual-message-123',
+            'source_platform': 'manual_import',
+            'text': 'Imported customer feedback',
+            'created_at': '2025-01-01T12:00:00Z',
+            field: f'  {url}  ',
+        }
+        if overflow:
+            with pytest.raises(MessageValidationError, match=field):
+                validate_message(raw)
+        else:
+            result = validate_message(raw)
+            assert result.url == url
+            assert result.source_url == url
+
+    @pytest.mark.parametrize('supplied_field', ['url', 'source_url'])
+    @pytest.mark.parametrize('missing_value', ['omitted', None, ''])
+    def test_backfills_only_missing_url(self, supplied_field, missing_value):
+        from _shared.schemas import validate_message
+
+        other = 'source_url' if supplied_field == 'url' else 'url'
+        raw = {
+            'id': 'manual-message-123',
+            'source_platform': 'manual_import',
+            'text': 'Imported customer feedback',
+            'created_at': '2025-01-01T12:00:00Z',
+            supplied_field: '  https://example.com/review  ',
+        }
+        if missing_value != 'omitted':
+            raw[other] = missing_value
+        result = validate_message(raw)
+        assert result.url == 'https://example.com/review'
+        assert result.source_url == 'https://example.com/review'
+        assert result.model_dump()['url'] == result.model_dump()['source_url']
+        assert other not in raw or raw[other] == missing_value
+
+    @pytest.mark.parametrize('missing_value', ['omitted', None, ''])
+    def test_keeps_both_missing_urls_absent(self, missing_value):
+        from _shared.schemas import validate_message
+
+        raw = {
+            'id': 'manual-message-123',
+            'source_platform': 'manual_import',
+            'text': 'Imported customer feedback',
+            'created_at': '2025-01-01T12:00:00Z',
+        }
+        if missing_value != 'omitted':
+            raw.update(url=missing_value, source_url=missing_value)
+        result = validate_message(raw)
+        assert result.url is None
+        assert result.source_url is None
 
     def test_provenance_keeps_schema_strict_without_restricting_methods(self):
         from _shared.schemas import MessageValidationError, validate_message
