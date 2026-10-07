@@ -106,7 +106,7 @@ For each feedback item you analyze:
 
 ## Storage
 
-Save the report as `discovery/[project]/signals/voc-analysis.md`.
+Save the report as `discovery/[project]/signals/voc-analysis.md`. The Signal Analyzer consolidates it into `signals/signal-summary.md`, the report Handoff requires.
 Keep per-item results under `discovery/data/`, or do not save them. Do not
 save helper scripts in the working folder.
 When used standalone without a project context, ask which project to file it

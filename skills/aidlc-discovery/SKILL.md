@@ -73,7 +73,7 @@ Tell the user which phase they're entering and what comes next.
 - **Mode**: `agentic`
 - **Capabilities**: search the feedback corpus, read text/JSON/CSV, read PDF/DOCX, run Python
 - **Input**: User's data folder, uploaded files, or connected knowledge base
-- **Output**: Signal Analysis Report (saved as artifact)
+- **Output**: Signal Analysis Report, saved as `discovery/[project]/signals/signal-summary.md` (required for Handoff)
 - **Validate**: Report contains sentiment breakdown, category distribution, key quotes, and urgency assessment
 - **On failure**: If no data found, ask user to point to a different source
 
