@@ -108,6 +108,9 @@ ingestors, webhooks, and manual imports:
   link through both fields. For example, `{"url": "https://example.com/review"}`
   produces both `url` and `source_url` with that value. If both are absent, both
   remain `None`; if both are supplied and differ, both values are preserved.
+- With `validate_assignment=True`, assigning `None` to either URL while the
+  other remains populated restores it from the other field; assignment cannot
+  be used to remove a link in that case.
 - This fallback applies to all producers. Presence of `source_url` in validated
   output does **not** mean the producer supplied a separate source link. Use the
   original producer payload (retained inline or in raw S3 storage) for that
