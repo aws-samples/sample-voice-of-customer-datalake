@@ -2,10 +2,19 @@
 Tests for shared/aws.py - AWS client utilities.
 
 Focuses on behavioral tests: caching, secret parsing, error handling.
-Removed: client factory tests that only verify boto3 is called with the right service name.
+The client factories, the literal Bedrock numbers, the secret cache size and
+`put_secret_json` are pinned in test_aws_mutation.py.
 """
 import json
-from unittest.mock import patch, MagicMock
+from typing import Any
+from unittest.mock import MagicMock, patch
+
+
+class _ErrorWithResponse(RuntimeError):
+    """A non-botocore error that still carries a `.response` attribute, as some
+    wrapped SDK errors do — for exercising the malformed-response guards."""
+
+    response: Any = None
 
 
 class TestGetSecret:
@@ -20,7 +29,7 @@ class TestGetSecret:
         }
         mock_get_client.return_value = mock_client
 
-        from shared.aws import get_secret, clear_secret_cache
+        from shared.aws import clear_secret_cache, get_secret
         clear_secret_cache()
 
         result = get_secret('arn:aws:secretsmanager:us-east-1:123:secret:test')
@@ -33,7 +42,7 @@ class TestGetSecret:
         mock_client.get_secret_value.side_effect = Exception('Access denied')
         mock_get_client.return_value = mock_client
 
-        from shared.aws import get_secret, clear_secret_cache
+        from shared.aws import clear_secret_cache, get_secret
         clear_secret_cache()
 
         result = get_secret('arn:aws:secretsmanager:us-east-1:123:secret:x')
@@ -48,7 +57,7 @@ class TestGetSecret:
         }
         mock_get_client.return_value = mock_client
 
-        from shared.aws import get_secret, clear_secret_cache
+        from shared.aws import clear_secret_cache, get_secret
         clear_secret_cache()
 
         result1 = get_secret('arn:aws:secretsmanager:us-east-1:123:secret:cached')
@@ -69,7 +78,7 @@ class TestClearSecretCache:
         }
         mock_get_client.return_value = mock_client
 
-        from shared.aws import get_secret, clear_secret_cache
+        from shared.aws import clear_secret_cache, get_secret
         clear_secret_cache()
 
         get_secret('arn:aws:secretsmanager:us-east-1:123:secret:test-clear')
@@ -189,15 +198,6 @@ class TestBedrockClientBudget:
         )
 
 
-class TestBedrockModelId:
-
-    def test_model_id_points_to_claude_sonnet(self):
-        """Verifies the model ID references Claude Sonnet."""
-        from shared.aws import BEDROCK_MODEL_ID
-        assert 'claude' in BEDROCK_MODEL_ID.lower()
-        assert 'sonnet' in BEDROCK_MODEL_ID.lower()
-
-
 class TestInvokeLambdaAsync:
 
     @patch('shared.aws.get_lambda_client')
@@ -274,7 +274,7 @@ class TestIsConditionalCheckFailure:
         from shared.aws import is_conditional_check_failure
 
         for response in ({}, {'Error': None}, {'Error': {}}, 'not a dict'):
-            error = RuntimeError('boom')
+            error = _ErrorWithResponse('boom')
             error.response = response
             assert is_conditional_check_failure(error) is False, response
 

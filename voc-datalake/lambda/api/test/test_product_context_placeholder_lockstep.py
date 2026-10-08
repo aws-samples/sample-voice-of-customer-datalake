@@ -16,24 +16,15 @@ Both literals are read as SOURCE TEXT rather than imported, so this test cannot
 be satisfied by whatever either module happens to resolve at import time, and it
 needs neither module's AWS-shaped import graph.
 
-Pattern follows test_kiro_exportable_types_lockstep.py (same directory).
+Pattern follows test_doc_type_lockstep.py (same directory).
 """
 import ast
 import re
-from pathlib import Path
+
+from lockstep_fixtures import read_source
 
 PRODUCER_SOURCE = 'lambda/api/product_context.py'
 CONSUMER_SOURCE = 'lambda/jobs/document_generator/handler.py'
-
-
-def _read(relative: str) -> str:
-    # lambda/api/test/ -> voc-datalake/
-    path = Path(__file__).resolve().parents[3] / relative
-    assert path.is_file(), (
-        f'{relative} not found — did the file move? '
-        f'If so, update the path constant in this test file.'
-    )
-    return path.read_text(encoding='utf-8')
 
 
 def _producer_placeholder() -> str:
@@ -43,7 +34,7 @@ def _producer_placeholder() -> str:
     was assembled", so a second unrelated `return "…"` elsewhere in the module
     must not be mistaken for it.
     """
-    source = _read(PRODUCER_SOURCE)
+    source = read_source(PRODUCER_SOURCE)
     matches = re.findall(r'if not sections:\s*\n\s*return\s+"([^"]*)"', source)
     assert len(matches) == 1, (
         f'Expected exactly one `if not sections: return "…"` fallback in '
@@ -56,7 +47,7 @@ def _producer_placeholder() -> str:
 
 def _consumer_placeholder() -> str:
     """The NO_PRODUCT_CONTEXT constant the generator compares against."""
-    source = _read(CONSUMER_SOURCE)
+    source = read_source(CONSUMER_SOURCE)
     matches = re.findall(r'^NO_PRODUCT_CONTEXT\s*=\s*"([^"]*)"', source, re.MULTILINE)
     assert len(matches) == 1, (
         f'Expected exactly one module-level NO_PRODUCT_CONTEXT assignment in '
@@ -95,7 +86,7 @@ def _producer_function() -> ast.FunctionDef:
     guards against, demonstrated there by mutation).
     """
     functions = [
-        node for node in ast.walk(ast.parse(_read(PRODUCER_SOURCE)))
+        node for node in ast.walk(ast.parse(read_source(PRODUCER_SOURCE)))
         if isinstance(node, ast.FunctionDef) and node.name == PRODUCER_FUNCTION
     ]
     assert len(functions) == 1, (
@@ -138,30 +129,32 @@ def _section_mutations() -> list[tuple[int, str, ast.expr | None]]:
     """
     found: list[tuple[int, str, ast.expr | None]] = []
     for node in ast.walk(_producer_function()):
-        if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and isinstance(node.func.value, ast.Name)
-            and node.func.value.id == SECTIONS
-        ):
-            found.append((node.lineno, node.func.attr, node.args[0] if node.args else None))
-        elif isinstance(node, ast.AnnAssign) and node.value is None:
-            continue
-        elif isinstance(node, (ast.AnnAssign, ast.Assign, ast.AugAssign)):
-            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            for target in targets:
-                if isinstance(target, ast.Name) and target.id == SECTIONS:
-                    if isinstance(node, ast.AugAssign):
-                        kind = '+='
-                    elif isinstance(node.value, ast.List) and not node.value.elts:
-                        kind = 'init'
-                    else:
-                        kind = 'rebind'
-                    found.append((node.lineno, kind, node.value))
-                elif isinstance(target, ast.Subscript) and isinstance(target.value, ast.Name) \
-                        and target.value.id == SECTIONS:
-                    found.append((node.lineno, 'setitem', node.value))
+        match node:
+            case ast.Call(func=ast.Attribute(value=ast.Name(id=receiver), attr=method)) \
+                    if receiver == SECTIONS:
+                found.append((node.lineno, method, node.args[0] if node.args else None))
+            case ast.AnnAssign(value=None):
+                continue
+            case ast.AnnAssign() | ast.Assign() | ast.AugAssign():
+                found.extend(_writes_to_sections(node))
     return found
+
+
+def _writes_to_sections(node: ast.AnnAssign | ast.Assign | ast.AugAssign):
+    """`(lineno, kind, value)` for each target of `node` that writes SECTIONS."""
+    targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+    for target in targets:
+        if isinstance(target, ast.Name) and target.id == SECTIONS:
+            if isinstance(node, ast.AugAssign):
+                kind = '+='
+            elif isinstance(node.value, ast.List) and not node.value.elts:
+                kind = 'init'
+            else:
+                kind = 'rebind'
+            yield (node.lineno, kind, node.value)
+        elif isinstance(target, ast.Subscript) and isinstance(target.value, ast.Name) \
+                and target.value.id == SECTIONS:
+            yield (node.lineno, 'setitem', node.value)
 
 
 class TestProductContextPlaceholderLockstep:
@@ -244,7 +237,7 @@ class TestNoBlockCanBeBlankWithoutBeingThePlaceholder:
         assert appends, f'No {SECTIONS}.append(...) found — did the producer change shape?'
         for line, value in appends:
             header = _leading_literal(value) if value is not None else None
-            assert header is not None and header.strip().startswith('###'), (
+            missing_heading = (
                 f'The section appended at {PRODUCER_SOURCE}:{line} has no leading '
                 f'"###" heading literal ({header!r}). A section that can be blank '
                 f'makes a non-placeholder block blank too, and _product_context '
@@ -253,3 +246,5 @@ class TestNoBlockCanBeBlankWithoutBeingThePlaceholder:
                 f'`bool(block and block.strip())` guard in '
                 f'{CONSUMER_SOURCE}::_product_context.'
             )
+            assert header is not None, missing_heading
+            assert header.strip().startswith('###'), missing_heading

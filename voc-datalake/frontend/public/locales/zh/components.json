@@ -20,7 +20,76 @@
     "saved": "类别保存成功",
     "deleteTitle": "删除类别",
     "deleteMessage": "确定要删除此类别及其所有子类别吗？此操作无法撤销。",
-    "deleteConfirm": "删除"
+    "deleteConfirm": "删除",
+    "expandLabel": "展开 {{name}}",
+    "collapseLabel": "收起 {{name}}",
+    "renameHint": "点击重命名",
+    "renameLabel": "重命名 {{name}}",
+    "deleteCategoryLabel": "删除 {{name}}",
+    "deleteSubcategoryLabel": "删除子类别 {{name}}",
+    "addSubcategoryLabel": "添加子类别",
+    "companyLabel": "公司描述",
+    "listHelp": "每个类别都有一个存储在每条评论上的 ID、一段描述、所属产品以及产品负责人。负责人会自动看到其类别的反馈，并负责跟进处理。",
+    "noProduct": "未设置产品",
+    "saveError": "无法保存类别。请检查名称和限制，并确认你是管理员。",
+    "details": {
+      "productLabel": "产品",
+      "productPlaceholder": "例如：移动应用",
+      "productHint": "此类别所属的产品或领域。",
+      "ownersLabel": "产品负责人",
+      "removeOwner": "移除 {{name}}",
+      "ownersLimit": "最多 {{max}} 位负责人",
+      "addOwner": "添加负责人…",
+      "ownersUnavailable": "无法加载用户列表，目前无法添加负责人。",
+      "ownersHint": "负责人会自动看到此类别的反馈。"
+    },
+    "reprocess": {
+      "title": "重新处理现有反馈",
+      "description": "更改类别后，对已存储的评论重新分类。评论会原地更新——不会删除任何内容。",
+      "modeLabel": "模式",
+      "modes": {
+        "processed": {
+          "title": "重新分类已处理的评论",
+          "description": "根据当前类别对已存储（已翻译）的文本进行分类。只会更改类别和子类别。"
+        },
+        "raw": {
+          "title": "从原始数据重新处理",
+          "description": "从原始数据重新运行完整的分析（情感、类别、用户画像、问题分析）。"
+        },
+        "dimensions": {
+          "title": "重新推断维度",
+          "description": "对可推断的维度重新运行模型。由来源、其配置或人员设置的值不会被更改。"
+        }
+      },
+      "status": {
+        "queued": "排队中",
+        "running": "运行中",
+        "completed": "已完成",
+        "failed": "失败",
+        "cancelled": "已取消"
+      },
+      "counters": {
+        "scanned": "已扫描",
+        "updated": "已更新",
+        "unchanged": "未变化",
+        "skipped_manual": "手动设置（保留）",
+        "failed": "失败"
+      },
+      "allTime": "全部时间",
+      "lastNDays_one": "最近 {{count}} 天",
+      "lastNDays_other": "最近 {{count}} 天",
+      "cancel": "取消任务",
+      "alreadyRunning": "已有重新处理任务正在运行。请等待其完成或先将其取消。",
+      "stoppedAtCeiling": "为控制模型成本，已在每个任务 {{max}} 条评论的上限处停止——其余评论未重新处理。请缩小时间范围以覆盖它们。",
+      "startError": "无法启动重新处理任务。",
+      "daysLabel": "时间范围（天）",
+      "includeManual": "同时覆盖手动更正",
+      "daysHint": "1–{{max}} 天，或输入 0 表示全部时间。除非另行选择，手动更正会被保留。",
+      "costNote": "成本：时间范围内每条评论调用一次模型。对大型数据湖运行全部时间可能需要数小时。",
+      "start": "开始重新处理",
+      "confirmTitle": "要重新处理现有反馈吗？",
+      "confirmMessage": "对{{window}}执行“{{mode}}”。该时间范围内每条评论调用一次模型。评论会原地更新，不会删除任何内容。"
+    }
   },
   "dataSourceWizard": {
     "all": "全部",
@@ -87,14 +156,16 @@
     "downloadMarkdown": "下载为 Markdown",
     "downloadOptions": "下载选项",
     "downloadPDF": "下载为 PDF",
-    "downloadTXT": "下载为 TXT",
-    "kiroPromptTip": "提示：在 Export / MCP 标签页中配置 Kiro 提示词"
+    "downloadTXT": "下载为 TXT"
   },
   "errorBoundary": {
     "description": "此页面遇到意外错误。您可以重新加载或返回首页，应用的其他部分不受影响。",
     "goHome": "返回首页",
     "reload": "重新加载页面",
-    "title": "出现问题"
+    "title": "出现问题",
+    "notFoundTitle": "找不到页面",
+    "notFoundDescription": "此地址没有对应的页面。页面可能已移动，或链接输入有误。",
+    "goBack": "返回"
   },
   "feedbackCard": {
     "copyText": "复制文本",
@@ -102,13 +173,9 @@
     "issue": "问题：{{summary}}",
     "rootCause": "根本原因：{{cause}}",
     "urgent": "紧急",
-    "webScraper": "网页爬虫"
-  },
-  "feedbackCarousel": {
-    "issue": "问题：{{summary}}",
-    "urgent": "紧急",
-    "viewDetails": "查看详情",
-    "webScraper": "网页爬虫"
+    "webScraper": "网页爬虫",
+    "openOriginal": "打开原始评论",
+    "reviewDateHint": "评论撰写日期"
   },
   "formQrCode": {
     "accessibleName": "“{{formName}}”反馈表单的二维码",
@@ -151,9 +218,11 @@
     "refresh": "刷新",
     "sourcePlaceholder": "来源名称...",
     "supportedFormats": "支持 CSV、JSON、JSONL",
+    "unknownError": "未知错误",
     "unsupportedFile": "不支持的文件类型：{{filename}}。仅支持 CSV、JSON 和 JSONL 文件。",
     "uploaded": "已上传 {{filename}}",
     "uploadFailed": "上传 {{filename}} 失败：{{error}}",
+    "uploadUrlFailed": "无法获取上传 URL",
     "uploading": "正在上传 {{count}} 个文件...",
     "uploading_one": "正在上传 {{count}} 个文件...",
     "uploading_other": "正在上传 {{count}} 个文件...",
@@ -162,7 +231,8 @@
   "socialFeed": {
     "all": "全部",
     "noFeedback": "此期间未找到反馈",
-    "view": "查看"
+    "view": "查看",
+    "filterLabel": "按来源筛选"
   },
   "userAdmin": {
     "active": "活跃",
@@ -191,7 +261,6 @@
     "firstNameLabel": "名",
     "lastNameLabel": "姓",
     "loadError": "加载用户失败。请确保您有管理员权限。",
-    "nameLabel": "名称（可选）",
     "noUsers": "未找到用户。请在上方添加您的第一个用户。",
     "passwordResetSent": "密码重置邮件已发送",
     "pendingStatus": "待处理",
@@ -209,40 +278,222 @@
     "userDeleted": "用户已删除",
     "userDisabled": "用户已禁用",
     "userEnabled": "用户已启用",
-    "userManagement": "用户管理",
     "userRole": "用户",
     "usersCount": "（{{count}} 个用户）",
     "usersCount_one": "（{{count}} 个用户）",
     "usersCount_other": "（{{count}} 个用户）",
-    "userUpdated": "用户已更新"
+    "roleFor": "{{email}} 的角色",
+    "categoryAccess": {
+      "title": "类别访问权限",
+      "noCategories": "尚未配置任何类别。",
+      "adminNote": "该用户是管理员，无论此处保存什么，都始终可以看到所有类别。",
+      "all": "所有类别",
+      "selected": "仅所选类别",
+      "ownersNote": "产品负责人始终可以看到自己负责的类别，即使此处未选中。",
+      "saveError": "无法保存类别访问权限。",
+      "loadError": "无法加载类别访问权限。",
+      "saved": "已更新 {{email}} 的类别访问权限"
+    },
+    "flags": {
+      "title": "记忆与所有者标记",
+      "description": "记忆审核员负责维护公司记忆。备用所有者（一名管理员）接收类别无所有者的代理创建项目。",
+      "fallbackOwner": "备用所有者",
+      "memoryReviewer": "记忆审核员",
+      "fallbackOwnerFor": "备用所有者：{{user}}",
+      "memoryReviewerFor": "记忆审核员：{{user}}",
+      "fallbackAdminOnly": "只有管理员才能成为备用所有者。",
+      "saveFailed": "无法更新标记，请重试。"
+    },
+    "sourceAccess": {
+      "title": "来源",
+      "default": "所有未受限的来源(默认)",
+      "all": "所有来源(包括受限来源)",
+      "selected": "仅所选来源",
+      "restricted": "受限",
+      "noProfiles": "尚未配置来源(管理 → 来源与隐私)。"
+    }
   },
-  "userProfile": {
-    "administrator": "管理员",
-    "allFieldsRequired": "所有字段都是必需的",
-    "changePassword": "更改密码",
-    "changing": "更改中...",
-    "confirmNewPassword": "确认新密码",
-    "confirmPasswordPlaceholder": "确认新密码",
-    "currentPassword": "当前密码",
-    "currentPasswordPlaceholder": "输入当前密码",
-    "email": "电子邮件",
-    "failedToChange": "更改密码失败",
-    "groups": "组",
-    "incorrectPassword": "当前密码不正确",
-    "language": "语言",
-    "myProfile": "我的资料",
-    "name": "名称",
-    "newPassword": "新密码",
-    "newPasswordPlaceholder": "输入新密码",
-    "passwordChanged": "密码更改成功！",
-    "passwordIntro": "输入当前密码并选择新密码",
-    "passwordRequirements": "密码必须至少 8 个字符，包含大写字母、小写字母和数字",
-    "passwordTooShort": "密码必须至少 8 个字符",
-    "passwordsMismatch": "新密码不匹配",
-    "profile": "资料",
-    "role": "角色",
-    "showPasswords": "显示密码",
-    "user": "用户",
-    "username": "用户名"
+  "confirmModal": {
+    "delete": "删除"
+  },
+  "pageLoader": {
+    "loading": "正在加载页面…"
+  },
+  "ratingStars": {
+    "label": "{{rating}} / {{max}} 星"
+  },
+  "categoryChange": {
+    "previous": "原为 {{category}}",
+    "manual": "已手动更改",
+    "manualBy": "由 {{user}} 更改",
+    "loading": "正在加载类别",
+    "category": "类别",
+    "choose": "选择类别",
+    "subcategory": "子类别",
+    "noSubcategory": "无",
+    "cancel": "取消",
+    "save": "保存类别",
+    "open": "更改类别",
+    "errors": {
+      "invalid": "该类别已不存在。请刷新后选择其他类别。",
+      "notFound": "你无法访问此评论，或该类别不在你的访问范围内。",
+      "conflict": "有人同时更改了此评论。请刷新后重试。",
+      "generic": "无法更改类别。"
+    }
+  },
+  "unsavedChanges": {
+    "title": "未保存的更改",
+    "message": "您有尚未保存的更改。离开前保存，还是放弃这些更改？",
+    "save": "保存",
+    "discard": "放弃",
+    "cancel": "取消",
+    "saveFailed": "保存失败。您的更改仍然保留；请重试或取消。",
+    "cannotSave": "请先修复标出的问题再保存，或放弃更改。"
+  },
+  "dimensionFields": {
+    "tagsLabel": "标签",
+    "tagsPlaceholder": "vip, 账单; 退款",
+    "tagsHint": "用逗号或分号分隔标签(最多 20 个)。",
+    "tagsInvalid": "不允许(不能含“#”“,”或“:”,最多 64 个字符):{{tags}}",
+    "tagsTooMany": "最多 {{max}} 个标签。",
+    "sourceLabel": "来源",
+    "manualImport": "手动导入(默认)",
+    "restrictedOption": "{{name}}(受限)",
+    "sourceHint": "决定这些行的个人数据策略、保留期限、可见范围和默认维度。",
+    "sourceRestrictedHint": "受限:只有管理员和获授此来源的人员才能看到这些行。",
+    "defaultsTitle": "维度和标签",
+    "defaultsHint": "来自此处的每条评价都带有这些值;每个维度上以评价自身的值为准。",
+    "noDimensions": "尚未配置维度(管理 → 维度)。",
+    "noDefault": "无默认值"
+  },
+  "draftSaveBar": {
+    "save": "保存",
+    "discard": "放弃更改",
+    "saving": "正在保存…",
+    "saved": "已保存",
+    "saveError": "未保存:{{reason}}",
+    "remove": "删除"
+  },
+  "dimensionsManager": {
+    "newValue": "新值",
+    "valueNameLabel": "{{name}} 的存储名称",
+    "valueNamePlaceholder": "stored_name",
+    "valueLabelLabel": "{{name}} 的显示标签",
+    "valueLabelPlaceholder": "显示标签(可选)",
+    "valueParentLabel": "{{name}} 所属的 {{parent}} 值",
+    "anyParentValue": "属于所有上级值",
+    "removeValue": "删除值 {{name}}",
+    "parentLabel": "上级维度",
+    "noParent": "无(顶层)",
+    "parentOfChildren": "它是 {{children}} 的上级,因此自身不能有上级。",
+    "parentHint": "子维度按上级的值缩小可选值(仅一层)。",
+    "newDimension": "新维度",
+    "removeDimension": "删除维度 {{name}}",
+    "keyLabel": "键(存储在评价上)",
+    "labelLabel": "标签",
+    "labelPlaceholder": "产品",
+    "descriptionLabel": "描述(提供给模型)",
+    "inferLabel": "允许模型推断",
+    "inferHint": "关闭:仅由来源、其配置或人员设置。",
+    "valuesTitle": "值({{n}})",
+    "addValueLabel": "{{name}} 的新值",
+    "addValue": "添加值",
+    "emptyTitle": "尚无维度",
+    "emptyHint": "添加维度,即可按产品、模块、用户类型等标记反馈。",
+    "addDimension": "添加维度(最多 {{max}} 个)",
+    "loadError": "无法加载维度。",
+    "problems": {
+      "tooMany": "最多 {{max}} 个维度。",
+      "keyFormat": "键“{{key}}”:使用小写字母、数字和“_”,以字母开头(最多 32 个)。",
+      "keyReserved": "“{{key}}”是保留字,请换一个键。",
+      "keyDuplicate": "有两个维度使用了键“{{key}}”。",
+      "labelLength": "“{{key}}”的标签超过 {{max}} 个字符。",
+      "descriptionLength": "“{{key}}”的描述超过 {{max}} 个字符。",
+      "parentInvalid": "“{{key}}”的上级必须是另一个顶层维度。",
+      "parentValueMissing": "“{{key}}”的值“{{value}}”所属的上级值已不存在。",
+      "tooManyValues": "“{{key}}”的值超过 {{max}} 个。",
+      "valueFormat": "“{{key}}”的值“{{value}}”:1-64 个字符,不能含空格、“#”“,”或“:”。",
+      "valueDuplicate": "“{{key}}”中值“{{value}}”出现了两次。"
+    }
+  },
+  "sourcesManager": {
+    "keepForever": "永久保留评价",
+    "retentionLabel": "删除早于以下天数的评价",
+    "retentionHint": "{{min}}-{{max}} 天。每日任务会删除此来源中更早的评价及其原始存档。",
+    "removeProfile": "删除 {{name}} 的配置",
+    "labelLabel": "标签",
+    "piiLabel": "个人数据",
+    "pii": {
+      "allow": "按原样保留",
+      "allowHint": "文本、作者和标题按来源发送的内容存储。",
+      "redact": "脱敏",
+      "redactHint": "电子邮件、电话号码、IBAN、卡号和 IP 地址在存储前会被替换;作者信息被删除;不保留原始副本。",
+      "summary_only": "仅摘要",
+      "summaryOnlyHint": "仅保留派生字段(摘要、类别、情绪、维度);不保存原文。"
+    },
+    "restrictedLabel": "受限",
+    "restrictedHint": "仅管理员和在“用户 → 访问权限”中获授此来源的用户可以看到其评价。",
+    "defaultsTitle": "此来源每条评价的维度值",
+    "noDefault": "无默认值",
+    "empty": "尚无配置:所有来源都会永久保留全部内容,并对所有人可见。",
+    "loadError": "无法加载来源配置。",
+    "addLabel": "添加来源配置",
+    "add": "添加",
+    "addHint": "选择插件、feedback_form 或 manual_import,或输入导入来源 ID(如 sales_csv)。",
+    "scraperHint": "网页抓取器的评论以抓取器名称作为来源 ID,因此只有按此格式命名的抓取器(小写字母、数字、_ 或 -,例如 trustpilot_reviews)才能设置配置文件。",
+    "problems": {
+      "tooMany": "最多 {{max}} 个来源配置。",
+      "retention": "{{name}}:保留期限必须为 {{min}}-{{max}} 天,或永久保留。",
+      "tags": "{{name}}:请先修正标签。",
+      "idFormat": "使用小写字母、数字、“_”或“-”(最多 48 个)。",
+      "idDuplicate": "该来源已有配置。"
+    }
+  },
+  "erasure": {
+    "title": "删除某个人的反馈",
+    "description": "删除所有匹配的评价及其原始存档。此操作无法撤销。仅保留该值的哈希。",
+    "fieldLabel": "匹配字段",
+    "fields": {
+      "author": "作者",
+      "source_id": "来源 ID",
+      "csv_row_id": "CSV 行 ID",
+      "email": "电子邮件"
+    },
+    "valueLabel": "值",
+    "sourceLabel": "限定来源",
+    "allSources": "所有来源",
+    "sourceRequired": "ID 仅在其来源内唯一：请选择来源。",
+    "start": "删除",
+    "startError": "未能开始删除:{{reason}}",
+    "jobsTitle": "最近的删除",
+    "noJobs": "暂无。",
+    "counts": "已删除 {{items}} 条评价、{{objects}} 个原始对象",
+    "status": {
+      "queued": "排队中",
+      "running": "运行中",
+      "completed": "已完成",
+      "failed": "失败"
+    },
+    "confirmTitle": "要删除此人的反馈吗?",
+    "confirmMessage": "{{field}} 与该值匹配的所有评价({{source}})及其原始存档将被永久删除。"
+  },
+  "dimensionsEdit": {
+    "errors": {
+      "invalid": "该维度值或标签不被允许。",
+      "notFound": "此评价已不可用。",
+      "conflict": "有人同时修改了此评价。请重新加载后重试。",
+      "generic": "无法保存更改。"
+    }
+  },
+  "feedbackDimensions": {
+    "edit": "编辑维度",
+    "none": "无",
+    "cancel": "取消",
+    "save": "保存",
+    "setByHand": "手动设置",
+    "redacted": "已脱敏",
+    "redactedHint": "此评价中的个人数据在存储前已被替换。",
+    "summaryOnly": "仅摘要",
+    "summaryOnlyHint": "其来源仅保留派生字段;原文未被存储。"
   }
 }

@@ -45,17 +45,17 @@
   "pdf": {
     "categoriesLabel": "Categories",
     "category": "Category",
-    "categoryBreakdown": "📊 Category Breakdown",
+    "categoryBreakdown": "Category Breakdown",
     "count": "Count",
     "distribution": "Distribution",
     "generatedOn": "Generated on {{date}} • VoC Analytics — Categories Analysis Report",
-    "sentimentDistribution": "😊 Sentiment Distribution",
+    "sentimentDistribution": "Sentiment Distribution",
     "sentimentLabel": "Sentiment",
     "share": "Share",
     "timeRange": "Time range: {{range}}",
     "timeRangeWithSource": "Time range: {{range}} • Source: {{source}}",
     "title": "Categories Analysis Report",
-    "topKeywords": "🔑 Top Keywords & Issues",
+    "topKeywords": "Top Keywords & Issues",
     "totalFeedback": "Total Feedback"
   },
   "positive": "Positive",
@@ -84,5 +84,14 @@
   "topIssue": "Top Issue",
   "totalFeedback": "Total Feedback",
   "trendingKeywords": "Trending Keywords",
-  "urgentOnly": "Urgent only"
+  "urgentOnly": "Urgent only",
+  "subtitle": "Explore feedback by category, sentiment, keyword and source",
+  "noFeedbackHint": "Try a wider time range or clear some filters.",
+  "viewMode": "View mode",
+  "attributeFilters": "Channel, dimension and tag filters",
+  "filterByChannel": "Filter by channel",
+  "allChannels": "All channels",
+  "filterByTag": "Filter by tag",
+  "allTags": "All tags",
+  "anyValue": "Any"
 }

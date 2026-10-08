@@ -24,33 +24,20 @@
  * assistive tech because both the code and its test agreed on a missing key.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import OverviewTab from './OverviewTab'
-import type { Project, ProjectDocument } from '../../api/types'
+import {
+  clickWizardBuild, confirmWizardBuild, prototypeMocks, prototypeProjectsApiModule, resetPrototypeMocks,
+} from './prototype-fixtures'
+// After the fixtures on purpose: this imports OverviewTab, whose module graph runs
+// the `vi.mock` factory below, which needs the fixture module evaluated.
+import { buildButton, overviewTab as overviewTabFor, renderOverviewTab } from './prototype-render-fixtures'
+import type { ProjectDocument } from '../../api/types'
 
-const mockBuildPrototype = vi.fn()
-vi.mock('../../api/projectsApi', () => ({
-  projectsApi: {
-    buildPrototype: (...args: unknown[]) => mockBuildPrototype(...args),
-  },
-}))
+vi.mock('../../api/projectsApi', () => prototypeProjectsApiModule())
+const { buildPrototype: mockBuildPrototype } = prototypeMocks
 
 const mockJobStarted = vi.fn()
-
-// Fully populated rather than a partial cast: an `as Project` on a two-field
-// literal compiles under the app config but fails `typecheck:tests`, and a cast is
-// exactly the thing that stops telling the truth when the type gains a field.
-const project: Project = {
-  project_id: 'proj_1',
-  name: 'Test project',
-  description: '',
-  status: 'active',
-  created_at: '2026-08-09T00:00:00Z',
-  updated_at: '2026-08-09T00:00:00Z',
-  persona_count: 0,
-  document_count: 0,
-}
 
 function doc(documentType: ProjectDocument['document_type'], id: string): ProjectDocument {
   return {
@@ -69,19 +56,7 @@ function doc(documentType: ProjectDocument['document_type'], id: string): Projec
  */
 /** The tab for a given document set, so a test can re-render with a different one. */
 function overviewTab(documents: ProjectDocument[]) {
-  return (
-    <OverviewTab
-      project={project}
-      personas={[]}
-      documents={documents}
-      onGeneratePersonas={vi.fn()}
-      onGenerateDoc={vi.fn()}
-      onRunResearch={vi.fn()}
-      onRemixDocuments={vi.fn()}
-      onOpenProductTool={vi.fn()}
-      onJobStarted={mockJobStarted}
-    />
-  )
+  return overviewTabFor({ documents, onJobStarted: mockJobStarted })
 }
 
 function renderCard(props: { hasPrd: boolean; hasPrfaq: boolean; hasPrototype?: boolean }) {
@@ -90,12 +65,22 @@ function renderCard(props: { hasPrd: boolean; hasPrfaq: boolean; hasPrototype?: 
   if (props.hasPrfaq) documents.push(doc('prfaq', 'prfaq_1'))
   if (props.hasPrototype === true) documents.push(doc('prototype', 'proto_1'))
 
-  return render(overviewTab(documents))
+  return renderOverviewTab({ documents, onJobStarted: mockJobStarted })
 }
 
-/** The build trigger, not the modal's confirm button. */
-function buildButton() {
-  return screen.getByRole('button', { name: /configure & build prototype/i })
+/** Renders the card for `props` and opens the build wizard; returns the user and `rerender`. */
+async function openCardWizard(props: Parameters<typeof renderCard>[0]) {
+  const user = userEvent.setup()
+  const { rerender } = renderCard(props)
+  await user.click(buildButton())
+  return { user, rerender }
+}
+
+/** Opens the wizard on a PRD-only project, where the PR-FAQ caution must be showing; returns `rerender`. */
+async function expectWizardOpenWithPrfaqCaution() {
+  const { rerender } = await openCardWizard({ hasPrd: true, hasPrfaq: false })
+  expect(screen.getByText(/No PR-FAQ yet/i)).toBeInTheDocument()
+  return rerender
 }
 
 /**
@@ -116,20 +101,42 @@ function confirmButton() {
  */
 async function startBuildVia(user: ReturnType<typeof userEvent.setup>) {
   await user.click(buildButton())
-  await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: /^build prototype$/i }))
+  await clickWizardBuild(user)
+}
+
+/** Renders a project holding both documents and starts a build from it; returns the user. */
+async function startBuildOnFullProject() {
+  const user = userEvent.setup()
+  renderCard({ hasPrd: true, hasPrfaq: true })
+  await startBuildVia(user)
+  return user
+}
+
+/** Starts a build whose request is rejected with `message` before anything is announced. */
+async function startFailingBuild(message: string) {
+  mockBuildPrototype.mockRejectedValue(new Error(message))
+  await startBuildOnFullProject()
+}
+
+/**
+ * Starts a build and holds its request open, so the in-flight state is observable;
+ * returns the release that resolves it. Release and then await, so the state update
+ * it causes happens inside the test rather than after it.
+ */
+async function startHeldBuild() {
+  const release = { value: () => {} }
+  mockBuildPrototype.mockImplementation(() => new Promise((resolve) => {
+    release.value = () => resolve({ job_id: 'job_1' })
+  }))
+  await startBuildOnFullProject()
+  return release
 }
 
 describe('prototype card confirm gate (U12)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockBuildPrototype.mockResolvedValue({ job_id: 'job_1' })
-  })
+  beforeEach(resetPrototypeMocks)
 
   it('asks for confirmation instead of building when only a PRD exists', async () => {
-    const user = userEvent.setup()
-    renderCard({ hasPrd: true, hasPrfaq: false })
-
-    await user.click(buildButton())
+    await openCardWizard({ hasPrd: true, hasPrfaq: false })
 
     // The gate's whole purpose: no billable work before consent.
     expect(mockBuildPrototype).not.toHaveBeenCalled()
@@ -137,19 +144,14 @@ describe('prototype card confirm gate (U12)', () => {
   })
 
   it('asks for confirmation instead of building when only a PR-FAQ exists', async () => {
-    const user = userEvent.setup()
-    renderCard({ hasPrd: false, hasPrfaq: true })
-
-    await user.click(buildButton())
+    await openCardWizard({ hasPrd: false, hasPrfaq: true })
 
     expect(mockBuildPrototype).not.toHaveBeenCalled()
     expect(screen.getByText(/No PRD yet/i)).toBeInTheDocument()
   })
 
   it('starts exactly one build when the confirmation is accepted', async () => {
-    const user = userEvent.setup()
-    renderCard({ hasPrd: true, hasPrfaq: false })
-    await user.click(buildButton())
+    const { user } = await openCardWizard({ hasPrd: true, hasPrfaq: false })
 
     await user.click(screen.getByRole('button', { name: /^build prototype$/i }))
 
@@ -158,9 +160,7 @@ describe('prototype card confirm gate (U12)', () => {
   })
 
   it('starts no build when the confirmation is cancelled', async () => {
-    const user = userEvent.setup()
-    renderCard({ hasPrd: true, hasPrfaq: false })
-    await user.click(buildButton())
+    const { user } = await openCardWizard({ hasPrd: true, hasPrfaq: false })
 
     await user.click(screen.getByRole('button', { name: /^cancel$/i }))
 
@@ -174,22 +174,18 @@ describe('prototype card confirm gate (U12)', () => {
   // PRDs opened a dialog and this one did not. The successor property is that the
   // panel opens with NO warning and still spends nothing until its own button.
   it('opens the wizard with no warning, and spends nothing, when both documents exist', async () => {
-    const user = userEvent.setup()
-    renderCard({ hasPrd: true, hasPrfaq: true })
-
-    await user.click(buildButton())
+    const { user } = await openCardWizard({ hasPrd: true, hasPrfaq: true })
 
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(mockBuildPrototype).not.toHaveBeenCalled()
     // Nothing to caution about on this project, so no caution is shown — an
     // always-rendered warning block would be an empty amber panel here.
-    expect(screen.queryByText(/No PR-FAQ yet/i)).not.toBeInTheDocument()
-    expect(screen.queryByText(/No PRD yet/i)).not.toBeInTheDocument()
-    expect(screen.queryByText(/already has a prototype/i)).not.toBeInTheDocument()
+    const cautions = [/No PR-FAQ yet/i, /No PRD yet/i, /already has a prototype/i]
+      .filter((caution) => screen.queryByText(caution) !== null)
+    expect(cautions).toStrictEqual([])
 
     // ...and it builds once asked.
-    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: /^build prototype$/i }))
-    await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
+    await confirmWizardBuild(user)
   })
 
   it('does not build when neither document exists', async () => {
@@ -216,14 +212,7 @@ describe('prototype card confirm gate (U12)', () => {
     // (no source document, and busy), and the message was rendered
     // unconditionally — so for the whole duration of every *successful* build it
     // told a user who plainly had a PRD to go and create one.
-    const user = userEvent.setup()
-    let releaseRequest = () => {}
-    mockBuildPrototype.mockImplementation(() => new Promise((resolve) => {
-      releaseRequest = () => resolve({ job_id: 'job_1' })
-    }))
-    renderCard({ hasPrd: true, hasPrfaq: true })
-
-    await startBuildVia(user)
+    const release = await startHeldBuild()
 
     // The label becomes "Building…" while in flight, so the trigger has to be found
     // by that name — the disabled state is real, and the point is what it *says*.
@@ -234,35 +223,27 @@ describe('prototype card confirm gate (U12)', () => {
     // Released and then awaited, so the state update it causes happens inside the
     // test rather than after it — an unawaited release surfaces as an act warning
     // whose timing depends on the machine.
-    releaseRequest()
+    release.value()
     await waitFor(() => expect(buildButton()).toBeInTheDocument())
   })
 })
 
 describe('prototype card rebuild guard', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockBuildPrototype.mockResolvedValue({ job_id: 'job_1' })
-  })
+  beforeEach(resetPrototypeMocks)
 
   it('confirms before building a second prototype, since the first is kept', async () => {
     // The build endpoint has no existing-prototype check, so a second click starts
     // another multi-minute billable build. Moving the control into the card grid
     // made it more discoverable, so the accidental-spend path needed closing even
     // though the wider "view vs rebuild" question is still open.
-    const user = userEvent.setup()
-    renderCard({ hasPrd: true, hasPrfaq: true, hasPrototype: true })
-
-    await user.click(buildButton())
+    await openCardWizard({ hasPrd: true, hasPrfaq: true, hasPrototype: true })
 
     expect(mockBuildPrototype).not.toHaveBeenCalled()
     expect(screen.getByText(/already has a prototype/i)).toBeInTheDocument()
   })
 
   it('builds the second prototype once the rebuild is confirmed', async () => {
-    const user = userEvent.setup()
-    renderCard({ hasPrd: true, hasPrfaq: true, hasPrototype: true })
-    await user.click(buildButton())
+    const { user } = await openCardWizard({ hasPrd: true, hasPrfaq: true, hasPrototype: true })
 
     await user.click(screen.getByRole('button', { name: /^build prototype$/i }))
 
@@ -270,9 +251,7 @@ describe('prototype card rebuild guard', () => {
   })
 
   it('starts nothing when the rebuild is cancelled', async () => {
-    const user = userEvent.setup()
-    renderCard({ hasPrd: true, hasPrfaq: true, hasPrototype: true })
-    await user.click(buildButton())
+    const { user } = await openCardWizard({ hasPrd: true, hasPrfaq: true, hasPrototype: true })
 
     await user.click(screen.getByRole('button', { name: /^cancel$/i }))
 
@@ -283,10 +262,7 @@ describe('prototype card rebuild guard', () => {
     // Spending money on a duplicate is the more consequential surprise, so it wins
     // over the "PR-FAQ is missing" note when a project has one document and one
     // prototype.
-    const user = userEvent.setup()
-    renderCard({ hasPrd: true, hasPrfaq: false, hasPrototype: true })
-
-    await user.click(buildButton())
+    await openCardWizard({ hasPrd: true, hasPrfaq: false, hasPrototype: true })
 
     expect(screen.getByText(/already has a prototype/i)).toBeInTheDocument()
     expect(screen.queryByText(/No PR-FAQ yet/i)).not.toBeInTheDocument()
@@ -308,11 +284,7 @@ describe('prototype card rebuild guard', () => {
   // the panel stays open, the caution FOLLOWS the documents, and nothing is spent
   // until the user presses the wizard's own button.
   it('keeps the panel open and clears the caution when the reason for it disappears', async () => {
-    const user = userEvent.setup()
-    const { rerender } = renderCard({ hasPrd: true, hasPrfaq: false })
-
-    await user.click(buildButton())
-    expect(screen.getByText(/No PR-FAQ yet/i)).toBeInTheDocument()
+    const rerender = await expectWizardOpenWithPrfaqCaution()
 
     // A PR-FAQ generation completes and the page refetches documents.
     rerender(overviewTab([doc('prd', 'prd_1'), doc('prfaq', 'prfaq_1')]))
@@ -327,10 +299,7 @@ describe('prototype card rebuild guard', () => {
     // sees the amber block move and a screen-reader user must be told. Asserted on
     // the live region CONTAINING the new text, because a region that is only mounted
     // once there is something to say cannot announce its own arrival.
-    const user = userEvent.setup()
-    const { rerender } = renderCard({ hasPrd: true, hasPrfaq: true })
-
-    await user.click(buildButton())
+    const { rerender } = await openCardWizard({ hasPrd: true, hasPrfaq: true })
     const region = within(screen.getByRole('dialog')).getByRole('status')
     expect(region).toHaveAttribute('aria-live', 'polite')
     expect(region).toBeEmptyDOMElement()
@@ -351,11 +320,7 @@ describe('prototype card rebuild guard', () => {
     // the caution is rendered into the panel the user is looking at and they must
     // still press Build. What must not happen is the panel showing the OLD caution,
     // or none, while the cost has changed.
-    const user = userEvent.setup()
-    const { rerender } = renderCard({ hasPrd: true, hasPrfaq: false })
-
-    await user.click(buildButton())
-    expect(screen.getByText(/No PR-FAQ yet/i)).toBeInTheDocument()
+    const rerender = await expectWizardOpenWithPrfaqCaution()
 
     rerender(overviewTab([doc('prd', 'prd_1'), doc('prototype', 'proto_1')]))
 
@@ -378,44 +343,32 @@ describe('prototype card rebuild guard', () => {
 
     rerender(overviewTab([doc('prd', 'prd_1'), doc('prfaq', 'prfaq_1'), doc('prototype', 'proto_1')]))
 
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(confirmButton()).not.toBeInTheDocument()
-    expect(mockBuildPrototype).not.toHaveBeenCalled()
+    expect({
+      dialog: screen.queryByRole('dialog') !== null,
+      confirm: confirmButton() !== null,
+      builds: mockBuildPrototype.mock.calls.length,
+    }).toStrictEqual({ dialog: false, confirm: false, builds: 0 })
   })
 })
 
 describe('prototype card handover to the jobs panel (U9)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockBuildPrototype.mockResolvedValue({ job_id: 'job_1' })
-  })
+  beforeEach(resetPrototypeMocks)
 
   it('announces the started job once the build request succeeds', async () => {
-    const user = userEvent.setup()
-    renderCard({ hasPrd: true, hasPrfaq: true })
-
-    await startBuildVia(user)
+    await startBuildOnFullProject()
 
     await waitFor(() => expect(mockJobStarted).toHaveBeenCalledTimes(1))
   })
 
   it('reports the failure inline and announces nothing when the build cannot start', async () => {
-    const user = userEvent.setup()
-    mockBuildPrototype.mockRejectedValue(new Error('Bedrock unavailable'))
-    renderCard({ hasPrd: true, hasPrfaq: true })
-
-    await startBuildVia(user)
+    await startFailingBuild('Bedrock unavailable')
 
     await waitFor(() => expect(screen.getByText(/Bedrock unavailable/)).toBeInTheDocument())
     expect(mockJobStarted).not.toHaveBeenCalled()
   })
 
   it('shows the failure instead of the acknowledgement, not both', async () => {
-    const user = userEvent.setup()
-    mockBuildPrototype.mockRejectedValue(new Error('Bedrock unavailable'))
-    renderCard({ hasPrd: true, hasPrfaq: true })
-
-    await startBuildVia(user)
+    await startFailingBuild('Bedrock unavailable')
 
     // A build that failed to start has not started. The card has one status line,
     // so an error that lost to the acknowledgement would be invisible.
@@ -424,16 +377,9 @@ describe('prototype card handover to the jobs panel (U9)', () => {
   })
 
   it('shows the busy label only until the request returns, not until the job finishes', async () => {
-    const user = userEvent.setup()
     // Hold the request open so the busy label is observable — otherwise this
     // assertion passes on a button that never showed it at all.
-    let releaseRequest = () => {}
-    mockBuildPrototype.mockImplementation(() => new Promise((resolve) => {
-      releaseRequest = () => resolve({ job_id: 'job_1' })
-    }))
-    renderCard({ hasPrd: true, hasPrfaq: true })
-
-    await startBuildVia(user)
+    const release = await startHeldBuild()
     expect(await screen.findByText(/building…/i)).toBeInTheDocument()
     // On the FULL accessible name, not a substring: `ActionCard` concatenates the
     // "Configure & " prefix with this label, and the busy label is a sentence rather
@@ -444,17 +390,14 @@ describe('prototype card handover to the jobs panel (U9)', () => {
     // by mutation: restoring the unconditional prefix fails exactly this assertion.
     expect(screen.getByRole('button', { name: /^building…$/i })).toBeInTheDocument()
 
-    releaseRequest()
+    release.value()
 
     // The old code kept "Building…" for up to five minutes of polling.
     await waitFor(() => expect(screen.queryByText(/building…/i)).not.toBeInTheDocument())
   })
 
   it('acknowledges the start, since the panel renders nothing until it refetches', async () => {
-    const user = userEvent.setup()
-    renderCard({ hasPrd: true, hasPrfaq: true })
-
-    await startBuildVia(user)
+    await startBuildOnFullProject()
 
     expect(await screen.findByText(/track it in background jobs/i)).toBeInTheDocument()
   })

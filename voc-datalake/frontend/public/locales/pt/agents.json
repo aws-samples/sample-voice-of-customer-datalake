@@ -1,0 +1,400 @@
+{
+  "nav": {
+    "label": "Agentes autônomos"
+  },
+  "common": {
+    "cancel": "Cancelar"
+  },
+  "status": {
+    "enabled": "Ativado",
+    "disabled": "Desativado"
+  },
+  "scope": {
+    "all": "Todas as categorias",
+    "some": "Monitora: {{list}}"
+  },
+  "list": {
+    "title": "Agentes autônomos",
+    "subtitle": "Os agentes monitoram o feedback do seu escopo e, quando um gatilho dispara, executam um fluxo de trabalho: pesquisa, personas, PR/FAQ, PRD e um protótipo, revisados por personas antes de entregar um projeto.",
+    "create": "Novo agente",
+    "createTitle": "Criar um agente autônomo",
+    "createHint": "Ele é criado desativado com o fluxo integrado “Avaliações → Protótipo”. Configure os gatilhos e o fluxo e depois ative-o.",
+    "createFailed": "Não foi possível criar o agente.",
+    "emptyTitle": "Ainda não há agentes autônomos",
+    "emptyAdmin": "Crie um para transformar automaticamente novo feedback em projetos pesquisados e protótipos.",
+    "emptyUser": "Um administrador ainda não configurou nenhum agente visível para você.",
+    "loadFailed": "Não foi possível carregar os agentes.",
+    "spend": "{{runs}} execuções agendadas hoje · {{calls}} chamadas de modelo neste mês",
+    "spendHint": "Execuções manuais não contam para o limite diário de execuções agendadas."
+  },
+  "library": {
+    "title": "Biblioteca de fluxos de trabalho",
+    "subtitle": "Todos os fluxos que os agentes podem executar. Arquive os que não precisa mais: saem da biblioteca, ficam somente leitura e as revisões são mantidas.",
+    "loadFailed": "Não foi possível carregar a biblioteca de fluxos de trabalho.",
+    "archive": "Arquivar",
+    "archiveNamed": "Arquivar {{name}}",
+    "archiveTitle": "Arquivar este fluxo de trabalho?",
+    "archiveMessage": "“{{name}}” será ocultado da biblioteca e do seletor de fluxos e ficará somente leitura. As revisões são mantidas.",
+    "archiveInUse": "Um agente ativo ainda executa este fluxo. Arquive esse agente ou atribua outro fluxo a ele primeiro.",
+    "archiveFailed": "Não foi possível arquivar o fluxo de trabalho."
+  },
+  "fields": {
+    "name": "Nome",
+    "description": "Descrição",
+    "scope": "Feedback monitorado",
+    "instructions": "Instruções",
+    "instructionsHint": "Orientações personalizadas para toda a equipe (até {{n}} caracteres).",
+    "visibility": "Visibilidade dos projetos entregues",
+    "visibilityHint": "Projetos privados são visíveis apenas para o proprietário, os membros e os administradores.",
+    "workflow": "Fluxo de trabalho",
+    "workflowDefault": "Avaliações → Protótipo (integrado)",
+    "workflowHint": "Edite as etapas na aba Fluxo de trabalho."
+  },
+  "visibility": {
+    "private": "Privado",
+    "public": "Público"
+  },
+  "detail": {
+    "back": "Todos os agentes",
+    "tabs": "Seções do agente",
+    "enabledLabel": "Ativado",
+    "toggleFailed": "Não foi possível ativar ou desativar o agente.",
+    "save": "Salvar",
+    "saved": "Salvo",
+    "saveFailed": "Não foi possível salvar as alterações.",
+    "discard": "Descartar alterações",
+    "archive": "Arquivar",
+    "archiveTitle": "Arquivar este agente?",
+    "archiveMessage": "Ele para de executar e some da lista. Os projetos que criou permanecem.",
+    "notFound": "Este agente não existe ou você não pode vê-lo.",
+    "stats": "{{runs}} execuções no total · {{today}} agendadas hoje · {{calls}} chamadas de modelo neste mês"
+  },
+  "tabs": {
+    "settings": "Configurações",
+    "triggers": "Gatilhos",
+    "personas": "Personas",
+    "instructions": "Instruções",
+    "models": "Modelos",
+    "budget": "Orçamento",
+    "workflow": "Fluxo de trabalho",
+    "runs": "Execuções"
+  },
+  "triggers": {
+    "hint": "O que aciona o agente. Ele executa sozinho no máximo duas vezes por dia e nunca duas vezes ao mesmo tempo.",
+    "none": "Sem gatilhos — ele só executa quando alguém clica em Executar agora.",
+    "remove": "Remover gatilho",
+    "minNew": "Novas avaliações necessárias",
+    "cooldown": "Intervalo de espera (horas)",
+    "every": "A cada",
+    "cron": "Expressão cron",
+    "cronHint": "Cinco campos, ex.: 0 9 * * 1 para segundas às 09:00.",
+    "timezone": "Fuso horário",
+    "count": "Avaliações",
+    "per": "Por",
+    "windowDays": "Em até (dias)",
+    "kinds": {
+      "new_reviews": "Novas avaliações",
+      "schedule": "Agendamento",
+      "threshold": "Limite"
+    },
+    "kindHints": {
+      "new_reviews": "Executa quando chega feedback novo suficiente no seu escopo desde a última execução.",
+      "schedule": "Executa em um agendamento fixo.",
+      "threshold": "Executa quando uma categoria ou subcategoria atinge um número de avaliações dentro de um período."
+    },
+    "everyOptions": {
+      "12h": "12 horas",
+      "24h": "24 horas",
+      "cron": "Personalizado (cron)"
+    },
+    "perOptions": {
+      "category": "Categoria",
+      "subcategory": "Subcategoria"
+    }
+  },
+  "personas": {
+    "fixed": "Personas fixas ({{n}} de {{max}})",
+    "none": "Sem personas fixas — o agente as escolhe a partir do projeto.",
+    "add": "Adicionar persona",
+    "remove": "Remover persona",
+    "project": "Projeto",
+    "persona": "Persona",
+    "chooseProject": "Escolha um projeto",
+    "choosePersona": "Escolha uma persona",
+    "allowGenerate": "Permitir que o agente gere novas personas quando nenhuma se encaixar"
+  },
+  "models": {
+    "hint": "Substitua o modelo por função da equipe. Mantenha o padrão para seguir Configurações → Modelos de IA.",
+    "default": "Padrão das configurações",
+    "roleHint": {
+      "orchestrator": "Decide a próxima etapa e verifica cada resultado.",
+      "worker": "Escreve pesquisas, documentos e protótipos.",
+      "reviewer": "Revisa o trabalho antes da entrega.",
+      "persona": "Fala por cada persona nas revisões."
+    }
+  },
+  "roles": {
+    "orchestrator": "Orquestrador",
+    "worker": "Executor",
+    "reviewer": "Revisor",
+    "persona": "Persona"
+  },
+  "budget": {
+    "runsPerDay": "Execuções agendadas por dia",
+    "runsPerDayHint": "No máximo 2. Execuções manuais não contam.",
+    "callsPerRun": "Chamadas de modelo por execução",
+    "monthlyCap": "Limite mensal de chamadas de modelo",
+    "monthlyCapHint": "O agente para de iniciar execuções quando as chamadas do mês atingem este limite.",
+    "uncapped": "Sem limite mensal"
+  },
+  "run": {
+    "hint": "Cada execução segue o fluxo de trabalho. O gráfico destaca as etapas à medida que executam; é uma visualização, não um controle.",
+    "list": "Execuções",
+    "none": "Ainda não há execuções.",
+    "runNow": "Executar agora",
+    "alreadyRunning": "Já há uma execução em andamento.",
+    "startFailed": "Não foi possível iniciar a execução.",
+    "cancel": "Cancelar execução",
+    "cancelFailed": "Não foi possível cancelar a execução.",
+    "calls": "{{n}} chamadas de modelo",
+    "openProject": "Abrir projeto",
+    "eventLog": "Registro de eventos",
+    "noEvents": "Ainda não há eventos.",
+    "noGraph": "Não foi possível carregar o fluxo de trabalho desta execução.",
+    "olderRevision": "Esta execução usou a revisão {{n}} do fluxo de trabalho.",
+    "graphLabel": "Gráfico de progresso da execução",
+    "showAll": "Mostrar todos os eventos (filtrado para {{step}})",
+    "rounds": "Rodada {{n}}",
+    "status": {
+      "queued": "Na fila",
+      "running": "Em execução",
+      "needs_human": "Requer uma pessoa",
+      "completed": "Concluída",
+      "failed": "Falhou",
+      "cancelled": "Cancelada"
+    },
+    "triggers": {
+      "manual": "Manual",
+      "schedule": "Agendamento",
+      "new_reviews": "Novas avaliações",
+      "threshold": "Limite"
+    },
+    "stepStatus": {
+      "idle": "Não iniciada",
+      "running": "Em execução",
+      "done": "Concluída",
+      "failed": "Falhou"
+    },
+    "eventKinds": {
+      "node_started": "Etapa iniciada",
+      "node_finished": "Etapa concluída",
+      "node_failed": "Etapa falhou",
+      "message": "Mensagem",
+      "verdict": "Veredito",
+      "decision": "Decisão",
+      "artifact": "Artefato"
+    }
+  },
+  "editor": {
+    "canvasLabel": "Tela do fluxo de trabalho",
+    "minimap": "Visão geral do fluxo de trabalho",
+    "palette": "Etapas",
+    "paletteHint": "Arraste uma etapa para a tela ou pressione Enter para adicioná-la.",
+    "panel": "Configurações da etapa",
+    "nothingSelected": "Selecione uma etapa, uma seta ou um loop (na tela ou no esquema abaixo) para configurá-lo.",
+    "multiSelected": "{{n}} etapas selecionadas",
+    "groupLoop": "Agrupar como loop",
+    "ungroupLoop": "Remover o loop",
+    "loopTitle": "Loop {{n}}",
+    "loopMembers": "{{n}} etapas",
+    "loopFrame": "Repetir até {{until}}",
+    "arrow": "Seta",
+    "deleteArrow": "Excluir seta",
+    "deleteStep": "Excluir etapa",
+    "builtin": "Modelo integrado — salve uma cópia para alterá-lo.",
+    "revision": "Revisão {{n}}",
+    "unsaved": "Alterações não salvas",
+    "save": "Salvar",
+    "saveAs": "Salvar como…",
+    "saveAsTitle": "Salvar como novo fluxo de trabalho",
+    "copyName": "{{name}} (cópia)",
+    "import": "Importar",
+    "export": "Exportar",
+    "reset": "Redefinir para o modelo",
+    "resetTitle": "Redefinir para o modelo?",
+    "resetMessage": "Suas alterações não salvas serão substituídas pelo fluxo integrado “Avaliações → Protótipo”.",
+    "conflict": "Alguém salvou uma revisão mais recente nesse meio-tempo.",
+    "conflictReload": "Carregar a mais recente",
+    "conflictSaveAs": "Salvar a minha como cópia",
+    "loadFailed": "Não foi possível carregar o fluxo de trabalho.",
+    "generalIssues": "Problemas do fluxo de trabalho",
+    "issueCount_one": "{{count}} problema",
+    "issueCount_other": "{{count}} problemas",
+    "valid": "O fluxo de trabalho é válido.",
+    "validUnsaved": "Válido — ainda não salvo.",
+    "outcome": {
+      "saved": "Salvo.",
+      "conflict": "Alguém salvou uma revisão mais recente nesse meio-tempo.",
+      "invalid": "O servidor rejeitou o fluxo de trabalho — corrija os problemas e salve novamente.",
+      "failed": "Não foi possível salvar o fluxo de trabalho.",
+      "import_failed": "Esse arquivo não é um fluxo de trabalho válido."
+    },
+    "fields": {
+      "workflowName": "Nome do fluxo de trabalho",
+      "title": "Título",
+      "instructions": "Instruções",
+      "instructionsRequired": "Instruções (obrigatório)",
+      "role": "Função",
+      "roleNone": "Sem função",
+      "label": "Condição",
+      "labelNone": "Sempre",
+      "until": "Até",
+      "maxRounds": "Máximo de rodadas",
+      "description": "Descrição",
+      "arrowTarget": "Para a etapa",
+      "arrowTargetNone": "Escolha uma etapa…",
+      "joinLoop": "Loop"
+    },
+    "params": {
+      "target": "Alvo",
+      "targetAny": "O que foi produzido por último",
+      "maxNew": "Máximo de novas personas",
+      "useWebSearch": "Usar pesquisa na web",
+      "endStatus": "A execução termina como"
+    },
+    "loopFrameLabel": "Loop {{n}}: até {{until}}, no máximo {{rounds}} rodadas",
+    "loopFrameHint": "Clique para configurar este loop",
+    "arrowLabel": "Seta de {{source}} para {{target}} ({{condition}})",
+    "conditionHint": "A seta é seguida quando a etapa informa este resultado; \"Sempre\" é o caminho padrão.",
+    "noConditions": "Esta etapa não emite veredito, então suas setas são sempre seguidas.",
+    "arrowsOut": "Setas de saída",
+    "noArrowsOut": "Nenhuma seta sai desta etapa ainda.",
+    "addArrow": "Adicionar uma seta",
+    "addArrowButton": "Adicionar seta",
+    "noArrowTargets": "Todas as outras etapas já estão conectadas a partir daqui.",
+    "deleteArrowTo": "Excluir a seta para {{target}}",
+    "conditionTo": "Condição para {{target}}",
+    "loopStepsLegend": "Etapas deste loop",
+    "maxRoundsHint": "Um número inteiro de {{min}} a {{max}}; no limite a execução para e pede uma pessoa.",
+    "joinLoop": "Adicionar ao loop",
+    "joinLoopHint": "Um loop repete suas etapas até que a condição de saída seja atendida.",
+    "newLoop": "Um novo loop",
+    "loopOption_one": "Loop {{n}} ({{count}} etapa)",
+    "loopOption_other": "Loop {{n}} ({{count}} etapas)",
+    "leaveLoop": "Tirar esta etapa do loop",
+    "outlineSteps": "Etapas deste fluxo de trabalho",
+    "outlineStepsCount": "Etapas ({{n}})",
+    "outlineLoops": "Loops",
+    "emptyCanvas": "A tela está vazia: adicione etapas pela paleta.",
+    "selectStep": "Configurar a etapa {{title}}",
+    "backToWorkflow": "Configurações do fluxo de trabalho",
+    "clear": "Limpar a tela",
+    "clearTitle": "Limpar a tela?",
+    "clearMessage": "Todas as etapas, setas e loops são removidos do rascunho para você montar o fluxo do zero. Nada é salvo até você salvar."
+  },
+  "paletteGroups": {
+    "flow": "Fluxo",
+    "research": "Pesquisa",
+    "documents": "Documentos",
+    "review": "Revisão",
+    "prototype": "Protótipo",
+    "delivery": "Entrega"
+  },
+  "edgeLabels": {
+    "pass": "Aprovado",
+    "fail": "Reprovado",
+    "agreed": "Acordo",
+    "not_agreed": "Sem acordo"
+  },
+  "loopUntil": {
+    "persona_agreement": "as personas concordarem",
+    "review_pass": "a revisão ser aprovada"
+  },
+  "reviewTargets": {
+    "prfaq": "PR/FAQ",
+    "prd": "PRD",
+    "prototype": "Protótipo"
+  },
+  "endStatuses": {
+    "completed": "Concluída",
+    "needs_human": "Requer uma pessoa"
+  },
+  "nodeTypes": {
+    "start": {
+      "label": "Início",
+      "description": "Onde toda execução começa."
+    },
+    "aggregate_reviews": {
+      "label": "Agregar avaliações",
+      "description": "Coleta o novo feedback no escopo do agente e identifica os temas principais."
+    },
+    "select_or_create_project": {
+      "label": "Selecionar ou criar projeto",
+      "description": "Reutiliza um projeto com o mesmo propósito ou cria um novo."
+    },
+    "select_personas": {
+      "label": "Selecionar personas",
+      "description": "Escolhe as personas relevantes para essas avaliações."
+    },
+    "generate_personas": {
+      "label": "Gerar personas",
+      "description": "Cria novas personas a partir do feedback quando nenhuma se encaixa."
+    },
+    "deep_research": {
+      "label": "Pesquisa aprofundada",
+      "description": "Executa uma tarefa de pesquisa no projeto, opcionalmente com pesquisa na web."
+    },
+    "write_prfaq": {
+      "label": "Escrever PR/FAQ",
+      "description": "Redige um comunicado de imprensa e FAQ para a ideia."
+    },
+    "write_prd": {
+      "label": "Escrever PRD",
+      "description": "Redige um documento de requisitos do produto."
+    },
+    "revise_document": {
+      "label": "Revisar documento",
+      "description": "Reescreve um documento a partir das objeções da revisão."
+    },
+    "duplicate_document": {
+      "label": "Duplicar documento",
+      "description": "Copia um documento para outro projeto."
+    },
+    "persona_review": {
+      "label": "Revisão por personas",
+      "description": "As personas pontuam o trabalho; acordo = média 4+ e nada bloqueante."
+    },
+    "final_review": {
+      "label": "Revisão final",
+      "description": "Um revisor verifica o pacote completo antes da entrega."
+    },
+    "custom_llm": {
+      "label": "Etapa personalizada",
+      "description": "Uma etapa guiada pelas suas próprias instruções."
+    },
+    "build_prototype": {
+      "label": "Criar protótipo",
+      "description": "Cria um protótipo HTML usando o design system."
+    },
+    "collect_prototype_feedback": {
+      "label": "Coletar pins dos testadores",
+      "description": "Lê os pins abertos que os testadores deixaram no protótipo, para a próxima revisão."
+    },
+    "revise_prototype": {
+      "label": "Revisar protótipo",
+      "description": "Altera o protótipo a partir das objeções da revisão."
+    },
+    "handoff": {
+      "label": "Entregar",
+      "description": "Entrega o projeto ao proprietário da sua categoria principal."
+    },
+    "end": {
+      "label": "Fim",
+      "description": "Onde a execução termina."
+    }
+  },
+  "loopUntilHint": {
+    "persona_agreement": "Repete enquanto a revisão de personas do loop responder \"Sem acordo\".",
+    "review_pass": "Repete enquanto uma etapa de revisão do loop responder \"Reprovado\"."
+  }
+}

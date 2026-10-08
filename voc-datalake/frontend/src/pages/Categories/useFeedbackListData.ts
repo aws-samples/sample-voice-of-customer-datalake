@@ -22,13 +22,16 @@
 import { useMemo } from 'react'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { api } from '../../api/client'
-import type { DateRangeParams, FeedbackItem } from '../../api/client'
+import type { DateRangeParams } from '../../api/client'
+import type { FeedbackItem } from '../../api/types'
 import { FEEDBACK_PAGE_LIMIT, nextPageOffset } from '../../api/feedbackPagination'
 import type { FeedbackPage } from '../../api/feedbackPagination'
 import { matchesRatingFilter } from './types'
+import { attributeFiltersOf } from './useCategoryFilters'
 import type { CategoryFiltersState } from './useCategoryFilters'
+import { failedReads, type FailedReads, type RetryableRead } from '../../utils/failedReads'
 
-export const SEARCH_MIN_CHARS = 2
+const SEARCH_MIN_CHARS = 2
 
 export interface FeedbackListData {
   filteredFeedback: FeedbackItem[]
@@ -43,6 +46,8 @@ export interface FeedbackListData {
   /** Fetches the next page. Only the list endpoint paginates; search/urgent never have more. */
   loadMore: () => void
   isLoadingMore: boolean
+  /** The active read failed with nothing to show: not the same as "no feedback found". */
+  failure: FailedReads
 }
 
 function buildCommonParams(dateParams: DateRangeParams, filters: CategoryFiltersState) {
@@ -53,6 +58,8 @@ function buildCommonParams(dateParams: DateRangeParams, filters: CategoryFilters
     sentiment: filters.sentimentFilter !== 'all' ? filters.sentimentFilter : undefined,
     // The list endpoints accept a single category; multi-select is refined client-side.
     category: filters.selectedCategories.length === 1 ? filters.selectedCategories[0] : undefined,
+    // channel / dims / tag are server-side filters on every list route.
+    ...attributeFiltersOf(filters),
   }
 }
 
@@ -139,6 +146,7 @@ export function useFeedbackListData(
     hasMore: active.hasMore,
     loadMore: active.loadMore,
     isLoadingMore: active.isLoadingMore,
+    failure: active.failure,
   }
 }
 
@@ -151,15 +159,17 @@ interface ActiveFeedbackSource {
   hasMore: boolean
   loadMore: () => void
   isLoadingMore: boolean
+  /** The active read failed with nothing to show: not the same as "no feedback found". */
+  failure: FailedReads
 }
 
-interface SimpleQuery {
+interface SimpleQuery extends RetryableRead {
   data: FeedbackPage | undefined
   isLoading: boolean
 }
 
 /** Structural subset of UseInfiniteQueryResult — keeps the generics out of the hook. */
-interface InfiniteListQuery {
+interface InfiniteListQuery extends RetryableRead {
   data: { pages: FeedbackPage[] } | undefined
   isLoading: boolean
   hasNextPage: boolean
@@ -176,6 +186,7 @@ function toSimpleSource(query: SimpleQuery): ActiveFeedbackSource {
     hasMore: false,
     loadMore: () => undefined,
     isLoadingMore: false,
+    failure: failedReads([query]),
   }
 }
 
@@ -191,6 +202,7 @@ function toListSource(query: InfiniteListQuery): ActiveFeedbackSource {
       void query.fetchNextPage()
     },
     isLoadingMore: query.isFetchingNextPage,
+    failure: failedReads([query]),
   }
 }
 

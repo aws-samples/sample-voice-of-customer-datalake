@@ -8,6 +8,7 @@
     "deleteForm": "Supprimer le formulaire",
     "directLink": "Lien direct",
     "disabled": "Désactivé",
+    "prototypePins": "Épingles de prototype",
     "disableForm": "Désactiver le formulaire",
     "editForm": "Modifier le formulaire",
     "enableForm": "Activer le formulaire",
@@ -19,7 +20,10 @@
     "showEmbedCode": "Afficher le code d'intégration",
     "submissions": "Soumissions",
     "themeLabel": "Thème",
-    "viewSubmissions": "Voir les soumissions"
+    "viewSubmissions": "Voir les soumissions",
+    "collectsName": "Nom",
+    "collectsEmail": "E-mail",
+    "disabledNotice": "Ce formulaire est désactivé. Son lien et son intégration affichent « Feedback form unavailable. » jusqu’à ce que vous l’activiez."
   },
   "configureApiFirst": "Configurez le point de terminaison API dans les Paramètres pour gérer les formulaires de feedback.",
   "createForm": "Créer un formulaire",
@@ -51,9 +55,9 @@
     "previewTagged": "Le feedback de ce formulaire sera tagué comme :",
     "primaryColor": "Couleur primaire",
     "question": "Libellé de la question",
-    "ratingEmoji": "Émoji 😀",
+    "ratingEmoji": "Émoji",
     "ratingNumeric": "Numérique (1-10)",
-    "ratingStars": "Étoiles ⭐",
+    "ratingStars": "Étoiles",
     "saveChanges": "Enregistrer les modifications",
     "saving": "Enregistrement...",
     "selectCategory": "-- Sélectionner une catégorie --",
@@ -85,7 +89,8 @@
     "validationUnknownProject": "Projet lié (plus disponible)",
     "validationUnverifiedDocument": "Document lié (vérification impossible)",
     "validationUnverifiedProject": "Projet lié (vérification impossible)",
-    "validationWholeProject": "-- Tout le projet --"
+    "validationWholeProject": "-- Tout le projet --",
+    "dimensionsHint": "Chaque envoi porte ces valeurs. Une intégration peut définir les siennes par page avec l'option dimensions, par exemple"
   },
   "empty": {
     "createButton": "Créer votre premier formulaire",
@@ -129,5 +134,10 @@
     "selectPrompt": "Sélectionnez un modèle pour continuer",
     "subtitle": "Choisissez un modèle pour commencer",
     "title": "Créer un nouveau formulaire"
+  },
+  "createdDisabled": {
+    "dismiss": "Ignorer",
+    "enable": "Activer maintenant",
+    "message": "« {{name}} » a été créé et est désactivé : quiconque ouvre son lien voit « Feedback form unavailable. » jusqu’à ce que vous l’activiez."
   }
 }

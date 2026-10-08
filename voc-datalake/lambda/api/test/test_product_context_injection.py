@@ -27,32 +27,16 @@ import os
 from unittest.mock import MagicMock, patch
 
 import pytest
+from product_docs_fixtures import product_doc
 
 TEXT_BODY = 'Onboarding takes three steps and the primary colour is #0F62FE.'
 IMAGE_BODY = '## Palette\n`--primary`: #FF00FF - a description no prompt should see yet'
 
 
-def _doc(doc_id: str, content_type: str, *, status: str = 'ready',
-         key: str | None = 'set', created_at: str = '2026-08-13T10:00:00+00:00') -> dict:
-    ext = {'text/markdown': 'md', 'text/plain': 'txt', 'image/png': 'png',
-           'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp'}[content_type]
-    return {
-        'doc_id': doc_id,
-        'filename': f'{doc_id}.{ext}',
-        'content_type': content_type,
-        'size_bytes': 2048,
-        'status': status,
-        'error': None,
-        'extracted_chars': 100,
-        's3_extracted_key': (
-            f'projects/proj-1/product_docs/extracted/{doc_id}.txt' if key else None
-        ),
-        'created_at': created_at,
-    }
 
 
-TEXT_DOC = _doc('notes', 'text/markdown')
-IMAGE_DOC = _doc('screenshot', 'image/png')
+TEXT_DOC = product_doc('notes', 'text/markdown')
+IMAGE_DOC = product_doc('screenshot', 'image/png')
 
 #: Extracted text per S3 key, so a body cannot be attributed to the wrong doc.
 EXTRACTED = {
@@ -81,7 +65,7 @@ def _block(docs: list[dict], *, extracted: dict[str, str] | None = None) -> str:
     s3 = MagicMock()
     # Keyed by S3 key so a body cannot be attributed to the wrong document. The
     # capitalised parameter names are boto3's own kwargs.
-    s3.get_object.side_effect = lambda Bucket, Key: {
+    s3.get_object.side_effect = lambda Key, **_kwargs: {
         'Body': MagicMock(read=lambda: bodies[Key].encode('utf-8'))
     }
     with patch.dict(os.environ, {'RAW_DATA_BUCKET': 'test-bucket'}), \
@@ -120,7 +104,7 @@ class TestImagesAreNotInjectedYet:
     def test_every_accepted_image_type_is_filtered(self, content_type):
         """All four, from the shared map rather than a retyped list — a fifth image
         type added to shared.image_limits must not slip through unfiltered."""
-        image = _doc('shot', content_type)
+        image = product_doc('shot', content_type)
         block = _block([TEXT_DOC, image], extracted={
             TEXT_DOC['s3_extracted_key']: TEXT_BODY,
             image['s3_extracted_key']: IMAGE_BODY,
@@ -248,7 +232,7 @@ class TestExtractedBodiesAreFenced:
         content be read as part of document B's."""
         import product_context
 
-        second = _doc('handbook', 'text/plain', created_at='2026-08-13T11:00:00+00:00')
+        second = product_doc('handbook', 'text/plain', created_at='2026-08-13T11:00:00+00:00')
         block = _block([TEXT_DOC, second], extracted={
             TEXT_DOC['s3_extracted_key']: TEXT_BODY,
             second['s3_extracted_key']: 'A second document.',

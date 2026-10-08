@@ -1,0 +1,26 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  // The Lambda handler: lib/stacks/api-stack.ts bundles this file with esbuild (`entry:`).
+  "entry": ["src/handler.ts!"],
+  "project": [
+    "src/**/*.ts!",
+    "!src/**/*.{spec,test}.ts!",
+    "!src/**/*-fixtures.ts!",
+    "!src/**/__fixtures__/**!"
+  ],
+  // Off: an export only its own file uses is a finding (nothing imports it, not even a spec).
+  // ../../../scripts/knip-production.mjs turns it back on for --production, where an export its own
+  // file uses and a spec imports is a testing seam.
+  "ignoreExportsUsedInFile": false,
+  // Each entry is an export nothing imports ON PURPOSE. Do not add one without its reason.
+  "ignoreIssues": {
+    // The wire contract the SPA mirrors (frontend/src/assistant/contract.ts). Its lockstep spec and
+    // the frontend's allowlists.lockstep.test.ts read THIS file as text with `export const` regexes,
+    // so the names only the SPA side consumes (tool packs, outcome statuses, id bound, page schema)
+    // stay exported here.
+    "src/assistant/contract.ts": ["exports"],
+    // Allowlist pins (updatable persona/form fields, lifecycle states) compared against the SPA copy
+    // by the frontend's allowlists.lockstep.test.ts, again as text.
+    "src/assistant/tools/client/allowlists.ts": ["exports"]
+  }
+}

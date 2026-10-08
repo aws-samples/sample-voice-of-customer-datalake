@@ -10,9 +10,9 @@ All three are synchronous single-call Bedrock helpers; converse() is mocked at
 the shared.converse boundary (the functions import it at call time).
 """
 import json
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
+import pytest
 
 PROJECT_DATA = {
     'project': {'project_id': 'proj-1', 'name': 'Test', 'filters': {'days': 30}},
@@ -49,7 +49,7 @@ class _Assists:
                 p.start()
             try:
                 import projects
-                result = getattr(projects, func_name)('proj-1', body)
+                result = getattr(projects, func_name)('proj-1', body, category_scope=None)
             finally:
                 for p in patches:
                     p.stop()
@@ -99,7 +99,7 @@ class TestSuggestResearchQuestions(_Assists):
         with patch('projects.projects_table', None):
             import projects
             with pytest.raises(ConfigurationError):
-                projects.suggest_research_questions('proj-1', {})
+                projects.suggest_research_questions('proj-1', {}, category_scope=None)
 
 
 class TestSuggestDocumentBrief(_Assists):
@@ -128,7 +128,7 @@ class TestSuggestDocumentBrief(_Assists):
         with patch('projects.projects_table', None):
             import projects
             with pytest.raises(ConfigurationError):
-                projects.suggest_document_brief('proj-1', {})
+                projects.suggest_document_brief('proj-1', {}, category_scope=None)
 
 
 class TestAutofillPrfaqQuestions(_Assists):
@@ -174,7 +174,7 @@ class TestAutofillPrfaqQuestions(_Assists):
         with patch('projects.projects_table', None):
             import projects
             with pytest.raises(ConfigurationError):
-                projects.autofill_prfaq_questions('proj-1', {})
+                projects.autofill_prfaq_questions('proj-1', {}, category_scope=None)
 
 
 class TestStrictJsonTokenHeadroom(_Assists):

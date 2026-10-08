@@ -3,7 +3,10 @@
     "docs_one": "문서 {{count}}개",
     "docs_other": "문서 {{count}}개",
     "personas_one": "페르소나 {{count}}개",
-    "personas_other": "페르소나 {{count}}개"
+    "personas_other": "페르소나 {{count}}개",
+    "deleteProject": "{{name}} 프로젝트 삭제",
+    "editProject": "{{name}} 프로젝트 편집",
+    "owner": "소유자: {{name}}"
   },
   "configureEndpoint": "먼저 설정에서 API 엔드포인트를 구성하세요",
   "createModal": {
@@ -21,6 +24,14 @@
     "message": "이 프로젝트를 삭제하시겠습니까? 모든 페르소나와 문서가 영구적으로 삭제됩니다.",
     "title": "프로젝트 삭제"
   },
+  "editModal": {
+    "nameRequired": "프로젝트 이름을 입력하세요.",
+    "save": "저장",
+    "saveFailed": "프로젝트를 저장하지 못했습니다. 액세스 권한을 확인하고 다시 시도하세요.",
+    "saving": "저장 중...",
+    "title": "프로젝트 편집",
+    "visibilityManageOnly": "공개 범위는 프로젝트 소유자 또는 관리자만 변경할 수 있습니다."
+  },
   "description": "피드백에서 페르소나, PRD, PR/FAQ를 생성하는 프로젝트를 만드세요",
   "emptyState": {
     "createButton": "프로젝트 만들기",
@@ -29,5 +40,58 @@
   },
   "newProject": "새 프로젝트",
   "openProject": "프로젝트 열기",
-  "title": "프로젝트"
+  "title": "프로젝트",
+  "readOnlyBanner": "이 프로젝트에 대한 보기 전용 권한이 있습니다. 편집 권한은 소유자에게 요청하세요.",
+  "sharing": {
+    "cancel": "취소",
+    "description": "이 프로젝트를 볼 수 있는 사람과 초대된 사람이 할 수 있는 작업을 선택하세요.",
+    "errors": {
+      "conflict": "이 사용자는 이미 이 프로젝트에 액세스할 수 있습니다.",
+      "forbidden": "이 프로젝트의 공유 설정을 변경할 권한이 없습니다.",
+      "generic": "변경 사항을 저장하지 못했습니다. 다시 시도하세요.",
+      "invalid": "요청이 거부되었습니다. 프로젝트가 멤버 한도에 도달했을 수 있습니다.",
+      "notFound": "해당 사용자 또는 멤버를 찾을 수 없습니다."
+    },
+    "invite": "초대",
+    "inviteHeading": "사용자 초대",
+    "inviteRoleLabel": "초대할 사용자의 역할",
+    "leave": "프로젝트 나가기",
+    "leaveConfirm": "나가기",
+    "leaveMessage": "프로젝트가 공개 상태가 아니면 액세스 권한을 잃게 됩니다.",
+    "leaveTitle": "프로젝트에서 나가시겠습니까?",
+    "loadError": "공유 설정을 불러오지 못했습니다.",
+    "loading": "공유 설정을 불러오는 중...",
+    "makeOwner": "{{name}}을(를) 소유자로 지정",
+    "members": "멤버",
+    "noMembers": "아직 초대된 사람이 없습니다.",
+    "noOwner": "소유자 없음",
+    "noResults": "일치하는 사용자가 없습니다",
+    "owner": "소유자",
+    "readOnlyNotice": "프로젝트 소유자 또는 관리자만 공유 설정을 변경할 수 있습니다.",
+    "remove": "{{name}} 제거",
+    "roleLabel": "{{name}}의 역할",
+    "roles": {
+      "editor": "편집 가능",
+      "viewer": "보기 가능"
+    },
+    "searchLabel": "사용자 검색",
+    "searchPlaceholder": "사용자 이름 또는 이메일",
+    "searchMinLength": "검색하려면 {{min}}자 이상 입력하세요.",
+    "searching": "검색 중...",
+    "select": "{{name}} 선택",
+    "selected": "선택됨: {{name}}",
+    "share": "공유",
+    "title": "\"{{name}}\" 공유",
+    "transferConfirm": "이전",
+    "transferMessage": "{{name}}이(가) 이 프로젝트의 소유자가 됩니다. 현재 소유자는 편집자로 남습니다.",
+    "transferTitle": "소유권을 이전하시겠습니까?",
+    "you": "(나)"
+  },
+  "visibility": {
+    "label": "이 프로젝트에 액세스할 수 있는 사용자",
+    "private": "비공개",
+    "privateHint": "소유자, 초대된 멤버, 관리자만 볼 수 있습니다.",
+    "public": "공개",
+    "publicHint": "이 워크스페이스의 모든 사용자가 보고 편집할 수 있습니다."
+  }
 }

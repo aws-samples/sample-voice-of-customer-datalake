@@ -55,7 +55,7 @@ export default function SessionQrCode({
   // host, on which `/vote/x` is a 403.
   const url = ballotPageUrl(window.location.origin, sessionId)
   if (url === null) {
-    return <p className="text-sm text-indigo-800">{t('roomVote.qrUnavailable')}</p>
+    return <p className="text-sm text-text">{t('roomVote.qrUnavailable')}</p>
   }
   return (
     <div className="flex flex-col items-center gap-2">
@@ -71,8 +71,8 @@ export default function SessionQrCode({
       />
       {/* The address in text under the symbol: a phone whose camera will not
           focus, or a remote attendee on a video call, still needs a way in. */}
-      <p className="text-xs text-indigo-800 text-center break-all">{url}</p>
-      <p className="text-xs text-indigo-800 text-center">{t('roomVote.qrCaption')}</p>
+      <p className="text-xs text-text text-center break-all">{url}</p>
+      <p className="text-xs text-text text-center">{t('roomVote.qrCaption')}</p>
     </div>
   )
 }

@@ -8,6 +8,7 @@
     "deleteForm": "删除表单",
     "directLink": "直接链接",
     "disabled": "已禁用",
+    "prototypePins": "原型图钉",
     "disableForm": "禁用表单",
     "editForm": "编辑表单",
     "enableForm": "启用表单",
@@ -19,7 +20,10 @@
     "showEmbedCode": "显示嵌入代码",
     "submissions": "提交数",
     "themeLabel": "主题",
-    "viewSubmissions": "查看提交"
+    "viewSubmissions": "查看提交",
+    "collectsName": "姓名",
+    "collectsEmail": "电子邮件",
+    "disabledNotice": "此表单已关闭。在您启用之前，其链接和嵌入内容会显示“Feedback form unavailable.”。"
   },
   "configureApiFirst": "请在设置中配置API端点以管理反馈表单。",
   "createForm": "创建表单",
@@ -51,9 +55,9 @@
     "previewTagged": "此表单的反馈将被标记为：",
     "primaryColor": "主色",
     "question": "问题",
-    "ratingEmoji": "表情 😀",
+    "ratingEmoji": "表情",
     "ratingNumeric": "数字 (1-10)",
-    "ratingStars": "星星 ⭐",
+    "ratingStars": "星星",
     "saveChanges": "保存更改",
     "saving": "保存中...",
     "selectCategory": "-- 选择类别 --",
@@ -85,7 +89,8 @@
     "validationUnknownProject": "已关联的项目（不再可用）",
     "validationUnverifiedDocument": "已关联的文档（无法验证）",
     "validationUnverifiedProject": "已关联的项目（无法验证）",
-    "validationWholeProject": "-- 整个项目 --"
+    "validationWholeProject": "-- 整个项目 --",
+    "dimensionsHint": "每次提交都带有这些值。嵌入时可用 dimensions 选项按页面设置自己的值,例如"
   },
   "empty": {
     "createButton": "创建第一个表单",
@@ -129,5 +134,10 @@
     "selectPrompt": "选择模板以继续",
     "subtitle": "选择模板开始",
     "title": "创建新表单"
+  },
+  "createdDisabled": {
+    "dismiss": "关闭",
+    "enable": "立即启用",
+    "message": "已创建“{{name}}”，目前处于停用状态：在您启用之前，打开其链接的人会看到“Feedback form unavailable.”。"
   }
 }

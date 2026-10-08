@@ -22,6 +22,8 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+import { byCodeUnit } from './compare';
+import { itemAt } from '../test-support/guards';
 
 const PROJECT_ROOT = join(__dirname, '..', '..');
 const STACKS_DIR = join(PROJECT_ROOT, 'lib', 'stacks');
@@ -51,7 +53,7 @@ function typeScriptFilesIn(dir: string): string[] {
  * this list silently, leaving the assertions below looping over the remaining
  * files and still passing.
  */
-const STACK_FILES = typeScriptFilesIn(STACKS_DIR).sort();
+const STACK_FILES = typeScriptFilesIn(STACKS_DIR).sort(byCodeUnit);
 
 /**
  * A name assembled from the account/region pair OUTSIDE the helper.
@@ -142,15 +144,22 @@ describe('the single source of physical names', () => {
     // `${Aws.ACCOUNT_ID}-${Aws.REGION}` pattern was the one spelling no file in
     // this repo uses, while `cdk.Aws.ACCOUNT_ID` (the spelling two stacks DO
     // write) went straight through.
-    const [awsPseudoParams, stackProperties] = HAND_ROLLED_NAME_PATTERNS;
-    expect('`${Aws.ACCOUNT_ID}-${Aws.REGION}`').toMatch(awsPseudoParams);
-    expect('`${cdk.Aws.ACCOUNT_ID}-${cdk.Aws.REGION}`').toMatch(awsPseudoParams);
-    expect('`${this.account}-${this.region}`').toMatch(stackProperties);
-    // ...and does not fire on an ARN, which legitimately interpolates both.
-    expect('`arn:aws:lambda:${this.region}:${this.account}:function:x`').not.toMatch(stackProperties);
-
-    expect("import { DeploymentNaming } from '../utils/naming';").toMatch(NAMING_IMPORT);
-    expect('import { DeploymentNaming } from "../utils/naming";').toMatch(NAMING_IMPORT);
+    const awsPseudoParams = itemAt(HAND_ROLLED_NAME_PATTERNS, 0);
+    const stackProperties = itemAt(HAND_ROLLED_NAME_PATTERNS, 1);
+    expect({
+      awsPseudoParams: ['`${Aws.ACCOUNT_ID}-${Aws.REGION}`', '`${cdk.Aws.ACCOUNT_ID}-${cdk.Aws.REGION}`']
+        .map((sample) => awsPseudoParams.test(sample)),
+      stackProperties: stackProperties.test('`${this.account}-${this.region}`'),
+      // ...and does not fire on an ARN, which legitimately interpolates both.
+      arn: stackProperties.test('`arn:aws:lambda:${this.region}:${this.account}:function:x`'),
+      namingImport: ["import { DeploymentNaming } from '../utils/naming';", 'import { DeploymentNaming } from "../utils/naming";']
+        .map((sample) => NAMING_IMPORT.test(sample)),
+    }).toStrictEqual({
+      awsPseudoParams: [true, true],
+      stackProperties: true,
+      arn: false,
+      namingImport: [true, true],
+    });
   });
 
   it('routes every physical name through the prefix-aware helpers', () => {
@@ -162,7 +171,7 @@ describe('the single source of physical names', () => {
     // is a normal addition and must not fail a test whose name reads as "naming
     // was ripped out", while a stack DROPPING the helpers still fails here.
     const users = STACK_FILES.filter((file) => /this\.unique(Dns)?Name\(/.test(read(file))).map(relative);
-    expect(users).toEqual(expect.arrayContaining([
+    expect(users).toStrictEqual(expect.arrayContaining([
       'lib/stacks/api-stack.ts',
       'lib/stacks/core-stack.ts',
       'lib/stacks/ingestion-stack.ts',

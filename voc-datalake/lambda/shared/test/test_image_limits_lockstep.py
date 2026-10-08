@@ -26,18 +26,10 @@ Three sets of numbers are pinned here.
 import os
 import re
 import sys
-from pathlib import Path
 
 import pytest
 
-
-def _repo_root() -> Path:
-    # lambda/shared/test/ -> voc-datalake/
-    return Path(__file__).resolve().parents[3]
-
-
-def _cdk_source() -> str:
-    return (_repo_root() / 'lib' / 'utils' / 'model-allowlist.ts').read_text(encoding='utf-8')
+from shared.test.repo_paths import cdk_model_allowlist_source, repo_root
 
 
 def _ts_num_const(name: str) -> int:
@@ -49,7 +41,7 @@ def _ts_num_const(name: str) -> int:
     stops matching has to fail loudly, otherwise the test keeps passing while
     comparing against a value nobody is reading any more.
     """
-    match = re.search(rf'export const {name} = ([\d_]+);', _cdk_source())
+    match = re.search(rf'export const {name} = ([\d_]+);', cdk_model_allowlist_source())
     assert match, f'{name} not found in model-allowlist.ts'
     return int(match.group(1).replace('_', ''))
 
@@ -67,7 +59,7 @@ def _frontend_int_const(name: str, source: str = FRONTEND_SOURCE) -> int:
     parameter because the caps are spread over two files in the same directory —
     a .tsx and a .ts — and the reading is identical for both.
     """
-    path = _repo_root() / source
+    path = repo_root() / source
     if not path.is_file():
         # A backend test reaching into the frontend tree. Where only the lambda
         # sources are present (packaging, a partial checkout) there is nothing to
@@ -95,7 +87,7 @@ def _product_context():
     run: collection order makes that true today, but this file must also pass
     when run on its own.
     """
-    api_dir = str(_repo_root() / 'lambda' / 'api')
+    api_dir = str(repo_root() / 'lambda' / 'api')
     if api_dir not in sys.path:
         sys.path.insert(0, api_dir)
     os.environ.setdefault('PROJECTS_TABLE', 'test-projects')
@@ -109,17 +101,7 @@ class TestConverseImageLimitsLockstep:
     def test_max_image_bytes_matches_cdk_source(self):
         from shared.image_limits import MAX_IMAGE_BYTES
 
-        assert MAX_IMAGE_BYTES == _ts_num_const('MAX_IMAGE_BYTES')
-
-    def test_max_image_dimension_matches_cdk_source(self):
-        from shared.image_limits import MAX_IMAGE_DIMENSION_PX
-
-        assert MAX_IMAGE_DIMENSION_PX == _ts_num_const('MAX_IMAGE_DIMENSION_PX')
-
-    def test_max_images_per_message_matches_cdk_source(self):
-        from shared.image_limits import MAX_IMAGES_PER_MESSAGE
-
-        assert MAX_IMAGES_PER_MESSAGE == _ts_num_const('MAX_IMAGES_PER_MESSAGE')
+        assert _ts_num_const('MAX_IMAGE_BYTES') == MAX_IMAGE_BYTES
 
     def test_image_byte_cap_uses_the_decimal_reading_of_3_75_mb(self):
         """Pinned against the binary reading specifically.
@@ -158,12 +140,6 @@ class TestBrowserImageCapLockstep:
             'browser re-encodes for no reason. Change both, or neither.'
         )
 
-    def test_it_is_the_same_number_the_cdk_source_declares(self):
-        """Transitively implied by the test above, asserted anyway: it names the
-        actual source of truth, so a failure points at the file to edit rather
-        than at the Python mirror that happens to sit between them."""
-        assert _frontend_int_const('MAX_IMAGE_BYTES', RESIZE_SOURCE) == _ts_num_const('MAX_IMAGE_BYTES')
-
     def test_the_browser_pixel_target_is_deliberately_not_pinned(self):
         """MAX_IMAGE_EDGE_PX (1568) has NO server counterpart and must not grow
         one. It is a quality/cost target taken from model behaviour — nothing
@@ -173,11 +149,9 @@ class TestBrowserImageCapLockstep:
         than an oversight, and fails if the two are ever made equal, which would
         only happen by someone pinning one to the other.
         """
-        from shared.image_limits import MAX_IMAGE_DIMENSION_PX
-
         browser_target = _frontend_int_const('MAX_IMAGE_EDGE_PX', RESIZE_SOURCE)
         assert browser_target == 1568
-        assert browser_target != MAX_IMAGE_DIMENSION_PX
+        assert browser_target != _ts_num_const('MAX_IMAGE_DIMENSION_PX')
 
 
 class TestUploadCapLockstep:

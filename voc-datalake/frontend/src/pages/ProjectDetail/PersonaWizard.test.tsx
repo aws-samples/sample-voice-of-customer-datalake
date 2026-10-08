@@ -10,47 +10,38 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import userEvent from '@testing-library/user-event'
+import { ApiError } from '../../lib/errors'
+import {
+  createWizardWrapper, resetWizardMocks,
+} from './wizard-fixtures'
+import {
+  wizardApiClientMock, wizardConfigStoreMock,
+} from '../../components/DataSourceWizard/dataSourceWizard-fixtures'
+import { makeDocument, makePersona } from './project-detail-fixtures'
+import { defaultContextConfig } from '../../components/DataSourceWizard/types'
 import { PersonaWizard, ResearchWizard } from './Wizards'
-import { defaultContextConfig } from '../../components/DataSourceWizard/exports'
-import type { ProjectDocument, ProjectPersona } from '../../api/types'
+import type { ProjectDocument } from '../../api/types'
+import type { ProjectPersona } from '../../api/projectTypes'
 
-const mockGetSources = vi.fn()
-const mockGetCategoriesConfig = vi.fn()
-vi.mock('../../api/client', () => ({
-  api: {
-    getSources: (days: number) => mockGetSources(days),
-    getCategoriesConfig: () => mockGetCategoriesConfig(),
-  },
-}))
+vi.mock('../../api/client', () => wizardApiClientMock())
 vi.mock('../../api/projectsApi', () => ({
   projectsApi: {
     suggestResearchQuestions: vi.fn().mockResolvedValue({ suggestions: [] }),
   },
 }))
-vi.mock('../../store/configStore', () => ({
-  useConfigStore: vi.fn(() => ({
-    config: { apiEndpoint: 'https://api.example.com' },
-  })),
-}))
+vi.mock('../../store/configStore', () => wizardConfigStoreMock())
 
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
-  return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
-}
+const createWrapper = createWizardWrapper
 
 const personas: ProjectPersona[] = [
-  { persona_id: 'p1', name: 'Power User', tagline: 'Uses all features', created_at: '' },
-  { persona_id: 'p2', name: 'Casual User', tagline: 'Basic usage', created_at: '' },
+  makePersona({ persona_id: 'p1', name: 'Power User', tagline: 'Uses all features' }),
+  makePersona({ persona_id: 'p2', name: 'Casual User', tagline: 'Basic usage' }),
 ]
 
 const documents: ProjectDocument[] = [
-  { document_id: 'd1', document_type: 'prd', title: 'A PRD', content: '', created_at: '' },
-  { document_id: 'd2', document_type: 'research', title: 'Some research', content: '', created_at: '' },
+  makeDocument({ document_id: 'd1', document_type: 'prd', title: 'A PRD' }),
+  makeDocument({ document_id: 'd2', document_type: 'research', title: 'Some research' }),
 ]
 
 function personaProps() {
@@ -68,11 +59,7 @@ function personaProps() {
 }
 
 describe('PersonaWizard data sources', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockGetSources.mockResolvedValue({ sources: {} })
-    mockGetCategoriesConfig.mockResolvedValue({ categories: [] })
-  })
+  beforeEach(resetWizardMocks)
 
   it('offers customer feedback', async () => {
     render(<PersonaWizard {...personaProps()} />, { wrapper: createWrapper() })
@@ -114,5 +101,50 @@ describe('PersonaWizard data sources', () => {
     await waitFor(() => {
       expect(screen.getByText('Personas (2)')).toBeInTheDocument()
     })
+  })
+})
+
+/** Walk the shared wizard from its first step to the final one (where Generate lives). */
+async function reachFinalStep(user: ReturnType<typeof userEvent.setup>, stepsLeft = 5): Promise<void> {
+  const next = screen.queryByRole('button', { name: /^next/i })
+  if (next === null || stepsLeft === 0) return
+  await user.click(next)
+  await reachFinalStep(user, stepsLeft - 1)
+}
+
+describe('PersonaWizard start failure (F1)', () => {
+  beforeEach(resetWizardMocks)
+
+  it('shows the server\'s reason when the start was refused (no feedback for the filters)', async () => {
+    const user = userEvent.setup()
+    render(
+      <PersonaWizard {...personaProps()} startError={new ApiError(400, 'No feedback data found for the given filters')} />,
+      { wrapper: createWrapper() },
+    )
+    await screen.findByText('Customer Feedback')
+    await reachFinalStep(user)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('No feedback data found for the given filters')
+  })
+
+  it('falls back to a retry line when the failure carries no server reason', async () => {
+    const user = userEvent.setup()
+    render(<PersonaWizard {...personaProps()} startError={new ApiError(502)} />, { wrapper: createWrapper() })
+    await screen.findByText('Customer Feedback')
+    await reachFinalStep(user)
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).not.toHaveTextContent('API Error')
+    expect(alert).toHaveTextContent('This could not be started. Try again.')
+  })
+
+  it('shows nothing before a failed attempt', async () => {
+    const user = userEvent.setup()
+    render(<PersonaWizard {...personaProps()} />, { wrapper: createWrapper() })
+    await screen.findByText('Customer Feedback')
+    await reachFinalStep(user)
+
+    expect(screen.getByText(/Number of Personas/)).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 })

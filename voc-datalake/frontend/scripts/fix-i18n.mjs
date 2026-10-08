@@ -6,9 +6,10 @@
  * Usage: node scripts/fix-i18n.mjs
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
-import { resolve, join, extname } from 'node:path'
+import { resolve, join, extname, isAbsolute, delimiter } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
+import { stripPlaceholders } from './i18n-locales.mjs'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const LOCALES_DIR = resolve(__dirname, '..', 'public', 'locales')
@@ -16,8 +17,8 @@ const LOCALES_DIR = resolve(__dirname, '..', 'public', 'locales')
 // compares this list, i18n-check.mjs's copy, src/i18n/options.ts and src/test/setup.ts
 // against the files on disk. `feedback` was listed here with no catalogue in any
 // locale, so every run tried to load a namespace that does not exist.
-const NAMESPACES = ['categories', 'chat', 'common', 'components', 'dashboard',
-  'dataExplorer', 'feedbackDetail', 'feedbackForms', 'login',
+const NAMESPACES = ['agents', 'assistant', 'assistantTools', 'categories', 'common', 'components', 'dashboard',
+  'dataExplorer', 'feedbackDetail', 'feedbackForms', 'login', 'memory',
   'prioritization', 'problemAnalysis', 'projectDetail', 'projects', 'scrapers', 'settings']
 const LANGUAGES = ['es', 'fr', 'de', 'ko', 'pt', 'ja', 'zh']
 const LANG_NAMES = {
@@ -28,11 +29,32 @@ const MODEL_ID = 'us.anthropic.claude-haiku-4-5-20251001-v1:0'
 const REGION = 'us-east-1'
 const BATCH_SIZE = 60
 
+/**
+ * Absolute path of the AWS CLI. `AWS_CLI` (absolute) wins; otherwise the first
+ * `aws` found in an ABSOLUTE `PATH` entry. Relative entries (`.`, `bin`) are
+ * skipped — they would let a file in the working directory stand in for the CLI
+ * that receives the caller's credentials.
+ */
+function awsCli() {
+  const override = process.env.AWS_CLI
+  if (override) {
+    if (!isAbsolute(override)) throw new Error('AWS_CLI must be an absolute path')
+    return override
+  }
+  for (const dir of (process.env.PATH ?? '').split(delimiter)) {
+    if (!isAbsolute(dir)) continue
+    const candidate = join(dir, 'aws')
+    if (existsSync(candidate) && statSync(candidate).isFile()) return candidate
+  }
+  throw new Error('AWS CLI not found on an absolute PATH entry (set AWS_CLI)')
+}
+
 // Context descriptions for each namespace so the LLM understands
 // where these strings appear in the UI
 const NS_CONTEXT = {
   categories: 'Category breakdown page — shows feedback categories, sentiment filters, keyword clouds, and PDF export for a customer feedback analytics dashboard.',
-  chat: 'AI Chat page — conversational interface where users ask questions about their customer feedback data. Includes suggested questions, chat history sidebar, and export options.',
+  assistant: 'Unified AI assistant — floating bubble / expanded panel / full screen on every page and the /chat page. Page-aware chat about customer feedback and projects; write actions need explicit approval. Includes suggested prompts, past conversations and export.',
+  assistantTools: 'AI assistant approval cards — each proposed write (create/update/delete documents, personas, projects, product context, feedback forms, research and generation jobs, scraper runs, brand settings) is shown with a preview/diff and Approve / Decline buttons, plus its executed / failed / declined / expired outcome.',
   common: 'Shared UI strings — navigation menu, sidebar, breadcrumbs, time range selectors, sentiment labels, pagination, and global filter controls used across all pages.',
   components: 'Reusable UI components — data source wizard (multi-step form), feedback cards, social feed, S3 file import, user administration panel, user profile/password management, document/persona export menus.',
   dashboard: 'Main dashboard — overview page with metric cards (total feedback, sentiment, urgent issues), charts (volume trend, source breakdown, sentiment distribution), and a live social feed.',
@@ -245,8 +267,7 @@ ${JSON.stringify(input, null, 2)}`
       '--body', 'fileb://' + tmpIn,
       tmpOut,
     ]
-    // eslint-disable-next-line sonarjs/no-os-command-from-path -- dev script intentionally invokes AWS CLI
-    execFileSync('aws', args, { stdio: 'pipe', timeout: 120_000 })
+    execFileSync(awsCli(), args, { stdio: 'pipe', timeout: 120_000 })
     const resp = JSON.parse(readFileSync(tmpOut, 'utf-8'))
     const text = resp.content[0].text.trim()
     // Strip markdown fences if present
@@ -285,8 +306,7 @@ for (const lang of LANGUAGES) {
         && !targetValue.startsWith('http')
         && !targetValue.startsWith('@')
         && !targetValue.startsWith('#')
-        // eslint-disable-next-line sonarjs/slow-regex -- bounded input from JSON translation values, not user-controlled
-        && targetValue.replace(/\{\{[^}]+\}\}/g, '').trim().length > 0
+        && stripPlaceholders(targetValue).trim().length > 0
 
       if (isMissing || isEmpty || isUntranslated) {
         toFix.push([key, resolved])

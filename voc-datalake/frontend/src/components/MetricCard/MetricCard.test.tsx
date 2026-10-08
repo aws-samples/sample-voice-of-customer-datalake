@@ -53,7 +53,7 @@ describe('MetricCard', () => {
   })
 
   describe('icon and color themes', () => {
-    it('renders icon with blue color theme by default', () => {
+    it('renders icon with the accent tone by default', () => {
       render(
         <MetricCard 
           title="Messages" 
@@ -63,49 +63,49 @@ describe('MetricCard', () => {
       )
       
       const iconContainer = screen.getByTestId('icon').parentElement
-      expect(iconContainer).toHaveClass('bg-blue-50', 'text-blue-600')
+      expect(iconContainer).toHaveClass('bg-accent-subtle', 'text-accent')
     })
 
-    it('renders icon with green color theme', () => {
+    it('renders icon with the ok tone', () => {
       render(
         <MetricCard 
           title="Positive" 
           value={80} 
           icon={<MessageSquare data-testid="icon" />}
-          color="green"
+          color="ok"
         />
       )
       
       const iconContainer = screen.getByTestId('icon').parentElement
-      expect(iconContainer).toHaveClass('bg-green-50', 'text-green-600')
+      expect(iconContainer).toHaveClass('bg-ok-subtle', 'text-ok')
     })
 
-    it('renders icon with red color theme', () => {
+    it('renders icon with the danger tone', () => {
       render(
         <MetricCard 
           title="Urgent" 
           value={5} 
           icon={<MessageSquare data-testid="icon" />}
-          color="red"
+          color="danger"
         />
       )
       
       const iconContainer = screen.getByTestId('icon').parentElement
-      expect(iconContainer).toHaveClass('bg-red-50', 'text-red-600')
+      expect(iconContainer).toHaveClass('bg-danger-subtle', 'text-danger')
     })
 
-    it('renders icon with orange color theme', () => {
+    it('renders icon with the warn tone', () => {
       render(
         <MetricCard 
           title="Pending" 
           value={12} 
           icon={<MessageSquare data-testid="icon" />}
-          color="orange"
+          color="warn"
         />
       )
       
       const iconContainer = screen.getByTestId('icon').parentElement
-      expect(iconContainer).toHaveClass('bg-orange-50', 'text-orange-600')
+      expect(iconContainer).toHaveClass('bg-warn-subtle', 'text-warn')
     })
 
     it('renders without icon when not provided', () => {

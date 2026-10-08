@@ -1,8 +1,11 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { z } from 'zod'
 import { getRuntimeConfig, isConfigLoaded } from '../runtimeConfig'
+import { getEnvString } from '../lib/env'
 import { isTrustedApiEndpoint } from '../lib/trustedOrigins'
 import type { DateBasis } from '../api/types'
+import { versionedPersist } from './persistVersion'
 
 /**
  * Return true when `endpoint` is safe to persist as the API endpoint.
@@ -22,7 +25,7 @@ function omitKey<T extends object, K extends keyof T>(obj: T, key: K): Omit<T, K
   return copy
 }
 
-export interface SourceConfig {
+interface SourceConfig {
   enabled: boolean
   schedule: string // cron or rate
   credentials: Record<string, string>
@@ -41,7 +44,7 @@ export interface Config {
 
 interface ConfigStore {
   config: Config
-  timeRange: '24h' | '48h' | '7d' | '30d' | 'custom' | 'all'
+  timeRange: typeof TIME_RANGES[number]
   /** Rolling lookback (in days) used when timeRange is 'custom'. */
   customDays: number | null
   /**
@@ -50,7 +53,7 @@ interface ConfigStore {
    */
   dateBasis: DateBasis
   setConfig: (config: Partial<Config>) => void
-  setTimeRange: (range: '24h' | '48h' | '7d' | '30d' | 'custom' | 'all') => void
+  setTimeRange: (range: typeof TIME_RANGES[number]) => void
   setCustomDays: (days: number | null) => void
   setDateBasis: (basis: DateBasis) => void
   syncWithRuntimeConfig: () => void
@@ -62,10 +65,50 @@ const defaultSourceConfig: SourceConfig = {
   credentials: {}
 }
 
-function getEnvString(key: string, defaultValue = ''): string {
-  const value: unknown = import.meta.env[key]
-  return typeof value === 'string' ? value : defaultValue
+/**
+ * Time-range tokens. `'90d'` is the widest fixed preset; `'all'` is ALL TIME
+ * (days=0). Before persisted version 2, `'all'` was the token of the "90 Days"
+ * preset — {@link upgradeConfigBlob} keeps those users on 90 days.
+ */
+const TIME_RANGES = ['24h', '48h', '7d', '30d', '90d', 'custom', 'all'] as const
+
+/** Persisted version of 'voc-config': 2 = `'all'` means all time (was the 90-day preset). */
+const CONFIG_PERSIST_VERSION = 2
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
+
+/**
+ * Rewrite a pre-v2 'voc-config' blob: its `'all'` meant the "90 Days" preset,
+ * so it becomes `'90d'` — the window the user actually picked — instead of
+ * silently widening to all time. Total: anything else passes through unchanged.
+ */
+function upgradeConfigBlob(persisted: unknown, fromVersion: number): unknown {
+  if (fromVersion >= CONFIG_PERSIST_VERSION || !isPlainRecord(persisted)) return persisted
+  return persisted['timeRange'] === 'all' ? { ...persisted, timeRange: '90d' } : persisted
+}
+
+/** The persisted part of the store ('voc-config'), validated on rehydrate. */
+const PersistedConfigSchema = z.object({
+  config: z.object({
+    apiEndpoint: z.string(),
+    brandName: z.string(),
+    brandHandles: z.array(z.string()),
+    hashtags: z.array(z.string()),
+    urlsToTrack: z.array(z.string()),
+    sources: z.object({
+      webscraper: z.object({
+        enabled: z.boolean(),
+        schedule: z.string(),
+        credentials: z.record(z.string(), z.string()),
+      }),
+    }),
+  }),
+  timeRange: z.enum(TIME_RANGES),
+  customDays: z.number().nullable(),
+  dateBasis: z.enum(['imported', 'review']),
+}).partial()
 
 // Get runtime config values, with fallbacks for when config isn't loaded yet
 function getApiEndpoint(): string {
@@ -137,7 +180,8 @@ export const useConfigStore = create<ConfigStore>()(
           // allowlist — this is the key defence against already-persisted bad
           // values. Also override when the runtime config has a different
           // valid endpoint (first-time deployment, environment change, etc.).
-          const runtimeEndpoint = runtimeConfig.apiEndpoint ?? ''
+          // Schema-validated (`RuntimeConfigSchema`), so always a string.
+          const runtimeEndpoint = runtimeConfig.apiEndpoint
           const storedIsAllowed = isAllowedApiEndpoint(currentConfig.apiEndpoint)
           const needsUpdate: boolean = !storedIsAllowed || (
             runtimeEndpoint !== '' && runtimeEndpoint !== currentConfig.apiEndpoint
@@ -151,6 +195,20 @@ export const useConfigStore = create<ConfigStore>()(
         }
       }
     }),
-    { name: 'voc-config' }
+    {
+      name: 'voc-config',
+      // The data fields only — exactly what was persisted before (functions
+      // never serialise), now named so the shape can be versioned.
+      partialize: (state): z.infer<typeof PersistedConfigSchema> => ({
+        config: state.config,
+        timeRange: state.timeRange,
+        customDays: state.customDays,
+        dateBasis: state.dateBasis,
+      }),
+      ...versionedPersist(PersistedConfigSchema, {
+        version: CONFIG_PERSIST_VERSION,
+        upgrade: upgradeConfigBlob,
+      }),
+    }
   )
 )

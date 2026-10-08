@@ -7,40 +7,40 @@ import SentimentBadge from './SentimentBadge'
 
 describe('SentimentBadge', () => {
   describe('sentiment colors', () => {
-    it('renders positive sentiment with green styling', () => {
+    it('renders positive sentiment with the ok tone', () => {
       render(<SentimentBadge sentiment="positive" />)
       
       const badge = screen.getByText('positive')
       expect(badge).toBeInTheDocument()
-      expect(badge).toHaveClass('bg-green-100', 'text-green-800')
+      expect(badge).toHaveClass('bg-ok-subtle', 'text-ok')
     })
 
-    it('renders negative sentiment with red styling', () => {
+    it('renders negative sentiment with the danger tone', () => {
       render(<SentimentBadge sentiment="negative" />)
       
       const badge = screen.getByText('negative')
-      expect(badge).toHaveClass('bg-red-100', 'text-red-800')
+      expect(badge).toHaveClass('bg-danger-subtle', 'text-danger')
     })
 
-    it('renders neutral sentiment with gray styling', () => {
+    it('renders neutral sentiment with the muted tone', () => {
       render(<SentimentBadge sentiment="neutral" />)
       
       const badge = screen.getByText('neutral')
-      expect(badge).toHaveClass('bg-gray-100', 'text-gray-800')
+      expect(badge).toHaveClass('bg-bg-hover', 'text-muted')
     })
 
-    it('renders mixed sentiment with yellow styling', () => {
+    it('renders mixed sentiment with the warn tone', () => {
       render(<SentimentBadge sentiment="mixed" />)
       
       const badge = screen.getByText('mixed')
-      expect(badge).toHaveClass('bg-yellow-100', 'text-yellow-800')
+      expect(badge).toHaveClass('bg-warn-subtle', 'text-warn')
     })
 
     it('falls back to neutral styling for unknown sentiment', () => {
       render(<SentimentBadge sentiment="unknown" />)
       
       const badge = screen.getByText('unknown')
-      expect(badge).toHaveClass('bg-gray-100', 'text-gray-800')
+      expect(badge).toHaveClass('bg-bg-hover', 'text-muted')
     })
   })
 

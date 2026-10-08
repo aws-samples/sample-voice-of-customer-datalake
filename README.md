@@ -10,15 +10,19 @@ A fully serverless AWS platform for ingesting, processing, and analyzing custome
 
 - **Plugin-Based Architecture**: Extensible data source plugins, easily create your own
 - **AI-Powered Analysis**: Amazon Bedrock (Claude) for sentiment, categorization, and insights
-- **Per-Surface Model Picker**: admins choose the Claude model per AI feature (chat, documents, prototypes, enrichment) over a curated allowlist
+- **Unified AI Assistant**: one page-aware assistant (floating bubble → panel → full screen, and the `/chat` page) speaking AG-UI over `/chat/stream`; server tools only read, every write is shown as an approval card and runs with your own permissions; prompt caching; sessions saved per user
+- **Per-Surface Model Picker**: admins choose the Claude model per AI feature (Claude 5.5 generation by default: Sonnet 5.5 for the assistant and documents, Opus 5.5 for prototypes, Haiku 5.5 for enrichment) over a curated allowlist
 - **Web Search**: AgentCore Gateway connector for chat and research — deployed by default, searches stay opt-in per request (opt out with `enableWebSearch: false`)
 - **Project Research Workspace**: generate personas, research, PRDs, PR/FAQs, product reports, and prototypes from customer evidence
 - **Managed Artifact Versions**: persistent PRD, PR/FAQ, and prototype series with revision and derivation lineage
 - **Team Prioritization**: compose document sets into scoring rows, collect individual or room ballots, and surface stale or cross-generation selections
-- **External-Agent Access**: scoped, expiring MCP credentials expose eleven read-only feedback, metrics, project, persona, and job tools
+- **External-Agent Access**: one global MCP server (`/mcp/global`) with personal, expiring tokens minted on Connect that act as their minter — feedback, metrics, memory, project and document tools, plus admin-only agent runs ([docs/mcp.md](docs/mcp.md))
+- **Dimensions, Tags and Channels**: admin-defined axes (product, module, user type, …) filled from imports, source defaults, categories or the model; filter feedback, metrics, the assistant and MCP by them ([docs/dimensions.md](docs/dimensions.md))
+- **Source Policies**: per-source PII redaction or summary-only storage, restricted sources granted per user, opt-in retention and erasure ([docs/source-policies.md](docs/source-policies.md))
+- **EU Deployment**: `-c inferenceScope=eu` keeps model inference in EU regions ([docs/eu-deployment.md](docs/eu-deployment.md))
 - **Real-Time Processing**: Event-driven with SQS and DynamoDB Streams
 - **Multi-Language Support**: Auto-detection and translation
-- **React Dashboard**: Metrics, charts, AI chat, projects, and prioritization
+- **React Dashboard**: Metrics, charts, AI assistant, projects, and prioritization
 - **Secure**: Cognito authentication, least-privilege IAM, KMS encryption, signed private assets, and Secrets Manager
 
 ## 🏗️ Architecture
@@ -62,7 +66,7 @@ npm run test          # frontend Vitest suite
 ```
 
 Other suites live behind their own scripts: `npm run test:cdk` (CDK),
-`npm run test:stream` (streaming chat Lambda), and `npm run test:backend`
+`npm run test:stream` (AI assistant stream Lambda), and `npm run test:backend`
 (Python pytest — needs the Python venv, which `install:all` does not create;
 see the [Deployment Guide](docs/deployment.md#quality-checks)).
 `npm run check` runs the full quality gate before you open a pull request. See
@@ -144,7 +148,12 @@ See [Getting Started with Plugins](docs/getting-started-plugins.md).
 | Document | Description |
 |----------|-------------|
 | [Deployment Guide](docs/deployment.md) | How to deploy the platform |
+| [EU Deployment](docs/eu-deployment.md) | `inferenceScope=eu`: EU inference profiles, model availability, web search and avatars, region choice |
+| [Dimensions](docs/dimensions.md) | Dimensions, tags and channels: model, value sources, filters, API |
+| [Source Policies](docs/source-policies.md) | Source profiles, PII redaction, restricted sources, retention and erasure |
+| [Kiro Design System](docs/kiro-design-system.md) | Frontend themes, colours, typography, components, motion and UI rules (ported from KiroCrew) |
 | [Project Workspace](docs/project-workspace.md) | Managed artifacts, prioritization, room voting, and MCP access |
+| [Kiro ACP Browser Bridge](docs/kiro-acp-browser-bridge.md) | Send work from a browser to a local `kiro-cli` over ACP (`tools/kiro-acp-bridge`), options and threat model |
 | [Plugin Architecture](docs/plugin-architecture.md) | Technical plugin system design |
 | [Getting Started with Plugins](docs/getting-started-plugins.md) | Creating new data source plugins |
 | [Feedback Forms](docs/feedback-forms.md) | Embeddable feedback forms |

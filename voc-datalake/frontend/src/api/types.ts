@@ -5,7 +5,7 @@
 import type { DocumentDerivation } from './derivation'
 // The credential vocabulary lives with its schema for the same reason: the
 // declared type and the runtime validation cannot drift apart.
-import type { McpScope, ReadReach } from './mcpTokenSchema'
+import type { CategoryOverride } from './feedbackSchema'
 
 export interface FeedbackItem {
   feedback_id: string
@@ -34,6 +34,42 @@ export interface FeedbackItem {
   direct_customer_quote?: string
   persona_name?: string
   persona_type?: string
+  /**
+   * How `category` was set: absent/'llm' by the processor, 'manual' when a user
+   * corrected it (see `category_override`), 'reprocess' by a reprocess job.
+   */
+  category_source?: string
+  /** Present when a user changed the category by hand. */
+  category_override?: CategoryOverride
+  /** The customer-side author / title the source sent (absent for summary-only sources). */
+  author?: string
+  title?: string
+  /** Admin-defined dimensions, `{key: value}` (see docs/dimensions.md). */
+  dimensions?: Record<string, string>
+  /** Where each dimension value came from: source, profile, category, ai, manual, reprocess. */
+  dimension_sources?: Record<string, string>
+  tags?: string[]
+  /** The source's PII policy when it was stored; absent = allow. */
+  pii_policy?: PiiPolicy
+}
+
+/** Where a CSV column goes on upload: a field, `metadata`, `ignore`, or `dimension:<key>`. */
+export type CsvColumnTarget =
+  | 'text' | 'id' | 'rating' | 'date' | 'author' | 'title' | 'url' | 'channel' | 'tags' | 'metadata' | 'ignore'
+  | `dimension:${string}`
+
+/** A source profile's PII policy (`SourceProfile.pii`). */
+export type PiiPolicy = 'allow' | 'redact' | 'summary_only'
+
+/**
+ * The attribute filters every list / search / urgent / entities / metrics route
+ * accepts next to `source`: an exact `source_channel`, `dims=key:value,…` (all
+ * must match; build it with `serializeDims`) and one tag (case-insensitive).
+ */
+export interface AttributeFilters {
+  channel?: string
+  dims?: string
+  tag?: string
 }
 
 /**
@@ -52,7 +88,7 @@ export type DateBasis = 'imported' | 'review'
  * Used by `/feedback`, `/feedback/urgent`, and `/feedback/search`. Each filter
  * narrows the result set independently; combine them via AND on the server.
  */
-export interface FeedbackFilters {
+interface FeedbackFilters extends AttributeFilters {
   days?: number
   date_basis?: DateBasis
   source?: string
@@ -92,15 +128,6 @@ export interface FeedbackListResponse {
   items: FeedbackItem[]
 }
 
-/**
- * Response envelope for `/feedback/urgent`. Not paginated — returns up to
- * `limit` items in one shot.
- */
-export interface UrgentFeedbackResponse {
-  count: number
-  items: FeedbackItem[]
-}
-
 export interface MetricsSummary {
   period_days: number
   total_feedback: number
@@ -117,14 +144,22 @@ export interface MetricsSummary {
    * - the raw-item scan was truncated (review-date basis, or a source filter on
    *   a very large window);
    * - a metric partition read stopped before the end of its window;
-   * - the requested window is wider than aggregates are retained for (~90 days),
-   *   so the older rows are already deleted and no complete answer exists.
+   * - a per-day walk hit the request's time budget (wide / all-time windows):
+   *   then `partial_reason` is `'time_budget'` and `scanned_through` names the
+   *   oldest day reached (read via `api/partialWindow.ts`).
+   *
+   * Nothing is deleted any more (no aggregate TTL), so a wide window is never
+   * partial merely for being wide.
    *
    * Optional only for backward compatibility with a deployed API that omitted it
    * on the aggregates path; treat an absent value as `false` (which is what
    * `?? false` at the call site does) rather than as unknown.
    */
   is_partial?: boolean
+  /** Why the window is partial; `'time_budget'` is the one the UI details. */
+  partial_reason?: string
+  /** 'YYYY-MM-DD' — oldest day read when `partial_reason` is `'time_budget'`. */
+  scanned_through?: string
   daily_totals: {
     date: string;
     count: number
@@ -241,6 +276,10 @@ export interface ScraperConfig {
   }
   last_run?: string
   items_found?: number
+  /** Dimension values every review this scraper finds is stamped with. */
+  dimension_defaults?: Record<string, string>
+  /** Tags every review this scraper finds carries. */
+  tags?: string[]
 }
 
 export interface ScraperTemplate {
@@ -284,121 +323,12 @@ export interface EntitiesResponse {
     personas: Record<string, number>
     sources: Record<string, number>
   }
-}
-
-export interface ProjectJob {
-  success?: boolean
-  job_id: string
-  job_type: 'research' | 'generate_personas' | 'generate_prd' | 'generate_prfaq' | 'generate_product_report' | 'build_prototype' | 'merge_documents' | 'import_persona'
-  status: 'pending' | 'running' | 'completed' | 'failed'
-  progress: number
-  current_step?: string
-  created_at: string
-  updated_at?: string
-  completed_at?: string
-  error?: string
-  result?: {
-    document_id?: string
-    persona_id?: string
-    title?: string
-    personas?: ProjectPersona[]
-    /**
-     * How the generation was grounded (issue #231).
-     *
-     * `feedback_items_used` is the number of feedback records that actually
-     * reached the model, which is smaller than `feedback_count` (the number
-     * read from the data lake) whenever `context_truncated` is true. Reporting
-     * only the count read would overstate the evidence behind the result
-     * exactly when the corpus was too large to fit. `fetch_limit_reached` is a
-     * separate loss: `feedback_count` is itself bounded by `fetch_limit`, so
-     * records the filters matched beyond it were never read at all.
-     *
-     * Read through `parseJobGrounding` (api/jobGroundingSchema.ts), never
-     * directly: these arrive from a DynamoDB job record, so the declared types
-     * are what the API intends, not what the wire guarantees.
-     */
-    metadata?: {
-      feedback_count?: number
-      feedback_items_used?: number
-      context_truncated?: boolean
-      fetch_limit_reached?: boolean
-      fetch_limit?: number
-    }
-  }
-}
-
-export interface ProjectPersona {
-  persona_id: string
-  name: string
-  tagline: string
-  created_at: string
-  confidence?: 'high' | 'medium' | 'low'
-  feedback_count?: number
-  avatar_url?: string
-  avatar_prompt?: string
-  // Section 1: Identity & Demographics
-  identity?: {
-    age_range?: string
-    location?: string
-    occupation?: string
-    income_bracket?: string
-    education?: string
-    family_status?: string
-    bio?: string
-  }
-  // Section 2: Goals & Motivations
-  goals_motivations?: {
-    primary_goal?: string
-    secondary_goals?: string[]
-    success_definition?: string
-    underlying_motivations?: string[]
-  }
-  // Section 3: Pain Points & Frustrations
-  pain_points?: {
-    current_challenges?: string[]
-    blockers?: string[]
-    workarounds?: string[]
-    emotional_impact?: string
-  }
-  // Section 4: Behaviors & Habits
-  behaviors?: {
-    current_solutions?: string[]
-    tools_used?: string[]
-    activity_frequency?: string
-    tech_savviness?: string
-    decision_style?: string
-  }
-  // Section 5: Context & Environment
-  context_environment?: {
-    usage_context?: string
-    devices?: string[]
-    time_constraints?: string
-    social_context?: string
-    influencers?: string[]
-  }
-  // Section 6: Representative Quotes
-  quotes?: Array<{
-    text: string;
-    context?: string
-  }>
-  // Section 7: Scenario/User Story
-  scenario?: {
-    title?: string
-    narrative?: string
-    trigger?: string
-    outcome?: string
-  }
-  // Section 8: Research Notes
-  research_notes?: Array<string | {
-    note_id?: string;
-    text: string;
-    author?: string;
-    created_at?: string;
-    tags?: string[]
-  }>
-  // Metadata
-  supporting_evidence?: string[]
-  source_breakdown?: Record<string, number>
+  /** Item counts per `source_channel` (absent from older APIs). */
+  channels?: Record<string, number>
+  /** Top 50 tags with their counts. */
+  tags?: Record<string, number>
+  /** `{dimension key: {value: count}}`. */
+  dimensions?: Record<string, Record<string, number>>
 }
 
 // 🔑 The ONE declaration of what POST /projects/{id}/document accepts in
@@ -578,6 +508,8 @@ export interface ProjectDocument {
   base_title?: string
   /** Stable, monotonic version within this project/type/base-title series. */
   version?: number
+  /** Edit counter of an unmanaged (research / custom) document: each save is +1. Absent = 1. */
+  revision?: number
   // New (S3-only) HTML prototypes have NO `content` — the HTML lives at
   // `prototype_url` on CloudFront. Legacy prototypes (JSON specs, or
   // pre-migration HTML) and all non-prototype document types still use
@@ -589,7 +521,7 @@ export interface ProjectDocument {
   // via `prototype_url` (new) or rendered from `content` via a sandboxed
   // iframe srcDoc (legacy fallback). Absent → legacy JSON spec rendered via
   // PrototypeRenderer.
-  prototype_format?: 'html' | string
+  prototype_format?: string
   // CloudFront URL for the generated prototype HTML (new prototypes only —
   // served from the /prototypes/* cache behavior with its own permissive CSP).
   // Absent on legacy prototypes; callers fall back to `content`/srcDoc.
@@ -628,73 +560,7 @@ export interface ProjectDocument {
   updated_at?: string
 }
 
-export type ProductLifecycleState = '' | 'idea' | 'mvp' | 'beta' | 'ga' | 'mature'
-
-export interface ProductContext {
-  product_name: string
-  one_liner: string
-  target_users: string
-  problem_solved: string
-  current_state: ProductLifecycleState
-  // The following are free-text comments — multi-line strings, not arrays.
-  key_features: string
-  differentiators: string
-  known_limitations: string
-  non_goals: string
-  success_metrics: string
-  free_form_notes: string
-  updated_at?: string
-}
-
 export type ProductDocStatus = 'pending' | 'extracting' | 'ready' | 'failed'
-
-export interface ProductDoc {
-  doc_id: string
-  filename: string
-  content_type: string
-  size_bytes: number
-  status: ProductDocStatus
-  error: string | null
-  extracted_chars: number
-  created_at: string
-}
-
-export interface ProductInterviewTurnResponse {
-  assistant_message: string
-  applied_patch: Partial<ProductContext>
-  context: ProductContext
-}
-
-export interface ProductReportResponse {
-  success: boolean
-  document: ProjectDocument
-}
-
-export interface Project {
-  project_id: string
-  name: string
-  description: string
-  status: 'active' | 'archived'
-  created_at: string
-  updated_at: string
-  persona_count: number
-  document_count: number
-  filters?: Record<string, unknown>
-  kiro_export_prompt?: string
-  /**
-   * The backend's static default instructions, sent on every GET /projects/{id}
-   * response so both the editor and "Copy to Kiro" can fall back to it without
-   * duplicating the text in the frontend bundle.
-   * Present on getProject responses; absent on list responses.
-   */
-  kiro_default_export_prompt?: string
-}
-
-export interface ProjectDetail {
-  project: Project
-  personas: ProjectPersona[]
-  documents: ProjectDocument[]
-}
 
 /**
  * One reviewer's complete ballot on ONE ROW, as read back.
@@ -711,38 +577,6 @@ export interface PrioritizationScore {
   confidence: number
   strategic_fit: number
   notes: string
-}
-
-/**
- * What a prioritization row IS: a project, and the concrete documents it holds.
- *
- * Returned as `rows` beside `scores` and `aggregates` on
- * `GET /projects/prioritization`, keyed by the same row id, so the page learns
- * every row's composition without a second round trip per row.
- *
- * `document_ids` are CONCRETE and stay put. "Latest of each type" is how a row is
- * first composed and not a pointer it keeps following, so generating a new PRD
- * changes no existing row — which is what keeps a ballot describing the documents
- * it was cast about. `prototype_id` is context a reviewer looks at rather than a
- * document the row is scored on, which is why it is its own field; it is `''` when
- * the project has no prototype.
- *
- * `is_frozen` says a ballot has landed, so the composition can no longer change. A
- * fact the page DISPLAYS, never one it enforces: the freeze is a condition on the
- * write itself, so a composition change racing the first ballot loses to it in the
- * database and answers 409 whatever this field said a moment earlier. The timestamp
- * behind it, and the write count the delete fences on, are deliberately NOT published
- * — a client computing the freeze itself would eventually disagree with the condition
- * that enforces it.
- */
-export interface PrioritizationRow {
-  row_id: string
-  project_id: string
-  document_ids: string[]
-  prototype_id: string
-  is_default: boolean
-  created_at: string
-  is_frozen: boolean
 }
 
 /**
@@ -775,44 +609,6 @@ export interface PrioritizationBallotEdit {
   confidence?: number
   strategic_fit?: number
   notes?: string
-}
-
-/**
- * What every reviewer together said about one ROW.
- *
- * A sibling of `scores` on `GET /projects/prioritization`. Where `scores` holds
- * the CALLER'S OWN ballot, this holds the cross-reviewer view: each axis is the
- * mean over the reviewers who scored that axis, and `score_spread` is the range
- * of the composite priority score — weighted exactly as `calculatePriorityScore`,
- * so it is expressed in the notches the page already sorts by. Zero spread means
- * agreement, or fewer than two comparable ballots.
- *
- * Three things a consumer has to know, all decided on the backend
- * (`_aggregate_scores` in `projects_handler.py`) and repeated here because this
- * is where a frontend author reads:
- *
- *  - Rows NOBODY scored are absent, so presence means "somebody scored
- *    this" — do not treat a missing key as a zero row.
- *  - An entry can OUTLIVE its row. Ballots live beside the row record and nothing
- *    removes them in this phase, so intersect these keys with the `rows` map
- *    rather than using this one as a row index.
- *  - `score_spread` compares only reviewers who scored EVERY axis, and is 0 below
- *    two of them, so it can be 0 while `reviewer_count` is greater than 1. An
- *    absent axis counts as zero in the composite, so comparing a partially-scored
- *    ballot would report how completely people scored rather than how much they
- *    disagreed. The means describe everyone who scored; the spread describes only
- *    those comparable like for like.
- *
- * `reviewer_count` counts reviewers who scored at least one axis; a ballot
- * carrying only a note is a legal save but not a vote and is not counted.
- */
-export interface PrioritizationAggregate {
-  impact: number
-  time_to_market: number
-  confidence: number
-  strategic_fit: number
-  reviewer_count: number
-  score_spread: number
 }
 
 export interface S3ImportSource {
@@ -889,9 +685,17 @@ export interface FeedbackForm extends FeedbackFormFields {
   // treat document_id as a refinement.
   project_id?: string
   document_id?: string
+  /** 'prototype_pin' for the form a built prototype gets automatically (§6.2); otherwise 'standard'. */
+  form_type?: FeedbackFormType
+  /** Dimension values every submission is stamped with (an embed's `dimensions` option wins per key). Internal, like project_id. */
+  dimension_defaults?: Record<string, string>
+  /** Tags every submission carries. */
+  tags?: string[]
   created_at: string
   updated_at: string
 }
+
+export type FeedbackFormType = 'standard' | 'prototype_pin'
 
 export interface CognitoUser {
   username: string
@@ -913,7 +717,10 @@ export interface ValidationLogEntry {
   timestamp: string
   log_type: 'validation_failure'
   errors: string[]
-  raw_preview?: string
+  /** Top-level field NAMES of the rejected record (never its values: no PII). */
+  record_keys?: string[]
+  /** Character count of the record's `text`, when it had one. */
+  text_length?: number
 }
 
 export interface ProcessingLogEntry {
@@ -941,43 +748,6 @@ export interface LogsSummary {
   total_validation_failures: number
   total_processing_errors: number
 }
-
-/**
- * Metadata for an API token used by external integrations to ingest feedback.
- * The raw token value is only returned once at creation time
- * (see CreateApiTokenResponse).
- */
-export interface ApiToken {
-  token_id: string
-  name: string
-  /** Per-domain grants (`feedback:read`, …). Replaces the old single `scope`,
-   *  whose `read-write` value was mintable but required by no tool. */
-  scopes: McpScope[]
-  /** The projects this credential is about. Bounds reads when read_reach is
-   *  'project-set'; will bound writes when write tools land. */
-  projects: string[]
-  /** How far the credential may read. 'workspace' is the default and is NOT
-   *  the harmless option — see READ_REACHES. */
-  read_reach: ReadReach
-  created_at: string
-  last_used_at?: string
-  /** ISO-8601 deadline after which the token stops authenticating; absent for
-   *  non-expiring tokens. */
-  expires_at?: string
-}
-
-/** Response when creating an API token; `token` is the only time the raw value is returned. */
-export interface CreateApiTokenResponse {
-  token: string
-  token_id: string
-  name: string
-  scopes: McpScope[]
-  projects: string[]
-  read_reach: ReadReach
-  /** Echo of the minted deadline; absent when the token does not expire. */
-  expires_at?: string
-}
-
 
 /**
  * A public-web search result returned by the AI chat web_search tool

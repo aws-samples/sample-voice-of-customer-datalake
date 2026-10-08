@@ -1,11 +1,15 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { z } from 'zod'
+import { versionedPersist } from './persistVersion'
 
 export interface ParsedReview {
   text: string
   rating: number | null
   author: string | null
   date: string | null
+  /** The parse found no date, so `date` is the import date; cleared once the user sets one. */
+  date_defaulted?: boolean
   title: string | null
 }
 
@@ -61,6 +65,24 @@ const initialState = {
   step: 'input' as const,
 }
 
+/** The persisted draft ('voc-manual-import'), validated on rehydrate. */
+const PersistedDraftSchema = z.object({
+  sourceUrl: z.string(),
+  rawText: z.string(),
+  parsedReviews: z.array(z.object({
+    text: z.string(),
+    rating: z.number().nullable(),
+    author: z.string().nullable(),
+    date: z.string().nullable(),
+    date_defaulted: z.boolean().optional(),
+    title: z.string().nullable(),
+  })),
+  unparsedSections: z.array(z.string()),
+  jobId: z.string().nullable(),
+  sourceOrigin: z.string().nullable(),
+  lastUpdated: z.string().nullable(),
+}).partial()
+
 export const useManualImportStore = create<ManualImportState>()(
   persist(
     (set) => ({
@@ -78,8 +100,11 @@ export const useManualImportStore = create<ManualImportState>()(
       setStep: (step) => set({ step }),
       
       updateReview: (index, review) => set((state) => {
+        const current = index < 0 ? undefined : state.parsedReviews.at(index)
+        // Out-of-range index: no-op rather than inserting a partial review.
+        if (current === undefined) return {}
         const reviews = [...state.parsedReviews]
-        reviews[index] = { ...reviews[index], ...review }
+        reviews[index] = { ...current, ...review }
         return { parsedReviews: reviews, lastUpdated: new Date().toISOString() }
       }),
       
@@ -117,7 +142,7 @@ export const useManualImportStore = create<ManualImportState>()(
     }),
     {
       name: 'voc-manual-import',
-      partialize: (state) => ({
+      partialize: (state): z.infer<typeof PersistedDraftSchema> => ({
         // Only persist draft data, not UI state
         sourceUrl: state.sourceUrl,
         rawText: state.rawText,
@@ -127,6 +152,7 @@ export const useManualImportStore = create<ManualImportState>()(
         sourceOrigin: state.sourceOrigin,
         lastUpdated: state.lastUpdated,
       }),
+      ...versionedPersist(PersistedDraftSchema),
     }
   )
 )

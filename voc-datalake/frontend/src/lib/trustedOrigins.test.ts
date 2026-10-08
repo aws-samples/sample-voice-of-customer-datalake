@@ -32,7 +32,8 @@ vi.mock('../runtimeConfig', () => ({
 
 import { buildTrustedApiOrigins, isTrustedOrigin, isTrustedApiEndpoint } from './trustedOrigins'
 import * as runtimeConfigModule from '../runtimeConfig'
-import { APP_ORIGIN, setLocationOrigin, useAppOrigin } from '@test/location'
+import { APP_ORIGIN, FOREIGN_HOST_SPELLINGS, setLocationOrigin, useAppOrigin } from '@test/location'
+import { loadRuntimeConfig } from '@test/api-mocks'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -43,11 +44,7 @@ const TRUSTED_ORIGIN = 'https://abc123.execute-api.us-east-1.amazonaws.com'
 
 describe('buildTrustedApiOrigins', () => {
   beforeEach(() => {
-    vi.mocked(runtimeConfigModule.isConfigLoaded).mockReturnValue(true)
-    vi.mocked(runtimeConfigModule.getRuntimeConfig).mockReturnValue({
-      apiEndpoint: TRUSTED_API,
-      cognito: { userPoolId: 'pool-1', clientId: 'client-1', region: 'us-east-1', identityPoolId: 'id-pool' },
-    })
+    loadRuntimeConfig(runtimeConfigModule, TRUSTED_API)
   })
   afterEach(() => {
     vi.restoreAllMocks()
@@ -61,7 +58,7 @@ describe('buildTrustedApiOrigins', () => {
 
   it('returns an empty array when config is not loaded', () => {
     vi.mocked(runtimeConfigModule.isConfigLoaded).mockReturnValue(false)
-    expect(buildTrustedApiOrigins()).toEqual([])
+    expect(buildTrustedApiOrigins()).toStrictEqual([])
   })
 
   it('returns an empty array when the runtime config endpoint is unparseable', () => {
@@ -72,7 +69,7 @@ describe('buildTrustedApiOrigins', () => {
     // buildTrustedApiOrigins never adds localhost entries — that logic lives
     // only in isTrustedAbsoluteUrl.  When the endpoint is unparseable the
     // array must be exactly empty.
-    expect(buildTrustedApiOrigins()).toEqual([])
+    expect(buildTrustedApiOrigins()).toStrictEqual([])
   })
 
   it('does NOT add localhost entries to the returned array in dev builds', () => {
@@ -85,20 +82,21 @@ describe('buildTrustedApiOrigins', () => {
   })
 })
 
-describe('isTrustedOrigin', () => {
+/** App origin pinned and the runtime config loaded with {@link TRUSTED_API}, undone after each test. */
+function useTrustedApiConfig(): void {
   useAppOrigin()
 
   beforeEach(() => {
-    vi.mocked(runtimeConfigModule.isConfigLoaded).mockReturnValue(true)
-    vi.mocked(runtimeConfigModule.getRuntimeConfig).mockReturnValue({
-      apiEndpoint: TRUSTED_API,
-      cognito: { userPoolId: 'pool-1', clientId: 'client-1', region: 'us-east-1', identityPoolId: 'id-pool' },
-    })
+    loadRuntimeConfig(runtimeConfigModule, TRUSTED_API)
   })
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllEnvs()
   })
+}
+
+describe('isTrustedOrigin', () => {
+  useTrustedApiConfig()
 
   // ── path-relative URLs (always same-origin) ───────────────────────────────
 
@@ -132,24 +130,10 @@ describe('isTrustedOrigin', () => {
   // by a prefix-based classifier. They are rejected because classification is
   // done on the origin the URL *resolves* to — the origin `fetch` will use.
 
-  it('does NOT trust a protocol-relative URL pointing to a foreign host', () => {
-    // Positive case: path-relative is still safe.
-    expect(isTrustedOrigin('/api/feedback')).toBe(true)
-    // //evil.example.com starts with '/' but resolves cross-origin.
-    expect(isTrustedOrigin('//evil.example.com/collect')).toBe(false)
-  })
-
-  it('does NOT trust a backslash-separator URL pointing to a foreign host', () => {
-    // Positive case: a genuinely path-relative URL is still trusted, so the
-    // negative assertions below cannot pass just because everything is refused.
-    expect(isTrustedOrigin('/api/feedback')).toBe(true)
-
-    // The WHATWG URL parser normalises `\` to `/` for http(s) schemes, so each
-    // of these resolves to https://evil.example.com even though none of them
-    // starts with '//'.
-    expect(isTrustedOrigin('/\\evil.example.com/collect')).toBe(false)
-    expect(isTrustedOrigin('/\\/evil.example.com')).toBe(false)
-    expect(isTrustedOrigin('/\\\\evil.example.com/collect')).toBe(false)
+  // The positive case ('trusts a path-relative URL' above) keeps these
+  // negatives from passing just because everything is refused.
+  it.each(FOREIGN_HOST_SPELLINGS)('does NOT trust %s, which starts with / but resolves to a foreign host', (url) => {
+    expect(isTrustedOrigin(url)).toBe(false)
   })
 
   it('does NOT trust mixed slash/backslash separator forms', () => {
@@ -316,19 +300,7 @@ describe('isTrustedOrigin', () => {
 })
 
 describe('isTrustedApiEndpoint', () => {
-  useAppOrigin()
-
-  beforeEach(() => {
-    vi.mocked(runtimeConfigModule.isConfigLoaded).mockReturnValue(true)
-    vi.mocked(runtimeConfigModule.getRuntimeConfig).mockReturnValue({
-      apiEndpoint: TRUSTED_API,
-      cognito: { userPoolId: 'pool-1', clientId: 'client-1', region: 'us-east-1', identityPoolId: 'id-pool' },
-    })
-  })
-  afterEach(() => {
-    vi.restoreAllMocks()
-    vi.unstubAllEnvs()
-  })
+  useTrustedApiConfig()
 
   // ── sentinel value ────────────────────────────────────────────────────────
 

@@ -4,33 +4,30 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['lib/**/*.test.ts'],
-    // The default timeout stays put deliberately. Only the two out-of-process
-    // synth suites need longer, and they set it per-`describe` — raising it
-    // globally would make an unrelated hung test in any of the other suites take
-    // two minutes to report instead of five seconds.
+    include: ['lib/**/*.test.ts', 'scripts/**/*.test.ts'],
+    // Each test file synthesizes into its own temp dir, removed when the file ends (a bare
+    // `new cdk.App()` otherwise leaves a ~340 MB cdk.out* in $TMPDIR per synth).
+    setupFiles: ['lib/test-support/cdk-tmpdir.setup.ts'],
+    // Files run in parallel, on a bounded pool. This used to be `fileParallelism:
+    // false`: two suites shell out to a whole-app `cdk synth`, and on a cold run
+    // parallel files once pushed api-stack.test.ts's heaviest case past the 5s
+    // default. Measured again (2026-10-07, 41 files / 795 tests, 12-core Mac):
+    // serial 89s, 4 workers 30s, 8 workers 20s; the slowest IN-PROCESS case at
+    // 4 workers was 2.8s (the cdk-nag pass in api-stack-jobs.test.ts), the
+    // out-of-process synth cases (SYNTH_TIMEOUT_MS) 7–11s. Four workers keep
+    // most of the gain and leave headroom under the 5s default; the default
+    // timeout itself stays put deliberately — raising it globally would make a
+    // hung test take minutes to report. scripts/validate.sh, which runs this
+    // suite beside three other lanes, passes its own --testTimeout for load.
     //
-    // Which is only sound if the 5s budget measures the TEST rather than machine
-    // load, hence this: one file at a time. Two suites here shell out to a
-    // whole-app `cdk synth`, so file parallelism oversubscribes the CPU with more
-    // processes than vitest sizes for. On a cold run that took
-    // api-stack.test.ts's heaviest case from 1.3s to 6.8s and failed it on the
-    // 5s default — a flake in a file nothing in that change touched.
-    //
-    // Four suites sit in the exposed band, not one: under parallel execution
-    // api-stack (0.9s), cdn-signing-keys (0.8s), core-stack (0.6s) and
-    // synth-app (0.4s) all synthesize CloudFormation in-process, and the cold
-    // multiplier measured ~5x. So a per-file timeout would mean editing four
-    // unrelated suites, and raising the global timeout is what the 5s default is
-    // here to avoid. Vitest has no per-FILE parallelism opt-out (`sequential`
-    // works within a file; `maxWorkers` still leaves the contention, just less
-    // of it), so the choice is this one line or a second vitest project purely
-    // to isolate two files.
-    //
-    // Measured cost, after removing the redundant third whole-app synth: ~19s
-    // serial against ~11s parallel. Worth 8s for a gate whose timings otherwise
-    // depend on what else the machine is doing.
-    fileParallelism: false,
+    // Sharing synthesized templates across files (one synth per worker) was
+    // measured too and NOT done: the whole run makes 122 in-process synths
+    // totalling ~13s of CPU, against ~55s of module import and ~100s of tests,
+    // so it would buy little and cost per-file module isolation (two suites
+    // vi.mock the plugin loader).
+    fileParallelism: true,
+    pool: 'forks',
+    maxWorkers: 4,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],

@@ -1,0 +1,200 @@
+# Modules (relative to voc-datalake/) already mutation-hardened and merged into kiro-voc.
+# One per line: `path` for a whole module, `path:from-to` for a slice. Read by scripts/mutation-plan.mjs.
+# Round 1 (merged 2026-10-04)
+lambda/aggregator/handler.py:1-1050
+lambda/api/mcp_handler.py:1-1357
+plugins/app_reviews_android/ingestor/play_client.py
+lambda/shared/category_access.py
+lambda/shared/category_override.py
+lambda/shared/idempotency.py
+lambda/shared/project_access.py
+lambda/shared/project_writes.py
+# Round 2 (partial — the round was cut off by a machine reboot)
+lambda/shared/category_config.py
+# Rounds on the modules neither live wave touched (merged 2026-10-05)
+lambda/shared/web_search.py
+lambda/custom_resources/admin_bootstrap.py
+lambda/shared/persona_import.py
+lambda/custom_resources/model_pin.py
+lambda/shared/prototypes.py
+lambda/shared/request_body.py
+lambda/shared/mcp_delegate.py
+lambda/shared/persona_context.py
+lambda/shared/row_ids.py
+lambda/shared/earliest_date.py
+lambda/shared/image_limits.py
+# Round on the wave-4 integration tip (merged into kiro-voc 2026-10-05 after wave 4/5 + kvf landed)
+lambda/api/ballots_handler.py
+lambda/api/chat_handler.py
+lambda/shared/prompts.py
+lambda/shared/jobs.py
+lambda/shared/feedback_category.py
+plugins/app_reviews_ios/ingestor/handler.py
+lambda/shared/time_budget.py
+lambda/shared/plugin_identity.py
+# Round 1 after wave 4/5 + kvf + kvb landed (merged 2026-10-05)
+lambda/api/settings_handler.py
+lambda/api/data_explorer_handler.py
+lambda/shared/reprocess_jobs.py
+lambda/jobs/persona_importer/handler.py
+lambda/shared/exceptions.py
+lambda/agents/nodes/final_review.py
+lambda/agents/nodes/custom_llm.py
+# Round 2 after the feature waves (merged 2026-10-05)
+lambda/api/mcp_handler.py:1358-3043
+plugins/webscraper/ingestor/handler.py
+lambda/shared/model_config.py
+lambda/shared/github_metrics.py
+plugins/_shared/github_api.py
+lambda/shared/project_gate.py
+lambda/agents/nodes/revise_prototype.py
+# Round 3 after the feature waves (merged 2026-10-05; metrics_handler only lines 1-620)
+lambda/api/metrics_handler.py
+lambda/processor/handler.py
+plugins/s3_import/ingestor/handler.py
+lambda/shared/mcp_global_tokens.py
+lambda/agents/principal.py
+lambda/shared/http_utils.py
+lambda/agents/fields.py
+lambda/agents/nodes/write_prfaq.py
+# Night run round 1 (2026-10-05)
+lambda/shared/api.py
+lambda/agents/store.py
+lambda/shared/aws.py
+lambda/memory/scanner/handler.py
+lambda/shared/derivation.py
+lambda/agents/nodes/select_personas.py
+lambda/agents/nodes/write_prd.py
+# Night run round 2 (2026-10-05)
+lambda/api/projects.py:1266-2671
+lambda/shared/memory_store.py:1-522
+lambda/shared/avatar.py
+lambda/shared/categorization.py
+plugins/app_reviews_ios/ingestor/itunes_client.py
+lambda/agents/context_blocks.py
+plugins/_shared/audit.py
+# Night run round 3 (2026-10-05)
+lambda/api/projects.py:2672-3896
+lambda/api/agents_handler.py
+plugins/_shared/sqs_utils.py
+lambda/api/mcp_tokens_handler.py
+lambda/agents/persona_panel/handler.py
+lambda/agents/nodes/aggregate_reviews.py
+lambda/agents/nodes/handler.py
+lambda/agents/nodes/deep_research.py
+# Night run round 4 (2026-10-05)
+lambda/api/projects.py:1-1265
+lambda/api/manual_import_handler.py
+lambda/jobs/category_reprocess/handler.py
+lambda/api/logs_handler.py
+plugins/_shared/circuit_breaker.py
+lambda/api/feedback_edit_handler.py
+lambda/agents/run_memory.py
+lambda/agents/nodes/collect_prototype_feedback.py
+# Night run round 5 (merged 2026-10-06 as 2.14.01; feedback_form_handler.py was still running and stays open)
+lambda/api/scrapers_handler.py
+lambda/shared/ingest_schemas.py
+lambda/memory/extractor/handler.py
+lambda/agents/graph.py
+lambda/shared/prompt_safety.py
+lambda/memory/retention/handler.py
+lambda/agents/nodes/duplicate_document.py
+lambda/api/feedback_form_handler.py:1-450
+# Round 6 (2026-10-06)
+lambda/api/projects_handler.py:2234-3717
+lambda/shared/memory_store.py:523-1080
+plugins/_shared/app_reviews_utils.py
+plugins/_shared/github_text.py
+plugins/github_issues/webhook/handler.py
+lambda/shared/batch.py
+lambda/shared/enabled_sources.py
+lambda/agents/nodes/handoff.py
+# Round 7 (2026-10-06)
+lambda/api/projects_handler.py:1-1007
+lambda/shared/feedback.py
+lambda/shared/mcp_global_tools.py
+lambda/api/manual_import_processor.py
+lambda/jobs/document_merger/handler.py
+plugins/_shared/raw_archive.py
+lambda/api/projects.py:3897-3955
+# Round 8 (2026-10-06)
+lambda/api/product_context.py
+lambda/shared/document_versions.py:1-727
+lambda/shared/design_references.py
+plugins/_shared/base_ingestor.py
+lambda/api/s3_import_handler.py
+lambda/shared/concurrency.py
+lambda/shared/category_gate.py
+# Round 9 (2026-10-06) — branch names did not match their content; these are the modules actually hardened
+lambda/api/projects_handler.py:1008-2233
+lambda/shared/document_versions.py:728-1498
+lambda/api/verification_fixture_provider.py
+plugins/_shared/github_mapping.py
+plugins/_shared/plugin_secrets.py
+lambda/shared/url_policy.py
+lambda/agents/nodes/base.py
+# Round 10 (2026-10-06)
+lambda/api/projects_handler.py:3718-4803
+lambda/shared/workflow_schema.py
+lambda/research/research_step_handler.py
+lambda/shared/user_flags.py
+plugins/_shared/github_config.py
+lambda/agents/nodes/select_or_create_project.py
+lambda/agents/nodes/prototypes.py
+# Round 11 (2026-10-06)
+lambda/api/mcp_handler.py:4245-5527
+lambda/api/feedback_form_handler.py:451-1230
+lambda/shared/prototype_pins.py
+lambda/shared/mcp_tokens.py
+lambda/agents/pins.py
+lambda/shared/embeddings.py
+lambda/shared/tables.py
+# Round 12 (2026-10-06) — the mcp_handler 3044-4244 branch was dropped: 3.00.00 retired api/mcp_handler.py
+lambda/shared/agents_store.py:1-580
+lambda/agents/conductor/handler.py
+lambda/agents/heartbeat/handler.py
+lambda/shared/cloudfront_signing.py
+lambda/agents/runtime.py
+lambda/agents/nodes/revise_document.py
+# Round 13 (2026-10-06)
+lambda/shared/converse.py
+lambda/api/mcp_global_handler.py
+lambda/api/users_handler.py
+plugins/app_reviews_android/ingestor/handler.py
+lambda/agents/llm.py
+lambda/shared/snapstart.py
+lambda/api/feedback_form_handler.py:1231-1241
+# Round 14 (2026-10-06)
+lambda/product_doc_extractor/handler.py
+lambda/shared/company_context.py
+lambda/shared/document_history.py
+plugins/_shared/base_webhook.py
+lambda/shared/onboarding.py
+lambda/shared/invocation_cost.py
+lambda/shared/ids.py
+lambda/agents/nodes/build_prototype.py
+# Round 15 (2026-10-06) — aggregator only lines 1051-1565 (the run hit "No space left on device")
+lambda/aggregator/handler.py:1051-1565
+lambda/shared/agents_store.py:581-1196
+plugins/github_issues/ingestor/handler.py
+lambda/shared/agentic_search.py
+lambda/agents/conductor/planning.py
+lambda/shared/document_versions.py:1499-1564
+lambda/shared/batch_get.py
+lambda/shared/scraper_run_errors.py
+lambda/api/integrations_handler.py
+lambda/jobs/document_generator/handler.py:853-1773
+lambda/aggregator/handler.py:1566-2180
+plugins/synthetic_reviews/ingestor/handler.py
+lambda/shared/model_fallback.py
+lambda/agents/state_machine.py
+lambda/agents/nodes/generate_personas.py
+plugins/_shared/normalized_item.py
+lambda/jobs/document_generator/handler.py:1-852
+lambda/api/memory_handler.py
+lambda/shared/memory_policy.py
+lambda/shared/tracing.py
+lambda/agents/artifacts.py
+plugins/_template/ingestor/handler.py
+lambda/agents/nodes/documents.py
+lambda/jobs/persona_generator/handler.py

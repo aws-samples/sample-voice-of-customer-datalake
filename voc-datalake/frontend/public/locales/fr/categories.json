@@ -49,17 +49,17 @@
   "pdf": {
     "categoriesLabel": "Catégories",
     "category": "Catégorie",
-    "categoryBreakdown": "📊 Répartition des catégories",
+    "categoryBreakdown": "Répartition des catégories",
     "count": "Nombre",
     "distribution": "Répartition",
     "generatedOn": "Généré le {{date}} • VoC Analytics — Rapport d'analyse des catégories",
-    "sentimentDistribution": "😊 Distribution des sentiments",
+    "sentimentDistribution": "Distribution des sentiments",
     "sentimentLabel": "Tonalité",
     "share": "Partager",
     "timeRange": "Période : {{range}}",
     "timeRangeWithSource": "Période : {{range}} • Source : {{source}}",
     "title": "Rapport d'analyse des catégories",
-    "topKeywords": "🔑 Mots-clés et problèmes principaux",
+    "topKeywords": "Mots-clés et problèmes principaux",
     "totalFeedback": "Total des commentaires"
   },
   "positive": "Positif",
@@ -89,5 +89,14 @@
   "topIssue": "Problème principal",
   "totalFeedback": "Total des commentaires",
   "trendingKeywords": "Mots-clés tendance",
-  "urgentOnly": "Urgents uniquement"
+  "urgentOnly": "Urgents uniquement",
+  "subtitle": "Explorez les avis par catégorie, sentiment, mot-clé et source",
+  "noFeedbackHint": "Essayez une période plus large ou retirez certains filtres.",
+  "viewMode": "Mode d’affichage",
+  "attributeFilters": "Filtres de canal, de dimension et d'étiquette",
+  "filterByChannel": "Filtrer par canal",
+  "allChannels": "Tous les canaux",
+  "filterByTag": "Filtrer par étiquette",
+  "allTags": "Toutes les étiquettes",
+  "anyValue": "Toutes"
 }

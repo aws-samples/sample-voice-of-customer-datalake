@@ -33,6 +33,7 @@
  * @module pages/Vote
  */
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { CheckCircle2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useParams } from 'react-router-dom'
@@ -122,9 +123,24 @@ function VotePanel({
   readonly children?: ReactElement | string
 }): ReactElement {
   return (
-    <div className="bg-white rounded-lg border p-4 space-y-2">
-      <h2 className="font-medium text-gray-900">{title}</h2>
-      {children === undefined ? null : <p className="text-sm text-gray-600">{children}</p>}
+    <div className="card p-4 space-y-2">
+      <h2 className="text-sm font-semibold tracking-tight text-text-strong">{title}</h2>
+      {children === undefined ? null : <p className="text-sm text-text">{children}</p>}
+    </div>
+  )
+}
+
+/** The loading state. A live region, so a screen reader hears the page is working
+ *  rather than landing on silence; the skeleton bars hold the form's place so the
+ *  ballot does not jump in under the reader's thumb when it arrives. */
+function BallotLoading({ label }: { readonly label: string }): ReactElement {
+  return (
+    <div role="status" aria-busy="true" className="card p-4 space-y-3">
+      <p className="text-sm font-medium text-text-strong">{label}</p>
+      <div className="skeleton h-4 w-2/3" aria-hidden="true" />
+      <div className="skeleton h-8 w-full" aria-hidden="true" />
+      <div className="skeleton h-4 w-1/2" aria-hidden="true" />
+      <div className="skeleton h-8 w-full" aria-hidden="true" />
     </div>
   )
 }
@@ -176,7 +192,7 @@ export default function Vote(): ReactElement {
 
   const body = (): ReactElement => {
     if (!sessionId) return <VotePanel title={t('ballot.closed.title')}>{t('ballot.closed.notFound')}</VotePanel>
-    if (isPending) return <VotePanel title={t('ballot.loading')} />
+    if (isPending) return <BallotLoading label={t('ballot.loading')} />
     // A failed CONFIG read is not a statement about the session and not a refusal
     // of a ballot — nothing was submitted yet — so it gets copy of its own rather
     // than borrowing either. "This vote is not open" would tell a room their vote
@@ -200,9 +216,12 @@ export default function Vote(): ReactElement {
     }
     if (submitted) {
       return (
-        <div role="status" className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-2">
-          <h2 className="font-medium text-green-900">{t('ballot.done.title')}</h2>
-          <p className="text-sm text-green-800">{t('ballot.done.description')}</p>
+        <div role="status" className="bg-ok-subtle border border-ok/30 rounded-lg p-4 flex items-start gap-3">
+          <CheckCircle2 size={20} className="text-ok shrink-0 mt-0.5" aria-hidden="true" />
+          <div className="space-y-1">
+            <h2 className="text-sm font-semibold text-text-strong">{t('ballot.done.title')}</h2>
+            <p className="text-sm text-text">{t('ballot.done.description')}</p>
+          </div>
         </div>
       )
     }
@@ -224,31 +243,33 @@ export default function Vote(): ReactElement {
   return (
     // `max-w-lg` and centred: this is read on a phone, and the same page projected
     // on a laptop should not stretch a slider across a monitor.
-    <div className="min-h-screen bg-gray-50 px-4 py-6">
+    // `<main>`: this route renders outside the app shell, so it has to supply its
+    // own landmark — the shell's `<main>` is not on the page.
+    <main className="min-h-screen bg-bg px-4 py-6 sm:py-10">
       <div className="mx-auto max-w-lg space-y-5">
         <header className="space-y-1">
-          <h1 className="text-xl font-bold text-gray-900">{t('ballot.title')}</h1>
+          <h1 className="text-xl font-bold tracking-tight text-text-strong">{t('ballot.title')}</h1>
           {/* WHICH proposal this session scores. It names the prioritization ROW —
               a project's set of documents — so one ballot covers the whole proposal
               rather than whichever of its documents a QR happened to sit on, which
               is what the page used to have to hedge about. Empty until the config
               read lands, and blank for a session whose facilitator sent no title. */}
           {session?.row_title ? (
-            <p className="text-base text-gray-700">{session.row_title}</p>
+            <p className="text-base text-text">{session.row_title}</p>
           ) : null}
           {/* And says plainly WHAT is being scored, since the room cannot see the
               row: a proposal's documents, together, in one ballot. Unconditional,
               because it is true of every session this page can open — the title
               above may be blank, this sentence never is. */}
-          <p className="text-sm text-gray-700">{t('ballot.scopeNote')}</p>
+          <p className="text-sm text-text">{t('ballot.scopeNote')}</p>
           {/* THE sentence this page must carry, wherever the page ends up: a
               ballot cast here counts and is not attributed to anybody. Above the
               form rather than under the button, because it is a condition of
               voting and not a footnote about it. */}
-          <p className="text-sm text-gray-600">{t('ballot.anonymousNotice')}</p>
+          <p className="text-sm text-muted">{t('ballot.anonymousNotice')}</p>
         </header>
         {body()}
       </div>
-    </div>
+    </main>
   )
 }

@@ -21,40 +21,24 @@
  */
 import { render, screen, act } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
+import {
+  HOUR_MS, signedPrototypeUrl, urlPrototypeDoc as prototypeDoc,
+} from './prototype-fixtures'
+import { documentsTabStubs, makeProject } from './project-detail-fixtures'
 import DocumentsTab from './DocumentsTab'
 import { formatExpiry } from '../../components/prototypeLinkLifetime'
-import type { Project, ProjectDocument } from '../../api/types'
+import type { ProjectDocument } from '../../api/types'
 
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-const project: Project = {
-  project_id: 'proj-1',
-  name: 'Test Project',
-  description: '',
-  status: 'active',
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
-  persona_count: 0,
-  document_count: 1,
-}
+const project = makeProject({
+  project_id: 'proj-1', name: 'Test Project', description: '', document_count: 1,
+})
 
 const PROTOTYPE_PATH = 'https://d111.cloudfront.net/prototypes/proj-1/doc-1.html'
-const HOUR_MS = 60 * 60_000
 
 /** A signed URL for the same document, with a distinct signature each time. */
-const signedUrl = (expiresAtMs: number, signature: string) =>
-  `${PROTOTYPE_PATH}?Expires=${Math.floor(expiresAtMs / 1000)}&Signature=${signature}&Key-Pair-Id=K1`
-
-const prototypeDoc = (prototypeUrl?: string): ProjectDocument => ({
-  document_id: 'doc-1',
-  title: 'My Prototype',
-  // New S3-only prototypes carry no inline content — the HTML is behind the URL.
-  content: '',
-  document_type: 'prototype',
-  prototype_format: 'html',
-  prototype_url: prototypeUrl,
-  created_at: new Date().toISOString(),
-})
+const signedUrl = (expiresAtMs: number, signature: string) => signedPrototypeUrl(PROTOTYPE_PATH, expiresAtMs, signature)
 
 const proseDoc: ProjectDocument = {
   document_id: 'doc-2',
@@ -67,17 +51,17 @@ const proseDoc: ProjectDocument = {
 const baseProps = {
   project,
   onSelectDoc: vi.fn(),
-  onEditDoc: vi.fn(),
-  onDeleteDoc: vi.fn(),
-  onCreateDoc: vi.fn(),
-  isDeleting: false,
+  ...documentsTabStubs(),
 }
 
-const renderTab = (selectedDoc: ProjectDocument) => render(
+/** The tab showing `doc` alone and selected, for the first render and every re-render. */
+const tabFor = (doc: ProjectDocument) => (
   <MemoryRouter>
-    <DocumentsTab {...baseProps} documents={[selectedDoc]} selectedDoc={selectedDoc} />
-  </MemoryRouter>,
+    <DocumentsTab {...baseProps} documents={[doc]} selectedDoc={doc} />
+  </MemoryRouter>
 )
+
+const renderTab = (selectedDoc: ProjectDocument) => render(tabFor(selectedDoc))
 
 const frameSrc = () => screen.getByTitle('My Prototype').getAttribute('src')
 const linkHref = (name: RegExp) => screen.getByRole('link', { name }).getAttribute('href')
@@ -124,7 +108,7 @@ describe('prototype link lifetime', () => {
   })
 
   it('claims no lifetime for a legacy prototype, which has no signature to expire', () => {
-    renderTab({ ...prototypeDoc(undefined), content: '<html><body>legacy</body></html>' })
+    renderTab({ ...prototypeDoc(), content: '<html><body>legacy</body></html>' })
     expect(screen.queryByText(/Link valid until/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Link expired/)).not.toBeInTheDocument()
   })
@@ -139,11 +123,7 @@ describe('re-signing the same prototype', () => {
     // What the pre-expiry refresh produces: same document, new credential.
     const resigned = signedUrl(Date.now() + 2 * HOUR_MS, 'sig-2')
     const doc = prototypeDoc(resigned)
-    rerender(
-      <MemoryRouter>
-        <DocumentsTab {...baseProps} documents={[doc]} selectedDoc={doc} />
-      </MemoryRouter>,
-    )
+    rerender(tabFor(doc))
 
     expect(frameSrc()).toBe(first)
   })
@@ -154,11 +134,7 @@ describe('re-signing the same prototype', () => {
 
     const resigned = signedUrl(Date.now() + 2 * HOUR_MS, 'sig-2')
     const doc = prototypeDoc(resigned)
-    rerender(
-      <MemoryRouter>
-        <DocumentsTab {...baseProps} documents={[doc]} selectedDoc={doc} />
-      </MemoryRouter>,
-    )
+    rerender(tabFor(doc))
 
     expect(linkHref(/Open in new tab/i)).toBe(resigned)
     expect(linkHref(/Download \.html/i)).toBe(resigned)
@@ -184,11 +160,7 @@ describe('re-signing the same prototype', () => {
       // The pre-expiry refresh lands: same document, later deadline. Frame keeps `live`.
       const resigned = signedUrl(Date.now() + 2 * HOUR_MS, 'sig-next')
       const doc = prototypeDoc(resigned)
-      const render2 = () => rerender(
-        <MemoryRouter>
-          <DocumentsTab {...baseProps} documents={[doc]} selectedDoc={doc} />
-        </MemoryRouter>,
-      )
+      const render2 = () => rerender(tabFor(doc))
       render2()
       expect(frameSrc()).toBe(live)
 
@@ -219,11 +191,7 @@ describe('re-signing the same prototype', () => {
 
     const fresh = signedUrl(Date.now() + HOUR_MS, 'sig-fresh')
     const doc = prototypeDoc(fresh)
-    rerender(
-      <MemoryRouter>
-        <DocumentsTab {...baseProps} documents={[doc]} selectedDoc={doc} />
-      </MemoryRouter>,
-    )
+    rerender(tabFor(doc))
 
     expect(frameSrc()).toBe(fresh)
   })
@@ -235,11 +203,7 @@ describe('re-signing the same prototype', () => {
     const other: ProjectDocument = {
       ...prototypeDoc(otherUrl), document_id: 'doc-9', title: 'My Prototype',
     }
-    rerender(
-      <MemoryRouter>
-        <DocumentsTab {...baseProps} documents={[other]} selectedDoc={other} />
-      </MemoryRouter>,
-    )
+    rerender(tabFor(other))
 
     expect(frameSrc()).toBe(otherUrl)
   })

@@ -52,61 +52,16 @@
 import {
   describe, it, expect, vi, beforeEach,
 } from 'vitest'
-import {
-  cleanup, render, screen, within,
-} from '@testing-library/react'
+import { cleanup, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import i18n from 'i18next'
+import './prioritization-mock-fixtures'
+import {
+  prioritizationMocks, authStoreModule, project, ROW_ID,
+} from './prioritization-fixtures'
+import { renderPrioritization } from './prioritization-render-fixtures'
 
-const mockGetProjects = vi.fn()
-const mockGetProject = vi.fn()
-const mockGetPrioritizationScores = vi.fn()
-const mockCreatePrioritizationRow = vi.fn()
-
-vi.mock('../../api/projectsApi', () => ({
-  projectsApi: {
-    getProjects: () => mockGetProjects(),
-    getProject: (id: string) => mockGetProject(id),
-  },
-}))
-
-vi.mock('../../api/client', () => ({
-  api: {
-    getPrioritizationScores: () => mockGetPrioritizationScores(),
-    createPrioritizationRow: (id: string) => mockCreatePrioritizationRow(id),
-    patchPrioritizationScores: () => Promise.resolve({ success: true }),
-    getFeedbackForms: () => Promise.resolve({ forms: [] }),
-    getFeedbackFormStats: () => Promise.resolve({ success: true, stats: null }),
-  },
-}))
-
-vi.mock('../../store/configStore', () => ({
-  useConfigStore: () => ({ config: { apiEndpoint: 'https://api.example.com' } }),
-}))
-
-vi.mock('../../store/authStore', () => ({
-  useIsAdmin: () => false,
-}))
-
-vi.mock('react-markdown', () => ({
-  default: ({ children }: { children: string }) => <div>{children}</div>,
-}))
-
-import Prioritization from './Prioritization'
-
-const ROW_ID = 'row_p1_default'
-
-const project = {
-  project_id: 'p1',
-  name: 'Project 1',
-  status: 'active',
-  created_at: '2025-01-01',
-  updated_at: '2025-01-01',
-  persona_count: 0,
-  document_count: 2,
-}
+vi.mock('../../store/authStore', () => authStoreModule())
 
 /** A derivation recording feedback and no source — lineage present, nothing crossed. */
 const fromFeedback = {
@@ -188,27 +143,17 @@ const storedRow = (overrides: Record<string, unknown> = {}) => ({
 
 /** Drive the page with one project holding `documents` and one row holding `row`. */
 function givenProject(documents: readonly unknown[], row: Record<string, unknown>) {
-  mockGetProject.mockResolvedValue({ project_id: 'p1', documents })
-  mockGetPrioritizationScores.mockResolvedValue({
+  prioritizationMocks.getProject.mockResolvedValue({ project_id: 'p1', documents })
+  prioritizationMocks.getPrioritizationScores.mockResolvedValue({
     rows: { [ROW_ID]: row },
     scores: {},
     aggregates: {},
   })
 }
 
-function renderPage() {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const router = createMemoryRouter([{ path: '/', element: <Prioritization /> }])
-  render(
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>,
-  )
-}
-
 /** The one lineage badge on screen, once the row has rendered. */
 async function lineageBadge(): Promise<HTMLElement> {
-  renderPage()
+  renderPrioritization()
   return screen.findByTestId('row-lineage')
 }
 
@@ -222,7 +167,7 @@ async function lineageBadge(): Promise<HTMLElement> {
  */
 async function openTheRow(rowTitle: string = PRFAQ_1.title): Promise<HTMLElement> {
   const user = userEvent.setup()
-  renderPage()
+  renderPrioritization()
   const badge = await screen.findByTestId('row-lineage')
   await user.click(screen.getByRole('button', { name: new RegExp(escapeForName(rowTitle)) }))
   await screen.findByTestId(`row-composition-${ROW_ID}`)
@@ -251,8 +196,8 @@ const staleAction = (): string => i18n.t('lineage.staleAction', {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mockGetProjects.mockResolvedValue({ projects: [project] })
-  mockCreatePrioritizationRow.mockResolvedValue({
+  prioritizationMocks.getProjects.mockResolvedValue({ projects: [project] })
+  prioritizationMocks.createPrioritizationRow.mockResolvedValue({
     success: true, created: false, row: storedRow(),
   })
   givenProject([PRD_1, PRFAQ_1], storedRow())
@@ -378,7 +323,7 @@ describe('a frozen row whose project has moved on', () => {
   it('says the documents behind it have been superseded', async () => {
     givenProject(bothGenerations, storedRow({ is_frozen: true }))
 
-    renderPage()
+    renderPrioritization()
     const stale = await screen.findByTestId('row-stale')
 
     expect(stale).toHaveTextContent(t('lineage.stale'))
@@ -390,10 +335,15 @@ describe('a frozen row whose project has moved on', () => {
     expect(await screen.findByTestId('row-lineage')).toHaveAttribute('data-lineage', 'coherent')
   })
 
-  it('directs the reviewer to Add row, with the frozen row and its documents untouched', async () => {
+  // One stale frozen row, opened — the advice, the untouched composition and the
+  // ballot are three claims about the same screen, asserted as three cases.
+  async function openStaleFrozenRow() {
     givenProject(bothGenerations, storedRow({ is_frozen: true }))
-
     await openTheRow()
+  }
+
+  it('directs the reviewer to Add row, naming the control by its rendered label', async () => {
+    await openStaleFrozenRow()
 
     // The advice, next to the control it names — and naming it with the label that
     // control actually renders. `composition.addRow` is interpolated rather than
@@ -407,9 +357,14 @@ describe('a frozen row whose project has moved on', () => {
     // off the rendered BUTTON, so a sentence pointing at a control by some other name
     // fails here. Non-vacuous — the button's name is non-empty and the raw key would
     // not contain it.
-    expect(addRow.textContent?.trim()).toBeTruthy()
-    expect(note.getByText(action)).toHaveTextContent(addRow.textContent?.trim() ?? '')
+    expect(addRow.textContent.trim()).toBeTruthy()
+    expect(note.getByText(action)).toHaveTextContent(addRow.textContent.trim())
     expect(addRow).toBeEnabled()
+  })
+
+  it('leaves the stale frozen row and its documents untouched', async () => {
+    await openStaleFrozenRow()
+
     // The frozen row is UNCHANGED: it still shows the documents its ballots were cast
     // on, not the fresher ones, and it says why its composition is locked. Silently
     // re-pointing it is the defect the row model exists to prevent.
@@ -420,9 +375,16 @@ describe('a frozen row whose project has moved on', () => {
     // document it names inside the expansion — which is the point: both are the
     // FIRST generation.
     expect(screen.getAllByText(PRFAQ_1.title).length).toBeGreaterThan(0)
-    expect(screen.queryByText(PRFAQ_2.title)).toBeNull()
-    expect(screen.queryByText(PRD_2.title)).toBeNull()
-    // Still scorable — freezing the composition never froze the ballot.
+    expect({
+      newerPrfaq: screen.queryByText(PRFAQ_2.title),
+      newerPrd: screen.queryByText(PRD_2.title),
+    }).toStrictEqual({ newerPrfaq: null, newerPrd: null })
+  })
+
+  it('keeps the stale frozen row scorable', async () => {
+    await openStaleFrozenRow()
+
+    // Freezing the composition never froze the ballot.
     expect(await screen.findAllByRole('slider')).toHaveLength(4)
   })
 
@@ -432,7 +394,7 @@ describe('a frozen row whose project has moved on', () => {
       document_ids: [PRFAQ_2.document_id, PRD_2.document_id],
     }))
 
-    renderPage()
+    renderPrioritization()
     await screen.findByTestId('row-lineage')
 
     expect(screen.queryByTestId('row-stale')).toBeNull()
@@ -463,7 +425,7 @@ describe('a frozen row whose project has moved on', () => {
     )
     givenProject([PRD_1, PRFAQ_1, PRD_2, crossingPrfaq2], storedRow({ is_frozen: true }))
 
-    renderPage()
+    renderPrioritization()
     await screen.findByTestId('row-lineage')
 
     expect(screen.queryByTestId('row-stale')).toBeNull()
@@ -484,7 +446,7 @@ describe('a frozen row whose project has moved on', () => {
     )
     givenProject(legacy, storedRow({ is_frozen: true }))
 
-    renderPage()
+    renderPrioritization()
 
     expect(await screen.findByTestId('row-stale')).toHaveTextContent(t('lineage.stale'))
     // Absent, not coherent: the fix loosened WHICH candidate may be advised, and did
@@ -502,7 +464,7 @@ describe('a frozen row whose project has moved on', () => {
       document_ids: [PRFAQ_1.document_id],
     }))
 
-    renderPage()
+    renderPrioritization()
     await screen.findByTestId('row-lineage')
 
     expect(screen.queryByTestId('row-stale')).toBeNull()
@@ -522,16 +484,18 @@ describe('a frozen row whose project has moved on', () => {
     // supersede anything. Asserted first because a failing assertion ends a case, and a
     // control placed after the negative one cannot be shown to have run.
     givenProject([PRD_1, PRFAQ_1, PRD_2, PRFAQ_2], storedRow({ is_frozen: true }))
-    renderPage()
+    renderPrioritization()
     expect(await screen.findByTestId('row-stale')).toBeInTheDocument()
     cleanup()
 
     givenProject([PRFAQ_1, PRD_2, PRFAQ_2], storedRow({ is_frozen: true }))
-    renderPage()
+    renderPrioritization()
     const badge = await screen.findByTestId('row-lineage')
 
-    expect(screen.queryByTestId('row-stale')).toBeNull()
-    expect(screen.queryByText(staleAction())).toBeNull()
+    expect({
+      badge: screen.queryByTestId('row-stale'),
+      action: screen.queryByText(staleAction()),
+    }).toStrictEqual({ badge: null, action: null })
     // The CLASSIFICATION still speaks, and that half is deliberate: it describes the
     // documents on screen, and the row is rendering one of them. Only the advisory —
     // which names a combination the reviewer does not yet have — withholds.

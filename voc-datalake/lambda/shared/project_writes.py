@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any
+
+from shared.ids import write_with_fresh_id
 
 PROJECT_DELETION_ATTRIBUTE = 'deletion_started_at'
 PROJECT_DELETING_STATUS = 'deleting'
@@ -31,6 +34,12 @@ PROJECT_WRITABLE_ATTRIBUTE_VALUES = {
     ':deleting_status': PROJECT_DELETING_STATUS,
     ':deleted_status': PROJECT_DELETED_STATUS,
 }
+
+
+#: Where `put_project_item_and_increment`'s Put sits in its transaction, for
+#: `shared.ids.write_with_fresh_id(put_index=...)`: a collision is only the
+#: cancellation reason AT the Put, never the project-writable update.
+PUT_AND_INCREMENT_PUT_INDEX = 0
 
 
 def project_meta_key(project_id: str) -> dict[str, str]:
@@ -128,7 +137,7 @@ def put_project_item_and_increment(
 ) -> None:
     """Atomically create one child and increment its project META count."""
     table_name = projects_table_name(table)
-    now = str(item.get('created_at') or datetime.now(timezone.utc).isoformat())
+    now = str(item.get('created_at') or datetime.now(UTC).isoformat())
     table.meta.client.transact_write_items(TransactItems=[
         {
             'Put': {
@@ -161,3 +170,26 @@ def put_project_item_and_increment(
             },
         },
     ])
+
+
+def create_counted_project_child(
+    table,
+    project_id: str,
+    prefix: str,
+    build_item: Callable[[str], dict[str, Any]],
+    count_attribute: str,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Mint a ``prefix`` id, build the child from it, put it and bump the count.
+
+    A same-id row already in the partition (a same-second create) is retried
+    once with a fresh id; a refused project-writable check is not. ``now`` is the
+    reading the caller stamped ``created_at`` with, so the id names the same second.
+    """
+    def write(child_id: str) -> dict[str, Any]:
+        item = build_item(child_id)
+        put_project_item_and_increment(table, project_id, item, count_attribute)
+        return item
+
+    return write_with_fresh_id(prefix, write, put_index=PUT_AND_INCREMENT_PUT_INDEX, now=now)

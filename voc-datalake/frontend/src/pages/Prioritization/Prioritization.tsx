@@ -3,367 +3,53 @@
  * @module pages/Prioritization
  */
 
-import {
-  useQuery, useMutation, useQueryClient,
-} from '@tanstack/react-query'
-import clsx from 'clsx'
-import {
-  AlertTriangle, ArrowUpDown, FileText, Sparkles, Save, RotateCcw,
-} from 'lucide-react'
-import {
-  useState, useMemo, useId, useEffect, useRef,
-} from 'react'
-import type { ReactElement, RefObject } from 'react'
-import {
-  useTranslation, Trans,
-} from 'react-i18next'
-import { useBlocker } from 'react-router-dom'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { AlertTriangle, Sparkles } from 'lucide-react'
+import { useState, useMemo, useEffect, useRef } from 'react'
+import { useTranslation, Trans } from 'react-i18next'
 import { isPermanentRefusal } from '../../api/apiErrorStatus'
 import { api } from '../../api/client'
 import { feedbackFormsKey } from '../../api/feedbackFormQueryKeys'
-import { projectsKey } from '../../api/projectQueryKeys'
+import { ALL_PROJECT_DETAILS_ROOT, projectDetailsBatchKey, projectsKey } from '../../api/projectQueryKeys'
 import { projectsApi } from '../../api/projectsApi'
-import ConfirmModal from '../../components/ConfirmModal'
+import { useUnsavedChangesGuard } from '../../components/UnsavedChangesGuard/useUnsavedChangesGuard'
+import LoadFailed from '../../components/LoadFailed/LoadFailed'
+import { failedReads } from '../../utils/failedReads'
 import { usePrototypeLinkRefresh } from '../../components/usePrototypeLinkRefresh'
 import { useIsAdmin } from '../../store/authStore'
 import { useConfigStore } from '../../store/configStore'
-import {
-  buildLinkedFormsByDocument, collectProjectDocumentIds, normalizeLinkedForms,
-} from './formLinkUtils'
-import PRFAQRow from './PRFAQRow'
+import { buildLinkedFormsByDocument, collectProjectDocumentIds, normalizeLinkedForms } from './formLinkUtils'
 import { EnsureRefusalPanel, RowActionFailurePanel, RowDeletedPanel } from './RowStatePanels'
 import { useRowLifecycle } from './useRowLifecycle'
+import { refusalsByProject, rowsAnswered, withoutProjects } from './rowEnsureResults'
+import { ownBallotRead } from './ownRead'
+import { applyBallotEdits, isScorable, MAX_NOTE_LENGTH, overLongNoteRows, withEditedField } from './prioritizationUtils'
+import type { SortField, SortDirection } from './prioritizationUtils'
 import {
-  refusalsByProject, rowsAnswered, withoutProjects,
-} from './rowEnsureResults'
-import {
-  applyBallotEdits, getScore, getTeamView, collectRows, isScorable,
-  MAX_NOTE_LENGTH, normalizeAggregates, normalizeRows, normalizeScores, ownBallotRead,
-  overLongNoteRows, priorityBand, projectsNeedingARow, READ_STATE_I18N_KEY,
-  retainedEnsuredRows, rowsPerProject, scorableDocumentsByProject, sortRows,
-  teamAggregatesOf, teamOrderingAvailable, uncountableTeamRead, withEditedField,
-  withoutRow,
-} from './prioritizationUtils'
-import type {
-  PrioritizationRowView, SortField, SortDirection, TeamAggregates,
-} from './prioritizationUtils'
-import type { RowCompositionActions } from './RowCompositionPanel'
-import type { LinkedForm } from './formLinkUtils'
-import type {
-  Project, PrioritizationScore, PrioritizationBallotEdit, PrioritizationRow,
-} from '../../api/types'
+  alignDetails, collectRows, projectsNeedingARow, retainedEnsuredRows, rowsPerProject, scorableDocumentsByProject, withoutRow,
+} from './rowCollection'
+import { sortRows } from './rowSort'
+import { teamAggregatesOf, teamOrderingAvailable } from './teamRead'
+import type { TeamAggregates } from './teamRead'
+import type { PrioritizationScore, PrioritizationBallotEdit } from '../../api/types'
+import type { Project, PrioritizationRow } from '../../api/projectTypes'
+import { selectPrioritization, rowCountSettled } from './prioritizationRead'
+import { StatsCards } from './StatsCards'
+import { SortControls } from './SortControls'
+import { PRFAQList } from './PRFAQList'
+import { PrioritizationHeader } from './PrioritizationHeader'
 
 /**
- * The prioritization read, validated at the query boundary — BOTH halves of it.
+ * Query key root for the fan-out project read — `ALL_PROJECT_DETAILS_ROOT` from
+ * api/projectQueryKeys, shared because the assistant's approval executors
+ * invalidate it too.
  *
- * Per project convention, the same place `normalizeLinkedForms` validates the form list.
- * `aggregates` is optional on the wire (a deployment predating it sends none at all) and
- * a partial or unreadable row must read as "nobody has scored this" rather than break a
- * row. `scores` goes through a normalizer too: a declared type is a promise about the
- * response and not a proof of it, and passing this half through untouched let a `null` or
- * non-object one leave every slider on `DEFAULT_SCORE` while the save guard read the
- * field as present.
- *
- * The parameter type is DERIVED from the client rather than restated, so `data.scores`
- * and `data.aggregates` are proof that `getPrioritizationScores` declares those fields:
- * remove one there and this fails to compile, where a hand-written shape would keep
- * agreeing with itself while the wire moved.
- *
- * At MODULE level, not inline in the `useQuery` call. TanStack Query memoises a `select`
- * result only while the function's identity is stable, so an inline arrow — a fresh
- * closure on every render — re-parsed the whole map on each render. That was waste rather
- * than a bug (structural sharing kept the result referentially stable downstream), but
- * this page re-renders on every slider drag, so the waste scaled with both the backlog
- * and the interaction.
- */
-type PrioritizationRead = Awaited<ReturnType<typeof api.getPrioritizationScores>>
-
-const selectPrioritization = (data: PrioritizationRead) => {
-  const rawRows: unknown = data.rows
-  const rows = normalizeRows(rawRows)
-  const rowsPublished = rawRows !== undefined
-    && rawRows !== null
-    && typeof rawRows === 'object'
-    && !Array.isArray(rawRows)
-    && rows !== undefined
-    && Object.keys(rows).length === Object.keys(rawRows).length
-  return {
-    rows,
-    /**
-     * Did this response actually PUBLISH a completely readable rows map?
-     *
-     * `normalizeRows` returns `{}` for an omitted field so the page can keep merging
-     * ensure-confirmed fallback rows, returns `undefined` for an unreadable container,
-     * and drops unreadable entries from an otherwise readable map. None is fully
-     * authoritative: only a PRESENT map whose every raw key survived normalization can
-     * say an ensured row or sibling is gone. A present readable empty map remains
-     * authoritative because both key counts are zero.
-     *
-     * Asked here, where the raw field and normalized result are both in hand, so
-     * malformed containers and partially readable maps cannot settle the count, while
-     * an omitted field cannot impersonate a published empty map.
-     */
-    rowsPublished,
-    scores: normalizeScores(data.scores),
-    aggregates: normalizeAggregates(data.aggregates),
-  }
-}
-
-/**
- * Is the per-project row count settled enough to EXPLAIN a withheld delete, as opposed
- * to merely to withhold one?
- *
- * The count (`rowsPerProject` over `knownRows`) is only as complete as the reads behind
- * it, and the two answers cost differently. Withholding the control through an unsettled
- * window is recoverable — the reader waits, or reloads, and it appears — while the
- * sentence explaining the absence asserts a fact about stored state ("this is the
- * project's only default row"), and a reviewer who believes a false one acts on it by
- * adding a row they did not want. So the gate runs on the count regardless and the
- * explanation runs on this.
- *
- * THE SCORES READ MUST HAVE DELIVERED A ROWS MAP, not merely stopped being pending, and
- * that is the condition an earlier version of this missed. Rows reach `ensuredRows` only
- * through `rowsAnswered`, and `api_create_prioritization_row` answers a project's DEFAULT
- * row and nothing else — a row somebody COMPOSED has no path into it at all, existing
- * only in the scores read. So on the path this page deliberately supports (a failed
- * scores read still listing the rows the ensure confirmed, because rows are the page's
- * whole content) `knownRows` holds exactly one default row per project, and every one of
- * them would be classified as its project's only row however many the partition holds.
- *
- * `rowsPublished` rather than `!scoresFailed`, for the same reason `retainedEnsuredRows`
- * is handed that signal: a read that SUCCEEDED on a deployment sending no `rows` field
- * publishes no rows either, so it is the identical blind spot with a 200 on it.
- *
- * The two project reads stay in it because `collectRows` and the count alike are empty
- * until the project list lands, so a row can already be on screen from the ensure while
- * the fan-out is still resolving its siblings.
- *
- * At MODULE level rather than inline: it is a rule about three reads with no dependency
- * on anything else the component holds, and the page is at its `complexity` budget.
- */
-function rowCountSettled({
-  loadingProjects, loadingDetails, rowsPublished,
-}: {
-  readonly loadingProjects: boolean
-  readonly loadingDetails: boolean
-  /** `undefined` while no read has delivered at all — see `selectPrioritization`. */
-  readonly rowsPublished: boolean | undefined
-}): boolean {
-  return !loadingProjects && !loadingDetails && rowsPublished === true
-}
-
-/**
- * The backlog at a glance, counted the same way the rows below are labelled.
- *
- * Reads the TEAM aggregate, not the caller's own map, because these cards sit
- * directly above rows that now lead with the team's composite: counting the
- * reader's own opinion under the heading the rows use for the group's would make
- * the totals disagree with the list they summarise. "Not Scored" is likewise
- * absence from the aggregate — nobody voted — rather than the caller's own
- * `impact === 0`, which counted a document the team had scored as unscored merely
- * because this reader had not.
- *
- * Counted through `priorityBand`, the same function that names the band on each
- * row, rather than by re-testing the composite against 4 and 3 here. Two copies of
- * one rule is how a card can say Medium about a row labelled High: the raw
- * composite of four 4s is 3.9999999999999996, so an unrounded `>= 4` counted a row
- * printing `4.0` as Medium. One function, one rounding, so a card and the row it
- * summarises cannot classify the same document differently.
- *
- * When the team read is UNCOUNTABLE (`uncountableTeamRead`: it failed, is still
- * running, or arrived naming documents with not one readable row among them) the
- * three team-derived cards show a dash rather than a count. A zero is a claim ("none
- * of these is high priority") and "1 Not Scored" for every document in the backlog is
- * a false one; no such read said anything about any of them. Only "Total Proposals"
- * survives, because that is counted off the project read, which is a different query
- * and may well have succeeded already.
- */
-function StatsCards({
-  rows, aggregates,
-}: {
-  readonly rows: PrioritizationRowView[];
-  readonly aggregates: TeamAggregates
-}) {
-  const { t } = useTranslation('prioritization')
-  const bands = rows.map((row) => priorityBand(getTeamView(aggregates, row.row_id)))
-  /**
-   * Not `teamReadDelivered`: a response whose EVERY named row is unreadable parses to
-   * a map, so "delivered" is true while the read says exactly as little as a failed
-   * one — and counting it printed `0 / 0 / 0`, three confident claims about documents
-   * no read has described, where the same fault one encoding over (an unreadable
-   * container) already dashed. Same fault, same dashes, same sr-only sentence.
-   */
-  const uncountable = uncountableTeamRead(aggregates)
-  /**
-   * Rows the response named but could not be read — the gap the line under the grid
-   * explains. When the cards are counting, a marked row is in "Total Proposals" and in
-   * no other card: it is not high, medium or low (no number), and calling it "Not
-   * Scored" is the conflation the row label refuses. Leaving that silent made the
-   * cards stop adding up with nothing on the page saying why. Zero when the read is
-   * uncountable, because then every team-derived card is already a dash with the same
-   * reason in its sr-only text — there are no numbers on screen to explain a gap in.
-   */
-  const unreadableCount = uncountable === null
-    ? bands.filter((band) => band === 'unavailable').length
-    : 0
-  /**
-   * How many rows fall in one band, or an EXPLAINED dash when the read is uncountable.
-   *
-   * The dash is decorative and hidden from assistive technology, with the reason
-   * beside it in text only a screen reader reads. A bare `—` is the one card state a
-   * reader cannot interpret: sighted readers have the panel above the list to explain
-   * it, while a screen reader announces the card as its label and either nothing or
-   * "em dash" — indistinguishable from a zero count, which is the exact confusion the
-   * dash exists to avoid. `aria-label` on a `<span>` would not reliably be announced
-   * (no role to carry it), hence visually-hidden text, as `AiModelSection` does.
-   *
-   * The sentence is the one the rows are already showing for the same state, so this
-   * adds no key to eight catalogues and cannot drift from what the page says.
-   */
-  const countOf = (band: 'high' | 'medium' | 'none'): ReactElement => {
-    // Both arms return an element, not "a number or an element": `sonarjs`
-    // (`function-return-type`) refuses a union return here, and a fragment adds no DOM
-    // node, so the card still renders the bare count.
-    if (uncountable === null) return <>{bands.filter((b) => b === band).length}</>
-    return (
-      <>
-        <span aria-hidden="true">—</span>
-        <span className="sr-only">{t(READ_STATE_I18N_KEY[uncountable])}</span>
-      </>
-    )
-  }
-
-  return (
-    <div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-        {/* Counts ROWS, and says so: one row is one proposal scored once, which is
-            the number a reader ranking a backlog is actually after. The old count was
-            documents, so a project whose PRD and PR/FAQ describe one idea inflated
-            every card by one. */}
-        <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-gray-900">{rows.length}</div><div className="text-sm text-gray-500">{t('stats.totalRows')}</div></div>
-        <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-green-600">{countOf('high')}</div><div className="text-sm text-gray-500">{t('stats.highPriority')}</div></div>
-        <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-blue-600">{countOf('medium')}</div><div className="text-sm text-gray-500">{t('stats.mediumPriority')}</div></div>
-        {/* `text-gray-500`, not the inherited `text-gray-400`: on this white card gray-400
-            measures 2.60:1, which fails AA even at the 3:1 allowance `text-2xl font-bold`
-            would qualify for — so it was missed by the contrast sweep rather than judged.
-            gray-500 is 4.84:1 and still reads as the quiet card of the four. */}
-        <div className="bg-white rounded-lg border p-4"><div className="text-2xl font-bold text-gray-500">{countOf('none')}</div><div className="text-sm text-gray-500">{t('stats.notScored')}</div></div>
-      </div>
-      {/* Why the counts above may not add up: a row the response named but could not be
-          read is in the total and in no other card — see `unreadableCount`. Ordinary
-          visible text rather than a live region, like the row labels that state the same
-          thing per document: it renders with the numbers it explains. `text-gray-600` per
-          the measured table in `BAND_STYLE` (gray-500 fails AA below 18.5px on gray
-          backgrounds; this line is text-sm on the page's gray-50). */}
-      {unreadableCount === 0 ? null : (
-        <p className="text-sm text-gray-600 mt-2">
-          {t('stats.unreadable', { count: unreadableCount })}
-        </p>
-      )}
-    </div>
-  )
-}
-
-function SortControls({
-  sortField, sortDirection, onToggleSort, ordersByTeam,
-}: {
-  readonly sortField: SortField;
-  readonly sortDirection: SortDirection;
-  readonly onToggleSort: (f: SortField) => void;
-  /**
-   * Can the three score buttons actually order the list by the team's numbers?
-   *
-   * `teamOrderingAvailable(aggregates)` — see there for which states answer false. When
-   * they do, `sortPRFAQs` leaves the order as it arrived for those three fields, and the
-   * hint below the buttons is permanently visible — so leaving it up left the page
-   * asserting the list is ordered by the team's numbers while nothing was ordering it.
-   */
-  readonly ordersByTeam: boolean
-}) {
-  const { t } = useTranslation('prioritization')
-  // Also announced, not only hovered. A `title` tooltip never appears on a touch
-  // device and screen-reader support for it is inconsistent, so the readers who most
-  // need "whose numbers are these" were the ones who could not reach the answer. The
-  // three team-ordered buttons point at one visible line below the row; `title` stays
-  // as the pointer affordance.
-  const hintId = useId()
-  const teamOrderedFields = [t('sort.priorityFull'), t('sort.impact'), t('sort.ttmFull')]
-  // Describes the BUTTONS, not the current sort. It is permanently visible — that is
-  // the point of moving it out of a `title` — so a sentence about "the list" was false
-  // for as long as the reader had Date Created active: an ascending date order sat
-  // directly beneath the words "orders the list by the team's numbers". Naming the
-  // three options instead is true in every state, including before the reader has
-  // clicked anything, which is when the hint is most use.
-  //
-  // The names are INTERPOLATED from the same keys the buttons render, rather than
-  // restated inside the sentence in eight catalogues, so a relabelled button cannot
-  // leave the hint naming an option that is no longer on screen.
-  //
-  // And withdrawn entirely when nothing gives the buttons a number to order by — the
-  // read failed, or arrived with no readable row (`teamOrderingAvailable`): the sentence
-  // would be describing an effect the reader can click for and not get. The rows and the
-  // stats cards already say why the team's numbers are missing; this line's only job is
-  // to attribute an ordering that is not happening.
-  const teamOrdered = ordersByTeam
-    ? t('sort.teamOrdered', { fields: teamOrderedFields.join(', ') })
-    : undefined
-  const options = [
-    {
-      field: 'priority_score' as const,
-      label: t('sort.priority'),
-      fullLabel: t('sort.priorityFull'),
-      hint: teamOrdered,
-    },
-    {
-      field: 'impact' as const,
-      label: t('sort.impact'),
-      fullLabel: t('sort.impact'),
-      hint: teamOrdered,
-    },
-    {
-      field: 'time_to_market' as const,
-      label: t('sort.ttm'),
-      fullLabel: t('sort.ttmFull'),
-      hint: teamOrdered,
-    },
-    {
-      field: 'created_at' as const,
-      label: t('sort.date'),
-      fullLabel: t('sort.dateFull'),
-      hint: undefined,
-    },
-  ]
-  return (
-    <div>
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        <span className="text-gray-500 w-full sm:w-auto">{t('sort.label')}</span>
-        {options.map(({
-          field, label, fullLabel, hint,
-        }) => (
-          <button key={field} title={hint} aria-describedby={hint === undefined ? undefined : hintId} onClick={() => onToggleSort(field)} className={clsx('px-2 sm:px-3 py-1.5 rounded-lg flex items-center gap-1 text-xs sm:text-sm', sortField === field ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>
-            <span className="sm:hidden">{label}</span>
-            <span className="hidden sm:inline">{fullLabel}</span>
-            {sortField === field && <ArrowUpDown size={14} className={sortDirection === 'desc' ? 'rotate-180' : ''} />}
-          </button>
-        ))}
-      </div>
-      {teamOrdered === undefined ? null : (
-        <p id={hintId} className="text-xs text-gray-500 mt-1.5">{teamOrdered}</p>
-      )}
-    </div>
-  )
-}
-
-/**
- * Query key root for the fan-out project read.
- *
- * A constant rather than two literals because it is now both fetched and
+ * A constant rather than two literals because it is both fetched and
  * invalidated (see the prototype re-sign below) — spelled twice, a rename would
  * leave the invalidation matching nothing, and nothing would fail: the page keeps
- * working and the prototype links quietly stop being refreshed. Stays private to
- * this page per the rule in api/projectQueryKeys.
+ * working and the prototype links quietly stop being refreshed.
  */
-const ALL_PROJECT_DETAILS_KEY = 'all-project-details'
+const ALL_PROJECT_DETAILS_KEY = ALL_PROJECT_DETAILS_ROOT
 
 /**
  * Query key for the prioritization read: rows, the caller's ballots, the team aggregates.
@@ -376,204 +62,6 @@ const ALL_PROJECT_DETAILS_KEY = 'all-project-details'
  * api/projectQueryKeys.
  */
 const PRIORITIZATION_SCORES_KEY = ['prioritization-scores'] as const
-
-function PRFAQList({
-  isLoading, rows, scores, aggregates, linkedFormsByDocument, apiEndpoint, composition, expandedId, onToggleExpand, onUpdateScore, hasNonScorableOnly,
-}: {
-  readonly isLoading: boolean
-  readonly rows: PrioritizationRowView[]
-  /** The caller's own ballots, PER ROW, behind each row's own sliders. */
-  readonly scores: Record<string, PrioritizationScore>
-  /**
-   * What every reviewer together said — the resting row, and the sort order.
-   *
-   * A map, or a read state saying why there is none; see `TeamAggregates` for what the
-   * three absences mean, rather than a restatement here that can go stale (this one did,
-   * naming a `null` that left the union). Each row states the read state as such rather
-   * than as an absence of votes.
-   */
-  readonly aggregates: TeamAggregates
-  /**
-   * Forms per DOCUMENT, threaded whole rather than resolved per row: a row holds a
-   * set of documents and the evidence belongs to each document, so the row's
-   * expansion looks up its own — see `PRFAQRow.RowDocument`.
-   */
-  readonly linkedFormsByDocument: ReadonlyMap<string, readonly LinkedForm[]>
-  /** Passed through to each row's linked-form panels — see PRFAQRow. */
-  readonly apiEndpoint: string
-  /**
-   * What a reviewer may do to a row's COMPOSITION, threaded whole and row-agnostic
-   * so this list passes ONE value to every row rather than building callbacks per row
-   * on a page that re-renders on every slider drag. See `RowCompositionActions`.
-   */
-  readonly composition: RowCompositionActions
-  readonly expandedId: string | null
-  readonly onToggleExpand: (id: string) => void
-  readonly onUpdateScore: (rowId: string, field: keyof PrioritizationScore, value: number | string) => void
-  readonly hasNonScorableOnly: boolean
-}) {
-  const { t } = useTranslation('prioritization')
-
-  if (isLoading) {
-    return <div className="text-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto" /><p className="text-gray-500 mt-4">{t('loading')}</p></div>
-  }
-  if (rows.length === 0) {
-    if (hasNonScorableOnly) {
-      return <div className="text-center py-12 bg-white rounded-lg border"><FileText size={48} className="mx-auto text-gray-300 mb-4" /><h3 className="text-lg font-medium text-gray-900">{t('empty.wrongTypeTitle')}</h3><p className="text-gray-500 mt-1">{t('empty.wrongTypeDescription')}</p></div>
-    }
-    return <div className="text-center py-12 bg-white rounded-lg border"><FileText size={48} className="mx-auto text-gray-300 mb-4" /><h3 className="text-lg font-medium text-gray-900">{t('empty.title')}</h3><p className="text-gray-500 mt-1">{t('empty.description')}</p></div>
-  }
-  return (
-    <div className="space-y-3">
-      {rows.map((row, index) => (
-        <PRFAQRow
-          key={row.row_id}
-          row={row}
-          index={index}
-          score={getScore(scores, row.row_id)}
-          team={getTeamView(aggregates, row.row_id)}
-          linkedFormsByDocument={linkedFormsByDocument}
-          apiEndpoint={apiEndpoint}
-          composition={composition}
-          isExpanded={expandedId === row.row_id}
-          onToggle={() => onToggleExpand(row.row_id)}
-          onUpdateScore={(field, value) => onUpdateScore(row.row_id, field, value)}
-        />
-      ))}
-    </div>
-  )
-}
-
-function PrioritizationHeader({
-  hasChanges, isPending, saveBlocked, rowCount, headingRef, onReset, onSave,
-}: {
-  readonly hasChanges: boolean
-  readonly isPending: boolean
-  /**
-   * True while a save cannot honestly be made, for either of two reasons.
-   *
-   * NO READABLE BALLOT MAP IS IN HAND — the read failed on first load, has not finished,
-   * or arrived carrying ballots that could not be read, with nothing held from an earlier
-   * one. Saving then writes the caller's edits against numbers nobody has seen, because
-   * the sliders are showing `DEFAULT_SCORE` rather than this reviewer's stored ballot. The
-   * panel above the list now covers both halves of that — a failed read AND a response
-   * whose ballots were unreadable — and is worded by the SAME predicate, so the sentence
-   * on screen cannot contradict the button. Only the in-flight case is silent, because
-   * nothing has gone wrong and it clears itself the moment the read lands.
-   *
-   * Read off `ownBallotRead`'s `inHand` — the caller's OWN ballots, the exact value being
-   * protected, and the same value the panel above the list is worded by. Not any proxy for
-   * them: two were tried and both were
-   * weaker: `!teamReadDelivered(aggregates)` asks about the TEAM column, and a bare
-   * `savedScores === undefined` proves only that *a response* arrived, which `select` now
-   * makes a much weaker claim than it looks (`normalizeScores` answers `undefined` for a
-   * null, a string or an array, not just for an omitted field). An empty `{}` is still a
-   * save: the response arrived and this reviewer simply has no ballot yet.
-   *
-   * A pre-#333 response carrying `scores` and no `aggregates` field shows the other
-   * direction: the reviewer's ballot did arrive, so the save is offered even though the
-   * team column has nothing to show.
-   *
-   * A failed REFETCH is deliberately NOT blocked: the cached response is still on screen,
-   * sliders included, so the reader is editing their real ballot and a save is as honest
-   * as it was a moment earlier. `savedScores` is retained through that failure, which is
-   * what lets one predicate cover both.
-   *
-   * Or a pending edit carries a note past `MAX_NOTE_LENGTH`: the API refuses it
-   * rather than truncating, and `fetchApi` discards the reason, so pressing Save
-   * would look like a button that does nothing. Its own panel too.
-   *
-   * Disabled rather than left to look ordinary, whichever reason applies — and each one
-   * that a reader cannot infer from the sliders has words above the list.
-   */
-  readonly saveBlocked: boolean
-  /**
-   * How many rows the list below is showing.
-   *
-   * NOT RENDERED AT ZERO, and that one rule is the whole of the state handling here,
-   * because "0 proposals" beside the heading asserts an empty backlog. Both states that
-   * reach this with nothing to count would be asserting one they have not established:
-   * the loading pass, where no documents have arrived to compose rows from and the list
-   * is still a spinner; and a genuinely empty list, where the list's own empty state
-   * already says so in words and says WHICH emptiness — no documents at all, or none of
-   * a scorable type — which a bare `0` cannot. A `number | null` prop was the same rule
-   * spelled twice, since a page with no rows yet has no other value to pass.
-   *
-   * Counts ROWS — the same UNIT as the "Total Proposals" card and as the list itself, so
-   * a reader comparing the two is comparing like with like. Deliberately not the number
-   * of documents: one row can hold a PRD and a PR/FAQ describing one idea.
-   *
-   * The same unit, not a promise of the same number. This is the LIST's length and the
-   * card's is the backlog's, which are equal only while nothing narrows the list — the
-   * first row filter or search box put on this page should make them differ, and each
-   * would then be right about what it is labelled.
-   */
-  readonly rowCount: number
-  /**
-   * WHERE A DISMISSAL LANDS when the control that produced the panel is gone.
-   *
-   * The page heading, because it is the one thing on this page guaranteed to outlive
-   * any row: a delete that landed takes its own "Delete row" button with it, and
-   * `RowDeletedPanel` is announce-only, so dismissing its Dismiss button would otherwise
-   * drop a keyboard reader on `<body>`. Focusable without joining the tab order for that
-   * one purpose — nothing tabs to a heading. See `useRowLifecycle.restoreFocus`.
-   */
-  readonly headingRef: RefObject<HTMLHeadingElement | null>
-  readonly onReset: () => void
-  readonly onSave: () => void
-}) {
-  const { t } = useTranslation('prioritization')
-  const canSave = hasChanges && !saveBlocked && !isPending
-  return (
-    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-      <div>
-        {/* BESIDE the heading, not inside it: a screen reader announcing this page's
-            heading should read "Prioritization", which is also what the breadcrumb and
-            the document outline name. The count's own text is self-describing.
-            (Not "the only h1" — the app shell's brand is an h1 too, so the deployed
-            page has two. That is pre-existing and separate; the point here is only
-            that THIS heading's accessible name stays the page's name.) */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <h1
-            ref={headingRef}
-            // Programmatically focusable only — see `headingRef`. A heading is never
-            // tabbed to, so this adds nothing to the tab order and costs the reader
-            // nothing; it is what makes a dismissal with no surviving control land
-            // somewhere a tab can reach the rows from.
-            tabIndex={-1}
-            className="text-xl sm:text-2xl font-bold text-gray-900"
-          >
-            {t('title')}
-          </h1>
-          {rowCount === 0 ? null : (
-            // The testid is what lets a test assert this is ABSENT without depending on
-            // how a zero would have been spelled or on where the badge sits. Querying
-            // for the text "0 proposals" only rules out one wording — a later
-            // `rowCount_zero` form would walk straight past it — and reading the
-            // wrapper's text depends on nothing being nested around the heading.
-            <span
-              data-testid="prioritization-row-count"
-              className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs sm:text-sm font-medium text-gray-600"
-            >
-              {t('rowCount', { count: rowCount })}
-            </span>
-          )}
-        </div>
-        <p className="text-sm sm:text-base text-gray-500 mt-1">{t('subtitle')}</p>
-      </div>
-      <div className="flex items-center gap-2 sm:gap-3">
-        {hasChanges ? <button onClick={onReset} className="flex items-center gap-2 px-3 sm:px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm">
-          <RotateCcw size={16} /><span className="hidden sm:inline">{t('actions.reset')}</span>
-        </button> : null}
-        <button onClick={onSave} disabled={!canSave} className={clsx('flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg font-medium text-sm', canSave ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-100 text-gray-400 cursor-not-allowed')}>
-          <Save size={16} />
-          <span className="hidden sm:inline">{isPending ? t('actions.saving') : t('actions.save')}</span>
-          <span className="sm:hidden">{isPending ? t('actions.savingMobile') : t('actions.saveMobile')}</span>
-        </button>
-      </div>
-    </div>
-  )
-}
 
 export default function Prioritization() {
   const { t } = useTranslation('prioritization')
@@ -610,24 +98,26 @@ export default function Prioritization() {
 
   const hasChanges = Object.keys(localEdits).length > 0
 
-  const {
-    data: projectsData, isLoading: loadingProjects,
-  } = useQuery({
+  const projectsQuery = useQuery({
     queryKey: projectsKey(),
     queryFn: () => projectsApi.getProjects(),
     enabled: config.apiEndpoint.length > 0,
   })
+  const { data: projectsData, isLoading: loadingProjects } = projectsQuery
 
   const projects = projectsData?.projects
   const projectIds = Array.isArray(projects) ? projects.map((p: Project) => p.project_id) : []
 
-  const {
-    data: allProjectDetails, isLoading: loadingDetails,
-  } = useQuery({
-    queryKey: [ALL_PROJECT_DETAILS_KEY, projectIds],
-    queryFn: () => Promise.all(projectIds.map((id) => projectsApi.getProject(id))),
+  // ONE request for every project's documents (`GET /projects?ids=…`), not one per
+  // project. Aligned back to `projects` by id: every reader below indexes the two
+  // arrays together, and a project the caller cannot view (or that was deleted
+  // since the list) is `undefined` there rather than shifting every later row.
+  const detailsQuery = useQuery({
+    queryKey: projectDetailsBatchKey(projectIds),
+    queryFn: async () => alignDetails(projectIds, await projectsApi.getProjectDetails(projectIds)),
     enabled: projectIds.length > 0,
   })
+  const { data: allProjectDetails, isLoading: loadingDetails } = detailsQuery
 
   /**
    * Re-sign the prototype links before they lapse.
@@ -655,7 +145,7 @@ export default function Prioritization() {
    * depend on its identity. A `useMemo` would stabilise a reference nothing holds.
    */
   usePrototypeLinkRefresh(
-    (allProjectDetails ?? []).flatMap((detail) => detail.documents ?? []),
+    (allProjectDetails ?? []).flatMap((detail) => detail?.documents ?? []),
     () => {
       void queryClient.invalidateQueries({ queryKey: [ALL_PROJECT_DETAILS_KEY] })
     },
@@ -696,7 +186,7 @@ export default function Prioritization() {
     // Validate at the query boundary, per project convention: stored forms
     // predate the link fields, so the record on the wire can omit them
     // entirely — an unlinked form must read as "not linked", not crash the page.
-    select: (data) => normalizeLinkedForms(data.forms ?? []),
+    select: (data) => normalizeLinkedForms(data.forms),
     enabled: config.apiEndpoint.length > 0,
   })
 
@@ -827,12 +317,15 @@ export default function Prioritization() {
    */
   const [ensureRefusals, setEnsureRefusals] = useState<Record<string, number>>({})
   useEffect(() => {
-    if (config.apiEndpoint.length === 0 || rowProjectIds.length === 0) return
+    // Read back from the KEY, not the array, so the key is the effect's whole input:
+    // project ids are `proj_<timestamp>`, so a comma never occurs inside one.
+    const ids = rowProjectKey.split(',').filter((id) => id.length > 0)
+    if (config.apiEndpoint.length === 0 || ids.length === 0) return
     // Asked ONCE per project per mount, while the ask keeps succeeding. Without this
     // the effect re-runs whenever the project read is refetched — which the prototype
     // re-signing does hourly — and each pass would spend one refused conditional write
     // per project.
-    const pending = rowProjectIds.filter((id) => !rowsEnsured.current.has(id))
+    const pending = ids.filter((id) => !rowsEnsured.current.has(id))
     if (pending.length === 0) return
     // Marked BEFORE the request, not after: two renders in the same tick would
     // otherwise both see an unmarked id and both write.
@@ -850,9 +343,10 @@ export default function Prioritization() {
       // which is a disagreement with `projectsNeedingARow` that asking again cannot
       // resolve — so releasing it re-asks on every project refetch for the whole mount
       // and never gets a different reply.
-      results.forEach((result, index) => {
-        if (result.status !== 'rejected') return
-        if (!isPermanentRefusal(result.reason)) rowsEnsured.current.delete(pending[index])
+      pending.forEach((id, index) => {
+        const result = results.at(index)
+        if (result?.status !== 'rejected') return
+        if (!isPermanentRefusal(result.reason)) rowsEnsured.current.delete(id)
       })
       // WHICH refusals a reader has to be told about, and which the page already
       // covers in words: `refusalsByProject` owns that judgement. Every project in
@@ -887,7 +381,6 @@ export default function Prioritization() {
       if (created) void queryClient.invalidateQueries({ queryKey: PRIORITIZATION_SCORES_KEY })
     })
     // `rowProjectKey` rather than the array: see its own comment.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rowProjectKey, config.apiEndpoint, queryClient])
 
   /**
@@ -932,7 +425,7 @@ export default function Prioritization() {
         ensuredRows,
         savedScores?.rowsPublished === true ? savedScores.rows : undefined,
       ),
-      ...(savedScores?.rows ?? {}),
+      ...savedScores?.rows,
     }),
     [savedScores, ensuredRows],
   )
@@ -947,7 +440,7 @@ export default function Prioritization() {
   const hasNonScorableOnly = useMemo(() => {
     if (!allProjectDetails) return false
     const hasNonScorableDoc = allProjectDetails.some(
-      (detail) => detail.documents && detail.documents.some((doc) => !isScorable(doc)),
+      (detail) => detail?.documents.some((doc) => !isScorable(doc)) ?? false,
     )
     return allRows.length === 0 && hasNonScorableDoc
   }, [allProjectDetails, allRows])
@@ -1074,8 +567,6 @@ export default function Prioritization() {
     },
   })
 
-  const blocker = useBlocker(hasChanges)
-
   // Records only the field that moved. The edit accumulates across interactions on
   // the same row — a reviewer who sets impact and then confidence sends both — but it
   // never gains a field they did not touch, so an untouched axis stays absent from the
@@ -1100,8 +591,21 @@ export default function Prioritization() {
     setLocalEdits({})
   }
 
+  // The shared unsaved-changes guard (E2E F6): Save is the header's own save,
+  // and is offered only when the header would allow it.
+  const saveBlocked = !ownBallots.inHand || overLongNotes.length > 0
+  const guard = useUnsavedChangesGuard({
+    dirty: hasChanges,
+    canSave: !saveBlocked,
+    onSave: async () => {
+      await saveMutation.mutateAsync()
+      return true
+    },
+    onDiscard: handleReset,
+  })
+
   if (config.apiEndpoint === '') {
-    return <div className="text-center py-12"><p className="text-gray-500">{t('configureApiEndpoint')}</p></div>
+    return <div className="text-center py-12"><p className="text-muted">{t('configureApiEndpoint')}</p></div>
   }
 
   // Whether the list is still a spinner. The heading's count relies on this being a
@@ -1112,13 +616,15 @@ export default function Prioritization() {
   // cached rows survive a refetch and the count would then sit over a spinner. Gate the
   // badge explicitly if that happens.
   const isLoading = loadingProjects || loadingDetails
-
+  // The projects or their documents could not be read: no rows is then NOT
+  // "no PR/FAQs yet" (the empty state used to say exactly that, offline).
+  const backlogFailure = failedReads([projectsQuery, detailsQuery])
   return (
     <div className="space-y-4 sm:space-y-6">
       <PrioritizationHeader
         hasChanges={hasChanges}
         isPending={saveMutation.isPending}
-        saveBlocked={!ownBallots.inHand || overLongNotes.length > 0}
+        saveBlocked={saveBlocked}
         // The list's OWN length, so the badge and the rows below it are one number.
         // Nothing is gated here — the header withholds a zero, which covers the loading
         // pass as well, since `collectRows` has no documents to compose rows from until
@@ -1135,12 +641,12 @@ export default function Prioritization() {
           indistinguishable to a screen reader AND to a test: `getByRole('alert')`
           throws on the second one rather than reporting which state was missing. */}
       {overLongNotes.length > 0 ? (
-        <div role="alert" aria-labelledby="note-too-long-title" className="bg-amber-50 border border-amber-200 rounded-lg p-3 sm:p-4">
+        <div role="alert" aria-labelledby="note-too-long-title" className="bg-warn-subtle border border-warn/30 rounded-lg p-3 sm:p-4">
           <div className="flex items-start gap-3">
-            <AlertTriangle className="text-amber-600 mt-0.5 flex-shrink-0" size={20} />
+            <AlertTriangle className="text-warn mt-0.5 flex-shrink-0" size={20} />
             <div>
-              <h3 id="note-too-long-title" className="font-medium text-amber-900 text-sm sm:text-base">{t('noteTooLong.title')}</h3>
-              <p className="text-xs sm:text-sm text-amber-700 mt-1">
+              <h2 id="note-too-long-title" className="font-medium text-text-strong text-sm sm:text-base">{t('noteTooLong.title')}</h2>
+              <p className="text-xs sm:text-sm text-text mt-1">
                 {/* No `count` interpolation on purpose: a plural key needs
                     `_one`/`_many`/`_other` forms that differ per locale, and a
                     missing form renders the raw path. */}
@@ -1150,7 +656,7 @@ export default function Prioritization() {
                   a reviewer, and rows are collapsed by default, so without this the
                   actionable half of the message is "expand every pending row and
                   look". Titles are data, not UI copy, so this needs no new key. */}
-              <ul className="text-xs sm:text-sm text-amber-800 mt-2 list-disc list-inside">
+              <ul className="text-xs sm:text-sm text-text mt-2 list-disc list-inside">
                 {overLongNotes.map((rowId) => (
                   <li key={rowId}>{titlesByRow[rowId] ?? rowId}</li>
                 ))}
@@ -1187,11 +693,11 @@ export default function Prioritization() {
           succeeded carrying ballots that could not be read. The second used to say nothing
           at all. `ownBallotRead` owns which is which. */}
       {ownBallots.needsPanel ? (
-        <div role="alert" aria-labelledby="scores-unavailable-title" className="bg-red-50 border border-red-200 rounded-lg p-3 sm:p-4">
+        <div role="alert" aria-labelledby="scores-unavailable-title" className="bg-danger-subtle border border-danger/30 rounded-lg p-3 sm:p-4">
           <div className="flex items-start gap-3">
-            <AlertTriangle className="text-red-600 mt-0.5 flex-shrink-0" size={20} />
+            <AlertTriangle className="text-danger mt-0.5 flex-shrink-0" size={20} />
             <div>
-              <h3 id="scores-unavailable-title" className="font-medium text-red-900 text-sm sm:text-base">{t('scoresUnavailable.title')}</h3>
+              <h2 id="scores-unavailable-title" className="font-medium text-text-strong text-sm sm:text-base">{t('scoresUnavailable.title')}</h2>
               {/* Chosen by THE SAME question the save guard asks — the caller's own
                   ballots — because these two sentences differ precisely on whether a save
                   is possible, and the button next to them is controlled by that. Keyed on
@@ -1204,7 +710,7 @@ export default function Prioritization() {
                   defaults and reloading IS the right move before saving. Both keys are
                   literals with the condition OUTSIDE `t(...)`: `i18n-check` only sees a
                   key it reads verbatim, so a ternary inside the call reports both unused. */}
-              <p className="text-xs sm:text-sm text-red-700 mt-1">
+              <p className="text-xs sm:text-sm text-text mt-1">
                 {ownBallots.inHand ? t('scoresUnavailable.staleDescription') : t('scoresUnavailable.description')}
               </p>
             </div>
@@ -1212,12 +718,12 @@ export default function Prioritization() {
         </div>
       ) : null}
 
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-3 sm:p-4 border border-blue-100">
+      <div className="bg-accent-subtle rounded-lg p-3 sm:p-4 border border-accent/30">
         <div className="flex items-start gap-3">
-          <Sparkles className="text-blue-600 mt-0.5 flex-shrink-0" size={20} />
+          <Sparkles className="text-accent-text mt-0.5 flex-shrink-0" size={20} aria-hidden="true" />
           <div>
-            <h3 className="font-medium text-blue-900 text-sm sm:text-base">{t('framework.title')}</h3>
-            <p className="text-xs sm:text-sm text-blue-700 mt-1">
+            <h2 className="text-sm font-semibold tracking-tight text-accent-text">{t('framework.title')}</h2>
+            <p className="text-xs sm:text-sm text-text mt-1">
               <Trans i18nKey="framework.description" ns="prioritization">
                 Score each PR/FAQ on: <strong>Impact</strong>, <strong>Time to Market</strong>, <strong>Strategic Fit</strong>, and <strong>Confidence</strong>.
               </Trans>
@@ -1234,30 +740,25 @@ export default function Prioritization() {
         ordersByTeam={teamOrderingAvailable(aggregates)}
       />
 
-      <PRFAQList
-        isLoading={isLoading}
-        rows={sortedRows}
-        scores={scores}
-        aggregates={aggregates}
-        linkedFormsByDocument={linkedFormsByDocument}
-        apiEndpoint={config.apiEndpoint}
-        composition={rowLifecycle.actions}
-        expandedId={expandedId}
-        onToggleExpand={(id) => setExpandedId(expandedId === id ? null : id)}
-        onUpdateScore={updateScore}
-        hasNonScorableOnly={hasNonScorableOnly}
-      />
+      {backlogFailure.loadFailed ? (
+        <LoadFailed onRetry={backlogFailure.retry} retrying={backlogFailure.retrying} />
+      ) : (
+        <PRFAQList
+          isLoading={isLoading}
+          rows={sortedRows}
+          scores={scores}
+          aggregates={aggregates}
+          linkedFormsByDocument={linkedFormsByDocument}
+          apiEndpoint={config.apiEndpoint}
+          composition={rowLifecycle.actions}
+          expandedId={expandedId}
+          onToggleExpand={(id) => setExpandedId(expandedId === id ? null : id)}
+          onUpdateScore={updateScore}
+          hasNonScorableOnly={hasNonScorableOnly}
+        />
+      )}
 
-      <ConfirmModal
-        isOpen={blocker.state === 'blocked'}
-        title={t('unsavedChanges.title')}
-        message={t('unsavedChanges.message')}
-        confirmLabel={t('unsavedChanges.confirm')}
-        cancelLabel={t('unsavedChanges.cancel')}
-        variant="warning"
-        onConfirm={() => blocker.proceed?.()}
-        onCancel={() => blocker.reset?.()}
-      />
+      {guard.dialog}
     </div>
   )
 }

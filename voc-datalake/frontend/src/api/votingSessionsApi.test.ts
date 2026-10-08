@@ -18,22 +18,27 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 vi.mock('./baseUrl', () => ({ getBaseUrl: () => 'https://api.example.com' }))
 
-const mockFetchApi = vi.fn()
+const mockFetchApi = vi.fn<(path: string, init?: RequestInit) => Promise<unknown>>()
 vi.mock('./client', () => ({ fetchApi: (path: string, init?: RequestInit) => mockFetchApi(path, init) }))
 
 import { votingSessionsApi } from './votingSessionsApi'
+import { at } from '@test/defined'
 
 const SESSION_ID = 'vs_0123456789abcdef0123456789abcdef'
 
-function jsonResponse(body: unknown, status = 200): Response {
+/** The parts of a `Response` this client reads. A stub, not a real `Response`,
+ *  so a test whose code reads the body twice still sees it the second time. */
+type StubResponse = Pick<Response, 'ok' | 'status' | 'json'>
+
+function jsonResponse(body: unknown, status = 200): StubResponse {
   return {
     ok: status >= 200 && status < 300,
     status,
     json: () => Promise.resolve(body),
-  } as unknown as Response
+  }
 }
 
-const fetchMock = vi.fn()
+const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<StubResponse>>()
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -88,7 +93,7 @@ describe('what the ballot page is told before it renders a form', () => {
 
     const config = await votingSessionsApi.getBallotSessionConfig(SESSION_ID)
 
-    expect(config).toEqual({ open: true, reason: null, row_title: 'Refunds' })
+    expect(config).toStrictEqual({ open: true, reason: null, row_title: 'Refunds' })
   })
 
   it('asks for it without a Content-Type, which a GET has no body to describe', async () => {
@@ -98,7 +103,7 @@ describe('what the ballot page is told before it renders a form', () => {
 
     await votingSessionsApi.getBallotSessionConfig(SESSION_ID)
 
-    const [, init] = fetchMock.mock.calls[0]
+    const [, init] = at(fetchMock.mock.calls, 0)
     expect(init?.headers).toBeUndefined()
   })
 
@@ -110,7 +115,7 @@ describe('what the ballot page is told before it renders a form', () => {
 
     const config = await votingSessionsApi.getBallotSessionConfig(SESSION_ID)
 
-    expect(config).toEqual({ open: false, reason: null, row_title: '' })
+    expect(config).toStrictEqual({ open: false, reason: null, row_title: '' })
   })
 
   it('normalises an absent reason to null rather than leaving it undefined', async () => {
@@ -130,7 +135,7 @@ describe('casting a ballot', () => {
 
     const result = await votingSessionsApi.submitBallot(SESSION_ID, { impact: 4 })
 
-    expect(result).toEqual({ ok: true, ballotId: 'abc', corrected: false })
+    expect(result).toStrictEqual({ ok: true, ballotId: 'abc', corrected: false })
   })
 
   it.each(['closed', 'expired', 'cap_reached', 'not_found', 'invalid'] as const)(
@@ -141,7 +146,7 @@ describe('casting a ballot', () => {
 
       const result = await votingSessionsApi.submitBallot(SESSION_ID, { impact: 4 })
 
-      expect(result).toEqual({ ok: false, failure: reason })
+      expect(result).toStrictEqual({ ok: false, failure: reason })
     })
 
   it.each([
@@ -153,16 +158,16 @@ describe('casting a ballot', () => {
 
     const result = await votingSessionsApi.submitBallot(SESSION_ID, { impact: 4 })
 
-    expect(result).toEqual({ ok: false, failure: 'unknown' })
+    expect(result).toStrictEqual({ ok: false, failure: 'unknown' })
   })
 
   it('survives a response that is not JSON at all', async () => {
     fetchMock.mockResolvedValue({
       ok: false, status: 502, json: () => Promise.reject(new Error('not json')),
-    } as unknown as Response)
+    })
 
     const result = await votingSessionsApi.submitBallot(SESSION_ID, { impact: 4 })
 
-    expect(result).toEqual({ ok: false, failure: 'unknown' })
+    expect(result).toStrictEqual({ ok: false, failure: 'unknown' })
   })
 })

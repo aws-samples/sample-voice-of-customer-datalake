@@ -7,7 +7,7 @@
  * that fail if the readers or the label-omission logic are reverted.
  *
  * Fixtures are the shapes of live rows. `pain_points` and `goals_motivations`
- * arrive as OPAQUE records from `projectItemSchema` on purpose — naming their
+ * arrive as OPAQUE records from the chat-context reader on purpose — naming their
  * leaves would let one malformed persona throw and take down the whole
  * chat-context build — so the null and wrong-type cases below are the contract,
  * not defensive padding.
@@ -20,11 +20,11 @@ import {
   personaNeeds,
   personaVoice,
 } from './persona-fields.js';
-import { buildSinglePersonaPrompt } from './persona-prompt.js';
-import type { ProjectItem } from './project-context.js';
+import { buildSinglePersonaPrompt, type PersonaPromptSource } from './persona-prompt.js';
 
-const asPersona = (raw: Record<string, unknown>): ProjectItem =>
-  raw as unknown as ProjectItem;
+// Fixtures deliberately include wrong-typed sections (the readers must survive
+// them), so they are built as loose records and handed over unchecked.
+const asPersona = (raw: Record<string, unknown>): PersonaPromptSource => raw;
 
 const GENERATED = asPersona({
   sk: 'PERSONA#p1',
@@ -69,7 +69,7 @@ describe('personaGoals', () => {
   });
 
   it('respects the cap', () => {
-    expect(personaGoals(GENERATED, 2)).toHaveLength(2);
+    expect(personaGoals(GENERATED, 2)).toStrictEqual(['Stay informed in ten minutes', 'Follow local council news']);
   });
 });
 
@@ -124,7 +124,7 @@ describe('personaVoice', () => {
 });
 
 describe('tolerance for shapes the boundary no longer validates', () => {
-  // `projectItemSchema` declares these sections as opaque records precisely so a
+  // `assistant/tools/server/chat-context.ts` declares these sections as opaque records precisely so a
   // malformed row cannot throw. That moves the burden here, so it is asserted here.
   it.each([
     ['a null section', { goals_motivations: null, pain_points: null, quotes: null }],
@@ -174,12 +174,75 @@ describe('bulletList', () => {
   it('returns an empty string for no values, so a caller can omit the label', () => {
     expect(bulletList([])).toBe('');
   });
+
+  it('puts one bullet per line', () => {
+    expect(bulletList(['one', 'two'])).toBe('- one\n- two');
+  });
+});
+
+describe('what counts as readable text in an entry', () => {
+  const goalsFrom = (secondary: unknown): string[] =>
+    personaGoals(asPersona({ goals_motivations: { secondary_goals: secondary } }), 10);
+
+  it('trims string entries, object text and a lone scalar, and drops blank ones', () => {
+    expect(goalsFrom(['  padded  ', '   ', { text: '  inner  ' }])).toStrictEqual(['padded', 'inner']);
+    expect(goalsFrom('  lone  ')).toStrictEqual(['lone']);
+    expect(goalsFrom('   ')).toStrictEqual([]);
+  });
+
+  it('falls through a blank text key to the next textual key', () => {
+    expect(goalsFrom([{ text: '   ', description: 'described' }])).toStrictEqual(['described']);
+  });
+
+  it('renders a finite number and drops NaN, Infinity and null', () => {
+    expect(goalsFrom([3, Number.NaN, Number.POSITIVE_INFINITY, null, 0.5])).toStrictEqual(['3', '0.5']);
+  });
+
+  it('trims the primary goal and skips a blank one', () => {
+    expect(personaGoals(asPersona({ goals_motivations: { primary_goal: '  Ship it  ' } }))).toStrictEqual(['Ship it']);
+    expect(personaGoals(asPersona({ goals_motivations: { primary_goal: '  ', secondary_goals: ['next'] } })))
+      .toStrictEqual(['next']);
+  });
+
+  it('trims the voice and skips a blank quote', () => {
+    expect(personaVoice(asPersona({ quotes: ['   ', { text: '  Said it.  ' }] }))).toBe('Said it.');
+    expect(personaVoice(asPersona({ quotes: [{ text: '  ' }] }))).toBe('');
+  });
+});
+
+describe('the item cap', () => {
+  const five = ['a', 'b', 'c', 'd', 'e'];
+
+  it('caps each list at four by default, exactly', () => {
+    expect(personaGoals(asPersona({ goals_motivations: { secondary_goals: five } }))).toStrictEqual(['a', 'b', 'c', 'd']);
+    expect(personaFrustrations(asPersona({ pain_points: { current_challenges: five } })))
+      .toStrictEqual(['a', 'b', 'c', 'd']);
+    expect(personaNeeds(asPersona({ goals_motivations: { underlying_motivations: five } })))
+      .toStrictEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('stops topping up at the cap and never repeats an entry', () => {
+    const persona = asPersona({
+      pain_points: {
+        current_challenges: ['a', 'b', 'c'], blockers: ['b', 'x', 'y'], workarounds: ['m', 'w1', 'w2', 'w3'],
+      },
+      goals_motivations: { underlying_motivations: ['m', 'n', 'o'] },
+    });
+    expect(personaFrustrations(persona)).toStrictEqual(['a', 'b', 'c', 'x']);
+    expect(personaNeeds(persona)).toStrictEqual(['m', 'n', 'o', 'w1']);
+  });
+
+  it('returns nothing at a cap of zero', () => {
+    expect(personaFrustrations(GENERATED, 0)).toStrictEqual([]);
+    expect(personaNeeds(GENERATED, 0)).toStrictEqual([]);
+    expect(personaGoals(GENERATED, 0)).toStrictEqual([]);
+  });
 });
 
 describe('the roundtable identity block', () => {
   // projectName, persona, selectedContent, otherDocsList, feedbackSection,
   // selectedDocumentIds, documents, previousResponses.
-  const build = (persona: ProjectItem): string =>
+  const build = (persona: PersonaPromptSource): string =>
     buildSinglePersonaPrompt('NorthStar', persona, '', [], '', [], [], []);
 
   it('gives the persona its real goals, frustrations and voice', () => {
@@ -196,10 +259,8 @@ describe('the roundtable identity block', () => {
     // the persona wants nothing. Emitting the heading unconditionally fails this.
     const prompt = build(asPersona({ name: 'Sparse', tagline: 'Knows little' }));
     expect(prompt).toContain('You are "Sparse"');
-    expect(prompt).not.toContain('Your Goals');
-    expect(prompt).not.toContain('Your Frustrations');
-    expect(prompt).not.toContain('What You Need');
-    expect(prompt).not.toContain('Your voice');
+    const emptyHeadings = ['Your Goals', 'Your Frustrations', 'What You Need', 'Your voice'];
+    expect(emptyHeadings.filter((heading) => prompt.includes(heading))).toStrictEqual([]);
   });
 
   it('renders what an imported persona has and stays silent on the rest', () => {

@@ -7,12 +7,7 @@
     "summary_many": "{{count}} catégories • {{total}} éléments • Derniers {{days}} jours",
     "summary_other": "{{count}} catégories • {{total}} éléments • Derniers {{days}} jours"
   },
-  "deleteConfirm": {
-    "deleteFeedback": "Supprimer le commentaire",
-    "deleteS3File": "Supprimer le fichier S3",
-    "message": "Êtes-vous sûr ? Cette action ne peut pas être annulée."
-  },
-  "description": "Parcourir, modifier et synchroniser les données brutes S3 et les enregistrements traités DynamoDB",
+  "description": "Parcourez les données brutes S3 et les enregistrements DynamoDB traités. Rien n'est jamais supprimé ici, et les fichiers bruts stockés sont en lecture seule.",
   "editModal": {
     "cancel": "Annuler",
     "close": "Fermer",
@@ -25,36 +20,42 @@
     "key": "Clé",
     "save": "Enregistrer",
     "syncToDynamo": "Mettre à jour aussi DynamoDB",
-    "syncToS3": "Mettre à jour aussi S3",
     "type": "Catégorie",
     "viewFeedback": "Afficher le commentaire",
-    "viewS3File": "Afficher le fichier S3"
+    "viewS3File": "Afficher le fichier S3",
+    "content": "Contenu du fichier"
   },
   "feedback": {
     "category": "Catégorie : {{category}}",
-    "delete": "Supprimer",
     "edit": "Modifier",
     "errorLoading": "Erreur de chargement des commentaires",
     "noFeedback": "Aucun commentaire trouvé",
     "showingRecords": "Affichage de {{filtered}} sur {{total}} enregistrements",
     "urgent": "Prioritaire",
-    "view": "Afficher"
+    "view": "Afficher",
+    "noFeedbackHint": "Essayez une autre source ou une période plus large.",
+    "showDetails": "Afficher les détails",
+    "hideDetails": "Masquer les détails"
   },
   "filters": {
     "allSources": "Toutes les sources",
-    "searchPlaceholder": "Rechercher..."
+    "searchPlaceholder": "Rechercher...",
+    "bucket": "Compartiment S3",
+    "source": "Origine",
+    "search": "Rechercher des retours"
   },
   "newFile": "Nouveau fichier",
   "notConfigured": "Configurez le point de terminaison API dans les paramètres pour explorer les données",
   "refresh": "Actualiser",
   "s3Browser": {
     "back": "Retour",
-    "delete": "Supprimer",
     "download": "Télécharger",
     "edit": "Modifier",
     "errorLoading": "Erreur de chargement des fichiers",
     "noFiles": "Aucun fichier trouvé",
-    "view": "Afficher"
+    "view": "Afficher",
+    "path": "Chemin du dossier",
+    "noFilesHint": "Ce dossier est vide. Créez un fichier ici ou ingérez des données depuis Sources de données."
   },
   "tabs": {
     "categories": "Catégories",
@@ -62,7 +63,8 @@
     "feedbackShort": "Commentaires",
     "processedFeedback": "Commentaires traités",
     "s3RawData": "Données brutes S3",
-    "s3Short": "S3"
+    "s3Short": "S3",
+    "label": "Vue des données"
   },
   "title": "Explorateur de données"
 }

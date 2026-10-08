@@ -18,6 +18,7 @@ import { skipToken, useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { z } from 'zod'
 import clsx from 'clsx'
+import { agentsKeys } from '../../api/agentsApi'
 import { projectKey } from '../../api/projectQueryKeys'
 import { buildCrumbs } from './routeCrumbs'
 
@@ -31,12 +32,15 @@ const ProjectNameSchema = z.object({
   project: z.object({ name: z.string().trim().min(1) }),
 })
 
+/** Same idea for an autonomous agent (`/agents/:id`). */
+const AgentNameSchema = z.object({ name: z.string().trim().min(1) })
+
 /**
  * The display name for the record the current route addresses, if the page has
  * already loaded it. At most one record route is active at a time, so a single
  * name covers them all.
  *
- * Projects are the only record with a name to show: a feedback item has no title
+ * Projects and agents are the records with a name to show: a feedback item has no title
  * field (see FeedbackItem), so `/feedback/:id` keeps its generic label.
  *
  * The entry is ProjectDetail's, via useProjectData — hence the shared `projectKey`
@@ -46,8 +50,11 @@ const ProjectNameSchema = z.object({
  */
 function useRecordName(pathSegments: readonly string[]): string | undefined {
   const projectId = pathSegments[0] === 'projects' ? pathSegments[1] : undefined
+  const agentId = pathSegments[0] === 'agents' ? pathSegments[1] : undefined
   const { data } = useQuery({ queryKey: projectKey(projectId), queryFn: skipToken })
-  return ProjectNameSchema.safeParse(data).data?.project.name
+  // AgentDetail's own entry (agentsKeys.detail), observed read-only like the project one.
+  const { data: agent } = useQuery({ queryKey: agentsKeys.detail(agentId ?? ''), queryFn: skipToken, enabled: agentId !== undefined })
+  return ProjectNameSchema.safeParse(data).data?.project.name ?? AgentNameSchema.safeParse(agent).data?.name
 }
 
 export default function Breadcrumbs() {
@@ -65,25 +72,29 @@ export default function Breadcrumbs() {
 
   return (
     <nav 
-      className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-gray-600 overflow-x-auto scrollbar-hide"
+      className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-text overflow-x-auto scrollbar-hide"
       aria-label="Breadcrumb"
     >
       {breadcrumbs.map((crumb, index) => {
         const isLast = index === breadcrumbs.length - 1
+        // Below `sm` only Home and the current page fit. An intermediate crumb
+        // collapses entirely — separator included — instead of leaving an
+        // empty link between two chevrons ("⌂ > > Page").
+        const isMiddle = !isLast && !crumb.isHome
         
         return (
-          <div key={crumb.path} className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+          <div key={crumb.path} className={clsx('items-center gap-1.5 sm:gap-2 flex-shrink-0', isMiddle ? 'hidden sm:flex' : 'flex')}>
             {index > 0 && (
               <ChevronRight 
                 size={14} 
-                className="text-gray-400 flex-shrink-0" 
+                className="text-muted-strong flex-shrink-0" 
                 aria-hidden="true" 
               />
             )}
             
             {isLast ? (
               <span 
-                className="text-gray-900 font-medium flex items-center gap-1 sm:gap-1.5 max-w-[120px] sm:max-w-none truncate"
+                className="text-text-strong font-medium flex items-center gap-1 sm:gap-1.5 max-w-[120px] sm:max-w-none truncate"
                 aria-current="page"
               >
                 {crumb.isHome && <Home size={14} className="flex-shrink-0" aria-hidden="true" />}
@@ -97,8 +108,8 @@ export default function Breadcrumbs() {
                 // at all on a phone.
                 aria-label={crumb.label}
                 className={clsx(
-                  'hover:text-blue-600 active:text-blue-700 transition-colors flex items-center gap-1 sm:gap-1.5 py-1',
-                  crumb.isHome && 'text-gray-500'
+                  'hover:text-accent-text active:text-accent-hover transition-colors flex items-center gap-1 sm:gap-1.5 py-1',
+                  crumb.isHome && 'text-muted'
                 )}
               >
                 {crumb.isHome && <Home size={14} className="flex-shrink-0" aria-hidden="true" />}

@@ -1,7 +1,7 @@
 {
   "id": "s3_import",
   "name": "S3 Bulk Import",
-  "icon": "📦",
+  "icon": "Package",
   "description": "Import feedback from S3 bucket (CSV, JSON, JSONL)",
   "category": "import",
   "version": "1.0.0",

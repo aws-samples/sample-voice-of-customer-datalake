@@ -1,10 +1,14 @@
 /**
  * SubmissionsModal - displays form submissions in a modal
  */
+import { useId } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
-import { X, Loader2, Star, MessageSquare } from 'lucide-react'
+import { Loader2, Star, MessageSquare, AlertCircle } from 'lucide-react'
 import { api } from '../../api/client'
-import clsx from 'clsx'
+import DialogClose from '../../components/DialogClose/DialogClose'
+import ModalShell from '../../components/ModalShell/ModalShell'
+import SentimentBadge from '../../components/SentimentBadge/SentimentBadge'
 
 interface SubmissionsModalProps {
   readonly formId: string
@@ -12,19 +16,10 @@ interface SubmissionsModalProps {
   readonly onClose: () => void
 }
 
-function getSentimentColor(sentiment: string): string {
-  switch (sentiment) {
-    case 'positive': return 'text-green-600 bg-green-50'
-    case 'negative': return 'text-red-600 bg-red-50'
-    case 'mixed': return 'text-yellow-600 bg-yellow-50'
-    default: return 'text-gray-600 bg-gray-50'
-  }
-}
-
-function formatDate(dateStr: string): string {
+function formatDate(dateStr: string, locale: string): string {
   if (!dateStr) return ''
   try {
-    return new Date(dateStr).toLocaleDateString('en-US', {
+    return new Date(dateStr).toLocaleDateString(locale, {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
@@ -37,83 +32,87 @@ function formatDate(dateStr: string): string {
 }
 
 function RatingStars({ rating, max = 5 }: { readonly rating: number | null; readonly max?: number }) {
-  if (rating === null) return <span className="text-gray-400 text-sm">No rating</span>
-  
+  const { t } = useTranslation('feedbackForms')
+  if (rating === null) return <span className="text-muted text-sm">{t('submissions.noRating')}</span>
+
   return (
     <div className="flex items-center gap-0.5">
       {Array.from({ length: max }, (_, i) => (
         <Star
           key={i}
           size={14}
-          className={i < rating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'}
+          className={i < rating ? 'text-warn fill-warn' : 'text-muted-strong'}
+          aria-hidden="true"
         />
       ))}
-      <span className="ml-1 text-sm text-gray-600">{rating}/{max}</span>
+      <span className="ml-1 text-sm font-mono text-text">{rating}/{max}</span>
     </div>
   )
 }
 
 export default function SubmissionsModal({ formId, formName, onClose }: SubmissionsModalProps) {
+  const { t, i18n } = useTranslation('feedbackForms')
+  const titleId = useId()
   const { data, isLoading, error } = useQuery({
     queryKey: ['form-submissions', formId],
     queryFn: () => api.getFeedbackFormSubmissions(formId, 50),
   })
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col">
+    // ModalShell rather than a bare overlay: role="dialog", a name, a focus trap
+    // and Escape, which the hand-rolled overlay had none of.
+    <ModalShell isOpen onClose={onClose} ariaLabelledBy={titleId} panelClassName="max-w-3xl max-h-[85vh]">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b">
-          <div>
-            <h2 className="text-lg font-semibold">{formName}</h2>
-            <p className="text-sm text-gray-500">Form Submissions</p>
+        <div className="dialog-header justify-between">
+          <div className="min-w-0">
+            <h2 id={titleId} className="dialog-title truncate" title={formName}>{formName}</h2>
+            <p className="dialog-description">{t('submissions.title')}</p>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
-            <X size={20} />
-          </button>
+          <DialogClose onClick={onClose} className="flex-shrink-0" />
         </div>
 
         {/* Stats Summary */}
         {data?.stats && (
-          <div className="grid grid-cols-3 gap-4 p-4 bg-gray-50 border-b">
+          <div className="grid grid-cols-3 gap-2 sm:gap-4 px-4 py-3 sm:p-4 bg-bg-accent border-b border-border">
             <div className="text-center">
-              <p className="text-2xl font-bold text-gray-900">{data.stats.total_submissions}</p>
-              <p className="text-xs text-gray-500">Total Submissions</p>
+              <p className="text-2xl font-bold font-mono text-text-strong">{data.stats.total_submissions}</p>
+              <p className="text-xs font-medium uppercase tracking-[.04em] text-muted">{t('submissions.totalSubmissions')}</p>
             </div>
             <div className="text-center">
-              <p className="text-2xl font-bold text-gray-900">
+              <p className="text-2xl font-bold font-mono text-text-strong">
                 {data.stats.avg_rating !== null ? data.stats.avg_rating.toFixed(1) : '—'}
               </p>
-              <p className="text-xs text-gray-500">Avg Rating</p>
+              <p className="text-xs font-medium uppercase tracking-[.04em] text-muted">{t('submissions.avgRating')}</p>
             </div>
             <div className="text-center">
-              <p className="text-2xl font-bold text-gray-900">{data.stats.rating_count}</p>
-              <p className="text-xs text-gray-500">Rated</p>
+              <p className="text-2xl font-bold font-mono text-text-strong">{data.stats.rating_count}</p>
+              <p className="text-xs font-medium uppercase tracking-[.04em] text-muted">{t('submissions.rated')}</p>
             </div>
           </div>
         )}
 
         {/* Content */}
-        <div className="flex-1 overflow-auto p-4">
+        <div className="dialog-body">
           {isLoading && (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="animate-spin text-blue-600" size={32} />
+            <div role="status" aria-label={t('common:loading')} className="flex items-center justify-center py-12">
+              <Loader2 className="animate-spin text-accent" size={24} aria-hidden="true" />
             </div>
           )}
 
           {error && (
-            <div className="text-center py-12 text-red-600">
-              Failed to load submissions
+            <div role="alert" className="flex items-center justify-center gap-2 py-12 text-sm text-danger">
+              <AlertCircle size={16} aria-hidden="true" />
+              {t('submissions.failedToLoad')}
             </div>
           )}
 
-          {data?.submissions && data.submissions.length === 0 && (
+          {data?.submissions.length === 0 && (
             <div className="text-center py-12">
-              <MessageSquare size={48} className="mx-auto text-gray-300 mb-4" />
-              <p className="text-gray-500">No submissions yet</p>
-              <p className="text-sm text-gray-400 mt-1">
-                Submissions will appear here once users submit feedback through this form.
-              </p>
+              <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-bg-hover flex items-center justify-center">
+                <MessageSquare size={20} className="text-muted" aria-hidden="true" />
+              </div>
+              <p className="text-sm font-semibold text-text-strong">{t('submissions.noSubmissions')}</p>
+              <p className="text-sm text-muted mt-1">{t('submissions.noSubmissionsHint')}</p>
             </div>
           )}
 
@@ -122,38 +121,31 @@ export default function SubmissionsModal({ formId, formName, onClose }: Submissi
               {data.submissions.map((submission) => (
                 <div
                   key={submission.feedback_id}
-                  className="border rounded-lg p-4 hover:bg-gray-50 transition-colors"
+                  className="border border-border rounded-lg p-3 sm:p-4"
                 >
                   <div className="flex items-start justify-between gap-4 mb-2">
                     <RatingStars rating={submission.rating} />
-                    <span
-                      className={clsx(
-                        'px-2 py-0.5 rounded text-xs font-medium capitalize',
-                        getSentimentColor(submission.sentiment_label)
-                      )}
-                    >
-                      {submission.sentiment_label || 'neutral'}
-                    </span>
+                    <SentimentBadge sentiment={submission.sentiment_label || 'neutral'} />
                   </div>
                   
-                  <p className="text-gray-800 text-sm leading-relaxed mb-3">
+                  <p className="text-text-strong text-sm leading-relaxed mb-3">
                     {submission.original_text}
                   </p>
                   
-                  <div className="flex items-center justify-between text-xs text-gray-500">
-                    <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0">
                       {submission.category && (
-                        <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded">
+                        <span className="badge badge-accent">
                           {submission.category}
                         </span>
                       )}
                       {submission.persona_name && (
-                        <span className="text-gray-600">
+                        <span className="text-text">
                           {submission.persona_name}
                         </span>
                       )}
                     </div>
-                    <span>{formatDate(submission.created_at)}</span>
+                    <span className="font-mono">{formatDate(submission.created_at, i18n.language)}</span>
                   </div>
                 </div>
               ))}
@@ -162,12 +154,11 @@ export default function SubmissionsModal({ formId, formName, onClose }: Submissi
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t bg-gray-50">
-          <button onClick={onClose} className="btn btn-secondary w-full">
-            Close
+        <div className="dialog-footer">
+          <button onClick={onClose} className="btn btn-secondary w-full sm:w-auto">
+            {t('submissions.close')}
           </button>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   )
 }

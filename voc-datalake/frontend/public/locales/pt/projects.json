@@ -5,7 +5,10 @@
     "docs_other": "{{count}} docs.",
     "personas_one": "{{count}} arquétipo",
     "personas_many": "{{count}} personas",
-    "personas_other": "{{count}} arquétipos"
+    "personas_other": "{{count}} arquétipos",
+    "deleteProject": "Excluir o projeto {{name}}",
+    "editProject": "Editar o projeto {{name}}",
+    "owner": "Proprietário: {{name}}"
   },
   "configureEndpoint": "Configure primeiro o endpoint da API nas Configurações",
   "createModal": {
@@ -23,6 +26,14 @@
     "message": "Tem certeza de que deseja excluir este projeto? Todas as personas e documentos serão excluídos permanentemente.",
     "title": "Excluir projeto"
   },
+  "editModal": {
+    "nameRequired": "Insira um nome de projeto.",
+    "save": "Salvar",
+    "saveFailed": "Não foi possível salvar o projeto. Verifique seu acesso e tente novamente.",
+    "saving": "Salvando...",
+    "title": "Editar projeto",
+    "visibilityManageOnly": "Somente o proprietário do projeto ou um administrador pode alterar quem o vê."
+  },
   "description": "Crie projetos para gerar personas, PRDs e PR/FAQs a partir de feedback",
   "emptyState": {
     "createButton": "Criar projeto",
@@ -31,5 +42,58 @@
   },
   "newProject": "Novo projeto",
   "openProject": "Abrir projeto",
-  "title": "Projetos"
+  "title": "Projetos",
+  "readOnlyBanner": "Você tem acesso somente leitura a este projeto. Peça ao proprietário acesso para editar.",
+  "sharing": {
+    "cancel": "Cancelar",
+    "description": "Escolha quem pode ver este projeto e o que as pessoas convidadas podem fazer.",
+    "errors": {
+      "conflict": "Essa pessoa já tem acesso a este projeto.",
+      "forbidden": "Você não tem permissão para alterar o compartilhamento deste projeto.",
+      "generic": "Não foi possível salvar a alteração. Tente novamente.",
+      "invalid": "A solicitação foi recusada. O projeto pode ter atingido o limite de membros.",
+      "notFound": "Usuário ou membro não encontrado."
+    },
+    "invite": "Convidar",
+    "inviteHeading": "Convidar pessoas",
+    "inviteRoleLabel": "Função da pessoa convidada",
+    "leave": "Sair do projeto",
+    "leaveConfirm": "Sair",
+    "leaveMessage": "Você perderá o acesso a este projeto, a menos que ele seja público.",
+    "leaveTitle": "Sair do projeto?",
+    "loadError": "Não foi possível carregar as configurações de compartilhamento.",
+    "loading": "Carregando configurações de compartilhamento...",
+    "makeOwner": "Tornar {{name}} proprietário",
+    "members": "Membros",
+    "noMembers": "Ninguém foi convidado ainda.",
+    "noOwner": "Sem proprietário",
+    "noResults": "Nenhum usuário correspondente",
+    "owner": "Proprietário",
+    "readOnlyNotice": "Somente o proprietário do projeto ou um administrador pode alterar o compartilhamento.",
+    "remove": "Remover {{name}}",
+    "roleLabel": "Função de {{name}}",
+    "roles": {
+      "editor": "Pode editar",
+      "viewer": "Pode visualizar"
+    },
+    "searchLabel": "Pesquisar usuários",
+    "searchPlaceholder": "Nome de usuário ou e-mail",
+    "searchMinLength": "Digite pelo menos {{min}} caracteres para pesquisar.",
+    "searching": "Pesquisando...",
+    "select": "Selecionar {{name}}",
+    "selected": "Selecionado: {{name}}",
+    "share": "Compartilhar",
+    "title": "Compartilhar \"{{name}}\"",
+    "transferConfirm": "Transferir",
+    "transferMessage": "{{name}} se tornará o proprietário deste projeto. O proprietário atual continuará como editor.",
+    "transferTitle": "Transferir a propriedade?",
+    "you": "(você)"
+  },
+  "visibility": {
+    "label": "Quem pode acessar este projeto",
+    "private": "Privado",
+    "privateHint": "Somente o proprietário, membros convidados e administradores podem vê-lo.",
+    "public": "Público",
+    "publicHint": "Todos neste espaço de trabalho podem visualizá-lo e editá-lo."
+  }
 }

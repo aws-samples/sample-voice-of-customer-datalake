@@ -8,13 +8,15 @@
     "never": "Never",
     "notConfigured": "Not configured",
     "runNow": "Run now",
-    "urls": "URLs"
+    "urls": "URLs",
+    "active": "Active",
+    "paused": "Paused"
   },
   "configureApiFirst": "Configure API endpoint first",
   "csvUpload": {
     "cancel": "Cancel",
-    "defaultSourceHint": "Used for rows that don't have a \"source\" column.",
-    "defaultSourceLabel": "Default source label",
+    "defaultSourceHint": "Used for rows without a channel column.",
+    "defaultSourceLabel": "Default channel",
     "done": "Done",
     "downloadTemplate": "Download template",
     "dropZone": "Drop a .csv file here or click to choose",
@@ -30,7 +32,33 @@
     "title": "CSV upload",
     "upload": "Upload",
     "uploading": "Uploading…",
-    "warningsHeader": "Warnings"
+    "warningsHeader": "Warnings",
+    "errorNoHeader": "The file has no header row.",
+    "errorUnreadable": "The file could not be read.",
+    "uploadFailed": "Upload failed",
+    "mapping": {
+      "title": "Column mapping",
+      "hint": "Suggested from the header row. Unrecognised columns are kept as metadata, so nothing is dropped unless you choose Ignore.",
+      "columnLabel": "Where {{header}} goes",
+      "dimensionTarget": "Dimension: {{name}}",
+      "targets": {
+        "text": "Feedback text",
+        "id": "Row id",
+        "rating": "Rating",
+        "date": "Date",
+        "author": "Author",
+        "title": "Title",
+        "url": "Link",
+        "channel": "Channel",
+        "tags": "Tags",
+        "metadata": "Keep as metadata",
+        "ignore": "Ignore"
+      },
+      "problems": {
+        "noText": "Map one column to Feedback text.",
+        "twice": "{{target}} is chosen for more than one column."
+      }
+    }
   },
   "deleteConfirmLabel": "Delete",
   "deleteConfirmMessage": "Are you sure you want to delete this scraper? This action cannot be undone.",
@@ -67,6 +95,7 @@
     "rating": "Rating",
     "reviewContainer": "Review Container *",
     "save": "Save Scraper",
+    "saveFailed": "Could not save the scraper. Please try again.",
     "scraperName": "Scraper Name",
     "scraperNamePlaceholder": "My Review Scraper",
     "selectorsAutoDetected": "These selectors were auto-detected. Adjust if needed.",
@@ -147,8 +176,13 @@
     "sourceUrl": "Source URL",
     "sourceUrlPlaceholder": "https://example.com/reviews",
     "title": "Manual Import",
-    "unparsedSections_one": "⚠️ {{count}} section could not be parsed",
-    "unparsedSections_other": "⚠️ {{count}} sections could not be parsed"
+    "unparsedSections_one": "{{count}} section could not be parsed",
+    "unparsedSections_other": "{{count}} sections could not be parsed",
+    "datesRequired_one": "{{count}} review needs a date before the import can run.",
+    "datesRequired_other": "{{count}} reviews need a date before the import can run.",
+    "datesDefaulted_one": "{{count}} review had no date in the text, so it uses today's import date. You can change it below.",
+    "datesDefaulted_other": "{{count}} reviews had no date in the text, so they use today's import date. You can change them below.",
+    "importFailed": "Failed to import reviews"
   },
   "newSource": "New Source",
   "parsedReview": {
@@ -158,7 +192,9 @@
     "star_one": "{{count}} star",
     "star_other": "{{count}} stars",
     "textPlaceholder": "Review text",
-    "titlePlaceholder": "Review title (optional)"
+    "titlePlaceholder": "Review title (optional)",
+    "dateLabel": "Review date (required)",
+    "dateDefaulted": "No date found: set to the import date"
   },
   "pluginConfig": {
     "automaticSchedule": "Automatic Schedule",
@@ -174,7 +210,9 @@
     "scheduleDescription": "Run this source on its configured schedule",
     "select": "Select...",
     "show": "Show",
-    "test": "Test"
+    "test": "Test",
+    "configuredInSettings": "This source is configured with its credentials in Settings.",
+    "openDataSourceSettings": "Open data source settings"
   },
   "refresh": "Refresh",
   "status": {
@@ -210,5 +248,20 @@
     "title": "Add Data Source",
     "webScraperTemplates": "Web Scraper Templates"
   },
-  "title": "Data Sources"
+  "title": "Data Sources",
+  "loading": "Loading data sources…",
+  "appCard": {
+    "platform": "Platform",
+    "maxReviews": "Max Reviews",
+    "unnamed": "Unnamed App",
+    "loading": "Loading app configurations…",
+    "deleteConfirmTitle": "Delete App",
+    "deleteConfirmMessage": "Are you sure you want to remove this app configuration?",
+    "editApp": "Edit App",
+    "addNewApp": "Add New App",
+    "addApp": "Add App",
+    "configuredApps": "Configured Apps",
+    "noApps": "No apps configured yet",
+    "addFirstApp": "Add your first app"
+  }
 }

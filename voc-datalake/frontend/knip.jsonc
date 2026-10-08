@@ -1,0 +1,43 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  // The files the bundler starts from: index.html is read for its <script> tags (src/main.tsx).
+  // The two scripts are run by hand, not imported: fix-i18n.mjs is the Bedrock translation tool
+  // (src/i18n/options.test.ts parses it) and i18n-check.test.mjs and check-mock-coverage.test.mjs are run by validate.sh with node.
+  "entry": ["index.html!", "scripts/fix-i18n.mjs", "scripts/i18n-check.test.mjs", "scripts/check-mock-coverage.test.mjs"],
+  "project": [
+    "src/**/*.{ts,tsx,css}!",
+    "!src/**/*.{spec,test}.{ts,tsx}!",
+    "!src/**/*-fixtures.{ts,tsx}!",
+    "!src/test/**!",
+    "scripts/**/*.{js,mjs,ts}"
+  ],
+  // Off: an export only its own file uses is a finding (nothing imports it, not even a spec).
+  // ../../scripts/knip-production.mjs turns it back on for --production, where an export its own file
+  // uses and a spec imports is a testing seam.
+  "ignoreExportsUsedInFile": false,
+  // Each entry is an export nothing imports ON PURPOSE. Do not add one without its reason.
+  "ignoreIssues": {
+    // DocTypeField* are compile-time pins: exported only so noUnusedLocals cannot delete them, and
+    // lambda/api/test/test_doc_type_lockstep.py pins their exact text. FeedbackFormConfig is the
+    // public widget's wire shape, pinned by test_widget_config_type_lockstep.py.
+    "src/api/types.ts": ["types"],
+    // The SPA mirror of the stream Lambda's wire contract. contract.lockstep.test.ts imports it as a
+    // namespace and compares EVERY export against the server file, so the names the SPA itself never
+    // reads (tool packs, interrupt constants, outcome statuses) are pinned there, not dead.
+    "src/assistant/contract.ts": ["exports", "types"],
+    // Allowlist pins and a test seam of the approval layer: PERSONA_UPDATABLE_FIELDS /
+    // FEEDBACK_FORM_UPDATABLE_FIELDS and listWriteTools are compared against the stream Lambda's
+    // contract by allowlists.lockstep.test.ts and registry.test.ts; resetExecutions resets the
+    // module-private zustand store between ApprovalCard specs (production never resets it).
+    "src/assistant/approvals/schemas.ts": ["exports"],
+    "src/assistant/approvals/registry.ts": ["exports"],
+    "src/assistant/approvals/executionStore.ts": ["exports"],
+    // resetSessionExpiryForTests: the test seam over module-private redirect state (3 specs);
+    // production resets it with a full document load.
+    "src/services/sessionExpiry.ts": ["exports"]
+  },
+  "ignoreDependencies": [
+    // Not imported: the i18n:extract script runs it through npx, configured by i18next-parser.config.js.
+    "i18next-parser"
+  ]
+}

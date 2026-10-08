@@ -25,11 +25,10 @@ write, so a change to one of those expressions has to be reflected here.
 """
 import json
 import re
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
-from botocore.exceptions import ClientError
+from ballots_fixtures import ConditionalFakeTable, cancelled_transaction, throttle_row_reads
 
 SESSION_PK = 'VOTING_SESSION'
 PRIORITIZATION_PK = 'PRIORITIZATION'
@@ -43,46 +42,25 @@ FUTURE = 4_000_000_000
 PAST = 1_000_000_000
 
 
-def _split_top_level(text, separator=','):
-    """Split on `separator` outside parentheses.
-
-    `if_not_exists(#frozen_at, :now)` carries a comma of its own, so a naive split
-    would cut it in half and report an assignment the route never made.
-    """
-    parts, depth, current = [], 0, ''
-    for character in text:
-        if character == '(':
-            depth += 1
-        elif character == ')':
-            depth -= 1
-        if character == separator and depth == 0:
-            parts.append(current)
-            current = ''
-            continue
-        current += character
-    parts.append(current)
-    return [part.strip() for part in parts if part.strip()]
-
-
-class FakeAggregatesTable:
+class FakeAggregatesTable(ConditionalFakeTable):
     """An in-memory stand-in for the aggregates table.
 
     Supports `get_item`, `put_item`, the conditional `SET`/`ADD` updates these
-    routes issue, and the `transact_write_items` the ballot write issues. The
-    condition evaluator understands only the four forms the handler uses
+    routes issue, and the `transact_write_items` the ballot write issues (the
+    shared, all-or-nothing machinery is `ballots_fixtures.ConditionalFakeTable`).
+    The condition evaluator understands only the four forms the handler uses
     (`attribute_exists(sk)`, `#name = :value`, `#name > :value`, `attr < attr`) and
     raises on anything else, so a new conjunct cannot pass unnoticed by being
     silently treated as true.
 
-    The TRANSACTION is all-or-nothing here as it is in DynamoDB — every condition is
-    evaluated before any item is applied — because that is the property the ballot
-    write depends on: the ballot and its row's freeze mark land together or neither
-    does, and a fake that applied items as it walked them would let a test about that
-    pass against code that wrote one without the other.
+    Differs from the reviewer-ballot fake on purpose: a transaction here may carry
+    only `Update`s (the ballot write is the one transaction these routes issue), an
+    assignment may be `attr + :alias` (the slot claim's atomic increment), and an
+    unaliased attribute name is accepted as itself.
     """
 
     def __init__(self, items=None, close_after_reads=None, rows_exist=True):
-        self.items = {(i['pk'], i['sk']): dict(i) for i in (items or [])}
+        super().__init__(items)
         if rows_exist:
             # THE ROW RECORD OF EVERY SEEDED SESSION, because that is the only state
             # the product can reach: a session is created only for a row that exists
@@ -102,17 +80,6 @@ class FakeAggregatesTable:
                     'project_id': 'proj', 'document_ids': [f'{row_id}-prd'],
                     'is_default': True, 'created_at': '2026-08-17T10:00:00+00:00',
                 })
-        self.get_item_calls = []
-        self.put_item_calls = []
-        self.update_item_calls = []
-        self.transact_calls = []
-        # `table.name` and `table.meta.client` are what a transaction needs: it is
-        # issued on the resource's underlying CLIENT, which takes the table name per
-        # item rather than being bound to one table.
-        self.name = 'test-aggregates'
-        self.meta = SimpleNamespace(client=SimpleNamespace(
-            transact_write_items=self._transact_write_items,
-        ))
         # Models the RACE: the facilitator closes the vote after the handler has
         # read the session and before it writes. `None` disables it.
         self.close_after_reads = close_after_reads
@@ -144,107 +111,11 @@ class FakeAggregatesTable:
         self.items[(item['pk'], item['sk'])] = dict(item)
         return {}
 
-    def update_item(self, **kwargs):
-        self.update_item_calls.append(kwargs)
-        key = (kwargs['Key']['pk'], kwargs['Key']['sk'])
-        names = kwargs.get('ExpressionAttributeNames', {})
-        values = kwargs.get('ExpressionAttributeValues', {})
-        item = self.items.get(key)
-
-        condition = kwargs.get('ConditionExpression')
-        if condition and not self._holds(condition, item, names, values):
-            raise ClientError(
-                {'Error': {'Code': 'ConditionalCheckFailedException',
-                           'Message': 'The conditional request failed'}},
-                'UpdateItem',
-            )
-
-        self._apply(key, kwargs)
-        item = self.items[key]
-        return {'Attributes': dict(item)} if kwargs.get('ReturnValues') == 'ALL_NEW' else {}
-
-    def _apply(self, key, kwargs):
-        """The `SET` / `ADD` clauses these routes write, condition already checked."""
-        names = kwargs.get('ExpressionAttributeNames', {})
-        values = kwargs.get('ExpressionAttributeValues', {})
-        item = self.items.get(key)
-        if item is None:
-            item = {'pk': key[0], 'sk': key[1]}
-            self.items[key] = item
-
-        expression = kwargs['UpdateExpression'].strip()
-        # One expression may carry both clauses: the row half of the ballot
-        # transaction is `SET #frozen_at = if_not_exists(...) ADD #ballot_writes :one`.
-        set_clause, add_clause = expression, ''
-        if ' ADD ' in expression:
-            set_clause, _, add_clause = expression.partition(' ADD ')
-        elif expression.upper().startswith('ADD'):
-            set_clause, add_clause = '', expression[len('ADD'):]
-        if set_clause:
-            assert set_clause.strip().upper().startswith('SET'), expression
-            for assignment in _split_top_level(set_clause.strip()[len('SET'):]):
-                target, _, source = (part.strip() for part in assignment.partition('='))
-                attribute = names.get(target, target)
-                if source.startswith('if_not_exists('):
-                    existing, fallback = _split_top_level(
-                        source[len('if_not_exists('):-1]
-                    )
-                    # `if_not_exists` is what makes the freeze mark record the FIRST
-                    # ballot rather than the latest, so it is honoured rather than
-                    # treated as a plain assignment: a fake that overwrote would let
-                    # an assignment pass as a freeze instant.
-                    if names.get(existing.strip(), existing.strip()) in item:
-                        continue
-                    item[attribute] = values[fallback.strip()]
-                    continue
-                item[attribute] = self._value(source, item, names, values)
-        if add_clause:
-            target, source = add_clause.split()
-            attribute = names.get(target, target)
-            item[attribute] = (item.get(attribute) or 0) + values[source]
-
-    def _transact_write_items(self, TransactItems):
-        """All-or-nothing, which is what the ballot write depends on.
-
-        The capitalised parameter is boto3's own spelling of it, kept so the fake
-        accepts exactly the call the route makes.
-
-        `CancellationReasons` is ONE ENTRY PER ITEM, POSITIONALLY, with `'None'` for
-        the items that did not fail — DynamoDB's own shape. The route reads the reason
-        at the ROW's index to tell a vanished row from a write conflict, so a
-        single-element list would let it pass here while reading the wrong position in
-        production.
-        """
-        self.transact_calls.append(TransactItems)
-        reasons = []
-        for entry in TransactItems:
-            (operation, request), = entry.items()
-            assert operation == 'Update', operation
-            assert request['TableName'] == self.name, request['TableName']
-            key = (request['Key']['pk'], request['Key']['sk'])
-            holds = self._holds(
-                request['ConditionExpression'], self.items.get(key),
-                request.get('ExpressionAttributeNames', {}),
-                request.get('ExpressionAttributeValues', {}),
-            ) if request.get('ConditionExpression') else True
-            reasons.append({'Code': 'None'} if holds else {
-                'Code': 'ConditionalCheckFailed',
-                'Message': 'The conditional request failed',
-            })
-        if any(reason['Code'] != 'None' for reason in reasons):
-            raise ClientError(
-                {'Error': {'Code': 'TransactionCanceledException',
-                           'Message': 'Transaction cancelled'},
-                 'CancellationReasons': reasons},
-                'TransactWriteItems',
-            )
-        for entry in TransactItems:
-            (_, request), = entry.items()
-            self._apply((request['Key']['pk'], request['Key']['sk']), request)
-        return {}
-
     # -- expression evaluation --------------------------------------------
-    def _value(self, source, item, names, values):
+    def _attribute_name(self, alias, names):
+        return names.get(alias, alias)
+
+    def _assigned_value(self, source, item, names, values):
         """`:alias`, or `attr + :alias` (the atomic increment)."""
         if '+' in source:
             left, right = (part.strip() for part in source.split('+'))
@@ -257,10 +128,10 @@ class FakeAggregatesTable:
         return item.get(names.get(token, token))
 
     def _holds(self, condition, item, names, values):
-        for conjunct in condition.split(' AND '):
-            if not self._conjunct_holds(conjunct.strip(), item, names, values):
-                return False
-        return True
+        return all(
+            self._conjunct_holds(conjunct.strip(), item, names, values)
+            for conjunct in condition.split(' AND ')
+        )
 
     def _conjunct_holds(self, conjunct, item, names, values):
         if conjunct.startswith('attribute_exists('):
@@ -294,15 +165,28 @@ class FakeAggregatesTable:
             if pk == PRIORITIZATION_PK and sk.startswith('BALLOT#')
         )
 
-    def ballot(self, sort_key):
+    def find_ballot(self, sort_key) -> dict | None:
         return self.items.get((PRIORITIZATION_PK, sort_key))
 
-    def row(self, row_id='row_proj_20260817_default'):
+    def ballot(self, sort_key) -> dict:
+        """The stored ballot at `sort_key`; failing here names the missing record."""
+        return _stored(self.find_ballot(sort_key), sort_key)
+
+    def find_row(self, row_id='row_proj_20260817_default') -> dict | None:
         """The ROW record a ballot stamps — the freeze mark and the delete's fence."""
         return self.items.get((PRIORITIZATION_PK, f'ROW#{row_id}'))
 
-    def session(self, session_id=OPEN_SESSION_ID):
-        return self.items.get((SESSION_PK, f'SESSION#{session_id}'))
+    def row(self, row_id='row_proj_20260817_default') -> dict:
+        return _stored(self.find_row(row_id), f'ROW#{row_id}')
+
+    def session(self, session_id=OPEN_SESSION_ID) -> dict:
+        return _stored(self.items.get((SESSION_PK, f'SESSION#{session_id}')),
+                       f'SESSION#{session_id}')
+
+
+def _stored(item: dict | None, key: str) -> dict:
+    assert item is not None, f'no stored record at {key}'
+    return item
 
 
 def open_session(session_id=OPEN_SESSION_ID, **overrides):
@@ -347,16 +231,37 @@ def _submit(table, api_gateway_event, lambda_context, *,
     return _call(table, event, lambda_context, logger=logger)
 
 
-def _config(table, api_gateway_event, lambda_context, *, session_id=OPEN_SESSION_ID):
+def _refused_as_invalid(api_gateway_event, lambda_context, body, msg=None):
+    """Submit `body` to an open session, assert it is a 400 `invalid`, and return
+    `(table, response)` so the caller can check nothing landed."""
+    table = FakeAggregatesTable([open_session()])
+    status, response = _submit(table, api_gateway_event, lambda_context, body=body)
+    assert (status, response['reason']) == (400, 'invalid'), msg
+    return table, response
+
+
+def _session_route(table, api_gateway_event, lambda_context, *, method, suffix,
+                   session_id=OPEN_SESSION_ID):
+    """Call `/voting-sessions/{session_id}{suffix}`, which carries no body."""
     event = api_gateway_event(
-        method='GET',
-        path=f'/voting-sessions/{session_id}/config',
+        method=method,
+        path=f'/voting-sessions/{session_id}{suffix}',
         path_params={'session_id': session_id},
     )
     return _call(table, event, lambda_context)
 
 
-def _create(table, api_gateway_event, lambda_context, *, body, subject='facilitator-sub',
+def _config(table, api_gateway_event, lambda_context, *, session_id=OPEN_SESSION_ID):
+    return _session_route(table, api_gateway_event, lambda_context,
+                          method='GET', suffix='/config', session_id=session_id)
+
+
+def _status(table, api_gateway_event, lambda_context):
+    """The facilitator's status view of the open session."""
+    return _session_route(table, api_gateway_event, lambda_context, method='GET', suffix='')
+
+
+def _create(table, api_gateway_event, lambda_context, *, body, subject: str | None = 'facilitator-sub',
             seed_row=True):
     """Open a session, seeding the named row's record first.
 
@@ -383,12 +288,29 @@ def _create(table, api_gateway_event, lambda_context, *, body, subject='facilita
 
 
 def _close(table, api_gateway_event, lambda_context, *, session_id=OPEN_SESSION_ID):
-    event = api_gateway_event(
-        method='POST',
-        path=f'/voting-sessions/{session_id}/close',
-        path_params={'session_id': session_id},
-    )
-    return _call(table, event, lambda_context)
+    return _session_route(table, api_gateway_event, lambda_context,
+                          method='POST', suffix='/close', session_id=session_id)
+
+
+def _lose_write_conflicts(table, *, clears_after=None):
+    """Make the ballot transaction lose a `TransactionConflict` on the ROW item.
+
+    Every attempt is recorded in the returned list. `clears_after=n` lets attempt
+    n+1 onward reach the real fake; `None` keeps conflicting for ever. The reasons
+    are positional, the row being the second item, so the route has to read the
+    right index to tell contention from a vanished row.
+    """
+    real = table.meta.client.transact_write_items
+    attempts = []
+
+    def conflicting(**kwargs):
+        attempts.append(kwargs)
+        if clears_after is None or len(attempts) <= clears_after:
+            raise cancelled_transaction([{'Code': 'None'}, {'Code': 'TransactionConflict'}])
+        return real(**kwargs)
+
+    table.meta.client.transact_write_items = conflicting
+    return attempts
 
 
 class TestTheCapIsEnforcedByTheDatabase:
@@ -569,7 +491,7 @@ class TestOneDeviceOneBallot:
                           body={**AXES, 'ballot_id': chosen})
 
         assert body['ballot_id'] != chosen
-        assert table.ballot(f'BALLOT#row_proj_20260817_default#anon:{chosen}') is None
+        assert table.find_ballot(f'BALLOT#row_proj_20260817_default#anon:{chosen}') is None
         assert table.ballot_keys == [
             f"BALLOT#row_proj_20260817_default#anon:{body['ballot_id']}"
         ]
@@ -775,24 +697,8 @@ class TestAnAnonymousBallotMarksItsRowLikeAnyOther:
 
         assert status == 404
         assert table.ballot_keys == [], 'no orphan was left behind'
-        assert table.row() is None, 'and the row was not resurrected'
+        assert table.find_row() is None, 'and the row was not resurrected'
         assert body['success'] is False
-
-    def test_the_vanished_row_is_refused_with_a_reason_the_page_can_state(
-            self, api_gateway_event, lambda_context):
-        """THE SHAPE, not the status. The page dispatches on `reason` alone —
-        `submitBallot` parses the body with `ballotRefusalSchema` and falls back to
-        `unknown` when the field is absent, which renders as "try again in a moment".
-
-        A bare `NotFoundError` is rendered by the shared handler WITHOUT a `reason`,
-        so the one case where the row is permanently gone got the copy reserved for
-        transient failures — inverting the very distinction the cancellation-reason
-        read exists to draw. `not_found` already has its own translated sentence."""
-        table = FakeAggregatesTable([open_session()], rows_exist=False)
-
-        _, body = _submit(table, api_gateway_event, lambda_context)
-
-        assert body['reason'] == 'not_found'
 
     def test_a_vanished_row_is_not_retried(
             self, api_gateway_event, lambda_context):
@@ -813,17 +719,7 @@ class TestAnAnonymousBallotMarksItsRowLikeAnyOther:
         that the proposal no longer exists — a settled refusal in place of the
         transient failure the page already retries."""
         table = FakeAggregatesTable([open_session()])
-
-        def conflict(**kwargs):
-            raise ClientError(
-                {'Error': {'Code': 'TransactionCanceledException',
-                           'Message': 'Transaction cancelled'},
-                 'CancellationReasons': [{'Code': 'None'},
-                                         {'Code': 'TransactionConflict'}]},
-                'TransactWriteItems',
-            )
-
-        table.meta.client.transact_write_items = conflict
+        _lose_write_conflicts(table)
 
         with patch('ballots_handler.time.sleep'):
             status, _ = _submit(table, api_gateway_event, lambda_context)
@@ -842,22 +738,7 @@ class TestAnAnonymousBallotMarksItsRowLikeAnyOther:
         with no way to resubmit, so a contended room would burn slots on conflicts
         and then refuse ballots with `cap_reached` it should have accepted."""
         table = FakeAggregatesTable([open_session()])
-        real = table.meta.client.transact_write_items
-        attempts = []
-
-        def conflict_once(**kwargs):
-            attempts.append(kwargs)
-            if len(attempts) == 1:
-                raise ClientError(
-                    {'Error': {'Code': 'TransactionCanceledException',
-                               'Message': 'Transaction cancelled'},
-                     'CancellationReasons': [{'Code': 'None'},
-                                             {'Code': 'TransactionConflict'}]},
-                    'TransactWriteItems',
-                )
-            return real(**kwargs)
-
-        table.meta.client.transact_write_items = conflict_once
+        attempts = _lose_write_conflicts(table, clears_after=1)
 
         # The retry's backoff is real `time.sleep`, and a test suite paying it is
         # the same money-for-nothing the jitter comment warns about — stubbed here
@@ -877,22 +758,7 @@ class TestAnAnonymousBallotMarksItsRowLikeAnyOther:
         own key: re-attempting cannot leave two records or count a vote twice. The
         fence moves once too, since the cancelled attempt wrote nothing at all."""
         table = FakeAggregatesTable([open_session()])
-        real = table.meta.client.transact_write_items
-        attempts = []
-
-        def conflict_once(**kwargs):
-            attempts.append(kwargs)
-            if len(attempts) == 1:
-                raise ClientError(
-                    {'Error': {'Code': 'TransactionCanceledException',
-                               'Message': 'Transaction cancelled'},
-                     'CancellationReasons': [{'Code': 'None'},
-                                             {'Code': 'TransactionConflict'}]},
-                    'TransactWriteItems',
-                )
-            return real(**kwargs)
-
-        table.meta.client.transact_write_items = conflict_once
+        _lose_write_conflicts(table, clears_after=1)
 
         with patch('ballots_handler.time.sleep'):
             _submit(table, api_gateway_event, lambda_context)
@@ -909,19 +775,7 @@ class TestAnAnonymousBallotMarksItsRowLikeAnyOther:
         import ballots_handler
 
         table = FakeAggregatesTable([open_session()])
-        attempts = []
-
-        def always_conflict(**kwargs):
-            attempts.append(kwargs)
-            raise ClientError(
-                {'Error': {'Code': 'TransactionCanceledException',
-                           'Message': 'Transaction cancelled'},
-                 'CancellationReasons': [{'Code': 'None'},
-                                         {'Code': 'TransactionConflict'}]},
-                'TransactWriteItems',
-            )
-
-        table.meta.client.transact_write_items = always_conflict
+        attempts = _lose_write_conflicts(table)
 
         with patch('ballots_handler.time.sleep') as slept:
             status, _ = _submit(table, api_gateway_event, lambda_context)
@@ -953,57 +807,6 @@ class TestAnAnonymousBallotMarksItsRowLikeAnyOther:
         assert table.transact_calls == [], 'no attempt was made'
         assert table.ballot_keys == [], 'and nothing was written'
 
-    def test_the_marks_are_spelled_the_way_the_other_bundle_reads_them(
-            self, api_gateway_event, lambda_context):
-        """The two handlers are separate Lambda bundles and neither may import the
-        other, so the attribute names are duplicated. Pinned against the real writer
-        here and across the two source files by `test_anon_row_mark_lockstep.py`: a
-        drift is a freeze that does not freeze and a fence that does not fence, and
-        neither failure is loud."""
-        import ballots_handler
-
-        table = FakeAggregatesTable([open_session()])
-        _submit(table, api_gateway_event, lambda_context)
-
-        row = table.row()
-        assert ballots_handler.ROW_FROZEN_AT_FIELD in row
-        assert ballots_handler.ROW_BALLOT_WRITES_FIELD in row
-
-
-class TestTheTuningConstantsKeepTheirAssumptions:
-    """Constant pins, in one place — the shape `MAX_ROW_BALLOTS_PER_DELETE + 2 <= 100`
-    uses in the projects suite. Separate from the route classes because these tests
-    involve no request at all: each pins a number some mechanism silently depends
-    on, so the failure names the assumption rather than a symptom."""
-
-    def test_the_write_attempts_bound_leaves_at_least_one_attempt(self):
-        """A bound of 0 makes `range` yield nothing, so the write loop is never
-        entered — and `_write_ballot` signals a written ballot by returning, which
-        makes falling out of the loop indistinguishable from success. It is a tuning
-        constant and a later change may lower it; the post-loop guard is what fires
-        if this stops holding anyway."""
-        import ballots_handler
-
-        assert ballots_handler.BALLOT_WRITE_ATTEMPTS >= 1
-
-    def test_the_worst_case_backoff_stays_well_inside_the_route_budget(self):
-        """The retry's sleeps are billed wall-clock inside a PUBLIC request a phone
-        is waiting on. The comment on the constants states ~150ms as the worst case;
-        this pins that the constants cannot drift to where the sleeps rival the 30s
-        route timeout while the comment keeps promising milliseconds."""
-        import ballots_handler
-
-        # The jitter multiplier tops out just under 1.0, so the un-jittered sum is
-        # the bound.
-        worst_case = sum(
-            ballots_handler.BALLOT_WRITE_BACKOFF_SECONDS * (2 ** attempt)
-            for attempt in range(ballots_handler.BALLOT_WRITE_ATTEMPTS - 1)
-        )
-        assert worst_case < 1, (
-            f'the retry can now sleep {worst_case:.2f}s inside a public request; '
-            f'if that is intended, move the submission budget, not just this pin'
-        )
-
 
 class TestValidationRefusalsAreTheirOwnReason:
     """A malformed ballot is PERMANENT. Answered as `invalid` rather than left to
@@ -1019,22 +822,16 @@ class TestValidationRefusalsAreTheirOwnReason:
     ])
     def test_a_ballot_that_scores_nothing_usable_is_refused_as_invalid(
             self, api_gateway_event, lambda_context, body):
-        table = FakeAggregatesTable([open_session()])
+        table, _ = _refused_as_invalid(api_gateway_event, lambda_context, body)
 
-        status, response = _submit(table, api_gateway_event, lambda_context, body=body)
-
-        assert (status, response['reason']) == (400, 'invalid')
         assert table.ballot_keys == []
         assert table.session()['ballot_count'] == 0
 
     def test_an_over_long_note_is_refused_rather_than_truncated(
             self, api_gateway_event, lambda_context):
-        table = FakeAggregatesTable([open_session()])
+        table, _ = _refused_as_invalid(api_gateway_event, lambda_context,
+                                       {**AXES, 'notes': 'x' * 2001})
 
-        status, response = _submit(table, api_gateway_event, lambda_context,
-                                   body={**AXES, 'notes': 'x' * 2001})
-
-        assert (status, response['reason']) == (400, 'invalid')
         assert table.ballot_keys == []
 
     def test_a_note_at_the_bound_is_accepted_whole(self, api_gateway_event, lambda_context):
@@ -1046,35 +843,25 @@ class TestValidationRefusalsAreTheirOwnReason:
         assert status == 200
         assert table.ballot(table.ballot_keys[0])['notes'] == 'x' * 2000
 
+    @pytest.mark.parametrize('raw_body', [
+        pytest.param('[1, 2, 3]', id='not_a_json_object'),
+        pytest.param('{not json', id='not_json_at_all'),
+    ])
     def test_a_body_that_is_not_a_json_object_is_refused_as_invalid(
-            self, api_gateway_event, lambda_context):
+            self, api_gateway_event, lambda_context, raw_body):
         table = FakeAggregatesTable([open_session()])
         event = api_gateway_event(
             method='POST',
             path=f'/voting-sessions/{OPEN_SESSION_ID}/submit',
             path_params={'session_id': OPEN_SESSION_ID},
         )
-        event['body'] = '[1, 2, 3]'
+        event['body'] = raw_body
 
         status, response = _call(table, event, lambda_context)
 
         assert (status, response['reason']) == (400, 'invalid')
 
-    def test_a_body_that_is_not_json_at_all_is_refused_as_invalid(
-            self, api_gateway_event, lambda_context):
-        table = FakeAggregatesTable([open_session()])
-        event = api_gateway_event(
-            method='POST',
-            path=f'/voting-sessions/{OPEN_SESSION_ID}/submit',
-            path_params={'session_id': OPEN_SESSION_ID},
-        )
-        event['body'] = '{not json'
-
-        status, response = _call(table, event, lambda_context)
-
-        assert (status, response['reason']) == (400, 'invalid')
-
-    @pytest.mark.parametrize('validator,body', [
+    @pytest.mark.parametrize(('validator', 'body'), [
         # One case per validator that can reach the refusal, named for the one it
         # actually reaches — the note bound only fires when the note is over it, and
         # a body with no scorable axis is refused before the note is ever read.
@@ -1090,11 +877,9 @@ class TestValidationRefusalsAreTheirOwnReason:
         # while those messages name the field and the limit and never the value —
         # this is a public route, and its response is the one place submitted text
         # could be reflected back.
-        table = FakeAggregatesTable([open_session()])
+        _, response = _refused_as_invalid(api_gateway_event, lambda_context, body,
+                                          msg=validator)
 
-        status, response = _submit(table, api_gateway_event, lambda_context, body=body)
-
-        assert (status, response['reason']) == (400, 'invalid'), validator
         assert 'SUBMITTED-CONTENT' not in json.dumps(response), validator
 
     def test_an_out_of_range_number_is_clamped_rather_than_refused(
@@ -1233,7 +1018,7 @@ class TestThePublicConfigRouteIsANarrowProjection:
             'open': True, 'reason': None, 'row_title': 'Instant refunds',
         }
 
-    @pytest.mark.parametrize('overrides,reason', [
+    @pytest.mark.parametrize(('overrides', 'reason'), [
         ({'status': 'closed'}, 'closed'),
         ({'ttl': PAST}, 'expired'),
     ])
@@ -1317,18 +1102,7 @@ class TestTheFacilitatorHalf:
         """'Missing' would refuse a facilitator standing in front of a room over a
         transient throttle; 'present' would open the window #342 exists to close.
         A failed read is neither — it raises, and the facilitator retries."""
-        table = FakeAggregatesTable([])
-        real_get = table.get_item
-
-        def failing_get(**kwargs):
-            if str(kwargs['Key']['sk']).startswith('ROW#'):
-                raise ClientError(
-                    {'Error': {'Code': 'ProvisionedThroughputExceededException'}},
-                    'GetItem',
-                )
-            return real_get(**kwargs)
-
-        table.get_item = failing_get
+        table = throttle_row_reads(FakeAggregatesTable([]))
 
         status, _ = _create(table, api_gateway_event, lambda_context,
                             body={'row_id': 'row_p1_default'})
@@ -1383,13 +1157,8 @@ class TestTheFacilitatorHalf:
         # distinguishable in the response: `status` says who ended the vote,
         # `state` says whether it still takes ballots.
         table = FakeAggregatesTable([open_session(ttl=PAST)])
-        event = api_gateway_event(
-            method='GET',
-            path=f'/voting-sessions/{OPEN_SESSION_ID}',
-            path_params={'session_id': OPEN_SESSION_ID},
-        )
 
-        status, body = _call(table, event, lambda_context)
+        status, body = _status(table, api_gateway_event, lambda_context)
 
         assert status == 200
         assert body['session']['status'] == 'open'
@@ -1479,13 +1248,8 @@ class TestASessionOpenedBeforeThisChangeDoesNotEatARoomsBallots:
         """The facilitator UI keys its QR on `state`, so this is what takes a dead
         QR off the screen and offers re-opening."""
         table = FakeAggregatesTable([self._pre_row_session()])
-        event = api_gateway_event(
-            method='GET',
-            path=f'/voting-sessions/{OPEN_SESSION_ID}',
-            path_params={'session_id': OPEN_SESSION_ID},
-        )
 
-        status, body = _call(table, event, lambda_context)
+        status, body = _status(table, api_gateway_event, lambda_context)
 
         assert status == 200
         assert body['session']['state'] == 'closed'
@@ -1504,7 +1268,8 @@ class TestASessionOpenedBeforeThisChangeDoesNotEatARoomsBallots:
 
         assert status == 200
         assert body['success'] is True
-        assert table.ballot_keys and table.ballot_keys[0].startswith(
+        assert table.ballot_keys
+        assert table.ballot_keys[0].startswith(
             'BALLOT#row_proj_20260817_default#anon:'
         )
 

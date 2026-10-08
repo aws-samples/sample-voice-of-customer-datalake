@@ -1,0 +1,187 @@
+{
+  "launcher": {
+    "open": "Abrir assistente",
+    "close": "Fechar assistente",
+    "askAboutProject": "Perguntar ao assistente",
+    "moveHint": "Arraste ou use as setas para mover o botão do assistente. Home o devolve ao lugar.",
+    "resetPosition": "Redefinir a posição do botão do assistente"
+  },
+  "panel": {
+    "title": "Assistente",
+    "using": "Contexto: {{context}}",
+    "newChat": "Nova conversa",
+    "sessions": "Conversas anteriores",
+    "export": "Exportar conversa (Markdown)",
+    "expand": "Expandir",
+    "fullscreen": "Tela cheia",
+    "exitFullscreen": "Sair da tela cheia",
+    "close": "Fechar",
+    "messages": "Conversa",
+    "thinking": "Pensando…",
+    "stillGenerating": "Ainda gerando…"
+  },
+  "pages": {
+    "home": "Início",
+    "dashboard": "Painel",
+    "feedback": "Feedback",
+    "categories": "Categorias",
+    "problems": "Análise de problemas",
+    "chat": "Chat com IA",
+    "projects": "Projetos",
+    "project": "Projeto",
+    "prioritization": "Priorização",
+    "data-explorer": "Explorador de dados",
+    "scrapers": "Scrapers",
+    "feedback-forms": "Formulários de feedback",
+    "settings": "Configurações",
+    "other": "Esta página"
+  },
+  "message": {
+    "reasoning": "Raciocínio",
+    "toolSteps": "Etapas executadas",
+    "feedbackSources": "Feedback relacionado",
+    "webSources": "Fontes da web",
+    "personaAnswers": "Respostas das personas",
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "savedDocumentTitle": "Resposta do assistente – {{date}}",
+    "saveAsDocument": {
+      "idle": "Salvar como documento",
+      "saving": "Salvando…",
+      "saved": "Salvo em documentos",
+      "error": "Falha ao salvar – tentar novamente"
+    }
+  },
+  "toolStatus": {
+    "streaming": "preparando",
+    "running": "em execução",
+    "complete": "concluído",
+    "awaiting_approval": "aguardando sua aprovação",
+    "executed": "concluído",
+    "failed": "falhou",
+    "declined": "recusado",
+    "cancelled": "cancelado"
+  },
+  "approvals": {
+    "title": "Ações aguardando aprovação",
+    "resolved": {
+      "executed": "concluído",
+      "failed": "falhou",
+      "declined": "recusado"
+    }
+  },
+  "composer": {
+    "label": "Mensagem para o assistente",
+    "placeholder": "Pergunte sobre seu feedback, projetos ou esta página…",
+    "send": "Enviar",
+    "stop": "Parar",
+    "attach": "Anexar imagem ou PDF",
+    "webSearch": "Pesquisar na web",
+    "removeAttachment": "Remover {{name}}",
+    "counter": "{{length}} / {{max}}",
+    "awaitingApproval": "Aprove ou recuse a ação pendente para continuar.",
+    "attachmentError": {
+      "type": "Somente imagens (PNG, JPEG, GIF, WebP) e PDFs podem ser anexados.",
+      "count": "Você pode anexar no máximo {{max}} arquivos.",
+      "size": "Os anexos são grandes demais.",
+      "read": "Não foi possível ler o arquivo."
+    },
+    "stillGenerating": "A resposta ainda está sendo escrita. Ela aparecerá aqui quando estiver pronta."
+  },
+  "errors": {
+    "streamClosed": "A conexão foi encerrada antes de a resposta terminar. Tente novamente.",
+    "generic": "Algo deu errado: {{message}}",
+    "followTimeout": "A resposta está demorando mais do que o esperado. Reabra esta conversa mais tarde para vê-la."
+  },
+  "export": {
+    "user": "Você",
+    "assistant": "Assistente"
+  },
+  "sessions": {
+    "title": "Conversas anteriores",
+    "close": "Fechar",
+    "loading": "Carregando conversas",
+    "error": "Não foi possível carregar as conversas.",
+    "empty": "Nenhuma conversa salva ainda.",
+    "untitled": "Conversa sem título",
+    "delete": "Excluir “{{title}}”",
+    "newConversation": "Nova conversa",
+    "sidebar": "Conversas",
+    "openGroup": "Abertas",
+    "historyGroup": "Histórico",
+    "closeThread": "Fechar “{{title}}”",
+    "closeRunning": "Parar e fechar “{{title}}”",
+    "status": {
+      "streaming": "Em execução",
+      "awaiting": "Aguardando sua aprovação",
+      "error": "Falhou",
+      "unread": "Nova resposta"
+    }
+  },
+  "empty": {
+    "title": "Como posso ajudar?",
+    "subtitle": "Posso ler seus dados e propor alterações — nada muda sem a sua aprovação."
+  },
+  "suggestions": {
+    "default": {
+      "1": "Com o que os clientes estão mais insatisfeitos esta semana?",
+      "2": "Resuma o feedback urgente",
+      "3": "Quais categorias estão em alta?"
+    },
+    "project": {
+      "1": "Resuma este projeto e suas personas",
+      "2": "O que nossas personas achariam desta ideia?",
+      "3": "Escreva um PRD a partir da pesquisa do projeto"
+    },
+    "forms": {
+      "1": "Como estão meus formulários de feedback?",
+      "2": "Resuma os envios mais recentes",
+      "3": "Qual formulário recebe as piores avaliações?"
+    },
+    "prioritization": {
+      "1": "O que devemos priorizar a seguir?",
+      "2": "Explique os itens mais bem classificados",
+      "3": "Quais itens têm mais impacto nos clientes?"
+    },
+    "scrapers": {
+      "1": "Quais scrapers foram executados recentemente?",
+      "2": "Algum scraper está falhando?",
+      "3": "O que a última execução coletou?"
+    },
+    "settings": {
+      "1": "Mostre as configurações atuais da marca",
+      "2": "Quais categorias estão configuradas?",
+      "3": "Sugira hashtags para acompanhar nossa marca"
+    },
+    "problems": {
+      "1": "Quais são os maiores problemas não resolvidos?",
+      "2": "Agrupe esses problemas por causa raiz",
+      "3": "Quais problemas foram resolvidos recentemente?"
+    },
+    "feedback": {
+      "1": "Resuma este feedback",
+      "2": "Encontre feedback semelhante",
+      "3": "Qual é a provável causa raiz?"
+    }
+  },
+  "notifications": {
+    "approval": {
+      "title": "O assistente precisa da sua aprovação",
+      "body": "Uma conversa está aguardando você aprovar uma ação."
+    },
+    "reply": {
+      "title": "O assistente respondeu",
+      "body": "Uma conversa tem uma nova resposta."
+    },
+    "failed": {
+      "title": "Uma execução do assistente falhou",
+      "body": "Abra a conversa para ver o que aconteceu."
+    },
+    "toggle": {
+      "turnOn": "Avisar quando uma conversa precisar de mim",
+      "turnOff": "Desativar notificações",
+      "blocked": "As notificações estão bloqueadas para este site nas configurações do navegador",
+      "unsupported": "Este navegador não oferece suporte a notificações"
+    }
+  }
+}

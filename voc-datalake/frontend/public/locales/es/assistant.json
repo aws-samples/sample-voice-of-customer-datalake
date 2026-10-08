@@ -1,0 +1,187 @@
+{
+  "launcher": {
+    "open": "Abrir asistente",
+    "close": "Cerrar asistente",
+    "askAboutProject": "Preguntar al asistente",
+    "moveHint": "Arrastra o usa las flechas para mover el botón del asistente. Inicio lo devuelve a su sitio.",
+    "resetPosition": "Restablecer la posición del botón del asistente"
+  },
+  "panel": {
+    "title": "Asistente",
+    "using": "Contexto: {{context}}",
+    "newChat": "Nuevo chat",
+    "sessions": "Conversaciones anteriores",
+    "export": "Exportar conversación (Markdown)",
+    "expand": "Ampliar",
+    "fullscreen": "Pantalla completa",
+    "exitFullscreen": "Salir de pantalla completa",
+    "close": "Cerrar",
+    "messages": "Conversación",
+    "thinking": "Pensando…",
+    "stillGenerating": "Aún generando…"
+  },
+  "pages": {
+    "home": "Inicio",
+    "dashboard": "Panel",
+    "feedback": "Comentarios",
+    "categories": "Categorías",
+    "problems": "Análisis de problemas",
+    "chat": "Chat con IA",
+    "projects": "Proyectos",
+    "project": "Proyecto",
+    "prioritization": "Priorización",
+    "data-explorer": "Explorador de datos",
+    "scrapers": "Scrapers",
+    "feedback-forms": "Formularios de comentarios",
+    "settings": "Configuración",
+    "other": "Esta página"
+  },
+  "message": {
+    "reasoning": "Razonamiento",
+    "toolSteps": "Pasos realizados",
+    "feedbackSources": "Comentarios relacionados",
+    "webSources": "Fuentes web",
+    "personaAnswers": "Respuestas de las personas",
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "savedDocumentTitle": "Respuesta del asistente – {{date}}",
+    "saveAsDocument": {
+      "idle": "Guardar como documento",
+      "saving": "Guardando…",
+      "saved": "Guardado en documentos",
+      "error": "Error al guardar – reintentar"
+    }
+  },
+  "toolStatus": {
+    "streaming": "preparando",
+    "running": "en ejecución",
+    "complete": "hecho",
+    "awaiting_approval": "esperando tu aprobación",
+    "executed": "hecho",
+    "failed": "fallido",
+    "declined": "rechazado",
+    "cancelled": "cancelado"
+  },
+  "approvals": {
+    "title": "Acciones pendientes de aprobación",
+    "resolved": {
+      "executed": "hecho",
+      "failed": "fallido",
+      "declined": "rechazado"
+    }
+  },
+  "composer": {
+    "label": "Mensaje para el asistente",
+    "placeholder": "Pregunta sobre tus comentarios, proyectos o esta página…",
+    "send": "Enviar",
+    "stop": "Detener",
+    "attach": "Adjuntar imagen o PDF",
+    "webSearch": "Buscar en la web",
+    "removeAttachment": "Quitar {{name}}",
+    "counter": "{{length}} / {{max}}",
+    "awaitingApproval": "Aprueba o rechaza la acción pendiente para continuar.",
+    "attachmentError": {
+      "type": "Solo se pueden adjuntar imágenes (PNG, JPEG, GIF, WebP) y PDF.",
+      "count": "Puedes adjuntar como máximo {{max}} archivos.",
+      "size": "Los archivos adjuntos son demasiado grandes.",
+      "read": "No se pudo leer el archivo."
+    },
+    "stillGenerating": "La respuesta aún se está escribiendo. Aparecerá aquí cuando esté lista."
+  },
+  "errors": {
+    "streamClosed": "La conexión se cerró antes de terminar la respuesta. Inténtalo de nuevo.",
+    "generic": "Algo salió mal: {{message}}",
+    "followTimeout": "La respuesta está tardando más de lo esperado. Vuelve a abrir esta conversación más tarde para verla."
+  },
+  "export": {
+    "user": "Tú",
+    "assistant": "Asistente"
+  },
+  "sessions": {
+    "title": "Conversaciones anteriores",
+    "close": "Cerrar",
+    "loading": "Cargando conversaciones",
+    "error": "No se pudieron cargar las conversaciones.",
+    "empty": "Aún no hay conversaciones guardadas.",
+    "untitled": "Conversación sin título",
+    "delete": "Eliminar «{{title}}»",
+    "newConversation": "Nueva conversación",
+    "sidebar": "Conversaciones",
+    "openGroup": "Abiertas",
+    "historyGroup": "Historial",
+    "closeThread": "Cerrar «{{title}}»",
+    "closeRunning": "Detener y cerrar «{{title}}»",
+    "status": {
+      "streaming": "En curso",
+      "awaiting": "Esperando tu aprobación",
+      "error": "Error",
+      "unread": "Nueva respuesta"
+    }
+  },
+  "empty": {
+    "title": "¿En qué puedo ayudarte?",
+    "subtitle": "Puedo leer tus datos y proponer cambios; nada se modifica sin tu aprobación."
+  },
+  "suggestions": {
+    "default": {
+      "1": "¿Qué es lo que más molesta a los clientes esta semana?",
+      "2": "Resume los comentarios urgentes",
+      "3": "¿Qué categorías van en aumento?"
+    },
+    "project": {
+      "1": "Resume este proyecto y sus personas",
+      "2": "¿Qué opinarían nuestras personas de esta idea?",
+      "3": "Redacta un PRD a partir de la investigación del proyecto"
+    },
+    "forms": {
+      "1": "¿Qué tal funcionan mis formularios de comentarios?",
+      "2": "Resume los envíos más recientes",
+      "3": "¿Qué formulario recibe las peores valoraciones?"
+    },
+    "prioritization": {
+      "1": "¿Qué deberíamos priorizar a continuación?",
+      "2": "Explica los elementos mejor clasificados",
+      "3": "¿Qué elementos tienen más impacto en los clientes?"
+    },
+    "scrapers": {
+      "1": "¿Qué scrapers se ejecutaron recientemente?",
+      "2": "¿Está fallando algún scraper?",
+      "3": "¿Qué recopiló la última ejecución?"
+    },
+    "settings": {
+      "1": "Muestra la configuración actual de la marca",
+      "2": "¿Qué categorías están configuradas?",
+      "3": "Sugiere hashtags para seguir nuestra marca"
+    },
+    "problems": {
+      "1": "¿Cuáles son los mayores problemas sin resolver?",
+      "2": "Agrupa estos problemas por causa raíz",
+      "3": "¿Qué problemas se resolvieron recientemente?"
+    },
+    "feedback": {
+      "1": "Resume este comentario",
+      "2": "Busca comentarios similares",
+      "3": "¿Cuál es la causa raíz probable?"
+    }
+  },
+  "notifications": {
+    "approval": {
+      "title": "El asistente necesita tu aprobación",
+      "body": "Una conversación espera que apruebes una acción."
+    },
+    "reply": {
+      "title": "El asistente respondió",
+      "body": "Una conversación tiene una respuesta nueva."
+    },
+    "failed": {
+      "title": "Falló una ejecución del asistente",
+      "body": "Abre la conversación para ver qué pasó."
+    },
+    "toggle": {
+      "turnOn": "Avisarme cuando una conversación me necesite",
+      "turnOff": "Desactivar notificaciones",
+      "blocked": "Las notificaciones están bloqueadas para este sitio en la configuración del navegador",
+      "unsupported": "Este navegador no admite notificaciones"
+    }
+  }
+}

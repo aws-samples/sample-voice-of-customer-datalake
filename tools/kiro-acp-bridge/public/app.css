@@ -1,0 +1,38 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, sans-serif;
+  line-height: 1.5;
+}
+main {
+  max-width: 56rem;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+h1 { font-size: 1.5rem; margin: 0 0 0.25rem; }
+h2 { font-size: 1.1rem; margin: 1.25rem 0 0.5rem; }
+.muted { opacity: 0.75; margin: 0.25rem 0; }
+.row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-top: 0.5rem; }
+label { display: block; font-weight: 600; }
+input, textarea { font: inherit; padding: 0.5rem; width: 100%; box-sizing: border-box; }
+.row input { flex: 1; width: auto; }
+button { font: inherit; padding: 0.45rem 1rem; cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: 0.5; }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid Highlight; outline-offset: 2px; }
+#status { font-weight: 600; }
+#transcript { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.5rem; }
+#transcript li { border: 1px solid color-mix(in srgb, currentColor 25%, transparent); border-radius: 6px; padding: 0.5rem 0.75rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+#transcript li.user { border-left: 4px solid #2f6feb; }
+#transcript li.agent { border-left: 4px solid #8250df; }
+#transcript li.tool { border-left: 4px solid #bf8700; font-family: ui-monospace, monospace; font-size: 0.9rem; }
+#transcript li.system { border-left: 4px solid #57606a; font-size: 0.9rem; }
+#transcript li.error { border-left: 4px solid #cf222e; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 18rem; overflow: auto; padding: 0.5rem; border: 1px solid color-mix(in srgb, currentColor 25%, transparent); border-radius: 6px; }
+dialog { max-width: 44rem; width: calc(100% - 2rem); border-radius: 8px; }
+.reject { font-weight: 600; }
+input[type='file'] { padding: 0.25rem 0; }
+#attachments { list-style: none; padding: 0; margin: 0.5rem 0 0; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+#attachments li { display: grid; gap: 0.25rem; justify-items: start; font-size: 0.85rem; max-width: 10rem; }
+#attachments img { max-width: 10rem; max-height: 6rem; border-radius: 4px; border: 1px solid color-mix(in srgb, currentColor 25%, transparent); }
+fieldset { margin-top: 1.25rem; border: 1px solid color-mix(in srgb, currentColor 25%, transparent); border-radius: 6px; }
+label.inline { display: flex; gap: 0.5rem; align-items: center; font-weight: 400; }
+label.inline input { width: auto; }

@@ -1,0 +1,233 @@
+{
+  "card": {
+    "kicker": "Approbation requise",
+    "kickerDestructive": "Approbation requise · irréversible",
+    "project": "Projet",
+    "expired": "Expirée",
+    "expiresIn": "Expire dans {{time}}",
+    "approve": "Approuver",
+    "approveDestructive": "Approuver et supprimer",
+    "decline": "Refuser",
+    "confirmDecline": "Refuser",
+    "back": "Retour",
+    "dismiss": "Ignorer",
+    "reasonLabel": "Motif (facultatif)",
+    "reasonPlaceholder": "Expliquez pourquoi à l'assistant pour qu'il s'adapte",
+    "executing": "En cours…",
+    "adminOnly": "Seuls les administrateurs peuvent approuver cette action. Vous pouvez toujours la refuser.",
+    "destructiveWarning": "Cette action supprime définitivement des données et ne peut pas être annulée.",
+    "destructiveConfirm": "Je comprends, supprimer",
+    "invalidArgs": "La demande de l'assistant n'est pas valide et ne peut pas être approuvée :",
+    "unknownTool": "Cette action n'est pas disponible ici et ne peut pas être approuvée.",
+    "unknownToolTitle": "Action inconnue ({{name}})",
+    "resolved": {
+      "executed": "Terminé",
+      "failed": "Échec",
+      "declined": "Refusée",
+      "expired": "Expirée"
+    }
+  },
+  "preview": {
+    "showMore": "Tout afficher ({{n}} caractères)",
+    "showLess": "Afficher moins",
+    "empty": "(vide)",
+    "yes": "Oui",
+    "no": "Non",
+    "loading": "Chargement de la version actuelle…",
+    "before": "Actuel",
+    "after": "Proposé",
+    "unchanged": "inchangé",
+    "document": "Document",
+    "persona": "Persona",
+    "changeSummary": "Modification",
+    "currentUnavailable": "Les valeurs actuelles n'ont pas pu être chargées ; seules les valeurs proposées sont affichées.",
+    "unknownCategory": "La catégorie « {{category}} » ne fait pas partie de celles que vous voyez : la modification sera refusée.",
+    "brandMerged": "Paramètres après enregistrement (les champs non mentionnés conservent leur valeur actuelle) :",
+    "diff": {
+      "label": "Modifications du document",
+      "stats": "{{added}} lignes ajoutées, {{removed}} lignes supprimées",
+      "unchanged": "… {{n}} lignes inchangées …",
+      "same": "Inchangé :",
+      "add": "Ajouté :",
+      "del": "Supprimé :",
+      "noChanges": "Le contenu proposé est identique au document actuel.",
+      "tooLarge": "Le document est trop volumineux pour une comparaison ligne par ligne. Le début de chaque version est affiché.",
+      "currentUnavailable": "Le document actuel n'a pas pu être chargé. Contenu proposé :"
+    },
+    "job": {
+      "timeWindow": "Lit les retours des {{days}} derniers jours (la période sélectionnée dans l'application).",
+      "language": "Rédige le résultat en {{language}}.",
+      "background": "Cette tâche s'exécute en arrière-plan et apparaît dans les tâches du projet. Vous pouvez continuer à travailler."
+    },
+    "agent": "Agent",
+    "run": "Exécution",
+    "memory": {
+      "scope": {
+        "company": "Entreprise — tout le monde",
+        "personal": "Personnel — vous uniquement"
+      },
+      "kind": {
+        "product": "Produit",
+        "customer": "Client",
+        "agents": "Agents",
+        "working_style": "Méthode de travail",
+        "strategy": "Stratégie",
+        "objective": "Objectif",
+        "other": "Autre"
+      },
+      "retention": {
+        "long_term": "Conservé à long terme",
+        "dated": "Jusqu'au {{date}}",
+        "decay": "S'estompe après 90 jours sans utilisation"
+      },
+      "resolve": {
+        "keep_both": "conserver les deux",
+        "keep": "en conserver un",
+        "replace": "remplacer",
+        "merge": "fusionner"
+      },
+      "companyVisible": "Les mémoires d'entreprise sont visibles par tous et utilisées par l'assistant et les agents pour tous les utilisateurs.",
+      "supporters_one": "{{count}} personne soutient l'énoncé actuel.",
+      "supporters_other": "{{count}} personnes soutiennent l'énoncé actuel.",
+      "reason": "Pourquoi",
+      "forEveryone": "Cela modifie ce que l'entreprise retient, pour tout le monde. Si vous n'êtes ni administrateur ni relecteur de mémoire, la modification est soumise comme proposition à examiner."
+    },
+    "workflow": {
+      "unchanged": "La définition proposée est identique à la définition actuelle.",
+      "meta": "Modifié : {{fields}}",
+      "addedSteps": "Étapes ajoutées",
+      "removedSteps": "Étapes supprimées",
+      "changedSteps": "Étapes modifiées",
+      "showMoves": "Afficher {{n}} étapes uniquement déplacées",
+      "hideMoves": "Masquer les étapes uniquement déplacées",
+      "addedArrows": "Flèches ajoutées",
+      "removedArrows": "Flèches supprimées",
+      "changedArrows": "Flèches modifiées",
+      "loopsChanged": "Boucles modifiées ({{n}} après enregistrement).",
+      "revision": "{{name}} : révision {{from}} → {{to}}",
+      "stale": "Cette proposition repose sur la révision {{expected}}, mais la révision actuelle est la {{current}} — l'enregistrement sera refusé ; demandez à l'assistant de la reconstruire.",
+      "counts": "{{nodes}} étapes, {{edges}} flèches, {{loops}} boucles"
+    }
+  },
+  "tools": {
+    "create_project": {
+      "title": "Créer un projet",
+      "titleWith": "Créer le projet « {{name}} »"
+    },
+    "set_problem_resolved": {
+      "title": "Modifier le statut d'un problème",
+      "titleResolve": "Marquer un problème comme résolu",
+      "titleReopen": "Rouvrir un problème"
+    },
+    "set_feedback_category": {
+      "title": "Modifier la catégorie d'un avis",
+      "titleWith": "Changer la catégorie en « {{category}} »"
+    },
+    "update_document": {
+      "title": "Modifier un document"
+    },
+    "create_document": {
+      "title": "Créer un document",
+      "titleWith": "Créer le document « {{title}} »"
+    },
+    "delete_document": {
+      "title": "Supprimer un document"
+    },
+    "update_persona": {
+      "title": "Modifier une persona"
+    },
+    "add_persona_note": {
+      "title": "Ajouter une note de recherche à une persona"
+    },
+    "update_project": {
+      "title": "Modifier les détails du projet"
+    },
+    "update_product_context": {
+      "title": "Mettre à jour la description du produit"
+    },
+    "start_research": {
+      "title": "Lancer une tâche de recherche"
+    },
+    "generate_document": {
+      "title": "Générer un document",
+      "titlePrd": "Générer un PRD",
+      "titlePrfaq": "Générer un PR/FAQ"
+    },
+    "generate_personas": {
+      "title": "Générer des personas",
+      "titleWith": "Générer des personas ({{n}})"
+    },
+    "merge_documents": {
+      "title": "Fusionner des documents"
+    },
+    "update_feedback_form": {
+      "title": "Mettre à jour un formulaire de retour"
+    },
+    "run_scraper": {
+      "title": "Exécuter un scraper maintenant"
+    },
+    "save_brand_settings": {
+      "title": "Enregistrer les paramètres de marque"
+    },
+    "remember": {
+      "title": "Mémoriser",
+      "titleCompany": "Mémoriser pour l'entreprise",
+      "titlePersonal": "Mémoriser pour vous"
+    },
+    "update_company_memory": {
+      "title": "Modifier une mémoire d'entreprise"
+    },
+    "forget_memory": {
+      "title": "Oublier une mémoire"
+    },
+    "confirm_memory": {
+      "title": "Confirmer une mémoire (+1)"
+    },
+    "merge_memories": {
+      "title": "Fusionner des mémoires",
+      "titleWith": "Fusionner {{n}} mémoires"
+    },
+    "resolve_memory_conflict": {
+      "title": "Résoudre un conflit de mémoire",
+      "titleWith": "Résoudre un conflit de mémoire : {{action}}"
+    },
+    "create_agent": {
+      "title": "Créer un agent autonome",
+      "titleWith": "Créer l'agent « {{name}} »"
+    },
+    "update_agent": {
+      "title": "Modifier un agent autonome"
+    },
+    "enable_agent": {
+      "title": "Activer un agent autonome"
+    },
+    "disable_agent": {
+      "title": "Désactiver un agent autonome"
+    },
+    "run_agent": {
+      "title": "Exécuter un agent autonome maintenant"
+    },
+    "cancel_agent_run": {
+      "title": "Annuler l'exécution d'un agent"
+    },
+    "create_workflow": {
+      "title": "Créer un workflow",
+      "titleWith": "Créer le workflow « {{name}} »"
+    },
+    "update_workflow": {
+      "title": "Enregistrer une nouvelle révision du workflow"
+    },
+    "duplicate_workflow": {
+      "title": "Dupliquer un workflow"
+    },
+    "update_company_context": {
+      "title": "Modifier la vision et les objectifs de l'entreprise"
+    },
+    "update_my_context": {
+      "title": "Modifier vos objectifs et KPI"
+    },
+    "update_design_system": {
+      "title": "Modifier le design system"
+    }
+  }
+}

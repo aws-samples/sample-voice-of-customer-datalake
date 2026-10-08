@@ -1,52 +1,20 @@
-# Python lint configuration (issue #201).
+# Python lint configuration (issue #201; rule set from the quality-gate brief).
 #
-# The root gate is `ruff check lambda plugins scripts`, run from this directory
-# by `lint:python` in the repo-root package.json.
+# The gate is `ruff check lambda plugins scripts`, run from this directory by
+# `lint:python` in the repo-root package.json and by scripts/validate.sh.
 #
-# What the baseline actually is, measured
-# --------------------------------------
-# The intended rule set is ruff's historical defaults — pyflakes `F` plus
-# pycodestyle errors `E4`/`E7`/`E9`. Against THAT set the tree carries 4
-# pre-existing `E402`s (3 in `lambda/conftest.py`, 1 in
-# `lambda/api/test/conftest.py`), where imports deliberately follow `sys.path`
-# setup. So the baseline is 4, not zero; an earlier version of this comment said
-# "keep it at zero", which was never true.
+# The rule set is selected explicitly and ruff is pinned exactly in
+# requirements-dev.txt, so the finding count no longer moves with ruff's own
+# defaults (it went from 4 to 518 between 0.15.0 and 0.16.4 on the same tree).
 #
-# The raw count also depends on ruff's own version, because `requirements-dev.txt`
-# declares an uncapped `ruff>=0.15.0` and ruff enables more rules by default over
-# time:
-#
-#   ruff 0.15.0  ->   4 errors
-#   ruff 0.16.4  -> 518 errors  (197 I001, 150 BLE001, 30 UP045, ...)
-#
-# Restricting to the documented set (`--select F,E4,E7,E9`) gives 4 under both.
-# All of that is pre-existing and independent of the `scripts` addition:
-# `ruff check lambda plugins` on `development` is also 518 under 0.16.4, and
-# `ruff check scripts` alone is clean under both versions — so widening the path
-# was a zero-error delta.
-#
-# The invariant to hold, therefore, is "no NEW findings", compared against the
-# same ruff version — not an absolute count. Pinning the rule set here with an
-# explicit `[lint] select`, or capping ruff's minor, would make an absolute number
-# reproducible; both are repo-wide policy changes rather than something the MCP
-# gate should decide, so they are left as follow-ups.
-#
-# Why `scripts` is in the path
-# ----------------------------
-# `scripts/mcp_gate.py` decides whether the MCP CI gate passes, and it was
-# previously outside every lint and test surface here: `pytest.ini` sets
-# `testpaths = lambda plugins`, so it was never collected, and the lint gate named
-# only `lambda plugins`, so it was never linted. A one-token edit making the gate
-# report success unconditionally would have been flagged by nothing.
-#
-# Both halves now run through explicit local/manual paths, which is worth being
-# clear about. `lambda/shared/test/test_mcp_gate_audit.py` unit-tests the file
-# under local `test:backend` and the manually-dispatched MCP workflow. The lint
-# half runs when someone invokes `npm run lint` or `npm run check`; no automatic
-# GitHub trigger invokes either half while the MCP workflow is manual-only. If
-# its pull-request/development triggers are re-enabled later, the test half
-# becomes automatic again while lint remains part of the local full check.
+# `scripts` is in the path because `scripts/mcp_gate.py` decides whether the MCP
+# CI gate passes; `lambda/shared/test/test_mcp_gate_audit.py` unit-tests it.
 
+target-version = "py312"
+line-length = 120
+# Import roots of the Lambda bundles and plugins, so isort (I001) groups
+# `shared`, `_shared`, handler-local modules etc. as first-party.
+src = ["lambda", "lambda/api", "plugins", "scripts"]
 extend-exclude = [
     # Vendored third-party code: local layer build output from
     # scripts/build-layers.sh (bs4, six, ...). Never lint, never fix.
@@ -55,4 +23,61 @@ extend-exclude = [
     "node_modules",
     "frontend",
     "dist",
+    ".venv",
+    "build",
 ]
+
+[lint]
+select = [
+    "F", "E", "W", "I", "B", "UP", "SIM", "RUF",   # correctness, imports (F401), modernisation, simplification
+    "ARG",                                           # unused arguments (dead parameters)
+    "RET", "PIE", "C4", "PERF", "PLW0108",           # returns, placeholders, comprehensions, loops, lambda wrappers
+    "PLR1714", "PLR5501", "PLR1730",                 # `x == a or x == b`, `else: if`, hand-written min/max
+    "FURB110", "FURB171", "FURB188",                 # `a if a else b`, `x in (y,)`, slice instead of removeprefix
+    "ERA001",                                        # commented-out code
+    "C901", "PLR0911", "PLR0912", "PLR0915",         # complexity, returns, branches, statements per function
+    "S", "BLE001", "TRY002", "TRY300", "TRY301", "TRY400", "T20", "PT",
+]
+ignore = [
+    "E501", "SIM108",
+]
+# Powertools' Logger: `logger.exception(...)` / `exc_info=True` count as handling for BLE001.
+logger-objects = ["shared.logging.logger", "_shared.base_ingestor.logger"]
+# Framework callbacks that must accept an argument and usually ignore it go here, by name, and nowhere else.
+# `context`: the Lambda runtime's second handler argument.
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?)|context)$"
+
+[lint.mccabe]
+max-complexity = 12
+
+[lint.pylint]
+max-branches = 15
+max-statements = 60
+max-returns = 8
+
+[lint.per-file-ignores]
+# Tests assert (S101) and hold fake secrets (S105/S106). Nothing else is exempt: an unused argument in a test is dead too.
+"**/test_*.py" = ["S101", "S105", "S106"]
+"**/*_test.py" = ["S101", "S105", "S106"]
+"**/conftest.py" = ["S101", "S105"]
+"scripts/**" = ["T201"]     # scripts talk to a terminal
+# Reviewed security findings (wave 4), each scoped to the one file and code it concerns:
+"lambda/shared/cloudfront_signing.py" = ["S303"]          # CloudFront signed URLs are RSA-SHA1 by AWS's spec
+"lambda/shared/test/test_cloudfront_signing.py" = ["S303"]  # verifies that SHA1 signature
+"lambda/shared/mcp_tokens.py" = ["S105"]                  # token-format prefixes, not secrets
+"lambda/shared/mcp_global_tokens.py" = ["S105"]           # partition keys, not secrets
+"lambda/api/mcp_tokens_handler.py" = ["S105"]             # a "Token not found" message, not a secret
+"lambda/api/test/global_mcp_world.py" = ["S101"]          # test-support module: its helpers assert the MCP frames
+"lambda/api/test/instrumentation.py" = ["S101"]           # test-support module: asserts a route keeps its tracer wrapper
+"lambda/agents/test/document_node_cases.py" = ["S101"]   # shared test cases subclassed by the write_prd/write_prfaq suites
+"lambda/api/scrapers_handler.py" = ["S310"]               # http(s) only after validate_url; every hop re-validated and its socket pinned to a vetted IP
+"lambda/conftest.py" = ["S603"]           # fixed argv: sys.executable -c <constant code>
+"lambda/shared/test/test_bedrock_retry_policy.py" = ["S603"]  # fresh interpreter, fixed argv
+"lambda/processor/test/test_bundle_import.py" = ["S603"]  # fresh interpreter, fixed argv (#249 bundle import)
+"lambda/shared/test/fresh_interpreter.py" = ["S603"]  # fresh interpreter, fixed argv (import-time guards)
+"lambda/shared/test/test_snapstart.py" = ["S311"]  # tests the `random` reseed itself
+"lambda/shared/test/test_model_agreement_handler.py" = ["S102"]  # execs the handler inlined in the CDK stack
+"scripts/mcp_gate.py" = ["S314"]                          # parses the JUnit XML our own pytest run just wrote
+# Per-review isolation and the job-level belt log the error TYPE only (privacy, see the handler), so
+# they neither narrow the catch nor log the exception itself.
+"lambda/jobs/category_reprocess/handler.py" = ["BLE001", "TRY400"]

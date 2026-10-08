@@ -9,25 +9,23 @@ api/projects_handler.py) rather than half-worked. The rules both layers enforce
 live in shared/persona_import.py.
 """
 
-import os
-import sys
-import json
 import base64
-from datetime import datetime, timezone
+import json
+import os
+from datetime import UTC, datetime
 
-# Add parent directory to path for shared module imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
-from shared.logging import logger, tracer, metrics
-from shared.jobs import job_handler, JobContext
-from shared.persona_import import validate_import_config
-from shared.prompts import PERSONA_IMPORT_PROMPTS, format_prompt, load_prompt_file
-from shared.image_limits import converse_image_format
-from shared.aws import get_dynamodb_resource, get_bedrock_client
-from shared.converse import bedrock_call_with_retry
-from shared.model_config import get_active_model_id
-from shared.project_writes import put_project_item_and_increment
 from api.projects import generate_persona_avatar
+from shared.aws import get_bedrock_client, get_dynamodb_resource
+from shared.converse import bedrock_call_with_retry
+from shared.ids import timestamped_id
+from shared.image_limits import converse_image_format
+from shared.invocation_cost import instrumented_handler
+from shared.jobs import JobContext, job_handler
+from shared.logging import logger
+from shared.model_config import get_active_model_id
+from shared.persona_import import validate_import_config
+from shared.project_writes import put_project_item_and_increment
+from shared.prompts import PERSONA_IMPORT_PROMPTS, format_prompt, load_prompt_file
 
 # Environment
 PROJECTS_TABLE = os.environ.get('PROJECTS_TABLE', '')
@@ -35,26 +33,28 @@ RAW_DATA_BUCKET = os.environ.get('RAW_DATA_BUCKET', '')
 
 
 @job_handler(error_message='Persona import failed')
-def handle_job(ctx: JobContext, project_id: str, job_id: str, import_config: dict) -> dict:
+def handle_job(ctx: JobContext, project_id: str, _job_id: str, import_config: dict) -> dict:
     """Handle async persona import job.
-    
+
     Args:
         ctx: Job context for progress updates
         project_id: Project ID
-        job_id: Job ID
+        _job_id: Job ID (unused; part of the job_handler callback signature)
         import_config: Import configuration (input_type, content, media_type)
-        
+
     Returns:
         Result dict with persona_id and title
     """
     dynamodb = get_dynamodb_resource()
     projects_table = dynamodb.Table(PROJECTS_TABLE)
-    
+
     ctx.update_progress(10, 'extracting_persona')
-    
+
     content = import_config.get('content')
     content = content if isinstance(content, str) else ''
-    media_type = import_config.get('media_type', '')
+    # No default: text never reads it, and for an image validate_import_config
+    # refuses None and '' with the same message.
+    media_type = import_config.get('media_type')
 
     # INVARIANT: refuse, never substitute placeholder content — this handler used
     # to hand the model a hardcoded sentence in place of input it could not read,
@@ -113,9 +113,9 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, import_config: dic
         converse_content.append({
             'text': f"{format_prompt(user_prompts['text'], content=content)}\n\nSchema:\n{json_schema}"
         })
-    
+
     ctx.update_progress(30, 'calling_ai')
-    
+
     bedrock = get_bedrock_client()
     # Persona import is a document-generation surface. Raw client call (image
     # input isn't supported by the text-only shared converse helper), so resolve
@@ -139,24 +139,29 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, import_config: dic
         ),
         step_name='import_persona',
     )
-    
-    response_text = response.get('output', {}).get('message', {}).get('content', [{}])[0].get('text', '')
-    
+
+    response_text = response.get('output', {}).get('message', {}).get('content', [{}])[0].get('text', '')  # pragma: no mutate - any non-JSON fallback fails json.loads below with the same 'Expecting value' message
+
     # Parse JSON
     json_text = response_text
     if '```json' in json_text:
         json_text = json_text.split('```json')[1].split('```')[0]
     elif '```' in json_text:
-        json_text = json_text.split('```')[1].split('```')[0]
-    
+        # The piece between the first two fences cannot contain a fence, so no
+        # second split is needed to drop the closing one.
+        json_text = json_text.split('```')[1]
+
     persona_data = json.loads(json_text.strip())
     logger.info(f"[IMPORT_PERSONA_JOB] Extracted persona: {persona_data.get('name', 'Unknown')}")
-    
+
     ctx.update_progress(60, 'generating_avatar')
-    
-    now = datetime.now(timezone.utc).isoformat()
-    persona_id = f"persona_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-    
+
+    now_dt = datetime.now(UTC)
+    now = now_dt.isoformat()
+    # Collision-safe (shared/ids.py) but not retried: the avatar below is keyed
+    # on this id before the row is written.
+    persona_id = timestamped_id('persona', now_dt)
+
     item = {
         'pk': f'PROJECT#{project_id}',
         'sk': f'PERSONA#{persona_id}',
@@ -186,34 +191,34 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, import_config: dic
         'created_at': now,
         'updated_at': now,
     }
-    
-    # Generate avatar
-    avatar_data = {'persona_id': persona_id, **item}
-    avatar_result = generate_persona_avatar(avatar_data, RAW_DATA_BUCKET)
+
+    # Generate avatar. A copy, so what the generator was shown stays distinct from
+    # the row the avatar fields are added to below. The project is stamped on the
+    # object so a project delete removes only avatars it owns (flat key space).
+    avatar_result = generate_persona_avatar(dict(item), RAW_DATA_BUCKET, project_id=project_id)
     if avatar_result.get('avatar_url'):
         item['avatar_url'] = avatar_result['avatar_url']
         item['avatar_prompt'] = avatar_result.get('avatar_prompt', '')
-    
+
     ctx.update_progress(90, 'saving_persona')
-    
+
     put_project_item_and_increment(
         projects_table, project_id, item, 'persona_count',
     )
-    
-    persona_name = item.get('name', 'Imported Persona')
+
+    # Always set above (the model's name or the 'Imported Persona' default).
+    persona_name = item['name']
     # No CDN-URL conversion here: `item` is not part of the return value below,
     # so the old conversion was dead. It also could not work now that avatar
     # URLs must be signed (issue #229) — this Lambda has no signing key. The
     # projects API signs at read time, which is the only place a browser gets
     # an avatar URL from.
-    
+
     logger.info(f"[IMPORT_PERSONA_JOB] Successfully imported persona: {persona_name}")
     return {'persona_id': persona_id, 'title': f'Imported: {persona_name}'}
 
 
-@logger.inject_lambda_context
-@tracer.capture_lambda_handler
-@metrics.log_metrics(capture_cold_start_metric=True)
+@instrumented_handler
 def lambda_handler(event: dict, context) -> dict:
     """Lambda entry point."""
     logger.info(f"Persona importer invoked with event keys: {list(event.keys())}")

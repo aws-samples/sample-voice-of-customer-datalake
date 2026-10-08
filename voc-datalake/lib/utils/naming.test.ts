@@ -121,7 +121,7 @@ function messageFrom(run: () => unknown): string {
 describe('uniqueName', () => {
   it('is unchanged with no prefix — the invariant that keeps existing deployments intact', () => {
     const { stack, naming } = namingFor();
-    expect(stack.resolve(naming.uniqueName('voc-feedback'))).toEqual({
+    expect(stack.resolve(naming.uniqueName('voc-feedback'))).toStrictEqual({
       'Fn::Join': ['', ['voc-feedback-', { Ref: 'AWS::AccountId' }, '-', { Ref: 'AWS::Region' }]],
     });
   });
@@ -195,12 +195,12 @@ describe('the name-length guard', () => {
     // Some log-group names the app generates today already exceed 64 characters,
     // and they deploy fine. A new synth failure on the default would be a
     // regression, not a guard, so the check is prefix-only by construction.
-    expect(overrunsFor(undefined, ['a'.repeat(budget + 20)])).toEqual([]);
+    expect(overrunsFor(undefined, ['a'.repeat(budget + 20)])).toStrictEqual([]);
   });
 
   it('accepts a prefix that exactly reaches the limit', () => {
     // An off-by-one here would reject a prefix that deploys perfectly well.
-    expect(overrunsFor('ab', ['x'.repeat(budget - 3)])).toEqual([]);
+    expect(overrunsFor('ab', ['x'.repeat(budget - 3)])).toStrictEqual([]);
   });
 
   it('rejects a prefix one character past the limit', () => {
@@ -237,7 +237,7 @@ describe('the name-length guard', () => {
     // which allow 512. Judging them against 64 would fail on names the app
     // already deploys today.
     const pathBudget = PATH_NAME_LENGTH_LIMIT - '-111111111111-us-east-1'.length;
-    expect(overrunsFor('stg', [`/aws/lambda/${'x'.repeat(80)}`])).toEqual([]);
+    expect(overrunsFor('stg', [`/aws/lambda/${'x'.repeat(80)}`])).toStrictEqual([]);
     const errors = overrunsFor('stg', [`/aws/lambda/voc-${'x'.repeat(pathBudget)}`]);
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain(`over the ${PATH_NAME_LENGTH_LIMIT}-character limit`);
@@ -253,7 +253,7 @@ describe('the name-length guard', () => {
 
     // Same base name, same prefix: allowed as a Lambda name, rejected as a bucket.
     const asLambda = overrunsFor('stg', ['x'.repeat(dnsBudget - 3)], 'default');
-    expect(asLambda).toEqual([]);
+    expect(asLambda).toStrictEqual([]);
     const asBucket = overrunsFor('stg', ['x'.repeat(dnsBudget - 3)], 'dns-label');
     expect(asBucket).toHaveLength(1);
     expect(asBucket[0]).toContain(`over the ${DNS_LABEL_LENGTH_LIMIT}-character limit`);
@@ -272,12 +272,15 @@ describe('the name-length guard', () => {
     const naming = new DeploymentNaming(stack, 'a'.repeat(20));
     expect(naming.uniqueDnsName('voc-access-logs')).toContain('voc-access-logs');
 
-    const [error] = stack.node.validate();
-    expect(error).toContain('64 characters');
-    expect(error).toContain(`over the ${DNS_LABEL_LENGTH_LIMIT}-character limit`);
-    expect(error).toContain('S3 bucket names and Cognito domain prefixes');
-    // 63 - 43 - 1 separator = 19.
-    expect(error).toContain('Use a prefix of at most 19 characters');
+    const [error = ''] = stack.node.validate();
+    const fragments = [
+      '64 characters',
+      `over the ${DNS_LABEL_LENGTH_LIMIT}-character limit`,
+      'S3 bucket names and Cognito domain prefixes',
+      // 63 - 43 - 1 separator = 19.
+      'Use a prefix of at most 19 characters',
+    ];
+    expect(fragments.filter((fragment) => !error.includes(fragment)), `missing from: ${error}`).toStrictEqual([]);
   });
 
   it('ignores name patterns, which are not resource names', () => {
@@ -287,6 +290,6 @@ describe('the name-length guard', () => {
     // exists.
     const { stack, naming } = namingFor('stg');
     naming.uniqueNamePattern('x'.repeat(budget));
-    expect(stack.node.validate()).toEqual([]);
+    expect(stack.node.validate()).toStrictEqual([]);
   });
 });

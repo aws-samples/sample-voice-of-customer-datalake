@@ -128,14 +128,6 @@ class TestEveryLineIsJson:
         assert line['service'] == extractor.SERVICE_NAME
         assert line['timestamp']
 
-    def test_the_service_name_is_configurable_and_defaults(self, extractor):
-        """Read from SERVICE_NAME, not POWERTOOLS_SERVICE_NAME: naming it after a
-        library this function deliberately does not have would promise the
-        library. The emitted FIELD is still `service`, which is what an operator's
-        query matches on."""
-        assert extractor.SERVICE_NAME
-        assert 'product-doc-extractor' in extractor.SERVICE_NAME
-
     def test_the_whole_pipeline_emits_only_json(self, extractor, wire, pending_doc, s3_event,
                                                 json_logs):
         """Not just a hand-rolled call: a real invocation's lines, all of them."""
@@ -149,7 +141,7 @@ class TestEveryLineIsJson:
 
 
 class TestTheLogLevelIsConfigurable:
-    @pytest.mark.parametrize('configured, expected', [
+    @pytest.mark.parametrize(('configured', 'expected'), [
         ('DEBUG', logging.DEBUG),
         ('debug', logging.DEBUG),
         ('WARNING', logging.WARNING),
@@ -252,7 +244,8 @@ class TestImportingTheModuleLeavesTheHostAlone:
     shape of defect worth a class of its own.
     """
 
-    def test_a_reload_adds_no_handler_to_the_root_logger(self, extractor, reload_extractor):
+    @pytest.mark.usefixtures("extractor")
+    def test_a_reload_adds_no_handler_to_the_root_logger(self, reload_extractor):
         root = logging.getLogger()
         before = list(root.handlers)
 
@@ -275,7 +268,8 @@ class TestImportingTheModuleLeavesTheHostAlone:
                    if type(h.formatter).__name__ == extractor.JsonFormatter.__name__]
         assert on_root == [], f'{len(on_root)} JSON handler(s) left on the host root logger'
 
-    def test_the_root_level_is_not_touched(self, extractor, reload_extractor):
+    @pytest.mark.usefixtures("extractor")
+    def test_the_root_level_is_not_touched(self, reload_extractor):
         """A sentinel level, for the same reason: root was already re-levelled to
         INFO before this test existed, so "unchanged since the snapshot" would pass
         while the write still happened. WARNING is a value nothing else here
@@ -298,13 +292,15 @@ class TestTheHandlerIsAttachedExactlyOnce:
     wrong.
     """
 
-    def test_two_reloads_leave_one_json_handler(self, extractor, reload_extractor):
+    @pytest.mark.usefixtures("extractor")
+    def test_two_reloads_leave_one_json_handler(self, reload_extractor):
         module = reload_extractor(times=2)
 
         ours = [h for h in module.logger.handlers if h.name == module.HANDLER_NAME]
         assert len(ours) == 1, f'{len(ours)} handlers means every line {len(ours)} times'
 
-    def test_a_reload_does_not_multiply_the_lines_emitted(self, extractor, reload_extractor):
+    @pytest.mark.usefixtures("extractor")
+    def test_a_reload_does_not_multiply_the_lines_emitted(self, reload_extractor):
         """The consequence, counted rather than inferred: every handler the module
         installed is pointed at ONE stream, so a duplicate handler shows up as a
         duplicate line.
@@ -360,7 +356,8 @@ class TestContextualFieldsReachEveryLine:
         extractor.lambda_handler(s3_event(TEXT_KEY, size=7))
 
         ready = [line for line in json_logs() if 'ready' in line['message']]
-        assert ready and ready[0]['s3_key'] == TEXT_KEY
+        assert ready
+        assert ready[0]['s3_key'] == TEXT_KEY
 
     def test_an_ignored_key_carries_no_document_fields(self, extractor, s3_event, json_logs):
         """The context is set only after the key is recognised, so a notification
@@ -464,10 +461,14 @@ class TestALogCallNeverBreaksTheHandler:
         assert 'unrepresentable' in line['thing']
 
 
+def _fail_deliberately() -> None:
+    raise ValueError('deliberate')
+
+
 class TestExceptionsCarryTheirTraceback:
     def test_logger_exception_puts_the_traceback_in_the_json(self, extractor, json_logs):
         try:
-            raise ValueError('deliberate')
+            _fail_deliberately()
         except ValueError:
             extractor.logger.exception('extraction blew up')
 

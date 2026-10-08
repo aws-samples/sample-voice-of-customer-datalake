@@ -45,17 +45,17 @@
   "pdf": {
     "categoriesLabel": "カテゴリ",
     "category": "カテゴリ",
-    "categoryBreakdown": "📊 カテゴリ分析",
+    "categoryBreakdown": "カテゴリ分析",
     "count": "件数",
     "distribution": "分布",
     "generatedOn": "{{date}} に生成 • VoC Analytics — カテゴリ分析レポート",
-    "sentimentDistribution": "😊 センチメント分布",
+    "sentimentDistribution": "センチメント分布",
     "sentimentLabel": "センチメント",
     "share": "共有",
     "timeRange": "期間: {{range}}",
     "timeRangeWithSource": "期間: {{range}} • ソース: {{source}}",
     "title": "カテゴリ分析レポート",
-    "topKeywords": "🔑 トップキーワードと問題",
+    "topKeywords": "トップキーワードと問題",
     "totalFeedback": "総フィードバック数"
   },
   "positive": "ポジティブ",
@@ -88,5 +88,14 @@
   "topIssue": "トップ問題",
   "totalFeedback": "総フィードバック数",
   "trendingKeywords": "トレンドキーワード",
-  "urgentOnly": "緊急のみ"
+  "urgentOnly": "緊急のみ",
+  "subtitle": "カテゴリ、センチメント、キーワード、ソース別にフィードバックを探索",
+  "noFeedbackHint": "期間を広げるか、フィルターをいくつか解除してください。",
+  "viewMode": "表示モード",
+  "attributeFilters": "チャネル・ディメンション・タグのフィルター",
+  "filterByChannel": "チャネルで絞り込む",
+  "allChannels": "すべてのチャネル",
+  "filterByTag": "タグで絞り込む",
+  "allTags": "すべてのタグ",
+  "anyValue": "すべて"
 }

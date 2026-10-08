@@ -9,76 +9,31 @@
  *   3. Empty values   — keys whose value is an empty string or whitespace-only
  *   4. Unused keys    — keys in English that are never referenced by source code t() calls
  *   5. Missing in source — t() calls in source code that reference keys not found in English files
+ *   6. Untranslated   — target values identical to English (informational only)
  *
  * Usage:  node scripts/i18n-check.mjs
  *
  * Exit codes:
- *   0 – everything is clean
+ *   0 – no missing, extra, empty or missing-in-source keys (checks 4 and 6 never fail)
  *   1 – problems detected
  */
 
-import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
-import { resolve, join, extname, normalize } from 'node:path'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { resolve, join, extname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { flattenEntries, loadLocale, localeNamespaces, safePath, stripPlaceholders } from './i18n-locales.mjs'
+import { extractKeyUsages, isValidPluralVariant, pluralBase, resolveKeyUsages } from './i18n-keys.mjs'
 
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
-const LOCALES_DIR = resolve(__dirname, '..', 'public', 'locales')
 const SRC_DIR = resolve(__dirname, '..', 'src')
-
-/**
- * Validate that a resolved path stays within an allowed base directory.
- * Prevents path-traversal attacks when building paths from dynamic segments.
- */
-function safePath(base, ...segments) {
-  const resolved = normalize(resolve(base, ...segments))
-  if (!resolved.startsWith(normalize(base) + '/') && resolved !== normalize(base)) {
-    throw new Error(`Path traversal detected: ${resolved} is outside ${base}`)
-  }
-  return resolved
-}
 
 const SOURCE_LANG = 'en'
 const LANGUAGES = ['es', 'fr', 'de', 'pt', 'ja', 'zh', 'ko']
-const NAMESPACES = ['categories', 'chat', 'common', 'components', 'dashboard', 'dataExplorer', 'feedbackDetail', 'feedbackForms', 'login', 'prioritization', 'problemAnalysis', 'projectDetail', 'projects', 'scrapers', 'settings']
+const NAMESPACES = localeNamespaces(SOURCE_LANG)
 const DEFAULT_NS = 'common'
 
 // ── helpers ──────────────────────────────────────────────────────────
-
-const PLURAL_SUFFIXES = ['_zero', '_one', '_two', '_few', '_many', '_other']
-
-function pluralBase(key) {
-  for (const suffix of PLURAL_SUFFIXES) {
-    if (key.endsWith(suffix)) return key.slice(0, -suffix.length)
-  }
-  return null
-}
-
-/** Flatten nested object into { 'dot.path': value } entries. */
-function flattenEntries(obj, prefix = '') {
-  const entries = []
-  for (const [key, value] of Object.entries(obj)) {
-    const fullKey = prefix ? `${prefix}.${key}` : key
-    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-      entries.push(...flattenEntries(value, fullKey))
-    } else {
-      entries.push([fullKey, value])
-    }
-  }
-  return entries
-}
-
-function loadLocale(lang, ns) {
-  const filePath = safePath(LOCALES_DIR, lang, `${ns}.json`)
-  if (!existsSync(filePath)) return null
-  return JSON.parse(readFileSync(filePath, 'utf-8'))
-}
-
-function isValidPluralVariant(key, sourceKeys) {
-  const base = pluralBase(key)
-  if (!base) return false
-  return PLURAL_SUFFIXES.some((s) => sourceKeys.has(`${base}${s}`))
-}
 
 /** Recursively collect all .tsx / .ts files under a directory. */
 function collectSourceFiles(dir) {
@@ -97,53 +52,21 @@ function collectSourceFiles(dir) {
 }
 
 /**
- * Extract t('key') / t("key") calls from source code.
- * Handles:
- *   t('key')                        → namespace = default
- *   t('key', { ns: 'settings' })   → namespace = settings
- *   t('ns:key')                     → namespace = ns
- *   useTranslation('ns') … t('key') → namespace = ns
- *   useTranslation('ns', { keyPrefix: 'p' }) … t('key') → ns:p.key
+ * Every translation key the source files use, as `{ namespaces, key }` usages:
+ * the `t(...)` calls (scope-resolved through their `useTranslation` hook — see
+ * `i18n-keys.mjs`) plus the keys held in data tables.
  */
 function extractKeysFromSource(files) {
-  const usedKeys = new Set()  // Set of "ns:key"
-
+  const usages = []
   for (const file of files) {
     const content = readFileSync(file, 'utf-8')
-
-    // Detect useTranslation('namespace') to know the file-level namespace.
-    // Also matches useTranslation('ns', { keyPrefix: '…' }) — the prefix is
-    // prepended to every unprefixed key used through that t.
-    let fileNs = DEFAULT_NS
-    const nsMatch = content.match(/useTranslation\(\s*['"](\w+)['"]\s*[,)]/)
-    if (nsMatch) fileNs = nsMatch[1]
-    let filePrefix = ''
-    const prefixMatch = content.match(/useTranslation\([^)]*keyPrefix:\s*['"]([\w.]+)['"]/)
-    if (prefixMatch) filePrefix = `${prefixMatch[1]}.`
-
-    // Match t('...') and t("...")
-    // Handles: t('key'), t('key', ...), t(`key`)
-    // Extract t('key') and t('key', { ns: 'foo' }) calls
-    const tCallRegex = /\bt\(\s*['"`]([^'"`]+)['"`](?:\s*,\s*\{[^}]*?ns:\s*['"](\w+)['"])?/g
-    let match
-    while ((match = tCallRegex.exec(content)) !== null) {
-      const rawKey = match[1]
-      const explicitNs = match[2]
-
-      // Handle ns:key syntax
-      if (rawKey.includes(':')) {
-        const [ns, key] = rawKey.split(':', 2)
-        usedKeys.add(`${ns}:${key}`)
-      } else {
-        const ns = explicitNs || fileNs
-        usedKeys.add(`${ns}:${filePrefix}${rawKey}`)
-      }
+    usages.push(...extractKeyUsages(file, content, { defaultNs: DEFAULT_NS, namespaces: NAMESPACES }))
+    for (const dataKey of extractDataHeldKeys(content, file)) {
+      const [ns, key] = dataKey.split(':', 2)
+      usages.push({ namespaces: [ns], key })
     }
-
-    for (const dataKey of extractDataHeldKeys(content, file)) usedKeys.add(dataKey)
   }
-
-  return usedKeys
+  return usages
 }
 
 /**
@@ -258,9 +181,8 @@ for (const ns of NAMESPACES) {
         if (v.length <= 3) return false
         // Skip values that are URLs, placeholders, or technical strings
         if (v.startsWith('http') || v.startsWith('@') || v.startsWith('#')) return false
-        // Skip values containing only template variables like "{{count}} / {{max}}"
-        // eslint-disable-next-line sonarjs/slow-regex -- bounded input from JSON translation values, not user-controlled
-        if (v.replace(/\{\{[^}]+\}\}/g, '').trim().length === 0) return false
+        // Skip values containing only template variables like "{{count}}"
+        if (stripPlaceholders(v).trim().length === 0) return false
         return v === sourceVal
       })
       .map(([k]) => k)
@@ -278,31 +200,9 @@ for (const ns of NAMESPACES) {
 // ── Check 3: Source code t() calls vs English keys ───────────────────
 
 const sourceFiles = collectSourceFiles(SRC_DIR)
-const usedKeys = extractKeysFromSource(sourceFiles)
+const { used: usedKeys, missing: missingInEnglish } = resolveKeyUsages(extractKeysFromSource(sourceFiles), allEnglishKeys)
 
-const missingInEnglish = []  // keys used in code but not in English files
 const unusedInEnglish = []   // keys in English files but never referenced in code
-
-// Collect all English keys as "ns:key" for comparison
-const allEnglishFlat = new Set()
-for (const [ns, keys] of allEnglishKeys) {
-  for (const key of keys) {
-    allEnglishFlat.add(`${ns}:${key}`)
-    // Also add without plural suffix for matching t('base', { count })
-    const base = pluralBase(key)
-    if (base) allEnglishFlat.add(`${ns}:${base}`)
-  }
-}
-
-for (const usedKey of usedKeys) {
-  if (!allEnglishFlat.has(usedKey)) {
-    // Check if it's a dynamic key pattern (contains {{ or variable)
-    const keyPart = usedKey.split(':')[1]
-    if (keyPart && !keyPart.includes('$') && !keyPart.includes('{')) {
-      missingInEnglish.push(usedKey)
-    }
-  }
-}
 
 // Check for unused English keys (skip plural variants of used bases)
 for (const [ns, keys] of allEnglishKeys) {
@@ -323,7 +223,11 @@ for (const [ns, keys] of allEnglishKeys) {
 let hasProblems = false
 
 if (report.length > 0) {
-  hasProblems = true
+  // Untranslated values are printed but do not fail the audit: a value equal
+  // to English is often correct (cognates and product terms — "Persona",
+  // "PR/FAQ", "Scrapers", "Source ID"), so it is a prompt for a reviewer, not a
+  // defect. Missing, extra and empty keys are defects.
+  hasProblems = totalMissing + totalExtra + totalEmpty > 0
   console.log('\n🌐  i18n Translation Coverage Report')
   console.log('═'.repeat(60))
 

@@ -83,7 +83,7 @@ def plugin_secret_prefix(plugin_id: str) -> str:
     return f"{plugin_id}_"
 
 
-def filter_plugin_secrets(plugin_id: str, all_secrets: Mapping) -> dict:
+def filter_plugin_secrets(plugin_id: object, all_secrets: object) -> dict:
     """Return *plugin_id*'s namespaced keys from *all_secrets*, prefix stripped.
 
     The returned shape is what plugin handlers already consume — bare field
@@ -118,8 +118,9 @@ def filter_plugin_secrets(plugin_id: str, all_secrets: Mapping) -> dict:
     # character class the WRITE path enforces on `source`. Both import it from
     # `shared/plugin_identity.py`: the read path refusing an identity the write
     # path accepted (or the reverse) is the same drift, one level up, that having
-    # two copies of the prefix scan produced.
-    if not is_valid_plugin_identifier(plugin_id):
+    # two copies of the prefix scan produced. (`is_valid_plugin_identifier`
+    # already rejects non-strings; the explicit isinstance narrows the type.)
+    if not isinstance(plugin_id, str) or not is_valid_plugin_identifier(plugin_id):
         # Truncated repr, not the raw value: the identity comes from
         # SOURCE_PLATFORM and is expected to be short, but an error message is
         # not the place to echo an unbounded string back. A non-string is named

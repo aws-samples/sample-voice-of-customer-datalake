@@ -5,19 +5,27 @@ Manages API credentials and data source schedules.
 
 import json
 import os
-from functools import lru_cache
+from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC
+from functools import cache
 from typing import Any
 
 import boto3
+from botocore.exceptions import BotoCoreError, ClientError
+
 from shared.api import api_handler, create_api_resolver, require_admin
 from shared.aws import get_secrets_client, put_secret_json
+from shared.enabled_sources import default_source_ids
 from shared.exceptions import (
     ConfigurationError,
     ServiceError,
     ValidationError,
 )
+from shared.ids import timestamped_id
 from shared.logging import logger, tracer
 from shared.plugin_identity import PLUGIN_IDENTIFIER_RULES, is_valid_plugin_identifier
+from shared.request_body import json_body_value, json_object_body
+from shared.snapstart import api_route_warmer, botocore_model_warmer, register_snapshot_hooks
 
 secretsmanager = get_secrets_client()
 events_client = boto3.client("events")
@@ -58,8 +66,8 @@ SOURCE_PLACEHOLDER = "{source}"
 #
 # Read inside _plugin_secret_defaults() rather than at module scope, so a test
 # can set it and clear the cache. It is parsed once per execution context either
-# way, which is what the lru_cache is for.
-PLUGIN_SECRET_DEFAULTS_VAR = "PLUGIN_SECRET_DEFAULTS"
+# way, which is what the cache is for.
+PLUGIN_DEFAULTS_ENV_VAR = "PLUGIN_SECRET_DEFAULTS"
 
 app = create_api_resolver()
 
@@ -106,7 +114,7 @@ MAX_CREDENTIAL_KEYS_PER_REQUEST = 20
 MAX_SOURCES_PER_STATUS_REQUEST = 50
 
 
-def _validate_credential_key(key: str) -> None:
+def _validate_credential_key(key: object) -> None:
     """Raise ValidationError if *key* does not conform to the allowed form.
 
     The key preview in the error message is truncated to avoid reflecting
@@ -119,7 +127,7 @@ def _validate_credential_key(key: str) -> None:
         )
 
 
-def _validate_source(source: str) -> None:
+def _validate_source(source: object) -> None:
     """Raise ValidationError if *source* does not conform to the allowed form.
 
     'source' is used as a namespace prefix (f"{source}_"), so it must satisfy
@@ -209,9 +217,9 @@ def _is_addressable_source(source: str) -> bool:
     Needed because ONE route cannot raise. `GET /sources/status?sources=a,b,c`
     answers about several sources at once, so raising on the first unknown name
     would fail the whole response rather than that one entry — and its own default
-    list is `['webscraper', 'manual_import', 's3_import']`, where `manual_import`
-    is a deliberate non-plugin: it is a legitimate `source_platform` (it appears in
-    `KNOWN_SOURCES` in `plugins/_shared/schemas.py`) with no manifest, so it is
+    list (`shared.enabled_sources.default_source_ids`) ends with `manual_import`, which
+    is a deliberate non-plugin: it is a legitimate `source_platform` (manual
+    imports are written with it by `manual_import_handler`) with no manifest, so it is
     absent from `PLUGIN_SECRET_DEFAULTS` and a raising guard would answer 400 to
     the argument-less request `SourceCard.tsx` issues on every Settings render —
     for admins too.
@@ -222,7 +230,7 @@ def _is_addressable_source(source: str) -> bool:
     `plugin.id`), so for every value rejected here `describe_rule` could only have
     raised `ResourceNotFoundException`, which the route already answers with
     `{'enabled': False, 'exists': False}` — exactly what the default request
-    returns today for all three of its sources. What changes is that an arbitrary
+    returns for `manual_import`. What changes is that an arbitrary
     value stops reaching EventBridge and stops having a rule name reflected back.
 
     Inherits the fail-open on an unavailable `PLUGIN_SECRET_DEFAULTS`, because
@@ -281,7 +289,7 @@ def _is_configured_value(value: object, seeded_default: str | None) -> bool:
     return stripped != default
 
 
-@lru_cache(maxsize=1)
+@cache
 def _plugin_secret_defaults() -> dict[str, dict[str, str]]:
     """Parse PLUGIN_SECRET_DEFAULTS into {plugin_id: {key: seeded_default}}.
 
@@ -295,7 +303,7 @@ def _plugin_secret_defaults() -> dict[str, dict[str, str]]:
     Entries that are not a str -> str mapping are dropped individually rather
     than voiding the whole variable, so one bad plugin cannot hide the others.
     """
-    raw = os.environ.get(PLUGIN_SECRET_DEFAULTS_VAR, "")
+    raw = os.environ.get(PLUGIN_DEFAULTS_ENV_VAR, "")
     if not raw:
         return {}
     try:
@@ -391,13 +399,13 @@ def get_integration_status():
                 'configured': len(configured_keys) > 0,
                 'credentials_set': configured_keys,
             }
-
-        return status
     except ConfigurationError:
         raise
     except Exception as e:
         logger.exception(f"Failed to get integration status: {e}")
-        raise ServiceError('Failed to retrieve integration status')
+        raise ServiceError('Failed to retrieve integration status') from e
+    else:
+        return status
 
 
 @app.get("/integrations/<source>/credentials")
@@ -463,13 +471,13 @@ def get_credentials(source: str):
             # by the scrapers handler as a top-level secret key).
             if secrets.get(prefixed_key):
                 result[key] = secrets[prefixed_key]
-
-        return result
     except (ConfigurationError, ValidationError):
         raise
     except Exception as e:
         logger.exception(f"Failed to get credentials for {source}: {e}")
-        raise ServiceError('Failed to retrieve credentials')
+        raise ServiceError('Failed to retrieve credentials') from e
+    else:
+        return result
 
 
 @app.put("/integrations/<source>/credentials")
@@ -480,7 +488,7 @@ def update_credentials(source: str):
     Requires admin access — credential management is an administrative operation.
 
     Each key in the request body must conform to the allowed form (lowercase
-    letters, digits, and underscores only; 1–64 characters; no leading/trailing
+    letters, digits, and underscores only; 1-64 characters; no leading/trailing
     underscores).  Unrecognised or malformed keys are rejected with a 400 error
     before any write is attempted.
 
@@ -500,7 +508,7 @@ def update_credentials(source: str):
     if not SECRETS_ARN:
         raise ConfigurationError('Secrets not configured')
 
-    body = app.current_event.json_body
+    body = json_body_value(app)
 
     # Reject non-dict bodies (list, string, null) before any further processing.
     if not isinstance(body, dict):
@@ -537,12 +545,13 @@ def update_credentials(source: str):
                 secrets[f"{prefix}{key}"] = value
 
         put_secret_json(secretsmanager, SECRETS_ARN, secrets)
-        return {'success': True, 'message': f'Credentials updated for {source}'}
     except (ConfigurationError, ValidationError):
         raise
     except Exception as e:
         logger.exception(f"Failed to update credentials: {e}")
-        raise ServiceError('Failed to update credentials')
+        raise ServiceError('Failed to update credentials') from e
+    else:
+        return {'success': True, 'message': f'Credentials updated for {source}'}
 
 
 # ============================================
@@ -550,6 +559,19 @@ def update_credentials(source: str):
 # ============================================
 
 APP_CONFIG_PLUGINS = {'app_reviews_ios', 'app_reviews_android'}
+
+
+def _app_configs_in_secret(source: str) -> tuple[dict, str, list]:
+    """The shared secret as stored, the key `source`'s app configs live under, and those configs.
+
+    The read half of every app-config route's read-modify-write; the write half is
+    `put_secret_json` on the same `secrets` dict.
+    """
+    response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
+    secrets = json.loads(response.get('SecretString', '{}'))
+    configs_key = _get_app_configs_key(source)
+    configs = json.loads(secrets.get(configs_key, '[]'))
+    return secrets, configs_key, configs
 
 
 def _get_app_configs_key(source: str) -> str:
@@ -579,16 +601,15 @@ def list_app_configs(source: str):
         return {'apps': []}
 
     try:
-        response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
-        secrets = json.loads(response.get('SecretString', '{}'))
-        configs_key = _get_app_configs_key(source)
-        configs = json.loads(secrets.get(configs_key, '[]'))
-        return {'apps': configs}
+        _secrets, _configs_key, configs = _app_configs_in_secret(source)
     except (ConfigurationError, ValidationError):
         raise
-    except Exception as e:
+    except (ClientError, BotoCoreError, ValueError, TypeError, AttributeError) as e:
+        # An AWS failure, or a secret whose JSON is not the {key: str} shape.
         logger.warning(f"Could not read app configs for {source}: {e}")
         return {'apps': []}
+    else:
+        return {'apps': configs}
 
 
 @app.post("/integrations/<source>/apps")
@@ -609,7 +630,7 @@ def save_app_config(source: str):
     if not SECRETS_ARN:
         raise ConfigurationError('Secrets not configured')
 
-    body = app.current_event.json_body or {}
+    body = json_object_body(app)
     app_config = body.get('app')
     if not app_config:
         raise ValidationError('No app config provided')
@@ -622,25 +643,23 @@ def save_app_config(source: str):
         raise ValidationError('app_name is required')
 
     try:
-        response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
-        secrets = json.loads(response.get('SecretString', '{}'))
-        configs_key = _get_app_configs_key(source)
-        configs = json.loads(secrets.get(configs_key, '[]'))
+        secrets, configs_key, configs = _app_configs_in_secret(source)
 
-        existing_idx = next((i for i, c in enumerate(configs) if c.get('id') == app_config['id']), -1)
-        if existing_idx >= 0:
-            configs[existing_idx] = app_config
-        else:
+        existing_idx = next((i for i, c in enumerate(configs) if c.get('id') == app_config['id']), None)
+        if existing_idx is None:
             configs.append(app_config)
+        else:
+            configs[existing_idx] = app_config
 
         secrets[configs_key] = json.dumps(configs)
         put_secret_json(secretsmanager, SECRETS_ARN, secrets)
-        return {'success': True, 'app': app_config}
     except (ConfigurationError, ValidationError):
         raise
     except Exception as e:
         logger.exception(f"Failed to save app config for {source}: {e}")
-        raise ServiceError('Failed to save app configuration')
+        raise ServiceError('Failed to save app configuration') from e
+    else:
+        return {'success': True, 'app': app_config}
 
 
 @app.delete("/integrations/<source>/apps/<app_id>")
@@ -661,19 +680,17 @@ def delete_app_config(source: str, app_id: str):
         raise ConfigurationError('Secrets not configured')
 
     try:
-        response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
-        secrets = json.loads(response.get('SecretString', '{}'))
-        configs_key = _get_app_configs_key(source)
-        configs = json.loads(secrets.get(configs_key, '[]'))
+        secrets, configs_key, configs = _app_configs_in_secret(source)
         configs = [c for c in configs if c.get('id') != app_id]
         secrets[configs_key] = json.dumps(configs)
         put_secret_json(secretsmanager, SECRETS_ARN, secrets)
-        return {'success': True}
     except (ConfigurationError, ValidationError):
         raise
     except Exception as e:
         logger.exception(f"Failed to delete app config for {source}: {e}")
-        raise ServiceError('Failed to delete app configuration')
+        raise ServiceError('Failed to delete app configuration') from e
+    else:
+        return {'success': True}
 
 
 @app.post("/sources/<source>/run")
@@ -696,7 +713,7 @@ def run_source(source: str):
     to invoke and wrote a `SOURCE_RUN#<source>` partition that nothing ever reads
     or expires.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from shared.tables import get_aggregates_table
 
@@ -705,14 +722,16 @@ def run_source(source: str):
 
     function_name = _build_ingestor_function_name(source)
 
-    execution_id = f"run_{source}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    execution_id = timestamped_id(f'run_{source}', datetime.now(UTC))
     payload: dict = {"manual_trigger": True, "execution_id": execution_id}
+    # The body is optional: a missing or malformed one (not JSON, or not an
+    # object) runs every app config — deliberately not a 400.
     try:
-        body = app.current_event.json_body or {}
-        if body.get("app_id"):
-            payload["app_id"] = body["app_id"]
-    except Exception:
-        pass
+        body = json_object_body(app)
+    except ValidationError:
+        body = {}
+    if body.get("app_id"):
+        payload["app_id"] = body["app_id"]
 
     # Create initial run status record
     try:
@@ -721,9 +740,9 @@ def run_source(source: str):
             table.put_item(Item={
                 'pk': f'SOURCE_RUN#{source}', 'sk': execution_id,
                 'status': 'running', 'items_found': 0,
-                'started_at': datetime.now(timezone.utc).isoformat(),
+                'started_at': datetime.now(UTC).isoformat(),
             })
-    except Exception as e:
+    except (ClientError, BotoCoreError) as e:
         logger.warning(f"Failed to create run status: {e}")
 
     lambda_client = boto3.client("lambda")
@@ -733,22 +752,21 @@ def run_source(source: str):
             InvocationType="Event",
             Payload=json.dumps(payload).encode(),
         )
-        status_code = response.get("StatusCode", 0)
-        if status_code == 202:
-            return {"success": True, "message": f"Triggered {source} ingestor", "source": source, "execution_id": execution_id}
-        raise ServiceError(f"Lambda invoke returned status {status_code}")
-    except lambda_client.exceptions.ResourceNotFoundException:
-        raise ServiceError(f"Ingestor Lambda not found for source: {source}")
-    except ServiceError:
-        raise
+    except lambda_client.exceptions.ResourceNotFoundException as e:
+        raise ServiceError(f"Ingestor Lambda not found for source: {source}") from e
     except Exception as e:
         logger.exception(f"Failed to trigger source {source}: {e}")
-        raise ServiceError(f"Failed to trigger {source} ingestor")
+        raise ServiceError(f"Failed to trigger {source} ingestor") from e
+    status_code = response.get("StatusCode", 0)
+    if status_code != 202:
+        raise ServiceError(f"Lambda invoke returned status {status_code}")
+    return {"success": True, "message": f"Triggered {source} ingestor", "source": source, "execution_id": execution_id}
 
 
 def _get_source_run_status(source: str):
     """Get the latest run status for a data source plugin."""
     from boto3.dynamodb.conditions import Key
+
     from shared.tables import get_aggregates_table
 
     table = get_aggregates_table()
@@ -772,9 +790,37 @@ def _get_source_run_status(source: str):
             'items_found': run.get('items_found', 0),
             'errors': run.get('errors', []),
         }
-    except Exception as e:
+    except (ClientError, BotoCoreError) as e:
         logger.warning(f"Failed to get source run status: {e}")
         return {'source': source, 'status': 'unknown'}
+
+
+# Concurrent DescribeRule calls one GET /sources/status makes. The default list
+# is a handful of sources; the cap keeps a 50-source request (the per-request
+# maximum) from bursting EventBridge's per-account DescribeRule rate.
+MAX_PARALLEL_RULE_DESCRIBES = 8
+
+
+def _schedule_status(source: str) -> dict:
+    """One source's schedule state, from its EventBridge rule.
+
+    Deliberate per-item boundary: any failure degrades this source's entry only;
+    the batch still answers.
+    """
+    rule_name = _build_rule_name(source)
+    try:
+        response = events_client.describe_rule(Name=rule_name)
+    except events_client.exceptions.ResourceNotFoundException:
+        return {'enabled': False, 'exists': False}
+    except Exception:
+        logger.exception(f"Failed to get status for source {source}")
+        return {'enabled': False, 'error': 'Failed to retrieve status'}
+    return {
+        'enabled': response.get('State') == 'ENABLED',
+        'schedule': response.get('ScheduleExpression'),
+        'rule_name': rule_name,
+        'exists': True,
+    }
 
 
 @app.get("/sources/status")
@@ -863,7 +909,8 @@ def get_sources_status():
             s.strip() for s in sources_param.split(',') if s.strip()
         ))
     else:
-        sources = ['webscraper', 'manual_import', 's3_import']
+        # The deployment's enabled plugins plus `manual_import` (issue #256).
+        sources = default_source_ids()
 
     # Raises, unlike the per-source check below: this is a malformed REQUEST, not
     # an unaddressable source, so there is no per-entry answer to report and no
@@ -874,29 +921,17 @@ def get_sources_status():
             f"{MAX_SOURCES_PER_STATUS_REQUEST}."
         )
 
-    status = {}
-    for source in sources:
-        if not _is_addressable_source(source):
-            # No rule can exist for a source that is not a plugin, so this is the
-            # answer `describe_rule` would have given — see `_is_addressable_source`
-            # for why that makes it output-identical, and why it must not raise.
-            status[source] = {'enabled': False, 'exists': False}
-            continue
-        rule_name = _build_rule_name(source)
-        try:
-            response = events_client.describe_rule(Name=rule_name)
-            status[source] = {
-                'enabled': response.get('State') == 'ENABLED',
-                'schedule': response.get('ScheduleExpression'),
-                'rule_name': rule_name,
-                'exists': True
-            }
-        except events_client.exceptions.ResourceNotFoundException:
-            status[source] = {'enabled': False, 'exists': False}
-        except Exception as e:
-            logger.warning(f"Failed to get status for source {source}: {e}")
-            status[source] = {'enabled': False, 'error': 'Failed to retrieve status'}
-    
+    # One DescribeRule per source, in parallel (E2E F10: the loop was serial, so
+    # the response waited for every call in turn). boto3 clients are thread-safe;
+    # `map` keeps the request order, which the response dict preserves.
+    addressable = [source for source in sources if _is_addressable_source(source)]
+    with ThreadPoolExecutor(max_workers=max(1, min(len(addressable), MAX_PARALLEL_RULE_DESCRIBES))) as pool:
+        described = dict(zip(addressable, pool.map(_schedule_status, addressable), strict=True))  # pragma: no mutate  map over the same list is always equal-length
+    # No rule can exist for a source that is not a plugin, so that entry is the
+    # answer `describe_rule` would have given — see `_is_addressable_source` for
+    # why that makes it output-identical, and why it must not raise.
+    status = {source: described.get(source, {'enabled': False, 'exists': False}) for source in sources}
+
     return {'sources': status}
 
 
@@ -915,10 +950,10 @@ def enable_source(source: str):
     rule_name = _build_rule_name(source)
     try:
         events_client.enable_rule(Name=rule_name)
-        return {'success': True, 'source': source, 'enabled': True}
     except Exception as e:
         logger.exception(f"Failed to enable source {source}: {e}")
-        raise ServiceError('Failed to enable data source')
+        raise ServiceError('Failed to enable data source') from e
+    return {'success': True, 'source': source, 'enabled': True}
 
 
 @app.put("/sources/<source>/disable")
@@ -936,10 +971,21 @@ def disable_source(source: str):
     rule_name = _build_rule_name(source)
     try:
         events_client.disable_rule(Name=rule_name)
-        return {'success': True, 'source': source, 'enabled': False}
     except Exception as e:
         logger.exception(f"Failed to disable source {source}: {e}")
-        raise ServiceError('Failed to disable data source')
+        raise ServiceError('Failed to disable data source') from e
+    return {'success': True, 'source': source, 'enabled': False}
+
+
+
+# SnapStart (lib/utils/snapstart.ts): the Secrets Manager and EventBridge clients
+# are already built at import. Before the snapshot, also parse the plugin defaults,
+# the DynamoDB and Lambda model files (the run-status / run routes build that Table
+# and client lazily: ~250 ms of model parsing that landed on the first such call
+# after every restore) and every route's request model (3.00.00 capacity: the first
+# call after a restore ran at 83-93 % CPU). Pure computation: no client, no
+# credential, no AWS call. Reseed after restore.
+register_snapshot_hooks(_plugin_secret_defaults, botocore_model_warmer('dynamodb', 'lambda'), api_route_warmer(app))
 
 
 @api_handler

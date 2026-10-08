@@ -4,10 +4,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { ParsedReview } from '../../store/manualImportStore'
 import ParsedReviewCard from './ParsedReviewCard'
 
 describe('ParsedReviewCard', () => {
-  const defaultReview = {
+  const defaultReview: ParsedReview = {
     text: 'Great product!',
     rating: 5,
     author: 'John Doe',
@@ -18,76 +19,67 @@ describe('ParsedReviewCard', () => {
   const mockOnUpdate = vi.fn()
   const mockOnDelete = vi.fn()
 
+  /** Render the card with the default review, optionally overridden, at `index`. */
+  function renderCard(overrides: Partial<ParsedReview> = {}, index = 0) {
+    render(
+      <ParsedReviewCard
+        review={{ ...defaultReview, ...overrides }}
+        index={index}
+        onUpdate={mockOnUpdate}
+        onDelete={mockOnDelete}
+      />
+    )
+  }
+
+  /** Render the card and type `text` into the field found by `placeholder`. */
+  async function renderAndType(placeholder: string, text: string) {
+    const user = userEvent.setup()
+    renderCard()
+    await user.type(screen.getByPlaceholderText(placeholder), text)
+  }
+
+  /** Render the card and select `value` in the rating dropdown. */
+  async function renderAndSelectRating(value: string) {
+    const user = userEvent.setup()
+    renderCard()
+    await user.selectOptions(screen.getByRole('combobox'), value)
+  }
+
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
   describe('rendering', () => {
     it('displays review text in textarea', () => {
-      render(
-        <ParsedReviewCard
-          review={defaultReview}
-          index={0}
-          onUpdate={mockOnUpdate}
-          onDelete={mockOnDelete}
-        />
-      )
+      renderCard()
 
       const textarea = screen.getByPlaceholderText('Review text')
       expect(textarea).toHaveValue('Great product!')
     })
 
     it('displays author in input field', () => {
-      render(
-        <ParsedReviewCard
-          review={defaultReview}
-          index={0}
-          onUpdate={mockOnUpdate}
-          onDelete={mockOnDelete}
-        />
-      )
+      renderCard()
 
       const authorInput = screen.getByPlaceholderText('Author')
       expect(authorInput).toHaveValue('John Doe')
     })
 
     it('displays title in input field', () => {
-      render(
-        <ParsedReviewCard
-          review={defaultReview}
-          index={0}
-          onUpdate={mockOnUpdate}
-          onDelete={mockOnDelete}
-        />
-      )
+      renderCard()
 
       const titleInput = screen.getByPlaceholderText('Review title (optional)')
       expect(titleInput).toHaveValue('Amazing')
     })
 
     it('displays rating in select dropdown', () => {
-      render(
-        <ParsedReviewCard
-          review={defaultReview}
-          index={0}
-          onUpdate={mockOnUpdate}
-          onDelete={mockOnDelete}
-        />
-      )
+      renderCard()
 
       const select = screen.getByRole('combobox')
       expect(select).toHaveValue('5')
     })
 
     it('renders star icons for non-null rating', () => {
-      render(
-        <ParsedReviewCard
-          review={defaultReview}
-          index={0}
-          onUpdate={mockOnUpdate}
-          onDelete={mockOnDelete}
-        />
-      )
+      renderCard()
 
       // Stars are rendered when rating is non-null - verify via select value
       const select = screen.getByRole('combobox')
@@ -97,126 +89,52 @@ describe('ParsedReviewCard', () => {
 
   describe('editing', () => {
     it('calls onUpdate when text is changed', async () => {
-      const user = userEvent.setup()
-      render(
-        <ParsedReviewCard
-          review={defaultReview}
-          index={0}
-          onUpdate={mockOnUpdate}
-          onDelete={mockOnDelete}
-        />
-      )
-
-      const textarea = screen.getByPlaceholderText('Review text')
-      await user.type(textarea, '!')
+      await renderAndType('Review text', '!')
 
       // onUpdate is called for each character typed
-      // eslint-disable-next-line vitest/prefer-called-with
-      expect(mockOnUpdate).toHaveBeenCalled()
       expect(mockOnUpdate).toHaveBeenLastCalledWith(0, { text: 'Great product!!' })
     })
 
     it('calls onUpdate when rating is changed', async () => {
-      const user = userEvent.setup()
-      render(
-        <ParsedReviewCard
-          review={defaultReview}
-          index={0}
-          onUpdate={mockOnUpdate}
-          onDelete={mockOnDelete}
-        />
-      )
-
-      const select = screen.getByRole('combobox')
-      await user.selectOptions(select, '3')
+      await renderAndSelectRating('3')
 
       expect(mockOnUpdate).toHaveBeenCalledWith(0, { rating: 3 })
     })
 
     it('calls onUpdate with null when rating is cleared', async () => {
-      const user = userEvent.setup()
-      render(
-        <ParsedReviewCard
-          review={defaultReview}
-          index={0}
-          onUpdate={mockOnUpdate}
-          onDelete={mockOnDelete}
-        />
-      )
-
-      const select = screen.getByRole('combobox')
-      await user.selectOptions(select, '')
+      await renderAndSelectRating('')
 
       expect(mockOnUpdate).toHaveBeenCalledWith(0, { rating: null })
     })
 
     it('calls onUpdate when author is changed', async () => {
-      const user = userEvent.setup()
-      render(
-        <ParsedReviewCard
-          review={defaultReview}
-          index={0}
-          onUpdate={mockOnUpdate}
-          onDelete={mockOnDelete}
-        />
-      )
+      await renderAndType('Author', '!')
 
-      const authorInput = screen.getByPlaceholderText('Author')
-      await user.type(authorInput, '!')
-
-      // eslint-disable-next-line vitest/prefer-called-with
-      expect(mockOnUpdate).toHaveBeenCalled()
       expect(mockOnUpdate).toHaveBeenLastCalledWith(0, { author: 'John Doe!' })
     })
 
     it('calls onUpdate when date is changed', async () => {
       const user = userEvent.setup()
-      render(
-        <ParsedReviewCard
-          review={defaultReview}
-          index={0}
-          onUpdate={mockOnUpdate}
-          onDelete={mockOnDelete}
-        />
-      )
+      renderCard()
 
       const dateInput = screen.getByDisplayValue('2026-01-05')
       await user.clear(dateInput)
       await user.type(dateInput, '2026-02-01')
 
-      // eslint-disable-next-line vitest/prefer-called-with
-      expect(mockOnUpdate).toHaveBeenCalled()
+      // The card is controlled and this harness never feeds the value back, so the
+      // clear is the edit that reaches onUpdate (jsdom drops partial date text).
+      expect(mockOnUpdate).toHaveBeenCalledWith(0, { date: null, date_defaulted: false })
     })
 
     it('calls onUpdate when title is changed', async () => {
-      const user = userEvent.setup()
-      render(
-        <ParsedReviewCard
-          review={defaultReview}
-          index={0}
-          onUpdate={mockOnUpdate}
-          onDelete={mockOnDelete}
-        />
-      )
+      await renderAndType('Review title (optional)', '!')
 
-      const titleInput = screen.getByPlaceholderText('Review title (optional)')
-      await user.type(titleInput, '!')
-
-      // eslint-disable-next-line vitest/prefer-called-with
-      expect(mockOnUpdate).toHaveBeenCalled()
       expect(mockOnUpdate).toHaveBeenLastCalledWith(0, { title: 'Amazing!' })
     })
 
     it('calls onUpdate with null when title is cleared', async () => {
       const user = userEvent.setup()
-      render(
-        <ParsedReviewCard
-          review={defaultReview}
-          index={0}
-          onUpdate={mockOnUpdate}
-          onDelete={mockOnDelete}
-        />
-      )
+      renderCard()
 
       const titleInput = screen.getByPlaceholderText('Review title (optional)')
       await user.clear(titleInput)
@@ -226,33 +144,19 @@ describe('ParsedReviewCard', () => {
 
     it('calls onUpdate with null when date is cleared', async () => {
       const user = userEvent.setup()
-      render(
-        <ParsedReviewCard
-          review={defaultReview}
-          index={0}
-          onUpdate={mockOnUpdate}
-          onDelete={mockOnDelete}
-        />
-      )
+      renderCard()
 
       const dateInput = screen.getByDisplayValue('2026-01-05')
       await user.clear(dateInput)
 
-      expect(mockOnUpdate).toHaveBeenCalledWith(0, { date: null })
+      expect(mockOnUpdate).toHaveBeenCalledWith(0, { date: null, date_defaulted: false })
     })
   })
 
   describe('deletion', () => {
     it('calls onDelete when delete button is clicked', async () => {
       const user = userEvent.setup()
-      render(
-        <ParsedReviewCard
-          review={defaultReview}
-          index={2}
-          onUpdate={mockOnUpdate}
-          onDelete={mockOnDelete}
-        />
-      )
+      renderCard({}, 2)
 
       const deleteButton = screen.getByTitle('Delete review')
       await user.click(deleteButton)
@@ -263,60 +167,28 @@ describe('ParsedReviewCard', () => {
 
   describe('null values', () => {
     it('handles null rating correctly', () => {
-      const reviewWithNullRating = { ...defaultReview, rating: null }
-      render(
-        <ParsedReviewCard
-          review={reviewWithNullRating}
-          index={0}
-          onUpdate={mockOnUpdate}
-          onDelete={mockOnDelete}
-        />
-      )
+      renderCard({ rating: null })
 
       const select = screen.getByRole('combobox')
       expect(select).toHaveValue('')
     })
 
     it('handles null author correctly', () => {
-      const reviewWithNullAuthor = { ...defaultReview, author: null }
-      render(
-        <ParsedReviewCard
-          review={reviewWithNullAuthor}
-          index={0}
-          onUpdate={mockOnUpdate}
-          onDelete={mockOnDelete}
-        />
-      )
+      renderCard({ author: null })
 
       const authorInput = screen.getByPlaceholderText('Author')
       expect(authorInput).toHaveValue('')
     })
 
     it('handles null title correctly', () => {
-      const reviewWithNullTitle = { ...defaultReview, title: null }
-      render(
-        <ParsedReviewCard
-          review={reviewWithNullTitle}
-          index={0}
-          onUpdate={mockOnUpdate}
-          onDelete={mockOnDelete}
-        />
-      )
+      renderCard({ title: null })
 
       const titleInput = screen.getByPlaceholderText('Review title (optional)')
       expect(titleInput).toHaveValue('')
     })
 
     it('does not render stars when rating is null', () => {
-      const reviewWithNullRating = { ...defaultReview, rating: null }
-      render(
-        <ParsedReviewCard
-          review={reviewWithNullRating}
-          index={0}
-          onUpdate={mockOnUpdate}
-          onDelete={mockOnDelete}
-        />
-      )
+      renderCard({ rating: null })
 
       // Stars container should not exist when rating is null - verify no star SVGs rendered
       const select = screen.getByRole('combobox')

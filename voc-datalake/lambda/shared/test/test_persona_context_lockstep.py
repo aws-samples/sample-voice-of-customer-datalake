@@ -14,8 +14,7 @@ the research string crosses a Step Functions state boundary; TypeScript defaults
 to 4 because chat prompts have more room. Both are asserted here so a change to
 either is a decision rather than an accident.
 
-Pattern follows test_kiro_exportable_types_lockstep.py and
-test_avatar_image_model_lockstep.py (same repo).
+Pattern follows test_avatar_image_model_lockstep.py (same repo).
 """
 import re
 from pathlib import Path
@@ -23,6 +22,7 @@ from pathlib import Path
 import pytest
 
 from shared import persona_context
+from shared.test.repo_paths import repo_root
 
 TS_SOURCE = 'lambda/stream/src/context/persona-fields.ts'
 
@@ -35,7 +35,7 @@ CALL_SITES = (
     'lambda/jobs/document_generator/handler.py',
     'lambda/jobs/document_merger/handler.py',
     'lambda/research/research_step_handler.py',
-    'lambda/stream/src/context/project-context.ts',
+    'lambda/stream/src/assistant/tools/server/consult-personas.ts',
     'lambda/stream/src/context/persona-prompt.ts',
 )
 
@@ -61,13 +61,9 @@ TS_ONLY_FIELD_PATHS = (
 )
 
 
-def _repo_root() -> Path:
-    # lambda/shared/test/ -> voc-datalake/
-    return Path(__file__).resolve().parents[3]
-
 
 def _read_repo_file(relative: str) -> str:
-    path = _repo_root() / relative
+    path = repo_root() / relative
     if not path.is_file():
         # A packaged copy of `shared/` has no sibling `stream/` or `api/` tree, so
         # skip rather than fail: the mirror cannot be checked from there, and a

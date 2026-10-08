@@ -3,7 +3,10 @@
  * @module components/PersonaExportMenu/PersonaPDFSections
  */
 
-import type { ProjectPersona } from '../../api/types'
+import type { ProjectPersona } from '../../api/projectTypes'
+import { Repeat, BookOpen, Earth, Quote, NotebookPen } from 'lucide-react'
+import { PdfIcon, PdfSectionHeading } from '../PdfParts/pdfParts'
+import { scenarioTriggerOutcome } from './scenarioTriggerOutcome'
 
 interface PersonaPDFContentProps { readonly persona: ProjectPersona }
 
@@ -22,13 +25,13 @@ export function ListSection({
       <p style={{
         fontSize: '14px',
         fontWeight: '500',
-        color: '#6b7280',
+        color: '#5e5966',
         marginBottom: '8px',
       }}>{title}</p>
       <ul style={{
         margin: 0,
         paddingLeft: '20px',
-        color: '#374151',
+        color: '#4a464f',
       }}>
         {items.map((item) => <li key={item} style={{ marginBottom: '4px' }}>{item}</li>)}
       </ul>
@@ -40,8 +43,8 @@ function BehaviorBadge({ label }: Readonly<{ label: string }>) {
   return (
     <span style={{
       padding: '4px 10px',
-      backgroundColor: '#dbeafe',
-      color: '#1d4ed8',
+      backgroundColor: '#f1e9ff',
+      color: '#723acc',
       borderRadius: '6px',
       fontSize: '12px',
     }}>
@@ -74,12 +77,7 @@ export function BehaviorsSection({ persona }: PersonaPDFContentProps) {
 
   return (
     <div data-pdf-section style={{ marginBottom: '24px' }}>
-      <h2 style={{
-        fontSize: '18px',
-        fontWeight: '600',
-        color: '#2563eb',
-        marginBottom: '12px',
-      }}>🔄 Behaviors & Habits</h2>
+      <PdfSectionHeading color="#723acc"><PdfIcon icon={Repeat} />Behaviors & Habits</PdfSectionHeading>
       {solutions.length > 0 && (
         <ListSection items={solutions} title="Current Solutions" />
       )}
@@ -89,7 +87,7 @@ export function BehaviorsSection({ persona }: PersonaPDFContentProps) {
           <p style={{
             fontSize: '14px',
             fontWeight: '500',
-            color: '#6b7280',
+            color: '#5e5966',
             marginBottom: '8px',
           }}>Tools Used</p>
           <div style={{
@@ -100,8 +98,8 @@ export function BehaviorsSection({ persona }: PersonaPDFContentProps) {
             {tools.map((tool) => (
               <span key={tool} style={{
                 padding: '2px 8px',
-                backgroundColor: '#f3f4f6',
-                color: '#4b5563',
+                backgroundColor: '#f5f5f5',
+                color: '#4a464f',
                 borderRadius: '4px',
                 fontSize: '12px',
               }}>{tool}</span>
@@ -125,17 +123,17 @@ function ScenarioDetail({
     <div style={{
       flex: 1,
       padding: '12px',
-      backgroundColor: '#f0fdfa',
+      backgroundColor: '#e0eee7',
       borderRadius: '8px',
     }}>
       <p style={{
         fontSize: '12px',
-        color: '#0d9488',
+        color: '#007038',
         fontWeight: '500',
         marginBottom: '4px',
       }}>{label}</p>
       <p style={{
-        color: '#374151',
+        color: '#4a464f',
         margin: 0,
         fontSize: '14px',
       }}>{text}</p>
@@ -144,9 +142,8 @@ function ScenarioDetail({
 }
 
 function TriggerOutcome({ scenario }: Readonly<{ scenario: NonNullable<ProjectPersona['scenario']> }>) {
-  const hasTrigger = scenario.trigger != null && scenario.trigger !== ''
-  const hasOutcome = scenario.outcome != null && scenario.outcome !== ''
-  if (!hasTrigger && !hasOutcome) return null
+  const parts = scenarioTriggerOutcome(scenario)
+  if (parts === null) return null
 
   return (
     <div data-pdf-section style={{
@@ -154,8 +151,8 @@ function TriggerOutcome({ scenario }: Readonly<{ scenario: NonNullable<ProjectPe
       gap: '16px',
       pageBreakInside: 'avoid',
     }}>
-      {hasTrigger ? <ScenarioDetail label="Trigger" text={scenario.trigger ?? ''} /> : null}
-      {hasOutcome ? <ScenarioDetail label="Desired Outcome" text={scenario.outcome ?? ''} /> : null}
+      {parts.trigger === null ? null : <ScenarioDetail label="Trigger" text={parts.trigger} />}
+      {parts.outcome === null ? null : <ScenarioDetail label="Desired Outcome" text={parts.outcome} />}
     </div>
   )
 }
@@ -169,7 +166,7 @@ function ScenarioBody({ scenario }: Readonly<{ scenario: NonNullable<ProjectPers
         marginBottom: '8px',
       }}>{scenario.title}</h3> : null}
       {scenario.narrative != null && scenario.narrative !== '' ? <p data-pdf-section style={{
-        color: '#374151',
+        color: '#4a464f',
         lineHeight: '1.6',
         marginBottom: '12px',
       }}>{scenario.narrative}</p> : null}
@@ -186,12 +183,7 @@ export function ScenarioSection({ persona }: PersonaPDFContentProps) {
       marginBottom: '24px',
       pageBreakInside: 'avoid',
     }}>
-      <h2 style={{
-        fontSize: '18px',
-        fontWeight: '600',
-        color: '#0d9488',
-        marginBottom: '12px',
-      }}>📖 Scenario</h2>
+      <PdfSectionHeading color="#007038"><PdfIcon icon={BookOpen} />Scenario</PdfSectionHeading>
       <ScenarioBody scenario={persona.scenario} />
     </div>
   )
@@ -204,14 +196,9 @@ export function ContextSection({ persona }: PersonaPDFContentProps) {
 
   return (
     <div data-pdf-section style={{ marginBottom: '24px' }}>
-      <h2 style={{
-        fontSize: '18px',
-        fontWeight: '600',
-        color: '#d97706',
-        marginBottom: '12px',
-      }}>🌍 Context & Environment</h2>
+      <PdfSectionHeading color="#6b5900"><PdfIcon icon={Earth} />Context & Environment</PdfSectionHeading>
       {persona.context_environment.usage_context != null && persona.context_environment.usage_context !== '' ? <p style={{
-        color: '#374151',
+        color: '#4a464f',
         marginBottom: '12px',
         lineHeight: '1.6',
       }}>{persona.context_environment.usage_context}</p> : null}
@@ -225,8 +212,8 @@ export function ContextSection({ persona }: PersonaPDFContentProps) {
           {devices.map((d) => (
             <span key={d} style={{
               padding: '4px 10px',
-              backgroundColor: '#fef3c7',
-              color: '#92400e',
+              backgroundColor: '#f0eee6',
+              color: '#6b5900',
               borderRadius: '6px',
               fontSize: '12px',
             }}>{d}</span>
@@ -234,7 +221,7 @@ export function ContextSection({ persona }: PersonaPDFContentProps) {
         </div>
       )}
       {persona.context_environment.time_constraints != null && persona.context_environment.time_constraints !== '' ? <p style={{
-        color: '#374151',
+        color: '#4a464f',
         fontSize: '14px',
       }}><strong>Time constraints:</strong> {persona.context_environment.time_constraints}</p> : null}
     </div>
@@ -246,24 +233,19 @@ export function QuotesSection({ persona }: PersonaPDFContentProps) {
 
   return (
     <div data-pdf-section style={{ marginBottom: '24px' }}>
-      <h2 style={{
-        fontSize: '18px',
-        fontWeight: '600',
-        color: '#6366f1',
-        marginBottom: '12px',
-      }}>💬 Representative Quotes</h2>
+      <PdfSectionHeading color="#8e48ff"><PdfIcon icon={Quote} />Representative Quotes</PdfSectionHeading>
       {persona.quotes.map((q) => (
         <blockquote key={q.text} data-pdf-section style={{
-          borderLeft: '4px solid #a5b4fc',
+          borderLeft: '4px solid #d7bfff',
           paddingLeft: '16px',
           margin: '0 0 12px 0',
           fontStyle: 'italic',
-          color: '#374151',
+          color: '#4a464f',
         }}>
           &quot;{q.text}&quot;
           {q.context != null && q.context !== '' ? <p style={{
             fontSize: '12px',
-            color: '#9ca3af',
+            color: '#5e5966',
             marginTop: '4px',
           }}>— {q.context}</p> : null}
         </blockquote>
@@ -277,16 +259,11 @@ export function ResearchNotesSection({ persona }: PersonaPDFContentProps) {
 
   return (
     <div data-pdf-section style={{ marginBottom: '24px' }}>
-      <h2 style={{
-        fontSize: '18px',
-        fontWeight: '600',
-        color: '#6b7280',
-        marginBottom: '12px',
-      }}>📝 Research Notes</h2>
+      <PdfSectionHeading color="#5e5966"><PdfIcon icon={NotebookPen} />Research Notes</PdfSectionHeading>
       <ul style={{
         margin: 0,
         paddingLeft: '20px',
-        color: '#374151',
+        color: '#4a464f',
       }}>
         {persona.research_notes.map((note) => {
           const text = typeof note === 'string' ? note : note.text

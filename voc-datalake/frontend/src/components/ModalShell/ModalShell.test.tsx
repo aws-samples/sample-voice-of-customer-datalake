@@ -11,8 +11,9 @@ import React from 'react'
 import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ModalShell from './ModalShell'
+import { required } from '../component-spec-fixtures'
 
-const onClose = vi.fn()
+const onClose = vi.fn<() => void>()
 
 /**
  * Overridable props exclude the accessible-name pair on purpose. The name is a
@@ -26,11 +27,83 @@ type ShellOverrides = Partial<
 >
 
 function renderShell(props: ShellOverrides = {}) {
+  return renderShellWith(<><button>first</button><button>last</button></>, props)
+}
+
+/** The open "Test dialog" shell around `children`. */
+function renderShellWith(children: React.ReactNode, props: ShellOverrides = {}) {
   return render(
     <ModalShell isOpen onClose={onClose} ariaLabel="Test dialog" {...props}>
-      <button>first</button>
-      <button>last</button>
+      {children}
     </ModalShell>,
+  )
+}
+
+/**
+ * Count the `nestedDocuments` scans of `body`: it descends with
+ * `querySelectorAll('iframe')`, so a call with that selector IS a scan.
+ */
+function spyOnFrameScans(body: HTMLElement): { readonly scans: () => number; readonly restore: () => void } {
+  const walk = vi.spyOn(body, 'querySelectorAll')
+  return {
+    scans: () => walk.mock.calls.filter(([selector]) => selector === 'iframe').length,
+    restore: () => walk.mockRestore(),
+  }
+}
+
+/**
+ * Insert `<div><iframe/></div>` into `doc`, let it settle, then remove the container
+ * and resolve with how many frame scans of `doc.body` the REMOVAL caused. A removal
+ * fires no `load`, so only the observer on `doc.body` can produce a scan here — which
+ * makes this the probe for "is anything watching this body".
+ */
+async function scansForRemovingWrappedFrame(doc: Document): Promise<number> {
+  const box = doc.createElement('div')
+  box.innerHTML = '<iframe title="wrapped"></iframe>'
+  doc.body.append(box)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const { scans, restore } = spyOnFrameScans(doc.body)
+  try {
+    box.remove()
+    await Promise.resolve()
+    return scans()
+  } finally {
+    restore()
+  }
+}
+
+/**
+ * Two sibling shells, "Outer" then "Inner" in document order, each with its
+ * own close spy. `inner` is the Inner shell's content (a button by default).
+ */
+function renderStackedShells(inner: React.ReactNode = <button>inner-button</button>) {
+  const onCloseOuter = vi.fn()
+  const onCloseInner = vi.fn()
+  render(
+    <>
+      <ModalShell isOpen onClose={onCloseOuter} ariaLabel="Outer">
+        <button>outer-button</button>
+      </ModalShell>
+      <ModalShell isOpen onClose={onCloseInner} ariaLabel="Inner">
+        {inner}
+      </ModalShell>
+    </>,
+  )
+  return { onCloseOuter, onCloseInner }
+}
+
+/** The document inside the iframe titled `title`; throws when it has no body yet. */
+function frameDocument(title: string): Document {
+  const frame = screen.getByTitle(title)
+  const doc = frame instanceof HTMLIFrameElement ? frame.contentDocument : null
+  if (!doc?.body) throw new Error(`no document in the "${title}" frame`)
+  return doc
+}
+
+/** Raise a bubbling Escape keydown on `doc`'s body, from that document's own window. */
+function pressEscapeIn(doc: Document) {
+  doc.body.dispatchEvent(
+    new (doc.defaultView ?? window).KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
   )
 }
 
@@ -53,6 +126,13 @@ describe('ModalShell', () => {
     expect(dialog).toHaveAccessibleName('Test dialog')
   })
 
+  it('applies the dialog recipe and merges panelClassName onto the panel', () => {
+    renderShell({ panelClassName: 'max-w-md' })
+
+    expect(screen.getByRole('dialog')).toHaveClass('dialog-panel', 'w-full', 'max-w-md')
+    expect(screen.getByTestId('modal-overlay')).toHaveClass('dialog-overlay')
+  })
+
   it('closes when Escape is pressed', async () => {
     const user = userEvent.setup()
     renderShell()
@@ -66,9 +146,7 @@ describe('ModalShell', () => {
     const user = userEvent.setup()
     renderShell()
 
-    const overlay = screen.getByTestId('modal-overlay')
-    expect(overlay).not.toBeNull()
-    await user.click(overlay as Element)
+    await user.click(screen.getByTestId('modal-overlay'))
 
     expect(onClose).toHaveBeenCalledTimes(1)
   })
@@ -90,7 +168,7 @@ describe('ModalShell', () => {
     renderShell({ dismissable: false })
 
     await user.keyboard('{Escape}')
-    await user.click(screen.getByTestId('modal-overlay') as Element)
+    await user.click(screen.getByTestId('modal-overlay'))
 
     expect(onClose).not.toHaveBeenCalled()
   })
@@ -104,12 +182,7 @@ describe('ModalShell', () => {
   it('skips hidden controls when choosing where to put focus', () => {
     // A modal with collapsible sections would otherwise focus an invisible
     // control, leaving the user with no visible focus ring.
-    render(
-      <ModalShell isOpen onClose={onClose} ariaLabel="Test dialog">
-        <button style={{ display: 'none' }}>hidden</button>
-        <button>visible</button>
-      </ModalShell>,
-    )
+    renderShellWith(<><button style={{ display: 'none' }}>hidden</button><button>visible</button></>)
 
     expect(screen.getByRole('button', { name: 'visible' })).toHaveFocus()
   })
@@ -118,13 +191,13 @@ describe('ModalShell', () => {
     // The real collapsible-section shape: the CONTAINER is hidden, and computed
     // display of a child inside it is the child's own value — so checking only
     // the element misses this. Requires walking ancestors.
-    render(
-      <ModalShell isOpen onClose={onClose} ariaLabel="Test dialog">
+    renderShellWith(
+      <>
         <div style={{ display: 'none' }}>
           <button>collapsed</button>
         </div>
         <button>visible</button>
-      </ModalShell>,
+      </>,
     )
 
     expect(screen.getByRole('button', { name: 'visible' })).toHaveFocus()
@@ -152,16 +225,17 @@ describe('ModalShell', () => {
     expect(trigger).toHaveFocus()
   })
 
-  it('wraps shift-Tab from the first focusable back to the last', async () => {
+  it.each([
+    ['shift-Tab from the first focusable back to the last', 'first', 'last', true],
+    ['Tab from the last focusable back to the first', 'last', 'first', false],
+  ] as const)('wraps %s', async (_case, from, to, shift) => {
     const user = userEvent.setup()
     renderShell()
-    const first = screen.getByRole('button', { name: 'first' })
-    const last = screen.getByRole('button', { name: 'last' })
 
-    first.focus()
-    await user.tab({ shift: true })
+    screen.getByRole('button', { name: from }).focus()
+    await user.tab({ shift })
 
-    expect(last).toHaveFocus()
+    expect(screen.getByRole('button', { name: to })).toHaveFocus()
   })
 
   it('closes the top-most dialog on Escape even when focus is on the body', async () => {
@@ -170,18 +244,7 @@ describe('ModalShell', () => {
     // focused control is removed or disabled. Passing requires the stack/document
     // -order guard, not a focus check.
     const user = userEvent.setup()
-    const onCloseOuter = vi.fn()
-    const onCloseInner = vi.fn()
-    render(
-      <>
-        <ModalShell isOpen onClose={onCloseOuter} ariaLabel="Outer">
-          <button>outer-button</button>
-        </ModalShell>
-        <ModalShell isOpen onClose={onCloseInner} ariaLabel="Inner">
-          <button>inner-button</button>
-        </ModalShell>
-      </>,
-    )
+    const { onCloseOuter, onCloseInner } = renderStackedShells()
     // Simulate focus being dropped to the body, as browsers do.
     ;(document.activeElement instanceof HTMLElement ? document.activeElement : null)?.blur()
     expect(document.activeElement).toBe(document.body)
@@ -226,18 +289,7 @@ describe('ModalShell', () => {
     // ConfirmModal is used as an unsaved-changes guard inside other modals, so
     // shells nest. An unguarded document listener would close both on one press.
     const user = userEvent.setup()
-    const onCloseOuter = vi.fn()
-    const onCloseInner = vi.fn()
-    render(
-      <>
-        <ModalShell isOpen onClose={onCloseOuter} ariaLabel="Outer">
-          <button>outer-button</button>
-        </ModalShell>
-        <ModalShell isOpen onClose={onCloseInner} ariaLabel="Inner">
-          <button>inner-button</button>
-        </ModalShell>
-      </>,
-    )
+    const { onCloseOuter, onCloseInner } = renderStackedShells()
     screen.getByRole('button', { name: 'inner-button' }).focus()
 
     await user.keyboard('{Escape}')
@@ -268,18 +320,6 @@ describe('ModalShell', () => {
 
     expect(inner).toHaveFocus()
   })
-
-  it('wraps Tab from the last focusable back to the first', async () => {
-    const user = userEvent.setup()
-    renderShell()
-    const first = screen.getByRole('button', { name: 'first' })
-    const last = screen.getByRole('button', { name: 'last' })
-
-    last.focus()
-    await user.tab()
-
-    expect(first).toHaveFocus()
-  })
 })
 
 /**
@@ -298,29 +338,36 @@ describe('ModalShell', () => {
  * i.e. the pre-iframe state only.
  */
 /**
- * Record the keydown listeners added to, and removed from, every frame document any
- * code reads while the returned restore function has not been called.
+ * Whether `value` is a Document — by `nodeType`, because a frame's document belongs
+ * to that frame's realm, where `instanceof Document` against this page is false.
+ */
+function isDocument(value: unknown): value is Document {
+  return typeof value === 'object' && value !== null && 'nodeType' in value
+    && value.nodeType === Node.DOCUMENT_NODE
+}
+
+/**
+ * Run `wrap` once on every frame document any code reads while the returned restore
+ * function has not been called, and undo every wrap on restore.
  *
  * Installed by patching `contentDocument` rather than the documents themselves,
  * because a frame's document does not exist until the frame is inserted and the shell
  * attaches during that same synchronous insertion — there is no moment in between for
  * a test to hold. Reading `contentDocument` is how the shell finds a document at all
- * (`frameDocument()`), so wrapping the getter puts the spy in front of every attach
+ * (`frameDocument()`), so wrapping the getter puts the wrap in front of every attach
  * without changing which object anyone gets: the same document is returned, with its
- * own `addEventListener` / `removeEventListener` wrapped once.
+ * own methods wrapped once.
  *
- * `restore()` undoes BOTH halves — the prototype getter and the listener methods on
- * every document already wrapped. Restoring only the getter would stop new documents
- * being wrapped while leaving live closures on the old ones still pushing into these
- * arrays, so a later test that spied, restored and then rendered another framed shell
- * would read contributions from the previous one. The helper is therefore reusable
- * rather than single-use, which is what a reader of the rest of this comment would
- * assume anyway.
+ * `restore()` undoes BOTH halves — the prototype getter and the methods on every
+ * document already wrapped. Restoring only the getter would stop new documents being
+ * wrapped while leaving live closures on the old ones still running, so a later test
+ * that spied, restored and then rendered another framed shell would read
+ * contributions from the previous one. Reusable rather than single-use.
+ *
+ * @param wrap installs own-property overrides on `doc` and names them, so restore can
+ *   delete them and leave the document reading through its prototype as before.
  */
-function spyOnFrameDocumentListeners(
-  added: EventListenerOrEventListenerObject[],
-  removed: EventListenerOrEventListenerObject[],
-): () => void {
+function onEachFrameDocument(wrap: (doc: Document) => readonly (keyof Document)[]): () => void {
   const real = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentDocument')
   if (!real?.get) throw new Error('no contentDocument getter to wrap')
   const realGet = real.get
@@ -329,27 +376,16 @@ function spyOnFrameDocumentListeners(
   Object.defineProperty(HTMLIFrameElement.prototype, 'contentDocument', {
     configurable: true,
     get(): Document | null {
-      const doc: Document | null = realGet.call(this)
+      const got: unknown = realGet.call(this)
+      const doc = isDocument(got) ? got : null
       if (doc && !wrapped.has(doc)) {
         wrapped.add(doc)
-        const realAdd = doc.addEventListener.bind(doc)
-        const realRemove = doc.removeEventListener.bind(doc)
-        // The own properties are deleted rather than reassigned, so the document is
-        // left reading these through its prototype exactly as it did before.
+        const keys = wrap(doc)
         // `Reflect.deleteProperty` rather than `delete`, which TypeScript rejects for
         // a non-optional property and which would otherwise need a type assertion.
         unwrap.push(() => {
-          Reflect.deleteProperty(doc, 'addEventListener')
-          Reflect.deleteProperty(doc, 'removeEventListener')
+          for (const key of keys) Reflect.deleteProperty(doc, key)
         })
-        doc.addEventListener = (type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) => {
-          if (type === 'keydown') added.push(listener)
-          realAdd(type, listener, options)
-        }
-        doc.removeEventListener = (type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) => {
-          if (type === 'keydown') removed.push(listener)
-          realRemove(type, listener, options)
-        }
       }
       return doc
     },
@@ -358,6 +394,97 @@ function spyOnFrameDocumentListeners(
     Object.defineProperty(HTMLIFrameElement.prototype, 'contentDocument', real)
     for (const undo of unwrap) undo()
   }
+}
+
+/**
+ * Record the keydown listeners added to, and removed from, every frame document any
+ * code reads while the returned restore function has not been called.
+ */
+function spyOnFrameDocumentListeners(
+  added: EventListenerOrEventListenerObject[],
+  removed: EventListenerOrEventListenerObject[],
+): () => void {
+  return onEachFrameDocument((doc) => {
+    const realAdd = doc.addEventListener.bind(doc)
+    const realRemove = doc.removeEventListener.bind(doc)
+    doc.addEventListener = (type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) => {
+      if (type === 'keydown') added.push(listener)
+      realAdd(type, listener, options)
+    }
+    doc.removeEventListener = (type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) => {
+      if (type === 'keydown') removed.push(listener)
+      realRemove(type, listener, options)
+    }
+    return ['addEventListener', 'removeEventListener']
+  })
+}
+
+/** The capture flag of an add/remove options argument, which is all the DOM dedupes on. */
+function captureOf(options?: boolean | EventListenerOptions): boolean {
+  return typeof options === 'boolean' ? options : options?.capture === true
+}
+
+/** A listener's registration through `eraseListenersOnOpen`, and the generation it belongs to. */
+interface Gate { readonly generation: number; readonly gate: EventListener }
+
+/**
+ * Make `document.open()` on every frame document erase that document's event
+ * listeners, as the HTML standard's document open steps require and jsdom does not
+ * (#386). A stand-in for a compliant engine, while the restore function is uncalled.
+ *
+ * Each listener is registered through a GATE stamped with the document's generation,
+ * and `open()` bumps the generation, so every gate registered before it goes inert —
+ * the listener is, to any dispatch, gone. Re-adding the same function after that
+ * attaches a fresh gate, exactly as a browser re-attaches an erased listener; re-adding
+ * it while its gate is current is the usual no-op. That second half is what makes the
+ * double faithful rather than merely hostile: a fix that re-asserts must pass, and only
+ * one that trusts membership must fail.
+ */
+function eraseListenersOnOpen(): () => void {
+  return onEachFrameDocument((doc) => {
+    const realAdd = doc.addEventListener.bind(doc)
+    const realRemove = doc.removeEventListener.bind(doc)
+    const realOpen = doc.open
+    const state = { generation: 0 }
+    // Per listener, its live gate per `type|capture` — the identity the DOM dedupes on.
+    const gates = new WeakMap<object, Map<string, Gate>>()
+    const gatesOf = (listener: EventListenerOrEventListenerObject) => {
+      const held = gates.get(listener) ?? new Map<string, Gate>()
+      gates.set(listener, held)
+      return held
+    }
+    const slot = (type: string, options?: boolean | EventListenerOptions) => `${type}|${String(captureOf(options))}`
+    doc.addEventListener = (type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) => {
+      const held = gatesOf(listener)
+      const key = slot(type, options)
+      if (held.get(key)?.generation === state.generation) return
+      const generation = state.generation
+      const gate: EventListener = (e) => {
+        if (generation !== state.generation) return
+        if (typeof listener === 'function') listener(e)
+        else listener.handleEvent(e)
+      }
+      held.set(key, { generation, gate })
+      realAdd(type, gate, options)
+    }
+    doc.removeEventListener = (type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) => {
+      const held = gatesOf(listener)
+      const key = slot(type, options)
+      const current = held.get(key)
+      if (current) realRemove(type, current.gate, options)
+      held.delete(key)
+    }
+    // Defined rather than assigned: `open` is overloaded (document form and window
+    // form), and no single arrow is assignable to both signatures.
+    Object.defineProperty(doc, 'open', {
+      configurable: true,
+      value: (...args: unknown[]): unknown => {
+        state.generation += 1
+        return Reflect.apply(realOpen, doc, args)
+      },
+    })
+    return ['addEventListener', 'removeEventListener', 'open']
+  })
 }
 
 /**
@@ -435,8 +562,7 @@ describe('ModalShell with a nested frame', () => {
       </ModalShell>,
     )
     const frame = screen.getByTitle('prototype')
-    const doc = frame instanceof HTMLIFrameElement ? frame.contentDocument : null
-    if (!doc?.body) throw new Error('no frame document to write the prototype into')
+    const doc = frameDocument('prototype')
     doc.body.innerHTML = inner
     /** Raise a key in the FRAME's document, as a browser does for a key pressed inside it. */
     const pressInFrame = (key: string, shiftKey = false) => {
@@ -499,6 +625,19 @@ describe('ModalShell with a nested frame', () => {
       )
     }
     return { nested, nestedDoc, pressInNested }
+  }
+
+  /**
+   * Replace `doc`'s content with a fresh nested frame `times` times, letting the
+   * shell's MutationObserver scan (and reap) between swaps rather than all at the
+   * end — its callbacks are microtasks. Resolves with the last frame added.
+   */
+  async function swapNestedFrames(doc: Document, times: number): Promise<ReturnType<typeof addNestedFrame>> {
+    doc.body.innerHTML = ''
+    const frame = addNestedFrame(doc, { inserted: true })
+    await Promise.resolve()
+    await Promise.resolve()
+    return times <= 1 ? frame : swapNestedFrames(doc, times - 1)
   }
 
   it('closes on Escape pressed inside the frame', () => {
@@ -709,21 +848,8 @@ describe('ModalShell with a nested frame', () => {
     // selector on this document is a scan of it. The spy goes on AFTER the insertion has
     // settled, so every call it sees belongs to the removal.
     const { doc } = renderFramedShell()
-    const box = doc.createElement('div')
-    box.innerHTML = '<iframe title="wrapped"></iframe>'
-    doc.body.append(box)
-    await new Promise((resolve) => setTimeout(resolve, 0))
 
-    const walk = vi.spyOn(doc.body, 'querySelectorAll')
-    const scans = () => walk.mock.calls.filter(([selector]) => selector === 'iframe').length
-    try {
-      box.remove()
-      await Promise.resolve()
-
-      expect(scans()).toBeGreaterThan(0)
-    } finally {
-      walk.mockRestore()
-    }
+    expect(await scansForRemovingWrappedFrame(doc)).toBeGreaterThan(0)
   })
 
   it('listens to a second frame added beside the first in one document', () => {
@@ -757,12 +883,10 @@ describe('ModalShell with a nested frame', () => {
     // resolutions: `nestedDocuments` descends with `querySelectorAll('iframe')`, so a call
     // with that selector on this document IS a scan of it.
     const { doc } = renderFramedShell({ inner: '<img id="asset" alt="" /><iframe title="nested"></iframe>' })
-    const walk = vi.spyOn(doc.body, 'querySelectorAll')
-    const scans = () => walk.mock.calls.filter(([selector]) => selector === 'iframe').length
+    const { scans, restore } = spyOnFrameScans(doc.body)
     try {
-      const asset = doc.getElementById('asset')
-      const nested = doc.querySelector('iframe')
-      if (!asset || !nested) throw new Error('fixture is missing the asset or the frame')
+      const asset = required(doc.getElementById('asset'), 'the fixture asset')
+      const nested = required(doc.querySelector('iframe'), 'the fixture frame')
       const before = scans()
 
       // A resource load: ignored, or every asset in the prototype costs a tree walk.
@@ -777,7 +901,7 @@ describe('ModalShell with a nested frame', () => {
       expect(afterAsset).toBe(before)
       expect(scans()).toBeGreaterThan(afterAsset)
     } finally {
-      walk.mockRestore()
+      restore()
     }
   })
 
@@ -798,8 +922,7 @@ describe('ModalShell with a nested frame', () => {
       { length: controls },
       (_, i) => `<div><div><div><div><button id="c${i}">c${i}</button></div></div></div></div>`,
     ).join('')
-    const view = doc.defaultView
-    if (!view) throw new Error('no view for the prototype document')
+    const view = required(doc.defaultView, 'a view for the prototype document')
     const real = view.getComputedStyle.bind(view)
     const calls: Element[] = []
     view.getComputedStyle = (el: Element, pseudo?: string | null) => {
@@ -837,38 +960,31 @@ describe('ModalShell with a nested frame', () => {
     const { doc } = renderFramedShell({ inner: '' })
     const spy = spyOnObservers()
     // The frame that SURVIVES the swaps, kept so the assertion after the spy block is
-    // about that document rather than a freshly added one. A mutable binding is fine
-    // here: eslint ignores `*.test.tsx`, so `no-restricted-syntax` does not reach it.
-    let surviving: ReturnType<typeof addNestedFrame> | undefined
-    try {
-      const atRest = spy.live()
-      for (const _ of Array.from({ length: 8 })) {
-        doc.body.innerHTML = ''
-        surviving = addNestedFrame(doc, { inserted: true })
-        // MutationObserver callbacks are microtasks, so the scan (and the reap) runs
-        // between swaps rather than all at the end.
-        await Promise.resolve()
-        await Promise.resolve()
-      }
+    // about that document rather than a freshly added one.
+    const surviving = await (async () => {
+      try {
+        const atRest = spy.live()
+        const last = await swapNestedFrames(doc, 8)
 
-      // EXACTLY one watcher for whichever nested document is current — not eight.
+        // EXACTLY one watcher for whichever nested document is current — not eight.
       // `atRest` is the baseline because the outer frame's own watcher predates the spy.
       //
       // An equality, because review asked whether the previous `<= 1` was loose by
       // necessity and it was not: two microtasks after the last swap the reap has already
       // run, so the count is settled. The inequality also admitted the very failure this
       // test is named for — one watcher leaked permanently reads as `<= 1` too.
-      expect(spy.live()).toBe(atRest + 1)
-    } finally {
-      spy.restore()
-    }
+        expect(spy.live()).toBe(atRest + 1)
+        return last
+      } finally {
+        spy.restore()
+      }
+    })()
 
     // And the SURVIVING frame still works, so the reaping did not take the live
     // document's listener with it. On the loop's own last frame, deliberately: adding a
     // fresh frame here would prove only that a new scan attaches a listener, a different
     // and weaker claim. That is what this assertion silently did before `addNestedFrame`
     // was fixed to hand back the frame it created rather than the document's first.
-    if (!surviving) throw new Error('the swap loop added no frame')
     surviving.nestedDoc.getElementById('deep')?.focus()
     surviving.pressInNested('Escape')
 
@@ -908,8 +1024,11 @@ describe('ModalShell with a nested frame', () => {
     // the guard must not treat it as an entry.
     const el = doc.createElement('iframe')
     el.title = 'nested'
-    const real = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentDocument')
-    if (!real?.get) throw new Error('no contentDocument getter to wrap')
+    // The own-property override below only falls back to this getter once deleted.
+    required(
+      Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentDocument')?.get,
+      'a contentDocument getter on the prototype',
+    )
     Object.defineProperty(el, 'contentDocument', {
       configurable: true,
       get() {
@@ -920,9 +1039,8 @@ describe('ModalShell with a nested frame', () => {
     // Let the observer run and skip it — MutationObserver callbacks are microtasks.
     await Promise.resolve()
     Reflect.deleteProperty(el, 'contentDocument')
-    const nestedDoc = el.contentDocument
-    if (!nestedDoc?.body) throw new Error('no nested frame document')
-    nestedDoc.body.innerHTML = '<button id="deep">deep</button>'
+    const nestedDoc = required(el.contentDocument, 'the nested frame document')
+    required(nestedDoc.body, 'a body in the nested frame document').innerHTML = '<button id="deep">deep</button>'
     // THE PRECONDITION, ASSERTED. Review's point was that this test arranged the
     // readable-but-unlistened state through getter surgery and then trusted it: the Tab
     // assertion below also passes if the frame simply has nothing reachable inside it, so
@@ -1015,12 +1133,8 @@ describe('ModalShell with a nested frame', () => {
     // one that early-returns, keeps both counts identical while Escape silently stops
     // closing the dialog. So the property a reader actually cares about is asserted
     // directly: after the re-renders, a key raised inside the frame still works.
-    const frame = screen.getByTitle('prototype')
-    const doc = frame instanceof HTMLIFrameElement ? frame.contentDocument : null
-    if (!doc?.body) throw new Error('no frame document')
-    doc.body.dispatchEvent(
-      new (doc.defaultView ?? window).KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
-    )
+    const doc = frameDocument('prototype')
+    pressEscapeIn(doc)
 
     expect(onClose).toHaveBeenCalledTimes(1)
   })
@@ -1041,13 +1155,9 @@ describe('ModalShell with a nested frame', () => {
     }
     render(<Late />)
     await user.click(screen.getByRole('button', { name: 'load' }))
-    const frame = screen.getByTitle('late')
-    const doc = frame instanceof HTMLIFrameElement ? frame.contentDocument : null
-    if (!doc?.body) throw new Error('no late frame document')
+    const doc = frameDocument('late')
 
-    doc.body.dispatchEvent(
-      new (doc.defaultView ?? window).KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
-    )
+    pressEscapeIn(doc)
 
     expect(onClose).toHaveBeenCalledTimes(1)
   })
@@ -1056,25 +1166,10 @@ describe('ModalShell with a nested frame', () => {
     // The stacking guard is document-position based and must keep working for a key
     // that arrived through a frame: `ConfirmModal` opens over other modals, and one
     // Escape closing both is the defect that guard exists for.
-    const onCloseOuter = vi.fn()
-    const onCloseInner = vi.fn()
-    render(
-      <>
-        <ModalShell isOpen onClose={onCloseOuter} ariaLabel="Outer">
-          <button>outer-button</button>
-        </ModalShell>
-        <ModalShell isOpen onClose={onCloseInner} ariaLabel="Inner">
-          <iframe title="inner-frame" />
-        </ModalShell>
-      </>,
-    )
-    const frame = screen.getByTitle('inner-frame')
-    const doc = frame instanceof HTMLIFrameElement ? frame.contentDocument : null
-    if (!doc?.body) throw new Error('no inner frame document')
+    const { onCloseOuter, onCloseInner } = renderStackedShells(<iframe title="inner-frame" />)
+    const doc = frameDocument('inner-frame')
 
-    doc.body.dispatchEvent(
-      new (doc.defaultView ?? window).KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
-    )
+    pressEscapeIn(doc)
 
     expect(onCloseInner).toHaveBeenCalledTimes(1)
     expect(onCloseOuter).not.toHaveBeenCalled()
@@ -1114,5 +1209,90 @@ describe('ModalShell with a nested frame', () => {
     // the defect the rest of this describe exists to catch.
     expect(added.length).toBeGreaterThan(0)
     for (const listener of added) expect(removed).toContain(listener)
+  })
+
+  /**
+   * The framed shell after its prototype rewrote itself through
+   * `document.open()`/`write()`/`close()`, under a double that erases listeners on
+   * `open()` as a compliant browser does (#386) — jsdom keeps them, which hid the bug.
+   *
+   * The rewrite fires nothing this shell's re-scan triggers act on (measured in jsdom:
+   * no `load` on the frame element after `close()`, and the old body is detached rather
+   * than mutated), so the realistic route back in is the one returned: `enter()` is the
+   * keyboard user's Tab from the frame element, which the entry guard answers by asking
+   * whether the document is listened to.
+   */
+  function renderRewrittenFrame() {
+    const restore = eraseListenersOnOpen()
+    try {
+      const shell = renderFramedShell()
+      shell.doc.open()
+      shell.doc.close()
+      // The tree `write('<body>…</body>')` would parse, built through the DOM because
+      // `write` is deprecated: after an empty open/close the document has no root at
+      // all, and what matters here is only that its body is a NEW object.
+      const root = shell.doc.createElement('html')
+      const body = shell.doc.createElement('body')
+      body.innerHTML = '<button id="r1">r one</button><button id="r2">r two</button>'
+      root.append(body)
+      shell.doc.append(root)
+      const enter = () => {
+        shell.frame.focus()
+        shell.pressInPage('Tab')
+      }
+      return { ...shell, enter }
+    } finally {
+      restore()
+    }
+  }
+
+  it('erases the frame\'s listeners on document.open() under the double', () => {
+    // Anti-vacuous: the tests below only mean something if the double really leaves
+    // the rewritten document unlistened until the shell re-arms it. Escape before any
+    // re-arm must be dead — if this ever passes the other way, the double has stopped
+    // standing in for a compliant engine and the rest prove nothing.
+    const { doc, pressInFrame } = renderRewrittenFrame()
+    doc.getElementById('r2')?.focus()
+
+    pressInFrame('Escape')
+
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('still closes on Escape inside a frame that rewrote itself with document.open()', () => {
+    // Fails on the membership check: `listening.has(doc)` stayed true across the erase,
+    // so nothing re-attached and Escape inside the rewritten prototype did nothing —
+    // after the entry guard had already let the keyboard user descend into it.
+    const { doc, enter, pressInFrame } = renderRewrittenFrame()
+    enter()
+    doc.getElementById('r2')?.focus()
+
+    pressInFrame('Escape')
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('brings Tab back to the panel from the last control of a rewritten frame', () => {
+    // The fail-OPEN half: with the listener erased, Tab off the rewritten document's
+    // last control went unobserved and the browser moved focus out of the dialog.
+    const { doc, enter, pressInFrame } = renderRewrittenFrame()
+    enter()
+    doc.getElementById('r2')?.focus()
+
+    pressInFrame('Tab')
+
+    expect(screen.getByRole('button', { name: 'after' })).toHaveFocus()
+  })
+
+  it('follows a body replaced by document.open() with its watcher', async () => {
+    // `document.open()` replaces `body`, so an observer kept on the old one watches a
+    // detached node for the rest of the dialog's life. Probed through a REMOVAL, because
+    // an inserted frame's own `load` would re-scan anyway and hide a stale watcher; a
+    // removal has only the observer, and a missed one leaves a gone document reading as
+    // a safe place to send focus.
+    const { doc, enter } = renderRewrittenFrame()
+    enter()
+
+    expect(await scansForRemovingWrappedFrame(doc)).toBeGreaterThan(0)
   })
 })

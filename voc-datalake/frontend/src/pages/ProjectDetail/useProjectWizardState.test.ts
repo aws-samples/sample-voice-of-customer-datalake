@@ -20,7 +20,7 @@ describe('useProjectWizardState', () => {
 
       expect(result.current.activeWizard).toBe('research')
       expect(result.current.contextConfig.usePersonas).toBe(true)
-      expect(result.current.contextConfig.selectedPersonaIds).toEqual(['p1', 'p2'])
+      expect(result.current.contextConfig.selectedPersonaIds).toStrictEqual(['p1', 'p2'])
     })
 
     it('keeps feedback on, since research reads it too', () => {
@@ -40,7 +40,7 @@ describe('useProjectWizardState', () => {
 
       expect(result.current.activeWizard).toBe('research')
       expect(result.current.contextConfig.usePersonas).toBe(false)
-      expect(result.current.contextConfig.selectedPersonaIds).toEqual([])
+      expect(result.current.contextConfig.selectedPersonaIds).toStrictEqual([])
     })
 
     it('does not carry a previous wizard configuration over', () => {
@@ -64,7 +64,7 @@ describe('useProjectWizardState', () => {
 
       expect(result.current.activeWizard).toBeNull()
       expect(result.current.contextConfig.usePersonas).toBe(false)
-      expect(result.current.contextConfig.selectedPersonaIds).toEqual([])
+      expect(result.current.contextConfig.selectedPersonaIds).toStrictEqual([])
     })
 
     it('copies the ids rather than holding the array the caller passed', () => {
@@ -74,7 +74,7 @@ describe('useProjectWizardState', () => {
       act(() => result.current.openResearchWizard(ids))
       ids.push('p2')
 
-      expect(result.current.contextConfig.selectedPersonaIds).toEqual(['p1'])
+      expect(result.current.contextConfig.selectedPersonaIds).toStrictEqual(['p1'])
     })
   })
 })

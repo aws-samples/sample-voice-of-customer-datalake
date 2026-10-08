@@ -6,7 +6,7 @@ and converted to consistent HTTP error responses.
 
 Usage:
     from shared.exceptions import NotFoundError, ValidationError
-    
+
     raise NotFoundError('Project not found')
     raise ValidationError('Message is required')
 """
@@ -14,13 +14,13 @@ Usage:
 
 class ApiError(Exception):
     """Base exception for all API errors.
-    
+
     Attributes:
         message: Human-readable error message
         status_code: HTTP status code to return
     """
     status_code: int = 500
-    
+
     def __init__(self, message: str):
         self.message = message
         super().__init__(message)
@@ -28,12 +28,12 @@ class ApiError(Exception):
 
 class ValidationError(ApiError):
     """Raised when request validation fails.
-    
+
     Examples:
         - Missing required fields
         - Invalid field values
         - Constraint violations
-    
+
     HTTP Status: 400 Bad Request
     """
     status_code = 400
@@ -41,13 +41,13 @@ class ValidationError(ApiError):
 
 class NotFoundError(ApiError):
     """Raised when a requested resource doesn't exist.
-    
+
     Examples:
         - Project not found
         - Document not found
         - Persona not found
         - Job not found
-    
+
     HTTP Status: 404 Not Found
     """
     status_code = 404
@@ -55,12 +55,12 @@ class NotFoundError(ApiError):
 
 class ConfigurationError(ApiError):
     """Raised when required configuration is missing.
-    
+
     Examples:
         - Environment variable not set
         - DynamoDB table not configured
         - S3 bucket not configured
-    
+
     HTTP Status: 500 Internal Server Error
     """
     status_code = 500
@@ -84,13 +84,13 @@ class SecretUnreadableError(ConfigurationError):
 
 class ServiceError(ApiError):
     """Raised when an external service call fails.
-    
+
     Examples:
         - DynamoDB operation failed
         - Bedrock API error
         - S3 operation failed
         - SQS send failed
-    
+
     HTTP Status: 500 Internal Server Error
     """
     status_code = 500
@@ -98,11 +98,11 @@ class ServiceError(ApiError):
 
 class AuthorizationError(ApiError):
     """Raised when user lacks permission for an action.
-    
+
     Examples:
         - User not in admin group
         - Insufficient permissions
-    
+
     HTTP Status: 403 Forbidden
     """
     status_code = 403
@@ -110,11 +110,35 @@ class AuthorizationError(ApiError):
 
 class ConflictError(ApiError):
     """Raised when there's a conflict with existing state.
-    
+
     Examples:
         - User already exists
         - Duplicate resource
-    
+
     HTTP Status: 409 Conflict
     """
     status_code = 409
+
+
+class ServiceUnavailableError(ApiError):
+    """Raised when a dependency the request must not proceed without is briefly unreadable.
+
+    Examples:
+        - The source profiles (PII policy) could not be read on an ingestion path,
+          which must fail closed rather than ingest under the default policy
+
+    HTTP Status: 503 Service Unavailable (the caller may retry)
+    """
+    status_code = 503
+
+
+class PayloadTooLargeError(ApiError):
+    """Raised when a request body would produce a record above a storage limit.
+
+    Examples:
+        - A saved assistant conversation that would exceed the DynamoDB item
+          size budget
+
+    HTTP Status: 413 Content Too Large
+    """
+    status_code = 413

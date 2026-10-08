@@ -59,57 +59,28 @@ Pattern follows test_visual_selection_bound_lockstep.py (same directory).
 import io
 import re
 import tokenize
-from pathlib import Path
+
+from lockstep_fixtures import (
+    py_int_const,
+    py_str_const,
+    read_source,
+    single_match,
+    ts_int_const,
+)
 
 BALLOTS_SOURCE = 'lambda/api/ballots_handler.py'
 PROJECTS_SOURCE = 'lambda/api/projects_handler.py'
+# Where both writers' key-segment validator now lives (`validated_row_id`).
+ROW_IDS_SOURCE = 'lambda/shared/row_ids.py'
 FRONTEND_BOUNDS_SOURCE = 'frontend/src/pages/Vote/ballotBounds.ts'
-
-
-def _read(relative: str) -> str:
-    # lambda/api/test/ -> voc-datalake/
-    path = Path(__file__).resolve().parents[3] / relative
-    assert path.is_file(), (
-        f'{relative} not found — did the file move? '
-        f'If so, update the path constant in this test file.'
-    )
-    return path.read_text(encoding='utf-8')
-
-
-def _single(source: str, pattern: str, where: str, what: str) -> str:
-    """The one match for `pattern`, or a failure naming what drifted.
-
-    Exactly one is required deliberately: a second assignment of the same
-    constant is itself the drift this file exists to prevent, and taking the
-    first match would hide it.
-    """
-    matches = re.findall(pattern, source, re.MULTILINE)
-    assert len(matches) == 1, (
-        f'Expected exactly one {what} assignment in {where}; found {len(matches)}. '
-        f'A second copy is the drift this test exists to prevent — if the '
-        f'declaration was restructured, update the pattern in this test file.'
-    )
-    return matches[0]
-
-
-def _str_const(source: str, name: str, where: str) -> str:
-    return _single(source, rf"^{name}\s*=\s*'([^']*)'", where, name)
-
-
-def _int_const(source: str, name: str, where: str) -> int:
-    return int(_single(source, rf'^{name}\s*=\s*(\d+)', where, name))
-
-
-def _ts_int_const(source: str, name: str, where: str) -> int:
-    return int(_single(source, rf'^export const {name}\s*=\s*(\d+)', where, name))
 
 
 class TestTheAnonymousKindCanNeverCollideWithASignedInReviewer:
     """The assertion that protects real reviewers' ballots from anonymous ones."""
 
     def test_the_two_kinds_are_different_strings(self):
-        anon = _str_const(_read(BALLOTS_SOURCE), 'REVIEWER_KIND_ANON', BALLOTS_SOURCE)
-        user = _str_const(_read(PROJECTS_SOURCE), 'REVIEWER_KIND_USER', PROJECTS_SOURCE)
+        anon = py_str_const(read_source(BALLOTS_SOURCE), 'REVIEWER_KIND_ANON', BALLOTS_SOURCE)
+        user = py_str_const(read_source(PROJECTS_SOURCE), 'REVIEWER_KIND_USER', PROJECTS_SOURCE)
         assert anon != user, (
             f"REVIEWER_KIND_ANON ({anon!r}) equals REVIEWER_KIND_USER ({user!r}). "
             f'An anonymous ballot would land on a signed-in reviewer sort key and '
@@ -121,19 +92,21 @@ class TestTheAnonymousKindCanNeverCollideWithASignedInReviewer:
         # `{kind}:{subject}`, so kinds where one is a prefix of the other are
         # only kept apart by the ':' that follows. Requiring non-prefix keeps
         # that safety from resting on the delimiter alone.
-        anon = _str_const(_read(BALLOTS_SOURCE), 'REVIEWER_KIND_ANON', BALLOTS_SOURCE)
-        user = _str_const(_read(PROJECTS_SOURCE), 'REVIEWER_KIND_USER', PROJECTS_SOURCE)
-        assert not anon.startswith(user) and not user.startswith(anon), (
+        anon = py_str_const(read_source(BALLOTS_SOURCE), 'REVIEWER_KIND_ANON', BALLOTS_SOURCE)
+        user = py_str_const(read_source(PROJECTS_SOURCE), 'REVIEWER_KIND_USER', PROJECTS_SOURCE)
+        message = (
             f'One reviewer kind prefixes the other ({anon!r}, {user!r}); keeping '
             f'anonymous and signed-in ballots apart should not depend on the '
             f"':' delimiter alone."
         )
+        assert not anon.startswith(user), message
+        assert not user.startswith(anon), message
 
     def test_neither_kind_contains_a_key_delimiter(self):
         # A '#' in a kind would break the reader's rpartition; a ':' would make
         # the kind/subject split ambiguous.
-        anon = _str_const(_read(BALLOTS_SOURCE), 'REVIEWER_KIND_ANON', BALLOTS_SOURCE)
-        user = _str_const(_read(PROJECTS_SOURCE), 'REVIEWER_KIND_USER', PROJECTS_SOURCE)
+        anon = py_str_const(read_source(BALLOTS_SOURCE), 'REVIEWER_KIND_ANON', BALLOTS_SOURCE)
+        user = py_str_const(read_source(PROJECTS_SOURCE), 'REVIEWER_KIND_USER', PROJECTS_SOURCE)
         for kind, where in ((anon, BALLOTS_SOURCE), (user, PROJECTS_SOURCE)):
             assert kind, f'an empty reviewer kind in {where} namespaces nothing'
             assert '#' not in kind, f'{kind!r} in {where} contains the sort-key delimiter'
@@ -144,8 +117,8 @@ class TestBothWritersAgreeOnWhereABallotLives:
     """Same partition, same sort-key prefix — or the aggregate never sees it."""
 
     def test_the_partition_key_matches(self):
-        ballots = _str_const(_read(BALLOTS_SOURCE), 'PRIORITIZATION_PK', BALLOTS_SOURCE)
-        projects = _str_const(_read(PROJECTS_SOURCE), 'PRIORITIZATION_PK', PROJECTS_SOURCE)
+        ballots = py_str_const(read_source(BALLOTS_SOURCE), 'PRIORITIZATION_PK', BALLOTS_SOURCE)
+        projects = py_str_const(read_source(PROJECTS_SOURCE), 'PRIORITIZATION_PK', PROJECTS_SOURCE)
         assert ballots == projects, (
             f'PRIORITIZATION_PK differs: {ballots!r} in {BALLOTS_SOURCE} vs '
             f'{projects!r} in {PROJECTS_SOURCE}. Anonymous ballots would be written '
@@ -154,8 +127,8 @@ class TestBothWritersAgreeOnWhereABallotLives:
         )
 
     def test_the_ballot_sort_key_prefix_matches(self):
-        ballots = _str_const(_read(BALLOTS_SOURCE), 'BALLOT_SK_PREFIX', BALLOTS_SOURCE)
-        projects = _str_const(_read(PROJECTS_SOURCE), 'BALLOT_SK_PREFIX', PROJECTS_SOURCE)
+        ballots = py_str_const(read_source(BALLOTS_SOURCE), 'BALLOT_SK_PREFIX', BALLOTS_SOURCE)
+        projects = py_str_const(read_source(PROJECTS_SOURCE), 'BALLOT_SK_PREFIX', PROJECTS_SOURCE)
         assert ballots == projects, (
             f'BALLOT_SK_PREFIX differs: {ballots!r} vs {projects!r}. '
             f'`_parse_ballot_sk` skips anything without the prefix it knows, so '
@@ -167,8 +140,8 @@ class TestBothWritersAgreeOnWhereABallotLives:
         # existence check (#342) looks a row up under the prefix projects_handler
         # writes it under. If the two drift, the check answers "no such row" for
         # every row, and no session can be opened at all.
-        ballots = _str_const(_read(BALLOTS_SOURCE), 'ROW_SK_PREFIX', BALLOTS_SOURCE)
-        projects = _str_const(_read(PROJECTS_SOURCE), 'ROW_SK_PREFIX', PROJECTS_SOURCE)
+        ballots = py_str_const(read_source(BALLOTS_SOURCE), 'ROW_SK_PREFIX', BALLOTS_SOURCE)
+        projects = py_str_const(read_source(PROJECTS_SOURCE), 'ROW_SK_PREFIX', PROJECTS_SOURCE)
         assert ballots == projects, (
             f'ROW_SK_PREFIX differs: {ballots!r} vs {projects!r}. The existence '
             f'check would look rows up under a key nothing writes.'
@@ -178,14 +151,14 @@ class TestBothWritersAgreeOnWhereABallotLives:
         # The reader splits on the LAST '#', so the shape — prefix, ROW id, '#',
         # kind-namespaced subject — has to be identical in both writers.
         # Compared as source text because the two live in different bundles.
-        ballots_key = _single(
-            _read(BALLOTS_SOURCE),
+        ballots_key = single_match(
+            read_source(BALLOTS_SOURCE),
             r"^\s*return f'\{BALLOT_SK_PREFIX\}(.+)'$",
             BALLOTS_SOURCE,
             'ballot sort-key f-string',
         )
-        projects_key = _single(
-            _read(PROJECTS_SOURCE),
+        projects_key = single_match(
+            read_source(PROJECTS_SOURCE),
             r"^\s*return f'\{BALLOT_SK_PREFIX\}(.+)'$",
             PROJECTS_SOURCE,
             'ballot sort-key f-string',
@@ -197,6 +170,9 @@ class TestBothWritersAgreeOnWhereABallotLives:
         # point of this pair: a room whose session names a document while the page
         # keys ballots to rows votes into a key nothing reads, and every phone
         # still says "thanks".
+        # One capturing group each, so each match is the group's text.
+        assert isinstance(ballots_key, str)
+        assert isinstance(projects_key, str)
         assert ballots_key.startswith('{row_id}#'), (
             f'{BALLOTS_SOURCE} builds a ballot key as {ballots_key!r}; the reader '
             f"expects the ROW id first, then '#'."
@@ -217,11 +193,11 @@ class TestBothWritersAgreeOnWhereABallotLives:
         # the unauthenticated path.
         #
         # BOTH guards are required, because a row id reaches the key by two
-        # routes: the facilitator names it when opening a session
-        # (`_validated_row_id`), and the row id is re-checked where it is READ BACK
-        # off the session record, which is the one helper the submit path resolves
-        # it through (`_session_row_id`). Asserting the rule appears merely
-        # SOMEWHERE would keep passing with either one deleted.
+        # routes: the facilitator names it when opening a session (the shared
+        # `validated_row_id`, in `shared/row_ids.py`), and the row id is re-checked
+        # where it is READ BACK off the session record, which is the one helper the
+        # submit path resolves it through (`_session_row_id`). Asserting the rule
+        # appears merely SOMEWHERE would keep passing with either one deleted.
         #
         # Not two INDEPENDENT checks, and the distinction is worth being exact
         # about: the submit path carries no delimiter test of its own, it calls the
@@ -234,14 +210,25 @@ class TestBothWritersAgreeOnWhereABallotLives:
         # raises when the delimiter IS present, the other answers "no usable row"
         # when it is NOT absent — and pinning one phrasing would fail a rename that
         # kept the invariant, which is the sort of failure that gets a lockstep test
-        # deleted rather than heeded. What is pinned is that TWO places refuse it.
-        source = _read(BALLOTS_SOURCE)
+        # deleted rather than heeded. What is pinned is that TWO places refuse it:
+        # the handler's own read-back guard, and the shared validator the creation
+        # route is pinned to call.
+        source = read_source(BALLOTS_SOURCE)
         guards = source.count("'#' in row_id") + source.count("'#' not in row_id")
-        assert guards >= 2, (
+        assert guards >= 1, (
             f"{BALLOTS_SOURCE} enforces \"no '#' in a row id\" in {guards} "
-            f'place(s); both the session-creation validator and the submit path '
-            f'must check it. The sort-key split of every ballot in the partition '
-            f'depends on it, and this is the one unauthenticated writer.'
+            f'place(s); the submit path must re-check it where the row id is read '
+            f'back off the session record.'
+        )
+        assert "validated_row_id(body.get('row_id'))" in source, (
+            f'{BALLOTS_SOURCE} must validate the facilitator-supplied row id through '
+            f'the shared `validated_row_id` before opening a session.'
+        )
+        shared_validator = read_source(ROW_IDS_SOURCE)
+        assert "'#' in value" in shared_validator, (
+            f"{ROW_IDS_SOURCE} must refuse '#' in a key segment; the sort-key split "
+            f'of every ballot in the partition depends on it, and this is the one '
+            f'unauthenticated writer.'
         )
 
 
@@ -249,7 +236,7 @@ class TestABallotNeverCarriesAnExpiry:
     """A ballot that expires removes itself from the team's score, later, quietly."""
 
     def test_the_session_record_expires_but_the_ballot_write_does_not(self):
-        source = _read(BALLOTS_SOURCE)
+        source = read_source(BALLOTS_SOURCE)
         # The literal attribute name, spelled as the table's expiry field. Not read
         # from a constant because the handler writes it inline on the session and
         # the point here is that this exact string is absent from the ballot write.
@@ -307,9 +294,9 @@ class TestTheNoteBoundIsTheSameNumberOnBothSidesOfTheBoundary:
     """The API refuses an over-long note; the page must not offer one."""
 
     def test_the_frontend_note_bound_matches_the_api(self):
-        api = _int_const(_read(BALLOTS_SOURCE), 'MAX_BALLOT_NOTE_LEN', BALLOTS_SOURCE)
-        frontend = _ts_int_const(
-            _read(FRONTEND_BOUNDS_SOURCE), 'MAX_BALLOT_NOTE_LENGTH', FRONTEND_BOUNDS_SOURCE,
+        api = py_int_const(read_source(BALLOTS_SOURCE), 'MAX_BALLOT_NOTE_LEN', BALLOTS_SOURCE)
+        frontend = ts_int_const(
+            read_source(FRONTEND_BOUNDS_SOURCE), 'MAX_BALLOT_NOTE_LENGTH', FRONTEND_BOUNDS_SOURCE,
         )
         assert api == frontend, (
             f'MAX_BALLOT_NOTE_LEN is {api} in {BALLOTS_SOURCE} but '
@@ -321,8 +308,8 @@ class TestTheNoteBoundIsTheSameNumberOnBothSidesOfTheBoundary:
     def test_the_anonymous_note_bound_matches_the_signed_in_one(self):
         # Both write the same `notes` attribute on the same kind of record, read
         # back on the same page, so one bound would be arbitrary.
-        anon = _int_const(_read(BALLOTS_SOURCE), 'MAX_BALLOT_NOTE_LEN', BALLOTS_SOURCE)
-        signed_in = _int_const(_read(PROJECTS_SOURCE), 'MAX_BALLOT_NOTE_LEN', PROJECTS_SOURCE)
+        anon = py_int_const(read_source(BALLOTS_SOURCE), 'MAX_BALLOT_NOTE_LEN', BALLOTS_SOURCE)
+        signed_in = py_int_const(read_source(PROJECTS_SOURCE), 'MAX_BALLOT_NOTE_LEN', PROJECTS_SOURCE)
         assert anon == signed_in, (
             f'MAX_BALLOT_NOTE_LEN is {anon} in {BALLOTS_SOURCE} but {signed_in} in '
             f'{PROJECTS_SOURCE}. The two paths write the same attribute on the same '
@@ -330,9 +317,9 @@ class TestTheNoteBoundIsTheSameNumberOnBothSidesOfTheBoundary:
         )
 
     def test_the_frontend_display_name_bound_matches_the_api(self):
-        api = _int_const(_read(BALLOTS_SOURCE), 'MAX_DISPLAY_NAME_LEN', BALLOTS_SOURCE)
-        frontend = _ts_int_const(
-            _read(FRONTEND_BOUNDS_SOURCE),
+        api = py_int_const(read_source(BALLOTS_SOURCE), 'MAX_DISPLAY_NAME_LEN', BALLOTS_SOURCE)
+        frontend = ts_int_const(
+            read_source(FRONTEND_BOUNDS_SOURCE),
             'MAX_BALLOT_DISPLAY_NAME_LENGTH',
             FRONTEND_BOUNDS_SOURCE,
         )

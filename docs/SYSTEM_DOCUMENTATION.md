@@ -7,8 +7,9 @@ This file is an index of the maintained technical documentation. Keeping a secon
 | Document | Scope |
 |----------|-------|
 | [Deployment](deployment.md) | Prerequisites, stacks, configuration, deployment, and troubleshooting |
-| [Project Workspace](project-workspace.md) | Managed artifact versions, prioritization, room voting, and MCP access |
+| [Project Workspace](project-workspace.md) | Sharing and permissions, managed artifact versions, prioritization, room voting, and MCP access |
 | [Data Lake Structure](data-lake-structure.md) | S3 layout, DynamoDB tables/indexes, retention, and Data Explorer |
+| [Categories, Products and Access](categories.md) | Category → product/owner mapping, per-user category access, category corrections, reprocessing |
 | [Processing Pipeline](processing-pipeline.md) | Ingestion, enrichment, storage, aggregation, and aggregate repair |
 | [Plugin Architecture](plugin-architecture.md) | Plugin manifests, infrastructure, secret isolation, and route boundaries |
 | [Getting Started with Plugins](getting-started-plugins.md) | Build and validate a new source plugin |

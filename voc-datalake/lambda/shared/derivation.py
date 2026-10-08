@@ -85,7 +85,7 @@ def _ids(values) -> list[str]:
     return [v for v in values if isinstance(v, str) and v]
 
 
-def derivation_source(document_id: str | None, role: str) -> dict | None:
+def derivation_source(document_id: object, role: str) -> dict | None:
     """One `sources` entry, or None when there is nothing to record.
 
     A caller may hold an absent document (`(prd or {}).get('document_id')` is a

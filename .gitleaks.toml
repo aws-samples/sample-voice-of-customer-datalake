@@ -1,0 +1,73 @@
+# gitleaks configuration: the default rule set plus the credentials this platform mints.
+# `lambda/shared/test/test_mcp_tokens_secret_scanning.py` keeps the rules below in step
+# with the formats in `lambda/shared/mcp_tokens.py`.
+
+title = "VoC Data Lake"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "voc-mcp-token"
+description = "VoC global MCP token (minted on Connect; acts as the user who minted it). Revoke it on /connect."
+regex = '''\bvoc_tok_[0-9a-f]{16}_[0-9a-f]{64}\b'''
+keywords = ["voc_tok_"]
+
+# ---------------------------------------------------------------------------------------------
+# Working-tree scan (scripts/gitleaks-tree.sh, a scripts/validate.sh step) — `gitleaks dir` does not
+# read .gitignore, so dependencies, build output and tool caches are skipped by path here. None of
+# these paths is tracked; in a `gitleaks git` scan this list matches nothing.
+[[allowlists]]
+description = "Untracked dependencies, build output and tool caches (gitignored)"
+paths = [
+  '''(^|/)node_modules/''',
+  '''(^|/)\.venv/''',
+  '''(^|/)\.git/''',
+  '''(^|/)\.cache/''',
+  '''(^|/)dist/''',
+  '''(^|/)cdk\.out[^/]*/''',
+  '''(^|/)coverage(_html)?/''',
+  '''(^|/)htmlcov/''',
+  '''(^|/)\.coverage$''',
+  '''(^|/)__pycache__/''',
+  '''(^|/)\.(ruff|mypy|pytest)_cache/''',
+  '''(^|/)\.mutmut-cache''',
+  '''(^|/)\.stryker-tmp/''',
+  '''(^|/)reports/''',
+  '''(^|/)test-results/''',
+  '''(^|/)playwright-report/''',
+  '''voc-datalake/lambda/layers/[^/]+/python/''',
+]
+
+# Reviewed false positives of the default `generic-api-key` rule. Each is matched by its literal
+# value, so the same rule still fires on anything else in these files.
+[[allowlists]]
+description = """MCP token IDs (`tok_` + 16 hex) are the public, listable half of a token — shown on
+/connect and in audit logs. The secret half only exists inside a full voc_tok_… value, which the
+voc-mcp-token rule above still catches everywhere."""
+targetRules = ["generic-api-key"]
+regexTarget = "match"
+regexes = ['''tok_[0-9a-f]{16}\b''']
+
+[[allowlists]]
+description = "`logo_pending_s3_key` is a DynamoDB attribute NAME (an S3 object key), not a credential."
+targetRules = ["generic-api-key"]
+regexTarget = "match"
+regexes = ['''logo_pending_s3_key''']
+
+[[allowlists]]
+description = "Fixed hex fixture standing in for a token secret in the token-format tests."
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^voc-datalake/lambda/shared/test/test_mcp_tokens_mutation\.py$''']
+regexTarget = "match"
+regexes = ['''_SECRET_HEX = .fedcba9876543210.''']
+
+[[allowlists]]
+description = """The PEM header in an assertion regex (`/-----BEGIN PRIVATE KEY-----/`): the test checks the
+generated signing key's shape; there is no key material in the file."""
+targetRules = ["private-key"]
+condition = "AND"
+paths = ['''^voc-datalake/lib/stacks/cdn-signing-keys\.test\.ts$''']
+regexTarget = "line"
+regexes = ['''-----BEGIN PRIVATE KEY-----/\)''']

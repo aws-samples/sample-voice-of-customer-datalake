@@ -43,7 +43,16 @@ npm run deploy:all   # Deploys all CDK stacks + frontend
 
 ## Quality Checks
 
-Always run quality checks before deploying:
+> **The gate process (owner decision, 2026-10-07): validate ONCE per release.** Agents and track branches
+> fix things WITHOUT the full gate: they run the single tool they need while iterating and
+> `bash scripts/validate-affected.sh [<base>]` (only the `validate.sh` steps for the paths they changed;
+> `--explain` shows the mapping) before handing over. The full `bash scripts/validate.sh` runs ONCE, on the
+> integration branch (`kiro-voc`), just before the release commit — never skipped. It runs its steps in four
+> parallel lanes, stops at the first failure (printing that step's log tail; full logs in
+> `.cache/validate/logs/<run>/`) and ends with a per-step timing table. It needs gitleaks 8.30+ installed
+> (`brew install gitleaks`). Details: CONTRIBUTING.md → Quality gates.
+
+The narrower npm scripts below are for iterating on one area:
 
 ```bash
 # From project root ONLY — voc-datalake/package.json has no `lint` script
@@ -51,7 +60,9 @@ npm run lint         # frontend + stream ESLint, and ruff over lambda/ + plugins
 npm run typecheck    # frontend ONLY (use typecheck:all for frontend + CDK + stream)
 npm run test         # frontend ONLY
 
-npm run check        # lint && typecheck:all && test && test:cdk && test:stream && test:backend
+npm run check:mock   # every frontend API call has a dev-mock route (starts the mock on a free port)
+
+npm run check        # lint && typecheck:all && test && check:mock && test:cdk && test:stream && test:backend
 ```
 
 ### What Each Check Does
@@ -62,6 +73,7 @@ npm run check        # lint && typecheck:all && test && test:cdk && test:stream 
 | `npm run typecheck` | Frontend only |
 | `npm run typecheck:all` | Frontend + CDK (`typecheck:cdk`) + stream |
 | `npm run test` | Frontend Vitest |
+| `npm run check:mock` | Every `fetchApi` call site is listed in `frontend/mock-coverage.json` and its probes reach a real mock route |
 | `npm run test:cdk` / `test:stream` / `test:backend` | CDK Vitest / stream Vitest / pytest via `.venv/bin/python` |
 | `npm run check` | All of the above, chained with `&&` |
 
@@ -94,14 +106,27 @@ The platform consists of 4 core stacks plus 1 AI-enablement stack.
 | `VocCoreStack` | DynamoDB tables, KMS, S3 buckets, Cognito, CloudFront | None |
 | `VocIngestionStack` | Plugin Lambdas, EventBridge schedules, SQS, Secrets | Core |
 | `VocProcessingStack` | Processor, Aggregator, Step Functions, Bedrock | Core, Ingestion |
-| `VocApiStack` | API Gateway, API Lambdas, Webhooks, WAF | Core, Ingestion, Processing |
+| `VocApiStack` | API Gateway (per-method throttles; no WAF — add one for production), API Lambdas, Webhooks | Core, Ingestion, Processing |
 | `VocWebSearchStack` (AI enablement, always us-east-1) | Two independently switchable halves: AgentCore web-search gateway (default-on, `-c enableWebSearch=false` opts out) + Bedrock model access / Anthropic use case (only when `anthropicUseCase` is set). Not created when both are off | None |
 
 ### Deploy All Stacks
 
 ```bash
-npm run deploy:infra    # Deploy all CDK stacks
+npm run deploy:infra    # Deploy all CDK stacks, then refresh the API stage
 ```
+
+> ### ⚠️ Every deploy that can touch VocApiStack must end with the stage refresh
+>
+> `scripts/cdk-deploy.sh` (behind `deploy:infra`, `deploy`, `deploy:api`) runs
+> `cdk deploy <args>` and then `scripts/refresh-api-stage.sh` (one
+> `apigateway create-deployment` of stage `v1`). CloudFormation snapshots the new
+> API Deployment BEFORE its cleanup phase deletes removed methods, so without the
+> refresh a route removed from `api-routes.ts` stays live on the stage (3.00.00 R1:
+> `POST /mcp` answered 500). A bare `cdk deploy` must be followed by
+> `bash scripts/refresh-api-stage.sh` (`API_STACK=<p>-VocApiStack` for a prefixed
+> deployment). `lib/utils/deploy-scripts.test.ts` pins the wiring;
+> `e2e/tests/ops-postdeploy.spec.ts` fails when the stage serves a method the API
+> definition no longer has. See docs/deployment.md.
 
 ### Deploy Individual Stacks
 
@@ -111,13 +136,13 @@ cd voc-datalake
 # Deploy specific stack
 cdk deploy VocCoreStack
 cdk deploy VocIngestionStack
-cdk deploy VocApiStack
+npm run deploy:api      # VocApiStack + the stage refresh
 
 # Deploy multiple stacks
 cdk deploy VocCoreStack VocIngestionStack
 
-# Deploy with auto-approve (no confirmation prompts)
-cdk deploy --all --require-approval never
+# Deploy with auto-approve (no confirmation prompts), then refresh the stage
+cdk deploy --all --require-approval never && bash scripts/refresh-api-stage.sh
 ```
 
 ### Stack Deployment Order
@@ -155,7 +180,7 @@ Deploy all stacks including frontend infrastructure:
 
 ```bash
 cd voc-datalake
-cdk deploy --all
+npm run deploy    # cdk deploy --all + the API stage refresh
 ```
 
 ### Frontend Build Process
@@ -243,8 +268,8 @@ npm run check
 cd voc-datalake
 cdk diff
 
-# 4. Deploy
-cdk deploy --all
+# 4. Deploy (then refresh the API stage)
+cdk deploy --all && bash scripts/refresh-api-stage.sh
 ```
 
 ### For Frontend Changes
@@ -350,7 +375,7 @@ aws cloudformation describe-stacks \
 |---------|-------------|
 | `npm run check` | Run all quality checks |
 | `npm run deploy:all` | Deploy infrastructure + frontend |
-| `npm run deploy:infra` | Deploy CDK stacks only |
+| `npm run deploy:infra` | Deploy CDK stacks only (+ the API stage refresh) |
 | `npm run deploy:frontend` | Deploy frontend only |
 | `npm run generate:config` | Regenerate plugin/menu config |
 | `npm run dev` | Start frontend dev server |

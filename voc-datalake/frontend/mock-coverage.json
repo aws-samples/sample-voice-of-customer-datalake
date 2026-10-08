@@ -1,0 +1,2643 @@
+[
+  {
+    "file": "api/adminEndpoints.ts",
+    "method": "GET",
+    "call": "'/users'",
+    "probes": [
+      {
+        "path": "/users"
+      }
+    ]
+  },
+  {
+    "file": "api/adminEndpoints.ts",
+    "method": "POST",
+    "call": "'/users'",
+    "probes": [
+      {
+        "path": "/users",
+        "body": {
+          "username": "x@example.com",
+          "email": "x@example.com"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/adminEndpoints.ts",
+    "method": "GET",
+    "call": "`/logs/processing?${buildSearchParams(params ?? {})}`",
+    "probes": [
+      {
+        "path": "/logs/processing?days=7"
+      }
+    ]
+  },
+  {
+    "file": "api/adminEndpoints.ts",
+    "method": "GET",
+    "call": "`/logs/scraper/${scraperId}?${buildSearchParams(params ?? {})}`",
+    "probes": [
+      {
+        "path": "/logs/scraper/scraper_1?days=7"
+      }
+    ]
+  },
+  {
+    "file": "api/adminEndpoints.ts",
+    "method": "GET",
+    "call": "`/logs/summary?${buildSearchParams({ days })}`",
+    "probes": [
+      {
+        "path": "/logs/summary?days=7"
+      }
+    ]
+  },
+  {
+    "file": "api/adminEndpoints.ts",
+    "method": "GET",
+    "call": "`/logs/validation?${buildSearchParams(params ?? {})}`",
+    "probes": [
+      {
+        "path": "/logs/validation?days=7"
+      }
+    ]
+  },
+  {
+    "file": "api/adminEndpoints.ts",
+    "method": "DELETE",
+    "call": "`/logs/validation/${source}`",
+    "probes": [
+      {
+        "path": "/logs/validation/webscraper"
+      }
+    ]
+  },
+  {
+    "file": "api/adminEndpoints.ts",
+    "method": "PUT",
+    "call": "userPath(username, '/disable')",
+    "probes": [
+      {
+        "path": "/users/viewer-demo/disable"
+      }
+    ]
+  },
+  {
+    "file": "api/adminEndpoints.ts",
+    "method": "PUT",
+    "call": "userPath(username, '/enable')",
+    "probes": [
+      {
+        "path": "/users/viewer-demo/enable"
+      }
+    ]
+  },
+  {
+    "file": "api/adminEndpoints.ts",
+    "method": "PUT",
+    "call": "userPath(username, '/group')",
+    "probes": [
+      {
+        "path": "/users/viewer-demo/group",
+        "body": {
+          "group": "users"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/adminEndpoints.ts",
+    "method": "POST",
+    "call": "userPath(username, '/reset-password')",
+    "probes": [
+      {
+        "path": "/users/viewer-demo/reset-password"
+      }
+    ]
+  },
+  {
+    "file": "api/adminEndpoints.ts",
+    "method": "DELETE",
+    "call": "userPath(username)",
+    "probes": [
+      {
+        "path": "/users/viewer-demo"
+      }
+    ]
+  },
+  {
+    "file": "api/adminEndpoints.ts",
+    "method": "PUT",
+    "call": "userPath(username)",
+    "probes": [
+      {
+        "path": "/users/viewer-demo",
+        "body": {
+          "name": "V"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/agentsApi.ts",
+    "method": "GET",
+    "call": "'/agents'",
+    "probes": [
+      {
+        "path": "/agents"
+      }
+    ]
+  },
+  {
+    "file": "api/agentsApi.ts",
+    "method": "POST",
+    "call": "'/agents'",
+    "probes": [
+      {
+        "path": "/agents",
+        "body": {
+          "name": "Probe agent",
+          "scope": {
+            "all": true
+          },
+          "triggers": [],
+          "workflow_id": "wf_default"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/agentsApi.ts",
+    "method": "POST",
+    "call": "agentPath(id, '/disable')",
+    "probes": [
+      {
+        "path": "/agents/ag_5d1e0c9a7b3f/disable"
+      }
+    ]
+  },
+  {
+    "file": "api/agentsApi.ts",
+    "method": "POST",
+    "call": "agentPath(id, '/enable')",
+    "probes": [
+      {
+        "path": "/agents/ag_5d1e0c9a7b3f/enable"
+      }
+    ]
+  },
+  {
+    "file": "api/agentsApi.ts",
+    "method": "POST",
+    "call": "agentPath(id, '/run')",
+    "probes": [
+      {
+        "path": "/agents/ag_5d1e0c9a7b3f/run"
+      }
+    ]
+  },
+  {
+    "file": "api/agentsApi.ts",
+    "method": "GET",
+    "call": "agentPath(id, `/runs${query}`)",
+    "probes": [
+      {
+        "path": "/agents/ag_5d1e0c9a7b3f/runs?cursor=c1"
+      }
+    ]
+  },
+  {
+    "file": "api/agentsApi.ts",
+    "method": "DELETE",
+    "call": "agentPath(id)",
+    "probes": [
+      {
+        "path": "/agents/ag_c0ffee123456"
+      }
+    ]
+  },
+  {
+    "file": "api/agentsApi.ts",
+    "method": "GET",
+    "call": "agentPath(id)",
+    "probes": [
+      {
+        "path": "/agents/ag_5d1e0c9a7b3f"
+      }
+    ]
+  },
+  {
+    "file": "api/agentsApi.ts",
+    "method": "PUT",
+    "call": "agentPath(id)",
+    "probes": [
+      {
+        "path": "/agents/ag_5d1e0c9a7b3f",
+        "body": {
+          "description": "x"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/agentsApi.ts",
+    "method": "POST",
+    "call": "runPath(id, runId, '/cancel')",
+    "probes": [
+      {
+        "path": "/agents/ag_5d1e0c9a7b3f/runs/ar_01a10627a1bce16c/cancel"
+      }
+    ]
+  },
+  {
+    "file": "api/agentsApi.ts",
+    "method": "GET",
+    "call": "runPath(id, runId, `/events?after=${after}`)",
+    "probes": [
+      {
+        "path": "/agents/ag_5d1e0c9a7b3f/runs/ar_01a10627a1bce16c/events?after=0"
+      }
+    ]
+  },
+  {
+    "file": "api/agentsApi.ts",
+    "method": "GET",
+    "call": "runPath(id, runId)",
+    "probes": [
+      {
+        "path": "/agents/ag_5d1e0c9a7b3f/runs/ar_01a10627a1bce16c"
+      }
+    ]
+  },
+  {
+    "file": "api/categoryAccessApi.ts",
+    "method": "GET",
+    "call": "'/feedback/access'",
+    "probes": [
+      {
+        "path": "/feedback/access"
+      }
+    ]
+  },
+  {
+    "file": "api/categoryAccessApi.ts",
+    "method": "GET",
+    "call": "`/users/${encodeURIComponent(username)}/category-access`",
+    "probes": [
+      {
+        "path": "/users/viewer-demo/category-access"
+      }
+    ]
+  },
+  {
+    "file": "api/categoryAccessApi.ts",
+    "method": "PUT",
+    "call": "`/users/${encodeURIComponent(username)}/category-access`",
+    "probes": [
+      {
+        "path": "/users/viewer-demo/category-access",
+        "body": {
+          "categories": [
+            "*"
+          ]
+        }
+      },
+      {
+        "path": "/users/viewer-demo/category-access",
+        "body": {
+          "categories": [
+            "*"
+          ],
+          "sources": [
+            "sales_csv"
+          ]
+        }
+      },
+      {
+        "path": "/users/viewer-demo/category-access",
+        "body": {
+          "categories": [
+            "*"
+          ],
+          "sources": null
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "GET",
+    "call": "'/feedback-forms'",
+    "probes": [
+      {
+        "path": "/feedback-forms"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "GET",
+    "call": "'/feedback-forms?include=stats'",
+    "probes": [
+      {
+        "path": "/feedback-forms?include=stats"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "POST",
+    "call": "'/feedback-forms'",
+    "probes": [
+      {
+        "path": "/feedback-forms",
+        "body": {
+          "name": "Probe form"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "GET",
+    "call": "'/integrations/status'",
+    "probes": [
+      {
+        "path": "/integrations/status"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "GET",
+    "call": "'/projects/prioritization'",
+    "probes": [
+      {
+        "path": "/projects/prioritization"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "PATCH",
+    "call": "'/projects/prioritization'",
+    "probes": [
+      {
+        "path": "/projects/prioritization",
+        "body": {
+          "scores": {}
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "POST",
+    "call": "'/projects/prioritization/rows'",
+    "probes": [
+      {
+        "path": "/projects/prioritization/rows",
+        "body": {
+          "project_id": "proj_1"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "GET",
+    "call": "'/scrapers'",
+    "probes": [
+      {
+        "path": "/scrapers"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "GET",
+    "call": "'/settings/brand'",
+    "probes": [
+      {
+        "path": "/settings/brand"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "PUT",
+    "call": "'/settings/brand'",
+    "probes": [
+      {
+        "path": "/settings/brand",
+        "body": {
+          "brand_name": "Acme"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "GET",
+    "call": "'/settings/categories'",
+    "probes": [
+      {
+        "path": "/settings/categories"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "PUT",
+    "call": "'/settings/categories'",
+    "probes": [
+      {
+        "path": "/settings/categories",
+        "body": {
+          "categories": [
+            {
+              "name": "delivery",
+              "subcategories": []
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "POST",
+    "call": "'/settings/categories/generate'",
+    "probes": [
+      {
+        "path": "/settings/categories/generate",
+        "body": {
+          "description": "shop"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "GET",
+    "call": "'/settings/model'",
+    "probes": [
+      {
+        "path": "/settings/model"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "PUT",
+    "call": "'/settings/model'",
+    "probes": [
+      {
+        "path": "/settings/model",
+        "body": {
+          "surfaces": {}
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "POST",
+    "call": "'/settings/model/test'",
+    "probes": [
+      {
+        "path": "/settings/model/test",
+        "body": {
+          "model_id": "global.anthropic.claude-haiku-5-5"
+        }
+      },
+      {
+        "path": "/settings/model/test",
+        "body": {
+          "model_id": "global.anthropic.claude-opus-4-8"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "GET",
+    "call": "'/settings/model/capacity'",
+    "probes": [
+      {
+        "path": "/settings/model/capacity"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "GET",
+    "call": "'/settings/resolved-problems'",
+    "probes": [
+      {
+        "path": "/settings/resolved-problems"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "PUT",
+    "call": "'/settings/resolved-problems'",
+    "probes": [
+      {
+        "path": "/settings/resolved-problems",
+        "body": {
+          "resolved": []
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "GET",
+    "call": "`/feedback-forms/${formId}/stats`",
+    "probes": [
+      {
+        "path": "/feedback-forms/form_1/stats"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "GET",
+    "call": "`/feedback-forms/${formId}/submissions?${params}`",
+    "probes": [
+      {
+        "path": "/feedback-forms/form_1/submissions?limit=20"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "POST",
+    "call": "`/feedback-forms/${formId}/submit`",
+    "probes": [
+      {
+        "path": "/feedback-forms/form_1/submit",
+        "body": {
+          "text": "hello",
+          "rating": 4
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "DELETE",
+    "call": "`/feedback-forms/${formId}`",
+    "probes": [
+      {
+        "path": "/feedback-forms/form_5"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "GET",
+    "call": "`/feedback-forms/${formId}`",
+    "probes": [
+      {
+        "path": "/feedback-forms/form_1"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "PUT",
+    "call": "`/feedback-forms/${formId}`",
+    "probes": [
+      {
+        "path": "/feedback-forms/form_1",
+        "body": {
+          "name": "Website Feedback"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "GET",
+    "call": "`/feedback?${searchParams}`",
+    "probes": [
+      {
+        "path": "/feedback?days=7"
+      },
+      {
+        "path": "/feedback?days=30&channel=review&dims=product:web_shop&tag=delivery_delay"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "GET",
+    "call": "`/feedback/${id}/similar?${searchParams}`",
+    "probes": [
+      {
+        "path": "/feedback/1/similar?limit=5"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "GET",
+    "call": "`/feedback/${id}`",
+    "probes": [
+      {
+        "path": "/feedback/access"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "GET",
+    "call": "`/feedback/entities?${searchParams}`",
+    "probes": [
+      {
+        "path": "/feedback/entities?days=7"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "GET",
+    "call": "`/feedback/search?${searchParams}`",
+    "probes": [
+      {
+        "path": "/feedback/search?q=delivery&days=7"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "GET",
+    "call": "`/feedback/urgent?${searchParams}`",
+    "probes": [
+      {
+        "path": "/feedback/urgent?days=7"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "DELETE",
+    "call": "`/integrations/${source}/apps/${appId}`",
+    "probes": [
+      {
+        "path": "/integrations/app_reviews_ios/apps/app_x"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "GET",
+    "call": "`/integrations/${source}/apps`",
+    "probes": [
+      {
+        "path": "/integrations/app_reviews_ios/apps"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "POST",
+    "call": "`/integrations/${source}/apps`",
+    "probes": [
+      {
+        "path": "/integrations/app_reviews_ios/apps",
+        "body": {
+          "app": {
+            "app_name": "Probe",
+            "app_id": "1"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "GET",
+    "call": "`/integrations/${source}/credentials?keys=${keys.join(',')}`",
+    "probes": [
+      {
+        "path": "/integrations/github_issues/credentials?keys=repo"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "PUT",
+    "call": "`/integrations/${source}/credentials`",
+    "probes": [
+      {
+        "path": "/integrations/webscraper/credentials",
+        "body": {
+          "key": "v"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "POST",
+    "call": "`/integrations/${source}/test`",
+    "probes": [
+      {
+        "path": "/integrations/webscraper/test"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "GET",
+    "call": "`/metrics/categories?${searchParams}`",
+    "probes": [
+      {
+        "path": "/metrics/categories?days=7"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "GET",
+    "call": "`/metrics/github?${searchParams}`",
+    "probes": [
+      {
+        "path": "/metrics/github?days=30"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "GET",
+    "call": "`/metrics/personas?${searchParams}`",
+    "probes": [
+      {
+        "path": "/metrics/personas?days=7"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "GET",
+    "call": "`/metrics/sentiment?${searchParams}`",
+    "probes": [
+      {
+        "path": "/metrics/sentiment?days=7"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "GET",
+    "call": "`/metrics/sources?${searchParams}`",
+    "probes": [
+      {
+        "path": "/metrics/sources?days=7"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "GET",
+    "call": "`/metrics/summary?${searchParams}`",
+    "probes": [
+      {
+        "path": "/metrics/summary?days=7"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "PUT",
+    "call": "`/sources/${source}/disable`",
+    "probes": [
+      {
+        "path": "/sources/webscraper/disable"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "PUT",
+    "call": "`/sources/${source}/enable`",
+    "probes": [
+      {
+        "path": "/sources/webscraper/enable"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "POST",
+    "call": "`/sources/${source}/run`",
+    "probes": [
+      {
+        "path": "/sources/app_reviews_ios/run"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "GET",
+    "call": "`/sources/status?run_status=${source}`",
+    "probes": [
+      {
+        "path": "/sources/status"
+      }
+    ]
+  },
+  {
+    "file": "api/client.ts",
+    "method": "GET",
+    "call": "`/sources/status${params}`",
+    "probes": [
+      {
+        "path": "/sources/status?sources=webscraper,app_reviews_ios"
+      }
+    ]
+  },
+  {
+    "file": "api/companyContextApi.ts",
+    "method": "GET",
+    "call": "'/settings/company-context'",
+    "probes": [
+      {
+        "path": "/settings/company-context"
+      }
+    ]
+  },
+  {
+    "file": "api/companyContextApi.ts",
+    "method": "PUT",
+    "call": "'/settings/company-context'",
+    "probes": [
+      {
+        "path": "/settings/company-context",
+        "body": {
+          "vision": "x"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/companyContextApi.ts",
+    "method": "GET",
+    "call": "'/settings/my-context'",
+    "probes": [
+      {
+        "path": "/settings/my-context"
+      }
+    ]
+  },
+  {
+    "file": "api/companyContextApi.ts",
+    "method": "PUT",
+    "call": "'/settings/my-context'",
+    "probes": [
+      {
+        "path": "/settings/my-context",
+        "body": {
+          "objectives": "x"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/onboardingApi.ts",
+    "method": "GET",
+    "call": "PATH",
+    "probes": [
+      {
+        "path": "/settings/my-onboarding"
+      }
+    ]
+  },
+  {
+    "file": "api/onboardingApi.ts",
+    "method": "PUT",
+    "call": "PATH",
+    "probes": [
+      {
+        "path": "/settings/my-onboarding",
+        "body": {
+          "state": "active"
+        }
+      },
+      {
+        "path": "/settings/my-onboarding",
+        "body": {
+          "start_page": "home"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/connectApi.ts",
+    "method": "DELETE",
+    "call": "`${TOKENS_PATH}/${encodeURIComponent(tokenId)}`",
+    "probes": [
+      {
+        "path": "/connect/tokens/tok_9f8e7d6c5b4a3f2e"
+      }
+    ]
+  },
+  {
+    "file": "api/connectApi.ts",
+    "method": "GET",
+    "call": "`${TOKENS_PATH}/${encodeURIComponent(tokenId)}${query}`",
+    "probes": [
+      {
+        "path": "/connect/tokens/tok_0a1b2c3d4e5f6a7b?audit=1"
+      }
+    ]
+  },
+  {
+    "file": "api/connectApi.ts",
+    "method": "GET",
+    "call": "TOKENS_PATH",
+    "probes": [
+      {
+        "path": "/connect/tokens"
+      }
+    ]
+  },
+  {
+    "file": "api/connectApi.ts",
+    "method": "POST",
+    "call": "TOKENS_PATH",
+    "probes": [
+      {
+        "path": "/connect/tokens",
+        "body": {
+          "name": "Probe",
+          "scope": "read",
+          "expires_in_days": 30
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/dataEndpoints.ts",
+    "method": "GET",
+    "call": "'/data-explorer/buckets'",
+    "probes": [
+      {
+        "path": "/data-explorer/buckets"
+      }
+    ]
+  },
+  {
+    "file": "api/dataEndpoints.ts",
+    "method": "PUT",
+    "call": "'/data-explorer/feedback'",
+    "probes": [
+      {
+        "path": "/data-explorer/feedback",
+        "body": {
+          "pk": "SOURCE#webscraper",
+          "sk": "FEEDBACK#1",
+          "data": {}
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/dataEndpoints.ts",
+    "method": "PUT",
+    "call": "'/data-explorer/s3'",
+    "probes": [
+      {
+        "path": "/data-explorer/s3",
+        "body": {
+          "key": "raw/probe/x.json",
+          "content": "{}"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/dataEndpoints.ts",
+    "method": "GET",
+    "call": "'/s3-import/sources'",
+    "probes": [
+      {
+        "path": "/s3-import/sources"
+      }
+    ]
+  },
+  {
+    "file": "api/dataEndpoints.ts",
+    "method": "POST",
+    "call": "'/s3-import/sources'",
+    "probes": [
+      {
+        "path": "/s3-import/sources",
+        "body": {
+          "name": "probe"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/dataEndpoints.ts",
+    "method": "POST",
+    "call": "'/s3-import/upload-url'",
+    "probes": [
+      {
+        "path": "/s3-import/upload-url",
+        "body": {
+          "filename": "a.json",
+          "content_type": "application/json"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/dataEndpoints.ts",
+    "method": "GET",
+    "call": "`/data-explorer/s3?${params}`",
+    "probes": [
+      {
+        "path": "/data-explorer/s3?bucket=raw-data"
+      }
+    ]
+  },
+  {
+    "file": "api/dataEndpoints.ts",
+    "method": "GET",
+    "call": "`/data-explorer/s3/preview?${params}`",
+    "probes": [
+      {
+        "path": "/data-explorer/s3/preview?bucket=raw-data&key=webscraper/item1.json"
+      }
+    ]
+  },
+  {
+    "file": "api/dataEndpoints.ts",
+    "method": "DELETE",
+    "call": "`/s3-import/file/${encodeURIComponent(key)}`",
+    "probes": [
+      {
+        "path": "/s3-import/file/probe%2Fa.json"
+      }
+    ]
+  },
+  {
+    "file": "api/dataEndpoints.ts",
+    "method": "GET",
+    "call": "`/s3-import/files?${searchParams}`",
+    "probes": [
+      {
+        "path": "/s3-import/files?source=probe"
+      }
+    ]
+  },
+  {
+    "file": "api/designSystemApi.ts",
+    "method": "PUT",
+    "call": "`${BASE}/integrations`",
+    "probes": [
+      {
+        "path": "/settings/design-system/integrations",
+        "body": {
+          "figma": true
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/designSystemApi.ts",
+    "method": "POST",
+    "call": "`${BASE}/logo`",
+    "probes": [
+      {
+        "path": "/settings/design-system/logo",
+        "body": {
+          "content_type": "image/png"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/designSystemApi.ts",
+    "method": "POST",
+    "call": "`${BASE}/references/${encodeURIComponent(id)}/refresh`",
+    "probes": [
+      {
+        "path": "/settings/design-system/references/ref_figma/refresh"
+      }
+    ]
+  },
+  {
+    "file": "api/designSystemApi.ts",
+    "method": "DELETE",
+    "call": "`${BASE}/references/${encodeURIComponent(id)}`",
+    "probes": [
+      {
+        "path": "/settings/design-system/references/ref_shot"
+      }
+    ]
+  },
+  {
+    "file": "api/designSystemApi.ts",
+    "method": "POST",
+    "call": "`${BASE}/references`",
+    "probes": [
+      {
+        "path": "/settings/design-system/references",
+        "body": {
+          "kind": "url",
+          "title": "Docs",
+          "url": "https://example.com"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/designSystemApi.ts",
+    "method": "GET",
+    "call": "BASE",
+    "probes": [
+      {
+        "path": "/settings/design-system"
+      }
+    ]
+  },
+  {
+    "file": "api/designSystemApi.ts",
+    "method": "PUT",
+    "call": "BASE",
+    "probes": [
+      {
+        "path": "/settings/design-system",
+        "body": {
+          "guidelines": "x"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/feedbackCategoryApi.ts",
+    "method": "PUT",
+    "call": "`/feedback/${encodeURIComponent(feedbackId)}/category`",
+    "probes": [
+      {
+        "path": "/feedback/1/category",
+        "body": {
+          "category": "delivery"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/memoryApi.ts",
+    "method": "POST",
+    "call": "'/memory'",
+    "probes": [
+      {
+        "path": "/memory",
+        "body": {
+          "scope": "personal",
+          "statement": "probe",
+          "kind": "working_style"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/memoryApi.ts",
+    "method": "POST",
+    "call": "'/memory/imports'",
+    "probes": [
+      {
+        "path": "/memory/imports",
+        "body": {
+          "filename": "notes.md",
+          "content_type": "text/markdown",
+          "scope": "personal"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/memoryApi.ts",
+    "method": "POST",
+    "call": "'/memory/merge'",
+    "probes": [
+      {
+        "path": "/memory/merge",
+        "body": {
+          "memory_ids": [
+            "mem_c1",
+            "mem_c2"
+          ],
+          "statement": "x"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/memoryApi.ts",
+    "method": "GET",
+    "call": "'/memory/review'",
+    "probes": [
+      {
+        "path": "/memory/review"
+      }
+    ]
+  },
+  {
+    "file": "api/memoryApi.ts",
+    "method": "GET",
+    "call": "`/memory?${memoryListQuery(params)}`",
+    "probes": [
+      {
+        "path": "/memory?scope=company"
+      }
+    ]
+  },
+  {
+    "file": "api/memoryApi.ts",
+    "method": "GET",
+    "call": "`/memory/imports/${encodeURIComponent(id)}`",
+    "probes": [
+      {
+        "path": "/memory/imports/imp_x"
+      }
+    ]
+  },
+  {
+    "file": "api/memoryApi.ts",
+    "method": "POST",
+    "call": "`/memory/review/${encodeURIComponent(id)}/resolve`",
+    "probes": [
+      {
+        "path": "/memory/review/mem_c3/resolve",
+        "body": {
+          "action": "keep"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/memoryApi.ts",
+    "method": "POST",
+    "call": "item(id, '/confirm')",
+    "probes": [
+      {
+        "path": "/memory/mem_c1/confirm"
+      }
+    ]
+  },
+  {
+    "file": "api/memoryApi.ts",
+    "method": "POST",
+    "call": "item(id, '/forget')",
+    "probes": [
+      {
+        "path": "/memory/mem_p1/forget"
+      }
+    ]
+  },
+  {
+    "file": "api/memoryApi.ts",
+    "method": "POST",
+    "call": "item(id, '/restore')",
+    "probes": [
+      {
+        "path": "/memory/mem_p1/restore"
+      }
+    ]
+  },
+  {
+    "file": "api/memoryApi.ts",
+    "method": "PUT",
+    "call": "item(id)",
+    "probes": [
+      {
+        "path": "/memory/mem_p1",
+        "body": {
+          "statement": "x"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/prioritizationRowsApi.ts",
+    "method": "POST",
+    "call": "'/projects/prioritization/rows/compose'",
+    "probes": [
+      {
+        "path": "/projects/prioritization/rows/compose",
+        "body": {
+          "project_id": "proj_1",
+          "document_ids": [
+            "prfaq_1"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/prioritizationRowsApi.ts",
+    "method": "DELETE",
+    "call": "rowPath(rowId)",
+    "probes": [
+      {
+        "path": "/projects/prioritization/rows/row_x"
+      }
+    ]
+  },
+  {
+    "file": "api/prioritizationRowsApi.ts",
+    "method": "PATCH",
+    "call": "rowPath(rowId)",
+    "probes": [
+      {
+        "path": "/projects/prioritization/rows/row_proj_1_default",
+        "body": {
+          "document_ids": [
+            "prfaq_1"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "GET",
+    "call": "'/projects'",
+    "probes": [
+      {
+        "path": "/projects"
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "GET",
+    "call": "`/projects?${query.toString()}`",
+    "probes": [
+      {
+        "path": "/projects?ids=proj_1,proj_2"
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "'/projects'",
+    "probes": [
+      {
+        "path": "/projects",
+        "body": {
+          "name": "Probe project"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "DELETE",
+    "call": "`/projects/${id}/members/${encodeURIComponent(sub)}`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/members/sub-viewer-demo"
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "PUT",
+    "call": "`/projects/${id}/members/${encodeURIComponent(sub)}`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/members/sub-viewer-demo",
+        "body": {
+          "role": "editor"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "GET",
+    "call": "`/projects/${id}/members/candidates?${new URLSearchParams({ q })}`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/members/candidates?q=vi"
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "GET",
+    "call": "`/projects/${id}/members`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/members"
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${id}/members`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/members",
+        "body": {
+          "sub": "sub-viewer-demo",
+          "role": "viewer"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${id}/owner`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/owner",
+        "body": {
+          "sub": "sub-viewer-demo"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "PUT",
+    "call": "`/projects/${id}/visibility`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/visibility",
+        "body": {
+          "visibility": "private"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "DELETE",
+    "call": "`/projects/${id}`",
+    "probes": [
+      {
+        "path": "/projects/proj_3"
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "GET",
+    "call": "`/projects/${id}`",
+    "probes": [
+      {
+        "path": "/projects/prioritization"
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "PUT",
+    "call": "`/projects/${id}`",
+    "probes": [
+      {
+        "path": "/projects/proj_1",
+        "body": {
+          "description": "x"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/build-prototype`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/build-prototype",
+        "body": {}
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/document`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/document",
+        "body": {
+          "doc_type": "prd"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "DELETE",
+    "call": "`/projects/${projectId}/documents/${documentId}`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/documents/doc_x"
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "PUT",
+    "call": "`/projects/${projectId}/documents/${documentId}`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/documents/prfaq_1",
+        "body": {
+          "title": "x"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/documents/merge`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/documents/merge",
+        "body": {
+          "document_ids": []
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/documents/suggest-brief`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/documents/suggest-brief",
+        "body": {}
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/documents`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/documents",
+        "body": {
+          "title": "Doc",
+          "content": "x"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "DELETE",
+    "call": "`/projects/${projectId}/jobs/${jobId}`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/jobs/job_x"
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "GET",
+    "call": "`/projects/${projectId}/jobs/${jobId}`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/jobs/job_unknown"
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "GET",
+    "call": "`/projects/${projectId}/jobs`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/jobs"
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "GET",
+    "call": "`/projects/${projectId}/documents/${documentId}/versions`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/documents/prfaq_1/versions"
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/documents/${documentId}/versions/${encodeURIComponent(versionId)}/restore`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/documents/prfaq_1/versions/prfaq_1/restore",
+        "body": {
+          "edit_id": "probe-1"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/personas/${personaId}/regenerate-avatar`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/personas/persona_1/regenerate-avatar"
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/personas/${personaId}/notes`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/personas/persona_1/notes",
+        "body": {
+          "text": "n"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "DELETE",
+    "call": "`/projects/${projectId}/personas/${personaId}`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/personas/persona_2"
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "PUT",
+    "call": "`/projects/${projectId}/personas/${personaId}`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/personas/persona_1",
+        "body": {
+          "tagline": "x"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/personas/generate`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/personas/generate",
+        "body": {}
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/personas/import`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/personas/import",
+        "body": {
+          "text": "Persona"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/personas`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/personas",
+        "body": {
+          "name": "Probe"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/prfaq-autofill`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/prfaq-autofill",
+        "body": {}
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/product-context/interview`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/product-context/interview",
+        "body": {
+          "message": "hi"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "GET",
+    "call": "`/projects/${projectId}/product-context`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/product-context"
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "PUT",
+    "call": "`/projects/${projectId}/product-context`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/product-context",
+        "body": {
+          "name": "x"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "DELETE",
+    "call": "`/projects/${projectId}/product-docs/${docId}`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/product-docs/doc_x"
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/product-docs/upload-url`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/product-docs/upload-url",
+        "body": {
+          "filename": "a.pdf"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "GET",
+    "call": "`/projects/${projectId}/product-docs`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/product-docs"
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/product-report`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/product-report",
+        "body": {}
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/research/suggest-questions`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/research/suggest-questions",
+        "body": {}
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/research`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/research",
+        "body": {
+          "question": "why"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/prototypePinsApi.ts",
+    "method": "POST",
+    "call": "`${pinPath(projectId, documentId, pinId)}/${action}`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/prototypes/proto_1/pins/pin_00000000000000000000aaaaaa/resolve"
+      }
+    ]
+  },
+  {
+    "file": "api/prototypePinsApi.ts",
+    "method": "POST",
+    "call": "`${pinPath(projectId, documentId, pinId)}/replies`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/prototypes/proto_1/pins/pin_00000000000000000000aaaaaa/replies",
+        "body": {
+          "text": "Looks good"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/prototypePinsApi.ts",
+    "method": "GET",
+    "call": "pinsPath(projectId, documentId)",
+    "probes": [
+      {
+        "path": "/projects/proj_1/prototypes/proto_1/pins"
+      }
+    ]
+  },
+  {
+    "file": "api/reprocessApi.ts",
+    "method": "POST",
+    "call": "`${BASE}/${encodeURIComponent(jobId)}/cancel`",
+    "probes": [
+      {
+        "path": "/settings/categories/reprocess/rp_unknown/cancel"
+      }
+    ]
+  },
+  {
+    "file": "api/reprocessApi.ts",
+    "method": "GET",
+    "call": "`${BASE}/${encodeURIComponent(jobId)}`",
+    "probes": [
+      {
+        "path": "/settings/categories/reprocess/rp_unknown"
+      }
+    ]
+  },
+  {
+    "file": "api/reprocessApi.ts",
+    "method": "GET",
+    "call": "BASE",
+    "probes": [
+      {
+        "path": "/settings/categories/reprocess"
+      }
+    ]
+  },
+  {
+    "file": "api/reprocessApi.ts",
+    "method": "POST",
+    "call": "BASE",
+    "probes": [
+      {
+        "path": "/settings/categories/reprocess",
+        "body": {
+          "mode": "processed",
+          "days": 30
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/scrapersApi.ts",
+    "method": "GET",
+    "call": "'/scrapers'",
+    "probes": [
+      {
+        "path": "/scrapers"
+      }
+    ]
+  },
+  {
+    "file": "api/scrapersApi.ts",
+    "method": "POST",
+    "call": "'/scrapers'",
+    "probes": [
+      {
+        "path": "/scrapers",
+        "body": {
+          "scraper": {
+            "name": "Probe",
+            "base_url": "https://example.com"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/scrapersApi.ts",
+    "method": "POST",
+    "call": "'/scrapers/analyze-url'",
+    "probes": [
+      {
+        "path": "/scrapers/analyze-url",
+        "body": {
+          "url": "https://example.com"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/scrapersApi.ts",
+    "method": "POST",
+    "call": "'/scrapers/manual/confirm'",
+    "probes": [
+      {
+        "path": "/scrapers/manual/confirm",
+        "body": {
+          "reviews": []
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/scrapersApi.ts",
+    "method": "POST",
+    "call": "'/scrapers/manual/csv-upload'",
+    "probes": [
+      {
+        "path": "/scrapers/manual/csv-upload",
+        "body": {
+          "csv": "text\nhi"
+        }
+      },
+      {
+        "path": "/scrapers/manual/csv-upload",
+        "body": {
+          "csv_text": "Comment,Product,Segment,Labels\n\"Login fails\",mobile_app,partner,vip;billing\n",
+          "source_id": "sales_csv",
+          "column_map": {
+            "Comment": "text",
+            "Product": "dimension:product",
+            "Segment": "dimension:user_type",
+            "Labels": "tags"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/scrapersApi.ts",
+    "method": "POST",
+    "call": "'/scrapers/manual/json-upload'",
+    "probes": [
+      {
+        "path": "/scrapers/manual/json-upload",
+        "body": {
+          "reviews": []
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/scrapersApi.ts",
+    "method": "POST",
+    "call": "'/scrapers/manual/parse'",
+    "probes": [
+      {
+        "path": "/scrapers/manual/parse",
+        "body": {
+          "source_origin": "x",
+          "raw_text": "Great product"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/scrapersApi.ts",
+    "method": "GET",
+    "call": "'/scrapers/templates'",
+    "probes": [
+      {
+        "path": "/scrapers/templates"
+      }
+    ]
+  },
+  {
+    "file": "api/scrapersApi.ts",
+    "method": "POST",
+    "call": "`/scrapers/${id}/run`",
+    "probes": [
+      {
+        "path": "/scrapers/scraper_1/run"
+      }
+    ]
+  },
+  {
+    "file": "api/scrapersApi.ts",
+    "method": "GET",
+    "call": "`/scrapers/${id}/runs`",
+    "probes": [
+      {
+        "path": "/scrapers/scraper_1/runs"
+      }
+    ]
+  },
+  {
+    "file": "api/scrapersApi.ts",
+    "method": "GET",
+    "call": "`/scrapers/${id}/status`",
+    "probes": [
+      {
+        "path": "/scrapers/scraper_1/status"
+      }
+    ]
+  },
+  {
+    "file": "api/scrapersApi.ts",
+    "method": "DELETE",
+    "call": "`/scrapers/${id}`",
+    "probes": [
+      {
+        "path": "/scrapers/scraper_2"
+      }
+    ]
+  },
+  {
+    "file": "api/scrapersApi.ts",
+    "method": "GET",
+    "call": "`/scrapers/manual/parse/${jobId}`",
+    "probes": [
+      {
+        "path": "/scrapers/manual/parse/job_x"
+      }
+    ]
+  },
+  {
+    "file": "api/userFlagsApi.ts",
+    "method": "PUT",
+    "call": "`/users/${encodeURIComponent(username)}/flags`",
+    "probes": [
+      {
+        "path": "/users/viewer-demo/flags",
+        "body": {
+          "memory_reviewer": false
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/votingSessionsApi.ts",
+    "method": "POST",
+    "call": "'/voting-sessions'",
+    "probes": [
+      {
+        "path": "/voting-sessions",
+        "body": {
+          "row_id": "row_proj_1_default"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/votingSessionsApi.ts",
+    "method": "POST",
+    "call": "`${sessionPath(sessionId)}/close`",
+    "probes": [
+      {
+        "path": "/voting-sessions/vs_unknown/close"
+      }
+    ]
+  },
+  {
+    "file": "api/votingSessionsApi.ts",
+    "method": "GET",
+    "call": "sessionPath(sessionId)",
+    "probes": [
+      {
+        "path": "/voting-sessions/vs_x"
+      }
+    ]
+  },
+  {
+    "file": "api/workflowsApi.ts",
+    "method": "GET",
+    "call": "'/workflows'",
+    "probes": [
+      {
+        "path": "/workflows"
+      }
+    ]
+  },
+  {
+    "file": "api/workflowsApi.ts",
+    "method": "POST",
+    "call": "'/workflows'",
+    "probes": [
+      {
+        "path": "/workflows",
+        "body": {
+          "name": "Probe wf"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/workflowsApi.ts",
+    "method": "POST",
+    "call": "'/workflows/import'",
+    "probes": [
+      {
+        "path": "/workflows/import",
+        "body": {
+          "workflow": {}
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/workflowsApi.ts",
+    "method": "POST",
+    "call": "'/workflows/validate'",
+    "probes": [
+      {
+        "path": "/workflows/validate",
+        "body": {
+          "nodes": [],
+          "edges": []
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/workflowsApi.ts",
+    "method": "POST",
+    "call": "path(id, '/duplicate')",
+    "probes": [
+      {
+        "path": "/workflows/wf_default/duplicate"
+      }
+    ]
+  },
+  {
+    "file": "api/workflowsApi.ts",
+    "method": "GET",
+    "call": "path(id, '/export')",
+    "probes": [
+      {
+        "path": "/workflows/wf_default/export"
+      }
+    ]
+  },
+  {
+    "file": "api/workflowsApi.ts",
+    "method": "GET",
+    "call": "path(id)",
+    "probes": [
+      {
+        "path": "/workflows/wf_default"
+      }
+    ]
+  },
+  {
+    "file": "api/workflowsApi.ts",
+    "method": "DELETE",
+    "call": "path(id)",
+    "probes": [
+      {
+        "path": "/workflows/wf_default"
+      }
+    ]
+  },
+  {
+    "file": "api/workflowsApi.ts",
+    "method": "PUT",
+    "call": "path(id)",
+    "probes": [
+      {
+        "path": "/workflows/wf_3b9e1c0d7a42",
+        "body": {
+          "name": "x",
+          "revision": 1
+        }
+      }
+    ]
+  },
+  {
+    "file": "assistant/approvals/companyExecutors.ts",
+    "method": "PUT",
+    "call": "COMPANY_CONTEXT",
+    "probes": [
+      {
+        "path": "/settings/company-context",
+        "body": {
+          "vision": "Be the most trusted shop",
+          "objectives": []
+        }
+      }
+    ]
+  },
+  {
+    "file": "assistant/approvals/companyExecutors.ts",
+    "method": "PUT",
+    "call": "DESIGN_SYSTEM",
+    "probes": [
+      {
+        "path": "/settings/design-system",
+        "body": {
+          "guidelines": "One primary action"
+        }
+      }
+    ]
+  },
+  {
+    "file": "assistant/approvals/companyExecutors.ts",
+    "method": "GET",
+    "call": "endpoint",
+    "probes": [
+      {
+        "path": "/settings/company-context"
+      },
+      {
+        "path": "/settings/my-context"
+      },
+      {
+        "path": "/settings/design-system"
+      }
+    ]
+  },
+  {
+    "file": "assistant/approvals/companyExecutors.ts",
+    "method": "PUT",
+    "call": "MY_CONTEXT",
+    "probes": [
+      {
+        "path": "/settings/my-context",
+        "body": {
+          "objectives": [
+            "Cut returns"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "file": "assistant/approvals/memoryExecutors.ts",
+    "method": "POST",
+    "call": "'/memory'",
+    "probes": [
+      {
+        "path": "/memory",
+        "body": {
+          "scope": "personal",
+          "statement": "probe",
+          "kind": "working_style"
+        }
+      }
+    ]
+  },
+  {
+    "file": "assistant/approvals/memoryExecutors.ts",
+    "method": "POST",
+    "call": "'/memory/merge'",
+    "probes": [
+      {
+        "path": "/memory/merge",
+        "body": {
+          "memory_ids": [
+            "mem_c1",
+            "mem_c2"
+          ],
+          "statement": "x"
+        }
+      }
+    ]
+  },
+  {
+    "file": "assistant/approvals/memoryExecutors.ts",
+    "method": "POST",
+    "call": "`/memory/review/${encodeURIComponent(args.memory_id)}/resolve`",
+    "probes": [
+      {
+        "path": "/memory/review/mem_c3/resolve",
+        "body": {
+          "action": "keep"
+        }
+      }
+    ]
+  },
+  {
+    "file": "assistant/approvals/memoryExecutors.ts",
+    "method": "POST",
+    "call": "item(args.memory_id, '/confirm')",
+    "probes": [
+      {
+        "path": "/memory/mem_c1/confirm"
+      }
+    ]
+  },
+  {
+    "file": "assistant/approvals/memoryExecutors.ts",
+    "method": "POST",
+    "call": "item(args.memory_id, '/forget')",
+    "probes": [
+      {
+        "path": "/memory/mem_p1/forget"
+      }
+    ]
+  },
+  {
+    "file": "assistant/approvals/memoryExecutors.ts",
+    "method": "PUT",
+    "call": "item(args.memory_id)",
+    "probes": [
+      {
+        "path": "/memory/mem_p1",
+        "body": {
+          "statement": "x"
+        }
+      }
+    ]
+  },
+  {
+    "file": "assistant/sessions/sessionsApi.ts",
+    "method": "GET",
+    "call": "'/chat/conversations/_list?kind=assistant'",
+    "probes": [
+      {
+        "path": "/chat/conversations/_list?kind=assistant"
+      }
+    ]
+  },
+  {
+    "file": "assistant/sessions/sessionsApi.ts",
+    "method": "POST",
+    "call": "sessionPath(body.id)",
+    "probes": [
+      {
+        "path": "/chat/conversations/conv_probe",
+        "body": {
+          "kind": "assistant",
+          "id": "conv_probe",
+          "messages": "[]"
+        }
+      }
+    ]
+  },
+  {
+    "file": "assistant/sessions/sessionsApi.ts",
+    "method": "DELETE",
+    "call": "sessionPath(id)",
+    "probes": [
+      {
+        "path": "/chat/conversations/conv_probe"
+      }
+    ]
+  },
+  {
+    "file": "assistant/sessions/sessionsApi.ts",
+    "method": "GET",
+    "call": "sessionPath(id)",
+    "probes": [
+      {
+        "path": "/chat/conversations/_list?kind=assistant"
+      }
+    ]
+  },
+  {
+    "file": "api/dimensionsApi.ts",
+    "method": "GET",
+    "call": "'/settings/dimensions'",
+    "probes": [
+      {
+        "path": "/settings/dimensions"
+      }
+    ]
+  },
+  {
+    "file": "api/dimensionsApi.ts",
+    "method": "PUT",
+    "call": "'/settings/dimensions'",
+    "probes": [
+      {
+        "path": "/settings/dimensions",
+        "body": {
+          "dimensions": [
+            {
+              "key": "product",
+              "label": "Product",
+              "infer": true,
+              "values": [
+                {
+                  "name": "mobile_app"
+                },
+                {
+                  "name": "web_shop"
+                },
+                {
+                  "name": "partner_portal"
+                }
+              ]
+            },
+            {
+              "key": "module",
+              "label": "Module",
+              "infer": true,
+              "parent": "product",
+              "values": [
+                {
+                  "name": "login",
+                  "parent_value": "mobile_app"
+                },
+                {
+                  "name": "checkout",
+                  "parent_value": "web_shop"
+                },
+                {
+                  "name": "search"
+                },
+                {
+                  "name": "push_notifications",
+                  "parent_value": "mobile_app"
+                },
+                {
+                  "name": "invoicing",
+                  "parent_value": "partner_portal"
+                }
+              ]
+            },
+            {
+              "key": "user_type",
+              "label": "User type",
+              "infer": false,
+              "values": [
+                {
+                  "name": "customer"
+                },
+                {
+                  "name": "partner"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/dimensionsApi.ts",
+    "method": "GET",
+    "call": "`/metrics/dimensions?${buildSearchParams(params)}`",
+    "probes": [
+      {
+        "path": "/metrics/dimensions?key=product&days=30"
+      },
+      {
+        "path": "/metrics/dimensions?key=module&days=30&dims=product:mobile_app&tag=vip&channel=review"
+      }
+    ]
+  },
+  {
+    "file": "api/dimensionsApi.ts",
+    "method": "PUT",
+    "call": "`/feedback/${encodeURIComponent(feedbackId)}/dimensions`",
+    "probes": [
+      {
+        "path": "/feedback/2/dimensions",
+        "body": {
+          "dimensions": {
+            "product": "mobile_app",
+            "module": null
+          },
+          "tags": [
+            "vip"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/sourceProfilesApi.ts",
+    "method": "GET",
+    "call": "'/settings/sources'",
+    "probes": [
+      {
+        "path": "/settings/sources"
+      }
+    ]
+  },
+  {
+    "file": "api/sourceProfilesApi.ts",
+    "method": "PUT",
+    "call": "'/settings/sources'",
+    "probes": [
+      {
+        "path": "/settings/sources",
+        "body": {
+          "sources": [
+            {
+              "id": "webscraper",
+              "label": "Web scraper",
+              "pii": "allow",
+              "retention_days": null,
+              "restricted": false,
+              "dimension_defaults": {},
+              "tags": []
+            },
+            {
+              "id": "manual_import",
+              "label": "Manual import",
+              "pii": "allow",
+              "retention_days": null,
+              "restricted": false,
+              "dimension_defaults": {},
+              "tags": []
+            },
+            {
+              "id": "feedback_form",
+              "label": "Feedback forms",
+              "pii": "allow",
+              "retention_days": null,
+              "restricted": false,
+              "dimension_defaults": {
+                "user_type": "customer"
+              },
+              "tags": []
+            },
+            {
+              "id": "sales_csv",
+              "label": "Sales CSV",
+              "pii": "allow",
+              "retention_days": null,
+              "restricted": false,
+              "dimension_defaults": {
+                "user_type": "partner"
+              },
+              "tags": [
+                "sales"
+              ]
+            },
+            {
+              "id": "support_tickets",
+              "label": "Support tickets",
+              "pii": "redact",
+              "retention_days": 365,
+              "restricted": true,
+              "dimension_defaults": {},
+              "tags": [
+                "support"
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/sourceProfilesApi.ts",
+    "method": "POST",
+    "call": "'/settings/erasure'",
+    "probes": [
+      {
+        "path": "/settings/erasure",
+        "body": {
+          "field": "author",
+          "value": "Jordan P."
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/sourceProfilesApi.ts",
+    "method": "GET",
+    "call": "'/settings/erasure'",
+    "probes": [
+      {
+        "path": "/settings/erasure"
+      }
+    ]
+  }
+]

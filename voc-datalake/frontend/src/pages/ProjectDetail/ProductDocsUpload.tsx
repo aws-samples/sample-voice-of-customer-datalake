@@ -27,8 +27,9 @@ import {
   IMAGE_MIME_EXTENSIONS, dragCarriesFiles, dragLeavesElement, pastedImages, toArray,
   withSyntheticName,
 } from '../../utils/imageInput'
+import { loadWhileMounted } from './loadWhileMounted'
 import { isImagePrepError, resizeImageForUpload } from './resizeImage'
-import type { ProductDoc } from '../../api/types'
+import type { ProductDoc } from '../../api/projectTypes'
 
 /**
  * Exactly the content types the upload boundary accepts — see
@@ -82,7 +83,11 @@ const ACCEPTED_LABEL = [...new Set(Object.values(ALLOWED_MIME))]
 // source text — keep it a single plain multiplication.
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 
-export function DocsUpload({ projectId }: { readonly projectId: string }) {
+/**
+ * `canEdit` false (a viewer) lists the uploaded docs and nothing else: no drop
+ * zone, picker, paste target or Delete — each of those would only 403.
+ */
+export function DocsUpload({ projectId, canEdit }: { readonly projectId: string; readonly canEdit: boolean }) {
   // Owns its namespace so i18next-parser attributes product.upload.* keys to
   // projectDetail.json (a passed-in `t` prop gets attributed to `common`).
   const { t } = useTranslation('projectDetail')
@@ -106,17 +111,11 @@ export function DocsUpload({ projectId }: { readonly projectId: string }) {
   // Initial load uses the promise-callback lifecycle pattern (all setState
   // happens asynchronously in .then/.finally); `refresh` stays for polling
   // and post-upload updates, which run from timer/event contexts.
-  useEffect(() => {
-    const lifecycle = { cancelled: false }
-    projectsApi.listProductDocs(projectId).then((r) => {
-      if (!lifecycle.cancelled) setDocs(r.docs)
-    }).catch((e) => {
-      console.error('Failed to list product docs', e)
-    }).finally(() => {
-      if (!lifecycle.cancelled) setLoading(false)
-    })
-    return () => { lifecycle.cancelled = true }
-  }, [projectId])
+  useEffect(() => loadWhileMounted(projectsApi.listProductDocs(projectId), {
+    onLoaded: (r) => setDocs(r.docs),
+    errorMessage: 'Failed to list product docs',
+    onSettled: () => setLoading(false),
+  }), [projectId])
 
   const inFlight = useMemo(() => docs.some((d) => d.status === 'pending' || d.status === 'extracting'), [docs])
   useEffect(() => {
@@ -124,7 +123,7 @@ export function DocsUpload({ projectId }: { readonly projectId: string }) {
     const start = Date.now()
     const id = setInterval(() => {
       if (Date.now() - start > 60_000) { clearInterval(id); return }
-      refresh()
+      void refresh()
     }, 3000)
     return () => clearInterval(id)
   }, [inFlight, refresh])
@@ -187,7 +186,7 @@ export function DocsUpload({ projectId }: { readonly projectId: string }) {
     for (const file of toArray(files)) {
       await uploadOne(file)
     }
-    refresh()
+    void refresh()
     if (fileInput.current) fileInput.current.value = ''
   }, [refresh, uploadOne])
 
@@ -197,7 +196,7 @@ export function DocsUpload({ projectId }: { readonly projectId: string }) {
     // field inside this pane still behaves like a paste.
     if (images.length === 0) return
     e.preventDefault()
-    handleFiles(images.map(withSyntheticName))
+    void handleFiles(images.map(withSyntheticName))
   }, [handleFiles])
 
   // The single activation path for the hidden file input — see the drop zone.
@@ -214,7 +213,7 @@ export function DocsUpload({ projectId }: { readonly projectId: string }) {
   const onDelete = useCallback(async (docId: string) => {
     try {
       await projectsApi.deleteProductDoc(projectId, docId)
-      refresh()
+      void refresh()
     } catch (e) {
       console.error('Delete failed', e)
     }
@@ -224,12 +223,12 @@ export function DocsUpload({ projectId }: { readonly projectId: string }) {
     // onPaste sits on the pane, not on window: a React paste handler only fires
     // for events originating inside this subtree, so pasting into an input
     // elsewhere on the page is untouched.
-    <div className="bg-white border rounded-xl p-4" onPaste={handlePaste}>
+    <div className="bg-card border rounded-xl p-4" onPaste={canEdit ? handlePaste : undefined}>
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold flex items-center gap-2">
-          <Upload size={16} className="text-blue-600" /> {t('product.upload.heading')}
+          <Upload size={16} className="text-accent" /> {t('product.upload.heading')}
         </h3>
-        <span className="text-xs text-gray-400">{t('product.upload.hint')}</span>
+        {canEdit ? <span className="text-xs text-muted">{t('product.upload.hint')}</span> : null}
       </div>
 
       {/*
@@ -256,7 +255,7 @@ export function DocsUpload({ projectId }: { readonly projectId: string }) {
         second one to translate; role="button" + that name is what makes the focus
         stop announce as an activatable control.
       */}
-      <div
+      {canEdit ? <><div
         role="button"
         tabIndex={0}
         aria-label={t('product.upload.dropZone')}
@@ -264,7 +263,7 @@ export function DocsUpload({ projectId }: { readonly projectId: string }) {
         // fail as if the drag handlers broke. The classes below stay the styling.
         data-drag-active={dragActive}
         className={`block border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors ${
-          dragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50'
+          dragActive ? 'border-accent bg-accent-subtle' : 'border-border-strong hover:border-accent/60 hover:bg-accent-subtle'
         }`}
         onClick={openPicker}
         onKeyDown={(e) => {
@@ -325,11 +324,11 @@ export function DocsUpload({ projectId }: { readonly projectId: string }) {
           e.preventDefault()
           e.stopPropagation()
           setDragActive(false)
-          handleFiles(e.dataTransfer.files)
+          void handleFiles(e.dataTransfer.files)
         }}
       >
-        <div className="text-sm text-gray-600">
-          <Upload size={20} className="mx-auto text-gray-400 mb-1" />
+        <div className="text-sm text-text">
+          <Upload size={20} className="mx-auto text-muted mb-1" />
           {t('product.upload.dropZone')}
         </div>
       </div>
@@ -345,32 +344,32 @@ export function DocsUpload({ projectId }: { readonly projectId: string }) {
       {/* PDF/DOCX are named explicitly rather than just omitted: they used to be
           accepted here, so a user who uploaded one before needs to read "not
           yet". Full width, unlike the header hint, which has a narrow slot. */}
-      <p className="mt-2 text-xs text-gray-400">
+      <p className="mt-2 text-xs text-muted">
         {t('product.upload.accepted')}
         {' · '}
         {t('product.upload.notYet')}
-      </p>
+      </p></> : null}
 
       {uploadError && (
-        <div className="mt-2 text-xs text-red-600 inline-flex items-center gap-1">
+        <div className="mt-2 text-xs text-danger inline-flex items-center gap-1">
           <AlertCircle size={12} /> {uploadError}
         </div>
       )}
 
       <ul className="mt-3 space-y-2">
-        {loading && <li className="text-xs text-gray-400">{t('product.upload.loading')}</li>}
+        {loading && <li className="text-xs text-muted">{t('product.upload.loading')}</li>}
         {!loading && docs.length === 0 && (
-          <li className="text-xs text-gray-400">{t('product.upload.empty')}</li>
+          <li className="text-xs text-muted">{t('product.upload.empty')}</li>
         )}
         {docs.map((d) => (
           <li key={d.doc_id} className="flex items-center justify-between border rounded-md px-3 py-2 text-sm">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <FileText size={14} className="text-gray-400 flex-shrink-0" />
+                <FileText size={14} className="text-muted flex-shrink-0" />
                 <span className="truncate">{d.filename}</span>
                 <DocStatusBadge status={d.status} error={d.error} />
               </div>
-              <div className="text-xs text-gray-400 mt-0.5">
+              <div className="text-xs text-muted mt-0.5">
                 {/* size_bytes can be 0/missing on legacy records — hide the KB
                     label rather than rendering "0.0 KB", which reads as broken */}
                 {d.size_bytes > 0 ? `${(d.size_bytes / 1024).toFixed(1)} KB` : null}
@@ -382,17 +381,20 @@ export function DocsUpload({ projectId }: { readonly projectId: string }) {
                     Only reachable from this rung on — nothing wrote `failed`
                     before it, so this text had never actually rendered. */}
                 {d.status === 'failed' && d.error && (
-                  <>{' · '}<span className="text-red-600">{d.error}</span></>
+                  <>{' · '}<span className="text-danger">{d.error}</span></>
                 )}
               </div>
             </div>
-            <button
-              onClick={() => onDelete(d.doc_id)}
-              className="ml-2 text-gray-400 hover:text-red-600"
-              aria-label={t('product.upload.delete')}
-            >
-              <Trash2 size={14} />
-            </button>
+            {canEdit ? (
+              <button
+                type="button"
+                onClick={() => onDelete(d.doc_id)}
+                className="ml-2 text-muted hover:text-danger"
+                aria-label={t('product.upload.delete')}
+              >
+                <Trash2 size={14} aria-hidden />
+              </button>
+            ) : null}
           </li>
         ))}
       </ul>
@@ -403,13 +405,13 @@ export function DocsUpload({ projectId }: { readonly projectId: string }) {
 function DocStatusBadge({ status, error }: { readonly status: ProductDoc['status']; readonly error: string | null }) {
   const { t } = useTranslation('projectDetail')
   if (status === 'ready') {
-    return <span className="inline-flex items-center gap-1 text-xs text-green-700"><CheckCircle2 size={12} /> {t('product.upload.statusReady')}</span>
+    return <span className="inline-flex items-center gap-1 text-xs text-ok"><CheckCircle2 size={12} /> {t('product.upload.statusReady')}</span>
   }
   if (status === 'failed') {
-    return <span className="inline-flex items-center gap-1 text-xs text-red-600" title={error || ''}><AlertCircle size={12} /> {t('product.upload.statusFailed')}</span>
+    return <span className="inline-flex items-center gap-1 text-xs text-danger" title={error ?? ''}><AlertCircle size={12} /> {t('product.upload.statusFailed')}</span>
   }
   return (
-    <span className="inline-flex items-center gap-1 text-xs text-gray-500">
+    <span className="inline-flex items-center gap-1 text-xs text-muted">
       <Loader2 size={12} className="animate-spin" />
       {status === 'pending' ? t('product.upload.statusUploading') : t('product.upload.statusExtracting')}
     </span>

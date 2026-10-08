@@ -2,19 +2,22 @@
  * @fileoverview Tests for UserAdmin component.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { screen, waitFor } from '@testing-library/react'
+import userEvent, { type UserEvent } from '@testing-library/user-event'
+import { renderWithQueryClient } from '../../test/query-client'
+import type { CognitoUser } from '../../api/types'
+import { required } from '../component-spec-fixtures'
+import { cognitoUser } from './userAdmin-fixtures'
 
 // Mock API before importing component
-const mockGetUsers = vi.fn()
-const mockCreateUser = vi.fn()
-const mockUpdateUserGroup = vi.fn()
-const mockResetUserPassword = vi.fn()
-const mockEnableUser = vi.fn()
-const mockDisableUser = vi.fn()
-const mockDeleteUser = vi.fn()
-const mockUpdateUser = vi.fn()
+const mockGetUsers = vi.fn<() => Promise<unknown>>()
+const mockCreateUser = vi.fn<(data: unknown) => Promise<unknown>>()
+const mockUpdateUserGroup = vi.fn<(username: string, group: string) => Promise<unknown>>()
+const mockResetUserPassword = vi.fn<(username: string) => Promise<unknown>>()
+const mockEnableUser = vi.fn<(username: string) => Promise<unknown>>()
+const mockDisableUser = vi.fn<(username: string) => Promise<unknown>>()
+const mockDeleteUser = vi.fn<(username: string) => Promise<unknown>>()
+const mockUpdateUser = vi.fn<(username: string, data: unknown) => Promise<unknown>>()
 
 vi.mock('../../api/client', () => ({
   api: {
@@ -31,13 +34,42 @@ vi.mock('../../api/client', () => ({
 
 import UserAdmin from './UserAdmin'
 
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
-  return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
+/** Mount the admin panel; `users` (when given) is what `GET /users` returns. */
+function renderAdmin(users?: CognitoUser[]): UserEvent {
+  if (users !== undefined) mockGetUsers.mockResolvedValue({ users })
+  const user = userEvent.setup()
+  renderWithQueryClient(<UserAdmin />)
+  return user
+}
+
+/** Mount with one user and wait for that row's controls. */
+async function renderOneUser(overrides: Partial<CognitoUser> = {}): Promise<UserEvent> {
+  const user = renderAdmin([cognitoUser(overrides)])
+  await screen.findAllByRole('combobox')
+  return user
+}
+
+/**
+ * The first element titled `title` — the desktop row's, since desktop and mobile
+ * layouts both render every row — once one is on screen.
+ */
+async function firstByTitle(title: string): Promise<HTMLElement> {
+  const [first] = await screen.findAllByTitle(title)
+  return required(first, `an element titled "${title}"`)
+}
+
+/** The desktop row's role dropdown. */
+function firstRoleSelect(): HTMLElement {
+  const [first] = screen.getAllByRole('combobox')
+  return required(first, 'a role dropdown')
+}
+
+/** Mount with no users and open the Add User modal. */
+async function openCreateModal(): Promise<UserEvent> {
+  const user = renderAdmin()
+  await user.click(await screen.findByRole('button', { name: /add user/i }))
+  await screen.findByText('Add New User')
+  return user
 }
 
 describe('UserAdmin', () => {
@@ -56,10 +88,9 @@ describe('UserAdmin', () => {
   describe('loading state', () => {
     it('shows loading spinner while fetching users', () => {
       mockGetUsers.mockReturnValue(new Promise(() => {}))
-      
-      render(<UserAdmin />, { wrapper: createWrapper() })
-      
-      // eslint-disable-next-line testing-library/no-node-access
+
+      renderAdmin()
+
       expect(document.querySelector('.animate-spin')).toBeInTheDocument()
     })
   })
@@ -67,179 +98,87 @@ describe('UserAdmin', () => {
   describe('error state', () => {
     it('shows error message when fetch fails', async () => {
       mockGetUsers.mockRejectedValue(new Error('Access denied'))
-      
-      render(<UserAdmin />, { wrapper: createWrapper() })
-      
-      await waitFor(() => {
-        expect(screen.getByText(/failed to load users/i)).toBeInTheDocument()
-      })
+
+      renderAdmin()
+
+      expect(await screen.findByText(/failed to load users/i)).toBeInTheDocument()
     })
   })
 
   describe('header', () => {
-    it('displays user management title', async () => {
-      render(<UserAdmin />, { wrapper: createWrapper() })
-      
-      await waitFor(() => {
-        expect(screen.getByText('User Management')).toBeInTheDocument()
-      })
+    it('renders no heading of its own — the Settings "User Administration" card supplies the section title', async () => {
+      renderAdmin()
+
+      expect(await screen.findByRole('button', { name: /add user/i })).toBeInTheDocument()
+      expect(screen.queryByRole('heading')).not.toBeInTheDocument()
+      expect(screen.queryByText('User Management')).not.toBeInTheDocument()
     })
 
     it('displays user count', async () => {
-      mockGetUsers.mockResolvedValue({
-        users: [
-          { username: 'user1', email: 'user1@example.com', name: '', given_name: '', family_name: '', status: 'CONFIRMED', enabled: true, groups: ['users'] },
-          { username: 'user2', email: 'user2@example.com', name: '', given_name: '', family_name: '', status: 'CONFIRMED', enabled: true, groups: ['admins'] },
-        ],
-      })
-      
-      render(<UserAdmin />, { wrapper: createWrapper() })
-      
-      await waitFor(() => {
-        expect(screen.getByText('(2 users)')).toBeInTheDocument()
-      })
+      renderAdmin([
+        cognitoUser({ username: 'user1', email: 'user1@example.com' }),
+        cognitoUser({ username: 'user2', email: 'user2@example.com', groups: ['admins'] }),
+      ])
+
+      expect(await screen.findByText('(2 users)')).toBeInTheDocument()
     })
 
     it('displays Add User button', async () => {
-      render(<UserAdmin />, { wrapper: createWrapper() })
-      
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /add user/i })).toBeInTheDocument()
-      })
+      renderAdmin()
+
+      expect(await screen.findByRole('button', { name: /add user/i })).toBeInTheDocument()
     })
   })
 
   describe('empty state', () => {
     it('shows empty message when no users exist', async () => {
-      mockGetUsers.mockResolvedValue({ users: [] })
-      
-      render(<UserAdmin />, { wrapper: createWrapper() })
-      
-      await waitFor(() => {
-        // Both desktop and mobile show empty state, just check one exists
-        const emptyMessages = screen.getAllByText(/no users found/i)
-        expect(emptyMessages.length).toBeGreaterThan(0)
-      })
+      renderAdmin([])
+
+      // Both desktop and mobile show the empty state.
+      expect((await screen.findAllByText(/no users found/i)).length).toBeGreaterThan(0)
     })
   })
 
   describe('users list', () => {
     it('displays user email', async () => {
-      mockGetUsers.mockResolvedValue({
-        users: [
-          { username: 'user1', email: 'test@example.com', name: '', given_name: '', family_name: '', status: 'CONFIRMED', enabled: true, groups: ['users'] },
-        ],
-      })
-      
-      render(<UserAdmin />, { wrapper: createWrapper() })
-      
-      await waitFor(() => {
-        // Both desktop and mobile render the email, just check one exists
-        const emails = screen.getAllByText('test@example.com')
-        expect(emails.length).toBeGreaterThan(0)
-      })
+      renderAdmin([cognitoUser()])
+
+      // Both desktop and mobile render the email.
+      expect((await screen.findAllByText('test@example.com')).length).toBeGreaterThan(0)
     })
 
     it('displays user name when available', async () => {
-      mockGetUsers.mockResolvedValue({
-        users: [
-          { username: 'user1', email: 'test@example.com', name: 'John Doe', given_name: 'John', family_name: 'Doe', status: 'CONFIRMED', enabled: true, groups: ['users'] },
-        ],
-      })
-      
-      render(<UserAdmin />, { wrapper: createWrapper() })
-      
-      await waitFor(() => {
-        // Both desktop and mobile render the name
-        const names = screen.getAllByText('John Doe')
-        expect(names.length).toBeGreaterThan(0)
-      })
+      renderAdmin([cognitoUser({ name: 'John Doe', given_name: 'John', family_name: 'Doe' })])
+
+      expect((await screen.findAllByText('John Doe')).length).toBeGreaterThan(0)
     })
   })
 
   describe('status badges', () => {
-    it('shows Active badge for confirmed enabled users', async () => {
-      mockGetUsers.mockResolvedValue({
-        users: [
-          { username: 'user1', email: 'test@example.com', name: '', given_name: '', family_name: '', status: 'CONFIRMED', enabled: true, groups: ['users'] },
-        ],
-      })
-      
-      render(<UserAdmin />, { wrapper: createWrapper() })
-      
-      await waitFor(() => {
-        // Both desktop and mobile render status badges
-        const badges = screen.getAllByText('Active')
-        expect(badges.length).toBeGreaterThan(0)
-      })
-    })
+    it.each([
+      ['Active', 'confirmed enabled users', {}],
+      ['Disabled', 'disabled users', { enabled: false }],
+      ['Pending', 'users requiring password change', { status: 'FORCE_CHANGE_PASSWORD' }],
+    ] as const)('shows %s badge for %s', async (badge, _who, overrides) => {
+      renderAdmin([cognitoUser(overrides)])
 
-    it('shows Disabled badge for disabled users', async () => {
-      mockGetUsers.mockResolvedValue({
-        users: [
-          { username: 'user1', email: 'test@example.com', name: '', given_name: '', family_name: '', status: 'CONFIRMED', enabled: false, groups: ['users'] },
-        ],
-      })
-      
-      render(<UserAdmin />, { wrapper: createWrapper() })
-      
-      await waitFor(() => {
-        const badges = screen.getAllByText('Disabled')
-        expect(badges.length).toBeGreaterThan(0)
-      })
-    })
-
-    it('shows Pending badge for users requiring password change', async () => {
-      mockGetUsers.mockResolvedValue({
-        users: [
-          { username: 'user1', email: 'test@example.com', name: '', given_name: '', family_name: '', status: 'FORCE_CHANGE_PASSWORD', enabled: true, groups: ['users'] },
-        ],
-      })
-      
-      render(<UserAdmin />, { wrapper: createWrapper() })
-      
-      await waitFor(() => {
-        const badges = screen.getAllByText('Pending')
-        expect(badges.length).toBeGreaterThan(0)
-      })
+      // Both desktop and mobile render status badges.
+      expect((await screen.findAllByText(badge)).length).toBeGreaterThan(0)
     })
   })
 
   describe('role selector', () => {
     it('displays role dropdown with current role selected', async () => {
-      mockGetUsers.mockResolvedValue({
-        users: [
-          { username: 'user1', email: 'test@example.com', name: '', given_name: '', family_name: '', status: 'CONFIRMED', enabled: true, groups: ['admins'] },
-        ],
-      })
-      
-      render(<UserAdmin />, { wrapper: createWrapper() })
-      
-      await waitFor(() => {
-        // Both desktop and mobile have dropdowns
-        const selects = screen.getAllByRole('combobox')
-        expect(selects.length).toBeGreaterThan(0)
-        expect(selects[0]).toHaveValue('admins')
-      })
+      await renderOneUser({ groups: ['admins'] })
+
+      expect(firstRoleSelect()).toHaveValue('admins')
     })
 
     it('calls updateUserGroup when role is changed', async () => {
-      const user = userEvent.setup()
-      mockGetUsers.mockResolvedValue({
-        users: [
-          { username: 'user1', email: 'test@example.com', name: '', given_name: '', family_name: '', status: 'CONFIRMED', enabled: true, groups: ['users'] },
-        ],
-      })
-      
-      render(<UserAdmin />, { wrapper: createWrapper() })
-      
-      await waitFor(() => {
-        expect(screen.getAllByRole('combobox').length).toBeGreaterThan(0)
-      })
-      
-      // Use the first dropdown (desktop)
-      await user.selectOptions(screen.getAllByRole('combobox')[0], 'admins')
-      
+      const user = await renderOneUser()
+
+      await user.selectOptions(firstRoleSelect(), 'admins')
+
       await waitFor(() => {
         expect(mockUpdateUserGroup).toHaveBeenCalledWith('user1', 'admins')
       })
@@ -248,71 +187,32 @@ describe('UserAdmin', () => {
 
   describe('create user modal', () => {
     it('opens modal when Add User is clicked', async () => {
-      const user = userEvent.setup()
-      render(<UserAdmin />, { wrapper: createWrapper() })
-      
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /add user/i })).toBeInTheDocument()
-      })
-      
-      await user.click(screen.getByRole('button', { name: /add user/i }))
-      
-      await waitFor(() => {
-        expect(screen.getByText('Add New User')).toBeInTheDocument()
-      })
+      await openCreateModal()
+
+      expect(screen.getByText('Add New User')).toBeInTheDocument()
     })
 
     it('displays email input field', async () => {
-      const user = userEvent.setup()
-      render(<UserAdmin />, { wrapper: createWrapper() })
-      
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /add user/i })).toBeInTheDocument()
-      })
-      
-      await user.click(screen.getByRole('button', { name: /add user/i }))
-      
-      await waitFor(() => {
-        expect(screen.getByPlaceholderText('user@example.com')).toBeInTheDocument()
-      })
+      await openCreateModal()
+
+      expect(screen.getByPlaceholderText('user@example.com')).toBeInTheDocument()
     })
 
     it('displays role selection', async () => {
-      const user = userEvent.setup()
-      render(<UserAdmin />, { wrapper: createWrapper() })
-      
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /add user/i })).toBeInTheDocument()
-      })
-      
-      await user.click(screen.getByRole('button', { name: /add user/i }))
-      
-      await waitFor(() => {
-        // Check for role radio buttons by their labels
-        expect(screen.getByRole('radio', { name: /user/i })).toBeInTheDocument()
-        expect(screen.getByRole('radio', { name: /admin/i })).toBeInTheDocument()
-      })
+      await openCreateModal()
+
+      expect(screen.getByRole('radio', { name: /user/i })).toBeInTheDocument()
+      expect(screen.getByRole('radio', { name: /admin/i })).toBeInTheDocument()
     })
 
     it('calls createUser API when form is submitted', async () => {
-      const user = userEvent.setup()
-      render(<UserAdmin />, { wrapper: createWrapper() })
-      
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /add user/i })).toBeInTheDocument()
-      })
-      
-      await user.click(screen.getByRole('button', { name: /add user/i }))
-      
-      await waitFor(() => {
-        expect(screen.getByPlaceholderText('user@example.com')).toBeInTheDocument()
-      })
-      
+      const user = await openCreateModal()
+
       await user.type(screen.getByPlaceholderText('user@example.com'), 'new@example.com')
       await user.type(screen.getByPlaceholderText('Jane'), 'New')
       await user.type(screen.getByPlaceholderText('Doe'), 'User')
       await user.click(screen.getByRole('button', { name: /send invite/i }))
-      
+
       await waitFor(() => {
         expect(mockCreateUser).toHaveBeenCalledWith({
           username: 'new@example.com',
@@ -325,21 +225,10 @@ describe('UserAdmin', () => {
     })
 
     it('closes modal when Cancel is clicked', async () => {
-      const user = userEvent.setup()
-      render(<UserAdmin />, { wrapper: createWrapper() })
-      
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /add user/i })).toBeInTheDocument()
-      })
-      
-      await user.click(screen.getByRole('button', { name: /add user/i }))
-      
-      await waitFor(() => {
-        expect(screen.getByText('Add New User')).toBeInTheDocument()
-      })
-      
+      const user = await openCreateModal()
+
       await user.click(screen.getByRole('button', { name: /cancel/i }))
-      
+
       await waitFor(() => {
         expect(screen.queryByText('Add New User')).not.toBeInTheDocument()
       })
@@ -347,107 +236,33 @@ describe('UserAdmin', () => {
   })
 
   describe('user actions', () => {
-    it('shows reset password confirmation when button is clicked', async () => {
-      const user = userEvent.setup()
-      mockGetUsers.mockResolvedValue({
-        users: [
-          { username: 'user1', email: 'test@example.com', name: '', given_name: '', family_name: '', status: 'CONFIRMED', enabled: true, groups: ['users'] },
-        ],
-      })
-      
-      render(<UserAdmin />, { wrapper: createWrapper() })
-      
-      await waitFor(() => {
-        expect(screen.getAllByTitle('Reset password').length).toBeGreaterThan(0)
-      })
-      
-      // Click the first reset button (desktop)
-      await user.click(screen.getAllByTitle('Reset password')[0])
-      
-      await waitFor(() => {
-        expect(screen.getByText('Reset Password')).toBeInTheDocument()
-        expect(screen.getByText(/send a password reset email/i)).toBeInTheDocument()
-      })
-    })
+    it.each([
+      ['reset password', 'Reset password', 'Reset Password', /send a password reset email/i],
+      ['disable', 'Disable user', 'Disable User', /they will not be able to log in/i],
+      ['delete', 'Delete user', 'Delete User', /are you sure you want to delete/i],
+    ] as const)('shows the %s confirmation when its button is clicked', async (_action, title, heading, body) => {
+      const user = renderAdmin([cognitoUser()])
 
-    it('shows disable confirmation for enabled users', async () => {
-      const user = userEvent.setup()
-      mockGetUsers.mockResolvedValue({
-        users: [
-          { username: 'user1', email: 'test@example.com', name: '', given_name: '', family_name: '', status: 'CONFIRMED', enabled: true, groups: ['users'] },
-        ],
-      })
-      
-      render(<UserAdmin />, { wrapper: createWrapper() })
-      
-      await waitFor(() => {
-        expect(screen.getAllByTitle('Disable user').length).toBeGreaterThan(0)
-      })
-      
-      await user.click(screen.getAllByTitle('Disable user')[0])
-      
-      await waitFor(() => {
-        expect(screen.getByText('Disable User')).toBeInTheDocument()
-      })
+      await user.click(await firstByTitle(title))
+
+      expect(await screen.findByText(heading)).toBeInTheDocument()
+      expect(screen.getByText(body)).toBeInTheDocument()
     })
 
     it('shows enable button for disabled users', async () => {
-      mockGetUsers.mockResolvedValue({
-        users: [
-          { username: 'user1', email: 'test@example.com', name: '', given_name: '', family_name: '', status: 'CONFIRMED', enabled: false, groups: ['users'] },
-        ],
-      })
-      
-      render(<UserAdmin />, { wrapper: createWrapper() })
-      
-      await waitFor(() => {
-        expect(screen.getAllByTitle('Enable user').length).toBeGreaterThan(0)
-      })
-    })
+      renderAdmin([cognitoUser({ enabled: false })])
 
-    it('shows delete confirmation when delete is clicked', async () => {
-      const user = userEvent.setup()
-      mockGetUsers.mockResolvedValue({
-        users: [
-          { username: 'user1', email: 'test@example.com', name: '', given_name: '', family_name: '', status: 'CONFIRMED', enabled: true, groups: ['users'] },
-        ],
-      })
-      
-      render(<UserAdmin />, { wrapper: createWrapper() })
-      
-      await waitFor(() => {
-        expect(screen.getAllByTitle('Delete user').length).toBeGreaterThan(0)
-      })
-      
-      await user.click(screen.getAllByTitle('Delete user')[0])
-      
-      await waitFor(() => {
-        expect(screen.getByText('Delete User')).toBeInTheDocument()
-        expect(screen.getByText(/are you sure you want to delete/i)).toBeInTheDocument()
-      })
+      expect(await firstByTitle('Enable user')).toBeInTheDocument()
     })
   })
 
   describe('success messages', () => {
     it('shows success message after role update', async () => {
-      const user = userEvent.setup()
-      mockGetUsers.mockResolvedValue({
-        users: [
-          { username: 'user1', email: 'test@example.com', name: '', given_name: '', family_name: '', status: 'CONFIRMED', enabled: true, groups: ['users'] },
-        ],
-      })
-      
-      render(<UserAdmin />, { wrapper: createWrapper() })
-      
-      await waitFor(() => {
-        expect(screen.getAllByRole('combobox').length).toBeGreaterThan(0)
-      })
-      
-      await user.selectOptions(screen.getAllByRole('combobox')[0], 'admins')
-      
-      await waitFor(() => {
-        expect(screen.getByText('User role updated')).toBeInTheDocument()
-      })
+      const user = await renderOneUser()
+
+      await user.selectOptions(firstRoleSelect(), 'admins')
+
+      expect(await screen.findByText('User role updated')).toBeInTheDocument()
     })
   })
 })

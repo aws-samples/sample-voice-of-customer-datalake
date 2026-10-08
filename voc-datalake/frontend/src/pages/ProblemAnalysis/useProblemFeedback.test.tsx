@@ -8,10 +8,10 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
-const mockGetFeedback = vi.fn()
+const mockGetFeedback = vi.fn<(params: PageRequest) => unknown>()
 
 vi.mock('../../api/client', () => ({
-  api: { getFeedback: (params: unknown) => mockGetFeedback(params) },
+  api: { getFeedback: (params: PageRequest) => mockGetFeedback(params) },
 }))
 
 import { useProblemFeedback, MAX_AUTO_PAGES } from './useProblemFeedback'
@@ -29,7 +29,7 @@ interface PageRequest {
  * Requests the hook actually made. Recorded here rather than read back out of
  * `mock.calls`, which is `any[][]` and so cannot be inspected without a cast.
  */
-let requests: PageRequest[] = []
+const requests: PageRequest[] = []
 
 /**
  * Serves a synthetic window of `total` rows, honouring offset/limit the way
@@ -71,9 +71,20 @@ function renderFeedback(apiEndpoint = API_ENDPOINT, queryClient = makeClient()) 
   })
 }
 
+/**
+ * Serves a complete window of `total` rows, renders the hook and waits until
+ * every row is in hand.
+ */
+async function renderLoadedWindow(total: number) {
+  serveWindow(total)
+  const { result } = renderFeedback()
+  await waitFor(() => expect(result.current.loadedCount).toBe(total))
+  return result
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
-  requests = []
+  requests.length = 0
   serveWindow(FEEDBACK_PAGE_LIMIT)
 })
 
@@ -81,13 +92,10 @@ describe('useProblemFeedback', () => {
   describe('page size', () => {
     // The regression guard. Reinstating `limit: 500` makes this fail.
     it('never requests a page larger than the endpoint allows', async () => {
-      serveWindow(250)
-      const { result } = renderFeedback()
-
-      await waitFor(() => expect(result.current.loadedCount).toBe(250))
+      await renderLoadedWindow(250)
 
       expect(requests.every((r) => (r.limit ?? 0) <= FEEDBACK_PAGE_LIMIT)).toBe(true)
-      expect(requests.map((r) => r.limit)).toEqual([
+      expect(requests.map((r) => r.limit)).toStrictEqual([
         FEEDBACK_PAGE_LIMIT,
         FEEDBACK_PAGE_LIMIT,
         FEEDBACK_PAGE_LIMIT,
@@ -97,32 +105,23 @@ describe('useProblemFeedback', () => {
 
   describe('reading the whole window', () => {
     it('pages until every row in the window is loaded', async () => {
-      serveWindow(250)
-      const { result } = renderFeedback()
+      const result = await renderLoadedWindow(250)
 
-      await waitFor(() => expect(result.current.loadedCount).toBe(250))
-
-      expect(requests.map((r) => r.offset)).toEqual([0, 100, 200])
+      expect(requests.map((r) => r.offset)).toStrictEqual([0, 100, 200])
       expect(result.current.totalCount).toBe(250)
       expect(result.current.isPartial).toBe(false)
       expect(result.current.isLoadingMore).toBe(false)
     })
 
     it('stops after one request when the window fits in a single page', async () => {
-      serveWindow(40)
-      const { result } = renderFeedback()
-
-      await waitFor(() => expect(result.current.loadedCount).toBe(40))
+      const result = await renderLoadedWindow(40)
       // A short page means the window is exhausted — no speculative second call.
       expect(mockGetFeedback).toHaveBeenCalledTimes(1)
       expect(result.current.isPartial).toBe(false)
     })
 
     it('does not treat a full final page as though more remained', async () => {
-      serveWindow(FEEDBACK_PAGE_LIMIT)
-      const { result } = renderFeedback()
-
-      await waitFor(() => expect(result.current.loadedCount).toBe(FEEDBACK_PAGE_LIMIT))
+      const result = await renderLoadedWindow(FEEDBACK_PAGE_LIMIT)
       expect(mockGetFeedback).toHaveBeenCalledTimes(1)
       expect(result.current.isPartial).toBe(false)
     })
@@ -192,15 +191,12 @@ describe('useProblemFeedback', () => {
 
       await waitFor(() => expect(result.current.isError).toBe(true))
       expect(result.current.loadedCount).toBe(0)
-      expect(result.current.items).toEqual([])
+      expect(result.current.items).toStrictEqual([])
       expect(result.current.isLoading).toBe(false)
     })
 
     it('leaves isError false on a clean complete read', async () => {
-      serveWindow(40)
-      const { result } = renderFeedback()
-
-      await waitFor(() => expect(result.current.loadedCount).toBe(40))
+      const result = await renderLoadedWindow(40)
       expect(result.current.isError).toBe(false)
       expect(result.current.isPartial).toBe(false)
     })
@@ -227,9 +223,7 @@ describe('useProblemFeedback', () => {
       // background refetch flag an already-complete window as short? It cannot,
       // because a completed walk leaves `hasNextPage` false and `stoppedEarly`
       // is gated on it. Pinned so that gate cannot be dropped.
-      serveWindow(150)
-      const { result } = renderFeedback()
-      await waitFor(() => expect(result.current.loadedCount).toBe(150))
+      const result = await renderLoadedWindow(150)
       expect(result.current.isPartial).toBe(false)
 
       mockGetFeedback.mockRejectedValue(new Error('boom'))

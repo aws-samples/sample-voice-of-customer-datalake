@@ -1,4 +1,6 @@
-import { NagPackSuppression } from 'cdk-nag';
+import type { Stack } from 'aws-cdk-lib';
+import { AwsCustomResource } from 'aws-cdk-lib/custom-resources';
+import { NagPackSuppression, NagSuppressions } from 'cdk-nag';
 
 import { bedrockFoundationModelSuppressionTargets } from './model-allowlist';
 
@@ -102,6 +104,8 @@ export const dynamoDbGsiSuppressions: NagPackSuppression[] = [
       { regex: '/Resource::<.*AggregatesTable.*\.Arn>/index/\*/' },
       { regex: '/Resource::<.*ProjectsTable.*\.Arn>/index/\*/' },
       { regex: '/Resource::<.*JobsTable.*\.Arn>/index/\*/' },
+      { regex: '/Resource::<.*MemoryTable.*\.Arn>/index/\*/' },
+      { regex: '/Resource::<.*AgentsTable.*\.Arn>/index/\*/' },
     ],
   },
 ];
@@ -136,6 +140,8 @@ export const s3BucketSuppressions: NagPackSuppression[] = [
     reason: 'S3 object access requires wildcard on bucket ARN (bucket-arn/*) - AWS best practice for object-level permissions',
     appliesTo: [
       { regex: '/.*RawDataBucket.*\.Arn>/\*/' },
+      // Category reprocess worker (raw mode): read-only on the raw/ prefix.
+      { regex: '/.*RawDataBucket.*\.Arn>/raw/\*/' },
       { regex: '/.*S3ImportBucket.*\.Arn>/\*/' },
       { regex: '/.*WebsiteBucket.*\.Arn>/\*/' }
     ],
@@ -190,6 +196,9 @@ export function pluginSystemSuppressions(deploymentPrefix?: string): NagPackSupp
       { regex: '/Resource::<.*DocumentGeneratorJob.*\.Arn>:\*/' },
       { regex: '/Resource::<.*DocumentMergerJob.*\.Arn>:\*/' },
       { regex: '/Resource::<.*PersonaImporterJob.*\.Arn>:\*/' },
+      // voc-agent-run's task states (lib/stacks/agent-runtime.ts).
+      { regex: '/Resource::<.*AgentConductor.*\.Arn>:\*/' },
+      { regex: '/Resource::<.*AgentPersonaPanel.*\.Arn>:\*/' },
     ],
   },
   ];
@@ -219,7 +228,16 @@ export const bedrockAgreementSuppressions: NagPackSuppression[] = [
 export const marketplaceSuppressions: NagPackSuppression[] = [
   {
     id: 'AwsSolutions-IAM5',
-    reason: 'AWS Marketplace subscription APIs (ViewSubscriptions, Subscribe) do not support resource-level permissions - required for Bedrock model EULA acceptance',
+    reason: 'AWS Marketplace subscription APIs (ViewSubscriptions, Subscribe) do not support resource-level permissions - required for Bedrock model EULA acceptance. API-stack grants (lib/stacks/api-marketplace.ts) narrow Subscribe to the image model listing with an aws-marketplace:ProductId condition (ViewSubscriptions has no condition key); the Bedrock model-access provider subscribes to the allowlisted model listings it enables',
+    appliesTo: ['Resource::*'],
+  },
+];
+
+// Service Quotas - read the account's Bedrock token quotas (Settings model test)
+export const serviceQuotasReadSuppressions: NagPackSuppression[] = [
+  {
+    id: 'AwsSolutions-IAM5',
+    reason: 'servicequotas:ListServiceQuotas supports no resource-level permission and is read-only: the settings Lambda lists the Bedrock tokens-per-minute quotas for POST /settings/model/test and GET /settings/model/capacity (shared/model_capacity.py); it holds no quota-increase or other write action',
     appliesTo: ['Resource::*'],
   },
 ];
@@ -228,7 +246,7 @@ export const marketplaceSuppressions: NagPackSuppression[] = [
 export const comprehendSuppressions: NagPackSuppression[] = [
   {
     id: 'AwsSolutions-IAM5',
-    reason: 'Comprehend real-time detection APIs (DetectSentiment, DetectKeyPhrases, DetectDominantLanguage) do not support resource-level permissions - these are stateless analysis operations that require Resource:*',
+    reason: 'Comprehend real-time detection APIs (DetectSentiment, DetectKeyPhrases, DetectDominantLanguage, DetectPiiEntities) do not support resource-level permissions - these are stateless analysis operations that require Resource:*',
     appliesTo: [
       'Resource::*',
     ],
@@ -288,3 +306,51 @@ export const publicBallotEndpointSuppressions: NagPackSuppression[] = [
     reason: 'Cognito authentication would defeat the feature - a room scores a proposal without accounts; the session record authorizes each write and closing the session revokes it',
   },
 ];
+
+// Plugin webhook receivers (intentionally unauthenticated at the gateway). Their own
+// list for the same reason as the ballot one: the control is different. The caller
+// is a third-party service (GitHub) that cannot present a Cognito token; every
+// delivery is authenticated in the handler by the provider's HMAC signature over the
+// exact body, against a secret held in Secrets Manager, before anything is parsed or
+// enqueued — and refused outright when no secret is configured.
+export const publicWebhookEndpointSuppressions: NagPackSuppression[] = [
+  {
+    id: 'AwsSolutions-APIG4',
+    reason: 'Provider webhooks (e.g. GitHub) cannot send a Cognito token; the handler verifies the provider HMAC signature (X-Hub-Signature-256, constant-time) before any processing and fails closed without a configured secret',
+  },
+  {
+    id: 'AwsSolutions-COG4',
+    reason: 'A third-party webhook sender has no Cognito identity; the shared-secret request signature is the authorization, checked in the Lambda',
+  },
+];
+
+/**
+ * Suppress the CDK-managed runtime and policy findings on the singleton
+ * `AwsCustomResource` provider Lambda (`AWS<uuid>` and its ServiceRole) when the
+ * stack has one. The paths are matched against `node.path`, whose first segment
+ * is the stack's CONSTRUCT ID; `stackPathSegment` is what the caller uses for
+ * it (the two stacks that call this spell it differently on purpose, see each
+ * call site). A stack without the singleton gets no suppression and no error.
+ */
+export function suppressAwsCustomResourceProvider(stack: Stack, stackPathSegment: string): void {
+  const customResourceId = `AWS${AwsCustomResource.PROVIDER_FUNCTION_UUID.split('-').join('')}`;
+  const customResourceSuppressPaths = new Set([
+    `/${stackPathSegment}/${customResourceId}/ServiceRole/Resource`,
+    `/${stackPathSegment}/${customResourceId}/Resource`,
+  ]);
+
+  const allExistingPaths = new Set(
+    stack.node.findAll().map((node) => `/${node.node.path}`)
+  );
+
+  for (const path of customResourceSuppressPaths) {
+    if (allExistingPaths.has(path)) {
+      NagSuppressions.addResourceSuppressionsByPath(
+        stack,
+        path,
+        [...cdkCustomResourceSuppressions, ...lambdaBasicExecutionRoleSuppressions],
+        true
+      );
+    }
+  }
+}

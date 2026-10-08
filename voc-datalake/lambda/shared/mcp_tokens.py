@@ -1,28 +1,19 @@
-"""MCP credential format, storage keys, and the two reach axes.
+"""The MCP credential format: mint, parse and hash a ``voc_tok_<id>_<secret>`` token.
 
-The single source of truth for what an MCP token *is*. Before this module the
-``voc_`` prefix was spelled in three places — the MCP handler, the projects
-handler, and an inline Node authorizer in api-stack.ts — and the only shared
-code was a bare SHA-256 helper.
+The single definition of what an MCP token *is*, shared by the global MCP server
+(``api/mcp_global_handler.py``, ``POST /mcp/global``) and its token API
+(``api/mcp_tokens_handler.py``, ``/connect/tokens``); WHERE a token is stored and
+what it may do live in ``shared.mcp_global_tokens``.
 
-Three things changed with this format, each fixing something structural:
+* **The token carries its own id**, so authentication is ONE keyed read of the
+  token row, never a scan that hashes every stored credential.
+* **Only the secret half is hashed.** The token id is therefore safe to log,
+  display and put in an error message, while the secret never is.
 
-1. **The token carries its own id**, so authentication is ONE keyed read
-   instead of "Query every token row in a project and hash each one until
-   something matches". That loop is also why the old credential needed an
-   ``X-Project-Id`` header: without the project there was no partition to
-   scan, and a header cannot express "no particular project", which is what
-   made a workspace-wide tool such as ``list_projects`` unimplementable.
-2. **Only the secret half is hashed.** The token id is therefore safe to log,
-   display and put in an error message, while the secret never is.
-3. **Reach is two independent axes** (see ``read_reach``), because "write
-   here, look around everywhere" is the shape people actually want and a
-   single project-scope field cannot say it.
-
-Legacy ``voc_<64 hex>`` tokens are NOT accepted. They were never used in
-production (owner confirmation, 2026-08-18), and the failure mode for a stray
-one is a 401 that re-minting fixes — not data loss. Nothing in here should
-grow a compatibility branch for them.
+The per-project MCP server (``/mcp``) and its ``MCPTOKEN`` rows, scopes and
+read-reach axes were retired in 3.00.00; a stale per-project credential still
+PARSES (same format) but names no ``MCPGTOKEN`` row, so the global server answers
+401. Legacy ``voc_<64 hex>`` tokens are not accepted either.
 """
 
 from __future__ import annotations
@@ -54,156 +45,6 @@ _SECRET_HEX_LEN: Final = _SECRET_BYTES * 2
 # exactly four parts and rebuilds the id, rather than splitting on the last
 # underscore and hoping.
 _TOKEN_PART_COUNT: Final = 4
-
-# ---------------------------------------------------------------------------
-# Storage keys
-# ---------------------------------------------------------------------------
-
-# Tokens live in ONE partition of the projects table, deliberately outside any
-# `PROJECT#{id}` partition: a credential is workspace-level and is no longer a
-# child of the project it happened to be minted from.
-#
-# One partition serves both access patterns with only the base table:
-#   • authenticate → Query(pk=MCPTOKEN, sk=TOKEN#{id})  — a single item
-#   • list for the UI → Query(pk=MCPTOKEN)              — every token
-# so no GSI is needed and the MCP role's existing Query+UpdateItem grant is
-# already sufficient. `gsi1pk` is deliberately NOT set on these rows, which is
-# what keeps them out of `projects.list_projects` (it queries the
-# `TYPE#PROJECT` GSI, so an unindexed row is invisible to it).
-#
-# SCALING: single hot partition for all tokens. Ceiling is per-partition
-# throughput (~3 000 RCU), which the endpoint's own 20 rps stage throttle sits
-# three orders of magnitude below. Upgrade path if tokens ever number in the
-# thousands: shard the pk by a prefix of the token id, which changes only the
-# two helpers below. Same shape as the existing global PRIORITIZATION
-# partition.
-MCP_TOKEN_PK: Final = 'MCPTOKEN'
-
-
-def token_sk(token_id: str) -> str:
-    """Sort key for a token row."""
-    return f'TOKEN#{token_id}'
-
-
-# ---------------------------------------------------------------------------
-# Scopes
-# ---------------------------------------------------------------------------
-
-# The scopes that currently grant something. Deliberately NOT the full nine of
-# the design doc: a mintable scope that no tool consults is a phantom
-# permission, and this codebase already had one (`read-write` was mintable,
-# stored, and shown with its own badge while every tool required only `read`).
-# Phase 3 adds a write scope in the same commit as the first write tool.
-SCOPE_FEEDBACK_READ: Final = 'feedback:read'
-SCOPE_METRICS_READ: Final = 'metrics:read'
-SCOPE_PROJECTS_READ: Final = 'projects:read'
-
-VALID_SCOPES: Final[frozenset[str]] = frozenset({
-    SCOPE_FEEDBACK_READ,
-    SCOPE_METRICS_READ,
-    SCOPE_PROJECTS_READ,
-})
-
-# The full read set, in vocabulary order. NOT a mint default: the mint route
-# REQUIRES `scopes`, because defaulting it would mean omitting the field yields
-# the widest possible credential — a fail-open boundary under a fail-closed
-# enforcement path. This exists for callers that legitimately want everything
-# (and for tests that need a maximal token); it is not a fallback.
-ALL_READ_SCOPES: Final[tuple[str, ...]] = (
-    SCOPE_FEEDBACK_READ,
-    SCOPE_METRICS_READ,
-    SCOPE_PROJECTS_READ,
-)
-
-# ---------------------------------------------------------------------------
-# Reach — the two axes
-# ---------------------------------------------------------------------------
-
-# Axis 1 is the token's PROJECT SET (`projects` on the row): the projects this
-# credential is about. Named `projects` rather than `write_projects` because in
-# this phase it bounds *reads* (see REACH_PROJECT_SET) and there are no write
-# tools yet; when Phase 3 adds them, writes are confined to the same list and
-# the name still tells the truth.
-#
-# Axis 2 is how far the token may READ, which is independent: the useful
-# default is "write in one place, look everywhere", and one field cannot say
-# that.
-REACH_WORKSPACE: Final = 'workspace'
-REACH_PROJECT_SET: Final = 'project-set'
-REACH_NONE: Final = 'none'
-
-VALID_READ_REACHES: Final[tuple[str, ...]] = (
-    REACH_WORKSPACE,
-    REACH_PROJECT_SET,
-    REACH_NONE,
-)
-
-# Workspace, by owner decision (2026-08-18). The reasoning is structural, not
-# a preference: the feedback corpus has no project dimension at all
-# (`voc-feedback` is keyed `SOURCE#{platform}`, and the project-scoped reads
-# select by filters), so any narrower default would have to be *invented* for
-# the corpus rather than enforced — and inventing it breaks the cross-project
-# analysis that is the reason to expose an MCP server.
-#
-# ⚠️ Default is not the same as benign. Workspace read reaches every other
-# project's unreleased PRDs, PR-FAQs and prototypes plus every raw verbatim.
-# That is right for an agent working on behalf of the team and wrong for a
-# token pasted into a third-party client, which is why the axis is explicit at
-# mint time instead of implied.
-DEFAULT_READ_REACH: Final = REACH_WORKSPACE
-
-# How a tool's data is shaped, which decides how reach applies to it.
-REACH_KIND_WORKSPACE: Final = 'workspace'   # no project dimension (feedback, metrics)
-REACH_KIND_PROJECT: Final = 'project'       # addresses one project
-
-
-def reach_allows(
-    *,
-    read_reach: str,
-    token_projects: list[str] | tuple[str, ...],
-    tool_reach_kind: str,
-    project_id: str | None,
-) -> bool:
-    """Whether a read of *tool_reach_kind* is within the token's reach.
-
-    Fail-closed on every unrecognised input: an unknown reach or an unknown
-    tool kind denies rather than falls through to allowed.
-
-    The interesting case is ``project-set`` against a workspace-shaped tool.
-    It is REFUSED, and that is the honest answer rather than a gap: there is
-    no project dimension in the feedback corpus to narrow, so "allow it" would
-    silently hand a supposedly sealed token the entire verbatim history. A
-    caller that needs both gets ``workspace`` and accepts what that means.
-
-    ``token_projects`` that is not a list or tuple reaches NO project, which is
-    the fail-closed reading and closes a real hole rather than tidying a type
-    hint. ``project_id in token_projects`` is a membership test against a sequence
-    but a SUBSTRING test against a string, so a damaged row storing ``projects``
-    as ``"proj1"`` instead of ``["proj1"]`` admitted ``project_id="p"``,
-    ``"proj"``, and every other substring of its own value. That value is stored
-    data and it is the thing a ``project-set`` token is bounded BY, so a shape
-    that changes what the bound MEANS must not be accepted.
-
-    Note ``workspace`` reach returns above without consulting the set at all —
-    which is what makes it safe for a caller to ask about a representative
-    project id under that reach (see ``_tool_is_authorized`` in the MCP handler).
-    """
-    if read_reach == REACH_NONE:
-        return False
-    if tool_reach_kind == REACH_KIND_WORKSPACE:
-        return read_reach == REACH_WORKSPACE
-    if tool_reach_kind != REACH_KIND_PROJECT:
-        return False
-    if not project_id:
-        return False
-    if read_reach == REACH_WORKSPACE:
-        return True
-    if read_reach == REACH_PROJECT_SET:
-        if not isinstance(token_projects, (list, tuple)):
-            return False
-        return project_id in token_projects
-    return False
-
 
 # ---------------------------------------------------------------------------
 # Mint / parse / hash
@@ -270,7 +111,7 @@ def _is_lower_hex(value: str, length: int) -> bool:
     return all(c in '0123456789abcdef' for c in value)
 
 
-def parse_token(raw: str) -> tuple[str, str] | None:
+def parse_token(raw: object) -> tuple[str, str] | None:
     """Split a presented credential into ``(token_id, secret)``.
 
     Returns ``None`` for anything that is not exactly this format. Strictness

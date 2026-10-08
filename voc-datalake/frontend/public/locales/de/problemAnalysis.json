@@ -16,7 +16,11 @@
     "similarityLow": "Niedrig",
     "similarityMed": "Mittel",
     "similarityOff": "Aus",
-    "urgentOnly": "Nur dringend"
+    "urgentOnly": "Nur dringend",
+    "source": "Quelle",
+    "category": "Kategorie",
+    "subcategory": "Unterkategorie",
+    "similarityHint": "Probleme mit ähnlichem Wortlaut zusammenfassen. „Niedrig“ fasst am meisten zusammen; „Aus“ listet jedes Problem einzeln."
   },
   "noDataHint": "Versuchen Sie, den Zeitraum zu erweitern oder die Filter anzupassen",
   "noDataTitle": "Keine Problemanalysedaten für den ausgewählten Zeitraum gefunden",
@@ -44,5 +48,7 @@
     "sub_one": "{{count}} Unter.",
     "sub_other": "{{count}} Unter.",
     "unknown": "Unbekannt"
-  }
+  },
+  "title": "Problemanalyse",
+  "subtitle": "Wiederkehrende Kundenprobleme nach Kategorie gruppiert, mit wahrscheinlichen Ursachen"
 }

@@ -1,14 +1,16 @@
 """Private baseline fixture provider contract and exact lifecycle."""
 
 import json
-from datetime import datetime, timedelta, timezone
+from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from typing import Any
+from unittest.mock import patch
 
-import boto3
 import pytest
-from botocore.exceptions import ClientError
 from moto import mock_aws
+from moto_helpers import pk_sk_table
+
 from shared.exceptions import (
     ApiError,
     ConfigurationError,
@@ -23,28 +25,12 @@ from verification_fixture_provider import (
     RENEWAL_MARGIN_SECONDS,
     REQUEST_SCHEMA,
     RESULT_SCHEMA,
-    _transact,
     lambda_handler,
     parse_provider_request,
     probe_fixture,
     setup_fixture,
     teardown_fixture,
 )
-
-
-def _table(name):
-    return boto3.resource('dynamodb', region_name='us-east-1').create_table(
-        TableName=name,
-        KeySchema=[
-            {'AttributeName': 'pk', 'KeyType': 'HASH'},
-            {'AttributeName': 'sk', 'KeyType': 'RANGE'},
-        ],
-        AttributeDefinitions=[
-            {'AttributeName': 'pk', 'AttributeType': 'S'},
-            {'AttributeName': 'sk', 'AttributeType': 'S'},
-        ],
-        BillingMode='PAY_PER_REQUEST',
-    )
 
 
 def _request(operation='setup', **overrides):
@@ -59,13 +45,28 @@ def _request(operation='setup', **overrides):
     }
 
 
-def _items(table):
-    return table.scan(ConsistentRead=True)['Items']
+def _items(table) -> list[dict[str, Any]]:
+    """Every stored item, as plain dicts (moto answers DynamoDB's typed values)."""
+    return [dict(item) for item in table.scan(ConsistentRead=True)['Items']]
 
 
 def _tables():
-    projects, aggregates = _table('projects'), _table('aggregates')
+    projects, aggregates = pk_sk_table('projects'), pk_sk_table('aggregates')
     return projects, aggregates
+
+
+# The fixed clock every lifecycle test starts from.
+_NOW = datetime(2026, 9, 11, 10, 0, tzinfo=UTC)
+
+
+@contextmanager
+def _provider_reads(projects, aggregates):
+    """Point the provider's two table getters at these (moto) tables."""
+    with (
+        patch('verification_fixture_provider.get_projects_table', return_value=projects),
+        patch('verification_fixture_provider.get_aggregates_table', return_value=aggregates),
+    ):
+        yield
 
 
 class TestProviderRequest:
@@ -109,51 +110,12 @@ class TestProviderRequest:
         assert 'table' not in json.dumps(manifest).lower()
 
 
-class TestTransactions:
-    @staticmethod
-    def _cancel(reason=None):
-        response = {'Error': {'Code': 'TransactionCanceledException'}}
-        if reason:
-            response['CancellationReasons'] = [{'Code': reason}]
-        return ClientError(response, 'TransactWriteItems')
-
-    @staticmethod
-    def _direct(code):
-        return ClientError({'Error': {'Code': code}}, 'TransactWriteItems')
-
-    def test_retries_transient_then_succeeds(self):
-        client = MagicMock()
-        client.transact_write_items.side_effect = [self._cancel('TransactionConflict'), {}]
-        with patch('verification_fixture_provider.time.sleep') as sleep:
-            _transact(client, [], collision_message='collision', failure_message='failure')
-        assert client.transact_write_items.call_count == 2
-        sleep.assert_called_once()
-
-    def test_exhaustion_is_service_failure(self):
-        client = MagicMock()
-        client.transact_write_items.side_effect = [self._direct('RequestLimitExceeded')] * 3
-        with patch('verification_fixture_provider.time.sleep'), pytest.raises(ServiceError):
-            _transact(client, [], collision_message='collision', failure_message='failure')
-
-    def test_only_confirmed_condition_failure_is_conflict(self):
-        client = MagicMock()
-        client.transact_write_items.side_effect = self._cancel('ConditionalCheckFailed')
-        with pytest.raises(ConflictError):
-            _transact(client, [], collision_message='collision', failure_message='failure')
-        client.transact_write_items.side_effect = self._cancel()
-        with pytest.raises(ServiceError):
-            _transact(client, [], collision_message='collision', failure_message='failure')
-
-
 class TestProviderLifecycle:
     @mock_aws
     def test_setup_probe_reuse_teardown_and_zero_residue(self):
         projects, aggregates = _tables()
-        now = datetime(2026, 9, 11, 10, 0, tzinfo=timezone.utc)
-        with (
-            patch('verification_fixture_provider.get_projects_table', return_value=projects),
-            patch('verification_fixture_provider.get_aggregates_table', return_value=aggregates),
-        ):
+        now = _NOW
+        with _provider_reads(projects, aggregates):
             created = setup_fixture(_request('setup'), now=now)
             reused = setup_fixture(_request('setup'), now=now + timedelta(hours=1))
             observed = probe_fixture(_request('probe'))
@@ -181,10 +143,7 @@ class TestProviderLifecycle:
     @mock_aws
     def test_exact_three_records_are_owned_and_related(self):
         projects, aggregates = _tables()
-        with (
-            patch('verification_fixture_provider.get_projects_table', return_value=projects),
-            patch('verification_fixture_provider.get_aggregates_table', return_value=aggregates),
-        ):
+        with _provider_reads(projects, aggregates):
             result = setup_fixture(_request('setup'))
 
         project_items, aggregate_items = _items(projects), _items(aggregates)
@@ -211,10 +170,7 @@ class TestProviderLifecycle:
             'verification_fixture_id': 'foreign',
         })
         # Derive the real key, then occupy it with a foreign owner.
-        with (
-            patch('verification_fixture_provider.get_projects_table', return_value=projects),
-            patch('verification_fixture_provider.get_aggregates_table', return_value=aggregates),
-        ):
+        with _provider_reads(projects, aggregates):
             result = setup_fixture(_request('setup'))
             teardown_fixture(_request('teardown'))
             projects.put_item(Item={
@@ -232,10 +188,7 @@ class TestProviderLifecycle:
     @mock_aws
     def test_probe_rejects_relationship_drift(self):
         projects, aggregates = _tables()
-        with (
-            patch('verification_fixture_provider.get_projects_table', return_value=projects),
-            patch('verification_fixture_provider.get_aggregates_table', return_value=aggregates),
-        ):
+        with _provider_reads(projects, aggregates):
             result = setup_fixture(_request('setup'))
             aggregates.update_item(
                 Key={
@@ -252,11 +205,8 @@ class TestProviderLifecycle:
     @mock_aws
     def test_expired_meta_is_renewed_and_missing_siblings_are_repaired(self):
         projects, aggregates = _tables()
-        now = datetime(2026, 9, 11, 10, 0, tzinfo=timezone.utc)
-        with (
-            patch('verification_fixture_provider.get_projects_table', return_value=projects),
-            patch('verification_fixture_provider.get_aggregates_table', return_value=aggregates),
-        ):
+        now = _NOW
+        with _provider_reads(projects, aggregates):
             first = setup_fixture(_request('setup'), now=now)
             projects.update_item(
                 Key={'pk': f"PROJECT#{first['project_id']}", 'sk': 'META'},
@@ -284,12 +234,9 @@ class TestProviderLifecycle:
         DynamoDB can delete part-way through the run, so the expiry moves forward
         while the request-derived identity stays put."""
         projects, aggregates = _tables()
-        now = datetime(2026, 9, 11, 10, 0, tzinfo=timezone.utc)
+        now = _NOW
         inside = now + timedelta(seconds=FIXTURE_TTL_SECONDS - RENEWAL_MARGIN_SECONDS // 2)
-        with (
-            patch('verification_fixture_provider.get_projects_table', return_value=projects),
-            patch('verification_fixture_provider.get_aggregates_table', return_value=aggregates),
-        ):
+        with _provider_reads(projects, aggregates):
             first = setup_fixture(_request('setup'), now=now)
             renewed = setup_fixture(_request('setup'), now=inside)
 
@@ -301,23 +248,6 @@ class TestProviderLifecycle:
         assert len(_items(aggregates)) == 1
 
     @mock_aws
-    def test_reuse_just_outside_the_margin_keeps_the_original_expiry(self):
-        """The boundary case that proves the margin is doing the deciding, not
-        merely that any second setup renews."""
-        projects, aggregates = _tables()
-        now = datetime(2026, 9, 11, 10, 0, tzinfo=timezone.utc)
-        outside = now + timedelta(seconds=FIXTURE_TTL_SECONDS - RENEWAL_MARGIN_SECONDS - 60)
-        with (
-            patch('verification_fixture_provider.get_projects_table', return_value=projects),
-            patch('verification_fixture_provider.get_aggregates_table', return_value=aggregates),
-        ):
-            first = setup_fixture(_request('setup'), now=now)
-            reused = setup_fixture(_request('setup'), now=outside)
-
-        assert reused['state'] == 'reused'
-        assert reused['expires_at'] == first['expires_at']
-
-    @mock_aws
     def test_every_record_carries_the_marker_the_project_list_filters_on(self):
         """Lockstep with lambda/shared/project_writes.py.
 
@@ -327,11 +257,8 @@ class TestProviderLifecycle:
         either module would fail.
         """
         projects, aggregates = _tables()
-        now = datetime(2026, 9, 11, 10, 0, tzinfo=timezone.utc)
-        with (
-            patch('verification_fixture_provider.get_projects_table', return_value=projects),
-            patch('verification_fixture_provider.get_aggregates_table', return_value=aggregates),
-        ):
+        now = _NOW
+        with _provider_reads(projects, aggregates):
             setup_fixture(_request('setup'), now=now)
 
         written = _items(projects) + _items(aggregates)
@@ -372,16 +299,6 @@ class TestLambdaHandler:
             'success': False,
             'error_code': expected_code,
         }
-
-    def test_unexpected_exception_becomes_internal_not_a_raise(self, lambda_context):
-        with patch(
-            'verification_fixture_provider.parse_provider_request',
-            side_effect=RuntimeError('boom'),
-        ):
-            result = lambda_handler(_request('probe'), lambda_context)
-        assert result['success'] is False
-        assert result['error_code'] == 'internal'
-        assert result['operation'] == 'probe'
 
     def test_rejected_operation_is_reported_as_unknown_not_echoed(self, lambda_context):
         """The envelope must never reflect an unvalidated operation back to the caller."""

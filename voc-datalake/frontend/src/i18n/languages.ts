@@ -2,7 +2,7 @@
  * @fileoverview Supported-language constants and the language-change helper.
  *
  * Deliberately side-effect free: importing this module does NOT initialize
- * i18next. UI components (e.g. the language picker in UserProfileModal) must
+ * i18next. UI components (e.g. the language picker on the Account page) must
  * import from here rather than from ./config, whose import runs the real
  * i18n.init() with the HTTP backend — something component tests (which init
  * the same i18next singleton with inline resources in src/test/setup.ts)
@@ -43,7 +43,6 @@ export function changeLanguage(lang: string): Promise<void> {
   if (!isSupportedLanguage(lang)) {
     return Promise.resolve()
   }
-  return i18n.changeLanguage(lang).then(() => {
-    return
-  })
+  // Drop i18next's `t` result: callers only wait for the switch.
+  return i18n.changeLanguage(lang).then(() => undefined)
 }

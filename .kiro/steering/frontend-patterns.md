@@ -109,6 +109,10 @@ const mutation = useMutation({
 })
 ```
 
+> **New or changed API call?** Mock it in the same change and list it in
+> `frontend/mock-coverage.json`; `npm run check:mock` fails otherwise. The full
+> rule is "Every frontend API call must be mocked" in `tech.md`.
+
 ##
  State Management
 

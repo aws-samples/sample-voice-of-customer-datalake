@@ -8,8 +8,8 @@
     "saved": "Saved",
     "surfaces": {
       "chat": {
-        "description": "Conversational data queries and project chat",
-        "label": "AI Chat"
+        "description": "Floating page-aware assistant and the full-screen chat page",
+        "label": "AI Assistant"
       },
       "documents": {
         "description": "PRDs, PR/FAQs, personas, and research reports",
@@ -26,9 +26,77 @@
       "utility": {
         "description": "Category suggestions and scraper selector detection",
         "label": "Utilities"
+      },
+      "memory": {
+        "label": "Memory",
+        "description": "Extracts, deduplicates and checks company and personal memories (Flex tier when available)"
+      },
+      "agent_orchestrator": {
+        "label": "Agent conductor",
+        "description": "Plans each autonomous run, advances the workflow and verifies every step"
+      },
+      "agent_worker": {
+        "label": "Agent workers",
+        "description": "Research, PR/FAQs, PRDs and prototypes inside an autonomous run"
+      },
+      "agent_reviewer": {
+        "label": "Agent final reviewer",
+        "description": "Final check of an autonomous run against the company objectives"
+      },
+      "agent_persona": {
+        "label": "Persona panel",
+        "description": "Personas that score and object to documents and prototypes during a run"
       }
     },
-    "title": "AI Models"
+    "title": "AI Models",
+    "test": {
+      "test": "Test",
+      "testTitle": "Send one test request to {{model}} for {{surface}}",
+      "testing": "Testing...",
+      "notTested": "Not tested",
+      "unsaved": "Unsaved change",
+      "save": "Save",
+      "discard": "Discard",
+      "latency": "{{ms}} ms",
+      "tokensPerMinute": "{{count}} tokens/min",
+      "quotaUnknown": "Quota unknown",
+      "all": "Test all models",
+      "allTitle": "Model access and capacity",
+      "allIntro": "Sends one short request to each model in turn and shows its tokens-per-minute quota for this account and region.",
+      "allRunning": "Testing {{current}} of {{total}}...",
+      "columns": {
+        "model": "Model",
+        "status": "Status",
+        "latency": "Latency",
+        "tokensPerMinute": "Tokens/min"
+      },
+      "status": {
+        "available": "Available",
+        "no_access": "No access",
+        "not_in_region": "Not in this region",
+        "no_capacity": "No capacity",
+        "throttled": "Throttled",
+        "not_ready": "Not ready",
+        "unavailable": "Unavailable",
+        "error": "Error"
+      },
+      "detail": {
+        "available": "The model answered.",
+        "no_access": "This account has no access to the model (model access, use case or agreement).",
+        "not_in_region": "The model or its inference profile is not offered in this region.",
+        "no_capacity": "Quota is 0 for this model in this account; nothing to do but wait.",
+        "throttled": "The model is throttling requests right now; retry in a moment.",
+        "not_ready": "The model is not ready yet; retry in a few minutes.",
+        "unavailable": "The model is temporarily unavailable; retry later.",
+        "error": "The test request failed."
+      },
+      "confirm": {
+        "title": "Save a model that has not passed a test?",
+        "untested": "{{model}} has not been tested yet. Save it for {{surface}} anyway?",
+        "failed": "The last test of {{model}} returned \"{{status}}\". Save it for {{surface}} anyway?",
+        "save": "Save anyway"
+      }
+    }
   },
   "api": {
     "connected": "Connected",
@@ -49,35 +117,16 @@
     "syncedToBackend": "Synced to backend",
     "title": "Brand Configuration",
     "urlsHint": "Specific URLs to monitor via web search",
-    "urlsLabel": "URLs to Track (one per line)"
+    "urlsLabel": "URLs to Track (one per line)",
+    "loadFailed": "Couldn’t load brand settings from the server. Showing the values saved in this browser.",
+    "retry": "Retry",
+    "notSynced": "Not synced",
+    "saveFailed": "Couldn’t save to the server. Try again."
   },
   "categories": {
-    "addCategory": "Add Category",
-    "addCategoryPlaceholder": "Add new category...",
-    "addSubcategoryPlaceholder": "Add subcategory...",
-    "aiSuggestionsDescription": "Describe your company, industry, or product to get AI-suggested categories tailored to your business.",
-    "aiSuggestionsTitle": "AI Category Suggestions",
-    "categoriesCount": "{{count}} categories",
-    "categoriesCount_one": "{{count}} category",
-    "categoriesCount_other": "{{count}} categories",
-    "companyPlaceholder": "e.g., We are an airline company offering domestic and international flights. Our customers care about punctuality, comfort, baggage handling, customer service, and in-flight experience...",
     "configureFirst": "Configure the API endpoint in the General tab to manage categories.",
-    "deleteButton": "Delete",
-    "deleteConfirmMessage": "Are you sure you want to delete this category and all its subcategories? This action cannot be undone.",
-    "deleteConfirmTitle": "Delete Category",
     "description": "Configure categories and subcategories for feedback classification.",
-    "emptyDescription": "Use AI generation above or add categories manually below.",
-    "emptyTitle": "No categories configured yet.",
-    "generateButton": "Generate Categories",
-    "generateError": "Failed to generate categories. Please try again.",
-    "generating": "Generating...",
-    "saved": "Categories saved successfully",
-    "saving": "Saving...",
-    "subcategoriesCount": "{{count}} sub",
-    "subcategoriesCount_one": "{{count}} sub",
-    "subcategoriesCount_other": "{{count}} sub",
-    "title": "Feedback Categories",
-    "titleLabel": "Categories & Subcategories"
+    "title": "Feedback Categories"
   },
   "dangerZone": {
     "resetButton": "Reset Settings",
@@ -90,19 +139,12 @@
   "dataSources": {
     "configureFirst": "Configure the API endpoint in the General tab to manage data sources.",
     "description": "Configure API credentials, webhooks, and enable/disable data source schedules.",
+    "noPlugins": "No data source plugins found. Run <code>npm run generate:manifests</code> to generate plugin manifests.",
     "title": "Data Sources & Integrations"
-  },
-  "language": {
-    "interfaceHint": "Controls the dashboard interface language and the language AI uses for chat responses, generated personas, research reports, PRDs, and PR/FAQs. Saved to your browser.",
-    "interfaceLabel": "Interface Language",
-    "loadingReview": "Loading review settings...",
-    "reviewHint": "All incoming feedback will be translated to this language for analysis and display. The original text is always preserved.",
-    "reviewLabel": "Review Language",
-    "title": "Language & Locale"
   },
   "logs": {
     "clear": "Clear",
-    "configureFirst": "Configure the API endpoint in the Brand tab to view logs.",
+    "configureFirst": "Configure the API endpoint in the General tab to view logs.",
     "daysAgo": "{{count}}d ago",
     "daysAgo_one": "{{count}}d ago",
     "daysAgo_other": "{{count}}d ago",
@@ -139,30 +181,256 @@
     "pages_one": "{{count}} page",
     "pages_other": "{{count}} pages",
     "processingErrors": "Processing Errors",
-    "rawPreview": "Raw Preview:",
+    "recordKeys": "Fields present:",
+    "textLength": "Text length: {{count}} characters",
+    "textLength_one": "Text length: {{count}} character",
+    "textLength_other": "Text length: {{count}} characters",
     "refresh": "Refresh",
     "runErrors": "{{count}} errors",
     "runErrors_one": "{{count}} error",
     "runErrors_other": "{{count}} errors",
     "scraperRuns": "Scraper Runs",
     "title": "System Logs",
-    "validationFailures": "Validation Failures"
+    "validationFailures": "Validation Failures",
+    "periodLabel": "Time period"
   },
   "saveChanges": "Save Changes",
   "saved": "Saved!",
   "saving": "Saving...",
-  "subtitle": "Configure your VoC platform",
+  "sourceCard": {
+    "connected": "Connected",
+    "copyWebhookUrl": "Copy webhook URL",
+    "credentials": "API Credentials",
+    "disabled": "Disabled",
+    "docs": "Docs",
+    "enabled": "Enabled",
+    "enterField": "Enter {{field}}",
+    "events": "Events: {{events}}",
+    "fileExplorer": "File Explorer",
+    "hide": "Hide",
+    "save": "Save",
+    "saved": "Saved!",
+    "saveToSecrets": "Save to Secrets Manager",
+    "selectOption": "Select...",
+    "show": "Show",
+    "test": "Test",
+    "unknownResult": "Unknown result",
+    "webhooks": "Webhooks"
+  },
+  "subtitle": "Configure the platform for everyone (administrators only).",
   "tabs": {
     "categories": "Categories",
     "general": "General",
     "logs": "Logs",
     "plugins": "Data Sources",
-    "users": "Users"
+    "users": "Users",
+    "ai": "AI models",
+    "integrations": "Integrations",
+    "dimensions": "Dimensions",
+    "sources": "Sources & privacy"
   },
-  "title": "Settings",
+  "title": "Administration",
   "users": {
     "configureFirst": "Configure the API endpoint in the General tab to manage users.",
     "description": "Manage users, roles, and permissions for the VoC platform.",
     "title": "User Administration"
+  },
+  "company": {
+    "title": "Company",
+    "subtitle": "The vision, objectives and design system everyone — and every AI feature — works from, plus your own objectives.",
+    "tabs": {
+      "vision": "Vision & objectives",
+      "mine": "My objectives",
+      "design": "Design system"
+    }
+  },
+  "shared": {
+    "viewOnly": "View only",
+    "loadFailed": "Could not load this section.",
+    "retry": "Retry",
+    "loading": "Loading…",
+    "saveFailed": "Could not save. Try again.",
+    "write": "Write",
+    "preview": "Preview",
+    "nothingToPreview": "Nothing to preview yet.",
+    "charCount": "{{count}} / {{max}} characters",
+    "configureFirst": "Connect the API endpoint first."
+  },
+  "companyContext": {
+    "title": "Company context",
+    "description": "The vision and objectives the assistant, the autonomous agents and memory use as context — and as the tie-breaker when memories conflict.",
+    "vision": "Long-term vision",
+    "visionPlaceholder": "Where is the company going, and why? Markdown supported.",
+    "noVision": "No vision has been written yet.",
+    "objectives": "Company objectives",
+    "noObjectives": "No company objectives yet.",
+    "addObjective": "Add objective",
+    "removeObjective": "Remove objective",
+    "objectiveLimit": "At most {{max}} objectives.",
+    "objectiveLegend": "Objective {{n}}",
+    "objectiveTitle": "Objective title",
+    "objectiveDescription": "What does success look like?",
+    "horizon": "Horizon",
+    "horizons": {
+      "long": "Long term",
+      "quarter": "This quarter",
+      "date": "By a date"
+    },
+    "due": "Due date",
+    "updatedMeta": "Last updated {{at}} by {{by}}",
+    "unknownEditor": "an administrator"
+  },
+  "myContext": {
+    "title": "My objectives & KPIs",
+    "description": "Your own objectives and how you measure them. The assistant and your personal memory use them; they never change the company objectives.",
+    "empty": "You have not set any objectives yet.",
+    "addObjective": "Add objective",
+    "removeObjective": "Remove objective",
+    "objectiveLegend": "Objective {{n}}",
+    "objectiveTitle": "Objective title",
+    "objectiveDescription": "Why it matters to you",
+    "due": "Due date",
+    "kpis": "Key results (KPIs)",
+    "addKpi": "Add KPI",
+    "removeKpi": "Remove KPI",
+    "kpiName": "KPI name",
+    "kpiTarget": "Target",
+    "kpiUnit": "Unit"
+  },
+  "designSystem": {
+    "title": "Design system",
+    "description": "Your brand tokens, guidelines and references. Prototypes and PR/FAQ visuals are built with them so they match your look.",
+    "logo": "Logo",
+    "logoAlt": "Company logo",
+    "uploadLogo": "Upload logo",
+    "colors": "Colors",
+    "typography": "Typography",
+    "spacing": "Spacing",
+    "radius": "Corner radius",
+    "noTokens": "None yet.",
+    "addToken": "Add token",
+    "removeToken": "Remove token",
+    "tokenName": "Name",
+    "tokenValue": "Value",
+    "swatch": "Color swatch {{value}}",
+    "invalidColor": "Not a valid color value",
+    "typeRole": "Role (e.g. heading)",
+    "typeFamily": "Font family",
+    "typeSize": "Size",
+    "typeWeight": "Weight",
+    "guidelines": "Guidelines",
+    "guidelinesPlaceholder": "Component guidance, tone, do and don’t… Markdown supported.",
+    "noGuidelines": "No guidelines yet.",
+    "references": "References",
+    "noReferences": "No references yet — add a Figma file, a GitHub repository, screenshots or an HTML page.",
+    "kinds": {
+      "screenshot": "Screenshot",
+      "html": "HTML page",
+      "figma": "Figma file",
+      "github": "GitHub repository"
+    },
+    "statuses": {
+      "pending": "Pending",
+      "processing": "Processing",
+      "ready": "Ready",
+      "failed": "Failed",
+      "archived": "Archived"
+    },
+    "openLink": "Open link",
+    "refresh": "Fetch again",
+    "archive": "Archive",
+    "archiveTitle": "Archive this reference?",
+    "archiveMessage": "\"{{title}}\" stops being used for new prototypes. The file is kept.",
+    "referenceKind": "Reference type",
+    "referenceTitle": "Title",
+    "referenceUrl": "Link (https://…)",
+    "referenceFile": "File",
+    "addReference": "Add reference",
+    "addReferenceFailed": "Could not add the reference. Try again.",
+    "uploadBadType": "{{name}} is not an accepted file type.",
+    "uploadTooLarge": "{{name}} is larger than {{mb}} MB.",
+    "uploadFailed": "Upload failed. Try again.",
+    "integrations": "Design integrations",
+    "integrationsHint": "Tokens are stored encrypted and never shown again. Leave a field empty to keep the current token.",
+    "providers": {
+      "figma": "Figma token",
+      "github": "GitHub token"
+    },
+    "tokenPlaceholder": "Paste a token",
+    "tokenReplacePlaceholder": "Paste a new token to replace it",
+    "configured": "Configured",
+    "notConfigured": "Not configured",
+    "saveTokens": "Save tokens",
+    "integrationsMoved": "Figma and GitHub tokens are set in",
+    "integrationsLink": "Administration → Integrations"
+  },
+  "integrations": {
+    "title": "Integrations",
+    "description": "Write-only tokens the platform uses to read your Figma files and GitHub repositories for the design system. They are stored in Secrets Manager and never shown again.",
+    "mcpHint": "MCP access for external assistants is per user, in",
+    "mcpLink": "Connect"
+  },
+  "integrationGuide": {
+    "heading": "Setup help",
+    "intro": "Step-by-step instructions for each token. Open one to see what it is for, where to get it, which permissions to grant and how to check that it works.",
+    "newTab": "opens in a new tab",
+    "purposeHeading": "What it is for",
+    "stepsHeading": "Where to get it",
+    "permissionsHeading": "Permissions to grant",
+    "saveHeading": "Save it here",
+    "testHeading": "Check that it works",
+    "failuresHeading": "If it fails",
+    "securityHeading": "Security",
+    "save": "Paste the token into the \"{{field}}\" field above and click \"{{save}}\". The field empties and the badge changes to \"{{configured}}\". To replace a token, paste the new one and save again; an empty field keeps the current token.",
+    "test": "There is no test button: a token is checked when a reference is fetched. Go to {{company}} → {{design}}, click \"{{add}}\", choose the type \"{{kind}}\" and paste the link. Reload the page after a moment: \"{{ready}}\" with a summary means the token works; \"{{failed}}\" shows the reason under the reference. After fixing the problem, click \"{{refresh}}\" on that reference.",
+    "openDesignSystem": "Open {{company}} → {{design}}",
+    "failMissing": "No token has been saved yet. Save one above, then click \"{{refresh}}\" on the reference.",
+    "failBadLink": "The link is not in a supported form. Copy it again from the browser's address bar (see the link format above).",
+    "failRateLimited": "The provider is limiting requests. Wait a few minutes, then click \"{{refresh}}\".",
+    "storage": "Where it is kept: in AWS Secrets Manager (the voc/design-integrations secret, encrypted with the platform's KMS key). Only the settings API can read it, it is never shown again, and this page only reports whether a token is configured. To stop a token working at once, revoke it at the provider.",
+    "otherCredentials": "Data source credentials, such as the GitHub Issues token, are not set here: each source card in the {{plugins}} tab has its own fields and setup steps.",
+    "figma": {
+      "title": "Figma personal access token",
+      "summary": "Required to use Figma files as design references.",
+      "purpose": "Lets the platform read the Figma files you add as design references under {{company}} → {{design}}: page and frame names and published styles. The token is sent only to api.figma.com, and only when a Figma reference is fetched.",
+      "step1": "Sign in to Figma. In the file browser, open the account menu in the top-left corner and choose \"Settings\".",
+      "step2": "Open the \"Security\" tab. Under \"Personal access tokens\", click \"Generate new token\".",
+      "step3": "Give the token a name (for example \"VoC design system\") and choose an expiration.",
+      "step4": "In the scopes, set \"File content\" to read-only (file_content:read). Leave every other scope off.",
+      "step5": "Click \"Generate token\" and copy it straight away: Figma shows it only once.",
+      "docsTokens": "Figma: personal access tokens",
+      "docsScopes": "Figma: token scopes",
+      "permissions": "One scope only: file_content:read (read-only). A token can only see files its owner can open in Figma, so the account that creates it must have access to the files you reference.",
+      "linkFormat": "Figma link: https://www.figma.com/design/<file key>/… (/file/, /proto/ and /board/ links also work).",
+      "failRefused": "The token is wrong, expired or revoked, or it lacks file_content:read. Generate a new one and save it.",
+      "failNotFound": "The link is wrong, or the token's owner cannot open that file in Figma.",
+      "security": "The token acts as the Figma user who created it. Prefer an account that can only view the design files, set an expiration and save a replacement before it expires. If a token leaks, revoke it in Figma under Settings → Security; revocation is immediate."
+    },
+    "github": {
+      "title": "GitHub fine-grained personal access token",
+      "summary": "Optional for public repositories, required for private ones.",
+      "purpose": "Lets the platform read design tokens, CSS, Tailwind configuration and README files from the GitHub repositories you add as design references under {{company}} → {{design}}. Public repositories also work without a token, at GitHub's lower anonymous rate limit; private repositories need one. The token is sent only to api.github.com.",
+      "step1": "On GitHub, click your profile picture (top right) → \"Settings\" → \"Developer settings\" → \"Personal access tokens\" → \"Fine-grained tokens\", then \"Generate new token\". The link below opens the form already filled in.",
+      "step2": "Enter a name and an expiration. Under \"Resource owner\", choose the user or organization that owns the design repository.",
+      "step3": "Under \"Repository access\", choose \"Only select repositories\" and select only the design repositories.",
+      "step4": "Under \"Permissions\", in the repository permissions, set \"Contents\" to \"Read-only\". \"Metadata\" (read-only) is added automatically. Grant nothing else.",
+      "step5": "Click \"Generate token\" and copy it. If the organization requires approval, the token can only read public repositories until an organization owner approves it.",
+      "newToken": "Create the token on GitHub (pre-filled: Contents read-only)",
+      "docsTokens": "GitHub: managing personal access tokens",
+      "permissions": "Contents: read-only, plus the automatic Metadata: read-only, on the selected repositories only. Avoid a classic token: it reaches every repository your account can access.",
+      "linkFormat": "GitHub link: https://github.com/<owner>/<repo>, a folder (…/tree/<branch>/<folder>) or a single file (…/blob/<branch>/<file>).",
+      "failRefused": "The token is wrong, expired or revoked, or it lacks Contents read access.",
+      "failNotFound": "The link is wrong, or the repository is private and the token was not given access to it (GitHub answers \"not found\" rather than \"forbidden\").",
+      "failNoFiles": "The token works, but that location has no design files. Link the folder that holds them.",
+      "security": "The token acts as the GitHub user who created it and stops working if that user loses access. Keep it limited to the design repositories, set an expiration and save a replacement before it expires. If it leaks, delete it under Settings → Developer settings → Personal access tokens. It is separate from the GitHub Issues data source token: do not reuse one for the other."
+    }
+  },
+  "dimensions": {
+    "title": "Dimensions",
+    "description": "Axes every review can be tagged and filtered by, such as product, module or user type."
+  },
+  "sources": {
+    "title": "Sources & privacy",
+    "description": "Per-source data protection: personal data handling, retention, who may see it, and erasure."
   }
 }

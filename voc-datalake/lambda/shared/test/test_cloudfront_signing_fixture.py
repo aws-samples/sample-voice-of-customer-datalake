@@ -33,7 +33,7 @@ FIXTURE_PATH = (
 
 def _signer(key_pair_id: str) -> CloudFrontSigner:
     # rsa_signer is never invoked: build_policy does not sign.
-    return CloudFrontSigner(key_pair_id, lambda message: b'unused')
+    return CloudFrontSigner(key_pair_id, lambda _message: b'unused')
 
 
 def _load_fixture() -> dict:
@@ -46,7 +46,7 @@ class TestFixtureIsReproducible:
 
     def test_canned_policy_matches_botocore(self):
         fx = _load_fixture()
-        expires = datetime.datetime.fromtimestamp(fx['expiresEpochSeconds'], tz=datetime.timezone.utc)
+        expires = datetime.datetime.fromtimestamp(fx['expiresEpochSeconds'], tz=datetime.UTC)
 
         expected = _signer(fx['keyPairId']).build_policy(fx['url'], expires)
 
@@ -59,7 +59,7 @@ class TestFixtureIsReproducible:
 
     def test_canned_policy_matches_botocore_for_a_url_with_a_query_string(self):
         fx = _load_fixture()
-        expires = datetime.datetime.fromtimestamp(fx['expiresEpochSeconds'], tz=datetime.timezone.utc)
+        expires = datetime.datetime.fromtimestamp(fx['expiresEpochSeconds'], tz=datetime.UTC)
 
         expected = _signer(fx['keyPairId']).build_policy(fx['urlWithQuery'], expires)
 

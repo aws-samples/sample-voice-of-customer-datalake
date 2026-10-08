@@ -2,145 +2,45 @@
  * @fileoverview Tests for ProblemRow component
  */
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
-import { ProblemRow } from './ProblemRow'
-
-const mockProblemGroup = {
-  problem: 'Slow delivery times',
-  similarProblems: ['Delivery too slow', 'Shipping delays'],
-  rootCause: 'Logistics bottleneck in warehouse',
-  items: [
-    {
-      feedback_id: 'f1',
-      source_platform: 'webscraper',
-      brand_name: 'TestBrand',
-      original_text: 'The delivery was very slow',
-      category: 'delivery',
-      subcategory: 'shipping_speed',
-      problem_summary: 'Slow delivery times',
-      sentiment_score: -0.5,
-      sentiment_label: 'negative' as const,
-      urgency: 'high' as const,
-      source_created_at: '2025-01-01',
-      processed_at: '2025-01-01',
-      original_language: 'en',
-      source_id: 's1',
-      source_channel: 'social',
-      journey_stage: 'post_purchase',
-      impact_area: 'delivery',
-    },
-    {
-      feedback_id: 'f2',
-      source_platform: 'manual_import',
-      brand_name: 'TestBrand',
-      original_text: 'Shipping took forever',
-      category: 'delivery',
-      subcategory: 'shipping_speed',
-      problem_summary: 'Delivery too slow',
-      sentiment_score: -0.6,
-      sentiment_label: 'negative' as const,
-      urgency: 'medium' as const,
-      source_created_at: '2025-01-02',
-      processed_at: '2025-01-02',
-      original_language: 'en',
-      source_id: 's2',
-      source_channel: 'review',
-      journey_stage: 'post_purchase',
-      impact_area: 'delivery',
-    },
-  ],
-  avgSentiment: -0.55,
-  urgentCount: 1,
-}
-
-function renderWithRouter(ui: React.ReactElement) {
-  return render(<MemoryRouter>{ui}</MemoryRouter>)
-}
+import { makeProblemGroup } from './problem-analysis-fixtures'
+import { renderProblemRow } from './problem-row-fixtures'
 
 describe('ProblemRow', () => {
   describe('collapsed state', () => {
     it('renders problem summary', () => {
-      renderWithRouter(
-        <ProblemRow
-          problemGroup={mockProblemGroup}
-          problemKey="delivery:shipping:slow"
-          isExpanded={false}
-          onToggle={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+      renderProblemRow()
 
       expect(screen.getByText('Slow delivery times')).toBeInTheDocument()
     })
 
     it('shows similar problems count badge', () => {
-      renderWithRouter(
-        <ProblemRow
-          problemGroup={mockProblemGroup}
-          problemKey="delivery:shipping:slow"
-          isExpanded={false}
-          onToggle={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+      renderProblemRow()
 
       expect(screen.getByText('+2')).toBeInTheDocument()
     })
 
     it('shows root cause hypothesis', () => {
-      renderWithRouter(
-        <ProblemRow
-          problemGroup={mockProblemGroup}
-          problemKey="delivery:shipping:slow"
-          isExpanded={false}
-          onToggle={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+      renderProblemRow()
 
       expect(screen.getByText(/logistics bottleneck/i)).toBeInTheDocument()
     })
 
     it('shows item count', () => {
-      renderWithRouter(
-        <ProblemRow
-          problemGroup={mockProblemGroup}
-          problemKey="delivery:shipping:slow"
-          isExpanded={false}
-          onToggle={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+      renderProblemRow()
 
       expect(screen.getByText('2')).toBeInTheDocument()
     })
 
     it('shows urgent count badge', () => {
-      renderWithRouter(
-        <ProblemRow
-          problemGroup={mockProblemGroup}
-          problemKey="delivery:shipping:slow"
-          isExpanded={false}
-          onToggle={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+      renderProblemRow()
 
       expect(screen.getByText('1')).toBeInTheDocument()
     })
 
     it('shows sentiment badge', () => {
-      renderWithRouter(
-        <ProblemRow
-          problemGroup={mockProblemGroup}
-          problemKey="delivery:shipping:slow"
-          isExpanded={false}
-          onToggle={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+      renderProblemRow()
 
       expect(screen.getByText('negative')).toBeInTheDocument()
     })
@@ -148,44 +48,20 @@ describe('ProblemRow', () => {
 
   describe('expanded state', () => {
     it('shows feedback items when expanded', () => {
-      renderWithRouter(
-        <ProblemRow
-          problemGroup={mockProblemGroup}
-          problemKey="delivery:shipping:slow"
-          isExpanded={true}
-          onToggle={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+      renderProblemRow({ isExpanded: true })
 
       expect(screen.getByText('The delivery was very slow')).toBeInTheDocument()
       expect(screen.getByText('Shipping took forever')).toBeInTheDocument()
     })
 
     it('shows similar problems list when expanded', () => {
-      renderWithRouter(
-        <ProblemRow
-          problemGroup={mockProblemGroup}
-          problemKey="delivery:shipping:slow"
-          isExpanded={true}
-          onToggle={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+      renderProblemRow({ isExpanded: true })
 
       expect(screen.getByText(/similar:/i)).toBeInTheDocument()
     })
 
     it('feedback items link to detail page', () => {
-      renderWithRouter(
-        <ProblemRow
-          problemGroup={mockProblemGroup}
-          problemKey="delivery:shipping:slow"
-          isExpanded={true}
-          onToggle={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+      renderProblemRow({ isExpanded: true })
 
       const links = screen.getAllByRole('link')
       expect(links[0]).toHaveAttribute('href', '/feedback/f1')
@@ -197,66 +73,28 @@ describe('ProblemRow', () => {
       const onToggle = vi.fn()
       const user = userEvent.setup()
 
-      renderWithRouter(
-        <ProblemRow
-          problemGroup={mockProblemGroup}
-          problemKey="delivery:shipping:slow"
-          isExpanded={false}
-          onToggle={onToggle}
-          onToggleResolved={vi.fn()}
-        />
-      )
+      renderProblemRow({ onToggle })
 
       await user.click(screen.getByText('Slow delivery times'))
-      expect(onToggle).toHaveBeenCalled()
+      expect(onToggle).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'click' }))
     })
   })
 
   describe('edge cases', () => {
     it('handles problem with no similar problems', () => {
-      const groupNoSimilar = { ...mockProblemGroup, similarProblems: [] }
-
-      renderWithRouter(
-        <ProblemRow
-          problemGroup={groupNoSimilar}
-          problemKey="delivery:shipping:slow"
-          isExpanded={false}
-          onToggle={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+      renderProblemRow({ problemGroup: makeProblemGroup({ similarProblems: [] }) })
 
       expect(screen.queryByText(/\+\d/)).not.toBeInTheDocument()
     })
 
     it('handles problem with no root cause', () => {
-      const groupNoRootCause = { ...mockProblemGroup, rootCause: null }
-
-      renderWithRouter(
-        <ProblemRow
-          problemGroup={groupNoRootCause}
-          problemKey="delivery:shipping:slow"
-          isExpanded={false}
-          onToggle={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+      renderProblemRow({ problemGroup: makeProblemGroup({ rootCause: null }) })
 
       expect(screen.queryByText(/logistics/i)).not.toBeInTheDocument()
     })
 
     it('handles problem with no urgent items', () => {
-      const groupNoUrgent = { ...mockProblemGroup, urgentCount: 0 }
-
-      renderWithRouter(
-        <ProblemRow
-          problemGroup={groupNoUrgent}
-          problemKey="delivery:shipping:slow"
-          isExpanded={false}
-          onToggle={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+      renderProblemRow({ problemGroup: makeProblemGroup({ urgentCount: 0 }) })
 
       // Should not show urgent badge (only the item count "2" should be visible)
       const badges = screen.getAllByText('2')
@@ -270,15 +108,7 @@ describe('problem resolution (issue #66)', () => {
   it('fires onToggleResolved from the resolve control without toggling the row', async () => {
     const onToggle = vi.fn()
     const onToggleResolved = vi.fn()
-    renderWithRouter(
-      <ProblemRow
-        problemGroup={mockProblemGroup}
-        problemKey="delivery:shipping:slow"
-        isExpanded={false}
-        onToggle={onToggle}
-        onToggleResolved={onToggleResolved}
-      />
-    )
+    renderProblemRow({ onToggle, onToggleResolved })
 
     await userEvent.click(screen.getByRole('button', { name: /mark as resolved/i }))
 
@@ -287,30 +117,14 @@ describe('problem resolution (issue #66)', () => {
   })
 
   it('shows the resolved badge and unresolve control for resolved groups', () => {
-    renderWithRouter(
-      <ProblemRow
-        problemGroup={{ ...mockProblemGroup, resolved: true }}
-        problemKey="delivery:shipping:slow"
-        isExpanded={false}
-        onToggle={vi.fn()}
-        onToggleResolved={vi.fn()}
-      />
-    )
+    renderProblemRow({ problemGroup: makeProblemGroup({ resolved: true }) })
 
     expect(screen.getByText('Resolved')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /mark as unresolved/i })).toBeInTheDocument()
   })
 
   it('shows no resolved badge for unresolved groups', () => {
-    renderWithRouter(
-      <ProblemRow
-        problemGroup={mockProblemGroup}
-        problemKey="delivery:shipping:slow"
-        isExpanded={false}
-        onToggle={vi.fn()}
-        onToggleResolved={vi.fn()}
-      />
-    )
+    renderProblemRow()
 
     expect(screen.queryByText('Resolved')).not.toBeInTheDocument()
   })

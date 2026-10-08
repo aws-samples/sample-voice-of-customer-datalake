@@ -64,7 +64,7 @@ function resolveRef(gitDir: string, ref: string): string | null {
   const line = readFileSync(packedPath, 'utf8')
     .split('\n')
     .find((entry) => !entry.startsWith('#') && !entry.startsWith('^') && entry.endsWith(` ${ref}`))
-  return line !== undefined ? line.split(' ')[0] : null
+  return line?.split(' ')[0] ?? null
 }
 
 /** Base directory for refs: the worktree common dir when `commondir`

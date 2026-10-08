@@ -1,18 +1,19 @@
 /**
- * @fileoverview Project detail page with personas, documents, and chat.
+ * @fileoverview Project detail page with personas, documents and product context.
+ * (The former Chat tab is gone: the floating assistant knows the project.)
  * Split into multiple components for maintainability.
  */
 import { Loader2 } from 'lucide-react'
 import {
-  useState, useCallback,
+  useState, useCallback, useEffect,
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  useParams, useNavigate,
+  useParams, useNavigate, useSearchParams,
 } from 'react-router-dom'
 import { projectsApi } from '../../api/projectsApi'
-import { isVersionManagedDocument } from '../../api/documentLineage'
-import { projectKey } from '../../api/projectQueryKeys'
+import { useDocumentSave } from './useDocumentSave'
+import ProjectSharingModal from '../../components/ProjectSharingModal/ProjectSharingModal'
 import { useConfigStore } from '../../store/configStore'
 import JobsSection from './JobsSection'
 import ProjectHeader from './ProjectHeader'
@@ -20,6 +21,8 @@ import {
   PersonaEditModalWrapper, ImportPersonaModalWrapper, DocumentModalWrapper, ConfirmModalWrapper,
 } from './ProjectModals'
 import ProjectTabs from './ProjectTabs'
+import ReadOnlyBanner from './ReadOnlyBanner'
+import { canEditProject } from './projectAccess'
 import TabContent from './TabContent'
 import {
   useSelectionState, useDocModalState, useImportModalState, useConfirmModalState,
@@ -30,8 +33,9 @@ import {
 } from './useProjectData'
 import { useProjectWizardState } from './useProjectWizardState'
 import WizardSection from './WizardSection'
+import { parseTab } from './types'
 import type { Tab } from './types'
-import type { ProductContext } from '../../api/types'
+import type { ProductContext } from '../../api/projectTypes'
 
 /** The product-context query's data shape, taken from the call that produces it. */
 type ProductContextResponse = Awaited<ReturnType<typeof projectsApi.getProductContext>>
@@ -41,11 +45,28 @@ export default function ProjectDetail() {
   const navigate = useNavigate()
   const { config } = useConfigStore()
 
-  const [activeTab, setActiveTab] = useState<Tab>('overview')
+  // The active tab lives in `?tab=` so the assistant's page context can name it.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeTab = parseTab(searchParams.get('tab'))
+  const setActiveTab = useCallback((tab: Tab) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      if (tab === 'overview') next.delete('tab')
+      else next.set('tab', tab)
+      return next
+    }, { replace: true })
+  }, [setSearchParams])
+  // An unknown `?tab=` (an old `mcp` or `chat` bookmark) renders Overview, so drop it
+  // from the URL too: the address bar and the assistant's page context then agree.
+  const rawTab = searchParams.get('tab')
+  useEffect(() => {
+    if (rawTab !== null && rawTab !== activeTab) setActiveTab(activeTab)
+  }, [rawTab, activeTab, setActiveTab])
   // When a long-running action last reported that it started a job. Keeps the
   // jobs poll alive while the new row becomes readable — see
   // JOB_START_POLL_WINDOW_MS in useProjectData.
   const [jobStartedAt, setJobStartedAt] = useState<number | null>(null)
+  const [showSharing, setShowSharing] = useState(false)
   const { t } = useTranslation('projectDetail')
 
   // Custom hooks for state management
@@ -74,6 +95,7 @@ export default function ProjectDetail() {
     researchConfig: wizard.researchConfig,
     docConfig: wizard.docConfig,
     mergeConfig: wizard.mergeConfig,
+    documents: data?.documents,
     onSuccess: wizard.resetWizard,
     onError: () => wizard.setGenerating(null),
   })
@@ -146,15 +168,6 @@ export default function ProjectDetail() {
     queryClient.setQueryData<ProductContextResponse>(productContextKey(id), { context })
   }, [queryClient, id])
 
-  const handleSaveKiroPrompt = useCallback((prompt: string) => {
-    const project = data?.project
-    if (project == null) return
-    void projectsApi.updateProject(project.project_id, { kiro_export_prompt: prompt })
-      .then(() => {
-        return queryClient.invalidateQueries({ queryKey: projectKey(id) })
-      })
-  }, [data, queryClient, id])
-
   const handleConfirmDelete = useCallback(() => {
     const {
       type, id: itemId,
@@ -164,41 +177,29 @@ export default function ProjectDetail() {
     confirm.closeConfirm()
   }, [confirm, deletePersonaMut, deleteDocMut])
 
-  const handleSavePersona = useCallback(() => {
+  // Both saves return their promise (resolve = saved, reject = failed), so the
+  // editors' unsaved-changes guard can wait for them (E2E F6).
+  const handleSavePersona = useCallback(async () => {
     const persona = selection.editingPersona
-    if (persona) updatePersonaMut.mutate({
+    if (persona) await updatePersonaMut.mutateAsync({
       personaId: persona.persona_id,
       updates: persona,
     })
   }, [selection.editingPersona, updatePersonaMut])
 
-  const handleSaveDocument = useCallback(() => {
-    if (docModal.editingDoc) {
-      const managedTitle = isVersionManagedDocument(docModal.editingDoc)
-      updateDocMut.mutate(
-        {
-          docId: docModal.editingDoc.document_id,
-          ...(managedTitle ? {} : { title: docModal.newDocTitle }),
-          content: docModal.newDocContent,
-        },
-        { onSuccess: docModal.resetAfterSave },
-      )
-    } else {
-      createDocMut.mutate(
-        {
-          title: docModal.newDocTitle,
-          content: docModal.newDocContent,
-        },
-        { onSuccess: () => docModal.setShowDocModal(false) },
-      )
-    }
-  }, [docModal, updateDocMut, createDocMut])
+  const documentSave = useDocumentSave({
+    projectId: id,
+    queryClient,
+    docModal,
+    updateDoc: updateDocMut.mutateAsync,
+    createDoc: createDocMut.mutateAsync,
+  })
 
   // Loading state
   if (Boolean(isLoading)) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader2 className="animate-spin text-blue-600" size={32} />
+        <Loader2 className="animate-spin text-accent" size={32} />
       </div>
     )
   }
@@ -207,12 +208,12 @@ export default function ProjectDetail() {
   if (data?.project == null) {
     return (
       <div className="text-center py-12">
-        <p className="text-gray-500">{t('notFound.message')}</p>
+        <p className="text-muted">{t('notFound.message')}</p>
         <button
           onClick={() => {
             void navigate('/projects')
           }}
-          className="mt-4 text-blue-600 hover:underline"
+          className="mt-4 link"
         >
           {t('notFound.backToProjects')}
         </button>
@@ -224,13 +225,28 @@ export default function ProjectDetail() {
     project, personas, documents,
   } = data
   const jobs = jobsData?.jobs ?? []
+  // Viewers see the banner and none of the controls that would only 403.
+  const canEdit = canEditProject(project)
 
   return (
     <div className="space-y-6">
       <ProjectHeader
         name={project.name}
         description={project.description}
+        visibility={project.visibility}
+        onShare={() => setShowSharing(true)}
+        projectId={project.project_id}
         onBack={() => {
+          void navigate('/projects')
+        }}
+      />
+      {canEdit ? null : <ReadOnlyBanner />}
+      <ProjectSharingModal
+        isOpen={showSharing}
+        onClose={() => setShowSharing(false)}
+        projectId={project.project_id}
+        projectName={project.name}
+        onLeft={() => {
           void navigate('/projects')
         }}
       />
@@ -252,12 +268,17 @@ export default function ProjectDetail() {
         docConfig={wizard.docConfig}
         mergeConfig={wizard.mergeConfig}
         generating={wizard.generating}
+        personaStartError={personaMut.error}
+        researchStartError={resMut.error}
         onContextChange={wizard.setContextConfig}
         onPersonaConfigChange={wizard.setPersonaConfig}
         onResearchConfigChange={wizard.setResearchConfig}
         onDocConfigChange={wizard.setDocConfig}
         onMergeConfigChange={wizard.setMergeConfig}
-        onClose={wizard.resetWizard}
+        onClose={() => {
+          // A refusal belongs to the attempt it answered, not to the next opening.
+          personaMut.reset(); resMut.reset(); wizard.resetWizard()
+        }}
         onSubmitPersona={() => {
           wizard.setGenerating('personas'); personaMut.mutate()
         }}
@@ -273,11 +294,13 @@ export default function ProjectDetail() {
       />
 
       {/* Background jobs are visible regardless of which tab is active */}
-      <JobsSection jobs={jobs} onDismiss={(jobId: string) => dismissJobMut.mutate(jobId)} />
+      {/* Dismissing a job is a DELETE the gate refuses for viewers, so they get no handler and no button. */}
+      <JobsSection jobs={jobs} onDismiss={canEdit ? (jobId: string) => dismissJobMut.mutate(jobId) : undefined} />
 
       <TabContent
         activeTab={activeTab}
         project={project}
+        canEdit={canEdit}
         personas={personas}
         documents={documents}
         productContext={productContext}
@@ -291,7 +314,6 @@ export default function ProjectDetail() {
         onRunResearch={() => wizard.openResearchWizard(personas.map((p) => p.persona_id))}
         onRemixDocuments={wizard.openMergeWizard}
         onOpenProductTool={() => setActiveTab('product')}
-        onSaveKiroPrompt={handleSaveKiroPrompt}
         onSelectPersona={selection.setSelectedPersona}
         onEditPersona={() => selection.selectedPersona && selection.setEditingPersona(selection.selectedPersona)}
         onDeletePersona={() => selection.selectedPersona && confirm.openPersonaConfirm(selection.selectedPersona.persona_id)}
@@ -301,11 +323,7 @@ export default function ProjectDetail() {
         onEditDoc={() => selection.selectedDoc && docModal.openEditModal(selection.selectedDoc)}
         onDeleteDoc={() => selection.selectedDoc && confirm.openDocumentConfirm(selection.selectedDoc.document_id)}
         onCreateDoc={docModal.openCreateModal}
-        onSaveAsDocument={docModal.openSaveAsModal}
         onContextSaved={handleContextSaved}
-        onDocumentChanged={() => {
-          void queryClient.invalidateQueries({ queryKey: projectKey(id) })
-        }}
         onJobStarted={handleJobStarted}
       />
 
@@ -339,8 +357,9 @@ export default function ProjectDetail() {
         isSaving={docModal.editingDoc ? updateDocMut.isPending : createDocMut.isPending}
         onTitleChange={docModal.setNewDocTitle}
         onContentChange={docModal.setNewDocContent}
-        onSave={handleSaveDocument}
+        onSave={documentSave.save}
         onClose={docModal.closeModal}
+        conflict={documentSave.conflict}
       />
 
       <ConfirmModalWrapper

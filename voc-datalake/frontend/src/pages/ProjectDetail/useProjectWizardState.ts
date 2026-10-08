@@ -4,9 +4,7 @@
 import {
   useState, useCallback,
 } from 'react'
-import {
-  defaultContextConfig, type ContextConfig,
-} from '../../components/DataSourceWizard/exports'
+import { defaultContextConfig, type ContextConfig } from '../../components/DataSourceWizard/types'
 import type {
   PersonaToolConfig, ResearchToolConfig, DocToolConfig, MergeToolConfig,
 } from './types'

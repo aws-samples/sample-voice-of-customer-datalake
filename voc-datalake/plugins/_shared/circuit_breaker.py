@@ -4,20 +4,15 @@ Auto-disables plugins after repeated failures.
 """
 
 import os
-from datetime import datetime, timezone, timedelta
-
 import sys
+from datetime import UTC, datetime, timedelta
+
+from botocore.exceptions import BotoCoreError, ClientError
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from shared.aws import get_dynamodb_resource, get_eventbridge_client
 from shared.logging import logger
-from shared.aws import get_dynamodb_resource
-
-# Try to import EventBridge client
-try:
-    from shared.aws import get_eventbridge_client
-    HAS_EVENTBRIDGE = True
-except ImportError:
-    HAS_EVENTBRIDGE = False
 
 FAILURE_THRESHOLD = int(os.environ.get("CIRCUIT_BREAKER_THRESHOLD", "5"))
 WINDOW_MINUTES = int(os.environ.get("CIRCUIT_BREAKER_WINDOW", "15"))
@@ -44,7 +39,7 @@ class CircuitBreaker:
             logger.warning("WATERMARKS_TABLE not configured, circuit breaker disabled")
             return
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         window_start = now - timedelta(minutes=WINDOW_MINUTES)
 
         try:
@@ -73,37 +68,23 @@ class CircuitBreaker:
             if recent_failures + 1 >= FAILURE_THRESHOLD:
                 self._trip_breaker(recent_failures + 1, error)
 
-        except Exception as e:
-            logger.warning(f"Failed to record failure in circuit breaker: {e}")
-
-    def _schedule_rule_name(self) -> str:
-        """This plugin's EventBridge schedule rule name.
-
-        Read from INGEST_SCHEDULE_RULE_NAME when CDK supplied it, which it does
-        only where the derivation below would be wrong — i.e. on a deployment
-        that carries a `deploymentPrefix`. This keeps the code unaware that
-        prefixes exist, and keeps the unprefixed template unchanged. Getting the
-        name wrong means DisableRule targets a rule that does not exist, so a
-        repeatedly failing plugin keeps hammering the source: the exact thing
-        this breaker exists to stop, failing silently.
-        """
-        resolved = os.environ.get("INGEST_SCHEDULE_RULE_NAME", "")
-        if resolved:
-            return resolved
-        # Match CDK's uniqueName() pattern: {base}-{account}-{region}
-        account_id = os.environ.get("DEPLOY_ACCOUNT_ID", os.environ.get("AWS_ACCOUNT_ID", ""))
-        region = os.environ.get("DEPLOY_REGION", os.environ.get("AWS_REGION", ""))
-        suffix = f"-{account_id}-{region}" if account_id and region else ""
-        return f"voc-ingest-{self.plugin_id}-schedule{suffix}"
+        except (BotoCoreError, ClientError) as e:
+            logger.warning(f"Failed to record failure in circuit breaker: {e}", exc_info=True)
 
     def _trip_breaker(self, failure_count: int, last_error: str) -> None:
-        """Disable the plugin schedule."""
-        rule_name = self._schedule_rule_name()
+        """Disable the plugin schedule and record the trip.
+
+        INGEST_SCHEDULE_RULE_NAME is the plugin's own schedule rule, set by CDK
+        (lib/stacks/ingestion-stack.ts) from the same string that names the rule
+        and scopes this role's events:DisableRule grant. It is absent for an
+        unscheduled plugin (no rule exists), which still records the trip so
+        later runs stop at `is_open`.
+        """
+        rule_name = os.environ.get("INGEST_SCHEDULE_RULE_NAME", "")
 
         try:
-            if HAS_EVENTBRIDGE:
-                events = get_eventbridge_client()
-                events.disable_rule(Name=rule_name)
+            if rule_name:
+                get_eventbridge_client().disable_rule(Name=rule_name)
 
             # Record the trip
             if self.table:
@@ -111,7 +92,7 @@ class CircuitBreaker:
                     "pk": f"CIRCUIT#{self.plugin_id}",
                     "sk": "TRIPPED",
                     "source": f"CIRCUIT#{self.plugin_id}#TRIPPED",
-                    "tripped_at": datetime.now(timezone.utc).isoformat(),
+                    "tripped_at": datetime.now(UTC).isoformat(),
                     "failure_count": failure_count,
                     "last_error": last_error[:500],
                 })
@@ -129,7 +110,7 @@ class CircuitBreaker:
             )
 
         except Exception as e:
-            logger.error(f"Failed to trip circuit breaker: {e}")
+            logger.exception(f"Failed to trip circuit breaker: {e}")
 
     def record_success(self) -> None:
         """Record a success. Resets failure count."""
@@ -141,8 +122,8 @@ class CircuitBreaker:
             self.table.delete_item(
                 Key={"pk": f"CIRCUIT#{self.plugin_id}", "sk": "TRIPPED"}
             )
-        except Exception as e:
-            logger.debug(f"Failed to clear circuit breaker state: {e}")
+        except (BotoCoreError, ClientError) as e:
+            logger.debug(f"Failed to clear circuit breaker state: {e}", exc_info=True)
 
     def is_open(self) -> bool:
         """Check if circuit breaker is open (plugin disabled)."""
@@ -153,7 +134,8 @@ class CircuitBreaker:
             response = self.table.get_item(
                 Key={"pk": f"CIRCUIT#{self.plugin_id}", "sk": "TRIPPED"}
             )
-            return "Item" in response
-        except Exception as e:
-            logger.debug(f"Failed to check circuit breaker state: {e}")
+        except (BotoCoreError, ClientError) as e:
+            logger.debug(f"Failed to check circuit breaker state: {e}", exc_info=True)
             return False
+        else:
+            return "Item" in response

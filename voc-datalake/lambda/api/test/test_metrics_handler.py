@@ -2,43 +2,44 @@
 Tests for metrics_handler.py - /feedback/* and /metrics/* endpoints.
 """
 import json
-from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
+from datetime import UTC, datetime, timedelta
+from unittest.mock import MagicMock, patch
+
+from handler_events_fixtures import call_route
+from urgency_index_fixtures import batch_get_key_counts, wire_urgency_index
+
+from metrics_handler import lambda_handler
+from shared.earliest_date import EARLIEST_DATE_KEY
 
 
 class TestListFeedbackEndpoint:
     """Tests for GET /feedback endpoint."""
 
     @patch('metrics_handler.feedback_table')
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     def test_returns_empty_list_when_no_feedback_exists(
-        self, mock_agg_table, mock_fb_table, api_gateway_event, lambda_context
+        self, mock_fb_table, api_gateway_event, lambda_context
     ):
         """Returns empty array when no feedback in date range."""
         mock_fb_table.query.return_value = {'Items': []}
-        
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
         from metrics_handler import lambda_handler
-        
-        event = api_gateway_event(
-            method='GET', 
-            path='/feedback', 
-            query_params={'days': '7'}
+
+        response, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            method='GET',
+            path='/feedback',
+            query_params={'days': '7'},
         )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
+
         assert response['statusCode'] == 200
         assert body['count'] == 0
         assert body['items'] == []
 
     @patch('metrics_handler.feedback_table')
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     def test_filters_by_source_when_source_param_provided(
-        self, mock_agg_table, mock_fb_table, api_gateway_event, lambda_context, sample_feedback_items
+        self, mock_fb_table, api_gateway_event, lambda_context, sample_feedback_items
     ):
         """Filters feedback by source platform."""
         mock_fb_table.query.side_effect = [
@@ -50,48 +51,38 @@ class TestListFeedbackEndpoint:
             {'Items': []},
             {'Items': []},
         ]
-        
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
         from metrics_handler import lambda_handler
-        
-        event = api_gateway_event(
-            method='GET', 
-            path='/feedback', 
-            query_params={'source': 'webscraper', 'days': '7'}
+
+        response, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            method='GET',
+            path='/feedback',
+            query_params={'source': 'webscraper', 'days': '7'},
         )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
+
         assert response['statusCode'] == 200
         assert body['count'] == 1
         assert all(item['source_platform'] == 'webscraper' for item in body['items'])
 
     @patch('metrics_handler.feedback_table')
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     def test_returns_items_within_limit(
-        self, mock_agg_table, mock_fb_table, api_gateway_event, lambda_context
+        self, mock_fb_table, api_gateway_event, lambda_context
     ):
         """Respects limit parameter."""
         items = [{'feedback_id': str(i), 'date': '2025-01-01'} for i in range(100)]
         mock_fb_table.query.return_value = {'Items': items}
-        
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
         from metrics_handler import lambda_handler
-        
-        event = api_gateway_event(
-            method='GET', 
-            path='/feedback', 
-            query_params={'limit': '10', 'source': 'webscraper'}
+
+        response, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            method='GET',
+            path='/feedback',
+            query_params={'limit': '10', 'source': 'webscraper'},
         )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
+
         assert response['statusCode'] == 200
         assert len(body['items']) <= 10
 
@@ -109,21 +100,16 @@ class TestGetSummaryEndpoint:
         mock_agg_table.query.return_value = {
             'Items': [{'sk': '2026-01-07', 'count': 50, 'sum': 25.0}]
         }
-        
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
         from metrics_handler import lambda_handler
-        
-        event = api_gateway_event(
-            method='GET', 
-            path='/metrics/summary', 
-            query_params={'days': '7'}
+
+        response, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            method='GET',
+            path='/metrics/summary',
+            query_params={'days': '7'},
         )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
+
         assert response['statusCode'] == 200
         assert body['period_days'] == 7
         # Exact values, not just key presence: the single item the stubbed query
@@ -138,21 +124,16 @@ class TestGetSummaryEndpoint:
     ):
         """Returns zero values when no aggregates exist."""
         mock_agg_table.query.return_value = {'Items': []}
-        
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
         from metrics_handler import lambda_handler
-        
-        event = api_gateway_event(
-            method='GET', 
-            path='/metrics/summary', 
-            query_params={'days': '30'}
+
+        response, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            method='GET',
+            path='/metrics/summary',
+            query_params={'days': '30'},
         )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
+
         assert response['statusCode'] == 200
         assert body['total_feedback'] == 0
 
@@ -160,10 +141,10 @@ class TestGetSummaryEndpoint:
 class TestGetSentimentEndpoint:
     """Tests for GET /metrics/sentiment endpoint."""
 
-    @patch('metrics_handler.aggregates_table')
-    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
+    @patch('metrics_handler.feedback_table', new=MagicMock())
     def test_returns_sentiment_breakdown(
-        self, mock_fb_table, mock_agg_table, api_gateway_event, lambda_context
+        self, api_gateway_event, lambda_context
     ):
         """Returns sentiment distribution."""
         # Stub at the window helper: it takes the pk as a plain string, whereas
@@ -171,30 +152,27 @@ class TestGetSentimentEndpoint:
         # boto3 Condition object. The query shape itself is covered by
         # TestQueryMetricWindow.
         counts = {'positive': 60, 'negative': 20, 'neutral': 15, 'mixed': 5}
-        
-        def window_side_effect(pk, days, current_date):
+
+        def window_side_effect(pk, _days, _current_date):
             # `(items, truncated)` — the helper reports truncation to its caller
             # now, so a stub returning a bare list would report the tuple itself
             # as the window.
             label = pk.rsplit('#', 1)[-1]
             return [{'sk': '2026-01-07', 'count': counts[label]}], False
-        
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
         from metrics_handler import lambda_handler
-        
+
         event = api_gateway_event(
-            method='GET', 
-            path='/metrics/sentiment', 
+            method='GET',
+            path='/metrics/sentiment',
             query_params={'days': '7'}
         )
-        
+
         with patch('metrics_handler._query_metric_window',
                    side_effect=window_side_effect) as mock_window:
             response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
-        
+
         assert response['statusCode'] == 200
         # Exact breakdown, so a mis-keyed window would fail rather than pass on
         # mere key presence.
@@ -212,37 +190,15 @@ class TestGetSentimentEndpoint:
         ]
 
 
-class TestGetUrgentFeedback:
-    """Tests for GET /feedback/urgent endpoint."""
+def _urgent_row(feedback_id: str, **fields) -> dict:
+    """One stored urgent item, imported yesterday (inside every default window)."""
+    recent = (datetime.now(UTC) - timedelta(days=1)).strftime('%Y-%m-%d')
+    return {'pk': 'SOURCE#webscraper', 'sk': f'FEEDBACK#{feedback_id}', 'feedback_id': feedback_id,
+            'urgency': 'high', 'date': recent, **fields}
 
-    @patch('metrics_handler.feedback_table')
-    def test_returns_urgent_feedback_items(
-        self, mock_fb_table, api_gateway_event, lambda_context
-    ):
-        """Returns high-urgency feedback items."""
-        mock_fb_table.query.return_value = {
-            'Items': [
-                {'pk': 'SOURCE#webscraper', 'sk': 'FEEDBACK#1', 'urgency': 'high'},
-                {'pk': 'SOURCE#manual_import', 'sk': 'FEEDBACK#2', 'urgency': 'high'}
-            ]
-        }
-        mock_fb_table.get_item.return_value = {
-            'Item': {'feedback_id': '1', 'urgency': 'high', 'original_text': 'Urgent issue!', 'date': '2026-01-07'}
-        }
-        
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from metrics_handler import lambda_handler
-        
-        event = api_gateway_event(method='GET', path='/feedback/urgent')
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        assert response['statusCode'] == 200
-        assert 'items' in body
-        assert 'count' in body
+
+class TestGetUrgentFeedback:
+    """Tests for GET /feedback/urgent endpoint (batch read-back: test_metrics_urgent_batch.py)."""
 
     @patch('metrics_handler.feedback_table')
     def test_count_is_the_returned_page_length_not_the_window_total(
@@ -250,10 +206,9 @@ class TestGetUrgentFeedback:
     ):
         """`count` reports how many items this page returned, NOT the window total.
 
-        Pinning deliberately-surprising behaviour. The handler returns
-        ``{'count': len(items), 'items': items[:limit]}`` and stops scanning once
-        it has ``limit`` items, so ``count`` is bounded by ``limit`` and cannot
-        express "how many urgent items exist".
+        Pinning deliberately-surprising behaviour. The handler stops reading once
+        it has ``limit`` candidates, so ``count`` is bounded by ``limit`` and
+        cannot express "how many urgent items exist".
 
         This is a trap for consumers: the sidebar urgent badge read this field
         with ``limit=10`` and could therefore never display more than 10, no
@@ -270,34 +225,14 @@ class TestGetUrgentFeedback:
         same time, not a regression.
         """
         # Ten urgent items available, but the caller asks for three.
-        mock_fb_table.query.return_value = {
-            'Items': [
-                {'pk': 'SOURCE#webscraper', 'sk': f'FEEDBACK#{i}', 'urgency': 'high'}
-                for i in range(10)
-            ]
-        }
-        # The date must be computed, not hardcoded: the handler drops anything
-        # older than the window, so a fixed date silently empties the result and
-        # the assertions below would pass against zero items.
-        recent = (datetime.now(timezone.utc) - timedelta(days=1)).strftime('%Y-%m-%d')
-        mock_fb_table.get_item.return_value = {
-            'Item': {
-                'feedback_id': '1', 'urgency': 'high',
-                'original_text': 'Urgent issue!', 'date': recent,
-            }
-        }
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from metrics_handler import lambda_handler
+        wire_urgency_index(mock_fb_table, [_urgent_row(str(i)) for i in range(10)])
 
-        event = api_gateway_event(
+        response, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
             method='GET',
             path='/feedback/urgent',
             query_params={'limit': '3'},
         )
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
 
         assert response['statusCode'] == 200
         # Exactly the requested page, not "at most" — ten items were available.
@@ -310,63 +245,38 @@ class TestGetUrgentFeedback:
     def test_respects_limit_parameter(
         self, mock_fb_table, api_gateway_event, lambda_context
     ):
-        """Respects limit parameter for urgent feedback."""
-        mock_fb_table.query.return_value = {'Items': []}
-        
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from metrics_handler import lambda_handler
-        
-        event = api_gateway_event(
+        """With no post-filter, only `limit` candidates are hydrated."""
+        wire_urgency_index(mock_fb_table, [_urgent_row(str(i)) for i in range(8)])
+
+        response, _ = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
             method='GET',
             path='/feedback/urgent',
-            query_params={'limit': '5'}
+            query_params={'limit': '5'},
         )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
+
         assert response['statusCode'] == 200
-        assert 'items' in body
-        # The limit must actually reach the query (no filters -> no over-fetch).
-        assert mock_fb_table.query.call_args.kwargs['Limit'] == 5
+        assert batch_get_key_counts(mock_fb_table) == [5]
 
     @patch('metrics_handler.feedback_table')
     def test_filters_by_source(
         self, mock_fb_table, api_gateway_event, lambda_context
     ):
         """Filters urgent feedback by source platform."""
-        mock_fb_table.query.return_value = {
-            'Items': [
-                {'pk': 'SOURCE#webscraper', 'sk': 'FEEDBACK#1'},
-                {'pk': 'SOURCE#manual_import', 'sk': 'FEEDBACK#2'}
-            ]
-        }
-        def get_item_side_effect(Key):
-            if Key['pk'] == 'SOURCE#webscraper':
-                return {'Item': {'feedback_id': '1', 'source_platform': 'webscraper', 'date': '2026-01-07'}}
-            return {'Item': {'feedback_id': '2', 'source_platform': 'manual_import', 'date': '2026-01-07'}}
-        
-        mock_fb_table.get_item.side_effect = get_item_side_effect
-        
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from metrics_handler import lambda_handler
-        
-        event = api_gateway_event(
+        wire_urgency_index(mock_fb_table, [
+            _urgent_row('1', source_platform='webscraper'),
+            _urgent_row('2', source_platform='manual_import'),
+        ])
+
+        response, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
             method='GET',
             path='/feedback/urgent',
-            query_params={'source': 'webscraper'}
+            query_params={'source': 'webscraper'},
         )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
+
         assert response['statusCode'] == 200
-        for item in body['items']:
-            assert item['source_platform'] == 'webscraper'
+        assert [i['feedback_id'] for i in body['items']] == ['1']
 
 
 class TestGetFeedbackById:
@@ -380,45 +290,18 @@ class TestGetFeedbackById:
         mock_fb_table.query.return_value = {
             'Items': [{'feedback_id': 'test-123', 'original_text': 'Great product!'}]
         }
-        
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
         from metrics_handler import lambda_handler
-        
-        event = api_gateway_event(
+
+        response, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
             method='GET',
             path='/feedback/test-123',
-            path_params={'feedback_id': 'test-123'}
+            path_params={'feedback_id': 'test-123'},
         )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
+
         assert response['statusCode'] == 200
         assert body['feedback_id'] == 'test-123'
-
-    @patch('metrics_handler.feedback_table')
-    def test_returns_404_when_feedback_not_found(
-        self, mock_fb_table, api_gateway_event, lambda_context
-    ):
-        """Returns 404 when feedback ID doesn't exist."""
-        mock_fb_table.query.return_value = {'Items': []}
-        
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from metrics_handler import lambda_handler
-        
-        event = api_gateway_event(
-            method='GET',
-            path='/feedback/nonexistent',
-            path_params={'feedback_id': 'nonexistent'}
-        )
-        
-        response = lambda_handler(event, lambda_context)
-        
-        assert response['statusCode'] == 404
 
 
 class TestGetSimilarFeedback:
@@ -437,21 +320,16 @@ class TestGetSimilarFeedback:
                 {'feedback_id': 'test-123', 'category': 'product'},
             ]}
         ]
-        
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
         from metrics_handler import lambda_handler
-        
-        event = api_gateway_event(
+
+        response, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
             method='GET',
             path='/feedback/test-123/similar',
-            path_params={'feedback_id': 'test-123'}
+            path_params={'feedback_id': 'test-123'},
         )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
+
         assert response['statusCode'] == 200
         assert body['source_feedback_id'] == 'test-123'
         assert 'items' in body
@@ -463,20 +341,16 @@ class TestGetSimilarFeedback:
     ):
         """Returns 404 when source feedback doesn't exist."""
         mock_fb_table.query.return_value = {'Items': []}
-        
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
         from metrics_handler import lambda_handler
-        
-        event = api_gateway_event(
+
+        response, _ = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
             method='GET',
             path='/feedback/nonexistent/similar',
-            path_params={'feedback_id': 'nonexistent'}
+            path_params={'feedback_id': 'nonexistent'},
         )
-        
-        response = lambda_handler(event, lambda_context)
-        
+
         assert response['statusCode'] == 404
 
 
@@ -484,9 +358,9 @@ class TestGetCategoryMetrics:
     """Tests for GET /metrics/categories endpoint."""
 
     @patch('metrics_handler.aggregates_table')
-    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.feedback_table', new=MagicMock())
     def test_returns_category_breakdown(
-        self, mock_fb_table, mock_agg_table, api_gateway_event, lambda_context
+        self, mock_agg_table, api_gateway_event, lambda_context
     ):
         """Returns category distribution."""
         # get_configured_categories memoizes in a module-level cache that other
@@ -494,34 +368,31 @@ class TestGetCategoryMetrics:
         # the cache is cleared. Same pattern as shared/test/test_api.py.
         from shared.api import clear_categories_cache
         clear_categories_cache()
-        
+
         # The configured-category list is still a get_item; only the per-day
         # count walk became a windowed query.
         def get_item_side_effect(Key):
             if Key.get('pk', '') == 'SETTINGS#categories':
                 return {'Item': {'categories': [{'name': 'product'}, {'name': 'delivery'}]}}
             return {}
-        
+
         mock_agg_table.get_item.side_effect = get_item_side_effect
-        
+
         counts = {'product': 50, 'delivery': 30}
-        
-        def window_side_effect(pk, days, current_date):
+
+        def window_side_effect(pk, _days, _current_date):
             # `(items, truncated)`; see the sentiment stub above.
             category = pk.rsplit('#', 1)[-1]
             return [{'sk': '2026-01-07', 'count': counts[category]}], False
-        
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
         from metrics_handler import lambda_handler
-        
+
         event = api_gateway_event(
             method='GET',
             path='/metrics/categories',
             query_params={'days': '7'}
         )
-        
+
         try:
             with patch('metrics_handler._query_metric_window',
                        side_effect=window_side_effect) as mock_window:
@@ -532,7 +403,7 @@ class TestGetCategoryMetrics:
             # runs next. Same bug class, other direction.
             clear_categories_cache()
         body = json.loads(response['body'])
-        
+
         assert response['statusCode'] == 200
         # Exact values and descending-by-count ordering, both of which the
         # previous 'categories' in body assertion could not see.
@@ -544,72 +415,6 @@ class TestGetCategoryMetrics:
             'METRIC#daily_category#product',
             'METRIC#daily_category#delivery',
         ]
-
-
-class TestGetSourceMetrics:
-    """Tests for GET /metrics/sources endpoint."""
-
-    @patch('metrics_handler.aggregates_table')
-    def test_returns_source_breakdown(
-        self, mock_agg_table, api_gateway_event, lambda_context
-    ):
-        """Returns source platform distribution."""
-        mock_agg_table.query.return_value = {
-            'Items': [
-                {'pk': 'METRIC#daily_source#webscraper', 'sk': '2026-01-07', 'count': 50},
-                {'pk': 'METRIC#daily_source#manual_import', 'sk': '2026-01-07', 'count': 30},
-            ]
-        }
-        
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from metrics_handler import lambda_handler
-        
-        event = api_gateway_event(
-            method='GET',
-            path='/metrics/sources',
-            query_params={'days': '7'}
-        )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        assert response['statusCode'] == 200
-        assert 'sources' in body
-
-
-class TestGetPersonaMetrics:
-    """Tests for GET /metrics/personas endpoint."""
-
-    @patch('metrics_handler.aggregates_table')
-    def test_returns_persona_breakdown(
-        self, mock_agg_table, api_gateway_event, lambda_context
-    ):
-        """Returns persona distribution."""
-        mock_agg_table.query.return_value = {
-            'Items': [
-                {'pk': 'METRIC#persona#TechEnthusiast', 'sk': '2026-01-07', 'count': 25},
-                {'pk': 'METRIC#persona#BudgetShopper', 'sk': '2026-01-07', 'count': 15},
-            ]
-        }
-        
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from metrics_handler import lambda_handler
-        
-        event = api_gateway_event(
-            method='GET',
-            path='/metrics/personas',
-            query_params={'days': '7'}
-        )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        assert response['statusCode'] == 200
-        assert 'personas' in body
 
 
 class TestQueryMetricWindow:
@@ -625,9 +430,10 @@ class TestQueryMetricWindow:
         # conftest.py already puts lambda/ and lambda/api/ on sys.path (:13-16),
         # so the per-test path insertion the older tests carry is redundant.
         from boto3.dynamodb.conditions import Key
+
         from metrics_handler import _query_metric_window
 
-        current = datetime(2026, 3, 10, 12, 0, tzinfo=timezone.utc)
+        current = datetime(2026, 3, 10, 12, 0, tzinfo=UTC)
         with patch('metrics_handler.aggregates_table') as mock_table:
             mock_table.query.return_value = {'Items': [{'sk': '2026-03-10', 'count': 2}]}
             items, truncated = _query_metric_window('METRIC#urgent', 7, current)
@@ -656,7 +462,7 @@ class TestQueryMetricWindow:
         with patch('metrics_handler.aggregates_table') as mock_table:
             mock_table.query.return_value = {'Items': []}
             _query_metric_window('METRIC#daily_total', 30,
-                                 datetime(2026, 3, 10, tzinfo=timezone.utc))
+                                 datetime(2026, 3, 10, tzinfo=UTC))
 
         assert mock_table.query.call_args.kwargs['ScanIndexForward'] is False
 
@@ -677,7 +483,7 @@ class TestQueryMetricWindow:
         with patch('metrics_handler.aggregates_table') as mock_table:
             mock_table.query.side_effect = pages
             items, truncated = _query_metric_window(
-                'METRIC#urgent', 7, datetime(2026, 3, 10, tzinfo=timezone.utc))
+                'METRIC#urgent', 7, datetime(2026, 3, 10, tzinfo=UTC))
 
         assert mock_table.query.call_count == 2
         assert items == [
@@ -712,7 +518,7 @@ class TestQueryMetricWindow:
                 'LastEvaluatedKey': {'pk': 'p', 'sk': '2026-03-10'},
             }
             items, truncated = _query_metric_window(
-                'METRIC#urgent', 3, datetime(2026, 3, 10, tzinfo=timezone.utc))
+                'METRIC#urgent', 3, datetime(2026, 3, 10, tzinfo=UTC))
 
         assert mock_table.query.call_count == 3, 'bound should cap pages at `days`'
         assert len(items) == 3
@@ -727,7 +533,7 @@ class TestQueryMetricWindow:
              patch('metrics_handler.logger') as mock_logger:
             mock_table.query.return_value = {'Items': [{'sk': '2026-03-10', 'count': 1}]}
             _, truncated = _query_metric_window(
-                'METRIC#urgent', 3, datetime(2026, 3, 10, tzinfo=timezone.utc))
+                'METRIC#urgent', 3, datetime(2026, 3, 10, tzinfo=UTC))
 
         assert mock_table.query.call_count == 1
         assert truncated is False
@@ -736,12 +542,13 @@ class TestQueryMetricWindow:
     def test_a_single_day_window_is_the_current_date_alone(self):
         """days=1 must not read a zero-width or off-by-one range."""
         from boto3.dynamodb.conditions import Key
+
         from metrics_handler import _query_metric_window
 
         with patch('metrics_handler.aggregates_table') as mock_table:
             mock_table.query.return_value = {'Items': []}
             _query_metric_window('METRIC#urgent', 1,
-                                 datetime(2026, 3, 10, tzinfo=timezone.utc))
+                                 datetime(2026, 3, 10, tzinfo=UTC))
 
         assert mock_table.query.call_args.kwargs['KeyConditionExpression'] == (
             Key('pk').eq('METRIC#urgent') & Key('sk').between('2026-03-10', '2026-03-10')
@@ -767,19 +574,21 @@ class TestMetricsRequestCountIsIndependentOfWindow:
         for days in ('1', '7', '90', '365'):
             mock_agg_table.reset_mock()
             mock_agg_table.query.return_value = {'Items': [{'sk': '2026-03-10', 'count': 3, 'sum': 1.5}]}
-            event = api_gateway_event(
-                method='GET', path='/metrics/summary', query_params={'days': days}
+            response, _ = call_route(
+                lambda_handler, api_gateway_event, lambda_context,
+                method='GET', path='/metrics/summary', query_params={'days': days},
             )
-            response = lambda_handler(event, lambda_context)
             assert response['statusCode'] == 200
             counts.append(mock_agg_table.query.call_count)
             # Scoped to METRIC# partitions rather than all get_item calls: the
             # fan-out being guarded against was per-day METRIC# reads, and a
             # legitimate single-shot settings read (SETTINGS#...) moving onto
-            # this table later should not fail this test.
+            # this table later should not fail this test. The earliest-date
+            # watermark (`METRIC#meta`) is one read per REQUEST, not per day.
             metric_get_items = [
                 c for c in mock_agg_table.get_item.call_args_list
                 if str(c.kwargs.get('Key', {}).get('pk', '')).startswith('METRIC#')
+                and c.kwargs.get('Key') != EARLIEST_DATE_KEY
             ]
             assert metric_get_items == [], f'per-day METRIC# get_item returned at days={days}'
 
@@ -797,10 +606,10 @@ class TestMetricsRequestCountIsIndependentOfWindow:
         for days in ('7', '90'):
             mock_agg_table.reset_mock()
             mock_agg_table.query.return_value = {'Items': [{'sk': '2026-03-10', 'count': 1}]}
-            event = api_gateway_event(
-                method='GET', path='/metrics/sentiment', query_params={'days': days}
+            response, _ = call_route(
+                lambda_handler, api_gateway_event, lambda_context,
+                method='GET', path='/metrics/sentiment', query_params={'days': days},
             )
-            response = lambda_handler(event, lambda_context)
             assert response['statusCode'] == 200
             counts.append(mock_agg_table.query.call_count)
 
@@ -817,11 +626,10 @@ class TestMetricsRequestCountIsIndependentOfWindow:
             {'sk': '2026-03-10', 'count': 5, 'sum': 2.5},
             {'sk': '2026-03-09', 'count': 3, 'sum': 1.5},
         ]}
-        event = api_gateway_event(
-            method='GET', path='/metrics/summary', query_params={'days': '7'}
+        _response, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            method='GET', path='/metrics/summary', query_params={'days': '7'},
         )
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
 
         assert [t['date'] for t in body['daily_totals']] == ['2026-03-10', '2026-03-09']
         assert [s['date'] for s in body['daily_sentiment']] == ['2026-03-10', '2026-03-09']
@@ -842,11 +650,10 @@ class TestMetricsRequestCountIsIndependentOfWindow:
             {'sk': '2026-03-09', 'count': 4},
             {'sk': '2026-03-08', 'count': 1},
         ]}
-        event = api_gateway_event(
-            method='GET', path='/metrics/summary', query_params={'days': '30'}
+        _response, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            method='GET', path='/metrics/summary', query_params={'days': '30'},
         )
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
 
         assert body['urgent_count'] == 12
 
@@ -863,72 +670,41 @@ class TestSearchQueryMinimumLength:
     """
 
     @patch('metrics_handler.feedback_table')
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     def test_a_one_character_query_is_refused_rather_than_answered_empty(
-        self, mock_agg, mock_fb, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(path='/feedback/search', query_params={'q': 'a'})
-
-        response = lambda_handler(event, lambda_context)
+        response, _ = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            path='/feedback/search', query_params={'q': 'a'},
+        )
 
         assert response['statusCode'] == 400
         assert json.loads(response['body'])['success'] is False
         assert mock_fb.query.call_count == 0, "a refused search must not scan the corpus"
 
-    @patch('metrics_handler.feedback_table')
-    @patch('metrics_handler.aggregates_table')
-    def test_the_refusal_states_the_minimum_so_a_caller_can_correct_itself(
-        self, mock_agg, mock_fb, api_gateway_event, lambda_context
-    ):
-        """The adapter relays this message verbatim to the model, so it has to
-        say what the rule is rather than merely that a rule was broken."""
-        from metrics_handler import lambda_handler
-        from shared.api import SEARCH_QUERY_MIN_LENGTH
-        event = api_gateway_event(path='/feedback/search', query_params={'q': 'a'})
-
-        error = json.loads(lambda_handler(event, lambda_context)['body'])['error']
-
-        assert str(SEARCH_QUERY_MIN_LENGTH) in error
-
-    @patch('metrics_handler.feedback_table')
-    @patch('metrics_handler.aggregates_table')
-    def test_whitespace_that_trims_below_the_minimum_is_refused(
-        self, mock_agg, mock_fb, api_gateway_event, lambda_context
-    ):
-        """The route trims before measuring, so `' a '` is one character.
-
-        This is the case the frontend can actually produce: its own gate counts
-        raw `.length`, so two typed spaces around one letter passes the client
-        check and arrives here as a single character.
-        """
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(path='/feedback/search', query_params={'q': '  a  '})
-
-        assert lambda_handler(event, lambda_context)['statusCode'] == 400
-
-    @patch('metrics_handler.feedback_table')
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.feedback_table', new=MagicMock())
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     def test_a_blank_query_is_still_a_successful_empty_answer(
-        self, mock_agg, mock_fb, api_gateway_event, lambda_context
+        self, api_gateway_event, lambda_context
     ):
         """Deliberately NOT an error: no search term means no search was asked
         for, and the filter-only answer belongs to `/feedback` — which is where
         the MCP adapter routes such a call. Only a term that is PRESENT and too
         short is a refusal.
         """
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(path='/feedback/search', query_params={'q': '   '})
-
-        response = lambda_handler(event, lambda_context)
+        response, _ = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            path='/feedback/search', query_params={'q': '   '},
+        )
 
         assert response['statusCode'] == 200
         assert json.loads(response['body'])['count'] == 0
 
     @patch('metrics_handler.feedback_table')
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     def test_a_query_at_the_minimum_is_accepted(
-        self, mock_agg, mock_fb, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
         """The boundary itself, so the guard cannot drift into off-by-one."""
         from metrics_handler import lambda_handler
@@ -960,13 +736,13 @@ class TestSearchScansTheRequestedWindow:
         ]
 
     @patch('metrics_handler.feedback_table')
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     def test_a_match_older_than_thirty_days_is_now_reachable(
-        self, mock_agg, mock_fb, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
         """The reported symptom, as a test: on the corpus this was found on, a
         5,240-item import sat 37 days back and no text search could see it."""
-        old_day = (datetime.now(timezone.utc) - timedelta(days=37)).strftime('%Y-%m-%d')
+        old_day = (datetime.now(UTC) - timedelta(days=37)).strftime('%Y-%m-%d')
 
         def by_day(**kwargs):
             queried = kwargs['KeyConditionExpression']._values[1]
@@ -984,18 +760,17 @@ class TestSearchScansTheRequestedWindow:
 
         mock_fb.query.side_effect = by_day
         from metrics_handler import lambda_handler
-        event = api_gateway_event(
-            path='/feedback/search', query_params={'q': 'delivery', 'days': '90'}
+        _, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            path='/feedback/search', query_params={'q': 'delivery', 'days': '90'},
         )
-
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
 
         assert [i['feedback_id'] for i in body['items']] == ['old-hit']
 
     @patch('metrics_handler.feedback_table')
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     def test_the_scan_covers_every_requested_day_not_thirty(
-        self, mock_agg, mock_fb, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
         """Asserted on the PARTITIONS queried rather than on a call count, so it
         says which window was read instead of merely how many reads happened."""
@@ -1010,24 +785,23 @@ class TestSearchScansTheRequestedWindow:
         assert len(self._day_partitions(mock_fb)) == 60, "the requested window, not a hidden 30"
 
     @patch('metrics_handler.feedback_table')
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     def test_a_complete_scan_reports_itself_as_complete(
-        self, mock_agg, mock_fb, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
         mock_fb.query.return_value = {'Items': []}
         from metrics_handler import lambda_handler
-        event = api_gateway_event(
-            path='/feedback/search', query_params={'q': 'delivery', 'days': '7'}
+        _, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            path='/feedback/search', query_params={'q': 'delivery', 'days': '7'},
         )
-
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
 
         assert body['is_partial_window'] is False
 
     @patch('metrics_handler.feedback_table')
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     def test_a_scan_that_stops_on_the_soft_cap_says_so(
-        self, mock_agg, mock_fb, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
         """The load-bearing half of the fix.
 
@@ -1049,11 +823,10 @@ class TestSearchScansTheRequestedWindow:
         ]
         mock_fb.query.return_value = {'Items': dense_day}
         from metrics_handler import lambda_handler
-        event = api_gateway_event(
-            path='/feedback/search', query_params={'q': 'delivery', 'days': '365'}
+        _, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            path='/feedback/search', query_params={'q': 'delivery', 'days': '365'},
         )
-
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
 
         assert body['count'] == 0, "no item contains the term"
         assert body['is_partial_window'] is True, (

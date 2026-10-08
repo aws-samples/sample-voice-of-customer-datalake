@@ -20,7 +20,76 @@
     "saved": "Categories saved successfully",
     "deleteTitle": "Delete Category",
     "deleteMessage": "Are you sure you want to delete this category and all its subcategories? This action cannot be undone.",
-    "deleteConfirm": "Delete"
+    "deleteConfirm": "Delete",
+    "expandLabel": "Expand {{name}}",
+    "collapseLabel": "Collapse {{name}}",
+    "renameHint": "Click to rename",
+    "renameLabel": "Rename {{name}}",
+    "deleteCategoryLabel": "Delete {{name}}",
+    "deleteSubcategoryLabel": "Delete subcategory {{name}}",
+    "addSubcategoryLabel": "Add subcategory",
+    "companyLabel": "Company description",
+    "listHelp": "Each category has an id stored on every review, a description, the product it belongs to, and its product owners. Owners automatically see their categories' feedback and are the people who act on it.",
+    "noProduct": "No product",
+    "saveError": "The categories could not be saved. Check the names and limits, and that you are an administrator.",
+    "details": {
+      "productLabel": "Product",
+      "productPlaceholder": "e.g. Mobile app",
+      "productHint": "The product or area this category belongs to.",
+      "ownersLabel": "Product owners",
+      "removeOwner": "Remove {{name}}",
+      "ownersLimit": "At most {{max}} owners",
+      "addOwner": "Add an owner…",
+      "ownersUnavailable": "The user list could not be loaded, so owners cannot be added right now.",
+      "ownersHint": "Owners automatically see this category's feedback."
+    },
+    "reprocess": {
+      "title": "Reprocess existing feedback",
+      "description": "After changing categories, re-categorise the reviews already stored. Reviews are updated in place — nothing is deleted.",
+      "modeLabel": "Mode",
+      "modes": {
+        "processed": {
+          "title": "Re-categorise processed reviews",
+          "description": "Classifies the stored (translated) text against the current categories. Only category and subcategory change."
+        },
+        "raw": {
+          "title": "Reprocess from raw data",
+          "description": "Re-runs the full enrichment (sentiment, category, persona, problem analysis) from the original raw data."
+        },
+        "dimensions": {
+          "title": "Re-infer dimensions",
+          "description": "Re-runs the model for the dimensions it may infer. Values set by the source, its profile or a person are never changed."
+        }
+      },
+      "status": {
+        "queued": "Queued",
+        "running": "Running",
+        "completed": "Completed",
+        "failed": "Failed",
+        "cancelled": "Cancelled"
+      },
+      "counters": {
+        "scanned": "Scanned",
+        "updated": "Updated",
+        "unchanged": "Unchanged",
+        "skipped_manual": "Manual, kept",
+        "failed": "Failed"
+      },
+      "allTime": "All time",
+      "lastNDays_one": "Last {{count}} day",
+      "lastNDays_other": "Last {{count}} days",
+      "cancel": "Cancel job",
+      "alreadyRunning": "A reprocess job is already running. Wait for it to finish or cancel it first.",
+      "stoppedAtCeiling": "Stopped at the per-job limit of {{max}} reviews to cap model costs — the remaining reviews were not reprocessed. Narrow the window to cover them.",
+      "startError": "The reprocess job could not be started.",
+      "daysLabel": "Window (days)",
+      "includeManual": "Also overwrite manual corrections",
+      "daysHint": "1–{{max}} days, or 0 for all time. Manual corrections are kept unless you choose otherwise.",
+      "costNote": "Cost: one model call per review in the window. An all-time run over a large data lake can take hours.",
+      "start": "Start reprocessing",
+      "confirmTitle": "Reprocess existing feedback?",
+      "confirmMessage": "{{mode}} for {{window}}. This makes one model call per review in that window. Reviews are updated in place; nothing is deleted."
+    }
   },
   "dataSourceWizard": {
     "all": "All",
@@ -87,14 +156,16 @@
     "downloadMarkdown": "Download as Markdown",
     "downloadOptions": "Download options",
     "downloadPDF": "Download as PDF",
-    "downloadTXT": "Download as TXT",
-    "kiroPromptTip": "Tip: Configure Kiro prompt in the Export / MCP tab"
+    "downloadTXT": "Download as TXT"
   },
   "errorBoundary": {
     "description": "This page hit an unexpected error. You can reload it or go back home — the rest of the app is unaffected.",
     "goHome": "Go to home",
     "reload": "Reload page",
-    "title": "Something went wrong"
+    "title": "Something went wrong",
+    "notFoundTitle": "Page not found",
+    "notFoundDescription": "This address doesn't match any page. It may have moved, or the link may be mistyped.",
+    "goBack": "Go back"
   },
   "feedbackCard": {
     "copyText": "Copy text",
@@ -102,13 +173,9 @@
     "issue": "Issue: {{summary}}",
     "rootCause": "Root cause: {{cause}}",
     "urgent": "Urgent",
-    "webScraper": "Web Scraper"
-  },
-  "feedbackCarousel": {
-    "issue": "Issue: {{summary}}",
-    "urgent": "Urgent",
-    "viewDetails": "View Details",
-    "webScraper": "Web Scraper"
+    "webScraper": "Web Scraper",
+    "openOriginal": "Open original review",
+    "reviewDateHint": "Date the review was written"
   },
   "formQrCode": {
     "accessibleName": "QR code for the {{formName}} feedback form",
@@ -151,9 +218,11 @@
     "refresh": "Refresh",
     "sourcePlaceholder": "Source name...",
     "supportedFormats": "Supports CSV, JSON, JSONL",
+    "unknownError": "Unknown error",
     "unsupportedFile": "Unsupported file type: {{filename}}. Only CSV, JSON, and JSONL files are supported.",
     "uploaded": "Uploaded {{filename}}",
     "uploadFailed": "Failed to upload {{filename}}: {{error}}",
+    "uploadUrlFailed": "Failed to get upload URL",
     "uploading": "Uploading {{count}} file(s)...",
     "uploading_one": "Uploading {{count}} file(s)...",
     "uploading_other": "Uploading {{count}} file(s)...",
@@ -162,7 +231,8 @@
   "socialFeed": {
     "all": "All",
     "noFeedback": "No feedback found for this period",
-    "view": "View"
+    "view": "View",
+    "filterLabel": "Filter by source"
   },
   "userAdmin": {
     "active": "Active",
@@ -191,7 +261,6 @@
     "firstNameLabel": "First Name",
     "lastNameLabel": "Last Name",
     "loadError": "Failed to load users. Make sure you have admin access.",
-    "nameLabel": "Name (optional)",
     "noUsers": "No users found. Add your first user above.",
     "passwordResetSent": "Password reset email sent",
     "pendingStatus": "Pending",
@@ -209,40 +278,222 @@
     "userDeleted": "User deleted",
     "userDisabled": "User disabled",
     "userEnabled": "User enabled",
-    "userManagement": "User Management",
     "userRole": "User",
     "usersCount": "({{count}} users)",
     "usersCount_one": "({{count}} user)",
     "usersCount_other": "({{count}} users)",
-    "userUpdated": "User updated"
+    "roleFor": "Role for {{email}}",
+    "categoryAccess": {
+      "title": "Category access",
+      "noCategories": "No categories are configured yet.",
+      "adminNote": "This user is an administrator and always sees every category, whatever is saved here.",
+      "all": "All categories",
+      "selected": "Only selected categories",
+      "ownersNote": "Product owners always see their own categories, even if they are not selected here.",
+      "saveError": "Category access could not be saved.",
+      "loadError": "Category access could not be loaded.",
+      "saved": "Category access updated for {{email}}"
+    },
+    "flags": {
+      "title": "Memory & ownership flags",
+      "description": "Memory reviewers curate company memory. The fallback owner (one admin) receives agent-created projects whose category has no owner.",
+      "fallbackOwner": "Fallback owner",
+      "memoryReviewer": "Memory reviewer",
+      "fallbackOwnerFor": "Fallback owner: {{user}}",
+      "memoryReviewerFor": "Memory reviewer: {{user}}",
+      "fallbackAdminOnly": "Only an admin can be the fallback owner.",
+      "saveFailed": "Could not update the flag. Try again."
+    },
+    "sourceAccess": {
+      "title": "Sources",
+      "default": "Every source that is not restricted (default)",
+      "all": "Every source, restricted ones included",
+      "selected": "Only selected sources",
+      "restricted": "Restricted",
+      "noProfiles": "No source profiles are configured yet (Administration → Sources & privacy)."
+    }
   },
-  "userProfile": {
-    "administrator": "Administrator",
-    "allFieldsRequired": "All fields are required",
-    "changePassword": "Change Password",
-    "changing": "Changing...",
-    "confirmNewPassword": "Confirm New Password",
-    "confirmPasswordPlaceholder": "Confirm new password",
-    "currentPassword": "Current Password",
-    "currentPasswordPlaceholder": "Enter current password",
-    "email": "Email",
-    "failedToChange": "Failed to change password",
-    "groups": "Groups",
-    "incorrectPassword": "Current password is incorrect",
-    "language": "Language",
-    "myProfile": "My Profile",
-    "name": "Name",
-    "newPassword": "New Password",
-    "newPasswordPlaceholder": "Enter new password",
-    "passwordChanged": "Password changed successfully!",
-    "passwordIntro": "Enter your current password and choose a new one",
-    "passwordRequirements": "Password must be at least 8 characters with uppercase, lowercase, and numbers",
-    "passwordTooShort": "Password must be at least 8 characters",
-    "passwordsMismatch": "New passwords do not match",
-    "profile": "Profile",
-    "role": "Role",
-    "showPasswords": "Show passwords",
-    "user": "User",
-    "username": "Username"
+  "confirmModal": {
+    "delete": "Delete"
+  },
+  "pageLoader": {
+    "loading": "Loading page…"
+  },
+  "ratingStars": {
+    "label": "{{rating}} out of {{max}} stars"
+  },
+  "categoryChange": {
+    "previous": "Was {{category}}",
+    "manual": "Changed manually",
+    "manualBy": "Changed by {{user}}",
+    "loading": "Loading categories",
+    "category": "Category",
+    "choose": "Choose a category",
+    "subcategory": "Subcategory",
+    "noSubcategory": "None",
+    "cancel": "Cancel",
+    "save": "Save category",
+    "open": "Change category",
+    "errors": {
+      "invalid": "That category no longer exists. Refresh and pick another.",
+      "notFound": "This review is not available to you, or the category is outside your access.",
+      "conflict": "Someone changed this review at the same time. Refresh and try again.",
+      "generic": "The category could not be changed."
+    }
+  },
+  "unsavedChanges": {
+    "title": "Unsaved changes",
+    "message": "You have changes that are not saved. Save them before you leave, or discard them?",
+    "save": "Save",
+    "discard": "Discard",
+    "cancel": "Cancel",
+    "saveFailed": "Could not save. Your changes are still here; try again or cancel.",
+    "cannotSave": "Fix the highlighted problems before saving, or discard the changes."
+  },
+  "dimensionFields": {
+    "tagsLabel": "Tags",
+    "tagsPlaceholder": "vip, billing; refund",
+    "tagsHint": "Separate tags with commas or semicolons (up to 20).",
+    "tagsInvalid": "Not allowed (no \"#\", \",\" or \":\", at most 64 characters): {{tags}}",
+    "tagsTooMany": "At most {{max}} tags.",
+    "sourceLabel": "Source",
+    "manualImport": "Manual import (default)",
+    "restrictedOption": "{{name}} (restricted)",
+    "sourceHint": "Decides the personal-data policy, retention, visibility and default dimensions of these rows.",
+    "sourceRestrictedHint": "Restricted: only admins and people granted this source will see these rows.",
+    "defaultsTitle": "Dimensions and tags",
+    "defaultsHint": "Every review from here carries these values; its own values win per dimension.",
+    "noDimensions": "No dimensions are configured yet (Administration → Dimensions).",
+    "noDefault": "No default"
+  },
+  "draftSaveBar": {
+    "save": "Save",
+    "discard": "Discard changes",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "saveError": "Not saved: {{reason}}",
+    "remove": "Remove"
+  },
+  "dimensionsManager": {
+    "newValue": "new value",
+    "valueNameLabel": "Stored name of {{name}}",
+    "valueNamePlaceholder": "stored_name",
+    "valueLabelLabel": "Display label of {{name}}",
+    "valueLabelPlaceholder": "Display label (optional)",
+    "valueParentLabel": "{{parent}} value that {{name}} belongs to",
+    "anyParentValue": "Under every parent value",
+    "removeValue": "Remove value {{name}}",
+    "parentLabel": "Parent dimension",
+    "noParent": "None (top level)",
+    "parentOfChildren": "Parent of {{children}}, so it cannot have a parent itself.",
+    "parentHint": "A child narrows its values by the parent's value (one level only).",
+    "newDimension": "New dimension",
+    "removeDimension": "Remove dimension {{name}}",
+    "keyLabel": "Key (stored on reviews)",
+    "labelLabel": "Label",
+    "labelPlaceholder": "Product",
+    "descriptionLabel": "Description (shown to the model)",
+    "inferLabel": "Let the model infer it",
+    "inferHint": "Off: only the source, its profile or a person sets it.",
+    "valuesTitle": "Values ({{n}})",
+    "addValueLabel": "New value for {{name}}",
+    "addValue": "Add value",
+    "emptyTitle": "No dimensions yet",
+    "emptyHint": "Add one to tag feedback by product, module, user type or anything else.",
+    "addDimension": "Add dimension (up to {{max}})",
+    "loadError": "The dimensions could not be loaded.",
+    "problems": {
+      "tooMany": "At most {{max}} dimensions.",
+      "keyFormat": "Key \"{{key}}\": use lowercase letters, digits and \"_\", starting with a letter (up to 32).",
+      "keyReserved": "\"{{key}}\" is reserved; pick another key.",
+      "keyDuplicate": "Two dimensions use the key \"{{key}}\".",
+      "labelLength": "The label of \"{{key}}\" is longer than {{max}} characters.",
+      "descriptionLength": "The description of \"{{key}}\" is longer than {{max}} characters.",
+      "parentInvalid": "\"{{key}}\" must name another top-level dimension as its parent.",
+      "parentValueMissing": "Value \"{{value}}\" of \"{{key}}\" belongs to a parent value that no longer exists.",
+      "tooManyValues": "\"{{key}}\" has more than {{max}} values.",
+      "valueFormat": "Value \"{{value}}\" of \"{{key}}\": 1-64 characters, no spaces, \"#\", \",\" or \":\".",
+      "valueDuplicate": "\"{{key}}\" lists the value \"{{value}}\" twice."
+    }
+  },
+  "sourcesManager": {
+    "keepForever": "Keep reviews forever",
+    "retentionLabel": "Delete reviews older than (days)",
+    "retentionHint": "{{min}}-{{max}} days. A daily job deletes older reviews of this source and their raw archives.",
+    "removeProfile": "Remove the profile of {{name}}",
+    "labelLabel": "Label",
+    "piiLabel": "Personal data",
+    "pii": {
+      "allow": "Keep as received",
+      "allowHint": "Text, author and title are stored as the source sent them.",
+      "redact": "Redact",
+      "redactHint": "Emails, phone numbers, IBANs, card numbers and IP addresses are replaced before storage; the author is dropped; no raw copy is kept.",
+      "summary_only": "Summary only",
+      "summaryOnlyHint": "Only derived fields (summary, category, sentiment, dimensions) are kept; the original text is withheld."
+    },
+    "restrictedLabel": "Restricted",
+    "restrictedHint": "Only admins and users granted this source in Users → access see its reviews.",
+    "defaultsTitle": "Dimension values for every review from this source",
+    "noDefault": "No default",
+    "empty": "No profiles yet: every source keeps everything, forever, visible to everyone.",
+    "loadError": "The source profiles could not be loaded.",
+    "addLabel": "Add a source profile",
+    "add": "Add",
+    "addHint": "Pick a plugin, feedback_form or manual_import, or type an import source id such as sales_csv.",
+    "scraperHint": "A web scraper's reviews carry the scraper's name as their source id, so only a scraper named in this format (lowercase letters, digits, _ or -, for example trustpilot_reviews) can have a profile.",
+    "problems": {
+      "tooMany": "At most {{max}} source profiles.",
+      "retention": "{{name}}: retention must be {{min}}-{{max}} days, or keep forever.",
+      "tags": "{{name}}: fix the tags first.",
+      "idFormat": "Use lowercase letters, digits, \"_\" or \"-\" (up to 48).",
+      "idDuplicate": "That source already has a profile."
+    }
+  },
+  "erasure": {
+    "title": "Erase one person's feedback",
+    "description": "Deletes every matching review and its raw archive. This cannot be undone. Only a hash of the value is kept.",
+    "fieldLabel": "Match on",
+    "fields": {
+      "author": "Author",
+      "source_id": "Source id",
+      "csv_row_id": "CSV row id",
+      "email": "Email"
+    },
+    "valueLabel": "Value",
+    "sourceLabel": "Within source",
+    "allSources": "All sources",
+    "sourceRequired": "An id is unique only within its source: choose the source.",
+    "start": "Erase",
+    "startError": "The erasure was not started: {{reason}}",
+    "jobsTitle": "Recent erasures",
+    "noJobs": "None yet.",
+    "counts": "{{items}} reviews, {{objects}} raw objects deleted",
+    "status": {
+      "queued": "Queued",
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed"
+    },
+    "confirmTitle": "Erase this person's feedback?",
+    "confirmMessage": "Every review whose {{field}} matches the value ({{source}}) and its raw archive will be deleted permanently."
+  },
+  "dimensionsEdit": {
+    "errors": {
+      "invalid": "That dimension value or tag is not allowed.",
+      "notFound": "This review is no longer available.",
+      "conflict": "Someone changed this review at the same time. Reload and try again.",
+      "generic": "The change could not be saved."
+    }
+  },
+  "feedbackDimensions": {
+    "edit": "Edit dimensions",
+    "none": "None",
+    "cancel": "Cancel",
+    "save": "Save",
+    "setByHand": "Set by hand",
+    "redacted": "Redacted",
+    "redactedHint": "Personal data in this review was replaced before it was stored.",
+    "summaryOnly": "Summary only",
+    "summaryOnlyHint": "Its source keeps only derived fields; the original text was not stored."
   }
 }

@@ -240,11 +240,5 @@
     "unavailable": "Note de l'équipe indisponible",
     "unavailableDescription": "Les notes de l'équipe n'ont pas pu être lues pour le moment : cette ligne n'affiche donc rien à leur sujet — cela ne signifie pas que personne n'a voté. Rechargez la page pour voir ce que l'équipe a dit."
   },
-  "title": "Priorisation",
-  "unsavedChanges": {
-    "cancel": "Rester sur la page",
-    "confirm": "Abandonner les modifications",
-    "message": "Vous avez des scores de priorisation non enregistrés. Voulez-vous abandonner vos modifications et quitter cette page ?",
-    "title": "Modifications non enregistrées"
-  }
+  "title": "Priorisation"
 }

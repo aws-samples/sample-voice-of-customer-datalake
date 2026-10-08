@@ -3,15 +3,21 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
+import { TestRouter } from '../../test/TestRouter'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import SocialFeed from './SocialFeed'
-import { useConfigStore } from '../../store/configStore'
 import { api } from '../../api/client'
+import type { FeedbackItem } from '../../api/types'
 
-// Mock the config store
+interface ConfigStub {
+  timeRange: string
+  customDays: number | null
+  config: { apiEndpoint: string }
+}
+const mockUseConfigStore = vi.fn<() => ConfigStub>()
 vi.mock('../../store/configStore', () => ({
-  useConfigStore: vi.fn(),
+  useConfigStore: () => mockUseConfigStore(),
 }))
 
 // Mock the API
@@ -20,7 +26,6 @@ vi.mock('../../api/client', () => ({
     getFeedback: vi.fn(),
     getSources: vi.fn(),
   },
-  getDaysFromRange: vi.fn().mockReturnValue(7),
   getDateRangeParams: () => ({ days: 7 }),
 }))
 
@@ -33,12 +38,18 @@ function renderWithQueryClient(ui: React.ReactElement) {
   })
   return render(
     <QueryClientProvider client={queryClient}>
-      {ui}
+      {/* FeedItem links to /feedback/:id, so it needs a router. */}
+      <TestRouter>{ui}</TestRouter>
     </QueryClientProvider>
   )
 }
 
-const mockFeedbackItems = [
+/** A `GET /feedback` page holding exactly `items`. */
+function feedbackPage(items: FeedbackItem[]) {
+  return { items, count: items.length, total: items.length, offset: 0, limit: items.length, is_partial_window: false }
+}
+
+const mockFeedbackItems: FeedbackItem[] = [
   {
     feedback_id: 'fb-1',
     source_id: 'src-1',
@@ -80,16 +91,13 @@ const mockFeedbackItems = [
 describe('SocialFeed', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    ;(useConfigStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+    mockUseConfigStore.mockReturnValue({
       timeRange: '7d',
       customDays: null,
       config: { apiEndpoint: 'https://api.example.com' },
     })
-    ;(api.getFeedback as ReturnType<typeof vi.fn>).mockResolvedValue({
-      count: 2,
-      items: mockFeedbackItems,
-    })
-    ;(api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue({
+    vi.mocked(api.getFeedback).mockResolvedValue(feedbackPage(mockFeedbackItems))
+    vi.mocked(api.getSources).mockResolvedValue({
       period_days: 7,
       sources: { webscraper: 10, manual_import: 5 },
     })
@@ -97,11 +105,12 @@ describe('SocialFeed', () => {
 
   describe('loading state', () => {
     it('shows loading skeletons while fetching', () => {
-      ;(api.getFeedback as ReturnType<typeof vi.fn>).mockReturnValue(new Promise(() => {}))
+      vi.mocked(api.getFeedback).mockReturnValue(new Promise(() => {}))
       
       renderWithQueryClient(<SocialFeed />)
       
-      const skeletons = document.querySelectorAll('.animate-pulse')
+      // `.skeleton` (index.css) carries its own pulse animation.
+      const skeletons = document.querySelectorAll('.skeleton')
       expect(skeletons.length).toBeGreaterThan(0)
     })
   })
@@ -117,12 +126,14 @@ describe('SocialFeed', () => {
     })
 
     it('displays source platform with icon', async () => {
-      renderWithQueryClient(<SocialFeed />)
+      const { container } = renderWithQueryClient(<SocialFeed />)
       
       await waitFor(() => {
-        expect(screen.getByText('webscraper')).toBeInTheDocument()
+        // Once in the source filter tab, once on the feed item — each beside its icon.
+        expect(screen.getAllByText('webscraper')).toHaveLength(2)
       })
-      expect(screen.getByText('🌐')).toBeInTheDocument()
+      expect(container.querySelector('svg.lucide-globe')).not.toBeNull()
+      expect(container.textContent).not.toMatch(/\p{Extended_Pictographic}/u)
     })
 
     it('displays sentiment badge', async () => {
@@ -138,7 +149,7 @@ describe('SocialFeed', () => {
       renderWithQueryClient(<SocialFeed />)
       
       await waitFor(() => {
-        const filledStars = document.querySelectorAll('.text-yellow-400.fill-yellow-400')
+        const filledStars = document.querySelectorAll('.text-warn.fill-warn')
         expect(filledStars.length).toBe(5)
       })
     })
@@ -186,7 +197,10 @@ describe('SocialFeed', () => {
       
       await waitFor(() => {
         const allButton = screen.getByRole('button', { name: /all/i })
-        expect(allButton).toHaveClass('bg-blue-600', 'text-white')
+        // Segmented-filter recipe: the active segment is `tab-active` and is
+        // exposed to assistive tech through aria-pressed.
+        expect(allButton).toHaveClass('tab', 'tab-active')
+        expect(allButton).toHaveAttribute('aria-pressed', 'true')
       })
     })
 
@@ -210,10 +224,7 @@ describe('SocialFeed', () => {
 
   describe('empty state', () => {
     it('shows empty message when no feedback found', async () => {
-      ;(api.getFeedback as ReturnType<typeof vi.fn>).mockResolvedValue({
-        count: 0,
-        items: [],
-      })
+      vi.mocked(api.getFeedback).mockResolvedValue(feedbackPage([]))
       
       renderWithQueryClient(<SocialFeed />)
       
@@ -250,7 +261,7 @@ describe('SocialFeed', () => {
       renderWithQueryClient(<SocialFeed />)
       
       await waitFor(() => {
-        const webscraperCard = document.querySelector('.border-l-blue-500')
+        const webscraperCard = document.querySelector('.border-l-chart-2')
         expect(webscraperCard).toBeInTheDocument()
       })
     })
@@ -259,7 +270,7 @@ describe('SocialFeed', () => {
       renderWithQueryClient(<SocialFeed />)
       
       await waitFor(() => {
-        const manualImportCard = document.querySelector('.border-l-purple-500')
+        const manualImportCard = document.querySelector('.border-l-chart-1')
         expect(manualImportCard).toBeInTheDocument()
       })
     })

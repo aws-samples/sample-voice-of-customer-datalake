@@ -1,22 +1,33 @@
 /**
  * TabContent - Renders the active tab content
  */
-import ChatTab from './ChatTab'
 import DocumentsTab from './DocumentsTab'
-import McpAccessTab from './McpAccessTab'
 import OverviewTab from './OverviewTab'
 import PersonasTab from './PersonasTab'
 import ProductTab from './ProductTab'
+import CompanyContextStrip from './CompanyContextStrip'
 import type {
   Tab, NoteItem,
 } from './types'
 import type {
-  Project, ProjectPersona, ProjectDocument, ProductContext, ProductDoc,
+  ProjectDocument,
 } from '../../api/types'
+import type {
+  Project,
+  ProjectPersona,
+  ProductContext,
+  ProductDoc,
+} from '../../api/projectTypes'
 
 interface TabContentProps {
   readonly activeTab: Tab
   readonly project: Project
+  /**
+   * `canEditProject(project)`, decided once by the page. Passed to the tabs that
+   * have no `project` of their own (Personas, Product); the others derive it from
+   * the project they already receive.
+   */
+  readonly canEdit: boolean
   readonly personas: ProjectPersona[]
   readonly documents: ProjectDocument[]
   /** For the Overview card's completeness display; undefined until it loads. */
@@ -32,7 +43,6 @@ interface TabContentProps {
   readonly onRunResearch: () => void
   readonly onRemixDocuments: () => void
   readonly onOpenProductTool: () => void
-  readonly onSaveKiroPrompt: (prompt: string) => void
   readonly onSelectPersona: (p: ProjectPersona | null) => void
   readonly onEditPersona: () => void
   readonly onDeletePersona: () => void
@@ -42,10 +52,8 @@ interface TabContentProps {
   readonly onEditDoc: () => void
   readonly onDeleteDoc: () => void
   readonly onCreateDoc: () => void
-  readonly onSaveAsDocument: (content: string) => void
   /** The Product tab saved the context; the Overview card's copy needs the new one. */
   readonly onContextSaved?: (context: ProductContext) => void
-  readonly onDocumentChanged?: () => void
   /** A long-running job was kicked off; the Background Jobs panel takes it from here. */
   readonly onJobStarted?: () => void
 }
@@ -53,6 +61,7 @@ interface TabContentProps {
 export default function TabContent({
   activeTab,
   project,
+  canEdit,
   personas,
   documents,
   productContext,
@@ -66,7 +75,6 @@ export default function TabContent({
   onRunResearch,
   onRemixDocuments,
   onOpenProductTool,
-  onSaveKiroPrompt,
   onSelectPersona,
   onEditPersona,
   onDeletePersona,
@@ -76,9 +84,7 @@ export default function TabContent({
   onEditDoc,
   onDeleteDoc,
   onCreateDoc,
-  onSaveAsDocument,
   onContextSaved,
-  onDocumentChanged,
   onJobStarted,
 }: TabContentProps) {
   if (activeTab === 'overview') {
@@ -105,7 +111,9 @@ export default function TabContent({
   if (activeTab === 'personas') {
     return (
       <PersonasTab
+        projectId={project.project_id}
         personas={personas}
+        canEdit={canEdit}
         selectedPersona={selectedPersona}
         onSelectPersona={onSelectPersona}
         onEditPersona={onEditPersona}
@@ -121,53 +129,33 @@ export default function TabContent({
 
   if (activeTab === 'product') {
     return (
-      <ProductTab
-        projectId={project.project_id}
-        onContextSaved={onContextSaved}
-        onJobStarted={onJobStarted}
-      />
-    )
-  }
-
-  if (activeTab === 'documents') {
-    return (
-      <DocumentsTab
-        project={project}
-        documents={documents}
-        // Only so a revision can drop a visual that has since been deleted —
-        // the API 404s on an id it cannot resolve, which would make a
-        // visually-grounded prototype unrevisable for good.
-        productDocs={productDocs}
-        selectedDoc={selectedDoc}
-        onSelectDoc={onSelectDoc}
-        onEditDoc={onEditDoc}
-        onDeleteDoc={onDeleteDoc}
-        onCreateDoc={onCreateDoc}
-        onJobStarted={onJobStarted}
-        isDeleting={isDeleting}
-      />
-    )
-  }
-
-  if (activeTab === 'chat') {
-    return (
-      <ChatTab
-        projectId={project.project_id}
-        personas={personas}
-        documents={documents}
-        onSaveAsDocument={onSaveAsDocument}
-        onDocumentChanged={onDocumentChanged}
-      />
+      <div className="space-y-4">
+        <CompanyContextStrip />
+        <ProductTab
+          projectId={project.project_id}
+          canEdit={canEdit}
+          onContextSaved={onContextSaved}
+          onJobStarted={onJobStarted}
+        />
+      </div>
     )
   }
 
   return (
-    <McpAccessTab
-      projectId={project.project_id}
+    <DocumentsTab
       project={project}
-      personas={personas}
       documents={documents}
-      onSaveKiroPrompt={onSaveKiroPrompt}
+      // Only so a revision can drop a visual that has since been deleted —
+      // the API 404s on an id it cannot resolve, which would make a
+      // visually-grounded prototype unrevisable for good.
+      productDocs={productDocs}
+      selectedDoc={selectedDoc}
+      onSelectDoc={onSelectDoc}
+      onEditDoc={onEditDoc}
+      onDeleteDoc={onDeleteDoc}
+      onCreateDoc={onCreateDoc}
+      onJobStarted={onJobStarted}
+      isDeleting={isDeleting}
     />
   )
 }

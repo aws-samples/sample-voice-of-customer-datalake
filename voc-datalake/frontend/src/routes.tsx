@@ -18,28 +18,36 @@ import { lazy, Suspense } from 'react'
 import type { ReactNode } from 'react'
 import type { RouteObject } from 'react-router-dom'
 import FeedbackRedirect from './components/FeedbackRedirect'
-import Layout from './components/Layout'
-import ProtectedRoute from './components/ProtectedRoute'
-import AdminRoute from './components/AdminRoute'
-import PageLoader from './components/PageLoader'
+import MovedRouteRedirect from './components/MovedRouteRedirect'
+import Layout from './components/Layout/Layout'
+import ProtectedRoute from './components/ProtectedRoute/ProtectedRoute'
+import AdminRoute from './components/AdminRoute/AdminRoute'
+import PageLoader from './components/PageLoader/PageLoader'
 import RouteErrorBoundary from './components/RouteErrorBoundary'
-import Login from './pages/Login'
+import NotFound from './components/RouteErrorBoundary/NotFound'
+import Login from './pages/Login/Login'
 
 // Lazy load pages for better code splitting
-const Home = lazy(() => import('./pages/Home'))
-const Dashboard = lazy(() => import('./pages/Dashboard'))
-const FeedbackDetail = lazy(() => import('./pages/FeedbackDetail'))
-const Categories = lazy(() => import('./pages/Categories'))
-const ProblemAnalysis = lazy(() => import('./pages/ProblemAnalysis'))
-const Settings = lazy(() => import('./pages/Settings'))
-const Scrapers = lazy(() => import('./pages/Scrapers'))
-const Chat = lazy(() => import('./pages/Chat'))
-const Projects = lazy(() => import('./pages/Projects'))
-const ProjectDetail = lazy(() => import('./pages/ProjectDetail'))
-const Prioritization = lazy(() => import('./pages/Prioritization'))
-const FeedbackForms = lazy(() => import('./pages/FeedbackForms'))
-const DataExplorer = lazy(() => import('./pages/DataExplorer'))
-const Vote = lazy(() => import('./pages/Vote'))
+const Home = lazy(() => import('./pages/Home/Home'))
+const Dashboard = lazy(() => import('./pages/Dashboard/Dashboard'))
+const FeedbackDetail = lazy(() => import('./pages/FeedbackDetail/FeedbackDetail'))
+const Categories = lazy(() => import('./pages/Categories/Categories'))
+const ProblemAnalysis = lazy(() => import('./pages/ProblemAnalysis/ProblemAnalysis'))
+const Settings = lazy(() => import('./pages/Settings/Settings'))
+const Scrapers = lazy(() => import('./pages/Scrapers/Scrapers'))
+const Chat = lazy(() => import('./pages/Chat/Chat'))
+const Projects = lazy(() => import('./pages/Projects/Projects'))
+const ProjectDetail = lazy(() => import('./pages/ProjectDetail/ProjectDetail'))
+const Prioritization = lazy(() => import('./pages/Prioritization/Prioritization'))
+const FeedbackForms = lazy(() => import('./pages/FeedbackForms/FeedbackForms'))
+const DataExplorer = lazy(() => import('./pages/DataExplorer/DataExplorer'))
+const Vote = lazy(() => import('./pages/Vote/Vote'))
+const Memory = lazy(() => import('./pages/Memory/Memory'))
+const Company = lazy(() => import('./pages/Company/Company'))
+const Agents = lazy(() => import('./pages/Agents/Agents'))
+const AgentDetail = lazy(() => import('./pages/Agents/AgentDetail'))
+const Account = lazy(() => import('./pages/Account/Account'))
+const Connect = lazy(() => import('./pages/Connect/Connect'))
 
 // Lazy pages share the same suspense fallback and, per issue #173, a
 // route-scoped error boundary: a render error in one page replaces only
@@ -101,10 +109,23 @@ export const routes: RouteObject[] = [
       { path: 'projects', ...page(<Projects />) },
       { path: 'projects/:id', ...page(<ProjectDetail />) },
       { path: 'prioritization', ...page(<Prioritization />) },
-      { path: 'data-explorer', ...page(<DataExplorer />) },
+      { path: 'data-explorer', ...page(<AdminRoute><DataExplorer /></AdminRoute>) },
       { path: 'scrapers', ...page(<Scrapers />) },
       { path: 'feedback-forms', ...page(<FeedbackForms />) },
-      { path: 'settings', ...page(<AdminRoute><Settings /></AdminRoute>) },
+      { path: 'memory', ...page(<Memory />) },
+      { path: 'company', ...page(<Company />) },
+      { path: 'agents', ...page(<Agents />) },
+      { path: 'agents/:id', ...page(<AgentDetail />) },
+      { path: 'connect', ...page(<Connect />) },
+      { path: 'account', ...page(<Account />) },
+      // Administration (was Settings, todofeatures §6.1): admins only. The old
+      // path keeps working — links, bookmarks and `?tab=` deep links redirect.
+      { path: 'admin', ...page(<AdminRoute><Settings /></AdminRoute>) },
+      { path: 'settings', element: <MovedRouteRedirect to="/admin" />, errorElement: <RouteErrorBoundary /> },
+      // Unknown URLs render a "Page not found" state INSIDE the layout, so the
+      // sidebar stays usable. Without it React Router hands the 404 to the root
+      // errorElement, which replaces the whole shell.
+      { path: '*', element: <NotFound />, errorElement: <RouteErrorBoundary /> },
     ],
   },
 ]

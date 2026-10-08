@@ -4,8 +4,9 @@ Loads LLM prompts from external JSON files in the prompts/ directory.
 """
 
 import json
-from pathlib import Path
+from datetime import UTC
 from functools import lru_cache
+from pathlib import Path
 
 from shared.feedback import (
     count_feedback_records,
@@ -62,16 +63,16 @@ def get_prompts_dir() -> Path:
     lambda_path = Path('/var/task/prompts')
     if lambda_path.exists():
         return lambda_path
-    
+
     # Local development / tests - repo layout keeps them in lambda/api/prompts
     if REPO_PROMPTS_DIR.exists():
         return REPO_PROMPTS_DIR
-    
+
     # Fallback - try current working directory
     cwd_path = Path.cwd() / 'prompts'
     if cwd_path.exists():
         return cwd_path
-    
+
     raise FileNotFoundError("Could not locate prompts directory")
 
 
@@ -79,28 +80,28 @@ def get_prompts_dir() -> Path:
 def load_prompt_file(filename: str) -> dict:
     """
     Load a prompt configuration file.
-    
+
     Args:
         filename: Name of the prompt file (e.g., 'persona-generation.json')
-    
+
     Returns:
         Parsed JSON content as dict
-    
+
     Raises:
         FileNotFoundError: If prompt file doesn't exist
         json.JSONDecodeError: If file is not valid JSON
     """
     prompts_dir = get_prompts_dir()
     filepath = prompts_dir / filename
-    
+
     if not filepath.exists():
         raise FileNotFoundError(f"Prompt file not found: {filepath}")
-    
+
     # Explicit encoding: prompt files carry em dashes / typographic quotes,
     # and open()'s default encoding is locale-dependent outside Lambda.
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, encoding='utf-8') as f:
         content = json.load(f)
-    
+
     logger.debug(f"Loaded prompt file: {filename}")
     return content
 
@@ -108,14 +109,14 @@ def load_prompt_file(filename: str) -> dict:
 def format_prompt(template: str, **kwargs) -> str:
     """
     Format a prompt template with provided values.
-    
+
     Uses str.format() style placeholders: {variable_name}
     Missing keys are left as-is (no error).
-    
+
     Args:
         template: Prompt template string
         **kwargs: Values to substitute
-    
+
     Returns:
         Formatted prompt string
     """
@@ -178,18 +179,18 @@ def get_step_inference_config(filename: str, step_name: str) -> dict:
 def build_chain_steps(filename: str, step_names: list[str], context: dict) -> list[dict]:
     """
     Build a list of LLM chain steps from a prompt file.
-    
+
     Args:
         filename: Name of the prompt file
         step_names: List of step names to include in order
         context: Dict of values to format into prompts
-    
+
     Returns:
         List of step dicts ready for invoke_bedrock_chain()
     """
     response_language = context.pop('response_language', None)
     language_instruction = get_response_language_instruction(response_language)
-    
+
     chain_steps = []
     for step_name in step_names:
         step = _get_step(filename, step_name)
@@ -204,37 +205,39 @@ def build_chain_steps(filename: str, step_names: list[str], context: dict) -> li
             'thinking_budget': inference['thinking_budget'],
             'step_name': inference['step_name'],
         })
-    
+
     return chain_steps
+
+
+# Display names for the response-language instruction (an unknown code is used as-is).
+LANGUAGE_NAMES = {
+    'es': 'Spanish', 'fr': 'French', 'de': 'German', 'pt': 'Portuguese',
+    'ja': 'Japanese', 'zh': 'Chinese', 'ko': 'Korean', 'it': 'Italian',
+    'nl': 'Dutch', 'ru': 'Russian', 'ar': 'Arabic', 'hi': 'Hindi',
+    'sv': 'Swedish', 'pl': 'Polish', 'tr': 'Turkish', 'da': 'Danish',
+    'no': 'Norwegian', 'fi': 'Finnish', 'th': 'Thai', 'vi': 'Vietnamese',
+    'uk': 'Ukrainian', 'ro': 'Romanian', 'cs': 'Czech', 'el': 'Greek',
+    'hu': 'Hungarian', 'he': 'Hebrew', 'id': 'Indonesian', 'ms': 'Malay',
+    'bg': 'Bulgarian', 'hr': 'Croatian', 'sk': 'Slovak', 'sl': 'Slovenian',
+    'sr': 'Serbian', 'ca': 'Catalan', 'tl': 'Filipino',
+}
 
 
 def get_response_language_instruction(language_code: str | None) -> str:
     """
     Build a language instruction to append to system prompts.
-    
+
     Args:
         language_code: ISO language code (e.g. 'en', 'es', 'ko').
                        If None or 'en', returns empty string.
-    
+
     Returns:
         Instruction string like 'IMPORTANT: You MUST respond entirely in Spanish (es).'
     """
     if not language_code or language_code == 'en':
         return ''
-    
-    # Map of common codes to display names
-    _names = {
-        'es': 'Spanish', 'fr': 'French', 'de': 'German', 'pt': 'Portuguese',
-        'ja': 'Japanese', 'zh': 'Chinese', 'ko': 'Korean', 'it': 'Italian',
-        'nl': 'Dutch', 'ru': 'Russian', 'ar': 'Arabic', 'hi': 'Hindi',
-        'sv': 'Swedish', 'pl': 'Polish', 'tr': 'Turkish', 'da': 'Danish',
-        'no': 'Norwegian', 'fi': 'Finnish', 'th': 'Thai', 'vi': 'Vietnamese',
-        'uk': 'Ukrainian', 'ro': 'Romanian', 'cs': 'Czech', 'el': 'Greek',
-        'hu': 'Hungarian', 'he': 'Hebrew', 'id': 'Indonesian', 'ms': 'Malay',
-        'bg': 'Bulgarian', 'hr': 'Croatian', 'sk': 'Slovak', 'sl': 'Slovenian',
-        'sr': 'Serbian', 'ca': 'Catalan', 'tl': 'Filipino',
-    }
-    name = _names.get(language_code, language_code)
+
+    name = LANGUAGE_NAMES.get(language_code, language_code)
     return f'IMPORTANT: You MUST respond entirely in {name} ({language_code}). All text, headings, labels, and explanations must be in {name}.'
 
 
@@ -328,7 +331,7 @@ def count_persona_sample_records(steps: list[dict]) -> int:
     """
     for step in steps:
         if step.get('step_name') == PERSONA_SYNTHESIS_STEP:
-            return count_feedback_records(step.get('user', ''))
+            return count_feedback_records(step.get('user', ''))  # pragma: no mutate  any marker-free default counts 0 records, same as ''
     return 0
 
 
@@ -348,7 +351,7 @@ def get_prd_generation_steps(
         'previous': '{previous}',
         'response_language': response_language,
     }
-    
+
     return build_chain_steps(
         PRD_GENERATION_PROMPTS,
         ['problem_analysis', 'solution_design', 'prd_document'],
@@ -372,8 +375,8 @@ def get_prfaq_generation_steps(
     # the model defaults to its training-cutoff date and produces dates in the
     # past — confusing for "Working Backwards" docs, which are supposed to
     # describe a near-future launch.
-    from datetime import datetime, timedelta, timezone
-    launch_date = (datetime.now(timezone.utc) + timedelta(days=90)).strftime('%Y-%m-%d')
+    from datetime import datetime, timedelta
+    launch_date = (datetime.now(UTC) + timedelta(days=90)).strftime('%Y-%m-%d')
 
     context = {
         'feature_idea': feature_idea,
@@ -408,7 +411,7 @@ def get_research_analysis_steps(
         'previous': '{previous}',
         'response_language': response_language,
     }
-    
+
     return build_chain_steps(
         RESEARCH_ANALYSIS_PROMPTS,
         ['data_analysis', 'synthesis', 'validation'],

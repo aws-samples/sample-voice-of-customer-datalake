@@ -25,6 +25,7 @@ import { join } from 'node:path';
 
 import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as cx from 'aws-cdk-lib/cx-api';
 import { AwsSolutionsChecks, NagSuppressions } from 'cdk-nag';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -110,14 +111,14 @@ describe('the annotation collector', () => {
 
 describe('pluginSystemSuppressions', () => {
   it('suppresses the ingestor wildcard on an unprefixed deployment', () => {
-    expect(nagFindings(synthIngestorGrant(undefined, undefined))).toEqual([]);
+    expect(nagFindings(synthIngestorGrant(undefined, undefined))).toStrictEqual([]);
   });
 
   it('suppresses the ingestor wildcard on a prefixed deployment', () => {
     // The finding quotes the concrete ARN — `function:b-voc-ingestor-*` — so a
     // suppression regex hardcoded to `function:voc-ingestor-` stops matching and
     // leaves an unsuppressed IAM5 error on every prefixed synth.
-    expect(nagFindings(synthIngestorGrant('b', 'b'))).toEqual([]);
+    expect(nagFindings(synthIngestorGrant('b', 'b'))).toStrictEqual([]);
   });
 
   it('still reports the finding when built for the wrong prefix', () => {
@@ -156,7 +157,7 @@ describe('cdkJsonContextStrict', () => {
     // does.
     const populated = join(createAssemblyDir('voc-cdkjson-'), 'cdk.json');
     writeFileSync(populated, JSON.stringify({ context: { probe: 1 } }));
-    expect(cdkJsonContextStrict(populated)).toEqual({ probe: 1 });
+    expect(cdkJsonContextStrict(populated)).toStrictEqual({ probe: 1 });
 
     // The throw pins the strictness — a lenient oracle degrading to `{}` would
     // satisfy its own comparison, `{}` filtered being `{}` filtered. A direct
@@ -201,7 +202,7 @@ describe('committedFeatureFlags', () => {
       '@aws-cdk-containers/ecs-service-extensions:enableDefaultLogDriver': true,
       omitUserPoolUsernameConfiguration: true,
       deploymentPrefix: 'b',
-    })).toEqual({
+    })).toStrictEqual({
       '@aws-cdk/aws-iam:minimizePolicies': true,
       // `@aws-cdk`, not `@aws-cdk/`: the ecs-service-extensions flag cdk.json
       // commits lives under `@aws-cdk-containers/`, so a trailing slash in the
@@ -223,7 +224,7 @@ describe('committedFeatureFlags', () => {
     // `cdkJsonContextStrict()`, NOT the private `cdkJsonContext()` the default
     // argument uses: an independent read is what gives this comparison something to
     // catch, and `cdkJsonContextStrict` above is what keeps it independent.
-    expect(committedFeatureFlags()).toEqual(committedFeatureFlags(cdkJsonContextStrict()));
+    expect(committedFeatureFlags()).toStrictEqual(committedFeatureFlags(cdkJsonContextStrict()));
     // Non-empty, so a cdk.json whose `context` went missing cannot satisfy the
     // equality above by making both sides `{}`.
     expect(committedFeatureFlags()['@aws-cdk/aws-s3:serverAccessLogsUseBucketPolicy']).toBe(true);
@@ -248,11 +249,11 @@ describe('committedFeatureFlags', () => {
       unprefixed,
       'a CDK upgrade changed which flags are unprefixed: re-read whether the @aws-cdk '
       + 'heuristic in committedFeatureFlags() still holds, then update this list',
-    ).toEqual(['aws-cdk:enableDiffNoFail']);
+    ).toStrictEqual(['aws-cdk:enableDiffNoFail']);
     expect(
       committedFeatureFlags({ 'aws-cdk:enableDiffNoFail': true }),
       'the prefix filter must still classify the one unprefixed flag as project context',
-    ).toEqual({});
+    ).toStrictEqual({});
   });
 
   it('cannot use cx-api FLAGS as the predicate instead, since a committed flag has expired out of it', () => {
@@ -310,7 +311,7 @@ describe('what counts as a diagnostic', () => {
       annotation('aws:cdk:error', 'AwsSolutions-IAM5[Resource::*]'),
     ];
     expect(diagnostics({ annotations }).map((found) => found.type))
-      .toEqual(['aws:cdk:warning', 'aws:cdk:error']);
+      .toStrictEqual(['aws:cdk:warning', 'aws:cdk:error']);
     expect(DIAGNOSTIC_ANNOTATION_TYPES).not.toContain('aws:cdk:info');
   });
 });
@@ -346,7 +347,7 @@ describe('the two annotation sources', () => {
     // dropping it would re-create the "collector silently finds nothing" failure
     // on an older manifest version.
     const result = readAssembly(fakeAssembly(['ManifestOnlyStack'], []));
-    expect(diagnostics(result).map((found) => found.stack)).toEqual(['ManifestOnlyStack']);
+    expect(diagnostics(result).map((found) => found.stack)).toStrictEqual(['ManifestOnlyStack']);
   });
 });
 
@@ -363,5 +364,37 @@ describe('assembly directory cleanup', () => {
     expect(existsSync(dir)).toBe(true);
     cleanupAssemblyDirs();
     expect(existsSync(dir)).toBe(false);
+  });
+});
+
+describe('canonicalTemplate', () => {
+  /** One function with a published version (as SnapStart needs), synthesized with `code`. */
+  function synthVersioned(code: string, memorySize = 128): string {
+    const outdir = createAssemblyDir('voc-canon-');
+    const app = new cdk.App({ outdir });
+    const stack = new cdk.Stack(app, 'CanonProbeStack', { env: { account: SYNTH_ACCOUNT, region: SYNTH_REGION } });
+    const fn = new lambda.Function(stack, 'ProbeApi', {
+      runtime: lambda.Runtime.PYTHON_3_14,
+      handler: 'index.handler',
+      memorySize,
+      code: lambda.Code.fromInline(code),
+    });
+    new lambda.Alias(fn, 'LiveAlias', { aliasName: 'live', version: fn.currentVersion });
+    app.synth();
+    return readAssembly(outdir).canonicalTemplate('CanonProbeStack');
+  }
+
+  it('normalizes the code hash in a version logical id, so a code edit does not move the baseline', () => {
+    const first = synthVersioned('def handler(event, context):\n    return 1\n');
+    const second = synthVersioned('def handler(event, context):\n    return 2\n');
+    expect(first).toMatch(/ProbeApiCurrentVersion[0-9A-F]{8}<CODE_HASH>/);
+    // Inline code sits in the template itself; drop it so only the version id is compared.
+    const withoutCode = (template: string) => template.replace(/"ZipFile":\s*"[^"]*"/g, '"ZipFile":"<CODE>"');
+    expect(withoutCode(second)).toBe(withoutCode(first));
+  });
+
+  it('still tells a configuration change apart', () => {
+    const code = 'def handler(event, context):\n    return 1\n';
+    expect(synthVersioned(code, 256)).not.toBe(synthVersioned(code, 128));
   });
 });

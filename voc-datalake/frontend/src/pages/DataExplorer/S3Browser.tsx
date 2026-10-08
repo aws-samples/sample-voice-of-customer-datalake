@@ -3,11 +3,13 @@
  * @module pages/DataExplorer/S3Browser
  */
 
-import { FolderOpen, FileJson, ChevronRight, Eye, Pencil, Trash2, ArrowLeft, HardDrive, Image, FileText, Download, Loader2 } from 'lucide-react'
+import { FolderOpen, FileJson, ChevronRight, Eye, Pencil, ArrowLeft, HardDrive, Image, FileText, Download, Loader2, type LucideIcon } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import clsx from 'clsx'
 import { safeFormatDate } from '../../utils/dateUtils'
+import { formatFileSize } from '../../utils/file'
 
-export interface S3Object {
+interface S3Object {
   key: string
   fullKey?: string
   size: number
@@ -15,113 +17,162 @@ export interface S3Object {
   isFolder: boolean
 }
 
-interface S3BrowserProps {
-  readonly path: string[]
-  readonly data: { objects: S3Object[]; bucket: string; prefix: string } | undefined
-  readonly loading: boolean
+/** Row-level callbacks the browser receives and hands down to every object row. */
+interface S3ObjectActions {
   readonly onNavigateToFolder: (folder: string) => void
-  readonly onNavigateUp: () => void
-  readonly onNavigateToBreadcrumb: (index: number) => void
   readonly onView: (key: string) => void
   readonly onEdit: (key: string) => void
-  readonly onDelete: (key: string) => void
   readonly onDownload: (key: string, filename: string) => void
 }
 
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+interface S3BrowserProps extends S3ObjectActions {
+  readonly path: string[]
+  readonly data: { objects: S3Object[]; bucket: string; prefix: string } | undefined
+  readonly loading: boolean
+  readonly onNavigateUp: () => void
+  readonly onNavigateToBreadcrumb: (index: number) => void
+}
+
+const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico']
+
+function extensionOf(filename: string): string {
+  return filename.split('.').pop()?.toLowerCase() ?? ''
 }
 
 function getFileIcon(filename: string) {
-  const ext = filename.split('.').pop()?.toLowerCase() ?? ''
-  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(ext)) {
-    return <Image size={20} className="text-purple-500" />
+  const ext = extensionOf(filename)
+  if (IMAGE_EXTENSIONS.includes(ext)) {
+    return <Image size={18} className="text-aim flex-shrink-0" aria-hidden="true" />
   }
   if (ext === 'pdf') {
-    return <FileText size={20} className="text-red-500" />
+    return <FileText size={18} className="text-danger flex-shrink-0" aria-hidden="true" />
   }
-  return <FileJson size={20} className="text-blue-500" />
+  return <FileJson size={18} className="text-info flex-shrink-0" aria-hidden="true" />
 }
 
 function isEditableFile(filename: string): boolean {
-  const ext = filename.split('.').pop()?.toLowerCase() ?? ''
-  return !['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'pdf'].includes(ext)
+  const ext = extensionOf(filename)
+  return ![...IMAGE_EXTENSIONS, 'pdf'].includes(ext)
+}
+
+/**
+ * Raw ingested data is immutable: the API refuses to overwrite an existing
+ * object under `raw/` (409), so the browser never offers to edit one. New files
+ * can still be created there (see `openS3Creator`).
+ */
+function isImmutableRawKey(fullKey: string): boolean {
+  return fullKey.startsWith('raw/')
+}
+
+function Crumb({ label, isCurrent, onClick }: Readonly<{ label: string; isCurrent: boolean; onClick: () => void }>) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={isCurrent ? 'location' : undefined}
+      className={clsx('rounded-sm px-1 py-0.5 whitespace-nowrap', isCurrent ? 'text-text-strong font-medium' : 'link')}
+    >
+      {label}
+    </button>
+  )
+}
+
+function Breadcrumbs({ bucket, path, onNavigateToBreadcrumb }: Readonly<{
+  bucket: string
+  path: string[]
+  onNavigateToBreadcrumb: (index: number) => void
+}>) {
+  const { t } = useTranslation('dataExplorer')
+  return (
+    <nav aria-label={t('s3Browser.path')} className="bg-bg-accent px-4 py-2.5 border-b border-border flex items-center gap-1.5 text-sm min-w-0 overflow-x-auto">
+      <HardDrive size={16} className="text-muted flex-shrink-0" aria-hidden="true" />
+      <Crumb label={bucket} isCurrent={path.length === 0} onClick={() => onNavigateToBreadcrumb(-1)} />
+      {path.map((segment, i) => (
+        // Segments can repeat ("2026/01/01"), so the path up to here is the identity.
+        <span key={path.slice(0, i + 1).join('/')} className="flex items-center gap-1.5 flex-shrink-0">
+          <ChevronRight size={14} className="text-muted" aria-hidden="true" />
+          <Crumb label={segment} isCurrent={i === path.length - 1} onClick={() => onNavigateToBreadcrumb(i)} />
+        </span>
+      ))}
+    </nav>
+  )
+}
+
+function EmptyFolder() {
+  const { t } = useTranslation('dataExplorer')
+  return (
+    <div className="px-6 py-12 text-center">
+      <FolderOpen size={20} className="mx-auto mb-3 text-muted" aria-hidden="true" />
+      <p className="text-sm font-medium text-text-strong">{t('s3Browser.noFiles')}</p>
+      <p className="text-sm text-muted mt-1">{t('s3Browser.noFilesHint')}</p>
+    </div>
+  )
 }
 
 export default function S3Browser({
-  path, data, loading, onNavigateToFolder, onNavigateUp, onNavigateToBreadcrumb, onView, onEdit, onDelete, onDownload
+  path, data, loading, onNavigateToFolder, onNavigateUp, onNavigateToBreadcrumb, onView, onEdit, onDownload
 }: S3BrowserProps) {
+  const { t } = useTranslation('dataExplorer')
   if (loading) {
-    return <div className="p-8 text-center"><Loader2 className="mx-auto animate-spin text-gray-400" size={32} /></div>
+    return <div className="p-8 text-center"><Loader2 className="mx-auto animate-spin text-accent" size={24} /></div>
   }
 
   const objects = data?.objects ?? []
-  const bucket = data?.bucket ?? 'voc-raw-data'
+  const bucket = data?.bucket != null && data.bucket !== '' ? data.bucket : 'voc-raw-data'
 
   return (
     <div>
-      <div className="bg-gray-50 px-4 py-3 border-b flex items-center gap-2 text-sm">
-        <HardDrive size={16} className="text-gray-400" />
-        <button onClick={() => onNavigateToBreadcrumb(-1)} className="text-blue-600 hover:underline">{bucket}</button>
-        {path.map((segment, i) => (
-          <span key={i} className="flex items-center gap-2">
-            <ChevronRight size={14} className="text-gray-400" />
-            <button
-              onClick={() => onNavigateToBreadcrumb(i)}
-              className={clsx(i === path.length - 1 ? 'text-gray-900 font-medium' : 'text-blue-600 hover:underline')}
-            >
-              {segment}
-            </button>
-          </span>
-        ))}
-      </div>
+      <Breadcrumbs bucket={bucket} path={path} onNavigateToBreadcrumb={onNavigateToBreadcrumb} />
 
       {path.length > 0 && (
-        <div className="px-4 py-2 border-b">
-          <button onClick={onNavigateUp} className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900">
-            <ArrowLeft size={16} /> Back
+        <div className="px-2 py-1.5 border-b border-border">
+          <button type="button" onClick={onNavigateUp} className="btn btn-ghost btn-sm">
+            <ArrowLeft size={14} /> {t('s3Browser.back')}
           </button>
         </div>
       )}
 
-      {objects.length === 0 ? (
-        <div className="p-8 text-center text-gray-500">
-          <FolderOpen size={48} className="mx-auto mb-4 opacity-50" />
-          <p>No files found</p>
-        </div>
-      ) : (
-        <div className="divide-y">
+      {objects.length === 0 ? <EmptyFolder /> : (
+        <ul className="divide-y divide-border">
           {objects.map((obj) => (
             <S3ObjectRow
-              key={obj.key}
+              key={obj.fullKey ?? obj.key}
               obj={obj}
               onNavigateToFolder={onNavigateToFolder}
               onView={onView}
               onEdit={onEdit}
-              onDelete={onDelete}
               onDownload={onDownload}
             />
           ))}
-        </div>
+        </ul>
       )}
     </div>
   )
 }
 
-interface S3ObjectRowProps {
+interface S3ObjectRowProps extends S3ObjectActions {
   readonly obj: S3Object
-  readonly onNavigateToFolder: (folder: string) => void
-  readonly onView: (key: string) => void
-  readonly onEdit: (key: string) => void
-  readonly onDelete: (key: string) => void
-  readonly onDownload: (key: string, filename: string) => void
 }
 
-function S3ObjectRow({ obj, onNavigateToFolder, onView, onEdit, onDelete, onDownload }: S3ObjectRowProps) {
+function RowAction({ icon: Icon, label, onClick, hoverClass }: Readonly<{
+  icon: LucideIcon
+  label: string
+  onClick: () => void
+  hoverClass: string
+}>) {
+  return (
+    <button type="button" onClick={onClick} className={clsx('icon-btn p-2', hoverClass)} title={label} aria-label={label}>
+      <Icon size={16} />
+    </button>
+  )
+}
+
+function S3ObjectRow({ obj, onNavigateToFolder, onView, onEdit, onDownload }: S3ObjectRowProps) {
+  const { t } = useTranslation('dataExplorer')
   const fullKey = obj.fullKey ?? obj.key
 
+  // The row's primary action is a real <button>: it was a clickable <div>, which
+  // a keyboard user could not reach, so folders could only be opened by mouse.
   const handleClick = () => {
     if (obj.isFolder) {
       onNavigateToFolder(obj.key)
@@ -131,36 +182,27 @@ function S3ObjectRow({ obj, onNavigateToFolder, onView, onEdit, onDelete, onDown
   }
 
   return (
-    <div className="flex items-center justify-between px-4 py-3 hover:bg-gray-50">
-      <div className="flex items-center gap-3 cursor-pointer flex-1" onClick={handleClick}>
-        {obj.isFolder ? <FolderOpen size={20} className="text-yellow-500" /> : getFileIcon(obj.key)}
-        <div>
-          <p className="font-medium text-sm">{obj.key}</p>
+    <li className="flex items-center justify-between gap-2 px-2 sm:px-4 py-1.5 hover:bg-bg-hover transition-colors">
+      <button type="button" onClick={handleClick} className="flex items-center gap-3 flex-1 min-w-0 text-left rounded-md px-2 py-1.5">
+        {obj.isFolder ? <FolderOpen size={18} className="text-warn flex-shrink-0" aria-hidden="true" /> : getFileIcon(obj.key)}
+        <span className="min-w-0">
+          <span className="block font-medium text-sm text-text-strong truncate" title={obj.key}>{obj.key}</span>
           {!obj.isFolder && (
-            <p className="text-xs text-gray-500">
-              {formatFileSize(obj.size)} • {safeFormatDate(obj.lastModified, 'MMM d, yyyy HH:mm')}
-            </p>
+            <span className="block text-xs text-muted">
+              <span className="font-mono">{formatFileSize(obj.size)}</span> • {safeFormatDate(obj.lastModified, 'MMM d, yyyy HH:mm')}
+            </span>
           )}
-        </div>
-      </div>
+        </span>
+      </button>
       {!obj.isFolder && (
-        <div className="flex items-center gap-1">
-          <button onClick={() => onView(fullKey)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="View">
-            <Eye size={16} />
-          </button>
-          <button onClick={() => onDownload(fullKey, obj.key)} className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded" title="Download">
-            <Download size={16} />
-          </button>
-          {isEditableFile(obj.key) && (
-            <button onClick={() => onEdit(fullKey)} className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded" title="Edit">
-              <Pencil size={16} />
-            </button>
+        <div className="flex items-center flex-shrink-0">
+          <RowAction icon={Eye} label={t('s3Browser.view')} onClick={() => onView(fullKey)} hoverClass="hover:text-accent-text" />
+          <RowAction icon={Download} label={t('s3Browser.download')} onClick={() => onDownload(fullKey, obj.key)} hoverClass="hover:text-accent-text" />
+          {isEditableFile(obj.key) && !isImmutableRawKey(fullKey) && (
+            <RowAction icon={Pencil} label={t('s3Browser.edit')} onClick={() => onEdit(fullKey)} hoverClass="hover:text-accent-text" />
           )}
-          <button onClick={() => onDelete(fullKey)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded" title="Delete">
-            <Trash2 size={16} />
-          </button>
         </div>
       )}
-    </div>
+    </li>
   )
 }

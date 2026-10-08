@@ -1,0 +1,233 @@
+{
+  "card": {
+    "kicker": "承認が必要です",
+    "kickerDestructive": "承認が必要です · 元に戻せません",
+    "project": "プロジェクト",
+    "expired": "期限切れ",
+    "expiresIn": "残り {{time}}",
+    "approve": "承認",
+    "approveDestructive": "承認して削除",
+    "decline": "却下",
+    "confirmDecline": "却下する",
+    "back": "戻る",
+    "dismiss": "閉じる",
+    "reasonLabel": "理由（任意）",
+    "reasonPlaceholder": "アシスタントが調整できるよう理由を伝えてください",
+    "executing": "処理中…",
+    "adminOnly": "この操作を承認できるのは管理者のみです。却下は可能です。",
+    "destructiveWarning": "この操作はデータを完全に削除し、元に戻せません。",
+    "destructiveConfirm": "理解しました。削除します",
+    "invalidArgs": "アシスタントのリクエストが無効なため承認できません：",
+    "unknownTool": "この操作はここでは利用できないため承認できません。",
+    "unknownToolTitle": "不明な操作（{{name}}）",
+    "resolved": {
+      "executed": "完了",
+      "failed": "失敗",
+      "declined": "却下済み",
+      "expired": "期限切れ"
+    }
+  },
+  "preview": {
+    "showMore": "すべて表示（{{n}} 文字）",
+    "showLess": "折りたたむ",
+    "empty": "（空）",
+    "yes": "はい",
+    "no": "いいえ",
+    "loading": "現在のバージョンを読み込み中…",
+    "before": "現在",
+    "after": "提案",
+    "unchanged": "変更なし",
+    "document": "ドキュメント",
+    "persona": "ペルソナ",
+    "changeSummary": "変更内容",
+    "currentUnavailable": "現在の値を読み込めませんでした。提案された値のみを表示しています。",
+    "unknownCategory": "カテゴリ「{{category}}」はあなたが閲覧できるカテゴリではないため、変更は拒否されます。",
+    "brandMerged": "保存後の設定（指定されていない項目は現在の値のままです）：",
+    "diff": {
+      "label": "ドキュメントの変更",
+      "stats": "{{added}} 行追加、{{removed}} 行削除",
+      "unchanged": "… 変更のない {{n}} 行 …",
+      "same": "変更なし：",
+      "add": "追加：",
+      "del": "削除：",
+      "noChanges": "提案された内容は現在のドキュメントと同一です。",
+      "tooLarge": "ドキュメントが大きすぎるため行ごとに比較できません。各バージョンの冒頭を表示しています。",
+      "currentUnavailable": "現在のドキュメントを読み込めませんでした。提案された内容："
+    },
+    "job": {
+      "timeWindow": "過去 {{days}} 日間のフィードバックを読み取ります（アプリで選択中の期間）。",
+      "language": "結果は{{language}}で作成されます。",
+      "background": "バックグラウンドで実行され、プロジェクトのジョブに表示されます。その間も作業を続けられます。"
+    },
+    "agent": "エージェント",
+    "run": "実行",
+    "memory": {
+      "scope": {
+        "company": "会社 — 全員",
+        "personal": "個人 — 自分のみ"
+      },
+      "kind": {
+        "product": "製品",
+        "customer": "顧客",
+        "agents": "エージェント",
+        "working_style": "仕事の進め方",
+        "strategy": "戦略",
+        "objective": "目標",
+        "other": "その他"
+      },
+      "retention": {
+        "long_term": "長期保存",
+        "dated": "{{date}} まで",
+        "decay": "90日間使用されないと消去"
+      },
+      "resolve": {
+        "keep_both": "両方を残す",
+        "keep": "一方を残す",
+        "replace": "置き換える",
+        "merge": "統合する"
+      },
+      "companyVisible": "会社のメモリは全員に表示され、すべてのユーザーに対してアシスタントとエージェントが使用します。",
+      "supporters_one": "{{count}} 人が現在の内容を支持しています。",
+      "supporters_other": "{{count}} 人が現在の内容を支持しています。",
+      "reason": "理由",
+      "forEveryone": "これは全員を対象に、会社が記憶する内容を変更します。管理者またはメモリレビュアーでない場合は、レビュー用の提案として登録されます。"
+    },
+    "workflow": {
+      "unchanged": "提案された定義は現在のものと同じです。",
+      "meta": "変更: {{fields}}",
+      "addedSteps": "追加されたステップ",
+      "removedSteps": "削除されたステップ",
+      "changedSteps": "変更されたステップ",
+      "showMoves": "移動のみのステップ {{n}} 件を表示",
+      "hideMoves": "移動のみのステップを非表示",
+      "addedArrows": "追加された矢印",
+      "removedArrows": "削除された矢印",
+      "changedArrows": "変更された矢印",
+      "loopsChanged": "ループが変更されました（保存後 {{n}} 件）。",
+      "revision": "{{name}}: リビジョン {{from}} → {{to}}",
+      "stale": "この提案はリビジョン {{expected}} を基に作成されましたが、現在のリビジョンは {{current}} です — 保存は拒否されます。アシスタントに再作成を依頼してください。",
+      "counts": "{{nodes}} ステップ、{{edges}} 矢印、{{loops}} ループ"
+    }
+  },
+  "tools": {
+    "create_project": {
+      "title": "プロジェクトを作成",
+      "titleWith": "プロジェクト「{{name}}」を作成"
+    },
+    "set_problem_resolved": {
+      "title": "問題のステータスを変更",
+      "titleResolve": "問題を解決済みにする",
+      "titleReopen": "問題を再オープン"
+    },
+    "set_feedback_category": {
+      "title": "レビューのカテゴリを変更",
+      "titleWith": "カテゴリを「{{category}}」に変更"
+    },
+    "update_document": {
+      "title": "ドキュメントを編集"
+    },
+    "create_document": {
+      "title": "ドキュメントを作成",
+      "titleWith": "ドキュメント「{{title}}」を作成"
+    },
+    "delete_document": {
+      "title": "ドキュメントを削除"
+    },
+    "update_persona": {
+      "title": "ペルソナを編集"
+    },
+    "add_persona_note": {
+      "title": "ペルソナにリサーチメモを追加"
+    },
+    "update_project": {
+      "title": "プロジェクトの詳細を編集"
+    },
+    "update_product_context": {
+      "title": "製品説明を更新"
+    },
+    "start_research": {
+      "title": "リサーチジョブを開始"
+    },
+    "generate_document": {
+      "title": "ドキュメントを生成",
+      "titlePrd": "PRD を生成",
+      "titlePrfaq": "PR/FAQ を生成"
+    },
+    "generate_personas": {
+      "title": "ペルソナを生成",
+      "titleWith": "ペルソナを生成（{{n}}）"
+    },
+    "merge_documents": {
+      "title": "ドキュメントを統合"
+    },
+    "update_feedback_form": {
+      "title": "フィードバックフォームを更新"
+    },
+    "run_scraper": {
+      "title": "スクレイパーを今すぐ実行"
+    },
+    "save_brand_settings": {
+      "title": "ブランド設定を保存"
+    },
+    "remember": {
+      "title": "記憶する",
+      "titleCompany": "会社として記憶する",
+      "titlePersonal": "自分用に記憶する"
+    },
+    "update_company_memory": {
+      "title": "会社のメモリを変更"
+    },
+    "forget_memory": {
+      "title": "メモリを削除"
+    },
+    "confirm_memory": {
+      "title": "メモリを支持（+1）"
+    },
+    "merge_memories": {
+      "title": "メモリを統合",
+      "titleWith": "{{n}} 件のメモリを統合"
+    },
+    "resolve_memory_conflict": {
+      "title": "メモリの競合を解決",
+      "titleWith": "メモリの競合を解決: {{action}}"
+    },
+    "create_agent": {
+      "title": "自律エージェントを作成",
+      "titleWith": "エージェント「{{name}}」を作成"
+    },
+    "update_agent": {
+      "title": "自律エージェントを変更"
+    },
+    "enable_agent": {
+      "title": "自律エージェントを有効化"
+    },
+    "disable_agent": {
+      "title": "自律エージェントを無効化"
+    },
+    "run_agent": {
+      "title": "自律エージェントを今すぐ実行"
+    },
+    "cancel_agent_run": {
+      "title": "エージェントの実行をキャンセル"
+    },
+    "create_workflow": {
+      "title": "ワークフローを作成",
+      "titleWith": "ワークフロー「{{name}}」を作成"
+    },
+    "update_workflow": {
+      "title": "ワークフローの新しいリビジョンを保存"
+    },
+    "duplicate_workflow": {
+      "title": "ワークフローを複製"
+    },
+    "update_company_context": {
+      "title": "会社のビジョンと目標を変更"
+    },
+    "update_my_context": {
+      "title": "自分の目標と KPI を変更"
+    },
+    "update_design_system": {
+      "title": "デザインシステムを変更"
+    }
+  }
+}

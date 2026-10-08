@@ -8,6 +8,7 @@
     "deleteForm": "양식 삭제",
     "directLink": "직접 링크",
     "disabled": "비활성",
+    "prototypePins": "프로토타입 핀",
     "disableForm": "양식 비활성화",
     "editForm": "양식 편집",
     "enableForm": "양식 활성화",
@@ -19,7 +20,10 @@
     "showEmbedCode": "임베드 코드 표시",
     "submissions": "제출",
     "themeLabel": "테마",
-    "viewSubmissions": "제출 보기"
+    "viewSubmissions": "제출 보기",
+    "collectsName": "이름",
+    "collectsEmail": "이메일",
+    "disabledNotice": "이 양식은 꺼져 있습니다. 활성화할 때까지 링크와 임베드에 “Feedback form unavailable.”이 표시됩니다."
   },
   "configureApiFirst": "피드백 양식을 관리하려면 설정에서 API 엔드포인트를 구성하세요.",
   "createForm": "양식 만들기",
@@ -51,9 +55,9 @@
     "previewTagged": "이 양식의 피드백은 다음과 같이 태그됩니다:",
     "primaryColor": "기본 색상",
     "question": "질문",
-    "ratingEmoji": "이모지 😀",
+    "ratingEmoji": "이모지",
     "ratingNumeric": "숫자 (1-10)",
-    "ratingStars": "별 ⭐",
+    "ratingStars": "별",
     "saveChanges": "변경사항 저장",
     "saving": "저장 중...",
     "selectCategory": "-- 카테고리 선택 --",
@@ -85,7 +89,8 @@
     "validationUnknownProject": "연결된 프로젝트(더 이상 사용할 수 없음)",
     "validationUnverifiedDocument": "연결된 문서(확인할 수 없음)",
     "validationUnverifiedProject": "연결된 프로젝트(확인할 수 없음)",
-    "validationWholeProject": "-- 프로젝트 전체 --"
+    "validationWholeProject": "-- 프로젝트 전체 --",
+    "dimensionsHint": "모든 제출에 이 값이 적용됩니다. 임베드에서 dimensions 옵션으로 페이지별 값을 지정할 수 있습니다. 예:"
   },
   "empty": {
     "createButton": "첫 번째 양식 만들기",
@@ -129,5 +134,10 @@
     "selectPrompt": "계속하려면 템플릿을 선택하세요",
     "subtitle": "시작할 템플릿을 선택하세요",
     "title": "새 양식 만들기"
+  },
+  "createdDisabled": {
+    "dismiss": "닫기",
+    "enable": "지금 활성화",
+    "message": "“{{name}}”이(가) 생성되었으며 꺼져 있습니다. 활성화할 때까지 링크를 여는 사람에게 “Feedback form unavailable.”이 표시됩니다."
   }
 }

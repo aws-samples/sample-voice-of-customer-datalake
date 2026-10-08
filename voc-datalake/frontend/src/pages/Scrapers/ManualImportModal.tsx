@@ -1,13 +1,15 @@
+import { Loader2, AlertCircle, AlertTriangle, CalendarClock, CheckCircle, Plus, ArrowLeft, Upload, ClipboardPaste } from 'lucide-react'
 import {
-  X, Loader2, AlertCircle, CheckCircle, Plus, ArrowLeft, Upload, ClipboardPaste,
-} from 'lucide-react'
-import {
-  useEffect, useRef, useCallback, useState,
+  useEffect, useId, useRef, useCallback, useState,
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { scrapersApi } from '../../api/scrapersApi'
+import { ApiError } from '../../lib/errors'
 import { useManualImportStore } from '../../store/manualImportStore'
 import ParsedReviewCard from './ParsedReviewCard'
+import { countDefaultedDates, countMissingDates } from './scraper-helpers'
+import ModalShell from '../../components/ModalShell/ModalShell'
+import SourceDialogHeader from './SourceDialogHeader'
 
 const MAX_CHARACTERS = 10000
 const POLL_INTERVAL = 2000
@@ -16,14 +18,22 @@ function extractDomainDisplay(url: string): string {
   try {
     const hostname = new URL(url).hostname.replace('www.', '')
     // Capitalize first letter of each part
-    return hostname.split('.')[0].charAt(0).toUpperCase() + hostname.split('.')[0].slice(1)
+    const [label = ''] = hostname.split('.')
+    return label.charAt(0).toUpperCase() + label.slice(1)
   } catch {
     return ''
   }
 }
 
+/** The server's own reason (`{message}` of a 4xx) or the generic fallback. */
+function confirmErrorText(error: unknown, fallback: string): string {
+  if (error instanceof ApiError && error.message !== new ApiError(error.status).message) return error.message
+  return fallback
+}
+
 function InputStep() {
   const { t } = useTranslation('scrapers')
+  const id = useId()
   const {
     sourceUrl, rawText, setSourceUrl, setRawText, processingError,
   } = useManualImportStore()
@@ -34,45 +44,47 @@ function InputStep() {
   return (
     <div className="space-y-4">
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          {t('manualImport.sourceUrl')} <span className="text-red-500">*</span>
+        <label htmlFor={`${id}-url`} className="block text-sm font-medium text-text mb-1">
+          {t('manualImport.sourceUrl')} <span className="text-danger" aria-hidden="true">*</span>
         </label>
         <input
+          id={`${id}-url`}
+          required
           type="url"
           value={sourceUrl}
           onChange={(e) => setSourceUrl(e.target.value)}
           placeholder={t('manualImport.sourceUrlPlaceholder')}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          className="input"
         />
-        {detectedSource === '' ? null : <p className="mt-1 text-sm text-green-600 flex items-center gap-1">
+        {detectedSource === '' ? null : <p className="mt-1 text-sm text-ok flex items-center gap-1">
           <CheckCircle size={14} /> {t('manualImport.detected', { source: detectedSource })}
         </p>}
       </div>
 
       <div>
         <div className="flex items-center justify-between mb-1">
-          <label className="block text-sm font-medium text-gray-700">
-            {t('manualImport.pasteReviews')} <span className="text-red-500">*</span>
+          <label htmlFor={`${id}-text`} className="block text-sm font-medium text-text">
+            {t('manualImport.pasteReviews')} <span className="text-danger" aria-hidden="true">*</span>
           </label>
-          <span className={`text-sm ${isOverLimit ? 'text-red-500 font-medium' : 'text-gray-500'}`}>
+          <span className={`text-xs font-mono ${isOverLimit ? 'text-danger font-medium' : 'text-muted'}`}>
             {charCount.toLocaleString()} / {MAX_CHARACTERS.toLocaleString()}
           </span>
         </div>
         <textarea
+          id={`${id}-text`}
+          required
           value={rawText}
           onChange={(e) => setRawText(e.target.value)}
           placeholder={t('manualImport.pasteReviewsPlaceholder')}
           rows={12}
-          className={`w-full border rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-            isOverLimit ? 'border-red-500' : 'border-gray-300'
-          }`}
+          className={`input resize-none ${isOverLimit ? 'border-danger' : ''}`}
         />
-        {isOverLimit ? <p className="mt-1 text-sm text-red-500">
+        {isOverLimit ? <p className="mt-1 text-sm text-danger">
           {t('manualImport.exceedsMax', { max: MAX_CHARACTERS.toLocaleString() })}
         </p> : null}
       </div>
 
-      {processingError != null && processingError !== '' ? <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-start gap-2">
+      {processingError != null && processingError !== '' ? <div className="p-3 bg-danger-subtle border border-danger/30 rounded-lg text-sm text-danger flex items-start gap-2">
         <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
         <span>{processingError}</span>
       </div> : null}
@@ -84,9 +96,9 @@ function ProcessingStep() {
   const { t } = useTranslation('scrapers')
   return (
     <div className="flex flex-col items-center justify-center py-12">
-      <Loader2 className="h-12 w-12 text-blue-500 animate-spin mb-4" />
-      <h3 className="text-lg font-medium text-gray-900 mb-2">{t('manualImport.parsingTitle')}</h3>
-      <p className="text-sm text-gray-500">{t('manualImport.parsingDescription')}</p>
+      <Loader2 className="h-12 w-12 text-accent-text animate-spin mb-4" />
+      <h3 className="text-lg font-medium text-text-strong mb-2">{t('manualImport.parsingTitle')}</h3>
+      <p className="text-sm text-muted">{t('manualImport.parsingDescription')}</p>
     </div>
   )
 }
@@ -102,6 +114,7 @@ function PreviewStep({
     parsedReviews,
     unparsedSections,
     sourceOrigin,
+    processingError,
     updateReview,
     deleteReview,
     addEmptyReview,
@@ -110,6 +123,11 @@ function PreviewStep({
 
   const hasReviews = parsedReviews.length > 0
   const hasValidReviews = parsedReviews.some((r) => r.text.trim().length > 0)
+  // POST /scrapers/manual/confirm refuses the whole import (400) when any review
+  // lacks a date, so say so here rather than after a silent failed click.
+  const missingDates = countMissingDates(parsedReviews)
+  // The parse gives a review with no date in the text the import date; say so.
+  const defaultedDates = countDefaultedDates(parsedReviews)
 
   const getReviewCountText = () => {
     if (!hasReviews) return t('manualImport.noReviewsDetected')
@@ -120,26 +138,26 @@ function PreviewStep({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="font-medium text-gray-900">
+          <h3 className="font-medium text-text-strong">
             {getReviewCountText()}
           </h3>
-          {sourceOrigin != null && sourceOrigin !== '' ? <p className="text-sm text-gray-500">{t('manualImport.source', { source: sourceOrigin })}</p> : null}
+          {sourceOrigin != null && sourceOrigin !== '' ? <p className="text-sm text-muted">{t('manualImport.source', { source: sourceOrigin })}</p> : null}
         </div>
         <button
           onClick={() => setStep('input')}
-          className="text-sm text-gray-600 hover:text-gray-900 flex items-center gap-1"
+          className="text-sm text-text hover:text-text-strong flex items-center gap-1"
         >
           <ArrowLeft size={14} /> {t('manualImport.backToEdit')}
         </button>
       </div>
 
       {!hasReviews && (
-        <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+        <div className="p-4 bg-warn-subtle border border-warn/30 rounded-lg">
           <div className="flex items-start gap-2">
-            <AlertCircle size={16} className="text-amber-600 mt-0.5" />
+            <AlertCircle size={16} className="text-warn mt-0.5" />
             <div>
-              <p className="text-sm text-amber-800 font-medium">{t('manualImport.noReviewsTitle')}</p>
-              <p className="text-sm text-amber-700 mt-1">
+              <p className="text-sm text-warn font-medium">{t('manualImport.noReviewsTitle')}</p>
+              <p className="text-sm text-warn mt-1">
                 {t('manualImport.noReviewsDescription')}
               </p>
             </div>
@@ -161,17 +179,18 @@ function PreviewStep({
 
       <button
         onClick={addEmptyReview}
-        className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-sm text-gray-600 hover:border-gray-400 hover:text-gray-700 flex items-center justify-center gap-2 transition-colors"
+        className="w-full py-2 border-2 border-dashed border-border-strong rounded-lg text-sm text-text hover:border-border-strong hover:text-text flex items-center justify-center gap-2 transition-colors"
       >
         <Plus size={16} /> {t('manualImport.addReviewManually')}
       </button>
 
       {unparsedSections.length > 0 && (
         <details className="text-sm">
-          <summary className="cursor-pointer text-amber-600 hover:text-amber-700">
+          <summary className="cursor-pointer text-warn hover:text-warn">
+            <AlertTriangle size={14} aria-hidden="true" className="inline mr-1.5 -mt-0.5" />
             {t('manualImport.unparsedSections', { count: unparsedSections.length })}
           </summary>
-          <div className="mt-2 p-3 bg-gray-50 rounded-lg text-gray-600 max-h-32 overflow-y-auto">
+          <div className="mt-2 p-3 bg-bg-accent rounded-lg text-text max-h-32 overflow-y-auto">
             {unparsedSections.map((section) => (
               <p key={section.slice(0, 50)} className="mb-2 last:mb-0">{section}</p>
             ))}
@@ -179,10 +198,31 @@ function PreviewStep({
         </details>
       )}
 
+      {defaultedDates > 0 && (
+        <p className="text-sm text-muted flex items-start gap-2">
+          <CalendarClock size={14} aria-hidden="true" className="mt-0.5 flex-shrink-0" />
+          {t('manualImport.datesDefaulted', { count: defaultedDates })}
+        </p>
+      )}
+
+      {missingDates > 0 && (
+        <p className="text-sm text-warn flex items-start gap-2">
+          <AlertTriangle size={14} aria-hidden="true" className="mt-0.5 flex-shrink-0" />
+          {t('manualImport.datesRequired', { count: missingDates })}
+        </p>
+      )}
+
+      {processingError != null && processingError !== '' ? (
+        <div role="alert" className="p-3 bg-danger-subtle border border-danger/30 rounded-lg text-sm text-danger flex items-start gap-2">
+          <AlertCircle size={16} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
+          <span>{processingError}</span>
+        </div>
+      ) : null}
+
       <div className="flex justify-end gap-3 pt-4 border-t">
         <button
           onClick={onConfirm}
-          disabled={!hasValidReviews || isConfirming}
+          disabled={!hasValidReviews || missingDates > 0 || isConfirming}
           className="btn btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isConfirming ? (
@@ -202,6 +242,7 @@ function PreviewStep({
 
 export default function ManualImportModal() {
   const { t } = useTranslation('scrapers')
+  const titleId = useId()
   const {
     isModalOpen,
     step,
@@ -316,6 +357,7 @@ export default function ManualImportModal() {
   const handleConfirm = async () => {
     if (isConfirming || (jobId == null || jobId === '')) return
     setIsConfirming(true)
+    setProcessingError(null)
 
     try {
       const validReviews = parsedReviews.filter((r) => r.text.trim().length > 0)
@@ -327,10 +369,10 @@ export default function ManualImportModal() {
         // Refresh to show new feedback
         window.location.reload()
       } else {
-        setProcessingError(result.error ?? 'Failed to import reviews')
+        setProcessingError(result.error ?? t('manualImport.importFailed'))
       }
-    } catch {
-      setProcessingError('Failed to import reviews')
+    } catch (error) {
+      setProcessingError(confirmErrorText(error, t('manualImport.importFailed')))
     } finally {
       setIsConfirming(false)
     }
@@ -341,42 +383,31 @@ export default function ManualImportModal() {
   const canParse = sourceUrl.trim() !== '' && rawText.trim() !== '' && rawText.length <= MAX_CHARACTERS
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <button type="button" className="absolute inset-0 bg-black/50" onClick={handleClose} aria-label="Close modal" />
-      <div className="relative bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between px-6 py-4 border-b">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
-              <ClipboardPaste className="text-purple-600" size={20} />
-            </div>
-            <h2 className="text-lg font-semibold">{t('manualImport.title')}</h2>
-          </div>
-          <button onClick={handleClose} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-            <X size={20} />
-          </button>
-        </div>
+    // ModalShell owns the backdrop click (and Escape) that a full-screen
+    // "Close modal" button used to provide — off while reviews are being saved.
+    <ModalShell isOpen onClose={handleClose} ariaLabelledBy={titleId} dismissable={!isConfirming} panelClassName="max-w-2xl max-h-[90vh]">
+        <SourceDialogHeader titleId={titleId} title={t('manualImport.title')} icon={ClipboardPaste} tone="warn" onClose={handleClose} />
 
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="dialog-body">
           {step === 'input' && <InputStep />}
           {step === 'processing' && <ProcessingStep />}
           {step === 'preview' && <PreviewStep onConfirm={() => void handleConfirm()} isConfirming={isConfirming} />}
         </div>
 
         {step === 'input' && (
-          <div className="flex justify-end gap-3 px-6 py-4 border-t bg-gray-50">
+          <div className="dialog-footer">
             <button onClick={handleClose} className="btn btn-secondary">
               {t('manualImport.cancel')}
             </button>
             <button
               onClick={() => void handleParse()}
               disabled={!Boolean(canParse)}
-              className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+              className="btn btn-primary"
             >
               {t('manualImport.parseReviews')}
             </button>
           </div>
         )}
-      </div>
-    </div>
+    </ModalShell>
   )
 }

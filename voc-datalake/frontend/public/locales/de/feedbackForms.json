@@ -8,6 +8,7 @@
     "deleteForm": "Formular löschen",
     "directLink": "Direktlink",
     "disabled": "Deaktiviert",
+    "prototypePins": "Prototyp-Pins",
     "disableForm": "Formular deaktivieren",
     "editForm": "Formular bearbeiten",
     "enableForm": "Formular aktivieren",
@@ -19,7 +20,10 @@
     "showEmbedCode": "Einbettungscode anzeigen",
     "submissions": "Einreichungen",
     "themeLabel": "Design",
-    "viewSubmissions": "Einreichungen anzeigen"
+    "viewSubmissions": "Einreichungen anzeigen",
+    "collectsName": "Name",
+    "collectsEmail": "E-Mail",
+    "disabledNotice": "Dieses Formular ist deaktiviert. Link und Einbettung zeigen „Feedback form unavailable.“, bis Sie es aktivieren."
   },
   "configureApiFirst": "Konfigurieren Sie den API-Endpunkt in den Einstellungen, um Feedback-Formulare zu verwalten.",
   "createForm": "Formular erstellen",
@@ -51,9 +55,9 @@
     "previewTagged": "Feedback aus diesem Formular wird markiert als:",
     "primaryColor": "Primärfarbe",
     "question": "Frage",
-    "ratingEmoji": "Emoji-Bewertung 😀",
+    "ratingEmoji": "Emoji-Bewertung",
     "ratingNumeric": "Numerisch (1-10)",
-    "ratingStars": "Sterne ⭐",
+    "ratingStars": "Sterne",
     "saveChanges": "Änderungen speichern",
     "saving": "Speichern...",
     "selectCategory": "-- Kategorie auswählen --",
@@ -85,7 +89,8 @@
     "validationUnknownProject": "Verknüpftes Projekt (nicht mehr verfügbar)",
     "validationUnverifiedDocument": "Verknüpftes Dokument (nicht überprüfbar)",
     "validationUnverifiedProject": "Verknüpftes Projekt (nicht überprüfbar)",
-    "validationWholeProject": "-- Gesamtes Projekt --"
+    "validationWholeProject": "-- Gesamtes Projekt --",
+    "dimensionsHint": "Jede Einsendung erhält diese Werte. Eine Einbettung kann mit der Option dimensions eigene Werte pro Seite setzen, z. B."
   },
   "empty": {
     "createButton": "Erstes Formular erstellen",
@@ -129,5 +134,10 @@
     "selectPrompt": "Wählen Sie eine Vorlage zum Fortfahren",
     "subtitle": "Wählen Sie eine Vorlage zum Starten",
     "title": "Neues Formular erstellen"
+  },
+  "createdDisabled": {
+    "dismiss": "Schließen",
+    "enable": "Jetzt aktivieren",
+    "message": "„{{name}}“ wurde erstellt und ist deaktiviert: Wer den Link öffnet, sieht „Feedback form unavailable.“, bis Sie es aktivieren."
   }
 }

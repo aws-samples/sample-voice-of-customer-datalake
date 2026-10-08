@@ -7,14 +7,14 @@
  * - Time range selector in header
  * - Breadcrumb navigation
  * - User menu with logout (when authenticated)
- * - User profile modal
  * - Urgent feedback count badge
  *
  * @module components/Layout
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { Outlet, useNavigate, useLocation } from 'react-router-dom'
+import { useState, useEffect, useRef, useCallback, type RefObject } from 'react'
+import { useTranslation } from 'react-i18next'
+import { Outlet, useLocation } from 'react-router-dom'
 import {
   Home,
   LayoutDashboard,
@@ -28,47 +28,55 @@ import {
   FileText,
   Database,
   Menu,
+  Brain,
+  Compass,
+  Workflow,
+  Plug,
 } from 'lucide-react'
-import { useQueryClient } from '@tanstack/react-query'
 import { getDateRangeParams } from '../../api/client'
+import { useBrandName } from '../../hooks/useBrandSettings'
 import { useSummaryQuery } from '../../hooks/useSummaryQuery'
 import { useConfigStore } from '../../store/configStore'
 import { useAuthStore, useIsAdmin } from '../../store/authStore'
-import { authService } from '../../services/auth'
-import TimeRangeSelector from '../TimeRangeSelector'
-import Breadcrumbs from '../Breadcrumbs'
-import UserProfileModal from '../UserProfileModal'
+import { useSignOut } from '../../hooks/useSignOut'
+import TimeRangeSelector from '../TimeRangeSelector/TimeRangeSelector'
+import ThemeToggle from '../ThemeToggle/ThemeToggle'
+import Breadcrumbs from '../Breadcrumbs/Breadcrumbs'
+import AssistantRoot from '../../assistant/components/AssistantRoot'
 import { isMenuItemEnabled } from '../../config/menuConfig'
+import { useOverlayFocus } from '../../hooks/useOverlayFocus'
 import { Sidebar, type NavItem } from './SidebarComponents'
 
 /**
- * Navigation items. The two entry points — Home (the getting-started guide) and
- * Dashboard (the analytics overview) — sit at the top with no section header.
- * Everything below is grouped by the AI-PDLC workshop phase it maps to
- * (sources → signals → ideation → validation → settings), so the sidebar
- * mirrors the product-development lifecycle the app is built around. The order
- * here drives the sidebar order; the `section` field groups items under a header
- * so the flow is visible instead of a flat list. Section headers are rendered by
- * <Sidebar> and auto-hide when a whole section is filtered out by menu config or
- * admin gating. Items without a `section` (Home, Dashboard) render above the
- * first header.
+ * Navigation items (todofeatures §6.1, decided 2026-10-04). Home and Dashboard
+ * sit at the top with no section header; the rest follow the VoC loop
+ * **Listen → Understand → Build → Validate**, then **Knowledge** (shared context
+ * everyone reads), **Connect** (external tools) and the admin-only
+ * **Administration** (was Settings). What a user configures for themselves —
+ * profile, language, their objectives & KPIs — is in Account, in the user menu
+ * at the bottom of the rail, not here.
  *
- * Phase mapping: Sources = load + inspect data (Phase 1) · Signals = analyze
- * feedback/themes (Phase 1) · Ideation = research → personas/PRD (Phase 2) ·
- * Validation = build survey + prioritize (Phase 3-4).
+ * The order here drives the sidebar order; `section` groups items under a header
+ * rendered by <Sidebar>, which auto-hides when a whole section is filtered out by
+ * menu config or admin gating.
  */
 const NAV_ITEMS: NavItem[] = [
   { to: '/', icon: Home, labelKey: 'nav.home', menuKey: 'home' },
   { to: '/dashboard', icon: LayoutDashboard, labelKey: 'nav.dashboard', menuKey: 'dashboard' },
-  { to: '/scrapers', icon: Globe, labelKey: 'nav.scrapers', menuKey: 'scrapers', section: 'nav.section.sources' },
-  { to: '/data-explorer', icon: Database, labelKey: 'nav.dataExplorer', menuKey: 'data-explorer', section: 'nav.section.sources' },
-  { to: '/categories', icon: FolderOpen, labelKey: 'nav.categories', menuKey: 'categories', section: 'nav.section.signals' },
-  { to: '/problems', icon: SearchX, labelKey: 'nav.problemAnalysis', menuKey: 'problems', section: 'nav.section.signals' },
-  { to: '/chat', icon: Bot, labelKey: 'nav.aiChat', menuKey: 'chat', section: 'nav.section.ideation' },
-  { to: '/projects', icon: Briefcase, labelKey: 'nav.projects', menuKey: 'projects', section: 'nav.section.ideation' },
-  { to: '/feedback-forms', icon: FileText, labelKey: 'nav.feedbackForms', menuKey: 'feedback-forms', section: 'nav.section.validation' },
-  { to: '/prioritization', icon: ListOrdered, labelKey: 'nav.prioritization', menuKey: 'prioritization', section: 'nav.section.validation' },
-  { to: '/settings', icon: Settings, labelKey: 'nav.settings', menuKey: 'settings', adminOnly: true, section: 'nav.section.settings' },
+  { to: '/scrapers', icon: Globe, labelKey: 'nav.scrapers', menuKey: 'scrapers', section: 'nav.section.listen' },
+  { to: '/data-explorer', icon: Database, labelKey: 'nav.dataExplorer', menuKey: 'data-explorer', adminOnly: true, section: 'nav.section.listen' },
+  { to: '/categories', icon: FolderOpen, labelKey: 'nav.categories', menuKey: 'categories', section: 'nav.section.understand' },
+  { to: '/problems', icon: SearchX, labelKey: 'nav.problemAnalysis', menuKey: 'problems', section: 'nav.section.understand' },
+  { to: '/chat', icon: Bot, labelKey: 'nav.aiChat', menuKey: 'chat', section: 'nav.section.build' },
+  { to: '/projects', icon: Briefcase, labelKey: 'nav.projects', menuKey: 'projects', section: 'nav.section.build' },
+  { to: '/agents', icon: Workflow, labelKey: 'agents:nav.label', menuKey: 'agents', section: 'nav.section.build' },
+  { to: '/feedback-forms', icon: FileText, labelKey: 'nav.feedbackForms', menuKey: 'feedback-forms', section: 'nav.section.validate' },
+  { to: '/prioritization', icon: ListOrdered, labelKey: 'nav.prioritization', menuKey: 'prioritization', section: 'nav.section.validate' },
+  { to: '/company', icon: Compass, labelKey: 'nav.company', menuKey: 'company', section: 'nav.section.knowledge' },
+  { to: '/memory', icon: Brain, labelKey: 'nav.memory', menuKey: 'memory', section: 'nav.section.knowledge' },
+  { to: '/connect', icon: Plug, labelKey: 'nav.connect', menuKey: 'connect', section: 'nav.section.connect' },
+  // menuKey stays `settings` so existing cdk.context.json menuStatus files keep working.
+  { to: '/admin', icon: Settings, labelKey: 'nav.admin', menuKey: 'settings', adminOnly: true, section: 'nav.section.admin' },
 ]
 
 function isNavItemVisible(item: NavItem, isAdmin: boolean): boolean {
@@ -79,25 +87,49 @@ function isNavItemVisible(item: NavItem, isAdmin: boolean): boolean {
   return true
 }
 
-// Main header component
-function MainHeader({ onOpenMenu }: Readonly<{ onOpenMenu: () => void }>) {
+/**
+ * Routes whose data is scoped by the global time range. The header picker is
+ * shown only there: on Home, Projects, Settings, etc. it changed nothing and
+ * read as a broken control.
+ */
+const TIME_SCOPED_ROUTES = ['/dashboard', '/categories', '/problems', '/chat', '/data-explorer']
+
+function isTimeScoped(pathname: string): boolean {
+  return TIME_SCOPED_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`))
+}
+
+// Main header component. The title is site chrome, not a section heading: the
+// page's own <h1> (PageTitle) must be the first heading (design audit D-STRUCT).
+function MainHeader({ onOpenMenu, menuButtonRef, showTimeRange }: Readonly<{
+  onOpenMenu: () => void
+  menuButtonRef: RefObject<HTMLButtonElement | null>
+  showTimeRange: boolean
+}>) {
+  const { t } = useTranslation()
+  const title = t('common:header.title')
   return (
-    <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4 flex-shrink-0">
+    <header className="chrome-glass relative z-10 border-b border-border px-4 sm:px-6 py-3 flex-shrink-0">
       <div className="flex items-center justify-between gap-4 mb-2 sm:mb-3">
         <div className="flex items-center gap-3 min-w-0">
           <button
+            ref={menuButtonRef}
+            type="button"
             onClick={onOpenMenu}
-            className="p-2 -ml-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg lg:hidden"
-            aria-label="Open menu"
+            className="icon-btn -ml-2 lg:hidden"
+            aria-label={t('common:sidebar.openMenu')}
+            title={t('common:sidebar.openMenu')}
           >
-            <Menu size={24} />
+            <Menu size={20} aria-hidden="true" />
           </button>
           <div className="min-w-0">
-            <h2 className="text-base sm:text-lg font-semibold text-gray-900 truncate">Voice of the Customer</h2>
-            <p className="text-xs sm:text-sm text-gray-500 mt-0.5 hidden sm:block">Unified customer feedback intelligence platform</p>
+            <p className="text-base sm:text-lg font-semibold tracking-tight text-text-strong truncate" title={title}>{title}</p>
+            <p className="text-xs sm:text-[13px] text-muted mt-0.5 hidden sm:block">{t('common:header.subtitle')}</p>
           </div>
         </div>
-        <TimeRangeSelector />
+        <div className="flex items-center gap-2">
+          {showTimeRange ? <TimeRangeSelector /> : null}
+          <ThemeToggle />
+        </div>
       </div>
       <Breadcrumbs />
     </header>
@@ -134,16 +166,22 @@ function useMobileMenu(pathname: string) {
 
 
 export default function Layout() {
-  const navigate = useNavigate()
   const location = useLocation()
   const { timeRange, customDays, dateBasis, config } = useConfigStore()
   const { user, isAuthenticated } = useAuthStore()
   const isAdmin = useIsAdmin()
   const dateParams = getDateRangeParams(timeRange, customDays, dateBasis)
-  const queryClient = useQueryClient()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [showProfileModal, setShowProfileModal] = useState(false)
   const { mobileMenuOpen, openMenu, closeMenu } = useMobileMenu(location.pathname)
+  // Mobile drawer keyboard contract: focus moves into it, Escape closes it, Tab
+  // leaving it closes it (it covers the page), and focus returns to the menu
+  // button (design audit D-NAV).
+  const sidebarRef = useRef<HTMLElement>(null)
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
+  useOverlayFocus(sidebarRef, mobileMenuOpen, { onClose: closeMenu, returnFocusTo: menuButtonRef, closeOnFocusOut: true })
+  // Loaded by the shell for every page (E2E F12: only /admin used to load it,
+  // so the subtitle said "Configure brand" until that page had been visited).
+  const brand = useBrandName(config.apiEndpoint)
 
   // Filter nav items based on menu config and user role
   const visibleNavItems = NAV_ITEMS.filter(item => isNavItemVisible(item, isAdmin))
@@ -167,29 +205,18 @@ export default function Layout() {
   // filtered in memory. Tracked separately as the per-day fan-out work.
   const { data: summaryData } = useSummaryQuery(dateParams, config.apiEndpoint)
 
-  const handleLogout = useCallback(() => {
-    // Sign-out is an in-app navigation, so the QueryClient outlives it and
-    // every cached authenticated response — urgent counts, feedback, projects
-    // — would render for whoever signs in next while their own data loads.
-    // The expired-session path does a full document load and so drops the
-    // cache implicitly; this one has to be explicit.
-    queryClient.clear()
-    authService.signOut()
-    navigate('/login')
-  }, [navigate, queryClient])
+  const handleLogout = useSignOut()
 
   const toggleSidebar = useCallback(() => setSidebarCollapsed(prev => !prev), [])
-  const showProfile = useCallback(() => setShowProfileModal(true), [])
-  const hideProfile = useCallback(() => setShowProfileModal(false), [])
 
   const urgentCount = summaryData?.urgent_count ?? 0
 
   return (
-    <div className="h-screen flex overflow-hidden">
+    <div className="app-ambient h-screen flex overflow-hidden bg-bg text-text">
       {/* Mobile menu overlay */}
       {mobileMenuOpen && (
         <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          className="fixed inset-0 bg-overlay backdrop-blur-sm z-40 lg:hidden"
           onClick={closeMenu}
           aria-hidden="true"
         />
@@ -197,28 +224,29 @@ export default function Layout() {
 
       {/* Sidebar */}
       <Sidebar
+        panelRef={sidebarRef}
         sidebarCollapsed={sidebarCollapsed}
         mobileMenuOpen={mobileMenuOpen}
-        brandName={config.brandName}
+        brandName={brand.brandName}
+        brandLoading={brand.isLoading}
         visibleNavItems={visibleNavItems}
         urgentCount={urgentCount}
         isAuthenticated={isAuthenticated}
         user={user}
         onClose={closeMenu}
         onToggleCollapse={toggleSidebar}
-        onShowProfile={showProfile}
         onLogout={handleLogout}
       />
 
       {/* Main content */}
       <main className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
-        <MainHeader onOpenMenu={openMenu} />
+        <MainHeader onOpenMenu={openMenu} menuButtonRef={menuButtonRef} showTimeRange={isTimeScoped(location.pathname)} />
         <div className="flex-1 overflow-auto p-4 sm:p-6">
           <Outlet />
         </div>
       </main>
 
-      <UserProfileModal isOpen={showProfileModal} onClose={hideProfile} />
+      <AssistantRoot />
     </div>
   )
 }

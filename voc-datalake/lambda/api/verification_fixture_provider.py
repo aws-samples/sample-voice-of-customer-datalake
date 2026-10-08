@@ -16,11 +16,12 @@ from __future__ import annotations
 import hashlib
 import re
 import time
-from datetime import datetime, timedelta, timezone
-from numbers import Number
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 
 from botocore.exceptions import ClientError
+
 from shared.exceptions import (
     ApiError,
     ConfigurationError,
@@ -188,6 +189,17 @@ def _owned_delete(
     }}
 
 
+def _reason_codes(reasons: object) -> set[object]:
+    """The `Code` of every mapping in a cancellation's `CancellationReasons`.
+
+    Taken as `object`: this is a wire answer, so a missing list or a non-mapping
+    entry contributes nothing rather than raising.
+    """
+    if not isinstance(reasons, list):
+        return set()
+    return {reason.get('Code') for reason in reasons if isinstance(reason, dict)}
+
+
 def _transact(
     client: Any,
     items: list[dict[str, Any]],
@@ -198,15 +210,10 @@ def _transact(
     for attempt in range(TRANSACTION_ATTEMPTS):
         try:
             client.transact_write_items(TransactItems=items)
-            return
         except ClientError as error:
             code = error.response.get('Error', {}).get('Code')
             reasons = error.response.get('CancellationReasons')
-            reason_codes = {
-                reason.get('Code')
-                for reason in reasons
-                if isinstance(reason, dict)
-            } if isinstance(reasons, list) else set()
+            reason_codes = _reason_codes(reasons)
             if 'ConditionalCheckFailed' in reason_codes:
                 raise ConflictError(collision_message) from error
             retryable = code in _RETRYABLE_TRANSACTION_CODES or bool(
@@ -216,7 +223,8 @@ def _transact(
                 time.sleep(0.05 * (2 ** attempt))
                 continue
             raise ServiceError(failure_message) from error
-    raise ServiceError(failure_message)
+        else:
+            return
 
 
 def _records(
@@ -246,7 +254,6 @@ def _records(
             'persona_count': 0,
             'document_count': 1,
             'filters': {},
-            'kiro_export_prompt': '',
             'fixture_expires_at': expires_at,
             'ttl': ttl,
             **ownership,
@@ -288,18 +295,19 @@ def _existing_expiry(
     request: dict[str, str],
     ids: dict[str, Any],
     now: datetime,
-) -> tuple[bool, str | None, int | None]:
+) -> tuple[str, int] | None:
+    """The owned fixture's (expires_at, ttl) when it can be reused as is, else None."""
     item = projects_table.get_item(
         Key={'pk': f"PROJECT#{ids['project_id']}", 'sk': 'META'},
         ConsistentRead=True,
     ).get('Item')
     if item is None:
-        return False, None, None
+        return None
     ownership = _ownership(request, ids['fixture_id'])
     if any(item.get(field) != ownership[field] for field in _OWNER_FIELDS):
         raise ConflictError('Fixture project key is owned by another subject')
     expires_at, ttl = item.get('fixture_expires_at'), item.get('ttl')
-    if not isinstance(expires_at, str) or not isinstance(ttl, Number):
+    if not isinstance(expires_at, str) or not isinstance(ttl, (int, float, Decimal)):
         raise ConflictError('Owned fixture metadata is incomplete')
     if int(ttl) <= int(now.timestamp()) + RENEWAL_MARGIN_SECONDS:
         # Two cases, one repair. Either the TTL already passed — DynamoDB deletes
@@ -311,8 +319,8 @@ def _existing_expiry(
         # three records. The owner condition still fences other subjects out, and
         # the identity (ids) is derived from the request, so a renewal keeps the
         # same project/document/row keys and only moves the expiry forward.
-        return False, None, None
-    return True, expires_at, int(ttl)
+        return None
+    return expires_at, int(ttl)
 
 
 def _result(
@@ -352,15 +360,14 @@ def _tables() -> tuple[Any, Any]:
 def setup_fixture(request: dict[str, str], *, now: datetime | None = None) -> dict[str, Any]:
     projects, aggregates = _tables()
     ids = _ids(request)
-    current = now or datetime.now(timezone.utc)
-    reused, expires_at, ttl = _existing_expiry(projects, request, ids, current)
-    if not reused:
+    current = now or datetime.now(UTC)
+    existing = _existing_expiry(projects, request, ids, current)
+    reused = existing is not None
+    if existing is None:
         ttl = int((current + timedelta(seconds=FIXTURE_TTL_SECONDS)).timestamp())
-        expires_at = datetime.fromtimestamp(ttl, timezone.utc).isoformat()
-    if expires_at is None or ttl is None:
-        # `assert` would vanish under `python -O`, leaving the records below to be
-        # built from None and fail far from the cause.
-        raise ServiceError('fixture expiry could not be resolved')
+        expires_at = datetime.fromtimestamp(ttl, UTC).isoformat()
+    else:
+        expires_at, ttl = existing
     project_items, aggregate_items = _records(request, ids, expires_at=expires_at, ttl=ttl)
     _transact(
         projects.meta.client,
@@ -482,6 +489,6 @@ def lambda_handler(event: Any, _context: Any) -> dict[str, Any]:
     except ApiError as error:
         logger.warning('Fixture provider rejected %s: %s', operation, type(error).__name__)
         return _failure(operation, _ERROR_CODES.get(type(error), 'service'))
-    except Exception:  # noqa: BLE001 -- final Lambda boundary returns a closed error envelope
+    except Exception:  # final Lambda boundary returns a closed error envelope
         logger.exception('Fixture provider failed internally for %s', operation)
         return _failure(operation, 'internal')

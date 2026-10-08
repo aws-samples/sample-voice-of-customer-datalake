@@ -1,0 +1,233 @@
+{
+  "card": {
+    "kicker": "需要批准",
+    "kickerDestructive": "需要批准 · 无法撤销",
+    "project": "项目",
+    "expired": "已过期",
+    "expiresIn": "{{time}} 后过期",
+    "approve": "批准",
+    "approveDestructive": "批准并删除",
+    "decline": "拒绝",
+    "confirmDecline": "确认拒绝",
+    "back": "返回",
+    "dismiss": "关闭",
+    "reasonLabel": "原因（可选）",
+    "reasonPlaceholder": "告诉助手原因，以便它进行调整",
+    "executing": "处理中…",
+    "adminOnly": "只有管理员可以批准此操作。您仍然可以拒绝。",
+    "destructiveWarning": "此操作将永久删除数据，且无法撤销。",
+    "destructiveConfirm": "我已了解，确认删除",
+    "invalidArgs": "助手的请求无效，无法批准：",
+    "unknownTool": "此操作在这里不可用，无法批准。",
+    "unknownToolTitle": "未知操作（{{name}}）",
+    "resolved": {
+      "executed": "已完成",
+      "failed": "失败",
+      "declined": "已拒绝",
+      "expired": "已过期"
+    }
+  },
+  "preview": {
+    "showMore": "显示全部（{{n}} 个字符）",
+    "showLess": "收起",
+    "empty": "（空）",
+    "yes": "是",
+    "no": "否",
+    "loading": "正在加载当前版本…",
+    "before": "当前",
+    "after": "建议",
+    "unchanged": "未更改",
+    "document": "文档",
+    "persona": "用户画像",
+    "changeSummary": "更改内容",
+    "currentUnavailable": "无法加载当前值；仅显示建议的值。",
+    "unknownCategory": "类别“{{category}}”不在你可见的范围内，此更改将被拒绝。",
+    "brandMerged": "保存后的设置（未提及的字段保留当前值）：",
+    "diff": {
+      "label": "文档更改",
+      "stats": "新增 {{added}} 行，删除 {{removed}} 行",
+      "unchanged": "… {{n}} 行未更改 …",
+      "same": "未更改：",
+      "add": "新增：",
+      "del": "删除：",
+      "noChanges": "建议的内容与当前文档完全相同。",
+      "tooLarge": "文档过大，无法逐行比较。显示每个版本的开头部分。",
+      "currentUnavailable": "无法加载当前文档。建议的内容："
+    },
+    "job": {
+      "timeWindow": "读取最近 {{days}} 天的反馈（应用中选择的时间范围）。",
+      "language": "结果将以{{language}}撰写。",
+      "background": "此任务在后台运行，并显示在项目的任务列表中。您可以同时继续工作。"
+    },
+    "agent": "智能体",
+    "run": "运行",
+    "memory": {
+      "scope": {
+        "company": "公司——所有人",
+        "personal": "个人——仅您自己"
+      },
+      "kind": {
+        "product": "产品",
+        "customer": "客户",
+        "agents": "智能体",
+        "working_style": "工作方式",
+        "strategy": "战略",
+        "objective": "目标",
+        "other": "其他"
+      },
+      "retention": {
+        "long_term": "长期保留",
+        "dated": "保留至 {{date}}",
+        "decay": "90 天未使用后淡化"
+      },
+      "resolve": {
+        "keep_both": "保留两者",
+        "keep": "保留其一",
+        "replace": "替换",
+        "merge": "合并"
+      },
+      "companyVisible": "公司记忆对所有人可见，助手和智能体会为所有用户使用这些记忆。",
+      "supporters_one": "{{count}} 人支持当前表述。",
+      "supporters_other": "{{count}} 人支持当前表述。",
+      "reason": "原因",
+      "forEveryone": "这会更改公司为所有人记住的内容。如果您不是管理员或记忆审核者，此更改将作为提议提交审核。"
+    },
+    "workflow": {
+      "unchanged": "提议的定义与当前定义相同。",
+      "meta": "已更改：{{fields}}",
+      "addedSteps": "新增步骤",
+      "removedSteps": "移除的步骤",
+      "changedSteps": "更改的步骤",
+      "showMoves": "显示 {{n}} 个仅移动的步骤",
+      "hideMoves": "隐藏仅移动的步骤",
+      "addedArrows": "新增箭头",
+      "removedArrows": "移除的箭头",
+      "changedArrows": "更改的箭头",
+      "loopsChanged": "循环已更改（保存后共 {{n}} 个）。",
+      "revision": "{{name}}：第 {{from}} 版 → 第 {{to}} 版",
+      "stale": "此提议基于第 {{expected}} 版，但当前为第 {{current}} 版——保存将被拒绝；请让助手重新生成。",
+      "counts": "{{nodes}} 个步骤，{{edges}} 个箭头，{{loops}} 个循环"
+    }
+  },
+  "tools": {
+    "create_project": {
+      "title": "创建项目",
+      "titleWith": "创建项目“{{name}}”"
+    },
+    "set_problem_resolved": {
+      "title": "更改问题状态",
+      "titleResolve": "将问题标记为已解决",
+      "titleReopen": "重新打开问题"
+    },
+    "set_feedback_category": {
+      "title": "更改评论的类别",
+      "titleWith": "将类别更改为“{{category}}”"
+    },
+    "update_document": {
+      "title": "编辑文档"
+    },
+    "create_document": {
+      "title": "创建文档",
+      "titleWith": "创建文档“{{title}}”"
+    },
+    "delete_document": {
+      "title": "删除文档"
+    },
+    "update_persona": {
+      "title": "编辑用户画像"
+    },
+    "add_persona_note": {
+      "title": "为用户画像添加研究笔记"
+    },
+    "update_project": {
+      "title": "编辑项目详情"
+    },
+    "update_product_context": {
+      "title": "更新产品描述"
+    },
+    "start_research": {
+      "title": "启动研究任务"
+    },
+    "generate_document": {
+      "title": "生成文档",
+      "titlePrd": "生成 PRD",
+      "titlePrfaq": "生成 PR/FAQ"
+    },
+    "generate_personas": {
+      "title": "生成用户画像",
+      "titleWith": "生成用户画像（{{n}}）"
+    },
+    "merge_documents": {
+      "title": "合并文档"
+    },
+    "update_feedback_form": {
+      "title": "更新反馈表单"
+    },
+    "run_scraper": {
+      "title": "立即运行抓取器"
+    },
+    "save_brand_settings": {
+      "title": "保存品牌设置"
+    },
+    "remember": {
+      "title": "记住",
+      "titleCompany": "为公司记住",
+      "titlePersonal": "为您记住"
+    },
+    "update_company_memory": {
+      "title": "更改公司记忆"
+    },
+    "forget_memory": {
+      "title": "忘记记忆"
+    },
+    "confirm_memory": {
+      "title": "确认记忆（+1）"
+    },
+    "merge_memories": {
+      "title": "合并记忆",
+      "titleWith": "合并 {{n}} 条记忆"
+    },
+    "resolve_memory_conflict": {
+      "title": "解决记忆冲突",
+      "titleWith": "解决记忆冲突：{{action}}"
+    },
+    "create_agent": {
+      "title": "创建自主智能体",
+      "titleWith": "创建智能体“{{name}}”"
+    },
+    "update_agent": {
+      "title": "更改自主智能体"
+    },
+    "enable_agent": {
+      "title": "启用自主智能体"
+    },
+    "disable_agent": {
+      "title": "停用自主智能体"
+    },
+    "run_agent": {
+      "title": "立即运行自主智能体"
+    },
+    "cancel_agent_run": {
+      "title": "取消智能体运行"
+    },
+    "create_workflow": {
+      "title": "创建工作流",
+      "titleWith": "创建工作流“{{name}}”"
+    },
+    "update_workflow": {
+      "title": "保存新的工作流版本"
+    },
+    "duplicate_workflow": {
+      "title": "复制工作流"
+    },
+    "update_company_context": {
+      "title": "更改公司愿景与目标"
+    },
+    "update_my_context": {
+      "title": "更改您的目标与 KPI"
+    },
+    "update_design_system": {
+      "title": "更改设计系统"
+    }
+  }
+}

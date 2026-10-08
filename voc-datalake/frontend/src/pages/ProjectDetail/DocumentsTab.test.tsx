@@ -3,18 +3,12 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import DocumentsTab from './DocumentsTab'
-import type { ProjectDocument, Project } from '../../api/types'
+import { documentsTabStubs, makeProject } from './project-detail-fixtures'
+import { EDITOR_ACCESS, VIEWER_ACCESS } from './projectAccess-fixtures'
+import type { ProjectDocument } from '../../api/types'
+import type { Project } from '../../api/projectTypes'
 
-const mockProject: Project = {
-  project_id: 'proj-1',
-  name: 'Test Project',
-  description: '',
-  status: 'active',
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
-  persona_count: 0,
-  document_count: 0,
-}
+const mockProject = makeProject({ project_id: 'proj-1', name: 'Test Project', description: '' })
 
 const mockDoc: ProjectDocument = {
   document_id: 'doc-1',
@@ -24,15 +18,14 @@ const mockDoc: ProjectDocument = {
   created_at: new Date().toISOString(),
 }
 
+const noDocuments: ProjectDocument[] = []
+
 const defaultProps = {
   project: mockProject,
-  documents: [] as ProjectDocument[],
+  documents: noDocuments,
   selectedDoc: null,
   onSelectDoc: vi.fn(),
-  onEditDoc: vi.fn(),
-  onDeleteDoc: vi.fn(),
-  onCreateDoc: vi.fn(),
-  isDeleting: false,
+  ...documentsTabStubs(),
 }
 
 const renderWithRouter = (ui: React.ReactElement) => {
@@ -57,6 +50,12 @@ describe('DocumentsTab', () => {
     
     await user.click(screen.getByRole('button', { name: /New Document/i }))
     expect(onCreateDoc).toHaveBeenCalledTimes(1)
+  })
+
+  // QA s3 F4: the selected document offers its Versions (collapsed until opened).
+  it('offers the Versions list under the selected document', () => {
+    renderWithRouter(<DocumentsTab {...defaultProps} documents={[mockDoc]} selectedDoc={mockDoc} />)
+    expect(screen.getByRole('button', { name: 'Versions' })).toHaveAttribute('aria-expanded', 'false')
   })
 
   it('renders document list when documents exist', () => {
@@ -86,8 +85,8 @@ describe('DocumentsTab', () => {
   it('highlights selected document', () => {
     renderWithRouter(<DocumentsTab {...defaultProps} documents={[mockDoc]} selectedDoc={mockDoc} />)
     const buttons = screen.getAllByRole('button')
-    const docButton = buttons.find(b => b.textContent?.includes('Test Document'))
-    expect(docButton).toHaveClass('bg-blue-50', 'border-blue-300')
+    const docButton = buttons.find(b => b.textContent.includes('Test Document'))
+    expect(docButton).toHaveClass('bg-accent-subtle', 'border-accent/40')
   })
 
   it('renders document content when selected', () => {
@@ -141,13 +140,19 @@ describe('DocumentsTab', () => {
       />,
     )
 
-    expect(screen.getByRole('heading', { level: 2, name: 'Checkout prototype (v3)' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Checkout prototype \(v3\)/ })).toBeInTheDocument()
-    expect(screen.queryByTitle('Edit document')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /download options/i })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /open in new tab/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /download \.html/i })).toBeInTheDocument()
-    expect(screen.getByTitle('Delete document')).toBeInTheDocument()
+    const shown = (element: HTMLElement | null) => element !== null
+    expect({
+      heading: shown(screen.queryByRole('heading', { level: 2, name: 'Checkout prototype (v3)' })),
+      listEntry: shown(screen.queryByRole('button', { name: /Checkout prototype \(v3\)/ })),
+      edit: shown(screen.queryByTitle('Edit document')),
+      downloadMenu: shown(screen.queryByRole('button', { name: /download options/i })),
+      openInNewTab: shown(screen.queryByRole('button', { name: /open in new tab/i })),
+      downloadHtml: shown(screen.queryByRole('button', { name: /download \.html/i })),
+      delete: shown(screen.queryByTitle('Delete document')),
+    }).toStrictEqual({
+      heading: true, listEntry: true, edit: false, downloadMenu: false,
+      openInNewTab: true, downloadHtml: true, delete: true,
+    })
     expect(onEditDoc).not.toHaveBeenCalled()
   })
 
@@ -174,5 +179,45 @@ describe('DocumentsTab', () => {
     expect(screen.getByRole('button', { name: /download \.json/i })).toBeInTheDocument()
     expect(screen.queryByTitle('Edit document')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /download options/i })).not.toBeInTheDocument()
+  })
+
+  // A viewer member reads and exports documents; create / edit / delete would
+  // all be refused by the project gate, so none of them is offered.
+  describe('for a viewer (project.access.can_edit false)', () => {
+    const viewerProject: Project = { ...mockProject, access: VIEWER_ACCESS }
+
+    it('offers no New Document button', () => {
+      renderWithRouter(<DocumentsTab {...defaultProps} project={viewerProject} />)
+      expect(screen.queryByRole('button', { name: /New Document/i })).not.toBeInTheDocument()
+    })
+
+    it('shows the selected document with export but without Edit or Delete', () => {
+      renderWithRouter(<DocumentsTab {...defaultProps} project={viewerProject} documents={[mockDoc]} selectedDoc={mockDoc} />)
+      expect(screen.getByRole('heading', { name: 'Test Document' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /download options/i })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /Edit document/i })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /Delete document/i })).not.toBeInTheDocument()
+    })
+
+    it('shows a prototype preview without the revise-with-feedback control', () => {
+      const prototype: ProjectDocument = {
+        ...mockDoc,
+        document_id: 'proto-1',
+        document_type: 'prototype',
+        prototype_format: 'html',
+        content: '<!doctype html><html><body>hi</body></html>',
+      }
+      renderWithRouter(<DocumentsTab {...defaultProps} project={viewerProject} documents={[prototype]} selectedDoc={prototype} />)
+      expect(screen.queryByRole('button', { name: /feedback/i })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /Delete document/i })).not.toBeInTheDocument()
+    })
+  })
+
+  it('keeps Edit and Delete for an editor (explicit can_edit true)', () => {
+    const editorProject: Project = { ...mockProject, access: EDITOR_ACCESS }
+    renderWithRouter(<DocumentsTab {...defaultProps} project={editorProject} documents={[mockDoc]} selectedDoc={mockDoc} />)
+    expect(screen.getByRole('button', { name: /New Document/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Edit document/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Delete document/i })).toBeInTheDocument()
   })
 })

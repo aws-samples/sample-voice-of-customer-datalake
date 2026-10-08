@@ -2,15 +2,43 @@
  * Form templates for common CX research types
  */
 import { Gauge, Star, MessageSquare, ClipboardList, ThumbsUp, FileText } from 'lucide-react'
-import type { FeedbackForm } from '../../api/client'
+import type { FeedbackForm } from '../../api/types'
+import { KIRO_LIGHT_HEX } from '../../theme/printPalette'
 
 export type FormTemplate = {
   id: string
   name: string
   description: string
   icon: React.ElementType
-  color: string
   config: Omit<FeedbackForm, 'form_id' | 'created_at' | 'updated_at'>
+}
+
+type TemplateConfig = FormTemplate['config']
+
+/** The per-template copy: everything a template says that its siblings do not. */
+type TemplateCopy = Omit<
+  TemplateConfig,
+  'theme' | 'collect_email' | 'collect_name' | 'custom_fields' | 'category' | 'subcategory'
+>
+
+/**
+ * Assemble a template config from its copy plus the two theme values that vary
+ * (accent colour and corner radius). Every other field is identical across the
+ * built-in templates. Returns a fresh object each call so no two templates share
+ * a `custom_fields` array.
+ */
+function templateConfig(copy: TemplateCopy, primaryColor: string, borderRadius: string): TemplateConfig {
+  return {
+    ...copy,
+    // Kiro Light palette (E2E F6). Each primary keeps a white label at AA
+    // (≥ 4.5:1); the customer can still set any colour in the editor.
+    theme: { primary_color: primaryColor, background_color: KIRO_LIGHT_HEX.bg, text_color: KIRO_LIGHT_HEX.textStrong, border_radius: borderRadius },
+    collect_email: false,
+    collect_name: false,
+    custom_fields: [],
+    category: '',
+    subcategory: '',
+  }
 }
 
 export const formTemplates: FormTemplate[] = [
@@ -19,8 +47,7 @@ export const formTemplates: FormTemplate[] = [
     name: 'NPS Survey',
     description: 'Net Promoter Score - measure customer loyalty with the classic 0-10 scale',
     icon: Gauge,
-    color: 'bg-purple-500',
-    config: {
+    config: templateConfig({
       name: 'NPS Survey',
       enabled: false,
       title: 'How likely are you to recommend us?',
@@ -32,21 +59,14 @@ export const formTemplates: FormTemplate[] = [
       rating_max: 10,
       submit_button_text: 'Submit',
       success_message: 'Thank you for your feedback! Your response helps us improve.',
-      theme: { primary_color: '#8B5CF6', background_color: '#FFFFFF', text_color: '#1F2937', border_radius: '12px' },
-      collect_email: false,
-      collect_name: false,
-      custom_fields: [],
-      category: '',
-      subcategory: '',
-    }
+    }, KIRO_LIGHT_HEX.accent, '12px'),
   },
   {
     id: 'csat',
     name: 'CSAT Survey',
     description: 'Customer Satisfaction - quick satisfaction rating after interactions',
     icon: ThumbsUp,
-    color: 'bg-green-500',
-    config: {
+    config: templateConfig({
       name: 'CSAT Survey',
       enabled: false,
       title: 'How satisfied are you?',
@@ -58,21 +78,14 @@ export const formTemplates: FormTemplate[] = [
       rating_max: 5,
       submit_button_text: 'Submit Feedback',
       success_message: 'Thanks for rating your experience!',
-      theme: { primary_color: '#22C55E', background_color: '#FFFFFF', text_color: '#1F2937', border_radius: '8px' },
-      collect_email: false,
-      collect_name: false,
-      custom_fields: [],
-      category: '',
-      subcategory: '',
-    }
+    }, KIRO_LIGHT_HEX.ok, '8px'),
   },
   {
     id: 'product-feedback',
     name: 'Product Feedback',
     description: 'Collect detailed product feedback with star ratings',
     icon: Star,
-    color: 'bg-yellow-500',
-    config: {
+    config: templateConfig({
       name: 'Product Feedback',
       enabled: false,
       title: 'Share Your Product Feedback',
@@ -84,21 +97,14 @@ export const formTemplates: FormTemplate[] = [
       rating_max: 5,
       submit_button_text: 'Submit Feedback',
       success_message: 'Thank you! Your feedback helps us build better products.',
-      theme: { primary_color: '#EAB308', background_color: '#FFFFFF', text_color: '#1F2937', border_radius: '8px' },
-      collect_email: false,
-      collect_name: false,
-      custom_fields: [],
-      category: '',
-      subcategory: '',
-    }
+    }, KIRO_LIGHT_HEX.warn, '8px'),
   },
   {
     id: 'general-feedback',
     name: 'General Feedback',
     description: 'Open-ended feedback form for any purpose',
     icon: MessageSquare,
-    color: 'bg-blue-500',
-    config: {
+    config: templateConfig({
       name: 'General Feedback',
       enabled: false,
       title: 'We\'d Love Your Feedback',
@@ -110,21 +116,14 @@ export const formTemplates: FormTemplate[] = [
       rating_max: 5,
       submit_button_text: 'Send Feedback',
       success_message: 'Thank you for sharing your thoughts with us!',
-      theme: { primary_color: '#3B82F6', background_color: '#FFFFFF', text_color: '#1F2937', border_radius: '8px' },
-      collect_email: false,
-      collect_name: false,
-      custom_fields: [],
-      category: '',
-      subcategory: '',
-    }
+    }, KIRO_LIGHT_HEX.aim, '8px'),
   },
   {
     id: 'experience-survey',
     name: 'Experience Survey',
     description: 'Multi-question survey about customer experience',
     icon: ClipboardList,
-    color: 'bg-indigo-500',
-    config: {
+    config: templateConfig({
       name: 'Experience Survey',
       enabled: false,
       title: 'Tell Us About Your Experience',
@@ -136,21 +135,14 @@ export const formTemplates: FormTemplate[] = [
       rating_max: 5,
       submit_button_text: 'Complete Survey',
       success_message: 'Survey completed! Thank you for your valuable input.',
-      theme: { primary_color: '#6366F1', background_color: '#FFFFFF', text_color: '#1F2937', border_radius: '10px' },
-      collect_email: false,
-      collect_name: false,
-      custom_fields: [],
-      category: '',
-      subcategory: '',
-    }
+    }, KIRO_LIGHT_HEX.info, '10px'),
   },
   {
     id: 'blank',
     name: 'Blank Form',
     description: 'Start from scratch with a blank template',
     icon: FileText,
-    color: 'bg-gray-500',
-    config: {
+    config: templateConfig({
       name: 'New Feedback Form',
       enabled: false,
       title: 'Share Your Feedback',
@@ -162,13 +154,7 @@ export const formTemplates: FormTemplate[] = [
       rating_max: 5,
       submit_button_text: 'Submit Feedback',
       success_message: 'Thank you for your feedback!',
-      theme: { primary_color: '#3B82F6', background_color: '#FFFFFF', text_color: '#1F2937', border_radius: '8px' },
-      collect_email: false,
-      collect_name: false,
-      custom_fields: [],
-      category: '',
-      subcategory: '',
-    }
+    }, KIRO_LIGHT_HEX.accent, '8px'),
   },
 ]
 

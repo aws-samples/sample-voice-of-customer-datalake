@@ -20,7 +20,76 @@
     "saved": "Categorías guardadas correctamente",
     "deleteTitle": "Eliminar categoría",
     "deleteMessage": "¿Seguro que quieres eliminar esta categoría y todas sus subcategorías? Esta acción no se puede deshacer.",
-    "deleteConfirm": "Eliminar"
+    "deleteConfirm": "Eliminar",
+    "expandLabel": "Expandir {{name}}",
+    "collapseLabel": "Contraer {{name}}",
+    "renameHint": "Haz clic para renombrar",
+    "renameLabel": "Renombrar {{name}}",
+    "deleteCategoryLabel": "Eliminar {{name}}",
+    "deleteSubcategoryLabel": "Eliminar subcategoría {{name}}",
+    "addSubcategoryLabel": "Añadir subcategoría",
+    "companyLabel": "Descripción de la empresa",
+    "listHelp": "Cada categoría tiene un identificador que se guarda en cada reseña, una descripción, el producto al que pertenece y sus responsables de producto. Los responsables ven automáticamente los comentarios de sus categorías y son quienes actúan sobre ellos.",
+    "noProduct": "Sin producto",
+    "saveError": "No se pudieron guardar las categorías. Revisa los nombres y los límites, y que seas administrador.",
+    "details": {
+      "productLabel": "Producto",
+      "productPlaceholder": "p. ej., App móvil",
+      "productHint": "El producto o área al que pertenece esta categoría.",
+      "ownersLabel": "Responsables de producto",
+      "removeOwner": "Quitar a {{name}}",
+      "ownersLimit": "Máximo {{max}} responsables",
+      "addOwner": "Añadir un responsable…",
+      "ownersUnavailable": "No se pudo cargar la lista de usuarios, así que ahora no se pueden añadir responsables.",
+      "ownersHint": "Los responsables ven automáticamente los comentarios de esta categoría."
+    },
+    "reprocess": {
+      "title": "Reprocesar los comentarios existentes",
+      "description": "Tras cambiar las categorías, vuelve a categorizar las reseñas ya guardadas. Las reseñas se actualizan en su sitio: no se elimina nada.",
+      "modeLabel": "Modo",
+      "modes": {
+        "processed": {
+          "title": "Recategorizar reseñas procesadas",
+          "description": "Clasifica el texto guardado (traducido) con las categorías actuales. Solo cambian la categoría y la subcategoría."
+        },
+        "raw": {
+          "title": "Reprocesar desde los datos sin procesar",
+          "description": "Vuelve a ejecutar el enriquecimiento completo (sentimiento, categoría, persona, análisis del problema) a partir de los datos originales."
+        },
+        "dimensions": {
+          "title": "Volver a deducir dimensiones",
+          "description": "Vuelve a ejecutar el modelo para las dimensiones que puede deducir. Nunca cambia los valores fijados por la fuente, su perfil o una persona."
+        }
+      },
+      "status": {
+        "queued": "En cola",
+        "running": "En curso",
+        "completed": "Completado",
+        "failed": "Error",
+        "cancelled": "Cancelado"
+      },
+      "counters": {
+        "scanned": "Revisadas",
+        "updated": "Actualizadas",
+        "unchanged": "Sin cambios",
+        "skipped_manual": "Manuales, conservadas",
+        "failed": "Con error"
+      },
+      "allTime": "Todo el periodo",
+      "lastNDays_one": "Último {{count}} día",
+      "lastNDays_other": "Últimos {{count}} días",
+      "cancel": "Cancelar trabajo",
+      "alreadyRunning": "Ya hay un trabajo de reprocesamiento en curso. Espera a que termine o cancélalo primero.",
+      "stoppedAtCeiling": "Se detuvo en el límite de {{max}} opiniones por trabajo para acotar el coste del modelo: el resto no se reprocesó. Reduce el periodo para cubrirlas.",
+      "startError": "No se pudo iniciar el trabajo de reprocesamiento.",
+      "daysLabel": "Periodo (días)",
+      "includeManual": "Sobrescribir también las correcciones manuales",
+      "daysHint": "De 1 a {{max}} días, o 0 para todo el periodo. Las correcciones manuales se conservan salvo que elijas lo contrario.",
+      "costNote": "Coste: una llamada al modelo por cada reseña del periodo. Una ejecución de todo el periodo sobre un data lake grande puede tardar horas.",
+      "start": "Iniciar reprocesamiento",
+      "confirmTitle": "¿Reprocesar los comentarios existentes?",
+      "confirmMessage": "{{mode}} para {{window}}. Se hace una llamada al modelo por cada reseña de ese periodo. Las reseñas se actualizan en su sitio; no se elimina nada."
+    }
   },
   "dataSourceWizard": {
     "all": "Todos",
@@ -94,14 +163,16 @@
     "downloadMarkdown": "Descargar como Markdown",
     "downloadOptions": "Opciones de descarga",
     "downloadPDF": "Descargar como PDF",
-    "downloadTXT": "Descargar como TXT",
-    "kiroPromptTip": "Consejo: Configura el prompt de Kiro en la pestaña Export / MCP"
+    "downloadTXT": "Descargar como TXT"
   },
   "errorBoundary": {
     "description": "Esta página encontró un error inesperado. Puedes recargarla o volver al inicio; el resto de la aplicación no se ve afectado.",
     "goHome": "Ir al inicio",
     "reload": "Recargar página",
-    "title": "Algo salió mal"
+    "title": "Algo salió mal",
+    "notFoundTitle": "Página no encontrada",
+    "notFoundDescription": "Esta dirección no corresponde a ninguna página. Puede que se haya movido o que el enlace esté mal escrito.",
+    "goBack": "Volver"
   },
   "feedbackCard": {
     "copyText": "Copiar texto",
@@ -109,13 +180,9 @@
     "issue": "Problema: {{summary}}",
     "rootCause": "Causa raíz: {{cause}}",
     "urgent": "Urgente",
-    "webScraper": "Recolector web"
-  },
-  "feedbackCarousel": {
-    "issue": "Problema: {{summary}}",
-    "urgent": "Urgente",
-    "viewDetails": "Ver detalles",
-    "webScraper": "Recolector web"
+    "webScraper": "Recolector web",
+    "openOriginal": "Abrir reseña original",
+    "reviewDateHint": "Fecha en que se escribió la reseña"
   },
   "formQrCode": {
     "accessibleName": "Código QR del formulario de opinión {{formName}}",
@@ -159,9 +226,11 @@
     "refresh": "Actualizar",
     "sourcePlaceholder": "Nombre de la fuente...",
     "supportedFormats": "Compatible con CSV, JSON, JSONL",
+    "unknownError": "Error desconocido",
     "unsupportedFile": "Tipo de archivo no compatible: {{filename}}. Solo se admiten archivos CSV, JSON y JSONL.",
     "uploaded": "{{filename}} cargado",
     "uploadFailed": "Error al cargar {{filename}}: {{error}}",
+    "uploadUrlFailed": "No se pudo obtener la URL de carga",
     "uploading": "Cargando {{count}} archivo(s)...",
     "uploading_one": "Cargando {{count}} archivo(s)...",
     "uploading_many": "Cargando {{count}} archivo(s)...",
@@ -171,7 +240,8 @@
   "socialFeed": {
     "all": "Todos",
     "noFeedback": "No se encontró retroalimentación para este período",
-    "view": "Ver"
+    "view": "Ver",
+    "filterLabel": "Filtrar por fuente"
   },
   "userAdmin": {
     "active": "Activo",
@@ -200,7 +270,6 @@
     "firstNameLabel": "Nombre",
     "lastNameLabel": "Apellido",
     "loadError": "Error al cargar usuarios. Asegúrate de tener acceso de administrador.",
-    "nameLabel": "Nombre (opcional)",
     "noUsers": "No se encontraron usuarios. Añade tu primer usuario arriba.",
     "passwordResetSent": "Correo de restablecimiento de contraseña enviado",
     "pendingStatus": "Pendiente",
@@ -218,41 +287,223 @@
     "userDeleted": "Usuario eliminado",
     "userDisabled": "Usuario desactivado",
     "userEnabled": "Usuario activado",
-    "userManagement": "Gestión de Usuarios",
     "userRole": "Usuario",
     "usersCount": "({{count}} usuarios)",
     "usersCount_one": "({{count}} usuarios)",
     "usersCount_many": "({{count}} usuarios)",
     "usersCount_other": "({{count}} usuarios)",
-    "userUpdated": "Usuario actualizado"
+    "roleFor": "Rol de {{email}}",
+    "categoryAccess": {
+      "title": "Acceso por categoría",
+      "noCategories": "Todavía no hay categorías configuradas.",
+      "adminNote": "Este usuario es administrador y siempre ve todas las categorías, se guarde aquí lo que se guarde.",
+      "all": "Todas las categorías",
+      "selected": "Solo las categorías seleccionadas",
+      "ownersNote": "Los responsables de producto siempre ven sus propias categorías, aunque no estén seleccionadas aquí.",
+      "saveError": "No se pudo guardar el acceso por categoría.",
+      "loadError": "No se pudo cargar el acceso por categoría.",
+      "saved": "Acceso por categoría actualizado para {{email}}"
+    },
+    "flags": {
+      "title": "Marcas de memoria y propiedad",
+      "description": "Los revisores de memoria curan la memoria de la empresa. El propietario de respaldo (un administrador) recibe los proyectos creados por agentes cuya categoría no tiene propietario.",
+      "fallbackOwner": "Propietario de respaldo",
+      "memoryReviewer": "Revisor de memoria",
+      "fallbackOwnerFor": "Propietario de respaldo: {{user}}",
+      "memoryReviewerFor": "Revisor de memoria: {{user}}",
+      "fallbackAdminOnly": "Solo un administrador puede ser propietario de respaldo.",
+      "saveFailed": "No se pudo actualizar la marca. Inténtalo de nuevo."
+    },
+    "sourceAccess": {
+      "title": "Fuentes",
+      "default": "Todas las fuentes no restringidas (predeterminado)",
+      "all": "Todas las fuentes, incluidas las restringidas",
+      "selected": "Solo las fuentes seleccionadas",
+      "restricted": "Restringida",
+      "noProfiles": "Aún no hay perfiles de fuente (Administración → Fuentes y privacidad)."
+    }
   },
-  "userProfile": {
-    "administrator": "Administrador",
-    "allFieldsRequired": "Todos los campos son obligatorios",
-    "changePassword": "Cambiar Contraseña",
-    "changing": "Cambiando...",
-    "confirmNewPassword": "Confirmar Nueva Contraseña",
-    "confirmPasswordPlaceholder": "Confirmar nueva contraseña",
-    "currentPassword": "Contraseña Actual",
-    "currentPasswordPlaceholder": "Ingrese la contraseña actual",
-    "email": "Correo Electrónico",
-    "failedToChange": "Error al cambiar la contraseña",
-    "groups": "Grupos",
-    "incorrectPassword": "La contraseña actual es incorrecta",
-    "language": "Idioma",
-    "myProfile": "Mi Perfil",
-    "name": "Nombre",
-    "newPassword": "Nueva Contraseña",
-    "newPasswordPlaceholder": "Ingrese la nueva contraseña",
-    "passwordChanged": "¡Contraseña cambiada exitosamente!",
-    "passwordIntro": "Ingrese su contraseña actual y elija una nueva",
-    "passwordRequirements": "La contraseña debe tener al menos 8 caracteres con mayúsculas, minúsculas y números",
-    "passwordTooShort": "La contraseña debe tener al menos 8 caracteres",
-    "passwordsMismatch": "Las nuevas contraseñas no coinciden",
-    "profile": "Perfil",
-    "role": "Rol",
-    "showPasswords": "Mostrar contraseñas",
-    "user": "Usuario",
-    "username": "Nombre de Usuario"
+  "confirmModal": {
+    "delete": "Eliminar"
+  },
+  "pageLoader": {
+    "loading": "Cargando página…"
+  },
+  "ratingStars": {
+    "label": "{{rating}} de {{max}} estrellas"
+  },
+  "categoryChange": {
+    "previous": "Antes: {{category}}",
+    "manual": "Cambiada manualmente",
+    "manualBy": "Cambiada por {{user}}",
+    "loading": "Cargando categorías",
+    "category": "Categoría",
+    "choose": "Elige una categoría",
+    "subcategory": "Subcategoría",
+    "noSubcategory": "Ninguna",
+    "cancel": "Cancelar",
+    "save": "Guardar categoría",
+    "open": "Cambiar categoría",
+    "errors": {
+      "invalid": "Esa categoría ya no existe. Actualiza y elige otra.",
+      "notFound": "Esta reseña no está disponible para ti, o la categoría está fuera de tu acceso.",
+      "conflict": "Alguien cambió esta reseña al mismo tiempo. Actualiza e inténtalo de nuevo.",
+      "generic": "No se pudo cambiar la categoría."
+    }
+  },
+  "unsavedChanges": {
+    "title": "Cambios sin guardar",
+    "message": "Tienes cambios sin guardar. ¿Guardarlos antes de salir o descartarlos?",
+    "save": "Guardar",
+    "discard": "Descartar",
+    "cancel": "Cancelar",
+    "saveFailed": "No se pudo guardar. Tus cambios siguen aquí; inténtalo de nuevo o cancela.",
+    "cannotSave": "Corrige los problemas señalados antes de guardar o descarta los cambios."
+  },
+  "dimensionFields": {
+    "tagsLabel": "Etiquetas",
+    "tagsPlaceholder": "vip, facturación; reembolso",
+    "tagsHint": "Separe las etiquetas con comas o punto y coma (hasta 20).",
+    "tagsInvalid": "No permitido (sin \"#\", \",\" ni \":\", 64 caracteres como máximo): {{tags}}",
+    "tagsTooMany": "Como máximo {{max}} etiquetas.",
+    "sourceLabel": "Fuente",
+    "manualImport": "Importación manual (predeterminada)",
+    "restrictedOption": "{{name}} (restringida)",
+    "sourceHint": "Determina la política de datos personales, la retención, la visibilidad y las dimensiones predeterminadas de estas filas.",
+    "sourceRestrictedHint": "Restringida: solo los administradores y las personas con acceso a esta fuente verán estas filas.",
+    "defaultsTitle": "Dimensiones y etiquetas",
+    "defaultsHint": "Cada opinión de aquí lleva estos valores; sus propios valores prevalecen en cada dimensión.",
+    "noDimensions": "Aún no hay dimensiones (Administración → Dimensiones).",
+    "noDefault": "Sin valor predeterminado"
+  },
+  "draftSaveBar": {
+    "save": "Guardar",
+    "discard": "Descartar cambios",
+    "saving": "Guardando…",
+    "saved": "Guardado",
+    "saveError": "No se guardó: {{reason}}",
+    "remove": "Quitar"
+  },
+  "dimensionsManager": {
+    "newValue": "valor nuevo",
+    "valueNameLabel": "Nombre almacenado de {{name}}",
+    "valueNamePlaceholder": "nombre_guardado",
+    "valueLabelLabel": "Etiqueta visible de {{name}}",
+    "valueLabelPlaceholder": "Etiqueta visible (opcional)",
+    "valueParentLabel": "Valor de {{parent}} al que pertenece {{name}}",
+    "anyParentValue": "Bajo cualquier valor superior",
+    "removeValue": "Quitar el valor {{name}}",
+    "parentLabel": "Dimensión superior",
+    "noParent": "Ninguna (nivel superior)",
+    "parentOfChildren": "Es superior de {{children}}, así que no puede tener una superior.",
+    "parentHint": "Una dimensión hija limita sus valores según el valor de la superior (solo un nivel).",
+    "newDimension": "Dimensión nueva",
+    "removeDimension": "Quitar la dimensión {{name}}",
+    "keyLabel": "Clave (se guarda en las opiniones)",
+    "labelLabel": "Etiqueta",
+    "labelPlaceholder": "Producto",
+    "descriptionLabel": "Descripción (se muestra al modelo)",
+    "inferLabel": "Permitir que el modelo la deduzca",
+    "inferHint": "Desactivado: solo la fija la fuente, su perfil o una persona.",
+    "valuesTitle": "Valores ({{n}})",
+    "addValueLabel": "Valor nuevo para {{name}}",
+    "addValue": "Añadir valor",
+    "emptyTitle": "Aún no hay dimensiones",
+    "emptyHint": "Añada una para etiquetar opiniones por producto, módulo, tipo de usuario u otro criterio.",
+    "addDimension": "Añadir dimensión (hasta {{max}})",
+    "loadError": "No se pudieron cargar las dimensiones.",
+    "problems": {
+      "tooMany": "Como máximo {{max}} dimensiones.",
+      "keyFormat": "Clave \"{{key}}\": use minúsculas, dígitos y \"_\", empezando por una letra (hasta 32).",
+      "keyReserved": "\"{{key}}\" está reservada; elija otra clave.",
+      "keyDuplicate": "Dos dimensiones usan la clave \"{{key}}\".",
+      "labelLength": "La etiqueta de \"{{key}}\" supera los {{max}} caracteres.",
+      "descriptionLength": "La descripción de \"{{key}}\" supera los {{max}} caracteres.",
+      "parentInvalid": "\"{{key}}\" debe tener como superior otra dimensión de nivel superior.",
+      "parentValueMissing": "El valor \"{{value}}\" de \"{{key}}\" pertenece a un valor superior que ya no existe.",
+      "tooManyValues": "\"{{key}}\" tiene más de {{max}} valores.",
+      "valueFormat": "Valor \"{{value}}\" de \"{{key}}\": 1-64 caracteres, sin espacios, \"#\", \",\" ni \":\".",
+      "valueDuplicate": "\"{{key}}\" incluye el valor \"{{value}}\" dos veces."
+    }
+  },
+  "sourcesManager": {
+    "keepForever": "Conservar las opiniones para siempre",
+    "retentionLabel": "Eliminar opiniones con más de (días)",
+    "retentionHint": "{{min}}-{{max}} días. Una tarea diaria elimina las opiniones más antiguas de esta fuente y sus archivos sin procesar.",
+    "removeProfile": "Quitar el perfil de {{name}}",
+    "labelLabel": "Etiqueta",
+    "piiLabel": "Datos personales",
+    "pii": {
+      "allow": "Conservar tal cual",
+      "allowHint": "El texto, el autor y el título se guardan como los envió la fuente.",
+      "redact": "Ocultar",
+      "redactHint": "Los correos, teléfonos, IBAN, números de tarjeta y direcciones IP se sustituyen antes de guardar; se descarta el autor; no se conserva copia sin procesar.",
+      "summary_only": "Solo resumen",
+      "summaryOnlyHint": "Solo se conservan los campos derivados (resumen, categoría, sentimiento, dimensiones); el texto original no se guarda."
+    },
+    "restrictedLabel": "Restringida",
+    "restrictedHint": "Solo los administradores y los usuarios con acceso a esta fuente en Usuarios → acceso ven sus opiniones.",
+    "defaultsTitle": "Valores de dimensión para cada opinión de esta fuente",
+    "noDefault": "Sin valor predeterminado",
+    "empty": "Aún no hay perfiles: todas las fuentes lo conservan todo, para siempre y visible para todos.",
+    "loadError": "No se pudieron cargar los perfiles de fuente.",
+    "addLabel": "Añadir un perfil de fuente",
+    "add": "Añadir",
+    "addHint": "Elija un plugin, feedback_form o manual_import, o escriba un id de fuente de importación como sales_csv.",
+    "scraperHint": "Las reseñas de un web scraper llevan el nombre del scraper como id de fuente, así que solo un scraper con un nombre en este formato (minúsculas, dígitos, _ o -, por ejemplo trustpilot_reviews) puede tener un perfil.",
+    "problems": {
+      "tooMany": "Como máximo {{max}} perfiles de fuente.",
+      "retention": "{{name}}: la retención debe ser de {{min}}-{{max}} días, o conservar para siempre.",
+      "tags": "{{name}}: corrija primero las etiquetas.",
+      "idFormat": "Use minúsculas, dígitos, \"_\" o \"-\" (hasta 48).",
+      "idDuplicate": "Esa fuente ya tiene un perfil."
+    }
+  },
+  "erasure": {
+    "title": "Borrar las opiniones de una persona",
+    "description": "Elimina cada opinión coincidente y su archivo sin procesar. No se puede deshacer. Solo se guarda un hash del valor.",
+    "fieldLabel": "Coincidir por",
+    "fields": {
+      "author": "Autor",
+      "source_id": "Id de origen",
+      "csv_row_id": "Id de fila CSV",
+      "email": "Correo electrónico"
+    },
+    "valueLabel": "Valor",
+    "sourceLabel": "Dentro de la fuente",
+    "allSources": "Todas las fuentes",
+    "sourceRequired": "Un id solo es único dentro de su fuente: elija la fuente.",
+    "start": "Borrar",
+    "startError": "No se inició el borrado: {{reason}}",
+    "jobsTitle": "Borrados recientes",
+    "noJobs": "Ninguno todavía.",
+    "counts": "{{items}} opiniones y {{objects}} objetos sin procesar eliminados",
+    "status": {
+      "queued": "En cola",
+      "running": "En curso",
+      "completed": "Completado",
+      "failed": "Error"
+    },
+    "confirmTitle": "¿Borrar las opiniones de esta persona?",
+    "confirmMessage": "Se eliminarán de forma permanente todas las opiniones cuyo campo {{field}} coincida con el valor ({{source}}) y su archivo sin procesar."
+  },
+  "dimensionsEdit": {
+    "errors": {
+      "invalid": "Ese valor de dimensión o esa etiqueta no está permitido.",
+      "notFound": "Esta opinión ya no está disponible.",
+      "conflict": "Otra persona cambió esta opinión a la vez. Recargue e inténtelo de nuevo.",
+      "generic": "No se pudo guardar el cambio."
+    }
+  },
+  "feedbackDimensions": {
+    "edit": "Editar dimensiones",
+    "none": "Ninguno",
+    "cancel": "Cancelar",
+    "save": "Guardar",
+    "setByHand": "Fijado a mano",
+    "redacted": "Datos ocultos",
+    "redactedHint": "Los datos personales de esta opinión se sustituyeron antes de guardarla.",
+    "summaryOnly": "Solo resumen",
+    "summaryOnlyHint": "Su fuente solo conserva campos derivados; el texto original no se guardó."
   }
 }

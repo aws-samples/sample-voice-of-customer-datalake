@@ -7,12 +7,7 @@
     "summary_many": "{{count}} categorias • {{total}} itens • Últimos {{days}} dias",
     "summary_other": "{{count}} categorias • {{total}} itens • Últimos {{days}} dias"
   },
-  "deleteConfirm": {
-    "deleteFeedback": "Deletar Feedback",
-    "deleteS3File": "Deletar Arquivo S3",
-    "message": "Tem certeza? Isso não pode ser desfeito."
-  },
-  "description": "Procure, edite e sincronize dados brutos do S3 e registros processados do DynamoDB",
+  "description": "Navegue pelos dados brutos do S3 e pelos registros processados do DynamoDB. Nada aqui é excluído, e os arquivos brutos armazenados são somente leitura.",
   "editModal": {
     "cancel": "Cancelar",
     "close": "Fechar",
@@ -25,36 +20,42 @@
     "key": "Chave",
     "save": "Salvar",
     "syncToDynamo": "Também atualizar DynamoDB",
-    "syncToS3": "Também atualizar S3",
     "type": "Tipo",
     "viewFeedback": "Visualizar Feedback",
-    "viewS3File": "Visualizar Arquivo S3"
+    "viewS3File": "Visualizar Arquivo S3",
+    "content": "Conteúdo do arquivo"
   },
   "feedback": {
     "category": "Categoria: {{category}}",
-    "delete": "Deletar",
     "edit": "Editar",
     "errorLoading": "Erro ao carregar feedback",
     "noFeedback": "Nenhum feedback encontrado",
     "showingRecords": "Mostrando {{filtered}} de {{total}} registros",
     "urgent": "Urgente",
-    "view": "Visualizar"
+    "view": "Visualizar",
+    "noFeedbackHint": "Tente outra fonte ou um período maior.",
+    "showDetails": "Mostrar detalhes",
+    "hideDetails": "Ocultar detalhes"
   },
   "filters": {
     "allSources": "Todas as Fontes",
-    "searchPlaceholder": "Pesquisar..."
+    "searchPlaceholder": "Pesquisar...",
+    "bucket": "Bucket do S3",
+    "source": "Fonte",
+    "search": "Pesquisar feedback"
   },
   "newFile": "Novo Arquivo",
   "notConfigured": "Configure o endpoint da API em Configurações para explorar dados",
   "refresh": "Atualizar",
   "s3Browser": {
     "back": "Voltar",
-    "delete": "Deletar",
     "download": "Baixar",
     "edit": "Editar",
     "errorLoading": "Erro ao carregar arquivos",
     "noFiles": "Nenhum arquivo encontrado",
-    "view": "Visualizar"
+    "view": "Visualizar",
+    "path": "Caminho da pasta",
+    "noFilesHint": "Esta pasta está vazia. Crie um arquivo aqui ou ingira dados em Fontes de dados."
   },
   "tabs": {
     "categories": "Categorias",
@@ -62,7 +63,8 @@
     "feedbackShort": "Comentários",
     "processedFeedback": "Feedback Processado",
     "s3RawData": "Dados Brutos S3",
-    "s3Short": "S3"
+    "s3Short": "S3",
+    "label": "Visualização de dados"
   },
   "title": "Explorador de Dados"
 }

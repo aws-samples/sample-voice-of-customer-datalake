@@ -2,7 +2,7 @@ import {
   describe, expect, it,
 } from 'vitest'
 import {
-  getAppIdentifier, getFrequencyLabel,
+  countDefaultedDates, getAppIdentifier, getFrequencyLabel,
 } from './scraper-helpers'
 
 describe('getAppIdentifier', () => {
@@ -48,5 +48,17 @@ describe('getFrequencyLabel', () => {
 
   it('returns Daily for values above 1440', () => {
     expect(getFrequencyLabel(2880)).toBe('Daily')
+  })
+})
+
+describe('countDefaultedDates', () => {
+  it('counts only importable reviews whose date is the import-date default', () => {
+    expect(countDefaultedDates([
+      { text: 'a', date: '2026-10-06', date_defaulted: true },
+      { text: 'b', date: '2026-10-01', date_defaulted: false },
+      { text: 'c', date: '2026-10-01' },
+      { text: '  ', date: '2026-10-06', date_defaulted: true },
+      { text: 'd', date: null, date_defaulted: true },
+    ])).toBe(1)
   })
 })

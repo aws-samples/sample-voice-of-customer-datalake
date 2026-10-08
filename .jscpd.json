@@ -1,0 +1,53 @@
+{
+  "format": [
+    "python",
+    "typescript",
+    "tsx",
+    "javascript"
+  ],
+  "mode": "weak",
+  "crossFormats": [
+    "typescript,tsx"
+  ],
+  "minTokens": 40,
+  "minLines": 5,
+  "threshold": 0,
+  "gitignore": true,
+  "absolute": false,
+  "reporters": [
+    "console"
+  ],
+  "path": [
+    "scripts",
+    "eslint-rules",
+    "voc-datalake/bin",
+    "voc-datalake/lib",
+    "voc-datalake/scripts",
+    "voc-datalake/lambda",
+    "voc-datalake/plugins",
+    "voc-datalake/frontend/src",
+    "voc-datalake/frontend/scripts"
+  ],
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/coverage/**",
+    "**/__pycache__/**",
+    "**/.venv/**",
+    "**/*.d.ts",
+    "**/cdk.out/**",
+    "**/.stryker-tmp/**",
+    "voc-datalake/lambda/layers/**",
+    "voc-datalake/frontend/src/assistant/contract.ts",
+    "voc-datalake/frontend/src/assistant/approvals/schemas.ts"
+  ],
+  "ignorePattern": [
+    "import\\s+(?:type\\s+)?[\\w$]+(?:\\s*,\\s*\\{[^}]*\\})?\\s+from\\s+['\"][^'\"]+['\"];?",
+    "import\\s+(?:type\\s+)?\\{[^}]*\\}\\s*from\\s+['\"][^'\"]+['\"];?",
+    "import\\s+\\*\\s+as\\s+[\\w$]+\\s+from\\s+['\"][^'\"]+['\"];?",
+    "from\\s+[\\w.]+\\s+import\\s+\\([^)]*\\)",
+    "from\\s+[\\w.]+\\s+import\\s+[^\\n]+",
+    "(?m)^import\\s+[\\w.]+(?:\\s+as\\s+\\w+)?(?:\\s*,\\s*[\\w.]+)*$"
+  ]
+}

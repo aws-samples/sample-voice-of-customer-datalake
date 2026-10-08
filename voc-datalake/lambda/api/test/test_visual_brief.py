@@ -24,37 +24,19 @@ import os
 from unittest.mock import MagicMock, patch
 
 import pytest
+from product_docs_fixtures import product_doc
+from product_report_fixtures import s3_serving
 
 IMAGE_BODY = '## Palette\n`--primary`: #FF00FF\nLayout: desktop top-nav'
 SECOND_IMAGE_BODY = '## Palette\n`--primary`: #00FF88\nLayout: phone shell'
 TEXT_BODY = 'Onboarding takes three steps and the primary colour is #0F62FE.'
 
 
-def _doc(doc_id: str, content_type: str, *, status: str = 'ready',
-         key: str | None = 'set', created_at: str = '2026-08-13T10:00:00+00:00') -> dict:
-    """A product-doc item as DynamoDB stores it. Same shape as
-    test_product_context_injection.py's, so the two files cannot drift on what a
-    record looks like."""
-    ext = {'text/markdown': 'md', 'text/plain': 'txt', 'image/png': 'png',
-           'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp'}[content_type]
-    return {
-        'doc_id': doc_id,
-        'filename': f'{doc_id}.{ext}',
-        'content_type': content_type,
-        'size_bytes': 2048,
-        'status': status,
-        'error': None,
-        'extracted_chars': 100,
-        's3_extracted_key': (
-            f'projects/proj-1/product_docs/extracted/{doc_id}.txt' if key else None
-        ),
-        'created_at': created_at,
-    }
 
 
-SELECTED_IMAGE = _doc('mockup', 'image/png')
-OTHER_IMAGE = _doc('screenshot', 'image/jpeg', created_at='2026-08-13T11:00:00+00:00')
-TEXT_DOC = _doc('notes', 'text/markdown')
+SELECTED_IMAGE = product_doc('mockup', 'image/png')
+OTHER_IMAGE = product_doc('screenshot', 'image/jpeg', created_at='2026-08-13T11:00:00+00:00')
+TEXT_DOC = product_doc('notes', 'text/markdown')
 
 #: Extracted text per S3 KEY, not per doc_id, so a body cannot be attributed to the
 #: wrong document — a lookup by the wrong key raises KeyError instead of silently
@@ -78,11 +60,7 @@ def _brief(docs: list[dict], doc_ids, *, extracted: dict[str, str] | None = None
 
     bodies = EXTRACTED if extracted is None else extracted
     if s3 is None:
-        s3 = MagicMock()
-        # Capitalised kwargs are boto3's own.
-        s3.get_object.side_effect = lambda Bucket, Key: {
-            'Body': MagicMock(read=lambda: bodies[Key].encode('utf-8'))
-        }
+        s3 = s3_serving(bodies)
     with patch.dict(os.environ, {'RAW_DATA_BUCKET': 'test-bucket'}), \
             patch.object(product_context, '_list_doc_items', return_value=list(docs)), \
             patch.object(product_context, '_s3', return_value=s3):
@@ -110,7 +88,7 @@ def _oversubscribed() -> tuple[list[dict], str, list[str]]:
     if either value changes.
     """
     count = _TOTAL_CAP // _PER_DOC_CAP + 1
-    docs = [_doc(f'shot{i}', 'image/png') for i in range(count)]
+    docs = [product_doc(f'shot{i}', 'image/png') for i in range(count)]
     block, used = _brief(
         docs, [d['doc_id'] for d in docs],
         extracted={d['s3_extracted_key']: 'A' * _PER_DOC_CAP for d in docs},
@@ -194,7 +172,7 @@ class TestOnlySelectedImagesAreIncluded:
     def test_every_accepted_image_type_qualifies(self, content_type):
         """All four, from the shared map rather than a retyped list, so a fifth type
         added to shared.image_limits is included here rather than silently dropped."""
-        image = _doc('shot', content_type)
+        image = product_doc('shot', content_type)
         block, used = _brief([image], ['shot'], extracted={
             image['s3_extracted_key']: IMAGE_BODY,
         })
@@ -212,7 +190,7 @@ class TestOnlySelectedImagesAreIncluded:
         pass just as happily on a function that never checked `status` at all — the
         missing-key guard below would carry it, and one of the two could be deleted
         unnoticed."""
-        pending = _doc('mockup', 'image/png', status=status)
+        pending = product_doc('mockup', 'image/png', status=status)
         block, used = _brief([pending], ['mockup'])
 
         assert (block, used) == ('', [])
@@ -227,7 +205,7 @@ class TestOnlySelectedImagesAreIncluded:
         same `('', [])` either way. The outcome is identical; what differs is a
         pointless S3 round trip and a warning that reads like an S3 outage."""
         s3 = MagicMock()
-        keyless = _doc('mockup', 'image/png', key=None)
+        keyless = product_doc('mockup', 'image/png', key=None)
         block, used = _brief([keyless], ['mockup'], s3=s3)
 
         assert (block, used) == ('', [])
@@ -447,7 +425,7 @@ class TestTheBudgetCannotRefuseWhatTheBoundaryAccepted:
 
         bound = product_context.MAX_SELECTED_PRODUCT_DOC_IDS
         per_doc = product_context.MAX_VISUAL_BRIEF_DOC_CHARS
-        docs = [_doc(f'shot{i}', 'image/png') for i in range(bound)]
+        docs = [product_doc(f'shot{i}', 'image/png') for i in range(bound)]
         block, used = _brief(
             docs, [d['doc_id'] for d in docs],
             extracted={d['s3_extracted_key']: 'A' * per_doc for d in docs},
@@ -464,7 +442,7 @@ class TestOneFailureDoesNotTakeTheOthers:
         on a function that returned ('', [])."""
         s3 = MagicMock()
 
-        def _get(Bucket, Key):
+        def _get(Key, **_kwargs):
             if Key == SELECTED_IMAGE['s3_extracted_key']:
                 raise RuntimeError('NoSuchKey')
             return {'Body': MagicMock(read=lambda: EXTRACTED[Key].encode('utf-8'))}

@@ -1,4 +1,12 @@
-"""Every mutating route in `scrapers_handler` is admin-gated.
+"""The gates on `scrapers_handler`'s routes: delete and run are admin-only, save is open.
+
+OWNER DECISION (2026-10-04), which supersedes the "every write is admin-gated"
+history recorded below: `POST /scrapers` (save — create AND update) is open to
+every authenticated user; `DELETE /scrapers/<id>` and `POST /scrapers/<id>/run`
+stay admin-only. The open save is bounded instead (`test_scrapers_save_bounds.py`),
+and a non-admin still cannot set the schedule fields (`TestANonAdminSaveKeepsTheSchedule`
+below). The measurements quoted further down describe the state BEFORE round 1
+gated all three; they are kept because they are why delete and run stay gated.
 
 SCOPE, first, because the module name and the URL prefix do not line up: this file
 covers `scrapers_handler` ONLY. `/scrapers/*` is served by TWO Lambdas — five more
@@ -49,9 +57,14 @@ one secret.
 REVERT MAP — each assertion below names the mutation it catches:
 
   TestANonAdminCannotWriteTheSharedSecret
-    — drops `require_admin` from `save_scraper` or `delete_scraper`. Asserts the
-      403 AND that `put_secret_json` was never called: a 403 with the write
-      already done would satisfy a status-code-only check.
+    — drops `require_admin` from `delete_scraper`. Asserts the 403 AND that
+      `put_secret_json` was never called: a 403 with the write already done would
+      satisfy a status-code-only check. Also pins the opposite for save: re-adding
+      `require_admin` to `save_scraper` fails `test_a_non_admin_save_is_accepted`.
+
+  TestANonAdminSaveKeepsTheSchedule
+    — drops `_apply_schedule_policy` (or makes it trust the caller): a non-admin
+      could then switch a scraper on or make it fetch every 15 minutes.
 
   TestANonAdminCannotTriggerAScraperRun
     — drops `require_admin` from `run_scraper`. Asserts no `lambda:Invoke` and no
@@ -77,11 +90,12 @@ REVERT MAP — each assertion below names the mutation it catches:
       docstring above has to be re-derived rather than left contradicting the code.
 """
 import ast
-import inspect
 import json
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
+from integrations_route_ast_fixtures import plain_calls_in, route_functions, route_paths
 
 
 def _handler_module():
@@ -100,14 +114,23 @@ def _non_admin_event(api_gateway_event, **kwargs):
 # Behavioural half
 # ---------------------------------------------------------------------------
 
-class TestANonAdminCannotWriteTheSharedSecret:
-    """`POST /scrapers` and `DELETE /scrapers/<id>` write the shared secret."""
+def _stored_configs(mock_put) -> list:
+    """The `webscraper_configs` array the one `put_secret_json` call wrote."""
+    (_client, _arn, secrets), _ = mock_put.call_args
+    return json.loads(secrets['webscraper_configs'])
 
+
+class TestANonAdminCannotWriteTheSharedSecret:
+    """`DELETE /scrapers/<id>` writes the shared secret and stays admin-only;
+    `POST /scrapers` writes it too but is open (owner decision)."""
+
+    @patch('scrapers_handler.validate_url', new=MagicMock(return_value=(True, '')))
     @patch('scrapers_handler.put_secret_json')
     @patch('scrapers_handler.secretsmanager')
-    def test_a_non_admin_save_is_refused_and_writes_nothing(
+    def test_a_non_admin_save_is_accepted(
         self, mock_secrets, mock_put, api_gateway_event, lambda_context
     ):
+        """Owner decision: any user may create a scraper. Re-adding the admin gate fails here."""
         mock_secrets.get_secret_value.return_value = {
             'SecretString': json.dumps({'webscraper_configs': '[]'})
         }
@@ -117,12 +140,11 @@ class TestANonAdminCannotWriteTheSharedSecret:
             api_gateway_event,
             method='POST',
             path='/scrapers',
-            body={'scraper': {'id': 'injected', 'name': 'Injected', 'base_url': 'https://attacker.example'}},
+            body={'scraper': {'id': 'mine', 'name': 'Mine', 'base_url': 'https://reviews.example'}},
         ), lambda_context)
 
-        assert response['statusCode'] == 403
-        # The status code alone would pass if the write happened first.
-        assert mock_put.call_args_list == []
+        assert response['statusCode'] == 200, response['body']
+        assert [c['id'] for c in _stored_configs(mock_put)] == ['mine']
 
     @patch('scrapers_handler.put_secret_json')
     @patch('scrapers_handler.secretsmanager')
@@ -163,6 +185,62 @@ class TestANonAdminCannotWriteTheSharedSecret:
 
         assert response['statusCode'] == 200
         assert len(mock_put.call_args_list) == 1
+
+
+@patch('scrapers_handler.validate_url', new=MagicMock(return_value=(True, '')))
+@patch('scrapers_handler.put_secret_json')
+@patch('scrapers_handler.secretsmanager')
+class TestANonAdminSaveKeepsTheSchedule:
+    """`enabled` / `frequency_minutes` decide when the scheduled ingestor fetches a
+    scraper, so only an admin sets them — the same reason run stays admin-only."""
+
+    STORED: ClassVar[dict] = {'id': 's1', 'name': 'Old', 'base_url': 'https://a.example', 'enabled': False, 'frequency_minutes': 1440}
+    PUSHED: ClassVar[dict] = {'id': 's1', 'name': 'New', 'base_url': 'https://b.example', 'enabled': True, 'frequency_minutes': 15}
+
+    def _save(self, mock_secrets, stored, scraper, event):
+        mock_secrets.get_secret_value.return_value = {
+            'SecretString': json.dumps({'webscraper_configs': json.dumps(stored)})
+        }
+        from scrapers_handler import lambda_handler
+        return lambda_handler(event(method='POST', path='/scrapers', body={'scraper': scraper}), MagicMock())
+
+    def test_a_non_admin_edit_keeps_the_stored_schedule_and_the_other_edits(
+        self, mock_secrets, mock_put, api_gateway_event
+    ):
+        response = self._save(
+            mock_secrets, [self.STORED], self.PUSHED,
+            lambda **kw: _non_admin_event(api_gateway_event, **kw),
+        )
+        assert response['statusCode'] == 200, response['body']
+        [saved] = _stored_configs(mock_put)
+        assert (saved['enabled'], saved['frequency_minutes']) == (False, 1440)
+        assert (saved['name'], saved['base_url']) == ('New', 'https://b.example')
+        assert json.loads(response['body'])['scraper'] == saved
+
+    def test_a_non_admin_edit_of_a_legacy_config_leaves_the_schedule_absent(
+        self, mock_secrets, mock_put, api_gateway_event
+    ):
+        """Absent stored fields stay absent, so the ingestor's own defaults keep applying."""
+        legacy = {'id': 's1', 'base_url': 'https://a.example'}
+        self._save(mock_secrets, [legacy], self.PUSHED, lambda **kw: _non_admin_event(api_gateway_event, **kw))
+        [saved] = _stored_configs(mock_put)
+        assert 'enabled' not in saved
+        assert 'frequency_minutes' not in saved
+
+    def test_a_non_admin_create_gets_the_default_schedule(
+        self, mock_secrets, mock_put, api_gateway_event
+    ):
+        self._save(mock_secrets, [], self.PUSHED, lambda **kw: _non_admin_event(api_gateway_event, **kw))
+        [saved] = _stored_configs(mock_put)
+        assert (saved['enabled'], saved['frequency_minutes']) == (True, 1440)
+
+    def test_the_control_an_admin_sets_the_schedule(
+        self, mock_secrets, mock_put, api_gateway_event
+    ):
+        """Non-vacuity: ignoring the schedule for EVERY caller would pass the above."""
+        self._save(mock_secrets, [self.STORED], self.PUSHED, api_gateway_event)
+        [saved] = _stored_configs(mock_put)
+        assert (saved['enabled'], saved['frequency_minutes']) == (True, 15)
 
 
 class TestANonAdminCannotTriggerAScraperRun:
@@ -258,33 +336,12 @@ class TestTheReadRoutesStayOpen:
 # `ast` half — covers a route added later
 # ---------------------------------------------------------------------------
 
-def _route_path_of(decorator: ast.expr) -> str | None:
-    """The literal path of an `@app.get("/x")`-style decorator, else None.
-
-    Matches on the `app` receiver and a string first argument, so
-    `@tracer.capture_method` (no arguments) is ignored without needing a list of
-    method names to exclude. Same shape as `test_integrations_security.py`'s
-    parser, deliberately: the two handlers are asserted about the same way.
-    """
-    if not isinstance(decorator, ast.Call):
-        return None
-    func = decorator.func
-    if not isinstance(func, ast.Attribute):
-        return None
-    if not isinstance(func.value, ast.Name) or func.value.id != 'app':
-        return None
-    if not decorator.args or not isinstance(decorator.args[0], ast.Constant):
-        return None
-    path = decorator.args[0].value
-    return path if isinstance(path, str) else None
-
-
 def _route_functions(module=None) -> dict[str, ast.FunctionDef]:
     """Every module-level function carrying an `@app.<method>("<path>")` decorator.
 
-    Parsed rather than read off the resolver, because the resolver records a
-    route's path and handler but not the guards inside the handler's body, which
-    is the thing under test.
+    Same parser as `test_integrations_security.py`'s (both live in
+    `integrations_route_ast_fixtures`), deliberately: the two handlers are asserted
+    about the same way.
 
     Takes a module so `TestTheInventoryIsOneHandlers` can point it at
     `manual_import_handler` — the sibling serving the other half of the
@@ -292,33 +349,22 @@ def _route_functions(module=None) -> dict[str, ast.FunctionDef]:
     disagree with this one about what a route is. Defaults to `scrapers_handler`,
     which every other caller means.
     """
-    tree = ast.parse(inspect.getsource(module or _handler_module()))
-    return {
-        node.name: node
-        for node in tree.body
-        if isinstance(node, ast.FunctionDef)
-        and any(_route_path_of(d) for d in node.decorator_list)
-    }
+    return route_functions(module or _handler_module())
 
 
-def _calls_in(node: ast.FunctionDef) -> set[str]:
-    """Names of the plain-function calls anywhere in *node*'s body."""
-    return {
-        call.func.id
-        for call in ast.walk(node)
-        if isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
-    }
-
-
-# The routes that MUTATE — a Secrets Manager value or a webscraper invocation.
-# Listed explicitly because "does this route write?" is a judgement no parse can
-# make, and because the read/write split is the whole argument for gating three
-# of the eight rather than all of them.
-SCRAPER_WRITE_ROUTES = {
-    'save_scraper',
+# The routes that MUTATE — a Secrets Manager value or a webscraper invocation —
+# split by the owner decision of 2026-10-04. Listed explicitly because "does this
+# route write, and who may?" is a judgement no parse can make.
+SCRAPER_ADMIN_ROUTES = {
     'delete_scraper',
     'run_scraper',
 }
+# Writes the shared secret but open to every authenticated user (owner decision);
+# bounded by `_validated_scraper` / `_upserted_configs` / `_apply_schedule_policy`.
+SCRAPER_OPEN_WRITE_ROUTES = {
+    'save_scraper',
+}
+SCRAPER_WRITE_ROUTES = SCRAPER_ADMIN_ROUTES | SCRAPER_OPEN_WRITE_ROUTES
 
 # `manual_import_handler`'s routes, all under `/scrapers/manual/`, and — as of this
 # change — the complete set of `/scrapers/*` routes NOT covered by anything else in
@@ -357,8 +403,8 @@ class TestScraperRouteCoverageIsComplete:
             'analyze_url',
         }, (
             'the route inventory changed; a NEW route must be added to '
-            'SCRAPER_WRITE_ROUTES if it mutates, and will otherwise be asserted '
-            'as a read that is deliberately open'
+            'SCRAPER_ADMIN_ROUTES or SCRAPER_OPEN_WRITE_ROUTES if it mutates, and '
+            'will otherwise be asserted as a read that is deliberately open'
         )
 
     def test_every_named_write_route_is_a_route_the_parser_found(self):
@@ -367,18 +413,26 @@ class TestScraperRouteCoverageIsComplete:
         Otherwise renaming a route would silently drop its guard assertion rather
         than failing.
         """
-        assert SCRAPER_WRITE_ROUTES <= set(_route_functions())
+        assert set(_route_functions()) >= SCRAPER_WRITE_ROUTES
 
 
 class TestEveryScraperWriteIsAdminGated:
-    """Each mutating route calls require_admin; each read deliberately does not."""
+    """Delete and run call require_admin; save and the reads deliberately do not."""
 
-    @pytest.mark.parametrize('route', sorted(SCRAPER_WRITE_ROUTES))
+    @pytest.mark.parametrize('route', sorted(SCRAPER_ADMIN_ROUTES))
     def test_the_route_requires_admin(self, route):
-        assert 'require_admin' in _calls_in(_route_functions()[route]), (
-            f'{route} mutates the shared secret or invokes the webscraper with no '
-            'admin gate'
+        assert 'require_admin' in plain_calls_in(_route_functions()[route]), (
+            f'{route} deletes from the shared secret or invokes the webscraper with '
+            'no admin gate'
         )
+
+    @pytest.mark.parametrize('route', sorted(SCRAPER_OPEN_WRITE_ROUTES))
+    def test_the_open_write_is_bounded_not_gated(self, route):
+        """Owner decision: save is open. What makes that safe is the bounds, so a
+        refactor that drops them fails here rather than silently."""
+        calls = plain_calls_in(_route_functions()[route])
+        assert 'require_admin' not in calls, f'{route} is open by owner decision (2026-10-04)'
+        assert {'_validated_scraper', '_upserted_configs'} <= calls
 
     @pytest.mark.parametrize(
         'route',
@@ -392,7 +446,7 @@ class TestEveryScraperWriteIsAdminGated:
         — and `validate_url` already bounds the fetch (SSRF). If a future change
         makes it store something, this fails and forces the classification.
         """
-        assert 'require_admin' not in _calls_in(_route_functions()[route]), (
+        assert 'require_admin' not in plain_calls_in(_route_functions()[route]), (
             f'{route} is a read; gating it would blank the Scrapers page for a '
             'non-admin. Move it to SCRAPER_WRITE_ROUTES if that is intended.'
         )
@@ -426,8 +480,7 @@ class TestTheInventoryIsOneHandlers:
         paths = [
             path
             for node in _route_functions(self._manual_import_module()).values()
-            for path in (_route_path_of(d) for d in node.decorator_list)
-            if path is not None
+            for path in route_paths(node)
         ]
         assert all(path.startswith('/scrapers/') for path in paths), (
             'this class exists because those routes share the /scrapers/ prefix; '
@@ -447,13 +500,13 @@ class TestTheInventoryIsOneHandlers:
         gated = {
             name
             for name, node in _route_functions(self._manual_import_module()).items()
-            if 'require_admin' in _calls_in(node)
+            if 'require_admin' in plain_calls_in(node)
         }
         assert gated == set(), (
             f'{sorted(gated)} is now admin-gated. That may be correct — but the '
             'scope paragraph in this module docstring says the manual-import '
-            'routes are ungated, and it is now wrong. Update it, and consider '
-            'whether the rest of that set should follow.'
+            'routes are ungated, and it is now wrong. Revise it, and consider '
+            'whether the remaining manual-import routes should follow.'
         )
 
     def test_the_control_the_parser_reaches_that_module_at_all(self):

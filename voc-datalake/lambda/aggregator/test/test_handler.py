@@ -234,61 +234,33 @@ reason:
     `test_a_remove_with_no_user_identity_is_treated_as_a_user_delete` plus both
     tests that delete without one.
 """
-import boto3
 import itertools
-import pytest
-from botocore.exceptions import ClientError
+import operator
 from collections.abc import Mapping
 from contextlib import contextmanager
-from datetime import datetime
-from moto import mock_aws
-from unittest.mock import patch, MagicMock
+from datetime import UTC, datetime, tzinfo
 from decimal import Decimal
+from typing import Any, Self, cast
+from unittest.mock import MagicMock, patch
+
+import boto3
+import pytest
 from aws_lambda_powertools.utilities.data_classes.dynamo_db_stream_event import DynamoDBRecord
+from botocore.exceptions import ClientError
+from moto import mock_aws
+
+from aggregator.test.aggregator_fixtures import conditional_check_failure
+from aggregator.test.aggregator_fixtures import stream_record as _record
+from aggregator.test.aggregator_fixtures import to_stream_image as _to_ddb
+from shared.test.moto_tables import create_pk_sk_table
+
+
+def _wire(request: Mapping[str, Any]) -> dict[str, Any]:
+    """A typed request as the plain dict boto3 sends — what these tests read."""
+    return dict(request)
 
 TTL_IDENTITY = {'principalId': 'dynamodb.amazonaws.com', 'type': 'Service'}
 
-
-def _to_ddb(item: dict) -> dict:
-    """Serialize a plain dict the way a stream image arrives."""
-    out = {}
-    for key, value in item.items():
-        if isinstance(value, bool):
-            out[key] = {'BOOL': value}
-        elif isinstance(value, (int, float, Decimal)):
-            out[key] = {'N': str(value)}
-        else:
-            out[key] = {'S': str(value)}
-    return out
-
-
-def _record(event_name: str, *, new=None, old=None, user_identity=None,
-            event_id=None) -> DynamoDBRecord:
-    """A real Powertools stream record, not a MagicMock.
-
-    A MagicMock answers any attribute, so `record.user_identity` on one would be
-    a truthy mock and the TTL branch could never be exercised honestly.
-
-    `event_id` is the stream's own `eventID`, which the aggregator claims to make an
-    arrival idempotent (issue #264). OMITTED BY DEFAULT, and that default is a
-    statement about what the other tests here are for: they ask which counters a
-    given event moves, and a dedupe claim would make the SECOND record built by a
-    test — a redelivery as far as the handler is concerned — write nothing, so every
-    such test would be measuring the claim instead of the dimensions. A record with
-    no id routes to the non-transactional path, exactly as it does in production when
-    `IDEMPOTENCY_TABLE` is unset, so those tests keep asserting what they always did.
-    The idempotency behaviour has its own class, where the id is passed explicitly.
-    """
-    body: dict = {'eventName': event_name, 'eventSource': 'aws:dynamodb', 'dynamodb': {}}
-    if new is not None:
-        body['dynamodb']['NewImage'] = _to_ddb(new)
-    if old is not None:
-        body['dynamodb']['OldImage'] = _to_ddb(old)
-    if user_identity is not None:
-        body['userIdentity'] = user_identity
-    if event_id is not None:
-        body['eventID'] = event_id
-    return DynamoDBRecord(body)
 
 
 def _writes(mock_table) -> list[tuple[str, str, str, int]]:
@@ -332,8 +304,10 @@ def _frozen_clock(instant: str):
 
     class _Frozen(datetime):
         @classmethod
-        def now(cls, tz=None):
-            return fixed
+        def now(cls, tz: tzinfo | None = None) -> Self:
+            # The instant is fixed; a `tz` argument only re-expresses it.
+            frozen = cls.fromisoformat(instant)
+            return frozen if tz is None else frozen.astimezone(tz)
 
     with patch('aggregator.handler.datetime', _Frozen):
         yield fixed.strftime('%Y-%m-%d')
@@ -366,18 +340,7 @@ def real_aggregates_table():
     against a mock those tests would pass with the condition deleted.
     """
     with mock_aws():
-        table = boto3.resource('dynamodb', region_name='us-east-1').create_table(
-            TableName='test-aggregates',
-            KeySchema=[
-                {'AttributeName': 'pk', 'KeyType': 'HASH'},
-                {'AttributeName': 'sk', 'KeyType': 'RANGE'},
-            ],
-            AttributeDefinitions=[
-                {'AttributeName': 'pk', 'AttributeType': 'S'},
-                {'AttributeName': 'sk', 'AttributeType': 'S'},
-            ],
-            BillingMode='PAY_PER_REQUEST',
-        )
+        table = create_pk_sk_table('test-aggregates')
         with patch('aggregator.handler.aggregates_table', table):
             yield table
 
@@ -411,18 +374,7 @@ def deduped_tables():
     """
     with mock_aws():
         resource = boto3.resource('dynamodb', region_name='us-east-1')
-        aggregates = resource.create_table(
-            TableName='test-aggregates',
-            KeySchema=[
-                {'AttributeName': 'pk', 'KeyType': 'HASH'},
-                {'AttributeName': 'sk', 'KeyType': 'RANGE'},
-            ],
-            AttributeDefinitions=[
-                {'AttributeName': 'pk', 'AttributeType': 'S'},
-                {'AttributeName': 'sk', 'AttributeType': 'S'},
-            ],
-            BillingMode='PAY_PER_REQUEST',
-        )
+        aggregates = create_pk_sk_table('test-aggregates', resource)
         idempotency = resource.create_table(
             TableName='test-idempotency',
             KeySchema=[{'AttributeName': 'id', 'KeyType': 'HASH'}],
@@ -459,6 +411,57 @@ def _counts(table) -> dict[str, Decimal]:
     return {item['pk']: item['count'] for item in table.scan()['Items']
             if 'count' in item and 'sum' not in item}
 
+def _recategorise(item: dict, category: str = 'billing') -> DynamoDBRecord:
+    """A MODIFY moving *item* to *category*, everything else unchanged."""
+    return _record('MODIFY', old=item, new={**item, 'category': category})
+
+
+def _rescore(item: dict, score: str = '0.10') -> DynamoDBRecord:
+    """A MODIFY changing only *item*'s sentiment score."""
+    return _record('MODIFY', old=item, new={**item, 'sentiment_score': Decimal(score)})
+
+
+LIVE_DAY = '2025-02-01'
+DEAD_DAY = '2024-01-01'
+
+
+def _arrive_live_then_correct_from_a_dead_day(item: dict, **old_overrides) -> None:
+    """INSERT *item* on LIVE_DAY, then a MODIFY onto it from DEAD_DAY (plus *old_overrides*)."""
+    from aggregator.handler import record_handler
+
+    arrived = {**item, 'date': LIVE_DAY}
+    record_handler(_record('INSERT', new=arrived))
+    record_handler(_record('MODIFY', old={**item, 'date': DEAD_DAY, **old_overrides}, new=arrived))
+
+
+def _recategorise_while_the_day_read_fails(record_handler, mock_table, item: dict, code: str) -> None:
+    """Run a category edit of *item* while the day-liveness `get_item` raises *code*."""
+    mock_table.get_item.side_effect = ClientError({'Error': {'Code': code, 'Message': 'slow'}}, 'GetItem')
+    record_handler(_recategorise(item))
+
+
+def _assert_counted_once_in_total_and_categories(aggregates) -> None:
+    """The daily total and the category rows agree, at exactly one item."""
+    counts = _counts(aggregates)
+    categories = sum(v for pk, v in counts.items()
+                     if pk.startswith('METRIC#daily_category#'))
+    assert counts['METRIC#daily_total'] == categories == Decimal(1), counts
+
+
+
+def _raise_once_then_call(real, failure: Exception):
+    """A stand-in for *real* that raises *failure* on its first call and
+    delegates every later call (with its keyword arguments) to *real*."""
+    pending = iter([failure])
+
+    def flaky(**kwargs):
+        first = next(pending, None)
+        if first is not None:
+            raise first
+        return real(**kwargs)
+
+    return flaky
+
 
 class TestGetMetricType:
     """Tests for get_metric_type() function."""
@@ -466,33 +469,33 @@ class TestGetMetricType:
     def test_returns_source_for_daily_source_pk(self):
         """Returns 'source' for daily_source metric pk."""
         from aggregator.handler import get_metric_type
-        
+
         result = get_metric_type('METRIC#daily_source#webscraper')
-        
+
         assert result == 'source'
 
     def test_returns_persona_for_persona_pk(self):
         """Returns 'persona' for persona metric pk."""
         from aggregator.handler import get_metric_type
-        
+
         result = get_metric_type('METRIC#persona#advocate')
-        
+
         assert result == 'persona'
 
     def test_returns_none_for_other_pk(self):
         """Returns None for non-indexed metric pk."""
         from aggregator.handler import get_metric_type
-        
+
         result = get_metric_type('METRIC#daily_total')
-        
+
         assert result is None
 
     def test_returns_none_for_category_pk(self):
         """Returns None for category metric pk."""
         from aggregator.handler import get_metric_type
-        
+
         result = get_metric_type('METRIC#daily_category#product_quality')
-        
+
         assert result is None
 
 
@@ -503,9 +506,9 @@ class TestUpdateCounter:
     def test_increments_counter_by_one(self, mock_table):
         """Increments counter field by 1 by default."""
         from aggregator.handler import update_counter
-        
+
         update_counter('METRIC#daily_total', '2025-01-15', 'count')
-        
+
         mock_table.update_item.assert_called_once()
         call_kwargs = mock_table.update_item.call_args.kwargs
         assert call_kwargs['Key'] == {'pk': 'METRIC#daily_total', 'sk': '2025-01-15'}
@@ -516,32 +519,31 @@ class TestUpdateCounter:
     def test_increments_counter_by_custom_amount(self, mock_table):
         """Increments counter by specified amount."""
         from aggregator.handler import update_counter
-        
+
         update_counter('METRIC#daily_total', '2025-01-15', 'count', increment=5)
-        
+
         call_kwargs = mock_table.update_item.call_args.kwargs
         assert call_kwargs['ExpressionAttributeValues'][':inc'] == 5
 
     @patch('aggregator.handler.aggregates_table')
-    def test_sets_ttl(self, mock_table):
-        """Sets TTL on the counter item."""
+    def test_stamps_no_ttl(self, mock_table):
+        """Aggregate rows are never deleted, so a counter write stamps no TTL."""
         from aggregator.handler import update_counter
-        
-        update_counter('METRIC#daily_total', '2025-01-15', 'count', ttl_days=30)
-        
+
+        update_counter('METRIC#daily_total', '2025-01-15', 'count')
+
         call_kwargs = mock_table.update_item.call_args.kwargs
-        assert ':ttl' in call_kwargs['ExpressionAttributeValues']
-        # TTL should be approximately 30 days from now
-        ttl_value = call_kwargs['ExpressionAttributeValues'][':ttl']
-        assert isinstance(ttl_value, int)
+        assert 'ttl' not in call_kwargs['UpdateExpression']
+        assert ':ttl' not in call_kwargs['ExpressionAttributeValues']
+        assert 'ttl' not in call_kwargs['ExpressionAttributeNames'].values()
 
     @patch('aggregator.handler.aggregates_table')
     def test_includes_metric_type_for_source_pk(self, mock_table):
         """Includes metric_type for source metrics (for GSI)."""
         from aggregator.handler import update_counter
-        
+
         update_counter('METRIC#daily_source#webscraper', '2025-01-15', 'count')
-        
+
         call_kwargs = mock_table.update_item.call_args.kwargs
         assert ':metric_type' in call_kwargs['ExpressionAttributeValues']
         assert call_kwargs['ExpressionAttributeValues'][':metric_type'] == 'source'
@@ -550,9 +552,9 @@ class TestUpdateCounter:
     def test_includes_metric_type_for_persona_pk(self, mock_table):
         """Includes metric_type for persona metrics (for GSI)."""
         from aggregator.handler import update_counter
-        
+
         update_counter('METRIC#persona#advocate', '2025-01-15', 'count')
-        
+
         call_kwargs = mock_table.update_item.call_args.kwargs
         assert ':metric_type' in call_kwargs['ExpressionAttributeValues']
         assert call_kwargs['ExpressionAttributeValues'][':metric_type'] == 'persona'
@@ -565,9 +567,9 @@ class TestUpdateAverage:
     def test_updates_sum_and_count(self, mock_table):
         """Updates sum and count for running average calculation."""
         from aggregator.handler import update_average
-        
+
         update_average('METRIC#daily_sentiment_avg', '2025-01-15', Decimal('0.85'))
-        
+
         mock_table.update_item.assert_called_once()
         call_kwargs = mock_table.update_item.call_args.kwargs
         assert call_kwargs['Key'] == {'pk': 'METRIC#daily_sentiment_avg', 'sk': '2025-01-15'}
@@ -577,110 +579,111 @@ class TestUpdateAverage:
         assert call_kwargs['ExpressionAttributeValues'][':one'] == 1
 
     @patch('aggregator.handler.aggregates_table')
-    def test_sets_ttl(self, mock_table):
-        """Sets TTL on the average item."""
+    def test_stamps_no_ttl(self, mock_table):
+        """Aggregate rows are never deleted, so an average write stamps no TTL."""
         from aggregator.handler import update_average
-        
-        update_average('METRIC#daily_sentiment_avg', '2025-01-15', Decimal('0.5'), ttl_days=60)
-        
+
+        update_average('METRIC#daily_sentiment_avg', '2025-01-15', Decimal('0.5'))
+
         call_kwargs = mock_table.update_item.call_args.kwargs
-        assert ':ttl' in call_kwargs['ExpressionAttributeValues']
+        assert 'ttl' not in call_kwargs['UpdateExpression']
+        assert ':ttl' not in call_kwargs['ExpressionAttributeValues']
 
 
 class TestProcessNewFeedback:
     """Tests for process_new_feedback() function."""
 
-    @patch('aggregator.handler.update_average')
+    @patch('aggregator.handler.update_average', MagicMock())
     @patch('aggregator.handler.update_counter')
-    def test_updates_daily_total(self, mock_counter, mock_avg, sample_feedback_item):
+    def test_updates_daily_total(self, mock_counter, sample_feedback_item):
         """Updates daily total counter."""
         from aggregator.handler import process_new_feedback
-        
+
         process_new_feedback(sample_feedback_item)
-        
+
         # Check daily total was updated
         calls = mock_counter.call_args_list
         daily_total_call = [c for c in calls if c.args[0] == 'METRIC#daily_total']
         assert len(daily_total_call) == 1
         assert daily_total_call[0].args[1] == '2025-01-15'
 
-    @patch('aggregator.handler.update_average')
+    @patch('aggregator.handler.update_average', MagicMock())
     @patch('aggregator.handler.update_counter')
-    def test_updates_daily_source(self, mock_counter, mock_avg, sample_feedback_item):
+    def test_updates_daily_source(self, mock_counter, sample_feedback_item):
         """Updates daily source counter."""
         from aggregator.handler import process_new_feedback
-        
+
         process_new_feedback(sample_feedback_item)
-        
+
         calls = mock_counter.call_args_list
         source_call = [c for c in calls if 'daily_source#webscraper' in c.args[0]]
         assert len(source_call) == 1
 
-    @patch('aggregator.handler.update_average')
+    @patch('aggregator.handler.update_average', MagicMock())
     @patch('aggregator.handler.update_counter')
-    def test_updates_daily_category(self, mock_counter, mock_avg, sample_feedback_item):
+    def test_updates_daily_category(self, mock_counter, sample_feedback_item):
         """Updates daily category counter."""
         from aggregator.handler import process_new_feedback
-        
+
         process_new_feedback(sample_feedback_item)
-        
+
         calls = mock_counter.call_args_list
         category_call = [c for c in calls if 'daily_category#product_quality' in c.args[0]]
         assert len(category_call) == 1
 
-    @patch('aggregator.handler.update_average')
+    @patch('aggregator.handler.update_average', MagicMock())
     @patch('aggregator.handler.update_counter')
-    def test_updates_daily_sentiment(self, mock_counter, mock_avg, sample_feedback_item):
+    def test_updates_daily_sentiment(self, mock_counter, sample_feedback_item):
         """Updates daily sentiment counter."""
         from aggregator.handler import process_new_feedback
-        
+
         process_new_feedback(sample_feedback_item)
-        
+
         calls = mock_counter.call_args_list
         sentiment_call = [c for c in calls if 'daily_sentiment#positive' in c.args[0]]
         assert len(sentiment_call) == 1
 
     @patch('aggregator.handler.update_average')
-    @patch('aggregator.handler.update_counter')
-    def test_updates_sentiment_average(self, mock_counter, mock_avg, sample_feedback_item):
+    @patch('aggregator.handler.update_counter', MagicMock())
+    def test_updates_sentiment_average(self, mock_avg, sample_feedback_item):
         """Updates sentiment score average."""
         from aggregator.handler import process_new_feedback
-        
+
         process_new_feedback(sample_feedback_item)
-        
+
         mock_avg.assert_called_once()
         call_args = mock_avg.call_args
         assert call_args.args[0] == 'METRIC#daily_sentiment_avg'
         assert call_args.args[1] == '2025-01-15'
         assert call_args.args[2] == Decimal('0.85')
 
-    @patch('aggregator.handler.update_average')
+    @patch('aggregator.handler.update_average', MagicMock())
     @patch('aggregator.handler.update_counter')
-    def test_updates_urgent_counter_for_high_urgency(self, mock_counter, mock_avg, sample_urgent_feedback_item):
+    def test_updates_urgent_counter_for_high_urgency(self, mock_counter, sample_urgent_feedback_item):
         """Updates urgent counter when urgency is high."""
         from aggregator.handler import process_new_feedback
-        
+
         process_new_feedback(sample_urgent_feedback_item)
-        
+
         calls = mock_counter.call_args_list
         urgent_call = [c for c in calls if c.args[0] == 'METRIC#urgent']
         assert len(urgent_call) == 1
 
-    @patch('aggregator.handler.update_average')
+    @patch('aggregator.handler.update_average', MagicMock())
     @patch('aggregator.handler.update_counter')
-    def test_skips_urgent_counter_for_low_urgency(self, mock_counter, mock_avg, sample_feedback_item):
+    def test_skips_urgent_counter_for_low_urgency(self, mock_counter, sample_feedback_item):
         """Does not update urgent counter when urgency is low."""
         from aggregator.handler import process_new_feedback
-        
+
         process_new_feedback(sample_feedback_item)
-        
+
         calls = mock_counter.call_args_list
         urgent_call = [c for c in calls if c.args[0] == 'METRIC#urgent']
         assert len(urgent_call) == 0
 
-    @patch('aggregator.handler.update_average')
+    @patch('aggregator.handler.update_average', MagicMock())
     @patch('aggregator.handler.update_counter')
-    def test_updates_persona_counter(self, mock_counter, mock_avg, sample_feedback_item):
+    def test_updates_persona_counter(self, mock_counter, sample_feedback_item):
         """Updates the persona counter, under the item's ARCHETYPE."""
         from aggregator.handler import process_new_feedback
 
@@ -690,41 +693,41 @@ class TestProcessNewFeedback:
         persona_call = [c for c in calls if 'persona#advocate' in c.args[0]]
         assert len(persona_call) == 1
 
-    @patch('aggregator.handler.update_average')
+    @patch('aggregator.handler.update_average', MagicMock())
     @patch('aggregator.handler.update_counter')
-    def test_updates_category_sentiment_combo(self, mock_counter, mock_avg, sample_feedback_item):
+    def test_updates_category_sentiment_combo(self, mock_counter, sample_feedback_item):
         """Updates category + sentiment combination counter."""
         from aggregator.handler import process_new_feedback
-        
+
         process_new_feedback(sample_feedback_item)
-        
+
         calls = mock_counter.call_args_list
         combo_call = [c for c in calls if 'category_sentiment#product_quality#positive' in c.args[0]]
         assert len(combo_call) == 1
 
-    @patch('aggregator.handler.update_average')
+    @patch('aggregator.handler.update_average', MagicMock())
     @patch('aggregator.handler.update_counter')
-    def test_uses_current_date_when_date_missing(self, mock_counter, mock_avg):
+    def test_uses_current_date_when_date_missing(self, mock_counter):
         """Uses current date when date field is missing."""
         from aggregator.handler import process_new_feedback
-        
+
         item_without_date = {
             'source_platform': 'webscraper',
             'category': 'other',
             'sentiment_label': 'neutral',
         }
-        
+
         process_new_feedback(item_without_date)
-        
+
         # Should still call update_counter with some date
         assert mock_counter.called
 
     @patch('aggregator.handler.update_average')
-    @patch('aggregator.handler.update_counter')
-    def test_skips_sentiment_average_when_score_missing(self, mock_counter, mock_avg):
+    @patch('aggregator.handler.update_counter', MagicMock())
+    def test_skips_sentiment_average_when_score_missing(self, mock_avg):
         """Skips sentiment average update when score is missing."""
         from aggregator.handler import process_new_feedback
-        
+
         item_without_score = {
             'date': '2025-01-15',
             'source_platform': 'webscraper',
@@ -732,42 +735,18 @@ class TestProcessNewFeedback:
             'sentiment_label': 'neutral',
             'sentiment_score': None,
         }
-        
+
         process_new_feedback(item_without_score)
-        
+
         mock_avg.assert_not_called()
 
 
 class TestRecordHandler:
     """Tests for record_handler() function."""
 
+    @patch('aggregator.handler.aggregates_table', MagicMock())
     @patch('aggregator.handler.process_new_feedback')
-    def test_processes_insert_event(self, mock_process, sample_feedback_item):
-        """Processes INSERT events from DynamoDB stream."""
-        from aggregator.handler import record_handler
-        
-        # Create mock DynamoDB record
-        record = MagicMock()
-        record.event_name = 'INSERT'
-        record.dynamodb = MagicMock()
-        record.dynamodb.new_image = {
-            'pk': {'S': 'SOURCE#webscraper'},
-            'sk': {'S': 'FEEDBACK#abc123'},
-            'date': {'S': '2025-01-15'},
-            'source_platform': {'S': 'webscraper'},
-            'category': {'S': 'product_quality'},
-            'sentiment_label': {'S': 'positive'},
-            'sentiment_score': {'N': '0.85'},
-        }
-        
-        result = record_handler(record)
-        
-        assert result['status'] == 'success'
-        mock_process.assert_called_once()
-
-    @patch('aggregator.handler.aggregates_table')
-    @patch('aggregator.handler.process_new_feedback')
-    def test_does_not_treat_a_modify_as_an_insert(self, mock_process, mock_table):
+    def test_does_not_treat_a_modify_as_an_insert(self, mock_process):
         """A MODIFY is rebucketed, never counted as a fresh arrival."""
         from aggregator.handler import record_handler
 
@@ -788,9 +767,9 @@ class TestRecordHandler:
         assert result['reason'] == 'incomplete images'
         mock_process.assert_not_called()
 
-    @patch('aggregator.handler.aggregates_table')
+    @patch('aggregator.handler.aggregates_table', MagicMock())
     @patch('aggregator.handler.process_new_feedback')
-    def test_does_not_treat_a_remove_as_an_insert(self, mock_process, mock_table):
+    def test_does_not_treat_a_remove_as_an_insert(self, mock_process):
         """A REMOVE reverses, never counts up."""
         from aggregator.handler import record_handler
 
@@ -813,14 +792,14 @@ class TestRecordHandler:
     def test_skips_when_no_new_image(self, mock_process):
         """Skips when new_image is missing."""
         from aggregator.handler import record_handler
-        
+
         record = MagicMock()
         record.event_name = 'INSERT'
         record.dynamodb = MagicMock()
         record.dynamodb.new_image = None
-        
+
         result = record_handler(record)
-        
+
         assert result['status'] == 'skipped'
         assert result['reason'] == 'no new image'
         mock_process.assert_not_called()
@@ -829,7 +808,7 @@ class TestRecordHandler:
     def test_converts_dynamodb_format_to_dict(self, mock_process):
         """Converts DynamoDB format to regular dict."""
         from aggregator.handler import record_handler
-        
+
         record = MagicMock()
         record.event_name = 'INSERT'
         record.dynamodb = MagicMock()
@@ -838,9 +817,9 @@ class TestRecordHandler:
             'source_platform': {'S': 'webscraper'},
             'sentiment_score': {'N': '0.85'},
         }
-        
+
         record_handler(record)
-        
+
         # Check the item passed to process_new_feedback
         call_args = mock_process.call_args
         item = call_args.args[0]
@@ -852,7 +831,7 @@ class TestRecordHandler:
     def test_handles_already_deserialized_format(self, mock_process):
         """Handles already deserialized DynamoDB format."""
         from aggregator.handler import record_handler
-        
+
         record = MagicMock()
         record.event_name = 'INSERT'
         record.dynamodb = MagicMock()
@@ -862,9 +841,9 @@ class TestRecordHandler:
             'source_platform': 'webscraper',
             'sentiment_score': Decimal('0.85'),
         }
-        
+
         record_handler(record)
-        
+
         call_args = mock_process.call_args
         item = call_args.args[0]
         assert item['date'] == '2025-01-15'
@@ -1033,14 +1012,18 @@ class TestADecrementCannotCreateOrGoNegative:
     @patch('aggregator.handler.aggregates_table')
     def test_a_refused_decrement_is_not_an_error(self, mock_table):
         """ConditionalCheckFailedException is the expected benign outcome."""
-        from aggregator.handler import update_counter
+        from aggregator.handler import CounterWrite, update_counter
 
         mock_table.update_item.side_effect = ClientError(
             {'Error': {'Code': 'ConditionalCheckFailedException', 'Message': 'gone'}},
             'UpdateItem',
         )
 
-        update_counter('METRIC#daily_total', '2025-01-15', 'count', increment=-1)
+        result = update_counter('METRIC#daily_total', '2025-01-15', 'count', increment=-1)
+
+        # A readable condition-failure response with no Item = "no such row".
+        assert result is CounterWrite.ROW_ABSENT
+        mock_table.update_item.assert_called_once()
 
     @patch('aggregator.handler.aggregates_table')
     def test_any_other_dynamodb_error_still_raises(self, mock_table):
@@ -1090,8 +1073,7 @@ class TestAnEditMovesAnItemBetweenBuckets:
         """
         from aggregator.handler import record_handler
 
-        record_handler(_record('MODIFY', old=sample_feedback_item,
-                               new={**sample_feedback_item, 'category': 'billing'}))
+        record_handler(_recategorise(sample_feedback_item))
         touched = {pk for pk, _, _, _ in _writes(live_day_table)}
 
         assert touched == {
@@ -1478,12 +1460,9 @@ class TestAPreDeployImageIsReversedOnTheRowItsInsertCreated:
 
         def update_item(**kwargs):
             if 'ConditionExpression' in kwargs and kwargs['Key']['pk'] != unless_pk:
-                response = {
-                    'Error': {'Code': 'ConditionalCheckFailedException', 'Message': 'no'},
-                }
-                if at_floor:
-                    response['Item'] = {**floor_item, 'pk': {'S': kwargs['Key']['pk']}}
-                raise ClientError(response, 'UpdateItem')
+                raise conditional_check_failure(
+                    {**floor_item, 'pk': {'S': kwargs['Key']['pk']}} if at_floor else None,
+                )
             return {}
 
         mock_table.update_item.side_effect = update_item
@@ -1666,10 +1645,12 @@ class TestAPreDeployImageIsReversedOnTheRowItsInsertCreated:
         # Every conditional write refused BY THE FLOOR: the rows are all there.
         self._refuse(mock_table, at_floor=True)
         item = sample_feedback_item
-        assert item.get('persona_name') and item.get('persona_type'), (
+        both_fields = (
             'the subject must carry BOTH fields, or the two derivations name one row '
             'and a stray write would be invisible'
         )
+        assert item.get('persona_name'), both_fields
+        assert item.get('persona_type'), both_fields
 
         record_handler(_record('REMOVE', old=item))
 
@@ -1901,7 +1882,9 @@ class TestAPreDeployImageIsReversedOnTheRowItsInsertCreated:
 
         class ConditionalCheckFailedException(ClientError):
             def __init__(self):
-                self.response = None
+                # botocore-stubs type `response` as always present; on the paths
+                # this test reproduces it is None, so the stub is what is wrong.
+                self.response = cast('Any', None)
 
         with patch('aggregator.handler.aggregates_table') as table:
             table.update_item.side_effect = ConditionalCheckFailedException()
@@ -1942,11 +1925,13 @@ class TestAPreDeployImageIsReversedOnTheRowItsInsertCreated:
 
         self._refuse(mock_table)
         item = sample_anonymous_feedback_item
-        assert LEGACY_PERSONA_FIELD not in item and item.get('persona_type'), (
+        post_deploy_shape = (
             'the arrangement is the point: the subject must look exactly like an item '
             f'this deploy wrote — an archetype and no `{LEGACY_PERSONA_FIELD}` — or it '
             'does not show that the shape is not what decides'
         )
+        assert LEGACY_PERSONA_FIELD not in item, post_deploy_shape
+        assert item.get('persona_type'), post_deploy_shape
 
         record_handler(_record('REMOVE', old=item))
 
@@ -2005,10 +1990,12 @@ class TestAPreDeployImageIsReversedOnTheRowItsInsertCreated:
 
         assert at_floor is CounterWrite.REFUSED_AT_FLOOR, at_floor
         assert absent is CounterWrite.ROW_ABSENT, absent
-        assert not at_floor and not absent, (
+        both_falsy = (
             'both are refusals, so both must stay falsy — the callers that only ask '
             '"did it land?" read this value as a boolean.'
         )
+        assert not at_floor, both_falsy
+        assert not absent, both_falsy
 
     def test_a_rebucket_of_a_pre_deploy_image_reverses_the_legacy_row_too(
         self, live_day_table, sample_pre_deploy_feedback_item
@@ -2340,8 +2327,7 @@ class TestARebucketCannotResurrectAnAgedOutDay:
     ):
         from aggregator.handler import record_handler
 
-        record_handler(_record('MODIFY', old=sample_feedback_item,
-                               new={**sample_feedback_item, 'category': 'billing'}))
+        record_handler(_recategorise(sample_feedback_item))
 
         assert real_aggregates_table.scan()['Items'] == []
 
@@ -2351,8 +2337,7 @@ class TestARebucketCannotResurrectAnAgedOutDay:
         """The resurrected average row is the most damaging of the three."""
         from aggregator.handler import record_handler
 
-        record_handler(_record('MODIFY', old=sample_feedback_item,
-                               new={**sample_feedback_item, 'sentiment_score': Decimal('0.10')}))
+        record_handler(_rescore(sample_feedback_item))
 
         assert real_aggregates_table.scan()['Items'] == []
 
@@ -2398,8 +2383,7 @@ class TestARebucketCannotResurrectAnAgedOutDay:
         from aggregator.handler import record_handler
 
         record_handler(_record('INSERT', new=sample_feedback_item))
-        record_handler(_record('MODIFY', old=sample_feedback_item,
-                               new={**sample_feedback_item, 'category': 'billing'}))
+        record_handler(_recategorise(sample_feedback_item))
 
         counts = {i['pk']: i['count'] for i in real_aggregates_table.scan()['Items']}
         assert counts['METRIC#daily_category#product_quality'] == Decimal(0)
@@ -2417,14 +2401,9 @@ class TestARebucketCannotResurrectAnAgedOutDay:
         live day's increments must land — otherwise a date correction silently loses
         the item from the metrics surface altogether.
         """
-        from aggregator.handler import record_handler
-
-        arrived = {**sample_feedback_item, 'date': '2025-02-01'}
-        record_handler(_record('INSERT', new=arrived))
-        # Now pretend the item had been recorded under an aged-out day and is being
-        # corrected forward onto the live one.
-        record_handler(_record('MODIFY', old={**sample_feedback_item, 'date': '2024-01-01'},
-                               new=arrived))
+        # The item arrives on the live day; then it is "corrected" forward from an
+        # aged-out day, as if it had been recorded there.
+        _arrive_live_then_correct_from_a_dead_day(sample_feedback_item)
 
         counts = {(i['pk'], i['sk']): i['count'] for i in real_aggregates_table.scan()['Items']}
         assert counts[('METRIC#daily_total', '2025-02-01')] == Decimal(2)
@@ -2485,8 +2464,7 @@ class TestARebucketCannotResurrectAnAgedOutDay:
 
         mock_table.get_item.return_value = {}
 
-        record_handler(_record('MODIFY', old=sample_feedback_item,
-                               new={**sample_feedback_item, 'category': 'billing'}))
+        record_handler(_recategorise(sample_feedback_item))
 
         assert mock_table.get_item.call_count == 1
 
@@ -2533,13 +2511,9 @@ class TestARebucketCannotResurrectAnAgedOutDay:
         """
         from aggregator.handler import record_handler
 
-        mock_table.get_item.side_effect = ClientError(
-            {'Error': {'Code': 'ProvisionedThroughputExceededException', 'Message': 'slow'}},
-            'GetItem',
+        _recategorise_while_the_day_read_fails(
+            record_handler, mock_table, sample_feedback_item, 'ProvisionedThroughputExceededException',
         )
-
-        record_handler(_record('MODIFY', old=sample_feedback_item,
-                               new={**sample_feedback_item, 'category': 'billing'}))
 
         assert mock_table.update_item.call_count > 0
 
@@ -2584,8 +2558,7 @@ class TestTheAveragesTwoHalvesCannotSplit:
         record_handler(_record('REMOVE', old=sample_feedback_item))
         assert self._avg(real_aggregates_table) == (Decimal(0), Decimal(0))
 
-        record_handler(_record('MODIFY', old=sample_feedback_item,
-                               new={**sample_feedback_item, 'sentiment_score': Decimal('0.10')}))
+        record_handler(_rescore(sample_feedback_item))
 
         assert self._avg(real_aggregates_table) == (Decimal(0), Decimal(0))
 
@@ -2600,8 +2573,7 @@ class TestTheAveragesTwoHalvesCannotSplit:
         from aggregator.handler import record_handler
 
         record_handler(_record('INSERT', new=sample_feedback_item))
-        record_handler(_record('MODIFY', old=sample_feedback_item,
-                               new={**sample_feedback_item, 'sentiment_score': Decimal('0.10')}))
+        record_handler(_rescore(sample_feedback_item))
 
         assert self._avg(real_aggregates_table) == (Decimal(1), Decimal('0.10'))
 
@@ -2642,20 +2614,16 @@ class TestTheAveragesTwoHalvesCannotSplit:
         the increment would lose the item from the average altogether — the
         count-dropping failure `_day_has_aggregates` exists to avoid.
         """
-        from aggregator.handler import record_handler
-
-        arrived = {**sample_feedback_item, 'date': '2025-02-01'}
-        record_handler(_record('INSERT', new=arrived))
-        record_handler(_record('MODIFY',
-                               old={**sample_feedback_item, 'date': '2024-01-01',
-                                    'sentiment_score': Decimal('0.20')},
-                               new=arrived))
+        _arrive_live_then_correct_from_a_dead_day(
+            sample_feedback_item, sentiment_score=Decimal('0.20'),
+        )
 
         assert self._avg(real_aggregates_table, '2025-02-01') == (Decimal(2), Decimal('1.70'))
         assert self._avg(real_aggregates_table, '2024-01-01') is None
 
+    @pytest.mark.usefixtures("real_aggregates_table")
     def test_a_refused_reversal_is_still_counted_as_refused(
-        self, real_aggregates_table, sample_feedback_item
+        self, sample_feedback_item
     ):
         """Skipping the pair must not also hide it: the refusal stays visible."""
         from aggregator.handler import REFUSED_METRIC, record_handler
@@ -2664,9 +2632,7 @@ class TestTheAveragesTwoHalvesCannotSplit:
         record_handler(_record('REMOVE', old=sample_feedback_item))
 
         with patch('aggregator.handler.metrics') as mock_metrics:
-            record_handler(_record('MODIFY', old=sample_feedback_item,
-                                   new={**sample_feedback_item,
-                                        'sentiment_score': Decimal('0.10')}))
+            record_handler(_rescore(sample_feedback_item))
 
         assert REFUSED_METRIC in [c.kwargs['name'] for c in mock_metrics.add_metric.call_args_list]
 
@@ -2750,8 +2716,7 @@ class TestThePairingIsPerRowAndNotPerEdit:
         record_handler(_record('INSERT', new=sample_feedback_item))
         record_handler(_record('REMOVE', old=sample_feedback_item))
 
-        record_handler(_record('MODIFY', old=sample_feedback_item,
-                               new={**sample_feedback_item, 'sentiment_score': Decimal('0.10')}))
+        record_handler(_rescore(sample_feedback_item))
 
         assert self._avg(real_aggregates_table, '2025-01-15') == (Decimal(0), Decimal(0))
 
@@ -2859,8 +2824,9 @@ class TestThePairingIsPerRowAndNotPerEdit:
         # rather than reporting one item's score as the day's average.
         assert self._avg(real_aggregates_table, '2025-01-15') is None
 
+    @pytest.mark.usefixtures("real_aggregates_table")
     def test_a_declined_re_application_is_counted_rather_than_silent(
-        self, real_aggregates_table, sample_feedback_item
+        self, sample_feedback_item
     ):
         """A write we decline to make cannot be counted by DynamoDB refusing it.
 
@@ -2879,9 +2845,7 @@ class TestThePairingIsPerRowAndNotPerEdit:
         record_handler(_record('REMOVE', old=sample_feedback_item))
 
         with patch('aggregator.handler.metrics') as mock_metrics:
-            record_handler(_record('MODIFY', old=sample_feedback_item,
-                                   new={**sample_feedback_item,
-                                        'sentiment_score': Decimal('0.10')}))
+            record_handler(_rescore(sample_feedback_item))
 
         names = [c.kwargs['name'] for c in mock_metrics.add_metric.call_args_list]
         assert DECLINED_METRIC in names
@@ -2901,9 +2865,7 @@ class TestThePairingIsPerRowAndNotPerEdit:
         record_handler(_record('INSERT', new=sample_feedback_item))
 
         with patch('aggregator.handler.metrics') as mock_metrics:
-            record_handler(_record('MODIFY', old=sample_feedback_item,
-                                   new={**sample_feedback_item,
-                                        'sentiment_score': Decimal('0.10')}))
+            record_handler(_rescore(sample_feedback_item))
 
         names = [c.kwargs['name'] for c in mock_metrics.add_metric.call_args_list]
         assert DECLINED_METRIC not in names
@@ -2919,12 +2881,14 @@ class TestUpdateAverageReportsWhetherItLanded:
     its consequence in `_rebucket_average`.
     """
 
-    def test_a_landed_write_reports_true(self, real_aggregates_table):
+    @pytest.mark.usefixtures("real_aggregates_table")
+    def test_a_landed_write_reports_true(self):
         from aggregator.handler import update_average
 
         assert update_average('METRIC#daily_sentiment_avg', '2025-01-15', Decimal('0.85'))
 
-    def test_a_reversal_against_an_empty_row_reports_false(self, real_aggregates_table):
+    @pytest.mark.usefixtures("real_aggregates_table")
+    def test_a_reversal_against_an_empty_row_reports_false(self):
         from aggregator.handler import update_average
 
         update_average('METRIC#daily_sentiment_avg', '2025-01-15', Decimal('0.85'))
@@ -2963,7 +2927,9 @@ class TestUpdateAverageReportsWhetherItLanded:
                 super().__init__(
                     {'Error': {'Code': 'ConditionalCheckFailedException'}}, 'UpdateItem'
                 )
-                self.response = None  # type: ignore[assignment]
+                # botocore-stubs type `response` as always present; this reproduces
+                # the path where it is None, so the stub is what is wrong here.
+                self.response = cast('Any', None)
 
         with patch('aggregator.handler.aggregates_table') as mock_table:
             mock_table.update_item.side_effect = ConditionalCheckFailedException()
@@ -3183,8 +3149,9 @@ class TestARedeliveredArrivalMovesNothing:
         row = aggregates.get_item(Key={'pk': SENTIMENT_AVG_PK, 'sk': '2025-01-15'})['Item']
         assert (row['count'], row['sum']) == (Decimal(1), Decimal('0.85'))
 
+    @pytest.mark.usefixtures("deduped_tables")
     def test_the_second_delivery_is_reported_as_a_skip_not_a_failure(
-        self, deduped_tables, sample_feedback_item
+        self, sample_feedback_item
     ):
         """🔑 IT MUST NOT RAISE, and that is not a cosmetic preference.
 
@@ -3201,8 +3168,9 @@ class TestARedeliveredArrivalMovesNothing:
         assert record_handler(record) == {"status": "success"}
         assert record_handler(record) == {"status": "skipped", "reason": "already applied"}
 
+    @pytest.mark.usefixtures("deduped_tables")
     def test_a_replayed_record_is_counted_so_the_guard_is_not_silently_inert(
-        self, deduped_tables, sample_feedback_item
+        self, sample_feedback_item
     ):
         """At zero, a working guard and a deleted one look identical from outside.
 
@@ -3314,10 +3282,7 @@ class TestARedeliveredArrivalMovesNothing:
         self._unpoison(aggregates)
         assert record_handler(record) == {"status": "success"}
 
-        counts = _counts(aggregates)
-        categories = sum(v for pk, v in counts.items()
-                         if pk.startswith('METRIC#daily_category#'))
-        assert counts['METRIC#daily_total'] == categories == Decimal(1), counts
+        _assert_counted_once_in_total_and_categories(aggregates)
 
     def test_a_cancellation_that_is_not_the_claim_is_raised_for_retry(
         self, deduped_tables, sample_feedback_item
@@ -3348,10 +3313,9 @@ class TestARedeliveredArrivalMovesNothing:
             'TransactWriteItems',
         )
         with patch.object(aggregates.meta.client, 'transact_write_items',
-                          side_effect=conflict):
-            with pytest.raises(ClientError):
-                record_handler(_record('INSERT', new=sample_feedback_item,
-                                       event_id=self.ID))
+                          side_effect=conflict), pytest.raises(ClientError):
+            record_handler(_record('INSERT', new=sample_feedback_item,
+                                   event_id=self.ID))
 
     def test_a_cancellation_whose_reasons_cannot_be_read_is_raised_too(
         self, deduped_tables, sample_feedback_item
@@ -3372,10 +3336,9 @@ class TestARedeliveredArrivalMovesNothing:
             'TransactWriteItems',
         )
         with patch.object(aggregates.meta.client, 'transact_write_items',
-                          side_effect=unreadable):
-            with pytest.raises(ClientError):
-                record_handler(_record('INSERT', new=sample_feedback_item,
-                                       event_id=self.ID))
+                          side_effect=unreadable), pytest.raises(ClientError):
+            record_handler(_record('INSERT', new=sample_feedback_item,
+                                   event_id=self.ID))
 
     def test_an_unconfigured_dedupe_table_still_aggregates(
         self, real_aggregates_table, sample_feedback_item
@@ -3432,7 +3395,6 @@ class TestARedeliveredArrivalMovesNothing:
         deletion is best-effort anyway. This is what caught the first version of the
         constant, which was exactly 24 hours.
         """
-        from datetime import timezone as tz
 
         from aggregator.handler import record_handler
         from shared.idempotency import (
@@ -3446,7 +3408,7 @@ class TestARedeliveredArrivalMovesNothing:
 
         marker = idempotency.scan()['Items'][0]
         assert IDEMPOTENCY_KEY_ATTRIBUTE in marker
-        now = datetime.now(tz.utc).timestamp()
+        now = datetime.now(UTC).timestamp()
         assert marker[IDEMPOTENCY_EXPIRY_ATTRIBUTE] > now + stream_retention_seconds, (
             'the claim does not outlive the 24 hours a stream record survives, so a '
             'late redelivery would find the marker gone and be applied again'
@@ -3496,7 +3458,7 @@ class TestTheTransactionIsAnArrivalAndOnlyAnArrival:
 
     DATE = '2025-01-15'
 
-    def _items(self, item) -> list[dict]:
+    def _items(self, item) -> list[dict[str, Any]]:
         from aggregator.handler import (
             SENTIMENT_AVG_PK,
             _average_transaction_item,
@@ -3509,7 +3471,7 @@ class TestTheTransactionIsAnArrivalAndOnlyAnArrival:
         score = _image_score(item)
         if score:
             items.append(_average_transaction_item(SENTIMENT_AVG_PK, self.DATE, score))
-        return items
+        return [_wire(entry) for entry in items]
 
     def test_no_transaction_builder_offers_a_direction(self):
         """🔑 A `sign=-1` MUST NOT BE EXPRESSIBLE HERE, and the check is on the
@@ -3608,9 +3570,8 @@ class TestTheTransactionIsAnArrivalAndOnlyAnArrival:
     def test_both_average_writers_spend_one_expression(self):
         """The average's attribute names exist once, as the counter's already did.
 
-        `sum` and `count` are what `get_summary` reads back, and the retention lockstep
-        compares only the writers' `ttl_days` defaults — so a second spelling here was
-        free to rename an attribute with nothing failing, and a transactional row
+        `sum` and `count` are what `get_summary` reads back, so a second spelling here
+        was free to rename an attribute with nothing failing, and a transactional row
         holding `total` reads as a day with no average at all. Compared as the REQUESTS
         the two writers build, since that is the thing that must agree.
         """
@@ -3620,15 +3581,15 @@ class TestTheTransactionIsAnArrivalAndOnlyAnArrival:
             _average_transaction_item,
         )
 
-        transactional = _average_transaction_item(
+        transactional = _wire(_average_transaction_item(
             SENTIMENT_AVG_PK, self.DATE, Decimal('0.5'),
-        )['Update']
-        single = _average_request(SENTIMENT_AVG_PK, self.DATE, Decimal('0.5'), 90, 1)
+        ))['Update']
+        single = _wire(_average_request(SENTIMENT_AVG_PK, self.DATE, Decimal('0.5'), 1))
 
         assert transactional['UpdateExpression'] == single['UpdateExpression']
         assert (transactional['ExpressionAttributeNames']
                 == single['ExpressionAttributeNames']
-                == {'#sum': 'sum', '#count': 'count', '#ttl': 'ttl'})
+                == {'#sum': 'sum', '#count': 'count'})
         # `:one` is the COUNT movement, so an arrival's is +1 in both.
         assert transactional['ExpressionAttributeValues'][':one'] == 1
         assert single['ExpressionAttributeValues'][':one'] == 1
@@ -3684,7 +3645,7 @@ class TestTheTransactionIsAnArrivalAndOnlyAnArrival:
         transactional_average = aggregates.get_item(
             Key={'pk': SENTIMENT_AVG_PK, 'sk': self.DATE})['Item']
 
-        for pk in list(transactional) + [SENTIMENT_AVG_PK]:
+        for pk in [*transactional, SENTIMENT_AVG_PK]:
             aggregates.delete_item(Key={'pk': pk, 'sk': self.DATE})
 
         # The single-write path: the same item, no eventID.
@@ -3781,6 +3742,27 @@ class TestAWriteConflictIsRetriedRatherThanReported:
             'TransactWriteItems',
         )
 
+    @staticmethod
+    @contextmanager
+    def _transaction_failing_once(aggregates, failure: Exception):
+        """Make the FIRST transaction raise *failure* and let every later one
+        through to the real table, with sleep patched out; yields the sleep mock."""
+        flaky = _raise_once_then_call(aggregates.meta.client.transact_write_items, failure)
+        with patch.object(aggregates.meta.client, 'transact_write_items', flaky), \
+                patch('aggregator.handler.time.sleep') as slept:
+            yield slept
+
+    @classmethod
+    def _insert_succeeds_after_one_failure(cls, aggregates, item: dict, failure: Exception):
+        """An INSERT whose first transaction raises *failure* still succeeds; the sleep mock."""
+        from aggregator.handler import record_handler
+
+        with cls._transaction_failing_once(aggregates, failure) as slept:
+            assert record_handler(
+                _record('INSERT', new=item, event_id=cls.ID)
+            ) == {"status": "success"}
+        return slept
+
     @classmethod
     def _conflict(cls) -> ClientError:
         """The response shape DynamoDB sends for a contended item.
@@ -3796,24 +3778,11 @@ class TestAWriteConflictIsRetriedRatherThanReported:
         """The first conflict is retried rather than raised, and the retry is what
         writes the record. Without it this record is reported failed on its first
         collision with another record of the same day."""
-        from aggregator.handler import TRANSACT_WRITE_ATTEMPTS, record_handler
+        from aggregator.handler import TRANSACT_WRITE_ATTEMPTS
 
         aggregates, _ = deduped_tables
-        real = aggregates.meta.client.transact_write_items
         # Conflict once, then let the real transaction through.
-        attempts = iter([self._conflict()])
-
-        def flaky(**kwargs):
-            failure = next(attempts, None)
-            if failure is not None:
-                raise failure
-            return real(**kwargs)
-
-        with patch.object(aggregates.meta.client, 'transact_write_items', flaky), \
-                patch('aggregator.handler.time.sleep') as slept:
-            assert record_handler(
-                _record('INSERT', new=sample_feedback_item, event_id=self.ID)
-            ) == {"status": "success"}
+        slept = self._insert_succeeds_after_one_failure(aggregates, sample_feedback_item, self._conflict())
 
         assert _counts(aggregates)['METRIC#daily_total'] == Decimal(1)
         # It WAITED, and it did not wait zero: a retry with no backoff re-collides.
@@ -3833,23 +3802,10 @@ class TestAWriteConflictIsRetriedRatherThanReported:
         from aggregator.handler import record_handler
 
         aggregates, idempotency = deduped_tables
-        real = aggregates.meta.client.transact_write_items
-        attempts = iter([self._conflict()])
-
-        def flaky(**kwargs):
-            failure = next(attempts, None)
-            if failure is not None:
-                raise failure
-            return real(**kwargs)
-
-        with patch.object(aggregates.meta.client, 'transact_write_items', flaky), \
-                patch('aggregator.handler.time.sleep'):
+        with self._transaction_failing_once(aggregates, self._conflict()):
             record_handler(_record('INSERT', new=sample_feedback_item, event_id=self.ID))
 
-        counts = _counts(aggregates)
-        categories = sum(v for pk, v in counts.items()
-                         if pk.startswith('METRIC#daily_category#'))
-        assert counts['METRIC#daily_total'] == categories == Decimal(1), counts
+        _assert_counted_once_in_total_and_categories(aggregates)
         assert idempotency.scan()['Count'] == 1
 
     def test_the_attempts_are_bounded(self, deduped_tables, sample_feedback_item):
@@ -3864,10 +3820,9 @@ class TestAWriteConflictIsRetriedRatherThanReported:
         aggregates, _ = deduped_tables
         with patch.object(aggregates.meta.client, 'transact_write_items',
                           side_effect=self._conflict()) as attempted, \
-                patch('aggregator.handler.time.sleep'):
-            with pytest.raises(ClientError):
-                record_handler(_record('INSERT', new=sample_feedback_item,
-                                       event_id=self.ID))
+                patch('aggregator.handler.time.sleep'), pytest.raises(ClientError):
+            record_handler(_record('INSERT', new=sample_feedback_item,
+                                   event_id=self.ID))
 
         assert attempted.call_count == TRANSACT_WRITE_ATTEMPTS, (
             'a permanently conflicted transaction was attempted a different number of '
@@ -3886,17 +3841,7 @@ class TestAWriteConflictIsRetriedRatherThanReported:
         from aggregator.handler import CONFLICTED_METRIC, record_handler
 
         aggregates, _ = deduped_tables
-        real = aggregates.meta.client.transact_write_items
-        attempts = iter([self._conflict()])
-
-        def flaky(**kwargs):
-            failure = next(attempts, None)
-            if failure is not None:
-                raise failure
-            return real(**kwargs)
-
-        with patch.object(aggregates.meta.client, 'transact_write_items', flaky), \
-                patch('aggregator.handler.time.sleep'), \
+        with self._transaction_failing_once(aggregates, self._conflict()), \
                 patch('aggregator.handler.metrics') as mock_metrics:
             record_handler(_record('INSERT', new=sample_feedback_item, event_id=self.ID))
 
@@ -3920,10 +3865,9 @@ class TestAWriteConflictIsRetriedRatherThanReported:
         aggregates, _ = deduped_tables
         permanent = self._cancelled('None', 'ValidationError')
         with patch.object(aggregates.meta.client, 'transact_write_items',
-                          side_effect=permanent) as attempted:
-            with pytest.raises(ClientError):
-                record_handler(_record('INSERT', new=sample_feedback_item,
-                                       event_id=self.ID))
+                          side_effect=permanent) as attempted, pytest.raises(ClientError):
+            record_handler(_record('INSERT', new=sample_feedback_item,
+                                   event_id=self.ID))
 
         assert attempted.call_count == 1, (
             'a cancellation no contention caused was re-attempted; it will fail the '
@@ -3949,23 +3893,10 @@ class TestAWriteConflictIsRetriedRatherThanReported:
         opposite conclusion about the same condition was the defect. Fails if
         `_RETRYABLE_CANCELLATION_REASONS` is narrowed back to the conflict alone.
         """
-        from aggregator.handler import record_handler
-
         aggregates, _ = deduped_tables
-        real = aggregates.meta.client.transact_write_items
-        attempts = iter([self._cancelled('None', reason)])
-
-        def flaky(**kwargs):
-            failure = next(attempts, None)
-            if failure is not None:
-                raise failure
-            return real(**kwargs)
-
-        with patch.object(aggregates.meta.client, 'transact_write_items', flaky), \
-                patch('aggregator.handler.time.sleep') as slept:
-            assert record_handler(
-                _record('INSERT', new=sample_feedback_item, event_id=self.ID)
-            ) == {"status": "success"}
+        slept = self._insert_succeeds_after_one_failure(
+            aggregates, sample_feedback_item, self._cancelled('None', reason),
+        )
 
         # The retry is what wrote the record, and it waited first.
         assert _counts(aggregates)['METRIC#daily_total'] == Decimal(1)
@@ -3995,10 +3926,9 @@ class TestAWriteConflictIsRetriedRatherThanReported:
         mixed = self._cancelled('None', 'TransactionConflict', 'ValidationError')
         with patch.object(aggregates.meta.client, 'transact_write_items',
                           side_effect=mixed) as attempted, \
-                patch('aggregator.handler.time.sleep') as slept:
-            with pytest.raises(ClientError):
-                record_handler(_record('INSERT', new=sample_feedback_item,
-                                       event_id=self.ID))
+                patch('aggregator.handler.time.sleep') as slept, pytest.raises(ClientError):
+            record_handler(_record('INSERT', new=sample_feedback_item,
+                                   event_id=self.ID))
 
         assert attempted.call_count == 1, (
             'a cancellation carrying a permanent reason was re-attempted because '
@@ -4021,10 +3951,9 @@ class TestAWriteConflictIsRetriedRatherThanReported:
 
         aggregates, _ = deduped_tables
         with patch.object(aggregates.meta.client, 'transact_write_items',
-                          side_effect=self._cancelled('None', 'None')) as attempted:
-            with pytest.raises(ClientError):
-                record_handler(_record('INSERT', new=sample_feedback_item,
-                                       event_id=self.ID))
+                          side_effect=self._cancelled('None', 'None')) as attempted, pytest.raises(ClientError):
+            record_handler(_record('INSERT', new=sample_feedback_item,
+                                   event_id=self.ID))
 
         assert attempted.call_count == 1
 
@@ -4128,8 +4057,9 @@ class TestAWriteConflictIsRetriedRatherThanReported:
                 f'_RETRYABLE_CANCELLATION_REASONS.'
             )
 
+    @pytest.mark.usefixtures("deduped_tables")
     def test_a_redelivery_is_still_a_skip_and_not_a_retry(
-        self, deduped_tables, sample_feedback_item
+        self, sample_feedback_item
     ):
         """The claim's refusal must be read BEFORE the conflict check, or a redelivery
         would be retried until the bound and then reported failed — a stalled shard in
@@ -4172,8 +4102,8 @@ class TestAWriteConflictIsRetriedRatherThanReported:
         spellings are named in the module and this says why they differ.
         """
         from aggregator.handler import (
-            TRANSACTION_CONFLICT_REASON,
             _TRANSIENT_READ_ERRORS,
+            TRANSACTION_CONFLICT_REASON,
         )
 
         assert TRANSACTION_CONFLICT_REASON == 'TransactionConflict'
@@ -4201,10 +4131,8 @@ class TestAnUnrecognizedEventIsSkippedRatherThanFatal:
         """
         record = _record('SOMETHING_NEW')
         with pytest.raises(KeyError):
-            # Assigned rather than accessed bare, so this reads as the deliberate
-            # evaluation it is (and not as a stray statement to a linter).
-            resolved = record.event_name
-            assert resolved  # unreachable; the property raises
+            # The property read IS the statement under test: it raises.
+            operator.attrgetter('event_name')(record)
 
     @patch('aggregator.handler.aggregates_table')
     def test_an_unrecognized_event_name_is_skipped(self, mock_table):
@@ -4237,8 +4165,8 @@ class TestTtlExpiryIsReadFromTheEventNotFromPowertools:
     from raw event dicts, so they follow Powertools rather than pinning it).
     """
 
-    @patch('aggregator.handler.aggregates_table')
-    def test_an_identity_arriving_as_another_mapping_is_still_ttl_expiry(self, mock_table):
+    @patch('aggregator.handler.aggregates_table', MagicMock())
+    def test_an_identity_arriving_as_another_mapping_is_still_ttl_expiry(self):
         """Reading `raw_event` as a Mapping is what survives a wrapped value."""
         from aggregator.handler import is_ttl_expiry
 
@@ -4298,8 +4226,7 @@ class TestTheDaySentinelIsTheCounterEveryItemWrites:
 
         mock_table.get_item.return_value = {}
 
-        record_handler(_record('MODIFY', old=sample_feedback_item,
-                               new={**sample_feedback_item, 'category': 'billing'}))
+        record_handler(_recategorise(sample_feedback_item))
 
         assert [c.kwargs['Key']['pk'] for c in mock_table.get_item.call_args_list] == [
             DAILY_TOTAL_PK,
@@ -4313,17 +4240,14 @@ class TestTheDaySentinelIsTheCounterEveryItemWrites:
         """A blip: survive it, and say so at the level a blip deserves."""
         from aggregator.handler import record_handler
 
-        mock_table.get_item.side_effect = ClientError(
-            {'Error': {'Code': 'ProvisionedThroughputExceededException', 'Message': 'slow'}},
-            'GetItem',
+        _recategorise_while_the_day_read_fails(
+            record_handler, mock_table, sample_feedback_item, 'ProvisionedThroughputExceededException',
         )
-
-        record_handler(_record('MODIFY', old=sample_feedback_item,
-                               new={**sample_feedback_item, 'category': 'billing'}))
 
         assert mock_table.update_item.call_count > 0
         assert mock_logger.warning.called
         assert not mock_logger.error.called
+        assert not mock_logger.exception.called
 
     @patch('aggregator.handler.logger')
     @patch('aggregator.handler.aggregates_table')
@@ -4344,11 +4268,10 @@ class TestTheDaySentinelIsTheCounterEveryItemWrites:
             {'Error': {'Code': 'AccessDeniedException', 'Message': 'no'}}, 'GetItem',
         )
 
-        record_handler(_record('MODIFY', old=sample_feedback_item,
-                               new={**sample_feedback_item, 'category': 'billing'}))
+        record_handler(_recategorise(sample_feedback_item))
 
         assert mock_table.update_item.call_count > 0
-        assert mock_logger.error.called
+        assert mock_logger.exception.called
 
 
 class TestEachBehaviourEmitsItsOwnMetric:
@@ -4386,8 +4309,8 @@ class TestEachBehaviourEmitsItsOwnMetric:
         )
 
     @patch('aggregator.handler.metrics')
-    @patch('aggregator.handler.aggregates_table')
-    def test_an_insert_counts_as_updated(self, mock_table, mock_metrics, sample_feedback_item):
+    @patch('aggregator.handler.aggregates_table', MagicMock())
+    def test_an_insert_counts_as_updated(self, mock_metrics, sample_feedback_item):
         from aggregator.handler import UPDATED_METRIC, record_handler
 
         record_handler(_record('INSERT', new=sample_feedback_item))
@@ -4395,26 +4318,27 @@ class TestEachBehaviourEmitsItsOwnMetric:
         assert self._names(mock_metrics) == [UPDATED_METRIC]
 
     @patch('aggregator.handler.metrics')
-    @patch('aggregator.handler.aggregates_table')
-    def test_a_delete_counts_as_reversed(self, mock_table, mock_metrics, sample_feedback_item):
+    @patch('aggregator.handler.aggregates_table', MagicMock())
+    def test_a_delete_counts_as_reversed(self, mock_metrics, sample_feedback_item):
         from aggregator.handler import REVERSED_METRIC, record_handler
 
         record_handler(_record('REMOVE', old=sample_feedback_item))
 
         assert self._names(mock_metrics) == [REVERSED_METRIC]
 
+    @pytest.mark.usefixtures("live_day_table")
     @patch('aggregator.handler.metrics')
-    def test_an_edit_counts_as_rebucketed(self, mock_metrics, live_day_table, sample_feedback_item):
+    def test_an_edit_counts_as_rebucketed(self, mock_metrics, sample_feedback_item):
         from aggregator.handler import REBUCKETED_METRIC, record_handler
 
-        record_handler(_record('MODIFY', old=sample_feedback_item,
-                               new={**sample_feedback_item, 'category': 'billing'}))
+        record_handler(_recategorise(sample_feedback_item))
 
         assert self._names(mock_metrics) == [REBUCKETED_METRIC]
 
+    @pytest.mark.usefixtures("live_day_table")
     @patch('aggregator.handler.metrics')
     def test_an_edit_that_moved_nothing_counts_as_nothing(
-        self, mock_metrics, live_day_table, sample_feedback_item
+        self, mock_metrics, sample_feedback_item
     ):
         """The metric means "aggregates moved", so a no-op edit must not inflate it."""
         from aggregator.handler import record_handler
@@ -4424,15 +4348,15 @@ class TestEachBehaviourEmitsItsOwnMetric:
 
         assert self._names(mock_metrics) == []
 
+    @pytest.mark.usefixtures("sample_feedback_item", "real_aggregates_table")
     @patch('aggregator.handler.metrics')
     def test_an_edit_to_an_aged_out_day_counts_as_nothing(
-        self, mock_metrics, sample_feedback_item, real_aggregates_table
+        self, mock_metrics, sample_feedback_item
     ):
         """Skipped for the day being gone is still "no aggregates moved"."""
         from aggregator.handler import record_handler
 
-        record_handler(_record('MODIFY', old=sample_feedback_item,
-                               new={**sample_feedback_item, 'category': 'billing'}))
+        record_handler(_recategorise(sample_feedback_item))
 
         assert self._names(mock_metrics) == []
 
@@ -4523,9 +4447,10 @@ class TestEachBehaviourEmitsItsOwnMetric:
             f'ask for.'
         )
 
+    @pytest.mark.usefixtures("real_aggregates_table")
     @patch('aggregator.handler.metrics')
     def test_an_edit_that_did_move_a_counter_still_counts_as_rebucketed(
-        self, mock_metrics, real_aggregates_table, sample_feedback_item
+        self, mock_metrics, sample_feedback_item
     ):
         """Positive control: counting LANDED writes must not stop counting at all."""
         from aggregator.handler import REBUCKETED_METRIC, record_handler
@@ -4533,8 +4458,7 @@ class TestEachBehaviourEmitsItsOwnMetric:
         record_handler(_record('INSERT', new=sample_feedback_item))
         mock_metrics.reset_mock()
 
-        record_handler(_record('MODIFY', old=sample_feedback_item,
-                               new={**sample_feedback_item, 'category': 'billing'}))
+        record_handler(_recategorise(sample_feedback_item))
 
         assert REBUCKETED_METRIC in self._names(mock_metrics)
 
@@ -4554,9 +4478,9 @@ class TestEachBehaviourEmitsItsOwnMetric:
         assert self._names(mock_metrics) == [REFUSED_METRIC]
 
     @patch('aggregator.handler.metrics')
-    @patch('aggregator.handler.aggregates_table')
+    @patch('aggregator.handler.aggregates_table', MagicMock())
     def test_a_skipped_ttl_expiry_counts_as_nothing(
-        self, mock_table, mock_metrics, sample_feedback_item
+        self, mock_metrics, sample_feedback_item
     ):
         from aggregator.handler import record_handler
 

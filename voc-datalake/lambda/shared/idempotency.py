@@ -36,29 +36,30 @@ the table keeps expiring an attribute nothing writes.
 """
 
 import os
+import threading
+from typing import TYPE_CHECKING, Any
+
 from aws_lambda_powertools.utilities.idempotency import (
     DynamoDBPersistenceLayer,
     IdempotencyConfig,
-    idempotent,
     idempotent_function,
 )
 from aws_lambda_powertools.utilities.idempotency.exceptions import (
     IdempotencyAlreadyInProgressError,
-    IdempotencyItemAlreadyExistsError,
 )
 
-# Re-export for convenience
+if TYPE_CHECKING:
+    from mypy_boto3_dynamodb.type_defs import TransactWriteItemTypeDef
+
+# Re-exported so the processor imports its idempotency surface from one place.
 __all__ = [
-    "dedupe_claim_item",
     "DEDUPE_CLAIM_TTL_SECONDS",
-    "get_idempotency_config",
-    "get_persistence_layer",
-    "idempotent",
-    "idempotent_function",
     "IDEMPOTENCY_EXPIRY_ATTRIBUTE",
     "IDEMPOTENCY_KEY_ATTRIBUTE",
     "IdempotencyAlreadyInProgressError",
-    "IdempotencyItemAlreadyExistsError",
+    "get_idempotency_config",
+    "get_persistence_layer",
+    "idempotent_function",
 ]
 
 # The idempotency table's schema, as BOTH writers spend it. `id` is the partition
@@ -70,22 +71,64 @@ __all__ = [
 IDEMPOTENCY_KEY_ATTRIBUTE = "id"
 IDEMPOTENCY_EXPIRY_ATTRIBUTE = "expiration"
 
+
+
+class ThreadSafeDynamoDBPersistenceLayer(DynamoDBPersistenceLayer):
+    """A `DynamoDBPersistenceLayer` that several threads of ONE invocation may share.
+
+    The processor enriches the records of an SQS batch concurrently
+    (`shared.batch.ConcurrentSqsBatchProcessor`), and every record goes through
+    this one layer. Two pieces of Powertools' layer are not thread-safe:
+
+    * `configure` flips `self.configured = True` BEFORE it sets the JMESPath
+      options, the expiry and the local cache, so a second thread that arrives
+      mid-way skips configuration and runs with a half-built layer (on a cold
+      start, AttributeError on `_cache`).
+    * the local cache is an `LRUDict` whose `get`/`__setitem__` are
+      check-then-act sequences (`get` then `move_to_end`); an eviction or a
+      delete between the two raises KeyError in another thread.
+
+    One re-entrant lock serialises both. They are in-memory steps of a few
+    microseconds next to the DynamoDB round-trips, which stay concurrent.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._thread_lock = threading.RLock()
+
+    def configure(self, config: IdempotencyConfig, function_name: str | None = None, key_prefix: str | None = None) -> None:
+        with self._thread_lock:
+            super().configure(config, function_name, key_prefix)
+
+    def _save_to_cache(self, data_record: Any) -> None:
+        with self._thread_lock:
+            super()._save_to_cache(data_record)
+
+    def _retrieve_from_cache(self, idempotency_key: str) -> Any:
+        with self._thread_lock:
+            return super()._retrieve_from_cache(idempotency_key)
+
+    def _delete_from_cache(self, idempotency_key: str) -> None:
+        with self._thread_lock:
+            super()._delete_from_cache(idempotency_key)
+
+
 # Module-level cache for persistence layer
 _persistence_layer = None
 
 
-def get_persistence_layer(table_name: str = None) -> DynamoDBPersistenceLayer:
+def get_persistence_layer(table_name: str | None = None) -> DynamoDBPersistenceLayer:
     """
     Get or create DynamoDB persistence layer for idempotency.
-    
+
     Args:
         table_name: DynamoDB table name. Defaults to IDEMPOTENCY_TABLE env var.
-        
+
     Returns:
         DynamoDBPersistenceLayer instance (cached for connection reuse)
     """
     global _persistence_layer
-    
+
     if _persistence_layer is None:
         table = table_name or os.environ.get("IDEMPOTENCY_TABLE", "")
         if not table:
@@ -93,43 +136,36 @@ def get_persistence_layer(table_name: str = None) -> DynamoDBPersistenceLayer:
                 "Idempotency table not configured. "
                 "Set IDEMPOTENCY_TABLE environment variable."
             )
-        _persistence_layer = DynamoDBPersistenceLayer(table_name=table)
-    
+        _persistence_layer = ThreadSafeDynamoDBPersistenceLayer(table_name=table)
+
     return _persistence_layer
 
 
 def get_idempotency_config(
     expires_after_seconds: int = 3600,
-    event_key_jmespath: str = None,
     use_local_cache: bool = True,
     local_cache_max_items: int = 256,
-    raise_on_no_idempotency_key: bool = False,
 ) -> IdempotencyConfig:
     """
     Create idempotency configuration with sensible defaults.
-    
+
+    Shaped for `idempotent_function`, which is handed its key through
+    `data_keyword_argument` — so there is no JMESPath to configure here. The one
+    default that differs from Powertools' own is `use_local_cache`: on, so a replay
+    inside one execution environment is answered from memory rather than DynamoDB.
+
     Args:
         expires_after_seconds: How long to remember processed events (default: 1 hour)
-        event_key_jmespath: JMESPath to extract idempotency key from event
         use_local_cache: Use in-memory cache to reduce DynamoDB reads (default: True)
         local_cache_max_items: Max items in local cache (default: 256)
-        raise_on_no_idempotency_key: Raise error if key extraction fails (default: False)
-        
+
     Returns:
         IdempotencyConfig instance
-        
-    Example JMESPath expressions:
-        - SQS batch: "Records[*].messageId" 
-        - Single record: "body.id"
-        - API Gateway: "requestContext.requestId"
-        - Custom: "powertools_json(body).source_platform"
     """
     return IdempotencyConfig(
         expires_after_seconds=expires_after_seconds,
-        event_key_jmespath=event_key_jmespath,
         use_local_cache=use_local_cache,
         local_cache_max_items=local_cache_max_items,
-        raise_on_no_idempotency_key=raise_on_no_idempotency_key,
     )
 
 
@@ -147,7 +183,7 @@ DEDUPE_CLAIM_TTL_SECONDS = 2 * 24 * 60 * 60
 def dedupe_claim_item(
     table_name: str, key: str, now: int,
     expires_after_seconds: int = DEDUPE_CLAIM_TTL_SECONDS,
-) -> dict:
+) -> 'TransactWriteItemTypeDef':
     """One `TransactWriteItems` entry that claims `key`, or fails the transaction.
 
     The dedupe primitive for work whose "result" is a set of DynamoDB writes rather

@@ -11,28 +11,26 @@
  * seam — edit in one tab, read in another — so it fails if the callback is left
  * unwired even while the component-level tests stay green.
  */
-import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter, Routes, Route } from 'react-router-dom'
-import ProjectDetail from './ProjectDetail'
+import { PAGE_PROJECT } from './project-detail-fixtures'
+import { projectDataApiModule, projectDataMocks } from './project-data-fixtures'
+import { renderProjectDetailPage } from './project-detail-page-fixtures'
 import { emptyProductContext } from './productContextFields'
-import { stubElementScrollTo } from '../../test/stubScrollTo'
+import { stubScrollToForSuite } from './project-detail-fixtures'
 import { useConfigStore } from '../../store/configStore'
-import type { Project, ProductContext } from '../../api/types'
+import type { ProductContext } from '../../api/projectTypes'
 
-const mockGetProject = vi.fn()
-const mockGetJobs = vi.fn()
-const mockGetProductContext = vi.fn()
-const mockUpdateProductContext = vi.fn()
-const mockListProductDocs = vi.fn()
+const {
+  getProject: mockGetProject, getJobs: mockGetJobs, getProductContext: mockGetProductContext,
+} = projectDataMocks
+const mockUpdateProductContext = vi.fn<(...args: unknown[]) => unknown>()
+const mockListProductDocs = vi.fn<(...args: unknown[]) => unknown>()
 
 vi.mock('../../api/projectsApi', () => ({
   projectsApi: {
-    getProject: (...args: unknown[]) => mockGetProject(...args),
-    getJobs: (...args: unknown[]) => mockGetJobs(...args),
-    getProductContext: (...args: unknown[]) => mockGetProductContext(...args),
+    ...projectDataApiModule().projectsApi,
     updateProductContext: (...args: unknown[]) => mockUpdateProductContext(...args),
     listProductDocs: (...args: unknown[]) => mockListProductDocs(...args),
     dismissJob: vi.fn(),
@@ -43,51 +41,22 @@ vi.mock('../../api/projectsApi', () => ({
   },
 }))
 
-const project: Project = {
-  project_id: 'proj-1',
-  name: 'Reader Engagement',
-  description: '',
-  status: 'active',
-  created_at: '2026-08-01T10:00:00Z',
-  updated_at: '2026-08-01T10:00:00Z',
-  persona_count: 0,
-  document_count: 0,
-}
+const project = PAGE_PROJECT
 
 const context = (fields: Partial<ProductContext> = {}): ProductContext => ({
   ...emptyProductContext(),
   ...fields,
 })
 
-function renderPage() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/projects/proj-1']}>
-        <Routes>
-          <Route path="/projects/:id" element={<ProjectDetail />} />
-        </Routes>
-      </MemoryRouter>
-    </QueryClientProvider>,
-  )
-}
+const renderPage = renderProjectDetailPage
 
 describe('ProjectDetail product-context handover', () => {
-  // The Product tab renders the AI interview, whose effect scrolls the transcript;
-  // jsdom has no Element.scrollTo and the exception would blank the tab.
-  let restoreScrollTo: () => void
-  beforeAll(() => {
-    restoreScrollTo = stubElementScrollTo()
-  })
-  afterAll(() => {
-    restoreScrollTo()
-  })
+  // jsdom has no Element.scrollTo; see stubScrollToForSuite for why that matters here.
+  stubScrollToForSuite()
 
   beforeEach(() => {
     vi.clearAllMocks()
-    useConfigStore.setState({ config: { apiEndpoint: 'https://api.example.com/v1' } })
+    useConfigStore.setState({ config: { ...useConfigStore.getState().config, apiEndpoint: 'https://api.example.com/v1' } })
     mockGetProject.mockResolvedValue({
       project,
       personas: [],
@@ -107,12 +76,12 @@ describe('ProjectDetail product-context handover', () => {
     // Overview, before: nothing described.
     expect(await screen.findByText('Not described yet')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: /product/i }))
+    await user.click(screen.getByRole('tab', { name: /product/i }))
     const field = await screen.findByLabelText(/product name/i)
     await user.type(field, 'Reader')
     await user.tab()
     await waitFor(() => {
-      expect(mockUpdateProductContext).toHaveBeenCalled()
+      expect(mockUpdateProductContext).toHaveBeenCalledWith('proj-1', { product_name: 'Reader' })
     })
 
     // Two reads by this point, and that is the known cost: this page fetches the
@@ -120,13 +89,15 @@ describe('ProjectDetail product-context handover', () => {
     // the record while editing.
     const readsBeforeReturning = mockGetProductContext.mock.calls.length
 
-    await user.click(screen.getByRole('button', { name: /overview/i }))
+    await user.click(screen.getByRole('tab', { name: /overview/i }))
 
     expect(await screen.findByText('1 of 11 fields filled')).toBeInTheDocument()
-    expect(screen.queryByText('Not described yet')).not.toBeInTheDocument()
     // From the cache the save seeded, not from a third request — which is what
     // makes "hand the value back" different from "invalidate and refetch".
-    expect(mockGetProductContext).toHaveBeenCalledTimes(readsBeforeReturning)
+    expect({
+      staleCard: screen.queryByText('Not described yet') !== null,
+      reads: mockGetProductContext.mock.calls.length,
+    }).toStrictEqual({ staleCard: false, reads: readsBeforeReturning })
   })
 
   it('leaves the card showing no state when the context request fails', async () => {

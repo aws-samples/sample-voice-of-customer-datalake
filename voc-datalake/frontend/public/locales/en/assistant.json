@@ -1,0 +1,187 @@
+{
+  "launcher": {
+    "open": "Open assistant",
+    "close": "Close assistant",
+    "askAboutProject": "Ask the assistant",
+    "moveHint": "Drag, or use the arrow keys, to move the assistant button. Home puts it back.",
+    "resetPosition": "Reset assistant button position"
+  },
+  "panel": {
+    "title": "Assistant",
+    "using": "Using: {{context}}",
+    "newChat": "New chat",
+    "sessions": "Past conversations",
+    "export": "Export conversation (Markdown)",
+    "expand": "Expand",
+    "fullscreen": "Full screen",
+    "exitFullscreen": "Exit full screen",
+    "close": "Close",
+    "messages": "Conversation",
+    "thinking": "Thinking…",
+    "stillGenerating": "Still generating…"
+  },
+  "pages": {
+    "home": "Home",
+    "dashboard": "Dashboard",
+    "feedback": "Feedback",
+    "categories": "Categories",
+    "problems": "Problem analysis",
+    "chat": "AI chat",
+    "projects": "Projects",
+    "project": "Project",
+    "prioritization": "Prioritization",
+    "data-explorer": "Data explorer",
+    "scrapers": "Scrapers",
+    "feedback-forms": "Feedback forms",
+    "settings": "Settings",
+    "other": "This page"
+  },
+  "message": {
+    "reasoning": "Reasoning",
+    "toolSteps": "Steps taken",
+    "feedbackSources": "Related feedback",
+    "webSources": "Web sources",
+    "personaAnswers": "Persona answers",
+    "copy": "Copy",
+    "copied": "Copied",
+    "savedDocumentTitle": "Assistant answer – {{date}}",
+    "saveAsDocument": {
+      "idle": "Save as document",
+      "saving": "Saving…",
+      "saved": "Saved to documents",
+      "error": "Save failed – retry"
+    }
+  },
+  "toolStatus": {
+    "streaming": "preparing",
+    "running": "running",
+    "complete": "done",
+    "awaiting_approval": "waiting for your approval",
+    "executed": "done",
+    "failed": "failed",
+    "declined": "declined",
+    "cancelled": "cancelled"
+  },
+  "approvals": {
+    "title": "Actions awaiting approval",
+    "resolved": {
+      "executed": "done",
+      "failed": "failed",
+      "declined": "declined"
+    }
+  },
+  "composer": {
+    "label": "Message the assistant",
+    "placeholder": "Ask about your feedback, projects or this page…",
+    "send": "Send",
+    "stop": "Stop",
+    "attach": "Attach image or PDF",
+    "webSearch": "Search the web",
+    "removeAttachment": "Remove {{name}}",
+    "counter": "{{length}} / {{max}}",
+    "awaitingApproval": "Approve or decline the pending action to continue.",
+    "attachmentError": {
+      "type": "Only images (PNG, JPEG, GIF, WebP) and PDFs can be attached.",
+      "count": "You can attach at most {{max}} files.",
+      "size": "The attachments are too large.",
+      "read": "The file could not be read."
+    },
+    "stillGenerating": "The answer is still being written. It will appear here when it's ready."
+  },
+  "errors": {
+    "streamClosed": "The connection closed before the answer finished. Please try again.",
+    "generic": "Something went wrong: {{message}}",
+    "followTimeout": "The answer is taking longer than expected. Reopen this conversation later to see it."
+  },
+  "export": {
+    "user": "You",
+    "assistant": "Assistant"
+  },
+  "sessions": {
+    "title": "Past conversations",
+    "close": "Close",
+    "loading": "Loading conversations",
+    "error": "Could not load conversations.",
+    "empty": "No saved conversations yet.",
+    "untitled": "Untitled conversation",
+    "delete": "Delete “{{title}}”",
+    "newConversation": "New conversation",
+    "sidebar": "Conversations",
+    "openGroup": "Open",
+    "historyGroup": "History",
+    "closeThread": "Close “{{title}}”",
+    "closeRunning": "Stop and close “{{title}}”",
+    "status": {
+      "streaming": "Running",
+      "awaiting": "Waiting for your approval",
+      "error": "Failed",
+      "unread": "New reply"
+    }
+  },
+  "empty": {
+    "title": "How can I help?",
+    "subtitle": "I can read your data and propose changes — nothing is changed without your approval."
+  },
+  "suggestions": {
+    "default": {
+      "1": "What are customers most unhappy about this week?",
+      "2": "Summarize the urgent feedback",
+      "3": "Which categories are trending up?"
+    },
+    "project": {
+      "1": "Summarize this project and its personas",
+      "2": "What would our personas think of this idea?",
+      "3": "Draft a PRD from the project research"
+    },
+    "forms": {
+      "1": "How are my feedback forms performing?",
+      "2": "Summarize the latest form submissions",
+      "3": "Which form gets the lowest ratings?"
+    },
+    "prioritization": {
+      "1": "What should we prioritize next?",
+      "2": "Explain the top-ranked items",
+      "3": "Which items have the most customer impact?"
+    },
+    "scrapers": {
+      "1": "Which scrapers ran recently?",
+      "2": "Are any scrapers failing?",
+      "3": "What did the last scraper run collect?"
+    },
+    "settings": {
+      "1": "Show the current brand settings",
+      "2": "Which categories are configured?",
+      "3": "Suggest hashtags to track for our brand"
+    },
+    "problems": {
+      "1": "What are the biggest unresolved problems?",
+      "2": "Group these problems by root cause",
+      "3": "Which problems were resolved recently?"
+    },
+    "feedback": {
+      "1": "Summarize this feedback",
+      "2": "Find similar feedback",
+      "3": "What is the likely root cause?"
+    }
+  },
+  "notifications": {
+    "approval": {
+      "title": "The assistant needs your approval",
+      "body": "A conversation is waiting for you to approve an action."
+    },
+    "reply": {
+      "title": "The assistant replied",
+      "body": "A conversation has a new reply."
+    },
+    "failed": {
+      "title": "An assistant run failed",
+      "body": "Open the conversation to see what went wrong."
+    },
+    "toggle": {
+      "turnOn": "Notify me when a conversation needs me",
+      "turnOff": "Turn off notifications",
+      "blocked": "Notifications are blocked for this site in the browser settings",
+      "unsupported": "This browser does not support notifications"
+    }
+  }
+}

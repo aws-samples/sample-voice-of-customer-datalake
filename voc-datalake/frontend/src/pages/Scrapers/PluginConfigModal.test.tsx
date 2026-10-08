@@ -1,21 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { createQueryWrapper } from '../Categories/categories-fixtures'
+import { expectScheduleToggleLocked, sourceScheduleMocks } from './scrapers-fixtures'
 import PluginConfigModal from './PluginConfigModal'
 // Imported rather than restated: the subject of these assertions is the GATE, not
 // the wording, so a later decision to translate the tooltip must not fail a test
 // about admin access. See the constant's own docstring for why it is still English.
 import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import type { PluginManifest } from '../../plugins/types'
+import { at } from '@test/defined'
 
-const mockGetAppConfigs = vi.fn()
-const mockSaveAppConfig = vi.fn()
-const mockDeleteAppConfig = vi.fn()
-const mockGetSourcesStatus = vi.fn()
-const mockRunSource = vi.fn()
-const mockEnableSource = vi.fn()
-const mockDisableSource = vi.fn()
+const mockGetAppConfigs = vi.fn<(...args: unknown[]) => unknown>()
+const mockSaveAppConfig = vi.fn<(...args: unknown[]) => unknown>()
+const mockDeleteAppConfig = vi.fn<(...args: unknown[]) => unknown>()
+const mockGetSourcesStatus = vi.fn<(...args: unknown[]) => unknown>()
+const mockRunSource = vi.fn<(...args: unknown[]) => unknown>()
 
 vi.mock('../../api/client', () => ({
   api: {
@@ -23,17 +23,14 @@ vi.mock('../../api/client', () => ({
     saveAppConfig: (s: string, a: Record<string, string>) => mockSaveAppConfig(s, a),
     deleteAppConfig: (s: string, id: string) => mockDeleteAppConfig(s, id),
     getSourcesStatus: (s: string[]) => mockGetSourcesStatus(s),
-    enableSource: (s: string) => mockEnableSource(s),
-    disableSource: (s: string) => mockDisableSource(s),
+    enableSource: (s: string) => sourceScheduleMocks.enableSource(s),
+    disableSource: (s: string) => sourceScheduleMocks.disableSource(s),
     runSource: (s: string) => mockRunSource(s),
   },
 }))
 vi.mock('../../store/configStore', () => ({ useConfigStore: () => ({ config: { apiEndpoint: 'https://api.example.com' } }) }))
 
-function createWrapper() {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>
-}
+const createWrapper = () => createQueryWrapper()
 
 const plugin: PluginManifest = {
   id: 'app_reviews_android', name: 'Android App Reviews', icon: 'Android',
@@ -53,6 +50,15 @@ const mockApps = [
 
 describe('PluginConfigModal', () => {
   const onClose = vi.fn()
+
+  /** Render the modal and wait for the configured apps to load; returns a user for interaction. */
+  async function renderLoaded(isAdmin: boolean) {
+    const user = userEvent.setup()
+    render(<PluginConfigModal plugin={plugin} onClose={onClose} isAdmin={isAdmin} />, { wrapper: createWrapper() })
+    await waitFor(() => { expect(screen.getByText('Zara')).toBeInTheDocument() })
+    return user
+  }
+
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetAppConfigs.mockResolvedValue({ apps: mockApps })
@@ -108,7 +114,7 @@ describe('PluginConfigModal', () => {
     render(<PluginConfigModal plugin={plugin} onClose={onClose} isAdmin />, { wrapper: createWrapper() })
     await waitFor(() => { expect(screen.getByText('Zara')).toBeInTheDocument() })
     const deleteButtons = screen.getAllByTitle('Delete')
-    await user.click(deleteButtons[0])
+    await user.click(at(deleteButtons, 0))
     expect(screen.getByText('Delete App')).toBeInTheDocument()
   })
 
@@ -116,8 +122,7 @@ describe('PluginConfigModal', () => {
     const user = userEvent.setup()
     render(<PluginConfigModal plugin={plugin} onClose={onClose} isAdmin />, { wrapper: createWrapper() })
     await user.click(screen.getByRole('button', { name: /close/i }))
-    // eslint-disable-next-line vitest/prefer-called-with
-    expect(onClose).toHaveBeenCalled()
+    expect(onClose).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'click' }))
   })
 
   it('shows Run Now when apps exist', async () => {
@@ -144,6 +149,33 @@ describe('PluginConfigModal', () => {
   })
 
   /**
+   * `/integrations/{source}/apps` serves only the app-review plugins and answers
+   * 400 for any other source. The S3 import and GitHub Issues tiles opened this
+   * modal, fired that request twice (a console error each), and offered an app
+   * editor whose save the API refuses (QA s1, production 2.13.00).
+   */
+  describe('a plugin without app configs (s3_import)', () => {
+    const s3Plugin: PluginManifest = {
+      ...plugin, id: 's3_import', name: 'S3 Bulk Import', category: 'import',
+      config: [{ key: 'bucket_name', label: 'Bucket', type: 'text', required: true, placeholder: '', secret: false }],
+    }
+
+    it('never asks /integrations/{source}/apps and offers no app editor', async () => {
+      render(<PluginConfigModal plugin={s3Plugin} onClose={onClose} isAdmin />, { wrapper: createQueryWrapper(['/scrapers']) })
+      await waitFor(() => { expect(mockGetSourcesStatus).toHaveBeenCalledWith(['s3_import']) })
+      expect(mockGetAppConfigs).not.toHaveBeenCalled()
+      expect(screen.queryByRole('button', { name: /add app|add your first app/i })).not.toBeInTheDocument()
+      expect(screen.queryByText('Configured Apps')).not.toBeInTheDocument()
+    })
+
+    it('points to the data source settings instead', async () => {
+      render(<PluginConfigModal plugin={s3Plugin} onClose={onClose} isAdmin />, { wrapper: createQueryWrapper(['/scrapers']) })
+      await waitFor(() => { expect(mockGetSourcesStatus).toHaveBeenCalledWith(['s3_import']) })
+      expect(screen.getByRole('link', { name: 'Open data source settings' })).toHaveAttribute('href', '/admin?tab=plugins')
+    })
+  })
+
+  /**
    * Every mutating route this modal calls is admin-gated server-side:
    * POST/DELETE `/integrations/{source}/apps`, `POST /sources/{source}/run` and
    * `PUT /sources/{source}/enable|disable`. None of them was, so a caller whose
@@ -157,9 +189,7 @@ describe('PluginConfigModal', () => {
    */
   describe('when the user is not an admin', () => {
     it('does not trigger a run', async () => {
-      const user = userEvent.setup()
-      render(<PluginConfigModal plugin={plugin} onClose={onClose} isAdmin={false} />, { wrapper: createWrapper() })
-      await waitFor(() => { expect(screen.getByText('Zara')).toBeInTheDocument() })
+      const user = await renderLoaded(false)
 
       const run = screen.getByRole('button', { name: /run now/i })
       expect(run).toBeDisabled()
@@ -169,21 +199,13 @@ describe('PluginConfigModal', () => {
     })
 
     it('does not toggle the schedule', async () => {
-      const user = userEvent.setup()
-      render(<PluginConfigModal plugin={plugin} onClose={onClose} isAdmin={false} />, { wrapper: createWrapper() })
-      await waitFor(() => { expect(screen.getByText('Zara')).toBeInTheDocument() })
+      const user = await renderLoaded(false)
 
-      const toggle = screen.getByRole('checkbox')
-      expect(toggle).toBeDisabled()
-      await user.click(toggle)
-      expect(mockEnableSource).not.toHaveBeenCalled()
-      expect(mockDisableSource).not.toHaveBeenCalled()
+      await expectScheduleToggleLocked(user)
     })
 
     it('does not open the editor, so nothing can be saved', async () => {
-      const user = userEvent.setup()
-      render(<PluginConfigModal plugin={plugin} onClose={onClose} isAdmin={false} />, { wrapper: createWrapper() })
-      await waitFor(() => { expect(screen.getByText('Zara')).toBeInTheDocument() })
+      const user = await renderLoaded(false)
 
       const add = screen.getByRole('button', { name: /add app/i })
       expect(add).toBeDisabled()
@@ -193,9 +215,7 @@ describe('PluginConfigModal', () => {
     })
 
     it('does not delete an app config', async () => {
-      const user = userEvent.setup()
-      render(<PluginConfigModal plugin={plugin} onClose={onClose} isAdmin={false} />, { wrapper: createWrapper() })
-      await waitFor(() => { expect(screen.getByText('Zara')).toBeInTheDocument() })
+      const user = await renderLoaded(false)
 
       // Located by its position in the per-app row rather than by title: `title` is
       // what the assertion is ABOUT, so selecting on it would find the Run button
@@ -206,7 +226,7 @@ describe('PluginConfigModal', () => {
           && el.querySelector('svg.lucide-trash2') !== null)
       expect(perApp).toHaveLength(2)
 
-      await user.click(perApp[0])
+      await user.click(at(perApp, 0))
       // No confirmation dialog, so the mutation is unreachable rather than merely
       // guarded at the last step.
       expect(screen.queryByText('Delete App')).not.toBeInTheDocument()

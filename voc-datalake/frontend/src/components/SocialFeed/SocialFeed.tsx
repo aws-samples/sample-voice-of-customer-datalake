@@ -12,11 +12,16 @@
 
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Star, ExternalLink } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { ExternalLink, Inbox, MessageCircle } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { api, getDateRangeParams } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import clsx from 'clsx'
-import type { FeedbackItem } from '../../api/client'
+import type { FeedbackItem } from '../../api/types'
+import SentimentBadge from '../SentimentBadge/SentimentBadge'
+import RatingStars from '../RatingStars'
+import { SourceIcon } from '../SourceIcon/SourceIcon'
 
 // Safe date formatting helper
 function formatDateSafe(dateStr: string | undefined): string {
@@ -29,64 +34,59 @@ function formatDateSafe(dateStr: string | undefined): string {
   }
 }
 
-const SOURCE_ICONS: Record<string, string> = {
-  webscraper: '🌐', web_scrape: '🌐', web_scrape_jsonld: '🌐',
-  manual_import: '📝', s3_import: '📦',
-}
-
 const SOURCE_COLORS: Record<string, string> = {
-  webscraper: 'border-l-blue-500', web_scrape: 'border-l-blue-500',
-  manual_import: 'border-l-purple-500', s3_import: 'border-l-green-500',
+  webscraper: 'border-l-chart-2', web_scrape: 'border-l-chart-2',
+  manual_import: 'border-l-chart-1', s3_import: 'border-l-chart-3',
 }
 
 function FeedItem({ item }: Readonly<{ item: FeedbackItem }>) {
-  const icon = SOURCE_ICONS[item.source_platform] || '📝'
-  const borderColor = SOURCE_COLORS[item.source_platform] || 'border-l-gray-300'
-  
+  const { t } = useTranslation('components')
+  // Only non-empty strings, so only an unknown platform falls back.
+  const borderColor = SOURCE_COLORS[item.source_platform] ?? 'border-l-border-strong'
+
   return (
-    <div className={clsx('bg-white rounded-lg border-l-4 p-4 shadow-sm hover:shadow-md transition-shadow', borderColor)}>
+    <article className={clsx('bg-card border border-border rounded-lg border-l-4 p-3 sm:p-4 hover:border-border-strong transition-colors', borderColor)}>
       <div className="flex items-start gap-3">
-        <span className="text-xl flex-shrink-0">{icon}</span>
+        <span className="flex-shrink-0 w-8 h-8 rounded-lg bg-accent-subtle text-accent-text flex items-center justify-center">
+          <SourceIcon platform={item.source_platform} />
+        </span>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-sm font-medium text-gray-900 capitalize">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-1">
+            <span className="text-sm font-medium text-text-strong capitalize">
               {item.source_platform.replace(/_/g, ' ')}
             </span>
-            {item.rating != null && (
-              <div className="flex items-center gap-0.5">
-                {Array.from({ length: 5 }, (_, i) => (
-                  <Star
-                    key={i}
-                    size={12}
-                    className={i < (item.rating ?? 0) ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'}
-                  />
-                ))}
-              </div>
-            )}
-            <span className={clsx(
-              'px-1.5 py-0.5 rounded text-xs font-medium',
-              item.sentiment_label === 'positive' && 'bg-green-100 text-green-700',
-              item.sentiment_label === 'negative' && 'bg-red-100 text-red-700',
-              item.sentiment_label === 'neutral' && 'bg-gray-100 text-gray-700',
-              item.sentiment_label === 'mixed' && 'bg-yellow-100 text-yellow-700',
-            )}>
-              {item.sentiment_label}
-            </span>
+            {item.rating != null && <RatingStars rating={item.rating} size={12} />}
+            <SentimentBadge sentiment={item.sentiment_label} />
           </div>
 
-          <p className="text-sm text-gray-700 line-clamp-3">{item.original_text}</p>
-          <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-            <span>{formatDateSafe(item.source_created_at)}</span>
+          <p className="text-sm text-text line-clamp-3">{item.original_text}</p>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-muted">
+            <span className="font-mono">{formatDateSafe(item.source_created_at)}</span>
             {item.category && <span className="capitalize">{item.category.replace(/_/g, ' ')}</span>}
-            {item.source_url && (
-              <a href={item.source_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-blue-600 hover:underline">
-                View <ExternalLink size={10} />
-              </a>
-            )}
+            <span className="ml-auto flex items-center gap-3">
+              <Link
+                to={`/feedback/${item.feedback_id}`}
+                className="inline-flex items-center gap-1 link focus-ring rounded-sm"
+              >
+                <MessageCircle size={12} aria-hidden="true" />
+                {t('feedbackCard.details')}
+              </Link>
+              {item.source_url && (
+                <a
+                  href={item.source_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 link focus-ring rounded-sm"
+                  title={t('feedbackCard.openOriginal')}
+                >
+                  {t('socialFeed.view')} <ExternalLink size={12} aria-hidden="true" />
+                </a>
+              )}
+            </span>
           </div>
         </div>
       </div>
-    </div>
+    </article>
   )
 }
 
@@ -98,6 +98,7 @@ interface SocialFeedProps {
 export default function SocialFeed({ limit = 10, showFilters = true }: SocialFeedProps) {
   const { timeRange, customDays, dateBasis, config } = useConfigStore()
   const dateParams = getDateRangeParams(timeRange, customDays, dateBasis)
+  const { t } = useTranslation('components')
   const [activeSource, setActiveSource] = useState<string | null>(null)
 
   // Fetch available sources dynamically
@@ -109,7 +110,7 @@ export default function SocialFeed({ limit = 10, showFilters = true }: SocialFee
 
   const { data, isLoading } = useQuery({
     queryKey: ['feedback', dateParams, activeSource],
-    queryFn: () => api.getFeedback({ ...dateParams, source: activeSource || undefined, limit }),
+    queryFn: () => api.getFeedback({ ...dateParams, source: activeSource === null || activeSource === '' ? undefined : activeSource, limit }),
     enabled: !!config.apiEndpoint,
   })
 
@@ -122,7 +123,7 @@ export default function SocialFeed({ limit = 10, showFilters = true }: SocialFee
     return (
       <div className="space-y-3">
         {Array.from({ length: 3 }, (_, i) => (
-          <div key={i} className="bg-gray-100 rounded-lg h-24 animate-pulse" />
+          <div key={i} className="skeleton rounded-lg h-24" />
         ))}
       </div>
     )
@@ -131,21 +132,30 @@ export default function SocialFeed({ limit = 10, showFilters = true }: SocialFee
   return (
     <div className="space-y-4">
       {showFilters && (
-        <div className="flex items-center gap-2 overflow-x-auto pb-2">
-          {sources.map(source => (
-            <button
-              key={source}
-              onClick={() => setActiveSource(source === 'all' ? null : source)}
-              className={clsx(
-                'px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors',
-                (source === 'all' && !activeSource) || activeSource === source
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              )}
-            >
-              {source === 'all' ? '🔄 All' : `${SOURCE_ICONS[source] || ''} ${source.replace(/_/g, ' ')}`}
-            </button>
-          ))}
+        // Segmented filter (design-system tabs recipe); scrolls sideways on
+        // phones instead of wrapping into a ragged second row.
+        <div className="max-w-full overflow-x-auto">
+          <div className="tabs-track inline-flex" role="group" aria-label={t('socialFeed.filterLabel')}>
+            {sources.map(source => {
+              const active = (source === 'all' && !activeSource) || activeSource === source
+              return (
+                <button
+                  key={source}
+                  type="button"
+                  onClick={() => setActiveSource(source === 'all' ? null : source)}
+                  aria-pressed={active}
+                  className={clsx('tab whitespace-nowrap', active && 'tab-active')}
+                >
+                  {source === 'all' ? t('socialFeed.all') : (
+                    <span className="inline-flex items-center gap-1.5">
+                      <SourceIcon platform={source} size={14} />
+                      {source.replace(/_/g, ' ')}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
         </div>
       )}
       
@@ -154,8 +164,9 @@ export default function SocialFeed({ limit = 10, showFilters = true }: SocialFee
           <FeedItem key={item.feedback_id} item={item} />
         ))}
         {(!data?.items || data.items.length === 0) && (
-          <div className="text-center py-8 text-gray-500">
-            No feedback found for this period
+          <div className="flex flex-col items-center gap-2 text-center py-8 text-sm text-muted">
+            <Inbox size={20} aria-hidden="true" />
+            {t('socialFeed.noFeedback')}
           </div>
         )}
       </div>

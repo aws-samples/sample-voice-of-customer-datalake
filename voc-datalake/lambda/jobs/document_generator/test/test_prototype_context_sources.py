@@ -37,7 +37,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-HTML = '<!DOCTYPE html><html><body><h1>Demo</h1></body></html>'
+from jobs.document_generator.test.prototype_table_fixtures import (
+    HTML,
+    PRD_NEW,
+    PRD_OLD,
+    prompt_sent,
+    run_prototype_build,
+    saved_item,
+    wire_projects_table,
+)
 
 # A block that could not be mistaken for the placeholder `_product_context`
 # returns when a project describes nothing. Asserting on the placeholder would
@@ -45,13 +53,38 @@ HTML = '<!DOCTYPE html><html><body><h1>Demo</h1></body></html>'
 # section was injected or omitted, because it is absent from both.
 DISTINCTIVE_CONTEXT = '### Structured product context\n**Product**: Wombat Telemetry Console'
 
-PRD_OLD = {'document_id': 'zz_prd_old', 'content': 'OLD PRD body', 'created_at': '2026-01-01T00:00:00Z'}
-PRD_NEW = {'document_id': 'aa_prd_new', 'content': 'NEW PRD body', 'created_at': '2026-06-01T00:00:00Z'}
 PRFAQ = {'document_id': 'prfaq_1', 'content': 'PRFAQ body', 'created_at': '2026-02-01T00:00:00Z'}
 RESEARCH_A = {'document_id': 'research_a', 'title': 'Churn interviews', 'content': 'RESEARCH A findings'}
 RESEARCH_B = {'document_id': 'research_b', 'title': 'Pricing survey', 'content': 'RESEARCH B findings'}
 
 GOLDEN_PROMPT = Path(__file__).parent / 'golden' / 'prototype_prompt_baseline.txt'
+
+
+@pytest.fixture
+def research_build(mock_dynamodb, mock_converse, sample_job_event, lambda_context):
+    """Run a research build over *documents*; returns the prompt the model got.
+
+    The spec is PRD_NEW (or *prd_items*) plus PRFAQ. *selected_ids* defaults to
+    every document passed, in order.
+    """
+    def build(documents: dict, *, selected_ids: list[str] | None = None,
+              prd_items: tuple = (PRD_NEW,)) -> str:
+        wire_projects_table(
+            mock_dynamodb,
+            prd_pages=[{'Items': list(prd_items)}],
+            prfaq_pages=[{'Items': [PRFAQ]}],
+            documents=documents,
+        )
+        mock_converse.return_value = HTML
+        run_prototype_build(
+            sample_job_event, lambda_context, use_research=True,
+            selected_research_ids=(
+                selected_ids if selected_ids is not None
+                else [doc['document_id'] for doc in documents.values()]
+            ),
+        )
+        return prompt_sent(mock_converse)
+    return build
 
 
 # ── Visual-brief fixtures ─────────────────────────────────────────────────────
@@ -133,7 +166,7 @@ def _visuals(docs, *, bodies=None, unreadable=()):
     text = VISUAL_BODIES if bodies is None else bodies
     s3 = MagicMock()
 
-    def get_object(Bucket, Key):  # capitalised kwargs are boto3's own
+    def get_object(Key, **_kwargs):  # capitalised kwarg is boto3's own
         if Key in unreadable:
             raise RuntimeError('NoSuchKey')
         return {'Body': MagicMock(read=lambda: text[Key].encode('utf-8'))}
@@ -144,63 +177,15 @@ def _visuals(docs, *, bodies=None, unreadable=()):
         yield
 
 
-def _wire(mock_dynamodb, *, prd_pages=(), prfaq_pages=(), documents=None, project_name='My Project'):
-    """
-    Wire the projects table: newest-of-type query pages per type, plus items
-    reachable by key.
-
-    Same shape as `test_prototype_sources._wire` — kept local rather than
-    imported so this file's fixtures can be read without opening another, and so
-    a change there cannot silently retune the golden test here.
-    """
-    table = mock_dynamodb['table']
-    table.query.side_effect = [*prd_pages, *prfaq_pages]
-
-    by_sk = {}
-    for prefix, pages in (('PRD#', prd_pages), ('PRFAQ#', prfaq_pages)):
-        for page in pages:
-            for item in page.get('Items') or []:
-                document_id = item.get('document_id')
-                if document_id:
-                    by_sk[f'{prefix}{document_id}'] = item
-    by_sk.update(documents or {})
-
-    def get_item(Key=None, **kwargs):
-        sk = (Key or {}).get('sk', '')
-        if sk == 'META':
-            return {'Item': {'name': project_name}}
-        item = by_sk.get(sk)
-        return {'Item': item} if item else {}
-
-    table.get_item.side_effect = get_item
-    return table
-
-
 def _wire_one_of_each(mock_dynamodb, **kwargs):
     """The simplest buildable project: one PRD, one PR/FAQ, plus both research reports."""
-    return _wire(
+    return wire_projects_table(
         mock_dynamodb,
         prd_pages=[{'Items': [PRD_NEW]}],
         prfaq_pages=[{'Items': [PRFAQ]}],
         documents={'RESEARCH#research_a': RESEARCH_A, 'RESEARCH#research_b': RESEARCH_B},
         **kwargs,
     )
-
-
-def _run(sample_job_event, lambda_context, **config):
-    from jobs.document_generator.handler import lambda_handler
-    return lambda_handler({
-        **sample_job_event,
-        'doc_config': {'doc_type': 'build_prototype', 'title': 'Test Prototype', **config},
-    }, lambda_context)
-
-
-def _prompt(mock_converse):
-    return mock_converse.call_args.kwargs['prompt']
-
-
-def _saved(mock_dynamodb):
-    return mock_dynamodb['table'].put_item.call_args.kwargs['Item']
 
 
 def _keys(mock_dynamodb):
@@ -221,20 +206,21 @@ def stub_product_context():
 
 
 class TestProductContextIsOptIn:
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3", "sample_job_event", "lambda_context", "stub_product_context")
     def test_ticking_product_context_puts_the_block_in_the_prompt(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event,
-        lambda_context, stub_product_context,
-    ):
+        self, mock_dynamodb, mock_converse, sample_job_event,
+        lambda_context,     ):
         _wire_one_of_each(mock_dynamodb)
         mock_converse.return_value = HTML
 
-        _run(sample_job_event, lambda_context, use_product_context=True)
+        run_prototype_build(sample_job_event, lambda_context, use_product_context=True)
 
-        assert DISTINCTIVE_CONTEXT in _prompt(mock_converse)
-        assert _saved(mock_dynamodb)['derivation']['product_context_included'] is True
+        assert DISTINCTIVE_CONTEXT in prompt_sent(mock_converse)
+        assert saved_item(mock_dynamodb)['derivation']['product_context_included'] is True
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_not_ticking_product_context_keeps_the_block_out(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event,
+        self, mock_dynamodb, mock_converse, sample_job_event,
         lambda_context, stub_product_context,
     ):
         """The helper is stubbed to succeed, so the only thing keeping the block
@@ -243,14 +229,15 @@ class TestProductContextIsOptIn:
         _wire_one_of_each(mock_dynamodb)
         mock_converse.return_value = HTML
 
-        _run(sample_job_event, lambda_context)
+        run_prototype_build(sample_job_event, lambda_context)
 
-        assert DISTINCTIVE_CONTEXT not in _prompt(mock_converse)
-        assert _saved(mock_dynamodb)['derivation']['product_context_included'] is False
+        assert DISTINCTIVE_CONTEXT not in prompt_sent(mock_converse)
+        assert saved_item(mock_dynamodb)['derivation']['product_context_included'] is False
         stub_product_context.assert_not_called()
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_a_failure_to_build_the_product_context_does_not_fail_the_build(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+        self, mock_dynamodb, mock_converse, sample_job_event, lambda_context,
     ):
         """The raise is planted INSIDE `build_product_context_block`, which is
         where a real failure happens (a DynamoDB read, an S3 read of extracted
@@ -265,9 +252,9 @@ class TestProductContextIsOptIn:
             'api.product_context.build_product_context_block',
             side_effect=RuntimeError('DynamoDB is having a day'),
         ):
-            _run(sample_job_event, lambda_context, use_product_context=True)
+            run_prototype_build(sample_job_event, lambda_context, use_product_context=True)
 
-        item = _saved(mock_dynamodb)
+        item = saved_item(mock_dynamodb)
         assert item['document_type'] == 'prototype'
         assert item['derivation']['product_context_included'] is False
 
@@ -279,23 +266,11 @@ class TestResearchIsScopedToResearchDocuments:
     observable — its `[:3]` cap keeps PRD/PR-FAQ and drops research.
     """
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_both_selected_research_reports_reach_the_prompt(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+        self, research_build,
     ):
-        _wire(
-            mock_dynamodb,
-            prd_pages=[{'Items': [PRD_OLD, PRD_NEW]}],
-            prfaq_pages=[{'Items': [PRFAQ]}],
-            documents={'RESEARCH#research_a': RESEARCH_A, 'RESEARCH#research_b': RESEARCH_B},
-        )
-        mock_converse.return_value = HTML
-
-        _run(
-            sample_job_event, lambda_context,
-            use_research=True, selected_research_ids=['research_a', 'research_b'],
-        )
-
-        prompt = _prompt(mock_converse)
+        prompt = research_build({'RESEARCH#research_a': RESEARCH_A, 'RESEARCH#research_b': RESEARCH_B}, prd_items=(PRD_OLD, PRD_NEW))
         assert 'RESEARCH A findings' in prompt
         assert 'RESEARCH B findings' in prompt
         # And the documents the build already read are still there — the research
@@ -303,23 +278,13 @@ class TestResearchIsScopedToResearchDocuments:
         assert 'NEW PRD body' in prompt
         assert 'PRFAQ body' in prompt
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_the_derivation_records_every_research_report_used(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+        self, mock_dynamodb, research_build,
     ):
-        _wire(
-            mock_dynamodb,
-            prd_pages=[{'Items': [PRD_OLD, PRD_NEW]}],
-            prfaq_pages=[{'Items': [PRFAQ]}],
-            documents={'RESEARCH#research_a': RESEARCH_A, 'RESEARCH#research_b': RESEARCH_B},
-        )
-        mock_converse.return_value = HTML
+        research_build({'RESEARCH#research_a': RESEARCH_A, 'RESEARCH#research_b': RESEARCH_B}, prd_items=(PRD_OLD, PRD_NEW))
 
-        _run(
-            sample_job_event, lambda_context,
-            use_research=True, selected_research_ids=['research_a', 'research_b'],
-        )
-
-        derivation = _saved(mock_dynamodb)['derivation']
+        derivation = saved_item(mock_dynamodb)['derivation']
         assert derivation['sources'] == [
             {'document_id': 'aa_prd_new', 'role': 'prototype_prd'},
             {'document_id': 'prfaq_1', 'role': 'prototype_prfaq'},
@@ -330,8 +295,9 @@ class TestResearchIsScopedToResearchDocuments:
         # numbers precisely so a future cap would show up as a difference.
         assert derivation['selected_document_count'] == 4
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_research_is_read_by_key_under_this_project_only(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+        self, mock_dynamodb, research_build,
     ):
         """The ownership and type halves of the trust boundary, asserted on the
         keys that are built rather than on an outcome — one mocked table has no
@@ -341,40 +307,24 @@ class TestResearchIsScopedToResearchDocuments:
         in a `query` here would mean the reader scans the project instead, which
         is how the reference-document cap gets inherited.
         """
-        _wire(
-            mock_dynamodb,
-            prd_pages=[{'Items': [PRD_NEW]}],
-            prfaq_pages=[{'Items': [PRFAQ]}],
-            documents={'RESEARCH#research_a': RESEARCH_A},
-        )
-        mock_converse.return_value = HTML
-
-        _run(sample_job_event, lambda_context, use_research=True, selected_research_ids=['research_a'])
+        research_build({'RESEARCH#research_a': RESEARCH_A})
 
         research_keys = [k for k in _keys(mock_dynamodb) if str(k.get('sk', '')).startswith('RESEARCH#')]
         assert research_keys == [{'pk': 'PROJECT#proj_20250101120000', 'sk': 'RESEARCH#research_a'}]
         assert 'RESEARCH#' not in str(mock_dynamodb['table'].query.call_args_list)
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_an_unresolvable_research_id_fails_the_build_and_saves_nothing(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+        self, mock_dynamodb, mock_jobs_table, mock_converse, research_build,
     ):
         """A named report that resolves to nothing must not be quietly skipped:
         the prototype would look grounded in research the model never saw. The
         fixture is wired so a build that skipped it would COMPLETE — both source
         lookups have answers — so this fails for the raise, not for a starved mock.
         """
-        _wire(
-            mock_dynamodb,
-            prd_pages=[{'Items': [PRD_NEW]}],
-            prfaq_pages=[{'Items': [PRFAQ]}],
-            documents={'RESEARCH#research_a': RESEARCH_A},
-        )
-        mock_converse.return_value = HTML
-
         with pytest.raises(Exception, match='Document generation failed'):
-            _run(
-                sample_job_event, lambda_context,
-                use_research=True, selected_research_ids=['research_a', 'research_gone'],
+            research_build(
+                {'RESEARCH#research_a': RESEARCH_A}, selected_ids=['research_a', 'research_gone'],
             )
 
         mock_converse.assert_not_called()
@@ -383,20 +333,22 @@ class TestResearchIsScopedToResearchDocuments:
         assert 'selected_research_ids' in recorded
         assert 'research_gone' in recorded
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_a_prd_id_offered_as_research_does_not_resolve(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+        self, mock_dynamodb, mock_converse, sample_job_event, lambda_context,
     ):
         """Type isolation comes from the `sk` prefix, so this is the fixture that
         fails if `RESEARCH#` is ever dropped from the lookup: `aa_prd_new` is a
         real document in this project, just not research."""
-        _wire(mock_dynamodb, prd_pages=[{'Items': [PRD_NEW]}], prfaq_pages=[{'Items': [PRFAQ]}])
+        wire_projects_table(mock_dynamodb, prd_pages=[{'Items': [PRD_NEW]}], prfaq_pages=[{'Items': [PRFAQ]}])
         mock_converse.return_value = HTML
 
         with pytest.raises(Exception, match='Document generation failed'):
-            _run(sample_job_event, lambda_context, use_research=True, selected_research_ids=['aa_prd_new'])
+            run_prototype_build(sample_job_event, lambda_context, use_research=True, selected_research_ids=['aa_prd_new'])
 
         mock_converse.assert_not_called()
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     @pytest.mark.parametrize('switch', [
         pytest.param({}, id='absent'),
         # What the API actually sends. `bool(body.get(...))` means the key is
@@ -409,7 +361,7 @@ class TestResearchIsScopedToResearchDocuments:
         pytest.param({'use_research': None}, id='null'),
     ])
     def test_ids_sent_without_the_research_box_are_not_read(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event,
+        self, mock_dynamodb, mock_converse, sample_job_event,
         lambda_context, switch,
     ):
         """`use_research` is the switch. Ids left behind by an unticked box must
@@ -417,13 +369,14 @@ class TestResearchIsScopedToResearchDocuments:
         _wire_one_of_each(mock_dynamodb)
         mock_converse.return_value = HTML
 
-        _run(sample_job_event, lambda_context, selected_research_ids=['research_a'], **switch)
+        run_prototype_build(sample_job_event, lambda_context, selected_research_ids=['research_a'], **switch)
 
-        assert 'RESEARCH A findings' not in _prompt(mock_converse)
+        assert 'RESEARCH A findings' not in prompt_sent(mock_converse)
         assert not [k for k in _keys(mock_dynamodb) if str(k.get('sk', '')).startswith('RESEARCH#')]
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_ticking_research_with_no_ids_reads_nothing(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+        self, mock_dynamodb, mock_converse, sample_job_event, lambda_context,
     ):
         """An empty selection is not "all of it". The reader is keyed reads per
         named id by design, so there is no project-wide query to fall back to —
@@ -431,10 +384,10 @@ class TestResearchIsScopedToResearchDocuments:
         _wire_one_of_each(mock_dynamodb)
         mock_converse.return_value = HTML
 
-        _run(sample_job_event, lambda_context, use_research=True, selected_research_ids=[])
+        run_prototype_build(sample_job_event, lambda_context, use_research=True, selected_research_ids=[])
 
-        assert 'RESEARCH FINDINGS' not in _prompt(mock_converse)
-        assert _saved(mock_dynamodb)['derivation']['selected_document_count'] == 2
+        assert 'RESEARCH FINDINGS' not in prompt_sent(mock_converse)
+        assert saved_item(mock_dynamodb)['derivation']['selected_document_count'] == 2
 
 
 class TestTheResearchSectionIsBoundedInTotal:
@@ -503,25 +456,13 @@ class TestTheResearchSectionIsBoundedInTotal:
         assert self.REPORT_BODY < RESEARCH_PER_DOC_CAP
         assert self.REPORT_COUNT * self.REPORT_BODY > RESEARCH_TOTAL_CAP
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_eight_reports_that_each_fit_are_bounded_together(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+        self, research_build,
     ):
         from jobs.document_generator.handler import RESEARCH_TOTAL_CAP
 
-        _wire(
-            mock_dynamodb,
-            prd_pages=[{'Items': [PRD_NEW]}],
-            prfaq_pages=[{'Items': [PRFAQ]}],
-            documents=self._reports(),
-        )
-        mock_converse.return_value = HTML
-
-        _run(
-            sample_job_event, lambda_context, use_research=True,
-            selected_research_ids=[f'research_{i}' for i in range(self.REPORT_COUNT)],
-        )
-
-        prompt = _prompt(mock_converse)
+        prompt = research_build(self._reports())
         block = self._research_block(prompt)
         assert len(block) <= RESEARCH_TOTAL_CAP + len('RESEARCH FINDINGS:\n')
         # A length assertion is satisfied by a body that was truncated INTO the
@@ -537,33 +478,21 @@ class TestTheResearchSectionIsBoundedInTotal:
         assert 'NEW PRD body' in prompt
         assert 'PRFAQ body' in prompt
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_every_named_report_still_reaches_the_prompt_truncated(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+        self, mock_dynamodb, research_build,
     ):
         """The budget is SHARED, not spent front-to-back. A running budget would
         satisfy the bound above by dropping the last reports entirely — and each
         one is recorded in the derivation as having been used, so a report that
         reached none of the prompt would make that record a lie."""
-        _wire(
-            mock_dynamodb,
-            prd_pages=[{'Items': [PRD_NEW]}],
-            prfaq_pages=[{'Items': [PRFAQ]}],
-            documents=self._reports(),
-        )
-        mock_converse.return_value = HTML
-
-        _run(
-            sample_job_event, lambda_context, use_research=True,
-            selected_research_ids=[f'research_{i}' for i in range(self.REPORT_COUNT)],
-        )
-
-        prompt = _prompt(mock_converse)
+        prompt = research_build(self._reports())
         for i in range(self.REPORT_COUNT):
             assert f'Report {i}' in prompt, f'report {i} lost its heading'
             assert f'HEAD{i}' in prompt, f'report {i} contributed nothing'
             assert f'TAIL{i}' not in prompt, f'report {i} was not truncated'
         # And all eight are still claimed as used, because all eight were.
-        assert _saved(mock_dynamodb)['derivation']['selected_document_count'] == 2 + self.REPORT_COUNT
+        assert saved_item(mock_dynamodb)['derivation']['selected_document_count'] == 2 + self.REPORT_COUNT
 
     @classmethod
     def _long_titles(cls):
@@ -609,8 +538,9 @@ class TestTheResearchSectionIsBoundedInTotal:
             'fixture is testing the same harmless tail-trim as the short titles'
         )
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_ten_long_titled_reports_still_all_reach_the_prompt(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+        self, mock_dynamodb, research_build,
     ):
         """The falsifier for the heading arithmetic. Titles are user-supplied and
         bounded nowhere on this path, so a block's cost is not its content: unpaid
@@ -625,20 +555,7 @@ class TestTheResearchSectionIsBoundedInTotal:
             RESEARCH_TOTAL_CAP,
         )
 
-        _wire(
-            mock_dynamodb,
-            prd_pages=[{'Items': [PRD_NEW]}],
-            prfaq_pages=[{'Items': [PRFAQ]}],
-            documents=self._long_title_reports(),
-        )
-        mock_converse.return_value = HTML
-
-        _run(
-            sample_job_event, lambda_context, use_research=True,
-            selected_research_ids=[f'research_{i}' for i in range(self.LONG_TITLE_COUNT)],
-        )
-
-        prompt = _prompt(mock_converse)
+        prompt = research_build(self._long_title_reports())
         last = self.LONG_TITLE_COUNT - 1
         assert f'HEAD{last}' in prompt, f'report {last} reached none of the prompt'
         for i in range(self.LONG_TITLE_COUNT):
@@ -651,12 +568,13 @@ class TestTheResearchSectionIsBoundedInTotal:
         assert title[:RESEARCH_TITLE_CAP + 1] not in prompt, 'title cut past the cap'
         assert len(self._research_block(prompt)) <= RESEARCH_TOTAL_CAP + len('RESEARCH FINDINGS:\n')
         assert (
-            _saved(mock_dynamodb)['derivation']['selected_document_count']
+            saved_item(mock_dynamodb)['derivation']['selected_document_count']
             == 2 + self.LONG_TITLE_COUNT
         )
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_a_ten_report_share_pays_for_its_own_heading(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+        self, research_build,
     ):
         """Where the equal share binds, it is the budget's share MINUS what the
         block costs around the content, pinned from both sides at the cut.
@@ -671,33 +589,22 @@ class TestTheResearchSectionIsBoundedInTotal:
         )
 
         share = RESEARCH_TOTAL_CAP // self.LONG_TITLE_COUNT - _RESEARCH_BLOCK_OVERHEAD
-        _wire(
-            mock_dynamodb,
-            prd_pages=[{'Items': [PRD_NEW]}],
-            prfaq_pages=[{'Items': [PRFAQ]}],
-            documents={
-                f'RESEARCH#research_{i}': {
-                    'document_id': f'research_{i}',
-                    'title': f'Report {i}',
-                    'content': ('z' * (share - 1)) + 'CUT_HERE' + ('z' * 500),
-                }
-                for i in range(self.LONG_TITLE_COUNT)
-            },
-        )
-        mock_converse.return_value = HTML
+        prompt = research_build({
+            f'RESEARCH#research_{i}': {
+                'document_id': f'research_{i}',
+                'title': f'Report {i}',
+                'content': ('z' * (share - 1)) + 'CUT_HERE' + ('z' * 500),
+            }
+            for i in range(self.LONG_TITLE_COUNT)
+        })
 
-        _run(
-            sample_job_event, lambda_context, use_research=True,
-            selected_research_ids=[f'research_{i}' for i in range(self.LONG_TITLE_COUNT)],
-        )
-
-        prompt = _prompt(mock_converse)
         assert 'z' * (share - 1) + 'C' in prompt, 'cut before the share'
         assert 'z' * (share - 1) + 'CU' not in prompt, 'cut past the share'
         assert 'CUT_HERE' not in prompt
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_a_small_selection_is_sliced_exactly_as_before(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+        self, mock_dynamodb, mock_converse, sample_job_event, lambda_context,
     ):
         """The aggregate bound must not quietly tighten the common case. At four
         reports the equal share is 12000 // 4 == 3000, which IS the per-report cap,
@@ -709,7 +616,7 @@ class TestTheResearchSectionIsBoundedInTotal:
             'document_id': 'research_long', 'title': 'Long report',
             'content': ('z' * (RESEARCH_PER_DOC_CAP - 1)) + 'CUT_HERE' + ('z' * 500),
         }
-        _wire(
+        wire_projects_table(
             mock_dynamodb,
             prd_pages=[{'Items': [PRD_NEW]}],
             prfaq_pages=[{'Items': [PRFAQ]}],
@@ -717,10 +624,10 @@ class TestTheResearchSectionIsBoundedInTotal:
         )
         mock_converse.return_value = HTML
 
-        _run(sample_job_event, lambda_context, use_research=True,
+        run_prototype_build(sample_job_event, lambda_context, use_research=True,
              selected_research_ids=['research_long'])
 
-        prompt = _prompt(mock_converse)
+        prompt = prompt_sent(mock_converse)
         # Pinned from BOTH sides, so the cut lands on exactly RESEARCH_PER_DOC_CAP.
         # `in prompt` alone was satisfied by any cut at or past the cap, which let a
         # share one character tighter than the cap pass — found by mutation.
@@ -799,21 +706,23 @@ class TestTheDerivationReportsWhatWasUsed:
         }
         return {'context': {**base, **fields}}
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_one_filled_field_is_reported_as_grounding(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+        self, mock_dynamodb, mock_converse, sample_job_event, lambda_context,
     ):
         _wire_one_of_each(mock_dynamodb)
         mock_converse.return_value = HTML
 
         with patch('api.product_context.get_context', return_value=self._context(one_liner='A console for wombats')), \
                 patch('api.product_context._list_doc_items', return_value=[]):
-            _run(sample_job_event, lambda_context, use_product_context=True)
+            run_prototype_build(sample_job_event, lambda_context, use_product_context=True)
 
-        assert 'A console for wombats' in _prompt(mock_converse)
-        assert _saved(mock_dynamodb)['derivation']['product_context_included'] is True
+        assert 'A console for wombats' in prompt_sent(mock_converse)
+        assert saved_item(mock_dynamodb)['derivation']['product_context_included'] is True
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_an_empty_product_context_is_not_reported_as_grounding(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+        self, mock_dynamodb, mock_converse, sample_job_event, lambda_context,
     ):
         """The box was ticked and the read succeeded, but there was nothing to
         say. The placeholder must not reach the prompt (it spends budget telling
@@ -823,10 +732,10 @@ class TestTheDerivationReportsWhatWasUsed:
 
         with patch('api.product_context.get_context', return_value=self._context()), \
                 patch('api.product_context._list_doc_items', return_value=[]):
-            _run(sample_job_event, lambda_context, use_product_context=True)
+            run_prototype_build(sample_job_event, lambda_context, use_product_context=True)
 
-        assert 'No product context provided' not in _prompt(mock_converse)
-        assert _saved(mock_dynamodb)['derivation']['product_context_included'] is False
+        assert 'No product context provided' not in prompt_sent(mock_converse)
+        assert saved_item(mock_dynamodb)['derivation']['product_context_included'] is False
 
 
 class TestSelectedVisualsGroundTheLookAndFeel:
@@ -842,8 +751,9 @@ class TestSelectedVisualsGroundTheLookAndFeel:
     already reach prompts through `build_product_context_block`.
     """
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_a_selected_visual_lands_in_the_visual_brief_and_the_unselected_one_is_absent(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+        self, mock_dynamodb, mock_converse, sample_job_event, lambda_context,
     ):
         """The discriminating case. Both documents are images, both `ready`, both
         extracted; they differ only in whether the build asked for them.
@@ -857,10 +767,10 @@ class TestSelectedVisualsGroundTheLookAndFeel:
         mock_converse.return_value = HTML
 
         with _visuals([MOCKUP, SCREENSHOT]):
-            _run(sample_job_event, lambda_context,
+            run_prototype_build(sample_job_event, lambda_context,
                  selected_product_doc_ids=[MOCKUP['doc_id']])
 
-        prompt = _prompt(mock_converse)
+        prompt = prompt_sent(mock_converse)
         assert MOCKUP_BODY in _visual_section(prompt)
         assert SCREENSHOT_BODY not in prompt
         # Not even named: a heading with nothing under it spends budget telling the
@@ -871,8 +781,9 @@ class TestSelectedVisualsGroundTheLookAndFeel:
         assert 'PRODUCT CONTEXT' not in prompt
         assert '### Internal documents' not in prompt
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_the_section_tells_the_model_to_take_the_palette_and_layout_from_the_visuals(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+        self, mock_dynamodb, mock_converse, sample_job_event, lambda_context,
     ):
         """A section that quotes the description and asks for nothing is a wasted
         section: the system prompt's neutral indigo defaults still win, because
@@ -884,10 +795,10 @@ class TestSelectedVisualsGroundTheLookAndFeel:
         mock_converse.return_value = HTML
 
         with _visuals([MOCKUP, SCREENSHOT]):
-            _run(sample_job_event, lambda_context,
+            run_prototype_build(sample_job_event, lambda_context,
                  selected_product_doc_ids=[MOCKUP['doc_id']])
 
-        section = _visual_section(_prompt(mock_converse))
+        section = _visual_section(prompt_sent(mock_converse))
         assert 'ACT ON THE VISUAL BRIEF ABOVE' in section
         # The theme levers, named as the system prompt names them.
         assert ':root custom property' in section
@@ -898,10 +809,10 @@ class TestSelectedVisualsGroundTheLookAndFeel:
         # can state.
         assert 'EARLIER one wins' in section
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3", "sample_job_event", "lambda_context", "stub_product_context")
     def test_the_brief_sits_beside_brand_ahead_of_the_document_sections(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event,
-        lambda_context, stub_product_context,
-    ):
+        self, mock_dynamodb, mock_converse, sample_job_event,
+        lambda_context,     ):
         """Placement is the argument for the section being where it is: it is an
         instruction about look and feel, so it belongs with BRAND — the other
         look-and-feel lever — rather than among the sections that say what the
@@ -912,17 +823,18 @@ class TestSelectedVisualsGroundTheLookAndFeel:
         mock_converse.return_value = HTML
 
         with _visuals([MOCKUP, SCREENSHOT]):
-            _run(sample_job_event, lambda_context, brand='UNNI',
+            run_prototype_build(sample_job_event, lambda_context, brand='UNNI',
                  use_product_context=True,
                  selected_product_doc_ids=[MOCKUP['doc_id']])
 
-        prompt = _prompt(mock_converse)
+        prompt = prompt_sent(mock_converse)
         assert f'BRAND: UNNI\n\n\n{VISUAL_HEADING}' in prompt
         assert prompt.index(VISUAL_HEADING) < prompt.index(DISTINCTIVE_CONTEXT)
         assert prompt.index(DISTINCTIVE_CONTEXT) < prompt.index('\n\nPRD:')
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_two_visuals_appear_in_the_order_they_were_selected(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+        self, mock_dynamodb, mock_converse, sample_job_event, lambda_context,
     ):
         """Order is load-bearing, because the section tells the model the earlier
         visual wins a disagreement. Requested in the REVERSE of stored order, which
@@ -933,21 +845,22 @@ class TestSelectedVisualsGroundTheLookAndFeel:
         mock_converse.return_value = HTML
 
         with _visuals([MOCKUP, SCREENSHOT]):  # stored: mockup, then screenshot
-            _run(sample_job_event, lambda_context,
+            run_prototype_build(sample_job_event, lambda_context,
                  selected_product_doc_ids=[SCREENSHOT['doc_id'], MOCKUP['doc_id']])
 
-        prompt = _prompt(mock_converse)
+        prompt = prompt_sent(mock_converse)
         assert prompt.index(SCREENSHOT_BODY) < prompt.index(MOCKUP_BODY)
         # The record is in the same order, so "the first visual won" is readable
         # from the derivation and from the prompt as the same claim.
-        assert _saved(mock_dynamodb)['derivation']['visual_document_ids'] == [
+        assert saved_item(mock_dynamodb)['derivation']['visual_document_ids'] == [
             'screenshot', 'mockup',
         ]
 
 
 class TestTheDerivationRecordsTheVisualsThatWereUsed:
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_the_recorded_ids_follow_the_producer_not_the_request(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+        self, mock_dynamodb, mock_converse, sample_job_event, lambda_context,
     ):
         """TWO visuals selected, ONE of them unreadable. The producer reports only
         what reached the text, and the record has to follow that — a build that
@@ -963,17 +876,18 @@ class TestTheDerivationRecordsTheVisualsThatWereUsed:
         mock_converse.return_value = HTML
 
         with _visuals([MOCKUP, SCREENSHOT], unreadable=[MOCKUP['s3_extracted_key']]):
-            _run(sample_job_event, lambda_context,
+            run_prototype_build(sample_job_event, lambda_context,
                  selected_product_doc_ids=[MOCKUP['doc_id'], SCREENSHOT['doc_id']])
 
-        prompt = _prompt(mock_converse)
+        prompt = prompt_sent(mock_converse)
         assert MOCKUP_BODY not in prompt
         assert SCREENSHOT_BODY in _visual_section(prompt)
         # Two selected, one used, one recorded.
-        assert _saved(mock_dynamodb)['derivation']['visual_document_ids'] == ['screenshot']
+        assert saved_item(mock_dynamodb)['derivation']['visual_document_ids'] == ['screenshot']
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_a_visual_gains_no_sources_entry_and_does_not_change_the_document_count(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+        self, mock_dynamodb, mock_converse, sample_job_event, lambda_context,
     ):
         """A visual is a product document under its own sort key, not a
         ProjectDocument, so a `sources` entry for it would never resolve to a title
@@ -986,10 +900,10 @@ class TestTheDerivationRecordsTheVisualsThatWereUsed:
         mock_converse.return_value = HTML
 
         with _visuals([MOCKUP, SCREENSHOT]):
-            _run(sample_job_event, lambda_context,
+            run_prototype_build(sample_job_event, lambda_context,
                  selected_product_doc_ids=[MOCKUP['doc_id'], SCREENSHOT['doc_id']])
 
-        derivation = _saved(mock_dynamodb)['derivation']
+        derivation = saved_item(mock_dynamodb)['derivation']
         assert derivation['visual_document_ids'] == ['mockup', 'screenshot']
         # Exactly the PRD and PR/FAQ this build read, and nothing else.
         assert derivation['sources'] == [
@@ -998,8 +912,9 @@ class TestTheDerivationRecordsTheVisualsThatWereUsed:
         ]
         assert derivation['selected_document_count'] == 2
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_a_producer_failure_does_not_fail_the_build_and_claims_no_visuals(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+        self, mock_dynamodb, mock_converse, sample_job_event, lambda_context,
     ):
         """`build_visual_brief_block` documents that it never raises. The wrapper is
         defensive anyway, because "never raises" is a promise a later edit can break
@@ -1016,16 +931,17 @@ class TestTheDerivationRecordsTheVisualsThatWereUsed:
             'api.product_context.build_visual_brief_block',
             side_effect=RuntimeError('DynamoDB is having a day'),
         ):
-            _run(sample_job_event, lambda_context,
+            run_prototype_build(sample_job_event, lambda_context,
                  selected_product_doc_ids=[MOCKUP['doc_id']])
 
-        item = _saved(mock_dynamodb)
+        item = saved_item(mock_dynamodb)
         assert item['document_type'] == 'prototype'
-        assert VISUAL_HEADING not in _prompt(mock_converse)
+        assert VISUAL_HEADING not in prompt_sent(mock_converse)
         assert item['derivation']['visual_document_ids'] == []
 
 
 class TestVisualsAreReadOnlyWhenSelected:
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     @pytest.mark.parametrize('selection', [
         pytest.param({}, id='absent'),
         # What the API actually sends for a build that ticked nothing: the key is
@@ -1035,7 +951,7 @@ class TestVisualsAreReadOnlyWhenSelected:
         pytest.param({'selected_product_doc_ids': None}, id='null'),
     ])
     def test_no_selection_does_not_call_the_producer(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event,
+        self, mock_dynamodb, mock_converse, sample_job_event,
         lambda_context, selection,
     ):
         """The selection IS the switch. With no ids there is nothing to look up, and
@@ -1049,16 +965,17 @@ class TestVisualsAreReadOnlyWhenSelected:
         with patch(
             'api.product_context.build_visual_brief_block', return_value=('', []),
         ) as producer:
-            _run(sample_job_event, lambda_context, **selection)
+            run_prototype_build(sample_job_event, lambda_context, **selection)
 
         producer.assert_not_called()
-        assert VISUAL_HEADING not in _prompt(mock_converse)
-        assert _saved(mock_dynamodb)['derivation']['visual_document_ids'] == []
+        assert VISUAL_HEADING not in prompt_sent(mock_converse)
+        assert saved_item(mock_dynamodb)['derivation']['visual_document_ids'] == []
 
 
 class TestAskingForNeitherChangesNothing:
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_the_prompt_is_byte_identical_to_the_pre_feature_prompt(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+        self, mock_dynamodb, mock_converse, sample_job_event, lambda_context,
     ):
         """Golden file, captured by running this exact fixture on the tree before
         the two sections existed. A substring assertion would not notice an extra
@@ -1070,7 +987,7 @@ class TestAskingForNeitherChangesNothing:
         prompt change is intended for builds that ask for NOTHING, which is
         exactly the promise being made.
         """
-        _wire(
+        wire_projects_table(
             mock_dynamodb,
             prd_pages=[{'Items': [{**PRD_NEW, 'document_id': 'prd_1',
                                    'content': 'PRD body for the golden prompt'}]}],
@@ -1079,12 +996,13 @@ class TestAskingForNeitherChangesNothing:
         )
         mock_converse.return_value = HTML
 
-        _run(sample_job_event, lambda_context, title='Golden Prototype')
+        run_prototype_build(sample_job_event, lambda_context, title='Golden Prototype')
 
-        assert _prompt(mock_converse) == GOLDEN_PROMPT.read_text(encoding='utf-8')
+        assert prompt_sent(mock_converse) == GOLDEN_PROMPT.read_text(encoding='utf-8')
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_no_visual_brief_heading_appears_when_nothing_is_selected(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+        self, mock_dynamodb, mock_converse, sample_job_event, lambda_context,
     ):
         """The golden comparison above already covers this, byte for byte. This
         names the failure so a diff does not have to be read to find it: an
@@ -1094,6 +1012,6 @@ class TestAskingForNeitherChangesNothing:
         _wire_one_of_each(mock_dynamodb)
         mock_converse.return_value = HTML
 
-        _run(sample_job_event, lambda_context)
+        run_prototype_build(sample_job_event, lambda_context)
 
-        assert VISUAL_HEADING not in _prompt(mock_converse)
+        assert VISUAL_HEADING not in prompt_sent(mock_converse)

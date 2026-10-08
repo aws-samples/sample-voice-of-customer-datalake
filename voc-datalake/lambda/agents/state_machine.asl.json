@@ -1,0 +1,288 @@
+{
+  "Comment": "The conductor walks an autonomous agent workflow (agents/conductor).",
+  "StartAt": "Init",
+  "States": {
+    "Advance": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "RecordFailure",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "Route",
+      "Parameters": {
+        "FunctionName": "${ConductorFunctionArn}",
+        "Payload": {
+          "action": "advance",
+          "agent_id.$": "$.agent_id",
+          "node.$": "$.result.node",
+          "run_id.$": "$.run_id"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$.step",
+      "ResultSelector": {
+        "next.$": "$.Payload"
+      },
+      "Retry": [
+        {
+          "BackoffRate": 2,
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "JitterStrategy": "FULL",
+          "MaxAttempts": 4
+        }
+      ],
+      "Type": "Task"
+    },
+    "Done": {
+      "Type": "Succeed"
+    },
+    "ExecuteNode": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "RecordFailure",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "Advance",
+      "Parameters": {
+        "FunctionName": "${NodesFunctionArn}",
+        "Payload": {
+          "action": "start",
+          "agent_id.$": "$.agent_id",
+          "mate_seq.$": "$.step.next.mate_seq",
+          "node_id.$": "$.step.next.node_id",
+          "run_id.$": "$.run_id"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$.result",
+      "ResultSelector": {
+        "node.$": "$.Payload"
+      },
+      "Retry": [
+        {
+          "BackoffRate": 2,
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "JitterStrategy": "FULL",
+          "MaxAttempts": 4
+        }
+      ],
+      "Type": "Task"
+    },
+    "Failed": {
+      "Cause": "See the run event journal.",
+      "Error": "AgentRunFailed",
+      "Type": "Fail"
+    },
+    "Init": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "RecordFailure",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "Route",
+      "Parameters": {
+        "FunctionName": "${ConductorFunctionArn}",
+        "Payload": {
+          "action": "init",
+          "agent_id.$": "$.agent_id",
+          "run_id.$": "$.run_id"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$.step",
+      "ResultSelector": {
+        "next.$": "$.Payload"
+      },
+      "Retry": [
+        {
+          "BackoffRate": 2,
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "JitterStrategy": "FULL",
+          "MaxAttempts": 4
+        }
+      ],
+      "Type": "Task"
+    },
+    "PersonaPanel": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "RecordFailure",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "Advance",
+      "Parameters": {
+        "FunctionName": "${PersonaPanelFunctionArn}",
+        "Payload": {
+          "action": "start",
+          "agent_id.$": "$.agent_id",
+          "mate_seq.$": "$.step.next.mate_seq",
+          "node_id.$": "$.step.next.node_id",
+          "run_id.$": "$.run_id"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$.result",
+      "ResultSelector": {
+        "node.$": "$.Payload"
+      },
+      "Retry": [
+        {
+          "BackoffRate": 2,
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "JitterStrategy": "FULL",
+          "MaxAttempts": 4
+        }
+      ],
+      "Type": "Task"
+    },
+    "PollNode": {
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "RecordFailure",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "Advance",
+      "Parameters": {
+        "FunctionName": "${NodesFunctionArn}",
+        "Payload": {
+          "action": "poll",
+          "agent_id.$": "$.agent_id",
+          "node_id.$": "$.step.next.node_id",
+          "pending.$": "$.step.next.pending",
+          "run_id.$": "$.run_id"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$.result",
+      "ResultSelector": {
+        "node.$": "$.Payload"
+      },
+      "Retry": [
+        {
+          "BackoffRate": 2,
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "JitterStrategy": "FULL",
+          "MaxAttempts": 4
+        }
+      ],
+      "Type": "Task"
+    },
+    "RecordFailure": {
+      "Next": "Failed",
+      "Parameters": {
+        "FunctionName": "${ConductorFunctionArn}",
+        "Payload": {
+          "action": "fail",
+          "agent_id.$": "$.agent_id",
+          "error.$": "$.error",
+          "run_id.$": "$.run_id"
+        }
+      },
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "ResultPath": "$.step",
+      "ResultSelector": {
+        "next.$": "$.Payload"
+      },
+      "Retry": [
+        {
+          "BackoffRate": 2,
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "JitterStrategy": "FULL",
+          "MaxAttempts": 4
+        }
+      ],
+      "Type": "Task"
+    },
+    "Route": {
+      "Choices": [
+        {
+          "And": [
+            {
+              "StringEquals": "execute",
+              "Variable": "$.step.next.kind"
+            },
+            {
+              "StringEquals": "persona_review",
+              "Variable": "$.step.next.node_type"
+            }
+          ],
+          "Next": "PersonaPanel"
+        },
+        {
+          "Next": "ExecuteNode",
+          "StringEquals": "execute",
+          "Variable": "$.step.next.kind"
+        },
+        {
+          "Next": "WaitForJob",
+          "StringEquals": "wait",
+          "Variable": "$.step.next.kind"
+        }
+      ],
+      "Default": "Done",
+      "Type": "Choice"
+    },
+    "WaitForJob": {
+      "Next": "PollNode",
+      "SecondsPath": "$.step.next.wait_seconds",
+      "Type": "Wait"
+    }
+  },
+  "TimeoutSeconds": 86400
+}

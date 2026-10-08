@@ -20,7 +20,76 @@
     "saved": "Kategorien erfolgreich gespeichert",
     "deleteTitle": "Kategorie löschen",
     "deleteMessage": "Möchten Sie diese Kategorie und alle ihre Unterkategorien wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
-    "deleteConfirm": "Löschen"
+    "deleteConfirm": "Löschen",
+    "expandLabel": "{{name}} aufklappen",
+    "collapseLabel": "{{name}} zuklappen",
+    "renameHint": "Zum Umbenennen klicken",
+    "renameLabel": "{{name}} umbenennen",
+    "deleteCategoryLabel": "{{name}} löschen",
+    "deleteSubcategoryLabel": "Unterkategorie {{name}} löschen",
+    "addSubcategoryLabel": "Unterkategorie hinzufügen",
+    "companyLabel": "Unternehmensbeschreibung",
+    "listHelp": "Jede Kategorie hat eine ID, die an jeder Bewertung gespeichert wird, eine Beschreibung, das zugehörige Produkt und ihre Product Owner. Owner sehen das Feedback ihrer Kategorien automatisch und sind diejenigen, die darauf reagieren.",
+    "noProduct": "Kein Produkt",
+    "saveError": "Die Kategorien konnten nicht gespeichert werden. Prüfen Sie Namen und Grenzwerte und ob Sie Administrator sind.",
+    "details": {
+      "productLabel": "Produkt",
+      "productPlaceholder": "z. B. Mobile App",
+      "productHint": "Das Produkt oder der Bereich, zu dem diese Kategorie gehört.",
+      "ownersLabel": "Product Owner",
+      "removeOwner": "{{name}} entfernen",
+      "ownersLimit": "Höchstens {{max}} Owner",
+      "addOwner": "Owner hinzufügen …",
+      "ownersUnavailable": "Die Benutzerliste konnte nicht geladen werden, daher können derzeit keine Owner hinzugefügt werden.",
+      "ownersHint": "Owner sehen das Feedback dieser Kategorie automatisch."
+    },
+    "reprocess": {
+      "title": "Vorhandenes Feedback neu verarbeiten",
+      "description": "Ordnen Sie nach einer Änderung der Kategorien die bereits gespeicherten Bewertungen neu zu. Bewertungen werden direkt aktualisiert – nichts wird gelöscht.",
+      "modeLabel": "Modus",
+      "modes": {
+        "processed": {
+          "title": "Verarbeitete Bewertungen neu kategorisieren",
+          "description": "Klassifiziert den gespeicherten (übersetzten) Text anhand der aktuellen Kategorien. Nur Kategorie und Unterkategorie ändern sich."
+        },
+        "raw": {
+          "title": "Aus Rohdaten neu verarbeiten",
+          "description": "Führt die vollständige Anreicherung (Stimmung, Kategorie, Persona, Problemanalyse) erneut aus den ursprünglichen Rohdaten aus."
+        },
+        "dimensions": {
+          "title": "Dimensionen neu ableiten",
+          "description": "Führt das Modell für die ableitbaren Dimensionen erneut aus. Von der Quelle, ihrem Profil oder einer Person gesetzte Werte bleiben unverändert."
+        }
+      },
+      "status": {
+        "queued": "In Warteschlange",
+        "running": "Läuft",
+        "completed": "Abgeschlossen",
+        "failed": "Fehlgeschlagen",
+        "cancelled": "Abgebrochen"
+      },
+      "counters": {
+        "scanned": "Geprüft",
+        "updated": "Aktualisiert",
+        "unchanged": "Unverändert",
+        "skipped_manual": "Manuell, beibehalten",
+        "failed": "Fehlgeschlagen"
+      },
+      "allTime": "Gesamter Zeitraum",
+      "lastNDays_one": "Letzter {{count}} Tag",
+      "lastNDays_other": "Letzte {{count}} Tage",
+      "cancel": "Job abbrechen",
+      "alreadyRunning": "Es läuft bereits ein Neuverarbeitungs-Job. Warten Sie, bis er fertig ist, oder brechen Sie ihn zuerst ab.",
+      "stoppedAtCeiling": "Beim Limit von {{max}} Bewertungen pro Job angehalten, um die Modellkosten zu begrenzen – die übrigen Bewertungen wurden nicht neu verarbeitet. Verkleinern Sie den Zeitraum, um sie abzudecken.",
+      "startError": "Der Neuverarbeitungs-Job konnte nicht gestartet werden.",
+      "daysLabel": "Zeitraum (Tage)",
+      "includeManual": "Auch manuelle Korrekturen überschreiben",
+      "daysHint": "1–{{max}} Tage oder 0 für den gesamten Zeitraum. Manuelle Korrekturen bleiben erhalten, sofern Sie nichts anderes wählen.",
+      "costNote": "Kosten: ein Modellaufruf pro Bewertung im Zeitraum. Ein Lauf über den gesamten Zeitraum eines großen Data Lakes kann Stunden dauern.",
+      "start": "Neuverarbeitung starten",
+      "confirmTitle": "Vorhandenes Feedback neu verarbeiten?",
+      "confirmMessage": "{{mode}} für {{window}}. Dabei wird pro Bewertung im Zeitraum ein Modellaufruf ausgeführt. Bewertungen werden direkt aktualisiert; nichts wird gelöscht."
+    }
   },
   "dataSourceWizard": {
     "all": "Alle",
@@ -87,14 +156,16 @@
     "downloadMarkdown": "Als Markdown herunterladen",
     "downloadOptions": "Download-Optionen",
     "downloadPDF": "Als PDF herunterladen",
-    "downloadTXT": "Als TXT herunterladen",
-    "kiroPromptTip": "Tipp: Kiro-Eingabeaufforderung im Tab Export / MCP konfigurieren"
+    "downloadTXT": "Als TXT herunterladen"
   },
   "errorBoundary": {
     "description": "Auf dieser Seite ist ein unerwarteter Fehler aufgetreten. Sie können sie neu laden oder zur Startseite zurückkehren — der Rest der Anwendung ist nicht betroffen.",
     "goHome": "Zur Startseite",
     "reload": "Seite neu laden",
-    "title": "Etwas ist schiefgelaufen"
+    "title": "Etwas ist schiefgelaufen",
+    "notFoundTitle": "Seite nicht gefunden",
+    "notFoundDescription": "Diese Adresse passt zu keiner Seite. Sie wurde vielleicht verschoben, oder der Link ist falsch geschrieben.",
+    "goBack": "Zurück"
   },
   "feedbackCard": {
     "copyText": "Text kopieren",
@@ -102,13 +173,9 @@
     "issue": "Problem: {{summary}}",
     "rootCause": "Grundursache: {{cause}}",
     "urgent": "Dringend",
-    "webScraper": "Web-Scraper"
-  },
-  "feedbackCarousel": {
-    "issue": "Problem: {{summary}}",
-    "urgent": "Dringend",
-    "viewDetails": "Details anzeigen",
-    "webScraper": "Web-Scraper"
+    "webScraper": "Web-Scraper",
+    "openOriginal": "Originalbewertung öffnen",
+    "reviewDateHint": "Datum der Bewertung"
   },
   "formQrCode": {
     "accessibleName": "QR-Code für das Feedback-Formular {{formName}}",
@@ -151,9 +218,11 @@
     "refresh": "Aktualisieren",
     "sourcePlaceholder": "Quellenname...",
     "supportedFormats": "Unterstützt CSV, JSON, JSONL",
+    "unknownError": "Unbekannter Fehler",
     "unsupportedFile": "Nicht unterstützter Dateityp: {{filename}}. Nur CSV-, JSON- und JSONL-Dateien werden unterstützt.",
     "uploaded": "{{filename}} hochgeladen",
     "uploadFailed": "Fehler beim Hochladen von {{filename}}: {{error}}",
+    "uploadUrlFailed": "Upload-URL konnte nicht abgerufen werden",
     "uploading": "{{count}} Datei(en) wird/werden hochgeladen...",
     "uploading_one": "{{count}} Datei(en) wird/werden hochgeladen...",
     "uploading_other": "{{count}} Datei(en) wird/werden hochgeladen...",
@@ -162,7 +231,8 @@
   "socialFeed": {
     "all": "Alle",
     "noFeedback": "Für diesen Zeitraum wurde kein Feedback gefunden",
-    "view": "Anzeigen"
+    "view": "Anzeigen",
+    "filterLabel": "Nach Quelle filtern"
   },
   "userAdmin": {
     "active": "Aktiv",
@@ -191,7 +261,6 @@
     "firstNameLabel": "Vorname",
     "lastNameLabel": "Nachname",
     "loadError": "Fehler beim Laden der Benutzer. Stellen Sie sicher, dass Sie Administratorzugriff haben.",
-    "nameLabel": "Benutzername (optional)",
     "noUsers": "Keine Benutzer gefunden. Fügen Sie oben Ihren ersten Benutzer hinzu.",
     "passwordResetSent": "E-Mail zum Zurücksetzen des Passworts gesendet",
     "pendingStatus": "Ausstehend",
@@ -209,40 +278,222 @@
     "userDeleted": "Benutzer gelöscht",
     "userDisabled": "Benutzer deaktiviert",
     "userEnabled": "Benutzer aktiviert",
-    "userManagement": "Benutzerverwaltung",
     "userRole": "Benutzer",
     "usersCount": "({{count}} Benutzer)",
     "usersCount_one": "({{count}} Benutzer)",
     "usersCount_other": "({{count}} Benutzer)",
-    "userUpdated": "Benutzer aktualisiert"
+    "roleFor": "Rolle für {{email}}",
+    "categoryAccess": {
+      "title": "Kategoriezugriff",
+      "noCategories": "Es sind noch keine Kategorien konfiguriert.",
+      "adminNote": "Dieser Benutzer ist Administrator und sieht immer alle Kategorien, unabhängig davon, was hier gespeichert ist.",
+      "all": "Alle Kategorien",
+      "selected": "Nur ausgewählte Kategorien",
+      "ownersNote": "Product Owner sehen ihre eigenen Kategorien immer, auch wenn sie hier nicht ausgewählt sind.",
+      "saveError": "Der Kategoriezugriff konnte nicht gespeichert werden.",
+      "loadError": "Der Kategoriezugriff konnte nicht geladen werden.",
+      "saved": "Kategoriezugriff für {{email}} aktualisiert"
+    },
+    "flags": {
+      "title": "Gedächtnis- und Eigentümer-Markierungen",
+      "description": "Gedächtnisprüfer pflegen das Unternehmensgedächtnis. Der Ersatz-Eigentümer (ein Admin) erhält von Agenten erstellte Projekte, deren Kategorie keinen Eigentümer hat.",
+      "fallbackOwner": "Ersatz-Eigentümer",
+      "memoryReviewer": "Gedächtnisprüfer",
+      "fallbackOwnerFor": "Ersatz-Eigentümer: {{user}}",
+      "memoryReviewerFor": "Gedächtnisprüfer: {{user}}",
+      "fallbackAdminOnly": "Nur ein Admin kann Ersatz-Eigentümer sein.",
+      "saveFailed": "Die Markierung konnte nicht aktualisiert werden. Bitte erneut versuchen."
+    },
+    "sourceAccess": {
+      "title": "Quellen",
+      "default": "Alle nicht eingeschränkten Quellen (Standard)",
+      "all": "Alle Quellen, einschließlich eingeschränkter",
+      "selected": "Nur ausgewählte Quellen",
+      "restricted": "Eingeschränkt",
+      "noProfiles": "Noch keine Quellprofile konfiguriert (Administration → Quellen & Datenschutz)."
+    }
   },
-  "userProfile": {
-    "administrator": "Verwalter",
-    "allFieldsRequired": "Alle Felder sind erforderlich",
-    "changePassword": "Passwort ändern",
-    "changing": "Wird geändert...",
-    "confirmNewPassword": "Neues Passwort bestätigen",
-    "confirmPasswordPlaceholder": "Neues Passwort bestätigen",
-    "currentPassword": "Aktuelles Passwort",
-    "currentPasswordPlaceholder": "Aktuelles Passwort eingeben",
-    "email": "E-Mail",
-    "failedToChange": "Passwortänderung fehlgeschlagen",
-    "groups": "Gruppen",
-    "incorrectPassword": "Aktuelles Passwort ist falsch",
-    "language": "Sprache",
-    "myProfile": "Mein Profil",
-    "name": "Benutzername",
-    "newPassword": "Neues Passwort",
-    "newPasswordPlaceholder": "Neues Passwort eingeben",
-    "passwordChanged": "Passwort erfolgreich geändert!",
-    "passwordIntro": "Geben Sie Ihr aktuelles Passwort ein und wählen Sie ein neues",
-    "passwordRequirements": "Passwort muss mindestens 8 Zeichen mit Groß-, Kleinbuchstaben und Zahlen enthalten",
-    "passwordTooShort": "Passwort muss mindestens 8 Zeichen lang sein",
-    "passwordsMismatch": "Neue Passwörter stimmen nicht überein",
-    "profile": "Profil",
-    "role": "Rolle",
-    "showPasswords": "Passwörter anzeigen",
-    "user": "Benutzer",
-    "username": "Benutzername"
+  "confirmModal": {
+    "delete": "Löschen"
+  },
+  "pageLoader": {
+    "loading": "Seite wird geladen…"
+  },
+  "ratingStars": {
+    "label": "{{rating}} von {{max}} Sternen"
+  },
+  "categoryChange": {
+    "previous": "Vorher: {{category}}",
+    "manual": "Manuell geändert",
+    "manualBy": "Geändert von {{user}}",
+    "loading": "Kategorien werden geladen",
+    "category": "Kategorie",
+    "choose": "Kategorie wählen",
+    "subcategory": "Unterkategorie",
+    "noSubcategory": "Keine",
+    "cancel": "Abbrechen",
+    "save": "Kategorie speichern",
+    "open": "Kategorie ändern",
+    "errors": {
+      "invalid": "Diese Kategorie existiert nicht mehr. Aktualisieren Sie und wählen Sie eine andere.",
+      "notFound": "Diese Bewertung ist für Sie nicht verfügbar, oder die Kategorie liegt außerhalb Ihres Zugriffs.",
+      "conflict": "Jemand hat diese Bewertung gleichzeitig geändert. Aktualisieren Sie und versuchen Sie es erneut.",
+      "generic": "Die Kategorie konnte nicht geändert werden."
+    }
+  },
+  "unsavedChanges": {
+    "title": "Ungespeicherte Änderungen",
+    "message": "Sie haben Änderungen, die nicht gespeichert sind. Vor dem Verlassen speichern oder verwerfen?",
+    "save": "Speichern",
+    "discard": "Verwerfen",
+    "cancel": "Abbrechen",
+    "saveFailed": "Speichern fehlgeschlagen. Ihre Änderungen sind noch da; erneut versuchen oder abbrechen.",
+    "cannotSave": "Beheben Sie die markierten Probleme vor dem Speichern oder verwerfen Sie die Änderungen."
+  },
+  "dimensionFields": {
+    "tagsLabel": "Tags",
+    "tagsPlaceholder": "vip, abrechnung; erstattung",
+    "tagsHint": "Tags durch Kommas oder Semikolons trennen (bis zu 20).",
+    "tagsInvalid": "Nicht erlaubt (kein „#“, „,“ oder „:“, höchstens 64 Zeichen): {{tags}}",
+    "tagsTooMany": "Höchstens {{max}} Tags.",
+    "sourceLabel": "Quelle",
+    "manualImport": "Manueller Import (Standard)",
+    "restrictedOption": "{{name}} (eingeschränkt)",
+    "sourceHint": "Bestimmt Datenschutzrichtlinie, Aufbewahrung, Sichtbarkeit und Standarddimensionen dieser Zeilen.",
+    "sourceRestrictedHint": "Eingeschränkt: Nur Admins und Personen mit Zugriff auf diese Quelle sehen diese Zeilen.",
+    "defaultsTitle": "Dimensionen und Tags",
+    "defaultsHint": "Jede Bewertung von hier erhält diese Werte; ihre eigenen Werte haben pro Dimension Vorrang.",
+    "noDimensions": "Noch keine Dimensionen konfiguriert (Administration → Dimensionen).",
+    "noDefault": "Kein Standard"
+  },
+  "draftSaveBar": {
+    "save": "Speichern",
+    "discard": "Änderungen verwerfen",
+    "saving": "Wird gespeichert…",
+    "saved": "Gespeichert",
+    "saveError": "Nicht gespeichert: {{reason}}",
+    "remove": "Entfernen"
+  },
+  "dimensionsManager": {
+    "newValue": "neuer Wert",
+    "valueNameLabel": "Gespeicherter Name von {{name}}",
+    "valueNamePlaceholder": "gespeicherter_name",
+    "valueLabelLabel": "Anzeigename von {{name}}",
+    "valueLabelPlaceholder": "Anzeigename (optional)",
+    "valueParentLabel": "{{parent}}-Wert, zu dem {{name}} gehört",
+    "anyParentValue": "Unter jedem übergeordneten Wert",
+    "removeValue": "Wert {{name}} entfernen",
+    "parentLabel": "Übergeordnete Dimension",
+    "noParent": "Keine (oberste Ebene)",
+    "parentOfChildren": "Übergeordnet zu {{children}} und kann daher selbst keine übergeordnete Dimension haben.",
+    "parentHint": "Eine untergeordnete Dimension schränkt ihre Werte nach dem übergeordneten Wert ein (nur eine Ebene).",
+    "newDimension": "Neue Dimension",
+    "removeDimension": "Dimension {{name}} entfernen",
+    "keyLabel": "Schlüssel (an Bewertungen gespeichert)",
+    "labelLabel": "Bezeichnung",
+    "labelPlaceholder": "Produkt",
+    "descriptionLabel": "Beschreibung (für das Modell)",
+    "inferLabel": "Vom Modell ableiten lassen",
+    "inferHint": "Aus: nur die Quelle, ihr Profil oder eine Person setzt sie.",
+    "valuesTitle": "Werte ({{n}})",
+    "addValueLabel": "Neuer Wert für {{name}}",
+    "addValue": "Wert hinzufügen",
+    "emptyTitle": "Noch keine Dimensionen",
+    "emptyHint": "Fügen Sie eine hinzu, um Feedback nach Produkt, Modul, Nutzertyp oder Ähnlichem zu kennzeichnen.",
+    "addDimension": "Dimension hinzufügen (bis zu {{max}})",
+    "loadError": "Die Dimensionen konnten nicht geladen werden.",
+    "problems": {
+      "tooMany": "Höchstens {{max}} Dimensionen.",
+      "keyFormat": "Schlüssel „{{key}}“: Kleinbuchstaben, Ziffern und „_“, beginnend mit einem Buchstaben (bis zu 32).",
+      "keyReserved": "„{{key}}“ ist reserviert; wählen Sie einen anderen Schlüssel.",
+      "keyDuplicate": "Zwei Dimensionen verwenden den Schlüssel „{{key}}“.",
+      "labelLength": "Die Bezeichnung von „{{key}}“ ist länger als {{max}} Zeichen.",
+      "descriptionLength": "Die Beschreibung von „{{key}}“ ist länger als {{max}} Zeichen.",
+      "parentInvalid": "„{{key}}“ muss eine andere Dimension der obersten Ebene als übergeordnete haben.",
+      "parentValueMissing": "Wert „{{value}}“ von „{{key}}“ gehört zu einem übergeordneten Wert, den es nicht mehr gibt.",
+      "tooManyValues": "„{{key}}“ hat mehr als {{max}} Werte.",
+      "valueFormat": "Wert „{{value}}“ von „{{key}}“: 1-64 Zeichen, keine Leerzeichen, kein „#“, „,“ oder „:“.",
+      "valueDuplicate": "„{{key}}“ enthält den Wert „{{value}}“ zweimal."
+    }
+  },
+  "sourcesManager": {
+    "keepForever": "Bewertungen unbegrenzt aufbewahren",
+    "retentionLabel": "Bewertungen löschen, die älter sind als (Tage)",
+    "retentionHint": "{{min}}-{{max}} Tage. Ein täglicher Job löscht ältere Bewertungen dieser Quelle und ihre Rohdaten-Archive.",
+    "removeProfile": "Profil von {{name}} entfernen",
+    "labelLabel": "Bezeichnung",
+    "piiLabel": "Personenbezogene Daten",
+    "pii": {
+      "allow": "Unverändert behalten",
+      "allowHint": "Text, Autor und Titel werden so gespeichert, wie die Quelle sie gesendet hat.",
+      "redact": "Schwärzen",
+      "redactHint": "E-Mails, Telefonnummern, IBANs, Kartennummern und IP-Adressen werden vor dem Speichern ersetzt; der Autor entfällt; es wird keine Rohkopie aufbewahrt.",
+      "summary_only": "Nur Zusammenfassung",
+      "summaryOnlyHint": "Nur abgeleitete Felder (Zusammenfassung, Kategorie, Stimmung, Dimensionen) bleiben erhalten; der Originaltext wird nicht gespeichert."
+    },
+    "restrictedLabel": "Eingeschränkt",
+    "restrictedHint": "Nur Admins und Nutzer, denen diese Quelle unter Benutzer → Zugriff gewährt wurde, sehen ihre Bewertungen.",
+    "defaultsTitle": "Dimensionswerte für jede Bewertung aus dieser Quelle",
+    "noDefault": "Kein Standard",
+    "empty": "Noch keine Profile: Jede Quelle behält alles, unbegrenzt und für alle sichtbar.",
+    "loadError": "Die Quellprofile konnten nicht geladen werden.",
+    "addLabel": "Quellprofil hinzufügen",
+    "add": "Hinzufügen",
+    "addHint": "Wählen Sie ein Plugin, feedback_form oder manual_import oder geben Sie eine Import-Quell-ID wie sales_csv ein.",
+    "scraperHint": "Die Bewertungen eines Web-Scrapers tragen den Namen des Scrapers als Quell-ID. Nur ein Scraper mit einem Namen in diesem Format (Kleinbuchstaben, Ziffern, _ oder -, zum Beispiel trustpilot_reviews) kann ein Profil erhalten.",
+    "problems": {
+      "tooMany": "Höchstens {{max}} Quellprofile.",
+      "retention": "{{name}}: Aufbewahrung muss {{min}}-{{max}} Tage betragen oder unbegrenzt sein.",
+      "tags": "{{name}}: Korrigieren Sie zuerst die Tags.",
+      "idFormat": "Kleinbuchstaben, Ziffern, „_“ oder „-“ verwenden (bis zu 48).",
+      "idDuplicate": "Diese Quelle hat bereits ein Profil."
+    }
+  },
+  "erasure": {
+    "title": "Feedback einer Person löschen",
+    "description": "Löscht jede passende Bewertung und ihr Rohdaten-Archiv. Dies kann nicht rückgängig gemacht werden. Nur ein Hash des Werts wird aufbewahrt.",
+    "fieldLabel": "Abgleich nach",
+    "fields": {
+      "author": "Autor",
+      "source_id": "Quell-ID",
+      "csv_row_id": "CSV-Zeilen-ID",
+      "email": "E-Mail"
+    },
+    "valueLabel": "Wert",
+    "sourceLabel": "Innerhalb der Quelle",
+    "allSources": "Alle Quellen",
+    "sourceRequired": "Eine ID ist nur innerhalb ihrer Quelle eindeutig: Wählen Sie die Quelle.",
+    "start": "Löschen",
+    "startError": "Die Löschung wurde nicht gestartet: {{reason}}",
+    "jobsTitle": "Letzte Löschungen",
+    "noJobs": "Noch keine.",
+    "counts": "{{items}} Bewertungen, {{objects}} Rohobjekte gelöscht",
+    "status": {
+      "queued": "In der Warteschlange",
+      "running": "Läuft",
+      "completed": "Abgeschlossen",
+      "failed": "Fehlgeschlagen"
+    },
+    "confirmTitle": "Feedback dieser Person löschen?",
+    "confirmMessage": "Jede Bewertung, deren {{field}} dem Wert entspricht ({{source}}), und ihr Rohdaten-Archiv werden dauerhaft gelöscht."
+  },
+  "dimensionsEdit": {
+    "errors": {
+      "invalid": "Dieser Dimensionswert oder Tag ist nicht erlaubt.",
+      "notFound": "Diese Bewertung ist nicht mehr verfügbar.",
+      "conflict": "Jemand hat diese Bewertung gleichzeitig geändert. Neu laden und erneut versuchen.",
+      "generic": "Die Änderung konnte nicht gespeichert werden."
+    }
+  },
+  "feedbackDimensions": {
+    "edit": "Dimensionen bearbeiten",
+    "none": "Keine",
+    "cancel": "Abbrechen",
+    "save": "Speichern",
+    "setByHand": "Manuell gesetzt",
+    "redacted": "Geschwärzt",
+    "redactedHint": "Personenbezogene Daten in dieser Bewertung wurden vor dem Speichern ersetzt.",
+    "summaryOnly": "Nur Zusammenfassung",
+    "summaryOnlyHint": "Ihre Quelle behält nur abgeleitete Felder; der Originaltext wurde nicht gespeichert."
   }
 }

@@ -20,7 +20,76 @@
     "saved": "Catégories enregistrées avec succès",
     "deleteTitle": "Supprimer la catégorie",
     "deleteMessage": "Voulez-vous vraiment supprimer cette catégorie et toutes ses sous-catégories ? Cette action est irréversible.",
-    "deleteConfirm": "Supprimer"
+    "deleteConfirm": "Supprimer",
+    "expandLabel": "Développer {{name}}",
+    "collapseLabel": "Réduire {{name}}",
+    "renameHint": "Cliquez pour renommer",
+    "renameLabel": "Renommer {{name}}",
+    "deleteCategoryLabel": "Supprimer {{name}}",
+    "deleteSubcategoryLabel": "Supprimer la sous-catégorie {{name}}",
+    "addSubcategoryLabel": "Ajouter une sous-catégorie",
+    "companyLabel": "Description de l’entreprise",
+    "listHelp": "Chaque catégorie a un identifiant enregistré sur chaque avis, une description, le produit auquel elle appartient et ses responsables produit. Les responsables voient automatiquement les retours de leurs catégories et sont ceux qui y donnent suite.",
+    "noProduct": "Aucun produit",
+    "saveError": "Les catégories n'ont pas pu être enregistrées. Vérifiez les noms et les limites, et que vous êtes administrateur.",
+    "details": {
+      "productLabel": "Produit",
+      "productPlaceholder": "p. ex. Application mobile",
+      "productHint": "Le produit ou le domaine auquel appartient cette catégorie.",
+      "ownersLabel": "Responsables produit",
+      "removeOwner": "Retirer {{name}}",
+      "ownersLimit": "{{max}} responsables au maximum",
+      "addOwner": "Ajouter un responsable…",
+      "ownersUnavailable": "La liste des utilisateurs n'a pas pu être chargée ; impossible d'ajouter des responsables pour le moment.",
+      "ownersHint": "Les responsables voient automatiquement les retours de cette catégorie."
+    },
+    "reprocess": {
+      "title": "Retraiter les retours existants",
+      "description": "Après avoir modifié les catégories, recatégorisez les avis déjà enregistrés. Les avis sont mis à jour sur place — rien n'est supprimé.",
+      "modeLabel": "Mode de traitement",
+      "modes": {
+        "processed": {
+          "title": "Recatégoriser les avis traités",
+          "description": "Classe le texte enregistré (traduit) selon les catégories actuelles. Seules la catégorie et la sous-catégorie changent."
+        },
+        "raw": {
+          "title": "Retraiter à partir des données brutes",
+          "description": "Relance l'enrichissement complet (sentiment, catégorie, persona, analyse du problème) à partir des données brutes d'origine."
+        },
+        "dimensions": {
+          "title": "Redéduire les dimensions",
+          "description": "Relance le modèle pour les dimensions qu'il peut déduire. Les valeurs fixées par la source, son profil ou une personne ne changent jamais."
+        }
+      },
+      "status": {
+        "queued": "En file d'attente",
+        "running": "En cours",
+        "completed": "Terminé",
+        "failed": "Échec",
+        "cancelled": "Annulé"
+      },
+      "counters": {
+        "scanned": "Analysés",
+        "updated": "Mis à jour",
+        "unchanged": "Inchangés",
+        "skipped_manual": "Manuels, conservés",
+        "failed": "En échec"
+      },
+      "allTime": "Toute la période",
+      "lastNDays_one": "Dernier {{count}} jour",
+      "lastNDays_other": "Derniers {{count}} jours",
+      "cancel": "Annuler la tâche",
+      "alreadyRunning": "Une tâche de retraitement est déjà en cours. Attendez qu'elle se termine ou annulez-la d'abord.",
+      "stoppedAtCeiling": "Arrêté à la limite de {{max}} avis par tâche pour plafonner les coûts du modèle — les avis restants n'ont pas été retraités. Réduisez la période pour les couvrir.",
+      "startError": "La tâche de retraitement n'a pas pu démarrer.",
+      "daysLabel": "Période (jours)",
+      "includeManual": "Écraser aussi les corrections manuelles",
+      "daysHint": "De 1 à {{max}} jours, ou 0 pour toute la période. Les corrections manuelles sont conservées sauf choix contraire.",
+      "costNote": "Coût : un appel au modèle par avis de la période. Une exécution sur toute la période d'un grand data lake peut prendre des heures.",
+      "start": "Lancer le retraitement",
+      "confirmTitle": "Retraiter les retours existants ?",
+      "confirmMessage": "{{mode}} pour {{window}}. Un appel au modèle est effectué par avis de cette période. Les avis sont mis à jour sur place ; rien n'est supprimé."
+    }
   },
   "dataSourceWizard": {
     "all": "Tous",
@@ -94,14 +163,16 @@
     "downloadMarkdown": "Télécharger en Markdown",
     "downloadOptions": "Options de téléchargement",
     "downloadPDF": "Télécharger en PDF",
-    "downloadTXT": "Télécharger en TXT",
-    "kiroPromptTip": "Conseil : Configurez l'invite Kiro dans l'onglet Export / MCP"
+    "downloadTXT": "Télécharger en TXT"
   },
   "errorBoundary": {
     "description": "Cette page a rencontré une erreur inattendue. Vous pouvez la recharger ou revenir à l'accueil — le reste de l'application n'est pas affecté.",
     "goHome": "Retour à l'accueil",
     "reload": "Recharger la page",
-    "title": "Une erreur est survenue"
+    "title": "Une erreur est survenue",
+    "notFoundTitle": "Page introuvable",
+    "notFoundDescription": "Cette adresse ne correspond à aucune page. Elle a peut-être été déplacée, ou le lien est mal saisi.",
+    "goBack": "Retour"
   },
   "feedbackCard": {
     "copyText": "Copier le texte",
@@ -109,13 +180,9 @@
     "issue": "Problème : {{summary}}",
     "rootCause": "Cause racine : {{cause}}",
     "urgent": "Prioritaire",
-    "webScraper": "Collecteur web"
-  },
-  "feedbackCarousel": {
-    "issue": "Problème : {{summary}}",
-    "urgent": "Prioritaire",
-    "viewDetails": "Voir les détails",
-    "webScraper": "Collecteur web"
+    "webScraper": "Collecteur web",
+    "openOriginal": "Ouvrir l’avis original",
+    "reviewDateHint": "Date de rédaction de l’avis"
   },
   "formQrCode": {
     "accessibleName": "Code QR du formulaire de retour {{formName}}",
@@ -159,9 +226,11 @@
     "refresh": "Actualiser",
     "sourcePlaceholder": "Nom de la source...",
     "supportedFormats": "Supporte CSV, JSON, JSONL",
+    "unknownError": "Erreur inconnue",
     "unsupportedFile": "Type de fichier non supporté : {{filename}}. Seuls les fichiers CSV, JSON et JSONL sont supportés.",
     "uploaded": "{{filename}} téléchargé",
     "uploadFailed": "Échec du téléchargement de {{filename}} : {{error}}",
+    "uploadUrlFailed": "Impossible d'obtenir l'URL de téléchargement",
     "uploading": "Téléchargement de {{count}} fichier(s)...",
     "uploading_one": "Téléchargement de {{count}} fichier(s)...",
     "uploading_many": "Téléchargement de {{count}} fichier(s)...",
@@ -171,7 +240,8 @@
   "socialFeed": {
     "all": "Tous",
     "noFeedback": "Aucun retour trouvé pour cette période",
-    "view": "Voir"
+    "view": "Voir",
+    "filterLabel": "Filtrer par source"
   },
   "userAdmin": {
     "active": "Actif",
@@ -200,7 +270,6 @@
     "firstNameLabel": "Prénom",
     "lastNameLabel": "Nom de famille",
     "loadError": "Impossible de charger les utilisateurs. Assurez-vous d'avoir accès administrateur.",
-    "nameLabel": "Nom (optionnel)",
     "noUsers": "Aucun utilisateur trouvé. Ajoutez votre premier utilisateur ci-dessus.",
     "passwordResetSent": "Email de réinitialisation du mot de passe envoyé",
     "pendingStatus": "En attente",
@@ -218,41 +287,223 @@
     "userDeleted": "Utilisateur supprimé",
     "userDisabled": "Utilisateur désactivé",
     "userEnabled": "Utilisateur activé",
-    "userManagement": "Gestion des utilisateurs",
     "userRole": "Utilisateur",
     "usersCount": "({{count}} utilisateurs)",
     "usersCount_one": "({{count}} utilisateurs)",
     "usersCount_many": "({{count}} utilisateurs)",
     "usersCount_other": "({{count}} utilisateurs)",
-    "userUpdated": "Utilisateur mis à jour"
+    "roleFor": "Rôle de {{email}}",
+    "categoryAccess": {
+      "title": "Accès par catégorie",
+      "noCategories": "Aucune catégorie n'est encore configurée.",
+      "adminNote": "Cet utilisateur est administrateur et voit toujours toutes les catégories, quel que soit le réglage enregistré ici.",
+      "all": "Toutes les catégories",
+      "selected": "Uniquement les catégories sélectionnées",
+      "ownersNote": "Les responsables produit voient toujours leurs propres catégories, même si elles ne sont pas sélectionnées ici.",
+      "saveError": "L'accès par catégorie n'a pas pu être enregistré.",
+      "loadError": "L'accès par catégorie n'a pas pu être chargé.",
+      "saved": "Accès par catégorie mis à jour pour {{email}}"
+    },
+    "flags": {
+      "title": "Indicateurs de mémoire et de propriété",
+      "description": "Les relecteurs de mémoire gèrent la mémoire d'entreprise. Le propriétaire de secours (un administrateur) reçoit les projets créés par des agents dont la catégorie n'a pas de propriétaire.",
+      "fallbackOwner": "Propriétaire de secours",
+      "memoryReviewer": "Relecteur de mémoire",
+      "fallbackOwnerFor": "Propriétaire de secours : {{user}}",
+      "memoryReviewerFor": "Relecteur de mémoire : {{user}}",
+      "fallbackAdminOnly": "Seul un administrateur peut être propriétaire de secours.",
+      "saveFailed": "Impossible de mettre à jour l'indicateur. Réessayez."
+    },
+    "sourceAccess": {
+      "title": "Sources",
+      "default": "Toutes les sources non restreintes (par défaut)",
+      "all": "Toutes les sources, y compris les restreintes",
+      "selected": "Uniquement les sources sélectionnées",
+      "restricted": "Restreinte",
+      "noProfiles": "Aucun profil de source n'est encore configuré (Administration → Sources et confidentialité)."
+    }
   },
-  "userProfile": {
-    "administrator": "Administrateur",
-    "allFieldsRequired": "Tous les champs sont obligatoires",
-    "changePassword": "Modifier le mot de passe",
-    "changing": "Modification en cours...",
-    "confirmNewPassword": "Confirmer le nouveau mot de passe",
-    "confirmPasswordPlaceholder": "Confirmer le nouveau mot de passe",
-    "currentPassword": "Mot de passe actuel",
-    "currentPasswordPlaceholder": "Entrez le mot de passe actuel",
-    "email": "E-mail",
-    "failedToChange": "Échec de la modification du mot de passe",
-    "groups": "Groupes",
-    "incorrectPassword": "Le mot de passe actuel est incorrect",
-    "language": "Langue",
-    "myProfile": "Mon profil",
-    "name": "Nom",
-    "newPassword": "Nouveau mot de passe",
-    "newPasswordPlaceholder": "Entrez le nouveau mot de passe",
-    "passwordChanged": "Mot de passe modifié avec succès !",
-    "passwordIntro": "Entrez votre mot de passe actuel et choisissez un nouveau",
-    "passwordRequirements": "Le mot de passe doit contenir au moins 8 caractères avec des majuscules, des minuscules et des chiffres",
-    "passwordTooShort": "Le mot de passe doit contenir au moins 8 caractères",
-    "passwordsMismatch": "Les nouveaux mots de passe ne correspondent pas",
-    "profile": "Profil",
-    "role": "Rôle",
-    "showPasswords": "Afficher les mots de passe",
-    "user": "Utilisateur",
-    "username": "Nom d'utilisateur"
+  "confirmModal": {
+    "delete": "Supprimer"
+  },
+  "pageLoader": {
+    "loading": "Chargement de la page…"
+  },
+  "ratingStars": {
+    "label": "{{rating}} sur {{max}} étoiles"
+  },
+  "categoryChange": {
+    "previous": "Avant : {{category}}",
+    "manual": "Modifiée manuellement",
+    "manualBy": "Modifiée par {{user}}",
+    "loading": "Chargement des catégories",
+    "category": "Catégorie",
+    "choose": "Choisissez une catégorie",
+    "subcategory": "Sous-catégorie",
+    "noSubcategory": "Aucune",
+    "cancel": "Annuler",
+    "save": "Enregistrer la catégorie",
+    "open": "Changer de catégorie",
+    "errors": {
+      "invalid": "Cette catégorie n'existe plus. Actualisez et choisissez-en une autre.",
+      "notFound": "Cet avis ne vous est pas accessible, ou la catégorie est hors de votre accès.",
+      "conflict": "Quelqu'un a modifié cet avis en même temps. Actualisez et réessayez.",
+      "generic": "La catégorie n'a pas pu être modifiée."
+    }
+  },
+  "unsavedChanges": {
+    "title": "Modifications non enregistrées",
+    "message": "Certaines modifications ne sont pas enregistrées. Les enregistrer avant de partir, ou les abandonner ?",
+    "save": "Enregistrer",
+    "discard": "Abandonner",
+    "cancel": "Annuler",
+    "saveFailed": "Échec de l'enregistrement. Vos modifications sont toujours là ; réessayez ou annulez.",
+    "cannotSave": "Corrigez les problèmes signalés avant d’enregistrer, ou abandonnez les modifications."
+  },
+  "dimensionFields": {
+    "tagsLabel": "Étiquettes",
+    "tagsPlaceholder": "vip, facturation ; remboursement",
+    "tagsHint": "Séparez les étiquettes par des virgules ou des points-virgules (20 au maximum).",
+    "tagsInvalid": "Non autorisé (ni « # », ni « , », ni « : », 64 caractères au maximum) : {{tags}}",
+    "tagsTooMany": "{{max}} étiquettes au maximum.",
+    "sourceLabel": "Source",
+    "manualImport": "Import manuel (par défaut)",
+    "restrictedOption": "{{name}} (restreinte)",
+    "sourceHint": "Détermine la politique de données personnelles, la conservation, la visibilité et les dimensions par défaut de ces lignes.",
+    "sourceRestrictedHint": "Restreinte : seuls les administrateurs et les personnes ayant accès à cette source verront ces lignes.",
+    "defaultsTitle": "Dimensions et étiquettes",
+    "defaultsHint": "Chaque avis venant d'ici porte ces valeurs ; ses propres valeurs l'emportent par dimension.",
+    "noDimensions": "Aucune dimension n'est encore configurée (Administration → Dimensions).",
+    "noDefault": "Aucune valeur par défaut"
+  },
+  "draftSaveBar": {
+    "save": "Enregistrer",
+    "discard": "Annuler les modifications",
+    "saving": "Enregistrement…",
+    "saved": "Enregistré",
+    "saveError": "Non enregistré : {{reason}}",
+    "remove": "Supprimer"
+  },
+  "dimensionsManager": {
+    "newValue": "nouvelle valeur",
+    "valueNameLabel": "Nom enregistré de {{name}}",
+    "valueNamePlaceholder": "nom_enregistre",
+    "valueLabelLabel": "Libellé affiché de {{name}}",
+    "valueLabelPlaceholder": "Libellé affiché (facultatif)",
+    "valueParentLabel": "Valeur de {{parent}} à laquelle appartient {{name}}",
+    "anyParentValue": "Sous toutes les valeurs parentes",
+    "removeValue": "Supprimer la valeur {{name}}",
+    "parentLabel": "Dimension parente",
+    "noParent": "Aucune (niveau supérieur)",
+    "parentOfChildren": "Parente de {{children}} : elle ne peut pas avoir elle-même de parente.",
+    "parentHint": "Une dimension enfant restreint ses valeurs selon la valeur de la parente (un seul niveau).",
+    "newDimension": "Nouvelle dimension",
+    "removeDimension": "Supprimer la dimension {{name}}",
+    "keyLabel": "Clé (enregistrée sur les avis)",
+    "labelLabel": "Libellé",
+    "labelPlaceholder": "Produit",
+    "descriptionLabel": "Description (montrée au modèle)",
+    "inferLabel": "Laisser le modèle la déduire",
+    "inferHint": "Désactivé : seule la source, son profil ou une personne la renseigne.",
+    "valuesTitle": "Valeurs ({{n}})",
+    "addValueLabel": "Nouvelle valeur pour {{name}}",
+    "addValue": "Ajouter une valeur",
+    "emptyTitle": "Aucune dimension pour l'instant",
+    "emptyHint": "Ajoutez-en une pour classer les avis par produit, module, type d'utilisateur ou tout autre critère.",
+    "addDimension": "Ajouter une dimension ({{max}} au maximum)",
+    "loadError": "Impossible de charger les dimensions.",
+    "problems": {
+      "tooMany": "{{max}} dimensions au maximum.",
+      "keyFormat": "Clé « {{key}} » : minuscules, chiffres et « _ », en commençant par une lettre (32 au maximum).",
+      "keyReserved": "« {{key}} » est réservé ; choisissez une autre clé.",
+      "keyDuplicate": "Deux dimensions utilisent la clé « {{key}} ».",
+      "labelLength": "Le libellé de « {{key}} » dépasse {{max}} caractères.",
+      "descriptionLength": "La description de « {{key}} » dépasse {{max}} caractères.",
+      "parentInvalid": "« {{key}} » doit avoir pour parente une autre dimension de premier niveau.",
+      "parentValueMissing": "La valeur « {{value}} » de « {{key}} » dépend d'une valeur parente qui n'existe plus.",
+      "tooManyValues": "« {{key}} » a plus de {{max}} valeurs.",
+      "valueFormat": "Valeur « {{value}} » de « {{key}} » : 1 à 64 caractères, sans espace, ni « # », « , » ou « : ».",
+      "valueDuplicate": "« {{key}} » contient deux fois la valeur « {{value}} »."
+    }
+  },
+  "sourcesManager": {
+    "keepForever": "Conserver les avis indéfiniment",
+    "retentionLabel": "Supprimer les avis de plus de (jours)",
+    "retentionHint": "{{min}} à {{max}} jours. Une tâche quotidienne supprime les avis plus anciens de cette source et leurs archives brutes.",
+    "removeProfile": "Supprimer le profil de {{name}}",
+    "labelLabel": "Libellé",
+    "piiLabel": "Données personnelles",
+    "pii": {
+      "allow": "Conserver tel quel",
+      "allowHint": "Le texte, l'auteur et le titre sont enregistrés tels que la source les a envoyés.",
+      "redact": "Masquer",
+      "redactHint": "E-mails, téléphones, IBAN, numéros de carte et adresses IP sont remplacés avant l'enregistrement ; l'auteur est retiré ; aucune copie brute n'est conservée.",
+      "summary_only": "Résumé uniquement",
+      "summaryOnlyHint": "Seuls les champs dérivés (résumé, catégorie, sentiment, dimensions) sont conservés ; le texte d'origine n'est pas gardé."
+    },
+    "restrictedLabel": "Restreinte",
+    "restrictedHint": "Seuls les administrateurs et les utilisateurs ayant accès à cette source (Utilisateurs → accès) voient ses avis.",
+    "defaultsTitle": "Valeurs de dimension pour chaque avis de cette source",
+    "noDefault": "Aucune valeur par défaut",
+    "empty": "Aucun profil pour l'instant : chaque source conserve tout, indéfiniment, visible par tous.",
+    "loadError": "Impossible de charger les profils de source.",
+    "addLabel": "Ajouter un profil de source",
+    "add": "Ajouter",
+    "addHint": "Choisissez un plugin, feedback_form ou manual_import, ou saisissez un id de source d'import comme sales_csv.",
+    "scraperHint": "Les avis d'un scraper web portent le nom du scraper comme id de source : seul un scraper nommé dans ce format (minuscules, chiffres, _ ou -, par exemple trustpilot_reviews) peut avoir un profil.",
+    "problems": {
+      "tooMany": "{{max}} profils de source au maximum.",
+      "retention": "{{name}} : la conservation doit être de {{min}} à {{max}} jours, ou illimitée.",
+      "tags": "{{name}} : corrigez d'abord les étiquettes.",
+      "idFormat": "Utilisez des minuscules, des chiffres, « _ » ou « - » (48 au maximum).",
+      "idDuplicate": "Cette source a déjà un profil."
+    }
+  },
+  "erasure": {
+    "title": "Effacer les avis d'une personne",
+    "description": "Supprime chaque avis correspondant et son archive brute. Action irréversible. Seule une empreinte de la valeur est conservée.",
+    "fieldLabel": "Correspondance sur",
+    "fields": {
+      "author": "Auteur",
+      "source_id": "Id d'origine",
+      "csv_row_id": "Id de ligne CSV",
+      "email": "E-mail"
+    },
+    "valueLabel": "Valeur",
+    "sourceLabel": "Dans la source",
+    "allSources": "Toutes les sources",
+    "sourceRequired": "Un identifiant n’est unique que dans sa source : choisissez la source.",
+    "start": "Effacer",
+    "startError": "L'effacement n'a pas démarré : {{reason}}",
+    "jobsTitle": "Effacements récents",
+    "noJobs": "Aucun pour l'instant.",
+    "counts": "{{items}} avis et {{objects}} objets bruts supprimés",
+    "status": {
+      "queued": "En file d'attente",
+      "running": "En cours",
+      "completed": "Terminé",
+      "failed": "Échec"
+    },
+    "confirmTitle": "Effacer les avis de cette personne ?",
+    "confirmMessage": "Chaque avis dont le champ {{field}} correspond à la valeur ({{source}}) ainsi que son archive brute seront supprimés définitivement."
+  },
+  "dimensionsEdit": {
+    "errors": {
+      "invalid": "Cette valeur de dimension ou cette étiquette n'est pas autorisée.",
+      "notFound": "Cet avis n'est plus disponible.",
+      "conflict": "Quelqu'un a modifié cet avis en même temps. Rechargez et réessayez.",
+      "generic": "La modification n'a pas pu être enregistrée."
+    }
+  },
+  "feedbackDimensions": {
+    "edit": "Modifier les dimensions",
+    "none": "Aucune",
+    "cancel": "Annuler",
+    "save": "Enregistrer",
+    "setByHand": "Défini manuellement",
+    "redacted": "Données masquées",
+    "redactedHint": "Les données personnelles de cet avis ont été remplacées avant l'enregistrement.",
+    "summaryOnly": "Résumé uniquement",
+    "summaryOnlyHint": "Sa source ne conserve que les champs dérivés ; le texte d'origine n'a pas été enregistré."
   }
 }

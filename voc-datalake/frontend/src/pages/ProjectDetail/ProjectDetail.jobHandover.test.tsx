@@ -14,17 +14,17 @@
  * this proves ProjectDetail actually wires that prop to the query.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter, Routes, Route } from 'react-router-dom'
-import ProjectDetail from './ProjectDetail'
+import { PAGE_PROJECT } from './project-detail-fixtures'
+import { renderProjectDetailPage } from './project-detail-page-fixtures'
+import { clickWizardBuild } from './prototype-fixtures'
 import { useConfigStore } from '../../store/configStore'
-import type { Project, ProjectDocument } from '../../api/types'
+import type { ProjectDocument } from '../../api/types'
 
-const mockGetProject = vi.fn()
-const mockGetJobs = vi.fn()
-const mockBuildPrototype = vi.fn()
+const mockGetProject = vi.fn<(...args: unknown[]) => unknown>()
+const mockGetJobs = vi.fn<(...args: unknown[]) => unknown>()
+const mockBuildPrototype = vi.fn<(...args: unknown[]) => unknown>()
 
 vi.mock('../../api/projectsApi', () => ({
   projectsApi: {
@@ -36,16 +36,7 @@ vi.mock('../../api/projectsApi', () => ({
   },
 }))
 
-const project: Project = {
-  project_id: 'proj-1',
-  name: 'Reader Engagement',
-  description: '',
-  status: 'active',
-  created_at: '2026-08-01T10:00:00Z',
-  updated_at: '2026-08-01T10:00:00Z',
-  persona_count: 0,
-  document_count: 1,
-}
+const project = { ...PAGE_PROJECT, document_count: 1 }
 
 /**
  * A prototype build needs a PRD or a PR-FAQ to be enabled at all — and both, to
@@ -69,19 +60,24 @@ const documents: ProjectDocument[] = [
   },
 ]
 
-function renderProjectDetail() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/projects/proj-1']}>
-        <Routes>
-          <Route path="/projects/:id" element={<ProjectDetail />} />
-        </Routes>
-      </MemoryRouter>
-    </QueryClientProvider>,
-  )
+const renderProjectDetail = renderProjectDetailPage
+
+/**
+ * Mounts the page, waits for the first jobs poll, then starts a prototype build
+ * through the wizard. Returns how many times the jobs list had been fetched
+ * BEFORE the build, so a test can tell a handover refetch from the initial load.
+ */
+async function startBuildFromIdlePage() {
+  const user = userEvent.setup()
+  renderProjectDetail()
+
+  const buildButton = await screen.findByRole('button', { name: /configure & build prototype/i })
+  await waitFor(() => expect(mockGetJobs).toHaveBeenCalledWith('proj-1'))
+  const callsBeforeBuild = mockGetJobs.mock.calls.length
+
+  await user.click(buildButton)
+  await clickWizardBuild(user)
+  return callsBeforeBuild
 }
 
 describe('ProjectDetail job handover (U9)', () => {
@@ -97,16 +93,7 @@ describe('ProjectDetail job handover (U9)', () => {
   })
 
   it('refetches the jobs list when a prototype build starts with nothing in flight', async () => {
-    const user = userEvent.setup()
-    renderProjectDetail()
-
-    const buildButton = await screen.findByRole('button', { name: /configure & build prototype/i })
-    await waitFor(() => expect(mockGetJobs).toHaveBeenCalled())
-    const callsBeforeBuild = mockGetJobs.mock.calls.length
-
-    await user.click(buildButton)
-    await user.click(within(screen.getByRole('dialog'))
-      .getByRole('button', { name: /^build prototype$/i }))
+    const callsBeforeBuild = await startBuildFromIdlePage()
 
     await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
     // Without the handover this stays at 1 forever: refetchInterval is 0 while
@@ -138,17 +125,8 @@ describe('ProjectDetail job handover (U9)', () => {
   })
 
   it('does not disturb the jobs list when the build fails to start', async () => {
-    const user = userEvent.setup()
     mockBuildPrototype.mockRejectedValue(new Error('Bedrock unavailable'))
-    renderProjectDetail()
-
-    const buildButton = await screen.findByRole('button', { name: /configure & build prototype/i })
-    await waitFor(() => expect(mockGetJobs).toHaveBeenCalled())
-    const callsBeforeBuild = mockGetJobs.mock.calls.length
-
-    await user.click(buildButton)
-    await user.click(within(screen.getByRole('dialog'))
-      .getByRole('button', { name: /^build prototype$/i }))
+    const callsBeforeBuild = await startBuildFromIdlePage()
 
     // The start failed, so there is no job to show; the error belongs inline.
     await waitFor(() => expect(screen.getByText(/Bedrock unavailable/)).toBeInTheDocument())

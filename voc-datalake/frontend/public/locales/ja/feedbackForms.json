@@ -8,6 +8,7 @@
     "deleteForm": "フォームを削除",
     "directLink": "直接リンク",
     "disabled": "無効",
+    "prototypePins": "プロトタイプのピン",
     "disableForm": "フォームを無効化",
     "editForm": "フォームを編集",
     "enableForm": "フォームを有効化",
@@ -19,7 +20,10 @@
     "showEmbedCode": "埋め込みコードを表示",
     "submissions": "送信数",
     "themeLabel": "テーマ",
-    "viewSubmissions": "送信を表示"
+    "viewSubmissions": "送信を表示",
+    "collectsName": "名前",
+    "collectsEmail": "メールアドレス",
+    "disabledNotice": "このフォームは無効です。有効にするまで、リンクと埋め込みには「Feedback form unavailable.」と表示されます。"
   },
   "configureApiFirst": "フィードバックフォームを管理するには、設定でAPIエンドポイントを構成してください。",
   "createForm": "フォームを作成",
@@ -51,9 +55,9 @@
     "previewTagged": "このフォームからのフィードバックは次のようにタグ付けされます：",
     "primaryColor": "プライマリカラー",
     "question": "質問",
-    "ratingEmoji": "絵文字 😀",
+    "ratingEmoji": "絵文字",
     "ratingNumeric": "数値 (1-10)",
-    "ratingStars": "星 ⭐",
+    "ratingStars": "星",
     "saveChanges": "変更を保存",
     "saving": "保存中...",
     "selectCategory": "-- カテゴリを選択 --",
@@ -85,7 +89,8 @@
     "validationUnknownProject": "リンク済みプロジェクト（現在利用できません）",
     "validationUnverifiedDocument": "リンク済みドキュメント（確認できません）",
     "validationUnverifiedProject": "リンク済みプロジェクト（確認できません）",
-    "validationWholeProject": "-- プロジェクト全体 --"
+    "validationWholeProject": "-- プロジェクト全体 --",
+    "dimensionsHint": "すべての送信にこの値が付きます。埋め込みごとに dimensions オプションでページ単位の値を設定できます。例:"
   },
   "empty": {
     "createButton": "最初のフォームを作成",
@@ -129,5 +134,10 @@
     "selectPrompt": "続行するにはテンプレートを選択してください",
     "subtitle": "テンプレートを選択して開始",
     "title": "新しいフォームを作成"
+  },
+  "createdDisabled": {
+    "dismiss": "閉じる",
+    "enable": "今すぐ有効にする",
+    "message": "「{{name}}」を作成しました。現在は無効のため、有効にするまでリンクを開いた人には「Feedback form unavailable.」と表示されます。"
   }
 }

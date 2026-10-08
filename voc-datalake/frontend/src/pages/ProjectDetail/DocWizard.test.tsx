@@ -6,13 +6,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { DocWizard } from './Wizards'
-import { defaultContextConfig } from '../../components/DataSourceWizard/exports'
+import {
+  baseWizardProps, createWizardWrapper, resetWizardMocks,
+} from './wizard-fixtures'
+import {
+  wizardApiClientMock, wizardConfigStoreMock,
+} from '../../components/DataSourceWizard/dataSourceWizard-fixtures'
+import { DocWizard } from './DocWizard'
 import type { DocToolConfig } from './types'
 
-const mockSuggestDocumentBrief = vi.fn()
-const mockAutofillPrfaqQuestions = vi.fn()
+const mockSuggestDocumentBrief = vi.fn<(...args: unknown[]) => unknown>()
+const mockAutofillPrfaqQuestions = vi.fn<(...args: unknown[]) => unknown>()
 
 vi.mock('../../api/projectsApi', () => ({
   projectsApi: {
@@ -21,28 +25,10 @@ vi.mock('../../api/projectsApi', () => ({
   },
 }))
 
-const mockGetSources = vi.fn()
-const mockGetCategoriesConfig = vi.fn()
-vi.mock('../../api/client', () => ({
-  api: {
-    getSources: (days: number) => mockGetSources(days),
-    getCategoriesConfig: () => mockGetCategoriesConfig(),
-  },
-}))
-vi.mock('../../store/configStore', () => ({
-  useConfigStore: vi.fn(() => ({
-    config: { apiEndpoint: 'https://api.example.com' },
-  })),
-}))
+vi.mock('../../api/client', () => wizardApiClientMock())
+vi.mock('../../store/configStore', () => wizardConfigStoreMock())
 
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
-  return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
-}
+const createWrapper = createWizardWrapper
 
 const baseDocConfig: DocToolConfig = {
   docTypes: ['prfaq'],
@@ -53,16 +39,9 @@ const baseDocConfig: DocToolConfig = {
 
 function makeProps(docConfig: Partial<DocToolConfig> = {}) {
   return {
-    projectId: 'proj-1',
-    personas: [],
-    documents: [],
-    contextConfig: defaultContextConfig,
+    ...baseWizardProps(),
     docConfig: { ...baseDocConfig, ...docConfig },
-    generating: null,
-    onContextChange: vi.fn(),
     onDocConfigChange: vi.fn(),
-    onClose: vi.fn(),
-    onSubmit: vi.fn(),
   }
 }
 
@@ -73,12 +52,29 @@ async function goToFinalStep(user: ReturnType<typeof userEvent.setup>) {
   }
 }
 
+/** Renders the wizard at its first step with the given doc-type selection. */
+function renderWithDocTypes(docTypes: DocToolConfig['docTypes']) {
+  render(<DocWizard {...makeProps({ docTypes })} />, { wrapper: createWrapper() })
+}
+
+/** Renders the wizard with fresh default props and a user; returns both. */
+function renderWizard() {
+  const user = userEvent.setup()
+  const props = makeProps()
+  render(<DocWizard {...props} />, { wrapper: createWrapper() })
+  return { user, props }
+}
+
+/** Renders the wizard with `props`, walks to the final step and returns the user. */
+async function renderAtFinalStep(props: ReturnType<typeof makeProps> = makeProps()) {
+  const user = userEvent.setup()
+  render(<DocWizard {...props} />, { wrapper: createWrapper() })
+  await goToFinalStep(user)
+  return user
+}
+
 describe('DocWizard', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockGetSources.mockResolvedValue({ sources: {} })
-    mockGetCategoriesConfig.mockResolvedValue({ categories: [] })
-  })
+  beforeEach(resetWizardMocks)
 
   // #283 stage 2: this wizard was one of the two keyboard traps found by browser
   // testing — no role="dialog", a fused overlay, and Escape did nothing. It now
@@ -98,18 +94,13 @@ describe('DocWizard', () => {
     it('keeps the dialog name in step with the doc-type selection', () => {
       // Pins the name to the same value the heading shows, which is what makes the
       // exact assertion above meaningful rather than a hardcoded coincidence.
-      render(
-        <DocWizard {...makeProps({ docTypes: ['prfaq', 'prd'] })} />,
-        { wrapper: createWrapper() },
-      )
+      renderWithDocTypes(['prfaq', 'prd'])
 
       expect(screen.getByRole('dialog')).toHaveAccessibleName('Generate PRD + PR-FAQ')
     })
 
     it('closes on Escape', async () => {
-      const user = userEvent.setup()
-      const props = makeProps()
-      render(<DocWizard {...props} />, { wrapper: createWrapper() })
+      const { user, props } = renderWizard()
 
       await user.keyboard('{Escape}')
 
@@ -117,9 +108,7 @@ describe('DocWizard', () => {
     })
 
     it('closes on overlay click but not on panel click', async () => {
-      const user = userEvent.setup()
-      const props = makeProps()
-      render(<DocWizard {...props} />, { wrapper: createWrapper() })
+      const { user, props } = renderWizard()
 
       await user.click(screen.getByRole('dialog'))
       expect(props.onClose).not.toHaveBeenCalled()
@@ -136,19 +125,13 @@ describe('DocWizard', () => {
     })
 
     it('shows combined title when both types are selected', () => {
-      render(
-        <DocWizard {...makeProps({ docTypes: ['prfaq', 'prd'] })} />,
-        { wrapper: createWrapper() },
-      )
+      renderWithDocTypes(['prfaq', 'prd'])
       expect(screen.getByText('Generate PRD + PR-FAQ')).toBeInTheDocument()
     })
 
     it('adds prd to the selection when its card is clicked (multi-select, not replace)', async () => {
-      const user = userEvent.setup()
       const props = makeProps()
-      render(<DocWizard {...props} />, { wrapper: createWrapper() })
-
-      await goToFinalStep(user)
+      const user = await renderAtFinalStep(props)
       await user.click(screen.getByRole('button', { name: /PRD Product Requirements Document/i }))
 
       expect(props.onDocConfigChange).toHaveBeenCalledWith(
@@ -157,11 +140,8 @@ describe('DocWizard', () => {
     })
 
     it('removes a selected type when its card is clicked again', async () => {
-      const user = userEvent.setup()
       const props = makeProps({ docTypes: ['prfaq', 'prd'] })
-      render(<DocWizard {...props} />, { wrapper: createWrapper() })
-
-      await goToFinalStep(user)
+      const user = await renderAtFinalStep(props)
       await user.click(screen.getByRole('button', { name: /PR-FAQ Amazon-style/i }))
 
       expect(props.onDocConfigChange).toHaveBeenCalledWith(
@@ -171,17 +151,19 @@ describe('DocWizard', () => {
   })
 
   describe('AI draft brief assist', () => {
+    /** Walks to the final step and clicks the brief "AI draft" button. */
+    async function clickAiDraft(props = makeProps()) {
+      const user = await renderAtFinalStep(props)
+      await user.click(screen.getByRole('button', { name: /^AI draft$/i }))
+    }
+
     it('fills title and feature idea from the suggestion', async () => {
-      const user = userEvent.setup()
       mockSuggestDocumentBrief.mockResolvedValue({
         title: 'Crash-free login',
         feature_idea: 'Fix the login crash.',
       })
       const props = makeProps()
-      render(<DocWizard {...props} />, { wrapper: createWrapper() })
-
-      await goToFinalStep(user)
-      await user.click(screen.getByRole('button', { name: /^AI draft$/i }))
+      await clickAiDraft(props)
 
       await waitFor(() => {
         expect(props.onDocConfigChange).toHaveBeenCalledWith(
@@ -198,39 +180,33 @@ describe('DocWizard', () => {
     })
 
     it('shows a hint when the model returns an empty draft', async () => {
-      const user = userEvent.setup()
       mockSuggestDocumentBrief.mockResolvedValue({ title: '', feature_idea: '' })
-      render(<DocWizard {...makeProps()} />, { wrapper: createWrapper() })
-
-      await goToFinalStep(user)
-      await user.click(screen.getByRole('button', { name: /^AI draft$/i }))
+      await clickAiDraft()
 
       expect(await screen.findByText(/no draft/i)).toBeInTheDocument()
     })
 
     it('shows the error when the draft call fails', async () => {
-      const user = userEvent.setup()
       mockSuggestDocumentBrief.mockRejectedValue(new Error('API Error: 500'))
-      render(<DocWizard {...makeProps()} />, { wrapper: createWrapper() })
-
-      await goToFinalStep(user)
-      await user.click(screen.getByRole('button', { name: /^AI draft$/i }))
+      await clickAiDraft()
 
       expect(await screen.findByText(/API Error: 500/i)).toBeInTheDocument()
     })
   })
 
   describe('PR-FAQ answers autofill assist', () => {
+    /** Walks to the final step and clicks "AI draft answers". */
+    async function clickAiDraftAnswers(props = makeProps()) {
+      const user = await renderAtFinalStep(props)
+      await user.click(screen.getByRole('button', { name: /AI draft answers/i }))
+    }
+
     it('fills the five customer questions from the suggestion', async () => {
-      const user = userEvent.setup()
       mockAutofillPrfaqQuestions.mockResolvedValue({
         answers: ['a1', 'a2', 'a3', 'a4', 'a5'],
       })
       const props = makeProps({ title: 'Dark mode', featureIdea: 'Add dark theme' })
-      render(<DocWizard {...props} />, { wrapper: createWrapper() })
-
-      await goToFinalStep(user)
-      await user.click(screen.getByRole('button', { name: /AI draft answers/i }))
+      await clickAiDraftAnswers(props)
 
       await waitFor(() => {
         expect(props.onDocConfigChange).toHaveBeenCalledWith(
@@ -244,13 +220,9 @@ describe('DocWizard', () => {
     })
 
     it('pads short answer lists to five entries', async () => {
-      const user = userEvent.setup()
       mockAutofillPrfaqQuestions.mockResolvedValue({ answers: ['only one'] })
       const props = makeProps()
-      render(<DocWizard {...props} />, { wrapper: createWrapper() })
-
-      await goToFinalStep(user)
-      await user.click(screen.getByRole('button', { name: /AI draft answers/i }))
+      await clickAiDraftAnswers(props)
 
       await waitFor(() => {
         expect(props.onDocConfigChange).toHaveBeenCalledWith(
@@ -260,12 +232,8 @@ describe('DocWizard', () => {
     })
 
     it('shows the error when autofill fails', async () => {
-      const user = userEvent.setup()
       mockAutofillPrfaqQuestions.mockRejectedValue(new Error('Autofill exploded'))
-      render(<DocWizard {...makeProps()} />, { wrapper: createWrapper() })
-
-      await goToFinalStep(user)
-      await user.click(screen.getByRole('button', { name: /AI draft answers/i }))
+      await clickAiDraftAnswers()
 
       expect(await screen.findByText(/Autofill exploded/i)).toBeInTheDocument()
     })

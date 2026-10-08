@@ -240,11 +240,5 @@
     "unavailable": "Pontuação da equipe indisponível",
     "unavailableDescription": "As pontuações da equipe não puderam ser lidas agora, portanto esta linha não mostra nada sobre elas — não que ninguém tenha votado. Recarregue a página para ver o que a equipe disse."
   },
-  "title": "Priorização",
-  "unsavedChanges": {
-    "cancel": "Permanecer na Página",
-    "confirm": "Descartar Alterações",
-    "message": "Você tem pontuações de priorização não salvas. Deseja descartar suas alterações e sair desta página?",
-    "title": "Alterações Não Salvas"
-  }
+  "title": "Priorização"
 }

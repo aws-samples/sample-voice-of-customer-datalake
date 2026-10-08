@@ -12,19 +12,17 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import DocumentsTab from './DocumentsTab'
+import { documentsTabStubs, makeProject } from './project-detail-fixtures'
 import type { DocumentDerivation } from '../../api/derivation'
-import type { ProjectDocument, Project } from '../../api/types'
+import type { ProjectDocument } from '../../api/types'
 
-const project: Project = {
+const project = makeProject({
   project_id: 'proj-1',
   name: 'Test Project',
   description: '',
-  status: 'active',
   created_at: '2026-01-05T00:00:00Z',
   updated_at: '2026-01-05T00:00:00Z',
-  persona_count: 0,
-  document_count: 0,
-}
+})
 
 function makeDoc(overrides: Partial<ProjectDocument> & Pick<ProjectDocument, 'document_id'>): ProjectDocument {
   return {
@@ -42,6 +40,7 @@ function derivation(overrides: Partial<DocumentDerivation> = {}): DocumentDeriva
     selected_document_count: 0,
     feedback_count: 0,
     persona_ids: [],
+    visual_document_ids: [],
     product_context_included: false,
     ...overrides,
   }
@@ -115,10 +114,7 @@ function renderTab(selectedDoc: ProjectDocument, onSelectDoc = vi.fn()) {
         documents={ALL_DOCUMENTS}
         selectedDoc={selectedDoc}
         onSelectDoc={onSelectDoc}
-        onEditDoc={vi.fn()}
-        onDeleteDoc={vi.fn()}
-        onCreateDoc={vi.fn()}
-        isDeleting={false}
+        {...documentsTabStubs()}
       />
     </MemoryRouter>,
   )
@@ -168,7 +164,7 @@ describe('the provenance of the selected document', () => {
     expect(within(panel).getByText('deleted_1')).toBeInTheDocument()
     expect(within(panel).getByText('No longer available')).toBeInTheDocument()
     // Not navigable: every button in the panel is one of the two live sources.
-    const names = within(panel).getAllByRole('button').map((b) => b.textContent ?? '')
+    const names = within(panel).getAllByRole('button').map((b) => b.textContent)
     expect(names).toHaveLength(2)
     expect(names.some((n) => n.includes('deleted_1'))).toBe(false)
   })
@@ -200,12 +196,19 @@ describe('the difference between documents selected and documents used', () => {
     const line = within(panel).getByText('3 of 5 selected documents used')
     // The cap is deliberate. Nothing from the line up to the panel may style it
     // as a fault, and the panel carries no icon that would imply one.
-    for (let node: HTMLElement | null = line; node !== null && node !== panel.parentElement; node = node.parentElement) {
+    for (const node of ancestorsUpTo(line, panel.parentElement)) {
       expect(node.className).not.toMatch(/red|amber|yellow|orange/)
     }
     expect(panel.querySelectorAll('svg')).toHaveLength(0)
   })
 })
+
+/** `node` and each ancestor of it, stopping before `stop` (or at the root). */
+function ancestorsUpTo(node: HTMLElement, stop: HTMLElement | null): HTMLElement[] {
+  if (node === stop) return []
+  const parent = node.parentElement
+  return [node, ...(parent === null ? [] : ancestorsUpTo(parent, stop))]
+}
 
 describe('a document written before the derivation field existed', () => {
   it('still says what it was built from, reconstructed from its old lineage fields', () => {

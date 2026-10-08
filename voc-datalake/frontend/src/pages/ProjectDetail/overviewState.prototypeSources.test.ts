@@ -37,8 +37,8 @@ describe('prototypeSources ordering mirrors the backend newest-of-type rule', ()
       doc('prfaq', 'prfaq_only', '2026-02-01T00:00:00Z'),
     ])
 
-    expect(prdOptions.map((o) => o.document_id)).toEqual(['aa_prd_new', 'zz_prd_old'])
-    expect(prfaqOptions.map((o) => o.document_id)).toEqual(['prfaq_only'])
+    expect(prdOptions.map((o) => o.document_id)).toStrictEqual(['aa_prd_new', 'zz_prd_old'])
+    expect(prfaqOptions.map((o) => o.document_id)).toStrictEqual(['prfaq_only'])
   })
 
   it('breaks a same-second tie on document_id DESCENDING, as the backend does', () => {
@@ -52,24 +52,19 @@ describe('prototypeSources ordering mirrors the backend newest-of-type rule', ()
       doc('prd', 'prd_b', sameSecond),
     ])
 
-    expect(prdOptions.map((o) => o.document_id)).toEqual(['prd_c', 'prd_b', 'prd_a'])
+    expect(prdOptions.map((o) => o.document_id)).toStrictEqual(['prd_c', 'prd_b', 'prd_a'])
   })
 
   it('keeps hasPrd/hasPrfaq consistent with the lists they summarise', () => {
-    const empty = sources([])
-    expect(empty.hasPrd).toBe(false)
-    expect(empty.prdOptions).toHaveLength(0)
-
-    const one = sources([doc('prd', 'prd_1', '2026-01-01T00:00:00Z')])
-    expect(one.hasPrd).toBe(true)
-    expect(one.hasPrfaq).toBe(false)
-    expect(one.prfaqOptions).toHaveLength(0)
+    expect(sources([])).toMatchObject({ hasPrd: false, prdOptions: [] })
+    expect(sources([doc('prd', 'prd_1', '2026-01-01T00:00:00Z')]))
+      .toMatchObject({ hasPrd: true, hasPrfaq: false, prfaqOptions: [] })
   })
 
   it('carries the title and date the picker renders', () => {
     const { prdOptions } = sources([doc('prd', 'prd_1', '2026-03-04T00:00:00Z')])
 
-    expect(prdOptions[0]).toEqual({
+    expect(prdOptions[0]).toStrictEqual({
       document_id: 'prd_1',
       title: 'prd_1',
       created_at: '2026-03-04T00:00:00Z',

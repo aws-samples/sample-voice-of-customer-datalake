@@ -151,17 +151,20 @@ unconditional — and the error tells it which prefix was expected.
 import ast
 import inspect
 import json
+import re
 import textwrap
+from contextlib import contextmanager
 from pathlib import Path
+from typing import override
 from unittest.mock import MagicMock, patch
 
 import pytest
-import shared.aws as shared_aws
-from shared.exceptions import ConfigurationError, SecretUnreadableError
-from shared.plugin_identity import is_valid_plugin_identifier
 
+import shared.aws as shared_aws
 from _shared import base_ingestor, base_webhook
 from _shared.plugin_secrets import filter_plugin_secrets, plugin_secret_prefix
+from shared.exceptions import ConfigurationError, SecretUnreadableError
+from shared.plugin_identity import PLUGIN_IDENTIFIER_RULES, is_valid_plugin_identifier
 
 # The identity these tests run as — read from the same module attribute the base
 # classes read, so a rename of the env plumbing cannot leave this file asserting
@@ -202,6 +205,7 @@ def _make_ingestor(execution_id=None):
 
 def _make_webhook():
     class _Webhook(base_webhook.BaseWebhook):
+        @override
         def parse_webhook_payload(self, body, headers):
             return []
 
@@ -263,7 +267,8 @@ class TestANamespaceMissFailsClosed:
         secret is fully populated for the CORRECT id, which is what made the old
         fallback so damaging — the miss looked like a not-yet-migrated plugin."""
         typo = PLUGIN_ID[:-1]
-        assert typo and typo != PLUGIN_ID
+        assert typo
+        assert typo != PLUGIN_ID
         with pytest.raises(ConfigurationError):
             filter_plugin_secrets(typo, MIXED_SECRET)
 
@@ -285,9 +290,54 @@ class TestANamespaceMissFailsClosed:
         """A plugin id becomes a key prefix, so it is validated on the same
         character class the write path enforces on `source`. An empty identity is
         the one that matters most: `prefix = '_'` would otherwise match nothing
-        and, under the old fallback, return everything."""
-        with pytest.raises(ConfigurationError):
+        and, under the old fallback, return everything.
+
+        Every id here also MISSES the namespace, so `pytest.raises` alone proves
+        nothing about which branch ran — the namespace-miss branch raises the same
+        `ConfigurationError` class, and deleting the identity guard left a
+        class-only assertion green (issue #398 A.1, upstream PR #400). The message
+        is the evidence: only the identity branch says "missing or malformed" and
+        states the rule it broke. The control below keeps that evidence meaningful.
+
+        `PLUGIN_IDENTIFIER_RULES` is asserted as the IMPORTED constant, not a quoted
+        copy, so a rewording that breaks nothing does not fail this.
+        """
+        with pytest.raises(
+            ConfigurationError,
+            match=r'plugin identity .* is missing or malformed \(it '
+                  + re.escape(PLUGIN_IDENTIFIER_RULES) + r'\)',
+        ) as excinfo:
             filter_plugin_secrets(identity, MIXED_SECRET)
+
+        message = str(excinfo.value)
+        # The identity message's own no-leak property: it is the only refusal
+        # that echoes caller-controlled input, so it is held to the same four-part
+        # rule as the miss message (key names AND values).
+        assert OTHER_PLUGIN_KEY not in message
+        assert OTHER_PLUGIN_VALUE not in message
+        assert UNPREFIXED_KEY not in message
+        assert UNPREFIXED_VALUE not in message
+        # Reflected input is bounded at 40 characters (`repr(plugin_id[:40])`);
+        # meaningful for the `too_long` fixture, trivially true for the rest.
+        assert 'a' * 41 not in message
+
+    def test_the_precondition_the_rules_constant_is_not_empty(self):
+        """`re.escape('')` matches anywhere, so an emptied constant would make the
+        message pin above vacuous while the control below failed for the wrong
+        reason. Makes that vacuity loud."""
+        assert PLUGIN_IDENTIFIER_RULES, 'the rules constant must state the rules'
+
+    def test_the_control_a_namespace_miss_is_not_reported_as_a_malformed_identity(self):
+        """Non-vacuity for the message pin above: it separates the two refusals
+        only while their messages differ. A namespace miss carries a VALID
+        identity, so stating the identity rules there would let the pin pass
+        with the guard deleted."""
+        with pytest.raises(ConfigurationError) as excinfo:
+            filter_plugin_secrets(PLUGIN_ID, FOREIGN_ONLY_SECRET)
+
+        message = str(excinfo.value)
+        assert PLUGIN_IDENTIFIER_RULES not in message
+        assert 'missing or malformed' not in message
 
 
 class TestErrorsRevealTheMisconfigurationAndNothingElse:
@@ -362,7 +412,7 @@ class TestBothBaseClassesFailClosed:
     # so an unpatched breaker issues a genuine `dynamodb.Query` and `record_failure`
     # swallows the result. Pinned by plugins/conftest.py::no_real_aws_calls.
     @patch.object(base_ingestor.CircuitBreaker, 'record_failure')
-    def _ingestor_with(payload, mock_record_failure, mock_get_secret, mock_sqs, mock_s3, mock_dynamo):
+    def _ingestor_with(payload, _mock_record_failure, mock_get_secret, _mock_sqs, _mock_s3, mock_dynamo):
         mock_get_secret.return_value = payload
         mock_dynamo.return_value.Table.return_value = MagicMock()
         return _make_ingestor()
@@ -370,7 +420,7 @@ class TestBothBaseClassesFailClosed:
     @staticmethod
     @patch('_shared.base_webhook.get_sqs_client')
     @patch('_shared.base_webhook.get_secret')
-    def _webhook_with(payload, mock_get_secret, mock_sqs):
+    def _webhook_with(payload, mock_get_secret, _mock_sqs):
         mock_get_secret.return_value = payload
         return _make_webhook()
 
@@ -513,12 +563,12 @@ class TestTheOnlyOptOutIsOverridingLoadSecrets:
         )
 
     @patch('_shared.base_ingestor.get_dynamodb_resource')
-    @patch('_shared.base_ingestor.get_s3_client')
-    @patch('_shared.base_ingestor.get_sqs_client')
+    @patch('_shared.base_ingestor.get_s3_client', new=MagicMock())
+    @patch('_shared.base_ingestor.get_sqs_client', new=MagicMock())
     @patch('_shared.base_ingestor.get_secret')
-    @patch.object(base_ingestor.CircuitBreaker, 'record_failure')
+    @patch.object(base_ingestor.CircuitBreaker, 'record_failure', new=MagicMock())
     def test_a_plugin_that_never_reads_the_attribute_still_fails_closed(
-        self, mock_record_failure, mock_get_secret, mock_sqs, mock_s3, mock_dynamo
+        self, mock_get_secret, mock_dynamo
     ):
         """The consequence, end to end: a subclass declaring nothing and never
         referencing `self.secrets` is refused against a secret populated for OTHER
@@ -538,11 +588,11 @@ class TestTheOnlyOptOutIsOverridingLoadSecrets:
         assert OTHER_PLUGIN_VALUE not in str(raised.value)
 
     @patch('_shared.base_ingestor.get_dynamodb_resource')
-    @patch('_shared.base_ingestor.get_s3_client')
-    @patch('_shared.base_ingestor.get_sqs_client')
+    @patch('_shared.base_ingestor.get_s3_client', new=MagicMock())
+    @patch('_shared.base_ingestor.get_sqs_client', new=MagicMock())
     @patch('_shared.base_ingestor.get_secret')
     def test_the_control_overriding_load_secrets_does_opt_out(
-        self, mock_get_secret, mock_sqs, mock_s3, mock_dynamo
+        self, mock_get_secret, mock_dynamo
     ):
         """Non-vacuity for the case above, and the escape hatch the docs now name.
 
@@ -642,6 +692,36 @@ class TestATransientReadFailureIsRetryable:
         assert client.get_secret_value.call_count == 1
 
 
+@contextmanager
+def _manual_run_construction_doubles(payload):
+    """The AWS doubles a manual-run construction reaches, with `get_secret`
+    answering *payload*; yields ``(aggregates table, emit_audit_event)``.
+
+    `AGGREGATES_TABLE` is patched to a non-empty name because
+    `_update_source_run_status` is a no-op without one, and `plugins/conftest.py`
+    does not set it.
+    """
+    table = MagicMock()
+    with patch('_shared.base_ingestor.AGGREGATES_TABLE', 'test-aggregates'), \
+            patch('_shared.base_ingestor.get_dynamodb_resource') as mock_dynamo, \
+            patch('_shared.base_ingestor.get_s3_client'), \
+            patch('_shared.base_ingestor.get_sqs_client'), \
+            patch('_shared.base_ingestor.get_secret', return_value=payload), \
+            patch('_shared.base_ingestor.clear_secret_cache'), \
+            patch('_shared.base_ingestor.emit_audit_event') as emit:
+        mock_dynamo.return_value.Table.return_value = table
+        yield table, emit
+
+
+def _construction_error(execution_id):
+    """Construct the ingestor; return the ConfigurationError it raised, or None."""
+    try:
+        _make_ingestor(execution_id=execution_id)
+    except ConfigurationError as raised:
+        return raised
+    return None
+
+
 class TestAConstructionFailureIsReported:
     """The raise happens in `__init__`, so it must report for itself.
 
@@ -660,25 +740,12 @@ class TestAConstructionFailureIsReported:
     def _construct(payload, execution_id):
         """Construct with a manual-run execution_id, returning the mocked table.
 
-        `AGGREGATES_TABLE` is patched to a non-empty name because
-        `_update_source_run_status` is a no-op without one, and `plugins/conftest.py`
-        does not set it.
+        The circuit breaker's `record_failure` is patched as well, so a test can
+        see whether construction failure reached it.
         """
-        table = MagicMock()
-        with patch('_shared.base_ingestor.AGGREGATES_TABLE', 'test-aggregates'), \
-                patch('_shared.base_ingestor.get_dynamodb_resource') as mock_dynamo, \
-                patch('_shared.base_ingestor.get_s3_client'), \
-                patch('_shared.base_ingestor.get_sqs_client'), \
-                patch('_shared.base_ingestor.get_secret', return_value=payload), \
-                patch('_shared.base_ingestor.clear_secret_cache'), \
-                patch.object(base_ingestor.CircuitBreaker, 'record_failure') as record_failure, \
-                patch('_shared.base_ingestor.emit_audit_event') as emit:
-            mock_dynamo.return_value.Table.return_value = table
-            error = None
-            try:
-                _make_ingestor(execution_id=execution_id)
-            except ConfigurationError as raised:
-                error = raised
+        with _manual_run_construction_doubles(payload) as (table, emit), \
+                patch.object(base_ingestor.CircuitBreaker, 'record_failure') as record_failure:
+            error = _construction_error(execution_id)
         return error, table, record_failure, emit
 
     @staticmethod
@@ -698,6 +765,15 @@ class TestAConstructionFailureIsReported:
             "the run record was left at the 'running' that run_source wrote, so "
             'the UI would poll it forever'
         )
+
+    def test_the_run_record_stores_the_error_class_not_its_text(self):
+        """The run path's rule (#263): `SOURCE_RUN#` rows are readable by every
+        signed-in user, so they carry the exception TYPE; its text (which names
+        the expected secret prefix) stays in the audit event and the log."""
+        error, table, _, _ = self._construct(FOREIGN_ONLY_SECRET, self.EXECUTION_ID)
+
+        written = [call.kwargs['ExpressionAttributeValues'].get(':errors') for call in table.update_item.call_args_list]
+        assert [type(error).__name__] in written, written
 
     def test_the_run_record_is_addressed_by_this_execution(self):
         """The record the UI polls, not just any record: `run_source` keys it
@@ -737,22 +813,10 @@ class TestAConstructionFailureIsReported:
         module-level import, which is precisely why patching only the ingestor's
         left three tests issuing real queries.
         """
-        table = MagicMock()
-        with patch('_shared.base_ingestor.AGGREGATES_TABLE', 'test-aggregates'), \
-                patch('_shared.base_ingestor.get_dynamodb_resource') as mock_dynamo, \
-                patch('_shared.base_ingestor.get_s3_client'), \
-                patch('_shared.base_ingestor.get_sqs_client'), \
-                patch('_shared.base_ingestor.get_secret', return_value=payload), \
-                patch('_shared.base_ingestor.clear_secret_cache'), \
+        with _manual_run_construction_doubles(payload) as (table, emit), \
                 patch('_shared.circuit_breaker.get_dynamodb_resource',
-                      side_effect=Exception('resource construction failed')), \
-                patch('_shared.base_ingestor.emit_audit_event') as emit:
-            mock_dynamo.return_value.Table.return_value = table
-            error = None
-            try:
-                _make_ingestor(execution_id=execution_id)
-            except ConfigurationError as raised:
-                error = raised
+                      side_effect=Exception('resource construction failed')):
+            error = _construction_error(execution_id)
         return error, table, emit
 
     def test_a_broken_circuit_breaker_does_not_swallow_the_audit_event(self):
@@ -1044,7 +1108,8 @@ class TestTheIdentityRuleIsSharedWithTheWritePath:
 
         path = Path(__file__).resolve().parents[3] / 'lambda' / 'api' / 'integrations_handler.py'
         spec = importlib.util.spec_from_file_location('_write_path_under_test', path)
-        assert spec and spec.loader, f'could not load {path}'
+        assert spec, f'could not load {path}'
+        assert spec.loader, f'could not load {path}'
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         return module
@@ -1085,14 +1150,6 @@ class TestTheIdentityRuleIsSharedWithTheWritePath:
         # And each load is genuinely fresh rather than served from that registry,
         # which is what `import_module` would do.
         assert second is not first
-
-    @pytest.mark.parametrize('plugin_id', ['webscraper', 'app_reviews_ios', 's3_import'])
-    def test_every_real_plugin_id_satisfies_the_shared_rule(self, plugin_id):
-        """The rule has to admit the ids actually deployed. A tightening that
-        rejected one of these would fail every one of that plugin's invocations at
-        construction, which is not a failure a unit test of the regex alone would
-        report as an outage."""
-        assert is_valid_plugin_identifier(plugin_id)
 
 
 class TestTheDeployTimeInvariantsThisBoundaryNeeds:

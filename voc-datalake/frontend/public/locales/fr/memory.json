@@ -1,0 +1,123 @@
+{
+  "add": {
+    "expiresAt": "Expire le",
+    "failed": "Impossible d'enregistrer le souvenir. Réessayez.",
+    "label": {
+      "company": "Retenir pour toute l'entreprise",
+      "personal": "Retenir pour moi"
+    },
+    "placeholder": {
+      "company": "ex. Nos clients ont montré qu’ils comparent les prix avant de payer",
+      "personal": "ex. J'aime les réponses courtes"
+    },
+    "proposedNotice": "Seuls les curateurs publient directement les souvenirs d'entreprise — le vôtre sera d'abord vérifié.",
+    "retention": "Conservation",
+    "saved": "Retenu.",
+    "submit": "Retenir"
+  },
+  "cancel": "Annuler",
+  "configureFirst": "Connectez d'abord le point de terminaison de l'API dans les Paramètres.",
+  "confirm": "+1",
+  "confirmHint": "Je suis d'accord — comptez-moi comme soutien",
+  "empty": "Rien n'est encore mémorisé ici.",
+  "expires": "expire le {{date}}",
+  "filters": {
+    "anyKind": "Tous les types",
+    "anyStatus": "Tous les statuts",
+    "kind": "Type",
+    "search": "Rechercher des souvenirs",
+    "status": "Filtre de statut"
+  },
+  "forget": "Oublier",
+  "forgetMessage": "« {{statement}} » est archivé et ne sera jamais réappris automatiquement. Vous pourrez le restaurer plus tard.",
+  "forgetTitle": "Oublier ce souvenir ?",
+  "imports": {
+    "content": "Contenu",
+    "contentPlaceholder": "Collez ici le texte de la page…",
+    "counter": "{{count}} / {{max}} caractères",
+    "created": "Souvenirs créés : {{count}}",
+    "description": "Collez un document ou une page web. Ce qu’il apprend est publié selon les règles de confiance habituelles ; l’original est conservé.",
+    "failed": "Impossible de lancer l'importation. Réessayez.",
+    "history": "Vos importations récentes",
+    "noHistory": "Aucune importation depuis ce navigateur pour le moment.",
+    "pageTitle": "Titre",
+    "status": {
+      "completed": "Terminé",
+      "failed": "Échec",
+      "processing": "En cours",
+      "queued": "En file d'attente"
+    },
+    "submit": "Importer",
+    "title": "Importer une page",
+    "url": "Lien source (facultatif)"
+  },
+  "kind": {
+    "agents": "Agents IA",
+    "customer": "Client",
+    "objective": "Objectif",
+    "other": "Autre",
+    "product": "Produit",
+    "strategy": "Stratégie",
+    "working_style": "Façon de travailler"
+  },
+  "loadFailed": "Impossible de charger les souvenirs.",
+  "loadMore": "Charger plus",
+  "loading": "Chargement des souvenirs…",
+  "merge": {
+    "description": "Une seule affirmation les remplace ; les originaux sont archivés et leurs soutiens sont conservés.",
+    "failed": "Échec de la fusion. Réessayez.",
+    "open": "Fusionner la sélection",
+    "statement": "Affirmation fusionnée",
+    "submit": "Fusionner",
+    "title": "Fusionner des souvenirs ({{count}})"
+  },
+  "meta": "Depuis le {{created}} · {{retention}}",
+  "restore": "Restaurer",
+  "retention": {
+    "dated": "Jusqu'à une date",
+    "decay": "S'efface sans usage",
+    "long_term": "Permanent"
+  },
+  "retry": "Réessayer",
+  "review": {
+    "actions": {
+      "keep": "Garder celui-ci",
+      "keep_both": "Garder les deux",
+      "merge": "Fusionner en un seul",
+      "replace": "Garder l'existant"
+    },
+    "aligned": "Aligné sur : {{objectives}}",
+    "apply": "Appliquer",
+    "empty": "Rien à vérifier — aucune proposition ni aucun conflit.",
+    "existing": "Ce que nous retenons aujourd'hui",
+    "failed": "Impossible d'appliquer la résolution. Réessayez.",
+    "newClaim": "Nouvelle affirmation",
+    "proposed": "Souvenir proposé",
+    "resolution": "Résolution",
+    "suggested": "Suggestion : {{action}}"
+  },
+  "reviewLoadFailed": "Impossible de charger la file de révision. Des mémoires en attente de révision peuvent manquer ici.",
+  "selectForMerge": "Sélectionner pour fusionner : {{statement}}",
+  "selected": "Sélectionnés : {{count}}",
+  "source": {
+    "agent": "Agent autonome",
+    "extracted": "Appris des conversations",
+    "import": "Importé",
+    "user_explicit": "Ajouté par une personne"
+  },
+  "status": {
+    "active": "Actif",
+    "archived": "Archivé",
+    "conflict": "Conflit",
+    "proposed": "Proposé"
+  },
+  "subtitle": "Ce dont se souviennent l'assistant et les agents autonomes — le savoir partagé de l'entreprise et vos propres préférences.",
+  "supportersHint": "Personnes qui l'ont dit ou confirmé",
+  "tabs": {
+    "company": "Entreprise",
+    "imports": "Importations",
+    "personal": "Personnel",
+    "review": "À vérifier"
+  },
+  "title": "Mémoire"
+}

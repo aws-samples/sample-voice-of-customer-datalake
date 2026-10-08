@@ -1,3 +1,4 @@
+import type { ComponentProps } from 'react'
 /**
  * @fileoverview Tests for S3Browser component
  */
@@ -5,6 +6,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import S3Browser from './S3Browser'
+import { at } from '@test/defined'
 
 const mockData = {
   bucket: 'voc-raw-data',
@@ -17,9 +19,19 @@ const mockData = {
   ],
 }
 
+// Outside `raw/`, where existing objects may still be edited.
+const editableData = {
+  bucket: 'voc-raw-data',
+  prefix: 'exports/',
+  objects: [
+    { key: 'report.json', fullKey: 'exports/report.json', size: 1024, lastModified: '2025-01-15T10:30:00Z', isFolder: false },
+    { key: 'chart.png', fullKey: 'exports/chart.png', size: 2048, lastModified: '2025-01-15T11:00:00Z', isFolder: false },
+  ],
+}
+
 describe('S3Browser', () => {
-  const defaultProps = {
-    path: [] as string[],
+  const defaultProps: ComponentProps<typeof S3Browser> = {
+    path: [],
     data: mockData,
     loading: false,
     onNavigateToFolder: vi.fn(),
@@ -27,7 +39,6 @@ describe('S3Browser', () => {
     onNavigateToBreadcrumb: vi.fn(),
     onView: vi.fn(),
     onEdit: vi.fn(),
-    onDelete: vi.fn(),
     onDownload: vi.fn(),
   }
 
@@ -106,7 +117,7 @@ describe('S3Browser', () => {
       render(<S3Browser {...defaultProps} path={['raw']} onNavigateUp={onNavigateUp} />)
 
       await user.click(screen.getByText('Back'))
-      expect(onNavigateUp).toHaveBeenCalled()
+      expect(onNavigateUp).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'click' }))
     })
 
     it('calls onNavigateToBreadcrumb when breadcrumb clicked', async () => {
@@ -148,30 +159,32 @@ describe('S3Browser', () => {
       render(<S3Browser {...defaultProps} onView={onView} />)
 
       const viewButtons = screen.getAllByTitle('View')
-      await user.click(viewButtons[0])
-      expect(onView).toHaveBeenCalled()
+      await user.click(at(viewButtons, 0))
+      expect(onView).toHaveBeenCalledWith('raw/feedback-001.json')
     })
 
-    it('calls onEdit when edit button clicked', async () => {
+    it('calls onEdit when edit button clicked on a non-raw object', async () => {
       const onEdit = vi.fn()
       const user = userEvent.setup()
 
-      render(<S3Browser {...defaultProps} onEdit={onEdit} />)
+      render(<S3Browser {...defaultProps} data={editableData} onEdit={onEdit} />)
 
       const editButtons = screen.getAllByTitle('Edit')
-      await user.click(editButtons[0])
-      expect(onEdit).toHaveBeenCalledWith('raw/feedback-001.json')
+      await user.click(at(editButtons, 0))
+      expect(onEdit).toHaveBeenCalledWith('exports/report.json')
     })
 
-    it('calls onDelete when delete button clicked', async () => {
-      const onDelete = vi.fn()
-      const user = userEvent.setup()
+    it('never offers to edit an existing raw object (raw data is immutable)', () => {
+      render(<S3Browser {...defaultProps} />)
 
-      render(<S3Browser {...defaultProps} onDelete={onDelete} />)
+      expect(screen.queryByTitle('Edit')).not.toBeInTheDocument()
+    })
 
-      const deleteButtons = screen.getAllByTitle('Delete')
-      await user.click(deleteButtons[0])
-      expect(onDelete).toHaveBeenCalled()
+    it('offers no delete action (customer data is never deleted)', () => {
+      render(<S3Browser {...defaultProps} data={editableData} />)
+
+      expect(screen.queryByTitle('Delete')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument()
     })
 
     it('calls onDownload when download button clicked', async () => {
@@ -181,12 +194,12 @@ describe('S3Browser', () => {
       render(<S3Browser {...defaultProps} onDownload={onDownload} />)
 
       const downloadButtons = screen.getAllByTitle('Download')
-      await user.click(downloadButtons[0])
-      expect(onDownload).toHaveBeenCalled()
+      await user.click(at(downloadButtons, 0))
+      expect(onDownload).toHaveBeenCalledWith('raw/feedback-001.json', 'feedback-001.json')
     })
 
     it('does not show edit button for image files', () => {
-      render(<S3Browser {...defaultProps} />)
+      render(<S3Browser {...defaultProps} data={editableData} />)
 
       // There should be 1 edit button (for json file) not 2
       const editButtons = screen.getAllByTitle('Edit')

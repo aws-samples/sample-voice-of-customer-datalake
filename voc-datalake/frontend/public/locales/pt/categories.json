@@ -49,17 +49,17 @@
   "pdf": {
     "categoriesLabel": "Categorias",
     "category": "Categoria",
-    "categoryBreakdown": "📊 Análise de Categorias",
+    "categoryBreakdown": "Análise de Categorias",
     "count": "Contagem",
     "distribution": "Distribuição",
     "generatedOn": "Gerado em {{date}} • VoC Analytics — Relatório de Análise de Categorias",
-    "sentimentDistribution": "😊 Distribuição de Sentimentos",
+    "sentimentDistribution": "Distribuição de Sentimentos",
     "sentimentLabel": "Sentimento",
     "share": "Compartilhar",
     "timeRange": "Período: {{range}}",
     "timeRangeWithSource": "Período: {{range}} • Fonte: {{source}}",
     "title": "Relatório de Análise de Categorias",
-    "topKeywords": "🔑 Principais Palavras-chave e Problemas",
+    "topKeywords": "Principais Palavras-chave e Problemas",
     "totalFeedback": "Total de Feedback"
   },
   "positive": "Positivo",
@@ -89,5 +89,14 @@
   "topIssue": "Problema Principal",
   "totalFeedback": "Total de Feedback",
   "trendingKeywords": "Palavras-chave em Tendência",
-  "urgentOnly": "Apenas urgentes"
+  "urgentOnly": "Apenas urgentes",
+  "subtitle": "Explore o feedback por categoria, sentimento, palavra-chave e fonte",
+  "noFeedbackHint": "Experimente um intervalo de tempo maior ou limpe alguns filtros.",
+  "viewMode": "Modo de visualização",
+  "attributeFilters": "Filtros de canal, dimensão e etiqueta",
+  "filterByChannel": "Filtrar por canal",
+  "allChannels": "Todos os canais",
+  "filterByTag": "Filtrar por etiqueta",
+  "allTags": "Todas as etiquetas",
+  "anyValue": "Qualquer"
 }

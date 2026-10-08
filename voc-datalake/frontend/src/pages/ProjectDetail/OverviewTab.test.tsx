@@ -1,31 +1,27 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import {
+  configStoreModule, contextWith, makeProject, overviewDoc as doc, overviewPersona as persona,
+} from './project-detail-fixtures'
 import OverviewTab from './OverviewTab'
 import { emptyProductContext } from './productContextFields'
-import type { Project, ProjectPersona, ProjectDocument, ProductContext } from '../../api/types'
+import { EDITOR_ACCESS, VIEWER_ACCESS } from './projectAccess-fixtures'
+import type { ProjectDocument } from '../../api/types'
+import type { Project, ProjectPersona } from '../../api/projectTypes'
+import { required } from '../../components/component-spec-fixtures'
 
-vi.mock('../../store/configStore', () => ({
-  useConfigStore: () => ({
-    config: { apiEndpoint: 'https://api.example.com/v1' },
-  }),
-}))
+vi.mock('../../store/configStore', () => configStoreModule())
 
-const mockProject: Project = {
-  project_id: 'proj-1',
-  name: 'Test Project',
-  description: 'A test project',
-  status: 'active',
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
-  persona_count: 0,
-  document_count: 0,
-}
+const mockProject: Project = makeProject({ project_id: 'proj-1' })
+
+const noPersonas: ProjectPersona[] = []
+const noDocuments: ProjectDocument[] = []
 
 const defaultProps = {
   project: mockProject,
-  personas: [] as ProjectPersona[],
-  documents: [] as ProjectDocument[],
+  personas: noPersonas,
+  documents: noDocuments,
   onGeneratePersonas: vi.fn(),
   onGenerateDoc: vi.fn(),
   onRunResearch: vi.fn(),
@@ -33,25 +29,17 @@ const defaultProps = {
   onOpenProductTool: vi.fn(),
 }
 
-const persona = (id: string): ProjectPersona => ({
-  persona_id: id,
-  name: `Persona ${id}`,
-  tagline: '',
-  created_at: '',
-})
-
-const doc = (id: string, type: ProjectDocument['document_type']): ProjectDocument => ({
-  document_id: id,
-  document_type: type,
-  title: `Doc ${id}`,
-  content: '',
-  created_at: '',
-})
-
-const contextWith = (fields: Partial<ProductContext>): ProductContext => ({
-  ...emptyProductContext(),
-  ...fields,
-})
+/** The tab on a project where every step has produced something. */
+function renderPopulatedTab() {
+  return render(
+    <OverviewTab
+      {...defaultProps}
+      personas={[persona('p1'), persona('p2'), persona('p3')]}
+      documents={[doc('d1', 'research'), doc('d2', 'prd'), doc('d3', 'prfaq')]}
+      productContext={contextWith({ product_name: 'VoC', one_liner: 'Feedback intelligence' })}
+    />,
+  )
+}
 
 /**
  * The action-card headings, in DOM order. Scoped to the card grid so the Kiro
@@ -59,16 +47,16 @@ const contextWith = (fields: Partial<ProductContext>): ProductContext => ({
  */
 function cardTitlesInOrder(): string[] {
   return within(screen.getByTestId('overview-cards'))
-    .getAllByRole('heading', { level: 3 })
-    .map((h) => h.textContent ?? '')
+    .getAllByRole('heading', { level: 2 })
+    .map((h) => h.textContent)
 }
 
 /** The card whose heading contains `title`, for assertions scoped to one card. */
 function cardFor(title: string): HTMLElement {
   const heading = within(screen.getByTestId('overview-cards'))
-    .getAllByRole('heading', { level: 3 })
-    .find((h) => (h.textContent ?? '').includes(title))
-  const card = heading?.closest('div.bg-white')
+    .getAllByRole('heading', { level: 2 })
+    .find((h) => h.textContent.includes(title))
+  const card = heading?.closest('div.card')
   if (!(card instanceof HTMLElement)) throw new Error(`no card found for "${title}"`)
   return card
 }
@@ -100,7 +88,7 @@ describe('OverviewTab', () => {
     render(<OverviewTab {...defaultProps} onGeneratePersonas={onGeneratePersonas} />)
 
     const buttons = screen.getAllByRole('button', { name: /Generate/i })
-    await user.click(buttons[0])
+    await user.click(required(buttons.at(0), 'the first Generate button'))
     expect(onGeneratePersonas).toHaveBeenCalledTimes(1)
   })
 
@@ -130,7 +118,7 @@ describe('OverviewTab', () => {
     expect(remixButton).not.toBeDisabled()
   })
 
-  it('does not render Kiro Export Settings on Overview tab (moved to Export / MCP tab)', () => {
+  it('does not render Kiro Export Settings on the Overview tab (the editor was removed with Export / MCP)', () => {
     render(<OverviewTab {...defaultProps} />)
     expect(screen.queryByText('Kiro Export Settings')).not.toBeInTheDocument()
   })
@@ -146,16 +134,17 @@ describe('OverviewTab', () => {
       render(<OverviewTab {...defaultProps} />)
 
       const titles = cardTitlesInOrder()
-      expect(titles).toHaveLength(6)
-      expect(titles[0]).toContain('Product / Service Description')
-      expect(titles[1]).toContain('Generate Personas')
-      expect(titles[2]).toContain('Run Research')
-      expect(titles[3]).toContain('Generate PRD / PR-FAQ')
       // Prototype needs one of PRD/PR-FAQ where remix needs two documents, and it
       // produces a new artifact where remix revises existing ones — so it sits
       // between them rather than at the end.
-      expect(titles[4]).toContain('Clickable Prototype')
-      expect(titles[5]).toContain('Remix Documents')
+      expect(titles).toStrictEqual([
+        expect.stringContaining('Product / Service Description'),
+        expect.stringContaining('Generate Personas'),
+        expect.stringContaining('Run Research'),
+        expect.stringContaining('Generate PRD / PR-FAQ'),
+        expect.stringContaining('Clickable Prototype'),
+        expect.stringContaining('Remix Documents'),
+      ])
     })
 
     it('carries each card position in the heading, not in a parallel hidden label', () => {
@@ -198,28 +187,14 @@ describe('OverviewTab', () => {
       }
       unmount()
 
-      render(
-        <OverviewTab
-          {...defaultProps}
-          personas={[persona('p1'), persona('p2'), persona('p3')]}
-          documents={[doc('d1', 'research'), doc('d2', 'prd'), doc('d3', 'prfaq')]}
-          productContext={contextWith({ product_name: 'VoC', one_liner: 'Feedback intelligence' })}
-        />,
-      )
+      renderPopulatedTab()
       for (const text of populatedStates) {
         expect(screen.getByText(text)).toBeInTheDocument()
       }
     })
 
     it('reports what each step has produced', () => {
-      render(
-        <OverviewTab
-          {...defaultProps}
-          personas={[persona('p1'), persona('p2'), persona('p3')]}
-          documents={[doc('d1', 'research'), doc('d2', 'prd'), doc('d3', 'prfaq')]}
-          productContext={contextWith({ product_name: 'VoC', one_liner: 'Feedback intelligence' })}
-        />,
-      )
+      renderPopulatedTab()
 
       // The "of 11" is deliberately a literal: it is the number the user reads, so
       // adding a product-context field should fail here and make someone look at
@@ -238,9 +213,9 @@ describe('OverviewTab', () => {
       // Scoped per card rather than counted: three cards share the string "None
       // yet", so a bare count passes while any one of them stops reporting and
       // another starts reporting twice.
-      expect(within(cardFor('Generate Personas')).getByText('None yet')).toBeInTheDocument()
-      expect(within(cardFor('Generate PRD / PR-FAQ')).getByText('None yet')).toBeInTheDocument()
-      expect(within(cardFor('Clickable Prototype')).getByText('None yet')).toBeInTheDocument()
+      const silentCards = ['Generate Personas', 'Generate PRD / PR-FAQ', 'Clickable Prototype']
+        .filter((title) => within(cardFor(title)).queryByText('None yet') === null)
+      expect(silentCards).toStrictEqual([])
     })
 
     it('shows no product state at all while the context is unknown', () => {
@@ -306,5 +281,58 @@ describe('OverviewTab', () => {
 
       expect(screen.queryByText('Next step:')).not.toBeInTheDocument()
     })
+  })
+
+  // `project.access.can_edit === false` is what the server returns for a viewer
+  // member of a private project. The cards stay (they report what the project
+  // has); the five buttons that would open a write are disabled, and the product
+  // card — which only switches tabs — is not.
+  describe('for a viewer (project.access.can_edit false)', () => {
+    const viewerProject: Project = { ...mockProject, access: VIEWER_ACCESS }
+    const twoDocs = [doc('1', 'prd'), doc('2', 'prfaq')]
+
+    it('disables every write card button but leaves the product card usable', () => {
+      render(<OverviewTab {...defaultProps} project={viewerProject} documents={twoDocs} personas={[persona('p1')]} />)
+
+      expect(within(cardFor('Product')).getByRole('button')).toBeEnabled()
+      for (const title of ['Personas', 'Research', 'PRD', 'Prototype', 'Remix']) {
+        expect(within(cardFor(title)).getByRole('button')).toBeDisabled()
+      }
+    })
+
+    it('recommends no next step and promotes no card, since a viewer can take none', () => {
+      // The same props recommend research to an editor (see "next step" above).
+      render(
+        <OverviewTab
+          {...defaultProps}
+          project={viewerProject}
+          personas={[persona('p1')]}
+          productContext={contextWith({ product_name: 'VoC' })}
+        />,
+      )
+
+      expect(screen.queryByText('Next step:')).not.toBeInTheDocument()
+      for (const button of within(screen.getByTestId('overview-cards')).getAllByRole('button')) {
+        expect(button).not.toHaveClass('btn-primary')
+      }
+    })
+
+    it('does not blame a missing document when the real reason is read-only access', () => {
+      render(<OverviewTab {...defaultProps} project={viewerProject} documents={twoDocs} />)
+      expect(screen.queryByText('Need at least 2 documents')).not.toBeInTheDocument()
+    })
+
+    it('keeps the two-document message for an editor with one document', () => {
+      render(<OverviewTab {...defaultProps} documents={[doc('1', 'prd')]} />)
+      expect(screen.getByText('Need at least 2 documents')).toBeInTheDocument()
+    })
+  })
+
+  it('leaves every card button enabled for an editor (explicit can_edit true)', () => {
+    const editorProject: Project = { ...mockProject, access: EDITOR_ACCESS }
+    render(<OverviewTab {...defaultProps} project={editorProject} documents={[doc('1', 'prd'), doc('2', 'prfaq')]} />)
+    for (const title of ['Product', 'Personas', 'Research', 'PRD', 'Prototype', 'Remix']) {
+      expect(within(cardFor(title)).getByRole('button')).toBeEnabled()
+    }
   })
 })

@@ -25,17 +25,21 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { expectAdminGatedButton, expectEnabledButtonFires } from './scrapers-fixtures'
 import { AppConfigCard } from './AppConfigComponents'
-// Imported, not restated — see PluginConfigModal.test.tsx.
-import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import type { PluginManifest } from '../../plugins/types'
 
-const plugin = {
+const plugin: PluginManifest = {
   id: 'app_reviews_ios',
   name: 'iOS App Reviews',
+  icon: 'iOS',
   description: 'Collect reviews from the App Store',
-} as unknown as PluginManifest
+  config: [],
+  enabled: true,
+  hasIngestor: true,
+  hasWebhook: false,
+  hasS3Trigger: false,
+}
 
 const app = {
   id: 'a1',
@@ -48,15 +52,6 @@ const app = {
 const onEdit = vi.fn()
 const onDelete = vi.fn()
 const onRun = vi.fn()
-
-/** The button carrying *iconClass*, e.g. `lucide-play`. */
-function buttonWithIcon(iconClass: string): HTMLElement {
-  const found = screen.getAllByRole('button').find(
-    (el) => el.querySelector(`svg.${iconClass}`) !== null
-  )
-  if (found == null) throw new Error(`no button carrying svg.${iconClass}`)
-  return found
-}
 
 function renderCard(isAdmin: boolean) {
   return render(
@@ -79,25 +74,15 @@ describe('AppConfigCard', () => {
 
   describe('when the user is not an admin', () => {
     it('does not trigger a run', async () => {
-      const user = userEvent.setup()
       renderCard(false)
 
-      const run = buttonWithIcon('lucide-play')
-      expect(run).toBeDisabled()
-      expect(run).toHaveAttribute('title', ADMIN_ONLY_TITLE)
-      await user.click(run)
-      expect(onRun).not.toHaveBeenCalled()
+      await expectAdminGatedButton('lucide-play', onRun)
     })
 
     it('does not delete the app config', async () => {
-      const user = userEvent.setup()
       renderCard(false)
 
-      const del = buttonWithIcon('lucide-trash2')
-      expect(del).toBeDisabled()
-      expect(del).toHaveAttribute('title', ADMIN_ONLY_TITLE)
-      await user.click(del)
-      expect(onDelete).not.toHaveBeenCalled()
+      await expectAdminGatedButton('lucide-trash2', onDelete)
     })
   })
 
@@ -108,25 +93,15 @@ describe('AppConfigCard', () => {
      * administrators it exists for.
      */
     it('triggers a run', async () => {
-      const user = userEvent.setup()
       renderCard(true)
 
-      const run = buttonWithIcon('lucide-play')
-      expect(run).toBeEnabled()
-      expect(run).toHaveAttribute('title', 'Run now')
-      await user.click(run)
-      expect(onRun).toHaveBeenCalledTimes(1)
+      await expectEnabledButtonFires('lucide-play', onRun, 'Run now')
     })
 
     it('deletes the app config', async () => {
-      const user = userEvent.setup()
       renderCard(true)
 
-      const del = buttonWithIcon('lucide-trash2')
-      expect(del).toBeEnabled()
-      expect(del).toHaveAttribute('title', 'Delete')
-      await user.click(del)
-      expect(onDelete).toHaveBeenCalledTimes(1)
+      await expectEnabledButtonFires('lucide-trash2', onDelete, 'Delete')
     })
   })
 
@@ -142,13 +117,9 @@ describe('AppConfigCard', () => {
      * everything for non-admins" from passing the cases above.
      */
     it.each([true, false])('opens the editor (isAdmin=%s)', async (isAdmin) => {
-      const user = userEvent.setup()
       renderCard(isAdmin)
 
-      const edit = buttonWithIcon('lucide-settings')
-      expect(edit).toBeEnabled()
-      await user.click(edit)
-      expect(onEdit).toHaveBeenCalledTimes(1)
+      await expectEnabledButtonFires('lucide-settings', onEdit)
     })
 
     it.each([true, false])('renders the app details (isAdmin=%s)', (isAdmin) => {

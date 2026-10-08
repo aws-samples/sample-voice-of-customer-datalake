@@ -75,10 +75,11 @@ def _configured_tool_name() -> str:
 def _region_from_gateway_url(url: str) -> str:
     """The gateway lives in its own region (web-search is us-east-1-only),
     which may differ from the Lambda's region — sign for the gateway's."""
-    host = urlparse(url).hostname or ''
-    match = re.search(r'\.gateway\.bedrock-agentcore\.([a-z0-9-]+)\.amazonaws\.com$', host)
-    if match:
-        return match.group(1)
+    host = urlparse(url).hostname
+    if host:
+        match = re.search(r'\.gateway\.bedrock-agentcore\.([a-z0-9-]+)\.amazonaws\.com$', host)
+        if match:
+            return match.group(1)
     return os.environ.get('AWS_REGION', 'us-east-1')
 
 
@@ -109,7 +110,7 @@ def _signed_post(url: str, payload: dict) -> dict:
     )
     try:
         with urllib.request.urlopen(http_request, timeout=_REQUEST_TIMEOUT_SECONDS) as response:  # noqa: S310
-            content_type = response.headers.get('Content-Type', '')
+            content_type = response.headers.get('Content-Type', '')  # pragma: no mutate - only ever tested for 'text/event-stream'; any other default behaves the same
             raw = response.read().decode('utf-8')
     except Exception as e:
         raise WebSearchError(f'Gateway request failed: {e}') from e
@@ -163,8 +164,10 @@ def _discover_tool_name() -> str:
     result = _rpc('tools/list', {})
     tools = result.get('tools', [])
     for tool in tools:
-        name = tool.get('name', '') if isinstance(tool, dict) else ''
-        if name.endswith('WebSearch'):
+        if not isinstance(tool, dict):
+            continue
+        name = tool.get('name')
+        if name and name.endswith('WebSearch'):
             return name
     raise WebSearchError('No WebSearch tool exposed by the gateway')
 
@@ -198,16 +201,15 @@ def _call_web_search_tool(query: str, max_results: int) -> dict:
 def _extract_results(tool_result: dict) -> list[dict]:
     """Unwrap the MCP envelope: content[0].text is a serialized JSON document
     with an `id` and a `results` array of observations."""
-    if tool_result.get('isError'):
-        content = tool_result.get('content', [])
-        detail = content[0].get('text', '') if content and isinstance(content[0], dict) else ''
-        raise WebSearchError(f'Web search tool error: {detail[:300]}')
-
     content = tool_result.get('content', [])
+    first_text = content[0].get('text', '') if content and isinstance(content[0], dict) else ''
+    if tool_result.get('isError'):
+        raise WebSearchError(f'Web search tool error: {first_text[:300]}')
+
     if not content or not isinstance(content[0], dict):
         raise WebSearchError('Web search returned an empty MCP content block')
     try:
-        payload = json.loads(content[0].get('text', ''))
+        payload = json.loads(first_text)
     except json.JSONDecodeError as e:
         raise WebSearchError('Web search returned non-JSON result text') from e
 

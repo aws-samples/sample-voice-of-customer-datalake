@@ -16,7 +16,11 @@
     "similarityLow": "Low",
     "similarityMed": "Med",
     "similarityOff": "Off",
-    "urgentOnly": "Urgent only"
+    "urgentOnly": "Urgent only",
+    "source": "Source",
+    "category": "Category",
+    "subcategory": "Subcategory",
+    "similarityHint": "Merge problems with similar wording. Low merges the most; Off lists every problem separately."
   },
   "noDataHint": "Try expanding the time range or adjusting filters",
   "noDataTitle": "No problem analysis data found for the selected period",
@@ -44,5 +48,7 @@
     "sub_one": "{{count}} sub",
     "sub_other": "{{count}} sub",
     "unknown": "Unknown"
-  }
+  },
+  "title": "Problem Analysis",
+  "subtitle": "Recurring customer problems grouped by category, with likely root causes"
 }

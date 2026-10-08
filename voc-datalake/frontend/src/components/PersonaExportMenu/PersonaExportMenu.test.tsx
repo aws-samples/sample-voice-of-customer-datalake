@@ -3,9 +3,12 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { openExportMenu, openThenClickOutside, renderExportMenu } from '../../test/export-menu'
 import PersonaExportMenu from './PersonaExportMenu'
-import type { ProjectPersona } from '../../api/types'
+import { ariaExpandedAcrossClick } from '../ExportMenuShell/exportMenu-fixtures'
+import type { ProjectPersona } from '../../api/projectTypes'
+
+const TRIGGER = 'Export persona'
 
 describe('PersonaExportMenu', () => {
   const mockPersona: ProjectPersona = {
@@ -17,6 +20,14 @@ describe('PersonaExportMenu', () => {
     created_at: '2025-01-15T10:00:00Z',
   }
 
+  const openMenu = () => openExportMenu(<PersonaExportMenu persona={mockPersona} />, TRIGGER)
+
+  /** Open the menu and press "Copy as Markdown". */
+  async function copyAsMarkdown(): Promise<void> {
+    const user = await openMenu()
+    await user.click(screen.getByText('Copy as Markdown'))
+  }
+
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -24,39 +35,24 @@ describe('PersonaExportMenu', () => {
   describe('visibility', () => {
     it('returns null when persona is null', () => {
       const { container } = render(<PersonaExportMenu persona={null} />)
-      // eslint-disable-next-line testing-library/no-node-access
-      expect(container.firstChild).toBeNull()
+      expect(container).toBeEmptyDOMElement()
     })
   })
 
   describe('menu toggle', () => {
     it('renders menu button', () => {
-      render(<PersonaExportMenu persona={mockPersona} />)
-      expect(screen.getByLabelText('Export persona')).toBeInTheDocument()
+      expect(renderExportMenu(<PersonaExportMenu persona={mockPersona} />, TRIGGER)).toBeInTheDocument()
     })
 
     it('opens menu when button is clicked', async () => {
-      const user = userEvent.setup()
-      render(<PersonaExportMenu persona={mockPersona} />)
-      
-      await user.click(screen.getByLabelText('Export persona'))
-      
+      await openMenu()
+
       expect(screen.getByRole('menu')).toBeInTheDocument()
     })
 
     it('closes menu when clicking outside', async () => {
-      const user = userEvent.setup()
-      render(
-        <div>
-          <PersonaExportMenu persona={mockPersona} />
-          <div data-testid="outside">Outside</div>
-        </div>
-      )
-      
-      await user.click(screen.getByLabelText('Export persona'))
-      expect(screen.getByRole('menu')).toBeInTheDocument()
-      
-      await user.click(screen.getByTestId('outside'))
+      await openThenClickOutside(<PersonaExportMenu persona={mockPersona} />, TRIGGER)
+
       await waitFor(() => {
         expect(screen.queryByRole('menu')).not.toBeInTheDocument()
       })
@@ -64,51 +60,22 @@ describe('PersonaExportMenu', () => {
   })
 
   describe('menu items', () => {
-    it('displays Copy as Markdown option', async () => {
-      const user = userEvent.setup()
-      render(<PersonaExportMenu persona={mockPersona} />)
-      
-      await user.click(screen.getByLabelText('Export persona'))
-      
-      expect(screen.getByText('Copy as Markdown')).toBeInTheDocument()
-    })
+    it.each([
+      'Copy as Markdown',
+      'Download as Markdown',
+      'Download as PDF',
+      'Download as TXT',
+    ])('displays the %s option', async (label) => {
+      await openMenu()
 
-    it('displays Download as Markdown option', async () => {
-      const user = userEvent.setup()
-      render(<PersonaExportMenu persona={mockPersona} />)
-      
-      await user.click(screen.getByLabelText('Export persona'))
-      
-      expect(screen.getByText('Download as Markdown')).toBeInTheDocument()
-    })
-
-    it('displays Download as PDF option', async () => {
-      const user = userEvent.setup()
-      render(<PersonaExportMenu persona={mockPersona} />)
-      
-      await user.click(screen.getByLabelText('Export persona'))
-      
-      expect(screen.getByText('Download as PDF')).toBeInTheDocument()
-    })
-
-    it('displays Download as TXT option', async () => {
-      const user = userEvent.setup()
-      render(<PersonaExportMenu persona={mockPersona} />)
-      
-      await user.click(screen.getByLabelText('Export persona'))
-      
-      expect(screen.getByText('Download as TXT')).toBeInTheDocument()
+      expect(screen.getByText(label)).toBeInTheDocument()
     })
   })
 
   describe('copy functionality', () => {
     it('copies persona as markdown to clipboard', async () => {
-      const user = userEvent.setup()
-      render(<PersonaExportMenu persona={mockPersona} />)
-      
-      await user.click(screen.getByLabelText('Export persona'))
-      await user.click(screen.getByText('Copy as Markdown'))
-      
+      await copyAsMarkdown()
+
       // The component shows "Copied!" when copy succeeds
       await waitFor(() => {
         expect(screen.getByText('Copied!')).toBeInTheDocument()
@@ -116,61 +83,22 @@ describe('PersonaExportMenu', () => {
     })
 
     it('shows Copied! after copying', async () => {
-      const user = userEvent.setup()
-      render(<PersonaExportMenu persona={mockPersona} />)
-      
-      await user.click(screen.getByLabelText('Export persona'))
-      await user.click(screen.getByText('Copy as Markdown'))
-      
+      await copyAsMarkdown()
+
       expect(screen.getByText('Copied!')).toBeInTheDocument()
     })
   })
 
   describe('markdown generation', () => {
-    it('includes persona name as title', async () => {
-      const user = userEvent.setup()
-      render(<PersonaExportMenu persona={mockPersona} />)
-      
-      await user.click(screen.getByLabelText('Export persona'))
-      await user.click(screen.getByText('Copy as Markdown'))
-      
-      // Verify copy succeeded (component shows Copied!)
-      await waitFor(() => {
-        expect(screen.getByText('Copied!')).toBeInTheDocument()
-      })
-    })
+    // Each case verifies the copy succeeded (the component shows Copied!).
+    it.each([
+      'includes persona name as title',
+      'includes tagline',
+      'includes confidence level',
+      'includes quote when provided',
+    ])('%s', async () => {
+      await copyAsMarkdown()
 
-    it('includes tagline', async () => {
-      const user = userEvent.setup()
-      render(<PersonaExportMenu persona={mockPersona} />)
-      
-      await user.click(screen.getByLabelText('Export persona'))
-      await user.click(screen.getByText('Copy as Markdown'))
-      
-      await waitFor(() => {
-        expect(screen.getByText('Copied!')).toBeInTheDocument()
-      })
-    })
-
-    it('includes confidence level', async () => {
-      const user = userEvent.setup()
-      render(<PersonaExportMenu persona={mockPersona} />)
-      
-      await user.click(screen.getByLabelText('Export persona'))
-      await user.click(screen.getByText('Copy as Markdown'))
-      
-      await waitFor(() => {
-        expect(screen.getByText('Copied!')).toBeInTheDocument()
-      })
-    })
-
-    it('includes quote when provided', async () => {
-      const user = userEvent.setup()
-      render(<PersonaExportMenu persona={mockPersona} />)
-      
-      await user.click(screen.getByLabelText('Export persona'))
-      await user.click(screen.getByText('Copy as Markdown'))
-      
       await waitFor(() => {
         expect(screen.getByText('Copied!')).toBeInTheDocument()
       })
@@ -179,21 +107,13 @@ describe('PersonaExportMenu', () => {
 
   describe('accessibility', () => {
     it('has correct aria attributes on menu button', () => {
-      render(<PersonaExportMenu persona={mockPersona} />)
-      
-      const button = screen.getByLabelText('Export persona')
+      const button = renderExportMenu(<PersonaExportMenu persona={mockPersona} />, TRIGGER)
       expect(button).toHaveAttribute('aria-haspopup', 'menu')
     })
 
     it('sets aria-expanded correctly', async () => {
-      const user = userEvent.setup()
-      render(<PersonaExportMenu persona={mockPersona} />)
-      
-      const button = screen.getByLabelText('Export persona')
-      expect(button).toHaveAttribute('aria-expanded', 'false')
-      
-      await user.click(button)
-      expect(button).toHaveAttribute('aria-expanded', 'true')
+      expect(await ariaExpandedAcrossClick(<PersonaExportMenu persona={mockPersona} />, TRIGGER))
+        .toStrictEqual({ before: 'false', after: 'true' })
     })
   })
 })

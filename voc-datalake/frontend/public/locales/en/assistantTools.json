@@ -1,0 +1,233 @@
+{
+  "card": {
+    "kicker": "Approval needed",
+    "kickerDestructive": "Approval needed · cannot be undone",
+    "project": "Project",
+    "expired": "Expired",
+    "expiresIn": "Expires in {{time}}",
+    "approve": "Approve",
+    "approveDestructive": "Approve and delete",
+    "decline": "Decline",
+    "confirmDecline": "Decline",
+    "back": "Back",
+    "dismiss": "Dismiss",
+    "reasonLabel": "Reason (optional)",
+    "reasonPlaceholder": "Tell the assistant why, so it can adjust",
+    "executing": "Working…",
+    "adminOnly": "Only administrators can approve this action. You can still decline it.",
+    "destructiveWarning": "This permanently deletes data and cannot be undone.",
+    "destructiveConfirm": "I understand, delete it",
+    "invalidArgs": "The assistant's request is invalid, so it can't be approved:",
+    "unknownTool": "This action isn't available here, so it can't be approved.",
+    "unknownToolTitle": "Unknown action ({{name}})",
+    "resolved": {
+      "executed": "Done",
+      "failed": "Failed",
+      "declined": "Declined",
+      "expired": "Expired"
+    }
+  },
+  "preview": {
+    "showMore": "Show all ({{n}} characters)",
+    "showLess": "Show less",
+    "empty": "(empty)",
+    "yes": "Yes",
+    "no": "No",
+    "loading": "Loading the current version…",
+    "before": "Current",
+    "after": "Proposed",
+    "unchanged": "unchanged",
+    "document": "Document",
+    "persona": "Persona",
+    "changeSummary": "Change",
+    "currentUnavailable": "The current values couldn't be loaded; only the proposed values are shown.",
+    "unknownCategory": "The category “{{category}}” is not one you can see — the change will be refused.",
+    "brandMerged": "Settings after saving (fields not mentioned keep their current value):",
+    "diff": {
+      "label": "Changes to the document",
+      "stats": "{{added}} lines added, {{removed}} lines removed",
+      "unchanged": "… {{n}} unchanged lines …",
+      "same": "Unchanged:",
+      "add": "Added:",
+      "del": "Removed:",
+      "noChanges": "The proposed content is identical to the current document.",
+      "tooLarge": "The document is too large to compare line by line. Showing the beginning of each version.",
+      "currentUnavailable": "The current document couldn't be loaded. Proposed content:"
+    },
+    "job": {
+      "timeWindow": "Reads feedback from the last {{days}} days (the time range selected in the app).",
+      "language": "Writes the result in {{language}}.",
+      "background": "This runs in the background and appears in the project's Jobs. You can keep working meanwhile."
+    },
+    "agent": "Agent",
+    "run": "Run",
+    "memory": {
+      "scope": {
+        "company": "Company — everyone",
+        "personal": "Personal — only you"
+      },
+      "kind": {
+        "product": "Product",
+        "customer": "Customer",
+        "agents": "Agents",
+        "working_style": "Working style",
+        "strategy": "Strategy",
+        "objective": "Objective",
+        "other": "Other"
+      },
+      "retention": {
+        "long_term": "Kept long term",
+        "dated": "Until {{date}}",
+        "decay": "Fades after 90 days unused"
+      },
+      "resolve": {
+        "keep_both": "keep both",
+        "keep": "keep one",
+        "replace": "replace",
+        "merge": "merge"
+      },
+      "companyVisible": "Company memories are visible to everyone and used by the assistant and agents for all users.",
+      "supporters_one": "{{count}} person supports the current statement.",
+      "supporters_other": "{{count}} people support the current statement.",
+      "reason": "Why",
+      "forEveryone": "This changes what the company remembers, for everyone. If you are not an administrator or memory reviewer, it is filed as a proposal for review."
+    },
+    "workflow": {
+      "unchanged": "The proposed definition is identical to the current one.",
+      "meta": "Changed: {{fields}}",
+      "addedSteps": "Added steps",
+      "removedSteps": "Removed steps",
+      "changedSteps": "Changed steps",
+      "showMoves": "Show {{n}} moved-only steps",
+      "hideMoves": "Hide moved-only steps",
+      "addedArrows": "Added arrows",
+      "removedArrows": "Removed arrows",
+      "changedArrows": "Changed arrows",
+      "loopsChanged": "Loops changed ({{n}} after saving).",
+      "revision": "{{name}}: revision {{from}} → {{to}}",
+      "stale": "This proposal was built on revision {{expected}}, but the current one is {{current}} — saving will be refused; ask the assistant to rebuild it.",
+      "counts": "{{nodes}} steps, {{edges}} arrows, {{loops}} loops"
+    }
+  },
+  "tools": {
+    "create_project": {
+      "title": "Create a project",
+      "titleWith": "Create project “{{name}}”"
+    },
+    "set_problem_resolved": {
+      "title": "Change a problem's status",
+      "titleResolve": "Mark a problem as resolved",
+      "titleReopen": "Reopen a problem"
+    },
+    "set_feedback_category": {
+      "title": "Change a review's category",
+      "titleWith": "Change the category to “{{category}}”"
+    },
+    "update_document": {
+      "title": "Edit a document"
+    },
+    "create_document": {
+      "title": "Create a document",
+      "titleWith": "Create document “{{title}}”"
+    },
+    "delete_document": {
+      "title": "Delete a document"
+    },
+    "update_persona": {
+      "title": "Edit a persona"
+    },
+    "add_persona_note": {
+      "title": "Add a research note to a persona"
+    },
+    "update_project": {
+      "title": "Edit project details"
+    },
+    "update_product_context": {
+      "title": "Update the product description"
+    },
+    "start_research": {
+      "title": "Start a research job"
+    },
+    "generate_document": {
+      "title": "Generate a document",
+      "titlePrd": "Generate a PRD",
+      "titlePrfaq": "Generate a PR/FAQ"
+    },
+    "generate_personas": {
+      "title": "Generate personas",
+      "titleWith": "Generate personas ({{n}})"
+    },
+    "merge_documents": {
+      "title": "Merge documents"
+    },
+    "update_feedback_form": {
+      "title": "Update a feedback form"
+    },
+    "run_scraper": {
+      "title": "Run a scraper now"
+    },
+    "save_brand_settings": {
+      "title": "Save brand settings"
+    },
+    "remember": {
+      "title": "Remember",
+      "titleCompany": "Remember for the company",
+      "titlePersonal": "Remember for you"
+    },
+    "update_company_memory": {
+      "title": "Change a company memory"
+    },
+    "forget_memory": {
+      "title": "Forget a memory"
+    },
+    "confirm_memory": {
+      "title": "Confirm a memory (+1)"
+    },
+    "merge_memories": {
+      "title": "Merge memories",
+      "titleWith": "Merge {{n}} memories"
+    },
+    "resolve_memory_conflict": {
+      "title": "Resolve a memory conflict",
+      "titleWith": "Resolve a memory conflict: {{action}}"
+    },
+    "create_agent": {
+      "title": "Create an autonomous agent",
+      "titleWith": "Create the agent “{{name}}”"
+    },
+    "update_agent": {
+      "title": "Change an autonomous agent"
+    },
+    "enable_agent": {
+      "title": "Enable an autonomous agent"
+    },
+    "disable_agent": {
+      "title": "Disable an autonomous agent"
+    },
+    "run_agent": {
+      "title": "Run an autonomous agent now"
+    },
+    "cancel_agent_run": {
+      "title": "Cancel an agent run"
+    },
+    "create_workflow": {
+      "title": "Create a workflow",
+      "titleWith": "Create the workflow “{{name}}”"
+    },
+    "update_workflow": {
+      "title": "Save a new workflow revision"
+    },
+    "duplicate_workflow": {
+      "title": "Duplicate a workflow"
+    },
+    "update_company_context": {
+      "title": "Change the company vision & objectives"
+    },
+    "update_my_context": {
+      "title": "Change your objectives & KPIs"
+    },
+    "update_design_system": {
+      "title": "Change the design system"
+    }
+  }
+}

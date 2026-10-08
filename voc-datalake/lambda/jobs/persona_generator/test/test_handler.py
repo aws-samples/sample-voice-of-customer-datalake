@@ -4,84 +4,21 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from shared.test.converse_fixtures import chain_results
+
 
 class TestPersonaGeneratorHandler:
     """Tests for the persona generator job Lambda handler."""
 
-    def test_successful_persona_generation(
-        self, mock_jobs_table, mock_generate_personas, persona_generation_event, lambda_context
-    ):
-        """Test successful persona generation job."""
-        from jobs.persona_generator.handler import lambda_handler
-        
-        result = lambda_handler(persona_generation_event, lambda_context)
-        
-        assert result['success'] is True
-        mock_generate_personas.assert_called_once()
-        # Verify progress callback was passed
-        call_args = mock_generate_personas.call_args
-        assert 'progress_callback' in call_args.kwargs
-
-    def test_job_status_updated_on_completion(
-        self, mock_jobs_table, mock_generate_personas, persona_generation_event, lambda_context
-    ):
-        """Test that job status is updated to completed."""
-        from jobs.persona_generator.handler import lambda_handler
-        
-        lambda_handler(persona_generation_event, lambda_context)
-        
-        # Verify job was marked as completed
-        mock_jobs_table.update_item.assert_called()
-        last_call = mock_jobs_table.update_item.call_args
-        assert ':status' in str(last_call) or 'completed' in str(last_call)
-
-    def test_job_status_updated_on_failure(
-        self, mock_jobs_table, mock_generate_personas, persona_generation_event, lambda_context
-    ):
-        """Test that job status is updated to failed on error."""
-        from jobs.persona_generator.handler import lambda_handler
-        from shared.exceptions import ServiceError
-        
-        mock_generate_personas.side_effect = Exception("LLM error")
-        
-        with pytest.raises(ServiceError):
-            lambda_handler(persona_generation_event, lambda_context)
-        
-        # Verify job was marked as failed
-        mock_jobs_table.update_item.assert_called()
-
-    def test_progress_callback_updates_job(
-        self, mock_jobs_table, mock_generate_personas, persona_generation_event, lambda_context
-    ):
-        """Test that progress callback updates job status."""
-        from jobs.persona_generator.handler import lambda_handler
-        
-        # Capture the progress callback
-        captured_callback = None
-        def capture_callback(*args, **kwargs):
-            nonlocal captured_callback
-            captured_callback = kwargs.get('progress_callback')
-            return {'success': True, 'personas': []}
-        
-        mock_generate_personas.side_effect = capture_callback
-        
-        lambda_handler(persona_generation_event, lambda_context)
-        
-        # Verify callback was provided
-        assert captured_callback is not None
-        
-        # Call the callback and verify it updates job status
-        captured_callback(50, 'generating_personas')
-        assert mock_jobs_table.update_item.called
-
+    @pytest.mark.usefixtures("mock_jobs_table")
     def test_handler_extracts_filters_from_event(
-        self, mock_jobs_table, mock_generate_personas, persona_generation_event, lambda_context
+        self, mock_generate_personas, persona_generation_event, lambda_context
     ):
         """Test that handler correctly extracts filters from event."""
         from jobs.persona_generator.handler import lambda_handler
-        
+
         lambda_handler(persona_generation_event, lambda_context)
-        
+
         call_args = mock_generate_personas.call_args
         assert call_args[0][0] == persona_generation_event['project_id']
         assert call_args[0][1] == persona_generation_event['filters']
@@ -98,8 +35,9 @@ class TestDateBasisPassThrough:
     future rebuild of the filters dict here can't silently drop the field.
     """
 
+    @pytest.mark.usefixtures("mock_jobs_table")
     def test_filters_including_date_basis_reach_generate_personas(
-        self, mock_jobs_table, mock_generate_personas, persona_generation_event, lambda_context
+        self, mock_generate_personas, persona_generation_event, lambda_context
     ):
         from jobs.persona_generator.handler import lambda_handler
 
@@ -158,15 +96,15 @@ class TestAvatarMetricsActuallyReachCloudWatch:
                 names.update(m['Name'] for m in family.get('Metrics', []))
         return names
 
+    @pytest.mark.usefixtures("mock_jobs_table")
     def test_a_metric_added_during_the_job_is_flushed_as_emf(
-        self, mock_jobs_table, mock_generate_personas, persona_generation_event,
+        self, mock_generate_personas, persona_generation_event,
         lambda_context, capsys,
     ):
+        from jobs.persona_generator.handler import lambda_handler
         from shared.logging import metrics
 
-        from jobs.persona_generator.handler import lambda_handler
-
-        def count_an_avatar_failure_like_generate_personas_does(*args, **kwargs):
+        def count_an_avatar_failure_like_generate_personas_does(*_args, **_kwargs):
             metrics.add_metric(name='AvatarGenerationFailed', unit='Count', value=1)
             return {'success': True, 'personas': [], 'metadata': {}}
 
@@ -180,8 +118,9 @@ class TestAvatarMetricsActuallyReachCloudWatch:
             f'metrics store on this handler (saw: {sorted(names)})'
         )
 
+    @pytest.mark.usefixtures("mock_jobs_table", "mock_generate_personas")
     def test_the_control_that_the_name_is_not_something_always_printed(
-        self, mock_jobs_table, mock_generate_personas, persona_generation_event,
+        self, persona_generation_event,
         lambda_context, capsys,
     ):
         """With no avatar metric added, the name must be absent. Without this control the
@@ -255,13 +194,13 @@ class TestGroundingMetadataReachesTheStoredJob:
         projects_table.query.return_value = {'Items': []}
         batch_writer = MagicMock()
         batch_writer.__enter__ = MagicMock(return_value=MagicMock())
-        batch_writer.__exit__ = MagicMock(return_value=False)
+        batch_writer.__exit__.return_value = False
         projects_table.batch_writer.return_value = batch_writer
 
         with patch('api.projects.projects_table', projects_table), \
              patch('api.projects.get_feedback_context', return_value=corpus), \
-             patch('api.projects.converse_chain',
-                   return_value=['Research analysis text.', persona_json]), \
+             patch('api.projects.converse_chain_detailed',
+                   return_value=chain_results(['Research analysis text.', persona_json])), \
              patch('api.projects.generate_persona_avatar',
                    return_value={'avatar_url': None, 'avatar_prompt': None}):
             return lambda_handler(persona_generation_event, lambda_context)

@@ -28,28 +28,38 @@ import json
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
-import boto3
 import pytest
 from moto import mock_aws
+from moto_helpers import invoke, pk_sk_table, rest_event
 
 PARTITION = 'PRIORITIZATION'
 AXES = {'impact': 4, 'time_to_market': 3, 'confidence': 2, 'strategic_fit': 5}
 
 
-def _table(name):
-    return boto3.resource('dynamodb', region_name='us-east-1').create_table(
-        TableName=name,
-        KeySchema=[
-            {'AttributeName': 'pk', 'KeyType': 'HASH'},
-            {'AttributeName': 'sk', 'KeyType': 'RANGE'},
-        ],
-        AttributeDefinitions=[
-            {'AttributeName': 'pk', 'AttributeType': 'S'},
-            {'AttributeName': 'sk', 'AttributeType': 'S'},
-        ],
-        BillingMode='PAY_PER_REQUEST',
-    )
 
+def _stored(table, sort_key: str) -> dict:
+    """The stored PRIORITIZATION item at `sort_key`; failing here names the key."""
+    item = table.get_item(Key={'pk': PARTITION, 'sk': sort_key}).get('Item')
+    assert item is not None, f'no stored item at {sort_key}'
+    return dict(item)
+
+
+def _stored_sort_keys(table, *, partition: str | None = None) -> list[str]:
+    """Every stored item's sort key, scan order, optionally one partition's only."""
+    return [
+        str(item['sk']) for item in table.scan()['Items']
+        if partition is None or item['pk'] == partition
+    ]
+
+
+def _composed_row(lambda_context):
+    """Fresh tables holding `_seeded_project` and one row composed on `d1`, through
+    the real compose route: `(aggregates, projects, row_id)`."""
+    aggregates, projects = pk_sk_table('aggr'), _seeded_project(pk_sk_table('projects'))
+    _, created = _call(aggregates, projects, lambda_context, 'POST',
+                       '/projects/prioritization/rows/compose',
+                       {'project_id': 'p1', 'document_ids': ['d1']})
+    return aggregates, projects, created['row']['row_id']
 
 class _RacingTable:
     """The real table, with ONE read hooked to land a concurrent write in the gap.
@@ -100,31 +110,8 @@ def _call(aggregates, projects, lambda_context, method, path, body=None,
     """One request through `lambda_handler`, with both tables real."""
     import projects_handler
 
-    event = {
-        'httpMethod': method,
-        'path': path,
-        'resource': path,
-        'headers': {'Content-Type': 'application/json'},
-        'requestContext': {
-            'authorizer': {'claims': {'sub': subject, 'cognito:groups': groups}},
-            'requestId': 'test-request', 'stage': 'test',
-            'httpMethod': method, 'path': path,
-            'identity': {'sourceIp': '1.2.3.4'},
-        },
-        'body': json.dumps(body) if body is not None else None,
-        'queryStringParameters': None,
-        'multiValueQueryStringParameters': None,
-        'pathParameters': None,
-        'stageVariables': None,
-        'multiValueHeaders': {},
-        'isBase64Encoded': False,
-    }
-    with (
-        patch.object(projects_handler, 'get_aggregates_table', return_value=aggregates),
-        patch.object(projects_handler, 'get_projects_table', return_value=projects),
-    ):
-        response = projects_handler.lambda_handler(event, lambda_context)
-    return response['statusCode'], json.loads(response['body'])
+    event = rest_event(method, path, claims={'sub': subject, 'cognito:groups': groups}, body=body)
+    return invoke(projects_handler, event, lambda_context, aggregates=aggregates, projects=projects)
 
 
 def _room_ballot(aggregates, lambda_context, row_id, axes=None, ballot_id=None):
@@ -164,7 +151,18 @@ def _room_ballot(aggregates, lambda_context, row_id, axes=None, ballot_id=None):
     return response['statusCode'], json.loads(response['body'])
 
 
-@pytest.fixture()
+def _assert_recompose_is_refused_as_frozen(aggregates, projects, lambda_context, row_id):
+    """Moving `row_id` from `d1` to `d2` is a 409 'frozen' that writes nothing."""
+    status, body = _call(aggregates, projects, lambda_context, 'PATCH',
+                         f'/projects/prioritization/rows/{row_id}',
+                         {'project_id': 'p1', 'document_ids': ['d2']})
+    assert status == 409
+    assert 'frozen' in body['error']
+    row = _stored(aggregates, f'ROW#{row_id}')
+    assert row['document_ids'] == ['d1'], 'the refusal wrote nothing'
+
+
+@pytest.fixture
 def lambda_context():
     return MagicMock()
 
@@ -180,7 +178,7 @@ class TestTheRowLifecycleAgainstARealTable:
         issued on `table.meta.client`. A request built for the low-level client with
         resource-shaped values would fail here with `ParamValidationError` before any
         condition was evaluated."""
-        aggregates, projects = _table('aggr'), _seeded_project(_table('projects'))
+        aggregates, projects = pk_sk_table('aggr'), _seeded_project(pk_sk_table('projects'))
         _, created = _call(aggregates, projects, lambda_context, 'POST',
                            '/projects/prioritization/rows/compose',
                            {'project_id': 'p1', 'document_ids': ['d1', 'd2']})
@@ -192,12 +190,10 @@ class TestTheRowLifecycleAgainstARealTable:
 
         assert status == 200
         assert body['updated_count'] == 1
-        row = aggregates.get_item(
-            Key={'pk': PARTITION, 'sk': f'ROW#{row_id}'})['Item']
+        row = _stored(aggregates, f'ROW#{row_id}')
         assert row['first_ballot_at']
         assert row['ballot_writes'] == Decimal(1)
-        ballot = aggregates.get_item(
-            Key={'pk': PARTITION, 'sk': f'BALLOT#{row_id}#user:alice'})['Item']
+        ballot = _stored(aggregates, f'BALLOT#{row_id}#user:alice')
         assert ballot['impact'] == Decimal(4)
         assert ballot['notes'] == 'ship it'
 
@@ -212,7 +208,7 @@ class TestTheRowLifecycleAgainstARealTable:
         """
         from shared.project_writes import VERIFICATION_FIXTURE_ATTRIBUTE
 
-        aggregates, projects = _table('aggr'), _seeded_project(_table('projects'))
+        aggregates, projects = pk_sk_table('aggr'), _seeded_project(pk_sk_table('projects'))
         _, created = _call(aggregates, projects, lambda_context, 'POST',
                            '/projects/prioritization/rows/compose',
                            {'project_id': 'p1', 'document_ids': ['d1']})
@@ -241,20 +237,15 @@ class TestTheRowLifecycleAgainstARealTable:
     ):
         """`if_not_exists` executed by something that implements it, rather than by
         the fake's reading of the expression."""
-        aggregates, projects = _table('aggr'), _seeded_project(_table('projects'))
-        _, created = _call(aggregates, projects, lambda_context, 'POST',
-                           '/projects/prioritization/rows/compose',
-                           {'project_id': 'p1', 'document_ids': ['d1']})
-        row_id = created['row']['row_id']
+        aggregates, projects, row_id = _composed_row(lambda_context)
 
         _call(aggregates, projects, lambda_context, 'PATCH', '/projects/prioritization',
               {'scores': {row_id: AXES}}, subject='alice')
-        first = aggregates.get_item(
-            Key={'pk': PARTITION, 'sk': f'ROW#{row_id}'})['Item']['first_ballot_at']
+        first = _stored(aggregates, f'ROW#{row_id}')['first_ballot_at']
         _call(aggregates, projects, lambda_context, 'PATCH', '/projects/prioritization',
               {'scores': {row_id: AXES}}, subject='bob')
 
-        row = aggregates.get_item(Key={'pk': PARTITION, 'sk': f'ROW#{row_id}'})['Item']
+        row = _stored(aggregates, f'ROW#{row_id}')
         assert row['first_ballot_at'] == first
         assert row['ballot_writes'] == Decimal(2), 'ADD moved for each of them'
 
@@ -274,17 +265,12 @@ class TestTheRowLifecycleAgainstARealTable:
         counts committed writes rather than reviewers and a fence that stood still
         under a replay would let a delete that enumerated before it commit over it.
         """
-        aggregates, projects = _table('aggr'), _seeded_project(_table('projects'))
-        _, created = _call(aggregates, projects, lambda_context, 'POST',
-                           '/projects/prioritization/rows/compose',
-                           {'project_id': 'p1', 'document_ids': ['d1']})
-        row_id = created['row']['row_id']
+        aggregates, projects, row_id = _composed_row(lambda_context)
         body = {'scores': {row_id: {**AXES, 'notes': 'ship it'}}}
 
         _call(aggregates, projects, lambda_context, 'PATCH',
               '/projects/prioritization', body)
-        first = aggregates.get_item(
-            Key={'pk': PARTITION, 'sk': f'ROW#{row_id}'})['Item']['first_ballot_at']
+        first = _stored(aggregates, f'ROW#{row_id}')['first_ballot_at']
         status, replayed = _call(aggregates, projects, lambda_context, 'PATCH',
                                  '/projects/prioritization', body)
 
@@ -293,7 +279,7 @@ class TestTheRowLifecycleAgainstARealTable:
                    if str(item['sk']).startswith('BALLOT#')]
         assert len(ballots) == 1, 'the replay overwrote the one record, not added one'
         assert (ballots[0]['impact'], ballots[0]['notes']) == (Decimal(4), 'ship it')
-        row = aggregates.get_item(Key={'pk': PARTITION, 'sk': f'ROW#{row_id}'})['Item']
+        row = _stored(aggregates, f'ROW#{row_id}')
         assert row['first_ballot_at'] == first, 'if_not_exists held the first instant'
         assert row['ballot_writes'] == Decimal(2), (
             'the fence counts committed writes, so a replay advances it — which is '
@@ -306,22 +292,11 @@ class TestTheRowLifecycleAgainstARealTable:
     ):
         """The recompose condition, evaluated by DynamoDB. The fake reads the
         expression; this asserts the expression means what the fake thinks."""
-        aggregates, projects = _table('aggr'), _seeded_project(_table('projects'))
-        _, created = _call(aggregates, projects, lambda_context, 'POST',
-                           '/projects/prioritization/rows/compose',
-                           {'project_id': 'p1', 'document_ids': ['d1']})
-        row_id = created['row']['row_id']
+        aggregates, projects, row_id = _composed_row(lambda_context)
         _call(aggregates, projects, lambda_context, 'PATCH', '/projects/prioritization',
               {'scores': {row_id: AXES}})
 
-        status, body = _call(aggregates, projects, lambda_context, 'PATCH',
-                             f'/projects/prioritization/rows/{row_id}',
-                             {'project_id': 'p1', 'document_ids': ['d2']})
-
-        assert status == 409
-        assert 'frozen' in body['error']
-        row = aggregates.get_item(Key={'pk': PARTITION, 'sk': f'ROW#{row_id}'})['Item']
-        assert row['document_ids'] == ['d1'], 'the refusal wrote nothing'
+        _assert_recompose_is_refused_as_frozen(aggregates, projects, lambda_context, row_id)
 
     @mock_aws
     def test_a_row_balloted_before_the_mark_existed_is_refused_too(self, lambda_context):
@@ -335,7 +310,7 @@ class TestTheRowLifecycleAgainstARealTable:
         ignores `ProjectionExpression` entirely, so a malformed one — an unaliased
         reserved word, a syntax error in the alias list — passes every fast test and
         fails on the first real call. Moto parses it the way DynamoDB does."""
-        aggregates, projects = _table('aggr'), _seeded_project(_table('projects'))
+        aggregates, projects = pk_sk_table('aggr'), _seeded_project(pk_sk_table('projects'))
         aggregates.put_item(Item={
             'pk': PARTITION, 'sk': 'ROW#row-legacy', 'row_id': 'row-legacy',
             'project_id': 'p1', 'document_ids': ['d1', 'd2'], 'prototype_id': '',
@@ -354,8 +329,7 @@ class TestTheRowLifecycleAgainstARealTable:
 
         assert status == 409
         assert 'frozen' in body['error']
-        row = aggregates.get_item(
-            Key={'pk': PARTITION, 'sk': 'ROW#row-legacy'})['Item']
+        row = _stored(aggregates, 'ROW#row-legacy')
         assert row['document_ids'] == ['d1', 'd2'], (
             "alice's ballot still describes the documents she saw"
         )
@@ -371,11 +345,7 @@ class TestTheRowLifecycleAgainstARealTable:
         the fence value is a `Decimal` read through the RESOURCE and passed back
         unconverted into a CLIENT-layer condition. Coercing it to `int`, or issuing
         this on a bare `boto3.client('dynamodb')`, breaks here and nowhere else."""
-        aggregates, projects = _table('aggr'), _seeded_project(_table('projects'))
-        _, created = _call(aggregates, projects, lambda_context, 'POST',
-                           '/projects/prioritization/rows/compose',
-                           {'project_id': 'p1', 'document_ids': ['d1']})
-        row_id = created['row']['row_id']
+        aggregates, projects, row_id = _composed_row(lambda_context)
         for subject in ('alice', 'bob'):
             _call(aggregates, projects, lambda_context, 'PATCH',
                   '/projects/prioritization', {'scores': {row_id: AXES}},
@@ -396,11 +366,7 @@ class TestTheRowLifecycleAgainstARealTable:
         advanced behind the route's back after it reads the row, which is exactly what
         a ballot landing in the gap does — and the transaction has to be cancelled
         WHOLE, leaving both the row and every ballot in place."""
-        aggregates, projects = _table('aggr'), _seeded_project(_table('projects'))
-        _, created = _call(aggregates, projects, lambda_context, 'POST',
-                           '/projects/prioritization/rows/compose',
-                           {'project_id': 'p1', 'document_ids': ['d1']})
-        row_id = created['row']['row_id']
+        aggregates, projects, row_id = _composed_row(lambda_context)
         _call(aggregates, projects, lambda_context, 'PATCH', '/projects/prioritization',
               {'scores': {row_id: AXES}})
 
@@ -424,7 +390,7 @@ class TestTheRowLifecycleAgainstARealTable:
 
         assert status == 409
         assert 'reload' in body['error']
-        assert sorted(item['sk'] for item in aggregates.scan()['Items']) == [
+        assert sorted(_stored_sort_keys(aggregates)) == [
             f'BALLOT#{row_id}#user:alice', f'ROW#{row_id}',
         ]
 
@@ -435,7 +401,7 @@ class TestTheRowLifecycleAgainstARealTable:
         """The `ConditionCheck` participant, which a real transaction validates the
         struct of — it takes no `UpdateExpression` and would be rejected outright if
         one were built for it."""
-        aggregates, projects = _table('aggr'), _seeded_project(_table('projects'))
+        aggregates, projects = pk_sk_table('aggr'), _seeded_project(pk_sk_table('projects'))
         _, created = _call(aggregates, projects, lambda_context, 'POST',
                            '/projects/prioritization/rows', {'project_id': 'p1'})
         default_row = created['row']['row_id']
@@ -461,11 +427,7 @@ class TestTheRowLifecycleAgainstARealTable:
         """`attribute_exists(sk)` on the row half, evaluated for real. `update_item`
         is an upsert, so without it this transaction would CREATE a bare row record
         for a row somebody deleted."""
-        aggregates, projects = _table('aggr'), _seeded_project(_table('projects'))
-        _, created = _call(aggregates, projects, lambda_context, 'POST',
-                           '/projects/prioritization/rows/compose',
-                           {'project_id': 'p1', 'document_ids': ['d1']})
-        row_id = created['row']['row_id']
+        aggregates, projects, row_id = _composed_row(lambda_context)
         _call(aggregates, projects, lambda_context, 'DELETE',
               f'/projects/prioritization/rows/{row_id}')
 
@@ -481,7 +443,7 @@ class TestTheRowLifecycleAgainstARealTable:
     ):
         """End to end through both halves, so `is_frozen` is not merely computed but
         computed from what a real write actually stored."""
-        aggregates, projects = _table('aggr'), _seeded_project(_table('projects'))
+        aggregates, projects = pk_sk_table('aggr'), _seeded_project(pk_sk_table('projects'))
         _, open_row = _call(aggregates, projects, lambda_context, 'POST',
                             '/projects/prioritization/rows/compose',
                             {'project_id': 'p1', 'document_ids': ['d1']})
@@ -521,32 +483,17 @@ class TestAnAnonymousBallotCarriesTheSameInvariantsAsASignedInOne:
         boundary. Before the anonymous write stamped the mark, a row carrying nothing
         but real room votes stayed recomposable — and recomposing it left every one of
         those ballots describing documents the room never saw."""
-        aggregates, projects = _table('aggr'), _seeded_project(_table('projects'))
-        _, created = _call(aggregates, projects, lambda_context, 'POST',
-                           '/projects/prioritization/rows/compose',
-                           {'project_id': 'p1', 'document_ids': ['d1']})
-        row_id = created['row']['row_id']
+        aggregates, projects, row_id = _composed_row(lambda_context)
 
         assert _room_ballot(aggregates, lambda_context, row_id)[0] == 200
 
-        status, body = _call(aggregates, projects, lambda_context, 'PATCH',
-                             f'/projects/prioritization/rows/{row_id}',
-                             {'project_id': 'p1', 'document_ids': ['d2']})
-
-        assert status == 409
-        assert 'frozen' in body['error']
-        row = aggregates.get_item(Key={'pk': PARTITION, 'sk': f'ROW#{row_id}'})['Item']
-        assert row['document_ids'] == ['d1'], 'the refusal wrote nothing'
+        _assert_recompose_is_refused_as_frozen(aggregates, projects, lambda_context, row_id)
 
     @mock_aws
     def test_the_page_reports_a_row_frozen_by_a_room_as_frozen(self, lambda_context):
         """`is_frozen` is one question with one answer, whoever voted. A page that
         showed such a row as editable would offer a control the server refuses."""
-        aggregates, projects = _table('aggr'), _seeded_project(_table('projects'))
-        _, created = _call(aggregates, projects, lambda_context, 'POST',
-                           '/projects/prioritization/rows/compose',
-                           {'project_id': 'p1', 'document_ids': ['d1']})
-        row_id = created['row']['row_id']
+        aggregates, projects, row_id = _composed_row(lambda_context)
         _room_ballot(aggregates, lambda_context, row_id)
 
         _, body = _call(aggregates, projects, lambda_context, 'GET',
@@ -564,11 +511,7 @@ class TestAnAnonymousBallotCarriesTheSameInvariantsAsASignedInOne:
         point where the two can cross — and it moves `ballot_writes`, so the delete's
         fence fails and the whole transaction is cancelled. Before the anonymous write
         moved that counter the delete committed and left the ballot behind."""
-        aggregates, projects = _table('aggr'), _seeded_project(_table('projects'))
-        _, created = _call(aggregates, projects, lambda_context, 'POST',
-                           '/projects/prioritization/rows/compose',
-                           {'project_id': 'p1', 'document_ids': ['d1']})
-        row_id = created['row']['row_id']
+        aggregates, projects, row_id = _composed_row(lambda_context)
 
         real_query = aggregates.query
         raced = {'done': False}
@@ -592,8 +535,7 @@ class TestAnAnonymousBallotCarriesTheSameInvariantsAsASignedInOne:
         assert raced['done'], 'the race never happened, so this asserts nothing'
         assert status == 409
         assert 'reload' in body['error']
-        stored = sorted(item['sk'] for item in aggregates.scan()['Items']
-                        if item['pk'] == PARTITION)
+        stored = sorted(_stored_sort_keys(aggregates, partition=PARTITION))
         assert stored[-1] == f'ROW#{row_id}', 'the row survived'
         assert any(sk.startswith(f'BALLOT#{row_id}#anon:') for sk in stored), (
             "and so did the room's ballot"
@@ -605,11 +547,7 @@ class TestAnAnonymousBallotCarriesTheSameInvariantsAsASignedInOne:
         ballots go with their row exactly as a reviewer's do. The enumeration is by
         row prefix, so nothing about which kind wrote a ballot decides whether it
         goes."""
-        aggregates, projects = _table('aggr'), _seeded_project(_table('projects'))
-        _, created = _call(aggregates, projects, lambda_context, 'POST',
-                           '/projects/prioritization/rows/compose',
-                           {'project_id': 'p1', 'document_ids': ['d1']})
-        row_id = created['row']['row_id']
+        aggregates, projects, row_id = _composed_row(lambda_context)
         _room_ballot(aggregates, lambda_context, row_id)
         _call(aggregates, projects, lambda_context, 'PATCH', '/projects/prioritization',
               {'scores': {row_id: AXES}})
@@ -630,11 +568,7 @@ class TestAnAnonymousBallotCarriesTheSameInvariantsAsASignedInOne:
         hour later. `attribute_exists(sk)` on the row half of the anonymous write is
         what makes a ballot on a row deleted in between fail — rather than recreating
         the row as a bare record, which `update_item`'s upsert would otherwise do."""
-        aggregates, projects = _table('aggr'), _seeded_project(_table('projects'))
-        _, created = _call(aggregates, projects, lambda_context, 'POST',
-                           '/projects/prioritization/rows/compose',
-                           {'project_id': 'p1', 'document_ids': ['d1']})
-        row_id = created['row']['row_id']
+        aggregates, projects, row_id = _composed_row(lambda_context)
         _call(aggregates, projects, lambda_context, 'DELETE',
               f'/projects/prioritization/rows/{row_id}')
 
@@ -651,14 +585,9 @@ class TestAnAnonymousBallotCarriesTheSameInvariantsAsASignedInOne:
         """`if_not_exists` across the bundle boundary and across a correction: the
         composition froze when the first phone submitted, and a device amending its
         own vote is not a new decision about which documents the row holds."""
-        aggregates, projects = _table('aggr'), _seeded_project(_table('projects'))
-        _, created = _call(aggregates, projects, lambda_context, 'POST',
-                           '/projects/prioritization/rows/compose',
-                           {'project_id': 'p1', 'document_ids': ['d1']})
-        row_id = created['row']['row_id']
+        aggregates, _projects, row_id = _composed_row(lambda_context)
         _, first = _room_ballot(aggregates, lambda_context, row_id)
-        froze_at = aggregates.get_item(
-            Key={'pk': PARTITION, 'sk': f'ROW#{row_id}'})['Item'][ 'first_ballot_at']
+        froze_at = _stored(aggregates, f'ROW#{row_id}')['first_ballot_at']
 
         status, corrected = _room_ballot(aggregates, lambda_context, row_id,
                                         axes={**AXES, 'impact': 1},
@@ -666,7 +595,7 @@ class TestAnAnonymousBallotCarriesTheSameInvariantsAsASignedInOne:
 
         assert status == 200
         assert corrected['corrected'] is True
-        row = aggregates.get_item(Key={'pk': PARTITION, 'sk': f'ROW#{row_id}'})['Item']
+        row = _stored(aggregates, f'ROW#{row_id}')
         assert row['first_ballot_at'] == froze_at
         assert row['ballot_writes'] == Decimal(2), (
             'the fence moves for a correction, so a delete that listed the ballots '

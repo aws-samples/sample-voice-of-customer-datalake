@@ -1,24 +1,4 @@
 {
-  "autoseed": {
-    "copyFailed": "コピーに失敗しました — もう一度お試しください。",
-    "copyKiroPrompt": "Kiroプロンプトをコピー",
-    "description": "ペルソナとドキュメントを選択してKiroワークスペースにシードします",
-    "deselectAll": "すべて選択解除",
-    "docTypes": {
-      "custom": "カスタム",
-      "prd": "PRD",
-      "prfaq": "PR/FAQ",
-      "product_report": "プロダクトレポート",
-      "research": "リサーチ"
-    },
-    "documents": "ドキュメント ({{selected}}/{{total}})",
-    "generatedPrompt": "生成されたKiroプロンプト",
-    "generateFirst": "autoseedを使用するには、まずペルソナまたはドキュメントを生成してください。",
-    "pasteHint": "これをKiroチャットに貼り付けてください。MCPアクセスタブからAPIトークンが必要です。",
-    "personas": "ペルソナ ({{selected}}/{{total}})",
-    "selectAll": "すべて選択",
-    "title": "Kiro 自動シード"
-  },
   "chat": {
     "askPlaceholder": "プロジェクトについて質問...",
     "attachFile": "画像またはPDFを添付",
@@ -28,7 +8,7 @@
     "fileTooLarge": "ファイルが大きすぎます (最大5MB): {{name}}",
     "mentionHint": "<at>でペルソナ、<atAll>でラウンドテーブル、<hash>でドキュメントを入力",
     "projectAiChat": "プロジェクトAIチャット",
-    "roundtable": "🎙️ ラウンドテーブル: 全{{count}}個のペルソナ",
+    "roundtable": "ラウンドテーブル: 全{{count}}個のペルソナ",
     "send": "メッセージを送信",
     "startConversation": "会話を開始",
     "stop": "停止",
@@ -44,6 +24,9 @@
   },
   "documentModal": {
     "cancel": "キャンセル",
+    "conflict": "この間に、誰かがこのドキュメントの新しいバージョンを保存しました。",
+    "conflictReload": "最新を読み込む",
+    "conflictSaveAnyway": "自分の変更をそのまま保存",
     "contentLabel": "コンテンツ (Markdown)",
     "contentPlaceholder": "ドキュメントをMarkdownで作成...",
     "create": "作成",
@@ -80,6 +63,28 @@
     "newDocument": "新規ドキュメント",
     "noDocuments": "ドキュメントなし",
     "ordinal": "{{total}} 件中 {{ordinal}} 件目",
+    "versions": {
+      "title": "バージョン",
+      "hint": "編集するたびに新しいバージョンが保存されます。以前のバージョンを開く・比較する、または新しいバージョンとして復元できます。",
+      "label": "v{{n}}",
+      "current": "現在",
+      "edited": "編集済み",
+      "restoredFrom": "v{{n}} から復元",
+      "open": "開く",
+      "openNamed": "{{label}} を開く",
+      "compare": "比較",
+      "compareNamed": "{{label}} を現在のバージョンと比較",
+      "compareTitle": "{{label}} と現在のバージョンの比較",
+      "identical": "このバージョンは現在のバージョンと同じです。",
+      "restore": "復元",
+      "restoreNamed": "{{label}} を復元",
+      "restoreTitle": "このバージョンを復元しますか？",
+      "restoreMessage": "v{{n}} の内容で新しいバージョンが保存されます。現在のバージョンは一覧に残ります。",
+      "restoreFailed": "バージョンを復元できませんでした。もう一度お試しください。",
+      "loadFailed": "バージョンを読み込めませんでした。",
+      "close": "閉じる",
+      "cancel": "キャンセル"
+    },
     "prototype": {
       "building": "作成中…",
       "button": "プロトタイプを作成",
@@ -120,15 +125,6 @@
       "heading": "改訂元"
     },
     "selectDocument": "ドキュメントを選択"
-  },
-  "export": {
-    "copyContext": "クリップボードにコピー",
-    "copyCopied": "コピーしました！",
-    "copyFailed": "コピーに失敗しました — もう一度お試しください。",
-    "description": "プロジェクトコンテキストをクリップボードにコピー — APIトークン不要",
-    "emptyHint": "エクスポートを有効にするには、まずペルソナまたはドキュメントを生成してください。",
-    "selectAtLeastOne": "各セクションで少なくとも1件を選択してください。選択しない場合、エクスポートにすべてが含まれます。",
-    "title": "エクスポート"
   },
   "imageErrors": {
     "tooLarge": "{{name}} は縮小してもまだサイズが大きすぎます。より小さいスクリーンショットを使うか、切り取ってください。",
@@ -200,85 +196,6 @@
       "importPersona": "ペルソナインポート",
       "mergeDocuments": "ドキュメントマージ",
       "research": "リサーチ"
-    }
-  },
-  "kiroExport": {
-    "cancel": "キャンセル",
-    "configure": "設定",
-    "description": "「Kiroにコピー」エクスポートのコンテキストを設定",
-    "edit": "編集",
-    "noPrompt": "Kiroエクスポートプロンプトが設定されていません",
-    "noPromptHint": "「設定」をクリックしてPRDエクスポートの実装コンテキストを追加してください",
-    "save": "保存",
-    "saved": "保存しました!",
-    "templateHint": "このコンテキストは「Kiroにコピー」使用時にPRD/PR-FAQドキュメントの先頭に追加されます。テックスタック、コーディング標準、実装ガイダンスを含めてください。",
-    "templateLabel": "エクスポートプロンプトテンプレート",
-    "title": "Kiroエクスポート設定",
-    "useDefault": "デフォルトテンプレートを使用",
-    "usingDefault": "既定の指示に従っています。独自の指示を作成するには「{{action}}」をクリックしてください。"
-  },
-  "mcp": {
-    "activeTokens": "アクティブなトークン ({{count}})",
-    "activeTokens_one": "アクティブなトークン ({{count}})",
-    "activeTokens_other": "アクティブなトークン ({{count}})",
-    "cancel": "キャンセル",
-    "collapseLabel": "折りたたむ",
-    "copied": "コピーしました",
-    "copy": "コピー",
-    "copyToken": "トークンをクリップボードにコピー",
-    "copyTokenNow": "このトークンを今すぐコピーしてください — 再度表示されません。",
-    "createdDate": "{{date}}に作成",
-    "description": "APIトークンを生成して、このプロジェクトをKiroやVS Codeなどのmcp互換クライアントに接続します。",
-    "dismiss": "閉じる",
-    "expandLabel": "展開",
-    "expiredDate": "期限切れ: {{date}}",
-    "expiresDate": "有効期限: {{date}}",
-    "expiry": "有効期限",
-    "expiryDays": "{{count}}日間",
-    "expiryDays_one": "{{count}}日間",
-    "expiryDays_other": "{{count}}日間",
-    "expiryNever": "無期限",
-    "generate": "生成",
-    "generateNewToken": "新しいAPIトークンを生成",
-    "generateToken": "トークンを生成",
-    "generating": "生成中...",
-    "hideToken": "トークンを非表示",
-    "lastUsed": "最後に使用: {{date}}",
-    "loadingTokens": "トークンを読み込み中…",
-    "mcpConfig": "MCPクライアント設定",
-    "mcpConfigHint": "<code>mcp.json</code> に追加してください。<code>&lt;YOUR_API_TOKEN&gt;</code> を下記のトークンに置き換えてください。",
-    "notAvailable": "MCP Access はまだ利用できません",
-    "notAvailableDesc": "API トークン管理エンドポイントがまだデプロイされていません。MCP トークンサポート付きでバックエンドをデプロイして、この機能を有効にしてください。",
-    "noTokensHint": "トークンを生成して、MCP クライアントをこのプロジェクトに接続します。",
-    "noTokensYet": "API トークンがまだありません",
-    "revealToken": "トークンを表示",
-    "revokeToken": "トークンを無効化",
-    "title": "MCP アクセス",
-    "tokenCreated": "トークンが正常に作成されました",
-    "tokenExpiresOn": "このトークンの有効期限は{{date}}です。",
-    "tokenName": "トークン名",
-    "tokenNamePlaceholder": "例：My Kiro token",
-    "tokenPasteHint": "このトークンを mcp.json または autoseed curl コマンドの <code>Authorization</code> ヘッダーに貼り付けてください。",
-    "scopes": "スコープ",
-    "scopeDesc": {
-      "feedback_read": "顧客フィードバックの検索と閲覧",
-      "metrics_read": "ダッシュボードと指標の内訳の閲覧",
-      "projects_read": "プロジェクト、ペルソナ、ドキュメントの閲覧"
-    },
-    "noScopes": "スコープなし",
-    "readReach": "読み取り範囲",
-    "reachOption": {
-      "workspace": "ワークスペース全体（既定）",
-      "project-set": "このプロジェクトのみ"
-    },
-    "reachHint": {
-      "workspace": "ワークスペース内のすべてのプロジェクト（他プロジェクトの未公開ドキュメントを含む）とすべての顧客フィードバックに到達します。",
-      "project-set": "このプロジェクトに限定されます。プロジェクト単位ではないフィードバック全体とワークスペース指標は読み取れません。"
-    },
-    "reachBadge": {
-      "workspace": "ワークスペース全体",
-      "project-set": "このプロジェクト",
-      "none": "読み取り不可"
     }
   },
   "notFound": {
@@ -361,7 +278,9 @@
     "triggerLabel": "トリガー",
     "triggerPlaceholder": "このシナリオのきっかけ",
     "workarounds": "対処法（1 行に 1 つ）",
-    "workaroundsPlaceholder": "現在の対応方法..."
+    "workaroundsPlaceholder": "現在の対応方法...",
+    "locationPlaceholder": "都市部、日本",
+    "occupationPlaceholder": "プロダクトマネージャー"
   },
   "personas": {
     "addNote": "ノートを追加",
@@ -378,12 +297,17 @@
     "notePlaceholder": "ユーザーリサーチの観察やインサイトを入力...",
     "notesCount_one": "{{count}}件のメモ",
     "notesCount_other": "{{count}}件のメモ",
-    "notesTip": "💡 ヒント: ユーザーインタビュー、ユーザビリティテスト、またはデータ分析からこのペルソナに関連する観察を追加してください。",
+    "notesTip": "ヒント: ユーザーインタビュー、ユーザビリティテスト、またはデータ分析からこのペルソナに関連する観察を追加してください。",
     "pressEnter": "Enterキーを押す ↵",
     "removeNote": "ノートを削除",
     "researchNotes": "リサーチノート",
     "reviews": "{{count}}件のレビュー",
-    "selectToView": "ペルソナを選択して詳細を表示"
+    "selectToView": "ペルソナを選択して詳細を表示",
+    "editPersona": "ペルソナを編集",
+    "deletePersona": "ペルソナを削除",
+    "regenerateAvatar": "アバターを再生成",
+    "regeneratingAvatar": "新しいアバターを生成しています…",
+    "regenerateAvatarFailed": "アバターを再生成できませんでした。もう一度お試しください。"
   },
   "personaSections": {
     "behaviorsHabits": "行動と習慣",
@@ -478,10 +402,10 @@
   "tabs": {
     "aiChat": "AIチャット",
     "documents": "ドキュメント",
-    "mcpAccess": "エクスポート / MCP",
     "overview": "概要",
     "personas": "ペルソナ",
-    "product": "製品"
+    "product": "製品",
+    "label": "プロジェクトのセクション"
   },
   "wizards": {
     "amazonQuestions": "Amazonの5つの顧客質問",
@@ -541,6 +465,7 @@
     "researchQuestionPlaceholder": "例：主なペインポイントは何ですか...",
     "researchSuggest": "AI 提案",
     "researchSuggestEmpty": "提案なし — まずフィードバックを追加または収集してください。",
+    "startFailed": "開始できませんでした。もう一度お試しください。",
     "researchSuggesting": "提案を作成中…",
     "researchSuggestPick": "提案をタップして使用:",
     "researchSuggestTitle": "プロジェクトのフィードバックから調査の問いを AI に提案させる",
@@ -549,11 +474,45 @@
     "researchWebSearch": "公開ウェブ検索",
     "researchWebSearchHint": "AIが複数のウェブ検索を計画・実行し、分析を裏付けます（AWS内で処理され、出典を引用します）",
     "runResearch": "リサーチを実行",
-    "selectAtLeast2": "⚠️ リミックスするには最低2つのドキュメントを選択してください。",
+    "selectAtLeast2": "リミックスするには最低2つのドキュメントを選択してください。",
     "submitGenerateDoc": "{{type}}を生成",
     "submitGeneratePersonas": "ペルソナを生成",
     "submitRemixDocuments": "ドキュメントをリミックス",
     "submitRunResearch": "リサーチを実行",
     "workingBackwards": "ワーキングバックワーズ"
+  },
+  "header": {
+    "back": "プロジェクト一覧に戻る",
+    "connectMcp": "MCP で接続"
+  },
+  "companyStrip": {
+    "label": "会社のコンテキスト",
+    "title": "会社のコンテキスト",
+    "noVision": "会社のビジョンはまだありません。",
+    "more": "他 {{n}} 件",
+    "designSystem": "デザインシステム:",
+    "open": "ナレッジ → 会社"
+  },
+  "prototypePins": {
+    "toggle": "テスターのピン",
+    "showOnPrototype": "プロトタイプ上にピンを表示",
+    "heading": "テスターのピン",
+    "hint": "テスターはプロトタイプの要素をクリックしてコメントを残します。エージェントは未対応のピンをもとにプロトタイプを修正します。",
+    "empty": "まだピンはありません。プロトタイプ内の「Feedback」をクリックして追加してください。",
+    "loadFailed": "ピンを読み込めませんでした。",
+    "status": {
+      "open": "未対応",
+      "addressed": "対応済み",
+      "resolved": "解決済み"
+    },
+    "flagged": "フラグ付き — エージェントには渡しません",
+    "consoleErrors": "コンソールエラー: {{count}}",
+    "addressedBy": "リビジョン {{id}} で対応",
+    "pinNumber": "ピン {{number}}",
+    "reply": "返信",
+    "replyPlaceholder": "テスターに返信…",
+    "resolve": "解決",
+    "reopen": "再開",
+    "actionFailed": "うまくいきませんでした。もう一度お試しください。"
   }
 }

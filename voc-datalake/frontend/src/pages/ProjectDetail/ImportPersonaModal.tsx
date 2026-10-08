@@ -11,12 +11,13 @@
  * not stop an old queued job or a hand-rolled caller.
  */
 import clsx from 'clsx'
-import {
-  Upload, Image, FileText, CheckCircle, X, Loader2, AlertCircle,
-} from 'lucide-react'
+import { Upload, Image, FileText, CheckCircle, Loader2, AlertCircle } from 'lucide-react'
+import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { IMAGE_ACCEPT_ATTR } from '../../utils/imageInput'
 import { cancelFileDragEvent, usePersonaImageInput } from './usePersonaImageInput'
+import DialogClose from '../../components/DialogClose/DialogClose'
+import ModalShell from '../../components/ModalShell/ModalShell'
 
 type ImportType = 'image' | 'text'
 
@@ -67,15 +68,17 @@ function ImportTypeButton({
   const IconElement = icon
   return (
     <button
+      type="button"
       onClick={onClick}
+      aria-pressed={isSelected}
       className={clsx(
-        'p-4 rounded-lg border text-center',
-        isSelected ? 'bg-purple-50 border-purple-300' : 'bg-white border-gray-200 hover:border-purple-200',
+        'p-4 rounded-lg border text-center transition-colors focus-ring',
+        isSelected ? 'bg-accent-subtle border-accent/40' : 'bg-card border-border hover:border-border-strong hover:bg-bg-hover',
       )}
     >
-      <IconElement size={24} className="mx-auto mb-2 text-purple-500" />
-      <div className="font-medium">{label}</div>
-      <div className="text-xs text-gray-500">{description}</div>
+      <IconElement size={20} className="mx-auto mb-2 text-accent-text" aria-hidden />
+      <div className="font-medium text-text-strong">{label}</div>
+      <div className={clsx('text-xs', isSelected ? 'text-text' : 'text-muted')}>{description}</div>
     </button>
   )
 }
@@ -90,9 +93,9 @@ function ImportTypeButton({
  * drag states).
  */
 function zoneStyle(dragActive: boolean, hasFile: boolean): string {
-  if (dragActive) return 'border-purple-500 bg-purple-50'
-  if (hasFile) return 'border-purple-300 bg-purple-50'
-  return 'border-gray-300 hover:border-purple-300'
+  if (dragActive) return 'border-accent bg-accent-subtle'
+  if (hasFile) return 'border-accent/40 bg-accent-subtle'
+  return 'border-border-strong hover:border-accent/40'
 }
 
 /**
@@ -148,15 +151,15 @@ function FileUploadSection({
         >
           {importFileName === '' ? (
             <div>
-              <Upload size={32} className="mx-auto mb-2 text-gray-400" />
-              <p className="text-gray-600">{t('importPersona.clickToUpload')}</p>
-              <p className="text-sm text-gray-400 mt-1">{t('importPersona.imageFormats')}</p>
+              <Upload size={32} className="mx-auto mb-2 text-muted" />
+              <p className="text-text">{t('importPersona.clickToUpload')}</p>
+              <p className="text-sm text-muted mt-1">{t('importPersona.imageFormats')}</p>
             </div>
           ) : (
             <div>
-              <CheckCircle size={32} className="mx-auto mb-2 text-purple-500" />
-              <p className="font-medium text-purple-700">{importFileName}</p>
-              <p className="text-sm text-gray-500 mt-1">{t('importPersona.clickToChange')}</p>
+              <CheckCircle size={32} className="mx-auto mb-2 text-accent" />
+              <p className="font-medium text-accent-text">{importFileName}</p>
+              <p className="text-sm text-muted mt-1">{t('importPersona.clickToChange')}</p>
             </div>
           )}
         </div>
@@ -168,7 +171,7 @@ function FileUploadSection({
         />
       </label>
       {/* Paste is the third way in, and nothing in the zone said so. */}
-      <p className="mt-2 text-xs text-gray-400">{t('importPersona.pasteScreenshotHint')}</p>
+      <p className="mt-2 text-xs text-muted">{t('importPersona.pasteScreenshotHint')}</p>
       {/*
         One slot, two severities. A refusal is red, carries the alert icon and is
         announced assertively through role="alert", because something failed and
@@ -181,11 +184,11 @@ function FileUploadSection({
       */}
       {imageInput.message !== null && (
         imageInput.message.kind === 'error' ? (
-          <div role="alert" className="mt-2 text-xs text-red-600 inline-flex items-center gap-1">
+          <div role="alert" className="mt-2 text-xs text-danger inline-flex items-center gap-1">
             <AlertCircle size={12} /> {imageInput.message.text}
           </div>
         ) : (
-          <div role="status" className="mt-2 text-xs text-gray-500">
+          <div role="status" className="mt-2 text-xs text-muted">
             {imageInput.message.text}
           </div>
         )
@@ -218,8 +221,9 @@ function TextInputSection({
         value={importContent}
         onChange={(e) => onContentChange(e.target.value)}
         placeholder={t('importPersona.pastePlaceholder')}
+        aria-label={t('importPersona.pasteContent')}
         rows={10}
-        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+        className="input"
       />
     </div>
   )
@@ -237,43 +241,51 @@ export default function ImportPersonaModal({
   onImport,
 }: ImportPersonaModalProps) {
   const { t } = useTranslation('projectDetail')
+  const titleId = useId()
 
   return (
-    // The BACKDROP swallows file drags that miss the dashed zone, not the panel.
-    // This div covers the viewport while the modal is open, and the dimmed area
-    // outside the small centred panel is the region a user aiming at the zone is
-    // most likely to miss; a file drop there reaches the browser's default, which
+    // The dialog semantics (role, aria-modal, name, Escape, focus trap, focus
+    // return) come from ModalShell like every other dialog (E2E F5: this one was
+    // hand-rolled and ignored Escape).
+    //
+    // This `display: contents` wrapper swallows file drags that miss the dashed
+    // zone. It is the React ancestor of the whole shell, so a drag event raised
+    // on the dimmed overlay OR the panel bubbles here: the dimmed area outside
+    // the small centred panel is the region a user aiming at the zone is most
+    // likely to miss, and a file drop there reaches the browser's default, which
     // NAVIGATES to the dropped file and takes the modal — and any image already
-    // chosen — with it. Being an ancestor of the panel, one pair of handlers here
-    // covers both. Cancel-only on purpose: the zone stays the single place where a
-    // drop selects something. Only FILE drags are cancelled, so a text drag into
-    // the persona textarea keeps the default that inserts it; see
+    // chosen — with it. Cancel-only on purpose: the zone stays the single place
+    // where a drop selects something. Only FILE drags are cancelled, so a text
+    // drag into the persona textarea keeps the default that inserts it; see
     // cancelFileDragEvent.
+    //
+    // Paste is NOT handled here. A React onPaste is delegated, so it fires only
+    // for a paste whose target is inside this subtree — the hook listens on
+    // document while the image step is showing instead; see the WHY there.
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      className="contents"
       data-testid="persona-import-backdrop"
       onDragOver={cancelFileDragEvent}
       onDrop={cancelFileDragEvent}
     >
-      {/*
-        Paste is NOT handled here. A React onPaste is delegated, so it fires only
-        for a paste whose target is inside this subtree, and nothing focuses the
-        panel on open — the ordinary "open the modal, press ⌘V" gesture targets
-        <body> and would have been a no-op. The hook listens on document while the
-        image step is showing instead; see the WHY there.
-      */}
-      <div
-        className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden"
-        // A stable hook for the tests, so the panel is not located through the
-        // `max-w-2xl` layout utility: widening the modal is not a behaviour change
-        // and must not fail a test about drop cancellation.
-        data-testid="persona-import-panel"
+      <ModalShell
+        isOpen
+        onClose={onClose}
+        ariaLabelledBy={titleId}
+        panelClassName="max-w-2xl max-h-[90vh]"
+        // An import in flight is not dismissed by a stray Escape or overlay click;
+        // the visible close button and Cancel still work, as before.
+        dismissable={!isImporting}
       >
-        <div className="flex items-center justify-between p-4 border-b">
-          <h2 className="text-lg font-semibold">{t('importPersona.title')}</h2>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
+      {/* A stable hook for the tests, so the panel is not located through the
+          `max-w-2xl` layout utility. `contents` keeps the header/body/footer
+          direct flex items of the shell's panel. */}
+      <div className="contents" data-testid="persona-import-panel">
+        <div className="dialog-header justify-between">
+          <h2 id={titleId} className="dialog-title">{t('importPersona.title')}</h2>
+          <DialogClose onClick={onClose} />
         </div>
-        <div className="p-6 space-y-6">
+        <div className="dialog-body space-y-6">
           {/* Import Type Selection */}
           <div>
             <h3 className="font-medium mb-3">{t('importPersona.importFrom')}</h3>
@@ -299,21 +311,22 @@ export default function ImportPersonaModal({
           <TextInputSection importType={importType} importContent={importContent} onContentChange={onContentChange} />
 
           {/* Info */}
-          <div className="bg-purple-50 rounded-lg p-4 text-sm">
-            <p className="text-purple-700">
+          <div className="bg-aim-subtle rounded-lg p-4 text-sm">
+            <p className="text-aim">
               <strong>{t('importPersona.aiPoweredImport')}</strong> {t('importPersona.aiImportDesc', { type: t(`importPersona.importType${importType.charAt(0).toUpperCase() + importType.slice(1)}`) })}
             </p>
           </div>
         </div>
-        <div className="flex justify-end gap-3 p-4 border-t bg-gray-50">
-          <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">{t('importPersona.cancel')}</button>
+        <div className="dialog-footer flex-col-reverse sm:flex-row">
+          <button type="button" onClick={onClose} className="btn btn-secondary w-full sm:w-auto">{t('importPersona.cancel')}</button>
           <button
+            type="button"
             onClick={onImport}
             // Same predicate as the server's empty-content guard, so a
             // whitespace-only paste is a disabled button rather than a 400 the
             // user has to read to discover there was nothing to send.
             disabled={importContent.trim() === '' || isImporting}
-            className="flex items-center gap-2 px-6 py-2 bg-purple-600 text-white rounded-lg disabled:opacity-50 hover:bg-purple-700"
+            className="btn btn-primary w-full sm:w-auto"
           >
             {isImporting ? (
               <><Loader2 size={16} className="animate-spin" />{t('importPersona.importing')}</>
@@ -323,6 +336,7 @@ export default function ImportPersonaModal({
           </button>
         </div>
       </div>
+      </ModalShell>
     </div>
   )
 }

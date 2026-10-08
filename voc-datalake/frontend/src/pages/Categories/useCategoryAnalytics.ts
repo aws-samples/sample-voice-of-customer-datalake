@@ -8,9 +8,15 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../../api/client'
+import { useCategoryAdmits } from '../../hooks/useCategories'
 import type { DateRangeParams } from '../../api/client'
-import { categoryColors, getSentimentColor } from './types'
+import { normalizeEntityExtras, rankedNames } from '../../api/dimensionsSchema'
+import type { AttributeFilters } from '../../api/types'
+import { rankEntityKeys } from './entityCounts'
+import { NEUTRAL_CHART_STEP, categoryChartSteps, chartStepPrintHex } from './types'
+import { sentimentHexColor } from '../../lib/sentiment'
 import type { CategoryData, SentimentData, WordCloudItem } from './types'
+import { failedReads, type FailedReads } from '../../utils/failedReads'
 
 // Stop words for word cloud filtering
 const STOP_WORDS = new Set([
@@ -35,7 +41,7 @@ function extractWordsFromIssues(issuesData: Record<string, number>): Record<stri
   return wordCounts
 }
 
-export function buildWordCloudData(
+function buildWordCloudData(
   entities: { issues?: Record<string, number>; categories?: Record<string, number> } | undefined
 ): WordCloudItem[] {
   if (!entities) return []
@@ -53,11 +59,15 @@ export function buildWordCloudData(
     .map(([word, count]) => ({ word, count }))
 }
 
-export interface CategoryAnalytics {
+/** `loadFailed`: the category or sentiment read failed with nothing cached (the cards would only show zeros). */
+export interface CategoryAnalytics extends FailedReads {
   categoryData: CategoryData[]
   sentimentData: SentimentData[]
   wordCloudData: WordCloudItem[]
   allSources: string[]
+  /** Channels and tags seen in the window (unfiltered), largest first — the filter options. */
+  allChannels: string[]
+  allTags: string[]
   totalIssues: number
   avgSentiment: number
   sentimentPercentages: Record<string, number>
@@ -65,57 +75,87 @@ export interface CategoryAnalytics {
   isLoading: boolean
 }
 
+/** The `source` query parameter for a selection: none (`null`) and the empty "all sources" value both mean unfiltered. */
+function sourceFilter(selectedSource: string | null): string | undefined {
+  return selectedSource === null || selectedSource === '' ? undefined : selectedSource
+}
+
+/** The unfiltered entities read, shared by both entity queries when no source is selected. */
+function allSourcesEntitiesKey(dateParams: DateRangeParams): readonly unknown[] {
+  return ['entities-all-sources', dateParams]
+}
+
+/**
+ * `attributes` (channel / dims / tag) narrow the category, sentiment and
+ * entities reads like `source` does; the all-sources entities read stays
+ * unfiltered because it supplies the filter OPTIONS.
+ */
 export function useCategoryAnalytics(
   dateParams: DateRangeParams,
   selectedSource: string | null,
-  apiEndpoint: string
+  apiEndpoint: string,
+  attributes: AttributeFilters = {},
 ): CategoryAnalytics {
   const enabled = !!apiEndpoint
+  const source = sourceFilter(selectedSource)
+  const unfiltered = source === undefined && Object.keys(attributes).length === 0
 
-  const { data: categories, isLoading: categoriesLoading } = useQuery({
-    queryKey: ['categories', dateParams, selectedSource],
-    queryFn: () => api.getCategories(dateParams, selectedSource || undefined),
+  const categoriesQuery = useQuery({
+    queryKey: ['categories', dateParams, selectedSource, attributes],
+    queryFn: () => api.getCategories(dateParams, source, attributes),
     enabled,
   })
+  const categories = categoriesQuery.data
 
-  const { data: sentiment, isLoading: sentimentLoading } = useQuery({
-    queryKey: ['sentiment', dateParams, selectedSource],
-    queryFn: () => api.getSentiment(dateParams, selectedSource || undefined),
+  const sentimentQuery = useQuery({
+    queryKey: ['sentiment', dateParams, selectedSource, attributes],
+    queryFn: () => api.getSentiment(dateParams, source, attributes),
     enabled,
   })
+  const sentiment = sentimentQuery.data
 
+  // With no filter this is the SAME request as the all-sources read below, so
+  // it shares that query's key and the page asks once, not twice
+  // (production: two identical /feedback/entities calls, 1.1 s and 1.7 s).
   const { data: entities } = useQuery({
-    queryKey: ['entities', dateParams, selectedSource],
-    queryFn: () => api.getEntities({ ...dateParams, limit: 50, source: selectedSource || undefined }),
+    queryKey: unfiltered ? allSourcesEntitiesKey(dateParams) : ['entities', dateParams, source, attributes],
+    queryFn: () => api.getEntities({ ...dateParams, limit: 50, source, ...attributes }),
     enabled,
   })
 
   const { data: allEntities } = useQuery({
-    queryKey: ['entities-all-sources', dateParams],
+    queryKey: allSourcesEntitiesKey(dateParams),
     queryFn: () => api.getEntities({ ...dateParams, limit: 50 }),
     enabled,
   })
 
-  const allSources = useMemo(() => {
-    if (!allEntities?.entities?.sources) return []
-    return Object.keys(allEntities.entities.sources).sort(
-      (a, b) => (allEntities.entities.sources[b] || 0) - (allEntities.entities.sources[a] || 0)
-    )
-  }, [allEntities])
+  const allSources = useMemo(() => rankEntityKeys(allEntities, 'sources'), [allEntities])
+  const extras = useMemo(() => normalizeEntityExtras(allEntities), [allEntities])
+  const allChannels = useMemo(() => rankedNames(extras.channels), [extras])
+  const allTags = useMemo(() => rankedNames(extras.tags), [extras])
 
+  // Belt-and-braces over the backend's per-category filtering: a category the
+  // caller cannot see never becomes a filter chip, even from a stale cache.
+  const admits = useCategoryAdmits()
   const categoryData: CategoryData[] = useMemo(() => {
     if (!categories) return []
-    return Object.entries(categories.categories)
-      .map(([name, value]) => ({ name, value, color: categoryColors[name] || categoryColors.other }))
-      .sort((a, b) => b.value - a.value)
-  }, [categories])
+    // Ranked largest first, ties by name, so the same counts always give the
+    // same order — and therefore the same colours (colours are assigned by rank).
+    const ranked = Object.entries(categories.categories)
+      .filter(([name]) => admits(name))
+      .sort(([nameA, a], [nameB, b]) => b - a || nameA.localeCompare(nameB))
+    const steps = categoryChartSteps(ranked.map(([name]) => name))
+    return ranked.map(([name, value]) => ({
+      name, value, color: chartStepPrintHex(steps.get(name) ?? NEUTRAL_CHART_STEP),
+    }))
+  }, [categories, admits])
 
   const sentimentData: SentimentData[] = useMemo(() => {
     if (!sentiment) return []
     return Object.entries(sentiment.breakdown).map(([name, value]) => ({
       name,
       value,
-      color: getSentimentColor(name),
+      color: sentimentHexColor(name),
       percentage: sentiment.percentages[name] ?? 0,
     }))
   }, [sentiment])
@@ -126,8 +166,10 @@ export function useCategoryAnalytics(
   )
 
   const totalIssues = categoryData.reduce((sum, c) => sum + c.value, 0)
+  // A label with no feedback may be absent from `percentages`; it counts as 0%
+  // (a present 0 already is 0, so `??` and the old `||` agree on every JSON value).
   const avgSentiment = sentiment
-    ? (sentiment.percentages.positive || 0) - (sentiment.percentages.negative || 0)
+    ? (sentiment.percentages.positive ?? 0) - (sentiment.percentages.negative ?? 0)
     : 0
 
   return {
@@ -135,10 +177,13 @@ export function useCategoryAnalytics(
     sentimentData,
     wordCloudData,
     allSources,
+    allChannels,
+    allTags,
     totalIssues,
     avgSentiment,
     sentimentPercentages: sentiment?.percentages ?? {},
     periodDays: categories?.period_days,
-    isLoading: categoriesLoading || sentimentLoading,
+    isLoading: categoriesQuery.isLoading || sentimentQuery.isLoading,
+    ...failedReads([categoriesQuery, sentimentQuery]),
   }
 }

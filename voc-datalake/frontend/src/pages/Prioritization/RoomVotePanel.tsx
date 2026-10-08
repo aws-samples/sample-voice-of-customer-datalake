@@ -24,8 +24,8 @@ import type { ReactElement } from 'react'
 function SessionStatus({ session }: { readonly session: VotingSession }): ReactElement {
   const { t } = useTranslation('prioritization')
   return (
-    <p className="text-sm text-indigo-900 flex items-center gap-1.5">
-      <Users size={14} className="text-indigo-500" />
+    <p className="text-sm text-text-strong flex items-center gap-1.5">
+      <Users size={14} className="text-aim" />
       {/* Plain interpolated numbers rather than a `count` plural: plural forms
           differ per locale and a missing one renders the raw key path in front of
           a room. Both numbers are shown, because "12 ballots" means something
@@ -117,24 +117,24 @@ export default function RoomVotePanel({
 
   if (sessionId === null || current === undefined) {
     return (
-      <div className="rounded-lg border border-indigo-100 bg-indigo-50 p-3 space-y-2">
-        <h4 className="font-medium text-indigo-900 flex items-center gap-1.5">
-          <QrCode size={14} className="text-indigo-500" />
+      <div className="rounded-lg border border-aim/30 bg-aim-subtle p-3 space-y-2">
+        <h4 className="font-medium text-text-strong flex items-center gap-1.5">
+          <QrCode size={14} className="text-aim" />
           {t('roomVote.title')}
         </h4>
-        <p className="text-sm text-indigo-800">{t('roomVote.description')}</p>
+        <p className="text-sm text-text">{t('roomVote.description')}</p>
         {/* Names the row the session will score. "One vote on this proposal" is what
             a facilitator has to be able to tell a room, and it is now true — the
             hedge this line used to carry (a PRD row and a PR/FAQ row being separate
             votes) is gone. */}
-        <p className="text-sm text-indigo-800">{t('roomVote.scopeNote', { title: rowTitle })}</p>
+        <p className="text-sm text-text">{t('roomVote.scopeNote', { title: rowTitle })}</p>
         {/* And that the one ballot covers the whole set, for a row that holds more
             than one document. Only then: on a single-document row there is nothing
             to clarify, which also lets the sentence be plural rather than a `count`
             plural whose forms differ per locale. `documents`, not `count`, because
             `count` is i18next's reserved plural option. */}
         {documentCount > 1 ? (
-          <p className="text-sm text-indigo-800">
+          <p className="text-sm text-text">
             {t('roomVote.scopeDocuments', { documents: documentCount })}
           </p>
         ) : null}
@@ -142,21 +142,21 @@ export default function RoomVotePanel({
           type="button"
           onClick={() => openMutation.mutate()}
           disabled={openMutation.isPending}
-          className="px-3 py-2 rounded-lg text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 disabled:text-gray-500"
+          className="btn btn-primary"
         >
           {openMutation.isPending ? t('roomVote.opening') : t('roomVote.open')}
         </button>
         {openMutation.isError ? (
-          <p role="alert" className="text-sm text-red-700">{t('roomVote.openFailed')}</p>
+          <p role="alert" className="text-sm text-danger">{t('roomVote.openFailed')}</p>
         ) : null}
       </div>
     )
   }
 
   return (
-    <div className="rounded-lg border border-indigo-100 bg-indigo-50 p-3 space-y-3">
-      <h4 className="font-medium text-indigo-900 flex items-center gap-1.5">
-        <QrCode size={14} className="text-indigo-500" />
+    <div className="rounded-lg border border-aim/30 bg-aim-subtle p-3 space-y-3">
+      <h4 className="font-medium text-text-strong flex items-center gap-1.5">
+        <QrCode size={14} className="text-aim" />
         {t('roomVote.title')}
       </h4>
       {isOpen ? (
@@ -170,12 +170,12 @@ export default function RoomVotePanel({
             type="button"
             onClick={() => closeMutation.mutate()}
             disabled={closeMutation.isPending}
-            className="px-3 py-2 rounded-lg text-sm font-medium text-indigo-800 bg-white border border-indigo-200 hover:bg-indigo-100 disabled:text-gray-400"
+            className="btn btn-secondary"
           >
             {closeMutation.isPending ? t('roomVote.closing') : t('roomVote.close')}
           </button>
           {closeMutation.isError ? (
-            <p role="alert" className="text-sm text-red-700">{t('roomVote.closeFailed')}</p>
+            <p role="alert" className="text-sm text-danger">{t('roomVote.closeFailed')}</p>
           ) : null}
         </>
       ) : (
@@ -190,7 +190,7 @@ export default function RoomVotePanel({
               candidates in a cleanup pass — leaving a raw key path in front of a
               room. Same trap `SCORABLE_TYPE_META` and the ballot page's
               `refusalMessage` document. */}
-          <p className="text-sm text-indigo-800">
+          <p className="text-sm text-text">
             {current.state === 'expired' ? t('roomVote.expired') : t('roomVote.closed')}
           </p>
           <SessionStatus session={current} />
@@ -201,7 +201,7 @@ export default function RoomVotePanel({
           <button
             type="button"
             onClick={startOver}
-            className="px-3 py-2 rounded-lg text-sm font-medium text-indigo-800 bg-white border border-indigo-200 hover:bg-indigo-100"
+            className="btn btn-secondary"
           >
             {t('roomVote.openAnother')}
           </button>
@@ -209,7 +209,7 @@ export default function RoomVotePanel({
       )}
       {/* Says what these ballots are, next to the count of them: they move the
           team's score and they attribute nothing to anybody. */}
-      <p className="text-xs text-indigo-800">{t('roomVote.anonymousNote')}</p>
+      <p className="text-xs text-text">{t('roomVote.anonymousNote')}</p>
     </div>
   )
 }

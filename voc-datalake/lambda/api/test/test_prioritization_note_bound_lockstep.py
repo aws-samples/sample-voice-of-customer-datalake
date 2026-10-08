@@ -69,7 +69,7 @@ class TestPrioritizationNoteBoundLockstep:
     def test_both_sides_bound_the_note_at_the_same_length(self):
         import projects_handler
 
-        assert projects_handler.MAX_BALLOT_NOTE_LEN == _frontend_bound(), (
+        assert _frontend_bound() == projects_handler.MAX_BALLOT_NOTE_LEN, (
             'MAX_BALLOT_NOTE_LEN and the frontend MAX_NOTE_LENGTH disagree. A '
             'lower page bound silently forbids notes the API accepts; a higher '
             'one lets the page send a note the API refuses, and `fetchApi` '

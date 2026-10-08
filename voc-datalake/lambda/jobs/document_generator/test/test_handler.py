@@ -1,7 +1,11 @@
 """Tests for document generator job handler (multi-step chain)."""
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
+
+from jobs.test.project_tables_fixtures import feedback_table_beside
+from shared.prototype_pins import inject_pin_widget, pin_form_id, strip_pin_widget
 
 
 class TestDocumentGeneratorHandler:
@@ -12,9 +16,9 @@ class TestDocumentGeneratorHandler:
         """Set default empty query response for all tests."""
         mock_dynamodb['table'].query.return_value = {'Items': []}
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse_chain", "mock_prompt_steps")
     def test_successful_prd_generation(
-        self, mock_dynamodb, mock_jobs_table, mock_converse_chain, mock_prompt_steps,
-        prd_generation_event, lambda_context
+        self, mock_converse_chain,         prd_generation_event, lambda_context
     ):
         """Test successful PRD generation using multi-step chain."""
         from jobs.document_generator.handler import lambda_handler
@@ -26,9 +30,9 @@ class TestDocumentGeneratorHandler:
         assert result['document_id'].startswith('prd_')
         mock_converse_chain.assert_called_once()
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse_chain", "mock_prompt_steps")
     def test_successful_prfaq_generation(
-        self, mock_dynamodb, mock_jobs_table, mock_converse_chain, mock_prompt_steps,
-        prfaq_generation_event, lambda_context
+        self, mock_converse_chain,         prfaq_generation_event, lambda_context
     ):
         """Test successful PR-FAQ generation using multi-step chain."""
         mock_converse_chain.return_value = [
@@ -44,8 +48,9 @@ class TestDocumentGeneratorHandler:
         assert result['document_id'].startswith('prfaq_')
         mock_converse_chain.assert_called_once()
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse_chain")
     def test_prd_uses_multi_step_chain_from_prompt_template(
-        self, mock_dynamodb, mock_jobs_table, mock_converse_chain, mock_prompt_steps,
+        self, mock_prompt_steps,
         prd_generation_event, lambda_context
     ):
         """PRD generation should use get_prd_generation_steps to build the chain."""
@@ -57,8 +62,9 @@ class TestDocumentGeneratorHandler:
         call_kwargs = mock_prompt_steps['prd'].call_args.kwargs
         assert call_kwargs['feature_idea'] == 'Improve user onboarding flow'
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table")
     def test_prfaq_uses_multi_step_chain_from_prompt_template(
-        self, mock_dynamodb, mock_jobs_table, mock_converse_chain, mock_prompt_steps,
+        self, mock_converse_chain, mock_prompt_steps,
         prfaq_generation_event, lambda_context
     ):
         """PR-FAQ generation should use get_prfaq_generation_steps to build the chain."""
@@ -74,9 +80,9 @@ class TestDocumentGeneratorHandler:
         call_kwargs = mock_prompt_steps['prfaq'].call_args.kwargs
         assert call_kwargs['feature_idea'] == 'New mobile app feature'
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse_chain", "mock_prompt_steps")
     def test_prd_stores_analysis_sections(
-        self, mock_dynamodb, mock_jobs_table, mock_converse_chain, mock_prompt_steps,
-        prd_generation_event, lambda_context
+        self, mock_dynamodb, mock_converse_chain,         prd_generation_event, lambda_context
     ):
         """PRD should store problem/solution analysis from intermediate chain steps."""
         mock_converse_chain.return_value = [
@@ -93,9 +99,9 @@ class TestDocumentGeneratorHandler:
         assert item['analysis']['solution'] == 'Solution design'
         assert item['content'] == 'Final PRD document'
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse_chain", "mock_prompt_steps")
     def test_prfaq_composes_full_document_from_chain_results(
-        self, mock_dynamodb, mock_jobs_table, mock_converse_chain, mock_prompt_steps,
-        prfaq_generation_event, lambda_context
+        self, mock_dynamodb, mock_converse_chain,         prfaq_generation_event, lambda_context
     ):
         """PR-FAQ should compose press release + FAQ sections into a single document."""
         mock_converse_chain.return_value = [
@@ -117,9 +123,9 @@ class TestDocumentGeneratorHandler:
         assert item['analysis']['press_release'] == 'The press release text'
         assert item['analysis']['customer_faq'] == 'Customer FAQ section'
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse_chain", "mock_prompt_steps")
     def test_document_saved_to_dynamodb(
-        self, mock_dynamodb, mock_jobs_table, mock_converse_chain, mock_prompt_steps,
-        prd_generation_event, lambda_context
+        self, mock_dynamodb,         prd_generation_event, lambda_context
     ):
         """Test that generated document is saved to DynamoDB."""
         from jobs.document_generator.handler import lambda_handler
@@ -138,9 +144,9 @@ class TestDocumentGeneratorHandler:
         assert 'created_at' in item
         assert item.get('feature_idea') == 'Improve user onboarding flow'
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse_chain", "mock_prompt_steps")
     def test_project_document_count_updated(
-        self, mock_dynamodb, mock_jobs_table, mock_converse_chain, mock_prompt_steps,
-        prd_generation_event, lambda_context
+        self, mock_dynamodb,         prd_generation_event, lambda_context
     ):
         """Test that project document_count is incremented after generation."""
         from jobs.document_generator.handler import lambda_handler
@@ -155,9 +161,9 @@ class TestDocumentGeneratorHandler:
         assert meta_update is not None, "Project META should be updated"
         assert 'document_count' in meta_update.kwargs.get('UpdateExpression', '')
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse_chain", "mock_prompt_steps")
     def test_job_status_updated_on_failure(
-        self, mock_dynamodb, mock_jobs_table, mock_converse_chain, mock_prompt_steps,
-        prd_generation_event, lambda_context
+        self, mock_jobs_table, mock_converse_chain,         prd_generation_event, lambda_context
     ):
         """Test that job status is updated to failed on error."""
         from jobs.document_generator.handler import lambda_handler
@@ -173,9 +179,9 @@ class TestDocumentGeneratorHandler:
         expr_values = update_call.kwargs.get('ExpressionAttributeValues', {})
         assert expr_values.get(':status') == 'failed'
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse_chain", "mock_prompt_steps")
     def test_progress_updates_during_generation(
-        self, mock_dynamodb, mock_jobs_table, mock_converse_chain, mock_prompt_steps,
-        prd_generation_event, lambda_context
+        self, mock_jobs_table,         prd_generation_event, lambda_context
     ):
         """Test that progress is updated at key stages."""
         from jobs.document_generator.handler import lambda_handler
@@ -185,28 +191,18 @@ class TestDocumentGeneratorHandler:
         update_calls = mock_jobs_table.update_item.call_args_list
         assert len(update_calls) >= 2, "Should have multiple progress updates"
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse_chain", "mock_prompt_steps")
     def test_gathers_feedback_when_enabled(
-        self, mock_dynamodb, mock_jobs_table, mock_converse_chain, mock_prompt_steps,
-        prd_generation_event, lambda_context
+        self, mock_dynamodb,         prd_generation_event, lambda_context
     ):
         """Test that feedback is gathered when data_sources.feedback is True."""
-        mock_feedback_table = MagicMock()
-        mock_feedback_table.query.return_value = {
-            'Items': [
-                {
-                    'original_text': 'Great app!',
-                    'source_platform': 'app_store',
-                    'sentiment_label': 'positive'
-                },
-            ]
-        }
-
-        def table_factory(name):
-            if 'feedback' in name.lower():
-                return mock_feedback_table
-            return mock_dynamodb['table']
-
-        mock_dynamodb['resource'].Table.side_effect = table_factory
+        mock_feedback_table = feedback_table_beside(mock_dynamodb, [
+            {
+                'original_text': 'Great app!',
+                'source_platform': 'app_store',
+                'sentiment_label': 'positive'
+            },
+        ])
 
         from jobs.document_generator.handler import lambda_handler
 
@@ -214,20 +210,13 @@ class TestDocumentGeneratorHandler:
 
         assert mock_feedback_table.query.called, "Feedback table should be queried"
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse_chain", "mock_prompt_steps")
     def test_skips_feedback_when_disabled(
-        self, mock_dynamodb, mock_jobs_table, mock_converse_chain, mock_prompt_steps,
-        prd_generation_event, lambda_context
+        self, mock_dynamodb,         prd_generation_event, lambda_context
     ):
         """Test that feedback is not gathered when data_sources.feedback is False."""
         prd_generation_event['doc_config']['data_sources']['feedback'] = False
-        mock_feedback_table = MagicMock()
-
-        def table_factory(name):
-            if 'feedback' in name.lower():
-                return mock_feedback_table
-            return mock_dynamodb['table']
-
-        mock_dynamodb['resource'].Table.side_effect = table_factory
+        mock_feedback_table = feedback_table_beside(mock_dynamodb)
 
         from jobs.document_generator.handler import lambda_handler
 
@@ -235,9 +224,26 @@ class TestDocumentGeneratorHandler:
 
         assert not mock_feedback_table.query.called, "Feedback table should not be queried"
 
+    def test_reads_feedback_within_the_starters_category_scope(self):
+        """The scope captured at job start reaches the feedback read."""
+        from unittest.mock import MagicMock, patch
+
+        from jobs.document_generator import handler
+        from shared.category_access import CategoryScope
+
+        doc_config = {
+            'data_sources': {'feedback': True},
+            'category_scope': {'all': False, 'categories': ['delivery']},
+        }
+        with patch.object(handler, 'query_feedback_by_date', return_value=[]) as fetch:
+            handler._gather_context(MagicMock(), MagicMock(), MagicMock(), 'p1', doc_config)
+
+        assert fetch.call_args.kwargs['category_scope'] == CategoryScope(
+            all=False, categories=frozenset({'delivery'}))
+
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse_chain", "mock_prompt_steps")
     def test_returns_title_in_result(
-        self, mock_dynamodb, mock_jobs_table, mock_converse_chain, mock_prompt_steps,
-        prd_generation_event, lambda_context
+        self,         prd_generation_event, lambda_context
     ):
         """Test that result includes the document title."""
         from jobs.document_generator.handler import lambda_handler
@@ -246,8 +252,9 @@ class TestDocumentGeneratorHandler:
 
         assert result.get('title') == 'Test PRD (v1)'
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse_chain")
     def test_passes_response_language_to_chain_steps(
-        self, mock_dynamodb, mock_jobs_table, mock_converse_chain, mock_prompt_steps,
+        self, mock_prompt_steps,
         prd_generation_event, lambda_context
     ):
         """Regression: response_language must be forwarded for CJK language support."""
@@ -260,9 +267,9 @@ class TestDocumentGeneratorHandler:
         call_kwargs = mock_prompt_steps['prd'].call_args.kwargs
         assert call_kwargs['response_language'] == 'ko'
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse_chain", "mock_prompt_steps")
     def test_chain_steps_passed_to_converse_chain(
-        self, mock_dynamodb, mock_jobs_table, mock_converse_chain, mock_prompt_steps,
-        prd_generation_event, lambda_context
+        self, mock_converse_chain,         prd_generation_event, lambda_context
     ):
         """The steps from get_prd_generation_steps should be passed directly to converse_chain."""
         from jobs.document_generator.handler import lambda_handler
@@ -304,6 +311,27 @@ class TestExtractHtml:
         assert _extract_html('') == ''
 
 
+PRD_1 = {'document_id': 'prd_1', 'content': 'PRD body', 'created_at': '2026-01-01'}
+
+
+def _revision_base_get_item(prototype_item: dict):
+    """A `get_item` double for a revision build whose base prototype is *prototype_item*.
+
+    Also answers the project META read and the keyed PRD read: the newest-of-type
+    read ranks over a projection, then fetches the winner by key.
+    """
+    def get_item(Key=None, **_kwargs):
+        sk = (Key or {}).get('sk', '')
+        if sk == 'META':
+            return {'Item': {'name': 'My Project'}}
+        if sk.startswith('PROTOTYPE#'):
+            return {'Item': prototype_item}
+        if sk == 'PRD#prd_1':
+            return {'Item': PRD_1}
+        return {}
+    return get_item
+
+
 class TestBuildPrototype:
     """Tests for the HTML prototype build path (Opus 5, iframe-rendered)."""
 
@@ -322,8 +350,9 @@ class TestBuildPrototype:
         }
         mock_dynamodb['table'].get_item.return_value = {'Item': {'name': 'My Project'}}
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_build_prototype_saves_html_with_format_marker(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context
+        self, mock_dynamodb, mock_converse, sample_job_event, lambda_context
     ):
         self._wire_tables(mock_dynamodb)
         mock_converse.return_value = self.HTML
@@ -345,8 +374,9 @@ class TestBuildPrototype:
         # request from prototypes/{project_id}/{document_id}.html.
         assert 'prototype_url' not in put_item
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table")
     def test_build_prototype_writes_html_to_s3(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context
+        self, mock_dynamodb, mock_converse, mock_s3, sample_job_event, lambda_context
     ):
         """The generated HTML is written to S3 under prototypes/{project_id}/{doc_id}.html."""
         self._wire_tables(mock_dynamodb)
@@ -358,14 +388,58 @@ class TestBuildPrototype:
         mock_s3.put_object.assert_called_once()
         put_kwargs = mock_s3.put_object.call_args.kwargs
         assert put_kwargs['Key'] == f"prototypes/proj_20250101120000/{result['document_id']}.html"
-        assert put_kwargs['Body'] == self.HTML.encode('utf-8')
+        # The model's HTML, plus the pin widget wired to this document's own form.
+        body = put_kwargs['Body'].decode('utf-8')
+        assert strip_pin_widget(body) == self.HTML
+        assert f"formId: '{pin_form_id(result['document_id'])}'" in body
         assert put_kwargs['ContentType'] == 'text/html; charset=utf-8'
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_s3")
+    def test_build_prototype_creates_one_pin_form_for_the_document(
+        self, mock_dynamodb, mock_converse, sample_job_event, lambda_context
+    ):
+        """§6.2: the build creates the document's prototype_pin form, conditionally."""
+        self._wire_tables(mock_dynamodb)
+        mock_converse.return_value = self.HTML
+
+        from jobs.document_generator.handler import lambda_handler
+        result = lambda_handler(self._prototype_event(sample_job_event), lambda_context)
+
+        form_puts = [c.kwargs for c in mock_dynamodb['table'].put_item.call_args_list
+                     if c.kwargs.get('Item', {}).get('pk') == 'FEEDBACK_FORM']
+        assert len(form_puts) == 1
+        form = form_puts[0]['Item']
+        assert form['form_type'] == 'prototype_pin'
+        assert form['form_id'] == pin_form_id(result['document_id'])
+        assert (form['project_id'], form['document_id']) == ('proj_20250101120000', result['document_id'])
+        assert form['enabled'] is True
+        assert form_puts[0]['ConditionExpression'] == 'attribute_not_exists(sk)'
+
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table")
+    def test_a_failed_pin_form_write_still_builds_the_prototype_without_the_widget(
+        self, mock_dynamodb, mock_converse, mock_s3, sample_job_event, lambda_context
+    ):
+        self._wire_tables(mock_dynamodb)
+        mock_converse.return_value = self.HTML
+        original_put = mock_dynamodb['table'].put_item.side_effect
+
+        def put_item(**kwargs):
+            if kwargs.get('Item', {}).get('pk') == 'FEEDBACK_FORM':
+                raise RuntimeError('throttled')
+            return original_put(**kwargs) if original_put else {}
+        mock_dynamodb['table'].put_item.side_effect = put_item
+
+        from jobs.document_generator.handler import lambda_handler
+        lambda_handler(self._prototype_event(sample_job_event), lambda_context)
+
+        assert mock_s3.put_object.call_args.kwargs['Body'] == self.HTML.encode('utf-8')
+
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_build_prototype_uses_prototype_surface(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context
+        self, mock_dynamodb, mock_converse, sample_job_event, lambda_context
     ):
         """The prototype build resolves its model through the 'prototype'
-        surface of the AI-model picker (whose default is Opus 5) instead of
+        surface of the AI-model picker (whose default is Opus 5.5) instead of
         hard-pinning a model id — admins can repoint it (issue #96)."""
         self._wire_tables(mock_dynamodb)
         mock_converse.return_value = self.HTML
@@ -376,11 +450,12 @@ class TestBuildPrototype:
 
         assert mock_converse.call_args.kwargs['surface'] == 'prototype'
         assert 'model_id' not in mock_converse.call_args.kwargs
-        # The surface's Automatic default remains the flagship Opus — now Opus 5.
-        assert surface_default('prototype') == 'global.anthropic.claude-opus-5'
+        # The surface's Automatic default remains the flagship Opus — now Opus 5.5.
+        assert surface_default('prototype') == 'global.anthropic.claude-opus-5-5'
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_build_prototype_passes_brand_and_language(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context
+        self, mock_dynamodb, mock_converse, sample_job_event, lambda_context
     ):
         self._wire_tables(mock_dynamodb)
         mock_converse.return_value = self.HTML
@@ -395,8 +470,9 @@ class TestBuildPrototype:
         assert 'UNNI' in prompt
         assert 'Korean' in prompt  # ko → Korean UI-text hint
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table")
     def test_build_prototype_feedback_revision_reads_prior_html_from_s3(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context
+        self, mock_dynamodb, mock_converse, mock_s3, sample_job_event, lambda_context
     ):
         """Feedback + base_prototype_id → prior HTML is read from S3 (new-style
         prototype with `prototype_url`, not `content`), fed into the prompt,
@@ -407,27 +483,14 @@ class TestBuildPrototype:
         }
         prior = '<!DOCTYPE html><html><body>OLD user-facing screens</body></html>'
 
-        def get_item(Key=None, **kwargs):
-            sk = (Key or {}).get('sk', '')
-            if sk == 'META':
-                return {'Item': {'name': 'My Project'}}
-            if sk.startswith('PROTOTYPE#'):
-                # New-style item: prototype_url present, no inline `content`.
-                return {
-                    'Item': {
-                        'document_id': 'prototype_20260101000000',
-                        'prototype_url': (
-                            'https://cdn.example.com/prototypes/'
-                            'proj_20250101120000/prototype_20260101000000.html'
-                        ),
-                    },
-                }
-            if sk == 'PRD#prd_1':
-                # The newest-of-type read ranks over a projection, then fetches the
-                # winner by key — so the double must answer that keyed read too.
-                return {'Item': {'document_id': 'prd_1', 'content': 'PRD body', 'created_at': '2026-01-01'}}
-            return {}
-        mock_dynamodb['table'].get_item.side_effect = get_item
+        # New-style item: prototype_url present, no inline `content`.
+        mock_dynamodb['table'].get_item.side_effect = _revision_base_get_item({
+            'document_id': 'prototype_20260101000000',
+            'prototype_url': (
+                'https://cdn.example.com/prototypes/'
+                'proj_20250101120000/prototype_20260101000000.html'
+            ),
+        })
 
         mock_body = MagicMock()
         mock_body.read.return_value = prior.encode('utf-8')
@@ -454,8 +517,9 @@ class TestBuildPrototype:
         assert put_item['revised_from_id'] == 'prototype_20260101000000'
         assert put_item['revision_feedback'] == 'Switch to the admin perspective'
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table")
     def test_build_prototype_feedback_revision_falls_back_to_legacy_content(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context
+        self, mock_dynamodb, mock_converse, mock_s3, sample_job_event, lambda_context
     ):
         """A pre-migration prototype (no `prototype_url`, has inline `content`)
         still works as a revision base — the regen path falls back to reading
@@ -466,17 +530,8 @@ class TestBuildPrototype:
         }
         prior = '<!DOCTYPE html><html><body>LEGACY prior prototype</body></html>'
 
-        def get_item(Key=None, **kwargs):
-            sk = (Key or {}).get('sk', '')
-            if sk == 'META':
-                return {'Item': {'name': 'My Project'}}
-            if sk.startswith('PROTOTYPE#'):
-                return {'Item': {'content': prior}}  # legacy shape, no prototype_url
-            if sk == 'PRD#prd_1':
-                # See the sibling test: the winner is fetched by key after ranking.
-                return {'Item': {'document_id': 'prd_1', 'content': 'PRD body', 'created_at': '2026-01-01'}}
-            return {}
-        mock_dynamodb['table'].get_item.side_effect = get_item
+        # Legacy shape, no prototype_url.
+        mock_dynamodb['table'].get_item.side_effect = _revision_base_get_item({'content': prior})
         mock_converse.return_value = self.HTML
 
         from jobs.document_generator.handler import lambda_handler
@@ -493,8 +548,9 @@ class TestBuildPrototype:
         prompt = mock_converse.call_args.kwargs['prompt']
         assert 'LEGACY prior prototype' in prompt
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_build_prototype_fails_without_source_documents(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context
+        self, mock_dynamodb, mock_converse, sample_job_event, lambda_context
     ):
         # No PRD/PRFAQ found → query returns empty.
         mock_dynamodb['table'].query.return_value = {'Items': []}
@@ -508,8 +564,9 @@ class TestBuildPrototype:
 
         mock_converse.assert_not_called()
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table")
     def test_build_prototype_fails_when_model_returns_no_html(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context
+        self, mock_dynamodb, mock_converse, mock_s3, sample_job_event, lambda_context
     ):
         self._wire_tables(mock_dynamodb)
         mock_converse.return_value = 'I cannot build that.'  # no HTML doc
@@ -555,8 +612,9 @@ class TestPrototypeVersionReplayAndStorage:
             'Item': {'name': 'My Project'},
         }
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table")
     def test_completed_replay_returns_before_sources_bedrock_or_s3(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3,
+        self, mock_dynamodb, mock_converse, mock_s3,
         sample_job_event, lambda_context,
     ):
         from unittest.mock import patch
@@ -591,13 +649,13 @@ class TestPrototypeVersionReplayAndStorage:
         mock_s3.head_object.assert_not_called()
         assert mock_dynamodb['transactions'] == []
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table")
     def test_persists_deterministic_s3_identity_in_the_four_item_transaction(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3,
+        self, mock_dynamodb, mock_converse, mock_s3,
         sample_job_event, lambda_context,
     ):
-        from shared.document_versions import versioned_document_id
-
         from jobs.document_generator.handler import lambda_handler
+        from shared.document_versions import versioned_document_id
 
         self._wire_source(mock_dynamodb)
         mock_converse.return_value = self.HTML
@@ -620,7 +678,7 @@ class TestPrototypeVersionReplayAndStorage:
         assert mock_s3.put_object.call_args.kwargs == {
             'Bucket': 'test-raw-data-bucket',
             'Key': expected_key,
-            'Body': self.HTML.encode('utf-8'),
+            'Body': inject_pin_widget(self.HTML, pin_form_id(expected_id)).encode('utf-8'),
             'ContentType': 'text/html; charset=utf-8',
             'IfNoneMatch': '*',
         }
@@ -642,18 +700,19 @@ class TestPrototypeVersionReplayAndStorage:
             'sk': 'META',
         }
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table")
     @pytest.mark.parametrize(
         'error_code',
         ['PreconditionFailed', 'ConditionalRequestConflict'],
     )
     def test_conditional_s3_conflict_heads_and_persists_the_winner(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3,
+        self, mock_dynamodb, mock_converse, mock_s3,
         sample_job_event, lambda_context, error_code,
     ):
         from botocore.exceptions import ClientError
-        from shared.document_versions import versioned_document_id
 
         from jobs.document_generator.handler import lambda_handler
+        from shared.document_versions import versioned_document_id
 
         self._wire_source(mock_dynamodb)
         mock_converse.return_value = self.HTML
@@ -720,8 +779,9 @@ class TestPrototypeVersionReplayAndStorage:
         )
         assert mock_dynamodb['transactions'] == []
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table")
     def test_revision_reads_current_s3_only_base_without_a_persisted_url(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3,
+        self, mock_dynamodb, mock_converse, mock_s3,
         sample_job_event, lambda_context,
     ):
         from jobs.document_generator.handler import lambda_handler
@@ -737,7 +797,7 @@ class TestPrototypeVersionReplayAndStorage:
             ],
         }
 
-        def get_item(Key=None, **kwargs):
+        def get_item(Key=None, **_kwargs):
             sk = (Key or {}).get('sk', '')
             if sk == 'META':
                 return {'Item': {'name': 'My Project'}}
@@ -787,11 +847,11 @@ class TestPrototypeVersionReplayAndStorage:
         assert 'prototype_url' not in document
 
 
+@pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table")
 @pytest.mark.parametrize('document_type', ['prd', 'prfaq'])
 def test_generated_document_replay_returns_before_context_or_model_work(
     document_type,
     mock_dynamodb,
-    mock_jobs_table,
     mock_converse_chain,
     mock_s3,
     sample_job_event,
@@ -833,11 +893,9 @@ def test_generated_document_replay_returns_before_context_or_model_work(
     assert mock_dynamodb['transactions'] == []
 
 
+@pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse_chain", "mock_prompt_steps")
 def test_execution_claim_stops_overlapping_direct_delivery_before_bedrock(
-    mock_dynamodb,
-    mock_jobs_table,
     mock_converse_chain,
-    mock_prompt_steps,
     prd_generation_event,
     lambda_context,
 ):

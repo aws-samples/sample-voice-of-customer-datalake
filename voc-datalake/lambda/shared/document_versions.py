@@ -17,9 +17,9 @@ import hashlib
 import re
 import time
 import unicodedata
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import uuid4
@@ -27,7 +27,7 @@ from uuid import uuid4
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
-from shared.exceptions import ServiceError, ValidationError
+from shared.exceptions import ConflictError, ServiceError, ValidationError
 from shared.logging import logger
 from shared.project_writes import (
     PROJECT_WRITABLE_ATTRIBUTE_NAMES,
@@ -45,6 +45,19 @@ VERSION_COUNTER_PREFIX = 'DOCUMENT_VERSIONS#PROJECT#'
 LEGACY_ASSIGNMENT_PREFIX = 'LEGACY_ASSIGNMENT#'
 ALLOCATION_PREFIX = 'ALLOCATION#'
 VERSION_SUFFIX_RE = re.compile(r'\s+\(v([1-9]\d*)\)$', re.IGNORECASE)
+# Type labels a display title may end with (`'X — PRD'`); not part of the series key.
+DOCUMENT_TYPE_TITLE_LABELS: dict[str, tuple[str, ...]] = {
+    'prd': ('PRD',),
+    'prfaq': ('PR/FAQ', 'PR-FAQ', 'PRFAQ'),
+}
+_TYPE_SUFFIX_RES: dict[str, re.Pattern[str]] = {
+    document_type: re.compile(
+        # whitespace, an em dash / en dash / hyphen, the label, end of title
+        r'\s+[\u2014\u2013-]\s*(?:' + '|'.join(re.escape(label) for label in labels) + r')$',
+        re.IGNORECASE,
+    )
+    for document_type, labels in DOCUMENT_TYPE_TITLE_LABELS.items()
+}
 VERSION_WRITE_ATTEMPTS = 4
 VERSION_WRITE_BACKOFF_SECONDS = 0.025
 LEGACY_MIGRATION_LEASE_SECONDS = 5
@@ -96,18 +109,44 @@ def split_versioned_title(title: object) -> tuple[str, int | None]:
     return base_title, version
 
 
-def normalized_base_title(title: object) -> str:
-    """Stable series key for a base or already-versioned title."""
+def series_base_title(title: object, document_type: str) -> str:
+    """The base title with its ``(vN)`` and any own-type label suffix removed.
+
+    The project wizard labels a PRD and a PR/FAQ generated together
+    (``'X — PRD'`` / ``'X — PR/FAQ'``) so the two can be told apart, while a
+    single-type generation (wizard or assistant) asks for plain ``'X'``.  Both
+    are the same series, so the series identity drops a trailing
+    `` — <label>`` naming *this* document's type — never another type's.
+    Mirrored by ``documentSeriesKey`` in the frontend's generatedDocTitle.ts.
+    """
     base_title, _ = split_versioned_title(title)
-    return base_title.casefold()
+    pattern = _TYPE_SUFFIX_RES.get(document_type)
+    match = pattern.search(base_title) if pattern else None
+    if match and match.start() > 0:
+        return base_title[:match.start()].rstrip()
+    return base_title
 
 
-def canonical_document_title(base_title: str, version: int) -> str:
+def normalized_base_title(title: object, document_type: str) -> str:
+    """Stable series key, within *document_type*, for a base or versioned title."""
+    return series_base_title(title, document_type).casefold()
+
+
+def canonical_document_title(base_title: str, version: object) -> str:
     """The one display title every surface consumes, including version one."""
     if isinstance(version, bool) or not isinstance(version, int) or version < 1:
         raise ValueError('Document version must be a positive integer')
     clean_base, _ = split_versioned_title(base_title)
     return f'{clean_base} (v{version})'
+
+
+def _creation_order(document: dict[str, Any]) -> tuple[str, str, str]:
+    """The stable ``created_at``/``document_id``/``sk`` order documents are ranked in."""
+    return (
+        str(document.get('created_at') or ''),
+        str(document.get('document_id') or ''),
+        str(document.get('sk') or ''),
+    )
 
 
 def normalize_document_versions(documents: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -129,18 +168,13 @@ def normalize_document_versions(documents: Iterable[dict[str, Any]]) -> list[dic
             base_title, suffix_version = split_versioned_title(raw_base)
         except ValidationError:
             base_title, suffix_version = 'Untitled', None
-        normalized = normalized_base_title(base_title)
+        normalized = normalized_base_title(base_title, document_type)
         persisted_version = _positive_int(document.get('version'))
         candidate = _VersionCandidate(
             index=index,
             base_title=base_title,
-            normalized_base=normalized,
             claimed_version=persisted_version or suffix_version,
-            rank=(
-                str(document.get('created_at') or ''),
-                str(document.get('document_id') or ''),
-                str(document.get('sk') or ''),
-            ),
+            rank=_creation_order(document),
         )
         groups.setdefault((document_type, normalized), []).append(candidate)
 
@@ -198,9 +232,9 @@ def persist_legacy_document_versions(
             continue
         raw_base = document.get('base_title') or document.get('title') or 'Untitled'
         try:
-            normalized = normalized_base_title(raw_base)
+            normalized = normalized_base_title(raw_base, document_type)
         except ValidationError:
-            normalized = normalized_base_title('Untitled')
+            normalized = normalized_base_title('Untitled', document_type)
         groups.setdefault((document_type, normalized), []).append(index)
 
     for (document_type, normalized), indices in groups.items():
@@ -210,8 +244,8 @@ def persist_legacy_document_versions(
         planned = _persist_legacy_series(
             table, project_id, document_type, normalized, originals,
         )
-        for index, document in zip(indices, planned, strict=True):
-            output[index] = document
+        for position, index in enumerate(indices):
+            output[index] = planned[position]
 
     return output
 
@@ -230,7 +264,7 @@ def _persist_legacy_series(
     planned = _plan_legacy_series(
         documents, assignments, counter.get('base_title'), counter_floor,
     )
-    high_water = max(_positive_int(document.get('version')) or 0 for document in planned)
+    high_water = max(document['version'] for document in planned)
     owner = uuid4().hex
 
     acquired_floor = _acquire_legacy_migration(
@@ -251,14 +285,15 @@ def _persist_legacy_series(
         planned = _plan_legacy_series(
             documents, assignments, counter.get('base_title'), acquired_floor,
         )
-        high_water = max(_positive_int(document.get('version')) or 0 for document in planned)
+        high_water = max(document['version'] for document in planned)
         _raise_locked_high_water(table, counter_key, high_water, owner)
 
         assignment_by_document = {
             str(item.get('source_document_sk') or ''): item
             for item in assignments
         }
-        for original, canonical in zip(documents, planned, strict=True):
+        for position, original in enumerate(documents):
+            canonical = planned[position]
             identity = str(original.get('sk') or '')
             if not identity:
                 raise ServiceError('Legacy managed document has no sort key')
@@ -290,20 +325,34 @@ def _plan_legacy_series(
     counter_base: object,
     counter_floor: int,
 ) -> list[dict[str, Any]]:
-    ordered = sorted(
-        documents,
-        key=lambda document: (
-            str(document.get('created_at') or ''),
-            str(document.get('document_id') or ''),
-            str(document.get('sk') or ''),
-        ),
-    )
+    ordered = sorted(documents, key=_creation_order)
     first_base = ordered[0].get('base_title') or ordered[0].get('title') or 'Untitled'
     try:
         display_base, _ = split_versioned_title(counter_base or first_base)
     except ValidationError:
         display_base = 'Untitled'
 
+    historical, used_by = _historical_legacy_versions(assignments)
+    assigned = _assign_persisted_legacy_versions(ordered, historical, used_by)
+    _assign_unpersisted_legacy_versions(ordered, assigned, used_by, counter_floor)
+
+    planned = []
+    for document in documents:
+        canonical = dict(document)
+        version = assigned[str(document.get('sk') or '')]
+        canonical.update({
+            'base_title': display_base,
+            'version': version,
+            'title': canonical_document_title(display_base, version),
+        })
+        planned.append(canonical)
+    return planned
+
+
+def _historical_legacy_versions(
+    assignments: list[dict[str, Any]],
+) -> tuple[dict[str, int], dict[int, str]]:
+    """Durable assignment rows → (identity → version, version → identity)."""
     historical: dict[str, int] = {}
     used_by: dict[int, str] = {}
     for assignment in assignments:
@@ -316,7 +365,15 @@ def _plan_legacy_series(
             raise ServiceError('Duplicate persisted legacy document versions detected')
         historical[identity] = version
         used_by[version] = identity
+    return historical, used_by
 
+
+def _assign_persisted_legacy_versions(
+    ordered: list[dict[str, Any]],
+    historical: dict[str, int],
+    used_by: dict[int, str],
+) -> dict[str, int]:
+    """Honour assignment rows first, then versions already on the documents."""
     assigned: dict[str, int] = {}
     for document in ordered:
         identity = str(document.get('sk') or '')
@@ -334,45 +391,60 @@ def _plan_legacy_series(
             raise ServiceError('Duplicate persisted document versions detected')
         assigned[identity] = persisted
         used_by[persisted] = identity
+    return assigned
 
+
+def _unassigned_documents(
+    ordered: list[dict[str, Any]], assigned: dict[str, int],
+) -> Iterator[tuple[str, dict[str, Any]]]:
+    """Yield ``(identity, document)`` for each document not yet in *assigned*.
+
+    Checked lazily, so a document assigned while iterating is honoured.
+    """
     for document in ordered:
         identity = str(document.get('sk') or '')
-        if identity in assigned:
-            continue
-        raw_title = document.get('title') or document.get('base_title') or 'Untitled'
-        try:
-            _, suffix_version = split_versioned_title(raw_title)
-        except ValidationError:
-            suffix_version = None
-        if (
-            suffix_version is not None
-            and suffix_version > counter_floor
-            and suffix_version not in used_by
-        ):
+        if identity not in assigned:
+            yield identity, document
+
+
+def _legacy_suffix_version(
+    document: dict[str, Any], counter_floor: int, used_by: dict[int, str],
+) -> int | None:
+    """The document's unused legacy ``(vN)`` title suffix above the floor, if any."""
+    raw_title = document.get('title') or document.get('base_title')
+    try:
+        _, suffix_version = split_versioned_title(raw_title)
+    except ValidationError:
+        return None
+    if suffix_version is None or suffix_version <= counter_floor or suffix_version in used_by:
+        return None
+    return suffix_version
+
+
+def _assign_unpersisted_legacy_versions(
+    ordered: list[dict[str, Any]],
+    assigned: dict[str, int],
+    used_by: dict[int, str],
+    counter_floor: int,
+) -> None:
+    """Version the documents with no persisted version, in two passes.
+
+    First reserve unused legacy ``(vN)`` title suffixes above the counter
+    floor; then give every still-unassigned document the lowest free version
+    above the floor.
+    """
+    for identity, document in _unassigned_documents(ordered, assigned):
+        suffix_version = _legacy_suffix_version(document, counter_floor, used_by)
+        if suffix_version is not None:
             assigned[identity] = suffix_version
             used_by[suffix_version] = identity
 
     next_free = counter_floor + 1
-    for document in ordered:
-        identity = str(document.get('sk') or '')
-        if identity in assigned:
-            continue
+    for identity, _document in _unassigned_documents(ordered, assigned):
         while next_free in used_by:
             next_free += 1
         assigned[identity] = next_free
         used_by[next_free] = identity
-
-    planned = []
-    for document in documents:
-        canonical = dict(document)
-        version = assigned[str(document.get('sk') or '')]
-        canonical.update({
-            'base_title': display_base,
-            'version': version,
-            'title': canonical_document_title(display_base, version),
-        })
-        planned.append(canonical)
-    return planned
 
 
 def _requires_legacy_persistence(document: dict[str, Any]) -> bool:
@@ -380,10 +452,7 @@ def _requires_legacy_persistence(document: dict[str, Any]) -> bool:
     base_title = document.get('base_title')
     if version is None or not isinstance(base_title, str) or not base_title.strip():
         return True
-    try:
-        return document.get('title') != canonical_document_title(base_title, version)
-    except ValidationError:
-        return True
+    return document.get('title') != canonical_document_title(base_title, version)
 
 
 def _legacy_assignment_prefix(counter_key: dict[str, str]) -> str:
@@ -425,8 +494,10 @@ def _query_legacy_assignments(
 
 
 def _migration_backoff_seconds(attempt: int) -> float:
+    # Any cap of 4 or more is equivalent: 0.025 s * 2**4 already exceeds the 0.25 s ceiling.
+    exponent = min(attempt, 4)  # pragma: no mutate  a larger cap is clamped by the ceiling
     return min(
-        VERSION_WRITE_BACKOFF_SECONDS * (2 ** min(attempt, 4)),
+        VERSION_WRITE_BACKOFF_SECONDS * (2 ** exponent),
         LEGACY_MIGRATION_POLL_MAX_SECONDS,
     )
 
@@ -482,7 +553,7 @@ def _acquire_legacy_migration(
             counter = _get_item(table, counter_key)
             now_epoch = int(time.time())
             expires_at = now_epoch + LEGACY_MIGRATION_LEASE_SECONDS
-            now = datetime.now(timezone.utc).isoformat()
+            now = datetime.now(UTC).isoformat()
             observed = _positive_int(counter.get('last_version')) if counter else None
             stored_normalized = counter.get('normalized_base_title') if counter else None
             if stored_normalized not in (None, normalized):
@@ -509,7 +580,7 @@ def _acquire_legacy_migration(
                 }
             else:
                 expression_values: dict[str, Any] = {
-                    ':last': max(observed or 0, high_water),
+                    ':last': max(observed or high_water, high_water),
                     ':base': str(counter.get('base_title') or display_base),
                     ':normalized': normalized,
                     ':owner': owner,
@@ -548,7 +619,6 @@ def _acquire_legacy_migration(
                 _project_writable_condition(table_name, project_id),
                 counter_write,
             ])
-            return observed or 0
         except ClientError as error:
             code = error.response.get('Error', {}).get('Code')
             if code == 'TransactionCanceledException' and not _project_accepts_writes(
@@ -571,6 +641,8 @@ def _acquire_legacy_migration(
                 ) from error
             time.sleep(min(_migration_backoff_seconds(attempt), remaining))
             attempt += 1
+        else:
+            return observed or 0
 
 
 def _raise_locked_high_water(
@@ -607,10 +679,9 @@ def _raise_locked_high_water(
                     ':observed': observed,
                     ':owner': owner,
                     ':now_epoch': now_epoch,
-                    ':now': datetime.now(timezone.utc).isoformat(),
+                    ':now': datetime.now(UTC).isoformat(),
                 },
             )
-            return
         except ClientError as error:
             retryable = _conditional_failure(error) or _transient(error)
             if retryable and attempt + 1 < VERSION_WRITE_ATTEMPTS:
@@ -621,6 +692,8 @@ def _raise_locked_high_water(
                     'Could not reserve legacy document versions. Please retry.'
                 ) from error
             raise
+        else:
+            return
 
 
 def _renew_legacy_migration(
@@ -641,10 +714,9 @@ def _renew_legacy_migration(
                     ':owner': owner,
                     ':now_epoch': now_epoch,
                     ':expires': now_epoch + LEGACY_MIGRATION_LEASE_SECONDS,
-                    ':now': datetime.now(timezone.utc).isoformat(),
+                    ':now': datetime.now(UTC).isoformat(),
                 },
             )
-            return
         except ClientError as error:
             if _conditional_failure(error):
                 raise ServiceError(
@@ -659,6 +731,8 @@ def _renew_legacy_migration(
                     'Could not renew document version migration. Please retry.'
                 ) from error
             raise
+        else:
+            return
 
 
 def _legacy_assignment_item(
@@ -787,29 +861,10 @@ def _persist_legacy_identity(
     for attempt in range(VERSION_WRITE_ATTEMPTS):
         try:
             table.meta.client.transact_write_items(TransactItems=transaction)
-            return
         except ClientError as error:
-            source_key = {'pk': original['pk'], 'sk': original['sk']}
-            current = _get_item(table, source_key)
-            if not current:
-                return
-            identity_matches = all(
-                current.get(key) == canonical[key]
-                for key in ('base_title', 'version', 'title')
-            )
-            assignment_matches = not assignment_required
-            if assignment_required:
-                assignment = _get_item(
-                    table,
-                    _legacy_assignment_key(
-                        counter_key, str(original.get('sk') or '')
-                    ),
-                )
-                assignment_matches = (
-                    assignment.get('source_document_sk') == original.get('sk')
-                    and _positive_int(assignment.get('version')) == canonical['version']
-                )
-            if identity_matches and assignment_matches:
+            if _legacy_identity_settled(
+                table, counter_key, original, canonical, assignment_required,
+            ):
                 return
             transient = _transient(error)
             if transient and attempt + 1 < VERSION_WRITE_ATTEMPTS:
@@ -825,6 +880,39 @@ def _persist_legacy_identity(
                     'Please retry.'
                 ) from error
             raise
+        else:
+            return
+
+
+def _legacy_identity_settled(
+    table,
+    counter_key: dict[str, str],
+    original: dict[str, Any],
+    canonical: dict[str, Any],
+    assignment_required: bool,
+) -> bool:
+    """After a refused write: is the document gone, or already in its canonical state?"""
+    source_key = {'pk': original['pk'], 'sk': original['sk']}
+    current = _get_item(table, source_key)
+    if not current:
+        return True
+    identity_matches = all(
+        current.get(key) == canonical[key]
+        for key in ('base_title', 'version', 'title')
+    )
+    assignment_matches = not assignment_required
+    if assignment_required:
+        assignment = _get_item(
+            table,
+            _legacy_assignment_key(
+                counter_key, str(original.get('sk') or '')
+            ),
+        )
+        assignment_matches = (
+            assignment.get('source_document_sk') == original.get('sk')
+            and _positive_int(assignment.get('version')) == canonical['version']
+        )
+    return identity_matches and assignment_matches
 
 
 def _release_legacy_migration(
@@ -843,7 +931,7 @@ def _release_legacy_migration(
             },
             ExpressionAttributeValues={
                 ':owner': owner,
-                ':now': datetime.now(timezone.utc).isoformat(),
+                ':now': datetime.now(UTC).isoformat(),
             },
         )
     except ClientError as error:
@@ -862,9 +950,9 @@ def _conditional_failure(error: ClientError) -> bool:
 
 
 def versioned_document_id(
-    project_id: str,
-    document_type: str,
-    allocation_id: str,
+    project_id: object,
+    document_type: object,
+    allocation_id: object,
 ) -> str:
     """Return the validated deterministic id for one allocation.
 
@@ -1101,6 +1189,8 @@ def persist_versioned_document(
     requested_title: object,
     allocation_id: str,
     item_fields: dict[str, Any],
+    *,
+    expected_last_version: int | None = None,
 ) -> dict[str, Any]:
     """Atomically persist one version-managed document and return its item.
 
@@ -1108,10 +1198,16 @@ def persist_versioned_document(
     merged documents). It produces a deterministic document key, while the
     allocation record remains after deletion so delayed retries cannot recreate
     a generated document at a later version.
+
+    ``expected_last_version`` (an edit from a client that loaded the series at
+    that version) makes a series that moved on a ConflictError instead of the
+    next version on top: the counter write is conditioned on it, and a moved
+    counter is not retried. A replay of an allocation that already landed still
+    returns its document (checked first).
     """
     document_id = versioned_document_id(project_id, document_type, allocation_id)
     requested_base, _ = split_versioned_title(requested_title)
-    requested_normalized = normalized_base_title(requested_base)
+    requested_normalized = normalized_base_title(requested_base, document_type)
     table_name = getattr(table, 'name', None)
     if not isinstance(table_name, str) or not table_name:
         raise ValueError('Projects table name is required for document persistence')
@@ -1136,16 +1232,18 @@ def persist_versioned_document(
         for document in legacy_documents
     ):
         persist_legacy_document_versions(table, project_id, legacy_documents)
+    series_base, series_high_water = _series_state(
+        legacy_documents, document_type, requested_normalized, requested_base,
+    )
 
     for attempt in range(VERSION_WRITE_ATTEMPTS):
         counter = _wait_for_legacy_migration(table, counter_key)
         observed_version = _positive_int(counter.get('last_version')) if counter else None
 
         if observed_version is None:
-            display_base, high_water = _series_state(
-                legacy_documents, document_type, requested_normalized, requested_base,
-            )
-            candidate_version = high_water + 1
+            display_base = series_base
+            _require_expected_version(expected_last_version, series_high_water)
+            candidate_version = series_high_water + 1
             counter_write = {
                 'Put': {
                     'TableName': table_name,
@@ -1162,7 +1260,12 @@ def persist_versioned_document(
             }
         else:
             display_base = str(counter.get('base_title') or requested_base)
-            candidate_version = observed_version + 1
+            # A counter can trail its series' documents when two stored series
+            # now share one identity (pre-fix '<t> — PRD' and '<t>' PRDs each
+            # counted their own v1); continue past every version in use.
+            series_head = max(observed_version, series_high_water)
+            _require_expected_version(expected_last_version, series_head)
+            candidate_version = series_head + 1
             counter_write = {
                 'Update': {
                     'TableName': table_name,
@@ -1245,7 +1348,6 @@ def persist_versioned_document(
 
         try:
             table.meta.client.transact_write_items(TransactItems=transaction)
-            return item
         except ClientError as error:
             replay = get_versioned_document_by_allocation(
                 table, project_id, document_type, allocation_id,
@@ -1260,24 +1362,21 @@ def persist_versioned_document(
                 raise ServiceError(
                     'Project deletion has started; documents cannot be created.'
                 ) from error
-            migration_active = _legacy_migration_active(
-                _get_item(table, counter_key),
-            )
-            retryable = (
-                _counter_moved(table, counter_key, observed_version)
-                or migration_active
-                or _transient(error)
+            retryable = _allocation_retryable(
+                table, counter_key, observed_version, error, expected_last_version,
             )
             if retryable and attempt + 1 < VERSION_WRITE_ATTEMPTS:
                 time.sleep(VERSION_WRITE_BACKOFF_SECONDS * (2 ** attempt))
                 continue
             if retryable:
-                logger.error(
+                logger.exception(
                     'Document version allocation exhausted retries',
                     extra={'project_id': project_id, 'document_type': document_type},
                 )
                 raise ServiceError('Could not allocate a document version. Please retry.') from error
             raise
+        else:
+            return item
 
     raise ServiceError('Could not allocate a document version. Please retry.')
 
@@ -1288,16 +1387,23 @@ class _VersionCandidate:
 
     index: int
     base_title: str
-    normalized_base: str
     claimed_version: int | None
     rank: tuple[str, str, str]
+
+
+def managed_document_type(document: dict[str, Any]) -> str | None:
+    """The managed type (prd / prfaq / prototype) of a stored document, else None.
+
+    Legacy rows carry no ``document_type`` and are recognised by sort-key prefix.
+    """
+    return _managed_document_type(document)
 
 
 def _managed_document_type(document: dict[str, Any]) -> str | None:
     document_type = document.get('document_type')
     if document_type in VERSIONED_DOCUMENT_TYPES:
         return str(document_type)
-    sk = str(document.get('sk') or '')
+    sk = str(document.get('sk'))
     if sk.startswith('PRD#'):
         return 'prd'
     if sk.startswith('PRFAQ#'):
@@ -1368,9 +1474,10 @@ def _query_project_documents(table, project_id: str) -> list[dict[str, Any]]:
             return documents
         page_items = response.get('Items')
         if isinstance(page_items, list):
-            for item in page_items:
-                if isinstance(item, dict) and _managed_document_type(item) is not None:
-                    documents.append(item)
+            documents.extend(
+                item for item in page_items
+                if isinstance(item, dict) and _managed_document_type(item) is not None
+            )
         cursor = response.get('LastEvaluatedKey')
         if not isinstance(cursor, dict) or not cursor:
             return documents
@@ -1387,12 +1494,12 @@ def _series_state(
     matching = [
         document for document in normalized_documents
         if _managed_document_type(document) == document_type
-        and normalized_base_title(document.get('base_title') or document.get('title')) == normalized
+        and normalized_base_title(document['base_title'], document_type) == normalized
     ]
     if not matching:
         return fallback_base, 0
-    display_base = str(matching[0].get('base_title') or fallback_base)
-    return display_base, max(_positive_int(document.get('version')) or 0 for document in matching)
+    # normalize_document_versions gives every managed row a base title and an int version.
+    return str(matching[0]['base_title']), max(document['version'] for document in matching)
 
 
 def _counter_moved(table, key: dict[str, str], observed: int | None) -> bool:
@@ -1401,13 +1508,47 @@ def _counter_moved(table, key: dict[str, str], observed: int | None) -> bool:
     return current_version != observed
 
 
+STALE_SERIES_MESSAGE = 'The document was changed by someone else; reload it and try again'
+
+
+def _require_expected_version(expected: int | None, current: int) -> None:
+    """A ConflictError when the caller loaded the series at another version than its head."""
+    if expected is not None and expected != current:
+        raise ConflictError(STALE_SERIES_MESSAGE)
+
+
+def _allocation_retryable(
+    table, counter_key: dict[str, str], observed: int | None, error: ClientError, expected: int | None,
+) -> bool:
+    """Whether a refused allocation is worth another attempt.
+
+    A moved counter normally is (take the next number). Not when the caller named
+    the version it loaded: another save took the next version while this one was in
+    flight, and landing on top of it is exactly the overwrite the check prevents.
+    """
+    migration_active = _legacy_migration_active(_get_item(table, counter_key))
+    counter_moved = _counter_moved(table, counter_key, observed)
+    if counter_moved and expected is not None:
+        raise ConflictError(STALE_SERIES_MESSAGE) from error
+    return counter_moved or migration_active or _transient(error)
+
+
+def _cancellation_reasons(error: ClientError) -> object:
+    """The raw ``CancellationReasons`` field, deliberately untyped.
+
+    The stubs promise a list of typed dicts, but the field may be absent or
+    shaped differently on the wire, so callers validate every level.
+    """
+    return error.response.get('CancellationReasons')
+
+
 def _transient(error: ClientError) -> bool:
     code = error.response.get('Error', {}).get('Code')
     if code in _TRANSIENT_ERROR_CODES:
         return True
     if code != 'TransactionCanceledException':
         return False
-    reasons = error.response.get('CancellationReasons')
+    reasons = _cancellation_reasons(error)
     if not isinstance(reasons, list):
         # Python DynamoDB responses may omit cancellation reasons. The retry
         # budget is bounded and each attempt first checks for a committed replay.

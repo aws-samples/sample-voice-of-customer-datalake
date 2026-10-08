@@ -1,24 +1,4 @@
 {
-  "autoseed": {
-    "copyFailed": "复制失败 — 请重试。",
-    "copyKiroPrompt": "复制 Kiro 提示词",
-    "description": "选择人物角色和文档以导入到 Kiro 工作区",
-    "deselectAll": "取消全选",
-    "docTypes": {
-      "custom": "自定义",
-      "prd": "PRD 文档",
-      "prfaq": "PR/FAQ 文档",
-      "product_report": "产品报告",
-      "research": "研究"
-    },
-    "documents": "文档 ({{selected}}/{{total}})",
-    "generatedPrompt": "生成的 Kiro 提示词",
-    "generateFirst": "请先生成人物角色或文档以使用自动导入功能。",
-    "pasteHint": "将此内容粘贴到 Kiro 聊天中。需要从 MCP 访问标签页获取 API 令牌。",
-    "personas": "人物角色 ({{selected}}/{{total}})",
-    "selectAll": "全选",
-    "title": "Kiro 自动导入"
-  },
   "chat": {
     "askPlaceholder": "询问关于您的项目...",
     "attachFile": "附加图片或 PDF",
@@ -28,7 +8,7 @@
     "fileTooLarge": "文件过大（最大 5MB）：{{name}}",
     "mentionHint": "输入 <at> 提及人物角色，<atAll> 提及圆桌讨论，或 <hash> 提及文档",
     "projectAiChat": "项目 AI 聊天",
-    "roundtable": "🎙️ 圆桌讨论：全部 {{count}} 个人物角色",
+    "roundtable": "圆桌讨论：全部 {{count}} 个人物角色",
     "send": "发送消息",
     "startConversation": "开始对话",
     "stop": "停止",
@@ -44,6 +24,9 @@
   },
   "documentModal": {
     "cancel": "取消",
+    "conflict": "在此期间，有人保存了此文档的更新版本。",
+    "conflictReload": "加载最新版本",
+    "conflictSaveAnyway": "仍然保存我的修改",
     "contentLabel": "内容（Markdown）",
     "contentPlaceholder": "用 Markdown 编写您的文档...",
     "create": "创建",
@@ -80,6 +63,28 @@
     "newDocument": "新建文档",
     "noDocuments": "无文档",
     "ordinal": "第 {{ordinal}} 个，共 {{total}} 个",
+    "versions": {
+      "title": "版本",
+      "hint": "每次编辑都会保存一个新版本。可以打开或比较较早的版本，或将其恢复为新版本。",
+      "label": "v{{n}}",
+      "current": "当前",
+      "edited": "已编辑",
+      "restoredFrom": "从 v{{n}} 恢复",
+      "open": "打开",
+      "openNamed": "打开 {{label}}",
+      "compare": "比较",
+      "compareNamed": "将 {{label}} 与当前版本比较",
+      "compareTitle": "{{label}} 与当前版本的比较",
+      "identical": "此版本与当前版本相同。",
+      "restore": "恢复",
+      "restoreNamed": "恢复 {{label}}",
+      "restoreTitle": "恢复此版本？",
+      "restoreMessage": "将以 v{{n}} 的内容保存一个新版本。当前版本仍保留在列表中。",
+      "restoreFailed": "无法恢复该版本，请重试。",
+      "loadFailed": "无法加载版本。",
+      "close": "关闭",
+      "cancel": "取消"
+    },
     "prototype": {
       "building": "构建中…",
       "button": "构建原型",
@@ -120,15 +125,6 @@
       "heading": "修订自"
     },
     "selectDocument": "选择文档"
-  },
-  "export": {
-    "copyContext": "复制到剪贴板",
-    "copyCopied": "已复制！",
-    "copyFailed": "复制失败 — 请重试。",
-    "description": "将项目上下文复制到剪贴板 — 无需 API 令牌",
-    "emptyHint": "请先生成用户角色或文档以启用导出。",
-    "selectAtLeastOne": "请在每个部分中至少选择一项，否则导出将包含全部内容。",
-    "title": "导出"
   },
   "imageErrors": {
     "tooLarge": "{{name}} 压缩后仍然过大。请使用更小的截图，或先裁剪。",
@@ -200,85 +196,6 @@
       "importPersona": "用户角色导入",
       "mergeDocuments": "文档合并",
       "research": "研究"
-    }
-  },
-  "kiroExport": {
-    "cancel": "取消",
-    "configure": "配置",
-    "description": "配置\"复制到 Kiro\"导出的上下文",
-    "edit": "编辑",
-    "noPrompt": "未配置 Kiro 导出提示词",
-    "noPromptHint": "点击\"配置\"为 PRD 导出添加实现上下文",
-    "save": "保存",
-    "saved": "已保存！",
-    "templateHint": "使用\"复制到 Kiro\"时，此上下文将添加到 PRD/PR-FAQ 文档前面。包括您的技术栈、编码规范和实现指南。",
-    "templateLabel": "导出提示词模板",
-    "title": "Kiro 导出设置",
-    "useDefault": "使用默认模板",
-    "usingDefault": "正在使用默认说明。点击\"{{action}}\"可编写自己的说明。"
-  },
-  "mcp": {
-    "activeTokens": "活跃令牌 ({{count}})",
-    "activeTokens_one": "活跃令牌 ({{count}})",
-    "activeTokens_other": "活跃令牌 ({{count}})",
-    "cancel": "取消",
-    "collapseLabel": "收起",
-    "copied": "已复制",
-    "copy": "复制",
-    "copyToken": "复制令牌到剪贴板",
-    "copyTokenNow": "立即复制此令牌 — 之后将不再显示。",
-    "createdDate": "创建于 {{date}}",
-    "description": "生成 API 令牌以将此项目连接到 Kiro 或 VS Code 等 MCP 兼容客户端。",
-    "dismiss": "关闭",
-    "expandLabel": "展开",
-    "expiredDate": "已于 {{date}} 过期",
-    "expiresDate": "{{date}} 到期",
-    "expiry": "有效期",
-    "expiryDays": "{{count}} 天",
-    "expiryDays_one": "{{count}} 天",
-    "expiryDays_other": "{{count}} 天",
-    "expiryNever": "永不过期",
-    "generate": "生成",
-    "generateNewToken": "生成新 API 令牌",
-    "generateToken": "生成令牌",
-    "generating": "生成中...",
-    "hideToken": "隐藏令牌",
-    "lastUsed": "最后使用 {{date}}",
-    "loadingTokens": "正在加载令牌…",
-    "mcpConfig": "MCP 客户端配置",
-    "mcpConfigHint": "将此添加到您的 <code>mcp.json</code>。将 <code>&lt;YOUR_API_TOKEN&gt;</code> 替换为下方的令牌。",
-    "notAvailable": "MCP 访问暂不可用",
-    "notAvailableDesc": "API 令牌管理端点尚未部署。部署支持 MCP 令牌的后端以启用此功能。",
-    "noTokensHint": "生成令牌以将 MCP 客户端连接到此项目。",
-    "noTokensYet": "暂无 API 令牌",
-    "revealToken": "显示令牌",
-    "revokeToken": "撤销令牌",
-    "title": "MCP 访问",
-    "tokenCreated": "令牌创建成功",
-    "tokenExpiresOn": "此令牌将于 {{date}} 到期。",
-    "tokenName": "令牌名称",
-    "tokenNamePlaceholder": "例如 My Kiro token",
-    "tokenPasteHint": "将此令牌粘贴到 mcp.json 或 autoseed curl 命令的 <code>Authorization</code> 标头中。",
-    "scopes": "权限范围",
-    "scopeDesc": {
-      "feedback_read": "搜索和查看客户反馈",
-      "metrics_read": "查看仪表板和指标细分",
-      "projects_read": "查看项目、用户画像和文档"
-    },
-    "noScopes": "无权限范围",
-    "readReach": "读取范围",
-    "reachOption": {
-      "workspace": "整个工作区（默认）",
-      "project-set": "仅此项目"
-    },
-    "reachHint": {
-      "workspace": "可访问工作区中的所有项目（包括其他项目未发布的文档）以及全部客户反馈。",
-      "project-set": "仅限此项目。无法读取并非按项目划分的反馈全集和工作区指标。"
-    },
-    "reachBadge": {
-      "workspace": "整个工作区",
-      "project-set": "此项目",
-      "none": "无读取权限"
     }
   },
   "notFound": {
@@ -361,7 +278,9 @@
     "triggerLabel": "触发器",
     "triggerPlaceholder": "触发此场景的因素",
     "workarounds": "变通方案（每行一个）",
-    "workaroundsPlaceholder": "他们目前的应对方式..."
+    "workaroundsPlaceholder": "他们目前的应对方式...",
+    "locationPlaceholder": "城市，中国",
+    "occupationPlaceholder": "产品经理"
   },
   "personas": {
     "addNote": "添加备注",
@@ -378,12 +297,17 @@
     "notePlaceholder": "输入您的研究观察或洞察...",
     "notesCount_one": "{{count}}条笔记",
     "notesCount_other": "{{count}}条笔记",
-    "notesTip": "💡 提示：添加来自用户访谈、可用性测试或数据分析中与该用户角色相关的观察。",
+    "notesTip": "提示：添加来自用户访谈、可用性测试或数据分析中与该用户角色相关的观察。",
     "pressEnter": "按 Enter ↵",
     "removeNote": "删除备注",
     "researchNotes": "研究笔记",
     "reviews": "{{count}} 条评价",
-    "selectToView": "选择一个用户角色查看详情"
+    "selectToView": "选择一个用户角色查看详情",
+    "editPersona": "编辑用户画像",
+    "deletePersona": "删除用户画像",
+    "regenerateAvatar": "重新生成头像",
+    "regeneratingAvatar": "正在生成新头像…",
+    "regenerateAvatarFailed": "无法重新生成头像，请重试。"
   },
   "personaSections": {
     "behaviorsHabits": "行为与习惯",
@@ -478,10 +402,10 @@
   "tabs": {
     "aiChat": "AI 对话",
     "documents": "文档",
-    "mcpAccess": "导出 / MCP",
     "overview": "概览",
     "personas": "用户角色",
-    "product": "产品"
+    "product": "产品",
+    "label": "项目分区"
   },
   "wizards": {
     "amazonQuestions": "亚马逊 5 个客户问题",
@@ -541,6 +465,7 @@
     "researchQuestionPlaceholder": "例如，主要痛点是什么...",
     "researchSuggest": "AI 建议",
     "researchSuggestEmpty": "暂无建议 — 请先添加或收集更多反馈。",
+    "startFailed": "无法启动，请重试。",
     "researchSuggesting": "正在提出建议…",
     "researchSuggestPick": "点按一条建议即可使用：",
     "researchSuggestTitle": "让 AI 根据项目反馈提出研究问题",
@@ -549,11 +474,45 @@
     "researchWebSearch": "公共网页搜索",
     "researchWebSearchHint": "AI 会规划并执行多次网页搜索，为分析提供依据（在 AWS 内部处理，并注明来源）",
     "runResearch": "运行研究",
-    "selectAtLeast2": "⚠️ 至少选择2个文档进行重新组合。",
+    "selectAtLeast2": "至少选择2个文档进行重新组合。",
     "submitGenerateDoc": "生成{{type}}",
     "submitGeneratePersonas": "生成用户角色",
     "submitRemixDocuments": "重新组合文档",
     "submitRunResearch": "运行研究",
     "workingBackwards": "反向工作法"
+  },
+  "header": {
+    "back": "返回项目列表",
+    "connectMcp": "通过 MCP 连接"
+  },
+  "companyStrip": {
+    "label": "公司背景",
+    "title": "公司背景",
+    "noVision": "尚无公司愿景。",
+    "more": "+{{n}} 项",
+    "designSystem": "设计系统：",
+    "open": "知识 → 公司"
+  },
+  "prototypePins": {
+    "toggle": "测试者图钉",
+    "showOnPrototype": "在原型上显示图钉",
+    "heading": "测试者图钉",
+    "hint": "测试者点击原型中的元素并留下评论。代理会根据未处理的图钉修订原型。",
+    "empty": "还没有图钉。点击原型中的 Feedback 留下一个。",
+    "loadFailed": "无法加载图钉。",
+    "status": {
+      "open": "未处理",
+      "addressed": "已处理",
+      "resolved": "已解决"
+    },
+    "flagged": "已标记 — 不提供给代理",
+    "consoleErrors": "控制台错误：{{count}}",
+    "addressedBy": "已在修订 {{id}} 中处理",
+    "pinNumber": "图钉 {{number}}",
+    "reply": "回复",
+    "replyPlaceholder": "回复测试者…",
+    "resolve": "解决",
+    "reopen": "重新打开",
+    "actionFailed": "操作失败，请重试。"
   }
 }

@@ -7,7 +7,7 @@ import { z } from 'zod'
 // Zod Schema — matches pipeline minimum fields
 // ============================================
 
-export const JsonFeedbackItemSchema = z.object({
+const JsonFeedbackItemSchema = z.object({
   text: z.string().min(1, 'text is required').max(50_000),
   id: z.string().min(1, 'id is required for deduplication').max(256),
   source: z.string().min(1, 'source is required').max(64).optional(),
@@ -34,7 +34,7 @@ export const JsonFeedbackItemSchema = z.object({
   },
 )
 
-export const JsonFeedbackArraySchema = z.array(JsonFeedbackItemSchema).min(1, 'File must contain at least one item').max(500, 'Maximum 500 items per upload')
+const JsonFeedbackArraySchema = z.array(JsonFeedbackItemSchema).min(1, 'File must contain at least one item').max(500, 'Maximum 500 items per upload')
 
 export type JsonFeedbackItem = z.infer<typeof JsonFeedbackItemSchema>
 
@@ -42,7 +42,7 @@ export type JsonFeedbackItem = z.infer<typeof JsonFeedbackItemSchema>
 // Template
 // ============================================
 
-export const TEMPLATE_DATA = {
+const TEMPLATE_DATA = {
   _instructions: {
     _note: 'This section is documentation only. Remove it before uploading, or leave it — it will be ignored.',
     _llm_instruction: 'If you are an LLM generating data for this template: produce a JSON array (or an object with an "items" array) following the field definitions below. Every item MUST have: text, id, source, and timestamp. Ensure each "id" is unique within its source to prevent duplicates. Output valid JSON only, no markdown fences.',

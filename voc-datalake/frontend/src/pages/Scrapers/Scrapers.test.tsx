@@ -1,17 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter } from 'react-router-dom'
+import { sortedStrings } from '@test/stringLists'
+import { SYNTHETIC_PLUGIN_MANIFEST } from './scrapers-fixtures'
+import { ADMIN_ONLY_TITLE } from '../../constants/admin'
+import { ApiError } from '../../lib/errors'
+import { configStoreModule, createQueryWrapper } from '../Categories/categories-fixtures'
+import enCommon from '../../../public/locales/en/common.json'
+import enScrapers from '../../../public/locales/en/scrapers.json'
 
 // Mock API
-const mockGetScrapers = vi.fn()
-const mockSaveScraper = vi.fn()
-const mockDeleteScraper = vi.fn()
-const mockRunScraper = vi.fn()
-const mockGetScraperStatus = vi.fn()
-const mockGetAppConfigs = vi.fn()
-const mockGetSourceRunStatus = vi.fn()
+const mockGetScrapers = vi.fn<(...args: unknown[]) => unknown>()
+const mockSaveScraper = vi.fn<(...args: unknown[]) => unknown>()
+const mockDeleteScraper = vi.fn<(...args: unknown[]) => unknown>()
+const mockRunScraper = vi.fn<(...args: unknown[]) => unknown>()
+const mockGetScraperStatus = vi.fn<(...args: unknown[]) => unknown>()
+const mockGetAppConfigs = vi.fn<(source: string) => unknown>()
+const mockGetSourceRunStatus = vi.fn<(...args: unknown[]) => unknown>()
 
 vi.mock('../../api/client', () => ({
   api: {
@@ -33,10 +38,14 @@ vi.mock('../../api/scrapersApi', () => ({
   },
 }))
 
-vi.mock('../../store/configStore', () => ({
-  useConfigStore: () => ({
-    config: { apiEndpoint: 'https://api.example.com' },
-  }),
+vi.mock('../../store/configStore', () => configStoreModule())
+
+// Role switch for the page-level role cases; admin by default so the cases that
+// predate it keep their behaviour. Reset in beforeEach.
+const role = { isAdmin: true }
+vi.mock('../../store/authStore', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../store/authStore')>(),
+  useIsAdmin: () => role.isAdmin,
 }))
 
 vi.mock('../../store/manualImportStore', () => ({
@@ -47,26 +56,15 @@ vi.mock('../../store/manualImportStore', () => ({
 }))
 
 const mockPluginManifests = [
-  { id: 'app_reviews_ios', name: 'iOS App Reviews', icon: '🍎', config: [], hasIngestor: true, hasWebhook: false, hasS3Trigger: false, enabled: true },
-  { id: 'app_reviews_android', name: 'Android App Reviews', icon: '🤖', config: [], hasIngestor: true, hasWebhook: false, hasS3Trigger: false, enabled: true },
+  { id: 'app_reviews_ios', name: 'iOS App Reviews', icon: 'iOS', config: [], hasIngestor: true, hasWebhook: false, hasS3Trigger: false, enabled: true },
+  { id: 'app_reviews_android', name: 'Android App Reviews', icon: 'Android', config: [], hasIngestor: true, hasWebhook: false, hasS3Trigger: false, enabled: true },
 ]
 
 // Mutable per-test list of synthetic plugins; default empty so pre-existing
 // tests keep their behavior. Reset in beforeEach.
 const mockSyntheticPlugins: Array<Record<string, unknown>> = []
 
-const syntheticPlugin = {
-  id: 'synthetic_reviews',
-  name: 'Synthetic Data Review Generator',
-  icon: '🧪',
-  description: 'Generate realistic synthetic customer reviews with AI.',
-  category: 'synthetic',
-  config: [],
-  hasIngestor: true,
-  hasWebhook: false,
-  hasS3Trigger: false,
-  enabled: true,
-}
+const syntheticPlugin = SYNTHETIC_PLUGIN_MANIFEST
 
 vi.mock('../../plugins', () => ({
   getPluginManifests: () => mockPluginManifests,
@@ -75,9 +73,11 @@ vi.mock('../../plugins', () => ({
 
 // Mock subcomponents
 vi.mock('./ScraperEditor', () => ({
-  default: ({ onSave, onClose }: { onSave: (s: unknown) => void; onClose: () => void }) => (
+  default: ({ onSave, onClose, saveError }: { onSave: (s: unknown) => Promise<unknown>; onClose: () => void; saveError?: string | null }) => (
     <div data-testid="scraper-editor">
-      <button onClick={() => onSave({ id: 'new', name: 'Test' })}>Save</button>
+      {saveError == null ? null : <p role="alert">{saveError}</p>}
+      {/* Like the real editor: a rejected save stays open and the host shows why. */}
+      <button onClick={() => { onSave({ id: 'new', name: 'Test' }).catch(() => undefined) }}>Save</button>
       <button onClick={onClose}>Close</button>
     </div>
   ),
@@ -97,16 +97,38 @@ vi.mock('./ManualImportModal', () => ({
 }))
 
 import Scrapers from './Scrapers'
+import { at } from '@test/defined'
+import { clickLoadFailedRetry } from '@test/loadFailed'
 
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+const createWrapper = () => createQueryWrapper(['/'])
+
+/** Render the page and wait for the scraper cards to load; returns a user for interaction. */
+async function renderLoaded() {
+  const user = userEvent.setup()
+  render(<Scrapers />, { wrapper: createWrapper() })
+  await waitFor(() => {
+    expect(screen.getByText('Test Scraper')).toBeInTheDocument()
   })
-  return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter>{children}</MemoryRouter>
-    </QueryClientProvider>
-  )
+  return user
+}
+
+/** Render the page and click through "New Source" to the template selector. */
+async function openTemplateSelector() {
+  const user = userEvent.setup()
+  render(<Scrapers />, { wrapper: createWrapper() })
+  await user.click(screen.getByRole('button', { name: /new source/i }))
+  return user
+}
+
+/** Render the page with the synthetic plugin and wait for its card. */
+async function renderWithSyntheticCard() {
+  mockSyntheticPlugins.push(syntheticPlugin)
+  const user = userEvent.setup()
+  render(<Scrapers />, { wrapper: createWrapper() })
+  await waitFor(() => {
+    expect(screen.getByText('Synthetic Data Review Generator')).toBeInTheDocument()
+  })
+  return user
 }
 
 const mockScrapers = [
@@ -133,6 +155,7 @@ const mockScrapers = [
 describe('Scrapers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    role.isAdmin = true
     mockSyntheticPlugins.length = 0
     mockGetScrapers.mockResolvedValue({ scrapers: mockScrapers })
     mockGetScraperStatus.mockResolvedValue({ status: 'never_run' })
@@ -144,6 +167,22 @@ describe('Scrapers', () => {
   })
 
   describe('rendering', () => {
+    it('lists app configs only for the app-review plugins the API serves', async () => {
+      // `/integrations/{source}/apps` answers 400 for any other source, so an
+      // ingestor plugin such as GitHub Issues must never be asked (it was, on
+      // every visit, while the page used a denylist).
+      mockPluginManifests.push(
+        { id: 'github_issues', name: 'GitHub Issues', icon: 'GitHub', config: [], hasIngestor: true, hasWebhook: true, hasS3Trigger: false, enabled: true },
+      )
+      try {
+        await renderLoaded()
+        await waitFor(() => expect(mockGetAppConfigs).toHaveBeenCalledTimes(2))
+        expect(sortedStrings(mockGetAppConfigs.mock.calls.map(([source]) => source))).toStrictEqual(['app_reviews_android', 'app_reviews_ios'])
+      } finally {
+        mockPluginManifests.pop()
+      }
+    })
+
     it('renders page header', async () => {
       render(<Scrapers />, { wrapper: createWrapper() })
 
@@ -159,12 +198,9 @@ describe('Scrapers', () => {
     })
 
     it('renders scraper cards after loading', async () => {
-      render(<Scrapers />, { wrapper: createWrapper() })
+      await renderLoaded()
 
-      await waitFor(() => {
-        expect(screen.getByText('Test Scraper')).toBeInTheDocument()
-        expect(screen.getByText('Disabled Scraper')).toBeInTheDocument()
-      })
+      expect(screen.getByText('Disabled Scraper')).toBeInTheDocument()
     })
 
     it('shows domain from base_url', async () => {
@@ -186,11 +222,37 @@ describe('Scrapers', () => {
     })
   })
 
-  describe('empty state', () => {
-    it('shows empty state when no scrapers', async () => {
-      mockGetScrapers.mockResolvedValue({ scrapers: [] })
+  describe('load failed', () => {
+    it('a failed scrapers read says so instead of "No scrapers configured"', async () => {
+      mockGetScrapers.mockRejectedValue(new Error('Failed to fetch'))
 
       render(<Scrapers />, { wrapper: createWrapper() })
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(enCommon.loadFailed.message)
+      expect(screen.queryByText(enScrapers.empty.title)).not.toBeInTheDocument()
+    })
+
+    it('Try again refetches and the list renders', async () => {
+      mockGetScrapers.mockRejectedValueOnce(new Error('API Error: 500'))
+      const user = userEvent.setup()
+      render(<Scrapers />, { wrapper: createWrapper() })
+
+      await clickLoadFailedRetry(user)
+
+      expect(await screen.findByText(at(mockScrapers, 0).name)).toBeInTheDocument()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('empty state', () => {
+    /** Render the page with the scraper list resolving empty. */
+    function renderWithNoScrapers() {
+      mockGetScrapers.mockResolvedValue({ scrapers: [] })
+      render(<Scrapers />, { wrapper: createWrapper() })
+    }
+
+    it('shows empty state when no scrapers', async () => {
+      renderWithNoScrapers()
 
       await waitFor(() => {
         expect(screen.getByText('No scrapers configured')).toBeInTheDocument()
@@ -199,9 +261,7 @@ describe('Scrapers', () => {
     })
 
     it('shows create button in empty state', async () => {
-      mockGetScrapers.mockResolvedValue({ scrapers: [] })
-
-      render(<Scrapers />, { wrapper: createWrapper() })
+      renderWithNoScrapers()
 
       await waitFor(() => {
         expect(screen.getByRole('button', { name: /create scraper/i })).toBeInTheDocument()
@@ -210,13 +270,9 @@ describe('Scrapers', () => {
 
     it('suppresses the empty state when a synthetic source exists (#146)', async () => {
       mockGetScrapers.mockResolvedValue({ scrapers: [] })
-      mockSyntheticPlugins.push(syntheticPlugin)
 
-      render(<Scrapers />, { wrapper: createWrapper() })
+      await renderWithSyntheticCard()
 
-      await waitFor(() => {
-        expect(screen.getByText('Synthetic Data Review Generator')).toBeInTheDocument()
-      })
       expect(screen.queryByText('No scrapers configured')).not.toBeInTheDocument()
     })
   })
@@ -234,14 +290,8 @@ describe('Scrapers', () => {
     })
 
     it('opens the generator modal from the card Generate button', async () => {
-      mockSyntheticPlugins.push(syntheticPlugin)
-      const user = userEvent.setup()
+      const user = await renderWithSyntheticCard()
 
-      render(<Scrapers />, { wrapper: createWrapper() })
-
-      await waitFor(() => {
-        expect(screen.getByText('Synthetic Data Review Generator')).toBeInTheDocument()
-      })
       await user.click(screen.getByRole('button', { name: /generate/i }))
 
       // GeneratorConfigModal renders the plugin name in its header too.
@@ -249,11 +299,8 @@ describe('Scrapers', () => {
     })
 
     it('does not render the section when no synthetic plugins exist', async () => {
-      render(<Scrapers />, { wrapper: createWrapper() })
+      await renderLoaded()
 
-      await waitFor(() => {
-        expect(screen.getByText('Test Scraper')).toBeInTheDocument()
-      })
       expect(screen.queryByRole('heading', { name: 'Synthetic Data' })).not.toBeInTheDocument()
     })
 
@@ -287,29 +334,20 @@ describe('Scrapers', () => {
 
   describe('template selector', () => {
     it('opens template selector when New Source clicked', async () => {
-      const user = userEvent.setup()
-      render(<Scrapers />, { wrapper: createWrapper() })
-
-      await user.click(screen.getByRole('button', { name: /new source/i }))
+      await openTemplateSelector()
 
       expect(screen.getByTestId('template-selector')).toBeInTheDocument()
     })
 
     it('closes template selector when close clicked', async () => {
-      const user = userEvent.setup()
-      render(<Scrapers />, { wrapper: createWrapper() })
-
-      await user.click(screen.getByRole('button', { name: /new source/i }))
+      const user = await openTemplateSelector()
       await user.click(screen.getByText('Close Templates'))
 
       expect(screen.queryByTestId('template-selector')).not.toBeInTheDocument()
     })
 
     it('opens editor when template selected', async () => {
-      const user = userEvent.setup()
-      render(<Scrapers />, { wrapper: createWrapper() })
-
-      await user.click(screen.getByRole('button', { name: /new source/i }))
+      const user = await openTemplateSelector()
       await user.click(screen.getByText('Select Template'))
 
       expect(screen.getByTestId('scraper-editor')).toBeInTheDocument()
@@ -318,48 +356,33 @@ describe('Scrapers', () => {
 
   describe('scraper actions', () => {
     it('opens editor when edit button clicked', async () => {
-      const user = userEvent.setup()
-      render(<Scrapers />, { wrapper: createWrapper() })
-
-      await waitFor(() => {
-        expect(screen.getByText('Test Scraper')).toBeInTheDocument()
-      })
+      const user = await renderLoaded()
 
       const editButtons = screen.getAllByTitle('Edit')
-      await user.click(editButtons[0])
+      await user.click(at(editButtons, 0))
 
       expect(screen.getByTestId('scraper-editor')).toBeInTheDocument()
     })
 
     it('shows delete confirmation when delete clicked', async () => {
-      const user = userEvent.setup()
-      render(<Scrapers />, { wrapper: createWrapper() })
-
-      await waitFor(() => {
-        expect(screen.getByText('Test Scraper')).toBeInTheDocument()
-      })
+      const user = await renderLoaded()
 
       const deleteButtons = screen.getAllByTitle('Delete')
-      await user.click(deleteButtons[0])
+      await user.click(at(deleteButtons, 0))
 
       expect(screen.getByText('Delete Scraper')).toBeInTheDocument()
       expect(screen.getByText(/are you sure/i)).toBeInTheDocument()
     })
 
     it('calls deleteScraper when delete confirmed', async () => {
-      const user = userEvent.setup()
-      render(<Scrapers />, { wrapper: createWrapper() })
-
-      await waitFor(() => {
-        expect(screen.getByText('Test Scraper')).toBeInTheDocument()
-      })
+      const user = await renderLoaded()
 
       const deleteButtons = screen.getAllByTitle('Delete')
-      await user.click(deleteButtons[0])
+      await user.click(at(deleteButtons, 0))
 
       // Find the confirm button in the modal (last Delete button is the modal's)
       const deleteButtons2 = screen.getAllByRole('button', { name: /^Delete$/i })
-      await user.click(deleteButtons2[deleteButtons2.length - 1])
+      await user.click(at(deleteButtons2, -1))
 
       await waitFor(() => {
         expect(mockDeleteScraper).toHaveBeenCalledWith('scraper-1')
@@ -367,15 +390,10 @@ describe('Scrapers', () => {
     })
 
     it('calls runScraper when run button clicked', async () => {
-      const user = userEvent.setup()
-      render(<Scrapers />, { wrapper: createWrapper() })
-
-      await waitFor(() => {
-        expect(screen.getByText('Test Scraper')).toBeInTheDocument()
-      })
+      const user = await renderLoaded()
 
       const runButtons = screen.getAllByTitle('Run now')
-      await user.click(runButtons[0])
+      await user.click(at(runButtons, 0))
 
       await waitFor(() => {
         expect(mockRunScraper).toHaveBeenCalledWith('scraper-1')
@@ -383,14 +401,122 @@ describe('Scrapers', () => {
     })
   })
 
+  describe('saving from the editor', () => {
+    async function saveFromNewSource() {
+      const user = await openTemplateSelector()
+      await user.click(screen.getByText('Select Template'))
+      await user.click(screen.getByRole('button', { name: 'Save' }))
+      return user
+    }
+
+    it('closes the editor once the save succeeded', async () => {
+      await saveFromNewSource()
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('scraper-editor')).not.toBeInTheDocument()
+      })
+      expect(mockSaveScraper).toHaveBeenCalledTimes(1)
+    })
+
+    it("keeps the editor open with the server's message when the save is rejected", async () => {
+      mockSaveScraper.mockRejectedValue(new ApiError(400, 'A scraper may list at most 20 URLs'))
+      await saveFromNewSource()
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('A scraper may list at most 20 URLs')
+      expect(screen.getByTestId('scraper-editor')).toBeInTheDocument()
+    })
+
+    it('falls back to a generic message when the server sent none', async () => {
+      mockSaveScraper.mockRejectedValue(new ApiError(502))
+      await saveFromNewSource()
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Could not save the scraper. Please try again.')
+      expect(screen.getByTestId('scraper-editor')).toBeInTheDocument()
+    })
+
+    it('clears the error when the editor is closed and reopened', async () => {
+      mockSaveScraper.mockRejectedValue(new ApiError(400, 'Too many scrapers'))
+      const user = await saveFromNewSource()
+      await screen.findByRole('alert')
+      await user.click(screen.getByRole('button', { name: 'Close' }))
+      await user.click(at(screen.getAllByTitle('Edit'), 0))
+
+      expect(screen.getByTestId('scraper-editor')).toBeInTheDocument()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('per role (owner decision 2026-10-04: save open, run + delete admin-only)', () => {
+    it.each([true, false])('creates and saves a scraper from New Source (isAdmin=%s)', async (isAdmin) => {
+      role.isAdmin = isAdmin
+      const user = await openTemplateSelector()
+      await user.click(screen.getByText('Select Template'))
+      await user.click(screen.getByRole('button', { name: 'Save' }))
+
+      await waitFor(() => {
+        expect(mockSaveScraper).toHaveBeenCalledTimes(1)
+      })
+    })
+
+    it.each([true, false])('creates from the empty state (isAdmin=%s)', async (isAdmin) => {
+      role.isAdmin = isAdmin
+      mockGetScrapers.mockResolvedValue({ scrapers: [] })
+      const user = userEvent.setup()
+      render(<Scrapers />, { wrapper: createWrapper() })
+      const create = await screen.findByRole('button', { name: /create scraper/i })
+      expect(create).toBeEnabled()
+      await user.click(create)
+
+      expect(screen.getByTestId('template-selector')).toBeInTheDocument()
+    })
+
+    it.each([true, false])('opens the editor from Edit (isAdmin=%s)', async (isAdmin) => {
+      role.isAdmin = isAdmin
+      const user = await renderLoaded()
+      await user.click(at(screen.getAllByTitle('Edit'), 0))
+
+      expect(screen.getByTestId('scraper-editor')).toBeInTheDocument()
+    })
+
+    it('disables Run and Delete for a non-admin', async () => {
+      role.isAdmin = false
+      await renderLoaded()
+
+      const gated = screen.getAllByTitle(ADMIN_ONLY_TITLE)
+      // Two scrapers × (Run, Delete); scraper-1 and scraper-2 both have a URL.
+      expect(gated.map((button) => button.hasAttribute('disabled'))).toStrictEqual([true, true, true, true])
+      expect(screen.queryAllByTitle('Run now')).toHaveLength(0)
+      expect(screen.queryAllByTitle('Delete')).toHaveLength(0)
+    })
+
+    it('issues neither request when a non-admin clicks the gated Run and Delete', async () => {
+      role.isAdmin = false
+      const user = await renderLoaded()
+
+      for (const button of screen.getAllByTitle(ADMIN_ONLY_TITLE)) {
+        await user.click(button)
+      }
+      expect(mockRunScraper).not.toHaveBeenCalled()
+      expect(mockDeleteScraper).not.toHaveBeenCalled()
+    })
+
+    it('the control: an admin gets enabled Run and Delete', async () => {
+      await renderLoaded()
+
+      expect(screen.queryAllByTitle(ADMIN_ONLY_TITLE)).toHaveLength(0)
+      for (const button of [...screen.getAllByTitle('Run now'), ...screen.getAllByTitle('Delete')]) {
+        expect(button).toBeEnabled()
+      }
+    })
+  })
+
   describe('loading state', () => {
     it('shows loading spinner while fetching', () => {
       mockGetScrapers.mockReturnValue(new Promise(() => {}))
 
-      const { container } = render(<Scrapers />, { wrapper: createWrapper() })
+      render(<Scrapers />, { wrapper: createWrapper() })
 
-      // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
-      expect(container.querySelector('.animate-spin')).toBeInTheDocument()
+      expect(screen.getByRole('status', { name: 'Loading data sources…' })).toBeInTheDocument()
     })
   })
 

@@ -8,13 +8,15 @@
     "never": "Jamais",
     "notConfigured": "Non configuré",
     "runNow": "Exécuter maintenant",
-    "urls": "URL"
+    "urls": "URL",
+    "active": "Actif",
+    "paused": "En pause"
   },
   "configureApiFirst": "Configurez d'abord le point de terminaison API",
   "csvUpload": {
     "cancel": "Annuler",
-    "defaultSourceHint": "Utilisé pour les lignes sans colonne « source ».",
-    "defaultSourceLabel": "Libellé de source par défaut",
+    "defaultSourceHint": "Utilisé pour les lignes sans colonne de canal.",
+    "defaultSourceLabel": "Canal par défaut",
     "done": "Terminé",
     "downloadTemplate": "Télécharger le modèle",
     "dropZone": "Déposez un fichier .csv ici ou cliquez pour choisir",
@@ -31,7 +33,33 @@
     "title": "Import CSV",
     "upload": "Envoyer",
     "uploading": "Envoi en cours…",
-    "warningsHeader": "Avertissements"
+    "warningsHeader": "Avertissements",
+    "errorNoHeader": "Le fichier n'a pas de ligne d'en-tête.",
+    "errorUnreadable": "Impossible de lire le fichier.",
+    "uploadFailed": "Échec de l'envoi",
+    "mapping": {
+      "title": "Correspondance des colonnes",
+      "hint": "Proposé à partir de l'en-tête. Les colonnes non reconnues sont gardées en métadonnées : rien n'est perdu sauf si vous choisissez Ignorer.",
+      "columnLabel": "Destination de {{header}}",
+      "dimensionTarget": "Dimension : {{name}}",
+      "targets": {
+        "text": "Texte de l'avis",
+        "id": "Id de ligne",
+        "rating": "Note",
+        "date": "Date",
+        "author": "Auteur",
+        "title": "Titre",
+        "url": "Lien",
+        "channel": "Canal",
+        "tags": "Étiquettes",
+        "metadata": "Garder en métadonnées",
+        "ignore": "Ignorer"
+      },
+      "problems": {
+        "noText": "Associez une colonne à Texte de l'avis.",
+        "twice": "{{target}} est choisi pour plusieurs colonnes."
+      }
+    }
   },
   "deleteConfirmLabel": "Supprimer",
   "deleteConfirmMessage": "Êtes-vous sûr de vouloir supprimer ce scraper ? Cette action est irréversible.",
@@ -69,6 +97,7 @@
     "rating": "Note",
     "reviewContainer": "Conteneur d'avis *",
     "save": "Enregistrer le scraper",
+    "saveFailed": "Impossible d'enregistrer le scraper. Veuillez réessayer.",
     "scraperName": "Nom du scraper",
     "scraperNamePlaceholder": "Mon scraper d'avis",
     "selectorsAutoDetected": "Ces sélecteurs ont été auto-détectés. Ajustez-les si nécessaire.",
@@ -156,9 +185,14 @@
     "sourceUrl": "URL source",
     "sourceUrlPlaceholder": "https://exemple.com/avis",
     "title": "Import manuel",
-    "unparsedSections_one": "⚠️ {{count}} section n'a pas pu être analysée",
-    "unparsedSections_many": "⚠️ {{count}} sections n'ont pas pu être analysées",
-    "unparsedSections_other": "⚠️ {{count}} sections n'ont pas pu être analysées"
+    "unparsedSections_one": "{{count}} section n'a pas pu être analysée",
+    "unparsedSections_many": "{{count}} sections n'ont pas pu être analysées",
+    "unparsedSections_other": "{{count}} sections n'ont pas pu être analysées",
+    "datesRequired_one": "{{count}} avis doit avoir une date avant de pouvoir l'importer.",
+    "datesRequired_other": "{{count}} avis doivent avoir une date avant de pouvoir les importer.",
+    "datesDefaulted_one": "{{count}} avis n'avait pas de date dans le texte : il prend la date d'import du jour. Vous pouvez la modifier ci-dessous.",
+    "datesDefaulted_other": "{{count}} avis n'avaient pas de date dans le texte : ils prennent la date d'import du jour. Vous pouvez la modifier ci-dessous.",
+    "importFailed": "Échec de l'importation des avis"
   },
   "newSource": "Nouvelle source",
   "parsedReview": {
@@ -169,7 +203,9 @@
     "star_many": "{{count}} étoiles",
     "star_other": "{{count}} étoiles",
     "textPlaceholder": "Texte de l'avis",
-    "titlePlaceholder": "Titre de l'avis (optionnel)"
+    "titlePlaceholder": "Titre de l'avis (optionnel)",
+    "dateLabel": "Date de l'avis (obligatoire)",
+    "dateDefaulted": "Aucune date trouvée : date d'import utilisée"
   },
   "pluginConfig": {
     "automaticSchedule": "Planification automatique",
@@ -185,7 +221,9 @@
     "scheduleDescription": "Exécuter cette source selon sa planification configurée",
     "select": "Sélectionner...",
     "show": "Afficher",
-    "test": "Tester"
+    "test": "Tester",
+    "configuredInSettings": "Cette source se configure avec ses identifiants dans les Paramètres.",
+    "openDataSourceSettings": "Ouvrir les paramètres des sources de données"
   },
   "refresh": "Actualiser",
   "status": {
@@ -222,5 +260,20 @@
     "title": "Ajouter une source de données",
     "webScraperTemplates": "Modèles de web scraper"
   },
-  "title": "Sources de données"
+  "title": "Sources de données",
+  "loading": "Chargement des sources de données…",
+  "appCard": {
+    "platform": "Plateforme",
+    "maxReviews": "Avis max.",
+    "unnamed": "App sans nom",
+    "loading": "Chargement des configurations d'apps…",
+    "deleteConfirmTitle": "Supprimer l'app",
+    "deleteConfirmMessage": "Voulez-vous vraiment supprimer cette configuration d'app ?",
+    "editApp": "Modifier l'app",
+    "addNewApp": "Ajouter une nouvelle app",
+    "addApp": "Ajouter une app",
+    "configuredApps": "Apps configurées",
+    "noApps": "Aucune app configurée pour l'instant",
+    "addFirstApp": "Ajoutez votre première app"
+  }
 }

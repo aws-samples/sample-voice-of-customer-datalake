@@ -10,10 +10,23 @@
  * rather than beside the formatters where the reporting is easy to forget —
  * which is how three silent stopping points accumulated in the first place.
  */
-import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { QueryCommand, type QueryCommandOutput } from '@aws-sdk/lib-dynamodb';
 import { z } from 'zod';
-import { FEEDBACK_BY_DATE_INDEX, FEEDBACK_BY_ID_INDEX } from '../indexes.js';
+import { FEEDBACK_BY_ID_INDEX } from '../indexes.js';
+import { feedbackByDateQuery } from '../feedback-by-date-query.js';
 import { PERSISTENT_QUERY_ERRORS } from '../context/query-errors.js';
+
+/** The page of a Query the scan reads: its rows and whether there is another page. */
+export type FeedbackQueryPage = Pick<QueryCommandOutput, 'Items' | 'LastEvaluatedKey'>;
+
+/**
+ * What the scan needs of a document client: a Query, answered. The real
+ * `DynamoDBDocumentClient` satisfies it (the assistant deps pass one straight
+ * in); the specs pass a plain double without widening it to the whole SDK client.
+ */
+export interface FeedbackQueryClient {
+  send(command: QueryCommand): Promise<FeedbackQueryPage>;
+}
 
 export const feedbackItemSchema = z.object({
   feedback_id: z.string().optional(),
@@ -32,7 +45,13 @@ export const feedbackItemSchema = z.object({
   problem_summary: z.string().optional(),
   date: z.string().optional(),
   urgency: z.string().optional(),
-}).passthrough();
+  // Issue-tracker fields (github_issues). Lenient: a malformed map reads as absent.
+  issue_attributes: z.object({ software_version: z.string().optional() }).loose().nullish().catch(null),
+  // Dimensions / tags / channel (docs/dimensions.md). Lenient: a malformed value reads as absent.
+  source_channel: z.string().nullish().catch(null),
+  tags: z.array(z.string()).nullish().catch(null),
+  dimensions: z.record(z.string(), z.string()).nullish().catch(null),
+}).loose();
 
 export type FeedbackItem = z.infer<typeof feedbackItemSchema>;
 
@@ -74,6 +93,22 @@ export const MAX_CANDIDATES = 10000;
  * lockstep test parses this text.
  */
 export const MAX_LOOKBACK_DAYS = 90;
+
+/**
+ * How far back (calendar days) the walk may go to fill its sample when the
+ * newest days hold no feedback. Mirror of `MAX_SAMPLE_WALK_DAYS` in
+ * lambda/shared/feedback.py (same lockstep test as MAX_LOOKBACK_DAYS).
+ *
+ * MAX_LOOKBACK_DAYS is a budget of days WITH DATA, not of calendar days: the
+ * walk covers up to this many calendar days and stops after MAX_LOOKBACK_DAYS
+ * days that returned rows. With a 90-calendar-day cap a deployment whose newest
+ * feedback is older than 90 days answered "Last year" and "All time" with
+ * nothing at all. An empty day is one cheap GSI read, so the worst case (an
+ * empty table, all time) is this many reads, in waves of DAY_SCAN_CONCURRENCY.
+ *
+ * Keep the literal on one line as `export const MAX_SAMPLE_WALK_DAYS = <n>`.
+ */
+export const MAX_SAMPLE_WALK_DAYS = 400;
 
 /**
  * How many day partitions are read at once. See `scanWaves`.
@@ -127,15 +162,15 @@ export function scanWasIncomplete(reasons: TruncationReason[]): boolean {
  * partial forever: the row fails identically on every future call, so the hedge
  * becomes background noise and a real truncation — the cap, a throttle — reads
  * the same as 99.9% of the corpus arriving intact. A flag that always fires
- * carries no information, the same reasoning voc-context.ts gives for
- * aggregating its warnings ("sixteen warnings say nothing the first one did").
+ * carries no information — the same reason the scan aggregates its warnings
+ * ("sixteen warnings say nothing the first one did").
  * Bulk loss is different in kind: a producer change or a migration that breaks a
  * tenth of the rows really does bend the distributions, so that is where the
  * line sits. Below it the drop is still logged — an operator can find and repair
  * the row — it just does not tell the model the window was truncated.
  *
- * recent-feedback.ts drops such rows silently and voc-context.ts counts them
- * into its degraded flag; the difference is what the row IS. There a dropped row
+ * A metric reader would count such rows into a degraded flag; the difference is
+ * what the row IS. There a dropped row
  * is a counter whose value was the measurement, so losing it provably
  * understates a total. Here it is one item among thousands in a distribution.
  */
@@ -188,7 +223,7 @@ interface DayReadOutcome {
    * `executeSearchFeedback` discard every row it had (measured: 450 rows read, 0
    * returned, prose telling the model the store could not be reached). That is the
    * inverse of the failure this file exists to prevent, and it contradicts the rule
-   * `fetchDayPages` quotes from voc-context.ts::readMetricPage.
+   * `fetchDayPages` states.
    */
   reached: boolean;
 }
@@ -197,6 +232,26 @@ interface DayReadOutcome {
 interface DayRead extends DayReadOutcome {
   dateStr: string;
   items: FeedbackItem[];
+}
+
+/** Did this day return any row (parseable or not)? Python's `_walk_dates` counts the same. */
+function dayHadData(read: DayRead): boolean {
+  return read.items.length + read.dropped > 0;
+}
+
+/**
+ * The wave's reads up to (and including) the day that spends the last of the
+ * dated-days budget, and whether that day was reached. Days after it are
+ * dropped so the walk stops exactly where the sequential Python walk would,
+ * not up to a wave later.
+ */
+function trimToDatedBudget(reads: DayRead[], datedSoFar: number, maxDatedDays: number): { kept: DayRead[]; stopped: boolean } {
+  if (maxDatedDays <= 0) return { kept: reads, stopped: false };
+  return reads.reduce<{ kept: DayRead[]; stopped: boolean; dated: number }>((acc, read) => {
+    if (acc.stopped) return acc;
+    const dated = acc.dated + (dayHadData(read) ? 1 : 0);
+    return { kept: [...acc.kept, read], stopped: dated >= maxDatedDays, dated };
+  }, { kept: [], stopped: false, dated: datedSoFar });
 }
 
 /** Days that dropped rows or failed outright, for one aggregated report. */
@@ -219,11 +274,17 @@ export interface DateScanResult {
   reasons: TruncationReason[];
   /** True when NOT ONE day answered: the window is unknown, not empty. */
   unmeasured: boolean;
+  /**
+   * Calendar days the walk covered, newest first. Below `days` only when it
+   * stopped after `maxDatedDays` days with data; the caller filters and
+   * describes THIS window so the three cannot disagree.
+   */
+  daysCovered: number;
 }
 
 /** The ID index's rows, or null when the query itself failed. */
 export async function queryFeedbackById(
-  docClient: DynamoDBDocumentClient,
+  docClient: FeedbackQueryClient,
   feedbackTable: string,
   feedbackId: string,
 ): Promise<Record<string, unknown>[] | null> {
@@ -248,14 +309,13 @@ export async function queryFeedbackById(
 /**
  * One page of one day's partition. A failed read is RETURNED, not thrown.
  *
- * Same shape as voc-context.ts::readMetricPage, for the same reason: throwing
- * discarded the pages already read, turning a partial day into a confident
+ * Throwing would discard the pages already read, turning a partial day into a confident
  * absence. The name travels with it because the caller needs it twice — to log
  * one line per distinct cause, and to tell a systemic failure (which repeats
  * identically for every partition) from one partition's bad luck.
  */
 async function readDayPage(
-  docClient: DynamoDBDocumentClient,
+  docClient: FeedbackQueryClient,
   feedbackTable: string,
   dateStr: string,
   startKey?: Record<string, unknown>,
@@ -266,14 +326,7 @@ async function readDayPage(
 }> {
   try {
     const resp = await docClient.send(
-      new QueryCommand({
-        TableName: feedbackTable,
-        IndexName: FEEDBACK_BY_DATE_INDEX,
-        KeyConditionExpression: 'gsi1pk = :pk',
-        ExpressionAttributeValues: { ':pk': `DATE#${dateStr}` },
-        ScanIndexForward: false,
-        ExclusiveStartKey: startKey,
-      }),
+      feedbackByDateQuery(feedbackTable, dateStr, { ExclusiveStartKey: startKey }),
     );
     return { items: resp.Items ?? [], lastKey: resp.LastEvaluatedKey };
   } catch (error) {
@@ -292,8 +345,8 @@ async function readDayPage(
  * `truncated` is true when the day still had pages left but the shared candidate
  * budget stopped the walk. `dropped` counts rows safeParse rejected. `errorName`
  * names a read that failed: the rows already collected survive it — a partition
- * whose second page fails must keep what its first page measured, the rule
- * voc-context.ts::readMetricPage states — and the caller reports the hole.
+ * whose second page fails must keep what its first page measured — and the
+ * caller reports the hole.
  *
  * Rows land in this day's OWN array rather than straight into the shared list,
  * so concurrently-read days cannot interleave: the caller concatenates them in
@@ -301,7 +354,7 @@ async function readDayPage(
  * whole scan rather than each day separately.
  */
 async function fetchDayPages(
-  docClient: DynamoDBDocumentClient,
+  docClient: FeedbackQueryClient,
   feedbackTable: string,
   dateStr: string,
   candidates: FeedbackItem[],
@@ -316,10 +369,10 @@ async function fetchDayPages(
   const dropped = parsedRows.filter((parsed) => !parsed.success).length;
   budget.spent += parsedRows.length - dropped;
   if (page.errorName !== undefined) {
-    // `startKey` IS the record of whether an earlier page of this day already came back:
-    // it is set only by the recursive call below, which runs only after a page succeeded.
-    // So a first-page failure leaves the day unreached, and a later one does not.
-    return { truncated: false, dropped, errorName: page.errorName, reached: startKey !== undefined };
+    // A failed page reports the day unreached; when an earlier page of this day already came
+    // back, the recursive caller below overrides that with `reached: true`. So a first-page
+    // failure leaves the day unreached, and a later one does not.
+    return { truncated: false, dropped, errorName: page.errorName, reached: false };
   }
   if (!page.lastKey) return { truncated: false, dropped, reached: true };
   if (budgetExhausted(budget)) return { truncated: true, dropped, reached: true };
@@ -331,7 +384,7 @@ async function fetchDayPages(
 
 /** One day's rows and outcome. Never throws: a failed read is a reported hole. */
 async function readOneDay(
-  docClient: DynamoDBDocumentClient,
+  docClient: FeedbackQueryClient,
   feedbackTable: string,
   dateStr: string,
   budget: CandidateBudget,
@@ -345,11 +398,9 @@ async function readOneDay(
 function hasSystemicFailure(reads: DayRead[]): boolean {
   // Retrying the remaining partitions just repeats the failure, and reporting it
   // N times says nothing the first line did — both consequences query-errors.ts
-  // states, and recent-feedback.ts already applies to its own fan-out over these
-  // same DATE# partitions.
-  return reads.some(
-    (read) => read.errorName !== undefined && PERSISTENT_QUERY_ERRORS.has(read.errorName),
-  );
+  // states. Widened so a read without an error is looked up as-is: no name is in the set.
+  const persistent: ReadonlySet<string | undefined> = PERSISTENT_QUERY_ERRORS;
+  return reads.some((read) => persistent.has(read.errorName));
 }
 
 /**
@@ -363,22 +414,21 @@ function hasSystemicFailure(reads: DayRead[]): boolean {
  * Shortfalls are collected, not logged here. A systemic cause makes every day of
  * the window say the same thing, so 90 identical CloudWatch lines per chat turn
  * would say nothing the first one did; `reportShortfalls` runs once for the whole
- * scan, the same aggregation point and the same reason as
- * voc-context.ts::reportMetricFailures.
+ * scan.
  */
-async function scanWaves(
-  docClient: DynamoDBDocumentClient,
-  feedbackTable: string,
-  waves: string[][],
-  budget: CandidateBudget,
-  acc: { candidates: FeedbackItem[]; reasons: TruncationReason[]; shortfalls: ScanShortfalls },
-  index = 0,
-): Promise<{ candidates: FeedbackItem[]; reasons: TruncationReason[]; shortfalls: ScanShortfalls }> {
-  if (index >= waves.length) return acc;
-  const reads = await Promise.all(
-    waves[index].map((dateStr) => readOneDay(docClient, feedbackTable, dateStr, budget)),
-  );
-  const next = {
+interface ScanAcc {
+  candidates: FeedbackItem[];
+  reasons: TruncationReason[];
+  shortfalls: ScanShortfalls;
+  /** Days so far that returned rows (the MAX_LOOKBACK_DAYS budget). */
+  datedDays: number;
+  /** Calendar days walked; less than the window only when the dated budget stopped it. */
+  daysCovered: number;
+}
+
+/** Fold one wave's (already trimmed) reads into the accumulator. */
+function foldWave(acc: ScanAcc, reads: DayRead[]): ScanAcc {
+  return {
     candidates: [...acc.candidates, ...reads.flatMap((read) => read.items)],
     reasons: [
       ...acc.reasons,
@@ -402,22 +452,48 @@ async function scanWaves(
         ...reads.flatMap((read) => (read.reached ? [read.dateStr] : [])),
       ],
     },
+    datedDays: acc.datedDays + reads.filter(dayHadData).length,
+    daysCovered: acc.daysCovered + reads.length,
   };
+}
+
+async function scanWaves(
+  docClient: FeedbackQueryClient,
+  feedbackTable: string,
+  waves: string[][],
+  budget: CandidateBudget & { maxDatedDays: number },
+  acc: ScanAcc,
+  index = 0,
+): Promise<ScanAcc> {
+  const wave = waves.at(index);
+  if (wave === undefined) return acc;
+  const reads = await Promise.all(
+    wave.map((dateStr) => readOneDay(docClient, feedbackTable, dateStr, budget)),
+  );
+  const { kept, stopped } = trimToDatedBudget(reads, acc.datedDays, budget.maxDatedDays);
+  const next = foldWave(acc, kept);
+  // Enough days with data: the sample is full, and the older days are simply
+  // not needed (a narrower window, reported by the caller from daysCovered).
+  if (stopped) return next;
   if (budgetExhausted(budget) || hasSystemicFailure(reads)) {
     // Waves after this one were never dispatched, so those days are genuinely
     // unread. Every day WITHIN this wave was read, hence the wave-level test:
     // claiming 'daysUnread' for them would be a truncation that did not happen.
+    // daysCovered is the planned window here: the shortfall is 'daysUnread', not a narrower window.
+    const planned = waves.reduce((sum, w) => sum + w.length, 0);
     return index + 1 < waves.length
-      ? { ...next, reasons: [...next.reasons, 'daysUnread'] }
+      ? { ...next, reasons: [...next.reasons, 'daysUnread'], daysCovered: planned }
       : next;
   }
   return scanWaves(docClient, feedbackTable, waves, budget, next, index + 1);
 }
 
 /**
- * Collect candidates day by day, newest first, over exactly `days` partitions.
+ * Collect candidates day by day, newest first, over up to `days` partitions,
+ * stopping after `maxDatedDays` days that returned rows (0 = never) — the same
+ * rule as `_walk_dates` in lambda/shared/feedback.py.
  *
- * `days` must already be clamped to MAX_LOOKBACK_DAYS — `resolveSearchParams`
+ * `days` must already be clamped to MAX_SAMPLE_WALK_DAYS — `resolveSearchParams`
  * is the single place that does it, so the scan bound is the same number the
  * cutoff filter uses. Clamping again here is what made the two disagree before.
  *
@@ -428,8 +504,8 @@ async function scanWaves(
  * lambda/api/metrics_handler.py, which returns `(items, is_partial)` for the
  * same reason — with the additions this runtime needs because it has failure
  * modes Python's does not: `_query_partition` propagates a failed read while
- * this scan survives it, so a survived failure must be REPORTED (the rule
- * voc-context.ts states for its metric pages) rather than leaving a missing day
+ * this scan survives it, so a survived failure must be REPORTED rather than
+ * leaving a missing day
  * looking like an empty one.
  *
  * Days are read DAY_SCAN_CONCURRENCY at a time, newest wave first. Sequentially
@@ -438,21 +514,21 @@ async function scanWaves(
  * 153ms in waves of 8 — less even than the 30-day sequential scan this widening
  * replaced (364ms), so the window got three times wider and still got faster.
  *
- * A range query is not available: `voc-context.ts::sumMetricWindow` escapes
+ * A range query is not available: a METRIC-row reader can avoid
  * per-day reads because METRIC rows share one partition with a sortable date
  * key, so BETWEEN bounds the window server-side. Feedback rows do not — `gsi1pk`
  * IS the date — so a window is N partitions and no query shape collapses them.
  * Concurrency is what is left, and it is safe here only because the candidate
  * budget is one shared counter rather than a per-day slice; see CandidateBudget
  * for why the sliced version would both hold K× the rows and invent truncation
- * signals that never happened. `context/recent-feedback.ts` fans out over these
- * very partitions for the same reason, in waves of 7.
+ * signals that never happened.
  */
 export async function fetchCandidatesByDate(
-  docClient: DynamoDBDocumentClient,
+  docClient: FeedbackQueryClient,
   feedbackTable: string,
   days: number,
   candidateCap: number,
+  maxDatedDays = 0,
 ): Promise<DateScanResult> {
   const now = new Date();
   const dates = Array.from({ length: days }, (_, i) => {
@@ -464,23 +540,25 @@ export async function fetchCandidatesByDate(
     { length: Math.ceil(dates.length / DAY_SCAN_CONCURRENCY) },
     (_, i) => dates.slice(i * DAY_SCAN_CONCURRENCY, (i + 1) * DAY_SCAN_CONCURRENCY),
   );
-  const scan = await scanWaves(docClient, feedbackTable, waves, { cap: candidateCap, spent: 0 }, {
+  const scan = await scanWaves(docClient, feedbackTable, waves, { cap: candidateCap, spent: 0, maxDatedDays }, {
     candidates: [],
     reasons: [],
     shortfalls: { failures: [], drops: [], daysRead: [] },
+    datedDays: 0,
+    daysCovered: 0,
   });
   return {
     candidates: scan.candidates,
     reasons: [...scan.reasons, ...reportShortfalls(scan.shortfalls, scan.candidates.length)],
     unmeasured: scan.shortfalls.daysRead.length === 0,
+    daysCovered: scan.daysCovered,
   };
 }
 
 /**
  * Log every shortfall once, and answer which of them make the answer a sample.
  *
- * Two channels with different jobs, as voc-context.ts::reportMetricFailures
- * splits them. The operator log carries the causes and the dates: an error name
+ * Two channels with different jobs. The operator log carries the causes and the dates: an error name
  * like ProvisionedThroughputExceededException tells someone the read is being
  * throttled, and the dates say which partitions to look at. The returned reasons
  * carry only what changes the ANSWER, because an exception name is

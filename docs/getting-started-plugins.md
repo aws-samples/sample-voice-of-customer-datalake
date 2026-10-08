@@ -42,7 +42,7 @@ Edit `manifest.json` with your source details:
 {
   "id": "your_source_id",
   "name": "Your Source Name",
-  "icon": "🔌",
+  "icon": "Plugin",
   "description": "Brief description of what this plugin does",
   "category": "reviews",
   "version": "1.0.0",

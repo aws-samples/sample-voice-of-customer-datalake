@@ -2,52 +2,142 @@
  * @fileoverview Tests for CategoriesManager component.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { screen, waitFor } from '@testing-library/react'
+import userEvent, { type UserEvent } from '@testing-library/user-event'
+import { renderWithQueryClient } from '../../test/query-client'
 
 // Mock API before importing component
-const mockGetCategoriesConfig = vi.fn()
-const mockSaveCategoriesConfig = vi.fn()
-const mockGenerateCategories = vi.fn()
+const mockGetCategoriesConfig = vi.fn<() => Promise<unknown>>()
+const mockSaveCategoriesConfig = vi.fn<(config: unknown) => Promise<unknown>>()
+const mockGenerateCategories = vi.fn<(desc: string) => Promise<unknown>>()
+const mockGetUsers = vi.fn<() => Promise<unknown>>()
+const mockFetchApi = vi.fn<(endpoint: string, options?: unknown) => Promise<unknown>>()
 
 vi.mock('../../api/client', () => ({
   api: {
     getCategoriesConfig: () => mockGetCategoriesConfig(),
     saveCategoriesConfig: (config: unknown) => mockSaveCategoriesConfig(config),
     generateCategories: (desc: string) => mockGenerateCategories(desc),
+    getUsers: () => mockGetUsers(),
   },
+  // The reprocess panel's calls go through fetchApi.
+  fetchApi: (endpoint: string, options?: unknown) => mockFetchApi(endpoint, options),
 }))
 
 import CategoriesManager from './CategoriesManager'
+import { useConfigStore } from '../../store/configStore'
+
+const LATE_DELIVERY = { id: 'sub_1', name: 'late', description: 'Late Delivery' }
+
+/** The single "Delivery" category most scenarios start from, with the given subcategories. */
+function deliveryCategory(subcategories: object[] = []) {
+  return { id: 'cat_1', name: 'delivery', description: 'Delivery', subcategories }
+}
+
+const ADD_CATEGORY_PLACEHOLDER = 'Add new category...'
+const ADD_SUBCATEGORY_PLACEHOLDER = 'Add subcategory...'
+const COMPANY_PLACEHOLDER = /e\.g\., We are an airline/i
+
+function renderComponent() {
+  return renderWithQueryClient(<CategoriesManager />)
+}
+
+/** Mount with `categories` from the API and wait until `readyText` is on screen. */
+async function renderWithCategories(categories: object[], readyText: string | RegExp): Promise<UserEvent> {
+  mockGetCategoriesConfig.mockResolvedValue({ categories })
+  renderComponent()
+  await screen.findByText(readyText)
+  return userEvent.setup()
+}
+
+/** Mount with no categories and wait for the add-category input. */
+async function renderEmpty(): Promise<UserEvent> {
+  mockGetCategoriesConfig.mockResolvedValue({ categories: [] })
+  renderComponent()
+  await screen.findByPlaceholderText(ADD_CATEGORY_PLACEHOLDER)
+  return userEvent.setup()
+}
+
+/** Mount with the Delivery category and wait for its row. */
+function renderDelivery(subcategories: object[] = []): Promise<UserEvent> {
+  return renderWithCategories([deliveryCategory(subcategories)], 'Delivery')
+}
+
+/**
+ * Expand the Delivery row, then wait for a subcategory label when `subLabel` is
+ * given, or for the add-subcategory input otherwise.
+ */
+async function expandDelivery(user: UserEvent, subLabel?: string): Promise<void> {
+  await user.click(screen.getByRole('button', { name: 'Expand Delivery' }))
+  if (subLabel === undefined) {
+    await screen.findByPlaceholderText(ADD_SUBCATEGORY_PLACEHOLDER)
+  } else {
+    await screen.findByText(subLabel)
+  }
+}
+
+/** Open the delete confirmation for the Delivery category. */
+async function openDeleteDelivery(user: UserEvent): Promise<void> {
+  await user.click(screen.getByRole('button', { name: 'Delete Delivery' }))
+  await screen.findByText('Delete Category')
+}
+
+/** Type into the add-category input and press the Add button. */
+async function addCategory(user: UserEvent, text: string): Promise<void> {
+  await user.type(screen.getByPlaceholderText(ADD_CATEGORY_PLACEHOLDER), text)
+  await user.click(screen.getByRole('button', { name: /add category/i }))
+}
+
+/** Describe the company and press Generate. */
+async function generateCategories(user: UserEvent, description: string): Promise<void> {
+  await user.type(screen.getByPlaceholderText(COMPANY_PLACEHOLDER), description)
+  await user.click(screen.getByRole('button', { name: /generate categories/i }))
+}
+
+/** Click a row label to enter edit mode and return its input. */
+async function startRename(user: UserEvent, label: string): Promise<HTMLElement> {
+  await user.click(screen.getByText(label))
+  return screen.findByDisplayValue(label)
+}
+
+/** Wait until the save mutation was called with `{ categories }` matching `categories`. */
+function expectSavedCategories(categories: unknown): Promise<void> {
+  return waitFor(() => {
+    expect(mockSaveCategoriesConfig).toHaveBeenCalledWith({ categories })
+  })
+}
+
+/** A save matcher for "some category has a subcategory matching `sub`". */
+function containingSubcategory(sub: Record<string, unknown>): unknown {
+  const subcategories: unknown = expect.arrayContaining([expect.objectContaining(sub)])
+  return expect.arrayContaining([expect.objectContaining({ subcategories })])
+}
+
+/** A promise that resolves with `value` after `ms`, for "still in flight" assertions. */
+function resolvesAfter(value: unknown, ms = 100) {
+  return () => new Promise<unknown>((resolve) => {
+    setTimeout(() => resolve(value), ms)
+  })
+}
 
 describe('CategoriesManager', () => {
-  let queryClient: QueryClient
-
   beforeEach(() => {
     vi.clearAllMocks()
-    queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: 0 } },
-    })
+    // The shared categories query waits for a configured endpoint.
+    useConfigStore.setState((s) => ({ config: { ...s.config, apiEndpoint: 'https://api.example.com' } }))
     mockGetCategoriesConfig.mockResolvedValue({ categories: [] })
     mockSaveCategoriesConfig.mockResolvedValue({ success: true })
     mockGenerateCategories.mockResolvedValue({ categories: [] })
+    mockGetUsers.mockResolvedValue({ success: true, users: [] })
+    mockFetchApi.mockResolvedValue({ job: null })
   })
-
-  function renderComponent() {
-    return render(
-      <QueryClientProvider client={queryClient}>
-        <CategoriesManager />
-      </QueryClientProvider>
-    )
-  }
 
   describe('loading state', () => {
     it('shows loading spinner while fetching categories', () => {
       mockGetCategoriesConfig.mockReturnValue(new Promise(() => {}))
-      
+
       renderComponent()
-      
+
       expect(document.querySelector('.animate-spin')).toBeInTheDocument()
     })
   })
@@ -55,7 +145,7 @@ describe('CategoriesManager', () => {
   describe('empty state', () => {
     it('displays empty state message when no categories exist', async () => {
       renderComponent()
-      
+
       await waitFor(() => {
         expect(screen.getByText('No categories configured yet.')).toBeInTheDocument()
       })
@@ -64,957 +154,359 @@ describe('CategoriesManager', () => {
 
   describe('categories display', () => {
     it('displays categories list when data exists', async () => {
-      mockGetCategoriesConfig.mockResolvedValue({
-        categories: [
-          { id: 'cat_1', name: 'delivery', description: 'Delivery Issues', subcategories: [] },
-          { id: 'cat_2', name: 'quality', description: 'Product Quality', subcategories: [] },
-        ],
-      })
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        expect(screen.getByText('Delivery Issues')).toBeInTheDocument()
-        expect(screen.getByText('Product Quality')).toBeInTheDocument()
-      })
+      await renderWithCategories([
+        { id: 'cat_1', name: 'delivery', description: 'Delivery Issues', subcategories: [] },
+        { id: 'cat_2', name: 'quality', description: 'Product Quality', subcategories: [] },
+      ], 'Delivery Issues')
+
+      expect(screen.getByText('Product Quality')).toBeInTheDocument()
     })
 
     it('shows category count in header', async () => {
-      mockGetCategoriesConfig.mockResolvedValue({
-        categories: [
-          { id: 'cat_1', name: 'delivery', description: 'Delivery', subcategories: [] },
-          { id: 'cat_2', name: 'quality', description: 'Quality', subcategories: [] },
-        ],
-      })
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        expect(screen.getByText('2 categories')).toBeInTheDocument()
-      })
+      await renderWithCategories([
+        deliveryCategory(),
+        { id: 'cat_2', name: 'quality', description: 'Quality', subcategories: [] },
+      ], '2 categories')
+
+      expect(screen.getByText('2 categories')).toBeInTheDocument()
     })
 
     it('shows subcategory count for each category', async () => {
-      mockGetCategoriesConfig.mockResolvedValue({
-        categories: [
-          {
-            id: 'cat_1',
-            name: 'delivery',
-            description: 'Delivery',
-            subcategories: [
-              { id: 'sub_1', name: 'late', description: 'Late Delivery' },
-              { id: 'sub_2', name: 'damaged', description: 'Damaged Package' },
-            ],
-          },
-        ],
-      })
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        expect(screen.getByText('2 subs')).toBeInTheDocument()
-      })
+      await renderDelivery([LATE_DELIVERY, { id: 'sub_2', name: 'damaged', description: 'Damaged Package' }])
+
+      expect(screen.getByText('2 subs')).toBeInTheDocument()
     })
   })
 
   describe('add category', () => {
-    it('adds new category when form is submitted', async () => {
-      const user = userEvent.setup()
-      mockGetCategoriesConfig.mockResolvedValue({ categories: [] })
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        expect(screen.getByPlaceholderText('Add new category...')).toBeInTheDocument()
-      })
-      
-      const input = screen.getByPlaceholderText('Add new category...')
-      await user.type(input, 'New Category')
-      await user.click(screen.getByRole('button', { name: /add category/i }))
-      
-      await waitFor(() => {
-        expect(mockSaveCategoriesConfig).toHaveBeenCalledWith({
-          categories: expect.arrayContaining([
-            expect.objectContaining({
-              name: 'new_category',
-              description: 'New Category',
-            }),
-          ]),
-        })
-      })
+    it.each([
+      ['adds new category when form is submitted', 'New Category', 'new_category'],
+      ['converts category name to lowercase with underscores', 'Customer Support Issues', 'customer_support_issues'],
+    ])('%s', async (_title, typed, normalized) => {
+      const user = await renderEmpty()
+
+      await addCategory(user, typed)
+
+      await expectSavedCategories(expect.arrayContaining([
+        expect.objectContaining({ name: normalized, description: typed }),
+      ]))
     })
 
     it('disables add button when input is empty', async () => {
-      mockGetCategoriesConfig.mockResolvedValue({ categories: [] })
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        const addButton = screen.getByRole('button', { name: /add category/i })
-        expect(addButton).toBeDisabled()
-      })
+      await renderEmpty()
+
+      expect(screen.getByRole('button', { name: /add category/i })).toBeDisabled()
+    })
+
+    it('adds category when Enter is pressed in input', async () => {
+      const user = await renderEmpty()
+
+      await user.type(screen.getByPlaceholderText(ADD_CATEGORY_PLACEHOLDER), 'New Category{Enter}')
+
+      await expectSavedCategories([expect.objectContaining({ name: 'new_category', description: 'New Category' })])
+    })
+
+    it('does not add category when input is empty', async () => {
+      const user = await renderEmpty()
+
+      await user.type(screen.getByPlaceholderText(ADD_CATEGORY_PLACEHOLDER), '{Enter}')
+
+      expect(mockSaveCategoriesConfig).not.toHaveBeenCalled()
     })
   })
 
   describe('delete category', () => {
     it('shows confirmation modal when delete is clicked', async () => {
-      const user = userEvent.setup()
-      mockGetCategoriesConfig.mockResolvedValue({
-        categories: [{ id: 'cat_1', name: 'delivery', description: 'Delivery', subcategories: [] }],
-      })
-      
-      renderComponent()
-      
+      const user = await renderDelivery()
+
+      await openDeleteDelivery(user)
+
+      expect(screen.getByText(/are you sure you want to delete this category/i)).toBeInTheDocument()
+    })
+
+    it('deletes category when confirmed', async () => {
+      const user = await renderDelivery()
+      await openDeleteDelivery(user)
+
+      await user.click(screen.getByRole('button', { name: /^delete$/i }))
+
+      await expectSavedCategories([])
+    })
+
+    it('cancels deletion when cancel is clicked', async () => {
+      const user = await renderDelivery()
+      await openDeleteDelivery(user)
+
+      await user.click(screen.getByRole('button', { name: /cancel/i }))
+
       await waitFor(() => {
-        expect(screen.getByText('Delivery')).toBeInTheDocument()
+        expect(screen.queryByText('Delete Category')).not.toBeInTheDocument()
       })
-      
-      const deleteButtons = screen.getAllByRole('button')
-      const deleteButton = deleteButtons.find(btn => btn.querySelector('svg.lucide-trash-2'))
-      await user.click(deleteButton!)
-      
-      await waitFor(() => {
-        expect(screen.getByText('Delete Category')).toBeInTheDocument()
-        expect(screen.getByText(/are you sure you want to delete this category/i)).toBeInTheDocument()
-      })
+      expect(screen.getByText('Delivery')).toBeInTheDocument()
     })
   })
 
   describe('expand/collapse', () => {
     it('expands category to show subcategories when clicked', async () => {
-      const user = userEvent.setup()
-      mockGetCategoriesConfig.mockResolvedValue({
-        categories: [
-          {
-            id: 'cat_1',
-            name: 'delivery',
-            description: 'Delivery',
-            subcategories: [{ id: 'sub_1', name: 'late', description: 'Late Delivery' }],
-          },
-        ],
-      })
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        expect(screen.getByText('Delivery')).toBeInTheDocument()
-      })
-      
-      // Click expand button - it's a button with ChevronRight icon
-      const deliveryRow = screen.getByText('Delivery').closest('div')
-      const expandButton = deliveryRow?.querySelector('button')
-      if (expandButton) await user.click(expandButton)
-      
-      await waitFor(() => {
-        expect(screen.getByText('Late Delivery')).toBeInTheDocument()
-      })
-    })
-  })
+      const user = await renderDelivery([LATE_DELIVERY])
 
-  describe('AI generation', () => {
-    it('shows AI generation section', async () => {
-      mockGetCategoriesConfig.mockResolvedValue({ categories: [] })
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        expect(screen.getByText('AI Category Suggestions')).toBeInTheDocument()
-      })
+      await expandDelivery(user, 'Late Delivery')
+
+      expect(screen.getByRole('button', { name: 'Collapse Delivery' })).toHaveAttribute('aria-expanded', 'true')
+      expect(screen.getByText('Late Delivery')).toBeInTheDocument()
     })
 
-    it('disables generate button when description is empty', async () => {
-      mockGetCategoriesConfig.mockResolvedValue({ categories: [] })
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        const generateButton = screen.getByRole('button', { name: /generate categories/i })
-        expect(generateButton).toBeDisabled()
-      })
-    })
-
-    it('calls generate API when button is clicked with description', async () => {
-      const user = userEvent.setup()
-      mockGetCategoriesConfig.mockResolvedValue({ categories: [] })
-      mockGenerateCategories.mockResolvedValue({
-        categories: [{ id: 'gen_1', name: 'generated', description: 'Generated', subcategories: [] }],
-      })
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        expect(screen.getByPlaceholderText(/e\.g\., We are an airline/i)).toBeInTheDocument()
-      })
-      
-      const textarea = screen.getByPlaceholderText(/e\.g\., We are an airline/i)
-      await user.type(textarea, 'We are an e-commerce company')
-      await user.click(screen.getByRole('button', { name: /generate categories/i }))
-      
-      await waitFor(() => {
-        expect(mockGenerateCategories).toHaveBeenCalledWith('We are an e-commerce company')
-      })
-    })
-
-    it('shows error message when generation fails', async () => {
-      const user = userEvent.setup()
-      mockGetCategoriesConfig.mockResolvedValue({ categories: [] })
-      mockGenerateCategories.mockRejectedValue(new Error('Generation failed'))
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        expect(screen.getByPlaceholderText(/e\.g\., We are an airline/i)).toBeInTheDocument()
-      })
-      
-      const textarea = screen.getByPlaceholderText(/e\.g\., We are an airline/i)
-      await user.type(textarea, 'Test company')
-      await user.click(screen.getByRole('button', { name: /generate categories/i }))
-      
-      await waitFor(() => {
-        expect(screen.getByText(/failed to generate categories/i)).toBeInTheDocument()
-      })
-    })
-  })
-
-  describe('save status', () => {
-    it('shows success message after saving', async () => {
-      const user = userEvent.setup()
-      mockGetCategoriesConfig.mockResolvedValue({ categories: [] })
-      mockSaveCategoriesConfig.mockResolvedValue({ success: true })
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        expect(screen.getByPlaceholderText('Add new category...')).toBeInTheDocument()
-      })
-      
-      const input = screen.getByPlaceholderText('Add new category...')
-      await user.type(input, 'Test')
-      await user.click(screen.getByRole('button', { name: /add category/i }))
-      
-      await waitFor(() => {
-        expect(screen.getByText('Categories saved successfully')).toBeInTheDocument()
-      })
-    })
-  })
-
-  describe('edit category', () => {
-    it('shows input field when category name is clicked', async () => {
-      const user = userEvent.setup()
-      mockGetCategoriesConfig.mockResolvedValue({
-        categories: [{ id: 'cat_1', name: 'delivery', description: 'Delivery', subcategories: [] }],
-      })
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        expect(screen.getByText('Delivery')).toBeInTheDocument()
-      })
-      
-      await user.click(screen.getByText('Delivery'))
-      
-      await waitFor(() => {
-        expect(screen.getByDisplayValue('Delivery')).toBeInTheDocument()
-      })
-    })
-
-    it('saves category when Enter is pressed', async () => {
-      const user = userEvent.setup()
-      mockGetCategoriesConfig.mockResolvedValue({
-        categories: [{ id: 'cat_1', name: 'delivery', description: 'Delivery', subcategories: [] }],
-      })
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        expect(screen.getByText('Delivery')).toBeInTheDocument()
-      })
-      
-      await user.click(screen.getByText('Delivery'))
-      
-      const input = await screen.findByDisplayValue('Delivery')
-      await user.clear(input)
-      await user.type(input, 'Updated Delivery{Enter}')
-      
-      await waitFor(() => {
-        expect(mockSaveCategoriesConfig).toHaveBeenCalledWith({
-          categories: expect.arrayContaining([
-            expect.objectContaining({ description: 'Updated Delivery' }),
-          ]),
-        })
-      })
-    })
-
-    it('cancels edit when Escape is pressed', async () => {
-      const user = userEvent.setup()
-      mockGetCategoriesConfig.mockResolvedValue({
-        categories: [{ id: 'cat_1', name: 'delivery', description: 'Delivery', subcategories: [] }],
-      })
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        expect(screen.getByText('Delivery')).toBeInTheDocument()
-      })
-      
-      await user.click(screen.getByText('Delivery'))
-      
-      const input = await screen.findByDisplayValue('Delivery')
-      await user.type(input, '{Escape}')
-      
-      await waitFor(() => {
-        expect(screen.getByText('Delivery')).toBeInTheDocument()
-        expect(screen.queryByDisplayValue('Delivery')).not.toBeInTheDocument()
-      })
-    })
-  })
-
-  describe('subcategories', () => {
-    it('adds subcategory when form is submitted', async () => {
-      const user = userEvent.setup()
-      mockGetCategoriesConfig.mockResolvedValue({
-        categories: [{
-          id: 'cat_1',
-          name: 'delivery',
-          description: 'Delivery',
-          subcategories: [],
-        }],
-      })
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        expect(screen.getByText('Delivery')).toBeInTheDocument()
-      })
-      
-      // Expand category
-      const expandButton = screen.getByText('Delivery').closest('div')?.querySelector('button')
-      if (expandButton) await user.click(expandButton)
-      
-      await waitFor(() => {
-        expect(screen.getByPlaceholderText('Add subcategory...')).toBeInTheDocument()
-      })
-      
-      const subInput = screen.getByPlaceholderText('Add subcategory...')
-      await user.type(subInput, 'Late Delivery')
-      
-      // Find and click the add subcategory button (Plus icon)
-      const addButtons = screen.getAllByRole('button')
-      const addSubButton = addButtons.find(btn => btn.querySelector('svg.lucide-plus') && btn.closest('.bg-white'))
-      if (addSubButton) await user.click(addSubButton)
-      
-      await waitFor(() => {
-        expect(mockSaveCategoriesConfig).toHaveBeenCalledWith({
-          categories: expect.arrayContaining([
-            expect.objectContaining({
-              subcategories: expect.arrayContaining([
-                expect.objectContaining({ description: 'Late Delivery' }),
-              ]),
-            }),
-          ]),
-        })
-      })
-    })
-
-    it('adds subcategory when Enter is pressed', async () => {
-      const user = userEvent.setup()
-      mockGetCategoriesConfig.mockResolvedValue({
-        categories: [{
-          id: 'cat_1',
-          name: 'delivery',
-          description: 'Delivery',
-          subcategories: [],
-        }],
-      })
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        expect(screen.getByText('Delivery')).toBeInTheDocument()
-      })
-      
-      // Expand category
-      const expandButton = screen.getByText('Delivery').closest('div')?.querySelector('button')
-      if (expandButton) await user.click(expandButton)
-      
-      await waitFor(() => {
-        expect(screen.getByPlaceholderText('Add subcategory...')).toBeInTheDocument()
-      })
-      
-      const subInput = screen.getByPlaceholderText('Add subcategory...')
-      await user.type(subInput, 'Late Delivery{Enter}')
-      
-      await waitFor(() => {
-        expect(mockSaveCategoriesConfig).toHaveBeenCalled()
-      })
-    })
-
-    it('deletes subcategory when delete button is clicked', async () => {
-      const user = userEvent.setup()
-      mockGetCategoriesConfig.mockResolvedValue({
-        categories: [{
-          id: 'cat_1',
-          name: 'delivery',
-          description: 'Delivery',
-          subcategories: [{ id: 'sub_1', name: 'late', description: 'Late Delivery' }],
-        }],
-      })
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        expect(screen.getByText('Delivery')).toBeInTheDocument()
-      })
-      
-      // Expand category
-      const expandButton = screen.getByText('Delivery').closest('div')?.querySelector('button')
-      if (expandButton) await user.click(expandButton)
-      
-      await waitFor(() => {
-        expect(screen.getByText('Late Delivery')).toBeInTheDocument()
-      })
-      
-      // Find delete button for subcategory (smaller trash icon)
-      const subRow = screen.getByText('Late Delivery').closest('div')
-      const deleteBtn = subRow?.querySelector('button')
-      if (deleteBtn) await user.click(deleteBtn)
-      
-      await waitFor(() => {
-        expect(mockSaveCategoriesConfig).toHaveBeenCalledWith({
-          categories: expect.arrayContaining([
-            expect.objectContaining({
-              subcategories: [],
-            }),
-          ]),
-        })
-      })
-    })
-
-    it('edits subcategory when clicked', async () => {
-      const user = userEvent.setup()
-      mockGetCategoriesConfig.mockResolvedValue({
-        categories: [{
-          id: 'cat_1',
-          name: 'delivery',
-          description: 'Delivery',
-          subcategories: [{ id: 'sub_1', name: 'late', description: 'Late Delivery' }],
-        }],
-      })
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        expect(screen.getByText('Delivery')).toBeInTheDocument()
-      })
-      
-      // Expand category
-      const expandButton = screen.getByText('Delivery').closest('div')?.querySelector('button')
-      if (expandButton) await user.click(expandButton)
-      
-      await waitFor(() => {
-        expect(screen.getByText('Late Delivery')).toBeInTheDocument()
-      })
-      
-      await user.click(screen.getByText('Late Delivery'))
-      
-      await waitFor(() => {
-        expect(screen.getByDisplayValue('Late Delivery')).toBeInTheDocument()
-      })
-    })
-  })
-
-  describe('confirm delete modal', () => {
-    it('deletes category when confirmed', async () => {
-      const user = userEvent.setup()
-      mockGetCategoriesConfig.mockResolvedValue({
-        categories: [{ id: 'cat_1', name: 'delivery', description: 'Delivery', subcategories: [] }],
-      })
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        expect(screen.getByText('Delivery')).toBeInTheDocument()
-      })
-      
-      // Click delete button
-      const deleteButtons = screen.getAllByRole('button')
-      const deleteButton = deleteButtons.find(btn => btn.querySelector('svg.lucide-trash-2'))
-      await user.click(deleteButton!)
-      
-      await waitFor(() => {
-        expect(screen.getByText('Delete Category')).toBeInTheDocument()
-      })
-      
-      // Confirm deletion
-      await user.click(screen.getByRole('button', { name: /delete/i }))
-      
-      await waitFor(() => {
-        expect(mockSaveCategoriesConfig).toHaveBeenCalledWith({
-          categories: [],
-        })
-      })
-    })
-
-    it('cancels deletion when cancel is clicked', async () => {
-      const user = userEvent.setup()
-      mockGetCategoriesConfig.mockResolvedValue({
-        categories: [{ id: 'cat_1', name: 'delivery', description: 'Delivery', subcategories: [] }],
-      })
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        expect(screen.getByText('Delivery')).toBeInTheDocument()
-      })
-      
-      // Click delete button
-      const deleteButtons = screen.getAllByRole('button')
-      const deleteButton = deleteButtons.find(btn => btn.querySelector('svg.lucide-trash-2'))
-      await user.click(deleteButton!)
-      
-      await waitFor(() => {
-        expect(screen.getByText('Delete Category')).toBeInTheDocument()
-      })
-      
-      // Cancel deletion
-      await user.click(screen.getByRole('button', { name: /cancel/i }))
-      
-      await waitFor(() => {
-        expect(screen.queryByText('Delete Category')).not.toBeInTheDocument()
-      })
-      
-      // Category should still exist
-      expect(screen.getByText('Delivery')).toBeInTheDocument()
-    })
-  })
-
-  describe('add category via Enter key', () => {
-    it('adds category when Enter is pressed in input', async () => {
-      const user = userEvent.setup()
-      mockGetCategoriesConfig.mockResolvedValue({ categories: [] })
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        expect(screen.getByPlaceholderText('Add new category...')).toBeInTheDocument()
-      })
-      
-      const input = screen.getByPlaceholderText('Add new category...')
-      await user.type(input, 'New Category{Enter}')
-      
-      await waitFor(() => {
-        expect(mockSaveCategoriesConfig).toHaveBeenCalled()
-      })
-    })
-  })
-
-  describe('category name display', () => {
-    it('shows category name when description is missing', async () => {
-      mockGetCategoriesConfig.mockResolvedValue({
-        categories: [{ id: 'cat_1', name: 'delivery_issues', subcategories: [] }],
-      })
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        expect(screen.getAllByText('delivery_issues').length).toBeGreaterThan(0)
-      })
-    })
-  })
-
-  describe('subcategory name display', () => {
-    it('shows subcategory name when description is missing', async () => {
-      const user = userEvent.setup()
-      mockGetCategoriesConfig.mockResolvedValue({
-        categories: [{
-          id: 'cat_1',
-          name: 'delivery',
-          description: 'Delivery',
-          subcategories: [{ id: 'sub_1', name: 'late_delivery' }],
-        }],
-      })
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        expect(screen.getByText('Delivery')).toBeInTheDocument()
-      })
-      
-      // Expand category by clicking the expand button
-      const expandButtons = screen.getAllByRole('button')
-      const expandBtn = expandButtons.find(b => b.querySelector('svg.lucide-chevron-right'))
-      if (expandBtn) await user.click(expandBtn)
-      
-      await waitFor(() => {
-        expect(screen.getAllByText('late_delivery').length).toBeGreaterThan(0)
-      }, { timeout: 2000 })
-    })
-  })
-
-  describe('edit category on blur', () => {
-    it('saves category when input loses focus', async () => {
-      const user = userEvent.setup()
-      mockGetCategoriesConfig.mockResolvedValue({
-        categories: [{ id: 'cat_1', name: 'delivery', description: 'Delivery', subcategories: [] }],
-      })
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        expect(screen.getByText('Delivery')).toBeInTheDocument()
-      })
-      
-      await user.click(screen.getByText('Delivery'))
-      
-      const input = await screen.findByDisplayValue('Delivery')
-      await user.clear(input)
-      await user.type(input, 'Updated')
-      
-      // Trigger blur by clicking elsewhere
-      await user.click(document.body)
-      
-      await waitFor(() => {
-        expect(mockSaveCategoriesConfig).toHaveBeenCalled()
-      })
-    })
-  })
-
-  describe('edit subcategory on blur', () => {
-    it('saves subcategory when input loses focus', async () => {
-      const user = userEvent.setup()
-      mockGetCategoriesConfig.mockResolvedValue({
-        categories: [{
-          id: 'cat_1',
-          name: 'delivery',
-          description: 'Delivery',
-          subcategories: [{ id: 'sub_1', name: 'late', description: 'Late Delivery' }],
-        }],
-      })
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        expect(screen.getByText('Delivery')).toBeInTheDocument()
-      })
-      
-      // Expand category
-      const expandButton = screen.getByText('Delivery').closest('div')?.querySelector('button')
-      if (expandButton) await user.click(expandButton)
-      
-      await waitFor(() => {
-        expect(screen.getByText('Late Delivery')).toBeInTheDocument()
-      })
-      
-      await user.click(screen.getByText('Late Delivery'))
-      
-      const input = await screen.findByDisplayValue('Late Delivery')
-      await user.clear(input)
-      await user.type(input, 'Very Late')
-      
-      // Trigger blur
-      await user.click(document.body)
-      
-      await waitFor(() => {
-        expect(mockSaveCategoriesConfig).toHaveBeenCalled()
-      })
-    })
-  })
-
-  describe('collapse expanded category', () => {
     it('collapses category when expand button is clicked again', async () => {
-      const user = userEvent.setup()
-      mockGetCategoriesConfig.mockResolvedValue({
-        categories: [{
-          id: 'cat_1',
-          name: 'delivery',
-          description: 'Delivery',
-          subcategories: [{ id: 'sub_1', name: 'late', description: 'Late Delivery' }],
-        }],
-      })
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        expect(screen.getByText('Delivery')).toBeInTheDocument()
-      })
-      
-      // Expand category
-      const expandButton = screen.getByText('Delivery').closest('div')?.querySelector('button')
-      if (expandButton) await user.click(expandButton)
-      
-      await waitFor(() => {
-        expect(screen.getByText('Late Delivery')).toBeInTheDocument()
-      })
-      
-      // Collapse category
-      if (expandButton) await user.click(expandButton)
-      
+      const user = await renderDelivery([LATE_DELIVERY])
+      await expandDelivery(user, 'Late Delivery')
+
+      await user.click(screen.getByRole('button', { name: 'Collapse Delivery' }))
+
       await waitFor(() => {
         expect(screen.queryByText('Late Delivery')).not.toBeInTheDocument()
       })
     })
   })
 
-  describe('AI generation loading state', () => {
-    it('shows loading state during generation', async () => {
-      const user = userEvent.setup()
-      mockGetCategoriesConfig.mockResolvedValue({ categories: [] })
-      
-      // Make generation take time
-      mockGenerateCategories.mockImplementation(() => new Promise(resolve => {
-        setTimeout(() => resolve({ categories: [] }), 100)
-      }))
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        expect(screen.getByPlaceholderText(/e\.g\., We are an airline/i)).toBeInTheDocument()
+  describe('AI generation', () => {
+    it('shows AI generation section', async () => {
+      await renderEmpty()
+
+      expect(screen.getByText('AI Category Suggestions')).toBeInTheDocument()
+    })
+
+    it('disables generate button when description is empty', async () => {
+      await renderEmpty()
+
+      expect(screen.getByRole('button', { name: /generate categories/i })).toBeDisabled()
+    })
+
+    it('calls generate API when button is clicked with description', async () => {
+      mockGenerateCategories.mockResolvedValue({
+        categories: [{ id: 'gen_1', name: 'generated', description: 'Generated', subcategories: [] }],
       })
-      
-      const textarea = screen.getByPlaceholderText(/e\.g\., We are an airline/i)
-      await user.type(textarea, 'Test company')
-      await user.click(screen.getByRole('button', { name: /generate categories/i }))
-      
-      // Should show loading state
+      const user = await renderEmpty()
+
+      await generateCategories(user, 'We are an e-commerce company')
+
+      await waitFor(() => {
+        expect(mockGenerateCategories).toHaveBeenCalledWith('We are an e-commerce company')
+      })
+    })
+
+    it('shows error message when generation fails', async () => {
+      mockGenerateCategories.mockRejectedValue(new Error('Generation failed'))
+      const user = await renderEmpty()
+
+      await generateCategories(user, 'Test company')
+
+      await waitFor(() => {
+        expect(screen.getByText(/failed to generate categories/i)).toBeInTheDocument()
+      })
+    })
+
+    it('shows loading state during generation', async () => {
+      mockGenerateCategories.mockImplementation(resolvesAfter({ categories: [] }))
+      const user = await renderEmpty()
+
+      await generateCategories(user, 'Test company')
+
       expect(screen.getByText(/generating/i)).toBeInTheDocument()
     })
-  })
 
-  describe('AI generation success', () => {
     it('saves generated categories automatically', async () => {
-      const user = userEvent.setup()
-      mockGetCategoriesConfig.mockResolvedValue({ categories: [] })
       mockGenerateCategories.mockResolvedValue({
         categories: [
           { id: 'gen_1', name: 'generated', description: 'Generated Category', subcategories: [] },
         ],
       })
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        expect(screen.getByPlaceholderText(/e\.g\., We are an airline/i)).toBeInTheDocument()
-      })
-      
-      const textarea = screen.getByPlaceholderText(/e\.g\., We are an airline/i)
-      await user.type(textarea, 'Test company')
-      await user.click(screen.getByRole('button', { name: /generate categories/i }))
-      
-      await waitFor(() => {
-        expect(mockSaveCategoriesConfig).toHaveBeenCalledWith({
-          categories: expect.arrayContaining([
-            expect.objectContaining({ name: 'generated' }),
-          ]),
-        })
-      })
+      const user = await renderEmpty()
+
+      await generateCategories(user, 'Test company')
+
+      await expectSavedCategories(expect.arrayContaining([
+        expect.objectContaining({ name: 'generated' }),
+      ]))
     })
   })
 
-  describe('saving status', () => {
-    it('shows saving indicator during save', async () => {
-      const user = userEvent.setup()
-      mockGetCategoriesConfig.mockResolvedValue({ categories: [] })
-      
-      // Make save take time
-      mockSaveCategoriesConfig.mockImplementation(() => new Promise(resolve => {
-        setTimeout(() => resolve({ success: true }), 100)
-      }))
-      
-      renderComponent()
-      
+  describe('save status', () => {
+    it('shows success message after saving', async () => {
+      const user = await renderEmpty()
+
+      await addCategory(user, 'Test')
+
       await waitFor(() => {
-        expect(screen.getByPlaceholderText('Add new category...')).toBeInTheDocument()
+        expect(screen.getByText('Categories saved successfully')).toBeInTheDocument()
       })
-      
-      const input = screen.getByPlaceholderText('Add new category...')
-      await user.type(input, 'Test')
-      await user.click(screen.getByRole('button', { name: /add category/i }))
-      
-      // Should show saving state
+    })
+
+    it('shows saving indicator during save', async () => {
+      mockSaveCategoriesConfig.mockImplementation(resolvesAfter({ success: true }))
+      const user = await renderEmpty()
+
+      await addCategory(user, 'Test')
+
       expect(screen.getByText(/saving/i)).toBeInTheDocument()
     })
   })
 
-  describe('empty subcategory input', () => {
-    it('does not add subcategory when input is empty', async () => {
-      const user = userEvent.setup()
-      const initialCategory = {
-        id: 'cat_1',
-        name: 'delivery',
-        description: 'Delivery',
-        subcategories: [],
-      }
-      mockGetCategoriesConfig.mockResolvedValue({
-        categories: [initialCategory],
-      })
-      
-      renderComponent()
-      
+  describe('edit category', () => {
+    it('shows input field when category name is clicked', async () => {
+      const user = await renderDelivery()
+
+      expect(await startRename(user, 'Delivery')).toHaveAccessibleName('Rename Delivery')
+    })
+
+    it('saves category when Enter is pressed', async () => {
+      const user = await renderDelivery()
+      const input = await startRename(user, 'Delivery')
+
+      await user.clear(input)
+      await user.type(input, 'Updated Delivery{Enter}')
+
+      await expectSavedCategories(expect.arrayContaining([
+        expect.objectContaining({ description: 'Updated Delivery' }),
+      ]))
+    })
+
+    it('cancels edit when Escape is pressed', async () => {
+      const user = await renderDelivery()
+      const input = await startRename(user, 'Delivery')
+
+      await user.type(input, '{Escape}')
+
       await waitFor(() => {
         expect(screen.getByText('Delivery')).toBeInTheDocument()
+        expect(screen.queryByDisplayValue('Delivery')).not.toBeInTheDocument()
       })
-      
-      // Expand category
-      const expandButtons = screen.getAllByRole('button')
-      const expandBtn = expandButtons.find(b => b.querySelector('svg.lucide-chevron-right'))
-      if (expandBtn) await user.click(expandBtn)
-      
-      await waitFor(() => {
-        expect(screen.getByPlaceholderText('Add subcategory...')).toBeInTheDocument()
-      })
-      
-      // Try to add empty subcategory (input is already empty)
-      const subInput = screen.getByPlaceholderText('Add subcategory...')
-      await user.type(subInput, '{Enter}')
-      
-      // Wait a bit to ensure any async calls complete
-      await new Promise(resolve => setTimeout(resolve, 50))
-      
-      // Verify that no subcategory was added - check that any save calls
-      // did not include a new subcategory in the delivery category
-      const saveCalls = mockSaveCategoriesConfig.mock.calls
-      for (const call of saveCalls) {
-        const savedCategories = call[0]?.categories || call[0]
-        if (Array.isArray(savedCategories)) {
-          const deliveryCategory = savedCategories.find((c: { id: string }) => c.id === 'cat_1')
-          if (deliveryCategory) {
-            // If delivery category was saved, it should still have no subcategories
-            expect(deliveryCategory.subcategories?.length || 0).toBe(0)
-          }
-        }
-      }
+    })
+
+    it('saves category when input loses focus', async () => {
+      const user = await renderDelivery()
+      const input = await startRename(user, 'Delivery')
+
+      await user.clear(input)
+      await user.type(input, 'Updated')
+      await user.click(document.body)
+
+      await expectSavedCategories([expect.objectContaining({ name: 'updated', description: 'Updated' })])
     })
   })
 
-  describe('empty category input', () => {
-    it('does not add category when input is empty', async () => {
-      const user = userEvent.setup()
-      mockGetCategoriesConfig.mockResolvedValue({ categories: [] })
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        expect(screen.getByPlaceholderText('Add new category...')).toBeInTheDocument()
-      })
-      
-      // Try to add empty category
-      const input = screen.getByPlaceholderText('Add new category...')
-      await user.type(input, '{Enter}')
-      
-      // Should not call save
+  describe('subcategories', () => {
+    it('adds subcategory when form is submitted', async () => {
+      const user = await renderDelivery()
+      await expandDelivery(user)
+
+      await user.type(screen.getByPlaceholderText(ADD_SUBCATEGORY_PLACEHOLDER), 'Late Delivery')
+      await user.click(screen.getByRole('button', { name: 'Add subcategory' }))
+
+      await expectSavedCategories(containingSubcategory({ description: 'Late Delivery' }))
+    })
+
+    it('adds subcategory when Enter is pressed', async () => {
+      const user = await renderDelivery()
+      await expandDelivery(user)
+
+      await user.type(screen.getByPlaceholderText(ADD_SUBCATEGORY_PLACEHOLDER), 'Late Delivery{Enter}')
+
+      await expectSavedCategories(containingSubcategory({ name: 'late_delivery', description: 'Late Delivery' }))
+    })
+
+    it('converts subcategory name to lowercase with underscores', async () => {
+      const user = await renderDelivery()
+      await expandDelivery(user)
+
+      await user.type(screen.getByPlaceholderText(ADD_SUBCATEGORY_PLACEHOLDER), 'Very Late Delivery{Enter}')
+
+      await expectSavedCategories(containingSubcategory({
+        name: 'very_late_delivery',
+        description: 'Very Late Delivery',
+      }))
+    })
+
+    it('deletes subcategory when delete button is clicked', async () => {
+      const user = await renderDelivery([LATE_DELIVERY])
+      await expandDelivery(user, 'Late Delivery')
+
+      // Icon-only delete buttons are named after the row they act on
+      await user.click(screen.getByRole('button', { name: 'Delete subcategory Late Delivery' }))
+
+      await expectSavedCategories(expect.arrayContaining([
+        expect.objectContaining({ subcategories: [] }),
+      ]))
+    })
+
+    it('edits subcategory when clicked', async () => {
+      const user = await renderDelivery([LATE_DELIVERY])
+      await expandDelivery(user, 'Late Delivery')
+
+      expect(await startRename(user, 'Late Delivery')).toHaveAccessibleName('Rename Late Delivery')
+    })
+
+    it('saves subcategory when input loses focus', async () => {
+      const user = await renderDelivery([LATE_DELIVERY])
+      await expandDelivery(user, 'Late Delivery')
+      const input = await startRename(user, 'Late Delivery')
+
+      await user.clear(input)
+      await user.type(input, 'Very Late')
+      await user.click(document.body)
+
+      await expectSavedCategories(containingSubcategory({ id: 'sub_1', name: 'very_late', description: 'Very Late' }))
+    })
+
+    it('does not add subcategory when input is empty', async () => {
+      const user = await renderDelivery()
+      await expandDelivery(user)
+
+      // Try to add empty subcategory (input is already empty)
+      await user.type(screen.getByPlaceholderText(ADD_SUBCATEGORY_PLACEHOLDER), '{Enter}')
+
+      // Wait a bit to ensure any async calls complete
+      await new Promise(resolve => setTimeout(resolve, 50))
+
+      // The empty name is refused before any save is attempted.
       expect(mockSaveCategoriesConfig).not.toHaveBeenCalled()
     })
   })
 
-  describe('category name normalization', () => {
-    it('converts category name to lowercase with underscores', async () => {
-      const user = userEvent.setup()
-      mockGetCategoriesConfig.mockResolvedValue({ categories: [] })
-      
-      renderComponent()
-      
-      await waitFor(() => {
-        expect(screen.getByPlaceholderText('Add new category...')).toBeInTheDocument()
-      })
-      
-      const input = screen.getByPlaceholderText('Add new category...')
-      await user.type(input, 'Customer Support Issues')
-      await user.click(screen.getByRole('button', { name: /add category/i }))
-      
-      await waitFor(() => {
-        expect(mockSaveCategoriesConfig).toHaveBeenCalledWith({
-          categories: expect.arrayContaining([
-            expect.objectContaining({
-              name: 'customer_support_issues',
-              description: 'Customer Support Issues',
-            }),
-          ]),
-        })
-      })
-    })
-  })
-
-  describe('subcategory name normalization', () => {
-    it('converts subcategory name to lowercase with underscores', async () => {
-      const user = userEvent.setup()
+  describe('name display without description', () => {
+    it('shows category name when description is missing', async () => {
       mockGetCategoriesConfig.mockResolvedValue({
-        categories: [{
-          id: 'cat_1',
-          name: 'delivery',
-          description: 'Delivery',
-          subcategories: [],
-        }],
+        categories: [{ id: 'cat_1', name: 'delivery_issues', subcategories: [] }],
       })
-      
+
       renderComponent()
-      
-      await waitFor(() => {
-        expect(screen.getByText('Delivery')).toBeInTheDocument()
-      })
-      
-      // Expand category
-      const expandButton = screen.getByText('Delivery').closest('div')?.querySelector('button')
-      if (expandButton) await user.click(expandButton)
-      
-      await waitFor(() => {
-        expect(screen.getByPlaceholderText('Add subcategory...')).toBeInTheDocument()
-      })
-      
-      const subInput = screen.getByPlaceholderText('Add subcategory...')
-      await user.type(subInput, 'Very Late Delivery{Enter}')
-      
-      await waitFor(() => {
-        expect(mockSaveCategoriesConfig).toHaveBeenCalledWith({
-          categories: expect.arrayContaining([
-            expect.objectContaining({
-              subcategories: expect.arrayContaining([
-                expect.objectContaining({
-                  name: 'very_late_delivery',
-                  description: 'Very Late Delivery',
-                }),
-              ]),
-            }),
-          ]),
-        })
-      })
+
+      expect((await screen.findAllByText('delivery_issues')).length).toBeGreaterThan(0)
+    })
+
+    it('shows subcategory name when description is missing', async () => {
+      const user = await renderDelivery([{ id: 'sub_1', name: 'late_delivery' }])
+
+      await user.click(screen.getByRole('button', { name: 'Expand Delivery' }))
+
+      expect((await screen.findAllByText('late_delivery', {}, { timeout: 2000 })).length).toBeGreaterThan(0)
     })
   })
 })
 
 
 describe('sparse legacy rows (issue #181)', () => {
-  let queryClient: QueryClient
-
   beforeEach(() => {
     vi.clearAllMocks()
-    queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: 0 } },
-    })
     mockSaveCategoriesConfig.mockResolvedValue({ success: true })
   })
-
-  function renderComponent() {
-    return render(
-      <QueryClientProvider client={queryClient}>
-        <CategoriesManager />
-      </QueryClientProvider>
-    )
-  }
 
   it('renders a legacy row without id/subcategories instead of crashing the tab', async () => {
     // Exactly what the wire delivered when Settings → Categories crashed:
     // old DynamoDB rows carry {name, display_name, color} only.
-    mockGetCategoriesConfig.mockResolvedValue({
-      categories: [
-        { name: 'app', display_name: 'Mobile App', description: 'App experience', color: '#EC4899' },
-      ],
-    })
+    await renderWithCategories([
+      { name: 'app', display_name: 'Mobile App', description: 'App experience', color: '#EC4899' },
+    ], 'App experience')
 
-    renderComponent()
-
-    await waitFor(() => {
-      expect(screen.getByText('App experience')).toBeInTheDocument()
-    })
     expect(screen.getByText('0 subs')).toBeInTheDocument()
   })
 })

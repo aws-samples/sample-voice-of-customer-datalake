@@ -25,81 +25,31 @@
  * is missing or has moved renders its raw path and these matchers fail.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import OverviewTab from './OverviewTab'
-import { emptyProductContext } from './productContextFields'
+import {
+  FILLED_CONTEXT, PRD, PRFAQ, RESEARCH_A, RESEARCH_B, VISUAL_A,
+  datedDoc, prototypeMocks, prototypeProjectsApiModule, resetPrototypeMocks,
+} from './prototype-fixtures'
+// After the fixtures on purpose: this imports OverviewTab, whose module graph runs
+// the `vi.mock` factory below, which needs the fixture module evaluated.
+import { buildButton, overviewTab, renderOverviewTab } from './prototype-render-fixtures'
 // The real en catalogue, so the dialog's expected accessible name is the shipped
 // string rather than a copy of it that can drift.
 import en from '../../../public/locales/en/projectDetail.json'
-import type { Project, ProductContext, ProductDoc, ProjectDocument } from '../../api/types'
+import type { ProjectDocument } from '../../api/types'
+import type { ProductDoc } from '../../api/projectTypes'
 
-const mockBuildPrototype = vi.fn()
-vi.mock('../../api/projectsApi', () => ({
-  projectsApi: {
-    buildPrototype: (...args: unknown[]) => mockBuildPrototype(...args),
-  },
-}))
+vi.mock('../../api/projectsApi', () => prototypeProjectsApiModule())
+const { buildPrototype: mockBuildPrototype } = prototypeMocks
 
-const project: Project = {
-  project_id: 'proj_1',
-  name: 'Test project',
-  description: '',
-  status: 'active',
-  created_at: '2026-01-01T00:00:00Z',
-  updated_at: '2026-01-01T00:00:00Z',
-  persona_count: 0,
-  document_count: 0,
-}
-
-function doc(
-  documentType: ProjectDocument['document_type'],
-  id: string,
-  title: string,
-  createdAt: string,
-): ProjectDocument {
-  return { document_id: id, document_type: documentType, title, content: 'x', created_at: createdAt }
-}
-
-const PRD = doc('prd', 'prd_1', 'Delivery spec', '2026-01-01T00:00:00Z')
-const PRD_2 = doc('prd', 'prd_2', 'Delivery spec v2', '2026-01-15T00:00:00Z')
-const PRFAQ = doc('prfaq', 'prfaq_1', 'Launch note', '2026-02-01T00:00:00Z')
-const RESEARCH_A = doc('research', 'research_a', 'Churn interviews', '2026-03-01T00:00:00Z')
-const RESEARCH_B = doc('research', 'research_b', 'Pricing survey', '2026-04-01T00:00:00Z')
-const PROTOTYPE = doc('prototype', 'proto_1', 'First cut', '2026-05-01T00:00:00Z')
-
-const FILLED_CONTEXT: ProductContext = { ...emptyProductContext(), one_liner: 'A console for wombats' }
-
-const VISUAL_A: ProductDoc = {
-  doc_id: 'pd_a',
-  filename: 'home-screen.png',
-  content_type: 'image/png',
-  size_bytes: 1024,
-  status: 'ready',
-  error: null,
-  extracted_chars: 400,
-  created_at: '2026-05-01T00:00:00Z',
-}
+const PRD_2 = datedDoc('prd', 'prd_2', 'Delivery spec v2', '2026-01-15T00:00:00Z')
+const PROTOTYPE = datedDoc('prototype', 'proto_1', 'First cut', '2026-05-01T00:00:00Z')
 
 function tab(documents: ProjectDocument[], productDocs?: ProductDoc[]) {
-  return (
-    <OverviewTab
-      project={project}
-      personas={[]}
-      documents={documents}
-      productContext={FILLED_CONTEXT}
-      productDocs={productDocs}
-      onGeneratePersonas={vi.fn()}
-      onGenerateDoc={vi.fn()}
-      onRunResearch={vi.fn()}
-      onRemixDocuments={vi.fn()}
-      onOpenProductTool={vi.fn()}
-      onJobStarted={vi.fn()}
-    />
-  )
+  return overviewTab({ documents, productContext: FILLED_CONTEXT, productDocs })
 }
 
-const buildButton = () => screen.getByRole('button', { name: /configure & build prototype/i })
 /**
  * The panel, found the way assistive tech finds it. `ModalShell` owns
  * `role="dialog"`, the accessible name and the focus trap, so asserting those
@@ -109,6 +59,22 @@ const buildButton = () => screen.getByRole('button', { name: /configure & build 
  */
 const wizard = () => screen.getByRole('dialog')
 const maybeWizard = () => screen.queryByRole('dialog')
+
+/** The one-of-each project — the shape most tests here open the wizard on. */
+const BASELINE: ProjectDocument[] = [PRD, PRFAQ, RESEARCH_A]
+
+/** Renders the tab for `documents` with the one ready visual every test here carries. */
+function renderTab(documents: ProjectDocument[]) {
+  return renderOverviewTab({ documents, productContext: FILLED_CONTEXT, productDocs: [VISUAL_A] })
+}
+
+/** Renders `documents` and opens the wizard; returns the user and `rerender`. */
+async function openWizard(documents: ProjectDocument[] = BASELINE) {
+  const user = userEvent.setup()
+  const { rerender } = renderTab(documents)
+  await user.click(buildButton())
+  return { user, rerender }
+}
 
 /**
  * The five project shapes that used to behave differently. Only the first opened no
@@ -123,17 +89,11 @@ const SHAPES: ReadonlyArray<{ name: string; documents: ProjectDocument[] }> = [
   { name: 'two PRDs (previously the choose-sources note)', documents: [PRD, PRD_2, PRFAQ] },
 ]
 
-beforeEach(() => {
-  vi.clearAllMocks()
-  mockBuildPrototype.mockResolvedValue({ job_id: 'job_1' })
-})
+beforeEach(resetPrototypeMocks)
 
 describe('the build configuration is reachable for every project', () => {
   it.each(SHAPES)('opens the wizard on $name', async ({ documents }) => {
-    const user = userEvent.setup()
-    render(tab(documents, [VISUAL_A]))
-
-    await user.click(buildButton())
+    await openWizard(documents)
 
     // Identified by what it CONTAINS, not merely by being a dialog: four of these
     // shapes already open a ConfirmModal, so a role-only assertion would pass on
@@ -150,7 +110,7 @@ describe('the build configuration is reachable for every project', () => {
   })
 
   it('does not put the configuration on the card face any more', () => {
-    render(tab([PRD, PRFAQ, RESEARCH_A], [VISUAL_A]))
+    renderTab(BASELINE)
 
     // Before the click there is no wizard, and the card must not be carrying the
     // controls either — that is the placement half of the change.
@@ -161,10 +121,7 @@ describe('the build configuration is reachable for every project', () => {
 
 describe('opening the wizard is not itself a build', () => {
   it('starts no build when the card button only opens the wizard', async () => {
-    const user = userEvent.setup()
-    render(tab([PRD, PRFAQ, RESEARCH_A], [VISUAL_A]))
-
-    await user.click(buildButton())
+    await openWizard()
 
     expect(wizard()).toBeInTheDocument()
     // The endpoint is billable and has no existing-prototype check of its own, so
@@ -175,19 +132,17 @@ describe('opening the wizard is not itself a build', () => {
 
 describe('the wizard owns its own open state', () => {
   it('keeps the panel open and the selection intact when the documents change underneath', async () => {
-    const user = userEvent.setup()
     // §5b: the confirm dialog it replaces derived its visibility from live document
     // data, and the page refetches documents whenever a job completes. Hosting user
     // input in something with that property discards the input mid-interaction.
-    const { rerender } = render(tab([PRD, PRFAQ, RESEARCH_A], [VISUAL_A]))
-    await user.click(buildButton())
+    const { user, rerender } = await openWizard()
 
     const researchBox = within(wizard()).getByRole('checkbox', { name: /research reports/i })
     await user.click(researchBox)
     expect(researchBox).toBeChecked()
 
     // An unrelated job finishing: the same project, one more document.
-    rerender(tab([PRD, PRFAQ, RESEARCH_A, RESEARCH_B], [VISUAL_A]))
+    rerender(tab([...BASELINE, RESEARCH_B], [VISUAL_A]))
 
     expect(maybeWizard()).toBeInTheDocument()
     // Asserted as a DOM property, not as rendered text — `checked` is invisible to a
@@ -202,9 +157,7 @@ describe('the wizard owns its own open state', () => {
     // own guard is the last thing between the user and a billable call with nothing
     // to build from. Nothing else in this suite exercises that guard from the wizard
     // path, which is what makes this the regression test for it.
-    const user = userEvent.setup()
-    const { rerender } = render(tab([PRD, PRFAQ, RESEARCH_A], [VISUAL_A]))
-    await user.click(buildButton())
+    const { user, rerender } = await openWizard()
     expect(wizard()).toBeInTheDocument()
 
     // Both source documents deleted from another surface while the panel is open.
@@ -216,9 +169,7 @@ describe('the wizard owns its own open state', () => {
   })
 
   it('closes on an explicit cancel', async () => {
-    const user = userEvent.setup()
-    render(tab([PRD, PRFAQ, RESEARCH_A], [VISUAL_A]))
-    await user.click(buildButton())
+    const { user } = await openWizard()
     expect(wizard()).toBeInTheDocument()
 
     await user.click(within(wizard()).getByRole('button', { name: /^cancel$/i }))

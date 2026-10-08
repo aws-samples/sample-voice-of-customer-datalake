@@ -1,9 +1,13 @@
 """
 Bedrock Converse image limits and the image types this platform accepts.
 
-Python mirror of the image-limits section of ``lib/utils/model-allowlist.ts``.
-``lambda/shared/test/test_image_limits_lockstep.py`` reads that TypeScript file as
-source text and pins every constant below against it, so the two cannot drift.
+Python mirror of the parts of the image-limits section of
+``lib/utils/model-allowlist.ts`` that Python code reads. The pixel cap and the
+per-message image count are deliberately NOT mirrored: no Lambda reads them as
+constants (the extractor gets MAX_IMAGE_DIMENSION_PX from its environment, which
+CDK sets from the TypeScript value). ``lambda/shared/test/test_image_limits_lockstep.py``
+reads that TypeScript file as source text and pins every constant below against
+it, so the two cannot drift.
 
 WHY THESE NUMBERS ARE SAFE TO HARDCODE, given the admin model picker: they are
 limits of the Converse API's ``Message.content`` shape, not of any single model
@@ -25,14 +29,6 @@ upload boundary) must be able to import this without pulling in
 
 # Max bytes for one image in a Converse message (decimal reading of 3.75 MB).
 MAX_IMAGE_BYTES = 3_750_000
-
-# Max pixels on either side of an image in a Converse message.
-MAX_IMAGE_DIMENSION_PX = 8000
-
-# Max images in one Converse message. Not load-bearing yet — the extractor sends
-# one image per call — but defined here so a later rung attaching several visuals
-# to a single prompt does not invent its own number.
-MAX_IMAGES_PER_MESSAGE = 20
 
 # Image content types this platform accepts, mapped to the file extension used
 # for the S3 object key. These are exactly the four formats Converse understands,

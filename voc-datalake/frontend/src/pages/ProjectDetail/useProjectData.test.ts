@@ -11,7 +11,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { jobsPollInterval, JOB_START_POLL_WINDOW_MS } from './useProjectData'
-import type { ProjectJob } from '../../api/types'
+import type { ProjectJob } from '../../api/projectTypes'
 
 type JobStatuses = ReadonlyArray<Pick<ProjectJob, 'status'>>
 

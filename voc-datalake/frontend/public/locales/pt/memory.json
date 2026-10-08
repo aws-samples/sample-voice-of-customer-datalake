@@ -1,0 +1,123 @@
+{
+  "add": {
+    "expiresAt": "Expira em",
+    "failed": "Não foi possível salvar a memória. Tente novamente.",
+    "label": {
+      "company": "Lembrar para toda a empresa",
+      "personal": "Lembrar para mim"
+    },
+    "placeholder": {
+      "company": "ex.: Nossos clientes mostraram que comparam preços antes de pagar",
+      "personal": "ex.: Prefiro respostas curtas"
+    },
+    "proposedNotice": "Somente curadores publicam memórias da empresa diretamente — a sua vai primeiro para revisão.",
+    "retention": "Retenção",
+    "saved": "Lembrado.",
+    "submit": "Lembrar"
+  },
+  "cancel": "Cancelar",
+  "configureFirst": "Conecte primeiro o endpoint da API nas Configurações.",
+  "confirm": "+1",
+  "confirmHint": "Concordo — conte-me como apoiador",
+  "empty": "Nada foi lembrado aqui ainda.",
+  "expires": "expira em {{date}}",
+  "filters": {
+    "anyKind": "Qualquer tipo",
+    "anyStatus": "Qualquer status",
+    "kind": "Tipo",
+    "search": "Pesquisar memórias",
+    "status": "Filtro de status"
+  },
+  "forget": "Esquecer",
+  "forgetMessage": "\"{{statement}}\" será arquivado e nunca reaprendido automaticamente. Você pode restaurá-lo depois.",
+  "forgetTitle": "Esquecer esta memória?",
+  "imports": {
+    "content": "Conteúdo",
+    "contentPlaceholder": "Cole o texto da página aqui…",
+    "counter": "{{count}} / {{max}} caracteres",
+    "created": "Memórias criadas: {{count}}",
+    "description": "Cole um documento ou página da web. O que ele ensina é publicado com as regras de confiança habituais; o original é mantido.",
+    "failed": "Não foi possível iniciar a importação. Tente novamente.",
+    "history": "Suas importações recentes",
+    "noHistory": "Ainda não há importações deste navegador.",
+    "pageTitle": "Título",
+    "status": {
+      "completed": "Concluído",
+      "failed": "Falhou",
+      "processing": "Processando",
+      "queued": "Na fila"
+    },
+    "submit": "Importar",
+    "title": "Importar uma página",
+    "url": "Link de origem (opcional)"
+  },
+  "kind": {
+    "agents": "Agentes",
+    "customer": "Cliente",
+    "objective": "Objetivo",
+    "other": "Outro",
+    "product": "Produto",
+    "strategy": "Estratégia",
+    "working_style": "Estilo de trabalho"
+  },
+  "loadFailed": "Não foi possível carregar as memórias.",
+  "loadMore": "Carregar mais",
+  "loading": "Carregando memórias…",
+  "merge": {
+    "description": "Uma única afirmação as substitui; as originais são arquivadas e seus apoiadores são mantidos.",
+    "failed": "Não foi possível mesclar. Tente novamente.",
+    "open": "Mesclar selecionados",
+    "statement": "Afirmação mesclada",
+    "submit": "Mesclar",
+    "title": "Mesclar memórias ({{count}})"
+  },
+  "meta": "Desde {{created}} · {{retention}}",
+  "restore": "Restaurar",
+  "retention": {
+    "dated": "Até uma data",
+    "decay": "Some se não for usado",
+    "long_term": "Permanente"
+  },
+  "retry": "Tentar novamente",
+  "review": {
+    "actions": {
+      "keep": "Manter este",
+      "keep_both": "Manter ambos",
+      "merge": "Mesclar em um",
+      "replace": "Manter o existente"
+    },
+    "aligned": "Alinhado com: {{objectives}}",
+    "apply": "Aplicar",
+    "empty": "Nada para revisar — sem propostas ou conflitos.",
+    "existing": "O que lembramos hoje",
+    "failed": "Não foi possível aplicar a resolução. Tente novamente.",
+    "newClaim": "Nova afirmação",
+    "proposed": "Memória proposta",
+    "resolution": "Resolução",
+    "suggested": "Sugestão: {{action}}"
+  },
+  "reviewLoadFailed": "Não foi possível carregar a fila de revisão. Memórias aguardando revisão podem estar faltando aqui.",
+  "selectForMerge": "Selecionar para mesclar: {{statement}}",
+  "selected": "Selecionados: {{count}}",
+  "source": {
+    "agent": "Agente autônomo",
+    "extracted": "Aprendido nas conversas",
+    "import": "Importado",
+    "user_explicit": "Adicionado por uma pessoa"
+  },
+  "status": {
+    "active": "Ativo",
+    "archived": "Arquivado",
+    "conflict": "Conflito",
+    "proposed": "Proposto"
+  },
+  "subtitle": "O que o assistente e os agentes autônomos lembram — conhecimento compartilhado da empresa e suas próprias preferências.",
+  "supportersHint": "Pessoas que disseram ou confirmaram isso",
+  "tabs": {
+    "company": "Empresa",
+    "imports": "Importações",
+    "personal": "Pessoal",
+    "review": "Para revisar"
+  },
+  "title": "Memória"
+}

@@ -13,13 +13,32 @@ validation happens here at all — an unresolvable id must cost a 4xx, not a
 multi-minute billable build that fails at the end.
 """
 import json
-from unittest.mock import MagicMock, patch
 
 import pytest
+from build_prototype_fixtures import build_prototype_against
 
 PROJECT = 'proj_1'
 OTHER_PROJECT = 'proj_2'
 PATH = f'/projects/{PROJECT}/build-prototype'
+
+
+def _keys_read(table):
+    """The `Key` of every `get_item` the route made, in order."""
+    return [call.kwargs.get('Key', {}) for call in table.get_item.call_args_list]
+
+
+def _assert_only_this_project_is_read(table):
+    """At least one keyed read happened and every one addressed `PROJECT`'s
+    partition; returns the keys."""
+    keys = _keys_read(table)
+    assert keys, 'expected at least one keyed read'
+    assert {k.get('pk') for k in keys} == {f'PROJECT#{PROJECT}'}
+    return keys
+
+
+def _assert_never_keyed_with(table, value):
+    """`value` was refused before any key carrying it was built."""
+    assert not any(value in str(key) for key in _keys_read(table))
 
 
 @pytest.fixture
@@ -40,7 +59,6 @@ def build_prototype(api_gateway_event, lambda_context):
     def _call(body):
         from projects_handler import MAX_SELECTED_RESEARCH_IDS
 
-        table = MagicMock()
         documents = {
             (f'PROJECT#{PROJECT}', 'PRD#prd_1'): {'document_id': 'prd_1'},
             (f'PROJECT#{PROJECT}', 'PRFAQ#prfaq_1'): {'document_id': 'prfaq_1'},
@@ -64,22 +82,9 @@ def build_prototype(api_gateway_event, lambda_context):
             (f'PROJECT#{OTHER_PROJECT}', 'RESEARCH#research_other'): {'document_id': 'research_other'},
         }
 
-        def get_item(Key=None, **kwargs):
-            key = (Key or {})
-            item = documents.get((key.get('pk', ''), key.get('sk', '')))
-            return {'Item': item} if item else {}
-
-        table.get_item.side_effect = get_item
-
-        with patch('projects_handler.get_projects_table', return_value=table), \
-                patch('projects_handler.create_job', return_value=('job_1', {})) as create_job, \
-                patch('projects_handler.invoke_lambda_async') as invoke:
-            from projects_handler import lambda_handler
-            response = lambda_handler(
-                api_gateway_event(method='POST', path=PATH, body=body, path_params={'project_id': PROJECT}),
-                lambda_context,
-            )
-        config = create_job.call_args.args[3] if create_job.call_args else None
+        response, config, table, invoke, _create_job = build_prototype_against(
+            documents, body, api_gateway_event, lambda_context, project_id=PROJECT, path=PATH,
+        )
         return response, config, table, invoke
 
     return _call
@@ -149,9 +154,7 @@ class TestUnresolvableIdIsRejectedBeforeAnyCost:
             {'source_prd_id': '../PROJECT#victim/prd_1'},
         )
 
-        keys = [call.kwargs.get('Key', {}) for call in table.get_item.call_args_list]
-        assert keys, 'expected at least one keyed read'
-        assert {k.get('pk') for k in keys} == {f'PROJECT#{PROJECT}'}
+        keys = _assert_only_this_project_is_read(table)
         assert keys[0]['sk'] == 'PRD#../PROJECT#victim/prd_1'
 
     @pytest.mark.parametrize('value', [
@@ -178,10 +181,7 @@ class TestUnresolvableIdIsRejectedBeforeAnyCost:
 
         assert response['statusCode'] == 400
         # Rejected before the key was ever built.
-        assert not any(
-            'x' * 5000 in str(call.kwargs.get('Key', {}))
-            for call in table.get_item.call_args_list
-        )
+        _assert_never_keyed_with(table, 'x' * 5000)
 
 
 class TestBasePrototypeIdIsCheckedLikeTheOtherTwo:
@@ -230,9 +230,7 @@ class TestBasePrototypeIdIsCheckedLikeTheOtherTwo:
         assert config is None
         invoke.assert_not_called()
         # Asserted on the key as well: the id never addresses another partition.
-        keys = [call.kwargs.get('Key', {}) for call in table.get_item.call_args_list]
-        assert keys, 'expected at least one keyed read'
-        assert {k.get('pk') for k in keys} == {f'PROJECT#{PROJECT}'}
+        _assert_only_this_project_is_read(table)
 
     def test_a_prd_id_offered_as_a_base_prototype_is_a_404(self, build_prototype):
         """`prd_1` is a real document in this project, just not a prototype. The
@@ -279,12 +277,9 @@ class TestBasePrototypeIdIsCheckedLikeTheOtherTwo:
         assert config is None
         invoke.assert_not_called()
         # Rejected before the key was ever built.
-        assert not any(
-            'x' * 5000 in str(call.kwargs.get('Key', {}))
-            for call in table.get_item.call_args_list
-        )
+        _assert_never_keyed_with(table, 'x' * 5000)
 
-    @pytest.mark.parametrize('body, label', [
+    @pytest.mark.parametrize(('body', 'label'), [
         pytest.param({}, 'absent', id='absent'),
         pytest.param({'base_prototype_id': None}, 'null', id='null'),
         pytest.param({'base_prototype_id': ''}, 'blank', id='blank'),
@@ -344,7 +339,7 @@ class TestOptionalExtraSources:
             'use_research': True, 'selected_research_ids': ['research_a'],
         })
 
-        keys = [call.kwargs.get('Key', {}) for call in table.get_item.call_args_list]
+        keys = _keys_read(table)
         assert {'pk': f'PROJECT#{PROJECT}', 'sk': 'RESEARCH#research_a'} in keys
         assert {k.get('pk') for k in keys} == {f'PROJECT#{PROJECT}'}
 
@@ -495,10 +490,7 @@ class TestOptionalExtraSources:
         assert response['statusCode'] == 400
         assert config is None
         invoke.assert_not_called()
-        assert not any(
-            'x' * 5000 in str(call.kwargs.get('Key', {}))
-            for call in table.get_item.call_args_list
-        )
+        _assert_never_keyed_with(table, 'x' * 5000)
 
     @pytest.mark.parametrize('value', [
         # Resolvable, so this is the one that fails if the reads are still made:
@@ -536,8 +528,8 @@ class TestOptionalExtraSources:
         assert config['selected_research_ids'] == []
         invoke.assert_called_once()
         assert not [
-            call.kwargs.get('Key', {}) for call in table.get_item.call_args_list
-            if str(call.kwargs.get('Key', {}).get('sk', '')).startswith('RESEARCH#')
+            key for key in _keys_read(table)
+            if str(key.get('sk', '')).startswith('RESEARCH#')
         ]
 
     @pytest.mark.parametrize('value', [

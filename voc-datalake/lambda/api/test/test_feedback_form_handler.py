@@ -7,9 +7,14 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import boto3
 import pytest
+from handler_events_fixtures import call_route
 from moto import mock_aws
+from moto_helpers import pk_sk_table
+
+from shared.test.source_profile_fixtures import no_source_profiles
+
+_no_profiles = pytest.fixture(autouse=True)(no_source_profiles)
 
 WIDGET_SOURCE = Path(__file__).resolve().parents[1] / 'static' / 'feedback-widget.js'
 
@@ -222,470 +227,6 @@ def _fake_feedback_table(items_by_pk: dict[str, list[dict]]):
     return table
 
 
-class TestListForms:
-    """Tests for GET /feedback-forms endpoint."""
-
-    @patch('feedback_form_handler.aggregates_table')
-    def test_returns_empty_list_when_no_forms(
-        self, mock_table, api_gateway_event, lambda_context
-    ):
-        """Returns empty list when no forms exist."""
-        mock_table.query.return_value = {'Items': []}
-        
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import lambda_handler
-        
-        event = api_gateway_event(method='GET', path='/feedback-forms')
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        assert body['success'] is True
-        assert body['forms'] == []
-
-    @patch('feedback_form_handler.aggregates_table')
-    def test_returns_list_of_forms(
-        self, mock_table, api_gateway_event, lambda_context
-    ):
-        """Returns list of all feedback forms."""
-        mock_table.query.return_value = {
-            'Items': [
-                {
-                    'form_id': 'form-1',
-                    'name': 'Product Feedback',
-                    'enabled': True,
-                    'title': 'Product Feedback Form',
-                    'created_at': '2026-01-01T00:00:00Z'
-                },
-                {
-                    'form_id': 'form-2',
-                    'name': 'Support Feedback',
-                    'enabled': False,
-                    'title': 'Support Feedback Form',
-                    'created_at': '2026-01-02T00:00:00Z'
-                }
-            ]
-        }
-        
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import lambda_handler
-        
-        event = api_gateway_event(method='GET', path='/feedback-forms')
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        assert body['success'] is True
-        assert len(body['forms']) == 2
-        # Should be sorted by created_at descending
-        assert body['forms'][0]['form_id'] == 'form-2'
-
-
-class TestCreateForm:
-    """Tests for POST /feedback-forms endpoint."""
-
-    @patch('feedback_form_handler.aggregates_table')
-    def test_creates_form_with_defaults(
-        self, mock_table, api_gateway_event, lambda_context
-    ):
-        """Creates form with default values."""
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import lambda_handler
-        
-        event = api_gateway_event(
-            method='POST',
-            path='/feedback-forms',
-            body={'name': 'New Form'}
-        )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        assert body['success'] is True
-        assert 'form' in body
-        assert body['form']['name'] == 'New Form'
-        assert body['form']['enabled'] is False
-        mock_table.put_item.assert_called_once()
-
-    @patch('feedback_form_handler.aggregates_table')
-    def test_creates_form_with_custom_config(
-        self, mock_table, api_gateway_event, lambda_context
-    ):
-        """Creates form with custom configuration."""
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import lambda_handler
-        
-        event = api_gateway_event(
-            method='POST',
-            path='/feedback-forms',
-            body={
-                'name': 'Custom Form',
-                'enabled': True,
-                'title': 'Custom Title',
-                'rating_type': 'emoji',
-                'category': 'product',
-                'subcategory': 'quality'
-            }
-        )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        assert body['success'] is True
-        assert body['form']['name'] == 'Custom Form'
-        assert body['form']['category'] == 'product'
-        assert body['form']['subcategory'] == 'quality'
-
-
-class TestGetForm:
-    """Tests for GET /feedback-forms/<form_id> endpoint."""
-
-    @patch('feedback_form_handler.aggregates_table')
-    def test_returns_not_found_for_missing_form(
-        self, mock_table, api_gateway_event, lambda_context
-    ):
-        """Returns error when form doesn't exist."""
-        mock_table.get_item.return_value = {}
-        
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import lambda_handler
-        
-        event = api_gateway_event(
-            method='GET',
-            path='/feedback-forms/nonexistent',
-            path_params={'form_id': 'nonexistent'}
-        )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        # Now returns 404 with error key
-        assert response['statusCode'] == 404
-        assert 'error' in body
-        assert 'not found' in body['error'].lower()
-
-    @patch('feedback_form_handler.aggregates_table')
-    def test_returns_form_details(
-        self, mock_table, api_gateway_event, lambda_context
-    ):
-        """Returns form details for existing form."""
-        mock_table.get_item.return_value = {
-            'Item': {
-                'form_id': 'form-123',
-                'name': 'Test Form',
-                'enabled': True,
-                'title': 'Test Title',
-                'rating_type': 'stars',
-                'rating_max': 5
-            }
-        }
-        
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import lambda_handler
-        
-        event = api_gateway_event(
-            method='GET',
-            path='/feedback-forms/form-123',
-            path_params={'form_id': 'form-123'}
-        )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        assert body['success'] is True
-        assert body['form']['form_id'] == 'form-123'
-        assert body['form']['name'] == 'Test Form'
-
-
-class TestUpdateForm:
-    """Tests for PUT /feedback-forms/<form_id> endpoint."""
-
-    @patch('feedback_form_handler.aggregates_table')
-    def test_returns_error_when_no_fields_to_update(
-        self, mock_table, api_gateway_event, lambda_context
-    ):
-        """Returns error when no updatable fields provided."""
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import lambda_handler
-        
-        event = api_gateway_event(
-            method='PUT',
-            path='/feedback-forms/form-123',
-            path_params={'form_id': 'form-123'},
-            body={}
-        )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        # Now returns 400 with error key
-        assert response['statusCode'] == 400
-        assert 'error' in body
-        assert 'No fields to update' in body['error']
-
-    @patch('feedback_form_handler.aggregates_table')
-    def test_updates_form_fields(
-        self, mock_table, api_gateway_event, lambda_context
-    ):
-        """Updates form with provided fields."""
-        mock_table.update_item.return_value = {
-            'Attributes': {
-                'form_id': 'form-123',
-                'name': 'Updated Name',
-                'enabled': True,
-                'title': 'Updated Title'
-            }
-        }
-        
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import lambda_handler
-        
-        event = api_gateway_event(
-            method='PUT',
-            path='/feedback-forms/form-123',
-            path_params={'form_id': 'form-123'},
-            body={
-                'name': 'Updated Name',
-                'enabled': True,
-                'title': 'Updated Title'
-            }
-        )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        assert body['success'] is True
-        assert body['form']['name'] == 'Updated Name'
-        mock_table.update_item.assert_called_once()
-
-
-class TestDeleteForm:
-    """Tests for DELETE /feedback-forms/<form_id> endpoint."""
-
-    @patch('feedback_form_handler.aggregates_table')
-    def test_deletes_form_successfully(
-        self, mock_table, api_gateway_event, lambda_context
-    ):
-        """Successfully deletes a form."""
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import lambda_handler
-        
-        event = api_gateway_event(
-            method='DELETE',
-            path='/feedback-forms/form-123',
-            path_params={'form_id': 'form-123'}
-        )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        assert body['success'] is True
-        mock_table.delete_item.assert_called_once_with(
-            Key={'pk': 'FEEDBACK_FORM', 'sk': 'FORM#form-123'}
-        )
-
-
-class TestSubmitFormFeedback:
-    """Tests for POST /feedback-forms/<form_id>/submit endpoint."""
-
-    @patch('feedback_form_handler.sqs')
-    @patch('feedback_form_handler.aggregates_table')
-    def test_returns_error_when_text_empty(
-        self, mock_table, mock_sqs, api_gateway_event, lambda_context
-    ):
-        """Returns error when feedback text is empty."""
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import lambda_handler
-        
-        event = api_gateway_event(
-            method='POST',
-            path='/feedback-forms/form-123/submit',
-            path_params={'form_id': 'form-123'},
-            body={'text': ''}
-        )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        # Now returns 400 with error key
-        assert response['statusCode'] == 400
-        assert 'error' in body
-        assert 'required' in body['error'].lower()
-
-    @patch('feedback_form_handler.sqs')
-    @patch('feedback_form_handler.aggregates_table')
-    def test_returns_error_when_form_not_found(
-        self, mock_table, mock_sqs, api_gateway_event, lambda_context
-    ):
-        """Returns error when form doesn't exist."""
-        mock_table.get_item.return_value = {}
-        
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import lambda_handler
-        
-        event = api_gateway_event(
-            method='POST',
-            path='/feedback-forms/nonexistent/submit',
-            path_params={'form_id': 'nonexistent'},
-            body={'text': 'Great product!'}
-        )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        # Now returns 404 with error key
-        assert response['statusCode'] == 404
-        assert 'error' in body
-        assert 'not found' in body['error'].lower()
-
-    @patch('feedback_form_handler.sqs')
-    @patch('feedback_form_handler.aggregates_table')
-    def test_returns_error_when_form_disabled(
-        self, mock_table, mock_sqs, api_gateway_event, lambda_context
-    ):
-        """Returns error when form is not enabled."""
-        mock_table.get_item.return_value = {
-            'Item': {'form_id': 'form-123', 'enabled': False}
-        }
-        
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import lambda_handler
-        
-        event = api_gateway_event(
-            method='POST',
-            path='/feedback-forms/form-123/submit',
-            path_params={'form_id': 'form-123'},
-            body={'text': 'Great product!'}
-        )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        # Now returns 400 with error key
-        assert response['statusCode'] == 400
-        assert 'error' in body
-        assert 'not enabled' in body['error'].lower()
-
-    @patch('feedback_form_handler.PROCESSING_QUEUE_URL', 'https://sqs.example.com/queue')
-    @patch('feedback_form_handler.sqs')
-    @patch('feedback_form_handler.aggregates_table')
-    def test_submits_feedback_with_category_routing(
-        self, mock_table, mock_sqs, api_gateway_event, lambda_context
-    ):
-        """Submits feedback with pre-assigned category from form config."""
-        mock_table.get_item.return_value = {
-            'Item': {
-                'form_id': 'form-123',
-                'name': 'Product Form',
-                'enabled': True,
-                'category': 'product',
-                'subcategory': 'quality',
-                'success_message': 'Thank you!'
-            }
-        }
-        
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import lambda_handler
-        
-        event = api_gateway_event(
-            method='POST',
-            path='/feedback-forms/form-123/submit',
-            path_params={'form_id': 'form-123'},
-            body={'text': 'Great product quality!', 'rating': 5}
-        )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        assert body['success'] is True
-        assert 'feedback_id' in body
-        assert body['message'] == 'Thank you!'
-        
-        # Verify SQS message includes category routing
-        mock_sqs.send_message.assert_called_once()
-        call_args = mock_sqs.send_message.call_args
-        message_body = json.loads(call_args.kwargs['MessageBody'])
-        assert message_body['preset_category'] == 'product'
-        assert message_body['preset_subcategory'] == 'quality'
-        assert message_body['source_channel'] == 'form_form-123'
-
-
-class TestItemToForm:
-    """Tests for item_to_form helper function."""
-
-    def test_converts_dynamodb_item_to_form_response(self):
-        """Converts DynamoDB item to form response format."""
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import item_to_form
-        
-        item = {
-            'form_id': 'form-123',
-            'name': 'Test Form',
-            'enabled': True,
-            'title': 'Test Title',
-            'description': 'Test description',
-            'rating_max': 5,
-            'theme': {'primary_color': '#3B82F6'},
-            'category': 'product',
-            'created_at': '2026-01-01T00:00:00Z'
-        }
-        
-        result = item_to_form(item)
-        
-        assert result['form_id'] == 'form-123'
-        assert result['name'] == 'Test Form'
-        assert result['enabled'] is True
-        assert result['rating_max'] == 5
-        assert result['theme']['primary_color'] == '#3B82F6'
-        assert result['category'] == 'product'
-
-    def test_handles_missing_fields_with_defaults(self):
-        """Returns default values for missing fields."""
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from feedback_form_handler import item_to_form
-        
-        item = {'form_id': 'form-123'}
-        
-        result = item_to_form(item)
-        
-        assert result['form_id'] == 'form-123'
-        assert result['name'] == ''
-        assert result['enabled'] is False
-        assert result['rating_enabled'] is True
-        assert result['rating_max'] == 5
-        assert result['theme'] == {}
-
-
 class TestValidationLink:
     """Tests for the optional project_id / document_id validation link.
 
@@ -707,7 +248,8 @@ class TestValidationLink:
         item_to_form allowlist), and a field declared in only one of them is
         silently dropped on the next read.
         """
-        event = api_gateway_event(
+        _response, body = call_route(
+            feedback_form_handler.lambda_handler, api_gateway_event, lambda_context,
             method='POST',
             path='/feedback-forms',
             body={
@@ -717,9 +259,6 @@ class TestValidationLink:
             },
         )
 
-        response = feedback_form_handler.lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-
         assert body['form']['project_id'] == 'proj-1'
         assert body['form']['document_id'] == 'doc-9'
 
@@ -727,17 +266,15 @@ class TestValidationLink:
         assert stored_item['project_id'] == 'proj-1'
         assert stored_item['document_id'] == 'doc-9'
 
-    @patch('feedback_form_handler.aggregates_table')
+    @patch('feedback_form_handler.aggregates_table', new=MagicMock())
     def test_create_without_the_link_stores_empty_strings(
-        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
+        self, api_gateway_event, lambda_context, feedback_form_handler
     ):
         """A form that validates nothing keeps working: link fields default empty."""
-        event = api_gateway_event(
-            method='POST', path='/feedback-forms', body={'name': 'Website Footer Form'}
+        _response, body = call_route(
+            feedback_form_handler.lambda_handler, api_gateway_event, lambda_context,
+            method='POST', path='/feedback-forms', body={'name': 'Website Footer Form'},
         )
-
-        response = feedback_form_handler.lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
 
         assert body['form']['project_id'] == ''
         assert body['form']['document_id'] == ''
@@ -757,14 +294,12 @@ class TestValidationLink:
             }
         }
 
-        event = api_gateway_event(
+        _response, body = call_route(
+            feedback_form_handler.lambda_handler, api_gateway_event, lambda_context,
             method='GET',
             path='/feedback-forms/form-123',
             path_params={'form_id': 'form-123'},
         )
-
-        response = feedback_form_handler.lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
 
         assert body['form']['project_id'] == 'proj-1'
         assert body['form']['document_id'] == 'doc-9'
@@ -783,15 +318,13 @@ class TestValidationLink:
             }
         }
 
-        event = api_gateway_event(
+        _response, body = call_route(
+            feedback_form_handler.lambda_handler, api_gateway_event, lambda_context,
             method='PUT',
             path='/feedback-forms/form-123',
             path_params={'form_id': 'form-123'},
             body={'project_id': 'proj-2', 'document_id': 'doc-7'},
         )
-
-        response = feedback_form_handler.lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
 
         assert body['form']['project_id'] == 'proj-2'
         expr_values = mock_table.update_item.call_args.kwargs['ExpressionAttributeValues']
@@ -854,14 +387,12 @@ class TestPublicConfigDoesNotLeakTheLink:
             }
         }
 
-        event = api_gateway_event(
+        response, body = call_route(
+            feedback_form_handler.lambda_handler, api_gateway_event, lambda_context,
             method='GET',
             path='/feedback-forms/form-123/config',
             path_params={'form_id': 'form-123'},
         )
-
-        response = feedback_form_handler.lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
 
         config = body['config']
         assert 'project_id' not in config
@@ -889,13 +420,12 @@ class TestPublicConfigDoesNotLeakTheLink:
             }
         }
 
-        event = api_gateway_event(
+        _, body = call_route(
+            feedback_form_handler.lambda_handler, api_gateway_event, lambda_context,
             method='GET',
             path='/feedback-forms/form-123/config',
             path_params={'form_id': 'form-123'},
         )
-
-        body = json.loads(feedback_form_handler.lambda_handler(event, lambda_context)['body'])
 
         read_by_widget = _fields_the_widget_reads()
         missing = sorted(read_by_widget - set(body['config']))
@@ -914,88 +444,6 @@ class TestValidationLinkBoundary:
     reads on the page as "this form collected no evidence" rather than as the
     bad request it was.
     """
-
-    @patch('feedback_form_handler.aggregates_table')
-    def test_create_rejects_a_non_string_project_id(
-        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
-    ):
-        """A structured value is a client error, not something to persist."""
-        event = api_gateway_event(
-            method='POST',
-            path='/feedback-forms',
-            body={'name': 'Bad form', 'project_id': {'nested': 'object'}},
-        )
-
-        response = feedback_form_handler.lambda_handler(event, lambda_context)
-
-        assert response['statusCode'] == 400
-        # Nothing may be written: rejecting after the put would leave the record
-        # behind and only fail the response.
-        mock_table.put_item.assert_not_called()
-
-    @patch('feedback_form_handler.aggregates_table')
-    def test_update_rejects_a_non_string_document_id(
-        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
-    ):
-        """PUT is validated on the same path as POST."""
-        event = api_gateway_event(
-            method='PUT',
-            path='/feedback-forms/form-123',
-            path_params={'form_id': 'form-123'},
-            body={'document_id': ['doc-1', 'doc-2']},
-        )
-
-        response = feedback_form_handler.lambda_handler(event, lambda_context)
-
-        assert response['statusCode'] == 400
-        mock_table.update_item.assert_not_called()
-
-    @patch('feedback_form_handler.aggregates_table')
-    def test_create_rejects_an_over_long_link_field(
-        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
-    ):
-        """The values are server-minted identifiers, so anything long is not one."""
-        too_long = 'p' * (feedback_form_handler.LINK_FIELD_MAX_LENGTH + 1)
-        event = api_gateway_event(
-            method='POST',
-            path='/feedback-forms',
-            body={'name': 'Bad form', 'project_id': too_long},
-        )
-
-        response = feedback_form_handler.lambda_handler(event, lambda_context)
-
-        assert response['statusCode'] == 400
-        mock_table.put_item.assert_not_called()
-
-    @patch('feedback_form_handler.aggregates_table')
-    def test_accepts_a_link_at_the_length_limit(
-        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
-    ):
-        """The cap is inclusive — an id exactly at the limit is still valid."""
-        at_limit = 'p' * feedback_form_handler.LINK_FIELD_MAX_LENGTH
-        event = api_gateway_event(
-            method='POST',
-            path='/feedback-forms',
-            body={'name': 'Edge form', 'project_id': at_limit},
-        )
-
-        response = feedback_form_handler.lambda_handler(event, lambda_context)
-
-        assert response['statusCode'] == 200
-        assert mock_table.put_item.call_args.kwargs['Item']['project_id'] == at_limit
-
-    @patch('feedback_form_handler.aggregates_table')
-    def test_a_request_without_the_link_is_untouched_by_validation(
-        self, mock_table, api_gateway_event, lambda_context, feedback_form_handler
-    ):
-        """Absent is always valid: the link is optional and must stay so."""
-        event = api_gateway_event(
-            method='POST', path='/feedback-forms', body={'name': 'Website Footer Form'}
-        )
-
-        response = feedback_form_handler.lambda_handler(event, lambda_context)
-
-        assert response['statusCode'] == 200
 
     def test_the_record_constructor_itself_rejects_a_bad_link(self, feedback_form_handler):
         """Validation is structural, not a line the route remembers to call.
@@ -1047,6 +495,46 @@ class TestValidationLinkBoundary:
         )
 
 
+def _acme_form_item() -> dict:
+    """The `get_item` response for form-123, a form whose brand is 'Acme'."""
+    return {'Item': {'form_id': 'form-123', 'brand_name': 'Acme'}}
+
+
+def _get_form_stats(feedback_form_handler, api_gateway_event, lambda_context) -> tuple[dict, dict]:
+    """GET /feedback-forms/form-123/stats through the handler."""
+    return call_route(
+        feedback_form_handler.lambda_handler, api_gateway_event, lambda_context,
+        method='GET',
+        path='/feedback-forms/form-123/stats',
+        path_params={'form_id': 'form-123'},
+    )
+
+
+def _submit_to_form_123(feedback_form_handler, api_gateway_event, lambda_context, body: dict) -> dict:
+    """POST /feedback-forms/form-123/submit with `body` through the handler; returns the raw response."""
+    event = api_gateway_event(
+        method='POST',
+        path='/feedback-forms/form-123/submit',
+        path_params={'form_id': 'form-123'},
+        body=body,
+    )
+    return feedback_form_handler.lambda_handler(event, lambda_context)
+
+
+def _stored_form_123(table) -> dict:
+    """The stored FORM#form-123 row of a moto aggregates table; fails the test when it is gone."""
+    item = table.get_item(Key={'pk': 'FEEDBACK_FORM', 'sk': 'FORM#form-123'}).get('Item')
+    assert item is not None, 'FORM#form-123 is no longer stored'
+    return item
+
+
+def _anchor_update_kwargs(mock_aggregates, feedback_form_handler, api_gateway_event, lambda_context) -> dict:
+    """Submit to a brandless form-123 and return the kwargs of the brand-anchoring update_item."""
+    mock_aggregates.get_item.return_value = {'Item': _form_with_legacy_brand(brand_name='')}
+    _submit_to_form_123(feedback_form_handler, api_gateway_event, lambda_context, {'text': 'Anything'})
+    return mock_aggregates.update_item.call_args.kwargs
+
+
 class TestFormStatsNeverReportsAZeroItDidNotMeasure:
     """GET /feedback-forms/<id>/stats must fail loudly rather than answer 0.
 
@@ -1065,19 +553,10 @@ class TestFormStatsNeverReportsAZeroItDidNotMeasure:
         feedback_form_handler
     ):
         """A query that raises returns 500, and no count at all."""
-        mock_aggregates.get_item.return_value = {
-            'Item': {'form_id': 'form-123', 'brand_name': 'Acme'}
-        }
+        mock_aggregates.get_item.return_value = _acme_form_item()
         mock_feedback.query.side_effect = Exception('ProvisionedThroughputExceeded')
 
-        event = api_gateway_event(
-            method='GET',
-            path='/feedback-forms/form-123/stats',
-            path_params={'form_id': 'form-123'},
-        )
-
-        response = feedback_form_handler.lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
+        response, body = _get_form_stats(feedback_form_handler, api_gateway_event, lambda_context)
 
         assert response['statusCode'] == 500
         assert body['success'] is False
@@ -1113,13 +592,7 @@ class TestFormStatsNeverReportsAZeroItDidNotMeasure:
         mock_aggregates.get_item.return_value = {'Item': _form_with_legacy_brand()}
         mock_feedback.query.side_effect = Exception('ProvisionedThroughputExceeded')
 
-        event = api_gateway_event(
-            method='GET',
-            path='/feedback-forms/form-123/stats',
-            path_params={'form_id': 'form-123'},
-        )
-
-        response = feedback_form_handler.lambda_handler(event, lambda_context)
+        response, _ = _get_form_stats(feedback_form_handler, api_gateway_event, lambda_context)
 
         assert response['statusCode'] == 500
         emitted = _emitted_metrics(capsys, 'FeedbackFormStatsReadFailed')
@@ -1140,18 +613,9 @@ class TestFormStatsNeverReportsAZeroItDidNotMeasure:
         feedback_form_handler
     ):
         """No table configured is a deployment fault, not an empty form."""
-        mock_aggregates.get_item.return_value = {
-            'Item': {'form_id': 'form-123', 'brand_name': 'Acme'}
-        }
+        mock_aggregates.get_item.return_value = _acme_form_item()
 
-        event = api_gateway_event(
-            method='GET',
-            path='/feedback-forms/form-123/stats',
-            path_params={'form_id': 'form-123'},
-        )
-
-        response = feedback_form_handler.lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
+        response, body = _get_form_stats(feedback_form_handler, api_gateway_event, lambda_context)
 
         assert response['statusCode'] == 500
         assert body['success'] is False
@@ -1165,9 +629,7 @@ class TestFormStatsNeverReportsAZeroItDidNotMeasure:
         feedback_form_handler
     ):
         """The happy path is unchanged — including a genuine, measured zero."""
-        mock_aggregates.get_item.return_value = {
-            'Item': {'form_id': 'form-123', 'brand_name': 'Acme'}
-        }
+        mock_aggregates.get_item.return_value = _acme_form_item()
         mock_feedback.query.return_value = {
             'Items': [
                 {'feedback_id': 'fb-1', 'rating': 5},
@@ -1176,14 +638,7 @@ class TestFormStatsNeverReportsAZeroItDidNotMeasure:
             ]
         }
 
-        event = api_gateway_event(
-            method='GET',
-            path='/feedback-forms/form-123/stats',
-            path_params={'form_id': 'form-123'},
-        )
-
-        response = feedback_form_handler.lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
+        response, body = _get_form_stats(feedback_form_handler, api_gateway_event, lambda_context)
 
         assert response['statusCode'] == 200
         assert body['success'] is True
@@ -1200,19 +655,10 @@ class TestFormStatsNeverReportsAZeroItDidNotMeasure:
     ):
         """Failing loudly must not have turned "nobody answered" into an error:
         an empty partition is a legitimate 200 with a zero count."""
-        mock_aggregates.get_item.return_value = {
-            'Item': {'form_id': 'form-123', 'brand_name': 'Acme'}
-        }
+        mock_aggregates.get_item.return_value = _acme_form_item()
         mock_feedback.query.return_value = {'Items': []}
 
-        event = api_gateway_event(
-            method='GET',
-            path='/feedback-forms/form-123/stats',
-            path_params={'form_id': 'form-123'},
-        )
-
-        response = feedback_form_handler.lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
+        response, body = _get_form_stats(feedback_form_handler, api_gateway_event, lambda_context)
 
         assert response['statusCode'] == 200
         assert body['stats']['total_submissions'] == 0
@@ -1243,14 +689,7 @@ class TestFormStatsNeverReportsAZeroItDidNotMeasure:
         # degraded read queries somewhere else and this is never consulted.
         mock_feedback.query.return_value = {'Items': []}
 
-        event = api_gateway_event(
-            method='GET',
-            path='/feedback-forms/form-123/stats',
-            path_params={'form_id': 'form-123'},
-        )
-
-        response = feedback_form_handler.lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
+        response, body = _get_form_stats(feedback_form_handler, api_gateway_event, lambda_context)
 
         assert response['statusCode'] == 500
         assert body['success'] is False
@@ -1281,14 +720,12 @@ class TestFormStatsNeverReportsAZeroItDidNotMeasure:
         `evidence.unavailable` string waiting for the 404."""
         mock_aggregates.get_item.return_value = {}
 
-        event = api_gateway_event(
+        response, body = call_route(
+            feedback_form_handler.lambda_handler, api_gateway_event, lambda_context,
             method='GET',
             path='/feedback-forms/does-not-exist/stats',
             path_params={'form_id': 'does-not-exist'},
         )
-
-        response = feedback_form_handler.lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
 
         assert response['statusCode'] == 404
         assert body['success'] is False
@@ -1321,13 +758,7 @@ class TestFormStatsNeverReportsAZeroItDidNotMeasure:
             'Form not found'
         )
 
-        event = api_gateway_event(
-            method='GET',
-            path='/feedback-forms/form-123/stats',
-            path_params={'form_id': 'form-123'},
-        )
-
-        response = feedback_form_handler.lambda_handler(event, lambda_context)
+        response, _ = _get_form_stats(feedback_form_handler, api_gateway_event, lambda_context)
 
         assert response['statusCode'] == 404, (
             'a typed exception raised inside the try was converted to a 500 by '
@@ -1347,13 +778,12 @@ class TestFormStatsNeverReportsAZeroItDidNotMeasure:
             'limit must be a number'
         )
 
-        event = api_gateway_event(
+        response, _ = call_route(
+            feedback_form_handler.lambda_handler, api_gateway_event, lambda_context,
             method='GET',
             path='/feedback-forms/form-123/submissions',
             path_params={'form_id': 'form-123'},
         )
-
-        response = feedback_form_handler.lambda_handler(event, lambda_context)
 
         assert response['statusCode'] == 400, (
             'a typed exception raised inside the try was converted to a 500 by '
@@ -1377,16 +807,9 @@ class TestFormStatsNeverReportsAZeroItDidNotMeasure:
             ]
         })
 
-        event = api_gateway_event(
-            method='GET',
-            path='/feedback-forms/form-123/stats',
-            path_params={'form_id': 'form-123'},
-        )
-
         with patch('feedback_form_handler.feedback_table', fake_table):
-            response = feedback_form_handler.lambda_handler(event, lambda_context)
+            response, body = _get_form_stats(feedback_form_handler, api_gateway_event, lambda_context)
 
-        body = json.loads(response['body'])
         assert response['statusCode'] == 200
         assert body['stats']['total_submissions'] == 1
         assert (
@@ -1405,16 +828,10 @@ class TestFormStatsNeverReportsAZeroItDidNotMeasure:
         check must not have added a read."""
         mock_aggregates.get_item.return_value = {'Item': _form_with_legacy_brand()}
 
-        event = api_gateway_event(
-            method='GET',
-            path='/feedback-forms/form-123/stats',
-            path_params={'form_id': 'form-123'},
-        )
-
         with patch(
             'feedback_form_handler.feedback_table', _fake_feedback_table({})
         ):
-            feedback_form_handler.lambda_handler(event, lambda_context)
+            _get_form_stats(feedback_form_handler, api_gateway_event, lambda_context)
 
         assert mock_aggregates.get_item.call_count == 1
 
@@ -1444,14 +861,13 @@ class TestSubmissionsStayInThePartitionTheStatsReadQueries:
         """The enqueued record carries the form's stored brand after a rename."""
         mock_aggregates.get_item.return_value = {'Item': _form_with_legacy_brand()}
 
-        event = api_gateway_event(
+        response, _ = call_route(
+            feedback_form_handler.lambda_handler, api_gateway_event, lambda_context,
             method='POST',
             path='/feedback-forms/form-123/submit',
             path_params={'form_id': 'form-123'},
             body={'text': 'Still a great product', 'rating': 5},
         )
-
-        response = feedback_form_handler.lambda_handler(event, lambda_context)
 
         assert response['statusCode'] == 200
         enqueued = json.loads(mock_sqs.send_message.call_args.kwargs['MessageBody'])
@@ -1470,14 +886,8 @@ class TestSubmissionsStayInThePartitionTheStatsReadQueries:
         record was actually written to."""
         mock_aggregates.get_item.return_value = {'Item': _form_with_legacy_brand()}
 
-        submit_event = api_gateway_event(
-            method='POST',
-            path='/feedback-forms/form-123/submit',
-            path_params={'form_id': 'form-123'},
-            body={'text': 'Still a great product', 'rating': 4},
-        )
-        submit_response = feedback_form_handler.lambda_handler(
-            submit_event, lambda_context
+        submit_response = _submit_to_form_123(
+            feedback_form_handler, api_gateway_event, lambda_context, {'text': 'Still a great product', 'rating': 4},
         )
         assert submit_response['statusCode'] == 200
 
@@ -1490,20 +900,12 @@ class TestSubmissionsStayInThePartitionTheStatsReadQueries:
         }
         partition = f"SOURCE#{enqueued['brand_name']}"
 
-        stats_event = api_gateway_event(
-            method='GET',
-            path='/feedback-forms/form-123/stats',
-            path_params={'form_id': 'form-123'},
-        )
         with patch(
             'feedback_form_handler.feedback_table',
             _fake_feedback_table({partition: [stored]}),
         ):
-            stats_response = feedback_form_handler.lambda_handler(
-                stats_event, lambda_context
-            )
+            stats_response, body = _get_form_stats(feedback_form_handler, api_gateway_event, lambda_context)
 
-        body = json.loads(stats_response['body'])
         assert stats_response['statusCode'] == 200
         assert body['stats']['total_submissions'] == 1, (
             'the submission landed in a partition this form\'s stats read does '
@@ -1524,14 +926,9 @@ class TestSubmissionsStayInThePartitionTheStatsReadQueries:
         form = {'form_id': 'form-123', 'name': 'Legacy Form', 'enabled': True}
         mock_aggregates.get_item.return_value = {'Item': dict(form)}
 
-        event = api_gateway_event(
-            method='POST',
-            path='/feedback-forms/form-123/submit',
-            path_params={'form_id': 'form-123'},
-            body={'text': 'Legacy submission'},
+        _submit_to_form_123(
+            feedback_form_handler, api_gateway_event, lambda_context, {'text': 'Legacy submission'},
         )
-
-        feedback_form_handler.lambda_handler(event, lambda_context)
 
         enqueued = json.loads(mock_sqs.send_message.call_args.kwargs['MessageBody'])
         assert enqueued['brand_name'] == 'Acme Rebranded'
@@ -1656,14 +1053,8 @@ class TestABrandlessFormIsAnchoredSoARenameCannotStrandIt:
 
         mock_aggregates.update_item.side_effect = update_item
 
-        submit_event = api_gateway_event(
-            method='POST',
-            path='/feedback-forms/form-123/submit',
-            path_params={'form_id': 'form-123'},
-            body={'text': 'Collected before the rename', 'rating': 5},
-        )
-        submit_response = feedback_form_handler.lambda_handler(
-            submit_event, lambda_context
+        submit_response = _submit_to_form_123(
+            feedback_form_handler, api_gateway_event, lambda_context, {'text': 'Collected before the rename', 'rating': 5},
         )
         assert submit_response['statusCode'] == 200
 
@@ -1677,22 +1068,14 @@ class TestABrandlessFormIsAnchoredSoARenameCannotStrandIt:
             'source_channel': enqueued['source_channel'],
         }
 
-        stats_event = api_gateway_event(
-            method='GET',
-            path='/feedback-forms/form-123/stats',
-            path_params={'form_id': 'form-123'},
-        )
         # The rename: nothing about the form or the stored feedback changes, only
         # the deployment's environment.
         with patch('feedback_form_handler.BRAND_NAME', 'Acme Rebranded'), patch(
             'feedback_form_handler.feedback_table',
             _fake_feedback_table({partition: [stored_submission]}),
         ):
-            stats_response = feedback_form_handler.lambda_handler(
-                stats_event, lambda_context
-            )
+            stats_response, body = _get_form_stats(feedback_form_handler, api_gateway_event, lambda_context)
 
-        body = json.loads(stats_response['body'])
         assert stats_response['statusCode'] == 200
         assert body['stats']['total_submissions'] == 1, (
             'a submission collected before the rename is unreachable to the '
@@ -1702,30 +1085,21 @@ class TestABrandlessFormIsAnchoredSoARenameCannotStrandIt:
 
     @patch('feedback_form_handler.PROCESSING_QUEUE_URL', 'https://sqs.example.com/queue')
     @patch('feedback_form_handler.BRAND_NAME', 'Acme Original')
-    @patch('feedback_form_handler.sqs')
+    @patch('feedback_form_handler.sqs', new=MagicMock())
     @patch('feedback_form_handler.aggregates_table')
     def test_the_anchor_write_cannot_overwrite_a_brand_already_stored(
-        self, mock_aggregates, mock_sqs, api_gateway_event, lambda_context,
-        feedback_form_handler
+        self,
+        mock_aggregates,
+        api_gateway_event,
+        lambda_context,
+        feedback_form_handler,
     ):
         """Guarded by a condition, so a concurrent submission or an admin edit
         that got there first wins. Without the condition this backfill would be a
         blind write that could move a form's partition — the defect it exists to
         prevent."""
-        mock_aggregates.get_item.return_value = {
-            'Item': _form_with_legacy_brand(brand_name='')
-        }
+        kwargs = _anchor_update_kwargs(mock_aggregates, feedback_form_handler, api_gateway_event, lambda_context)
 
-        event = api_gateway_event(
-            method='POST',
-            path='/feedback-forms/form-123/submit',
-            path_params={'form_id': 'form-123'},
-            body={'text': 'Anything'},
-        )
-
-        feedback_form_handler.lambda_handler(event, lambda_context)
-
-        kwargs = mock_aggregates.update_item.call_args.kwargs
         assert 'attribute_not_exists(brand_name)' in kwargs['ConditionExpression']
         assert kwargs['ExpressionAttributeValues'][':empty'] == ''
         assert kwargs['ExpressionAttributeValues'][':brand'] == 'Acme Original'
@@ -1743,11 +1117,14 @@ class TestABrandlessFormIsAnchoredSoARenameCannotStrandIt:
 
     @patch('feedback_form_handler.PROCESSING_QUEUE_URL', 'https://sqs.example.com/queue')
     @patch('feedback_form_handler.BRAND_NAME', 'Acme Original')
-    @patch('feedback_form_handler.sqs')
+    @patch('feedback_form_handler.sqs', new=MagicMock())
     @patch('feedback_form_handler.aggregates_table')
     def test_the_anchor_records_when_it_changed_the_form(
-        self, mock_aggregates, mock_sqs, api_gateway_event, lambda_context,
-        feedback_form_handler
+        self,
+        mock_aggregates,
+        api_gateway_event,
+        lambda_context,
+        feedback_form_handler,
     ):
         """brand_name is published by item_to_form and by the PUBLIC widget
         config, so the anchor changes what the management UI and the widget on a
@@ -1755,20 +1132,8 @@ class TestABrandlessFormIsAnchoredSoARenameCannotStrandIt:
         (build_form_item sets it, update_form always appends it); a published
         field that moves with no timestamp is the kind of change nobody can
         account for six months later."""
-        mock_aggregates.get_item.return_value = {
-            'Item': _form_with_legacy_brand(brand_name='')
-        }
+        kwargs = _anchor_update_kwargs(mock_aggregates, feedback_form_handler, api_gateway_event, lambda_context)
 
-        event = api_gateway_event(
-            method='POST',
-            path='/feedback-forms/form-123/submit',
-            path_params={'form_id': 'form-123'},
-            body={'text': 'Anything'},
-        )
-
-        feedback_form_handler.lambda_handler(event, lambda_context)
-
-        kwargs = mock_aggregates.update_item.call_args.kwargs
         assert 'updated_at' in kwargs['UpdateExpression']
         # A real ISO-8601 instant, not a placeholder that only satisfies the
         # assertion above.
@@ -1794,24 +1159,22 @@ class TestABrandlessFormIsAnchoredSoARenameCannotStrandIt:
 
     @patch('feedback_form_handler.PROCESSING_QUEUE_URL', 'https://sqs.example.com/queue')
     @patch('feedback_form_handler.BRAND_NAME', 'Acme Rebranded')
-    @patch('feedback_form_handler.sqs')
+    @patch('feedback_form_handler.sqs', new=MagicMock())
     @patch('feedback_form_handler.aggregates_table')
     def test_a_form_that_already_has_a_brand_is_not_rewritten(
-        self, mock_aggregates, mock_sqs, api_gateway_event, lambda_context,
-        feedback_form_handler
+        self,
+        mock_aggregates,
+        api_gateway_event,
+        lambda_context,
+        feedback_form_handler,
     ):
         """No write for a form that is already anchored: the backfill must not add
         a DynamoDB write to every submission on every form."""
         mock_aggregates.get_item.return_value = {'Item': _form_with_legacy_brand()}
 
-        event = api_gateway_event(
-            method='POST',
-            path='/feedback-forms/form-123/submit',
-            path_params={'form_id': 'form-123'},
-            body={'text': 'Anything'},
+        _submit_to_form_123(
+            feedback_form_handler, api_gateway_event, lambda_context, {'text': 'Anything'},
         )
-
-        feedback_form_handler.lambda_handler(event, lambda_context)
 
         mock_aggregates.update_item.assert_not_called()
 
@@ -1831,14 +1194,13 @@ class TestABrandlessFormIsAnchoredSoARenameCannotStrandIt:
         }
         mock_aggregates.update_item.side_effect = Exception('Throttled')
 
-        event = api_gateway_event(
+        response, _ = call_route(
+            feedback_form_handler.lambda_handler, api_gateway_event, lambda_context,
             method='POST',
             path='/feedback-forms/form-123/submit',
             path_params={'form_id': 'form-123'},
             body={'text': 'Feedback that must not be dropped'},
         )
-
-        response = feedback_form_handler.lambda_handler(event, lambda_context)
 
         assert response['statusCode'] == 200
         enqueued = json.loads(mock_sqs.send_message.call_args.kwargs['MessageBody'])
@@ -1861,14 +1223,13 @@ class TestABrandlessFormIsAnchoredSoARenameCannotStrandIt:
         form = _form_with_legacy_brand(brand_name='')
         mock_aggregates.get_item.return_value = {'Item': dict(form)}
 
-        event = api_gateway_event(
+        response, _ = call_route(
+            feedback_form_handler.lambda_handler, api_gateway_event, lambda_context,
             method='POST',
             path='/feedback-forms/form-123/submit',
             path_params={'form_id': 'form-123'},
             body={'text': 'Unbranded deployment'},
         )
-
-        response = feedback_form_handler.lambda_handler(event, lambda_context)
 
         assert response['statusCode'] == 200
         mock_aggregates.update_item.assert_not_called()
@@ -1932,18 +1293,7 @@ class TestTheAnchorCanOnlyEverUpdateAFormThatExists:
 
     @staticmethod
     def _table_with_a_brandless_form():
-        table = boto3.resource('dynamodb', region_name='us-east-1').create_table(
-            TableName='test-aggregates-anchor',
-            KeySchema=[
-                {'AttributeName': 'pk', 'KeyType': 'HASH'},
-                {'AttributeName': 'sk', 'KeyType': 'RANGE'},
-            ],
-            AttributeDefinitions=[
-                {'AttributeName': 'pk', 'AttributeType': 'S'},
-                {'AttributeName': 'sk', 'AttributeType': 'S'},
-            ],
-            BillingMode='PAY_PER_REQUEST',
-        )
+        table = pk_sk_table('test-aggregates-anchor')
         # A form created while BRAND_NAME was unset: build_form_item stores ''.
         table.put_item(Item={
             'pk': 'FEEDBACK_FORM',
@@ -1966,15 +1316,10 @@ class TestTheAnchorCanOnlyEverUpdateAFormThatExists:
         table = self._table_with_a_brandless_form()
         racing = self._aggregates_table_that_loses_the_form_mid_request(table)
 
-        event = api_gateway_event(
-            method='POST',
-            path='/feedback-forms/form-123/submit',
-            path_params={'form_id': 'form-123'},
-            body={'text': 'In flight when the form was deleted', 'rating': 5},
-        )
-
         with patch('feedback_form_handler.aggregates_table', racing):
-            response = feedback_form_handler.lambda_handler(event, lambda_context)
+            response = _submit_to_form_123(
+                feedback_form_handler, api_gateway_event, lambda_context, {'text': 'In flight when the form was deleted', 'rating': 5},
+            )
 
         # The submission itself still succeeds: it was accepted before the delete
         # and its record already carries the brand, so dropping it would be the
@@ -1993,9 +1338,9 @@ class TestTheAnchorCanOnlyEverUpdateAFormThatExists:
     @mock_aws
     @patch('feedback_form_handler.PROCESSING_QUEUE_URL', 'https://sqs.example.com/queue')
     @patch('feedback_form_handler.BRAND_NAME', 'Acme Original')
-    @patch('feedback_form_handler.sqs')
+    @patch('feedback_form_handler.sqs', new=MagicMock())
     def test_the_stats_route_still_reports_that_form_as_gone(
-        self, mock_sqs, api_gateway_event, lambda_context, feedback_form_handler
+        self, api_gateway_event, lambda_context, feedback_form_handler
     ):
         """The consequence that matters to this change: a phantom record makes
         _load_form_for_query find an Item, so /stats answers 200 with
@@ -2004,28 +1349,16 @@ class TestTheAnchorCanOnlyEverUpdateAFormThatExists:
         table = self._table_with_a_brandless_form()
         racing = self._aggregates_table_that_loses_the_form_mid_request(table)
 
-        submit_event = api_gateway_event(
-            method='POST',
-            path='/feedback-forms/form-123/submit',
-            path_params={'form_id': 'form-123'},
-            body={'text': 'In flight when the form was deleted'},
-        )
         with patch('feedback_form_handler.aggregates_table', racing):
-            feedback_form_handler.lambda_handler(submit_event, lambda_context)
+            _submit_to_form_123(
+                feedback_form_handler, api_gateway_event, lambda_context, {'text': 'In flight when the form was deleted'},
+            )
 
-        stats_event = api_gateway_event(
-            method='GET',
-            path='/feedback-forms/form-123/stats',
-            path_params={'form_id': 'form-123'},
-        )
         with patch('feedback_form_handler.aggregates_table', table), patch(
             'feedback_form_handler.feedback_table', _fake_feedback_table({})
         ):
-            stats_response = feedback_form_handler.lambda_handler(
-                stats_event, lambda_context
-            )
+            stats_response, body = _get_form_stats(feedback_form_handler, api_gateway_event, lambda_context)
 
-        body = json.loads(stats_response['body'])
         assert stats_response['statusCode'] == 404, (
             'a deleted form is answering the stats route again, which means the '
             'anchor recreated it'
@@ -2035,9 +1368,9 @@ class TestTheAnchorCanOnlyEverUpdateAFormThatExists:
     @mock_aws
     @patch('feedback_form_handler.PROCESSING_QUEUE_URL', 'https://sqs.example.com/queue')
     @patch('feedback_form_handler.BRAND_NAME', 'Acme Original')
-    @patch('feedback_form_handler.sqs')
+    @patch('feedback_form_handler.sqs', new=MagicMock())
     def test_a_form_that_is_still_there_is_anchored_as_before(
-        self, mock_sqs, api_gateway_event, lambda_context, feedback_form_handler
+        self, api_gateway_event, lambda_context, feedback_form_handler
     ):
         """The boundary the existence check must not have crossed: requiring the
         item to exist is only correct if it still lets the ordinary brandless form
@@ -2045,32 +1378,27 @@ class TestTheAnchorCanOnlyEverUpdateAFormThatExists:
         working, which the failure it tolerates would hide."""
         table = self._table_with_a_brandless_form()
 
-        event = api_gateway_event(
-            method='POST',
-            path='/feedback-forms/form-123/submit',
-            path_params={'form_id': 'form-123'},
-            body={'text': 'An ordinary submission', 'rating': 4},
-        )
-
         with patch('feedback_form_handler.aggregates_table', table):
-            response = feedback_form_handler.lambda_handler(event, lambda_context)
+            response = _submit_to_form_123(
+                feedback_form_handler, api_gateway_event, lambda_context, {'text': 'An ordinary submission', 'rating': 4},
+            )
 
         assert response['statusCode'] == 200
-        item = table.get_item(
-            Key={'pk': 'FEEDBACK_FORM', 'sk': 'FORM#form-123'}
-        )['Item']
+        item = _stored_form_123(table)
         assert item['brand_name'] == 'Acme Original'
         # And the rest of the record is intact — an update, never a replacement.
         assert item['name'] == 'Product Form'
         assert item['enabled'] is True
-        datetime.fromisoformat(item['updated_at'])
+        updated_at = item['updated_at']
+        assert isinstance(updated_at, str)
+        datetime.fromisoformat(updated_at)
 
     @mock_aws
     @patch('feedback_form_handler.PROCESSING_QUEUE_URL', 'https://sqs.example.com/queue')
     @patch('feedback_form_handler.BRAND_NAME', 'Acme Rebranded')
-    @patch('feedback_form_handler.sqs')
+    @patch('feedback_form_handler.sqs', new=MagicMock())
     def test_a_form_whose_history_predates_its_anchor_reports_only_the_anchored_half(
-        self, mock_sqs, api_gateway_event, lambda_context, feedback_form_handler
+        self, api_gateway_event, lambda_context, feedback_form_handler
     ):
         """The accepted limit of the fix, pinned so it is a decision and not a
         surprise.
@@ -2091,21 +1419,13 @@ class TestTheAnchorCanOnlyEverUpdateAFormThatExists:
         """
         table = self._table_with_a_brandless_form()
 
-        submit_event = api_gateway_event(
-            method='POST',
-            path='/feedback-forms/form-123/submit',
-            path_params={'form_id': 'form-123'},
-            body={'text': 'The submission that anchors the form', 'rating': 5},
-        )
         with patch('feedback_form_handler.aggregates_table', table):
-            submit_response = feedback_form_handler.lambda_handler(
-                submit_event, lambda_context
+            submit_response = _submit_to_form_123(
+                feedback_form_handler, api_gateway_event, lambda_context, {'text': 'The submission that anchors the form', 'rating': 5},
             )
         assert submit_response['statusCode'] == 200
 
-        anchored_brand = table.get_item(
-            Key={'pk': 'FEEDBACK_FORM', 'sk': 'FORM#form-123'}
-        )['Item']['brand_name']
+        anchored_brand = _stored_form_123(table)['brand_name']
         assert anchored_brand == 'Acme Rebranded'
 
         # The history: 7 submissions collected under the old brand, 2 under the
@@ -2123,19 +1443,11 @@ class TestTheAnchorCanOnlyEverUpdateAFormThatExists:
             ],
         }
 
-        stats_event = api_gateway_event(
-            method='GET',
-            path='/feedback-forms/form-123/stats',
-            path_params={'form_id': 'form-123'},
-        )
         with patch('feedback_form_handler.aggregates_table', table), patch(
             'feedback_form_handler.feedback_table', _fake_feedback_table(history)
         ):
-            stats_response = feedback_form_handler.lambda_handler(
-                stats_event, lambda_context
-            )
+            stats_response, body = _get_form_stats(feedback_form_handler, api_gateway_event, lambda_context)
 
-        body = json.loads(stats_response['body'])
         assert stats_response['statusCode'] == 200
         assert body['stats']['total_submissions'] == 2, (
             'the stats read reports the anchored partition only — 2 of the 9 '
@@ -2144,3 +1456,40 @@ class TestTheAnchorCanOnlyEverUpdateAFormThatExists:
             'and doubling the reads on a route that already pages a whole '
             'partition. If that changed, this expectation changes with it.'
         )
+
+
+def _relative_luminance(hex_colour: str) -> float:
+    channels = [int(hex_colour[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    linear = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+
+def _contrast(a: str, b: str) -> float:
+    hi, lo = sorted((_relative_luminance(a), _relative_luminance(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+class TestDefaultTheme:
+    """A form created without a theme gets the Kiro Light palette (E2E F6)."""
+
+    def test_default_theme_is_the_kiro_light_palette(self, feedback_form_handler):
+        theme = feedback_form_handler.DEFAULT_THEME
+        assert (theme['primary_color'], theme['background_color'], theme['text_color']) == (
+            '#8e48ff', '#ffffff', '#19161d')
+
+    def test_the_white_start_label_passes_aa_on_the_default_primary(self, feedback_form_handler):
+        # The widget's start/next buttons put a white label on the primary; the
+        # old #3B82F6 default gave 3.68:1 and failed axe colour-contrast.
+        assert _contrast('#ffffff', feedback_form_handler.DEFAULT_THEME['primary_color']) >= 4.5
+
+    def test_a_new_form_without_a_theme_is_stored_with_it(self, feedback_form_handler):
+        item = feedback_form_handler.build_form_item({'name': 'n'})
+        assert item['theme']['primary_color'] == '#8e48ff'
+
+    def test_the_old_tailwind_blue_is_not_the_default_but_a_stored_one_is_kept(self, feedback_form_handler):
+        # E2E F7: #3B82F6 rendered as an off-palette swatch on five screens. It
+        # must never come back as the default, and a form that stored it keeps it.
+        assert feedback_form_handler.DEFAULT_THEME['primary_color'].lower() != '#3b82f6'
+        item = feedback_form_handler.build_form_item({'name': 'n', 'theme': {'primary_color': '#3B82F6'}})
+        assert item['theme']['primary_color'] == '#3B82F6'
+

@@ -1,0 +1,400 @@
+{
+  "nav": {
+    "label": "自主智能体"
+  },
+  "common": {
+    "cancel": "取消"
+  },
+  "status": {
+    "enabled": "已启用",
+    "disabled": "已停用"
+  },
+  "scope": {
+    "all": "所有分类",
+    "some": "关注：{{list}}"
+  },
+  "list": {
+    "title": "自主智能体",
+    "subtitle": "智能体关注其范围内的反馈，并在触发器触发时运行工作流：调研、用户画像、PR/FAQ、PRD 和原型，经用户画像评审后移交项目。",
+    "create": "新建智能体",
+    "createTitle": "创建自主智能体",
+    "createHint": "创建后默认停用，并使用内置的“评论 → 原型”工作流。配置触发器和工作流后再启用。",
+    "createFailed": "无法创建智能体。",
+    "emptyTitle": "暂无自主智能体",
+    "emptyAdmin": "创建一个智能体，自动将新反馈转化为经过调研的项目和原型。",
+    "emptyUser": "管理员尚未设置您可见的智能体。",
+    "loadFailed": "无法加载智能体。",
+    "spend": "今日计划运行 {{runs}} 次 · 本月模型调用 {{calls}} 次",
+    "spendHint": "手动运行不计入每日计划运行上限。"
+  },
+  "library": {
+    "title": "工作流库",
+    "subtitle": "智能体可运行的所有工作流。归档不再需要的工作流：它们会从库中移除并变为只读，修订版本会保留。",
+    "loadFailed": "无法加载工作流库。",
+    "archive": "归档",
+    "archiveNamed": "归档 {{name}}",
+    "archiveTitle": "归档此工作流？",
+    "archiveMessage": "“{{name}}”将从库和工作流选择器中隐藏并变为只读。其修订版本会保留。",
+    "archiveInUse": "仍有活动的智能体在运行此工作流。请先归档该智能体或为其指定其他工作流。",
+    "archiveFailed": "无法归档该工作流。"
+  },
+  "fields": {
+    "name": "名称",
+    "description": "描述",
+    "scope": "关注的反馈",
+    "instructions": "指令",
+    "instructionsHint": "面向整个团队的自定义指导（最多 {{n}} 个字符）。",
+    "visibility": "移交项目的可见性",
+    "visibilityHint": "私有项目仅对其所有者、成员和管理员可见。",
+    "workflow": "工作流",
+    "workflowDefault": "评论 → 原型（内置）",
+    "workflowHint": "在“工作流”选项卡中编辑步骤。"
+  },
+  "visibility": {
+    "private": "私有",
+    "public": "公开"
+  },
+  "detail": {
+    "back": "所有智能体",
+    "tabs": "智能体分区",
+    "enabledLabel": "已启用",
+    "toggleFailed": "无法启用或停用智能体。",
+    "save": "保存",
+    "saved": "已保存",
+    "saveFailed": "无法保存更改。",
+    "discard": "放弃更改",
+    "archive": "归档",
+    "archiveTitle": "归档此智能体？",
+    "archiveMessage": "它将停止运行并从列表中消失。它创建的项目会保留。",
+    "notFound": "此智能体不存在或您无权查看。",
+    "stats": "共运行 {{runs}} 次 · 今日计划 {{today}} 次 · 本月模型调用 {{calls}} 次"
+  },
+  "tabs": {
+    "settings": "设置",
+    "triggers": "触发器",
+    "personas": "用户画像",
+    "instructions": "指令",
+    "models": "模型",
+    "budget": "预算",
+    "workflow": "工作流",
+    "runs": "运行记录"
+  },
+  "triggers": {
+    "hint": "唤醒智能体的条件。它每天最多自动运行两次，且不会同时运行两次。",
+    "none": "无触发器——仅在有人点击“立即运行”时运行。",
+    "remove": "移除触发器",
+    "minNew": "所需新评论数",
+    "cooldown": "冷却时间（小时）",
+    "every": "每隔",
+    "cron": "Cron 表达式",
+    "cronHint": "五个字段，例如 0 9 * * 1 表示每周一 09:00。",
+    "timezone": "时区",
+    "count": "评论数",
+    "per": "按",
+    "windowDays": "时间范围（天）",
+    "kinds": {
+      "new_reviews": "新评论",
+      "schedule": "定时",
+      "threshold": "阈值"
+    },
+    "kindHints": {
+      "new_reviews": "自上次运行以来，范围内新增反馈足够多时运行。",
+      "schedule": "按固定计划运行。",
+      "threshold": "当某分类或子分类在时间范围内的评论数达到阈值时运行。"
+    },
+    "everyOptions": {
+      "12h": "12 小时",
+      "24h": "24 小时",
+      "cron": "自定义（cron）"
+    },
+    "perOptions": {
+      "category": "分类",
+      "subcategory": "子分类"
+    }
+  },
+  "personas": {
+    "fixed": "固定用户画像（{{n}}/{{max}}）",
+    "none": "无固定用户画像——智能体将从项目中挑选。",
+    "add": "添加用户画像",
+    "remove": "移除用户画像",
+    "project": "项目",
+    "persona": "用户画像",
+    "chooseProject": "选择项目",
+    "choosePersona": "选择用户画像",
+    "allowGenerate": "没有合适的用户画像时，允许智能体生成新的用户画像"
+  },
+  "models": {
+    "hint": "按团队角色覆盖模型。保留默认值则遵循“设置 → AI 模型”。",
+    "default": "设置默认值",
+    "roleHint": {
+      "orchestrator": "决定下一步并验证每个结果。",
+      "worker": "撰写调研、文档和原型。",
+      "reviewer": "在移交前评审成果。",
+      "persona": "在评审中代表各用户画像发言。"
+    }
+  },
+  "roles": {
+    "orchestrator": "编排者",
+    "worker": "执行者",
+    "reviewer": "评审者",
+    "persona": "用户画像"
+  },
+  "budget": {
+    "runsPerDay": "每日计划运行次数",
+    "runsPerDayHint": "最多 2 次。手动运行不计入。",
+    "callsPerRun": "每次运行的模型调用次数",
+    "monthlyCap": "每月模型调用上限",
+    "monthlyCapHint": "当月调用次数达到此上限后，智能体将不再启动运行。",
+    "uncapped": "无每月上限"
+  },
+  "run": {
+    "hint": "每次运行都遵循工作流。图中会高亮正在运行的步骤；它仅用于查看，不可控制。",
+    "list": "运行记录",
+    "none": "暂无运行记录。",
+    "runNow": "立即运行",
+    "alreadyRunning": "已有运行正在进行。",
+    "startFailed": "无法启动运行。",
+    "cancel": "取消运行",
+    "cancelFailed": "无法取消运行。",
+    "calls": "{{n}} 次模型调用",
+    "openProject": "打开项目",
+    "eventLog": "事件日志",
+    "noEvents": "暂无事件。",
+    "noGraph": "无法加载此次运行的工作流。",
+    "olderRevision": "此次运行使用了工作流的第 {{n}} 版。",
+    "graphLabel": "运行进度图",
+    "showAll": "显示所有事件（当前筛选：{{step}}）",
+    "rounds": "第 {{n}} 轮",
+    "status": {
+      "queued": "排队中",
+      "running": "运行中",
+      "needs_human": "需要人工处理",
+      "completed": "已完成",
+      "failed": "失败",
+      "cancelled": "已取消"
+    },
+    "triggers": {
+      "manual": "手动",
+      "schedule": "定时",
+      "new_reviews": "新评论",
+      "threshold": "阈值"
+    },
+    "stepStatus": {
+      "idle": "未开始",
+      "running": "运行中",
+      "done": "完成",
+      "failed": "失败"
+    },
+    "eventKinds": {
+      "node_started": "步骤开始",
+      "node_finished": "步骤完成",
+      "node_failed": "步骤失败",
+      "message": "消息",
+      "verdict": "结论",
+      "decision": "决策",
+      "artifact": "产出物"
+    }
+  },
+  "editor": {
+    "canvasLabel": "工作流画布",
+    "minimap": "工作流概览",
+    "palette": "步骤",
+    "paletteHint": "将步骤拖到画布上，或按 Enter 添加。",
+    "panel": "步骤设置",
+    "nothingSelected": "在画布或下方大纲中选择一个步骤、箭头或循环进行配置。",
+    "multiSelected": "已选择 {{n}} 个步骤",
+    "groupLoop": "组合为循环",
+    "ungroupLoop": "移除循环",
+    "loopTitle": "循环 {{n}}",
+    "loopMembers": "{{n}} 个步骤",
+    "loopFrame": "循环直到{{until}}",
+    "arrow": "箭头",
+    "deleteArrow": "删除箭头",
+    "deleteStep": "删除步骤",
+    "builtin": "内置模板——请保存副本后再修改。",
+    "revision": "第 {{n}} 版",
+    "unsaved": "未保存的更改",
+    "save": "保存",
+    "saveAs": "另存为…",
+    "saveAsTitle": "另存为新工作流",
+    "copyName": "{{name}}（副本）",
+    "import": "导入",
+    "export": "导出",
+    "reset": "重置为模板",
+    "resetTitle": "重置为模板？",
+    "resetMessage": "未保存的更改将被内置的“评论 → 原型”工作流替换。",
+    "conflict": "在此期间有人保存了更新的版本。",
+    "conflictReload": "加载最新版本",
+    "conflictSaveAs": "将我的版本另存为副本",
+    "loadFailed": "无法加载工作流。",
+    "generalIssues": "工作流问题",
+    "issueCount_one": "{{count}} 个问题",
+    "issueCount_other": "{{count}} 个问题",
+    "valid": "工作流有效。",
+    "validUnsaved": "有效——尚未保存。",
+    "outcome": {
+      "saved": "已保存。",
+      "conflict": "在此期间有人保存了更新的版本。",
+      "invalid": "服务器拒绝了此工作流——请修复问题后重新保存。",
+      "failed": "无法保存工作流。",
+      "import_failed": "该文件不是有效的工作流。"
+    },
+    "fields": {
+      "workflowName": "工作流名称",
+      "title": "标题",
+      "instructions": "指令",
+      "instructionsRequired": "指令（必填）",
+      "role": "角色",
+      "roleNone": "无角色",
+      "label": "条件",
+      "labelNone": "始终",
+      "until": "直到",
+      "maxRounds": "最大轮数",
+      "description": "描述",
+      "arrowTarget": "指向步骤",
+      "arrowTargetNone": "选择一个步骤…",
+      "joinLoop": "循环"
+    },
+    "params": {
+      "target": "目标",
+      "targetAny": "最近一次产出的内容",
+      "maxNew": "新用户画像上限",
+      "useWebSearch": "使用网络搜索",
+      "endStatus": "运行结束状态"
+    },
+    "loopFrameLabel": "循环 {{n}}：直到{{until}}，最多 {{rounds}} 轮",
+    "loopFrameHint": "点击以配置此循环",
+    "arrowLabel": "从 {{source}} 到 {{target}} 的箭头（{{condition}}）",
+    "conditionHint": "当步骤报告此结果时走这条箭头；“始终”是默认路径。",
+    "noConditions": "此步骤不给出结论，因此它的箭头始终会被执行。",
+    "arrowsOut": "出向箭头",
+    "noArrowsOut": "此步骤还没有出向箭头。",
+    "addArrow": "添加箭头",
+    "addArrowButton": "添加箭头",
+    "noArrowTargets": "其他所有步骤都已从这里连接。",
+    "deleteArrowTo": "删除指向 {{target}} 的箭头",
+    "conditionTo": "指向 {{target}} 的条件",
+    "loopStepsLegend": "此循环中的步骤",
+    "maxRoundsHint": "{{min}} 到 {{max}} 的整数；达到上限时运行停止并请人工处理。",
+    "joinLoop": "加入循环",
+    "joinLoopHint": "循环会重复其步骤，直到满足退出条件。",
+    "newLoop": "新循环",
+    "loopOption_one": "循环 {{n}}（{{count}} 个步骤）",
+    "loopOption_other": "循环 {{n}}（{{count}} 个步骤）",
+    "leaveLoop": "将此步骤移出循环",
+    "outlineSteps": "此工作流中的步骤",
+    "outlineStepsCount": "步骤（{{n}}）",
+    "outlineLoops": "循环",
+    "emptyCanvas": "画布为空：请从面板添加步骤。",
+    "selectStep": "配置步骤 {{title}}",
+    "backToWorkflow": "工作流设置",
+    "clear": "清空画布",
+    "clearTitle": "清空画布？",
+    "clearMessage": "将从草稿中移除所有步骤、箭头和循环，以便从头构建工作流。在你保存之前不会保存任何内容。"
+  },
+  "paletteGroups": {
+    "flow": "流程",
+    "research": "调研",
+    "documents": "文档",
+    "review": "评审",
+    "prototype": "原型",
+    "delivery": "交付"
+  },
+  "edgeLabels": {
+    "pass": "通过",
+    "fail": "未通过",
+    "agreed": "达成一致",
+    "not_agreed": "未达成一致"
+  },
+  "loopUntil": {
+    "persona_agreement": "用户画像达成一致",
+    "review_pass": "评审通过"
+  },
+  "reviewTargets": {
+    "prfaq": "PR/FAQ",
+    "prd": "PRD",
+    "prototype": "原型"
+  },
+  "endStatuses": {
+    "completed": "已完成",
+    "needs_human": "需要人工处理"
+  },
+  "nodeTypes": {
+    "start": {
+      "label": "开始",
+      "description": "每次运行的起点。"
+    },
+    "aggregate_reviews": {
+      "label": "汇总评论",
+      "description": "收集智能体范围内的新反馈并找出主要主题。"
+    },
+    "select_or_create_project": {
+      "label": "选择或创建项目",
+      "description": "复用目的相同的项目，或创建新项目。"
+    },
+    "select_personas": {
+      "label": "选择用户画像",
+      "description": "挑选与这些评论相关的用户画像。"
+    },
+    "generate_personas": {
+      "label": "生成用户画像",
+      "description": "没有合适的用户画像时，根据反馈创建新的用户画像。"
+    },
+    "deep_research": {
+      "label": "深度调研",
+      "description": "对项目运行调研任务，可选使用网络搜索。"
+    },
+    "write_prfaq": {
+      "label": "撰写 PR/FAQ",
+      "description": "为该想法起草新闻稿和常见问题。"
+    },
+    "write_prd": {
+      "label": "撰写 PRD",
+      "description": "起草产品需求文档。"
+    },
+    "revise_document": {
+      "label": "修订文档",
+      "description": "根据评审意见重写文档。"
+    },
+    "duplicate_document": {
+      "label": "复制文档",
+      "description": "将文档复制到另一个项目。"
+    },
+    "persona_review": {
+      "label": "用户画像评审",
+      "description": "由用户画像为成果打分；达成一致 = 平均分 4 分及以上且无阻塞问题。"
+    },
+    "final_review": {
+      "label": "最终评审",
+      "description": "评审者在移交前检查整体成果。"
+    },
+    "custom_llm": {
+      "label": "自定义步骤",
+      "description": "由您自己的指令驱动的步骤。"
+    },
+    "build_prototype": {
+      "label": "构建原型",
+      "description": "使用设计系统构建 HTML 原型。"
+    },
+    "collect_prototype_feedback": {
+      "label": "收集测试者图钉",
+      "description": "读取测试者在原型上留下的未处理图钉，用于下一次修订。"
+    },
+    "revise_prototype": {
+      "label": "修订原型",
+      "description": "根据评审意见修改原型。"
+    },
+    "handoff": {
+      "label": "移交",
+      "description": "将项目移交给其主分类的负责人。"
+    },
+    "end": {
+      "label": "结束",
+      "description": "运行结束的位置。"
+    }
+  },
+  "loopUntilHint": {
+    "persona_agreement": "只要循环中的角色评审回答“未达成一致”，就会重复。",
+    "review_pass": "只要循环中的评审步骤回答“未通过”，就会重复。"
+  }
+}

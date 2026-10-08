@@ -1,17 +1,31 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { renderWithQueryClient } from '../../test/query-client'
 import { MemoryRouter } from 'react-router-dom'
+import { configStoreModule } from '../Categories/categories-fixtures'
+import enCommon from '../../../public/locales/en/common.json'
 
-// Mock hooks
+// Mock hooks. `isConfigured` is the hook's verdict on the API endpoint; a test flips it.
+// `failed` names the view whose listing read failed with nothing cached.
+const queriesState = vi.hoisted(() => {
+  const state: { isConfigured: boolean; failed: 's3' | 'feedback' | null; retry: () => void } = {
+    isConfigured: true, failed: null, retry: () => undefined,
+  }
+  return state
+})
+const failure = (view: 's3' | 'feedback') => ({
+  loadFailed: queriesState.failed === view, retrying: false, retry: () => queriesState.retry(),
+})
 vi.mock('./useDataExplorerQueries', () => ({
   useDataExplorerQueries: () => ({
-    isConfigured: true,
+    isConfigured: queriesState.isConfigured,
     s3Data: { folders: [], files: [] },
     s3Loading: false,
     feedbackData: { items: [], count: 0 },
     feedbackLoading: false,
+    s3Failure: failure('s3'),
+    feedbackFailure: failure('feedback'),
     bucketsData: { buckets: [{ id: 'raw-data', label: 'Raw Data' }] },
     sourcesData: { sources: {} },
     refetch: vi.fn(),
@@ -21,9 +35,7 @@ vi.mock('./useDataExplorerQueries', () => ({
 vi.mock('./useDataExplorerMutations', () => ({
   useDataExplorerMutations: () => ({
     saveS3Mutation: { mutate: vi.fn(), isPending: false, error: null },
-    deleteS3Mutation: { mutate: vi.fn(), isPending: false },
     saveFeedbackMutation: { mutate: vi.fn(), isPending: false, error: null },
-    deleteFeedbackMutation: { mutate: vi.fn(), isPending: false },
   }),
 }))
 
@@ -33,11 +45,7 @@ vi.mock('./s3Handlers', () => ({
   downloadS3File: vi.fn(),
 }))
 
-vi.mock('../../store/configStore', () => ({
-  useConfigStore: () => ({
-    config: { apiEndpoint: 'https://api.example.com' },
-  }),
-}))
+vi.mock('../../store/configStore', () => configStoreModule())
 
 // Mock subcomponents to simplify testing
 vi.mock('./S3Browser', () => ({
@@ -62,31 +70,26 @@ vi.mock('./EditModal', () => ({
 
 import DataExplorer from './DataExplorer'
 
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
-  return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter>{children}</MemoryRouter>
-    </QueryClientProvider>
-  )
+/** Renders `ui` (the page by default) with a no-retry query client inside its router. */
+function renderDataExplorer(ui: React.ReactElement = <DataExplorer />) {
+  return renderWithQueryClient(<MemoryRouter>{ui}</MemoryRouter>)
 }
 
 describe('DataExplorer', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    queriesState.isConfigured = true
   })
 
   describe('rendering', () => {
     it('renders page header', async () => {
-      render(<DataExplorer />, { wrapper: createWrapper() })
+      renderDataExplorer()
 
       expect(screen.getByText('Data Explorer')).toBeInTheDocument()
     })
 
     it('renders S3 browser by default', async () => {
-      render(<DataExplorer />, { wrapper: createWrapper() })
+      renderDataExplorer()
 
       await waitFor(() => {
         expect(screen.getByTestId('s3-browser')).toBeInTheDocument()
@@ -94,32 +97,58 @@ describe('DataExplorer', () => {
     })
 
     it('renders New File button in S3 view', async () => {
-      render(<DataExplorer />, { wrapper: createWrapper() })
+      renderDataExplorer()
 
       expect(screen.getByRole('button', { name: /new file/i })).toBeInTheDocument()
     })
 
     it('renders Refresh button', async () => {
-      render(<DataExplorer />, { wrapper: createWrapper() })
+      renderDataExplorer()
 
       expect(screen.getByRole('button', { name: /refresh/i })).toBeInTheDocument()
     })
   })
 })
 
+describe('DataExplorer - a failed listing is not an empty folder', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    queriesState.isConfigured = true
+    queriesState.failed = null
+  })
+
+  it('shows LoadFailed in place of the S3 browser, and its button retries', async () => {
+    queriesState.failed = 's3'
+    const retry = vi.fn()
+    queriesState.retry = retry
+    renderDataExplorer()
+
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent(enCommon.loadFailed.message)
+    expect(screen.queryByTestId('s3-browser')).not.toBeInTheDocument()
+    await userEvent.setup().click(within(alert).getByRole('button', { name: enCommon.loadFailed.retry }))
+    expect(retry).toHaveBeenCalledExactlyOnceWith()
+  })
+
+  it('a failed feedback read does not hide the S3 view it does not feed', () => {
+    queriesState.failed = 'feedback'
+    renderDataExplorer()
+
+    expect(screen.getByTestId('s3-browser')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+})
+
 describe('DataExplorer - not configured', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    queriesState.isConfigured = false
   })
 
   it('shows configuration message when API not configured', () => {
-    vi.doMock('../../store/configStore', () => ({
-      useConfigStore: () => ({
-        config: { apiEndpoint: '' },
-      }),
-    }))
+    renderDataExplorer()
 
-    // This would need a fresh import to test properly
-    // For now, we test the component renders the not configured view
+    expect(screen.getByText('Configure API endpoint in Settings to explore data')).toBeInTheDocument()
+    expect(screen.queryByTestId('s3-browser')).not.toBeInTheDocument()
   })
 })

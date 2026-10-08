@@ -28,7 +28,7 @@ plugins/your_source/
 |-------|----------|-------------|
 | `id` | Yes | Unique identifier (lowercase, underscores) |
 | `name` | Yes | Display name in UI |
-| `icon` | Yes | Emoji or SVG filename |
+| `icon` | Yes | Icon word mapped to a lucide icon (`Web`, `iOS`, `Android`, `GitHub`, `Package`, `Synthetic`, `Plugin`); never an emoji |
 | `description` | No | Short description |
 | `category` | No | One of: reviews, social, import, search, scraper |
 | `infrastructure` | Yes | AWS resources to deploy |

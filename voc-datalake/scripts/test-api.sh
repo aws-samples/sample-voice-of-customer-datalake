@@ -156,7 +156,6 @@ print(items[0].get('id','') if items else '')" 2>/dev/null || echo "")
   fi
 
   echo -e "\n${BLUE}Chat API${NC}"
-  tpost "/chat" '{"message":"test"}'
 
   echo -e "\n${BLUE}Integrations API${NC}"
   tget "/integrations/status"
@@ -172,7 +171,6 @@ print(items[0].get('id','') if items else '')" 2>/dev/null || echo "")
 
   echo -e "\n${BLUE}Projects API${NC}"
   tget "/projects"
-  tget "/projects/config"
   tget "/projects/prioritization"
 
   # PR #131: document-generation (Step Functions) + product-context workspace.

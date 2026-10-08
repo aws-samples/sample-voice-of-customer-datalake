@@ -1,0 +1,151 @@
+{
+  "$comment": "The EXACT DynamoDB actions each memory/agents Lambda role holds, per table. Pinned on both sides: lib/stacks/memory-agents-stack.test.ts asserts the synthesized roles equal this file, and lambda/shared/test/strict_iam.py makes every moto-backed backend test answer AccessDenied for a call the Lambda's role would not allow (the voc-memory-scanner BatchGetItem outage). Change a grant in the stack and here together.",
+  "tables": {
+    "Memory": "MEMORY_TABLE",
+    "Agents": "AGENTS_TABLE",
+    "Aggregates": "AGGREGATES_TABLE",
+    "Conversations": "CONVERSATIONS_TABLE",
+    "Feedback": "FEEDBACK_TABLE",
+    "Projects": "PROJECTS_TABLE"
+  },
+  "roles": {
+    "MemoryWorkersMemoryExtractorRole": {
+      "stack": "processing",
+      "entry": "memory/extractor/handler.py",
+      "grants": {
+        "Memory": [
+          "dynamodb:BatchGetItem",
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:Query",
+          "dynamodb:UpdateItem"
+        ],
+        "Conversations": [
+          "dynamodb:GetItem"
+        ],
+        "Aggregates": [
+          "dynamodb:GetItem"
+        ]
+      }
+    },
+    "MemoryWorkersMemoryScannerRole": {
+      "stack": "processing",
+      "entry": "memory/scanner/handler.py",
+      "grants": {
+        "Memory": [
+          "dynamodb:BatchGetItem",
+          "dynamodb:UpdateItem"
+        ],
+        "Conversations": [
+          "dynamodb:Scan"
+        ]
+      }
+    },
+    "MemoryWorkersMemoryRetentionRole": {
+      "stack": "processing",
+      "entry": "memory/retention/handler.py",
+      "grants": {
+        "Memory": [
+          "dynamodb:PutItem",
+          "dynamodb:Query",
+          "dynamodb:UpdateItem"
+        ]
+      }
+    },
+    "AgentRuntimeAgentConductorRole": {
+      "stack": "processing",
+      "entry": "agents/conductor/handler.py",
+      "grants": {
+        "Agents": [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:Query",
+          "dynamodb:UpdateItem"
+        ],
+        "Aggregates": [
+          "dynamodb:GetItem"
+        ]
+      }
+    },
+    "AgentRuntimeAgentNodesRole": {
+      "stack": "processing",
+      "entry": "agents/nodes/handler.py",
+      "grants": {
+        "Agents": [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:Query",
+          "dynamodb:UpdateItem"
+        ],
+        "Aggregates": [
+          "dynamodb:GetItem",
+          "dynamodb:Query"
+        ]
+      }
+    },
+    "AgentRuntimeAgentPersonaPanelRole": {
+      "stack": "processing",
+      "entry": "agents/persona_panel/handler.py",
+      "grants": {
+        "Agents": [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:Query",
+          "dynamodb:UpdateItem"
+        ],
+        "Aggregates": [
+          "dynamodb:GetItem"
+        ]
+      }
+    },
+    "AgentRuntimeAgentHeartbeatRole": {
+      "stack": "processing",
+      "entry": "agents/heartbeat/handler.py",
+      "grants": {
+        "Agents": [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:Query",
+          "dynamodb:UpdateItem"
+        ],
+        "Feedback": [
+          "dynamodb:Query"
+        ],
+        "Aggregates": [
+          "dynamodb:GetItem",
+          "dynamodb:Query"
+        ]
+      }
+    },
+    "MemoryLambdaRole": {
+      "stack": "api",
+      "entry": "api/memory_handler.py",
+      "grants": {
+        "Memory": [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:Query",
+          "dynamodb:UpdateItem"
+        ],
+        "Aggregates": [
+          "dynamodb:GetItem"
+        ]
+      }
+    },
+    "AgentsLambdaRole": {
+      "stack": "api",
+      "entry": "api/agents_handler.py",
+      "grants": {
+        "Agents": [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:Query",
+          "dynamodb:UpdateItem"
+        ],
+        "Aggregates": [
+          "dynamodb:GetItem"
+        ]
+      }
+    }
+  }
+}

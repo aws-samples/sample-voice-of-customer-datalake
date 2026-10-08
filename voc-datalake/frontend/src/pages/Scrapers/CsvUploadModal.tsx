@@ -2,197 +2,223 @@
  * @fileoverview CSV upload modal — bulk import customer feedback rows from a CSV file.
  *
  * The browser reads the file as text and posts it to /scrapers/manual/csv-upload,
- * which parses, archives the original to S3, and pushes each row to the same
- * processing queue that ingestor plugins (iOS, Android, etc.) feed into. End
- * result: rows show up in the feedback table with full Bedrock enrichment.
+ * which parses it and pushes each row to the same processing queue that
+ * ingestor plugins feed into. End result: rows show up in the feedback table
+ * with full Bedrock enrichment.
  *
- * Required column: `text`. Optional: `id`, `rating`, `date`/`timestamp`, `author`,
- * `title`, `url`, `source`. Header names are case-insensitive; common synonyms
- * (review, comment, stars, score, user, name) are accepted server-side.
+ * Three choices before upload:
+ * - the source profile the rows belong to (`source_id`, default `manual_import`),
+ *   which decides their PII policy, retention, visibility and default dimensions;
+ * - the column mapping (`column_map`), suggested from the header row — fields,
+ *   dimension columns, `metadata` (the default for anything unrecognised, so
+ *   nothing is dropped) or `ignore`;
+ * - the default channel for rows without a channel column.
  */
-import {
-  X, Upload, Download, FileText, AlertCircle, CheckCircle, Loader2,
-} from 'lucide-react'
-import { useCallback, useRef, useState } from 'react'
+import { Upload, Download, FileText, AlertCircle, CheckCircle, Loader2 } from 'lucide-react'
+import { useCallback, useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { scrapersApi } from '../../api/scrapersApi'
+import { MANUAL_IMPORT_SOURCE } from '../../api/sourceProfilesApi'
+import ModalShell from '../../components/ModalShell/ModalShell'
+import SourceProfileSelect from '../../components/DimensionFields/SourceProfileSelect'
+import { useDimensionsConfig } from '../../hooks/useDimensions'
+import CsvColumnMapping from './CsvColumnMapping'
+import { mappingProblem } from './csvColumns'
+import SourceDialogHeader from './SourceDialogHeader'
+import { useCsvSelection } from './useCsvSelection'
+import type { CsvPickError } from './useCsvSelection'
+import type { Dimension } from '../../api/dimensionsSchema'
+import type { CsvColumnTarget } from '../../api/types'
 
-const MAX_BYTES = 10 * 1024 * 1024
-const TEMPLATE = 'id,text,rating,date,author,source\n' +
-  '1,"Great app, fast and reliable",5,2026-01-15,Alice,app_review\n' +
-  '2,"Login fails on iOS",1,2026-01-16,Bob,app_review\n'
+const TEMPLATE = 'id,text,rating,date,author,channel,tags\n' +
+  '1,"Great app, fast and reliable",5,2026-01-15,Alice,app_review,"vip"\n' +
+  '2,"Login fails on iOS",1,2026-01-16,Bob,app_review,"login;ios"\n'
+
+// Held as `…Key:` data so scripts/i18n-check.mjs sees each message.
+const PICK_ERRORS: Record<CsvPickError, { messageKey: string }> = {
+  tooLarge: { messageKey: 'scrapers:csvUpload.errorTooLarge' },
+  notCsv: { messageKey: 'scrapers:csvUpload.errorNotCsv' },
+  noHeader: { messageKey: 'scrapers:csvUpload.errorNoHeader' },
+  unreadable: { messageKey: 'scrapers:csvUpload.errorUnreadable' },
+}
 
 interface CsvUploadModalProps {
   readonly isOpen: boolean
   readonly onClose: () => void
 }
 
+interface UploadResult {
+  imported_count: number
+  total_rows: number
+  warnings?: string[]
+  errors?: string[]
+}
+
+function downloadTemplate() {
+  const blob = new Blob([TEMPLATE], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'feedback-template.csv'
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export default function CsvUploadModal({ isOpen, onClose }: CsvUploadModalProps) {
   const { t } = useTranslation('scrapers')
-  const [file, setFile] = useState<File | null>(null)
+  const { t: tAll } = useTranslation()
+  const titleId = useId()
+  const { data: dimensionsConfig } = useDimensionsConfig()
+  const dimensions = dimensionsConfig?.dimensions ?? []
+  const { selection, error: pickError, pick, setMapping, reset } = useCsvSelection(dimensions)
+  const [sourceId, setSourceId] = useState(MANUAL_IMPORT_SOURCE)
   const [defaultSource, setDefaultSource] = useState('csv_upload')
   const [busy, setBusy] = useState(false)
-  const [result, setResult] = useState<{
-    imported_count: number
-    total_rows: number
-    warnings?: string[]
-    errors?: string[]
-  } | null>(null)
+  const [result, setResult] = useState<UploadResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const blocked = selection === null || mappingProblem(selection.mapping) !== null
 
   const close = useCallback(() => {
     if (busy) return
-    setFile(null); setResult(null); setError(null); setBusy(false)
+    reset(); setResult(null); setError(null); setBusy(false)
     onClose()
-  }, [busy, onClose])
-
-  const downloadTemplate = useCallback(() => {
-    const blob = new Blob([TEMPLATE], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'feedback-template.csv'
-    a.click()
-    URL.revokeObjectURL(url)
-  }, [])
+  }, [busy, onClose, reset])
 
   const onPickFile = useCallback((f: File | null) => {
     setError(null); setResult(null)
-    if (!f) { setFile(null); return }
-    if (f.size > MAX_BYTES) {
-      setError(t('csvUpload.errorTooLarge', { defaultValue: 'File exceeds 10 MB limit.' }))
-      return
-    }
-    if (!/\.csv$/i.test(f.name) && f.type !== 'text/csv') {
-      setError(t('csvUpload.errorNotCsv', { defaultValue: 'Please select a .csv file.' }))
-      return
-    }
-    setFile(f)
-  }, [t])
+    void pick(f)
+  }, [pick])
 
   const onSubmit = useCallback(async () => {
-    if (!file) return
+    if (!selection) return
     setBusy(true); setError(null); setResult(null)
     try {
-      const csvText = await file.text()
       const r = await scrapersApi.uploadCsvFeedback({
-        csv_text: csvText,
+        csv_text: selection.text,
         default_source: defaultSource.trim() || undefined,
+        source_id: sourceId,
+        column_map: selection.mapping,
       })
-      setResult({
-        imported_count: r.imported_count,
-        total_rows: r.total_rows,
-        warnings: r.warnings,
-        errors: r.errors,
-      })
+      setResult({ imported_count: r.imported_count, total_rows: r.total_rows, warnings: r.warnings, errors: r.errors })
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Upload failed'
-      setError(msg)
+      setError(e instanceof Error ? e.message : t('csvUpload.uploadFailed'))
     } finally {
       setBusy(false)
     }
-  }, [file, defaultSource])
+  }, [selection, defaultSource, sourceId, t])
 
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <FileText size={18} className="text-emerald-600" />
-            {t('csvUpload.title', { defaultValue: 'CSV upload' })}
-          </h2>
-          <button onClick={close} disabled={busy} className="text-gray-400 hover:text-gray-600 disabled:opacity-50">
-            <X size={20} />
-          </button>
-        </div>
+    // Not dismissable mid-upload, matching the disabled Cancel / X.
+    <ModalShell isOpen onClose={close} ariaLabelledBy={titleId} dismissable={!busy} panelClassName="max-w-2xl max-h-[90vh]">
+        <SourceDialogHeader titleId={titleId} title={t('csvUpload.title')} icon={FileText} tone="ok" onClose={close} closeDisabled={busy} />
 
-        <div className="p-4 overflow-y-auto space-y-4">
-          {result ? (
-            <SuccessView result={result} onClose={close} />
-          ) : (
-            <>
-              <FormatGuide onDownload={downloadTemplate} />
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {t('csvUpload.defaultSourceLabel', { defaultValue: 'Default source label' })}
-                </label>
-                <input
-                  type="text"
-                  value={defaultSource}
-                  onChange={(e) => setDefaultSource(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-md text-sm"
-                  placeholder="csv_upload"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  {t('csvUpload.defaultSourceHint', { defaultValue: 'Used for rows that don\'t have a "source" column.' })}
-                </p>
-              </div>
-
-              <DropZone file={file} onPick={onPickFile} fileInputRef={fileInputRef} t={t} />
-
-              {error ? (
-                <div className="text-sm text-red-600 inline-flex items-start gap-2">
-                  <AlertCircle size={14} className="mt-0.5 flex-shrink-0" /> <span>{error}</span>
-                </div>
-              ) : null}
-            </>
+        <div className="dialog-body space-y-4 overflow-y-auto">
+          {result ? <SuccessView result={result} onClose={close} /> : (
+            <UploadForm
+              sourceId={sourceId}
+              onSourceIdChange={setSourceId}
+              defaultSource={defaultSource}
+              onDefaultSourceChange={setDefaultSource}
+              busy={busy}
+              file={selection?.file ?? null}
+              onPick={onPickFile}
+              fileInputRef={fileInputRef}
+              mapping={selection?.mapping}
+              dimensions={dimensions}
+              onMappingChange={setMapping}
+              error={error ?? (pickError === null ? null : tAll(PICK_ERRORS[pickError].messageKey))}
+            />
           )}
         </div>
-
-        {!result ? (
-          <div className="flex items-center justify-end gap-2 p-4 border-t">
-            <button onClick={close} disabled={busy} className="btn btn-secondary">
-              {t('csvUpload.cancel', { defaultValue: 'Cancel' })}
-            </button>
-            <button
-              onClick={onSubmit}
-              disabled={busy || !file}
-              className="btn btn-primary inline-flex items-center gap-2"
-            >
-              {busy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-              {busy
-                ? t('csvUpload.uploading', { defaultValue: 'Uploading…' })
-                : t('csvUpload.upload', { defaultValue: 'Upload' })}
-            </button>
-          </div>
-        ) : null}
-      </div>
-    </div>
+        {result ? null : <UploadFooter busy={busy} blocked={blocked} onCancel={close} onSubmit={() => void onSubmit()} />}
+    </ModalShell>
   )
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────
 
+interface UploadFormProps {
+  readonly sourceId: string
+  readonly onSourceIdChange: (id: string) => void
+  readonly defaultSource: string
+  readonly onDefaultSourceChange: (value: string) => void
+  readonly busy: boolean
+  readonly file: File | null
+  readonly onPick: (f: File | null) => void
+  readonly fileInputRef: React.RefObject<HTMLInputElement | null>
+  readonly mapping: Record<string, CsvColumnTarget> | undefined
+  readonly dimensions: readonly Dimension[]
+  readonly onMappingChange: (mapping: Record<string, CsvColumnTarget>) => void
+  readonly error: string | null
+}
+
+function UploadForm(props: UploadFormProps) {
+  const { t } = useTranslation('scrapers')
+  const channelId = useId()
+  return (
+    <>
+      <FormatGuide onDownload={downloadTemplate} />
+      <SourceProfileSelect value={props.sourceId} onChange={props.onSourceIdChange} disabled={props.busy} />
+      <div>
+        <label htmlFor={channelId} className="block text-sm font-medium text-text mb-1">{t('csvUpload.defaultSourceLabel')}</label>
+        <input id={channelId} type="text" value={props.defaultSource} onChange={(e) => props.onDefaultSourceChange(e.target.value)} className="input" placeholder="csv_upload" />
+        <p className="text-xs text-muted mt-1">{t('csvUpload.defaultSourceHint')}</p>
+      </div>
+      <DropZone file={props.file} onPick={props.onPick} fileInputRef={props.fileInputRef} t={t} />
+      {props.mapping && <CsvColumnMapping mapping={props.mapping} dimensions={props.dimensions} onChange={props.onMappingChange} />}
+      {props.error === null ? null : (
+        <div role="alert" className="text-sm text-danger inline-flex items-start gap-2">
+          <AlertCircle size={14} className="mt-0.5 flex-shrink-0" /> <span>{props.error}</span>
+        </div>
+      )}
+    </>
+  )
+}
+
+function UploadFooter({ busy, blocked, onCancel, onSubmit }: {
+  readonly busy: boolean; readonly blocked: boolean; readonly onCancel: () => void; readonly onSubmit: () => void
+}) {
+  const { t } = useTranslation('scrapers')
+  return (
+    <div className="dialog-footer">
+      <button onClick={onCancel} disabled={busy} className="btn btn-secondary">{t('csvUpload.cancel')}</button>
+      <button onClick={onSubmit} disabled={busy || blocked} className="btn btn-primary">
+        {busy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+        {busy ? t('csvUpload.uploading') : t('csvUpload.upload')}
+      </button>
+    </div>
+  )
+}
+
 function FormatGuide({ onDownload }: { readonly onDownload: () => void }) {
   const { t } = useTranslation('scrapers')
   return (
-    <div className="p-3 bg-gray-50 rounded-lg space-y-2">
+    <div className="p-3 bg-bg-accent rounded-lg space-y-2">
       <div className="flex items-center justify-between">
-        <div className="text-sm font-medium text-gray-700">
+        <div className="text-sm font-medium text-text">
           {t('csvUpload.formatGuide', { defaultValue: 'CSV format' })}
         </div>
         <button
           onClick={onDownload}
-          className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700 font-medium"
+          className="flex items-center gap-1.5 text-sm text-accent-text hover:text-accent-hover font-medium"
         >
           <Download size={14} />
           {t('csvUpload.downloadTemplate', { defaultValue: 'Download template' })}
         </button>
       </div>
-      <div className="text-xs text-gray-500 space-y-1">
+      <div className="text-xs text-muted space-y-1">
         <p>
-          <span className="font-medium text-gray-700">text</span>{' '}
+          <span className="font-medium text-text">text</span>{' '}
           {t('csvUpload.fieldText', { defaultValue: '— required. The feedback content.' })}
         </p>
         <p>
-          <span className="font-medium text-gray-700">id, rating, date, author, title, url, source</span>{' '}
+          <span className="font-medium text-text">id, rating, date, author, title, url, channel, tags</span>{' '}
           {t('csvUpload.fieldOptional', { defaultValue: '— optional.' })}
         </p>
-        <p className="text-gray-400">
+        <p className="text-muted">
           {t('csvUpload.headerNote', { defaultValue: 'Headers are case-insensitive. Up to 50,000 rows / 10 MB per upload.' })}
         </p>
       </div>
@@ -210,12 +236,11 @@ function DropZone({
 }) {
   return (
     <label
-      className="block border-2 border-dashed rounded-lg p-6 text-center cursor-pointer border-gray-300 hover:border-blue-400 hover:bg-blue-50"
+      className="block border-2 border-dashed rounded-lg p-6 text-center cursor-pointer border-border-strong hover:border-accent hover:bg-accent-subtle"
       onDragOver={(e) => { e.preventDefault() }}
       onDrop={(e) => {
         e.preventDefault()
-        const f = e.dataTransfer.files?.[0] ?? null
-        onPick(f)
+        onPick(e.dataTransfer.files.item(0))
       }}
     >
       <input
@@ -225,14 +250,14 @@ function DropZone({
         onChange={(e) => onPick(e.target.files?.[0] ?? null)}
         className="hidden"
       />
-      <Upload size={24} className="mx-auto text-gray-400 mb-2" />
+      <Upload size={24} className="mx-auto text-muted mb-2" />
       {file ? (
         <div className="text-sm">
-          <div className="font-medium text-gray-700">{file.name}</div>
-          <div className="text-xs text-gray-500">{(file.size / 1024).toFixed(1)} KB</div>
+          <div className="font-medium text-text">{file.name}</div>
+          <div className="text-xs text-muted font-mono">{(file.size / 1024).toFixed(1)} KB</div>
         </div>
       ) : (
-        <div className="text-sm text-gray-600">
+        <div className="text-sm text-text">
           {t('csvUpload.dropZone', { defaultValue: 'Drop a .csv file here or click to choose' })}
         </div>
       )}
@@ -249,19 +274,19 @@ function SuccessView({
   const { t } = useTranslation('scrapers')
   return (
     <div className="text-center py-4">
-      <CheckCircle className="mx-auto h-10 w-10 text-green-500 mb-3" />
-      <h3 className="text-base font-medium text-gray-900 mb-1">
+      <CheckCircle className="mx-auto h-10 w-10 text-ok mb-3" />
+      <h3 className="text-base font-medium text-text-strong mb-1">
         {t('csvUpload.imported', { count: result.imported_count, defaultValue: '{{count}} rows queued for processing' })}
       </h3>
-      <p className="text-sm text-gray-500 mb-4">
+      <p className="text-sm text-muted mb-4">
         {t('csvUpload.pipelineNote', { defaultValue: 'Rows will appear on the Feedback page once Bedrock enrichment completes (usually within a minute).' })}
       </p>
       {result.warnings && result.warnings.length > 0 ? (
-        <div className="text-left text-xs bg-amber-50 border border-amber-200 rounded p-3 mb-3 max-h-40 overflow-y-auto">
-          <div className="font-medium text-amber-700 mb-1">
+        <div className="text-left text-xs bg-warn-subtle border border-warn/30 rounded-sm p-3 mb-3 max-h-40 overflow-y-auto">
+          <div className="font-medium text-warn mb-1">
             {t('csvUpload.warningsHeader', { defaultValue: 'Warnings' })}
           </div>
-          <ul className="list-disc pl-4 text-amber-700 space-y-0.5">
+          <ul className="list-disc pl-4 text-warn space-y-0.5">
             {result.warnings.map((w, i) => <li key={i}>{w}</li>)}
           </ul>
         </div>

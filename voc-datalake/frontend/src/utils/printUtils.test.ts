@@ -1,187 +1,232 @@
 /**
- * @fileoverview Tests for printUtils module
+ * @fileoverview Tests for printUtils module (hidden srcdoc iframe printing).
  * @module utils/printUtils.test
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createElement } from 'react'
+import { createPdfGenerator, openPrintWindow } from './printUtils'
+
+const TestContent = () => createElement('div', null, 'Test content')
+
+/**
+ * Open a print frame for `TestContent` with the given title (and optional onClose).
+ * The frame's `print` is stubbed at once: jsdom fires its own `load` for an
+ * attached iframe and its `print` only logs "Not implemented".
+ */
+function openTestFrame(title = 'Test Title', onClose?: () => void) {
+  const result = openPrintWindow({ title, content: createElement(TestContent), onClose })
+  if (result) vi.spyOn(result, 'print').mockImplementation(() => undefined)
+  return result
+}
+
+/** The single print frame currently attached to the document, if any. */
+function printFrame(): HTMLIFrameElement | null {
+  return document.body.querySelector('iframe')
+}
+
+/** The attached print frame; fails the test when there is none. */
+function requireFrame(): HTMLIFrameElement {
+  const frame = printFrame()
+  if (!frame) throw new Error('expected a print frame to be attached')
+  return frame
+}
+
+/** The attached frame's window; fails the test when there is none. */
+function requireFrameWindow(): Window {
+  const frameWindow = requireFrame().contentWindow
+  if (!frameWindow) throw new Error('expected the print frame to have a window')
+  return frameWindow
+}
+
+/** Fires the frame's load event, as the browser does once about:srcdoc is parsed. */
+function loadFrame() {
+  requireFrame().dispatchEvent(new Event('load'))
+}
+
+/** The stubbed `print` of the attached frame (installed by `openTestFrame`). */
+function spyOnFramePrint() {
+  return vi.mocked(requireFrameWindow().print)
+}
 
 describe('printUtils', () => {
-  let mockPrintBtn: { addEventListener: ReturnType<typeof vi.fn> }
-  let mockWindow: {
-    document: {
-      write: ReturnType<typeof vi.fn>
-      close: ReturnType<typeof vi.fn>
-      getElementById: ReturnType<typeof vi.fn>
-    }
-    print: ReturnType<typeof vi.fn>
-    onload: (() => void) | null
-    onbeforeunload: (() => void) | null
-  }
-
   beforeEach(() => {
-    mockPrintBtn = { addEventListener: vi.fn() }
-    mockWindow = {
-      document: {
-        write: vi.fn(),
-        close: vi.fn(),
-        getElementById: vi.fn().mockReturnValue(mockPrintBtn),
-      },
-      print: vi.fn(),
-      onload: null,
-      onbeforeunload: null,
-    }
-    vi.spyOn(window, 'open').mockReturnValue(mockWindow as unknown as Window)
+    vi.useFakeTimers()
   })
 
   afterEach(() => {
+    for (const frame of document.body.querySelectorAll('iframe')) frame.remove()
+    vi.useRealTimers()
     vi.restoreAllMocks()
   })
 
   describe('openPrintWindow', () => {
-    it('opens a new window', async () => {
-      const { openPrintWindow } = await import('./printUtils')
-      
-      const TestContent = () => createElement('div', null, 'Test content')
-      openPrintWindow({
-        title: 'Test Title',
-        content: createElement(TestContent),
-      })
+    it('never opens a popup', () => {
+      const open = vi.spyOn(window, 'open')
 
-      expect(window.open).toHaveBeenCalledWith('', '_blank')
+      openTestFrame()
+
+      expect(open).not.toHaveBeenCalled()
     })
 
-    it('returns null when popup is blocked', async () => {
-      vi.spyOn(window, 'open').mockReturnValue(null)
-      
-      const { openPrintWindow } = await import('./printUtils')
-      
-      const TestContent = () => createElement('div', null, 'Test content')
-      const result = openPrintWindow({
-        title: 'Test Title',
-        content: createElement(TestContent),
-      })
+    it('attaches a hidden iframe carrying the full document via srcdoc', () => {
+      openTestFrame()
 
-      expect(result).toBeNull()
+      const frame = requireFrame()
+      expect(frame.srcdoc).toMatch(/^<!DOCTYPE html>[\s\S]*<title>Test Title<\/title>[\s\S]*<div>Test content<\/div>/)
+      expect(frame.getAttribute('src')).toBeNull()
     })
 
-    it('writes HTML to the new window', async () => {
-      const { openPrintWindow } = await import('./printUtils')
-      
-      const TestContent = () => createElement('div', null, 'Test content')
-      openPrintWindow({
-        title: 'Test Title',
-        content: createElement(TestContent),
-      })
+    it('keeps the frame invisible and out of the accessibility tree', () => {
+      openTestFrame()
 
-      // eslint-disable-next-line vitest/prefer-called-with
-      expect(mockWindow.document.write).toHaveBeenCalled()
-      const writtenHtml = mockWindow.document.write.mock.calls[0][0] as string
-      expect(writtenHtml).toContain('Test Title')
-      expect(writtenHtml).toContain('<!DOCTYPE html>')
+      const frame = requireFrame()
+      expect(frame.getAttribute('aria-hidden')).toBe('true')
+      expect(frame.style.visibility).toBe('hidden')
+      expect([frame.style.width, frame.style.height]).toStrictEqual(['0px', '0px'])
     })
 
-    it('closes the document after writing', async () => {
-      const { openPrintWindow } = await import('./printUtils')
-      
-      const TestContent = () => createElement('div', null, 'Test content')
-      openPrintWindow({
-        title: 'Test Title',
-        content: createElement(TestContent),
-      })
+    it('embeds the print styles inline so they apply inside the frame', () => {
+      openTestFrame()
 
-      expect(mockWindow.document.close).toHaveBeenCalledWith()
+      const { srcdoc } = requireFrame()
+      expect(srcdoc).toContain('<style>')
+      expect(srcdoc).toContain('@media print')
+      expect(srcdoc).toContain('@page')
     })
 
-    it('sets up onload handler to trigger print', async () => {
-      const { openPrintWindow } = await import('./printUtils')
-      
-      const TestContent = () => createElement('div', null, 'Test content')
-      openPrintWindow({
-        title: 'Test Title',
-        content: createElement(TestContent),
-      })
+    it('carries no script or inline handler (CSP script-src is self-only)', () => {
+      openTestFrame()
 
-      expect(mockWindow.onload).toBeDefined()
+      const { srcdoc } = requireFrame()
+      expect(srcdoc).not.toMatch(/<script/i)
+      expect(srcdoc).not.toMatch(/\son[a-z]+=/i)
     })
 
-    it('sets up onbeforeunload handler when onClose is provided', async () => {
-      const { openPrintWindow } = await import('./printUtils')
+    it('escapes HTML in the title', () => {
+      openTestFrame('<script>alert("xss")</script>')
+
+      const { srcdoc } = requireFrame()
+      expect(srcdoc).not.toContain('<script>alert("xss")</script>')
+      expect(srcdoc).toContain('&lt;script&gt;')
+    })
+
+    it('returns the frame window', () => {
+      const result = openTestFrame()
+
+      expect(result).toBe(requireFrameWindow())
+    })
+
+    it('does not print before the frame has loaded', () => {
+      openTestFrame()
+      const print = spyOnFramePrint()
+
+      expect(print).not.toHaveBeenCalled()
+    })
+
+    it('prints exactly once after load', () => {
+      openTestFrame()
+      const print = spyOnFramePrint()
+
+      loadFrame()
+      loadFrame()
+
+      expect(print).toHaveBeenCalledTimes(1)
+    })
+
+    it('removes the frame and calls onClose on afterprint', () => {
       const onClose = vi.fn()
-      
-      const TestContent = () => createElement('div', null, 'Test content')
-      openPrintWindow({
-        title: 'Test Title',
-        content: createElement(TestContent),
-        onClose,
-      })
+      openTestFrame('Test Title', onClose)
+      spyOnFramePrint()
+      const frameWindow = requireFrameWindow()
 
-      expect(mockWindow.onbeforeunload).toBe(onClose)
+      loadFrame()
+      expect(printFrame()).not.toBeNull()
+      frameWindow.dispatchEvent(new Event('afterprint'))
+
+      expect(printFrame()).toBeNull()
+      expect(onClose).toHaveBeenCalledTimes(1)
     })
 
-    it('does not set onbeforeunload when onClose is not provided', async () => {
-      const { openPrintWindow } = await import('./printUtils')
-      
-      const TestContent = () => createElement('div', null, 'Test content')
-      openPrintWindow({
-        title: 'Test Title',
-        content: createElement(TestContent),
-      })
+    it('falls back to removing the frame after a timeout when afterprint never fires', () => {
+      const onClose = vi.fn()
+      openTestFrame('Test Title', onClose)
+      spyOnFramePrint()
 
-      expect(mockWindow.onbeforeunload).toBeNull()
+      loadFrame()
+      vi.advanceTimersByTime(59_999)
+      expect(printFrame()).not.toBeNull()
+      vi.advanceTimersByTime(1)
+
+      expect(printFrame()).toBeNull()
+      expect(onClose).toHaveBeenCalledTimes(1)
     })
 
-    it('escapes HTML in title', async () => {
-      const { openPrintWindow } = await import('./printUtils')
-      
-      const TestContent = () => createElement('div', null, 'Test content')
-      openPrintWindow({
-        title: '<script>alert("xss")</script>',
-        content: createElement(TestContent),
-      })
+    it('cleans up only once when afterprint precedes the fallback timeout', () => {
+      const onClose = vi.fn()
+      openTestFrame('Test Title', onClose)
+      spyOnFramePrint()
+      const frameWindow = requireFrameWindow()
 
-      const writtenHtml = mockWindow.document.write.mock.calls[0][0] as string
-      expect(writtenHtml).not.toContain('<script>alert("xss")</script>')
-      expect(writtenHtml).toContain('&lt;script&gt;')
+      loadFrame()
+      frameWindow.dispatchEvent(new Event('afterprint'))
+      vi.runAllTimers()
+
+      expect(onClose).toHaveBeenCalledTimes(1)
     })
 
-    it('includes print styles in the HTML', async () => {
-      const { openPrintWindow } = await import('./printUtils')
-      
-      const TestContent = () => createElement('div', null, 'Test content')
-      openPrintWindow({
-        title: 'Test Title',
-        content: createElement(TestContent),
+    it('removes the frame when print() throws', () => {
+      const onClose = vi.fn()
+      openTestFrame('Test Title', onClose)
+      vi.spyOn(requireFrameWindow(), 'print').mockImplementation(() => {
+        throw new Error('printing disabled')
       })
 
-      const writtenHtml = mockWindow.document.write.mock.calls[0][0] as string
-      expect(writtenHtml).toContain('@media print')
-      expect(writtenHtml).toContain('@page')
+      loadFrame()
+
+      expect(printFrame()).toBeNull()
+      expect(onClose).toHaveBeenCalledTimes(1)
     })
 
-    it('includes print button in the HTML', async () => {
-      const { openPrintWindow } = await import('./printUtils')
-      
-      const TestContent = () => createElement('div', null, 'Test content')
-      openPrintWindow({
-        title: 'Test Title',
-        content: createElement(TestContent),
-      })
+    it('returns null and removes the frame when no contentWindow is created', () => {
+      const onClose = vi.fn()
+      vi.spyOn(HTMLIFrameElement.prototype, 'contentWindow', 'get').mockReturnValue(null)
 
-      const writtenHtml = mockWindow.document.write.mock.calls[0][0] as string
-      expect(writtenHtml).toContain('Print / Save as PDF')
-      expect(writtenHtml).toContain('id="print-btn"')
+      expect(openTestFrame('Test Title', onClose)).toBeNull()
+      expect(printFrame()).toBeNull()
+      expect(onClose).toHaveBeenCalledTimes(1)
     })
 
-    it('returns the window reference', async () => {
-      const { openPrintWindow } = await import('./printUtils')
-      
-      const TestContent = () => createElement('div', null, 'Test content')
-      const result = openPrintWindow({
-        title: 'Test Title',
-        content: createElement(TestContent),
-      })
+    it('removes the frame without printing when the window is gone by load time', () => {
+      const onClose = vi.fn()
+      openTestFrame('Test Title', onClose)
+      const frame = requireFrame()
+      vi.spyOn(HTMLIFrameElement.prototype, 'contentWindow', 'get').mockReturnValue(null)
 
-      expect(result).toBe(mockWindow)
+      frame.dispatchEvent(new Event('load'))
+
+      expect(printFrame()).toBeNull()
+      expect(onClose).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('createPdfGenerator', () => {
+    it('resolves a function title from the props', () => {
+      const generate = createPdfGenerator<{ name: string }>(
+        (p) => `Report ${p.name}`,
+        () => createElement(TestContent),
+      )
+
+      generate({ name: 'Q3' })
+      vi.spyOn(requireFrameWindow(), 'print').mockImplementation(() => undefined)
+
+      expect(requireFrame().srcdoc).toContain('<title>Report Q3</title>')
+    })
+
+    it('throws when the print document cannot be prepared', () => {
+      vi.spyOn(HTMLIFrameElement.prototype, 'contentWindow', 'get').mockReturnValue(null)
+      const generate = createPdfGenerator('Report', () => createElement(TestContent))
+
+      expect(() => generate(undefined)).toThrow('Failed to prepare the print document.')
     })
   })
 })

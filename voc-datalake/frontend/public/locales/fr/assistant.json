@@ -1,0 +1,187 @@
+{
+  "launcher": {
+    "open": "Ouvrir l'assistant",
+    "close": "Fermer l'assistant",
+    "askAboutProject": "Demander à l'assistant",
+    "moveHint": "Faites glisser ou utilisez les flèches pour déplacer le bouton de l’assistant. Début le remet en place.",
+    "resetPosition": "Réinitialiser la position du bouton de l’assistant"
+  },
+  "panel": {
+    "title": "Assistant",
+    "using": "Contexte : {{context}}",
+    "newChat": "Nouvelle conversation",
+    "sessions": "Conversations précédentes",
+    "export": "Exporter la conversation (Markdown)",
+    "expand": "Agrandir",
+    "fullscreen": "Plein écran",
+    "exitFullscreen": "Quitter le plein écran",
+    "close": "Fermer",
+    "messages": "Conversation",
+    "thinking": "Réflexion…",
+    "stillGenerating": "Génération en cours…"
+  },
+  "pages": {
+    "home": "Accueil",
+    "dashboard": "Tableau de bord",
+    "feedback": "Retours",
+    "categories": "Catégories",
+    "problems": "Analyse des problèmes",
+    "chat": "Chat IA",
+    "projects": "Projets",
+    "project": "Projet",
+    "prioritization": "Priorisation",
+    "data-explorer": "Explorateur de données",
+    "scrapers": "Scrapers",
+    "feedback-forms": "Formulaires de retours",
+    "settings": "Paramètres",
+    "other": "Cette page"
+  },
+  "message": {
+    "reasoning": "Raisonnement",
+    "toolSteps": "Étapes effectuées",
+    "feedbackSources": "Retours associés",
+    "webSources": "Sources web",
+    "personaAnswers": "Réponses des personas",
+    "copy": "Copier",
+    "copied": "Copié",
+    "savedDocumentTitle": "Réponse de l'assistant – {{date}}",
+    "saveAsDocument": {
+      "idle": "Enregistrer comme document",
+      "saving": "Enregistrement…",
+      "saved": "Enregistré dans les documents",
+      "error": "Échec de l'enregistrement – réessayer"
+    }
+  },
+  "toolStatus": {
+    "streaming": "préparation",
+    "running": "en cours",
+    "complete": "terminé",
+    "awaiting_approval": "en attente de votre validation",
+    "executed": "terminé",
+    "failed": "échec",
+    "declined": "refusé",
+    "cancelled": "annulé"
+  },
+  "approvals": {
+    "title": "Actions en attente de validation",
+    "resolved": {
+      "executed": "terminé",
+      "failed": "échec",
+      "declined": "refusé"
+    }
+  },
+  "composer": {
+    "label": "Message à l'assistant",
+    "placeholder": "Posez une question sur vos retours, vos projets ou cette page…",
+    "send": "Envoyer",
+    "stop": "Arrêter",
+    "attach": "Joindre une image ou un PDF",
+    "webSearch": "Rechercher sur le web",
+    "removeAttachment": "Retirer {{name}}",
+    "counter": "{{length}} / {{max}}",
+    "awaitingApproval": "Validez ou refusez l'action en attente pour continuer.",
+    "attachmentError": {
+      "type": "Seules les images (PNG, JPEG, GIF, WebP) et les PDF peuvent être joints.",
+      "count": "Vous pouvez joindre au maximum {{max}} fichiers.",
+      "size": "Les pièces jointes sont trop volumineuses.",
+      "read": "Le fichier n'a pas pu être lu."
+    },
+    "stillGenerating": "La réponse est encore en cours de rédaction. Elle s'affichera ici dès qu'elle sera prête."
+  },
+  "errors": {
+    "streamClosed": "La connexion a été interrompue avant la fin de la réponse. Veuillez réessayer.",
+    "generic": "Une erreur s'est produite : {{message}}",
+    "followTimeout": "La réponse prend plus de temps que prévu. Rouvrez cette conversation plus tard pour la voir."
+  },
+  "export": {
+    "user": "Vous",
+    "assistant": "Assistant"
+  },
+  "sessions": {
+    "title": "Conversations précédentes",
+    "close": "Fermer",
+    "loading": "Chargement des conversations",
+    "error": "Impossible de charger les conversations.",
+    "empty": "Aucune conversation enregistrée pour le moment.",
+    "untitled": "Conversation sans titre",
+    "delete": "Supprimer « {{title}} »",
+    "newConversation": "Nouvelle conversation",
+    "sidebar": "Conversations",
+    "openGroup": "Ouvertes",
+    "historyGroup": "Historique",
+    "closeThread": "Fermer « {{title}} »",
+    "closeRunning": "Arrêter et fermer « {{title}} »",
+    "status": {
+      "streaming": "En cours",
+      "awaiting": "En attente de votre approbation",
+      "error": "Échec",
+      "unread": "Nouvelle réponse"
+    }
+  },
+  "empty": {
+    "title": "Comment puis-je vous aider ?",
+    "subtitle": "Je peux lire vos données et proposer des modifications — rien ne change sans votre validation."
+  },
+  "suggestions": {
+    "default": {
+      "1": "Qu’est-ce qui mécontente le plus les clients cette semaine ?",
+      "2": "Résume les retours urgents",
+      "3": "Quelles catégories sont en hausse ?"
+    },
+    "project": {
+      "1": "Résume ce projet et ses personas",
+      "2": "Que penseraient nos personas de cette idée ?",
+      "3": "Rédige un PRD à partir des recherches du projet"
+    },
+    "forms": {
+      "1": "Quelles sont les performances de mes formulaires ?",
+      "2": "Résume les dernières réponses aux formulaires",
+      "3": "Quel formulaire reçoit les moins bonnes notes ?"
+    },
+    "prioritization": {
+      "1": "Que devrions-nous prioriser ensuite ?",
+      "2": "Explique les éléments les mieux classés",
+      "3": "Quels éléments ont le plus d’impact client ?"
+    },
+    "scrapers": {
+      "1": "Quels scrapers ont tourné récemment ?",
+      "2": "Des scrapers sont-ils en échec ?",
+      "3": "Qu’a collecté la dernière exécution ?"
+    },
+    "settings": {
+      "1": "Affiche les paramètres de marque actuels",
+      "2": "Quelles catégories sont configurées ?",
+      "3": "Suggère des hashtags à suivre pour notre marque"
+    },
+    "problems": {
+      "1": "Quels sont les plus gros problèmes non résolus ?",
+      "2": "Regroupe ces problèmes par cause racine",
+      "3": "Quels problèmes ont été résolus récemment ?"
+    },
+    "feedback": {
+      "1": "Résume ce retour",
+      "2": "Trouve des retours similaires",
+      "3": "Quelle est la cause racine probable ?"
+    }
+  },
+  "notifications": {
+    "approval": {
+      "title": "L’assistant attend votre approbation",
+      "body": "Une conversation attend que vous approuviez une action."
+    },
+    "reply": {
+      "title": "L’assistant a répondu",
+      "body": "Une conversation a une nouvelle réponse."
+    },
+    "failed": {
+      "title": "Une exécution de l’assistant a échoué",
+      "body": "Ouvrez la conversation pour voir ce qui s’est passé."
+    },
+    "toggle": {
+      "turnOn": "Me prévenir quand une conversation a besoin de moi",
+      "turnOff": "Désactiver les notifications",
+      "blocked": "Les notifications sont bloquées pour ce site dans les paramètres du navigateur",
+      "unsupported": "Ce navigateur ne prend pas en charge les notifications"
+    }
+  }
+}

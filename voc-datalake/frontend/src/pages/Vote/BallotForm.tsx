@@ -58,10 +58,10 @@ function BallotSlider({
   return (
     <div className="space-y-1">
       <div className="flex items-baseline justify-between gap-3">
-        <label htmlFor={inputId} className="font-medium text-gray-900">{label}</label>
-        <span className="text-lg font-bold text-blue-700 tabular-nums">{value}</span>
+        <label htmlFor={inputId} className="font-medium text-text-strong">{label}</label>
+        <span className="text-lg font-bold font-mono text-accent-text tabular-nums">{value}</span>
       </div>
-      <p id={hintId} className="text-sm text-gray-600">{hint}</p>
+      <p id={hintId} className="text-sm text-muted">{hint}</p>
       {/* `h-8` rather than the default track height: this is operated with a thumb
           on a phone held at arm's length, and the hit area is the whole control. */}
       <input
@@ -73,7 +73,7 @@ function BallotSlider({
         value={value}
         aria-describedby={hintId}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full h-8 accent-blue-600"
+        className="range"
       />
     </div>
   )
@@ -104,7 +104,7 @@ export default function BallotForm({
 
   return (
     <form
-      className="space-y-6"
+      className="card p-4 sm:p-5 space-y-6"
       onSubmit={(e) => {
         e.preventDefault()
         // Every axis is sent, because every slider has a position the submitter
@@ -152,7 +152,7 @@ export default function BallotForm({
       />
 
       <div className="space-y-1">
-        <label htmlFor={notesId} className="font-medium text-gray-900">{t('ballot.notes.label')}</label>
+        <label htmlFor={notesId} className="font-medium text-text-strong">{t('ballot.notes.label')}</label>
         {/* Bounded by the same number the API refuses past, so this page cannot
             compose a body that comes back 400 with a reason it could not show.
             `maxLength` counts UTF-16 code units where the API counts code points,
@@ -166,17 +166,17 @@ export default function BallotForm({
           rows={3}
           maxLength={MAX_BALLOT_NOTE_LENGTH}
           placeholder={t('ballot.notes.placeholder')}
-          className="w-full px-3 py-2 border rounded-lg"
+          className="input"
         />
       </div>
 
       <div className="space-y-1">
-        <label htmlFor={nameId} className="font-medium text-gray-900">{t('ballot.displayName.label')}</label>
+        <label htmlFor={nameId} className="font-medium text-text-strong">{t('ballot.displayName.label')}</label>
         {/* Says plainly that this is the ONE field that could identify the
             submitter, and that leaving it blank is the normal thing to do. A
             room's vote is anonymous; an optional name is a courtesy, not the
             price of voting. */}
-        <p id={nameHintId} className="text-sm text-gray-600">{t('ballot.displayName.hint')}</p>
+        <p id={nameHintId} className="text-sm text-muted">{t('ballot.displayName.hint')}</p>
         <input
           id={nameId}
           type="text"
@@ -185,14 +185,14 @@ export default function BallotForm({
           maxLength={MAX_BALLOT_DISPLAY_NAME_LENGTH}
           aria-describedby={nameHintId}
           autoComplete="off"
-          className="w-full px-3 py-2 border rounded-lg"
+          className="input"
         />
       </div>
 
       <button
         type="submit"
         disabled={isSubmitting}
-        className="w-full px-4 py-3 rounded-lg font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:text-gray-500"
+        className="btn btn-primary w-full py-3"
       >
         {isSubmitting ? t('ballot.submit.pending') : t('ballot.submit.label')}
       </button>

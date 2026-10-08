@@ -116,7 +116,7 @@ The `manifest.json` is the single source of truth for each plugin. It defines:
 {
   "id": "webscraper",
   "name": "Web Scraper",
-  "icon": "🌐",
+  "icon": "Web",
   "description": "Extract reviews from web pages using CSS selectors or JSON-LD",
   "category": "import",
   
@@ -163,7 +163,7 @@ The `manifest.json` is the single source of truth for each plugin. It defines:
 |-------|------|----------|-------------|
 | `id` | string | Yes | Unique identifier, used in folder name and AWS resource names |
 | `name` | string | Yes | Display name in UI |
-| `icon` | string | Yes | Emoji or path to SVG icon |
+| `icon` | string | Yes | Icon word, mapped to a lucide icon: `Web`, `iOS`, `Android`, `GitHub`, `Package`, `Synthetic`, `Plugin` (see `frontend/src/components/SourceIcon/sourceIcons.ts`). An unknown word falls back to `Package` for `import` plugins, otherwise `Plug`. Never an emoji — `frontend/src/noEmoji.test.ts` fails on one |
 | `description` | string | No | Short description shown in UI |
 | `category` | enum | No | One of: `reviews`, `social`, `import`, `search`, `scraper` |
 | `infrastructure` | object | Yes | AWS resources to deploy |
@@ -248,7 +248,7 @@ The webscraper plugin extracts reviews from web pages using CSS selectors or JSO
 {
   "id": "webscraper",
   "name": "Web Scraper",
-  "icon": "🌐",
+  "icon": "Web",
   "description": "Extract reviews from web pages using CSS selectors or JSON-LD",
   "category": "import",
   
@@ -297,7 +297,7 @@ Use the `_template` folder as a starting point for creating new plugins:
 {
   "id": "my_custom_source",
   "name": "My Custom Source",
-  "icon": "🔌",
+  "icon": "Plugin",
   "description": "Custom data source connector",
   "category": "import",
   
@@ -417,7 +417,6 @@ const ManifestSchema = z.object({
 });
 
 export type PluginManifest = z.infer<typeof ManifestSchema>;
-export type ConfigField = z.infer<typeof ConfigFieldSchema>;
 
 // ============================================
 // Plugin Discovery
@@ -1035,7 +1034,6 @@ function ConfigFieldInput({
 // cdk.context.json
 {
   "brandName": "MyBrand",
-  "brandHandles": ["@mybrand", "mybrand"],
   "primaryLanguage": "en",
   "enabledSources": [
     "webscraper"
@@ -1117,7 +1115,7 @@ mkdir -p plugins/my_source/ingestor
 {
   "id": "my_source",
   "name": "My Source",
-  "icon": "🔌",
+  "icon": "Plugin",
   "description": "Fetches data from My Source API",
   "category": "reviews",
   
@@ -2002,9 +2000,8 @@ scheduled run that event is the only signal there is.
 exemption relies on. On a *manual* run the `SOURCE_RUN#` record clears the UI's spinner and
 carries the message. On a **scheduled** run there is no such record — `_update_source_run_status`
 is a no-op without an `execution_id` — so the only signals are the
-`Refusing to load plugin secrets` log line and the `plugin.failed` audit event, and that
-event reaches EventBridge only when `AUDIT_EVENT_BUS` is set (no stack in this repo sets it;
-otherwise it is a `logger.info("AUDIT", …)`). No stack creates a metric filter or alarm
+`Refusing to load plugin secrets` log line and the `plugin.failed` audit event, which is a
+CloudWatch log line (`logger.info("AUDIT", …)`) and nothing more. No stack creates a metric filter or alarm
 either. So a scheduled plugin with an unreadable secret is silently not ingesting, and the
 one mechanism that used to make that state visible in the console — the breaker disabling
 the rule — is now deliberately withheld. The trade is still the right one, but it moves the
@@ -3250,23 +3247,20 @@ def validate_metadata(metadata: dict) -> tuple[bool, list[str]]:
 
 **Problem**: No structured audit trail for plugin operations.
 
-**Solution**: Emit structured audit events to CloudWatch Logs and optionally to S3/EventBridge.
+**Solution**: Emit structured audit events to CloudWatch Logs. (An optional EventBridge
+copy behind an `AUDIT_EVENT_BUS` variable was removed: no stack ever created the bus or set
+the variable, so it never ran.)
 
 ```python
 # plugins/_shared/audit.py
 """
 Structured audit logging for plugin operations.
 """
-import json
-import os
 from datetime import datetime, timezone
 from typing import Literal
 from dataclasses import dataclass, asdict
 
 from shared.logging import logger
-from shared.aws import get_eventbridge_client
-
-AUDIT_EVENT_BUS = os.environ.get('AUDIT_EVENT_BUS', '')
 
 AuditAction = Literal[
     'plugin.invoked',
@@ -3327,21 +3321,8 @@ def emit_audit_event(
         ip_address=ip_address,
     )
     
-    # Always log to CloudWatch
+    # The one destination: CloudWatch
     logger.info('AUDIT', extra={'audit_event': event.to_dict()})
-    
-    # Optionally send to EventBridge for downstream processing
-    if AUDIT_EVENT_BUS:
-        try:
-            events = get_eventbridge_client()
-            events.put_events(Entries=[{
-                'Source': 'voc.plugins',
-                'DetailType': f'Plugin Audit: {action}',
-                'Detail': json.dumps(event.to_dict()),
-                'EventBusName': AUDIT_EVENT_BUS,
-            }])
-        except Exception as e:
-            logger.warning(f'Failed to send audit event to EventBridge: {e}')
 
 
 # Usage in base_ingestor.py
@@ -3474,6 +3455,23 @@ def record_plugin_deployment(plugin_id: str, version: str) -> None:
 **Problem**: A failing plugin keeps running and wasting resources.
 
 **Solution**: Auto-disable plugins after repeated failures.
+
+**As deployed** (the sketch below predates these details):
+
+- `CIRCUIT_BREAKER_THRESHOLD` failures (default 5) inside `CIRCUIT_BREAKER_WINDOW` minutes
+  (default 15) trip the breaker, which calls `events:DisableRule` on the plugin's own schedule
+  and then writes `CIRCUIT#<plugin>` / `TRIPPED` to the watermarks table. Every later run
+  stops at that row (`status: skipped`, `reason: circuit_breaker_open`).
+- The rule name comes from `INGEST_SCHEDULE_RULE_NAME`, which `lib/stacks/ingestion-stack.ts`
+  sets from the same string that names the rule — with or without a `deploymentPrefix`. An
+  unscheduled plugin has no such variable: it disables nothing and only records the trip.
+- Each scheduled ingestor runs as its own role (`lib/stacks/ingestion-roles.ts`), granted
+  `events:DisableRule` on exactly its own rule ARN — never a wildcard, never on the role the
+  unscheduled ingestors share — so no plugin can switch off a sibling's schedule.
+- **Recovery is manual, and takes two steps.** Delete the `CIRCUIT#<plugin>` / `TRIPPED` item
+  from the watermarks table, then re-enable the source in Settings. Re-enabling alone turns the
+  schedule back on, but every run still skips while the row exists. The "Manual reset via API"
+  below is a design sketch; no such route exists.
 
 ```python
 # plugins/_shared/circuit_breaker.py
@@ -3628,7 +3626,7 @@ def reset_circuit_breaker(plugin_id: str) -> dict:
 **Solution**: Use Pydantic for runtime validation with automatic error messages.
 
 ```python
-# plugins/_shared/schemas.py
+# lambda/shared/ingest_schemas.py
 """
 Pydantic schemas for message validation.
 """

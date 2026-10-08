@@ -49,17 +49,17 @@
   "pdf": {
     "categoriesLabel": "Categorías",
     "category": "Categoría",
-    "categoryBreakdown": "📊 Desglose de categorías",
+    "categoryBreakdown": "Desglose de categorías",
     "count": "Cantidad",
     "distribution": "Distribución",
     "generatedOn": "Generado el {{date}} • VoC Analytics — Informe de análisis de categorías",
-    "sentimentDistribution": "😊 Distribución de sentimientos",
+    "sentimentDistribution": "Distribución de sentimientos",
     "sentimentLabel": "Sentimiento",
     "share": "Compartir",
     "timeRange": "Rango de tiempo: {{range}}",
     "timeRangeWithSource": "Rango de tiempo: {{range}} • Fuente: {{source}}",
     "title": "Informe de análisis de categorías",
-    "topKeywords": "🔑 Palabras clave y problemas principales",
+    "topKeywords": "Palabras clave y problemas principales",
     "totalFeedback": "Total de comentarios"
   },
   "positive": "Positivo",
@@ -89,5 +89,14 @@
   "topIssue": "Problema principal",
   "totalFeedback": "Total de comentarios",
   "trendingKeywords": "Palabras clave en tendencia",
-  "urgentOnly": "Solo urgentes"
+  "urgentOnly": "Solo urgentes",
+  "subtitle": "Explora los comentarios por categoría, sentimiento, palabra clave y fuente",
+  "noFeedbackHint": "Prueba un intervalo de tiempo más amplio o quita algunos filtros.",
+  "viewMode": "Modo de vista",
+  "attributeFilters": "Filtros de canal, dimensión y etiqueta",
+  "filterByChannel": "Filtrar por canal",
+  "allChannels": "Todos los canales",
+  "filterByTag": "Filtrar por etiqueta",
+  "allTags": "Todas las etiquetas",
+  "anyValue": "Cualquiera"
 }

@@ -42,7 +42,9 @@
  */
 import { describe, it, expect } from 'vitest'
 import { execFileSync } from 'child_process'
+import { accessSync, constants, statSync } from 'fs'
 import * as path from 'path'
+import { at } from '@test/defined'
 
 const FRONTEND_DIR = path.join(__dirname, '..')
 
@@ -50,13 +52,45 @@ const FRONTEND_DIR = path.join(__dirname, '..')
  *  explicit comparator because the default sorts by UTF-16 code unit. */
 const byName = (a: string, b: string) => a.localeCompare(b)
 
-function gitLsPublic(): string {
+/** Whether `candidate` is an executable regular file. */
+function isExecutableFile(candidate: string): boolean {
   try {
-    // `git` comes from PATH like every other git call in this repo (deploy.sh, the
-    // hooks, CI); an absolute path would break on any machine whose git is elsewhere,
-    // and the argv is a fixed literal, so nothing is interpolated from a filename.
-    // eslint-disable-next-line sonarjs/no-os-command-from-path -- fixed argv; see above
-    return execFileSync('git', ['ls-files', '-z', '--', 'public'], {
+    accessSync(candidate, constants.X_OK)
+    return statSync(candidate).isFile()
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The absolute path of `git`, found on PATH the way the shell would (first
+ * executable match wins, `PATHEXT` suffixes on Windows).
+ *
+ * `git` still comes from PATH like every other git call in this repo (deploy.sh,
+ * the hooks, CI) — a hard-coded absolute path would break on any machine whose git
+ * is elsewhere. Resolving it here, once, means the child is spawned by absolute
+ * path, so a later change to PATH (or a `git` dropped into the working directory)
+ * cannot swap the binary between the lookup and the spawn.
+ */
+function resolveGit(): string {
+  const suffixes = process.platform === 'win32'
+    ? (process.env.PATHEXT ?? '.EXE;.CMD;.BAT').split(';')
+    : ['']
+  const dirs = (process.env.PATH ?? '').split(path.delimiter).filter((dir) => path.isAbsolute(dir))
+  for (const dir of dirs) {
+    for (const suffix of suffixes) {
+      const candidate = path.join(dir, `git${suffix}`)
+      if (isExecutableFile(candidate)) return candidate
+    }
+  }
+  throw new Error('public/ inventory requires git; no executable "git" was found on PATH')
+}
+
+function gitLsPublic(): string {
+  const git = resolveGit()
+  try {
+    // The argv is a fixed literal, so nothing is interpolated from a filename.
+    return execFileSync(git, ['ls-files', '-z', '--', 'public'], {
       cwd: FRONTEND_DIR,
       encoding: 'utf8',
       // Keep git's stderr out of the test output. `execFileSync` already appends the
@@ -131,7 +165,7 @@ const TRACKED_PUBLIC_PATHS = trackedPublicPaths()
 /** First path segments that are directories rather than top-level files. */
 const TRACKED_DIRECTORIES = [
   ...new Set(
-    TRACKED_PUBLIC_PATHS.filter((p) => p.includes('/')).map((p) => p.split('/')[0]),
+    TRACKED_PUBLIC_PATHS.filter((p) => p.includes('/')).map((p) => at(p.split('/'), 0)),
   ),
 ]
 
@@ -174,28 +208,52 @@ const EXPECTED_PUBLIC_ENTRIES = [
   // Browser tab icon; requested by the browser itself (index.html:5 declares it, but
   // /favicon.ico would be requested regardless).
   'favicon.ico',
+  // SVG favicon (Kiro ghost mark), declared first in index.html's icon links;
+  // favicon.ico stays as the fallback for browsers without SVG icons.
+  'kiro-ghost.svg',
   // i18next fetches translation JSON at runtime over HTTP, so these cannot be
   // bundled — src/i18n/loadPath.ts builds `/locales/{{lng}}/{{ns}}.json?v=…`.
   // Contents are guarded separately by src/i18n/localeParity.test.ts.
   'locales',
+  // Pre-paint theme script — see PUBLISHED_SCRIPTS.
+  'theme-init.js',
+  // The external-assistant skill for the global MCP endpoint (todofeatures §6.3,
+  // docs/mcp.md). Public BY DESIGN: it is handed to third-party assistants as a
+  // stable link (`/voc-mcp-skill.md`), and the Connect page fetches it to fill in
+  // this deployment's endpoint for the download. It holds no token and no
+  // deployment detail — only the `{{VOC_MCP_ENDPOINT}}` placeholder.
+  'voc-mcp-skill.md',
 ]
+
+/**
+ * The ONLY scripts allowed under `public/`, each with why it cannot be bundled.
+ *
+ * `theme-init.js` sets `data-theme`/`data-mode` on <html> before first paint so the
+ * Kiro dark/light theme never flashes. It must run synchronously in <head>:
+ *  - the CloudFront CSP is `script-src 'self'`, so it cannot be inline;
+ *  - a Vite module script is deferred, so a bundled version runs after first paint.
+ * The two reasons the ban exists are answered for it: it IS linted (`eslint .`
+ * covers `public/`), and its storage key and attributes are pinned to
+ * src/theme/themeStore.ts by src/theme/themeInit.test.ts.
+ */
+const PUBLISHED_SCRIPTS = ['theme-init.js']
 
 describe('frontend public/ inventory', () => {
   it('contains exactly the assets we intend to publish to the CDN', () => {
     // First path segment only, so `locales/en/common.json` counts as `locales` and the
     // 120 translation files need not be listed individually.
     const actual = [
-      ...new Set(TRACKED_PUBLIC_PATHS.map((p) => p.split('/')[0])),
+      ...new Set(TRACKED_PUBLIC_PATHS.map((p) => at(p.split('/'), 0))),
     ].sort(byName)
 
     // Compared whole rather than per-entry so the message names the unexpected file,
     // which is what a reader acts on. Both sides sorted: comparing a sorted actual
     // against the literal order reported a legitimately-added entry as simultaneously
     // unexpected (+) and missing (-), which reads as a bug in the guard.
-    expect(actual).toEqual([...EXPECTED_PUBLIC_ENTRIES].sort(byName))
+    expect(actual).toStrictEqual([...EXPECTED_PUBLIC_ENTRIES].sort(byName))
   })
 
-  it('publishes no JavaScript anywhere in the tree, which would be served unbundled and unlinted', () => {
+  it('publishes no JavaScript anywhere in the tree except the justified PUBLISHED_SCRIPTS', () => {
     // Every tracked path, not just the top level: a script inside an allowlisted
     // directory (locales/ is machine-managed, so it is the subtree least likely to be
     // read) is copied to dist/ and served just the same, while the assertion above sees
@@ -210,7 +268,9 @@ describe('frontend public/ inventory', () => {
       /\.[cm]?[jt]sx?$/i.test(p),
     ).sort(byName)
 
-    expect(scripts).toEqual([])
+    // Exact-match allowlist (top-level path, same case): `locales/theme-init.js` or
+    // `THEME-INIT.JS` would still fail.
+    expect(scripts).toStrictEqual([...PUBLISHED_SCRIPTS].sort(byName))
   })
 
   it('declares the permitted file types for every allowlisted directory', () => {
@@ -231,7 +291,7 @@ describe('frontend public/ inventory', () => {
     expect(
       undeclared,
       'allowlisted directories with no NESTED_ALLOWED_EXTENSIONS entry — say which file types may be published from each',
-    ).toEqual([])
+    ).toStrictEqual([])
   })
 
   it('declares file types only for directories that still exist', () => {
@@ -247,7 +307,7 @@ describe('frontend public/ inventory', () => {
     expect(
       stale,
       'NESTED_ALLOWED_EXTENSIONS keys that are not directories tracked under public/ — delete the entry, or fix the name',
-    ).toEqual([])
+    ).toStrictEqual([])
   })
 
   it('publishes only the declared file types inside allowlisted directories', () => {
@@ -259,14 +319,14 @@ describe('frontend public/ inventory', () => {
     // message naming the decision that actually has to be made (justify the
     // directory), not by this one (declare its extensions).
     const unexpected = TRACKED_PUBLIC_PATHS.filter((p) => p.includes('/'))
-      .filter((p) => EXPECTED_PUBLIC_ENTRIES.includes(p.split('/')[0]))
+      .filter((p) => EXPECTED_PUBLIC_ENTRIES.includes(at(p.split('/'), 0)))
       .filter((p) => {
-        const allowed = NESTED_ALLOWED_EXTENSIONS[p.split('/')[0]]
+        const allowed = NESTED_ALLOWED_EXTENSIONS[at(p.split('/'), 0)]
         // A directory with NO declaration is reported once above, on the constant.
         return allowed !== undefined && !allowed.some((ext) => p.endsWith(ext))
       })
       .sort(byName)
 
-    expect(unexpected).toEqual([])
+    expect(unexpected).toStrictEqual([])
   })
 })

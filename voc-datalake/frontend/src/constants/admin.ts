@@ -5,8 +5,9 @@
  * Declared once, and HERE rather than under one page, because two pages now render
  * such a control: `pages/Scrapers` (`AppConfigComponents`' Run and Delete,
  * `PluginConfigModal`'s Add/Save/Delete/Run and schedule toggle,
- * `GeneratorConfigModal`'s Generate — where this wording came from) and
- * `pages/Settings` (`SourceCard`'s Enabled toggle). It began in
+ * `GeneratorConfigModal`'s Generate — where this wording came from — and
+ * `ScraperEditor`'s schedule fields) and `pages/Settings` (`SourceCard`'s Enabled
+ * toggle, `LogsSection`'s Clear). It began in
  * `pages/Scrapers/constants.ts`, which was right while Scrapers was the only page
  * with a gated control; the Settings toggle calls the same
  * `PUT /sources/{source}/enable|disable` pair, so a page-local home would have
@@ -15,8 +16,12 @@
  * 403.
  *
  * The routes: `POST`/`DELETE /integrations/{source}/apps`,
- * `POST /sources/{source}/run`, `PUT /sources/{source}/enable|disable`, and
- * `POST`/`DELETE /scrapers` plus `POST /scrapers/{id}/run`. None of them were
+ * `POST /sources/{source}/run`, `PUT /sources/{source}/enable|disable`,
+ * `DELETE /scrapers/{id}` plus `POST /scrapers/{id}/run`, and
+ * `DELETE /logs/validation/{source}`. `POST /scrapers` (save) is open to every
+ * user, but only an admin may set or change a scraper's `enabled` /
+ * `frequency_minutes` (the server keeps the stored schedule otherwise), which is
+ * why `ScraperEditor` disables just those fields. None of them were
  * gated — a `users`-group caller could write the shared API-credentials secret and
  * invoke an ingestor — so the gate is the SERVER's and this string is only the
  * explanation. Disabling a control is never the boundary.

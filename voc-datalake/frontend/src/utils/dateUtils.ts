@@ -4,21 +4,23 @@
  */
 
 import { format, isValid } from 'date-fns'
+import { ALL_TIME_CUSTOM_DAYS } from '../api/baseUrl'
 import type { DateBasis } from '../api/types'
 
 /**
  * Human-readable labels for the time-range tokens stored in the config store.
  *
- * Mirrors the `fullLabel` values in `TimeRangeSelector`. Note the `'all'` token
- * is presented as the "90 Days" preset (the max window, matching the aggregates
- * 90-day TTL); the bare token must never be shown to users.
+ * Mirrors the `fullLabel` values in `TimeRangeSelector`. `'90d'` is the widest
+ * fixed preset and `'all'` is all time (days=0); the bare token must never be
+ * shown to users.
  */
 const TIME_RANGE_LABELS: Record<string, string> = {
   '24h': '24 Hours',
   '48h': '48 Hours',
   '7d': '7 Days',
   '30d': '30 Days',
-  all: '90 Days',
+  '90d': '90 Days',
+  all: 'All time',
 }
 
 /**
@@ -34,7 +36,8 @@ const TIME_RANGE_LABELS: Record<string, string> = {
 /** Base label for a time-range token, before any date-basis annotation. */
 function baseTimeRangeLabel(timeRange: string, customDays?: number | null): string {
   if (timeRange === 'custom') {
-    return customDays != null ? `Last ${customDays} days` : 'Custom'
+    if (customDays == null) return 'Custom'
+    return customDays === ALL_TIME_CUSTOM_DAYS ? 'All time' : `Last ${customDays} days`
   }
   return TIME_RANGE_LABELS[timeRange] ?? timeRange
 }

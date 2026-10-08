@@ -3,7 +3,7 @@
  * @module components/PersonaExportMenu/personaToMarkdown
  */
 
-import type { ProjectPersona } from '../../api/types'
+import type { ProjectPersona } from '../../api/projectTypes'
 
 function addIdentitySection(lines: string[], persona: ProjectPersona): void {
   const identity = persona.identity

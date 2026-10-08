@@ -8,13 +8,15 @@
     "never": "없음",
     "notConfigured": "미구성",
     "runNow": "지금 실행",
-    "urls": "URL"
+    "urls": "URL",
+    "active": "활성",
+    "paused": "일시 중지됨"
   },
   "configureApiFirst": "먼저 API 엔드포인트를 구성하세요",
   "csvUpload": {
     "cancel": "취소",
-    "defaultSourceHint": "\"source\" 열이 없는 행에 사용됩니다.",
-    "defaultSourceLabel": "기본 소스 레이블",
+    "defaultSourceHint": "채널 열이 없는 행에 사용됩니다.",
+    "defaultSourceLabel": "기본 채널",
     "done": "완료",
     "downloadTemplate": "템플릿 다운로드",
     "dropZone": ".csv 파일을 여기로 끌어다 놓거나 클릭하여 선택",
@@ -30,7 +32,33 @@
     "title": "CSV 업로드",
     "upload": "업로드",
     "uploading": "업로드 중…",
-    "warningsHeader": "경고"
+    "warningsHeader": "경고",
+    "errorNoHeader": "파일에 헤더 행이 없습니다.",
+    "errorUnreadable": "파일을 읽을 수 없습니다.",
+    "uploadFailed": "업로드 실패",
+    "mapping": {
+      "title": "열 매핑",
+      "hint": "헤더 행을 기준으로 제안합니다. 인식되지 않는 열은 메타데이터로 보관되며, 무시를 선택하지 않는 한 삭제되지 않습니다.",
+      "columnLabel": "{{header}}의 대상",
+      "dimensionTarget": "차원: {{name}}",
+      "targets": {
+        "text": "피드백 텍스트",
+        "id": "행 ID",
+        "rating": "평점",
+        "date": "날짜",
+        "author": "작성자",
+        "title": "제목",
+        "url": "링크",
+        "channel": "채널",
+        "tags": "태그",
+        "metadata": "메타데이터로 보관",
+        "ignore": "무시"
+      },
+      "problems": {
+        "noText": "한 열을 피드백 텍스트에 매핑하세요.",
+        "twice": "{{target}}이(가) 여러 열에 지정되었습니다."
+      }
+    }
   },
   "deleteConfirmLabel": "삭제",
   "deleteConfirmMessage": "이 스크레이퍼를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
@@ -67,6 +95,7 @@
     "rating": "평점",
     "reviewContainer": "리뷰 컨테이너 *",
     "save": "스크레이퍼 저장",
+    "saveFailed": "스크레이퍼를 저장할 수 없습니다. 다시 시도해 주세요.",
     "scraperName": "스크레이퍼 이름",
     "scraperNamePlaceholder": "내 리뷰 스크레이퍼",
     "selectorsAutoDetected": "이 선택자는 자동 감지되었습니다. 필요에 따라 조정하세요.",
@@ -147,8 +176,13 @@
     "sourceUrl": "소스 URL",
     "sourceUrlPlaceholder": "https://example.com/reviews",
     "title": "수동 가져오기",
-    "unparsedSections_one": "⚠️ {{count}}개 섹션을 분석할 수 없습니다",
-    "unparsedSections_other": "⚠️ {{count}}개 섹션을 분석할 수 없습니다"
+    "unparsedSections_one": "{{count}}개 섹션을 분석할 수 없습니다",
+    "unparsedSections_other": "{{count}}개 섹션을 분석할 수 없습니다",
+    "datesRequired_one": "가져오기 전에 리뷰 {{count}}개에 날짜가 필요합니다.",
+    "datesRequired_other": "가져오기 전에 리뷰 {{count}}개에 날짜가 필요합니다.",
+    "datesDefaulted_one": "리뷰 {{count}}개는 본문에 날짜가 없어 오늘 가져온 날짜를 사용합니다. 아래에서 변경할 수 있습니다.",
+    "datesDefaulted_other": "리뷰 {{count}}개는 본문에 날짜가 없어 오늘 가져온 날짜를 사용합니다. 아래에서 변경할 수 있습니다.",
+    "importFailed": "리뷰를 가져오지 못했습니다"
   },
   "newSource": "새 소스",
   "parsedReview": {
@@ -158,7 +192,9 @@
     "star_one": "{{count}}점",
     "star_other": "{{count}}점",
     "textPlaceholder": "리뷰 텍스트",
-    "titlePlaceholder": "리뷰 제목 (선택사항)"
+    "titlePlaceholder": "리뷰 제목 (선택사항)",
+    "dateLabel": "리뷰 날짜(필수)",
+    "dateDefaulted": "날짜 없음: 가져온 날짜로 설정됨"
   },
   "pluginConfig": {
     "automaticSchedule": "자동 일정",
@@ -174,7 +210,9 @@
     "scheduleDescription": "구성된 일정에 따라 이 소스 실행",
     "select": "선택...",
     "show": "표시",
-    "test": "테스트"
+    "test": "테스트",
+    "configuredInSettings": "이 소스는 설정에서 자격 증명과 함께 구성합니다.",
+    "openDataSourceSettings": "데이터 소스 설정 열기"
   },
   "refresh": "새로고침",
   "status": {
@@ -210,5 +248,20 @@
     "title": "데이터 소스 추가",
     "webScraperTemplates": "웹 스크레이퍼 템플릿"
   },
-  "title": "데이터 소스"
+  "title": "데이터 소스",
+  "loading": "데이터 소스를 불러오는 중…",
+  "appCard": {
+    "platform": "플랫폼",
+    "maxReviews": "최대 리뷰 수",
+    "unnamed": "이름 없는 앱",
+    "loading": "앱 구성을 불러오는 중…",
+    "deleteConfirmTitle": "앱 삭제",
+    "deleteConfirmMessage": "이 앱 구성을 삭제하시겠습니까?",
+    "editApp": "앱 편집",
+    "addNewApp": "새 앱 추가",
+    "addApp": "앱 추가",
+    "configuredApps": "구성된 앱",
+    "noApps": "아직 구성된 앱이 없습니다",
+    "addFirstApp": "첫 번째 앱 추가"
+  }
 }

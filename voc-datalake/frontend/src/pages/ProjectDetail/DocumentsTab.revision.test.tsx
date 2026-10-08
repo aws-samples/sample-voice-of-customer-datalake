@@ -9,50 +9,28 @@
  * project read, and were displayed nowhere.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import {
+  PROTOTYPE_PROJECT, prototypeDoc as doc, prototypeProjectsApiModule,
+  resetPrototypeMocks, reviseWithFeedback,
+} from './prototype-fixtures'
+import { documentsTabStubs } from './project-detail-fixtures'
+// After the fixtures on purpose: this imports DocumentsTab, whose module graph runs
+// the `vi.mock` factory below, which needs the fixture module evaluated.
 import DocumentsTab from './DocumentsTab'
-import type { Project, ProjectDocument } from '../../api/types'
+import type { ProjectDocument } from '../../api/types'
 
-const mockBuildPrototype = vi.fn()
-vi.mock('../../api/projectsApi', () => ({
-  projectsApi: {
-    buildPrototype: (...args: unknown[]) => mockBuildPrototype(...args),
-  },
-}))
-
-const project: Project = {
-  project_id: 'proj_1',
-  name: 'Test project',
-  description: '',
-  status: 'active',
-  created_at: '2026-01-01T00:00:00Z',
-  updated_at: '2026-01-01T00:00:00Z',
-  persona_count: 0,
-  document_count: 0,
-}
-
-function doc(overrides: Partial<ProjectDocument> & { document_id: string }): ProjectDocument {
-  return {
-    document_type: 'prototype',
-    title: 'Prototype',
-    content: '<!DOCTYPE html><html><body>x</body></html>',
-    created_at: '2026-07-10T00:00:00Z',
-    ...overrides,
-  }
-}
+vi.mock('../../api/projectsApi', () => prototypeProjectsApiModule())
 
 function renderTab(documents: ProjectDocument[], selected: ProjectDocument | null, onSelectDoc = vi.fn()) {
   render(
     <DocumentsTab
-      project={project}
+      project={PROTOTYPE_PROJECT}
       documents={documents}
       selectedDoc={selected}
       onSelectDoc={onSelectDoc}
-      onEditDoc={vi.fn()}
-      onDeleteDoc={vi.fn()}
-      onCreateDoc={vi.fn()}
-      isDeleting={false}
+      {...documentsTabStubs()}
     />,
   )
   return onSelectDoc
@@ -167,17 +145,13 @@ describe('revising a prototype keeps the spec it was built from', () => {
     source_prfaq_id: 'prfaq_june',
   })
 
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockBuildPrototype.mockResolvedValue({ job_id: 'job_1' })
-  })
+  beforeEach(resetPrototypeMocks)
 
   it('sends the base prototype’s own sources, not whatever is newest', async () => {
     // Without this the backend re-resolves "the newest of each type", so revising a
     // prototype built from June's PRD would quietly re-base it on September's — a
     // revision that changes the spec as well as the feedback. The project holds a
     // newer PRD precisely so a regression has something wrong to pick.
-    const user = userEvent.setup()
     // Both inherited sources must be PRESENT in the project: since review round 1
     // an id that no longer resolves is dropped to '', so a fixture that omits the
     // PR/FAQ it claims is inherited would assert the fallback, not the inheritance.
@@ -188,12 +162,7 @@ describe('revising a prototype keeps the spec it was built from', () => {
       doc({ document_id: 'prfaq_june', document_type: 'prfaq', title: 'June launch', created_at: '2026-06-01T00:00:00Z' }),
     ], built)
 
-    await user.click(screen.getByRole('button', { name: /revise with feedback/i }))
-    await user.type(screen.getByRole('textbox'), 'Show the admin view')
-    await user.click(screen.getByRole('button', { name: /^regenerate$/i }))
-
-    await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
-    const body = mockBuildPrototype.mock.calls[0][1]
+    const body = await reviseWithFeedback('Show the admin view')
     expect(body.source_prd_id).toBe('prd_june')
     expect(body.source_prfaq_id).toBe('prfaq_june')
     expect(body.base_prototype_id).toBe('proto_1')
@@ -203,26 +172,17 @@ describe('revising a prototype keeps the spec it was built from', () => {
     // Pre-lineage prototypes stored a real null. Blank is what the API reads as
     // "not aimed", which restores the old newest-of-each behaviour for them rather
     // than sending a null the validator would reject.
-    const user = userEvent.setup()
     const legacy = doc({ document_id: 'proto_legacy', prototype_format: 'html', source_prd_id: null })
     renderTab([legacy], legacy)
 
-    await user.click(screen.getByRole('button', { name: /revise with feedback/i }))
-    await user.type(screen.getByRole('textbox'), 'Any change')
-    await user.click(screen.getByRole('button', { name: /^regenerate$/i }))
-
-    await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
-    const body = mockBuildPrototype.mock.calls[0][1]
+    const body = await reviseWithFeedback('Any change')
     expect(body.source_prd_id).toBe('')
     expect(body.source_prfaq_id).toBe('')
   })
 })
 
 describe('a prototype stays revisable after its source is deleted', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockBuildPrototype.mockResolvedValue({ job_id: 'job_1' })
-  })
+  beforeEach(resetPrototypeMocks)
 
   it('drops an inherited source id that is no longer in the project', async () => {
     // Found in review round 1 on PR #320. Inheriting the base prototype's sources
@@ -231,7 +191,6 @@ describe('a prototype stays revisable after its source is deleted', () => {
     // id on every attempt and could never be revised again. Blank instead: the
     // document whose spec would have been preserved no longer exists, so
     // newest-of-type is the only thing left, and it is not a silent substitution.
-    const user = userEvent.setup()
     const orphaned = doc({
       document_id: 'proto_orphan',
       prototype_format: 'html',
@@ -243,12 +202,7 @@ describe('a prototype stays revisable after its source is deleted', () => {
       doc({ document_id: 'prfaq_still_here', document_type: 'prfaq', title: 'Launch note' }),
     ], orphaned)
 
-    await user.click(screen.getByRole('button', { name: /revise with feedback/i }))
-    await user.type(screen.getByRole('textbox'), 'Any change')
-    await user.click(screen.getByRole('button', { name: /^regenerate$/i }))
-
-    await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
-    const body = mockBuildPrototype.mock.calls[0][1]
+    const body = await reviseWithFeedback('Any change')
     expect(body.source_prd_id).toBe('')
     // The one that DOES still exist is still inherited — the fallback is per slot,
     // not all-or-nothing, so a deleted PRD does not also discard a live PR/FAQ.

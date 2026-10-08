@@ -1,8 +1,8 @@
 """Shared pytest fixtures for processor tests."""
-import json
 import os
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 # Set processor-specific environment variables
 os.environ.setdefault('IDEMPOTENCY_TABLE', 'test-idempotency')
@@ -10,54 +10,32 @@ os.environ.setdefault('PRIMARY_LANGUAGE', 'en')
 os.environ.setdefault('BEDROCK_MODEL_ID', 'test-model-id')
 
 
-@pytest.fixture
-def mock_dynamodb_table():
-    """Create a mock DynamoDB table."""
-    table = MagicMock()
-    table.query.return_value = {'Items': [], 'Count': 0}
-    table.get_item.return_value = {}
-    table.put_item.return_value = {}
-    table.update_item.return_value = {}
-    return table
+@pytest.fixture(autouse=True)
+def _no_dimension_or_source_settings():
+    """No dimensions and no source profiles unless a test seeds them.
+
+    The processor reads both through its module-level aggregates table; seeding
+    the cache keeps every test that does not care from sending that read anywhere.
+    """
+    from processor import handler
+
+    # Stamped at +inf so `now - stamp` is never past the TTL: the seed never expires.
+    seeded = (float('inf'), [])
+    handler._settings_cache.clear()
+    handler._settings_cache.update({'dimensions': seeded, 'sources': seeded})
+    yield
+    handler._settings_cache.clear()
 
 
 @pytest.fixture
-def mock_comprehend_client():
-    """Mock Comprehend client for language detection and sentiment."""
-    client = MagicMock()
-    client.detect_dominant_language.return_value = {
-        'Languages': [{'LanguageCode': 'en', 'Score': 0.99}]
-    }
-    client.detect_sentiment.return_value = {
-        'Sentiment': 'POSITIVE',
-        'SentimentScore': {
-            'Positive': 0.8,
-            'Negative': 0.1,
-            'Neutral': 0.05,
-            'Mixed': 0.05
-        }
-    }
-    return client
-
-
-@pytest.fixture
-def mock_translate_client():
-    """Mock Translate client."""
-    client = MagicMock()
-    client.translate_text.return_value = {
-        'TranslatedText': 'Translated text'
-    }
-    return client
-
-
-@pytest.fixture
-def mock_bedrock_response():
-    """Create a mock Bedrock response."""
-    def _create_response(insights: dict):
-        return json.dumps({
-            'content': [{'text': json.dumps(insights)}]
-        }).encode()
-    return _create_response
+def lambda_context():
+    """A mock Lambda context (the shape Powertools' inject_lambda_context reads)."""
+    context = MagicMock()
+    context.function_name = 'test-processor'
+    context.memory_limit_in_mb = 1024
+    context.invoked_function_arn = 'arn:aws:lambda:us-east-1:123456789:function:test-processor'
+    context.aws_request_id = 'test-request-id-12345'
+    return context
 
 
 @pytest.fixture
@@ -99,14 +77,3 @@ def sample_llm_insights():
             }
         }
     }
-
-
-@pytest.fixture
-def lambda_context():
-    """Create a mock Lambda context."""
-    context = MagicMock()
-    context.function_name = 'test-processor'
-    context.memory_limit_in_mb = 512
-    context.invoked_function_arn = 'arn:aws:lambda:us-east-1:123456789:function:test-processor'
-    context.aws_request_id = 'test-request-id-12345'
-    return context

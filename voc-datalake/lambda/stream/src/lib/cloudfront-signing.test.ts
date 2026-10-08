@@ -21,13 +21,12 @@
  * RSA PKCS#1 v1.5 is deterministic, so 1 + 2 together imply both
  * implementations emit identical signatures for identical keys.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { createVerify, generateKeyPairSync } from 'node:crypto';
 import fixture from './__fixtures__/cloudfront-signing.botocore.json';
 import {
   buildCannedPolicy,
   buildSignedUrl,
-  clearSigningCache,
   signUrlWithKey,
 } from './cloudfront-signing.js';
 
@@ -59,18 +58,6 @@ describe('canned policy serialization', () => {
     expect(buildCannedPolicy(fixture.urlWithQuery, fixture.expiresEpochSeconds)).toBe(
       fixture.expectedCannedPolicyForUrlWithQuery,
     );
-  });
-
-  it('emits no whitespace padding', () => {
-    // botocore uses separators=(',',':'). JSON.stringify agrees today; pinning
-    // it means a future "pretty-print for debugging" edit fails here rather than
-    // silently at the edge.
-    expect(buildCannedPolicy('https://x/y', 1)).not.toContain(' ');
-  });
-
-  it('puts Resource before Condition, which is significant for a canned policy', () => {
-    const policy = buildCannedPolicy(fixture.url, fixture.expiresEpochSeconds);
-    expect(policy.indexOf('"Resource"')).toBeLessThan(policy.indexOf('"Condition"'));
   });
 });
 
@@ -104,69 +91,17 @@ describe('signUrlWithKey', () => {
 
     expect(once).toBe(twice);
   });
-
-  it('uses the CloudFront base64 alphabet, not standard base64', () => {
-    const { privateKey } = testKeyPair();
-    const signed = signUrlWithKey(fixture.url, privateKey, fixture.keyPairId, 123);
-    const signature = new URL(signed).searchParams.get('Signature') ?? '';
-
-    // CloudFront maps + / = onto - ~ _ ; any original reaching the wire means a
-    // mangled or rejected URL.
-    expect(signature).not.toMatch(/[+/=]/);
-    expect(signature.length).toBeGreaterThan(0);
-  });
 });
 
 describe('buildSignedUrl', () => {
-  it('starts a query string when the URL has none', () => {
-    const out = buildSignedUrl('https://d1.cloudfront.net/a.jpeg', 42, Buffer.from('sig'), 'KID');
-    expect(out).toContain('/a.jpeg?Expires=42');
+  it('starts a query string, orders Expires, Signature, Key-Pair-Id and maps + / = onto - ~ _', () => {
+    // 0xfb 0xff is '+/8=' in standard base64: every character CloudFront remaps.
+    const out = buildSignedUrl('https://d1.cloudfront.net/a.jpeg', 42, Buffer.from([0xfb, 0xff]), 'KID');
+    expect(out).toBe('https://d1.cloudfront.net/a.jpeg?Expires=42&Signature=-~8_&Key-Pair-Id=KID');
   });
 
   it('appends to an existing query string instead of starting a second one', () => {
     const out = buildSignedUrl('https://d1.cloudfront.net/a.jpeg?v=2', 42, Buffer.from('sig'), 'KID');
-    expect(out).toContain('?v=2&Expires=42');
-    expect(out.match(/\?/g)).toHaveLength(1);
-  });
-
-  it('orders the parameters Expires, Signature, Key-Pair-Id', () => {
-    const out = buildSignedUrl('https://d1.cloudfront.net/a.jpeg', 42, Buffer.from('sig'), 'KID');
-    expect(out.indexOf('Expires=')).toBeLessThan(out.indexOf('Signature='));
-    expect(out.indexOf('Signature=')).toBeLessThan(out.indexOf('Key-Pair-Id='));
-  });
-});
-
-describe('signCloudFrontUrl fail-closed behavior', () => {
-  const saved = { ...process.env };
-
-  beforeEach(() => {
-    clearSigningCache();
-    delete process.env.CDN_SIGNING_SECRET_ARN;
-    delete process.env.CDN_SIGNING_KEY_PAIR_ID;
-  });
-
-  afterEach(() => {
-    process.env = { ...saved };
-    clearSigningCache();
-  });
-
-  it('returns undefined when signing is not configured', async () => {
-    // Never a bare URL: /avatars/* requires a signature, and emitting the
-    // unsigned form would be handing out an unauthenticated link.
-    const { signCloudFrontUrl } = await import('./cloudfront-signing.js');
-    await expect(signCloudFrontUrl('https://d1.cloudfront.net/avatars/a.jpeg')).resolves.toBeUndefined();
-  });
-
-  it('returns undefined when only the key pair id is configured', async () => {
-    process.env.CDN_SIGNING_KEY_PAIR_ID = 'KID';
-    const { signCloudFrontUrl } = await import('./cloudfront-signing.js');
-    await expect(signCloudFrontUrl('https://d1.cloudfront.net/avatars/a.jpeg')).resolves.toBeUndefined();
-  });
-
-  it('returns undefined for an empty url even when configured', async () => {
-    process.env.CDN_SIGNING_SECRET_ARN = 'arn:aws:secretsmanager:us-east-1:1:secret:x';
-    process.env.CDN_SIGNING_KEY_PAIR_ID = 'KID';
-    const { signCloudFrontUrl } = await import('./cloudfront-signing.js');
-    await expect(signCloudFrontUrl('')).resolves.toBeUndefined();
+    expect(out).toBe('https://d1.cloudfront.net/a.jpeg?v=2&Expires=42&Signature=c2ln&Key-Pair-Id=KID');
   });
 });

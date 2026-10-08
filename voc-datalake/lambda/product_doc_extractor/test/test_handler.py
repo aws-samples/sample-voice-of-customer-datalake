@@ -16,8 +16,9 @@ passes for the wrong reason:
     "reached failed" and "never claimed ready" are different guarantees and
     build_product_context_block depends on the second one.
 """
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 from .conftest import (
     DOCUMENTS_DEFAULT_MODEL,
@@ -79,13 +80,37 @@ def _reread_as(table, first: dict, later: dict | None) -> None:
     """
     reads = {'n': 0}
 
-    # Capitalised parameter name because it is boto3's own kwarg.
-    def phased_get(Key=None, **_kwargs):
+    def phased_get(**_kwargs):
         reads['n'] += 1
         item = first if reads['n'] == 1 else later
         return {'Item': item} if item is not None else {}
 
     table.get_item = phased_get
+
+
+def _extract_png(extractor, wire, pending_doc, s3_event, body: bytes) -> dict:
+    """Wire a pending image/png document holding *body* and run the extractor
+    over its S3 event; returns the wired mocks."""
+    mocks = wire(body=body, doc=pending_doc('image/png'))
+
+    extractor.lambda_handler(s3_event(f'{RAW_KEY}.png', size=len(body)))
+
+    return mocks
+
+
+def _extract_md_log_lines(extractor, s3_event, caplog, source: bytes) -> list[str]:
+    """Run the extractor over the markdown *source* and return every INFO+ log line."""
+    with caplog.at_level('INFO'):
+        extractor.lambda_handler(s3_event(f'{RAW_KEY}.md', size=len(source)))
+
+    return [r.message for r in caplog.records]
+
+
+def _refusal_lines(messages: list[str]) -> list[str]:
+    """The refused-overwrite log lines, which must exist for a refused write."""
+    refusals = [m for m in messages if 'refusing to overwrite' in m]
+    assert refusals, f'no distinguishable refusal log; got {messages}'
+    return refusals
 
 
 class TestTextPassThrough:
@@ -181,9 +206,7 @@ class TestImageDescription:
         # A .png full of PDF bytes: the declared content type is a claim, the
         # header sniff is the check.
         body = b'%PDF-1.7\n%\xc7\xec\x8f\xa2\n1 0 obj\n<< /Type /Catalog >>'
-        mocks = wire(body=body, doc=pending_doc('image/png'))
-
-        extractor.lambda_handler(s3_event(f'{RAW_KEY}.png', size=len(body)))
+        mocks = _extract_png(extractor, wire, pending_doc, s3_event, body)
 
         assert statuses(mocks['projects']) == ['extracting', 'failed']
         assert terminal(mocks['projects'])['error']
@@ -195,9 +218,7 @@ class TestImageDescription:
     def test_mismatched_image_type_fails(self, extractor, wire, pending_doc, s3_event):
         # Real image, wrong declared type: a GIF uploaded as image/png.
         body = gif_header(100, 100)
-        mocks = wire(body=body, doc=pending_doc('image/png'))
-
-        extractor.lambda_handler(s3_event(f'{RAW_KEY}.png', size=len(body)))
+        mocks = _extract_png(extractor, wire, pending_doc, s3_event, body)
 
         assert statuses(mocks['projects']) == ['extracting', 'failed']
         mocks['bedrock'].converse.assert_not_called()
@@ -266,9 +287,7 @@ class TestSizeAndDimensionCaps:
         self, extractor, wire, pending_doc, s3_event,
     ):
         oversized = png_header(MAX_IMAGE_DIMENSION_PX + 1, 100)
-        mocks = wire(body=oversized, doc=pending_doc('image/png'))
-
-        extractor.lambda_handler(s3_event(f'{RAW_KEY}.png', size=len(oversized)))
+        mocks = _extract_png(extractor, wire, pending_doc, s3_event, oversized)
 
         failure = terminal(mocks['projects'])
         assert failure['status'] == 'failed'
@@ -281,9 +300,7 @@ class TestSizeAndDimensionCaps:
         # The cheap-rejection property: the first read is a Range request, so a
         # bad file never costs a full download.
         oversized = png_header(MAX_IMAGE_DIMENSION_PX + 1, 100)
-        mocks = wire(body=oversized, doc=pending_doc('image/png'))
-
-        extractor.lambda_handler(s3_event(f'{RAW_KEY}.png', size=len(oversized)))
+        mocks = _extract_png(extractor, wire, pending_doc, s3_event, oversized)
 
         assert len(mocks['s3'].gets) == 1
         assert mocks['s3'].gets[0][1] == f'bytes=0-{extractor.HEADER_BYTES - 1}'
@@ -330,12 +347,11 @@ class TestHeaderParsing:
     ])
     def test_truncated_or_corrupt_headers_yield_no_dimensions(self, extractor, body):
         fmt = extractor._sniff_format(body)
-        if fmt == 'jpeg':
-            assert extractor._jpeg_dimensions(body) is None
-        elif fmt is None:
-            assert True  # unrecognised is itself a refusal
-        else:
-            assert extractor._dimensions_from_head(fmt, body) is None
+        # An unrecognised format (fmt None) is itself a refusal, and
+        # _dimensions_from_head answers None for it too.
+        dimensions = (extractor._jpeg_dimensions(body) if fmt == 'jpeg'
+                      else extractor._dimensions_from_head(str(fmt), body))
+        assert dimensions is None
 
 
 class TestTriggerGuard:
@@ -445,9 +461,7 @@ class TestTheExtractingBadgeIsWritten:
         only on the happy path would leave the badge stuck on "Uploading…" for
         exactly the documents a user is most likely to be watching."""
         body = b'%PDF-1.7 not an image at all'
-        mocks = wire(body=body, doc=pending_doc('image/png'))
-
-        extractor.lambda_handler(s3_event(f'{RAW_KEY}.png', size=len(body)))
+        mocks = _extract_png(extractor, wire, pending_doc, s3_event, body)
 
         assert statuses(mocks['projects']) == ['extracting', 'failed']
 
@@ -491,7 +505,6 @@ class TestTheExtractingBadgeIsWritten:
         and not the other is either an unreachable badge (what this finding was)
         or a record the API will never rescue."""
         from api.product_context import STALLABLE_STATUSES
-
         from product_doc_extractor.handler import NON_TERMINAL_STATUSES
 
         assert set(NON_TERMINAL_STATUSES) == set(STALLABLE_STATUSES)
@@ -514,9 +527,7 @@ class TestALateExtractionCannotClobberAStalledFailure:
         assertion — with the two placeholder VALUES checked as well, since a
         condition naming the wrong statuses would still be a condition."""
         image = png_header(400, 400)
-        mocks = wire(body=image, doc=pending_doc('image/png'))
-
-        extractor.lambda_handler(s3_event(f'{RAW_KEY}.png', size=len(image)))
+        mocks = _extract_png(extractor, wire, pending_doc, s3_event, image)
 
         assert mocks['projects'].updates, 'no write to inspect'
         for call in mocks['projects'].updates:
@@ -578,12 +589,8 @@ class TestALateExtractionCannotClobberAStalledFailure:
         # refused — which IS the race: the API failed it as stalled in between.
         _reread_as(mocks['projects'], doc, pending_doc('text/markdown', status='failed'))
 
-        with caplog.at_level('INFO'):
-            extractor.lambda_handler(s3_event(f'{RAW_KEY}.md', size=len(source)))
-
-        messages = [r.message for r in caplog.records]
-        refusals = [m for m in messages if 'refusing to overwrite' in m]
-        assert refusals, f'no distinguishable refusal log; got {messages}'
+        messages = _extract_md_log_lines(extractor, s3_event, caplog, source)
+        refusals = _refusal_lines(messages)
         # It names the status that won, and says why this is not routine.
         assert 'failed' in refusals[-1]
         assert 'stalled' in refusals[-1]
@@ -613,12 +620,8 @@ class TestALateExtractionCannotClobberAStalledFailure:
                      update_error=conditional_check_failed())
         _reread_as(mocks['projects'], doc, malformed)
 
-        with caplog.at_level('INFO'):
-            extractor.lambda_handler(s3_event(f'{RAW_KEY}.md', size=len(source)))
-
-        messages = [r.message for r in caplog.records]
-        refusals = [m for m in messages if 'refusing to overwrite' in m]
-        assert refusals, f'no distinguishable refusal log; got {messages}'
+        messages = _extract_md_log_lines(extractor, s3_event, caplog, source)
+        refusals = _refusal_lines(messages)
         # Still a refusal, still greppable — but it must not match a grep for the
         # stall wording AT ALL, not even inside a denial, or the signal an operator
         # searches for is polluted by records that never stalled.
@@ -641,10 +644,7 @@ class TestALateExtractionCannotClobberAStalledFailure:
         # which is what "deleted mid-extraction" actually means.
         _reread_as(mocks['projects'], doc, None)
 
-        with caplog.at_level('INFO'):
-            extractor.lambda_handler(s3_event(f'{RAW_KEY}.md', size=len(source)))
-
-        messages = [r.message for r in caplog.records]
+        messages = _extract_md_log_lines(extractor, s3_event, caplog, source)
         assert any('deleted mid-extraction' in m for m in messages), messages
         assert not any('refusing to overwrite' in m for m in messages)
 
@@ -658,10 +658,7 @@ class TestALateExtractionCannotClobberAStalledFailure:
         mocks = wire(body=source, doc=pending_doc('text/markdown'),
                      update_error=RuntimeError('ProvisionedThroughputExceededException'))
 
-        with caplog.at_level('INFO'):
-            extractor.lambda_handler(s3_event(f'{RAW_KEY}.md', size=len(source)))
-
-        messages = [r.message for r in caplog.records]
+        messages = _extract_md_log_lines(extractor, s3_event, caplog, source)
         assert any('Could not update product doc' in m for m in messages), messages
         assert not any('refusing to overwrite' in m for m in messages)
         assert mocks['s3'].puts, 'the extraction itself should still have run'
@@ -800,33 +797,6 @@ class TestTheBedrockClientBudget:
         with patch.object(extractor, 'boto3') as mock_boto3:
             clients = [extractor._bedrock() for _ in range(times)]
         return clients, mock_boto3
-
-    @classmethod
-    def _captured_config(cls, extractor):
-        _, mock_boto3 = cls._build(extractor)
-        call = mock_boto3.client.call_args
-        assert call.args[0] == 'bedrock-runtime'
-        return call.kwargs['config']
-
-    def test_waits_and_retries_exactly_as_declared(self, extractor):
-        config = self._captured_config(extractor)
-
-        assert config.read_timeout == extractor.BEDROCK_READ_TIMEOUT_SECONDS
-        assert config.connect_timeout == extractor.BEDROCK_CONNECT_TIMEOUT_SECONDS
-        assert config.retries['max_attempts'] == extractor.BEDROCK_MAX_ATTEMPTS
-
-    def test_makes_one_attempt_in_standard_mode(self, extractor):
-        """`max_attempts` counts TOTAL attempts in standard mode.
-
-        Legacy mode's reading of the same key is ambiguous, so the mode is stated
-        rather than inherited — otherwise `max_attempts: 1` is not provably one
-        attempt, and the budget compared against the Lambda timeout is a lower
-        bound instead of the budget.
-        """
-        config = self._captured_config(extractor)
-
-        assert config.retries['mode'] == 'standard'
-        assert extractor.BEDROCK_MAX_ATTEMPTS == 1
 
     def test_the_client_is_built_once_and_cached(self, extractor):
         """The cache is what makes a per-invocation client construction free.

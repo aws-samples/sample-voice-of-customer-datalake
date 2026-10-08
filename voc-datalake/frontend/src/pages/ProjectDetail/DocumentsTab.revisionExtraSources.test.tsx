@@ -15,41 +15,23 @@
  * where the generator writes what it actually used.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { render, screen, within } from '@testing-library/react'
+import {
+  PROTOTYPE_PROJECT, prototypeDoc as doc, productDoc as readyProductDoc,
+  prototypeProjectsApiModule, resetPrototypeMocks, reviseWithFeedback,
+} from './prototype-fixtures'
+import { documentsTabStubs } from './project-detail-fixtures'
+// After the fixtures on purpose: this imports DocumentsTab, whose module graph runs
+// the `vi.mock` factory below, which needs the fixture module evaluated.
 import DocumentsTab from './DocumentsTab'
 import { MAX_SELECTED_PRODUCT_DOC_IDS, MAX_SELECTED_RESEARCH_IDS } from './overviewState'
 import en from '../../../public/locales/en/projectDetail.json'
 import type { DocumentDerivation } from '../../api/derivation'
-import type { ProductDoc, Project, ProjectDocument } from '../../api/types'
+import type { ProjectDocument } from '../../api/types'
+import type { ProductDoc } from '../../api/projectTypes'
 
-const mockBuildPrototype = vi.fn()
-vi.mock('../../api/projectsApi', () => ({
-  projectsApi: {
-    buildPrototype: (...args: unknown[]) => mockBuildPrototype(...args),
-  },
-}))
-
-const project: Project = {
-  project_id: 'proj_1',
-  name: 'Test project',
-  description: '',
-  status: 'active',
-  created_at: '2026-01-01T00:00:00Z',
-  updated_at: '2026-01-01T00:00:00Z',
-  persona_count: 0,
-  document_count: 0,
-}
-
-function doc(overrides: Partial<ProjectDocument> & { document_id: string }): ProjectDocument {
-  return {
-    document_type: 'prototype',
-    title: 'Prototype',
-    content: '<!DOCTYPE html><html><body>x</body></html>',
-    created_at: '2026-07-10T00:00:00Z',
-    ...overrides,
-  }
-}
+vi.mock('../../api/projectsApi', () => prototypeProjectsApiModule())
+const project = PROTOTYPE_PROJECT
 
 function derivation(overrides: Partial<DocumentDerivation>): DocumentDerivation {
   return {
@@ -61,6 +43,28 @@ function derivation(overrides: Partial<DocumentDerivation>): DocumentDerivation 
     product_context_included: false,
     ...overrides,
   }
+}
+
+/** A prototype built from the PRD alone — no research, no context, no visuals. */
+function plainPrototype(extra: Partial<DocumentDerivation> = {}): ProjectDocument {
+  return doc({
+    document_id: 'proto_plain',
+    prototype_format: 'html',
+    derivation: derivation({
+      sources: [{ document_id: 'prd_1', role: 'prototype_prd' }],
+      selected_document_count: 1,
+      ...extra,
+    }),
+  })
+}
+
+/** A prototype whose base build was grounded on exactly these uploaded visuals. */
+function visuallyGroundedPrototype(visualDocumentIds: string[]): ProjectDocument {
+  return doc({
+    document_id: 'proto_visual',
+    prototype_format: 'html',
+    derivation: derivation({ visual_document_ids: visualDocumentIds }),
+  })
 }
 
 const RESEARCH_A = doc({
@@ -94,16 +98,7 @@ const BASE = doc({
 
 /** A ready image upload — the only kind the visual picker offers. */
 function productDoc(docId: string): ProductDoc {
-  return {
-    doc_id: docId,
-    filename: `${docId}.png`,
-    content_type: 'image/png',
-    size_bytes: 1024,
-    status: 'ready',
-    error: null,
-    extracted_chars: 400,
-    created_at: '2026-05-01T00:00:00Z',
-  }
+  return readyProductDoc({ doc_id: docId, filename: `${docId}.png` })
 }
 
 function renderTab(
@@ -123,27 +118,14 @@ function renderTab(
       productDocs={productDocs}
       selectedDoc={selected}
       onSelectDoc={vi.fn()}
-      onEditDoc={vi.fn()}
-      onDeleteDoc={vi.fn()}
-      onCreateDoc={vi.fn()}
-      isDeleting={false}
+      {...documentsTabStubs()}
     />,
   )
 }
 
-async function revise() {
-  const user = userEvent.setup()
-  await user.click(screen.getByRole('button', { name: /revise with feedback/i }))
-  await user.type(screen.getByRole('textbox'), 'Show the admin view')
-  await user.click(screen.getByRole('button', { name: /^regenerate$/i }))
-  await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
-  return mockBuildPrototype.mock.calls[0][1]
-}
+const revise = () => reviseWithFeedback('Show the admin view')
 
-beforeEach(() => {
-  vi.clearAllMocks()
-  mockBuildPrototype.mockResolvedValue({ job_id: 'job_1' })
-})
+beforeEach(resetPrototypeMocks)
 
 describe('a revision keeps the inputs its base was built with', () => {
   it('sends the base’s research report and not the one created since', async () => {
@@ -152,7 +134,7 @@ describe('a revision keeps the inputs its base was built with', () => {
     const body = await revise()
 
     expect(body.use_research).toBe(true)
-    expect(body.selected_research_ids).toEqual(['research_a'])
+    expect(body.selected_research_ids).toStrictEqual(['research_a'])
   })
 
   it('sends the base’s product-context flag', async () => {
@@ -166,25 +148,18 @@ describe('a revision keeps the inputs its base was built with', () => {
   it('inherits nothing from a base that used neither', async () => {
     // Research B exists and is the newest, so a re-derived default would pick it up
     // and a hardcoded `true` flag would show here.
-    const plain = doc({
-      document_id: 'proto_plain',
-      prototype_format: 'html',
-      derivation: derivation({
-        sources: [{ document_id: 'prd_1', role: 'prototype_prd' }],
-        selected_document_count: 1,
-      }),
-    })
+    const plain = plainPrototype()
     renderTab([plain, PRD, RESEARCH_A, RESEARCH_B], plain)
 
     const body = await revise()
 
     expect(body.use_product_context).toBe(false)
     expect(body.use_research).toBe(false)
-    expect(body.selected_research_ids).toEqual([])
+    expect(body.selected_research_ids).toStrictEqual([])
     // The positive control for the visuals too: a base built without any must
     // revise without any, or "inherits the visuals" would be indistinguishable
     // from "always sends visuals".
-    expect(body.selected_product_doc_ids).toEqual([])
+    expect(body.selected_product_doc_ids).toStrictEqual([])
   })
 
   it('inherits nothing from a prototype built before the derivation existed', async () => {
@@ -200,7 +175,7 @@ describe('a revision keeps the inputs its base was built with', () => {
 
     expect(body.source_prd_id).toBe('prd_1')
     expect(body.use_product_context).toBe(false)
-    expect(body.selected_research_ids).toEqual([])
+    expect(body.selected_research_ids).toStrictEqual([])
   })
 
   it('drops an inherited report that has since been deleted', async () => {
@@ -211,7 +186,7 @@ describe('a revision keeps the inputs its base was built with', () => {
 
     const body = await revise()
 
-    expect(body.selected_research_ids).toEqual([])
+    expect(body.selected_research_ids).toStrictEqual([])
     expect(body.use_research).toBe(false)
     // The rest of the inheritance survives one missing report.
     expect(body.use_product_context).toBe(true)
@@ -230,7 +205,7 @@ describe('a revision keeps the inputs its base was built with', () => {
       document_id: 'proto_over',
       prototype_format: 'html',
       derivation: derivation({
-        sources: extra.map((document_id) => ({ document_id, role: 'reference' as const })),
+        sources: extra.map((documentId) => ({ document_id: documentId, role: 'reference' as const })),
         selected_document_count: extra.length,
       }),
     })
@@ -243,7 +218,7 @@ describe('a revision keeps the inputs its base was built with', () => {
 
     // Sliced, not truncated arbitrarily: the first N in recorded order, which is
     // the order the original build read them in.
-    expect(body.selected_research_ids).toEqual(extra.slice(0, MAX_SELECTED_RESEARCH_IDS))
+    expect(body.selected_research_ids).toStrictEqual(extra.slice(0, MAX_SELECTED_RESEARCH_IDS))
     expect(body.use_research).toBe(true)
   })
 
@@ -269,7 +244,7 @@ describe('a revision keeps the inputs its base was built with', () => {
 
     const body = await revise()
 
-    expect(body.selected_product_doc_ids).toEqual(['pd_b', 'pd_a'])
+    expect(body.selected_product_doc_ids).toStrictEqual(['pd_b', 'pd_a'])
     // Nothing else was inherited by accident: visuals are their own input, with no
     // flag of their own and no effect on the research pair.
     expect(body.use_research).toBe(false)
@@ -282,16 +257,12 @@ describe('a revision keeps the inputs its base was built with', () => {
     // button that revises it — a harder failure than the research equivalent,
     // which is why the fallback is worth its own filter. The surviving id is
     // asserted too: returning [] would also pass a "not sent" assertion.
-    const grounded = doc({
-      document_id: 'proto_visual',
-      prototype_format: 'html',
-      derivation: derivation({ visual_document_ids: ['pd_gone', 'pd_a'] }),
-    })
+    const grounded = visuallyGroundedPrototype(['pd_gone', 'pd_a'])
     renderTab([grounded, PRD], grounded, [productDoc('pd_a')])
 
     const body = await revise()
 
-    expect(body.selected_product_doc_ids).toEqual(['pd_a'])
+    expect(body.selected_product_doc_ids).toStrictEqual(['pd_a'])
   })
 
   it('sends the inherited visuals unchanged while the upload list is unknown', async () => {
@@ -299,16 +270,12 @@ describe('a revision keeps the inputs its base was built with', () => {
     // and treating "we did not learn" as "they are all gone" would let one failed
     // request strip a revision of its entire visual grounding — the exact silent
     // re-theming this inheritance exists to prevent.
-    const grounded = doc({
-      document_id: 'proto_visual',
-      prototype_format: 'html',
-      derivation: derivation({ visual_document_ids: ['pd_gone', 'pd_a'] }),
-    })
+    const grounded = visuallyGroundedPrototype(['pd_gone', 'pd_a'])
     renderTab([grounded, PRD], grounded)
 
     const body = await revise()
 
-    expect(body.selected_product_doc_ids).toEqual(['pd_gone', 'pd_a'])
+    expect(body.selected_product_doc_ids).toStrictEqual(['pd_gone', 'pd_a'])
   })
 
   it('still revises a base carrying more visuals than the current bound allows', async () => {
@@ -326,7 +293,7 @@ describe('a revision keeps the inputs its base was built with', () => {
 
     const body = await revise()
 
-    expect(body.selected_product_doc_ids).toEqual(extra.slice(0, MAX_SELECTED_PRODUCT_DOC_IDS))
+    expect(body.selected_product_doc_ids).toStrictEqual(extra.slice(0, MAX_SELECTED_PRODUCT_DOC_IDS))
   })
 
   it('inherits only research, never another document type recorded as a reference', async () => {
@@ -349,7 +316,7 @@ describe('a revision keeps the inputs its base was built with', () => {
 
     const body = await revise()
 
-    expect(body.selected_research_ids).toEqual(['research_a'])
+    expect(body.selected_research_ids).toStrictEqual(['research_a'])
   })
 })
 
@@ -394,15 +361,7 @@ describe('the provenance panel reports visuals as a count', () => {
     // The fixture has a derivation worth rendering (a source and a feedback count),
     // so the panel IS on screen — otherwise "says nothing about visuals" would pass
     // for the wrong reason, on a panel that renders nothing at all.
-    const plain = doc({
-      document_id: 'proto_plain',
-      prototype_format: 'html',
-      derivation: derivation({
-        sources: [{ document_id: 'prd_1', role: 'prototype_prd' }],
-        selected_document_count: 1,
-        feedback_count: 12,
-      }),
-    })
+    const plain = plainPrototype({ feedback_count: 12 })
     renderTab([plain, PRD], plain)
 
     expect(within(panel()).getByText(/12 feedback items used/)).toBeInTheDocument()

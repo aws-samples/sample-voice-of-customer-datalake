@@ -22,8 +22,10 @@ import { IgnoreStrategy } from 'aws-cdk-lib';
 import {
   PY_LAMBDA_ASSET_EXCLUDES,
   VERIFICATION_FIXTURE_PROVIDER_ASSET_EXCLUDES,
+  WORKER_TREE_ASSET_EXCLUDES,
   rootPluginAssetExcludes,
 } from './lambda-asset-excludes';
+import { byCodeUnit } from './compare';
 
 const stacksDir = path.join(process.cwd(), 'lib', 'stacks');
 // Derived from disk exactly as ingestion-stack derives its sibling excludes —
@@ -31,7 +33,7 @@ const stacksDir = path.join(process.cwd(), 'lib', 'stacks');
 const PLUGIN_IDS = fs.readdirSync(path.join(process.cwd(), 'plugins'), { withFileTypes: true })
   .filter((entry) => entry.isDirectory() && !entry.name.startsWith('_'))
   .map((entry) => entry.name)
-  .sort();
+  .sort(byCodeUnit);
 
 function stackSources(): Array<{ file: string; source: string }> {
   return fs.readdirSync(stacksDir)
@@ -126,10 +128,15 @@ describe('asset staging sites use the shared lists in GIT ignore mode', () => {
    * real statement, and worth building if this exclusion grows siblings.
    */
   it('provider-only source feeds its bundle but not ordinary API/job fingerprints', () => {
-    const source = fs.readFileSync(path.join(stacksDir, 'api-stack.ts'), 'utf8');
-    expect(source).toContain("handlerFileName === 'verification_fixture_provider.py'");
-    expect(source).toContain(': VERIFICATION_FIXTURE_PROVIDER_ASSET_EXCLUDES;');
-    expect(source.match(/\.\.\.VERIFICATION_FIXTURE_PROVIDER_ASSET_EXCLUDES/g)).toHaveLength(1);
+    // The API bundler (createApiLambdaCode) lives in api-stack.ts; the job
+    // bundler in api-job-lambdas.ts. Counted across the WHOLE VocApiStack
+    // module family (api-*.ts), so moving either cannot make this vacuous.
+    const apiStack = fs.readFileSync(path.join(stacksDir, 'api-stack.ts'), 'utf8');
+    const family = stackSources().filter(({ file }) => file.startsWith('api-')).map(({ source }) => source).join('\n');
+    expect(apiStack).toContain("handlerFileName === 'verification_fixture_provider.py'");
+    expect(apiStack).toContain(': VERIFICATION_FIXTURE_PROVIDER_ASSET_EXCLUDES;');
+    expect(fs.readFileSync(path.join(stacksDir, 'api-job-lambdas.ts'), 'utf8')).toContain('...VERIFICATION_FIXTURE_PROVIDER_ASSET_EXCLUDES');
+    expect(family.match(/\.\.\.VERIFICATION_FIXTURE_PROVIDER_ASSET_EXCLUDES/g)).toHaveLength(1);
   });
 });
 
@@ -157,16 +164,18 @@ describe('root staging behavior (aws-cdk-lib IgnoreStrategy.git)', () => {
     expect(ignores('lambda/shared/.env.production')).toBe(true);
   });
 
-  it('prunes repo metadata and tool dirs with their dot-children', () => {
-    // .git/index changes on every commit/checkout — without this the
-    // ingestor hashes churn across commits with zero payload changes.
-    expect(ignores('.git/index')).toBe(true);
-    expect(ignores('.git/refs/heads/development')).toBe(true);
-    expect(ignores('node_modules/.bin/tsc')).toBe(true);
-    expect(ignores('.venv/.gitignore')).toBe(true);
-    expect(ignores('.ruff_cache/.gitignore')).toBe(true);
-    expect(ignores('frontend/.env.local')).toBe(true);
-    expect(ignores('.env.local')).toBe(true);
+  // .git/index changes on every commit/checkout — without this the
+  // ingestor hashes churn across commits with zero payload changes.
+  it.each([
+    '.git/index',
+    '.git/refs/heads/development',
+    'node_modules/.bin/tsc',
+    '.venv/.gitignore',
+    '.ruff_cache/.gitignore',
+    'frontend/.env.local',
+    '.env.local',
+  ])('prunes repo metadata and tool dirs with their dot-children: %s', (path) => {
+    expect(ignores(path)).toBe(true);
   });
 
   it('keeps everything the plugin bundle actually copies', () => {
@@ -181,7 +190,9 @@ describe('root staging behavior (aws-cdk-lib IgnoreStrategy.git)', () => {
     expect(ignores('plugins/webscraper/ingestor/lib/parser.py')).toBe(false);
     expect(ignores('plugins/webscraper/ingestor/scripts/seed.py')).toBe(false);
     expect(ignores('lambda/shared/bin/helper.py')).toBe(false);
-    // ...while the top-level dirs themselves stay excluded.
+  });
+
+  it('keeps the top-level tool dirs themselves excluded', () => {
     expect(ignores('lib/stacks/core-stack.ts')).toBe(true);
     expect(ignores('scripts/build-layers.sh')).toBe(true);
   });
@@ -235,5 +246,22 @@ describe('lambda staging behavior (aws-cdk-lib IgnoreStrategy.git)', () => {
     expect(ignores('shared/test/test_api.py')).toBe(true);
     expect(ignores('jobs/document_generator/test/test_handler.py')).toBe(true);
     expect(ignores('api/test/conftest.py')).toBe(true);
+  });
+
+  it('keeps the memory/agents worker trees out of every other bundle', () => {
+    const otherBundles = ignoresWith([...PY_LAMBDA_ASSET_EXCLUDES, ...WORKER_TREE_ASSET_EXCLUDES]);
+    expect(otherBundles('memory/extractor/handler.py')).toBe(true);
+    expect(otherBundles('agents/conductor/handler.py')).toBe(true);
+    expect(otherBundles('shared/api.py')).toBe(false);
+    expect(otherBundles('api/memory_handler.py')).toBe(false);
+  });
+
+  it("spreads WORKER_TREE_ASSET_EXCLUDES at every fromAsset('lambda') site outside worker-lambda.ts", () => {
+    let sites = 0;
+    forEachCallSite("fromAsset('lambda'", (file, options) => {
+      sites += 1;
+      expect(options, `${file} would hash lambda/memory and lambda/agents`).toContain('...WORKER_TREE_ASSET_EXCLUDES');
+    });
+    expect(sites, 'no call sites found — scan drifted?').toBeGreaterThan(0);
   });
 });

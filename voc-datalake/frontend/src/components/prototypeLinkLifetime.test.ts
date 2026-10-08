@@ -10,7 +10,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import {
-  signedUrlExpiresAt, earliestPrototypeExpiry, refreshDelayMs, isExpired,
+  signedUrlExpiresAt, earliestPrototypeExpiry, refreshDelayMs,
   unsignedUrlKey, formatExpiry,
   REFRESH_LEAD_MS, MIN_REFRESH_DELAY_MS,
 } from './prototypeLinkLifetime'
@@ -162,7 +162,7 @@ describe('earliestPrototypeExpiry', () => {
   })
 
   it('returns null for a legacy prototype that has no URL to expire', () => {
-    expect(earliestPrototypeExpiry([prototype(undefined)])).toBeNull()
+    expect(earliestPrototypeExpiry([prototype()])).toBeNull()
   })
 
   /**
@@ -214,23 +214,5 @@ describe('refreshDelayMs', () => {
 
   it('never returns a negative delay', () => {
     expect(refreshDelayMs(NOW - 10 * 60 * 60_000, NOW)).toBeGreaterThan(0)
-  })
-})
-
-describe('isExpired', () => {
-  it('is false while the link still has life', () => {
-    expect(isExpired(NOW + 1000, NOW)).toBe(false)
-  })
-
-  it('is true once the deadline has passed', () => {
-    expect(isExpired(NOW - 1000, NOW)).toBe(true)
-  })
-
-  it('is true exactly at the deadline, since the signature is no longer accepted', () => {
-    expect(isExpired(NOW, NOW)).toBe(true)
-  })
-
-  it('is false when there is no deadline, so an unsigned link is not called expired', () => {
-    expect(isExpired(null, NOW)).toBe(false)
   })
 })

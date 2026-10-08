@@ -3,11 +3,13 @@
  * @module components/PersonaExportMenu/PersonaPDFContent
  */
 
+import { User, Target, Frown } from 'lucide-react'
 import {
   ListSection, BehaviorsSection, ScenarioSection,
   ContextSection, QuotesSection, ResearchNotesSection,
 } from './PersonaPDFSections'
-import type { ProjectPersona } from '../../api/types'
+import { PdfIcon, PdfReport, PdfSectionHeading } from '../PdfParts/pdfParts'
+import type { ProjectPersona } from '../../api/projectTypes'
 
 interface PersonaPDFContentProps { readonly persona: ProjectPersona }
 
@@ -16,16 +18,16 @@ function getConfidenceStyle(confidence: string): {
   color: string
 } {
   if (confidence === 'high') return {
-    bg: '#dcfce7',
-    color: '#166534',
+    bg: '#e0eee7',
+    color: '#007038',
   }
   if (confidence === 'medium') return {
-    bg: '#fef9c3',
-    color: '#854d0e',
+    bg: '#f0eee6',
+    color: '#6b5900',
   }
   return {
-    bg: '#f3f4f6',
-    color: '#374151',
+    bg: '#f5f5f5',
+    color: '#4a464f',
   }
 }
 
@@ -49,7 +51,7 @@ function HeaderSection({ persona }: PersonaPDFContentProps) {
             height: '80px',
             borderRadius: '50%',
             objectFit: 'cover',
-            border: '3px solid #e9d5ff',
+            border: '3px solid #d7bfff',
           }}
           crossOrigin="anonymous"
         />
@@ -58,7 +60,7 @@ function HeaderSection({ persona }: PersonaPDFContentProps) {
           width: '80px',
           height: '80px',
           borderRadius: '50%',
-          background: 'linear-gradient(135deg, #8b5cf6, #ec4899)',
+          background: 'linear-gradient(135deg, #8e48ff, #7337d6)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -74,11 +76,11 @@ function HeaderSection({ persona }: PersonaPDFContentProps) {
           fontSize: '28px',
           fontWeight: 'bold',
           margin: 0,
-          color: '#111827',
+          color: '#19161d',
         }}>{persona.name}</h1>
         <p style={{
           fontSize: '16px',
-          color: '#6b7280',
+          color: '#5e5966',
           margin: '4px 0 0 0',
         }}>{persona.tagline}</p>
         {confidenceStyle ? <span style={{
@@ -106,14 +108,9 @@ function IdentitySection({ persona }: PersonaPDFContentProps) {
 
   return (
     <div data-pdf-section style={{ marginBottom: '24px' }}>
-      <h2 style={{
-        fontSize: '18px',
-        fontWeight: '600',
-        color: '#7c3aed',
-        marginBottom: '12px',
-      }}>👤 Identity & Demographics</h2>
+      <PdfSectionHeading color="#723acc"><PdfIcon icon={User} />Identity & Demographics</PdfSectionHeading>
       {identity.bio != null && identity.bio !== '' ? <p style={{
-        color: '#374151',
+        color: '#4a464f',
         marginBottom: '12px',
         lineHeight: '1.6',
       }}>{identity.bio}</p> : null}
@@ -125,8 +122,8 @@ function IdentitySection({ persona }: PersonaPDFContentProps) {
         {attrs.map(([k, v]) => (
           <span key={k} style={{
             padding: '4px 10px',
-            backgroundColor: '#f3e8ff',
-            color: '#7c3aed',
+            backgroundColor: '#f1e9ff',
+            color: '#723acc',
             borderRadius: '6px',
             fontSize: '12px',
           }}>
@@ -147,26 +144,21 @@ function GoalsSection({ persona }: PersonaPDFContentProps) {
 
   return (
     <div data-pdf-section style={{ marginBottom: '24px' }}>
-      <h2 style={{
-        fontSize: '18px',
-        fontWeight: '600',
-        color: '#16a34a',
-        marginBottom: '12px',
-      }}>🎯 Goals & Motivations</h2>
+      <PdfSectionHeading color="#007038"><PdfIcon icon={Target} />Goals & Motivations</PdfSectionHeading>
       {goals.primary_goal != null && goals.primary_goal !== '' ? <div data-pdf-section style={{
         padding: '12px',
-        backgroundColor: '#f0fdf4',
+        backgroundColor: '#e0eee7',
         borderRadius: '8px',
         marginBottom: '12px',
       }}>
         <p style={{
           fontSize: '12px',
-          color: '#16a34a',
+          color: '#007038',
           fontWeight: '500',
           marginBottom: '4px',
         }}>Primary Goal</p>
         <p style={{
-          color: '#374151',
+          color: '#4a464f',
           margin: 0,
         }}>{goals.primary_goal}</p>
       </div> : null}
@@ -186,12 +178,7 @@ function PainPointsSection({ persona }: PersonaPDFContentProps) {
 
   return (
     <div data-pdf-section style={{ marginBottom: '24px' }}>
-      <h2 style={{
-        fontSize: '18px',
-        fontWeight: '600',
-        color: '#dc2626',
-        marginBottom: '12px',
-      }}>😤 Pain Points & Frustrations</h2>
+      <PdfSectionHeading color="#bd1c3a"><PdfIcon icon={Frown} />Pain Points & Frustrations</PdfSectionHeading>
       <ListSection items={challenges} title="Current Challenges" />
       <ListSection items={blockers} title="Blockers" />
       <ListSection items={workarounds} title="Current Workarounds" isLast />
@@ -201,16 +188,10 @@ function PainPointsSection({ persona }: PersonaPDFContentProps) {
 
 export default function PersonaPDFContent({ persona }: PersonaPDFContentProps) {
   return (
-    <div style={{
-      padding: '40px',
-      backgroundColor: 'white',
-    }}>
-      <HeaderSection persona={persona} />
-      <hr style={{
-        border: 'none',
-        borderTop: '2px solid #e5e7eb',
-        marginBottom: '24px',
-      }} />
+    <PdfReport
+      header={<HeaderSection persona={persona} />}
+      footer={<>Generated on {new Date().toLocaleDateString()} • VoC Analytics</>}
+    >
       <IdentitySection persona={persona} />
       <GoalsSection persona={persona} />
       <PainPointsSection persona={persona} />
@@ -219,21 +200,6 @@ export default function PersonaPDFContent({ persona }: PersonaPDFContentProps) {
       <QuotesSection persona={persona} />
       <ScenarioSection persona={persona} />
       <ResearchNotesSection persona={persona} />
-      <div data-pdf-section>
-        <hr style={{
-          border: 'none',
-          borderTop: '1px solid #e5e7eb',
-          marginTop: '32px',
-          marginBottom: '16px',
-        }} />
-        <p style={{
-          fontSize: '11px',
-          color: '#9ca3af',
-          textAlign: 'center',
-        }}>
-          Generated on {new Date().toLocaleDateString()} • VoC Analytics
-        </p>
-      </div>
-    </div>
+    </PdfReport>
   )
 }

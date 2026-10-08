@@ -20,8 +20,14 @@
  * deliberate persona selection.
  */
 import type {
-  ProductContext, ProductDoc, ProductDocStatus, ProjectDocument, ProjectPersona,
+  ProductDocStatus,
+  ProjectDocument,
 } from '../../api/types'
+import type {
+  ProductContext,
+  ProductDoc,
+  ProjectPersona,
+} from '../../api/projectTypes'
 import {
   PRODUCT_CONTEXT_FIELD_COUNT, countFilledProductContextFields,
 } from './productContextFields'
@@ -30,7 +36,7 @@ import {
 export type OverviewStep = 'product' | 'personas' | 'research' | 'documents' | 'prototype' | 'remix'
 
 /** Remix needs two documents to combine; below that its card stays disabled. */
-export const REMIX_MIN_DOCUMENTS = 2
+const REMIX_MIN_DOCUMENTS = 2
 
 /**
  * How many research reports one prototype build may name.
@@ -146,7 +152,7 @@ export interface PrototypeVisualOption {
  * default selection and the backend's latest-of-type must name the same document,
  * or the dialog would state one thing and the build do another.
  */
-export interface PrototypeSources {
+interface PrototypeSources {
   readonly hasPrd: boolean
   readonly hasPrfaq: boolean
   readonly prdOptions: ReadonlyArray<PrototypeSourceOption>

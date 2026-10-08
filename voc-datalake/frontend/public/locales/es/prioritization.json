@@ -240,11 +240,5 @@
     "unavailable": "Puntuación del equipo no disponible",
     "unavailableDescription": "Las puntuaciones del equipo no se han podido leer ahora mismo, así que esta fila no muestra nada sobre ellas; no significa que nadie haya votado. Vuelve a cargar la página para ver lo que dijo el equipo."
   },
-  "title": "Priorización",
-  "unsavedChanges": {
-    "cancel": "Permanecer en la página",
-    "confirm": "Descartar cambios",
-    "message": "Tiene puntuaciones de priorización sin guardar. ¿Desea descartar los cambios y abandonar esta página?",
-    "title": "Cambios sin guardar"
-  }
+  "title": "Priorización"
 }

@@ -18,7 +18,7 @@ import { Construct } from 'constructs';
 import { z } from 'zod';
 import { ALLOWED_FOUNDATION_MODEL_IDS } from '../utils/model-allowlist';
 import { NagSuppressions } from 'cdk-nag';
-import { cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, pluginSystemSuppressions, bedrockAgreementSuppressions, marketplaceSuppressions } from '../utils/nag-suppressions';
+import { cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, pluginSystemSuppressions, bedrockAgreementSuppressions, marketplaceSuppressions, suppressAwsCustomResourceProvider } from '../utils/nag-suppressions';
 
 /**
  * Valid industry options for Anthropic use case form.
@@ -50,7 +50,7 @@ const INTENDED_USERS_OPTIONS = ['0', '1', '2'] as const;
  */
 export const AnthropicUseCaseSchema = z.object({
   companyName: z.string().min(1, 'Company name is required'),
-  companyWebsite: z.string().url('Company website must be a valid URL'),
+  companyWebsite: z.url('Company website must be a valid URL'),
   // intendedUsers is an index: "0" = internal, "1" = external, "2" = both
   intendedUsers: z.enum(INTENDED_USERS_OPTIONS).default('0'),
   industryOption: z.enum(INDUSTRY_OPTIONS).default('Technology'),
@@ -63,9 +63,10 @@ export type AnthropicUseCaseConfig = z.infer<typeof AnthropicUseCaseSchema>;
 /**
  * Models that require agreement acceptance for the VoC platform. Sourced from
  * the shared allowlist so every model the per-surface picker can select
- * (issue #96) has its agreement created — Sonnet 5, Sonnet 4.6, Opus 5, Opus
- * 4.8 and Haiku 4.5. Opus 4.8 needs its agreement both as a picker option and
- * because Opus 5 automatically falls back to it. Kept in lockstep with
+ * (issue #96) has its agreement created — Opus 5.5, Sonnet 5.5, Sonnet 5,
+ * Sonnet 4.6, Opus 5, Opus 4.8, Haiku 5.5 and Haiku 4.5. Opus 5 and Opus 4.8
+ * need their agreements both as picker options and as safety-fallback targets
+ * (Opus 5.5 falls back to Opus 5, Opus 5 to Opus 4.8). Kept in lockstep with
  * lambda/shared/model_config.py.
  */
 const REQUIRED_MODELS = [...ALLOWED_FOUNDATION_MODEL_IDS];
@@ -131,7 +132,7 @@ export class BedrockModelAccess extends Construct {
     if (!parseResult.success) {
       throw new Error(
         'Invalid anthropicUseCase configuration: ' +
-        parseResult.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+        parseResult.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
       );
     }
 
@@ -211,26 +212,7 @@ export class BedrockModelAccess extends Construct {
       // coincide while no explicit `stackName` is set, so using stackName here
       // would silently stop matching — and therefore silently drop the
       // suppressions — the day someone overrides it.
-      const customResourceId = `AWS${cr.AwsCustomResource.PROVIDER_FUNCTION_UUID.split('-').join('')}`;
-      const customResourceSuppressPaths = new Set([
-        `/${stack.node.id}/${customResourceId}/ServiceRole/Resource`,
-        `/${stack.node.id}/${customResourceId}/Resource`,
-      ]);
-
-      const allExistingPaths = new Set(
-        stack.node.findAll().map((node) => `/${node.node.path}`)
-      );
-
-      for (const path of customResourceSuppressPaths) {
-        if (allExistingPaths.has(path)) {
-          NagSuppressions.addResourceSuppressionsByPath(
-            stack,
-            path,
-            [...cdkCustomResourceSuppressions, ...lambdaBasicExecutionRoleSuppressions],
-            true
-          );
-        }
-      }
+      suppressAwsCustomResourceProvider(stack, stack.node.id);
     }
 
     // ============================================

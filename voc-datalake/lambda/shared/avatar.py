@@ -4,14 +4,21 @@ Uses Claude to generate image prompts, then the Bedrock image model configured
 in avatar-generation.json ("image_model") to create the images.
 """
 
+from __future__ import annotations
+
 import hashlib
 import json
 import os
 import threading
+from typing import TYPE_CHECKING
+
 import boto3
 
 from shared.logging import logger, tracer
-from shared.prompts import get_avatar_prompt_config, format_prompt
+from shared.prompts import format_prompt, get_avatar_prompt_config
+
+if TYPE_CHECKING:
+    from mypy_boto3_bedrock_runtime import BedrockRuntimeClient
 
 # `shared.cloudfront_signing` (and through it `cryptography`) is imported LAZILY
 # inside get_avatar_cdn_url — the only function here that signs. The rest of this
@@ -55,13 +62,40 @@ _SUPPORTED_OUTPUT_FORMATS = frozenset({'png', 'jpeg'})
 # object orphaned forever.
 _HISTORICAL_EXTENSIONS = ('png', 'jpeg', 'jpg', 'webp')
 
+# AI surface (shared/model_config.py) the avatar image-PROMPT writer resolves its
+# text model through. 'utility' is the picker's bucket for small helper calls; the
+# persona text itself runs on 'documents'.
+AVATAR_PROMPT_SURFACE = 'utility'
+
+# Used when the LLM call fails or answers empty and avatar-generation.json has no
+# fallback_prompt_template of its own.
+_DEFAULT_FALLBACK_PROMPT_TEMPLATE = (
+    'Professional headshot of a {occupation}, friendly expression, soft studio '
+    'lighting, neutral background, photorealistic'
+)
+
+# S3 user-metadata key recording which project an avatar object belongs to.
+#
+# The key space `avatars/{persona_id}/{digest}.{ext}` (legacy: the flat
+# `avatars/{persona_id}.{ext}`) carries no project component — the only one a
+# project owns without one — and persona ids are not globally unique:
+# `create_persona` and the persona importer both mint `persona_{YYYYMMDDHHMMSS}`
+# with no project part and no randomness, so two personas created in the same
+# second in DIFFERENT projects name one object. Ownership therefore cannot be
+# inferred from the key; a project delete that assumed it could would remove a
+# live avatar from a project nobody deleted. Recorded at write time instead (the
+# only moment the owner is known for certain). boto3 hands user metadata back
+# under this exact key, so writer and reader share the constant. Ported from
+# PR #407 (perrozzi).
+AVATAR_OWNER_METADATA_KEY = 'project-id'
+
 # Region-pinned image-model clients, cached for the life of the execution
 # environment (one per region, since the region is config-driven). Building a
 # boto3 client costs a botocore session + endpoint resolution, and the persona
 # generator used to pay that per persona — with the avatar loop now concurrent,
 # several threads would also build clients simultaneously. boto3 clients are
 # thread-safe to USE but creating them is not, hence the lock.
-_image_model_clients: dict[str, object] = {}
+_image_model_clients: dict[str, BedrockRuntimeClient] = {}
 _image_model_clients_lock = threading.Lock()
 
 
@@ -87,7 +121,7 @@ IMAGE_CLIENT_READ_TIMEOUT = 120
 IMAGE_CLIENT_CONNECT_TIMEOUT = 10
 
 
-def get_image_model_client(region: str):
+def get_image_model_client(region: str) -> BedrockRuntimeClient:
     """Bedrock runtime client pinned to the image model's region, cached.
 
     Cached per region rather than globally because the region comes from
@@ -121,16 +155,6 @@ def get_image_model_client(region: str):
     return client
 
 
-def clear_image_model_client_cache() -> None:
-    """Drop the cached region-pinned clients.
-
-    Exists for tests: the cache lives for the whole process, so a test that
-    patches boto3 would otherwise be served a client built by an earlier test.
-    """
-    with _image_model_clients_lock:
-        _image_model_clients.clear()
-
-
 def get_image_model_config() -> dict:
     """Resolve the avatar image model settings from the prompt config.
 
@@ -159,24 +183,119 @@ def get_image_model_config() -> dict:
     }
 
 
-def _delete_superseded_avatars(s3_client, bucket: str, persona_id: str, keep: str) -> None:
-    """Remove this persona's avatar stored under a different extension.
+AVATAR_KEY_PREFIX = 'avatars/'
 
-    The S3 key embeds the image format, so regenerating a persona after an
-    output_format change writes a NEW object (avatars/x.jpeg) and leaves the old
-    one (avatars/x.png) behind with nothing referencing it. Best-effort: a failure
-    here must never fail avatar generation, and deleting an absent key is a no-op
-    in S3, so this costs nothing when there is nothing to clean.
+# Hex characters of the content digest in an avatar key: enough that two images of
+# one persona never share a key, short enough to keep the URL readable.
+AVATAR_DIGEST_CHARS = 24
+
+
+def avatar_object_key(persona_id: str, image_data: bytes, image_format: str) -> str:
+    """The S3 key one generated image is stored under: new per image, never reused.
+
+    Content-addressed (`avatars/{persona_id}/{sha256}.{ext}`). The key used to be
+    `avatars/{persona_id}.{ext}`, overwritten by every regeneration, while the
+    object is served `immutable` for a year and the `/avatars/*` CloudFront cache
+    key ignores the query string (so the signature does not bust it either): a
+    regenerated avatar kept showing the OLD image until the edge copy expired. A
+    new key per image makes the new URL a cache miss by construction, and the
+    long-lived immutable caching becomes correct rather than harmful.
     """
-    for extension in _HISTORICAL_EXTENSIONS:
-        if extension == keep:
+    digest = hashlib.sha256(image_data).hexdigest()[:AVATAR_DIGEST_CHARS]
+    return f'{AVATAR_KEY_PREFIX}{persona_id}/{digest}.{image_format}'
+
+
+def avatar_object_keys(persona_id: str) -> tuple[str, ...]:
+    """Every LEGACY flat key one persona's avatar may occupy (`avatars/{id}.{ext}`).
+
+    The flat key embedded the image format, so a persona regenerated across an
+    `output_format` change could have an object under more than one extension.
+    Current images live under the persona's prefix instead; see
+    ``persona_avatar_keys`` for the complete inventory. A caller deleting on behalf
+    of a project must still check ownership (see AVATAR_OWNER_METADATA_KEY).
+    """
+    return tuple(f'{AVATAR_KEY_PREFIX}{persona_id}.{extension}' for extension in _HISTORICAL_EXTENSIONS)
+
+
+def persona_avatar_keys(s3_client, bucket: str, persona_id: str) -> list[str]:
+    """Every key one persona's avatar may occupy: the legacy flat keys + its prefix.
+
+    The flat keys are candidates (they may not exist — the owner HEAD answers
+    that); the per-persona prefix is listed, so every image ever generated for the
+    persona is found, however many regenerations ago. A listing failure raises: a
+    sweep that silently saw nothing would leave the objects behind for good.
+    """
+    keys = list(avatar_object_keys(persona_id))
+    paginator = s3_client.get_paginator('list_objects_v2')
+    for page in paginator.paginate(Bucket=bucket, Prefix=f'{AVATAR_KEY_PREFIX}{persona_id}/'):
+        keys.extend(entry['Key'] for entry in page.get('Contents', []) if isinstance(entry.get('Key'), str))
+    return keys
+
+
+def avatar_key_from_uri(s3_uri: object, bucket: str) -> str | None:
+    """The key an `s3://{bucket}/avatars/...` URI names, or None for anything else."""
+    prefix = f's3://{bucket}/{AVATAR_KEY_PREFIX}'
+    if not isinstance(s3_uri, str) or not s3_uri.startswith(prefix):
+        return None
+    return s3_uri.removeprefix(f's3://{bucket}/')
+
+
+def avatar_object_owner(s3_client, bucket: str, key: str) -> str | None:
+    """Which project this avatar object belongs to, or None if it cannot be told.
+
+    None covers three cases a deleting caller must treat alike: the object does
+    not exist, it predates the owner stamp, or the HEAD itself failed. Deleting on
+    None would reintroduce the cross-project deletion this exists to prevent, so
+    the safe reading leaves an ambiguous object alone.
+    """
+    try:
+        response = s3_client.head_object(Bucket=bucket, Key=key)
+    except Exception:  # noqa: BLE001 - absent or unreadable both mean "cannot tell"
+        return None
+    metadata = response.get('Metadata') if isinstance(response, dict) else None
+    if not isinstance(metadata, dict):
+        return None
+    owner = metadata.get(AVATAR_OWNER_METADATA_KEY)
+    return owner if isinstance(owner, str) and owner else None
+
+
+def delete_superseded_avatars(
+    s3_client, bucket: str, persona_id: str, *, keep: str, project_id: str | None,
+    previous_key: str | None = None,
+) -> None:
+    """Remove this persona's earlier avatar images once a new one is referenced.
+
+    Called AFTER the persona row points at ``keep``, so a failure between upload
+    and update can never leave the row naming a deleted object. Removed:
+
+    * every image under the persona's prefix stamped as this project's;
+    * the image the row named before (``previous_key``) unless another project's
+      stamp is on it — the row is the evidence it was ours, which covers a legacy
+      object written before the owner stamp existed;
+    * the legacy flat keys stamped as this project's.
+
+    An object stamped by ANOTHER project is always kept: persona ids are not
+    unique across projects. Best-effort: a failure is logged, never raised —
+    the new avatar is already live.
+    """
+    try:
+        candidates = persona_avatar_keys(s3_client, bucket, persona_id)
+    except Exception as e:  # noqa: BLE001 - cleanup must not fail the regeneration
+        logger.warning(f"[PERSONA_AVATAR] Could not list superseded avatars of {persona_id}: {e}")
+        candidates = []
+    if previous_key and previous_key not in candidates:
+        candidates.append(previous_key)
+    for key in dict.fromkeys(candidates):
+        if key == keep:
+            continue
+        owner = avatar_object_owner(s3_client, bucket, key)
+        ours = owner == project_id if owner is not None else key == previous_key
+        if not ours:
             continue
         try:
-            s3_client.delete_object(Bucket=bucket, Key=f"avatars/{persona_id}.{extension}")
-        except Exception as e:  # noqa: BLE001 - cleanup must not break generation
-            logger.warning(
-                f"[PERSONA_AVATAR] Could not remove superseded avatars/{persona_id}.{extension}: {e}"
-            )
+            s3_client.delete_object(Bucket=bucket, Key=key)
+        except Exception as e:  # noqa: BLE001 - cleanup must not fail the regeneration
+            logger.warning(f"[PERSONA_AVATAR] Could not remove superseded {key}: {e}")
 
 
 def _stable_seed(persona_id: str) -> int:
@@ -192,18 +311,23 @@ def _stable_seed(persona_id: str) -> int:
     return 1 + int(digest[:8], 16) % (_MAX_SEED - 1)
 
 
-def generate_avatar_prompt_with_llm(persona_data: dict, bedrock_client) -> str:
+def generate_avatar_prompt_with_llm(persona_data: dict) -> str:
     """Use Claude to generate an optimal image prompt from persona data.
-    
+
+    The text model is resolved through the per-surface model picker
+    (``AVATAR_PROMPT_SURFACE`` via shared.converse), never a hardcoded id: a
+    raw ``BEDROCK_MODEL_ID`` invoke AccessDenied in any deployment where that
+    one model was not enabled, and the fallback below then hid it (issue #273).
+
     Args:
         persona_data: Dict with persona info (name, tagline, identity, etc.)
-        bedrock_client: Bedrock runtime client for Claude calls
-        
+
     Returns:
         Generated image prompt string
     """
-    from shared.aws import BEDROCK_MODEL_ID
-    
+    # Lazy, like shared.aws below: keeps this module's import graph narrow.
+    from shared.converse import converse
+
     name = persona_data.get('name', 'Unknown')
     tagline = persona_data.get('tagline', '')
     identity = persona_data.get('identity', {})
@@ -211,12 +335,12 @@ def generate_avatar_prompt_with_llm(persona_data: dict, bedrock_client) -> str:
     age_range = identity.get('age_range', '')
     occupation = identity.get('occupation', '')
     location = identity.get('location', '')
-    
+
     # Load prompt config from external file
     config = get_avatar_prompt_config()
     system_prompt = config.get('system_prompt', '')
     user_template = config.get('user_prompt_template', '')
-    
+
     user_msg = format_prompt(
         user_template,
         name=name,
@@ -227,71 +351,89 @@ def generate_avatar_prompt_with_llm(persona_data: dict, bedrock_client) -> str:
         bio=bio[:300] if bio else 'N/A'
     )
 
+    fallback_prompt = format_prompt(
+        config.get('fallback_prompt_template', _DEFAULT_FALLBACK_PROMPT_TEMPLATE),
+        occupation=occupation or 'professional',
+    )
     try:
-        request_body = {
-            'anthropic_version': 'bedrock-2023-05-31',
-            'max_tokens': config.get('max_tokens', 200),
-            'system': system_prompt,
-            'messages': [{'role': 'user', 'content': user_msg}]
-        }
-        
-        response = bedrock_client.invoke_model(
-            modelId=BEDROCK_MODEL_ID,
-            contentType='application/json',
-            accept='application/json',
-            body=json.dumps(request_body)
-        )
-        result = json.loads(response['body'].read())
-        
-        # Handle response with thinking blocks
-        for block in result.get('content', []):
-            if block.get('type') == 'text':
-                return block.get('text', '').strip()
-        
-        return result['content'][0]['text'].strip()
+        prompt = converse(
+            prompt=user_msg,
+            system_prompt=system_prompt,
+            max_tokens=config.get('max_tokens', 200),
+            # The raw invoke this replaced sent no temperature; keep that rather
+            # than imposing converse()'s 0.1 on a creative one-liner.
+            temperature=None,
+            surface=AVATAR_PROMPT_SURFACE,
+            step_name='persona_avatar_prompt',
+            # A one-line prompt: continuing a truncated one is not worth a call.
+            max_continuations=0,
+        ).strip()
     except Exception as e:
-        logger.warning(f"[PERSONA_AVATAR] LLM prompt generation failed: {e}, using fallback")
-        fallback_template = config.get('fallback_prompt_template', 'Professional headshot of a {occupation}, friendly expression, soft studio lighting, neutral background, photorealistic')
-        return format_prompt(fallback_template, occupation=occupation or 'professional')
+        logger.exception(f"[PERSONA_AVATAR] LLM prompt generation failed: {e}, using fallback")
+        return fallback_prompt
+    if not prompt:
+        logger.warning("[PERSONA_AVATAR] LLM returned an empty image prompt, using fallback")
+        return fallback_prompt
+    return prompt
+
+
+def avatars_enabled() -> bool:
+    """False when the deployment switched avatars off (``AVATARS_ENABLED=false``).
+
+    An EU deployment (``-c inferenceScope=eu``, docs/eu-deployment.md) sets it: the
+    image model only runs in us-west-2, so avatars degrade to none rather than
+    sending a persona description out of the EU. Anything but ``false`` (any case)
+    keeps them on.
+    """
+    return os.environ.get('AVATARS_ENABLED', '').strip().lower() != 'false'
 
 
 @tracer.capture_method
-def generate_persona_avatar(persona_data: dict, bedrock_client, s3_bucket: str = None) -> dict:
+def generate_persona_avatar(
+    persona_data: dict, s3_bucket: str | None = None, project_id: str | None = None,
+) -> dict:
     """
     Generate an AI avatar image for a persona.
-    
+
     Uses Claude to create an intelligent image prompt from persona data (name, bio, occupation),
     then the configured image model to generate the actual image.
-    
+
     Args:
         persona_data: Dict with name, tagline, identity (bio, age_range, occupation, location), persona_id
-        bedrock_client: Bedrock runtime client for Claude calls
         s3_bucket: Optional S3 bucket override, defaults to RAW_DATA_BUCKET env var
-        
+        project_id: The owning project, stamped on the object as
+            AVATAR_OWNER_METADATA_KEY. Without it the object carries no owner and
+            a project delete declines to remove it (the safe direction).
+
     Returns:
         dict with 'avatar_url' (S3 URI or None) and 'avatar_prompt' (the prompt used)
     """
     import base64
-    
+
     persona_id = persona_data.get('persona_id', 'unknown')
     persona_name = persona_data.get('name', 'Unknown')
-    
+
+    if not avatars_enabled():
+        # Before the prompt model call too: nothing is spent on an avatar that will not exist.
+        logger.info("[PERSONA_AVATAR] Avatars disabled for this deployment (AVATARS_ENABLED=false); skipping")
+        return {'avatar_url': None, 'avatar_prompt': None}
+
     logger.info(f"[PERSONA_AVATAR] Starting avatar generation for {persona_name}", extra={
         "persona_id": persona_id
     })
-    
+
     if not s3_bucket:
         s3_bucket = os.environ.get('RAW_DATA_BUCKET', '')
-    
+
     if not s3_bucket:
         logger.warning("[PERSONA_AVATAR] No S3 bucket configured - RAW_DATA_BUCKET env var is empty")
         return {'avatar_url': None, 'avatar_prompt': None}
-    
+
     # Use Claude to generate an intelligent image prompt from persona data
     logger.info(f"[PERSONA_AVATAR] Generating image prompt with Claude for {persona_name}")
-    avatar_prompt = generate_avatar_prompt_with_llm(persona_data, bedrock_client)
+    avatar_prompt = generate_avatar_prompt_with_llm(persona_data)
     logger.info(f"[PERSONA_AVATAR] Generated prompt: {avatar_prompt}")
-    
+
     image_model = get_image_model_config()
     model_id = image_model['model_id']
     model_region = image_model['region']
@@ -314,17 +456,17 @@ def generate_persona_avatar(persona_data: dict, bedrock_client, s3_bucket: str =
             "output_format": image_model['output_format'],
             "seed": _stable_seed(persona_id),
         }
-        
+
         logger.info(f"[PERSONA_AVATAR] Invoking image model: {model_id}")
-        
+
         response = bedrock_runtime.invoke_model(
             modelId=model_id,
             body=json.dumps(request_body)
         )
-        
+
         result = json.loads(response['body'].read())
         images = result.get('images', [])
-        
+
         if not images:
             # finish_reasons explains a content-filtered or failed generation,
             # which returns 200 with no image rather than raising.
@@ -333,17 +475,17 @@ def generate_persona_avatar(persona_data: dict, bedrock_client, s3_bucket: str =
                 f"(finish_reasons={result.get('finish_reasons')})"
             )
             return {'avatar_url': None, 'avatar_prompt': avatar_prompt}
-        
+
         logger.info(f"[PERSONA_AVATAR] {model_id} generated {len(images)} image(s)")
-        
+
         # Decode base64 image and upload to S3. Extension and content type follow
         # the configured output_format so they cannot disagree with the bytes.
         image_data = base64.b64decode(images[0])
         image_format = image_model['output_format']
-        s3_key = f"avatars/{persona_id}.{image_format}"
-        
+        s3_key = avatar_object_key(persona_id, image_data, image_format)
+
         logger.info(f"[PERSONA_AVATAR] Uploading avatar to S3: s3://{s3_bucket}/{s3_key}")
-        
+
         # The shared accessor, not boto3.client('s3'), for two reasons that both arrived
         # with the concurrent avatar loop:
         #  1. This function now runs on several threads at once. boto3 clients are
@@ -356,6 +498,10 @@ def generate_persona_avatar(persona_data: dict, bedrock_client, s3_bucket: str =
         # Imported inside the function to keep this module's import graph narrow.
         from shared.aws import get_s3_client
         s3_client = get_s3_client()
+        # Owner stamped by the same put that writes the bytes, so it cannot be
+        # present on a half-failed upload. No key at all without a project (an
+        # empty map writes no metadata), so "unowned" never reads as an owner.
+        owner_metadata = {AVATAR_OWNER_METADATA_KEY: project_id} if project_id else {}
         s3_client.put_object(
             Bucket=s3_bucket,
             Key=s3_key,
@@ -364,20 +510,29 @@ def generate_persona_avatar(persona_data: dict, bedrock_client, s3_bucket: str =
             # constrained the format to _SUPPORTED_OUTPUT_FORMATS.
             ContentType=f"image/{image_format}",
             CacheControl='public, max-age=31536000, immutable',
+            Metadata=owner_metadata,
         )
-        # The key embeds the format, so a format change would otherwise leave the
-        # persona's previous avatar orphaned in the bucket.
-        _delete_superseded_avatars(s3_client, s3_bucket, persona_id, image_format)
-        
+        # Earlier images are NOT removed here: the persona row still names one of
+        # them until the caller saves this URL. A regeneration sweeps them after
+        # its update (delete_superseded_avatars); a new persona has none.
+
         avatar_url = f"s3://{s3_bucket}/{s3_key}"
         logger.info(f"[PERSONA_AVATAR] SUCCESS - Avatar generated for {persona_name}: {avatar_url}")
-        
-        return {'avatar_url': avatar_url, 'avatar_prompt': avatar_prompt}
-        
+
     except Exception as e:
         error_type = type(e).__name__
         if 'AccessDenied' in error_type or 'AccessDenied' in str(e):
-            logger.error(f"[PERSONA_AVATAR] ACCESS DENIED - Check IAM policy includes arn:aws:bedrock:{model_region}::foundation-model/{model_id}", extra={"error": str(e)})
+            # Two grants can cause this, and the second is the one a fresh account
+            # hits (issue #274): a Marketplace-listed model (Stability) is invoked
+            # only by a role that may also view/accept its subscription.
+            logger.error(
+                f"[PERSONA_AVATAR] ACCESS DENIED - Check the role's IAM policy grants "
+                f"bedrock:InvokeModel on arn:aws:bedrock:{model_region}::foundation-model/{model_id} "
+                "AND aws-marketplace:ViewSubscriptions + aws-marketplace:Subscribe "
+                "(Marketplace models such as Stability need these on first use in an account)",
+                extra={"error": str(e)},
+                exc_info=True,
+            )
         elif 'ResourceNotFound' in error_type or 'ResourceNotFound' in str(e):
             # A legacy model reports itself as "not found" once the account loses
             # access (15+ days idle during the legacy window, or past EOL). Name
@@ -390,6 +545,7 @@ def generate_persona_avatar(persona_data: dict, bedrock_client, s3_bucket: str =
                 "state and migrate: aws bedrock list-foundation-models "
                 "--by-output-modality IMAGE",
                 extra={"error": str(e), "model_id": model_id, "region": model_region},
+                exc_info=True,
             )
         elif 'ValidationException' in error_type or 'ValidationException' in str(e):
             logger.error(
@@ -397,23 +553,27 @@ def generate_persona_avatar(persona_data: dict, bedrock_client, s3_bucket: str =
                 "Stability models take prompt/mode/aspect_ratio/output_format; a model "
                 "from another vendor needs its own request body, not this one",
                 extra={"error": str(e)},
+                exc_info=True,
             )
         else:
             logger.error(f"[PERSONA_AVATAR] FAILED - Avatar generation error: {error_type}: {e}", extra={
                 "persona_id": persona_id,
                 "error_type": error_type,
                 "error": str(e)
-            })
+            }, exc_info=True)
         return {'avatar_url': None, 'avatar_prompt': avatar_prompt}
+    else:
+        return {'avatar_url': avatar_url, 'avatar_prompt': avatar_prompt}
 
 
-def get_avatar_cdn_url(s3_uri: str, cdn_url: str = None) -> str | None:
+def get_avatar_cdn_url(s3_uri: str | None, cdn_url: str | None = None) -> str | None:
     """Convert S3 URI to a SIGNED CloudFront CDN URL for avatar images.
 
-    S3 URI format: s3://bucket/avatars/{persona_id}.{ext}
-    CDN URL format: https://{cdn_domain}/avatars/{persona_id}.{ext}?Expires=...
-    The extension follows the configured output_format; parsing below is
-    extension-agnostic (it takes the trailing path segment).
+    S3 URI format: s3://bucket/avatars/{persona_id}/{digest}.{ext}
+    (legacy: s3://bucket/avatars/{persona_id}.{ext})
+    CDN URL format: https://{cdn_domain}/avatars/{same path}?Expires=...
+    The `/avatars/*` behavior maps 1:1 to the `avatars/` key prefix, so the URL
+    path is the key below that prefix.
 
     The `/avatars/*` cache behavior is restricted by a CloudFront trusted key
     group (issue #229), so the URL is only useful to a browser once signed.
@@ -435,25 +595,25 @@ def get_avatar_cdn_url(s3_uri: str, cdn_url: str = None) -> str | None:
     """
     if not s3_uri or not s3_uri.startswith('s3://'):
         return None
-    
+
     avatars_cdn_url = cdn_url or os.environ.get('AVATARS_CDN_URL', '')
     if not avatars_cdn_url:
         logger.warning("AVATARS_CDN_URL not configured")
         return None
-    
+
     try:
-        # Extract filename from s3://bucket/avatars/{persona_id}.{ext}
         # AVATARS_CDN_URL already ends in /avatars (the cache behavior's path
-        # prefix maps 1:1 to the S3 key prefix), so only the filename is needed.
-        parts = s3_uri.split('/')
-        if len(parts) < 2:
-            return None
-        filename = parts[-1]  # e.g., persona_20241128123456_0.jpeg
-        
+        # prefix maps 1:1 to the S3 key prefix), so the path is the key after
+        # `avatars/`: `{persona_id}/{digest}.jpeg`, or a legacy `{persona_id}.jpeg`.
+        # A URI outside that prefix keeps the old reading (its last segment).
+        key = s3_uri.removeprefix('s3://').partition('/')[2]
+        filename = (key.removeprefix(AVATAR_KEY_PREFIX) if key.startswith(AVATAR_KEY_PREFIX)
+                    else s3_uri.split('/')[-1])
+
         # Lazy on purpose — see the note beside the imports at the top.
         from shared.cloudfront_signing import sign_url
 
         return sign_url(f"{avatars_cdn_url.rstrip('/')}/{filename}")
     except Exception as e:
-        logger.warning(f"Failed to generate CDN URL for {s3_uri}: {e}")
+        logger.exception(f"Failed to generate CDN URL for {s3_uri}: {e}")
         return None

@@ -73,14 +73,16 @@ def mock_dynamodb():
         patch('shared.aws.get_dynamodb_resource', return_value=mock_resource),
         patch('shared.document_versions._get_item', side_effect=version_get_item),
         patch('shared.document_versions._query_project_documents', return_value=[]),
+        # Also patch at handler module level for already-imported modules
+        *(
+            patch(module_path, return_value=mock_resource, create=True)
+            for module_path in (
+                'jobs.document_generator.handler.get_dynamodb_resource',
+                'jobs.document_merger.handler.get_dynamodb_resource',
+                'jobs.persona_importer.handler.get_dynamodb_resource',
+            )
+        ),
     ]
-    # Also patch at handler module level for already-imported modules
-    for module_path in [
-        'jobs.document_generator.handler.get_dynamodb_resource',
-        'jobs.document_merger.handler.get_dynamodb_resource',
-        'jobs.persona_importer.handler.get_dynamodb_resource',
-    ]:
-        patchers.append(patch(module_path, return_value=mock_resource, create=True))
     for p in patchers:
         p.start()
     yield {
@@ -107,12 +109,9 @@ def mock_bedrock():
     mock_client = MagicMock()
     patchers = [
         patch('shared.aws.get_bedrock_client', return_value=mock_client),
+        # Also patch at handler module level for already-imported modules
+        patch('jobs.persona_importer.handler.get_bedrock_client', return_value=mock_client, create=True),
     ]
-    # Also patch at handler module level for already-imported modules
-    for module_path in [
-        'jobs.persona_importer.handler.get_bedrock_client',
-    ]:
-        patchers.append(patch(module_path, return_value=mock_client, create=True))
     for p in patchers:
         p.start()
     yield mock_client
@@ -138,19 +137,16 @@ def mock_s3():
 @pytest.fixture
 def mock_converse():
     """Mock converse function where it's used in handler modules.
-    
+
     Handlers use `from shared.converse import converse`, creating a local binding.
     We must patch at the handler module level so the local reference is replaced.
     """
     mock = MagicMock(return_value="Generated content from LLM")
     patchers = [
         patch('shared.converse.converse', mock),
+        # Also patch at handler module level for already-imported modules
+        patch('jobs.document_merger.handler.converse', mock, create=True),
     ]
-    # Also patch at handler module level for already-imported modules
-    for module_path in [
-        'jobs.document_merger.handler.converse',
-    ]:
-        patchers.append(patch(module_path, mock, create=True))
     for p in patchers:
         p.start()
     yield mock
@@ -161,7 +157,7 @@ def mock_converse():
 @pytest.fixture
 def mock_converse_chain():
     """Mock converse_chain function for multi-step document generation.
-    
+
     Returns 3 results by default (problem_analysis, solution_design, prd_document).
     Tests can override return_value for different step counts.
     """

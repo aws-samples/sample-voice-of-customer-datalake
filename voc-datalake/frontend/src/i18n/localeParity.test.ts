@@ -7,6 +7,7 @@
  * pluralizes must stay pluralized everywhere.
  */
 import { describe, it, expect } from 'vitest'
+import { sortedStrings } from '@test/stringLists'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -71,7 +72,7 @@ describe('locale parity', () => {
     // Anti-vacuous guard: the 8 supported locales are en (reference) plus
     // de, es, fr, ja, ko, pt, zh. Adding or dropping a locale should be a
     // conscious change — bump this list alongside it.
-    expect([REFERENCE_LOCALE, ...locales].sort()).toStrictEqual(['de', 'en', 'es', 'fr', 'ja', 'ko', 'pt', 'zh'])
+    expect(sortedStrings([REFERENCE_LOCALE, ...locales])).toStrictEqual(['de', 'en', 'es', 'fr', 'ja', 'ko', 'pt', 'zh'])
     expect(namespaces.length).toBeGreaterThan(0)
   })
 
@@ -95,8 +96,8 @@ describe('locale parity', () => {
       const reference = collectKeys(readNamespace(REFERENCE_LOCALE, namespace))
       for (const locale of locales) {
         const actual = collectKeys(readNamespace(locale, namespace))
-        const missing = [...reference.base].filter((key) => !actual.base.has(key)).sort()
-        const extra = [...actual.base].filter((key) => !reference.base.has(key)).sort()
+        const missing = sortedStrings([...reference.base].filter((key) => !actual.base.has(key)))
+        const extra = sortedStrings([...actual.base].filter((key) => !reference.base.has(key)))
         expect({ locale, missing, extra }).toStrictEqual({ locale, missing: [], extra: [] })
       }
     })
@@ -117,9 +118,8 @@ describe('locale parity', () => {
         const content = readNamespace(locale, namespace)
         const suffixed = suffixedKeysOf(content)
         const actual = collectKeys(content)
-        const unrenderable = [...reference.pluralized]
-          .filter((base) => !suffixed.has(`${base}_other`) && !actual.bare.has(base))
-          .sort()
+        const unrenderable = sortedStrings([...reference.pluralized]
+          .filter((base) => !suffixed.has(`${base}_other`) && !actual.bare.has(base)))
         expect({ locale, unrenderable }).toStrictEqual({ locale, unrenderable: [] })
       }
     })

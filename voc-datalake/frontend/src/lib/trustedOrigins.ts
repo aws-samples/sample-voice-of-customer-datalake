@@ -9,6 +9,7 @@
  * dependencies on either baseUrl or configStore.
  */
 import { getRuntimeConfig, isConfigLoaded } from '../runtimeConfig'
+import { isRecord } from './typeGuards'
 
 /**
  * Build the allowlist of trusted API origins.
@@ -115,7 +116,11 @@ export function isTrustedOrigin(requestUrl: string): boolean {
  * instead of resolving against `undefined`.
  */
 function getCurrentOrigin(): string | null {
-  const origin: unknown = globalThis.window?.location?.origin
+  if (typeof window === 'undefined') return null
+  // `unknown`, not `Location`: suites stub `window.location` with partial
+  // objects, and a host may not provide one at all.
+  const location: unknown = window.location
+  const origin: unknown = isRecord(location) ? location['origin'] : undefined
   return typeof origin === 'string' && origin !== '' ? origin : null
 }
 

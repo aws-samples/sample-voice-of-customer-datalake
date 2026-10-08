@@ -1,0 +1,400 @@
+{
+  "nav": {
+    "label": "Agentes autónomos"
+  },
+  "common": {
+    "cancel": "Cancelar"
+  },
+  "status": {
+    "enabled": "Activado",
+    "disabled": "Desactivado"
+  },
+  "scope": {
+    "all": "Todas las categorías",
+    "some": "Vigila: {{list}}"
+  },
+  "list": {
+    "title": "Agentes autónomos",
+    "subtitle": "Los agentes vigilan el feedback de su ámbito y, cuando se activa un disparador, ejecutan un flujo de trabajo: investigación, personas, PR/FAQ, PRD y un prototipo, revisados por personas antes de entregar un proyecto.",
+    "create": "Nuevo agente",
+    "createTitle": "Crear un agente autónomo",
+    "createHint": "Se crea desactivado con el flujo de trabajo integrado “Reseñas → Prototipo”. Configura los disparadores y el flujo de trabajo y, después, actívalo.",
+    "createFailed": "No se pudo crear el agente.",
+    "emptyTitle": "Aún no hay agentes autónomos",
+    "emptyAdmin": "Crea uno para convertir automáticamente el feedback nuevo en proyectos investigados y prototipos.",
+    "emptyUser": "Un administrador aún no ha configurado ningún agente que puedas ver.",
+    "loadFailed": "No se pudieron cargar los agentes.",
+    "spend": "{{runs}} ejecuciones programadas hoy · {{calls}} llamadas al modelo este mes",
+    "spendHint": "Las ejecuciones manuales no cuentan para el límite diario de ejecuciones programadas."
+  },
+  "library": {
+    "title": "Biblioteca de flujos de trabajo",
+    "subtitle": "Todos los flujos que pueden ejecutar los agentes. Archiva los que ya no necesites: salen de la biblioteca, pasan a ser de solo lectura y se conservan sus revisiones.",
+    "loadFailed": "No se pudo cargar la biblioteca de flujos de trabajo.",
+    "archive": "Archivar",
+    "archiveNamed": "Archivar {{name}}",
+    "archiveTitle": "¿Archivar este flujo de trabajo?",
+    "archiveMessage": "«{{name}}» se ocultará de la biblioteca y del selector de flujos y pasará a ser de solo lectura. Se conservan sus revisiones.",
+    "archiveInUse": "Un agente activo todavía ejecuta este flujo. Archiva ese agente o asígnale otro flujo primero.",
+    "archiveFailed": "No se pudo archivar el flujo de trabajo."
+  },
+  "fields": {
+    "name": "Nombre",
+    "description": "Descripción",
+    "scope": "Feedback que vigila",
+    "instructions": "Instrucciones",
+    "instructionsHint": "Indicaciones personalizadas para todo el equipo (hasta {{n}} caracteres).",
+    "visibility": "Visibilidad de los proyectos que entrega",
+    "visibilityHint": "Los proyectos privados solo los ven su propietario, sus miembros y los administradores.",
+    "workflow": "Flujo de trabajo",
+    "workflowDefault": "Reseñas → Prototipo (integrado)",
+    "workflowHint": "Edita los pasos en la pestaña Flujo de trabajo."
+  },
+  "visibility": {
+    "private": "Privado",
+    "public": "Público"
+  },
+  "detail": {
+    "back": "Todos los agentes",
+    "tabs": "Secciones del agente",
+    "enabledLabel": "Activado",
+    "toggleFailed": "No se pudo activar ni desactivar el agente.",
+    "save": "Guardar",
+    "saved": "Guardado",
+    "saveFailed": "No se pudieron guardar los cambios.",
+    "discard": "Descartar cambios",
+    "archive": "Archivar",
+    "archiveTitle": "¿Archivar este agente?",
+    "archiveMessage": "Deja de ejecutarse y desaparece de la lista. Los proyectos que creó se conservan.",
+    "notFound": "Este agente no existe o no puedes verlo.",
+    "stats": "{{runs}} ejecuciones en total · {{today}} programadas hoy · {{calls}} llamadas al modelo este mes"
+  },
+  "tabs": {
+    "settings": "Configuración",
+    "triggers": "Disparadores",
+    "personas": "Personas",
+    "instructions": "Instrucciones",
+    "models": "Modelos",
+    "budget": "Presupuesto",
+    "workflow": "Flujo de trabajo",
+    "runs": "Ejecuciones"
+  },
+  "triggers": {
+    "hint": "Lo que activa al agente. Se ejecuta por sí solo como máximo dos veces al día y nunca dos veces a la vez.",
+    "none": "Sin disparadores: solo se ejecuta cuando alguien pulsa Ejecutar ahora.",
+    "remove": "Eliminar disparador",
+    "minNew": "Reseñas nuevas necesarias",
+    "cooldown": "Tiempo de espera (horas)",
+    "every": "Cada",
+    "cron": "Expresión cron",
+    "cronHint": "Cinco campos, p. ej. 0 9 * * 1 para los lunes a las 09:00.",
+    "timezone": "Zona horaria",
+    "count": "Reseñas",
+    "per": "Por",
+    "windowDays": "En un plazo de (días)",
+    "kinds": {
+      "new_reviews": "Reseñas nuevas",
+      "schedule": "Programación",
+      "threshold": "Umbral"
+    },
+    "kindHints": {
+      "new_reviews": "Se ejecuta cuando ha llegado suficiente feedback nuevo a su ámbito desde la última ejecución.",
+      "schedule": "Se ejecuta según una programación fija.",
+      "threshold": "Se ejecuta cuando una categoría o subcategoría alcanza un número de reseñas en un periodo."
+    },
+    "everyOptions": {
+      "12h": "12 horas",
+      "24h": "24 horas",
+      "cron": "Personalizado (cron)"
+    },
+    "perOptions": {
+      "category": "Categoría",
+      "subcategory": "Subcategoría"
+    }
+  },
+  "personas": {
+    "fixed": "Personas fijas ({{n}} de {{max}})",
+    "none": "Sin personas fijas: el agente las elige del proyecto.",
+    "add": "Añadir persona",
+    "remove": "Eliminar persona",
+    "project": "Proyecto",
+    "persona": "Persona",
+    "chooseProject": "Elige un proyecto",
+    "choosePersona": "Elige una persona",
+    "allowGenerate": "Permitir que el agente genere personas nuevas cuando ninguna encaje"
+  },
+  "models": {
+    "hint": "Cambia el modelo por rol del equipo. Deja el valor predeterminado para seguir Configuración → Modelos de IA.",
+    "default": "Predeterminado de Configuración",
+    "roleHint": {
+      "orchestrator": "Decide el siguiente paso y verifica cada resultado.",
+      "worker": "Redacta investigaciones, documentos y prototipos.",
+      "reviewer": "Revisa el trabajo antes de la entrega.",
+      "persona": "Habla en nombre de cada persona en las revisiones."
+    }
+  },
+  "roles": {
+    "orchestrator": "Orquestador",
+    "worker": "Ejecutor",
+    "reviewer": "Revisor",
+    "persona": "Persona"
+  },
+  "budget": {
+    "runsPerDay": "Ejecuciones programadas al día",
+    "runsPerDayHint": "Como máximo 2. Las ejecuciones manuales no cuentan.",
+    "callsPerRun": "Llamadas al modelo por ejecución",
+    "monthlyCap": "Límite mensual de llamadas al modelo",
+    "monthlyCapHint": "El agente deja de iniciar ejecuciones cuando las llamadas del mes alcanzan este límite.",
+    "uncapped": "Sin límite mensual"
+  },
+  "run": {
+    "hint": "Cada ejecución sigue el flujo de trabajo. El gráfico ilumina los pasos a medida que se ejecutan; es una vista, no un control.",
+    "list": "Ejecuciones",
+    "none": "Aún no hay ejecuciones.",
+    "runNow": "Ejecutar ahora",
+    "alreadyRunning": "Ya hay una ejecución en curso.",
+    "startFailed": "No se pudo iniciar la ejecución.",
+    "cancel": "Cancelar ejecución",
+    "cancelFailed": "No se pudo cancelar la ejecución.",
+    "calls": "{{n}} llamadas al modelo",
+    "openProject": "Abrir proyecto",
+    "eventLog": "Registro de eventos",
+    "noEvents": "Aún no hay eventos.",
+    "noGraph": "No se pudo cargar el flujo de trabajo de esta ejecución.",
+    "olderRevision": "Esta ejecución usó la revisión {{n}} del flujo de trabajo.",
+    "graphLabel": "Gráfico de progreso de la ejecución",
+    "showAll": "Mostrar todos los eventos (filtrado por {{step}})",
+    "rounds": "Ronda {{n}}",
+    "status": {
+      "queued": "En cola",
+      "running": "En ejecución",
+      "needs_human": "Requiere una persona",
+      "completed": "Completada",
+      "failed": "Fallida",
+      "cancelled": "Cancelada"
+    },
+    "triggers": {
+      "manual": "Manual",
+      "schedule": "Programación",
+      "new_reviews": "Reseñas nuevas",
+      "threshold": "Umbral"
+    },
+    "stepStatus": {
+      "idle": "Sin iniciar",
+      "running": "En ejecución",
+      "done": "Hecho",
+      "failed": "Fallido"
+    },
+    "eventKinds": {
+      "node_started": "Paso iniciado",
+      "node_finished": "Paso finalizado",
+      "node_failed": "Paso fallido",
+      "message": "Mensaje",
+      "verdict": "Veredicto",
+      "decision": "Decisión",
+      "artifact": "Artefacto"
+    }
+  },
+  "editor": {
+    "canvasLabel": "Lienzo del flujo de trabajo",
+    "minimap": "Vista general del flujo de trabajo",
+    "palette": "Pasos",
+    "paletteHint": "Arrastra un paso al lienzo o pulsa Intro para añadirlo.",
+    "panel": "Configuración del paso",
+    "nothingSelected": "Selecciona un paso, una flecha o un bucle (en el lienzo o en el esquema de abajo) para configurarlo.",
+    "multiSelected": "{{n}} pasos seleccionados",
+    "groupLoop": "Agrupar como bucle",
+    "ungroupLoop": "Quitar el bucle",
+    "loopTitle": "Bucle {{n}}",
+    "loopMembers": "{{n}} pasos",
+    "loopFrame": "Repetir hasta que {{until}}",
+    "arrow": "Flecha",
+    "deleteArrow": "Eliminar flecha",
+    "deleteStep": "Eliminar paso",
+    "builtin": "Plantilla integrada: guarda una copia para modificarla.",
+    "revision": "Revisión {{n}}",
+    "unsaved": "Cambios sin guardar",
+    "save": "Guardar",
+    "saveAs": "Guardar como…",
+    "saveAsTitle": "Guardar como nuevo flujo de trabajo",
+    "copyName": "{{name}} (copia)",
+    "import": "Importar",
+    "export": "Exportar",
+    "reset": "Restablecer plantilla",
+    "resetTitle": "¿Restablecer la plantilla?",
+    "resetMessage": "Tus cambios sin guardar se sustituirán por el flujo de trabajo integrado “Reseñas → Prototipo”.",
+    "conflict": "Alguien guardó una revisión más reciente mientras tanto.",
+    "conflictReload": "Cargar la más reciente",
+    "conflictSaveAs": "Guardar la mía como copia",
+    "loadFailed": "No se pudo cargar el flujo de trabajo.",
+    "generalIssues": "Problemas del flujo de trabajo",
+    "issueCount_one": "{{count}} problema",
+    "issueCount_other": "{{count}} problemas",
+    "valid": "El flujo de trabajo es válido.",
+    "validUnsaved": "Válido; aún no guardado.",
+    "outcome": {
+      "saved": "Guardado.",
+      "conflict": "Alguien guardó una revisión más reciente mientras tanto.",
+      "invalid": "El servidor rechazó el flujo de trabajo: corrige los problemas y vuelve a guardar.",
+      "failed": "No se pudo guardar el flujo de trabajo.",
+      "import_failed": "Ese archivo no es un flujo de trabajo válido."
+    },
+    "fields": {
+      "workflowName": "Nombre del flujo de trabajo",
+      "title": "Título",
+      "instructions": "Instrucciones",
+      "instructionsRequired": "Instrucciones (obligatorio)",
+      "role": "Rol",
+      "roleNone": "Sin rol",
+      "label": "Condición",
+      "labelNone": "Siempre",
+      "until": "Hasta que",
+      "maxRounds": "Rondas máximas",
+      "description": "Descripción",
+      "arrowTarget": "Al paso",
+      "arrowTargetNone": "Elige un paso…",
+      "joinLoop": "Bucle"
+    },
+    "params": {
+      "target": "Objetivo",
+      "targetAny": "Lo último que se haya producido",
+      "maxNew": "Máximo de personas nuevas",
+      "useWebSearch": "Usar búsqueda web",
+      "endStatus": "La ejecución termina como"
+    },
+    "loopFrameLabel": "Bucle {{n}}: hasta que {{until}}, como máximo {{rounds}} rondas",
+    "loopFrameHint": "Haz clic para configurar este bucle",
+    "arrowLabel": "Flecha de {{source}} a {{target}} ({{condition}})",
+    "conditionHint": "La flecha se sigue cuando el paso informa este resultado; «Siempre» es el camino por defecto.",
+    "noConditions": "Este paso no emite veredicto, así que sus flechas se siguen siempre.",
+    "arrowsOut": "Flechas de salida",
+    "noArrowsOut": "Todavía no sale ninguna flecha de este paso.",
+    "addArrow": "Añadir una flecha",
+    "addArrowButton": "Añadir flecha",
+    "noArrowTargets": "Todos los demás pasos ya están conectados desde aquí.",
+    "deleteArrowTo": "Eliminar la flecha hacia {{target}}",
+    "conditionTo": "Condición hacia {{target}}",
+    "loopStepsLegend": "Pasos de este bucle",
+    "maxRoundsHint": "Un número entero de {{min}} a {{max}}; al llegar al límite la ejecución se detiene y pide ayuda a una persona.",
+    "joinLoop": "Añadir al bucle",
+    "joinLoopHint": "Un bucle repite sus pasos hasta que se cumple su condición de salida.",
+    "newLoop": "Un bucle nuevo",
+    "loopOption_one": "Bucle {{n}} ({{count}} paso)",
+    "loopOption_other": "Bucle {{n}} ({{count}} pasos)",
+    "leaveLoop": "Sacar este paso del bucle",
+    "outlineSteps": "Pasos de este flujo de trabajo",
+    "outlineStepsCount": "Pasos ({{n}})",
+    "outlineLoops": "Bucles",
+    "emptyCanvas": "El lienzo está vacío: añade pasos desde la paleta.",
+    "selectStep": "Configurar el paso {{title}}",
+    "backToWorkflow": "Ajustes del flujo de trabajo",
+    "clear": "Vaciar el lienzo",
+    "clearTitle": "¿Vaciar el lienzo?",
+    "clearMessage": "Se quitan del borrador todos los pasos, flechas y bucles para que construyas el flujo desde cero. No se guarda nada hasta que guardes."
+  },
+  "paletteGroups": {
+    "flow": "Flujo",
+    "research": "Investigación",
+    "documents": "Documentos",
+    "review": "Revisión",
+    "prototype": "Prototipo",
+    "delivery": "Entrega"
+  },
+  "edgeLabels": {
+    "pass": "Aprobado",
+    "fail": "Suspenso",
+    "agreed": "De acuerdo",
+    "not_agreed": "Sin acuerdo"
+  },
+  "loopUntil": {
+    "persona_agreement": "las personas estén de acuerdo",
+    "review_pass": "se apruebe la revisión"
+  },
+  "reviewTargets": {
+    "prfaq": "PR/FAQ",
+    "prd": "PRD",
+    "prototype": "Prototipo"
+  },
+  "endStatuses": {
+    "completed": "Completada",
+    "needs_human": "Requiere una persona"
+  },
+  "nodeTypes": {
+    "start": {
+      "label": "Inicio",
+      "description": "Donde empieza cada ejecución."
+    },
+    "aggregate_reviews": {
+      "label": "Agregar reseñas",
+      "description": "Recopila el feedback nuevo del ámbito del agente e identifica los temas principales."
+    },
+    "select_or_create_project": {
+      "label": "Seleccionar o crear proyecto",
+      "description": "Reutiliza un proyecto con el mismo propósito o crea uno nuevo."
+    },
+    "select_personas": {
+      "label": "Seleccionar personas",
+      "description": "Elige las personas relevantes para estas reseñas."
+    },
+    "generate_personas": {
+      "label": "Generar personas",
+      "description": "Crea personas nuevas a partir del feedback cuando ninguna encaja."
+    },
+    "deep_research": {
+      "label": "Investigación a fondo",
+      "description": "Ejecuta un trabajo de investigación en el proyecto, opcionalmente con búsqueda web."
+    },
+    "write_prfaq": {
+      "label": "Redactar PR/FAQ",
+      "description": "Redacta un comunicado de prensa y unas FAQ para la idea."
+    },
+    "write_prd": {
+      "label": "Redactar PRD",
+      "description": "Redacta un documento de requisitos de producto."
+    },
+    "revise_document": {
+      "label": "Revisar documento",
+      "description": "Reescribe un documento a partir de las objeciones de la revisión."
+    },
+    "duplicate_document": {
+      "label": "Duplicar documento",
+      "description": "Copia un documento en otro proyecto."
+    },
+    "persona_review": {
+      "label": "Revisión de personas",
+      "description": "Las personas puntúan el trabajo; acuerdo = media de 4 o más y nada bloqueante."
+    },
+    "final_review": {
+      "label": "Revisión final",
+      "description": "Un revisor comprueba todo el paquete antes de la entrega."
+    },
+    "custom_llm": {
+      "label": "Paso personalizado",
+      "description": "Un paso guiado por tus propias instrucciones."
+    },
+    "build_prototype": {
+      "label": "Crear prototipo",
+      "description": "Crea un prototipo HTML con el sistema de diseño."
+    },
+    "collect_prototype_feedback": {
+      "label": "Recoger pines de testers",
+      "description": "Lee los pines abiertos que los testers dejaron en el prototipo, para la próxima revisión."
+    },
+    "revise_prototype": {
+      "label": "Revisar prototipo",
+      "description": "Modifica el prototipo a partir de las objeciones de la revisión."
+    },
+    "handoff": {
+      "label": "Entregar",
+      "description": "Entrega el proyecto al propietario de su categoría principal."
+    },
+    "end": {
+      "label": "Fin",
+      "description": "Donde termina la ejecución."
+    }
+  },
+  "loopUntilHint": {
+    "persona_agreement": "Se repite mientras la revisión de personas del bucle responda «No de acuerdo».",
+    "review_pass": "Se repite mientras un paso de revisión del bucle responda «No supera»."
+  }
+}

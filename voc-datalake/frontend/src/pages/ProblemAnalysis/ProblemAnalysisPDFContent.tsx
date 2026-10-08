@@ -5,6 +5,8 @@
  */
 
 import { sentimentLabelFromScore } from '../../lib/sentiment'
+import { CircleCheck, TriangleAlert, Lightbulb } from 'lucide-react'
+import { PdfIcon, PdfReport, PdfReportHeader } from '../../components/PdfParts/pdfParts'
 
 interface ProblemGroupPDF {
   readonly problem: string
@@ -46,9 +48,9 @@ export interface ProblemAnalysisPDFProps {
 }
 
 function getSentimentColor(score: number): string {
-  if (score > 0) return '#16a34a'
-  if (score < -0.3) return '#dc2626'
-  return '#6b7280'
+  if (score > 0) return '#007038'
+  if (score < -0.3) return '#bd1c3a'
+  return '#5e5966'
 }
 
 function buildActiveFilters(filters: ProblemAnalysisPDFProps['filters']): string[] {
@@ -74,26 +76,26 @@ function buildHeaderStats(categories: CategoryGroupPDF[]) {
     {
       label: 'Categories',
       value: categories.length,
-      bg: '#f0f9ff',
-      color: '#1d4ed8',
+      bg: '#f1e9ff',
+      color: '#723acc',
     },
     {
       label: 'Problems',
       value: totalProblems,
-      bg: '#fef3c7',
-      color: '#92400e',
+      bg: '#f0eee6',
+      color: '#6b5900',
     },
     {
       label: 'Feedback Items',
       value: totalFeedback,
-      bg: '#f0fdf4',
-      color: '#166534',
+      bg: '#e0eee7',
+      color: '#007038',
     },
     {
       label: 'Urgent',
       value: totalUrgent,
-      bg: '#fef2f2',
-      color: '#991b1b',
+      bg: '#f8e8eb',
+      color: '#bd1c3a',
     },
   ]
 }
@@ -102,54 +104,17 @@ function HeaderSection({
   categories, timeRange, filters,
 }: ProblemAnalysisPDFProps) {
   const activeFilters = buildActiveFilters(filters)
-  const stats = buildHeaderStats(categories)
+  const subtitle = activeFilters.length > 0
+    ? `Time range: ${timeRange} • ${activeFilters.join(' • ')}`
+    : `Time range: ${timeRange}`
 
   return (
-    <div data-pdf-section style={{ marginBottom: '24px' }}>
-      <h1 style={{
-        fontSize: '28px',
-        fontWeight: 'bold',
-        margin: '0 0 4px 0',
-        color: '#111827',
-      }}>
-        Problem Analysis Report
-      </h1>
-      <p style={{
-        fontSize: '14px',
-        color: '#6b7280',
-        margin: '0 0 16px 0',
-      }}>
-        Time range: {timeRange}
-        {activeFilters.length > 0 && ` • ${activeFilters.join(' • ')}`}
-      </p>
-      <div style={{
-        display: 'flex',
-        gap: '16px',
-        flexWrap: 'wrap',
-      }}>
-        {stats.map((stat) => (
-          <div key={stat.label} style={{
-            padding: '12px 20px',
-            backgroundColor: stat.bg,
-            borderRadius: '8px',
-            minWidth: '120px',
-          }}>
-            <p style={{
-              fontSize: '12px',
-              color: stat.color,
-              fontWeight: '500',
-              margin: '0 0 4px 0',
-            }}>{stat.label}</p>
-            <p style={{
-              fontSize: '24px',
-              fontWeight: 'bold',
-              color: stat.color,
-              margin: 0,
-            }}>{stat.value}</p>
-          </div>
-        ))}
-      </div>
-    </div>
+    <PdfReportHeader
+      title="Problem Analysis Report"
+      subtitle={subtitle}
+      stats={buildHeaderStats(categories)}
+      statMinWidth="120px"
+    />
   )
 }
 
@@ -158,9 +123,9 @@ function ProblemItem({ problem, resolvedLabel }: { readonly problem: ProblemGrou
   return (
     <div data-pdf-section style={{
       padding: '10px 16px',
-      borderLeft: resolved ? '3px solid #16a34a' : '3px solid #f59e0b',
+      borderLeft: resolved ? '3px solid #007038' : '3px solid #6b5900',
       marginBottom: '8px',
-      backgroundColor: resolved ? '#f0fdf4' : '#fffbeb',
+      backgroundColor: resolved ? '#e0eee7' : '#f0eee6',
       borderRadius: '0 6px 6px 0',
       opacity: resolved ? 0.75 : 1,
     }}>
@@ -174,16 +139,16 @@ function ProblemItem({ problem, resolvedLabel }: { readonly problem: ProblemGrou
           <p style={{
             fontSize: '13px',
             fontWeight: '600',
-            color: '#1f2937',
+            color: '#19161d',
             margin: '0 0 4px 0',
           }}>
-            {resolved ? '✅' : '⚠️'} {problem.problem}
+            {resolved ? <PdfIcon icon={CircleCheck} color="#007038" /> : <PdfIcon icon={TriangleAlert} color="#6b5900" />}{problem.problem}
             {resolved && (
               <span style={{
                 fontSize: '10px',
                 fontWeight: '600',
-                color: '#166534',
-                backgroundColor: '#dcfce7',
+                color: '#007038',
+                backgroundColor: '#e0eee7',
                 borderRadius: '9999px',
                 padding: '2px 8px',
                 marginLeft: '8px',
@@ -194,7 +159,7 @@ function ProblemItem({ problem, resolvedLabel }: { readonly problem: ProblemGrou
             {problem.similarProblems.length > 0 && (
               <span style={{
                 fontSize: '11px',
-                color: '#6b7280',
+                color: '#5e5966',
                 fontWeight: 'normal',
               }}>
                 {' '}(+{problem.similarProblems.length} similar)
@@ -203,10 +168,10 @@ function ProblemItem({ problem, resolvedLabel }: { readonly problem: ProblemGrou
           </p>
           {problem.rootCause != null && problem.rootCause !== '' ? <p style={{
             fontSize: '12px',
-            color: '#6b7280',
+            color: '#5e5966',
             margin: '0 0 2px 0',
           }}>
-            💡 {problem.rootCause}
+            <PdfIcon icon={Lightbulb} color="#5e5966" />{problem.rootCause}
           </p> : null}
         </div>
         <div style={{
@@ -217,13 +182,13 @@ function ProblemItem({ problem, resolvedLabel }: { readonly problem: ProblemGrou
         }}>
           <span style={{
             fontSize: '12px',
-            color: '#6b7280',
+            color: '#5e5966',
           }}>{problem.itemCount} items</span>
           {problem.urgentCount > 0 && (
             <span style={{
               padding: '2px 8px',
-              backgroundColor: '#fecaca',
-              color: '#991b1b',
+              backgroundColor: '#f8e8eb',
+              color: '#bd1c3a',
               borderRadius: '10px',
               fontSize: '11px',
               fontWeight: '500',
@@ -233,7 +198,7 @@ function ProblemItem({ problem, resolvedLabel }: { readonly problem: ProblemGrou
           )}
           <span style={{
             padding: '2px 8px',
-            backgroundColor: '#f3f4f6',
+            backgroundColor: '#f5f5f5',
             color: getSentimentColor(problem.avgSentiment),
             borderRadius: '10px',
             fontSize: '11px',
@@ -268,7 +233,7 @@ function SubcategorySection({
         <h3 style={{
           fontSize: '15px',
           fontWeight: '600',
-          color: '#374151',
+          color: '#4a464f',
           margin: 0,
           textTransform: 'capitalize',
         }}>
@@ -276,15 +241,15 @@ function SubcategorySection({
         </h3>
         <span style={{
           fontSize: '12px',
-          color: '#9ca3af',
+          color: '#5e5966',
         }}>
           {subcategory.problems.length} problems • {subcategory.totalItems} items
         </span>
         {subcategory.urgentCount > 0 && (
           <span style={{
             padding: '2px 8px',
-            backgroundColor: '#fecaca',
-            color: '#991b1b',
+            backgroundColor: '#f8e8eb',
+            color: '#bd1c3a',
             borderRadius: '10px',
             fontSize: '11px',
           }}>
@@ -307,15 +272,15 @@ function CategorySection({ category, resolvedLabel }: { readonly category: Categ
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: '12px 16px',
-        backgroundColor: '#f8fafc',
+        backgroundColor: '#f5f5f5',
         borderRadius: '8px',
-        borderLeft: '4px solid #3b82f6',
+        borderLeft: '4px solid #8e48ff',
         marginBottom: '12px',
       }}>
         <h2 style={{
           fontSize: '18px',
           fontWeight: '700',
-          color: '#1e293b',
+          color: '#19161d',
           margin: 0,
           textTransform: 'capitalize',
         }}>
@@ -326,15 +291,15 @@ function CategorySection({ category, resolvedLabel }: { readonly category: Categ
           gap: '12px',
           alignItems: 'center',
           fontSize: '13px',
-          color: '#64748b',
+          color: '#5e5966',
         }}>
           <span>{category.subcategories.length} subcategories</span>
           <span>{category.totalItems} items</span>
           {category.urgentCount > 0 && (
             <span style={{
               padding: '2px 8px',
-              backgroundColor: '#fecaca',
-              color: '#991b1b',
+              backgroundColor: '#f8e8eb',
+              color: '#bd1c3a',
               borderRadius: '10px',
               fontSize: '12px',
               fontWeight: '500',
@@ -358,34 +323,13 @@ function CategorySection({ category, resolvedLabel }: { readonly category: Categ
 
 export default function ProblemAnalysisPDFContent(props: ProblemAnalysisPDFProps) {
   return (
-    <div style={{
-      padding: '40px',
-      backgroundColor: 'white',
-    }}>
-      <HeaderSection {...props} />
-      <hr style={{
-        border: 'none',
-        borderTop: '2px solid #e5e7eb',
-        marginBottom: '24px',
-      }} />
+    <PdfReport
+      header={<HeaderSection {...props} />}
+      footer={`Generated on ${new Date().toLocaleDateString()} • VoC Analytics — Problem Analysis Report`}
+    >
       {props.categories.map((category) => (
         <CategorySection key={category.category} category={category} resolvedLabel={props.resolvedLabel} />
       ))}
-      <div data-pdf-section>
-        <hr style={{
-          border: 'none',
-          borderTop: '1px solid #e5e7eb',
-          marginTop: '32px',
-          marginBottom: '16px',
-        }} />
-        <p style={{
-          fontSize: '11px',
-          color: '#9ca3af',
-          textAlign: 'center',
-        }}>
-          Generated on {new Date().toLocaleDateString()} • VoC Analytics — Problem Analysis Report
-        </p>
-      </div>
-    </div>
+    </PdfReport>
   )
 }

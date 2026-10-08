@@ -8,7 +8,7 @@
  * @module pages/ProblemAnalysis/problemResolution
  */
 import { z } from 'zod'
-import type { FeedbackItem } from '../../api/client'
+import type { FeedbackItem } from '../../api/types'
 
 /** Map of resolution keys to their resolution metadata, as stored server-side. */
 export type ResolvedProblemsMap = Record<string, { resolved_at: string }>

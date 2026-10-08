@@ -1,24 +1,4 @@
 {
-  "autoseed": {
-    "copyFailed": "Copy failed — please try again.",
-    "copyKiroPrompt": "Copy Kiro Prompt",
-    "description": "Select personas and documents to seed into a Kiro workspace",
-    "deselectAll": "Deselect all",
-    "docTypes": {
-      "custom": "Custom",
-      "prd": "PRDs",
-      "prfaq": "PR/FAQs",
-      "product_report": "Product Reports",
-      "research": "Research"
-    },
-    "documents": "Documents ({{selected}}/{{total}})",
-    "generatedPrompt": "Generated Kiro Prompt",
-    "generateFirst": "Generate personas or documents first to use autoseed.",
-    "pasteHint": "Paste this into Kiro chat. Requires an API token from the MCP Access tab.",
-    "personas": "Personas ({{selected}}/{{total}})",
-    "selectAll": "Select all",
-    "title": "Kiro Autoseed"
-  },
   "chat": {
     "askPlaceholder": "Ask about your project...",
     "attachFile": "Attach image or PDF",
@@ -28,7 +8,7 @@
     "fileTooLarge": "File too large (max 5MB): {{name}}",
     "mentionHint": "Type <at> for personas, <atAll> for roundtable, or <hash> for documents",
     "projectAiChat": "Project AI Chat",
-    "roundtable": "🎙️ Roundtable: all {{count}} personas",
+    "roundtable": "Roundtable: all {{count}} personas",
     "send": "Send message",
     "startConversation": "Start a conversation",
     "stop": "Stop",
@@ -44,6 +24,9 @@
   },
   "documentModal": {
     "cancel": "Cancel",
+    "conflict": "Someone saved a newer version of this document meanwhile.",
+    "conflictReload": "Load the latest",
+    "conflictSaveAnyway": "Save mine anyway",
     "contentLabel": "Content (Markdown)",
     "contentPlaceholder": "Write your document in Markdown...",
     "create": "Create",
@@ -80,6 +63,28 @@
     "newDocument": "New Document",
     "noDocuments": "No documents",
     "ordinal": "{{ordinal}} of {{total}}",
+    "versions": {
+      "title": "Versions",
+      "hint": "Every edit saves a new version. Open or compare an earlier one, or restore it as a new version.",
+      "label": "v{{n}}",
+      "current": "Current",
+      "edited": "Edited",
+      "restoredFrom": "Restored from v{{n}}",
+      "open": "Open",
+      "openNamed": "Open {{label}}",
+      "compare": "Compare",
+      "compareNamed": "Compare {{label}} with the current version",
+      "compareTitle": "{{label}} compared with the current version",
+      "identical": "This version is identical to the current one.",
+      "restore": "Restore",
+      "restoreNamed": "Restore {{label}}",
+      "restoreTitle": "Restore this version?",
+      "restoreMessage": "A new version is saved with the content of v{{n}}. The current version stays in the list.",
+      "restoreFailed": "The version couldn't be restored. Try again.",
+      "loadFailed": "The versions couldn't be loaded.",
+      "close": "Close",
+      "cancel": "Cancel"
+    },
     "prototype": {
       "building": "Building…",
       "button": "Build Prototype",
@@ -120,15 +125,6 @@
       "heading": "Revision of"
     },
     "selectDocument": "Select a document"
-  },
-  "export": {
-    "copyContext": "Copy to clipboard",
-    "copyCopied": "Copied!",
-    "copyFailed": "Copy failed — please try again.",
-    "description": "Copy project context to clipboard — no API token needed",
-    "emptyHint": "Generate personas or documents first to enable export.",
-    "selectAtLeastOne": "Select at least one item in each section, or the export would include everything.",
-    "title": "Export"
   },
   "imageErrors": {
     "tooLarge": "{{name}} is still too large after resizing. Try a smaller screenshot, or crop it.",
@@ -200,85 +196,6 @@
       "importPersona": "Persona Import",
       "mergeDocuments": "Document Merge",
       "research": "Research"
-    }
-  },
-  "kiroExport": {
-    "cancel": "Cancel",
-    "configure": "Configure",
-    "description": "Configure context for \"Copy to Kiro\" exports",
-    "edit": "Edit",
-    "noPrompt": "No Kiro export prompt configured",
-    "noPromptHint": "Click \"Configure\" to add implementation context for PRD exports",
-    "save": "Save",
-    "saved": "Saved!",
-    "templateHint": "This context will be prepended to PRD/PR-FAQ documents when using \"Copy to Kiro\". Include your tech stack, coding standards, and implementation guidance.",
-    "templateLabel": "Export Prompt Template",
-    "title": "Kiro Export Settings",
-    "useDefault": "Use default template",
-    "usingDefault": "Following the default instructions. Click \"{{action}}\" to write your own."
-  },
-  "mcp": {
-    "activeTokens": "Active Tokens ({{count}})",
-    "activeTokens_one": "Active Tokens ({{count}})",
-    "activeTokens_other": "Active Tokens ({{count}})",
-    "cancel": "Cancel",
-    "collapseLabel": "Collapse",
-    "copied": "Copied",
-    "copy": "Copy",
-    "copyToken": "Copy token to clipboard",
-    "copyTokenNow": "Copy this token now — it won't be shown again.",
-    "createdDate": "Created {{date}}",
-    "description": "Generate API tokens to connect this project to MCP-compatible clients like Kiro or VS Code.",
-    "dismiss": "Dismiss",
-    "expandLabel": "Expand",
-    "expiredDate": "Expired {{date}}",
-    "expiresDate": "Expires {{date}}",
-    "expiry": "Expiration",
-    "expiryDays": "{{count}} days",
-    "expiryDays_one": "{{count}} day",
-    "expiryDays_other": "{{count}} days",
-    "expiryNever": "Never expires",
-    "generate": "Generate",
-    "generateNewToken": "Generate new API token",
-    "generateToken": "Generate Token",
-    "generating": "Generating...",
-    "hideToken": "Hide token",
-    "lastUsed": "Last used {{date}}",
-    "loadingTokens": "Loading tokens…",
-    "mcpConfig": "MCP Client Configuration",
-    "mcpConfigHint": "Add this to your <code>mcp.json</code>. Replace <code>&lt;YOUR_API_TOKEN&gt;</code> with a token from below.",
-    "notAvailable": "MCP Access is not available yet",
-    "notAvailableDesc": "The API token management endpoint has not been deployed. Deploy the backend with MCP token support to enable this feature.",
-    "noTokensHint": "Generate a token to connect MCP clients to this project.",
-    "noTokensYet": "No API tokens yet",
-    "revealToken": "Reveal token",
-    "revokeToken": "Revoke token",
-    "title": "MCP Access",
-    "tokenCreated": "Token created successfully",
-    "tokenExpiresOn": "This token expires on {{date}}.",
-    "tokenName": "Token name",
-    "tokenNamePlaceholder": "e.g. My Kiro token",
-    "tokenPasteHint": "Paste this token into the <code>Authorization</code> header of your mcp.json or autoseed curl command.",
-    "scopes": "Scopes",
-    "scopeDesc": {
-      "feedback_read": "Search and read customer feedback",
-      "metrics_read": "Read dashboards and metric breakdowns",
-      "projects_read": "Read projects, personas and documents"
-    },
-    "noScopes": "no scopes",
-    "readReach": "Read reach",
-    "reachOption": {
-      "workspace": "Whole workspace (default)",
-      "project-set": "This project only"
-    },
-    "reachHint": {
-      "workspace": "Reaches every project in the workspace — including other projects’ unreleased documents — and all customer feedback.",
-      "project-set": "Limited to this project. Cannot read the feedback corpus or workspace metrics, which are not project-scoped."
-    },
-    "reachBadge": {
-      "workspace": "Whole workspace",
-      "project-set": "This project",
-      "none": "No read access"
     }
   },
   "notFound": {
@@ -361,7 +278,9 @@
     "triggerLabel": "Trigger",
     "triggerPlaceholder": "What triggers this scenario",
     "workarounds": "Workarounds (one per line)",
-    "workaroundsPlaceholder": "How they currently cope..."
+    "workaroundsPlaceholder": "How they currently cope...",
+    "locationPlaceholder": "Urban, US",
+    "occupationPlaceholder": "Product Manager"
   },
   "personas": {
     "addNote": "Add Note",
@@ -378,12 +297,17 @@
     "notePlaceholder": "Type your research observation or insight...",
     "notesCount_one": "{{count}} note",
     "notesCount_other": "{{count}} notes",
-    "notesTip": "💡 Tip: Add observations from user interviews, usability tests, or data analysis that relate to this persona.",
+    "notesTip": "Tip: Add observations from user interviews, usability tests, or data analysis that relate to this persona.",
     "pressEnter": "Press Enter ↵",
     "removeNote": "Remove note",
     "researchNotes": "Research Notes",
     "reviews": "{{count}} reviews",
-    "selectToView": "Select a persona to view details"
+    "selectToView": "Select a persona to view details",
+    "editPersona": "Edit persona",
+    "deletePersona": "Delete persona",
+    "regenerateAvatar": "Regenerate avatar",
+    "regeneratingAvatar": "Generating a new avatar…",
+    "regenerateAvatarFailed": "The avatar couldn't be regenerated. Try again."
   },
   "personaSections": {
     "behaviorsHabits": "Behaviors & Habits",
@@ -478,10 +402,10 @@
   "tabs": {
     "aiChat": "AI Chat",
     "documents": "Documents",
-    "mcpAccess": "Export / MCP",
     "overview": "Overview",
     "personas": "Personas",
-    "product": "Product"
+    "product": "Product",
+    "label": "Project sections"
   },
   "wizards": {
     "amazonQuestions": "Amazon's 5 Customer Questions",
@@ -541,6 +465,7 @@
     "researchQuestionPlaceholder": "e.g., What are the main pain points...",
     "researchSuggest": "AI suggest",
     "researchSuggestEmpty": "No suggestions — add or collect more feedback first.",
+    "startFailed": "This could not be started. Try again.",
     "researchSuggesting": "Suggesting…",
     "researchSuggestPick": "Tap a suggestion to use it:",
     "researchSuggestTitle": "Let AI suggest research questions from this project's feedback",
@@ -549,11 +474,45 @@
     "researchWebSearch": "Public Web Search",
     "researchWebSearchHint": "AI plans and runs multiple web searches to ground the analysis (served within AWS, sources cited)",
     "runResearch": "Run Research",
-    "selectAtLeast2": "⚠️ Select at least 2 documents to remix.",
+    "selectAtLeast2": "Select at least 2 documents to remix.",
     "submitGenerateDoc": "Generate {{type}}",
     "submitGeneratePersonas": "Generate Personas",
     "submitRemixDocuments": "Remix Documents",
     "submitRunResearch": "Run Research",
     "workingBackwards": "Working Backwards"
+  },
+  "header": {
+    "back": "Back to projects",
+    "connectMcp": "Connect via MCP"
+  },
+  "companyStrip": {
+    "label": "Company context",
+    "title": "Company context",
+    "noVision": "No company vision yet.",
+    "more": "+{{n}} more",
+    "designSystem": "Design system:",
+    "open": "Knowledge → Company"
+  },
+  "prototypePins": {
+    "toggle": "Tester pins",
+    "showOnPrototype": "Show pins on the prototype",
+    "heading": "Tester pins",
+    "hint": "Testers click an element in the prototype and leave a comment. Agents revise the prototype from the open pins.",
+    "empty": "No pins yet. Click Feedback inside the prototype to leave one.",
+    "loadFailed": "The pins could not be loaded.",
+    "status": {
+      "open": "Open",
+      "addressed": "Addressed",
+      "resolved": "Resolved"
+    },
+    "flagged": "Flagged — kept away from agents",
+    "consoleErrors": "Console errors: {{count}}",
+    "addressedBy": "Addressed by revision {{id}}",
+    "pinNumber": "Pin {{number}}",
+    "reply": "Reply",
+    "replyPlaceholder": "Reply to the tester…",
+    "resolve": "Resolve",
+    "reopen": "Reopen",
+    "actionFailed": "That did not work. Please try again."
   }
 }

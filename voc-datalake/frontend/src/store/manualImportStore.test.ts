@@ -3,24 +3,12 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useManualImportStore } from './manualImportStore'
-
-const initialState = {
-  sourceUrl: '',
-  rawText: '',
-  parsedReviews: [],
-  unparsedSections: [],
-  jobId: null,
-  sourceOrigin: null,
-  lastUpdated: null,
-  isModalOpen: false,
-  isProcessing: false,
-  processingError: null,
-  step: 'input' as const,
-}
+import { at } from '@test/defined'
 
 describe('manualImportStore', () => {
   beforeEach(() => {
-    useManualImportStore.setState(initialState)
+    // The store's own initial state (zustand v5), so the reset cannot drift from it.
+    useManualImportStore.setState(useManualImportStore.getInitialState())
   })
 
   describe('setSourceUrl', () => {
@@ -57,7 +45,7 @@ describe('manualImportStore', () => {
       setParsedReviews(reviews)
 
       const state = useManualImportStore.getState()
-      expect(state.parsedReviews).toEqual(reviews)
+      expect(state.parsedReviews).toStrictEqual(reviews)
     })
   })
 
@@ -71,8 +59,8 @@ describe('manualImportStore', () => {
       updateReview(0, { text: 'Updated', rating: 5 })
 
       const state = useManualImportStore.getState()
-      expect(state.parsedReviews[0].text).toBe('Updated')
-      expect(state.parsedReviews[0].rating).toBe(5)
+      expect(at(state.parsedReviews, 0).text).toBe('Updated')
+      expect(at(state.parsedReviews, 0).rating).toBe(5)
     })
 
     it('preserves other review fields when updating', () => {
@@ -84,9 +72,20 @@ describe('manualImportStore', () => {
       updateReview(0, { rating: 5 })
 
       const state = useManualImportStore.getState()
-      expect(state.parsedReviews[0].text).toBe('Original')
-      expect(state.parsedReviews[0].author).toBe('John')
-      expect(state.parsedReviews[0].rating).toBe(5)
+      expect(at(state.parsedReviews, 0).text).toBe('Original')
+      expect(at(state.parsedReviews, 0).author).toBe('John')
+      expect(at(state.parsedReviews, 0).rating).toBe(5)
+    })
+
+    it('ignores an out-of-range index instead of inserting a partial review', () => {
+      const { setParsedReviews, updateReview } = useManualImportStore.getState()
+      const reviews = [{ text: 'Only', rating: 3, author: null, date: null, title: null }]
+      setParsedReviews(reviews)
+
+      updateReview(1, { text: 'Ghost' })
+      updateReview(-1, { text: 'Ghost' })
+
+      expect(useManualImportStore.getState().parsedReviews).toStrictEqual(reviews)
     })
   })
 
@@ -102,7 +101,7 @@ describe('manualImportStore', () => {
 
       const state = useManualImportStore.getState()
       expect(state.parsedReviews).toHaveLength(1)
-      expect(state.parsedReviews[0].text).toBe('Review 2')
+      expect(at(state.parsedReviews, 0).text).toBe('Review 2')
     })
   })
 
@@ -114,7 +113,7 @@ describe('manualImportStore', () => {
 
       const state = useManualImportStore.getState()
       expect(state.parsedReviews).toHaveLength(1)
-      expect(state.parsedReviews[0]).toEqual({
+      expect(state.parsedReviews[0]).toStrictEqual({
         text: '',
         rating: null,
         author: null,
@@ -133,8 +132,8 @@ describe('manualImportStore', () => {
 
       const state = useManualImportStore.getState()
       expect(state.parsedReviews).toHaveLength(2)
-      expect(state.parsedReviews[0].text).toBe('Existing')
-      expect(state.parsedReviews[1].text).toBe('')
+      expect(at(state.parsedReviews, 0).text).toBe('Existing')
+      expect(at(state.parsedReviews, 1).text).toBe('')
     })
   })
 
@@ -183,13 +182,14 @@ describe('manualImportStore', () => {
 
       state.clearDraft()
 
-      const newState = useManualImportStore.getState()
-      expect(newState.sourceUrl).toBe('')
-      expect(newState.rawText).toBe('')
-      expect(newState.parsedReviews).toEqual([])
-      expect(newState.jobId).toBeNull()
-      expect(newState.sourceOrigin).toBeNull()
-      expect(newState.lastUpdated).toBeNull()
+      expect(useManualImportStore.getState()).toMatchObject({
+        sourceUrl: '',
+        rawText: '',
+        parsedReviews: [],
+        jobId: null,
+        sourceOrigin: null,
+        lastUpdated: null,
+      })
     })
   })
 

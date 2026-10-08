@@ -1,0 +1,123 @@
+{
+  "add": {
+    "expiresAt": "만료일",
+    "failed": "기억을 저장하지 못했습니다. 다시 시도하세요.",
+    "label": {
+      "company": "회사 전체에 기억하기",
+      "personal": "나를 위해 기억하기"
+    },
+    "placeholder": {
+      "company": "예: 고객은 결제 전에 가격을 비교하는 것으로 나타났다",
+      "personal": "예: 짧은 답변을 선호함"
+    },
+    "proposedNotice": "회사 기억은 큐레이터만 바로 게시할 수 있으며, 내 기억은 먼저 검토됩니다.",
+    "retention": "보관 기간",
+    "saved": "기억했습니다.",
+    "submit": "기억하기"
+  },
+  "cancel": "취소",
+  "configureFirst": "먼저 설정에서 API 엔드포인트를 연결하세요.",
+  "confirm": "+1",
+  "confirmHint": "동의합니다 — 지지자로 추가",
+  "empty": "아직 기억된 내용이 없습니다.",
+  "expires": "{{date}}에 만료",
+  "filters": {
+    "anyKind": "모든 종류",
+    "anyStatus": "모든 상태",
+    "kind": "종류",
+    "search": "기억 검색",
+    "status": "상태 필터"
+  },
+  "forget": "잊기",
+  "forgetMessage": "\"{{statement}}\"은(는) 보관되며 자동으로 다시 학습되지 않습니다. 나중에 복원할 수 있습니다.",
+  "forgetTitle": "이 기억을 잊을까요?",
+  "imports": {
+    "content": "내용",
+    "contentPlaceholder": "여기에 페이지 텍스트를 붙여넣으세요…",
+    "counter": "{{count}} / {{max}}자",
+    "created": "생성된 기억: {{count}}",
+    "description": "문서나 웹 페이지를 붙여넣으세요. 학습한 내용은 일반 신뢰도 규칙에 따라 게시되며 원본은 보존됩니다.",
+    "failed": "가져오기를 시작하지 못했습니다. 다시 시도하세요.",
+    "history": "최근 가져오기",
+    "noHistory": "이 브라우저에서 가져온 항목이 아직 없습니다.",
+    "pageTitle": "제목",
+    "status": {
+      "completed": "완료",
+      "failed": "실패",
+      "processing": "처리 중",
+      "queued": "대기열"
+    },
+    "submit": "가져오기",
+    "title": "페이지 가져오기",
+    "url": "출처 링크(선택)"
+  },
+  "kind": {
+    "agents": "에이전트",
+    "customer": "고객",
+    "objective": "목표",
+    "other": "기타",
+    "product": "제품",
+    "strategy": "전략",
+    "working_style": "업무 스타일"
+  },
+  "loadFailed": "기억을 불러오지 못했습니다.",
+  "loadMore": "더 불러오기",
+  "loading": "기억을 불러오는 중…",
+  "merge": {
+    "description": "하나의 문장으로 대체합니다. 원본은 보관되고 지지자는 이어집니다.",
+    "failed": "병합하지 못했습니다. 다시 시도하세요.",
+    "open": "선택 항목 병합",
+    "statement": "병합된 문장",
+    "submit": "병합",
+    "title": "기억 병합({{count}})"
+  },
+  "meta": "{{created}}부터 · {{retention}}",
+  "restore": "복원",
+  "retention": {
+    "dated": "특정 날짜까지",
+    "decay": "사용하지 않으면 사라짐",
+    "long_term": "장기 보관"
+  },
+  "retry": "다시 시도",
+  "review": {
+    "actions": {
+      "keep": "이것을 유지",
+      "keep_both": "둘 다 유지",
+      "merge": "하나로 병합",
+      "replace": "기존 항목 유지"
+    },
+    "aligned": "연관 목표: {{objectives}}",
+    "apply": "적용",
+    "empty": "검토할 항목이 없습니다. 제안이나 충돌이 없습니다.",
+    "existing": "현재 기억하는 내용",
+    "failed": "해결 방법을 적용하지 못했습니다. 다시 시도하세요.",
+    "newClaim": "새 주장",
+    "proposed": "제안된 기억",
+    "resolution": "해결 방법",
+    "suggested": "추천: {{action}}"
+  },
+  "reviewLoadFailed": "검토 대기열을 불러오지 못했습니다. 검토 대기 중인 메모리가 여기에 표시되지 않을 수 있습니다.",
+  "selectForMerge": "병합 대상으로 선택: {{statement}}",
+  "selected": "선택됨: {{count}}",
+  "source": {
+    "agent": "자율 에이전트",
+    "extracted": "채팅에서 학습",
+    "import": "가져옴",
+    "user_explicit": "사람이 추가함"
+  },
+  "status": {
+    "active": "활성",
+    "archived": "보관됨",
+    "conflict": "충돌",
+    "proposed": "제안됨"
+  },
+  "subtitle": "어시스턴트와 자율 에이전트가 기억하는 것: 공유된 회사 지식과 나만의 선호.",
+  "supportersHint": "이를 말했거나 확인한 사람",
+  "tabs": {
+    "company": "회사",
+    "imports": "가져오기",
+    "personal": "개인",
+    "review": "검토 필요"
+  },
+  "title": "메모리"
+}

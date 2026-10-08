@@ -5,15 +5,18 @@
 
 import { X, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import type { ProjectPersona, ProjectDocument } from '../../api/client'
+import type { ProjectDocument } from '../../api/types'
+import type { ProjectPersona } from '../../api/projectTypes'
 import clsx from 'clsx'
 import type { ContextConfig } from './types'
-import { DataSourcesStep, FeedbackFiltersStep, ItemSelectionStep } from './DataSourceSteps'
+import { DataSourcesStep, FeedbackFiltersStep } from './DataSourceSteps'
+import { ItemSelectionStep } from './ItemSelectionStep'
 import type { ExtraDataSource } from './DataSourceSteps'
 import { useWizardState } from './useWizardState'
-import ModalShell from '../ModalShell'
+import ModalShell from '../ModalShell/ModalShell'
+import type { Tone } from '../../theme/tones'
 
-type AccentColor = 'purple' | 'amber' | 'blue' | 'green'
+type AccentColor = Extract<Tone, 'accent' | 'warn' | 'info' | 'ok'>
 
 interface DataSourceWizardProps {
   readonly title: string
@@ -36,10 +39,12 @@ interface DataSourceWizardProps {
 }
 
 const colorClasses = {
-  purple: { bg: 'bg-purple-600', bgLight: 'bg-purple-100', border: 'border-purple-300', text: 'text-purple-700', hover: 'hover:bg-purple-700' },
-  amber: { bg: 'bg-amber-600', bgLight: 'bg-amber-100', border: 'border-amber-300', text: 'text-amber-700', hover: 'hover:bg-amber-700' },
-  blue: { bg: 'bg-blue-600', bgLight: 'bg-blue-100', border: 'border-blue-300', text: 'text-blue-700', hover: 'hover:bg-blue-700' },
-  green: { bg: 'bg-green-600', bgLight: 'bg-green-100', border: 'border-green-300', text: 'text-green-700', hover: 'hover:bg-green-700' },
+  // Caller-facing names are legacy hues; each maps to a semantic token by meaning:
+  // purple = brand primary, amber = warn, blue = info, green = ok.
+  accent: { bg: 'bg-accent', fg: 'text-accent-fg', bgLight: 'bg-accent-subtle', border: 'border-accent/30', text: 'text-accent-text', hover: 'hover:bg-accent-hover' },
+  warn: { bg: 'bg-warn', fg: 'text-warn-fg', bgLight: 'bg-warn-subtle', border: 'border-warn/30', text: 'text-warn', hover: 'hover:bg-warn/90' },
+  info: { bg: 'bg-info', fg: 'text-info-fg', bgLight: 'bg-info-subtle', border: 'border-info/30', text: 'text-info', hover: 'hover:bg-info/90' },
+  ok: { bg: 'bg-ok', fg: 'text-ok-fg', bgLight: 'bg-ok-subtle', border: 'border-ok/30', text: 'text-ok', hover: 'hover:bg-ok/90' },
 }
 
 export default function DataSourceWizard({
@@ -90,12 +95,12 @@ export default function DataSourceWizard({
       isOpen
       onClose={onClose}
       ariaLabel={title}
-      panelClassName="max-w-2xl max-h-[90vh] overflow-hidden"
+      panelClassName="max-w-2xl max-h-[90vh]"
     >
       <WizardHeader title={title} icon={icon} step={step} totalSteps={totalSteps} onClose={onClose} />
       <ProgressBar step={step} totalSteps={totalSteps} bgClass={colors.bg} />
 
-      <div className="p-4 sm:p-6 overflow-y-auto max-h-[60vh]">
+      <div className="dialog-body">
         {stepContent === 'dataSources' && (
           <DataSourcesStep
             contextConfig={contextConfig}
@@ -166,22 +171,22 @@ interface WizardHeaderProps {
 function WizardHeader({ title, icon, step, totalSteps, onClose }: WizardHeaderProps) {
   const { t } = useTranslation('components')
   return (
-    <div className="flex items-center justify-between p-3 sm:p-4 border-b">
+    <div className="dialog-header justify-between">
       <div className="flex items-center gap-2 sm:gap-3 min-w-0">
         <div className="flex-shrink-0">{icon}</div>
         <div className="min-w-0">
-          <h2 className="text-base sm:text-lg font-semibold truncate">{title}</h2>
-          <p className="text-xs sm:text-sm text-gray-500">
+          <h2 className="dialog-title">{title}</h2>
+          <p className="dialog-description">
             {t('components:dataSourceWizard.stepOf', { step, total: totalSteps })}
           </p>
         </div>
       </div>
       <button 
         onClick={onClose} 
-        className="p-2 hover:bg-gray-100 rounded-lg flex-shrink-0"
+        className="dialog-close flex-shrink-0"
         aria-label={t('components:dataSourceWizard.closeWizard')}
       >
-        <X size={20} />
+        <X size={16} />
       </button>
     </div>
   )
@@ -196,7 +201,7 @@ interface ProgressBarProps {
 
 function ProgressBar({ step, totalSteps, bgClass }: ProgressBarProps) {
   return (
-    <div className="h-1 bg-gray-100">
+    <div className="h-1 shrink-0 bg-border">
       <div className={clsx('h-full transition-all', bgClass)} style={{ width: `${(step / totalSteps) * 100}%` }} />
     </div>
   )
@@ -206,7 +211,7 @@ function ProgressBar({ step, totalSteps, bgClass }: ProgressBarProps) {
 interface WizardFooterProps {
   readonly step: number
   readonly totalSteps: number
-  readonly colors: typeof colorClasses.purple
+  readonly colors: typeof colorClasses.accent
   readonly finalStepValid: boolean
   readonly isSubmitting: boolean
   readonly submitLabel: React.ReactNode
@@ -228,11 +233,13 @@ function WizardFooter({
 }: WizardFooterProps) {
   const { t } = useTranslation('components')
   return (
-    <div className="flex justify-between p-3 sm:p-4 border-t bg-gray-50 gap-2">
+    <div className="dialog-footer justify-between">
       <button
         onClick={onBack}
         disabled={step === 1}
-        className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-lg disabled:opacity-50 text-sm sm:text-base"
+        className="btn btn-ghost"
+        aria-label={t('dataSourceWizard.back')}
+        title={t('dataSourceWizard.back')}
       >
         <ChevronLeft size={16} className="flex-shrink-0" />
         <span className="hidden sm:inline">{t('components:dataSourceWizard.back')}</span>
@@ -241,7 +248,7 @@ function WizardFooter({
       {step < totalSteps ? (
         <button
           onClick={onNext}
-          className={clsx('flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 text-white rounded-lg text-sm sm:text-base', colors.bg, colors.hover)}
+          className={clsx('btn border-transparent', colors.bg, colors.fg, colors.hover)}
         >
           <span>{t('components:dataSourceWizard.next')}</span>
           <ChevronRight size={16} className="flex-shrink-0" />
@@ -250,7 +257,7 @@ function WizardFooter({
         <button
           onClick={onSubmit}
           disabled={!finalStepValid || isSubmitting}
-          className={clsx('flex items-center gap-1 sm:gap-2 px-4 sm:px-6 py-2 text-white rounded-lg disabled:opacity-50 text-sm sm:text-base', colors.bg, colors.hover)}
+          className={clsx('btn border-transparent px-4 sm:px-6', colors.bg, colors.fg, colors.hover)}
         >
           {isSubmitting ? (
             <>

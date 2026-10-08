@@ -8,6 +8,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import {
   normalizeScrapers, normalizeScraperRunStatus,
 } from './scrapersSchema'
+import { at } from '@test/defined'
 
 const sparseScraper = { id: 'scraper_2', name: 'Forum Posts', enabled: false }
 
@@ -17,17 +18,19 @@ describe('normalizeScrapers (issue #169)', () => {
   })
 
   it('fills every missing field on a sparse legacy record with conservative defaults', () => {
-    const [scraper] = normalizeScrapers([sparseScraper])
+    const scraper = at(normalizeScrapers([sparseScraper]), 0)
 
-    expect(scraper.base_url).toBe('')
-    expect(scraper.urls).toEqual([])
-    // 0 = 'Manual only': the truthful schedule for a record that has none.
-    // Anything nonzero would claim runs that never happen; undefined was
-    // the 'undefinedm' symptom.
-    expect(scraper.frequency_minutes).toBe(0)
-    expect(scraper.container_selector).toBe('')
-    expect(scraper.text_selector).toBe('')
-    expect(scraper.pagination).toEqual({ enabled: false, param: 'page', max_pages: 1, start: 1 })
+    expect(scraper).toMatchObject({
+      base_url: '',
+      urls: [],
+      // 0 = 'Manual only': the truthful schedule for a record that has none.
+      // Anything nonzero would claim runs that never happen; undefined was
+      // the 'undefinedm' symptom.
+      frequency_minutes: 0,
+      container_selector: '',
+      text_selector: '',
+    })
+    expect(scraper.pagination).toStrictEqual({ enabled: false, param: 'page', max_pages: 1, start: 1 })
   })
 
   it('passes a fully configured record through unchanged', () => {
@@ -40,37 +43,37 @@ describe('normalizeScrapers (issue #169)', () => {
       last_run: '2026-07-15T00:00:00Z', items_found: 42,
     }
 
-    const [scraper] = normalizeScrapers([configured])
+    const scraper = at(normalizeScrapers([configured]), 0)
 
     expect(scraper).toMatchObject(configured)
   })
 
   it('treats explicit nulls like missing fields (DynamoDB emits both)', () => {
-    const [scraper] = normalizeScrapers([
+    const scraper = at(normalizeScrapers([
       { ...sparseScraper, base_url: null, frequency_minutes: null, urls: null, pagination: null },
-    ])
+    ]), 0)
 
     expect(scraper.base_url).toBe('')
     expect(scraper.frequency_minutes).toBe(0)
-    expect(scraper.urls).toEqual([])
-    expect(scraper.pagination).toEqual({ enabled: false, param: 'page', max_pages: 1, start: 1 })
+    expect(scraper.urls).toStrictEqual([])
+    expect(scraper.pagination).toStrictEqual({ enabled: false, param: 'page', max_pages: 1, start: 1 })
   })
 
   it('coerces numeric-string round-trips and merges partial pagination', () => {
-    const [scraper] = normalizeScrapers([
+    const scraper = at(normalizeScrapers([
       { ...sparseScraper, frequency_minutes: '30', pagination: { enabled: true, max_pages: '5' } },
-    ])
+    ]), 0)
 
     expect(scraper.frequency_minutes).toBe(30)
-    expect(scraper.pagination).toEqual({ enabled: true, param: 'page', max_pages: 5, start: 1 })
+    expect(scraper.pagination).toStrictEqual({ enabled: true, param: 'page', max_pages: 5, start: 1 })
   })
 
   it('salvages string urls and drops junk elements instead of discarding the array', () => {
-    const [scraper] = normalizeScrapers([
+    const scraper = at(normalizeScrapers([
       { ...sparseScraper, urls: ['https://a.example.com', 42, null, 'https://b.example.com'] },
-    ])
+    ]), 0)
 
-    expect(scraper.urls).toEqual(['https://a.example.com', 'https://b.example.com'])
+    expect(scraper.urls).toStrictEqual(['https://a.example.com', 'https://b.example.com'])
   })
 
   it('drops records without a usable id instead of inventing one', () => {
@@ -82,14 +85,14 @@ describe('normalizeScrapers (issue #169)', () => {
       { id: '', name: 'Empty Identity', enabled: true },
     ])
 
-    expect(scrapers.map((s) => s.id)).toEqual(['scraper_2'])
+    expect(scrapers.map((s) => s.id)).toStrictEqual(['scraper_2'])
     expect(warn).toHaveBeenCalledTimes(2)
   })
 
   it('passes unknown backend fields through so edit round-trips lose nothing', () => {
-    const [scraper] = normalizeScrapers([
+    const scraper = at(normalizeScrapers([
       { ...sparseScraper, created_at: '2026-01-01T00:00:00Z', future_field: { nested: true } },
-    ])
+    ]), 0)
 
     // A record read from getScrapers() and saved back by the editor must
     // not silently shed fields this schema doesn't enumerate.
@@ -108,7 +111,7 @@ describe('normalizeScraperRunStatus (issue #169)', () => {
 
     expect(status.pages_scraped).toBe(0)
     expect(status.items_found).toBe(0)
-    expect(status.errors).toEqual([])
+    expect(status.errors).toStrictEqual([])
   })
 
   it('passes a real run status through unchanged', () => {
@@ -132,14 +135,14 @@ describe('normalizeScraperRunStatus (issue #169)', () => {
       const status = normalizeScraperRunStatus(garbage)
       expect(status.status).toBe('never_run')
       expect(status.pages_scraped).toBe(0)
-      expect(status.errors).toEqual([])
+      expect(status.errors).toStrictEqual([])
     }
   })
 
   it('keeps string errors and drops junk elements', () => {
     const status = normalizeScraperRunStatus({ status: 'error', errors: ['timeout', 500, null] })
 
-    expect(status.errors).toEqual(['timeout'])
+    expect(status.errors).toStrictEqual(['timeout'])
   })
 
   it('coerces numeric-string counts', () => {

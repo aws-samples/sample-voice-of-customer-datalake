@@ -4,12 +4,17 @@ Provides centralized table access with connection reuse.
 """
 
 import os
+from typing import Any
+
 from shared.aws import get_dynamodb_resource
 
-_cache: dict[str, object] = {}
+# boto3 resources are built dynamically at runtime; typing these as the
+# mypy_boto3 `Table` stub is a cross-module migration (every caller's
+# Key/Item shapes would need TypedDicts), so they stay dynamically typed.
+_cache: dict[str, Any] = {}
 
 
-def _get_table(env_var: str):
+def _get_table(env_var: str) -> Any:
     """Get a DynamoDB table resource by env var name, with connection reuse."""
     if env_var not in _cache:
         table_name = os.environ.get(env_var, '')
@@ -36,13 +41,3 @@ def get_feedback_table():
 def get_projects_table():
     """Get projects table resource. Requires PROJECTS_TABLE env var."""
     return _get_table('PROJECTS_TABLE')
-
-
-def get_conversations_table():
-    """Get conversations table resource. Requires CONVERSATIONS_TABLE env var."""
-    return _get_table('CONVERSATIONS_TABLE')
-
-
-def clear_table_cache():
-    """Clear all cached table references. Useful for testing."""
-    _cache.clear()

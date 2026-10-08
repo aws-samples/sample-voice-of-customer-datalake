@@ -8,13 +8,15 @@
     "never": "Nie",
     "notConfigured": "Nicht konfiguriert",
     "runNow": "Jetzt ausführen",
-    "urls": "Adressen"
+    "urls": "Adressen",
+    "active": "Aktiv",
+    "paused": "Pausiert"
   },
   "configureApiFirst": "Zuerst API-Endpunkt konfigurieren",
   "csvUpload": {
     "cancel": "Abbrechen",
-    "defaultSourceHint": "Wird für Zeilen ohne \"source\"-Spalte verwendet.",
-    "defaultSourceLabel": "Standard-Quellenbezeichnung",
+    "defaultSourceHint": "Wird für Zeilen ohne Kanalspalte verwendet.",
+    "defaultSourceLabel": "Standardkanal",
     "done": "Fertig",
     "downloadTemplate": "Vorlage herunterladen",
     "dropZone": ".csv-Datei hier ablegen oder klicken zum Auswählen",
@@ -30,7 +32,33 @@
     "title": "CSV-Upload",
     "upload": "Hochladen",
     "uploading": "Wird hochgeladen…",
-    "warningsHeader": "Warnungen"
+    "warningsHeader": "Warnungen",
+    "errorNoHeader": "Die Datei hat keine Kopfzeile.",
+    "errorUnreadable": "Die Datei konnte nicht gelesen werden.",
+    "uploadFailed": "Hochladen fehlgeschlagen",
+    "mapping": {
+      "title": "Spaltenzuordnung",
+      "hint": "Aus der Kopfzeile vorgeschlagen. Unbekannte Spalten bleiben als Metadaten erhalten; verworfen wird nur, was Sie auf Ignorieren setzen.",
+      "columnLabel": "Ziel von {{header}}",
+      "dimensionTarget": "Dimension: {{name}}",
+      "targets": {
+        "text": "Feedbacktext",
+        "id": "Zeilen-ID",
+        "rating": "Bewertung",
+        "date": "Datum",
+        "author": "Autor",
+        "title": "Titel",
+        "url": "Link",
+        "channel": "Kanal",
+        "tags": "Tags",
+        "metadata": "Als Metadaten behalten",
+        "ignore": "Ignorieren"
+      },
+      "problems": {
+        "noText": "Ordnen Sie eine Spalte dem Feedbacktext zu.",
+        "twice": "{{target}} ist mehr als einer Spalte zugeordnet."
+      }
+    }
   },
   "deleteConfirmLabel": "Löschen",
   "deleteConfirmMessage": "Möchten Sie diesen Scraper wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
@@ -67,6 +95,7 @@
     "rating": "Bewertung",
     "reviewContainer": "Bewertungs-Container *",
     "save": "Scraper speichern",
+    "saveFailed": "Der Scraper konnte nicht gespeichert werden. Bitte versuchen Sie es erneut.",
     "scraperName": "Scraper-Name",
     "scraperNamePlaceholder": "Mein Bewertungs-Scraper",
     "selectorsAutoDetected": "Diese Selektoren wurden automatisch erkannt. Passen Sie sie bei Bedarf an.",
@@ -147,8 +176,13 @@
     "sourceUrl": "Quell-URL",
     "sourceUrlPlaceholder": "https://beispiel.de/bewertungen",
     "title": "Manueller Import",
-    "unparsedSections_one": "⚠️ {{count}} Abschnitt konnte nicht geparst werden",
-    "unparsedSections_other": "⚠️ {{count}} Abschnitte konnten nicht geparst werden"
+    "unparsedSections_one": "{{count}} Abschnitt konnte nicht geparst werden",
+    "unparsedSections_other": "{{count}} Abschnitte konnten nicht geparst werden",
+    "datesRequired_one": "{{count}} Bewertung braucht ein Datum, bevor der Import starten kann.",
+    "datesRequired_other": "{{count}} Bewertungen brauchen ein Datum, bevor der Import starten kann.",
+    "datesDefaulted_one": "{{count}} Bewertung hatte im Text kein Datum und erhält das heutige Importdatum. Sie können es unten ändern.",
+    "datesDefaulted_other": "{{count}} Bewertungen hatten im Text kein Datum und erhalten das heutige Importdatum. Sie können es unten ändern.",
+    "importFailed": "Bewertungen konnten nicht importiert werden"
   },
   "newSource": "Neue Quelle",
   "parsedReview": {
@@ -158,7 +192,9 @@
     "star_one": "{{count}} Stern",
     "star_other": "{{count}} Sterne",
     "textPlaceholder": "Bewertungstext",
-    "titlePlaceholder": "Bewertungstitel (optional)"
+    "titlePlaceholder": "Bewertungstitel (optional)",
+    "dateLabel": "Bewertungsdatum (Pflichtfeld)",
+    "dateDefaulted": "Kein Datum gefunden: Importdatum gesetzt"
   },
   "pluginConfig": {
     "automaticSchedule": "Automatischer Zeitplan",
@@ -174,7 +210,9 @@
     "scheduleDescription": "Diese Quelle nach konfiguriertem Zeitplan ausführen",
     "select": "Auswählen...",
     "show": "Anzeigen",
-    "test": "Testen"
+    "test": "Testen",
+    "configuredInSettings": "Diese Quelle wird mit ihren Zugangsdaten in den Einstellungen konfiguriert.",
+    "openDataSourceSettings": "Datenquellen-Einstellungen öffnen"
   },
   "refresh": "Aktualisieren",
   "status": {
@@ -210,5 +248,20 @@
     "title": "Datenquelle hinzufügen",
     "webScraperTemplates": "Web-Scraper-Vorlagen"
   },
-  "title": "Datenquellen"
+  "title": "Datenquellen",
+  "loading": "Datenquellen werden geladen…",
+  "appCard": {
+    "platform": "Plattform",
+    "maxReviews": "Max. Bewertungen",
+    "unnamed": "Unbenannte App",
+    "loading": "App-Konfigurationen werden geladen…",
+    "deleteConfirmTitle": "App löschen",
+    "deleteConfirmMessage": "Möchten Sie diese App-Konfiguration wirklich entfernen?",
+    "editApp": "App bearbeiten",
+    "addNewApp": "Neue App hinzufügen",
+    "addApp": "App hinzufügen",
+    "configuredApps": "Konfigurierte Apps",
+    "noApps": "Noch keine Apps konfiguriert",
+    "addFirstApp": "Erste App hinzufügen"
+  }
 }

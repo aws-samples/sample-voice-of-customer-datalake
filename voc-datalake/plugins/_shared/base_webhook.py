@@ -6,20 +6,22 @@ import json
 import os
 import sys
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
 from typing import Any
 
 # Add shared module to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from shared.logging import logger, tracer, metrics
-from shared.aws import clear_secret_cache, get_sqs_client, get_secret
+from shared.aws import clear_secret_cache, get_secret, get_sqs_client
+from shared.logging import logger, metrics, tracer
+from shared.source_profiles import SourceProfilesUnavailable
 
 from .audit import emit_audit_event
+from .normalized_item import normalized_item_fields
 from .plugin_secrets import filter_plugin_secrets
+from .source_policy_gate import policy_messages
 from .sqs_utils import send_messages_to_queue
 
-__all__ = ["BaseWebhook", "logger", "tracer", "metrics"]
+__all__ = ["BaseWebhook", "logger", "metrics", "tracer"]
 
 # Configuration from environment
 PROCESSING_QUEUE_URL = os.environ.get("PROCESSING_QUEUE_URL", "")
@@ -72,33 +74,26 @@ class BaseWebhook(ABC):
     def parse_webhook_payload(self, body: dict, headers: dict) -> list[dict]:
         """
         Parse the webhook payload and return a list of items to process.
-        
+
         Must be implemented by subclasses.
-        
+
         Args:
             body: The parsed JSON body of the webhook request
             headers: The request headers
-            
+
         Returns:
             List of normalized items ready for the processing queue
         """
-        pass
 
     def normalize_item(self, item: dict) -> dict:
         """Normalize item to common schema."""
         return {
-            "id": item.get("id", ""),
-            "source_platform": self.source_platform,
-            "source_channel": item.get("channel", "webhook"),
-            "url": item.get("url", ""),
-            "text": item.get("text", ""),
-            "rating": item.get("rating"),
-            "created_at": item.get(
-                "created_at", datetime.now(timezone.utc).isoformat()
+            **normalized_item_fields(
+                item,
+                source_platform=self.source_platform,
+                default_channel="webhook",
+                brand_name=self.brand_name,
             ),
-            "ingested_at": datetime.now(timezone.utc).isoformat(),
-            "brand_name": self.brand_name,
-            "brand_handles_matched": item.get("brand_handles_matched", []),
             "is_webhook": True,
             "raw_data": item,
         }
@@ -132,7 +127,7 @@ class BaseWebhook(ABC):
         return send_messages_to_queue(
             self._sqs,
             PROCESSING_QUEUE_URL,
-            items,
+            policy_messages(items),
             metric_name="WebhookItemsIngested",
             log_label="webhook",
         )
@@ -147,11 +142,11 @@ class BaseWebhook(ABC):
     def handle(self, event: dict, context: Any) -> dict:
         """
         Main webhook handler method.
-        
+
         This should be called from the Lambda handler after signature verification.
         """
         client_ip = self._extract_client_ip(event)
-        
+
         emit_audit_event("webhook.received", self.source_platform, True, {
             "ip_address": client_ip,
         })
@@ -162,7 +157,7 @@ class BaseWebhook(ABC):
             if event.get("isBase64Encoded"):
                 import base64
                 body = base64.b64decode(body).decode("utf-8")
-            
+
             if isinstance(body, str):
                 body = json.loads(body)
 
@@ -170,7 +165,7 @@ class BaseWebhook(ABC):
 
             # Parse webhook payload
             items = self.parse_webhook_payload(body, headers)
-            
+
             if not items:
                 logger.info("No items to process from webhook")
                 return {
@@ -199,7 +194,7 @@ class BaseWebhook(ABC):
             }
 
         except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON in webhook body: {e}")
+            logger.exception(f"Invalid JSON in webhook body: {e}")
             emit_audit_event("webhook.rejected", self.source_platform, False, {
                 "reason": "invalid_json",
                 "ip_address": client_ip,
@@ -207,6 +202,19 @@ class BaseWebhook(ABC):
             return {
                 "statusCode": 400,
                 "body": json.dumps({"error": "Invalid JSON"}),
+            }
+        except SourceProfilesUnavailable as e:
+            # Fail closed: nothing was queued under the allow default; the
+            # provider re-delivers on a 5xx.
+            logger.warning("Webhook deferred: source policy unreadable")
+            metrics.add_metric(name="WebhookErrors", unit="Count", value=1)
+            emit_audit_event("webhook.rejected", self.source_platform, False, {
+                "reason": "source_policy_unavailable",
+                "ip_address": client_ip,
+            })
+            return {
+                "statusCode": 503,
+                "body": json.dumps({"error": e.message}),
             }
         except Exception as e:
             logger.exception(f"Webhook processing failed: {e}")

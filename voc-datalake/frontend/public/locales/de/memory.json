@@ -1,0 +1,123 @@
+{
+  "add": {
+    "expiresAt": "Läuft ab am",
+    "failed": "Die Erinnerung konnte nicht gespeichert werden. Bitte erneut versuchen.",
+    "label": {
+      "company": "Für das ganze Unternehmen merken",
+      "personal": "Für mich merken"
+    },
+    "placeholder": {
+      "company": "z. B. Unsere Kunden vergleichen nachweislich Preise vor dem Bezahlen",
+      "personal": "z. B. Ich mag kurze Antworten"
+    },
+    "proposedNotice": "Nur Kuratoren veröffentlichen Unternehmenserinnerungen direkt – Ihre wird zuerst geprüft.",
+    "retention": "Aufbewahrung",
+    "saved": "Gemerkt.",
+    "submit": "Merken"
+  },
+  "cancel": "Abbrechen",
+  "configureFirst": "Verbinden Sie zuerst den API-Endpunkt in den Einstellungen.",
+  "confirm": "+1",
+  "confirmHint": "Ich stimme zu – zählt mich als Unterstützer",
+  "empty": "Hier ist noch nichts gespeichert.",
+  "expires": "läuft ab am {{date}}",
+  "filters": {
+    "anyKind": "Jede Art",
+    "anyStatus": "Jeder Status",
+    "kind": "Art",
+    "search": "Erinnerungen durchsuchen",
+    "status": "Statusfilter"
+  },
+  "forget": "Vergessen",
+  "forgetMessage": "„{{statement}}“ wird archiviert und nie automatisch neu gelernt. Sie können es später wiederherstellen.",
+  "forgetTitle": "Diese Erinnerung vergessen?",
+  "imports": {
+    "content": "Inhalt",
+    "contentPlaceholder": "Seitentext hier einfügen…",
+    "counter": "{{count}} / {{max}} Zeichen",
+    "created": "Erstellte Erinnerungen: {{count}}",
+    "description": "Fügen Sie ein Dokument oder eine Webseite ein. Was daraus gelernt wird, erscheint nach den üblichen Vertrauensregeln; das Original bleibt erhalten.",
+    "failed": "Der Import konnte nicht gestartet werden. Bitte erneut versuchen.",
+    "history": "Ihre letzten Importe",
+    "noHistory": "Noch keine Importe aus diesem Browser.",
+    "pageTitle": "Titel",
+    "status": {
+      "completed": "Abgeschlossen",
+      "failed": "Fehlgeschlagen",
+      "processing": "In Bearbeitung",
+      "queued": "In der Warteschlange"
+    },
+    "submit": "Importieren",
+    "title": "Seite importieren",
+    "url": "Quell-Link (optional)"
+  },
+  "kind": {
+    "agents": "Agenten",
+    "customer": "Kunde",
+    "objective": "Ziel",
+    "other": "Sonstiges",
+    "product": "Produkt",
+    "strategy": "Strategie",
+    "working_style": "Arbeitsweise"
+  },
+  "loadFailed": "Erinnerungen konnten nicht geladen werden.",
+  "loadMore": "Mehr laden",
+  "loading": "Erinnerungen werden geladen…",
+  "merge": {
+    "description": "Eine Aussage ersetzt sie; die Originale werden archiviert und ihre Unterstützer übernommen.",
+    "failed": "Zusammenführen fehlgeschlagen. Bitte erneut versuchen.",
+    "open": "Auswahl zusammenführen",
+    "statement": "Zusammengeführte Aussage",
+    "submit": "Zusammenführen",
+    "title": "Erinnerungen zusammenführen ({{count}})"
+  },
+  "meta": "Seit {{created}} · {{retention}}",
+  "restore": "Wiederherstellen",
+  "retention": {
+    "dated": "Bis zu einem Datum",
+    "decay": "Verblasst ohne Nutzung",
+    "long_term": "Dauerhaft"
+  },
+  "retry": "Erneut versuchen",
+  "review": {
+    "actions": {
+      "keep": "Diese behalten",
+      "keep_both": "Beide behalten",
+      "merge": "Zu einer zusammenführen",
+      "replace": "Bestehende behalten"
+    },
+    "aligned": "Passt zu: {{objectives}}",
+    "apply": "Anwenden",
+    "empty": "Nichts zu prüfen – keine Vorschläge oder Konflikte.",
+    "existing": "Was wir heute wissen",
+    "failed": "Die Lösung konnte nicht angewendet werden. Bitte erneut versuchen.",
+    "newClaim": "Neue Aussage",
+    "proposed": "Vorgeschlagene Erinnerung",
+    "resolution": "Lösung",
+    "suggested": "Vorschlag: {{action}}"
+  },
+  "reviewLoadFailed": "Die Prüfwarteschlange konnte nicht geladen werden. Zu prüfende Erinnerungen fehlen hier möglicherweise.",
+  "selectForMerge": "Zum Zusammenführen auswählen: {{statement}}",
+  "selected": "Ausgewählt: {{count}}",
+  "source": {
+    "agent": "Autonomer Agent",
+    "extracted": "Aus Chats gelernt",
+    "import": "Importiert",
+    "user_explicit": "Von einer Person hinzugefügt"
+  },
+  "status": {
+    "active": "Aktiv",
+    "archived": "Archiviert",
+    "conflict": "Konflikt",
+    "proposed": "Vorgeschlagen"
+  },
+  "subtitle": "Was sich Assistent und autonome Agenten merken – gemeinsames Unternehmenswissen und Ihre eigenen Vorlieben.",
+  "supportersHint": "Personen, die dies gesagt oder bestätigt haben",
+  "tabs": {
+    "company": "Unternehmen",
+    "imports": "Importe",
+    "personal": "Persönlich",
+    "review": "Zu prüfen"
+  },
+  "title": "Gedächtnis"
+}

@@ -9,21 +9,22 @@
  * @module components/DocumentExportMenu
  */
 
-import {
-  Copy, Check, FileDown, MoreVertical, FileText, FileType, Sparkles,
-} from 'lucide-react'
-import {
-  useState, useRef, useEffect,
-} from 'react'
+import { Check, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import {
   downloadFile, sanitizeFilename,
 } from '../../utils/file'
 import { openPrintWindow } from '../../utils/printUtils'
+import ExportMenuShell from '../ExportMenuShell/ExportMenuShell'
+import { useCopiedFlash } from '../ExportMenuShell/useCopiedFlash'
 import DocumentPDFContent from './DocumentPDFContent'
+import { documentText } from './documentText'
 import type {
-  ProjectDocument, Project,
+  ProjectDocument,
 } from '../../api/types'
+import type {
+  Project,
+} from '../../api/projectTypes'
 
 interface DocumentExportMenuProps {
   document: ProjectDocument | null
@@ -101,10 +102,9 @@ function stripMarkdownLinks(text: string): string {
 /**
  * Heading for the document section of the "Copy to Kiro" clipboard payload.
  *
- * Deliberately plain English, matching `_build_steering_file`'s scaffold, which
- * emits "## Custom Instructions", "## Personas" etc. in English regardless of
- * locale. Both Kiro handoff paths have to agree on the structural markdown, so
- * this is English-only by design rather than by omission.
+ * Deliberately plain English regardless of locale: the payload is instructions
+ * for a coding agent, and its structural markdown is English by design rather
+ * than by omission.
  *
  * Keyed rather than a `prfaq ? … : 'PRD Document'` ternary so that widening
  * KiroSection's document_type gate below cannot silently label another document
@@ -117,10 +117,9 @@ const KIRO_SECTION_HEADINGS: Partial<Record<ProjectDocument['document_type'], st
 }
 
 function KiroSection({
-  doc, project, copiedKiro, onCopyToKiro, t,
+  doc, copiedKiro, onCopyToKiro, t,
 }: Readonly<{
   doc: ProjectDocument
-  project?: Project | null
   copiedKiro: boolean
   onCopyToKiro: () => void
   t: (key: string) => string
@@ -128,21 +127,15 @@ function KiroSection({
   if (doc.document_type !== 'prd' && doc.document_type !== 'prfaq') return null
   return (
     <>
-      <hr className="my-1 border-gray-100" />
+      <hr className="menu-separator border-0" />
       <button
         onClick={onCopyToKiro}
-        className="w-full flex items-center gap-2 px-3 py-2.5 sm:py-2 text-sm text-purple-700 hover:bg-purple-50 active:bg-purple-100"
+        className="menu-item py-2.5 sm:py-1.5 text-aim hover:bg-aim-subtle focus-visible:bg-aim-subtle active:bg-aim-subtle"
         role="menuitem"
       >
-        {copiedKiro ? <Check size={16} className="text-green-500 flex-shrink-0" /> : <Sparkles size={16} className="flex-shrink-0" />}
+        {copiedKiro ? <Check size={16} className="text-ok flex-shrink-0" /> : <Sparkles size={16} className="flex-shrink-0" />}
         <span className="truncate">{copiedKiro ? t('documentExport.copied') : t('documentExport.copyToKiro')}</span>
       </button>
-      {(project?.kiro_export_prompt == null || project.kiro_export_prompt === '') &&
-        (project?.kiro_default_export_prompt == null || project.kiro_default_export_prompt === '') && (
-        <p className="px-3 py-1 text-xs text-gray-400">
-          {t('documentExport.kiroPromptTip')}
-        </p>
-      )}
     </>
   )
 }
@@ -150,58 +143,37 @@ function KiroSection({
 export default function DocumentExportMenu({
   document: doc, project,
 }: Readonly<DocumentExportMenuProps>) {
-  const [isOpen, setIsOpen] = useState(false)
-  const [copied, setCopied] = useState(false)
-  const [copiedKiro, setCopiedKiro] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
+  const [copiedKiro, flashCopiedKiro] = useCopiedFlash()
   const { t } = useTranslation('components')
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target
-      if (menuRef.current && target instanceof Node && !menuRef.current.contains(target)) {
-        setIsOpen(false)
-      }
-    }
-    window.document.addEventListener('mousedown', handleClickOutside)
-    return () => window.document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
 
   // Prototype artifacts own their open/download controls in PrototypeView. Raw
   // prototype content is never a prose or Kiro export, including legacy inline
   // HTML/JSON prototypes that do not have a prototype_url.
   if (!doc || doc.document_type === 'prototype') return null
 
-  const copyContent = async () => {
-    await navigator.clipboard.writeText(doc.content ?? '')
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
+  const copyContent = () => navigator.clipboard.writeText(documentText(doc))
 
-  const copyToKiro = async () => {
-    const storedPrompt = project?.kiro_export_prompt ?? ''
-    const effectivePrompt = storedPrompt !== ''
-      ? storedPrompt
-      : (project?.kiro_default_export_prompt ?? '')
+  const copyToKiro = async (close: () => void) => {
+    // The server's one Kiro prompt. A project's stored per-project prompt
+    // (pre-3.00.00, no longer editable) is not read.
+    const effectivePrompt = project?.kiro_default_export_prompt ?? ''
     const sectionHeading = KIRO_SECTION_HEADINGS[doc.document_type] ?? 'Document'
-    const prdSection = `# ${doc.title}\n\n${doc.content ?? ''}`
+    const prdSection = `# ${doc.title}\n\n${documentText(doc)}`
     const fullContent = effectivePrompt === ''
       ? prdSection
       : `${effectivePrompt}\n\n---\n\n## ${sectionHeading}\n\n${prdSection}`
 
     await navigator.clipboard.writeText(fullContent)
-    setCopiedKiro(true)
-    setTimeout(() => setCopiedKiro(false), 2000)
-    setIsOpen(false)
+    flashCopiedKiro()
+    close()
   }
 
   const downloadAsMarkdown = () => {
-    downloadFile(doc.content ?? '', `${sanitizeFilename(doc.title)}.md`, 'text/markdown')
-    setIsOpen(false)
+    downloadFile(documentText(doc), `${sanitizeFilename(doc.title)}.md`, 'text/markdown')
   }
 
   const downloadAsTxt = () => {
-    const plainText = stripMarkdownLinks(doc.content ?? '')
+    const plainText = stripMarkdownLinks(documentText(doc))
       .replaceAll(/#{1,6}\s/g, '')
       .replaceAll(/\*\*(.+?)\*\*/g, '$1')
       .replaceAll(/\*(.+?)\*/g, '$1')
@@ -211,86 +183,37 @@ export default function DocumentExportMenu({
       .replaceAll(/^\d+\.\s+/gm, '')
 
     downloadFile(plainText, `${sanitizeFilename(doc.title)}.txt`, 'text/plain')
-    setIsOpen(false)
   }
 
+  // A throw is logged and swallowed by the shell.
   const downloadAsPDF = () => {
-    try {
-      const printWindow = openPrintWindow({
-        title: doc.title,
-        content: <DocumentPDFContent document={doc} />,
-      })
-
-      if (!printWindow && import.meta.env.DEV) {
-        console.error('Failed to open print window. Popups may be blocked.')
-      }
-    } catch (error) {
-      if (import.meta.env.DEV) {
-        console.error('PDF export failed:', error)
-      }
-    } finally {
-      setIsOpen(false)
+    const printWindow = openPrintWindow({
+      title: doc.title,
+      content: <DocumentPDFContent document={doc} />,
+    })
+    if (!printWindow && import.meta.env.DEV) {
+      console.error('Failed to prepare the print document.')
     }
   }
 
   return (
-    <div className="relative" ref={menuRef}>
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-        title={t('documentExport.downloadOptions')}
-        aria-label={t('documentExport.downloadOptions')}
-        aria-expanded={isOpen}
-        aria-haspopup="menu"
-      >
-        <MoreVertical size={18} />
-      </button>
-
-      {isOpen ? <div
-        className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 w-52 max-w-[calc(100vw-2rem)] py-1"
-        role="menu"
-        aria-orientation="vertical"
-      >
-        <button
-          onClick={() => void copyContent()}
-          className="w-full flex items-center gap-2 px-3 py-2.5 sm:py-2 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100"
-          role="menuitem"
-        >
-          {copied ? <Check size={16} className="text-green-500 flex-shrink-0" /> : <Copy size={16} className="flex-shrink-0" />}
-          <span className="truncate">{copied ? t('documentExport.copied') : t('documentExport.copy')}</span>
-        </button>
-
-        <hr className="my-1 border-gray-100" />
-
-        <button
-          onClick={downloadAsMarkdown}
-          className="w-full flex items-center gap-2 px-3 py-2.5 sm:py-2 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100"
-          role="menuitem"
-        >
-          <FileText size={16} className="flex-shrink-0" />
-          <span className="truncate">{t('documentExport.downloadMarkdown')}</span>
-        </button>
-
-        <button
-          onClick={downloadAsPDF}
-          className="w-full flex items-center gap-2 px-3 py-2.5 sm:py-2 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100"
-          role="menuitem"
-        >
-          <FileDown size={16} className="flex-shrink-0" />
-          <span className="truncate">{t('documentExport.downloadPDF')}</span>
-        </button>
-
-        <button
-          onClick={downloadAsTxt}
-          className="w-full flex items-center gap-2 px-3 py-2.5 sm:py-2 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100"
-          role="menuitem"
-        >
-          <FileType size={16} className="flex-shrink-0" />
-          <span className="truncate">{t('documentExport.downloadTXT')}</span>
-        </button>
-
-        <KiroSection doc={doc} project={project} copiedKiro={copiedKiro} onCopyToKiro={() => void copyToKiro()} t={t} />
-      </div> : null}
-    </div>
+    <ExportMenuShell
+      labels={{
+        trigger: t('documentExport.downloadOptions'),
+        copy: t('documentExport.copy'),
+        copied: t('documentExport.copied'),
+        downloadMarkdown: t('documentExport.downloadMarkdown'),
+        downloadPDF: t('documentExport.downloadPDF'),
+        downloadTXT: t('documentExport.downloadTXT'),
+      }}
+      onCopy={copyContent}
+      onDownloadMarkdown={downloadAsMarkdown}
+      onDownloadPDF={downloadAsPDF}
+      onDownloadTXT={downloadAsTxt}
+    >
+      {({ close }) => (
+        <KiroSection doc={doc} copiedKiro={copiedKiro} onCopyToKiro={() => void copyToKiro(close)} t={t} />
+      )}
+    </ExportMenuShell>
   )
 }

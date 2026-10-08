@@ -12,8 +12,8 @@
  */
 
 import { apiErrorStatus } from '../../api/apiErrorStatus'
-import { normalizeRow } from './prioritizationUtils'
-import type { PrioritizationRow } from '../../api/types'
+import { normalizeRow } from './ownRead'
+import type { PrioritizationRow } from '../../api/projectTypes'
 
 /**
  * The rows a batch of row-ensure asks actually handed back, keyed by row id.
@@ -71,8 +71,9 @@ export function refusalsByProject(
   const refused = results.flatMap((result, index): [string, number][] => {
     if (result.status !== 'rejected') return []
     const status = apiErrorStatus(result.reason)
-    if (status === null || !REPORTED_ENSURE_STATUSES.has(status)) return []
-    return [[projectIds[index], status]]
+    const projectId = projectIds.at(index)
+    if (projectId === undefined || status === null || !REPORTED_ENSURE_STATUSES.has(status)) return []
+    return [[projectId, status]]
   })
   return Object.fromEntries(refused)
 }

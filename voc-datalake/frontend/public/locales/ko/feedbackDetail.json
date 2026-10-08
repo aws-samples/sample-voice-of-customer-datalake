@@ -52,5 +52,15 @@
   "type": "유형",
   "unknown": "알 수 없음",
   "urgent": "긴급",
-  "viewOriginal": "원본 보기"
+  "viewOriginal": "원본 보기",
+  "sourceId": "ID: {{id}}",
+  "reviewDate": "리뷰 날짜: {{date}}",
+  "reviewDateHint": "고객이 이 피드백을 작성한 시점",
+  "imported": "가져온 날짜: {{date}}",
+  "importedHint": "이 피드백을 플랫폼으로 가져온 시점",
+  "noSimilar": "유사한 피드백이 없습니다",
+  "loading": "피드백을 불러오는 중…",
+  "similarFailed": "유사한 피드백을 불러오지 못했습니다. 나중에 다시 시도하세요.",
+  "author": "작성자",
+  "reviewTitle": "제목"
 }

@@ -2,6 +2,7 @@
  * Tests for plugins/types.ts - Frontend plugin manifest types and validation.
  */
 import { describe, it, expect } from 'vitest';
+import { WEBSCRAPER_MANIFEST_CORE } from './manifest-fixtures';
 import {
   PluginManifestSchema,
   PluginManifestsSchema,
@@ -175,7 +176,7 @@ describe('PluginManifestSchema', () => {
   const validManifest = {
     id: 'webscraper',
     name: 'Web Scraper',
-    icon: '🕷️',
+    icon: 'Web',
     description: 'Configurable scraper for extracting feedback from websites',
     category: 'import',
     config: [
@@ -257,7 +258,7 @@ describe('PluginManifestsSchema', () => {
       {
         id: 'webscraper',
         name: 'Web Scraper',
-        icon: '🕷️',
+        icon: 'Web',
         config: [],
         hasIngestor: true,
         hasWebhook: false,
@@ -267,7 +268,7 @@ describe('PluginManifestsSchema', () => {
       {
         id: 'manual_import',
         name: 'Manual Import',
-        icon: '📝',
+        icon: 'Plugin',
         config: [],
         hasIngestor: true,
         hasWebhook: false,
@@ -295,7 +296,7 @@ describe('PluginManifestsSchema', () => {
       {
         id: 'valid',
         name: 'Valid',
-        icon: '✓',
+        icon: 'Plugin',
         config: [],
         hasIngestor: true,
         hasWebhook: false,
@@ -318,7 +319,7 @@ describe('Validation Functions', () => {
   const validManifest = {
     id: 'webscraper',
     name: 'Web Scraper',
-    icon: '🕷️',
+    icon: 'Web',
     config: [],
     hasIngestor: true,
     hasWebhook: false,
@@ -334,7 +335,7 @@ describe('Validation Functions', () => {
 
       expect(result).not.toBeNull();
       expect(result).toHaveLength(1);
-      expect(result![0].id).toBe('webscraper');
+      expect(result?.[0]?.id).toBe('webscraper');
     });
 
     it('returns null for invalid input', () => {
@@ -361,14 +362,7 @@ describe('Validation Functions', () => {
 describe('Real-World Manifest Examples', () => {
   it('validates Web Scraper manifest structure', () => {
     const webscraperManifest = {
-      id: 'webscraper',
-      name: 'Web Scraper',
-      icon: '🕷️',
-      description: 'Configurable scraper for extracting feedback from websites',
-      category: 'import',
-      config: [
-        { key: 'configs', label: 'Scraper Configurations (JSON)', type: 'textarea', required: false, secret: false },
-      ],
+      ...WEBSCRAPER_MANIFEST_CORE,
       setup: {
         title: 'Web Scraper Setup',
         color: 'gray',
@@ -394,7 +388,7 @@ describe('Real-World Manifest Examples', () => {
     const s3ImportManifest = {
       id: 's3_import',
       name: 'S3 Bulk Import',
-      icon: '📦',
+      icon: 'Package',
       description: 'Import feedback from S3 bucket (CSV, JSON, JSONL)',
       category: 'import',
       config: [

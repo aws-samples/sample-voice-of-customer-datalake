@@ -1,11 +1,28 @@
 /**
  * Shared types for ProjectDetail components
  */
+// DocType (what POST /projects/{id}/document accepts) is declared in api/types.ts, which
+// owns that wire contract (issue #381). Import it from there; do not respell 'prd' | 'prfaq'.
 import type {
-  ProjectPersona, Project, DocType,
+  DocType,
 } from '../../api/types'
+import type {
+  ProjectPersona,
+} from '../../api/projectTypes'
+import type { Tone } from '../../theme/tones'
+import type { LucideIcon } from 'lucide-react'
 
-export type Tab = 'overview' | 'personas' | 'product' | 'documents' | 'chat' | 'mcp'
+export type Tab = 'overview' | 'personas' | 'product' | 'documents'
+
+const TAB_IDS: readonly Tab[] = ['overview', 'personas', 'product', 'documents']
+
+/**
+ * `?tab=` → a known tab. Unknown values fall back to overview, including the
+ * removed `chat` and `mcp` (Export / MCP moved to the global Connect page).
+ */
+export function parseTab(value: string | null): Tab {
+  return TAB_IDS.find((tab) => tab === value) ?? 'overview'
+}
 
 export type NoteItem = string | {
   note_id?: string;
@@ -25,13 +42,6 @@ export interface ResearchToolConfig {
   // has the AgentCore web search gateway).
   useWebSearch: boolean
 }
-
-// What POST /projects/{id}/document accepts, RE-EXPORTED for the picker — the
-// declaration itself lives in `api/types.ts` beside the other wire types, because
-// that route owns the contract and the lockstep test pins it there. It was declared
-// here and imported by the two clients, which pointed `api/` at `pages/`; issue #381
-// turned it round. Do not respell `'prd' | 'prfaq'` from either side.
-export type { DocType } from '../../api/types'
 
 export interface DocToolConfig {
   // Which documents to generate. Both can be selected to generate PRD + PR-FAQ
@@ -55,63 +65,53 @@ export interface PersonaAvatarProps {
 
 export interface PersonaSectionProps {
   readonly title: string
-  readonly icon: string
-  readonly color: 'purple' | 'green' | 'red' | 'blue' | 'amber' | 'indigo' | 'teal' | 'gray' | 'emerald'
+  /** A lucide icon (KiroCrew rule: lucide only, never an emoji glyph). */
+  readonly icon: LucideIcon
+  readonly color: SectionColor
   readonly children: React.ReactNode
 }
 
 export interface ResearchNotesProps {
   readonly persona: ProjectPersona
+  /** False for a viewer: the notes are listed but cannot be added to or removed. */
+  readonly canEdit: boolean
   readonly onSave: (notes: NoteItem[]) => void
   readonly isSaving: boolean
 }
 
-export interface KiroExportSettingsProps {
-  readonly project: Project
-  readonly onSave: (prompt: string) => void
-}
-
-type SectionColor = 'purple' | 'green' | 'red' | 'blue' | 'amber' | 'indigo' | 'teal' | 'gray' | 'emerald'
+type SectionColor = Tone
 
 export const SECTION_COLOR_CLASSES: Record<SectionColor, {
   border: string;
   title: string
 }> = {
-  purple: {
-    border: 'border-purple-200 bg-purple-50/50',
-    title: 'text-purple-700',
+  aim: {
+    border: 'border-aim/30 bg-aim-subtle',
+    title: 'text-aim',
   },
-  green: {
-    border: 'border-green-200 bg-green-50/50',
-    title: 'text-green-700',
+  ok: {
+    border: 'border-ok/30 bg-ok-subtle',
+    title: 'text-ok',
   },
-  red: {
-    border: 'border-red-200 bg-red-50/50',
-    title: 'text-red-700',
+  danger: {
+    border: 'border-danger/30 bg-danger-subtle',
+    title: 'text-danger',
   },
-  blue: {
-    border: 'border-blue-200 bg-blue-50/50',
-    title: 'text-blue-700',
+  info: {
+    border: 'border-info/30 bg-info-subtle',
+    title: 'text-info',
   },
-  amber: {
-    border: 'border-amber-200 bg-amber-50/50',
-    title: 'text-amber-700',
+  warn: {
+    border: 'border-warn/30 bg-warn-subtle',
+    title: 'text-warn',
   },
-  indigo: {
-    border: 'border-indigo-200 bg-indigo-50/50',
-    title: 'text-indigo-700',
+  accent: {
+    border: 'border-accent/30 bg-accent-subtle',
+    title: 'text-accent-text',
   },
-  teal: {
-    border: 'border-teal-200 bg-teal-50/50',
-    title: 'text-teal-700',
-  },
-  gray: {
-    border: 'border-gray-200 bg-gray-50/50',
-    title: 'text-gray-700',
-  },
-  emerald: {
-    border: 'border-emerald-200 bg-emerald-50/50',
-    title: 'text-emerald-700',
+  muted: {
+    border: 'border-border bg-bg-accent/50',
+    title: 'text-text',
   },
 }
 

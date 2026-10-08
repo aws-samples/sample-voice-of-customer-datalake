@@ -4,11 +4,11 @@
  * @module components/PersonaExportMenu/pdfGenerator.test
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { ProjectPersona } from '../../api/types'
+import type { ProjectPersona } from '../../api/projectTypes'
 
 // Mock the printUtils module — createPdfGenerator delegates to openPrintWindow internally,
 // so we mock createPdfGenerator to capture calls while preserving the factory pattern.
-const mockOpenPrintWindow = vi.fn()
+const mockOpenPrintWindow = vi.fn<(options: unknown) => unknown>()
 vi.mock('../../utils/printUtils', () => ({
   createPdfGenerator: (title: string | ((p: unknown) => string), render: (p: unknown) => unknown) =>
     (props: unknown) => {
@@ -80,6 +80,36 @@ describe('PersonaPDFContent for PDF generation', () => {
     created_at: '2025-01-01T00:00:00Z',
   })
 
+  /** A persona with every optional section filled in. */
+  const createFullPersona = (): ProjectPersona => ({
+    ...createTestPersona(),
+    confidence: 'high',
+    feedback_count: 100,
+    avatar_url: 'https://example.com/avatar.png',
+    identity: {
+      age_range: '25-34',
+      occupation: 'Engineer',
+      bio: 'A detailed bio',
+    },
+    goals_motivations: {
+      primary_goal: 'Primary goal',
+      secondary_goals: ['Secondary 1', 'Secondary 2'],
+      underlying_motivations: ['Motivation 1'],
+    },
+    pain_points: {
+      current_challenges: ['Challenge 1'],
+      blockers: ['Blocker 1'],
+      workarounds: ['Workaround 1'],
+    },
+    context_environment: {
+      usage_context: 'Office',
+      devices: ['Laptop', 'Phone'],
+      time_constraints: '9-5',
+    },
+    quotes: [{ text: 'Quote 1', context: 'Interview' }],
+    research_notes: ['Note 1', 'Note 2'],
+  })
+
   it('creates valid persona object for PDF', () => {
     const persona = createTestPersona()
     
@@ -89,34 +119,7 @@ describe('PersonaPDFContent for PDF generation', () => {
   })
 
   it('handles persona with all optional fields', () => {
-    const persona: ProjectPersona = {
-      ...createTestPersona(),
-      confidence: 'high',
-      feedback_count: 100,
-      avatar_url: 'https://example.com/avatar.png',
-      identity: {
-        age_range: '25-34',
-        occupation: 'Engineer',
-        bio: 'A detailed bio',
-      },
-      goals_motivations: {
-        primary_goal: 'Primary goal',
-        secondary_goals: ['Secondary 1', 'Secondary 2'],
-        underlying_motivations: ['Motivation 1'],
-      },
-      pain_points: {
-        current_challenges: ['Challenge 1'],
-        blockers: ['Blocker 1'],
-        workarounds: ['Workaround 1'],
-      },
-      context_environment: {
-        usage_context: 'Office',
-        devices: ['Laptop', 'Phone'],
-        time_constraints: '9-5',
-      },
-      quotes: [{ text: 'Quote 1', context: 'Interview' }],
-      research_notes: ['Note 1', 'Note 2'],
-    }
+    const persona = createFullPersona()
 
     expect(persona.confidence).toBe('high')
     expect(persona.feedback_count).toBe(100)
@@ -125,34 +128,7 @@ describe('PersonaPDFContent for PDF generation', () => {
   })
 
   it('handles persona optional collection fields', () => {
-    const persona: ProjectPersona = {
-      ...createTestPersona(),
-      confidence: 'high',
-      feedback_count: 100,
-      avatar_url: 'https://example.com/avatar.png',
-      identity: {
-        age_range: '25-34',
-        occupation: 'Engineer',
-        bio: 'A detailed bio',
-      },
-      goals_motivations: {
-        primary_goal: 'Primary goal',
-        secondary_goals: ['Secondary 1', 'Secondary 2'],
-        underlying_motivations: ['Motivation 1'],
-      },
-      pain_points: {
-        current_challenges: ['Challenge 1'],
-        blockers: ['Blocker 1'],
-        workarounds: ['Workaround 1'],
-      },
-      context_environment: {
-        usage_context: 'Office',
-        devices: ['Laptop', 'Phone'],
-        time_constraints: '9-5',
-      },
-      quotes: [{ text: 'Quote 1', context: 'Interview' }],
-      research_notes: ['Note 1', 'Note 2'],
-    }
+    const persona = createFullPersona()
 
     expect(persona.pain_points?.current_challenges).toHaveLength(1)
     expect(persona.context_environment?.devices).toHaveLength(2)
@@ -193,10 +169,12 @@ describe('PDF filename generation', () => {
     expect(filename).toBe('johns-test-demo-persona.pdf')
   })
 
-  it('handles empty persona name', () => {
-    const personaName = ''
-    const filename = personaName || 'persona'
-    
-    expect(filename).toBe('persona')
+  it.each([
+    ['', 'persona'],
+    ['Ann', 'Ann'],
+  ])('falls back to "persona" only for an empty name (%j)', (personaName, expected) => {
+    const filename = personaName === '' ? 'persona' : personaName
+
+    expect(filename).toBe(expected)
   })
 })

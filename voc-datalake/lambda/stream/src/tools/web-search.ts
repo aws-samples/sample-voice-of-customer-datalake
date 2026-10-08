@@ -124,8 +124,8 @@ async function signedFetch(url: string, body: string): Promise<Response> {
 
 const jsonRpcResponseSchema = z.object({
   result: z.unknown().optional(),
-  error: z.object({ message: z.string().optional() }).passthrough().optional(),
-}).passthrough();
+  error: z.object({ message: z.string().optional() }).loose().optional(),
+}).loose();
 
 /** JSON-RPC responses may arrive as plain JSON or as an SSE frame
  * (`data: {...}`) depending on how the gateway answers. */
@@ -186,8 +186,8 @@ export function resetToolNameCacheForTesting(): void {
 }
 
 const toolsListSchema = z.object({
-  tools: z.array(z.object({ name: z.string() }).passthrough()).optional(),
-}).passthrough();
+  tools: z.array(z.object({ name: z.string() }).loose()).optional(),
+}).loose();
 
 /** Reads only the first page: MCP tools/list can paginate via nextCursor,
  * but this gateway exposes a single connector target with one tool. */
@@ -228,19 +228,19 @@ async function callWebSearchTool(query: string, maxResults: number): Promise<unk
 
 const toolCallResultSchema = z.object({
   isError: z.boolean().optional(),
-  content: z.array(z.object({ type: z.string().optional(), text: z.string().optional() }).passthrough()).optional(),
-}).passthrough();
+  content: z.array(z.object({ type: z.string().optional(), text: z.string().optional() }).loose()).optional(),
+}).loose();
 
 const webResultSchema = z.object({
   title: z.string().nullable().optional(),
   url: z.string().nullable().optional(),
   text: z.string(),
   publishedDate: z.string().nullable().optional(),
-}).passthrough();
+}).loose();
 
 const searchPayloadSchema = z.object({
   results: z.array(z.unknown()).optional(),
-}).passthrough();
+}).loose();
 
 export interface WebSource {
   title: string;
@@ -306,7 +306,7 @@ function formatResults(sources: WebSource[]): string {
 const webSearchInputSchema = z.object({
   query: z.string().optional(),
   max_results: z.number().optional(),
-}).passthrough();
+}).loose();
 
 export async function executeWebSearch(
   toolInput: unknown,

@@ -1,16 +1,34 @@
 """
 Tests for logs_handler.py - /logs/* endpoints.
 Provides access to validation failures and processing errors.
+
+The route shapes, refusal wording, DynamoDB calls and redaction bounds are pinned
+in `test_logs_handler_mutation.py`; this file keeps the unfiltered-listing default,
+the zero summary, the #256 fan-out regression, the real-clock scraper window and
+the clear's count.
 """
-import json
-from unittest.mock import patch, MagicMock
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
+from unittest.mock import MagicMock, patch
+
+import pytest
+from handler_events_fixtures import call_route
+
+from logs_handler import lambda_handler
 
 
 def _today_iso() -> str:
     """Today as ISO timestamp. Used for scraper_run started_at fixtures so they
     fall within the default 7-day lookback regardless of when tests run."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
+
+
+def _scraper_run(sk: str, *, started_at: str, pages_scraped: int, items_found: int) -> dict:
+    """A completed SCRAPER#scraper-123 run row."""
+    return {
+        'pk': 'SCRAPER#scraper-123', 'sk': sk, 'status': 'completed',
+        'started_at': started_at, 'completed_at': started_at,
+        'pages_scraped': pages_scraped, 'items_found': items_found, 'errors': [],
+    }
 
 
 class TestGetValidationLogs:
@@ -23,158 +41,19 @@ class TestGetValidationLogs:
         """Returns empty array when no validation failures in date range."""
         # Arrange
         mock_table.query.return_value = {'Items': []}
-        
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from logs_handler import lambda_handler
-        
-        event = api_gateway_event(method='GET', path='/logs/validation', query_params={'days': '7'})
-        
+
+
         # Act
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
+        response, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            method='GET', path='/logs/validation', query_params={'days': '7'},
+        )
+
         # Assert
         assert response['statusCode'] == 200
         assert body['logs'] == []
         assert body['count'] == 0
         assert body['days'] == 7
-
-    @patch('logs_handler.aggregates_table')
-    def test_returns_validation_logs_for_specific_source(
-        self, mock_table, api_gateway_event, lambda_context
-    ):
-        """Returns validation logs filtered by source platform."""
-        # Arrange
-        mock_table.query.return_value = {
-            'Items': [
-                {
-                    'source_platform': 'webscraper',
-                    'message_id': 'msg-123',
-                    'timestamp': '2025-01-01T12:00:00Z',
-                    'log_type': 'validation',
-                    'errors': ['Missing required field: text'],
-                    'raw_preview': '{"id": "123"}'
-                }
-            ]
-        }
-        
-        from logs_handler import lambda_handler
-        event = api_gateway_event(
-            method='GET',
-            path='/logs/validation',
-            query_params={'source': 'webscraper', 'days': '7'}
-        )
-        
-        # Act
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        # Assert
-        assert response['statusCode'] == 200
-        assert body['count'] == 1
-        assert body['logs'][0]['source_platform'] == 'webscraper'
-        assert body['logs'][0]['errors'] == ['Missing required field: text']
-
-    @patch('logs_handler.aggregates_table')
-    def test_limits_results_to_max_500(
-        self, mock_table, api_gateway_event, lambda_context
-    ):
-        """Enforces maximum limit of 500 items."""
-        # Arrange
-        mock_table.query.return_value = {'Items': []}
-        
-        from logs_handler import lambda_handler
-        event = api_gateway_event(
-            method='GET',
-            path='/logs/validation',
-            query_params={'limit': '1000'}
-        )
-        
-        # Act
-        response = lambda_handler(event, lambda_context)
-        
-        # Assert - should not error, limit capped internally
-        assert response['statusCode'] == 200
-
-    @patch('logs_handler.aggregates_table')
-    def test_returns_error_message_when_table_not_configured(
-        self, mock_table, api_gateway_event, lambda_context
-    ):
-        """Returns error when aggregates table not configured."""
-        # Arrange - simulate table not configured
-        with patch('logs_handler.aggregates_table', None):
-            from logs_handler import lambda_handler
-            event = api_gateway_event(method='GET', path='/logs/validation')
-            
-            # Act
-            response = lambda_handler(event, lambda_context)
-            body = json.loads(response['body'])
-            
-            # Assert - now returns 500 with error key
-            assert response['statusCode'] == 500
-            assert 'error' in body
-
-
-class TestGetProcessingLogs:
-    """Tests for GET /logs/processing endpoint."""
-
-    @patch('logs_handler.aggregates_table')
-    def test_returns_empty_list_when_no_errors_exist(
-        self, mock_table, api_gateway_event, lambda_context
-    ):
-        """Returns empty array when no processing errors in date range."""
-        # Arrange
-        mock_table.query.return_value = {'Items': []}
-        
-        from logs_handler import lambda_handler
-        event = api_gateway_event(method='GET', path='/logs/processing', query_params={'days': '7'})
-        
-        # Act
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        # Assert
-        assert response['statusCode'] == 200
-        assert body['logs'] == []
-        assert body['count'] == 0
-
-    @patch('logs_handler.aggregates_table')
-    def test_returns_processing_errors_with_error_details(
-        self, mock_table, api_gateway_event, lambda_context
-    ):
-        """Returns processing errors with error type and message."""
-        # Arrange - filter by source to get predictable results
-        mock_table.query.return_value = {
-            'Items': [
-                {
-                    'source_platform': 'manual_import',
-                    'message_id': 'msg-456',
-                    'timestamp': '2025-01-01T12:00:00Z',
-                    'log_type': 'processing',
-                    'error_type': 'BedrockError',
-                    'error_message': 'Model invocation failed'
-                }
-            ]
-        }
-        
-        from logs_handler import lambda_handler
-        event = api_gateway_event(
-            method='GET',
-            path='/logs/processing',
-            query_params={'source': 'manual_import'}  # Filter by source for predictable count
-        )
-        
-        # Act
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        # Assert
-        assert response['statusCode'] == 200
-        assert body['count'] == 1
-        assert body['logs'][0]['error_type'] == 'BedrockError'
-        assert body['logs'][0]['error_message'] == 'Model invocation failed'
 
 
 class TestGetLogsSummary:
@@ -187,14 +66,13 @@ class TestGetLogsSummary:
         """Returns zero counts when no logs in date range."""
         # Arrange
         mock_table.query.return_value = {'Items': []}
-        
-        from logs_handler import lambda_handler
-        event = api_gateway_event(method='GET', path='/logs/summary', query_params={'days': '7'})
-        
+
         # Act
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
+        response, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            method='GET', path='/logs/summary', query_params={'days': '7'},
+        )
+
         # Assert
         assert response['statusCode'] == 200
         assert body['summary']['total_validation_failures'] == 0
@@ -202,79 +80,27 @@ class TestGetLogsSummary:
         assert body['days'] == 7
 
     @patch('logs_handler.aggregates_table')
-    def test_aggregates_counts_by_source(
-        self, mock_table, api_gateway_event, lambda_context
+    def test_counts_every_enabled_plugin_not_a_hardcoded_list(
+        self, mock_table, api_gateway_event, lambda_context, monkeypatch
     ):
-        """Aggregates validation and processing counts per source."""
-        # Arrange - return different counts for different sources
-        def mock_query(**kwargs):
-            pk = kwargs.get('KeyConditionExpression')
-            # Simulate different results based on query
-            if 'validation' in str(pk) and 'webscraper' in str(pk):
-                return {'Items': [{'id': '1'}, {'id': '2'}]}
-            elif 'processing' in str(pk) and 'webscraper' in str(pk):
-                return {'Items': [{'id': '3'}]}
-            return {'Items': []}
-        
-        mock_table.query.side_effect = mock_query
-        
-        from logs_handler import lambda_handler
-        event = api_gateway_event(method='GET', path='/logs/summary')
-        
-        # Act
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        # Assert
-        assert response['statusCode'] == 200
-        assert 'summary' in body
-        assert 'validation_failures' in body['summary']
-        assert 'processing_errors' in body['summary']
+        """Issue #256: a plugin enabled at deploy time is summarised.
+
+        `synthetic_reviews` was enabled in `pluginStatus` yet never listed, because
+        the handler fanned out over a hardcoded triple instead of ENABLED_SOURCES.
+        """
+        monkeypatch.setenv('ENABLED_SOURCES', '["synthetic_reviews"]')
+        mock_table.query.return_value = {'Items': [{'id': '1'}]}
+
+        _, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            method='GET', path='/logs/summary',
+        )
+
+        assert body['summary']['validation_failures'] == {'synthetic_reviews': 1, 'manual_import': 1}
 
 
 class TestGetScraperLogs:
     """Tests for GET /logs/scraper/{scraper_id} endpoint."""
-
-    @patch('logs_handler.aggregates_table')
-    def test_returns_scraper_run_history(
-        self, mock_table, api_gateway_event, lambda_context
-    ):
-        """Returns run history for specific scraper."""
-        # Arrange
-        recent = _today_iso()
-        mock_table.query.return_value = {
-            'Items': [
-                {
-                    'pk': 'SCRAPER#scraper-123',
-                    'sk': f'RUN#{recent}',
-                    'status': 'completed',
-                    'started_at': recent,
-                    'completed_at': recent,
-                    'pages_scraped': 10,
-                    'items_found': 50,
-                    'errors': []
-                }
-            ]
-        }
-        
-        from logs_handler import lambda_handler
-        event = api_gateway_event(
-            method='GET',
-            path='/logs/scraper/scraper-123',
-            path_params={'scraper_id': 'scraper-123'}
-        )
-        
-        # Act
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        # Assert
-        assert response['statusCode'] == 200
-        assert body['scraper_id'] == 'scraper-123'
-        assert body['count'] == 1
-        assert body['logs'][0]['status'] == 'completed'
-        assert body['logs'][0]['pages_scraped'] == 10
-        assert body['logs'][0]['items_found'] == 50
 
     @patch('logs_handler.aggregates_table')
     def test_excludes_runs_older_than_lookback_window(
@@ -288,35 +114,22 @@ class TestGetScraperLogs:
         """
         # Arrange: one recent run (kept) and one a year old (must be dropped).
         recent = _today_iso()
-        old = (datetime.now(timezone.utc) - timedelta(days=365)).isoformat()
+        old = (datetime.now(UTC) - timedelta(days=365)).isoformat()
         mock_table.query.return_value = {
             'Items': [
-                {
-                    'pk': 'SCRAPER#scraper-123', 'sk': f'RUN#{recent}',
-                    'status': 'completed', 'started_at': recent,
-                    'completed_at': recent, 'pages_scraped': 5,
-                    'items_found': 20, 'errors': [],
-                },
-                {
-                    'pk': 'SCRAPER#scraper-123', 'sk': f'RUN#{old}',
-                    'status': 'completed', 'started_at': old,
-                    'completed_at': old, 'pages_scraped': 99,
-                    'items_found': 999, 'errors': [],
-                },
+                _scraper_run(f'RUN#{recent}', started_at=recent, pages_scraped=5, items_found=20),
+                _scraper_run(f'RUN#{old}', started_at=old, pages_scraped=99, items_found=999),
             ]
         }
 
-        from logs_handler import lambda_handler
-        event = api_gateway_event(
+        # Act
+        response, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
             method='GET',
             path='/logs/scraper/scraper-123',
             path_params={'scraper_id': 'scraper-123'},
             query_params={'days': '7'},
         )
-
-        # Act
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
 
         # Assert: only the recent run survives the cutoff.
         assert response['statusCode'] == 200
@@ -325,171 +138,40 @@ class TestGetScraperLogs:
         returned_started = [log['started_at'] for log in body['logs']]
         assert old not in returned_started
 
-    @patch('logs_handler.aggregates_table')
-    def test_keeps_runs_missing_started_at(
-        self, mock_table, api_gateway_event, lambda_context
-    ):
-        """Runs without a started_at are kept (not silently dropped by the filter)."""
-        # Arrange
-        mock_table.query.return_value = {
-            'Items': [
-                {
-                    'pk': 'SCRAPER#scraper-123', 'sk': 'RUN#legacy',
-                    'status': 'completed', 'pages_scraped': 1,
-                    'items_found': 2, 'errors': [],
-                },
-            ]
-        }
-
-        from logs_handler import lambda_handler
-        event = api_gateway_event(
-            method='GET',
-            path='/logs/scraper/scraper-123',
-            path_params={'scraper_id': 'scraper-123'},
-            query_params={'days': '7'},
-        )
-
-        # Act
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-
-        # Assert: the run with no timestamp is preserved.
-        assert response['statusCode'] == 200
-        assert body['count'] == 1
-        assert body['logs'][0]['run_id'] == 'RUN#legacy'
-
-    @patch('logs_handler.aggregates_table')
-    def test_returns_empty_list_for_unknown_scraper(
-        self, mock_table, api_gateway_event, lambda_context
-    ):
-        """Returns empty list when scraper has no runs."""
-        # Arrange
-        mock_table.query.return_value = {'Items': []}
-        
-        from logs_handler import lambda_handler
-        event = api_gateway_event(
-            method='GET',
-            path='/logs/scraper/unknown-scraper',
-            path_params={'scraper_id': 'unknown-scraper'}
-        )
-        
-        # Act
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        # Assert
-        assert response['statusCode'] == 200
-        assert body['logs'] == []
-        assert body['count'] == 0
-
 
 class TestClearValidationLogs:
     """Tests for DELETE /logs/validation/{source} endpoint."""
 
+    @pytest.mark.parametrize(('source', 'stored', 'expected_deleted'), [
+        # Deletes all validation logs for the specified source.
+        ('webscraper', [
+            {'pk': 'LOGS#validation#webscraper', 'sk': '2025-01-01T12:00:00Z'},
+            {'pk': 'LOGS#validation#webscraper', 'sk': '2025-01-01T13:00:00Z'},
+        ], 2),
+        # Zero deleted when the source has no logs.
+        ('unknown', [], 0),
+    ])
     @patch('logs_handler.aggregates_table')
-    def test_clears_validation_logs_for_source(
-        self, mock_table, api_gateway_event, lambda_context
+    def test_reports_how_many_logs_it_cleared_for_the_source(
+        self, mock_table, api_gateway_event, lambda_context, source, stored, expected_deleted
     ):
-        """Deletes all validation logs for specified source."""
-        # Arrange
-        mock_table.query.return_value = {
-            'Items': [
-                {'pk': 'LOGS#validation#webscraper', 'sk': '2025-01-01T12:00:00Z'},
-                {'pk': 'LOGS#validation#webscraper', 'sk': '2025-01-01T13:00:00Z'}
-            ]
-        }
+        # Arrange. One page as an exhaustible list, not a return_value: a pager that
+        # fails to stop then hits StopIteration on its second query and answers 500
+        # instead of spinning forever against the mock.
+        mock_table.query.side_effect = [{'Items': stored}]
         mock_batch_writer = MagicMock()
         mock_batch_writer.__enter__ = MagicMock(return_value=mock_batch_writer)
-        mock_batch_writer.__exit__ = MagicMock(return_value=False)
         mock_table.batch_writer.return_value = mock_batch_writer
-        
-        from logs_handler import lambda_handler
-        event = api_gateway_event(
-            method='DELETE',
-            path='/logs/validation/webscraper',
-            path_params={'source': 'webscraper'}
-        )
-        
+
         # Act
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
+        response, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            method='DELETE',
+            path=f'/logs/validation/{source}',
+            path_params={'source': source},
+        )
+
         # Assert
         assert response['statusCode'] == 200
         assert body['success'] is True
-        assert body['deleted'] == 2
-
-    @patch('logs_handler.aggregates_table')
-    def test_returns_zero_deleted_when_no_logs_exist(
-        self, mock_table, api_gateway_event, lambda_context
-    ):
-        """Returns zero deleted count when source has no logs."""
-        # Arrange
-        mock_table.query.return_value = {'Items': []}
-        mock_batch_writer = MagicMock()
-        mock_batch_writer.__enter__ = MagicMock(return_value=mock_batch_writer)
-        mock_batch_writer.__exit__ = MagicMock(return_value=False)
-        mock_table.batch_writer.return_value = mock_batch_writer
-        
-        from logs_handler import lambda_handler
-        event = api_gateway_event(
-            method='DELETE',
-            path='/logs/validation/unknown',
-            path_params={'source': 'unknown'}
-        )
-        
-        # Act
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        # Assert
-        assert response['statusCode'] == 200
-        assert body['success'] is True
-        assert body['deleted'] == 0
-
-    @patch('logs_handler.aggregates_table')
-    def test_returns_error_when_delete_fails(
-        self, mock_table, api_gateway_event, lambda_context
-    ):
-        """Returns error when batch delete fails."""
-        # Arrange
-        mock_table.query.side_effect = Exception('DynamoDB error')
-        
-        from logs_handler import lambda_handler
-        event = api_gateway_event(
-            method='DELETE',
-            path='/logs/validation/webscraper',
-            path_params={'source': 'webscraper'}
-        )
-        
-        # Act
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        # Assert - now returns 500 with error key
-        assert response['statusCode'] == 500
-        assert 'error' in body
-
-
-class TestCorsHeaders:
-    """Tests for CORS header configuration."""
-
-    @patch('logs_handler.aggregates_table')
-    def test_includes_cors_headers_in_response(
-        self, mock_table, api_gateway_event, lambda_context
-    ):
-        """Verifies CORS headers are included in responses."""
-        # Arrange
-        mock_table.query.return_value = {'Items': []}
-        
-        from logs_handler import lambda_handler
-        event = api_gateway_event(method='GET', path='/logs/summary')
-        
-        # Act
-        response = lambda_handler(event, lambda_context)
-        
-        # Assert
-        assert response['statusCode'] == 200
-        headers = response.get('headers', {})
-        # CORS headers should be present (set by Powertools)
-        assert 'Access-Control-Allow-Origin' in headers or response['statusCode'] == 200
+        assert body['deleted'] == expected_deleted

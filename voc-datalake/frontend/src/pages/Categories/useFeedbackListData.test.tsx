@@ -1,21 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { categoriesApiMocks, clientApiModule, createQueryWrapper } from './categories-fixtures'
 
-const mockGetFeedback = vi.fn()
-const mockSearchFeedback = vi.fn()
-const mockGetUrgentFeedback = vi.fn()
-
-vi.mock('../../api/client', () => ({
-  api: {
-    getFeedback: (params: unknown) => mockGetFeedback(params),
-    searchFeedback: (params: unknown) => mockSearchFeedback(params),
-    getUrgentFeedback: (params: unknown) => mockGetUrgentFeedback(params),
-  },
-}))
+vi.mock('../../api/client', () => clientApiModule())
 
 import { useFeedbackListData } from './useFeedbackListData'
 import type { CategoryFiltersState } from './useCategoryFilters'
+import { at } from '@test/defined'
+
+const mockGetFeedback = categoriesApiMocks.getFeedback
+const mockSearchFeedback = categoriesApiMocks.searchFeedback
+const mockGetUrgentFeedback = categoriesApiMocks.getUrgentFeedback
 
 const API_ENDPOINT = 'https://api.example.com'
 const DATE_PARAMS = { days: 7 }
@@ -27,6 +22,9 @@ const baseFilters: CategoryFiltersState = {
   sentimentFilter: 'all',
   ratingFilter: { value: 0, direction: 'up' },
   showUrgentOnly: false,
+  channel: null,
+  dimensionFilter: {},
+  tag: null,
 }
 
 function makeItem(overrides: Record<string, unknown> = {}) {
@@ -44,18 +42,9 @@ function makeItem(overrides: Record<string, unknown> = {}) {
   }
 }
 
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
-  return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
-}
-
 function renderData(filters: CategoryFiltersState, apiEndpoint = API_ENDPOINT) {
   return renderHook(() => useFeedbackListData(DATE_PARAMS, filters, apiEndpoint), {
-    wrapper: createWrapper(),
+    wrapper: createQueryWrapper(),
   })
 }
 
@@ -66,11 +55,17 @@ beforeEach(() => {
   mockGetUrgentFeedback.mockResolvedValue({ count: 1, items: [makeItem()] })
 })
 
+/** The `offset` of a `getFeedback` request (the stub's arguments are untyped), 0 when absent. */
+function offsetOf(params: unknown): number {
+  if (typeof params !== 'object' || params === null || !('offset' in params)) return 0
+  return typeof params.offset === 'number' ? params.offset : 0
+}
+
 describe('useFeedbackListData', () => {
   describe('default browse-all fetch (issue #198 UX rationalization)', () => {
     it('fetches the list with default filters (nothing selected = show everything)', async () => {
       const { result } = renderData(baseFilters)
-      await waitFor(() => expect(mockGetFeedback).toHaveBeenCalled())
+      await waitFor(() => expect(mockGetFeedback).toHaveBeenCalledWith({ days: 7, limit: 100, offset: 0 }))
       await waitFor(() => expect(result.current.filteredFeedback).toHaveLength(1))
     })
 
@@ -85,7 +80,7 @@ describe('useFeedbackListData', () => {
   describe('endpoint selection', () => {
     it('uses the search endpoint when the query has 2+ characters', async () => {
       renderData({ ...baseFilters, searchText: 'slow' })
-      await waitFor(() => expect(mockSearchFeedback).toHaveBeenCalled())
+      await waitFor(() => expect(mockSearchFeedback).toHaveBeenCalledWith({ days: 7, limit: 100, q: 'slow' }))
       expect(mockSearchFeedback).toHaveBeenCalledWith(expect.objectContaining({ q: 'slow' }))
       expect(mockGetFeedback).not.toHaveBeenCalled()
       expect(mockGetUrgentFeedback).not.toHaveBeenCalled()
@@ -95,18 +90,18 @@ describe('useFeedbackListData', () => {
       const { result } = renderData({ ...baseFilters, searchText: 'a' })
       expect(result.current.isSearching).toBe(false)
       expect(mockSearchFeedback).not.toHaveBeenCalled()
-      await waitFor(() => expect(mockGetFeedback).toHaveBeenCalled())
+      await waitFor(() => expect(mockGetFeedback).toHaveBeenCalledWith({ days: 7, limit: 100, offset: 0 }))
     })
 
     it('uses the urgent endpoint when the urgent toggle is on', async () => {
       renderData({ ...baseFilters, showUrgentOnly: true })
-      await waitFor(() => expect(mockGetUrgentFeedback).toHaveBeenCalled())
+      await waitFor(() => expect(mockGetUrgentFeedback).toHaveBeenCalledWith({ days: 7, limit: 100 }))
       expect(mockGetFeedback).not.toHaveBeenCalled()
     })
 
     it('search wins over the urgent toggle', async () => {
       renderData({ ...baseFilters, searchText: 'slow', showUrgentOnly: true })
-      await waitFor(() => expect(mockSearchFeedback).toHaveBeenCalled())
+      await waitFor(() => expect(mockSearchFeedback).toHaveBeenCalledWith({ days: 7, limit: 100, q: 'slow' }))
       expect(mockGetUrgentFeedback).not.toHaveBeenCalled()
     })
   })
@@ -116,6 +111,13 @@ describe('useFeedbackListData', () => {
       renderData({ ...baseFilters, selectedCategories: ['delivery'] })
       await waitFor(() =>
         expect(mockGetFeedback).toHaveBeenCalledWith(expect.objectContaining({ category: 'delivery' }))
+      )
+    })
+
+    it('passes channel, dims and tag to the server', async () => {
+      renderData({ ...baseFilters, channel: 'review', dimensionFilter: { product: 'web_shop' }, tag: 'vip' })
+      await waitFor(() =>
+        expect(mockGetFeedback).toHaveBeenCalledWith(expect.objectContaining({ channel: 'review', dims: 'product:web_shop', tag: 'vip' }))
       )
     })
 
@@ -136,7 +138,7 @@ describe('useFeedbackListData', () => {
       const { result } = renderData({ ...baseFilters, ratingFilter: { value: 4, direction: 'up' } })
 
       await waitFor(() => expect(result.current.filteredFeedback).toHaveLength(1))
-      expect(result.current.filteredFeedback[0].feedback_id).toBe('hi')
+      expect(at(result.current.filteredFeedback, 0).feedback_id).toBe('hi')
     })
 
     it('filters out items above the rating threshold with the & below direction', async () => {
@@ -151,7 +153,7 @@ describe('useFeedbackListData', () => {
       const { result } = renderData({ ...baseFilters, ratingFilter: { value: 3, direction: 'below' } })
 
       await waitFor(() => expect(result.current.filteredFeedback).toHaveLength(2))
-      expect(result.current.filteredFeedback.map((i) => i.feedback_id)).toEqual(['mid', 'lo'])
+      expect(result.current.filteredFeedback.map((i) => i.feedback_id)).toStrictEqual(['mid', 'lo'])
     })
 
     it('excludes unrated items in both rating directions', async () => {
@@ -162,7 +164,7 @@ describe('useFeedbackListData', () => {
       const { result } = renderData({ ...baseFilters, ratingFilter: { value: 3, direction: 'below' } })
 
       await waitFor(() => expect(result.current.filteredFeedback).toHaveLength(1))
-      expect(result.current.filteredFeedback[0].feedback_id).toBe('rated')
+      expect(at(result.current.filteredFeedback, 0).feedback_id).toBe('rated')
     })
 
     it('applies multi-category filtering client-side', async () => {
@@ -176,18 +178,21 @@ describe('useFeedbackListData', () => {
       const { result } = renderData({ ...baseFilters, selectedCategories: ['delivery', 'pricing'] })
 
       await waitFor(() => expect(result.current.filteredFeedback).toHaveLength(1))
-      expect(result.current.filteredFeedback[0].feedback_id).toBe('a')
+      expect(at(result.current.filteredFeedback, 0).feedback_id).toBe('a')
     })
   })
 
   describe('pagination (list endpoint)', () => {
+    /** The first page — rows `a` and `b` — of a window holding `total` rows. */
+    const firstPageOf = (total: number) => ({
+      count: 2,
+      total,
+      offset: 0,
+      items: [makeItem({ feedback_id: 'a' }), makeItem({ feedback_id: 'b' })],
+    })
+
     it('reports hasMore when the loaded rows are fewer than the windowed total', async () => {
-      mockGetFeedback.mockResolvedValue({
-        count: 2,
-        total: 5,
-        offset: 0,
-        items: [makeItem({ feedback_id: 'a' }), makeItem({ feedback_id: 'b' })],
-      })
+      mockGetFeedback.mockResolvedValue(firstPageOf(5))
       const { result } = renderData(baseFilters)
 
       await waitFor(() => expect(result.current.hasMore).toBe(true))
@@ -195,12 +200,7 @@ describe('useFeedbackListData', () => {
     })
 
     it('reports no more pages when the full total is loaded', async () => {
-      mockGetFeedback.mockResolvedValue({
-        count: 2,
-        total: 2,
-        offset: 0,
-        items: [makeItem({ feedback_id: 'a' }), makeItem({ feedback_id: 'b' })],
-      })
+      mockGetFeedback.mockResolvedValue(firstPageOf(2))
       const { result } = renderData(baseFilters)
 
       await waitFor(() => expect(result.current.filteredFeedback).toHaveLength(2))
@@ -208,9 +208,9 @@ describe('useFeedbackListData', () => {
     })
 
     it('loadMore fetches the next page with the offset and appends the items', async () => {
-      mockGetFeedback.mockImplementation((params: { offset?: number }) =>
+      mockGetFeedback.mockImplementation((params: unknown) =>
         Promise.resolve(
-          (params.offset ?? 0) === 0
+          offsetOf(params) === 0
             ? { count: 2, total: 4, offset: 0, items: [makeItem({ feedback_id: 'a' }), makeItem({ feedback_id: 'b' })] }
             : { count: 2, total: 4, offset: 2, items: [makeItem({ feedback_id: 'c' }), makeItem({ feedback_id: 'd' })] }
         )
@@ -222,8 +222,10 @@ describe('useFeedbackListData', () => {
 
       await waitFor(() => expect(result.current.filteredFeedback).toHaveLength(4))
       expect(mockGetFeedback).toHaveBeenCalledWith(expect.objectContaining({ offset: 2 }))
-      expect(result.current.filteredFeedback.map((i) => i.feedback_id)).toEqual(['a', 'b', 'c', 'd'])
-      expect(result.current.hasMore).toBe(false)
+      expect({
+        ids: result.current.filteredFeedback.map((i) => i.feedback_id),
+        hasMore: result.current.hasMore,
+      }).toStrictEqual({ ids: ['a', 'b', 'c', 'd'], hasMore: false })
     })
 
     it('never reports more pages for search results (no server pagination)', async () => {
@@ -278,15 +280,15 @@ describe('the search gate measures what the server measures', () => {
   it('sends the trimmed term so the client and the route agree on its length', async () => {
     renderData({ ...baseFilters, searchText: '  delivery  ' })
 
-    await waitFor(() => expect(mockSearchFeedback).toHaveBeenCalled())
-    expect(mockSearchFeedback.mock.calls[0][0]).toMatchObject({ q: 'delivery' })
+    await waitFor(() => expect(mockSearchFeedback).toHaveBeenCalledWith({ days: 7, limit: 100, q: 'delivery' }))
+    expect(at(mockSearchFeedback.mock.calls, 0)[0]).toMatchObject({ q: 'delivery' })
   })
 
   it('still searches when only the interior has spaces', async () => {
     renderData({ ...baseFilters, searchText: 'slow delivery' })
 
-    await waitFor(() => expect(mockSearchFeedback).toHaveBeenCalled())
-    expect(mockSearchFeedback.mock.calls[0][0]).toMatchObject({ q: 'slow delivery' })
+    await waitFor(() => expect(mockSearchFeedback).toHaveBeenCalledWith({ days: 7, limit: 100, q: 'slow delivery' }))
+    expect(at(mockSearchFeedback.mock.calls, 0)[0]).toMatchObject({ q: 'slow delivery' })
   })
 })
 
@@ -304,19 +306,11 @@ describe('a truncated search window reaches the display', () => {
     await waitFor(() => expect(result.current.isPartialWindow).toBe(true))
   })
 
-  it('reports a complete search window as complete', async () => {
-    mockSearchFeedback.mockResolvedValue({
-      count: 1, items: [makeItem()], is_partial_window: false,
-    })
-
-    const { result } = renderData({ ...baseFilters, searchText: 'delivery' })
-
-    await waitFor(() => expect(result.current.filteredFeedback).toHaveLength(1))
-    expect(result.current.isPartialWindow).toBe(false)
-  })
-
-  it('treats a route that omits the flag as complete', async () => {
-    mockSearchFeedback.mockResolvedValue({ count: 1, items: [makeItem()] })
+  it.each([
+    ['reports a complete search window as complete', { is_partial_window: false }],
+    ['treats a route that omits the flag as complete', {}],
+  ])('%s', async (_name, flag) => {
+    mockSearchFeedback.mockResolvedValue({ count: 1, items: [makeItem()], ...flag })
 
     const { result } = renderData({ ...baseFilters, searchText: 'delivery' })
 

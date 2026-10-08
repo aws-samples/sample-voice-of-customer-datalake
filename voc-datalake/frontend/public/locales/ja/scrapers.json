@@ -8,13 +8,15 @@
     "never": "なし",
     "notConfigured": "未設定",
     "runNow": "今すぐ実行",
-    "urls": "URL"
+    "urls": "URL",
+    "active": "有効",
+    "paused": "一時停止"
   },
   "configureApiFirst": "まずAPIエンドポイントを設定してください",
   "csvUpload": {
     "cancel": "キャンセル",
-    "defaultSourceHint": "「source」列がない行に使用されます。",
-    "defaultSourceLabel": "デフォルトのソースラベル",
+    "defaultSourceHint": "チャネル列のない行に使われます。",
+    "defaultSourceLabel": "既定のチャネル",
     "done": "完了",
     "downloadTemplate": "テンプレートをダウンロード",
     "dropZone": ".csv ファイルをここにドロップするか、クリックして選択",
@@ -30,7 +32,33 @@
     "title": "CSV アップロード",
     "upload": "アップロード",
     "uploading": "アップロード中…",
-    "warningsHeader": "警告"
+    "warningsHeader": "警告",
+    "errorNoHeader": "ファイルにヘッダー行がありません。",
+    "errorUnreadable": "ファイルを読み取れませんでした。",
+    "uploadFailed": "アップロードに失敗しました",
+    "mapping": {
+      "title": "列の割り当て",
+      "hint": "ヘッダー行から提案しています。認識できない列はメタデータとして保持され、「無視」を選ばない限り失われません。",
+      "columnLabel": "{{header}} の割り当て先",
+      "dimensionTarget": "ディメンション: {{name}}",
+      "targets": {
+        "text": "フィードバック本文",
+        "id": "行 ID",
+        "rating": "評価",
+        "date": "日付",
+        "author": "作成者",
+        "title": "タイトル",
+        "url": "リンク",
+        "channel": "チャネル",
+        "tags": "タグ",
+        "metadata": "メタデータとして保持",
+        "ignore": "無視"
+      },
+      "problems": {
+        "noText": "1 つの列を「フィードバック本文」に割り当ててください。",
+        "twice": "{{target}} が複数の列に割り当てられています。"
+      }
+    }
   },
   "deleteConfirmLabel": "削除",
   "deleteConfirmMessage": "このスクレイパーを削除してもよろしいですか？この操作は元に戻せません。",
@@ -67,6 +95,7 @@
     "rating": "評価",
     "reviewContainer": "レビューコンテナ *",
     "save": "スクレイパーを保存",
+    "saveFailed": "スクレイパーを保存できませんでした。もう一度お試しください。",
     "scraperName": "スクレイパー名",
     "scraperNamePlaceholder": "マイレビュースクレイパー",
     "selectorsAutoDetected": "これらのセレクターは自動検出されました。必要に応じて調整してください。",
@@ -147,8 +176,13 @@
     "sourceUrl": "ソースURL",
     "sourceUrlPlaceholder": "https://example.com/reviews",
     "title": "手動インポート",
-    "unparsedSections_one": "⚠️ {{count}}セクションを解析できませんでした",
-    "unparsedSections_other": "⚠️ {{count}}セクションを解析できませんでした"
+    "unparsedSections_one": "{{count}}セクションを解析できませんでした",
+    "unparsedSections_other": "{{count}}セクションを解析できませんでした",
+    "datesRequired_one": "インポートするには、{{count}}件のレビューに日付が必要です。",
+    "datesRequired_other": "インポートするには、{{count}}件のレビューに日付が必要です。",
+    "datesDefaulted_one": "{{count}}件のレビューは本文に日付がないため、本日のインポート日を使用します。下で変更できます。",
+    "datesDefaulted_other": "{{count}}件のレビューは本文に日付がないため、本日のインポート日を使用します。下で変更できます。",
+    "importFailed": "レビューをインポートできませんでした"
   },
   "newSource": "新しいソース",
   "parsedReview": {
@@ -158,7 +192,9 @@
     "star_one": "{{count}}つ星",
     "star_other": "{{count}}つ星",
     "textPlaceholder": "レビューテキスト",
-    "titlePlaceholder": "レビュータイトル（オプション）"
+    "titlePlaceholder": "レビュータイトル（オプション）",
+    "dateLabel": "レビューの日付（必須）",
+    "dateDefaulted": "日付が見つかりません：インポート日を設定"
   },
   "pluginConfig": {
     "automaticSchedule": "自動スケジュール",
@@ -174,7 +210,9 @@
     "scheduleDescription": "設定されたスケジュールでこのソースを実行",
     "select": "選択...",
     "show": "表示",
-    "test": "テスト"
+    "test": "テスト",
+    "configuredInSettings": "このソースは設定画面で認証情報とともに構成します。",
+    "openDataSourceSettings": "データソース設定を開く"
   },
   "refresh": "更新",
   "status": {
@@ -210,5 +248,20 @@
     "title": "データソースを追加",
     "webScraperTemplates": "Webスクレイパーテンプレート"
   },
-  "title": "データソース"
+  "title": "データソース",
+  "loading": "データソースを読み込み中…",
+  "appCard": {
+    "platform": "プラットフォーム",
+    "maxReviews": "最大レビュー数",
+    "unnamed": "名前のないアプリ",
+    "loading": "アプリ設定を読み込み中…",
+    "deleteConfirmTitle": "アプリを削除",
+    "deleteConfirmMessage": "このアプリ設定を削除してもよろしいですか？",
+    "editApp": "アプリを編集",
+    "addNewApp": "新しいアプリを追加",
+    "addApp": "アプリを追加",
+    "configuredApps": "設定済みのアプリ",
+    "noApps": "まだアプリが設定されていません",
+    "addFirstApp": "最初のアプリを追加"
+  }
 }

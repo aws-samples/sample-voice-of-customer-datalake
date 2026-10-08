@@ -4,7 +4,7 @@
   "model": "claude-opus-4.6",
   "prompt": "file://./prompts/security-reviewer.md",
   "tools": [
-    "fs_read",
+    "read",
     "thinking"
   ],
   "allowedTools": [
@@ -14,5 +14,13 @@
   "resources": [
     "file://.kiro/steering/tech.md",
     "file://.kiro/steering/coding-standards.md"
-  ]
+  ],
+  "permissions": {
+    "rules": [
+      {
+        "capability": "fs_read",
+        "effect": "allow"
+      }
+    ]
+  }
 }

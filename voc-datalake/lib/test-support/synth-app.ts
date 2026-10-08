@@ -15,7 +15,9 @@ import { join } from 'node:path';
 
 import { z } from 'zod';
 
+import { isRecord } from './guards';
 import type { NameInventory } from './name-inventory';
+import { byCodeUnit } from '../utils/compare';
 
 const PROJECT_ROOT = join(__dirname, '..', '..');
 
@@ -184,10 +186,6 @@ function baseContext(): Record<string, unknown> {
   };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 export interface SynthResult {
   /** Absolute path to the cloud assembly directory. */
   outdir: string;
@@ -196,7 +194,8 @@ export interface SynthResult {
   /** Parsed template for one stack, by artifact id. */
   template(stackName: string): Record<string, unknown>;
   /**
-   * Template text with every 64-hex asset hash replaced by `<ASSET_HASH>`.
+   * Template text with every 64-hex asset hash replaced by `<ASSET_HASH>`, and
+   * the code-hash suffix of a Lambda version's logical id by `<CODE_HASH>`.
    *
    * Asset hashes are digests of the Lambda SOURCE TREE, so they move whenever
    * any Python or frontend file changes — including changes that cannot affect
@@ -407,7 +406,7 @@ export function readAssembly(outdir: string): SynthResult {
   const stackNames = readdirSync(outdir)
     .filter((entry) => entry.endsWith('.template.json'))
     .map((entry) => entry.slice(0, -'.template.json'.length))
-    .sort();
+    .sort(byCodeUnit);
 
   const annotations = readAnnotations(outdir);
 
@@ -424,6 +423,11 @@ export function readAssembly(outdir: string): SynthResult {
       if (!isRecord(parsed)) throw new Error(`${stackName}: template is not an object`);
       return parsed;
     },
-    canonicalTemplate: (stackName) => raw(stackName).replace(/\b[0-9a-f]{64}\b/g, '<ASSET_HASH>'),
+    canonicalTemplate: (stackName) => raw(stackName)
+      .replace(/\b[0-9a-f]{64}\b/g, '<ASSET_HASH>')
+      // A Lambda version's logical id is `<fn>CurrentVersion<8 HEX><32-hex code hash>`
+      // (SnapStart functions, lib/utils/snapstart.ts): the suffix digests the code,
+      // so it moves with every Python edit exactly like an asset hash.
+      .replace(/(CurrentVersion[0-9A-F]{8})[0-9a-f]{32}\b/g, '$1<CODE_HASH>'),
   };
 }

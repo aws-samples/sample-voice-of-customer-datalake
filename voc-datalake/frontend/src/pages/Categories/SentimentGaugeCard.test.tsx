@@ -1,17 +1,13 @@
+import type { ComponentProps } from 'react'
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { rechartsStubModule } from './categories-fixtures'
 import { SentimentGauge } from './SentimentGaugeCard'
-import type { SentimentData, SentimentFilter } from './types'
+import type { SentimentData } from './types'
 
 // Mock recharts to avoid rendering issues in tests
-vi.mock('recharts', () => ({
-  ResponsiveContainer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  PieChart: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  Pie: () => null,
-  Cell: () => null,
-  Tooltip: () => null,
-}))
+vi.mock('recharts', () => rechartsStubModule())
 
 const mockSentimentData: SentimentData[] = [
   { name: 'positive', value: 60, color: '#22c55e', percentage: 60 },
@@ -19,10 +15,10 @@ const mockSentimentData: SentimentData[] = [
   { name: 'negative', value: 15, color: '#ef4444', percentage: 15 },
 ]
 
-const defaultProps = {
+const defaultProps: ComponentProps<typeof SentimentGauge> = {
   sentimentData: mockSentimentData,
   avgSentiment: 45,
-  sentimentFilter: 'all' as SentimentFilter,
+  sentimentFilter: 'all',
   onSentimentFilterChange: vi.fn(),
   percentages: { positive: 60, neutral: 25, negative: 15 },
 }
@@ -77,21 +73,24 @@ describe('SentimentGauge', () => {
     render(<SentimentGauge {...defaultProps} sentimentFilter="negative" />)
 
     const negativeButton = screen.getByRole('button', { name: /negative/i })
-    expect(negativeButton).toHaveClass('bg-gray-900', 'text-white')
+    // Selected legend chip = accent-subtle fill + accent ring (same selected
+    // treatment as the category rows), exposed as a pressed toggle.
+    expect(negativeButton).toHaveClass('bg-accent-subtle', 'text-accent-text')
+    expect(negativeButton).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('applies green color for positive sentiment', () => {
     render(<SentimentGauge {...defaultProps} avgSentiment={50} />)
-    expect(screen.getByText('+50')).toHaveClass('text-green-600')
+    expect(screen.getByText('+50')).toHaveClass('text-sentiment-positive')
   })
 
   it('applies red color for negative sentiment', () => {
     render(<SentimentGauge {...defaultProps} avgSentiment={-50} />)
-    expect(screen.getByText('-50')).toHaveClass('text-red-600')
+    expect(screen.getByText('-50')).toHaveClass('text-sentiment-negative')
   })
 
   it('applies gray color for neutral sentiment', () => {
     render(<SentimentGauge {...defaultProps} avgSentiment={0} />)
-    expect(screen.getByText('0')).toHaveClass('text-gray-600')
+    expect(screen.getByText('0')).toHaveClass('text-text')
   })
 })

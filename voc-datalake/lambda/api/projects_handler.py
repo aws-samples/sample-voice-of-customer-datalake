@@ -6,28 +6,103 @@ Separate Lambda to handle projects endpoints and avoid policy size limits.
 import json
 import math
 import os
+import re
 import secrets
-from collections.abc import Iterable
-from datetime import datetime, timedelta, timezone
+import time
+from collections.abc import Callable, Iterable
+from datetime import UTC, datetime
 from typing import Any
 
-from shared.logging import logger, tracer
-from shared.aws import invoke_lambda_async
+import boto3
+from aws_lambda_powertools.event_handler import Response, content_types
+from boto3.dynamodb.conditions import Key
+from botocore.exceptions import ClientError
+
+from product_context import (
+    # Imported rather than re-declared: the `sk` prefix a product doc is written
+    # under is the same string that has to be read back to validate a selection,
+    # and a second copy of the literal here would be a silent partition split.
+    DOC_SK_PREFIX as PRODUCT_DOC_SK_PREFIX,
+)
+from product_context import (
+    # Same reasoning, and it earned it: this bound was declared here and the
+    # visual-brief character budget was chosen independently over there, so the
+    # budget silently refused the FOURTH visual the bound had already allowed.
+    # The budget is now derived from this number, which is why the number lives
+    # beside it.
+    MAX_SELECTED_PRODUCT_DOC_IDS,
+)
+from product_context import (
+    create_upload_url as pc_create_upload_url,
+)
+from product_context import (
+    delete_doc as pc_delete_doc,
+)
+from product_context import (
+    get_context as pc_get_context,
+)
+from product_context import (
+    interview_turn as pc_interview_turn,
+)
+from product_context import (
+    list_docs as pc_list_docs,
+)
+from product_context import (
+    update_context as pc_update_context,
+)
+from projects import (
+    add_persona_note,
+    add_project_member,
+    autofill_prfaq_questions,
+    create_document,
+    create_persona,
+    create_project,
+    delete_document,
+    delete_persona,
+    delete_persona_note,
+    delete_project,
+    duplicate_document,
+    ensure_persona_feedback,
+    ensure_research_feedback,
+    feedback_filters_from_body,
+    get_document_versions,
+    get_project,
+    get_project_chat_context,
+    get_project_details,
+    get_project_members,
+    list_projects,
+    parse_project_detail_ids,
+    regenerate_persona_avatar,
+    remove_project_member,
+    restore_document,
+    run_research,
+    search_member_candidates,
+    set_project_visibility,
+    suggest_document_brief,
+    suggest_research_questions,
+    transfer_project_owner,
+    update_document,
+    update_persona,
+    update_persona_note,
+    update_project,
+    update_project_member,
+)
+from shared import category_access, category_gate, project_access, project_gate, prototype_pins
 from shared.api import (
+    MAX_PERSONAS_PER_GENERATION,
+    api_handler,
     create_api_resolver,
     get_caller_subject,
-    validate_days,
-    validate_int,
-    validate_bool,
-    api_handler,
-    validate_date_basis,
-    MAX_PERSONAS_PER_GENERATION,
     # Appended rather than sorted in, to avoid a conflict with #344 and #330 while
     # they are open; sort this block once both have landed.
     require_admin,
+    validate_bool,
+    validate_date_basis,
+    validate_days,
+    validate_int,
 )
-from shared.tables import get_jobs_table, get_aggregates_table, get_projects_table
-from shared.jobs import create_job
+from shared.aws import invoke_lambda_async, is_conditional_check_failure
+from shared.document_versions import split_versioned_title
 from shared.exceptions import (
     ApiError,
     AuthorizationError,
@@ -37,50 +112,257 @@ from shared.exceptions import (
     ServiceError,
     ValidationError,
 )
+from shared.jobs import create_job
+from shared.logging import logger, tracer
 from shared.persona_import import validate_import_config
-from shared.document_versions import split_versioned_title
-from shared.project_writes import is_verification_fixture
-from shared import mcp_tokens
-
-from aws_lambda_powertools.event_handler import Response, content_types
-from boto3.dynamodb.conditions import Key
-from botocore.exceptions import ClientError
-import boto3
-
-from projects import (
-    list_projects, create_project, get_project, get_project_chat_context,
-    update_project, delete_project,
-    run_research,
-    create_document, update_document, delete_document,
-    create_persona, update_persona, delete_persona,
-    add_persona_note, update_persona_note, delete_persona_note,
-    regenerate_persona_avatar,
-    autoseed_project,
-    autofill_prfaq_questions,
-    suggest_research_questions,
-    suggest_document_brief,
-)
-from product_context import (
-    get_context as pc_get_context,
-    update_context as pc_update_context,
-    interview_turn as pc_interview_turn,
-    list_docs as pc_list_docs,
-    create_upload_url as pc_create_upload_url,
-    delete_doc as pc_delete_doc,
-    # Imported rather than re-declared: the `sk` prefix a product doc is written
-    # under is the same string that has to be read back to validate a selection,
-    # and a second copy of the literal here would be a silent partition split.
-    DOC_SK_PREFIX as PRODUCT_DOC_SK_PREFIX,
-    # Same reasoning, and it earned it: this bound was declared here and the
-    # visual-brief character budget was chosen independently over there, so the
-    # budget silently refused the FOURTH visual the bound had already allowed.
-    # The budget is now derived from this number, which is why the number lives
-    # beside it.
-    MAX_SELECTED_PRODUCT_DOC_IDS,
-)
+from shared.project_access import Caller, ProjectAccess
+from shared.project_writes import PROJECT_DELETION_ATTRIBUTE, is_project_tombstone, is_verification_fixture
+from shared.request_body import json_body_value, json_object_body
+from shared.row_ids import MAX_KEY_SEGMENT_ID_LEN, is_clampable_number, validated_row_id
+from shared.tables import get_aggregates_table, get_jobs_table, get_projects_table
 
 # API resolver with standard CORS
 app = create_api_resolver()
+
+
+# ============================================
+# Per-project access gate
+# ============================================
+#
+# ONE middleware decides access for every /projects/{id}/... route, so a route
+# added later cannot forget the check: Powertools runs `app.use` middlewares for
+# every matched route, and `test_project_permissions.py` enumerates the routes
+# in this file to pin that each one is classified. Levels come from
+# `project_access.required_level`; the decision from `resolve_access`.
+
+_CALLER_CONTEXT_KEY = 'project_caller'
+_ACCESS_CONTEXT_KEY = 'project_access'
+
+
+def _caller_from_event(event: dict) -> Caller:
+    return project_gate.caller_from_event(event)
+
+
+def _caller_category_scope() -> dict:
+    """The caller's category scope, as stored config.
+
+    Captured into a job's config at job start, and passed to the synchronous AI
+    assists (autofill, suggest-brief, suggest-questions, the research fallback).
+    A job reads feedback long after the request is gone, so it carries the
+    scope of the user who started it (`shared.feedback.get_feedback_context`
+    applies it); a restricted user's persona/research/document job therefore
+    never quotes a review they could not see. Admins cost no read.
+    """
+    scope = category_gate.scope_for_event(app.current_event.raw_event, get_aggregates_table())
+    return category_access.scope_to_config(scope)
+
+
+def _gate_meta(project_id: str) -> dict | None:
+    table = get_projects_table()
+    if not table:
+        raise ConfigurationError('Projects table not configured')
+    return project_gate.read_gate_meta(table, project_id)
+
+
+def _project_access_for(project_id: str, caller: Caller, level: str) -> ProjectAccess:
+    """The caller's access, or the refusal the HTTP contract prescribes."""
+    return project_gate.require_project_level(
+        lambda: _gate_meta(project_id), caller, level,
+    )
+
+
+def project_access_middleware(app, next_middleware):
+    """Powertools middleware enforcing per-project permissions.
+
+    BOTH context keys are written on every non-preflight request, gated or not.
+    Powertools clears `app.context` only after a SUCCESSFUL resolve, so a request
+    that raised could otherwise leave its caller behind in a warm container for
+    the next request's ungated route (list/create) to pick up.
+    """
+    event = app.current_event
+    method = event.http_method.upper()
+    if method == 'OPTIONS':
+        return next_middleware(app)
+    caller = _caller_from_event(event.raw_event)
+    access = None  # pragma: no mutate  every reader isinstance-checks, so any non-ProjectAccess is this
+    route = project_access.project_route(event.path)
+    if route is not None:
+        # Powertools' `<project_id>` group captures exactly this path segment, so
+        # the gate and the route address one project.
+        project_id, rest = route
+        level = project_access.required_level(method, rest)
+        access = _project_access_for(project_id, caller, level)
+    app.append_context(**{_CALLER_CONTEXT_KEY: caller, _ACCESS_CONTEXT_KEY: access})
+    return next_middleware(app)
+
+
+app.use(middlewares=[project_access_middleware])
+
+
+def _request_caller() -> Caller:
+    caller = app.context.get(_CALLER_CONTEXT_KEY)
+    if not isinstance(caller, Caller):
+        # Unreachable: the middleware sets it for every routed request.
+        raise AuthorizationError('Caller identity could not be determined')
+    return caller
+
+
+def _request_access() -> ProjectAccess:
+    access = app.context.get(_ACCESS_CONTEXT_KEY)
+    if not isinstance(access, ProjectAccess):
+        # Unreachable for a gated route; fail closed if it ever is.
+        raise AuthorizationError('You do not have permission to manage this project')
+    return access
+
+
+# ---- The prioritization board's per-project checks ------------------------
+#
+# /projects/prioritization* is a workspace route the middleware skips, but every
+# row names ONE project (`project_id`) and carries that project's document ids.
+# So the board applies the same policy per row: composing or recomposing needs
+# EDIT on the project, scoring needs VIEW, and the page read only returns rows
+# whose project the caller can VIEW. Admins skip every check, exactly as the gate.
+
+# BatchGetItem's per-request key ceiling.
+_GATE_BATCH_SIZE = 100
+# Retries of UnprocessedKeys before failing closed. A refusal to answer is the
+# safe failure here: treating an unread project as visible would leak it.
+_GATE_BATCH_ATTEMPTS = 5
+_GATE_BATCH_BACKOFF_SECONDS = 0.05
+
+
+def _gate_meta_batch_chunk(table, project_ids: list[str]) -> dict[str, dict]:
+    """Gate projections for up to 100 projects, keyed by project id.
+
+    Issued on the RESOURCE's client, which (like the ballot transaction's) takes and
+    returns native Python values rather than `{'S': ...}` wire types.
+    """
+    client = table.meta.client
+    gate_read = [
+        project_access.meta_gate_read(project_id, PROJECT_DELETION_ATTRIBUTE)
+        for project_id in project_ids
+    ]
+    request: dict[str, Any] = {
+        table.name: {
+            'Keys': [read['Key'] for read in gate_read],
+            'ConsistentRead': True,
+            'ProjectionExpression': gate_read[0]['ProjectionExpression'],
+            'ExpressionAttributeNames': gate_read[0]['ExpressionAttributeNames'],
+        }
+    }
+    metas: dict[str, dict] = {}
+    for attempt in range(_GATE_BATCH_ATTEMPTS):
+        if attempt:
+            # AWS's guidance for UnprocessedKeys: back off before re-asking.
+            time.sleep(_GATE_BATCH_BACKOFF_SECONDS * 2 ** attempt)
+        response = client.batch_get_item(RequestItems=request)
+        for item in (response.get('Responses') or {}).get(table.name, []):
+            pk = item.get('pk') if isinstance(item, dict) else None
+            if isinstance(pk, str) and pk.startswith('PROJECT#'):
+                metas[pk[len('PROJECT#'):]] = item
+        unprocessed = response.get('UnprocessedKeys') or {}
+        if not unprocessed.get(table.name, {}).get('Keys'):
+            return metas
+        request = unprocessed
+    logger.error('Project access check left keys unprocessed after %d attempts',
+                 _GATE_BATCH_ATTEMPTS)
+    raise ServiceError('Failed to check project access')
+
+
+def _viewable_project_ids(project_ids: Iterable[str], caller: Caller) -> set[str]:
+    """Which of ``project_ids`` the (non-admin) caller may VIEW.
+
+    Each distinct id is read once. A missing or tombstoned META is not viewable.
+    """
+    table = get_projects_table()
+    if not table:
+        raise ConfigurationError('Projects table not configured')
+    distinct = sorted({pid for pid in project_ids if pid})
+    viewable: set[str] = set()
+    for start in range(0, len(distinct), _GATE_BATCH_SIZE):
+        metas = _gate_meta_batch_chunk(table, distinct[start:start + _GATE_BATCH_SIZE])
+        viewable.update(
+            project_id for project_id, meta in metas.items()
+            if not is_project_tombstone(meta)
+            and project_access.resolve_access(meta, caller).can_view
+        )
+    return viewable
+
+
+def _require_row_project_edit(project_id: str) -> None:
+    """EDIT on the project a row is composed from; 404 without view, 403 view-only."""
+    _project_access_for(project_id, _request_caller(), project_access.LEVEL_EDIT)
+
+
+def _require_project_exists(project_id: str) -> None:
+    """404 unless the project's META exists and is not a tombstone.
+
+    The gate decides an ADMIN without reading META (`require_project_level`), so
+    on an admin request a route that writes a record keyed to the project before
+    it looks the project up would write it for a project that does not exist. The
+    routes that do that call this first; for a non-admin it is a second, cheap read
+    of a META the gate has already confirmed.
+    """
+    meta = _gate_meta(project_id)
+    if not meta or is_project_tombstone(meta):
+        raise NotFoundError(project_gate.PROJECT_NOT_FOUND)
+
+
+def _started_job(
+    project_id: str, job_type: str, config_key: str, config: dict,
+    *, precheck: Callable[[], None] | None = None, **kwargs,
+) -> str:
+    """Record a job for ``project_id`` as the calling user, and return its id.
+
+    EVERY route that starts an async job records it through here, which is what
+    makes two properties hold for all of them rather than for the ones somebody
+    remembered:
+
+    * The project EXISTS before any JOB row is written. The access gate has
+      already refused a non-admin who cannot view the project (and so a missing
+      project, as 404); an admin skips that read, so without this an admin hitting
+      a mistyped id left a JOB row — and an async Lambda invocation — behind for a
+      project that was never there, and only then met the route's own 404 (or no
+      404 at all, for the routes that never read the project).
+    * The job carries `initiated_by`: the subject of the caller whose request was
+      gated. Jobs run later, under the Lambda's role, on behalf of someone; the
+      membership that allowed the start can change before the job finishes, and
+      this is the one durable record of who that someone was.
+
+    ``precheck`` runs after the existence read and before the row: a route's
+    synchronous "would this job only fail?" check (F1, the no-feedback 400), so
+    a missing project still answers 404 rather than 400.
+    """
+    _require_project_exists(project_id)
+    if precheck is not None:
+        precheck()
+    job_id, _ = create_job(
+        project_id, job_type, config_key, config,
+        initiated_by=_request_caller().subject, **kwargs,
+    )
+    return job_id
+
+
+def _rows_hidden_from_caller(rows_by_id: dict[str, dict]) -> set[str]:
+    """Row ids whose project the caller cannot VIEW (none for an admin).
+
+    A row with no readable `project_id`, or whose project META is missing or
+    tombstoned, is hidden from non-admins: fail closed.
+    """
+    caller = _request_caller()
+    if caller.is_admin or not rows_by_id:
+        return set()
+    viewable = _viewable_project_ids(
+        (
+            project_id for row in rows_by_id.values()
+            if isinstance(project_id := row.get('project_id'), str)
+        ),
+        caller,
+    )
+    return {
+        row_id for row_id, row in rows_by_id.items()
+        if row.get('project_id') not in viewable
+    }
 
 # Environment - Job Lambda function names
 PERSONA_GENERATOR_FUNCTION = os.environ.get('PERSONA_GENERATOR_FUNCTION', '')
@@ -108,43 +390,46 @@ def validate_persona_count(value, default=3):
 # Project CRUD Routes
 # ============================================
 
-@app.get("/projects/config")
-@tracer.capture_method
-def api_get_config():
-    return {'chat_stream_url': os.environ.get('CHAT_STREAM_URL', '')}
-
-
 @app.get("/projects")
 @tracer.capture_method
 def api_list_projects():
-    return list_projects()
+    """The project list — or, with ``?ids=a,b``, those projects' details in ONE read.
+
+    The batch form is the Prioritization board's: one request instead of one
+    ``GET /projects/{id}`` per project. Reusing this explicitly wired route adds no
+    API Gateway resource (VocApiStack sits near CloudFormation's 500 ceiling).
+    """
+    params = app.current_event.query_string_parameters or {}
+    if 'ids' in params:
+        return get_project_details(parse_project_detail_ids(params.get('ids') or ''), _request_caller())
+    return list_projects(_request_caller())
 
 
 @app.post("/projects")
 @tracer.capture_method
 def api_create_project():
-    return create_project(app.current_event.json_body)
+    return create_project(json_object_body(app), _request_caller())
 
 
 @app.get("/projects/<project_id>")
 @tracer.capture_method
 def api_get_project(project_id: str):
-    return get_project(project_id)
+    return get_project(project_id, _request_caller())
 
 
 @app.post("/projects/<project_id>/chat-context")
 @tracer.capture_method
 def api_project_chat_context(project_id: str):
-    body = _json_object_body()
+    body = json_object_body(app)
     return get_project_chat_context(
-        project_id, body.get('selected_document_ids', []),
+        project_id, body.get('selected_document_ids', []), _request_caller(),
     )
 
 
 @app.put("/projects/<project_id>")
 @tracer.capture_method
 def api_update_project(project_id: str):
-    return update_project(project_id, app.current_event.json_body)
+    return update_project(project_id, json_object_body(app))
 
 
 @app.delete("/projects/<project_id>")
@@ -153,13 +438,53 @@ def api_delete_project(project_id: str):
     return delete_project(project_id)
 
 
-@app.get("/projects/<project_id>/autoseed")
+# ============================================
+# Sharing Routes (visibility, members, owner)
+# ============================================
+
+@app.put("/projects/<project_id>/visibility")
 @tracer.capture_method
-def api_autoseed_project(project_id: str):
+def api_set_project_visibility(project_id: str):
+    return set_project_visibility(project_id, json_body_value(app))
+
+
+@app.get("/projects/<project_id>/members")
+@tracer.capture_method
+def api_list_project_members(project_id: str):
+    return get_project_members(project_id, _request_caller())
+
+
+@app.get("/projects/<project_id>/members/candidates")
+@tracer.capture_method
+def api_member_candidates(project_id: str):
     params = app.current_event.query_string_parameters or {}
-    persona_ids = params.get('persona_ids', '').split(',') if params.get('persona_ids') else None
-    document_ids = params.get('document_ids', '').split(',') if params.get('document_ids') else None
-    return autoseed_project(project_id, persona_ids=persona_ids, document_ids=document_ids)
+    return search_member_candidates(project_id, params.get('q', ''))
+
+
+@app.post("/projects/<project_id>/members")
+@tracer.capture_method
+def api_add_project_member(project_id: str):
+    return add_project_member(project_id, json_body_value(app), _request_caller())
+
+
+@app.put("/projects/<project_id>/members/<member_sub>")
+@tracer.capture_method
+def api_update_project_member(project_id: str, member_sub: str):
+    return update_project_member(project_id, member_sub, json_body_value(app))
+
+
+@app.delete("/projects/<project_id>/members/<member_sub>")
+@tracer.capture_method
+def api_remove_project_member(project_id: str, member_sub: str):
+    return remove_project_member(
+        project_id, member_sub, _request_caller(), _request_access(),
+    )
+
+
+@app.post("/projects/<project_id>/owner")
+@tracer.capture_method
+def api_transfer_project_owner(project_id: str):
+    return transfer_project_owner(project_id, json_body_value(app), _request_caller())
 
 
 # ============================================
@@ -169,14 +494,14 @@ def api_autoseed_project(project_id: str):
 @app.post("/projects/<project_id>/personas")
 @tracer.capture_method
 def api_create_persona(project_id: str):
-    return create_persona(project_id, app.current_event.json_body)
+    return create_persona(project_id, json_object_body(app))
 
 
 @app.post("/projects/<project_id>/personas/import")
 @tracer.capture_method
 def api_import_persona(project_id: str):
     """Import a persona from an image or pasted text - runs as background job."""
-    body = app.current_event.json_body or {}
+    body = json_object_body(app)
     content = body.get('content', '')
     media_type = body.get('media_type', '')
     # INVARIANT (tested): validated BEFORE create_job, so a refused import leaves
@@ -190,7 +515,7 @@ def api_import_persona(project_id: str):
         'content': content,
         'media_type': media_type
     }
-    job_id, _ = create_job(project_id, 'import_persona', 'import_config', config)
+    job_id = _started_job(project_id, 'import_persona', 'import_config', config)
     invoke_lambda_async(PERSONA_IMPORTER_FUNCTION, {
         'project_id': project_id,
         'job_id': job_id,
@@ -202,7 +527,7 @@ def api_import_persona(project_id: str):
 @app.put("/projects/<project_id>/personas/<persona_id>")
 @tracer.capture_method
 def api_update_persona(project_id: str, persona_id: str):
-    return update_persona(project_id, persona_id, app.current_event.json_body)
+    return update_persona(project_id, persona_id, json_object_body(app))
 
 
 @app.delete("/projects/<project_id>/personas/<persona_id>")
@@ -214,13 +539,13 @@ def api_delete_persona(project_id: str, persona_id: str):
 @app.post("/projects/<project_id>/personas/<persona_id>/notes")
 @tracer.capture_method
 def api_add_persona_note(project_id: str, persona_id: str):
-    return add_persona_note(project_id, persona_id, app.current_event.json_body)
+    return add_persona_note(project_id, persona_id, json_object_body(app))
 
 
 @app.put("/projects/<project_id>/personas/<persona_id>/notes/<note_id>")
 @tracer.capture_method
 def api_update_persona_note(project_id: str, persona_id: str, note_id: str):
-    return update_persona_note(project_id, persona_id, note_id, app.current_event.json_body)
+    return update_persona_note(project_id, persona_id, note_id, json_object_body(app))
 
 
 @app.delete("/projects/<project_id>/personas/<persona_id>/notes/<note_id>")
@@ -239,12 +564,9 @@ def api_regenerate_persona_avatar(project_id: str, persona_id: str):
 @tracer.capture_method
 def api_generate_personas(project_id: str):
     """Start async persona generation."""
-    body = app.current_event.json_body or {}
+    body = json_object_body(app)
     filters = {
-        'sources': body.get('sources', []),
-        'categories': body.get('categories', []),
-        'sentiments': body.get('sentiments', []),
-        'days': validate_days(body.get('days'), default=30),
+        **feedback_filters_from_body(body),
         'date_basis': validate_date_basis(body.get('date_basis')),
         'persona_count': validate_persona_count(body.get('persona_count')),
         'custom_instructions': body.get('custom_instructions', ''),
@@ -272,8 +594,14 @@ def api_generate_personas(project_id: str):
         'generate_avatars': validate_bool(
             body.get('generate_avatars'), default=True, field='generate_avatars'
         ),
+        category_access.SCOPE_CONFIG_KEY: _caller_category_scope(),
     }
-    job_id, _ = create_job(project_id, 'generate_personas', 'filters', filters, ttl_minutes=30*24*60)
+    # 400 before any job row or invoke when nothing matches (F1): the job
+    # would only fail with this same message after the caller had moved on.
+    job_id = _started_job(
+        project_id, 'generate_personas', 'filters', filters, ttl_minutes=30*24*60,
+        precheck=lambda: ensure_persona_feedback(filters),
+    )
     invoke_lambda_async(PERSONA_GENERATOR_FUNCTION, {
         'project_id': project_id,
         'job_id': job_id,
@@ -290,7 +618,7 @@ def api_generate_personas(project_id: str):
 @tracer.capture_method
 def api_run_research(project_id: str):
     """Start research via Step Functions."""
-    body = app.current_event.json_body or {}
+    body = json_object_body(app)
     research_config = {
         'question': body.get('question', 'What are the main customer pain points?'),
         'title': body.get('title', ''),
@@ -306,11 +634,17 @@ def api_run_research(project_id: str):
         # bool() coercion would turn the string "false" into True and
         # silently enable a billed feature.
         'use_web_search': body.get('use_web_search') is True,
-        'filters': body
+        'filters': body,
+        category_access.SCOPE_CONFIG_KEY: _caller_category_scope(),
     }
-    job_id, _ = create_job(project_id, 'research', 'research_config', research_config, status='pending')
-    
     state_machine_arn = os.environ.get('RESEARCH_STATE_MACHINE_ARN', '')
+    # 400 before any job row or execution when nothing matches (F1). Only on the
+    # Step Functions path: the fallback (run_research) makes its own check.
+    job_id = _started_job(
+        project_id, 'research', 'research_config', research_config, status='pending',
+        precheck=(lambda: ensure_research_feedback(research_config)) if state_machine_arn else None,
+    )
+
     if state_machine_arn:
         boto3.client('stepfunctions').start_execution(
             stateMachineArn=state_machine_arn,
@@ -318,8 +652,11 @@ def api_run_research(project_id: str):
             input=json.dumps({'job_id': job_id, 'project_id': project_id, 'research_config': research_config})
         )
     else:
-        return run_research(project_id, body)
-    
+        return run_research(
+            project_id, body,
+            category_scope=research_config[category_access.SCOPE_CONFIG_KEY],
+        )
+
     return {'success': True, 'job_id': job_id, 'status': 'pending', 'message': 'Research started.'}
 
 
@@ -328,21 +665,13 @@ DEFAULT_GENERATED_DOC_TYPE = 'prd'
 # What POST /projects/{id}/document accepts in `doc_type`. Mirrored in the
 # frontend's `DocType` union; `test_doc_type_lockstep.py` fails if the two drift.
 #
-# ⚠️ WIDENING THIS TUPLE TAKES THREE FURTHER EDITS, and no gate asks for any. Adding a
-# member here and to `DocType` together leaves `tsc` at exit 0 and every lockstep test
-# green (measured).
+# ⚠️ WIDENING THIS TUPLE TAKES THREE FURTHER EDITS, and only the generator's is gated.
+# Adding a member here and to `DocType` together leaves `tsc` at exit 0 and the
+# lockstep tests green (measured).
 #
-# THE GENERATOR is the one that matters: `lambda/jobs/document_generator/handler.py`
-# dispatches `doc_type` as a BINARY with PR-FAQ as the unconditional `else`, in three
-# places: the step-builder selection (`get_prd_generation_steps` vs
-# `get_prfaq_generation_steps`), the generation branch (`_generate_prd` vs
-# `_generate_prfaq`) and the assembly/result-indexing branch in `_assemble_and_save`.
-# It never imports this constant. So a new member is accepted here, routed into the
-# chain by `is_chain` below (true by construction once it is in this tuple), then
-# generated and persisted as a PR-FAQ — `document_type` and the `{DOC_TYPE}#` sort key
-# say the new type while the CONTENT is a PR-FAQ, after a Bedrock spend, with no error
-# raised. A new doc type therefore needs a step builder, a generation branch and an
-# assembly branch there, or it silently produces the wrong kind of document.
+# THE GENERATOR: `CHAIN_DOC_TYPES` in lambda/jobs/document_generator/handler.py must
+# gain an entry (step builder + assembler); `test_document_generator_dispatch.py` fails
+# until it does, and an unmapped type fails the job before any model call.
 #
 # THE PICKER is the other, and it is benign by comparison — dead capability rather than
 # wrong content, but still an edit the widening needs.
@@ -362,9 +691,9 @@ DEFAULT_GENERATED_DOC_TYPE = 'prd'
 # this route never accepts). The generator writes that field straight from `doc_type`, so
 # a widened `DocType` produces rows the wire type does not admit — latent, since `tsc` is
 # clean until some code makes the two unions meet, at which point it is a TS2322.
-# Referencing `DocType` there would remove the edit but breaks
-# `test_kiro_exportable_types_lockstep.py`, which parses that union as literals; the
-# reason sits at the field.
+# Referencing `DocType` there would remove the edit; it was ruled out while a
+# Kiro-export lockstep test parsed that union as literals (deleted with the Export /
+# MCP tab), and the reason still sits at the field.
 #
 # ⚠️ NOT FOUR. The generator serves four doc types (`prd`, `prfaq`,
 # `build_prototype`, `product_report`) and this route's docstring names the
@@ -443,7 +772,7 @@ def api_generate_document(project_id: str):
     # omitted its unparseable-JSON branch — `{not json` raised JSONDecodeError at
     # the `json_body` read and the catch-all reported a malformed REQUEST as a
     # server fault. See its docstring for the full reasoning.
-    body = _json_object_body()
+    body = json_object_body(app)
     # Validated BEFORE create_job, so a rejected request leaves no job row
     # describing work nobody will do, and bills no Bedrock call.
     doc_type = _validated_doc_type(body.get('doc_type'))
@@ -457,8 +786,11 @@ def api_generate_document(project_id: str):
     # `doc_config.get('doc_type', 'prd')` reads an explicit null as null rather
     # than as the default, and a null crashes it on `.upper()` after the job row
     # already exists.
-    doc_config = {**body, 'doc_type': doc_type, 'title': title}
-    job_id, _ = create_job(project_id, f'generate_{doc_type}', 'doc_config', doc_config, status='pending')
+    doc_config = {
+        **body, 'doc_type': doc_type, 'title': title,
+        category_access.SCOPE_CONFIG_KEY: _caller_category_scope(),
+    }
+    job_id = _started_job(project_id, f'generate_{doc_type}', 'doc_config', doc_config, status='pending')
 
     state_machine_arn = os.environ.get('DOCUMENT_STATE_MACHINE_ARN', '')
     # The constant, not a second copy of its literal: a re-declared allowlist
@@ -488,28 +820,29 @@ def api_generate_document(project_id: str):
 @app.post("/projects/<project_id>/documents")
 @tracer.capture_method
 def api_create_document(project_id: str):
-    return create_document(project_id, app.current_event.json_body)
+    return create_document(project_id, json_object_body(app))
 
 
 @app.post("/projects/<project_id>/documents/merge")
 @tracer.capture_method
 def api_merge_documents(project_id: str):
     """Merge multiple documents."""
-    body = _json_object_body()
+    body = json_object_body(app)
     output_type = body.get('output_type', 'custom')
     if not isinstance(output_type, str) or output_type not in MERGE_OUTPUT_TYPES:
         raise ValidationError(
             f'output_type must be one of: {", ".join(MERGE_OUTPUT_TYPES)} '
             f'(got {type(output_type).__name__})'
         )
-    merge_config = body
+    # Always a copy carrying the starter's scope (never the request body itself).
+    merge_config = {**body, category_access.SCOPE_CONFIG_KEY: _caller_category_scope()}
     if output_type in MANAGED_MERGE_OUTPUT_TYPES:
         title, _ = split_versioned_title(
             body.get('title', 'Merged Document'),
         )
-        merge_config = {**body, 'title': title}
+        merge_config = {**merge_config, 'title': title}
 
-    job_id, _ = create_job(
+    job_id = _started_job(
         project_id,
         'merge_documents',
         'merge_config',
@@ -532,13 +865,51 @@ def api_merge_documents(project_id: str):
 @app.put("/projects/<project_id>/documents/<document_id>")
 @tracer.capture_method
 def api_update_document(project_id: str, document_id: str):
-    return update_document(project_id, document_id, app.current_event.json_body)
+    return update_document(project_id, document_id, json_object_body(app))
+
+
+@app.get("/projects/<project_id>/documents/<document_id>/versions")
+@tracer.capture_method
+def api_document_versions(project_id: str, document_id: str):
+    """Every version of a document, newest first, with content (open / compare)."""
+    return get_document_versions(project_id, document_id)
+
+
+@app.post("/projects/<project_id>/documents/<document_id>/versions/<version_id>/restore")
+@tracer.capture_method
+def api_restore_document_version(project_id: str, document_id: str, version_id: str):
+    """Restore = a NEW version carrying that version's content; nothing is rewritten."""
+    return restore_document(project_id, document_id, version_id, json_object_body(app))
 
 
 @app.delete("/projects/<project_id>/documents/<document_id>")
 @tracer.capture_method
 def api_delete_document(project_id: str, document_id: str):
     return delete_document(project_id, document_id)
+
+
+_MAX_TARGET_PROJECT_ID_LENGTH = 128
+
+
+@app.post("/projects/<project_id>/documents/<document_id>/duplicate")
+@tracer.capture_method
+def api_duplicate_document(project_id: str, document_id: str):
+    """Copy a document into another project.
+
+    The gate already required EDIT on the source (a POST); EDIT on the target is
+    checked here with the same 404/403 answers, so a caller cannot learn that a
+    private target exists. Nothing is moved or deleted.
+    """
+    body = json_object_body(app)
+    target = body.get('target_project_id')
+    if (
+        not isinstance(target, str) or not target or target != target.strip()
+        or len(target) > _MAX_TARGET_PROJECT_ID_LENGTH
+    ):
+        raise ValidationError('target_project_id is required')
+    _project_access_for(target, _request_caller(), project_access.LEVEL_EDIT)
+    _require_project_exists(target)
+    return duplicate_document(project_id, document_id, target)
 
 
 # ============================================
@@ -557,24 +928,48 @@ def api_get_job_status(project_id: str, job_id: str):
         'progress': item.get('progress', 0), 'current_step': item.get('current_step'),
         'job_type': item.get('job_type'), 'created_at': item.get('created_at'),
         'updated_at': item.get('updated_at'), 'completed_at': item.get('completed_at'),
-        'error': item.get('error'), 'result': item.get('result')
+        'error': item.get('error'), 'result': item.get('result'),
+        'initiated_by': item.get('initiated_by'),
     }
+
+
+JOBS_LIST_LIMIT = 50
+# Job rows expire (TTL), so a project's partition stays small; the cap only bounds
+# a pathological one. Read in full because the sort key is `JOB#{random id}`.
+JOBS_LIST_SCAN_CAP = 1000
+
+
+def _project_job_rows(project_id: str) -> list[dict]:
+    """The project's job rows, newest ``created_at`` first, at most JOBS_LIST_LIMIT.
+
+    The sort key orders by a random job id, so a key-ordered page of 50 was neither
+    the newest 50 nor in time order. Every row is read (bounded by the scan cap) and
+    sorted by its creation time; a row without one sorts last.
+    """
+    query: dict[str, Any] = {'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}')}
+    rows: list[dict] = []
+    while len(rows) < JOBS_LIST_SCAN_CAP:
+        response = get_jobs_table().query(**query)
+        rows.extend(response.get('Items', []))
+        cursor = response.get('LastEvaluatedKey')
+        if not cursor:
+            break
+        query['ExclusiveStartKey'] = cursor
+    rows.sort(key=lambda row: str(row.get('created_at') or ''), reverse=True)
+    return rows[:JOBS_LIST_LIMIT]
 
 
 @app.get("/projects/<project_id>/jobs")
 @tracer.capture_method
 def api_list_jobs(project_id: str):
-    response = get_jobs_table().query(
-        KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}'),
-        ScanIndexForward=False, Limit=50
-    )
     jobs = [{
         'job_id': i.get('job_id') or i.get('sk', '').removeprefix('JOB#') or None,
         'job_type': i.get('job_type'), 'status': i.get('status'),
         'progress': i.get('progress', 0), 'current_step': i.get('current_step'),
         'created_at': i.get('created_at'), 'updated_at': i.get('updated_at'),
-        'completed_at': i.get('completed_at'), 'error': i.get('error'), 'result': i.get('result')
-    } for i in response.get('Items', [])]
+        'completed_at': i.get('completed_at'), 'error': i.get('error'), 'result': i.get('result'),
+        'initiated_by': i.get('initiated_by'),
+    } for i in _project_job_rows(project_id)]
     return {'success': True, 'jobs': jobs}
 
 
@@ -583,24 +978,6 @@ def api_list_jobs(project_id: str):
 def api_delete_job(project_id: str, job_id: str):
     get_jobs_table().delete_item(Key={'pk': f'PROJECT#{project_id}', 'sk': f'JOB#{job_id}'})
     return {'success': True}
-
-
-# A DynamoDB sort key is capped at 1024 bytes. Bounding an id that reaches one
-# well under that makes an absurd value a 400 naming the field rather than a
-# DynamoDB ValidationException surfacing as a 500.
-#
-# Named for the KEY SEGMENT rather than for the document, because it bounds every
-# caller-supplied id that becomes half of a sort key: a document id, a project id
-# (which `_default_row_id` composes a row id from), and a row id itself. It was
-# `MAX_SOURCE_DOCUMENT_ID_LEN` while documents were the only such id; a row is now
-# what a ballot is keyed to, and a name claiming documents was the last thing here
-# still saying otherwise.
-#
-# Defined here, above the prioritization block that is its first use, rather than
-# beside `_validated_source_id` further down: the previous placement worked only
-# because every reference sat inside a function body, which breaks the moment a
-# helper is hoisted to module scope.
-MAX_KEY_SEGMENT_ID_LEN = 256
 
 
 # ============================================
@@ -615,9 +992,9 @@ MAX_KEY_SEGMENT_ID_LEN = 256
 #
 # Storage lives in ONE partition, with the identity in the sort key:
 #
-#     pk = 'PRIORITIZATION'
-#     sk = 'ROW#{row_id}'                       — the row: which documents it holds
-#     sk = 'BALLOT#{row_id}#user:{cognito_sub}' — one reviewer's ballot ON that row
+#     pk is 'PRIORITIZATION'
+#     sk is 'ROW#{row_id}'                       — the row: which documents it holds
+#     sk is 'BALLOT#{row_id}#user:{cognito_sub}' — one reviewer's ballot ON that row
 #
 # Why this shape:
 #   * A reviewer's save is a single `update_item` on its OWN key, so two
@@ -636,8 +1013,8 @@ MAX_KEY_SEGMENT_ID_LEN = 256
 # Parsing assumption: row ids and Cognito subjects are both server-minted and
 # contain no '#', which is what makes `BALLOT#{id}#{kind}:{subject}` safely
 # splittable. BOTH halves are CHECKED against that assumption rather than trusted
-# — row ids in `_validated_ballot_row_id` (and, at the point one is minted, in
-# `_validated_row_project_id`), the reviewer subject in
+# — row ids in `shared.row_ids.validated_row_id` (and, at the point one is minted, in
+# `shared.row_ids.validated_row_id`), the reviewer subject in
 # `_caller_reviewer_subject`. A '#' in either half mis-splits the key silently:
 # the write succeeds, the ballot becomes unreadable, and a phantom row id appears
 # in `aggregates`.
@@ -662,7 +1039,7 @@ REVIEWER_KIND_USER = 'user'
 # The row record: which project a row belongs to and which of that project's
 # documents it holds.
 #
-#     sk = 'ROW#{row_id}'
+#     sk is 'ROW#{row_id}'  — one record per row
 #
 # In the SAME partition as the ballots on purpose. The page reads the partition
 # whole already, so the rows arrive with the ballots in one query and nothing has
@@ -689,7 +1066,7 @@ DEFAULT_ROW_ID_SUFFIX = '_default'
 # How many random bytes a NON-default row's id carries, and how one is spelled.
 #
 # Minted server-side, never accepted from a caller, for the reason
-# `_validated_ballot_row_id` records at length: the row id becomes the FIRST SEGMENT
+# `shared.row_ids.validated_row_id` records at length: the row id becomes the FIRST SEGMENT
 # of every ballot sort key on that row, so a caller-chosen id puts the shape of that
 # key under a caller's control. Hex under the same DEFAULT_ROW_ID_PREFIX namespace,
 # so every row id in the partition reads alike and none of them can contain the '#'
@@ -892,60 +1269,6 @@ MAX_ROWS_PER_PROJECT = 50
 MAX_PROJECT_DOCUMENT_PAGES = 20
 
 
-def _json_object_body() -> dict:
-    """The request body as a JSON object, or a ValidationError.
-
-    `json_body` alone is two unhandled failures: unparseable JSON raises
-    `JSONDecodeError`, and a body that parses to a LIST or a string passes an
-    `or {}` guard truthy and then dies on `.get`. Neither has a registered handler,
-    so both surface as a bare 500 — a malformed REQUEST reported as a server fault,
-    counted as an error, with nothing the page can say about it. Probed before
-    fixing: `[1,2]`, `"hi"` and `{not json` each answered 500.
-
-    The `or {}` idiom is wrong in a THIRD way, and it is the quietest: `or`
-    collapses every falsy value, so `[]`, `false`, `0` and `""` arrive at any
-    later isinstance check already disguised as an empty object and are accepted
-    as "no body". On a route that starts a billed job from the body, that is an
-    unvalidated entry rather than a 500. Hence `is None`, not `or`: only a
-    genuinely absent body (no body, or a literal JSON `null`) defaults.
-
-    A zero-length body (`Content-Length: 0`) also defaults, though by a route
-    outside this helper: powertools' `json_body` returns None for a falsy
-    `decoded_body` without parsing it, so `''` reaches the `is None` branch below
-    rather than the refusal. Same answer as an absent body, which is the intended
-    one — pinned by test rather than left resting on that library detail.
-
-    Deliberately the same helper, with the same name and contract, as
-    `ballots_handler._json_object_body` — one idiom rather than two spellings of it.
-    Not extracted into `shared/` while it has two copies; the third one should do
-    that rather than a second refactor of the first two.
-
-    SCOPE: the prioritization routes and `api_generate_document`. The other bodies
-    in this module have the same latent shape and predate this change, and
-    sweeping ~20 pre-existing routes is its own reviewable diff rather than a
-    rider on a change to one route.
-
-    One of those routes is not merely unswept but actively defective, and it is the
-    one a reader here would most likely assume is covered: `api_merge_documents`
-    still reads `json_body or {}` and calls `create_job` BEFORE anything inspects
-    the body, so a JSON array or a bare string produces a billed job row whose
-    `merge_config` is not an object. Tracked with the measurements in issue #380;
-    the fix is to call this helper. Adopting it here rather than there was the
-    scope line, not a judgement that the other route is fine.
-    """
-    try:
-        body = app.current_event.json_body
-    except ValueError as e:
-        # json.JSONDecodeError is a ValueError; a body that is not JSON at all is
-        # the caller's mistake, not this service's.
-        raise ValidationError('the request body must be JSON') from e
-    if body is None:
-        return {}
-    if not isinstance(body, dict):
-        raise ValidationError('the request body must be a JSON object')
-    return body
-
-
 def _caller_reviewer_subject() -> str:
     """The authenticated Cognito subject of the caller, or raise (403).
 
@@ -1009,6 +1332,26 @@ def _ballot_sk(row_id: str, subject: str) -> str:
     return f'{BALLOT_SK_PREFIX}{row_id}#{_reviewer_segment(subject)}'
 
 
+def _row_record(
+    row_id: str, project_id: str, document_ids: list[str], prototype_id: str, *, is_default: bool,
+) -> dict:
+    """A new row record as stored: created and updated now, and WITHOUT a `ttl` —
+    the aggregates table expires anything carrying one, and a row is as durable as
+    the ballots keyed to it."""
+    now = datetime.now(UTC).isoformat()
+    return {
+        'pk': PRIORITIZATION_PK,
+        'sk': _row_sk(row_id),
+        'row_id': row_id,
+        'project_id': project_id,
+        'document_ids': document_ids,
+        'prototype_id': prototype_id,
+        'is_default': is_default,
+        'created_at': now,
+        'updated_at': now,
+    }
+
+
 def _row_sk(row_id: str) -> str:
     return f'{ROW_SK_PREFIX}{row_id}'
 
@@ -1018,7 +1361,7 @@ def _default_row_id(project_id: str) -> str:
 
     Derived, never minted: see DEFAULT_ROW_ID_PREFIX. The project id is already
     known to contain no '#' by the time this is called
-    (`_validated_row_project_id`), so the composed id is a legal first half of a
+    (`shared.row_ids.validated_row_id`), so the composed id is a legal first half of a
     ballot sort key.
     """
     return f'{DEFAULT_ROW_ID_PREFIX}{project_id}{DEFAULT_ROW_ID_SUFFIX}'
@@ -1042,121 +1385,6 @@ def _parse_ballot_sk(sk: str) -> tuple[str, str] | None:
     return row_id, reviewer
 
 
-def _validated_ballot_row_id(raw: Any) -> str:
-    """Check that a client-supplied score key can be a ballot sort key.
-
-    '#' is refused rather than escaped: it is the sort-key delimiter, server-minted
-    row ids never contain it, and an id carrying one would make the key ambiguous
-    to `_parse_ballot_sk`. The length bound keeps an absurd id a 400 naming the
-    field instead of a DynamoDB ValidationException surfacing as a 500 (a sort key
-    is capped at 1024 bytes; MAX_KEY_SEGMENT_ID_LEN is the same bound the
-    document-aiming fields in this module already use, and a row id is derived
-    from a project id so it is bounded in the same order).
-
-    Each branch names the RULE it failed rather than echoing the key: three
-    distinct causes behind one message leaves a caller unable to tell a delimiter
-    collision from an over-long id, while the value itself is unbounded caller
-    input that a response body gains nothing by repeating (the same reasoning
-    `validate_bool` in shared/api.py records).
-
-    WHAT THIS CHECKS IS THE SHAPE, not the existence. Existence is checked by the
-    ROUTE, against the table, once per save (`_fetched_ballot_rows`) — it cannot
-    live here because this function sees one key at a time with no table in hand.
-    The two checks answer differently on purpose: a malformed key is a 400 about
-    the request, a well-formed key naming no row is a 404 about the world.
-
-    An earlier version deliberately skipped the existence check, reasoning that an
-    orphaned ballot is "a ballot nothing will read, which is the same outcome the
-    read already has to tolerate". Production showed why that reasoning was wrong
-    (#342): the same outcome for the READER is not the same outcome for the
-    WRITER, who was told 200 `updated_count: 1` while their vote appeared nowhere
-    — silent loss reported as success, the exact fault class this module's read
-    side counts and warns about. That a row's documents belong to its project is
-    still guaranteed one level up, where a row is composed
-    (`_default_row_composition` picks from the project's own partition).
-    """
-    if not isinstance(raw, str) or not raw.strip():
-        raise ValidationError('scores keys must be non-empty row id strings')
-    row_id = raw.strip()
-    if '#' in row_id:
-        raise ValidationError("scores keys must not contain '#', the sort-key delimiter")
-    if len(row_id) > MAX_KEY_SEGMENT_ID_LEN:
-        raise ValidationError(
-            f'scores keys must be at most {MAX_KEY_SEGMENT_ID_LEN} characters'
-        )
-    return row_id
-
-
-def _validated_path_row_id(raw: Any) -> str:
-    """Check that a row id taken from the URL PATH can be a sort key.
-
-    The same three rules `_validated_ballot_row_id` applies, for the same reasons
-    recorded there, with messages that name `row_id` rather than "scores keys": a
-    caller who addressed `PATCH /projects/prioritization/rows/{row_id}` and was told
-    their "scores keys" were wrong would be reading about a field their request does
-    not have.
-
-    A path segment reaches the same sort key as a body key does, so the no-'#' rule
-    is not merely inherited — a '%23' that arrives decoded would compose
-    `ROW#a#b`, and the row a later ballot's `BALLOT#a#b#user:x` key parses to is then
-    not the row that was written.
-    """
-    if not isinstance(raw, str) or not raw.strip():
-        raise ValidationError('row_id is required')
-    row_id = raw.strip()
-    if '#' in row_id:
-        raise ValidationError("row_id must not contain '#', the sort-key delimiter")
-    if len(row_id) > MAX_KEY_SEGMENT_ID_LEN:
-        raise ValidationError(
-            f'row_id must be at most {MAX_KEY_SEGMENT_ID_LEN} characters'
-        )
-    return row_id
-
-
-def _is_clampable_number(value: Any) -> bool:
-    """Whether an axis value is a number this route may clamp into 0-5.
-
-    CLAMP A NUMBER, REFUSE A NON-NUMBER. The clamp is justified because the value
-    is bounded either way — `99`, `-4`, `'3'` and `2.7` all plainly mean a number
-    the slider range can hold. `'high'` does not: there is no value to bound, so
-    the 0 that `validate_int`'s fallback produces is INVENTED, and once stored it
-    is indistinguishable from a deliberate lowest score. That is the same "an
-    all-zero ballot inflates `reviewer_count` and drags every mean down" defect
-    `_validated_ballot_entry` refuses a non-dict entry to prevent, one level
-    further in — and worse, because four unparseable axes also satisfy
-    `_is_fully_scored` and so corrupt `score_spread` too.
-
-    Three traps, each of which lets a non-number through a numeric check written
-    the obvious way:
-
-    * `bool` is a subclass of `int`, so `isinstance(True, int)` is true and
-      `int(True)` is `1`. A flag is not a slider position: `true` would store a 1
-      nobody chose, and `false` an invented 0 that reaches the aggregate as a
-      deliberate lowest vote. Refused explicitly, ahead of any coercion — the
-      mirror of the argument `validate_bool` in shared/api.py makes.
-    * `int(float('inf'))` raises `OverflowError`, which is in NEITHER of the
-      exception types `validate_int` catches. Left to `validate_int` it therefore
-      does not fall back at all: it propagates out of the write loop and
-      half-persists a multi-row save behind a bare 500, defeating the whole
-      point of validating before the first write. `Infinity` is reachable over
-      the wire because Powertools parses the body with non-strict `json.loads`.
-    * `int(float('nan'))` raises `ValueError`, which IS swallowed, so a `NaN`
-      would silently store the invented 0.
-
-    So the coercion attempt catches `OverflowError` beside `ValueError` and
-    `TypeError`, and a non-finite float is refused outright.
-    """
-    if isinstance(value, bool):
-        return False
-    if isinstance(value, float) and not math.isfinite(value):
-        return False
-    try:
-        int(value)
-    except (ValueError, TypeError, OverflowError):
-        return False
-    return True
-
-
 def _validated_ballot_entry(entry: Any) -> dict:
     """Check that a client-supplied score value can be a ballot.
 
@@ -1173,7 +1401,7 @@ def _validated_ballot_entry(entry: Any) -> dict:
     them here rather than at the write is what makes the up-front pass's promise
     ("nothing malformed can leave a multi-row save half-persisted") true:
 
-    * An axis must be null (absent, left alone) or a number `_is_clampable_number`
+    * An axis must be null (absent, left alone) or a number `shared.row_ids.is_clampable_number`
       will accept. An unparseable axis stored as a real 0 both invents a vote and
       DESTROYS the sender's own stored score, while answering 200.
     * `notes` must be null (absent, left alone) or a string. Coercing a non-string
@@ -1190,7 +1418,7 @@ def _validated_ballot_entry(entry: Any) -> dict:
       an over-long note cannot leave a multi-row save half-persisted.
 
     None of the messages echoes the value: it is unbounded caller input a response
-    body gains nothing by repeating (the reasoning `_validated_ballot_row_id`
+    body gains nothing by repeating (the reasoning `shared.row_ids.validated_row_id`
     and `validate_bool` both record). The note's message names the bound instead,
     which is the part a caller can act on.
     """
@@ -1202,7 +1430,7 @@ def _validated_ballot_entry(entry: Any) -> dict:
         value = entry.get(axis)
         if value is None:
             continue
-        if not _is_clampable_number(value):
+        if not is_clampable_number(value):
             raise ValidationError(
                 f'{axis} must be a number between {MIN_AXIS_VALUE} and '
                 f'{MAX_AXIS_VALUE}, or null to leave it unchanged'
@@ -1230,7 +1458,7 @@ def _readable_axis(entry: Any, axis: str) -> float | None:
     None means NOTHING WAS EXPRESSED, which covers four cases: a non-dict entry, an
     absent or null axis, a value no number can be read out of (`'high'`, `''`,
     `[1, 2]`, `NaN`, `Infinity`), and a bool — `float(True)` is `1.0`, but a flag is not a
-    slider position, the same reading `_is_clampable_number` enforces on the way
+    slider position, the same reading `shared.row_ids.is_clampable_number` enforces on the way
     in. Everything the write path stores is an int, and DynamoDB hands numbers back
     as Decimal, both of which read cleanly.
 
@@ -1240,7 +1468,7 @@ def _readable_axis(entry: Any, axis: str) -> float | None:
     in a field named for what a reviewer entered, and make it indistinguishable
     from the deliberate 0 that `_carries_axis` exists to keep distinguishable.
 
-    So this and `_is_clampable_number` answer the same question with different
+    So this and `shared.row_ids.is_clampable_number` answer the same question with different
     verdicts for the same input — `''` is refused on the way IN (400) and read as
     silence on the way OUT — and that asymmetry is the design, not a gap. Refusing is
     available on a write because there is a caller to tell; on a read the value is
@@ -1632,7 +1860,7 @@ def _aggregate_scores(
             # one ballot cannot disagree with itself, and there is no second
             # fully-scored opinion to disagree with it.
             'score_spread': (
-                round(max(comparable) - min(comparable), 2) if len(comparable) > 1
+                round(max(comparable) - min(comparable), 2) if len(comparable) > 1  # pragma: no mutate  one ballot's range is 0.0 either way
                 else 0.0
             ),
         }
@@ -1719,8 +1947,8 @@ def _drop_legacy_score(table, document_id: str) -> None:
     except ClientError as e:
         if e.response.get('Error', {}).get('Code') != 'ConditionalCheckFailedException':
             logger.warning(f"Legacy prioritization score removal failed: {e}")
-    except Exception as e:
-        logger.warning(f"Legacy prioritization score removal failed: {e}")
+    except Exception:
+        logger.exception("Legacy prioritization score removal failed")
 
 
 class _LegacyScores:
@@ -1730,7 +1958,7 @@ class _LegacyScores:
     client asking for it, and it is keyed by DOCUMENT while a ballot is keyed by ROW
     — so "retire what this ballot supersedes" is, per scored row, a read of the row
     and a conditional delete per document it holds. Done unconditionally that is up
-    to MAX_BALLOTS_PER_SAVE × MAX_ROW_DOCUMENT_IDS sequential writes in one
+    to MAX_BALLOTS_PER_SAVE x MAX_ROW_DOCUMENT_IDS sequential writes in one
     invocation, forever, in a deployment that has never held a single legacy entry —
     which is every deployment that never ran the pre-ballot version. One keyed read
     of the map tells us there is nothing to do, and `empty` then skips the row read
@@ -1751,7 +1979,7 @@ class _LegacyScores:
 
     def __init__(self, table) -> None:
         self._table = table
-        self._document_ids: set[str] | None = None
+        self._document_ids = None
 
     def _held(self) -> set[str]:
         if self._document_ids is None:
@@ -1879,22 +2107,33 @@ def _fetched_ballot_rows(table, row_ids: list[str]) -> dict[str, dict]:
     """
     fetched: dict[str, dict] = {}
     for row_id in row_ids:
-        try:
-            # Strongly consistent, because this read GATES a write and the case
-            # it exists to distinguish is "created moments ago": the row create
-            # answers the page, the page saves, and an eventually-consistent
-            # read can miss the row it just handed out — refusing a legitimate
-            # save with 404. Negligible cost for a keyed read on a save path.
-            item = table.get_item(
-                Key={'pk': PRIORITIZATION_PK, 'sk': _row_sk(row_id)},
-                ConsistentRead=True,
-            ).get('Item')
-        except Exception as e:
-            logger.exception(f'Failed to read a prioritization row before a save: {e}')
-            raise ServiceError('Failed to save prioritization scores') from e
+        item = _consistent_row_read(
+            table, row_id,
+            'Failed to read a prioritization row before a save',
+            'Failed to save prioritization scores',
+        )
         if isinstance(item, dict):
             fetched[row_id] = item
     return fetched
+
+
+def _consistent_row_read(table, row_id: str, log_message: str, failure_message: str):
+    """One row record as stored (or None), read strongly consistently.
+
+    Strongly consistent, because this read GATES a write and the case it exists to
+    distinguish is "created moments ago": the row create answers the page, the page
+    saves, and an eventually-consistent read can miss the row it just handed out —
+    refusing a legitimate save with 404. Negligible cost for a keyed read on a save
+    path. A failed read is the caller's own 500, worded for the caller's route.
+    """
+    try:
+        return table.get_item(
+            Key={'pk': PRIORITIZATION_PK, 'sk': _row_sk(row_id)},
+            ConsistentRead=True,
+        ).get('Item')
+    except Exception as e:
+        logger.exception(f'{log_message}: {e}')
+        raise ServiceError(failure_message) from e
 
 
 def _fetched_row(table, row_id: str) -> dict | None:
@@ -1903,16 +2142,13 @@ def _fetched_row(table, row_id: str) -> dict | None:
     Separate from `_fetched_ballot_rows` for one reason: that helper's failed-read
     message says a SAVE failed, and a delete that reported "Failed to save
     prioritization scores" would send an operator reading the wrong route's logs. The
-    consistency argument is the same and stated there.
+    consistency argument is the same and stated on `_consistent_row_read`.
     """
-    try:
-        item = table.get_item(
-            Key={'pk': PRIORITIZATION_PK, 'sk': _row_sk(row_id)},
-            ConsistentRead=True,
-        ).get('Item')
-    except Exception as e:
-        logger.exception(f'Failed to read a prioritization row before a delete: {e}')
-        raise ServiceError('Failed to delete the prioritization row') from e
+    item = _consistent_row_read(
+        table, row_id,
+        'Failed to read a prioritization row before a delete',
+        'Failed to delete the prioritization row',
+    )
     return item if isinstance(item, dict) else None
 
 
@@ -2016,25 +2252,21 @@ def _row_payload(row: dict, row_ballots: Iterable[Any] = ()) -> dict:
     }
 
 
-def _validated_row_project_id(raw: Any) -> str:
-    """Check that a client-supplied project id can name a row.
+def _row_request_project() -> tuple[dict, str, list[dict]]:
+    """The JSON body of a row route, its validated `project_id`, and that project's documents.
 
-    The project id reaches a SORT KEY through `_default_row_id`, so the same
-    no-'#' rule every other half of a ballot key is held to applies here — and it
-    is checked at the one place a row id is minted, which is what lets
-    `_validated_ballot_row_id` refuse a '#' without having to explain where one
-    could have come from.
+    404 when the project has no META record: a row cannot be composed for, or
+    moved to, a project that does not exist.
     """
-    if not isinstance(raw, str) or not raw.strip():
-        raise ValidationError('project_id is required')
-    project_id = raw.strip()
-    if '#' in project_id:
-        raise ValidationError("project_id must not contain '#', the sort-key delimiter")
-    if len(project_id) > MAX_KEY_SEGMENT_ID_LEN:
-        raise ValidationError(
-            f'project_id must be at most {MAX_KEY_SEGMENT_ID_LEN} characters'
-        )
-    return project_id
+    body = json_object_body(app)
+    project_id = validated_row_id(body.get('project_id'), field='project_id')
+    # Before any document is read: a row exposes and scores the project's documents.
+    _require_row_project_edit(project_id)
+
+    documents = _project_documents(project_id)
+    if not any(item.get('sk') == 'META' for item in documents):
+        raise NotFoundError(f'Project {project_id} not found')
+    return body, project_id, documents
 
 
 def _project_documents(project_id: str) -> list[dict]:
@@ -2124,6 +2356,24 @@ def _project_documents(project_id: str) -> list[dict]:
 # only means either a row composed without a document the page shows sliders for,
 # or a page refusing to show a document the row was scored on.
 SCORABLE_SK_PREFIXES = ('PRD#', 'PRFAQ#')
+
+
+def _scorable_documents(documents: list[dict]) -> Iterable[tuple[str, str, dict]]:
+    """`(sk prefix, document_id, item)` for each document a row may be scored on.
+
+    The type is read off the sort-key prefix — how storage spells it
+    (`SCORABLE_SK_PREFIXES`) — so this cannot disagree with what counts as scorable;
+    an item without a non-empty string `document_id` is not one.
+    """
+    for item in documents:
+        # A missing `sk` reads 'None', which no prefix matches.
+        sk = str(item.get('sk'))
+        prefix = next((p for p in SCORABLE_SK_PREFIXES if sk.startswith(p)), None)
+        if prefix is None:
+            continue
+        document_id = item.get('document_id')
+        if isinstance(document_id, str) and document_id:
+            yield prefix, document_id, item
 PROTOTYPE_SK_PREFIX = 'PROTOTYPE#'
 
 
@@ -2161,14 +2411,7 @@ def _default_row_composition(documents: list[dict]) -> tuple[list[str], str]:
     # instant; a document with none sorts oldest, which is the right way for an
     # unreadable timestamp to lose to a readable one.
     newest_by_type: dict[str, dict] = {}
-    for item in documents:
-        sk = str(item.get('sk', ''))
-        prefix = next((p for p in SCORABLE_SK_PREFIXES if sk.startswith(p)), None)
-        if prefix is None:
-            continue
-        document_id = item.get('document_id')
-        if not isinstance(document_id, str) or not document_id:
-            continue
+    for prefix, _document_id, item in _scorable_documents(documents):
         incumbent = newest_by_type.get(prefix)
         if incumbent is None or str(item.get('created_at', '')) > str(incumbent.get('created_at', '')):
             newest_by_type[prefix] = item
@@ -2199,7 +2442,7 @@ def _latest_prototype_id(documents: list[dict]) -> str:
     """
     prototypes = [
         item for item in documents
-        if str(item.get('sk', '')).startswith(PROTOTYPE_SK_PREFIX)
+        if str(item.get('sk')).startswith(PROTOTYPE_SK_PREFIX)
     ]
     prototypes.sort(key=lambda item: str(item.get('created_at', '')), reverse=True)
     for item in prototypes:
@@ -2213,7 +2456,7 @@ def _minted_row_id() -> str:
     """A new NON-default row's id.
 
     Always minted here, never taken from the request, for the reason
-    `_validated_ballot_row_id` records: the id becomes the first segment of every
+    `shared.row_ids.validated_row_id` records: the id becomes the first segment of every
     ballot sort key on the row, so a caller-chosen id would put that key's shape
     under a caller's control. Hex, so it cannot carry the '#' the key is split on,
     and prefixed like the derived default ids so every row id in the partition reads
@@ -2236,14 +2479,8 @@ def _scorable_document_ids(documents: list[dict]) -> dict[str, str]:
     one as a row member would put an unscorable id in `document_ids`.
     """
     owned: dict[str, str] = {}
-    for item in documents:
-        sk = str(item.get('sk', ''))
-        prefix = next((p for p in SCORABLE_SK_PREFIXES if sk.startswith(p)), None)
-        if prefix is None:
-            continue
-        document_id = item.get('document_id')
-        if isinstance(document_id, str) and document_id:
-            owned.setdefault(document_id, prefix)
+    for prefix, document_id, _item in _scorable_documents(documents):
+        owned.setdefault(document_id, prefix)
     return owned
 
 
@@ -2257,7 +2494,7 @@ def _validated_row_document_ids(raw: Any, documents: list[dict]) -> list[str]:
 
     Every refusal happens BEFORE anything is written, and each names the rule it
     failed rather than echoing the id, which is unbounded caller input a response
-    body gains nothing by repeating (the reasoning `_validated_ballot_row_id` and
+    body gains nothing by repeating (the reasoning `shared.row_ids.validated_row_id` and
     `validate_bool` both record). Five rules, and the reason each one is a refusal
     rather than a repair:
 
@@ -2352,12 +2589,7 @@ def api_compose_prioritization_row():
     is not a state the reads care about, while a hundred is. The bound still holds as
     a bound: the next call reads the crossed count and refuses.
     """
-    body = _json_object_body()
-    project_id = _validated_row_project_id(body.get('project_id'))
-
-    documents = _project_documents(project_id)
-    if not any(item.get('sk') == 'META' for item in documents):
-        raise NotFoundError(f'Project {project_id} not found')
+    body, project_id, documents = _row_request_project()
     document_ids = _validated_row_document_ids(body.get('document_ids'), documents)
     prototype_id = _latest_prototype_id(documents)
 
@@ -2389,25 +2621,11 @@ def api_compose_prioritization_row():
             'rows one project may have; delete a row before composing another'
         )
 
-    row_id = _minted_row_id()
-    now = datetime.now(timezone.utc).isoformat()
-    item = {
-        'pk': PRIORITIZATION_PK,
-        'sk': _row_sk(row_id),
-        'row_id': row_id,
-        'project_id': project_id,
-        'document_ids': document_ids,
-        # The project's latest prototype, as context, exactly as the default row
-        # carries it. Not composable per row: a prototype is not scored, so a
-        # separate selector for it would be a second dimension of choice over
-        # something no ballot is about.
-        'prototype_id': prototype_id,
-        'is_default': False,
-        'created_at': now,
-        'updated_at': now,
-        # No `ttl`: the aggregates table expires anything carrying one, and a row is
-        # as durable as the ballots keyed to it.
-    }
+    # The project's latest prototype, as context, exactly as the default row
+    # carries it. Not composable per row: a prototype is not scored, so a
+    # separate selector for it would be a second dimension of choice over
+    # something no ballot is about.
+    item = _row_record(_minted_row_id(), project_id, document_ids, prototype_id, is_default=False)
     try:
         table.put_item(Item=item, ConditionExpression='attribute_not_exists(sk)')
     except Exception as e:
@@ -2471,33 +2689,38 @@ def api_recompose_prioritization_row(row_id: str):
 
     Open to any signed-in reviewer, for the same reason the create is.
     """
-    validated_row_id = _validated_path_row_id(row_id)
-    body = _json_object_body()
-    project_id = _validated_row_project_id(body.get('project_id'))
-
-    documents = _project_documents(project_id)
-    if not any(item.get('sk') == 'META' for item in documents):
-        raise NotFoundError(f'Project {project_id} not found')
+    path_row_id = validated_row_id(row_id)
+    body, project_id, documents = _row_request_project()
     document_ids = _validated_row_document_ids(body.get('document_ids'), documents)
 
     table = get_aggregates_table()
     if not table:
         raise ConfigurationError('Aggregates table not configured')
 
+    caller = _request_caller()
+    if not caller.is_admin:
+        # The row's STORED project is gated too, so naming a private project's row
+        # id answers 404 rather than a 409 confirming it exists. When it matches the
+        # body's project it was gated above; a missing row falls to the condition.
+        stored = _fetched_row(table, path_row_id)
+        stored_project = stored.get('project_id') if stored else None
+        if isinstance(stored_project, str) and stored_project != project_id:
+            _project_access_for(stored_project, caller, project_access.LEVEL_EDIT)
+
     # The LEGACY half of the freeze — see the docstring. A row balloted before the
     # mark existed satisfies the write's condition, so it has to be refused here,
     # with the same 409 the condition produces: which mechanism refused is plumbing,
     # and the caller's remedy (reload, see the current rows) is identical.
-    if _row_holds_a_value_bearing_ballot(table, validated_row_id):
+    if _row_holds_a_value_bearing_ballot(table, path_row_id):
         raise ConflictError(
             'This row cannot be recomposed: a ballot has already frozen its '
             'composition'
         )
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     try:
         response = table.update_item(
-            Key={'pk': PRIORITIZATION_PK, 'sk': _row_sk(validated_row_id)},
+            Key={'pk': PRIORITIZATION_PK, 'sk': _row_sk(path_row_id)},
             UpdateExpression=(
                 'SET #document_ids = :document_ids, #updated_at = :updated_at'
             ),
@@ -2849,7 +3072,7 @@ def _cancelled_by_condition(e: ClientError, index: int | None = None) -> bool:
             return False
         reasons = [reasons[index]]
     return any(
-        isinstance(reason, dict) and reason.get('Code') == 'ConditionalCheckFailed'
+        reason.get('Code') == 'ConditionalCheckFailed'
         for reason in reasons
     )
 
@@ -2991,30 +3214,35 @@ def api_delete_prioritization_row(row_id: str):
     resulting state one nothing in the product can repair by asking again.
     """
     require_admin(app.current_event.raw_event)
-    validated_row_id = _validated_path_row_id(row_id)
+    path_row_id = validated_row_id(row_id)
 
     table = get_aggregates_table()
     if not table:
         raise ConfigurationError('Aggregates table not configured')
 
-    row = _fetched_row(table, validated_row_id)
+    row = _fetched_row(table, path_row_id)
     if row is None:
         raise NotFoundError('That prioritization row does not exist')
+    # A no-op today (the route is admin-only and admins hold every project), kept so
+    # relaxing `require_admin` cannot silently open private projects' rows.
+    row_project = row.get('project_id')
+    if isinstance(row_project, str) and row_project:
+        _require_row_project_edit(row_project)
 
     # Only a DEFAULT row needs a sibling, and only a default row pays the query that
     # looks for one: a row somebody composed is never the reason a project has a row
     # at all, so deleting it can never leave the page inviting a PRD for a project
     # that has one.
     is_default = _is_default_row(row)
-    sibling_sk = _sibling_row_sk(table, row, validated_row_id) if is_default else None
+    sibling_sk = _sibling_row_sk(table, row, path_row_id) if is_default else None
     if is_default and sibling_sk is None:
         raise ConflictError(
             "A project's default row cannot be deleted while it is the project's "
             'only row'
         )
 
-    ballot_sks = _row_ballot_sort_keys(table, validated_row_id)
-    _transact_delete_row(table, row, validated_row_id, ballot_sks, sibling_sk)
+    ballot_sks = _row_ballot_sort_keys(table, path_row_id)
+    _transact_delete_row(table, row, path_row_id, ballot_sks, sibling_sk)
     # THE ONLY TRACE A COMPLETED DELETE LEAVES. `ballots_deleted` is evidence only in
     # the caller's own response body, and every ballot removed here is a durable
     # decision record — so an operator asked "where did the team's score go?" has
@@ -3028,11 +3256,11 @@ def api_delete_prioritization_row(row_id: str):
     # is not.
     logger.info(
         'Deleted prioritization row %s (default: %s) with %d ballot(s)',
-        validated_row_id, is_default, len(ballot_sks),
+        path_row_id, is_default, len(ballot_sks),
     )
     return {
         'success': True,
-        'row_id': validated_row_id,
+        'row_id': path_row_id,
         'ballots_deleted': len(ballot_sks),
     }
 
@@ -3061,12 +3289,7 @@ def api_create_prioritization_row():
     the decision recorded on the issue: the freeze phase 2 adds is the protection,
     not the identity of whoever created the row.
     """
-    body = _json_object_body()
-    project_id = _validated_row_project_id(body.get('project_id'))
-
-    documents = _project_documents(project_id)
-    if not any(item.get('sk') == 'META' for item in documents):
-        raise NotFoundError(f'Project {project_id} not found')
+    _body, project_id, documents = _row_request_project()
     document_ids, prototype_id = _default_row_composition(documents)
     if not document_ids:
         raise ValidationError(
@@ -3078,22 +3301,8 @@ def api_create_prioritization_row():
         raise ConfigurationError('Aggregates table not configured')
 
     row_id = _default_row_id(project_id)
-    now = datetime.now(timezone.utc).isoformat()
-    item = {
-        'pk': PRIORITIZATION_PK,
-        'sk': _row_sk(row_id),
-        'row_id': row_id,
-        'project_id': project_id,
-        # CONCRETE ids, never the selector that chose them. See
-        # `_default_row_composition`.
-        'document_ids': document_ids,
-        'prototype_id': prototype_id,
-        'is_default': True,
-        'created_at': now,
-        'updated_at': now,
-        # No `ttl`: the aggregates table expires anything carrying one, and a row
-        # is as durable as the ballots keyed to it.
-    }
+    # CONCRETE ids, never the selector that chose them. See `_default_row_composition`.
+    item = _row_record(row_id, project_id, document_ids, prototype_id, is_default=True)
     try:
         table.put_item(
             Item=item,
@@ -3126,6 +3335,40 @@ def api_create_prioritization_row():
         raise ServiceError('Failed to create the prioritization row') from e
 
     return {'success': True, 'created': True, 'row': _row_payload(item)}
+
+
+def _split_prioritization_partition(
+    items: list[dict],
+) -> tuple[dict, dict[str, dict], list[tuple[str, str, dict]]]:
+    """(legacy SCORES map, rows by id, every ``(row_id, reviewer, ballot)``) of one partition read."""
+    legacy_scores: dict = {}
+    rows_by_id: dict[str, dict] = {}
+    all_ballots: list[tuple[str, str, dict]] = []
+
+    for item in items:
+        sk = item.get('sk') or ''  # pragma: no mutate  any stand-in for a missing key is unparsable alike
+        if sk == LEGACY_SCORES_SK:
+            stored = item.get('scores')
+            legacy_scores = stored if isinstance(stored, dict) else {}
+            continue
+        if sk.startswith(ROW_SK_PREFIX):
+            # Verification fixture rows are written into this partition on purpose,
+            # so the fixture exercises the real read paths — which means this walk
+            # picks them up like any other row. Skip them here for the same reason
+            # `list_projects` does: a verification run must not appear in anyone's
+            # prioritization. The fixture's own probe reads by exact key, not here.
+            if is_verification_fixture(item):
+                continue
+            row_id = sk[len(ROW_SK_PREFIX):]
+            if row_id:
+                rows_by_id[row_id] = item
+            continue
+        parsed = _parse_ballot_sk(sk)
+        if not parsed:
+            continue
+        row_id, reviewer = parsed
+        all_ballots.append((row_id, reviewer, item))
+    return legacy_scores, rows_by_id, all_ballots
 
 
 @app.get("/projects/prioritization")
@@ -3165,33 +3408,7 @@ def api_get_prioritization_scores():
         raise ServiceError('Failed to read prioritization scores') from e
 
     caller_segment = _reviewer_segment(subject)
-    legacy_scores: dict = {}
-    rows_by_id: dict[str, dict] = {}
-    all_ballots: list[tuple[str, str, dict]] = []
-
-    for item in items:
-        sk = item.get('sk') or ''
-        if sk == LEGACY_SCORES_SK:
-            stored = item.get('scores')
-            legacy_scores = stored if isinstance(stored, dict) else {}
-            continue
-        if sk.startswith(ROW_SK_PREFIX):
-            # Verification fixture rows are written into this partition on purpose,
-            # so the fixture exercises the real read paths — which means this walk
-            # picks them up like any other row. Skip them here for the same reason
-            # `list_projects` does: a verification run must not appear in anyone's
-            # prioritization. The fixture's own probe reads by exact key, not here.
-            if is_verification_fixture(item):
-                continue
-            row_id = sk[len(ROW_SK_PREFIX):]
-            if row_id:
-                rows_by_id[row_id] = item
-            continue
-        parsed = _parse_ballot_sk(sk)
-        if not parsed:
-            continue
-        row_id, reviewer = parsed
-        all_ballots.append((row_id, reviewer, item))
+    legacy_scores, rows_by_id, all_ballots = _split_prioritization_partition(items)
 
     # A ballot whose row does not resolve is dropped here, once, so that neither
     # the caller's own map nor the aggregate can name a row the response does not
@@ -3214,11 +3431,21 @@ def api_get_prioritization_scores():
     # row has gone. Phase 2 introduces row deletion, which is when the second
     # becomes ordinary and needs the delete-row-with-its-ballots path rather than
     # this line; the count is what will show whether that is working.
+    # Rows of projects the caller cannot VIEW are withheld whole — the row, its
+    # ballots, its aggregate and any legacy value that would land on it. Hidden
+    # BEFORE the ballot walk, so their ballots are skipped rather than counted as
+    # orphans by the warning below.
+    hidden_rows = _rows_hidden_from_caller(rows_by_id)
+    for row_id in hidden_rows:
+        rows_by_id.pop(row_id, None)
+
     ballots_by_row: dict[str, list[dict]] = {}
     caller_ballots: dict[str, dict] = {}
     unresolved_rows: set[str] = set()
     unresolved_ballots = 0
     for row_id, reviewer, item in all_ballots:
+        if row_id in hidden_rows:
+            continue
         if row_id not in rows_by_id:
             unresolved_rows.add(row_id)
             unresolved_ballots += 1
@@ -3455,13 +3682,12 @@ def _ballot_transact_items(table, update_kwargs: dict, row_id: str, now: str) ->
         'ExpressionAttributeNames': {'#ballot_writes': ROW_BALLOT_WRITES_FIELD},
         'ExpressionAttributeValues': {':one': 1},
     }
-    assignments: list[str] = []
-    if _writes_a_reviewer_value(update_kwargs):
-        assignments.append('#frozen_at = if_not_exists(#frozen_at, :now)')
+    freezes = _writes_a_reviewer_value(update_kwargs)
+    if freezes:
         row_update['ExpressionAttributeNames']['#frozen_at'] = ROW_FROZEN_AT_FIELD
         row_update['ExpressionAttributeValues'][':now'] = now
     row_update['UpdateExpression'] = (
-        (('SET ' + ', '.join(assignments) + ' ') if assignments else '')
+        ('SET #frozen_at = if_not_exists(#frozen_at, :now) ' if freezes else '')
         + 'ADD #ballot_writes :one'
     )
     # SPREAD rather than rebuilt field by field, and checked rather than trusted. A
@@ -3553,6 +3779,75 @@ def api_put_prioritization_scores():
     )
 
 
+def _validated_ballot_body(changed_scores: dict) -> list[tuple[str, Any]]:
+    """Every ``(row_id, entry)`` of a ballot save, validated BEFORE the first write,
+    so nothing malformed can leave a multi-row save half-persisted.
+
+    Two keys differing only in surrounding whitespace address the SAME ballot
+    once stripped, so writing both silently let one entry overwrite the other —
+    with the winner decided by object order rather than by anything the caller
+    said — and still reported `updated_count` as if two rows had been saved.
+    Refused rather than de-duplicated, for the same reason `_validated_ballot_entry`
+    refuses a non-dict: the request states two different scores for one row
+    and there is no way to know which was meant. Refusing also keeps
+    `updated_count` and MAX_BALLOTS_PER_SAVE counted in the unit they claim —
+    ballots written, not keys received.
+    """
+    validated = [
+        (validated_row_id(row_id, field='scores keys',
+                          missing_message='scores keys must be non-empty row id strings'),
+         _validated_ballot_entry(entry))
+        for row_id, entry in changed_scores.items()
+    ]
+    seen: set[str] = set()
+    for row_id, _ in validated:
+        if row_id in seen:
+            raise ValidationError(
+                'scores keys must be distinct row ids; two keys differing '
+                'only in surrounding whitespace address the same ballot'
+            )
+        seen.add(row_id)
+    return validated
+
+
+def _write_ballot_transaction(table, update_kwargs: dict, row_id: str, now: str) -> None:
+    """Write one row's ballot as ONE TRANSACTION, not one `update_item`.
+
+    The ballot, the row's continued existence and the freeze mark land together
+    or not at all. See `_ballot_transact_items` for why each of the three has to
+    be in the same write as the others.
+    """
+    try:
+        table.meta.client.transact_write_items(
+            TransactItems=_ballot_transact_items(table, update_kwargs, row_id, now)
+        )
+    except ClientError as e:
+        if (
+            e.response.get('Error', {}).get('Code')
+            != 'TransactionCanceledException'
+            # ONLY a failed condition on the ROW's half means the row went
+            # away. A cancellation for any other reason — above all
+            # `TransactionConflict`, which two reviewers scoring one row at
+            # the same moment reach because both `ADD` to the same record —
+            # is re-raised into the save's 500, so the page releases it for a
+            # retry. Answering 404 there told a reviewer whose save merely
+            # lost a race to reload a row that is still there, and dropped
+            # their ballot on advice that could never work.
+            or not _cancelled_by_condition(e, BALLOT_TRANSACT_ROW_INDEX)
+        ):
+            raise
+        # The row's own condition failed, and the only thing it asserts is
+        # that the row exists — so the row went away between the up-front pass
+        # and this write, the delete-racing-a-ballot case (#342). 404, the
+        # same answer the up-front pass gives, because it is the same fact
+        # about the world; and nothing of this row's ballot was written,
+        # because a transaction applies whole or not at all.
+        raise NotFoundError(
+            'scores name a row that does not exist; reload the page to get '
+            'the current rows'
+        ) from e
+
+
 @app.patch("/projects/prioritization")
 @tracer.capture_method
 def api_patch_prioritization_scores():
@@ -3624,7 +3919,7 @@ def api_patch_prioritization_scores():
     act on ("retry the body") is better than a number it would have to interpret.
     """
     subject = _caller_reviewer_subject()
-    body = _json_object_body()
+    body = json_object_body(app)
     changed_scores = body.get('scores') or {}
     if not isinstance(changed_scores, dict):
         raise ValidationError('scores must be an object keyed by row id')
@@ -3635,29 +3930,7 @@ def api_patch_prioritization_scores():
             f'scores may carry at most {MAX_BALLOTS_PER_SAVE} rows per save'
         )
 
-    # Validate every key AND value BEFORE the first write, so nothing malformed
-    # can leave a multi-row save half-persisted.
-    validated = [
-        (_validated_ballot_row_id(row_id), _validated_ballot_entry(entry))
-        for row_id, entry in changed_scores.items()
-    ]
-    # Two keys differing only in surrounding whitespace address the SAME ballot
-    # once stripped, so writing both silently let one entry overwrite the other —
-    # with the winner decided by object order rather than by anything the caller
-    # said — and still reported `updated_count` as if two rows had been saved.
-    # Refused rather than de-duplicated, for the same reason `_validated_ballot_entry`
-    # refuses a non-dict: the request states two different scores for one row
-    # and there is no way to know which was meant. Refusing also keeps
-    # `updated_count` and MAX_BALLOTS_PER_SAVE counted in the unit they claim —
-    # ballots written, not keys received.
-    seen: set[str] = set()
-    for row_id, _ in validated:
-        if row_id in seen:
-            raise ValidationError(
-                'scores keys must be distinct row ids; two keys differing '
-                'only in surrounding whitespace address the same ballot'
-            )
-        seen.add(row_id)
+    validated = _validated_ballot_body(changed_scores)
 
     table = get_aggregates_table()
     if not table:
@@ -3686,13 +3959,19 @@ def api_patch_prioritization_scores():
     # returns the row records the legacy migration reads, so the same key is never
     # read twice in one save.
     rows_by_id = _fetched_ballot_rows(table, [row_id for row_id, _ in validated])
-    if any(row_id not in rows_by_id for row_id, _ in validated):
+    # Scoring a row also needs VIEW on its project, refused with the SAME 404 as a
+    # missing row (no existence leak) and before the first write, so a body naming
+    # one private row persists nothing.
+    if (
+        any(row_id not in rows_by_id for row_id, _ in validated)
+        or _rows_hidden_from_caller(rows_by_id)
+    ):
         raise NotFoundError(
             'scores name a row that does not exist; reload the page to get '
             'the current rows'
         )
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     # Counted so a failure part way through a multi-row save is diagnosable.
     # Validation cannot half-persist a save, but a throttle or a timeout on
@@ -3710,39 +3989,7 @@ def api_patch_prioritization_scores():
     try:
         for row_id, entry in validated:
             update_kwargs = _ballot_update_kwargs(row_id, subject, entry, now)
-            # ONE TRANSACTION per row, not one `update_item`: the ballot, the row's
-            # continued existence and the freeze mark land together or not at all.
-            # See `_ballot_transact_items` for why each of the three has to be in the
-            # same write as the others.
-            try:
-                table.meta.client.transact_write_items(
-                    TransactItems=_ballot_transact_items(table, update_kwargs, row_id, now)
-                )
-            except ClientError as e:
-                if (
-                    e.response.get('Error', {}).get('Code')
-                    != 'TransactionCanceledException'
-                    # ONLY a failed condition on the ROW's half means the row went
-                    # away. A cancellation for any other reason — above all
-                    # `TransactionConflict`, which two reviewers scoring one row at
-                    # the same moment reach because both `ADD` to the same record —
-                    # is re-raised into the 500 below, so the page releases it for a
-                    # retry. Answering 404 there told a reviewer whose save merely
-                    # lost a race to reload a row that is still there, and dropped
-                    # their ballot on advice that could never work.
-                    or not _cancelled_by_condition(e, BALLOT_TRANSACT_ROW_INDEX)
-                ):
-                    raise
-                # The row's own condition failed, and the only thing it asserts is
-                # that the row exists — so the row went away between the pass above
-                # and this write, the delete-racing-a-ballot case (#342). 404, the
-                # same answer the up-front pass gives, because it is the same fact
-                # about the world; and nothing of this row's ballot was written,
-                # because a transaction applies whole or not at all.
-                raise NotFoundError(
-                    'scores name a row that does not exist; reload the page to get '
-                    'the current rows'
-                ) from e
+            _write_ballot_transaction(table, update_kwargs, row_id, now)
             rows_written += 1
             if _writes_a_reviewer_value(update_kwargs):
                 ballots += 1
@@ -3753,7 +4000,6 @@ def api_patch_prioritization_scores():
             # The row record was already fetched by the existence pass above.
             if _is_a_vote(entry):
                 legacy.drop_for_row(rows_by_id[row_id])
-        return {'success': True, 'updated_count': ballots}
     except ApiError:
         raise
     except Exception as e:
@@ -3762,264 +4008,7 @@ def api_patch_prioritization_scores():
             f"{len(validated)} rows: {e}"
         )
         raise ServiceError('Failed to save prioritization scores') from e
-
-
-# ============================================
-# API Token Routes (MCP Access)
-# ============================================
-#
-# The credential format, storage keys and reach vocabulary all live in
-# shared/mcp_tokens.py — this module only handles HTTP concerns (validation,
-# status codes) so the format has exactly one definition.
-#
-# Token rows are NOT in the minting project's partition any more: a credential
-# is workspace-level, and `read_reach` decides how far it sees. The route stays
-# project-shaped because that is where the UI lives, and because a token minted
-# from a project should be visible and revocable there.
-
-# Ceiling for an OPTIONAL expires_in_days at mint time. A year, matching the
-# repo's outermost `days` bound (validate_days max_val=365). Omitting the field
-# still mints a non-expiring token.
-MAX_TOKEN_LIFETIME_DAYS = 365
-
-
-def _validate_expires_in_days(value: Any) -> str | None:
-    """Turn an optional ``expires_in_days`` into an ISO deadline, or None.
-
-    Absent (or JSON null) = a non-expiring token. When PRESENT it is validated
-    strictly rather than clamped: this is a credential lifetime a human chose,
-    so `validate_int`'s fall-back-to-default contract is wrong here — an
-    unreadable value would silently mint a credential with a lifetime nobody
-    picked. Bools are excluded before int() because isinstance(True, int) is
-    True, and fractional values are refused rather than truncated.
-    """
-    if value is None:
-        return None
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, int)
-        or not (1 <= value <= MAX_TOKEN_LIFETIME_DAYS)
-    ):
-        raise ValidationError(
-            f'expires_in_days must be an integer between 1 and {MAX_TOKEN_LIFETIME_DAYS}'
-        )
-    return (datetime.now(timezone.utc) + timedelta(days=value)).isoformat()
-
-
-def _validate_scopes(value: Any) -> list[str]:
-    """Validate a requested scope set. REQUIRED — there is no default.
-
-    🔑 Deliberately not defaulted, unlike `read_reach`. Defaulting would mean
-    `POST {"name": "x"}` mints a credential holding *every* scope, i.e. omitting
-    a field yields the widest grant — a fail-OPEN mint boundary sitting under a
-    fail-CLOSED enforcement path (`_scope_allows` grants nothing for an
-    unreadable scope set). The asymmetry with `read_reach` is intentional and is
-    the honest split: the owner chose a *specific* reach default and the UI warns
-    about it, whereas there is no least-privilege scope set to fall back to —
-    every candidate default is either the widest one or useless.
-    Requiring it costs callers nothing: the route's body shape changed anyway, so
-    no existing caller survives unedited.
-
-    No escalation gate is needed *yet* and this is deliberately not pretending
-    to be one: every scope in the current vocabulary is a read, and a read
-    token grants nothing its minter did not already have through the Cognito
-    API (there is no per-project authorization — #241). The gate becomes real
-    in the same change that adds the first write scope, which is why
-    `created_by` is recorded below.
-    """
-    if value is None:
-        raise ValidationError(
-            'scopes is required and must be a non-empty array. Valid scopes: '
-            f'{", ".join(sorted(mcp_tokens.VALID_SCOPES))}'
-        )
-    if not isinstance(value, list) or not value:
-        raise ValidationError('scopes must be a non-empty array')
-    if not all(isinstance(s, str) for s in value):
-        raise ValidationError('scopes must be an array of strings')
-    unknown = sorted(set(value) - mcp_tokens.VALID_SCOPES)
-    if unknown:
-        raise ValidationError(
-            f'Unknown scope(s): {", ".join(unknown)}. '
-            f'Valid scopes: {", ".join(sorted(mcp_tokens.VALID_SCOPES))}'
-        )
-    # De-duplicated but order-stable, so the stored row reads the way it was asked for.
-    return list(dict.fromkeys(value))
-
-
-def _validate_read_reach(value: Any) -> str:
-    """Validate the read-reach axis, defaulting to workspace.
-
-    ``workspace`` is the default by owner decision — see DEFAULT_READ_REACH for
-    why the platform's read surface is genuinely workspace-shaped. It is not
-    the harmless option, and the UI is responsible for saying so.
-    """
-    if value is None:
-        return mcp_tokens.DEFAULT_READ_REACH
-    if value not in mcp_tokens.VALID_READ_REACHES:
-        raise ValidationError(
-            f'read_reach must be one of: {", ".join(mcp_tokens.VALID_READ_REACHES)}'
-        )
-    return value
-
-
-def _token_response(item: dict) -> dict:
-    """Project a stored token row into the API shape. Never returns the hash."""
-    return {
-        'token_id': item['token_id'],
-        'name': item['name'],
-        'scopes': item.get('scopes', []),
-        'projects': item.get('projects', []),
-        'read_reach': item.get('read_reach', mcp_tokens.DEFAULT_READ_REACH),
-        'created_at': item['created_at'],
-        'last_used_at': item.get('last_used_at'),
-        # Absent on a non-expiring token; surfaced as null and displayed as
-        # "never expires", which is also how mcp_handler enforces it.
-        'expires_at': item.get('expires_at'),
-    }
-
-
-def _query_all_tokens(table) -> list[dict]:
-    """Every token row, following pagination to the end.
-
-    🔑 The `LastEvaluatedKey` loop is load-bearing, not defensive boilerplate.
-    All tokens share ONE partition (see MCP_TOKEN_PK), and DynamoDB caps a Query
-    page at 1 MB. A single-page read would therefore start silently truncating
-    once the workspace accumulates enough credentials — and because this list is
-    the ONLY revoke path, a truncated page makes the credentials it omits
-    unlistable and so unrevocable. That would break the exact invariant the mint
-    route is written to guarantee.
-
-    Unbounded on purpose: the result is every credential in the workspace, and
-    stopping early is the failure being prevented. The row count is human-scale
-    (a handful per project) and each row is small, so the loop terminates after
-    one page in practice.
-    """
-    items: list[dict] = []
-    kwargs: dict[str, Any] = {
-        'KeyConditionExpression': Key('pk').eq(mcp_tokens.MCP_TOKEN_PK),
-    }
-    while True:
-        response = table.query(**kwargs)
-        items.extend(response.get('Items', []))
-        last_key = response.get('LastEvaluatedKey')
-        if not last_key:
-            return items
-        kwargs['ExclusiveStartKey'] = last_key
-
-
-@app.get("/projects/<project_id>/api-tokens")
-@tracer.capture_method
-def api_list_tokens(project_id: str):
-    """List the API tokens whose project set includes this project."""
-    table = get_projects_table()
-    if not table:
-        raise ServiceError('Projects table not configured')
-
-    # Filtered in Python rather than by a key condition: tokens live in one
-    # partition keyed by token id (so authentication is a single keyed read),
-    # which means "tokens for project X" is a membership test, not a range.
-    # The row count here is human-scale — a handful per project.
-    tokens = [
-        _token_response(item)
-        for item in _query_all_tokens(table)
-        if project_id in item.get('projects', [])
-    ]
-    tokens.sort(key=lambda t: t['created_at'], reverse=True)
-
-    return {'success': True, 'tokens': tokens}
-
-
-@app.post("/projects/<project_id>/api-tokens")
-@tracer.capture_method
-def api_create_token(project_id: str):
-    """Mint a new MCP credential, scoped to this project for write reach."""
-    body = app.current_event.json_body or {}
-    name = body.get('name', '').strip()
-    if not name:
-        raise ValidationError('Token name is required')
-
-    scopes = _validate_scopes(body.get('scopes'))
-    read_reach = _validate_read_reach(body.get('read_reach'))
-    expires_at = _validate_expires_in_days(body.get('expires_in_days'))
-
-    # The project set is always exactly the minting project in this phase. A
-    # multi-project token has no consumer yet: there are no write tools, and
-    # cross-project READING is what `read_reach: workspace` already provides.
-    # Keeping it derived also guarantees every token is visible in the tab it
-    # was minted from, so no credential can become unlistable and therefore
-    # unrevocable through the UI.
-    projects = [project_id]
-
-    table = get_projects_table()
-    if not table:
-        raise ServiceError('Projects table not configured')
-
-    project_resp = table.get_item(Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'})
-    if 'Item' not in project_resp:
-        raise NotFoundError(f'Project {project_id} not found')
-
-    minted = mcp_tokens.mint_token()
-    item = {
-        'pk': mcp_tokens.MCP_TOKEN_PK,
-        'sk': mcp_tokens.token_sk(minted.token_id),
-        'token_id': minted.token_id,
-        'name': name,
-        # Only the SECRET half is hashed, so token_id stays safe to log.
-        'secret_hash': minted.secret_hash,
-        'scopes': scopes,
-        'projects': projects,
-        'read_reach': read_reach,
-        'created_at': datetime.now(timezone.utc).isoformat(),
-        # Audit provenance only. With prioritization excluded from MCP, no tool
-        # keys data or authorization by this value — but it is what a Phase 3
-        # escalation gate and audit trail will need, and it cannot be
-        # reconstructed after the fact.
-        'created_by': get_caller_subject(app.current_event.raw_event),
-    }
-    if expires_at is not None:
-        # Absent attribute on a non-expiring token, so mcp_handler's falsy
-        # check needs no special case.
-        item['expires_at'] = expires_at
-    table.put_item(Item=item)
-
-    # token_id, never the credential.
-    logger.info(f"Minted MCP token {minted.token_id} for project {project_id}")
-
-    return {
-        'success': True,
-        # The one and only time the raw credential leaves this function.
-        'token': minted.raw,
-        'token_id': minted.token_id,
-        'name': name,
-        'scopes': scopes,
-        'projects': projects,
-        'read_reach': read_reach,
-        'expires_at': expires_at,
-    }
-
-
-@app.delete("/projects/<project_id>/api-tokens/<token_id>")
-@tracer.capture_method
-def api_delete_token(project_id: str, token_id: str):
-    """Revoke an API token."""
-    table = get_projects_table()
-    if not table:
-        raise ServiceError('Projects table not configured')
-
-    key = {'pk': mcp_tokens.MCP_TOKEN_PK, 'sk': mcp_tokens.token_sk(token_id)}
-    resp = table.get_item(Key=key)
-    item = resp.get('Item')
-    # A token outside this project's set is not revocable through this
-    # project's route — the route stays coherent even though every signed-in
-    # user can reach every project today (#241).
-    if not item or project_id not in item.get('projects', []):
-        raise NotFoundError(f'Token {token_id} not found')
-
-    table.delete_item(Key=key)
-
-    logger.info(f"Revoked MCP token {token_id} from project {project_id}")
-
-    return {'success': True, 'message': f'Token {token_id} revoked'}
+    return {'success': True, 'updated_count': ballots}
 
 
 # ============================================
@@ -4035,13 +4024,13 @@ def api_get_product_context(project_id: str):
 @app.put("/projects/<project_id>/product-context")
 @tracer.capture_method
 def api_update_product_context(project_id: str):
-    return pc_update_context(project_id, app.current_event.json_body)
+    return pc_update_context(project_id, json_body_value(app))
 
 
 @app.post("/projects/<project_id>/product-context/interview")
 @tracer.capture_method
 def api_product_context_interview(project_id: str):
-    return pc_interview_turn(project_id, app.current_event.json_body)
+    return pc_interview_turn(project_id, json_object_body(app))
 
 
 @app.get("/projects/<project_id>/product-docs")
@@ -4053,7 +4042,7 @@ def api_list_product_docs(project_id: str):
 @app.post("/projects/<project_id>/product-docs/upload-url")
 @tracer.capture_method
 def api_create_product_doc_upload_url(project_id: str):
-    return pc_create_upload_url(project_id, app.current_event.json_body)
+    return pc_create_upload_url(project_id, json_object_body(app))
 
 
 @app.delete("/projects/<project_id>/product-docs/<doc_id>")
@@ -4066,21 +4055,27 @@ def api_delete_product_doc(project_id: str, doc_id: str):
 @tracer.capture_method
 def api_autofill_prfaq_questions(project_id: str):
     """Synchronous: returns 5 drafted answers for the Amazon Working-Backwards questions."""
-    return autofill_prfaq_questions(project_id, app.current_event.json_body)
+    return autofill_prfaq_questions(
+        project_id, json_object_body(app), category_scope=_caller_category_scope(),
+    )
 
 
 @app.post("/projects/<project_id>/research/suggest-questions")
 @tracer.capture_method
 def api_suggest_research_questions(project_id: str):
     """Synchronous: returns up to 3 AI-suggested research questions for this project."""
-    return suggest_research_questions(project_id, app.current_event.json_body or {})
+    return suggest_research_questions(
+        project_id, json_object_body(app), category_scope=_caller_category_scope(),
+    )
 
 
 @app.post("/projects/<project_id>/documents/suggest-brief")
 @tracer.capture_method
 def api_suggest_document_brief(project_id: str):
     """Synchronous: drafts a feature title + description for a PRD/PR-FAQ."""
-    return suggest_document_brief(project_id, app.current_event.json_body or {})
+    return suggest_document_brief(
+        project_id, json_object_body(app), category_scope=_caller_category_scope(),
+    )
 
 
 def _validated_source_id(project_id: str, sk_prefix: str, raw: Any, field: str) -> str | None:
@@ -4217,6 +4212,155 @@ def _validated_product_doc_ids(project_id: str, raw: Any, field: str) -> list[st
     return document_ids
 
 
+# ---- Prototype pins (todofeatures §6.2) -----------------------------------
+#
+# Testers' pins live in the aggregates table under the prototype document's pin
+# form (shared/prototype_pins.py), and arrive through the PUBLIC feedback-form
+# submit route. Reading and moderating them is a project matter, so it is here,
+# behind the projects proxy's Cognito authorizer and the per-project gate — and
+# EDIT is required even to read: a pin may quote what a tester typed, which is
+# reviewer material, not something every project viewer should browse. The
+# agent reaches these routes as its own principal (capped at editor).
+
+_PIN_DOCUMENT_ID_RE = re.compile(r'^[A-Za-z0-9_\-]{1,128}$')
+
+
+def _pin_form_for(project_id: str, document_id: str) -> str:
+    """EDIT on the project, the prototype exists, and its pin form id — else 4xx."""
+    _project_access_for(project_id, _request_caller(), project_access.LEVEL_EDIT)
+    if not _PIN_DOCUMENT_ID_RE.fullmatch(document_id):
+        raise ValidationError('Invalid document id')
+    table = get_projects_table()
+    if not table:
+        raise ConfigurationError('Projects table not configured')
+    item = table.get_item(
+        Key={'pk': f'PROJECT#{project_id}', 'sk': f'PROTOTYPE#{document_id}'},
+        ProjectionExpression='pk',
+    ).get('Item')
+    if not item:
+        raise NotFoundError('Prototype not found')
+    return prototype_pins.pin_form_id(document_id)
+
+
+def _pins_table():
+    table = get_aggregates_table()
+    if not table:
+        raise ConfigurationError('Aggregates table not configured')
+    return table
+
+
+def _pin_actor() -> tuple[str, str]:
+    """(stable actor id, display name) for the calling user or agent."""
+    caller = _request_caller()
+    if caller.agent_id:
+        return f'agent:{caller.agent_id}', 'Autonomous agent'
+    return caller.subject, caller.username or caller.email or 'Reviewer'
+
+
+def _checked_pin_id(pin_id: str) -> str:
+    if not prototype_pins.is_pin_id(pin_id):
+        raise ValidationError('Invalid pin id')
+    return pin_id
+
+
+def _pin_status_change(form_id: str, pin_id: str, status: str, only_from: tuple[str, ...],
+                       extra: dict | None = None) -> dict:
+    actor, _ = _pin_actor()
+    try:
+        return prototype_pins.set_status(_pins_table(), form_id, _checked_pin_id(pin_id), status,
+                                         actor=actor, only_from=only_from, extra=extra)
+    except ClientError as e:
+        if is_conditional_check_failure(e):
+            raise ConflictError('The pin does not exist or cannot move to that state') from e
+        raise
+
+
+@app.get("/projects/<project_id>/prototypes/<document_id>/pins")
+@tracer.capture_method
+def list_prototype_pins(project_id: str, document_id: str):
+    """The prototype's pins (``?status=open|addressed|resolved``), oldest first."""
+    form_id = _pin_form_for(project_id, document_id)
+    status = (app.current_event.query_string_parameters or {}).get('status') or None
+    if status is not None and status not in prototype_pins.STATUSES:
+        raise ValidationError('status must be open, addressed or resolved')
+    pins = prototype_pins.list_pins(_pins_table(), form_id, status)
+    return {'form_id': form_id, 'document_id': document_id, 'count': len(pins), 'pins': pins}
+
+
+@app.post("/projects/<project_id>/prototypes/<document_id>/pins/<pin_id>/replies")
+@tracer.capture_method
+def reply_to_prototype_pin(project_id: str, document_id: str, pin_id: str):
+    form_id = _pin_form_for(project_id, document_id)
+    text = prototype_pins.validate_reply(json_object_body(app))
+    actor, name = _pin_actor()
+    reply = {'by': actor, 'name': name[:120], 'text': text, 'at': datetime.now(UTC).isoformat()}
+    try:
+        pin = prototype_pins.append_reply(_pins_table(), form_id, _checked_pin_id(pin_id), reply)
+    except ClientError as e:
+        if is_conditional_check_failure(e):
+            raise ConflictError('The pin does not exist or its thread is full') from e
+        raise
+    return {'success': True, 'pin': pin}
+
+
+@app.post("/projects/<project_id>/prototypes/<document_id>/pins/<pin_id>/resolve")
+@tracer.capture_method
+def resolve_prototype_pin(project_id: str, document_id: str, pin_id: str):
+    form_id = _pin_form_for(project_id, document_id)
+    pin = _pin_status_change(form_id, pin_id, prototype_pins.STATUS_RESOLVED,
+                             (prototype_pins.STATUS_OPEN, prototype_pins.STATUS_ADDRESSED))
+    return {'success': True, 'pin': pin}
+
+
+@app.post("/projects/<project_id>/prototypes/<document_id>/pins/<pin_id>/reopen")
+@tracer.capture_method
+def reopen_prototype_pin(project_id: str, document_id: str, pin_id: str):
+    form_id = _pin_form_for(project_id, document_id)
+    pin = _pin_status_change(form_id, pin_id, prototype_pins.STATUS_OPEN,
+                             (prototype_pins.STATUS_ADDRESSED, prototype_pins.STATUS_RESOLVED),
+                             extra={'addressed_by': None})
+    return {'success': True, 'pin': pin}
+
+
+def _batch_status_change(project_id: str, document_id: str, status: str, only_from: tuple[str, ...],
+                         extra: dict | None = None) -> dict:
+    """Move each listed pin that is in ``only_from``; the rest are reported, not failed."""
+    form_id = _pin_form_for(project_id, document_id)
+    pin_ids = prototype_pins.batch_pin_ids(json_object_body(app))
+    changed, skipped = [], []
+    for pin_id in pin_ids:
+        try:
+            _pin_status_change(form_id, pin_id, status, only_from, extra)
+            changed.append(pin_id)
+        except ConflictError:
+            skipped.append(pin_id)
+    return {'success': True, 'changed': changed, 'skipped': skipped}
+
+
+@app.post("/projects/<project_id>/prototypes/<document_id>/pins/addressed")
+@tracer.capture_method
+def mark_prototype_pins_addressed(project_id: str, document_id: str):
+    """A revision was built for these OPEN pins: ``{pin_ids, revision_document_id}``.
+
+    Addressed is not resolved — a later persona / reviewer pass resolves them
+    (``POST …/pins/resolve``), or a human does.
+    """
+    body = json_object_body(app)
+    revision = body.get('revision_document_id')
+    if not isinstance(revision, str) or not _PIN_DOCUMENT_ID_RE.fullmatch(revision):
+        raise ValidationError('revision_document_id is required')
+    return _batch_status_change(project_id, document_id, prototype_pins.STATUS_ADDRESSED,
+                                (prototype_pins.STATUS_OPEN,), extra={'addressed_by': revision})
+
+
+@app.post("/projects/<project_id>/prototypes/<document_id>/pins/resolve")
+@tracer.capture_method
+def resolve_addressed_prototype_pins(project_id: str, document_id: str):
+    """Resolve ADDRESSED pins after the revision that addressed them passed review."""
+    return _batch_status_change(project_id, document_id, prototype_pins.STATUS_RESOLVED,
+                                (prototype_pins.STATUS_ADDRESSED,))
+
+
 @app.post("/projects/<project_id>/build-prototype")
 @tracer.capture_method
 def api_build_prototype(project_id: str):
@@ -4228,7 +4372,7 @@ def api_build_prototype(project_id: str):
     status, then displays the HTML in an iframe via srcdoc (sandboxed, no
     parent-page access).
     """
-    body = _json_object_body()
+    body = json_object_body(app)
     raw_title = body.get('title')
     title_input = 'Prototype' if raw_title is None or raw_title == '' else raw_title
     title, _ = split_versioned_title(title_input)
@@ -4299,13 +4443,7 @@ def api_build_prototype(project_id: str):
             project_id, body.get('selected_product_doc_ids'), 'selected_product_doc_ids',
         ),
     }
-    job_id, _ = create_job(project_id, 'build_prototype', 'doc_config', doc_config, status='pending')
-    invoke_lambda_async(DOCUMENT_GENERATOR_FUNCTION, {
-        'project_id': project_id,
-        'job_id': job_id,
-        'doc_config': doc_config,
-    })
-    return {'success': True, 'job_id': job_id, 'status': 'pending', 'message': 'Prototype build started.'}
+    return _started_generator_job(project_id, 'build_prototype', doc_config, 'Prototype build started.')
 
 
 @app.post("/projects/<project_id>/product-report")
@@ -4317,19 +4455,26 @@ def api_generate_product_report(project_id: str):
     lambda; this endpoint returns immediately with a job_id so API Gateway's
     29-second timeout can't trip the request.
     """
-    body = app.current_event.json_body or {}
+    body = json_object_body(app)
     doc_config = {
         'doc_type': 'product_report',
         'title': body.get('title') or 'Product description report',
         'response_language': body.get('response_language'),
     }
-    job_id, _ = create_job(project_id, 'generate_product_report', 'doc_config', doc_config, status='pending')
+    return _started_generator_job(
+        project_id, 'generate_product_report', doc_config, 'Product report generation started.',
+    )
+
+
+def _started_generator_job(project_id: str, job_type: str, doc_config: dict, message: str) -> dict:
+    """Record a pending job and hand it to the document-generator Lambda; the route's 202-style answer."""
+    job_id = _started_job(project_id, job_type, 'doc_config', doc_config, status='pending')
     invoke_lambda_async(DOCUMENT_GENERATOR_FUNCTION, {
         'project_id': project_id,
         'job_id': job_id,
         'doc_config': doc_config,
     })
-    return {'success': True, 'job_id': job_id, 'status': 'pending', 'message': 'Product report generation started.'}
+    return {'success': True, 'job_id': job_id, 'status': 'pending', 'message': message}
 
 
 # ============================================
@@ -4389,8 +4534,7 @@ def lambda_handler(event: dict, context: Any) -> dict:
         result = app.resolve(event, context)
         result = _bounded_chat_context_response(event, result)
         logger.info("Returning response", extra={"status_code": result.get("statusCode")})
-        return result
-        
+
     except Exception as e:
         logger.exception(f"Lambda handler error: {e}")
         return {
@@ -4403,3 +4547,9 @@ def lambda_handler(event: dict, context: Any) -> dict:
             },
             'body': json.dumps({'error': 'Internal server error', 'message': 'An unexpected error occurred.'})
         }
+    finally:
+        # Powertools clears its per-request context only after a SUCCESSFUL
+        # resolve. Clearing here too means a request that raised can never hand
+        # its caller (see project_access_middleware) to the next invocation.
+        app.clear_context()
+    return result

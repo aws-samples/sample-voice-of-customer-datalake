@@ -2,12 +2,15 @@
 Additional coverage tests for document_merger/handler.py.
 Covers: use_feedback=True path (lines 80-107), feedback filtering (line 115).
 """
-from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock
+from datetime import UTC, datetime, timedelta
+
+import pytest
+
+from jobs.test.project_tables_fixtures import project_and_feedback_tables
 
 # Use a recent date so items stay within the handler's rolling lookback window
 # (avoids date-drift failures from hardcoded fixtures aging out).
-_RECENT_DATE = (datetime.now(timezone.utc) - timedelta(days=1)).strftime('%Y-%m-%d')
+_RECENT_DATE = (datetime.now(UTC) - timedelta(days=1)).strftime('%Y-%m-%d')
 
 
 def _managed_prd(document_id: str, title: str, content: str) -> dict[str, object]:
@@ -23,55 +26,54 @@ def _managed_prd(document_id: str, title: str, content: str) -> dict[str, object
     }
 
 
+TWO_PRDS = [
+    _managed_prd('doc_1', 'PRD 1', 'C1'),
+    _managed_prd('doc_2', 'PRD 2', 'C2'),
+]
+
+
 class TestDocumentMergerFeedbackPath:
     """Cover the use_feedback=True branch (lines 80-107, 115)."""
 
     @staticmethod
-    def _projects_table(mock_dynamodb):
-        table = MagicMock()
-        table.name = 'test-projects-table'
-        table.get_item.return_value = {}
-        table.meta.client.transact_write_items.side_effect = (
-            mock_dynamodb['table'].meta.client.transact_write_items.side_effect
+    def _tables(mock_dynamodb, *, project_items, feedback_items):
+        """Separate projects/feedback doubles whose transactions replay through
+        the shared `mock_dynamodb` table's fake writer."""
+        return project_and_feedback_tables(
+            mock_dynamodb,
+            project_items=project_items,
+            feedback_items=feedback_items,
+            transact_write_items=mock_dynamodb['table'].meta.client.transact_write_items.side_effect,
         )
-        return table
 
-    def test_includes_feedback_when_use_feedback_enabled(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, merge_documents_event, lambda_context
-    ):
-        """Cover the use_feedback=True path with feedback items."""
-        mock_projects_table = self._projects_table(mock_dynamodb)
-        mock_feedback_table = MagicMock()
-
-        project_items = [
-            _managed_prd('doc_1', 'PRD 1', 'Content 1'),
-            {'sk': 'RESEARCH#doc_2', 'document_id': 'doc_2', 'document_type': 'research', 'title': 'Research', 'content': 'Content 2'},
-        ]
-        mock_projects_table.query.return_value = {'Items': project_items}
-        mock_projects_table.put_item.return_value = {}
-        mock_projects_table.update_item.return_value = {}
-
-        mock_feedback_table.query.return_value = {
-            'Items': [
-                {'original_text': 'Great app!', 'source_platform': 'app_store', 'sentiment_label': 'positive'},
-                {'original_text': 'Needs work', 'source_platform': 'webscraper', 'sentiment_label': 'negative'},
-            ]
-        }
-
-        def table_factory(name):
-            if 'feedback' in name.lower():
-                return mock_feedback_table
-            return mock_projects_table
-
-        mock_dynamodb['resource'].Table.side_effect = table_factory
-
-        merge_documents_event['merge_config']['use_feedback'] = True
-        merge_documents_event['merge_config']['feedback_sources'] = ['app_store']
-        merge_documents_event['merge_config']['feedback_categories'] = []
-        merge_documents_event['merge_config']['days'] = 7
+    @staticmethod
+    def _merge_with_feedback(merge_documents_event, lambda_context, **config) -> dict:
+        merge_documents_event['merge_config'].update({'use_feedback': True, 'days': 7, **config})
 
         from jobs.document_merger.handler import lambda_handler
-        result = lambda_handler(merge_documents_event, lambda_context)
+        return lambda_handler(merge_documents_event, lambda_context)
+
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table")
+    def test_includes_feedback_when_use_feedback_enabled(
+        self, mock_dynamodb, mock_converse, merge_documents_event, lambda_context
+    ):
+        """Cover the use_feedback=True path with feedback items."""
+        _, mock_feedback_table = self._tables(
+            mock_dynamodb,
+            project_items=[
+                _managed_prd('doc_1', 'PRD 1', 'Content 1'),
+                {'sk': 'RESEARCH#doc_2', 'document_id': 'doc_2', 'document_type': 'research', 'title': 'Research', 'content': 'Content 2'},
+            ],
+            feedback_items=[
+                {'original_text': 'Great app!', 'source_platform': 'app_store', 'sentiment_label': 'positive'},
+                {'original_text': 'Needs work', 'source_platform': 'webscraper', 'sentiment_label': 'negative'},
+            ],
+        )
+
+        result = self._merge_with_feedback(
+            merge_documents_event, lambda_context,
+            feedback_sources=['app_store'], feedback_categories=[],
+        )
 
         assert result['success'] is True
         assert mock_feedback_table.query.called
@@ -80,41 +82,23 @@ class TestDocumentMergerFeedbackPath:
         prompt = call_kwargs.get('prompt', '')
         assert 'Great app!' in prompt
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table")
     def test_filters_feedback_by_category(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, merge_documents_event, lambda_context
+        self, mock_dynamodb, mock_converse, merge_documents_event, lambda_context
     ):
         """Cover feedback_categories filtering branch (line 115)."""
-        mock_projects_table = self._projects_table(mock_dynamodb)
-        mock_feedback_table = MagicMock()
-
-        project_items = [
-            _managed_prd('doc_1', 'PRD 1', 'C1'),
-            _managed_prd('doc_2', 'PRD 2', 'C2'),
-        ]
-        mock_projects_table.query.return_value = {'Items': project_items}
-        mock_projects_table.put_item.return_value = {}
-        mock_projects_table.update_item.return_value = {}
-
-        mock_feedback_table.query.return_value = {
-            'Items': [
+        self._tables(
+            mock_dynamodb,
+            project_items=TWO_PRDS,
+            feedback_items=[
                 {'original_text': 'Billing issue', 'source_platform': 'ws', 'sentiment_label': 'negative', 'category': 'billing', 'date': _RECENT_DATE},
                 {'original_text': 'Good delivery', 'source_platform': 'ws', 'sentiment_label': 'positive', 'category': 'delivery', 'date': _RECENT_DATE},
-            ]
-        }
+            ],
+        )
 
-        def table_factory(name):
-            if 'feedback' in name.lower():
-                return mock_feedback_table
-            return mock_projects_table
-
-        mock_dynamodb['resource'].Table.side_effect = table_factory
-
-        merge_documents_event['merge_config']['use_feedback'] = True
-        merge_documents_event['merge_config']['feedback_categories'] = ['billing']
-        merge_documents_event['merge_config']['days'] = 7
-
-        from jobs.document_merger.handler import lambda_handler
-        result = lambda_handler(merge_documents_event, lambda_context)
+        result = self._merge_with_feedback(
+            merge_documents_event, lambda_context, feedback_categories=['billing'],
+        )
 
         assert result['success'] is True
         # Only billing feedback should be in prompt
@@ -122,49 +106,26 @@ class TestDocumentMergerFeedbackPath:
         prompt = call_kwargs.get('prompt', '')
         assert 'Billing issue' in prompt
 
-    def test_use_feedback_with_no_feedback_items(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, merge_documents_event, lambda_context
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table")
+    def test_reads_feedback_within_the_starters_category_scope(
+        self, mock_dynamodb, mock_converse, merge_documents_event, lambda_context
     ):
-        """Cover use_feedback=True when no feedback items are returned."""
-        mock_projects_table = self._projects_table(mock_dynamodb)
-        mock_feedback_table = MagicMock()
+        """The scope captured at job start hides categories the starter cannot see."""
+        self._tables(
+            mock_dynamodb,
+            project_items=TWO_PRDS,
+            feedback_items=[
+                {'original_text': 'Billing issue', 'source_platform': 'ws', 'category': 'billing', 'date': _RECENT_DATE},
+                {'original_text': 'Good delivery', 'source_platform': 'ws', 'category': 'delivery', 'date': _RECENT_DATE},
+            ],
+        )
 
-        project_items = [
-            _managed_prd('doc_1', 'PRD 1', 'C1'),
-            _managed_prd('doc_2', 'PRD 2', 'C2'),
-        ]
-        mock_projects_table.query.return_value = {'Items': project_items}
-        mock_projects_table.put_item.return_value = {}
-        mock_projects_table.update_item.return_value = {}
-
-        mock_feedback_table.query.return_value = {'Items': []}
-
-        def table_factory(name):
-            if 'feedback' in name.lower():
-                return mock_feedback_table
-            return mock_projects_table
-
-        mock_dynamodb['resource'].Table.side_effect = table_factory
-
-        merge_documents_event['merge_config']['use_feedback'] = True
-        merge_documents_event['merge_config']['days'] = 7
-
-        from jobs.document_merger.handler import lambda_handler
-        result = lambda_handler(merge_documents_event, lambda_context)
+        result = self._merge_with_feedback(
+            merge_documents_event, lambda_context,
+            category_scope={'all': False, 'categories': ['delivery']},
+        )
 
         assert result['success'] is True
-
-    def test_prfaq_output_type_uses_correct_prompt(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, merge_documents_event, mock_project_documents, lambda_context
-    ):
-        """Cover the prfaq output_type branch for system prompt."""
-        mock_dynamodb['table'].query.return_value = {'Items': mock_project_documents}
-        merge_documents_event['merge_config']['output_type'] = 'prfaq'
-
-        from jobs.document_merger.handler import lambda_handler
-        result = lambda_handler(merge_documents_event, lambda_context)
-
-        assert result['success'] is True
-        call_kwargs = mock_converse.call_args.kwargs
-        assert 'PR-FAQ' in call_kwargs.get('system_prompt', '')
-        assert call_kwargs.get('max_tokens') == 16000
+        prompt = mock_converse.call_args.kwargs.get('prompt', '')
+        assert 'Good delivery' in prompt
+        assert 'Billing issue' not in prompt

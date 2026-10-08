@@ -16,7 +16,11 @@
     "similarityLow": "低",
     "similarityMed": "中",
     "similarityOff": "关闭",
-    "urgentOnly": "仅紧急"
+    "urgentOnly": "仅紧急",
+    "source": "来源",
+    "category": "类别",
+    "subcategory": "子类别",
+    "similarityHint": "合并措辞相似的问题。“低”合并最多；“关闭”则单独列出每个问题。"
   },
   "noDataHint": "尝试扩展时间范围或调整筛选条件",
   "noDataTitle": "未找到所选时期的问题分析数据",
@@ -44,5 +48,7 @@
     "sub_one": "{{count}} 个子项",
     "sub_other": "{{count}} 个子项",
     "unknown": "未知"
-  }
+  },
+  "title": "问题分析",
+  "subtitle": "按类别分组的重复客户问题及其可能的根本原因"
 }

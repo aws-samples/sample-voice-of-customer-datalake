@@ -51,9 +51,9 @@ export function WindowCoverageNotice({
 }: WindowCoverageNoticeProps) {
   const { t } = useTranslation('problemAnalysis')
 
-  // `text-gray-600`, not a lighter grey: these carry information, so they need
-  // the audited contrast ratio.
-  const className = 'text-xs text-gray-600'
+  // `text-text` (body text), not `text-muted`: these carry information, so they
+  // need the audited contrast ratio on both themes.
+  const className = 'text-xs text-text'
   const counts = { loaded: loadedCount, total: totalCount }
 
   if (hasFailed && loadedCount === 0) {
@@ -69,7 +69,7 @@ export function WindowCoverageNotice({
           <button
             type="button"
             onClick={onRetry}
-            className="mt-2 text-xs text-blue-600 hover:text-blue-800 underline"
+            className="mt-2 text-xs text-accent-text hover:text-accent underline"
           >
             {t('stats.retry')}
           </button>

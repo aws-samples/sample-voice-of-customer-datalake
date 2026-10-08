@@ -60,12 +60,25 @@ Behaviours tested:
    assertion cannot see this and every case in item 9 passes without the fix.
    Regression: TestTheStatusRouteDoesNotFanOutPerDuplicate
 """
-import ast
-import inspect
 import json
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
+from integrations_fixtures import (
+    call_apps,
+    call_credentials,
+    call_integrations,
+    call_source_action,
+    secret_string,
+    stub_ingestor_invoke,
+    stub_rule_lookup,
+)
+from integrations_route_ast_fixtures import (
+    module_function,
+    plain_calls_in,
+    route_functions,
+    route_paths,
+)
 from plugin_manifests import (
     MANIFEST_KEYS,
     PLUGIN_IDS,
@@ -73,12 +86,42 @@ from plugin_manifests import (
     freshly_deployed_secret,
 )
 
+from integrations_handler import MAX_CREDENTIAL_KEYS_PER_REQUEST
+from shared.plugin_identity import is_valid_plugin_identifier
 
-def _non_admin_event(api_gateway_event, **kwargs):
-    """Build an API Gateway event that has no admin group membership."""
-    event = api_gateway_event(**kwargs)
-    event['requestContext']['authorizer']['claims']['cognito:groups'] = 'users'
-    return event
+# The `cognito:groups` claim of a caller with no admin group membership.
+NON_ADMIN = 'users'
+
+# The one iOS app config the app-config read controls seed and expect back.
+ONE_IOS_APP_SECRET = {
+    'app_reviews_ios_configs': json.dumps([{'id': 'a1', 'app_name': 'Real'}]),
+}
+
+
+@pytest.fixture
+def enabled_sources(monkeypatch):
+    """ENABLED_SOURCES as CDK renders it with every plugin enabled (issue #256)."""
+    monkeypatch.setenv('ENABLED_SOURCES', json.dumps(PLUGIN_IDS))
+
+
+@pytest.fixture
+def allowlist_unavailable(monkeypatch):
+    """PLUGIN_SECRET_DEFAULTS absent, with the parse cache cleared on both sides."""
+    import integrations_handler as h
+
+    monkeypatch.delenv(h.PLUGIN_DEFAULTS_ENV_VAR, raising=False)
+    h._plugin_secret_defaults.cache_clear()
+    yield
+    h._plugin_secret_defaults.cache_clear()
+
+
+def _status_body(mock_secrets, api_gateway_event, lambda_context, secret):
+    """GET /integrations/status against *secret*; returns (status code, body)."""
+    mock_secrets.get_secret_value.return_value = secret_string(secret)
+    response = call_integrations(
+        api_gateway_event, lambda_context, method='GET', path='/integrations/status'
+    )
+    return response['statusCode'], json.loads(response['body'])
 
 
 class TestCrossNamespaceReadBlocked:
@@ -102,25 +145,18 @@ class TestCrossNamespaceReadBlocked:
 
         Expected: the response must be {} — the top-level key must not leak.
         """
-        mock_secrets.get_secret_value.return_value = {
-            'SecretString': json.dumps({
-                # A key written by the scrapers handler at the top level.
-                # It is not in the webscraper_ namespace.
-                'other_feature_blob': 'sensitive-data-from-another-feature',
-                # A legitimately namespaced key for a different source.
-                'myapp_api_token': 'token-for-myapp',
-            })
-        }
+        mock_secrets.get_secret_value.return_value = secret_string({
+            # A key written by the scrapers handler at the top level.
+            # It is not in the webscraper_ namespace.
+            'other_feature_blob': 'sensitive-data-from-another-feature',
+            # A legitimately namespaced key for a different source.
+            'myapp_api_token': 'token-for-myapp',
+        })
 
-        from integrations_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='GET',
-            path='/integrations/webscraper/credentials',
-            path_params={'source': 'webscraper'},
+        response = call_credentials(
+            api_gateway_event, lambda_context, 'GET',
             query_params={'keys': 'other_feature_blob'},
         )
-        response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
 
         assert response['statusCode'] == 200
@@ -133,22 +169,14 @@ class TestCrossNamespaceReadBlocked:
     @patch('integrations_handler.secretsmanager')
     def test_namespaced_key_is_returned(self, mock_secrets, api_gateway_event, lambda_context):
         """Correctly namespaced keys ARE returned (positive-path control)."""
-        mock_secrets.get_secret_value.return_value = {
-            'SecretString': json.dumps({
-                'webscraper_app_name': 'my-app',
-                'other_feature_blob': 'should-not-appear',
-            })
-        }
+        mock_secrets.get_secret_value.return_value = secret_string({
+            'webscraper_app_name': 'my-app',
+            'other_feature_blob': 'should-not-appear',
+        })
 
-        from integrations_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='GET',
-            path='/integrations/webscraper/credentials',
-            path_params={'source': 'webscraper'},
-            query_params={'keys': 'app_name'},
+        response = call_credentials(
+            api_gateway_event, lambda_context, 'GET', query_params={'keys': 'app_name'}
         )
-        response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
 
         assert response['statusCode'] == 200
@@ -174,20 +202,13 @@ class TestInvalidWriteKeyRejected:
     ):
         """Malformed key in request body → 400 and no write to the secret."""
         existing_secret = {'webscraper_app_name': 'existing-value'}
-        mock_secrets.get_secret_value.return_value = {
-            'SecretString': json.dumps(existing_secret)
-        }
+        mock_secrets.get_secret_value.return_value = secret_string(existing_secret)
 
-        from integrations_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='PUT',
-            path='/integrations/webscraper/credentials',
-            path_params={'source': 'webscraper'},
+        response = call_credentials(
+            api_gateway_event, lambda_context, 'PUT',
             # Key contains a dot — must be rejected.
             body={'invalid.key': 'value'},
         )
-        response = lambda_handler(event, lambda_context)
 
         assert response['statusCode'] == 400, (
             f"Expected 400 for invalid key, got {response['statusCode']}"
@@ -198,68 +219,24 @@ class TestInvalidWriteKeyRejected:
         # The secret must not have been written.
         mock_secrets.put_secret_value.assert_not_called()
 
+    @pytest.mark.parametrize('body', [
+        # Key starting with underscore → 400 and no write.
+        pytest.param({'_private': 'value'}, id='leading-underscore'),
+        # Key containing uppercase letters → 400 and no write.
+        pytest.param({'MyKey': 'value'}, id='uppercase'),
+        # More than MAX_CREDENTIAL_KEYS_PER_REQUEST valid-form keys → 400 and no write.
+        pytest.param(
+            {f"key{i}": f"val{i}" for i in range(MAX_CREDENTIAL_KEYS_PER_REQUEST + 1)},
+            id='too-many-keys',
+        ),
+    ])
     @patch('integrations_handler.secretsmanager')
-    def test_key_with_leading_underscore_rejected(
-        self, mock_secrets, api_gateway_event, lambda_context
+    def test_malformed_key_rejected(
+        self, mock_secrets, body, api_gateway_event, lambda_context
     ):
-        """Key starting with underscore → 400 and no write."""
-        mock_secrets.get_secret_value.return_value = {
-            'SecretString': json.dumps({})
-        }
+        mock_secrets.get_secret_value.return_value = secret_string({})
 
-        from integrations_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='PUT',
-            path='/integrations/webscraper/credentials',
-            path_params={'source': 'webscraper'},
-            body={'_private': 'value'},
-        )
-        response = lambda_handler(event, lambda_context)
-        assert response['statusCode'] == 400
-        mock_secrets.put_secret_value.assert_not_called()
-
-    @patch('integrations_handler.secretsmanager')
-    def test_key_with_uppercase_rejected(
-        self, mock_secrets, api_gateway_event, lambda_context
-    ):
-        """Key containing uppercase letters → 400 and no write."""
-        mock_secrets.get_secret_value.return_value = {
-            'SecretString': json.dumps({})
-        }
-
-        from integrations_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='PUT',
-            path='/integrations/webscraper/credentials',
-            path_params={'source': 'webscraper'},
-            body={'MyKey': 'value'},
-        )
-        response = lambda_handler(event, lambda_context)
-        assert response['statusCode'] == 400
-        mock_secrets.put_secret_value.assert_not_called()
-
-    @patch('integrations_handler.secretsmanager')
-    def test_too_many_keys_rejected(
-        self, mock_secrets, api_gateway_event, lambda_context
-    ):
-        """More than MAX_CREDENTIAL_KEYS_PER_REQUEST keys → 400 and no write."""
-        from integrations_handler import MAX_CREDENTIAL_KEYS_PER_REQUEST, lambda_handler
-
-        # Build a body that exceeds the limit with valid-form keys.
-        body = {f"key{i}": f"val{i}" for i in range(MAX_CREDENTIAL_KEYS_PER_REQUEST + 1)}
-        mock_secrets.get_secret_value.return_value = {
-            'SecretString': json.dumps({})
-        }
-
-        event = api_gateway_event(
-            method='PUT',
-            path='/integrations/webscraper/credentials',
-            path_params={'source': 'webscraper'},
-            body=body,
-        )
-        response = lambda_handler(event, lambda_context)
+        response = call_credentials(api_gateway_event, lambda_context, 'PUT', body=body)
         assert response['statusCode'] == 400
         mock_secrets.put_secret_value.assert_not_called()
 
@@ -268,20 +245,13 @@ class TestInvalidWriteKeyRejected:
         self, mock_secrets, api_gateway_event, lambda_context
     ):
         """Valid-form keys are accepted (positive-path control)."""
-        mock_secrets.get_secret_value.return_value = {
-            'SecretString': json.dumps({})
-        }
+        mock_secrets.get_secret_value.return_value = secret_string({})
         mock_secrets.put_secret_value.return_value = {}
 
-        from integrations_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='PUT',
-            path='/integrations/webscraper/credentials',
-            path_params={'source': 'webscraper'},
+        response = call_credentials(
+            api_gateway_event, lambda_context, 'PUT',
             body={'app_name': 'my-app', 'sort_by': 'recent'},
         )
-        response = lambda_handler(event, lambda_context)
         assert response['statusCode'] == 200
         mock_secrets.put_secret_value.assert_called_once()
 
@@ -295,108 +265,54 @@ class TestAdminGateOnCredentialsRoutes:
     corresponding test to return 200/other status instead of 403.
     """
 
-    def test_non_admin_read_rejected(self, api_gateway_event, lambda_context):
-        """Non-admin caller gets 403 on GET /integrations/<source>/credentials.
-
-        Regression: test_non_admin_read_rejected
-        """
-        from integrations_handler import lambda_handler
-
-        event = _non_admin_event(
-            api_gateway_event,
-            method='GET',
-            path='/integrations/webscraper/credentials',
-            path_params={'source': 'webscraper'},
-            query_params={'keys': 'api_key'},
+    @pytest.mark.parametrize(('method', 'path', 'event_kwargs'), [
+        # Non-admin caller gets 403 on GET /integrations/<source>/credentials
+        # (the regression formerly named test_non_admin_read_rejected).
+        pytest.param('GET', '/integrations/webscraper/credentials',
+                     {'path_params': {'source': 'webscraper'}, 'query_params': {'keys': 'api_key'}},
+                     id='test_non_admin_read_rejected'),
+        # Non-admin caller gets 403 on PUT /integrations/<source>/credentials
+        # (the regression formerly named test_non_admin_write_rejected).
+        pytest.param('PUT', '/integrations/webscraper/credentials',
+                     {'path_params': {'source': 'webscraper'}, 'body': {'api_key': 'value'}},
+                     id='test_non_admin_write_rejected'),
+        # Non-admin caller gets 403 on GET /integrations/status.
+        # Regression guard for the admin gate added in issue #261 follow-up.
+        pytest.param('GET', '/integrations/status', {}, id='test_non_admin_status_rejected'),
+    ])
+    def test_non_admin_rejected(self, method, path, event_kwargs, api_gateway_event, lambda_context):
+        response = call_integrations(
+            api_gateway_event, lambda_context,
+            groups=NON_ADMIN, method=method, path=path, **event_kwargs,
         )
-        response = lambda_handler(event, lambda_context)
         assert response['statusCode'] == 403, (
-            f"Expected 403 for non-admin GET, got {response['statusCode']}"
+            f"Expected 403 for non-admin {method} {path}, got {response['statusCode']}"
         )
         body = json.loads(response['body'])
         assert body.get('success') is False
 
-    def test_non_admin_write_rejected(self, api_gateway_event, lambda_context):
-        """Non-admin caller gets 403 on PUT /integrations/<source>/credentials.
-
-        Regression: test_non_admin_write_rejected
-        """
-        from integrations_handler import lambda_handler
-
-        event = _non_admin_event(
-            api_gateway_event,
-            method='PUT',
-            path='/integrations/webscraper/credentials',
-            path_params={'source': 'webscraper'},
-            body={'api_key': 'value'},
-        )
-        response = lambda_handler(event, lambda_context)
-        assert response['statusCode'] == 403, (
-            f"Expected 403 for non-admin PUT, got {response['statusCode']}"
-        )
-        body = json.loads(response['body'])
-        assert body.get('success') is False
-
+    @pytest.mark.parametrize(('method', 'secret', 'event_kwargs'), [
+        # Admin caller can read credentials (positive-path control).
+        pytest.param('GET', {'webscraper_api_key': 'key123'},
+                     {'query_params': {'keys': 'api_key'}}, id='test_admin_read_succeeds'),
+        # Admin caller can write credentials (positive-path control).
+        pytest.param('PUT', {}, {'body': {'api_key': 'new-value'}}, id='test_admin_write_succeeds'),
+    ])
     @patch('integrations_handler.secretsmanager')
-    def test_admin_read_succeeds(self, mock_secrets, api_gateway_event, lambda_context):
-        """Admin caller can read credentials (positive-path control)."""
-        mock_secrets.get_secret_value.return_value = {
-            'SecretString': json.dumps({'webscraper_api_key': 'key123'})
-        }
+    def test_admin_succeeds(
+        self, mock_secrets, method, secret, event_kwargs, api_gateway_event, lambda_context
+    ):
+        mock_secrets.get_secret_value.return_value = secret_string(secret)
+        mock_secrets.put_secret_value.return_value = {}
 
-        from integrations_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='GET',
-            path='/integrations/webscraper/credentials',
-            path_params={'source': 'webscraper'},
-            query_params={'keys': 'api_key'},
-        )
-        response = lambda_handler(event, lambda_context)
+        response = call_credentials(api_gateway_event, lambda_context, method, **event_kwargs)
         # The conftest fixture sets cognito:groups = 'admins'.
         assert response['statusCode'] == 200
 
     @patch('integrations_handler.secretsmanager')
-    def test_admin_write_succeeds(self, mock_secrets, api_gateway_event, lambda_context):
-        """Admin caller can write credentials (positive-path control)."""
-        mock_secrets.get_secret_value.return_value = {
-            'SecretString': json.dumps({})
-        }
-        mock_secrets.put_secret_value.return_value = {}
-
-        from integrations_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='PUT',
-            path='/integrations/webscraper/credentials',
-            path_params={'source': 'webscraper'},
-            body={'api_key': 'new-value'},
-        )
-        response = lambda_handler(event, lambda_context)
-        assert response['statusCode'] == 200
-
-    def test_non_admin_status_rejected(self, api_gateway_event, lambda_context):
-        """Non-admin caller gets 403 on GET /integrations/status.
-
-        Regression guard for the admin gate added in issue #261 follow-up.
-        """
-        from integrations_handler import lambda_handler
-
-        event = _non_admin_event(
-            api_gateway_event,
-            method='GET',
-            path='/integrations/status',
-        )
-        response = lambda_handler(event, lambda_context)
-        assert response['statusCode'] == 403, (
-            f"Expected 403 for non-admin GET /integrations/status, got {response['statusCode']}"
-        )
-        body = json.loads(response['body'])
-        assert body.get('success') is False
-
-    @patch('integrations_handler.secretsmanager')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_status_reports_all_known_plugins(
-        self, mock_secrets, api_gateway_event, lambda_context, plugin_secret_defaults
+        self, mock_secrets, api_gateway_event, lambda_context
     ):
         """GET /integrations/status returns an entry for every known plugin, not just webscraper.
 
@@ -407,26 +323,16 @@ class TestAdminGateOnCredentialsRoutes:
         The expected set is PLUGIN_IDS, read from the manifests, so adding a
         plugin extends this guard without a test edit.
         """
-        mock_secrets.get_secret_value.return_value = {
-            'SecretString': json.dumps({
-                'webscraper_configs': '[{"id": "x"}]',
-                'app_reviews_ios_app_id': '12345',
-                'app_reviews_android_package_name': 'com.example.app',
-                's3_import_bucket_name': 'my-bucket',
-                'synthetic_reviews_company_name': 'Acme Corp',
-            })
-        }
+        status, body = _status_body(mock_secrets, api_gateway_event, lambda_context, {
+            'webscraper_configs': '[{"id": "x"}]',
+            'app_reviews_ios_app_id': '12345',
+            'app_reviews_android_package_name': 'com.example.app',
+            's3_import_bucket_name': 'my-bucket',
+            'synthetic_reviews_company_name': 'Acme Corp',
+            'github_issues_repos': 'acme/Kiro',
+        })
+        assert status == 200
 
-        from integrations_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='GET',
-            path='/integrations/status',
-        )
-        response = lambda_handler(event, lambda_context)
-        assert response['statusCode'] == 200
-
-        body = json.loads(response['body'])
         missing = set(PLUGIN_IDS) - set(body.keys())
         assert not missing, (
             f"GET /integrations/status is missing entries for: {missing}. "
@@ -459,21 +365,15 @@ class TestFreshDeployReportsNothingConfigured:
     """
 
     @patch('integrations_handler.secretsmanager')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_fresh_deploy_reports_nothing_configured(
-        self, mock_secrets, api_gateway_event, lambda_context, plugin_secret_defaults
+        self, mock_secrets, api_gateway_event, lambda_context
     ):
         """Against the exact secret CDK seeds, every source reports configured=False."""
-        mock_secrets.get_secret_value.return_value = {
-            'SecretString': json.dumps(freshly_deployed_secret())
-        }
-
-        from integrations_handler import lambda_handler
-
-        response = lambda_handler(
-            api_gateway_event(method='GET', path='/integrations/status'), lambda_context
+        status, body = _status_body(
+            mock_secrets, api_gateway_event, lambda_context, freshly_deployed_secret()
         )
-        assert response['statusCode'] == 200
-        body = json.loads(response['body'])
+        assert status == 200
 
         # Sanity: the fixture must actually contain non-empty seeded values, or
         # this test would pass for the wrong reason.
@@ -491,20 +391,14 @@ class TestFreshDeployReportsNothingConfigured:
             assert body[plugin_id]['credentials_set'] == [], plugin_id
 
     @patch('integrations_handler.secretsmanager')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_value_differing_from_its_default_is_configured(
-        self, mock_secrets, api_gateway_event, lambda_context, plugin_secret_defaults
+        self, mock_secrets, api_gateway_event, lambda_context
     ):
         """Editing one field flips exactly that source, and only that source."""
         secret = freshly_deployed_secret()
         secret['webscraper_configs'] = '[{"id": "s1", "url": "https://example.test"}]'
-        mock_secrets.get_secret_value.return_value = {'SecretString': json.dumps(secret)}
-
-        from integrations_handler import lambda_handler
-
-        response = lambda_handler(
-            api_gateway_event(method='GET', path='/integrations/status'), lambda_context
-        )
-        body = json.loads(response['body'])
+        _status, body = _status_body(mock_secrets, api_gateway_event, lambda_context, secret)
 
         assert body['webscraper']['configured'] is True
         assert body['webscraper']['credentials_set'] == ['configs']
@@ -512,8 +406,9 @@ class TestFreshDeployReportsNothingConfigured:
         assert not others, f'{others} became configured without being touched'
 
     @patch('integrations_handler.secretsmanager')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_key_with_no_declared_default_is_reported(
-        self, mock_secrets, api_gateway_event, lambda_context, plugin_secret_defaults
+        self, mock_secrets, api_gateway_event, lambda_context
     ):
         """A key written via PUT that no manifest declares still shows up.
 
@@ -523,14 +418,7 @@ class TestFreshDeployReportsNothingConfigured:
         """
         secret = freshly_deployed_secret()
         secret['webscraper_undeclared_key'] = 'some-value'
-        mock_secrets.get_secret_value.return_value = {'SecretString': json.dumps(secret)}
-
-        from integrations_handler import lambda_handler
-
-        response = lambda_handler(
-            api_gateway_event(method='GET', path='/integrations/status'), lambda_context
-        )
-        body = json.loads(response['body'])
+        _status, body = _status_body(mock_secrets, api_gateway_event, lambda_context, secret)
         assert body['webscraper']['credentials_set'] == ['undeclared_key']
         assert body['webscraper']['configured'] is True
 
@@ -552,61 +440,43 @@ class TestRuntimeWrittenConfigsArrays:
     """
 
     @patch('integrations_handler.secretsmanager')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_empty_runtime_configs_array_is_not_configured(
-        self, mock_secrets, api_gateway_event, lambda_context, plugin_secret_defaults
+        self, mock_secrets, api_gateway_event, lambda_context
     ):
         secret = freshly_deployed_secret()
         # Exactly what save_app_config leaves behind before any app is added.
         secret['app_reviews_ios_configs'] = '[]'
         secret['app_reviews_android_configs'] = '[]'
-        mock_secrets.get_secret_value.return_value = {'SecretString': json.dumps(secret)}
-
-        from integrations_handler import lambda_handler
-
-        response = lambda_handler(
-            api_gateway_event(method='GET', path='/integrations/status'), lambda_context
-        )
-        body = json.loads(response['body'])
+        _status, body = _status_body(mock_secrets, api_gateway_event, lambda_context, secret)
 
         claiming = sorted(k for k, v in body.items() if v['configured'])
         assert not claiming, f'{claiming} report configured on an empty configs array'
 
     @patch('integrations_handler.secretsmanager')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_populated_runtime_configs_array_is_configured(
-        self, mock_secrets, api_gateway_event, lambda_context, plugin_secret_defaults
+        self, mock_secrets, api_gateway_event, lambda_context
     ):
         """Adding an app instance does flip the source — the guard is not blanket."""
         secret = freshly_deployed_secret()
         secret['app_reviews_ios_configs'] = '[{"id": "a1", "app_name": "Example"}]'
-        mock_secrets.get_secret_value.return_value = {'SecretString': json.dumps(secret)}
-
-        from integrations_handler import lambda_handler
-
-        response = lambda_handler(
-            api_gateway_event(method='GET', path='/integrations/status'), lambda_context
-        )
-        body = json.loads(response['body'])
+        _status, body = _status_body(mock_secrets, api_gateway_event, lambda_context, secret)
 
         assert body['app_reviews_ios']['configured'] is True
         assert body['app_reviews_ios']['credentials_set'] == ['configs']
         assert body['app_reviews_android']['configured'] is False
 
     @patch('integrations_handler.secretsmanager')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_hand_edited_real_array_is_not_configured(
-        self, mock_secrets, api_gateway_event, lambda_context, plugin_secret_defaults
+        self, mock_secrets, api_gateway_event, lambda_context
     ):
         """End-to-end: a real empty array in the secret does not flip a source."""
-        secret = freshly_deployed_secret()
-        secret['app_reviews_ios_configs'] = []  # not '[]' — an actual JSON array
-        mock_secrets.get_secret_value.return_value = {'SecretString': json.dumps(secret)}
-
-        from integrations_handler import lambda_handler
-
-        response = lambda_handler(
-            api_gateway_event(method='GET', path='/integrations/status'), lambda_context
-        )
-        assert response['statusCode'] == 200
-        body = json.loads(response['body'])
+        # not '[]' — an actual JSON array
+        secret = {**freshly_deployed_secret(), 'app_reviews_ios_configs': []}
+        status, body = _status_body(mock_secrets, api_gateway_event, lambda_context, secret)
+        assert status == 200
         assert body['app_reviews_ios']['configured'] is False
 
 
@@ -698,12 +568,11 @@ class TestPluginSecretDefaultsParsing:
     turn a bad value into a 500 on a route that has nothing to do with it.
     """
 
-    def test_absent_variable_yields_no_sources(self, monkeypatch):
+    @pytest.mark.usefixtures('allowlist_unavailable')
+    def test_absent_variable_yields_no_sources(self):
         """Unset means an empty mapping, not a raise."""
         import integrations_handler as h
 
-        monkeypatch.delenv(h.PLUGIN_SECRET_DEFAULTS_VAR, raising=False)
-        h._plugin_secret_defaults.cache_clear()
         assert h._plugin_secret_defaults() == {}
 
     @pytest.mark.parametrize('bad', ['not json at all', '[]', '"a string"', '42'])
@@ -711,7 +580,7 @@ class TestPluginSecretDefaultsParsing:
         """Invalid JSON, or valid JSON of the wrong shape, degrades to {}."""
         import integrations_handler as h
 
-        monkeypatch.setenv(h.PLUGIN_SECRET_DEFAULTS_VAR, bad)
+        monkeypatch.setenv(h.PLUGIN_DEFAULTS_ENV_VAR, bad)
         h._plugin_secret_defaults.cache_clear()
         assert h._plugin_secret_defaults() == {}
 
@@ -720,7 +589,7 @@ class TestPluginSecretDefaultsParsing:
         import integrations_handler as h
 
         monkeypatch.setenv(
-            h.PLUGIN_SECRET_DEFAULTS_VAR,
+            h.PLUGIN_DEFAULTS_ENV_VAR,
             json.dumps({'good': {'a': '1'}, 'bad': 'not-a-mapping'}),
         )
         h._plugin_secret_defaults.cache_clear()
@@ -731,7 +600,7 @@ class TestPluginSecretDefaultsParsing:
         import integrations_handler as h
 
         monkeypatch.setenv(
-            h.PLUGIN_SECRET_DEFAULTS_VAR,
+            h.PLUGIN_DEFAULTS_ENV_VAR,
             json.dumps({'p': {'ok': 'v', 'bad': 7}}),
         )
         h._plugin_secret_defaults.cache_clear()
@@ -746,7 +615,7 @@ class TestPluginSecretDefaultsParsing:
         """
         import integrations_handler as h
 
-        monkeypatch.setenv(h.PLUGIN_SECRET_DEFAULTS_VAR, json.dumps(PLUGIN_SECRET_DEFAULTS))
+        monkeypatch.setenv(h.PLUGIN_DEFAULTS_ENV_VAR, json.dumps(PLUGIN_SECRET_DEFAULTS))
         h._plugin_secret_defaults.cache_clear()
         assert h._plugin_secret_defaults() == PLUGIN_SECRET_DEFAULTS
         assert set(h._plugin_secret_defaults()) == set(PLUGIN_IDS)
@@ -773,8 +642,9 @@ class TestSourceParameterValidation:
     """
 
     @patch('integrations_handler.secretsmanager')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_a_real_plugin_id_is_accepted(
-        self, mock_secrets, api_gateway_event, lambda_context, plugin_secret_defaults,
+        self, mock_secrets, api_gateway_event, lambda_context
     ):
         """Positive control for the allowlist below: a real plugin id still works.
 
@@ -785,20 +655,15 @@ class TestSourceParameterValidation:
             'SecretString': '{"webscraper_api_key": "value"}'
         }
 
-        from integrations_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='GET',
-            path='/integrations/webscraper/credentials',
-            path_params={'source': 'webscraper'},
-            query_params={'keys': 'api_key'},
+        response = call_credentials(
+            api_gateway_event, lambda_context, 'GET', query_params={'keys': 'api_key'}
         )
-        response = lambda_handler(event, lambda_context)
         assert response['statusCode'] == 200
 
     @patch('integrations_handler.secretsmanager')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_a_well_formed_but_unknown_source_is_rejected_on_read(
-        self, mock_secrets, api_gateway_event, lambda_context, plugin_secret_defaults,
+        self, mock_secrets, api_gateway_event, lambda_context
     ):
         """The form check cannot close the collision gap, because the colliding
         value is WELL-FORMED.
@@ -809,23 +674,22 @@ class TestSourceParameterValidation:
         that actually exists, which `PLUGIN_SECRET_DEFAULTS` is the manifest-derived
         list of.
         """
-        from integrations_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='GET',
-            path='/integrations/webscraper_admin/credentials',
-            path_params={'source': 'webscraper_admin'},
-            query_params={'keys': 'api_key'},
+        response = call_credentials(
+            api_gateway_event, lambda_context, 'GET',
+            source='webscraper_admin', query_params={'keys': 'api_key'},
         )
-        response = lambda_handler(event, lambda_context)
         assert response['statusCode'] == 400
         mock_secrets.get_secret_value.assert_not_called()
 
     @patch('integrations_handler.put_secret_json')
     @patch('integrations_handler.secretsmanager')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_a_write_cannot_address_another_plugins_namespace(
-        self, mock_secrets, mock_put, api_gateway_event, lambda_context,
-        plugin_secret_defaults,
+        self,
+        mock_secrets,
+        mock_put,
+        api_gateway_event,
+        lambda_context,
     ):
         """The concrete cross-plugin credential injection, end to end.
 
@@ -841,15 +705,10 @@ class TestSourceParameterValidation:
             'SecretString': '{"app_reviews_ios_app_name": "RealApp"}'
         }
 
-        from integrations_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='PUT',
-            path='/integrations/app_reviews/credentials',
-            path_params={'source': 'app_reviews'},
-            body={'ios_app_id': '99999'},
+        response = call_credentials(
+            api_gateway_event, lambda_context, 'PUT',
+            source='app_reviews', body={'ios_app_id': '99999'},
         )
-        response = lambda_handler(event, lambda_context)
 
         assert response['statusCode'] == 400
         assert mock_put.call_args_list == [], (
@@ -857,8 +716,9 @@ class TestSourceParameterValidation:
         )
 
     @patch('integrations_handler.secretsmanager')
+    @pytest.mark.usefixtures('allowlist_unavailable')
     def test_an_unavailable_allowlist_falls_back_to_the_form_check(
-        self, mock_secrets, api_gateway_event, lambda_context, monkeypatch,
+        self, mock_secrets, api_gateway_event, lambda_context,
     ):
         """Fails OPEN when PLUGIN_SECRET_DEFAULTS is absent, deliberately.
 
@@ -868,76 +728,38 @@ class TestSourceParameterValidation:
         outright, so the form check alone applies — which is the state this route
         shipped in. Pinned so the fallback is a decision rather than an accident.
         """
-        import integrations_handler as h
-
-        monkeypatch.delenv(h.PLUGIN_SECRET_DEFAULTS_VAR, raising=False)
-        h._plugin_secret_defaults.cache_clear()
         mock_secrets.get_secret_value.return_value = {
             'SecretString': '{"webscraper_admin_api_key": "value"}'
         }
 
-        event = api_gateway_event(
-            method='GET',
-            path='/integrations/webscraper_admin/credentials',
-            path_params={'source': 'webscraper_admin'},
-            query_params={'keys': 'api_key'},
+        response = call_credentials(
+            api_gateway_event, lambda_context, 'GET',
+            source='webscraper_admin', query_params={'keys': 'api_key'},
         )
-        response = h.lambda_handler(event, lambda_context)
-        h._plugin_secret_defaults.cache_clear()
 
         assert response['statusCode'] == 200
 
+    # Source with uppercase letters returns 400 before the secret is read or written.
+    # The error message must say 'source identifier' (not 'credential key') so
+    # it is clear which parameter is invalid when debugging a 400.
+    @pytest.mark.parametrize(('method', 'event_kwargs'), [
+        pytest.param('GET', {'query_params': {'keys': 'api_key'}}, id='test_uppercase_source_get_rejected'),
+        pytest.param('PUT', {'body': {'api_key': 'value'}}, id='test_uppercase_source_put_rejected'),
+    ])
     @patch('integrations_handler.secretsmanager')
-    def test_uppercase_source_get_rejected(self, mock_secrets, api_gateway_event, lambda_context):
-        """Source with uppercase letters returns 400 on GET before the secret is read.
-
-        The error message must say 'source identifier' (not 'credential key') so
-        it is clear which parameter is invalid when debugging a 400.
-        """
-        import json as _json
-
-        from integrations_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='GET',
-            path='/integrations/WebScraper/credentials',
-            path_params={'source': 'WebScraper'},
-            query_params={'keys': 'api_key'},
+    def test_uppercase_source_rejected(
+        self, mock_secrets, method, event_kwargs, api_gateway_event, lambda_context
+    ):
+        response = call_credentials(
+            api_gateway_event, lambda_context, method, source='WebScraper', **event_kwargs
         )
-        response = lambda_handler(event, lambda_context)
         assert response['statusCode'] == 400
         # Validation runs before the secret is read.
-        mock_secrets.get_secret_value.assert_not_called()
-        # Error message must identify it as a source identifier, not a key.
-        # The API returns errors under the 'error' key for ValidationError.
-        body = _json.loads(response['body'])
-        error_text = (body.get('error') or body.get('message') or '').lower()
-        assert 'source identifier' in error_text
-
-    @patch('integrations_handler.secretsmanager')
-    def test_uppercase_source_put_rejected(self, mock_secrets, api_gateway_event, lambda_context):
-        """Source with uppercase letters returns 400 on PUT before the secret is touched.
-
-        The error message must say 'source identifier' (not 'credential key') so
-        it is clear which parameter is invalid when debugging a 400.
-        """
-        import json as _json
-
-        from integrations_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='PUT',
-            path='/integrations/WebScraper/credentials',
-            path_params={'source': 'WebScraper'},
-            body={'api_key': 'value'},
-        )
-        response = lambda_handler(event, lambda_context)
-        assert response['statusCode'] == 400
         mock_secrets.get_secret_value.assert_not_called()
         mock_secrets.put_secret_value.assert_not_called()
         # Error message must identify it as a source identifier, not a key.
         # The API returns errors under the 'error' key for ValidationError.
-        body = _json.loads(response['body'])
+        body = json.loads(response['body'])
         error_text = (body.get('error') or body.get('message') or '').lower()
         assert 'source identifier' in error_text
 
@@ -951,18 +773,17 @@ class TestGetKeysValidation:
     on the write path.
     """
 
+    @pytest.mark.parametrize('keys', [
+        # GET with a malformed key in ?keys= returns 400 without reading the secret.
+        pytest.param('invalid.key', id='test_malformed_key_in_query_returns_400'),
+        # GET with a hyphenated key in ?keys= returns 400.
+        pytest.param('api-key', id='test_key_with_hyphen_in_query_rejected'),
+    ])
     @patch('integrations_handler.secretsmanager')
-    def test_malformed_key_in_query_returns_400(self, mock_secrets, api_gateway_event, lambda_context):
-        """GET with a malformed key in ?keys= returns 400 without reading the secret."""
-        from integrations_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='GET',
-            path='/integrations/webscraper/credentials',
-            path_params={'source': 'webscraper'},
-            query_params={'keys': 'invalid.key'},
+    def test_malformed_query_key_rejected(self, mock_secrets, keys, api_gateway_event, lambda_context):
+        response = call_credentials(
+            api_gateway_event, lambda_context, 'GET', query_params={'keys': keys}
         )
-        response = lambda_handler(event, lambda_context)
         assert response['statusCode'] == 400, (
             f"Expected 400 for malformed key in ?keys=, got {response['statusCode']}"
         )
@@ -970,36 +791,13 @@ class TestGetKeysValidation:
         mock_secrets.get_secret_value.assert_not_called()
 
     @patch('integrations_handler.secretsmanager')
-    def test_key_with_hyphen_in_query_rejected(self, mock_secrets, api_gateway_event, lambda_context):
-        """GET with a hyphenated key in ?keys= returns 400."""
-        from integrations_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='GET',
-            path='/integrations/webscraper/credentials',
-            path_params={'source': 'webscraper'},
-            query_params={'keys': 'api-key'},
-        )
-        response = lambda_handler(event, lambda_context)
-        assert response['statusCode'] == 400
-        mock_secrets.get_secret_value.assert_not_called()
-
-    @patch('integrations_handler.secretsmanager')
     def test_valid_query_key_is_accepted(self, mock_secrets, api_gateway_event, lambda_context):
         """GET with a valid key in ?keys= reads the secret (positive-path control)."""
-        mock_secrets.get_secret_value.return_value = {
-            'SecretString': json.dumps({'webscraper_app_name': 'my-app'})
-        }
+        mock_secrets.get_secret_value.return_value = secret_string({'webscraper_app_name': 'my-app'})
 
-        from integrations_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='GET',
-            path='/integrations/webscraper/credentials',
-            path_params={'source': 'webscraper'},
-            query_params={'keys': 'app_name'},
+        response = call_credentials(
+            api_gateway_event, lambda_context, 'GET', query_params={'keys': 'app_name'}
         )
-        response = lambda_handler(event, lambda_context)
         assert response['statusCode'] == 200
         mock_secrets.get_secret_value.assert_called_once()
 
@@ -1012,42 +810,17 @@ class TestNonDictBodyRejection:
     secret is touched.
     """
 
+    @pytest.mark.parametrize('body', [
+        # A JSON list body returns 400 and the secret is untouched.
+        pytest.param(['item1', 'item2'], id='test_list_body_rejected'),
+        # A JSON string body returns 400 and the secret is untouched.
+        pytest.param('just-a-string', id='test_string_body_rejected'),
+    ])
     @patch('integrations_handler.secretsmanager')
-    def test_list_body_rejected(self, mock_secrets, api_gateway_event, lambda_context):
-        """A JSON list body returns 400 and the secret is untouched."""
-        import json as _json
-
-        from integrations_handler import lambda_handler
-
-        # Manually craft an event with a list body because the conftest
-        # helper json.dumps the body dict.
-        event = api_gateway_event(
-            method='PUT',
-            path='/integrations/webscraper/credentials',
-            path_params={'source': 'webscraper'},
-        )
-        event['body'] = _json.dumps(['item1', 'item2'])
-
-        response = lambda_handler(event, lambda_context)
-        assert response['statusCode'] == 400
-        mock_secrets.get_secret_value.assert_not_called()
-        mock_secrets.put_secret_value.assert_not_called()
-
-    @patch('integrations_handler.secretsmanager')
-    def test_string_body_rejected(self, mock_secrets, api_gateway_event, lambda_context):
-        """A JSON string body returns 400 and the secret is untouched."""
-        import json as _json
-
-        from integrations_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='PUT',
-            path='/integrations/webscraper/credentials',
-            path_params={'source': 'webscraper'},
-        )
-        event['body'] = _json.dumps('just-a-string')
-
-        response = lambda_handler(event, lambda_context)
+    def test_non_dict_body_rejected(self, mock_secrets, body, api_gateway_event, lambda_context):
+        # The conftest factory json.dumps any truthy body, so a list or string
+        # arrives as that JSON value rather than an object.
+        response = call_credentials(api_gateway_event, lambda_context, 'PUT', body=body)
         assert response['statusCode'] == 400
         mock_secrets.get_secret_value.assert_not_called()
         mock_secrets.put_secret_value.assert_not_called()
@@ -1063,18 +836,9 @@ class TestValueValidation:
     @patch('integrations_handler.secretsmanager')
     def test_non_string_value_rejected(self, mock_secrets, api_gateway_event, lambda_context):
         """A non-string value returns 400 and the secret is untouched."""
-        import json as _json
-
-        from integrations_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='PUT',
-            path='/integrations/webscraper/credentials',
-            path_params={'source': 'webscraper'},
+        response = call_credentials(
+            api_gateway_event, lambda_context, 'PUT', body={'app_name': 12345}
         )
-        event['body'] = _json.dumps({'app_name': 12345})
-
-        response = lambda_handler(event, lambda_context)
         assert response['statusCode'] == 400
         mock_secrets.get_secret_value.assert_not_called()
         mock_secrets.put_secret_value.assert_not_called()
@@ -1097,18 +861,11 @@ class TestValueValidation:
         big_configs = json.dumps([{'id': f's{i}', 'url': 'https://e.test'} for i in range(400)])
         assert len(big_configs) > 4096, 'fixture must exceed the cap this test retires'
 
-        mock_secrets.get_secret_value.return_value = {'SecretString': json.dumps({})}
+        mock_secrets.get_secret_value.return_value = secret_string({})
 
-        from integrations_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='PUT',
-            path='/integrations/webscraper/credentials',
-            path_params={'source': 'webscraper'},
+        response = call_credentials(
+            api_gateway_event, lambda_context, 'PUT', body={'configs': big_configs}
         )
-        event['body'] = json.dumps({'configs': big_configs})
-
-        response = lambda_handler(event, lambda_context)
         assert response['statusCode'] == 200, response['body']
         written = json.loads(mock_secrets.put_secret_value.call_args.kwargs['SecretString'])
         assert written['webscraper_configs'] == big_configs
@@ -1125,18 +882,12 @@ class TestValueValidation:
         """
         from shared.aws import SECRET_STRING_MAX_BYTES
 
-        mock_secrets.get_secret_value.return_value = {'SecretString': json.dumps({})}
+        mock_secrets.get_secret_value.return_value = secret_string({})
 
-        from integrations_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='PUT',
-            path='/integrations/webscraper/credentials',
-            path_params={'source': 'webscraper'},
+        response = call_credentials(
+            api_gateway_event, lambda_context, 'PUT',
+            body={'configs': 'x' * (SECRET_STRING_MAX_BYTES + 1)},
         )
-        event['body'] = json.dumps({'configs': 'x' * (SECRET_STRING_MAX_BYTES + 1)})
-
-        response = lambda_handler(event, lambda_context)
         assert response['statusCode'] == 400, response['body']
         # The read happens (the merge needs the current secret) but the WRITE must not.
         mock_secrets.put_secret_value.assert_not_called()
@@ -1154,18 +905,11 @@ class TestValueValidation:
 
         # An existing secret already near the limit, plus one modest addition.
         existing = {'other_feature_blob': 'y' * (SECRET_STRING_MAX_BYTES - 200)}
-        mock_secrets.get_secret_value.return_value = {'SecretString': json.dumps(existing)}
+        mock_secrets.get_secret_value.return_value = secret_string(existing)
 
-        from integrations_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='PUT',
-            path='/integrations/webscraper/credentials',
-            path_params={'source': 'webscraper'},
+        response = call_credentials(
+            api_gateway_event, lambda_context, 'PUT', body={'configs': 'z' * 500}
         )
-        event['body'] = json.dumps({'configs': 'z' * 500})
-
-        response = lambda_handler(event, lambda_context)
         assert response['statusCode'] == 400, response['body']
         mock_secrets.put_secret_value.assert_not_called()
 
@@ -1177,15 +921,15 @@ class TestManifestKeysAccepted:
     def test_manifest_key_passes_validation(self, key):
         """No ValidationError is raised for a real manifest field name."""
         from integrations_handler import _validate_credential_key
-        # Must not raise.
-        _validate_credential_key(key)
+        _validate_credential_key(key)  # raises ValidationError on a rejected key
+        assert is_valid_plugin_identifier(key)
 
     @pytest.mark.parametrize('plugin_id', PLUGIN_IDS)
     def test_plugin_id_passes_validation(self, plugin_id):
         """Plugin IDs used as `source` path parameters must pass _validate_source."""
         from integrations_handler import _validate_source
-        # Must not raise.
-        _validate_source(plugin_id)
+        _validate_source(plugin_id)  # raises ValidationError on a rejected source
+        assert is_valid_plugin_identifier(plugin_id)
 
 
 # ---------------------------------------------------------------------------
@@ -1214,61 +958,16 @@ def _handler_module():
     return integrations_handler
 
 
-def _route_functions() -> dict[str, ast.FunctionDef]:
-    """Every module-level function carrying an `@app.<method>("<path>")` decorator.
+def _route_functions():
+    """Every module-level `@app.<method>("<path>")` function in integrations_handler, by name.
 
-    Parsed rather than read off the resolver, because the resolver records the
-    route's PATH and handler but not the guards inside the handler's body, which
-    is the thing under test. Keyed by function name; the paths are recovered
-    separately in `_route_paths` below.
+    The paths are recovered separately with `route_paths`; the parser itself is
+    shared with `test_scrapers_security.py` (`integrations_route_ast_fixtures`).
     """
-    tree = ast.parse(inspect.getsource(_handler_module()))
-    routes = {}
-    for node in tree.body:
-        if not isinstance(node, ast.FunctionDef):
-            continue
-        if any(_route_path_of(decorator) for decorator in node.decorator_list):
-            routes[node.name] = node
-    return routes
+    return route_functions(_handler_module())
 
 
-def _route_path_of(decorator: ast.expr) -> str | None:
-    """The literal path of an `@app.get("/x")`-style decorator, else None.
-
-    Matches on the `app` receiver and a string first argument, so
-    `@tracer.capture_method` (no arguments) and any future non-routing decorator
-    are ignored without needing a list of method names to exclude.
-    """
-    if not isinstance(decorator, ast.Call):
-        return None
-    func = decorator.func
-    if not isinstance(func, ast.Attribute):
-        return None
-    if not isinstance(func.value, ast.Name) or func.value.id != 'app':
-        return None
-    if not decorator.args or not isinstance(decorator.args[0], ast.Constant):
-        return None
-    path = decorator.args[0].value
-    return path if isinstance(path, str) else None
-
-
-def _route_paths(node: ast.FunctionDef) -> list[str]:
-    return [
-        path for path in (_route_path_of(d) for d in node.decorator_list)
-        if path is not None
-    ]
-
-
-def _calls_in(node: ast.FunctionDef) -> set[str]:
-    """Names of the plain-function calls anywhere in *node*'s body."""
-    return {
-        call.func.id
-        for call in ast.walk(node)
-        if isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
-    }
-
-
-def _source_routes() -> dict[str, ast.FunctionDef]:
+def _source_routes():
     """Route functions that take a `<source>` path parameter.
 
     Selected by the DECORATOR's path containing `<source>`, not by the presence of
@@ -1286,7 +985,7 @@ def _source_routes() -> dict[str, ast.FunctionDef]:
     """
     return {
         name: node for name, node in _route_functions().items()
-        if any('<source>' in path for path in _route_paths(node))
+        if any('<source>' in path for path in route_paths(node))
     }
 
 
@@ -1343,7 +1042,7 @@ class TestSourceRouteCoverageIsComplete:
         Otherwise deleting or renaming a route would silently drop its guard
         assertions rather than failing.
         """
-        assert SOURCE_ADMIN_ROUTES <= set(_source_routes())
+        assert set(_source_routes()) >= SOURCE_ADMIN_ROUTES
 
     def test_the_only_ungated_source_route_is_the_app_config_read(self):
         """States the read/write split as an assertion, so widening it is a choice.
@@ -1365,7 +1064,7 @@ class TestEverySourceRouteIsValidated:
 
     @pytest.mark.parametrize('route', sorted(_source_routes()))
     def test_the_route_validates_its_source(self, route):
-        calls = _calls_in(_source_routes()[route])
+        calls = plain_calls_in(_source_routes()[route])
         assert '_validate_source_parameter' in calls, (
             f'{route} uses <source> without validating it; a well-formed but '
             'unknown value reaches a secret key, a Lambda name or a rule name'
@@ -1378,12 +1077,8 @@ class TestEverySourceRouteIsValidated:
         calling `_validate_source_parameter` gets both, and this is what makes that
         true.
         """
-        validator = next(
-            node for node in ast.parse(inspect.getsource(_handler_module())).body
-            if isinstance(node, ast.FunctionDef)
-            and node.name == '_validate_source_parameter'
-        )
-        assert _calls_in(validator) == {
+        validator = module_function(_handler_module(), '_validate_source_parameter')
+        assert plain_calls_in(validator) == {
             '_validate_source',
             '_validate_source_is_a_known_plugin',
         }
@@ -1399,7 +1094,7 @@ class TestEverySourceWriteIsAdminGated:
 
     @pytest.mark.parametrize('route', sorted(SOURCE_ADMIN_ROUTES))
     def test_the_route_requires_admin(self, route):
-        assert 'require_admin' in _calls_in(_source_routes()[route]), (
+        assert 'require_admin' in plain_calls_in(_source_routes()[route]), (
             f'{route} mutates or reads configuration with no admin gate'
         )
 
@@ -1411,7 +1106,19 @@ class TestEverySourceWriteIsAdminGated:
         empty that list for non-admins, so its openness is a decision and is pinned
         as one.
         """
-        assert 'require_admin' not in _calls_in(_source_routes()['list_app_configs'])
+        assert 'require_admin' not in plain_calls_in(_source_routes()['list_app_configs'])
+
+
+def _assert_ios_app_list_readable(mock_secrets, api_gateway_event, lambda_context, groups=None):
+    """GET /integrations/app_reviews_ios/apps answers 200 with the seeded app."""
+    mock_secrets.get_secret_value.return_value = secret_string(ONE_IOS_APP_SECRET)
+
+    response = call_apps(
+        api_gateway_event, lambda_context, 'GET', 'app_reviews_ios', groups=groups
+    )
+
+    assert response['statusCode'] == 200
+    assert json.loads(response['body'])['apps'][0]['app_name'] == 'Real'
 
 
 class TestAnUnknownSourceReachesNoResource:
@@ -1422,10 +1129,13 @@ class TestAnUnknownSourceReachesNoResource:
     """
 
     @patch('integrations_handler.put_secret_json')
-    @patch('integrations_handler.secretsmanager')
+    @patch('integrations_handler.secretsmanager', new=MagicMock())
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_an_unknown_source_cannot_write_an_app_config(
-        self, mock_secrets, mock_put, api_gateway_event, lambda_context,
-        plugin_secret_defaults,
+        self,
+        mock_put,
+        api_gateway_event,
+        lambda_context,
     ):
         """POST /integrations/<source>/apps writes `<source>_configs` on the SAME
         shared secret the credentials route writes, so it needs the same check.
@@ -1443,15 +1153,10 @@ class TestAnUnknownSourceReachesNoResource:
         a defence-in-depth check from an absent one when a narrower check already
         refuses the same input.
         """
-        from integrations_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='POST',
-            path='/integrations/not_a_plugin/apps',
-            path_params={'source': 'not_a_plugin'},
+        response = call_apps(
+            api_gateway_event, lambda_context, 'POST', 'not_a_plugin',
             body={'app': {'app_name': 'Injected'}},
         )
-        response = lambda_handler(event, lambda_context)
 
         assert response['statusCode'] == 400
         assert mock_put.call_args_list == [], 'a value was written under not_a_plugin_configs'
@@ -1462,24 +1167,22 @@ class TestAnUnknownSourceReachesNoResource:
 
     @patch('shared.tables.get_aggregates_table')
     @patch('boto3.client')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_an_unknown_source_invokes_no_lambda_and_writes_no_run_record(
-        self, mock_boto_client, mock_table, api_gateway_event, lambda_context,
-        plugin_secret_defaults,
+        self,
+        mock_boto_client,
+        mock_table,
+        api_gateway_event,
+        lambda_context,
     ):
         """POST /sources/<source>/run interpolated <source> straight into a Lambda
         function name and a `SOURCE_RUN#<source>` partition key."""
-        lambda_client = mock_boto_client.return_value
-        lambda_client.invoke.return_value = {'StatusCode': 202}
+        lambda_client = stub_ingestor_invoke(mock_boto_client.return_value)
         table = mock_table.return_value
 
-        from integrations_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='POST',
-            path='/sources/not_a_plugin/run',
-            path_params={'source': 'not_a_plugin'},
+        response = call_source_action(
+            api_gateway_event, lambda_context, 'POST', 'not_a_plugin', 'run'
         )
-        response = lambda_handler(event, lambda_context)
 
         assert response['statusCode'] == 400
         assert lambda_client.invoke.call_args_list == []
@@ -1489,73 +1192,54 @@ class TestAnUnknownSourceReachesNoResource:
 
     @pytest.mark.parametrize('action', ['enable', 'disable'])
     @patch('integrations_handler.events_client')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_an_unknown_source_touches_no_eventbridge_rule(
-        self, mock_events, action, api_gateway_event, lambda_context,
-        plugin_secret_defaults,
+        self,
+        mock_events,
+        action,
+        api_gateway_event,
+        lambda_context,
     ):
-        from integrations_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='PUT',
-            path=f'/sources/not_a_plugin/{action}',
-            path_params={'source': 'not_a_plugin'},
+        response = call_source_action(
+            api_gateway_event, lambda_context, 'PUT', 'not_a_plugin', action
         )
-        response = lambda_handler(event, lambda_context)
 
         assert response['statusCode'] == 400
         assert mock_events.enable_rule.call_args_list == []
         assert mock_events.disable_rule.call_args_list == []
 
     @patch('integrations_handler.secretsmanager')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_the_control_a_real_plugin_id_still_reads_its_app_configs(
-        self, mock_secrets, api_gateway_event, lambda_context, plugin_secret_defaults,
+        self, mock_secrets, api_gateway_event, lambda_context
     ):
         """Non-vacuity for the four cases above: rejecting every source would
         satisfy them all while breaking the Scrapers page outright."""
-        mock_secrets.get_secret_value.return_value = {
-            'SecretString': json.dumps({
-                'app_reviews_ios_configs': json.dumps([{'id': 'a1', 'app_name': 'Real'}]),
-            })
-        }
-
-        from integrations_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='GET',
-            path='/integrations/app_reviews_ios/apps',
-            path_params={'source': 'app_reviews_ios'},
-        )
-        response = lambda_handler(event, lambda_context)
-
-        assert response['statusCode'] == 200
-        assert json.loads(response['body'])['apps'][0]['app_name'] == 'Real'
+        _assert_ios_app_list_readable(mock_secrets, api_gateway_event, lambda_context)
 
     @patch('shared.tables.get_aggregates_table')
     @patch('boto3.client')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_the_control_a_real_plugin_id_still_runs(
-        self, mock_boto_client, mock_table, api_gateway_event, lambda_context,
-        plugin_secret_defaults,
+        self,
+        mock_boto_client,
+        mock_table,
+        api_gateway_event,
+        lambda_context,
     ):
-        lambda_client = mock_boto_client.return_value
-        lambda_client.invoke.return_value = {'StatusCode': 202}
+        lambda_client = stub_ingestor_invoke(mock_boto_client.return_value)
         mock_table.return_value = None
 
-        from integrations_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='POST',
-            path='/sources/webscraper/run',
-            path_params={'source': 'webscraper'},
-        )
-        response = lambda_handler(event, lambda_context)
+        response = call_source_action(api_gateway_event, lambda_context, 'POST', 'webscraper', 'run')
 
         assert response['statusCode'] == 200
         assert lambda_client.invoke.call_args_list, 'the real ingestor was not invoked'
 
     @patch('shared.tables.get_aggregates_table')
     @patch('boto3.client')
+    @pytest.mark.usefixtures('allowlist_unavailable')
     def test_an_unavailable_allowlist_still_admits_a_run(
-        self, mock_boto_client, mock_table, api_gateway_event, lambda_context, monkeypatch,
+        self, mock_boto_client, mock_table, api_gateway_event, lambda_context,
     ):
         """Fails OPEN when PLUGIN_SECRET_DEFAULTS is absent, on these routes too.
 
@@ -1565,21 +1249,10 @@ class TestAnUnknownSourceReachesNoResource:
         management out entirely. The ADMIN gate is unconditional and covers this
         state — see TestNoNonAdminReachesASourceWrite.
         """
-        import integrations_handler as h
-
-        monkeypatch.delenv(h.PLUGIN_SECRET_DEFAULTS_VAR, raising=False)
-        h._plugin_secret_defaults.cache_clear()
-        lambda_client = mock_boto_client.return_value
-        lambda_client.invoke.return_value = {'StatusCode': 202}
+        stub_ingestor_invoke(mock_boto_client.return_value)
         mock_table.return_value = None
 
-        event = api_gateway_event(
-            method='POST',
-            path='/sources/webscraper/run',
-            path_params={'source': 'webscraper'},
-        )
-        response = h.lambda_handler(event, lambda_context)
-        h._plugin_secret_defaults.cache_clear()
+        response = call_source_action(api_gateway_event, lambda_context, 'POST', 'webscraper', 'run')
 
         assert response['statusCode'] == 200
 
@@ -1595,22 +1268,20 @@ class TestNoNonAdminReachesASourceWrite:
 
     @patch('integrations_handler.put_secret_json')
     @patch('integrations_handler.secretsmanager')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_a_non_admin_cannot_save_an_app_config(
-        self, mock_secrets, mock_put, api_gateway_event, lambda_context,
-        plugin_secret_defaults,
+        self,
+        mock_secrets,
+        mock_put,
+        api_gateway_event,
+        lambda_context,
     ):
         mock_secrets.get_secret_value.return_value = {'SecretString': '{}'}
 
-        from integrations_handler import lambda_handler
-
-        event = _non_admin_event(
-            api_gateway_event,
-            method='POST',
-            path='/integrations/app_reviews_ios/apps',
-            path_params={'source': 'app_reviews_ios'},
-            body={'app': {'app_name': 'Injected'}},
+        response = call_apps(
+            api_gateway_event, lambda_context, 'POST', 'app_reviews_ios',
+            groups=NON_ADMIN, body={'app': {'app_name': 'Injected'}},
         )
-        response = lambda_handler(event, lambda_context)
 
         assert response['statusCode'] == 403
         assert mock_put.call_args_list == [], (
@@ -1619,51 +1290,43 @@ class TestNoNonAdminReachesASourceWrite:
 
     @patch('integrations_handler.put_secret_json')
     @patch('integrations_handler.secretsmanager')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_a_non_admin_cannot_delete_an_app_config(
-        self, mock_secrets, mock_put, api_gateway_event, lambda_context,
-        plugin_secret_defaults,
+        self,
+        mock_secrets,
+        mock_put,
+        api_gateway_event,
+        lambda_context,
     ):
-        mock_secrets.get_secret_value.return_value = {
-            'SecretString': json.dumps({
-                'app_reviews_ios_configs': json.dumps([{'id': 'a1', 'app_name': 'Real'}]),
-            })
-        }
+        mock_secrets.get_secret_value.return_value = secret_string(ONE_IOS_APP_SECRET)
 
-        from integrations_handler import lambda_handler
-
-        event = _non_admin_event(
-            api_gateway_event,
-            method='DELETE',
-            path='/integrations/app_reviews_ios/apps/a1',
-            path_params={'source': 'app_reviews_ios', 'app_id': 'a1'},
+        response = call_apps(
+            api_gateway_event, lambda_context, 'DELETE', 'app_reviews_ios',
+            app_id='a1', groups=NON_ADMIN,
         )
-        response = lambda_handler(event, lambda_context)
 
         assert response['statusCode'] == 403
         assert mock_put.call_args_list == [], 'a users-group caller deleted an app config'
 
     @patch('shared.tables.get_aggregates_table')
     @patch('boto3.client')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_a_non_admin_cannot_trigger_a_run(
-        self, mock_boto_client, mock_table, api_gateway_event, lambda_context,
-        plugin_secret_defaults,
+        self,
+        mock_boto_client,
+        mock_table,
+        api_gateway_event,
+        lambda_context,
     ):
         """Every run fetches from a third-party API and writes the data lake, so
         this is a billed operation and a rate limit any authenticated user could
         exhaust."""
-        lambda_client = mock_boto_client.return_value
-        lambda_client.invoke.return_value = {'StatusCode': 202}
+        lambda_client = stub_ingestor_invoke(mock_boto_client.return_value)
         table = mock_table.return_value
 
-        from integrations_handler import lambda_handler
-
-        event = _non_admin_event(
-            api_gateway_event,
-            method='POST',
-            path='/sources/webscraper/run',
-            path_params={'source': 'webscraper'},
+        response = call_source_action(
+            api_gateway_event, lambda_context, 'POST', 'webscraper', 'run', groups=NON_ADMIN
         )
-        response = lambda_handler(event, lambda_context)
 
         assert response['statusCode'] == 403
         assert lambda_client.invoke.call_args_list == [], (
@@ -1673,50 +1336,59 @@ class TestNoNonAdminReachesASourceWrite:
 
     @pytest.mark.parametrize('action', ['enable', 'disable'])
     @patch('integrations_handler.events_client')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_a_non_admin_cannot_toggle_a_schedule(
-        self, mock_events, action, api_gateway_event, lambda_context,
-        plugin_secret_defaults,
+        self,
+        mock_events,
+        action,
+        api_gateway_event,
+        lambda_context,
     ):
         """`disable` is the direction that matters most: it silently stops
         ingestion, and nothing in this repo re-enables a rule automatically."""
-        from integrations_handler import lambda_handler
-
-        event = _non_admin_event(
-            api_gateway_event,
-            method='PUT',
-            path=f'/sources/webscraper/{action}',
-            path_params={'source': 'webscraper'},
+        response = call_source_action(
+            api_gateway_event, lambda_context, 'PUT', 'webscraper', action, groups=NON_ADMIN
         )
-        response = lambda_handler(event, lambda_context)
 
         assert response['statusCode'] == 403
         assert mock_events.enable_rule.call_args_list == []
         assert mock_events.disable_rule.call_args_list == []
 
     @patch('integrations_handler.secretsmanager')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_the_control_a_non_admin_can_still_list_app_configs(
-        self, mock_secrets, api_gateway_event, lambda_context, plugin_secret_defaults,
+        self, mock_secrets, api_gateway_event, lambda_context
     ):
         """Non-vacuity, and the property the gates must not cost: the Scrapers page
         renders this list for every authenticated user."""
-        mock_secrets.get_secret_value.return_value = {
-            'SecretString': json.dumps({
-                'app_reviews_ios_configs': json.dumps([{'id': 'a1', 'app_name': 'Real'}]),
-            })
-        }
-
-        from integrations_handler import lambda_handler
-
-        event = _non_admin_event(
-            api_gateway_event,
-            method='GET',
-            path='/integrations/app_reviews_ios/apps',
-            path_params={'source': 'app_reviews_ios'},
+        _assert_ios_app_list_readable(
+            mock_secrets, api_gateway_event, lambda_context, groups=NON_ADMIN
         )
-        response = lambda_handler(event, lambda_context)
 
-        assert response['statusCode'] == 200
-        assert json.loads(response['body'])['apps'][0]['app_name'] == 'Real'
+
+def _sources_status(api_gateway_event, lambda_context, query):
+    """GET /sources/status?<query> as a `users`-group caller, its real audience."""
+    return call_integrations(
+        api_gateway_event, lambda_context,
+        groups=NON_ADMIN, method='GET', path='/sources/status', query_params=query,
+    )
+
+
+def _default_status_sources(mock_events, api_gateway_event, lambda_context) -> dict:
+    """The `sources` of a bare GET /sources/status with no rule deployed.
+
+    Asserts the request succeeded and reported exactly the fallback list — every
+    enabled plugin (the `enabled_sources` fixture enables them all) plus
+    `manual_import` — keyed by source, so a caller asserts only what is specific
+    to its regression. Equality, not membership: a plugin missing from the
+    default response is issue #256.
+    """
+    stub_rule_lookup(mock_events, missing=True)
+    response = _sources_status(api_gateway_event, lambda_context, {})
+    body = json.loads(response['body'])
+    assert response['statusCode'] == 200
+    assert set(body['sources']) == {*PLUGIN_IDS, 'manual_import'}
+    return body['sources']
 
 
 class TestTheQueryStringSourceRouteIsValidated:
@@ -1748,18 +1420,10 @@ class TestTheQueryStringSourceRouteIsValidated:
     a claim asserted in one direction only can regress in the other.
     """
 
-    @staticmethod
-    def _status_event(api_gateway_event, query):
-        return _non_admin_event(
-            api_gateway_event,
-            method='GET',
-            path='/sources/status',
-            query_params=query,
-        )
-
     @patch('integrations_handler.events_client')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_an_unknown_source_reaches_no_eventbridge_rule(
-        self, mock_events, api_gateway_event, lambda_context, plugin_secret_defaults,
+        self, mock_events, api_gateway_event, lambda_context
     ):
         """The batch branch reports the source as absent instead of describing it.
 
@@ -1767,17 +1431,10 @@ class TestTheQueryStringSourceRouteIsValidated:
         answered `exists: False` while still calling `describe_rule` would satisfy a
         response-only assertion and still enumerate rules.
         """
-        mock_events.exceptions.ResourceNotFoundException = type(
-            'ResourceNotFoundException', (Exception,), {}
-        )
-        mock_events.describe_rule.return_value = {
-            'State': 'ENABLED', 'ScheduleExpression': 'rate(1 day)',
-        }
+        stub_rule_lookup(mock_events)
 
-        from integrations_handler import lambda_handler
 
-        event = self._status_event(api_gateway_event, {'sources': 'not_a_plugin'})
-        response = lambda_handler(event, lambda_context)
+        response = _sources_status(api_gateway_event, lambda_context, {'sources': 'not_a_plugin'})
         body = json.loads(response['body'])
 
         assert response['statusCode'] == 200
@@ -1791,8 +1448,9 @@ class TestTheQueryStringSourceRouteIsValidated:
         assert 'rule_name' not in body['sources']['not_a_plugin']
 
     @patch('integrations_handler.events_client')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_a_malformed_source_reaches_no_eventbridge_rule(
-        self, mock_events, api_gateway_event, lambda_context, plugin_secret_defaults,
+        self, mock_events, api_gateway_event, lambda_context
     ):
         """The traversal-shaped value from the report, which the form check catches.
 
@@ -1801,14 +1459,10 @@ class TestTheQueryStringSourceRouteIsValidated:
         converts both to the same answer. A guard wired to only one of the two would
         pass one of these cases.
         """
-        mock_events.exceptions.ResourceNotFoundException = type(
-            'ResourceNotFoundException', (Exception,), {}
-        )
+        stub_rule_lookup(mock_events)
 
-        from integrations_handler import lambda_handler
 
-        event = self._status_event(api_gateway_event, {'sources': '../../etc'})
-        response = lambda_handler(event, lambda_context)
+        response = _sources_status(api_gateway_event, lambda_context, {'sources': '../../etc'})
 
         assert response['statusCode'] == 200
         assert mock_events.describe_rule.call_args_list == []
@@ -1817,22 +1471,16 @@ class TestTheQueryStringSourceRouteIsValidated:
         }
 
     @patch('integrations_handler.events_client')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_the_control_a_real_plugin_id_is_still_described(
-        self, mock_events, api_gateway_event, lambda_context, plugin_secret_defaults,
+        self, mock_events, api_gateway_event, lambda_context
     ):
         """Non-vacuity: rejecting every source would satisfy both cases above while
         making every schedule on the Settings page read as disabled."""
-        mock_events.exceptions.ResourceNotFoundException = type(
-            'ResourceNotFoundException', (Exception,), {}
-        )
-        mock_events.describe_rule.return_value = {
-            'State': 'ENABLED', 'ScheduleExpression': 'rate(1 day)',
-        }
+        stub_rule_lookup(mock_events)
 
-        from integrations_handler import lambda_handler
 
-        event = self._status_event(api_gateway_event, {'sources': 'webscraper'})
-        response = lambda_handler(event, lambda_context)
+        response = _sources_status(api_gateway_event, lambda_context, {'sources': 'webscraper'})
         body = json.loads(response['body'])
 
         assert response['statusCode'] == 200
@@ -1842,8 +1490,9 @@ class TestTheQueryStringSourceRouteIsValidated:
         assert body['sources']['webscraper']['enabled'] is True
 
     @patch('integrations_handler.events_client')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_a_mixed_request_reports_the_unknown_and_still_describes_the_known(
-        self, mock_events, api_gateway_event, lambda_context, plugin_secret_defaults,
+        self, mock_events, api_gateway_event, lambda_context
     ):
         """The reason the batch branch skips rather than raises.
 
@@ -1851,19 +1500,12 @@ class TestTheQueryStringSourceRouteIsValidated:
         guard here would answer 400 and the caller would learn nothing about the
         sources it asked about that DO exist.
         """
-        mock_events.exceptions.ResourceNotFoundException = type(
-            'ResourceNotFoundException', (Exception,), {}
-        )
-        mock_events.describe_rule.return_value = {
-            'State': 'ENABLED', 'ScheduleExpression': 'rate(1 day)',
-        }
+        stub_rule_lookup(mock_events)
 
-        from integrations_handler import lambda_handler
 
-        event = self._status_event(
-            api_gateway_event, {'sources': 'not_a_plugin,webscraper'}
+        response = _sources_status(
+            api_gateway_event, lambda_context, {'sources': 'not_a_plugin,webscraper'}
         )
-        response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
 
         assert response['statusCode'] == 200
@@ -1871,15 +1513,16 @@ class TestTheQueryStringSourceRouteIsValidated:
         assert body['sources']['webscraper']['enabled'] is True
 
     @patch('integrations_handler.events_client')
-    def test_the_default_request_still_reports_all_three_of_its_sources(
-        self, mock_events, api_gateway_event, lambda_context, plugin_secret_defaults,
+    @pytest.mark.usefixtures("plugin_secret_defaults", "enabled_sources")
+    def test_the_default_request_still_reports_all_of_its_sources(
+        self, mock_events, api_gateway_event, lambda_context
     ):
         """The regression this route's guard must not cause, and why it cannot raise.
 
         `SourceCard.tsx` calls `getSourcesStatus()` with NO argument on every
         Settings render, taking the fallback list below. `manual_import` is in that
-        list, is a legitimate `source_platform` (it is in `KNOWN_SOURCES` in
-        `plugins/_shared/schemas.py`) and has no manifest — so it is absent from
+        list, is a legitimate `source_platform` (`manual_import_handler` writes it
+        as the source of manual imports) and has no manifest — so it is absent from
         `PLUGIN_SECRET_DEFAULTS` and a raising guard would answer 400 to that
         request for every user, admin included.
 
@@ -1888,26 +1531,14 @@ class TestTheQueryStringSourceRouteIsValidated:
         and `'manual_import' in body` would not notice a route that reported it as
         an error instead of a status.
         """
-        mock_events.exceptions.ResourceNotFoundException = type(
-            'ResourceNotFoundException', (Exception,), {}
-        )
-        mock_events.describe_rule.side_effect = (
-            mock_events.exceptions.ResourceNotFoundException
-        )
+        sources = _default_status_sources(mock_events, api_gateway_event, lambda_context)
 
-        from integrations_handler import lambda_handler
-
-        event = self._status_event(api_gateway_event, {})
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-
-        assert response['statusCode'] == 200
-        assert set(body['sources']) == {'webscraper', 'manual_import', 's3_import'}
-        assert body['sources']['manual_import'] == {'enabled': False, 'exists': False}
+        assert sources['manual_import'] == {'enabled': False, 'exists': False}
 
     @patch('shared.tables.get_aggregates_table')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_the_run_status_branch_refuses_the_manual_import_the_other_accepts(
-        self, mock_table, api_gateway_event, lambda_context, plugin_secret_defaults,
+        self, mock_table, api_gateway_event, lambda_context
     ):
         """The deliberate counterpart of the case above, and the ONE input on which
         the two branches of this route disagree.
@@ -1931,17 +1562,15 @@ class TestTheQueryStringSourceRouteIsValidated:
         Asserting only the accepting half left the asymmetry unpinned in the
         direction that could regress: a future edit swapping this branch to
         `_is_addressable_source` would answer 200 with an empty status, which
-        `test_the_default_request_still_reports_all_three_of_its_sources` cannot
+        `test_the_default_request_still_reports_all_of_its_sources` cannot
         see. Separate from `..._an_unknown_run_status_source_queries_nothing`
         because `not_a_plugin` is not in the route's own default list, so it does
         not exercise the disagreement at all.
         """
         table = mock_table.return_value
 
-        from integrations_handler import lambda_handler
 
-        event = self._status_event(api_gateway_event, {'run_status': 'manual_import'})
-        response = lambda_handler(event, lambda_context)
+        response = _sources_status(api_gateway_event, lambda_context, {'run_status': 'manual_import'})
 
         assert response['statusCode'] == 400
         assert table.query.call_args_list == [], (
@@ -1949,8 +1578,9 @@ class TestTheQueryStringSourceRouteIsValidated:
         )
 
     @patch('shared.tables.get_aggregates_table')
+    @pytest.mark.usefixtures('allowlist_unavailable')
     def test_the_asymmetry_is_a_property_of_the_configured_state_only(
-        self, mock_table, api_gateway_event, lambda_context, monkeypatch,
+        self, mock_table, api_gateway_event, lambda_context,
     ):
         """With the allowlist unavailable the two branches STOP disagreeing.
 
@@ -1966,16 +1596,10 @@ class TestTheQueryStringSourceRouteIsValidated:
         change making the fail-open stricter has to update the comment rather than
         leave it describing a state that no longer exists.
         """
-        import integrations_handler as h
-
         table = mock_table.return_value
         table.query.return_value = {'Items': []}
-        monkeypatch.delenv(h.PLUGIN_SECRET_DEFAULTS_VAR, raising=False)
-        h._plugin_secret_defaults.cache_clear()
 
-        event = self._status_event(api_gateway_event, {'run_status': 'manual_import'})
-        response = h.lambda_handler(event, lambda_context)
-        h._plugin_secret_defaults.cache_clear()
+        response = _sources_status(api_gateway_event, lambda_context, {'run_status': 'manual_import'})
 
         assert response['statusCode'] == 200
         assert len(table.query.call_args_list) == 1, (
@@ -1984,8 +1608,9 @@ class TestTheQueryStringSourceRouteIsValidated:
         )
 
     @patch('shared.tables.get_aggregates_table')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_an_unknown_run_status_source_queries_nothing(
-        self, mock_table, api_gateway_event, lambda_context, plugin_secret_defaults,
+        self, mock_table, api_gateway_event, lambda_context
     ):
         """This branch DOES raise: it answers about one source, so a 400 is honest.
 
@@ -1995,10 +1620,8 @@ class TestTheQueryStringSourceRouteIsValidated:
         """
         table = mock_table.return_value
 
-        from integrations_handler import lambda_handler
 
-        event = self._status_event(api_gateway_event, {'run_status': 'not_a_plugin'})
-        response = lambda_handler(event, lambda_context)
+        response = _sources_status(api_gateway_event, lambda_context, {'run_status': 'not_a_plugin'})
 
         assert response['statusCode'] == 400
         assert table.query.call_args_list == [], (
@@ -2006,8 +1629,9 @@ class TestTheQueryStringSourceRouteIsValidated:
         )
 
     @patch('shared.tables.get_aggregates_table')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_the_control_a_real_plugin_id_still_returns_its_run_status(
-        self, mock_table, api_gateway_event, lambda_context, plugin_secret_defaults,
+        self, mock_table, api_gateway_event, lambda_context
     ):
         """Non-vacuity for the case above: the Scrapers page polls this every two
         seconds while a run is in flight, so refusing every source would leave a
@@ -2017,10 +1641,8 @@ class TestTheQueryStringSourceRouteIsValidated:
             'sk': 'run_webscraper_1', 'status': 'completed', 'items_found': 7,
         }]}
 
-        from integrations_handler import lambda_handler
 
-        event = self._status_event(api_gateway_event, {'run_status': 'webscraper'})
-        response = lambda_handler(event, lambda_context)
+        response = _sources_status(api_gateway_event, lambda_context, {'run_status': 'webscraper'})
         body = json.loads(response['body'])
 
         assert response['statusCode'] == 200
@@ -2029,8 +1651,9 @@ class TestTheQueryStringSourceRouteIsValidated:
         assert body['items_found'] == 7
 
     @patch('integrations_handler.events_client')
+    @pytest.mark.usefixtures('allowlist_unavailable')
     def test_an_unavailable_allowlist_still_reports_every_source(
-        self, mock_events, api_gateway_event, lambda_context, monkeypatch,
+        self, mock_events, api_gateway_event, lambda_context,
     ):
         """Fails OPEN when PLUGIN_SECRET_DEFAULTS is absent, here as elsewhere.
 
@@ -2040,20 +1663,9 @@ class TestTheQueryStringSourceRouteIsValidated:
         the write routes: the worst case is the pre-allowlist behaviour, and this
         route never had an admin gate to fall back on.
         """
-        import integrations_handler as h
+        stub_rule_lookup(mock_events)
 
-        monkeypatch.delenv(h.PLUGIN_SECRET_DEFAULTS_VAR, raising=False)
-        h._plugin_secret_defaults.cache_clear()
-        mock_events.exceptions.ResourceNotFoundException = type(
-            'ResourceNotFoundException', (Exception,), {}
-        )
-        mock_events.describe_rule.return_value = {
-            'State': 'ENABLED', 'ScheduleExpression': 'rate(1 day)',
-        }
-
-        event = self._status_event(api_gateway_event, {'sources': 'custom_source'})
-        response = h.lambda_handler(event, lambda_context)
-        h._plugin_secret_defaults.cache_clear()
+        response = _sources_status(api_gateway_event, lambda_context, {'sources': 'custom_source'})
 
         assert response['statusCode'] == 200
         assert json.loads(response['body'])['sources']['custom_source']['enabled'] is True
@@ -2066,11 +1678,8 @@ class TestTheQueryStringSourceRouteIsValidated:
         because the equivalence is the property: a behavioural test would pass just
         as well against a duplicated rule that happens to agree today.
         """
-        predicate = next(
-            node for node in ast.parse(inspect.getsource(_handler_module())).body
-            if isinstance(node, ast.FunctionDef) and node.name == '_is_addressable_source'
-        )
-        assert _calls_in(predicate) == {'_validate_source_parameter'}
+        predicate = module_function(_handler_module(), '_is_addressable_source')
+        assert plain_calls_in(predicate) == {'_validate_source_parameter'}
 
     def test_the_route_uses_the_predicate_and_the_validator(self):
         """Both branches are guarded, and by the intended one of the two.
@@ -2079,11 +1688,8 @@ class TestTheQueryStringSourceRouteIsValidated:
         renamed or its guards moved into a helper, `next` raises StopIteration here
         rather than this passing over a route that no longer exists.
         """
-        route = next(
-            node for node in ast.parse(inspect.getsource(_handler_module())).body
-            if isinstance(node, ast.FunctionDef) and node.name == 'get_sources_status'
-        )
-        calls = _calls_in(route)
+        route = module_function(_handler_module(), 'get_sources_status')
+        calls = plain_calls_in(route)
         assert '_is_addressable_source' in calls, 'the ?sources= branch is unguarded'
         assert '_validate_source_parameter' in calls, (
             'the ?run_status= branch is unguarded'
@@ -2097,11 +1703,8 @@ class TestTheQueryStringSourceRouteIsValidated:
         page for non-admins. Recorded as a decision so a future reader does not
         read the absence as the same oversight the validation was.
         """
-        route = next(
-            node for node in ast.parse(inspect.getsource(_handler_module())).body
-            if isinstance(node, ast.FunctionDef) and node.name == 'get_sources_status'
-        )
-        assert 'require_admin' not in _calls_in(route)
+        route = module_function(_handler_module(), 'get_sources_status')
+        assert 'require_admin' not in plain_calls_in(route)
 
 
 class TestTheStatusRouteDoesNotFanOutPerDuplicate:
@@ -2114,7 +1717,7 @@ class TestTheStatusRouteDoesNotFanOutPerDuplicate:
 
     Measured before the fix, as a caller whose only Cognito group is `users`:
 
-      ?sources=<one valid name × 500>  → 200, 500 describe_rule calls,
+      ?sources=<one valid name x 500>  → 200, 500 describe_rule calls,
                                          1 key in the response body
 
     All 499 repeats overwrote the same `status[source]` entry, so they could not
@@ -2128,37 +1731,18 @@ class TestTheStatusRouteDoesNotFanOutPerDuplicate:
     code. A body-only assertion cannot see this defect.
     """
 
-    @staticmethod
-    def _status_event(api_gateway_event, query):
-        return _non_admin_event(
-            api_gateway_event,
-            method='GET',
-            path='/sources/status',
-            query_params=query,
-        )
-
-    @staticmethod
-    def _stub(mock_events):
-        mock_events.exceptions.ResourceNotFoundException = type(
-            'ResourceNotFoundException', (Exception,), {}
-        )
-        mock_events.describe_rule.return_value = {
-            'State': 'ENABLED', 'ScheduleExpression': 'rate(1 day)',
-        }
-
     @patch('integrations_handler.events_client')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_a_repeated_source_is_described_once(
-        self, mock_events, api_gateway_event, lambda_context, plugin_secret_defaults,
+        self, mock_events, api_gateway_event, lambda_context
     ):
         """The reported case: one valid name repeated many times, one AWS call."""
-        self._stub(mock_events)
+        stub_rule_lookup(mock_events)
 
-        from integrations_handler import lambda_handler
 
-        event = self._status_event(
-            api_gateway_event, {'sources': ','.join(['webscraper'] * 500)}
+        response = _sources_status(
+            api_gateway_event, lambda_context, {'sources': ','.join(['webscraper'] * 500)}
         )
-        response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
 
         assert response['statusCode'] == 200
@@ -2172,8 +1756,9 @@ class TestTheStatusRouteDoesNotFanOutPerDuplicate:
         assert len(body['sources']) == 1
 
     @patch('integrations_handler.events_client')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_the_control_distinct_sources_are_each_still_described(
-        self, mock_events, api_gateway_event, lambda_context, plugin_secret_defaults,
+        self, mock_events, api_gateway_event, lambda_context
     ):
         """Non-vacuity: de-duplicating too eagerly would collapse a real request.
 
@@ -2187,14 +1772,12 @@ class TestTheStatusRouteDoesNotFanOutPerDuplicate:
         sources twice as well. A control that fails alongside its subject proves
         nothing about vacuity.
         """
-        self._stub(mock_events)
+        stub_rule_lookup(mock_events)
 
-        from integrations_handler import lambda_handler
 
-        event = self._status_event(
-            api_gateway_event, {'sources': 'webscraper,s3_import'}
+        response = _sources_status(
+            api_gateway_event, lambda_context, {'sources': 'webscraper,s3_import'}
         )
-        response = lambda_handler(event, lambda_context)
         body = json.loads(response['body'])
 
         assert response['statusCode'] == 200
@@ -2208,8 +1791,9 @@ class TestTheStatusRouteDoesNotFanOutPerDuplicate:
         assert set(body['sources']) == {'webscraper', 's3_import'}
 
     @patch('integrations_handler.events_client')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_a_source_list_over_the_cap_is_refused_before_any_lookup(
-        self, mock_events, api_gateway_event, lambda_context, plugin_secret_defaults,
+        self, mock_events, api_gateway_event, lambda_context
     ):
         """The cap raises rather than truncating, and describes nothing first.
 
@@ -2218,39 +1802,32 @@ class TestTheStatusRouteDoesNotFanOutPerDuplicate:
         guard. Asserting no call happened is the load-bearing half — a route that
         answered 400 after describing 51 rules would pass a status-only assertion.
         """
-        from integrations_handler import (
-            MAX_SOURCES_PER_STATUS_REQUEST,
-            lambda_handler,
-        )
+        from integrations_handler import MAX_SOURCES_PER_STATUS_REQUEST
 
-        self._stub(mock_events)
+        stub_rule_lookup(mock_events)
         too_many = ','.join(
             f'plugin_{i}' for i in range(MAX_SOURCES_PER_STATUS_REQUEST + 1)
         )
-        event = self._status_event(api_gateway_event, {'sources': too_many})
-        response = lambda_handler(event, lambda_context)
+        response = _sources_status(api_gateway_event, lambda_context, {'sources': too_many})
 
         assert response['statusCode'] == 400
         assert mock_events.describe_rule.call_args_list == []
 
     @patch('integrations_handler.events_client')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_the_control_a_list_at_the_cap_is_still_answered(
-        self, mock_events, api_gateway_event, lambda_context, plugin_secret_defaults,
+        self, mock_events, api_gateway_event, lambda_context
     ):
         """Non-vacuity for the cap: an off-by-one that refused the limit itself
         would satisfy the case above, and the cap is meant to bound abuse rather
         than any request a caller could legitimately make."""
-        from integrations_handler import (
-            MAX_SOURCES_PER_STATUS_REQUEST,
-            lambda_handler,
-        )
+        from integrations_handler import MAX_SOURCES_PER_STATUS_REQUEST
 
-        self._stub(mock_events)
+        stub_rule_lookup(mock_events)
         at_cap = ','.join(
             f'plugin_{i}' for i in range(MAX_SOURCES_PER_STATUS_REQUEST)
         )
-        event = self._status_event(api_gateway_event, {'sources': at_cap})
-        response = lambda_handler(event, lambda_context)
+        response = _sources_status(api_gateway_event, lambda_context, {'sources': at_cap})
 
         assert response['statusCode'] == 200
         # None is a configured plugin, so the allowlist answers all of them and
@@ -2261,8 +1838,9 @@ class TestTheStatusRouteDoesNotFanOutPerDuplicate:
         )
 
     @patch('integrations_handler.events_client')
+    @pytest.mark.usefixtures("plugin_secret_defaults")
     def test_the_cap_counts_distinct_sources_not_typed_ones(
-        self, mock_events, api_gateway_event, lambda_context, plugin_secret_defaults,
+        self, mock_events, api_gateway_event, lambda_context
     ):
         """De-duplication runs BEFORE the cap, which is the useful order.
 
@@ -2271,45 +1849,28 @@ class TestTheStatusRouteDoesNotFanOutPerDuplicate:
         refused. Capping the typed list first would reject a request that costs one
         AWS call.
         """
-        from integrations_handler import (
-            MAX_SOURCES_PER_STATUS_REQUEST,
-            lambda_handler,
-        )
+        from integrations_handler import MAX_SOURCES_PER_STATUS_REQUEST
 
-        self._stub(mock_events)
-        event = self._status_event(api_gateway_event, {
+        stub_rule_lookup(mock_events)
+        response = _sources_status(api_gateway_event, lambda_context, {
             'sources': ','.join(
                 ['webscraper'] * (MAX_SOURCES_PER_STATUS_REQUEST + 10)
             ),
         })
-        response = lambda_handler(event, lambda_context)
 
         assert response['statusCode'] == 200
         assert mock_events.describe_rule.call_count == 1
 
     @patch('integrations_handler.events_client')
+    @pytest.mark.usefixtures("plugin_secret_defaults", "enabled_sources")
     def test_the_default_request_is_unaffected_by_either_guard(
-        self, mock_events, api_gateway_event, lambda_context, plugin_secret_defaults,
+        self, mock_events, api_gateway_event, lambda_context
     ):
         """The regression control, on the path every Settings render takes.
 
         `SourceCard.tsx` calls `getSourcesStatus()` with no argument, so the
         fallback list must reach the loop untouched by de-duplication or the cap —
-        it holds no duplicates and three entries, and `manual_import` among them is
-        a deliberate non-plugin.
+        it holds no duplicates and stays under the cap, and `manual_import` among
+        them is a deliberate non-plugin.
         """
-        mock_events.exceptions.ResourceNotFoundException = type(
-            'ResourceNotFoundException', (Exception,), {}
-        )
-        mock_events.describe_rule.side_effect = (
-            mock_events.exceptions.ResourceNotFoundException
-        )
-
-        from integrations_handler import lambda_handler
-
-        event = self._status_event(api_gateway_event, {})
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-
-        assert response['statusCode'] == 200
-        assert set(body['sources']) == {'webscraper', 'manual_import', 's3_import'}
+        _default_status_sources(mock_events, api_gateway_event, lambda_context)

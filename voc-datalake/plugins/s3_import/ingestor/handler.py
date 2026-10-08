@@ -4,18 +4,27 @@ Triggered by S3 events when files are uploaded.
 Folder name becomes the source: {folder}/file.csv -> source = "S3 - {folder}"
 """
 
-import json
 import csv
-import io
 import hashlib
-import boto3
+import io
+import json
 import urllib.parse
-from typing import Generator
-from _shared.base_ingestor import BaseIngestor, logger, tracer, metrics
+from collections.abc import Generator
+
+import boto3
+
+from _shared.base_ingestor import BaseIngestor, logger, metrics, tracer
+from shared.invocation_cost import measure_invocation_cost
 
 s3_client = boto3.client("s3")
 
-MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024
+MAX_FILE_SIZE_MB = 50
+MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+
+# What normalizing one parsed row can raise: AttributeError for a JSON row that is
+# not an object (no `.get`), TypeError/ValueError for a value of an unexpected
+# shape. Every value is stringified before use, so nothing else is reachable.
+_ROW_ERRORS = (AttributeError, TypeError, ValueError)
 
 # Maps canonical field names to common aliases found in CSV/JSON files
 FIELD_ALIASES: dict[str, list[str]] = {
@@ -29,7 +38,7 @@ FIELD_ALIASES: dict[str, list[str]] = {
 }
 
 
-def _resolve_field(row: dict, canonical: str, default: str = "") -> str:
+def _resolve_field(row: dict, canonical: str, default: str | None = "") -> str | None:
     """Resolve a field value by trying canonical name then aliases."""
     for alias in FIELD_ALIASES.get(canonical, [canonical]):
         value = row.get(alias)
@@ -45,9 +54,7 @@ def _generate_deterministic_id(text: str) -> str:
 
 
 def _parse_rating(value) -> float | None:
-    """Parse rating value to float, returning None for invalid values."""
-    if value is None or value == "":
-        return None
+    """Parse rating value to float, returning None for invalid values (None and "" included)."""
     try:
         return float(value)
     except (ValueError, TypeError):
@@ -62,7 +69,7 @@ def _get_source_from_key(key: str) -> str:
     return "S3 - Import"
 
 
-def _normalize_row(row: dict, source_name: str, default_channel: str = "import") -> dict | None:
+def _normalize_row(row: dict, source_name: str, default_channel: str) -> dict | None:
     """Normalize a row (from CSV or JSON) into the expected item format. Returns None if no text."""
     text = _resolve_field(row, "text")
     if not text:
@@ -101,7 +108,7 @@ def _parse_csv(stream, source_name: str) -> Generator[dict, None, None]:
                 yield item
             else:
                 logger.debug(f"Row {row_num}: empty text, skipping")
-        except Exception as e:
+        except _ROW_ERRORS as e:
             logger.warning(f"Row {row_num}: parse error: {e}")
 
 
@@ -117,7 +124,9 @@ def _parse_jsonl(stream, source_name: str) -> Generator[dict, None, None]:
             item = _normalize_row(row, source_name, "json_import")
             if item:
                 yield item
-        except (json.JSONDecodeError, Exception) as e:
+        except (*_ROW_ERRORS, RecursionError) as e:
+            # ValueError covers json.JSONDecodeError; RecursionError is what
+            # json.loads raises for a pathologically nested line.
             logger.warning(f"JSONL line {line_num}: {e}")
 
 
@@ -126,7 +135,7 @@ def _parse_json(stream, source_name: str) -> Generator[dict, None, None]:
     try:
         data = json.loads(stream.read())
     except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON: {e}")
+        logger.exception(f"Invalid JSON: {e}")
         return
 
     items = data if isinstance(data, list) else [data]
@@ -135,7 +144,7 @@ def _parse_json(stream, source_name: str) -> Generator[dict, None, None]:
             item = _normalize_row(row, source_name, "json_import")
             if item:
                 yield item
-        except Exception as e:
+        except _ROW_ERRORS as e:
             logger.warning(f"JSON item {idx}: {e}")
 
 
@@ -158,8 +167,7 @@ class S3ImportIngestor(BaseIngestor):
 
     def fetch_new_items(self) -> Generator[dict, None, None]:
         """Not used — S3 import processes files directly via process_file."""
-        return
-        yield
+        yield from ()
 
     def process_file(self, bucket: str, key: str) -> int:
         """Process a single S3 file: validate, parse, normalize, and queue."""
@@ -177,7 +185,7 @@ class S3ImportIngestor(BaseIngestor):
             return 0
 
         if file_size > MAX_FILE_SIZE_BYTES:
-            logger.error(f"{key}: {file_size / 1024 / 1024:.1f} MB exceeds {MAX_FILE_SIZE_BYTES / 1024 / 1024:.0f} MB limit")
+            logger.error(f"{key}: {file_size / 1024 / 1024:.1f} MB exceeds {MAX_FILE_SIZE_MB} MB limit")
             return 0
 
         # Stream, parse, normalize, and send in batches
@@ -215,6 +223,7 @@ class S3ImportIngestor(BaseIngestor):
 @logger.inject_lambda_context
 @tracer.capture_lambda_handler
 @metrics.log_metrics(capture_cold_start_metric=True)
+@measure_invocation_cost
 def lambda_handler(event, context):
     """Handle S3 event notifications."""
     if "Records" not in event or not event["Records"]:

@@ -138,10 +138,6 @@
           {
             "value": "most_recent",
             "label": "Most Recent (recommended)"
-          },
-          {
-            "value": "most_critical",
-            "label": "Most Critical"
           }
         ]
       },
@@ -212,9 +208,100 @@
     "enabled": true
   },
   {
+    "id": "github_issues",
+    "name": "GitHub Issues",
+    "icon": "GitHub",
+    "description": "Ingest issues and comments from GitHub repositories, with software version, labels and error signatures",
+    "category": "reviews",
+    "config": [
+      {
+        "key": "repos",
+        "label": "Repositories (owner/name or a GitHub URL, one per line)",
+        "type": "textarea",
+        "required": true,
+        "placeholder": "kirodotdev/Kiro or https://github.com/kirodotdev/Kiro/issues",
+        "secret": false
+      },
+      {
+        "key": "token",
+        "label": "Fine-grained token (read-only Issues + Metadata)",
+        "type": "password",
+        "required": true,
+        "secret": true
+      },
+      {
+        "key": "labels",
+        "label": "Only issues with any of these labels (optional, comma-separated)",
+        "type": "text",
+        "required": false,
+        "placeholder": "bug, feedback",
+        "secret": false
+      },
+      {
+        "key": "product_names",
+        "label": "Product names cited with a version (optional, e.g. Kiro)",
+        "type": "text",
+        "required": false,
+        "placeholder": "Kiro",
+        "secret": false
+      },
+      {
+        "key": "created_after",
+        "label": "Only issues and comments created on or after (optional, YYYY-MM-DD)",
+        "type": "text",
+        "required": false,
+        "placeholder": "2026-01-01",
+        "secret": false
+      },
+      {
+        "key": "exclude_associations",
+        "label": "Skip authors with these GitHub roles (optional, e.g. OWNER, MEMBER, COLLABORATOR)",
+        "type": "text",
+        "required": false,
+        "placeholder": "OWNER, MEMBER, COLLABORATOR",
+        "secret": false
+      },
+      {
+        "key": "webhook_secret",
+        "label": "Webhook secret (optional, for real-time delivery)",
+        "type": "password",
+        "required": false,
+        "secret": true
+      }
+    ],
+    "webhooks": [
+      {
+        "name": "GitHub repository webhook",
+        "events": [
+          "issues",
+          "issue_comment"
+        ],
+        "docUrl": "https://docs.github.com/en/webhooks/using-webhooks/creating-webhooks"
+      }
+    ],
+    "setup": {
+      "title": "GitHub Issues Setup",
+      "color": "gray",
+      "steps": [
+        "Create a fine-grained personal access token limited to the repositories you list",
+        "Grant it read-only Issues and Metadata permissions and nothing else",
+        "Paste the token and the repositories above (one owner/name or GitHub URL per line)",
+        "Optionally restrict to labels, and name the product so 'Kiro 0.4.2' is read as a version",
+        "For a large repository, set a start date and skip maintainer roles: every ingested item costs a model call",
+        "Enable the schedule to poll every 30 minutes",
+        "For real-time delivery add a repository webhook (issues, issue_comment) to /webhooks/github_issues with content type application/json and the same secret"
+      ]
+    },
+    "hasIngestor": true,
+    "hasWebhook": true,
+    "hasS3Trigger": false,
+    "version": "1.0.0",
+    "enabled": true
+  },
+  {
     "id": "s3_import",
     "name": "S3 Bulk Import",
-    "icon": "📦",
+    "icon": "Package",
     "description": "Import feedback from S3 bucket (CSV, JSON, JSONL)",
     "category": "import",
     "config": [
@@ -263,7 +350,7 @@
   {
     "id": "synthetic_reviews",
     "name": "Synthetic Data Review Generator",
-    "icon": "🧪",
+    "icon": "Synthetic",
     "description": "Generate realistic synthetic customer reviews with AI (Amazon Bedrock) for demos, testing, and modeling. Ingested through the normal pipeline and tagged as synthetic data.",
     "category": "synthetic",
     "config": [

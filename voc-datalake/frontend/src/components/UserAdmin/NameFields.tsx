@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 
 interface NameFieldsProps {
@@ -12,13 +13,17 @@ export default function NameFields({
   givenName, familyName, onGivenNameChange, onFamilyNameChange, autoFocusFirst,
 }: NameFieldsProps) {
   const { t } = useTranslation('components')
+  // Each label names its input (it used to name nothing, so screen readers read a bare text box).
+  const givenId = useId()
+  const familyId = useId()
   return (
     <>
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label htmlFor={givenId} className="block text-sm font-medium text-text mb-1">
           {t('userAdmin.firstNameLabel')}
         </label>
         <input
+          id={givenId}
           type="text"
           value={givenName}
           onChange={(e) => onGivenNameChange(e.target.value)}
@@ -28,10 +33,11 @@ export default function NameFields({
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label htmlFor={familyId} className="block text-sm font-medium text-text mb-1">
           {t('userAdmin.lastNameLabel')}
         </label>
         <input
+          id={familyId}
           type="text"
           value={familyName}
           onChange={(e) => onFamilyNameChange(e.target.value)}

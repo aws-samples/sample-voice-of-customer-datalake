@@ -1,43 +1,25 @@
-"""Tests for research step functions (initialize, analyze, synthesize, validate, save)."""
-import pytest
-from unittest.mock import patch, MagicMock
+"""Tests for research step functions (initialize, analyze, save) through their real collaborators.
+
+The step-by-step contract (progress trail, boundaries, defaults, report layout) is pinned in
+test_research_step_handler_mutation.py; these keep the paths that run the shared helpers
+unstubbed: persona prompt fields, the transactional project write, and the web-search hand-off.
+"""
 from decimal import Decimal
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 
-@pytest.fixture
-def mock_tables():
-    """Mock both feedback and projects tables."""
-    mock_fb = MagicMock()
-    mock_proj = MagicMock()
-    mock_proj.name = 'test-projects'
-
-    def transact_write_items(*, TransactItems):
-        for action in TransactItems:
-            put = action.get('Put')
-            if put:
-                mock_proj.put_item(Item=put['Item'])
-            update = action.get('Update')
-            if update:
-                mock_proj.update_item(
-                    Key=update['Key'],
-                    UpdateExpression=update['UpdateExpression'],
-                    ExpressionAttributeValues=update.get(
-                        'ExpressionAttributeValues', {},
-                    ),
-                )
-        return {}
-
-    mock_proj.meta.client.transact_write_items.side_effect = transact_write_items
-    with patch('research_step_handler._get_feedback_table', return_value=mock_fb), \
-         patch('research_step_handler._get_projects_table', return_value=mock_proj):
-        yield {'feedback': mock_fb, 'projects': mock_proj}
-
-
-@pytest.fixture
-def mock_job_status():
-    """Mock update_job_status."""
-    with patch('research_step_handler.update_job_status') as m:
-        yield m
+def _initialize_event(**config) -> dict:
+    """A step_initialize event for project p1/job j1 selecting nothing, plus *config*."""
+    return {
+        'project_id': 'p1', 'job_id': 'j1',
+        'research_config': {
+            'sources': [], 'categories': [], 'sentiments': [], 'days': 30,
+            'selected_persona_ids': [], 'selected_document_ids': [],
+            **config,
+        },
+    }
 
 
 @pytest.fixture
@@ -71,66 +53,12 @@ def feedback_items():
 class TestStepInitialize:
     """Tests for step_initialize function."""
 
+    @pytest.mark.usefixtures("mock_tables", "mock_job_status")
     @patch('research_step_handler.get_feedback_context')
-    @patch('research_step_handler.format_feedback_for_llm', return_value='formatted feedback')
-    @patch('research_step_handler.get_feedback_statistics', return_value='stats')
-    def test_successful_init(self, mock_stats, mock_format, mock_get_fb,
-                              mock_tables, mock_job_status, feedback_items):
-        from research_step_handler import step_initialize
-        mock_get_fb.return_value = feedback_items
-
-        event = {
-            'project_id': 'proj_1', 'job_id': 'job_1',
-            'research_config': {
-                'question': 'What are pain points?',
-                'sources': [], 'categories': [], 'sentiments': [], 'days': 30,
-                'selected_persona_ids': [], 'selected_document_ids': [],
-            }
-        }
-
-        result = step_initialize(event)
-
-        assert result['feedback_count'] == 2
-        assert result['feedback_context'] == 'formatted feedback'
-        assert result['feedback_stats'] == 'stats'
-        assert mock_job_status.call_count >= 3
-
-    @patch('research_step_handler.get_feedback_context')
-    def test_raises_on_no_feedback(self, mock_get_fb, mock_tables, mock_job_status):
-        from research_step_handler import step_initialize
-        mock_get_fb.return_value = []
-
-        event = {
-            'project_id': 'p1', 'job_id': 'j1',
-            'research_config': {'sources': [], 'categories': [], 'sentiments': [], 'days': 30}
-        }
-
-        with pytest.raises(ValueError, match="No feedback data found"):
-            step_initialize(event)
-
-    @patch('research_step_handler.get_feedback_context')
-    @patch('research_step_handler.format_feedback_for_llm')
-    @patch('research_step_handler.get_feedback_statistics', return_value='s')
-    def test_truncates_large_feedback(self, mock_stats, mock_format, mock_get_fb,
-                                       mock_tables, mock_job_status, feedback_items):
-        from research_step_handler import step_initialize
-        mock_get_fb.return_value = feedback_items
-        mock_format.return_value = 'x' * 60000
-
-        event = {
-            'project_id': 'p1', 'job_id': 'j1',
-            'research_config': {'sources': [], 'categories': [], 'sentiments': [], 'days': 30,
-                                'selected_persona_ids': [], 'selected_document_ids': []}
-        }
-
-        result = step_initialize(event)
-        assert len(result['feedback_context']) <= 50025  # 50000 + "\n\n[... truncated ...]"
-
-    @patch('research_step_handler.get_feedback_context')
-    @patch('research_step_handler.format_feedback_for_llm', return_value='fb')
-    @patch('research_step_handler.get_feedback_statistics', return_value='s')
-    def test_includes_personas_context(self, mock_stats, mock_format, mock_get_fb,
-                                        mock_tables, mock_job_status, feedback_items):
+    @patch('research_step_handler.format_feedback_for_llm', MagicMock(return_value='fb'))
+    @patch('research_step_handler.get_feedback_statistics', MagicMock(return_value='s'))
+    def test_includes_personas_context(self, mock_get_fb,
+                                        mock_tables, feedback_items):
         from research_step_handler import step_initialize
         mock_get_fb.return_value = feedback_items
 
@@ -147,13 +75,7 @@ class TestStepInitialize:
             ]
         }
 
-        event = {
-            'project_id': 'proj_1', 'job_id': 'job_1',
-            'research_config': {
-                'sources': [], 'categories': [], 'sentiments': [], 'days': 30,
-                'selected_persona_ids': ['p1'], 'selected_document_ids': [],
-            }
-        }
+        event = _initialize_event(selected_persona_ids=['p1'])
 
         result = step_initialize(event)
         personas_context = result['personas_context']
@@ -164,174 +86,11 @@ class TestStepInitialize:
         assert 'f1' in personas_context, 'the persona frustration never reached the prompt'
         assert 'Q' in personas_context, 'the persona quote never reached the prompt'
 
-    @patch('research_step_handler.get_feedback_context')
-    @patch('research_step_handler.format_feedback_for_llm', return_value='fb')
-    @patch('research_step_handler.get_feedback_statistics', return_value='s')
-    def test_includes_documents_context(self, mock_stats, mock_format, mock_get_fb,
-                                         mock_tables, mock_job_status, feedback_items):
-        from research_step_handler import step_initialize
-        mock_get_fb.return_value = feedback_items
-
-        mock_tables['projects'].query.return_value = {
-            'Items': [
-                {'sk': 'DOC#d1', 'document_id': 'd1', 'title': 'Doc Title',
-                 'document_type': 'research', 'content': 'Doc content here'},
-            ]
-        }
-
-        event = {
-            'project_id': 'proj_1', 'job_id': 'job_1',
-            'research_config': {
-                'sources': [], 'categories': [], 'sentiments': [], 'days': 30,
-                'selected_persona_ids': [], 'selected_document_ids': ['d1'],
-            }
-        }
-
-        result = step_initialize(event)
-        assert 'Doc Title' in result['documents_context']
-
-
-    @patch('research_step_handler.get_feedback_context')
-    @patch('research_step_handler.format_feedback_for_llm', return_value='fb')
-    @patch('research_step_handler.get_feedback_statistics', return_value='s')
-    def test_documents_context_key_always_present(self, mock_stats, mock_format, mock_get_fb,
-                                                  mock_tables, mock_job_status, feedback_items):
-        """Contract for the Step Functions resultSelector (issue #157): it
-        references $.Payload.documents_context unconditionally, so the key
-        must exist (as '') even when no reference documents are selected —
-        a missing key would fail the InitializeResearch state outright."""
-        from research_step_handler import step_initialize
-        mock_get_fb.return_value = feedback_items
-
-        event = {
-            'project_id': 'p1', 'job_id': 'j1',
-            'research_config': {'sources': [], 'categories': [], 'sentiments': [], 'days': 30,
-                                'selected_persona_ids': [], 'selected_document_ids': []}
-        }
-
-        result = step_initialize(event)
-        assert result['documents_context'] == ''
-
-
-class TestStepAnalyze:
-
-    def test_successful_analysis(self, mock_tables, mock_job_status, mock_converse):
-        from research_step_handler import step_analyze
-
-        event = {
-            'project_id': 'p1', 'job_id': 'j1',
-            'research_config': {'question': 'What are pain points?'},
-            'feedback_context': 'Customer feedback data',
-            'feedback_stats': 'Stats here',
-        }
-
-        result = step_analyze(event)
-        assert result['analysis'] == 'AI analysis result'
-        mock_converse.assert_called_once()
-
-    def test_includes_personas_context(self, mock_tables, mock_job_status, mock_converse):
-        from research_step_handler import step_analyze
-
-        event = {
-            'project_id': 'p1', 'job_id': 'j1',
-            'research_config': {'question': 'Q?'},
-            'feedback_context': 'fb', 'feedback_stats': 's',
-            'personas_context': 'Persona info here',
-        }
-
-        step_analyze(event)
-        prompt = mock_converse.call_args.kwargs.get('prompt', '')
-        assert 'Persona info' in prompt
-
-    def test_includes_documents_context(self, mock_tables, mock_job_status, mock_converse):
-        """Selected reference documents must reach the analysis prompt
-        (issue #157: the SF resultSelector used to drop them silently)."""
-        from research_step_handler import step_analyze
-
-        event = {
-            'project_id': 'p1', 'job_id': 'j1',
-            'research_config': {'question': 'Q?'},
-            'feedback_context': 'fb', 'feedback_stats': 's',
-            'documents_context': '## Reference Documents\n\n### Doc Title (PRD)\n\nDoc body',
-        }
-
-        step_analyze(event)
-        prompt = mock_converse.call_args.kwargs.get('prompt', '')
-        assert 'Doc Title' in prompt
-
-    def test_with_response_language(self, mock_tables, mock_job_status, mock_converse):
-        from research_step_handler import step_analyze
-
-        event = {
-            'project_id': 'p1', 'job_id': 'j1',
-            'research_config': {'question': 'Q?', 'response_language': 'es'},
-            'feedback_context': 'fb', 'feedback_stats': 's',
-        }
-
-        step_analyze(event)
-        system_prompt = mock_converse.call_args.kwargs.get('system_prompt', '')
-        assert 'Spanish' in system_prompt
-
-
-class TestStepSynthesize:
-
-    def test_successful_synthesis(self, mock_tables, mock_job_status, mock_converse):
-        from research_step_handler import step_synthesize
-
-        event = {
-            'project_id': 'p1', 'job_id': 'j1',
-            'analysis': 'Previous analysis text',
-            'research_config': {},
-        }
-
-        result = step_synthesize(event)
-        assert result['synthesis'] == 'AI analysis result'
-
-    def test_with_language(self, mock_tables, mock_job_status, mock_converse):
-        from research_step_handler import step_synthesize
-
-        event = {
-            'project_id': 'p1', 'job_id': 'j1',
-            'analysis': 'Analysis',
-            'research_config': {'response_language': 'fr'},
-        }
-
-        step_synthesize(event)
-        system_prompt = mock_converse.call_args.kwargs.get('system_prompt', '')
-        assert 'French' in system_prompt
-
-
-class TestStepValidate:
-
-    def test_successful_validation(self, mock_tables, mock_job_status, mock_converse):
-        from research_step_handler import step_validate
-
-        event = {
-            'project_id': 'p1', 'job_id': 'j1',
-            'analysis': 'Analysis text', 'synthesis': 'Synthesis text',
-            'research_config': {},
-        }
-
-        result = step_validate(event)
-        assert result['validation'] == 'AI analysis result'
-
-    def test_with_language(self, mock_tables, mock_job_status, mock_converse):
-        from research_step_handler import step_validate
-
-        event = {
-            'project_id': 'p1', 'job_id': 'j1',
-            'analysis': 'A', 'synthesis': 'S',
-            'research_config': {'response_language': 'de'},
-        }
-
-        step_validate(event)
-        system_prompt = mock_converse.call_args.kwargs.get('system_prompt', '')
-        assert 'German' in system_prompt
-
 
 class TestStepSave:
 
-    def test_successful_save(self, mock_tables, mock_job_status):
+    @pytest.mark.usefixtures("mock_tables", "mock_job_status")
+    def test_successful_save(self, mock_tables):
         from research_step_handler import step_save
 
         event = {
@@ -349,311 +108,65 @@ class TestStepSave:
         mock_tables['projects'].put_item.assert_called_once()
         mock_tables['projects'].update_item.assert_called_once()
 
-    def test_truncates_large_report(self, mock_tables, mock_job_status):
+    @pytest.mark.parametrize('basis', ['review', 'imported'])
+    @pytest.mark.usefixtures("mock_job_status")
+    def test_the_report_and_the_item_record_the_date_basis(self, mock_tables, basis):
+        """#258: the artifact says which dates the window applied to."""
         from research_step_handler import step_save
 
-        event = {
+        step_save({
             'project_id': 'p1', 'job_id': 'j1',
-            'research_config': {'question': 'Q?', 'title': 'T', 'filters': {}},
-            'feedback_count': 5,
-            'analysis': 'x' * 200000,
-            'synthesis': 'y' * 200000,
-            'validation': 'z' * 200000,
-        }
+            'research_config': {'question': 'Q?', 'filters': {}, 'date_basis': basis},
+            'feedback_count': 1, 'analysis': 'a', 'synthesis': 's', 'validation': 'v',
+        })
 
-        result = step_save(event)
-        assert result['success'] is True
-        put_call = mock_tables['projects'].put_item.call_args
-        content = put_call.kwargs['Item']['content']
-        assert len(content) <= 360000
+        item = mock_tables['projects'].put_item.call_args.kwargs['Item']
+        assert item['date_basis'] == basis
+        assert f'| Date basis: {basis}' in item['content']
 
 
-class TestLambdaHandlerRouting:
-
-    @patch('research_step_handler.step_synthesize')
-    def test_routes_synthesize(self, mock_step, lambda_context):
-        from research_step_handler import lambda_handler
-        mock_step.return_value = {'synthesis': 'test'}
-        event = {'step': 'synthesize', 'project_id': 'p1', 'job_id': 'j1'}
-        lambda_handler(event, lambda_context)
-        mock_step.assert_called_once()
-
-    @patch('research_step_handler.step_validate')
-    def test_routes_validate(self, mock_step, lambda_context):
-        from research_step_handler import lambda_handler
-        mock_step.return_value = {'validation': 'test'}
-        event = {'step': 'validate', 'project_id': 'p1', 'job_id': 'j1'}
-        lambda_handler(event, lambda_context)
-        mock_step.assert_called_once()
-
-    @patch('research_step_handler.step_save')
-    def test_routes_save(self, mock_step, lambda_context):
-        from research_step_handler import lambda_handler
-        mock_step.return_value = {'success': True}
-        event = {'step': 'save', 'project_id': 'p1', 'job_id': 'j1'}
-        lambda_handler(event, lambda_context)
-        mock_step.assert_called_once()
-
-    def test_bedrock_throttling_propagates(self, lambda_context):
-        from research_step_handler import lambda_handler, BedrockThrottlingException
-        with patch('research_step_handler.step_analyze',
-                   side_effect=BedrockThrottlingException("Throttled")):
-            with pytest.raises(BedrockThrottlingException):
-                lambda_handler({'step': 'analyze'}, lambda_context)
-
-
-class TestTableAccessors:
-
-    @patch('research_step_handler.get_feedback_table')
-    def test_get_feedback_table_lazy(self, mock_get):
-        import research_step_handler as rsh
-        rsh.feedback_table = None
-        mock_get.return_value = MagicMock()
-        result = rsh._get_feedback_table()
-        assert result is not None
-        mock_get.assert_called_once()
-
-    @patch('research_step_handler.get_projects_table')
-    def test_get_projects_table_lazy(self, mock_get):
-        import research_step_handler as rsh
-        rsh.projects_table = None
-        mock_get.return_value = MagicMock()
-        result = rsh._get_projects_table()
-        assert result is not None
-        mock_get.assert_called_once()
-
-
-
+@pytest.mark.usefixtures("mock_tables", "mock_job_status")
 class TestStepInitializeWebSearch:
-    """Web search grounding in step_initialize (issue #68 / AgentCore; agentic
-    loop since #207).
+    """Web search grounding in step_initialize (issue #68 / AgentCore; agentic loop since #207)."""
 
-    Contract pinned here: 'web_context' AND 'web_search_queries' are ALWAYS
-    present in the return value — the Step Functions resultSelector references
-    both unconditionally, so a missing key would fail the whole state, and a
-    web search failure must degrade to ''/[] instead of failing the research
-    job.
-    """
-
-    def _event(self, use_web_search):
-        return {
-            'project_id': 'p1', 'job_id': 'j1',
-            'research_config': {
-                'question': 'What are pain points?',
-                'sources': [], 'categories': [], 'sentiments': [], 'days': 30,
-                'selected_persona_ids': [], 'selected_document_ids': [],
-                'use_web_search': use_web_search,
-            }
-        }
-
-    @patch('research_step_handler.get_feedback_context')
-    @patch('research_step_handler.format_feedback_for_llm', return_value='fb')
-    @patch('research_step_handler.get_feedback_statistics', return_value='s')
-    def test_web_keys_always_present_when_disabled(self, mock_stats, mock_format, mock_get_fb,
-                                                   mock_tables, mock_job_status, feedback_items):
-        from research_step_handler import step_initialize
-        mock_get_fb.return_value = feedback_items
-
-        result = step_initialize(self._event(use_web_search=False))
-
-        assert result['web_context'] == ''
-        assert result['web_search_queries'] == []
-
-    @patch('research_step_handler.run_agentic_web_search')
-    @patch('research_step_handler.is_web_search_configured', return_value=True)
-    @patch('research_step_handler.get_feedback_context')
-    @patch('research_step_handler.format_feedback_for_llm', return_value='fb')
-    @patch('research_step_handler.get_feedback_statistics', return_value='stats-hint')
-    def test_runs_agentic_search_with_question_and_stats_hint(self, mock_stats, mock_format, mock_get_fb,
-                                                              mock_configured, mock_agentic,
-                                                              mock_tables, mock_job_status, feedback_items):
+    @patch('research_step_handler.is_web_search_configured', MagicMock(return_value=True))
+    def test_runs_agentic_search_with_question_and_stats_hint(self, feedback_items):
         """The loop gets the research question plus the feedback stats as a
         domain hint, and its outcome lands in web_context/web_search_queries."""
         from research_step_handler import step_initialize
+
         from shared.agentic_search import AgenticSearchOutcome
-        mock_get_fb.return_value = feedback_items
-        mock_agentic.return_value = AgenticSearchOutcome(
+        outcome = AgenticSearchOutcome(
             context='### Search: "q1"\n\n1. T\n   Source: https://t.example\n   Snippet',
             queries=['q1', 'q2'],
             result_count=1,
         )
-
-        result = step_initialize(self._event(use_web_search=True))
+        with patch('research_step_handler.get_feedback_context', return_value=feedback_items), \
+                patch('research_step_handler.format_feedback_for_llm', return_value='fb'), \
+                patch('research_step_handler.get_feedback_statistics', return_value='stats-hint'), \
+                patch('research_step_handler.run_agentic_web_search', return_value=outcome) as mock_agentic:
+            result = step_initialize(_initialize_event(question='What are pain points?', use_web_search=True))
 
         mock_agentic.assert_called_once_with('What are pain points?', context_hint='stats-hint')
         assert 'https://t.example' in result['web_context']
         assert result['web_search_queries'] == ['q1', 'q2']
 
-    @patch('research_step_handler.run_agentic_web_search')
-    @patch('research_step_handler.is_web_search_configured', return_value=True)
-    @patch('research_step_handler.get_feedback_context')
-    @patch('research_step_handler.format_feedback_for_llm', return_value='fb')
-    @patch('research_step_handler.get_feedback_statistics', return_value='s')
-    def test_search_failure_degrades_to_empty_context(self, mock_stats, mock_format, mock_get_fb,
-                                                      mock_configured, mock_agentic,
-                                                      mock_tables, mock_job_status, feedback_items):
-        """run_agentic_web_search degrades internally, but even if it raises
-        (any exception class — the loop spans Bedrock AND the gateway), the
-        job must proceed without web context."""
-        from research_step_handler import step_initialize
-        mock_get_fb.return_value = feedback_items
-        mock_agentic.side_effect = RuntimeError('planner and gateway both down')
-
-        result = step_initialize(self._event(use_web_search=True))
-
-        assert result['web_context'] == ''
-        assert result['web_search_queries'] == []
-        assert result['feedback_count'] == 2  # research proceeded
-
-    @patch('research_step_handler.run_agentic_web_search')
-    @patch('research_step_handler.is_web_search_configured', return_value=True)
-    @patch('research_step_handler.get_feedback_context')
-    @patch('research_step_handler.format_feedback_for_llm', return_value='fb')
-    @patch('research_step_handler.get_feedback_statistics', return_value='s')
-    def test_non_boolean_truthy_values_do_not_enable_web_search(self, mock_stats, mock_format, mock_get_fb,
-                                                                mock_configured, mock_agentic,
-                                                                mock_tables, mock_job_status, feedback_items):
-        """Strict-boolean parity with projects_handler: replayed or foreign
-        state-machine inputs carrying the STRING \"false\" (or \"true\") must
-        not trigger a billed search."""
-        from research_step_handler import step_initialize
-        mock_get_fb.return_value = feedback_items
-
-        for value in ('false', 'true', 1, 'yes'):
-            event = self._event(use_web_search=value)
-            result = step_initialize(event)
-            assert result['web_context'] == ''
-            assert result['web_search_queries'] == []
-
-        mock_agentic.assert_not_called()
-
-    @patch('research_step_handler.run_agentic_web_search')
-    @patch('research_step_handler.is_web_search_configured', return_value=False)
-    @patch('research_step_handler.get_feedback_context')
-    @patch('research_step_handler.format_feedback_for_llm', return_value='fb')
-    @patch('research_step_handler.get_feedback_statistics', return_value='s')
-    def test_requested_but_unconfigured_skips_without_calling(self, mock_stats, mock_format, mock_get_fb,
-                                                              mock_configured, mock_agentic,
-                                                              mock_tables, mock_job_status, feedback_items):
-        from research_step_handler import step_initialize
-        mock_get_fb.return_value = feedback_items
-
-        result = step_initialize(self._event(use_web_search=True))
-
-        mock_agentic.assert_not_called()
-        assert result['web_context'] == ''
-        assert result['web_search_queries'] == []
-
 
 class TestStepAnalyzeWebContext:
     """Web results reach the analysis prompt with attribution rules."""
 
-    def _event(self, web_context):
-        return {
+    @pytest.mark.usefixtures("mock_job_status")
+    def test_web_section_included_with_citation_instructions(self, mock_converse):
+        from research_step_handler import step_analyze
+
+        step_analyze({
             'project_id': 'p1', 'job_id': 'j1',
             'research_config': {'question': 'Q?'},
             'feedback_context': 'fb', 'feedback_stats': 's',
-            'web_context': web_context,
-        }
-
-    def test_web_section_included_with_citation_instructions(self, mock_job_status, mock_converse):
-        from research_step_handler import step_analyze
-
-        step_analyze(self._event('1. [Title](https://t.example)\n   Snippet'))
+            'web_context': '1. [Title](https://t.example)\n   Snippet',
+        })
 
         prompt = mock_converse.call_args.kwargs['prompt']
         assert 'PUBLIC WEB SEARCH RESULTS' in prompt
         assert 'https://t.example' in prompt
         assert 'cite its source URL' in prompt
-
-    def test_no_web_section_when_context_empty(self, mock_job_status, mock_converse):
-        from research_step_handler import step_analyze
-
-        step_analyze(self._event(''))
-
-        prompt = mock_converse.call_args.kwargs['prompt']
-        assert 'PUBLIC WEB SEARCH RESULTS' not in prompt
-
-
-class TestStepSaveWebSearchNote:
-    """The saved report discloses that (and how) web search was used."""
-
-    def _event(self, use_web_search, web_search_queries=None):
-        event = {
-            'project_id': 'p1', 'job_id': 'j1',
-            'research_config': {'question': 'Q?', 'title': 'T', 'filters': {}, 'use_web_search': use_web_search},
-            'feedback_count': 2, 'analysis': 'a', 'synthesis': 's', 'validation': 'v',
-        }
-        if web_search_queries is not None:
-            event['web_search_queries'] = web_search_queries
-        return event
-
-    def test_report_notes_web_search_when_enabled(self, mock_tables, mock_job_status):
-        """Executions pinned to a pre-#207 state-machine definition don't pass
-        web_search_queries — the header must still disclose 'enabled'."""
-        from research_step_handler import step_save
-
-        step_save(self._event(use_web_search=True))
-
-        saved = mock_tables['projects'].put_item.call_args.kwargs['Item']
-        assert 'Web search: enabled' in saved['content']
-
-    def test_report_discloses_query_count_and_lists_searches(self, mock_tables, mock_job_status):
-        from research_step_handler import step_save
-
-        step_save(self._event(use_web_search=True, web_search_queries=['acme churn 2026', 'app redesign backlash']))
-
-        saved = mock_tables['projects'].put_item.call_args.kwargs['Item']
-        assert 'Web search: enabled (2 queries)' in saved['content']
-        assert '## Web Searches' in saved['content']
-        assert '1. "acme churn 2026"' in saved['content']
-        assert '2. "app redesign backlash"' in saved['content']
-
-    def test_single_query_disclosed_in_singular(self, mock_tables, mock_job_status):
-        from research_step_handler import step_save
-
-        step_save(self._event(use_web_search=True, web_search_queries=['acme churn 2026']))
-
-        saved = mock_tables['projects'].put_item.call_args.kwargs['Item']
-        assert 'Web search: enabled (1 query)' in saved['content']
-
-    def test_report_silent_when_disabled(self, mock_tables, mock_job_status):
-        from research_step_handler import step_save
-
-        step_save(self._event(use_web_search=False))
-
-        saved = mock_tables['projects'].put_item.call_args.kwargs['Item']
-        assert 'Web search' not in saved['content']
-
-    def test_report_silent_for_string_false(self, mock_tables, mock_job_status):
-        """Disclosure parity with the strict gating in step_initialize: a
-        foreign \"false\" string skips the search, so the report must not
-        claim web search was used — even if a queries list is present."""
-        from research_step_handler import step_save
-
-        step_save(self._event(use_web_search='false', web_search_queries=['q']))
-
-        saved = mock_tables['projects'].put_item.call_args.kwargs['Item']
-        assert 'Web search' not in saved['content']
-        assert '## Web Searches' not in saved['content']
-
-    def test_non_string_queries_are_ignored_in_disclosure(self, mock_tables, mock_job_status):
-        """State-machine input is an unvalidated boundary; junk entries must
-        not crash the save step or leak into the report."""
-        from research_step_handler import step_save
-
-        step_save(self._event(use_web_search=True, web_search_queries=[None, 42, '  ', 'real query']))
-
-        saved = mock_tables['projects'].put_item.call_args.kwargs['Item']
-        assert 'Web search: enabled (1 query)' in saved['content']
-        assert '1. "real query"' in saved['content']
-
-    def test_multiline_query_is_flattened_in_disclosure(self, mock_tables, mock_job_status):
-        """Queries land verbatim in report markdown — embedded newlines must
-        not break the numbered-list layout."""
-        from research_step_handler import step_save
-
-        step_save(self._event(use_web_search=True, web_search_queries=['line one\nline   two']))
-
-        saved = mock_tables['projects'].put_item.call_args.kwargs['Item']
-        assert '1. "line one line two"' in saved['content']

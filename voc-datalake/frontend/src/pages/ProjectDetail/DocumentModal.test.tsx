@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import DocumentModal from './DocumentModal'
 import { DocumentModalWrapper } from './ProjectModals'
 import type { ProjectDocument } from '../../api/types'
+import { required } from '../../components/component-spec-fixtures'
 
 describe('DocumentModal', () => {
   const defaultProps = {
@@ -61,8 +62,8 @@ describe('DocumentModal', () => {
     render(<DocumentModal {...defaultProps} onTitleChange={onTitleChange} />)
     
     await user.type(screen.getByPlaceholderText('Document title...'), 'New')
-    // eslint-disable-next-line vitest/prefer-called-with
-    expect(onTitleChange).toHaveBeenCalled()
+    // A controlled input held at '', so each keystroke reports just that key.
+    expect(onTitleChange.mock.calls).toStrictEqual([['N'], ['e'], ['w']])
   })
 
   it('calls onContentChange when content textarea changes', async () => {
@@ -71,26 +72,49 @@ describe('DocumentModal', () => {
     render(<DocumentModal {...defaultProps} onContentChange={onContentChange} />)
     
     await user.type(screen.getByPlaceholderText(/Write your document/), 'Text')
-    // eslint-disable-next-line vitest/prefer-called-with
-    expect(onContentChange).toHaveBeenCalled()
+    expect(onContentChange.mock.calls).toStrictEqual([['T'], ['e'], ['x'], ['t']])
   })
 
-  it('calls onClose when Cancel button is clicked', async () => {
+  it.each([
+    ['Cancel button', () => screen.getByText('Cancel')],
+    // The X button is the first button the modal renders.
+    ['X button', () => required(screen.getAllByRole('button').at(0), 'the X button')],
+  ])('calls onClose when the %s is clicked', async (_name, closeButton) => {
     const user = userEvent.setup()
     const onClose = vi.fn()
     render(<DocumentModal {...defaultProps} onClose={onClose} />)
-    
-    await user.click(screen.getByText('Cancel'))
+
+    await user.click(closeButton())
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('calls onClose when X button is clicked', async () => {
+  // Design audit D-OVL: Escape did nothing on an empty Create Document dialog.
+  it('closes on Escape while nothing has been written', async () => {
     const user = userEvent.setup()
     const onClose = vi.fn()
-    render(<DocumentModal {...defaultProps} onClose={onClose} />)
-    
-    const buttons = screen.getAllByRole('button')
-    await user.click(buttons[0]) // X button is first
+    render(<DocumentModal {...defaultProps} title="" content="" onClose={onClose} />)
+    await user.keyboard('{Escape}')
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('asks before Escape discards a typed title (unsaved-changes guard, E2E F6)', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    const { rerender } = render(<DocumentModal {...defaultProps} onClose={onClose} />)
+    // The host owns the fields: typing arrives as a new `title` prop.
+    rerender(<DocumentModal {...defaultProps} title="Draft" onClose={onClose} />)
+    await user.keyboard('{Escape}')
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog', { name: 'Unsaved changes' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Discard' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('closes on Escape when nothing changed since it opened', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    render(<DocumentModal {...defaultProps} isEditing title="Saved title" content="Saved body" onClose={onClose} />)
+    await user.keyboard('{Escape}')
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 

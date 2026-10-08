@@ -1,12 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { UserEvent } from '@testing-library/user-event'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { createTestQueryClient } from '../../test/query-client'
+import { configStoreModule } from '../Categories/categories-fixtures'
 
 // Mock API
-const mockGetFeedbackById = vi.fn()
-const mockGetSimilarFeedback = vi.fn()
+const mockGetFeedbackById = vi.fn<(...args: unknown[]) => unknown>()
+const mockGetSimilarFeedback = vi.fn<(...args: unknown[]) => unknown>()
 
 vi.mock('../../api/client', () => ({
   api: {
@@ -15,31 +18,67 @@ vi.mock('../../api/client', () => ({
   },
 }))
 
-vi.mock('../../store/configStore', () => ({
-  useConfigStore: () => ({
-    config: { apiEndpoint: 'https://api.example.com' },
-  }),
-}))
+vi.mock('../../store/configStore', () => configStoreModule())
 
 import FeedbackDetail from './FeedbackDetail'
 
-function createWrapper(feedbackId: string = 'test-123') {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
+const FEEDBACK_ID = 'test-123'
+
+/**
+ * A /categories probe route so tests can assert where tag-click deep-links land
+ * (the Feedback list page was consolidated into Categories, issue #198).
+ */
+function CategoriesProbe() {
+  return <div data-testid="categories-probe">{window.location.search}</div>
+}
+
+/**
+ * Mount the page on `/feedback/:id`, optionally with the Categories probe route
+ * alongside it for the navigation cases.
+ */
+function createWrapper({ withCategoriesProbe = false } = {}) {
+  const queryClient = createTestQueryClient()
   return ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[`/feedback/${feedbackId}`]}>
+      <MemoryRouter initialEntries={[`/feedback/${FEEDBACK_ID}`]}>
         <Routes>
           <Route path="/feedback/:id" element={children} />
+          {withCategoriesProbe && <Route path="/categories" element={<CategoriesProbe />} />}
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>
   )
 }
 
+function renderDetail(options?: { withCategoriesProbe: boolean }) {
+  render(<FeedbackDetail />, { wrapper: createWrapper(options) })
+}
+
+/** Render with the Categories probe route and a user ready to click a tag. */
+function renderDetailWithProbe(): UserEvent {
+  const user = userEvent.setup()
+  renderDetail({ withCategoriesProbe: true })
+  return user
+}
+
+/** Render, then wait until `text` is on screen. */
+async function expectRenderedText(text: string | RegExp): Promise<void> {
+  renderDetail()
+  await waitFor(() => {
+    expect(screen.getByText(text)).toBeInTheDocument()
+  })
+}
+
+/** Render, then wait until the detail read was issued for the routed id. */
+async function expectDetailFetched(): Promise<void> {
+  renderDetail()
+  await waitFor(() => {
+    expect(mockGetFeedbackById).toHaveBeenCalledWith(FEEDBACK_ID)
+  })
+}
+
 const mockFeedback = {
-  feedback_id: 'test-123',
+  feedback_id: FEEDBACK_ID,
   source_platform: 'webscraper',
   source_channel: 'mentions',
   original_text: 'This is a great product! Really love the quality.',
@@ -82,30 +121,6 @@ const mockSimilarFeedback = {
   ],
 }
 
-/**
- * Wrapper with a /categories probe route so tests can assert where tag-click
- * deep-links land (the Feedback list page was consolidated into Categories,
- * issue #198).
- */
-function createNavigationWrapper(feedbackId: string = 'test-123') {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
-  function CategoriesProbe() {
-    return <div data-testid="categories-probe">{window.location.search}</div>
-  }
-  return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[`/feedback/${feedbackId}`]}>
-        <Routes>
-          <Route path="/feedback/:id" element={children} />
-          <Route path="/categories" element={<CategoriesProbe />} />
-        </Routes>
-      </MemoryRouter>
-    </QueryClientProvider>
-  )
-}
-
 describe('FeedbackDetail', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -113,38 +128,60 @@ describe('FeedbackDetail', () => {
     mockGetSimilarFeedback.mockResolvedValue(mockSimilarFeedback)
   })
 
+  describe('similar feedback & a11y', () => {
+    it('shows similar items after expanding, and an empty state when there are none', async () => {
+      const user = userEvent.setup()
+      renderDetail()
+
+      const toggle = await screen.findByRole('button', { name: 'Show' })
+      expect(toggle).toHaveAttribute('aria-expanded', 'false')
+      await user.click(toggle)
+      expect(await screen.findByText('Also love this product!')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Hide' })).toHaveAttribute('aria-expanded', 'true')
+    })
+
+    it('says "No similar feedback found" instead of loading forever on an empty result', async () => {
+      mockGetSimilarFeedback.mockResolvedValue({ items: [] })
+      const user = userEvent.setup()
+      renderDetail()
+
+      await user.click(await screen.findByRole('button', { name: 'Show' }))
+      expect(await screen.findByText('No similar feedback found')).toBeInTheDocument()
+      expect(screen.queryByText('Loading similar feedback...')).not.toBeInTheDocument()
+    })
+
+    it('labels the icon-only copy buttons and keeps headings in order (h1 → h2)', async () => {
+      renderDetail()
+
+      const copyButtons = await screen.findAllByRole('button', { name: 'Copy to clipboard' })
+      expect(copyButtons.length).toBeGreaterThan(0)
+      expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { level: 2, name: 'Original Feedback' })).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { level: 4 })).not.toBeInTheDocument()
+    })
+  })
+
   describe('tag-click deep-links land on Categories (issue #198)', () => {
     it('navigates to /categories with the category param when the category tag is clicked', async () => {
-      const user = userEvent.setup()
-      render(<FeedbackDetail />, { wrapper: createNavigationWrapper() })
+      const user = renderDetailWithProbe()
 
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'product_quality' })).toBeInTheDocument()
-      })
-      await user.click(screen.getByRole('button', { name: 'product_quality' }))
+      await user.click(await screen.findByRole('button', { name: 'product_quality' }))
 
       expect(screen.getByTestId('categories-probe')).toBeInTheDocument()
     })
 
     it('navigates to /categories when the source tag is clicked', async () => {
-      const user = userEvent.setup()
-      render(<FeedbackDetail />, { wrapper: createNavigationWrapper() })
+      const user = renderDetailWithProbe()
 
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'webscraper' })).toBeInTheDocument()
-      })
-      await user.click(screen.getByRole('button', { name: 'webscraper' }))
+      await user.click(await screen.findByRole('button', { name: 'webscraper' }))
 
       expect(screen.getByTestId('categories-probe')).toBeInTheDocument()
     })
 
     it('back link points to /categories', async () => {
-      render(<FeedbackDetail />, { wrapper: createNavigationWrapper() })
+      renderDetail({ withCategoriesProbe: true })
 
-      await waitFor(() => {
-        expect(screen.getByText(/Back to feedback/)).toBeInTheDocument()
-      })
-      const backLink = screen.getByText(/Back to feedback/).closest('a')
+      const backLink = (await screen.findByText(/Back to feedback/)).closest('a')
       expect(backLink).toHaveAttribute('href', '/categories')
     })
   })
@@ -153,7 +190,7 @@ describe('FeedbackDetail', () => {
     it('shows loading spinner while fetching', () => {
       mockGetFeedbackById.mockReturnValue(new Promise(() => {}))
 
-      render(<FeedbackDetail />, { wrapper: createWrapper() })
+      renderDetail()
 
       expect(document.querySelector('.animate-spin')).toBeInTheDocument()
     })
@@ -161,73 +198,41 @@ describe('FeedbackDetail', () => {
 
   describe('feedback display', () => {
     it('renders feedback header with platform', async () => {
-      render(<FeedbackDetail />, { wrapper: createWrapper() })
-
-      await waitFor(() => {
-        expect(screen.getByText(/ID: test-123/)).toBeInTheDocument()
-      })
+      await expectRenderedText(/ID: test-123/)
     })
 
     it('renders feedback ID', async () => {
-      render(<FeedbackDetail />, { wrapper: createWrapper() })
-
-      await waitFor(() => {
-        expect(screen.getByText(/ID: test-123/)).toBeInTheDocument()
-      })
+      await expectRenderedText(/ID: test-123/)
     })
 
     it('renders sentiment badge', async () => {
-      render(<FeedbackDetail />, { wrapper: createWrapper() })
-
-      await waitFor(() => {
-        expect(screen.getByText('positive')).toBeInTheDocument()
-      })
+      await expectRenderedText('positive')
     })
 
     it('renders original text', async () => {
-      render(<FeedbackDetail />, { wrapper: createWrapper() })
-
-      await waitFor(() => {
-        expect(screen.getByText(/this is a great product/i)).toBeInTheDocument()
-      })
+      await expectRenderedText(/this is a great product/i)
     })
 
     it('renders rating stars', async () => {
-      render(<FeedbackDetail />, { wrapper: createWrapper() })
-
-      await waitFor(() => {
-        expect(screen.getByText('Rating:')).toBeInTheDocument()
-      })
+      await expectRenderedText('Rating:')
     })
 
     it('renders classification section', async () => {
-      render(<FeedbackDetail />, { wrapper: createWrapper() })
-
-      await waitFor(() => {
-        expect(screen.getByText('Classification')).toBeInTheDocument()
-      })
+      await expectRenderedText('Classification')
     })
 
     it('renders persona section when available', async () => {
-      render(<FeedbackDetail />, { wrapper: createWrapper() })
-
-      await waitFor(() => {
-        expect(screen.getByText('Customer Persona')).toBeInTheDocument()
-      })
+      await expectRenderedText('Customer Persona')
     })
   })
 
   describe('suggested responses', () => {
     it('renders suggested responses section', async () => {
-      render(<FeedbackDetail />, { wrapper: createWrapper() })
-
-      await waitFor(() => {
-        expect(screen.getByText('Suggested Responses')).toBeInTheDocument()
-      })
+      await expectRenderedText('Suggested Responses')
     })
 
     it('shows copy button for responses', async () => {
-      render(<FeedbackDetail />, { wrapper: createWrapper() })
+      renderDetail()
 
       await waitFor(() => {
         const copyButtons = screen.getAllByTitle(/copy/i)
@@ -238,29 +243,17 @@ describe('FeedbackDetail', () => {
 
   describe('similar feedback', () => {
     it('calls API to get feedback details', async () => {
-      render(<FeedbackDetail />, { wrapper: createWrapper() })
-
-      await waitFor(() => {
-        expect(mockGetFeedbackById).toHaveBeenCalledWith('test-123')
-      })
+      await expectDetailFetched()
     })
   })
 
   describe('navigation', () => {
     it('renders page content after loading', async () => {
-      render(<FeedbackDetail />, { wrapper: createWrapper() })
-
-      await waitFor(() => {
-        expect(screen.getByText(/ID: test-123/)).toBeInTheDocument()
-      })
+      await expectRenderedText(/ID: test-123/)
     })
 
     it('fetches feedback on mount', async () => {
-      render(<FeedbackDetail />, { wrapper: createWrapper() })
-
-      await waitFor(() => {
-        expect(mockGetFeedbackById).toHaveBeenCalledWith('test-123')
-      })
+      await expectDetailFetched()
     })
   })
 
@@ -268,17 +261,13 @@ describe('FeedbackDetail', () => {
     it('shows not found message when feedback is null', async () => {
       mockGetFeedbackById.mockResolvedValue(null)
 
-      render(<FeedbackDetail />, { wrapper: createWrapper() })
-
-      await waitFor(() => {
-        expect(screen.getByText('Feedback not found')).toBeInTheDocument()
-      })
+      await expectRenderedText('Feedback not found')
     })
 
     it('shows link back to feedback list', async () => {
       mockGetFeedbackById.mockResolvedValue(null)
 
-      render(<FeedbackDetail />, { wrapper: createWrapper() })
+      renderDetail()
 
       await waitFor(() => {
         expect(screen.getByRole('link', { name: /back to feedback list/i })).toBeInTheDocument()
@@ -294,7 +283,7 @@ describe('FeedbackDetail', () => {
         normalized_text: 'This is the translated text',
       })
 
-      render(<FeedbackDetail />, { wrapper: createWrapper() })
+      renderDetail()
 
       await waitFor(() => {
         expect(screen.getByText(/translated from es/i)).toBeInTheDocument()

@@ -49,25 +49,48 @@ Plugins fetch data from external sources and send to the processing queue.
 
 ## Step 2: Message Validation
 
-Before processing, messages are validated using Pydantic schemas. For detailed validation implementation including security sanitization, see [Plugin Architecture - SQS Message Validation](plugin-architecture.md#sqs-message-validation-layer).
+Before processing, every message is validated against `IngestMessage` in
+`lambda/shared/ingest_schemas.py` — the one source of truth, shipped in the
+processor bundle (`processor/*` + `shared/`). Plugins and tests import it from
+there too. The import is unconditional: if the schema cannot be imported the
+processor fails its cold start rather than running unvalidated (issue #249 — it
+used to live under `plugins/`, which the bundle never contained, so validation was
+silently off in every deployment). For sanitization details see
+[Plugin Architecture - SQS Message Validation](plugin-architecture.md#sqs-message-validation-layer).
 
 ### Validation Rules
 
+Unknown fields are rejected (`extra='forbid'`), so every field a producer sends
+is declared. `plugins/_shared/test/test_schemas.py::TestProducerShapes` pins one
+message per producer (webscraper, app reviews iOS/Android, s3_import,
+synthetic_reviews, GitHub webhook, manual-import confirm/CSV/JSON, feedback-form
+submit) — add a field to a producer and its case there.
+
 | Field | Rule |
 |-------|------|
-| `id` | Required, max 256 chars |
-| `source_platform` | Required, lowercase alphanumeric |
+| `id` | Required, non-blank, max 256 chars |
+| `source_platform` | Required, non-blank display name, max 256 (e.g. `MyApp_iOS`, `S3 - surveys`, a scraper's name) |
 | `text` | Required, max 50KB |
-| `created_at` | Required, valid ISO 8601, not future |
-| `rating` | Optional, 1-5 range |
-| `url` | Optional, must be http/https |
+| `created_at` | Required; not more than 1 day in the future. A blank or unparseable value (s3_import's `""`, a scraped "3 days ago") falls back to `ingested_at`, else now |
+| `rating` | Optional, 1-10 (the widget's numeric scale is 1..10) |
+| `url`, `source_url` | Optional, http/https, max 4096 |
+| `source_channel` | Optional, max 128 (`form_<form id>`) |
+| `ingestion_method`, `source_origin`, `manual_import_job_id` | Optional manual-import provenance (64 / 256 / 256) |
+| `preset_category`, `preset_subcategory` | Optional feedback-form routing, max 128 |
+| `metadata` | Flat primitives, plus `custom_fields`: ≤20 scalar answers, keys ≤64, values ≤1000 |
 
 ### Validation Failures
 
 Failed messages are:
-- Logged to DynamoDB (`LOGS#validation#{source}`)
-- Removed from queue (not retried)
+- Logged to DynamoDB (`LOGS#validation#{source}`) and counted (`ValidationFailures` metric)
+- Failed as a batch item (`MessageRejectedError`), so SQS keeps them and, after
+  `maxReceiveCount` (3), moves them to the processing DLQ for inspection and
+  re-drive — never deleted
 - Visible in Settings → Logs
+
+The aggregator's DynamoDB stream source likewise retries a failing batch 3 times
+and then records the discarded shard range on the `voc-aggregator-stream-failures`
+queue (an on-failure destination, #253) instead of dropping it silently.
 
 ## Step 3: Deduplication
 
@@ -138,7 +161,7 @@ You are an expert customer experience analyst. Analyze feedback and return ONLY 
 
 ### Categories Configuration
 
-Categories are loaded from DynamoDB (`SETTINGS#categories`). Configure via Settings → Categories.
+Categories are loaded from DynamoDB (`SETTINGS#categories`). Configure via Settings → Categories, where each category is also mapped to a product and its product owners. The prompt helpers live in `lambda/shared/categorization.py`, shared with the category reprocess worker. See [Categories](categories.md).
 
 Default categories if not configured:
 ```
@@ -189,7 +212,8 @@ Return ONLY this JSON structure:
 
 1. Go to **Settings** → **Categories**
 2. Add/edit/remove categories and subcategories
-3. Changes take effect immediately (cached for 5 minutes)
+3. Changes take effect for new feedback immediately (cached for 5 minutes)
+4. To re-categorise feedback that is already stored, use **Reprocess existing feedback** in the same editor ([Categories → Reprocess](categories.md#reprocessing-existing-feedback))
 
 ### Changing the Model
 
@@ -310,8 +334,9 @@ needed.
 
 **Write absolute values. Never replay deltas.** The counter updates use
 `SET #field = if_not_exists(#field, :zero) + :inc`, so a delta replayed against a row
-that has aged out of its 90-day TTL *recreates* that row under a fresh TTL — holding a
-negative count for a date whose real totals are long gone, which
+that is missing (a legacy row that aged out under the old 90-day TTL, or one never
+written) *recreates* that row — holding a negative count for a date whose real totals
+are not there, which
 `/metrics/summary` would then serve as that day's figures. An absolute `PUT` cannot do
 that: it either overwrites a row that is there or writes the correct value for a row
 that is not.
@@ -326,20 +351,33 @@ For each date `D` in the window:
    there rather than re-deriving, since a rebuild that buckets differently from the
    writer produces rows the read path cannot find.
 2. **Write each row with `put_item`**, not `update_item`: `{pk, sk: D, count: <the
-   recomputed number>, ttl: <now + 90 days>, updated_at: <now>}`, plus
+   recomputed number>, updated_at: <now>}` — no `ttl`: metric rows are kept indefinitely — plus
    `metric_type` for the source and persona partitions (the `metric_type` GSI is how
    `/metrics/sources` and `/metrics/personas` find them). For the average row, write
    `sum` and `count` from the scored items of `D`.
-3. **Skip dates outside retention.** Aggregate rows live 90 days
-   (`AGGREGATE_RETENTION_DAYS`), and rebuilding a date older than that plants rows for
-   a day whose neighbours no longer exist — `/metrics/trends` would show one populated
-   day in an empty stretch. Rebuild only within the retention window.
-4. **Delete rows the rebuild did not write** for a date it did rebuild. A bucket that
-   has legitimately dropped to zero items still has a row holding its old count, and
-   writing only the buckets that now have items leaves that stale row behind.
+3. **Any date with feedback can be rebuilt.** Metric rows no longer expire, so there
+   is no retention window to stay inside; on a deployment migrated from the old 90-day
+   TTL, rebuilding older dates is how their missing rows are restored.
+4. **Zero the rows the rebuild did not write** for a date it did rebuild — `put_item`
+   them with `count: 0` rather than deleting them (nothing in the data lake is deleted).
+   A bucket that has legitimately dropped to zero items still has a row holding its old
+   count, and writing only the buckets that now have items leaves that stale row behind.
 
-Do this against a copy of the table first if the window is wide: step 2 is
-destructive by design, and it is the only step that is.
+Do this against a copy of the table first if the window is wide: steps 2 and 4
+overwrite counters by design, and they are the only steps that do.
+
+`voc-datalake/scripts/retention/rebuild_aggregates.py` implements exactly this
+procedure (same CLI as `remove_ttl.py`: `--stack`/`--region` or explicit table names,
+`--from`/`--to` to limit the window). It is a DRY RUN unless `--apply` is passed and
+prints a per-dimension summary, including whether the sum of the daily totals equals
+the dated items. Two guards make it safe beside the live aggregator: `--apply`
+refuses while any item was processed within `--settle-hours` (default 24, the stream
+retention — such an item's INSERT may still be in flight and would be counted
+twice), and every put is conditional on the row being unchanged since the run
+started, so an aggregator write that lands mid-run is reported, not overwritten (a
+re-run recomputes it). No dedupe claim is needed: the aggregator's claim is per
+stream record and the rebuild consumes none. A re-run writes only rows whose stored
+value differs, so it is idempotent and resumable.
 
 ## Monitoring
 
@@ -377,7 +415,12 @@ View processing logs in:
 
 ### Batch Processing
 
-The processor handles SQS messages in batches (up to 10 at a time).
+The processor handles SQS messages in batches of up to 10, gathered for at most
+5 s (the event source's batching window). The records of a batch are enriched
+5 at a time (`ENRICHMENT_CONCURRENCY`), so a full batch takes about two records'
+worth of enrichment rather than ten. Each record still succeeds or fails on its
+own: a failed or throttled record is reported in `batchItemFailures` and
+retried by SQS, and its neighbours are kept.
 
 ### Cold Start
 

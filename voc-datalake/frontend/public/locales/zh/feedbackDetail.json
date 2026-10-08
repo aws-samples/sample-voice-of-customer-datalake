@@ -52,5 +52,15 @@
   "type": "类型",
   "unknown": "未知",
   "urgent": "紧急",
-  "viewOriginal": "查看原文"
+  "viewOriginal": "查看原文",
+  "sourceId": "ID：{{id}}",
+  "reviewDate": "评论日期：{{date}}",
+  "reviewDateHint": "客户撰写此反馈的时间",
+  "imported": "导入时间：{{date}}",
+  "importedHint": "此反馈导入平台的时间",
+  "noSimilar": "未找到类似反馈",
+  "loading": "正在加载反馈…",
+  "similarFailed": "无法加载类似反馈，请稍后重试。",
+  "author": "作者",
+  "reviewTitle": "标题"
 }

@@ -8,10 +8,12 @@
  * the layout and sidebar stay interactive.
  */
 import { useEffect } from 'react'
-import { AlertTriangle, Home, RotateCcw } from 'lucide-react'
+import { AlertTriangle, RotateCcw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Link, useRouteError } from 'react-router-dom'
+import { isRouteErrorResponse, useRouteError } from 'react-router-dom'
 import { describeRouteError } from './describeRouteError'
+import GoHomeLink from './GoHomeLink'
+import NotFound from './NotFound'
 
 export default function RouteErrorBoundary() {
   const error = useRouteError()
@@ -24,36 +26,37 @@ export default function RouteErrorBoundary() {
     console.error('Route render error caught by RouteErrorBoundary:', error)
   }, [error])
 
+  // A 404 is not a crash: "Reload page" on a URL that cannot exist is a dead
+  // end, so say what actually happened and offer a way out.
+  if (isRouteErrorResponse(error) && error.status === 404) {
+    return <NotFound />
+  }
+
   return (
     <div className="flex items-center justify-center min-h-[60vh] p-6" role="alert">
       <div className="max-w-md w-full text-center">
-        <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-red-100 mb-4">
-          <AlertTriangle size={24} className="text-red-600" />
+        <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-danger-subtle mb-4">
+          <AlertTriangle size={24} className="text-danger" aria-hidden="true" />
         </div>
-        <h1 className="text-xl font-semibold text-gray-900 mb-2">{t('errorBoundary.title')}</h1>
-        <p className="text-gray-600 mb-4">{t('errorBoundary.description')}</p>
+        <h1 className="text-xl font-semibold tracking-tight text-text-strong mb-2">{t('errorBoundary.title')}</h1>
+        <p className="text-text mb-4">{t('errorBoundary.description')}</p>
         {import.meta.env.DEV && (
           // Technical detail is dev-only: raw messages leak implementation
           // internals to end users; production keeps them in the log path.
-          <p className="text-sm font-mono text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 mb-6 break-words">
+          <p className="text-sm font-mono text-muted bg-bg-accent border border-border rounded-lg px-3 py-2 mb-6 break-words">
             {describeRouteError(error)}
           </p>
         )}
         <div className="flex items-center justify-center gap-3">
           <button
+            type="button"
             onClick={() => window.location.reload()}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="btn btn-primary gap-2"
           >
-            <RotateCcw size={16} />
+            <RotateCcw size={16} aria-hidden="true" />
             {t('errorBoundary.reload')}
           </button>
-          <Link
-            to="/"
-            className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-          >
-            <Home size={16} />
-            {t('errorBoundary.goHome')}
-          </Link>
+          <GoHomeLink variant="secondary" />
         </div>
       </div>
     </div>

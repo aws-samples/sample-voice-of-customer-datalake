@@ -5,17 +5,18 @@
 
 import clsx from 'clsx'
 import {
-  Play, Trash2, Settings, Globe, AlertCircle, CheckCircle, Loader2, XCircle,
+  Globe, AlertCircle, CheckCircle, Loader2, XCircle,
 } from 'lucide-react'
 import {
   useState, useEffect, useCallback, type ReactElement,
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { scrapersApi } from '../../api/scrapersApi'
-import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import { FREQUENCY_OPTIONS } from './constants'
 import type { ScraperConfig } from '../../api/types'
 import { normalizedBaseUrl, scraperDomainLabel } from './scraperUrl'
+import { CardActions, CardStat, RunOutcomeBadge, type RunOutcome } from './SourceCardParts'
+import { ToneTile } from './SourceDialogHeader'
 
 interface RunStatus {
   status: string
@@ -26,24 +27,24 @@ interface RunStatus {
 }
 
 function getStatusStyle(status: RunStatus): string {
-  if (status.status === 'running') return 'bg-blue-50 border-blue-200'
-  if (status.status === 'error') return 'bg-red-50 border-red-200'
-  if (status.errors.length > 0) return 'bg-amber-50 border-amber-200'
-  return 'bg-green-50 border-green-200'
+  if (status.status === 'running') return 'bg-info-subtle border-info/30'
+  if (status.status === 'error') return 'bg-danger-subtle border-danger/30'
+  if (status.errors.length > 0) return 'bg-warn-subtle border-warn/30'
+  return 'bg-ok-subtle border-ok/30'
 }
 
 function StatusIndicator({ status }: { readonly status: RunStatus }): ReactElement | null {
   const { t } = useTranslation('scrapers')
   if (status.status === 'running') {
-    return <><Loader2 size={16} className="animate-spin text-blue-600" /><span className="font-medium text-blue-700">{t('status.running')}</span></>
+    return <><Loader2 size={16} className="animate-spin text-info" /><span className="font-medium text-info">{t('status.running')}</span></>
   }
   if (status.status === 'error') {
-    return <><XCircle size={16} className="text-red-600" /><span className="font-medium text-red-700">{t('status.failed')}</span></>
+    return <><XCircle size={16} className="text-danger" /><span className="font-medium text-danger">{t('status.failed')}</span></>
   }
   if (status.errors.length > 0) {
-    return <><AlertCircle size={16} className="text-amber-600" /><span className="font-medium text-amber-700">{t('status.completedWithErrors')}</span></>
+    return <><AlertCircle size={16} className="text-warn" /><span className="font-medium text-warn">{t('status.completedWithErrors')}</span></>
   }
-  return <><CheckCircle size={16} className="text-green-600" /><span className="font-medium text-green-700">{t('status.completed')}</span></>
+  return <><CheckCircle size={16} className="text-ok" /><span className="font-medium text-ok">{t('status.completed')}</span></>
 }
 
 function ScraperRunStatus({
@@ -86,11 +87,11 @@ function ScraperRunStatus({
       <div className="flex items-center gap-2 mb-2">
         <StatusIndicator status={status} />
       </div>
-      <div className="grid grid-cols-2 gap-2 text-xs">
-        <div>{t('status.pagesScraped')} <span className="font-semibold">{status.pages_scraped}</span></div>
-        <div>{t('status.reviewsFound')} <span className="font-semibold">{status.items_found}</span></div>
+      <div className="grid grid-cols-2 gap-2 text-xs text-text">
+        <div>{t('status.pagesScraped')} <span className="font-mono font-semibold text-text-strong">{status.pages_scraped}</span></div>
+        <div>{t('status.reviewsFound')} <span className="font-mono font-semibold text-text-strong">{status.items_found}</span></div>
       </div>
-      {hasErrors ? <div className="mt-2 text-xs text-red-600">
+      {hasErrors ? <div className="mt-2 text-xs text-danger">
         {status.errors.slice(0, 2).map((err) => <div key={err.slice(0, 50)} className="truncate">{err}</div>)}
         {status.errors.length > 2 && <div>{t('status.moreErrors', { count: status.errors.length - 2 })}</div>}
       </div> : null}
@@ -98,37 +99,24 @@ function ScraperRunStatus({
   )
 }
 
-function getLastRunBadge(status: string): {
-  className: string;
-  icon: string
-} {
-  if (status === 'completed') return {
-    className: 'bg-green-100 text-green-700',
-    icon: '✓',
-  }
-  if (status === 'error') return {
-    className: 'bg-red-100 text-red-700',
-    icon: '✗',
-  }
-  return {
-    className: 'bg-amber-100 text-amber-700',
-    icon: '⚠',
-  }
+function lastRunOutcome(status: string): RunOutcome {
+  if (status === 'completed') return 'ok'
+  if (status === 'error') return 'failed'
+  return 'partial'
 }
 
 function LastRunSummary({ lastRunInfo }: { readonly lastRunInfo: RunStatus }) {
   const { t } = useTranslation('scrapers')
-  const badge = getLastRunBadge(lastRunInfo.status)
   return (
-    <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
-      <div className="flex items-center justify-between">
+    <div className="mt-4 pt-3 border-t border-border text-xs text-muted">
+      <div className="flex items-center justify-between gap-2">
         <span>{t('card.lastSummary', {
           pages: lastRunInfo.pages_scraped,
           reviews: lastRunInfo.items_found,
         })}</span>
-        <span className={clsx('px-2 py-0.5 rounded', badge.className)}>{badge.icon}</span>
+        <RunOutcomeBadge outcome={lastRunOutcome(lastRunInfo.status)} />
       </div>
-      {lastRunInfo.errors.length > 0 && <p className="text-red-500 truncate mt-1">{lastRunInfo.errors[0]}</p>}
+      {lastRunInfo.errors.length > 0 && <p className="text-danger truncate mt-1">{lastRunInfo.errors[0]}</p>}
     </div>
   )
 }
@@ -140,13 +128,9 @@ function ScraperCardHeader({
   readonly isRunning: boolean
   /** `POST /scrapers/{id}/run` and `DELETE /scrapers/{id}` are admin-gated
    *  server-side, so those two controls are disabled for a non-admin rather than
-   *  issuing a request that 403s. Edit stays enabled because a non-admin can
-   *  already read this config through `GET /scrapers`, which is deliberately open —
-   *  the editor is a viewer for them, and its Save button carries the gate for
-   *  `POST /scrapers` (`ScraperEditor.tsx`, pinned by `ScraperEditor.test.tsx`). It
-   *  did NOT until this was checked: the editor had no `isAdmin` at all, so a
-   *  non-admin's Save issued the request and the modal closed as though it had
-   *  worked. Enabling Edit is only safe while that gate exists. */
+   *  issuing a request that 403s. Edit stays enabled: save (`POST /scrapers`) is
+   *  open to every user by owner decision (2026-10-04), with only the schedule
+   *  admin-only inside the editor (`ScraperEditor.tsx`). */
   readonly isAdmin: boolean
   readonly onRun: () => void
   readonly onEdit: () => void
@@ -156,32 +140,37 @@ function ScraperCardHeader({
   const domain = scraperDomainLabel(scraper.base_url, t('card.notConfigured'))
   const hasUrl = normalizedBaseUrl(scraper.base_url) !== ''
   return (
-    <div className="flex items-start justify-between mb-3">
-      <div className="flex items-center gap-3">
-        <div className={clsx('w-10 h-10 rounded-lg flex items-center justify-center', scraper.enabled ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400')}>
-          <Globe size={20} />
-        </div>
-        <div>
-          <h3 className="font-semibold">{scraper.name}</h3>
-          <p className="text-sm text-gray-500">{domain}</p>
+    <div className="flex items-start justify-between gap-3 mb-4">
+      <div className="flex items-center gap-3 min-w-0">
+        <ToneTile icon={Globe} tone={scraper.enabled ? 'ok' : 'muted'} />
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <h2 className="text-sm font-semibold tracking-tight text-text-strong truncate" title={scraper.name}>{scraper.name}</h2>
+            <span className={clsx('badge flex-shrink-0', scraper.enabled ? 'badge-ok' : 'badge-muted')}>
+              {scraper.enabled ? t('card.active') : t('card.paused')}
+            </span>
+          </div>
+          <p className="text-sm text-muted truncate" title={domain}>{domain}</p>
         </div>
       </div>
-      <div className="flex items-center gap-1">
-        <button onClick={onRun} disabled={isRunning || !hasUrl || !isAdmin} className={clsx('p-2 rounded transition-colors disabled:cursor-not-allowed', isRunning ? 'bg-blue-100 text-blue-600' : 'hover:bg-green-100 text-green-600', isAdmin ? '' : 'opacity-50')} title={isAdmin ? t('card.runNow') : ADMIN_ONLY_TITLE}>
-          {isRunning ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
-        </button>
-        <button onClick={onEdit} className="p-2 hover:bg-gray-100 rounded" title={t('card.edit')}><Settings size={16} /></button>
-        <button onClick={onDelete} disabled={!isAdmin} className={clsx('p-2 hover:bg-gray-100 rounded text-red-500 disabled:cursor-not-allowed', isAdmin ? '' : 'opacity-50')} title={isAdmin ? t('card.delete') : ADMIN_ONLY_TITLE}><Trash2 size={16} /></button>
-      </div>
+      <CardActions
+        isAdmin={isAdmin}
+        isRunning={isRunning}
+        runDisabled={isRunning || !hasUrl}
+        onRun={onRun}
+        onEdit={onEdit}
+        onDelete={onDelete}
+      />
     </div>
   )
 }
 
 function calculateTotalUrls(scraper: ScraperConfig): number {
-  const additionalUrls = scraper.urls?.length ?? 0
+  // `urls` and `pagination` are normalized at the scrapersApi boundary (scrapersSchema.ts).
+  const additionalUrls = scraper.urls.length
   const baseUrlCount = scraper.base_url ? 1 : 0
-  const paginationCount = scraper.base_url && scraper.pagination?.enabled
-    ? (scraper.pagination.max_pages ?? 1) - 1
+  const paginationCount = scraper.base_url && scraper.pagination.enabled
+    ? scraper.pagination.max_pages - 1
     : 0
   return additionalUrls + baseUrlCount + paginationCount
 }
@@ -206,12 +195,22 @@ function ScraperCardStats({
   const lastRunDate = lastRunInfo?.started_at != null && lastRunInfo.started_at !== '' ? new Date(lastRunInfo.started_at).toLocaleDateString() : t('card.never')
 
   return (
-    <div className="grid grid-cols-3 gap-4 text-sm">
-      <div><span className="text-gray-500">{t('card.frequency')}</span><p className="font-medium">{frequencyLabel}</p></div>
-      <div><span className="text-gray-500">{t('card.urls')}</span><p className="font-medium">{totalUrls}</p></div>
-      <div><span className="text-gray-500">{t('card.lastRun')}</span><p className="font-medium">{lastRunDate}</p></div>
-    </div>
+    <dl className="grid grid-cols-3 gap-3 sm:gap-4">
+      <CardStat label={t('card.frequency')} value={frequencyLabel} />
+      <CardStat label={t('card.urls')} value={totalUrls} mono />
+      <CardStat label={t('card.lastRun')} value={lastRunDate} />
+    </dl>
   )
+}
+
+/** The scraper's latest run, or null when it never ran or the status cannot be read. */
+async function loadLatestRun(scraperId: string): Promise<RunStatus | null> {
+  try {
+    const result = await scrapersApi.getScraperStatus(scraperId)
+    return result.status === 'never_run' ? null : result
+  } catch {
+    return null
+  }
 }
 
 function useScraperStatus(scraperId: string) {
@@ -219,17 +218,12 @@ function useScraperStatus(scraperId: string) {
   const [isRunning, setIsRunning] = useState(false)
   const [lastRunInfo, setLastRunInfo] = useState<RunStatus | null>(null)
 
-  const fetchLatestStatus = useCallback(async () => {
-    try {
-      const result = await scrapersApi.getScraperStatus(scraperId)
-      if (result.status !== 'never_run') setLastRunInfo(result)
-    } catch {
-      /* ignore */
-    }
-  }, [scraperId])
+  // The state update lands in the promise callback, never synchronously in the effect.
+  const fetchLatestStatus = useCallback(() => loadLatestRun(scraperId).then((info) => {
+    if (info !== null) setLastRunInfo(info)
+  }), [scraperId])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data fetch on mount
     void fetchLatestStatus()
   }, [fetchLatestStatus])
 
@@ -269,7 +263,9 @@ export default function ScraperCard({
   const showLastRunSummary = lastRunInfo != null && lastRunInfo.status !== 'never_run' && !showStatus
 
   return (
-    <div className={clsx('card border-2 transition-all', scraper.enabled ? 'border-green-200 bg-green-50/30' : 'border-gray-200 opacity-60')}>
+    // Paused is said by the badge and the muted icon tile — never by fading the
+    // whole card, which pushed its text below AA contrast.
+    <div className="card">
       <ScraperCardHeader scraper={scraper} isRunning={isRunning} isAdmin={isAdmin} onRun={() => handleRun(onRun)} onEdit={onEdit} onDelete={onDelete} />
       <ScraperCardStats scraper={scraper} lastRunInfo={lastRunInfo} />
       {showLastRunSummary ? <LastRunSummary lastRunInfo={lastRunInfo} /> : null}

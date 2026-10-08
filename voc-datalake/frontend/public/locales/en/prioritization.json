@@ -240,11 +240,5 @@
     "unavailable": "Team score unavailable",
     "unavailableDescription": "The team's scores could not be read just now, so this row shows nothing about them — not that nobody has voted. Reload the page to see what the team said."
   },
-  "title": "Prioritization",
-  "unsavedChanges": {
-    "cancel": "Stay on Page",
-    "confirm": "Discard Changes",
-    "message": "You have unsaved prioritization scores. Do you want to discard your changes and leave this page?",
-    "title": "Unsaved Changes"
-  }
+  "title": "Prioritization"
 }

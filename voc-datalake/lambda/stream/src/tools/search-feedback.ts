@@ -5,24 +5,22 @@
  * Filtering, formatting and the prose the model reads. The reads themselves —
  * and every shortfall they have to admit — live in ./feedback-scan.ts.
  */
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { z } from 'zod';
 import { ConfigurationError } from '../lib/errors.js';
+import { ALL_TIME_DAYS } from '../assistant/contract.js';
+import { admitsItem, type CategoryScope } from './category-scope.js';
 import {
   fetchCandidatesByDate,
   feedbackItemSchema,
   queryFeedbackById,
+  type FeedbackQueryClient,
   scanWasIncomplete,
-  DAY_SCAN_CONCURRENCY,
   MAX_CANDIDATES,
   MAX_LOOKBACK_DAYS,
+  MAX_SAMPLE_WALK_DAYS,
   type FeedbackItem,
   type TruncationReason,
 } from './feedback-scan.js';
-
-// Re-exported so the constants keep one import path for callers and tests. They
-// are declared in feedback-scan.ts, which the lockstep guard parses.
-export { DAY_SCAN_CONCURRENCY, MAX_CANDIDATES, MAX_LOOKBACK_DAYS };
 
 const searchInputSchema = z.object({
   query: z.string().optional(),
@@ -30,6 +28,12 @@ const searchInputSchema = z.object({
   category: z.string().optional(),
   sentiment: z.string().optional(),
   urgency: z.string().optional(),
+  // A software release ("0.4.2"); matches items whose issue_attributes name it.
+  version: z.string().optional(),
+  // Exact source_channel, a tag (case-insensitive) and dimension pairs (all must match).
+  channel: z.string().optional(),
+  tag: z.string().optional(),
+  dims: z.record(z.string(), z.string()).optional(),
   limit: z.number().optional(),
   // 'aggregate' returns distribution stats over ALL matches in one call
   // (counts by urgency/sentiment/category + a few examples) instead of a
@@ -38,12 +42,40 @@ const searchInputSchema = z.object({
   // 'urgency' sorts matches high→medium→low (most negative first within a
   // tier) so "most urgent" surfaces the right items even past the list cap.
   sort_by: z.enum(['recent', 'urgency']).optional(),
-}).passthrough();
+}).loose();
 
-const URGENCY_RANK: Record<string, number> = { high: 3, medium: 2, low: 1 };
+// A Map keyed by the optional field itself: an absent urgency is simply not a
+// key, so no placeholder string is needed (and no Object.prototype key can match).
+const URGENCY_RANK = new Map<string | undefined, number>([['high', 3], ['medium', 2], ['low', 1]]);
+
+function isAllTime(requestedDays: number): boolean {
+  return requestedDays === ALL_TIME_DAYS;
+}
+
+/** The question named a longer window than the scan read (all time always is). */
+function requestExceedsScan(requestedDays: number, scannedDays: number): boolean {
+  return isAllTime(requestedDays) || requestedDays > scannedDays;
+}
+
+/** The window the question named: "365 days" / "all time" (reads after "the question named"). */
+function requestedWindowPhrase(requestedDays: number): string {
+  return isAllTime(requestedDays) ? 'all time' : `${requestedDays} days`;
+}
+
+/** The requested window as a noun phrase: "the 365-day window" / "the all-time window". */
+function requestedWindowNoun(requestedDays: number): string {
+  return isAllTime(requestedDays) ? 'the all-time window' : `the ${requestedDays}-day window`;
+}
+
+/** What the scan did NOT read of the requested window, as prose. */
+function unreadRemainderPhrase(requestedDays: number, scannedDays: number): string {
+  return isAllTime(requestedDays)
+    ? 'anything older'
+    : `the ${requestedDays - scannedDays} earlier days`;
+}
 
 function urgencyRank(item: FeedbackItem): number {
-  return URGENCY_RANK[item.urgency ?? ''] ?? 0;
+  return URGENCY_RANK.get(item.urgency) ?? 0;
 }
 
 // high→medium→low; within a tier, most negative sentiment first, then newest.
@@ -58,10 +90,27 @@ function compareByUrgency(a: FeedbackItem, b: FeedbackItem): number {
 
 type SearchInput = z.infer<typeof searchInputSchema>;
 
-interface ContextFilters {
+interface ItemFilters {
+  channel?: string;
+  tag?: string;
+  dims?: Record<string, string>;
+}
+
+interface SearchFilters extends ItemFilters {
   source?: string;
   category?: string;
   sentiment?: string;
+  urgency?: string;
+  version?: string;
+}
+
+interface ContextFilters {
+  /** The caller's readable categories AND sources (`GET /feedback/access`). Required: no implicit "all". */
+  scope: CategoryScope;
+  source?: string;
+  category?: string;
+  sentiment?: string;
+  /** Requested window; 0 = all time (sampled newest first: MAX_LOOKBACK_DAYS days with data within MAX_SAMPLE_WALK_DAYS). */
   days?: number;
   /** 'imported' (default) or 'review' — which date the days window uses. */
   dateBasis?: 'imported' | 'review';
@@ -87,19 +136,21 @@ interface SearchFeedbackResult {
 
 // Shape guard: a malformed source_created_at ("unavailable") would compare
 // lexicographically above any YYYY-MM-DD cutoff and sneak through.
-const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const ISO_DATE_PREFIX_RE = /^\d{4}-\d{2}-\d{2}/;
 
 /**
- * The YYYY-MM-DD date the window applies to for one item. 'review' uses the
- * date the customer wrote the feedback (source_created_at), falling back to
- * the import date when missing/malformed; 'imported' uses the import date.
- * Mirrors lambda/shared/feedback.py::basis_date.
+ * The value the window's YYYY-MM-DD cutoff is compared with for one item.
+ * 'review' uses when the customer wrote the feedback (source_created_at),
+ * falling back to the import date when missing/malformed; 'imported' uses the
+ * import date. Mirrors lambda/shared/feedback.py::basis_date.
+ *
+ * The timestamp is returned whole: against a 10-character cutoff an ISO
+ * timestamp orders exactly as its date part does. `String()` turns an absent
+ * value into "undefined", which fails the shape check like any malformed one.
  */
 function itemBasisDate(item: FeedbackItem, dateBasis?: 'imported' | 'review'): string {
-  if (dateBasis === 'review') {
-    const sourceCreated = (item.source_created_at ?? '').slice(0, 10);
-    if (ISO_DATE_RE.test(sourceCreated)) return sourceCreated;
-  }
+  const sourceCreated = String(item.source_created_at);
+  if (dateBasis === 'review' && ISO_DATE_PREFIX_RE.test(sourceCreated)) return sourceCreated;
   return item.date ?? '';
 }
 
@@ -111,16 +162,25 @@ function passesDateFilter(
   return itemBasisDate(item, dateBasis) >= cutoffDate;
 }
 
-function passesFieldFilters(item: FeedbackItem, filters: Record<string, string | undefined>): boolean {
+function passesFieldFilters(item: FeedbackItem, filters: SearchFilters): boolean {
   if (filters.source && item.source_platform !== filters.source) return false;
   if (filters.sentiment && item.sentiment_label !== filters.sentiment) return false;
   if (filters.category && item.category !== filters.category) return false;
   if (filters.urgency && item.urgency !== filters.urgency) return false;
+  if (filters.version && item.issue_attributes?.software_version !== filters.version.replace(/^v/, '')) return false;
   return true;
 }
 
+/** channel / tag / dims (docs/dimensions.md); unset filters admit everything. */
+function passesItemFilters(item: FeedbackItem, filters: ItemFilters): boolean {
+  if (filters.channel && item.source_channel !== filters.channel) return false;
+  const tag = filters.tag?.toLowerCase();
+  if (tag && !(item.tags ?? []).some((candidate) => candidate.toLowerCase() === tag)) return false;
+  return Object.entries(filters.dims ?? {}).every(([key, value]) => item.dimensions?.[key] === value);
+}
+
+// An empty query admits everything: every string includes ''.
 function passesTextSearch(item: FeedbackItem, query: string): boolean {
-  if (!query) return true;
   const q = query.toLowerCase();
   const text = (item.original_text ?? '').toLowerCase();
   const title = (item.title ?? '').toLowerCase();
@@ -131,12 +191,15 @@ function passesTextSearch(item: FeedbackItem, query: string): boolean {
 function matchesFeedbackItem(
   item: FeedbackItem,
   query: string,
-  filters: Record<string, string | undefined>,
+  filters: SearchFilters,
   cutoffDate: string,
+  scope: CategoryScope,
   dateBasis?: 'imported' | 'review',
 ): boolean {
-  return passesDateFilter(item, cutoffDate, dateBasis)
+  return admitsItem(scope, item)
+    && passesDateFilter(item, cutoffDate, dateBasis)
     && passesFieldFilters(item, filters)
+    && passesItemFilters(item, filters)
     && passesTextSearch(item, query);
 }
 
@@ -154,9 +217,10 @@ function matchesFeedbackItem(
  * here, about the item, in one query.
  */
 async function lookupByFeedbackId(
-  docClient: DynamoDBDocumentClient,
+  docClient: FeedbackQueryClient,
   feedbackTable: string,
   feedbackId: string,
+  scope: CategoryScope,
 ): Promise<SearchFeedbackResult | null> {
   const rows = await queryFeedbackById(docClient, feedbackTable, feedbackId);
   if (rows === null || rows.length === 0) return null;
@@ -164,6 +228,13 @@ async function lookupByFeedbackId(
     const parsed = feedbackItemSchema.safeParse(raw);
     return parsed.success ? [parsed.data] : [];
   });
+  // A restricted caller (category OR source rule) learns nothing about an item
+  // outside their scope — not even that it exists (the REST route answers 404 the
+  // same way). An unparseable row cannot be shown to be in scope, so it is hidden too.
+  if (!scope.all) {
+    const visible = items.filter((item) => admitsItem(scope, item));
+    return { items: visible, formatted: formatToolResults(visible), isPartial: false };
+  }
   // A direct ID hit reads one row by key: nothing was truncated.
   if (items.length > 0) return { items, formatted: formatToolResults(items), isPartial: false };
   console.warn(`search_feedback: feedback_id ${feedbackId} matched a row that would not parse`);
@@ -181,49 +252,62 @@ async function lookupByFeedbackId(
 /**
  * Resolve the effective search parameters from tool input + chat context.
  *
- * `days` is the EFFECTIVE window: clamped to MAX_LOOKBACK_DAYS here, once, so
- * the day loop, the cutoff filter and the notice text all spend one number.
+ * `days` is the WALK window: clamped to MAX_SAMPLE_WALK_DAYS here, once, and
+ * `maxDatedDays` the MAX_LOOKBACK_DAYS budget of days WITH DATA (the rule of
+ * `query_feedback_by_date` in lambda/shared/feedback.py). The scan reports the
+ * calendar days it actually covered, and the cutoff filter and the notice text
+ * spend that one number.
  * Clamping inside the loop instead is the bug `metrics_handler.py` records
  * having had — the filter admitted a year of items while the scan collected a
  * month of them, and nothing said so.
  *
  * `requestedDays` is kept because the clamp is itself an unread remainder: a
- * caller asking for 365 gets 90, which the answer has to admit rather than
- * present as the year that was asked about. `chatRequestSchema` accepts up to
- * 365 (src/schema.ts), so this is reachable even though the SPA caps at 90.
+ * caller asking for 365 whose walk stopped after 90 days with data at day 120
+ * gets 120, which the answer has to admit rather than present as the year that
+ * was asked about. `requestedDays = 0` is "all time" (the page picker's
+ * all-time range): the walk still stops after MAX_LOOKBACK_DAYS days with data
+ * — this tool samples for a prompt, it is not a full-history report
+ * (get_metrics is) — and the notice says so.
  */
 function resolveSearchParams(toolInput: unknown, contextFilters: ContextFilters): {
   input: SearchInput;
   query: string;
-  mode: 'list' | 'aggregate';
+  /** Absent = list: only 'aggregate' changes the shape of the answer. */
+  mode: 'list' | 'aggregate' | undefined;
   limit: number;
   days: number;
+  maxDatedDays: number;
   requestedDays: number;
-  filters: { source?: string; category?: string; sentiment?: string; urgency?: string };
+  filters: SearchFilters;
 } {
   const parsed = searchInputSchema.safeParse(toolInput);
   const input: SearchInput = parsed.success ? parsed.data : {};
-  const requestedDays = contextFilters.days ?? 30;
+  const requestedDays = Math.max(contextFilters.days ?? 30, ALL_TIME_DAYS);
   return {
     input,
     query: input.query ?? '',
-    mode: input.mode ?? 'list',
+    mode: input.mode,
     // aggregate mode returns stats over the whole match set, so a small list
     // cap there is fine (only used for the handful of examples we show).
     limit: Math.min(input.limit ?? 15, 30),
-    days: Math.min(requestedDays, MAX_LOOKBACK_DAYS),
+    days: isAllTime(requestedDays) ? MAX_SAMPLE_WALK_DAYS : Math.min(requestedDays, MAX_SAMPLE_WALK_DAYS),
+    maxDatedDays: isAllTime(requestedDays) ? MAX_LOOKBACK_DAYS : Math.min(requestedDays, MAX_LOOKBACK_DAYS),
     requestedDays,
     filters: {
       source: input.source ?? contextFilters.source,
       category: input.category ?? contextFilters.category,
       sentiment: input.sentiment ?? contextFilters.sentiment,
       urgency: input.urgency,
+      version: input.version,
+      channel: input.channel,
+      tag: input.tag,
+      dims: input.dims,
     },
   };
 }
 
 export async function executeSearchFeedback(
-  docClient: DynamoDBDocumentClient,
+  docClient: FeedbackQueryClient,
   feedbackTable: string,
   toolInput: unknown,
   contextFilters: ContextFilters,
@@ -232,27 +316,33 @@ export async function executeSearchFeedback(
   candidateCap: number = MAX_CANDIDATES,
 ): Promise<SearchFeedbackResult> {
   const {
-    input, query, mode, limit, days, requestedDays, filters,
+    input, query, mode, limit, days: walkDays, maxDatedDays, requestedDays, filters,
   } = resolveSearchParams(toolInput, contextFilters);
 
   if (!feedbackTable) throw new ConfigurationError('Feedback table not configured');
 
   // Check if query is a feedback ID
   if (query && /^[a-f0-9]{32}$/i.test(query.trim())) {
-    const idResult = await lookupByFeedbackId(docClient, feedbackTable, query);
+    const idResult = await lookupByFeedbackId(docClient, feedbackTable, query, contextFilters.scope);
     if (idResult) return idResult;
   }
 
-  const scan = await fetchCandidatesByDate(docClient, feedbackTable, days, candidateCap);
+  const scan = await fetchCandidatesByDate(docClient, feedbackTable, walkDays, candidateCap, maxDatedDays);
   // Not one partition answered, so this window is unknown rather than empty and
   // must not be formatted as a search that found nothing.
   if (scan.unmeasured) {
-    return { items: [], formatted: unmeasuredWindowNotice(days), isPartial: true };
+    return { items: [], formatted: unmeasuredWindowNotice(walkDays), isPartial: true };
   }
+  // The calendar days actually walked: the walk window, or fewer when it
+  // stopped after `maxDatedDays` days with data. One number for the clamp
+  // check, the cutoff and the notice.
+  const days = scan.daysCovered;
   // The clamp is a truncation like any other: the caller asked about a longer
   // window than this scan can reach, so the answer covers less than the
   // question did and has to say which window it actually read.
-  const reasons = requestedDays > days ? ['windowClamped' as const, ...scan.reasons] : scan.reasons;
+  const reasons = requestExceedsScan(requestedDays, days)
+    ? ['windowClamped' as const, ...scan.reasons]
+    : scan.reasons;
   const isPartial = reasons.length > 0;
 
   // Days-long window ending today (same definition as the metrics API).
@@ -267,7 +357,7 @@ export async function executeSearchFeedback(
   const cutoffDate = cutoff.toISOString().slice(0, 10);
 
   const allMatched = scan.candidates.filter((item) =>
-    matchesFeedbackItem(item, query, filters, cutoffDate, dateBasis),
+    matchesFeedbackItem(item, query, filters, cutoffDate, contextFilters.scope, dateBasis),
   );
 
   const notice = truncationNotice(reasons, days, requestedDays);
@@ -340,7 +430,7 @@ const TRUNCATION_CLAUSES: Record<TruncationReason, string> = {
  * wording said "the 365-day window" about a scan that read 90 days of it, so
  * the model hedged about a window nothing had looked at.
  *
- * English is deliberate, matching voc-context.ts's degradedNote: this is prompt
+ * English is deliberate: this is prompt
  * text rather than UI copy, and buildSystemPrompt instructs the model to answer
  * in `response_language`, so the model relays the fact in the user's language.
  * Translating it would change nothing the user reads.
@@ -359,14 +449,14 @@ function truncationNotice(
   // that is what this says.
   if (!scanWasIncomplete(reasons)) {
     return `\n⚠️ NARROWER WINDOW THAN ASKED ABOUT: this search reaches back at most `
-      + `${scannedDays} days, but the question named ${requestedDays} days. The figures above `
-      + `are complete for the most recent ${scannedDays} days and say nothing about the `
-      + `${requestedDays - scannedDays} earlier days. Name the ${scannedDays}-day window when `
+      + `${scannedDays} days, but the question named ${requestedWindowPhrase(requestedDays)}. The figures above `
+      + `are complete for the most recent ${scannedDays} days and say nothing about `
+      + `${unreadRemainderPhrase(requestedDays, scannedDays)}. Name the ${scannedDays}-day window when `
       + 'you answer, and do not describe these numbers as covering the longer period.\n';
   }
   const causes = [...new Set(reasons)].map((reason) => TRUNCATION_CLAUSES[reason]).join('; ');
-  const windowRead = requestedDays > scannedDays
-    ? `only the most recent ${scannedDays} days of the ${requestedDays}-day window asked about`
+  const windowRead = requestExceedsScan(requestedDays, scannedDays)
+    ? `only the most recent ${scannedDays} days of ${requestedWindowNoun(requestedDays)} asked about`
     : `part of the ${scannedDays}-day window`;
   return `\n⚠️ INCOMPLETE RESULTS: the items and any counts above cover ${windowRead} `
     + `— ${causes}. Say so when you answer, name the ${scannedDays}-day window they do cover, `
@@ -406,10 +496,12 @@ function countBy(items: FeedbackItem[], field: keyof FeedbackItem): [string, num
   return [...counts.entries()].sort((a, b) => b[1] - a[1]);
 }
 
+// Only called with total ≥ 1 (formatAggregate answers an empty set first), and
+// countBy then yields at least one bucket ('unknown' included), so neither an
+// empty distribution nor a zero divisor can reach here.
 function formatDistribution(label: string, dist: [string, number][], total: number): string {
-  if (dist.length === 0) return '';
   const lines = dist
-    .map(([k, n]) => `- ${k}: ${n} (${((n / Math.max(total, 1)) * 100).toFixed(0)}%)`)
+    .map(([k, n]) => `- ${k}: ${n} (${((n / total) * 100).toFixed(0)}%)`)
     .join('\n');
   return `**${label}:**\n${lines}\n\n`;
 }

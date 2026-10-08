@@ -1,0 +1,187 @@
+{
+  "launcher": {
+    "open": "アシスタントを開く",
+    "close": "アシスタントを閉じる",
+    "askAboutProject": "アシスタントに質問",
+    "moveHint": "ドラッグまたは矢印キーでアシスタントボタンを移動します。Home キーで元に戻ります。",
+    "resetPosition": "アシスタントボタンの位置をリセット"
+  },
+  "panel": {
+    "title": "アシスタント",
+    "using": "参照中: {{context}}",
+    "newChat": "新しいチャット",
+    "sessions": "過去の会話",
+    "export": "会話をエクスポート（Markdown）",
+    "expand": "拡大",
+    "fullscreen": "全画面",
+    "exitFullscreen": "全画面を終了",
+    "close": "閉じる",
+    "messages": "会話",
+    "thinking": "考え中…",
+    "stillGenerating": "生成中…"
+  },
+  "pages": {
+    "home": "ホーム",
+    "dashboard": "ダッシュボード",
+    "feedback": "フィードバック",
+    "categories": "カテゴリ",
+    "problems": "課題分析",
+    "chat": "AIチャット",
+    "projects": "プロジェクト",
+    "project": "プロジェクト",
+    "prioritization": "優先順位付け",
+    "data-explorer": "データエクスプローラー",
+    "scrapers": "スクレイパー",
+    "feedback-forms": "フィードバックフォーム",
+    "settings": "設定",
+    "other": "このページ"
+  },
+  "message": {
+    "reasoning": "思考過程",
+    "toolSteps": "実行したステップ",
+    "feedbackSources": "関連するフィードバック",
+    "webSources": "Webソース",
+    "personaAnswers": "ペルソナの回答",
+    "copy": "コピー",
+    "copied": "コピーしました",
+    "savedDocumentTitle": "アシスタントの回答 – {{date}}",
+    "saveAsDocument": {
+      "idle": "ドキュメントとして保存",
+      "saving": "保存中…",
+      "saved": "ドキュメントに保存しました",
+      "error": "保存に失敗しました – 再試行"
+    }
+  },
+  "toolStatus": {
+    "streaming": "準備中",
+    "running": "実行中",
+    "complete": "完了",
+    "awaiting_approval": "承認待ち",
+    "executed": "完了",
+    "failed": "失敗",
+    "declined": "却下",
+    "cancelled": "キャンセル"
+  },
+  "approvals": {
+    "title": "承認待ちのアクション",
+    "resolved": {
+      "executed": "完了",
+      "failed": "失敗",
+      "declined": "却下"
+    }
+  },
+  "composer": {
+    "label": "アシスタントへのメッセージ",
+    "placeholder": "フィードバック、プロジェクト、このページについて質問…",
+    "send": "送信",
+    "stop": "停止",
+    "attach": "画像またはPDFを添付",
+    "webSearch": "Webを検索",
+    "removeAttachment": "{{name}} を削除",
+    "counter": "{{length}} / {{max}}",
+    "awaitingApproval": "続行するには、保留中のアクションを承認または却下してください。",
+    "attachmentError": {
+      "type": "添付できるのは画像（PNG、JPEG、GIF、WebP）とPDFのみです。",
+      "count": "添付できるファイルは最大 {{max}} 個です。",
+      "size": "添付ファイルが大きすぎます。",
+      "read": "ファイルを読み込めませんでした。"
+    },
+    "stillGenerating": "回答はまだ作成中です。準備ができるとここに表示されます。"
+  },
+  "errors": {
+    "streamClosed": "回答の完了前に接続が切断されました。もう一度お試しください。",
+    "generic": "問題が発生しました: {{message}}",
+    "followTimeout": "回答に予想以上の時間がかかっています。後でこの会話をもう一度開いて確認してください。"
+  },
+  "export": {
+    "user": "あなた",
+    "assistant": "アシスタント"
+  },
+  "sessions": {
+    "title": "過去の会話",
+    "close": "閉じる",
+    "loading": "会話を読み込み中",
+    "error": "会話を読み込めませんでした。",
+    "empty": "保存された会話はまだありません。",
+    "untitled": "無題の会話",
+    "delete": "「{{title}}」を削除",
+    "newConversation": "新しい会話",
+    "sidebar": "会話",
+    "openGroup": "開いている会話",
+    "historyGroup": "履歴",
+    "closeThread": "「{{title}}」を閉じる",
+    "closeRunning": "「{{title}}」を停止して閉じる",
+    "status": {
+      "streaming": "実行中",
+      "awaiting": "承認待ち",
+      "error": "失敗",
+      "unread": "新しい返信"
+    }
+  },
+  "empty": {
+    "title": "何をお手伝いしましょうか？",
+    "subtitle": "データを読み取り、変更を提案できます。承認なしに変更されることはありません。"
+  },
+  "suggestions": {
+    "default": {
+      "1": "今週、顧客が最も不満に思っていることは？",
+      "2": "緊急のフィードバックを要約して",
+      "3": "増加傾向にあるカテゴリは？"
+    },
+    "project": {
+      "1": "このプロジェクトとペルソナを要約して",
+      "2": "このアイデアをペルソナはどう思う？",
+      "3": "プロジェクトの調査からPRDを作成して"
+    },
+    "forms": {
+      "1": "フィードバックフォームの状況は？",
+      "2": "最新のフォーム回答を要約して",
+      "3": "評価が最も低いフォームは？"
+    },
+    "prioritization": {
+      "1": "次に何を優先すべき？",
+      "2": "上位の項目を説明して",
+      "3": "顧客への影響が最も大きい項目は？"
+    },
+    "scrapers": {
+      "1": "最近実行されたスクレイパーは？",
+      "2": "失敗しているスクレイパーはある？",
+      "3": "前回の実行で何を収集した？"
+    },
+    "settings": {
+      "1": "現在のブランド設定を表示して",
+      "2": "設定されているカテゴリは？",
+      "3": "ブランドで追跡すべきハッシュタグを提案して"
+    },
+    "problems": {
+      "1": "未解決の最大の課題は？",
+      "2": "これらの課題を根本原因ごとにまとめて",
+      "3": "最近解決された課題は？"
+    },
+    "feedback": {
+      "1": "このフィードバックを要約して",
+      "2": "類似のフィードバックを探して",
+      "3": "考えられる根本原因は？"
+    }
+  },
+  "notifications": {
+    "approval": {
+      "title": "アシスタントが承認を待っています",
+      "body": "会話でアクションの承認が必要です。"
+    },
+    "reply": {
+      "title": "アシスタントが返信しました",
+      "body": "会話に新しい返信があります。"
+    },
+    "failed": {
+      "title": "アシスタントの実行に失敗しました",
+      "body": "会話を開いて内容を確認してください。"
+    },
+    "toggle": {
+      "turnOn": "会話で対応が必要なときに通知する",
+      "turnOff": "通知をオフにする",
+      "blocked": "このサイトの通知はブラウザーの設定でブロックされています",
+      "unsupported": "このブラウザーは通知に対応していません"
+    }
+  }
+}

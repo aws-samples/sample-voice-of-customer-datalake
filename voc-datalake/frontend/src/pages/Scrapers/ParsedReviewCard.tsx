@@ -1,4 +1,5 @@
-import { Trash2 } from 'lucide-react'
+import { CalendarClock, Trash2 } from 'lucide-react'
+import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import RatingStars from '../../components/RatingStars'
 import type { ParsedReview } from '../../store/manualImportStore'
@@ -46,15 +47,17 @@ export default function ParsedReviewCard({
   review, index, onUpdate, onDelete,
 }: ParsedReviewCardProps) {
   const { t } = useTranslation('scrapers')
+  const defaultedNoteId = useId()
+  const dateMissing = review.date == null || review.date === ''
   return (
-    <div className="border border-gray-200 rounded-lg p-4 bg-white">
+    <div className="border border-border rounded-lg p-4 bg-card">
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="flex items-center gap-3 flex-wrap">
           <RatingStars rating={review.rating} />
           <select
             value={review.rating ?? ''}
             onChange={(e) => onUpdate(index, { rating: e.target.value === '' ? null : Number(e.target.value) })}
-            className="text-sm border border-gray-200 rounded px-2 py-1"
+            className="select select-sm w-auto"
           >
             {RATING_OPTIONS.map((opt) => (
               <option key={opt.labelKey + (opt.count ?? '')} value={opt.value ?? ''}>
@@ -67,18 +70,28 @@ export default function ParsedReviewCard({
             value={review.author ?? ''}
             onChange={(e) => onUpdate(index, { author: e.target.value === '' ? null : e.target.value })}
             placeholder={t('parsedReview.authorPlaceholder')}
-            className="text-sm border border-gray-200 rounded px-2 py-1 w-32"
+            className="input w-32 px-2 py-1"
           />
           <input
             type="date"
+            required
+            aria-label={t('parsedReview.dateLabel')}
+            aria-invalid={dateMissing}
+            aria-describedby={review.date_defaulted === true ? defaultedNoteId : undefined}
             value={review.date ?? ''}
-            onChange={(e) => onUpdate(index, { date: e.target.value === '' ? null : e.target.value })}
-            className="text-sm border border-gray-200 rounded px-2 py-1"
+            onChange={(e) => onUpdate(index, { date: e.target.value === '' ? null : e.target.value, date_defaulted: false })}
+            className={`input w-auto px-2 py-1 ${dateMissing ? 'border-warn' : ''}`}
           />
+          {review.date_defaulted === true && (
+            <span id={defaultedNoteId} className="text-xs text-muted flex items-center gap-1">
+              <CalendarClock size={14} aria-hidden="true" />
+              {t('parsedReview.dateDefaulted')}
+            </span>
+          )}
         </div>
         <button
           onClick={() => onDelete(index)}
-          className="p-1.5 text-red-500 hover:bg-red-50 rounded transition-colors"
+          className="p-1.5 text-danger hover:bg-danger-subtle rounded-sm transition-colors"
           title="Delete review"
         >
           <Trash2 size={16} />
@@ -90,7 +103,7 @@ export default function ParsedReviewCard({
         value={review.title ?? ''}
         onChange={(e) => onUpdate(index, { title: e.target.value === '' ? null : e.target.value })}
         placeholder={t('parsedReview.titlePlaceholder')}
-        className="w-full text-sm font-medium border border-gray-200 rounded px-3 py-2 mb-2"
+        className="input font-medium mb-2"
       />
 
       <textarea
@@ -98,7 +111,7 @@ export default function ParsedReviewCard({
         onChange={(e) => onUpdate(index, { text: e.target.value })}
         placeholder={t('parsedReview.textPlaceholder')}
         rows={3}
-        className="w-full text-sm border border-gray-200 rounded px-3 py-2 resize-none"
+        className="input resize-none"
       />
     </div>
   )

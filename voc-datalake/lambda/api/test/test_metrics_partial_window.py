@@ -1,67 +1,52 @@
 """The metrics endpoints must MEASURE completeness, not assert it.
 
 Every route in `metrics_handler.py` that publishes `is_partial` used to publish a
-hardcoded `False` on its aggregates path — the default path, a plain `?days=N` —
-because the flag was initialised to `False` beside the scan branch that sets it
-and the aggregates branch never touched it. Measured symptom of finding "M4":
-99 items of a 6,239-item corpus reported as a complete answer. Through MCP that
-is worse than on the dashboard, where a human has the corpus total next to the
-chart to notice with.
+hardcoded `False` on its aggregates path, because the flag was initialised beside
+the scan branch and the aggregates branch never touched it (finding "M4": 99 items
+of a 6,239-item corpus reported as complete).
 
-Two INDEPENDENT faults make an aggregates answer incomplete, and each has its
-own tests here because neither implies the other:
+What makes an answer incomplete now, each with its own tests:
 
-1. Paging truncation, which `_query_metric_window` already detected and threw
-   away (it logged and returned a short list). It now returns
-   `(items, truncated)`, the convention `_scan_recent_items` /
-   `_scan_window_items` already use.
-2. The aggregate retention horizon, which nothing detected at all. Aggregate
-   rows carry a 90-day TTL while `days` validates up to 365, so a window wider
-   than `AGGREGATE_RETENTION_DAYS` reads a partition whose older rows DynamoDB
-   has already deleted. Every read succeeds; the totals just under-report.
+1. Paging truncation of an aggregate read (`_query_metric_window` returns
+   `(items, truncated)`, the convention of `_scan_recent_items`/`_scan_window_items`).
+2. An unpaged `gsi1-by-metric-type` read leaving a cursor open.
+3. A per-day `gsi1-by-date` walk stopped by the request's wall-clock budget
+   (`shared/time_budget.py`): `is_partial` (or `is_partial_window` on `/feedback`
+   and `/feedback/search`) plus `partial_reason: 'time_budget'` and
+   `scanned_through`.
 
-Which mutation makes each assertion here fail:
-
-* `TestAggregatePathReportsPagingTruncation` — revert
-  `_query_metric_window`'s `return items, True` to `return items` (and the
-  callers' `or truncated` with it): the truncated cases report `False`.
-  `test_an_untruncated_window_is_reported_complete` is the positive control that
-  keeps this suite from passing by reporting `True` unconditionally.
-* `TestWindowWiderThanAggregateRetention` — delete the
-  `_window_exceeds_aggregate_retention(days)` seed from the aggregates branches
-  (or weaken `>` to `>=`... which breaks the boundary test instead): a 365-day
-  window reports `False`. The `days=90` case fails if the check is widened to
-  flag windows the rows still cover.
-* `TestEveryPublishingRouteIsWired` — add a route that returns `is_partial`
-  without wiring it and the derived parametrization picks it up and fails; the
-  derivation itself is guarded by
-  `test_the_derivation_finds_the_routes_that_publish_the_flag`, without which an
-  empty list would make every parametrized test vacuous.
-* `TestScanPathIsUnchanged` — anti-overreach. Fails if the retention horizon or
-  the paging flag is applied to the raw-item scan path, whose feedback rows keep
-  a 365-day TTL and are therefore complete over the widest window callers may
-  ask for, or if a partial aggregate read is "fixed" by falling back to scanning.
+The aggregate RETENTION horizon is gone: nothing is ever deleted, so a window of
+any width (0 = all time, resolved through the earliest-data watermark) is complete
+unless one of the above happened. `TestAnyWindowIsAnsweredFromAggregatesInFull`
+fails if a by-construction partial flag comes back.
 """
 import ast
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
-
+from handler_events_fixtures import call_route
 from metrics_publishing_routes import (
     HANDLER_SOURCE as _HANDLER_SOURCE,
+)
+from metrics_publishing_routes import (
     handler_tree,
     routes_publishing_is_partial,
 )
-from shared.api import AGGREGATE_RETENTION_DAYS, MAX_FEEDBACK_WINDOW_DAYS, clear_categories_cache
+
+from shared.api import MAX_FEEDBACK_WINDOW_DAYS, clear_categories_cache
 
 # DERIVED from the handler source rather than listed here — see
-# `metrics_publishing_routes`, which `test_mcp_delegation` reads too so there is
-# one derivation and not two. `test_the_derivation_finds_the_routes_that_publish
+# `metrics_publishing_routes`. `test_the_derivation_finds_the_routes_that_publish
 # _the_flag` below is its positive control.
 PUBLISHING_ROUTES = routes_publishing_is_partial()
+# Publishing routes with NO aggregates path: they always walk raw items, so the
+# aggregate-paging suites below have nothing to truncate there. The time-budget
+# and presence suites still cover them through PUBLISHING_ROUTES.
+SCAN_ONLY_ROUTES = frozenset({'/metrics/github'})
+AGGREGATE_ROUTES = sorted(set(PUBLISHING_ROUTES) - SCAN_ONLY_ROUTES)
 
 _HELPER = '_query_metric_window'
 # test/ → api/ → lambda/. Every Lambda package lives under here, so this is the
@@ -104,11 +89,20 @@ def _calls_unpacking_two_values(tree: ast.Module) -> list[ast.Call]:
 # Every one of them reaches its aggregates path on a plain `?days=N`: no
 # `source`, and the default 'imported' date basis. That is the path that used to
 # assert completeness, and the only extra parameter any of them needs.
-INSIDE_RETENTION_DAYS = AGGREGATE_RETENTION_DAYS - 1
+WINDOW_DAYS = 30
 
 
 def _today() -> str:
-    return datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    return datetime.now(UTC).strftime('%Y-%m-%d')
+
+
+def _get(event_factory, context, path: str, params: dict) -> dict:
+    """GET one metrics route with `params` and return the parsed body."""
+    from metrics_handler import lambda_handler
+    _, body = call_route(
+        lambda_handler, event_factory, context, method='GET', path=path, query_params=params,
+    )
+    return body
 
 
 def _aggregate_page(truncated: bool) -> dict:
@@ -125,19 +119,30 @@ def _aggregate_page(truncated: bool) -> dict:
     return page
 
 
+# A route's required parameters beyond `days`.
+ROUTE_PARAMS = {'/metrics/dimensions': {'key': 'product'}}
+# `/metrics/dimensions` needs one configured dimension; every other settings read is empty.
+_DIMENSIONS_ROW = {'Item': {'dimensions': [{'key': 'product', 'values': [{'name': 'App'}]}]}}
+
+
+def _settings_rows(**kwargs) -> dict:
+    return _DIMENSIONS_ROW if kwargs.get('Key', {}).get('pk') == 'SETTINGS#dimensions' else {}
+
+
 def _call_route(path: str, days: int, agg, fb, event_factory, context) -> dict:
     """Drive one route down its aggregates path and return the parsed body."""
     # `get_configured_categories` memoises module-side, so a value another test
     # module left behind would decide which category partitions are read. Cleared
     # both ways, as the other metrics tests do.
     clear_categories_cache()
-    agg.get_item.return_value = {}
+    agg.get_item.side_effect = _settings_rows
     fb.query.return_value = {'Items': [], 'ScannedCount': 0}
     from metrics_handler import lambda_handler
 
+    params = {'days': str(days), **ROUTE_PARAMS.get(path, {})}
     try:
         response = lambda_handler(
-            event_factory(method='GET', path=path, query_params={'days': str(days)}),
+            event_factory(method='GET', path=path, query_params=params),
             context,
         )
     finally:
@@ -165,6 +170,11 @@ class TestEveryPublishingRouteIsWired:
             '/metrics/categories',
             '/metrics/sources',
             '/metrics/personas',
+            # GitHub Issues per-release breakdown: a raw-item walk, so it carries
+            # the walk's partial flag like the scan branches of the routes above.
+            '/metrics/github',
+            # Per-value counts of one configured dimension.
+            '/metrics/dimensions',
         }, PUBLISHING_ROUTES
 
     @pytest.mark.parametrize('path', sorted(PUBLISHING_ROUTES))
@@ -175,7 +185,7 @@ class TestEveryPublishingRouteIsWired:
     ):
         """An absent flag reads as "complete" exactly like a false one."""
         agg.query.return_value = _aggregate_page(truncated=False)
-        body = _call_route(path, INSIDE_RETENTION_DAYS, agg, fb,
+        body = _call_route(path, WINDOW_DAYS, agg, fb,
                            api_gateway_event, lambda_context)
 
         assert 'is_partial' in body, f'{path} publishes no is_partial'
@@ -195,7 +205,14 @@ class TestEveryCallerUnpacksTheTruncationFlag:
 
     def test_the_derivation_sees_the_calls(self):
         """The positive control: an empty derivation would make the check below
-        pass by never running."""
+        pass by never running.
+
+        `_metric_window_pair` is now the ONLY direct caller: every partition read —
+        `_metric_window_totals` (`/metrics/sentiment`, `/metrics/categories`, the
+        category half of `/feedback/entities`), `_summary_from_aggregates` and the
+        total in `get_entities` — goes through it (via `_metric_windows`, which
+        runs them concurrently), and it unpacks the pair it hands on.
+        """
         tree = handler_tree()
 
         callers = sorted(
@@ -204,9 +221,7 @@ class TestEveryCallerUnpacksTheTruncationFlag:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
             and _calls_to_helper(ast.Module(body=node.body, type_ignores=[]))
         )
-        assert callers == [
-            'get_category_metrics', 'get_entities', 'get_sentiment_metrics', 'get_summary',
-        ], callers
+        assert callers == ['_metric_window_pair'], callers
 
     def test_no_call_site_drops_the_flag(self):
         tree = handler_tree()
@@ -244,7 +259,7 @@ class TestEveryCallerUnpacksTheTruncationFlag:
 class TestAggregatePathReportsPagingTruncation:
     """Fault 1: the paging bound, which the helper detected and discarded."""
 
-    @pytest.mark.parametrize('path', sorted(PUBLISHING_ROUTES))
+    @pytest.mark.parametrize('path', AGGREGATE_ROUTES)
     @patch('metrics_handler.feedback_table')
     @patch('metrics_handler.aggregates_table')
     def test_a_truncated_aggregate_read_is_reported_partial(
@@ -252,14 +267,14 @@ class TestAggregatePathReportsPagingTruncation:
     ):
         """Every page hands back another cursor, so every read stops short."""
         agg.query.return_value = _aggregate_page(truncated=True)
-        body = _call_route(path, INSIDE_RETENTION_DAYS, agg, fb,
+        body = _call_route(path, WINDOW_DAYS, agg, fb,
                            api_gateway_event, lambda_context)
 
         assert body['is_partial'] is True, (
             f'{path} read a truncated window and called it complete'
         )
 
-    @pytest.mark.parametrize('path', sorted(PUBLISHING_ROUTES))
+    @pytest.mark.parametrize('path', AGGREGATE_ROUTES)
     @patch('metrics_handler.feedback_table')
     @patch('metrics_handler.aggregates_table')
     def test_an_untruncated_window_is_reported_complete(
@@ -273,7 +288,7 @@ class TestAggregatePathReportsPagingTruncation:
         ignored.
         """
         agg.query.return_value = _aggregate_page(truncated=False)
-        body = _call_route(path, INSIDE_RETENTION_DAYS, agg, fb,
+        body = _call_route(path, WINDOW_DAYS, agg, fb,
                            api_gateway_event, lambda_context)
 
         assert body['is_partial'] is False, (
@@ -289,7 +304,7 @@ class TestAggregatePathReportsPagingTruncation:
 
         agg.query.return_value = _aggregate_page(truncated=True)
         items, truncated = _query_metric_window(
-            'METRIC#urgent', 3, datetime(2026, 3, 10, tzinfo=timezone.utc))
+            'METRIC#urgent', 3, datetime(2026, 3, 10, tzinfo=UTC))
 
         assert truncated is True
         assert len(items) == 3, 'the bound still caps pages at `days`'
@@ -315,104 +330,207 @@ class TestAggregatePathReportsPagingTruncation:
         agg.query.side_effect = one_short_partition
 
         from metrics_handler import lambda_handler
-        event = api_gateway_event(
+        _, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
             method='GET', path='/metrics/sentiment',
-            query_params={'days': str(INSIDE_RETENTION_DAYS)},
+            query_params={'days': str(WINDOW_DAYS)},
         )
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
 
         assert body['is_partial'] is True
 
 
-class TestWindowWiderThanAggregateRetention:
-    """Fault 2: the retention horizon, which nothing detected at all.
+class TestAnyWindowIsAnsweredFromAggregatesInFull:
+    """Aggregate rows are never deleted (no TTL), so no window is partial by construction.
 
-    Not a variant of fault 1. Paging truncation is a property of one read that
-    may or may not happen; this holds for the request itself even when every
-    read succeeds and returns every row that still exists.
+    This class replaces the retired retention horizon (`AGGREGATE_RETENTION_DAYS`):
+    a window of any width, all-time included, is answered from the aggregate
+    partitions and reported complete unless a READ was truncated.
     """
 
-    @pytest.mark.parametrize('path', sorted(PUBLISHING_ROUTES))
+    @pytest.mark.parametrize('path', AGGREGATE_ROUTES)
     @patch('metrics_handler.feedback_table')
     @patch('metrics_handler.aggregates_table')
-    def test_a_window_beyond_the_retention_is_partial_by_construction(
+    def test_the_widest_window_is_complete(
         self, agg, fb, path, api_gateway_event, lambda_context
     ):
         agg.query.return_value = _aggregate_page(truncated=False)
         body = _call_route(path, MAX_FEEDBACK_WINDOW_DAYS, agg, fb,
                            api_gateway_event, lambda_context)
 
-        assert body['is_partial'] is True, (
-            f'{path} answered a {MAX_FEEDBACK_WINDOW_DAYS}-day window from '
-            f'{AGGREGATE_RETENTION_DAYS} days of surviving rows and called it complete'
-        )
-
-    @pytest.mark.parametrize('path', sorted(PUBLISHING_ROUTES))
-    @patch('metrics_handler.feedback_table')
-    @patch('metrics_handler.aggregates_table')
-    def test_a_window_the_rows_still_cover_is_complete(
-        self, agg, fb, path, api_gateway_event, lambda_context
-    ):
-        """At exactly the retention the rows still cover the window, so flagging
-        it would cry partial over a complete answer and teach callers to ignore
-        the flag."""
-        agg.query.return_value = _aggregate_page(truncated=False)
-        body = _call_route(path, AGGREGATE_RETENTION_DAYS, agg, fb,
-                           api_gateway_event, lambda_context)
-
         assert body['is_partial'] is False, (
-            f'{path} called a {AGGREGATE_RETENTION_DAYS}-day window partial'
+            f'{path} called a complete {MAX_FEEDBACK_WINDOW_DAYS}-day window partial'
         )
+        assert 'partial_reason' not in body
 
-    def test_the_predicate_is_about_the_request_not_about_a_read(self):
-        """Exercised directly, because the boundary is the whole claim."""
-        from metrics_handler import _window_exceeds_aggregate_retention
+    def test_the_retention_predicate_is_gone(self):
+        import metrics_handler
 
-        assert _window_exceeds_aggregate_retention(AGGREGATE_RETENTION_DAYS + 1) is True
-        assert _window_exceeds_aggregate_retention(AGGREGATE_RETENTION_DAYS) is False
-        assert _window_exceeds_aggregate_retention(1) is False
+        assert not hasattr(metrics_handler, '_window_exceeds_aggregate_retention')
 
     @patch('metrics_handler.feedback_table')
     @patch('metrics_handler.aggregates_table')
     def test_the_wide_window_is_still_answered_from_aggregates(
         self, agg, fb, api_gateway_event, lambda_context
     ):
-        """Reporting the horizon must not widen or narrow what is read.
-
-        The honest answer to "this window exceeds what aggregates retain" is to
-        say so, not to silently fall back to a raw-item scan — which is a
-        different, budget-bounded set of numbers arriving under the same name.
-        """
+        """A wide window must not silently fall back to a raw-item scan, which is
+        a different, budget-bounded set of numbers arriving under the same name."""
         agg.query.return_value = _aggregate_page(truncated=False)
         body = _call_route('/metrics/categories', MAX_FEEDBACK_WINDOW_DAYS, agg, fb,
                            api_gateway_event, lambda_context)
 
-        assert body['is_partial'] is True
+        assert body['is_partial'] is False
         assert body['period_days'] == MAX_FEEDBACK_WINDOW_DAYS
         fb.query.assert_not_called()
 
 
-class TestScanPathIsUnchanged:
-    """Anti-overreach: neither new signal may leak onto the raw-item path.
+class TestAllTimeWindowsResolveThroughTheWatermark:
+    """`days=0` is all time: from the earliest-data watermark to today."""
 
-    Feedback rows are written with a 365-day TTL, so a scan reaches back as far
-    as `validate_days` allows. Only the 90-day AGGREGATE rows are the shorter
-    horizon, so applying it to a scan would report complete answers as partial.
-    """
+    @staticmethod
+    def _watermark(days_ago: int) -> dict:
+        earliest = (datetime.now(UTC) - timedelta(days=days_ago)).strftime('%Y-%m-%d')
+        return {'Item': {'pk': 'METRIC#meta', 'sk': 'earliest_date', 'date': earliest}}
 
+    @patch('metrics_handler.feedback_table', new=MagicMock())
     @patch('metrics_handler.aggregates_table')
+    def test_days_zero_reads_exactly_the_history(
+        self, agg, api_gateway_event, lambda_context
+    ):
+        from boto3.dynamodb.conditions import Key
+
+        agg.get_item.return_value = self._watermark(days_ago=9)
+        agg.query.return_value = {'Items': []}
+        body = _get(api_gateway_event, lambda_context, '/metrics/summary', {'days': '0'})
+
+        assert body['period_days'] == 10
+        today = datetime.now(UTC)
+        oldest = (today - timedelta(days=9)).strftime('%Y-%m-%d')
+        assert agg.query.call_args_list[0].kwargs['KeyConditionExpression'] == (
+            Key('pk').eq('METRIC#daily_total')
+            & Key('sk').between(oldest, today.strftime('%Y-%m-%d'))
+        )
+        agg.get_item.assert_called_once_with(Key={'pk': 'METRIC#meta', 'sk': 'earliest_date'})
+
+    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.aggregates_table')
+    def test_a_window_past_the_history_is_narrowed_to_it(
+        self, agg, fb, api_gateway_event, lambda_context
+    ):
+        """A scan path walks the history, not 9,999 empty day partitions."""
+        agg.get_item.return_value = self._watermark(days_ago=4)
+        fb.query.return_value = {'Items': [], 'ScannedCount': 0}
+        body = _get(api_gateway_event, lambda_context, '/metrics/categories',
+                    {'days': str(MAX_FEEDBACK_WINDOW_DAYS), 'source': 'webscraper'})
+
+        assert body['period_days'] == 5
+        assert fb.query.call_count == 5
+
+    @patch('metrics_handler.feedback_table', new=MagicMock())
+    @patch('metrics_handler.aggregates_table')
+    def test_without_a_watermark_all_time_falls_back_to_a_year(
+        self, agg, api_gateway_event, lambda_context
+    ):
+        from shared.api import ALL_TIME_FALLBACK_DAYS
+
+        agg.get_item.return_value = {}
+        agg.query.return_value = {'Items': []}
+        body = _get(api_gateway_event, lambda_context, '/metrics/summary', {'days': '0'})
+
+        assert body['period_days'] == ALL_TIME_FALLBACK_DAYS
+
+
+class TestPerDayWalksStopOnTheTimeBudget:
+    """Per-day `gsi1-by-date` walks are bounded by wall-clock time, and say so."""
+
+    @staticmethod
+    def _exhausted_after_first_day(monkeypatch):
+        """A budget whose clock runs out once the first day has been read."""
+        import metrics_handler
+        from shared.time_budget import WalkBudget
+
+        ticks = iter(range(1000))
+
+        def clock() -> float:
+            # 0 at construction, then 100 s per reading: past the deadline at once.
+            return next(ticks) * 100.0
+
+        class ExhaustedBudget(WalkBudget):
+            def __init__(self):
+                super().__init__(clock=clock)
+
+        monkeypatch.setattr(metrics_handler, 'WalkBudget', ExhaustedBudget)
+
+    @classmethod
+    def _get_exhausted(cls, agg, fb, monkeypatch, event_factory, context, path, params) -> dict:
+        """GET `path` over 30 days with a budget that runs out after the first day."""
+        cls._exhausted_after_first_day(monkeypatch)
+        agg.get_item.return_value = {}
+        fb.query.return_value = {'Items': [], 'ScannedCount': 0}
+        return _get(event_factory, context, path, {'days': '30', **params})
+
+    @pytest.mark.parametrize(('path', 'params'), [
+        ('/metrics/categories', {'source': 'webscraper'}),
+        ('/metrics/sentiment', {'source': 'webscraper'}),
+        ('/metrics/sources', {'date_basis': 'review'}),
+        ('/metrics/personas', {'date_basis': 'review'}),
+        ('/metrics/summary', {'date_basis': 'review'}),
+        ('/feedback/entities', {'source': 'webscraper'}),
+    ])
+    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.aggregates_table')
+    def test_scan_routes_report_the_budget_stop(
+        self, agg, fb, path, params, monkeypatch, api_gateway_event, lambda_context
+    ):
+        body = self._get_exhausted(agg, fb, monkeypatch, api_gateway_event, lambda_context, path, params)
+
+        assert body['is_partial'] is True
+        assert body['partial_reason'] == 'time_budget'
+        assert body['scanned_through'] == _today()
+        assert fb.query.call_count == 1, 'the walk must stop once the budget is spent'
+
+    @pytest.mark.parametrize(('path', 'params'), [
+        ('/feedback', {}),
+        ('/feedback/search', {'q': 'late'}),
+    ])
+    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.aggregates_table')
+    def test_list_routes_report_the_budget_stop(
+        self, agg, fb, path, params, monkeypatch, api_gateway_event, lambda_context
+    ):
+        """These routes name their flag `is_partial_window`; the reason rides beside it."""
+        body = self._get_exhausted(agg, fb, monkeypatch, api_gateway_event, lambda_context, path, params)
+
+        assert body['is_partial_window'] is True
+        assert body['partial_reason'] == 'time_budget'
+        assert body['scanned_through'] == _today()
+
+    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.aggregates_table')
+    def test_a_walk_inside_the_budget_carries_no_reason(
+        self, agg, fb, api_gateway_event, lambda_context
+    ):
+        agg.get_item.return_value = {}
+        fb.query.return_value = {'Items': [], 'ScannedCount': 0}
+        body = _get(api_gateway_event, lambda_context, '/metrics/categories',
+                    {'days': '30', 'source': 'webscraper'})
+
+        assert body['is_partial'] is False
+        assert 'partial_reason' not in body
+        assert 'scanned_through' not in body
+        assert fb.query.call_count == 30
+
+
+class TestScanPathIsUnchanged:
+    """Anti-overreach: the aggregate-read signals must not leak onto the raw-item path."""
+
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     @patch('metrics_handler.feedback_table')
     def test_a_complete_scan_of_the_widest_window_is_complete(
-        self, fb, agg, api_gateway_event, lambda_context
+        self, fb, api_gateway_event, lambda_context
     ):
         fb.query.return_value = {'Items': [], 'ScannedCount': 0}
-
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(
-            method='GET', path='/metrics/categories',
-            query_params={'days': str(MAX_FEEDBACK_WINDOW_DAYS), 'source': 'webscraper'},
-        )
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
+        body = _get(api_gateway_event, lambda_context, '/metrics/categories',
+                    {'days': str(MAX_FEEDBACK_WINDOW_DAYS), 'source': 'webscraper'})
 
         assert body['is_partial'] is False
 
@@ -423,7 +541,7 @@ class TestScanPathIsUnchanged:
     ):
         """The behaviour that already worked, pinned so the rewiring cannot have
         replaced the scan's flag with the aggregates one."""
-        today = datetime.now(timezone.utc)
+        today = datetime.now(UTC)
         fb.query.side_effect = [
             {
                 'Items': [{
@@ -438,11 +556,11 @@ class TestScanPathIsUnchanged:
         ] + [{'Items': [], 'ScannedCount': 0}] * 400
 
         from metrics_handler import lambda_handler
-        event = api_gateway_event(
+        _, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
             method='GET', path='/metrics/categories',
             query_params={'days': '30', 'source': 'webscraper'},
         )
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
 
         assert body['is_partial'] is True
         assert body['categories'] == {'delivery': 1}
@@ -455,21 +573,25 @@ class TestScanPathIsUnchanged:
     def test_the_review_basis_summary_still_reports_its_own_scan(
         self, fb, agg, api_gateway_event, lambda_context
     ):
-        today = datetime.now(timezone.utc)
-        fb.query.side_effect = [{
+        today = datetime.now(UTC)
+        first_page = {
             'Items': [{
                 'feedback_id': 'a-1', 'date': today.strftime('%Y-%m-%d'),
                 'source_created_at': today.isoformat(),
             }],
             'ScannedCount': 1,
-        }] + [{'Items': [], 'ScannedCount': 0}] * 400
+        }
+        pages = iter([first_page])
+        # Every later day partition is empty; a function rather than a list so the
+        # widest window cannot run out of canned pages.
+        fb.query.side_effect = lambda **_kwargs: next(pages, {'Items': [], 'ScannedCount': 0})
 
         from metrics_handler import lambda_handler
-        event = api_gateway_event(
+        _, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
             method='GET', path='/metrics/summary',
             query_params={'days': str(MAX_FEEDBACK_WINDOW_DAYS), 'date_basis': 'review'},
         )
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
 
         assert body['is_partial'] is False
         assert body['total_feedback'] == 1
@@ -493,8 +615,10 @@ class TestUnpagedIndexReadsReportTruncation:
         agg.query.return_value = _aggregate_page(truncated=True)
 
         from metrics_handler import lambda_handler
-        event = api_gateway_event(method='GET', path=path, query_params={'days': '7'})
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
+        _, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            method='GET', path=path, query_params={'days': '7'},
+        )
 
         assert body['is_partial'] is True
         assert agg.query.call_count == 1, 'the read must not have been widened'
@@ -507,8 +631,10 @@ class TestUnpagedIndexReadsReportTruncation:
         agg.query.return_value = _aggregate_page(truncated=False)
 
         from metrics_handler import lambda_handler
-        event = api_gateway_event(method='GET', path=path, query_params={'days': '7'})
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
+        _, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            method='GET', path=path, query_params={'days': '7'},
+        )
 
         assert body['is_partial'] is False
 
@@ -519,11 +645,12 @@ class TestWindowBoundsAreUnchanged:
     @patch('metrics_handler.aggregates_table')
     def test_the_queried_date_range_is_the_requested_window(self, agg):
         from boto3.dynamodb.conditions import Key
+
         from metrics_handler import _query_metric_window
 
         agg.query.return_value = {'Items': []}
         _query_metric_window('METRIC#urgent', 7,
-                             datetime(2026, 3, 10, tzinfo=timezone.utc))
+                             datetime(2026, 3, 10, tzinfo=UTC))
 
         assert agg.query.call_args.kwargs['KeyConditionExpression'] == (
             Key('pk').eq('METRIC#urgent') & Key('sk').between('2026-03-04', '2026-03-10')
@@ -533,11 +660,11 @@ class TestWindowBoundsAreUnchanged:
     def test_summary_still_costs_three_queries_at_any_window(
         self, agg, api_gateway_event, lambda_context
     ):
-        """Including a window past the retention horizon: the flag is computed
-        from `days`, not bought with extra reads."""
+        """At any window, all-time and the widest included: the flag is computed
+        from the reads, not bought with extra ones."""
         from metrics_handler import lambda_handler
 
-        for days in ('1', '7', '90', '365'):
+        for days in ('0', '1', '7', '90', '365', str(MAX_FEEDBACK_WINDOW_DAYS)):
             agg.reset_mock()
             agg.query.return_value = _aggregate_page(truncated=False)
             event = api_gateway_event(
@@ -553,7 +680,7 @@ class TestWindowBoundsAreUnchanged:
         """Partial means "a lower bound", not "no answer" — the numbers that were
         read are still returned."""
         agg.query.return_value = _aggregate_page(truncated=True)
-        body = _call_route('/metrics/sentiment', INSIDE_RETENTION_DAYS, agg, fb,
+        body = _call_route('/metrics/sentiment', WINDOW_DAYS, agg, fb,
                            api_gateway_event, lambda_context)
 
         assert body['is_partial'] is True
@@ -568,7 +695,7 @@ class TestDailySeriesOrderSurvivesTheNewReturnShape:
     def test_summary_keeps_daily_totals_newest_first(
         self, agg, api_gateway_event, lambda_context
     ):
-        newest = datetime.now(timezone.utc)
+        newest = datetime.now(UTC)
         older = newest - timedelta(days=1)
         agg.query.return_value = {'Items': [
             {'sk': newest.strftime('%Y-%m-%d'), 'count': 2, 'sum': 1.0},
@@ -576,11 +703,11 @@ class TestDailySeriesOrderSurvivesTheNewReturnShape:
         ]}
 
         from metrics_handler import lambda_handler
-        event = api_gateway_event(
-            method='GET', path='/metrics/summary', query_params={'days': '7'})
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
+        _, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            method='GET', path='/metrics/summary', query_params={'days': '7'},
+        )
 
-        assert [t['date'] for t in body['daily_totals']] == [
-            newest.strftime('%Y-%m-%d'), older.strftime('%Y-%m-%d'),
-        ]
+        day_order = [t['date'] for t in body['daily_totals']]
+        assert day_order == [newest.strftime('%Y-%m-%d'), older.strftime('%Y-%m-%d')]
         assert agg.query.call_args.kwargs['ScanIndexForward'] is False

@@ -31,6 +31,8 @@ interface FilterBarProps {
   readonly onClearFilters: () => void
   /** Optional content pinned to the far right of the bar (e.g. Export PDF). */
   readonly trailing?: React.ReactNode
+  /** A second row of filters (channel, dimensions, tag). */
+  readonly children?: React.ReactNode
 }
 
 export function FilterBar({
@@ -46,27 +48,29 @@ export function FilterBar({
   hasActiveFilters,
   onClearFilters,
   trailing,
+  children,
 }: FilterBarProps) {
   const { t } = useTranslation('categories')
   return (
     <div className="card !p-4 sm:!p-6">
       <div className="flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-4">
         <div className="relative flex-1 min-w-0">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={18} />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" size={16} aria-hidden="true" />
           <input
-            type="text"
+            type="search"
             placeholder={t('searchPlaceholder')}
+            aria-label={t('searchPlaceholder')}
             value={searchText}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="input !pl-11"
+            className="input !pl-10"
           />
         </div>
         <div className="flex flex-wrap items-center gap-3 sm:gap-4">
           <select
-            value={selectedSource || ''}
+            value={selectedSource ?? ''}
             onChange={(e) => onSourceChange(e.target.value || null)}
             aria-label={t('filterBySource')}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="select w-auto"
           >
             <option value="">{t('allSources')}</option>
             {allSources.map(source => (
@@ -74,19 +78,19 @@ export function FilterBar({
             ))}
           </select>
           <RatingPicker ratingFilter={ratingFilter} onRatingFilterChange={onRatingFilterChange} />
-          <label className="flex items-center gap-2 cursor-pointer whitespace-nowrap">
+          <label className="flex items-center gap-2 min-h-9 cursor-pointer whitespace-nowrap">
             <input
               type="checkbox"
               checked={showUrgentOnly}
               onChange={(e) => onUrgentChange(e.target.checked)}
-              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              className="rounded-sm accent-accent focus-ring"
             />
-            <span className="text-sm text-gray-700">{t('urgentOnly')}</span>
+            <span className="text-sm text-text">{t('urgentOnly')}</span>
           </label>
           {hasActiveFilters && (
             <button
               onClick={onClearFilters}
-              className="flex items-center gap-1 text-xs sm:text-sm text-gray-500 hover:text-gray-700 whitespace-nowrap"
+              className="btn btn-ghost btn-sm whitespace-nowrap"
             >
               <X size={14} />
               {t('clearFilters')}
@@ -96,12 +100,13 @@ export function FilterBar({
         {trailing && (
           <div
             data-testid="filter-bar-trailing"
-            className="flex items-center lg:ml-auto lg:border-l lg:border-gray-200 lg:pl-4"
+            className="flex items-center lg:ml-auto lg:border-l lg:border-border lg:pl-4"
           >
             {trailing}
           </div>
         )}
       </div>
+      {children}
     </div>
   )
 }
@@ -117,26 +122,28 @@ function RatingPicker({
 }: Readonly<{ ratingFilter: RatingFilter; onRatingFilterChange: (filter: RatingFilter) => void }>) {
   const { t } = useTranslation('categories')
   return (
-    <div className="flex items-center gap-1.5 sm:gap-2">
+    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 min-w-0">
       <div className="flex items-center gap-0.5 sm:gap-1" role="group" aria-label={t('starRating')}>
         {[0, 1, 2, 3, 4, 5].map(rating => (
           <button
             key={rating}
             onClick={() => onRatingFilterChange({ ...ratingFilter, value: rating })}
             title={starTitle(t, rating, ratingFilter.direction)}
+            aria-label={starTitle(t, rating, ratingFilter.direction)}
+            aria-pressed={ratingFilter.value === rating}
             className={clsx(
-              'p-1 sm:p-1.5 rounded transition-colors active:scale-95',
-              ratingFilter.value === rating ? 'bg-yellow-100' : 'hover:bg-gray-100'
+              'min-h-9 min-w-9 sm:min-h-0 sm:min-w-0 inline-flex items-center justify-center p-1 sm:p-1.5 rounded-md transition-colors active:scale-95 focus-ring',
+              ratingFilter.value === rating ? 'bg-accent-subtle ring-1 ring-inset ring-accent/40' : 'hover:bg-bg-hover'
             )}
           >
             {rating === 0 ? (
-              <span className="text-xs text-gray-500 px-1">{t('any')}</span>
+              <span className={clsx('text-xs px-1', ratingFilter.value === 0 ? 'text-accent-text font-medium' : 'text-muted')}>{t('any')}</span>
             ) : (
               <Star
-                size={14}
-                className="sm:w-4 sm:h-4"
-                fill={ratingFilter.value >= rating ? '#eab308' : 'none'}
-                color={ratingFilter.value >= rating ? '#eab308' : '#d1d5db'}
+                size={16}
+                aria-hidden="true"
+                fill={ratingFilter.value >= rating ? 'var(--warn)' : 'none'}
+                color={ratingFilter.value >= rating ? 'var(--warn)' : 'var(--border-strong)'}
               />
             )}
           </button>
@@ -166,12 +173,12 @@ function RatingDirectionToggle({
     const next: RatingDirection = ratingFilter.direction === 'up' ? 'below' : 'up'
     select(next)
     const radios = e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]')
-    radios[next === 'up' ? 0 : 1]?.focus()
+    Array.from(radios).at(next === 'up' ? 0 : 1)?.focus()
   }
 
   return (
     <div
-      className="flex items-center rounded-lg bg-gray-100 p-0.5 text-xs"
+      className="tabs-track"
       role="radiogroup"
       aria-label={t('ratingDirection')}
       onKeyDown={handleKeyDown}
@@ -205,10 +212,7 @@ function DirectionOption({
       role="radio"
       aria-checked={checked}
       tabIndex={checked ? 0 : -1}
-      className={clsx(
-        'px-1.5 py-0.5 rounded whitespace-nowrap transition-colors active:scale-95',
-        checked ? 'bg-white shadow-sm text-gray-700' : 'text-gray-500 hover:text-gray-700'
-      )}
+      className={clsx('tab', checked && 'tab-active')}
     >
       {label}
     </button>

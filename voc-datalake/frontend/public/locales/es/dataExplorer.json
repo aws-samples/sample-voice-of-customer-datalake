@@ -7,12 +7,7 @@
     "summary_many": "{{count}} categorías • {{total}} elementos • Últimos {{days}} días",
     "summary_other": "{{count}} categorías • {{total}} elementos • Últimos {{days}} días"
   },
-  "deleteConfirm": {
-    "deleteFeedback": "Eliminar Comentario",
-    "deleteS3File": "Eliminar Archivo S3",
-    "message": "¿Estás seguro? Esto no se puede deshacer."
-  },
-  "description": "Explora, edita y sincroniza datos S3 sin procesar y registros DynamoDB procesados",
+  "description": "Explora los datos sin procesar de S3 y los registros procesados de DynamoDB. Aquí nunca se elimina nada y los archivos sin procesar guardados son de solo lectura.",
   "editModal": {
     "cancel": "Cancelar",
     "close": "Cerrar",
@@ -25,36 +20,42 @@
     "key": "Clave",
     "save": "Guardar",
     "syncToDynamo": "También actualizar DynamoDB",
-    "syncToS3": "También actualizar S3",
     "type": "Tipo",
     "viewFeedback": "Ver Comentario",
-    "viewS3File": "Ver Archivo S3"
+    "viewS3File": "Ver Archivo S3",
+    "content": "Contenido del archivo"
   },
   "feedback": {
     "category": "Categoría: {{category}}",
-    "delete": "Eliminar",
     "edit": "Editar",
     "errorLoading": "Error al cargar comentarios",
     "noFeedback": "No se encontraron comentarios",
     "showingRecords": "Mostrando {{filtered}} de {{total}} registros",
     "urgent": "Urgente",
-    "view": "Ver"
+    "view": "Ver",
+    "noFeedbackHint": "Prueba otra fuente o un intervalo de tiempo más amplio.",
+    "showDetails": "Mostrar detalles",
+    "hideDetails": "Ocultar detalles"
   },
   "filters": {
     "allSources": "Todas las Fuentes",
-    "searchPlaceholder": "Buscar..."
+    "searchPlaceholder": "Buscar...",
+    "bucket": "Bucket de S3",
+    "source": "Fuente",
+    "search": "Buscar comentarios"
   },
   "newFile": "Nuevo Archivo",
   "notConfigured": "Configura el endpoint de API en Configuración para explorar datos",
   "refresh": "Actualizar",
   "s3Browser": {
     "back": "Atrás",
-    "delete": "Eliminar",
     "download": "Descargar",
     "edit": "Editar",
     "errorLoading": "Error al cargar archivos",
     "noFiles": "No se encontraron archivos",
-    "view": "Ver"
+    "view": "Ver",
+    "path": "Ruta de la carpeta",
+    "noFilesHint": "Esta carpeta está vacía. Crea un archivo aquí o ingiere datos desde Fuentes de datos."
   },
   "tabs": {
     "categories": "Categorías",
@@ -62,7 +63,8 @@
     "feedbackShort": "Comentarios",
     "processedFeedback": "Comentarios Procesados",
     "s3RawData": "Datos S3 Sin Procesar",
-    "s3Short": "S3"
+    "s3Short": "S3",
+    "label": "Vista de datos"
   },
   "title": "Explorador de Datos"
 }

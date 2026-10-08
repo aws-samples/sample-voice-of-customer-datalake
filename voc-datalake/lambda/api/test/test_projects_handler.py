@@ -3,10 +3,38 @@ Tests for projects_handler.py - /projects/* endpoints.
 """
 import json
 import os
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 import pytest
+from handler_events_fixtures import call_route
 
+from projects_handler import lambda_handler
+
+# The handler passes the gate's Caller through; its shape is pinned in
+# test_project_permissions.py, so these routing tests only check it is passed.
+ANY_CALLER = ANY
+
+
+
+def _post_document_with_raw_body(api_gateway_event, lambda_context, raw_body):
+    """POST /projects/proj-123/document with `raw_body` as the wire body, verbatim.
+
+    Set on the event directly rather than through the fixture's `body=`, which
+    JSON-encodes a dict: these cases are about payloads that are not an object, or
+    not JSON at all. Returns the response and the patched job-creation and
+    generator-invocation mocks, so a refusal can assert nothing was started.
+    """
+    event = api_gateway_event(
+        method='POST',
+        path='/projects/proj-123/document',
+        path_params={'project_id': 'proj-123'},
+    )
+    event['body'] = raw_body
+
+    with patch('projects_handler.create_job', return_value=('job-1', {})) as mock_create_job, \
+            patch('projects_handler.invoke_lambda_async') as mock_invoke:
+        response = lambda_handler(event, lambda_context)
+    return response, mock_create_job, mock_invoke
 
 class TestValidatePersonaCount:
     """Tests for validate_persona_count helper function."""
@@ -14,45 +42,28 @@ class TestValidatePersonaCount:
     def test_returns_default_when_value_is_none(self):
         """Returns default value when input is None."""
         from projects_handler import validate_persona_count
-        
+
         assert validate_persona_count(None, default=3) == 3
 
     def test_clamps_to_min_value(self):
         """Clamps values below minimum (hardcoded to 1)."""
         from projects_handler import validate_persona_count
-        
+
         assert validate_persona_count(0, default=3) == 1
         assert validate_persona_count(-1, default=3) == 1
 
     def test_clamps_to_max_value(self):
         """Clamps values above maximum (hardcoded to 10)."""
         from projects_handler import validate_persona_count
-        
+
         assert validate_persona_count(20, default=3) == 10
 
     def test_accepts_valid_count(self):
         """Accepts valid count within range."""
         from projects_handler import validate_persona_count
-        
+
         assert validate_persona_count(5, default=3) == 5
         assert validate_persona_count('7', default=3) == 7
-
-
-class TestGetConfigEndpoint:
-    """Tests for GET /projects/config endpoint."""
-
-    @patch.dict('os.environ', {'CHAT_STREAM_URL': 'wss://stream.example.com'})
-    def test_returns_config_with_stream_url(self, api_gateway_event, lambda_context):
-        """Returns configuration including streaming endpoint."""
-        from projects_handler import lambda_handler
-        
-        event = api_gateway_event(method='GET', path='/projects/config')
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        assert 'chat_stream_url' in body
-        assert body['chat_stream_url'] == 'wss://stream.example.com'
 
 
 class TestListProjectsEndpoint:
@@ -70,14 +81,12 @@ class TestListProjectsEndpoint:
                 {'project_id': 'proj-2', 'name': 'Project 2'}
             ]
         }
-        
-        from projects_handler import lambda_handler
-        
-        event = api_gateway_event(method='GET', path='/projects')
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
+
+        _response, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            method='GET', path='/projects',
+        )
+
         assert 'projects' in body
         mock_list_projects.assert_called_once()
 
@@ -98,18 +107,14 @@ class TestCreateProjectEndpoint:
                 'description': 'A new project'
             }
         }
-        
-        from projects_handler import lambda_handler
-        
-        event = api_gateway_event(
+
+        _response, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
             method='POST',
             path='/projects',
-            body={'name': 'New Project', 'description': 'A new project'}
+            body={'name': 'New Project', 'description': 'A new project'},
         )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
+
         assert body['success'] is True
         assert body['project']['name'] == 'New Project'
         mock_create_project.assert_called_once()
@@ -132,19 +137,15 @@ class TestGetProjectEndpoint:
                 'documents': []
             }
         }
-        
-        from projects_handler import lambda_handler
-        
-        event = api_gateway_event(
+
+        _response, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
             method='GET',
             path='/projects/proj-123',
-            path_params={'project_id': 'proj-123'}
+            path_params={'project_id': 'proj-123'},
         )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        mock_get_project.assert_called_once_with('proj-123')
+
+        mock_get_project.assert_called_once_with('proj-123', ANY_CALLER)
         assert body['project']['project_id'] == 'proj-123'
 
 
@@ -164,19 +165,15 @@ class TestUpdateProjectEndpoint:
                 'description': 'Updated description'
             }
         }
-        
-        from projects_handler import lambda_handler
-        
-        event = api_gateway_event(
+
+        _response, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
             method='PUT',
             path='/projects/proj-123',
             path_params={'project_id': 'proj-123'},
-            body={'name': 'Updated Name', 'description': 'Updated description'}
+            body={'name': 'Updated Name', 'description': 'Updated description'},
         )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
+
         assert body['success'] is True
 
 
@@ -189,18 +186,14 @@ class TestDeleteProjectEndpoint:
     ):
         """Deletes project successfully."""
         mock_delete_project.return_value = {'success': True}
-        
-        from projects_handler import lambda_handler
-        
-        event = api_gateway_event(
+
+        _response, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
             method='DELETE',
             path='/projects/proj-123',
-            path_params={'project_id': 'proj-123'}
+            path_params={'project_id': 'proj-123'},
         )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
+
         assert body['success'] is True
         mock_delete_project.assert_called_once_with('proj-123')
 
@@ -221,19 +214,15 @@ class TestPersonaCRUDEndpoints:
                 'description': 'Early adopter of technology'
             }
         }
-        
-        from projects_handler import lambda_handler
-        
-        event = api_gateway_event(
+
+        _response, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
             method='POST',
             path='/projects/proj-123/personas',
             path_params={'project_id': 'proj-123'},
-            body={'name': 'Tech Enthusiast', 'description': 'Early adopter of technology'}
+            body={'name': 'Tech Enthusiast', 'description': 'Early adopter of technology'},
         )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
+
         assert body['success'] is True
         assert body['persona']['name'] == 'Tech Enthusiast'
 
@@ -249,19 +238,15 @@ class TestPersonaCRUDEndpoints:
                 'name': 'Updated Name'
             }
         }
-        
-        from projects_handler import lambda_handler
-        
-        event = api_gateway_event(
+
+        _response, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
             method='PUT',
             path='/projects/proj-123/personas/persona-123',
             path_params={'project_id': 'proj-123', 'persona_id': 'persona-123'},
-            body={'name': 'Updated Name'}
+            body={'name': 'Updated Name'},
         )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
+
         assert body['success'] is True
         assert body['persona']['name'] == 'Updated Name'
 
@@ -271,18 +256,14 @@ class TestPersonaCRUDEndpoints:
     ):
         """Deletes a persona."""
         mock_delete_persona.return_value = {'success': True}
-        
-        from projects_handler import lambda_handler
-        
-        event = api_gateway_event(
+
+        _response, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
             method='DELETE',
             path='/projects/proj-123/personas/persona-123',
-            path_params={'project_id': 'proj-123', 'persona_id': 'persona-123'}
+            path_params={'project_id': 'proj-123', 'persona_id': 'persona-123'},
         )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
+
         assert body['success'] is True
 
 
@@ -353,6 +334,7 @@ class TestPersonaPromptVersionIsStamped:
         )
 
 
+@pytest.mark.usefixtures('existing_project')
 class TestGeneratePersonasEndpoint:
     """POST /projects/<id>/personas/generate assembles the filters dict.
 
@@ -391,8 +373,6 @@ class TestGeneratePersonasEndpoint:
     @staticmethod
     def _post_raw(api_gateway_event, lambda_context, body):
         """Submit without asserting success, for the cases that must be refused."""
-        from projects_handler import lambda_handler
-
         event = api_gateway_event(
             method='POST',
             path='/projects/proj-123/personas/generate',
@@ -400,6 +380,7 @@ class TestGeneratePersonasEndpoint:
             body=body,
         )
         with patch('projects_handler.create_job', return_value=('job-1', {})), \
+                patch('projects_handler.ensure_persona_feedback'), \
                 patch('projects_handler.invoke_lambda_async') as mock_invoke:
             response = lambda_handler(event, lambda_context)
         return response, mock_invoke
@@ -438,6 +419,14 @@ class TestGeneratePersonasEndpoint:
         )['generate_avatars'] is False
 
 
+def _assert_a_prd_job_started(response, mock_create_job) -> None:
+    """The request was accepted and started a `generate_prd` job configured as a PRD."""
+    assert json.loads(response['body'])['success'] is True
+    assert mock_create_job.call_args.args[1] == 'generate_prd'
+    assert mock_create_job.call_args.args[3]['doc_type'] == 'prd'
+
+
+@pytest.mark.usefixtures('existing_project')
 class TestGenerateDocumentDocType:
     """POST /projects/<id>/document validates `doc_type` against an allowlist.
 
@@ -459,14 +448,20 @@ class TestGenerateDocumentDocType:
     """
 
     @staticmethod
+    def _assert_started_as_a_prd(api_gateway_event, lambda_context, body):
+        """`body` is accepted and starts a `generate_prd` job configured as a PRD."""
+        response, mock_create_job, _ = TestGenerateDocumentDocType._post(
+            api_gateway_event, lambda_context, body,
+        )
+        _assert_a_prd_job_started(response, mock_create_job)
+
+    @staticmethod
     def _post(api_gateway_event, lambda_context, body):
         """POST the generation route with create_job and the invoke both mocked.
 
         Returns (response, mock_create_job, mock_invoke) so a test can assert on
         the refusal AND on the absence of a job row.
         """
-        from projects_handler import lambda_handler
-
         event = api_gateway_event(
             method='POST',
             path='/projects/proj-123/document',
@@ -505,12 +500,7 @@ class TestGenerateDocumentDocType:
     ):
         """Pinning the pre-existing default: a request that says nothing about
         doc_type behaves exactly as it did before the guard."""
-        response, mock_create_job, _ = self._post(
-            api_gateway_event, lambda_context, {'title': 'A feature'},
-        )
-        assert json.loads(response['body'])['success'] is True
-        assert mock_create_job.call_args.args[1] == 'generate_prd'
-        assert mock_create_job.call_args.args[3]['doc_type'] == 'prd'
+        self._assert_started_as_a_prd(api_gateway_event, lambda_context, {'title': 'A feature'})
 
     def test_an_explicit_null_doc_type_is_resolved_not_forwarded(
         self, api_gateway_event, lambda_context
@@ -520,12 +510,9 @@ class TestGenerateDocumentDocType:
         The generator's own `doc_config.get('doc_type', 'prd')` reads a present
         null as null, and a null doc_type crashes it on `.upper()` after the job
         row already exists."""
-        response, mock_create_job, _ = self._post(
+        self._assert_started_as_a_prd(
             api_gateway_event, lambda_context, {'doc_type': None, 'title': 'A feature'},
         )
-        assert json.loads(response['body'])['success'] is True
-        assert mock_create_job.call_args.args[1] == 'generate_prd'
-        assert mock_create_job.call_args.args[3]['doc_type'] == 'prd'
 
     @pytest.mark.parametrize('bad', [
         # The two doc types the generator also serves, which have their own
@@ -607,20 +594,11 @@ class TestGenerateDocumentDocType:
         problem. Before the isinstance guard these raised AttributeError on
         `body.get` and the handler's catch-all answered 500 — which reads as a
         server fault and which a client retries differently."""
-        from projects_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='POST',
-            path='/projects/proj-123/document',
-            path_params={'project_id': 'proj-123'},
+        # The body is set verbatim rather than through the fixture's `body=`, which
+        # JSON-encodes a dict: the point is a payload that parses to a NON-dict.
+        response, mock_create_job, mock_invoke = _post_document_with_raw_body(
+            api_gateway_event, lambda_context, raw_body,
         )
-        # Set verbatim rather than through the fixture's `body=`, which JSON-encodes
-        # a dict: the point is a payload that parses to a NON-dict.
-        event['body'] = raw_body
-
-        with patch('projects_handler.create_job', return_value=('job-1', {})) as mock_create_job, \
-                patch('projects_handler.invoke_lambda_async') as mock_invoke:
-            response = lambda_handler(event, lambda_context)
 
         assert response['statusCode'] == 400
         assert 'JSON object' in json.loads(response['body'])['error']
@@ -639,21 +617,12 @@ class TestGenerateDocumentDocType:
         `json_body` is a cached_property calling `json.loads`, so unparseable JSON
         raises `JSONDecodeError` AT THE ATTRIBUTE READ — before any isinstance
         check can run — and reaches the handler's catch-all as a 500. Only reading
-        the body through `_json_object_body`, whose `except ValueError` branch owns
+        the body through `shared.request_body.json_object_body`, whose `except ValueError` branch owns
         this case, turns it into the 400 the caller can act on.
         """
-        from projects_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='POST',
-            path='/projects/proj-123/document',
-            path_params={'project_id': 'proj-123'},
+        response, mock_create_job, mock_invoke = _post_document_with_raw_body(
+            api_gateway_event, lambda_context, raw_body,
         )
-        event['body'] = raw_body
-
-        with patch('projects_handler.create_job', return_value=('job-1', {})) as mock_create_job, \
-                patch('projects_handler.invoke_lambda_async') as mock_invoke:
-            response = lambda_handler(event, lambda_context)
 
         assert response['statusCode'] == 400
         # Names the body as the problem, not the shape: this one never parsed.
@@ -686,22 +655,11 @@ class TestGenerateDocumentDocType:
         Without this case a guard that also refused the absent body would look
         correct.
         """
-        from projects_handler import lambda_handler
-
-        event = api_gateway_event(
-            method='POST',
-            path='/projects/proj-123/document',
-            path_params={'project_id': 'proj-123'},
+        response, mock_create_job, mock_invoke = _post_document_with_raw_body(
+            api_gateway_event, lambda_context, raw_body,
         )
-        event['body'] = raw_body
 
-        with patch('projects_handler.create_job', return_value=('job-1', {})) as mock_create_job, \
-                patch('projects_handler.invoke_lambda_async') as mock_invoke:
-            response = lambda_handler(event, lambda_context)
-
-        assert json.loads(response['body'])['success'] is True
-        assert mock_create_job.call_args.args[1] == 'generate_prd'
-        assert mock_create_job.call_args.args[3]['doc_type'] == 'prd'
+        _assert_a_prd_job_started(response, mock_create_job)
         mock_invoke.assert_called_once()
 
     def test_the_request_body_is_not_mutated_by_the_write_back(
@@ -742,8 +700,6 @@ class TestGenerateDocumentDocType:
         value was never observed reaching the Step Functions input — the path
         production actually runs.
         """
-        from projects_handler import lambda_handler
-
         event = api_gateway_event(
             method='POST',
             path='/projects/proj-123/document',
@@ -882,19 +838,15 @@ class TestDocumentCRUDEndpoints:
                 'doc_type': 'prd'
             }
         }
-        
-        from projects_handler import lambda_handler
-        
-        event = api_gateway_event(
+
+        _response, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
             method='POST',
             path='/projects/proj-123/documents',
             path_params={'project_id': 'proj-123'},
-            body={'title': 'Product Requirements', 'doc_type': 'prd'}
+            body={'title': 'Product Requirements', 'doc_type': 'prd'},
         )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
+
         assert body['success'] is True
         assert body['document']['title'] == 'Product Requirements'
 
@@ -911,19 +863,15 @@ class TestDocumentCRUDEndpoints:
                 'content': 'Updated content'
             }
         }
-        
-        from projects_handler import lambda_handler
-        
-        event = api_gateway_event(
+
+        _response, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
             method='PUT',
             path='/projects/proj-123/documents/doc-123',
             path_params={'project_id': 'proj-123', 'document_id': 'doc-123'},
-            body={'title': 'Updated Title', 'content': 'Updated content'}
+            body={'title': 'Updated Title', 'content': 'Updated content'},
         )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
+
         assert body['success'] is True
         assert body['document']['title'] == 'Updated Title'
 
@@ -933,347 +881,51 @@ class TestDocumentCRUDEndpoints:
     ):
         """Deletes a document."""
         mock_delete_document.return_value = {'success': True}
-        
-        from projects_handler import lambda_handler
-        
-        event = api_gateway_event(
+
+        _response, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
             method='DELETE',
             path='/projects/proj-123/documents/doc-123',
-            path_params={'project_id': 'proj-123', 'document_id': 'doc-123'}
+            path_params={'project_id': 'proj-123', 'document_id': 'doc-123'},
         )
-        
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
+
         assert body['success'] is True
 
 
 
 
 
-class TestCreateTokenExpiry:
-    """POST /projects/{id}/api-tokens — optional expires_in_days.
+class TestRetiredRoutes:
+    """3.00.00 retired the per-project MCP token routes and the Kiro autoseed export.
 
-    Absent (or JSON null) mints a non-expiring token with NO expires_at
-    attribute, byte-compatible with every pre-expiry row.  When present the
-    value is validated STRICTLY rather than clamped: this is a credential
-    lifetime a human chose, so validate_int's fall-back-to-default contract
-    would silently mint a lifetime nobody picked.  Reverting the strict check
-    to validate_int fails test_rejects_bool and test_rejects_fractional —
-    isinstance(True, int) is True, and int(30.5) truncates.
+    Every one is now unrouted: a 404 from the resolver, and nothing reaches the
+    table (a stale client cannot mint, list or revoke a per-project token, or
+    pull a project's files). The global tokens live at /connect/tokens.
     """
 
-    def _post(self, api_gateway_event, lambda_context, body, *, with_scopes=True):
-        """POST the mint route.
-
-        `scopes` is REQUIRED by the route, so it is supplied unless a test is
-        specifically about its absence — otherwise every test here would be
-        asserting the same 400.
-        """
-        from projects_handler import lambda_handler
-        from shared.mcp_tokens import ALL_READ_SCOPES
-        if with_scopes and 'scopes' not in body:
-            body = {**body, 'scopes': list(ALL_READ_SCOPES)}
-        with patch('projects_handler.get_projects_table') as mock_get_table:
-            mock_table = mock_get_table.return_value
-            mock_table.get_item.return_value = {'Item': {'pk': 'PROJECT#proj-1', 'sk': 'META'}}
-            mock_table.put_item.return_value = {}
-            event = api_gateway_event(
-                method='POST',
-                path='/projects/proj-1/api-tokens',
-                body=body,
-            )
-            response = lambda_handler(event, lambda_context)
-            return response, mock_table
-
-    def test_scopes_are_required_not_defaulted(self, api_gateway_event, lambda_context):
-        """Omitting `scopes` is a 400, NOT a credential holding everything.
-
-        The mint boundary must not be fail-open while enforcement is fail-closed:
-        defaulting here would mean `POST {"name": "x"}` yields the widest
-        possible credential, so the laziest request would produce the most
-        dangerous token. `read_reach` is deliberately different — it HAS a
-        chosen default the UI warns about; `scopes` has no least-privilege
-        fallback, so there is nothing honest to default to.
-        """
-        response, mock_table = self._post(
-            api_gateway_event, lambda_context, {'name': 't'}, with_scopes=False,
-        )
-        assert response['statusCode'] == 400, response['body']
-        # This API reports validation failures under `error`, not `message`.
-        body = json.loads(response['body'])
-        assert 'scopes' in body.get('error', ''), body
-        mock_table.put_item.assert_not_called()
-
-    def test_absent_expiry_stores_no_attribute(self, api_gateway_event, lambda_context):
-        """Omitting the field keeps today's exact row shape — attribute absent."""
-        response, mock_table = self._post(api_gateway_event, lambda_context, {'name': 't'})
-        assert response['statusCode'] == 200
-        stored = mock_table.put_item.call_args.kwargs['Item']
-        assert 'expires_at' not in stored
-        assert json.loads(response['body'])['expires_at'] is None
-
-    def test_valid_expiry_is_stored_and_echoed(self, api_gateway_event, lambda_context):
-        from datetime import datetime, timedelta, timezone
-        response, mock_table = self._post(
-            api_gateway_event, lambda_context, {'name': 't', 'expires_in_days': 30}
-        )
-        assert response['statusCode'] == 200
-        stored = mock_table.put_item.call_args.kwargs['Item']['expires_at']
-        assert json.loads(response['body'])['expires_at'] == stored
-        # ~30 days out, parseable, timezone-aware
-        parsed = datetime.fromisoformat(stored)
-        delta = parsed - datetime.now(timezone.utc)
-        assert timedelta(days=29, hours=23) < delta <= timedelta(days=30)
-
-    @pytest.mark.parametrize('bad', [0, -1, 366, 'thirty', 30.5, True, False, [30], {}])
-    def test_rejects_out_of_range_and_non_integer(self, api_gateway_event, lambda_context, bad):
-        """Strict 400, never a clamp: an unreadable lifetime must not mint."""
-        response, mock_table = self._post(
-            api_gateway_event, lambda_context, {'name': 't', 'expires_in_days': bad}
-        )
-        assert response['statusCode'] == 400
-        mock_table.put_item.assert_not_called()
-
-    def test_json_null_means_absent(self, api_gateway_event, lambda_context):
-        """An explicit null is 'no preference', same as omitting the field."""
-        response, mock_table = self._post(
-            api_gateway_event, lambda_context, {'name': 't', 'expires_in_days': None}
-        )
-        assert response['statusCode'] == 200
-        assert 'expires_at' not in mock_table.put_item.call_args.kwargs['Item']
-
-    def _list(self, api_gateway_event, lambda_context, items, project='proj-1'):
-        from projects_handler import lambda_handler
-        with patch('projects_handler.get_projects_table') as mock_get_table:
-            mock_get_table.return_value.query.return_value = {'Items': items}
-            event = api_gateway_event(method='GET', path=f'/projects/{project}/api-tokens')
-            response = lambda_handler(event, lambda_context)
-        return response, mock_get_table.return_value
-
-    def test_list_returns_expires_at(self, api_gateway_event, lambda_context):
-        """GET .../api-tokens surfaces the deadline; a row without one reads None."""
-        response, _ = self._list(api_gateway_event, lambda_context, [
-            {'token_id': 'tok_new', 'name': 'n', 'created_at': 'c',
-             'projects': ['proj-1'], 'expires_at': '2027-01-01T00:00:00+00:00'},
-            {'token_id': 'tok_forever', 'name': 'l', 'created_at': 'c',
-             'projects': ['proj-1']},
-        ])
-        tokens = {t['token_id']: t for t in json.loads(response['body'])['tokens']}
-        assert tokens['tok_new']['expires_at'] == '2027-01-01T00:00:00+00:00'
-        assert tokens['tok_forever']['expires_at'] is None
-
-    def test_list_shows_only_tokens_whose_project_set_includes_this_project(
-        self, api_gateway_event, lambda_context
-    ):
-        """Tokens live in one partition, so the tab filters by membership.
-
-        A credential is workspace-level now; the project tab shows the ones
-        minted for (or reaching) that project. Getting this filter wrong would
-        show every project's credentials in every tab.
-        """
-        response, table = self._list(api_gateway_event, lambda_context, [
-            {'token_id': 'tok_mine', 'name': 'a', 'created_at': 'c', 'projects': ['proj-1']},
-            {'token_id': 'tok_theirs', 'name': 'b', 'created_at': 'c', 'projects': ['proj-2']},
-            {'token_id': 'tok_both', 'name': 'c', 'created_at': 'c',
-             'projects': ['proj-1', 'proj-2']},
-            {'token_id': 'tok_none', 'name': 'd', 'created_at': 'c', 'projects': []},
-        ])
-        ids = {t['token_id'] for t in json.loads(response['body'])['tokens']}
-        assert ids == {'tok_mine', 'tok_both'}, (
-            'the tab must show exactly the tokens whose project set names this project'
-        )
-        # One Query of the token partition, not a per-project range scan.
-        table.query.assert_called_once()
-
-    def test_list_follows_pagination_to_the_end(self, api_gateway_event, lambda_context):
-        """A truncated first page would make credentials unrevocable.
-
-        All tokens share ONE partition and a Query page is capped at 1 MB, so a
-        single-page read starts silently dropping rows as the workspace grows.
-        The list is the only revoke path, so a dropped row is a credential that
-        cannot be revoked through the UI — the exact invariant the mint route is
-        written to guarantee.
-
-        Revert story: deleting the LastEvaluatedKey loop in `_query_all_tokens`
-        fails this test, because only `tok_page1` comes back.
-        """
-        from projects_handler import lambda_handler
-        page1 = {
-            'Items': [{'token_id': 'tok_page1', 'name': 'a', 'created_at': 'c',
-                       'projects': ['proj-1']}],
-            'LastEvaluatedKey': {'pk': {'S': 'MCPTOKEN'}, 'sk': {'S': 'TOKEN#tok_page1'}},
-        }
-        page2 = {
-            'Items': [{'token_id': 'tok_page2', 'name': 'b', 'created_at': 'c',
-                       'projects': ['proj-1']}],
-        }
-        with patch('projects_handler.get_projects_table') as mock_get_table:
-            table = mock_get_table.return_value
-            table.query.side_effect = [page1, page2]
-            event = api_gateway_event(method='GET', path='/projects/proj-1/api-tokens')
-            response = lambda_handler(event, lambda_context)
-
-        ids = {t['token_id'] for t in json.loads(response['body'])['tokens']}
-        assert ids == {'tok_page1', 'tok_page2'}, (
-            'the second page was dropped — those credentials would be unrevocable'
-        )
-        assert table.query.call_count == 2
-        # The follow-up Query must resume from where the first stopped.
-        assert table.query.call_args_list[1].kwargs['ExclusiveStartKey'] == (
-            page1['LastEvaluatedKey']
-        )
-
-    def test_list_never_returns_the_secret_hash(self, api_gateway_event, lambda_context):
-        response, _ = self._list(api_gateway_event, lambda_context, [
-            {'token_id': 'tok_1', 'name': 'n', 'created_at': 'c', 'projects': ['proj-1'],
-             'secret_hash': 'THE-STORED-HASH', 'created_by': 'a-cognito-sub'},
-        ])
-        body = response['body']
-        assert 'THE-STORED-HASH' not in body
-        assert 'secret_hash' not in body
-        # created_by identifies a person; it is stored for audit, not displayed.
-        assert 'a-cognito-sub' not in body
-
-    def test_mint_stores_the_new_credential_shape(self, api_gateway_event, lambda_context):
-        """The row carries a secret hash, a scope set, a project set and a reach."""
-        from shared.mcp_tokens import (
-            ALL_READ_SCOPES,
-            DEFAULT_READ_REACH,
-            MCP_TOKEN_PK,
-            parse_token,
-        )
-        response, mock_table = self._post(api_gateway_event, lambda_context, {'name': 't'})
-        assert response['statusCode'] == 200
-        stored = mock_table.put_item.call_args.kwargs['Item']
-        body = json.loads(response['body'])
-
-        # Stored outside any project partition: a credential is workspace-level.
-        assert stored['pk'] == MCP_TOKEN_PK
-        assert not stored['pk'].startswith('PROJECT#')
-        assert stored['sk'] == f"TOKEN#{stored['token_id']}"
-        assert stored['scopes'] == list(ALL_READ_SCOPES)
-        assert stored['projects'] == ['proj-1']
-        assert stored['read_reach'] == DEFAULT_READ_REACH
-        assert stored['created_by']
-
-        # The returned credential parses back to the row that was stored, and
-        # the row holds a hash of the secret rather than the credential itself.
-        parsed = parse_token(body['token'])
-        assert parsed is not None, f"minted credential does not parse: {body['token']!r}"
-        assert parsed[0] == stored['token_id']
-        assert stored['secret_hash'] not in body['token']
-        assert 'token_hash' not in stored, 'the retired field must not be written'
-
-    def test_mint_accepts_a_narrower_scope_set(self, api_gateway_event, lambda_context):
-        from shared.mcp_tokens import SCOPE_FEEDBACK_READ
-        response, mock_table = self._post(
-            api_gateway_event, lambda_context,
-            {'name': 't', 'scopes': [SCOPE_FEEDBACK_READ]},
-        )
-        assert response['statusCode'] == 200
-        assert mock_table.put_item.call_args.kwargs['Item']['scopes'] == [SCOPE_FEEDBACK_READ]
-
-    @pytest.mark.parametrize('bad_scopes', [
-        [], 'projects:read', ['nope:read'], ['projects:write'], [123], {}, ['projects:read', 'x'],
+    @pytest.mark.parametrize(('method', 'path'), [
+        ('GET', '/projects/proj-1/api-tokens'),
+        ('POST', '/projects/proj-1/api-tokens'),
+        ('DELETE', '/projects/proj-1/api-tokens/tok_0123456789abcdef'),
+        ('GET', '/projects/proj-1/autoseed'),
     ])
-    def test_mint_rejects_an_unusable_scope_set(
-        self, api_gateway_event, lambda_context, bad_scopes
-    ):
-        """Unknown scopes are refused rather than dropped.
-
-        Silently ignoring one would mint a credential narrower than the caller
-        asked for, which they discover as a permission error much later.
-        `projects:write` is in the list on purpose: it does not exist yet, and
-        accepting it would recreate the phantom-permission bug the old
-        `read-write` scope was.
-        """
-        response, mock_table = self._post(
-            api_gateway_event, lambda_context, {'name': 't', 'scopes': bad_scopes},
-        )
-        assert response['statusCode'] == 400, response['body']
-        mock_table.put_item.assert_not_called()
-
-    def test_mint_deduplicates_scopes_without_reordering(self, api_gateway_event, lambda_context):
-        from shared.mcp_tokens import SCOPE_FEEDBACK_READ, SCOPE_PROJECTS_READ
-        response, mock_table = self._post(
-            api_gateway_event, lambda_context,
-            {'name': 't', 'scopes': [SCOPE_PROJECTS_READ, SCOPE_FEEDBACK_READ,
-                                     SCOPE_PROJECTS_READ]},
-        )
-        assert response['statusCode'] == 200
-        assert mock_table.put_item.call_args.kwargs['Item']['scopes'] == [
-            SCOPE_PROJECTS_READ, SCOPE_FEEDBACK_READ,
-        ]
-
-    @pytest.mark.parametrize('reach', ['workspace', 'project-set', 'none'])
-    def test_mint_accepts_each_valid_read_reach(
-        self, api_gateway_event, lambda_context, reach
-    ):
-        response, mock_table = self._post(
-            api_gateway_event, lambda_context, {'name': 't', 'read_reach': reach},
-        )
-        assert response['statusCode'] == 200
-        assert mock_table.put_item.call_args.kwargs['Item']['read_reach'] == reach
-
-    @pytest.mark.parametrize('bad', ['all', 'WORKSPACE', '', 'write-set', 1, [], None])
-    def test_mint_rejects_an_unknown_read_reach(
-        self, api_gateway_event, lambda_context, bad
-    ):
-        """Including 'write-set', an earlier name for 'project-set'.
-
-        A stale client sending the old value must be refused rather than
-        silently defaulted to workspace — the widest reach is the last thing to
-        grant by accident.
-        """
-        response, mock_table = self._post(
-            api_gateway_event, lambda_context, {'name': 't', 'read_reach': bad},
-        )
-        if bad is None:
-            # JSON null means "no preference" and takes the default, like an
-            # absent field. Every other bad value is a 400.
-            assert response['statusCode'] == 200
-            return
-        assert response['statusCode'] == 400, response['body']
-        mock_table.put_item.assert_not_called()
-
-    def test_revoke_addresses_the_token_partition(self, api_gateway_event, lambda_context):
-        from projects_handler import lambda_handler
-        from shared.mcp_tokens import MCP_TOKEN_PK
+    def test_the_route_is_gone(self, api_gateway_event, lambda_context, method, path):
         with patch('projects_handler.get_projects_table') as mock_get_table:
-            table = mock_get_table.return_value
-            table.get_item.return_value = {
-                'Item': {'token_id': 'tok_x', 'projects': ['proj-1']}
-            }
-            event = api_gateway_event(
-                method='DELETE', path='/projects/proj-1/api-tokens/tok_x',
+            response, _ = call_route(
+                lambda_handler, api_gateway_event, lambda_context,
+                method=method, path=path, body={'name': 't', 'scopes': ['feedback:read']},
             )
-            response = lambda_handler(event, lambda_context)
-        assert response['statusCode'] == 200, response['body']
-        assert table.delete_item.call_args.kwargs['Key'] == {
-            'pk': MCP_TOKEN_PK, 'sk': 'TOKEN#tok_x',
-        }
-
-    def test_revoke_refuses_a_token_outside_this_project(
-        self, api_gateway_event, lambda_context
-    ):
-        """404, and nothing is deleted.
-
-        Tokens share one partition, so without this check any project's route
-        could revoke any other project's credential by id.
-        """
-        from projects_handler import lambda_handler
-        with patch('projects_handler.get_projects_table') as mock_get_table:
-            table = mock_get_table.return_value
-            table.get_item.return_value = {
-                'Item': {'token_id': 'tok_x', 'projects': ['proj-2']}
-            }
-            event = api_gateway_event(
-                method='DELETE', path='/projects/proj-1/api-tokens/tok_x',
-            )
-            response = lambda_handler(event, lambda_context)
         assert response['statusCode'] == 404, response['body']
+        table = mock_get_table.return_value
+        table.put_item.assert_not_called()
         table.delete_item.assert_not_called()
+        table.query.assert_not_called()
+
+    def test_no_registered_route_names_them(self):
+        from projects_handler import app
+        patterns = [route.rule.pattern for route in [*app._static_routes, *app._dynamic_routes]]
+        assert patterns, 'the resolver exposes no routes to inspect'
+        assert [p for p in patterns if 'autoseed' in p or 'api-tokens' in p] == []
 
 
 class TestProjectChatContextEndpoint:
@@ -1289,18 +941,16 @@ class TestProjectChatContextEndpoint:
             'documents': [{'sk': 'PRD#d1', 'document_id': 'd1'}],
         }
 
-        from projects_handler import lambda_handler
-
-        event = api_gateway_event(
+        response, _ = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
             method='POST',
             path='/projects/proj-123/chat-context',
             path_params={'project_id': 'proj-123'},
             body={'selected_document_ids': ['d1']},
         )
-        response = lambda_handler(event, lambda_context)
 
         assert response['statusCode'] == 200
-        mock_get_context.assert_called_once_with('proj-123', ['d1'])
+        mock_get_context.assert_called_once_with('proj-123', ['d1'], ANY_CALLER)
 
     @patch('projects_handler.get_project_chat_context')
     def test_replaces_an_oversized_proxy_response_with_a_small_413(
@@ -1321,21 +971,34 @@ class TestProjectChatContextEndpoint:
                 'content': 'é"\\' * repeated,
             }],
         }
-        event = api_gateway_event(
+        response, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
             method='POST',
             path='/projects/proj-123/chat-context',
             path_params={'project_id': 'proj-123'},
             body={'selected_document_ids': ['large']},
         )
 
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-
         assert response['statusCode'] == 413
         assert 'fewer or smaller documents' in body['message']
         assert len(json.dumps(response).encode('utf-8')) < 1024
 
 
+# Padded, run-of-spaces title in FULLWIDTH 'P' and '(V7)': NFKC folds it to
+# 'Plan (V7)' and canonicalisation then reduces it to 'Checkout Plan'.
+_FULLWIDTH_TITLE = '  Checkout   \uff30lan \uff08\uff36\uff17\uff09 '
+
+
+def _assert_title_normalised(response, create_job, invoke, config_key: str) -> None:
+    """Accepted, and `_FULLWIDTH_TITLE` reached both the job row and the worker
+    payload's `config_key` as the NFKC-folded, whitespace-collapsed 'Checkout Plan'."""
+    assert json.loads(response['body'])['success'] is True
+    config = create_job.call_args.args[3]
+    assert config['title'] == 'Checkout Plan'
+    assert invoke.call_args.args[1][config_key]['title'] == 'Checkout Plan'
+
+
+@pytest.mark.usefixtures('existing_project')
 class TestManagedDocumentTitleBoundaries:
     @staticmethod
     def _post(
@@ -1345,8 +1008,6 @@ class TestManagedDocumentTitleBoundaries:
         body,
         path_params=None,
     ):
-        from projects_handler import lambda_handler
-
         event = api_gateway_event(
             method='POST',
             path=path,
@@ -1373,14 +1034,11 @@ class TestManagedDocumentTitleBoundaries:
             '/projects/proj-123/document',
             {
                 'doc_type': document_type,
-                'title': '  Checkout   Ｐlan （Ｖ７） ',
+                'title': _FULLWIDTH_TITLE,
             },
         )
 
-        assert json.loads(response['body'])['success'] is True
-        config = create_job.call_args.args[3]
-        assert config['title'] == 'Checkout Plan'
-        assert invoke.call_args.args[1]['doc_config']['title'] == 'Checkout Plan'
+        _assert_title_normalised(response, create_job, invoke, 'doc_config')
 
     @pytest.mark.parametrize('bad_title', [None, [], {}, 7, True, '   '])
     def test_generation_rejects_invalid_title_before_job_creation(
@@ -1407,15 +1065,12 @@ class TestManagedDocumentTitleBoundaries:
             '/projects/proj-123/documents/merge',
             {
                 'output_type': document_type,
-                'title': '  Checkout   Ｐlan （Ｖ７） ',
+                'title': _FULLWIDTH_TITLE,
                 'selected_document_ids': ['a', 'b'],
             },
         )
 
-        assert json.loads(response['body'])['success'] is True
-        config = create_job.call_args.args[3]
-        assert config['title'] == 'Checkout Plan'
-        assert invoke.call_args.args[1]['merge_config']['title'] == 'Checkout Plan'
+        _assert_title_normalised(response, create_job, invoke, 'merge_config')
 
     @pytest.mark.parametrize('bad_title', [None, [], {}, 7, True, '   '])
     def test_managed_merge_rejects_invalid_title_before_job_creation(

@@ -43,5 +43,7 @@
     "resettingPassword": "Réinitialisation du mot de passe...",
     "submit": "Réinitialiser le mot de passe",
     "title": "Entrer le code de vérification"
-  }
+  },
+  "showPassword": "Afficher le mot de passe",
+  "hidePassword": "Masquer le mot de passe"
 }

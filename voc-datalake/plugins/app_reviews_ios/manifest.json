@@ -39,8 +39,7 @@
       "required": false,
       "secret": false,
       "options": [
-        { "value": "most_recent", "label": "Most Recent (recommended)" },
-        { "value": "most_critical", "label": "Most Critical" }
+        { "value": "most_recent", "label": "Most Recent (recommended)" }
       ]
     },
     {

@@ -1,9 +1,31 @@
 import tseslint from 'typescript-eslint'
 import eslintComments from '@eslint-community/eslint-plugin-eslint-comments/configs'
 import sonarjs from 'eslint-plugin-sonarjs'
+import unicorn from 'eslint-plugin-unicorn'
+import vitest from '@vitest/eslint-plugin'
 import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
 import globals from 'globals'
+import noReExports from '../../eslint-rules/no-re-exports.mjs'
+import {
+  QUALITY_BASELINE,
+  SOURCE_RULES,
+  SPEC_FILES,
+  SPEC_RULES,
+  SUPPRESSION_RULES,
+  withPending,
+} from '../../eslint-rules/quality-gates.mjs'
+
+// Rules of the shared quality-gate set (../../eslint-rules/quality-gates.mjs) whose findings in
+// this package are not fixed yet, each with the setting this package enforced before ('off' when
+// it had none). Delete an entry in the change that brings its count to zero; never add one back.
+const PENDING_SOURCE = {}
+const PENDING_SPEC = {}
+const PENDING_SUPPRESSION = {}
+
+// Spec files are linted in the normal run as well.
+const SPECS_PENDING = false
+const lintSpecs = QUALITY_BASELINE || !SPECS_PENDING
 
 export default tseslint.config(
   {
@@ -11,35 +33,38 @@ export default tseslint.config(
       'dist/**',
       'node_modules/**',
       'coverage/**',
+      '.stryker-tmp/**',
+      'reports/**',
+      // The production Playwright suite is its own package (e2e/package.json, own tsconfig);
+      // it is type-checked by `npx tsc -p e2e/tsconfig.json`, not by the app's lint profile.
+      'e2e/**',
       'mock-server.js',
-      '**/*.test.ts',
-      // #374 argues that an asset survived in `public/` because no gate read it.
-      // The guard that now reads `public/` is itself a `*.test.ts`, so shipping
-      // it under this ignore would repeat the finding it exists to prevent. One
-      // negated path rather than un-ignoring every test file: the rest of the
-      // suite carries a backlog whose cleanup is not this change.
-      '!src/publicAssets.test.ts',
-      '**/*.test.tsx',
-      'src/test/**/*',
+      ...(lintSpecs
+        ? []
+        : [
+            '**/*.test.ts',
+            // #374 argues that an asset survived in `public/` because no gate read it.
+            // The guard that now reads `public/` is itself a `*.test.ts`, so shipping
+            // it under this ignore would repeat the finding it exists to prevent.
+            '!src/publicAssets.test.ts',
+            '**/*.test.tsx',
+            'src/test/**/*',
+          ]),
       'vitest.config.ts',
+      'stryker.config.mjs',
     ],
   },
   ...tseslint.configs.recommended,
   eslintComments.recommended,
-  {
-    rules: {
-      '@eslint-community/eslint-comments/no-use': [
-        'error',
-        { allow: ['eslint-disable', 'eslint-enable', 'eslint-disable-next-line'] },
-      ],
-    },
-  },
+  { rules: withPending(SUPPRESSION_RULES, PENDING_SUPPRESSION) },
   sonarjs.configs.recommended,
   {
     files: ['**/*.ts', '**/*.tsx'],
     plugins: {
       'react-hooks': reactHooks,
       'react-refresh': reactRefresh,
+      unicorn,
+      custom: { rules: { 'no-re-exports': noReExports } },
     },
     languageOptions: {
       ecmaVersion: 2020,
@@ -66,25 +91,19 @@ export default tseslint.config(
           message: 'Use const. Avoid mutation.',
         },
       ],
-      'prefer-const': 'error',
-      'no-var': 'error',
       // No any types
-      '@typescript-eslint/no-explicit-any': 'error',
+      // A leading underscore marks a binding kept on purpose (a mock's positional parameter, a
+      // loop counter, a destructured field dropped from a rest copy), as in ruff's dummy regex.
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
+      ],
       '@typescript-eslint/no-unsafe-assignment': 'error',
       '@typescript-eslint/no-unsafe-member-access': 'error',
       '@typescript-eslint/no-unsafe-call': 'error',
       '@typescript-eslint/no-unsafe-return': 'error',
-      // No type assertions - fix the types instead
-      '@typescript-eslint/consistent-type-assertions': [
-        'error',
-        { assertionStyle: 'never' },
-      ],
-      // No non-null assertions
-      '@typescript-eslint/no-non-null-assertion': 'error',
-      // Complexity limits
-      'max-lines': ['error', { max: 600, skipBlankLines: true, skipComments: true }],
-      'max-depth': ['error', 3],
-      complexity: ['error', 12],
+      // Shared quality-gate set: size, escape hatches, re-exports, unnecessary logic, promises
+      ...withPending(SOURCE_RULES, PENDING_SOURCE),
       // Naming conventions
       '@typescript-eslint/naming-convention': [
         'error',
@@ -118,27 +137,22 @@ export default tseslint.config(
     },
   },
   {
-    // The un-ignored guard (see the negated pattern above) is the one linted file
-    // that `tsconfig.app.json` excludes, so the project service cannot type it and
-    // every type-aware rule would report a parse error instead of a finding. Point
-    // it at `tsconfig.test.json`, which does include `src/**/*.test.ts`, rather
-    // than widening the app project to cover tests.
+    // Specs and `src/test/**` are excluded from `tsconfig.app.json`, so the project service cannot
+    // type them and every type-aware rule would report a parse error instead of a finding. Point
+    // them at `tsconfig.test.json`, which includes all of `src`, rather than widening the app project.
     //
-    // It also runs in node, not a browser: it shells out to `git` and reads
-    // `__dirname`.
-    //
-    // ⚠️ This buys LINT coverage, not typecheck coverage. `npm run typecheck` runs
-    // against `tsconfig.app.json`, which still excludes tests, so this file's types
-    // are checked only as a side effect of ESLint's project service resolving
-    // `tsconfig.test.json` here. A type error in it fails `lint`, not `typecheck`.
-    files: ['src/publicAssets.test.ts'],
+    // ⚠️ This buys LINT coverage, not typecheck coverage: `npm run typecheck` runs against
+    // `tsconfig.app.json`, so a type error in a spec fails `lint` (or `typecheck:tests`), not `typecheck`.
+    files: [...SPEC_FILES, 'src/test/**/*'],
+    plugins: { vitest },
     languageOptions: {
-      globals: globals.node,
+      globals: { ...globals.browser, ...globals.node, ...vitest.environments.env.globals },
       parserOptions: {
         projectService: false,
         project: ['./tsconfig.test.json'],
         tsconfigRootDir: import.meta.dirname,
       },
     },
+    rules: withPending(SPEC_RULES, PENDING_SPEC),
   },
 )

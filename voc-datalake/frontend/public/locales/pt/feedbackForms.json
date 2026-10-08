@@ -8,6 +8,7 @@
     "deleteForm": "Excluir formulário",
     "directLink": "Link direto",
     "disabled": "Desabilitado",
+    "prototypePins": "Pins do protótipo",
     "disableForm": "Desabilitar formulário",
     "editForm": "Editar formulário",
     "enableForm": "Habilitar formulário",
@@ -19,7 +20,10 @@
     "showEmbedCode": "Mostrar código de incorporação",
     "submissions": "Submissões",
     "themeLabel": "Tema",
-    "viewSubmissions": "Ver submissões"
+    "viewSubmissions": "Ver submissões",
+    "collectsName": "Nome",
+    "collectsEmail": "E-mail",
+    "disabledNotice": "Este formulário está desativado. O link e a incorporação mostram “Feedback form unavailable.” até você ativá-lo."
   },
   "configureApiFirst": "Configure o endpoint da API nas Configurações para gerenciar formulários de feedback.",
   "createForm": "Criar formulário",
@@ -51,9 +55,9 @@
     "previewTagged": "Feedback deste formulário será marcado como:",
     "primaryColor": "Cor primária",
     "question": "Pergunta",
-    "ratingEmoji": "Emoji de avaliação 😀",
+    "ratingEmoji": "Emoji de avaliação",
     "ratingNumeric": "Numérico (1-10)",
-    "ratingStars": "Estrelas ⭐",
+    "ratingStars": "Estrelas",
     "saveChanges": "Salvar alterações",
     "saving": "Salvando...",
     "selectCategory": "-- Selecionar categoria --",
@@ -85,7 +89,8 @@
     "validationUnknownProject": "Projeto vinculado (não mais disponível)",
     "validationUnverifiedDocument": "Documento vinculado (não foi possível verificar)",
     "validationUnverifiedProject": "Projeto vinculado (não foi possível verificar)",
-    "validationWholeProject": "-- Projeto inteiro --"
+    "validationWholeProject": "-- Projeto inteiro --",
+    "dimensionsHint": "Cada envio recebe estes valores. Uma incorporação pode definir os seus por página com a opção dimensions, por exemplo"
   },
   "empty": {
     "createButton": "Criar seu primeiro formulário",
@@ -129,5 +134,10 @@
     "selectPrompt": "Selecione um modelo para continuar",
     "subtitle": "Escolha um modelo para começar",
     "title": "Criar novo formulário"
+  },
+  "createdDisabled": {
+    "dismiss": "Dispensar",
+    "enable": "Ativar agora",
+    "message": "“{{name}}” foi criado e está desativado: quem abrir o link verá “Feedback form unavailable.” até você ativá-lo."
   }
 }

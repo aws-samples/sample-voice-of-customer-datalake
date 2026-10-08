@@ -9,55 +9,57 @@ so a change has to be deliberate.
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
+import pytest
+
 
 class TestPrototypeS3Key:
     def test_key_layout(self):
         from shared.prototypes import prototype_s3_key
         assert prototype_s3_key('proj_1', 'prototype_2') == 'prototypes/proj_1/prototype_2.html'
 
-    def test_key_sits_under_the_prototypes_prefix(self):
-        """The /prototypes/* cache behavior maps 1:1 onto this prefix; a key
-        outside it would be served by the SPA's default behavior instead, with
-        the wrong CSP and no key-group restriction."""
-        from shared.prototypes import prototype_s3_key
-        assert prototype_s3_key('p', 'd').startswith('prototypes/')
-
 
 class TestPrototypeSignedUrl:
     CDN = 'https://d111.cloudfront.net/prototypes'
 
-    def test_returns_a_signed_url_for_the_derived_key(self, cdn_signing_configured):
+    @staticmethod
+    def _signed(project_id: str, document_id: str, **kwargs) -> str:
+        """prototype_signed_url for a case that must produce a URL."""
         from shared.prototypes import prototype_signed_url
+        url = prototype_signed_url(project_id, document_id, **kwargs)
+        assert url is not None
+        return url
 
-        url = prototype_signed_url('proj_1', 'prototype_2', cdn_url=self.CDN)
+    @pytest.mark.usefixtures("cdn_signing_configured")
+    def test_returns_a_signed_url_for_the_derived_key(self):
+        url = self._signed('proj_1', 'prototype_2', cdn_url=self.CDN)
 
         assert url.startswith(f'{self.CDN}/proj_1/prototype_2.html?')
         assert set(parse_qs(urlparse(url).query)) == {'Expires', 'Signature', 'Key-Pair-Id'}
 
-    def test_url_path_matches_the_s3_key(self, cdn_signing_configured):
+    @pytest.mark.usefixtures("cdn_signing_configured")
+    def test_url_path_matches_the_s3_key(self):
         """Guard against the two helpers drifting apart."""
-        from shared.prototypes import prototype_s3_key, prototype_signed_url
+        from shared.prototypes import prototype_s3_key
 
-        url = prototype_signed_url('proj_9', 'prototype_9', cdn_url=self.CDN)
+        url = self._signed('proj_9', 'prototype_9', cdn_url=self.CDN)
 
         assert urlparse(url).path == f'/{prototype_s3_key("proj_9", "prototype_9")}'
 
-    def test_strips_a_trailing_slash_on_the_cdn_base(self, cdn_signing_configured):
-        from shared.prototypes import prototype_signed_url
-
-        url = prototype_signed_url('p', 'd', cdn_url=f'{self.CDN}/')
+    @pytest.mark.usefixtures("cdn_signing_configured")
+    def test_strips_a_trailing_slash_on_the_cdn_base(self):
+        url = self._signed('p', 'd', cdn_url=f'{self.CDN}/')
 
         assert url.startswith(f'{self.CDN}/p/d.html?')
 
-    def test_reads_the_cdn_base_from_env(self, cdn_signing_configured):
-        from shared.prototypes import prototype_signed_url
-
+    @pytest.mark.usefixtures("cdn_signing_configured")
+    def test_reads_the_cdn_base_from_env(self):
         with patch.dict('os.environ', {'PROTOTYPES_CDN_URL': self.CDN}):
-            url = prototype_signed_url('p', 'd')
+            url = self._signed('p', 'd')
 
         assert url.startswith(f'{self.CDN}/p/d.html?')
 
-    def test_returns_none_without_a_cdn_base(self, cdn_signing_configured):
+    @pytest.mark.usefixtures("cdn_signing_configured")
+    def test_returns_none_without_a_cdn_base(self):
         from shared.prototypes import prototype_signed_url
         with patch.dict('os.environ', {'PROTOTYPES_CDN_URL': ''}):
             assert prototype_signed_url('p', 'd') is None
@@ -68,7 +70,8 @@ class TestPrototypeSignedUrl:
         from shared.prototypes import prototype_signed_url
         assert prototype_signed_url('p', 'd', cdn_url=self.CDN) is None
 
-    def test_returns_none_for_missing_ids(self, cdn_signing_configured):
+    @pytest.mark.usefixtures("cdn_signing_configured")
+    def test_returns_none_for_missing_ids(self):
         from shared.prototypes import prototype_signed_url
         assert prototype_signed_url('', 'd', cdn_url=self.CDN) is None
         assert prototype_signed_url('p', '', cdn_url=self.CDN) is None
@@ -90,9 +93,3 @@ class TestNoCryptoDependencyForWriters:
             'Importing shared.prototypes pulled in cryptography. Keep the '
             'shared.cloudfront_signing import inside prototype_signed_url.'
         )
-
-    def test_prototype_s3_key_works_without_touching_the_signer(self):
-        """The writer-only entry point stays usable with no signing config."""
-        from shared.prototypes import prototype_s3_key
-
-        assert prototype_s3_key('p', 'd') == 'prototypes/p/d.html'

@@ -3,6 +3,9 @@
  */
 import { describe, it, expect } from 'vitest'
 import { applyResolution, buildResolutionKey } from './problemResolution'
+import { makeFeedbackItem, makeProblemGroup } from './problem-analysis-fixtures'
+import type { CategoryGroup, ProblemGroup } from './problemResolution'
+import { at } from '@test/defined'
 
 describe('buildResolutionKey', () => {
   it('joins category, subcategory, and normalized problem text', () => {
@@ -46,20 +49,22 @@ describe('buildResolutionKey', () => {
     const emojiProblem = '📦🚚💥 delayed '.repeat(30)
     const key = buildResolutionKey('delivery', 'speed', emojiProblem)
     expect(new TextEncoder().encode(key).length).toBeLessThanOrEqual(255)
-    // isWellFormed is the real check: a key may legitimately END with a
+    // Well-formedness is the real check: a key may legitimately END with a
     // complete emoji (whose last code unit is a low surrogate) — only
-    // UNPAIRED surrogates make the string malformed.
-    expect(key.isWellFormed()).toBe(true)
+    // UNPAIRED surrogates make the string malformed. In a `u` regex a valid
+    // pair is one code point, so the surrogate range matches only a lone half
+    // (the `String#isWellFormed` test, without needing the ES2024 lib).
+    expect(key).not.toMatch(/[\uD800-\uDFFF]/u)
   })
 })
 
-const makeProblem = (problem: string, items: number, urgent: number) => ({
+const makeProblem = (problem: string, items: number, urgent: number): ProblemGroup => makeProblemGroup({
   problem,
-  items: Array.from({ length: items }, (_, i) => ({ id: i })),
+  items: Array.from({ length: items }, (_, i) => makeFeedbackItem({ feedback_id: `f${i}` })),
   urgentCount: urgent,
 })
 
-const tree = () => ([
+const tree = (): CategoryGroup[] => ([
   {
     category: 'delivery',
     totalItems: 5,
@@ -87,11 +92,13 @@ describe('applyResolution', () => {
     const { visible, resolvedCount } = applyResolution(tree(), resolvedMap, false)
 
     expect(resolvedCount).toBe(1)
-    expect(visible[0].subcategories[0].problems.map((p) => p.problem)).toEqual(['lost packages'])
-    expect(visible[0].subcategories[0].totalItems).toBe(2)
-    expect(visible[0].subcategories[0].urgentCount).toBe(1)
-    expect(visible[0].totalItems).toBe(2)
-    expect(visible[0].urgentCount).toBe(1)
+    const category = visible.at(0)
+    const subcategory = category?.subcategories.at(0)
+    expect({
+      problems: subcategory?.problems.map((p) => p.problem),
+      subcategoryTotals: [subcategory?.totalItems, subcategory?.urgentCount],
+      categoryTotals: [category?.totalItems, category?.urgentCount],
+    }).toStrictEqual({ problems: ['lost packages'], subcategoryTotals: [2, 1], categoryTotals: [2, 1] })
   })
 
   it('drops categories whose problems are all resolved', () => {
@@ -101,14 +108,14 @@ describe('applyResolution', () => {
     }
     const { visible, resolvedCount } = applyResolution(tree(), allResolved, false)
 
-    expect(visible).toEqual([])
+    expect(visible).toStrictEqual([])
     expect(resolvedCount).toBe(2)
   })
 
   it('keeps resolved problems annotated when showResolved is on', () => {
     const { visible, resolvedCount } = applyResolution(tree(), resolvedMap, true)
 
-    const problems = visible[0].subcategories[0].problems
+    const problems = at(at(visible, 0).subcategories, 0).problems
     expect(resolvedCount).toBe(1)
     expect(problems).toHaveLength(2)
     expect(problems.find((p) => p.problem === 'slow delivery')?.resolved).toBe(true)
@@ -119,6 +126,6 @@ describe('applyResolution', () => {
     const { visible, resolvedCount } = applyResolution(tree(), {}, false)
 
     expect(resolvedCount).toBe(0)
-    expect(visible[0].subcategories[0].problems).toHaveLength(2)
+    expect(at(at(visible, 0).subcategories, 0).problems).toHaveLength(2)
   })
 })

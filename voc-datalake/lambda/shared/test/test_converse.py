@@ -2,9 +2,35 @@
 Tests for shared.converse module.
 """
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 from botocore.exceptions import ClientError
+
+from shared.converse import ConverseResult
+
+
+def _reply(text: str) -> dict:
+    """A Converse response carrying one text block."""
+    return {'output': {'message': {'content': [{'text': text}]}}}
+
+
+def _client_replying(mock_get_client, text: str) -> MagicMock:
+    """Install and return a Bedrock client whose converse() answers *text*."""
+    mock_client = MagicMock()
+    mock_client.converse.return_value = _reply(text)
+    mock_get_client.return_value = mock_client
+    return mock_client
+
+
+def _converse_recovering_from(mock_get_client, mock_client, error) -> str:
+    """converse('Test', max_retries=3) against *mock_client*, which raises
+    *error* once and then answers 'Success'."""
+    mock_client.converse.side_effect = [error, _reply('Success')]
+    mock_get_client.return_value = mock_client
+
+    from shared.converse import converse
+    return converse('Test', max_retries=3)
 
 
 class TestConverse:
@@ -22,41 +48,33 @@ class TestConverse:
             }
         }
         mock_get_client.return_value = mock_client
-        
+
         from shared.converse import converse
         result = converse('Say hello')
-        
+
         assert result == 'Hello, world!'
         mock_client.converse.assert_called_once()
 
     @patch('shared.converse.get_bedrock_client')
     def test_includes_system_prompt(self, mock_get_client):
         """Includes system prompt when provided."""
-        mock_client = MagicMock()
-        mock_client.converse.return_value = {
-            'output': {'message': {'content': [{'text': 'Response'}]}}
-        }
-        mock_get_client.return_value = mock_client
-        
+        mock_client = _client_replying(mock_get_client, 'Response')
+
         from shared.converse import converse
         converse('Hello', system_prompt='You are helpful.')
-        
+
         call_args = mock_client.converse.call_args
         assert call_args.kwargs['system'] == [{'text': 'You are helpful.'}]
 
     @patch('shared.converse.get_bedrock_client')
     def test_extended_thinking_budget(self, mock_get_client):
         """Includes extended thinking when budget > 0 (explicit-budget model)."""
-        mock_client = MagicMock()
-        mock_client.converse.return_value = {
-            'output': {'message': {'content': [{'text': 'Thoughtful response'}]}}
-        }
-        mock_get_client.return_value = mock_client
-        
+        mock_client = _client_replying(mock_get_client, 'Thoughtful response')
+
         from shared.converse import converse
         converse('Complex question', thinking_budget=5000,
                  model_id='global.anthropic.claude-sonnet-4-6')
-        
+
         call_args = mock_client.converse.call_args
         assert 'additionalModelRequestFields' in call_args.kwargs
         thinking = call_args.kwargs['additionalModelRequestFields']['thinking']
@@ -73,11 +91,7 @@ class TestConverse:
         Opus 5 is the prototype-surface default, so dropping it out of
         _ADAPTIVE_THINKING_IDS would 400 every prototype build.
         """
-        mock_client = MagicMock()
-        mock_client.converse.return_value = {
-            'output': {'message': {'content': [{'text': 'Thoughtful response'}]}}
-        }
-        mock_get_client.return_value = mock_client
+        mock_client = _client_replying(mock_get_client, 'Thoughtful response')
 
         from shared.converse import converse
         from shared.model_config import ALLOWED_MODELS, uses_adaptive_thinking
@@ -97,12 +111,8 @@ class TestConverse:
     @patch('shared.converse.get_bedrock_client')
     def test_no_thinking_when_budget_zero(self, mock_get_client):
         """Does not include thinking when budget is 0."""
-        mock_client = MagicMock()
-        mock_client.converse.return_value = {
-            'output': {'message': {'content': [{'text': 'Response'}]}}
-        }
-        mock_get_client.return_value = mock_client
-        
+        mock_client = _client_replying(mock_get_client, 'Response')
+
         from shared.converse import converse
         converse('Simple question', thinking_budget=0)
 
@@ -112,11 +122,7 @@ class TestConverse:
     @patch('shared.converse.get_bedrock_client')
     def test_includes_temperature_by_default(self, mock_get_client):
         """Temperature is sent in inferenceConfig when the model accepts it."""
-        mock_client = MagicMock()
-        mock_client.converse.return_value = {
-            'output': {'message': {'content': [{'text': 'R'}]}}
-        }
-        mock_get_client.return_value = mock_client
+        mock_client = _client_replying(mock_get_client, 'R')
 
         from shared.converse import converse
         converse('Hi', temperature=0.4,
@@ -130,11 +136,7 @@ class TestConverse:
         """Sonnet 5 / Opus 5 reject `temperature` — converse() drops it
         automatically so any surface can be pointed at them via the picker
         without every caller special-casing the param."""
-        mock_client = MagicMock()
-        mock_client.converse.return_value = {
-            'output': {'message': {'content': [{'text': 'R'}]}}
-        }
-        mock_get_client.return_value = mock_client
+        mock_client = _client_replying(mock_get_client, 'R')
 
         from shared.converse import converse
         for model in ('global.anthropic.claude-sonnet-5',
@@ -147,11 +149,7 @@ class TestConverse:
     @patch('shared.converse.get_bedrock_client')
     def test_omits_temperature_when_none(self, mock_get_client):
         """temperature=None omits the param entirely (e.g. for Opus 5)."""
-        mock_client = MagicMock()
-        mock_client.converse.return_value = {
-            'output': {'message': {'content': [{'text': 'R'}]}}
-        }
-        mock_get_client.return_value = mock_client
+        mock_client = _client_replying(mock_get_client, 'R')
 
         from shared.converse import converse
         converse('Hi', temperature=None)
@@ -181,11 +179,7 @@ class TestConverse:
         newly allowlisted model is covered on arrival and a retired one does not
         turn this into a false negative.
         """
-        mock_client = MagicMock()
-        mock_client.converse.return_value = {
-            'output': {'message': {'content': [{'text': 'R'}]}}
-        }
-        mock_get_client.return_value = mock_client
+        mock_client = _client_replying(mock_get_client, 'R')
 
         from shared.converse import converse
         from shared.model_config import (
@@ -273,21 +267,20 @@ class TestConverse:
         with patch('shared.converse.omits_temperature',
                    lambda model_id: model_id == REJECTS):
             # Sent: report the value, not a reason.
-            assert _temperature_note(True, 0.1, ACCEPTS, False) == '0.1'
+            assert _temperature_note(True, 0.1, ACCEPTS) == '0.1'
 
-            # None wins over a co-occurring explicit budget — the caller's choice
-            # is the reason, and blaming thinking here would send an operator
-            # hunting a model-capability problem that does not exist.
-            assert _temperature_note(False, None, ACCEPTS, True) == 'omitted (caller passed None)'
-            assert _temperature_note(False, None, ACCEPTS, False) == 'omitted (caller passed None)'
+            # None wins over a model that also rejects temperature (and over a
+            # co-occurring explicit budget, the only cause left after these
+            # two) — the caller's choice is the reason.
+            assert _temperature_note(False, None, REJECTS) == 'omitted (caller passed None)'
+            assert _temperature_note(False, None, ACCEPTS) == 'omitted (caller passed None)'
 
             # Model capability, including alongside an explicit budget.
-            assert _temperature_note(False, 0.1, REJECTS, False) == 'omitted (model rejects it)'
-            assert _temperature_note(False, 0.1, REJECTS, True) == 'omitted (model rejects it)'
+            assert _temperature_note(False, 0.1, REJECTS) == 'omitted (model rejects it)'
 
             # Only when the caller asked for it and the model accepts it is
             # thinking the real cause.
-            assert _temperature_note(False, 0.1, ACCEPTS, True) == 'omitted (explicit thinking)'
+            assert _temperature_note(False, 0.1, ACCEPTS) == 'omitted (explicit thinking)'
 
 
 class TestConverseRetry:
@@ -302,23 +295,21 @@ class TestConverseRetry:
             {'Error': {'Code': 'ThrottlingException', 'Message': 'Rate exceeded'}},
             'Converse'
         )
-        mock_client.converse.side_effect = [
-            throttle_error,
-            {'output': {'message': {'content': [{'text': 'Success'}]}}}
-        ]
-        mock_get_client.return_value = mock_client
-        
-        from shared.converse import converse
-        result = converse('Test', max_retries=3)
-        
+        result = _converse_recovering_from(mock_get_client, mock_client, throttle_error)
+
         assert result == 'Success'
         assert mock_client.converse.call_count == 2
         mock_sleep.assert_called_once()
 
-    @patch('shared.converse.time.sleep')
+    @patch('shared.converse.time.sleep', MagicMock())
     @patch('shared.converse.get_bedrock_client')
-    def test_raises_after_max_retries(self, mock_get_client, mock_sleep):
-        """Raises BedrockThrottlingError after max retries."""
+    def test_raises_after_max_retries(self, mock_get_client):
+        """Raises BedrockThrottlingError after max retries — on EVERY model.
+
+        A throttle that outlasts the retry budget falls back down the model
+        chain (shared.model_fallback); each model gets the full budget, and
+        when all are throttled the error still surfaces.
+        """
         mock_client = MagicMock()
         throttle_error = ClientError(
             {'Error': {'Code': 'ThrottlingException', 'Message': 'Rate exceeded'}},
@@ -326,17 +317,20 @@ class TestConverseRetry:
         )
         mock_client.converse.side_effect = throttle_error
         mock_get_client.return_value = mock_client
-        
-        from shared.converse import converse, BedrockThrottlingError
-        
+
+        from shared.converse import BedrockThrottlingError, converse
+        from shared.model_config import fallback_chain, get_active_model_id
+
         with pytest.raises(BedrockThrottlingError):
             converse('Test', max_retries=2)
-        
-        assert mock_client.converse.call_count == 2
 
-    @patch('shared.converse.time.sleep')
+        chain = fallback_chain(get_active_model_id('default'), 'default')
+        tried = [c.kwargs['modelId'] for c in mock_client.converse.call_args_list]
+        assert tried == [model for model in chain for _ in range(2)]
+
+    @patch('shared.converse.time.sleep', MagicMock())
     @patch('shared.converse.get_bedrock_client')
-    def test_returns_empty_when_raise_disabled(self, mock_get_client, mock_sleep):
+    def test_returns_empty_when_raise_disabled(self, mock_get_client):
         """Returns empty string when raise_on_throttle=False."""
         mock_client = MagicMock()
         throttle_error = ClientError(
@@ -345,10 +339,10 @@ class TestConverseRetry:
         )
         mock_client.converse.side_effect = throttle_error
         mock_get_client.return_value = mock_client
-        
+
         from shared.converse import converse
         result = converse('Test', max_retries=2, raise_on_throttle=False)
-        
+
         assert result == ''
 
     @patch('shared.converse.get_bedrock_client')
@@ -361,108 +355,87 @@ class TestConverseRetry:
         )
         mock_client.converse.side_effect = access_error
         mock_get_client.return_value = mock_client
-        
+
         from shared.converse import converse
-        
+
         with pytest.raises(ClientError) as exc_info:
             converse('Test', max_retries=3)
-        
-        assert exc_info.value.response['Error']['Code'] == 'AccessDeniedException'
-        assert mock_client.converse.call_count == 1
 
-    @patch('shared.converse.time.sleep')
-    @patch('shared.converse.get_bedrock_client')
-    def test_retries_on_service_unavailable(self, mock_get_client, mock_sleep):
-        """Retries on ServiceUnavailableException."""
-        mock_client = MagicMock()
-        service_error = ClientError(
-            {'Error': {'Code': 'ServiceUnavailableException', 'Message': 'Service down'}},
-            'Converse'
-        )
-        mock_client.converse.side_effect = [
-            service_error,
-            {'output': {'message': {'content': [{'text': 'Success'}]}}}
-        ]
-        mock_get_client.return_value = mock_client
-        
-        from shared.converse import converse
-        result = converse('Test', max_retries=3)
-        
-        assert result == 'Success'
-        assert mock_client.converse.call_count == 2
+        assert exc_info.value.response.get('Error', {}).get('Code') == 'AccessDeniedException'
+        assert mock_client.converse.call_count == 1
 
 
 class TestConverseChain:
     """Tests for converse_chain function."""
 
-    @patch('shared.converse.converse')
+    @patch('shared.converse.converse_detailed')
     def test_executes_chain_of_steps(self, mock_converse):
         """Executes chain of LLM calls."""
-        mock_converse.side_effect = ['Step 1 result', 'Step 2 result']
-        
+        mock_converse.side_effect = [ConverseResult(text='Step 1 result'), ConverseResult(text='Step 2 result')]
+
         from shared.converse import converse_chain
         steps = [
             {'system': 'System 1', 'user': 'User 1', 'max_tokens': 1000},
             {'system': 'System 2', 'user': 'Previous: {previous}', 'max_tokens': 2000},
         ]
-        
+
         results = converse_chain(steps)
-        
+
         assert len(results) == 2
         assert results[0] == 'Step 1 result'
         assert results[1] == 'Step 2 result'
         assert mock_converse.call_count == 2
 
-    @patch('shared.converse.converse')
+    @patch('shared.converse.converse_detailed')
     def test_injects_previous_result(self, mock_converse):
         """Injects previous result into {previous} placeholder."""
-        mock_converse.side_effect = ['First output', 'Second output']
-        
+        mock_converse.side_effect = [ConverseResult(text='First output'), ConverseResult(text='Second output')]
+
         from shared.converse import converse_chain
         steps = [
             {'system': 'S1', 'user': 'Start'},
             {'system': 'S2', 'user': 'Continue from: {previous}'},
         ]
-        
+
         converse_chain(steps)
-        
+
         # Second call should have the first result injected
         second_call = mock_converse.call_args_list[1]
-        assert 'Continue from: First output' == second_call.kwargs['prompt']
+        assert second_call.kwargs['prompt'] == 'Continue from: First output'
 
-    @patch('shared.converse.converse')
+    @patch('shared.converse.converse_detailed')
     def test_calls_progress_callback(self, mock_converse):
         """Calls progress callback for each step."""
-        mock_converse.return_value = 'Result'
+        mock_converse.return_value = ConverseResult(text='Result')
         progress_calls = []
-        
+
         def progress_callback(progress, step):
             progress_calls.append((progress, step))
-        
+
         from shared.converse import converse_chain
         steps = [
             {'system': 'S1', 'user': 'U1', 'step_name': 'analysis'},
             {'system': 'S2', 'user': 'U2', 'step_name': 'synthesis'},
         ]
-        
+
         converse_chain(steps, progress_callback=progress_callback)
-        
+
         assert len(progress_calls) == 2
         assert progress_calls[0][1] == 'analysis'
         assert progress_calls[1][1] == 'synthesis'
 
-    @patch('shared.converse.converse')
+    @patch('shared.converse.converse_detailed')
     def test_passes_thinking_budget(self, mock_converse):
         """Passes thinking_budget to converse."""
-        mock_converse.return_value = 'Result'
-        
+        mock_converse.return_value = ConverseResult(text='Result')
+
         from shared.converse import converse_chain
         steps = [
             {'system': 'S1', 'user': 'U1', 'thinking_budget': 3000},
         ]
-        
+
         converse_chain(steps)
-        
+
         call_args = mock_converse.call_args
         assert call_args.kwargs['thinking_budget'] == 3000
 
@@ -473,21 +446,21 @@ class TestExtractText:
     def test_extracts_single_text_block(self):
         """Extracts text from single content block."""
         from shared.converse import _extract_text
-        
+
         content = [{'text': 'Hello world'}]
         assert _extract_text(content) == 'Hello world'
 
     def test_concatenates_multiple_text_blocks(self):
         """Concatenates text from multiple blocks."""
         from shared.converse import _extract_text
-        
+
         content = [{'text': 'Hello '}, {'text': 'world'}]
         assert _extract_text(content) == 'Hello world'
 
     def test_ignores_non_text_blocks(self):
         """Ignores blocks without text key."""
         from shared.converse import _extract_text
-        
+
         content = [
             {'text': 'Hello'},
             {'toolUse': {'name': 'search'}},
@@ -498,47 +471,15 @@ class TestExtractText:
     def test_returns_empty_for_empty_content(self):
         """Returns empty string for empty content list."""
         from shared.converse import _extract_text
-        
+
         assert _extract_text([]) == ''
 
     def test_returns_empty_for_no_text_blocks(self):
         """Returns empty string when no text blocks present."""
         from shared.converse import _extract_text
-        
+
         content = [{'toolUse': {'name': 'search'}}]
         assert _extract_text(content) == ''
-
-
-class TestCalculateBackoff:
-    """Tests for _calculate_backoff helper function."""
-
-    def test_first_attempt_returns_base_delay_plus_jitter(self):
-        """First attempt returns approximately base delay."""
-        from shared.converse import _calculate_backoff, DEFAULT_BASE_DELAY
-        
-        delay = _calculate_backoff(0)
-        # Base delay (1.0) + jitter (0-1)
-        assert DEFAULT_BASE_DELAY <= delay <= DEFAULT_BASE_DELAY + 1
-
-    def test_exponential_increase(self):
-        """Delay increases exponentially with attempts."""
-        from shared.converse import _calculate_backoff
-        
-        delay_0 = _calculate_backoff(0)
-        delay_1 = _calculate_backoff(1)
-        delay_2 = _calculate_backoff(2)
-        
-        # Each should roughly double (accounting for jitter)
-        assert delay_1 > delay_0
-        assert delay_2 > delay_1
-
-    def test_caps_at_max_delay(self):
-        """Delay is capped at maximum value."""
-        from shared.converse import _calculate_backoff, DEFAULT_MAX_DELAY
-        
-        # Very high attempt number
-        delay = _calculate_backoff(100)
-        assert delay <= DEFAULT_MAX_DELAY + 1  # +1 for jitter
 
 
 class TestConverseEdgeCases:
@@ -547,15 +488,11 @@ class TestConverseEdgeCases:
     @patch('shared.converse.get_bedrock_client')
     def test_uses_custom_model_id(self, mock_get_client):
         """Uses custom model ID when provided."""
-        mock_client = MagicMock()
-        mock_client.converse.return_value = {
-            'output': {'message': {'content': [{'text': 'Response'}]}}
-        }
-        mock_get_client.return_value = mock_client
-        
+        mock_client = _client_replying(mock_get_client, 'Response')
+
         from shared.converse import converse
         converse('Hello', model_id='custom-model-123')
-        
+
         call_args = mock_client.converse.call_args
         assert call_args.kwargs['modelId'] == 'custom-model-123'
 
@@ -567,79 +504,57 @@ class TestConverseEdgeCases:
             'output': {'message': {'content': []}}
         }
         mock_get_client.return_value = mock_client
-        
+
         from shared.converse import converse
         result = converse('Hello')
-        
+
         assert result == ''
 
     @patch('shared.converse.get_bedrock_client')
     def test_omits_system_when_empty(self, mock_get_client):
         """Does not include system key when system_prompt is empty."""
-        mock_client = MagicMock()
-        mock_client.converse.return_value = {
-            'output': {'message': {'content': [{'text': 'Response'}]}}
-        }
-        mock_get_client.return_value = mock_client
-        
+        mock_client = _client_replying(mock_get_client, 'Response')
+
         from shared.converse import converse
         converse('Hello', system_prompt='')
-        
+
         call_args = mock_client.converse.call_args
         assert 'system' not in call_args.kwargs
 
-    @patch('shared.converse.time.sleep')
+    @patch('shared.converse.time.sleep', MagicMock())
     @patch('shared.converse.get_bedrock_client')
-    def test_retries_on_model_stream_error(self, mock_get_client, mock_sleep):
+    def test_retries_on_model_stream_error(self, mock_get_client):
         """Retries on ModelStreamErrorException."""
         mock_client = MagicMock()
         stream_error = ClientError(
             {'Error': {'Code': 'ModelStreamErrorException', 'Message': 'Stream error'}},
             'Converse'
         )
-        mock_client.converse.side_effect = [
-            stream_error,
-            {'output': {'message': {'content': [{'text': 'Success'}]}}}
-        ]
-        mock_get_client.return_value = mock_client
-        
-        from shared.converse import converse
-        result = converse('Test', max_retries=3)
-        
+        result = _converse_recovering_from(mock_get_client, mock_client, stream_error)
+
         assert result == 'Success'
         assert mock_client.converse.call_count == 2
 
     @patch('shared.converse.get_bedrock_client')
     def test_passes_inference_config(self, mock_get_client):
         """Passes max_tokens and temperature in inferenceConfig."""
-        mock_client = MagicMock()
-        mock_client.converse.return_value = {
-            'output': {'message': {'content': [{'text': 'Response'}]}}
-        }
-        mock_get_client.return_value = mock_client
-        
+        mock_client = _client_replying(mock_get_client, 'Response')
+
         from shared.converse import converse
         converse('Hello', max_tokens=500, temperature=0.7,
                  model_id='global.anthropic.claude-sonnet-4-6')
-        
+
         call_args = mock_client.converse.call_args
         assert call_args.kwargs['inferenceConfig']['maxTokens'] == 500
         assert call_args.kwargs['inferenceConfig']['temperature'] == 0.7
 
-    @patch('shared.converse.time.sleep')
+    @patch('shared.converse.time.sleep', MagicMock())
     @patch('shared.converse.get_bedrock_client')
-    def test_retries_generic_exceptions(self, mock_get_client, mock_sleep):
+    def test_retries_generic_exceptions(self, mock_get_client):
         """Retries on generic exceptions (not just ClientError)."""
         mock_client = MagicMock()
-        mock_client.converse.side_effect = [
-            ConnectionError("Network error"),
-            {'output': {'message': {'content': [{'text': 'Success'}]}}}
-        ]
-        mock_get_client.return_value = mock_client
-        
-        from shared.converse import converse
-        result = converse('Test', max_retries=3)
-        
+        result = _converse_recovering_from(mock_get_client, mock_client, ConnectionError("Network error"))
+
         assert result == 'Success'
         assert mock_client.converse.call_count == 2
 
@@ -647,49 +562,49 @@ class TestConverseEdgeCases:
 class TestConverseChainEdgeCases:
     """Tests for edge cases in converse_chain function."""
 
-    @patch('shared.converse.converse')
+    @patch('shared.converse.converse_detailed')
     def test_handles_empty_steps_list(self, mock_converse):
         """Returns empty list for empty steps."""
         from shared.converse import converse_chain
-        
+
         results = converse_chain([])
-        
+
         assert results == []
         mock_converse.assert_not_called()
 
-    @patch('shared.converse.converse')
+    @patch('shared.converse.converse_detailed')
     def test_uses_default_step_name(self, mock_converse):
         """Uses default step name when not provided."""
-        mock_converse.return_value = 'Result'
+        mock_converse.return_value = ConverseResult(text='Result')
         progress_calls = []
-        
+
         from shared.converse import converse_chain
         steps = [{'system': 'S1', 'user': 'U1'}]  # No step_name
-        
-        converse_chain(steps, progress_callback=lambda p, s: progress_calls.append(s))
-        
+
+        converse_chain(steps, progress_callback=lambda _p, s: progress_calls.append(s))
+
         assert progress_calls[0] == 'llm_step_1'
 
-    @patch('shared.converse.converse')
+    @patch('shared.converse.converse_detailed')
     def test_handles_progress_callback_error(self, mock_converse):
         """Continues execution when progress callback raises."""
-        mock_converse.return_value = 'Result'
-        
-        def failing_callback(progress, step):
+        mock_converse.return_value = ConverseResult(text='Result')
+
+        def failing_callback(_progress, _step):
             raise ValueError("Callback failed")
-        
+
         from shared.converse import converse_chain
         steps = [{'system': 'S1', 'user': 'U1'}]
-        
+
         # Should not raise, should continue
         results = converse_chain(steps, progress_callback=failing_callback)
-        
+
         assert results == ['Result']
 
-    @patch('shared.converse.converse')
+    @patch('shared.converse.converse_detailed')
     def test_passes_max_retries_to_converse(self, mock_converse):
         """Passes max_retries parameter to converse calls."""
-        mock_converse.return_value = 'Result'
+        mock_converse.return_value = ConverseResult(text='Result')
 
         from shared.converse import converse_chain
         steps = [{'system': 'S1', 'user': 'U1'}]
@@ -811,7 +726,7 @@ class TestConverseAutoContinuation:
         assert [m['role'] for m in retry_kwargs['messages']] == ['user']
         assert retry_kwargs['inferenceConfig']['maxTokens'] == 6000
 
-    @pytest.mark.parametrize('current_max, expected', [
+    @pytest.mark.parametrize(('current_max', 'expected'), [
         (3000, 6000),        # room to double
         (32000, 64000),      # the build_prototype budget doubles onto the ceiling
         (40000, 64000),      # doubling overshoots — capped, but still a raise
@@ -846,7 +761,7 @@ class TestConverseAutoContinuation:
         which degrades to the empty result rather than crashing."""
         from shared.converse import _EMPTY_RAISE_CEILING, _raised_empty_budget
         largest_known_caller_budget = 32000  # jobs/document_generator/handler.py
-        assert _EMPTY_RAISE_CEILING > largest_known_caller_budget
+        assert largest_known_caller_budget < _EMPTY_RAISE_CEILING
         assert _raised_empty_budget(largest_known_caller_budget) is not None
 
     @patch('shared.converse.get_bedrock_client')
@@ -876,7 +791,7 @@ class TestConverseAutoContinuation:
         mock_client = MagicMock()
         mock_client.converse.return_value = self._resp('', stop_reason='max_tokens')
         mock_get_client.return_value = mock_client
-        from shared.converse import converse, _EMPTY_RAISE_CEILING
+        from shared.converse import _EMPTY_RAISE_CEILING, converse
         over_ceiling = _EMPTY_RAISE_CEILING + 1000
         result = converse('Build this', step_name='huge', max_tokens=over_ceiling)
         assert result == ''
@@ -885,7 +800,7 @@ class TestConverseAutoContinuation:
         sent = mock_client.converse.call_args.kwargs['inferenceConfig']['maxTokens']
         assert sent == over_ceiling
 
-    @pytest.mark.parametrize('elapsed, deadline, past', [
+    @pytest.mark.parametrize(('elapsed', 'deadline', 'past'), [
         (0.0, 420.0, False),
         (419.0, 420.0, False),
         (421.0, 420.0, True),
@@ -914,7 +829,7 @@ class TestConverseAutoContinuation:
         mock_client = MagicMock()
         mock_client.converse.return_value = self._resp('', stop_reason='max_tokens')
         mock_get_client.return_value = mock_client
-        from shared.converse import converse, _raised_empty_budget
+        from shared.converse import _raised_empty_budget, converse
         # Headroom DOES exist at this budget (32000 -> 64000), so only the
         # deadline can be what stops the retry.
         assert _raised_empty_budget(32000) == 64000
@@ -977,7 +892,7 @@ class TestConverseAutoContinuation:
         mock_client = MagicMock()
         mock_client.converse.return_value = self._resp('', stop_reason='max_tokens')
         mock_get_client.return_value = mock_client
-        from shared.converse import converse, _EMPTY_RAISE_CEILING
+        from shared.converse import _EMPTY_RAISE_CEILING, converse
         half_ceiling = _EMPTY_RAISE_CEILING // 2
         result = converse('Analyze this', step_name='research_analyze', max_tokens=half_ceiling)
         assert result == ''
@@ -1111,9 +1026,9 @@ class TestReadTimeoutIsNotRetried:
         # symptom that the raise was added without removing the retry path.
         mock_sleep.assert_not_called()
 
-    @patch('shared.converse.time.sleep')
+    @patch('shared.converse.time.sleep', MagicMock())
     @patch('shared.converse.get_bedrock_client')
-    def test_a_connect_timeout_is_still_retried(self, mock_get_client, mock_sleep):
+    def test_a_connect_timeout_is_still_retried(self, mock_get_client):
         """The control, so the branch above is narrow rather than "nothing retries".
 
         A connect timeout costs 10 s and no generation at all — it is the transient

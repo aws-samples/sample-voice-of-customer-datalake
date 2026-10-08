@@ -5,15 +5,16 @@
 
 import clsx from 'clsx'
 import {
-  Play, Settings, Trash2, Smartphone, Loader2, CheckCircle2, AlertCircle,
+  Smartphone, Loader2, CheckCircle2, AlertCircle,
 } from 'lucide-react'
-import { ADMIN_ONLY_TITLE } from '../../constants/admin'
+import { useTranslation } from 'react-i18next'
 import {
-  getAppIdentifier, getFrequencyLabel,
+  appField, getAppIdentifier, getFrequencyLabel,
 } from './scraper-helpers'
+import { CardActions, CardStat } from './SourceCardParts'
+import { ToneTile } from './SourceDialogHeader'
+import type { AppConfig } from './scraper-helpers'
 import type { PluginManifest } from '../../plugins/types'
-
-type AppConfig = Record<string, string>
 
 export interface RunStatusInfo {
   status: string
@@ -28,10 +29,10 @@ function getPlatformLabel(pluginId: string): string {
 }
 
 function getStatusColor(status: string, hasErrors: boolean): string {
-  if (status === 'running') return 'bg-blue-50 border-blue-200'
-  if (status === 'error') return 'bg-red-50 border-red-200'
-  if (hasErrors) return 'bg-amber-50 border-amber-200'
-  return 'bg-green-50 border-green-200'
+  if (status === 'running') return 'bg-info-subtle border-info/30'
+  if (status === 'error') return 'bg-danger-subtle border-danger/30'
+  if (hasErrors) return 'bg-warn-subtle border-warn/30'
+  return 'bg-ok-subtle border-ok/30'
 }
 
 function StatusIcon({
@@ -40,28 +41,30 @@ function StatusIcon({
   status: string
   hasErrors: boolean
 }>) {
+  const { t } = useTranslation('scrapers')
   if (status === 'running') {
-    return <><Loader2 size={14} className="animate-spin text-blue-600" /><span className="font-medium text-blue-700">Running...</span></>
+    return <><Loader2 size={14} className="animate-spin text-info" /><span className="font-medium text-info">{t('status.running')}</span></>
   }
   if (status === 'error') {
-    return <><AlertCircle size={14} className="text-red-600" /><span className="font-medium text-red-700">Failed</span></>
+    return <><AlertCircle size={14} className="text-danger" /><span className="font-medium text-danger">{t('status.failed')}</span></>
   }
   if (hasErrors) {
-    return <><AlertCircle size={14} className="text-amber-600" /><span className="font-medium text-amber-700">Completed with errors</span></>
+    return <><AlertCircle size={14} className="text-warn" /><span className="font-medium text-warn">{t('status.completedWithErrors')}</span></>
   }
-  return <><CheckCircle2 size={14} className="text-green-600" /><span className="font-medium text-green-700">Completed</span></>
+  return <><CheckCircle2 size={14} className="text-ok" /><span className="font-medium text-ok">{t('status.completed')}</span></>
 }
 
 function AppRunStatusBar({ status }: Readonly<{ status: RunStatusInfo }>) {
+  const { t } = useTranslation('scrapers')
   return (
     <div className={clsx('mt-3 p-3 rounded-lg text-sm border', getStatusColor(status.status, status.errors.length > 0))}>
       <div className="flex items-center gap-2 mb-1">
         <StatusIcon status={status.status} hasErrors={status.errors.length > 0} />
       </div>
-      <div className="text-xs text-gray-600">
-        Reviews found: <span className="font-semibold">{status.items_found}</span>
+      <div className="text-xs text-text">
+        {t('status.reviewsFound')} <span className="font-mono font-semibold text-text-strong">{status.items_found}</span>
       </div>
-      {status.errors.length > 0 ? <div className="mt-1 text-xs text-red-600 truncate">{status.errors[0]}</div> : null}
+      {status.errors.length > 0 ? <div className="mt-1 text-xs text-danger truncate">{status.errors[0]}</div> : null}
     </div>
   )
 }
@@ -84,32 +87,37 @@ export function AppConfigCard({
   isRunning: boolean
   runStatus?: RunStatusInfo
 }>) {
-  const frequencyMinutes = Number.parseInt(app.frequency_minutes === '' ? '1440' : app.frequency_minutes, 10)
+  const { t } = useTranslation('scrapers')
+  const frequency = appField(app, 'frequency_minutes')
+  const frequencyMinutes = Number.parseInt(frequency === '' ? '1440' : frequency, 10)
   const frequencyLabel = getFrequencyLabel(frequencyMinutes)
+  const name = app.app_name === '' ? t('appCard.unnamed') : app.app_name
+  const identifier = getAppIdentifier(app, plugin.id)
 
   return (
-    <div className="card border-2 border-purple-200 bg-purple-50/30 transition-all">
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center"><Smartphone size={20} /></div>
-          <div>
-            <h3 className="font-semibold">{app.app_name === '' ? 'Unnamed App' : app.app_name}</h3>
-            <p className="text-sm text-gray-500">{getAppIdentifier(app, plugin.id)}</p>
+    <div className="card">
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div className="flex items-center gap-3 min-w-0">
+          <ToneTile icon={Smartphone} tone="accent" />
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold tracking-tight text-text-strong truncate" title={name}>{name}</h2>
+            <p className="text-sm text-muted truncate font-mono" title={identifier}>{identifier}</p>
           </div>
         </div>
-        <div className="flex items-center gap-1">
-          <button onClick={onRun} disabled={isRunning || !isAdmin} className={clsx('p-2 rounded transition-colors disabled:cursor-not-allowed', isRunning ? 'bg-blue-100 text-blue-600' : 'hover:bg-green-100 text-green-600', isAdmin ? '' : 'opacity-50')} title={isAdmin ? 'Run now' : ADMIN_ONLY_TITLE}>
-            {isRunning ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
-          </button>
-          <button onClick={onEdit} className="p-2 hover:bg-gray-100 rounded" title="Edit"><Settings size={16} className="text-gray-500" /></button>
-          <button onClick={onDelete} disabled={!isAdmin} className="p-2 hover:bg-gray-100 rounded text-red-500 disabled:opacity-50 disabled:cursor-not-allowed" title={isAdmin ? 'Delete' : ADMIN_ONLY_TITLE}><Trash2 size={16} /></button>
-        </div>
+        <CardActions
+          isAdmin={isAdmin}
+          isRunning={isRunning}
+          runDisabled={isRunning}
+          onRun={onRun}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
       </div>
-      <div className="grid grid-cols-3 gap-4 text-sm">
-        <div><span className="text-gray-500">Frequency</span><p className="font-medium">{frequencyLabel}</p></div>
-        <div><span className="text-gray-500">Platform</span><p className="font-medium">{getPlatformLabel(plugin.id)}</p></div>
-        <div><span className="text-gray-500">Max Reviews</span><p className="font-medium">{app.max_reviews_per_run === '' ? '500' : app.max_reviews_per_run}</p></div>
-      </div>
+      <dl className="grid grid-cols-3 gap-3 sm:gap-4">
+        <CardStat label={t('card.frequency')} value={frequencyLabel} />
+        <CardStat label={t('appCard.platform')} value={getPlatformLabel(plugin.id)} />
+        <CardStat label={t('appCard.maxReviews')} value={app.max_reviews_per_run === '' ? '500' : app.max_reviews_per_run} mono />
+      </dl>
       {runStatus == null ? null : <AppRunStatusBar status={runStatus} />}
     </div>
   )

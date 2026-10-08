@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import PageLoader from './components/PageLoader'
+import PageLoader from './components/PageLoader/PageLoader'
 import { routes } from './routes'
 import { loadRuntimeConfig, isConfigLoaded } from './runtimeConfig'
 import { useConfigStore } from './store/configStore'
 import { configureAmplify } from './lib/amplify-config'
+import { useThemeSync } from './theme/useThemeSync'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -25,6 +26,7 @@ export default function App() {
   const [configReady, setConfigReady] = useState(isConfigLoaded())
   const [error, setError] = useState<string | null>(null)
   const syncWithRuntimeConfig = useConfigStore((state) => state.syncWithRuntimeConfig)
+  useThemeSync()
 
   useEffect(() => {
     if (!configReady) {
@@ -48,13 +50,13 @@ export default function App() {
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+      <div className="min-h-screen flex items-center justify-center bg-bg">
         <div className="text-center">
-          <h1 className="text-xl font-semibold text-red-600 mb-2">Configuration Error</h1>
-          <p className="text-gray-600">{error}</p>
+          <h1 className="text-xl font-semibold text-danger mb-2">Configuration Error</h1>
+          <p className="text-muted">{error}</p>
           <button 
             onClick={() => window.location.reload()} 
-            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            className="btn btn-primary mt-4"
           >
             Retry
           </button>

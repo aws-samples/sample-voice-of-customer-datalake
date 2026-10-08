@@ -68,7 +68,7 @@ const getUserPool = (): CognitoUserPool | null => {
  */
 const parseJwt = (token: string): Record<string, unknown> => {
   try {
-    const base64Url = token.split('.')[1]
+    const base64Url = token.split('.').at(1) ?? ''
     const base64 = base64Url.replaceAll('-', '+').replaceAll('_', '/')
     const jsonPayload = decodeURIComponent(
       atob(base64)
@@ -97,13 +97,49 @@ const extractUser = (idToken: string): User => {
   const email = payload['email']
   const name = payload['name']
   const groups = payload['cognito:groups']
+  const sub = payload['sub']
 
   return {
     username: isString(username) ? username : '',
     email: isString(email) ? email : '',
     name: isString(name) ? name : undefined,
     groups: isStringArray(groups) ? groups : [],
+    sub: isString(sub) && sub !== '' ? sub : undefined,
   }
+}
+
+/**
+ * The User Pool, or a thrown ConfigError when Cognito is not configured.
+ * Called inside a `new Promise` executor, the throw becomes that promise's
+ * rejection.
+ */
+const requireUserPool = (): CognitoUserPool => {
+  const userPool = getUserPool()
+  if (!userPool) throw new ConfigError('Cognito not configured')
+  return userPool
+}
+
+/** A CognitoUser handle for `username` in `userPool` (no session yet). */
+const cognitoUserFor = (username: string, userPool: CognitoUserPool): CognitoUser =>
+  new CognitoUser({ Username: username, Pool: userPool })
+
+/**
+ * Stores a freshly issued session's tokens and the user they identify.
+ * Every successful sign-in, challenge completion and refresh ends here.
+ */
+const storeSession = (session: CognitoUserSession): void => {
+  const idToken = session.getIdToken().getJwtToken()
+  useAuthStore.getState().setTokens({
+    accessToken: session.getAccessToken().getJwtToken(),
+    idToken,
+    refreshToken: session.getRefreshToken().getToken(),
+  })
+  useAuthStore.getState().setUser(extractUser(idToken))
+}
+
+/** An `onFailure` callback that rejects with `err`, wrapping non-Error values in AuthError. */
+const rejectWith = (reject: (reason: Error) => void) => (err: unknown): void => {
+  reject(err instanceof Error ? err : new AuthError(String(err)))
 }
 
 /**
@@ -150,16 +186,7 @@ export const authService = {
    */
   signIn: (username: string, password: string): Promise<CognitoUserSession> => {
     return new Promise((resolve, reject) => {
-      const userPool = getUserPool()
-      if (!userPool) {
-        reject(new ConfigError('Cognito not configured'))
-        return
-      }
-
-      const cognitoUser = new CognitoUser({
-        Username: username,
-        Pool: userPool,
-      })
+      const cognitoUser = cognitoUserFor(username, requireUserPool())
 
       const authDetails = new AuthenticationDetails({
         Username: username,
@@ -168,27 +195,14 @@ export const authService = {
 
       cognitoUser.authenticateUser(authDetails, {
         onSuccess: (session) => {
-          const idToken = session.getIdToken().getJwtToken()
-          const accessToken = session.getAccessToken().getJwtToken()
-          const refreshToken = session.getRefreshToken().getToken()
-
-          const user = extractUser(idToken)
-
-          useAuthStore.getState().setTokens({
-            accessToken,
-            idToken,
-            refreshToken,
-          })
-          useAuthStore.getState().setUser(user)
+          storeSession(session)
 
           // Sync session with Amplify for IAM signing
           void authService.syncAmplifySession()
 
           resolve(session)
         },
-        onFailure: (err: unknown) => {
-          reject(err instanceof Error ? err : new AuthError(String(err)))
-        },
+        onFailure: rejectWith(reject),
         newPasswordRequired: (userAttributes: Record<string, unknown>) => {
           // Handle new password required (first login)
           const error = new AuthError('New password required')
@@ -218,24 +232,10 @@ export const authService = {
     return new Promise((resolve, reject) => {
       cognitoUser.completeNewPasswordChallenge(newPassword, {}, {
         onSuccess: (session) => {
-          const idToken = session.getIdToken().getJwtToken()
-          const accessToken = session.getAccessToken().getJwtToken()
-          const refreshToken = session.getRefreshToken().getToken()
-
-          const user = extractUser(idToken)
-
-          useAuthStore.getState().setTokens({
-            accessToken,
-            idToken,
-            refreshToken,
-          })
-          useAuthStore.getState().setUser(user)
-
+          storeSession(session)
           resolve(session)
         },
-        onFailure: (err: unknown) => {
-          reject(err instanceof Error ? err : new AuthError(String(err)))
-        },
+        onFailure: rejectWith(reject),
       })
     })
   },
@@ -266,11 +266,7 @@ export const authService = {
    */
   refreshSession: (): Promise<CognitoUserSession> => {
     return new Promise((resolve, reject) => {
-      const userPool = getUserPool()
-      if (!userPool) {
-        reject(new ConfigError('Cognito not configured'))
-        return
-      }
+      const userPool = requireUserPool()
 
       const cognitoUser = userPool.getCurrentUser()
       if (!cognitoUser) {
@@ -285,51 +281,35 @@ export const authService = {
        * Handles a successful session by extracting tokens and updating the store.
        */
       const handleSession = async (session: CognitoUserSession) => {
-        const idToken = session.getIdToken().getJwtToken()
-        const accessToken = session.getAccessToken().getJwtToken()
-        const newRefreshToken = session.getRefreshToken().getToken()
-
-        const user = extractUser(idToken)
-
-        useAuthStore.getState().setTokens({
-          accessToken,
-          idToken,
-          refreshToken: newRefreshToken,
-        })
-        useAuthStore.getState().setUser(user)
+        storeSession(session)
 
         await authService.syncAmplifySession()
 
         resolve(session)
       }
 
+      /** Shared callback for both refresh paths; `fallbackMessage` names the path that failed. */
+      const onRefreshed = (fallbackMessage: string) =>
+        (err: Error | null, session: CognitoUserSession | null) => {
+          if (err || !session) {
+            useAuthStore.getState().logout()
+            reject(err ?? new AuthError(fallbackMessage))
+            return
+          }
+          void handleSession(session)
+        }
+
       if (refreshToken != null && refreshToken !== '') {
         // Primary path: use the in-memory refresh token
         cognitoUser.refreshSession(
           new CognitoRefreshToken({ RefreshToken: refreshToken }),
-          (err: Error | null, session: CognitoUserSession | null) => {
-            if (err || !session) {
-              useAuthStore.getState().logout()
-              reject(err ?? new AuthError('Session refresh failed'))
-              return
-            }
-            void handleSession(session)
-          },
+          onRefreshed('Session refresh failed'),
         )
       } else {
         // Fallback: no refresh token in memory (new tab).
         // Cognito SDK's getSession() uses its own cookies to silently
         // re-authenticate without requiring the refresh token from our store.
-        cognitoUser.getSession(
-          (err: Error | null, session: CognitoUserSession | null) => {
-            if (err || !session) {
-              useAuthStore.getState().logout()
-              reject(err ?? new AuthError('No session available — please sign in again'))
-              return
-            }
-            void handleSession(session)
-          },
-        )
+        cognitoUser.getSession(onRefreshed('No session available — please sign in again'))
       }
     })
   },
@@ -388,18 +368,7 @@ export const authService = {
    */
   forgotPassword: (username: string): Promise<void> => {
     return new Promise((resolve, reject) => {
-      const userPool = getUserPool()
-      if (!userPool) {
-        reject(new ConfigError('Cognito not configured'))
-        return
-      }
-
-      const cognitoUser = new CognitoUser({
-        Username: username,
-        Pool: userPool,
-      })
-
-      cognitoUser.forgotPassword({
+      cognitoUserFor(username, requireUserPool()).forgotPassword({
         onSuccess: () => resolve(),
         onFailure: (err) => reject(err),
       })
@@ -421,18 +390,7 @@ export const authService = {
     newPassword: string,
   ): Promise<void> => {
     return new Promise((resolve, reject) => {
-      const userPool = getUserPool()
-      if (!userPool) {
-        reject(new ConfigError('Cognito not configured'))
-        return
-      }
-
-      const cognitoUser = new CognitoUser({
-        Username: username,
-        Pool: userPool,
-      })
-
-      cognitoUser.confirmPassword(code, newPassword, {
+      cognitoUserFor(username, requireUserPool()).confirmPassword(code, newPassword, {
         onSuccess: () => resolve(),
         onFailure: (err) => reject(err),
       })
@@ -449,13 +407,7 @@ export const authService = {
    */
   changePassword: (oldPassword: string, newPassword: string): Promise<void> => {
     return new Promise((resolve, reject) => {
-      const userPool = getUserPool()
-      if (!userPool) {
-        reject(new ConfigError('Cognito not configured'))
-        return
-      }
-
-      const cognitoUser = userPool.getCurrentUser()
+      const cognitoUser = requireUserPool().getCurrentUser()
       if (!cognitoUser) {
         reject(new AuthError('No current user'))
         return

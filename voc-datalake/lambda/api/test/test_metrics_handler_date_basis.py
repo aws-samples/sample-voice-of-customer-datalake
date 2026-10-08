@@ -9,18 +9,23 @@ The default basis ('imported') preserves historical behavior. The 'review'
 basis excludes items that were only *imported* recently but *written* long
 ago (e.g. a backfill of 3-year-old reviews).
 """
-import json
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+
+from handler_events_fixtures import call_route
+from urgency_index_fixtures import wire_urgency_index
+
+from metrics_handler import lambda_handler
+from shared.earliest_date import EARLIEST_DATE_KEY
 
 
 def _day(days_ago: int) -> str:
-    return (datetime.now(timezone.utc) - timedelta(days=days_ago)).strftime('%Y-%m-%d')
+    return (datetime.now(UTC) - timedelta(days=days_ago)).strftime('%Y-%m-%d')
 
 
 def _iso(days_ago: int) -> str:
-    return (datetime.now(timezone.utc) - timedelta(days=days_ago)).isoformat()
+    return (datetime.now(UTC) - timedelta(days=days_ago)).isoformat()
 
 
 def _item(feedback_id: str, imported_days_ago: int, written_days_ago: int, **overrides) -> dict:
@@ -53,89 +58,98 @@ def _side_effect_for_day_loop(items: list[dict], days: int) -> list[dict]:
     return [{'Items': items}] + [{'Items': []}] * (days - 1)
 
 
+def _truncated_first_of_30_days(item: dict) -> list[dict]:
+    """A 30-day walk whose first day hit the scan ceiling with rows left behind, holding `item`."""
+    truncated_day = {'Items': [item], 'ScannedCount': 10000, 'LastEvaluatedKey': {'pk': 'more'}}
+    return [truncated_day, *[{'Items': [], 'ScannedCount': 0}] * 29]
+
+
+def _day_loop_get(mock_fb, items: list[dict], api_gateway_event, lambda_context, path: str, **query: str) -> dict:
+    """GET `path`?`query` with the per-day feedback walk answering `items`; the decoded body."""
+    mock_fb.query.side_effect = _side_effect_for_day_loop(items, days=int(query['days']))
+    _, body = call_route(lambda_handler, api_gateway_event, lambda_context, path=path, query_params=query)
+    return body
+
+
+def _category_get(mock_fb, items: list[dict], api_gateway_event, lambda_context, **query: str) -> dict:
+    """GET /feedback?days=7&category=delivery&`query`, the category GSI answering `items`; the body."""
+    mock_fb.query.return_value = {'Items': items}
+    _, body = call_route(
+        lambda_handler, api_gateway_event, lambda_context,
+        path='/feedback', query_params={'days': '7', 'category': 'delivery', **query},
+    )
+    return body
+
+
+
+def _recent_and_ancient() -> list[dict]:
+    """Two items imported today: one written two days ago, one three years ago.
+
+    The pair every basis test turns on: the import window keeps both, the review
+    window keeps only `recent`.
+    """
+    return [
+        _item('recent', imported_days_ago=0, written_days_ago=2),
+        _item('ancient', imported_days_ago=0, written_days_ago=1095),
+    ]
+
 class TestListFeedbackDateBasis:
     """GET /feedback with date_basis."""
 
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     @patch('metrics_handler.feedback_table')
     def test_review_basis_excludes_old_reviews_imported_recently(
-        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
         """A 3-year-old review imported today is dropped under review basis."""
-        items = [
-            _item('recent', imported_days_ago=0, written_days_ago=2),
-            _item('ancient', imported_days_ago=0, written_days_ago=1095),
-        ]
-        mock_fb.query.side_effect = _side_effect_for_day_loop(items, days=7)
-
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(
-            path='/feedback', query_params={'days': '7', 'date_basis': 'review'}
-        )
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
+        body = _day_loop_get(mock_fb, _recent_and_ancient(), api_gateway_event, lambda_context,
+                             '/feedback', days='7', date_basis='review')
 
         assert body['count'] == 1
         assert body['items'][0]['feedback_id'] == 'recent'
 
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     @patch('metrics_handler.feedback_table')
     def test_default_basis_keeps_old_reviews_imported_recently(
-        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
         """Without date_basis the import window governs (regression guard)."""
-        items = [
-            _item('recent', imported_days_ago=0, written_days_ago=2),
-            _item('ancient', imported_days_ago=0, written_days_ago=1095),
-        ]
-        mock_fb.query.side_effect = _side_effect_for_day_loop(items, days=7)
-
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(path='/feedback', query_params={'days': '7'})
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
+        body = _day_loop_get(mock_fb, _recent_and_ancient(), api_gateway_event, lambda_context,
+                             '/feedback', days='7')
 
         assert body['count'] == 2
         assert {i['feedback_id'] for i in body['items']} == {'recent', 'ancient'}
 
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     @patch('metrics_handler.feedback_table')
     def test_invalid_basis_falls_back_to_imported(
-        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
         """Unknown date_basis values behave like the default."""
         items = [_item('ancient', imported_days_ago=0, written_days_ago=1095)]
-        mock_fb.query.side_effect = _side_effect_for_day_loop(items, days=7)
-
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(
-            path='/feedback', query_params={'days': '7', 'date_basis': 'bogus'}
-        )
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
+        body = _day_loop_get(mock_fb, items, api_gateway_event, lambda_context,
+                             '/feedback', days='7', date_basis='bogus')
 
         assert body['count'] == 1
 
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     @patch('metrics_handler.feedback_table')
     def test_review_basis_keeps_items_missing_source_created_at(
-        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
         """Items without a review date fall back to their import date."""
         no_source_date = _item('no-source-date', imported_days_ago=0, written_days_ago=0)
         del no_source_date['source_created_at']
-        mock_fb.query.side_effect = _side_effect_for_day_loop([no_source_date], days=7)
-
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(
-            path='/feedback', query_params={'days': '7', 'date_basis': 'review'}
-        )
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
+        body = _day_loop_get(mock_fb, [no_source_date], api_gateway_event, lambda_context,
+                             '/feedback', days='7', date_basis='review')
 
         assert body['count'] == 1
         assert body['items'][0]['feedback_id'] == 'no-source-date'
 
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     @patch('metrics_handler.feedback_table')
     def test_review_basis_combines_with_source_filter(
-        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
         """Review window and source filter apply together (AND)."""
         items = [
@@ -144,14 +158,8 @@ class TestListFeedbackDateBasis:
                   source_platform='manual_import'),
             _item('too-old', imported_days_ago=0, written_days_ago=400),
         ]
-        mock_fb.query.side_effect = _side_effect_for_day_loop(items, days=7)
-
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(
-            path='/feedback',
-            query_params={'days': '7', 'date_basis': 'review', 'source': 'webscraper'},
-        )
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
+        body = _day_loop_get(mock_fb, items, api_gateway_event, lambda_context,
+                             '/feedback', days='7', date_basis='review', source='webscraper')
 
         assert [i['feedback_id'] for i in body['items']] == ['match']
 
@@ -159,43 +167,37 @@ class TestListFeedbackDateBasis:
 class TestUrgentFeedbackDateBasis:
     """GET /feedback/urgent with date_basis."""
 
-    def _wire_urgent_mocks(self, mock_fb, full_items: list[dict]):
-        gsi_rows = [{'pk': i['pk'], 'sk': i['sk']} for i in full_items]
-        mock_fb.query.return_value = {'Items': gsi_rows}
-        mock_fb.get_item.side_effect = [{'Item': i} for i in full_items]
+    def _urgent(self, mock_fb, full_items: list[dict], api_gateway_event, lambda_context, **query: str) -> dict:
+        """GET /feedback/urgent?days=30&`query` with the urgency GSI pointing at `full_items`."""
+        wire_urgency_index(mock_fb, full_items)
+        _, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            path='/feedback/urgent', query_params={'days': '30', **query},
+        )
+        return body
 
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     @patch('metrics_handler.feedback_table')
     def test_review_basis_excludes_urgent_items_written_before_window(
-        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
         items = [
             _item('urgent-new', imported_days_ago=0, written_days_ago=3, urgency='high'),
             _item('urgent-old', imported_days_ago=0, written_days_ago=200, urgency='high'),
         ]
-        self._wire_urgent_mocks(mock_fb, items)
-
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(
-            path='/feedback/urgent', query_params={'days': '30', 'date_basis': 'review'}
-        )
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
+        body = self._urgent(mock_fb, items, api_gateway_event, lambda_context, date_basis='review')
 
         assert [i['feedback_id'] for i in body['items']] == ['urgent-new']
 
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     @patch('metrics_handler.feedback_table')
     def test_imported_basis_keeps_urgent_items_written_before_window(
-        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
         items = [
             _item('urgent-old', imported_days_ago=0, written_days_ago=200, urgency='high'),
         ]
-        self._wire_urgent_mocks(mock_fb, items)
-
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(path='/feedback/urgent', query_params={'days': '30'})
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
+        body = self._urgent(mock_fb, items, api_gateway_event, lambda_context)
 
         assert [i['feedback_id'] for i in body['items']] == ['urgent-old']
 
@@ -203,10 +205,10 @@ class TestUrgentFeedbackDateBasis:
 class TestSearchFeedbackDateBasis:
     """GET /feedback/search with date_basis."""
 
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     @patch('metrics_handler.feedback_table')
     def test_review_basis_excludes_matches_written_before_window(
-        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
         items = [
             _item('hit-new', imported_days_ago=0, written_days_ago=2,
@@ -216,12 +218,11 @@ class TestSearchFeedbackDateBasis:
         ]
         mock_fb.query.side_effect = _side_effect_for_day_loop(items, days=30)
 
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(
+        _, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
             path='/feedback/search',
             query_params={'q': 'slow', 'days': '30', 'date_basis': 'review'},
         )
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
 
         assert [i['feedback_id'] for i in body['items']] == ['hit-new']
 
@@ -229,10 +230,10 @@ class TestSearchFeedbackDateBasis:
 class TestEntitiesDateBasis:
     """GET /feedback/entities with date_basis."""
 
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     @patch('metrics_handler.feedback_table')
     def test_review_basis_computes_entities_from_items_within_review_window(
-        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
         items = [
             _item('a', imported_days_ago=0, written_days_ago=1,
@@ -245,11 +246,10 @@ class TestEntitiesDateBasis:
         ]
         mock_fb.query.side_effect = _side_effect_for_day_loop(items, days=7)
 
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(
-            path='/feedback/entities', query_params={'days': '7', 'date_basis': 'review'}
+        _, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            path='/feedback/entities', query_params={'days': '7', 'date_basis': 'review'},
         )
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
 
         assert body['feedback_count'] == 2
         assert body['entities']['categories'] == {'delivery': 1, 'billing': 1}
@@ -273,11 +273,10 @@ class TestSummaryDateBasis:
         ]
         mock_fb.query.side_effect = _side_effect_for_day_loop(items, days=7)
 
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(
-            path='/metrics/summary', query_params={'days': '7', 'date_basis': 'review'}
+        _, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            path='/metrics/summary', query_params={'days': '7', 'date_basis': 'review'},
         )
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
 
         assert body['total_feedback'] == 3
         assert body['urgent_count'] == 1
@@ -287,10 +286,11 @@ class TestSummaryDateBasis:
         ]
         # All items carry sentiment_score 0.8
         assert body['avg_sentiment'] == 0.8
-        # Aggregates table is bypassed entirely under review basis. Both access
-        # shapes must be absent for "entirely" to hold, now that the windowed
-        # query has replaced the per-day get_item walk.
-        mock_agg.get_item.assert_not_called()
+        # Aggregates table is bypassed entirely under review basis — apart from
+        # the one earliest-date watermark read that resolves the window. Both
+        # access shapes are checked, now that the windowed query has replaced the
+        # per-day get_item walk.
+        mock_agg.get_item.assert_called_once_with(Key=EARLIEST_DATE_KEY)
         mock_agg.query.assert_not_called()
 
     @patch('metrics_handler.aggregates_table')
@@ -305,9 +305,10 @@ class TestSummaryDateBasis:
             'Items': [{'sk': _day(1), 'count': 5, 'sum': Decimal('2.5')}]
         }
 
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(path='/metrics/summary', query_params={'days': '7'})
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
+        _, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            path='/metrics/summary', query_params={'days': '7'},
+        )
 
         assert body['period_days'] == 7
         assert mock_agg.query.called
@@ -317,10 +318,10 @@ class TestSummaryDateBasis:
 class TestSentimentDateBasis:
     """GET /metrics/sentiment with date_basis."""
 
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     @patch('metrics_handler.feedback_table')
     def test_review_basis_counts_sentiment_from_items_within_review_window(
-        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
         items = [
             _item('a', imported_days_ago=0, written_days_ago=1, sentiment_label='positive'),
@@ -329,11 +330,10 @@ class TestSentimentDateBasis:
         ]
         mock_fb.query.side_effect = _side_effect_for_day_loop(items, days=30)
 
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(
-            path='/metrics/sentiment', query_params={'days': '30', 'date_basis': 'review'}
+        _, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            path='/metrics/sentiment', query_params={'days': '30', 'date_basis': 'review'},
         )
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
 
         assert body['total'] == 2
         assert body['breakdown'] == {'positive': 1, 'neutral': 0, 'negative': 1, 'mixed': 0}
@@ -358,11 +358,10 @@ class TestCategoriesDateBasis:
         ]
         mock_fb.query.side_effect = _side_effect_for_day_loop(items, days=30)
 
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(
-            path='/metrics/categories', query_params={'days': '30', 'date_basis': 'review'}
+        _, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            path='/metrics/categories', query_params={'days': '30', 'date_basis': 'review'},
         )
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
 
         assert body['categories'] == {'delivery': 2}
 
@@ -383,11 +382,10 @@ class TestSourcesDateBasis:
         ]
         mock_fb.query.side_effect = _side_effect_for_day_loop(items, days=30)
 
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(
-            path='/metrics/sources', query_params={'days': '30', 'date_basis': 'review'}
+        _, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            path='/metrics/sources', query_params={'days': '30', 'date_basis': 'review'},
         )
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
 
         assert body['sources'] == {'webscraper': 1, 'manual_import': 1}
         mock_agg.query.assert_not_called()
@@ -401,9 +399,10 @@ class TestSourcesDateBasis:
             {'pk': 'METRIC#daily_source#webscraper', 'sk': _day(1), 'count': 4},
         ]}
 
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(path='/metrics/sources', query_params={'days': '30'})
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
+        _, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            path='/metrics/sources', query_params={'days': '30'},
+        )
 
         assert body['sources'] == {'webscraper': 4}
         mock_fb.query.assert_not_called()
@@ -427,11 +426,10 @@ class TestPersonasDateBasis:
         ]
         mock_fb.query.side_effect = _side_effect_for_day_loop(items, days=30)
 
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(
-            path='/metrics/personas', query_params={'days': '30', 'date_basis': 'review'}
+        _, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            path='/metrics/personas', query_params={'days': '30', 'date_basis': 'review'},
         )
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
 
         assert body['personas'] == {'existing_customer': 2}
         mock_agg.query.assert_not_called()
@@ -441,39 +439,29 @@ class TestPersonasDateBasis:
 class TestBasisDateEdgeCases:
     """Edge cases for the review-date fallback logic."""
 
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     @patch('metrics_handler.feedback_table')
     def test_review_basis_falls_back_to_import_date_for_malformed_source_date(
-        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
         """A truncated/garbage source_created_at behaves like a missing one."""
         malformed = _item('malformed', imported_days_ago=0, written_days_ago=0,
                           source_created_at='2023')
-        mock_fb.query.side_effect = _side_effect_for_day_loop([malformed], days=7)
-
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(
-            path='/feedback', query_params={'days': '7', 'date_basis': 'review'}
-        )
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
+        body = _day_loop_get(mock_fb, [malformed], api_gateway_event, lambda_context,
+                             '/feedback', days='7', date_basis='review')
 
         # Import date (today) is inside the window, so the item is kept.
         assert body['count'] == 1
         assert body['items'][0]['feedback_id'] == 'malformed'
 
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     @patch('metrics_handler.feedback_table')
     def test_review_basis_summary_returns_zeroes_for_empty_window(
-        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
         """No matching items yields zeroed metrics without division errors."""
-        mock_fb.query.side_effect = _side_effect_for_day_loop([], days=7)
-
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(
-            path='/metrics/summary', query_params={'days': '7', 'date_basis': 'review'}
-        )
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
+        body = _day_loop_get(mock_fb, [], api_gateway_event, lambda_context,
+                             '/metrics/summary', days='7', date_basis='review')
 
         assert body['total_feedback'] == 0
         assert body['avg_sentiment'] == 0
@@ -491,44 +479,31 @@ class TestCategoryBranchDaysWindow:
     while the UI showed a 7-day window.
     """
 
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     @patch('metrics_handler.feedback_table')
     def test_category_filter_excludes_items_imported_before_window(
-        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
         items = [
             _item('in-window', imported_days_ago=1, written_days_ago=1, category='delivery'),
             _item('stale', imported_days_ago=60, written_days_ago=60, category='delivery'),
         ]
-        mock_fb.query.return_value = {'Items': items}
-
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(
-            path='/feedback', query_params={'days': '7', 'category': 'delivery'}
-        )
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
+        body = _category_get(mock_fb, items, api_gateway_event, lambda_context)
 
         assert [i['feedback_id'] for i in body['items']] == ['in-window']
         # The category branch still uses the category GSI, not the date loop.
         assert mock_fb.query.call_args.kwargs['IndexName'] == 'gsi2-by-category'
 
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     @patch('metrics_handler.feedback_table')
     def test_category_filter_with_review_basis_excludes_old_reviews(
-        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
         items = [
             _item('fresh-review', imported_days_ago=0, written_days_ago=2, category='delivery'),
             _item('old-review', imported_days_ago=0, written_days_ago=400, category='delivery'),
         ]
-        mock_fb.query.return_value = {'Items': items}
-
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(
-            path='/feedback',
-            query_params={'days': '7', 'category': 'delivery', 'date_basis': 'review'},
-        )
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
+        body = _category_get(mock_fb, items, api_gateway_event, lambda_context, date_basis='review')
 
         assert [i['feedback_id'] for i in body['items']] == ['fresh-review']
 
@@ -555,10 +530,10 @@ class TestDominatedPartitionSourceFilter:
             responses.append(response)
         return responses
 
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     @patch('metrics_handler.feedback_table')
     def test_feedback_list_finds_source_beyond_first_page_of_dominated_day(
-        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
         """Items of the requested source on page 2 are returned, not starved."""
         dominant = [
@@ -575,21 +550,20 @@ class TestDominatedPartitionSourceFilter:
         mock_fb.query.side_effect = day_pages + empty_days
         del dominant  # dominant rows never surface: DynamoDB filters them
 
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(
-            path='/feedback', query_params={'days': '7', 'source': 'source_a'}
+        _, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            path='/feedback', query_params={'days': '7', 'source': 'source_a'},
         )
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
 
         assert [i['feedback_id'] for i in body['items']] == ['a-1']
         # The source filter must be pushed down to DynamoDB.
         first_call = mock_fb.query.call_args_list[0]
         assert 'FilterExpression' in first_call.kwargs
 
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     @patch('metrics_handler.feedback_table')
     def test_sentiment_metrics_count_source_rows_beyond_first_page(
-        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
         wanted = [
             _item('a-1', imported_days_ago=0, written_days_ago=0,
@@ -601,38 +575,36 @@ class TestDominatedPartitionSourceFilter:
         empty_days = [{'Items': [], 'ScannedCount': 0}] * 29
         mock_fb.query.side_effect = day_pages + empty_days
 
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(
-            path='/metrics/sentiment', query_params={'days': '30', 'source': 'source_a'}
+        _, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            path='/metrics/sentiment', query_params={'days': '30', 'source': 'source_a'},
         )
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
 
         assert body['total'] == 2
         assert body['breakdown']['negative'] == 1
         assert body['breakdown']['positive'] == 1
 
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     @patch('metrics_handler.feedback_table')
     def test_category_branch_pages_past_the_first_page(
-        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
         """The category GSI is paged too — one query is only one page."""
         page1 = [_item('p1', imported_days_ago=0, written_days_ago=0, category='delivery')]
         page2 = [_item('p2', imported_days_ago=0, written_days_ago=0, category='delivery')]
         mock_fb.query.side_effect = self._paged_responses([page1, page2])
 
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(
-            path='/feedback', query_params={'days': '7', 'category': 'delivery'}
+        _, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            path='/feedback', query_params={'days': '7', 'category': 'delivery'},
         )
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
 
         assert {i['feedback_id'] for i in body['items']} == {'p1', 'p2'}
 
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     @patch('metrics_handler.feedback_table')
     def test_partition_paging_stops_at_scan_ceiling(
-        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
         """A pathological partition can't loop forever: the scan ceiling holds."""
         # Every page scans 5000 rows, matches nothing, and links onward.
@@ -641,11 +613,10 @@ class TestDominatedPartitionSourceFilter:
         }
         mock_fb.query.side_effect = [endless_page] * 50
 
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(
-            path='/feedback', query_params={'days': '1', 'source': 'ghost'}
+        _, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            path='/feedback', query_params={'days': '1', 'source': 'ghost'},
         )
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
 
         assert body['items'] == []
         # 10000-row ceiling per partition => exactly 2 pages of 5000 scanned.
@@ -661,34 +632,27 @@ class TestReviewMetricsPartiality:
     response must say so via `is_partial` instead of silently degrading.
     """
 
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     @patch('metrics_handler.feedback_table')
     def test_summary_flags_partial_when_scan_truncated(
-        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
         # First day: the partition hits the per-partition scan ceiling with
         # rows left behind (LastEvaluatedKey present) => truncated window.
-        truncated_day = {
-            'Items': [_item('a-1', imported_days_ago=0, written_days_ago=0)],
-            'ScannedCount': 10000,
-            'LastEvaluatedKey': {'pk': 'more'},
-        }
-        empty_days = [{'Items': [], 'ScannedCount': 0}] * 29
-        mock_fb.query.side_effect = [truncated_day] + empty_days
+        mock_fb.query.side_effect = _truncated_first_of_30_days(_item('a-1', imported_days_ago=0, written_days_ago=0))
 
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(
-            path='/metrics/summary', query_params={'days': '30', 'date_basis': 'review'}
+        _, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            path='/metrics/summary', query_params={'days': '30', 'date_basis': 'review'},
         )
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
 
         assert body['is_partial'] is True
         assert body['total_feedback'] == 1
 
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     @patch('metrics_handler.feedback_table')
     def test_summary_not_partial_when_window_fully_scanned(
-        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
         items = [_item('a-1', imported_days_ago=0, written_days_ago=0)]
         mock_fb.query.side_effect = (
@@ -696,35 +660,28 @@ class TestReviewMetricsPartiality:
             + [{'Items': [], 'ScannedCount': 0}] * 29
         )
 
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(
-            path='/metrics/summary', query_params={'days': '30', 'date_basis': 'review'}
+        _, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            path='/metrics/summary', query_params={'days': '30', 'date_basis': 'review'},
         )
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
 
         assert body['is_partial'] is False
         assert body['total_feedback'] == 1
 
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     @patch('metrics_handler.feedback_table')
     def test_sentiment_metrics_flag_partial_scan(
-        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
-        truncated_day = {
-            'Items': [_item('a-1', imported_days_ago=0, written_days_ago=0,
-                            sentiment_label='negative')],
-            'ScannedCount': 10000,
-            'LastEvaluatedKey': {'pk': 'more'},
-        }
-        empty_days = [{'Items': [], 'ScannedCount': 0}] * 29
-        mock_fb.query.side_effect = [truncated_day] + empty_days
+        mock_fb.query.side_effect = _truncated_first_of_30_days(
+            _item('a-1', imported_days_ago=0, written_days_ago=0, sentiment_label='negative'),
+        )
 
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(
+        _, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
             path='/metrics/sentiment',
             query_params={'days': '30', 'source': 'webscraper'},
         )
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
 
         assert body['is_partial'] is True
         assert body['breakdown']['negative'] == 1
@@ -740,11 +697,10 @@ class TestReviewMetricsPartiality:
         # resolve; an unstubbed query would return a MagicMock, not rows.
         mock_agg.query.return_value = {'Items': [{'sk': _day(1), 'count': 5}]}
 
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(
-            path='/metrics/sentiment', query_params={'days': '7'}
+        _, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            path='/metrics/sentiment', query_params={'days': '7'},
         )
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
 
         assert body['is_partial'] is False
         mock_fb.query.assert_not_called()
@@ -754,10 +710,10 @@ class TestMalformedSourceCreatedAt:
     """Garbage source dates must fall back to the import date, not become
     lexicographic winners and pollute daily buckets (e.g. 'unavailable')."""
 
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     @patch('metrics_handler.feedback_table')
     def test_non_date_string_falls_back_to_import_date(
-        self, mock_fb, mock_agg, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
         item = _item('weird', imported_days_ago=0, written_days_ago=0)
         item['source_created_at'] = 'unavailable-forever'
@@ -766,11 +722,10 @@ class TestMalformedSourceCreatedAt:
             + [{'Items': [], 'ScannedCount': 0}] * 6
         )
 
-        from metrics_handler import lambda_handler
-        event = api_gateway_event(
-            path='/metrics/summary', query_params={'days': '7', 'date_basis': 'review'}
+        _, body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            path='/metrics/summary', query_params={'days': '7', 'date_basis': 'review'},
         )
-        body = json.loads(lambda_handler(event, lambda_context)['body'])
 
         # Fallback keeps the item (import date is in-window) and buckets it
         # under a real date rather than a garbage key.

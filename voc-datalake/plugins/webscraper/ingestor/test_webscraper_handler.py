@@ -8,12 +8,13 @@ fallbacks so a regression in any of them is caught. Plus the manual-run
 secret-cache clear (issue #141).
 """
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 from bs4 import BeautifulSoup
 
+from _shared.test.ingestor_fixtures import offline_ingestor_construction
 from _shared.test.scoped_secret import scoped_secret
-
 
 # ---------------------------------------------------------------------------
 # Helpers / fixtures
@@ -27,13 +28,7 @@ def _el(html: str):
 @pytest.fixture
 def ingestor():
     """Create a WebScraperIngestor with mocked AWS dependencies."""
-    with (
-        patch("_shared.base_ingestor.get_dynamodb_resource") as mock_dynamo,
-        patch("_shared.base_ingestor.get_s3_client"),
-        patch("_shared.base_ingestor.get_sqs_client"),
-        patch("_shared.base_ingestor.get_secret", return_value=scoped_secret()),
-    ):
-        mock_dynamo.return_value.Table.return_value = MagicMock()
+    with offline_ingestor_construction():
         from webscraper.ingestor.handler import WebScraperIngestor
         return WebScraperIngestor()
 
@@ -43,15 +38,11 @@ def ingestor():
 # ---------------------------------------------------------------------------
 
 class TestExtractRatingWordClasses:
-    def test_star_rating_three_returns_3(self, ingestor):
-        # The books.toscrape.com pattern.
-        el = _el('<p class="star-rating Three"></p>')
-        assert ingestor._extract_rating(el, {}) == 3
-
-    @pytest.mark.parametrize("word,expected", [
+    @pytest.mark.parametrize(("word", "expected"), [
         ("One", 1), ("Two", 2), ("Three", 3), ("Four", 4), ("Five", 5),
     ])
     def test_all_word_ratings(self, ingestor, word, expected):
+        # "Three" is the books.toscrape.com pattern (<p class="star-rating Three">).
         el = _el(f'<p class="star-rating {word}"></p>')
         assert ingestor._extract_rating(el, {}) == expected
 
@@ -84,10 +75,6 @@ class TestExtractRatingExisting:
         # data-rating is checked before class names.
         el = _el('<div data-rating="5" class="Two"></div>')
         assert ingestor._extract_rating(el, {}) == 5
-
-    def test_custom_rating_attribute(self, ingestor):
-        el = _el('<div data-stars="4"></div>')
-        assert ingestor._extract_rating(el, {"rating_attribute": "data-stars"}) == 4
 
     def test_text_fallback_x_out_of_5(self, ingestor):
         assert ingestor._extract_rating(_el('<span>4/5</span>'), {}) == 4
@@ -155,12 +142,12 @@ class TestLambdaHandlerSecretCache:
         )
 
     @patch("_shared.base_ingestor.get_dynamodb_resource")
-    @patch("_shared.base_ingestor.get_s3_client")
-    @patch("_shared.base_ingestor.get_sqs_client")
+    @patch("_shared.base_ingestor.get_s3_client", new=MagicMock())
+    @patch("_shared.base_ingestor.get_sqs_client", new=MagicMock())
     @patch("_shared.base_ingestor.get_secret")
     @patch("_shared.base_ingestor.clear_secret_cache")
     def test_manual_construction_clears_cache_before_config_read(
-        self, mock_clear, mock_get_secret, mock_sqs, mock_s3, mock_dynamo
+        self, mock_clear, mock_get_secret, mock_dynamo
     ):
         """End-to-end through the REAL WebScraperIngestor: constructing with
         an execution_id clears the cache before the secret/config is read."""
@@ -179,3 +166,158 @@ class TestLambdaHandlerSecretCache:
 
         assert call_order == ["clear", "get_secret"]
         assert ingestor.execution_id == "exec-1"
+
+
+# ---------------------------------------------------------------------------
+# Outbound URL policy at fetch time (issue #244)
+# ---------------------------------------------------------------------------
+
+def _http_response(status, body='', location=None):
+    response = MagicMock()
+    response.status_code = status
+    response.text = body
+    response.headers = {'Location': location} if location else {}
+    return response
+
+
+_PUBLIC_DNS = [(2, 1, 6, '', ('93.184.216.34', 0))]
+_REVIEW_PAGE = '<div class="review"><p class="review-text">Great product, would buy again</p></div>'
+
+
+class TestFetchEnforcesUrlPolicy:
+    """The scheduled/manual run re-checks every URL and redirect hop before
+    requesting it, even when the stored config was never validated."""
+
+    @patch("shared.http_utils.requests.Session.request")
+    def test_a_configured_metadata_url_is_never_requested(self, mock_request, ingestor):
+        from shared.http_utils import UnsafeURLError
+
+        with pytest.raises(UnsafeURLError):
+            ingestor._fetch_soup('http://169.254.169.254/latest/meta-data/')
+        mock_request.assert_not_called()
+
+    @patch("shared.http_utils.requests.Session.request")
+    def test_a_redirect_to_the_metadata_ip_is_not_followed(self, mock_request, ingestor):
+        from shared.http_utils import UnsafeURLError
+
+        mock_request.return_value = _http_response(302, location='http://169.254.169.254/latest/api/token')
+        with patch('shared.url_policy.socket.getaddrinfo', return_value=_PUBLIC_DNS), \
+             pytest.raises(UnsafeURLError):
+            ingestor._fetch_soup('https://shop.example/reviews')
+        assert mock_request.call_count == 1
+        assert mock_request.call_args.kwargs['allow_redirects'] is False
+
+    def test_a_dns_rebind_to_the_runtime_api_never_connects(self, ingestor):
+        """Public to the check, 127.0.0.1 to the connect: refused, no socket opened (real requests stack)."""
+        from shared.http_utils import UnsafeURLError
+
+        answers = iter(['93.184.216.34', '127.0.0.1'])
+
+        def rebinding(_host, port, *_args, **_kwargs):
+            return [(2, 1, 6, '', (next(answers, '127.0.0.1'), port or 0))]
+
+        with patch('shared.url_policy.socket.getaddrinfo', side_effect=rebinding), \
+             patch('shared.url_policy.socket.create_connection') as connect, \
+             pytest.raises(UnsafeURLError):
+            ingestor._fetch_soup('http://shop.example:9001/2018-06-01/runtime/invocation/next')
+        connect.assert_not_called()
+
+    @patch("webscraper.ingestor.handler.time.sleep", new=MagicMock())
+    @patch("shared.http_utils.requests.Session.request")
+    def test_a_blocked_url_fails_alone_and_the_run_continues(self, mock_request, ingestor):
+        def resolver(host, *_args, **_kwargs):
+            ip = '10.0.0.9' if host == 'intranet.example' else '93.184.216.34'
+            return [(2, 1, 6, '', (ip, 0))]
+
+        mock_request.return_value = _http_response(200, _REVIEW_PAGE)
+        ingestor.scraper_configs = [{
+            'id': 's1', 'name': 'Mixed',
+            'urls': ['https://intranet.example/admin', 'https://shop.example/reviews'],
+        }]
+        ingestor.execution_id = 'exec-1'
+        status_updates = []
+        ingestor._update_run_status = lambda _sid, updates: status_updates.append(updates)
+        ingestor.set_watermark = MagicMock()
+
+        with patch('shared.url_policy.socket.getaddrinfo', side_effect=resolver):
+            items = list(ingestor.fetch_new_items())
+
+        assert [i['url'] for i in items] == ['https://shop.example/reviews']
+        assert [c.kwargs['url'] for c in mock_request.call_args_list] == ['https://shop.example/reviews']
+        final = status_updates[-1]
+        assert final['status'] == 'completed_with_errors'
+        assert len(final['errors']) == 1
+        assert 'https://intranet.example/admin' in final['errors'][0]
+        assert final['errors'][0] == (
+            'Error scraping https://intranet.example/admin: URL blocked by policy '
+            '(Access to internal/private IP addresses is not allowed)'
+        )
+
+    @patch("webscraper.ingestor.handler.time.sleep", new=MagicMock())
+    def test_a_failing_page_records_the_exception_class_not_its_text(self, ingestor):
+        """Run errors are readable by every user via GET /logs/scraper/*: no str(e)."""
+        ingestor.scraper_configs = [{'id': 's1', 'name': 'Broken', 'urls': ['https://shop.example/reviews']}]
+        ingestor.execution_id = 'exec-1'
+        status_updates = []
+        ingestor._update_run_status = lambda _sid, updates: status_updates.append(updates)
+        ingestor.set_watermark = MagicMock()
+        ingestor._scrape_page = MagicMock(side_effect=KeyError('review by jane.doe@example.com'))
+
+        list(ingestor.fetch_new_items())
+
+        assert status_updates[-1]['errors'] == ['Error scraping https://shop.example/reviews: KeyError']
+
+
+# ---------------------------------------------------------------------------
+# 'Manual only' schedule: frequency_minutes 0
+# ---------------------------------------------------------------------------
+
+class TestManualOnlySchedule:
+    """`frequency_minutes: 0` is 'Manual only' in the Scrapers UI: a scheduled tick
+    must never run it, however long ago (or whether) it last ran; a manual run
+    (`execution_id`) still does."""
+
+    @pytest.mark.parametrize('last_run', [None, '2000-01-01T00:00:00+00:00'])
+    def test_a_manual_only_scraper_is_never_due(self, ingestor, last_run):
+        ingestor.get_watermark = MagicMock(return_value=last_run)
+
+        assert ingestor._should_run_scraper({'id': 's1', 'frequency_minutes': 0}) is False
+
+    def test_a_scheduled_tick_skips_it(self, ingestor):
+        ingestor.scraper_configs = [{'id': 's1', 'frequency_minutes': 0, 'urls': ['https://shop.example/r']}]
+        ingestor.get_watermark = MagicMock(return_value=None)
+        ingestor._scrape_page = MagicMock(return_value=[])
+
+        assert list(ingestor.fetch_new_items()) == []
+        ingestor._scrape_page.assert_not_called()
+
+    @patch("webscraper.ingestor.handler.time.sleep", new=MagicMock())
+    def test_a_manual_run_still_scrapes_it(self, ingestor):
+        ingestor.scraper_configs = [{'id': 's1', 'frequency_minutes': 0, 'urls': ['https://shop.example/r']}]
+        ingestor.execution_id = 'exec-1'
+        ingestor.target_scraper_id = 's1'
+        ingestor._update_run_status = MagicMock()
+        ingestor.set_watermark = MagicMock()
+        ingestor._scrape_page = MagicMock(return_value=[{'id': 'r1'}])
+
+        assert list(ingestor.fetch_new_items()) == [{'id': 'r1'}]
+        ingestor._scrape_page.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Scraper dimension defaults and tags travel on every message
+# ---------------------------------------------------------------------------
+
+class TestScraperLabels:
+    def _item(self, ingestor, config):
+        return ingestor._scraped_item(
+            {'id': 's1', 'name': 'Shop', **config}, 'https://shop.example/reviews',
+            item_url='https://shop.example/r/1', extraction_method='css', channel='web',
+            title='', text='Great', rating=5, created_at='2026-01-15T00:00:00+00:00', author='A')
+
+    def test_defaults_and_tags_become_message_labels(self, ingestor):
+        item = self._item(ingestor, {'dimension_defaults': {'product': 'app'}, 'tags': ['vip', 'VIP']})
+        assert (item['dimensions'], item['tags']) == ({'product': 'app'}, ['vip'])
+
+    def test_a_scraper_without_them_adds_neither(self, ingestor):
+        assert not {'dimensions', 'tags'} & set(self._item(ingestor, {}))

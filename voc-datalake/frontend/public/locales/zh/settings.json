@@ -8,8 +8,8 @@
     "saved": "已保存",
     "surfaces": {
       "chat": {
-        "description": "对话式数据查询和项目聊天",
-        "label": "AI 聊天"
+        "description": "感知页面的浮动助手和全屏聊天页面",
+        "label": "AI 助手"
       },
       "documents": {
         "description": "PRD、PR/FAQ、用户画像和研究报告",
@@ -26,9 +26,77 @@
       "utility": {
         "description": "类别建议和抓取器选择器检测",
         "label": "实用工具"
+      },
+      "memory": {
+        "label": "记忆",
+        "description": "提取、去重并核查公司与个人记忆（可用时使用 Flex 层级）"
+      },
+      "agent_orchestrator": {
+        "label": "代理指挥",
+        "description": "规划每次自主运行、推进工作流并核验每一步"
+      },
+      "agent_worker": {
+        "label": "代理执行者",
+        "description": "自主运行中的调研、PR/FAQ、PRD 与原型"
+      },
+      "agent_reviewer": {
+        "label": "代理终审",
+        "description": "对照公司目标对自主运行做最终检查"
+      },
+      "agent_persona": {
+        "label": "用户画像评审团",
+        "description": "在运行中为文档和原型打分并提出异议的用户画像"
       }
     },
-    "title": "AI 模型"
+    "title": "AI 模型",
+    "test": {
+      "test": "测试",
+      "testTitle": "为 {{surface}} 向 {{model}} 发送一个测试请求",
+      "testing": "测试中...",
+      "notTested": "未测试",
+      "unsaved": "有未保存的更改",
+      "save": "保存",
+      "discard": "放弃",
+      "latency": "{{ms}} 毫秒",
+      "tokensPerMinute": "{{count}} 个令牌/分钟",
+      "quotaUnknown": "配额未知",
+      "all": "测试所有模型",
+      "allTitle": "模型访问权限与容量",
+      "allIntro": "依次向每个模型发送一个简短请求，并显示其在此账户和区域中每分钟的令牌配额。",
+      "allRunning": "正在测试第 {{current}} 个，共 {{total}} 个...",
+      "columns": {
+        "model": "模型",
+        "status": "状态",
+        "latency": "延迟",
+        "tokensPerMinute": "令牌/分钟"
+      },
+      "status": {
+        "available": "可用",
+        "no_access": "无访问权限",
+        "not_in_region": "此区域未提供",
+        "no_capacity": "无容量",
+        "throttled": "已限流",
+        "not_ready": "未就绪",
+        "unavailable": "暂不可用",
+        "error": "错误"
+      },
+      "detail": {
+        "available": "模型已响应。",
+        "no_access": "此账户无权访问该模型（模型访问权限、用例或协议）。",
+        "not_in_region": "此区域未提供该模型或其推理配置文件。",
+        "no_capacity": "此账户中该模型的配额为 0；只能等待。",
+        "throttled": "模型当前正在限制请求；请稍后重试。",
+        "not_ready": "模型尚未就绪；请几分钟后重试。",
+        "unavailable": "模型暂时不可用；请稍后重试。",
+        "error": "测试请求失败。"
+      },
+      "confirm": {
+        "title": "要保存一个未通过测试的模型吗？",
+        "untested": "{{model}} 尚未测试。仍要为 {{surface}} 保存吗？",
+        "failed": "{{model}} 上次测试的结果为“{{status}}”。仍要为 {{surface}} 保存吗？",
+        "save": "仍然保存"
+      }
+    }
   },
   "api": {
     "connected": "已连接",
@@ -49,35 +117,16 @@
     "syncedToBackend": "已同步到后端",
     "title": "品牌配置",
     "urlsHint": "通过网络搜索监控的特定URL",
-    "urlsLabel": "要跟踪的URL（每行一个）"
+    "urlsLabel": "要跟踪的URL（每行一个）",
+    "loadFailed": "无法从服务器加载品牌设置。正在显示此浏览器中保存的值。",
+    "retry": "重试",
+    "notSynced": "未同步",
+    "saveFailed": "无法保存到服务器。请重试。"
   },
   "categories": {
-    "addCategory": "添加分类",
-    "addCategoryPlaceholder": "添加新分类...",
-    "addSubcategoryPlaceholder": "添加子分类...",
-    "aiSuggestionsDescription": "描述您的公司、行业或产品，获取根据您的业务定制的AI建议分类。",
-    "aiSuggestionsTitle": "AI分类建议",
-    "categoriesCount": "{{count}} 个分类",
-    "categoriesCount_one": "{{count}} 个分类",
-    "categoriesCount_other": "{{count}} 个分类",
-    "companyPlaceholder": "例如，我们是一家航空公司，提供国内和国际航班。我们的客户关心准时性、舒适度、行李处理、客户服务和飞行体验...",
     "configureFirst": "请在常规选项卡中配置API端点以管理分类。",
-    "deleteButton": "删除",
-    "deleteConfirmMessage": "确定要删除此分类及其所有子分类吗？此操作无法撤销。",
-    "deleteConfirmTitle": "删除分类",
     "description": "配置反馈分类的类别和子类别。",
-    "emptyDescription": "使用上方的AI生成或在下方手动添加分类。",
-    "emptyTitle": "尚未配置任何分类。",
-    "generateButton": "生成分类",
-    "generateError": "生成分类失败。请重试。",
-    "generating": "生成中...",
-    "saved": "分类保存成功",
-    "saving": "保存中...",
-    "subcategoriesCount": "{{count}} 个子分类",
-    "subcategoriesCount_one": "{{count}} 个子分类",
-    "subcategoriesCount_other": "{{count}} 个子分类",
-    "title": "反馈分类",
-    "titleLabel": "分类与子分类"
+    "title": "反馈分类"
   },
   "dangerZone": {
     "resetButton": "重置设置",
@@ -90,15 +139,8 @@
   "dataSources": {
     "configureFirst": "请在常规选项卡中配置API端点以管理数据源。",
     "description": "配置API凭据、Webhook，启用/禁用数据源计划。",
+    "noPlugins": "未找到数据源插件。请运行 <code>npm run generate:manifests</code> 生成插件清单。",
     "title": "数据源和集成"
-  },
-  "language": {
-    "interfaceHint": "控制仪表盘界面语言以及AI用于聊天回复、生成的角色、研究报告、PRD和PR/FAQ的语言。保存在浏览器中。",
-    "interfaceLabel": "界面语言",
-    "loadingReview": "正在加载评论设置...",
-    "reviewHint": "所有传入的反馈将被翻译为此语言进行分析和显示。原始文本始终保留。",
-    "reviewLabel": "评论语言",
-    "title": "语言和区域"
   },
   "logs": {
     "clear": "清除",
@@ -139,30 +181,256 @@
     "pages_one": "{{count}}页",
     "pages_other": "{{count}}页",
     "processingErrors": "处理错误",
-    "rawPreview": "原始预览：",
+    "recordKeys": "包含的字段：",
+    "textLength": "文本长度：{{count}}个字符",
+    "textLength_one": "文本长度：{{count}}个字符",
+    "textLength_other": "文本长度：{{count}}个字符",
     "refresh": "刷新",
     "runErrors": "{{count}}个错误",
     "runErrors_one": "{{count}}个错误",
     "runErrors_other": "{{count}}个错误",
     "scraperRuns": "爬虫运行",
     "title": "系统日志",
-    "validationFailures": "验证失败"
+    "validationFailures": "验证失败",
+    "periodLabel": "时间段"
   },
   "saveChanges": "保存更改",
   "saved": "已保存！",
   "saving": "保存中...",
+  "sourceCard": {
+    "connected": "已连接",
+    "copyWebhookUrl": "复制Webhook URL",
+    "credentials": "API凭据",
+    "disabled": "已禁用",
+    "docs": "文档",
+    "enabled": "已启用",
+    "enterField": "输入{{field}}",
+    "events": "事件：{{events}}",
+    "fileExplorer": "文件浏览器",
+    "hide": "隐藏",
+    "save": "保存",
+    "saved": "已保存！",
+    "saveToSecrets": "保存到Secrets Manager",
+    "selectOption": "选择...",
+    "show": "显示",
+    "test": "测试",
+    "unknownResult": "未知结果",
+    "webhooks": "Webhook"
+  },
   "subtitle": "配置您的VoC平台",
   "tabs": {
     "categories": "分类",
     "general": "常规",
     "logs": "日志",
     "plugins": "数据源",
-    "users": "用户"
+    "users": "用户",
+    "ai": "AI 模型",
+    "integrations": "集成",
+    "dimensions": "维度",
+    "sources": "来源与隐私"
   },
   "title": "设置",
   "users": {
     "configureFirst": "请在常规选项卡中配置API端点以管理用户。",
     "description": "管理VoC平台的用户、角色和权限。",
     "title": "用户管理"
+  },
+  "company": {
+    "title": "公司",
+    "subtitle": "所有人及每项 AI 功能共同依据的愿景、目标与设计系统，以及你自己的目标。",
+    "tabs": {
+      "vision": "愿景与目标",
+      "mine": "我的目标",
+      "design": "设计系统"
+    }
+  },
+  "shared": {
+    "viewOnly": "仅查看",
+    "loadFailed": "无法加载此部分。",
+    "retry": "重试",
+    "loading": "加载中…",
+    "saveFailed": "保存失败，请重试。",
+    "write": "编辑",
+    "preview": "预览",
+    "nothingToPreview": "暂无可预览的内容。",
+    "charCount": "{{count}} / {{max}} 个字符",
+    "configureFirst": "请先连接 API 端点。"
+  },
+  "companyContext": {
+    "title": "公司背景",
+    "description": "助手、自主代理和记忆所使用的愿景与目标，也是记忆冲突时的裁决依据。",
+    "vision": "长期愿景",
+    "visionPlaceholder": "公司要去向何方，为什么？支持 Markdown。",
+    "noVision": "尚未撰写愿景。",
+    "objectives": "公司目标",
+    "noObjectives": "暂无公司目标。",
+    "addObjective": "添加目标",
+    "removeObjective": "移除目标",
+    "objectiveLimit": "最多 {{max}} 个目标。",
+    "objectiveLegend": "目标 {{n}}",
+    "objectiveTitle": "目标标题",
+    "objectiveDescription": "成功是什么样子？",
+    "horizon": "时间范围",
+    "horizons": {
+      "long": "长期",
+      "quarter": "本季度",
+      "date": "截至某日期"
+    },
+    "due": "截止日期",
+    "updatedMeta": "最后更新：{{at}}，由 {{by}}",
+    "unknownEditor": "管理员"
+  },
+  "myContext": {
+    "title": "我的目标与 KPI",
+    "description": "你自己的目标及其衡量方式。助手和你的个人记忆会使用它们，但不会更改公司目标。",
+    "empty": "你还没有设置任何目标。",
+    "addObjective": "添加目标",
+    "removeObjective": "移除目标",
+    "objectiveLegend": "目标 {{n}}",
+    "objectiveTitle": "目标标题",
+    "objectiveDescription": "为什么这对你很重要",
+    "due": "截止日期",
+    "kpis": "关键指标（KPI）",
+    "addKpi": "添加 KPI",
+    "removeKpi": "移除 KPI",
+    "kpiName": "KPI 名称",
+    "kpiTarget": "目标值",
+    "kpiUnit": "单位"
+  },
+  "designSystem": {
+    "title": "设计系统",
+    "description": "品牌令牌、规范与参考资料。原型和 PR/FAQ 视觉都按此构建，以匹配你的风格。",
+    "logo": "标志",
+    "logoAlt": "公司标志",
+    "uploadLogo": "上传标志",
+    "colors": "颜色",
+    "typography": "字体排印",
+    "spacing": "间距",
+    "radius": "圆角",
+    "noTokens": "暂无。",
+    "addToken": "添加令牌",
+    "removeToken": "移除令牌",
+    "tokenName": "名称",
+    "tokenValue": "值",
+    "swatch": "色板 {{value}}",
+    "invalidColor": "不是有效的颜色值",
+    "typeRole": "用途（如标题）",
+    "typeFamily": "字体系列",
+    "typeSize": "字号",
+    "typeWeight": "字重",
+    "guidelines": "设计规范",
+    "guidelinesPlaceholder": "组件指南、语气、该做与不该做……支持 Markdown。",
+    "noGuidelines": "暂无设计规范。",
+    "references": "参考资料",
+    "noReferences": "暂无参考资料——可添加 Figma 文件、GitHub 仓库、截图或 HTML 页面。",
+    "kinds": {
+      "screenshot": "截图",
+      "html": "HTML 页面",
+      "figma": "Figma 文件",
+      "github": "GitHub 仓库"
+    },
+    "statuses": {
+      "pending": "待处理",
+      "processing": "处理中",
+      "ready": "就绪",
+      "failed": "失败",
+      "archived": "已归档"
+    },
+    "openLink": "打开链接",
+    "refresh": "重新获取",
+    "archive": "归档",
+    "archiveTitle": "要归档此参考资料吗？",
+    "archiveMessage": "“{{title}}”将不再用于新原型，文件会保留。",
+    "referenceKind": "参考资料类型",
+    "referenceTitle": "标题",
+    "referenceUrl": "链接（https://…）",
+    "referenceFile": "文件",
+    "addReference": "添加参考资料",
+    "addReferenceFailed": "无法添加参考资料，请重试。",
+    "uploadBadType": "{{name}} 不是受支持的文件类型。",
+    "uploadTooLarge": "{{name}} 超过 {{mb}} MB。",
+    "uploadFailed": "上传失败，请重试。",
+    "integrations": "设计集成",
+    "integrationsHint": "令牌加密存储，且不会再次显示。留空即保留当前令牌。",
+    "providers": {
+      "figma": "Figma 令牌",
+      "github": "GitHub 令牌"
+    },
+    "tokenPlaceholder": "粘贴令牌",
+    "tokenReplacePlaceholder": "粘贴新令牌以替换",
+    "configured": "已配置",
+    "notConfigured": "未配置",
+    "saveTokens": "保存令牌",
+    "integrationsMoved": "Figma 和 GitHub 令牌的设置位置：",
+    "integrationsLink": "管理 → 集成"
+  },
+  "integrations": {
+    "title": "集成",
+    "description": "平台用于读取您的 Figma 文件和 GitHub 仓库以构建设计系统的只写令牌。令牌存储在 Secrets Manager 中，不会再次显示。",
+    "mcpHint": "外部助手的 MCP 访问按用户设置，位于",
+    "mcpLink": "连接"
+  },
+  "integrationGuide": {
+    "heading": "配置帮助",
+    "intro": "每个令牌的分步说明。展开即可查看它的用途、获取位置、需要授予的权限以及如何确认它可用。",
+    "newTab": "在新标签页中打开",
+    "purposeHeading": "用途",
+    "stepsHeading": "获取方式",
+    "permissionsHeading": "需要授予的权限",
+    "saveHeading": "在此保存",
+    "testHeading": "确认是否可用",
+    "failuresHeading": "如果失败",
+    "securityHeading": "安全",
+    "save": "将令牌粘贴到上方的“{{field}}”字段，然后点击“{{save}}”。字段会被清空，徽章变为“{{configured}}”。要替换令牌，粘贴新令牌后再次保存；字段留空则保留当前令牌。",
+    "test": "没有测试按钮：令牌会在获取参考资料时被检查。前往 {{company}} → {{design}}，点击“{{add}}”，选择类型“{{kind}}”并粘贴链接。稍候刷新页面：显示“{{ready}}”并附有摘要表示令牌可用；显示“{{failed}}”时，原因会出现在参考资料下方。解决问题后，在该参考资料上点击“{{refresh}}”。",
+    "openDesignSystem": "打开 {{company}} → {{design}}",
+    "failMissing": "尚未保存任何令牌。请先在上方保存，然后在参考资料上点击“{{refresh}}”。",
+    "failBadLink": "链接格式不受支持。请从浏览器地址栏重新复制（参见上方的链接格式）。",
+    "failRateLimited": "服务提供方正在限制请求。请等待几分钟，然后点击“{{refresh}}”。",
+    "storage": "保存位置：AWS Secrets Manager（密钥 voc/design-integrations，使用平台的 KMS 密钥加密）。只有设置 API 能读取它，它不会再次显示，此页面只显示是否已配置令牌。要让令牌立即失效，请在服务提供方处撤销它。",
+    "otherCredentials": "数据源凭证（例如 GitHub Issues 令牌）不在这里设置：{{plugins}} 标签页中的每张数据源卡片都有各自的字段和配置步骤。",
+    "figma": {
+      "title": "Figma 个人访问令牌",
+      "summary": "将 Figma 文件用作设计参考资料时必需。",
+      "purpose": "让平台读取你在 {{company}} → {{design}} 中添加为设计参考资料的 Figma 文件：页面和画框名称以及已发布的样式。令牌只会发送到 api.figma.com，并且只在获取 Figma 参考资料时发送。",
+      "step1": "登录 Figma。在文件浏览器中，打开左上角的账户菜单并选择“Settings”。",
+      "step2": "打开“Security”标签页。在“Personal access tokens”下点击“Generate new token”。",
+      "step3": "为令牌命名（例如“VoC design system”）并选择有效期。",
+      "step4": "在权限范围中，将“File content”设为只读（file_content:read）。其他所有范围保持关闭。",
+      "step5": "点击“Generate token”并立即复制：Figma 只显示一次。",
+      "docsTokens": "Figma：个人访问令牌",
+      "docsScopes": "Figma：令牌权限范围",
+      "permissions": "只需一个范围：file_content:read（只读）。令牌只能看到其所有者在 Figma 中能打开的文件，因此创建令牌的账户必须能访问你引用的文件。",
+      "linkFormat": "Figma 链接：https://www.figma.com/design/<file key>/…（/file/、/proto/ 和 /board/ 链接也可以）。",
+      "failRefused": "令牌错误、已过期或已撤销，或缺少 file_content:read。请生成新令牌并保存。",
+      "failNotFound": "链接错误，或令牌所有者无法在 Figma 中打开该文件。",
+      "security": "令牌以创建它的 Figma 用户身份运行。建议使用只能查看设计文件的账户，设置有效期，并在过期前保存替换令牌。如果令牌泄露，请在 Figma 的 Settings → Security 中撤销；撤销立即生效。"
+    },
+    "github": {
+      "title": "GitHub 细粒度个人访问令牌（fine-grained）",
+      "summary": "公开仓库可选，私有仓库必需。",
+      "purpose": "让平台从你在 {{company}} → {{design}} 中添加为设计参考资料的 GitHub 仓库读取设计令牌、CSS、Tailwind 配置和 README 文件。公开仓库无需令牌也能使用，但适用 GitHub 较低的匿名速率限制；私有仓库需要令牌。令牌只会发送到 api.github.com。",
+      "step1": "在 GitHub 上点击右上角的头像 →“Settings”→“Developer settings”→“Personal access tokens”→“Fine-grained tokens”，然后点击“Generate new token”。下方链接会打开已预填的表单。",
+      "step2": "输入名称和有效期。在“Resource owner”中，选择拥有设计仓库的用户或组织。",
+      "step3": "在“Repository access”中选择“Only select repositories”，并只选择设计仓库。",
+      "step4": "在“Permissions”的仓库权限中，将“Contents”设为“Read-only”。“Metadata”（只读）会自动添加。不要授予其他任何权限。",
+      "step5": "点击“Generate token”并复制。如果组织要求审批，在组织所有者批准之前，令牌只能读取公开仓库。",
+      "newToken": "在 GitHub 上创建令牌（已预填：Contents 只读）",
+      "docsTokens": "GitHub：管理个人访问令牌",
+      "permissions": "仅在所选仓库上授予 Contents：只读，以及自动添加的 Metadata：只读。不要使用经典令牌：它能访问你的账户可访问的所有仓库。",
+      "linkFormat": "GitHub 链接：https://github.com/<owner>/<repo>、某个文件夹（…/tree/<branch>/<folder>）或单个文件（…/blob/<branch>/<file>）。",
+      "failRefused": "令牌错误、已过期或已撤销，或缺少 Contents 读取权限。",
+      "failNotFound": "链接错误，或仓库是私有的而令牌未获授权访问（GitHub 返回“未找到”而不是“禁止访问”）。",
+      "failNoFiles": "令牌可用，但该位置没有设计文件。请链接到包含这些文件的文件夹。",
+      "security": "令牌以创建它的 GitHub 用户身份运行，如果该用户失去访问权限，令牌也会失效。请将其限制在设计仓库，设置有效期，并在过期前保存替换令牌。如果泄露，请在 Settings → Developer settings → Personal access tokens 中删除。它与 GitHub Issues 数据源的令牌是分开的：不要混用。"
+    }
+  },
+  "dimensions": {
+    "title": "维度",
+    "description": "可用于标记和筛选每条评价的维度,例如产品、模块或用户类型。"
+  },
+  "sources": {
+    "title": "来源与隐私",
+    "description": "按来源的数据保护:个人数据处理、保留期限、可见范围和删除。"
   }
 }

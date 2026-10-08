@@ -1,0 +1,400 @@
+{
+  "nav": {
+    "label": "Autonome Agenten"
+  },
+  "common": {
+    "cancel": "Abbrechen"
+  },
+  "status": {
+    "enabled": "Aktiviert",
+    "disabled": "Deaktiviert"
+  },
+  "scope": {
+    "all": "Alle Kategorien",
+    "some": "Beobachtet: {{list}}"
+  },
+  "list": {
+    "title": "Autonome Agenten",
+    "subtitle": "Agenten beobachten das Feedback in ihrem Bereich und führen bei einem Auslöser einen Workflow aus: Recherche, Personas, PR/FAQ, PRD und ein Prototyp, von Personas geprüft, bevor ein Projekt übergeben wird.",
+    "create": "Neuer Agent",
+    "createTitle": "Autonomen Agenten erstellen",
+    "createHint": "Er wird deaktiviert mit dem integrierten Workflow „Bewertungen → Prototyp“ erstellt. Konfigurieren Sie Auslöser und Workflow und aktivieren Sie ihn dann.",
+    "createFailed": "Der Agent konnte nicht erstellt werden.",
+    "emptyTitle": "Noch keine autonomen Agenten",
+    "emptyAdmin": "Erstellen Sie einen, um neues Feedback automatisch in recherchierte Projekte und Prototypen umzuwandeln.",
+    "emptyUser": "Ein Administrator hat noch keinen für Sie sichtbaren Agenten eingerichtet.",
+    "loadFailed": "Agenten konnten nicht geladen werden.",
+    "spend": "{{runs}} geplante Läufe heute · {{calls}} Modellaufrufe diesen Monat",
+    "spendHint": "Manuelle Läufe zählen nicht zum täglichen Limit geplanter Läufe."
+  },
+  "library": {
+    "title": "Workflow-Bibliothek",
+    "subtitle": "Alle Workflows, die Agenten ausführen können. Archivieren Sie nicht mehr benötigte: Sie verschwinden aus der Bibliothek, werden schreibgeschützt und ihre Revisionen bleiben erhalten.",
+    "loadFailed": "Die Workflow-Bibliothek konnte nicht geladen werden.",
+    "archive": "Archivieren",
+    "archiveNamed": "{{name}} archivieren",
+    "archiveTitle": "Diesen Workflow archivieren?",
+    "archiveMessage": "„{{name}}“ wird in der Bibliothek und der Workflow-Auswahl ausgeblendet und schreibgeschützt. Seine Revisionen bleiben erhalten.",
+    "archiveInUse": "Ein aktiver Agent führt diesen Workflow noch aus. Archivieren Sie zuerst diesen Agenten oder weisen Sie ihm einen anderen Workflow zu.",
+    "archiveFailed": "Der Workflow konnte nicht archiviert werden."
+  },
+  "fields": {
+    "name": "Name",
+    "description": "Beschreibung",
+    "scope": "Beobachtetes Feedback",
+    "instructions": "Anweisungen",
+    "instructionsHint": "Eigene Vorgaben für die gesamte Crew (bis zu {{n}} Zeichen).",
+    "visibility": "Sichtbarkeit der übergebenen Projekte",
+    "visibilityHint": "Private Projekte sind nur für Eigentümer, Mitglieder und Administratoren sichtbar.",
+    "workflow": "Workflow",
+    "workflowDefault": "Bewertungen → Prototyp (integriert)",
+    "workflowHint": "Bearbeiten Sie die Schritte im Tab „Workflow“."
+  },
+  "visibility": {
+    "private": "Privat",
+    "public": "Öffentlich"
+  },
+  "detail": {
+    "back": "Alle Agenten",
+    "tabs": "Agentenbereiche",
+    "enabledLabel": "Aktiviert",
+    "toggleFailed": "Der Agent konnte nicht aktiviert oder deaktiviert werden.",
+    "save": "Speichern",
+    "saved": "Gespeichert",
+    "saveFailed": "Die Änderungen konnten nicht gespeichert werden.",
+    "discard": "Änderungen verwerfen",
+    "archive": "Archivieren",
+    "archiveTitle": "Diesen Agenten archivieren?",
+    "archiveMessage": "Er wird nicht mehr ausgeführt und verschwindet aus der Liste. Von ihm erstellte Projekte bleiben erhalten.",
+    "notFound": "Dieser Agent existiert nicht oder ist für Sie nicht sichtbar.",
+    "stats": "{{runs}} Läufe insgesamt · {{today}} heute geplant · {{calls}} Modellaufrufe diesen Monat"
+  },
+  "tabs": {
+    "settings": "Einstellungen",
+    "triggers": "Auslöser",
+    "personas": "Personas",
+    "instructions": "Anweisungen",
+    "models": "Modelle",
+    "budget": "Budget",
+    "workflow": "Workflow",
+    "runs": "Läufe"
+  },
+  "triggers": {
+    "hint": "Was den Agenten startet. Er läuft selbstständig höchstens zweimal täglich und nie zweimal gleichzeitig.",
+    "none": "Keine Auslöser – er läuft nur, wenn jemand auf „Jetzt ausführen“ klickt.",
+    "remove": "Auslöser entfernen",
+    "minNew": "Benötigte neue Bewertungen",
+    "cooldown": "Abklingzeit (Stunden)",
+    "every": "Alle",
+    "cron": "Cron-Ausdruck",
+    "cronHint": "Fünf Felder, z. B. 0 9 * * 1 für montags um 09:00.",
+    "timezone": "Zeitzone",
+    "count": "Bewertungen",
+    "per": "Pro",
+    "windowDays": "Innerhalb von (Tagen)",
+    "kinds": {
+      "new_reviews": "Neue Bewertungen",
+      "schedule": "Zeitplan",
+      "threshold": "Schwellenwert"
+    },
+    "kindHints": {
+      "new_reviews": "Läuft, wenn seit dem letzten Lauf genug neues Feedback in seinem Bereich eingegangen ist.",
+      "schedule": "Läuft nach einem festen Zeitplan.",
+      "threshold": "Läuft, wenn eine Kategorie oder Unterkategorie innerhalb eines Zeitraums eine Anzahl an Bewertungen erreicht."
+    },
+    "everyOptions": {
+      "12h": "12 Stunden",
+      "24h": "24 Stunden",
+      "cron": "Benutzerdefiniert (Cron)"
+    },
+    "perOptions": {
+      "category": "Kategorie",
+      "subcategory": "Unterkategorie"
+    }
+  },
+  "personas": {
+    "fixed": "Feste Personas ({{n}} von {{max}})",
+    "none": "Keine festen Personas – der Agent wählt sie aus dem Projekt.",
+    "add": "Persona hinzufügen",
+    "remove": "Persona entfernen",
+    "project": "Projekt",
+    "persona": "Persona",
+    "chooseProject": "Projekt auswählen",
+    "choosePersona": "Persona auswählen",
+    "allowGenerate": "Agent darf neue Personas generieren, wenn keine passt"
+  },
+  "models": {
+    "hint": "Modell pro Crew-Rolle überschreiben. Behalten Sie den Standard, um Einstellungen → KI-Modelle zu folgen.",
+    "default": "Standard aus Einstellungen",
+    "roleHint": {
+      "orchestrator": "Entscheidet den nächsten Schritt und prüft jedes Ergebnis.",
+      "worker": "Schreibt Recherchen, Dokumente und Prototypen.",
+      "reviewer": "Prüft die Arbeit vor der Übergabe.",
+      "persona": "Spricht in Reviews für jede Persona."
+    }
+  },
+  "roles": {
+    "orchestrator": "Orchestrator",
+    "worker": "Bearbeiter",
+    "reviewer": "Prüfer",
+    "persona": "Persona"
+  },
+  "budget": {
+    "runsPerDay": "Geplante Läufe pro Tag",
+    "runsPerDayHint": "Höchstens 2. Manuelle Läufe zählen nicht.",
+    "callsPerRun": "Modellaufrufe pro Lauf",
+    "monthlyCap": "Monatliches Limit für Modellaufrufe",
+    "monthlyCapHint": "Der Agent startet keine Läufe mehr, sobald die Aufrufe des Monats dieses Limit erreichen.",
+    "uncapped": "Kein monatliches Limit"
+  },
+  "run": {
+    "hint": "Jeder Lauf folgt dem Workflow. Der Graph hebt die Schritte während der Ausführung hervor; er dient nur der Anzeige, nicht der Steuerung.",
+    "list": "Läufe",
+    "none": "Noch keine Läufe.",
+    "runNow": "Jetzt ausführen",
+    "alreadyRunning": "Es läuft bereits ein Lauf.",
+    "startFailed": "Der Lauf konnte nicht gestartet werden.",
+    "cancel": "Lauf abbrechen",
+    "cancelFailed": "Der Lauf konnte nicht abgebrochen werden.",
+    "calls": "{{n}} Modellaufrufe",
+    "openProject": "Projekt öffnen",
+    "eventLog": "Ereignisprotokoll",
+    "noEvents": "Noch keine Ereignisse.",
+    "noGraph": "Der Workflow dieses Laufs konnte nicht geladen werden.",
+    "olderRevision": "Dieser Lauf verwendete Revision {{n}} des Workflows.",
+    "graphLabel": "Fortschrittsgraph des Laufs",
+    "showAll": "Alle Ereignisse anzeigen (gefiltert nach {{step}})",
+    "rounds": "Runde {{n}}",
+    "status": {
+      "queued": "In Warteschlange",
+      "running": "Läuft",
+      "needs_human": "Benötigt einen Menschen",
+      "completed": "Abgeschlossen",
+      "failed": "Fehlgeschlagen",
+      "cancelled": "Abgebrochen"
+    },
+    "triggers": {
+      "manual": "Manuell",
+      "schedule": "Zeitplan",
+      "new_reviews": "Neue Bewertungen",
+      "threshold": "Schwellenwert"
+    },
+    "stepStatus": {
+      "idle": "Nicht gestartet",
+      "running": "Läuft",
+      "done": "Fertig",
+      "failed": "Fehlgeschlagen"
+    },
+    "eventKinds": {
+      "node_started": "Schritt gestartet",
+      "node_finished": "Schritt beendet",
+      "node_failed": "Schritt fehlgeschlagen",
+      "message": "Nachricht",
+      "verdict": "Urteil",
+      "decision": "Entscheidung",
+      "artifact": "Artefakt"
+    }
+  },
+  "editor": {
+    "canvasLabel": "Workflow-Arbeitsfläche",
+    "minimap": "Workflow-Übersicht",
+    "palette": "Schritte",
+    "paletteHint": "Ziehen Sie einen Schritt auf die Arbeitsfläche oder drücken Sie die Eingabetaste, um ihn hinzuzufügen.",
+    "panel": "Schritteinstellungen",
+    "nothingSelected": "Wählen Sie einen Schritt, einen Pfeil oder eine Schleife aus – auf der Arbeitsfläche oder in der Übersicht unten –, um sie zu konfigurieren.",
+    "multiSelected": "{{n}} Schritte ausgewählt",
+    "groupLoop": "Als Schleife gruppieren",
+    "ungroupLoop": "Schleife entfernen",
+    "loopTitle": "Schleife {{n}}",
+    "loopMembers": "{{n}} Schritte",
+    "loopFrame": "Wiederholen, bis {{until}}",
+    "arrow": "Pfeil",
+    "deleteArrow": "Pfeil löschen",
+    "deleteStep": "Schritt löschen",
+    "builtin": "Integrierte Vorlage – speichern Sie eine Kopie, um sie zu ändern.",
+    "revision": "Revision {{n}}",
+    "unsaved": "Ungespeicherte Änderungen",
+    "save": "Speichern",
+    "saveAs": "Speichern unter…",
+    "saveAsTitle": "Als neuen Workflow speichern",
+    "copyName": "{{name}} (Kopie)",
+    "import": "Importieren",
+    "export": "Exportieren",
+    "reset": "Auf Vorlage zurücksetzen",
+    "resetTitle": "Auf die Vorlage zurücksetzen?",
+    "resetMessage": "Ihre ungespeicherten Änderungen werden durch den integrierten Workflow „Bewertungen → Prototyp“ ersetzt.",
+    "conflict": "Jemand hat inzwischen eine neuere Revision gespeichert.",
+    "conflictReload": "Neueste laden",
+    "conflictSaveAs": "Meine als Kopie speichern",
+    "loadFailed": "Der Workflow konnte nicht geladen werden.",
+    "generalIssues": "Workflow-Probleme",
+    "issueCount_one": "{{count}} Problem",
+    "issueCount_other": "{{count}} Probleme",
+    "valid": "Der Workflow ist gültig.",
+    "validUnsaved": "Gültig – noch nicht gespeichert.",
+    "outcome": {
+      "saved": "Gespeichert.",
+      "conflict": "Jemand hat inzwischen eine neuere Revision gespeichert.",
+      "invalid": "Der Server hat den Workflow abgelehnt – beheben Sie die Probleme und speichern Sie erneut.",
+      "failed": "Der Workflow konnte nicht gespeichert werden.",
+      "import_failed": "Diese Datei ist kein gültiger Workflow."
+    },
+    "fields": {
+      "workflowName": "Workflow-Name",
+      "title": "Titel",
+      "instructions": "Anweisungen",
+      "instructionsRequired": "Anweisungen (erforderlich)",
+      "role": "Rolle",
+      "roleNone": "Keine Rolle",
+      "label": "Bedingung",
+      "labelNone": "Immer",
+      "until": "Bis",
+      "maxRounds": "Maximale Runden",
+      "description": "Beschreibung",
+      "arrowTarget": "Zum Schritt",
+      "arrowTargetNone": "Schritt wählen…",
+      "joinLoop": "Schleife"
+    },
+    "params": {
+      "target": "Ziel",
+      "targetAny": "Zuletzt Erzeugtes",
+      "maxNew": "Maximal neue Personas",
+      "useWebSearch": "Websuche verwenden",
+      "endStatus": "Lauf endet als"
+    },
+    "loopFrameLabel": "Schleife {{n}}: bis {{until}}, höchstens {{rounds}} Runden",
+    "loopFrameHint": "Klicken, um diese Schleife zu konfigurieren",
+    "arrowLabel": "Pfeil von {{source}} nach {{target}} ({{condition}})",
+    "conditionHint": "Der Pfeil wird genommen, wenn der Schritt dieses Ergebnis meldet; „Immer“ ist der Standardweg.",
+    "noConditions": "Dieser Schritt meldet kein Urteil, daher werden seine Pfeile immer genommen.",
+    "arrowsOut": "Ausgehende Pfeile",
+    "noArrowsOut": "Von diesem Schritt geht noch kein Pfeil aus.",
+    "addArrow": "Pfeil hinzufügen",
+    "addArrowButton": "Pfeil hinzufügen",
+    "noArrowTargets": "Alle anderen Schritte sind von hier aus bereits verbunden.",
+    "deleteArrowTo": "Pfeil nach {{target}} löschen",
+    "conditionTo": "Bedingung nach {{target}}",
+    "loopStepsLegend": "Schritte in dieser Schleife",
+    "maxRoundsHint": "Eine ganze Zahl von {{min}} bis {{max}}; beim Limit stoppt der Lauf und fragt einen Menschen.",
+    "joinLoop": "Zur Schleife hinzufügen",
+    "joinLoopHint": "Eine Schleife wiederholt ihre Schritte, bis ihre Abbruchbedingung erfüllt ist.",
+    "newLoop": "Eine neue Schleife",
+    "loopOption_one": "Schleife {{n}} ({{count}} Schritt)",
+    "loopOption_other": "Schleife {{n}} ({{count}} Schritte)",
+    "leaveLoop": "Diesen Schritt aus der Schleife nehmen",
+    "outlineSteps": "Schritte in diesem Workflow",
+    "outlineStepsCount": "Schritte ({{n}})",
+    "outlineLoops": "Schleifen",
+    "emptyCanvas": "Die Arbeitsfläche ist leer: Fügen Sie Schritte aus der Palette hinzu.",
+    "selectStep": "Schritt {{title}} konfigurieren",
+    "backToWorkflow": "Workflow-Einstellungen",
+    "clear": "Arbeitsfläche leeren",
+    "clearTitle": "Arbeitsfläche leeren?",
+    "clearMessage": "Alle Schritte, Pfeile und Schleifen werden aus dem Entwurf entfernt, damit Sie den Workflow neu aufbauen können. Gespeichert wird erst, wenn Sie speichern."
+  },
+  "paletteGroups": {
+    "flow": "Ablauf",
+    "research": "Recherche",
+    "documents": "Dokumente",
+    "review": "Prüfung",
+    "prototype": "Prototyp",
+    "delivery": "Übergabe"
+  },
+  "edgeLabels": {
+    "pass": "Bestanden",
+    "fail": "Nicht bestanden",
+    "agreed": "Einig",
+    "not_agreed": "Nicht einig"
+  },
+  "loopUntil": {
+    "persona_agreement": "die Personas sich einig sind",
+    "review_pass": "die Prüfung bestanden ist"
+  },
+  "reviewTargets": {
+    "prfaq": "PR/FAQ",
+    "prd": "PRD",
+    "prototype": "Prototyp"
+  },
+  "endStatuses": {
+    "completed": "Abgeschlossen",
+    "needs_human": "Benötigt einen Menschen"
+  },
+  "nodeTypes": {
+    "start": {
+      "label": "Start",
+      "description": "Hier beginnt jeder Lauf."
+    },
+    "aggregate_reviews": {
+      "label": "Bewertungen bündeln",
+      "description": "Sammelt das neue Feedback im Bereich des Agenten und ermittelt die Hauptthemen."
+    },
+    "select_or_create_project": {
+      "label": "Projekt auswählen oder erstellen",
+      "description": "Verwendet ein Projekt mit demselben Zweck erneut oder erstellt ein neues."
+    },
+    "select_personas": {
+      "label": "Personas auswählen",
+      "description": "Wählt die für diese Bewertungen relevanten Personas aus."
+    },
+    "generate_personas": {
+      "label": "Personas generieren",
+      "description": "Erstellt neue Personas aus dem Feedback, wenn keine passt."
+    },
+    "deep_research": {
+      "label": "Tiefenrecherche",
+      "description": "Führt einen Recherche-Job für das Projekt aus, optional mit Websuche."
+    },
+    "write_prfaq": {
+      "label": "PR/FAQ schreiben",
+      "description": "Entwirft eine Pressemitteilung und FAQ zur Idee."
+    },
+    "write_prd": {
+      "label": "PRD schreiben",
+      "description": "Entwirft ein Produktanforderungsdokument."
+    },
+    "revise_document": {
+      "label": "Dokument überarbeiten",
+      "description": "Schreibt ein Dokument anhand der Einwände aus der Prüfung neu."
+    },
+    "duplicate_document": {
+      "label": "Dokument duplizieren",
+      "description": "Kopiert ein Dokument in ein anderes Projekt."
+    },
+    "persona_review": {
+      "label": "Persona-Prüfung",
+      "description": "Personas bewerten die Arbeit; Einigkeit = Durchschnitt 4+ und nichts Blockierendes."
+    },
+    "final_review": {
+      "label": "Abschlussprüfung",
+      "description": "Ein Prüfer kontrolliert das gesamte Paket vor der Übergabe."
+    },
+    "custom_llm": {
+      "label": "Eigener Schritt",
+      "description": "Ein Schritt, der Ihren eigenen Anweisungen folgt."
+    },
+    "build_prototype": {
+      "label": "Prototyp erstellen",
+      "description": "Erstellt einen HTML-Prototyp mit dem Designsystem."
+    },
+    "collect_prototype_feedback": {
+      "label": "Tester-Pins sammeln",
+      "description": "Liest die offenen Pins der Tester am Prototyp für die nächste Überarbeitung."
+    },
+    "revise_prototype": {
+      "label": "Prototyp überarbeiten",
+      "description": "Ändert den Prototyp anhand der Einwände aus der Prüfung."
+    },
+    "handoff": {
+      "label": "Übergeben",
+      "description": "Übergibt das Projekt an den Eigentümer seiner Hauptkategorie."
+    },
+    "end": {
+      "label": "Ende",
+      "description": "Hier endet der Lauf."
+    }
+  },
+  "loopUntilHint": {
+    "persona_agreement": "Wiederholt sich, solange die Persona-Prüfung in der Schleife „Nicht einverstanden“ meldet.",
+    "review_pass": "Wiederholt sich, solange ein Prüfschritt in der Schleife „Nicht bestanden“ meldet."
+  }
+}

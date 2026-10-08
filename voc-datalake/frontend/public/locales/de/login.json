@@ -43,5 +43,7 @@
     "resettingPassword": "Passwort wird zurückgesetzt...",
     "submit": "Passwort zurücksetzen",
     "title": "Bestätigungscode eingeben"
-  }
+  },
+  "showPassword": "Passwort anzeigen",
+  "hidePassword": "Passwort verbergen"
 }

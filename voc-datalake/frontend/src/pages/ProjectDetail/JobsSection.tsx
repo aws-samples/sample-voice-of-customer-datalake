@@ -22,7 +22,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import JobStatusBadge from './JobStatusBadge'
 import { safeFormatDate } from '../../utils/dateUtils'
-import type { ProjectJob } from '../../api/types'
+import type { ProjectJob } from '../../api/projectTypes'
 import { parseJobGrounding, hasUsableCounts } from '../../api/jobGroundingSchema'
 
 type JobStatus = 'running' | 'pending' | 'completed' | 'failed'
@@ -33,10 +33,26 @@ function isValidJobStatus(status: string): status is JobStatus {
 
 interface JobsSectionProps {
   readonly jobs: ProjectJob[]
-  readonly onDismiss: (jobId: string) => void
+  /**
+   * Omitted for a viewer: dismissing is a DELETE the project gate refuses, so no
+   * handler means no Dismiss button. Same shape as `ProjectHeader.onShare`.
+   */
+  readonly onDismiss?: (jobId: string) => void
 }
 
 const STALE_THRESHOLD_MS = 10 * 60 * 1000
+
+/** The label key per job type; a type this bundle does not know reads as research. */
+const JOB_TYPE_KEYS: Partial<Record<string, string>> = {
+  research: 'jobs.types.research',
+  generate_prd: 'jobs.types.generatePrd',
+  generate_prfaq: 'jobs.types.generatePrfaq',
+  generate_personas: 'jobs.types.generatePersonas',
+  generate_product_report: 'jobs.types.generateProductReport',
+  build_prototype: 'jobs.types.buildPrototype',
+  import_persona: 'jobs.types.importPersona',
+  merge_documents: 'jobs.types.mergeDocuments',
+}
 
 function checkIsStale(status: string, updatedAt: string | undefined, now: number): boolean {
   if (status !== 'running' && status !== 'pending') return false
@@ -47,20 +63,20 @@ function checkIsStale(status: string, updatedAt: string | undefined, now: number
 interface JobItemProps {
   readonly job: ProjectJob
   readonly isStale: boolean
-  readonly onDismiss: (jobId: string) => void
+  readonly onDismiss?: (jobId: string) => void
 }
 
 function JobProgressBar({ job }: { readonly job: ProjectJob }) {
   const { t } = useTranslation('projectDetail')
   return (
     <div className="mt-2">
-      <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+      <div className="flex items-center justify-between text-xs text-muted mb-1">
         <span>{job.current_step?.replaceAll('_', ' ') ?? t('jobs.starting')}</span>
         <span>{job.progress}%</span>
       </div>
-      <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+      <div className="h-1.5 bg-border rounded-full overflow-hidden">
         <div
-          className="h-full bg-blue-600 transition-all duration-500"
+          className="h-full bg-accent transition-all duration-500"
           style={{ width: `${job.progress}%` }}
         />
       </div>
@@ -110,7 +126,7 @@ function TruncationNotice({ job }: { readonly job: ProjectJob }) {
   return (
     <>
       {trimmed && (
-        <p className="text-xs text-amber-600 mt-1">
+        <p className="text-xs text-warn mt-1">
           {hasUsableCounts(grounding)
             ? t('jobs.truncated.counted', {
               used: grounding.feedback_items_used,
@@ -120,7 +136,7 @@ function TruncationNotice({ job }: { readonly job: ProjectJob }) {
         </p>
       )}
       {capped && (
-        <p className="text-xs text-amber-600 mt-1">
+        <p className="text-xs text-warn mt-1">
           {grounding.fetch_limit === undefined
             ? t('jobs.truncated.fetchCappedGeneric')
             : t('jobs.truncated.fetchCapped', { limit: grounding.fetch_limit })}
@@ -140,7 +156,7 @@ function JobStatusMessage({
   const { t } = useTranslation('projectDetail')
   if (isStale) {
     return (
-      <p className="text-xs text-amber-600 mt-1">
+      <p className="text-xs text-warn mt-1">
         {t('jobs.staleMessage')}
       </p>
     )
@@ -154,7 +170,7 @@ function JobStatusMessage({
   // between them cannot change what renders. Pinned by
   // 'a failed job with an artifact id shows the error, in either branch order'.
   if (job.status === 'failed' && job.error != null && job.error !== '') {
-    return <p className="text-xs text-red-600 mt-1 truncate">{job.error}</p>
+    return <p className="text-xs text-danger mt-1 truncate">{job.error}</p>
   }
   // The truncation notice is rendered for any completed job that reports it,
   // not only those with a named artifact: persona generation returns its
@@ -163,7 +179,7 @@ function JobStatusMessage({
   return (
     <>
       {hasCompletedResult(job) && (
-        <p className="text-xs text-gray-500 mt-1">
+        <p className="text-xs text-muted mt-1">
           {t('jobs.created')} {getCompletedLabel(job)}
         </p>
       )}
@@ -182,16 +198,7 @@ function JobItemContent({
   const status = isValidJobStatus(job.status) ? job.status : 'pending'
   const showProgress = !isStale && (job.status === 'running' || job.status === 'pending')
 
-  const jobTypeKey = {
-    research: 'jobs.types.research',
-    generate_prd: 'jobs.types.generatePrd',
-    generate_prfaq: 'jobs.types.generatePrfaq',
-    generate_personas: 'jobs.types.generatePersonas',
-    generate_product_report: 'jobs.types.generateProductReport',
-    build_prototype: 'jobs.types.buildPrototype',
-    import_persona: 'jobs.types.importPersona',
-    merge_documents: 'jobs.types.mergeDocuments',
-  }[job.job_type] ?? 'jobs.types.research'
+  const jobTypeKey = JOB_TYPE_KEYS[job.job_type] ?? 'jobs.types.research'
 
   return (
     <div className="flex-1 min-w-0">
@@ -220,16 +227,17 @@ function JobItemActions({
   job, isStale, onDismiss,
 }: JobItemProps) {
   const { t } = useTranslation('projectDetail')
-  const showDismiss = job.status === 'completed' || job.status === 'failed' || isStale
+  const showDismiss = onDismiss !== undefined && (job.status === 'completed' || job.status === 'failed' || isStale)
 
   return (
     <div className="flex items-center gap-2 flex-shrink-0">
-      <span className="text-xs text-gray-400">
+      <span className="text-xs text-muted">
         {formatJobTime(job.created_at)}
       </span>
       {showDismiss ? <button
+        type="button"
         onClick={() => onDismiss(job.job_id)}
-        className="p-1 hover:bg-gray-200 rounded text-gray-400 hover:text-gray-600"
+        className="p-1 hover:bg-bg-hover rounded-sm text-muted hover:text-text"
         title={t('jobs.dismiss')}
         aria-label={t('jobs.dismiss')}
       >
@@ -246,7 +254,7 @@ function JobItem({
     <div
       className={clsx(
         'flex items-center gap-4 p-3 rounded-lg',
-        isStale ? 'bg-amber-50 border border-amber-200' : 'bg-gray-50',
+        isStale ? 'bg-warn-subtle border border-warn/30' : 'bg-bg-accent',
       )}
     >
       <JobIcon status={job.status} isStale={isStale} />
@@ -260,12 +268,12 @@ function JobsSectionHeader() {
   const { t } = useTranslation('projectDetail')
   return (
     <div className="flex items-center gap-3 mb-4">
-      <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
-        <Clock size={20} className="text-gray-600" />
+      <div className="w-10 h-10 bg-bg-hover rounded-lg flex items-center justify-center">
+        <Clock size={20} className="text-text" />
       </div>
       <div>
-        <h3 className="font-semibold">{t('jobs.backgroundJobs')}</h3>
-        <p className="text-sm text-gray-500">{t('jobs.backgroundJobsDesc')}</p>
+        <h2 className="text-sm font-semibold tracking-tight text-text-strong">{t('jobs.backgroundJobs')}</h2>
+        <p className="text-sm text-muted">{t('jobs.backgroundJobsDesc')}</p>
       </div>
     </div>
   )
@@ -293,7 +301,7 @@ function CollapsibleJobGroup({
         type="button"
         onClick={() => setExpanded((open) => !open)}
         aria-expanded={expanded}
-        className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 rounded"
+        className="flex items-center gap-2 text-sm text-muted hover:text-text rounded-sm"
       >
         {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         {icon}
@@ -365,7 +373,7 @@ export default function JobsSection({
   const { inline, overflowFailed, completed } = partitionByAttention(jobs)
 
   return (
-    <div className="bg-white rounded-xl p-6 border">
+    <div className="bg-card rounded-xl p-6 border">
       <JobsSectionHeader />
       <div className="space-y-3">
         {inline.map((job) => (
@@ -380,7 +388,7 @@ export default function JobsSection({
           <CollapsibleJobGroup
             jobs={overflowFailed}
             label={t('jobs.moreFailedCount', { count: overflowFailed.length })}
-            icon={<XCircle size={14} className="text-red-600" />}
+            icon={<XCircle size={14} className="text-danger" />}
             onDismiss={onDismiss}
           />
         ) : null}
@@ -388,7 +396,7 @@ export default function JobsSection({
           <CollapsibleJobGroup
             jobs={completed}
             label={t('jobs.completedCount', { count: completed.length })}
-            icon={<CheckCircle size={14} className="text-green-600" />}
+            icon={<CheckCircle size={14} className="text-ok" />}
             onDismiss={onDismiss}
           />
         ) : null}
@@ -404,13 +412,13 @@ function JobIcon({
   readonly isStale: boolean
 }) {
   if (isStale) {
-    return <Clock size={20} className="text-amber-600 flex-shrink-0" />
+    return <Clock size={20} className="text-warn flex-shrink-0" />
   }
   if (status === 'running' || status === 'pending') {
-    return <Loader2 size={20} className="text-blue-600 animate-spin flex-shrink-0" />
+    return <Loader2 size={20} className="text-accent animate-spin flex-shrink-0" />
   }
   if (status === 'completed') {
-    return <CheckCircle size={20} className="text-green-600 flex-shrink-0" />
+    return <CheckCircle size={20} className="text-ok flex-shrink-0" />
   }
-  return <XCircle size={20} className="text-red-600 flex-shrink-0" />
+  return <XCircle size={20} className="text-danger flex-shrink-0" />
 }

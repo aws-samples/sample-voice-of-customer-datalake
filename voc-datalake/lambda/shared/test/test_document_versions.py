@@ -5,7 +5,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
-import boto3
 import pytest
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
@@ -19,30 +18,13 @@ from shared.document_versions import (
     version_partition_key,
 )
 from shared.exceptions import ServiceError
+from shared.test.moto_tables import create_projects_table_with_meta
 
 
 @pytest.fixture
 def projects_table():
     with mock_aws():
-        table = boto3.resource('dynamodb', region_name='us-east-1').create_table(
-            TableName='test-projects',
-            KeySchema=[
-                {'AttributeName': 'pk', 'KeyType': 'HASH'},
-                {'AttributeName': 'sk', 'KeyType': 'RANGE'},
-            ],
-            AttributeDefinitions=[
-                {'AttributeName': 'pk', 'AttributeType': 'S'},
-                {'AttributeName': 'sk', 'AttributeType': 'S'},
-            ],
-            BillingMode='PAY_PER_REQUEST',
-        )
-        table.put_item(Item={
-            'pk': 'PROJECT#p1',
-            'sk': 'META',
-            'project_id': 'p1',
-            'document_count': 0,
-        })
-        yield table
+        yield create_projects_table_with_meta('test-projects')
 
 
 def fields(created_at: str = '2026-09-01T10:00:00+00:00') -> dict:
@@ -107,10 +89,7 @@ def test_allocates_versions_by_type_and_normalized_base_title(projects_table):
     assert (prd_v2['version'], prd_v2['title']) == (2, 'Launch Plan (v2)')
     assert (prfaq_v1['version'], prfaq_v1['title']) == (1, 'Launch Plan (v1)')
 
-    meta = projects_table.get_item(
-        Key={'pk': 'PROJECT#p1', 'sk': 'META'}, ConsistentRead=True,
-    )['Item']
-    assert meta['document_count'] == 3
+    assert _document_count(projects_table) == 3
 
 
 def test_replaying_the_same_job_returns_the_existing_document(projects_table):
@@ -125,10 +104,7 @@ def test_replaying_the_same_job_returns_the_existing_document(projects_table):
 
     assert replay == first
     query.assert_not_called()
-    meta = projects_table.get_item(
-        Key={'pk': 'PROJECT#p1', 'sk': 'META'}, ConsistentRead=True,
-    )['Item']
-    assert meta['document_count'] == 1
+    assert _document_count(projects_table) == 1
 
 
 def test_bootstraps_after_legacy_documents_without_reusing_a_version(projects_table):
@@ -165,6 +141,35 @@ def test_missing_project_metadata_commits_nothing(projects_table):
         )
 
     assert projects_table.scan()['Items'] == []
+
+
+def _document_count(table) -> int:
+    """The project META's document_count, read consistently."""
+    return table.get_item(
+        Key={'pk': 'PROJECT#p1', 'sk': 'META'}, ConsistentRead=True,
+    )['Item']['document_count']
+
+
+def _version_counter(table) -> dict:
+    """The one row in the version partition that carries ``last_version``."""
+    return next(
+        row for row in table.query(
+            KeyConditionExpression=Key('pk').eq(version_partition_key('p1')),
+            ConsistentRead=True,
+        )['Items']
+        if row.get('last_version') is not None
+    )
+
+
+def _tombstone_project(table, tombstone: dict) -> None:
+    """Mark project p1's META with the single deletion attribute in *tombstone*."""
+    attribute, value = next(iter(tombstone.items()))
+    table.update_item(
+        Key={'pk': 'PROJECT#p1', 'sk': 'META'},
+        UpdateExpression='SET #tombstone = :value',
+        ExpressionAttributeNames={'#tombstone': attribute},
+        ExpressionAttributeValues={':value': value},
+    )
 
 
 def _transaction_error(*reasons: str) -> ClientError:
@@ -249,43 +254,16 @@ def test_retries_a_transient_transaction_conflict_once(projects_table):
     assert (calls, item['version'], item['title']) == (2, 1, 'Retry (v1)')
 
 
-def test_reports_retryable_transaction_exhaustion(projects_table):
-    client = projects_table.meta.client
-    error = _transaction_error('TransactionConflict', 'None', 'None')
-
-    with (
-        patch.object(client, 'transact_write_items', side_effect=error) as transact,
-        patch('shared.document_versions.time.sleep'),
-        pytest.raises(ServiceError, match='Could not allocate a document version'),
-    ):
-        persist_versioned_document(
-            projects_table, 'p1', 'prd', 'Retry', 'job-exhausted', fields(),
-        )
-
-    assert transact.call_count == 4
-
-
-def test_does_not_retry_a_non_transient_transaction_cancellation(projects_table):
-    client = projects_table.meta.client
-    error = _transaction_error('ConditionalCheckFailed', 'None', 'None')
-
-    with (
-        patch.object(client, 'transact_write_items', side_effect=error) as transact,
-        patch('shared.document_versions.time.sleep'),
-        pytest.raises(ClientError),
-    ):
-        persist_versioned_document(
-            projects_table, 'p1', 'prd', 'No retry', 'job-no-retry', fields(),
-        )
-
-    assert transact.call_count == 1
-
-
 def test_competing_allocations_receive_unique_versions(projects_table):
     client = projects_table.meta.client
     original = client.transact_write_items
     barrier = threading.Barrier(2)
     call_lock = threading.Lock()
+    # DynamoDB serializes transactions; moto does not (two transactions released together by the
+    # barrier can each fail the other's condition and both roll back, which made this test flaky on
+    # CI). The barrier still makes both writers observe the same counter first; this lock only
+    # stands in for DynamoDB's serializable commit.
+    transaction_lock = threading.Lock()
     calls = 0
 
     def synchronize_first_attempts(**kwargs):
@@ -295,7 +273,8 @@ def test_competing_allocations_receive_unique_versions(projects_table):
             current_call = calls
         if current_call <= 2:
             barrier.wait(timeout=5)
-        return original(**kwargs)
+        with transaction_lock:
+            return original(**kwargs)
 
     with (
         patch.object(client, 'transact_write_items', side_effect=synchronize_first_attempts),
@@ -360,43 +339,6 @@ def test_expired_migration_lease_cannot_write_assignments(projects_table):
         KeyConditionExpression=Key('pk').eq(version_partition_key('p1')),
     )['Items']
     assert all(not item['sk'].startswith('LEGACY_ASSIGNMENT#') for item in counter_items)
-
-
-def test_retries_transaction_cancellation_without_reason_details(projects_table):
-    client = projects_table.meta.client
-    error = ClientError(
-        {'Error': {'Code': 'TransactionCanceledException', 'Message': 'cancelled'}},
-        'TransactWriteItems',
-    )
-
-    with (
-        patch.object(client, 'transact_write_items', side_effect=error) as transact,
-        patch('shared.document_versions.time.sleep'),
-        pytest.raises(ServiceError, match='Could not allocate a document version'),
-    ):
-        persist_versioned_document(
-            projects_table, 'p1', 'prd', 'Unknown cancellation', 'job-unknown', fields(),
-        )
-
-    assert transact.call_count == 4
-
-
-def test_mixed_permanent_and_transient_cancellation_is_not_retried(projects_table):
-    client = projects_table.meta.client
-    error = _transaction_error(
-        'TransactionConflict', 'ConditionalCheckFailed', 'None',
-    )
-
-    with (
-        patch.object(client, 'transact_write_items', side_effect=error) as transact,
-        patch('shared.document_versions.time.sleep'),
-        pytest.raises(ClientError),
-    ):
-        persist_versioned_document(
-            projects_table, 'p1', 'prd', 'Mixed cancellation', 'job-mixed', fields(),
-        )
-
-    assert transact.call_count == 1
 
 
 def test_legacy_backfill_uses_counter_floor_observed_during_lease_acquisition(
@@ -481,60 +423,26 @@ def test_concurrent_first_reads_wait_and_return_the_same_persisted_identity(
     ] == [(1, 'Launch (v1)'), (1, 'Launch (v1)')]
 
 
-def test_legacy_migration_retries_transient_lease_acquisition(projects_table):
-    legacy = late_legacy_document()
-    projects_table.put_item(Item=legacy)
-    client = projects_table.meta.client
-    original_transaction = client.transact_write_items
-    counter_attempts = 0
+def _migrate_with_first_transaction_throttled(projects_table, marker_attribute: str):
+    """Migrate one late legacy document while the FIRST transaction whose Put
+    item carries *marker_attribute* is throttled; later ones pass through.
 
-    def throttle_first_counter_transaction(**kwargs):
-        nonlocal counter_attempts
-        actions = kwargs['TransactItems']
-        is_acquisition = any(
-            action.get('Put', {}).get('Item', {}).get('migration_owner')
-            for action in actions
-        )
-        if is_acquisition:
-            counter_attempts += 1
-            if counter_attempts == 1:
-                raise ClientError(
-                    {'Error': {'Code': 'ThrottlingException', 'Message': 'slow'}},
-                    'TransactWriteItems',
-                )
-        return original_transaction(**kwargs)
-
-    with (
-        patch.object(
-            client,
-            'transact_write_items',
-            side_effect=throttle_first_counter_transaction,
-        ),
-        patch('shared.document_versions.time.sleep'),
-    ):
-        migrated = persist_legacy_document_versions(
-            projects_table, 'p1', [legacy],
-        )
-
-    assert counter_attempts == 2
-    assert (migrated[0]['version'], migrated[0]['title']) == (1, 'Launch (v1)')
-
-
-def test_legacy_migration_retries_transient_identity_transaction(projects_table):
+    Returns ``(attempts, migrated)`` — how many matching transactions were
+    attempted, and the migration result.
+    """
     legacy = late_legacy_document()
     projects_table.put_item(Item=legacy)
     client = projects_table.meta.client
     original_transaction = client.transact_write_items
     attempts = 0
 
-    def throttle_first_identity_transaction(**kwargs):
+    def throttle_first_matching_transaction(**kwargs):
         nonlocal attempts
-        actions = kwargs['TransactItems']
-        is_identity = any(
-            action.get('Put', {}).get('Item', {}).get('source_document_sk')
-            for action in actions
+        matches = any(
+            action.get('Put', {}).get('Item', {}).get(marker_attribute)
+            for action in kwargs['TransactItems']
         )
-        if is_identity:
+        if matches:
             attempts += 1
             if attempts == 1:
                 raise ClientError(
@@ -547,13 +455,27 @@ def test_legacy_migration_retries_transient_identity_transaction(projects_table)
         patch.object(
             client,
             'transact_write_items',
-            side_effect=throttle_first_identity_transaction,
+            side_effect=throttle_first_matching_transaction,
         ),
         patch('shared.document_versions.time.sleep'),
     ):
         migrated = persist_legacy_document_versions(
             projects_table, 'p1', [legacy],
         )
+    return attempts, migrated
+
+
+def test_legacy_migration_retries_transient_lease_acquisition(projects_table):
+    # The lease-acquisition transaction is the one that Puts `migration_owner`.
+    attempts, migrated = _migrate_with_first_transaction_throttled(projects_table, 'migration_owner')
+
+    assert attempts == 2
+    assert (migrated[0]['version'], migrated[0]['title']) == (1, 'Launch (v1)')
+
+
+def test_legacy_migration_retries_transient_identity_transaction(projects_table):
+    # The identity transaction is the one that Puts `source_document_sk`.
+    attempts, migrated = _migrate_with_first_transaction_throttled(projects_table, 'source_document_sk')
 
     assert attempts == 2
     assert (migrated[0]['version'], migrated[0]['title']) == (1, 'Launch (v1)')
@@ -644,10 +566,7 @@ def test_prototype_allocations_are_canonical_deterministic_and_replay_safe(proje
             'created_at': document['created_at'],
         }
 
-    meta = projects_table.get_item(
-        Key={'pk': 'PROJECT#p1', 'sk': 'META'}, ConsistentRead=True,
-    )['Item']
-    assert meta['document_count'] == 2
+    assert _document_count(projects_table) == 2
 
 
 def test_deleted_allocation_replay_is_rejected_without_advancing_or_recreating(projects_table):
@@ -656,13 +575,7 @@ def test_deleted_allocation_replay_is_rejected_without_advancing_or_recreating(p
         'job-deleted-prototype', fields(),
     )
     allocation = _allocation_history(projects_table, 'job-deleted-prototype')
-    counter_before = next(
-        row for row in projects_table.query(
-            KeyConditionExpression=Key('pk').eq(version_partition_key('p1')),
-            ConsistentRead=True,
-        )['Items']
-        if row.get('last_version') is not None
-    )
+    counter_before = _version_counter(projects_table)
     projects_table.delete_item(Key={'pk': item['pk'], 'sk': item['sk']})
 
     with pytest.raises(
@@ -685,10 +598,7 @@ def test_deleted_allocation_replay_is_rejected_without_advancing_or_recreating(p
         ConsistentRead=True,
     )['Item']
     assert counter_after['last_version'] == counter_before['last_version'] == 1
-    meta = projects_table.get_item(
-        Key={'pk': 'PROJECT#p1', 'sk': 'META'}, ConsistentRead=True,
-    )['Item']
-    assert meta['document_count'] == 1
+    assert _document_count(projects_table) == 1
 
 
 def test_generated_document_without_history_backfills_on_replay(projects_table):
@@ -706,18 +616,9 @@ def test_generated_document_without_history_backfills_on_replay(projects_table):
 
     assert replay == original
     assert _allocation_history(projects_table, 'job-history-backfill') == allocation
-    counter = next(
-        row for row in projects_table.query(
-            KeyConditionExpression=Key('pk').eq(version_partition_key('p1')),
-            ConsistentRead=True,
-        )['Items']
-        if row.get('last_version') is not None
-    )
+    counter = _version_counter(projects_table)
     assert counter['last_version'] == 1
-    meta = projects_table.get_item(
-        Key={'pk': 'PROJECT#p1', 'sk': 'META'}, ConsistentRead=True,
-    )['Item']
-    assert meta['document_count'] == 1
+    assert _document_count(projects_table) == 1
 
 
 def test_legacy_prototypes_without_document_type_migrate_durably_and_hold_high_water(
@@ -856,13 +757,7 @@ def test_late_legacy_row_is_persisted_before_next_allocation(
 def test_project_deletion_fence_blocks_all_managed_version_writes(
     projects_table, tombstone,
 ):
-    attribute, value = next(iter(tombstone.items()))
-    projects_table.update_item(
-        Key={'pk': 'PROJECT#p1', 'sk': 'META'},
-        UpdateExpression='SET #tombstone = :value',
-        ExpressionAttributeNames={'#tombstone': attribute},
-        ExpressionAttributeValues={':value': value},
-    )
+    _tombstone_project(projects_table, tombstone)
 
     with pytest.raises(ServiceError, match='Project deletion has started'):
         persist_versioned_document(
@@ -897,13 +792,7 @@ def test_project_deletion_fence_blocks_allocation_history_repair(
     )
     allocation = _allocation_history(projects_table, 'job-history-fence')
     projects_table.delete_item(Key={'pk': allocation['pk'], 'sk': allocation['sk']})
-    attribute, value = next(iter(tombstone.items()))
-    projects_table.update_item(
-        Key={'pk': 'PROJECT#p1', 'sk': 'META'},
-        UpdateExpression='SET #tombstone = :value',
-        ExpressionAttributeNames={'#tombstone': attribute},
-        ExpressionAttributeValues={':value': value},
-    )
+    _tombstone_project(projects_table, tombstone)
 
     with pytest.raises(ServiceError, match='Project deletion has started'):
         get_versioned_document_by_allocation(

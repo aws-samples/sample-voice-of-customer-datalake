@@ -18,15 +18,17 @@ import {
   useQuery, useMutation, useQueryClient,
 } from '@tanstack/react-query'
 import {
-  Users, UserPlus,
+  UserPlus,
   Loader2, CheckCircle2, AlertCircle,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
-import ConfirmModal from '../ConfirmModal'
+import ConfirmModal from '../ConfirmModal/ConfirmModal'
 import CreateUserModal from './CreateUserModal'
 import EditUserModal from './EditUserModal'
+import CategoryAccessModal from './CategoryAccessModal'
+import UserFlagsPanel from './UserFlagsPanel'
 import {
   UsersTable, UsersCards,
 } from './UserAdminComponents'
@@ -72,6 +74,7 @@ export default function UserAdmin() {
   const queryClient = useQueryClient()
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingUser, setEditingUser] = useState<CognitoUser | null>(null)
+  const [accessUser, setAccessUser] = useState<CognitoUser | null>(null)
   const [confirmAction, setConfirmAction] = useState<ConfirmActionState | null>(null)
   const [actionSuccess, setActionSuccess] = useState<string | null>(null)
 
@@ -166,6 +169,10 @@ export default function UserAdmin() {
       setEditingUser(user)
       return
     }
+    if (type === 'access') {
+      setAccessUser(user)
+      return
+    }
     setConfirmAction({
       type,
       user,
@@ -175,14 +182,14 @@ export default function UserAdmin() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="animate-spin text-blue-600" size={32} />
+        <Loader2 className="animate-spin text-accent" size={32} />
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="flex items-center gap-2 text-red-600 bg-red-50 p-4 rounded-lg">
+      <div className="flex items-center gap-2 text-danger bg-danger-subtle p-4 rounded-lg">
         <AlertCircle size={20} />
         <span>{t('userAdmin.loadError')}</span>
       </div>
@@ -193,12 +200,9 @@ export default function UserAdmin() {
 
   return (
     <div className="space-y-4">
+      {/* No heading of its own: the Settings "User Administration" card supplies the section title. */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Users className="text-blue-600" size={20} />
-          <h3 className="font-semibold">{t('userAdmin.userManagement')}</h3>
-          <span className="text-sm text-gray-500">{t('userAdmin.usersCount', { count: users.length })}</span>
-        </div>
+        <span className="text-sm text-muted">{t('userAdmin.usersCount', { count: users.length })}</span>
         <button
           onClick={() => setShowCreateModal(true)}
           className="btn btn-primary flex items-center justify-center gap-2 w-full sm:w-auto"
@@ -208,7 +212,7 @@ export default function UserAdmin() {
         </button>
       </div>
 
-      {actionSuccess == null || actionSuccess === '' ? null : <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 p-3 rounded-lg">
+      {actionSuccess == null || actionSuccess === '' ? null : <div className="flex items-center gap-2 text-sm text-ok bg-ok-subtle p-3 rounded-lg">
         <CheckCircle2 size={16} />
         {actionSuccess}
       </div>}
@@ -229,6 +233,8 @@ export default function UserAdmin() {
         />
       </div>
 
+      <UserFlagsPanel users={users} />
+
       <CreateUserModal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
@@ -240,6 +246,12 @@ export default function UserAdmin() {
         user={editingUser}
         onClose={() => setEditingUser(null)}
         onSuccess={() => void queryClient.invalidateQueries({ queryKey: ['users'] })}
+      />
+
+      <CategoryAccessModal
+        user={accessUser}
+        onClose={() => setAccessUser(null)}
+        onSaved={(email) => showSuccess(t('userAdmin.categoryAccess.saved', { email }))}
       />
 
       {confirmAction ? <ConfirmModal

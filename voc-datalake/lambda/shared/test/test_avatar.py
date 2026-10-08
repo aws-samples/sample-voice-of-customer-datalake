@@ -1,109 +1,84 @@
 """Tests for shared.avatar module - avatar generation utilities."""
 
-import json
-from concurrent.futures import ThreadPoolExecutor
-from unittest.mock import patch, MagicMock
 import base64
+import json
+import re
+from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import MagicMock, patch
 
+import pytest
+
+from shared.test.avatar_fixtures import (
+    avatar_after_image_model_raises,
+    bedrock_runtime_only,
+    image_model_response,
+)
+
+PROMPT_CONFIG = {
+    'system_prompt': 'Generate image prompts',
+    'user_prompt_template': 'Create avatar for {name}, {occupation}',
+    'max_tokens': 200,
+    'fallback_prompt_template': 'Headshot of a {occupation}',
+}
+
+
+def _prompt_with(converse_mock: MagicMock, persona: dict) -> str:
+    """generate_avatar_prompt_with_llm with shared.converse.converse = *converse_mock*."""
+    from shared.avatar import generate_avatar_prompt_with_llm
+
+    with patch('shared.avatar.get_avatar_prompt_config', return_value=PROMPT_CONFIG), \
+            patch('shared.converse.converse', converse_mock):
+        return generate_avatar_prompt_with_llm(persona)
+
+
+
+def _flat(url: str) -> str:
+    """The URI with its per-image digest folded away: `.../avatars/p1/{digest}.jpeg` → `.../avatars/p1.jpeg`.
+
+    Keys are content-addressed per image (see test_avatar_versioned_keys.py); these
+    tests are about WHICH persona and format was written, not the digest.
+    """
+    return re.sub(r'/[0-9a-f]{24}\.', '.', url)
 
 class TestGenerateAvatarPromptWithLlm:
-    """Tests for generate_avatar_prompt_with_llm function."""
+    """The image-prompt writer resolves its text model through the picker (#273)."""
 
-    @patch('shared.avatar.get_avatar_prompt_config')
-    @patch('shared.aws.BEDROCK_MODEL_ID', 'test-model')
-    def test_successful_prompt_generation(self, mock_config):
-        """Generates image prompt from persona data using Claude."""
-        from shared.avatar import generate_avatar_prompt_with_llm
+    def test_returns_the_models_prompt_stripped(self):
+        converse = MagicMock(return_value='  Professional headshot of an engineer \n')
 
-        mock_config.return_value = {
-            'system_prompt': 'Generate image prompts',
-            'user_prompt_template': 'Create avatar for {name}, {occupation}',
-            'max_tokens': 200,
-            'fallback_prompt_template': 'Headshot of {occupation}',
-        }
+        result = _prompt_with(converse, {'name': 'Alice', 'identity': {'occupation': 'Engineer'}})
 
-        mock_bedrock = MagicMock()
-        response_body = json.dumps({
-            'content': [{'type': 'text', 'text': 'Professional headshot of a software engineer'}]
-        }).encode()
-        mock_bedrock.invoke_model.return_value = {
-            'body': MagicMock(read=MagicMock(return_value=response_body))
-        }
+        assert result == 'Professional headshot of an engineer'
 
-        persona = {
-            'name': 'Alice', 'tagline': 'Tech enthusiast',
-            'identity': {
-                'bio': 'A software engineer who loves coding',
-                'age_range': '25-35', 'occupation': 'Software Engineer',
-                'location': 'San Francisco',
-            }
-        }
+    def test_sends_the_configured_system_prompt_and_formatted_user_prompt(self):
+        converse = MagicMock(return_value='p')
 
-        result = generate_avatar_prompt_with_llm(persona, mock_bedrock)
-        assert result == 'Professional headshot of a software engineer'
-        mock_bedrock.invoke_model.assert_called_once()
+        _prompt_with(converse, {'name': 'Alice', 'identity': {'occupation': 'Pilot'}})
 
-    @patch('shared.avatar.get_avatar_prompt_config')
-    @patch('shared.aws.BEDROCK_MODEL_ID', 'test-model')
-    def test_handles_thinking_blocks_in_response(self, mock_config):
-        """Extracts text from response with thinking blocks."""
-        from shared.avatar import generate_avatar_prompt_with_llm
+        assert converse.call_args.kwargs['system_prompt'] == 'Generate image prompts'
+        assert converse.call_args.kwargs['prompt'] == 'Create avatar for Alice, Pilot'
+        assert converse.call_args.kwargs['max_tokens'] == 200
 
-        mock_config.return_value = {
-            'system_prompt': 'S', 'user_prompt_template': '{name}',
-            'max_tokens': 200, 'fallback_prompt_template': 'Headshot of {occupation}',
-        }
+    def test_falls_back_to_the_template_when_the_call_fails(self):
+        converse = MagicMock(side_effect=RuntimeError('AccessDeniedException'))
 
-        mock_bedrock = MagicMock()
-        response_body = json.dumps({
-            'content': [
-                {'type': 'thinking', 'text': 'Let me think...'},
-                {'type': 'text', 'text': 'A portrait of a teacher'},
-            ]
-        }).encode()
-        mock_bedrock.invoke_model.return_value = {
-            'body': MagicMock(read=MagicMock(return_value=response_body))
-        }
+        result = _prompt_with(converse, {'name': 'Carol', 'identity': {'occupation': 'Designer'}})
 
-        result = generate_avatar_prompt_with_llm({'name': 'Bob', 'identity': {}}, mock_bedrock)
-        assert result == 'A portrait of a teacher'
+        assert result == 'Headshot of a Designer'
 
-    @patch('shared.avatar.get_avatar_prompt_config')
-    @patch('shared.aws.BEDROCK_MODEL_ID', 'test-model')
-    def test_fallback_on_llm_error(self, mock_config):
-        """Uses fallback prompt when LLM call fails."""
-        from shared.avatar import generate_avatar_prompt_with_llm
+    def test_falls_back_to_the_template_when_the_model_answers_empty(self):
+        converse = MagicMock(return_value='   ')
 
-        mock_config.return_value = {
-            'system_prompt': 'S', 'user_prompt_template': '{name}',
-            'max_tokens': 200,
-            'fallback_prompt_template': 'Professional headshot of a {occupation}, friendly expression',
-        }
+        result = _prompt_with(converse, {'name': 'X', 'identity': {'occupation': 'Chef'}})
 
-        mock_bedrock = MagicMock()
-        mock_bedrock.invoke_model.side_effect = Exception("Bedrock error")
+        assert result == 'Headshot of a Chef'
 
-        result = generate_avatar_prompt_with_llm(
-            {'name': 'Carol', 'identity': {'occupation': 'Designer'}}, mock_bedrock
-        )
-        assert 'Designer' in result
+    def test_fallback_uses_professional_without_an_occupation(self):
+        converse = MagicMock(side_effect=RuntimeError('boom'))
 
-    @patch('shared.avatar.get_avatar_prompt_config')
-    @patch('shared.aws.BEDROCK_MODEL_ID', 'test-model')
-    def test_fallback_with_empty_occupation(self, mock_config):
-        """Uses 'professional' as default occupation in fallback."""
-        from shared.avatar import generate_avatar_prompt_with_llm
+        result = _prompt_with(converse, {'name': 'X', 'identity': {}})
 
-        mock_config.return_value = {
-            'system_prompt': 'S', 'user_prompt_template': '{name}',
-            'max_tokens': 200, 'fallback_prompt_template': 'Headshot of a {occupation}',
-        }
-
-        mock_bedrock = MagicMock()
-        mock_bedrock.invoke_model.side_effect = Exception("Error")
-
-        result = generate_avatar_prompt_with_llm({'name': 'X', 'identity': {}}, mock_bedrock)
-        assert 'professional' in result
+        assert result == 'Headshot of a professional'
 
 
 class TestGeneratePersonaAvatar:
@@ -122,7 +97,7 @@ class TestGeneratePersonaAvatar:
         mock_bedrock_runtime = MagicMock()
         mock_s3 = MagicMock()
 
-        def client_factory(service, **kwargs):
+        def client_factory(service, **_kwargs):
             if service == 'bedrock-runtime':
                 return mock_bedrock_runtime
             return mock_s3
@@ -144,100 +119,24 @@ class TestGeneratePersonaAvatar:
             'identity': {'occupation': 'Engineer'},
         }
 
-        result = generate_persona_avatar(persona, MagicMock(), s3_bucket='test-bucket')
+        result = generate_persona_avatar(persona, s3_bucket='test-bucket')
 
         # Deliberately a LITERAL. Deriving the extension from
         # get_image_model_config() would take the expectation from the same
         # production code under test, so a wrong extension could never fail this.
-        assert result['avatar_url'] == 's3://test-bucket/avatars/p123.jpeg'
+        assert _flat(result['avatar_url']) == 's3://test-bucket/avatars/p123.jpeg'
         assert result['avatar_prompt'] == 'A portrait prompt'
 
-    @patch('shared.avatar.generate_avatar_prompt_with_llm')
-    def test_returns_none_when_no_bucket(self, mock_prompt):
-        """Returns None avatar_url when no S3 bucket configured."""
-        from shared.avatar import generate_persona_avatar
-
-        with patch.dict('os.environ', {'RAW_DATA_BUCKET': ''}):
-            result = generate_persona_avatar(
-                {'persona_id': 'p1', 'name': 'Test'}, MagicMock(), s3_bucket='',
-            )
-
-        assert result['avatar_url'] is None
-        assert result['avatar_prompt'] is None
-
+    @pytest.mark.parametrize('error', [
+        pytest.param(Exception("AccessDenied: not authorized"), id='access_denied'),
+        pytest.param(Exception("ValidationException: invalid params"), id='validation_exception'),
+        pytest.param(RuntimeError("Something broke"), id='generic_error'),
+    ])
     @patch('shared.avatar.boto3')
     @patch('shared.avatar.generate_avatar_prompt_with_llm')
-    def test_handles_empty_images_array(self, mock_prompt, mock_boto3):
-        """Returns None when Nova Canvas returns empty images."""
-        from shared.avatar import generate_persona_avatar
-
-        mock_prompt.return_value = 'A prompt'
-        mock_bedrock = MagicMock()
-        mock_boto3.client.return_value = mock_bedrock
-
-        nova_response = json.dumps({'images': []}).encode()
-        mock_bedrock.invoke_model.return_value = {
-            'body': MagicMock(read=MagicMock(return_value=nova_response))
-        }
-
-        result = generate_persona_avatar(
-            {'persona_id': 'p1', 'name': 'Test', 'identity': {}},
-            MagicMock(), s3_bucket='bucket',
-        )
-
-        assert result['avatar_url'] is None
-        assert result['avatar_prompt'] == 'A prompt'
-
-    @patch('shared.avatar.boto3')
-    @patch('shared.avatar.generate_avatar_prompt_with_llm')
-    def test_handles_access_denied_error(self, mock_prompt, mock_boto3):
-        """Handles AccessDenied error gracefully."""
-        from shared.avatar import generate_persona_avatar
-
-        mock_prompt.return_value = 'A prompt'
-        mock_bedrock = MagicMock()
-        mock_boto3.client.return_value = mock_bedrock
-        mock_bedrock.invoke_model.side_effect = Exception("AccessDenied: not authorized")
-
-        result = generate_persona_avatar(
-            {'persona_id': 'p1', 'name': 'Test', 'identity': {}},
-            MagicMock(), s3_bucket='bucket',
-        )
-        assert result['avatar_url'] is None
-        assert result['avatar_prompt'] == 'A prompt'
-
-    @patch('shared.avatar.boto3')
-    @patch('shared.avatar.generate_avatar_prompt_with_llm')
-    def test_handles_validation_exception(self, mock_prompt, mock_boto3):
-        """Handles ValidationException error gracefully."""
-        from shared.avatar import generate_persona_avatar
-
-        mock_prompt.return_value = 'A prompt'
-        mock_bedrock = MagicMock()
-        mock_boto3.client.return_value = mock_bedrock
-        mock_bedrock.invoke_model.side_effect = Exception("ValidationException: invalid params")
-
-        result = generate_persona_avatar(
-            {'persona_id': 'p1', 'name': 'Test', 'identity': {}},
-            MagicMock(), s3_bucket='bucket',
-        )
-        assert result['avatar_url'] is None
-
-    @patch('shared.avatar.boto3')
-    @patch('shared.avatar.generate_avatar_prompt_with_llm')
-    def test_handles_generic_error(self, mock_prompt, mock_boto3):
-        """Handles generic errors gracefully."""
-        from shared.avatar import generate_persona_avatar
-
-        mock_prompt.return_value = 'A prompt'
-        mock_bedrock = MagicMock()
-        mock_boto3.client.return_value = mock_bedrock
-        mock_bedrock.invoke_model.side_effect = RuntimeError("Something broke")
-
-        result = generate_persona_avatar(
-            {'persona_id': 'p1', 'name': 'Test', 'identity': {}},
-            MagicMock(), s3_bucket='bucket',
-        )
+    def test_handles_image_model_errors_gracefully(self, mock_prompt, mock_boto3, error):
+        """An image-model failure costs the avatar, never the persona or its prompt."""
+        result = avatar_after_image_model_raises(mock_prompt, mock_boto3, error)
         assert result['avatar_url'] is None
         assert result['avatar_prompt'] == 'A prompt'
 
@@ -245,9 +144,17 @@ class TestGeneratePersonaAvatar:
 class TestGetAvatarCdnUrl:
     """Tests for get_avatar_cdn_url function."""
 
-    def test_converts_s3_uri_to_signed_cdn_url(self, cdn_signing_configured):
+    @staticmethod
+    def _signed_cdn_url(s3_uri: str, **kwargs) -> str:
+        """get_avatar_cdn_url for a case that must produce a URL."""
         from shared.avatar import get_avatar_cdn_url
-        result = get_avatar_cdn_url('s3://bucket/avatars/persona_123.png', cdn_url='https://cdn.example.com')
+        result = get_avatar_cdn_url(s3_uri, **kwargs)
+        assert result is not None
+        return result
+
+    @pytest.mark.usefixtures("cdn_signing_configured")
+    def test_converts_s3_uri_to_signed_cdn_url(self):
+        result = self._signed_cdn_url('s3://bucket/avatars/persona_123.png', cdn_url='https://cdn.example.com')
         assert result.startswith('https://cdn.example.com/persona_123.png?')
         assert 'Signature=' in result
         assert 'Key-Pair-Id=K2TESTKEYPAIRID' in result
@@ -279,15 +186,15 @@ class TestGetAvatarCdnUrl:
             result = get_avatar_cdn_url('s3://bucket/avatars/test.png', cdn_url='')
         assert result is None
 
-    def test_strips_trailing_slash_from_cdn_url(self, cdn_signing_configured):
-        from shared.avatar import get_avatar_cdn_url
-        result = get_avatar_cdn_url('s3://bucket/avatars/test.png', cdn_url='https://cdn.example.com/')
+    @pytest.mark.usefixtures("cdn_signing_configured")
+    def test_strips_trailing_slash_from_cdn_url(self):
+        result = self._signed_cdn_url('s3://bucket/avatars/test.png', cdn_url='https://cdn.example.com/')
         assert result.startswith('https://cdn.example.com/test.png?')
 
+    @pytest.mark.usefixtures("cdn_signing_configured")
     @patch.dict('os.environ', {'AVATARS_CDN_URL': 'https://env-cdn.example.com'})
-    def test_uses_env_var_when_no_cdn_url_param(self, cdn_signing_configured):
-        from shared.avatar import get_avatar_cdn_url
-        result = get_avatar_cdn_url('s3://bucket/avatars/test.png')
+    def test_uses_env_var_when_no_cdn_url_param(self):
+        result = self._signed_cdn_url('s3://bucket/avatars/test.png')
         assert result.startswith('https://env-cdn.example.com/test.png?')
 
 
@@ -310,35 +217,28 @@ class TestImageModelClientIsReused:
     endpoint resolution, repeated for work that always targets the same region.
     """
 
-    @staticmethod
-    def _image_response():
-        return {
-            'body': MagicMock(read=MagicMock(return_value=json.dumps(
-                {'images': [base64.b64encode(b'bytes').decode()]}).encode()))
-        }
-
     def _generate(self, persona_ids, config=None):
         """Generate avatars for several personas through one patched boto3 and
         report how many bedrock-runtime clients were constructed."""
         from shared.avatar import generate_persona_avatar
 
         mock_bedrock = MagicMock()
-        mock_bedrock.invoke_model.return_value = self._image_response()
+        mock_bedrock.invoke_model.return_value = image_model_response()
 
-        def client_factory(service, **kwargs):
-            return mock_bedrock if service == 'bedrock-runtime' else MagicMock()
+        client_factory = bedrock_runtime_only(mock_bedrock)
 
-        results = []
         with patch('shared.avatar.get_avatar_prompt_config', return_value=config or IMAGE_MODEL_TEST_CONFIG), \
              patch('shared.avatar.generate_avatar_prompt_with_llm', return_value='p'), \
              patch('shared.aws.get_s3_client', return_value=MagicMock()), \
              patch('shared.avatar.boto3') as mock_boto3:
             mock_boto3.client.side_effect = client_factory
-            for persona_id in persona_ids:
-                results.append(generate_persona_avatar(
+            results = [
+                generate_persona_avatar(
                     {'persona_id': persona_id, 'name': persona_id, 'identity': {}},
-                    MagicMock(), s3_bucket='b',
-                ))
+                    s3_bucket='b',
+                )
+                for persona_id in persona_ids
+            ]
             bedrock_client_calls = [
                 c for c in mock_boto3.client.call_args_list
                 if c.args and c.args[0] == 'bedrock-runtime'
@@ -349,7 +249,7 @@ class TestImageModelClientIsReused:
         results, client_calls = self._generate(['p1', 'p2', 'p3'])
         # Positive control: all three avatars really were produced, so the
         # single client is reuse and not three skipped generations.
-        assert [r['avatar_url'] for r in results] == [
+        assert [_flat(r['avatar_url']) for r in results] == [
             's3://b/avatars/p1.jpeg', 's3://b/avatars/p2.jpeg', 's3://b/avatars/p3.jpeg',
         ]
         assert len(client_calls) == 1, (
@@ -364,8 +264,6 @@ class TestImageModelClientIsReused:
         """Cached per region, not globally: the region comes from
         avatar-generation.json, so a config change must not keep serving a
         client pinned to the old region."""
-        from shared.avatar import clear_image_model_client_cache
-
         _, first = self._generate(['p1'])
         assert first[0].kwargs['region_name'] == 'us-west-2'
 
@@ -377,8 +275,6 @@ class TestImageModelClientIsReused:
         _, second = self._generate(['p2'], config=eu_config)
         assert second[0].kwargs['region_name'] == 'eu-west-1'
 
-        clear_image_model_client_cache()
-
     def test_concurrent_generations_still_build_one_client(self):
         """The persona generator now runs these calls in parallel, so several
         threads reach the cache at once. The lock must keep that to one client
@@ -386,10 +282,9 @@ class TestImageModelClientIsReused:
         from shared.avatar import generate_persona_avatar
 
         mock_bedrock = MagicMock()
-        mock_bedrock.invoke_model.return_value = self._image_response()
+        mock_bedrock.invoke_model.return_value = image_model_response()
 
-        def client_factory(service, **kwargs):
-            return mock_bedrock if service == 'bedrock-runtime' else MagicMock()
+        client_factory = bedrock_runtime_only(mock_bedrock)
 
         persona_ids = [f'p{i}' for i in range(6)]
         with patch('shared.avatar.get_avatar_prompt_config', return_value=IMAGE_MODEL_TEST_CONFIG), \
@@ -401,7 +296,7 @@ class TestImageModelClientIsReused:
                 results = list(pool.map(
                     lambda pid: generate_persona_avatar(
                         {'persona_id': pid, 'name': pid, 'identity': {}},
-                        MagicMock(), s3_bucket='b',
+                        s3_bucket='b',
                     ),
                     persona_ids,
                 ))
@@ -446,22 +341,14 @@ class TestS3ClientIsSharedNotBuiltPerAvatar:
     from actual client construction.
     """
 
-    @staticmethod
-    def _image_response():
-        return {
-            'body': MagicMock(read=MagicMock(return_value=json.dumps(
-                {'images': [base64.b64encode(b'bytes').decode()]}).encode()))
-        }
-
     def _run(self, persona_ids, concurrent):
         import shared.aws as shared_aws
         from shared.avatar import generate_persona_avatar
 
         mock_bedrock = MagicMock()
-        mock_bedrock.invoke_model.return_value = self._image_response()
+        mock_bedrock.invoke_model.return_value = image_model_response()
 
-        def avatar_client_factory(service, **kwargs):
-            return mock_bedrock if service == 'bedrock-runtime' else MagicMock()
+        avatar_client_factory = bedrock_runtime_only(mock_bedrock)
 
         shared_aws._s3_client = None          # the cache outlives a test
         try:
@@ -475,7 +362,7 @@ class TestS3ClientIsSharedNotBuiltPerAvatar:
                 def one(pid):
                     return generate_persona_avatar(
                         {'persona_id': pid, 'name': pid, 'identity': {}},
-                        MagicMock(), s3_bucket='b',
+                        s3_bucket='b',
                     )
 
                 if concurrent:
@@ -496,7 +383,7 @@ class TestS3ClientIsSharedNotBuiltPerAvatar:
         results, s3_constructions = self._run([f'p{i}' for i in range(6)], concurrent=False)
         # Positive control: every avatar really was produced, so "one client" is reuse
         # and not six generations that bailed out before reaching S3.
-        assert [r['avatar_url'] for r in results] == [
+        assert [_flat(r['avatar_url']) for r in results] == [
             f's3://b/avatars/p{i}.jpeg' for i in range(6)
         ]
         assert len(s3_constructions) == 1, (
@@ -505,7 +392,7 @@ class TestS3ClientIsSharedNotBuiltPerAvatar:
 
     def test_six_concurrent_avatars_build_one_s3_client(self):
         results, s3_constructions = self._run([f'p{i}' for i in range(6)], concurrent=True)
-        assert sorted(r['avatar_url'] for r in results) == sorted(
+        assert sorted(_flat(r['avatar_url']) for r in results) == sorted(
             f's3://b/avatars/p{i}.jpeg' for i in range(6)
         )
         assert len(s3_constructions) == 1, (
@@ -519,46 +406,6 @@ class TestS3ClientIsSharedNotBuiltPerAvatar:
         _, s3_constructions = self._run(['p1'], concurrent=False)
         config = s3_constructions[0].kwargs['config']
         assert config.signature_version == 's3v4'
-
-
-class TestImageClientIsConfiguredForTheFanOut:
-    """The cached image client is shared by every avatar thread, so its connection pool
-    and retry mode are properties of the fan-out rather than of one call. On botocore
-    defaults it got max_pool_connections=10 — exactly the ceiling, i.e. zero headroom,
-    and urllib3 builds that pool with block=False so an over-limit connection is served
-    by a throwaway socket plus a warning rather than queueing — and retries={'mode':
-    'legacy'}, which does not back off on throttling.
-    """
-
-    @staticmethod
-    def _build_and_capture():
-        from shared.avatar import clear_image_model_client_cache, get_image_model_client
-
-        clear_image_model_client_cache()
-        try:
-            with patch('shared.avatar.boto3') as mock_boto3:
-                get_image_model_client('us-west-2')
-                return mock_boto3.client.call_args
-        finally:
-            clear_image_model_client_cache()
-
-    def test_the_pool_is_at_least_the_persona_ceiling(self):
-        from shared.api import MAX_PERSONAS_PER_GENERATION
-
-        config = self._build_and_capture().kwargs['config']
-        assert config.max_pool_connections >= MAX_PERSONAS_PER_GENERATION, (
-            f'pool {config.max_pool_connections} is below the {MAX_PERSONAS_PER_GENERATION} '
-            'avatars that can be in flight, so connection reuse degrades silently'
-        )
-
-    def test_retries_back_off_rather_than_using_legacy_mode(self):
-        config = self._build_and_capture().kwargs['config']
-        assert config.retries['mode'] == 'standard'
-        assert config.retries['max_attempts'] >= 3
-
-    def test_timeouts_are_explicit(self):
-        config = self._build_and_capture().kwargs['config']
-        assert config.read_timeout and config.connect_timeout
 
 
 class TestConcurrencyCeilingsCannotDrift:

@@ -5,7 +5,6 @@ import { describe, it, expect } from 'vitest';
 import {
   ApiError,
   ValidationError,
-  NotFoundError,
   ConfigurationError,
   ServiceError,
   isApiError,
@@ -42,14 +41,6 @@ describe('ValidationError', () => {
   });
 });
 
-describe('NotFoundError', () => {
-  it('has status code 404', () => {
-    const err = new NotFoundError('not here');
-    expect(err.statusCode).toBe(404);
-    expect(err.name).toBe('NotFoundError');
-  });
-});
-
 describe('ConfigurationError', () => {
   it('has status code 500', () => {
     const err = new ConfigurationError('missing env');
@@ -70,18 +61,20 @@ describe('isApiError', () => {
   it('returns true for ApiError instances', () => {
     expect(isApiError(new ApiError('x'))).toBe(true);
     expect(isApiError(new ValidationError('x'))).toBe(true);
-    expect(isApiError(new NotFoundError('x'))).toBe(true);
+    expect(isApiError(new ApiError('x', 404))).toBe(true);
   });
 
   it('returns false for plain Error', () => {
     expect(isApiError(new Error('x'))).toBe(false);
   });
 
-  it('returns false for non-error values', () => {
-    expect(isApiError(null)).toBe(false);
-    expect(isApiError(undefined)).toBe(false);
-    expect(isApiError('string')).toBe(false);
-    expect(isApiError(42)).toBe(false);
-    expect(isApiError({ statusCode: 400 })).toBe(false);
+  it.each([
+    ['null', null],
+    ['undefined', undefined],
+    ['a string', 'string'],
+    ['a number', 42],
+    ['a status-shaped plain object', { statusCode: 400 }],
+  ])('returns false for %s', (_label, value) => {
+    expect(isApiError(value)).toBe(false);
   });
 });

@@ -1,0 +1,233 @@
+{
+  "card": {
+    "kicker": "Aprovação necessária",
+    "kickerDestructive": "Aprovação necessária · não pode ser desfeito",
+    "project": "Projeto",
+    "expired": "Expirada",
+    "expiresIn": "Expira em {{time}}",
+    "approve": "Aprovar",
+    "approveDestructive": "Aprovar e excluir",
+    "decline": "Recusar",
+    "confirmDecline": "Recusar",
+    "back": "Voltar",
+    "dismiss": "Dispensar",
+    "reasonLabel": "Motivo (opcional)",
+    "reasonPlaceholder": "Diga ao assistente o motivo para que ele possa se ajustar",
+    "executing": "Processando…",
+    "adminOnly": "Somente administradores podem aprovar esta ação. Você ainda pode recusá-la.",
+    "destructiveWarning": "Isto exclui dados permanentemente e não pode ser desfeito.",
+    "destructiveConfirm": "Entendo, excluir",
+    "invalidArgs": "A solicitação do assistente é inválida e não pode ser aprovada:",
+    "unknownTool": "Esta ação não está disponível aqui e não pode ser aprovada.",
+    "unknownToolTitle": "Ação desconhecida ({{name}})",
+    "resolved": {
+      "executed": "Concluído",
+      "failed": "Falhou",
+      "declined": "Recusada",
+      "expired": "Expirada"
+    }
+  },
+  "preview": {
+    "showMore": "Mostrar tudo ({{n}} caracteres)",
+    "showLess": "Mostrar menos",
+    "empty": "(vazio)",
+    "yes": "Sim",
+    "no": "Não",
+    "loading": "Carregando a versão atual…",
+    "before": "Atual",
+    "after": "Proposto",
+    "unchanged": "inalterado",
+    "document": "Documento",
+    "persona": "Persona",
+    "changeSummary": "Alteração",
+    "currentUnavailable": "Não foi possível carregar os valores atuais; apenas os valores propostos são exibidos.",
+    "unknownCategory": "A categoria “{{category}}” não está entre as que você pode ver — a alteração será recusada.",
+    "brandMerged": "Configurações após salvar (campos não mencionados mantêm o valor atual):",
+    "diff": {
+      "label": "Alterações no documento",
+      "stats": "{{added}} linhas adicionadas, {{removed}} linhas removidas",
+      "unchanged": "… {{n}} linhas inalteradas …",
+      "same": "Inalterado:",
+      "add": "Adicionado:",
+      "del": "Removido:",
+      "noChanges": "O conteúdo proposto é idêntico ao documento atual.",
+      "tooLarge": "O documento é grande demais para comparar linha a linha. Exibindo o início de cada versão.",
+      "currentUnavailable": "Não foi possível carregar o documento atual. Conteúdo proposto:"
+    },
+    "job": {
+      "timeWindow": "Lê o feedback dos últimos {{days}} dias (o período selecionado no aplicativo).",
+      "language": "Escreve o resultado em {{language}}.",
+      "background": "Isto é executado em segundo plano e aparece nos trabalhos do projeto. Você pode continuar trabalhando enquanto isso."
+    },
+    "agent": "Agente",
+    "run": "Execução",
+    "memory": {
+      "scope": {
+        "company": "Empresa — todos",
+        "personal": "Pessoal — só você"
+      },
+      "kind": {
+        "product": "Produto",
+        "customer": "Cliente",
+        "agents": "Agentes",
+        "working_style": "Estilo de trabalho",
+        "strategy": "Estratégia",
+        "objective": "Objetivo",
+        "other": "Outro"
+      },
+      "retention": {
+        "long_term": "Mantida a longo prazo",
+        "dated": "Até {{date}}",
+        "decay": "Expira após 90 dias sem uso"
+      },
+      "resolve": {
+        "keep_both": "manter ambas",
+        "keep": "manter uma",
+        "replace": "substituir",
+        "merge": "mesclar"
+      },
+      "companyVisible": "As memórias da empresa são visíveis para todos e usadas pelo assistente e pelos agentes para todos os usuários.",
+      "supporters_one": "{{count}} pessoa apoia a declaração atual.",
+      "supporters_other": "{{count}} pessoas apoiam a declaração atual.",
+      "reason": "Motivo",
+      "forEveryone": "Isso altera o que a empresa lembra, para todos. Se você não for administrador nem revisor de memória, será registrado como proposta para revisão."
+    },
+    "workflow": {
+      "unchanged": "A definição proposta é idêntica à atual.",
+      "meta": "Alterado: {{fields}}",
+      "addedSteps": "Etapas adicionadas",
+      "removedSteps": "Etapas removidas",
+      "changedSteps": "Etapas alteradas",
+      "showMoves": "Mostrar {{n}} etapas apenas movidas",
+      "hideMoves": "Ocultar etapas apenas movidas",
+      "addedArrows": "Setas adicionadas",
+      "removedArrows": "Setas removidas",
+      "changedArrows": "Setas alteradas",
+      "loopsChanged": "Loops alterados ({{n}} após salvar).",
+      "revision": "{{name}}: revisão {{from}} → {{to}}",
+      "stale": "Esta proposta foi criada sobre a revisão {{expected}}, mas a atual é {{current}} — o salvamento será recusado; peça ao assistente para recriá-la.",
+      "counts": "{{nodes}} etapas, {{edges}} setas, {{loops}} loops"
+    }
+  },
+  "tools": {
+    "create_project": {
+      "title": "Criar um projeto",
+      "titleWith": "Criar o projeto “{{name}}”"
+    },
+    "set_problem_resolved": {
+      "title": "Alterar o status de um problema",
+      "titleResolve": "Marcar um problema como resolvido",
+      "titleReopen": "Reabrir um problema"
+    },
+    "set_feedback_category": {
+      "title": "Alterar a categoria de uma avaliação",
+      "titleWith": "Alterar a categoria para “{{category}}”"
+    },
+    "update_document": {
+      "title": "Editar um documento"
+    },
+    "create_document": {
+      "title": "Criar um documento",
+      "titleWith": "Criar o documento “{{title}}”"
+    },
+    "delete_document": {
+      "title": "Excluir um documento"
+    },
+    "update_persona": {
+      "title": "Editar uma persona"
+    },
+    "add_persona_note": {
+      "title": "Adicionar uma nota de pesquisa a uma persona"
+    },
+    "update_project": {
+      "title": "Editar os detalhes do projeto"
+    },
+    "update_product_context": {
+      "title": "Atualizar a descrição do produto"
+    },
+    "start_research": {
+      "title": "Iniciar um trabalho de pesquisa"
+    },
+    "generate_document": {
+      "title": "Gerar um documento",
+      "titlePrd": "Gerar um PRD",
+      "titlePrfaq": "Gerar um PR/FAQ"
+    },
+    "generate_personas": {
+      "title": "Gerar personas",
+      "titleWith": "Gerar personas ({{n}})"
+    },
+    "merge_documents": {
+      "title": "Mesclar documentos"
+    },
+    "update_feedback_form": {
+      "title": "Atualizar um formulário de feedback"
+    },
+    "run_scraper": {
+      "title": "Executar um scraper agora"
+    },
+    "save_brand_settings": {
+      "title": "Salvar as configurações da marca"
+    },
+    "remember": {
+      "title": "Lembrar",
+      "titleCompany": "Lembrar para a empresa",
+      "titlePersonal": "Lembrar para você"
+    },
+    "update_company_memory": {
+      "title": "Alterar uma memória da empresa"
+    },
+    "forget_memory": {
+      "title": "Esquecer uma memória"
+    },
+    "confirm_memory": {
+      "title": "Confirmar uma memória (+1)"
+    },
+    "merge_memories": {
+      "title": "Mesclar memórias",
+      "titleWith": "Mesclar {{n}} memórias"
+    },
+    "resolve_memory_conflict": {
+      "title": "Resolver um conflito de memória",
+      "titleWith": "Resolver um conflito de memória: {{action}}"
+    },
+    "create_agent": {
+      "title": "Criar um agente autônomo",
+      "titleWith": "Criar o agente “{{name}}”"
+    },
+    "update_agent": {
+      "title": "Alterar um agente autônomo"
+    },
+    "enable_agent": {
+      "title": "Ativar um agente autônomo"
+    },
+    "disable_agent": {
+      "title": "Desativar um agente autônomo"
+    },
+    "run_agent": {
+      "title": "Executar um agente autônomo agora"
+    },
+    "cancel_agent_run": {
+      "title": "Cancelar a execução de um agente"
+    },
+    "create_workflow": {
+      "title": "Criar um fluxo de trabalho",
+      "titleWith": "Criar o fluxo de trabalho “{{name}}”"
+    },
+    "update_workflow": {
+      "title": "Salvar uma nova revisão do fluxo de trabalho"
+    },
+    "duplicate_workflow": {
+      "title": "Duplicar um fluxo de trabalho"
+    },
+    "update_company_context": {
+      "title": "Alterar a visão e os objetivos da empresa"
+    },
+    "update_my_context": {
+      "title": "Alterar seus objetivos e KPIs"
+    },
+    "update_design_system": {
+      "title": "Alterar o design system"
+    }
+  }
+}

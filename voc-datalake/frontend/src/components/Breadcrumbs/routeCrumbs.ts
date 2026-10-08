@@ -53,7 +53,14 @@ export const SEGMENT_CRUMBS: Readonly<Partial<Record<string, RouteCrumb>>> = {
   'data-explorer': { labelKey: 'common:breadcrumbs.dataExplorer' },
   'scrapers': { labelKey: 'common:breadcrumbs.scrapers' },
   'feedback-forms': { labelKey: 'common:breadcrumbs.feedbackForms' },
-  'settings': { labelKey: 'common:breadcrumbs.settings' },
+  'memory': { labelKey: 'common:breadcrumbs.memory' },
+  'company': { labelKey: 'common:breadcrumbs.company' },
+  'agents': { labelKey: 'common:breadcrumbs.agents' },
+  'connect': { labelKey: 'common:breadcrumbs.connect' },
+  'account': { labelKey: 'common:breadcrumbs.account' },
+  'admin': { labelKey: 'common:breadcrumbs.admin' },
+  // Redirects to /admin (todofeatures §6.1); labelled for the redirect's instant.
+  'settings': { labelKey: 'common:breadcrumbs.admin', path: '/admin' },
 }
 
 /**
@@ -75,6 +82,7 @@ export const SEGMENT_CRUMBS: Readonly<Partial<Record<string, RouteCrumb>>> = {
 export const RECORD_CRUMBS: Readonly<Partial<Record<string, CrumbLabel>>> = {
   'projects': { labelKey: 'common:breadcrumbs.project' },
   'feedback': { labelKey: 'common:breadcrumbs.feedbackItem' },
+  'agents': { labelKey: 'common:breadcrumbs.agent' },
 }
 
 export interface Crumb {
@@ -110,7 +118,8 @@ export function buildCrumbs(
         return { label: t(route.labelKey), path: route.path ?? segmentPath, isHome: false }
       }
 
-      const record = index === 0 ? undefined : RECORD_CRUMBS[pathSegments[index - 1]]
+      const parent = index === 0 ? undefined : pathSegments.at(index - 1)
+      const record = parent === undefined ? undefined : RECORD_CRUMBS[parent]
       if (record !== undefined) {
         return { label: recordName ?? t(record.labelKey), path: segmentPath, isHome: false }
       }

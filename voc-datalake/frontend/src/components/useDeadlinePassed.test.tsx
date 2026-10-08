@@ -87,10 +87,14 @@ describe('useDeadlinePassed', () => {
   })
 
   it('clears its timer on unmount rather than firing into a dead component', () => {
+    const setSpy = vi.spyOn(globalThis, 'setTimeout')
     const clearSpy = vi.spyOn(globalThis, 'clearTimeout')
     const { unmount } = renderHook(() => useDeadlinePassed(Date.now() + 60_000))
+    // The hook's own timer — the last one scheduled before unmount.
+    const timerId: unknown = setSpy.mock.results.at(-1)?.value
     unmount()
-    expect(clearSpy).toHaveBeenCalled()
+    expect(clearSpy).toHaveBeenCalledWith(timerId)
+    setSpy.mockRestore()
     clearSpy.mockRestore()
   })
 })

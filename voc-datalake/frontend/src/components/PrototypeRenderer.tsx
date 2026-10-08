@@ -9,6 +9,7 @@
  */
 import clsx from 'clsx'
 import { useCallback, useMemo, useState } from 'react'
+import type { Ref } from 'react'
 import { signedUrlExpiresAt, unsignedUrlKey } from './prototypeLinkLifetime'
 import { useDeadlinePassed } from './useDeadlinePassed'
 import type { PrototypeBlock, PrototypeSpec } from './prototypeSpec'
@@ -31,6 +32,19 @@ import type { PrototypeBlock, PrototypeSpec } from './prototypeSpec'
  * those apart, and a genuine change of document (different path, or dropping to a
  * legacy inline prototype) still reloads, because that is a different address.
  */
+/** `value`, or `fallback` when it is absent or empty. */
+function orFallback(value: string | undefined, fallback: string): string {
+  return value === undefined || value === '' ? fallback : value
+}
+
+/**
+ * Whether a screen can be rendered and keyed. The spec is parsed by Zod, but it
+ * is model output stored verbatim, so the renderer stays safe on its own.
+ */
+function hasStringId(screen: unknown): boolean {
+  return typeof screen === 'object' && screen !== null && 'id' in screen && typeof screen.id === 'string'
+}
+
 function useLoadedUrl(url: string | undefined): string | undefined {
   // Whether the URL on offer has ALREADY lapsed. Read only at the moment it is taken —
   // see `deadOnArrival` below — so this asks "could this ever load?", not "is the
@@ -91,19 +105,22 @@ function useLoadedUrl(url: string | undefined): string | undefined {
  * but non-breaking to display.
  */
 export function HtmlPrototypeFrame({
-  url, html, title, className,
+  url, html, title, className, frameRef,
 }: {
   readonly url?: string
   readonly html?: string
   readonly title?: string
   readonly className?: string
+  /** The CDN frame, for the prototype pin bridge (components/PrototypePins). */
+  readonly frameRef?: Ref<HTMLIFrameElement>
 }) {
   const loadedUrl = useLoadedUrl(url)
 
   if (loadedUrl) {
     return (
       <iframe
-        title={title || 'Prototype'}
+        ref={frameRef}
+        title={orFallback(title, 'Prototype')}
         src={loadedUrl}
         className={className ?? 'w-full h-full border-0'}
       />
@@ -111,7 +128,7 @@ export function HtmlPrototypeFrame({
   }
   return (
     <iframe
-      title={title || 'Prototype'}
+      title={orFallback(title, 'Prototype')}
       srcDoc={html}
       sandbox="allow-scripts allow-popups allow-forms"
       className={className ?? 'w-full h-full border-0'}
@@ -149,7 +166,7 @@ export default function PrototypeRenderer({
   readonly measureClassName?: string
 }) {
   const screens = useMemo(
-    () => spec.screens.filter((s) => s && typeof s.id === 'string'),
+    () => spec.screens.filter(hasStringId),
     [spec.screens],
   )
   const [activeId, setActiveId] = useState<string>(screens[0]?.id ?? '')
@@ -158,20 +175,21 @@ export default function PrototypeRenderer({
     if (id && screens.some((s) => s.id === id)) setActiveId(id)
   }, [screens])
 
-  if (screens.length === 0) {
-    return <div className="text-sm text-gray-500">No screens in prototype.</div>
+  const firstScreen = screens.at(0)
+  if (firstScreen === undefined) {
+    return <div className="text-sm text-muted">No screens in prototype.</div>
   }
 
-  const active = screens.find((s) => s.id === activeId) ?? screens[0]
+  const active = screens.find((s) => s.id === activeId) ?? firstScreen
 
   return (
     <div className={measureClassName ?? DEFAULT_SPEC_MEASURE}>
       {spec.banner ? (
-        <div className="bg-amber-100 text-amber-900 text-xs text-center py-1.5 rounded-md mb-3 font-medium">
+        <div className="bg-warn-subtle text-warn border border-warn/30 text-xs text-center py-1.5 rounded-md mb-3 font-medium">
           {spec.banner}
         </div>
       ) : null}
-      <nav className="flex gap-1 mb-4 border-b overflow-x-auto pb-1">
+      <nav className="flex gap-1 mb-4 border-b border-border overflow-x-auto pb-1">
         {screens.map((s) => (
           <button
             key={s.id}
@@ -179,19 +197,19 @@ export default function PrototypeRenderer({
             className={clsx(
               'px-3 py-1.5 text-sm rounded-t-md whitespace-nowrap transition-colors',
               s.id === active.id
-                ? 'bg-blue-600 text-white'
-                : 'text-gray-600 hover:bg-gray-100',
+                ? 'bg-accent text-accent-fg'
+                : 'text-muted hover:text-text hover:bg-bg-hover',
             )}
           >
-            {s.label || s.id}
+            {orFallback(s.label, s.id)}
           </button>
         ))}
       </nav>
       <div className="space-y-4">
         {active.heading ? (
           <div>
-            <h3 className="text-lg font-semibold">{active.heading}</h3>
-            {active.subheading ? <p className="text-sm text-gray-500 mt-0.5">{active.subheading}</p> : null}
+            <h3 className="text-lg font-semibold tracking-tight text-text-strong">{active.heading}</h3>
+            {active.subheading ? <p className="text-sm text-muted mt-0.5">{active.subheading}</p> : null}
           </div>
         ) : null}
         {(active.blocks ?? []).map((block, i) => (
@@ -210,7 +228,7 @@ function PrototypeBlockView({
 }) {
   switch (block.type) {
     case 'text':
-      return <p className="text-sm text-gray-700 whitespace-pre-wrap">{block.text}</p>
+      return <p className="text-sm text-text whitespace-pre-wrap">{block.text}</p>
     case 'callout':
       return <PrototypeCalloutBlock block={block} />
     case 'stats':
@@ -223,7 +241,7 @@ function PrototypeBlockView({
       return <PrototypeButtonsBlock block={block} onNavigate={onNavigate} />
     default:
       return (
-        <div className="text-xs text-gray-400 italic">
+        <div className="text-xs text-muted italic">
           (Unsupported block type: {block.type})
         </div>
       )
@@ -232,11 +250,11 @@ function PrototypeBlockView({
 
 function PrototypeCalloutBlock({ block }: { readonly block: PrototypeBlock }) {
   const toneClass = {
-    info: 'bg-blue-50 border-blue-200 text-blue-800',
-    success: 'bg-emerald-50 border-emerald-200 text-emerald-800',
-    warn: 'bg-amber-50 border-amber-200 text-amber-800',
-    error: 'bg-red-50 border-red-200 text-red-800',
-  }[block.tone || 'info'] ?? 'bg-gray-50 border-gray-200 text-gray-800'
+    info: 'bg-info-subtle border-info/30 text-info',
+    success: 'bg-ok-subtle border-ok/30 text-ok',
+    warn: 'bg-warn-subtle border-warn/30 text-warn',
+    error: 'bg-danger-subtle border-danger/30 text-danger',
+  }[orFallback(block.tone, 'info')] ?? 'bg-bg-accent border-border text-text'
   return <div className={clsx('text-sm p-3 rounded-md border', toneClass)}>{block.text}</div>
 }
 
@@ -244,9 +262,9 @@ function PrototypeStatsBlock({ block }: { readonly block: PrototypeBlock }) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
       {(block.items ?? []).map((s, i) => (
-        <div key={i} className="border rounded-lg p-3 bg-gray-50">
-          <div className="text-xs text-gray-500">{s.label}</div>
-          <div className="text-lg font-semibold mt-0.5">{s.value}</div>
+        <div key={i} className="border border-border rounded-lg p-3 bg-bg-accent">
+          <div className="text-xs text-muted">{s.label}</div>
+          <div className="text-lg font-semibold font-mono text-text-strong mt-0.5">{s.value}</div>
         </div>
       ))}
     </div>
@@ -256,16 +274,16 @@ function PrototypeStatsBlock({ block }: { readonly block: PrototypeBlock }) {
 function PrototypeListBlock({ block }: { readonly block: PrototypeBlock }) {
   return (
     <div className="space-y-2">
-      {block.title ? <h4 className="text-sm font-medium text-gray-700">{block.title}</h4> : null}
-      <ul className="divide-y border rounded-lg">
+      {block.title ? <h4 className="text-sm font-semibold tracking-tight text-text-strong">{block.title}</h4> : null}
+      <ul className="divide-y divide-border border border-border rounded-lg">
         {(block.items ?? []).map((item, i) => (
           <li key={i} className="px-3 py-2 flex items-center justify-between">
             <div className="min-w-0 flex-1">
-              <div className="text-sm font-medium truncate">{item.title}</div>
-              {item.subtitle ? <div className="text-xs text-gray-500 truncate">{item.subtitle}</div> : null}
+              <div className="text-sm font-medium text-text-strong truncate">{item.title}</div>
+              {item.subtitle ? <div className="text-xs text-muted truncate">{item.subtitle}</div> : null}
             </div>
             {item.badge ? (
-              <span className="ml-2 text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full whitespace-nowrap">
+              <span className="ml-2 text-xs bg-bg-hover text-text px-2 py-0.5 rounded-full whitespace-nowrap">
                 {item.badge}
               </span>
             ) : null}
@@ -291,8 +309,8 @@ function PrototypeButtonsBlock({
           className={clsx(
             'px-4 py-2 rounded-md text-sm transition-colors',
             (b.tone ?? 'primary') === 'secondary'
-              ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              : 'bg-blue-600 text-white hover:bg-blue-700',
+              ? 'bg-bg-hover text-text hover:bg-border'
+              : 'bg-accent text-accent-fg hover:bg-accent-hover',
           )}
         >
           {b.label}
@@ -317,34 +335,34 @@ function PrototypeFormBlock({
         setSubmitted(true)
         if (block.submit?.goto) onNavigate(block.submit.goto)
       }}
-      className="space-y-3 border rounded-lg p-3 bg-gray-50"
+      className="space-y-3 border border-border rounded-lg p-3 bg-bg-accent"
     >
-      {block.title ? <h4 className="text-sm font-medium text-gray-700">{block.title}</h4> : null}
+      {block.title ? <h4 className="text-sm font-semibold tracking-tight text-text-strong">{block.title}</h4> : null}
       {fields.map((f, i) => (
         <div key={i}>
-          <label className="block text-xs text-gray-600 mb-1">{f.label}</label>
+          <label className="block text-xs text-text mb-1">{f.label}</label>
           {(f.type ?? 'text') === 'textarea' ? (
             <textarea
               placeholder={f.placeholder}
               rows={3}
-              className="w-full px-3 py-2 border rounded-md text-sm"
+              className="input"
             />
           ) : (
             <input
               type={f.type ?? 'text'}
               placeholder={f.placeholder}
-              className="w-full px-3 py-2 border rounded-md text-sm"
+              className="input"
             />
           )}
         </div>
       ))}
       {block.submit ? (
-        <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700">
+        <button type="submit" className="btn btn-primary">
           {block.submit.label}
         </button>
       ) : null}
       {submitted && !block.submit?.goto ? (
-        <div className="text-xs text-emerald-700 mt-1">✓ Submitted (mock)</div>
+        <div className="text-xs text-ok mt-1">✓ Submitted (mock)</div>
       ) : null}
     </form>
   )

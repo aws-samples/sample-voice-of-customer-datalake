@@ -2,14 +2,32 @@
  * Regression tests for issue #171: /feedback-forms crashed with
  * "Cannot read properties of undefined (reading 'primary_color')" when the
  * wire delivered sparse form records (persisted before theme/custom_fields
- * existed). normalizeFeedbackForm makes the FeedbackForm contract true at
+ * existed). normalizeFeedbackForms makes the FeedbackForm contract true at
  * the query boundary via a lenient Zod schema.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { normalizeFeedbackForm, normalizeFeedbackForms } from './formSchema'
-import type { SparseFeedbackForm } from './formSchema'
+import { normalizeFeedbackForms } from './formSchema'
 import { defaultFormConfig } from './formTemplates'
-import type { FeedbackForm } from '../../api/client'
+import type { FeedbackForm } from '../../api/types'
+
+/** What the wire is expected to deliver for a stored form: identity fields
+ * plus any subset of the rest, including a partial nested theme. Lets these
+ * tests build sparse fixtures without type assertions. */
+type SparseFeedbackForm =
+  Partial<Omit<FeedbackForm, 'theme'>> &
+  Pick<FeedbackForm, 'form_id' | 'name' | 'enabled'> &
+  { theme?: Partial<FeedbackForm['theme']> }
+
+/**
+ * One identified record through the production list boundary. Every record
+ * these single-record cases pass carries a usable form_id, so the list path
+ * keeps it and applies exactly the schema a single record gets.
+ */
+function normalizeFeedbackForm(raw: unknown): FeedbackForm {
+  const form = normalizeFeedbackForms([raw]).at(0)
+  if (form === undefined) throw new Error('fixture was dropped: it needs a usable form_id')
+  return form
+}
 
 const sparseForm: SparseFeedbackForm = { form_id: 'form_3', name: 'Support Feedback', enabled: false }
 
@@ -17,15 +35,17 @@ describe('normalizeFeedbackForm (issue #171)', () => {
   it('fills every missing field on a sparse legacy record with defaults', () => {
     const form = normalizeFeedbackForm(sparseForm)
 
-    expect(form.theme).toEqual(defaultFormConfig.theme)
-    expect(form.custom_fields).toEqual([])
-    expect(form.title).toBe(defaultFormConfig.title)
-    expect(form.rating_type).toBe(defaultFormConfig.rating_type)
-    expect(form.rating_max).toBe(defaultFormConfig.rating_max)
-    expect(form.collect_email).toBe(defaultFormConfig.collect_email)
-    expect(form.category).toBe('')
-    expect(form.created_at).toBe('')
-    expect(form.updated_at).toBe('')
+    expect(form.theme).toStrictEqual(defaultFormConfig.theme)
+    expect(form).toMatchObject({
+      custom_fields: [],
+      title: defaultFormConfig.title,
+      rating_type: defaultFormConfig.rating_type,
+      rating_max: defaultFormConfig.rating_max,
+      collect_email: defaultFormConfig.collect_email,
+      category: '',
+      created_at: '',
+      updated_at: '',
+    })
   })
 
   it('passes identity fields through untouched', () => {
@@ -46,8 +66,8 @@ describe('normalizeFeedbackForm (issue #171)', () => {
     })
 
     expect(form.title).toBe(defaultFormConfig.title)
-    expect(form.theme).toEqual(defaultFormConfig.theme)
-    expect(form.custom_fields).toEqual([])
+    expect(form.theme).toStrictEqual(defaultFormConfig.theme)
+    expect(form.custom_fields).toStrictEqual([])
     expect(form.created_at).toBe('')
   })
 
@@ -76,7 +96,7 @@ describe('normalizeFeedbackForm (issue #171)', () => {
       ],
     })
 
-    expect(form.custom_fields).toEqual([{ id: 'f1', label: 'Order ID', type: 'text', required: true }])
+    expect(form.custom_fields).toStrictEqual([{ id: 'f1', label: 'Order ID', type: 'text', required: true }])
   })
 
   it('passes unknown backend fields through so edit round-trips lose nothing', () => {
@@ -138,7 +158,7 @@ describe('normalizeFeedbackForm (issue #171)', () => {
       custom_fields: [{ id: 'f1', label: 'Order ID', type: 'text', required: true }],
     }
 
-    expect(normalizeFeedbackForm(complete)).toEqual(complete)
+    expect(normalizeFeedbackForm(complete)).toStrictEqual(complete)
   })
 
   it('never shares object references between normalized forms or with inputs', () => {
@@ -152,12 +172,14 @@ describe('normalizeFeedbackForm (issue #171)', () => {
     a.theme.primary_color = '#000000'
     expect(defaultFormConfig.theme.primary_color).not.toBe('#000000')
     expect(b.theme.primary_color).toBe(defaultFormConfig.theme.primary_color)
+  })
 
+  it('never shares an input array with the normalized form', () => {
     // Zod re-parses arrays, so inputs are not shared by reference either.
     const inputFields = [{ id: 'f1', label: 'Order ID', type: 'text', required: true }]
     const c = normalizeFeedbackForm({ ...sparseForm, custom_fields: inputFields })
     expect(c.custom_fields).not.toBe(inputFields)
-    expect(c.custom_fields).toEqual(inputFields)
+    expect(c.custom_fields).toStrictEqual(inputFields)
   })
 })
 
@@ -179,7 +201,7 @@ describe('normalizeFeedbackForms (list boundary)', () => {
       { form_id: null, name: 'Null Identity', enabled: true },
     ])
 
-    expect(forms.map((f) => f.form_id)).toEqual(['form_3'])
+    expect(forms.map((f) => f.form_id)).toStrictEqual(['form_3'])
     expect(warn).toHaveBeenCalledTimes(3)
   })
 
@@ -187,6 +209,6 @@ describe('normalizeFeedbackForms (list boundary)', () => {
     const forms = normalizeFeedbackForms([sparseForm, { ...sparseForm, form_id: 'form_4' }])
 
     expect(forms).toHaveLength(2)
-    expect(forms[0]).toEqual(normalizeFeedbackForm(sparseForm))
+    expect(forms[0]).toStrictEqual(normalizeFeedbackForm(sparseForm))
   })
 })

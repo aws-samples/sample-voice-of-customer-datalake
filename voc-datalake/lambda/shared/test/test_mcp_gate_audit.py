@@ -41,12 +41,12 @@ the point is to exercise `audit()`'s decisions, including report shapes a health
 run never produces (a module absent entirely, a `<skipped>` child, a malformed
 file), which a real run cannot be made to emit on demand.
 """
-import importlib.util
-import sys
 from pathlib import Path
 from xml.etree import ElementTree
 
 import pytest
+
+from shared.test.repo_paths import load_module_from_path, repo_root
 
 
 def _load_gate():
@@ -57,20 +57,16 @@ def _load_gate():
     importable package, and adding one to make this test simpler would change how
     the workflow has to invoke it.
     """
-    # lambda/shared/test/ -> voc-datalake/
-    script = Path(__file__).resolve().parents[3] / 'scripts' / 'mcp_gate.py'
+    script = repo_root() / 'scripts' / 'mcp_gate.py'
     assert script.exists(), (
         f'the MCP gate script moved: {script}. '
         '.github/workflows/mcp-backend-tests.yml invokes it by this path twice, so a '
         'move breaks CI — update both the workflow and this test.'
     )
-    spec = importlib.util.spec_from_file_location('_mcp_gate_under_test', script)
-    module = importlib.util.module_from_spec(spec)
-    # Registered before exec so the module is importable from within itself if it
-    # ever grows a dataclass or an enum that needs its own module by name.
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+    # Registered in sys.modules before exec (by the helper) so the module is
+    # importable from within itself if it ever grows a dataclass or an enum that
+    # needs its own module by name.
+    return load_module_from_path('_mcp_gate_under_test', script)
 
 
 mcp_gate = _load_gate()
@@ -91,13 +87,12 @@ def _report(tmp_path: Path, cases: list[tuple[str, int, int]]) -> Path:
     for module, ran, skipped in cases:
         prefix = 'lambda.' if '.' in module else 'lambda.shared.test.'
         classname = f'{prefix}{module}.TestThing'
-        for index in range(ran):
-            lines.append(f'<testcase classname="{classname}" name="test_ran_{index}" />')
-        for index in range(skipped):
-            lines.append(
-                f'<testcase classname="{classname}" name="test_skipped_{index}">'
-                '<skipped type="pytest.skip" message="disabled" /></testcase>'
-            )
+        lines.extend(f'<testcase classname="{classname}" name="test_ran_{index}" />' for index in range(ran))
+        lines.extend(
+            f'<testcase classname="{classname}" name="test_skipped_{index}">'
+            '<skipped type="pytest.skip" message="disabled" /></testcase>'
+            for index in range(skipped)
+        )
     lines.append('</testsuite></testsuites>')
     report = tmp_path / 'report.xml'
     report.write_text('\n'.join(lines))
@@ -213,7 +208,8 @@ class TestTheGateRejectsAShrunkenRun:
         ) in capsys.readouterr().out.splitlines()
 
     def test_a_module_below_its_floor_fails(self, tmp_path):
-        report = _report_meeting_every_floor(tmp_path, test_mcp_security=(152, 0))
+        floor = mcp_gate.MODULE_FLOORS['test_mcp_tokens_handler_mutation']
+        report = _report_meeting_every_floor(tmp_path, test_mcp_tokens_handler_mutation=(floor - 1, 0))
         assert mcp_gate.audit(report) == 1
 
     def test_a_module_absent_entirely_fails(self, tmp_path):
@@ -225,7 +221,7 @@ class TestTheGateRejectsAShrunkenRun:
         cases = [
             (module, floor, 0)
             for module, floor in mcp_gate.MODULE_FLOORS.items()
-            if module != 'test_mcp_delegation'
+            if module != 'test_global_mcp_protocol'
         ]
         assert mcp_gate.audit(_report(tmp_path, cases)) == 1
 
@@ -238,7 +234,8 @@ class TestTheGateRejectsAShrunkenRun:
         all three — including the worst of them, where a test that starts failing
         is marked `xfail` and reports success indefinitely.
         """
-        report = _report_meeting_every_floor(tmp_path, test_mcp_tokens=(0, 46))
+        floor = mcp_gate.MODULE_FLOORS['test_mcp_tokens']
+        report = _report_meeting_every_floor(tmp_path, test_mcp_tokens=(0, floor))
         assert mcp_gate.audit(report) == 1
 
     def test_a_partial_skip_that_drops_below_the_floor_fails(self, tmp_path):
@@ -295,24 +292,24 @@ class TestTheGateRejectsAShrunkenRun:
         cases = [
             (module, floor, 0)
             for module, floor in mcp_gate.MODULE_FLOORS.items()
-            if module != 'test_mcp_delegation'
+            if module != 'test_mcp_delegate_mutation'
         ]
-        floor = mcp_gate.MODULE_FLOORS['test_mcp_delegation']
+        floor = mcp_gate.MODULE_FLOORS['test_mcp_delegate_mutation']
         # The real module, wholly skipped; the twin, passing and holding the count
         # at exactly the floor. Summed, the bucket looks healthy.
-        cases.append(('api.test.test_mcp_delegation', 0, floor))
-        cases.append(('shared.test.test_mcp_delegation', floor, 0))
+        cases.append(('shared.test.test_mcp_delegate_mutation', 0, floor))
+        cases.append(('api.test.test_mcp_delegate_mutation', floor, 0))
         assert mcp_gate.audit(_report(tmp_path, cases)) == 1
 
         output = capsys.readouterr().out
         assert (
-            f'test_mcp_delegation: {floor} ran (COLLISION: count combines multiple '
+            f'test_mcp_delegate_mutation: {floor} ran (COLLISION: count combines multiple '
             f'modules; floor {floor} is not meaningful)' in output
         )
         assert (
-            '::error::MCP gate ambiguous — test_mcp_delegation: two modules share '
-            'this name (lambda.api.test.test_mcp_delegation, '
-            'lambda.shared.test.test_mcp_delegation)' in output
+            '::error::MCP gate ambiguous — test_mcp_delegate_mutation: two modules share '
+            'this name (lambda.api.test.test_mcp_delegate_mutation, '
+            'lambda.shared.test.test_mcp_delegate_mutation)' in output
         )
         assert 'ONE floor is being compared against the SUM of both' in output
         assert (
@@ -320,7 +317,7 @@ class TestTheGateRejectsAShrunkenRun:
             'are unique, the audit cannot determine whether either contributor also '
             'fell below its own floor.' in output
         )
-        assert 'MCP gate shrank — test_mcp_delegation:' not in output
+        assert 'MCP gate shrank — test_mcp_delegate_mutation:' not in output
 
     def test_two_same_named_modules_fail_even_when_both_run(
         self, tmp_path, capsys
@@ -336,21 +333,21 @@ class TestTheGateRejectsAShrunkenRun:
         cases = [
             (module, floor, 0)
             for module, floor in mcp_gate.MODULE_FLOORS.items()
-            if module != 'test_mcp_security'
+            if module != 'test_mcp_tokens_handler_mutation'
         ]
-        floor = mcp_gate.MODULE_FLOORS['test_mcp_security']
-        cases.append(('api.test.test_mcp_security', floor - 4, 0))
-        cases.append(('shared.test.test_mcp_security', 3, 0))
+        floor = mcp_gate.MODULE_FLOORS['test_mcp_tokens_handler_mutation']
+        cases.append(('api.test.test_mcp_tokens_handler_mutation', floor - 4, 0))
+        cases.append(('shared.test.test_mcp_tokens_handler_mutation', 3, 0))
         assert mcp_gate.audit(_report(tmp_path, cases)) == 1
 
         output = capsys.readouterr().out
         assert (
-            '::error::MCP gate ambiguous — test_mcp_security: two modules share this '
-            'name (lambda.api.test.test_mcp_security, '
-            'lambda.shared.test.test_mcp_security)' in output
+            '::error::MCP gate ambiguous — test_mcp_tokens_handler_mutation: two modules share this '
+            'name (lambda.api.test.test_mcp_tokens_handler_mutation, '
+            'lambda.shared.test.test_mcp_tokens_handler_mutation)' in output
         )
         assert 'below its floor' not in output
-        assert 'MCP gate shrank — test_mcp_security:' not in output
+        assert 'MCP gate shrank — test_mcp_tokens_handler_mutation:' not in output
 
     def test_one_module_cannot_cover_for_another(self, tmp_path):
         """Why the floors are per-module rather than one total.
@@ -362,9 +359,9 @@ class TestTheGateRejectsAShrunkenRun:
         cases = [
             (module, floor, 0)
             for module, floor in mcp_gate.MODULE_FLOORS.items()
-            if module != 'test_mcp_date_basis'
+            if module != 'test_global_mcp_tokens_api'
         ]
-        cases.append(('test_mcp_security', 10_000, 0))
+        cases.append(('test_mcp_global_tokens_mutation', 10_000, 0))
         assert mcp_gate.audit(_report(tmp_path, cases)) == 1
 
 
@@ -416,9 +413,9 @@ class TestModuleAttribution:
         ('classname', 'expected'),
         [
             # The ordinary shape: dotted module path plus a Test-prefixed class.
-            ('lambda.api.test.test_mcp_security.TestCatalog', 'test_mcp_security'),
+            ('lambda.api.test.test_global_mcp_protocol.TestTransport', 'test_global_mcp_protocol'),
             # A module-level test function produces no class segment.
-            ('lambda.api.test.test_mcp_date_basis', 'test_mcp_date_basis'),
+            ('lambda.api.test.test_global_mcp_e2e', 'test_global_mcp_e2e'),
             # Nested classes: every Test* segment is dropped, not just the last.
             ('lambda.shared.test.test_mcp_tokens.TestOuter.TestInner', 'test_mcp_tokens'),
             # A module whose own name starts with `Test` would be indistinguishable
@@ -444,6 +441,8 @@ def _independently_discovered_first_party_mcp_tests(
     """
     if root is None:
         root = Path(__file__).resolve().parents[3]
+    # jscpd:ignore-start — independent oracle of scripts/mcp_gate.py's scanner:
+    # sharing it would let one regression satisfy both sides (see docstring)
     layers = (root / 'lambda' / 'layers').resolve()
     return tuple(
         sorted(
@@ -453,6 +452,7 @@ def _independently_discovered_first_party_mcp_tests(
             and not (resolved := path.resolve()).is_relative_to(layers)
         )
     )
+    # jscpd:ignore-end of the accepted pair
 
 
 def _gated_paths() -> list[Path]:
@@ -485,14 +485,13 @@ class TestTheGateScopeIsSelfConsistent:
     def test_semantically_required_paths_are_explicit_and_all_explicit_paths_exist(self):
         """Required boundary modules stay gated, and stale explicit paths fail clearly.
 
-        The two required paths intentionally do not match the `test_mcp_` prefix,
+        The required path intentionally does not match the `test_mcp_` prefix,
         so recursive convention discovery cannot protect them. Keep this oracle
         independent of EXPLICIT_TEST_PATHS, then separately reject stale entries.
         """
         root = Path(__file__).resolve().parents[3]
         explicit_paths = {(root / path).resolve() for path in mcp_gate.EXPLICIT_TEST_PATHS}
         required_paths = {
-            (root / 'lambda/api/test/test_projects_handler.py').resolve(),
             (root / 'lambda/shared/test/test_python_runtime_lockstep.py').resolve(),
         }
         missing_required = sorted(

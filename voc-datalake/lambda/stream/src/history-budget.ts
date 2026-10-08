@@ -1,9 +1,13 @@
 /**
- * Conversation-history budget: how much prior turn text the client may replay.
+ * Conversation-history budget: how much prior turn text is replayed to the model.
+ *
+ * Used by `assistant/runtime/flatten.ts`, which renders everything before the
+ * newest user message as plain text turns and clamps them with
+ * `clampHistoryToBudget`.
  *
  * ## Why this CLAMPS instead of rejecting
  *
- * `history` carries text this service itself generated. `handleVocChat` streams
+ * History carries text this service itself generated. The assistant streams
  * with `maxTokens: MAX_OUTPUT_TOKENS`, the client replays that answer verbatim
  * on the next turn, and Converse is stateless so the whole array is resent every
  * round. Any per-entry bound below the model's own output ceiling therefore turns
@@ -60,16 +64,6 @@ export const MAX_HISTORY_TOTAL_LENGTH = MAX_HISTORY_CONTENT_LENGTH * 4;
 
 /** Most recent turns kept, regardless of length. */
 export const MAX_HISTORY_ENTRIES = 50;
-
-/**
- * Outer sanity bound on the array, enforced by the schema as a REJECTION.
- *
- * Deliberately an order of magnitude above MAX_HISTORY_ENTRIES: it is not a
- * product limit, so no real conversation can reach it and the graceful clamp is
- * what every genuine request meets. Its only job is to stop Zod validating an
- * absurd array element-by-element before the window throws almost all of it away.
- */
-export const MAX_HISTORY_ARRAY = MAX_HISTORY_ENTRIES * 10;
 
 /**
  * Appended when a single turn is truncated, so the model can tell that it is

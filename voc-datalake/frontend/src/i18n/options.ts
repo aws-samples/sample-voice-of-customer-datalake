@@ -28,10 +28,10 @@ import { supportedLanguages } from './languages'
 // before this move. Consolidating them is a separate change.
 const DEFAULT_NS = 'common'
 
-const NAMESPACES = ['common', 'dashboard', 'dataExplorer', 'feedbackDetail', 'chat', 'login', 'settings', 'components', 'scrapers', 'feedbackForms', 'projects', 'categories', 'prioritization', 'problemAnalysis', 'projectDetail'] as const
+const NAMESPACES = ['common', 'dashboard', 'dataExplorer', 'feedbackDetail', 'assistant', 'assistantTools', 'login', 'settings', 'components', 'scrapers', 'feedbackForms', 'projects', 'categories', 'prioritization', 'problemAnalysis', 'projectDetail', 'memory', 'agents'] as const
 
 export const I18N_INIT_OPTIONS: InitOptions = {
-  // No `lng` pin: the language switcher (UserProfileModal) now drives the
+  // No `lng` pin: the language switcher (Account page) now drives the
   // active language via localStorage('voc-language'), read by the detector
   // below. First visit (no cached choice) falls back to English.
   fallbackLng: 'en',

@@ -3,18 +3,23 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
-import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import { Construct } from 'constructs';
 import { NagSuppressions } from 'cdk-nag';
 import { pluginSystemSuppressions } from '../utils/nag-suppressions';
-import { allowlistedModelArns } from '../utils/model-allowlist';
+import { stackModelArns } from '../utils/model-allowlist';
 import { pythonLayerCode } from '../utils/python-layer-bundling';
-import { PY_LAMBDA_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
+import { PY_LAMBDA_ASSET_EXCLUDES, WORKER_TREE_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
 import { VocStack, VocStackProps } from '../utils/voc-stack';
+import { MEMORY_EXTRACT_DLQ_BASE_NAME, MemoryWorkers } from './memory-workers';
+import { ALARM_TOPIC_BASE_NAME, addQueueDepthAlarm, importAlarmTopic } from './dlq-alarms';
+import { AgentRuntime } from './agent-runtime';
+import { RetentionWorker } from './retention-worker';
+import { createResearchStateMachine } from './processing-research-workflow';
 
 export interface VocProcessingStackProps extends VocStackProps {
   feedbackTable: dynamodb.Table;
@@ -22,8 +27,16 @@ export interface VocProcessingStackProps extends VocStackProps {
   projectsTable: dynamodb.Table;
   jobsTable: dynamodb.Table;
   idempotencyTable: dynamodb.Table;
+  /** voc-memory — memory items, events, session cursors, imports. */
+  memoryTable: dynamodb.Table;
+  /** voc-agents — agents, workflows, runs, run events, crewmate transcripts. */
+  agentsTable: dynamodb.Table;
+  /** The memory scanner reads assistant sessions; the extractor reads one. */
+  conversationsTable: dynamodb.Table;
   processingQueue: sqs.Queue;
   kmsKey: kms.Key;
+  /** Raw data lake — the category reprocess worker re-reads `raw/*` in raw mode. */
+  rawDataBucket: s3.IBucket;
   // Web search (AgentCore Gateway, deployed in us-east-1 by VocWebSearchStack)
   // — absent when the feature isn't enabled.
   webSearchGatewayUrl?: string;
@@ -31,11 +44,22 @@ export interface VocProcessingStackProps extends VocStackProps {
   webSearchToolName?: string;
   config: {
     brandName: string;
-    brandHandles: string[];
     primaryLanguage: string;
     enabledSources: string[];
   };
 }
+
+/**
+ * Base physical name of the category reprocess worker. The settings API (in
+ * VocApiStack) builds the same deterministic name for its env var and invoke
+ * grant instead of importing the function: no cross-stack export to pin, and
+ * the API stack already deploys after this one.
+ */
+export const CATEGORY_REPROCESS_FUNCTION_BASE_NAME = 'voc-category-reprocess';
+
+// Feedback processor event source. Pinned by processing-stack-consolidated.test.ts.
+const PROCESSOR_BATCHING_WINDOW_SECONDS = 5;
+const PROCESSOR_ENRICHMENT_CONCURRENCY = 5;
 
 /**
  * VocProcessingStack - Consolidated processing and research
@@ -47,16 +71,27 @@ export interface VocProcessingStackProps extends VocStackProps {
  * - Aggregation Lambda (DynamoDB Streams triggered)
  * - Research Step Functions workflow
  * - Research step Lambda
+ * - Category reprocess worker (async job started by POST /settings/categories/reprocess)
+ * - Retention / erasure worker, voc-retention (daily + POST /settings/erasure; retention-worker.ts)
+ * - Memory workers: scanner, memory-extract queue + extractor, retention (memory-workers.ts)
+ * - Autonomous-agent runtime: heartbeat, conductor, persona panel, voc-agent-run (agent-runtime.ts)
  */
 export class VocProcessingStack extends VocStack {
   public readonly processingLambda: lambda.Function;
   public readonly aggregationLambda: lambda.Function;
   public readonly researchStateMachine: sfn.StateMachine;
+  public readonly categoryReprocessLambda: lambda.Function;
+  /** voc-retention — per-source retention + erasure (the only customer-data delete). */
+  public readonly retentionLambda: lambda.Function;
+  /** Memory extraction queue — the memory API (imports) sends to it from VocApiStack. */
+  public readonly memoryExtractQueue: sqs.Queue;
+  /** voc-agent-run — the agents API starts/stops executions from VocApiStack. */
+  public readonly agentRunStateMachine: sfn.StateMachine;
 
   constructor(scope: Construct, id: string, props: VocProcessingStackProps) {
     super(scope, id, props);
 
-    const { feedbackTable, aggregatesTable, projectsTable, jobsTable, idempotencyTable, processingQueue, kmsKey, config } = props;
+    const { feedbackTable, aggregatesTable, projectsTable, jobsTable, idempotencyTable, processingQueue, kmsKey, rawDataBucket, config } = props;
 
 
     // Shared Lambda Layer
@@ -83,7 +118,7 @@ export class VocProcessingStack extends VocStack {
     processingRole.addToPolicy(new iam.PolicyStatement({
       sid: 'BedrockInvoke',
       actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
-      resources: allowlistedModelArns(this.region, this.account),
+      resources: stackModelArns(this),
     }));
 
     // Comprehend + Translate permissions
@@ -110,7 +145,7 @@ export class VocProcessingStack extends VocStack {
     // FEEDBACK PROCESSOR LAMBDA
     // ============================================
     const processorCode = lambda.Code.fromAsset('lambda', {
-      exclude: [...PY_LAMBDA_ASSET_EXCLUDES, '/aggregator/', '/api/', '/jobs/', '/research/'],
+      exclude: [...PY_LAMBDA_ASSET_EXCLUDES, ...WORKER_TREE_ASSET_EXCLUDES, '/aggregator/', '/api/', '/jobs/', '/research/'],
       ignoreMode: cdk.IgnoreMode.GIT,
       bundling: {
         image: lambda.Runtime.PYTHON_3_14.bundlingImage,
@@ -134,6 +169,7 @@ export class VocProcessingStack extends VocStack {
         PROJECTS_TABLE: projectsTable.tableName,
         IDEMPOTENCY_TABLE: idempotencyTable.tableName,
         PRIMARY_LANGUAGE: config.primaryLanguage,
+        ENRICHMENT_CONCURRENCY: String(PROCESSOR_ENRICHMENT_CONCURRENCY),
         // No BEDROCK_MODEL_ID env: the enrichment model resolves through the
         // per-surface AI-model picker (lambda/shared/model_config.py — the
         // 'enrichment' surface defaults to Haiku, admins can override it).
@@ -149,9 +185,13 @@ export class VocProcessingStack extends VocStack {
       }),
     });
 
+    // Latency to "visible" is batching window + the batch's enrichment time. The
+    // window used to be 30 s, which was most of a Manual Import's ~50 s wait (QA
+    // 2.13.00); 5 s still gathers a burst into one invocation. Records of a batch
+    // are enriched ENRICHMENT_CONCURRENCY at a time (lambda/processor/handler.py).
     this.processingLambda.addEventSource(new lambdaEventSources.SqsEventSource(processingQueue, {
       batchSize: 10,
-      maxBatchingWindow: cdk.Duration.seconds(30),
+      maxBatchingWindow: cdk.Duration.seconds(PROCESSOR_BATCHING_WINDOW_SECONDS),
       reportBatchItemFailures: true,
     }));
 
@@ -160,7 +200,7 @@ export class VocProcessingStack extends VocStack {
     // AGGREGATION LAMBDA
     // ============================================
     const aggregatorCode = lambda.Code.fromAsset('lambda', {
-      exclude: [...PY_LAMBDA_ASSET_EXCLUDES, '/api/', '/jobs/', '/processor/', '/research/'],
+      exclude: [...PY_LAMBDA_ASSET_EXCLUDES, ...WORKER_TREE_ASSET_EXCLUDES, '/api/', '/jobs/', '/processor/', '/research/'],
       ignoreMode: cdk.IgnoreMode.GIT,
       bundling: {
         image: lambda.Runtime.PYTHON_3_14.bundlingImage,
@@ -207,13 +247,86 @@ export class VocProcessingStack extends VocStack {
       }),
     });
 
+    // Records the stream source gives up on (#253): after `retryAttempts` the
+    // batch's failed range is otherwise DROPPED, and a feedback item's counters
+    // then never reach the aggregates table. The on-failure destination keeps a
+    // pointer to each discarded shard range (shard id + sequence numbers, not the
+    // record bodies) so the gap is visible and can be replayed from the stream
+    // within its 24 h retention. CMK-encrypted, TLS-only, 14 days like the app's
+    // other terminal-failure queues; nothing consumes it, hence no DLQ of its own.
+    const aggregatorFailureQueueName = this.uniqueName('voc-aggregator-stream-failures');
+    const aggregatorFailureQueue = new sqs.Queue(this, 'AggregatorStreamFailures', {
+      queueName: aggregatorFailureQueueName,
+      encryption: sqs.QueueEncryption.KMS,
+      encryptionMasterKey: kmsKey,
+      retentionPeriod: cdk.Duration.days(14),
+      enforceSSL: true,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+    NagSuppressions.addResourceSuppressions(aggregatorFailureQueue, [{
+      id: 'AwsSolutions-SQS3',
+      reason: 'This queue IS the terminal failure record (a DynamoDB stream event source on-failure destination); nothing consumes it, so it has no DLQ of its own',
+    }]);
+    const alarmTopic = importAlarmTopic(this, 'OpsAlarmTopic', this.uniqueName(ALARM_TOPIC_BASE_NAME));
+    addQueueDepthAlarm(this, 'AggregatorStreamFailuresDepthAlarm', { queueName: aggregatorFailureQueueName, topic: alarmTopic });
+
     this.aggregationLambda.addEventSource(new lambdaEventSources.DynamoEventSource(feedbackTable, {
       startingPosition: lambda.StartingPosition.TRIM_HORIZON,
       batchSize: 100,
       maxBatchingWindow: cdk.Duration.seconds(30),
       retryAttempts: 3,
       reportBatchItemFailures: true,
+      onFailure: new lambdaEventSources.SqsDlq(aggregatorFailureQueue),
     }));
+
+    // ============================================
+    // CATEGORY REPROCESS WORKER
+    // ============================================
+    this.categoryReprocessLambda = this.createCategoryReprocessLambda({
+      feedbackTable, aggregatesTable, kmsKey, rawDataBucket, processingLayer, primaryLanguage: config.primaryLanguage,
+    });
+
+    // ============================================
+    // RETENTION / ERASURE WORKER (docs/source-policies.md)
+    // ============================================
+    this.retentionLambda = new RetentionWorker(this, 'RetentionWorker', {
+      uniqueName: (baseName) => this.uniqueName(baseName),
+      layer: processingLayer,
+      kmsKey,
+      feedbackTable,
+      aggregatesTable,
+      rawDataBucket,
+    }).fn;
+
+    // ============================================
+    // MEMORY + AUTONOMOUS AGENTS
+    // ============================================
+    const uniqueName = (baseName: string) => this.uniqueName(baseName);
+    const memoryWorkers = new MemoryWorkers(this, 'MemoryWorkers', {
+      uniqueName,
+      layer: processingLayer,
+      kmsKey,
+      memoryTable: props.memoryTable,
+      conversationsTable: props.conversationsTable,
+      aggregatesTable,
+      rawDataBucket,
+    });
+    this.memoryExtractQueue = memoryWorkers.extractQueue;
+    addQueueDepthAlarm(this, 'MemoryExtractDLQDepthAlarm', {
+      queueName: this.uniqueName(MEMORY_EXTRACT_DLQ_BASE_NAME), topic: alarmTopic,
+    });
+    const agentRuntime = new AgentRuntime(this, 'AgentRuntime', {
+      uniqueName,
+      layer: processingLayer,
+      kmsKey,
+      agentsTable: props.agentsTable,
+      feedbackTable,
+      aggregatesTable,
+      rawDataBucket,
+      memoryExtractQueue: this.memoryExtractQueue,
+    });
+    this.agentRunStateMachine = agentRuntime.stateMachine;
+    NagSuppressions.addResourceSuppressions(this.agentRunStateMachine, pluginSystemSuppressions(this.deploymentPrefix), true);
 
     // ============================================
     // RESEARCH WORKFLOW (Step Functions)
@@ -235,7 +348,7 @@ export class VocProcessingStack extends VocStack {
     // repointable via the picker, so grant every allowlisted model (issue #96).
     researchRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
-      resources: allowlistedModelArns(this.region, this.account),
+      resources: stackModelArns(this),
     }));
 
     // Same lambda/-rooted staging as processor/aggregator: root-based staging
@@ -248,7 +361,7 @@ export class VocProcessingStack extends VocStack {
       // config would not change the hash and the Lambda would keep the old budgets.
       // Only prompts are re-included, so api/*.py edits can't churn this hash.
       exclude: [
-        ...PY_LAMBDA_ASSET_EXCLUDES,
+        ...PY_LAMBDA_ASSET_EXCLUDES, ...WORKER_TREE_ASSET_EXCLUDES,
         '/aggregator/',
         '/api/*',
         '!/api/prompts',
@@ -274,7 +387,8 @@ export class VocProcessingStack extends VocStack {
       code: researchCode,
       role: researchRole,
       timeout: cdk.Duration.minutes(15),
-      memorySize: 1024,
+      // 1536 MB, raised for CPU (lib/sizing/policy.ts RAISED_FOR_CPU).
+      memorySize: 1536,
       environment: {
         FEEDBACK_TABLE: feedbackTable.tableName,
         PROJECTS_TABLE: projectsTable.tableName,
@@ -294,7 +408,7 @@ export class VocProcessingStack extends VocStack {
     });
 
     // Step Functions workflow
-    this.researchStateMachine = this.createResearchStateMachine(researchStepLambda);
+    this.researchStateMachine = createResearchStateMachine(this, (baseName) => this.uniqueName(baseName), researchStepLambda);
     NagSuppressions.addResourceSuppressions(this.researchStateMachine, pluginSystemSuppressions(this.deploymentPrefix), true);
 
     // ============================================
@@ -319,159 +433,103 @@ export class VocProcessingStack extends VocStack {
     new cdk.CfnOutput(this, 'AggregatorFunctionArn', { value: this.aggregationLambda.functionArn });
     new cdk.CfnOutput(this, 'ResearchStateMachineArn', { value: this.researchStateMachine.stateMachineArn });
     new cdk.CfnOutput(this, 'ResearchStepLambdaArn', { value: researchStepLambda.functionArn });
+    new cdk.CfnOutput(this, 'AgentRunStateMachineArn', { value: this.agentRunStateMachine.stateMachineArn });
+    new cdk.CfnOutput(this, 'MemoryExtractQueueUrl', { value: this.memoryExtractQueue.queueUrl });
   }
 
-  private createResearchStateMachine(researchStepLambda: lambda.Function): sfn.StateMachine {
-    // Step 1: Initialize
-    const initializeStep = new tasks.LambdaInvoke(this, 'InitializeResearch', {
-      lambdaFunction: researchStepLambda,
-      payload: sfn.TaskInput.fromObject({
-        step: 'initialize',
-        'job_id.$': '$.job_id',
-        'project_id.$': '$.project_id',
-        'research_config.$': '$.research_config',
-      }),
-      resultPath: '$.initialize_result',
-      resultSelector: {
-        'feedback_context.$': '$.Payload.feedback_context',
-        'feedback_stats.$': '$.Payload.feedback_stats',
-        'feedback_count.$': '$.Payload.feedback_count',
-        'personas_context.$': '$.Payload.personas_context',
-        // step_initialize ALWAYS returns web_context (empty string when web
-        // search is off) — an absent key here would fail the state outright.
-        'web_context.$': '$.Payload.web_context',
-        // Always returned ([] when web search is off/failed) — flows to the
-        // save step for the report's web-search disclosure (#207).
-        // Update skew: the definition GetAtts the function (implicit CFN
-        // dependency), so the Lambda always updates BEFORE this definition
-        // and a new definition never runs against the old Lambda. In-flight
-        // executions keep the definition they started with; step_save's
-        // .get() defaults cover that opposite skew (old definition, new
-        // Lambda). Same rollout pattern as web_context (#157).
-        'web_search_queries.$': '$.Payload.web_search_queries',
-        // Always returned by step_initialize ('' when unused) — see #157.
-        'documents_context.$': '$.Payload.documents_context',
-        // What the report was built from (reference documents actually used,
-        // how many were selected, feedback count, persona ids). step_initialize
-        // is the only step that reads those inputs, and step_save is what
-        // persists them, so it rides the state like web_search_queries does.
-        // ALWAYS returned by step_initialize (empty when nothing was selected)
-        // — an absent key here would fail the state outright.
-        'derivation.$': '$.Payload.derivation',
+  /**
+   * The category reprocess worker: re-categorises stored feedback in place after
+   * the category configuration changes (lambda/jobs/category_reprocess). Scans
+   * voc-feedback page by page, checkpoints the job row in aggregates, and hands
+   * over to a fresh async invocation of ITSELF before its 15-minute ceiling.
+   *
+   * Least privilege — no DeleteItem/PutItem on feedback (items are only ever
+   * UPDATEd in place), raw bucket read limited to `raw/*`.
+   */
+  private createCategoryReprocessLambda(deps: {
+    feedbackTable: dynamodb.Table;
+    aggregatesTable: dynamodb.Table;
+    kmsKey: kms.Key;
+    rawDataBucket: s3.IBucket;
+    processingLayer: lambda.ILayerVersion;
+    primaryLanguage: string;
+  }): lambda.Function {
+    const functionName = this.uniqueName(CATEGORY_REPROCESS_FUNCTION_BASE_NAME);
+    const role = new iam.Role(this, 'CategoryReprocessRole', {
+      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
+      ],
+    });
+    deps.feedbackTable.grant(role, 'dynamodb:Scan', 'dynamodb:GetItem', 'dynamodb:UpdateItem');
+    // Category config + model-picker override (GetItem); the job row and its
+    // lock are only ever UPDATEd by the worker (claim, checkpoint, finish,
+    // release). Creating jobs (PutItem) and the latest-job lookup (Query) are
+    // the settings API's, not the worker's.
+    deps.aggregatesTable.grant(role, 'dynamodb:GetItem', 'dynamodb:UpdateItem');
+    deps.rawDataBucket.grantRead(role, 'raw/*');
+    deps.kmsKey.grantEncryptDecrypt(role);
+    // 'enrichment'/'utilities' surfaces are repointable via the picker (issue #96).
+    role.addToPolicy(new iam.PolicyStatement({
+      sid: 'BedrockInvoke',
+      actions: ['bedrock:InvokeModel'],
+      resources: stackModelArns(this),
+    }));
+    role.addToPolicy(new iam.PolicyStatement({
+      sid: 'ComprehendAnalysis',
+      actions: ['comprehend:DetectSentiment', 'comprehend:DetectDominantLanguage'],
+      resources: ['*'],
+    }));
+    role.addToPolicy(new iam.PolicyStatement({
+      sid: 'TranslateText',
+      actions: ['translate:TranslateText'],
+      resources: ['*'],
+    }));
+    // Self hand-over: a deterministic ARN, not `fn.grantInvoke(role)` — the
+    // function depends on its role, so a role policy GetAtt-ing the function
+    // would be a CloudFormation cycle (same pattern as the api-stack job Lambdas).
+    role.addToPolicy(new iam.PolicyStatement({
+      sid: 'SelfInvoke',
+      actions: ['lambda:InvokeFunction'],
+      resources: [this.formatArn({ service: 'lambda', resource: 'function', resourceName: functionName, arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME })],
+    }));
+
+    const code = lambda.Code.fromAsset('lambda', {
+      exclude: [...PY_LAMBDA_ASSET_EXCLUDES, ...WORKER_TREE_ASSET_EXCLUDES, '/aggregator/', '/api/', '/processor/', '/research/', '/jobs/retention/'],
+      ignoreMode: cdk.IgnoreMode.GIT,
+      bundling: {
+        image: lambda.Runtime.PYTHON_3_14.bundlingImage,
+        command: ['bash', '-c', 'mkdir -p /asset-output && cp /asset-input/jobs/category_reprocess/handler.py /asset-output/ && cp -r /asset-input/shared /asset-output/'],
+        platform: 'linux/arm64',
       },
     });
-    initializeStep.addRetry({ errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException', 'States.Timeout'], interval: cdk.Duration.seconds(2), maxAttempts: 3, backoffRate: 2 });
 
-    // Step 2: Analysis
-    const analysisStep = new tasks.LambdaInvoke(this, 'AnalyzeFeedback', {
-      lambdaFunction: researchStepLambda,
-      payload: sfn.TaskInput.fromObject({
-        step: 'analyze',
-        'job_id.$': '$.job_id',
-        'project_id.$': '$.project_id',
-        'research_config.$': '$.research_config',
-        'feedback_context.$': '$.initialize_result.feedback_context',
-        'feedback_stats.$': '$.initialize_result.feedback_stats',
-        'personas_context.$': '$.initialize_result.personas_context',
-        'web_context.$': '$.initialize_result.web_context',
-        'documents_context.$': '$.initialize_result.documents_context',
-      }),
-      resultPath: '$.analysis_result',
-      resultSelector: { 'analysis.$': '$.Payload.analysis' },
-    });
-    analysisStep.addRetry({ errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException', 'States.Timeout', 'BedrockThrottlingException'], interval: cdk.Duration.seconds(5), maxAttempts: 3, backoffRate: 2 });
-
-    // Step 3: Synthesis
-    const synthesisStep = new tasks.LambdaInvoke(this, 'SynthesizeFindings', {
-      lambdaFunction: researchStepLambda,
-      payload: sfn.TaskInput.fromObject({
-        step: 'synthesize',
-        'job_id.$': '$.job_id',
-        'project_id.$': '$.project_id',
-        'research_config.$': '$.research_config',
-        'analysis.$': '$.analysis_result.analysis',
-      }),
-      resultPath: '$.synthesis_result',
-      resultSelector: { 'synthesis.$': '$.Payload.synthesis' },
-    });
-    synthesisStep.addRetry({ errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException', 'States.Timeout', 'BedrockThrottlingException'], interval: cdk.Duration.seconds(5), maxAttempts: 3, backoffRate: 2 });
-
-    // Step 4: Validate
-    const validateStep = new tasks.LambdaInvoke(this, 'ValidateResearch', {
-      lambdaFunction: researchStepLambda,
-      payload: sfn.TaskInput.fromObject({
-        step: 'validate',
-        'job_id.$': '$.job_id',
-        'project_id.$': '$.project_id',
-        'research_config.$': '$.research_config',
-        'analysis.$': '$.analysis_result.analysis',
-        'synthesis.$': '$.synthesis_result.synthesis',
-      }),
-      resultPath: '$.validate_result',
-      resultSelector: { 'validation.$': '$.Payload.validation' },
-    });
-    validateStep.addRetry({ errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException', 'States.Timeout', 'BedrockThrottlingException'], interval: cdk.Duration.seconds(5), maxAttempts: 3, backoffRate: 2 });
-
-    // Step 5: Save
-    const saveStep = new tasks.LambdaInvoke(this, 'SaveResearchResults', {
-      lambdaFunction: researchStepLambda,
-      payload: sfn.TaskInput.fromObject({
-        step: 'save',
-        'job_id.$': '$.job_id',
-        'project_id.$': '$.project_id',
-        'research_config.$': '$.research_config',
-        'feedback_count.$': '$.initialize_result.feedback_count',
-        // Executed web-search queries for the report disclosure (#207).
-        'web_search_queries.$': '$.initialize_result.web_search_queries',
-        // Provenance decided at initialize, persisted on the document here.
-        'derivation.$': '$.initialize_result.derivation',
-        'analysis.$': '$.analysis_result.analysis',
-        'synthesis.$': '$.synthesis_result.synthesis',
-        'validation.$': '$.validate_result.validation',
-      }),
-      resultPath: '$.save_result',
-    });
-    saveStep.addRetry({ errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException', 'States.Timeout'], interval: cdk.Duration.seconds(2), maxAttempts: 3, backoffRate: 2 });
-
-    // Error handler
-    const handleError = new tasks.LambdaInvoke(this, 'HandleResearchError', {
-      lambdaFunction: researchStepLambda,
-      payload: sfn.TaskInput.fromObject({
-        step: 'error',
-        'job_id.$': '$.job_id',
-        'project_id.$': '$.project_id',
-        'error.$': '$.error',
-      }),
-    });
-    handleError.addRetry({ errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException'], interval: cdk.Duration.seconds(1), maxAttempts: 2, backoffRate: 2 });
-
-    const successState = new sfn.Succeed(this, 'ResearchComplete');
-    const failState = new sfn.Fail(this, 'ResearchFailed', { cause: 'Research job failed', error: 'ResearchError' });
-
-    const addCatch = (step: tasks.LambdaInvoke) => step.addCatch(handleError, { resultPath: '$.error' });
-
-    const definition = addCatch(initializeStep)
-      .next(addCatch(analysisStep))
-      .next(addCatch(synthesisStep))
-      .next(addCatch(validateStep))
-      .next(addCatch(saveStep))
-      .next(successState);
-
-    handleError.next(failState);
-
-    return new sfn.StateMachine(this, 'ResearchStateMachine', {
-      stateMachineName: this.uniqueName('voc-research-workflow'),
-      definitionBody: sfn.DefinitionBody.fromChainable(definition),
-      timeout: cdk.Duration.hours(1),
-      tracingEnabled: true,
-      logs: {
-        destination: new logs.LogGroup(this, 'ResearchStateMachineLogs', {
-          logGroupName: this.uniqueName('/aws/stepfunctions/voc-research-workflow'),
-          retention: logs.RetentionDays.TWO_WEEKS,
-          removalPolicy: cdk.RemovalPolicy.DESTROY,
-        }),
-        level: sfn.LogLevel.ALL,
+    return new lambda.Function(this, 'CategoryReprocessWorker', {
+      functionName,
+      runtime: lambda.Runtime.PYTHON_3_14,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'handler.lambda_handler',
+      code,
+      role,
+      timeout: cdk.Duration.minutes(15),
+      memorySize: 1024,
+      // Async-invoked; a hidden re-drive would re-pay a page of model calls and
+      // race the checkpoint. The job row records failures for the UI instead.
+      retryAttempts: 0,
+      environment: {
+        FEEDBACK_TABLE: deps.feedbackTable.tableName,
+        AGGREGATES_TABLE: deps.aggregatesTable.tableName,
+        RAW_DATA_BUCKET: deps.rawDataBucket.bucketName,
+        PRIMARY_LANGUAGE: deps.primaryLanguage,
+        POWERTOOLS_SERVICE_NAME: CATEGORY_REPROCESS_FUNCTION_BASE_NAME,
+        LOG_LEVEL: 'INFO',
       },
+      layers: [deps.processingLayer],
+      logGroup: new logs.LogGroup(this, 'CategoryReprocessLogs', {
+        logGroupName: this.uniqueName(`/aws/lambda/${CATEGORY_REPROCESS_FUNCTION_BASE_NAME}`),
+        retention: logs.RetentionDays.TWO_WEEKS,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }),
     });
   }
 }

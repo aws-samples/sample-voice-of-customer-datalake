@@ -22,8 +22,8 @@ import i18n from 'i18next'
 
 import type { BallotSessionConfig, BallotSubmission } from '../../api/votingSessionsApi'
 
-const mockGetBallotSessionConfig = vi.fn()
-const mockSubmitBallot = vi.fn()
+const mockGetBallotSessionConfig = vi.fn<(...args: unknown[]) => unknown>()
+const mockSubmitBallot = vi.fn<(...args: unknown[]) => unknown>()
 
 vi.mock('../../api/votingSessionsApi', () => ({
   votingSessionsApi: {
@@ -61,7 +61,7 @@ async function submit() {
   const button = await screen.findByRole('button', { name: key('ballot.submit.label') })
   await user.click(button)
   await waitFor(() => {
-    expect(mockSubmitBallot).toHaveBeenCalled()
+    expect(mockSubmitBallot).toHaveBeenCalledWith(SESSION_ID, expect.any(Object))
   })
 }
 

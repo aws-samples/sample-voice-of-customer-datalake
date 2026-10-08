@@ -18,7 +18,8 @@ import { useTranslation } from 'react-i18next'
 import { projectKey, projectsKey } from '../../api/projectQueryKeys'
 import { projectsApi } from '../../api/projectsApi'
 import { isScorable, SCORABLE_TYPE_META } from '../Prioritization/prioritizationUtils'
-import type { Project, ProjectDocument } from '../../api/types'
+import type { ProjectDocument } from '../../api/types'
+import type { Project } from '../../api/projectTypes'
 import type { ReactElement } from 'react'
 
 /** The link, as the editor holds it. '' on either field means "not set". */
@@ -193,14 +194,14 @@ export default function ValidationLinkPicker({
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4">
-        <h4 className="font-medium text-blue-900 mb-2 text-sm sm:text-base">{t('editor.validationTitle')}</h4>
-        <p className="text-xs sm:text-sm text-blue-800">{t('editor.validationDescription')}</p>
+      <div className="bg-info-subtle border border-info/30 rounded-lg p-3 sm:p-4">
+        <h3 className="font-medium text-info mb-2 text-sm sm:text-base">{t('editor.validationTitle')}</h3>
+        <p className="text-xs sm:text-sm text-text">{t('editor.validationDescription')}</p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="validation-project">
+          <label className="block text-sm font-medium text-text mb-1" htmlFor="validation-project">
             {t('editor.validationProjectLabel')}
           </label>
           <select
@@ -209,7 +210,7 @@ export default function ValidationLinkPicker({
             // Clearing or switching the project clears the document: a document
             // id only means anything inside its own project.
             onChange={(e) => onChange({ project_id: e.target.value, document_id: '' })}
-            className="input"
+            className="select"
           >
             <option value="">{t('editor.validationNoProject')}</option>
             {storedProject === null ? null : (
@@ -221,18 +222,18 @@ export default function ValidationLinkPicker({
               <option key={project.project_id} value={project.project_id}>{project.name}</option>
             ))}
           </select>
-          <p className="text-xs text-gray-500 mt-1">{t('editor.validationProjectHint')}</p>
+          <p className="text-xs text-muted mt-1">{t('editor.validationProjectHint')}</p>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="validation-document">
+          <label className="block text-sm font-medium text-text mb-1" htmlFor="validation-document">
             {t('editor.validationDocumentLabel')}
           </label>
           <select
             id="validation-document"
             value={value.document_id}
             onChange={(e) => onChange({ project_id: value.project_id, document_id: e.target.value })}
-            className="input"
+            className="select"
             disabled={value.project_id === ''}
           >
             <option value="">{t('editor.validationWholeProject')}</option>
@@ -247,7 +248,7 @@ export default function ValidationLinkPicker({
               </option>
             ))}
           </select>
-          <p className="text-xs text-gray-500 mt-1">{t('editor.validationDocumentHint')}</p>
+          <p className="text-xs text-muted mt-1">{t('editor.validationDocumentHint')}</p>
         </div>
       </div>
     </div>

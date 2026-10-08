@@ -32,3 +32,19 @@ export const projectKey = (id: string | undefined) => ['project', id] as const
  * invalidation it had better be able to name.
  */
 export const projectsKey = () => ['projects'] as const
+
+/**
+ * Root of Prioritization's fan-out read of every project's detail
+ * (`[ALL_PROJECT_DETAILS_ROOT, projectIds]`, invalidated by prefix).
+ *
+ * Moved here by the rule above: the AI assistant's approval executors also
+ * invalidate it after a project write (assistant/approvals/invalidation.ts).
+ */
+export const ALL_PROJECT_DETAILS_ROOT = 'all-project-details'
+
+/** The prefix key that matches every `[ALL_PROJECT_DETAILS_ROOT, projectIds]` query. */
+export const allProjectDetailsKey = () => [ALL_PROJECT_DETAILS_ROOT] as const
+
+/** Prioritization's one-call read of these projects' details (`projectsApi.getProjectDetails`). */
+export const projectDetailsBatchKey = (projectIds: readonly string[]) =>
+  [ALL_PROJECT_DETAILS_ROOT, projectIds] as const

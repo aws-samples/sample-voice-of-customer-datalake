@@ -4,9 +4,11 @@ Provides pre-configured clients with connection reuse.
 """
 
 import json
-import boto3
 from functools import lru_cache
 from typing import Final
+
+import boto3
+
 from shared.exceptions import ValidationError
 from shared.logging import logger
 
@@ -17,6 +19,7 @@ _sqs_client = None
 _secrets_client = None
 _bedrock_client = None
 _lambda_client = None
+_eventbridge_client = None
 
 
 def get_dynamodb_resource():
@@ -128,7 +131,11 @@ def get_bedrock_client():
             connect_timeout=BEDROCK_CONNECT_TIMEOUT_SECONDS,
             retries={'max_attempts': BEDROCK_MAX_ATTEMPTS, 'mode': 'standard'},
         )
-        _bedrock_client = boto3.client("bedrock-runtime", config=config)
+        # Local import: shared.model_config imports this module. The hook maps
+        # canonical `global.` ids to the deployment's inference scope (`eu.`) on
+        # every call, covering raw converse/invoke_model callers (docs/eu-deployment.md).
+        from shared.model_config import scope_bedrock_client
+        _bedrock_client = scope_bedrock_client(boto3.client("bedrock-runtime", config=config))
     return _bedrock_client
 
 
@@ -140,14 +147,22 @@ def get_lambda_client():
     return _lambda_client
 
 
+def get_eventbridge_client():
+    """Get shared EventBridge client with connection reuse."""
+    global _eventbridge_client
+    if _eventbridge_client is None:
+        _eventbridge_client = boto3.client("events")
+    return _eventbridge_client
+
+
 def invoke_lambda_async(function_name: str, payload: dict) -> dict:
     """
     Invoke a Lambda function asynchronously (fire-and-forget).
-    
+
     Args:
         function_name: Lambda function name or ARN
         payload: Event payload dict
-    
+
     Returns:
         Lambda invoke response (status only, no payload for async)
     """
@@ -180,7 +195,7 @@ def get_secret(secret_arn: str) -> dict:
         response = client.get_secret_value(SecretId=secret_arn)
         return json.loads(response["SecretString"])
     except Exception as e:
-        logger.error(f"Failed to load secret {secret_arn}: {e}")
+        logger.error(f"Failed to load secret {secret_arn}: {e}", exc_info=True)
         return {}
 
 
@@ -230,9 +245,9 @@ def put_secret_json(client, secret_arn: str, secrets: dict) -> None:
     client.put_secret_value(SecretId=secret_arn, SecretString=payload)
 
 
-# Default Bedrock model — Claude Sonnet 5 global cross-region inference profile.
+# Default Bedrock model — Claude Sonnet 5.5 global cross-region inference profile.
 # This is the ultimate fallback for text inference. The per-surface AI-model
 # picker (shared/model_config.py) resolves a model per surface and only falls
 # back to this constant when nothing is configured and the surface has no more
-# specific default. Bumped from Sonnet 4.5 → Sonnet 5 (latest).
-BEDROCK_MODEL_ID = "global.anthropic.claude-sonnet-5"
+# specific default. Bumped Sonnet 4.5 → Sonnet 5 → Sonnet 5.5 (the "default" surface).
+BEDROCK_MODEL_ID = "global.anthropic.claude-sonnet-5-5"

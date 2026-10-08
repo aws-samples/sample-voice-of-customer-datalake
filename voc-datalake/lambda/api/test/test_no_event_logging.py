@@ -294,50 +294,72 @@ def _logger_call_arg_texts(line: str):
     or not the call closes on this line.
     """
     for match in _PAT_LOGGER_CALL.finditer(line):
-        out = []
-        stack = []
-        quote = None
-        i = match.end()
-        while i < len(line):
-            char = line[i]
-            if quote is not None:
-                if char == '\\':
-                    i += 2
-                    continue
-                if char == quote:
-                    quote = None
-                    if not _is_elided(stack):
-                        out.append(char)
-                i += 1
-                continue
-            if char in '"\'':
-                quote = char
-                if not _is_elided(stack):
-                    out.append(char)
-            elif char in '({':
-                was_elided = _is_elided(stack)
-                stack.append(char)
-                if _is_elided(stack):
-                    if not was_elided:
-                        # Placeholders must not contain a brace: pattern 5 scans
-                        # the inside of extra={...} with a [^}]* run.
-                        out.append('(...)' if char == '(' else '...')
-                else:
-                    out.append(char)
-            elif char in ')}':
-                if not stack:
-                    if char == ')':
-                        break  # the logger call's own closing paren
-                    i += 1
-                    continue
-                was_elided = _is_elided(stack)
-                stack.pop()
-                if not was_elided and not _is_elided(stack):
-                    out.append(char)
-            elif not _is_elided(stack):
-                out.append(char)
-            i += 1
-        yield ''.join(out) + ')'
+        yield _scan_call_args(line, match.end())
+
+
+def _append_unless_elided(out: list[str], stack: list[str], text: str) -> None:
+    if not _is_elided(stack):
+        out.append(text)
+
+
+def _scan_quoted(char: str, quote: str, stack: list[str], out: list[str]) -> tuple[int, str | None]:
+    """One step inside a string literal: ``(chars to advance, quote still open)``.
+
+    The literal's contents are dropped; only its closing quote is kept.
+    """
+    if char == '\\':
+        return 2, quote
+    if char == quote:
+        _append_unless_elided(out, stack, char)
+        return 1, None
+    return 1, quote
+
+
+def _open_group(char: str, stack: list[str], out: list[str]) -> None:
+    was_elided = _is_elided(stack)
+    stack.append(char)
+    if not _is_elided(stack):
+        out.append(char)
+    elif not was_elided:
+        # Placeholders must not contain a brace: pattern 5 scans
+        # the inside of extra={...} with a [^}]* run.
+        out.append('(...)' if char == '(' else '...')
+
+
+def _close_group(char: str, stack: list[str], out: list[str]) -> None:
+    if not stack:
+        return  # a stray closing brace outside any group is dropped
+    was_elided = _is_elided(stack)
+    stack.pop()
+    if not was_elided and not _is_elided(stack):
+        out.append(char)
+
+
+def _scan_call_args(line: str, start: int) -> str:
+    """The normalised direct-argument text of the logger call opening at `start`."""
+    out: list[str] = []
+    stack: list[str] = []
+    quote: str | None = None
+    i = start
+    while i < len(line):
+        char = line[i]
+        if quote is not None:
+            step, quote = _scan_quoted(char, quote, stack, out)
+            i += step
+            continue
+        if char in '"\'':
+            quote = char
+            _append_unless_elided(out, stack, char)
+        elif char in '({':
+            _open_group(char, stack, out)
+        elif char in ')}':
+            if not stack and char == ')':
+                break  # the logger call's own closing paren
+            _close_group(char, stack, out)
+        else:
+            _append_unless_elided(out, stack, char)
+        i += 1
+    return ''.join(out) + ')'
 
 
 # ---------------------------------------------------------------------------

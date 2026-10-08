@@ -3,17 +3,21 @@
  * Tests validation logs, processing logs, and summary display.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { screen, waitFor } from '@testing-library/react'
+import userEvent, { type UserEvent } from '@testing-library/user-event'
+import { renderWithQueryClient } from '../../test/query-client'
+import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import LogsSection from './LogsSection'
 
+const auth = vi.hoisted(() => ({ isAdmin: true }))
+vi.mock('../../store/authStore', () => ({ useIsAdmin: () => auth.isAdmin }))
+
 // Mock API client
-const mockGetLogsSummary = vi.fn()
-const mockGetValidationLogs = vi.fn()
-const mockGetProcessingLogs = vi.fn()
-const mockGetScrapers = vi.fn()
-const mockClearValidationLogs = vi.fn()
+const mockGetLogsSummary = vi.fn<(...args: unknown[]) => unknown>()
+const mockGetValidationLogs = vi.fn<(...args: unknown[]) => unknown>()
+const mockGetProcessingLogs = vi.fn<(...args: unknown[]) => unknown>()
+const mockGetScrapers = vi.fn<(...args: unknown[]) => unknown>()
+const mockClearValidationLogs = vi.fn<(...args: unknown[]) => unknown>()
 
 vi.mock('../../api/client', () => ({
   api: {
@@ -26,21 +30,36 @@ vi.mock('../../api/client', () => ({
   },
 }))
 
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
+const API_ENDPOINT = 'https://api.example.com'
+
+/** One webscraper validation failure, as `GET /logs/validation` returns it. */
+const ONE_VALIDATION_FAILURE = {
+  logs: [
+    {
+      source_platform: 'webscraper',
+      message_id: 'msg-123',
+      timestamp: '2025-01-01T12:00:00Z',
+      errors: ['Missing required field: text'],
     },
-  })
-  return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
+  ],
+  count: 1,
+  days: 7,
+}
+
+function renderSection() {
+  return renderWithQueryClient(<LogsSection apiEndpoint={API_ENDPOINT} />)
+}
+
+/** Mount the section and switch to the tab whose button matches `tabName`. */
+async function renderOnTab(user: UserEvent, tabName: RegExp) {
+  renderSection()
+  await user.click(screen.getByRole('button', { name: tabName }))
 }
 
 describe('LogsSection', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    auth.isAdmin = true
     mockGetLogsSummary.mockResolvedValue({
       summary: {
         validation_failures: {},
@@ -57,13 +76,13 @@ describe('LogsSection', () => {
 
   describe('when API endpoint is not configured', () => {
     it('displays configuration warning message', () => {
-      render(<LogsSection apiEndpoint="" />, { wrapper: createWrapper() })
+      renderWithQueryClient(<LogsSection apiEndpoint="" />)
 
       expect(screen.getByText(/configure the api endpoint/i)).toBeInTheDocument()
     })
 
     it('does not fetch logs data', () => {
-      render(<LogsSection apiEndpoint="" />, { wrapper: createWrapper() })
+      renderWithQueryClient(<LogsSection apiEndpoint="" />)
 
       expect(mockGetLogsSummary).not.toHaveBeenCalled()
       expect(mockGetValidationLogs).not.toHaveBeenCalled()
@@ -72,13 +91,20 @@ describe('LogsSection', () => {
 
   describe('when API endpoint is configured', () => {
     it('displays system logs header', async () => {
-      render(<LogsSection apiEndpoint="https://api.example.com" />, { wrapper: createWrapper() })
+      renderSection()
 
       expect(screen.getByText('System Logs')).toBeInTheDocument()
     })
 
+    it('labels the period select and marks the active sub-tab', () => {
+      renderSection()
+
+      expect(screen.getByRole('combobox', { name: 'Time period' })).toHaveValue('7')
+      expect(screen.getByRole('button', { name: /Validation Failures/i })).toHaveAttribute('aria-pressed', 'true')
+    })
+
     it('displays summary card with zero counts when no logs exist', async () => {
-      render(<LogsSection apiEndpoint="https://api.example.com" />, { wrapper: createWrapper() })
+      renderSection()
 
       await waitFor(() => {
         expect(screen.getByText('Validation Failures')).toBeInTheDocument()
@@ -104,7 +130,7 @@ describe('LogsSection', () => {
         days: 7,
       })
 
-      render(<LogsSection apiEndpoint="https://api.example.com" />, { wrapper: createWrapper() })
+      renderSection()
 
       await waitFor(() => {
         expect(screen.getByText('8')).toBeInTheDocument()
@@ -122,7 +148,7 @@ describe('LogsSection', () => {
         days: 7,
       })
 
-      render(<LogsSection apiEndpoint="https://api.example.com" />, { wrapper: createWrapper() })
+      renderSection()
 
       await waitFor(() => {
         expect(screen.getByText('2')).toBeInTheDocument()
@@ -132,36 +158,36 @@ describe('LogsSection', () => {
 
   describe('tab navigation', () => {
     it('displays validation tab as active by default', async () => {
-      render(<LogsSection apiEndpoint="https://api.example.com" />, { wrapper: createWrapper() })
+      renderSection()
 
       const validationTab = screen.getByRole('button', { name: /validation failures/i })
-      expect(validationTab).toHaveClass('border-blue-600')
+      expect(validationTab).toHaveClass('tab-active')
     })
 
     it('switches to processing tab when clicked', async () => {
       const user = userEvent.setup()
-      render(<LogsSection apiEndpoint="https://api.example.com" />, { wrapper: createWrapper() })
+      renderSection()
 
       const processingTab = screen.getByRole('button', { name: /processing errors/i })
       await user.click(processingTab)
 
-      expect(processingTab).toHaveClass('border-blue-600')
+      expect(processingTab).toHaveClass('tab-active')
     })
 
     it('switches to scrapers tab when clicked', async () => {
       const user = userEvent.setup()
-      render(<LogsSection apiEndpoint="https://api.example.com" />, { wrapper: createWrapper() })
+      renderSection()
 
       const scrapersTab = screen.getByRole('button', { name: /scraper runs/i })
       await user.click(scrapersTab)
 
-      expect(scrapersTab).toHaveClass('border-blue-600')
+      expect(scrapersTab).toHaveClass('tab-active')
     })
   })
 
   describe('time range selector', () => {
     it('displays time range dropdown with default 7 days', () => {
-      render(<LogsSection apiEndpoint="https://api.example.com" />, { wrapper: createWrapper() })
+      renderSection()
 
       const select = screen.getByRole('combobox')
       expect(select).toHaveValue('7')
@@ -169,7 +195,7 @@ describe('LogsSection', () => {
 
     it('changes time range when different option selected', async () => {
       const user = userEvent.setup()
-      render(<LogsSection apiEndpoint="https://api.example.com" />, { wrapper: createWrapper() })
+      renderSection()
 
       const select = screen.getByRole('combobox')
       await user.selectOptions(select, '30')
@@ -182,7 +208,7 @@ describe('LogsSection', () => {
     it('displays empty state when no validation logs exist', async () => {
       mockGetValidationLogs.mockResolvedValue({ logs: [], count: 0, days: 7 })
 
-      render(<LogsSection apiEndpoint="https://api.example.com" />, { wrapper: createWrapper() })
+      renderSection()
 
       await waitFor(() => {
         expect(screen.getByText(/no validation failures/i)).toBeInTheDocument()
@@ -190,45 +216,22 @@ describe('LogsSection', () => {
     })
 
     it('displays validation logs grouped by source', async () => {
-      mockGetValidationLogs.mockResolvedValue({
-        logs: [
-          {
-            source_platform: 'webscraper',
-            message_id: 'msg-123',
-            timestamp: '2025-01-01T12:00:00Z',
-            errors: ['Missing required field: text'],
-            raw_preview: '{"id": "123"}',
-          },
-        ],
-        count: 1,
-        days: 7,
-      })
+      mockGetValidationLogs.mockResolvedValue(ONE_VALIDATION_FAILURE)
 
-      render(<LogsSection apiEndpoint="https://api.example.com" />, { wrapper: createWrapper() })
+      renderSection()
 
       await waitFor(() => {
         expect(screen.getByText('webscraper')).toBeInTheDocument()
-        expect(screen.getByText('1 failures')).toBeInTheDocument()
+        // Pluralised through i18n: one failure, not "1 failures"
+        expect(screen.getByText('1 failure')).toBeInTheDocument()
       })
     })
 
     it('expands log entry to show error details when clicked', async () => {
       const user = userEvent.setup()
-      mockGetValidationLogs.mockResolvedValue({
-        logs: [
-          {
-            source_platform: 'webscraper',
-            message_id: 'msg-123',
-            timestamp: '2025-01-01T12:00:00Z',
-            errors: ['Missing required field: text'],
-            raw_preview: '{"id": "123"}',
-          },
-        ],
-        count: 1,
-        days: 7,
-      })
+      mockGetValidationLogs.mockResolvedValue(ONE_VALIDATION_FAILURE)
 
-      render(<LogsSection apiEndpoint="https://api.example.com" />, { wrapper: createWrapper() })
+      renderSection()
 
       await waitFor(() => {
         expect(screen.getByText('msg-123')).toBeInTheDocument()
@@ -241,6 +244,57 @@ describe('LogsSection', () => {
         expect(screen.getByText('Missing required field: text')).toBeInTheDocument()
       })
     })
+
+    it('renders the record shape and never a raw preview, even if an older API sends one', async () => {
+      const user = userEvent.setup()
+      mockGetValidationLogs.mockResolvedValue({
+        ...ONE_VALIDATION_FAILURE,
+        logs: [{
+          ...ONE_VALIDATION_FAILURE.logs[0],
+          raw_preview: '{"submitter_email": "jane.doe@example.com"}',
+          record_keys: ['id', 'submitter_email', 'text'],
+          text_length: 1,
+        }],
+      })
+
+      renderSection()
+      await user.click(await screen.findByText('msg-123'))
+
+      expect(await screen.findByText('id, submitter_email, text')).toBeInTheDocument()
+      expect(screen.getByText('Fields present:')).toBeInTheDocument()
+      expect(screen.getByText('Text length: 1 character')).toBeInTheDocument()
+      // Never rendered: neither the preview's PII nor a "raw preview" label.
+      expect([screen.queryByText(/jane\.doe@example\.com/), screen.queryByText(/raw preview/i)])
+        .toStrictEqual([null, null])
+    })
+
+    it('lets an admin clear a source', async () => {
+      const user = userEvent.setup()
+      mockGetValidationLogs.mockResolvedValue(ONE_VALIDATION_FAILURE)
+      mockClearValidationLogs.mockResolvedValue({ success: true, deleted: 1 })
+
+      renderSection()
+      const clear = await screen.findByRole('button', { name: /clear/i })
+      expect(clear).toBeEnabled()
+      expect(clear).not.toHaveAttribute('title', ADMIN_ONLY_TITLE)
+      await user.click(clear)
+
+      await waitFor(() => expect(mockClearValidationLogs).toHaveBeenCalledWith('webscraper'))
+    })
+
+    it('disables Clear for a non-admin: DELETE /logs/* is admin-only', async () => {
+      const user = userEvent.setup()
+      auth.isAdmin = false
+      mockGetValidationLogs.mockResolvedValue(ONE_VALIDATION_FAILURE)
+
+      renderSection()
+      const clear = await screen.findByRole('button', { name: /clear/i })
+      expect(clear).toBeDisabled()
+      expect(clear).toHaveAttribute('title', ADMIN_ONLY_TITLE)
+      await user.click(clear)
+
+      expect(mockClearValidationLogs).not.toHaveBeenCalled()
+    })
   })
 
   describe('processing logs panel', () => {
@@ -248,10 +302,7 @@ describe('LogsSection', () => {
       const user = userEvent.setup()
       mockGetProcessingLogs.mockResolvedValue({ logs: [], count: 0, days: 7 })
 
-      render(<LogsSection apiEndpoint="https://api.example.com" />, { wrapper: createWrapper() })
-
-      // Switch to processing tab
-      await user.click(screen.getByRole('button', { name: /processing errors/i }))
+      await renderOnTab(user, /processing errors/i)
 
       await waitFor(() => {
         expect(screen.getByText(/no processing errors/i)).toBeInTheDocument()
@@ -274,10 +325,7 @@ describe('LogsSection', () => {
         days: 7,
       })
 
-      render(<LogsSection apiEndpoint="https://api.example.com" />, { wrapper: createWrapper() })
-
-      // Switch to processing tab
-      await user.click(screen.getByRole('button', { name: /processing errors/i }))
+      await renderOnTab(user, /processing errors/i)
 
       await waitFor(() => {
         expect(screen.getByText('webscraper')).toBeInTheDocument()
@@ -291,10 +339,7 @@ describe('LogsSection', () => {
       const user = userEvent.setup()
       mockGetScrapers.mockResolvedValue({ scrapers: [] })
 
-      render(<LogsSection apiEndpoint="https://api.example.com" />, { wrapper: createWrapper() })
-
-      // Switch to scrapers tab
-      await user.click(screen.getByRole('button', { name: /scraper runs/i }))
+      await renderOnTab(user, /scraper runs/i)
 
       await waitFor(() => {
         expect(screen.getByText(/no scrapers configured/i)).toBeInTheDocument()
@@ -309,10 +354,7 @@ describe('LogsSection', () => {
         ],
       })
 
-      render(<LogsSection apiEndpoint="https://api.example.com" />, { wrapper: createWrapper() })
-
-      // Switch to scrapers tab
-      await user.click(screen.getByRole('button', { name: /scraper runs/i }))
+      await renderOnTab(user, /scraper runs/i)
 
       await waitFor(() => {
         expect(screen.getByText('Test Scraper')).toBeInTheDocument()

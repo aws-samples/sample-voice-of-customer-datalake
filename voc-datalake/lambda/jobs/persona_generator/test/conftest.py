@@ -1,10 +1,11 @@
 """Test fixtures for persona generator job."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 # Import shared fixtures
-from jobs.conftest import *  # noqa: F401, F403
+from jobs.conftest import *  # noqa: F403
 
 
 @pytest.fixture

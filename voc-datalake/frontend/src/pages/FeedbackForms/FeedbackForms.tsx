@@ -14,36 +14,22 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import {
-  Plus, Loader2, Palette, Settings2, Save, X, Eye, Link2
-} from 'lucide-react'
-import clsx from 'clsx'
+import { Link } from 'react-router-dom'
+import { z } from 'zod'
+import { Plus, Loader2, Eye, ClipboardList, PowerOff, Power, X } from 'lucide-react'
 import { api } from '../../api/client'
-import { feedbackFormsKey } from '../../api/feedbackFormQueryKeys'
-import type { LucideIcon } from 'lucide-react'
-import type { FeedbackForm } from '../../api/client'
+import { feedbackFormsKey, feedbackFormsWithStatsKey, formStatsKey } from '../../api/feedbackFormQueryKeys'
+import type { FeedbackForm } from '../../api/types'
 import { useConfigStore } from '../../store/configStore'
-import ConfirmModal from '../../components/ConfirmModal'
-import { defaultFormConfig } from './formTemplates'
+import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
+import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import { normalizeFeedbackForms } from './formSchema'
+import { useCategoriesConfig } from '../../hooks/useCategories'
 import TemplateWizard from './TemplateWizard'
 import FormCard from './FormCard'
-import ValidationLinkPicker from './ValidationLinkPicker'
-import type { ValidationLink } from './ValidationLinkPicker'
+import FormEditor from './FormEditor'
+import { PageTitle } from '../../components/PageTitle/PageTitle'
 
-
-type FormConfig = Omit<FeedbackForm, 'form_id' | 'created_at' | 'updated_at'>
-type FormConfigWithId = FormConfig & { form_id?: string }
-
-type EditorTabId = 'settings' | 'category' | 'validation' | 'theme'
-
-/** One entry in the editor's tab strip. */
-interface EditorTab {
-  readonly id: EditorTabId
-  readonly label: string
-  readonly shortLabel: string
-  readonly icon: LucideIcon
-}
 
 function stripTrailingSlashes(str: string): string {
   if (str.length === 0 || str[str.length - 1] !== '/') return str
@@ -52,6 +38,7 @@ function stripTrailingSlashes(str: string): string {
 
 function FormsListContent({
   isLoading,
+  loadFailed,
   forms,
   onEdit,
   onDelete,
@@ -60,6 +47,8 @@ function FormsListContent({
   apiEndpoint,
 }: Readonly<{
   isLoading: boolean
+  /** The list read failed and nothing is cached: say so, never "no forms yet". */
+  loadFailed: { retry: () => void; retrying: boolean } | null
   forms: FeedbackForm[] | undefined
   onEdit: (form: FeedbackForm) => void
   onDelete: (formId: string) => void
@@ -67,12 +56,17 @@ function FormsListContent({
   onCreateNew: () => void
   apiEndpoint: string
 }>) {
+  const { t } = useTranslation('feedbackForms')
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="animate-spin text-blue-600" size={32} />
+      <div role="status" aria-label={t('common:loading')} className="flex items-center justify-center py-12">
+        <Loader2 className="animate-spin text-accent" size={24} aria-hidden="true" />
       </div>
     )
+  }
+
+  if (loadFailed !== null) {
+    return <LoadFailed onRetry={loadFailed.retry} retrying={loadFailed.retrying} />
   }
 
   if (forms && forms.length > 0) {
@@ -94,448 +88,120 @@ function FormsListContent({
 
   return (
     <div className="card text-center py-12">
-      <div className="text-4xl mb-4">📝</div>
-      <h3 className="text-lg font-medium text-gray-900 mb-2">No feedback forms yet</h3>
-      <p className="text-gray-500 mb-4">Create your first form to start collecting customer feedback.</p>
-      <button onClick={onCreateNew} className="btn btn-primary inline-flex items-center gap-2">
-        <Plus size={18} />
-        Create Your First Form
+      <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-accent-subtle flex items-center justify-center">
+        <ClipboardList size={20} className="text-accent-text" aria-hidden="true" />
+      </div>
+      <h2 className="text-base font-semibold tracking-tight text-text-strong mb-1">{t('empty.title')}</h2>
+      <p className="text-sm text-muted mb-4">{t('empty.description')}</p>
+      <button onClick={onCreateNew} className="btn btn-primary">
+        <Plus size={16} />
+        {t('empty.createButton')}
       </button>
     </div>
   )
 }
 
-interface FormEditorProps {
-  readonly form: FeedbackForm | null
-  readonly initialConfig?: FormConfig | null
-  readonly categories: ReadonlyArray<{ id: string; name: string; subcategories: ReadonlyArray<{ id: string; name: string }> }>
-  readonly onSave: (form: FormConfigWithId) => void
-  readonly onCancel: () => void
-  readonly isSaving?: boolean
-  /** False before the API endpoint is configured — the validation-link picker
-   *  reads projects, so it must not fire a request without one. */
-  readonly validationPickerEnabled: boolean
+
+
+/**
+ * The part of a create response the notice reads, validated rather than
+ * trusted: a missing or non-boolean `enabled` reads as disabled (the server's
+ * default), and a response without an id announces nothing.
+ */
+const CreatedFormResponseSchema = z.object({
+  form: z.object({
+    form_id: z.string().min(1),
+    name: z.string().catch(''),
+    enabled: z.boolean().catch(false),
+  }),
+})
+
+/** The created form when the response says it is disabled, else null. */
+function createdDisabledForm(response: unknown): CreatedDisabledForm | null {
+  const parsed = CreatedFormResponseSchema.safeParse(response)
+  if (!parsed.success || parsed.data.form.enabled) return null
+  return { formId: parsed.data.form.form_id, name: parsed.data.form.name }
 }
 
-function getInitialFormData(form: FeedbackForm | null, initialConfig: FormConfig | null | undefined): FormConfigWithId {
-  if (form) return { ...form }
-  if (initialConfig) return { ...initialConfig }
-  return { ...defaultFormConfig }
+/** A form just created and still disabled: named, so the notice can say which one. */
+interface CreatedDisabledForm {
+  readonly formId: string
+  readonly name: string
 }
 
 /**
- * The link fields as the picker's controlled selects need them: '' rather than
- * undefined, so a record persisted before these fields existed still renders.
- * A module-level helper rather than inline JSX, to keep `FormEditor` under the
- * repo's complexity ceiling.
+ * Shown right after a create that left the form disabled (E2E F6): new forms
+ * start off by design, so the owner is told — at the moment they would go and
+ * share the link — that it answers "Feedback form unavailable." until enabled,
+ * with the enable action one click away.
  */
-function toValidationLink(formData: FormConfigWithId): ValidationLink {
-  return {
-    project_id: formData.project_id ?? '',
-    document_id: formData.document_id ?? '',
-  }
-}
-
-function getSaveButtonText(isSaving: boolean, isEditing: boolean): string {
-  if (isSaving) return isEditing ? 'Saving...' : 'Creating...'
-  return isEditing ? 'Save Changes' : 'Create Form'
-}
-
-/**
- * The editor's tab strip. Extracted from `FormEditor` when the fourth tab
- * pushed that function past the repo's complexity ceiling.
- */
-function EditorTabBar({ activeTab, onSelect }: Readonly<{
-  activeTab: EditorTabId
-  onSelect: (tab: EditorTabId) => void
+function CreatedDisabledNotice({ form, onEnable, onDismiss, isEnabling }: Readonly<{
+  form: CreatedDisabledForm
+  onEnable: () => void
+  onDismiss: () => void
+  isEnabling: boolean
 }>) {
   const { t } = useTranslation('feedbackForms')
-  // Annotated, not inferred: with `id` typed as EditorTabId, `onSelect(tab.id)`
-  // typechecks directly, so no runtime narrowing guard is needed and a mistyped
-  // id fails to compile instead of rendering a button that silently does
-  // nothing. All four labels come from the catalogues — the keys already exist
-  // in all eight locales, and a half-translated tab strip reads worse than
-  // either extreme.
-  const tabs: readonly EditorTab[] = [
-    { id: 'settings', label: t('editor.tabs.formSettings'), shortLabel: t('editor.tabs.settings'), icon: Settings2 },
-    { id: 'category', label: t('editor.tabs.categoryRouting'), shortLabel: t('editor.tabs.category'), icon: Settings2 },
-    { id: 'validation', label: t('editor.tabs.validates'), shortLabel: t('editor.tabs.validatesShort'), icon: Link2 },
-    { id: 'theme', label: t('editor.tabs.theme'), shortLabel: t('editor.tabs.theme'), icon: Palette },
-  ]
   return (
-    <div className="flex gap-1 sm:gap-2 px-3 sm:px-4 pt-3 sm:pt-4 border-b border-gray-200 overflow-x-auto">
-      {tabs.map((tab) => (
-        <button
-          key={tab.id}
-          onClick={() => onSelect(tab.id)}
-          className={clsx(
-            'flex items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 border-b-2 -mb-px transition-colors whitespace-nowrap text-sm',
-            activeTab === tab.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-          )}
-        >
-          <tab.icon size={16} />
-          <span className="hidden sm:inline">{tab.label}</span>
-          <span className="sm:hidden">{tab.shortLabel}</span>
+    <div role="status" className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 rounded-lg border border-warn/30 bg-warn-subtle">
+      <PowerOff size={18} className="text-warn flex-shrink-0" aria-hidden="true" />
+      <p className="text-sm text-text flex-1">{t('createdDisabled.message', { name: form.name })}</p>
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={onEnable} disabled={isEnabling} className="btn btn-primary btn-sm">
+          <Power size={14} aria-hidden="true" />
+          {t('createdDisabled.enable')}
         </button>
-      ))}
-    </div>
-  )
-}
-
-function FormEditor({ form, initialConfig, categories, onSave, onCancel, isSaving, validationPickerEnabled }: FormEditorProps) {
-  const [activeTab, setActiveTab] = useState<EditorTabId>('settings')
-  const [formData, setFormData] = useState<FormConfigWithId>(() => getInitialFormData(form, initialConfig))
-
-  const selectedCategory = categories.find(c => c.id === formData.category)
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4">
-      <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between p-3 sm:p-4 border-b">
-          <h2 className="text-base sm:text-lg font-semibold truncate pr-2">
-            {form ? 'Edit Feedback Form' : 'Create New Feedback Form'}
-          </h2>
-          <button onClick={onCancel} className="p-2 hover:bg-gray-100 rounded-lg flex-shrink-0">
-            <X size={20} />
-          </button>
-        </div>
-
-        <EditorTabBar activeTab={activeTab} onSelect={setActiveTab} />
-
-        {/* Content */}
-        <div className="flex-1 overflow-auto p-3 sm:p-4">
-          {activeTab === 'settings' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-              <div className="space-y-3 sm:space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Form Name (Internal)</label>
-                  <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="e.g., Website Footer Form"
-                    className="input"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Form Title</label>
-                  <input
-                    type="text"
-                    value={formData.title}
-                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                    className="input"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                  <textarea
-                    value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    className="input min-h-[80px]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Question</label>
-                  <input
-                    type="text"
-                    value={formData.question}
-                    onChange={(e) => setFormData({ ...formData, question: e.target.value })}
-                    className="input"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Placeholder Text</label>
-                  <input
-                    type="text"
-                    value={formData.placeholder}
-                    onChange={(e) => setFormData({ ...formData, placeholder: e.target.value })}
-                    className="input"
-                  />
-                </div>
-              </div>
-              <div className="space-y-3 sm:space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Submit Button Text</label>
-                  <input
-                    type="text"
-                    value={formData.submit_button_text}
-                    onChange={(e) => setFormData({ ...formData, submit_button_text: e.target.value })}
-                    className="input"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Success Message</label>
-                  <input
-                    type="text"
-                    value={formData.success_message}
-                    onChange={(e) => setFormData({ ...formData, success_message: e.target.value })}
-                    className="input"
-                  />
-                </div>
-                <div className="flex flex-wrap items-center gap-3 sm:gap-4">
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={formData.rating_enabled}
-                      onChange={(e) => setFormData({ ...formData, rating_enabled: e.target.checked })}
-                      className="rounded border-gray-300 text-blue-600"
-                    />
-                    <span className="text-sm">Enable Rating</span>
-                  </label>
-                  {formData.rating_enabled && (
-                    <select
-                      value={formData.rating_type}
-                      onChange={(e) => {
-                        const val = e.target.value
-                        if (val === 'stars' || val === 'numeric' || val === 'emoji') {
-                          setFormData({ ...formData, rating_type: val })
-                        }
-                      }}
-                      className="input w-auto"
-                    >
-                      <option value="stars">Stars ⭐</option>
-                      <option value="numeric">Numeric (1-10)</option>
-                      <option value="emoji">Emoji 😀</option>
-                    </select>
-                  )}
-                </div>
-                <div className="flex flex-wrap items-center gap-3 sm:gap-4">
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={formData.collect_name}
-                      onChange={(e) => setFormData({ ...formData, collect_name: e.target.checked })}
-                      className="rounded border-gray-300 text-blue-600"
-                    />
-                    <span className="text-sm">Collect Name</span>
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={formData.collect_email}
-                      onChange={(e) => setFormData({ ...formData, collect_email: e.target.checked })}
-                      className="rounded border-gray-300 text-blue-600"
-                    />
-                    <span className="text-sm">Collect Email</span>
-                  </label>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'category' && (
-            <div className="space-y-4 sm:space-y-6">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4">
-                <h4 className="font-medium text-blue-900 mb-2 text-sm sm:text-base">Category Routing</h4>
-                <p className="text-xs sm:text-sm text-blue-800">
-                  Assign a category to this form. All feedback submitted through this form will be automatically 
-                  tagged with the selected category, making it easy to filter and analyze feedback by source.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                  <select
-                    value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value, subcategory: '' })}
-                    className="input"
-                  >
-                    <option value="">-- Select Category --</option>
-                    {categories.map(cat => (
-                      <option key={cat.id} value={cat.id}>{cat.name}</option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Categories are configured in Settings → Feedback Categories
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Subcategory (Optional)</label>
-                  <select
-                    value={formData.subcategory}
-                    onChange={(e) => setFormData({ ...formData, subcategory: e.target.value })}
-                    className="input"
-                    disabled={!selectedCategory}
-                  >
-                    <option value="">-- Select Subcategory --</option>
-                    {selectedCategory?.subcategories.map(sub => (
-                      <option key={sub.id} value={sub.id}>{sub.name}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {formData.category && (
-                <div className="p-3 sm:p-4 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-700">
-                    <strong>Preview:</strong> Feedback from this form will be tagged as:
-                  </p>
-                  <p className="mt-2 font-mono text-xs sm:text-sm bg-white px-3 py-2 rounded border inline-block break-all">
-                    category: "{formData.category}"
-                    {formData.subcategory && <>, subcategory: "{formData.subcategory}"</>}
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {activeTab === 'validation' && (
-            <ValidationLinkPicker
-              value={toValidationLink(formData)}
-              onChange={(link) => setFormData({ ...formData, ...link })}
-              enabled={validationPickerEnabled}
-            />
-          )}
-
-          {activeTab === 'theme' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-              <div className="space-y-3 sm:space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Primary Color</label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="color"
-                      value={formData.theme.primary_color}
-                      onChange={(e) => setFormData({ ...formData, theme: { ...formData.theme, primary_color: e.target.value } })}
-                      className="w-10 h-10 rounded border cursor-pointer flex-shrink-0"
-                    />
-                    <input
-                      type="text"
-                      value={formData.theme.primary_color}
-                      onChange={(e) => setFormData({ ...formData, theme: { ...formData.theme, primary_color: e.target.value } })}
-                      className="input flex-1 min-w-0"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Background Color</label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="color"
-                      value={formData.theme.background_color}
-                      onChange={(e) => setFormData({ ...formData, theme: { ...formData.theme, background_color: e.target.value } })}
-                      className="w-10 h-10 rounded border cursor-pointer flex-shrink-0"
-                    />
-                    <input
-                      type="text"
-                      value={formData.theme.background_color}
-                      onChange={(e) => setFormData({ ...formData, theme: { ...formData.theme, background_color: e.target.value } })}
-                      className="input flex-1 min-w-0"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Text Color</label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="color"
-                      value={formData.theme.text_color}
-                      onChange={(e) => setFormData({ ...formData, theme: { ...formData.theme, text_color: e.target.value } })}
-                      className="w-10 h-10 rounded border cursor-pointer flex-shrink-0"
-                    />
-                    <input
-                      type="text"
-                      value={formData.theme.text_color}
-                      onChange={(e) => setFormData({ ...formData, theme: { ...formData.theme, text_color: e.target.value } })}
-                      className="input flex-1 min-w-0"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Border Radius</label>
-                  <input
-                    type="text"
-                    value={formData.theme.border_radius}
-                    onChange={(e) => setFormData({ ...formData, theme: { ...formData.theme, border_radius: e.target.value } })}
-                    placeholder="8px"
-                    className="input"
-                  />
-                </div>
-              </div>
-              {/* Preview */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Preview</label>
-                <div
-                  className="relative overflow-hidden border"
-                  style={{
-                    backgroundColor: formData.theme.background_color,
-                    color: formData.theme.text_color,
-                    borderRadius: formData.theme.border_radius,
-                    minHeight: '240px',
-                  }}
-                >
-                  <div 
-                    className="absolute top-0 left-0 h-1 transition-all"
-                    style={{ backgroundColor: formData.theme.primary_color, width: '33%' }}
-                  />
-                  <div className="flex flex-col items-center justify-center text-center p-4 sm:p-6 h-full min-h-[240px]">
-                    <h3 className="text-lg sm:text-xl font-bold mb-2 line-clamp-2">{formData.title}</h3>
-                    <p className="text-xs sm:text-sm mb-4 opacity-70 max-w-xs line-clamp-2">{formData.description}</p>
-                    <button
-                      className="px-4 sm:px-5 py-2 text-white font-medium text-sm"
-                      style={{ backgroundColor: formData.theme.primary_color, borderRadius: formData.theme.border_radius }}
-                    >
-                      Start →
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 p-3 sm:p-4 border-t bg-gray-50">
-          <button onClick={onCancel} className="btn btn-secondary" disabled={isSaving}>
-            Cancel
-          </button>
-          <button
-            onClick={() => onSave(formData)}
-            disabled={isSaving}
-            className="btn btn-primary flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-            {getSaveButtonText(isSaving ?? false, !!form)}
-          </button>
-        </div>
+        <button type="button" onClick={onDismiss} className="icon-btn p-2 focus-ring" aria-label={t('createdDisabled.dismiss')} title={t('createdDisabled.dismiss')}>
+          <X size={16} aria-hidden="true" />
+        </button>
       </div>
     </div>
   )
 }
 
-
 export default function FeedbackForms() {
+  const { t } = useTranslation('feedbackForms')
   const queryClient = useQueryClient()
   const { config } = useConfigStore()
   const [editingForm, setEditingForm] = useState<FeedbackForm | null>(null)
   const [showWizard, setShowWizard] = useState(false)
   const [templateConfig, setTemplateConfig] = useState<Omit<FeedbackForm, 'form_id' | 'created_at' | 'updated_at'> | null>(null)
   const [deleteFormId, setDeleteFormId] = useState<string | null>(null)
+  const [createdDisabled, setCreatedDisabled] = useState<CreatedDisabledForm | null>(null)
 
-  const { data: formsData, isLoading } = useQuery({
-    queryKey: feedbackFormsKey(),
-    queryFn: () => api.getFeedbackForms(),
+  const { data: formsData, isLoading, isError, isFetching, refetch } = useQuery({
+    queryKey: feedbackFormsWithStatsKey(),
+    // One request for the list AND every card's stats (E2E F11: each card used
+    // to fetch its own). The stats seed each card's `formStatsKey` entry, which
+    // FormCard (and Prioritization's evidence panel) read with the shared stale
+    // time, so no per-card request is made. Without a map (older API, or a
+    // failed stats read) nothing is seeded and each card asks for itself.
+    queryFn: async () => {
+      const data = await api.getFeedbackFormsWithStats()
+      for (const [formId, stats] of Object.entries(data.stats ?? {})) {
+        queryClient.setQueryData(formStatsKey(formId), { success: true, form_id: formId, stats })
+      }
+      return data
+    },
     // Stored forms can predate newer fields (and fixtures can be sparse):
     // normalize once at the query boundary so FeedbackForm's declared
     // contract is true for every consumer (issue #171).
-    select: (data) => ({ ...data, forms: normalizeFeedbackForms(data.forms ?? []) }),
+    select: (data) => ({ ...data, forms: normalizeFeedbackForms(data.forms) }),
     enabled: !!config.apiEndpoint,
   })
 
-  const { data: categoriesData } = useQuery({
-    queryKey: ['categories-config'],
-    queryFn: () => api.getCategoriesConfig(),
-    enabled: !!config.apiEndpoint,
-  })
+  // The shared, normalized config query: legacy rows can lack an id (and
+  // subcategories), and without normalization the option list rendered a
+  // keyless <option> and a select that could not pick it.
+  const { data: categoriesData } = useCategoriesConfig()
 
   const saveMutation = useMutation({
     mutationFn: (form: Omit<FeedbackForm, 'form_id' | 'created_at' | 'updated_at'> & { form_id?: string }) =>
       form.form_id ? api.updateFeedbackForm(form.form_id, form) : api.createFeedbackForm(form),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: feedbackFormsKey() })
+    onSuccess: (response, submitted) => {
+      void queryClient.invalidateQueries({ queryKey: feedbackFormsKey() })
+      // Only a CREATE that came back disabled; an edit never re-announces.
+      setCreatedDisabled(submitted.form_id === undefined ? createdDisabledForm(response) : null)
       setEditingForm(null)
       setTemplateConfig(null)
     },
@@ -544,15 +210,16 @@ export default function FeedbackForms() {
   const deleteMutation = useMutation({
     mutationFn: (formId: string) => api.deleteFeedbackForm(formId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: feedbackFormsKey() })
+      void queryClient.invalidateQueries({ queryKey: feedbackFormsKey() })
     },
   })
 
   const toggleMutation = useMutation({
     mutationFn: ({ formId, enabled }: { formId: string; enabled: boolean }) =>
       api.updateFeedbackForm(formId, { enabled }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: feedbackFormsKey() })
+    onSuccess: (_response, { formId, enabled }) => {
+      void queryClient.invalidateQueries({ queryKey: feedbackFormsKey() })
+      if (enabled) setCreatedDisabled((current) => (current?.formId === formId ? null : current))
     },
   })
 
@@ -560,53 +227,58 @@ export default function FeedbackForms() {
     setDeleteFormId(formId)
   }
 
-  const apiEndpoint = stripTrailingSlashes(config.apiEndpoint ?? '')
-  const categories = categoriesData?.categories || []
+  const apiEndpoint = stripTrailingSlashes(config.apiEndpoint)
+  const categories = categoriesData?.categories ?? []
 
   if (!config.apiEndpoint) {
     return (
-      <div className="max-w-4xl mx-auto">
-        <div className="card text-center py-12">
-          <p className="text-gray-500 mb-4">Configure the API endpoint in Settings to manage feedback forms.</p>
-          <a href="/settings" className="btn btn-primary">Go to Settings</a>
-        </div>
+      <div className="card text-center py-12">
+        <p className="text-sm text-muted mb-4">{t('configureApiFirst')}</p>
+        <Link to="/admin" className="btn btn-primary">{t('common:goToSettings')}</Link>
       </div>
     )
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-4 sm:space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Feedback Forms</h1>
-          <p className="text-sm sm:text-base text-gray-500">Create embeddable forms to collect customer feedback</p>
-        </div>
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4">
+        <PageTitle title={t('title')} subtitle={t('subtitle')} />
         <button
           onClick={() => setShowWizard(true)}
-          className="btn btn-primary flex items-center justify-center gap-2 w-full sm:w-auto"
+          className="btn btn-primary w-full sm:w-auto"
         >
-          <Plus size={18} />
-          Create Form
+          <Plus size={16} />
+          {t('createForm')}
         </button>
       </div>
 
       {/* Info banner */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h4 className="font-medium text-blue-900 mb-2 flex items-center gap-2">
-          <Eye size={16} /> Typeform-style Feedback Collection
-        </h4>
-        <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
-          <li>Create multiple forms for different purposes (website, app, support, etc.)</li>
-          <li>Each form has its own unique URL and embed code</li>
-          <li>Assign categories to route feedback automatically</li>
-          <li>All submissions go through AI enrichment (sentiment, personas, etc.)</li>
+      <div className="bg-info-subtle border border-info/30 rounded-lg p-4">
+        <h2 className="text-sm font-semibold tracking-tight text-info mb-2 flex items-center gap-2">
+          <Eye size={16} aria-hidden="true" /> {t('infoBanner.title')}
+        </h2>
+        <ul className="text-sm text-text space-y-1 list-disc list-inside">
+          <li>{t('infoBanner.item1')}</li>
+          <li>{t('infoBanner.item2')}</li>
+          <li>{t('infoBanner.item3')}</li>
+          <li>{t('infoBanner.item4')}</li>
         </ul>
       </div>
+
+      {createdDisabled === null ? null : (
+        <CreatedDisabledNotice
+          form={createdDisabled}
+          isEnabling={toggleMutation.isPending}
+          onEnable={() => toggleMutation.mutate({ formId: createdDisabled.formId, enabled: true })}
+          onDismiss={() => setCreatedDisabled(null)}
+        />
+      )}
 
       {/* Forms list */}
       <FormsListContent
         isLoading={isLoading}
+        loadFailed={isError && formsData === undefined ? { retry: () => void refetch(), retrying: isFetching } : null}
         forms={formsData?.forms}
         onEdit={setEditingForm}
         onDelete={handleDelete}
@@ -627,12 +299,12 @@ export default function FeedbackForms() {
       )}
 
       {/* Editor modal */}
-      {(templateConfig || editingForm) && (
+      {(templateConfig !== null || editingForm !== null) && (
         <FormEditor
           form={editingForm}
           initialConfig={templateConfig}
           categories={categories}
-          onSave={(form) => saveMutation.mutate(form)}
+          onSave={(form) => saveMutation.mutateAsync(form)}
           onCancel={() => {
             setEditingForm(null)
             setTemplateConfig(null)
@@ -644,9 +316,9 @@ export default function FeedbackForms() {
 
       <ConfirmModal
         isOpen={deleteFormId !== null}
-        title="Delete Form"
-        message="Are you sure you want to delete this form? This action cannot be undone."
-        confirmLabel="Delete"
+        title={t('deleteConfirmTitle')}
+        message={t('deleteConfirmMessage')}
+        confirmLabel={t('deleteConfirmLabel')}
         variant="danger"
         isLoading={deleteMutation.isPending}
         onConfirm={() => {

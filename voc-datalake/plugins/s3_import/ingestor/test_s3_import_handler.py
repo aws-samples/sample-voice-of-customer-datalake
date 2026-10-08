@@ -1,24 +1,27 @@
 """
 Tests for S3 Import Ingestor handler.
 
-Covers: field alias resolution, deterministic IDs, CSV/JSON/JSONL parsing,
-file size validation, batched SQS sending, and lambda_handler entry point.
+Covers: field alias resolution, rating parsing, source naming, CSV/JSON/JSONL
+parsing, parser dispatch per extension, batched SQS sending, URL-decoded keys
+and the lambda_handler entry point. Exact log lines, boundaries, every alias
+and the full response shape live in test_s3_import_handler_mutation.py.
 """
 
 import io
 import json
+from typing import override
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
-from _shared.test.scoped_secret import scoped_secret
-
+from _shared.test.ingestor_fixtures import offline_ingestor_construction
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 def _csv_bytes(header: str, *rows: str) -> bytes:
-    return "\n".join([header] + list(rows)).encode("utf-8")
+    return "\n".join([header, *rows]).encode("utf-8")
 
 
 def _json_bytes(data) -> bytes:
@@ -82,25 +85,6 @@ class TestResolveField:
         assert _resolve_field({"text": "  padded  "}, "text") == "padded"
 
 
-class TestGenerateDeterministicId:
-    def test_produces_consistent_ids(self):
-        from s3_import.ingestor.handler import _generate_deterministic_id
-        assert _generate_deterministic_id("same") == _generate_deterministic_id("same")
-
-    def test_different_text_produces_different_ids(self):
-        from s3_import.ingestor.handler import _generate_deterministic_id
-        assert _generate_deterministic_id("A") != _generate_deterministic_id("B")
-
-    def test_starts_with_s3_prefix(self):
-        from s3_import.ingestor.handler import _generate_deterministic_id
-        assert _generate_deterministic_id("hello").startswith("s3-")
-
-    def test_handles_empty_text(self):
-        from s3_import.ingestor.handler import _generate_deterministic_id
-        result = _generate_deterministic_id("")
-        assert result.startswith("s3-") and len(result) > 3
-
-
 class TestParseRating:
     def test_parses_int(self):
         from s3_import.ingestor.handler import _parse_rating
@@ -109,18 +93,6 @@ class TestParseRating:
     def test_parses_string(self):
         from s3_import.ingestor.handler import _parse_rating
         assert _parse_rating("4") == 4.0
-
-    def test_returns_none_for_none(self):
-        from s3_import.ingestor.handler import _parse_rating
-        assert _parse_rating(None) is None
-
-    def test_returns_none_for_empty(self):
-        from s3_import.ingestor.handler import _parse_rating
-        assert _parse_rating("") is None
-
-    def test_returns_none_for_non_numeric(self):
-        from s3_import.ingestor.handler import _parse_rating
-        assert _parse_rating("excellent") is None
 
 
 class TestGetSourceFromKey:
@@ -134,34 +106,10 @@ class TestGetSourceFromKey:
 
 
 class TestNormalizeRow:
-    def test_normalizes_canonical_fields(self):
-        from s3_import.ingestor.handler import _normalize_row
-        result = _normalize_row({"id": "1", "text": "Great", "rating": "5"}, "S3 - test")
-        assert result["text"] == "Great"
-        assert result["id"] == "1"
-        assert result["rating"] == 5.0
-
-    def test_resolves_aliases(self):
-        from s3_import.ingestor.handler import _normalize_row
-        result = _normalize_row({"review_id": "r1", "comment": "Nice", "score": "4"}, "S3 - test")
-        assert result["text"] == "Nice"
-        assert result["id"] == "r1"
-        assert result["rating"] == 4.0
-
     def test_returns_none_for_empty_text(self):
         from s3_import.ingestor.handler import _normalize_row
-        assert _normalize_row({"text": ""}, "S3 - test") is None
-        assert _normalize_row({"id": "1"}, "S3 - test") is None
-
-    def test_generates_id_when_missing(self):
-        from s3_import.ingestor.handler import _normalize_row
-        result = _normalize_row({"text": "No id here"}, "S3 - test")
-        assert result["id"].startswith("s3-")
-
-    def test_sets_source_platform_override(self):
-        from s3_import.ingestor.handler import _normalize_row
-        result = _normalize_row({"text": "Hello"}, "S3 - surveys")
-        assert result["source_platform_override"] == "S3 - surveys"
+        assert _normalize_row({"text": ""}, "S3 - test", "csv_import") is None
+        assert _normalize_row({"id": "1"}, "S3 - test", "csv_import") is None
 
 
 # ---------------------------------------------------------------------------
@@ -177,43 +125,12 @@ class TestParseCsv:
         assert items[0]["text"] == "Great product"
         assert items[1]["rating"] == 1.0
 
-    def test_resolves_alias_columns(self):
-        from s3_import.ingestor.handler import _parse_csv
-        data = _csv_bytes("review_id,comment,score,date", "r1,Nice,4,2025-06-01")
-        items = list(_parse_csv(_stream(data), "S3 - test"))
-        assert len(items) == 1
-        assert items[0]["text"] == "Nice"
-        assert items[0]["created_at"] == "2025-06-01"
-
-    def test_skips_rows_with_empty_text(self):
-        from s3_import.ingestor.handler import _parse_csv
-        data = _csv_bytes("id,text,rating", "1,,5", "2,Valid,3")
-        items = list(_parse_csv(_stream(data), "S3 - test"))
-        assert len(items) == 1
-
-    def test_rejects_csv_without_text_column(self):
-        from s3_import.ingestor.handler import _parse_csv
-        data = _csv_bytes("id,score,date", "1,5,2025-01-01")
-        items = list(_parse_csv(_stream(data), "S3 - test"))
-        assert len(items) == 0
-
-    def test_rejects_empty_headers(self):
-        from s3_import.ingestor.handler import _parse_csv
-        items = list(_parse_csv(_stream(b""), "S3 - test"))
-        assert len(items) == 0
-
 
 class TestParseJsonl:
     def test_parses_valid_jsonl(self):
         from s3_import.ingestor.handler import _parse_jsonl
         data = _jsonl_bytes({"text": "Review 1"}, {"text": "Review 2"})
         items = list(_parse_jsonl(_stream(data), "S3 - test"))
-        assert len(items) == 2
-
-    def test_skips_invalid_json_lines(self):
-        from s3_import.ingestor.handler import _parse_jsonl
-        raw = b'{"text": "Good"}\n{bad json}\n{"text": "Also good"}\n'
-        items = list(_parse_jsonl(_stream(raw), "S3 - test"))
         assert len(items) == 2
 
     def test_skips_empty_lines(self):
@@ -242,19 +159,6 @@ class TestParseJson:
         items = list(_parse_json(_stream(data), "S3 - test"))
         assert len(items) == 1
 
-    def test_handles_invalid_json(self):
-        from s3_import.ingestor.handler import _parse_json
-        items = list(_parse_json(_stream(b"not json"), "S3 - test"))
-        assert len(items) == 0
-
-    def test_resolves_field_aliases(self):
-        from s3_import.ingestor.handler import _parse_json
-        data = _json_bytes([{"review": "Alias text", "score": 4, "reviewer": "Bob"}])
-        items = list(_parse_json(_stream(data), "S3 - test"))
-        assert items[0]["text"] == "Alias text"
-        assert items[0]["rating"] == 4.0
-        assert items[0]["author"] == "Bob"
-
 
 # ---------------------------------------------------------------------------
 # Ingestor / process_file tests
@@ -263,22 +167,31 @@ class TestParseJson:
 @pytest.fixture
 def ingestor():
     """Create an S3ImportIngestor with mocked AWS dependencies."""
-    with (
-        patch("_shared.base_ingestor.get_dynamodb_resource") as mock_dynamo,
-        patch("_shared.base_ingestor.get_s3_client"),
-        patch("_shared.base_ingestor.get_sqs_client"),
-        patch("_shared.base_ingestor.get_secret", return_value=scoped_secret()),
-    ):
-        mock_dynamo.return_value.Table.return_value = MagicMock()
+    with offline_ingestor_construction():
         from s3_import.ingestor.handler import S3ImportIngestor
-        ing = S3ImportIngestor()
-        ing.normalize_item = lambda item: {**item, "_normalized": True}
+
+        class _MarkingS3ImportIngestor(S3ImportIngestor):
+            """Normalizes by marking the item instead of storing it to S3."""
+
+            @override
+            def normalize_item(self, item: dict, raw_content: str | None = None) -> dict:
+                return {**item, "_normalized": True}
+
+        ing = _MarkingS3ImportIngestor()
         # Mirror the real contract: send_to_queue returns the number of items SQS
         # confirmed, and raises rather than losing any.  A bare MagicMock() would
         # return a MagicMock, so process_file's count would silently stop being a
         # number and every assertion on it would be vacuous.
-        ing.send_to_queue = MagicMock(side_effect=lambda batch: len(batch))
+        ing.send_to_queue = MagicMock(side_effect=len)
         return ing
+
+
+def _serve_csv_rows(mock_s3: MagicMock, row_count: int) -> None:
+    """Have *mock_s3* serve a CSV with *row_count* reviews."""
+    rows = [f"{i},Review {i},3" for i in range(row_count)]
+    csv_data = _csv_bytes("id,text,rating", *rows)
+    mock_s3.head_object.return_value = {"ContentLength": len(csv_data)}
+    mock_s3.get_object.return_value = {"Body": _stream(csv_data)}
 
 
 class TestProcessFile:
@@ -307,32 +220,6 @@ class TestProcessFile:
 
         assert ingestor.process_file("bucket", "src/data.jsonl") == 3
 
-    @patch("s3_import.ingestor.handler.s3_client")
-    def test_rejects_oversized_file(self, mock_s3, ingestor):
-        mock_s3.head_object.return_value = {"ContentLength": 100 * 1024 * 1024}
-        assert ingestor.process_file("bucket", "src/huge.csv") == 0
-        mock_s3.get_object.assert_not_called()
-
-    @patch("s3_import.ingestor.handler.s3_client")
-    def test_rejects_empty_file(self, mock_s3, ingestor):
-        mock_s3.head_object.return_value = {"ContentLength": 0}
-        assert ingestor.process_file("bucket", "src/empty.csv") == 0
-
-    @patch("s3_import.ingestor.handler.s3_client")
-    def test_returns_zero_for_unsupported_extension(self, mock_s3, ingestor):
-        assert ingestor.process_file("bucket", "src/data.txt") == 0
-        mock_s3.head_object.assert_not_called()
-
-    @patch("s3_import.ingestor.handler.s3_client")
-    def test_batches_large_files(self, mock_s3, ingestor):
-        rows = [f"{i},Review {i},3" for i in range(250)]
-        csv_data = _csv_bytes("id,text,rating", *rows)
-        mock_s3.head_object.return_value = {"ContentLength": len(csv_data)}
-        mock_s3.get_object.return_value = {"Body": _stream(csv_data)}
-
-        assert ingestor.process_file("bucket", "src/big.csv") == 250
-        assert ingestor.send_to_queue.call_count == 3  # 100 + 100 + 50
-
     @patch("s3_import.ingestor.handler.metrics")
     @patch("s3_import.ingestor.handler.s3_client")
     def test_reports_what_landed_when_a_later_batch_is_rejected(
@@ -350,10 +237,7 @@ class TestProcessFile:
         CloudWatch — and counting ``len(batch)`` instead of the returned value
         reports 250 for a file where 50 items never reached the queue.
         """
-        rows = [f"{i},Review {i},3" for i in range(250)]
-        csv_data = _csv_bytes("id,text,rating", *rows)
-        mock_s3.head_object.return_value = {"ContentLength": len(csv_data)}
-        mock_s3.get_object.return_value = {"Body": _stream(csv_data)}
+        _serve_csv_rows(mock_s3, 250)
         ingestor.send_to_queue = MagicMock(
             side_effect=[100, 100, RuntimeError("50 ingestor item(s) rejected")]
         )
@@ -372,36 +256,6 @@ class TestProcessFile:
 
 class TestLambdaHandler:
     @patch("s3_import.ingestor.handler.S3ImportIngestor")
-    def test_handles_s3_event(self, MockIngestor, lambda_context):
-        from s3_import.ingestor.handler import lambda_handler
-        mock_inst = MagicMock()
-        mock_inst.process_file.return_value = 5
-        MockIngestor.return_value = mock_inst
-
-        result = lambda_handler(_make_s3_event("bucket", "src/data.csv"), lambda_context)
-
-        assert result["status"] == "success"
-        assert result["files_processed"] == 1
-        assert result["items_processed"] == 5
-        mock_inst.process_file.assert_called_once_with("bucket", "src/data.csv")
-
-    @patch("s3_import.ingestor.handler.S3ImportIngestor")
-    def test_handles_multiple_records(self, MockIngestor, lambda_context):
-        from s3_import.ingestor.handler import lambda_handler
-        mock_inst = MagicMock()
-        mock_inst.process_file.side_effect = [3, 7]
-        MockIngestor.return_value = mock_inst
-
-        event = {"Records": [
-            {"eventSource": "aws:s3", "s3": {"bucket": {"name": "b"}, "object": {"key": "a.csv"}}},
-            {"eventSource": "aws:s3", "s3": {"bucket": {"name": "b"}, "object": {"key": "b.json"}}},
-        ]}
-        result = lambda_handler(event, lambda_context)
-
-        assert result["files_processed"] == 2
-        assert result["items_processed"] == 10
-
-    @patch("s3_import.ingestor.handler.S3ImportIngestor")
     def test_decodes_url_encoded_keys(self, MockIngestor, lambda_context):
         from s3_import.ingestor.handler import lambda_handler
         mock_inst = MagicMock()
@@ -410,8 +264,3 @@ class TestLambdaHandler:
 
         lambda_handler(_make_s3_event("bucket", "my+folder/my+file.csv"), lambda_context)
         mock_inst.process_file.assert_called_once_with("bucket", "my folder/my file.csv")
-
-    def test_skips_when_no_records(self, lambda_context):
-        from s3_import.ingestor.handler import lambda_handler
-        result = lambda_handler({}, lambda_context)
-        assert result["status"] == "skipped"

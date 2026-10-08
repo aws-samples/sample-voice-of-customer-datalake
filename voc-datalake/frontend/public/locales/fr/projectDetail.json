@@ -1,24 +1,4 @@
 {
-  "autoseed": {
-    "copyFailed": "Échec de la copie — veuillez réessayer.",
-    "copyKiroPrompt": "Copier le prompt Kiro",
-    "description": "Sélectionnez des personas et des documents à importer dans un espace de travail Kiro",
-    "deselectAll": "Désélectionner tout",
-    "docTypes": {
-      "custom": "Personnalisé",
-      "prd": "PRD",
-      "prfaq": "PR/FAQ",
-      "product_report": "Rapports produit",
-      "research": "Recherche"
-    },
-    "documents": "Fichiers ({{selected}}/{{total}})",
-    "generatedPrompt": "Prompt Kiro généré",
-    "generateFirst": "Générez d'abord des personas ou des documents pour utiliser l'autoseed.",
-    "pasteHint": "Collez ceci dans le chat Kiro. Nécessite un token API de l'onglet Accès MCP.",
-    "personas": "Profils ({{selected}}/{{total}})",
-    "selectAll": "Sélectionner tout",
-    "title": "Autoseed Kiro"
-  },
   "chat": {
     "askPlaceholder": "Posez une question sur votre projet...",
     "attachFile": "Joindre une image ou un PDF",
@@ -28,7 +8,7 @@
     "fileTooLarge": "Fichier trop volumineux (max 5 Mo) : {{name}}",
     "mentionHint": "Tapez <at> pour les personas, <atAll> pour la table ronde, ou <hash> pour les documents",
     "projectAiChat": "Chat IA du projet",
-    "roundtable": "🎙️ Table ronde : {{count}} personas",
+    "roundtable": "Table ronde : {{count}} personas",
     "send": "Envoyer le message",
     "startConversation": "Démarrer une conversation",
     "stop": "Arrêter",
@@ -44,6 +24,9 @@
   },
   "documentModal": {
     "cancel": "Annuler",
+    "conflict": "Entre-temps, quelqu’un a enregistré une version plus récente de ce document.",
+    "conflictReload": "Charger la plus récente",
+    "conflictSaveAnyway": "Enregistrer la mienne quand même",
     "contentLabel": "Contenu (Markdown)",
     "contentPlaceholder": "Rédigez votre document en Markdown...",
     "create": "Créer",
@@ -80,6 +63,28 @@
     "newDocument": "Nouveau document",
     "noDocuments": "Aucun document",
     "ordinal": "{{ordinal}} sur {{total}}",
+    "versions": {
+      "title": "Versions",
+      "hint": "Chaque modification enregistre une nouvelle version. Ouvrez ou comparez une version antérieure, ou restaurez-la comme nouvelle version.",
+      "label": "v{{n}}",
+      "current": "Actuelle",
+      "edited": "Modifiée",
+      "restoredFrom": "Restaurée depuis v{{n}}",
+      "open": "Ouvrir",
+      "openNamed": "Ouvrir {{label}}",
+      "compare": "Comparer",
+      "compareNamed": "Comparer {{label}} à la version actuelle",
+      "compareTitle": "{{label}} comparée à la version actuelle",
+      "identical": "Cette version est identique à la version actuelle.",
+      "restore": "Restaurer",
+      "restoreNamed": "Restaurer {{label}}",
+      "restoreTitle": "Restaurer cette version ?",
+      "restoreMessage": "Une nouvelle version est enregistrée avec le contenu de v{{n}}. La version actuelle reste dans la liste.",
+      "restoreFailed": "La version n’a pas pu être restaurée. Réessayez.",
+      "loadFailed": "Les versions n’ont pas pu être chargées.",
+      "close": "Fermer",
+      "cancel": "Annuler"
+    },
     "prototype": {
       "building": "Création en cours…",
       "button": "Créer le prototype",
@@ -121,15 +126,6 @@
     },
     "selectDocument": "Sélectionner un document"
   },
-  "export": {
-    "copyContext": "Copier dans le presse-papiers",
-    "copyCopied": "Copié !",
-    "copyFailed": "Échec de la copie — veuillez réessayer.",
-    "description": "Copier le contexte du projet dans le presse-papiers — aucun jeton API requis",
-    "emptyHint": "Générez d'abord des personas ou des documents pour activer l'export.",
-    "selectAtLeastOne": "Sélectionnez au moins un élément dans chaque section, sinon l’export inclurait tout.",
-    "title": "Exporter"
-  },
   "imageErrors": {
     "tooLarge": "{{name}} reste trop volumineux après redimensionnement. Essayez une capture plus petite ou recadrez-la.",
     "unreadable": "Impossible de lire cette image : {{name}}"
@@ -169,12 +165,10 @@
   "jobs": {
     "backgroundJobs": "Tâches en arrière-plan",
     "backgroundJobsDesc": "Tâches longues pour ce projet",
-    "completedCount_many": "{{count}} terminées",
     "completedCount_one": "{{count}} terminée",
     "completedCount_other": "{{count}} terminées",
     "created": "Créée :",
     "dismiss": "Fermer",
-    "moreFailedCount_many": "{{count}} autres en échec",
     "moreFailedCount_one": "{{count}} autre en échec",
     "moreFailedCount_other": "{{count}} autres en échec",
     "staleMessage": "Aucune mise à jour depuis 10+ minutes. Sera effacée automatiquement bientôt.",
@@ -202,87 +196,9 @@
       "importPersona": "Import de persona",
       "mergeDocuments": "Fusion de documents",
       "research": "Recherche"
-    }
-  },
-  "kiroExport": {
-    "cancel": "Annuler",
-    "configure": "Configurer",
-    "description": "Configurer le contexte pour les exports « Copier vers Kiro »",
-    "edit": "Modifier",
-    "noPrompt": "Aucun prompt d'export Kiro configuré",
-    "noPromptHint": "Cliquez sur « Configurer » pour ajouter le contexte d'implémentation pour les exports PRD",
-    "save": "Enregistrer",
-    "saved": "Enregistré !",
-    "templateHint": "Ce contexte sera ajouté au début des documents PRD/PR-FAQ lors de l'utilisation de « Copier vers Kiro ». Incluez votre stack technologique, vos normes de codage et vos directives d'implémentation.",
-    "templateLabel": "Modèle de prompt d'export",
-    "title": "Paramètres d'export Kiro",
-    "useDefault": "Utiliser le modèle par défaut",
-    "usingDefault": "Les instructions par défaut sont utilisées. Cliquez sur « {{action}} » pour définir les vôtres."
-  },
-  "mcp": {
-    "activeTokens": "Tokens actifs ({{count}})",
-    "activeTokens_many": "Tokens actifs ({{count}})",
-    "activeTokens_one": "Tokens actifs ({{count}})",
-    "activeTokens_other": "Tokens actifs ({{count}})",
-    "cancel": "Annuler",
-    "collapseLabel": "Réduire",
-    "copied": "Copié",
-    "copy": "Copier",
-    "copyToken": "Copier le token dans le presse-papiers",
-    "copyTokenNow": "Copiez ce token maintenant — il ne sera plus affiché.",
-    "createdDate": "Créé {{date}}",
-    "description": "Générez des tokens API pour connecter ce projet à des clients compatibles MCP comme Kiro ou VS Code.",
-    "dismiss": "Fermer",
-    "expandLabel": "Développer",
-    "expiredDate": "Expiré le {{date}}",
-    "expiresDate": "Expire le {{date}}",
-    "expiry": "Expiration",
-    "expiryDays": "{{count}} jours",
-    "expiryDays_one": "{{count}} jour",
-    "expiryDays_other": "{{count}} jours",
-    "expiryNever": "N'expire jamais",
-    "generate": "Générer",
-    "generateNewToken": "Générer un nouveau token API",
-    "generateToken": "Générer un token",
-    "generating": "Génération...",
-    "hideToken": "Masquer le token",
-    "lastUsed": "Dernière utilisation {{date}}",
-    "loadingTokens": "Chargement des tokens…",
-    "mcpConfig": "Configuration du client MCP",
-    "mcpConfigHint": "Ajoutez ceci à votre <code>mcp.json</code>. Remplacez <code>&lt;YOUR_API_TOKEN&gt;</code> par un token ci-dessous.",
-    "notAvailable": "L'accès MCP n'est pas encore disponible",
-    "notAvailableDesc": "Le point de terminaison de gestion des tokens API n'a pas été déployé. Déployez le backend avec le support des tokens MCP pour activer cette fonctionnalité.",
-    "noTokensHint": "Générez un token pour connecter les clients MCP à ce projet.",
-    "noTokensYet": "Aucun token API pour le moment",
-    "revealToken": "Afficher le token",
-    "revokeToken": "Révoquer le token",
-    "title": "Accès MCP",
-    "tokenCreated": "Token créé avec succès",
-    "tokenExpiresOn": "Ce jeton expire le {{date}}.",
-    "tokenName": "Nom du token",
-    "tokenNamePlaceholder": "ex. Mon token Kiro",
-    "tokenPasteHint": "Collez ce token dans l'en-tête <code>Authorization</code> de votre mcp.json ou commande curl autoseed.",
-    "scopes": "Portées",
-    "scopeDesc": {
-      "feedback_read": "Rechercher et lire les retours clients",
-      "metrics_read": "Lire les tableaux de bord et les métriques",
-      "projects_read": "Lire les projets, personas et documents"
     },
-    "noScopes": "aucune portée",
-    "readReach": "Portée de lecture",
-    "reachOption": {
-      "workspace": "Tout l’espace de travail (par défaut)",
-      "project-set": "Ce projet uniquement"
-    },
-    "reachHint": {
-      "workspace": "Atteint tous les projets de l’espace de travail — y compris les documents non publiés des autres projets — et tous les retours clients.",
-      "project-set": "Limité à ce projet. Ne peut pas lire le corpus de retours ni les métriques de l’espace, qui ne sont pas liés à un projet."
-    },
-    "reachBadge": {
-      "workspace": "Tout l’espace",
-      "project-set": "Ce projet",
-      "none": "Aucune lecture"
-    }
+    "completedCount_many": "{{count}} terminées",
+    "moreFailedCount_many": "{{count}} autres en échec"
   },
   "notFound": {
     "backToProjects": "Retour aux projets",
@@ -364,7 +280,9 @@
     "triggerLabel": "Déclencheur",
     "triggerPlaceholder": "Ce qui déclenche ce scénario",
     "workarounds": "Contournements (un par ligne)",
-    "workaroundsPlaceholder": "Comment ils s'en sortent actuellement..."
+    "workaroundsPlaceholder": "Comment ils s'en sortent actuellement...",
+    "locationPlaceholder": "Urbain, FR",
+    "occupationPlaceholder": "Chef de produit"
   },
   "personas": {
     "addNote": "Ajouter une note",
@@ -379,15 +297,20 @@
     "noNotesYet": "Aucune note pour le moment",
     "noPersonasYet": "Aucun persona pour le moment",
     "notePlaceholder": "Tapez votre observation ou insight de recherche...",
-    "notesCount_many": "{{count}} notes",
     "notesCount_one": "{{count}} remarque",
     "notesCount_other": "{{count}} remarques",
-    "notesTip": "💡 Conseil : Ajoutez des observations provenant d'entretiens utilisateurs, tests d'utilisabilité ou analyses de données qui se rapportent à ce persona.",
+    "notesTip": "Conseil : Ajoutez des observations provenant d'entretiens utilisateurs, tests d'utilisabilité ou analyses de données qui se rapportent à ce persona.",
     "pressEnter": "Appuyez sur Entrée ↵",
     "removeNote": "Supprimer la note",
     "researchNotes": "Notes de recherche",
     "reviews": "{{count}} avis",
-    "selectToView": "Sélectionnez un persona pour voir les détails"
+    "selectToView": "Sélectionnez un persona pour voir les détails",
+    "editPersona": "Modifier le persona",
+    "deletePersona": "Supprimer le persona",
+    "regenerateAvatar": "Régénérer l’avatar",
+    "regeneratingAvatar": "Génération d’un nouvel avatar…",
+    "regenerateAvatarFailed": "L’avatar n’a pas pu être régénéré. Réessayez.",
+    "notesCount_many": "{{count}} notes"
   },
   "personaSections": {
     "behaviorsHabits": "Comportements et habitudes",
@@ -467,7 +390,6 @@
         "unsupportedType": "Type non pris en charge : {{name}} ({{type}}). Formats acceptés : {{accepted}}",
         "uploadFailed": "{{name}} : échec de l’envoi — {{message}}"
       },
-      "extractedChars_many": "{{count}} caractères extraits",
       "extractedChars_one": "{{count}} caractère extrait",
       "extractedChars_other": "{{count}} caractères extraits",
       "heading": "Documents internes",
@@ -477,16 +399,17 @@
       "statusExtracting": "Extraction…",
       "statusFailed": "Échec",
       "statusReady": "Prêt",
-      "statusUploading": "Envoi…"
+      "statusUploading": "Envoi…",
+      "extractedChars_many": "{{count}} caractères extraits"
     }
   },
   "tabs": {
     "aiChat": "Chat IA",
     "documents": "Fichiers",
-    "mcpAccess": "Exporter / MCP",
     "overview": "Aperçu",
     "personas": "Profils",
-    "product": "Produit"
+    "product": "Produit",
+    "label": "Sections du projet"
   },
   "wizards": {
     "amazonQuestions": "Les 5 questions clients d'Amazon",
@@ -546,6 +469,7 @@
     "researchQuestionPlaceholder": "ex. : Quels sont les principaux points de friction...",
     "researchSuggest": "Suggestion IA",
     "researchSuggestEmpty": "Pas de suggestions — ajoutez ou collectez d’abord plus de retours.",
+    "startFailed": "Impossible de lancer l’opération. Réessayez.",
     "researchSuggesting": "Suggestions en cours…",
     "researchSuggestPick": "Touchez une suggestion pour l’utiliser :",
     "researchSuggestTitle": "Laisser l’IA suggérer des questions de recherche à partir des retours du projet",
@@ -554,11 +478,45 @@
     "researchWebSearch": "Recherche web publique",
     "researchWebSearchHint": "L'IA planifie et exécute plusieurs recherches web pour ancrer l'analyse (servi au sein d'AWS, sources citées)",
     "runResearch": "Lancer la recherche",
-    "selectAtLeast2": "⚠️ Sélectionnez au moins 2 documents à remixer.",
+    "selectAtLeast2": "Sélectionnez au moins 2 documents à remixer.",
     "submitGenerateDoc": "Générer {{type}}",
     "submitGeneratePersonas": "Générer les personas",
     "submitRemixDocuments": "Remixer les documents",
     "submitRunResearch": "Lancer la recherche",
     "workingBackwards": "Raisonnement inversé"
+  },
+  "header": {
+    "back": "Retour aux projets",
+    "connectMcp": "Connecter via MCP"
+  },
+  "companyStrip": {
+    "label": "Contexte de l'entreprise",
+    "title": "Contexte de l'entreprise",
+    "noVision": "Aucune vision d'entreprise pour l'instant.",
+    "more": "+{{n}} de plus",
+    "designSystem": "Design system :",
+    "open": "Connaissances → Entreprise"
+  },
+  "prototypePins": {
+    "toggle": "Épingles des testeurs",
+    "showOnPrototype": "Afficher les épingles sur le prototype",
+    "heading": "Épingles des testeurs",
+    "hint": "Les testeurs cliquent sur un élément du prototype et laissent un commentaire. Les agents révisent le prototype à partir des épingles ouvertes.",
+    "empty": "Aucune épingle pour l’instant. Cliquez sur Feedback dans le prototype pour en déposer une.",
+    "loadFailed": "Impossible de charger les épingles.",
+    "status": {
+      "open": "Ouverte",
+      "addressed": "Traitée",
+      "resolved": "Résolue"
+    },
+    "flagged": "Signalée — tenue à l’écart des agents",
+    "consoleErrors": "Erreurs de console : {{count}}",
+    "addressedBy": "Traitée par la révision {{id}}",
+    "pinNumber": "Épingle {{number}}",
+    "reply": "Répondre",
+    "replyPlaceholder": "Répondre au testeur…",
+    "resolve": "Résoudre",
+    "reopen": "Rouvrir",
+    "actionFailed": "Cela n’a pas fonctionné. Veuillez réessayer."
   }
 }

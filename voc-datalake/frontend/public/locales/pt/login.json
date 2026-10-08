@@ -43,5 +43,7 @@
     "resettingPassword": "A redefinir palavra-passe...",
     "submit": "Redefinir Palavra-passe",
     "title": "Introduzir Código de Verificação"
-  }
+  },
+  "showPassword": "Mostrar senha",
+  "hidePassword": "Ocultar senha"
 }

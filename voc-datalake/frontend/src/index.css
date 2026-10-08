@@ -1,57 +1,585 @@
+/*
+ * VoC design system — ported from KiroCrew (kirodotdev/kirocrew, Apache-2.0),
+ * website/src/index.css + tailwind-theme.css.
+ *
+ * Theme is selected by attributes on <html> (set by public/theme-init.js
+ * before first paint and kept in sync by src/theme/themeStore.ts):
+ *   data-theme="kiro-dark" | "kiro-light"
+ *   data-mode="dark" | "light"
+ *   data-mode-pref="dark" | "light" | "system"
+ *
+ * Components use SEMANTIC utilities only (bg-bg, bg-card, text-text,
+ * text-muted, border-border, bg-accent, text-ok, bg-danger-subtle …) —
+ * never raw palette classes like bg-white / text-gray-600 / bg-blue-600.
+ * See docs/kiro-design-system.md for tokens, recipes and rules.
+ */
 @import "tailwindcss";
+@import "@fontsource/space-grotesk/400.css";
+@import "@fontsource/space-grotesk/500.css";
+@import "@fontsource/space-grotesk/600.css";
+@import "@fontsource/space-grotesk/700.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
 
+/* `dark:` matches whichever dark theme is active (use sparingly — prefer tokens). */
+@custom-variant dark (&:where([data-mode="dark"], [data-mode="dark"] *));
+
+/* ---------------------------------------------------------------------------
+ * Tailwind bridge: utilities ↔ runtime tokens
+ * ------------------------------------------------------------------------- */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-accent: var(--bg-accent);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-bg-hover: var(--bg-hover);
+  --color-card: var(--card);
+  --color-card-fg: var(--card-fg);
+  --color-panel: var(--panel);
+  --color-panel-strong: var(--panel-strong);
+  --color-chrome: var(--chrome);
+  --color-text: var(--text);
+  --color-text-strong: var(--text-strong);
+  --color-muted: var(--muted);
+  --color-muted-fg: var(--muted-fg);
+  --color-muted-strong: var(--muted-strong);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-border-hover: var(--border-hover);
+  --color-control-border: var(--control-border);
+  --color-control-border-hover: var(--control-border-hover);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-subtle: var(--accent-subtle);
+  --color-accent-glow: var(--accent-glow);
+  --color-accent-text: var(--accent-text);
+  --color-ring: var(--ring);
+  --color-ok: var(--ok);
+  --color-ok-fg: var(--ok-fg);
+  --color-ok-subtle: var(--ok-subtle);
+  --color-warn: var(--warn);
+  --color-warn-fg: var(--warn-fg);
+  --color-warn-subtle: var(--warn-subtle);
+  --color-danger: var(--danger);
+  --color-danger-fg: var(--danger-fg);
+  --color-danger-subtle: var(--danger-subtle);
+  --color-info: var(--info);
+  --color-info-fg: var(--info-fg);
+  --color-info-subtle: color-mix(in srgb, var(--info) 12%, transparent);
+  --color-aim: var(--aim);
+  --color-aim-fg: var(--aim-fg);
+  --color-aim-subtle: var(--aim-subtle);
+  --color-overlay: var(--overlay);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+  --color-chart-7: var(--chart-7);
+  --color-chart-8: var(--chart-8);
+  --color-chart-grid: var(--chart-grid);
+  --color-sentiment-positive: var(--sentiment-positive);
+  --color-sentiment-neutral: var(--sentiment-neutral);
+  --color-sentiment-negative: var(--sentiment-negative);
+  --color-sentiment-mixed: var(--sentiment-mixed);
+
+  --font-sans: var(--font-body);
+  --font-body: var(--font-body);
+  --font-mono: var(--mono);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+
+  --animate-rise: rise .35s cubic-bezier(.16, 1, .3, 1) backwards;
+  --animate-slide-up: slide-up .3s cubic-bezier(.16, 1, .3, 1) backwards;
+  --animate-slide-in-right: slide-in-right .3s cubic-bezier(.16, 1, .3, 1) backwards;
+  --animate-slide-in-left: slide-in-left .25s cubic-bezier(.16, 1, .3, 1) backwards;
+  --animate-scale-in: scale-in .2s cubic-bezier(.16, 1, .3, 1) backwards;
+  --animate-shimmer: shimmer 1.5s ease-in-out infinite;
+  --animate-dot-breathe: dot-breathe 2s ease-in-out infinite;
+  --animate-float: float 3s ease-in-out infinite;
+  --animate-fade-in: fade-in .15s ease-out backwards;
+
+  @keyframes rise { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: translateY(0) } }
+  @keyframes slide-up { from { opacity: 0; transform: translateY(12px) } to { opacity: 1; transform: translateY(0) } }
+  @keyframes slide-in-right { from { opacity: 0; transform: translateX(16px) } to { opacity: 1; transform: translateX(0) } }
+  @keyframes slide-in-left { from { opacity: 0; transform: translateX(-16px) } to { opacity: 1; transform: translateX(0) } }
+  @keyframes scale-in { from { opacity: 0; transform: scale(.92) } to { opacity: 1; transform: scale(1) } }
+  @keyframes shimmer { 0% { background-position: -200% 0 } 100% { background-position: 200% 0 } }
+  @keyframes dot-breathe { 0%, 100% { opacity: .6; transform: scale(.9) } 50% { opacity: 1; transform: scale(1.1) } }
+  @keyframes float { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-6px) } }
+  @keyframes fade-in { from { opacity: 0 } to { opacity: 1 } }
+}
+
+/* ---------------------------------------------------------------------------
+ * Shared tokens
+ * ------------------------------------------------------------------------- */
 :root {
-  --color-primary: #3b82f6;
-  --color-positive: #22c55e;
-  --color-negative: #ef4444;
-  --color-neutral: #6b7280;
+  --font-body: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  /* lucide check, used as a MASK so the tick takes the theme's --accent-fg. */
+  --check-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
 }
 
-body {
-  @apply bg-gray-50 text-gray-900 antialiased;
+/* Kiro dark — also the fallback before theme-init.js runs. */
+:root,
+[data-theme="kiro-dark"] {
+  --bg: #19161d; --bg-accent: #1c1922; --bg-elevated: #211d25; --bg-hover: #28242e;
+  --card: #211d25; --card-fg: #f2f1f4; --card-hl: rgba(255, 255, 255, .04);
+  --panel: #211d25; --panel-strong: #28242e;
+  --chrome: rgba(25, 22, 29, .95);
+  --text: #dcdadf; --text-strong: #f2f1f4; --muted: #938f9b; --muted-fg: #ffffff; --muted-strong: #8a8592;
+  --border: #352f3d; --border-strong: #4a464f; --border-hover: #5e5966;
+  /* The boundary that IDENTIFIES a form control (input, select, textarea,
+   * checkbox, radio): WCAG 1.4.11 asks 3:1 against what is next to it, and
+   * --border is 1.28:1 on the card (design audit D-13). ≥ 3:1 on every surface
+   * a control sits on, row hover included — pinned by theme/controlBorder.test.ts. */
+  --control-border: #77727f; --control-border-hover: #938f9b;
+  --accent: #8e48ff; --accent-fg: #ffffff; --accent-hover: #9f63ff; --accent-subtle: rgba(178, 127, 255, .16);
+  --accent-glow: rgba(142, 72, 255, .3); --accent-text: #bd8fff; --ring: #8e48ff;
+  --nav-active-bg: #352f3d; --nav-active-text: #c19aff; --nav-active-border: #4a464f;
+  /* KiroCrew kiro-dark hue (#008543, 150°), lightened for AA: #008543 is 2.8:1 as
+   * badge text on its own tint over a hovered row; #1bb36b is 4.86:1 there.
+   * (The former #22c55e was KiroCrew's generic `dark` theme, not Kiro.) */
+  --ok: #1bb36b; --ok-fg: #000000; --ok-subtle: rgba(0, 133, 67, .15);
+  --warn: #e0b94d; --warn-fg: #000000; --warn-subtle: rgba(224, 185, 77, .12);
+  /* AA-adjusted from KiroCrew (#f94359 / white fg were 4.1:1 and 3.5:1). */
+  --danger: #ff5f73; --danger-fg: #000000; --danger-subtle: rgba(249, 67, 89, .12);
+  /* AA-adjusted from KiroCrew (#6f9ae0 was 4.42:1 as badge-info text on a hovered row). */
+  --info: #7aa3e6; --info-fg: #000000;
+  --aim: #c19aff; --aim-fg: #000000; --aim-subtle: rgba(193, 154, 255, .15);
+  --overlay: rgba(10, 8, 12, .6);
+  /* Data ramp (series, categories, distributions) = KiroCrew's categorical
+   * data hues (website/src/index.css `--ctx-src-*` / `--ctx-cat-*`): each source
+   * hue mixed 74% into --card, exactly as KiroCrew does, with the first series
+   * on the accent (KiroCrew's `--ctx-cat-message`, here its kiro-dark accent tint
+   * #b07fff) and the neutral step on --muted. Precomputed hex, in order:
+   *   1 accent tint #b07fff · 2 memory #4aa8ff · 3 sys #43c9bd · 4 lessons #ff9d5c
+   *   5 tool #b98cff · 6 --muted · 7 skill #00c48f · 8 history #f2c14e
+   * Every step ≥ 3:1 on --card (WCAG 1.4.11; steps are fills, never text) and
+   * every pair ≥ 10 ΔE2000 apart — pinned by theme/chartRamp.test.ts. */
+  --chart-1: #b07fff; --chart-2: #3f84c6; --chart-3: #3a9c95; --chart-4: #c57c4e;
+  --chart-5: #916fc6; --chart-6: #938f9b; --chart-7: #099973; --chart-8: #bc9643;
+  --chart-grid: #352f3d;
+  /* lucide chevron-down in --muted (data URIs cannot read CSS variables). */
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23938f9b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  /* Sentiment is a STATUS, not a series. KiroCrew colours every good/bad,
+   * pass/fail or health value with its status tones (ContextBar thresholds,
+   * workflow run results, connected/not-connected dots, artifact events) and
+   * never with its categorical hues — so sentiment does the same:
+   * ok / danger / warn, and --muted for neutral. Never the ramp. */
+  --sentiment-positive: var(--ok); --sentiment-neutral: var(--muted); --sentiment-negative: var(--danger); --sentiment-mixed: var(--warn);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, .35), 0 0 0 1px rgba(255, 255, 255, .02);
+  --shadow-lg: 0 12px 28px rgba(0, 0, 0, .45);
+  color-scheme: dark;
 }
 
-.card {
-  @apply bg-white rounded-xl shadow-sm border border-gray-100 p-6;
+/* Kiro light */
+[data-theme="kiro-light"] {
+  --bg: #ffffff; --bg-accent: #f5f5f5; --bg-elevated: #ffffff; --bg-hover: #f0f0f0;
+  --card: #ffffff; --card-fg: #19161d; --card-hl: rgba(0, 0, 0, .03);
+  --panel: #fafafa; --panel-strong: #f5f5f5;
+  --chrome: rgba(255, 255, 255, .95);
+  --text: #4a464f; --text-strong: #19161d; --muted: #5e5966; --muted-fg: #ffffff; --muted-strong: #4a464f;
+  --border: #e4e4e7; --border-strong: #d4d4d8; --border-hover: #a1a1aa;
+  --control-border: #86818e; --control-border-hover: #5e5966;
+  --accent: #8e48ff; --accent-fg: #ffffff; --accent-hover: #7a35e0; --accent-subtle: rgba(142, 72, 255, .12);
+  --accent-glow: rgba(142, 72, 255, .15); --accent-text: #723acc; --ring: #8e48ff;
+  /* KiroCrew's kiro-light selected-row fill is #d8d2e0, but its #723acc label is
+   * 4.45:1 there; #ebe5f3 (same hue, lighter) gives 5.34:1. */
+  --nav-active-bg: #ebe5f3; --nav-active-text: #723acc; --nav-active-border: #c4bcd0;
+  /* ok / warn / danger AA-adjusted from KiroCrew (#008543 / #a38a00 / #d92544
+   * were 4.0, 3.1 and 4.0:1 on their own subtle tints). */
+  --ok: #007038; --ok-fg: #ffffff; --ok-subtle: rgba(0, 112, 56, .12);
+  --warn: #6b5900; --warn-fg: #ffffff; --warn-subtle: rgba(107, 89, 0, .1);
+  --danger: #bd1c3a; --danger-fg: #ffffff; --danger-subtle: rgba(189, 28, 58, .1);
+  --info: #285092; --info-fg: #ffffff;
+  --aim: #7337d6; --aim-fg: #ffffff; --aim-subtle: rgba(115, 55, 214, .12);
+  --overlay: rgba(25, 22, 29, .4);
+  /* Data ramp — the same KiroCrew hues as the dark block, in the same order.
+   * KiroCrew's 74%-into-white mixes are 1.5–2.3:1 on the white card (below the
+   * 3:1 WCAG 1.4.11 asks of bars), so each hue is instead DARKENED toward black
+   * (hue unchanged) to the first step ≥ 3.2:1; step 1 is --accent itself, as in
+   * KiroCrew's `--ctx-cat-message`. Pinned by theme/chartRamp.test.ts.
+   * pages/Categories/types.ts mirrors these hexes for the print/PDF export;
+   * keep the two in step. */
+  --chart-1: #8e48ff; --chart-2: #4194e0; --chart-3: #359f95; --chart-4: #c97c49;
+  --chart-5: #a37be0; --chart-6: #5e5966; --chart-7: #00a377; --chart-8: #ae8b38;
+  --chart-grid: #e4e4e7;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235e5966' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  --sentiment-positive: var(--ok); --sentiment-neutral: var(--muted); --sentiment-negative: var(--danger); --sentiment-mixed: var(--warn);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, .08), 0 0 0 1px rgba(0, 0, 0, .04);
+  --shadow-lg: 0 12px 28px rgba(0, 0, 0, .12);
+  color-scheme: light;
 }
 
-.btn {
-  @apply px-4 py-2 rounded-lg font-medium transition-colors duration-200;
+/* ---------------------------------------------------------------------------
+ * Base
+ * ------------------------------------------------------------------------- */
+@layer base {
+  *, ::after, ::before, ::backdrop, ::file-selector-button { border-color: var(--border); }
+  input::placeholder, textarea::placeholder { color: var(--muted); }
+  button:not(:disabled), [role="button"]:not(:disabled) { cursor: pointer; }
+
+  html { background: var(--bg); }
+
+  body {
+    font: 400 0.875rem/1.55 var(--font-body);
+    background: var(--bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    transition: background-color .25s ease, color .25s ease;
+  }
+
+  h1, h2, h3, h4, h5, h6 { color: var(--text-strong); letter-spacing: -0.01em; }
+
+  code, kbd, pre, samp { font-family: var(--mono); }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  ::selection { background: var(--accent-subtle); color: var(--text-strong); }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 9999px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+  /* Native form controls pick up the theme. */
+  select, input, textarea { color: var(--text); }
+
+  /* Checkbox / radio: the UA box draws its own grey edge (and ignores CSS
+   * borders), which measured below 3:1 on the card, so every one is drawn here
+   * with --control-border (D-13). In the base layer, so a size or margin
+   * utility on the element still wins. */
+  input[type="checkbox"], input[type="radio"] {
+    appearance: none;
+    display: inline-grid;
+    place-content: center;
+    flex-shrink: 0;
+    width: 1rem;
+    height: 1rem;
+    border: 1px solid var(--control-border);
+    border-radius: var(--radius-sm);
+    background-color: var(--bg-elevated);
+    vertical-align: middle;
+    cursor: pointer;
+    transition: background-color .15s ease, border-color .15s ease;
+  }
+  input[type="radio"] { border-radius: 9999px; }
+  input[type="checkbox"]:hover:not(:disabled), input[type="radio"]:hover:not(:disabled) { border-color: var(--control-border-hover); }
+  input[type="checkbox"]:checked, input[type="radio"]:checked { border-color: var(--accent); background-color: var(--accent); }
+  input[type="checkbox"]::before {
+    content: "";
+    width: .75rem;
+    height: .75rem;
+    background-color: var(--accent-fg);
+    -webkit-mask: var(--check-mask) center / contain no-repeat;
+    mask: var(--check-mask) center / contain no-repeat;
+    transform: scale(0);
+  }
+  input[type="checkbox"]:checked::before { transform: scale(1); }
+  /* The selected radio keeps a ring of the field colour around a filled dot. */
+  input[type="radio"]:checked { box-shadow: inset 0 0 0 3px var(--bg-elevated); }
+  /* A destructive choice (assistant approval card) checks in --danger. */
+  input[type="checkbox"].accent-danger:checked { border-color: var(--danger); background-color: var(--danger); }
+  input[type="checkbox"].accent-danger::before { background-color: var(--danger-fg); }
+  input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: .5; cursor: not-allowed; }
+  option { background: var(--bg-elevated); color: var(--text); }
 }
 
-.btn-primary {
-  @apply bg-blue-600 text-white hover:bg-blue-700;
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
-.btn-secondary {
-  @apply bg-gray-100 text-gray-700 hover:bg-gray-200;
+/* ---------------------------------------------------------------------------
+ * Component recipes (KiroCrew src/components/ui.tsx equivalents).
+ * Plain classes, so className="btn btn-primary" keeps working everywhere.
+ * ------------------------------------------------------------------------- */
+@layer components {
+  .card {
+    @apply bg-card border border-border rounded-lg p-5 shadow-sm transition-colors;
+    box-shadow: var(--shadow-sm), inset 0 1px 0 var(--card-hl);
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-md border text-[13px] font-medium
+      transition-all active:scale-[0.97] active:duration-75
+      disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100;
+    border-color: var(--border);
+    color: var(--text);
+    background: transparent;
+  }
+  .btn:not(:disabled):hover { border-color: var(--border-strong); background: var(--bg-hover); }
+
+  .btn-primary {
+    @apply btn-sweep;
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-fg);
+  }
+  .btn-primary:not(:disabled):hover {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+    box-shadow: 0 0 12px var(--accent-glow);
+  }
+
+  .btn-secondary {
+    background: var(--bg-elevated);
+    border-color: var(--border);
+    color: var(--text);
+  }
+
+  .btn-ghost { background: transparent; border-color: transparent; color: var(--muted); }
+  .btn-ghost:not(:disabled):hover { color: var(--text); background: var(--bg-hover); border-color: transparent; }
+
+  .btn-danger { background: transparent; border-color: var(--border); color: var(--danger); }
+  .btn-danger:not(:disabled):hover { border-color: var(--danger); background: var(--danger-subtle); }
+
+  .btn-danger-solid { background: var(--danger); border-color: var(--danger); color: var(--danger-fg); }
+  .btn-danger-solid:not(:disabled):hover { filter: brightness(1.08); background: var(--danger); }
+
+  .btn-sm { @apply px-2.5 py-1 text-[12px]; }
+
+  .icon-btn {
+    @apply inline-flex items-center justify-center p-1.5 rounded-md text-muted transition-all
+      hover:text-text hover:bg-bg-hover active:scale-[0.97]
+      disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+
+  .input {
+    @apply w-full bg-bg-elevated border border-control-border rounded-md px-3 py-2 text-sm text-text outline-none
+      transition-colors hover:border-control-border-hover disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .input:focus, .input:focus-visible {
+    /* The 1px inset outline repeats the ring border, so a border-colour utility on
+       the field (`border-aim/30`, `border-danger`) cannot erase the focus state. */
+    outline: 1px solid var(--ring);
+    outline-offset: -1px;
+    border-color: var(--ring);
+    box-shadow: 0 0 0 3px var(--accent-subtle), 0 0 20px color-mix(in srgb, var(--accent) 8%, transparent);
+  }
+  /* Chromium makes a date/time field's picker icon its own Tab stop, during which
+     the input is not :focus (only :focus-within) — keep the field ringed then too. */
+  .input:focus-within {
+    outline: 1px solid var(--ring);
+    outline-offset: -1px;
+    border-color: var(--ring);
+  }
+  /* Focus ring for everything that is not a text field (buttons, links, switches,
+     tabs, menu items, cards). The `--accent-subtle` glow alone measured 1.28:1
+     on the card — invisible — so the ring is the base `:focus-visible` outline
+     (`--ring` clears 3:1 on every surface, pinned by theme/focusRing.test.ts).
+     An outline is never reset by a variant class (`border-border`, `tab-active`),
+     which is what left focused active tabs with no indicator at all. */
+  .focus-ring:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  /* Link: accent-text AND an underline, always. Colour alone is not a cue
+     (WCAG 1.4.1, axe link-in-text-block — E2E F7: links that only underlined on
+     hover were indistinguishable from the sentence around them for anyone who
+     cannot tell the hues apart). Hover strengthens the line; the focus ring is
+     the shared `focus-ring` treatment. Use on every text link and link-styled
+     button; the same rule `.md-content a` applies to rendered markdown. */
+  .link {
+    color: var(--accent-text);
+    text-decoration-line: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+    text-decoration-color: color-mix(in srgb, var(--accent-text) 55%, transparent);
+    border-radius: var(--radius-sm);
+  }
+  .link:hover { text-decoration-color: var(--accent-text); text-decoration-thickness: 2px; }
+  .link:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  /* Badge tones (KiroCrew Badge: ok | err | warn | muted | aim + accent/info). */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap;
+  }
+  .badge-ok { @apply bg-ok-subtle text-ok; }
+  .badge-danger { @apply bg-danger-subtle text-danger; }
+  .badge-warn { @apply bg-warn-subtle text-warn; }
+  .badge-muted { @apply bg-bg-hover text-muted; }
+  .badge-accent { @apply bg-accent-subtle text-accent-text; }
+  .badge-info { @apply bg-info-subtle text-info; }
+  .badge-aim { @apply bg-aim-subtle text-aim; }
+
+  .skeleton { @apply bg-bg-hover animate-pulse rounded-md; }
+
+  .nav-active {
+    background: var(--nav-active-bg);
+    color: var(--nav-active-text);
+    border-color: var(--nav-active-border);
+  }
+
+  .stat-accent { position: relative; overflow: hidden; }
+  .stat-accent::after {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity: 0; transition: opacity .3s ease;
+  }
+  .stat-accent:hover::after { opacity: 1; }
+
+  .chrome-glass {
+    background: color-mix(in srgb, var(--chrome) 74%, transparent);
+    backdrop-filter: blur(18px) saturate(1.8);
+    -webkit-backdrop-filter: blur(18px) saturate(1.8);
+  }
+
+  /* --- Tabs: KiroCrew segmented pill (ui/tabsPill.ts) ------------------ */
+  .tabs-track {
+    @apply isolate flex w-fit max-w-full items-center gap-0.5 overflow-x-auto rounded-lg border border-border bg-bg-elevated p-0.5;
+    scrollbar-width: none;
+  }
+  .tabs-track::-webkit-scrollbar { display: none; }
+  .tabs-rail { @apply mb-4 border-b border-border pb-3; }
+  .tab {
+    @apply relative flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md border border-transparent
+      px-2.5 py-1.5 text-[12px] font-medium text-muted transition-colors hover:text-text
+      disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  .tab:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+  .tab-active, .tab[aria-selected="true"] {
+    @apply border-border bg-card text-accent-text shadow-sm hover:text-accent-text;
+  }
+
+  /* --- Dialog: KiroCrew ui/dialog.tsx ---------------------------------- */
+  .dialog-overlay { @apply fixed inset-0 z-50 bg-overlay backdrop-blur-md animate-fade-in; }
+  .dialog-panel {
+    @apply relative flex flex-col overflow-hidden rounded-xl border border-border bg-card text-text shadow-2xl animate-scale-in;
+  }
+  .dialog-header { @apply flex shrink-0 items-center gap-3 border-b border-border px-5 py-3; }
+  .dialog-title { @apply min-w-0 truncate text-[15px] font-semibold tracking-tight text-text-strong; }
+  .dialog-description { @apply text-[12px] leading-relaxed text-muted; }
+  .dialog-body { @apply min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-5 py-4; }
+  .dialog-footer { @apply flex shrink-0 items-center justify-end gap-2 border-t border-border bg-bg-accent px-5 py-3; }
+  .dialog-close {
+    @apply rounded-md p-1.5 text-muted transition-colors hover:bg-bg-hover hover:text-text;
+  }
+
+  /* --- Select: KiroCrew ui/select.tsx trigger look on a native <select> - */
+  .select {
+    @apply w-full cursor-pointer appearance-none rounded-md border border-control-border bg-bg-elevated py-2 pl-3 pr-8 text-sm text-text
+      outline-none transition-colors hover:border-control-border-hover disabled:cursor-not-allowed disabled:opacity-40;
+    background-image: var(--select-chevron);
+    background-repeat: no-repeat;
+    background-position: right .6rem center;
+    background-size: 14px 14px;
+  }
+  .select:focus-visible, .select:focus {
+    outline: 1px solid var(--ring);
+    outline-offset: -1px;
+    border-color: var(--ring);
+    box-shadow: 0 0 0 3px var(--accent-subtle);
+  }
+  .select-sm { @apply py-1 pl-2.5 pr-7 text-[12px]; background-position: right .45rem center; }
+
+  /* --- Menu / popover: KiroCrew ui/dropdown-menu.tsx ------------------- */
+  .menu {
+    @apply z-50 min-w-[8rem] overflow-y-auto overscroll-contain rounded-lg border border-border bg-bg-elevated p-1 text-text shadow-lg animate-scale-in;
+  }
+  .menu-item {
+    @apply relative flex w-full cursor-pointer select-none items-center gap-2 rounded-md px-3 py-1.5 text-left text-[13px] text-text
+      outline-none transition-colors hover:bg-bg-hover
+      disabled:pointer-events-none disabled:opacity-50;
+  }
+  /* bg-bg-hover alone was 1.1:1 against the menu; inset so the ring stays inside the menu's clip. */
+  .menu-item:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; background: var(--bg-hover); }
+  .menu-label { @apply px-3 py-1.5 text-[12px] font-semibold text-muted; }
+  .menu-separator { @apply mx-1 my-1 h-px bg-border; }
+
+  /* --- Switch: KiroCrew Toggle (ui.tsx) -------------------------------- */
+  .switch {
+    @apply relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full bg-border transition-colors
+      disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  .switch[aria-checked="true"], .switch-on { @apply bg-accent; }
+  .switch:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  .switch-knob {
+    @apply pointer-events-none absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform;
+  }
+  .switch[aria-checked="true"] .switch-knob, .switch-on .switch-knob { @apply translate-x-4; }
+
+  /* --- Range slider: KiroCrew Slider (ui.tsx) on a native range input --
+   * The input itself stays tall (h-8 hit area, good on phones); only the
+   * painted track is thin. */
+  .range {
+    @apply h-8 w-full cursor-pointer appearance-none bg-transparent disabled:cursor-not-allowed disabled:opacity-40;
+    accent-color: var(--accent);
+  }
+  .range::-webkit-slider-runnable-track { @apply h-1.5 rounded-full bg-border; }
+  .range::-moz-range-track { @apply h-1.5 rounded-full bg-border; }
+  .range::-moz-range-progress { @apply h-1.5 rounded-full bg-accent; }
+  .range::-webkit-slider-thumb {
+    @apply -mt-[6px] h-[18px] w-[18px] appearance-none rounded-full bg-accent shadow-sm transition-transform;
+    border: 2px solid var(--card);
+  }
+  .range::-moz-range-thumb {
+    @apply h-[18px] w-[18px] rounded-full bg-accent shadow-sm;
+    border: 2px solid var(--card);
+  }
+  .range:active::-webkit-slider-thumb { transform: scale(1.1); }
+  /* Not yet chosen (e.g. an unscored axis): hollow muted thumb. */
+  .range-unscored::-webkit-slider-thumb { background: var(--card); border-color: var(--muted); }
+  .range-unscored::-moz-range-thumb { background: var(--card); border-color: var(--muted); }
+  .range-unscored::-moz-range-progress { background: transparent; }
+  .range:focus-visible { outline: none; }
+  /* The ring goes on the thumb (the input's own box is the tall h-8 hit area). */
+  .range:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--ring); outline-offset: 2px; box-shadow: 0 0 0 4px var(--accent-subtle); }
+  .range:focus-visible::-moz-range-thumb { outline: 2px solid var(--ring); outline-offset: 2px; box-shadow: 0 0 0 4px var(--accent-subtle); }
 }
 
-.input {
-  @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none;
+@utility btn-sweep {
+  position: relative;
+  overflow: hidden;
+  &::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .15), transparent);
+    transform: translateX(-100%); transition: none;
+  }
+  &:hover::after { transform: translateX(100%); transition: transform .5s ease; }
 }
 
-.badge {
-  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+/* Unlayered so it beats `space-y-*` / `gap` utilities: a dialog rendered inside
+ * a spaced list otherwise inherits a margin, and a margin on a fixed inset-0
+ * box shrinks the backdrop (it left a 24px uncovered strip on /projects). */
+.dialog-overlay { margin: 0; }
+
+/* Ambient brand wash behind the app (KiroCrew body::before).
+ * `isolation: isolate` + z-index -1 keeps the wash behind every child WITHOUT
+ * giving <main> or the sidebar a z-index — a z-index there would create a
+ * stacking context that traps page modals (z-50) beneath the sidebar. */
+.app-ambient { isolation: isolate; }
+.app-ambient::before {
+  content: ''; position: fixed; inset: 0; pointer-events: none; z-index: -1;
+  background:
+    radial-gradient(circle at 20% 50%, color-mix(in srgb, var(--accent) 4%, transparent), transparent 45%),
+    radial-gradient(circle at 80% 20%, color-mix(in srgb, var(--accent) 2.5%, transparent), transparent 40%),
+    radial-gradient(circle at 50% 80%, color-mix(in srgb, var(--accent) 2%, transparent), transparent 40%);
 }
 
-.badge-positive {
-  @apply bg-green-100 text-green-800;
-}
-
-.badge-negative {
-  @apply bg-red-100 text-red-800;
-}
-
-.badge-neutral {
-  @apply bg-gray-100 text-gray-800;
-}
-
-.badge-urgent {
-  @apply bg-orange-100 text-orange-800;
-}
-
-/* Hide scrollbar for carousel */
+/* Hide a scrollbar while keeping the element scrollable (carousels, crumbs). */
 .scrollbar-hide {
   -ms-overflow-style: none;
   scrollbar-width: none;
@@ -61,7 +589,29 @@ body {
   display: none;
 }
 
-/* Prose overrides for chat markdown */
-.prose-sm h1 { @apply text-lg font-bold; }
-.prose-sm h2 { @apply text-base font-semibold; }
-.prose-sm h3 { @apply text-sm font-semibold; }
+/* Rendered markdown (chat replies, documents) — KiroCrew `.msg-content`. */
+.md-content { color: var(--text); line-height: 1.6; overflow-wrap: anywhere; }
+.md-content > :first-child { margin-top: 0; }
+.md-content > :last-child { margin-bottom: 0; }
+.md-content :where(p, ul, ol, pre, blockquote, table) { margin: .5rem 0; }
+.md-content :where(h1, h2, h3, h4) { color: var(--text-strong); font-weight: 600; letter-spacing: -0.01em; margin: .9rem 0 .4rem; }
+.md-content h1 { font-size: 1.125rem; font-weight: 700; }
+.md-content h2 { font-size: 1rem; }
+.md-content :where(h3, h4) { font-size: .875rem; }
+.md-content :where(ul, ol) { padding-left: 1.25rem; }
+.md-content ul { list-style: disc; }
+.md-content ol { list-style: decimal; }
+.md-content li { margin: .125rem 0; }
+.md-content li::marker { color: var(--muted); }
+.md-content :where(strong, b) { color: var(--text-strong); font-weight: 600; }
+.md-content a { color: var(--accent-text); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent-text) 45%, transparent); }
+.md-content a:hover { text-decoration-color: var(--accent-text); }
+.md-content :not(pre) > code {
+  background: var(--bg-hover); color: var(--accent-text); padding: .1em .35em; border-radius: var(--radius-sm); font-size: .9em;
+}
+.md-content pre { background: var(--bg-accent); border: 1px solid var(--border); border-radius: var(--radius-md); padding: .75rem; overflow-x: auto; font-size: 12px; }
+.md-content blockquote { border-left: 2px solid var(--accent); padding-left: .75rem; color: var(--muted); }
+.md-content hr { border: 0; border-top: 1px solid var(--border); margin: 1rem 0; }
+.md-content table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.md-content :where(th, td) { border: 1px solid var(--border); padding: .35rem .6rem; text-align: left; }
+.md-content th { background: var(--bg-accent); color: var(--text-strong); font-weight: 600; }

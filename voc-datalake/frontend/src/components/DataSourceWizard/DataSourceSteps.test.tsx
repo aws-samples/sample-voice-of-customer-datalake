@@ -4,32 +4,14 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { DataSourcesStep, FeedbackFiltersStep, ItemSelectionStep } from './DataSourceSteps'
+import { DataSourcesStep, FeedbackFiltersStep } from './DataSourceSteps'
+import { ItemSelectionStep } from './ItemSelectionStep'
 import { SENTIMENTS } from '../../constants/filters'
-import type { ContextConfig } from './types'
-import type { ProjectPersona, ProjectDocument } from '../../api/client'
-
-const defaultColors = {
-  bg: 'bg-purple-600',
-  bgLight: 'bg-purple-100',
-  border: 'border-purple-300',
-  text: 'text-purple-700',
-  hover: 'hover:bg-purple-700',
-}
-
-const defaultContextConfig: ContextConfig = {
-  useFeedback: true,
-  usePersonas: false,
-  useDocuments: false,
-  useResearch: false,
-  sources: [],
-  categories: [],
-  sentiments: [],
-  days: 30,
-  selectedPersonaIds: [],
-  selectedDocumentIds: [],
-  selectedResearchIds: [],
-}
+import { defaultContextConfig } from './types'
+import { accentColors, contextConfig, splitDocuments } from './dataSourceWizard-fixtures'
+import type { ProjectDocument } from '../../api/types'
+import type { ProjectPersona } from '../../api/projectTypes'
+import { at } from '@test/defined'
 
 const mockPersonas: ProjectPersona[] = [
   {
@@ -78,6 +60,13 @@ const mockDocuments: ProjectDocument[] = [
   },
 ]
 
+/** Assert that each of `texts` is on screen. */
+function expectAllVisible(...texts: string[]) {
+  for (const text of texts) {
+    expect(screen.getByText(text)).toBeInTheDocument()
+  }
+}
+
 describe('DataSourcesStep', () => {
   const defaultProps = {
     contextConfig: defaultContextConfig,
@@ -93,6 +82,19 @@ describe('DataSourcesStep', () => {
     researchDocsCount: 1,
   }
 
+  type StepProps = Partial<Parameters<typeof DataSourcesStep>[0]>
+
+  /** Mount the step, click the checkbox named `name`, and return the change spy. */
+  async function toggle(name: RegExp, overrides: StepProps = {}) {
+    const user = userEvent.setup()
+    const onContextChange = vi.fn()
+    render(<DataSourcesStep {...defaultProps} {...overrides} onContextChange={onContextChange} />)
+
+    await user.click(screen.getByRole('checkbox', { name }))
+
+    return onContextChange
+  }
+
   it('renders data sources heading', () => {
     render(<DataSourcesStep {...defaultProps} />)
     expect(screen.getByText('Data Sources')).toBeInTheDocument()
@@ -103,109 +105,62 @@ describe('DataSourcesStep', () => {
     expect(screen.getByText(/select what data to use/i)).toBeInTheDocument()
   })
 
-  describe('Customer Feedback option', () => {
-    it('displays Customer Feedback when showFeedback is true', () => {
+  describe('built-in options', () => {
+    it.each([
+      ['Customer Feedback', 'Customer Feedback'],
+      ['Personas with count', /Personas \(2\)/],
+      ['Existing Documents', /Existing Documents \(2\)/],
+      ['Research Documents', /Research Documents \(1\)/],
+    ])('displays %s when shown', (_label, text) => {
       render(<DataSourcesStep {...defaultProps} />)
-      expect(screen.getByText('Customer Feedback')).toBeInTheDocument()
+      expect(screen.getByText(text)).toBeInTheDocument()
     })
 
-    it('hides Customer Feedback when showFeedback is false', () => {
-      render(<DataSourcesStep {...defaultProps} showFeedback={false} />)
-      expect(screen.queryByText('Customer Feedback')).not.toBeInTheDocument()
+    it.each([
+      ['Customer Feedback', { showFeedback: false }, 'Customer Feedback'],
+      ['Personas', { showPersonas: false }, /Personas/],
+      ['documents', { showDocuments: false }, /Existing Documents/],
+      ['research', { showResearch: false }, /Research Documents/],
+    ] as const)('hides %s when its show flag is false', (_label, overrides, text) => {
+      render(<DataSourcesStep {...defaultProps} {...overrides} />)
+      expect(screen.queryByText(text)).not.toBeInTheDocument()
     })
 
-    it('calls onContextChange when feedback checkbox is toggled', async () => {
-      const user = userEvent.setup()
-      const onContextChange = vi.fn()
-      render(<DataSourcesStep {...defaultProps} onContextChange={onContextChange} />)
-      
-      const checkbox = screen.getByRole('checkbox', { name: /customer feedback/i })
-      await user.click(checkbox)
-      
-      expect(onContextChange).toHaveBeenCalledWith(
-        expect.objectContaining({ useFeedback: false })
-      )
-    })
-  })
-
-  describe('Personas option', () => {
-    it('displays Personas with count when showPersonas is true', () => {
-      render(<DataSourcesStep {...defaultProps} />)
-      expect(screen.getByText(/Personas \(2\)/)).toBeInTheDocument()
-    })
-
-    it('hides Personas when showPersonas is false', () => {
-      render(<DataSourcesStep {...defaultProps} showPersonas={false} />)
-      expect(screen.queryByText(/Personas/)).not.toBeInTheDocument()
-    })
-
-    it('calls onContextChange when personas checkbox is toggled', async () => {
-      const user = userEvent.setup()
-      const onContextChange = vi.fn()
-      render(<DataSourcesStep {...defaultProps} onContextChange={onContextChange} />)
-      
-      const checkbox = screen.getByRole('checkbox', { name: /personas/i })
-      await user.click(checkbox)
-      
-      expect(onContextChange).toHaveBeenCalledWith(
-        expect.objectContaining({ usePersonas: true })
-      )
-    })
-
-    it('clears selectedPersonaIds when personas is disabled', async () => {
-      const user = userEvent.setup()
-      const onContextChange = vi.fn()
-      const config = { ...defaultContextConfig, usePersonas: true, selectedPersonaIds: ['p1'] }
-      render(<DataSourcesStep {...defaultProps} contextConfig={config} onContextChange={onContextChange} />)
-      
-      const checkbox = screen.getByRole('checkbox', { name: /personas/i })
-      await user.click(checkbox)
-      
-      expect(onContextChange).toHaveBeenCalledWith(
-        expect.objectContaining({ usePersonas: false, selectedPersonaIds: [] })
-      )
-    })
-  })
-
-  describe('Documents option (combined mode)', () => {
     it('displays combined Documents option when combineDocuments is true', () => {
       render(<DataSourcesStep {...defaultProps} combineDocuments={true} />)
       expect(screen.getByText(/Documents \(3\)/)).toBeInTheDocument()
     })
+  })
+
+  describe('toggles', () => {
+    it('calls onContextChange when feedback checkbox is toggled', async () => {
+      const onContextChange = await toggle(/customer feedback/i)
+
+      expect(onContextChange).toHaveBeenCalledWith(expect.objectContaining({ useFeedback: false }))
+    })
+
+    it('calls onContextChange when personas checkbox is toggled', async () => {
+      const onContextChange = await toggle(/personas/i)
+
+      expect(onContextChange).toHaveBeenCalledWith(expect.objectContaining({ usePersonas: true }))
+    })
+
+    it('clears selectedPersonaIds when personas is disabled', async () => {
+      const onContextChange = await toggle(/personas/i, {
+        contextConfig: contextConfig({ usePersonas: true, selectedPersonaIds: ['p1'] }),
+      })
+
+      expect(onContextChange).toHaveBeenCalledWith(
+        expect.objectContaining({ usePersonas: false, selectedPersonaIds: [] })
+      )
+    })
 
     it('toggles both useDocuments and useResearch when combined', async () => {
-      const user = userEvent.setup()
-      const onContextChange = vi.fn()
-      render(<DataSourcesStep {...defaultProps} combineDocuments={true} onContextChange={onContextChange} />)
-      
-      const checkbox = screen.getByRole('checkbox', { name: /documents/i })
-      await user.click(checkbox)
-      
+      const onContextChange = await toggle(/documents/i, { combineDocuments: true })
+
       expect(onContextChange).toHaveBeenCalledWith(
         expect.objectContaining({ useDocuments: true, useResearch: true })
       )
-    })
-  })
-
-  describe('Documents option (separate mode)', () => {
-    it('displays Existing Documents when combineDocuments is false', () => {
-      render(<DataSourcesStep {...defaultProps} combineDocuments={false} />)
-      expect(screen.getByText(/Existing Documents \(2\)/)).toBeInTheDocument()
-    })
-
-    it('displays Research Documents when combineDocuments is false', () => {
-      render(<DataSourcesStep {...defaultProps} combineDocuments={false} />)
-      expect(screen.getByText(/Research Documents \(1\)/)).toBeInTheDocument()
-    })
-
-    it('hides documents when showDocuments is false', () => {
-      render(<DataSourcesStep {...defaultProps} showDocuments={false} />)
-      expect(screen.queryByText(/Existing Documents/)).not.toBeInTheDocument()
-    })
-
-    it('hides research when showResearch is false', () => {
-      render(<DataSourcesStep {...defaultProps} showResearch={false} />)
-      expect(screen.queryByText(/Research Documents/)).not.toBeInTheDocument()
     })
   })
 
@@ -225,8 +180,7 @@ describe('DataSourcesStep', () => {
 
     it('renders extra sources as peer cards after the built-ins', () => {
       render(<DataSourcesStep {...defaultProps} extraDataSources={[webSearchSource]} />)
-      expect(screen.getByText('Public Web Search')).toBeInTheDocument()
-      expect(screen.getByText('AI plans and runs multiple web searches')).toBeInTheDocument()
+      expectAllVisible('Public Web Search', 'AI plans and runs multiple web searches')
     })
 
     it('uses the exact same card markup as the built-in sources', () => {
@@ -265,76 +219,57 @@ describe('FeedbackFiltersStep', () => {
       { id: 'support', name: 'Support' },
     ],
     loadingCategories: false,
-    colors: defaultColors,
+    colors: accentColors,
   }
 
-  it('renders Sources section', () => {
-    render(<FeedbackFiltersStep {...defaultProps} />)
-    expect(screen.getByText('Sources')).toBeInTheDocument()
-  })
+  type StepProps = Partial<Parameters<typeof FeedbackFiltersStep>[0]>
 
-  it('renders Categories section', () => {
-    render(<FeedbackFiltersStep {...defaultProps} />)
-    expect(screen.getByText('Categories')).toBeInTheDocument()
-  })
+  /** Mount the step, click the filter button labelled `label`, and return the change spy. */
+  async function clickFilter(label: string, overrides: StepProps = {}) {
+    const user = userEvent.setup()
+    const onContextChange = vi.fn()
+    render(<FeedbackFiltersStep {...defaultProps} {...overrides} onContextChange={onContextChange} />)
 
-  it('renders Sentiments section', () => {
-    render(<FeedbackFiltersStep {...defaultProps} />)
-    expect(screen.getByText('Sentiments')).toBeInTheDocument()
-  })
+    await user.click(screen.getByText(label))
 
-  it('renders Time Range section', () => {
+    return onContextChange
+  }
+
+  it.each(['Sources', 'Categories', 'Sentiments', 'Time Range'])('renders the %s section', (heading) => {
     render(<FeedbackFiltersStep {...defaultProps} />)
-    expect(screen.getByText('Time Range')).toBeInTheDocument()
+    expect(screen.getByText(heading)).toBeInTheDocument()
   })
 
   describe('Sources', () => {
     it('displays all source buttons', () => {
       render(<FeedbackFiltersStep {...defaultProps} />)
-      expect(screen.getByText('Webscraper')).toBeInTheDocument()
-      expect(screen.getByText('Manual Import')).toBeInTheDocument()
-      expect(screen.getByText('S3 Import')).toBeInTheDocument()
+      expectAllVisible('Webscraper', 'Manual Import', 'S3 Import')
     })
 
     it('formats source names correctly', () => {
-      const props = { ...defaultProps, sources: ['webscraper', 'manual_import'] }
-      render(<FeedbackFiltersStep {...props} />)
-      expect(screen.getByText('Webscraper')).toBeInTheDocument()
-      expect(screen.getByText('Manual Import')).toBeInTheDocument()
+      render(<FeedbackFiltersStep {...defaultProps} sources={['webscraper', 'manual_import']} />)
+      expectAllVisible('Webscraper', 'Manual Import')
     })
 
     it('toggles source selection when clicked', async () => {
-      const user = userEvent.setup()
-      const onContextChange = vi.fn()
-      render(<FeedbackFiltersStep {...defaultProps} onContextChange={onContextChange} />)
-      
-      await user.click(screen.getByText('Webscraper'))
-      
-      expect(onContextChange).toHaveBeenCalledWith(
-        expect.objectContaining({ sources: ['webscraper'] })
-      )
+      const onContextChange = await clickFilter('Webscraper')
+
+      expect(onContextChange).toHaveBeenCalledWith(expect.objectContaining({ sources: ['webscraper'] }))
     })
 
     it('removes source when already selected', async () => {
-      const user = userEvent.setup()
-      const onContextChange = vi.fn()
-      const config = { ...defaultContextConfig, sources: ['webscraper'] }
-      render(<FeedbackFiltersStep {...defaultProps} contextConfig={config} onContextChange={onContextChange} />)
-      
-      await user.click(screen.getByText('Webscraper'))
-      
-      expect(onContextChange).toHaveBeenCalledWith(
-        expect.objectContaining({ sources: [] })
-      )
+      const onContextChange = await clickFilter('Webscraper', {
+        contextConfig: contextConfig({ sources: ['webscraper'] }),
+      })
+
+      expect(onContextChange).toHaveBeenCalledWith(expect.objectContaining({ sources: [] }))
     })
   })
 
   describe('Categories', () => {
     it('displays all category buttons', () => {
       render(<FeedbackFiltersStep {...defaultProps} />)
-      expect(screen.getByText('Delivery')).toBeInTheDocument()
-      expect(screen.getByText('Quality')).toBeInTheDocument()
-      expect(screen.getByText('Support')).toBeInTheDocument()
+      expectAllVisible('Delivery', 'Quality', 'Support')
     })
 
     it('shows loading state when loadingCategories is true', () => {
@@ -343,15 +278,9 @@ describe('FeedbackFiltersStep', () => {
     })
 
     it('toggles category selection when clicked', async () => {
-      const user = userEvent.setup()
-      const onContextChange = vi.fn()
-      render(<FeedbackFiltersStep {...defaultProps} onContextChange={onContextChange} />)
-      
-      await user.click(screen.getByText('Delivery'))
-      
-      expect(onContextChange).toHaveBeenCalledWith(
-        expect.objectContaining({ categories: ['delivery'] })
-      )
+      const onContextChange = await clickFilter('Delivery')
+
+      expect(onContextChange).toHaveBeenCalledWith(expect.objectContaining({ categories: ['delivery'] }))
     })
   })
 
@@ -361,37 +290,22 @@ describe('FeedbackFiltersStep', () => {
     // into contextConfig stays lowercase.
     it('displays sentiment buttons', () => {
       render(<FeedbackFiltersStep {...defaultProps} />)
-      expect(screen.getByText('Positive')).toBeInTheDocument()
-      expect(screen.getByText('Negative')).toBeInTheDocument()
-      expect(screen.getByText('Neutral')).toBeInTheDocument()
+      expectAllVisible('Positive', 'Negative', 'Neutral')
     })
 
     it('toggles sentiment selection when clicked', async () => {
-      const user = userEvent.setup()
-      const onContextChange = vi.fn()
-      render(<FeedbackFiltersStep {...defaultProps} onContextChange={onContextChange} />)
-      
-      await user.click(screen.getByText('Positive'))
-      
-      expect(onContextChange).toHaveBeenCalledWith(
-        expect.objectContaining({ sentiments: ['positive'] })
-      )
+      const onContextChange = await clickFilter('Positive')
+
+      expect(onContextChange).toHaveBeenCalledWith(expect.objectContaining({ sentiments: ['positive'] }))
     })
 
-    it('applies correct styling for positive sentiment when selected', async () => {
-      const config = { ...defaultContextConfig, sentiments: ['positive'] }
-      render(<FeedbackFiltersStep {...defaultProps} contextConfig={config} />)
-      
-      const positiveButton = screen.getByText('Positive')
-      expect(positiveButton).toHaveClass('bg-green-100')
-    })
+    it.each([
+      ['positive', 'Positive', 'bg-ok-subtle'],
+      ['negative', 'Negative', 'bg-danger-subtle'],
+    ])('applies correct styling for %s sentiment when selected', (sentiment, label, className) => {
+      render(<FeedbackFiltersStep {...defaultProps} contextConfig={contextConfig({ sentiments: [sentiment] })} />)
 
-    it('applies correct styling for negative sentiment when selected', async () => {
-      const config = { ...defaultContextConfig, sentiments: ['negative'] }
-      render(<FeedbackFiltersStep {...defaultProps} contextConfig={config} />)
-      
-      const negativeButton = screen.getByText('Negative')
-      expect(negativeButton).toHaveClass('bg-red-100')
+      expect(screen.getByText(label)).toHaveClass(className)
     })
 
     // A render assertion cannot tell "translated" from "i18next echoed the key",
@@ -414,14 +328,10 @@ describe('FeedbackFiltersStep', () => {
   })
 
   describe('Time Range', () => {
-    it('displays time range select', () => {
-      render(<FeedbackFiltersStep {...defaultProps} />)
-      expect(screen.getByRole('combobox')).toBeInTheDocument()
-    })
-
-    it('has correct default value', () => {
+    it('displays time range select with the default value', () => {
       render(<FeedbackFiltersStep {...defaultProps} />)
       const select = screen.getByRole('combobox')
+      expect(select).toBeInTheDocument()
       expect(select).toHaveValue('30')
     })
 
@@ -429,197 +339,126 @@ describe('FeedbackFiltersStep', () => {
       const user = userEvent.setup()
       const onContextChange = vi.fn()
       render(<FeedbackFiltersStep {...defaultProps} onContextChange={onContextChange} />)
-      
+
       await user.selectOptions(screen.getByRole('combobox'), '7')
-      
-      expect(onContextChange).toHaveBeenCalledWith(
-        expect.objectContaining({ days: 7 })
-      )
+
+      expect(onContextChange).toHaveBeenCalledWith(expect.objectContaining({ days: 7 }))
     })
 
     it('displays all time range options', () => {
       render(<FeedbackFiltersStep {...defaultProps} />)
-      expect(screen.getByText('Last 7 days')).toBeInTheDocument()
-      expect(screen.getByText('Last 14 days')).toBeInTheDocument()
-      expect(screen.getByText('Last 30 days')).toBeInTheDocument()
-      expect(screen.getByText('Last 60 days')).toBeInTheDocument()
-      expect(screen.getByText('Last 90 days')).toBeInTheDocument()
-      expect(screen.getByText('Last year')).toBeInTheDocument()
-      expect(screen.getByText('All time')).toBeInTheDocument()
+      expectAllVisible(
+        'Last 7 days', 'Last 14 days', 'Last 30 days', 'Last 60 days', 'Last 90 days', 'Last year', 'All time',
+      )
     })
   })
 })
 
 describe('ItemSelectionStep', () => {
-  const otherDocs = mockDocuments.filter(d => d.document_type !== 'research')
-  const researchDocs = mockDocuments.filter(d => d.document_type === 'research')
-
   const defaultProps = {
     contextConfig: defaultContextConfig,
     onContextChange: vi.fn(),
     personas: mockPersonas,
     documents: mockDocuments,
-    otherDocs,
-    researchDocs,
+    ...splitDocuments(mockDocuments),
     combineDocuments: false,
   }
 
+  type StepProps = Partial<Parameters<typeof ItemSelectionStep>[0]>
+
+  /** Mount the step with the given context toggles on. */
+  function renderWith(toggles: Partial<typeof defaultContextConfig>, overrides: StepProps = {}) {
+    render(<ItemSelectionStep {...defaultProps} contextConfig={contextConfig(toggles)} {...overrides} />)
+  }
+
+  /** Mount the step, click the checkbox at `index`, and return the change spy. */
+  async function toggleCheckbox(toggles: Partial<typeof defaultContextConfig>, index: number) {
+    const user = userEvent.setup()
+    const onContextChange = vi.fn()
+    renderWith(toggles, { onContextChange })
+
+    await user.click(at(screen.getAllByRole('checkbox'), index))
+
+    return onContextChange
+  }
+
+  describe('sections follow the context toggles', () => {
+    it.each([
+      ['personas', 'Select Personas', { usePersonas: true }],
+      ['documents', 'Select Documents', { useDocuments: true }],
+      ['research', 'Select Research Documents', { useResearch: true }],
+    ])('shows the %s section only when its toggle is on', (_name, heading, toggles) => {
+      const { unmount } = render(<ItemSelectionStep {...defaultProps} />)
+      expect(screen.queryByText(heading)).not.toBeInTheDocument()
+      unmount()
+
+      renderWith(toggles)
+      expect(screen.getByText(heading)).toBeInTheDocument()
+    })
+
+    it.each([
+      ['personas', 'Select Personas', { usePersonas: true }, { personas: [] }],
+      ['documents', 'Select Documents', { useDocuments: true }, { otherDocs: [] }],
+      ['research', 'Select Research Documents', { useResearch: true }, { researchDocs: [] }],
+    ] as const)('does not show the %s section when its items are empty', (_name, heading, toggles, overrides) => {
+      renderWith(toggles, overrides)
+      expect(screen.queryByText(heading)).not.toBeInTheDocument()
+    })
+  })
+
   describe('Persona Selection', () => {
-    it('does not show personas when usePersonas is false', () => {
-      render(<ItemSelectionStep {...defaultProps} />)
-      expect(screen.queryByText('Select Personas')).not.toBeInTheDocument()
-    })
-
-    it('shows personas when usePersonas is true', () => {
-      const config = { ...defaultContextConfig, usePersonas: true }
-      render(<ItemSelectionStep {...defaultProps} contextConfig={config} />)
-      expect(screen.getByText('Select Personas')).toBeInTheDocument()
-    })
-
-    it('displays all personas', () => {
-      const config = { ...defaultContextConfig, usePersonas: true }
-      render(<ItemSelectionStep {...defaultProps} contextConfig={config} />)
-      expect(screen.getByText('Power User')).toBeInTheDocument()
-      expect(screen.getByText('Casual User')).toBeInTheDocument()
-    })
-
-    it('displays persona taglines', () => {
-      const config = { ...defaultContextConfig, usePersonas: true }
-      render(<ItemSelectionStep {...defaultProps} contextConfig={config} />)
-      expect(screen.getByText('Uses all features daily')).toBeInTheDocument()
-      expect(screen.getByText('Occasional usage')).toBeInTheDocument()
+    it('displays all personas with their taglines', () => {
+      renderWith({ usePersonas: true })
+      expectAllVisible('Power User', 'Casual User', 'Uses all features daily', 'Occasional usage')
     })
 
     it('toggles persona selection when clicked', async () => {
-      const user = userEvent.setup()
-      const onContextChange = vi.fn()
-      const config = { ...defaultContextConfig, usePersonas: true }
-      render(<ItemSelectionStep {...defaultProps} contextConfig={config} onContextChange={onContextChange} />)
-      
-      const checkbox = screen.getAllByRole('checkbox')[0]
-      await user.click(checkbox)
-      
-      expect(onContextChange).toHaveBeenCalledWith(
-        expect.objectContaining({ selectedPersonaIds: ['p1'] })
-      )
+      const onContextChange = await toggleCheckbox({ usePersonas: true }, 0)
+
+      expect(onContextChange).toHaveBeenCalledWith(expect.objectContaining({ selectedPersonaIds: ['p1'] }))
     })
 
     it('removes persona when already selected', async () => {
-      const user = userEvent.setup()
-      const onContextChange = vi.fn()
-      const config = { ...defaultContextConfig, usePersonas: true, selectedPersonaIds: ['p1'] }
-      render(<ItemSelectionStep {...defaultProps} contextConfig={config} onContextChange={onContextChange} />)
-      
-      const checkbox = screen.getAllByRole('checkbox')[0]
-      await user.click(checkbox)
-      
-      expect(onContextChange).toHaveBeenCalledWith(
-        expect.objectContaining({ selectedPersonaIds: [] })
-      )
+      const onContextChange = await toggleCheckbox({ usePersonas: true, selectedPersonaIds: ['p1'] }, 0)
+
+      expect(onContextChange).toHaveBeenCalledWith(expect.objectContaining({ selectedPersonaIds: [] }))
     })
 
     it('shows persona initial in avatar', () => {
-      const config = { ...defaultContextConfig, usePersonas: true }
-      render(<ItemSelectionStep {...defaultProps} contextConfig={config} />)
-      expect(screen.getByText('P')).toBeInTheDocument() // Power User initial
-      expect(screen.getByText('C')).toBeInTheDocument() // Casual User initial
+      renderWith({ usePersonas: true })
+      expectAllVisible('P', 'C') // Power User, Casual User initials
     })
   })
 
   describe('Document Selection (separate mode)', () => {
-    it('does not show documents when useDocuments is false', () => {
-      render(<ItemSelectionStep {...defaultProps} />)
-      expect(screen.queryByText('Select Documents')).not.toBeInTheDocument()
-    })
-
-    it('shows documents when useDocuments is true', () => {
-      const config = { ...defaultContextConfig, useDocuments: true }
-      render(<ItemSelectionStep {...defaultProps} contextConfig={config} />)
-      expect(screen.getByText('Select Documents')).toBeInTheDocument()
-    })
-
-    it('displays non-research documents', () => {
-      const config = { ...defaultContextConfig, useDocuments: true }
-      render(<ItemSelectionStep {...defaultProps} contextConfig={config} />)
-      expect(screen.getByText('Product PRD')).toBeInTheDocument()
-      expect(screen.getByText('PR/FAQ Document')).toBeInTheDocument()
-    })
-
-    it('shows document type labels', () => {
-      const config = { ...defaultContextConfig, useDocuments: true }
-      render(<ItemSelectionStep {...defaultProps} contextConfig={config} />)
-      expect(screen.getByText('PRD')).toBeInTheDocument()
-      expect(screen.getByText('PRFAQ')).toBeInTheDocument()
+    it('displays non-research documents with their type labels', () => {
+      renderWith({ useDocuments: true })
+      expectAllVisible('Product PRD', 'PR/FAQ Document', 'PRD', 'PRFAQ')
     })
   })
 
   describe('Research Document Selection', () => {
-    it('does not show research when useResearch is false', () => {
-      render(<ItemSelectionStep {...defaultProps} />)
-      expect(screen.queryByText('Select Research Documents')).not.toBeInTheDocument()
-    })
-
-    it('shows research when useResearch is true', () => {
-      const config = { ...defaultContextConfig, useResearch: true }
-      render(<ItemSelectionStep {...defaultProps} contextConfig={config} />)
-      expect(screen.getByText('Select Research Documents')).toBeInTheDocument()
-    })
-
     it('displays research documents', () => {
-      const config = { ...defaultContextConfig, useResearch: true }
-      render(<ItemSelectionStep {...defaultProps} contextConfig={config} />)
+      renderWith({ useResearch: true })
       expect(screen.getByText('Research Report')).toBeInTheDocument()
     })
 
     it('toggles research document selection', async () => {
-      const user = userEvent.setup()
-      const onContextChange = vi.fn()
-      const config = { ...defaultContextConfig, useResearch: true }
-      render(<ItemSelectionStep {...defaultProps} contextConfig={config} onContextChange={onContextChange} />)
-      
-      const checkbox = screen.getByRole('checkbox')
-      await user.click(checkbox)
-      
-      expect(onContextChange).toHaveBeenCalledWith(
-        expect.objectContaining({ selectedResearchIds: ['d2'] })
-      )
+      const onContextChange = await toggleCheckbox({ useResearch: true }, 0)
+
+      expect(onContextChange).toHaveBeenCalledWith(expect.objectContaining({ selectedResearchIds: ['d2'] }))
     })
   })
 
   describe('Document Selection (combined mode)', () => {
     it('shows all documents when combineDocuments is true', () => {
-      const config = { ...defaultContextConfig, useDocuments: true, useResearch: true }
-      render(<ItemSelectionStep {...defaultProps} contextConfig={config} combineDocuments={true} />)
-      expect(screen.getByText('Select Documents')).toBeInTheDocument()
-      expect(screen.getByText('Product PRD')).toBeInTheDocument()
-      expect(screen.getByText('Research Report')).toBeInTheDocument()
-      expect(screen.getByText('PR/FAQ Document')).toBeInTheDocument()
+      renderWith({ useDocuments: true, useResearch: true }, { combineDocuments: true })
+      expectAllVisible('Select Documents', 'Product PRD', 'Research Report', 'PR/FAQ Document')
     })
 
     it('shows description for merge mode', () => {
-      const config = { ...defaultContextConfig, useDocuments: true, useResearch: true }
-      render(<ItemSelectionStep {...defaultProps} contextConfig={config} combineDocuments={true} />)
+      renderWith({ useDocuments: true, useResearch: true }, { combineDocuments: true })
       expect(screen.getByText('Select documents to merge')).toBeInTheDocument()
-    })
-  })
-
-  describe('Empty states', () => {
-    it('does not show personas section when personas array is empty', () => {
-      const config = { ...defaultContextConfig, usePersonas: true }
-      render(<ItemSelectionStep {...defaultProps} contextConfig={config} personas={[]} />)
-      expect(screen.queryByText('Select Personas')).not.toBeInTheDocument()
-    })
-
-    it('does not show documents section when documents array is empty', () => {
-      const config = { ...defaultContextConfig, useDocuments: true }
-      render(<ItemSelectionStep {...defaultProps} contextConfig={config} otherDocs={[]} />)
-      expect(screen.queryByText('Select Documents')).not.toBeInTheDocument()
-    })
-
-    it('does not show research section when research array is empty', () => {
-      const config = { ...defaultContextConfig, useResearch: true }
-      render(<ItemSelectionStep {...defaultProps} contextConfig={config} researchDocs={[]} />)
-      expect(screen.queryByText('Select Research Documents')).not.toBeInTheDocument()
     })
   })
 })

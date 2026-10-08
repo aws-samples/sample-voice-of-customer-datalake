@@ -15,7 +15,9 @@
 
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { z } from 'zod'
 import { getRuntimeConfig, isConfigLoaded } from '../runtimeConfig'
+import { versionedPersist } from './persistVersion'
 
 /**
  * Authenticated user information extracted from Cognito ID token.
@@ -27,8 +29,13 @@ export interface User {
   email: string
   /** User's display name (fullname attribute) */
   name?: string
-  /** Cognito user groups for authorization */
+  /** Cognito groups for authorization */
   groups: string[]
+  /**
+   * Cognito `sub` (stable user id) — what project ownership and membership are
+   * keyed by. Optional so sessions persisted before it existed still load.
+   */
+  sub?: string
 }
 
 /**
@@ -66,6 +73,20 @@ interface AuthState {
   /** Clear all auth state and tokens */
   logout: () => void
 }
+
+/** The persisted part of the store ('voc-auth'), validated on rehydrate. */
+const PersistedAuthSchema = z.object({
+  user: z.object({
+    username: z.string(),
+    email: z.string(),
+    name: z.string().optional(),
+    groups: z.array(z.string()),
+    sub: z.string().optional(),
+  }).nullable(),
+  accessToken: z.string().nullable(),
+  idToken: z.string().nullable(),
+  isAuthenticated: z.boolean(),
+}).partial()
 
 export const useAuthStore = create<AuthState>()(
   persist(
@@ -113,12 +134,13 @@ export const useAuthStore = create<AuthState>()(
       // refreshToken is deliberately excluded — it stays in memory only.
       // This limits XSS blast radius: stolen access/ID tokens expire in ~1hr,
       // while the 30-day refresh token is never written to disk.
-      partialize: (state) => ({
+      partialize: (state): z.infer<typeof PersistedAuthSchema> => ({
         user: state.user,
         accessToken: state.accessToken,
         idToken: state.idToken,
         isAuthenticated: state.isAuthenticated,
       }),
+      ...versionedPersist(PersistedAuthSchema),
     },
   ),
 )

@@ -12,207 +12,28 @@
  */
 
 import { useState, useMemo } from 'react'
+import type { ReactNode } from 'react'
+import clsx from 'clsx'
 import { useQuery } from '@tanstack/react-query'
 import { 
   ChevronDown, ChevronRight, AlertTriangle, 
-  MessageSquare, TrendingUp, Filter, X, Layers, FileDown
+  MessageSquare, TrendingUp, Filter, X, Layers
 } from 'lucide-react'
 import { api, getDateRangeParams } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
-import type { FeedbackItem } from '../../api/client'
 import { SubcategoryRow } from './SubcategoryRow'
 import { applyResolution } from './problemResolution'
 import { useProblemResolution } from './useProblemResolution'
 import { useProblemFeedback } from './useProblemFeedback'
+import { toggleSetMember } from './toggleSetMember'
 import { WindowCoverageNotice } from './WindowCoverageNotice'
-import type { CategoryGroup, ProblemGroup, SubcategoryGroup } from './problemResolution'
+import { groupProblems, toPDFCategories } from './problemGrouping'
+import { rankEntityKeys } from '../Categories/entityCounts'
 import { generateProblemAnalysisPDF } from './problemAnalysisPdfGenerator'
 import { getTimeRangeLabel } from '../../utils/dateUtils'
 import { useTranslation } from 'react-i18next'
+import { CenteredSpinner, ExportPageHeader } from '../Categories/ExportPageHeader'
 
-
-// Normalize text for similarity comparison
-function normalizeText(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-// Extract key words from text
-function extractKeywords(text: string): Set<string> {
-  const stopWords = new Set(['the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 
-    'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might',
-    'must', 'shall', 'can', 'need', 'dare', 'ought', 'used', 'to', 'of', 'in', 'for', 'on', 'with',
-    'at', 'by', 'from', 'as', 'into', 'through', 'during', 'before', 'after', 'above', 'below',
-    'between', 'under', 'again', 'further', 'then', 'once', 'here', 'there', 'when', 'where',
-    'why', 'how', 'all', 'each', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor',
-    'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very', 'just', 'and', 'but', 'if', 'or',
-    'because', 'until', 'while', 'although', 'though', 'after', 'before', 'when', 'whenever',
-    'i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 'you', 'your', 'yours',
-    'yourself', 'yourselves', 'he', 'him', 'his', 'himself', 'she', 'her', 'hers', 'herself',
-    'it', 'its', 'itself', 'they', 'them', 'their', 'theirs', 'themselves', 'what', 'which',
-    'who', 'whom', 'this', 'that', 'these', 'those', 'am', 'been', 'being', 'get', 'got', 'getting'])
-  
-  const words = normalizeText(text).split(' ')
-  return new Set(words.filter(w => w.length > 2 && !stopWords.has(w)))
-}
-
-// Calculate Jaccard similarity between two sets
-function jaccardSimilarity(set1: Set<string>, set2: Set<string>): number {
-  if (set1.size === 0 && set2.size === 0) return 1
-  if (set1.size === 0 || set2.size === 0) return 0
-  
-  const intersection = new Set([...set1].filter(x => set2.has(x)))
-  const union = new Set([...set1, ...set2])
-  
-  return intersection.size / union.size
-}
-
-// Check if keywords match any in a list above threshold
-function matchesAnyKeywords(newKeywords: Set<string>, texts: string[], threshold: number): boolean {
-  return texts.some(text => jaccardSimilarity(newKeywords, extractKeywords(text)) >= threshold)
-}
-
-// Find or create a similar problem group
-function findSimilarProblem(
-  problems: Map<string, ProblemGroup>,
-  newProblem: string,
-  threshold: number = 0.4
-): string | null {
-  const newKeywords = extractKeywords(newProblem)
-
-  for (const [existingProblem, group] of problems) {
-    const existingKeywords = extractKeywords(existingProblem)
-    if (jaccardSimilarity(newKeywords, existingKeywords) >= threshold) {
-      return existingProblem
-    }
-    if (matchesAnyKeywords(newKeywords, group.similarProblems, threshold)) {
-      return existingProblem
-    }
-  }
-
-  return null
-}
-
-function getOrCreateSubcategoryMap(
-  categoryMap: Map<string, Map<string, Map<string, ProblemGroup>>>,
-  category: string
-): Map<string, Map<string, ProblemGroup>> {
-  const existing = categoryMap.get(category)
-  if (existing) return existing
-  const newMap = new Map<string, Map<string, ProblemGroup>>()
-  categoryMap.set(category, newMap)
-  return newMap
-}
-
-function getOrCreateProblemMap(
-  subcategoryMap: Map<string, Map<string, ProblemGroup>>,
-  subcategory: string
-): Map<string, ProblemGroup> {
-  const existing = subcategoryMap.get(subcategory)
-  if (existing) return existing
-  const newMap = new Map<string, ProblemGroup>()
-  subcategoryMap.set(subcategory, newMap)
-  return newMap
-}
-
-function updateExistingGroup(group: ProblemGroup, item: FeedbackItem, problem: string, similarProblemKey: string): void {
-  group.items.push(item)
-  if (item.urgency === 'high') group.urgentCount++
-  if (problem !== similarProblemKey && !group.similarProblems.includes(problem)) {
-    group.similarProblems.push(problem)
-  }
-  if (!group.rootCause && item.problem_root_cause_hypothesis) {
-    group.rootCause = item.problem_root_cause_hypothesis
-  }
-}
-
-function addItemToProblemGroup(
-  problemMap: Map<string, ProblemGroup>,
-  item: FeedbackItem,
-  problem: string,
-  similarityThreshold: number
-): void {
-  const similarProblemKey = findSimilarProblem(problemMap, problem, similarityThreshold)
-
-  if (similarProblemKey) {
-    const group = problemMap.get(similarProblemKey)
-    if (group) {
-      updateExistingGroup(group, item, problem, similarProblemKey)
-    }
-  } else {
-    problemMap.set(problem, {
-      problem,
-      similarProblems: [],
-      rootCause: item.problem_root_cause_hypothesis || null,
-      items: [item],
-      avgSentiment: 0,
-      urgentCount: item.urgency === 'high' ? 1 : 0,
-    })
-  }
-}
-
-function buildSubcategoryGroup(problemMap: Map<string, ProblemGroup>, subcategory: string): SubcategoryGroup {
-  const problems: ProblemGroup[] = []
-
-  for (const group of problemMap.values()) {
-    group.avgSentiment = group.items.reduce((sum, i) => sum + i.sentiment_score, 0) / group.items.length
-    problems.push(group)
-  }
-
-  problems.sort((a, b) => b.items.length - a.items.length)
-  const totalItems = problems.reduce((sum, p) => sum + p.items.length, 0)
-  const urgentCount = problems.reduce((sum, p) => sum + p.urgentCount, 0)
-  return { subcategory, problems, totalItems, urgentCount }
-}
-
-function buildCategoryGroups(categoryMap: Map<string, Map<string, Map<string, ProblemGroup>>>): CategoryGroup[] {
-  const result: CategoryGroup[] = []
-
-  for (const [category, subcategoryMap] of categoryMap) {
-    const subcategories: SubcategoryGroup[] = []
-
-    for (const [subcategory, problemMap] of subcategoryMap) {
-      subcategories.push(buildSubcategoryGroup(problemMap, subcategory))
-    }
-
-    subcategories.sort((a, b) => b.totalItems - a.totalItems)
-    const categoryTotalItems = subcategories.reduce((sum, s) => sum + s.totalItems, 0)
-    const categoryUrgent = subcategories.reduce((sum, s) => sum + s.urgentCount, 0)
-    result.push({ category, subcategories, totalItems: categoryTotalItems, urgentCount: categoryUrgent })
-  }
-
-  result.sort((a, b) => b.totalItems - a.totalItems)
-  return result
-}
-
-// Map the in-memory grouping tree to the PDF export shape
-// (the problem level uses itemCount instead of the full items array).
-function toPDFCategories(groups: CategoryGroup[]) {
-  return groups.map((c) => ({
-    category: c.category,
-    totalItems: c.totalItems,
-    urgentCount: c.urgentCount,
-    subcategories: c.subcategories.map((s) => ({
-      subcategory: s.subcategory,
-      totalItems: s.totalItems,
-      urgentCount: s.urgentCount,
-      problems: s.problems.map((p) => ({
-        problem: p.problem,
-        similarProblems: p.similarProblems,
-        rootCause: p.rootCause,
-        itemCount: p.items.length,
-        avgSentiment: p.avgSentiment,
-        urgentCount: p.urgentCount,
-        // With "Show resolved" on, resolved groups reach the export — the
-        // PDF must annotate them, since strike-through/badge is UI-only.
-        resolved: p.resolved === true,
-      })),
-    })),
-  }))
-}
 
 // Module-level so the operator chain doesn't count against the page
 // component's complexity budget.
@@ -227,18 +48,31 @@ function EmptyProblemsState({ resolvedCount }: { readonly resolvedCount: number 
   const { t } = useTranslation('common')
   return (
     <div className="card text-center py-8 sm:py-12">
-      <AlertTriangle size={36} className="mx-auto text-gray-300 mb-3 sm:mb-4 sm:w-12 sm:h-12" />
+      <AlertTriangle size={36} className="mx-auto text-muted-strong mb-3 sm:mb-4 sm:w-12 sm:h-12" />
       {resolvedCount > 0 ? (
         <>
-          <p className="text-gray-500 text-sm sm:text-base">{t('problemResolution.allResolvedTitle')}</p>
-          <p className="text-xs sm:text-sm text-gray-400 mt-1">{t('problemResolution.allResolvedHint', { total: resolvedCount })}</p>
+          <p className="text-text text-sm sm:text-base">{t('problemResolution.allResolvedTitle')}</p>
+          <p className="text-xs sm:text-sm text-muted mt-1">{t('problemResolution.allResolvedHint', { total: resolvedCount })}</p>
         </>
       ) : (
         <>
-          <p className="text-gray-500 text-sm sm:text-base">{t('problemAnalysisPage.emptyTitle')}</p>
-          <p className="text-xs sm:text-sm text-gray-400 mt-1">{t('problemAnalysisPage.emptyHint')}</p>
+          <p className="text-text text-sm sm:text-base">{t('problemAnalysisPage.emptyTitle')}</p>
+          <p className="text-xs sm:text-sm text-muted mt-1">{t('problemAnalysisPage.emptyHint')}</p>
         </>
       )}
+    </div>
+  )
+}
+
+/** One header stat. Same chrome as the dashboard metric tiles' label/value pair. */
+function StatCard({ icon, label, value, tone }: Readonly<{ icon: ReactNode; label: string; value: number; tone?: 'warn' }>) {
+  return (
+    <div className={clsx('card stat-accent !p-3 sm:!p-4', tone === 'warn' && '!bg-warn-subtle !border-warn/30 col-span-2 sm:col-span-1')}>
+      <div className={clsx('flex items-center gap-1.5 sm:gap-2 mb-1', tone === 'warn' ? 'text-warn' : 'text-muted')}>
+        {icon}
+        <span className="text-xs sm:text-sm truncate">{label}</span>
+      </div>
+      <p className={clsx('text-xl sm:text-2xl font-bold font-mono', tone === 'warn' ? 'text-warn' : 'text-text-strong')}>{value}</p>
     </div>
   )
 }
@@ -249,9 +83,9 @@ function ResolveErrorBanner({ show, onDismiss }: { readonly show: boolean; reado
   const { t } = useTranslation('common')
   if (!show) return null
   return (
-    <div className="card bg-red-50 border border-red-200 text-red-700 text-sm py-2 px-3 flex items-center justify-between gap-2" role="alert">
+    <div className="card !bg-danger-subtle !border-danger/30 text-danger text-sm !py-2 !px-3 flex items-center justify-between gap-2" role="alert">
       <span>{t('problemResolution.saveFailed')}</span>
-      <button type="button" onClick={onDismiss} aria-label={t('dismiss')} className="text-red-500 hover:text-red-700">
+      <button type="button" onClick={onDismiss} aria-label={t('dismiss')} className="icon-btn text-danger hover:text-danger">
         <X size={14} />
       </button>
     </div>
@@ -259,7 +93,7 @@ function ResolveErrorBanner({ show, onDismiss }: { readonly show: boolean; reado
 }
 
 export default function ProblemAnalysis() {
-  const { t } = useTranslation('common')
+  const { t } = useTranslation(['common', 'problemAnalysis'])
   const { timeRange, customDays, dateBasis, config } = useConfigStore()
   const dateParams = getDateRangeParams(timeRange, customDays, dateBasis)
   
@@ -294,16 +128,10 @@ export default function ProblemAnalysis() {
   } = useProblemResolution(!!config.apiEndpoint)
 
   // Build dynamic sources list from entities
-  const allSources = useMemo(() => {
-    if (!entitiesData?.entities?.sources) return []
-    return Object.keys(entitiesData.entities.sources)
-      .sort((a, b) => (entitiesData.entities.sources[b] || 0) - (entitiesData.entities.sources[a] || 0))
-  }, [entitiesData])
+  const allSources = useMemo(() => rankEntityKeys(entitiesData, 'sources'), [entitiesData])
 
   // Group feedback by category → subcategory → problem (with similarity) → items
   const groupedData = useMemo(() => {
-    const categoryMap = new Map<string, Map<string, Map<string, ProblemGroup>>>()
-
     const filteredItems = feedback.items
       .filter(item => item.problem_summary)
       .filter(item => !showUrgentOnly || item.urgency === 'high')
@@ -311,17 +139,7 @@ export default function ProblemAnalysis() {
       .filter(item => !selectedSubcategory || item.subcategory === selectedSubcategory)
       .filter(item => !selectedSource || item.source_platform === selectedSource)
 
-    for (const item of filteredItems) {
-      const category = item.category || 'uncategorized'
-      const subcategory = item.subcategory || 'general'
-      const problem = item.problem_summary || 'Unknown Issue'
-
-      const subcategoryMap = getOrCreateSubcategoryMap(categoryMap, category)
-      const problemMap = getOrCreateProblemMap(subcategoryMap, subcategory)
-      addItemToProblemGroup(problemMap, item, problem, similarityThreshold)
-    }
-
-    return buildCategoryGroups(categoryMap)
+    return groupProblems(filteredItems, similarityThreshold)
   }, [feedback.items, showUrgentOnly, selectedCategory, selectedSubcategory, selectedSource, similarityThreshold])
 
   // Annotate problem groups with their shared resolved status and hide the
@@ -333,12 +151,7 @@ export default function ProblemAnalysis() {
   )
 
   // Get unique categories from entities (dynamic)
-  const allCategories = useMemo(() => {
-    if (!entitiesData?.entities?.categories) return []
-    const categories = entitiesData.entities.categories
-    return Object.keys(categories)
-      .sort((a, b) => (categories[b] ?? 0) - (categories[a] ?? 0))
-  }, [entitiesData])
+  const allCategories = useMemo(() => rankEntityKeys(entitiesData, 'categories'), [entitiesData])
 
   // Get unique subcategories from current data
   const allSubcategories = useMemo(() => {
@@ -350,30 +163,15 @@ export default function ProblemAnalysis() {
   }, [feedback.items])
 
   const toggleCategory = (category: string) => {
-    setExpandedCategories(prev => {
-      const next = new Set(prev)
-      if (next.has(category)) next.delete(category)
-      else next.add(category)
-      return next
-    })
+    setExpandedCategories(prev => toggleSetMember(prev, category))
   }
 
   const toggleSubcategory = (key: string) => {
-    setExpandedSubcategories(prev => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
+    setExpandedSubcategories(prev => toggleSetMember(prev, key))
   }
 
   const toggleProblem = (key: string) => {
-    setExpandedProblems(prev => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
+    setExpandedProblems(prev => toggleSetMember(prev, key))
   }
 
   const expandAll = () => {
@@ -427,7 +225,7 @@ export default function ProblemAnalysis() {
   if (!config.apiEndpoint) {
     return (
       <div className="flex items-center justify-center h-full">
-        <p className="text-gray-500">Please configure your API endpoint in Settings</p>
+        <p className="text-muted">{t('problemAnalysis:configureApi')}</p>
       </div>
     )
   }
@@ -435,11 +233,7 @@ export default function ProblemAnalysis() {
   // Gate on the resolved-state query too: without it, resolved problems
   // flash as unresolved for a frame and then vanish when the query lands.
   if (feedback.isLoading || resolvedLoading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      </div>
-    )
+    return <CenteredSpinner />
   }
 
   // Nothing was read, so every aggregate below would be a zero that looks like
@@ -461,43 +255,19 @@ export default function ProblemAnalysis() {
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      {/* Header Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4">
-        <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-200 shadow-sm">
-          <div className="flex items-center gap-1.5 sm:gap-2 text-gray-600 mb-1">
-            <TrendingUp size={14} className="sm:w-4 sm:h-4" />
-            <span className="text-xs sm:text-sm">Categories</span>
-          </div>
-          <p className="text-xl sm:text-2xl font-bold text-gray-900">{visibleData.length}</p>
-        </div>
-        <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-200 shadow-sm">
-          <div className="flex items-center gap-1.5 sm:gap-2 text-gray-600 mb-1">
-            <Layers size={14} className="sm:w-4 sm:h-4" />
-            <span className="text-xs sm:text-sm">Subcategories</span>
-          </div>
-          <p className="text-xl sm:text-2xl font-bold text-gray-900">{totalSubcategories}</p>
-        </div>
-        <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-200 shadow-sm">
-          <div className="flex items-center gap-1.5 sm:gap-2 text-gray-600 mb-1">
-            <AlertTriangle size={14} className="sm:w-4 sm:h-4" />
-            <span className="text-xs sm:text-sm truncate">Problems</span>
-          </div>
-          <p className="text-xl sm:text-2xl font-bold text-gray-900">{totalProblems}</p>
-        </div>
-        <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-200 shadow-sm">
-          <div className="flex items-center gap-1.5 sm:gap-2 text-gray-600 mb-1">
-            <MessageSquare size={14} className="sm:w-4 sm:h-4" />
-            <span className="text-xs sm:text-sm">Feedback</span>
-          </div>
-          <p className="text-xl sm:text-2xl font-bold text-gray-900">{totalFeedback}</p>
-        </div>
-        <div className="bg-white rounded-xl p-3 sm:p-4 border border-red-200 shadow-sm bg-red-50 col-span-2 sm:col-span-1">
-          <div className="flex items-center gap-1.5 sm:gap-2 text-red-600 mb-1">
-            <AlertTriangle size={14} className="sm:w-4 sm:h-4" />
-            <span className="text-xs sm:text-sm">Urgent</span>
-          </div>
-          <p className="text-xl sm:text-2xl font-bold text-red-700">{totalUrgent}</p>
-        </div>
+      <ExportPageHeader
+        title={t('problemAnalysis:title')}
+        subtitle={t('problemAnalysis:subtitle')}
+        onExport={exportPDF}
+        exportDisabled={visibleData.length === 0}
+      />
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+        <StatCard icon={<TrendingUp size={14} className="sm:w-4 sm:h-4" aria-hidden="true" />} label={t('problemAnalysis:stats.categories')} value={visibleData.length} />
+        <StatCard icon={<Layers size={14} className="sm:w-4 sm:h-4" aria-hidden="true" />} label={t('problemAnalysis:stats.subcategories')} value={totalSubcategories} />
+        <StatCard icon={<AlertTriangle size={14} className="sm:w-4 sm:h-4" aria-hidden="true" />} label={t('problemAnalysis:stats.problems')} value={totalProblems} />
+        <StatCard icon={<MessageSquare size={14} className="sm:w-4 sm:h-4" aria-hidden="true" />} label={t('problemAnalysis:stats.feedback')} value={totalFeedback} />
+        <StatCard icon={<AlertTriangle size={14} className="sm:w-4 sm:h-4" aria-hidden="true" />} label={t('problemAnalysis:stats.urgent')} value={totalUrgent} tone="warn" />
       </div>
 
       {/* Coverage of the counts above; self-hiding when the window was read in
@@ -514,36 +284,39 @@ export default function ProblemAnalysis() {
       <div className="card">
         <div className="flex flex-col gap-3 sm:gap-4">
           {/* Filter Row */}
-          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            <Filter size={16} className="text-gray-500 flex-shrink-0 sm:w-[18px] sm:h-[18px]" />
+          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-3">
+            <Filter size={16} className="hidden sm:block text-muted flex-shrink-0" aria-hidden="true" />
             <select
-              value={selectedSource || ''}
+              aria-label={t('problemAnalysis:filters.source')}
+              value={selectedSource ?? ''}
               onChange={(e) => setSelectedSource(e.target.value || null)}
-              className="flex-1 sm:flex-none px-2.5 sm:px-3 py-1.5 border border-gray-300 rounded-lg text-xs sm:text-sm min-w-0 sm:min-w-[140px]"
+              className="select w-full sm:w-auto sm:min-w-[160px]"
             >
-              <option value="">All Sources</option>
+              <option value="">{t('problemAnalysis:filters.allSources')}</option>
               {allSources.map(source => (
                 <option key={source} value={source}>{source}</option>
               ))}
             </select>
             <select
-              value={selectedCategory || ''}
+              aria-label={t('problemAnalysis:filters.category')}
+              value={selectedCategory ?? ''}
               onChange={(e) => { setSelectedCategory(e.target.value || null); setSelectedSubcategory(null) }}
-              className="flex-1 sm:flex-none px-2.5 sm:px-3 py-1.5 border border-gray-300 rounded-lg text-xs sm:text-sm min-w-0 sm:min-w-[140px]"
+              className="select w-full sm:w-auto sm:min-w-[160px]"
             >
-              <option value="">All Categories</option>
+              <option value="">{t('problemAnalysis:filters.allCategories')}</option>
               {allCategories.map(cat => (
-                <option key={cat} value={cat}>{cat.replace('_', ' ')}</option>
+                <option key={cat} value={cat}>{cat.replace(/_/g, ' ')}</option>
               ))}
             </select>
             <select
-              value={selectedSubcategory || ''}
+              aria-label={t('problemAnalysis:filters.subcategory')}
+              value={selectedSubcategory ?? ''}
               onChange={(e) => setSelectedSubcategory(e.target.value || null)}
-              className="flex-1 sm:flex-none px-2.5 sm:px-3 py-1.5 border border-gray-300 rounded-lg text-xs sm:text-sm min-w-0 sm:min-w-[140px]"
+              className="select w-full sm:w-auto sm:min-w-[160px]"
             >
-              <option value="">All Subcategories</option>
+              <option value="">{t('problemAnalysis:filters.allSubcategories')}</option>
               {allSubcategories.map(sub => (
-                <option key={sub} value={sub}>{sub.replace('_', ' ')}</option>
+                <option key={sub} value={sub}>{sub.replace(/_/g, ' ')}</option>
               ))}
             </select>
           </div>
@@ -551,21 +324,21 @@ export default function ProblemAnalysis() {
           {/* Controls Row */}
           <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-4">
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-              <label className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm">
+              <label className="flex items-center gap-2 min-h-9 text-sm cursor-pointer">
                 <input
                   type="checkbox"
                   checked={showUrgentOnly}
                   onChange={(e) => setShowUrgentOnly(e.target.checked)}
-                  className="rounded border-gray-300 w-3.5 h-3.5 sm:w-4 sm:h-4"
+                  className="rounded-sm accent-accent focus-ring w-4 h-4"
                 />
-                <span>Urgent only</span>
+                <span>{t('problemAnalysis:filters.urgentOnly')}</span>
               </label>
-              <label className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm">
+              <label className="flex items-center gap-2 min-h-9 text-sm cursor-pointer">
                 <input
                   type="checkbox"
                   checked={showResolved}
                   onChange={(e) => setShowResolved(e.target.checked)}
-                  className="rounded border-gray-300 w-3.5 h-3.5 sm:w-4 sm:h-4"
+                  className="rounded-sm accent-accent focus-ring w-4 h-4"
                 />
                 {/* Counts resolved problems within the CURRENT filters
                     (what the toggle would reveal), not the global store. */}
@@ -573,46 +346,38 @@ export default function ProblemAnalysis() {
               </label>
               {anyFilterActive(selectedSource, selectedCategory, selectedSubcategory, showUrgentOnly, showResolved) && (
                 <button
+                  type="button"
                   onClick={() => { setSelectedSource(null); setSelectedCategory(null); setSelectedSubcategory(null); setShowUrgentOnly(false); setShowResolved(false) }}
-                  className="text-xs sm:text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1 active:scale-95"
+                  className="btn btn-ghost btn-sm"
                 >
-                  <X size={12} className="sm:w-[14px] sm:h-[14px]" />
-                  Clear
+                  <X size={14} aria-hidden="true" />
+                  {t('problemAnalysis:filters.clear')}
                 </button>
               )}
             </div>
             <div className="flex flex-wrap items-center gap-2 sm:gap-4">
-              <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm">
-                <span className="text-gray-500 hidden xs:inline">Similarity:</span>
+              {/* A real <label>, so the select has a visible accessible name
+                  (axe label-title-only: a title alone is not a label). */}
+              <label className="flex items-center gap-2 text-sm">
+                <span className="text-muted">{t('problemAnalysis:filters.similarity')}</span>
                 <select
                   value={similarityThreshold}
                   onChange={(e) => setSimilarityThreshold(parseFloat(e.target.value))}
-                  className="px-2 py-1 border border-gray-300 rounded text-xs sm:text-sm"
-                  title="Higher = stricter matching, fewer merged groups"
+                  className="select select-sm w-auto"
+                  title={t('problemAnalysis:filters.similarityHint')}
                 >
-                  <option value={0.2}>Low</option>
-                  <option value={0.4}>Med</option>
-                  <option value={0.6}>High</option>
-                  <option value={1.0}>Off</option>
+                  <option value={0.2}>{t('problemAnalysis:filters.similarityLow')}</option>
+                  <option value={0.4}>{t('problemAnalysis:filters.similarityMed')}</option>
+                  <option value={0.6}>{t('problemAnalysis:filters.similarityHigh')}</option>
+                  <option value={1.0}>{t('problemAnalysis:filters.similarityOff')}</option>
                 </select>
-              </div>
-              <div className="flex gap-1.5 sm:gap-2">
-                <button onClick={expandAll} className="btn btn-secondary text-xs px-2 py-1 sm:px-3 sm:py-1.5 active:scale-95">
-                  <span className="hidden xs:inline">Expand All</span>
-                  <span className="xs:hidden">Expand</span>
+              </label>
+              <div className="flex gap-2">
+                <button type="button" onClick={expandAll} className="btn btn-secondary btn-sm">
+                  {t('problemAnalysis:filters.expandAll')}
                 </button>
-                <button onClick={collapseAll} className="btn btn-secondary text-xs px-2 py-1 sm:px-3 sm:py-1.5 active:scale-95">
-                  <span className="hidden xs:inline">Collapse All</span>
-                  <span className="xs:hidden">Collapse</span>
-                </button>
-                <button
-                  onClick={exportPDF}
-                  disabled={visibleData.length === 0}
-                  className="btn btn-secondary text-xs px-2 py-1 sm:px-3 sm:py-1.5 active:scale-95 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title={t('exportPdfTooltip')}
-                >
-                  <FileDown size={14} />
-                  {t('exportPdfShort')}
+                <button type="button" onClick={collapseAll} className="btn btn-secondary btn-sm">
+                  {t('problemAnalysis:filters.collapseAll')}
                 </button>
               </div>
             </div>
@@ -631,23 +396,26 @@ export default function ProblemAnalysis() {
             <div key={categoryGroup.category} className="card p-0 overflow-hidden">
               {/* Category Header */}
               <button
+                type="button"
                 onClick={() => toggleCategory(categoryGroup.category)}
-                className="w-full px-3 sm:px-6 py-3 sm:py-4 flex items-center justify-between bg-gray-50 hover:bg-gray-100 active:bg-gray-200 transition-colors"
+                aria-expanded={expandedCategories.has(categoryGroup.category)}
+                className="w-full px-3 sm:px-5 py-3 sm:py-4 flex items-center justify-between bg-bg-accent hover:bg-bg-hover active:bg-border transition-colors focus-ring text-left"
               >
                 <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                   {expandedCategories.has(categoryGroup.category) ? (
-                    <ChevronDown size={18} className="text-gray-500 flex-shrink-0 sm:w-5 sm:h-5" />
+                    <ChevronDown size={18} className="text-muted flex-shrink-0 sm:w-5 sm:h-5" />
                   ) : (
-                    <ChevronRight size={18} className="text-gray-500 flex-shrink-0 sm:w-5 sm:h-5" />
+                    <ChevronRight size={18} className="text-muted flex-shrink-0 sm:w-5 sm:h-5" />
                   )}
-                  <span className="font-semibold text-gray-900 capitalize text-sm sm:text-base truncate">
+                  <span className="font-semibold tracking-tight text-text-strong capitalize text-sm sm:text-base truncate">
                     {categoryGroup.category.replace(/_/g, ' ')}
                   </span>
-                  <span className="text-xs sm:text-sm text-gray-500 hidden xs:inline whitespace-nowrap">
-                    {categoryGroup.subcategories.length} sub • {categoryGroup.totalItems} reviews
+                  <span className="text-xs sm:text-sm text-muted hidden sm:inline whitespace-nowrap">
+                    {t('problemAnalysis:tree.sub', { count: categoryGroup.subcategories.length })} • {t('problemAnalysis:tree.reviews', { count: categoryGroup.totalItems })}
                   </span>
                   {categoryGroup.urgentCount > 0 && (
-                    <span className="px-1.5 sm:px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full flex-shrink-0">
+                    <span className="badge badge-warn font-mono flex-shrink-0" title={t('problemAnalysis:stats.urgent')}>
+                      <AlertTriangle size={12} aria-hidden="true" />
                       {categoryGroup.urgentCount}
                     </span>
                   )}
@@ -656,7 +424,7 @@ export default function ProblemAnalysis() {
 
               {/* Subcategories List */}
               {expandedCategories.has(categoryGroup.category) && (
-                <div className="divide-y divide-gray-100">
+                <div className="divide-y divide-border">
                   {categoryGroup.subcategories.map((subcategoryGroup) => {
                     const subcategoryKey = `${categoryGroup.category}:${subcategoryGroup.subcategory}`
                     return (

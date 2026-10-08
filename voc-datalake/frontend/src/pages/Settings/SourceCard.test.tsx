@@ -1,24 +1,25 @@
+import type { ComponentProps } from 'react'
 /**
  * @fileoverview Tests for SourceCard component
  * @module pages/Settings/SourceCard.test
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { renderWithQueryClient } from '../../test/query-client'
 import SourceCard from './SourceCard'
 // Imported rather than restated: the subject of these assertions is the admin GATE,
 // not the wording, so a later decision to translate the tooltip must not fail them.
 import { ADMIN_ONLY_TITLE } from '../../constants/admin'
-import type { PluginManifest } from '../../plugins/types'
+import type { PluginManifest, SetupInfo } from '../../plugins/types'
+import { expectScheduleToggleLocked, sourceScheduleMocks } from '../Scrapers/scrapers-fixtures'
 
 // Mock API
-const mockGetIntegrationStatus = vi.fn()
-const mockGetSourcesStatus = vi.fn()
-const mockUpdateIntegrationCredentials = vi.fn()
-const mockTestIntegration = vi.fn()
-const mockEnableSource = vi.fn()
-const mockDisableSource = vi.fn()
+const mockGetIntegrationStatus = vi.fn<(...args: unknown[]) => unknown>()
+const mockGetSourcesStatus = vi.fn<(...args: unknown[]) => unknown>()
+const mockUpdateIntegrationCredentials = vi.fn<(...args: unknown[]) => unknown>()
+const mockTestIntegration = vi.fn<(...args: unknown[]) => unknown>()
+const { enableSource: mockEnableSource, disableSource: mockDisableSource } = sourceScheduleMocks
 
 vi.mock('../../api/client', () => ({
   api: {
@@ -27,29 +28,27 @@ vi.mock('../../api/client', () => ({
     updateIntegrationCredentials: (source: string, creds: Record<string, string>) =>
       mockUpdateIntegrationCredentials(source, creds),
     testIntegration: (source: string) => mockTestIntegration(source),
-    enableSource: (source: string) => mockEnableSource(source),
-    disableSource: (source: string) => mockDisableSource(source),
+    enableSource: (source: string) => sourceScheduleMocks.enableSource(source),
+    disableSource: (source: string) => sourceScheduleMocks.disableSource(source),
   },
 }))
 
 // Mock S3ImportExplorer
-vi.mock('../../components/S3ImportExplorer', () => ({
+vi.mock('../../components/S3ImportExplorer/S3ImportExplorer', () => ({
   default: () => <div data-testid="s3-import-explorer">S3 Import Explorer</div>,
 }))
 
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
-  return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
+const MOCK_SETUP: SetupInfo = {
+  title: 'Setup Instructions',
+  color: 'blue',
+  steps: ['Step 1', 'Step 2', 'Step 3'],
 }
 
 const mockManifest: PluginManifest = {
   id: 'test_source',
   name: 'Test Source',
-  icon: '🧪',
+  icon: 'Synthetic',
+  enabled: true,
   description: 'Test source description',
   config: [
     { key: 'api_key', label: 'API Key', type: 'password', required: true, secret: true },
@@ -58,14 +57,34 @@ const mockManifest: PluginManifest = {
   webhooks: [
     { name: 'Test Webhook', events: ['created', 'updated'], docUrl: 'https://docs.example.com' },
   ],
-  setup: {
-    title: 'Setup Instructions',
-    color: 'blue',
-    steps: ['Step 1', 'Step 2', 'Step 3'],
-  },
+  setup: MOCK_SETUP,
   hasIngestor: true,
   hasWebhook: true,
   hasS3Trigger: false,
+}
+
+
+type SourceCardProps = ComponentProps<typeof SourceCard>
+
+/** Renders the card for an admin against the default endpoint; `overrides` replace any prop. */
+function renderCard(overrides: Partial<SourceCardProps> = {}) {
+  return renderWithQueryClient(<SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin {...overrides} />)
+}
+
+/** `renderCard`, then opens the card by its header (named after the manifest). */
+async function renderExpanded(overrides: Partial<SourceCardProps> = {}, header: RegExp = /test source/i) {
+  const user = userEvent.setup()
+  renderCard(overrides)
+  await user.click(screen.getByRole('button', { name: header }))
+  return user
+}
+
+/** Opens the card (as admin, save succeeding), types `apiKey` and clicks Save. */
+async function saveApiKey(apiKey: string) {
+  mockUpdateIntegrationCredentials.mockResolvedValue({ success: true })
+  const user = await renderExpanded()
+  await user.type(screen.getByPlaceholderText('Enter api key'), apiKey)
+  await user.click(screen.getByRole('button', { name: /save/i }))
 }
 
 describe('SourceCard', () => {
@@ -77,20 +96,35 @@ describe('SourceCard', () => {
 
   describe('Header', () => {
     it('renders source name and icon', () => {
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
-        { wrapper: createWrapper() }
-      )
+      renderCard()
 
       expect(screen.getByText('Test Source')).toBeInTheDocument()
-      expect(screen.getByText('🧪')).toBeInTheDocument()
+      // Known manifest icons render as a lucide glyph inside the icon tile, not as raw emoji.
+      const tile = screen.getByTestId('source-icon')
+      expect(tile.querySelector('svg')).not.toBeNull()
+    })
+
+    it('renders a fallback icon, never the raw manifest string, for an unknown icon word', () => {
+      renderCard({ manifest: { ...mockManifest, icon: 'Satellite' } })
+
+      const tile = screen.getByTestId('source-icon')
+      expect(tile).toHaveTextContent('')
+      expect(tile.querySelector('svg')).not.toBeNull()
+    })
+
+    it('names the enable switch after the source and exposes the expand state', async () => {
+      const user = userEvent.setup()
+      renderCard()
+
+      expect(screen.getByRole('checkbox', { name: /Test Source Disabled/i })).toBeInTheDocument()
+      const expand = screen.getByRole('button', { name: /test source/i })
+      expect(expand).toHaveAttribute('aria-expanded', 'false')
+      await user.click(expand)
+      expect(expand).toHaveAttribute('aria-expanded', 'true')
     })
 
     it('renders description when provided', () => {
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
-        { wrapper: createWrapper() }
-      )
+      renderCard()
 
       expect(screen.getByText('Test source description')).toBeInTheDocument()
     })
@@ -98,10 +132,7 @@ describe('SourceCard', () => {
     it('shows connected badge when source is configured', async () => {
       mockGetIntegrationStatus.mockResolvedValue({ test_source: { configured: true } })
 
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
-        { wrapper: createWrapper() }
-      )
+      renderCard()
 
       await waitFor(() => {
         expect(screen.getByText('Connected')).toBeInTheDocument()
@@ -109,20 +140,14 @@ describe('SourceCard', () => {
     })
 
     it('shows enabled/disabled toggle', () => {
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
-        { wrapper: createWrapper() }
-      )
+      renderCard()
 
       expect(screen.getByRole('checkbox')).toBeInTheDocument()
       expect(screen.getByText('Disabled')).toBeInTheDocument()
     })
 
     it('does not call getIntegrationStatus when isAdmin is false', async () => {
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={false} />,
-        { wrapper: createWrapper() }
-      )
+      renderCard({ isAdmin: false })
 
       // Give the query time to fire if it were going to.
       await new Promise((resolve) => setTimeout(resolve, 50))
@@ -133,38 +158,20 @@ describe('SourceCard', () => {
 
   describe('Expand/Collapse', () => {
     it('expands card when header is clicked', async () => {
-      const user = userEvent.setup()
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
-        { wrapper: createWrapper() }
-      )
-
-      await user.click(screen.getByRole('button', { name: /test source/i }))
+      await renderExpanded()
 
       expect(screen.getByText('API Credentials')).toBeInTheDocument()
     })
 
     it('shows webhooks section when expanded', async () => {
-      const user = userEvent.setup()
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
-        { wrapper: createWrapper() }
-      )
-
-      await user.click(screen.getByRole('button', { name: /test source/i }))
+      await renderExpanded()
 
       expect(screen.getByText('Webhooks')).toBeInTheDocument()
       expect(screen.getByText('Test Webhook')).toBeInTheDocument()
     })
 
     it('shows setup instructions when expanded', async () => {
-      const user = userEvent.setup()
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
-        { wrapper: createWrapper() }
-      )
-
-      await user.click(screen.getByRole('button', { name: /test source/i }))
+      await renderExpanded()
 
       expect(screen.getByText('Setup Instructions')).toBeInTheDocument()
       expect(screen.getByText('Step 1')).toBeInTheDocument()
@@ -176,10 +183,7 @@ describe('SourceCard', () => {
       const user = userEvent.setup()
       mockEnableSource.mockResolvedValue({ enabled: true })
 
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
-        { wrapper: createWrapper() }
-      )
+      renderCard()
 
       await user.click(screen.getByRole('checkbox'))
 
@@ -193,10 +197,7 @@ describe('SourceCard', () => {
       mockGetSourcesStatus.mockResolvedValue({ sources: { test_source: { enabled: true } } })
       mockDisableSource.mockResolvedValue({ enabled: false })
 
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
-        { wrapper: createWrapper() }
-      )
+      renderCard()
 
       await waitFor(() => {
         expect(screen.getByRole('checkbox')).toBeChecked()
@@ -210,10 +211,7 @@ describe('SourceCard', () => {
     })
 
     it('disables toggle when no API endpoint', () => {
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="" isAdmin={true} />,
-        { wrapper: createWrapper() }
-      )
+      renderCard({ apiEndpoint: '' })
 
       expect(screen.getByRole('checkbox')).toBeDisabled()
     })
@@ -235,26 +233,14 @@ describe('SourceCard', () => {
       it('disables the toggle and issues no request when it is clicked', async () => {
         const user = userEvent.setup()
 
-        render(
-          <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={false} />,
-          { wrapper: createWrapper() }
-        )
-
-        const toggle = screen.getByRole('checkbox')
-        expect(toggle).toBeDisabled()
-
-        await user.click(toggle)
+        renderCard({ isAdmin: false })
 
         // The observable that matters: no 403 was provoked.
-        expect(mockEnableSource).not.toHaveBeenCalled()
-        expect(mockDisableSource).not.toHaveBeenCalled()
+        await expectScheduleToggleLocked(user)
       })
 
       it('explains why the toggle is disabled', () => {
-        render(
-          <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={false} />,
-          { wrapper: createWrapper() }
-        )
+        renderCard({ isAdmin: false })
 
         // On the label, not the input: a disabled input does not reliably surface
         // its own title on hover.
@@ -264,10 +250,7 @@ describe('SourceCard', () => {
       it('leaves the toggle untitled for an admin', () => {
         /** Non-vacuity for the case above: a title rendered unconditionally would
          *  satisfy it while telling an admin their access is refused. */
-        render(
-          <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
-          { wrapper: createWrapper() }
-        )
+        renderCard()
 
         expect(screen.queryByTitle(ADMIN_ONLY_TITLE)).not.toBeInTheDocument()
       })
@@ -276,13 +259,7 @@ describe('SourceCard', () => {
 
   describe('Credentials Section', () => {
     it('renders credential fields', async () => {
-      const user = userEvent.setup()
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
-        { wrapper: createWrapper() }
-      )
-
-      await user.click(screen.getByRole('button', { name: /test source/i }))
+      await renderExpanded()
 
       expect(screen.getByText('API Key')).toBeInTheDocument()
       expect(screen.getByText('Business ID')).toBeInTheDocument()
@@ -291,13 +268,7 @@ describe('SourceCard', () => {
     })
 
     it('toggles password visibility', async () => {
-      const user = userEvent.setup()
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
-        { wrapper: createWrapper() }
-      )
-
-      await user.click(screen.getByRole('button', { name: /test source/i }))
+      const user = await renderExpanded()
 
       const apiKeyInput = screen.getByPlaceholderText('Enter api key')
       expect(apiKeyInput).toHaveAttribute('type', 'password')
@@ -308,17 +279,7 @@ describe('SourceCard', () => {
     })
 
     it('saves credentials when save button is clicked', async () => {
-      const user = userEvent.setup()
-      mockUpdateIntegrationCredentials.mockResolvedValue({ success: true })
-
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
-        { wrapper: createWrapper() }
-      )
-
-      await user.click(screen.getByRole('button', { name: /test source/i }))
-      await user.type(screen.getByPlaceholderText('Enter api key'), 'secret-key')
-      await user.click(screen.getByRole('button', { name: /save/i }))
+      await saveApiKey('secret-key')
 
       await waitFor(() => {
         expect(mockUpdateIntegrationCredentials).toHaveBeenCalledWith('test_source', { api_key: 'secret-key' })
@@ -326,22 +287,10 @@ describe('SourceCard', () => {
     })
 
     it('shows success message after saving', async () => {
-      const user = userEvent.setup()
-      mockUpdateIntegrationCredentials.mockResolvedValue({ success: true })
+      await saveApiKey('secret-key')
 
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
-        { wrapper: createWrapper() }
-      )
-
-      await user.click(screen.getByRole('button', { name: /test source/i }))
-      await user.type(screen.getByPlaceholderText('Enter api key'), 'secret-key')
-      await user.click(screen.getByRole('button', { name: /save/i }))
-
-      // Verify mutation was called - the success message is shown via internal state
-      await waitFor(() => {
-        expect(mockUpdateIntegrationCredentials).toHaveBeenCalledWith('test_source', { api_key: 'secret-key' })
-      })
+      // The Save button swaps its label for the confirmation.
+      expect(await screen.findByRole('button', { name: /saved!/i })).toBeInTheDocument()
     })
 
     /**
@@ -368,10 +317,7 @@ describe('SourceCard', () => {
        *  disable reason is the admin gate — `Object.keys(credentials).length === 0`
        *  disables it on an untouched form regardless of who is looking. */
       async function expandAndType(user: ReturnType<typeof userEvent.setup>, isAdmin: boolean) {
-        render(
-          <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={isAdmin} />,
-          { wrapper: createWrapper() }
-        )
+        renderCard({ isAdmin })
         await user.click(screen.getByRole('button', { name: /test source/i }))
         await user.type(screen.getByPlaceholderText('Enter api key'), 'secret-key')
         return screen.getByRole('button', { name: /save/i })
@@ -441,16 +387,10 @@ describe('SourceCard', () => {
 
   describe('Test Integration', () => {
     it('tests integration when test button is clicked', async () => {
-      const user = userEvent.setup()
       mockGetIntegrationStatus.mockResolvedValue({ test_source: { configured: true } })
       mockTestIntegration.mockResolvedValue({ success: true, message: 'Connection successful' })
 
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
-        { wrapper: createWrapper() }
-      )
-
-      await user.click(screen.getByRole('button', { name: /test source/i }))
+      const user = await renderExpanded()
 
       // Wait for the integration status to load
       await waitFor(() => {
@@ -465,58 +405,26 @@ describe('SourceCard', () => {
       })
     })
 
-    it('shows success message on successful test', async () => {
-      const user = userEvent.setup()
+    it.each([
+      ['shows success message on successful test', true, 'Connection successful'],
+      ['shows error message on failed test', false, 'Invalid credentials'],
+    ])('%s', async (_name, success, message) => {
       mockGetIntegrationStatus.mockResolvedValue({ test_source: { configured: true } })
-      mockTestIntegration.mockResolvedValue({ success: true, message: 'Connection successful' })
+      mockTestIntegration.mockResolvedValue({ success, message })
 
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
-        { wrapper: createWrapper() }
-      )
-
-      await user.click(screen.getByRole('button', { name: /test source/i }))
+      const user = await renderExpanded()
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /test$/i })).not.toBeDisabled()
+        expect(screen.getByRole('button', { name: /test$/i })).toBeEnabled()
       })
       await user.click(screen.getByRole('button', { name: /test$/i }))
 
-      await waitFor(() => {
-        expect(screen.getByText('Connection successful')).toBeInTheDocument()
-      })
-    })
-
-    it('shows error message on failed test', async () => {
-      const user = userEvent.setup()
-      mockGetIntegrationStatus.mockResolvedValue({ test_source: { configured: true } })
-      mockTestIntegration.mockResolvedValue({ success: false, message: 'Invalid credentials' })
-
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
-        { wrapper: createWrapper() }
-      )
-
-      await user.click(screen.getByRole('button', { name: /test source/i }))
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /test$/i })).not.toBeDisabled()
-      })
-      await user.click(screen.getByRole('button', { name: /test$/i }))
-
-      await waitFor(() => {
-        expect(screen.getByText('Invalid credentials')).toBeInTheDocument()
-      })
+      expect(await screen.findByText(message)).toBeInTheDocument()
     })
 
     it('disables test button when source not configured', async () => {
-      const user = userEvent.setup()
       mockGetIntegrationStatus.mockResolvedValue({ test_source: { configured: false } })
 
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
-        { wrapper: createWrapper() }
-      )
-
-      await user.click(screen.getByRole('button', { name: /test source/i }))
+      await renderExpanded()
 
       // The test button should be disabled when not configured
       const testButton = screen.getByRole('button', { name: /test$/i })
@@ -526,43 +434,22 @@ describe('SourceCard', () => {
 
   describe('Webhooks Section', () => {
     it('displays webhook URL', async () => {
-      const user = userEvent.setup()
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com/" isAdmin={true} />,
-        { wrapper: createWrapper() }
-      )
-
-      await user.click(screen.getByRole('button', { name: /test source/i }))
+      await renderExpanded({ apiEndpoint: 'https://api.example.com/' })
 
       expect(screen.getByText('https://api.example.com/webhooks/test_source')).toBeInTheDocument()
     })
 
     it('copies webhook URL to clipboard', async () => {
-      const user = userEvent.setup()
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com/" isAdmin={true} />,
-        { wrapper: createWrapper() }
-      )
+      const user = await renderExpanded({ apiEndpoint: 'https://api.example.com/' })
 
-      await user.click(screen.getByRole('button', { name: /test source/i }))
+      await user.click(screen.getByRole('button', { name: 'Copy webhook URL' }))
 
-      const copyButtons = screen.getAllByRole('button')
-      const copyButton = copyButtons.find(btn => btn.querySelector('svg'))
-      if (copyButton) {
-        await user.click(copyButton)
-      }
-
-      // Clipboard mock is set up in test setup
+      // user-event's clipboard stub records what the card wrote.
+      expect(await navigator.clipboard.readText()).toBe('https://api.example.com/webhooks/test_source')
     })
 
     it('shows documentation link when provided', async () => {
-      const user = userEvent.setup()
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
-        { wrapper: createWrapper() }
-      )
-
-      await user.click(screen.getByRole('button', { name: /test source/i }))
+      await renderExpanded()
 
       const docsLink = screen.getByRole('link', { name: /docs/i })
       expect(docsLink).toHaveAttribute('href', 'https://docs.example.com')
@@ -575,17 +462,15 @@ describe('SourceCard', () => {
       const s3Manifest: PluginManifest = {
         id: 's3_import',
         name: 'S3 Import',
-        icon: '📦',
+        icon: 'Package',
+        enabled: true,
         config: [],
         hasIngestor: true,
         hasWebhook: false,
         hasS3Trigger: true,
       }
 
-      render(
-        <SourceCard manifest={s3Manifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
-        { wrapper: createWrapper() }
-      )
+      renderCard({ manifest: s3Manifest })
 
       await user.click(screen.getByRole('button', { name: /s3 import/i }))
 
@@ -595,34 +480,25 @@ describe('SourceCard', () => {
 
   describe('Setup Instructions Colors', () => {
     it('applies blue color theme', async () => {
-      const user = userEvent.setup()
-      render(
-        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
-        { wrapper: createWrapper() }
-      )
-
-      await user.click(screen.getByRole('button', { name: /test source/i }))
+      await renderExpanded()
 
       const instructionsSection = screen.getByText('Setup Instructions').closest('div')
-      expect(instructionsSection).toHaveClass('bg-blue-50')
+      expect(instructionsSection).toHaveClass('bg-info-subtle')
     })
 
     it('applies orange color theme', async () => {
       const user = userEvent.setup()
       const orangeManifest: PluginManifest = {
         ...mockManifest,
-        setup: { ...mockManifest.setup!, color: 'orange' },
+        setup: { ...MOCK_SETUP, color: 'orange' },
       }
 
-      render(
-        <SourceCard manifest={orangeManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
-        { wrapper: createWrapper() }
-      )
+      renderCard({ manifest: orangeManifest })
 
       await user.click(screen.getByRole('button', { name: /test source/i }))
 
       const instructionsSection = screen.getByText('Setup Instructions').closest('div')
-      expect(instructionsSection).toHaveClass('bg-orange-50')
+      expect(instructionsSection).toHaveClass('bg-warn-subtle')
     })
   })
 
@@ -632,22 +508,47 @@ describe('SourceCard', () => {
       const multilineManifest: PluginManifest = {
         id: 'test_source',
         name: 'Test',
-        icon: '🧪',
+        icon: 'Synthetic',
+        enabled: true,
         config: [{ key: 'config', label: 'Config', type: 'textarea', placeholder: 'Enter config', required: false, secret: false }],
         hasIngestor: true,
         hasWebhook: false,
         hasS3Trigger: false,
       }
 
-      render(
-        <SourceCard manifest={multilineManifest} apiEndpoint="https://api.example.com" isAdmin={true} />,
-        { wrapper: createWrapper() }
-      )
+      renderCard({ manifest: multilineManifest })
 
       await user.click(screen.getByRole('button', { name: /test/i }))
 
       const textarea = screen.getByPlaceholderText('Enter config')
       expect(textarea.tagName.toLowerCase()).toBe('textarea')
     })
+  })
+})
+
+describe('SourceCard — one /sources/status call per page', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetIntegrationStatus.mockResolvedValue({})
+  })
+
+  it('shares one status read across every card, each card showing its own entry', async () => {
+    // Production made 5 identical calls on the plugins tab, one per card,
+    // queuing from 1.5 s to 4.0 s (QA perf track).
+    mockGetSourcesStatus.mockResolvedValue({ sources: { test_source: { enabled: true }, other_source: { enabled: false } } })
+    const other: PluginManifest = { ...mockManifest, id: 'other_source', name: 'Other Source' }
+
+    renderWithQueryClient(
+      <>
+        <SourceCard manifest={mockManifest} apiEndpoint="https://api.example.com" isAdmin />
+        <SourceCard manifest={other} apiEndpoint="https://api.example.com" isAdmin />
+      </>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('checkbox')[0]).toBeChecked()
+    })
+    expect(screen.getAllByRole('checkbox')[1]).not.toBeChecked()
+    expect(mockGetSourcesStatus).toHaveBeenCalledExactlyOnceWith()
   })
 })

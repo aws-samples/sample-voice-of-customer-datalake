@@ -14,16 +14,14 @@ exactly does this shared helper put on the wire". Two consequences of that gap:
   copy, and a shared helper whose only test is one caller's integration test is one
   the next caller has to re-derive the contract of.
 
-The attribute names themselves are pinned against `core-stack.ts` in
-`test_idempotency_table_schema_lockstep.py` — that is the drift no runtime error
-reports. These are about the REQUEST: the shape, the condition, and the horizon.
+Expected values are LITERALS — `'id'`, `'expiration'`, `172_800` — not reads of the
+module's own constants. A test that compares the production write against the
+production constant moves with every edit and so pins nothing; the lockstep in
+`test_idempotency_table_schema_lockstep.py` is what ties the same two names to
+`core-stack.ts`, so a rename that is deliberate has two files to update and a rename
+that is accidental has two files that fail.
 """
-from shared.idempotency import (
-    DEDUPE_CLAIM_TTL_SECONDS,
-    IDEMPOTENCY_EXPIRY_ATTRIBUTE,
-    IDEMPOTENCY_KEY_ATTRIBUTE,
-    dedupe_claim_item,
-)
+from shared.idempotency import DEDUPE_CLAIM_TTL_SECONDS, dedupe_claim_item
 
 NOW = 1_700_000_000
 TABLE = 'some-idempotency-table'
@@ -31,89 +29,33 @@ KEY = 'caller#some-unit-of-work'
 
 
 class TestDedupeClaimItem:
-    """What the claim puts on the wire, asserted directly.
+    """What the claim puts on the wire, asserted as one literal request.
 
-    REVERT MAP, each entry RUN:
-      * Drop the `ConditionExpression` — fails
-        test_the_claim_refuses_a_key_that_is_already_there, and NOTHING else here,
-        which is the point: a claim without it is a `Put` that overwrites, so every
-        redelivery would be applied and the helper would still look correct.
-      * Condition on `attribute_not_exists` of some other attribute — fails
-        test_the_condition_names_the_attribute_the_item_is_keyed_on. A condition on an
-        attribute the item does not carry is refused by nothing, so it reads as a
-        working claim right up to the first redelivery.
-      * Return the `Put` without the `{'Put': ...}` wrapper, or add a second operation
-        — fails test_the_item_is_one_transaction_entry.
-      * Stamp `now` rather than `now + expires_after_seconds` — fails
-        test_the_marker_expires_in_the_future.
-      * Shorten `DEDUPE_CLAIM_TTL_SECONDS` to the stream's own 24 hours — fails
-        test_the_default_horizon_outlives_a_streams_retention, which is the assertion
-        that caught the first version of that constant.
+    REVERT MAP, each entry RUN against the whole-request assertion:
+      * Drop the `ConditionExpression` — the claim is a `Put` that OVERWRITES, so a
+        second delivery of the same key succeeds and the writes it guards are applied
+        twice, while the item it produces is otherwise identical. 🔑 THE WHOLE
+        MECHANISM, and the one thing the aggregator's own tests cannot see.
+      * Condition on `attribute_not_exists` of some other attribute — refused by
+        nothing, because an attribute the item does not carry is absent from every
+        item. Reads as a working claim right up to the first redelivery.
+      * Return the `Put` without the `{'Put': ...}` wrapper, or add a second
+        operation — `transact_write_items` takes exactly one operation per entry.
+      * Stamp `now` (or `now - ttl`) rather than `now + ttl` — a marker already in the
+        past is deleted at DynamoDB's leisure and the key becomes claimable again.
+      * Carry a third attribute — a stored RESULT is Powertools' shape; the result of
+        a claimed unit of work here is the writes that committed with it.
+      * Change `DEDUPE_CLAIM_TTL_SECONDS` by any amount — the expiry literal moves.
     """
 
-    def _put(self, **kwargs) -> dict:
-        return dedupe_claim_item(TABLE, KEY, NOW, **kwargs)['Put']
-
-    def test_the_item_is_one_transaction_entry(self):
-        """One `Put`, and nothing else: `transact_write_items` takes exactly one
-        operation per entry and rejects an entry carrying two."""
-        entry = dedupe_claim_item(TABLE, KEY, NOW)
-
-        assert list(entry) == ['Put'], entry
-        assert entry['Put']['TableName'] == TABLE
-
-    def test_the_claim_refuses_a_key_that_is_already_there(self):
-        """🔑 THE WHOLE MECHANISM. Without the condition this is a `Put` that
-        OVERWRITES, so a second delivery of the same key succeeds and the writes it
-        guards are applied twice — while every other assertion in this file still
-        passes, because the item it produces is identical.
-        """
-        assert 'ConditionExpression' in self._put(), (
-            'the claim carries no condition, so it cannot refuse a key it has already '
-            'seen: it would overwrite the marker and let the guarded writes re-apply'
-        )
-
-    def test_the_condition_names_the_attribute_the_item_is_keyed_on(self):
-        """The condition and the key must be the SAME attribute, and this is the
-        failure mode nothing at runtime reports.
-
-        `attribute_not_exists(<anything the item does not carry>)` is true of every
-        item, so a condition on the wrong attribute is never refused — the claim looks
-        like it works until a redelivery arrives, and then it silently does not. Read
-        out of the two rather than compared against a literal, so this cannot become
-        the stale copy of the name.
-        """
-        put = self._put()
-
-        assert IDEMPOTENCY_KEY_ATTRIBUTE in put['Item']
-        assert put['ConditionExpression'] == (
-            f'attribute_not_exists({IDEMPOTENCY_KEY_ATTRIBUTE})'
-        ), (
-            f"the claim conditions on something other than {IDEMPOTENCY_KEY_ATTRIBUTE!r}, "
-            f'the attribute it keys the item on. attribute_not_exists of an attribute '
-            f'the item does not carry is true of every item, so the claim would never '
-            f'refuse anything and the redelivery it exists to catch would be applied.'
-        )
-
-    def test_the_key_is_the_one_the_caller_asked_for(self):
-        """A helper that derived its own key would deduplicate the wrong unit of work.
-
-        The aggregator's key is per stream RECORD (`eventID`), which is what makes it
-        a redelivery test rather than a de-duplication of the feedback itself — a
-        decision that belongs to the caller and cannot be made here.
-        """
-        assert self._put()['Item'][IDEMPOTENCY_KEY_ATTRIBUTE] == KEY
-
-    def test_the_marker_expires_in_the_future(self):
-        """The horizon is `now + expires_after_seconds`, stamped on the attribute the
-        table collects. A marker whose expiry is in the PAST is deleted at DynamoDB's
-        leisure and the key becomes claimable again — the leak's opposite, and equally
-        silent: it looks like a working claim that occasionally lets one through.
-        """
-        expiry = self._put()['Item'][IDEMPOTENCY_EXPIRY_ATTRIBUTE]
-
-        assert expiry == NOW + DEDUPE_CLAIM_TTL_SECONDS
-        assert expiry > NOW
+    def test_the_claim_is_one_conditional_put_of_a_two_attribute_marker(self):
+        assert dedupe_claim_item(TABLE, KEY, NOW) == {
+            'Put': {
+                'TableName': TABLE,
+                'Item': {'id': KEY, 'expiration': 1_700_172_800},
+                'ConditionExpression': 'attribute_not_exists(id)',
+            },
+        }
 
     def test_the_horizon_is_the_callers_to_shorten(self):
         """`expires_after_seconds` is honoured, so a caller whose redelivery window is
@@ -121,53 +63,28 @@ class TestDedupeClaimItem:
         because the aggregator's window is the common case, but a default nothing can
         override is a constant with extra steps.
         """
-        assert self._put(expires_after_seconds=60)['Item'][
-            IDEMPOTENCY_EXPIRY_ATTRIBUTE
-        ] == NOW + 60
+        put = dedupe_claim_item(TABLE, KEY, NOW, expires_after_seconds=60).get('Put')
+        assert put is not None
 
-    def test_the_default_horizon_outlives_a_streams_retention(self):
+        item = put['Item']
+        assert item['expiration'] == 1_700_000_060
+
+    def test_the_default_horizon_is_two_days_and_outlives_a_streams_retention(self):
         """A marker must outlive the window a redelivery can arrive IN.
 
         DynamoDB Streams retain a record for 24 hours, so that is the latest a
-        redelivery of one can appear. Asserting `>` rather than `>=` is the point: an
-        expiry equal to the horizon leaves the last possible redelivery racing the TTL
-        that deletes its own marker, and TTL deletion is best-effort besides
-        (documented as up to 48 hours of lag). This is what caught the first version of
-        the constant, which was exactly 24 hours.
+        redelivery of one can appear. The `>` is the invariant: an expiry equal to the
+        horizon leaves the last possible redelivery racing the TTL that deletes its
+        own marker, and TTL deletion is best-effort besides (documented as up to 48
+        hours of lag). This is what caught the first version of the constant, which
+        was exactly 24 hours. The `==` is the chosen value: double the window, the
+        smallest horizon with headroom on both sides.
         """
-        stream_retention_seconds = 24 * 60 * 60
+        stream_retention_seconds = 86_400
 
-        assert DEDUPE_CLAIM_TTL_SECONDS > stream_retention_seconds, (
+        assert stream_retention_seconds < DEDUPE_CLAIM_TTL_SECONDS, (
             f'a claim lives {DEDUPE_CLAIM_TTL_SECONDS}s, which does not outlast the '
             f'{stream_retention_seconds}s a stream record survives — so the last '
             f'possible redelivery can find the marker gone and be applied twice'
         )
-
-    def test_the_marker_carries_nothing_else(self):
-        """Two attributes, and no stored result.
-
-        This is the difference from Powertools' `idempotent_function`, which remembers
-        a RESPONSE so a replay can return it. The result of a claimed unit of work here
-        is a set of DynamoDB writes that either committed with the claim or did not
-        exist, so there is nothing to remember and a marker carrying a payload would be
-        storing state whose only use is to become stale.
-        """
-        assert set(self._put()['Item']) == {
-            IDEMPOTENCY_KEY_ATTRIBUTE, IDEMPOTENCY_EXPIRY_ATTRIBUTE,
-        }
-
-    def test_two_callers_get_two_different_claims(self):
-        """No shared mutable state between calls: it builds a request and issues
-        nothing, so the same helper can serve two tables in one invocation. The reason
-        it takes `now` rather than reading a clock is the same — one invocation stamps
-        one instant across everything it writes, and a test can freeze one clock.
-        """
-        first = dedupe_claim_item('table-a', 'key-a', NOW)
-        second = dedupe_claim_item('table-b', 'key-b', NOW + 5)
-
-        assert first['Put']['TableName'] == 'table-a'
-        assert second['Put']['TableName'] == 'table-b'
-        assert first['Put']['Item'][IDEMPOTENCY_KEY_ATTRIBUTE] == 'key-a'
-        assert second['Put']['Item'][IDEMPOTENCY_EXPIRY_ATTRIBUTE] == (
-            NOW + 5 + DEDUPE_CLAIM_TTL_SECONDS
-        )
+        assert DEDUPE_CLAIM_TTL_SECONDS == 172_800

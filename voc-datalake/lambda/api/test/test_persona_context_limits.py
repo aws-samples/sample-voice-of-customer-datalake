@@ -39,11 +39,29 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+from shared.converse import ConverseResult
 from shared.feedback import (
     FEEDBACK_CHARS_PER_ITEM_MAX,
     REVIEW_BLOCK_MARKER,
+    feedback_char_budget,
+    feedback_item_limit,
     format_feedback_for_llm,
 )
+from shared.test.converse_fixtures import chain_results
+
+# The documented defaults of the persona budget pair, resolved against the
+# DEFAULT context window rather than the live model. The persona path itself
+# calls projects.persona_context_budget() so it follows the resolved model;
+# these are what the budget-consistency tests below pin.
+#
+# MAX_PERSONA_CONTEXT_CHARS: the character budget for the formatted corpus.
+# FEEDBACK_LIMIT_PERSONA: the item-fetch limit ("item" = one DynamoDB feedback
+# record), derived from that budget and the measured worst-case per-item
+# formatted size, so a FULL corpus fits and the character cap is a genuine
+# backstop for unusually long records rather than the operative limit.
+MAX_PERSONA_CONTEXT_CHARS = feedback_char_budget()
+FEEDBACK_LIMIT_PERSONA = feedback_item_limit(MAX_PERSONA_CONTEXT_CHARS)
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -92,6 +110,17 @@ def _chars_per_item() -> int:
     return len(format_feedback_for_llm([_make_feedback_item(0)]))
 
 
+def _live_persona_budget() -> int:
+    """The char budget generate_personas trims to for the RESOLVED documents model.
+
+    Not MAX_PERSONA_CONTEXT_CHARS: that is sized for the 200 K default window,
+    while the documents surface default (Sonnet 5.5) has a 1M window, so a
+    corpus just over the default budget is not truncated at all.
+    """
+    import projects
+    return projects.persona_context_budget()[0]
+
+
 def _corpus_of_at_least(chars: int) -> list[dict]:
     """Smallest corpus whose formatted string exceeds ``chars``.
 
@@ -132,22 +161,21 @@ def _run_generate_personas(feedback_items):
     mock_table.query.return_value = {"Items": []}
     batch_writer = MagicMock()
     batch_writer.__enter__ = MagicMock(return_value=MagicMock())
-    batch_writer.__exit__ = MagicMock(return_value=False)
     mock_table.batch_writer.return_value = batch_writer
 
-    # One string per chain step. The chain is (research_analysis,
+    # One result per chain step. The chain is (research_analysis,
     # persona_synthesis) since PR #331 dropped the third 'validation' step;
     # generate_personas locates the persona JSON BY STEP NAME, so a trailing
     # spare entry is harmless and keeps this fixture working either way.
-    chain_results = [
+    step_results = chain_results([
         "Research analysis text.",
         MINIMAL_PERSONA_JSON,
-    ]
+    ])
 
     with patch("projects.projects_table", mock_table), \
          patch("projects.get_feedback_context", return_value=feedback_items), \
          patch("projects.get_persona_generation_steps", side_effect=capturing_builder), \
-         patch("projects.converse_chain", return_value=chain_results), \
+         patch("projects.converse_chain_detailed", return_value=step_results), \
          patch("projects.generate_persona_avatar",
                return_value={"avatar_url": None, "avatar_prompt": None}):
         result = projects.generate_personas(
@@ -234,15 +262,14 @@ class TestPersonaSynthesisSeesTheCorpus:
         ~410 000 chars against a 200 000-char cap, so the truncation branch was
         the DEFAULT path and discarded more than half of every full corpus.
         """
-        import projects
 
-        corpus = [_make_feedback_item(i) for i in range(projects.FEEDBACK_LIMIT_PERSONA)]
+        corpus = [_make_feedback_item(i) for i in range(FEEDBACK_LIMIT_PERSONA)]
         result, chain_steps = _run_generate_personas(corpus)
 
         assert result["metadata"]["context_truncated"] is False, (
-            f"a full {projects.FEEDBACK_LIMIT_PERSONA}-item corpus "
+            f"a full {FEEDBACK_LIMIT_PERSONA}-item corpus "
             f"({len(format_feedback_for_llm(corpus))} chars) must fit the "
-            f"{projects.MAX_PERSONA_CONTEXT_CHARS}-char budget — the item limit "
+            f"{MAX_PERSONA_CONTEXT_CHARS}-char budget — the item limit "
             f"and the char cap have drifted apart"
         )
         assert result["metadata"]["feedback_items_used"] == len(corpus)
@@ -259,13 +286,12 @@ class TestBudgetConstantsAreConsistent:
     """
 
     def test_item_limit_and_char_cap_cannot_disagree(self):
-        import projects
 
-        worst_case = projects.FEEDBACK_LIMIT_PERSONA * FEEDBACK_CHARS_PER_ITEM_MAX
-        assert worst_case <= projects.MAX_PERSONA_CONTEXT_CHARS, (
-            f"{projects.FEEDBACK_LIMIT_PERSONA} items at up to "
+        worst_case = FEEDBACK_LIMIT_PERSONA * FEEDBACK_CHARS_PER_ITEM_MAX
+        assert worst_case <= MAX_PERSONA_CONTEXT_CHARS, (
+            f"{FEEDBACK_LIMIT_PERSONA} items at up to "
             f"{FEEDBACK_CHARS_PER_ITEM_MAX} chars each is {worst_case} chars, "
-            f"over the {projects.MAX_PERSONA_CONTEXT_CHARS}-char budget: the "
+            f"over the {MAX_PERSONA_CONTEXT_CHARS}-char budget: the "
             f"char cap would be the operative limit, not a backstop"
         )
 
@@ -287,19 +313,17 @@ class TestBudgetConstantsAreConsistent:
         A literal would overflow a smaller-window model as a hard Bedrock
         ValidationException — worse than the truncation it replaced.
         """
-        import projects
         from shared.feedback import feedback_char_budget
 
-        assert projects.MAX_PERSONA_CONTEXT_CHARS == feedback_char_budget()
+        assert feedback_char_budget() == MAX_PERSONA_CONTEXT_CHARS
         # A narrower window must yield a smaller budget.
         assert feedback_char_budget(window_tokens=100_000) < feedback_char_budget()
 
     def test_budget_is_above_both_old_caps(self):
         """The whole point: more corpus reaches the model than before."""
-        import projects
         from shared.prompts import MAX_PERSONA_SAMPLE_CHARS
 
-        assert projects.MAX_PERSONA_CONTEXT_CHARS > OLD_CONTEXT_CAP
+        assert MAX_PERSONA_CONTEXT_CHARS > OLD_CONTEXT_CAP
         assert MAX_PERSONA_SAMPLE_CHARS > OLD_SAMPLE_CAP
 
 
@@ -340,6 +364,16 @@ class TestLimitsReachTheirCallSites:
             return kwargs["limit"]
         return gfc.call_args.args[1]
 
+    @classmethod
+    def _limit_for_scoped_project_path(cls, path_fn):
+        """The fetch limit of `path_fn(project_id, body, category_scope=None)` over an
+        empty, unfiltered project."""
+        with patch("projects.get_project",
+                   return_value={"project": {"filters": {}}, "personas": []}):
+            return cls._limit_passed_to_get_feedback_context(
+                lambda: path_fn("proj-test", {}, category_scope=None)
+            )
+
     def test_persona_path_uses_the_resolved_limit(self):
         """The persona fetch uses the limit resolved WITH the char budget.
 
@@ -357,104 +391,18 @@ class TestLimitsReachTheirCallSites:
 
     def test_autofill_path_uses_the_named_limit(self):
         import projects
-        with patch("projects.get_project",
-                   return_value={"project": {"filters": {}}, "personas": []}):
-            limit = self._limit_passed_to_get_feedback_context(
-                lambda: projects.autofill_prfaq_questions("proj-test", {})
-            )
+        limit = self._limit_for_scoped_project_path(projects.autofill_prfaq_questions)
         assert limit == projects.FEEDBACK_LIMIT_AUTOFILL
 
     def test_brief_path_uses_the_named_limit(self):
         import projects
-        with patch("projects.get_project",
-                   return_value={"project": {"filters": {}}, "personas": []}):
-            limit = self._limit_passed_to_get_feedback_context(
-                lambda: projects.suggest_document_brief("proj-test", {})
-            )
+        limit = self._limit_for_scoped_project_path(projects.suggest_document_brief)
         assert limit == projects.FEEDBACK_LIMIT_BRIEF
 
     def test_research_suggest_path_uses_the_named_limit(self):
         import projects
-        with patch("projects.get_project",
-                   return_value={"project": {"filters": {}}, "personas": []}):
-            limit = self._limit_passed_to_get_feedback_context(
-                lambda: projects.suggest_research_questions("proj-test", {})
-            )
+        limit = self._limit_for_scoped_project_path(projects.suggest_research_questions)
         assert limit == projects.FEEDBACK_LIMIT_RESEARCH_SUGGEST
-
-
-class TestLegacySurfacesAreNotClaimedAsFixed:
-    """Guard the scope claim.
-
-    ``generate_prd`` / ``generate_prfaq`` are unreachable in a deployed system:
-    ``projects_handler.py`` does not import them, and document generation routes
-    to ``lambda/jobs/document_generator/handler.py``, which fetches its own
-    feedback with its own caps. Their limits are therefore deliberately left
-    alone. If someone wires them up, or changes the live path, these fail and
-    point at the follow-up work rather than letting a decorative constant look
-    like a fix.
-    """
-
-    @staticmethod
-    def _lambda_dir():
-        from pathlib import Path
-        return Path(__file__).resolve().parents[2]
-
-    @staticmethod
-    def _imported_names(source: str) -> set[str]:
-        """Every name ``source`` imports, parsed rather than string-sliced.
-
-        The previous form did ``source.split("from projects import (")[1]``,
-        which raises IndexError on any change to how that import is written —
-        dropping the parentheses, splitting it in two, switching to
-        ``import projects`` — and the failure would read as "the handler now
-        imports generate_prd" when it means "the import is formatted
-        differently".
-        """
-        import ast
-
-        names: set[str] = set()
-        for node in ast.walk(ast.parse(source)):
-            if isinstance(node, (ast.Import, ast.ImportFrom)):
-                names.update(alias.name for alias in node.names)
-        return names
-
-    def test_prd_and_prfaq_are_not_imported_by_the_handler(self):
-        handler = (self._lambda_dir() / "api" / "projects_handler.py").read_text()
-        imported = self._imported_names(handler)
-        assert "generate_prd" not in imported
-        assert "generate_prfaq" not in imported
-
-    def test_the_live_document_path_does_not_use_the_persona_budget(self):
-        """The scope boundary, asserted as a boundary rather than as a bug.
-
-        The claim this guards is "#231's document half is NOT fixed here": the
-        live document path bounds its own corpus, independently of the budget
-        this PR derives. Asserting the boundary — that none of the shared budget
-        helpers appear there — keeps that claim checkable without pinning the
-        exact literal the path currently uses.
-
-        An earlier version asserted ``"feedback_items[:30]" in live``, i.e. that
-        a known shortcoming was still present. That inverts the purpose of a
-        test: correcting the shortcoming would have broken the build, and
-        reformatting the slice would have broken it for no reason at all. This
-        version fails when someone adopts the shared budget there, which is
-        exactly when the LEGACY notes in projects.py stop being true.
-        """
-        live = (
-            self._lambda_dir() / "jobs" / "document_generator" / "handler.py"
-        ).read_text()
-        for helper in (
-            "feedback_char_budget",
-            "feedback_item_limit",
-            "MAX_PERSONA_CONTEXT_CHARS",
-            "FEEDBACK_LIMIT_PERSONA",
-        ):
-            assert helper not in live, (
-                f"the live document path now uses {helper} — #231's document "
-                f"half may be fixed. Update the LEGACY notes in projects.py, "
-                f"re-scope the issue, and retire this guard."
-            )
 
 
 # ---------------------------------------------------------------------------
@@ -481,9 +429,8 @@ class TestReportedMetadataIsHonest:
 
     def test_a_corpus_over_the_budget_is_flagged_and_counted_down(self):
         """Truncation reports the surviving count, not the fetched count."""
-        import projects
 
-        corpus = _corpus_of_at_least(projects.MAX_PERSONA_CONTEXT_CHARS)
+        corpus = _corpus_of_at_least(_live_persona_budget())
         result, chain_steps = _run_generate_personas(corpus)
 
         meta = result["metadata"]
@@ -502,9 +449,8 @@ class TestReportedMetadataIsHonest:
 
     def test_truncated_context_never_ends_mid_record(self):
         """A partial record is data the model may reason from as if it were real."""
-        import projects
 
-        corpus = _corpus_of_at_least(projects.MAX_PERSONA_CONTEXT_CHARS)
+        corpus = _corpus_of_at_least(_live_persona_budget())
         _, chain_steps = _run_generate_personas(corpus)
 
         body = _synthesis_prompt(chain_steps).split(
@@ -552,7 +498,7 @@ class TestOversizedInputErrorIsNamed:
         with patch("projects.projects_table", mock_table), \
              patch("projects.get_feedback_context",
                    return_value=[_make_feedback_item(i) for i in range(5)]), \
-             patch("projects.converse_chain", side_effect=error):
+             patch("projects.converse_chain_detailed", side_effect=error):
             projects.generate_personas("proj-test", {"persona_count": 1})
 
     def test_oversized_input_points_the_user_at_what_they_control(self):
@@ -642,7 +588,7 @@ class TestBudgetAndFetchLimitCannotDrift:
                 lambda: projects.generate_personas("proj-test", {})
             )
         assert limit == expected
-        assert limit < projects.FEEDBACK_LIMIT_PERSONA, (
+        assert limit < FEEDBACK_LIMIT_PERSONA, (
             "the fetch used the import-time default rather than the resolved "
             "budget — the fixture forces a window narrower than the default"
         )
@@ -731,14 +677,14 @@ class TestTheChainDoesNotAccumulateContext:
 
         def fake_converse(prompt, **kwargs):
             seen.append(prompt)
-            return f"output-of-{kwargs.get('step_name')}"
+            return ConverseResult(text=f"output-of-{kwargs.get('step_name')}")
 
         steps = [
             {"step_name": "one", "system": "s", "user": "FIRST-MARKER"},
             {"step_name": "two", "system": "s", "user": "SECOND-MARKER {previous}"},
             {"step_name": "three", "system": "s", "user": "THIRD-MARKER {previous}"},
         ]
-        with patch("shared.converse.converse", side_effect=fake_converse):
+        with patch("shared.converse.converse_detailed", side_effect=fake_converse):
             converse_chain(steps)
 
         assert len(seen) == 3

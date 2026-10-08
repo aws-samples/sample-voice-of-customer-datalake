@@ -4,45 +4,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter } from 'react-router-dom'
+import { at } from '@test/defined'
+import {
+  clientApiModule,
+  problemAnalysisApiMocks,
+} from './problem-analysis-fixtures'
+import { configStoreModule, createQueryWrapper } from '../Categories/categories-fixtures'
 
-// Mock API
-const mockGetFeedback = vi.fn()
-const mockGetEntities = vi.fn()
-const mockGetResolvedProblems = vi.fn()
-const mockSetProblemResolved = vi.fn()
-
-vi.mock('../../api/client', () => ({
-  api: {
-    getFeedback: (params: unknown) => mockGetFeedback(params),
-    getEntities: (params: unknown) => mockGetEntities(params),
-    getResolvedProblems: () => mockGetResolvedProblems(),
-    setProblemResolved: (key: string, resolved: boolean) => mockSetProblemResolved(key, resolved),
-  },
-  getDaysFromRange: () => 7,
-  getDateRangeParams: () => ({ days: 7 }),
-}))
-
-vi.mock('../../store/configStore', () => ({
-  useConfigStore: () => ({
-    timeRange: '7d',
-    config: { apiEndpoint: 'https://api.example.com' },
-  }),
-}))
+vi.mock('../../api/client', () => clientApiModule())
+vi.mock('../../store/configStore', () => configStoreModule())
 
 import ProblemAnalysis from './ProblemAnalysis'
 
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
-  return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter>{children}</MemoryRouter>
-    </QueryClientProvider>
-  )
-}
+const { getFeedback, getEntities, getResolvedProblems, setProblemResolved } = problemAnalysisApiMocks
 
 const mockFeedbackItems = [
   {
@@ -82,34 +56,52 @@ const mockEntities = {
   },
 }
 
+function renderPage() {
+  return render(<ProblemAnalysis />, { wrapper: createQueryWrapper(['/']) })
+}
+
+/** Renders the page and waits for the loading spinner to go away. */
+async function renderLoadedPage() {
+  renderPage()
+  await waitFor(() => {
+    expect(document.querySelector('.animate-spin')).not.toBeInTheDocument()
+  })
+}
+
+/** Renders the page and waits for the "show resolved (1)" toggle to appear. */
+async function renderPageWithResolvedToggle() {
+  renderPage()
+  await waitFor(() => {
+    expect(screen.getByRole('checkbox', { name: /show resolved \(1\)/i })).toBeInTheDocument()
+  })
+}
+
 describe('ProblemAnalysis', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockGetFeedback.mockResolvedValue({ items: mockFeedbackItems, count: 2 })
-    mockGetEntities.mockResolvedValue(mockEntities)
-    mockGetResolvedProblems.mockResolvedValue({ resolved: {} })
-    mockSetProblemResolved.mockResolvedValue({ success: true })
+    getFeedback.mockResolvedValue({ items: mockFeedbackItems, count: 2 })
+    getEntities.mockResolvedValue(mockEntities)
+    getResolvedProblems.mockResolvedValue({ resolved: {} })
+    setProblemResolved.mockResolvedValue({ success: true })
   })
 
   describe('rendering', () => {
     it('renders stats cards', async () => {
-      render(<ProblemAnalysis />, { wrapper: createWrapper() })
+      renderPage()
 
       await waitFor(() => {
-        expect(screen.getByText('Categories')).toBeInTheDocument()
-        expect(screen.getByText('Subcategories')).toBeInTheDocument()
-        expect(screen.getByText('Problems')).toBeInTheDocument()
-        expect(screen.getByText('Feedback')).toBeInTheDocument()
-        expect(screen.getByText('Urgent')).toBeInTheDocument()
+        // Every stat label, exactly once: the list names any that is missing.
+        const labels = ['Categories', 'Subcategories', 'Problems', 'Feedback', 'Urgent']
+        expect(labels.filter((label) => screen.queryAllByText(label).length !== 1)).toStrictEqual([])
       })
     })
   })
 
   describe('loading state', () => {
     it('shows loading spinner while fetching', async () => {
-      mockGetFeedback.mockReturnValue(new Promise(() => {}))
+      getFeedback.mockReturnValue(new Promise(() => {}))
 
-      render(<ProblemAnalysis />, { wrapper: createWrapper() })
+      renderPage()
 
       expect(document.querySelector('.animate-spin')).toBeInTheDocument()
     })
@@ -117,9 +109,9 @@ describe('ProblemAnalysis', () => {
 
   describe('empty state', () => {
     it('shows empty state when no problems found', async () => {
-      mockGetFeedback.mockResolvedValue({ items: [], count: 0 })
+      getFeedback.mockResolvedValue({ items: [], count: 0 })
 
-      render(<ProblemAnalysis />, { wrapper: createWrapper() })
+      renderPage()
 
       await waitFor(() => {
         expect(screen.getByText(/no problem analysis data found/i)).toBeInTheDocument()
@@ -129,12 +121,7 @@ describe('ProblemAnalysis', () => {
 
   describe('category grouping', () => {
     it('renders categories when feedback has problem summaries', async () => {
-      render(<ProblemAnalysis />, { wrapper: createWrapper() })
-
-      // Wait for loading to complete
-      await waitFor(() => {
-        expect(document.querySelector('.animate-spin')).not.toBeInTheDocument()
-      })
+      await renderLoadedPage()
 
       // The component should render - check for stats cards which always render
       expect(screen.getByText('Categories')).toBeInTheDocument()
@@ -143,34 +130,24 @@ describe('ProblemAnalysis', () => {
 
   describe('expand/collapse', () => {
     it('renders expand button', async () => {
-      render(<ProblemAnalysis />, { wrapper: createWrapper() })
-
-      // Wait for loading to complete
-      await waitFor(() => {
-        expect(document.querySelector('.animate-spin')).not.toBeInTheDocument()
-      })
+      await renderLoadedPage()
 
       // Check expand button exists
       const expandButtons = screen.getAllByRole('button')
-      const expandButton = expandButtons.find(b => b.textContent?.toLowerCase().includes('expand'))
+      const expandButton = expandButtons.find(b => b.textContent.toLowerCase().includes('expand'))
       expect(expandButton).toBeTruthy()
     })
   })
 describe('source filtering', () => {
     it('renders source filter dropdown with available sources', async () => {
-      render(<ProblemAnalysis />, { wrapper: createWrapper() })
-
-      // Wait for loading to complete
-      await waitFor(() => {
-        expect(document.querySelector('.animate-spin')).not.toBeInTheDocument()
-      })
+      await renderLoadedPage()
 
       // The source filter dropdown should be present with "All Sources" option
       const sourceSelects = document.querySelectorAll('select')
       expect(sourceSelects.length).toBeGreaterThan(0)
       
       // First select should have "All Sources" option
-      const firstSelect = sourceSelects[0]
+      const firstSelect = at(sourceSelects, 0)
       expect(firstSelect.querySelector('option[value=""]')).toBeTruthy()
     })
   })
@@ -183,12 +160,12 @@ describe('source filtering', () => {
 describe('problem resolution (issue #66)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockGetFeedback.mockResolvedValue({ items: mockFeedbackItems, count: 2 })
-    mockGetEntities.mockResolvedValue(mockEntities)
-    mockSetProblemResolved.mockResolvedValue({ success: true })
+    getFeedback.mockResolvedValue({ items: mockFeedbackItems, count: 2 })
+    getEntities.mockResolvedValue(mockEntities)
+    setProblemResolved.mockResolvedValue({ success: true })
     // Both mock feedback items merge into the same "Slow delivery times"
     // problem group (similarity), which is marked resolved server-side.
-    mockGetResolvedProblems.mockResolvedValue({
+    getResolvedProblems.mockResolvedValue({
       resolved: {
         'delivery|shipping_speed|slow delivery times': { resolved_at: '2026-07-01T00:00:00Z' },
       },
@@ -196,12 +173,8 @@ describe('problem resolution (issue #66)', () => {
   })
 
   it('hides resolved problems by default and shows them via the toggle', async () => {
-    render(<ProblemAnalysis />, { wrapper: createWrapper() })
-
     // Resolved group hidden: the page falls back to its empty state.
-    await waitFor(() => {
-      expect(screen.getByRole('checkbox', { name: /show resolved \(1\)/i })).toBeInTheDocument()
-    })
+    await renderPageWithResolvedToggle()
     expect(screen.queryByText('Slow delivery times')).not.toBeInTheDocument()
     // The empty state explains WHY the tree is empty instead of "no data".
     expect(screen.getByText(/marked resolved/i)).toBeInTheDocument()
@@ -215,11 +188,7 @@ describe('problem resolution (issue #66)', () => {
   })
 
   it('persists an unresolve action through the API', async () => {
-    render(<ProblemAnalysis />, { wrapper: createWrapper() })
-
-    await waitFor(() => {
-      expect(screen.getByRole('checkbox', { name: /show resolved \(1\)/i })).toBeInTheDocument()
-    })
+    await renderPageWithResolvedToggle()
     await userEvent.click(screen.getByRole('checkbox', { name: /show resolved/i }))
 
     // Expand category → subcategory to reach the problem row.
@@ -228,7 +197,7 @@ describe('problem resolution (issue #66)', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: /mark as unresolved/i }))
 
-    expect(mockSetProblemResolved).toHaveBeenCalledWith(
+    expect(setProblemResolved).toHaveBeenCalledWith(
       'delivery|shipping_speed|slow delivery times', false,
     )
   })

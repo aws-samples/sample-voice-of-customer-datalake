@@ -13,9 +13,10 @@
 import type { ReactNode } from 'react'
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import clsx from 'clsx'
+import type { Tone } from '../../theme/tones'
 
 type TrendDirection = 'up' | 'down' | 'neutral'
-type ColorTheme = 'blue' | 'green' | 'red' | 'orange' | 'gray'
+type MetricTone = Extract<Tone, 'accent' | 'ok' | 'danger' | 'warn' | 'muted'>
 
 interface MetricCardProps {
   /** Metric title/label */
@@ -29,17 +30,17 @@ interface MetricCardProps {
   /** Trend direction for styling */
   trend?: TrendDirection
   /** Color theme for icon background */
-  color?: ColorTheme
+  color?: MetricTone
   /** Disclosure tooltip on the value (e.g. partial/approximate data) */
   hint?: string
 }
 
-const COLOR_CLASSES: Record<ColorTheme, string> = {
-  blue: 'bg-blue-50 text-blue-600',
-  green: 'bg-green-50 text-green-600',
-  red: 'bg-red-50 text-red-600',
-  orange: 'bg-orange-50 text-orange-600',
-  gray: 'bg-gray-50 text-gray-600',
+const COLOR_CLASSES: Record<MetricTone, string> = {
+  accent: 'bg-accent-subtle text-accent',
+  ok: 'bg-ok-subtle text-ok',
+  danger: 'bg-danger-subtle text-danger',
+  warn: 'bg-warn-subtle text-warn',
+  muted: 'bg-bg-hover text-muted',
 }
 
 function getTrendDirection(trend?: TrendDirection): string {
@@ -54,9 +55,9 @@ function getTrendLabel(trend?: TrendDirection, change?: number): string {
 }
 
 function getTrendClasses(trend?: TrendDirection): string {
-  if (trend === 'up') return 'text-green-600'
-  if (trend === 'down') return 'text-red-600'
-  return 'text-gray-500'
+  if (trend === 'up') return 'text-ok'
+  if (trend === 'down') return 'text-danger'
+  return 'text-muted'
 }
 
 // Render the appropriate trend icon based on direction
@@ -77,19 +78,19 @@ function TrendIndicator({ trend, change }: Readonly<{ trend?: TrendDirection; ch
       aria-label={getTrendLabel(trend, change)}
     >
       <TrendIcon trend={trend} />
-      <span>{change > 0 ? '+' : ''}{change}%</span>
+      <span className="font-mono">{change > 0 ? '+' : ''}{change}%</span>
     </div>
   )
 }
 
-export default function MetricCard({ title, value, change, icon, trend, color = 'blue', hint }: Readonly<MetricCardProps>) {
+export default function MetricCard({ title, value, change, icon, trend, color = 'accent', hint }: Readonly<MetricCardProps>) {
   return (
-    <div className="card !p-3 sm:!p-4 md:!p-6">
+    <div className="card stat-accent !p-3 sm:!p-4 md:!p-6">
       <div className="flex items-start justify-between gap-2 sm:gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-xs sm:text-sm text-gray-500 mb-0.5 sm:mb-1 truncate">{title}</p>
+          <p className="text-xs sm:text-sm text-muted mb-0.5 sm:mb-1 truncate">{title}</p>
           <p
-            className="text-lg sm:text-xl md:text-2xl font-bold text-gray-900 truncate"
+            className="text-lg sm:text-xl md:text-2xl font-bold font-mono tracking-tight text-text-strong truncate"
             title={hint}
             aria-label={hint ? `${value} — ${hint}` : undefined}
           >

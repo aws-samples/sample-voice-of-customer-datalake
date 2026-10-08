@@ -5,34 +5,38 @@ Uses DynamoDB for watermarks and SQS for processing queue.
 This is the plugin version that supports per-plugin secrets isolation.
 """
 
-import json
 import os
 import sys
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
-from typing import Generator
-import hashlib
+from collections.abc import Generator
+from datetime import UTC, datetime
+
+from botocore.exceptions import BotoCoreError, ClientError
 
 # Add shared module to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from shared.logging import logger, tracer, metrics
-from shared.exceptions import ConfigurationError, SecretUnreadableError
-from shared.http_utils import fetch_with_retry
 from shared.aws import (
     clear_secret_cache,
     get_dynamodb_resource,
     get_s3_client,
-    get_sqs_client,
     get_secret,
+    get_sqs_client,
 )
-from .circuit_breaker import CircuitBreaker
+from shared.exceptions import ConfigurationError, SecretUnreadableError
+from shared.http_utils import fetch_with_retry
+from shared.logging import logger, metrics, tracer
+
 from .audit import emit_audit_event
+from .circuit_breaker import CircuitBreaker
+from .normalized_item import normalized_item_fields
 from .plugin_secrets import filter_plugin_secrets
+from .raw_archive import archive_raw_item
+from .source_policy_gate import policy_messages
 from .sqs_utils import send_messages_to_queue
 
 # Re-export for backwards compatibility with existing handlers
-__all__ = ["BaseIngestor", "logger", "tracer", "metrics", "fetch_with_retry"]
+__all__ = ["BaseIngestor", "fetch_with_retry", "logger", "metrics", "tracer"]
 
 # Configuration from environment
 WATERMARKS_TABLE = os.environ.get("WATERMARKS_TABLE", "")
@@ -40,7 +44,6 @@ PROCESSING_QUEUE_URL = os.environ.get("PROCESSING_QUEUE_URL", "")
 RAW_DATA_BUCKET = os.environ.get("RAW_DATA_BUCKET", "")
 SECRETS_ARN = os.environ.get("SECRETS_ARN", "")
 BRAND_NAME = os.environ.get("BRAND_NAME", "")
-BRAND_HANDLES = json.loads(os.environ.get("BRAND_HANDLES", "[]"))
 SOURCE_PLATFORM = os.environ.get("SOURCE_PLATFORM", "")
 AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
 
@@ -58,12 +61,11 @@ class BaseIngestor(ABC):
                 saved moments ago (Save-then-Run-now, issues #141/#215).
                 Scheduled runs keep the warm cache.
         """
-        self.execution_id: str | None = execution_id
+        self.execution_id = execution_id
         if execution_id:
             clear_secret_cache()
         self.source_platform = SOURCE_PLATFORM
         self.brand_name = BRAND_NAME
-        self.brand_handles = BRAND_HANDLES
         # Everything the failure path needs is wired BEFORE the secret is read.
         # Since issue #251 a namespace miss raises here rather than silently
         # widening to the whole shared secret, so construction failing is a
@@ -162,12 +164,16 @@ class BaseIngestor(ABC):
         except Exception as reporting_error:  # noqa: BLE001
             logger.warning(f"Failed to emit construction failure audit event: {reporting_error}")
 
+        # The exception TYPE only, the same rule as run()'s path (#263): the
+        # run-status row is returned to every signed-in user, and a construction
+        # error's text names the secret prefix and keys the plugin expected. The
+        # full text is in the audit event above.
         try:
             self._update_source_run_status({
                 'status': 'error',
                 'items_found': 0,
-                'completed_at': datetime.now(timezone.utc).isoformat(),
-                'errors': [str(error)],
+                'completed_at': datetime.now(UTC).isoformat(),
+                'errors': [type(error).__name__],
             })
         except Exception as reporting_error:  # noqa: BLE001
             logger.warning(f"Failed to record construction failure run status: {reporting_error}")
@@ -214,16 +220,21 @@ class BaseIngestor(ABC):
 
         return filter_plugin_secrets(self.source_platform, all_secrets)
 
-    def get_watermark(self, key: str, default: str = None) -> str:
-        """Get watermark for a specific source/key from DynamoDB."""
+    def get_watermark(self, key: str, default: str | None = None) -> str | None:
+        """Get watermark for a specific source/key from DynamoDB.
+
+        Watermarks are only ever written as strings (``set_watermark``), so a
+        stored value that is not a string is treated like a missing one.
+        """
         try:
             response = self.watermarks_table.get_item(
                 Key={"source": f"{self.source_platform}#{key}"}
             )
-            return response.get("Item", {}).get("value", default)
-        except Exception as e:
-            logger.warning(f"Failed to get watermark: {e}")
+        except (BotoCoreError, ClientError) as e:
+            logger.warning(f"Failed to get watermark: {e}", exc_info=True)
             return default
+        value = response.get("Item", {}).get("value", default)
+        return value if isinstance(value, str) else default
 
     def set_watermark(self, key: str, value: str):
         """Set watermark for a specific source/key in DynamoDB."""
@@ -232,98 +243,22 @@ class BaseIngestor(ABC):
                 Item={
                     "source": f"{self.source_platform}#{key}",
                     "value": value,
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(UTC).isoformat(),
                 }
             )
-        except Exception as e:
-            logger.error(f"Failed to save watermark: {e}")
+        except (BotoCoreError, ClientError) as e:
+            logger.exception(f"Failed to save watermark: {e}")
 
     @abstractmethod
     def fetch_new_items(self) -> Generator[dict, None, None]:
         """Fetch new items from the data source. Must be implemented by subclasses."""
-        pass
 
-    def _generate_deterministic_id(self, item: dict) -> str:
-        """
-        Generate a deterministic ID for S3 filename to prevent duplicates.
-        
-        Uses the same logic as processor deduplication:
-        1. source_id if available (most reliable)
-        2. hash of created_at + text + url (fallback for scraped content)
-        """
-        source_id = item.get("id", "")
-        if source_id:
-            # Sanitize source_id for use as filename (remove special chars)
-            safe_id = "".join(c if c.isalnum() or c in "-_" else "_" for c in str(source_id))
-            return safe_id[:64]  # Limit length
-        
-        # Fallback: generate from content signature
-        text = item.get("text", "")
-        created_at = item.get("created_at", "")
-        url = item.get("url", "")
-        
-        # MD5 used only for content fingerprinting (not security), marked explicitly
-        text_hash = hashlib.sha256(text[:500].encode(), usedforsecurity=False).hexdigest()[:16] if text else ""
-        content = f"{created_at}:{text_hash}:{url}"
-        return hashlib.sha256(content.encode()).hexdigest()[:32]
+    def store_raw_to_s3(self, item: dict, raw_content: str | None = None) -> str | None:
+        """Store raw data to S3 with partitioned structure (see ``_shared/raw_archive.py``)."""
+        source_platform = item.get("source_platform_override") or self.source_platform
+        return archive_raw_item(self._s3, RAW_DATA_BUCKET, source_platform, item, raw_content)
 
-    def store_raw_to_s3(self, item: dict, raw_content: str = None) -> str | None:
-        """Store raw data to S3 with partitioned structure."""
-        if not RAW_DATA_BUCKET:
-            logger.warning("RAW_DATA_BUCKET not configured, skipping S3 storage")
-            return None
-
-        try:
-            now = datetime.now(timezone.utc)
-            source_platform = (
-                item.get("source_platform_override") or self.source_platform
-            )
-            
-            item_id = self._generate_deterministic_id(item)
-
-            # Use review's created_at date for partitioning
-            created_at = item.get("created_at")
-            if created_at:
-                try:
-                    if isinstance(created_at, str):
-                        date_str = created_at.replace('Z', '+00:00').replace(' ', 'T')
-                        if 'T' in date_str and '+' not in date_str and '-' not in date_str.split('T')[1]:
-                            date_str += '+00:00'
-                        partition_date = datetime.fromisoformat(date_str)
-                    else:
-                        partition_date = now
-                except (ValueError, TypeError) as e:
-                    logger.debug(f"Could not parse created_at '{created_at}': {e}")
-                    partition_date = now
-            else:
-                partition_date = now
-
-            # Build S3 key - scoped to plugin prefix for isolation
-            s3_key = f"raw/{source_platform}/{partition_date.year}/{partition_date.month:02d}/{partition_date.day:02d}/{item_id}.json"
-
-            raw_payload = {
-                "item_id": item_id,
-                "source_platform": source_platform,
-                "ingested_at": now.isoformat(),
-                "partition_date": partition_date.strftime('%Y-%m-%d'),
-                "raw_content": raw_content,
-                "raw_item": item,
-            }
-
-            self._s3.put_object(
-                Bucket=RAW_DATA_BUCKET,
-                Key=s3_key,
-                Body=json.dumps(raw_payload, default=str),
-                ContentType="application/json",
-            )
-
-            logger.info(f"Stored raw data to s3://{RAW_DATA_BUCKET}/{s3_key}")
-            return f"s3://{RAW_DATA_BUCKET}/{s3_key}"
-        except Exception as e:
-            logger.error(f"Failed to store raw data to S3: {e}")
-            return None
-
-    def normalize_item(self, item: dict, raw_content: str = None) -> dict:
+    def normalize_item(self, item: dict, raw_content: str | None = None) -> dict:
         """Normalize item to common raw schema and store raw data to S3."""
         source_platform = (
             item.get("source_platform_override") or self.source_platform
@@ -332,18 +267,12 @@ class BaseIngestor(ABC):
         s3_raw_uri = self.store_raw_to_s3(item, raw_content)
 
         return {
-            "id": item.get("id", ""),
-            "source_platform": source_platform,
-            "source_channel": item.get("channel", "unknown"),
-            "url": item.get("url", ""),
-            "text": item.get("text", ""),
-            "rating": item.get("rating"),
-            "created_at": item.get(
-                "created_at", datetime.now(timezone.utc).isoformat()
+            **normalized_item_fields(
+                item,
+                source_platform=source_platform,
+                default_channel="unknown",
+                brand_name=self.brand_name,
             ),
-            "ingested_at": datetime.now(timezone.utc).isoformat(),
-            "brand_name": self.brand_name,
-            "brand_handles_matched": item.get("brand_handles_matched", []),
             "s3_raw_uri": s3_raw_uri,
             "raw_data": item if not s3_raw_uri else None,
         }
@@ -351,11 +280,10 @@ class BaseIngestor(ABC):
     def send_to_queue(self, items: list[dict]) -> int:
         """Send items to SQS processing queue.
 
-        Delegates to the shared helper which checks the ``Failed`` list in every
-        batch response, retries transient errors, and raises ``RuntimeError`` if
-        any items cannot be enqueued — ensuring callers cannot silently lose
-        feedback.  The ``ItemsIngested`` metric reflects the actual enqueued
-        count, not the attempted count.
+        Delegates to ``send_messages_to_queue`` (see its docstring for the
+        ``Failed``-list checking, retries and the ``RuntimeError`` on loss), so
+        callers cannot silently lose feedback.  The ``ItemsIngested`` metric
+        reflects the actual enqueued count, not the attempted count.
 
         Returns:
             The number of items that SQS confirmed as enqueued.
@@ -363,7 +291,7 @@ class BaseIngestor(ABC):
         return send_messages_to_queue(
             self._sqs,
             PROCESSING_QUEUE_URL,
-            items,
+            policy_messages(items),
             metric_name="ItemsIngested",
             log_label="ingestor",
         )
@@ -388,8 +316,9 @@ class BaseIngestor(ABC):
                 ExpressionAttributeNames=expr_names,
                 ExpressionAttributeValues=expr_values,
             )
-        except Exception as e:
-            logger.warning(f"Failed to update run status: {e}")
+        except (BotoCoreError, ClientError, TypeError) as e:
+            # TypeError: boto3's DynamoDB serializer rejecting a value type.
+            logger.warning(f"Failed to update run status: {e}", exc_info=True)
 
     def run(self) -> dict:
         """Main execution method with circuit breaker support."""
@@ -399,17 +328,16 @@ class BaseIngestor(ABC):
             return {"status": "skipped", "reason": "circuit_breaker_open"}
 
         emit_audit_event("plugin.invoked", self.source_platform, True)
-        
-        # Initialize run status tracking
-        if self.aggregates_table and self.execution_id:
-            self._update_source_run_status({
-                'status': 'running',
-                'items_found': 0,
-                'started_at': datetime.now(timezone.utc).isoformat(),
-            })
+
+        # Initialize run status tracking (a no-op without a table and an execution id)
+        self._update_source_run_status({
+            'status': 'running',
+            'items_found': 0,
+            'started_at': datetime.now(UTC).isoformat(),
+        })
 
         items = []
-        last_id = None
+        last_id = None  # pragma: no mutate  read only by the falsy `if last_id` below; '' is as falsy as None
         total_processed = 0
 
         try:
@@ -438,35 +366,40 @@ class BaseIngestor(ABC):
 
             # Record success
             self.circuit_breaker.record_success()
-            
+
             self._update_source_run_status({
                 'status': 'completed',
                 'items_found': total_processed,
-                'completed_at': datetime.now(timezone.utc).isoformat(),
+                'completed_at': datetime.now(UTC).isoformat(),
             })
 
             emit_audit_event("plugin.completed", self.source_platform, True, {
                 "items_processed": total_processed,
             })
 
-            return {"status": "success", "items_processed": total_processed}
-
         except Exception as e:
             logger.exception(f"Ingestion failed: {e}")
             metrics.add_metric(name="IngestionErrors", unit="Count", value=1)
-            
+
+            # The exception TYPE only: this SOURCE_RUN# row is returned to every
+            # signed-in user (integrations_handler's source status), and the
+            # exception text can carry an upstream URL, response body or
+            # credential-bearing detail. The full text is in the log line above
+            # and the audit event below (#263).
             self._update_source_run_status({
                 'status': 'error',
                 'items_found': total_processed,
-                'completed_at': datetime.now(timezone.utc).isoformat(),
-                'errors': [str(e)],
+                'completed_at': datetime.now(UTC).isoformat(),
+                'errors': [type(e).__name__],
             })
 
             # Record failure for circuit breaker
             self.circuit_breaker.record_failure(str(e))
-            
+
             emit_audit_event("plugin.failed", self.source_platform, False, {
                 "error": str(e),
                 "error_type": type(e).__name__,
             })
             raise
+        else:
+            return {"status": "success", "items_processed": total_processed}

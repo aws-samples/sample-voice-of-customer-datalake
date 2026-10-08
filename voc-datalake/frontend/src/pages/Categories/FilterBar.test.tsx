@@ -1,19 +1,19 @@
-import { useState } from 'react'
+import { useState, type ComponentProps } from 'react'
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { FilterBar } from './FilterBar'
 import type { RatingFilter } from './types'
 
-const defaultProps = {
+const defaultProps: ComponentProps<typeof FilterBar> = {
   searchText: '',
   onSearchChange: vi.fn(),
-  selectedSource: null as string | null,
+  selectedSource: null,
   onSourceChange: vi.fn(),
   allSources: ['webscraper', 'manual_import'],
   showUrgentOnly: false,
   onUrgentChange: vi.fn(),
-  ratingFilter: { value: 0, direction: 'up' } as RatingFilter,
+  ratingFilter: { value: 0, direction: 'up' },
   onRatingFilterChange: vi.fn(),
   hasActiveFilters: false,
   onClearFilters: vi.fn(),
@@ -23,11 +23,13 @@ describe('FilterBar', () => {
   it('renders search input, source select, star rating and urgent toggle in one bar', () => {
     render(<FilterBar {...defaultProps} />)
 
-    expect(screen.getByPlaceholderText('Search feedback...')).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: /filter by source/i })).toBeInTheDocument()
-    expect(screen.getByRole('group', { name: /star rating/i })).toBeInTheDocument()
-    expect(screen.getByRole('radiogroup', { name: /rating direction/i })).toBeInTheDocument()
-    expect(screen.getByText('Urgent only')).toBeInTheDocument()
+    expect([
+      screen.getByPlaceholderText('Search feedback...'),
+      screen.getByRole('combobox', { name: /filter by source/i }),
+      screen.getByRole('group', { name: /star rating/i }),
+      screen.getByRole('radiogroup', { name: /rating direction/i }),
+      screen.getByText('Urgent only'),
+    ].every((el) => el.isConnected)).toBe(true)
   })
 
   it('propagates typed search text', async () => {
@@ -67,6 +69,20 @@ describe('FilterBar', () => {
     expect(onUrgentChange).toHaveBeenCalledWith(true)
   })
 
+  /** Render with the threshold at 3 (& up) and a spy on the rating callback. */
+  function renderWithThresholdThree() {
+    const user = userEvent.setup()
+    const onRatingFilterChange = vi.fn()
+    render(
+      <FilterBar
+        {...defaultProps}
+        ratingFilter={{ value: 3, direction: 'up' }}
+        onRatingFilterChange={onRatingFilterChange}
+      />
+    )
+    return { user, onRatingFilterChange }
+  }
+
   it('sets the rating threshold from the star picker, keeping the direction', async () => {
     const user = userEvent.setup()
     const onRatingFilterChange = vi.fn()
@@ -77,30 +93,14 @@ describe('FilterBar', () => {
   })
 
   it('resets the rating threshold via the Any button', async () => {
-    const user = userEvent.setup()
-    const onRatingFilterChange = vi.fn()
-    render(
-      <FilterBar
-        {...defaultProps}
-        ratingFilter={{ value: 3, direction: 'up' }}
-        onRatingFilterChange={onRatingFilterChange}
-      />
-    )
+    const { user, onRatingFilterChange } = renderWithThresholdThree()
 
     await user.click(screen.getByTitle('Any rating'))
     expect(onRatingFilterChange).toHaveBeenCalledWith({ value: 0, direction: 'up' })
   })
 
   it('switches the direction to & below, keeping the threshold', async () => {
-    const user = userEvent.setup()
-    const onRatingFilterChange = vi.fn()
-    render(
-      <FilterBar
-        {...defaultProps}
-        ratingFilter={{ value: 3, direction: 'up' }}
-        onRatingFilterChange={onRatingFilterChange}
-      />
-    )
+    const { user, onRatingFilterChange } = renderWithThresholdThree()
 
     await user.click(screen.getByRole('radio', { name: '& below' }))
     expect(onRatingFilterChange).toHaveBeenCalledWith({ value: 3, direction: 'below' })
@@ -123,19 +123,29 @@ describe('FilterBar', () => {
     }
     render(<Harness />)
 
-    expect(screen.getByRole('radio', { name: '& up' })).toHaveAttribute('tabindex', '0')
-    expect(screen.getByRole('radio', { name: '& below' })).toHaveAttribute('tabindex', '-1')
+    /** The roving-tabindex state of one direction radio. */
+    const radioState = (name: string) => {
+      const radio = screen.getByRole('radio', { name })
+      return {
+        checked: radio.getAttribute('aria-checked'),
+        tabIndex: radio.getAttribute('tabindex'),
+        focused: radio === document.activeElement,
+      }
+    }
+
+    expect({ up: radioState('& up').tabIndex, below: radioState('& below').tabIndex })
+      .toStrictEqual({ up: '0', below: '-1' })
 
     screen.getByRole('radio', { name: '& up' }).focus()
     await user.keyboard('{ArrowRight}')
 
-    expect(screen.getByRole('radio', { name: '& below' })).toHaveAttribute('aria-checked', 'true')
-    expect(screen.getByRole('radio', { name: '& below' })).toHaveAttribute('tabindex', '0')
-    expect(screen.getByRole('radio', { name: '& up' })).toHaveAttribute('tabindex', '-1')
-    expect(screen.getByRole('radio', { name: '& below' })).toHaveFocus()
+    expect({ up: radioState('& up'), below: radioState('& below') }).toMatchObject({
+      up: { tabIndex: '-1' },
+      below: { checked: 'true', tabIndex: '0', focused: true },
+    })
 
     await user.keyboard('{ArrowLeft}')
-    expect(screen.getByRole('radio', { name: '& up' })).toHaveAttribute('aria-checked', 'true')
+    expect(radioState('& up').checked).toBe('true')
   })
 
   it('shows the clear button only when filters are active and fires onClearFilters', async () => {
@@ -147,7 +157,7 @@ describe('FilterBar', () => {
 
     rerender(<FilterBar {...defaultProps} hasActiveFilters onClearFilters={onClearFilters} />)
     await user.click(screen.getByText('Clear filters'))
-    expect(onClearFilters).toHaveBeenCalled()
+    expect(onClearFilters).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'click' }))
   })
 
   it('renders trailing content in the bar when provided', () => {

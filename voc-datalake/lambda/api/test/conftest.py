@@ -1,12 +1,13 @@
 """
 Shared pytest fixtures for Lambda API handler tests.
 """
+import json
 import os
 import sys
-import json
+from datetime import UTC, datetime
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock
-from datetime import datetime, timezone
 
 # Add lambda directory to path for shared module imports
 # and lambda/api directory for handler imports
@@ -40,10 +41,6 @@ os.environ['PROCESSING_QUEUE_URL'] = 'https://sqs.us-east-1.amazonaws.com/123456
 os.environ['USER_POOL_ID'] = 'us-east-1_testpool'
 
 
-# Imported after the sys.path setup above, which is what makes it resolvable.
-from plugin_manifests import PLUGIN_SECRET_DEFAULTS
-
-
 @pytest.fixture
 def plugin_secret_defaults(monkeypatch):
     """Give the integrations handler the PLUGIN_SECRET_DEFAULTS that CDK sets.
@@ -52,9 +49,13 @@ def plugin_secret_defaults(monkeypatch):
     handler knows of no sources and returns {}. The lru_cache is cleared on both
     sides so neither this value nor a previous one leaks between tests.
     """
+    # Imported here, after the sys.path setup above has run, which is what
+    # makes both resolvable.
+    from plugin_manifests import PLUGIN_SECRET_DEFAULTS
+
     import integrations_handler as h
 
-    monkeypatch.setenv(h.PLUGIN_SECRET_DEFAULTS_VAR, json.dumps(PLUGIN_SECRET_DEFAULTS))
+    monkeypatch.setenv(h.PLUGIN_DEFAULTS_ENV_VAR, json.dumps(PLUGIN_SECRET_DEFAULTS))
     h._plugin_secret_defaults.cache_clear()
     yield PLUGIN_SECRET_DEFAULTS
     h._plugin_secret_defaults.cache_clear()
@@ -75,61 +76,21 @@ def feedback_form_handler():
 
 
 @pytest.fixture
-def mock_dynamodb_table():
-    """Create a mock DynamoDB table with common methods."""
-    table = MagicMock()
-    table.query.return_value = {'Items': [], 'Count': 0}
-    table.get_item.return_value = {}
-    table.put_item.return_value = {}
-    table.delete_item.return_value = {}
-    table.update_item.return_value = {}
-    return table
-
-
-@pytest.fixture
-def mock_dynamodb_resource(mock_dynamodb_table):
-    """Mock boto3 DynamoDB resource."""
-    resource = MagicMock()
-    resource.Table.return_value = mock_dynamodb_table
-    return resource
-
-
-@pytest.fixture
-def mock_bedrock_client():
-    """Mock Bedrock runtime client for AI features."""
-    client = MagicMock()
-    client.invoke_model.return_value = {
-        'body': MagicMock(read=lambda: json.dumps({
-            'content': [{'text': 'Test AI response from Claude Sonnet 4.5'}]
-        }).encode())
-    }
-    return client
-
-
-@pytest.fixture
-def mock_bedrock_response():
-    """Factory fixture to create custom Bedrock responses."""
-    def _create_response(text: str):
-        return {
-            'body': MagicMock(read=lambda: json.dumps({
-                'content': [{'text': text}]
-            }).encode())
-        }
-    return _create_response
-
-
-@pytest.fixture
 def api_gateway_event():
     """Factory fixture to create API Gateway events."""
     def _create_event(
         method: str = 'GET',
         path: str = '/feedback',
-        query_params: dict = None,
-        body: dict = None,
-        path_params: dict = None,
-        headers: dict = None,
-        resource: str = None
+        query_params: dict | None = None,
+        body: dict | None = None,
+        path_params: dict | None = None,
+        headers: dict | None = None,
+        resource: str | None = None,
+        claims: dict | None = None,
     ):
+        # `claims` replaces the authorizer claims wholesale; omitted, the caller
+        # is the admin below, so tests that predate per-project permissions are
+        # unaffected by the access gate.
         # Auto-generate resource from path if not provided
         # For proxy routes, replace the proxy value with {proxy+}
         if resource is None:
@@ -137,7 +98,7 @@ def api_gateway_event():
             if path_params and 'proxy' in path_params:
                 proxy_value = path_params['proxy']
                 resource = path.replace(f'/{proxy_value}', '/{proxy+}')
-        
+
         return {
             'httpMethod': method,
             'path': path,
@@ -152,7 +113,7 @@ def api_gateway_event():
             },
             'requestContext': {
                 'authorizer': {
-                    'claims': {
+                    'claims': claims if claims is not None else {
                         'sub': 'test-user-id',
                         'email': 'test@example.com',
                         'cognito:groups': 'admins'
@@ -164,6 +125,19 @@ def api_gateway_event():
             'isBase64Encoded': False
         }
     return _create_event
+
+
+@pytest.fixture
+def existing_project():
+    """`projects_handler` sees exactly one project, `proj-123`, as existing.
+
+    The id every handler test addresses by convention. Tests about a MISSING
+    project (404 before any job row) do not use this fixture.
+    """
+    from handler_events_fixtures import project_meta_table
+
+    with patch('projects_handler.get_projects_table', return_value=project_meta_table('proj-123')):
+        yield
 
 
 @pytest.fixture
@@ -192,9 +166,9 @@ def sample_feedback_item():
         'sentiment_score': 0.85,
         'category': 'product_quality',
         'urgency': 'low',
-        'date': datetime.now(timezone.utc).strftime('%Y-%m-%d'),
-        'source_created_at': datetime.now(timezone.utc).isoformat(),
-        'processed_at': datetime.now(timezone.utc).isoformat(),
+        'date': datetime.now(UTC).strftime('%Y-%m-%d'),
+        'source_created_at': datetime.now(UTC).isoformat(),
+        'processed_at': datetime.now(UTC).isoformat(),
     }
 
 

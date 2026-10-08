@@ -1,11 +1,11 @@
 /**
  * @fileoverview Sentiment badge component.
  *
- * Displays sentiment label with color coding:
- * - positive: green
- * - negative: red
- * - neutral: gray
- * - mixed: yellow
+ * Displays sentiment label with colour by MEANING (design-system tones, not a
+ * data-series hue): positive → `ok`, negative → `danger`, mixed → `warn`,
+ * neutral → `muted`. Sentiment is a status, so it keeps the semantic tones the
+ * way KiroCrew colours every good/bad value (`bg-ok-subtle text-ok`, …) instead
+ * of joining the categorical data ramp (`--chart-*`).
  *
  * @module components/SentimentBadge
  */
@@ -21,10 +21,10 @@ interface SentimentBadgeProps {
 type SentimentType = 'positive' | 'negative' | 'neutral' | 'mixed'
 
 const SENTIMENT_COLORS: Record<SentimentType, string> = {
-  positive: 'bg-green-100 text-green-800',
-  negative: 'bg-red-100 text-red-800',
-  neutral: 'bg-gray-100 text-gray-800',
-  mixed: 'bg-yellow-100 text-yellow-800',
+  positive: 'bg-ok-subtle text-ok',
+  negative: 'bg-danger-subtle text-danger',
+  neutral: 'bg-bg-hover text-muted',
+  mixed: 'bg-warn-subtle text-warn',
 }
 
 function isSentimentType(value: string): value is SentimentType {
@@ -47,7 +47,9 @@ export default function SentimentBadge({ sentiment, score, size = 'sm' }: Readon
     )}>
       {sentiment}
       {score !== undefined && (
-        <span className="ml-1 opacity-70">({Number(score).toFixed(2)})</span>
+        // Same tone as the label, no opacity fade: opacity-70 on the 12px
+        // score dropped it below WCAG AA contrast on the subtle fills.
+        <span className="ml-1 font-mono">({Number(score).toFixed(2)})</span>
       )}
     </span>
   )

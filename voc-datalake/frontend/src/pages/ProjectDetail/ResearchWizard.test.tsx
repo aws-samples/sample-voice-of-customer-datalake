@@ -7,12 +7,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import {
+  baseWizardProps, createWizardWrapper, resetWizardMocks,
+} from './wizard-fixtures'
+import {
+  wizardApiClientMock, wizardConfigStoreMock,
+} from '../../components/DataSourceWizard/dataSourceWizard-fixtures'
 import { ResearchWizard } from './Wizards'
-import { defaultContextConfig } from '../../components/DataSourceWizard/exports'
 import type { ResearchToolConfig } from './types'
 
-const mockSuggestResearchQuestions = vi.fn()
+const mockSuggestResearchQuestions = vi.fn<(...args: unknown[]) => unknown>()
 
 vi.mock('../../api/projectsApi', () => ({
   projectsApi: {
@@ -20,33 +24,15 @@ vi.mock('../../api/projectsApi', () => ({
   },
 }))
 
-const mockGetSources = vi.fn()
-const mockGetCategoriesConfig = vi.fn()
-vi.mock('../../api/client', () => ({
-  api: {
-    getSources: (days: number) => mockGetSources(days),
-    getCategoriesConfig: () => mockGetCategoriesConfig(),
-  },
-}))
-vi.mock('../../store/configStore', () => ({
-  useConfigStore: vi.fn(() => ({
-    config: { apiEndpoint: 'https://api.example.com' },
-  })),
-}))
+vi.mock('../../api/client', () => wizardApiClientMock())
+vi.mock('../../store/configStore', () => wizardConfigStoreMock())
 
-const mockIsWebSearchAvailable = vi.fn()
+const mockIsWebSearchAvailable = vi.fn<(...args: unknown[]) => unknown>()
 vi.mock('../../runtimeConfig', () => ({
   isWebSearchAvailable: () => mockIsWebSearchAvailable(),
 }))
 
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
-  return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
-}
+const createWrapper = createWizardWrapper
 
 const baseResearchConfig: ResearchToolConfig = {
   question: '',
@@ -56,33 +42,26 @@ const baseResearchConfig: ResearchToolConfig = {
 
 function makeProps(researchConfig: Partial<ResearchToolConfig> = {}) {
   return {
-    projectId: 'proj-1',
-    personas: [],
-    documents: [],
-    contextConfig: defaultContextConfig,
+    ...baseWizardProps(),
     researchConfig: { ...baseResearchConfig, ...researchConfig },
-    generating: null,
-    onContextChange: vi.fn(),
     onResearchConfigChange: vi.fn(),
-    onClose: vi.fn(),
-    onSubmit: vi.fn(),
   }
 }
 
 /** Click Next until the final (research question) step is visible.
  * Bounded so a broken wizard fails with an assertion, not a test timeout. */
-async function goToFinalStep(user: ReturnType<typeof userEvent.setup>) {
-  for (let i = 0; i < 5 && !screen.queryByText(/research question/i); i++) {
+async function goToFinalStep(user: ReturnType<typeof userEvent.setup>, clicksLeft = 5): Promise<void> {
+  if (clicksLeft > 0 && !screen.queryByText(/research question/i)) {
     await user.click(screen.getByRole('button', { name: /next/i }))
+    await goToFinalStep(user, clicksLeft - 1)
+    return
   }
   expect(screen.getByText(/research question/i)).toBeInTheDocument()
 }
 
 describe('ResearchWizard web-search data source (#207)', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
-    mockGetSources.mockResolvedValue({ sources: {} })
-    mockGetCategoriesConfig.mockResolvedValue({ categories: [] })
+    resetWizardMocks()
     mockIsWebSearchAvailable.mockReturnValue(true)
   })
 

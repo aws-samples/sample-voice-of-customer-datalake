@@ -8,8 +8,8 @@
     "saved": "Gespeichert",
     "surfaces": {
       "chat": {
-        "description": "Konversationelle Datenabfragen und Projekt-Chat",
-        "label": "KI-Chat"
+        "description": "Schwebender, seitenbezogener Assistent und die Vollbild-Chatseite",
+        "label": "KI-Assistent"
       },
       "documents": {
         "description": "PRDs, PR/FAQs, Personas und Forschungsberichte",
@@ -26,9 +26,77 @@
       "utility": {
         "description": "Kategorievorschläge und Scraper-Selektor-Erkennung",
         "label": "Dienstprogramme"
+      },
+      "memory": {
+        "label": "Gedächtnis",
+        "description": "Extrahiert, dedupliziert und prüft Unternehmens- und persönliche Erinnerungen (Flex-Stufe, sofern verfügbar)"
+      },
+      "agent_orchestrator": {
+        "label": "Agenten-Dirigent",
+        "description": "Plant jeden autonomen Lauf, treibt den Workflow voran und prüft jeden Schritt"
+      },
+      "agent_worker": {
+        "label": "Agenten-Mitarbeiter",
+        "description": "Recherche, PR/FAQs, PRDs und Prototypen innerhalb eines autonomen Laufs"
+      },
+      "agent_reviewer": {
+        "label": "Agenten-Endprüfer",
+        "description": "Abschlussprüfung eines autonomen Laufs anhand der Unternehmensziele"
+      },
+      "agent_persona": {
+        "label": "Persona-Gremium",
+        "description": "Personas, die Dokumente und Prototypen während eines Laufs bewerten und beanstanden"
       }
     },
-    "title": "KI-Modelle"
+    "title": "KI-Modelle",
+    "test": {
+      "test": "Testen",
+      "testTitle": "Eine Testanfrage an {{model}} für {{surface}} senden",
+      "testing": "Wird getestet...",
+      "notTested": "Nicht getestet",
+      "unsaved": "Nicht gespeicherte Änderung",
+      "save": "Speichern",
+      "discard": "Verwerfen",
+      "latency": "{{ms}} ms",
+      "tokensPerMinute": "{{count}} Tokens/Min.",
+      "quotaUnknown": "Kontingent unbekannt",
+      "all": "Alle Modelle testen",
+      "allTitle": "Modellzugriff und Kapazität",
+      "allIntro": "Sendet nacheinander eine kurze Anfrage an jedes Modell und zeigt sein Kontingent an Tokens pro Minute für dieses Konto und diese Region.",
+      "allRunning": "Teste {{current}} von {{total}}...",
+      "columns": {
+        "model": "Modell",
+        "status": "Status",
+        "latency": "Latenz",
+        "tokensPerMinute": "Tokens/Min."
+      },
+      "status": {
+        "available": "Verfügbar",
+        "no_access": "Kein Zugriff",
+        "not_in_region": "Nicht in dieser Region",
+        "no_capacity": "Keine Kapazität",
+        "throttled": "Gedrosselt",
+        "not_ready": "Nicht bereit",
+        "unavailable": "Nicht erreichbar",
+        "error": "Fehler"
+      },
+      "detail": {
+        "available": "Das Modell hat geantwortet.",
+        "no_access": "Dieses Konto hat keinen Zugriff auf das Modell (Modellzugriff, Anwendungsfall oder Vereinbarung).",
+        "not_in_region": "Das Modell oder sein Inferenzprofil wird in dieser Region nicht angeboten.",
+        "no_capacity": "Das Kontingent für dieses Modell ist in diesem Konto 0; es bleibt nur abzuwarten.",
+        "throttled": "Das Modell drosselt gerade Anfragen; versuchen Sie es gleich noch einmal.",
+        "not_ready": "Das Modell ist noch nicht bereit; versuchen Sie es in einigen Minuten erneut.",
+        "unavailable": "Das Modell ist vorübergehend nicht erreichbar; versuchen Sie es später erneut.",
+        "error": "Die Testanfrage ist fehlgeschlagen."
+      },
+      "confirm": {
+        "title": "Ein Modell ohne bestandenen Test speichern?",
+        "untested": "{{model}} wurde noch nicht getestet. Trotzdem für {{surface}} speichern?",
+        "failed": "Der letzte Test von {{model}} ergab „{{status}}“. Trotzdem für {{surface}} speichern?",
+        "save": "Trotzdem speichern"
+      }
+    }
   },
   "api": {
     "connected": "Verbunden",
@@ -49,35 +117,16 @@
     "syncedToBackend": "Mit Backend synchronisiert",
     "title": "Markenkonfiguration",
     "urlsHint": "Bestimmte URLs zur Überwachung per Websuche",
-    "urlsLabel": "URLs zum Verfolgen (eine pro Zeile)"
+    "urlsLabel": "URLs zum Verfolgen (eine pro Zeile)",
+    "loadFailed": "Markeneinstellungen konnten nicht vom Server geladen werden. Es werden die in diesem Browser gespeicherten Werte angezeigt.",
+    "retry": "Erneut versuchen",
+    "notSynced": "Nicht synchronisiert",
+    "saveFailed": "Speichern auf dem Server fehlgeschlagen. Bitte erneut versuchen."
   },
   "categories": {
-    "addCategory": "Kategorie hinzufügen",
-    "addCategoryPlaceholder": "Neue Kategorie hinzufügen...",
-    "addSubcategoryPlaceholder": "Unterkategorie hinzufügen...",
-    "aiSuggestionsDescription": "Beschreiben Sie Ihr Unternehmen, Ihre Branche oder Ihr Produkt, um KI-gestützte Kategorievorschläge zu erhalten, die auf Ihr Geschäft zugeschnitten sind.",
-    "aiSuggestionsTitle": "KI-Kategorievorschläge",
-    "categoriesCount": "{{count}} Kategorien",
-    "categoriesCount_one": "{{count}} Kategorien",
-    "categoriesCount_other": "{{count}} Kategorien",
-    "companyPlaceholder": "z. B. Wir sind eine Fluggesellschaft, die Inlands- und Auslandsflüge anbietet. Unsere Kunden legen Wert auf Pünktlichkeit, Komfort, Gepäckabfertigung, Kundenservice und Bordunterhaltung...",
     "configureFirst": "Konfigurieren Sie den API-Endpunkt im Tab Allgemein, um Kategorien zu verwalten.",
-    "deleteButton": "Löschen",
-    "deleteConfirmMessage": "Möchten Sie diese Kategorie und alle ihre Unterkategorien wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
-    "deleteConfirmTitle": "Kategorie löschen",
     "description": "Kategorien und Unterkategorien für die Feedback-Klassifizierung konfigurieren.",
-    "emptyDescription": "Verwenden Sie die KI-Generierung oben oder fügen Sie unten manuell Kategorien hinzu.",
-    "emptyTitle": "Noch keine Kategorien konfiguriert.",
-    "generateButton": "Kategorien generieren",
-    "generateError": "Kategorien konnten nicht generiert werden. Bitte versuchen Sie es erneut.",
-    "generating": "Wird generiert...",
-    "saved": "Kategorien erfolgreich gespeichert",
-    "saving": "Wird gespeichert...",
-    "subcategoriesCount": "{{count}} Unter",
-    "subcategoriesCount_one": "{{count}} Unter",
-    "subcategoriesCount_other": "{{count}} Unter",
-    "title": "Feedback-Kategorien",
-    "titleLabel": "Kategorien & Unterkategorien"
+    "title": "Feedback-Kategorien"
   },
   "dangerZone": {
     "resetButton": "Einstellungen zurücksetzen",
@@ -90,15 +139,8 @@
   "dataSources": {
     "configureFirst": "Konfigurieren Sie den API-Endpunkt im Tab Allgemein, um Datenquellen zu verwalten.",
     "description": "API-Anmeldedaten, Webhooks konfigurieren und Datenquellen-Zeitpläne aktivieren/deaktivieren.",
+    "noPlugins": "Keine Datenquellen-Plugins gefunden. Führen Sie <code>npm run generate:manifests</code> aus, um die Plugin-Manifeste zu erzeugen.",
     "title": "Datenquellen & Integrationen"
-  },
-  "language": {
-    "interfaceHint": "Steuert die Dashboard-Sprache und die Sprache, die KI für Chat-Antworten, generierte Personas, Forschungsberichte, PRDs und PR/FAQs verwendet. Wird im Browser gespeichert.",
-    "interfaceLabel": "Oberflächensprache",
-    "loadingReview": "Bewertungseinstellungen werden geladen...",
-    "reviewHint": "Alle eingehenden Rückmeldungen werden zur Analyse und Anzeige in diese Sprache übersetzt. Der Originaltext bleibt immer erhalten.",
-    "reviewLabel": "Bewertungssprache",
-    "title": "Sprache & Region"
   },
   "logs": {
     "clear": "Löschen",
@@ -139,30 +181,256 @@
     "pages_one": "{{count}} Seite",
     "pages_other": "{{count}} Seiten",
     "processingErrors": "Verarbeitungsfehler",
-    "rawPreview": "Rohvorschau:",
+    "recordKeys": "Vorhandene Felder:",
+    "textLength": "Textlänge: {{count}} Zeichen",
+    "textLength_one": "Textlänge: {{count}} Zeichen",
+    "textLength_other": "Textlänge: {{count}} Zeichen",
     "refresh": "Aktualisieren",
     "runErrors": "{{count}} Fehler",
     "runErrors_one": "{{count}} Fehler",
     "runErrors_other": "{{count}} Fehler",
     "scraperRuns": "Scraper-Läufe",
     "title": "Systemprotokolle",
-    "validationFailures": "Validierungsfehler"
+    "validationFailures": "Validierungsfehler",
+    "periodLabel": "Zeitraum"
   },
   "saveChanges": "Änderungen speichern",
   "saved": "Gespeichert!",
   "saving": "Wird gespeichert...",
+  "sourceCard": {
+    "connected": "Verbunden",
+    "copyWebhookUrl": "Webhook-URL kopieren",
+    "credentials": "API-Anmeldedaten",
+    "disabled": "Deaktiviert",
+    "docs": "Dokumentation",
+    "enabled": "Aktiviert",
+    "enterField": "{{field}} eingeben",
+    "events": "Ereignisse: {{events}}",
+    "fileExplorer": "Datei-Explorer",
+    "hide": "Ausblenden",
+    "save": "Speichern",
+    "saved": "Gespeichert!",
+    "saveToSecrets": "In Secrets Manager speichern",
+    "selectOption": "Auswählen...",
+    "show": "Anzeigen",
+    "test": "Testen",
+    "unknownResult": "Unbekanntes Ergebnis",
+    "webhooks": "Webhook-URLs"
+  },
   "subtitle": "Konfigurieren Sie Ihre VoC-Plattform",
   "tabs": {
     "categories": "Kategorien",
     "general": "Allgemein",
     "logs": "Protokolle",
     "plugins": "Datenquellen",
-    "users": "Benutzer"
+    "users": "Benutzer",
+    "ai": "KI-Modelle",
+    "integrations": "Integrationen",
+    "dimensions": "Dimensionen",
+    "sources": "Quellen & Datenschutz"
   },
   "title": "Einstellungen",
   "users": {
     "configureFirst": "Konfigurieren Sie den API-Endpunkt im Tab Allgemein, um Benutzer zu verwalten.",
     "description": "Benutzer, Rollen und Berechtigungen für die VoC-Plattform verwalten.",
     "title": "Benutzerverwaltung"
+  },
+  "company": {
+    "title": "Unternehmen",
+    "subtitle": "Vision, Ziele und Designsystem, mit denen alle – und jede KI-Funktion – arbeiten, dazu Ihre eigenen Ziele.",
+    "tabs": {
+      "vision": "Vision & Ziele",
+      "mine": "Meine Ziele",
+      "design": "Designsystem"
+    }
+  },
+  "shared": {
+    "viewOnly": "Nur ansehen",
+    "loadFailed": "Dieser Bereich konnte nicht geladen werden.",
+    "retry": "Erneut versuchen",
+    "loading": "Wird geladen…",
+    "saveFailed": "Speichern fehlgeschlagen. Bitte erneut versuchen.",
+    "write": "Schreiben",
+    "preview": "Vorschau",
+    "nothingToPreview": "Noch nichts für die Vorschau.",
+    "charCount": "{{count}} / {{max}} Zeichen",
+    "configureFirst": "Verbinden Sie zuerst den API-Endpunkt."
+  },
+  "companyContext": {
+    "title": "Unternehmenskontext",
+    "description": "Vision und Ziele, die Assistent, autonome Agenten und das Gedächtnis als Kontext nutzen – und als Entscheidungshilfe bei widersprüchlichen Erinnerungen.",
+    "vision": "Langfristige Vision",
+    "visionPlaceholder": "Wohin entwickelt sich das Unternehmen und warum? Markdown wird unterstützt.",
+    "noVision": "Es wurde noch keine Vision verfasst.",
+    "objectives": "Unternehmensziele",
+    "noObjectives": "Noch keine Unternehmensziele.",
+    "addObjective": "Ziel hinzufügen",
+    "removeObjective": "Ziel entfernen",
+    "objectiveLimit": "Höchstens {{max}} Ziele.",
+    "objectiveLegend": "Ziel {{n}}",
+    "objectiveTitle": "Titel des Ziels",
+    "objectiveDescription": "Woran erkennt man Erfolg?",
+    "horizon": "Zeithorizont",
+    "horizons": {
+      "long": "Langfristig",
+      "quarter": "Dieses Quartal",
+      "date": "Bis zu einem Datum"
+    },
+    "due": "Fälligkeitsdatum",
+    "updatedMeta": "Zuletzt aktualisiert am {{at}} von {{by}}",
+    "unknownEditor": "einem Administrator"
+  },
+  "myContext": {
+    "title": "Meine Ziele & Kennzahlen",
+    "description": "Ihre eigenen Ziele und wie Sie sie messen. Assistent und Ihr persönliches Gedächtnis nutzen sie; die Unternehmensziele bleiben unberührt.",
+    "empty": "Sie haben noch keine Ziele festgelegt.",
+    "addObjective": "Ziel hinzufügen",
+    "removeObjective": "Ziel entfernen",
+    "objectiveLegend": "Ziel {{n}}",
+    "objectiveTitle": "Titel des Ziels",
+    "objectiveDescription": "Warum es Ihnen wichtig ist",
+    "due": "Fälligkeitsdatum",
+    "kpis": "Kennzahlen (KPIs)",
+    "addKpi": "Kennzahl hinzufügen",
+    "removeKpi": "Kennzahl entfernen",
+    "kpiName": "Name der Kennzahl",
+    "kpiTarget": "Zielwert",
+    "kpiUnit": "Einheit"
+  },
+  "designSystem": {
+    "title": "Designsystem",
+    "description": "Ihre Marken-Tokens, Richtlinien und Referenzen. Prototypen und PR/FAQ-Visuals werden damit erstellt, damit sie zu Ihrem Erscheinungsbild passen.",
+    "logo": "Firmenlogo",
+    "logoAlt": "Unternehmenslogo",
+    "uploadLogo": "Logo hochladen",
+    "colors": "Farben",
+    "typography": "Typografie",
+    "spacing": "Abstände",
+    "radius": "Eckenradius",
+    "noTokens": "Noch keine.",
+    "addToken": "Token hinzufügen",
+    "removeToken": "Token entfernen",
+    "tokenName": "Bezeichnung",
+    "tokenValue": "Wert",
+    "swatch": "Farbmuster {{value}}",
+    "invalidColor": "Kein gültiger Farbwert",
+    "typeRole": "Rolle (z. B. Überschrift)",
+    "typeFamily": "Schriftfamilie",
+    "typeSize": "Größe",
+    "typeWeight": "Stärke",
+    "guidelines": "Richtlinien",
+    "guidelinesPlaceholder": "Hinweise zu Komponenten, Tonalität, Do & Don’t … Markdown wird unterstützt.",
+    "noGuidelines": "Noch keine Richtlinien.",
+    "references": "Referenzen",
+    "noReferences": "Noch keine Referenzen – fügen Sie eine Figma-Datei, ein GitHub-Repository, Screenshots oder eine HTML-Seite hinzu.",
+    "kinds": {
+      "screenshot": "Bildschirmfoto",
+      "html": "HTML-Seite",
+      "figma": "Figma-Datei",
+      "github": "GitHub-Repository"
+    },
+    "statuses": {
+      "pending": "Ausstehend",
+      "processing": "In Bearbeitung",
+      "ready": "Bereit",
+      "failed": "Fehlgeschlagen",
+      "archived": "Archiviert"
+    },
+    "openLink": "Link öffnen",
+    "refresh": "Erneut abrufen",
+    "archive": "Archivieren",
+    "archiveTitle": "Diese Referenz archivieren?",
+    "archiveMessage": "„{{title}}“ wird für neue Prototypen nicht mehr verwendet. Die Datei bleibt erhalten.",
+    "referenceKind": "Art der Referenz",
+    "referenceTitle": "Titel",
+    "referenceUrl": "Verknüpfung (https://…)",
+    "referenceFile": "Datei",
+    "addReference": "Referenz hinzufügen",
+    "addReferenceFailed": "Die Referenz konnte nicht hinzugefügt werden. Bitte erneut versuchen.",
+    "uploadBadType": "{{name}} hat keinen zulässigen Dateityp.",
+    "uploadTooLarge": "{{name}} ist größer als {{mb}} MB.",
+    "uploadFailed": "Hochladen fehlgeschlagen. Bitte erneut versuchen.",
+    "integrations": "Design-Integrationen",
+    "integrationsHint": "Tokens werden verschlüsselt gespeichert und nie wieder angezeigt. Lassen Sie ein Feld leer, um das aktuelle Token zu behalten.",
+    "providers": {
+      "figma": "Figma-Token",
+      "github": "GitHub-Token"
+    },
+    "tokenPlaceholder": "Token einfügen",
+    "tokenReplacePlaceholder": "Neues Token zum Ersetzen einfügen",
+    "configured": "Eingerichtet",
+    "notConfigured": "Nicht eingerichtet",
+    "saveTokens": "Tokens speichern",
+    "integrationsMoved": "Figma- und GitHub-Tokens werden festgelegt unter",
+    "integrationsLink": "Administration → Integrationen"
+  },
+  "integrations": {
+    "title": "Integrationen",
+    "description": "Nur schreibbare Tokens, mit denen die Plattform Ihre Figma-Dateien und GitHub-Repositorys für das Designsystem liest. Sie werden in Secrets Manager gespeichert und nie wieder angezeigt.",
+    "mcpHint": "MCP-Zugriff für externe Assistenten wird pro Benutzer eingerichtet unter",
+    "mcpLink": "Verbinden"
+  },
+  "integrationGuide": {
+    "heading": "Einrichtungshilfe",
+    "intro": "Schritt-für-Schritt-Anleitungen für jedes Token. Öffnen Sie eines, um zu sehen, wofür es dient, wo Sie es erhalten, welche Berechtigungen nötig sind und wie Sie prüfen, ob es funktioniert.",
+    "newTab": "öffnet in einem neuen Tab",
+    "purposeHeading": "Wofür es dient",
+    "stepsHeading": "Wo Sie es erhalten",
+    "permissionsHeading": "Zu erteilende Berechtigungen",
+    "saveHeading": "Hier speichern",
+    "testHeading": "Prüfen, ob es funktioniert",
+    "failuresHeading": "Wenn es fehlschlägt",
+    "securityHeading": "Sicherheit",
+    "save": "Fügen Sie das Token oben in das Feld „{{field}}“ ein und klicken Sie auf „{{save}}“. Das Feld wird geleert und das Abzeichen wechselt zu „{{configured}}“. Um ein Token zu ersetzen, fügen Sie das neue ein und speichern erneut; ein leeres Feld behält das aktuelle Token bei.",
+    "test": "Es gibt keine Test-Schaltfläche: Ein Token wird geprüft, wenn eine Referenz abgerufen wird. Gehen Sie zu {{company}} → {{design}}, klicken Sie auf „{{add}}“, wählen Sie den Typ „{{kind}}“ und fügen Sie den Link ein. Laden Sie die Seite nach kurzer Zeit neu: „{{ready}}“ mit einer Zusammenfassung bedeutet, dass das Token funktioniert; „{{failed}}“ zeigt den Grund unter der Referenz. Klicken Sie nach der Behebung bei dieser Referenz auf „{{refresh}}“.",
+    "openDesignSystem": "{{company}} → {{design}} öffnen",
+    "failMissing": "Es wurde noch kein Token gespeichert. Speichern Sie oben eines und klicken Sie dann bei der Referenz auf „{{refresh}}“.",
+    "failBadLink": "Der Link hat kein unterstütztes Format. Kopieren Sie ihn erneut aus der Adressleiste des Browsers (siehe Linkformat oben).",
+    "failRateLimited": "Der Anbieter begrenzt die Anfragen. Warten Sie einige Minuten und klicken Sie dann auf „{{refresh}}“.",
+    "storage": "Wo es aufbewahrt wird: in AWS Secrets Manager (im Secret voc/design-integrations, verschlüsselt mit dem KMS-Schlüssel der Plattform). Nur die Einstellungs-API kann es lesen, es wird nie wieder angezeigt, und diese Seite meldet nur, ob ein Token konfiguriert ist. Um ein Token sofort unwirksam zu machen, widerrufen Sie es beim Anbieter.",
+    "otherCredentials": "Zugangsdaten für Datenquellen, etwa das GitHub-Issues-Token, werden nicht hier festgelegt: Jede Quellkarte im Tab {{plugins}} hat eigene Felder und Einrichtungsschritte.",
+    "figma": {
+      "title": "Figma Personal Access Token",
+      "summary": "Erforderlich, um Figma-Dateien als Design-Referenzen zu verwenden.",
+      "purpose": "Ermöglicht der Plattform, die Figma-Dateien zu lesen, die Sie unter {{company}} → {{design}} als Design-Referenzen hinzufügen: Seiten- und Frame-Namen sowie veröffentlichte Stile. Das Token wird nur an api.figma.com gesendet, und nur, wenn eine Figma-Referenz abgerufen wird.",
+      "step1": "Melden Sie sich bei Figma an. Öffnen Sie im Dateibrowser das Kontomenü oben links und wählen Sie „Settings“.",
+      "step2": "Öffnen Sie den Tab „Security“. Klicken Sie unter „Personal access tokens“ auf „Generate new token“.",
+      "step3": "Geben Sie dem Token einen Namen (zum Beispiel „VoC design system“) und wählen Sie ein Ablaufdatum.",
+      "step4": "Setzen Sie bei den Scopes „File content“ auf schreibgeschützt (file_content:read). Lassen Sie alle anderen Scopes deaktiviert.",
+      "step5": "Klicken Sie auf „Generate token“ und kopieren Sie es sofort: Figma zeigt es nur ein einziges Mal an.",
+      "docsTokens": "Figma: Personal Access Tokens",
+      "docsScopes": "Figma: Token-Scopes",
+      "permissions": "Nur ein Scope: file_content:read (nur lesen). Ein Token sieht nur Dateien, die sein Eigentümer in Figma öffnen kann; das erstellende Konto braucht also Zugriff auf die referenzierten Dateien.",
+      "linkFormat": "Figma-Link: https://www.figma.com/design/<file key>/… (/file/-, /proto/- und /board/-Links funktionieren ebenfalls).",
+      "failRefused": "Das Token ist falsch, abgelaufen oder widerrufen, oder ihm fehlt file_content:read. Erzeugen Sie ein neues und speichern Sie es.",
+      "failNotFound": "Der Link ist falsch, oder der Eigentümer des Tokens kann diese Datei in Figma nicht öffnen.",
+      "security": "Das Token handelt als der Figma-Benutzer, der es erstellt hat. Verwenden Sie möglichst ein Konto, das die Design-Dateien nur ansehen kann, legen Sie ein Ablaufdatum fest und speichern Sie rechtzeitig einen Ersatz. Gelangt ein Token in falsche Hände, widerrufen Sie es in Figma unter Settings → Security; der Widerruf wirkt sofort."
+    },
+    "github": {
+      "title": "GitHub Fine-grained Personal Access Token",
+      "summary": "Optional für öffentliche Repositorys, erforderlich für private.",
+      "purpose": "Ermöglicht der Plattform, Design-Tokens, CSS, Tailwind-Konfiguration und README-Dateien aus den GitHub-Repositorys zu lesen, die Sie unter {{company}} → {{design}} als Design-Referenzen hinzufügen. Öffentliche Repositorys funktionieren auch ohne Token, mit dem niedrigeren anonymen Ratenlimit von GitHub; private Repositorys brauchen eines. Das Token wird nur an api.github.com gesendet.",
+      "step1": "Klicken Sie auf GitHub auf Ihr Profilbild (oben rechts) → „Settings“ → „Developer settings“ → „Personal access tokens“ → „Fine-grained tokens“ und dann auf „Generate new token“. Der Link unten öffnet das Formular bereits ausgefüllt.",
+      "step2": "Geben Sie einen Namen und ein Ablaufdatum ein. Wählen Sie unter „Resource owner“ den Benutzer oder die Organisation, der das Design-Repository gehört.",
+      "step3": "Wählen Sie unter „Repository access“ die Option „Only select repositories“ und markieren Sie nur die Design-Repositorys.",
+      "step4": "Setzen Sie unter „Permissions“ bei den Repository-Berechtigungen „Contents“ auf „Read-only“. „Metadata“ (nur lesen) wird automatisch hinzugefügt. Erteilen Sie nichts weiter.",
+      "step5": "Klicken Sie auf „Generate token“ und kopieren Sie es. Verlangt die Organisation eine Genehmigung, kann das Token nur öffentliche Repositorys lesen, bis ein Organisationsinhaber es genehmigt.",
+      "newToken": "Token auf GitHub erstellen (vorausgefüllt: Contents nur lesen)",
+      "docsTokens": "GitHub: Personal Access Tokens verwalten",
+      "permissions": "Contents: nur lesen, plus das automatische Metadata: nur lesen, ausschließlich für die ausgewählten Repositorys. Vermeiden Sie ein klassisches Token: Es erreicht jedes Repository, auf das Ihr Konto Zugriff hat.",
+      "linkFormat": "GitHub-Link: https://github.com/<owner>/<repo>, ein Ordner (…/tree/<branch>/<folder>) oder eine einzelne Datei (…/blob/<branch>/<file>).",
+      "failRefused": "Das Token ist falsch, abgelaufen oder widerrufen, oder ihm fehlt Lesezugriff auf Contents.",
+      "failNotFound": "Der Link ist falsch, oder das Repository ist privat und das Token hat keinen Zugriff darauf (GitHub antwortet „nicht gefunden“ statt „verboten“).",
+      "failNoFiles": "Das Token funktioniert, aber an dieser Stelle liegen keine Design-Dateien. Verlinken Sie den Ordner, der sie enthält.",
+      "security": "Das Token handelt als der GitHub-Benutzer, der es erstellt hat, und funktioniert nicht mehr, wenn dieser Benutzer den Zugriff verliert. Beschränken Sie es auf die Design-Repositorys, legen Sie ein Ablaufdatum fest und speichern Sie rechtzeitig einen Ersatz. Gelangt es in falsche Hände, löschen Sie es unter Settings → Developer settings → Personal access tokens. Es ist vom Token der Datenquelle GitHub Issues getrennt: Verwenden Sie keines für das andere."
+    }
+  },
+  "dimensions": {
+    "title": "Dimensionen",
+    "description": "Achsen, nach denen jede Bewertung gekennzeichnet und gefiltert werden kann, etwa Produkt, Modul oder Nutzertyp."
+  },
+  "sources": {
+    "title": "Quellen & Datenschutz",
+    "description": "Datenschutz pro Quelle: Umgang mit personenbezogenen Daten, Aufbewahrung, Sichtbarkeit und Löschung."
   }
 }

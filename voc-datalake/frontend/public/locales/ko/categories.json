@@ -45,17 +45,17 @@
   "pdf": {
     "categoriesLabel": "카테고리",
     "category": "카테고리",
-    "categoryBreakdown": "📊 카테고리 분석",
+    "categoryBreakdown": "카테고리 분석",
     "count": "개수",
     "distribution": "분포",
     "generatedOn": "{{date}}에 생성됨 • VoC Analytics — 카테고리 분석 보고서",
-    "sentimentDistribution": "😊 감정 분포",
+    "sentimentDistribution": "감정 분포",
     "sentimentLabel": "감정",
     "share": "공유",
     "timeRange": "기간: {{range}}",
     "timeRangeWithSource": "기간: {{range}} • 소스: {{source}}",
     "title": "카테고리 분석 보고서",
-    "topKeywords": "🔑 상위 키워드 & 이슈",
+    "topKeywords": "상위 키워드 & 이슈",
     "totalFeedback": "전체 피드백"
   },
   "positive": "긍정",
@@ -88,5 +88,14 @@
   "topIssue": "상위 이슈",
   "totalFeedback": "전체 피드백",
   "trendingKeywords": "트렌딩 키워드",
-  "urgentOnly": "긴급만 표시"
+  "urgentOnly": "긴급만 표시",
+  "subtitle": "카테고리, 감정, 키워드, 소스별로 피드백 살펴보기",
+  "noFeedbackHint": "기간을 넓히거나 일부 필터를 해제해 보세요.",
+  "viewMode": "보기 모드",
+  "attributeFilters": "채널, 차원, 태그 필터",
+  "filterByChannel": "채널로 필터링",
+  "allChannels": "모든 채널",
+  "filterByTag": "태그로 필터링",
+  "allTags": "모든 태그",
+  "anyValue": "전체"
 }

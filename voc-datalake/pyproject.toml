@@ -1,0 +1,101 @@
+# Tool configuration only: this directory is not an installable Python package.
+# ruff is configured in ruff.toml and pytest in pytest.ini (both take precedence
+# over this file), so only the tools that read nothing else live here.
+
+[tool.vulture]
+paths = ["lambda", "plugins", "scripts"]
+# vulture scores every unused function, class, attribute and variable at exactly 60 %; a higher floor cannot report a dead function.
+min_confidence = 60
+sort_by_size = true
+# Only real entry points and named seams that production defines and only tests call, each with a comment.
+ignore_names = [
+    # pytest collects these by name: the per-directory hook that registers markers, and a module's marker list.
+    "pytest_configure",
+    "pytestmark",
+    # The Lambda runtime calls these by the handler string lib/stacks/* passes to CDK.
+    "lambda_handler",
+    "handler",
+    # Read by aws-lambda-powertools from the Lambda context; conftest fakes of that context set it.
+    "memory_limit_in_mb",
+    # pydantic: the model's config, read by pydantic itself (lambda/shared/ingest_schemas.py).
+    "model_config",
+    # lambda/shared/ingest_schemas.py MessageMetadata fields: declared only to carry validation limits
+    # (max_length, ge=0) on keys producers send; extra='allow' would accept them unchecked otherwise.
+    "is_verified", "location_id", "reference_id", "reply_count", "like_count",
+    "business_id", "business_name", "author_image", "custom_fields",
+    # lambda/shared/ingest_schemas.py IngestMessage fields: extra='forbid' wire shape, written by the
+    # ingestors/webhooks and read by the processor from the queued JSON, never by attribute.
+    "channel", "brand_handles_matched", "ingested_at", "raw_data", "is_webhook", "is_update", "is_deleted",
+    "ingestion_method", "manual_import_job_id",
+    # Set by ingestion (shared/source_policy.py) in the queued JSON, read by key.
+    "pii_policy_applied",
+    # lambda/shared/ingest_schemas.py IssueAttributes fields (github_issues): same extra='forbid' wire
+    # shape, read back as the DynamoDB `issue_attributes` map by metrics_handler, never by attribute.
+    "parent_id", "state_reason", "author_association", "linked_prs", "comment_count",
+    "software_version", "version_source",
+    # Test seam: resets the module-level categories cache; 30+ API tests call it between cases.
+    "clear_categories_cache",
+    # Test seam: resets shared/model_capacity.py's Service Quotas listing cache between cases.
+    "clear_quota_cache",
+    # shared/model_capacity.py TypedDict wire fields of the /settings/model/test and /capacity
+    # responses: built as dict literals and read by the SPA, never by attribute.
+    "tokens_per_minute", "checked_at",
+    # Test seams: memory_store's per-container caches (company embedding pool, objectives);
+    # the memory fixture resets both between cases so one test never sees another's rows.
+    "clear_pool_cache",
+    "clear_objective_cache",
+    # html.parser.HTMLParser callbacks, called by the parser itself (agents/artifacts.py).
+    "handle_starttag",
+    "handle_endtag",
+    "handle_data",
+    # aws-lambda-powertools BasePartialProcessor hook, called by the batch processor's
+    # __enter__/__call__ (lambda/shared/batch.py ConcurrentSqsBatchProcessor overrides it).
+    "process",
+    # Named sets the tests pin EXACTLY, so a claim nobody considered fails a test: the
+    # synthesized authorizer claims (test_mcp_delegate_mutation), the product-doc statuses the
+    # extractor's partition is checked against (product_doc_extractor/test/test_status_lockstep).
+    "SYNTHETIC_CLAIM_KEYS",
+    "OPTIONAL_SYNTHETIC_CLAIM_KEYS",
+    "PRODUCT_DOC_STATUSES",
+    # API Gateway's 29 s integration ceiling: the walk budget is pinned below it by
+    # test_time_budget.py and mirrored into the CDK by api-stack.test.ts (read as text).
+    "API_GATEWAY_INTEGRATION_TIMEOUT_SECONDS",
+    # urllib.request.OpenerDirector dispatches to `<scheme>_open` by name (scrapers_handler's
+    # pinned-socket handlers, the DNS-rebinding guard of POST /scrapers/analyze-url).
+    "http_open", "https_open",
+    # aws-lambda-powertools BaseSegment interface (shared/tracing.py NoOpSubsegment): the Tracer and
+    # callers may call any of these on the subsegment it yields.
+    "add_subsegment", "remove_subsegment", "add_exception",
+    # http.client.HTTPConnection.connect() calls `self._create_connection`; the pinned connections set it.
+    "_create_connection",
+    # aggregator/handler.py `_RefusalReport` / `_UpdateRequest`: TypedDict fields, read by key.
+    "ConditionExpression", "ReturnValuesOnConditionCheckFailure", "UpdateExpression",
+    "ExpressionAttributeNames", "ExpressionAttributeValues",
+    # requests/urllib3 seams the ingestor's pinned session (shared/http_utils.py) overrides or sets,
+    # each read by the library itself: urllib3 calls `_new_conn` and instantiates a pool's
+    # `ConnectionCls`, its PoolManager picks a pool from `pool_classes_by_scheme`, requests'
+    # HTTPAdapter calls `proxy_manager_for`, and Session reads `trust_env`.
+    "_new_conn", "ConnectionCls", "pool_classes_by_scheme", "proxy_manager_for", "trust_env",
+    # urllib3's connection protocols, which exist only under TYPE_CHECKING: shared/http_utils.py
+    # imports them there and names them in its two `cast('type[...]', ...)` strings.
+    "BaseHTTPConnection", "BaseHTTPSConnection",
+]
+# Decorators that REGISTER the function with a framework, which then calls it: Powertools routes and
+# exception handlers, pydantic validators. Your own wrapper decorators (@api_handler, @tracer.*) are
+# NOT here: they register nothing, so a dead function under them is still reported.
+# What this hides is a route the resolver registers but API Gateway never routes to; the CDK test
+# "wires every route each API handler registers" (lib/stacks/api-stack.test.ts) reports that instead.
+ignore_decorators = [
+    "@pytest.fixture",
+    "@app.get",
+    "@app.post",
+    "@app.put",
+    "@app.delete",
+    "@app.patch",
+    "@app.route",
+    "@app.exception_handler",
+    "@field_validator",
+    "@model_validator",
+]
+# No `exclude` here on purpose: vulture's CLI flags REPLACE pyproject values, and
+# scripts/lint-python.sh passes the excludes (they are what its two passes differ in).

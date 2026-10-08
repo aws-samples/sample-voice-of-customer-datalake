@@ -43,5 +43,7 @@
     "resettingPassword": "비밀번호 재설정 중...",
     "submit": "비밀번호 재설정",
     "title": "인증 코드 입력"
-  }
+  },
+  "showPassword": "비밀번호 표시",
+  "hidePassword": "비밀번호 숨기기"
 }

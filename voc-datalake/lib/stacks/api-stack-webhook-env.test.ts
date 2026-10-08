@@ -25,32 +25,23 @@ import { join } from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
 import * as cdk from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
-import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
-import * as kms from 'aws-cdk-lib/aws-kms';
-import * as s3 from 'aws-cdk-lib/aws-s3';
-import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
-import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
-import * as cognito from 'aws-cdk-lib/aws-cognito';
-import * as iam from 'aws-cdk-lib/aws-iam';
-import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import { z } from 'zod';
+import { apiStackDependencyProps, pkSkTable, sharedSecretArn } from '../test-support/api-stack-fixture';
 
 const WEBHOOK_PLUGIN_ID = 'webhook_fixture';
 
-const ACCOUNT = '111111111111';
-const REGION = 'us-east-1';
+const ENV = { account: '111111111111', region: 'us-east-1' };
 /** The SHARED API-credentials secret — the one `base_webhook.py` reads. Named here
- *  because the IAM case below has to tell it apart from the CDN signing secret,
- *  which the same stack also grants reads of. */
-const SHARED_SECRET_ARN = `arn:aws:secretsmanager:${REGION}:${ACCOUNT}:secret:voc`;
-const CDN_SIGNING_SECRET_ARN = `arn:aws:secretsmanager:${REGION}:${ACCOUNT}:secret:cdn-signing`;
+ *  because the IAM case below has to tell it apart from the CDN signing secret
+ *  (`cdnSigningSecretArn` in the fixture), which the same stack also grants reads of. */
+const SHARED_SECRET_ARN = sharedSecretArn(ENV);
 
 /** A manifest declaring a webhook, which nothing on disk does. Otherwise shaped
  *  exactly like a real one, so it travels the same `createWebhookLambda` path. */
 const webhookPlugin = {
   id: WEBHOOK_PLUGIN_ID,
   name: 'Webhook Fixture',
-  icon: '🔔',
+  icon: 'Plugin',
   infrastructure: {
     webhook: { enabled: true, path: '/webhooks/fixture', methods: ['POST'] as const },
   },
@@ -74,45 +65,13 @@ function synthWithWebhookPlugin(): Template {
   const app = new cdk.App({
     context: { 'aws:cdk:bundling-stacks': [], skipFrontendBuildCheck: true },
   });
-  const env = { account: ACCOUNT, region: REGION };
-  const deps = new cdk.Stack(app, 'TestDeps', { env });
+  const deps = new cdk.Stack(app, 'TestDeps', { env: ENV });
 
-  const table = (id: string) => new dynamodb.Table(deps, id, {
-    partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
-    sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
-  });
-  const userPool = new cognito.UserPool(deps, 'UserPool');
-  const websiteBucket = new s3.Bucket(deps, 'Website');
+  const table = (id: string) => pkSkTable(deps, id);
 
   const stack = new VocApiStack(app, 'TestApiStack', {
-    env,
-    feedbackTable: table('Feedback'),
-    aggregatesTable: table('Aggregates'),
-    projectsTable: table('Projects'),
-    jobsTable: table('Jobs'),
-    conversationsTable: table('Conversations'),
-    kmsKey: new kms.Key(deps, 'Key'),
-    rawDataBucket: new s3.Bucket(deps, 'RawData'),
-    avatarsCdnUrl: 'https://cdn.example.invalid/avatars',
-    prototypesCdnUrl: 'https://cdn.example.invalid/prototypes',
-    cdnSigningSecretArn: CDN_SIGNING_SECRET_ARN,
-    cdnSigningKeyPairId: 'KEXAMPLE0000',
-    websiteBucket,
-    frontendDistribution: new cloudfront.Distribution(deps, 'Dist', {
-      defaultBehavior: { origin: origins.S3BucketOrigin.withOriginAccessControl(websiteBucket) },
-    }),
-    frontendDomainName: 'app.example.invalid',
-    userPool,
-    userPoolClient: userPool.addClient('Client'),
-    identityPool: new cognito.CfnIdentityPool(deps, 'IdentityPool', { allowUnauthenticatedIdentities: false }),
-    authenticatedRole: new iam.Role(deps, 'AuthRole', { assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com') }),
-    processingQueueUrl: `https://sqs.${env.region}.amazonaws.com/${env.account}/processing`,
-    processingQueueArn: `arn:aws:sqs:${env.region}:${env.account}:processing`,
-    secretsArn: SHARED_SECRET_ARN,
-    s3ImportBucket: new s3.Bucket(deps, 'S3Import'),
-    researchStateMachine: new sfn.StateMachine(deps, 'Research', {
-      definitionBody: sfn.DefinitionBody.fromChainable(new sfn.Pass(deps, 'Noop')),
-    }),
+    env: ENV,
+    ...apiStackDependencyProps(deps, ENV, table),
     brandName: 'TestBrand',
     // The fixture plugin has to be ENABLED for a webhook Lambda to be created:
     // api-stack.ts filters `getEnabledPlugins` before `getPluginsWithWebhook`.
@@ -164,10 +123,13 @@ const PolicySchema = z.object({
       Statement: z.array(z.object({
         Action: z.union([z.string(), z.array(z.string())]).optional(),
         Resource: z.unknown().optional(),
-      }).passthrough()),
+      }).loose()),
     }),
   }),
 });
+
+/** One `Roles` entry of an inline policy, when it is a plain `Ref`. */
+const RoleNameRefSchema = z.object({ Ref: z.string() });
 
 function statementsFor(roleLogicalId: string): { Action?: string | string[]; Resource?: unknown }[] {
   return Object.values(template().findResources('AWS::IAM::Policy'))
@@ -175,7 +137,7 @@ function statementsFor(roleLogicalId: string): { Action?: string | string[]; Res
       const parsed = PolicySchema.safeParse(p);
       if (!parsed.success) return false;
       return parsed.data.Properties.Roles.some(
-        (r) => typeof r === 'object' && r !== null && (r as { Ref?: string }).Ref === roleLogicalId,
+        (r) => RoleNameRefSchema.safeParse(r).data?.Ref === roleLogicalId,
       );
     })
     .flatMap((p) => PolicySchema.parse(p).Properties.PolicyDocument.Statement);
@@ -221,13 +183,12 @@ describe('webhook Lambda environment', () => {
     // direction: the two assertions above would still pass if the Python side were
     // changed to read a third name. Read out of the Python source rather than
     // re-stated, which is this repo's convention for a contract two languages
-    // share (see the MCP_TOKEN_PK and TRANSPORT_HEADERS tests in
-    // api-stack.test.ts).
+    // share (see the MCP transport-header tests in api-stack-mcp.test.ts).
     const source = readFileSync(
       join(__dirname, '..', '..', 'plugins', '_shared', 'base_webhook.py'),
       'utf-8',
     );
-    const name = source.match(/^SOURCE_PLATFORM = os\.environ\.get\("([A-Z_]+)"/m)?.[1];
+    const name = /^SOURCE_PLATFORM = os\.environ\.get\("([A-Z_]+)"/m.exec(source)?.[1];
 
     expect(name, 'could not read the identity env var from base_webhook.py').toBeDefined();
     expect(Object.keys(webhookEnv())).toContain(name);
@@ -251,7 +212,7 @@ describe('webhook Lambda environment', () => {
     // resource, or a move to `secret.grantRead()` — would report a MISSING grant
     // that is in fact present, which is the costliest failure direction here.
     // Containment keeps the CDN discrimination: a statement scoped only to
-    // CDN_SIGNING_SECRET_ARN still does not match. Do not tighten this back.
+    // the CDN signing secret still does not match. Do not tighten this back.
     const roleLogicalId = RoleRefSchema.parse(webhookFunction())
       .Properties.Role['Fn::GetAtt'][0];
 
@@ -286,5 +247,45 @@ describe('webhook Lambda environment', () => {
     // sqs:SendMessage is granted to the same role on the line above the secret one,
     // so its presence proves the lookup reaches the right policy document.
     expect(statements.flatMap(actionsOf)).toContain('sqs:SendMessage');
+  });
+
+  it('names the raw-archive bucket, which _shared/raw_archive.py writes through the webhook', () => {
+    expect(webhookEnv().RAW_DATA_BUCKET, 'webhook raw payloads would never reach the lake').toBeTruthy();
+  });
+
+  it("lets the webhook put raw objects only under its OWN source's prefix", () => {
+    const roleLogicalId = RoleRefSchema.parse(webhookFunction())
+      .Properties.Role['Fn::GetAtt'][0];
+    const puts = statementsFor(roleLogicalId).filter((s) => actionsOf(s).some((a) => a.startsWith('s3:PutObject')));
+
+    expect(puts.length, 'the webhook role cannot archive its raw payload').toBeGreaterThan(0);
+    const rendered = JSON.stringify(puts.flatMap(resourcesOf));
+    expect(rendered).toContain(`/raw/${WEBHOOK_PLUGIN_ID}/*`);
+    // No bucket-wide or sibling-prefix put: every resource names this plugin's prefix.
+    for (const resource of puts.flatMap(resourcesOf)) {
+      expect(JSON.stringify(resource)).toContain(`/raw/${WEBHOOK_PLUGIN_ID}/*`);
+    }
+  });
+
+  it('bundles lambda/shared, which base_webhook.py imports (`shared.aws`, `shared.logging`)', () => {
+    // The asset is skipped in tests (`aws:cdk:bundling-stacks: []`), so the bundle
+    // command is read from the stack source: it must stage from the project root
+    // and copy all three trees, exactly as an ingestor bundle does.
+    const source = readFileSync(join(__dirname, 'api-stack.ts'), 'utf-8');
+    const body = source.slice(source.indexOf('private createWebhookLambda('));
+    expect(body).toContain("cp -r /asset-input/lambda/shared /asset-output/");
+    expect(body).toContain('cp -r /asset-input/plugins/_shared /asset-output/');
+    expect(body).toContain("lambda.Code.fromAsset('.'");
+  });
+});
+
+describe('webhook stage throttle', () => {
+  it('gives the enabled webhook route an explicit rate/burst pair', () => {
+    const stage = Object.values(template().findResources('AWS::ApiGateway::Stage'))[0];
+    const settings = JSON.stringify(stage);
+    expect(settings).toContain(
+      `{"DataTraceEnabled":false,"HttpMethod":"POST","ResourcePath":"/~1webhooks~1${WEBHOOK_PLUGIN_ID}",`
+      + '"ThrottlingBurstLimit":20,"ThrottlingRateLimit":10}',
+    );
   });
 });

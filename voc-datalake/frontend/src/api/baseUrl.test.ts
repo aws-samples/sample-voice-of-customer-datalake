@@ -9,48 +9,41 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 // ── module-level mocks ────────────────────────────────────────────────────────
 
-vi.mock('../store/configStore', () => ({
-  useConfigStore: {
-    getState: vi.fn(() => ({
-      config: { apiEndpoint: 'https://abc123.execute-api.us-east-1.amazonaws.com/v1' },
-      dateBasis: 'imported',
-    })),
-  },
-}))
+const TRUSTED_API = 'https://abc123.execute-api.us-east-1.amazonaws.com/v1'
 
-vi.mock('../runtimeConfig', () => ({
-  isConfigLoaded: vi.fn(() => true),
-  getRuntimeConfig: vi.fn(() => ({
-    apiEndpoint: 'https://abc123.execute-api.us-east-1.amazonaws.com/v1',
-    cognito: { userPoolId: 'pool-1', clientId: 'client-1', region: 'us-east-1', identityPoolId: 'id-pool' },
-  })),
-}))
-
-vi.mock('../services/auth', () => ({
-  authService: {
-    isConfigured: vi.fn(() => true),
-    getIdToken: vi.fn(() => 'mock-cognito-id-token'),
-  },
-}))
+vi.mock('../store/configStore', () => import('@test/api-mocks').then(m =>
+  m.configStoreMock('https://abc123.execute-api.us-east-1.amazonaws.com/v1', { dateBasis: 'imported' })))
+vi.mock('../runtimeConfig', () => import('@test/api-mocks').then(m =>
+  m.runtimeConfigMock('https://abc123.execute-api.us-east-1.amazonaws.com/v1')))
+vi.mock('../services/auth', () => import('@test/api-mocks').then(m => m.authServiceMock('mock-cognito-id-token')))
 
 // ── imports (after mocks) ─────────────────────────────────────────────────────
 
-import {
-  isTrustedRequestOrigin,
-  getTrustedApiOrigins,
-  getAuthHeaders,
-  stripTrailingSlashes,
-} from './baseUrl'
+import { getAuthHeaders, parseCustomDaysInput, stripTrailingSlashes } from './baseUrl'
+import { buildTrustedApiOrigins, isTrustedOrigin } from '../lib/trustedOrigins'
 import * as runtimeConfigModule from '../runtimeConfig'
 import { authService } from '../services/auth'
-import { useAppOrigin } from '@test/location'
+import { FOREIGN_HOST_SPELLINGS, useAppOrigin } from '@test/location'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-const TRUSTED_API = 'https://abc123.execute-api.us-east-1.amazonaws.com/v1'
 const TRUSTED_ORIGIN = 'https://abc123.execute-api.us-east-1.amazonaws.com'
 
 // ── tests ─────────────────────────────────────────────────────────────────────
+
+describe('parseCustomDaysInput', () => {
+  it('accepts 0 (all time) through 9999, trimmed', () => {
+    expect(parseCustomDaysInput('0')).toBe(0)
+    expect(parseCustomDaysInput(' 30 ')).toBe(30)
+    expect(parseCustomDaysInput('9999')).toBe(9999)
+  })
+
+  it('rejects anything that is not a whole number in range', () => {
+    for (const input of ['', '10000', '-1', '1.5', '7d', '1e3']) {
+      expect(parseCustomDaysInput(input)).toBeNull()
+    }
+  })
+})
 
 describe('stripTrailingSlashes', () => {
   it('removes a single trailing slash', () => {
@@ -66,15 +59,15 @@ describe('stripTrailingSlashes', () => {
   })
 })
 
-describe('getTrustedApiOrigins', () => {
+describe('buildTrustedApiOrigins', () => {
   it('returns the runtime config origin', () => {
-    const origins = getTrustedApiOrigins()
+    const origins = buildTrustedApiOrigins()
     expect(origins).toContain(TRUSTED_ORIGIN)
   })
 
   it('returns an empty array when config is not loaded', () => {
     vi.mocked(runtimeConfigModule.isConfigLoaded).mockReturnValueOnce(false)
-    expect(getTrustedApiOrigins()).toEqual([])
+    expect(buildTrustedApiOrigins()).toStrictEqual([])
   })
 
   it('returns no origin derived from an unparseable runtime config endpoint', () => {
@@ -86,30 +79,30 @@ describe('getTrustedApiOrigins', () => {
     // buildTrustedApiOrigins never adds localhost entries — that logic lives
     // only in isTrustedAbsoluteUrl.  When the endpoint is unparseable the
     // array must be exactly empty.
-    const origins = getTrustedApiOrigins()
-    expect(origins).toEqual([])
+    const origins = buildTrustedApiOrigins()
+    expect(origins).toStrictEqual([])
   })
 })
 
-describe('isTrustedRequestOrigin', () => {
+describe('isTrustedOrigin', () => {
   useAppOrigin()
 
   it('trusts a URL whose origin matches the deployment API', () => {
-    expect(isTrustedRequestOrigin(`${TRUSTED_API}/feedback`)).toBe(true)
+    expect(isTrustedOrigin(`${TRUSTED_API}/feedback`)).toBe(true)
   })
 
   it('trusts a relative URL (same-origin by definition)', () => {
-    expect(isTrustedRequestOrigin('/api/feedback')).toBe(true)
+    expect(isTrustedOrigin('/api/feedback')).toBe(true)
   })
 
   it('does NOT trust a URL with a foreign origin', () => {
-    expect(isTrustedRequestOrigin('https://attacker.example.com/collect')).toBe(false)
+    expect(isTrustedOrigin('https://attacker.example.com/collect')).toBe(false)
   })
 
   it('does NOT trust a URL that starts with the same characters (prefix trick)', () => {
     // A host that begins with the same characters is a different origin.
     const prefixTrick = 'https://abc123.execute-api.us-east-1.amazonaws.com.evil.example.com/v1'
-    expect(isTrustedRequestOrigin(prefixTrick)).toBe(false)
+    expect(isTrustedOrigin(prefixTrick)).toBe(false)
   })
 
   it('does NOT trust a URL with userinfo (userinfo trick)', () => {
@@ -117,37 +110,31 @@ describe('isTrustedRequestOrigin', () => {
     // 'https://evil.example.com' — verify the parsed origin is used, not a
     // string prefix check.
     const userinfoTrick = `https://abc123.execute-api.us-east-1.amazonaws.com@attacker.example.com/v1`
-    expect(isTrustedRequestOrigin(userinfoTrick)).toBe(false)
+    expect(isTrustedOrigin(userinfoTrick)).toBe(false)
   })
 
-  it('does NOT trust a protocol-relative URL pointing to a foreign host', () => {
-    // `//evil.example.com/collect` starts with `/` but is NOT same-origin.
-    // A `startsWith('/')` classifier was a bypass — the implementation resolves
-    // the URL against window.location.origin and classifies the result.
-    expect(isTrustedRequestOrigin('//evil.example.com/collect')).toBe(false)
+  it('trusts a path-relative URL, so the foreign-host negatives below cannot pass vacuously', () => {
+    expect(isTrustedOrigin('/api/feedback')).toBe(true)
   })
 
-  it('does NOT trust backslash-separator URLs pointing to a foreign host', () => {
-    // Positive case so the negatives cannot pass vacuously.
-    expect(isTrustedRequestOrigin('/api/feedback')).toBe(true)
-    // `\` is a path separator for http(s) in the WHATWG URL parser, so these
-    // resolve cross-origin while still satisfying startsWith('/') and failing
-    // startsWith('//') — the exact gap a two-prefix guard leaves open.
-    expect(isTrustedRequestOrigin('/\\evil.example.com/collect')).toBe(false)
-    expect(isTrustedRequestOrigin('/\\/evil.example.com')).toBe(false)
+  // A `startsWith('/')` classifier was a bypass — the implementation resolves
+  // the URL against window.location.origin and classifies the result.
+  it.each(FOREIGN_HOST_SPELLINGS)('does NOT trust %s, which starts with / but resolves to a foreign host', (url) => {
+    expect(isTrustedOrigin(url)).toBe(false)
   })
 
   it('returns false when config is not loaded (empty allowlist)', () => {
     vi.mocked(runtimeConfigModule.isConfigLoaded).mockReturnValueOnce(false)
-    expect(isTrustedRequestOrigin(TRUSTED_API)).toBe(false)
+    expect(isTrustedOrigin(TRUSTED_API)).toBe(false)
   })
 
   it('returns false for a URL with no host (fail closed)', () => {
-    expect(isTrustedRequestOrigin('http://')).toBe(false)
+    expect(isTrustedOrigin('http://')).toBe(false)
   })
 })
 
-describe('getAuthHeaders — trusted origin', () => {
+/** App origin pinned and a configured auth service holding an id token. */
+function useSignedInAuth(): void {
   useAppOrigin()
 
   beforeEach(() => {
@@ -155,6 +142,10 @@ describe('getAuthHeaders — trusted origin', () => {
     vi.mocked(authService.getIdToken).mockReturnValue('mock-cognito-id-token')
   })
   afterEach(() => vi.restoreAllMocks())
+}
+
+describe('getAuthHeaders — trusted origin', () => {
+  useSignedInAuth()
 
   it('attaches Authorization when a token exists and the origin is trusted', () => {
     const headers = getAuthHeaders(`${TRUSTED_API}/feedback`)
@@ -178,13 +169,7 @@ describe('getAuthHeaders — trusted origin', () => {
 })
 
 describe('getAuthHeaders — untrusted origin', () => {
-  useAppOrigin()
-
-  beforeEach(() => {
-    vi.mocked(authService.isConfigured).mockReturnValue(true)
-    vi.mocked(authService.getIdToken).mockReturnValue('mock-cognito-id-token')
-  })
-  afterEach(() => vi.restoreAllMocks())
+  useSignedInAuth()
 
   it('DOES attach Authorization to the trusted origin (vacuity check)', () => {
     // This positive case proves the token IS present and the header mechanism
@@ -243,10 +228,10 @@ describe('getAuthHeaders — untrusted origin', () => {
   })
 
   it('does NOT attach Authorization when the target URL is missing entirely', () => {
-    // The double assertion is the point: it constructs an off-contract call that
-    // the signature forbids but that is reachable at runtime, since test files
-    // are never type-checked.
-    const noTarget = undefined as unknown as string
-    expect(getAuthHeaders(noTarget)['Authorization']).toBeUndefined()
+    // An off-contract call that the signature forbids but that is reachable at
+    // runtime (an untyped caller). Method parameters are bivariant, so the
+    // holder admits the optional signature without a type assertion.
+    const untyped: { getAuthHeaders(targetUrl?: string): Record<string, string> } = { getAuthHeaders }
+    expect(untyped.getAuthHeaders()['Authorization']).toBeUndefined()
   })
 })

@@ -7,6 +7,7 @@
  * input clamping, and the citation-bearing formatting contract.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { nth } from '../lib/nth-fixtures.js';
 
 vi.mock('@aws-sdk/credential-provider-node', () => ({
   // Static credentials so the real SignatureV4 can sign offline.
@@ -65,7 +66,7 @@ afterEach(() => {
 });
 
 function sentBody(callIndex = 0): { method: string; params: { name?: string; arguments?: Record<string, unknown> } } {
-  const init = mockFetch.mock.calls[callIndex][1] as { body: string };
+  const init = nth(mockFetch.mock.calls, callIndex)[1] as { body: string };
   return JSON.parse(init.body) as { method: string; params: { name?: string; arguments?: Record<string, unknown> } };
 }
 
@@ -93,36 +94,48 @@ describe('executeWebSearch', () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it('sends a SigV4-signed JSON-RPC tools/call and normalizes results', async () => {
-    mockFetch.mockResolvedValueOnce(jsonResponse(toolCallBody(SAMPLE_RESULTS)));
+  describe('a successful search', () => {
+    async function searchOnce() {
+      mockFetch.mockResolvedValueOnce(jsonResponse(toolCallBody(SAMPLE_RESULTS)));
+      return executeWebSearch({ query: 'python 3.13 release' });
+    }
 
-    const result = await executeWebSearch({ query: 'python 3.13 release' });
+    it('sends one SigV4-signed request to the gateway', async () => {
+      await searchOnce();
 
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-    const [url, init] = mockFetch.mock.calls[0] as [string, { headers: Record<string, string> }];
-    expect(url).toBe(GATEWAY_URL);
-    // Signed by the real SignatureV4 for the gateway's region/service.
-    expect(init.headers.authorization).toContain('AWS4-HMAC-SHA256');
-    expect(init.headers.authorization).toContain('us-east-1/bedrock-agentcore');
+      const [url, init] = nth(mockFetch.mock.calls, 0) as [string, { headers: Record<string, string> }];
+      expect({ fetches: mockFetch.mock.calls.length, url }).toStrictEqual({ fetches: 1, url: GATEWAY_URL });
+      // Signed by the real SignatureV4 for the gateway's region/service.
+      expect(init.headers.authorization).toContain('AWS4-HMAC-SHA256');
+      expect(init.headers.authorization).toContain('us-east-1/bedrock-agentcore');
+    });
 
-    const body = sentBody();
-    expect(body.method).toBe('tools/call');
-    expect(body.params.name).toBe(TOOL_NAME);
-    expect(body.params.arguments).toStrictEqual({ query: 'python 3.13 release', maxResults: 5 });
+    it('sends a JSON-RPC tools/call for the configured tool', async () => {
+      await searchOnce();
 
-    expect(result.webSources).toStrictEqual([
-      {
-        title: 'Python 3.13 Release Highlights',
-        url: 'https://example.com/python/releases/3.13',
-        text: 'Python 3.13 was released on October 7, 2024...',
-        published_date: '2024-10-07',
-      },
-      // Knowledge-graph fact kept, with empty (not null) title/url.
-      { title: '', url: '', text: 'Founded: 1994. Founder: Jeff Bezos.', published_date: '' },
-    ]);
-    // Formatting keeps citations and instructs the model to use them.
-    expect(result.content).toContain('cite its source URL');
-    expect(result.content).toContain('[Python 3.13 Release Highlights](https://example.com/python/releases/3.13)');
+      const body = sentBody();
+      expect({ method: body.method, name: body.params.name, arguments: body.params.arguments }).toStrictEqual({
+        method: 'tools/call', name: TOOL_NAME, arguments: { query: 'python 3.13 release', maxResults: 5 },
+      });
+    });
+
+    it('normalizes results and formats them with citations', async () => {
+      const result = await searchOnce();
+
+      expect(result.webSources).toStrictEqual([
+        {
+          title: 'Python 3.13 Release Highlights',
+          url: 'https://example.com/python/releases/3.13',
+          text: 'Python 3.13 was released on October 7, 2024...',
+          published_date: '2024-10-07',
+        },
+        // Knowledge-graph fact kept, with empty (not null) title/url.
+        { title: '', url: '', text: 'Founded: 1994. Founder: Jeff Bezos.', published_date: '' },
+      ]);
+      // Formatting keeps citations and instructs the model to use them.
+      expect(result.content).toContain('cite its source URL');
+      expect(result.content).toContain('[Python 3.13 Release Highlights](https://example.com/python/releases/3.13)');
+    });
   });
 
   it('clamps the query to 200 chars and max_results to 10', async () => {
@@ -186,9 +199,7 @@ describe('tool name discovery fallback', () => {
     const result = await executeWebSearch({ query: 'query' });
 
     expect(mockFetch).toHaveBeenCalledTimes(3);
-    expect(sentBody(0).method).toBe('tools/call');
-    expect(sentBody(1).method).toBe('tools/list');
-    expect(sentBody(2).params.name).toBe(discovered);
+    expect([sentBody(0).method, sentBody(1).method, sentBody(2).params.name]).toStrictEqual(['tools/call', 'tools/list', discovered]);
     expect(result.webSources).toHaveLength(2);
 
     // Subsequent calls go straight to the discovered name.

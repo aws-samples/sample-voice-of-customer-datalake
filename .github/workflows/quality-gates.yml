@@ -1,0 +1,86 @@
+# Runs scripts/validate.sh, every quality gate in the repo, on each pull request and on pushes to
+# development. CI calls that script and nothing else, so a green local `npm run validate` is a
+# green run here. Gates not enforced yet are counted by scripts/quality-baseline.sh instead.
+name: quality gates
+
+on:
+  pull_request:
+  push:
+    branches:
+      - development
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-gates-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: scripts/validate.sh
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # No step pushes, tags, or calls the API (same reason as the other workflows).
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            voc-datalake/package-lock.json
+            voc-datalake/frontend/package-lock.json
+            voc-datalake/lambda/stream/package-lock.json
+            tools/kiro-acp-bridge/package-lock.json
+
+      # The Lambda runtime is Python 3.12 (lib/stacks), so the gates type-check and test against it.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Node dependencies (five packages, each with its own lockfile)
+        run: |
+          npm ci
+          npm ci --prefix voc-datalake
+          npm ci --prefix voc-datalake/frontend
+          npm ci --prefix voc-datalake/lambda/stream
+          npm ci --prefix tools/kiro-acp-bridge
+
+      - name: Install Python dependencies into voc-datalake/.venv
+        working-directory: voc-datalake
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --disable-pip-version-check -q \
+            -r requirements-dev.txt \
+            -r lambda/layers/ingestion-deps/requirements.txt \
+            -r lambda/layers/processing-deps/requirements.txt
+
+      - name: Install gitleaks (the working-tree secret scan, scripts/gitleaks-tree.sh)
+        env:
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL -o "/tmp/${tarball}" "${base}/${tarball}"
+          curl -sSfL -o /tmp/gitleaks_checksums.txt "${base}/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          (cd /tmp && grep " ${tarball}\$" gitleaks_checksums.txt | sha256sum --check --strict -)
+          mkdir -p "$HOME/.local/bin"
+          tar -xzf "/tmp/${tarball}" -C "$HOME/.local/bin" gitleaks
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Validate
+        run: bash scripts/validate.sh
+
+      # The pending gates' counts (scripts/quality-baseline.sh), so a PR that raises one shows it in its
+      # own log. A measurement, not a gate: it never fails the job, and it runs even when Validate failed.
+      - name: Quality baseline (informational)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: |
+          bash scripts/quality-baseline.sh | tee "$RUNNER_TEMP/baseline.txt"
+          { echo '```text'; cat "$RUNNER_TEMP/baseline.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

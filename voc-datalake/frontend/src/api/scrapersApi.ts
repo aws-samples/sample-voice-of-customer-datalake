@@ -3,7 +3,7 @@ import { fetchApi } from './client'
 import { normalizeScrapers, normalizeScraperRunStatus } from './scrapersSchema'
 import type { ScraperRunStatus } from './scrapersSchema'
 import type {
-  ScraperConfig, ScraperTemplate,
+  CsvColumnTarget, ScraperConfig, ScraperTemplate,
 } from './types'
 
 export const scrapersApi = {
@@ -105,6 +105,8 @@ export const scrapersApi = {
         rating: number | null;
         author: string | null;
         date: string | null;
+        /** True when the text had no date and `date` is the import date (manual_import_processor.py). */
+        date_defaulted?: boolean;
         title: string | null
       }>
       unparsed_sections?: string[]
@@ -133,7 +135,7 @@ export const scrapersApi = {
       }),
     }),
 
-  uploadJsonFeedback: (items: Array<Record<string, unknown>>) =>
+  uploadJsonFeedback: (items: Array<Record<string, unknown>>, sourceId?: string) =>
     fetchApi<{
       success: boolean;
       imported_count: number;
@@ -142,9 +144,19 @@ export const scrapersApi = {
       errors?: string[]
     }>('/scrapers/manual/json-upload', {
       method: 'POST',
-      body: JSON.stringify({ items }),
+      body: JSON.stringify(sourceId === undefined ? { items } : { items, source_id: sourceId }),
     }),
-  uploadCsvFeedback: (params: { csv_text: string; default_source?: string }) =>
+  /**
+   * `source_id`: the source profile the rows belong to (default `manual_import`);
+   * `column_map`: `{<csv header>: <target>}` (see `CsvColumnTarget`). Headers not
+   * mapped and not auto-detected server-side land in `metadata`.
+   */
+  uploadCsvFeedback: (params: {
+    csv_text: string
+    default_source?: string
+    source_id?: string
+    column_map?: Record<string, CsvColumnTarget>
+  }) =>
     fetchApi<{
       success: boolean;
       imported_count: number;

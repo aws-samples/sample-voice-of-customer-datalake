@@ -1,7 +1,10 @@
 {
   "card": {
+    "deleteProject": "Delete project {{name}}",
+    "editProject": "Edit project {{name}}",
     "docs_one": "{{count}} doc",
     "docs_other": "{{count}} docs",
+    "owner": "Owner: {{name}}",
     "personas_one": "{{count}} persona",
     "personas_other": "{{count}} personas"
   },
@@ -21,6 +24,14 @@
     "message": "Are you sure you want to delete this project? All personas and documents will be permanently deleted.",
     "title": "Delete Project"
   },
+  "editModal": {
+    "nameRequired": "Enter a project name.",
+    "save": "Save",
+    "saveFailed": "Could not save the project. Check your access and try again.",
+    "saving": "Saving...",
+    "title": "Edit Project",
+    "visibilityManageOnly": "Only the project's owner or an admin can change who can see it."
+  },
   "description": "Create projects to build personas, PRDs, and PR/FAQs from feedback",
   "emptyState": {
     "createButton": "Create Project",
@@ -29,5 +40,58 @@
   },
   "newProject": "New Project",
   "openProject": "Open Project",
-  "title": "Projects"
+  "readOnlyBanner": "You have view-only access to this project. Ask the owner for edit access.",
+  "sharing": {
+    "cancel": "Cancel",
+    "description": "Choose who can see this project and what invited people can do.",
+    "errors": {
+      "conflict": "That person already has access to this project.",
+      "forbidden": "You do not have permission to change sharing for this project.",
+      "generic": "That change could not be saved. Please try again.",
+      "invalid": "The request was rejected. The project may have reached its member limit.",
+      "notFound": "That user or member could not be found."
+    },
+    "invite": "Invite",
+    "inviteHeading": "Invite people",
+    "inviteRoleLabel": "Role for the invited person",
+    "leave": "Leave project",
+    "leaveConfirm": "Leave",
+    "leaveMessage": "You will lose access to this project unless it is public.",
+    "leaveTitle": "Leave project?",
+    "loadError": "Sharing settings could not be loaded.",
+    "loading": "Loading sharing settings...",
+    "makeOwner": "Make {{name}} the owner",
+    "members": "Members",
+    "noMembers": "No one has been invited yet.",
+    "noOwner": "No owner",
+    "noResults": "No matching users",
+    "owner": "Owner",
+    "readOnlyNotice": "Only the project owner or an admin can change sharing.",
+    "remove": "Remove {{name}}",
+    "roleLabel": "Role for {{name}}",
+    "roles": {
+      "editor": "Can edit",
+      "viewer": "Can view"
+    },
+    "searchLabel": "Search users",
+    "searchPlaceholder": "Username or email",
+    "searchMinLength": "Type at least {{min}} characters to search.",
+    "searching": "Searching...",
+    "select": "Select {{name}}",
+    "selected": "Selected: {{name}}",
+    "share": "Share",
+    "title": "Share \"{{name}}\"",
+    "transferConfirm": "Transfer",
+    "transferMessage": "{{name}} will become the owner of this project. The current owner stays on as an editor.",
+    "transferTitle": "Transfer ownership?",
+    "you": "(you)"
+  },
+  "title": "Projects",
+  "visibility": {
+    "label": "Who can access this project",
+    "private": "Private",
+    "privateHint": "Only the owner, invited members, and admins can see it.",
+    "public": "Public",
+    "publicHint": "Everyone in this workspace can view and edit it."
+  }
 }

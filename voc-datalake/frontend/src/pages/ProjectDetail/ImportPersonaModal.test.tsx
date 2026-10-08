@@ -16,6 +16,10 @@ import {
   act, render, screen, fireEvent, waitFor,
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import {
+  expectAcceptsImagesNotPdf, fileInput, pasteFiles, pasteText, zoneChild,
+  stubImaging, stubOversizedImaging, stubUnreadableImage,
+} from './imaging-fixtures'
 import ImportPersonaModal from './ImportPersonaModal'
 import { useImportModalState } from './useModalState'
 
@@ -74,25 +78,12 @@ describe('ImportPersonaModal import type options', () => {
 })
 
 describe('ImportPersonaModal file picker', () => {
-  function fileInput(): HTMLInputElement {
-    const input = document.querySelector('input[type="file"]')
-    if (!(input instanceof HTMLInputElement)) throw new Error('file input not found')
-    return input
-  }
-
   it('accepts only image types and never a pdf', () => {
     render(<ImportPersonaModal {...defaultProps} importType="image" />)
 
     const accept = fileInput().getAttribute('accept') ?? ''
 
-    // Presence half: an empty or missing accept attribute would trivially satisfy
-    // "does not contain pdf" while letting the OS picker offer every file type.
-    expect(accept).toContain('image/png')
-    expect(accept).toContain('image/jpeg')
-    expect(accept).toContain('image/gif')
-    expect(accept).toContain('image/webp')
-
-    expect(accept).not.toContain('pdf')
+    expectAcceptsImagesNotPdf(accept)
   })
 
   it('tells the user which image formats are accepted, not "PDF files only"', () => {
@@ -207,35 +198,6 @@ describe('ImportPersonaModal image input paths', () => {
     )
   }
 
-  class FakeOffscreenCanvas {
-    readonly width: number
-    readonly height: number
-
-    constructor(width: number, height: number) {
-      this.width = width
-      this.height = height
-    }
-
-    getContext(contextId: string) {
-      if (contextId !== '2d') return null
-      return { fillStyle: '', fillRect: () => undefined, drawImage: () => undefined }
-    }
-
-    convertToBlob(options: { type: string }): Promise<Blob> {
-      // Half a byte per pixel — under the 3.75 MB cap at 1568 px, so the first
-      // (PNG) rung of the ladder wins.
-      const bytes = Math.round((this.width * this.height) / 2)
-      return Promise.resolve(new Blob([new Uint8Array(bytes)], { type: options.type }))
-    }
-  }
-
-  function stubImaging(width: number, height: number) {
-    vi.stubGlobal('OffscreenCanvas', FakeOffscreenCanvas)
-    vi.stubGlobal('createImageBitmap', vi.fn(() => Promise.resolve({
-      width, height, close: () => undefined,
-    })))
-  }
-
   /**
    * The visible drop target — the element the handlers have to be on.
    *
@@ -272,8 +234,18 @@ describe('ImportPersonaModal image input paths', () => {
     return screen.getByRole('button', { name: /Import Persona/i })
   }
 
+  /** The dataTransfer a file drag carries; `files` is empty until the drop itself. */
+  function filesDrag(files: readonly File[] = []) {
+    return { dataTransfer: { files, types: ['Files'] } }
+  }
+
   function dropFiles(files: readonly File[]) {
-    fireEvent.drop(dropZone(), { dataTransfer: { files, types: ['Files'] } })
+    fireEvent.drop(dropZone(), filesDrag(files))
+  }
+
+  /** The non-image the refusal tests drop: the one type this modal used to offer. */
+  function pdfFile() {
+    return new File(['%PDF'], 'plan.pdf', { type: 'application/pdf' })
   }
 
   /**
@@ -290,18 +262,36 @@ describe('ImportPersonaModal image input paths', () => {
     }))
   }
 
-  function pasteFiles(target: HTMLElement, files: readonly File[], kind = 'file') {
-    return fireEvent.paste(target, {
-      clipboardData: {
-        items: files.map((file) => ({ kind, type: file.type, getAsFile: () => file })),
-        files,
-      },
-    })
-  }
-
   function readRequest(): ImportRequest {
     expect(submitted).toHaveBeenCalledTimes(1)
-    return submitted.mock.calls[0][0]
+    const call = submitted.mock.calls.at(0)
+    if (call === undefined) throw new Error('the import was not submitted')
+    return call[0]
+  }
+
+  /** Waits for the chosen image to enable Import, submits, and checks the media type sent. */
+  async function expectImportSendsMediaType(mediaType: string) {
+    await waitFor(() => expect(importButton()).toBeEnabled())
+    fireEvent.click(importButton())
+    expect(readRequest().media_type).toBe(mediaType)
+  }
+
+  /**
+   * Drops a PNG on `target`, off the zone, then drags over it. Both must be
+   * cancelled — `fireEvent` returns false when a handler called preventDefault —
+   * and NOT accepted: the dashed zone stays the single place where a drop selects
+   * something, so a near-miss is inert rather than a second target.
+   */
+  function expectMissedDropCancelled(target: HTMLElement) {
+    const dropped = fireEvent.drop(target, filesDrag([imageFile('card.png', 'image/png', 512)]))
+    const draggedOver = fireEvent.dragOver(target, filesDrag())
+
+    expect({
+      dropped,
+      draggedOver,
+      fileNamed: screen.queryByText('card.png') !== null,
+      importDisabled: importButton().hasAttribute('disabled'),
+    }).toStrictEqual({ dropped: false, draggedOver: false, fileNamed: false, importDisabled: true })
   }
 
   /** Switches to the image type, which is where the dropzone lives. */
@@ -334,13 +324,12 @@ describe('ImportPersonaModal image input paths', () => {
 
     fireEvent.click(importButton())
     const request = readRequest()
-    expect(request.input_type).toBe('image')
     // The API returns 400 before doing any work when media_type is blank or
-    // outside the four Converse types — a real one has to be sent.
-    expect(request.media_type).toBe('image/png')
-    expect(request.content.length).toBeGreaterThan(0)
-    // base64, not a data URL: the server decodes this directly.
-    expect(request.content).not.toContain('data:')
+    // outside the four Converse types — a real one has to be sent. The content is
+    // non-empty base64, not a data URL: the server decodes this directly.
+    expect({ inputType: request.input_type, mediaType: request.media_type })
+      .toStrictEqual({ inputType: 'image', mediaType: 'image/png' })
+    expect(request.content).toMatch(/^[A-Za-z0-9+/=]+$/)
   })
 
   it('selects a picked PNG the same way, as the control for the drop above', async () => {
@@ -350,14 +339,11 @@ describe('ImportPersonaModal image input paths', () => {
     stubImaging(800, 600)
     const user = await openImageStep()
 
-    const input = document.querySelector('input[type="file"]')
-    if (!(input instanceof HTMLInputElement)) throw new Error('file input not found')
+    const input = fileInput()
     await user.upload(input, imageFile('picked.png', 'image/png', 1024))
 
     expect(await screen.findByText('picked.png')).toBeInTheDocument()
-    await waitFor(() => expect(importButton()).toBeEnabled())
-    fireEvent.click(importButton())
-    expect(readRequest().media_type).toBe('image/png')
+    await expectImportSendsMediaType('image/png')
   })
 
   it('marks the zone while a drag is over it, and unmarks it on leave', async () => {
@@ -367,7 +353,7 @@ describe('ImportPersonaModal image input paths', () => {
     // Baseline included, so this cannot pass on a zone that is always marked.
     expect(dropZone()).toHaveAttribute('data-drag-active', 'false')
 
-    fireEvent.dragEnter(dropZone(), { dataTransfer: { files: [], types: ['Files'] } })
+    fireEvent.dragEnter(dropZone(), filesDrag())
     expect(dropZone()).toHaveAttribute('data-drag-active', 'true')
 
     fireEvent.dragLeave(dropZone(), { dataTransfer: { files: [], types: ['Files'] } })
@@ -402,10 +388,9 @@ describe('ImportPersonaModal image input paths', () => {
     // reported for a child unmarks a zone the pointer is still inside, and the
     // next dragover marks it again — a visible flicker of the highlight.
     await openImageStep()
-    fireEvent.dragEnter(dropZone(), { dataTransfer: { files: [], types: ['Files'] } })
+    fireEvent.dragEnter(dropZone(), filesDrag())
 
-    const child = dropZone().querySelector('p')
-    if (!(child instanceof HTMLElement)) throw new Error('zone child not found')
+    const child = zoneChild(dropZone(), 'p')
     dragLeaveTowards(dropZone(), child)
 
     expect(dropZone()).toHaveAttribute('data-drag-active', 'true')
@@ -423,7 +408,7 @@ describe('ImportPersonaModal image input paths', () => {
     // was not true.
     stubImaging(800, 600)
     await openImageStep()
-    fireEvent.dragEnter(dropZone(), { dataTransfer: { files: [], types: ['Files'] } })
+    fireEvent.dragEnter(dropZone(), filesDrag())
     expect(dropZone()).toHaveAttribute('data-drag-active', 'true')
 
     fireEvent.drop(backdrop(), {
@@ -437,7 +422,7 @@ describe('ImportPersonaModal image input paths', () => {
     // dragend is the other way a drag ends without the zone hearing about it: the
     // user dragged in, changed their mind, and let go outside the window.
     await openImageStep()
-    fireEvent.dragEnter(dropZone(), { dataTransfer: { files: [], types: ['Files'] } })
+    fireEvent.dragEnter(dropZone(), filesDrag())
     expect(dropZone()).toHaveAttribute('data-drag-active', 'true')
 
     fireEvent(document, new Event('dragend', { bubbles: true }))
@@ -454,20 +439,7 @@ describe('ImportPersonaModal image input paths', () => {
     stubImaging(800, 600)
     await openImageStep()
 
-    const nearMiss = fireEvent.drop(panel(), {
-      dataTransfer: { files: [imageFile('card.png', 'image/png', 512)], types: ['Files'] },
-    })
-    const draggedOver = fireEvent.dragOver(panel(), {
-      dataTransfer: { files: [], types: ['Files'] },
-    })
-
-    // fireEvent returns false when a handler called preventDefault.
-    expect(nearMiss).toBe(false)
-    expect(draggedOver).toBe(false)
-    // Cancelled, NOT accepted: the dashed zone stays the single place where a drop
-    // selects something, so a near-miss is inert rather than a second target.
-    expect(screen.queryByText('card.png')).not.toBeInTheDocument()
-    expect(importButton()).toBeDisabled()
+    expectMissedDropCancelled(panel())
   })
 
   it('cancels a drop on the dimmed backdrop, which is most of the screen', async () => {
@@ -475,21 +447,12 @@ describe('ImportPersonaModal image input paths', () => {
     // whole viewport — so the LARGEST miss region, and the one a user aiming at a
     // small centred panel is most likely to hit, still reached the browser default
     // and navigated away from the app entirely. They are on the backdrop now,
-    // which is an ancestor of the panel, so one pair covers both.
+    // which is an ancestor of the panel, so one pair covers both. Fired on the
+    // shell's real dimmed overlay (ModalShell's), which the user actually hits.
     stubImaging(800, 600)
     await openImageStep()
 
-    const missed = fireEvent.drop(backdrop(), {
-      dataTransfer: { files: [imageFile('card.png', 'image/png', 512)], types: ['Files'] },
-    })
-    const draggedOver = fireEvent.dragOver(backdrop(), {
-      dataTransfer: { files: [], types: ['Files'] },
-    })
-
-    expect(missed).toBe(false)
-    expect(draggedOver).toBe(false)
-    expect(screen.queryByText('card.png')).not.toBeInTheDocument()
-    expect(importButton()).toBeDisabled()
+    expectMissedDropCancelled(screen.getByTestId('modal-overlay'))
   })
 
   it('leaves a TEXT drag into the persona textarea alone, unlike a file drag', async () => {
@@ -589,9 +552,7 @@ describe('ImportPersonaModal image input paths', () => {
 
     const name = await screen.findByText(/^pasted-.+\.png$/)
     expect(name).toBeInTheDocument()
-    await waitFor(() => expect(importButton()).toBeEnabled())
-    fireEvent.click(importButton())
-    expect(readRequest().media_type).toBe('image/png')
+    await expectImportSendsMediaType('image/png')
   })
 
   it('names a pasted JPEG .jpg, the extension the rest of the app uses', async () => {
@@ -636,7 +597,7 @@ describe('ImportPersonaModal image input paths', () => {
     dropFiles([imageFile('good.png', 'image/png', 512)])
     await screen.findByText('good.png')
 
-    dropFiles([new File(['%PDF'], 'plan.pdf', { type: 'application/pdf' })])
+    dropFiles([pdfFile()])
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/not an image we can read/i)
     // The exact set the server enforces, so the two refusals name the same four.
@@ -710,7 +671,7 @@ describe('ImportPersonaModal image input paths', () => {
     // file the user has already replaced is describing something abandoned.
     stubImaging(800, 600)
     await openImageStep()
-    dropFiles([new File(['%PDF'], 'plan.pdf', { type: 'application/pdf' })])
+    dropFiles([pdfFile()])
     expect(await screen.findByRole('alert')).toBeInTheDocument()
 
     dropFiles([imageFile('card.png', 'image/png', 512)])
@@ -726,7 +687,7 @@ describe('ImportPersonaModal image input paths', () => {
     // empty zone, describing a file that was no longer anywhere in the modal.
     stubImaging(800, 600)
     const user = await openImageStep()
-    dropFiles([new File(['%PDF'], 'plan.pdf', { type: 'application/pdf' })])
+    dropFiles([pdfFile()])
     expect(await screen.findByRole('alert')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /Paste content/i }))
@@ -744,10 +705,9 @@ describe('ImportPersonaModal image input paths', () => {
     // end: the user's obvious next move — pick it again — did nothing at all.
     // Refused first (the imaging stub is missing, so the resize fails), then the
     // very same File is offered again with imaging working.
-    vi.stubGlobal('createImageBitmap', vi.fn(() => Promise.reject(new Error('bad bytes'))))
+    stubUnreadableImage()
     const user = await openImageStep()
-    const input = document.querySelector('input[type="file"]')
-    if (!(input instanceof HTMLInputElement)) throw new Error('file input not found')
+    const input = fileInput()
     const same = imageFile('retry.png', 'image/png', 4_000_000)
 
     await user.upload(input, same)
@@ -777,13 +737,17 @@ describe('ImportPersonaModal image input paths', () => {
     // role="status", NOT role="alert": the drop succeeded. An assertive alert
     // would interrupt a screen-reader user to announce a failure that did not
     // happen, and the red styling says the same to everyone else.
-    expect(screen.getByRole('status')).toHaveTextContent('Only the first image was used')
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect({
+      statusNotice: screen.queryByRole('status')?.textContent.includes('Only the first image was used'),
+      alert: screen.queryByRole('alert') !== null,
+    }).toStrictEqual({ statusNotice: true, alert: false })
     // The notice is about the file that WAS taken, so it survives its acceptance
-    // rather than being cleared by it.
+    // rather than being cleared by it — and the second file was never taken.
     await waitFor(() => expect(importButton()).toBeEnabled())
-    expect(screen.getByRole('status')).toBeInTheDocument()
-    expect(screen.queryByText('second.png')).not.toBeInTheDocument()
+    expect({
+      notice: screen.queryByRole('status') !== null,
+      secondFile: screen.queryByText('second.png') !== null,
+    }).toStrictEqual({ notice: true, secondFile: false })
   })
 
   it('reports a refusal as an alert, as the control for that notice being a status', async () => {
@@ -792,7 +756,7 @@ describe('ImportPersonaModal image input paths', () => {
     stubImaging(800, 600)
     await openImageStep()
 
-    dropFiles([new File(['%PDF'], 'plan.pdf', { type: 'application/pdf' })])
+    dropFiles([pdfFile()])
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/not an image we can read/i)
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
@@ -856,12 +820,7 @@ describe('ImportPersonaModal image input paths', () => {
   it('leaves a paste carrying no file completely alone', async () => {
     await openImageStep()
 
-    const event = fireEvent.paste(dropZone(), {
-      clipboardData: {
-        items: [{ kind: 'string', type: 'text/plain', getAsFile: () => null }],
-        files: [],
-      },
-    })
+    const event = pasteText(dropZone())
 
     // Not cancelled ⇒ an ordinary text paste still behaves like a paste, and no
     // error is invented for something that was never an image attempt.
@@ -901,9 +860,7 @@ describe('ImportPersonaModal image input paths', () => {
     render(<ImportHarness />)
     const textarea = screen.getByPlaceholderText(/Paste your persona description/i)
 
-    const textPaste = fireEvent.paste(textarea, {
-      clipboardData: { items: [{ kind: 'string', type: 'text/plain', getAsFile: () => null }], files: [] },
-    })
+    const textPaste = pasteText(textarea)
     const imagePaste = pasteFiles(textarea, [new File([new Uint8Array(64)], '', { type: 'image/png' })])
 
     expect(textPaste).toBe(true)
@@ -912,7 +869,7 @@ describe('ImportPersonaModal image input paths', () => {
   })
 
   it('says an image is unreadable rather than failing silently', async () => {
-    vi.stubGlobal('createImageBitmap', vi.fn(() => Promise.reject(new Error('bad bytes'))))
+    stubUnreadableImage()
     await openImageStep()
 
     dropFiles([imageFile('broken.png', 'image/png', 4_000_000)])
@@ -922,20 +879,7 @@ describe('ImportPersonaModal image input paths', () => {
   })
 
   it('says an image is still too large when no quality step gets it under the cap', async () => {
-    vi.stubGlobal('OffscreenCanvas', class {
-      getContext() {
-        return { fillStyle: '', fillRect: () => undefined, drawImage: () => undefined }
-      }
-
-      convertToBlob(options: { type: string }): Promise<Blob> {
-        const blob = new Blob([new Uint8Array(8)], { type: options.type })
-        Object.defineProperty(blob, 'size', { value: 3_900_000 })
-        return Promise.resolve(blob)
-      }
-    })
-    vi.stubGlobal('createImageBitmap', vi.fn(() => Promise.resolve({
-      width: 4000, height: 3000, close: () => undefined,
-    })))
+    stubOversizedImaging()
     await openImageStep()
 
     dropFiles([imageFile('huge.png', 'image/png', 9_000_000)])
@@ -950,5 +894,45 @@ describe('ImportPersonaModal image input paths', () => {
     await openImageStep()
 
     expect(screen.getByText('Or paste a screenshot from your clipboard')).toBeInTheDocument()
+  })
+})
+
+describe('ImportPersonaModal dialog behaviour (E2E F5: it ignored Escape)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('is a named modal dialog', () => {
+    render(<ImportPersonaModal {...defaultProps} />)
+
+    const dialog = screen.getByRole('dialog', { name: 'Import Persona' })
+    expect(dialog).toHaveAttribute('aria-modal', 'true')
+  })
+
+  it('closes on Escape', async () => {
+    render(<ImportPersonaModal {...defaultProps} />)
+
+    await userEvent.keyboard('{Escape}')
+
+    expect(defaultProps.onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not close on Escape while an import is in flight', async () => {
+    render(<ImportPersonaModal {...defaultProps} importContent="Ann, 34" isImporting />)
+
+    await userEvent.keyboard('{Escape}')
+
+    expect(defaultProps.onClose).not.toHaveBeenCalled()
+  })
+
+  it('moves focus into the dialog on open and traps Tab inside it', async () => {
+    render(<ImportPersonaModal {...defaultProps} />)
+    const dialog = screen.getByRole('dialog', { name: 'Import Persona' })
+    expect(dialog).toContainElement(document.activeElement instanceof HTMLElement ? document.activeElement : null)
+
+    // More Tabs than the dialog has stops, so the trap has to wrap at least once.
+    await Array.from({ length: 12 }).reduce<Promise<void>>((done) => done.then(() => userEvent.tab()), Promise.resolve())
+
+    expect(dialog).toContainElement(document.activeElement instanceof HTMLElement ? document.activeElement : null)
   })
 })

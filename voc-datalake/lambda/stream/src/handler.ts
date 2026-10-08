@@ -1,507 +1,72 @@
 /**
- * Streaming chat Lambda handler (Node.js 22).
+ * Streaming assistant Lambda handler (Node.js 22).
  *
- * Entry point using `awslambda.streamifyResponse` for true SSE streaming
- * through API Gateway with ResponseTransferMode: STREAM.
- *
- * Routes:
- *   POST /chat/stream  → VoC AI Chat (with search_feedback tool)
- *                       → Project AI Chat when project_id is in the body
+ * `POST /chat/stream` (API Gateway REST, Cognito authorizer, STREAM transfer
+ * mode) speaks AG-UI 1.0: the body is a `RunAgentInput`, the response is a
+ * stream of AG-UI events as SSE frames. The run itself lives in
+ * `assistant/runtime/run.ts`; this file only wires real dependencies to it.
  */
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import type { Message, ContentBlock, ToolResultContentBlock, Tool } from '@aws-sdk/client-bedrock-runtime';
 
-import { streamifyResponse, wrapStreamWithHeaders, sendSSE, sendErrorAndClose } from './lib/streaming.js';
-import { isApiError, ValidationError } from './lib/errors.js';
-import { chatRequestSchema, type ChatRequest, type HistoryMessage } from './schema.js';
-import {
-  parseLambdaEvent,
-  requireProjectCallerSubject,
-  resolveProjectId,
-  type LambdaEvent,
-} from './project-route.js';
+import { startHeartbeat, streamifyResponse, wrapStreamWithHeaders } from './lib/streaming.js';
+import { measureInvocationCost } from './lib/invocation-cost.js';
 import { converseStream } from './bedrock/converse-stream.js';
 import { resolveModelOverride } from './bedrock/model-override.js';
-import { processStreamEvent, createStreamState, type ToolUseBlock } from './bedrock/stream-processor.js';
-import { executeTool } from './tools/executor.js';
-import { getSearchFeedbackTool, getUpdateDocumentTool, getCreateDocumentTool, getCreateProjectTool, getWebSearchTool } from './tools/index.js';
 import { isWebSearchConfigured } from './tools/web-search.js';
-import type { WebSource } from './tools/web-search.js';
-import type { DocumentChange } from './tools/update-document.js';
-import type { ProjectChange } from './tools/create-project.js';
-import { buildVocChatContext } from './context/voc-context.js';
-import { buildProjectChatContext, buildRoundtableContext } from './context/project-context.js';
-import { loadCanonicalProject as loadProject } from './context/projects-client.js';
-import { attachmentsToContentBlocks } from './attachments.js';
+import { getAssistantToolset, toolGuidance } from './assistant/tools/registry.js';
+import { createStreamEmitter } from './assistant/runtime/emitter.js';
+import { parseLambdaEvent, type LambdaEvent } from './assistant/runtime/event.js';
+import { runAssistant, type RuntimeDeps } from './assistant/runtime/run.js';
+import { createMemoryRecall } from './assistant/runtime/memory-recall.js';
+import { getInternalApiInvoker } from './assistant/tools/internal-api.js';
+import { createDynamoSessionStore } from './assistant/session/store.js';
 
 // ── AWS Clients (module-level for connection reuse) ──
-const ddbClient = new DynamoDBClient({});
-const docClient = DynamoDBDocumentClient.from(ddbClient, {
+const docClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
   marshallOptions: { removeUndefinedValues: true },
 });
 
-// ── Environment ──
-const FEEDBACK_TABLE = process.env.FEEDBACK_TABLE ?? '';
 const AGGREGATES_TABLE = process.env.AGGREGATES_TABLE ?? '';
-const PROJECTS_TABLE = process.env.PROJECTS_TABLE ?? '';
+// Server-side session persistence (assistant/session/): unset = not saved.
+const CONVERSATIONS_TABLE = process.env.CONVERSATIONS_TABLE ?? '';
 
-// Max agentic tool-call rounds before we stop and ask the user to narrow the
-// question. Each round = 1 Bedrock call + 1 tool execution (~6-15s observed),
-// so the real ceiling is the Lambda's 300s timeout, not this number. 15 rounds
-// (~225s worst case) leaves headroom while letting multi-step questions
-// converge. Broad questions ("summarize all" / "most urgent") are answered in a
-// single round via search_feedback mode="aggregate", so they shouldn't loop.
-const MAX_TOOL_LOOPS = 15;
+const deps: RuntimeDeps = {
+  converse: converseStream,
+  getToolset: getAssistantToolset,
+  toolGuidance,
+  // The assistant is the "chat" AI surface of the admin model picker.
+  resolveModel: () => resolveModelOverride(docClient, AGGREGATES_TABLE, 'chat'),
+  webSearchConfigured: isWebSearchConfigured,
+  recallMemory: createMemoryRecall(getInternalApiInvoker()),
+  now: () => new Date(),
+  ...(CONVERSATIONS_TABLE
+    ? { sessions: { store: createDynamoSessionStore(docClient, CONVERSATIONS_TABLE), nowMs: () => Date.now() } }
+    : {}),
+};
 
-// Roundtable tuning: one turn per persona, generous budget for a full perspective.
-const ROUNDTABLE_MAX_TOKENS = 4000;
-const ROUNDTABLE_THINKING_BUDGET = 2000;
-
-
-// ── Types ──
-
-interface ContextFilters {
-  source?: string;
-  category?: string;
-  sentiment?: string;
-  days?: number;
-  /** 'imported' (default) or 'review' — which date the days window uses. */
-  dateBasis?: 'imported' | 'review';
-}
-
-// ── Tool execution helpers ──
-
-/** Artifacts accumulated across all tool rounds of one conversation. */
-interface CollectedArtifacts {
-  sources: Record<string, unknown>[];
-  documentChanges: DocumentChange[];
-  projectChanges: ProjectChange[];
-  webSources: WebSource[];
-}
-
-function createCollectedArtifacts(): CollectedArtifacts {
-  return { sources: [], documentChanges: [], projectChanges: [], webSources: [] };
-}
-
-function buildAssistantContent(state: { textContent: string; toolUseBlocks: ToolUseBlock[] }): ContentBlock[] {
-  const content: ContentBlock[] = [];
-  if (state.textContent) {
-    content.push({ text: state.textContent });
-  }
-  for (const tb of state.toolUseBlocks) {
-    content.push({ toolUse: { toolUseId: tb.toolUseId, name: tb.name, input: tb.input } });
-  }
-  return content;
-}
-
-async function executeToolsAndBuildResults(
-  toolUseBlocks: ToolUseBlock[],
-  contextFilters: ContextFilters,
-  collected: CollectedArtifacts,
-  stream: NodeJS.WritableStream,
-  projectsTable?: string,
-  projectId?: string,
-): Promise<ContentBlock[]> {
-  const toolResults: ContentBlock[] = [];
-  for (const tb of toolUseBlocks) {
-    const result = await executeTool(
-      tb,
-      docClient,
-      FEEDBACK_TABLE,
-      contextFilters,
-      stream,
-      projectsTable,
-      projectId,
-    );
-    collected.sources.push(...result.sources);
-    if (result.documentChange) {
-      collected.documentChanges.push(result.documentChange);
-    }
-    if (result.projectChange) {
-      collected.projectChanges.push(result.projectChange);
-    }
-    if (result.webSources) {
-      collected.webSources.push(...result.webSources);
-    }
-    // Notify the frontend that the tool has completed
-    sendSSE(stream, { type: 'tool_result', toolName: tb.name });
-    const resultContent: ToolResultContentBlock[] = [{ text: result.content }];
-    toolResults.push({ toolResult: { toolUseId: result.toolUseId, content: resultContent } });
-  }
-  return toolResults;
-}
-
-// ── Agentic loop ──
-
-async function runConversationLoop(
-  messages: Message[],
-  tools: Tool[],
-  stream: NodeJS.WritableStream,
-  systemPrompt: string,
-  contextFilters: ContextFilters,
-  collected: CollectedArtifacts,
-  loopCount: number,
-  projectsTable?: string,
-  projectId?: string,
-): Promise<void> {
-  if (loopCount >= MAX_TOOL_LOOPS) {
-    // Log so CloudWatch shows WHY the loop exhausted (which tools kept getting
-    // called). The user-facing SSE message alone leaves no server-side trace.
-    console.warn(`Tool loop hit MAX_TOOL_LOOPS=${MAX_TOOL_LOOPS}; stopping.`);
-    sendSSE(stream, {
-      type: 'text',
-      content: '\n\n_Reached maximum tool iterations. Please try a more specific question._',
-    });
-    return;
-  }
-
-  const state = createStreamState();
-
-  // Streaming chat is the "chat" AI surface — resolve the admin-configured
-  // model override (falls back to the env default inside converseStream).
-  const modelId = await resolveModelOverride(docClient, AGGREGATES_TABLE, 'chat');
-
-  const events = converseStream({
-    messages,
-    systemPrompt,
-    tools: tools.length > 0 ? tools : undefined,
-    // maxTokens intentionally omitted: MAX_OUTPUT_TOKENS in history-budget.ts is
-    // the single source, converseStream defaults to it, and the longest replayed
-    // turn is derived from it. Passing the same literal here let the two drift.
-    thinkingBudget: 5000,
-    modelId,
-  });
-
-  for await (const event of events) {
-    processStreamEvent(event, state, stream);
-  }
-
-  if (state.stopReason !== 'tool_use' || state.toolUseBlocks.length === 0) return;
-
-  // Trace only tool names. Inputs can contain complete customer documents and
-  // must not be copied into CloudWatch logs.
-  console.log(
-    `Tool round ${loopCount + 1}/${MAX_TOOL_LOOPS}:`,
-    state.toolUseBlocks.map((toolBlock) => toolBlock.name).join(', '),
-  );
-
-  messages.push({ role: 'assistant', content: buildAssistantContent(state) });
-
-  const toolResults = await executeToolsAndBuildResults(
-    state.toolUseBlocks, contextFilters, collected, stream, projectsTable, projectId,
-  );
-  messages.push({ role: 'user', content: toolResults });
-
-  await runConversationLoop(
-    messages, tools, stream, systemPrompt, contextFilters,
-    collected, loopCount + 1,
-    projectsTable, projectId,
-  );
-}
-
-// ── VoC Chat handler ──
-
-// ── History helpers ──
-
-function historyToBedrockMessages(history: HistoryMessage[] | undefined): Message[] {
-  if (!history || history.length === 0) return [];
-  return history.map((msg) => ({
-    role: msg.role,
-    content: [{ text: msg.content }],
-  }));
-}
-
-async function handleVocChat(body: ChatRequest, stream: NodeJS.WritableStream): Promise<void> {
-  const ctx = await buildVocChatContext(docClient, AGGREGATES_TABLE, {
-    message: body.message,
-    context: body.context,
-    days: body.days,
-    date_basis: body.date_basis,
-    response_language: body.response_language,
-  });
-
-  sendSSE(stream, { type: 'metadata', metadata: ctx.metadata });
-
-  const messages: Message[] = [
-    ...historyToBedrockMessages(body.history),
-    { role: 'user', content: [{ text: ctx.userMessage }] },
-  ];
-  // search_feedback for analysis + create_project so the user can turn the
-  // insights into a pre-filled project ("make a project out of this"). No
-  // projectId here (VoC chat is project-agnostic), but create_project only
-  // needs the table, so PROJECTS_TABLE is passed as the projectsTable arg.
-  const tools: Tool[] = [getSearchFeedbackTool(), getCreateProjectTool()];
-  // Public web search is opt-in per request AND requires the AgentCore
-  // gateway to be deployed; otherwise the model never sees the tool.
-  if (body.use_web_search === true && isWebSearchConfigured()) {
-    tools.push(getWebSearchTool());
-  }
-  const collected = createCollectedArtifacts();
-
-  await runConversationLoop(
-    messages, tools, stream, ctx.systemPrompt, ctx.metadata.filters,
-    collected, 0,
-    PROJECTS_TABLE,
-  );
-
-  sendSSE(stream, {
-    type: 'done',
-    metadata: {
-      sources: deduplicateSources(collected.sources),
-      project_changes: collected.projectChanges,
-      web_sources: deduplicateWebSources(collected.webSources),
-    },
-  });
-  stream.end();
-}
-
-// ── Roundtable Chat handler ──
-
-async function handleRoundtableChat(
-  projectId: string,
-  callerSubject: string,
-  body: ChatRequest,
-  stream: NodeJS.WritableStream,
-): Promise<void> {
-  const ctx = await buildRoundtableContext(
-    docClient,
-    loadProject,
-    FEEDBACK_TABLE,
-    projectId,
-    body.message,
-    body.selected_personas ?? [],
-    body.selected_documents ?? [],
-    body.response_language,
-    callerSubject,
-  );
-
-  sendSSE(stream, { type: 'metadata', metadata: ctx.metadata });
-
-  // Roundtable = exactly ONE turn per selected persona. Each persona answers the
-  // user's message in its own voice, from its own prompt only. We deliberately do
-  // NOT feed personas each other's responses: the previous multi-round design
-  // injected the running transcript ("## Conversation so far") into every later
-  // turn and asked personas to "respond to what others said", which made the model
-  // re-quote everyone — producing ~8 noisy bubbles that each repeated
-  // "Stefan: … Margarete: … Thomas: …". One persona → one clean, distinct bubble.
-
-  // Hoist loop-invariant work: attachments and history are the same for every persona.
-  const attachmentBlocks = (body.attachments?.length)
-    ? attachmentsToContentBlocks(body.attachments)
-    : [];
-  const historyMessages = historyToBedrockMessages(body.history);
-  // Roundtable turns are the "chat" surface too — resolve the admin-configured
-  // model ONCE (loop-invariant, like the hoists above). Without this every
-  // persona turn silently falls back to the BEDROCK_MODEL_ID env default,
-  // ignoring the Settings picker entirely.
-  const modelId = await resolveModelOverride(docClient, AGGREGATES_TABLE, 'chat');
-
-  const responses: string[] = [];
-
-  for (const persona of ctx.personas) {
-    sendSSE(stream, {
-      type: 'persona_turn',
-      persona: {
-        persona_id: persona.persona_id,
-        name: persona.name,
-        avatar_url: persona.avatar_url,
-      },
-    });
-
-    try {
-      const userContent: ContentBlock[] = [{ text: ctx.userMessage }, ...attachmentBlocks];
-
-      const messages: Message[] = [
-        ...historyMessages,
-        { role: 'user', content: userContent },
-      ];
-
-      const systemPrompt = `${persona.systemPrompt}
-
-Share your own perspective on the user's message in your own voice. Be direct and specific. Speak only as yourself — do not narrate, summarize, or quote what the other personas might say.`;
-
-      const state = createStreamState();
-      const events = converseStream({
-        messages,
-        systemPrompt,
-        maxTokens: ROUNDTABLE_MAX_TOKENS,
-        thinkingBudget: ROUNDTABLE_THINKING_BUDGET,
-        modelId,
-      });
-
-      for await (const event of events) {
-        processStreamEvent(event, state, stream);
-      }
-
-      if (state.textContent) {
-        responses.push(state.textContent);
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      console.error(
-        `Roundtable turn failed for persona ${persona.persona_id} (${persona.name}): ${errorMessage}`,
-      );
-      sendSSE(stream, {
-        type: 'persona_error',
-        persona: { persona_id: persona.persona_id, name: persona.name },
-        error: errorMessage,
-      });
-    }
-  }
-
-  sendSSE(stream, {
-    type: 'done',
-    metadata: {
-      ...ctx.metadata,
-      roundtable_responses: responses.length,
-    },
-  });
-  stream.end();
-}
-
-// ── Project Chat handler ──
-
-async function handleProjectChat(
-  projectId: string,
-  callerSubject: string,
-  body: ChatRequest,
-  stream: NodeJS.WritableStream,
-): Promise<void> {
-  const ctx = await buildProjectChatContext(
-    docClient,
-    loadProject,
-    FEEDBACK_TABLE,
-    projectId,
-    body.message,
-    body.selected_personas ?? [],
-    body.selected_documents ?? [],
-    body.response_language,
-    callerSubject,
-  );
-
-  sendSSE(stream, { type: 'metadata', metadata: ctx.metadata });
-
-  // Build user content blocks: text + optional attachments
-  const userContent: ContentBlock[] = [{ text: ctx.userMessage }];
-  if (body.attachments && body.attachments.length > 0) {
-    const attachmentBlocks = attachmentsToContentBlocks(body.attachments);
-    userContent.push(...attachmentBlocks);
-  }
-
-  const messages: Message[] = [
-    ...historyToBedrockMessages(body.history),
-    { role: 'user', content: userContent },
-  ];
-
-  // Always provide document tools in project chat so the AI can edit/create
-  // documents even when they aren't explicitly #-mentioned
-  const tools: Tool[] = [getSearchFeedbackTool(), getUpdateDocumentTool(), getCreateDocumentTool()];
-  if (body.use_web_search === true && isWebSearchConfigured()) {
-    tools.push(getWebSearchTool());
-  }
-  console.log('Project chat tools:', tools.map(t => t.toolSpec?.name));
-  console.log('Project ID:', projectId, 'PROJECTS_TABLE:', PROJECTS_TABLE);
-
-  const collected = createCollectedArtifacts();
-
-  await runConversationLoop(
-    messages, tools, stream, ctx.systemPrompt,
-    // Project chat has no context string, but the picker's window settings
-    // still apply to the search tool (issue #150).
-    { days: body.days, dateBasis: body.date_basis },
-    collected, 0,
-    PROJECTS_TABLE, projectId,
-  );
-
-  sendSSE(stream, {
-    type: 'done',
-    metadata: {
-      ...ctx.metadata,
-      document_changes: collected.documentChanges,
-      web_sources: deduplicateWebSources(collected.webSources),
-    },
-  });
-  stream.end();
-}
-
-// ── Helpers ──
-
-function deduplicateSources(sources: Record<string, unknown>[]): Record<string, unknown>[] {
-  const seen = new Set<string>();
-  return sources.filter((s) => {
-    const id = typeof s.feedback_id === 'string' ? s.feedback_id : '';
-    if (!id || seen.has(id)) return false;
-    seen.add(id);
-    return true;
-  });
-}
-
-/** Dedupe web results by URL across tool rounds; keep URL-less
- * knowledge-graph facts out of the citation list (nothing to link). */
-function deduplicateWebSources(webSources: WebSource[]): WebSource[] {
-  const seen = new Set<string>();
-  return webSources.filter((s) => {
-    if (!s.url || seen.has(s.url)) return false;
-    seen.add(s.url);
-    return true;
-  });
-}
-
-// ── Request routing ──
-
-async function routeRequest(event: LambdaEvent, stream: NodeJS.WritableStream): Promise<void> {
-  const rawBody: unknown = JSON.parse(event.body ?? '{}');
-  const parsed = chatRequestSchema.safeParse(rawBody);
-
-  if (!parsed.success) {
-    throw new ValidationError(parsed.error.issues[0]?.message ?? 'Invalid request');
-  }
-
-  const body = parsed.data;
-
-  // Route by project_id in body (preferred) or URL path (legacy)
-  const projectId = resolveProjectId(event, body.project_id);
-
-  if (projectId) {
-    const callerSubject = requireProjectCallerSubject(event);
-    if (body.roundtable) {
-      await handleRoundtableChat(projectId, callerSubject, body, stream);
-    } else {
-      await handleProjectChat(projectId, callerSubject, body, stream);
-    }
-  } else {
-    await handleVocChat(body, stream);
+/** The run, with the heartbeat and the stream closed however it ends. */
+async function runAndClose(event: LambdaEvent, stream: NodeJS.WritableStream) {
+  // Keepalive comments for the whole run: a slow tool call or first token
+  // would otherwise leave the edge-optimized API idle long enough to cut it.
+  const stopHeartbeat = startHeartbeat(stream);
+  try {
+    return await runAssistant(event, createStreamEmitter(stream), deps);
+  } finally {
+    stopHeartbeat();
+    stream.end();
   }
 }
 
-// ── Main handler ──
+async function streamRun(rawEvent: unknown, responseStream: NodeJS.WritableStream): Promise<void> {
+  const event = parseLambdaEvent(rawEvent);
+  const { persisted } = await runAndClose(event, wrapStreamWithHeaders(responseStream));
+  // The client already has every event; the last session write lands after
+  // the stream is closed, and before the invocation ends (a frozen Lambda
+  // would drop it). Runs to completion even when the client disconnected.
+  await persisted;
+}
 
-export const handler = streamifyResponse(
-  async (rawEvent: unknown, responseStream: NodeJS.WritableStream) => {
-    const event = parseLambdaEvent(rawEvent);
-    const origin = event.headers?.origin ?? event.headers?.Origin;
-    const stream = wrapStreamWithHeaders(responseStream, origin);
-
-    try {
-      await routeRequest(event, stream);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Internal error';
-      const errorType = isApiError(err) ? err.name : 'ServiceError';
-      const statusCode = isApiError(err) ? err.statusCode : 500;
-
-      // Log at appropriate level based on error type
-      if (isApiError(err) && err.statusCode < 500) {
-        console.warn(`${errorType}: ${message}`);
-      } else {
-        console.error('Stream handler error:', err);
-      }
-
-      try {
-        sendErrorAndClose(stream, message, errorType, statusCode);
-      } catch {
-        stream.end();
-      }
-    }
-  },
-);
+// One `invocation_cost` line per run, covering the final session write too
+// (lib/invocation-cost.ts; the sizing policy's CPU figure for this function).
+export const handler = streamifyResponse(measureInvocationCost(streamRun));

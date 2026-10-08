@@ -46,10 +46,19 @@ describe('assertFrontendBuildFresh', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    while (created.length > 0) {
-      fs.rmSync(created.pop() as string, { recursive: true, force: true });
+    for (let dir = created.pop(); dir !== undefined; dir = created.pop()) {
+      fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  /** A built tree whose src/app.ts is newer than dist/index.html. */
+  function staleFrontend(): string {
+    const root = newFrontend();
+    buildDist(root);
+    setMtimeSecondsAgo(path.join(root, 'dist', 'index.html'), 100);
+    setMtimeSecondsAgo(path.join(root, 'src', 'app.ts'), 10);
+    return root;
+  }
 
   it('throws when dist/index.html is missing', () => {
     const root = newFrontend();
@@ -57,10 +66,7 @@ describe('assertFrontendBuildFresh', () => {
   });
 
   it('throws when a source file is newer than the build (stale)', () => {
-    const root = newFrontend();
-    buildDist(root);
-    setMtimeSecondsAgo(path.join(root, 'dist', 'index.html'), 100);
-    setMtimeSecondsAgo(path.join(root, 'src', 'app.ts'), 10);
+    const root = staleFrontend();
     expect(() => assertFrontendBuildFresh({ frontendRoot: root })).toThrow(/Frontend dist is stale/);
   });
 
@@ -91,20 +97,14 @@ describe('assertFrontendBuildFresh', () => {
   });
 
   it('bypasses the check when skip is true', () => {
-    const root = newFrontend();
-    buildDist(root);
-    setMtimeSecondsAgo(path.join(root, 'dist', 'index.html'), 100);
-    setMtimeSecondsAgo(path.join(root, 'src', 'app.ts'), 10); // stale
+    const root = staleFrontend();
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     expect(() => assertFrontendBuildFresh({ frontendRoot: root, skip: true })).not.toThrow();
-    expect(warn).toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Frontend build freshness check skipped'));
   });
 
   it('bypasses the check when SKIP_FRONTEND_BUILD_CHECK=1', () => {
-    const root = newFrontend();
-    buildDist(root);
-    setMtimeSecondsAgo(path.join(root, 'dist', 'index.html'), 100);
-    setMtimeSecondsAgo(path.join(root, 'src', 'app.ts'), 10); // stale
+    const root = staleFrontend();
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     process.env.SKIP_FRONTEND_BUILD_CHECK = '1';
     expect(() => assertFrontendBuildFresh({ frontendRoot: root })).not.toThrow();

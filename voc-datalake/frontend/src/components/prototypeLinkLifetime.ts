@@ -161,18 +161,6 @@ export function refreshDelayMs(expiresAt: number | null, now: number): number | 
 }
 
 /**
- * True once the link is past its deadline.
- *
- * Only reachable if the scheduled refresh could not run — a suspended machine, a
- * throttled background tab, or a refetch that failed — so it is a display concern
- * rather than a state to prevent: the label stops promising a window it cannot
- * honour, and the next focus refetch or timer fires replaces the URL.
- */
-export function isExpired(expiresAt: number | null, now: number): boolean {
-  return expiresAt != null && expiresAt <= now
-}
-
-/**
  * The deadline as a string for the viewer's locale.
  *
  * Two things this is careful about, both of which a bare `HH:mm` got wrong:

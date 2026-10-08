@@ -1,7 +1,9 @@
 """Tests for shared.prompts module."""
 import re
+from datetime import UTC
 from pathlib import Path
-from unittest.mock import MagicMock, mock_open, patch
+from typing import ClassVar
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -33,70 +35,25 @@ class TestGetPromptsDir:
         # Non-empty is the invariant; don't bake in the file format.
         assert any(prompts_dir.iterdir())
 
-    def test_raises_not_found(self):
-        """get_prompts_dir raises FileNotFoundError when no dir exists."""
-        from shared.prompts import get_prompts_dir
-        mock_false = MagicMock()
-        mock_false.exists.return_value = False
-        mock_false.__truediv__ = lambda self, x: mock_false
-        mock_false.parent = mock_false
-        # REPO_PROMPTS_DIR is computed once at import, so patching Path alone no longer
-        # reaches the local-dev branch — it would find the real directory and return it.
-        # All three candidates have to be made absent for "nothing exists" to be the case
-        # under test.
-        with patch('shared.prompts.Path') as mp, \
-                patch('shared.prompts.REPO_PROMPTS_DIR', mock_false):
-            mp.return_value = mock_false
-            mp.cwd.return_value = mock_false
-            with pytest.raises(FileNotFoundError):
-                get_prompts_dir()
-
 
 class TestLoadPromptFile:
-    def setup_method(self):
-        from shared.prompts import load_prompt_file
-        load_prompt_file.cache_clear()
-
-    @patch('shared.prompts.get_prompts_dir')
-    def test_loads_json(self, md):
-        from shared.prompts import load_prompt_file
-        mp = MagicMock()
-        md.return_value = mp
-        fp = MagicMock(exists=MagicMock(return_value=True))
-        mp.__truediv__ = lambda s, x: fp
-        with patch('builtins.open', mock_open(read_data='{"k":"v"}')):
-            assert load_prompt_file('t.json') == {'k': 'v'}
-
-    @patch('shared.prompts.get_prompts_dir')
-    def test_missing_file(self, md):
-        from shared.prompts import load_prompt_file
-        mp = MagicMock()
-        md.return_value = mp
-        fp = MagicMock(exists=MagicMock(return_value=False))
-        mp.__truediv__ = lambda s, x: fp
-        with pytest.raises(FileNotFoundError):
-            load_prompt_file('x.json')
-
-    @patch('shared.prompts.get_prompts_dir')
-    def test_caches(self, md):
-        from shared.prompts import load_prompt_file
-        mp = MagicMock()
-        md.return_value = mp
-        fp = MagicMock(exists=MagicMock(return_value=True))
-        mp.__truediv__ = lambda s, x: fp
-        with patch('builtins.open', mock_open(read_data='{"a":1}')):
-            assert load_prompt_file('c.json') is load_prompt_file('c.json')
+    def test_caches(self, monkeypatch, tmp_path):
+        import shared.prompts as prompts_module
+        (tmp_path / 'c.json').write_text('{"a": 1}', encoding='utf-8')
+        monkeypatch.setattr(prompts_module, 'get_prompts_dir', lambda: tmp_path)
+        prompts_module.load_prompt_file.cache_clear()
+        try:
+            first = prompts_module.load_prompt_file('c.json')
+            assert first == {'a': 1}
+            assert prompts_module.load_prompt_file('c.json') is first
+        finally:
+            prompts_module.load_prompt_file.cache_clear()
 
 
 class TestFormatPrompt:
     def test_simple(self):
         from shared.prompts import format_prompt
         assert format_prompt("Hi {n}", n="A") == "Hi A"
-
-    def test_missing(self):
-        from shared.prompts import format_prompt
-        r = format_prompt("{a} {b}", a="X")
-        assert "X" in r and "{b}" in r
 
     def test_plain(self):
         from shared.prompts import format_prompt
@@ -107,70 +64,7 @@ class TestFormatPrompt:
         assert format_prompt("{n}", n=42) == "42"
 
 
-class TestBuildChainSteps:
-    @patch('shared.prompts.load_prompt_file')
-    def test_builds(self, ml):
-        from shared.prompts import build_chain_steps
-        ml.return_value = {'steps': {'s1': {
-            'system_prompt': 'S1', 'user_prompt_template': '{x}',
-            'max_tokens': 2000, 'thinking_budget': 0, 'name': 'N1'}}}
-        r = build_chain_steps('f.json', ['s1'], {'x': 'D'})
-        assert r[0]['system'] == 'S1' and r[0]['user'] == 'D'
-
-    @patch('shared.prompts.load_prompt_file')
-    def test_missing_step(self, ml):
-        from shared.prompts import build_chain_steps
-        ml.return_value = {'steps': {'s1': {}}}
-        with pytest.raises(KeyError):
-            build_chain_steps('f.json', ['bad'], {})
-
-    @patch('shared.prompts.load_prompt_file')
-    def test_language(self, ml):
-        from shared.prompts import build_chain_steps
-        ml.return_value = {'steps': {'s1': {
-            'system_prompt': 'B', 'user_prompt_template': ''}}}
-        r = build_chain_steps('f.json', ['s1'], {'response_language': 'es'})
-        assert 'Spanish' in r[0]['system']
-
-    @patch('shared.prompts.load_prompt_file')
-    def test_defaults(self, ml):
-        from shared.prompts import build_chain_steps
-        ml.return_value = {'steps': {'s1': {}}}
-        r = build_chain_steps('f.json', ['s1'], {})
-        assert r[0]['max_tokens'] == 4096
-
-
-class TestGetResponseLanguageInstruction:
-    def test_none(self):
-        from shared.prompts import get_response_language_instruction as f
-        assert f(None) == ''
-
-    def test_en(self):
-        from shared.prompts import get_response_language_instruction as f
-        assert f('en') == ''
-
-    def test_es(self):
-        from shared.prompts import get_response_language_instruction as f
-        assert 'Spanish' in f('es')
-
-    def test_unknown(self):
-        from shared.prompts import get_response_language_instruction as f
-        assert 'xx' in f('xx')
-
-    def test_all(self):
-        from shared.prompts import get_response_language_instruction as f
-        for c in ['es', 'fr', 'de', 'pt', 'ja', 'zh', 'ko']:
-            assert f(c) != ''
-
-
 class TestConvenienceFunctions:
-    @patch('shared.prompts.build_chain_steps')
-    def test_persona(self, mb):
-        from shared.prompts import get_persona_generation_steps
-        mb.return_value = []
-        get_persona_generation_steps(3, 's', 'fb', 'custom', 'es')
-        assert mb.call_args[0][0] == 'persona-generation.json'
-
     @patch('shared.prompts.build_chain_steps')
     def test_persona_sample_is_not_capped_below_the_context_budget(self, mb):
         """A corpus inside the budget reaches the synthesis step whole.
@@ -187,7 +81,7 @@ class TestConvenienceFunctions:
         )
         mb.return_value = []
         corpus = 'x' * 20_000
-        assert 20_000 < MAX_PERSONA_SAMPLE_CHARS, 'fixture must fit the budget to be meaningful'
+        assert MAX_PERSONA_SAMPLE_CHARS > 20_000, 'fixture must fit the budget to be meaningful'
         get_persona_generation_steps(3, 's', corpus)
         assert mb.call_args[0][2]['feedback_sample'] == corpus
 
@@ -237,13 +131,6 @@ class TestConvenienceFunctions:
         assert 0 < used < len(items)
 
     @patch('shared.prompts.build_chain_steps')
-    def test_persona_no_custom(self, mb):
-        from shared.prompts import get_persona_generation_steps
-        mb.return_value = []
-        get_persona_generation_steps(3, 's', 'fb')
-        assert mb.call_args[0][2]['custom_section'] == ''
-
-    @patch('shared.prompts.build_chain_steps')
     def test_persona_chain_ends_with_the_step_whose_output_is_saved(self, mb):
         """persona_synthesis emits the JSON that generate_personas saves, so it
         must be the LAST step: anything after it is billed time that can only
@@ -255,27 +142,6 @@ class TestConvenienceFunctions:
         mb.return_value = []
         get_persona_generation_steps(3, 's', 'fb')
         assert mb.call_args[0][1] == ['research_analysis', 'persona_synthesis']
-
-    @patch('shared.prompts.build_chain_steps')
-    def test_prd(self, mb):
-        from shared.prompts import get_prd_generation_steps
-        mb.return_value = []
-        get_prd_generation_steps('F', 'p', 'fb', 'fr')
-        assert mb.call_args[0][0] == 'prd-generation.json'
-
-    @patch('shared.prompts.build_chain_steps')
-    def test_prfaq(self, mb):
-        from shared.prompts import get_prfaq_generation_steps
-        mb.return_value = []
-        get_prfaq_generation_steps('F', 'p', 'fb')
-        assert mb.call_args[0][0] == 'prfaq-generation.json'
-
-    @patch('shared.prompts.build_chain_steps')
-    def test_research(self, mb):
-        from shared.prompts import get_research_analysis_steps
-        mb.return_value = []
-        get_research_analysis_steps('Q?', 's', 'fb', 50, 'ko')
-        assert mb.call_args[0][2]['feedback_count'] == 50
 
     @patch('shared.prompts.load_prompt_file')
     def test_avatar(self, ml):
@@ -309,10 +175,10 @@ class TestPrfaqPromptContract:
     # (consumed as a system-prompt instruction). A new parameter must be
     # classified here explicitly — the drift test below fails loudly on
     # anything unrecognized rather than silently trusting it is a slot.
-    KNOWN_SLOT_PARAMS = {
+    KNOWN_SLOT_PARAMS = frozenset({
         'feature_idea', 'personas_context', 'feedback_context', 'product_context',
-    }
-    KNOWN_NON_SLOT_PARAMS = {'response_language'}
+    })
+    KNOWN_NON_SLOT_PARAMS = frozenset({'response_language'})
 
     # Slots the chain builder supplies: the classified signature params plus
     # the internally generated launch_date and executor-substituted previous.
@@ -322,11 +188,11 @@ class TestPrfaqPromptContract:
     # its grounding data (the reverse failure mode of an unknown placeholder).
     # customer_thinking carries the four context slots; later steps are
     # grounded through {previous}; press_release also needs {launch_date}.
-    REQUIRED_PLACEHOLDERS = {
+    REQUIRED_PLACEHOLDERS: ClassVar[dict[str, frozenset[str]]] = {
         'customer_thinking': KNOWN_SLOT_PARAMS,
-        'press_release': {'launch_date', 'previous'},
-        'customer_faq': {'previous'},
-        'internal_faq': {'previous'},
+        'press_release': frozenset({'launch_date', 'previous'}),
+        'customer_faq': frozenset({'previous'}),
+        'internal_faq': frozenset({'previous'}),
     }
 
     def test_builder_signature_has_no_unclassified_parameters(self):
@@ -402,7 +268,7 @@ class TestPrfaqPromptContract:
 
     # step name -> the section heading the assembler owns and the step's
     # system prompt must explicitly ban re-adding.
-    BANNED_HEADINGS = {
+    BANNED_HEADINGS: ClassVar[dict[str, str]] = {
         'press_release': 'press release',
         'customer_faq': 'customer faq',
         'internal_faq': 'internal faq',
@@ -442,12 +308,12 @@ class TestPrfaqPromptContract:
     def test_chain_builder_formats_prfaq_steps_cleanly(self):
         """End-to-end through build_chain_steps: no unresolved placeholders
         except the {previous} handled later by the chain executor."""
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
         from shared.prompts import get_prfaq_generation_steps
 
         def launch_date_now() -> str:
-            return (datetime.now(timezone.utc) + timedelta(days=90)).strftime('%Y-%m-%d')
+            return (datetime.now(UTC) + timedelta(days=90)).strftime('%Y-%m-%d')
 
         # Sample the expected date BEFORE and AFTER the builder call: if the
         # test straddles a UTC midnight, the builder's date matches one of

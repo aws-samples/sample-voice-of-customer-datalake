@@ -1,36 +1,15 @@
+import type { ComponentProps } from 'react'
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
+import { feedbackItem } from './categories-fixtures'
 import { FeedbackResults } from './FeedbackResults'
-import type { FeedbackItem } from '../../api/client'
-import type { RatingFilter, SentimentFilter, ViewMode } from './types'
+import type { FeedbackItem } from '../../api/types'
 
 const mockFeedback: FeedbackItem[] = [
-  {
-    feedback_id: '1',
-    source_platform: 'webscraper',
-    original_text: 'Great delivery service!',
-    sentiment_label: 'positive',
-    sentiment_score: 0.9,
-    category: 'delivery',
-    source_created_at: '2026-01-01T10:00:00Z',
-    rating: 5,
-    problem_summary: null,
-    brand_name: 'test',
-    urgency_level: 'low',
-    persona: null,
-    keywords: [],
-    root_cause_hypothesis: null,
-    suggested_response: null,
-    language: 'en',
-    translated_text: null,
-    source_url: null,
-    author_name: null,
-    author_location: null,
-    processed_at: '2026-01-01T10:00:00Z',
-  },
-  {
+  feedbackItem({ original_text: 'Great delivery service!' }),
+  feedbackItem({
     feedback_id: '2',
     source_platform: 'manual_import',
     original_text: 'Slow support response',
@@ -40,30 +19,19 @@ const mockFeedback: FeedbackItem[] = [
     source_created_at: '2026-01-02T10:00:00Z',
     rating: 2,
     problem_summary: 'Slow response',
-    brand_name: 'test',
-    urgency_level: 'high',
-    persona: null,
-    keywords: [],
-    root_cause_hypothesis: null,
-    suggested_response: null,
-    language: 'en',
-    translated_text: null,
-    source_url: null,
-    author_name: null,
-    author_location: null,
     processed_at: '2026-01-02T10:00:00Z',
-  },
+  }),
 ]
 
-const defaultProps = {
+const defaultProps: ComponentProps<typeof FeedbackResults> = {
   filteredFeedback: mockFeedback,
   feedbackLoading: false,
-  viewMode: 'grid' as ViewMode,
+  viewMode: 'grid',
   onViewModeChange: vi.fn(),
-  selectedSource: null as string | null,
+  selectedSource: null,
   selectedCategories: ['delivery'],
-  sentimentFilter: 'all' as SentimentFilter,
-  ratingFilter: { value: 0, direction: 'up' } as RatingFilter,
+  sentimentFilter: 'all',
+  ratingFilter: { value: 0, direction: 'up' },
   onExport: vi.fn(),
   totalCount: 2,
   isPartialWindow: false,
@@ -135,7 +103,7 @@ describe('FeedbackResults', () => {
       renderWithRouter(<FeedbackResults {...defaultProps} hasMore onLoadMore={onLoadMore} />)
 
       await user.click(screen.getByRole('button', { name: 'Load more' }))
-      expect(onLoadMore).toHaveBeenCalledOnce()
+      expect(onLoadMore).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'click' }))
     })
 
     it('hides the Load more button when everything is loaded', () => {
@@ -180,7 +148,8 @@ describe('FeedbackResults', () => {
     it('highlights active view mode button', () => {
       renderWithRouter(<FeedbackResults {...defaultProps} viewMode="grid" />)
       const gridButton = screen.getByRole('button', { name: /grid view/i })
-      expect(gridButton).toHaveClass('bg-white', 'shadow-sm')
+      expect(gridButton).toHaveClass('tab', 'tab-active')
+      expect(screen.getByRole('button', { name: /list view/i })).not.toHaveClass('tab-active')
     })
   })
 
@@ -202,7 +171,7 @@ describe('FeedbackResults', () => {
       renderWithRouter(<FeedbackResults {...defaultProps} onExport={onExport} />)
 
       await user.click(screen.getByRole('button', { name: 'Export as CSV' }))
-      expect(onExport).toHaveBeenCalled()
+      expect(onExport).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'click' }))
     })
   })
 

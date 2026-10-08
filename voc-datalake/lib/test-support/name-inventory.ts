@@ -8,6 +8,9 @@
  * the failure legible: a name-level diff instead of "the sha changed".
  */
 
+import { isRecord } from './guards';
+import { byCodeUnit } from '../utils/compare';
+
 /**
  * A physical-name-bearing property, spelled AS CLOUDFORMATION EMITS IT.
  *
@@ -27,6 +30,7 @@
  * unexamined.
  */
 const NAME_PROPERTIES = [
+  'AlarmName', // AWS::CloudWatch::Alarm
   'AliasName', // AWS::KMS::Alias
   'BucketName', // AWS::S3::Bucket
   'ClientName', // AWS::Cognito::UserPoolClient
@@ -38,6 +42,7 @@ const NAME_PROPERTIES = [
   'QueueName', // AWS::SQS::Queue
   'StateMachineName', // AWS::StepFunctions::StateMachine
   'TableName', // AWS::DynamoDB::Table
+  'TopicName', // AWS::SNS::Topic
   'UsagePlanName', // AWS::ApiGateway::UsagePlan
   'UserPoolName', // AWS::Cognito::UserPool
 ] as const;
@@ -53,17 +58,13 @@ export interface NameInventory {
   environmentNames: string[];
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 /**
  * Render a template value that may be an `Fn::Join` of literals and tokens
  * (which is how CDK emits `${base}-${Aws.ACCOUNT_ID}-${Aws.REGION}`) into a
  * comparable string. Tokens become `<AWS::AccountId>` / `<AWS::Region>` so the
  * literal part — the part naming carries — is what gets compared.
  */
-export function renderName(value: unknown): string | undefined {
+function renderName(value: unknown): string | undefined {
   if (typeof value === 'string') return value;
   if (!isRecord(value)) return undefined;
   const join = value['Fn::Join'];
@@ -81,6 +82,20 @@ export function renderName(value: unknown): string | undefined {
   return undefined;
 }
 
+/** `value` rendered as a name, when that name is a VoC one; otherwise `undefined`. */
+function vocName(value: unknown): string | undefined {
+  const rendered = renderName(value);
+  return rendered?.includes('voc') ? rendered : undefined;
+}
+
+/** Add each VoC name among a statement's `Resource` (a single value or a list). */
+function addResourceNames(resource: unknown, into: Set<string>): void {
+  for (const entry of Array.isArray(resource) ? resource : [resource]) {
+    const name = vocName(entry);
+    if (name !== undefined) into.add(name);
+  }
+}
+
 /** Collect every `Resource` string reachable from a policy document. */
 function collectPolicyResources(node: unknown, into: Set<string>): void {
   if (Array.isArray(node)) {
@@ -89,59 +104,69 @@ function collectPolicyResources(node: unknown, into: Set<string>): void {
   }
   if (!isRecord(node)) return;
   for (const [key, value] of Object.entries(node)) {
-    if (key === 'Resource') {
-      const values = Array.isArray(value) ? value : [value];
-      for (const entry of values) {
-        const rendered = renderName(entry);
-        if (rendered && rendered.includes('voc')) into.add(rendered);
-      }
-    }
+    if (key === 'Resource') addResourceNames(value, into);
     collectPolicyResources(value, into);
   }
 }
 
-export function nameInventory(template: Record<string, unknown>): NameInventory {
-  const physicalNames = new Set<string>();
-  const exportNames = new Set<string>();
-  const policyResources = new Set<string>();
-  const environmentNames = new Set<string>();
+/** A resource's Lambda-style `Environment.Variables`, or `{}`. */
+function environmentVariables(props: Record<string, unknown>): Record<string, unknown> {
+  const environment = isRecord(props.Environment) ? props.Environment : undefined;
+  return environment && isRecord(environment.Variables) ? environment.Variables : {};
+}
 
+/** Every rendered `Export.Name` among the template's outputs. */
+function exportedNames(template: Record<string, unknown>): Set<string> {
+  const names = new Set<string>();
+  const outputs = isRecord(template.Outputs) ? template.Outputs : {};
+  for (const output of Object.values(outputs)) {
+    const exported = isRecord(output) && isRecord(output.Export) ? renderName(output.Export.Name) : undefined;
+    if (exported) names.add(exported);
+  }
+  return names;
+}
+
+/** Each resource of a template as its `Type` (`?` when missing) and `Properties` (`{}` when missing). */
+function* templateResources(
+  template: Record<string, unknown>,
+): Generator<{ type: string; props: Record<string, unknown> }> {
   const resources = isRecord(template.Resources) ? template.Resources : {};
   for (const resource of Object.values(resources)) {
     if (!isRecord(resource)) continue;
     const type = typeof resource.Type === 'string' ? resource.Type : '?';
     const props = isRecord(resource.Properties) ? resource.Properties : {};
+    yield { type, props };
+  }
+}
+
+export function nameInventory(template: Record<string, unknown>): NameInventory {
+  const physicalNames = new Set<string>();
+  const policyResources = new Set<string>();
+  const environmentNames = new Set<string>();
+
+  for (const { type, props } of templateResources(template)) {
 
     for (const property of NAME_PROPERTIES) {
-      const rendered = renderName(props[property]);
-      if (rendered && rendered.includes('voc')) physicalNames.add(`${type} ${property} = ${rendered}`);
+      const name = vocName(props[property]);
+      if (name !== undefined) physicalNames.add(`${type} ${property} = ${name}`);
     }
 
     // Cognito nests the hosted-UI domain prefix, and DynamoDB/Lambda nest
     // nothing — but the environment block is where resolved names reach
     // runtime code, which is exactly where a missed prefix goes unnoticed.
-    const environment = isRecord(props.Environment) ? props.Environment : undefined;
-    const variables = environment && isRecord(environment.Variables) ? environment.Variables : {};
-    for (const [key, value] of Object.entries(variables)) {
-      const rendered = renderName(value);
-      if (rendered && rendered.includes('voc')) environmentNames.add(`${key} = ${rendered}`);
+    for (const [key, value] of Object.entries(environmentVariables(props))) {
+      const name = vocName(value);
+      if (name !== undefined) environmentNames.add(`${key} = ${name}`);
     }
 
     collectPolicyResources(props.PolicyDocument, policyResources);
     collectPolicyResources(props.Policies, policyResources);
   }
 
-  const outputs = isRecord(template.Outputs) ? template.Outputs : {};
-  for (const output of Object.values(outputs)) {
-    if (!isRecord(output)) continue;
-    const exported = isRecord(output.Export) ? renderName(output.Export.Name) : undefined;
-    if (exported) exportNames.add(exported);
-  }
-
-  const sorted = (values: Set<string>): string[] => [...values].sort();
+  const sorted = (values: Set<string>): string[] => [...values].sort(byCodeUnit);
   return {
     physicalNames: sorted(physicalNames),
-    exportNames: sorted(exportNames),
+    exportNames: sorted(exportedNames(template)),
     policyResources: sorted(policyResources),
     environmentNames: sorted(environmentNames),
   };
@@ -176,16 +201,12 @@ export function unlistedNameProperties(
 ): string[] {
   const listed: readonly string[] = [...NAME_PROPERTIES, ...exempt];
   const unlisted = new Set<string>();
-  const resources = isRecord(template.Resources) ? template.Resources : {};
-  for (const resource of Object.values(resources)) {
-    if (!isRecord(resource)) continue;
-    const type = typeof resource.Type === 'string' ? resource.Type : '?';
-    const props = isRecord(resource.Properties) ? resource.Properties : {};
+  for (const { type, props } of templateResources(template)) {
     for (const [property, value] of Object.entries(props)) {
       if (listed.includes(property)) continue;
       const rendered = renderName(value);
-      if (rendered && rendered.includes('voc')) unlisted.add(`${type} ${property} = ${rendered}`);
+      if (rendered?.includes('voc')) unlisted.add(`${type} ${property} = ${rendered}`);
     }
   }
-  return [...unlisted].sort();
+  return [...unlisted].sort(byCodeUnit);
 }

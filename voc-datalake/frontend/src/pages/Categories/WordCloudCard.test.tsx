@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { WordCloudCard } from './WordCloudCard'
+import { keywordFontPx } from './keywordSize'
 import type { WordCloudItem } from './types'
 
 const mockWords: WordCloudItem[] = [
@@ -47,14 +48,14 @@ describe('WordCloudCard', () => {
     render(<WordCloudCard {...defaultProps} searchText="delivery" />)
 
     const deliveryButton = screen.getByText('delivery')
-    expect(deliveryButton).toHaveClass('bg-blue-600', 'text-white')
+    expect(deliveryButton).toHaveClass('bg-accent', 'text-accent-fg')
   })
 
   it('does not highlight keywords when the search text differs', () => {
     render(<WordCloudCard {...defaultProps} searchText="something else" />)
 
     const deliveryButton = screen.getByText('delivery')
-    expect(deliveryButton).not.toHaveClass('bg-blue-600')
+    expect(deliveryButton).not.toHaveClass('bg-accent')
   })
 
   it('shows empty state when no keywords', () => {
@@ -72,5 +73,27 @@ describe('WordCloudCard', () => {
     const deliverySize = parseFloat(deliveryButton.style.fontSize)
     const supportSize = parseFloat(supportButton.style.fontSize)
     expect(deliverySize).toBeGreaterThan(supportSize)
+  })
+})
+
+// Design audit D-TYPE: the rarest keywords rendered at 10.4px, between scale steps.
+describe('keywordFontPx', () => {
+  const TYPE_SCALE = [12, 13, 14, 16, 18, 20]
+
+  it.each([[1, 1000], [0, 10], [5, 10], [10, 10], [37, 50]])('count %i of %i lands on the type scale, never below 12px', (count, max) => {
+    const px = keywordFontPx(count, max)
+    expect(TYPE_SCALE).toContain(px)
+    expect(px).toBeGreaterThanOrEqual(12)
+  })
+
+  it('the top keyword is the largest step and size grows with count', () => {
+    expect(keywordFontPx(50, 50)).toBe(20)
+    expect(keywordFontPx(20, 50)).toBeLessThan(keywordFontPx(50, 50))
+  })
+
+  it('renders every keyword button at a pixel size from the scale', () => {
+    render(<WordCloudCard {...defaultProps} wordCloudData={[{ word: 'rare', count: 1 }, { word: 'common', count: 1000 }]} />)
+    expect(screen.getByRole('button', { name: 'rare' }).style.fontSize).toBe('12px')
+    expect(screen.getByRole('button', { name: 'common' }).style.fontSize).toBe('20px')
   })
 })

@@ -4,11 +4,11 @@
  *
  * Its own module rather than more surface on `client.ts`, following the
  * `projectsApi` precedent — and for one reason specific to this feature: the two
- * PUBLIC calls cannot go through `fetchApi`. That helper throws
- * `API Error: <status>` and discards the response body, which is exactly the
- * information the ballot page exists to show: "this session is closed", "it has
- * expired", "the room is full". A phone that has just scanned a QR needs the
- * reason in words, so these two read the body and return it.
+ * PUBLIC calls cannot go through `fetchApi`. That helper attaches an auth header
+ * and refreshes a session on 401, and surfaces only the body's `message`; the
+ * ballot page needs the whole refusal body ("this session is closed", "it has
+ * expired", "the room is full") on a phone that has no session at all, so these
+ * two read the body and return it.
  *
  * The facilitator's three calls DO go through `fetchApi`, because they are
  * ordinary authenticated requests that want its 401 refresh-and-retry.
@@ -29,17 +29,17 @@ import { fetchApi } from './client'
  * (`ballots_handler.py`), and the page maps each to its own translated sentence —
  * so a new reason arrives as `unknown` rather than as a blank screen.
  */
-export const BALLOT_REFUSAL_REASONS = [
+const BALLOT_REFUSAL_REASONS = [
   'not_found', 'closed', 'expired', 'cap_reached', 'invalid',
 ] as const
 
-export type BallotRefusalReason = typeof BALLOT_REFUSAL_REASONS[number]
+type BallotRefusalReason = typeof BALLOT_REFUSAL_REASONS[number]
 
 /** Anything else that stopped the submission — a network fault, a 500, a shape
  *  this client cannot read. Distinct from the four above because it is not a
  *  statement about the session, and the page says "try again" rather than
  *  explaining a state. */
-export const BALLOT_REFUSAL_UNKNOWN = 'unknown'
+const BALLOT_REFUSAL_UNKNOWN = 'unknown'
 
 export type BallotFailure = BallotRefusalReason | typeof BALLOT_REFUSAL_UNKNOWN
 

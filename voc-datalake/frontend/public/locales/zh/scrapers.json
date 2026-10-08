@@ -8,13 +8,15 @@
     "never": "从未",
     "notConfigured": "未配置",
     "runNow": "立即运行",
-    "urls": "URL"
+    "urls": "URL",
+    "active": "已启用",
+    "paused": "已暂停"
   },
   "configureApiFirst": "请先配置API端点",
   "csvUpload": {
     "cancel": "取消",
-    "defaultSourceHint": "用于没有 \"source\" 列的行。",
-    "defaultSourceLabel": "默认来源标签",
+    "defaultSourceHint": "用于没有渠道列的行。",
+    "defaultSourceLabel": "默认渠道",
     "done": "完成",
     "downloadTemplate": "下载模板",
     "dropZone": "将 .csv 文件拖放到此处，或点击选择",
@@ -30,7 +32,33 @@
     "title": "CSV 上传",
     "upload": "上传",
     "uploading": "上传中…",
-    "warningsHeader": "警告"
+    "warningsHeader": "警告",
+    "errorNoHeader": "文件没有标题行。",
+    "errorUnreadable": "无法读取文件。",
+    "uploadFailed": "上传失败",
+    "mapping": {
+      "title": "列映射",
+      "hint": "根据标题行建议。无法识别的列会保留为元数据,除非选择“忽略”,否则不会丢弃。",
+      "columnLabel": "{{header}} 的映射目标",
+      "dimensionTarget": "维度:{{name}}",
+      "targets": {
+        "text": "反馈文本",
+        "id": "行 ID",
+        "rating": "评分",
+        "date": "日期",
+        "author": "作者",
+        "title": "标题",
+        "url": "链接",
+        "channel": "渠道",
+        "tags": "标签",
+        "metadata": "保留为元数据",
+        "ignore": "忽略"
+      },
+      "problems": {
+        "noText": "请将一列映射到“反馈文本”。",
+        "twice": "{{target}} 被分配给了多个列。"
+      }
+    }
   },
   "deleteConfirmLabel": "删除",
   "deleteConfirmMessage": "确定要删除此抓取器吗？此操作无法撤销。",
@@ -67,6 +95,7 @@
     "rating": "评分",
     "reviewContainer": "评论容器 *",
     "save": "保存抓取器",
+    "saveFailed": "无法保存抓取器，请重试。",
     "scraperName": "抓取器名称",
     "scraperNamePlaceholder": "我的评论抓取器",
     "selectorsAutoDetected": "这些选择器已自动检测。如需要请调整。",
@@ -147,8 +176,13 @@
     "sourceUrl": "来源URL",
     "sourceUrlPlaceholder": "https://example.com/reviews",
     "title": "手动导入",
-    "unparsedSections_one": "⚠️ {{count}}个部分无法解析",
-    "unparsedSections_other": "⚠️ {{count}}个部分无法解析"
+    "unparsedSections_one": "{{count}}个部分无法解析",
+    "unparsedSections_other": "{{count}}个部分无法解析",
+    "datesRequired_one": "导入前，{{count}} 条评论需要填写日期。",
+    "datesRequired_other": "导入前，{{count}} 条评论需要填写日期。",
+    "datesDefaulted_one": "{{count}} 条评论的文本中没有日期，已使用今天的导入日期。您可以在下方修改。",
+    "datesDefaulted_other": "{{count}} 条评论的文本中没有日期，已使用今天的导入日期。您可以在下方修改。",
+    "importFailed": "无法导入评论"
   },
   "newSource": "新建源",
   "parsedReview": {
@@ -158,7 +192,9 @@
     "star_one": "{{count}}星",
     "star_other": "{{count}}星",
     "textPlaceholder": "评论文本",
-    "titlePlaceholder": "评论标题（可选）"
+    "titlePlaceholder": "评论标题（可选）",
+    "dateLabel": "评论日期（必填）",
+    "dateDefaulted": "未找到日期：已设为导入日期"
   },
   "pluginConfig": {
     "automaticSchedule": "自动计划",
@@ -174,7 +210,9 @@
     "scheduleDescription": "按配置的计划运行此源",
     "select": "选择...",
     "show": "显示",
-    "test": "测试"
+    "test": "测试",
+    "configuredInSettings": "此数据源在设置中通过其凭据进行配置。",
+    "openDataSourceSettings": "打开数据源设置"
   },
   "refresh": "刷新",
   "status": {
@@ -210,5 +248,20 @@
     "title": "添加数据源",
     "webScraperTemplates": "网页抓取器模板"
   },
-  "title": "数据源"
+  "title": "数据源",
+  "loading": "正在加载数据源…",
+  "appCard": {
+    "platform": "平台",
+    "maxReviews": "最大评论数",
+    "unnamed": "未命名应用",
+    "loading": "正在加载应用配置…",
+    "deleteConfirmTitle": "删除应用",
+    "deleteConfirmMessage": "确定要移除此应用配置吗？",
+    "editApp": "编辑应用",
+    "addNewApp": "添加新应用",
+    "addApp": "添加应用",
+    "configuredApps": "已配置的应用",
+    "noApps": "尚未配置任何应用",
+    "addFirstApp": "添加第一个应用"
+  }
 }

@@ -6,8 +6,15 @@
 import { useQuery } from '@tanstack/react-query'
 import { api, getDateRangeParams } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
+import { normalizeBuckets, normalizeS3Listing } from './dataExplorerSchema'
+import { failedReads } from '../../utils/failedReads'
 
 type ViewMode = 's3-raw' | 'dynamodb-processed'
+
+// Wire-boundary normalization (dataExplorerSchema.ts): components never trust a
+// response to match its declared type. Module-level so `select` keeps a stable
+// identity — TanStack Query then runs it once per response, not once per render.
+const selectBuckets = (raw: unknown) => ({ buckets: normalizeBuckets(raw) })
 
 export function useDataExplorerQueries(
   viewMode: ViewMode,
@@ -22,12 +29,14 @@ export function useDataExplorerQueries(
   const bucketsQuery = useQuery({
     queryKey: ['data-explorer-buckets'],
     queryFn: () => api.getDataExplorerBuckets(),
+    select: selectBuckets,
     enabled: isConfigured,
   })
 
   const s3Query = useQuery({
     queryKey: ['data-explorer-s3', selectedBucket, s3Path.join('/')],
     queryFn: () => api.getDataExplorerS3(s3Path.join('/'), selectedBucket),
+    select: normalizeS3Listing,
     enabled: isConfigured && viewMode === 's3-raw',
   })
 
@@ -44,8 +53,8 @@ export function useDataExplorerQueries(
   })
 
   const refetch = () => {
-    if (viewMode === 's3-raw') s3Query.refetch()
-    else feedbackQuery.refetch()
+    if (viewMode === 's3-raw') void s3Query.refetch()
+    else void feedbackQuery.refetch()
   }
 
   return {
@@ -55,6 +64,9 @@ export function useDataExplorerQueries(
     s3Loading: s3Query.isLoading,
     feedbackData: feedbackQuery.data,
     feedbackLoading: feedbackQuery.isLoading,
+    // Per view, so a failed listing is told apart from an empty folder / no feedback.
+    s3Failure: failedReads([s3Query]),
+    feedbackFailure: failedReads([feedbackQuery]),
     sourcesData: sourcesQuery.data,
     refetch,
   }

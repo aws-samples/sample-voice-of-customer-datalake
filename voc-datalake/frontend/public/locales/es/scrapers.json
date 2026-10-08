@@ -8,13 +8,15 @@
     "never": "Nunca",
     "notConfigured": "No configurado",
     "runNow": "Ejecutar ahora",
-    "urls": "URL"
+    "urls": "URL",
+    "active": "Activo",
+    "paused": "En pausa"
   },
   "configureApiFirst": "Configure primero el endpoint de la API",
   "csvUpload": {
     "cancel": "Cancelar",
-    "defaultSourceHint": "Se usa para las filas que no tienen columna \"source\".",
-    "defaultSourceLabel": "Etiqueta de origen predeterminada",
+    "defaultSourceHint": "Se usa en las filas sin columna de canal.",
+    "defaultSourceLabel": "Canal predeterminado",
     "done": "Listo",
     "downloadTemplate": "Descargar plantilla",
     "dropZone": "Suelta un archivo .csv aquí o haz clic para elegir",
@@ -31,7 +33,33 @@
     "title": "Carga de CSV",
     "upload": "Subir",
     "uploading": "Subiendo…",
-    "warningsHeader": "Advertencias"
+    "warningsHeader": "Advertencias",
+    "errorNoHeader": "El archivo no tiene fila de encabezado.",
+    "errorUnreadable": "No se pudo leer el archivo.",
+    "uploadFailed": "Error al subir",
+    "mapping": {
+      "title": "Asignación de columnas",
+      "hint": "Sugerido a partir del encabezado. Las columnas no reconocidas se guardan como metadatos; solo se descarta lo que marque como Ignorar.",
+      "columnLabel": "Destino de {{header}}",
+      "dimensionTarget": "Dimensión: {{name}}",
+      "targets": {
+        "text": "Texto de la opinión",
+        "id": "Id de fila",
+        "rating": "Valoración",
+        "date": "Fecha",
+        "author": "Autor",
+        "title": "Título",
+        "url": "Enlace",
+        "channel": "Canal",
+        "tags": "Etiquetas",
+        "metadata": "Guardar como metadatos",
+        "ignore": "Ignorar"
+      },
+      "problems": {
+        "noText": "Asigne una columna a Texto de la opinión.",
+        "twice": "{{target}} está asignado a más de una columna."
+      }
+    }
   },
   "deleteConfirmLabel": "Eliminar",
   "deleteConfirmMessage": "¿Está seguro de que desea eliminar este scraper? Esta acción no se puede deshacer.",
@@ -69,6 +97,7 @@
     "rating": "Calificación",
     "reviewContainer": "Contenedor de reseña *",
     "save": "Guardar scraper",
+    "saveFailed": "No se pudo guardar el scraper. Inténtalo de nuevo.",
     "scraperName": "Nombre del scraper",
     "scraperNamePlaceholder": "Mi scraper de reseñas",
     "selectorsAutoDetected": "Estos selectores fueron auto-detectados. Ajústelos si es necesario.",
@@ -156,9 +185,14 @@
     "sourceUrl": "URL de origen",
     "sourceUrlPlaceholder": "https://ejemplo.com/resenas",
     "title": "Importación manual",
-    "unparsedSections_one": "⚠️ {{count}} sección no pudo ser analizada",
-    "unparsedSections_many": "⚠️ {{count}} secciones no pudieron ser analizadas",
-    "unparsedSections_other": "⚠️ {{count}} secciones no pudieron ser analizadas"
+    "unparsedSections_one": "{{count}} sección no pudo ser analizada",
+    "unparsedSections_many": "{{count}} secciones no pudieron ser analizadas",
+    "unparsedSections_other": "{{count}} secciones no pudieron ser analizadas",
+    "datesRequired_one": "{{count}} reseña necesita una fecha antes de poder importar.",
+    "datesRequired_other": "{{count}} reseñas necesitan una fecha antes de poder importar.",
+    "datesDefaulted_one": "{{count}} reseña no tenía fecha en el texto, así que usa la fecha de importación de hoy. Puedes cambiarla abajo.",
+    "datesDefaulted_other": "{{count}} reseñas no tenían fecha en el texto, así que usan la fecha de importación de hoy. Puedes cambiarlas abajo.",
+    "importFailed": "No se pudieron importar las reseñas"
   },
   "newSource": "Nueva fuente",
   "parsedReview": {
@@ -169,7 +203,9 @@
     "star_many": "{{count}} estrellas",
     "star_other": "{{count}} estrellas",
     "textPlaceholder": "Texto de la reseña",
-    "titlePlaceholder": "Título de la reseña (opcional)"
+    "titlePlaceholder": "Título de la reseña (opcional)",
+    "dateLabel": "Fecha de la reseña (obligatoria)",
+    "dateDefaulted": "Sin fecha: se usa la fecha de importación"
   },
   "pluginConfig": {
     "automaticSchedule": "Programación automática",
@@ -185,7 +221,9 @@
     "scheduleDescription": "Ejecutar esta fuente según su programación configurada",
     "select": "Seleccionar...",
     "show": "Mostrar",
-    "test": "Probar"
+    "test": "Probar",
+    "configuredInSettings": "Esta fuente se configura con sus credenciales en Configuración.",
+    "openDataSourceSettings": "Abrir la configuración de fuentes de datos"
   },
   "refresh": "Actualizar",
   "status": {
@@ -222,5 +260,20 @@
     "title": "Agregar fuente de datos",
     "webScraperTemplates": "Plantillas de web scraper"
   },
-  "title": "Fuentes de datos"
+  "title": "Fuentes de datos",
+  "loading": "Cargando fuentes de datos…",
+  "appCard": {
+    "platform": "Plataforma",
+    "maxReviews": "Reseñas máx.",
+    "unnamed": "App sin nombre",
+    "loading": "Cargando configuraciones de apps…",
+    "deleteConfirmTitle": "Eliminar app",
+    "deleteConfirmMessage": "¿Seguro que quieres eliminar esta configuración de app?",
+    "editApp": "Editar app",
+    "addNewApp": "Añadir nueva app",
+    "addApp": "Añadir app",
+    "configuredApps": "Apps configuradas",
+    "noApps": "Aún no hay apps configuradas",
+    "addFirstApp": "Añade tu primera app"
+  }
 }

@@ -48,15 +48,22 @@ WHY NO NEW PIP DEPENDENCY
     option either — it was removed from the standard library in Python 3.13 and
     this function runs on python3.14.
 """
+from __future__ import annotations
+
 import json
 import logging
 import os
 import re
 import struct
 import sys
+import time
+from typing import TYPE_CHECKING
 from urllib.parse import unquote_plus
 
 import boto3
+
+if TYPE_CHECKING:
+    from mypy_boto3_bedrock_runtime.literals import ImageFormatType
 
 # ── Structured logging (stdlib only, see the module docstring) ───────────────
 # Every other Lambda in this app emits powertools JSON. This one cannot import
@@ -83,11 +90,11 @@ _log_context: dict = {}
 #: Attribute names logging puts on a record itself, so that everything ELSE in
 #: `record.__dict__` can be treated as a caller's `extra=`. Taken from a real
 #: LogRecord rather than typed out: a name added by a future Python version would
-#: otherwise start appearing in the JSON as if it were an extra. `message` and
-#: `asctime` are added by Formatter.format and are not present on a fresh record.
-_RECORD_ATTRS = frozenset(
-    logging.LogRecord('', 0, '', 0, '', (), None).__dict__
-) | {'asctime', 'message'}
+#: otherwise start appearing in the JSON as if it were an extra. `asctime` is
+#: added by another handler's Formatter.format and is not present on a fresh
+#: record. (`message` is added the same way, but JsonFormatter writes that key
+#: itself first, so the `setdefault` merge already keeps the record's copy out.)
+_RECORD_ATTRS = frozenset(logging.makeLogRecord({}).__dict__) | {'asctime'}
 
 
 def _stringify(value: object) -> str:
@@ -151,8 +158,10 @@ class JsonFormatter(logging.Formatter):
 
 def _log_level() -> int:
     """The configured level, defaulting to INFO — the app-wide convention."""
-    name = (os.environ.get('LOG_LEVEL') or '').strip().upper()
-    return logging.getLevelNamesMapping().get(name, logging.INFO)
+    name = os.environ.get('LOG_LEVEL')
+    if not name:
+        return logging.INFO
+    return logging.getLevelNamesMapping().get(name.strip().upper(), logging.INFO)
 
 
 #: The name given to the handler this module installs, so that a SECOND import
@@ -262,7 +271,7 @@ TEXT_CONTENT_TYPES = frozenset({'text/markdown', 'text/plain'})
 # the S3 key for an image/jpeg ends `.jpg`, but Converse only accepts `jpeg` and
 # answers a bare 400 ValidationException for `jpg`. Sending the extension here is
 # a silent, uninformative failure, so the mapping is explicit.
-CONVERSE_IMAGE_FORMATS = {
+CONVERSE_IMAGE_FORMATS: dict[str, ImageFormatType] = {
     'image/png': 'png',
     'image/jpeg': 'jpeg',
     'image/gif': 'gif',
@@ -367,14 +376,43 @@ def _s3():
     return _clients['s3']
 
 
+# EU inference scope (docs/eu-deployment.md). Mirrors
+# shared/model_config.py::invocation_model_id, which this Lambda cannot import
+# (see the module docstring); test_inference_scope_lockstep.py pins the two.
+# Stored and allowlisted ids stay canonical `global.`; only the id on the wire
+# becomes `eu.` when the stack sets BEDROCK_INFERENCE_SCOPE=eu, because an EU
+# deployment is granted ONLY the `eu.` profiles.
+_GLOBAL_MODEL_PREFIX = 'global.'
+_SCOPE_MODEL_PREFIXES = {'eu': 'eu.'}
+
+
+def _invocation_model_id(model_id: str) -> str:
+    """``global.x`` -> ``eu.x`` under BEDROCK_INFERENCE_SCOPE=eu; anything else unchanged (idempotent)."""
+    scope = os.environ.get('BEDROCK_INFERENCE_SCOPE', '').strip().lower()
+    prefix = _SCOPE_MODEL_PREFIXES.get(scope)
+    if prefix is None or not model_id.startswith(_GLOBAL_MODEL_PREFIX):
+        return model_id
+    return prefix + model_id[len(_GLOBAL_MODEL_PREFIX):]
+
+
+def _scope_model_id_param(params: dict, **_kwargs: object) -> None:
+    """botocore ``provide-client-params`` hook (fires before validation): map ``modelId`` in place."""
+    model_id = params.get('modelId')
+    if isinstance(model_id, str):
+        params['modelId'] = _invocation_model_id(model_id)
+
+
 def _bedrock():
     if 'bedrock' not in _clients:
         from botocore.config import Config
-        _clients['bedrock'] = boto3.client('bedrock-runtime', config=Config(
+        client = boto3.client('bedrock-runtime', config=Config(
             read_timeout=BEDROCK_READ_TIMEOUT_SECONDS,
             connect_timeout=BEDROCK_CONNECT_TIMEOUT_SECONDS,
             retries={'max_attempts': BEDROCK_MAX_ATTEMPTS, 'mode': 'standard'},
         ))
+        client.meta.events.register('provide-client-params.bedrock-runtime', _scope_model_id_param,
+                                    unique_id='voc-inference-scope')
+        _clients['bedrock'] = client
     return _clients['bedrock']
 
 
@@ -532,8 +570,8 @@ def _jpeg_dimensions(data: bytes) -> tuple[int, int] | None:
         segment_length = struct.unpack('>H', data[i + 2:i + 4])[0]
         if segment_length < 2:
             return None
-        # SOF0..SOF15, excluding DHT (C4), JPG (C8) and DAC (CC).
-        if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+        # SOF0..SOF15 (the 0xCn row), excluding DHT (C4), JPG (C8) and DAC (CC).
+        if marker >> 4 == 0xC and marker not in (0xC4, 0xC8, 0xCC):
             height, width = struct.unpack('>HH', data[i + 5:i + 9])
             return width, height
         i += 2 + segment_length
@@ -567,6 +605,8 @@ def _get_doc(project_id: str, doc_id: str) -> dict | None:
         return None
 
 
+# jscpd:ignore-start — deliberate copy of shared/aws.py::is_conditional_check_failure:
+# this Lambda is stdlib+boto3 only and cannot import shared/ (module docstring)
 def _is_conditional_check_failure(error: Exception) -> bool:
     """True for DynamoDB's ConditionalCheckFailedException, however it arrives.
 
@@ -584,6 +624,7 @@ def _is_conditional_check_failure(error: Exception) -> bool:
     code = (response.get('Error') or {}).get('Code') if isinstance(response, dict) else None
     return (code == 'ConditionalCheckFailedException'
             or type(error).__name__ == 'ConditionalCheckFailedException')
+# jscpd:ignore-end of the accepted pair
 
 
 def _log_refused_write(project_id: str, doc_id: str, values: dict) -> None:
@@ -659,19 +700,19 @@ def _update_doc(project_id: str, doc_id: str, values: dict) -> None:
     names = {f'#k{i}': k for i, k in enumerate(values)}
     vals = {f':v{i}': v for i, v in enumerate(values.values())}
     expression = 'SET ' + ', '.join(f'#k{i} = :v{i}' for i in range(len(values)))
-    status_placeholders = [f':s{i}' for i in range(len(NON_TERMINAL_STATUSES))]
+    status_values = {f':s{i}': s for i, s in enumerate(NON_TERMINAL_STATUSES)}
     try:
         _table(PROJECTS_TABLE).update_item(
             Key={'pk': f'PROJECT#{project_id}', 'sk': f'{DOC_SK_PREFIX}{doc_id}'},
             UpdateExpression=expression,
             ConditionExpression=(
                 'attribute_exists(pk) AND #doc_status IN '
-                f'({", ".join(status_placeholders)})'
+                f'({", ".join(status_values)})'
             ),
             ExpressionAttributeNames={**names, '#doc_status': 'status'},
             ExpressionAttributeValues={
                 **vals,
-                **dict(zip(status_placeholders, NON_TERMINAL_STATUSES)),
+                **status_values,
             },
         )
     except Exception as e:  # noqa: BLE001 - a bookkeeping write must not fail the batch
@@ -735,7 +776,9 @@ def _int_env(name: str) -> int | None:
     value is a deploy bug, and the image branch refuses the document rather than
     silently extracting without a cap.
     """
-    raw = os.environ.get(name, '')
+    raw = os.environ.get(name)
+    if raw is None:
+        return None
     try:
         value = int(raw)
     except ValueError:
@@ -786,7 +829,7 @@ def _extract_image(bucket: str, key: str, content_type: str, actual_size: int) -
         raise _ExtractionError('This file is not a readable image.')
 
     declared = CONVERSE_IMAGE_FORMATS.get(content_type)
-    if declared != detected:
+    if declared is None or declared != detected:
         raise _ExtractionError(f'This file is not a valid {content_type} image.')
 
     if detected == 'jpeg':
@@ -829,11 +872,20 @@ def _extract_image(bucket: str, key: str, content_type: str, actual_size: int) -
         inferenceConfig={'maxTokens': MAX_DESCRIPTION_TOKENS},
     )
     blocks = response.get('output', {}).get('message', {}).get('content', []) or []
-    text = '\n'.join(b['text'] for b in blocks if isinstance(b, dict) and b.get('text'))
+    text = '\n'.join(t for b in blocks if isinstance(b, dict) and (t := b.get('text')))
     return text, text.encode('utf-8')
 
 
 # ── Per-record processing ───────────────────────────────────────────────────
+
+def _extract_by_type(bucket: str, key: str, content_type: str, obj: dict) -> tuple[str, bytes]:
+    """Dispatch on the upload's content type; ``_ExtractionError`` for any other."""
+    if content_type in TEXT_CONTENT_TYPES:
+        return _extract_text(bucket, key)
+    if content_type in CONVERSE_IMAGE_FORMATS:
+        return _extract_image(bucket, key, content_type, int(obj.get('size') or 0))
+    raise _ExtractionError('This file type cannot be processed.')
+
 
 def _process_record(record: dict) -> None:
     """Read one S3 notification, then extract that document under its log context.
@@ -849,7 +901,7 @@ def _process_record(record: dict) -> None:
     # `%20`, and a raw key would then miss both the pattern and the object.
     key = unquote_plus(obj.get('key') or '')
 
-    match = RAW_KEY_PATTERN.match(key)
+    match = RAW_KEY_PATTERN.fullmatch(key)
     if not match:
         logger.info(f'Ignoring {key or "(no key)"} - not a product-doc upload')
         return
@@ -892,15 +944,10 @@ def _extract_document(project_id: str, doc_id: str, bucket: str, key: str, obj: 
     # state is that it is visible WHILE the slow part runs.
     _mark_extracting(project_id, doc_id)
 
-    content_type = str(doc.get('content_type') or '')
+    # A missing type reads as 'None', which no branch accepts, like any other.
+    content_type = str(doc.get('content_type'))
     try:
-        if content_type in TEXT_CONTENT_TYPES:
-            text, payload = _extract_text(bucket, key)
-        elif content_type in CONVERSE_IMAGE_FORMATS:
-            actual_size = int(obj.get('size') or 0)
-            text, payload = _extract_image(bucket, key, content_type, actual_size)
-        else:
-            raise _ExtractionError('This file type cannot be processed.')
+        text, payload = _extract_by_type(bucket, key, content_type, obj)
     except _ExtractionError as e:
         _mark_failed(project_id, doc_id, str(e))
         return
@@ -932,7 +979,7 @@ def _extract_document(project_id: str, doc_id: str, bucket: str, key: str, obj: 
     logger.info(f'Product doc {doc_id} ready ({len(text)} chars)')
 
 
-def lambda_handler(event, _context=None):
+def lambda_handler(event, context=None):
     """S3 OBJECT_CREATED entrypoint.
 
     DOES NOT RE-RAISE after marking a record `failed`, and that is deliberate.
@@ -945,12 +992,53 @@ def lambda_handler(event, _context=None):
     record IS the durable outcome, so the log plus that record is the whole
     story. Records are processed independently so one bad document cannot take
     its batch-mates down with it.
+
+    Every invocation also logs one `invocation_cost` line (see _log_invocation_cost).
     """
-    records = event.get('Records') or []
+    cpu_start, wall_start = time.process_time(), time.perf_counter()
+    try:
+        return _process_records(event.get('Records') or [])
+    finally:
+        _log_invocation_cost(context, cpu_start, wall_start)
+
+
+def _process_records(records: list) -> dict:
+    """Each record on its own: one bad record must not fail the batch (see lambda_handler)."""
     for record in records:
         try:
             _process_record(record)
         except Exception:
-            # One bad record must not fail the batch (see the docstring above).
             logger.exception('Unhandled error processing S3 record')
     return {'processed': len(records)}
+
+
+# ── CPU measurement (stdlib mirror of shared/invocation_cost.py) ─────────────
+# Every Lambda logs one `invocation_cost` line so the sizing policy's CPU rule
+# (docs/lambda-sizing.md) is measurable from Logs Insights. This function cannot
+# import shared/ (module docstring), so the two helpers below re-state
+# `shared.invocation_cost.memory_mb` / `invocation_cost_fields`;
+# test/test_invocation_cost_lockstep.py pins them to the originals.
+_COST_LINE = 'invocation_cost'
+_MB_PER_VCPU = 1769
+
+
+def _memory_mb(context: object) -> int | None:
+    raw = str(getattr(context, 'memory_limit_in_mb', 0))
+    value = int(raw) if raw.isdigit() else 0
+    return value or None
+
+
+def _invocation_cost_fields(memory: int | None, cpu_ms: float, wall_ms: float) -> dict[str, float | int]:
+    fields = {'cpu_ms': round(cpu_ms, 1), 'wall_ms': round(wall_ms, 1)}
+    if memory is not None:
+        fields['function_memory_size'] = memory
+        if wall_ms > 0:
+            fields['cpu_pct_of_allocation'] = round(cpu_ms / (wall_ms * memory / _MB_PER_VCPU) * 100, 1)
+    return fields
+
+
+def _log_invocation_cost(context: object, cpu_start: float, wall_start: float) -> None:
+    """Numbers only — never the event or a document."""
+    cpu_ms = (time.process_time() - cpu_start) * 1000
+    wall_ms = (time.perf_counter() - wall_start) * 1000
+    logger.info(_COST_LINE, extra=_invocation_cost_fields(_memory_mb(context), cpu_ms, wall_ms))

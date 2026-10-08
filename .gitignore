@@ -53,6 +53,15 @@ npm-debug.log*
 .coverage
 coverage/
 htmlcov/
+coverage_html/
+
+# Quality-gate tool state (scripts/validate.sh, scripts/mutation-report.sh)
+# validate.sh: per-run step logs (.cache/validate/logs/) and per-worktree tsc build info.
+.cache/
+.mutmut-cache
+*.py.bak
+.stryker-tmp/
+reports/
 
 # JUnit report written by the MCP CI gate (see scripts/mcp_gate.py). Produced on
 # any local run of that gate's pytest command too, so it is ignored rather than

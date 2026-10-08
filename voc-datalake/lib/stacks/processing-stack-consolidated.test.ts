@@ -8,71 +8,18 @@
  * the analysis prompt. These tests fail if either half of the wiring is
  * removed again (e.g. in a conflict resolution on the selector block).
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import * as cdk from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
-import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
-import * as sqs from 'aws-cdk-lib/aws-sqs';
-import * as kms from 'aws-cdk-lib/aws-kms';
-import { VocProcessingStack } from './processing-stack-consolidated';
+import { stateMachineDefinition, synthProcessingTemplate } from '../test-support/processing-stack-fixture';
+import { isRecord, itemAt, recordAt } from '../test-support/guards';
+import { allowedActions, roleStatements } from '../test-support/iam-statements';
+import { expectSelfInvokeOnly, findWorkerFunction } from '../test-support/worker-function';
 
-function synthProcessingTemplate(): Template {
-  // Skip asset bundling (Docker) — template assertions only need structure.
-  const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [] } });
-  const env = { account: '111111111111', region: 'us-east-1' };
-  const deps = new cdk.Stack(app, 'TestDeps', { env });
-
-  const makeTable = (id: string, props: Partial<dynamodb.TableProps> = {}) =>
-    new dynamodb.Table(deps, id, {
-      partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
-      sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
-      ...props,
-    });
-
-  const stack = new VocProcessingStack(app, 'TestProcessing', {
-    env,
-    feedbackTable: makeTable('Feedback', { stream: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES }),
-    aggregatesTable: makeTable('Aggregates'),
-    projectsTable: makeTable('Projects'),
-    jobsTable: makeTable('Jobs'),
-    idempotencyTable: makeTable('Idempotency'),
-    processingQueue: new sqs.Queue(deps, 'Queue'),
-    kmsKey: new kms.Key(deps, 'Key'),
-    config: {
-      brandName: 'TestBrand',
-      brandHandles: ['@testbrand'],
-      primaryLanguage: 'en',
-      enabledSources: [],
-    },
-  });
-
-  return Template.fromStack(stack);
-}
-
-/** The state machine definition as raw JSON text. DefinitionString is an
- * Fn::Join of string fragments and Lambda ARN refs; joining just the string
- * fragments yields searchable JSON (with real quotes, so assertions can pin
- * exact `"key.$":"path"` pairs). */
 function researchDefinition(template: Template): string {
-  const machines = template.findResources('AWS::StepFunctions::StateMachine');
-  const ids = Object.keys(machines);
-  expect(ids).toHaveLength(1);
-  const definition: unknown = machines[ids[0]].Properties.DefinitionString;
-  if (
-    typeof definition === 'object' && definition !== null &&
-    'Fn::Join' in definition && Array.isArray(definition['Fn::Join'])
-  ) {
-    const [, pieces] = definition['Fn::Join'] as [unknown, unknown];
-    if (Array.isArray(pieces)) {
-      return pieces.filter((piece): piece is string => typeof piece === 'string').join('');
-    }
-  }
-  // A definition without refs synthesizes as a plain string.
-  expect(typeof definition).toBe('string');
-  return String(definition);
+  return stateMachineDefinition(template, 'ResearchStateMachine');
 }
 
 describe('research state machine wiring (issue #157)', () => {
@@ -124,13 +71,7 @@ describe('research state machine wiring (issue #157)', () => {
 
 /** Narrow a CloudFormation resource to its Properties without a bare cast. */
 function propsOf(resource: unknown): Record<string, unknown> {
-  if (typeof resource === 'object' && resource !== null && 'Properties' in resource) {
-    const props = (resource as { Properties: unknown }).Properties;
-    if (typeof props === 'object' && props !== null) {
-      return props as Record<string, unknown>;
-    }
-  }
-  return {};
+  return recordAt(resource, 'Properties') ?? {};
 }
 
 /**
@@ -151,6 +92,9 @@ describe('research Lambda keeps the maximum timeout its budgets assume', () => {
     researchFns = Object.values(fns)
       .map(propsOf)
       .filter((p) => typeof p.Handler === 'string' && p.Handler.includes('research_step_handler'));
+  });
+
+  it('finds the research Lambda (positive control for the loops below)', () => {
     expect(researchFns.length, 'no Lambda with the research_step_handler handler')
       .toBeGreaterThan(0);
   });
@@ -231,7 +175,7 @@ describe('web-search wiring is skipped cleanly when the gateway is absent', () =
         ? Object.keys(vars).filter((k) => k.startsWith('WEB_SEARCH'))
         : [];
     });
-    expect(webSearchVars).toEqual([]);
+    expect(webSearchVars).toStrictEqual([]);
   });
 
   it('grants no bedrock-agentcore permissions', () => {
@@ -242,7 +186,7 @@ describe('web-search wiring is skipped cleanly when the gateway is absent', () =
       .flatMap((policy) => policy.Properties?.PolicyDocument?.Statement ?? [])
       .flatMap((statement: { Action?: string | string[] }) =>
         typeof statement.Action === 'string' ? [statement.Action] : statement.Action ?? []);
-    expect(actions.filter((a) => a.startsWith('bedrock-agentcore'))).toEqual([]);
+    expect(actions.filter((a) => a.startsWith('bedrock-agentcore'))).toStrictEqual([]);
   });
 
   it('leaks no "undefined" into any Lambda environment value', () => {
@@ -251,7 +195,7 @@ describe('web-search wiring is skipped cleanly when the gateway is absent', () =
     const values = Object.values(template.findResources('AWS::Lambda::Function'))
       .flatMap((fn) => Object.values(fn.Properties?.Environment?.Variables ?? {}))
       .filter((v): v is string => typeof v === 'string');
-    expect(values.filter((v) => v.includes('undefined'))).toEqual([]);
+    expect(values.filter((v) => v.includes('undefined'))).toStrictEqual([]);
   });
 });
 
@@ -283,11 +227,8 @@ describe('the aggregator can reach the dedupe table it is already allowed to (#2
    * caller then needs no cast and the helper needs no `any`. */
   function aggregatorEnvironments(): Record<string, unknown>[] {
     return Object.values(template.findResources('AWS::Lambda::Function'))
-      .map((fn) => fn.Properties?.Environment?.Variables as unknown)
-      .filter((vars): vars is Record<string, unknown> => (
-        typeof vars === 'object' && vars !== null &&
-        (vars as Record<string, unknown>).POWERTOOLS_SERVICE_NAME === 'voc-aggregator'
-      ));
+      .map((fn) => recordAt(fn, 'Properties', 'Environment', 'Variables'))
+      .filter((vars): vars is Record<string, unknown> => vars?.POWERTOOLS_SERVICE_NAME === 'voc-aggregator');
   }
 
   function aggregatorEnvironment(): Record<string, unknown> {
@@ -300,7 +241,7 @@ describe('the aggregator can reach the dedupe table it is already allowed to (#2
     // failure; `finds exactly one aggregation Lambda` still reports it as its own
     // distinct problem.
     expect(environments).toHaveLength(1);
-    return environments[0];
+    return itemAt(environments, 0);
   }
 
   it('finds exactly one aggregation Lambda to assert about', () => {
@@ -328,7 +269,7 @@ describe('the aggregator can reach the dedupe table it is already allowed to (#2
     // one keeps a stack reorganisation from failing a test whose subject it is not.
     const value = aggregatorEnvironment().IDEMPOTENCY_TABLE;
     expect(typeof value).toBe('object');
-    expect(Object.keys(value as object).some((key) => key.startsWith('Fn::') || key === 'Ref'))
+    expect(Object.keys(isRecord(value) ? value : {}).some((key) => key.startsWith('Fn::') || key === 'Ref'))
       .toBe(true);
   });
 
@@ -339,11 +280,11 @@ describe('the aggregator can reach the dedupe table it is already allowed to (#2
     // know about. The handler namespaces its keys (`aggregator#stream#...`) so the
     // two cannot collide within it.
     const processor = Object.values(template.findResources('AWS::Lambda::Function'))
-      .map((fn) => fn.Properties?.Environment?.Variables as Record<string, unknown> | undefined)
+      .map((fn) => recordAt(fn, 'Properties', 'Environment', 'Variables'))
       .find((vars) => vars?.POWERTOOLS_SERVICE_NAME === 'voc-processor');
     expect(processor).toBeDefined();
     expect(aggregatorEnvironment().IDEMPOTENCY_TABLE)
-      .toEqual(processor?.IDEMPOTENCY_TABLE);
+      .toStrictEqual(processor?.IDEMPOTENCY_TABLE);
   });
 
   it('keeps the aggregates table name too, so the transaction can name it', () => {
@@ -353,5 +294,180 @@ describe('the aggregator can reach the dedupe table it is already allowed to (#2
     // transaction is built from — losing it would break every write rather than
     // only the dedupe.
     expect(aggregatorEnvironment()).toHaveProperty('AGGREGATES_TABLE');
+  });
+});
+
+/**
+ * The category reprocess worker (POST /settings/categories/reprocess starts it):
+ * re-categorises stored feedback IN PLACE, page by page, handing over to a fresh
+ * async invocation of itself before its 15-minute ceiling. Least privilege is
+ * the point of these cases — it must never be able to delete or replace a review.
+ */
+describe('category reprocess worker', () => {
+  // Synthesized in beforeAll (not at collection time) so a synth failure is a
+  // named test failure, like the research suite above.
+  let template: Template;
+  beforeAll(() => { template = synthProcessingTemplate(); });
+
+  const worker = () => findWorkerFunction(template, 'voc-category-reprocess');
+
+  const statements = () => roleStatements(template, worker().Role['Fn::GetAtt'][0]);
+  const actionsOn = (prefix: string, fragment: string) => allowedActions(statements(), prefix, fragment);
+
+  it('runs the category_reprocess handler with the 15-minute ceiling its hand-over assumes', () => {
+    expect(worker().Handler).toBe('handler.lambda_handler');
+    expect(worker().Timeout).toBe(900);
+  });
+
+  it('is handed the tables, the raw bucket and the primary language', () => {
+    expect(Object.keys(worker().Environment.Variables)).toStrictEqual(expect.arrayContaining([
+      'FEEDBACK_TABLE', 'AGGREGATES_TABLE', 'RAW_DATA_BUCKET', 'PRIMARY_LANGUAGE',
+    ]));
+  });
+
+  it('holds exactly Scan/GetItem/UpdateItem on feedback — never Put or Delete', () => {
+    expect(actionsOn('dynamodb:', 'Feedback')).toStrictEqual(['dynamodb:GetItem', 'dynamodb:Scan', 'dynamodb:UpdateItem']);
+  });
+
+  it('holds exactly GetItem/UpdateItem on aggregates — the worker never creates or lists jobs', () => {
+    expect(actionsOn('dynamodb:', 'Aggregates'))
+      .toStrictEqual(['dynamodb:GetItem', 'dynamodb:UpdateItem']);
+  });
+
+  it('reads only raw/* in the raw bucket, and writes nothing there', () => {
+    const s3 = statements().filter((s) => s.actions.some((a) => a.startsWith('s3:')));
+    expect(s3.length).toBeGreaterThan(0);
+    expect(s3.flatMap((s) => s.actions).filter((a) => /^s3:(Put|Delete|Abort)/.test(a))).toStrictEqual([]);
+    const objectResources = s3.map((s) => s.resource).filter((r) => r.includes('/'));
+    expect(objectResources.join(' ')).toContain('/raw/*');
+    expect(objectResources.every((r) => !r.includes('"/*"')), 'bucket-wide object grant').toBe(true);
+  });
+
+  it('can call Bedrock, Comprehend and Translate', () => {
+    const actions = statements().flatMap((s) => s.actions);
+    expect(actions).toStrictEqual(expect.arrayContaining([
+      'bedrock:InvokeModel', 'comprehend:DetectSentiment', 'comprehend:DetectDominantLanguage', 'translate:TranslateText',
+    ]));
+  });
+
+  it('may invoke only itself, by an unqualified colon-form ARN', () => {
+    expectSelfInvokeOnly(statements(), 'voc-category-reprocess-');
+  });
+});
+
+describe('the aggregator stream source keeps what it gives up on (#253)', () => {
+  const state: { template: Template | undefined } = { template: undefined };
+  beforeAll(() => {
+    state.template = synthProcessingTemplate();
+  });
+  const template = (): Template => {
+    if (!state.template) throw new Error('template not synthesized');
+    return state.template;
+  };
+
+  /** The mapping's Properties (records only — scalars are read off it directly). */
+  const streamMappingProps = (): Record<string, unknown>[] => {
+    const mappings = template().findResources('AWS::Lambda::EventSourceMapping');
+    return Object.values(mappings)
+      .map((m) => recordAt(m, 'Properties') ?? {})
+      .filter((props) => props.StartingPosition === 'TRIM_HORIZON');
+  };
+  const failureQueueEntry = () => {
+    const queues = template().findResources('AWS::SQS::Queue');
+    return Object.entries(queues).find(([id]) => id.startsWith('AggregatorStreamFailures'));
+  };
+
+  it('has exactly one DynamoDB stream mapping', () => {
+    expect(streamMappingProps()).toHaveLength(1);
+  });
+
+  it('sends exhausted batches to an SQS on-failure destination', () => {
+    const props = itemAt(streamMappingProps(), 0);
+    const onFailure = recordAt(props, 'DestinationConfig', 'OnFailure');
+    expect(onFailure, 'DestinationConfig.OnFailure must be set').toBeDefined();
+    const entry = failureQueueEntry();
+    expect(entry).toBeDefined();
+    expect(onFailure?.Destination).toStrictEqual({ 'Fn::GetAtt': [entry?.[0], 'Arn'] });
+  });
+
+  it('still bounds retries before giving up', () => {
+    const props = itemAt(streamMappingProps(), 0);
+    expect(props.MaximumRetryAttempts).toBe(3);
+  });
+
+  it('encrypts the failure queue with the app CMK', () => {
+    const props = recordAt(failureQueueEntry()?.[1], 'Properties');
+    expect(props?.KmsMasterKeyId).toBeDefined();
+  });
+});
+
+describe('processor bundle ships the validation schema it imports (#249)', () => {
+  const source = readFileSync(join(__dirname, 'processing-stack-consolidated.ts'), 'utf8');
+  const processorAsset = source.split('const processorCode')[1]?.split('});')[0] ?? '';
+  const lambdaRoot = join(__dirname, '..', '..', 'lambda');
+
+  it('copies the processor handler and the shared tree', () => {
+    expect(processorAsset).toContain('cp -r /asset-input/processor/* /asset-output/');
+    expect(processorAsset).toContain('cp -r /asset-input/shared /asset-output/');
+  });
+
+  it('the schema lives in the shared tree that bundle copies', () => {
+    expect(existsSync(join(lambdaRoot, 'shared', 'ingest_schemas.py'))).toBe(true);
+  });
+
+  it('the handler imports the schema from shared/, unconditionally', () => {
+    const lines = readFileSync(join(lambdaRoot, 'processor', 'handler.py'), 'utf8').split('\n');
+    const schemaImport = 'from shared.ingest_schemas import ';
+    const importedNames = lines.filter((line) => line.startsWith(schemaImport))
+      .flatMap((line) => line.slice(schemaImport.length).split(', '));
+    expect(importedNames).toContain('safe_validate_message');
+    // The #249 failure mode: a plugins/ import the bundle cannot satisfy,
+    // swallowed by `except ImportError` into a disabled-validation flag.
+    const stripped = lines.map((line) => line.trim());
+    expect(stripped.filter((line) => line.startsWith('from _shared') || line.startsWith('import _shared'))).toStrictEqual([]);
+    expect(stripped.filter((line) => line.startsWith('except ImportError'))).toStrictEqual([]);
+    expect(lines.filter((line) => line.startsWith('VALIDATION_ENABLED'))).toStrictEqual([]);
+  });
+});
+
+describe('the feedback processor picks up new feedback within seconds (QA 2.13.00)', () => {
+  /**
+   * A Manual Import took ~50 s to become visible; ~30 s of it was this event
+   * source's batching window, and most of the rest was the batch's records being
+   * enriched one after another. The window is now 5 s and the handler enriches
+   * ENRICHMENT_CONCURRENCY records at once (lambda/processor/handler.py).
+   */
+  const template = synthProcessingTemplate();
+
+  function processorFunction(): [string, Record<string, unknown>] {
+    const entries = Object.entries(template.findResources('AWS::Lambda::Function'))
+      .filter(([, fn]) => recordAt(fn, 'Properties', 'Environment', 'Variables')?.POWERTOOLS_SERVICE_NAME === 'voc-processor');
+    expect(entries).toHaveLength(1);
+    const [id, fn] = itemAt(entries, 0);
+    return [id, propsOf(fn)];
+  }
+
+  function processorMapping(): Record<string, unknown> {
+    const [id] = processorFunction();
+    const mappings = Object.values(template.findResources('AWS::Lambda::EventSourceMapping'))
+      .map(propsOf)
+      .filter((props) => JSON.stringify(props.FunctionName ?? '').includes(id));
+    expect(mappings).toHaveLength(1);
+    return itemAt(mappings, 0);
+  }
+
+  it('waits at most 5 s to fill a batch of at most 10', () => {
+    const mapping = processorMapping();
+    expect(mapping.MaximumBatchingWindowInSeconds).toBe(5);
+    expect(mapping.BatchSize).toBe(10);
+  });
+
+  it('keeps per-record partial-batch failures', () => {
+    expect(processorMapping().FunctionResponseTypes).toStrictEqual(['ReportBatchItemFailures']);
+  });
+
+  it('tells the handler to enrich 5 records at a time', () => {
+    const [, props] = processorFunction();
+    expect(recordAt(props, 'Environment', 'Variables')?.ENRICHMENT_CONCURRENCY).toBe('5');
   });
 });

@@ -12,6 +12,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from jobs.test.project_tables_fixtures import feedback_table_beside, negative_webscraper_reviews
+
+# What a document built from nothing records: every key present, each empty.
+EMPTY_DERIVATION = {
+    'sources': [],
+    'selected_document_count': 0,
+    'feedback_count': 0,
+    'persona_ids': [],
+    'visual_document_ids': [],
+    'product_context_included': False,
+}
+
 # The wizard selected five reference documents...
 SELECTED_IDS = ['doc_a', 'doc_b', 'doc_c', 'doc_d', 'doc_e']
 
@@ -63,9 +75,9 @@ class TestReferenceDocumentProvenance:
     def wire_project_documents(self, mock_dynamodb):
         mock_dynamodb['table'].query.return_value = {'Items': PROJECT_DOCS}
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse_chain", "mock_prompt_steps")
     def test_records_the_three_documents_used_not_the_five_selected(
-        self, mock_dynamodb, mock_jobs_table, mock_converse_chain, mock_prompt_steps,
-        event, lambda_context,
+        self, mock_dynamodb,         event, lambda_context,
     ):
         from jobs.document_generator.handler import lambda_handler
 
@@ -73,9 +85,9 @@ class TestReferenceDocumentProvenance:
 
         assert _saved_item(mock_dynamodb)['derivation']['sources'] == USED_SOURCES
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse_chain", "mock_prompt_steps")
     def test_states_how_many_were_selected_so_the_drop_is_visible(
-        self, mock_dynamodb, mock_jobs_table, mock_converse_chain, mock_prompt_steps,
-        event, lambda_context,
+        self, mock_dynamodb,         event, lambda_context,
     ):
         from jobs.document_generator.handler import lambda_handler
 
@@ -83,13 +95,13 @@ class TestReferenceDocumentProvenance:
 
         assert _saved_item(mock_dynamodb)['derivation']['selected_document_count'] == 5
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse_chain", "mock_prompt_steps")
     def test_a_selected_document_that_no_longer_exists_counts_as_selected_only(
-        self, mock_dynamodb, mock_jobs_table, mock_converse_chain, mock_prompt_steps,
-        event, lambda_context,
+        self, mock_dynamodb,         event, lambda_context,
     ):
         """A deleted document can still be in the request. It cannot be a source
         (it never reached the model) but it was selected, so the count includes it."""
-        event['doc_config']['selected_document_ids'] = ['doc_deleted'] + SELECTED_IDS
+        event['doc_config']['selected_document_ids'] = ['doc_deleted', *SELECTED_IDS]
 
         from jobs.document_generator.handler import lambda_handler
 
@@ -99,9 +111,9 @@ class TestReferenceDocumentProvenance:
         assert derivation['sources'] == USED_SOURCES
         assert derivation['selected_document_count'] == 6
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse_chain", "mock_prompt_steps")
     def test_records_feedback_and_persona_inputs_actually_used(
-        self, mock_dynamodb, mock_jobs_table, mock_converse_chain, mock_prompt_steps,
-        event, lambda_context,
+        self, mock_dynamodb,         event, lambda_context,
     ):
         """A PRD built from feedback and personas must not read as built from
         nothing: the counts and persona ids that reached the prompt are recorded."""
@@ -114,16 +126,7 @@ class TestReferenceDocumentProvenance:
                 {'sk': 'PERSONA#persona_2', 'persona_id': 'persona_2', 'name': 'Bo'},
             ],
         }
-        feedback_table = MagicMock()
-        feedback_table.query.return_value = {
-            'Items': [
-                {'original_text': f'review {i}', 'source_platform': 'webscraper', 'sentiment_label': 'negative'}
-                for i in range(4)
-            ],
-        }
-        mock_dynamodb['resource'].Table.side_effect = (
-            lambda name: feedback_table if 'feedback' in name.lower() else mock_dynamodb['table']
-        )
+        feedback_table_beside(mock_dynamodb, negative_webscraper_reviews(4))
 
         from jobs.document_generator.handler import lambda_handler
 
@@ -134,9 +137,9 @@ class TestReferenceDocumentProvenance:
         assert derivation['persona_ids'] == ['persona_1', 'persona_2']
         assert derivation['sources'] == []
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse_chain", "mock_prompt_steps")
     def test_records_whether_the_product_context_block_was_included(
-        self, mock_dynamodb, mock_jobs_table, mock_converse_chain, mock_prompt_steps,
-        event, lambda_context,
+        self, mock_dynamodb,         event, lambda_context,
     ):
         from jobs.document_generator import handler
 
@@ -145,9 +148,9 @@ class TestReferenceDocumentProvenance:
 
         assert _saved_item(mock_dynamodb)['derivation']['product_context_included'] is True
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse_chain", "mock_prompt_steps")
     def test_a_document_with_no_inputs_records_an_empty_derivation(
-        self, mock_dynamodb, mock_jobs_table, mock_converse_chain, mock_prompt_steps,
-        event, lambda_context,
+        self, mock_dynamodb,         event, lambda_context,
     ):
         """The question must always be answerable — "nothing" is an answer, and
         it is recorded with every key present rather than by omission."""
@@ -157,14 +160,7 @@ class TestReferenceDocumentProvenance:
 
         lambda_handler(event, lambda_context)
 
-        assert _saved_item(mock_dynamodb)['derivation'] == {
-            'sources': [],
-            'selected_document_count': 0,
-            'feedback_count': 0,
-            'persona_ids': [],
-            'visual_document_ids': [],
-            'product_context_included': False,
-        }
+        assert _saved_item(mock_dynamodb)['derivation'] == EMPTY_DERIVATION
 
 
 class TestProductContextFlag:
@@ -216,25 +212,33 @@ class TestPrototypeProvenance:
             'doc_config': {'doc_type': 'build_prototype', 'title': 'Test Prototype'},
         }
 
+    def _build_prototype_from(self, mock_dynamodb, mock_converse, sample_job_event,
+                              lambda_context, *, prd, prfaq):
+        """Build a prototype whose newest PRD / PR-FAQ are *prd* / *prfaq*
+        (None for absent) and return the saved item."""
+        mock_dynamodb['table'].get_item.return_value = {'Item': {'name': 'My Project'}}
+        mock_converse.return_value = self.HTML
+
+        from jobs.document_generator import handler
+        with patch.object(handler, '_latest_doc_by_prefix', self._latest(prd, prfaq)):
+            handler.lambda_handler(self._event(sample_job_event), lambda_context)
+
+        return _saved_item(mock_dynamodb)
+
     def _latest(self, prd, prfaq):
         """Stand in for the per-prefix "newest document" lookup, whose real
         DynamoDB key condition a MagicMock table cannot distinguish."""
         return lambda _table, _project_id, prefix: prd if prefix == 'PRD#' else prfaq
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_records_both_source_documents_with_distinct_roles(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+        self, mock_dynamodb, mock_converse, sample_job_event, lambda_context,
     ):
-        mock_dynamodb['table'].get_item.return_value = {'Item': {'name': 'My Project'}}
-        mock_converse.return_value = self.HTML
-
-        from jobs.document_generator import handler
-        with patch.object(handler, '_latest_doc_by_prefix', self._latest(
-            {'document_id': 'prd_1', 'content': 'PRD body'},
-            {'document_id': 'prfaq_1', 'content': 'PRFAQ body'},
-        )):
-            handler.lambda_handler(self._event(sample_job_event), lambda_context)
-
-        item = _saved_item(mock_dynamodb)
+        item = self._build_prototype_from(
+            mock_dynamodb, mock_converse, sample_job_event, lambda_context,
+            prd={'document_id': 'prd_1', 'content': 'PRD body'},
+            prfaq={'document_id': 'prfaq_1', 'content': 'PRFAQ body'},
+        )
         assert item['derivation']['sources'] == [
             {'document_id': 'prd_1', 'role': 'prototype_prd'},
             {'document_id': 'prfaq_1', 'role': 'prototype_prfaq'},
@@ -244,21 +248,16 @@ class TestPrototypeProvenance:
         assert item['source_prd_id'] == 'prd_1'
         assert item['source_prfaq_id'] == 'prfaq_1'
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse", "mock_s3")
     def test_a_prototype_built_from_one_document_records_only_that_one(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, mock_s3, sample_job_event, lambda_context,
+        self, mock_dynamodb, mock_converse, sample_job_event, lambda_context,
     ):
         """`source_prfaq_id` is written as a REAL stored null here; the shared
         shape must not turn that null into a source."""
-        mock_dynamodb['table'].get_item.return_value = {'Item': {'name': 'My Project'}}
-        mock_converse.return_value = self.HTML
-
-        from jobs.document_generator import handler
-        with patch.object(handler, '_latest_doc_by_prefix', self._latest(
-            {'document_id': 'prd_1', 'content': 'PRD body'}, None,
-        )):
-            handler.lambda_handler(self._event(sample_job_event), lambda_context)
-
-        item = _saved_item(mock_dynamodb)
+        item = self._build_prototype_from(
+            mock_dynamodb, mock_converse, sample_job_event, lambda_context,
+            prd={'document_id': 'prd_1', 'content': 'PRD body'}, prfaq=None,
+        )
         assert item['derivation']['sources'] == [{'document_id': 'prd_1', 'role': 'prototype_prd'}]
         assert item['derivation']['selected_document_count'] == 1
         assert item['source_prfaq_id'] is None
@@ -268,8 +267,9 @@ class TestStepFunctionsPath:
     """PRD/PR-FAQ generation is split across Lambda invocations; the derivation
     is decided at gather and must survive to the save step."""
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_prompt_steps")
     def test_gather_stashes_the_derivation_and_save_writes_it(
-        self, mock_dynamodb, mock_jobs_table, mock_prompt_steps, mock_s3,
+        self, mock_dynamodb, mock_s3,
         sample_job_event, lambda_context,
     ):
         from jobs.document_generator import handler
@@ -279,7 +279,7 @@ class TestStepFunctionsPath:
         stash: dict[str, bytes] = {}
         mock_s3.put_object.side_effect = lambda **kw: stash.__setitem__(kw['Key'], kw['Body'])
 
-        def get_object(Bucket=None, Key=None, **kwargs):
+        def get_object(Key: str, **_kwargs):
             body = MagicMock()
             body.read.return_value = stash[Key]
             return {'Body': body}
@@ -316,14 +316,14 @@ class TestStepFunctionsPath:
         assert derivation['sources'] == USED_SOURCES
         assert derivation['selected_document_count'] == 5
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_s3", "sample_job_event", "lambda_context")
     def test_save_still_writes_a_document_when_the_derivation_is_unreadable(
-        self, mock_dynamodb, mock_jobs_table, mock_s3, sample_job_event, lambda_context,
-    ):
+        self, mock_dynamodb, mock_s3, sample_job_event,     ):
         """An execution replayed against a cleaned scratch prefix must still save
         the document; "no lineage" is a legitimate answer, not a failure."""
         from jobs.document_generator.handler import _assemble_and_save
 
-        def get_object(Bucket=None, Key=None, **kwargs):
+        def get_object(Key: str, **_kwargs):
             if Key.endswith('derivation.txt'):
                 raise RuntimeError('NoSuchKey')
             body = MagicMock()
@@ -336,21 +336,14 @@ class TestStepFunctionsPath:
             'prd', 'Test PRD', 'Improve onboarding', 3,
         )
 
-        assert _saved_item(mock_dynamodb)['derivation'] == {
-            'sources': [],
-            'selected_document_count': 0,
-            'feedback_count': 0,
-            'persona_ids': [],
-            'visual_document_ids': [],
-            'product_context_included': False,
-        }
+        assert _saved_item(mock_dynamodb)['derivation'] == EMPTY_DERIVATION
 
 
 class TestStepFunctionsReplay:
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table")
     def test_gather_replay_completes_without_context_or_scratch_writes(
         self,
         mock_dynamodb,
-        mock_jobs_table,
         mock_prompt_steps,
         mock_s3,
         sample_job_event,
@@ -386,10 +379,10 @@ class TestStepFunctionsReplay:
         mock_s3.put_object.assert_not_called()
         assert mock_dynamodb['transactions'] == []
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table")
     def test_save_retry_returns_committed_allocation_before_scratch_reads(
         self,
         mock_dynamodb,
-        mock_jobs_table,
         mock_s3,
         sample_job_event,
         lambda_context,

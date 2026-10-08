@@ -29,7 +29,8 @@
 import { useCallback, useEffect, useMemo } from 'react'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { api } from '../../api/client'
-import type { DateRangeParams, FeedbackItem } from '../../api/client'
+import type { DateRangeParams } from '../../api/client'
+import type { FeedbackItem } from '../../api/types'
 import { FEEDBACK_PAGE_LIMIT, nextPageOffset } from '../../api/feedbackPagination'
 import type { FeedbackPage } from '../../api/feedbackPagination'
 
@@ -48,7 +49,7 @@ export const MAX_AUTO_PAGES = 20
  * How long a loaded window counts as fresh — longer than the app-wide 30s
  * default because re-walking costs one request per 100 rows.
  */
-export const WINDOW_STALE_MS = 5 * 60 * 1000
+const WINDOW_STALE_MS = 5 * 60 * 1000
 
 export interface ProblemFeedback {
   /** Every row loaded so far, across pages. */

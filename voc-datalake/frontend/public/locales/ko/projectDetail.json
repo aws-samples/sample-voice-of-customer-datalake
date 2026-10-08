@@ -1,24 +1,4 @@
 {
-  "autoseed": {
-    "copyFailed": "복사 실패 — 다시 시도해 주세요.",
-    "copyKiroPrompt": "Kiro 프롬프트 복사",
-    "description": "Kiro 워크스페이스에 시드할 페르소나와 문서를 선택하세요",
-    "deselectAll": "모두 선택 해제",
-    "docTypes": {
-      "custom": "커스텀",
-      "prd": "PRD",
-      "prfaq": "PR/FAQ",
-      "product_report": "제품 보고서",
-      "research": "리서치"
-    },
-    "documents": "문서 ({{selected}}/{{total}})",
-    "generatedPrompt": "생성된 Kiro 프롬프트",
-    "generateFirst": "autoseed를 사용하려면 먼저 페르소나 또는 문서를 생성하세요.",
-    "pasteHint": "이를 Kiro 채팅에 붙여넣으세요. MCP Access 탭에서 API 토큰이 필요합니다.",
-    "personas": "페르소나 ({{selected}}/{{total}})",
-    "selectAll": "모두 선택",
-    "title": "Kiro 오토시드"
-  },
   "chat": {
     "askPlaceholder": "프로젝트에 대해 질문하세요...",
     "attachFile": "이미지 또는 PDF 첨부",
@@ -28,7 +8,7 @@
     "fileTooLarge": "파일이 너무 큼 (최대 5MB): {{name}}",
     "mentionHint": "<at>을 입력하여 페르소나, <atAll>을 입력하여 라운드테이블, <hash>을 입력하여 문서를 언급하세요",
     "projectAiChat": "프로젝트 AI 채팅",
-    "roundtable": "🎙️ 라운드테이블: 모든 {{count}}개 페르소나",
+    "roundtable": "라운드테이블: 모든 {{count}}개 페르소나",
     "send": "메시지 보내기",
     "startConversation": "대화 시작",
     "stop": "중지",
@@ -44,6 +24,9 @@
   },
   "documentModal": {
     "cancel": "취소",
+    "conflict": "그사이 다른 사람이 이 문서의 최신 버전을 저장했습니다.",
+    "conflictReload": "최신 버전 불러오기",
+    "conflictSaveAnyway": "그래도 내 변경 저장",
     "contentLabel": "콘텐츠 (Markdown)",
     "contentPlaceholder": "Markdown으로 문서를 작성하세요...",
     "create": "생성",
@@ -80,6 +63,28 @@
     "newDocument": "새 문서",
     "noDocuments": "문서 없음",
     "ordinal": "{{total}}개 중 {{ordinal}}번째",
+    "versions": {
+      "title": "버전",
+      "hint": "편집할 때마다 새 버전이 저장됩니다. 이전 버전을 열거나 비교하고, 새 버전으로 복원할 수 있습니다.",
+      "label": "v{{n}}",
+      "current": "현재",
+      "edited": "편집됨",
+      "restoredFrom": "v{{n}}에서 복원",
+      "open": "열기",
+      "openNamed": "{{label}} 열기",
+      "compare": "비교",
+      "compareNamed": "{{label}}을(를) 현재 버전과 비교",
+      "compareTitle": "{{label}}과(와) 현재 버전 비교",
+      "identical": "이 버전은 현재 버전과 같습니다.",
+      "restore": "복원",
+      "restoreNamed": "{{label}} 복원",
+      "restoreTitle": "이 버전을 복원할까요?",
+      "restoreMessage": "v{{n}}의 내용으로 새 버전이 저장됩니다. 현재 버전은 목록에 남습니다.",
+      "restoreFailed": "버전을 복원하지 못했습니다. 다시 시도하세요.",
+      "loadFailed": "버전을 불러오지 못했습니다.",
+      "close": "닫기",
+      "cancel": "취소"
+    },
     "prototype": {
       "building": "생성 중…",
       "button": "프로토타입 생성",
@@ -120,15 +125,6 @@
       "heading": "수정 대상"
     },
     "selectDocument": "문서를 선택하세요"
-  },
-  "export": {
-    "copyContext": "클립보드에 복사",
-    "copyCopied": "복사됨!",
-    "copyFailed": "복사 실패 — 다시 시도해 주세요.",
-    "description": "프로젝트 컨텍스트를 클립보드에 복사 — API 토큰 불필요",
-    "emptyHint": "내보내기를 활성화하려면 먼저 페르소나 또는 문서를 생성하세요.",
-    "selectAtLeastOne": "각 섹션에서 최소 한 개를 선택하세요. 선택하지 않으면 내보내기에 전체가 포함됩니다.",
-    "title": "내보내기"
   },
   "imageErrors": {
     "tooLarge": "{{name}}은(는) 크기를 줄인 뒤에도 여전히 너무 큽니다. 더 작은 스크린샷을 사용하거나 잘라내세요.",
@@ -200,85 +196,6 @@
       "importPersona": "페르소나 가져오기",
       "mergeDocuments": "문서 병합",
       "research": "조사"
-    }
-  },
-  "kiroExport": {
-    "cancel": "취소",
-    "configure": "설정",
-    "description": "\"Kiro로 복사\" 내보내기를 위한 컨텍스트 설정",
-    "edit": "편집",
-    "noPrompt": "Kiro 내보내기 프롬프트가 설정되지 않음",
-    "noPromptHint": "\"설정\"을 클릭하여 PRD 내보내기를 위한 구현 컨텍스트 추가",
-    "save": "저장",
-    "saved": "저장됨!",
-    "templateHint": "이 컨텍스트는 \"Kiro로 복사\"를 사용할 때 PRD/PR-FAQ 문서 앞에 추가됩니다. 기술 스택, 코딩 표준 및 구현 가이드를 포함하세요.",
-    "templateLabel": "내보내기 프롬프트 템플릿",
-    "title": "Kiro 내보내기 설정",
-    "useDefault": "기본 템플릿 사용",
-    "usingDefault": "기본 지침을 따르고 있습니다. 직접 작성하려면 \"{{action}}\" 버튼을 클릭하세요."
-  },
-  "mcp": {
-    "activeTokens": "활성 토큰 ({{count}})",
-    "activeTokens_one": "활성 토큰 ({{count}})",
-    "activeTokens_other": "활성 토큰 ({{count}})",
-    "cancel": "취소",
-    "collapseLabel": "축소",
-    "copied": "복사됨",
-    "copy": "복사",
-    "copyToken": "토큰을 클립보드에 복사",
-    "copyTokenNow": "지금 이 토큰을 복사하세요 — 다시 표시되지 않습니다.",
-    "createdDate": "{{date}}에 생성됨",
-    "description": "Kiro 또는 VS Code와 같은 MCP 호환 클라이언트에 이 프로젝트를 연결하기 위한 API 토큰을 생성하세요.",
-    "dismiss": "닫기",
-    "expandLabel": "확장",
-    "expiredDate": "만료됨: {{date}}",
-    "expiresDate": "만료일: {{date}}",
-    "expiry": "만료",
-    "expiryDays": "{{count}}일",
-    "expiryDays_one": "{{count}}일",
-    "expiryDays_other": "{{count}}일",
-    "expiryNever": "만료 없음",
-    "generate": "생성",
-    "generateNewToken": "새 API 토큰 생성",
-    "generateToken": "토큰 생성",
-    "generating": "생성 중...",
-    "hideToken": "토큰 숨기기",
-    "lastUsed": "{{date}}에 마지막 사용됨",
-    "loadingTokens": "토큰 로드 중…",
-    "mcpConfig": "MCP 클라이언트 설정",
-    "mcpConfigHint": "<code>mcp.json</code>에 이를 추가하세요. <code>&lt;YOUR_API_TOKEN&gt;</code>을 아래의 토큰으로 바꾸세요.",
-    "notAvailable": "MCP Access를 아직 사용할 수 없습니다",
-    "notAvailableDesc": "API 토큰 관리 엔드포인트가 배포되지 않았습니다. MCP 토큰 지원으로 백엔드를 배포하여 이 기능을 활성화하세요.",
-    "noTokensHint": "토큰을 생성하여 MCP 클라이언트를 이 프로젝트에 연결하세요.",
-    "noTokensYet": "API 토큰이 없습니다",
-    "revealToken": "토큰 표시",
-    "revokeToken": "토큰 취소",
-    "title": "MCP 접근",
-    "tokenCreated": "토큰이 성공적으로 생성되었습니다",
-    "tokenExpiresOn": "이 토큰은 {{date}}에 만료됩니다.",
-    "tokenName": "토큰 이름",
-    "tokenNamePlaceholder": "예: My Kiro token",
-    "tokenPasteHint": "이 토큰을 mcp.json 또는 autoseed curl 명령의 <code>Authorization</code> 헤더에 붙여넣으세요.",
-    "scopes": "범위",
-    "scopeDesc": {
-      "feedback_read": "고객 피드백 검색 및 읽기",
-      "metrics_read": "대시보드 및 지표 분석 읽기",
-      "projects_read": "프로젝트, 페르소나, 문서 읽기"
-    },
-    "noScopes": "범위 없음",
-    "readReach": "읽기 범위",
-    "reachOption": {
-      "workspace": "전체 워크스페이스(기본값)",
-      "project-set": "이 프로젝트만"
-    },
-    "reachHint": {
-      "workspace": "다른 프로젝트의 미공개 문서를 포함한 워크스페이스의 모든 프로젝트와 모든 고객 피드백에 접근합니다.",
-      "project-set": "이 프로젝트로 제한됩니다. 프로젝트 단위가 아닌 피드백 전체와 워크스페이스 지표는 읽을 수 없습니다."
-    },
-    "reachBadge": {
-      "workspace": "전체 워크스페이스",
-      "project-set": "이 프로젝트",
-      "none": "읽기 불가"
     }
   },
   "notFound": {
@@ -361,7 +278,9 @@
     "triggerLabel": "트리거",
     "triggerPlaceholder": "이 시나리오를 트리거하는 것",
     "workarounds": "해결 방법 (줄당 하나)",
-    "workaroundsPlaceholder": "현재 대처 방식..."
+    "workaroundsPlaceholder": "현재 대처 방식...",
+    "locationPlaceholder": "도시, 한국",
+    "occupationPlaceholder": "프로덕트 매니저"
   },
   "personas": {
     "addNote": "노트 추가",
@@ -378,12 +297,17 @@
     "notePlaceholder": "사용자 조사 관찰 또는 인사이트를 입력하세요...",
     "notesCount_one": "메모 {{count}}개",
     "notesCount_other": "메모 {{count}}개",
-    "notesTip": "💡 팁: 사용자 인터뷰, 사용성 테스트 또는 데이터 분석에서 이 페르소나와 관련된 관찰을 추가하세요.",
+    "notesTip": "팁: 사용자 인터뷰, 사용성 테스트 또는 데이터 분석에서 이 페르소나와 관련된 관찰을 추가하세요.",
     "pressEnter": "Enter 키 입력 ↵",
     "removeNote": "노트 삭제",
     "researchNotes": "연구 노트",
     "reviews": "{{count}}개 리뷰",
-    "selectToView": "페르소나를 선택하여 상세 정보를 확인하세요"
+    "selectToView": "페르소나를 선택하여 상세 정보를 확인하세요",
+    "editPersona": "페르소나 편집",
+    "deletePersona": "페르소나 삭제",
+    "regenerateAvatar": "아바타 다시 생성",
+    "regeneratingAvatar": "새 아바타를 생성하는 중…",
+    "regenerateAvatarFailed": "아바타를 다시 생성하지 못했습니다. 다시 시도하세요."
   },
   "personaSections": {
     "behaviorsHabits": "행동 및 습관",
@@ -478,10 +402,10 @@
   "tabs": {
     "aiChat": "AI 채팅",
     "documents": "문서",
-    "mcpAccess": "내보내기 / MCP",
     "overview": "개요",
     "personas": "페르소나",
-    "product": "제품"
+    "product": "제품",
+    "label": "프로젝트 섹션"
   },
   "wizards": {
     "amazonQuestions": "Amazon의 5가지 고객 질문",
@@ -541,6 +465,7 @@
     "researchQuestionPlaceholder": "예: 주요 pain point는 무엇인가...",
     "researchSuggest": "AI 추천",
     "researchSuggestEmpty": "추천할 수 없습니다 — 피드백을 먼저 수집/추가하세요.",
+    "startFailed": "시작하지 못했습니다. 다시 시도하세요.",
     "researchSuggesting": "추천 중…",
     "researchSuggestPick": "추천을 눌러 적용하세요:",
     "researchSuggestTitle": "이 프로젝트의 피드백을 바탕으로 AI가 리서치 질문을 추천합니다",
@@ -549,11 +474,45 @@
     "researchWebSearch": "공개 웹 검색",
     "researchWebSearchHint": "AI가 여러 웹 검색을 계획하고 실행하여 분석을 뒷받침합니다(AWS 내에서 처리되며 출처가 인용됩니다)",
     "runResearch": "조사 실행",
-    "selectAtLeast2": "⚠️ 리믹스할 문서를 최소 2개 이상 선택하세요.",
+    "selectAtLeast2": "리믹스할 문서를 최소 2개 이상 선택하세요.",
     "submitGenerateDoc": "{{type}} 생성",
     "submitGeneratePersonas": "페르소나 생성",
     "submitRemixDocuments": "문서 리믹스",
     "submitRunResearch": "조사 실행",
     "workingBackwards": "역방향 작업"
+  },
+  "header": {
+    "back": "프로젝트 목록으로 돌아가기",
+    "connectMcp": "MCP로 연결"
+  },
+  "companyStrip": {
+    "label": "회사 컨텍스트",
+    "title": "회사 컨텍스트",
+    "noVision": "아직 회사 비전이 없습니다.",
+    "more": "+{{n}}개 더",
+    "designSystem": "디자인 시스템:",
+    "open": "지식 → 회사"
+  },
+  "prototypePins": {
+    "toggle": "테스터 핀",
+    "showOnPrototype": "프로토타입에 핀 표시",
+    "heading": "테스터 핀",
+    "hint": "테스터가 프로토타입의 요소를 클릭하고 의견을 남깁니다. 에이전트는 열린 핀을 바탕으로 프로토타입을 수정합니다.",
+    "empty": "아직 핀이 없습니다. 프로토타입 안의 Feedback을 클릭해 남겨 보세요.",
+    "loadFailed": "핀을 불러오지 못했습니다.",
+    "status": {
+      "open": "열림",
+      "addressed": "반영됨",
+      "resolved": "해결됨"
+    },
+    "flagged": "플래그됨 — 에이전트에게 전달하지 않음",
+    "consoleErrors": "콘솔 오류: {{count}}",
+    "addressedBy": "리비전 {{id}}에서 반영",
+    "pinNumber": "핀 {{number}}",
+    "reply": "답장",
+    "replyPlaceholder": "테스터에게 답장…",
+    "resolve": "해결",
+    "reopen": "다시 열기",
+    "actionFailed": "실패했습니다. 다시 시도해 주세요."
   }
 }

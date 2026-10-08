@@ -43,5 +43,7 @@
     "resettingPassword": "正在重置密码...",
     "submit": "重置密码",
     "title": "输入验证码"
-  }
+  },
+  "showPassword": "显示密码",
+  "hidePassword": "隐藏密码"
 }

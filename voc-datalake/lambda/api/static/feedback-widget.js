@@ -12,6 +12,57 @@
  *   });
  */
 (function() {
+  // Defaults from the Kiro Light palette (docs/kiro-design-system.md): accent,
+  // page background, strong text, muted text, borders. A form's own theme
+  // colours always win; these apply only where the form leaves one unset.
+  var KIRO = {
+    primary: '#8e48ff',
+    background: '#ffffff',
+    text: '#19161d',
+    muted: '#5e5966',
+    border: '#d4d4d8',
+    borderSubtle: '#e4e4e7'
+  };
+
+  /** WCAG relative luminance of a #rgb / #rrggbb colour, or null for anything else. */
+  function luminance(colour) {
+    var m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(colour || '').trim());
+    if (!m) return null;
+    var hex = m[1].length === 3 ? m[1].replace(/./g, '$&$&') : m[1];
+    var channels = [0, 2, 4].map(function(i) {
+      var channel = parseInt(hex.slice(i, i + 2), 16) / 255;
+      return channel <= 0.03928 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+  }
+
+  function contrast(a, b) {
+    var hi = Math.max(a, b), lo = Math.min(a, b);
+    return (hi + 0.05) / (lo + 0.05);
+  }
+
+  /**
+   * The text colour for a label ON `fill` (the start/next/selected buttons):
+   * white or Kiro strong text, whichever contrasts more. Keeps a customer's
+   * brand colour as the fill while the label stays readable; the old fixed
+   * white label failed WCAG AA on the old blue default (3.68:1, E2E F6).
+   * Anything that is not a hex colour keeps white.
+   */
+  function readableOn(fill) {
+    var l = luminance(fill);
+    if (l === null) return '#ffffff';
+    return contrast(l, 1) >= contrast(l, luminance(KIRO.text)) ? '#ffffff' : KIRO.text;
+  }
+
+  function message(container, text) {
+    container.innerHTML = '';
+    var p = document.createElement('p');
+    p.setAttribute('role', 'status');
+    p.style.cssText = 'color:' + KIRO.muted + ';text-align:center;padding:40px;';
+    p.textContent = text;
+    container.appendChild(p);
+  }
+
   window.VoCFeedbackForm = {
     init: function(options) {
       var container = document.querySelector(options.container);
@@ -25,22 +76,42 @@
         .then(function(data) {
           var config = data.config || data;
           if (data.success && config && config.enabled) {
-            new TypeformWidget(container, config, apiEndpoint, submitEndpoint);
+            new TypeformWidget(container, config, apiEndpoint, submitEndpoint, embedDimensions(options.dimensions));
           } else {
-            container.innerHTML = '<p style="color:#666;text-align:center;padding:40px;">Feedback form unavailable.</p>';
+            message(container, 'Feedback form unavailable.');
           }
         })
         .catch(function() {
-          container.innerHTML = '<p style="color:#666;text-align:center;padding:40px;">Failed to load form.</p>';
+          message(container, 'Failed to load form.');
         });
     }
   };
 
-  function TypeformWidget(container, config, apiEndpoint, submitEndpoint) {
+  // The `dimensions` embed option ({product: 'app', user_type: 'partner'}): kept
+  // only as a plain object of up to 10 string/number values. The server drops
+  // anything the deployment's dimensions config does not know.
+  var MAX_EMBED_DIMENSIONS = 10;
+  function embedDimensions(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    var out = {};
+    var count = 0;
+    Object.keys(raw).forEach(function(key) {
+      var value = raw[key];
+      var usable = typeof value === 'string' || (typeof value === 'number' && isFinite(value));
+      if (usable && count < MAX_EMBED_DIMENSIONS) {
+        out[key] = String(value);
+        count += 1;
+      }
+    });
+    return count ? out : null;
+  }
+
+  function TypeformWidget(container, config, apiEndpoint, submitEndpoint, dimensions) {
     this.container = container;
     this.config = config;
     this.apiEndpoint = apiEndpoint;
     this.submitEndpoint = submitEndpoint;
+    this.dimensions = dimensions || null;
     this.currentStep = 0;
     this.data = { rating: null, text: '', name: '', email: '' };
     this.isSubmitting = false;
@@ -67,9 +138,10 @@
 
   TypeformWidget.prototype.render = function() {
     var t = this.config.theme || {};
-    var primary = t.primary_color || '#3B82F6';
-    var bg = t.background_color || '#FFFFFF';
-    var text = t.text_color || '#1F2937';
+    var primary = t.primary_color || KIRO.primary;
+    var onPrimary = readableOn(primary);
+    var bg = t.background_color || KIRO.background;
+    var text = t.text_color || KIRO.text;
 
     this.container.innerHTML = '';
     this.container.style.cssText = 'position:relative;min-height:400px;background:' + bg + ';color:' + text + ';font-family:system-ui,-apple-system,sans-serif;overflow:hidden;';
@@ -97,13 +169,15 @@
 
     var prevBtn = document.createElement('button');
     prevBtn.innerHTML = '&uarr;';
-    prevBtn.style.cssText = 'width:40px;height:40px;border:1px solid #d1d5db;background:white;border-radius:4px;cursor:pointer;font-size:18px;';
+    prevBtn.setAttribute('aria-label', 'Previous question');
+    prevBtn.style.cssText = 'width:40px;height:40px;border:1px solid ' + KIRO.border + ';background:' + KIRO.background + ';color:' + KIRO.text + ';border-radius:4px;cursor:pointer;font-size:18px;';
     prevBtn.onclick = function() { self.prev(); };
     this.prevBtn = prevBtn;
 
     var nextBtn = document.createElement('button');
     nextBtn.innerHTML = '&darr;';
-    nextBtn.style.cssText = 'width:40px;height:40px;border:none;background:' + primary + ';color:white;border-radius:4px;cursor:pointer;font-size:18px;';
+    nextBtn.setAttribute('aria-label', 'Next question');
+    nextBtn.style.cssText = 'width:40px;height:40px;border:none;background:' + primary + ';color:' + onPrimary + ';border-radius:4px;cursor:pointer;font-size:18px;';
     nextBtn.onclick = function() { self.next(); };
     this.nextBtn = nextBtn;
 
@@ -125,7 +199,7 @@
   TypeformWidget.prototype.createSlide = function(step, index) {
     var self = this;
     var t = this.config.theme || {};
-    var primary = t.primary_color || '#3B82F6';
+    var primary = t.primary_color || KIRO.primary;
 
     var slide = document.createElement('div');
     slide.dataset.index = index;
@@ -143,7 +217,7 @@
       p.textContent = step.subtitle;
       var btn = document.createElement('button');
       btn.className = 'voc-start';
-      btn.style.cssText = 'background:' + primary + ';color:white;border:none;padding:16px 32px;font-size:16px;border-radius:8px;cursor:pointer;';
+      btn.style.cssText = 'background:' + primary + ';color:' + readableOn(primary) + ';border:none;padding:16px 32px;font-size:16px;border-radius:8px;cursor:pointer;';
       btn.innerHTML = 'Start &rarr;';
       btn.onclick = function() { self.next(); };
       content.appendChild(h1);
@@ -158,7 +232,7 @@
       var ta = document.createElement('textarea');
       ta.className = 'voc-input';
       ta.placeholder = step.placeholder;
-      ta.style.cssText = 'width:100%;min-height:150px;padding:16px;font-size:18px;border:2px solid #e5e7eb;border-radius:12px;resize:none;font-family:inherit;box-sizing:border-box;';
+      ta.style.cssText = 'width:100%;min-height:150px;padding:16px;font-size:18px;border:2px solid ' + KIRO.borderSubtle + ';border-radius:12px;resize:none;font-family:inherit;box-sizing:border-box;';
       ta.oninput = function() { self.data.text = this.value; };
       ta.onkeydown = function(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); self.next(); } };
       var hint = document.createElement('p');
@@ -175,7 +249,7 @@
       inp.type = step.type === 'email' ? 'email' : 'text';
       inp.className = 'voc-input';
       inp.placeholder = step.placeholder;
-      inp.style.cssText = 'width:100%;padding:16px;font-size:24px;border:none;border-bottom:2px solid #e5e7eb;text-align:center;outline:none;background:transparent;';
+      inp.style.cssText = 'width:100%;padding:16px;font-size:24px;border:none;border-bottom:2px solid ' + KIRO.borderSubtle + ';text-align:center;outline:none;background:transparent;';
       inp.oninput = function() { self.data[step.type] = this.value; };
       inp.onkeydown = function(e) { if (e.key === 'Enter') self.next(); };
       content.appendChild(h2);
@@ -226,7 +300,7 @@
         var btn = document.createElement('button');
         btn.className = 'voc-rating-btn';
         btn.dataset.value = n;
-        btn.style.cssText = 'width:44px;height:44px;border:2px solid #d1d5db;background:white;border-radius:8px;cursor:pointer;font-size:16px;font-weight:600;transition:all 0.2s;';
+        btn.style.cssText = 'width:44px;height:44px;border:2px solid ' + KIRO.border + ';background:' + KIRO.background + ';color:' + KIRO.text + ';border-radius:8px;cursor:pointer;font-size:16px;font-weight:600;transition:all 0.2s;';
         btn.textContent = n;
         ratingContainer.appendChild(btn);
       }
@@ -248,66 +322,49 @@
     hintEl.style.cssText = 'margin-top:24px;font-size:14px;opacity:0.5;min-height:20px;';
     hintEl.textContent = 'Click to rate';
     content.appendChild(hintEl);
+
+    // Highlight the buttons up to (stars) or at (emoji, numeric) `rating`; a falsy
+    // rating resets them. Numeric buttons are recoloured only on a real selection
+    // (`selecting`), and so is any rating type other than stars/emoji/numeric.
+    function paintRatingButtons(rating, selecting) {
+      content.querySelectorAll('.voc-rating-btn').forEach(function(b) {
+        var v = parseInt(b.dataset.value);
+        if (step.ratingType === 'stars') {
+          b.style.opacity = v <= rating ? '1' : '0.3';
+        } else if (step.ratingType === 'numeric') {
+          if (!selecting) return;
+          b.style.background = v === rating ? primary : KIRO.background;
+          b.style.color = v === rating ? readableOn(primary) : KIRO.text;
+          b.style.borderColor = v === rating ? primary : KIRO.border;
+        } else if (selecting || step.ratingType === 'emoji') {
+          b.style.opacity = v === rating ? '1' : '0.4';
+          b.style.transform = v === rating ? 'scale(1.2)' : 'scale(1)';
+        }
+      });
+    }
+
     content.querySelectorAll('.voc-rating-btn').forEach(function(btn) {
       btn.onmouseenter = function() {
-        var hoverVal = parseInt(this.dataset.value);
         var label = this.dataset.label;
         if (label) hintEl.textContent = label;
-        if (step.ratingType === 'stars') {
-          content.querySelectorAll('.voc-rating-btn').forEach(function(b) {
-            b.style.opacity = parseInt(b.dataset.value) <= hoverVal ? '1' : '0.3';
-          });
-        } else if (step.ratingType === 'emoji') {
-          content.querySelectorAll('.voc-rating-btn').forEach(function(b) {
-            var v = parseInt(b.dataset.value);
-            b.style.opacity = v === hoverVal ? '1' : '0.4';
-            b.style.transform = v === hoverVal ? 'scale(1.2)' : 'scale(1)';
-          });
-        }
+        paintRatingButtons(parseInt(this.dataset.value), false);
       };
 
       btn.onmouseleave = function() {
         if (self.data.rating) {
           var selBtn = content.querySelector('.voc-rating-btn[data-value="' + self.data.rating + '"]');
           hintEl.textContent = selBtn ? (selBtn.dataset.label || 'Click to rate') : 'Click to rate';
-          content.querySelectorAll('.voc-rating-btn').forEach(function(b) {
-            var v = parseInt(b.dataset.value);
-            if (step.ratingType === 'stars') {
-              b.style.opacity = v <= self.data.rating ? '1' : '0.3';
-            } else if (step.ratingType === 'emoji') {
-              b.style.opacity = v === self.data.rating ? '1' : '0.4';
-              b.style.transform = v === self.data.rating ? 'scale(1.2)' : 'scale(1)';
-            }
-          });
         } else {
           hintEl.textContent = 'Click to rate';
-          content.querySelectorAll('.voc-rating-btn').forEach(function(b) {
-            if (step.ratingType === 'stars') b.style.opacity = '0.3';
-            else if (step.ratingType === 'emoji') {
-              b.style.opacity = '0.4';
-              b.style.transform = 'scale(1)';
-            }
-          });
         }
+        paintRatingButtons(self.data.rating, false);
       };
 
       btn.onclick = function() {
         self.data.rating = parseInt(this.dataset.value);
         var label = this.dataset.label;
         if (label) hintEl.textContent = label;
-        content.querySelectorAll('.voc-rating-btn').forEach(function(b) {
-          var v = parseInt(b.dataset.value);
-          if (step.ratingType === 'stars') {
-            b.style.opacity = v <= self.data.rating ? '1' : '0.3';
-          } else if (step.ratingType === 'numeric') {
-            b.style.background = v === self.data.rating ? primary : 'white';
-            b.style.color = v === self.data.rating ? 'white' : 'inherit';
-            b.style.borderColor = v === self.data.rating ? primary : '#d1d5db';
-          } else {
-            b.style.opacity = v === self.data.rating ? '1' : '0.4';
-            b.style.transform = v === self.data.rating ? 'scale(1.2)' : 'scale(1)';
-          }
-        });
+        paintRatingButtons(self.data.rating, true);
         setTimeout(function() { self.next(); }, 300);
       };
     });
@@ -371,16 +428,19 @@
     if (this.isSubmitting) return;
     this.isSubmitting = true;
 
+    var payload = {
+      text: this.data.text,
+      rating: this.data.rating,
+      name: this.data.name || null,
+      email: this.data.email || null,
+      page_url: window.location.href
+    };
+    if (this.dimensions) payload.dimensions = this.dimensions;
+
     fetch(this.apiEndpoint + this.submitEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        text: this.data.text,
-        rating: this.data.rating,
-        name: this.data.name || null,
-        email: this.data.email || null,
-        page_url: window.location.href
-      })
+      body: JSON.stringify(payload)
     })
     .then(function(r) { return r.json(); })
     .then(function(result) {

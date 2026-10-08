@@ -31,7 +31,24 @@ def _reset_image_model_client_cache():
     guard test that importing it must not pull in `cryptography`), so widening who depends
     on it importing cleanly is the opposite of what the module is built for.
     """
-    from shared.avatar import clear_image_model_client_cache
-    clear_image_model_client_cache()
+    from shared import avatar
+
+    def _clear():
+        with avatar._image_model_clients_lock:
+            avatar._image_model_clients.clear()
+
+    _clear()
     yield
-    clear_image_model_client_cache()
+    _clear()
+
+
+@pytest.fixture
+def reset_table_cache():
+    """Drop shared.tables' cached Table resources before the test.
+
+    The accessors cache one resource per env var for the life of the execution
+    environment, so a test that patches `get_dynamodb_resource` or the table env
+    vars would otherwise be served a table an earlier test built.
+    """
+    from shared import tables
+    tables._cache.clear()

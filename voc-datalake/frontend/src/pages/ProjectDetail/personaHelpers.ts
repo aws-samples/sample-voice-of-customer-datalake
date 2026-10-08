@@ -1,8 +1,8 @@
 const confidenceClasses: Record<string, string> = {
-  high: 'bg-green-100 text-green-700',
-  medium: 'bg-yellow-100 text-yellow-700',
+  high: 'bg-ok-subtle text-ok',
+  medium: 'bg-warn-subtle text-warn',
 }
 
 export function getConfidenceClass(confidence: string | undefined): string {
-  return confidenceClasses[confidence ?? ''] ?? 'bg-gray-100 text-gray-600'
+  return confidenceClasses[confidence ?? ''] ?? 'bg-bg-hover text-text'
 }

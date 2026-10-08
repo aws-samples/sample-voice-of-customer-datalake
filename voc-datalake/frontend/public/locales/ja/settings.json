@@ -8,8 +8,8 @@
     "saved": "保存済み",
     "surfaces": {
       "chat": {
-        "description": "対話型データクエリとプロジェクトチャット",
-        "label": "AIチャット"
+        "description": "ページに応じて動作するフローティングアシスタントと全画面チャットページ",
+        "label": "AIアシスタント"
       },
       "documents": {
         "description": "PRD、PR/FAQ、ペルソナ、調査レポート",
@@ -26,9 +26,77 @@
       "utility": {
         "description": "カテゴリ提案とスクレイパーセレクター検出",
         "label": "ユーティリティ"
+      },
+      "memory": {
+        "label": "メモリ",
+        "description": "会社と個人の記憶を抽出・重複排除・確認します（利用可能なら Flex 階層）"
+      },
+      "agent_orchestrator": {
+        "label": "エージェント指揮役",
+        "description": "自律実行を計画し、ワークフローを進め、各ステップを検証します"
+      },
+      "agent_worker": {
+        "label": "エージェント作業役",
+        "description": "自律実行内での調査、PR/FAQ、PRD、プロトタイプ"
+      },
+      "agent_reviewer": {
+        "label": "エージェント最終レビュー",
+        "description": "会社の目標に照らした自律実行の最終確認"
+      },
+      "agent_persona": {
+        "label": "ペルソナパネル",
+        "description": "実行中にドキュメントやプロトタイプを採点し、異議を唱えるペルソナ"
       }
     },
-    "title": "AIモデル"
+    "title": "AIモデル",
+    "test": {
+      "test": "テスト",
+      "testTitle": "{{surface}} 用に {{model}} へテストリクエストを 1 件送信",
+      "testing": "テスト中...",
+      "notTested": "未テスト",
+      "unsaved": "未保存の変更",
+      "save": "保存",
+      "discard": "破棄",
+      "latency": "{{ms}} ミリ秒",
+      "tokensPerMinute": "{{count}} トークン/分",
+      "quotaUnknown": "クォータ不明",
+      "all": "すべてのモデルをテスト",
+      "allTitle": "モデルのアクセスと容量",
+      "allIntro": "各モデルに短いリクエストを 1 件ずつ順番に送信し、このアカウントとリージョンでの 1 分あたりのトークンクォータを表示します。",
+      "allRunning": "{{total}} 件中 {{current}} 件目をテスト中...",
+      "columns": {
+        "model": "モデル",
+        "status": "ステータス",
+        "latency": "レイテンシー",
+        "tokensPerMinute": "トークン/分"
+      },
+      "status": {
+        "available": "利用可能",
+        "no_access": "アクセス権なし",
+        "not_in_region": "このリージョンでは未提供",
+        "no_capacity": "容量なし",
+        "throttled": "スロットリング中",
+        "not_ready": "準備中",
+        "unavailable": "一時的に利用不可",
+        "error": "エラー"
+      },
+      "detail": {
+        "available": "モデルが応答しました。",
+        "no_access": "このアカウントにはモデルへのアクセス権がありません (モデルアクセス、ユースケース、または契約)。",
+        "not_in_region": "このモデルまたは推論プロファイルはこのリージョンでは提供されていません。",
+        "no_capacity": "このアカウントでのこのモデルのクォータは 0 です。待つ以外にできることはありません。",
+        "throttled": "モデルが現在リクエストを制限しています。しばらくしてから再試行してください。",
+        "not_ready": "モデルはまだ準備ができていません。数分後に再試行してください。",
+        "unavailable": "モデルは一時的に利用できません。後で再試行してください。",
+        "error": "テストリクエストが失敗しました。"
+      },
+      "confirm": {
+        "title": "テストに合格していないモデルを保存しますか?",
+        "untested": "{{model}} はまだテストされていません。それでも {{surface}} に保存しますか?",
+        "failed": "{{model}} の前回のテスト結果は「{{status}}」でした。それでも {{surface}} に保存しますか?",
+        "save": "このまま保存"
+      }
+    }
   },
   "api": {
     "connected": "接続済み",
@@ -49,35 +117,16 @@
     "syncedToBackend": "バックエンドと同期済み",
     "title": "ブランド設定",
     "urlsHint": "ウェブ検索で監視する特定のURL",
-    "urlsLabel": "追跡するURL（1行に1つ）"
+    "urlsLabel": "追跡するURL（1行に1つ）",
+    "loadFailed": "サーバーからブランド設定を読み込めませんでした。このブラウザーに保存された値を表示しています。",
+    "retry": "再試行",
+    "notSynced": "未同期",
+    "saveFailed": "サーバーに保存できませんでした。もう一度お試しください。"
   },
   "categories": {
-    "addCategory": "カテゴリを追加",
-    "addCategoryPlaceholder": "新しいカテゴリを追加...",
-    "addSubcategoryPlaceholder": "サブカテゴリを追加...",
-    "aiSuggestionsDescription": "貴社、業界、または製品について説明して、ビジネスに合わせたAI提案カテゴリを取得してください。",
-    "aiSuggestionsTitle": "AIカテゴリ提案",
-    "categoriesCount": "{{count}}個のカテゴリ",
-    "categoriesCount_one": "{{count}}個のカテゴリ",
-    "categoriesCount_other": "{{count}}個のカテゴリ",
-    "companyPlaceholder": "例：国内線および国際線を提供する航空会社です。お客様は定時性、快適性、荷物取扱、カスタマーサービス、機内体験を重視しています...",
     "configureFirst": "カテゴリを管理するには、一般タブでAPIエンドポイントを設定してください。",
-    "deleteButton": "削除",
-    "deleteConfirmMessage": "このカテゴリとすべてのサブカテゴリを削除してもよろしいですか？この操作は取り消せません。",
-    "deleteConfirmTitle": "カテゴリを削除",
     "description": "フィードバック分類のカテゴリとサブカテゴリを設定します。",
-    "emptyDescription": "上記のAI生成を使用するか、以下に手動でカテゴリを追加してください。",
-    "emptyTitle": "まだカテゴリが設定されていません。",
-    "generateButton": "カテゴリを生成",
-    "generateError": "カテゴリの生成に失敗しました。もう一度お試しください。",
-    "generating": "生成中...",
-    "saved": "カテゴリが正常に保存されました",
-    "saving": "保存中...",
-    "subcategoriesCount": "{{count}}個のサブ",
-    "subcategoriesCount_one": "{{count}}個のサブ",
-    "subcategoriesCount_other": "{{count}}個のサブ",
-    "title": "フィードバックカテゴリ",
-    "titleLabel": "カテゴリとサブカテゴリ"
+    "title": "フィードバックカテゴリ"
   },
   "dangerZone": {
     "resetButton": "設定をリセット",
@@ -90,15 +139,8 @@
   "dataSources": {
     "configureFirst": "データソースを管理するには、一般タブでAPIエンドポイントを設定してください。",
     "description": "API認証情報、Webhookの設定、データソーススケジュールの有効化/無効化。",
+    "noPlugins": "データソースプラグインが見つかりません。<code>npm run generate:manifests</code> を実行してプラグインマニフェストを生成してください。",
     "title": "データソースと統合"
-  },
-  "language": {
-    "interfaceHint": "ダッシュボードの言語と、AIがチャット応答、生成されたペルソナ、調査レポート、PRD、PR/FAQに使用する言語を制御します。ブラウザに保存されます。",
-    "interfaceLabel": "インターフェース言語",
-    "loadingReview": "レビュー設定を読み込み中...",
-    "reviewHint": "すべての受信フィードバックは、分析と表示のためにこの言語に翻訳されます。元のテキストは常に保持されます。",
-    "reviewLabel": "レビュー言語",
-    "title": "言語と地域"
   },
   "logs": {
     "clear": "クリア",
@@ -139,30 +181,256 @@
     "pages_one": "{{count}}ページ",
     "pages_other": "{{count}}ページ",
     "processingErrors": "処理エラー",
-    "rawPreview": "生データプレビュー:",
+    "recordKeys": "含まれるフィールド:",
+    "textLength": "テキスト長: {{count}}文字",
+    "textLength_one": "テキスト長: {{count}}文字",
+    "textLength_other": "テキスト長: {{count}}文字",
     "refresh": "更新",
     "runErrors": "{{count}}件のエラー",
     "runErrors_one": "{{count}}件のエラー",
     "runErrors_other": "{{count}}件のエラー",
     "scraperRuns": "スクレイパー実行",
     "title": "システムログ",
-    "validationFailures": "バリデーションエラー"
+    "validationFailures": "バリデーションエラー",
+    "periodLabel": "期間"
   },
   "saveChanges": "変更を保存",
   "saved": "保存しました！",
   "saving": "保存中...",
+  "sourceCard": {
+    "connected": "接続済み",
+    "copyWebhookUrl": "Webhook URLをコピー",
+    "credentials": "API認証情報",
+    "disabled": "無効",
+    "docs": "ドキュメント",
+    "enabled": "有効",
+    "enterField": "{{field}}を入力",
+    "events": "イベント: {{events}}",
+    "fileExplorer": "ファイルエクスプローラー",
+    "hide": "非表示",
+    "save": "保存",
+    "saved": "保存しました！",
+    "saveToSecrets": "Secrets Managerに保存",
+    "selectOption": "選択...",
+    "show": "表示",
+    "test": "テスト",
+    "unknownResult": "不明な結果",
+    "webhooks": "Webhook"
+  },
   "subtitle": "VoCプラットフォームを設定",
   "tabs": {
     "categories": "カテゴリ",
     "general": "一般",
     "logs": "ログ",
     "plugins": "データソース",
-    "users": "ユーザー"
+    "users": "ユーザー",
+    "ai": "AIモデル",
+    "integrations": "連携",
+    "dimensions": "ディメンション",
+    "sources": "ソースとプライバシー"
   },
   "title": "設定",
   "users": {
     "configureFirst": "ユーザーを管理するには、一般タブでAPIエンドポイントを設定してください。",
     "description": "VoCプラットフォームのユーザー、ロール、権限を管理します。",
     "title": "ユーザー管理"
+  },
+  "company": {
+    "title": "会社",
+    "subtitle": "全員と各 AI 機能が拠り所とするビジョン・目標・デザインシステム、そしてあなた自身の目標。",
+    "tabs": {
+      "vision": "ビジョンと目標",
+      "mine": "自分の目標",
+      "design": "デザインシステム"
+    }
+  },
+  "shared": {
+    "viewOnly": "閲覧のみ",
+    "loadFailed": "このセクションを読み込めませんでした。",
+    "retry": "再試行",
+    "loading": "読み込み中…",
+    "saveFailed": "保存できませんでした。もう一度お試しください。",
+    "write": "編集",
+    "preview": "プレビュー",
+    "nothingToPreview": "まだプレビューする内容がありません。",
+    "charCount": "{{count}} / {{max}} 文字",
+    "configureFirst": "先に API エンドポイントを接続してください。"
+  },
+  "companyContext": {
+    "title": "会社のコンテキスト",
+    "description": "アシスタント、自律エージェント、メモリがコンテキストとして使うビジョンと目標です。記憶が矛盾したときの判断基準にもなります。",
+    "vision": "長期ビジョン",
+    "visionPlaceholder": "会社はどこへ向かい、なぜなのか。Markdown に対応しています。",
+    "noVision": "ビジョンはまだ書かれていません。",
+    "objectives": "会社の目標",
+    "noObjectives": "会社の目標はまだありません。",
+    "addObjective": "目標を追加",
+    "removeObjective": "目標を削除",
+    "objectiveLimit": "目標は最大 {{max}} 件です。",
+    "objectiveLegend": "目標 {{n}}",
+    "objectiveTitle": "目標のタイトル",
+    "objectiveDescription": "成功とはどのような状態ですか？",
+    "horizon": "期間",
+    "horizons": {
+      "long": "長期",
+      "quarter": "今四半期",
+      "date": "期日まで"
+    },
+    "due": "期日",
+    "updatedMeta": "最終更新: {{at}}（{{by}}）",
+    "unknownEditor": "管理者"
+  },
+  "myContext": {
+    "title": "自分の目標と KPI",
+    "description": "あなた自身の目標とその測り方です。アシスタントと個人メモリが使い、会社の目標は変更しません。",
+    "empty": "まだ目標を設定していません。",
+    "addObjective": "目標を追加",
+    "removeObjective": "目標を削除",
+    "objectiveLegend": "目標 {{n}}",
+    "objectiveTitle": "目標のタイトル",
+    "objectiveDescription": "あなたにとって重要な理由",
+    "due": "期日",
+    "kpis": "主要指標（KPI）",
+    "addKpi": "KPI を追加",
+    "removeKpi": "KPI を削除",
+    "kpiName": "KPI 名",
+    "kpiTarget": "目標値",
+    "kpiUnit": "単位"
+  },
+  "designSystem": {
+    "title": "デザインシステム",
+    "description": "ブランドのトークン、ガイドライン、参考資料です。プロトタイプや PR/FAQ のビジュアルはこれに沿って作られます。",
+    "logo": "ロゴ",
+    "logoAlt": "会社のロゴ",
+    "uploadLogo": "ロゴをアップロード",
+    "colors": "カラー",
+    "typography": "タイポグラフィ",
+    "spacing": "余白",
+    "radius": "角丸",
+    "noTokens": "まだありません。",
+    "addToken": "トークンを追加",
+    "removeToken": "トークンを削除",
+    "tokenName": "名前",
+    "tokenValue": "値",
+    "swatch": "カラー見本 {{value}}",
+    "invalidColor": "有効な色の値ではありません",
+    "typeRole": "役割（例：見出し）",
+    "typeFamily": "フォントファミリー",
+    "typeSize": "サイズ",
+    "typeWeight": "太さ",
+    "guidelines": "ガイドライン",
+    "guidelinesPlaceholder": "コンポーネントの指針、トーン、すべきこと・避けること…Markdown に対応しています。",
+    "noGuidelines": "ガイドラインはまだありません。",
+    "references": "参考資料",
+    "noReferences": "参考資料はまだありません。Figma ファイル、GitHub リポジトリ、スクリーンショット、HTML ページを追加してください。",
+    "kinds": {
+      "screenshot": "スクリーンショット",
+      "html": "HTML ページ",
+      "figma": "Figma ファイル",
+      "github": "GitHub リポジトリ"
+    },
+    "statuses": {
+      "pending": "保留中",
+      "processing": "処理中",
+      "ready": "準備完了",
+      "failed": "失敗",
+      "archived": "アーカイブ済み"
+    },
+    "openLink": "リンクを開く",
+    "refresh": "再取得",
+    "archive": "アーカイブ",
+    "archiveTitle": "この参考資料をアーカイブしますか？",
+    "archiveMessage": "「{{title}}」は新しいプロトタイプに使われなくなります。ファイルは保持されます。",
+    "referenceKind": "参考資料の種類",
+    "referenceTitle": "タイトル",
+    "referenceUrl": "リンク（https://…）",
+    "referenceFile": "ファイル",
+    "addReference": "参考資料を追加",
+    "addReferenceFailed": "参考資料を追加できませんでした。もう一度お試しください。",
+    "uploadBadType": "{{name}} は対応していないファイル形式です。",
+    "uploadTooLarge": "{{name}} は {{mb}} MB を超えています。",
+    "uploadFailed": "アップロードに失敗しました。もう一度お試しください。",
+    "integrations": "デザイン連携",
+    "integrationsHint": "トークンは暗号化して保存され、再表示されません。空欄のままにすると現在のトークンを維持します。",
+    "providers": {
+      "figma": "Figma トークン",
+      "github": "GitHub トークン"
+    },
+    "tokenPlaceholder": "トークンを貼り付け",
+    "tokenReplacePlaceholder": "置き換える新しいトークンを貼り付け",
+    "configured": "設定済み",
+    "notConfigured": "未設定",
+    "saveTokens": "トークンを保存",
+    "integrationsMoved": "Figma と GitHub のトークンの設定場所:",
+    "integrationsLink": "管理 → 連携"
+  },
+  "integrations": {
+    "title": "連携",
+    "description": "デザインシステム用に Figma ファイルと GitHub リポジトリを読み取るために、プラットフォームが使用する書き込み専用トークンです。Secrets Manager に保存され、再表示されることはありません。",
+    "mcpHint": "外部アシスタント向けの MCP アクセスはユーザーごとに設定します。設定場所:",
+    "mcpLink": "接続"
+  },
+  "integrationGuide": {
+    "heading": "設定ガイド",
+    "intro": "トークンごとの手順です。開くと、用途、取得場所、付与する権限、動作の確認方法を確認できます。",
+    "newTab": "新しいタブで開きます",
+    "purposeHeading": "用途",
+    "stepsHeading": "取得方法",
+    "permissionsHeading": "付与する権限",
+    "saveHeading": "ここに保存する",
+    "testHeading": "動作を確認する",
+    "failuresHeading": "失敗した場合",
+    "securityHeading": "セキュリティ",
+    "save": "上の「{{field}}」欄にトークンを貼り付けて「{{save}}」をクリックします。欄が空になり、バッジが「{{configured}}」に変わります。トークンを置き換えるには、新しいトークンを貼り付けて再度保存します。欄が空のままなら現在のトークンが維持されます。",
+    "test": "テストボタンはありません。トークンは参考資料の取得時に確認されます。{{company}} → {{design}} を開き、「{{add}}」をクリックして種類「{{kind}}」を選び、リンクを貼り付けます。少し待ってからページを再読み込みしてください。要約付きで「{{ready}}」になればトークンは機能しています。「{{failed}}」の場合は参考資料の下に理由が表示されます。問題を解決したら、その参考資料の「{{refresh}}」をクリックします。",
+    "openDesignSystem": "{{company}} → {{design}} を開く",
+    "failMissing": "トークンがまだ保存されていません。上で保存してから、参考資料の「{{refresh}}」をクリックしてください。",
+    "failBadLink": "リンクの形式がサポートされていません。ブラウザのアドレスバーからもう一度コピーしてください（上のリンク形式を参照）。",
+    "failRateLimited": "プロバイダーがリクエストを制限しています。数分待ってから「{{refresh}}」をクリックしてください。",
+    "storage": "保管場所：AWS Secrets Manager（シークレット voc/design-integrations、プラットフォームの KMS キーで暗号化）。読み取れるのは設定 API だけで、二度と表示されず、このページにはトークンが設定済みかどうかだけが表示されます。トークンをすぐに無効にするには、プロバイダー側で取り消してください。",
+    "otherCredentials": "GitHub Issues のトークンなど、データソースの認証情報はここでは設定しません。{{plugins}} タブの各ソースカードに専用の入力欄と設定手順があります。",
+    "figma": {
+      "title": "Figma 個人アクセストークン",
+      "summary": "Figma ファイルをデザインの参考資料として使うのに必要です。",
+      "purpose": "{{company}} → {{design}} でデザインの参考資料として追加した Figma ファイル（ページ名、フレーム名、公開スタイル）をプラットフォームが読み取れるようにします。トークンは api.figma.com にだけ、Figma の参考資料を取得するときにだけ送信されます。",
+      "step1": "Figma にサインインします。ファイルブラウザで左上のアカウントメニューを開き、「Settings」を選びます。",
+      "step2": "「Security」タブを開きます。「Personal access tokens」で「Generate new token」をクリックします。",
+      "step3": "トークンに名前（例：「VoC design system」）を付け、有効期限を選びます。",
+      "step4": "スコープで「File content」を読み取り専用（file_content:read）にします。それ以外のスコープはすべてオフのままにします。",
+      "step5": "「Generate token」をクリックし、すぐにコピーします。Figma がトークンを表示するのは一度だけです。",
+      "docsTokens": "Figma：個人アクセストークン",
+      "docsScopes": "Figma：トークンのスコープ",
+      "permissions": "スコープは file_content:read（読み取り専用）の 1 つだけです。トークンは所有者が Figma で開けるファイルしか参照できないため、作成するアカウントは参照するファイルへのアクセス権が必要です。",
+      "linkFormat": "Figma のリンク：https://www.figma.com/design/<file key>/…（/file/、/proto/、/board/ のリンクも使えます）。",
+      "failRefused": "トークンが誤っている、期限切れまたは取り消し済み、あるいは file_content:read がありません。新しいトークンを生成して保存してください。",
+      "failNotFound": "リンクが誤っているか、トークンの所有者がそのファイルを Figma で開けません。",
+      "security": "トークンは作成した Figma ユーザーとして動作します。デザインファイルの閲覧だけができるアカウントを使い、有効期限を設定して、期限前に新しいトークンを保存してください。トークンが漏えいした場合は Figma の Settings → Security で取り消してください。取り消しは即時に反映されます。"
+    },
+    "github": {
+      "title": "GitHub fine-grained 個人アクセストークン",
+      "summary": "公開リポジトリでは任意、非公開リポジトリでは必須です。",
+      "purpose": "{{company}} → {{design}} でデザインの参考資料として追加した GitHub リポジトリから、デザイントークン、CSS、Tailwind 設定、README ファイルをプラットフォームが読み取れるようにします。公開リポジトリはトークンなしでも使えますが、GitHub の匿名アクセスのより低いレート制限が適用されます。非公開リポジトリにはトークンが必要です。トークンは api.github.com にだけ送信されます。",
+      "step1": "GitHub で右上のプロフィール画像 → 「Settings」 → 「Developer settings」 → 「Personal access tokens」 → 「Fine-grained tokens」を開き、「Generate new token」をクリックします。下のリンクから入力済みのフォームを開けます。",
+      "step2": "名前と有効期限を入力します。「Resource owner」で、デザインリポジトリを所有するユーザーまたは組織を選びます。",
+      "step3": "「Repository access」で「Only select repositories」を選び、デザインリポジトリだけを選択します。",
+      "step4": "「Permissions」のリポジトリ権限で「Contents」を「Read-only」にします。「Metadata」（読み取り専用）は自動で追加されます。それ以外は付与しないでください。",
+      "step5": "「Generate token」をクリックしてコピーします。組織が承認を必須にしている場合、組織のオーナーが承認するまでトークンは公開リポジトリしか読み取れません。",
+      "newToken": "GitHub でトークンを作成（入力済み：Contents 読み取り専用）",
+      "docsTokens": "GitHub：個人アクセストークンの管理",
+      "permissions": "選択したリポジトリに対する Contents：読み取り専用と、自動で付く Metadata：読み取り専用だけです。クラシックトークンは使わないでください。アカウントがアクセスできるすべてのリポジトリに届いてしまいます。",
+      "linkFormat": "GitHub のリンク：https://github.com/<owner>/<repo>、フォルダー（…/tree/<branch>/<folder>）、または単一ファイル（…/blob/<branch>/<file>）。",
+      "failRefused": "トークンが誤っている、期限切れまたは取り消し済み、あるいは Contents の読み取り権限がありません。",
+      "failNotFound": "リンクが誤っているか、リポジトリが非公開でトークンにアクセス権が付与されていません（GitHub は「禁止」ではなく「見つからない」と応答します）。",
+      "failNoFiles": "トークンは機能していますが、その場所にデザインファイルがありません。ファイルを含むフォルダーをリンクしてください。",
+      "security": "トークンは作成した GitHub ユーザーとして動作し、そのユーザーがアクセス権を失うと使えなくなります。対象はデザインリポジトリだけに絞り、有効期限を設定して、期限前に新しいトークンを保存してください。漏えいした場合は Settings → Developer settings → Personal access tokens で削除してください。GitHub Issues データソースのトークンとは別のものなので、使い回さないでください。"
+    }
+  },
+  "dimensions": {
+    "title": "ディメンション",
+    "description": "製品、モジュール、ユーザー種別など、すべてのレビューを分類・絞り込みできる軸です。"
+  },
+  "sources": {
+    "title": "ソースとプライバシー",
+    "description": "ソースごとのデータ保護: 個人データの扱い、保持期間、閲覧できる人、消去。"
   }
 }

@@ -2,6 +2,7 @@
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
 import { Tags, Aspects } from 'aws-cdk-lib';
+import { z } from 'zod';
 import { AwsSolutionsChecks, NagSuppressions } from 'cdk-nag';
 import { VocCoreStack } from '../lib/stacks/core-stack';
 import { VocIngestionStack } from '../lib/stacks/ingestion-stack';
@@ -10,9 +11,11 @@ import { VocApiStack } from '../lib/stacks/api-stack';
 import { VocWebSearchStack } from '../lib/stacks/web-search-stack';
 import { AnthropicUseCaseSchema, AnthropicUseCaseConfig } from '../lib/stacks/bedrock-access-stack';
 import { lambdaBasicExecutionRoleSuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions, s3BucketSuppressions, bedrockModelSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, comprehendSuppressions, translateSuppressions, apiGatewayPushToCloudwatchLogsRoleSuppressions } from '../lib/utils/nag-suppressions';
-import { shouldDeployWebSearch } from '../lib/utils/web-search-default';
+import { shouldDeployWebSearchInScope } from '../lib/utils/web-search-default';
+import { applyInferenceScopeEnv, inferenceScopeOf } from '../lib/utils/inference-scope';
 import { shouldDeployAiEnablement } from '../lib/utils/ai-enablement-default';
 import { validateDeploymentPrefix } from '../lib/utils/naming';
+import { recordOrEmpty, stringOr } from '../lib/utils/context';
 
 const app = new cdk.App();
 
@@ -37,31 +40,34 @@ const deploymentPrefix = validateDeploymentPrefix(app.node.tryGetContext('deploy
  */
 const stackId = (id: string): string => (deploymentPrefix ? `${deploymentPrefix}-${id}` : id);
 
-// Cost allocation tag helper
+// Cost allocation tag helper. `Environment` reads the same `environment` context key the
+// API stack uses for its CORS mode (cdk.context.json, default production), so the tag can
+// never say dev on a stack that serves production origins. CDK_ENV still overrides it.
+const environmentName = stringOr(process.env.CDK_ENV, stringOr(app.node.tryGetContext('environment'), 'production'));
+
 function tagStack(stack: cdk.Stack, feature: string) {
   Tags.of(stack).add('Project', 'VoC-DataLake');
   Tags.of(stack).add('Feature', feature);
-  Tags.of(stack).add('Environment', process.env.CDK_ENV || 'dev');
+  Tags.of(stack).add('Environment', environmentName);
   Tags.of(stack).add('ManagedBy', 'CDK');
 }
 
 // Derive enabled sources from pluginStatus
-const pluginStatus: Record<string, boolean> = app.node.tryGetContext('pluginStatus') || {};
+const pluginStatus = recordOrEmpty(app.node.tryGetContext('pluginStatus'));
 const enabledSources = Object.entries(pluginStatus)
   .filter(([, enabled]) => enabled === true)
   .map(([pluginId]) => pluginId);
 
 // Configuration
 const config = {
-  brandName: app.node.tryGetContext('brandName') || 'MyBrand',
-  brandHandles: app.node.tryGetContext('brandHandles') || ['@mybrand'],
-  primaryLanguage: app.node.tryGetContext('primaryLanguage') || 'en',
+  brandName: stringOr(app.node.tryGetContext('brandName'), 'MyBrand'),
+  primaryLanguage: stringOr(app.node.tryGetContext('primaryLanguage'), 'en'),
   enabledSources,
 };
 
 const env = {
   account: process.env.CDK_DEFAULT_ACCOUNT,
-  region: process.env.CDK_DEFAULT_REGION || 'us-east-1',
+  region: stringOr(process.env.CDK_DEFAULT_REGION, 'us-east-1'),
 };
 
 // ============================================
@@ -89,8 +95,11 @@ const env = {
 // through stackId() like every other stack, so a prefixed deployment namespaces
 // the exports and both importers in lockstep — which is what keeps two copies
 // from importing each other's gateway.
+// Where Bedrock inference may run: `global` (default) or `eu` (docs/eu-deployment.md).
+// Validated here, before any stack is built, so a typo fails the synth up front.
+const inferenceScope = inferenceScopeOf(app);
 const webSearchContextRaw = app.node.tryGetContext('enableWebSearch');
-const deployWebSearch = shouldDeployWebSearch(webSearchContextRaw);
+const deployWebSearch = shouldDeployWebSearchInScope(webSearchContextRaw, inferenceScope);
 const webSearchCrossRegion = deployWebSearch && env.region !== 'us-east-1';
 
 // Accept either boolean true (from cdk.context.json) or string "true"
@@ -107,7 +116,7 @@ if (anthropicUseCaseRaw) {
     anthropicUseCase = parseResult.data;
   } else {
     console.warn('⚠️  Invalid anthropicUseCase config in cdk.context.json:');
-    console.warn(parseResult.error.format());
+    console.warn(z.prettifyError(parseResult.error));
     console.warn('Skipping Bedrock model access. See cdk.context.example.json for the required format.');
   }
 }
@@ -128,6 +137,13 @@ if (shouldDeployAiEnablement(deployWebSearch, anthropicUseCase)) {
     skipUseCaseSubmission,
   });
   tagStack(webSearchStack, 'AiEnablement');
+  if (inferenceScope === 'eu') {
+    // Only the model-access half can be here (web search is never deployed for eu).
+    cdk.Annotations.of(webSearchStack).addInfo(
+      'inferenceScope=eu: VocWebSearchStack carries only Bedrock model access (the account-level Anthropic ' +
+      'use-case form, submitted in us-east-1). No inference and no customer data go through it.',
+    );
+  }
   if (webSearchCrossRegion) {
     // Upgrade hint (issue #205): web search now deploys by default, and a
     // non-us-east-1 app needs a us-east-1 bootstrap for the cross-region
@@ -160,7 +176,6 @@ const ingestionStack = new VocIngestionStack(app, stackId('VocIngestionStack'), 
   env,
   deploymentPrefix,
   description: 'VoC Data Lake - Ingestion Layer (Lambda, EventBridge, SQS) (uksb-0q2jyqfvlm)(tag:VocIngestionStack)',
-  feedbackTable: coreStack.feedbackTable,
   watermarksTable: coreStack.watermarksTable,
   aggregatesTable: coreStack.aggregatesTable,
   rawDataBucket: coreStack.rawDataBucket,
@@ -186,8 +201,12 @@ const processingStack = new VocProcessingStack(app, stackId('VocProcessingStack'
   projectsTable: coreStack.projectsTable,
   jobsTable: coreStack.jobsTable,
   idempotencyTable: coreStack.idempotencyTable,
+  memoryTable: coreStack.memoryTable,
+  agentsTable: coreStack.agentsTable,
+  conversationsTable: coreStack.conversationsTable,
   processingQueue: ingestionStack.processingQueue,
   kmsKey: coreStack.kmsKey,
+  rawDataBucket: coreStack.rawDataBucket,
   webSearchGatewayUrl: webSearchStack?.gatewayUrl,
   webSearchGatewayArn: webSearchStack?.gatewayArn,
   webSearchToolName: webSearchStack?.toolName,
@@ -211,6 +230,9 @@ const apiStack = new VocApiStack(app, stackId('VocApiStack'), {
   projectsTable: coreStack.projectsTable,
   jobsTable: coreStack.jobsTable,
   conversationsTable: coreStack.conversationsTable,
+  memoryTable: coreStack.memoryTable,
+  agentsTable: coreStack.agentsTable,
+  designIntegrationsSecretArn: coreStack.designIntegrationsSecretArn,
   kmsKey: coreStack.kmsKey,
   rawDataBucket: coreStack.rawDataBucket,
   avatarsCdnUrl: coreStack.avatarsCdnUrl,
@@ -229,6 +251,9 @@ const apiStack = new VocApiStack(app, stackId('VocApiStack'), {
   secretsArn: ingestionStack.secretsArn,
   s3ImportBucket: ingestionStack.s3ImportBucket,
   researchStateMachine: processingStack.researchStateMachine,
+  agentRunStateMachine: processingStack.agentRunStateMachine,
+  memoryExtractQueueUrl: processingStack.memoryExtractQueue.queueUrl,
+  memoryExtractQueueArn: processingStack.memoryExtractQueue.queueArn,
   webSearchGatewayUrl: webSearchStack?.gatewayUrl,
   webSearchGatewayArn: webSearchStack?.gatewayArn,
   webSearchToolName: webSearchStack?.toolName,
@@ -253,8 +278,12 @@ Aspects.of(app).add(new AwsSolutionsChecks({ verbose: true }));
 // gateway resources.
 NagSuppressions.addStackSuppressions(coreStack, [...lambdaBasicExecutionRoleSuppressions, ...cdkAssetsSuppressions], true);
 // Apply stack-level suppressions
-NagSuppressions.addStackSuppressions(ingestionStack, [...lambdaBasicExecutionRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...s3BucketSuppressions], true);
-NagSuppressions.addStackSuppressions(processingStack, [...lambdaBasicExecutionRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...bedrockModelSuppressions, ...pluginSystemSuppressions(deploymentPrefix), ...comprehendSuppressions, ...translateSuppressions], true);
+NagSuppressions.addStackSuppressions(ingestionStack, [...lambdaBasicExecutionRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...s3BucketSuppressions, ...comprehendSuppressions], true);
+NagSuppressions.addStackSuppressions(processingStack, [...lambdaBasicExecutionRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...s3BucketSuppressions, ...bedrockModelSuppressions, ...pluginSystemSuppressions(deploymentPrefix), ...comprehendSuppressions, ...translateSuppressions], true);
 NagSuppressions.addStackSuppressions(apiStack, [...lambdaBasicExecutionRoleSuppressions, ...apiGatewayPushToCloudwatchLogsRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...s3BucketSuppressions, ...bedrockModelSuppressions, ...pluginSystemSuppressions(deploymentPrefix), ...cdkAssetsSuppressions, ...comprehendSuppressions, ...translateSuppressions], true);
+
+// inferenceScope=eu: BEDROCK_INFERENCE_SCOPE=eu + AVATARS_ENABLED=false on every
+// Lambda of every stack. A no-op for `global`, so default templates are unchanged.
+applyInferenceScopeEnv(app);
 
 app.synth();

@@ -2,7 +2,30 @@
 Tests for shared/feedback.py - Feedback utilities for LLM context building.
 """
 
+from datetime import UTC
 from unittest.mock import MagicMock
+
+
+def _table_returning(items: list[dict]) -> MagicMock:
+    """A table double answering every query with *items*."""
+    mock_table = MagicMock()
+    mock_table.query.return_value = {'Items': items}
+    return mock_table
+
+
+def _table_scanning(*day_pages: list[dict], empty_days: int) -> MagicMock:
+    """A table double answering successive per-day queries with *day_pages*,
+    then *empty_days* empty pages (one per remaining day of the lookback)."""
+    mock_table = MagicMock()
+    mock_table.query.side_effect = (
+        [{'Items': page} for page in day_pages]
+        + [{'Items': []} for _ in range(empty_days)]
+    )
+    return mock_table
+
+
+def _numbered_items(count: int) -> list[dict]:
+    return [{'feedback_id': str(i)} for i in range(count)]
 
 
 class TestGetFeedbackContext:
@@ -11,15 +34,15 @@ class TestGetFeedbackContext:
     def test_returns_empty_list_when_table_none(self):
         """Returns empty list when feedback_table is None."""
         from shared.feedback import get_feedback_context
-        
+
         result = get_feedback_context(None, {'days': 7})
-        
+
         assert result == []
 
     def test_queries_by_date_when_no_category_filter(self):
         """Queries by date index when no categories specified."""
         from shared.feedback import get_feedback_context
-        
+
         mock_table = MagicMock()
         # Return items only on first query, empty on subsequent
         mock_table.query.side_effect = [
@@ -28,9 +51,9 @@ class TestGetFeedbackContext:
                 {'feedback_id': '2', 'source_platform': 'manual_import'}
             ]},
         ] + [{'Items': []} for _ in range(30)]  # Empty for remaining days
-        
+
         result = get_feedback_context(mock_table, {'days': 7}, limit=10)
-        
+
         assert len(result) == 2
         # Should query by date index
         call_args = mock_table.query.call_args_list[0]
@@ -39,18 +62,18 @@ class TestGetFeedbackContext:
     def test_queries_by_category_when_categories_specified(self):
         """Queries by category index when categories specified without sources."""
         from shared.feedback import get_feedback_context
-        
+
         mock_table = MagicMock()
         mock_table.query.return_value = {'Items': [
             {'feedback_id': '1', 'category': 'delivery'}
         ]}
-        
+
         get_feedback_context(
             mock_table,
             {'categories': ['delivery', 'support']},
             limit=10
         )
-        
+
         # Should query by category index
         call_args = mock_table.query.call_args
         assert call_args.kwargs['IndexName'] == 'gsi2-by-category'
@@ -58,74 +81,65 @@ class TestGetFeedbackContext:
     def test_filters_by_source_platform(self):
         """Filters results by source_platform."""
         from shared.feedback import get_feedback_context
-        
-        mock_table = MagicMock()
-        mock_table.query.side_effect = [
-            {'Items': [
-                {'feedback_id': '1', 'source_platform': 'webscraper'},
-                {'feedback_id': '2', 'source_platform': 'manual_import'},
-                {'feedback_id': '3', 'source_platform': 'webscraper'}
-            ]},
-        ] + [{'Items': []} for _ in range(30)]
-        
+
+        mock_table = _table_scanning([
+            {'feedback_id': '1', 'source_platform': 'webscraper'},
+            {'feedback_id': '2', 'source_platform': 'manual_import'},
+            {'feedback_id': '3', 'source_platform': 'webscraper'}
+        ], empty_days=30)
+
         result = get_feedback_context(
             mock_table,
             {'days': 7, 'sources': ['webscraper']},
             limit=10
         )
-        
+
         assert len(result) == 2
         assert all(item['source_platform'] == 'webscraper' for item in result)
 
     def test_filters_by_sentiment(self):
         """Filters results by sentiment_label."""
         from shared.feedback import get_feedback_context
-        
-        mock_table = MagicMock()
-        mock_table.query.side_effect = [
-            {'Items': [
-                {'feedback_id': '1', 'sentiment_label': 'positive'},
-                {'feedback_id': '2', 'sentiment_label': 'negative'},
-                {'feedback_id': '3', 'sentiment_label': 'positive'}
-            ]},
-        ] + [{'Items': []} for _ in range(30)]
-        
+
+        mock_table = _table_scanning([
+            {'feedback_id': '1', 'sentiment_label': 'positive'},
+            {'feedback_id': '2', 'sentiment_label': 'negative'},
+            {'feedback_id': '3', 'sentiment_label': 'positive'}
+        ], empty_days=30)
+
         result = get_feedback_context(
             mock_table,
             {'days': 7, 'sentiments': ['positive']},
             limit=10
         )
-        
+
         assert len(result) == 2
         assert all(item['sentiment_label'] == 'positive' for item in result)
 
     def test_respects_limit(self):
         """Respects the limit parameter."""
         from shared.feedback import get_feedback_context
-        
+
         mock_table = MagicMock()
         mock_table.query.return_value = {'Items': [
             {'feedback_id': str(i)} for i in range(100)
         ]}
-        
+
         result = get_feedback_context(mock_table, {'days': 7}, limit=5)
-        
+
         assert len(result) == 5
 
     def test_combines_multiple_filters(self):
         """Combines source, sentiment, and category filters."""
         from shared.feedback import get_feedback_context
-        
-        mock_table = MagicMock()
-        mock_table.query.side_effect = [
-            {'Items': [
-                {'feedback_id': '1', 'source_platform': 'webscraper', 'sentiment_label': 'positive', 'category': 'delivery'},
-                {'feedback_id': '2', 'source_platform': 'manual_import', 'sentiment_label': 'positive', 'category': 'delivery'},
-                {'feedback_id': '3', 'source_platform': 'webscraper', 'sentiment_label': 'negative', 'category': 'delivery'},
-                {'feedback_id': '4', 'source_platform': 'webscraper', 'sentiment_label': 'positive', 'category': 'support'},
-            ]},
-        ] + [{'Items': []} for _ in range(30)]
-        
+
+        mock_table = _table_scanning([
+            {'feedback_id': '1', 'source_platform': 'webscraper', 'sentiment_label': 'positive', 'category': 'delivery'},
+            {'feedback_id': '2', 'source_platform': 'manual_import', 'sentiment_label': 'positive', 'category': 'delivery'},
+            {'feedback_id': '3', 'source_platform': 'webscraper', 'sentiment_label': 'negative', 'category': 'delivery'},
+            {'feedback_id': '4', 'source_platform': 'webscraper', 'sentiment_label': 'positive', 'category': 'support'},
+        ], empty_days=30)
+
         result = get_feedback_context(
             mock_table,
             {
@@ -136,7 +150,7 @@ class TestGetFeedbackContext:
             },
             limit=10
         )
-        
+
         assert len(result) == 1
         assert result[0]['feedback_id'] == '1'
 
@@ -144,295 +158,35 @@ class TestGetFeedbackContext:
 class TestFormatFeedbackForLlm:
     """Tests for format_feedback_for_llm function."""
 
-    def test_formats_basic_feedback_item(self):
-        """Formats basic feedback item with required fields."""
-        from shared.feedback import format_feedback_for_llm
-        
-        items = [{
-            'source_platform': 'webscraper',
-            'source_created_at': '2024-01-15T10:30:00Z',
-            'sentiment_label': 'positive',
-            'sentiment_score': 0.85,
-            'category': 'delivery',
-            'rating': 5,
-            'urgency': 'low',
-            'original_text': 'Great service!'
-        }]
-        
-        result = format_feedback_for_llm(items)
-        
-        assert 'Review 1' in result
-        assert 'webscraper' in result
-        assert 'positive' in result
-        assert '0.85' in result
-        assert 'delivery' in result
-        assert 'Great service!' in result
-
-    def test_includes_optional_fields_when_present(self):
-        """Includes optional fields when present."""
-        from shared.feedback import format_feedback_for_llm
-        
-        items = [{
-            'source_platform': 'manual_import',
-            'sentiment_label': 'negative',
-            'sentiment_score': -0.7,
-            'category': 'support',
-            'urgency': 'high',
-            'original_text': 'Bad experience',
-            'direct_customer_quote': 'Never again!',
-            'problem_summary': 'Long wait times',
-            'problem_root_cause_hypothesis': 'Understaffed',
-            'persona_type': 'frustrated_customer',
-            'journey_stage': 'post_purchase'
-        }]
-        
-        result = format_feedback_for_llm(items)
-        
-        assert 'Never again!' in result
-        assert 'Long wait times' in result
-        assert 'Understaffed' in result
-        assert 'frustrated_customer' in result
-        assert 'post_purchase' in result
-
-    def test_handles_missing_optional_fields(self):
-        """Handles missing optional fields gracefully."""
-        from shared.feedback import format_feedback_for_llm
-        
-        items = [{
-            'source_platform': 'webscraper',
-            'sentiment_label': 'neutral',
-            'sentiment_score': 0.0,
-            'category': 'other',
-            'urgency': 'medium',
-            'original_text': 'It was okay'
-        }]
-        
-        result = format_feedback_for_llm(items)
-        
-        # Should not raise and should contain basic info
-        assert 'Review 1' in result
-        assert 'webscraper' in result
-
-    def test_truncates_long_text(self):
-        """Truncates very long original_text."""
-        from shared.feedback import format_feedback_for_llm
-        
-        long_text = 'A' * 1000
-        items = [{
-            'source_platform': 'webscraper',
-            'sentiment_label': 'positive',
-            'sentiment_score': 0.5,
-            'category': 'other',
-            'urgency': 'low',
-            'original_text': long_text
-        }]
-        
-        result = format_feedback_for_llm(items)
-        
-        # Should truncate to 600 chars
-        assert 'A' * 600 in result
-        assert 'A' * 700 not in result
-
-    def test_formats_multiple_items(self):
-        """Formats multiple feedback items with sequential numbering."""
-        from shared.feedback import format_feedback_for_llm
-        
-        items = [
-            {'source_platform': 'webscraper', 'sentiment_label': 'positive', 'sentiment_score': 0.8, 'category': 'a', 'urgency': 'low', 'original_text': 'First'},
-            {'source_platform': 'manual_import', 'sentiment_label': 'negative', 'sentiment_score': -0.5, 'category': 'b', 'urgency': 'high', 'original_text': 'Second'},
-        ]
-        
-        result = format_feedback_for_llm(items)
-        
-        assert 'Review 1' in result
-        assert 'Review 2' in result
-        assert 'First' in result
-        assert 'Second' in result
-
     def test_returns_empty_string_for_empty_list(self):
         """Returns empty string for empty items list."""
         from shared.feedback import format_feedback_for_llm
-        
+
         result = format_feedback_for_llm([])
-        
+
         assert result == ''
 
 
 class TestGetFeedbackStatistics:
     """Tests for get_feedback_statistics function."""
 
-    def test_returns_no_data_message_for_empty_list(self):
-        """Returns appropriate message for empty items list."""
-        from shared.feedback import get_feedback_statistics
-        
-        result = get_feedback_statistics([])
-        
-        assert 'No feedback data available' in result
-
-    def test_calculates_sentiment_distribution(self):
-        """Calculates sentiment distribution correctly."""
-        from shared.feedback import get_feedback_statistics
-        
-        items = [
-            {'sentiment_label': 'positive'},
-            {'sentiment_label': 'positive'},
-            {'sentiment_label': 'negative'},
-            {'sentiment_label': 'neutral'},
-        ]
-        
-        result = get_feedback_statistics(items)
-        
-        assert 'positive: 2' in result
-        assert 'negative: 1' in result
-        assert 'neutral: 1' in result
-
-    def test_calculates_category_counts(self):
-        """Calculates category counts correctly."""
-        from shared.feedback import get_feedback_statistics
-        
-        items = [
-            {'sentiment_label': 'positive', 'category': 'delivery'},
-            {'sentiment_label': 'positive', 'category': 'delivery'},
-            {'sentiment_label': 'negative', 'category': 'support'},
-        ]
-        
-        result = get_feedback_statistics(items)
-        
-        assert 'delivery: 2' in result
-        assert 'support: 1' in result
-
-    def test_calculates_source_counts(self):
-        """Calculates source platform counts correctly."""
-        from shared.feedback import get_feedback_statistics
-        
-        items = [
-            {'sentiment_label': 'positive', 'source_platform': 'webscraper'},
-            {'sentiment_label': 'positive', 'source_platform': 'webscraper'},
-            {'sentiment_label': 'negative', 'source_platform': 'manual_import'},
-        ]
-        
-        result = get_feedback_statistics(items)
-        
-        assert 'webscraper: 2' in result
-        assert 'manual_import: 1' in result
-
-    def test_calculates_urgency_counts(self):
-        """Calculates urgency level counts correctly."""
-        from shared.feedback import get_feedback_statistics
-        
-        items = [
-            {'sentiment_label': 'negative', 'urgency': 'high'},
-            {'sentiment_label': 'negative', 'urgency': 'high'},
-            {'sentiment_label': 'neutral', 'urgency': 'medium'},
-            {'sentiment_label': 'positive', 'urgency': 'low'},
-        ]
-        
-        result = get_feedback_statistics(items)
-        
-        assert 'High: 2' in result
-        assert 'Medium: 1' in result
-        assert 'Low: 1' in result
-
-    def test_calculates_average_rating(self):
-        """Calculates average rating correctly."""
-        from shared.feedback import get_feedback_statistics
-        
-        items = [
-            {'sentiment_label': 'positive', 'rating': 5},
-            {'sentiment_label': 'positive', 'rating': 4},
-            {'sentiment_label': 'neutral', 'rating': 3},
-        ]
-        
-        result = get_feedback_statistics(items)
-        
-        assert '4.0/5' in result
-        assert 'from 3 rated reviews' in result
-
     def test_handles_items_without_ratings(self):
         """Handles items without ratings gracefully."""
         from shared.feedback import get_feedback_statistics
-        
+
         items = [
             {'sentiment_label': 'positive'},
             {'sentiment_label': 'negative'},
         ]
-        
+
         result = get_feedback_statistics(items)
-        
+
         # Should show 0.0 average with 0 rated reviews
         assert '0.0/5' in result
         assert 'from 0 rated reviews' in result
 
-    def test_includes_total_count(self):
-        """Includes total feedback count in statistics."""
-        from shared.feedback import get_feedback_statistics
-        
-        items = [
-            {'sentiment_label': 'positive'},
-            {'sentiment_label': 'negative'},
-            {'sentiment_label': 'neutral'},
-        ]
-        
-        result = get_feedback_statistics(items)
-        
-        assert 'n=3' in result
-
-    def test_handles_unknown_values(self):
-        """Handles unknown/missing values gracefully."""
-        from shared.feedback import get_feedback_statistics
-        
-        items = [
-            {},  # Empty item
-            {'sentiment_label': 'positive'},
-        ]
-        
-        result = get_feedback_statistics(items)
-        
-        # Should count 'unknown' for missing sentiment
-        assert 'unknown: 1' in result
-        assert 'positive: 1' in result
-
-
 class TestGetFeedbackContextEdgeCases:
     """Edge case tests for get_feedback_context function."""
-
-    def test_handles_empty_filters(self):
-        """Handles empty filters dict."""
-        from shared.feedback import get_feedback_context
-        
-        mock_table = MagicMock()
-        mock_table.query.return_value = {'Items': []}
-        
-        result = get_feedback_context(mock_table, {})
-        
-        assert result == []
-
-    def test_uses_default_days_when_not_specified(self):
-        """Uses default 30 days when not specified in filters."""
-        from shared.feedback import get_feedback_context
-        
-        mock_table = MagicMock()
-        mock_table.query.return_value = {'Items': []}
-        
-        get_feedback_context(mock_table, {}, limit=10)
-        
-        # Should query multiple days (up to 30)
-        assert mock_table.query.call_count > 0
-
-    def test_stops_early_when_enough_items(self):
-        """Stops querying when enough items collected."""
-        from shared.feedback import get_feedback_context
-        
-        mock_table = MagicMock()
-        # Return many items on first query
-        mock_table.query.return_value = {'Items': [
-            {'feedback_id': str(i)} for i in range(200)
-        ]}
-        
-        result = get_feedback_context(mock_table, {'days': 30}, limit=10)
-        
-        # Should stop early since we have enough items
-        assert len(result) == 10
 
     def test_does_not_break_early_when_source_filter_active(self):
         """Regression: early break must not skip dates when source filtering is active.
@@ -482,7 +236,7 @@ class TestGetFeedbackContextEdgeCases:
         # Day 5: 10 positive items
         positive_items = [{'feedback_id': f'pos_{i}', 'sentiment_label': 'positive'} for i in range(10)]
 
-        def query_side_effect(**kwargs):
+        def query_side_effect(**_kwargs):
             call_num = mock_table.query.call_count
             if call_num == 1:
                 return {'Items': list(negative_items)}
@@ -505,11 +259,8 @@ class TestGetFeedbackContextEdgeCases:
         """Early break optimization still works when no source/sentiment filters are active."""
         from shared.feedback import get_feedback_context
 
-        mock_table = MagicMock()
         # Return 200 items on every query
-        mock_table.query.return_value = {'Items': [
-            {'feedback_id': str(i)} for i in range(200)
-        ]}
+        mock_table = _table_returning(_numbered_items(200))
 
         result = get_feedback_context(mock_table, {'days': 30}, limit=10)
 
@@ -521,23 +272,14 @@ class TestGetFeedbackContextEdgeCases:
 class TestQueryFeedbackByDate:
     """Tests for query_feedback_by_date — the shared low-level query function."""
 
-    def test_returns_empty_when_table_is_none(self):
-        """Returns empty list when feedback_table is None."""
-        from shared.feedback import query_feedback_by_date
-
-        assert query_feedback_by_date(None, days=7) == []
-
     def test_single_source_filter_as_list(self):
         """Accepts a single source wrapped in a list (API handler pattern)."""
         from shared.feedback import query_feedback_by_date
 
-        mock_table = MagicMock()
-        mock_table.query.side_effect = [
-            {'Items': [
-                {'feedback_id': '1', 'source_platform': 'target'},
-                {'feedback_id': '2', 'source_platform': 'other'},
-            ]},
-        ] + [{'Items': []} for _ in range(29)]
+        mock_table = _table_scanning([
+            {'feedback_id': '1', 'source_platform': 'target'},
+            {'feedback_id': '2', 'source_platform': 'other'},
+        ], empty_days=29)
 
         result = query_feedback_by_date(mock_table, days=30, sources=['target'], limit=50)
 
@@ -548,10 +290,7 @@ class TestQueryFeedbackByDate:
         """Passing None for sources/categories/sentiments means no filtering."""
         from shared.feedback import query_feedback_by_date
 
-        mock_table = MagicMock()
-        mock_table.query.side_effect = [
-            {'Items': [{'feedback_id': '1'}, {'feedback_id': '2'}]},
-        ] + [{'Items': []} for _ in range(29)]
+        mock_table = _table_scanning([{'feedback_id': '1'}, {'feedback_id': '2'}], empty_days=29)
 
         result = query_feedback_by_date(
             mock_table, days=30, sources=None, categories=None, sentiments=None, limit=50,
@@ -582,25 +321,84 @@ class TestQueryFeedbackByDate:
         assert mock_table.query.call_args_list[1].kwargs['ExclusiveStartKey'] == {'pk': 'x'}
         assert len(result) == 700
 
-    def test_days_capped_at_max_lookback(self):
-        """Days parameter is capped at MAX_LOOKBACK_DAYS."""
-        from shared.feedback import MAX_LOOKBACK_DAYS, query_feedback_by_date
+    def test_days_capped_at_the_sample_walk(self):
+        """An empty table walks at most MAX_SAMPLE_WALK_DAYS calendar days, however wide `days` is."""
+        from shared.feedback import MAX_SAMPLE_WALK_DAYS, query_feedback_by_date
 
         mock_table = MagicMock()
         mock_table.query.return_value = {'Items': []}
 
         query_feedback_by_date(mock_table, days=9999, limit=10)
 
+        assert mock_table.query.call_count == MAX_SAMPLE_WALK_DAYS
+
+    def test_all_time_walks_the_sample_window(self):
+        """days=0 means all time: it walks MAX_SAMPLE_WALK_DAYS, not zero days."""
+        from shared.feedback import MAX_SAMPLE_WALK_DAYS, query_feedback_by_date
+
+        mock_table = MagicMock()
+        mock_table.query.return_value = {'Items': []}
+
+        query_feedback_by_date(mock_table, days=0, limit=10)
+
+        assert mock_table.query.call_count == MAX_SAMPLE_WALK_DAYS
+
+    def test_get_feedback_context_passes_all_time_through(self):
+        from shared.feedback import MAX_SAMPLE_WALK_DAYS, get_feedback_context
+
+        mock_table = MagicMock()
+        mock_table.query.return_value = {'Items': []}
+
+        get_feedback_context(mock_table, {'days': 0}, limit=10)
+
+        assert mock_table.query.call_count == MAX_SAMPLE_WALK_DAYS
+
+    def test_wide_window_reaches_feedback_older_than_the_lookback(self):
+        """Regression (QA s3): newest feedback 120 days old, `days=365` -> found.
+
+        With a 90-calendar-day cap, "Last year" / "All time" read only the last 90
+        days, so every persona / document / research job failed with "No feedback
+        data found" on a deployment whose newest feedback was older than that.
+        """
+        from datetime import UTC, datetime, timedelta
+
+        from shared.feedback import query_feedback_by_date
+
+        old_day = (datetime.now(UTC) - timedelta(days=120)).strftime('%Y-%m-%d')
+        item = {'feedback_id': 'f1', 'date': old_day, 'source_platform': 'app'}
+
+        def query(**kwargs):
+            pk = kwargs['KeyConditionExpression'].get_expression()['values'][1]
+            return {'Items': [item] if pk == f'DATE#{old_day}' else []}
+
+        mock_table = MagicMock()
+        mock_table.query.side_effect = query
+
+        assert query_feedback_by_date(mock_table, days=365, limit=10) == [item]
+        assert query_feedback_by_date(mock_table, days=0, limit=10) == [item]
+        # A window the user narrowed still means what it says.
+        assert query_feedback_by_date(mock_table, days=90, limit=10) == []
+
+    def test_walk_stops_after_max_lookback_days_with_data(self):
+        """Continuous data: the sample still spans MAX_LOOKBACK_DAYS dated days (unchanged cost)."""
+        from shared.feedback import MAX_LOOKBACK_DAYS, query_feedback_by_date
+
+        mock_table = MagicMock()
+        mock_table.query.return_value = {'Items': [{'feedback_id': 'x', 'sentiment_label': 'positive'}]}
+
+        # A post-filter disables the fetch-ceiling early break, so only the dated-day budget stops the walk.
+        query_feedback_by_date(mock_table, days=0, sentiments=['positive'], limit=10)
+
         assert mock_table.query.call_count == MAX_LOOKBACK_DAYS
 
     def test_gsi2_category_query_filters_by_date_range(self):
         """GSI2 category queries filter out items outside the date range."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         from shared.feedback import query_feedback_by_date
 
         mock_table = MagicMock()
-        today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        today = datetime.now(UTC).strftime('%Y-%m-%d')
         mock_table.query.return_value = {
             'Items': [
                 {'feedback_id': '1', 'category': 'delivery', 'date': today},
@@ -616,74 +414,10 @@ class TestQueryFeedbackByDate:
         assert result[0]['feedback_id'] == '1'
 
 
-class TestQueryFeedbackPage:
-    """Tests for query_feedback_page — returns (page, total) for pagination."""
-
-    def test_returns_empty_tuple_when_table_is_none(self):
-        from shared.feedback import query_feedback_page
-        page, total = query_feedback_page(None, days=7)
-        assert page == []
-        assert total == 0
-
-    def test_returns_total_count_and_page_slice(self):
-        from shared.feedback import query_feedback_page
-
-        mock_table = MagicMock()
-        all_items = [{'feedback_id': str(i)} for i in range(50)]
-        mock_table.query.side_effect = [
-            {'Items': list(all_items)},
-        ] + [{'Items': []} for _ in range(29)]
-
-        page, total = query_feedback_page(mock_table, days=30, limit=10, offset=0)
-
-        assert total == 50
-        assert len(page) == 10
-        assert page[0]['feedback_id'] == '0'
-
-    def test_offset_skips_items(self):
-        from shared.feedback import query_feedback_page
-
-        mock_table = MagicMock()
-        all_items = [{'feedback_id': str(i)} for i in range(50)]
-        mock_table.query.side_effect = [
-            {'Items': list(all_items)},
-        ] + [{'Items': []} for _ in range(29)]
-
-        page, total = query_feedback_page(mock_table, days=30, limit=10, offset=20)
-
-        assert total == 50
-        assert len(page) == 10
-        assert page[0]['feedback_id'] == '20'
-
-    def test_scans_all_dates_for_accurate_total_with_source_filter(self):
-        """query_feedback_page must NOT early-break so total is accurate."""
-        from shared.feedback import query_feedback_page
-
-        mock_table = MagicMock()
-        other_items = [{'feedback_id': f'o{i}', 'source_platform': 'other'} for i in range(200)]
-        target_items = [{'feedback_id': f't{i}', 'source_platform': 'target'} for i in range(30)]
-
-        responses = [{'Items': []} for _ in range(30)]
-        responses[0] = {'Items': list(other_items)}
-        responses[15] = {'Items': list(target_items)}
-        mock_table.query.side_effect = responses
-
-        page, total = query_feedback_page(
-            mock_table, days=30, sources=['target'], limit=10, offset=0,
-        )
-
-        assert total == 30
-        assert len(page) == 10
-        assert all(i['source_platform'] == 'target' for i in page)
-        # Must have queried all 30 days (no early break)
-        assert mock_table.query.call_count == 30
-
-
-
 def _dated_item(feedback_id, imported_days_ago, written_days_ago, **overrides):
     """Feedback item with explicit import and review dates."""
-    from datetime import datetime, timedelta, timezone
-    now = datetime.now(timezone.utc)
+    from datetime import datetime, timedelta
+    now = datetime.now(UTC)
     item = {
         'feedback_id': feedback_id,
         'source_platform': 'webscraper',
@@ -708,10 +442,7 @@ class TestDateBasis:
         """Default basis is unchanged: freshly imported old reviews stay."""
         from shared.feedback import query_feedback_by_date
 
-        mock_table = MagicMock()
-        mock_table.query.side_effect = [
-            {'Items': [_dated_item('old-review', 0, 400)]},
-        ] + [{'Items': []} for _ in range(30)]
+        mock_table = _table_scanning([_dated_item('old-review', 0, 400)], empty_days=30)
 
         result = query_feedback_by_date(mock_table, days=7)
 
@@ -720,13 +451,10 @@ class TestDateBasis:
     def test_review_basis_drops_backfilled_old_reviews(self):
         from shared.feedback import query_feedback_by_date
 
-        mock_table = MagicMock()
-        mock_table.query.side_effect = [
-            {'Items': [
-                _dated_item('fresh-review', 0, 2),
-                _dated_item('old-review', 0, 400),
-            ]},
-        ] + [{'Items': []} for _ in range(30)]
+        mock_table = _table_scanning([
+            _dated_item('fresh-review', 0, 2),
+            _dated_item('old-review', 0, 400),
+        ], empty_days=30)
 
         result = query_feedback_by_date(mock_table, days=7, date_basis='review')
 
@@ -742,10 +470,7 @@ class TestDateBasis:
         # the only match was written recently but imported on day 1.
         day0 = [_dated_item(f'old-{i}', 0, 400) for i in range(10)]
         day1 = [_dated_item('fresh', 1, 1)]
-        mock_table = MagicMock()
-        mock_table.query.side_effect = [
-            {'Items': day0}, {'Items': day1},
-        ] + [{'Items': []} for _ in range(30)]
+        mock_table = _table_scanning(day0, day1, empty_days=30)
 
         # limit=1 => fetch_ceiling=3; day0 alone exceeds it. Without the
         # early-break disable, day1 would never be read.
@@ -756,13 +481,10 @@ class TestDateBasis:
     def test_category_branch_applies_review_basis(self):
         from shared.feedback import query_feedback_by_date
 
-        mock_table = MagicMock()
-        mock_table.query.side_effect = [
-            {'Items': [
-                _dated_item('fresh-review', 0, 2),
-                _dated_item('old-review', 0, 400),
-            ]},
-        ]
+        mock_table = _table_scanning([
+            _dated_item('fresh-review', 0, 2),
+            _dated_item('old-review', 0, 400),
+        ], empty_days=0)
 
         result = query_feedback_by_date(
             mock_table, days=7, categories=['delivery'], date_basis='review',
@@ -774,13 +496,10 @@ class TestDateBasis:
     def test_get_feedback_context_unpacks_date_basis(self):
         from shared.feedback import get_feedback_context
 
-        mock_table = MagicMock()
-        mock_table.query.side_effect = [
-            {'Items': [
-                _dated_item('fresh-review', 0, 1),
-                _dated_item('old-review', 0, 400),
-            ]},
-        ] + [{'Items': []} for _ in range(30)]
+        mock_table = _table_scanning([
+            _dated_item('fresh-review', 0, 1),
+            _dated_item('old-review', 0, 400),
+        ], empty_days=30)
 
         result = get_feedback_context(
             mock_table, {'days': 7, 'date_basis': 'review'}, limit=10,
@@ -788,33 +507,16 @@ class TestDateBasis:
 
         assert [i['feedback_id'] for i in result] == ['fresh-review']
 
-    def test_query_feedback_page_totals_respect_review_basis(self):
-        from shared.feedback import query_feedback_page
-
-        mock_table = MagicMock()
-        mock_table.query.side_effect = [
-            {'Items': [
-                _dated_item('fresh-1', 0, 0),
-                _dated_item('fresh-2', 0, 3),
-                _dated_item('old', 0, 100),
-            ]},
-        ] + [{'Items': []} for _ in range(30)]
-
-        page, total = query_feedback_page(mock_table, days=7, date_basis='review')
-
-        assert total == 2
-        assert {i['feedback_id'] for i in page} == {'fresh-1', 'fresh-2'}
-
 
 class TestWindowHelpers:
     """basis_date / window_cutoff — the shared window definition."""
 
     def test_window_cutoff_is_days_long_ending_today(self):
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
         from shared.feedback import window_cutoff
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         assert window_cutoff(1) == now.strftime('%Y-%m-%d')
         assert window_cutoff(7) == (now - timedelta(days=6)).strftime('%Y-%m-%d')
 

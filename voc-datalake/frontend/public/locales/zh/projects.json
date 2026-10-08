@@ -3,7 +3,10 @@
     "docs_one": "{{count}} 个文档",
     "docs_other": "{{count}} 个文档",
     "personas_one": "{{count}} 个画像",
-    "personas_other": "{{count}} 个画像"
+    "personas_other": "{{count}} 个画像",
+    "deleteProject": "删除项目 {{name}}",
+    "editProject": "编辑项目 {{name}}",
+    "owner": "所有者：{{name}}"
   },
   "configureEndpoint": "请先在设置中配置API端点",
   "createModal": {
@@ -21,6 +24,14 @@
     "message": "确定要删除此项目吗？所有用户画像和文档将被永久删除。",
     "title": "删除项目"
   },
+  "editModal": {
+    "nameRequired": "请输入项目名称。",
+    "save": "保存",
+    "saveFailed": "无法保存项目。请检查您的访问权限后重试。",
+    "saving": "正在保存...",
+    "title": "编辑项目",
+    "visibilityManageOnly": "只有项目所有者或管理员可以更改项目的可见范围。"
+  },
   "description": "创建项目，从反馈中生成用户画像、PRD和PR/FAQ",
   "emptyState": {
     "createButton": "创建项目",
@@ -29,5 +40,58 @@
   },
   "newProject": "新建项目",
   "openProject": "打开项目",
-  "title": "项目"
+  "title": "项目",
+  "readOnlyBanner": "您对此项目只有查看权限。如需编辑，请联系所有者。",
+  "sharing": {
+    "cancel": "取消",
+    "description": "选择谁可以查看此项目，以及受邀成员可以执行的操作。",
+    "errors": {
+      "conflict": "此用户已可以访问该项目。",
+      "forbidden": "您没有权限更改此项目的共享设置。",
+      "generic": "无法保存更改，请重试。",
+      "invalid": "请求被拒绝。项目成员数量可能已达上限。",
+      "notFound": "未找到该用户或成员。"
+    },
+    "invite": "邀请",
+    "inviteHeading": "邀请成员",
+    "inviteRoleLabel": "受邀者的角色",
+    "leave": "退出项目",
+    "leaveConfirm": "退出",
+    "leaveMessage": "除非项目是公开的，否则您将失去对它的访问权限。",
+    "leaveTitle": "退出项目？",
+    "loadError": "无法加载共享设置。",
+    "loading": "正在加载共享设置...",
+    "makeOwner": "将 {{name}} 设为所有者",
+    "members": "成员",
+    "noMembers": "尚未邀请任何人。",
+    "noOwner": "无所有者",
+    "noResults": "没有匹配的用户",
+    "owner": "所有者",
+    "readOnlyNotice": "只有项目所有者或管理员可以更改共享设置。",
+    "remove": "移除 {{name}}",
+    "roleLabel": "{{name}} 的角色",
+    "roles": {
+      "editor": "可编辑",
+      "viewer": "可查看"
+    },
+    "searchLabel": "搜索用户",
+    "searchPlaceholder": "用户名或电子邮件",
+    "searchMinLength": "请至少输入 {{min}} 个字符进行搜索。",
+    "searching": "正在搜索...",
+    "select": "选择 {{name}}",
+    "selected": "已选择：{{name}}",
+    "share": "共享",
+    "title": "共享“{{name}}”",
+    "transferConfirm": "转让",
+    "transferMessage": "{{name}} 将成为此项目的所有者。当前所有者将保留编辑者身份。",
+    "transferTitle": "转让所有权？",
+    "you": "（您）"
+  },
+  "visibility": {
+    "label": "谁可以访问此项目",
+    "private": "私有",
+    "privateHint": "只有所有者、受邀成员和管理员可以查看。",
+    "public": "公开",
+    "publicHint": "此工作区中的所有人都可以查看和编辑。"
+  }
 }

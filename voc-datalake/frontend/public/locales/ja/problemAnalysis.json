@@ -16,7 +16,11 @@
     "similarityLow": "低",
     "similarityMed": "中",
     "similarityOff": "オフ",
-    "urgentOnly": "緊急のみ"
+    "urgentOnly": "緊急のみ",
+    "source": "ソース",
+    "category": "カテゴリ",
+    "subcategory": "サブカテゴリ",
+    "similarityHint": "表現が似ている問題をまとめます。「低」が最も多くまとめ、「オフ」は各問題を個別に表示します。"
   },
   "noDataHint": "時間範囲を広げるか、フィルターを調整してみてください",
   "noDataTitle": "選択した期間の問題分析データが見つかりません",
@@ -44,5 +48,7 @@
     "sub_one": "{{count}} サブ",
     "sub_other": "{{count}} サブ",
     "unknown": "不明"
-  }
+  },
+  "title": "問題分析",
+  "subtitle": "繰り返し発生する顧客の問題をカテゴリ別にまとめ、考えられる根本原因を表示"
 }

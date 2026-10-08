@@ -5,82 +5,64 @@ Uses google-play-scraper to fetch reviews across multiple countries,
 deduplicates by review ID, and yields to the base ingestor pipeline.
 """
 
-import json
 import random
-from datetime import datetime, timezone
-from typing import Generator
 
-from _shared.base_ingestor import BaseIngestor, logger, tracer, metrics
-from _shared.app_reviews_utils import parse_int, process_app_reviews
 from countries import ANDROID_COUNTRIES
-from play_client import fetch_reviews_for_country
 from models import AndroidAppConfig
+from play_client import fetch_reviews_for_country
+
+from _shared.app_reviews_utils import (
+    AppReviewsIngestor,
+    load_app_configs,
+    merge_reviews_by_composite_id,
+    newest_first,
+    parse_int,
+    review_created_at,
+)
+from _shared.base_ingestor import logger, metrics, tracer
+from shared.invocation_cost import measure_invocation_cost
 
 
-class AndroidAppReviewsIngestor(BaseIngestor):
+class AndroidAppReviewsIngestor(AppReviewsIngestor[AndroidAppConfig]):
     """Ingestor for Google Play Store reviews."""
 
+    PLATFORM_LABEL = "Android"
+    DATE_FIELD = "at"
+    DEFAULT_SORT_BY = "newest"
+
     def __init__(self, execution_id: str | None = None):
-        # execution_id → BaseIngestor manual-run cache clear (#141/#215).
         super().__init__(execution_id=execution_id)
-        self.app_configs = self._load_app_configs()
-        self.sort_by = self.secrets.get("sort_by", "newest")
         # Android Play Store returns the same global reviews regardless of country.
         # Multiple countries just fetch duplicates, so we hardcode to 1 to avoid
         # wasted API calls. The library paginates internally to get all available
         # reviews (typically ~1000-2000 per app).
         self.max_countries = 1
-        self.frequency_minutes = parse_int(
-            self.secrets.get("frequency_minutes", "60"), 60, allow_zero=True
-        )
+
+    def app_identifier(self, app: AndroidAppConfig) -> str:
+        return app.package_name
 
     def _load_app_configs(self) -> list[AndroidAppConfig]:
         """Load app configurations from JSON array or legacy flat keys."""
-        # Try new multi-app format first
-        configs_json = self.secrets.get("configs", "")
-        if configs_json:
-            try:
-                configs_list = json.loads(configs_json) if isinstance(configs_json, str) else configs_json
-                if isinstance(configs_list, list) and len(configs_list) > 0:
-                    result = []
-                    for cfg in configs_list:
-                        try:
-                            result.append(AndroidAppConfig(
-                                name=cfg.get("app_name", "").strip(),
-                                package_name=cfg.get("package_name", "").strip(),
-                                enabled=cfg.get("enabled", True),
-                                max_reviews_per_run=parse_int(str(cfg.get("max_reviews_per_run", "500")), 500),
-                                lang=str(cfg.get("lang", "") or "").strip(),
-                                country=str(cfg.get("country", "") or "").strip(),
-                            ))
-                        except (ValueError, TypeError) as e:
-                            logger.warning(f"Skipping invalid Android app config: {e}")
-                    if result:
-                        return result
-            except (json.JSONDecodeError, TypeError) as e:
-                logger.warning(f"Failed to parse Android configs array: {e}")
-
-        # Fallback to legacy single-app flat keys
-        app_name = self.secrets.get("app_name", "").strip()
-        package_name = self.secrets.get("package_name", "").strip()
-        max_reviews = parse_int(
-            self.secrets.get("max_reviews_per_run", "500"), 500
-        )
-
-        if not app_name or not package_name:
-            return []
-
-        try:
-            config = AndroidAppConfig(
+        return load_app_configs(
+            self.secrets,
+            platform_label="Android",
+            legacy_id_key="package_name",
+            from_entry=lambda cfg: AndroidAppConfig(
+                name=cfg.get("app_name", "").strip(),
+                package_name=cfg.get("package_name", "").strip(),
+                enabled=cfg.get("enabled", True),
+                # An absent cap stringifies to "None", which parse_int rejects → 500.
+                max_reviews_per_run=parse_int(str(cfg.get("max_reviews_per_run")), 500),
+                lang=str(cfg.get("lang", "") or "").strip(),
+                country=str(cfg.get("country", "") or "").strip(),
+            ),
+            from_legacy=lambda app_name, package_name, max_reviews: AndroidAppConfig(
                 name=app_name,
                 package_name=package_name,
                 enabled=True,
                 max_reviews_per_run=max_reviews,
-            )
-            return [config]
-        except (ValueError, TypeError) as e:
-            logger.warning(f"Invalid Android app config: {e}")
-            return []
+            ),
+        )
 
     def _collect_reviews_for_app(self, app: AndroidAppConfig) -> list[dict]:
         """
@@ -99,11 +81,15 @@ class AndroidAppReviewsIngestor(BaseIngestor):
         else:
             countries = list(ANDROID_COUNTRIES)
             random.shuffle(countries)
-            if self.max_countries and self.max_countries < len(countries):
-                countries = countries[: self.max_countries]
-            locales = [("en", c) for c in countries]
+            locales = [("en", c) for c in countries[: self.max_countries]]
 
         all_reviews: dict[str, dict] = {}
+
+        def composite_id_for(review: dict) -> str | None:
+            review_id = review.get("reviewId", "")
+            if not review_id:
+                return None
+            return f"android_{app.package_name}_{review_id}"
 
         for lang, country in locales:
             reviews = fetch_reviews_for_country(
@@ -113,36 +99,16 @@ class AndroidAppReviewsIngestor(BaseIngestor):
                 sort_by=self.sort_by,
                 lang=lang,
             )
-            for review in reviews:
-                review_id = review.get("reviewId", "")
-                if not review_id:
-                    continue
-                composite_id = f"android_{app.package_name}_{review_id}"
-                if composite_id not in all_reviews:
-                    all_reviews[composite_id] = {
-                        **review,
-                        "composite_id": composite_id,
-                        "country": country,
-                    }
+            merge_reviews_by_composite_id(
+                all_reviews, reviews, country=country, composite_id_for=composite_id_for
+            )
 
-        # Sort by date descending and cap
-        sorted_reviews = sorted(
-            all_reviews.values(),
-            key=lambda r: r.get("at") or datetime.min.replace(tzinfo=timezone.utc),
-            reverse=True,
+        return newest_first(
+            all_reviews.values(), date_field="at", cap=app.max_reviews_per_run
         )
-        return sorted_reviews[: app.max_reviews_per_run]
 
     def _format_review(self, review: dict, app: AndroidAppConfig) -> dict:
         """Format a raw review into the VoC pipeline schema."""
-        date = review.get("at")
-        if date and hasattr(date, "isoformat"):
-            created_at = date.isoformat()
-        elif isinstance(date, str):
-            created_at = date
-        else:
-            created_at = datetime.now(timezone.utc).isoformat()
-
         text = review.get("content", "")
         dev_response = review.get("replyContent")
         dev_response_date = review.get("repliedAt")
@@ -153,7 +119,7 @@ class AndroidAppReviewsIngestor(BaseIngestor):
             "text": text,
             "title": "",
             "rating": review.get("score"),
-            "created_at": created_at,
+            "created_at": review_created_at(review.get("at")),
             "url": f"https://play.google.com/store/apps/details?id={app.package_name}",
             "author": review.get("userName", "Anonymous"),
             "brand_handles_matched": [self.brand_name] if self.brand_name else [],
@@ -162,7 +128,7 @@ class AndroidAppReviewsIngestor(BaseIngestor):
             "app_identifier": app.package_name,
             "country": review.get("country", ""),
             "app_version": review.get("reviewCreatedVersion"),
-            "developer_response": dev_response if dev_response else None,
+            "developer_response": dev_response or None,
             "developer_response_date": (
                 dev_response_date.isoformat()
                 if dev_response_date and hasattr(dev_response_date, "isoformat")
@@ -171,42 +137,11 @@ class AndroidAppReviewsIngestor(BaseIngestor):
             "thumbs_up_count": review.get("thumbsUpCount", 0),
         }
 
-    @tracer.capture_method
-    def fetch_new_items(self) -> Generator[dict, None, None]:
-        """Fetch new reviews from all configured Android apps."""
-        if not self.app_configs:
-            logger.warning("No Android app configurations found")
-            return
-
-        for app in self.app_configs:
-            if not app.enabled:
-                logger.info(f"Skipping disabled Android app: {app.name} ({app.package_name})")
-                continue
-            yield from process_app_reviews(
-                app_config=app,
-                app_name=app.name,
-                platform_label="Android",
-                date_field="at",
-                get_watermark_fn=self.get_watermark,
-                set_watermark_fn=self.set_watermark,
-                frequency_minutes=self.frequency_minutes,
-                collect_fn=self._collect_reviews_for_app,
-                format_fn=self._format_review,
-                execution_id=self.execution_id,
-            )
-
 
 @logger.inject_lambda_context
 @tracer.capture_lambda_handler
 @metrics.log_metrics(capture_cold_start_metric=True)
+@measure_invocation_cost
 def lambda_handler(event, context):
     """Lambda entry point. Optionally filters to a single app via event['app_id']."""
-    # Manual-run secret-cache clearing (issue #141) is centralized in
-    # BaseIngestor.__init__ — passing execution_id below triggers it.
-    execution_id = event.get("execution_id") if isinstance(event, dict) else None
-    ingestor = AndroidAppReviewsIngestor(execution_id=execution_id)
-    if isinstance(event, dict):
-        app_id = event.get("app_id")
-        if app_id:
-            ingestor.app_configs = [c for c in ingestor.app_configs if c.package_name == app_id]
-    return ingestor.run()
+    return AndroidAppReviewsIngestor.run_for_event(event)

@@ -1,0 +1,400 @@
+{
+  "nav": {
+    "label": "자율 에이전트"
+  },
+  "common": {
+    "cancel": "취소"
+  },
+  "status": {
+    "enabled": "사용",
+    "disabled": "사용 안 함"
+  },
+  "scope": {
+    "all": "모든 카테고리",
+    "some": "감시 대상: {{list}}"
+  },
+  "list": {
+    "title": "자율 에이전트",
+    "subtitle": "에이전트는 범위 내 피드백을 감시하다가 트리거가 발생하면 워크플로를 실행합니다: 리서치, 페르소나, PR/FAQ, PRD, 프로토타입을 만들고 페르소나 검토를 거쳐 프로젝트를 인계합니다.",
+    "create": "새 에이전트",
+    "createTitle": "자율 에이전트 만들기",
+    "createHint": "기본 제공 “리뷰 → 프로토타입” 워크플로로 비활성 상태로 생성됩니다. 트리거와 워크플로를 구성한 후 활성화하세요.",
+    "createFailed": "에이전트를 만들 수 없습니다.",
+    "emptyTitle": "아직 자율 에이전트가 없습니다",
+    "emptyAdmin": "에이전트를 만들어 새 피드백을 리서치된 프로젝트와 프로토타입으로 자동 전환하세요.",
+    "emptyUser": "관리자가 아직 볼 수 있는 에이전트를 설정하지 않았습니다.",
+    "loadFailed": "에이전트를 불러올 수 없습니다.",
+    "spend": "오늘 예약 실행 {{runs}}회 · 이번 달 모델 호출 {{calls}}회",
+    "spendHint": "수동 실행은 일일 예약 실행 한도에 포함되지 않습니다."
+  },
+  "library": {
+    "title": "워크플로 라이브러리",
+    "subtitle": "에이전트가 실행할 수 있는 모든 워크플로입니다. 더 이상 필요 없는 워크플로는 보관하세요. 라이브러리에서 빠지고 읽기 전용이 되며 리비전은 유지됩니다.",
+    "loadFailed": "워크플로 라이브러리를 불러오지 못했습니다.",
+    "archive": "보관",
+    "archiveNamed": "{{name}} 보관",
+    "archiveTitle": "이 워크플로를 보관할까요?",
+    "archiveMessage": "“{{name}}”은(는) 라이브러리와 워크플로 선택 목록에서 숨겨지고 읽기 전용이 됩니다. 리비전은 유지됩니다.",
+    "archiveInUse": "활성 에이전트가 아직 이 워크플로를 실행합니다. 먼저 해당 에이전트를 보관하거나 다른 워크플로를 지정하세요.",
+    "archiveFailed": "워크플로를 보관하지 못했습니다."
+  },
+  "fields": {
+    "name": "이름",
+    "description": "설명",
+    "scope": "감시할 피드백",
+    "instructions": "지침",
+    "instructionsHint": "전체 크루를 위한 맞춤 지침(최대 {{n}}자).",
+    "visibility": "인계할 프로젝트의 공개 범위",
+    "visibilityHint": "비공개 프로젝트는 소유자, 멤버, 관리자만 볼 수 있습니다.",
+    "workflow": "워크플로",
+    "workflowDefault": "리뷰 → 프로토타입(기본 제공)",
+    "workflowHint": "워크플로 탭에서 단계를 편집하세요."
+  },
+  "visibility": {
+    "private": "비공개",
+    "public": "공개"
+  },
+  "detail": {
+    "back": "모든 에이전트",
+    "tabs": "에이전트 섹션",
+    "enabledLabel": "사용",
+    "toggleFailed": "에이전트를 활성화하거나 비활성화할 수 없습니다.",
+    "save": "저장",
+    "saved": "저장됨",
+    "saveFailed": "변경 사항을 저장할 수 없습니다.",
+    "discard": "변경 사항 취소",
+    "archive": "보관",
+    "archiveTitle": "이 에이전트를 보관할까요?",
+    "archiveMessage": "실행이 중지되고 목록에서 사라집니다. 생성된 프로젝트는 유지됩니다.",
+    "notFound": "이 에이전트가 없거나 볼 권한이 없습니다.",
+    "stats": "총 실행 {{runs}}회 · 오늘 예약 {{today}}회 · 이번 달 모델 호출 {{calls}}회"
+  },
+  "tabs": {
+    "settings": "설정",
+    "triggers": "트리거",
+    "personas": "페르소나",
+    "instructions": "지침",
+    "models": "모델",
+    "budget": "예산",
+    "workflow": "워크플로",
+    "runs": "실행"
+  },
+  "triggers": {
+    "hint": "에이전트를 깨우는 조건입니다. 자동 실행은 하루 최대 두 번이며 동시에 두 번 실행되지 않습니다.",
+    "none": "트리거 없음 — 누군가 지금 실행을 누를 때만 실행됩니다.",
+    "remove": "트리거 삭제",
+    "minNew": "필요한 새 리뷰 수",
+    "cooldown": "대기 시간(시간)",
+    "every": "주기",
+    "cron": "Cron 표현식",
+    "cronHint": "필드 5개, 예: 0 9 * * 1은 매주 월요일 09:00.",
+    "timezone": "시간대",
+    "count": "리뷰 수",
+    "per": "기준",
+    "windowDays": "기간(일)",
+    "kinds": {
+      "new_reviews": "새 리뷰",
+      "schedule": "일정",
+      "threshold": "임계값"
+    },
+    "kindHints": {
+      "new_reviews": "마지막 실행 이후 범위 내 새 피드백이 충분히 들어오면 실행됩니다.",
+      "schedule": "정해진 일정에 따라 실행됩니다.",
+      "threshold": "카테고리 또는 하위 카테고리의 리뷰 수가 기간 내 기준에 도달하면 실행됩니다."
+    },
+    "everyOptions": {
+      "12h": "12시간",
+      "24h": "24시간",
+      "cron": "사용자 지정(cron)"
+    },
+    "perOptions": {
+      "category": "카테고리",
+      "subcategory": "하위 카테고리"
+    }
+  },
+  "personas": {
+    "fixed": "고정 페르소나({{n}}/{{max}})",
+    "none": "고정 페르소나 없음 — 에이전트가 프로젝트에서 선택합니다.",
+    "add": "페르소나 추가",
+    "remove": "페르소나 삭제",
+    "project": "프로젝트",
+    "persona": "페르소나",
+    "chooseProject": "프로젝트 선택",
+    "choosePersona": "페르소나 선택",
+    "allowGenerate": "맞는 페르소나가 없으면 에이전트가 새 페르소나를 생성하도록 허용"
+  },
+  "models": {
+    "hint": "크루 역할별로 모델을 재정의합니다. 기본값을 두면 설정 → AI 모델을 따릅니다.",
+    "default": "설정 기본값",
+    "roleHint": {
+      "orchestrator": "다음 단계를 결정하고 각 결과를 검증합니다.",
+      "worker": "리서치, 문서, 프로토타입을 작성합니다.",
+      "reviewer": "인계 전에 작업을 검토합니다.",
+      "persona": "검토에서 각 페르소나를 대변합니다."
+    }
+  },
+  "roles": {
+    "orchestrator": "오케스트레이터",
+    "worker": "작업자",
+    "reviewer": "검토자",
+    "persona": "페르소나"
+  },
+  "budget": {
+    "runsPerDay": "일일 예약 실행 수",
+    "runsPerDayHint": "최대 2회. 수동 실행은 포함되지 않습니다.",
+    "callsPerRun": "실행당 모델 호출 수",
+    "monthlyCap": "월간 모델 호출 한도",
+    "monthlyCapHint": "이번 달 호출 수가 한도에 도달하면 에이전트가 새 실행을 시작하지 않습니다.",
+    "uncapped": "월간 한도 없음"
+  },
+  "run": {
+    "hint": "각 실행은 워크플로를 따릅니다. 그래프는 실행 중인 단계를 표시하며, 보기 전용이고 제어 기능은 없습니다.",
+    "list": "실행",
+    "none": "아직 실행 내역이 없습니다.",
+    "runNow": "지금 실행",
+    "alreadyRunning": "이미 실행 중입니다.",
+    "startFailed": "실행을 시작할 수 없습니다.",
+    "cancel": "실행 취소",
+    "cancelFailed": "실행을 취소할 수 없습니다.",
+    "calls": "모델 호출 {{n}}회",
+    "openProject": "프로젝트 열기",
+    "eventLog": "이벤트 로그",
+    "noEvents": "아직 이벤트가 없습니다.",
+    "noGraph": "이 실행의 워크플로를 불러올 수 없습니다.",
+    "olderRevision": "이 실행은 워크플로 리비전 {{n}}을(를) 사용했습니다.",
+    "graphLabel": "실행 진행 그래프",
+    "showAll": "모든 이벤트 보기({{step}}(으)로 필터링됨)",
+    "rounds": "{{n}}라운드",
+    "status": {
+      "queued": "대기 중",
+      "running": "실행 중",
+      "needs_human": "사람 확인 필요",
+      "completed": "완료",
+      "failed": "실패",
+      "cancelled": "취소됨"
+    },
+    "triggers": {
+      "manual": "수동",
+      "schedule": "일정",
+      "new_reviews": "새 리뷰",
+      "threshold": "임계값"
+    },
+    "stepStatus": {
+      "idle": "시작 전",
+      "running": "실행 중",
+      "done": "완료",
+      "failed": "실패"
+    },
+    "eventKinds": {
+      "node_started": "단계 시작",
+      "node_finished": "단계 완료",
+      "node_failed": "단계 실패",
+      "message": "메시지",
+      "verdict": "판정",
+      "decision": "결정",
+      "artifact": "산출물"
+    }
+  },
+  "editor": {
+    "canvasLabel": "워크플로 캔버스",
+    "minimap": "워크플로 개요",
+    "palette": "단계",
+    "paletteHint": "단계를 캔버스로 드래그하거나 Enter를 눌러 추가하세요.",
+    "panel": "단계 설정",
+    "nothingSelected": "캔버스 또는 아래 개요에서 단계, 화살표 또는 루프를 선택해 구성하세요.",
+    "multiSelected": "{{n}}개 단계 선택됨",
+    "groupLoop": "루프로 묶기",
+    "ungroupLoop": "루프 해제",
+    "loopTitle": "루프 {{n}}",
+    "loopMembers": "{{n}}개 단계",
+    "loopFrame": "{{until}}까지 반복",
+    "arrow": "화살표",
+    "deleteArrow": "화살표 삭제",
+    "deleteStep": "단계 삭제",
+    "builtin": "기본 제공 템플릿 — 변경하려면 사본을 저장하세요.",
+    "revision": "리비전 {{n}}",
+    "unsaved": "저장되지 않은 변경 사항",
+    "save": "저장",
+    "saveAs": "다른 이름으로 저장…",
+    "saveAsTitle": "새 워크플로로 저장",
+    "copyName": "{{name}}(사본)",
+    "import": "가져오기",
+    "export": "내보내기",
+    "reset": "템플릿으로 재설정",
+    "resetTitle": "템플릿으로 재설정할까요?",
+    "resetMessage": "저장되지 않은 변경 사항이 기본 제공 “리뷰 → 프로토타입” 워크플로로 대체됩니다.",
+    "conflict": "그사이 다른 사용자가 최신 리비전을 저장했습니다.",
+    "conflictReload": "최신 버전 불러오기",
+    "conflictSaveAs": "내 버전을 사본으로 저장",
+    "loadFailed": "워크플로를 불러올 수 없습니다.",
+    "generalIssues": "워크플로 문제",
+    "issueCount_one": "문제 {{count}}개",
+    "issueCount_other": "문제 {{count}}개",
+    "valid": "워크플로가 유효합니다.",
+    "validUnsaved": "유효함 — 아직 저장되지 않음.",
+    "outcome": {
+      "saved": "저장되었습니다.",
+      "conflict": "그사이 다른 사용자가 최신 리비전을 저장했습니다.",
+      "invalid": "서버가 워크플로를 거부했습니다 — 문제를 수정한 후 다시 저장하세요.",
+      "failed": "워크플로를 저장할 수 없습니다.",
+      "import_failed": "유효한 워크플로 파일이 아닙니다."
+    },
+    "fields": {
+      "workflowName": "워크플로 이름",
+      "title": "제목",
+      "instructions": "지침",
+      "instructionsRequired": "지침 (필수)",
+      "role": "역할",
+      "roleNone": "역할 없음",
+      "label": "조건",
+      "labelNone": "항상",
+      "until": "종료 조건",
+      "maxRounds": "최대 라운드",
+      "description": "설명",
+      "arrowTarget": "연결할 단계",
+      "arrowTargetNone": "단계 선택…",
+      "joinLoop": "루프"
+    },
+    "params": {
+      "target": "대상",
+      "targetAny": "마지막으로 생성된 항목",
+      "maxNew": "최대 새 페르소나 수",
+      "useWebSearch": "웹 검색 사용",
+      "endStatus": "실행 종료 상태"
+    },
+    "loopFrameLabel": "루프 {{n}}: {{until}}까지, 최대 {{rounds}}회",
+    "loopFrameHint": "클릭하여 이 루프 구성",
+    "arrowLabel": "{{source}}에서 {{target}}(으)로 가는 화살표({{condition}})",
+    "conditionHint": "단계가 이 결과를 보고하면 화살표를 따릅니다. \"항상\"이 기본 경로입니다.",
+    "noConditions": "이 단계는 판정을 보고하지 않으므로 화살표를 항상 따릅니다.",
+    "arrowsOut": "나가는 화살표",
+    "noArrowsOut": "이 단계에서 나가는 화살표가 아직 없습니다.",
+    "addArrow": "화살표 추가",
+    "addArrowButton": "화살표 추가",
+    "noArrowTargets": "다른 모든 단계가 이미 여기에서 연결되어 있습니다.",
+    "deleteArrowTo": "{{target}}(으)로 가는 화살표 삭제",
+    "conditionTo": "{{target}}(으)로 가는 조건",
+    "loopStepsLegend": "이 루프의 단계",
+    "maxRoundsHint": "{{min}}~{{max}}의 정수입니다. 한도에 도달하면 실행이 멈추고 사람에게 요청합니다.",
+    "joinLoop": "루프에 추가",
+    "joinLoopHint": "루프는 종료 조건이 충족될 때까지 단계를 반복합니다.",
+    "newLoop": "새 루프",
+    "loopOption_one": "루프 {{n}}({{count}}개 단계)",
+    "loopOption_other": "루프 {{n}}({{count}}개 단계)",
+    "leaveLoop": "이 단계를 루프에서 빼기",
+    "outlineSteps": "이 워크플로의 단계",
+    "outlineStepsCount": "단계({{n}})",
+    "outlineLoops": "루프",
+    "emptyCanvas": "캔버스가 비어 있습니다. 팔레트에서 단계를 추가하세요.",
+    "selectStep": "{{title}} 단계 구성",
+    "backToWorkflow": "워크플로 설정",
+    "clear": "캔버스 지우기",
+    "clearTitle": "캔버스를 지울까요?",
+    "clearMessage": "워크플로를 처음부터 만들 수 있도록 초안에서 모든 단계, 화살표, 루프를 제거합니다. 저장하기 전까지는 아무것도 저장되지 않습니다."
+  },
+  "paletteGroups": {
+    "flow": "흐름",
+    "research": "리서치",
+    "documents": "문서",
+    "review": "검토",
+    "prototype": "프로토타입",
+    "delivery": "전달"
+  },
+  "edgeLabels": {
+    "pass": "통과",
+    "fail": "실패",
+    "agreed": "합의",
+    "not_agreed": "합의 안 됨"
+  },
+  "loopUntil": {
+    "persona_agreement": "페르소나 합의",
+    "review_pass": "검토 통과"
+  },
+  "reviewTargets": {
+    "prfaq": "PR/FAQ",
+    "prd": "PRD",
+    "prototype": "프로토타입"
+  },
+  "endStatuses": {
+    "completed": "완료",
+    "needs_human": "사람 확인 필요"
+  },
+  "nodeTypes": {
+    "start": {
+      "label": "시작",
+      "description": "모든 실행이 시작되는 지점입니다."
+    },
+    "aggregate_reviews": {
+      "label": "리뷰 집계",
+      "description": "에이전트 범위의 새 피드백을 수집하고 주요 테마를 찾습니다."
+    },
+    "select_or_create_project": {
+      "label": "프로젝트 선택 또는 생성",
+      "description": "같은 목적의 프로젝트를 재사용하거나 새로 만듭니다."
+    },
+    "select_personas": {
+      "label": "페르소나 선택",
+      "description": "이 리뷰와 관련된 페르소나를 선택합니다."
+    },
+    "generate_personas": {
+      "label": "페르소나 생성",
+      "description": "맞는 페르소나가 없으면 피드백으로 새 페르소나를 만듭니다."
+    },
+    "deep_research": {
+      "label": "심층 리서치",
+      "description": "프로젝트에서 리서치 작업을 실행하며, 선택적으로 웹 검색을 사용합니다."
+    },
+    "write_prfaq": {
+      "label": "PR/FAQ 작성",
+      "description": "아이디어에 대한 보도 자료와 FAQ 초안을 작성합니다."
+    },
+    "write_prd": {
+      "label": "PRD 작성",
+      "description": "제품 요구사항 문서 초안을 작성합니다."
+    },
+    "revise_document": {
+      "label": "문서 수정",
+      "description": "검토 의견을 반영해 문서를 다시 작성합니다."
+    },
+    "duplicate_document": {
+      "label": "문서 복제",
+      "description": "문서를 다른 프로젝트로 복사합니다."
+    },
+    "persona_review": {
+      "label": "페르소나 검토",
+      "description": "페르소나가 작업을 평가합니다. 합의 = 평균 4점 이상이고 차단 사항 없음."
+    },
+    "final_review": {
+      "label": "최종 검토",
+      "description": "검토자가 인계 전 전체 패키지를 확인합니다."
+    },
+    "custom_llm": {
+      "label": "사용자 지정 단계",
+      "description": "직접 작성한 지침으로 동작하는 단계입니다."
+    },
+    "build_prototype": {
+      "label": "프로토타입 빌드",
+      "description": "디자인 시스템을 사용해 HTML 프로토타입을 빌드합니다."
+    },
+    "collect_prototype_feedback": {
+      "label": "테스터 핀 수집",
+      "description": "테스터가 프로토타입에 남긴 열린 핀을 다음 수정을 위해 읽습니다."
+    },
+    "revise_prototype": {
+      "label": "프로토타입 수정",
+      "description": "검토 의견을 반영해 프로토타입을 변경합니다."
+    },
+    "handoff": {
+      "label": "인계",
+      "description": "주 카테고리 소유자에게 프로젝트를 넘깁니다."
+    },
+    "end": {
+      "label": "종료",
+      "description": "실행이 끝나는 지점입니다."
+    }
+  },
+  "loopUntilHint": {
+    "persona_agreement": "루프 안의 페르소나 검토가 \"동의하지 않음\"으로 답하는 동안 반복합니다.",
+    "review_pass": "루프 안의 검토 단계가 \"불합격\"으로 답하는 동안 반복합니다."
+  }
+}

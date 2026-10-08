@@ -11,6 +11,19 @@ describe('ProjectTabs', () => {
     onTabChange: vi.fn(),
   }
 
+  /** Renders the tabs with a fresh `onTabChange` spy and a user to drive them. */
+  function renderWithUser() {
+    const user = userEvent.setup()
+    const onTabChange = vi.fn()
+    render(<ProjectTabs {...defaultProps} onTabChange={onTabChange} />)
+    return { user, onTabChange }
+  }
+
+  /** Puts keyboard focus on the Overview tab, where every key test starts. */
+  function focusOverview() {
+    screen.getByRole('tab', { name: 'Overview' }).focus()
+  }
+
   it('renders all tabs', () => {
     render(<ProjectTabs {...defaultProps} />)
     expect(screen.getByText('Overview')).toBeInTheDocument()
@@ -18,10 +31,17 @@ describe('ProjectTabs', () => {
     expect(screen.getByText(/Documents/)).toBeInTheDocument()
   })
 
-  it('renders chat and mcp tabs', () => {
+  it('renders no chat tab (the floating assistant replaces it)', () => {
     render(<ProjectTabs {...defaultProps} />)
-    expect(screen.getByText('AI Chat')).toBeInTheDocument()
-    expect(screen.getByText('Export / MCP')).toBeInTheDocument()
+    expect(screen.queryByText('AI Chat')).not.toBeInTheDocument()
+  })
+
+  it('renders no Export / MCP tab (the global MCP on /connect replaces it)', () => {
+    render(<ProjectTabs {...defaultProps} />)
+    expect(screen.queryByRole('tab', { name: /MCP|Export/ })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toStrictEqual([
+      'Overview', 'Personas(3)', 'Product', 'Documents(5)',
+    ])
   })
 
   it('displays personas count', () => {
@@ -34,27 +54,71 @@ describe('ProjectTabs', () => {
     expect(screen.getByText(/\(12\)/)).toBeInTheDocument()
   })
 
-  it('highlights active tab with blue styling', () => {
+  it('highlights the active tab and marks it selected', () => {
     render(<ProjectTabs {...defaultProps} activeTab="personas" />)
-    const personasTab = screen.getByRole('button', { name: /Personas/ })
-    expect(personasTab).toHaveClass('border-blue-600', 'text-blue-600')
+    const personasTab = screen.getByRole('tab', { name: /Personas/ })
+    expect(personasTab).toHaveClass('tab', 'tab-active')
+    expect(personasTab).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'false')
+  })
+
+  it('exposes the tabs as a labelled tablist, not a navigation landmark', () => {
+    render(<ProjectTabs {...defaultProps} />)
+    expect(screen.getByRole('tablist')).toHaveAccessibleName()
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
+    // Overview, Personas, Product, Documents (project chat moved to the floating
+    // assistant, Export / MCP to the global Connect page).
+    expect(screen.getAllByRole('tab')).toHaveLength(4)
+  })
+
+  it('only the selected tab is in the Tab order (roving tabindex)', () => {
+    render(<ProjectTabs {...defaultProps} activeTab="documents" />)
+    const tabIndexes = screen.getAllByRole('tab').map((tab) => tab.getAttribute('tabindex'))
+    expect(tabIndexes).toStrictEqual(['-1', '-1', '-1', '0'])
+  })
+
+  it('arrow keys move the selection and wrap around', async () => {
+    const { user, onTabChange } = renderWithUser()
+
+    focusOverview()
+    await user.keyboard('{ArrowRight}')
+    expect(onTabChange).toHaveBeenLastCalledWith('personas')
+    expect(screen.getByRole('tab', { name: /Personas/ })).toHaveFocus()
+
+    focusOverview()
+    await user.keyboard('{ArrowLeft}')
+    expect(onTabChange).toHaveBeenLastCalledWith('documents')
+  })
+
+  it('Home and End jump to the first and last tab', async () => {
+    const { user, onTabChange } = renderWithUser()
+
+    focusOverview()
+    await user.keyboard('{ArrowLeft}')
+    await user.keyboard('{Home}')
+    expect(onTabChange).toHaveBeenLastCalledWith('overview')
+    await user.keyboard('{End}')
+    expect(onTabChange).toHaveBeenLastCalledWith('documents')
+  })
+
+  it('ignores other keys', async () => {
+    const { user, onTabChange } = renderWithUser()
+    focusOverview()
+    await user.keyboard('a')
+    expect(onTabChange).not.toHaveBeenCalled()
   })
 
   it('calls onTabChange when tab is clicked', async () => {
-    const user = userEvent.setup()
-    const onTabChange = vi.fn()
-    render(<ProjectTabs {...defaultProps} onTabChange={onTabChange} />)
+    const { user, onTabChange } = renderWithUser()
     
     await user.click(screen.getByText(/Documents/))
     expect(onTabChange).toHaveBeenCalledWith('documents')
   })
 
   it('calls onTabChange with correct tab id for each tab', async () => {
-    const user = userEvent.setup()
-    const onTabChange = vi.fn()
-    render(<ProjectTabs {...defaultProps} onTabChange={onTabChange} />)
+    const { user, onTabChange } = renderWithUser()
     
-    await user.click(screen.getByText('AI Chat'))
-    expect(onTabChange).toHaveBeenCalledWith('chat')
+    await user.click(screen.getByText('Product'))
+    expect(onTabChange).toHaveBeenCalledWith('product')
   })
 })

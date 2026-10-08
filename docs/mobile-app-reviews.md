@@ -58,7 +58,7 @@ The iOS plugin card shows these config fields:
 |-------|-----|------|---------|-------------|
 | App Name | `app_name` | text | — | Logical app name (required) |
 | App Store ID | `app_id` | text | — | Apple App Store numeric ID (required) |
-| Review Sort Order | `sort_by` | select | `most_recent` | `most_recent` or `most_critical` |
+| Review Sort Order | `sort_by` | select | `most_recent` | `most_recent` (the only option — see [Sort Order](#sort-order)) |
 | Max Countries Per Run | `max_countries_per_run` | text | `40` | Limit country iteration |
 | Max Reviews Per Run | `max_reviews_per_run` | text | `500` | Max reviews to collect per run |
 | Run Frequency | `frequency_minutes` | select | `1440` (Daily) | Schedule override |
@@ -93,8 +93,10 @@ Both plugins offer the same frequency options via a select dropdown:
 ### Sort Order
 
 **iOS options:**
-- `most_recent` — Fetch newest reviews first (default, recommended)
-- `most_critical` — Fetch lowest-rated reviews first
+- `most_recent` — Fetch newest reviews first (the default and only option)
+
+There is no "most critical" sort: Apple's customer-reviews RSS feed answers HTTP 500 for
+`sortby=mostcritical`, so that option was removed. Filter by rating after ingestion instead.
 
 **Android options:**
 - `newest` — Fetch newest reviews first (default, recommended)
@@ -346,7 +348,7 @@ cdk deploy --all
 ## Assumptions & Limitations
 
 - **Multiple apps per plugin**: each plugin supports several app configurations, managed from the **Configured Apps** list on the Scrapers page and persisted as a JSON array via the `/integrations/{source}/apps` CRUD endpoints.
-- **Implementation prerequisite**: The `KNOWN_SOURCES` set in `_shared/schemas.py` must include `app_reviews_ios` and `app_reviews_android` for message validation. Secret filtering no longer needs a per-plugin list: `_shared/plugin_secrets.py` returns only the plugin's own `<plugin_id>_*` namespace and raises a configuration error when that namespace is empty, so the `_get_known_prefixes()` list this bullet used to also require is gone (issue #251).
+- **Implementation prerequisite**: none for validation: `source_platform` is checked by pattern in `lambda/shared/ingest_schemas.py`, so no per-plugin source list is needed. Secret filtering no longer needs a per-plugin list either: `_shared/plugin_secrets.py` returns only the plugin's own `<plugin_id>_*` namespace and raises a configuration error when that namespace is empty, so the `_get_known_prefixes()` list this bullet used to also require is gone (issue #251).
 - **Unofficial APIs**: Both plugins use unofficial/public endpoints. These can change without notice. The circuit breaker will auto-disable the plugin if endpoints break.
 - **Rate limiting**: Apple and Google may rate-limit aggressive scraping. `app-store-web-scraper` has built-in delays with jitter. For Google, the country shuffle and configurable `max_countries_per_run` help manage request volume.
 - **iOS review depth**: Max 500 reviews per country (10 pages × 50). High-volume apps may miss reviews between runs if the schedule is too infrequent.

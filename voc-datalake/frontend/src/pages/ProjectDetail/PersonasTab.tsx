@@ -9,10 +9,13 @@ import { useTranslation } from 'react-i18next'
 import PersonaAvatar from './PersonaAvatar'
 import PersonaDetailView from './PersonaDetailView'
 import type { NoteItem } from './types'
-import type { ProjectPersona } from '../../api/types'
+import type { ProjectPersona } from '../../api/projectTypes'
 
 interface PersonasTabProps {
+  readonly projectId: string
   readonly personas: ProjectPersona[]
+  /** Viewers (`can_edit: false`) get the list and detail, but no import / generate / edit / delete / notes controls. */
+  readonly canEdit: boolean
   readonly selectedPersona: ProjectPersona | null
   readonly onSelectPersona: (persona: ProjectPersona) => void
   readonly onEditPersona: () => void
@@ -25,7 +28,9 @@ interface PersonasTabProps {
 }
 
 export default function PersonasTab({
+  projectId,
   personas,
+  canEdit,
   selectedPersona,
   onSelectPersona,
   onEditPersona,
@@ -40,54 +45,71 @@ export default function PersonasTab({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row justify-end gap-2">
-        <button
-          onClick={onImportPersona}
-          className="flex items-center justify-center gap-2 px-4 py-2 border border-purple-300 text-purple-600 rounded-lg hover:bg-purple-50 text-sm"
-        >
-          <Upload size={16} />{t('personas.importPersona')}
-        </button>
-        <button
-          onClick={onGeneratePersonas}
-          className="flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm"
-        >
-          <Sparkles size={16} />{t('personas.generatePersonas')}
-        </button>
-      </div>
+      {canEdit ? (
+        <div className="flex flex-col sm:flex-row justify-end gap-2">
+          <button
+            type="button"
+            onClick={onImportPersona}
+            className="btn btn-secondary"
+          >
+            <Upload size={16} aria-hidden />{t('personas.importPersona')}
+          </button>
+          <button
+            type="button"
+            onClick={onGeneratePersonas}
+            className="btn btn-primary"
+          >
+            <Sparkles size={16} aria-hidden />{t('personas.generatePersonas')}
+          </button>
+        </div>
+      ) : null}
 
       {personas.length === 0 ? (
-        <EmptyPersonasState onGenerate={onGeneratePersonas} />
+        <EmptyPersonasState onGenerate={canEdit ? onGeneratePersonas : undefined} />
       ) : (
         <div className="flex flex-col lg:grid lg:grid-cols-3 gap-4 lg:gap-6">
           {/* Persona List */}
           <div className="flex lg:flex-col gap-3 overflow-x-auto lg:overflow-x-visible pb-2 lg:pb-0 -mx-4 px-4 lg:mx-0 lg:px-0">
-            {personas.map((p) => (
-              <button
-                key={p.persona_id}
-                onClick={() => onSelectPersona(p)}
-                className={clsx(
-                  'flex-shrink-0 w-48 lg:w-full text-left p-3 lg:p-4 rounded-lg border transition-colors',
-                  selectedPersona?.persona_id === p.persona_id
-                    ? 'bg-purple-50 border-purple-300'
-                    : 'bg-white hover:border-purple-200',
-                )}
-              >
-                <div className="flex items-center gap-3">
-                  <PersonaAvatar persona={p} size="sm" />
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-medium truncate text-sm lg:text-base">@{p.name}</h4>
-                    <p className="text-xs text-gray-500 truncate">{p.tagline}</p>
+            {personas.map((p) => {
+              const selected = selectedPersona?.persona_id === p.persona_id
+              return (
+                <button
+                  key={p.persona_id}
+                  type="button"
+                  onClick={() => onSelectPersona(p)}
+                  aria-current={selected ? 'true' : undefined}
+                  className={clsx(
+                    'flex-shrink-0 w-48 lg:w-full text-left p-3 lg:p-4 rounded-lg border transition-colors focus-ring',
+                    selected
+                      ? 'bg-accent-subtle border-accent/40'
+                      : 'bg-card border-border hover:border-border-strong hover:bg-bg-hover',
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <PersonaAvatar persona={p} size="sm" />
+                    <div className="flex-1 min-w-0">
+                      {/* Plain text, not a heading: a heading inside a button is
+                          flattened into the button's name anyway, and six of them
+                          broke the page outline (h1 → h4). */}
+                      <p className="font-medium truncate text-sm lg:text-base text-text-strong" title={`@${p.name}`}>@{p.name}</p>
+                      <p className={clsx('text-xs truncate', selected ? 'text-text' : 'text-muted')} title={p.tagline}>{p.tagline}</p>
+                    </div>
                   </div>
-                </div>
-              </button>
-            ))}
+                </button>
+              )
+            })}
           </div>
 
           {/* Persona Detail */}
-          <div className="lg:col-span-2 bg-white rounded-xl border overflow-hidden">
+          <div className="lg:col-span-2 bg-card rounded-xl border overflow-hidden">
             {selectedPersona ? (
               <PersonaDetailView
+                // Remounted per persona: a pending or failed avatar regeneration
+                // belongs to the persona it was started for.
+                key={selectedPersona.persona_id}
+                projectId={projectId}
                 persona={selectedPersona}
+                canEdit={canEdit}
                 onEdit={onEditPersona}
                 onDelete={onDeletePersona}
                 onSaveNotes={onSaveNotes}
@@ -95,7 +117,8 @@ export default function PersonasTab({
                 isSavingNotes={isSavingNotes}
               />
             ) : (
-              <div className="flex items-center justify-center h-full min-h-[500px] text-gray-400">
+              <div className="flex flex-col items-center justify-center gap-3 h-full min-h-[240px] lg:min-h-[500px] text-sm text-muted p-6 text-center">
+                <Users size={20} className="text-muted" aria-hidden />
                 {t('personas.selectToView')}
               </div>
             )}
@@ -106,16 +129,21 @@ export default function PersonasTab({
   )
 }
 
-function EmptyPersonasState({ onGenerate }: { readonly onGenerate: () => void }) {
+/** No `onGenerate` means the caller may not generate (a viewer): the empty state then has no call to action. */
+function EmptyPersonasState({ onGenerate }: { readonly onGenerate?: () => void }) {
   const { t } = useTranslation('projectDetail')
   return (
-    <div className="text-center py-12 bg-white rounded-xl border">
-      <Users size={48} className="mx-auto text-gray-300 mb-4" />
-      <h3 className="text-lg font-medium mb-2">{t('personas.noPersonasYet')}</h3>
-      <p className="text-gray-500 mb-4">{t('personas.generateFromFeedback')}</p>
-      <button onClick={onGenerate} className="px-4 py-2 bg-purple-600 text-white rounded-lg">
-        <Sparkles size={16} className="inline mr-2" />{t('overview.generate')}
-      </button>
+    <div className="card text-center py-12 sm:py-16">
+      <div className="w-12 h-12 mx-auto mb-4 rounded-lg bg-aim-subtle flex items-center justify-center">
+        <Users size={20} className="text-aim" aria-hidden />
+      </div>
+      <h2 className="text-base font-semibold tracking-tight text-text-strong mb-1">{t('personas.noPersonasYet')}</h2>
+      <p className={clsx('text-sm text-muted', onGenerate && 'mb-5')}>{t('personas.generateFromFeedback')}</p>
+      {onGenerate ? (
+        <button type="button" onClick={onGenerate} className="btn btn-secondary">
+          <Sparkles size={16} aria-hidden />{t('overview.generate')}
+        </button>
+      ) : null}
     </div>
   )
 }

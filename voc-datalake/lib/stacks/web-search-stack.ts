@@ -81,6 +81,8 @@ export class VocWebSearchStack extends VocStack {
   public readonly gatewayUrl?: string;
   public readonly gatewayArn?: string;
   public readonly toolName?: string;
+  /** The Bedrock model-access half, when `anthropicUseCase` is set. */
+  public readonly modelAccess?: BedrockModelAccess;
 
   constructor(scope: Construct, id: string, props: VocWebSearchStackProps) {
     super(scope, id, props);
@@ -106,7 +108,7 @@ export class VocWebSearchStack extends VocStack {
           'where the app runs. Pass the app region.',
         );
       }
-      new BedrockModelAccess(this, 'BedrockModelAccess', {
+      this.modelAccess = new BedrockModelAccess(this, 'BedrockModelAccess', {
         anthropicUseCase: props.anthropicUseCase,
         modelRegion: props.modelRegion,
         skipUseCaseSubmission: props.skipUseCaseSubmission,

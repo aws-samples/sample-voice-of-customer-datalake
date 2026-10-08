@@ -1,31 +1,28 @@
 /**
- * @fileoverview Data Explorer page with full CRUD for S3 and DynamoDB data.
+ * @fileoverview Data Explorer page (admin-only): browse S3 raw data and DynamoDB
+ * processed feedback. Nothing is ever deleted and existing raw objects are never
+ * overwritten — the explorer reads, creates new raw files, and edits processed records.
  * @module pages/DataExplorer
  */
 
 import { useState, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Database, HardDrive, Plus, RefreshCw, Search, Filter } from 'lucide-react'
-import type { FeedbackItem } from '../../api/client'
-import ConfirmModal from '../../components/ConfirmModal'
+import type { FeedbackItem } from '../../api/types'
 import clsx from 'clsx'
 import S3Browser from './S3Browser'
 import ProcessedFeedbackView from './ProcessedFeedbackView'
 import EditModal, { type EditModalState } from './EditModal'
 import { useDataExplorerQueries } from './useDataExplorerQueries'
+import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import { useDataExplorerMutations } from './useDataExplorerMutations'
 import { openS3Editor, openS3Creator, downloadS3File } from './s3Handlers'
 
 type ViewMode = 's3-raw' | 'dynamodb-processed'
 
-interface DeleteConfirmState {
-  type: 's3' | 'dynamodb'
-  key: string
-  id?: string
-}
-
 const VIEW_TABS = [
-  { id: 's3-raw', icon: HardDrive, label: 'S3 Raw Data', shortLabel: 'S3' },
-  { id: 'dynamodb-processed', icon: Database, label: 'Edit Processed Feedback', shortLabel: 'Edit' },
+  { id: 's3-raw', icon: HardDrive, labelKey: 'tabs.s3RawData', shortLabelKey: 'tabs.s3Short' },
+  { id: 'dynamodb-processed', icon: Database, labelKey: 'tabs.processedFeedback', shortLabelKey: 'tabs.feedbackShort' },
 ] as const
 
 // Extended feedback item type that may include s3_raw_uri from API
@@ -48,14 +45,11 @@ export default function DataExplorer() {
   const [searchQuery, setSearchQuery] = useState('')
   const [sourceFilter, setSourceFilter] = useState<string>('')
   const [editModal, setEditModal] = useState<EditModalState | null>(null)
-  const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmState | null>(null)
 
   const queries = useDataExplorerQueries(viewMode, selectedBucket, s3Path, sourceFilter)
   const mutations = useDataExplorerMutations(selectedBucket, {
     onS3SaveSuccess: () => setEditModal(null),
-    onS3DeleteSuccess: () => setDeleteConfirm(null),
     onFeedbackSaveSuccess: () => setEditModal(null),
-    onFeedbackDeleteSuccess: () => setDeleteConfirm(null),
   })
 
   const handleBucketChange = useCallback((bucketId: string) => {
@@ -64,7 +58,9 @@ export default function DataExplorer() {
   }, [])
 
   const handleOpenS3Editor = useCallback((fullKey: string, mode: 'view' | 'edit') => {
-    openS3Editor(fullKey, mode, selectedBucket, setEditModal)
+    // Same contract as download: a failed preview fetch must not surface as an
+    // unhandled rejection; the modal simply does not open.
+    openS3Editor(fullKey, mode, selectedBucket, setEditModal).catch(console.error)
   }, [selectedBucket])
 
   const handleOpenS3Creator = useCallback(() => {
@@ -90,18 +86,9 @@ export default function DataExplorer() {
       mutations.saveS3Mutation.mutate({ key: editModal.key, content: contentStr, syncToDynamo: sync })
     } else if (editModal.feedbackId) {
       const feedbackData = isPartialFeedbackItem(content) ? content : {}
-      mutations.saveFeedbackMutation.mutate({ feedbackId: editModal.feedbackId, data: feedbackData, syncToS3: sync })
+      mutations.saveFeedbackMutation.mutate({ feedbackId: editModal.feedbackId, data: feedbackData })
     }
   }, [editModal, mutations.saveS3Mutation, mutations.saveFeedbackMutation])
-
-  const handleDelete = useCallback(() => {
-    if (!deleteConfirm) return
-    if (deleteConfirm.type === 's3') {
-      mutations.deleteS3Mutation.mutate(deleteConfirm.key)
-    } else if (deleteConfirm.id) {
-      mutations.deleteFeedbackMutation.mutate(deleteConfirm.id)
-    }
-  }, [deleteConfirm, mutations.deleteS3Mutation, mutations.deleteFeedbackMutation])
 
   if (!queries.isConfigured) {
     return <NotConfiguredView />
@@ -133,40 +120,36 @@ export default function DataExplorer() {
         onOpenS3Editor={handleOpenS3Editor}
         onDownloadS3File={handleDownloadS3File}
         onOpenFeedbackEditor={handleOpenFeedbackEditor}
-        onDeleteConfirm={setDeleteConfirm}
       />
 
       {editModal && (
         <EditModal
-          {...editModal}
+          {...editModalProps(editModal)}
           onClose={() => setEditModal(null)}
           onSave={handleSave}
           saving={mutations.saveS3Mutation.isPending || mutations.saveFeedbackMutation.isPending}
           error={mutations.saveS3Mutation.error?.message ?? mutations.saveFeedbackMutation.error?.message}
         />
       )}
-
-      <ConfirmModal
-        isOpen={!!deleteConfirm}
-        title={`Delete ${deleteConfirm?.type === 's3' ? 'S3 File' : 'Feedback'}`}
-        message="Are you sure? This cannot be undone."
-        confirmLabel="Delete"
-        variant="danger"
-        onConfirm={handleDelete}
-        onCancel={() => setDeleteConfirm(null)}
-        isLoading={mutations.deleteS3Mutation.isPending || mutations.deleteFeedbackMutation.isPending}
-      />
     </div>
   )
 }
 
+/**
+ * EditModalState carries the S3 object key as `key`, which React reserves: a
+ * `{...state}` spread would hand React a list key instead of a prop (and warn).
+ * Pass it through under its own name instead.
+ */
+function editModalProps({ key: s3Key, ...rest }: EditModalState) {
+  return { ...rest, s3Key }
+}
+
 function NotConfiguredView() {
+  const { t } = useTranslation('dataExplorer')
   return (
-    <div className="flex items-center justify-center h-64">
-      <div className="text-center text-gray-500">
-        <Database size={48} className="mx-auto mb-4 opacity-50" />
-        <p>Configure API endpoint in Settings to explore data</p>
-      </div>
+    <div className="card flex flex-col items-center justify-center text-center py-12 gap-2">
+      <Database size={20} className="text-muted" />
+      <p className="text-sm text-muted">{t('notConfigured')}</p>
     </div>
   )
 }
@@ -180,12 +163,16 @@ interface ContentPanelProps {
   readonly onOpenS3Editor: (key: string, mode: 'view' | 'edit') => void
   readonly onDownloadS3File: (key: string, filename: string) => void
   readonly onOpenFeedbackEditor: (item: FeedbackItem, mode: 'view' | 'edit') => void
-  readonly onDeleteConfirm: (state: DeleteConfirmState) => void
 }
 
 function ContentPanel({
-  viewMode, queries, s3Path, searchQuery, onS3PathChange, onOpenS3Editor, onDownloadS3File, onOpenFeedbackEditor, onDeleteConfirm
+  viewMode, queries, s3Path, searchQuery, onS3PathChange, onOpenS3Editor, onDownloadS3File, onOpenFeedbackEditor
 }: ContentPanelProps) {
+  // A failed listing is not an empty folder / "no feedback": say so, with a retry.
+  const failure = viewMode === 's3-raw' ? queries.s3Failure : queries.feedbackFailure
+  if (failure.loadFailed) {
+    return <LoadFailed onRetry={failure.retry} retrying={failure.retrying} />
+  }
   return (
     <div className="card p-0 overflow-hidden">
       {viewMode === 's3-raw' && (
@@ -198,7 +185,6 @@ function ContentPanel({
           onNavigateToBreadcrumb={(i) => onS3PathChange(i < 0 ? [] : s3Path.slice(0, i + 1))}
           onView={(k) => onOpenS3Editor(k, 'view')}
           onEdit={(k) => onOpenS3Editor(k, 'edit')}
-          onDelete={(k) => onDeleteConfirm({ type: 's3', key: k })}
           onDownload={onDownloadS3File}
         />
       )}
@@ -209,7 +195,6 @@ function ContentPanel({
           searchQuery={searchQuery}
           onView={(i) => onOpenFeedbackEditor(i, 'view')}
           onEdit={(i) => onOpenFeedbackEditor(i, 'edit')}
-          onDelete={(i) => onDeleteConfirm({ type: 'dynamodb', key: i.feedback_id, id: i.feedback_id })}
         />
       )}
     </div>
@@ -222,15 +207,16 @@ interface HeaderProps {
 }
 
 function Header({ viewMode, onCreateFile }: HeaderProps) {
+  const { t } = useTranslation('dataExplorer')
   return (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
       <div>
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Data Explorer</h1>
-        <p className="text-sm text-gray-500">Browse, edit, and sync raw S3 data and processed DynamoDB records</p>
+        <h1 className="text-2xl font-bold tracking-tight text-text-strong">{t('title')}</h1>
+        <p className="text-sm text-muted mt-1">{t('description')}</p>
       </div>
       {viewMode === 's3-raw' && (
-        <button onClick={onCreateFile} className="btn btn-primary flex items-center justify-center gap-2 text-sm">
-          <Plus size={18} /> New File
+        <button onClick={onCreateFile} className="btn btn-primary justify-center">
+          <Plus size={16} /> {t('newFile')}
         </button>
       )}
     </div>
@@ -243,22 +229,25 @@ interface ViewTabsProps {
 }
 
 function ViewTabs({ viewMode, onViewModeChange }: ViewTabsProps) {
+  const { t } = useTranslation('dataExplorer')
   return (
-    <div className="flex items-center gap-2 sm:gap-4 border-b border-gray-200 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-      {VIEW_TABS.map(({ id, icon: Icon, label, shortLabel }) => (
-        <button
-          key={id}
-          onClick={() => onViewModeChange(id)}
-          className={clsx(
-            'flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-3 border-b-2 font-medium text-xs sm:text-sm transition-colors whitespace-nowrap',
-            viewMode === id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-          )}
-        >
-          <Icon size={16} />
-          <span className="hidden sm:inline">{label}</span>
-          <span className="sm:hidden">{shortLabel}</span>
-        </button>
-      ))}
+    <div className="tabs-rail -mx-4 px-4 sm:mx-0 sm:px-0">
+      <div className="tabs-track" role="tablist" aria-label={t('tabs.label')}>
+        {VIEW_TABS.map(({ id, icon: Icon, labelKey, shortLabelKey }) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={viewMode === id}
+            onClick={() => onViewModeChange(id)}
+            className={clsx('tab', viewMode === id && 'tab-active')}
+          >
+            <Icon size={14} />
+            <span className="hidden sm:inline">{t(labelKey)}</span>
+            <span className="sm:hidden">{t(shortLabelKey)}</span>
+          </button>
+        ))}
+      </div>
     </div>
   )
 }
@@ -280,6 +269,7 @@ function FilterBar({
   viewMode, selectedBucket, buckets, sourceFilter, sources, searchQuery,
   onBucketChange, onSourceFilterChange, onSearchChange, onRefresh
 }: FilterBarProps) {
+  const { t } = useTranslation('dataExplorer')
   return (
     <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
       {viewMode === 's3-raw' && buckets && buckets.length > 1 && (
@@ -288,13 +278,11 @@ function FilterBar({
       {viewMode !== 's3-raw' && (
         <>
           <SourceSelector sourceFilter={sourceFilter} sources={sources} onSourceFilterChange={onSourceFilterChange} />
-          {viewMode === 'dynamodb-processed' && (
-            <SearchInput searchQuery={searchQuery} onSearchChange={onSearchChange} />
-          )}
+          <SearchInput searchQuery={searchQuery} onSearchChange={onSearchChange} />
         </>
       )}
-      <button onClick={onRefresh} className="btn btn-secondary py-1.5 text-sm flex items-center justify-center gap-1 sm:ml-auto">
-        <RefreshCw size={14} /> Refresh
+      <button onClick={onRefresh} className="btn btn-secondary justify-center sm:ml-auto">
+        <RefreshCw size={16} /> {t('refresh')}
       </button>
     </div>
   )
@@ -307,13 +295,15 @@ interface BucketSelectorProps {
 }
 
 function BucketSelector({ selectedBucket, buckets, onBucketChange }: BucketSelectorProps) {
+  const { t } = useTranslation('dataExplorer')
   return (
     <div className="flex items-center gap-2">
-      <HardDrive size={16} className="text-gray-400 flex-shrink-0" />
+      <HardDrive size={16} className="text-muted flex-shrink-0" aria-hidden="true" />
       <select
+        aria-label={t('filters.bucket')}
         value={selectedBucket}
         onChange={(e) => onBucketChange(e.target.value)}
-        className="input py-1.5 text-sm flex-1 sm:min-w-[200px]"
+        className="select flex-1 sm:min-w-[200px]"
       >
         {buckets.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
       </select>
@@ -328,15 +318,17 @@ interface SourceSelectorProps {
 }
 
 function SourceSelector({ sourceFilter, sources, onSourceFilterChange }: SourceSelectorProps) {
+  const { t } = useTranslation('dataExplorer')
   return (
     <div className="flex items-center gap-2">
-      <Filter size={16} className="text-gray-400 flex-shrink-0" />
+      <Filter size={16} className="text-muted flex-shrink-0" aria-hidden="true" />
       <select
+        aria-label={t('filters.source')}
         value={sourceFilter}
         onChange={(e) => onSourceFilterChange(e.target.value)}
-        className="input py-1.5 text-sm flex-1 sm:min-w-[150px]"
+        className="select flex-1 sm:min-w-[160px]"
       >
-        <option value="">All Sources</option>
+        <option value="">{t('filters.allSources')}</option>
         {sources && Object.keys(sources).map((s) => <option key={s} value={s}>{s}</option>)}
       </select>
     </div>
@@ -349,15 +341,17 @@ interface SearchInputProps {
 }
 
 function SearchInput({ searchQuery, onSearchChange }: SearchInputProps) {
+  const { t } = useTranslation('dataExplorer')
   return (
     <div className="flex items-center gap-2 flex-1">
-      <Search size={16} className="text-gray-400 flex-shrink-0" />
+      <Search size={16} className="text-muted flex-shrink-0" aria-hidden="true" />
       <input
-        type="text"
+        type="search"
+        aria-label={t('filters.search')}
         value={searchQuery}
         onChange={(e) => onSearchChange(e.target.value)}
-        placeholder="Search..."
-        className="input py-1.5 text-sm flex-1 sm:max-w-md"
+        placeholder={t('filters.searchPlaceholder')}
+        className="input flex-1 sm:max-w-md"
       />
     </div>
   )

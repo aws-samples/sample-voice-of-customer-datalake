@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import PersonaPDFContent from './PersonaPDFContent'
-import type { ProjectPersona } from '../../api/types'
+import type { ProjectPersona } from '../../api/projectTypes'
 
 const createMinimalPersona = (overrides: Partial<ProjectPersona> = {}): ProjectPersona => ({
   persona_id: 'persona-1',
@@ -69,7 +69,7 @@ describe('PersonaPDFContent', () => {
       })
       render(<PersonaPDFContent persona={persona} />)
 
-      expect(screen.getByText('👤 Identity & Demographics')).toBeInTheDocument()
+      expect(screen.getByText('Identity & Demographics')).toBeInTheDocument()
       expect(screen.getByText('A busy professional who values efficiency')).toBeInTheDocument()
     })
 
@@ -97,7 +97,7 @@ describe('PersonaPDFContent', () => {
       }
       render(<PersonaPDFContent persona={persona} />)
 
-      expect(screen.queryByText('👤 Identity & Demographics')).not.toBeInTheDocument()
+      expect(screen.queryByText('Identity & Demographics')).not.toBeInTheDocument()
     })
   })
 
@@ -108,7 +108,7 @@ describe('PersonaPDFContent', () => {
       })
       render(<PersonaPDFContent persona={persona} />)
 
-      expect(screen.getByText('🎯 Goals & Motivations')).toBeInTheDocument()
+      expect(screen.getByText('Goals & Motivations')).toBeInTheDocument()
       expect(screen.getByText('Primary Goal')).toBeInTheDocument()
       expect(screen.getByText('Increase productivity by 50%')).toBeInTheDocument()
     })
@@ -152,7 +152,7 @@ describe('PersonaPDFContent', () => {
       })
       render(<PersonaPDFContent persona={persona} />)
 
-      expect(screen.getByText('😤 Pain Points & Frustrations')).toBeInTheDocument()
+      expect(screen.getByText('Pain Points & Frustrations')).toBeInTheDocument()
       expect(screen.getByText('Current Challenges')).toBeInTheDocument()
       expect(screen.getByText('Too many manual steps')).toBeInTheDocument()
     })
@@ -199,7 +199,7 @@ describe('PersonaPDFContent', () => {
       })
       render(<PersonaPDFContent persona={persona} />)
 
-      expect(screen.getByText('🔄 Behaviors & Habits')).toBeInTheDocument()
+      expect(screen.getByText('Behaviors & Habits')).toBeInTheDocument()
       expect(screen.getByText('Current Solutions')).toBeInTheDocument()
       expect(screen.getByText('Competitor A')).toBeInTheDocument()
     })
@@ -238,7 +238,7 @@ describe('PersonaPDFContent', () => {
       })
       render(<PersonaPDFContent persona={persona} />)
 
-      expect(screen.getByText('🌍 Context & Environment')).toBeInTheDocument()
+      expect(screen.getByText('Context & Environment')).toBeInTheDocument()
       expect(screen.getByText('Works from home office')).toBeInTheDocument()
     })
 
@@ -272,7 +272,7 @@ describe('PersonaPDFContent', () => {
       })
       render(<PersonaPDFContent persona={persona} />)
 
-      expect(screen.getByText('💬 Representative Quotes')).toBeInTheDocument()
+      expect(screen.getByText('Representative Quotes')).toBeInTheDocument()
       expect(screen.getByText('"I need this to be faster"')).toBeInTheDocument()
       expect(screen.getByText('— During user interview')).toBeInTheDocument()
       expect(screen.getByText('"The old system was better"')).toBeInTheDocument()
@@ -287,31 +287,24 @@ describe('PersonaPDFContent', () => {
   })
 
   describe('Scenario Section', () => {
+    const MORNING_ROUTINE = {
+      title: 'Morning Routine',
+      narrative: 'User starts their day by checking notifications.',
+      trigger: 'Alarm goes off',
+      outcome: 'All tasks reviewed',
+    }
+
     it('renders scenario title and narrative', () => {
-      const persona = createMinimalPersona({
-        scenario: {
-          title: 'Morning Routine',
-          narrative: 'User starts their day by checking notifications.',
-          trigger: 'Alarm goes off',
-          outcome: 'All tasks reviewed',
-        },
-      })
+      const persona = createMinimalPersona({ scenario: MORNING_ROUTINE })
       render(<PersonaPDFContent persona={persona} />)
 
-      expect(screen.getByText('📖 Scenario')).toBeInTheDocument()
+      expect(screen.getByText('Scenario')).toBeInTheDocument()
       expect(screen.getByText('Morning Routine')).toBeInTheDocument()
       expect(screen.getByText('User starts their day by checking notifications.')).toBeInTheDocument()
     })
 
     it('renders scenario trigger and outcome', () => {
-      const persona = createMinimalPersona({
-        scenario: {
-          title: 'Morning Routine',
-          narrative: 'User starts their day by checking notifications.',
-          trigger: 'Alarm goes off',
-          outcome: 'All tasks reviewed',
-        },
-      })
+      const persona = createMinimalPersona({ scenario: MORNING_ROUTINE })
       render(<PersonaPDFContent persona={persona} />)
 
       expect(screen.getByText('Trigger')).toBeInTheDocument()
@@ -328,7 +321,7 @@ describe('PersonaPDFContent', () => {
       })
       render(<PersonaPDFContent persona={persona} />)
 
-      expect(screen.getByText('📝 Research Notes')).toBeInTheDocument()
+      expect(screen.getByText('Research Notes')).toBeInTheDocument()
       expect(screen.getByText('Note 1')).toBeInTheDocument()
       expect(screen.getByText('Note 2')).toBeInTheDocument()
     })
@@ -362,49 +355,49 @@ describe('PersonaPDFContent', () => {
       const persona = createMinimalPersona()
       render(<PersonaPDFContent persona={persona} />)
 
-      expect(screen.queryByText('🎯 Goals & Motivations')).not.toBeInTheDocument()
+      expect(screen.queryByText('Goals & Motivations')).not.toBeInTheDocument()
     })
 
     it('does not render pain points section when no frustrations', () => {
       const persona = createMinimalPersona()
       render(<PersonaPDFContent persona={persona} />)
 
-      expect(screen.queryByText('😤 Pain Points & Frustrations')).not.toBeInTheDocument()
+      expect(screen.queryByText('Pain Points & Frustrations')).not.toBeInTheDocument()
     })
 
     it('does not render behaviors section when no behaviors', () => {
       const persona = createMinimalPersona()
       render(<PersonaPDFContent persona={persona} />)
 
-      expect(screen.queryByText('🔄 Behaviors & Habits')).not.toBeInTheDocument()
+      expect(screen.queryByText('Behaviors & Habits')).not.toBeInTheDocument()
     })
 
     it('does not render context section when no context_environment', () => {
       const persona = createMinimalPersona()
       render(<PersonaPDFContent persona={persona} />)
 
-      expect(screen.queryByText('🌍 Context & Environment')).not.toBeInTheDocument()
+      expect(screen.queryByText('Context & Environment')).not.toBeInTheDocument()
     })
 
     it('does not render quotes section when no quotes', () => {
       const persona = createMinimalPersona()
       render(<PersonaPDFContent persona={persona} />)
 
-      expect(screen.queryByText('💬 Representative Quotes')).not.toBeInTheDocument()
+      expect(screen.queryByText('Representative Quotes')).not.toBeInTheDocument()
     })
 
     it('does not render scenario section when scenario is empty', () => {
       const persona = createMinimalPersona()
       render(<PersonaPDFContent persona={persona} />)
 
-      expect(screen.queryByText('📖 Scenario')).not.toBeInTheDocument()
+      expect(screen.queryByText('Scenario')).not.toBeInTheDocument()
     })
 
     it('does not render research notes section when no notes', () => {
       const persona = createMinimalPersona()
       render(<PersonaPDFContent persona={persona} />)
 
-      expect(screen.queryByText('📝 Research Notes')).not.toBeInTheDocument()
+      expect(screen.queryByText('Research Notes')).not.toBeInTheDocument()
     })
   })
 })

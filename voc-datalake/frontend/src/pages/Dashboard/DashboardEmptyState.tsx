@@ -20,14 +20,14 @@ export default function DashboardEmptyState() {
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center px-4">
       <div className="max-w-md text-center">
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-400">
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-bg-hover text-muted">
           <Inbox size={24} />
         </div>
-        <h2 className="mb-2 text-xl font-bold text-gray-900">{t('onboarding.heading')}</h2>
-        <p className="mb-6 text-gray-500">{t('onboarding.subheading')}</p>
+        <h2 className="mb-2 text-xl font-bold tracking-tight text-text-strong">{t('onboarding.heading')}</h2>
+        <p className="mb-6 text-muted">{t('onboarding.subheading')}</p>
         <Link
           to="/"
-          className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+          className="btn btn-primary"
         >
           {t('onboarding.cta')} <ArrowRight size={16} />
         </Link>

@@ -20,7 +20,76 @@
     "saved": "카테고리가 저장되었습니다",
     "deleteTitle": "카테고리 삭제",
     "deleteMessage": "이 카테고리와 모든 하위 카테고리를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
-    "deleteConfirm": "삭제"
+    "deleteConfirm": "삭제",
+    "expandLabel": "{{name}} 펼치기",
+    "collapseLabel": "{{name}} 접기",
+    "renameHint": "클릭하여 이름 변경",
+    "renameLabel": "{{name}} 이름 변경",
+    "deleteCategoryLabel": "{{name}} 삭제",
+    "deleteSubcategoryLabel": "하위 카테고리 {{name}} 삭제",
+    "addSubcategoryLabel": "하위 카테고리 추가",
+    "companyLabel": "회사 설명",
+    "listHelp": "각 카테고리에는 모든 리뷰에 저장되는 ID, 설명, 해당 제품, 제품 담당자가 있습니다. 담당자는 자신의 카테고리 피드백을 자동으로 볼 수 있으며 이에 대응하는 사람입니다.",
+    "noProduct": "제품 없음",
+    "saveError": "카테고리를 저장하지 못했습니다. 이름과 제한, 관리자 권한을 확인하세요.",
+    "details": {
+      "productLabel": "제품",
+      "productPlaceholder": "예: 모바일 앱",
+      "productHint": "이 카테고리가 속한 제품 또는 영역입니다.",
+      "ownersLabel": "제품 담당자",
+      "removeOwner": "{{name}} 제거",
+      "ownersLimit": "담당자는 최대 {{max}}명",
+      "addOwner": "담당자 추가…",
+      "ownersUnavailable": "사용자 목록을 불러오지 못해 지금은 담당자를 추가할 수 없습니다.",
+      "ownersHint": "담당자는 이 카테고리의 피드백을 자동으로 볼 수 있습니다."
+    },
+    "reprocess": {
+      "title": "기존 피드백 재처리",
+      "description": "카테고리를 변경한 후 이미 저장된 리뷰를 다시 분류합니다. 리뷰는 그대로 업데이트되며 아무것도 삭제되지 않습니다.",
+      "modeLabel": "모드",
+      "modes": {
+        "processed": {
+          "title": "처리된 리뷰 재분류",
+          "description": "저장된(번역된) 텍스트를 현재 카테고리로 분류합니다. 카테고리와 하위 카테고리만 바뀝니다."
+        },
+        "raw": {
+          "title": "원시 데이터에서 재처리",
+          "description": "원본 원시 데이터로 전체 보강(감정, 카테고리, 페르소나, 문제 분석)을 다시 실행합니다."
+        },
+        "dimensions": {
+          "title": "차원 다시 추론",
+          "description": "추론 가능한 차원에 대해 모델을 다시 실행합니다. 소스, 해당 프로필 또는 사람이 설정한 값은 바뀌지 않습니다."
+        }
+      },
+      "status": {
+        "queued": "대기 중",
+        "running": "실행 중",
+        "completed": "완료됨",
+        "failed": "실패",
+        "cancelled": "취소됨"
+      },
+      "counters": {
+        "scanned": "검사됨",
+        "updated": "업데이트됨",
+        "unchanged": "변경 없음",
+        "skipped_manual": "수동 설정 유지",
+        "failed": "실패"
+      },
+      "allTime": "전체 기간",
+      "lastNDays_one": "최근 {{count}}일",
+      "lastNDays_other": "최근 {{count}}일",
+      "cancel": "작업 취소",
+      "alreadyRunning": "재처리 작업이 이미 실행 중입니다. 완료될 때까지 기다리거나 먼저 취소하세요.",
+      "stoppedAtCeiling": "모델 비용을 제한하기 위해 작업당 한도인 리뷰 {{max}}건에서 중지했습니다. 나머지 리뷰는 재처리되지 않았습니다. 기간을 좁혀 나머지를 처리하세요.",
+      "startError": "재처리 작업을 시작하지 못했습니다.",
+      "daysLabel": "기간(일)",
+      "includeManual": "수동 수정도 덮어쓰기",
+      "daysHint": "1–{{max}}일 또는 전체 기간은 0. 따로 선택하지 않으면 수동 수정은 유지됩니다.",
+      "costNote": "비용: 기간 내 리뷰 1건당 모델 호출 1회. 대규모 데이터 레이크의 전체 기간 실행은 몇 시간이 걸릴 수 있습니다.",
+      "start": "재처리 시작",
+      "confirmTitle": "기존 피드백을 재처리할까요?",
+      "confirmMessage": "{{window}} 동안 '{{mode}}'을(를) 실행합니다. 해당 기간의 리뷰 1건당 모델을 1회 호출합니다. 리뷰는 그대로 업데이트되며 아무것도 삭제되지 않습니다."
+    }
   },
   "dataSourceWizard": {
     "all": "전체",
@@ -87,14 +156,16 @@
     "downloadMarkdown": "Markdown으로 다운로드",
     "downloadOptions": "다운로드 옵션",
     "downloadPDF": "PDF로 다운로드",
-    "downloadTXT": "TXT로 다운로드",
-    "kiroPromptTip": "팁: Export / MCP 탭에서 Kiro 프롬프트 구성"
+    "downloadTXT": "TXT로 다운로드"
   },
   "errorBoundary": {
     "description": "이 페이지에서 예기치 않은 오류가 발생했습니다. 페이지를 새로 고치거나 홈으로 돌아갈 수 있으며, 앱의 나머지 부분은 영향을 받지 않습니다.",
     "goHome": "홈으로 이동",
     "reload": "페이지 새로 고침",
-    "title": "문제가 발생했습니다"
+    "title": "문제가 발생했습니다",
+    "notFoundTitle": "페이지를 찾을 수 없습니다",
+    "notFoundDescription": "이 주소와 일치하는 페이지가 없습니다. 페이지가 이동되었거나 링크가 잘못 입력되었을 수 있습니다.",
+    "goBack": "뒤로 가기"
   },
   "feedbackCard": {
     "copyText": "텍스트 복사",
@@ -102,13 +173,9 @@
     "issue": "문제: {{summary}}",
     "rootCause": "근본 원인: {{cause}}",
     "urgent": "긴급",
-    "webScraper": "웹 스크래퍼"
-  },
-  "feedbackCarousel": {
-    "issue": "문제: {{summary}}",
-    "urgent": "긴급",
-    "viewDetails": "세부정보 보기",
-    "webScraper": "웹 스크래퍼"
+    "webScraper": "웹 스크래퍼",
+    "openOriginal": "원본 리뷰 열기",
+    "reviewDateHint": "리뷰 작성일"
   },
   "formQrCode": {
     "accessibleName": "{{formName}} 피드백 양식의 QR 코드",
@@ -151,9 +218,11 @@
     "refresh": "새로고침",
     "sourcePlaceholder": "소스 이름...",
     "supportedFormats": "CSV, JSON, JSONL 지원",
+    "unknownError": "알 수 없는 오류",
     "unsupportedFile": "지원하지 않는 파일 형식: {{filename}}. CSV, JSON, JSONL 파일만 지원됩니다.",
     "uploaded": "{{filename}} 업로드됨",
     "uploadFailed": "{{filename}} 업로드 실패: {{error}}",
+    "uploadUrlFailed": "업로드 URL을 가져오지 못했습니다",
     "uploading": "{{count}}개 파일 업로드 중...",
     "uploading_one": "{{count}}개 파일 업로드 중...",
     "uploading_other": "{{count}}개 파일 업로드 중...",
@@ -162,7 +231,8 @@
   "socialFeed": {
     "all": "모두",
     "noFeedback": "이 기간에 대한 피드백이 없습니다",
-    "view": "보기"
+    "view": "보기",
+    "filterLabel": "소스로 필터"
   },
   "userAdmin": {
     "active": "활성",
@@ -191,7 +261,6 @@
     "firstNameLabel": "이름",
     "lastNameLabel": "성",
     "loadError": "사용자를 로드하지 못했습니다. 관리자 권한이 있는지 확인하세요.",
-    "nameLabel": "이름 (선택사항)",
     "noUsers": "사용자를 찾을 수 없습니다. 위에서 첫 번째 사용자를 추가하세요.",
     "passwordResetSent": "비밀번호 재설정 이메일이 전송되었습니다",
     "pendingStatus": "대기 중",
@@ -209,40 +278,222 @@
     "userDeleted": "사용자가 삭제되었습니다",
     "userDisabled": "사용자가 비활성화되었습니다",
     "userEnabled": "사용자가 활성화되었습니다",
-    "userManagement": "사용자 관리",
     "userRole": "사용자",
     "usersCount": "({{count}}명의 사용자)",
     "usersCount_one": "({{count}}명의 사용자)",
     "usersCount_other": "({{count}}명의 사용자)",
-    "userUpdated": "사용자가 업데이트되었습니다"
+    "roleFor": "{{email}}의 역할",
+    "categoryAccess": {
+      "title": "카테고리 접근 권한",
+      "noCategories": "아직 구성된 카테고리가 없습니다.",
+      "adminNote": "이 사용자는 관리자이므로 여기 저장된 내용과 관계없이 항상 모든 카테고리를 볼 수 있습니다.",
+      "all": "모든 카테고리",
+      "selected": "선택한 카테고리만",
+      "ownersNote": "제품 담당자는 여기서 선택되지 않았더라도 자신의 카테고리를 항상 볼 수 있습니다.",
+      "saveError": "카테고리 접근 권한을 저장하지 못했습니다.",
+      "loadError": "카테고리 접근 권한을 불러오지 못했습니다.",
+      "saved": "{{email}}의 카테고리 접근 권한을 업데이트했습니다"
+    },
+    "flags": {
+      "title": "메모리 및 소유자 플래그",
+      "description": "메모리 검토자는 회사 메모리를 관리합니다. 대체 소유자(관리자 1명)는 카테고리에 소유자가 없는 에이전트 생성 프로젝트를 받습니다.",
+      "fallbackOwner": "대체 소유자",
+      "memoryReviewer": "메모리 검토자",
+      "fallbackOwnerFor": "대체 소유자: {{user}}",
+      "memoryReviewerFor": "메모리 검토자: {{user}}",
+      "fallbackAdminOnly": "관리자만 대체 소유자가 될 수 있습니다.",
+      "saveFailed": "플래그를 업데이트하지 못했습니다. 다시 시도하세요."
+    },
+    "sourceAccess": {
+      "title": "소스",
+      "default": "제한되지 않은 모든 소스(기본)",
+      "all": "제한된 소스를 포함한 모든 소스",
+      "selected": "선택한 소스만",
+      "restricted": "제한됨",
+      "noProfiles": "아직 소스 프로필이 없습니다(관리 → 소스 및 개인정보)."
+    }
   },
-  "userProfile": {
-    "administrator": "관리자",
-    "allFieldsRequired": "모든 필드는 필수입니다",
-    "changePassword": "비밀번호 변경",
-    "changing": "변경 중...",
-    "confirmNewPassword": "새 비밀번호 확인",
-    "confirmPasswordPlaceholder": "새 비밀번호 확인",
-    "currentPassword": "현재 비밀번호",
-    "currentPasswordPlaceholder": "현재 비밀번호 입력",
-    "email": "이메일",
-    "failedToChange": "비밀번호 변경 실패",
-    "groups": "그룹",
-    "incorrectPassword": "현재 비밀번호가 올바르지 않습니다",
-    "language": "언어",
-    "myProfile": "내 프로필",
-    "name": "이름",
-    "newPassword": "새 비밀번호",
-    "newPasswordPlaceholder": "새 비밀번호 입력",
-    "passwordChanged": "비밀번호가 성공적으로 변경되었습니다!",
-    "passwordIntro": "현재 비밀번호를 입력하고 새 비밀번호를 선택하세요",
-    "passwordRequirements": "비밀번호는 최소 8자 이상이며 대문자, 소문자, 숫자를 포함해야 합니다",
-    "passwordTooShort": "비밀번호는 최소 8자 이상이어야 합니다",
-    "passwordsMismatch": "새 비밀번호가 일치하지 않습니다",
-    "profile": "프로필",
-    "role": "역할",
-    "showPasswords": "비밀번호 표시",
-    "user": "사용자",
-    "username": "사용자명"
+  "confirmModal": {
+    "delete": "삭제"
+  },
+  "pageLoader": {
+    "loading": "페이지 로드 중…"
+  },
+  "ratingStars": {
+    "label": "별 {{max}}개 중 {{rating}}개"
+  },
+  "categoryChange": {
+    "previous": "이전: {{category}}",
+    "manual": "수동으로 변경됨",
+    "manualBy": "{{user}}님이 변경함",
+    "loading": "카테고리 불러오는 중",
+    "category": "카테고리",
+    "choose": "카테고리 선택",
+    "subcategory": "하위 카테고리",
+    "noSubcategory": "없음",
+    "cancel": "취소",
+    "save": "카테고리 저장",
+    "open": "카테고리 변경",
+    "errors": {
+      "invalid": "해당 카테고리가 더 이상 존재하지 않습니다. 새로고침 후 다른 카테고리를 선택하세요.",
+      "notFound": "이 리뷰를 사용할 수 없거나 카테고리가 접근 범위를 벗어났습니다.",
+      "conflict": "다른 사람이 동시에 이 리뷰를 변경했습니다. 새로고침 후 다시 시도하세요.",
+      "generic": "카테고리를 변경하지 못했습니다."
+    }
+  },
+  "unsavedChanges": {
+    "title": "저장되지 않은 변경 사항",
+    "message": "저장되지 않은 변경 사항이 있습니다. 떠나기 전에 저장하시겠습니까, 아니면 버리시겠습니까?",
+    "save": "저장",
+    "discard": "버리기",
+    "cancel": "취소",
+    "saveFailed": "저장하지 못했습니다. 변경 사항은 그대로 있습니다. 다시 시도하거나 취소하세요.",
+    "cannotSave": "저장하기 전에 표시된 문제를 해결하거나 변경 사항을 버리세요."
+  },
+  "dimensionFields": {
+    "tagsLabel": "태그",
+    "tagsPlaceholder": "vip, 결제; 환불",
+    "tagsHint": "태그는 쉼표나 세미콜론으로 구분합니다(최대 20개).",
+    "tagsInvalid": "허용되지 않음(\"#\", \",\", \":\" 불가, 최대 64자): {{tags}}",
+    "tagsTooMany": "태그는 최대 {{max}}개입니다.",
+    "sourceLabel": "소스",
+    "manualImport": "수동 가져오기(기본)",
+    "restrictedOption": "{{name}}(제한됨)",
+    "sourceHint": "이 행들의 개인 정보 정책, 보관 기간, 공개 범위, 기본 차원을 결정합니다.",
+    "sourceRestrictedHint": "제한됨: 관리자와 이 소스를 허용받은 사람만 이 행들을 볼 수 있습니다.",
+    "defaultsTitle": "차원 및 태그",
+    "defaultsHint": "여기서 들어오는 모든 리뷰에 이 값이 적용되며, 차원별로 리뷰 자체 값이 우선합니다.",
+    "noDimensions": "아직 차원이 없습니다(관리 → 차원).",
+    "noDefault": "기본값 없음"
+  },
+  "draftSaveBar": {
+    "save": "저장",
+    "discard": "변경 취소",
+    "saving": "저장 중…",
+    "saved": "저장됨",
+    "saveError": "저장되지 않음: {{reason}}",
+    "remove": "삭제"
+  },
+  "dimensionsManager": {
+    "newValue": "새 값",
+    "valueNameLabel": "{{name}}의 저장 이름",
+    "valueNamePlaceholder": "stored_name",
+    "valueLabelLabel": "{{name}}의 표시 레이블",
+    "valueLabelPlaceholder": "표시 레이블(선택)",
+    "valueParentLabel": "{{name}}이(가) 속한 {{parent}} 값",
+    "anyParentValue": "모든 상위 값에 속함",
+    "removeValue": "값 {{name}} 삭제",
+    "parentLabel": "상위 차원",
+    "noParent": "없음(최상위)",
+    "parentOfChildren": "{{children}}의 상위이므로 자신은 상위를 가질 수 없습니다.",
+    "parentHint": "하위 차원은 상위 값에 따라 값이 좁혀집니다(한 단계만).",
+    "newDimension": "새 차원",
+    "removeDimension": "차원 {{name}} 삭제",
+    "keyLabel": "키(리뷰에 저장)",
+    "labelLabel": "레이블",
+    "labelPlaceholder": "제품",
+    "descriptionLabel": "설명(모델에 제공)",
+    "inferLabel": "모델이 추론하도록 허용",
+    "inferHint": "끄기: 소스, 해당 프로필 또는 사람만 설정합니다.",
+    "valuesTitle": "값({{n}})",
+    "addValueLabel": "{{name}}의 새 값",
+    "addValue": "값 추가",
+    "emptyTitle": "아직 차원이 없습니다",
+    "emptyHint": "제품, 모듈, 사용자 유형 등으로 피드백을 분류하려면 추가하세요.",
+    "addDimension": "차원 추가(최대 {{max}}개)",
+    "loadError": "차원을 불러오지 못했습니다.",
+    "problems": {
+      "tooMany": "차원은 최대 {{max}}개입니다.",
+      "keyFormat": "키 \"{{key}}\": 소문자, 숫자, \"_\"를 사용하고 문자로 시작(최대 32자).",
+      "keyReserved": "\"{{key}}\"은(는) 예약어입니다. 다른 키를 선택하세요.",
+      "keyDuplicate": "두 차원이 키 \"{{key}}\"를 사용합니다.",
+      "labelLength": "\"{{key}}\"의 레이블이 {{max}}자를 넘습니다.",
+      "descriptionLength": "\"{{key}}\"의 설명이 {{max}}자를 넘습니다.",
+      "parentInvalid": "\"{{key}}\"의 상위는 다른 최상위 차원이어야 합니다.",
+      "parentValueMissing": "\"{{key}}\"의 값 \"{{value}}\"이(가) 더 이상 없는 상위 값에 속해 있습니다.",
+      "tooManyValues": "\"{{key}}\"의 값이 {{max}}개를 넘습니다.",
+      "valueFormat": "\"{{key}}\"의 값 \"{{value}}\": 1~64자, 공백·\"#\"·\",\"·\":\" 불가.",
+      "valueDuplicate": "\"{{key}}\"에 값 \"{{value}}\"이(가) 두 번 있습니다."
+    }
+  },
+  "sourcesManager": {
+    "keepForever": "리뷰를 영구 보관",
+    "retentionLabel": "다음보다 오래된 리뷰 삭제(일)",
+    "retentionHint": "{{min}}~{{max}}일. 매일 실행되는 작업이 이 소스의 오래된 리뷰와 원본 보관 파일을 삭제합니다.",
+    "removeProfile": "{{name}} 프로필 삭제",
+    "labelLabel": "레이블",
+    "piiLabel": "개인 정보",
+    "pii": {
+      "allow": "받은 그대로 보관",
+      "allowHint": "텍스트, 작성자, 제목을 소스가 보낸 그대로 저장합니다.",
+      "redact": "가림 처리",
+      "redactHint": "이메일, 전화번호, IBAN, 카드 번호, IP 주소는 저장 전에 대체되고 작성자는 삭제되며 원본은 보관하지 않습니다.",
+      "summary_only": "요약만",
+      "summaryOnlyHint": "파생 필드(요약, 카테고리, 감정, 차원)만 보관하고 원문은 저장하지 않습니다."
+    },
+    "restrictedLabel": "제한됨",
+    "restrictedHint": "관리자와 사용자 → 접근 권한에서 이 소스를 허용받은 사용자만 리뷰를 볼 수 있습니다.",
+    "defaultsTitle": "이 소스의 모든 리뷰에 적용할 차원 값",
+    "noDefault": "기본값 없음",
+    "empty": "아직 프로필이 없습니다. 모든 소스가 모든 내용을 영구 보관하며 모두에게 표시됩니다.",
+    "loadError": "소스 프로필을 불러오지 못했습니다.",
+    "addLabel": "소스 프로필 추가",
+    "add": "추가",
+    "addHint": "플러그인, feedback_form, manual_import 중에서 고르거나 sales_csv 같은 가져오기 소스 ID를 입력하세요.",
+    "scraperHint": "웹 스크레이퍼의 리뷰는 스크레이퍼 이름을 소스 ID로 사용하므로, 이 형식의 이름(소문자, 숫자, _ 또는 -, 예: trustpilot_reviews)을 가진 스크레이퍼만 프로필을 가질 수 있습니다.",
+    "problems": {
+      "tooMany": "소스 프로필은 최대 {{max}}개입니다.",
+      "retention": "{{name}}: 보관 기간은 {{min}}~{{max}}일이거나 영구여야 합니다.",
+      "tags": "{{name}}: 먼저 태그를 수정하세요.",
+      "idFormat": "소문자, 숫자, \"_\" 또는 \"-\"를 사용하세요(최대 48자).",
+      "idDuplicate": "해당 소스에는 이미 프로필이 있습니다."
+    }
+  },
+  "erasure": {
+    "title": "한 사람의 피드백 삭제",
+    "description": "일치하는 모든 리뷰와 원본 보관 파일을 삭제합니다. 되돌릴 수 없습니다. 값은 해시만 보관됩니다.",
+    "fieldLabel": "일치 기준",
+    "fields": {
+      "author": "작성자",
+      "source_id": "소스 ID",
+      "csv_row_id": "CSV 행 ID",
+      "email": "이메일"
+    },
+    "valueLabel": "값",
+    "sourceLabel": "대상 소스",
+    "allSources": "모든 소스",
+    "sourceRequired": "ID는 해당 소스 안에서만 고유합니다. 소스를 선택하세요.",
+    "start": "삭제",
+    "startError": "삭제를 시작하지 못했습니다: {{reason}}",
+    "jobsTitle": "최근 삭제",
+    "noJobs": "아직 없습니다.",
+    "counts": "리뷰 {{items}}건, 원본 객체 {{objects}}개 삭제",
+    "status": {
+      "queued": "대기 중",
+      "running": "실행 중",
+      "completed": "완료",
+      "failed": "실패"
+    },
+    "confirmTitle": "이 사람의 피드백을 삭제할까요?",
+    "confirmMessage": "{{field}}이(가) 값과 일치하는 모든 리뷰({{source}})와 원본 보관 파일이 영구 삭제됩니다."
+  },
+  "dimensionsEdit": {
+    "errors": {
+      "invalid": "해당 차원 값 또는 태그는 허용되지 않습니다.",
+      "notFound": "이 리뷰는 더 이상 사용할 수 없습니다.",
+      "conflict": "다른 사람이 동시에 이 리뷰를 변경했습니다. 새로고침 후 다시 시도하세요.",
+      "generic": "변경 사항을 저장하지 못했습니다."
+    }
+  },
+  "feedbackDimensions": {
+    "edit": "차원 편집",
+    "none": "없음",
+    "cancel": "취소",
+    "save": "저장",
+    "setByHand": "수동으로 설정",
+    "redacted": "가림 처리됨",
+    "redactedHint": "이 리뷰의 개인 정보는 저장 전에 대체되었습니다.",
+    "summaryOnly": "요약만",
+    "summaryOnlyHint": "이 소스는 파생 필드만 보관하며 원문은 저장되지 않았습니다."
   }
 }

@@ -8,6 +8,7 @@
     "deleteForm": "Delete form",
     "directLink": "Direct Link",
     "disabled": "Disabled",
+    "prototypePins": "Prototype pins",
     "disableForm": "Disable form",
     "editForm": "Edit form",
     "enableForm": "Enable form",
@@ -19,7 +20,10 @@
     "showEmbedCode": "Show Embed Code",
     "submissions": "Submissions",
     "themeLabel": "Theme",
-    "viewSubmissions": "View Submissions"
+    "viewSubmissions": "View Submissions",
+    "collectsName": "Name",
+    "collectsEmail": "Email",
+    "disabledNotice": "This form is off. Its link and embed show “Feedback form unavailable.” until you enable it."
   },
   "configureApiFirst": "Configure the API endpoint in Settings to manage feedback forms.",
   "createForm": "Create Form",
@@ -51,9 +55,9 @@
     "previewTagged": "Feedback from this form will be tagged as:",
     "primaryColor": "Primary Color",
     "question": "Question",
-    "ratingEmoji": "Emoji 😀",
+    "ratingEmoji": "Emoji",
     "ratingNumeric": "Numeric (1-10)",
-    "ratingStars": "Stars ⭐",
+    "ratingStars": "Stars",
     "saveChanges": "Save Changes",
     "saving": "Saving...",
     "selectCategory": "-- Select Category --",
@@ -85,7 +89,8 @@
     "validationUnknownProject": "Linked project (no longer available)",
     "validationUnverifiedDocument": "Linked document (could not be checked)",
     "validationUnverifiedProject": "Linked project (could not be checked)",
-    "validationWholeProject": "-- Whole project --"
+    "validationWholeProject": "-- Whole project --",
+    "dimensionsHint": "Every submission carries these values. An embed can set its own per page with the dimensions option, e.g."
   },
   "empty": {
     "createButton": "Create Your First Form",
@@ -129,5 +134,10 @@
     "selectPrompt": "Select a template to continue",
     "subtitle": "Choose a template to get started",
     "title": "Create New Form"
+  },
+  "createdDisabled": {
+    "dismiss": "Dismiss",
+    "enable": "Enable now",
+    "message": "“{{name}}” was created and is disabled: anyone opening its link sees “Feedback form unavailable.” until you enable it."
   }
 }

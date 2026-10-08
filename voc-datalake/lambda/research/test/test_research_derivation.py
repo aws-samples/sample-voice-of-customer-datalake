@@ -32,38 +32,10 @@ USED_SOURCES = [
 
 
 @pytest.fixture
-def mock_tables():
-    mock_fb = MagicMock()
-    mock_proj = MagicMock()
-    mock_proj.name = 'test-projects'
-    mock_proj.query.return_value = {'Items': PROJECT_ITEMS}
-
-    def transact_write_items(*, TransactItems):
-        for action in TransactItems:
-            put = action.get('Put')
-            if put:
-                mock_proj.put_item(Item=put['Item'])
-            update = action.get('Update')
-            if update:
-                mock_proj.update_item(
-                    Key=update['Key'],
-                    UpdateExpression=update['UpdateExpression'],
-                    ExpressionAttributeValues=update.get(
-                        'ExpressionAttributeValues', {},
-                    ),
-                )
-        return {}
-
-    mock_proj.meta.client.transact_write_items.side_effect = transact_write_items
-    with patch('research_step_handler._get_feedback_table', return_value=mock_fb), \
-         patch('research_step_handler._get_projects_table', return_value=mock_proj):
-        yield {'feedback': mock_fb, 'projects': mock_proj}
-
-
-@pytest.fixture
-def mock_job_status():
-    with patch('research_step_handler.update_job_status') as m:
-        yield m
+def mock_tables(mock_tables):
+    """The shared doubles, with the project query answering the fixture items."""
+    mock_tables['projects'].query.return_value = {'Items': PROJECT_ITEMS}
+    return mock_tables
 
 
 @pytest.fixture
@@ -79,32 +51,34 @@ def config():
 
 class TestInitializeRecordsInputs:
     @patch('research_step_handler.get_feedback_context')
-    @patch('research_step_handler.format_feedback_for_llm', return_value='formatted feedback')
-    @patch('research_step_handler.get_feedback_statistics', return_value='stats')
-    def _run(self, mock_stats, mock_format, mock_get_fb, config=None, feedback_count=7):
+    @patch('research_step_handler.format_feedback_for_llm', MagicMock(return_value='formatted feedback'))
+    @patch('research_step_handler.get_feedback_statistics', MagicMock(return_value='stats'))
+    def _run(self, mock_get_fb, config=None, feedback_count=7):
         from research_step_handler import step_initialize
         mock_get_fb.return_value = [{'original_text': f'review {i}'} for i in range(feedback_count)]
         return step_initialize({
             'project_id': 'proj_1', 'job_id': 'job_1', 'research_config': config,
         })
 
+    @pytest.mark.usefixtures("mock_tables", "mock_job_status")
     def test_records_the_three_documents_used_not_the_five_selected(
-        self, mock_tables, mock_job_status, config,
+        self, config,
     ):
         result = self._run(config=config)
 
         assert result['derivation']['sources'] == USED_SOURCES
         assert result['derivation']['selected_document_count'] == 5
 
-    def test_records_the_feedback_and_personas_used(self, mock_tables, mock_job_status, config):
+    @pytest.mark.usefixtures("mock_tables", "mock_job_status")
+    def test_records_the_feedback_and_personas_used(self, config):
         result = self._run(config=config)
 
         assert result['derivation']['feedback_count'] == 7
         assert result['derivation']['persona_ids'] == ['persona_1']
 
+    @pytest.mark.usefixtures("mock_tables", "mock_job_status")
     def test_always_returns_a_derivation_even_when_nothing_was_selected(
-        self, mock_tables, mock_job_status,
-    ):
+        self,     ):
         """The state machine's resultSelector references the key unconditionally,
         so an absent key would fail the whole execution."""
         result = self._run(config={'question': 'Q', 'days': 30}, feedback_count=2)
@@ -133,7 +107,7 @@ class TestEveryExitCarriesTheDerivation:
     """
 
     @staticmethod
-    def _step_initialize() -> ast.FunctionDef:
+    def _step_initialize() -> ast.FunctionDef | ast.AsyncFunctionDef:
         # lambda/research/test/ -> lambda/research/
         source = (Path(__file__).resolve().parents[1] / 'research_step_handler.py').read_text(encoding='utf-8')
         functions = [
@@ -193,7 +167,8 @@ class TestSaveWritesDerivation:
         })
         return mock_tables['projects'].put_item.call_args.kwargs['Item']
 
-    def test_persists_the_derivation_it_was_handed(self, mock_tables, mock_job_status):
+    @pytest.mark.usefixtures("mock_tables", "mock_job_status")
+    def test_persists_the_derivation_it_was_handed(self, mock_tables):
         derivation = {
             'sources': USED_SOURCES,
             'selected_document_count': 5,
@@ -206,9 +181,9 @@ class TestSaveWritesDerivation:
 
         assert item['derivation'] == derivation
 
+    @pytest.mark.usefixtures("mock_tables", "mock_job_status")
     def test_an_execution_pinned_to_the_previous_definition_still_saves(
-        self, mock_tables, mock_job_status,
-    ):
+        self, mock_tables,     ):
         """In-flight executions keep the state machine definition they started
         with, which does not forward the derivation. That must read as "no
         lineage" rather than failing the save."""

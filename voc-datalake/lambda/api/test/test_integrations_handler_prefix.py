@@ -19,6 +19,10 @@ lib/app-deployment-prefix.test.ts, so the two halves cannot drift apart.
 import json
 from unittest.mock import MagicMock, patch
 
+from handler_events_fixtures import call_route
+
+from integrations_handler import lambda_handler
+
 
 class TestScheduleRuleNameUnderAPrefix:
     def test_uses_the_pattern_cdk_supplied(self):
@@ -81,13 +85,12 @@ class TestManualRunInvokesThePrefixedIngestor:
             'integrations_handler.INGESTOR_FUNCTION_NAME_PATTERN',
             'stg-voc-ingestor-{source}-123456789012-us-east-1',
         ):
-            from integrations_handler import lambda_handler
-            event = api_gateway_event(
+            response, _ = call_route(
+                lambda_handler, api_gateway_event, lambda_context,
                 method='POST',
                 path='/sources/webscraper/run',
                 path_params={'source': 'webscraper'},
             )
-            response = lambda_handler(event, lambda_context)
 
         assert response['statusCode'] == 200
         assert json.loads(response['body'])['success'] is True

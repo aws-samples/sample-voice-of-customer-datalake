@@ -15,7 +15,7 @@
  * @module api/feedbackPagination
  */
 
-import type { FeedbackItem } from './client'
+import type { FeedbackItem } from './types'
 
 /**
  * Page size for `/feedback`, equal to the endpoint's server-side maximum.

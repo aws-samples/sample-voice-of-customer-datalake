@@ -15,14 +15,15 @@
  * @module pages/Categories/CategoryDistribution
  */
 
-import { useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { ChevronDown, ChevronUp, FolderOpen } from 'lucide-react'
 import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
+import { NEUTRAL_CHART_STEP, categoryChartSteps, chartStepVar } from './types'
 import type { CategoryData } from './types'
 
 /** Rows shown while collapsed. */
-export const MAX_COLLAPSED_ROWS = 5
+const MAX_COLLAPSED_ROWS = 5
 
 interface CategoryDistributionProps {
   /** Categories sorted by value descending (as produced by the Categories page). */
@@ -53,15 +54,19 @@ export function CategoryDistribution({
 }: CategoryDistributionProps) {
   const { t } = useTranslation('categories')
   const [expanded, setExpanded] = useState(false)
+  const headingId = useId()
+  // Colours by rank over the WHOLE ranked list, so expanding or collapsing the
+  // card never recolours a row.
+  const steps = useMemo(() => categoryChartSteps(categoryData.map((category) => category.name)), [categoryData])
   if (categoryData.length === 0) {
     return (
-      <div className="card">
-        <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">{t('categoryDistribution')}</h2>
-        <div className="py-8 text-center text-gray-500">
-          <FolderOpen size={40} className="mx-auto mb-3 opacity-50" />
-          <p>{t('noCategories')}</p>
+      <section className="card" aria-labelledby={headingId}>
+        <h2 id={headingId} className="text-base sm:text-lg font-semibold tracking-tight text-text-strong mb-3 sm:mb-4">{t('categoryDistribution')}</h2>
+        <div className="py-8 text-center text-muted">
+          <FolderOpen size={20} className="mx-auto mb-2 text-muted" aria-hidden="true" />
+          <p className="text-sm">{t('noCategories')}</p>
         </div>
-      </div>
+      </section>
     )
   }
 
@@ -72,38 +77,50 @@ export function CategoryDistribution({
   ].join(' • ')
 
   return (
-    <div className="card">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-1">
-        <h2 className="text-base sm:text-lg font-semibold">{t('categoryDistribution')}</h2>
-        <p className="text-xs sm:text-sm text-gray-500">{headerMeta}</p>
-      </div>
-      <p className="text-xs text-gray-400 mb-1.5">{t('categoryDistributionHint')}</p>
-      <div className="divide-y divide-gray-100">
+    <section className="card" aria-labelledby={headingId}>
+      {/* Stacked, not side-by-side: in the 3-up row the card is ~370px wide and
+          a row layout wrapped the title onto two lines next to the meta. */}
+      <h2 id={headingId} className="text-base sm:text-lg font-semibold tracking-tight text-text-strong">{t('categoryDistribution')}</h2>
+      <p className="text-xs text-muted mt-0.5">{headerMeta}</p>
+      <p className="text-xs text-muted mt-2 mb-1.5">{t('categoryDistributionHint')}</p>
+      <div className="divide-y divide-border">
         {(expanded ? categoryData : visibleWhileCollapsed(categoryData, selectedCategories)).map((category) => {
           const percentage = totalIssues > 0 ? (category.value / totalIssues) * 100 : 0
           const isSelected = selectedCategories.includes(category.name)
+          const colour = chartStepVar(steps.get(category.name) ?? NEUTRAL_CHART_STEP)
           return (
             <button
               key={category.name}
               onClick={() => onToggleCategory(category.name)}
               aria-pressed={isSelected}
               className={clsx(
-                'block w-full text-left py-1.5 px-2 -mx-2 rounded-lg transition-colors active:scale-[0.99]',
-                isSelected ? 'bg-blue-50 ring-1 ring-inset ring-blue-300' : 'hover:bg-gray-50'
+                'block w-full text-left py-1.5 px-2 -mx-2 rounded-lg transition-colors active:scale-[0.99] focus-ring',
+                isSelected ? 'bg-accent-subtle ring-1 ring-inset ring-accent/40' : 'hover:bg-bg-hover'
               )}
             >
-              <div className="flex items-center justify-between mb-0.5">
-                <span className={clsx('font-medium text-sm leading-tight capitalize', isSelected && 'text-blue-800')}>
-                  {category.name.replace('_', ' ')}
+              <div className="flex items-center justify-between gap-2 mb-0.5">
+                <span className="flex items-center gap-2 min-w-0">
+                  {/* Legend swatch: the bar's colour beside the name it belongs to. */}
+                  <span
+                    aria-hidden="true"
+                    data-testid="category-swatch"
+                    className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: colour }}
+                  />
+                  <span className={clsx('font-medium text-sm leading-tight capitalize', isSelected ? 'text-accent-text' : 'text-text-strong')}>
+                    {category.name.replace(/_/g, ' ')}
+                  </span>
                 </span>
-                <span className="text-xs text-gray-600 leading-tight">
+                <span className="text-xs font-mono text-text leading-tight">
                   {category.value} ({percentage.toFixed(1)}%)
                 </span>
               </div>
-              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              {/* The name and count above carry the meaning; the bar repeats them visually. */}
+              <div aria-hidden="true" className="h-1.5 bg-border rounded-full overflow-hidden">
                 <div
+                  data-testid="category-bar"
                   className="h-full rounded-full"
-                  style={{ width: `${percentage}%`, backgroundColor: category.color }}
+                  style={{ width: `${percentage}%`, backgroundColor: colour }}
                 />
               </div>
             </button>
@@ -112,8 +129,10 @@ export function CategoryDistribution({
       </div>
       {categoryData.length > MAX_COLLAPSED_ROWS && (
         <button
+          type="button"
           onClick={() => setExpanded(!expanded)}
-          className="mt-1.5 flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
+          aria-expanded={expanded}
+          className="btn btn-ghost btn-sm mt-1.5 -ml-2.5 text-accent-text"
         >
           {expanded ? (
             <>
@@ -128,6 +147,6 @@ export function CategoryDistribution({
           )}
         </button>
       )}
-    </div>
+    </section>
   )
 }

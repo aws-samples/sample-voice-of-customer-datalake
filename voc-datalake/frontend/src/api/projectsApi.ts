@@ -2,35 +2,76 @@
 // Uses shared fetchApi from client.ts for consistent 401 retry + token refresh
 import { fetchApi } from './client'
 import { getDateBasisBodyParams } from './baseUrl'
-import { normalizeProjectDetail } from './projectDetailSchema'
+import {
+  normalizeDocumentVersions, normalizeMemberCandidates, normalizeProject, normalizeProjectDetail,
+  normalizeProjectDetailBatch, normalizeProjectDocument, normalizeProjectList, normalizeProjectMember,
+  normalizeProjectMembers,
+} from './projectDetailSchema'
+import type { DocumentVersion } from './projectDetailSchema'
+import { asRecord } from './wireRecord'
+import { normalizeAddPersonaNoteResponse } from './personaNoteSchema'
+import type { AddPersonaNoteResponse } from './personaNoteSchema'
 import type {
-  Project, ProjectDetail, ProjectPersona, ProjectDocument, ProjectJob,
-  ProductContext, ProductDoc, ProductInterviewTurnResponse,
+  ProjectDocument,
   // The document-generation request body; see its declaration for why it is a
   // named type rather than an object literal spelled out here. `BothWays` comes with
   // it for the signature pin at the foot of this file.
-  GenerateDocumentBody, BothWays,
+  GenerateDocumentBody,
+  BothWays,
 } from './types'
+import type {
+  Project,
+  ProjectDetail,
+  ProjectPersona,
+  ProjectJob,
+  ProductContext,
+  ProductDoc,
+  ProductInterviewTurnResponse,
+  ProjectVisibility,
+  ProjectMemberRole,
+  ProjectMembersResponse,
+  ProjectMemberCandidate,
+  CreateProjectBody,
+} from './projectTypes'
+
+/** = MAX_PROJECT_DETAIL_BATCH in lambda/api/projects.py (the server answers 400 above it). */
+export const MAX_PROJECT_DETAIL_BATCH = 200
 
 export const projectsApi = {
-  getProjects: () => fetchApi<{ projects: Project[] }>('/projects'),
+  getProjects: async (): Promise<{ projects: Project[] }> => {
+    const raw = await fetchApi<unknown>('/projects')
+    return normalizeProjectList(raw)
+  },
 
-  createProject: (data: {
-    name: string;
-    description?: string;
-    filters?: Record<string, unknown>
-  }) =>
-    fetchApi<{
-      success: boolean;
-      project: Project
-    }>('/projects', {
+  createProject: async (data: CreateProjectBody): Promise<{ success: boolean; project: Project | null }> => {
+    const raw = await fetchApi<unknown>('/projects', {
       method: 'POST',
       body: JSON.stringify(data),
-    }),
+    })
+    const record = asRecord(raw)
+    return { success: record?.success === true, project: normalizeProject(record?.project) }
+  },
 
   getProject: async (id: string): Promise<ProjectDetail> => {
     const raw = await fetchApi<unknown>(`/projects/${id}`)
     return normalizeProjectDetail(raw)
+  },
+
+  /**
+   * Many projects' details (without personas) in one `GET /projects?ids=…` per
+   * MAX_PROJECT_DETAIL_BATCH ids — one request for any board one team prioritises.
+   * Only projects the caller can view come back; the rest are simply absent.
+   */
+  getProjectDetails: async (ids: readonly string[]): Promise<ProjectDetail[]> => {
+    const chunks = Array.from(
+      { length: Math.ceil(ids.length / MAX_PROJECT_DETAIL_BATCH) },
+      (_, index) => ids.slice(index * MAX_PROJECT_DETAIL_BATCH, (index + 1) * MAX_PROJECT_DETAIL_BATCH),
+    )
+    const pages = await Promise.all(chunks.map(async (chunk) => {
+      const query = new URLSearchParams({ ids: chunk.join(',') })
+      return normalizeProjectDetailBatch(await fetchApi<unknown>(`/projects?${query.toString()}`))
+    }))
+    return pages.flat()
   },
 
   updateProject: (id: string, data: Partial<Project>) =>
@@ -41,6 +82,48 @@ export const projectsApi = {
 
   deleteProject: (id: string) =>
     fetchApi<{ success: boolean }>(`/projects/${id}`, { method: 'DELETE' }),
+
+  // ── Sharing (see the HTTP contract in lambda/shared/project_access.py) ──
+  setVisibility: (id: string, visibility: ProjectVisibility) =>
+    fetchApi<{ success: boolean; visibility: ProjectVisibility }>(`/projects/${id}/visibility`, {
+      method: 'PUT',
+      body: JSON.stringify({ visibility }),
+    }),
+
+  getMembers: async (id: string): Promise<ProjectMembersResponse> => {
+    const raw = await fetchApi<unknown>(`/projects/${id}/members`)
+    return normalizeProjectMembers(raw)
+  },
+
+  searchMemberCandidates: async (id: string, q: string): Promise<ProjectMemberCandidate[]> => {
+    const raw = await fetchApi<unknown>(`/projects/${id}/members/candidates?${new URLSearchParams({ q })}`)
+    return normalizeMemberCandidates(raw)
+  },
+
+  addMember: async (id: string, sub: string, role: ProjectMemberRole) => {
+    const raw = await fetchApi<unknown>(`/projects/${id}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ sub, role }),
+    })
+    return { member: normalizeProjectMember(asRecord(raw)?.member) }
+  },
+
+  updateMemberRole: async (id: string, sub: string, role: ProjectMemberRole) => {
+    const raw = await fetchApi<unknown>(`/projects/${id}/members/${encodeURIComponent(sub)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ role }),
+    })
+    return { member: normalizeProjectMember(asRecord(raw)?.member) }
+  },
+
+  removeMember: (id: string, sub: string) =>
+    fetchApi<{ success: boolean }>(`/projects/${id}/members/${encodeURIComponent(sub)}`, { method: 'DELETE' }),
+
+  transferOwnership: (id: string, sub: string) =>
+    fetchApi<{ success: boolean }>(`/projects/${id}/owner`, {
+      method: 'POST',
+      body: JSON.stringify({ sub }),
+    }),
 
   generatePersonas: (projectId: string, filters?: {
     sources?: string[]
@@ -62,7 +145,7 @@ export const projectsApi = {
       message: string;
     }>(`/projects/${projectId}/personas/generate`, {
       method: 'POST',
-      body: JSON.stringify({ ...getDateBasisBodyParams(), ...(filters ?? {}) }),
+      body: JSON.stringify({ ...getDateBasisBodyParams(), ...filters }),
     }),
 
   createPersona: (projectId: string, persona: Omit<ProjectPersona, 'persona_id' | 'created_at'>) =>
@@ -82,6 +165,25 @@ export const projectsApi = {
 
   deletePersona: (projectId: string, personaId: string) =>
     fetchApi<{ success: boolean }>(`/projects/${projectId}/personas/${personaId}`, { method: 'DELETE' }),
+
+  /**
+   * A new avatar image for one persona (synchronous, ~5 s). Each image is stored
+   * under its own key, so the answer's signed URL is never the cached old one.
+   * `avatar_url` is null when the answer carries none (signing unavailable).
+   */
+  regeneratePersonaAvatar: async (projectId: string, personaId: string): Promise<{ avatar_url: string | null }> => {
+    const raw = await fetchApi<unknown>(`/projects/${projectId}/personas/${personaId}/regenerate-avatar`, { method: 'POST' })
+    const url = asRecord(raw)?.avatar_url
+    return { avatar_url: typeof url === 'string' && url !== '' ? url : null }
+  },
+
+  addPersonaNote: async (projectId: string, personaId: string, body: { text: string; author?: string }): Promise<AddPersonaNoteResponse> => {
+    const raw = await fetchApi<unknown>(`/projects/${projectId}/personas/${personaId}/notes`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    })
+    return normalizeAddPersonaNoteResponse(raw)
+  },
 
   importPersona: (projectId: string, data: {
     // No 'pdf': the API refuses it (nothing extracts PDF text), so advertising it
@@ -191,14 +293,39 @@ export const projectsApi = {
       body: JSON.stringify(data),
     }),
 
-  updateDocument: (projectId: string, documentId: string, data: {
+  /**
+   * Save an edit. It is a NEW version (a PRD / PR-FAQ edit is the next version of
+   * its series, with a new id); the answer's `document` is the saved one. Pass a
+   * fresh `edit_id` per save so a retried request replays instead of duplicating,
+   * and the `expected_revision` the editor loaded (`documentRevision`) so a save
+   * over someone else's newer one is a 409 rather than a silent overwrite.
+   */
+  updateDocument: async (projectId: string, documentId: string, data: {
     title?: string;
-    content?: string
-  }) =>
-    fetchApi<{ success: boolean }>(`/projects/${projectId}/documents/${documentId}`, {
+    content?: string;
+    edit_id?: string;
+    expected_revision?: number
+  }): Promise<{ success: boolean; document: ProjectDocument | null }> => {
+    const raw = await fetchApi<unknown>(`/projects/${projectId}/documents/${documentId}`, {
       method: 'PUT',
       body: JSON.stringify(data),
-    }),
+    })
+    const record = asRecord(raw)
+    return { success: record?.success === true, document: normalizeProjectDocument(record?.document) }
+  },
+
+  /** Every version of a document, newest first, with content (open / compare). */
+  getDocumentVersions: async (projectId: string, documentId: string): Promise<DocumentVersion[]> =>
+    normalizeDocumentVersions(await fetchApi<unknown>(`/projects/${projectId}/documents/${documentId}/versions`)),
+
+  /** Restore = a NEW version carrying `versionId`'s content; nothing is rewritten. */
+  restoreDocumentVersion: async (projectId: string, documentId: string, versionId: string, editId: string): Promise<ProjectDocument | null> => {
+    const raw = await fetchApi<unknown>(
+      `/projects/${projectId}/documents/${documentId}/versions/${encodeURIComponent(versionId)}/restore`,
+      { method: 'POST', body: JSON.stringify({ edit_id: editId }) },
+    )
+    return normalizeProjectDocument(asRecord(raw)?.document)
+  },
 
   deleteDocument: (projectId: string, documentId: string) =>
     fetchApi<{ success: boolean }>(`/projects/${projectId}/documents/${documentId}`, { method: 'DELETE' }),
@@ -341,34 +468,6 @@ export const projectsApi = {
 
   deleteProductDoc: (projectId: string, docId: string) =>
     fetchApi<{ success: boolean }>(`/projects/${projectId}/product-docs/${docId}`, { method: 'DELETE' }),
-
-  /**
-   * GET /projects/{project_id}/autoseed
-   *
-   * Returns the same autoseed payload as the Bearer-token MCP route, but is
-   * authorised by the user's existing Cognito session — so it requires no API
-   * token. Card 1 ("Export") in the Export / MCP tab wires its copy button to
-   * this route.
-   *
-   * The backend helper _build_steering_file already injects the project's
-   * kiro_export_prompt into the payload as a "## Custom Instructions" section,
-   * server-side, so the response already has the template baked in.
-   */
-  autoseedProject: (projectId: string, params: {
-    personaIds?: string[]
-    documentIds?: string[]
-  } = {}) => {
-    const searchParams = new URLSearchParams()
-    if ((params.personaIds?.length ?? 0) > 0) {
-      searchParams.set('persona_ids', (params.personaIds ?? []).join(','))
-    }
-    if ((params.documentIds?.length ?? 0) > 0) {
-      searchParams.set('document_ids', (params.documentIds ?? []).join(','))
-    }
-    const qs = searchParams.toString()
-    const path = qs === '' ? `/projects/${projectId}/autoseed` : `/projects/${projectId}/autoseed?${qs}`
-    return fetchApi<{ project: Record<string, unknown>; files: Array<{ path: string; content: string }> }>(path)
-  },
 }
 
 // 🔑 The pin on `generateDocument`'s request-body parameter: it must admit EXACTLY

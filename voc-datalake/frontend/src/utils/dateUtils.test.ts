@@ -63,12 +63,17 @@ describe('getTimeRangeLabel', () => {
     expect(getTimeRangeLabel('30d')).toBe('30 Days')
   })
 
-  it('presents the "all" token as the 90 Days preset (never the raw token)', () => {
-    expect(getTimeRangeLabel('all')).toBe('90 Days')
+  it('labels the 90d preset "90 Days" and the "all" token "All time" (never the raw token)', () => {
+    expect(getTimeRangeLabel('90d')).toBe('90 Days')
+    expect(getTimeRangeLabel('all')).toBe('All time')
   })
 
   it('formats custom ranges as "Last N days" when customDays is set', () => {
     expect(getTimeRangeLabel('custom', 14)).toBe('Last 14 days')
+  })
+
+  it('labels a custom lookback of 0 as "All time"', () => {
+    expect(getTimeRangeLabel('custom', 0)).toBe('All time')
   })
 
   it('falls back to "Custom" when custom is selected without a day count', () => {
@@ -77,7 +82,7 @@ describe('getTimeRangeLabel', () => {
   })
 
   it('falls back to the raw token for unknown values', () => {
-    expect(getTimeRangeLabel('90d')).toBe('90d')
+    expect(getTimeRangeLabel('365d')).toBe('365d')
   })
 
   it('appends the review-date note when filtering by review date', () => {

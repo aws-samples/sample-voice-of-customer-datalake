@@ -3,9 +3,13 @@
  * @module pages/DataExplorer/EditModal
  */
 
-import { useState } from 'react'
-import { FileJson, Database, X, Loader2, Save, Link2, AlertTriangle } from 'lucide-react'
+import { useId, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
+import { FileJson, Database, Loader2, Save, Link2, AlertTriangle } from 'lucide-react'
 import clsx from 'clsx'
+import DialogClose from '../../components/DialogClose/DialogClose'
+import ModalShell from '../../components/ModalShell/ModalShell'
 
 export interface EditModalState {
   readonly isOpen: boolean
@@ -22,7 +26,9 @@ export interface EditModalState {
 type EditMode = EditModalState['mode']
 type EditType = EditModalState['type']
 
-interface EditModalProps extends EditModalState {
+/** `key` is renamed `s3Key` here: React reserves `key`, so it cannot be a prop. */
+interface EditModalProps extends Omit<EditModalState, 'key'> {
+  readonly s3Key?: string
   readonly onClose: () => void
   readonly onSave: (content: unknown, syncOption?: boolean) => void
   readonly saving: boolean
@@ -46,10 +52,10 @@ function getFileType(isPresignedUrl: boolean | undefined, contentType: string | 
   return 'text'
 }
 
-function getTitle(mode: EditMode, type: EditType): string {
-  if (mode === 'create') return 'Create New File'
-  const target = type === 's3' ? 'S3 File' : 'Feedback'
-  return mode === 'edit' ? `Edit ${target}` : `View ${target}`
+function getTitle(mode: EditMode, type: EditType, t: TFunction<'dataExplorer'>): string {
+  if (mode === 'create') return t('editModal.createNewFile')
+  if (mode === 'edit') return type === 's3' ? t('editModal.editS3File') : t('editModal.editFeedback')
+  return type === 's3' ? t('editModal.viewS3File') : t('editModal.viewFeedback')
 }
 
 function validateJson(text: string): string | null {
@@ -71,11 +77,11 @@ interface MediaContentProps {
 function MediaContent({ fileType, mediaUrl, fileKey }: MediaContentProps) {
   if (fileType === 'image') {
     return (
-      <div className="flex items-center justify-center p-4 bg-gray-100 rounded-lg min-h-[300px] sm:min-h-[400px]">
+      <div className="flex items-center justify-center p-4 bg-bg-hover rounded-lg min-h-[300px] sm:min-h-[400px]">
         <img
           src={mediaUrl}
           alt={fileKey ?? 'Preview'}
-          className="max-w-full max-h-[50vh] sm:max-h-[60vh] object-contain rounded shadow-lg"
+          className="max-w-full max-h-[50vh] sm:max-h-[60vh] object-contain rounded-sm shadow-lg"
         />
       </div>
     )
@@ -83,7 +89,7 @@ function MediaContent({ fileType, mediaUrl, fileKey }: MediaContentProps) {
 
   if (fileType === 'pdf') {
     return (
-      <div className="w-full h-[50vh] sm:h-[60vh] bg-gray-100 rounded-lg overflow-hidden">
+      <div className="w-full h-[50vh] sm:h-[60vh] bg-bg-hover rounded-lg overflow-hidden">
         <iframe src={mediaUrl} className="w-full h-full border-0" title={fileKey ?? 'PDF Preview'} />
       </div>
     )
@@ -93,8 +99,10 @@ function MediaContent({ fileType, mediaUrl, fileKey }: MediaContentProps) {
 }
 
 export default function EditModal({
-  mode, type, data, key: fileKey, feedbackId, s3RawUri, contentType, isPresignedUrl, onClose, onSave, saving, error
+  mode, type, data, s3Key: fileKey, feedbackId, s3RawUri, contentType, isPresignedUrl, onClose, onSave, saving, error
 }: EditModalProps) {
+  const { t } = useTranslation('dataExplorer')
+  const titleId = useId()
   const initialContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2)
   const [content, setContent] = useState(initialContent)
   const [syncEnabled, setSyncEnabled] = useState(false)
@@ -103,7 +111,9 @@ export default function EditModal({
   const fileType = getFileType(isPresignedUrl, contentType, fileKey)
   const isMediaFile = fileType === 'image' || fileType === 'pdf'
   const isReadOnly = mode === 'view' || isMediaFile
-  const title = getTitle(mode, type)
+  const title = getTitle(mode, type, t)
+  // Escape / backdrop close only while nothing would be lost.
+  const dismissable = !saving && content === initialContent
 
   const handleContentChange = (text: string) => {
     setContent(text)
@@ -124,30 +134,30 @@ export default function EditModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[95vh] sm:max-h-[90vh] flex flex-col">
-        <ModalHeader type={type} title={title} fileType={fileType} onClose={onClose} />
+    <ModalShell isOpen onClose={onClose} ariaLabelledBy={titleId} dismissable={dismissable} panelClassName="max-w-4xl max-h-[95vh] sm:max-h-[90vh]">
+        <ModalHeader titleId={titleId} type={type} title={title} fileType={fileType} onClose={onClose} />
         <ModalMetadata type={type} fileKey={fileKey} feedbackId={feedbackId} s3RawUri={s3RawUri} contentType={contentType} />
 
-        <div className="flex-1 overflow-auto p-3 sm:p-4">
+        <div className="dialog-body">
           {isMediaFile ? (
             <MediaContent fileType={fileType} mediaUrl={typeof data === 'string' ? data : ''} fileKey={fileKey} />
           ) : (
             <>
               <textarea
+                aria-label={t('editModal.content')}
                 value={content}
                 onChange={(e) => handleContentChange(e.target.value)}
                 readOnly={isReadOnly}
                 className={clsx(
-                  'w-full h-full min-h-[300px] sm:min-h-[400px] font-mono text-xs p-3 sm:p-4 rounded-lg border resize-none',
-                  isReadOnly ? 'bg-gray-50 text-gray-700' : 'bg-white',
-                  jsonError ? 'border-red-300' : 'border-gray-200'
+                  'input w-full h-full min-h-[300px] sm:min-h-[400px] font-mono text-xs p-3 sm:p-4 resize-none',
+                  isReadOnly && 'bg-bg-accent text-text',
+                  jsonError && 'border-danger'
                 )}
                 spellCheck={false}
               />
               {jsonError && (
-                <p className="text-xs text-red-600 mt-2 flex items-center gap-1">
-                  <AlertTriangle size={14} /> Invalid JSON: {jsonError}
+                <p className="text-xs text-danger mt-2 flex items-center gap-1">
+                  <AlertTriangle size={14} className="flex-shrink-0" /> {t('editModal.invalidJson', { error: jsonError })}
                 </p>
               )}
             </>
@@ -167,33 +177,31 @@ export default function EditModal({
           jsonError={jsonError}
           error={error}
         />
-      </div>
-    </div>
+    </ModalShell>
   )
 }
 
 interface ModalHeaderProps {
+  readonly titleId: string
   readonly type: 's3' | 'dynamodb'
   readonly title: string
   readonly fileType: FileType
   readonly onClose: () => void
 }
 
-function ModalHeader({ type, title, fileType, onClose }: ModalHeaderProps) {
+function ModalHeader({ titleId, type, title, fileType, onClose }: ModalHeaderProps) {
   return (
-    <div className="flex items-center justify-between px-3 sm:px-4 py-3 border-b">
-      <div className="flex items-center gap-2 min-w-0">
-        {type === 's3' ? (
-          <FileJson size={18} className="text-blue-500 flex-shrink-0" />
-        ) : (
-          <Database size={18} className="text-green-500 flex-shrink-0" />
-        )}
-        <span className="font-medium text-sm sm:text-base truncate">{title}</span>
+    <div className="dialog-header justify-between">
+      <div className="flex items-center gap-3 min-w-0">
+        <span className="w-9 h-9 rounded-lg bg-bg-hover text-muted flex items-center justify-center flex-shrink-0" aria-hidden="true">
+          {type === 's3' ? <FileJson size={18} /> : <Database size={18} />}
+        </span>
+        <h2 id={titleId} className="dialog-title truncate">{title}</h2>
         {fileType !== 'text' && (
-          <span className="text-xs px-2 py-0.5 bg-gray-100 rounded text-gray-600 uppercase flex-shrink-0">{fileType}</span>
+          <span className="badge badge-muted uppercase flex-shrink-0">{fileType}</span>
         )}
       </div>
-      <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded flex-shrink-0"><X size={20} /></button>
+      <DialogClose onClick={onClose} className="flex-shrink-0" />
     </div>
   )
 }
@@ -206,23 +214,31 @@ interface ModalMetadataProps {
   readonly contentType?: string
 }
 
-function ModalMetadata({ type, fileKey, feedbackId, s3RawUri, contentType }: ModalMetadataProps) {
+const metaCode = 'font-mono bg-bg-hover text-text-strong px-1.5 py-0.5 rounded-sm truncate'
+
+const present = (v: string | undefined): v is string => v != null && v !== ''
+
+function MetaItem({ label, value, icon }: Readonly<{ label: string; value: string; icon?: React.ReactNode }>) {
   return (
-    <div className="px-3 sm:px-4 py-2 bg-gray-50 border-b text-xs text-gray-600 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 overflow-x-auto">
-      {type === 's3' && fileKey && (
-        <span className="truncate">Key: <code className="bg-gray-200 px-1 rounded">{fileKey}</code></span>
-      )}
-      {type === 'dynamodb' && feedbackId && (
-        <span className="truncate">ID: <code className="bg-gray-200 px-1 rounded">{feedbackId}</code></span>
-      )}
-      {s3RawUri && (
-        <span className="flex items-center gap-1 truncate">
-          <Link2 size={12} className="flex-shrink-0" /> S3: <code className="bg-gray-200 px-1 rounded text-xs truncate">{s3RawUri}</code>
-        </span>
-      )}
-      {contentType && (
-        <span className="truncate">Type: <code className="bg-gray-200 px-1 rounded">{contentType}</code></span>
-      )}
+    <span className="flex items-center gap-1.5 min-w-0">
+      {icon}{label} <code className={metaCode} title={value}>{value}</code>
+    </span>
+  )
+}
+
+function ModalMetadata({ type, fileKey, feedbackId, s3RawUri, contentType }: ModalMetadataProps) {
+  const { t } = useTranslation('dataExplorer')
+  const items = [
+    type === 's3' && present(fileKey) ? { label: t('editModal.key'), value: fileKey } : null,
+    type === 'dynamodb' && present(feedbackId) ? { label: t('editModal.id'), value: feedbackId } : null,
+    present(s3RawUri) ? { label: 'S3', value: s3RawUri, icon: <Link2 size={12} className="flex-shrink-0" aria-hidden="true" /> } : null,
+    present(contentType) ? { label: t('editModal.type'), value: contentType } : null,
+  ].filter((item) => item !== null)
+  // Render nothing rather than an empty strip (create mode used to show a blank bar).
+  if (items.length === 0) return null
+  return (
+    <div className="px-5 py-2 bg-bg-accent border-b border-border text-xs text-muted flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-4 min-w-0">
+      {items.map((item) => <MetaItem key={item.label} {...item} />)}
     </div>
   )
 }
@@ -244,34 +260,36 @@ interface ModalFooterProps {
 function ModalFooter({
   type, mode, isReadOnly, isMediaFile, syncEnabled, onSyncChange, onClose, onSave, saving, jsonError, error
 }: ModalFooterProps) {
-  const syncLabel = type === 's3' ? 'Also update DynamoDB' : 'Also update S3'
-  const saveLabel = mode === 'create' ? 'Create' : 'Save'
+  const { t } = useTranslation('dataExplorer')
+  const saveLabel = mode === 'create' ? t('editModal.create') : t('editModal.save')
 
   return (
-    <div className="px-3 sm:px-4 py-3 border-t bg-gray-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <div className="dialog-footer flex-col items-stretch sm:flex-row sm:items-center sm:justify-between gap-3">
       <div className="flex items-center gap-4">
-        {!isReadOnly && !isMediaFile && (
-          <label className="flex items-center gap-2 text-xs sm:text-sm">
+        {/* Raw → processed sync only: raw data is immutable, so a processed-record
+            edit never writes back to S3. */}
+        {type === 's3' && !isReadOnly && !isMediaFile && (
+          <label className="flex items-center gap-2 text-sm min-h-9">
             <input
               type="checkbox"
               checked={syncEnabled}
               onChange={(e) => onSyncChange(e.target.checked)}
-              className="rounded border-gray-300 text-blue-600"
+              className="rounded-sm accent-accent"
             />
-            <span className="text-gray-700">{syncLabel}</span>
+            <span className="text-text">{t('editModal.syncToDynamo')}</span>
           </label>
         )}
       </div>
       <div className="flex items-center gap-2 justify-end">
-        {error && <span className="text-xs text-red-600">{error}</span>}
-        <button onClick={onClose} className="btn btn-secondary text-sm">
-          {isMediaFile ? 'Close' : 'Cancel'}
+        {error && <span role="alert" className="text-xs text-danger">{error}</span>}
+        <button onClick={onClose} className="btn btn-secondary">
+          {isReadOnly ? t('editModal.close') : t('editModal.cancel')}
         </button>
         {!isReadOnly && !isMediaFile && (
           <button
             onClick={onSave}
             disabled={saving || !!jsonError}
-            className="btn btn-primary flex items-center gap-2 text-sm"
+            className="btn btn-primary"
           >
             {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
             {saveLabel}

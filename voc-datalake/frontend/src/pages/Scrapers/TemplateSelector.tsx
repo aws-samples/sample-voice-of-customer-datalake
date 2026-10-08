@@ -7,16 +7,17 @@
  */
 
 import { useQuery } from '@tanstack/react-query'
-import clsx from 'clsx'
-import {
-  Loader2, FileJson, Globe, Smartphone, ClipboardPaste, Upload, Sparkles, FileText,
-} from 'lucide-react'
+import { FileJson, ClipboardPaste, Upload, FlaskConical, FileText, Code2, Plus, type LucideIcon } from 'lucide-react'
+import { manifestIcon } from '../../components/SourceIcon/sourceIcons'
+import { useId, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { scrapersApi } from '../../api/scrapersApi'
 import { getPluginManifests, getSyntheticPlugins } from '../../plugins'
 import { useConfigStore } from '../../store/configStore'
 import type { ScraperTemplate } from '../../api/types'
 import type { PluginManifest } from '../../plugins/types'
+import ModalShell from '../../components/ModalShell/ModalShell'
+import SourceDialogHeader, { ToneTile, type SourceTone } from './SourceDialogHeader'
 
 interface TemplateSelectorProps {
   readonly onSelect: (template: ScraperTemplate) => void
@@ -37,7 +38,7 @@ const BUILTIN_TEMPLATES: ScraperTemplate[] = [
     id: 'review_jsonld',
     name: 'Review JSON-LD',
     description: 'Extract reviews using JSON-LD structured data.',
-    icon: '⭐',
+    icon: 'JSON-LD',
     extraction_method: 'jsonld',
     url_pattern: '',
     url_placeholder: '',
@@ -63,7 +64,7 @@ const BUILTIN_TEMPLATES: ScraperTemplate[] = [
     id: 'custom_css',
     name: 'Custom (CSS Selectors)',
     description: 'Create a custom scraper with CSS selectors.',
-    icon: '🔧',
+    icon: 'CSS',
     extraction_method: 'css',
     url_pattern: '',
     url_placeholder: '',
@@ -88,28 +89,69 @@ const BUILTIN_TEMPLATES: ScraperTemplate[] = [
   },
 ]
 
-/** Get icon component for a plugin based on its icon string */
-function PluginIcon({ icon }: { readonly icon: string }) {
-  if (icon === 'iOS' || icon === 'Android') {
-    return <Smartphone size={24} className="text-gray-600" />
-  }
-  return <Globe size={24} className="text-gray-600" />
+/** Icon (the shared manifest-word map, components/SourceIcon) + tone for a discovered plugin. */
+function pluginVisual(plugin: PluginManifest): { icon: LucideIcon; tone: SourceTone } {
+  return { icon: manifestIcon(plugin.icon, plugin.category), tone: plugin.category === 'import' ? 'info' : 'accent' }
 }
 
-/** Get the color scheme for a plugin category */
-function getPluginBorderClass(category?: string): string {
-  if (category === 'reviews') return 'border-purple-200 bg-purple-50/30'
-  return 'border-gray-200'
+/** Web scraper templates: JSON-LD (structured data) vs hand-written CSS selectors. */
+function templateVisual(template: ScraperTemplate): { icon: LucideIcon; tone: SourceTone } {
+  return template.extraction_method === 'jsonld'
+    ? { icon: FileJson, tone: 'ok' }
+    : { icon: Code2, tone: 'muted' }
+}
+
+/**
+ * One selectable source. Every tile has the same neutral surface; the kind of
+ * source is carried by the icon tile's tone (it used to be five different
+ * tinted fills and borders, which read as five different states).
+ */
+function SourceTile({ icon, tone, title, badge, description, onClick }: Readonly<{
+  icon: LucideIcon
+  tone: SourceTone
+  title: string
+  badge?: ReactNode
+  description?: string
+  onClick: () => void
+}>) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex items-start gap-3 p-3 sm:p-4 rounded-lg border border-border bg-card text-left transition-colors hover:border-border-strong hover:bg-bg-hover focus-ring"
+    >
+      <ToneTile icon={icon} tone={tone} />
+      <span className="min-w-0 flex-1">
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="text-sm font-medium text-text-strong">{title}</span>
+          {badge}
+        </span>
+        {description != null && description !== '' ? <span className="block text-xs text-muted mt-1">{description}</span> : null}
+      </span>
+      <Plus size={16} className="text-muted opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 mt-0.5" aria-hidden="true" />
+    </button>
+  )
+}
+
+function TileSection({ title, children }: Readonly<{ title: string; children: ReactNode }>) {
+  return (
+    <section>
+      <h3 className="text-[11px] font-semibold uppercase tracking-[.08em] text-muted mb-2">{title}</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">{children}</div>
+    </section>
+  )
 }
 
 /**
  * Get auto-discovered plugins that should appear in the template selector.
  * Excludes the webscraper plugin (it has its own templates), synthetic generators
  * (shown in their own section), and only includes plugins with an ingestor.
+ * Enabled only: a disabled plugin (`pluginStatus` false) has no deployed
+ * ingestor, so offering it as a source to configure leads nowhere.
  */
 function getDiscoverablePlugins(): PluginManifest[] {
   return getPluginManifests().filter(
-    (p) => p.id !== 'webscraper' && p.category !== 'synthetic' && p.hasIngestor,
+    (p) => p.enabled && p.id !== 'webscraper' && p.category !== 'synthetic' && p.hasIngestor,
   )
 }
 
@@ -128,9 +170,12 @@ export default function TemplateSelector({
   const { t } = useTranslation('scrapers')
   const { config } = useConfigStore()
 
-  const {
-    data, isLoading,
-  } = useQuery({
+  const titleId = useId()
+
+  // No loading state: the built-in templates are always available, so they are
+  // shown at once and replaced if the API returns its own. Waiting on the query
+  // left a spinner up for the whole retry back-off whenever the route failed.
+  const { data } = useQuery({
     queryKey: ['scraper-templates'],
     queryFn: scrapersApi.getScraperTemplates,
     enabled: config.apiEndpoint.length > 0,
@@ -141,146 +186,56 @@ export default function TemplateSelector({
   const syntheticPlugins = getSyntheticPlugins()
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="p-3 sm:p-4 border-b flex items-center justify-between">
-          <h3 className="font-semibold text-base sm:text-lg">{t('templateSelector.title')}</h3>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
-        </div>
+    <ModalShell isOpen onClose={onClose} ariaLabelledBy={titleId} panelClassName="max-w-3xl max-h-[95vh] sm:max-h-[90vh]">
+      <SourceDialogHeader titleId={titleId} title={t('templateSelector.title')} icon={Plus} tone="accent" onClose={onClose} />
 
-        <div className="p-3 sm:p-4 overflow-y-auto flex-1 space-y-6">
-          {/* Auto-discovered plugins section */}
-          {discoverablePlugins.length > 0 && (
-            <div>
-              <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">{t('templateSelector.appReviewSources')}</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                {discoverablePlugins.map((plugin) => (
-                  <button
-                    key={plugin.id}
-                    onClick={() => onSelectPlugin(plugin)}
-                    className={clsx(
-                      'p-3 sm:p-4 border-2 rounded-lg text-left transition-all hover:border-purple-400 hover:bg-purple-50',
-                      getPluginBorderClass(plugin.category),
-                    )}
-                  >
-                    <div className="flex items-center gap-2 sm:gap-3 mb-2">
-                      <PluginIcon icon={plugin.icon} />
-                      <div>
-                        <div className="font-medium text-sm sm:text-base">{plugin.name}</div>
-                        <span className="inline-flex items-center gap-1 text-xs text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded">
-                          {t('templateSelector.autoDiscovered')}
-                        </span>
-                      </div>
-                    </div>
-                    <p className="text-xs sm:text-sm text-gray-600">{plugin.description}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+      <div className="dialog-body space-y-5">
+        {discoverablePlugins.length > 0 && (
+          <TileSection title={t('templateSelector.appReviewSources')}>
+            {discoverablePlugins.map((plugin) => (
+              <SourceTile
+                key={plugin.id}
+                {...pluginVisual(plugin)}
+                title={plugin.name}
+                badge={<span className="badge badge-accent">{t('templateSelector.autoDiscovered')}</span>}
+                description={plugin.description}
+                onClick={() => onSelectPlugin(plugin)}
+              />
+            ))}
+          </TileSection>
+        )}
 
-          {/* Web scraper templates section */}
-          <div>
-            <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">{t('templateSelector.webScraperTemplates')}</h4>
-            {isLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="animate-spin h-8 w-8 text-blue-500" />
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                {templates.map((template) => (
-                  <button
-                    key={template.id}
-                    onClick={() => onSelect(template)}
-                    className={clsx(
-                      'p-3 sm:p-4 border-2 rounded-lg text-left transition-all hover:border-blue-400 hover:bg-blue-50',
-                      template.extraction_method === 'jsonld' ? 'border-green-200 bg-green-50/30' : 'border-gray-200',
-                    )}
-                  >
-                    <div className="flex items-center gap-2 sm:gap-3 mb-2">
-                      <span className="text-xl sm:text-2xl">{template.icon}</span>
-                      <div>
-                        <div className="font-medium text-sm sm:text-base">{template.name}</div>
-                        {template.extraction_method === 'jsonld' && (
-                          <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-100 px-1.5 py-0.5 rounded">
-                            <FileJson size={10} /> JSON-LD
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <p className="text-xs sm:text-sm text-gray-600">{template.description}</p>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+        <TileSection title={t('templateSelector.webScraperTemplates')}>
+          {templates.map((template) => (
+            <SourceTile
+              key={template.id}
+              {...templateVisual(template)}
+              title={template.name}
+              badge={template.extraction_method === 'jsonld' ? <span className="badge badge-ok">JSON-LD</span> : undefined}
+              description={template.description}
+              onClick={() => onSelect(template)}
+            />
+          ))}
+        </TileSection>
 
-          {/* Manual Import section */}
-          <div>
-            <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">{t('templateSelector.manualInput')}</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-              <button
-                onClick={onManualImport}
-                className="p-3 sm:p-4 border-2 rounded-lg text-left transition-all hover:border-amber-400 hover:bg-amber-50 border-amber-200 bg-amber-50/30"
-              >
-                <div className="flex items-center gap-2 sm:gap-3 mb-2">
-                  <ClipboardPaste size={24} className="text-amber-600" />
-                  <div className="font-medium text-sm sm:text-base">{t('templateSelector.manualImport')}</div>
-                </div>
-                <p className="text-xs sm:text-sm text-gray-600">{t('templateSelector.manualImportDescription')}</p>
-              </button>
-              <button
-                onClick={onJsonUpload}
-                className="p-3 sm:p-4 border-2 rounded-lg text-left transition-all hover:border-blue-400 hover:bg-blue-50 border-blue-200 bg-blue-50/30"
-              >
-                <div className="flex items-center gap-2 sm:gap-3 mb-2">
-                  <Upload size={24} className="text-blue-600" />
-                  <div className="font-medium text-sm sm:text-base">{t('templateSelector.jsonUpload')}</div>
-                </div>
-                <p className="text-xs sm:text-sm text-gray-600">{t('templateSelector.jsonUploadDescription')}</p>
-              </button>
-              <button
-                onClick={onCsvUpload}
-                className="p-3 sm:p-4 border-2 rounded-lg text-left transition-all hover:border-emerald-400 hover:bg-emerald-50 border-emerald-200 bg-emerald-50/30"
-              >
-                <div className="flex items-center gap-2 sm:gap-3 mb-2">
-                  <FileText size={24} className="text-emerald-600" />
-                  <div className="font-medium text-sm sm:text-base">{t('templateSelector.csvUpload', { defaultValue: 'CSV upload' })}</div>
-                </div>
-                <p className="text-xs sm:text-sm text-gray-600">
-                  {t('templateSelector.csvUploadDescription', { defaultValue: 'Upload a CSV file with feedback rows. Each row is enriched and added to the feedback table.' })}
-                </p>
-              </button>
-            </div>
-          </div>
+        <TileSection title={t('templateSelector.manualInput')}>
+          <SourceTile icon={ClipboardPaste} tone="warn" title={t('templateSelector.manualImport')} description={t('templateSelector.manualImportDescription')} onClick={onManualImport} />
+          <SourceTile icon={Upload} tone="info" title={t('templateSelector.jsonUpload')} description={t('templateSelector.jsonUploadDescription')} onClick={onJsonUpload} />
+          <SourceTile icon={FileText} tone="ok" title={t('templateSelector.csvUpload')} description={t('templateSelector.csvUploadDescription')} onClick={onCsvUpload} />
+        </TileSection>
 
-          {/* Synthetic Data section */}
-          {syntheticPlugins.length > 0 && (
-            <div>
-              <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">{t('templateSelector.syntheticData')}</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                {syntheticPlugins.map((plugin) => (
-                  <button
-                    key={plugin.id}
-                    onClick={() => onSelectGenerator(plugin)}
-                    className="p-3 sm:p-4 border-2 rounded-lg text-left transition-all hover:border-indigo-400 hover:bg-indigo-50 border-indigo-200 bg-indigo-50/30"
-                  >
-                    <div className="flex items-center gap-2 sm:gap-3 mb-2">
-                      <Sparkles size={24} className="text-indigo-600" />
-                      <div className="font-medium text-sm sm:text-base">{plugin.name}</div>
-                    </div>
-                    <p className="text-xs sm:text-sm text-gray-600">{plugin.description}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="p-3 sm:p-4 border-t">
-          <button onClick={onClose} className="btn btn-secondary w-full text-sm">{t('templateSelector.cancel')}</button>
-        </div>
+        {syntheticPlugins.length > 0 && (
+          <TileSection title={t('templateSelector.syntheticData')}>
+            {syntheticPlugins.map((plugin) => (
+              <SourceTile key={plugin.id} icon={FlaskConical} tone="aim" title={plugin.name} description={plugin.description} onClick={() => onSelectGenerator(plugin)} />
+            ))}
+          </TileSection>
+        )}
       </div>
-    </div>
+
+      <div className="dialog-footer">
+        <button type="button" onClick={onClose} className="btn btn-secondary">{t('templateSelector.cancel')}</button>
+      </div>
+    </ModalShell>
   )
 }

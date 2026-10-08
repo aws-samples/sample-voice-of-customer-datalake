@@ -26,14 +26,12 @@ os.environ.setdefault('PROCESSING_QUEUE_URL', 'https://sqs.us-east-1.amazonaws.c
 os.environ.setdefault('RAW_DATA_BUCKET', '')
 os.environ.setdefault('SECRETS_ARN', 'arn:aws:secretsmanager:us-east-1:123456789:secret:test')
 os.environ.setdefault('BRAND_NAME', 'TestBrand')
-os.environ.setdefault('BRAND_HANDLES', '["@testbrand", "testbrand"]')
 os.environ.setdefault('SOURCE_PLATFORM', 'test_source')
 os.environ.setdefault('AWS_DEFAULT_REGION', 'us-east-1')
 os.environ.setdefault('POWERTOOLS_SERVICE_NAME', 'test-service')
 os.environ.setdefault('POWERTOOLS_METRICS_NAMESPACE', 'TestVoC')
 os.environ.setdefault('CIRCUIT_BREAKER_THRESHOLD', '3')
 os.environ.setdefault('CIRCUIT_BREAKER_WINDOW', '5')
-os.environ.setdefault('AUDIT_EVENT_BUS', '')
 os.environ.setdefault('WEBHOOK_SECRET', 'test-webhook-secret')
 
 # Credentials that cannot resolve to a real account. Belt to the braces of the
@@ -107,7 +105,7 @@ def no_real_aws_calls():
 
     attempted = []
 
-    def _refuse(self, operation_name, api_params):
+    def _refuse(self, operation_name, _api_params):
         call = f"{self.meta.service_model.service_name}.{operation_name}"
         attempted.append(call)
         raise AssertionError(
@@ -130,3 +128,13 @@ def no_real_aws_calls():
         '`base_ingestor.CircuitBreaker.record_failure` or '
         '`_shared.circuit_breaker.get_dynamodb_resource` as well.'
     )
+
+
+@pytest.fixture(autouse=True)
+def no_source_profiles():
+    """Every plugin message passes the source policy (`_shared/source_policy_gate.py`);
+    serve "no profiles configured" from its cache instead of a DynamoDB read. A test
+    that needs a profile nests `seeded_source_profiles([...])` inside."""
+    from shared.test.source_profile_fixtures import seeded_source_profiles
+    with seeded_source_profiles():
+        yield

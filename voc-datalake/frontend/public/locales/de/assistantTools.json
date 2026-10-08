@@ -1,0 +1,233 @@
+{
+  "card": {
+    "kicker": "Freigabe erforderlich",
+    "kickerDestructive": "Freigabe erforderlich · nicht rückgängig zu machen",
+    "project": "Projekt",
+    "expired": "Abgelaufen",
+    "expiresIn": "Läuft ab in {{time}}",
+    "approve": "Freigeben",
+    "approveDestructive": "Freigeben und löschen",
+    "decline": "Ablehnen",
+    "confirmDecline": "Ablehnen",
+    "back": "Zurück",
+    "dismiss": "Schließen",
+    "reasonLabel": "Grund (optional)",
+    "reasonPlaceholder": "Sagen Sie dem Assistenten, warum, damit er sich anpassen kann",
+    "executing": "Wird ausgeführt…",
+    "adminOnly": "Nur Administratoren können diese Aktion freigeben. Ablehnen ist weiterhin möglich.",
+    "destructiveWarning": "Dadurch werden Daten dauerhaft gelöscht. Dies kann nicht rückgängig gemacht werden.",
+    "destructiveConfirm": "Ich verstehe, bitte löschen",
+    "invalidArgs": "Die Anfrage des Assistenten ist ungültig und kann nicht freigegeben werden:",
+    "unknownTool": "Diese Aktion ist hier nicht verfügbar und kann nicht freigegeben werden.",
+    "unknownToolTitle": "Unbekannte Aktion ({{name}})",
+    "resolved": {
+      "executed": "Erledigt",
+      "failed": "Fehlgeschlagen",
+      "declined": "Abgelehnt",
+      "expired": "Abgelaufen"
+    }
+  },
+  "preview": {
+    "showMore": "Alles anzeigen ({{n}} Zeichen)",
+    "showLess": "Weniger anzeigen",
+    "empty": "(leer)",
+    "yes": "Ja",
+    "no": "Nein",
+    "loading": "Aktuelle Version wird geladen…",
+    "before": "Aktuell",
+    "after": "Vorgeschlagen",
+    "unchanged": "unverändert",
+    "document": "Dokument",
+    "persona": "Persona",
+    "changeSummary": "Änderung",
+    "currentUnavailable": "Die aktuellen Werte konnten nicht geladen werden; es werden nur die vorgeschlagenen Werte angezeigt.",
+    "unknownCategory": "Die Kategorie „{{category}}“ ist für Sie nicht sichtbar – die Änderung wird abgelehnt.",
+    "brandMerged": "Einstellungen nach dem Speichern (nicht genannte Felder behalten ihren aktuellen Wert):",
+    "diff": {
+      "label": "Änderungen am Dokument",
+      "stats": "{{added}} Zeilen hinzugefügt, {{removed}} Zeilen entfernt",
+      "unchanged": "… {{n}} unveränderte Zeilen …",
+      "same": "Unverändert:",
+      "add": "Hinzugefügt:",
+      "del": "Entfernt:",
+      "noChanges": "Der vorgeschlagene Inhalt ist identisch mit dem aktuellen Dokument.",
+      "tooLarge": "Das Dokument ist zu groß für einen zeilenweisen Vergleich. Der Anfang jeder Version wird angezeigt.",
+      "currentUnavailable": "Das aktuelle Dokument konnte nicht geladen werden. Vorgeschlagener Inhalt:"
+    },
+    "job": {
+      "timeWindow": "Liest Feedback der letzten {{days}} Tage (der in der App gewählte Zeitraum).",
+      "language": "Schreibt das Ergebnis auf {{language}}.",
+      "background": "Dies läuft im Hintergrund und erscheint in den Jobs des Projekts. Sie können währenddessen weiterarbeiten."
+    },
+    "agent": "Agent",
+    "run": "Lauf",
+    "memory": {
+      "scope": {
+        "company": "Unternehmen – alle",
+        "personal": "Persönlich – nur Sie"
+      },
+      "kind": {
+        "product": "Produkt",
+        "customer": "Kunde",
+        "agents": "Agenten",
+        "working_style": "Arbeitsweise",
+        "strategy": "Strategie",
+        "objective": "Ziel",
+        "other": "Sonstiges"
+      },
+      "retention": {
+        "long_term": "Langfristig gespeichert",
+        "dated": "Bis {{date}}",
+        "decay": "Verblasst nach 90 Tagen ohne Nutzung"
+      },
+      "resolve": {
+        "keep_both": "beide behalten",
+        "keep": "eine behalten",
+        "replace": "ersetzen",
+        "merge": "zusammenführen"
+      },
+      "companyVisible": "Unternehmenserinnerungen sind für alle sichtbar und werden vom Assistenten und von Agenten für alle Benutzer verwendet.",
+      "supporters_one": "{{count}} Person unterstützt die aktuelle Aussage.",
+      "supporters_other": "{{count}} Personen unterstützen die aktuelle Aussage.",
+      "reason": "Grund",
+      "forEveryone": "Dies ändert, was sich das Unternehmen merkt – für alle. Wenn Sie kein Administrator oder Gedächtnisprüfer sind, wird es als Vorschlag zur Prüfung eingereicht."
+    },
+    "workflow": {
+      "unchanged": "Die vorgeschlagene Definition ist identisch mit der aktuellen.",
+      "meta": "Geändert: {{fields}}",
+      "addedSteps": "Hinzugefügte Schritte",
+      "removedSteps": "Entfernte Schritte",
+      "changedSteps": "Geänderte Schritte",
+      "showMoves": "{{n}} nur verschobene Schritte anzeigen",
+      "hideMoves": "Nur verschobene Schritte ausblenden",
+      "addedArrows": "Hinzugefügte Pfeile",
+      "removedArrows": "Entfernte Pfeile",
+      "changedArrows": "Geänderte Pfeile",
+      "loopsChanged": "Schleifen geändert ({{n}} nach dem Speichern).",
+      "revision": "{{name}}: Revision {{from}} → {{to}}",
+      "stale": "Dieser Vorschlag basiert auf Revision {{expected}}, aktuell ist aber {{current}} – das Speichern wird abgelehnt; bitten Sie den Assistenten, ihn neu zu erstellen.",
+      "counts": "{{nodes}} Schritte, {{edges}} Pfeile, {{loops}} Schleifen"
+    }
+  },
+  "tools": {
+    "create_project": {
+      "title": "Projekt erstellen",
+      "titleWith": "Projekt „{{name}}“ erstellen"
+    },
+    "set_problem_resolved": {
+      "title": "Status eines Problems ändern",
+      "titleResolve": "Problem als gelöst markieren",
+      "titleReopen": "Problem wieder öffnen"
+    },
+    "set_feedback_category": {
+      "title": "Kategorie einer Bewertung ändern",
+      "titleWith": "Kategorie auf „{{category}}“ ändern"
+    },
+    "update_document": {
+      "title": "Dokument bearbeiten"
+    },
+    "create_document": {
+      "title": "Dokument erstellen",
+      "titleWith": "Dokument „{{title}}“ erstellen"
+    },
+    "delete_document": {
+      "title": "Dokument löschen"
+    },
+    "update_persona": {
+      "title": "Persona bearbeiten"
+    },
+    "add_persona_note": {
+      "title": "Forschungsnotiz zu einer Persona hinzufügen"
+    },
+    "update_project": {
+      "title": "Projektdetails bearbeiten"
+    },
+    "update_product_context": {
+      "title": "Produktbeschreibung aktualisieren"
+    },
+    "start_research": {
+      "title": "Recherche-Job starten"
+    },
+    "generate_document": {
+      "title": "Dokument generieren",
+      "titlePrd": "PRD generieren",
+      "titlePrfaq": "PR/FAQ generieren"
+    },
+    "generate_personas": {
+      "title": "Personas generieren",
+      "titleWith": "Personas generieren ({{n}})"
+    },
+    "merge_documents": {
+      "title": "Dokumente zusammenführen"
+    },
+    "update_feedback_form": {
+      "title": "Feedback-Formular aktualisieren"
+    },
+    "run_scraper": {
+      "title": "Scraper jetzt ausführen"
+    },
+    "save_brand_settings": {
+      "title": "Markeneinstellungen speichern"
+    },
+    "remember": {
+      "title": "Merken",
+      "titleCompany": "Für das Unternehmen merken",
+      "titlePersonal": "Für Sie merken"
+    },
+    "update_company_memory": {
+      "title": "Unternehmenserinnerung ändern"
+    },
+    "forget_memory": {
+      "title": "Erinnerung vergessen"
+    },
+    "confirm_memory": {
+      "title": "Erinnerung bestätigen (+1)"
+    },
+    "merge_memories": {
+      "title": "Erinnerungen zusammenführen",
+      "titleWith": "{{n}} Erinnerungen zusammenführen"
+    },
+    "resolve_memory_conflict": {
+      "title": "Erinnerungskonflikt lösen",
+      "titleWith": "Erinnerungskonflikt lösen: {{action}}"
+    },
+    "create_agent": {
+      "title": "Autonomen Agenten erstellen",
+      "titleWith": "Agenten „{{name}}“ erstellen"
+    },
+    "update_agent": {
+      "title": "Autonomen Agenten ändern"
+    },
+    "enable_agent": {
+      "title": "Autonomen Agenten aktivieren"
+    },
+    "disable_agent": {
+      "title": "Autonomen Agenten deaktivieren"
+    },
+    "run_agent": {
+      "title": "Autonomen Agenten jetzt ausführen"
+    },
+    "cancel_agent_run": {
+      "title": "Agentenlauf abbrechen"
+    },
+    "create_workflow": {
+      "title": "Workflow erstellen",
+      "titleWith": "Workflow „{{name}}“ erstellen"
+    },
+    "update_workflow": {
+      "title": "Neue Workflow-Revision speichern"
+    },
+    "duplicate_workflow": {
+      "title": "Workflow duplizieren"
+    },
+    "update_company_context": {
+      "title": "Unternehmensvision & -ziele ändern"
+    },
+    "update_my_context": {
+      "title": "Ihre Ziele & KPIs ändern"
+    },
+    "update_design_system": {
+      "title": "Designsystem ändern"
+    }
+  }
+}

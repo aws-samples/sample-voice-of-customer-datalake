@@ -71,11 +71,12 @@ So when that job lands, these go with it: ``MODULE_FLOORS``,
 all of ``test_mcp_gate_audit.py``. Do not invest in extending them.
 
 What does NOT retire, because running more of the existing tree would never have
-created it: the two lockstep modules — ``test_mcp_vocabulary_lockstep.py``
-(``VALID_SCOPES``/``VALID_READ_REACHES``/``DEFAULT_READ_REACH`` against
-``mcpTokenSchema.ts``) and ``test_python_runtime_lockstep.py`` (``.python-version``
-against the CDK runtime). No test in the tree read ``MCP_SCOPES`` at all before
-they existed.
+created it: the lockstep module ``test_python_runtime_lockstep.py``
+(``.python-version`` against the CDK runtime). Its sibling
+``test_mcp_vocabulary_lockstep.py`` (the per-project mint form's scope/reach
+vocabulary against ``mcpTokenSchema.ts``) was deleted with that form, when the
+project page's Export / MCP tab was removed; the vocabulary itself went with the
+per-project MCP server in 3.00.00.
 
 If automatic triggers and branch protection are re-enabled later, keep the job
 name ``MCP backend tests`` stable: that string becomes the required-check
@@ -96,27 +97,22 @@ from xml.etree import ElementTree
 # globs DISCOVER; MODULE_FLOORS below is what stops the discovered set shrinking.
 TEST_PATH_GLOBS: tuple[str, ...] = (
     'lambda/api/test/test_mcp_*.py',
+    'lambda/api/test/test_global_mcp_*.py',
     'lambda/shared/test/test_mcp_*.py',
 )
 
 # Modules that are gated but cannot match the `test_mcp_` prefix, so they are
-# named. Each is here because it owns a boundary the globbed modules depend on:
-#
-# test_projects_handler.py — the credential MINT route. `_validate_scopes` and
-#   `_validate_read_reach` decide which credentials can exist at all, and their
-#   failure mode is fail-OPEN under a fail-CLOSED enforcement path: making
-#   `_validate_read_reach` return `DEFAULT_READ_REACH` for an unknown reach
-#   instead of raising is silent to every `test_mcp_*` module, and hands out the
-#   widest reach by accident — which is exactly what that function's docstring
-#   warns about. Accepting an unknown scope likewise recreates the retired
-#   `read-write` phantom permission.
+# named. Each is here because it owns a boundary the globbed modules depend on.
+# (`test_projects_handler.py` was here for the per-project credential MINT route;
+# that route went with the per-project MCP server in 3.00.00, and the global mint
+# route is covered by `test_mcp_tokens_handler_mutation.py` and
+# `test_global_mcp_tokens_api.py`.)
 #
 # test_python_runtime_lockstep.py — ties `.python-version`, which chooses THIS
 #   job's interpreter, to the `Runtime.PYTHON_3_*` the stacks deploy. Without it
 #   a bump to either side leaves CI green while testing an interpreter no Lambda
 #   runs.
 EXPLICIT_TEST_PATHS: tuple[str, ...] = (
-    'lambda/api/test/test_projects_handler.py',
     'lambda/shared/test/test_python_runtime_lockstep.py',
 )
 
@@ -164,15 +160,27 @@ EXPLICIT_TEST_PATHS: tuple[str, ...] = (
 # refused: `_collisions` fails the audit, and
 # `test_no_two_gated_modules_share_a_stem` fails before the report even exists.
 MODULE_FLOORS: dict[str, int] = {
-    'test_mcp_security': 153,
-    'test_mcp_delegation': 185,
-    'test_mcp_protocol_envelope': 285,
-    'test_mcp_output_schema_conformance': 118,
-    'test_mcp_date_basis': 5,
-    'test_mcp_tokens': 46,
-    'test_mcp_vocabulary_lockstep': 13,
+    # 3.00.00 retired the per-project MCP server (`api/mcp_handler.py`) and with it
+    # test_mcp_security, test_mcp_delegation, test_mcp_protocol_envelope,
+    # test_mcp_output_schema_conformance, test_mcp_date_basis and the two
+    # test_mcp_handler_mutation_* slices; test_mcp_tokens shrank to the credential
+    # format (46 -> 27) and test_projects_handler left the gate with the
+    # per-project mint route. The global server's suites joined it.
+    'test_global_mcp_e2e': 22,
+    'test_global_mcp_protocol': 14,
+    'test_global_mcp_tokens_api': 9,
+    # Mutation-hardening suites (one per module or slice, see todo.md Agent 4 item 9).
+    'test_mcp_global_handler_mutation': 171,
+    'test_mcp_delegate_mutation': 68,
+    'test_mcp_global_tokens_mutation': 147,
+    'test_mcp_global_tools_mutation': 121,
+    'test_mcp_global_tools_budget': 1,
+    'test_mcp_tokens_handler_mutation': 93,
+    'test_mcp_tokens_creator_index': 12,
+    'test_mcp_tokens': 27,
+    'test_mcp_tokens_mutation': 8,
+    'test_mcp_tokens_secret_scanning': 4,
     'test_mcp_gate_audit': 29,
-    'test_projects_handler': 105,
     'test_python_runtime_lockstep': 4,
 }
 
@@ -234,7 +242,7 @@ def _executed_per_module(
     for case in root.iter('testcase'):
         classname = case.get('classname', '')
         path = _module_path_of(classname)
-        module = path.rsplit('.', 1)[-1]
+        module = _module_of(classname)
         bucket = inert if case.find('skipped') is not None else executed
         bucket[module] = bucket.get(module, 0) + 1
         origins.setdefault(module, set()).add(path)
@@ -296,24 +304,8 @@ def _convention_mcp_test_paths() -> tuple[Path, ...]:
     )
 
 
-def audit(report: Path) -> int:
-    """Audit the JUnit report and the current checkout's declared MCP test scope.
-
-    The report and checkout must describe the same commit; an artifact from another
-    commit must be audited from that commit's checkout.
-    """
-    if not report.exists():
-        _fail(
-            f'No JUnit report at {report}. The test step did not produce one, so the '
-            'gate cannot be audited — treat this as a failure of the run, not of the '
-            'floor.'
-        )
-        return 1
-
-    executed, inert, origins = _executed_per_module(report)
-    shrinkage_problems: list[str] = []
-    collision_problems: list[str] = []
-
+def _scope_problems() -> list[str]:
+    """The declared MCP test scope against independent convention discovery."""
     # This oracle deliberately does not derive from TEST_PATH_GLOBS or floors. If a
     # glob and every floor it used to reach are deleted together, all declaration-
     # based checks remain self-consistent while pytest quietly runs less. Compare
@@ -327,46 +319,49 @@ def audit(report: Path) -> int:
     }
     declared_paths.update((root / path).resolve() for path in EXPLICIT_TEST_PATHS)
     convention_paths = set(_convention_mcp_test_paths())
+    problems: list[str] = []
     if not convention_paths:
-        shrinkage_problems.append(
+        problems.append(
             'independent first-party MCP discovery found no tests. This likely means the '
             'gate resolved the wrong repository root or is running from a copied script; '
             'without a positive control, the scope-completeness comparison is vacuous.'
         )
-    for path in sorted(convention_paths - declared_paths):
-        shrinkage_problems.append(
-            f'{path.relative_to(root).as_posix()}: convention-discovered MCP test is '
-            'outside TEST_PATH_GLOBS + EXPLICIT_TEST_PATHS. A narrowed glob plus '
-            'removal of the corresponding MODULE_FLOORS entries is otherwise '
-            'self-consistent and would silently shrink the gate. Add this path to the '
-            'declared MCP execution scope.'
-        )
+    problems.extend(
+        f'{path.relative_to(root).as_posix()}: convention-discovered MCP test is '
+        'outside TEST_PATH_GLOBS + EXPLICIT_TEST_PATHS. A narrowed glob plus '
+        'removal of the corresponding MODULE_FLOORS entries is otherwise '
+        'self-consistent and would silently shrink the gate. Add this path to the '
+        'declared MCP execution scope.'
+        for path in sorted(convention_paths - declared_paths)
+    )
+    return problems
 
-    # Checked BEFORE the floors, because a collision makes every count below it
-    # untrustworthy. The floor loop skips those names: it would otherwise compare a
-    # sum against a floor written for one contributor and prescribe the wrong remedy.
-    # Reported as its own diagnosis rather than folded into a floor failure, since the
-    # remedy is to rename one of the two files, not to restore tests or move a number.
-    colliding_modules = set(_collisions(origins))
-    for name in sorted(colliding_modules):
-        collision_problems.append(
-            f'{name}: two modules share this name ('
-            + ', '.join(sorted(origins[name]))
-            + '), and MODULE_FLOORS is keyed by module name, so ONE floor is being '
-            'compared against the SUM of both. That lets one of them be skipped '
-            'entirely while the other keeps the count at the floor. Rename one of the '
-            'two files so each has its own floor. Until the names are unique, the '
-            'audit cannot determine whether either contributor also fell below its '
-            'own floor.'
-        )
 
+def _collision_problems(colliding_modules: set[str], origins: dict[str, set[str]]) -> list[str]:
+    return [
+        f'{name}: two modules share this name ('
+        + ', '.join(sorted(origins[name]))
+        + '), and MODULE_FLOORS is keyed by module name, so ONE floor is being '
+        'compared against the SUM of both. That lets one of them be skipped '
+        'entirely while the other keeps the count at the floor. Rename one of the '
+        'two files so each has its own floor. Until the names are unique, the '
+        'audit cannot determine whether either contributor also fell below its '
+        'own floor.'
+        for name in sorted(colliding_modules)
+    ]
+
+
+def _floor_problems(
+    executed: dict[str, int], inert: dict[str, int], colliding_modules: set[str],
+) -> list[str]:
+    problems: list[str] = []
     for module, floor in sorted(MODULE_FLOORS.items()):
         if module in colliding_modules:
             continue
         ran = executed.get(module, 0)
         skipped = inert.get(module, 0)
         if ran == 0 and skipped == 0:
-            shrinkage_problems.append(
+            problems.append(
                 f'{module}: no tests at all (floor {floor}). The module was renamed off '
                 'the test_mcp_ prefix, moved out of a globbed directory, deleted, or '
                 'failed to import. Restore it, or change the floor in '
@@ -374,13 +369,17 @@ def audit(report: Path) -> int:
             )
         elif ran < floor:
             detail = f' and {skipped} skipped or xfailed' if skipped else ''
-            shrinkage_problems.append(
+            problems.append(
                 f'{module}: {ran} tests ran{detail}, below its floor of {floor}. '
                 'A skipped test asserts nothing, so it does not count towards the floor. '
                 'Restore the tests, or change the floor in '
                 'voc-datalake/scripts/mcp_gate.py and say why.'
             )
+    return problems
 
+
+def _unfloored_skip_problems(inert: dict[str, int]) -> list[str]:
+    """A skip in a module with NO floor is a failure, not a warning (see below)."""
     # A skip in a module with NO floor is a failure, not a warning.
     #
     # This is the second half of a regression the floor loop above cannot see.
@@ -394,16 +393,17 @@ def audit(report: Path) -> int:
     # module below its floor means "restore the tests"; an unfloored module with
     # skips means "this module has no floor, which is why the skip went unremarked" —
     # and naming the missing floor is the actionable part.
-    for module, skipped in sorted(inert.items()):
-        if module in MODULE_FLOORS:
-            continue
-        shrinkage_problems.append(
-            f'{module}: {skipped} tests skipped or xfailed and the module has no floor, '
-            'so no floor could object. Either its MODULE_FLOORS entry was deleted, or '
-            'the report contains a new module that arrived without a floor and was then '
-            'disabled. Give it a floor and remove the skip.'
-        )
+    return [
+        f'{module}: {skipped} tests skipped or xfailed and the module has no floor, '
+        'so no floor could object. Either its MODULE_FLOORS entry was deleted, or '
+        'the report contains a new module that arrived without a floor and was then '
+        'disabled. Give it a floor and remove the skip.'
+        for module, skipped in sorted(inert.items())
+        if module not in MODULE_FLOORS
+    ]
 
+
+def _print_counts(executed: dict[str, int], inert: dict[str, int], colliding_modules: set[str]) -> None:
     # Reported separately from the floors: a skip inside a module that is still
     # above its floor is not yet a shrinkage, but it is how one starts, so it is
     # surfaced rather than tolerated silently.
@@ -430,6 +430,35 @@ def audit(report: Path) -> int:
         marker = '' if module in MODULE_FLOORS else '  (UNFLOORED — add it to MODULE_FLOORS)'
         print(f'{module}: {ran} ran (floor {floor}){marker}')
     print(f'total ran: {sum(executed.values())}')
+
+
+def audit(report: Path) -> int:
+    """Audit the JUnit report and the current checkout's declared MCP test scope.
+
+    The report and checkout must describe the same commit; an artifact from another
+    commit must be audited from that commit's checkout.
+    """
+    if not report.exists():
+        _fail(
+            f'No JUnit report at {report}. The test step did not produce one, so the '
+            'gate cannot be audited — treat this as a failure of the run, not of the '
+            'floor.'
+        )
+        return 1
+
+    executed, inert, origins = _executed_per_module(report)
+    shrinkage_problems = _scope_problems()
+
+    # Checked BEFORE the floors, because a collision makes every count below it
+    # untrustworthy. The floor loop skips those names: it would otherwise compare a
+    # sum against a floor written for one contributor and prescribe the wrong remedy.
+    # Reported as its own diagnosis rather than folded into a floor failure, since the
+    # remedy is to rename one of the two files, not to restore tests or move a number.
+    colliding_modules = set(_collisions(origins))
+    collision_problems = _collision_problems(colliding_modules, origins)
+    shrinkage_problems += _floor_problems(executed, inert, colliding_modules)
+    shrinkage_problems += _unfloored_skip_problems(inert)
+    _print_counts(executed, inert, colliding_modules)
 
     # Each problem carries its own remedy rather than sharing a generic suffix:
     # "change the floor and say why" is right for a module below its floor and

@@ -52,5 +52,15 @@
   "type": "Tipo",
   "unknown": "Desconocido",
   "urgent": "Urgente",
-  "viewOriginal": "Ver original"
+  "viewOriginal": "Ver original",
+  "sourceId": "ID: {{id}}",
+  "reviewDate": "Fecha de la reseña: {{date}}",
+  "reviewDateHint": "Cuándo escribió el cliente este comentario",
+  "imported": "Importado: {{date}}",
+  "importedHint": "Cuándo se importó este comentario a la plataforma",
+  "noSimilar": "No se encontraron comentarios similares",
+  "loading": "Cargando comentario…",
+  "similarFailed": "No se pudieron cargar comentarios similares. Inténtalo más tarde.",
+  "author": "Autor",
+  "reviewTitle": "Título"
 }

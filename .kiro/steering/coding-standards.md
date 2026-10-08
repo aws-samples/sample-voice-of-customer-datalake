@@ -7,6 +7,10 @@
 3. **Idempotent**: All operations should be safe to retry
 4. **Observable**: Include logging, tracing, and metrics in all Lambda functions
 5. **Lambda IAM Policy Size Limit**: AWS has a 20KB limit on Lambda execution role policies - split Lambdas by concern to avoid hitting this limit
+6. **Quality gates are human-owned (read-only for agents)**: `eslint-rules/quality-gates.mjs` and every gate setting
+   (`max-lines` = 400 for production files, 750 for specs; complexity; ruff/pyright/jscpd/knip thresholds) are never
+   raised, relaxed, pended or suppressed to make a change pass. Fix the code instead: split the file, extract a helper,
+   simplify. A change to a gate value needs the human owner's explicit approval first.
 
 ## Python (Lambda Functions)
 
@@ -108,7 +112,7 @@ def lambda_handler(event: dict, context: Any) -> dict:
 Never hardcode model ids — resolution goes through
 `shared/model_config.py` (the admin model picker's per-surface overrides
 apply automatically), and `shared/converse.py` shapes requests per model
-capability (Sonnet 5 / both Opus generations reject `temperature`; they also reject an
+capability (Sonnet 5 / 5.5, Haiku 5.5 and every Opus generation reject `temperature`; they also reject an
 explicit thinking budget). Pass a `surface` and let the helper resolve:
 
 ```python
@@ -144,7 +148,7 @@ AWS Lambda execution roles have a **20KB policy size limit**. When a single Lamb
 lambda/api/
 ├── metrics_handler.py       # /feedback/*, /metrics/* (read-only)
 ├── chat_handler.py          # /chat/*
-├── (streaming chat: lambda/stream — TypeScript, SSE at /chat/stream)
+├── (AI assistant: lambda/stream — TypeScript, AG-UI 1.0 SSE at /chat/stream)
 ├── integrations_handler.py  # /integrations/*, /sources/*
 ├── scrapers_handler.py      # /scrapers/*
 ├── settings_handler.py      # /settings/*
@@ -152,7 +156,10 @@ lambda/api/
 ├── users_handler.py         # /users/* (Cognito admin)
 ├── feedback_form_handler.py # /feedback-forms/*
 ├── data_explorer_handler.py # /data-explorer/* (S3 raw data & DynamoDB browser)
+├── feedback_edit_handler.py # PUT /feedback/{id}/category (voc-feedback-edit-api)
 └── projects.py              # Shared business logic for projects
+
+lambda/jobs/category_reprocess/handler.py  # voc-category-reprocess worker (async, Processing stack)
 ```
 
 **Domain-to-Permission Mapping (12 handlers):**
@@ -161,7 +168,7 @@ lambda/api/
 |--------|---------|-----------------|
 | Metrics | `metrics_handler.py` | DynamoDB read (feedback, aggregates) |
 | Chat | `chat_handler.py` | DynamoDB RW (conversations), Bedrock |
-| Chat Stream | `lambda/stream` (TypeScript) | DynamoDB read, Bedrock streaming |
+| Chat Stream (AI assistant) | `lambda/stream` (TypeScript) | DynamoDB read (feedback, aggregates), Bedrock streaming, invoke ProjectsApi/MetricsApi/FeedbackFormApi/SettingsApi/ScrapersApi/MemoryApi/AgentsApi, conversations GetItem/PutItem (the caller's own session only, partition enforced in code) — no projects table, no business-data writes |
 | Integrations | `integrations_handler.py` | Secrets Manager, EventBridge |
 | Scrapers | `scrapers_handler.py` | Secrets Manager, Lambda invoke, Bedrock |
 | Settings | `settings_handler.py` | DynamoDB (aggregates), Bedrock |
@@ -169,15 +176,17 @@ lambda/api/
 | Users | `users_handler.py` | Cognito admin |
 | Feedback Forms | `feedback_form_handler.py` | DynamoDB (aggregates), SQS |
 | Data Explorer | `data_explorer_handler.py` | S3, DynamoDB (feedback) |
+| Feedback Edit (`voc-feedback-edit-api`) | `feedback_edit_handler.py` | DynamoDB RW (feedback), read (aggregates) |
+| Category Reprocess worker (`voc-category-reprocess`) | `jobs/category_reprocess/handler.py` | DynamoDB (feedback Scan/Get/Update, aggregates), S3 read (`raw/*`), KMS, Bedrock, Comprehend, Translate, self-invoke |
 
 **When adding new API endpoints:**
 
 1. Identify which domain the endpoint belongs to
 2. Add the route to the appropriate existing handler
 3. If creating a new domain, create a new `{domain}_handler.py` file
-4. Update `api-stack.ts` to create the Lambda and wire API Gateway routes
+4. Create the Lambda in the matching `lib/stacks/api-*-lambdas.ts` builder and wire its routes in `api-routes.ts`
 5. Grant only the minimum required permissions
-
+6. If the frontend calls it, mock it for local dev and add it to `frontend/mock-coverage.json` (see "Every frontend API call must be mocked" in tech.md); `npm run check:mock` gates this
 **Example - Adding a new endpoint to existing domain:**
 
 ```python
@@ -274,7 +283,7 @@ export class MyStack extends cdk.Stack {
 
 AWS Lambda execution roles have a **20KB policy size limit**. The CDK stack must create separate Lambdas for each domain with isolated permissions.
 
-**Current Lambda Architecture in `api-stack.ts`:**
+**Current Lambda Architecture (the `lib/stacks/api-*-lambdas.ts` builders composed by `api-stack.ts`):**
 
 ```typescript
 // 1. Metrics Lambda - read-only feedback/metrics queries
@@ -448,9 +457,9 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> 
 export const api = {
   getFeedback: (params) => fetchApi<{ count: number; items: FeedbackItem[] }>(`/feedback?${new URLSearchParams(params)}`),
   getSummary: (days: number) => fetchApi<MetricsSummary>(`/metrics/summary?days=${days}`),
-  chat: (message: string) => fetchApi<{ response: string }>('/chat', {
-    method: 'POST',
-    body: JSON.stringify({ message })
+  saveBrandSettings: (settings: BrandSettings) => fetchApi<{ success: boolean }>('/settings/brand', {
+    method: 'PUT',
+    body: JSON.stringify(settings)
   }),
 }
 ```
@@ -592,8 +601,7 @@ GET  /metrics/sources             # Source breakdown
 GET  /metrics/personas            # Persona breakdown
 
 # Chat
-POST /chat                        # AI chat endpoint
-POST /chat/stream                 # Streaming chat (SSE via API Gateway)
+POST /chat/stream                 # Unified AI assistant (AG-UI RunAgentInput in, AG-UI SSE events out)
 
 # Scrapers
 GET  /scrapers                    # List scraper configs
@@ -609,7 +617,7 @@ POST /projects                    # Create project
 GET  /projects/{id}               # Get project with personas/documents
 POST /projects/{id}/personas/generate  # Generate personas from feedback
 POST /projects/{id}/research      # Run research job (Step Functions)
-POST /projects/{id}/chat          # Project-scoped chat
+# (project chat → POST /chat/stream with forwardedProps.page.projectId)
 ```
 
 ### Response Format
@@ -712,7 +720,9 @@ curl -N -X POST "${API_URL%/}/chat/stream" \
 ### Deployment Checklist
 
 1. Build Lambda layers with Docker: `./scripts/build-layers.sh`
-2. Deploy stacks: `npx cdk deploy --all --context frontendDomain=<domain>`
+2. Deploy stacks: `npm run deploy:infra -- --context frontendDomain=<domain>` (from the repo root;
+   it ends with `scripts/refresh-api-stage.sh` — after a bare `npx cdk deploy --all` run
+   `bash voc-datalake/scripts/refresh-api-stage.sh` yourself, or removed routes stay live)
    — a clean synth/deploy prints **zero warnings**; treat new warnings as
    regressions. Pre-#105 environments additionally need
    `-c omitUserPoolUsernameConfiguration=true` (see docs/deployment.md

@@ -1,207 +1,194 @@
 /**
- * Tests for Bedrock stream event processing.
+ * Tests for the Bedrock turn accumulator.
  */
 import { describe, it, expect, vi } from 'vitest';
 import type { ConverseStreamOutput } from '@aws-sdk/client-bedrock-runtime';
-import { createStreamState, processStreamEvent } from './stream-processor.js';
+import { createTurnState, finishTurn, parseToolInput, processStreamEvent, type TurnSink } from './stream-processor.js';
 
-function mockStream() {
-  return { write: vi.fn() } as unknown as NodeJS.WritableStream;
+function recordingSink() {
+  const calls: string[] = [];
+  const sink: TurnSink = {
+    onText: vi.fn((d: string) => calls.push(`text:${d}`)),
+    onReasoning: vi.fn((d: string) => calls.push(`reasoning:${d}`)),
+    onBlockStop: vi.fn((k: string) => calls.push(`stop:${k}`)),
+  };
+  return { sink, calls };
 }
 
-describe('createStreamState', () => {
-  it('returns a fresh state with empty defaults', () => {
-    const state = createStreamState();
-    expect(state).toStrictEqual({
-      stopReason: null,
-      toolUseBlocks: [],
-      currentToolUseId: null,
-      currentToolName: null,
-      toolInputChunks: [],
-      textContent: '',
+function apply(events: ConverseStreamOutput[]) {
+  const state = createTurnState();
+  const { sink, calls } = recordingSink();
+  for (const event of events) processStreamEvent(event, state, sink);
+  finishTurn(state, sink);
+  return { state, calls };
+}
+
+describe('processStreamEvent', () => {
+  it('collects reasoning (with signature), text and tool use in arrival order', () => {
+    const { state, calls } = apply([
+      { contentBlockDelta: { contentBlockIndex: 0, delta: { reasoningContent: { text: 'think' } } } },
+      { contentBlockDelta: { contentBlockIndex: 0, delta: { reasoningContent: { signature: 'sig' } } } },
+      { contentBlockStop: { contentBlockIndex: 0 } },
+      { contentBlockDelta: { contentBlockIndex: 1, delta: { text: 'Hel' } } },
+      { contentBlockDelta: { contentBlockIndex: 1, delta: { text: 'lo' } } },
+      { contentBlockStop: { contentBlockIndex: 1 } },
+      { contentBlockStart: { contentBlockIndex: 2, start: { toolUse: { toolUseId: 'tu', name: 'search_feedback' } } } },
+      { contentBlockDelta: { contentBlockIndex: 2, delta: { toolUse: { input: '{"query":' } } } },
+      { contentBlockDelta: { contentBlockIndex: 2, delta: { toolUse: { input: '"x"}' } } } },
+      { contentBlockStop: { contentBlockIndex: 2 } },
+      { messageStop: { stopReason: 'tool_use' } },
+      { metadata: { usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 }, metrics: { latencyMs: 1 } } },
+    ]);
+
+    expect(state.content).toStrictEqual([
+      { reasoningContent: { reasoningText: { text: 'think', signature: 'sig' } } },
+      { text: 'Hello' },
+      { toolUse: { toolUseId: 'tu', name: 'search_feedback', input: { query: 'x' } } },
+    ]);
+    expect(state.toolUses).toStrictEqual([{ toolUseId: 'tu', name: 'search_feedback', input: { query: 'x' } }]);
+    expect({ text: state.text, stopReason: state.stopReason, usage: state.usage }).toStrictEqual({
+      text: 'Hello', stopReason: 'tool_use', usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 },
     });
+    expect(calls).toStrictEqual(['reasoning:think', 'stop:reasoning', 'text:Hel', 'text:lo', 'stop:text', 'stop:toolUse']);
+  });
+
+  it('keeps redacted reasoning bytes', () => {
+    const bytes = new Uint8Array([1, 2, 3]);
+    const { state } = apply([
+      { contentBlockDelta: { contentBlockIndex: 0, delta: { reasoningContent: { redactedContent: bytes } } } },
+      { messageStop: { stopReason: 'end_turn' } },
+    ]);
+    expect(state.content).toStrictEqual([{ reasoningContent: { redactedContent: bytes } }]);
+  });
+
+  it('closes a block left open when the stream ends without messageStop', () => {
+    const { state } = apply([{ contentBlockDelta: { contentBlockIndex: 0, delta: { text: 'cut' } } }]);
+    expect(state.content).toStrictEqual([{ text: 'cut' }]);
+    expect(state.stopReason).toBeNull();
+  });
+
+  it('defaults the stop reason to end_turn', () => {
+    const { state } = apply([{ messageStop: { stopReason: undefined } }]);
+    expect(state.stopReason).toBe('end_turn');
   });
 });
 
-describe('processStreamEvent', () => {
-  describe('text delta', () => {
-    it('appends text to state and sends SSE event', () => {
-      const state = createStreamState();
-      const stream = mockStream();
-      const event: ConverseStreamOutput = {
-        contentBlockDelta: { delta: { text: 'Hello' }, contentBlockIndex: 0 },
-      };
+describe('parseToolInput', () => {
+  it.each([
+    ['', {}],
+    ['not json', {}],
+    ['[1,2]', {}],
+    ['"str"', {}],
+    ['{"a":{"b":[1,null,true]}}', { a: { b: [1, null, true] } }],
+  ])('parses %j', (raw, expected) => {
+    expect(parseToolInput(raw)).toStrictEqual(expected);
+  });
+});
 
-      processStreamEvent(event, state, stream);
+// The mutation run found the block boundaries, partial events, the
+// "first matching handler wins" rule and the reasoning shapes unpinned.
+const USAGE = { inputTokens: 1, outputTokens: 2, totalTokens: 3 };
+const METADATA = { metadata: { usage: USAGE, metrics: { latencyMs: 1 } } };
 
-      expect(state.textContent).toBe('Hello');
-      expect(stream.write).toHaveBeenCalledOnce();
-      const written = (stream.write as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-      expect(written).toContain('"type":"text"');
-      expect(written).toContain('"content":"Hello"');
-    });
+/** Bedrock events as they may arrive at runtime: partial, or carrying two members. */
+function isLooseEvent(value: unknown): value is ConverseStreamOutput {
+  return typeof value === 'object' && value !== null;
+}
+function looseEvent(value: unknown): ConverseStreamOutput {
+  if (!isLooseEvent(value)) throw new Error('an event is an object');
+  return value;
+}
 
-    it('accumulates multiple text deltas', () => {
-      const state = createStreamState();
-      const stream = mockStream();
+const textDelta = (text: string) => looseEvent({ contentBlockDelta: { contentBlockIndex: 0, delta: { text } } });
+const reasoningDelta = (reasoningContent: unknown) => looseEvent({ contentBlockDelta: { contentBlockIndex: 0, delta: { reasoningContent } } });
+const toolStart = (toolUse: unknown) => looseEvent({ contentBlockStart: { contentBlockIndex: 0, start: { toolUse } } });
 
-      processStreamEvent(
-        { contentBlockDelta: { delta: { text: 'Hello ' }, contentBlockIndex: 0 } },
-        state,
-        stream,
-      );
-      processStreamEvent(
-        { contentBlockDelta: { delta: { text: 'world' }, contentBlockIndex: 0 } },
-        state,
-        stream,
-      );
-
-      expect(state.textContent).toBe('Hello world');
-      expect(stream.write).toHaveBeenCalledTimes(2);
-    });
+describe('processStreamEvent — block boundaries', () => {
+  it('a contentBlockStop splits two text blocks', () => {
+    const { state, calls } = apply([textDelta('a'), { contentBlockStop: { contentBlockIndex: 0 } }, textDelta('b')]);
+    expect(state.content).toStrictEqual([{ text: 'a' }, { text: 'b' }]);
+    expect(calls).toStrictEqual(['text:a', 'stop:text', 'text:b', 'stop:text']);
   });
 
-  describe('thinking delta', () => {
-    it('sends thinking SSE event', () => {
-      const state = createStreamState();
-      const stream = mockStream();
-      const event: ConverseStreamOutput = {
-        contentBlockDelta: {
-          delta: { reasoningContent: { text: 'Let me think...' } },
-          contentBlockIndex: 0,
-        },
-      };
-
-      processStreamEvent(event, state, stream);
-
-      const written = (stream.write as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-      expect(written).toContain('"type":"thinking"');
-      expect(written).toContain('Let me think...');
-    });
+  it('a new kind closes the open block without a contentBlockStop', () => {
+    const { state, calls } = apply([
+      reasoningDelta({ text: 'r' }), textDelta('t'), toolStart({ toolUseId: 'id', name: 'n' }),
+    ]);
+    expect(state.content).toStrictEqual([
+      { reasoningContent: { reasoningText: { text: 'r' } } },
+      { text: 't' },
+      { toolUse: { toolUseId: 'id', name: 'n', input: {} } },
+    ]);
+    expect(calls).toStrictEqual(['reasoning:r', 'stop:reasoning', 'text:t', 'stop:text', 'stop:toolUse']);
   });
 
-  describe('tool use flow', () => {
-    it('tracks tool use start, input chunks, and block stop', () => {
-      const state = createStreamState();
-      const stream = mockStream();
-
-      // 1. Tool use start
-      processStreamEvent(
-        {
-          contentBlockStart: {
-            start: { toolUse: { toolUseId: 'tool-1', name: 'search_feedback' } },
-            contentBlockIndex: 0,
-          },
-        },
-        state,
-        stream,
-      );
-      expect(state.currentToolUseId).toBe('tool-1');
-      expect(state.currentToolName).toBe('search_feedback');
-
-      // 2. Tool input chunks
-      processStreamEvent(
-        { contentBlockDelta: { delta: { toolUse: { input: '{"query":' } }, contentBlockIndex: 0 } },
-        state,
-        stream,
-      );
-      processStreamEvent(
-        { contentBlockDelta: { delta: { toolUse: { input: '"delivery"}' } }, contentBlockIndex: 0 } },
-        state,
-        stream,
-      );
-      expect(state.toolInputChunks).toStrictEqual(['{"query":', '"delivery"}']);
-
-      // 3. Content block stop — finalizes tool use block
-      processStreamEvent({ contentBlockStop: { contentBlockIndex: 0 } }, state, stream);
-
-      expect(state.toolUseBlocks).toHaveLength(1);
-      expect(state.toolUseBlocks[0]).toStrictEqual({
-        toolUseId: 'tool-1',
-        name: 'search_feedback',
-        input: { query: 'delivery' },
-      });
-      expect(state.currentToolUseId).toBeNull();
-      expect(state.toolInputChunks).toStrictEqual([]);
-    });
-
-    it('handles invalid JSON in tool input gracefully', () => {
-      const state = createStreamState();
-      const stream = mockStream();
-
-      processStreamEvent(
-        {
-          contentBlockStart: {
-            start: { toolUse: { toolUseId: 'tool-2', name: 'search_feedback' } },
-            contentBlockIndex: 0,
-          },
-        },
-        state,
-        stream,
-      );
-      processStreamEvent(
-        { contentBlockDelta: { delta: { toolUse: { input: '{invalid json' } }, contentBlockIndex: 0 } },
-        state,
-        stream,
-      );
-      processStreamEvent({ contentBlockStop: { contentBlockIndex: 0 } }, state, stream);
-
-      expect(state.toolUseBlocks[0].input).toStrictEqual({});
-    });
-
-    it('handles empty tool input', () => {
-      const state = createStreamState();
-      const stream = mockStream();
-
-      processStreamEvent(
-        {
-          contentBlockStart: {
-            start: { toolUse: { toolUseId: 'tool-3', name: 'search_feedback' } },
-            contentBlockIndex: 0,
-          },
-        },
-        state,
-        stream,
-      );
-      processStreamEvent({ contentBlockStop: { contentBlockIndex: 0 } }, state, stream);
-
-      expect(state.toolUseBlocks[0].input).toStrictEqual({});
-    });
+  it('reasoning after text closes the text block', () => {
+    const { state, calls } = apply([textDelta('t'), reasoningDelta({ text: 'r' })]);
+    expect(state.content).toStrictEqual([{ text: 't' }, { reasoningContent: { reasoningText: { text: 'r' } } }]);
+    expect(calls).toStrictEqual(['text:t', 'stop:text', 'reasoning:r', 'stop:reasoning']);
   });
 
-  describe('message stop', () => {
-    it('sets stop reason from event', () => {
-      const state = createStreamState();
-      const stream = mockStream();
-
-      processStreamEvent(
-        { messageStop: { stopReason: 'tool_use' } },
-        state,
-        stream,
-      );
-
-      expect(state.stopReason).toBe('tool_use');
-    });
-
-    it('defaults stop reason to end_turn', () => {
-      const state = createStreamState();
-      const stream = mockStream();
-
-      processStreamEvent({ messageStop: { stopReason: undefined } }, state, stream);
-
-      expect(state.stopReason).toBe('end_turn');
-    });
+  it('messageStop closes the open block itself', () => {
+    const state = createTurnState();
+    const { sink, calls } = recordingSink();
+    for (const event of [textDelta('t'), looseEvent({ messageStop: { stopReason: 'end_turn' } })]) processStreamEvent(event, state, sink);
+    expect(state.content).toStrictEqual([{ text: 't' }]);
+    expect(calls).toStrictEqual(['text:t', 'stop:text']);
   });
 
-  describe('unrecognized events', () => {
-    it('silently ignores metadata/usage events', () => {
-      const state = createStreamState();
-      const stream = mockStream();
+  it('defaults a tool use without id or name', () => {
+    expect(apply([toolStart({})]).state.toolUses).toStrictEqual([{ toolUseId: '', name: 'unknown', input: {} }]);
+  });
+});
 
-      processStreamEvent({ metadata: { usage: { inputTokens: 100 } } } as ConverseStreamOutput, state, stream);
+describe('processStreamEvent — partial and stray events', () => {
+  const toolChunk = { contentBlockDelta: { contentBlockIndex: 0, delta: { toolUse: { input: '{}' } } } };
+  const messageStart = { messageStart: { role: 'assistant' } };
 
-      expect(state.textContent).toBe('');
-      expect(stream.write).not.toHaveBeenCalled();
-    });
+  it.each([
+    ['a delta without a body', { contentBlockDelta: { contentBlockIndex: 0 } }],
+    ['a delta with an empty body', { contentBlockDelta: { contentBlockIndex: 0, delta: {} } }],
+    ['a start without a body', { contentBlockStart: { contentBlockIndex: 0 } }],
+    ['a tool-input chunk with no tool use open', toolChunk],
+    ['an empty text delta', textDelta('')],
+    ['a messageStart', messageStart],
+  ])('ignores %s', (_label, event) => {
+    const { state, calls } = apply([looseEvent(event)]);
+    expect(state).toStrictEqual(createTurnState());
+    expect(calls).toStrictEqual([]);
+  });
+
+  it('keeps the usage when a later event carries none', () => {
+    expect(apply([looseEvent(METADATA), looseEvent(messageStart)]).state.usage).toStrictEqual(USAGE);
+  });
+
+  it.each([
+    ['reasoning', reasoningDelta({ text: 'r' })],
+    ['text', textDelta('t')],
+    ['an empty text delta', textDelta('')],
+    ['a tool-input chunk', toolChunk],
+    ['a tool-use start', toolStart({ toolUseId: 'id', name: 'n' })],
+    ['a contentBlockStop', { contentBlockStop: { contentBlockIndex: 0 } }],
+    ['a messageStop', { messageStop: { stopReason: 'end_turn' } }],
+  ])('an event handled as %s ignores the metadata it also carries', (_label, event) => {
+    expect(apply([looseEvent({ ...event, ...METADATA })]).state.usage).toBeNull();
+  });
+});
+
+describe('processStreamEvent — reasoning shapes', () => {
+  it.each([
+    ['text without a signature', [{ text: 't' }], [{ reasoningContent: { reasoningText: { text: 't' } } }]],
+    ['a signature without text', [{ signature: 's' }], [{ reasoningContent: { reasoningText: { text: '', signature: 's' } } }]],
+    ['nothing at all', [{}], []],
+    ['redacted bytes followed by a signature', [{ redactedContent: new Uint8Array([7]) }, { signature: 's' }],
+      [{ reasoningContent: { redactedContent: new Uint8Array([7]) } }]],
+  ])('keeps %s', (_label, deltas, content) => {
+    expect(apply(deltas.map(reasoningDelta)).state.content).toStrictEqual(content);
+  });
+});
+
+describe('parseToolInput — non-object JSON', () => {
+  it.each(['null', '42', 'true'])('turns %s into {}', (raw) => {
+    expect(parseToolInput(raw)).toStrictEqual({});
   });
 });

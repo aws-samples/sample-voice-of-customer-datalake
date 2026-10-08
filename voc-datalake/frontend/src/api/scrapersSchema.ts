@@ -19,21 +19,12 @@
  * @module api/scrapersSchema
  */
 import { z } from 'zod'
+import { lenientList, toOptionalFiniteNumber } from './lenientFields'
+import { OptionalStringMapSchema, OptionalTagsSchema } from './dimensionsSchema'
 import type { ScraperConfig } from './types'
 
-/** Coerce DynamoDB string round-trips like "30" to numbers; null/'' become
- * undefined so the field-level catch supplies the default instead of 0. */
-function toOptionalFiniteNumber(value: unknown): number | undefined {
-  if (value === null || value === undefined || value === '') return undefined
-  const n = typeof value === 'number' ? value : Number(value)
-  return Number.isFinite(n) ? n : undefined
-}
-
 /** Keep string items, drop junk elements instead of discarding the array. */
-const stringArraySchema = z
-  .array(z.unknown())
-  .catch(() => [])
-  .transform((items) => items.filter((item): item is string => typeof item === 'string'))
+const stringArraySchema = lenientList((item): item is string => typeof item === 'string')
 
 // Per-field catches survive a partial pagination object; the object-level
 // catch covers pagination: null/absent wholesale.
@@ -62,7 +53,7 @@ const optionalString = z.string().optional().catch(undefined)
  *   never happen ('undefinedm' was the rendered symptom, issue #169).
  * - base_url defaults to '' (the card's not-configured state, issue #167).
  */
-export const ScraperConfigSchema = z.looseObject({
+const ScraperConfigSchema = z.looseObject({
   id: z.string().min(1),
   name: z.string().catch(''),
   enabled: z.boolean().catch(false),
@@ -84,6 +75,9 @@ export const ScraperConfigSchema = z.looseObject({
   pagination: paginationSchema,
   last_run: optionalString,
   items_found: z.preprocess(toOptionalFiniteNumber, z.number().optional().catch(undefined)),
+  // Stamped on every review the scraper finds (absent on older records = none).
+  dimension_defaults: OptionalStringMapSchema,
+  tags: OptionalTagsSchema,
 })
 
 /**
@@ -113,7 +107,7 @@ export function normalizeScrapers(rawScrapers: readonly unknown[]): ScraperConfi
  * object-level catch makes even a non-object response (null, an error
  * string body) degrade to never_run — same philosophy, never throw.
  */
-export const ScraperRunStatusSchema = z
+const ScraperRunStatusSchema = z
   .object({
     scraper_id: optionalString,
     execution_id: optionalString,

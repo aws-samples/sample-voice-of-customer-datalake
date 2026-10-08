@@ -1,0 +1,187 @@
+{
+  "launcher": {
+    "open": "Assistent öffnen",
+    "close": "Assistent schließen",
+    "askAboutProject": "Assistent fragen",
+    "moveHint": "Ziehen oder mit den Pfeiltasten verschieben. Pos1 setzt die Position zurück.",
+    "resetPosition": "Position der Assistent-Schaltfläche zurücksetzen"
+  },
+  "panel": {
+    "title": "Assistent",
+    "using": "Kontext: {{context}}",
+    "newChat": "Neuer Chat",
+    "sessions": "Frühere Unterhaltungen",
+    "export": "Unterhaltung exportieren (Markdown)",
+    "expand": "Vergrößern",
+    "fullscreen": "Vollbild",
+    "exitFullscreen": "Vollbild beenden",
+    "close": "Schließen",
+    "messages": "Unterhaltung",
+    "thinking": "Denkt nach…",
+    "stillGenerating": "Wird noch generiert…"
+  },
+  "pages": {
+    "home": "Startseite",
+    "dashboard": "Übersicht",
+    "feedback": "Feedback",
+    "categories": "Kategorien",
+    "problems": "Problemanalyse",
+    "chat": "KI-Chat",
+    "projects": "Projekte",
+    "project": "Projekt",
+    "prioritization": "Priorisierung",
+    "data-explorer": "Daten-Explorer",
+    "scrapers": "Scraper",
+    "feedback-forms": "Feedback-Formulare",
+    "settings": "Einstellungen",
+    "other": "Diese Seite"
+  },
+  "message": {
+    "reasoning": "Überlegungen",
+    "toolSteps": "Ausgeführte Schritte",
+    "feedbackSources": "Zugehöriges Feedback",
+    "webSources": "Webquellen",
+    "personaAnswers": "Antworten der Personas",
+    "copy": "Kopieren",
+    "copied": "Kopiert",
+    "savedDocumentTitle": "Antwort des Assistenten – {{date}}",
+    "saveAsDocument": {
+      "idle": "Als Dokument speichern",
+      "saving": "Wird gespeichert…",
+      "saved": "In Dokumenten gespeichert",
+      "error": "Speichern fehlgeschlagen – erneut versuchen"
+    }
+  },
+  "toolStatus": {
+    "streaming": "wird vorbereitet",
+    "running": "läuft",
+    "complete": "erledigt",
+    "awaiting_approval": "wartet auf Ihre Freigabe",
+    "executed": "erledigt",
+    "failed": "fehlgeschlagen",
+    "declined": "abgelehnt",
+    "cancelled": "abgebrochen"
+  },
+  "approvals": {
+    "title": "Aktionen mit ausstehender Freigabe",
+    "resolved": {
+      "executed": "erledigt",
+      "failed": "fehlgeschlagen",
+      "declined": "abgelehnt"
+    }
+  },
+  "composer": {
+    "label": "Nachricht an den Assistenten",
+    "placeholder": "Fragen Sie zu Feedback, Projekten oder dieser Seite…",
+    "send": "Senden",
+    "stop": "Stopp",
+    "attach": "Bild oder PDF anhängen",
+    "webSearch": "Im Web suchen",
+    "removeAttachment": "{{name}} entfernen",
+    "counter": "{{length}} / {{max}}",
+    "awaitingApproval": "Geben Sie die ausstehende Aktion frei oder lehnen Sie sie ab, um fortzufahren.",
+    "attachmentError": {
+      "type": "Nur Bilder (PNG, JPEG, GIF, WebP) und PDFs können angehängt werden.",
+      "count": "Sie können höchstens {{max}} Dateien anhängen.",
+      "size": "Die Anhänge sind zu groß.",
+      "read": "Die Datei konnte nicht gelesen werden."
+    },
+    "stillGenerating": "Die Antwort wird noch geschrieben. Sie erscheint hier, sobald sie fertig ist."
+  },
+  "errors": {
+    "streamClosed": "Die Verbindung wurde vor dem Ende der Antwort getrennt. Bitte versuchen Sie es erneut.",
+    "generic": "Etwas ist schiefgelaufen: {{message}}",
+    "followTimeout": "Die Antwort dauert länger als erwartet. Öffnen Sie diese Unterhaltung später erneut, um sie zu sehen."
+  },
+  "export": {
+    "user": "Sie",
+    "assistant": "Assistent"
+  },
+  "sessions": {
+    "title": "Frühere Unterhaltungen",
+    "close": "Schließen",
+    "loading": "Unterhaltungen werden geladen",
+    "error": "Unterhaltungen konnten nicht geladen werden.",
+    "empty": "Noch keine gespeicherten Unterhaltungen.",
+    "untitled": "Unbenannte Unterhaltung",
+    "delete": "„{{title}}“ löschen",
+    "newConversation": "Neue Unterhaltung",
+    "sidebar": "Unterhaltungen",
+    "openGroup": "Geöffnet",
+    "historyGroup": "Verlauf",
+    "closeThread": "„{{title}}“ schließen",
+    "closeRunning": "„{{title}}“ stoppen und schließen",
+    "status": {
+      "streaming": "Läuft",
+      "awaiting": "Wartet auf Ihre Freigabe",
+      "error": "Fehlgeschlagen",
+      "unread": "Neue Antwort"
+    }
+  },
+  "empty": {
+    "title": "Wie kann ich helfen?",
+    "subtitle": "Ich kann Ihre Daten lesen und Änderungen vorschlagen – ohne Ihre Freigabe wird nichts geändert."
+  },
+  "suggestions": {
+    "default": {
+      "1": "Worüber sind Kunden diese Woche am unzufriedensten?",
+      "2": "Fasse das dringende Feedback zusammen",
+      "3": "Welche Kategorien nehmen zu?"
+    },
+    "project": {
+      "1": "Fasse dieses Projekt und seine Personas zusammen",
+      "2": "Was würden unsere Personas von dieser Idee halten?",
+      "3": "Entwirf ein PRD aus der Projektrecherche"
+    },
+    "forms": {
+      "1": "Wie schneiden meine Feedback-Formulare ab?",
+      "2": "Fasse die neuesten Formulareinsendungen zusammen",
+      "3": "Welches Formular erhält die schlechtesten Bewertungen?"
+    },
+    "prioritization": {
+      "1": "Was sollten wir als Nächstes priorisieren?",
+      "2": "Erkläre die am höchsten eingestuften Einträge",
+      "3": "Welche Einträge haben die größte Wirkung auf Kunden?"
+    },
+    "scrapers": {
+      "1": "Welche Scraper sind kürzlich gelaufen?",
+      "2": "Schlagen Scraper fehl?",
+      "3": "Was hat der letzte Scraper-Lauf erfasst?"
+    },
+    "settings": {
+      "1": "Zeige die aktuellen Markeneinstellungen",
+      "2": "Welche Kategorien sind konfiguriert?",
+      "3": "Schlage Hashtags vor, die wir für unsere Marke verfolgen sollten"
+    },
+    "problems": {
+      "1": "Was sind die größten ungelösten Probleme?",
+      "2": "Gruppiere diese Probleme nach Ursache",
+      "3": "Welche Probleme wurden kürzlich gelöst?"
+    },
+    "feedback": {
+      "1": "Fasse dieses Feedback zusammen",
+      "2": "Finde ähnliches Feedback",
+      "3": "Was ist die wahrscheinliche Ursache?"
+    }
+  },
+  "notifications": {
+    "approval": {
+      "title": "Der Assistent braucht Ihre Freigabe",
+      "body": "Eine Unterhaltung wartet darauf, dass Sie eine Aktion freigeben."
+    },
+    "reply": {
+      "title": "Der Assistent hat geantwortet",
+      "body": "Eine Unterhaltung hat eine neue Antwort."
+    },
+    "failed": {
+      "title": "Ein Assistentenlauf ist fehlgeschlagen",
+      "body": "Öffnen Sie die Unterhaltung, um den Fehler zu sehen."
+    },
+    "toggle": {
+      "turnOn": "Benachrichtigen, wenn eine Unterhaltung mich braucht",
+      "turnOff": "Benachrichtigungen ausschalten",
+      "blocked": "Benachrichtigungen sind für diese Website in den Browsereinstellungen blockiert",
+      "unsupported": "Dieser Browser unterstützt keine Benachrichtigungen"
+    }
+  }
+}

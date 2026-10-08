@@ -6,27 +6,30 @@
  * @module pages/Categories/FeedbackPDFContent
  */
 
+import type { CSSProperties } from 'react'
+import { ClipboardList } from 'lucide-react'
 import type { FeedbackItem } from '../../api/types'
+import { PdfIcon, PdfSectionHeading } from '../../components/PdfParts/pdfParts'
 
 function getSentimentStyle(label: string): {
   bg: string;
   color: string
 } {
   if (label === 'positive') return {
-    bg: '#dcfce7',
-    color: '#166534',
+    bg: '#e0eee7',
+    color: '#007038',
   }
   if (label === 'negative') return {
-    bg: '#fef2f2',
-    color: '#991b1b',
+    bg: '#f8e8eb',
+    color: '#bd1c3a',
   }
   if (label === 'mixed') return {
-    bg: '#fef9c3',
-    color: '#854d0e',
+    bg: '#f0eee6',
+    color: '#6b5900',
   }
   return {
-    bg: '#f3f4f6',
-    color: '#374151',
+    bg: '#f5f5f5',
+    color: '#4a464f',
   }
 }
 
@@ -57,6 +60,13 @@ function toFiniteNumber(value: unknown, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback
 }
 
+const HEADER_CELL = {
+  textAlign: 'left',
+  padding: '8px 6px',
+  color: '#5e5966',
+  fontWeight: '600',
+} satisfies CSSProperties
+
 /**
  * Feedback items table for the PDF report. Renders nothing when the list is
  * empty (mirrors the other report sections).
@@ -66,12 +76,7 @@ export function FeedbackTableSection({ items }: { readonly items: readonly Feedb
 
   return (
     <div data-pdf-section style={{ marginBottom: '28px' }}>
-      <h2 style={{
-        fontSize: '18px',
-        fontWeight: '600',
-        color: '#1e293b',
-        marginBottom: '12px',
-      }}>📋 Feedback Items ({items.length})</h2>
+      <PdfSectionHeading><PdfIcon icon={ClipboardList} />Feedback Items ({items.length})</PdfSectionHeading>
       <table style={{
         width: '100%',
         borderCollapse: 'collapse',
@@ -79,52 +84,20 @@ export function FeedbackTableSection({ items }: { readonly items: readonly Feedb
       }}>
         <thead>
           <tr style={{
-            borderBottom: '2px solid #e5e7eb',
-            backgroundColor: '#f8fafc',
+            borderBottom: '2px solid #e4e4e7',
+            backgroundColor: '#f5f5f5',
           }}>
+            <th style={HEADER_CELL}>Date</th>
+            <th style={HEADER_CELL}>Source</th>
+            <th style={HEADER_CELL}>Category</th>
+            <th style={HEADER_CELL}>Sentiment</th>
             <th style={{
-              textAlign: 'left',
-              padding: '8px 6px',
-              color: '#6b7280',
-              fontWeight: '600',
-            }}>Date</th>
-            <th style={{
-              textAlign: 'left',
-              padding: '8px 6px',
-              color: '#6b7280',
-              fontWeight: '600',
-            }}>Source</th>
-            <th style={{
-              textAlign: 'left',
-              padding: '8px 6px',
-              color: '#6b7280',
-              fontWeight: '600',
-            }}>Category</th>
-            <th style={{
-              textAlign: 'left',
-              padding: '8px 6px',
-              color: '#6b7280',
-              fontWeight: '600',
-            }}>Sentiment</th>
-            <th style={{
+              ...HEADER_CELL,
               textAlign: 'center',
-              padding: '8px 6px',
-              color: '#6b7280',
-              fontWeight: '600',
               width: '50px',
             }}>Rating</th>
-            <th style={{
-              textAlign: 'left',
-              padding: '8px 6px',
-              color: '#6b7280',
-              fontWeight: '600',
-            }}>Feedback</th>
-            <th style={{
-              textAlign: 'left',
-              padding: '8px 6px',
-              color: '#6b7280',
-              fontWeight: '600',
-            }}>Problem</th>
+            <th style={HEADER_CELL}>Feedback</th>
+            <th style={HEADER_CELL}>Problem</th>
           </tr>
         </thead>
         <tbody>
@@ -132,13 +105,13 @@ export function FeedbackTableSection({ items }: { readonly items: readonly Feedb
             const sentStyle = getSentimentStyle(item.sentiment_label)
             return (
               <tr key={item.feedback_id} style={{
-                borderBottom: '1px solid #f3f4f6',
-                backgroundColor: i % 2 === 0 ? '#ffffff' : '#f9fafb',
+                borderBottom: '1px solid #f5f5f5',
+                backgroundColor: i % 2 === 0 ? '#ffffff' : '#f5f5f5',
               }}>
                 <td style={{
                   padding: '6px',
                   whiteSpace: 'nowrap',
-                  color: '#6b7280',
+                  color: '#5e5966',
                   fontSize: '11px',
                 }}>
                   {formatDate(item.source_created_at)}
@@ -146,7 +119,7 @@ export function FeedbackTableSection({ items }: { readonly items: readonly Feedb
                 <td style={{
                   padding: '6px',
                   textTransform: 'capitalize',
-                  color: '#374151',
+                  color: '#4a464f',
                   fontSize: '11px',
                 }}>
                   {item.source_platform.replaceAll('_', ' ')}
@@ -154,7 +127,7 @@ export function FeedbackTableSection({ items }: { readonly items: readonly Feedb
                 <td style={{
                   padding: '6px',
                   textTransform: 'capitalize',
-                  color: '#374151',
+                  color: '#4a464f',
                   fontSize: '11px',
                 }}>
                   {item.category.replaceAll('_', ' ')}
@@ -175,14 +148,14 @@ export function FeedbackTableSection({ items }: { readonly items: readonly Feedb
                 <td style={{
                   padding: '6px',
                   textAlign: 'center',
-                  color: '#374151',
+                  color: '#4a464f',
                   fontSize: '11px',
                 }}>
                   {item.rating == null ? '—' : `${item.rating}/5`}
                 </td>
                 <td style={{
                   padding: '6px',
-                  color: '#374151',
+                  color: '#4a464f',
                   fontSize: '11px',
                   maxWidth: '250px',
                 }}>
@@ -190,7 +163,7 @@ export function FeedbackTableSection({ items }: { readonly items: readonly Feedb
                 </td>
                 <td style={{
                   padding: '6px',
-                  color: '#6b7280',
+                  color: '#5e5966',
                   fontSize: '11px',
                   fontStyle: 'italic',
                   maxWidth: '180px',

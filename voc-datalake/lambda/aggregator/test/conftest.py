@@ -1,7 +1,49 @@
 """Shared pytest fixtures for aggregator tests."""
-import pytest
-from unittest.mock import MagicMock
 from decimal import Decimal
+from unittest.mock import MagicMock
+
+import pytest
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        'markers',
+        'real_watermark: run the real earliest-date watermark write in record_handler',
+    )
+
+
+@pytest.fixture(autouse=True)
+def _no_dedupe_table_unless_a_test_names_one(monkeypatch):
+    """Pin `IDEMPOTENCY_TABLE` to unset, the default these suites are written against.
+
+    The module reads it at import, so its value otherwise depends on which other
+    package's conftest ran first — `processor/test/conftest.py` sets the variable for
+    its own suite, and a combined run (`lambda/aggregator lambda/processor`) made the
+    batch tests here take the dedupe-transaction path. Tests that exercise dedupe
+    patch the name themselves, after this.
+    """
+    import aggregator.handler as handler
+
+    monkeypatch.setattr(handler, 'IDEMPOTENCY_TABLE', '')
+
+
+@pytest.fixture(autouse=True)
+def _earliest_date_watermark(request, monkeypatch):
+    """Stub the earliest-date watermark write unless a test opts in.
+
+    `record_handler` lowers the watermark on every INSERT with one extra
+    `update_item` on the aggregates table. The suites here read EVERY
+    `update_item` call as a counter or average write (see `_writes`), so the
+    watermark has its own tests (`real_watermark`) instead of leaking into theirs.
+    `lower_earliest_date` also memoises per container; reset both ways.
+    """
+    import aggregator.handler as handler
+
+    handler._known_earliest_date = None
+    if request.node.get_closest_marker('real_watermark') is None:
+        monkeypatch.setattr(handler, 'lower_earliest_date', lambda _date: None)
+    yield
+    handler._known_earliest_date = None
 
 # NO FIXTURE HERE SAYS WHICH DEPLOY WROTE IT, and that is the point. Whether an
 # item's insert ran before the persona axis moved is not a property of the item at
@@ -145,7 +187,7 @@ def sample_dynamodb_stream_record(sample_feedback_item):
             elif isinstance(value, bool):
                 result[key] = {'BOOL': value}
         return result
-    
+
     return {
         'eventName': 'INSERT',
         'dynamodb': {

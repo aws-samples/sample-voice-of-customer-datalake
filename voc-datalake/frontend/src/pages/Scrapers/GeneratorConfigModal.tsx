@@ -11,19 +11,19 @@
 import {
   useMutation, useQuery,
 } from '@tanstack/react-query'
+import { FlaskConical, Loader2, Sparkles } from 'lucide-react'
 import {
-  Loader2, Sparkles,
-} from 'lucide-react'
-import {
-  useState, useEffect,
+  useId, useState, useEffect,
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
 import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import {
-  PluginField, SetupInstructions, ResultMessage,
+  PluginFieldGrid, SetupInstructions, ResultMessage,
 } from './PluginConfigParts'
 import type { PluginManifest } from '../../plugins/types'
+import ModalShell from '../../components/ModalShell/ModalShell'
+import SourceDialogHeader from './SourceDialogHeader'
 
 interface GeneratorConfigModalProps {
   readonly plugin: PluginManifest
@@ -40,27 +40,6 @@ type RunPhase = 'idle' | 'running' | 'completed' | 'error'
 const TERMINAL_STATUSES = new Set(['completed', 'error', 'failed'])
 const POLL_INTERVAL_MS = 2000
 
-function GeneratorHeader({
-  plugin, onClose,
-}: {
-  readonly plugin: PluginManifest;
-  readonly onClose: () => void
-}) {
-  const hasDescription = plugin.description != null && plugin.description !== ''
-  return (
-    <div className="p-4 border-b flex items-center justify-between">
-      <div className="flex items-center gap-3">
-        <span className="w-10 h-10 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center text-xl flex-shrink-0">{plugin.icon.slice(0, 2)}</span>
-        <div>
-          <h3 className="font-semibold text-lg">{plugin.name}</h3>
-          {hasDescription ? <p className="text-sm text-gray-500">{plugin.description}</p> : null}
-        </div>
-      </div>
-      <button onClick={onClose} className="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
-    </div>
-  )
-}
-
 function RunStatusBanner({
   phase, runningNote, completedMsg, errorMsg,
 }: {
@@ -71,7 +50,7 @@ function RunStatusBanner({
 }) {
   if (phase === 'running') {
     return (
-      <div className="flex items-center gap-2 text-sm text-indigo-700 bg-indigo-50 rounded-lg p-3">
+      <div className="flex items-center gap-2 text-sm text-aim bg-aim-subtle rounded-lg p-3">
         <Loader2 size={16} className="animate-spin" />
         <span>{runningNote}</span>
       </div>
@@ -86,6 +65,7 @@ export default function GeneratorConfigModal({
   plugin, onClose, isAdmin,
 }: GeneratorConfigModalProps) {
   const { t } = useTranslation('scrapers')
+  const titleId = useId()
   const fieldKeys = plugin.config.map((f) => f.key)
 
   const [edits, setEdits] = useState<Record<string, string>>({})
@@ -102,7 +82,7 @@ export default function GeneratorConfigModal({
 
   // Derive form values from saved config + local edits (no init effect needed).
   const values: Record<string, string> = {
-    ...(savedConfig ?? {}),
+    ...savedConfig,
     ...edits,
   }
 
@@ -144,25 +124,20 @@ export default function GeneratorConfigModal({
     : t('generator.runningNote')
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col">
-        <GeneratorHeader plugin={plugin} onClose={onClose} />
+    // Escape / backdrop are off while a run is in flight, so a stray key does not
+    // drop the progress view mid-run; Close and the X remain the deliberate exits.
+    <ModalShell isOpen onClose={onClose} ariaLabelledBy={titleId} dismissable={!isBusy} panelClassName="max-w-2xl max-h-[95vh] sm:max-h-[90vh]">
+        <SourceDialogHeader titleId={titleId} title={plugin.name} description={plugin.description} icon={FlaskConical} tone="aim" onClose={onClose} />
 
-        <div className="p-4 overflow-y-auto flex-1 space-y-4">
-          <div className="grid gap-3">
-            {plugin.config.map((field) => (
-              <PluginField
-                key={field.key}
-                field={field}
-                value={values[field.key] ?? ''}
-                showSecrets={false}
-                onChange={(v) => setEdits((prev) => ({
-                  ...prev,
-                  [field.key]: v,
-                }))}
-              />
-            ))}
-          </div>
+        <div className="dialog-body space-y-4">
+          <PluginFieldGrid
+            fields={plugin.config}
+            values={values}
+            onChange={(key, v) => setEdits((prev) => ({
+              ...prev,
+              [key]: v,
+            }))}
+          />
 
           <RunStatusBanner
             phase={phase}
@@ -174,19 +149,20 @@ export default function GeneratorConfigModal({
           {plugin.setup == null ? null : <SetupInstructions setup={plugin.setup} />}
         </div>
 
-        <div className="p-4 border-t flex items-center gap-2">
+        {/* Secondary first, primary last (right) — the order every other dialog uses. */}
+        <div className="dialog-footer">
+          <button type="button" onClick={onClose} className="btn btn-secondary">{t('pluginConfig.close')}</button>
           <button
+            type="button"
             onClick={() => generateMutation.mutate()}
             disabled={isBusy || !hasRequired || !isAdmin}
             title={isAdmin ? undefined : ADMIN_ONLY_TITLE}
-            className="btn btn-primary flex items-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            className="btn btn-primary"
           >
             {isBusy ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
             {isBusy ? t('generator.generating') : t('generator.generate')}
           </button>
-          <button onClick={onClose} className="btn btn-secondary text-sm ml-auto">{t('pluginConfig.close')}</button>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   )
 }

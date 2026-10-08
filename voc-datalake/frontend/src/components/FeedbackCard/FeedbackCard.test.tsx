@@ -3,18 +3,14 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import FeedbackCard from './FeedbackCard'
-import type { FeedbackItem } from '../../api/client'
+import type { FeedbackItem } from '../../api/types'
 
 // Helper to render with router
 function renderWithRouter(ui: React.ReactElement, initialEntries: string[] = ['/']) {
   return render(
-    <MemoryRouter
-      initialEntries={initialEntries}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-    >
+    <MemoryRouter initialEntries={initialEntries}>
       {ui}
     </MemoryRouter>
   )
@@ -56,10 +52,11 @@ describe('FeedbackCard', () => {
     })
 
     it('renders source platform with icon', () => {
-      renderWithRouter(<FeedbackCard feedback={mockFeedback} />)
+      const { container } = renderWithRouter(<FeedbackCard feedback={mockFeedback} />)
       // Component capitalizes the source name via CSS (capitalize class)
       expect(screen.getByText('webscraper')).toBeInTheDocument()
-      expect(screen.getByText('🌐')).toBeInTheDocument()
+      expect(container.querySelector('svg.lucide-globe')).not.toBeNull()
+      expect(container.textContent).not.toMatch(/\p{Extended_Pictographic}/u)
     })
 
     it('renders sentiment badge', () => {
@@ -82,14 +79,14 @@ describe('FeedbackCard', () => {
     it('renders star rating when provided', () => {
       renderWithRouter(<FeedbackCard feedback={mockFeedback} />)
       // Should have 5 star icons
-      const stars = document.querySelectorAll('.text-yellow-400')
+      const stars = document.querySelectorAll('.text-warn')
       expect(stars.length).toBe(5)
     })
 
     it('does not render rating when not provided', () => {
       const feedbackWithoutRating = { ...mockFeedback, rating: undefined }
       renderWithRouter(<FeedbackCard feedback={feedbackWithoutRating} />)
-      const stars = document.querySelectorAll('.text-yellow-400')
+      const stars = document.querySelectorAll('.text-warn')
       expect(stars.length).toBe(0)
     })
   })
@@ -104,7 +101,7 @@ describe('FeedbackCard', () => {
     it('applies urgent border styling for high urgency', () => {
       const urgentFeedback = { ...mockFeedback, urgency: 'high' }
       const { container } = renderWithRouter(<FeedbackCard feedback={urgentFeedback} />)
-      expect(container.querySelector('.border-l-orange-500')).toBeInTheDocument()
+      expect(container.querySelector('.border-l-warn')).toBeInTheDocument()
     })
 
     it('does not show urgent badge for low urgency', () => {
@@ -183,9 +180,9 @@ describe('FeedbackCard', () => {
 
     it('formats webscraper source correctly', () => {
       const webscraperFeedback = { ...mockFeedback, source_platform: 'web_scrape' }
-      renderWithRouter(<FeedbackCard feedback={webscraperFeedback} />)
+      const { container } = renderWithRouter(<FeedbackCard feedback={webscraperFeedback} />)
       expect(screen.getByText('Web Scraper')).toBeInTheDocument()
-      expect(screen.getByText('🌐')).toBeInTheDocument()
+      expect(container.querySelector('svg.lucide-globe')).not.toBeNull()
     })
   })
 

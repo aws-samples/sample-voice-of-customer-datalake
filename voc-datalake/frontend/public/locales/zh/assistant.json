@@ -1,0 +1,187 @@
+{
+  "launcher": {
+    "open": "打开助手",
+    "close": "关闭助手",
+    "askAboutProject": "询问助手",
+    "moveHint": "拖动或使用方向键移动助手按钮。按 Home 键恢复原位。",
+    "resetPosition": "重置助手按钮位置"
+  },
+  "panel": {
+    "title": "助手",
+    "using": "当前上下文：{{context}}",
+    "newChat": "新对话",
+    "sessions": "历史对话",
+    "export": "导出对话（Markdown）",
+    "expand": "展开",
+    "fullscreen": "全屏",
+    "exitFullscreen": "退出全屏",
+    "close": "关闭",
+    "messages": "对话",
+    "thinking": "思考中…",
+    "stillGenerating": "仍在生成…"
+  },
+  "pages": {
+    "home": "首页",
+    "dashboard": "仪表盘",
+    "feedback": "反馈",
+    "categories": "类别",
+    "problems": "问题分析",
+    "chat": "AI 对话",
+    "projects": "项目",
+    "project": "项目",
+    "prioritization": "优先级",
+    "data-explorer": "数据浏览器",
+    "scrapers": "抓取器",
+    "feedback-forms": "反馈表单",
+    "settings": "设置",
+    "other": "此页面"
+  },
+  "message": {
+    "reasoning": "推理过程",
+    "toolSteps": "已执行的步骤",
+    "feedbackSources": "相关反馈",
+    "webSources": "网页来源",
+    "personaAnswers": "用户画像的回答",
+    "copy": "复制",
+    "copied": "已复制",
+    "savedDocumentTitle": "助手回答 – {{date}}",
+    "saveAsDocument": {
+      "idle": "保存为文档",
+      "saving": "正在保存…",
+      "saved": "已保存到文档",
+      "error": "保存失败 – 重试"
+    }
+  },
+  "toolStatus": {
+    "streaming": "准备中",
+    "running": "运行中",
+    "complete": "完成",
+    "awaiting_approval": "等待您的批准",
+    "executed": "完成",
+    "failed": "失败",
+    "declined": "已拒绝",
+    "cancelled": "已取消"
+  },
+  "approvals": {
+    "title": "等待批准的操作",
+    "resolved": {
+      "executed": "完成",
+      "failed": "失败",
+      "declined": "已拒绝"
+    }
+  },
+  "composer": {
+    "label": "给助手发消息",
+    "placeholder": "询问您的反馈、项目或此页面…",
+    "send": "发送",
+    "stop": "停止",
+    "attach": "附加图片或 PDF",
+    "webSearch": "搜索网络",
+    "removeAttachment": "移除 {{name}}",
+    "counter": "{{length}} / {{max}}",
+    "awaitingApproval": "请批准或拒绝待处理的操作以继续。",
+    "attachmentError": {
+      "type": "只能附加图片（PNG、JPEG、GIF、WebP）和 PDF。",
+      "count": "最多可附加 {{max}} 个文件。",
+      "size": "附件过大。",
+      "read": "无法读取该文件。"
+    },
+    "stillGenerating": "回答仍在生成中，完成后会显示在这里。"
+  },
+  "errors": {
+    "streamClosed": "回答完成前连接已断开，请重试。",
+    "generic": "出现问题：{{message}}",
+    "followTimeout": "回答所需时间比预期长。请稍后重新打开此对话查看。"
+  },
+  "export": {
+    "user": "您",
+    "assistant": "助手"
+  },
+  "sessions": {
+    "title": "历史对话",
+    "close": "关闭",
+    "loading": "正在加载对话",
+    "error": "无法加载对话。",
+    "empty": "还没有已保存的对话。",
+    "untitled": "未命名对话",
+    "delete": "删除“{{title}}”",
+    "newConversation": "新对话",
+    "sidebar": "对话",
+    "openGroup": "已打开",
+    "historyGroup": "历史记录",
+    "closeThread": "关闭“{{title}}”",
+    "closeRunning": "停止并关闭“{{title}}”",
+    "status": {
+      "streaming": "运行中",
+      "awaiting": "等待您的批准",
+      "error": "失败",
+      "unread": "新回复"
+    }
+  },
+  "empty": {
+    "title": "有什么可以帮您？",
+    "subtitle": "我可以读取您的数据并提出修改建议——未经您批准不会做任何更改。"
+  },
+  "suggestions": {
+    "default": {
+      "1": "本周客户最不满意的是什么？",
+      "2": "总结紧急反馈",
+      "3": "哪些类别呈上升趋势？"
+    },
+    "project": {
+      "1": "总结这个项目及其用户画像",
+      "2": "我们的用户画像会如何看待这个想法？",
+      "3": "根据项目调研起草一份 PRD"
+    },
+    "forms": {
+      "1": "我的反馈表单表现如何？",
+      "2": "总结最新的表单提交",
+      "3": "哪个表单评分最低？"
+    },
+    "prioritization": {
+      "1": "接下来应该优先做什么？",
+      "2": "解释排名靠前的事项",
+      "3": "哪些事项对客户影响最大？"
+    },
+    "scrapers": {
+      "1": "最近运行了哪些抓取器？",
+      "2": "有抓取器运行失败吗？",
+      "3": "上次运行收集了什么？"
+    },
+    "settings": {
+      "1": "显示当前品牌设置",
+      "2": "配置了哪些类别？",
+      "3": "为我们的品牌推荐要跟踪的话题标签"
+    },
+    "problems": {
+      "1": "最大的未解决问题是什么？",
+      "2": "按根本原因对这些问题分组",
+      "3": "最近解决了哪些问题？"
+    },
+    "feedback": {
+      "1": "总结这条反馈",
+      "2": "查找类似反馈",
+      "3": "可能的根本原因是什么？"
+    }
+  },
+  "notifications": {
+    "approval": {
+      "title": "助手需要您的批准",
+      "body": "有一个对话正在等待您批准一项操作。"
+    },
+    "reply": {
+      "title": "助手已回复",
+      "body": "有一个对话收到了新回复。"
+    },
+    "failed": {
+      "title": "助手运行失败",
+      "body": "打开对话查看出了什么问题。"
+    },
+    "toggle": {
+      "turnOn": "对话需要我时通知我",
+      "turnOff": "关闭通知",
+      "blocked": "浏览器设置已阻止此网站的通知",
+      "unsupported": "此浏览器不支持通知"
+    }
+  }
+}

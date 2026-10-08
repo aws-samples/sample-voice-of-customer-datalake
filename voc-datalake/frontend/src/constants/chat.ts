@@ -1,19 +1,15 @@
 /**
- * Shared rules for the conversation history sent to the streaming chat API.
+ * Shared rules for conversation history sent as a plain `history` list to a
+ * Bedrock-backed endpoint.
  *
- * Both streaming surfaces POST to the *same path*, `/chat/stream`. The VOC chat
- * page (`Chat.tsx`) reaches it through `streamVocChat` and the project chat tab
- * (`ChatTab.tsx`) through `streamProjectChat`, but those two helpers are the same
- * request to the same URL with different fields in the body — the project one
- * adds `project_id`, `selected_personas`, `selected_documents`, `attachments` and
- * `roundtable`. Neither varies the path (see `api/streamClient.ts`), so one
- * server-side contract binds both, and that is why the history rules live here
- * rather than per surface.
- *
- * The product interview (`ProductTab.tsx`) is the one that really does post
- * elsewhere, to `/product-context/interview`; its history still reaches Bedrock
- * Converse through the same 1:1 mapping and so owes the same shape, under its own
- * tighter cap ({@link MAX_INTERVIEW_HISTORY_ENTRIES}).
+ * The only remaining caller is the product interview (`ProductTab.tsx`), which
+ * posts to `/product-context/interview`; its history reaches Bedrock Converse
+ * through a 1:1 mapping, under its own tight cap
+ * ({@link MAX_INTERVIEW_HISTORY_ENTRIES}). The former chat page and project chat
+ * tab — which this module was written for — were replaced by the unified AI
+ * assistant, which sends AG-UI `messages` instead (`assistant/thread/wire.ts`).
+ * The commentary below on the `/chat/stream` window describes those removed
+ * surfaces and is kept as the rationale for the default cap.
  *
  * Every call site that assembles history goes through {@link buildHistory}, so no
  * path can keep producing the shape this module exists to prevent.
@@ -93,11 +89,11 @@ const MERGED_CONTENT_SEPARATOR = '\n\n'
 function mergeAssistantRuns(messages: readonly HistoryEntry[]): HistoryEntry[] {
   const merged: HistoryEntry[] = []
   for (const message of messages) {
-    const last = merged.length - 1
-    if (merged.length > 0 && merged[last].role === 'assistant' && message.role === 'assistant') {
-      merged[last] = {
+    const last = merged.at(-1)
+    if (last?.role === 'assistant' && message.role === 'assistant') {
+      merged[merged.length - 1] = {
         role: 'assistant',
-        content: `${merged[last].content}${MERGED_CONTENT_SEPARATOR}${message.content}`,
+        content: `${last.content}${MERGED_CONTENT_SEPARATOR}${message.content}`,
       }
       continue
     }

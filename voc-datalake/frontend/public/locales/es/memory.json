@@ -1,0 +1,123 @@
+{
+  "add": {
+    "expiresAt": "Caduca el",
+    "failed": "No se pudo guardar el recuerdo. Inténtalo de nuevo.",
+    "label": {
+      "company": "Recordar para toda la empresa",
+      "personal": "Recordar para mí"
+    },
+    "placeholder": {
+      "company": "p. ej., Nuestros clientes demostraron que comparan precios antes de pagar",
+      "personal": "p. ej., Prefiero respuestas cortas"
+    },
+    "proposedNotice": "Solo los curadores publican recuerdos de empresa directamente; el tuyo pasará antes a revisión.",
+    "retention": "Conservación",
+    "saved": "Recordado.",
+    "submit": "Recordar"
+  },
+  "cancel": "Cancelar",
+  "configureFirst": "Conecta primero el endpoint de la API en Configuración.",
+  "confirm": "+1",
+  "confirmHint": "Estoy de acuerdo: cuéntame como apoyo",
+  "empty": "Aquí aún no hay nada recordado.",
+  "expires": "caduca el {{date}}",
+  "filters": {
+    "anyKind": "Cualquier tipo",
+    "anyStatus": "Cualquier estado",
+    "kind": "Tipo",
+    "search": "Buscar recuerdos",
+    "status": "Filtro de estado"
+  },
+  "forget": "Olvidar",
+  "forgetMessage": "\"{{statement}}\" se archiva y nunca se vuelve a aprender automáticamente. Puedes restaurarlo más tarde.",
+  "forgetTitle": "¿Olvidar este recuerdo?",
+  "imports": {
+    "content": "Contenido",
+    "contentPlaceholder": "Pega aquí el texto de la página…",
+    "counter": "{{count}} / {{max}} caracteres",
+    "created": "Recuerdos creados: {{count}}",
+    "description": "Pega un documento o página web. Lo que aporte se publica con las reglas de confianza habituales; el original se conserva.",
+    "failed": "No se pudo iniciar la importación. Inténtalo de nuevo.",
+    "history": "Tus importaciones recientes",
+    "noHistory": "Aún no hay importaciones desde este navegador.",
+    "pageTitle": "Título",
+    "status": {
+      "completed": "Completado",
+      "failed": "Error",
+      "processing": "Procesando",
+      "queued": "En cola"
+    },
+    "submit": "Importar",
+    "title": "Importar una página",
+    "url": "Enlace de origen (opcional)"
+  },
+  "kind": {
+    "agents": "Agentes",
+    "customer": "Cliente",
+    "objective": "Objetivo",
+    "other": "Otro",
+    "product": "Producto",
+    "strategy": "Estrategia",
+    "working_style": "Forma de trabajar"
+  },
+  "loadFailed": "No se pudieron cargar los recuerdos.",
+  "loadMore": "Cargar más",
+  "loading": "Cargando recuerdos…",
+  "merge": {
+    "description": "Una sola afirmación las reemplaza; las originales se archivan y sus apoyos se conservan.",
+    "failed": "No se pudo combinar. Inténtalo de nuevo.",
+    "open": "Combinar selección",
+    "statement": "Afirmación combinada",
+    "submit": "Combinar",
+    "title": "Combinar recuerdos ({{count}})"
+  },
+  "meta": "Desde {{created}} · {{retention}}",
+  "restore": "Restaurar",
+  "retention": {
+    "dated": "Hasta una fecha",
+    "decay": "Se desvanece si no se usa",
+    "long_term": "Permanente"
+  },
+  "retry": "Reintentar",
+  "review": {
+    "actions": {
+      "keep": "Conservar este",
+      "keep_both": "Conservar ambos",
+      "merge": "Combinar en uno",
+      "replace": "Conservar el existente"
+    },
+    "aligned": "Alineado con: {{objectives}}",
+    "apply": "Aplicar",
+    "empty": "Nada que revisar: no hay propuestas ni conflictos.",
+    "existing": "Lo que recordamos hoy",
+    "failed": "No se pudo aplicar la resolución. Inténtalo de nuevo.",
+    "newClaim": "Nueva afirmación",
+    "proposed": "Recuerdo propuesto",
+    "resolution": "Resolución",
+    "suggested": "Sugerencia: {{action}}"
+  },
+  "reviewLoadFailed": "No se pudo cargar la cola de revisión. Es posible que falten aquí recuerdos pendientes de revisión.",
+  "selectForMerge": "Seleccionar para combinar: {{statement}}",
+  "selected": "Seleccionados: {{count}}",
+  "source": {
+    "agent": "Agente autónomo",
+    "extracted": "Aprendido de chats",
+    "import": "Importado",
+    "user_explicit": "Añadido por una persona"
+  },
+  "status": {
+    "active": "Activo",
+    "archived": "Archivado",
+    "conflict": "Conflicto",
+    "proposed": "Propuesto"
+  },
+  "subtitle": "Lo que recuerdan el asistente y los agentes autónomos: conocimiento compartido de la empresa y tus propias preferencias.",
+  "supportersHint": "Personas que lo dijeron o confirmaron",
+  "tabs": {
+    "company": "Empresa",
+    "imports": "Importaciones",
+    "personal": "Personales",
+    "review": "Por revisar"
+  },
+  "title": "Memoria"
+}

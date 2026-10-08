@@ -9,192 +9,53 @@ import {
 import {
   Plus, Globe, AlertCircle, Loader2, RefreshCw,
 } from 'lucide-react'
-import {
-  useState, useEffect,
-} from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
 import { scrapersApi } from '../../api/scrapersApi'
-import ConfirmModal from '../../components/ConfirmModal'
+import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
+import LoadFailed from '../../components/LoadFailed/LoadFailed'
+import { failedReads, type FailedReads } from '../../utils/failedReads'
 import { getPluginManifests, getSyntheticPlugins } from '../../plugins'
 import { useIsAdmin } from '../../store/authStore'
 import { useConfigStore } from '../../store/configStore'
 import { useManualImportStore } from '../../store/manualImportStore'
-import { AppConfigCard } from './AppConfigComponents'
+import { serverReason } from '../../lib/errors'
 import GeneratorConfigModal from './GeneratorConfigModal'
 import JsonUploadModal from './JsonUploadModal'
 import CsvUploadModal from './CsvUploadModal'
+import AppConfigList from './AppConfigList'
 import ManualImportModal from './ManualImportModal'
 import PluginConfigModal from './PluginConfigModal'
-import { getAppIdentifier } from './scraper-helpers'
 import ScraperCard from './ScraperCard'
 import ScraperEditor from './ScraperEditor'
+import { supportsAppConfigs } from './scraper-helpers'
 import SyntheticSourceCard from './SyntheticSourceCard'
 import TemplateSelector from './TemplateSelector'
-import type { RunStatusInfo } from './AppConfigComponents'
 import type {
   ScraperConfig, ScraperTemplate,
 } from '../../api/types'
 import type { PluginManifest } from '../../plugins/types'
-
-type AppConfig = Record<string, string>
+import { PageTitle } from '../../components/PageTitle/PageTitle'
 
 function getAppConfigPlugins(): PluginManifest[] {
-  return getPluginManifests().filter((p) => p.id !== 'webscraper' && p.id !== 's3_import' && p.category !== 'synthetic' && p.hasIngestor)
+  return getPluginManifests().filter((p) => supportsAppConfigs(p.id))
 }
 
-function AppConfigList({
-  plugins, isAdmin, onEditPlugin, onDeleteApp, onRunApp,
-}: {
-  readonly plugins: PluginManifest[];
-  /** `POST /sources/{source}/run` and `DELETE /integrations/{source}/apps/{id}` are
-   *  admin-gated server-side, so the Run and Delete controls on each card are
-   *  disabled for a non-admin rather than firing a 403. Listing the configs is
-   *  deliberately NOT gated — that is why this list still renders for everyone. */
-  readonly isAdmin: boolean
-  readonly onEditPlugin: (p: PluginManifest) => void
-  readonly onDeleteApp: (pluginId: string, appId: string) => void;
-  readonly onRunApp: (pluginId: string, appIdentifier: string) => void
-}) {
-  const { config } = useConfigStore()
-  const [runningApps, setRunningApps] = useState<Set<string>>(new Set())
-  const [runStatuses, setRunStatuses] = useState<Record<string, RunStatusInfo>>({})
-
-  // Poll run status for running apps
-  useEffect(() => {
-    if (runningApps.size === 0) return
-    // Extract unique plugin IDs from running app keys
-    const runningPluginIds = new Set([...runningApps].map((key) => key.split('-')[0]))
-    const updateStatus = (pluginId: string, result: {
-      status: string
-      items_found?: number
-      errors?: string[]
-    }) => {
-      const statusInfo: RunStatusInfo = {
-        status: result.status,
-        items_found: result.items_found ?? 0,
-        errors: result.errors ?? [],
-      }
-      // Update all running apps for this plugin with the same status
-      setRunStatuses((prev) => {
-        const next = { ...prev }
-        for (const key of runningApps) {
-          if (key.startsWith(`${pluginId}-`)) {
-            next[key] = statusInfo
-          }
-        }
-        return next
-      })
-      if (result.status === 'completed' || result.status === 'error') {
-        setRunningApps((prev) => {
-          const next = new Set(prev)
-          for (const key of prev) {
-            if (key.startsWith(`${pluginId}-`)) next.delete(key)
-          }
-          return next
-        })
-      }
-    }
-    const pollStatus = () => {
-      for (const pluginId of runningPluginIds) {
-        void api.getSourceRunStatus(pluginId)
-          .then((result) => {
-            updateStatus(pluginId, result)
-            return null
-          })
-          .catch(() => null)
-      }
-    }
-    const interval = setInterval(pollStatus, 2000)
-    return () => clearInterval(interval)
-  }, [runningApps])
-
-  const handleRun = (pluginId: string, appIdentifier: string) => {
-    const appKey = `${pluginId}-${appIdentifier}`
-    setRunningApps((prev) => new Set(prev).add(appKey))
-    setRunStatuses((prev) => ({
-      ...prev,
-      [appKey]: {
-        status: 'running',
-        items_found: 0,
-        errors: [],
-      },
-    }))
-    onRunApp(pluginId, appIdentifier)
-  }
-
-  const {
-    data: allAppConfigs, isLoading: isLoadingApps,
-  } = useQuery({
-    queryKey: ['all-app-configs', plugins.map((p) => p.id).join(',')],
-    queryFn: async () => {
-      const emptyApps: AppConfig[] = []
-      const results = await Promise.all(plugins.map(async (plugin) => {
-        try {
-          const response = await api.getAppConfigs(plugin.id)
-          return {
-            pluginId: plugin.id,
-            apps: response.apps,
-          }
-        } catch (err) {
-          console.warn(`Failed to fetch app configs for plugin "${plugin.id}":`, err)
-          return {
-            pluginId: plugin.id,
-            apps: emptyApps,
-          }
-        }
-      }))
-      return results
-    },
-    enabled: config.apiEndpoint.length > 0 && plugins.length > 0,
-  })
-
-  const pluginMap = new Map(plugins.map((p) => [p.id, p]))
-  const allApps: Array<{
-    app: AppConfig;
-    plugin: PluginManifest
-  }> = []
-  for (const entry of allAppConfigs ?? []) {
-    const plugin = pluginMap.get(entry.pluginId)
-    if (!plugin) continue
-    for (const app of entry.apps) allApps.push({
-      app,
-      plugin,
-    })
-  }
-
-  if (isLoadingApps) return (
-    <div className="card border-2 border-purple-200 bg-purple-50/30 flex items-center justify-center py-8">
-      <Loader2 className="animate-spin text-purple-400 mr-2" size={20} />
-      <span className="text-sm text-purple-500">Loading app configurations…</span>
-    </div>
-  )
-
-  if (allApps.length === 0) return null
-
-  return (
-    <>
-      {allApps.map(({
-        app, plugin,
-      }) => (
-        <AppConfigCard key={`${plugin.id}-${app.id}`} app={app} plugin={plugin} isAdmin={isAdmin}
-          onEdit={() => onEditPlugin(plugin)} onDelete={() => onDeleteApp(plugin.id, app.id)}
-          onRun={() => handleRun(plugin.id, getAppIdentifier(app, plugin.id))}
-          isRunning={runningApps.has(`${plugin.id}-${getAppIdentifier(app, plugin.id)}`)}
-          runStatus={runStatuses[`${plugin.id}-${getAppIdentifier(app, plugin.id)}`]} />
-      ))}
-    </>
-  )
+/** What the editor shows for the save mutation's `error`: null while there is none. */
+function saveErrorText(error: Error | null, fallback: string): string | null {
+  if (error == null) return null
+  return serverReason(error) ?? fallback
 }
 
 function EmptyState({ onCreateClick }: { readonly onCreateClick: () => void }) {
   const { t } = useTranslation('scrapers')
   return (
     <div className="card text-center py-12">
-      <Globe className="mx-auto h-12 w-12 text-gray-300 mb-4" />
-      <h3 className="text-lg font-medium text-gray-900 mb-2">{t('empty.title')}</h3>
-      <p className="text-gray-500 mb-4">{t('empty.description')}</p>
-      <button onClick={onCreateClick} className="btn btn-primary inline-flex items-center gap-2">
+      <Globe size={20} className="mx-auto text-muted mb-3" aria-hidden="true" />
+      <h2 className="text-sm font-semibold text-text-strong">{t('empty.title')}</h2>
+      <p className="text-sm text-muted mt-1 mb-4">{t('empty.description')}</p>
+      <button onClick={onCreateClick} className="btn btn-secondary">
         <Plus size={16} /> {t('empty.createButton')}
       </button>
     </div>
@@ -224,7 +85,7 @@ function useScraperMutations() {
 }
 
 function ScrapersContent({
-  scrapers, isLoading, appConfigPlugins, syntheticPlugins, isAdmin, onRefresh, onShowTemplates, onEdit, onDelete, onRun, onEditPlugin, onDeleteApp, onRunApp, onGenerate,
+  scrapers, isLoading, appConfigPlugins, syntheticPlugins, isAdmin, onRefresh, onShowTemplates, onEdit, onDelete, onRun, onEditPlugin, onDeleteApp, onRunApp, onGenerate, failure,
 }: {
   readonly scrapers: ScraperConfig[]
   readonly isLoading: boolean
@@ -238,39 +99,40 @@ function ScrapersContent({
   readonly onRun: (id: string) => void
   readonly onEditPlugin: (p: PluginManifest) => void
   readonly onDeleteApp: (pluginId: string, appId: string) => void
-  readonly onRunApp: (pluginId: string, appIdentifier: string) => void
+  readonly onRunApp: (pluginId: string, appIdentifier: string) => Promise<unknown>
   readonly onGenerate: (p: PluginManifest) => void
+  /** The scrapers read failed with nothing cached (not "no sources"). */
+  readonly failure: FailedReads
 }) {
   const { t } = useTranslation('scrapers')
 
   return (
     <div className="max-w-4xl mx-auto space-y-4 sm:space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('title')}</h1>
-          <p className="text-sm text-gray-500">{t('subtitle')}</p>
-        </div>
+        <PageTitle title={t('title')} subtitle={t('subtitle')} />
         <div className="flex gap-2">
-          <button onClick={onRefresh} className="btn btn-secondary flex items-center justify-center gap-2 text-sm flex-1 sm:flex-none">
+          <button onClick={onRefresh} className="btn btn-secondary justify-center flex-1 sm:flex-none">
             <RefreshCw size={16} /> {t('refresh')}
           </button>
-          <button onClick={onShowTemplates} className="btn btn-primary flex items-center justify-center gap-2 text-sm flex-1 sm:flex-none">
+          <button onClick={onShowTemplates} className="btn btn-primary justify-center flex-1 sm:flex-none">
             <Plus size={16} /> {t('newSource')}
           </button>
         </div>
       </div>
 
-      {isLoading ? <div className="flex items-center justify-center py-12"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /></div> : null}
+      {isLoading ? <div className="flex items-center justify-center py-12" role="status" aria-label={t('loading')}><Loader2 className="animate-spin text-accent" size={24} /></div> : null}
+      {/* A failed read is not "no sources": say so and offer a retry instead of the create-first empty state. */}
+      {!isLoading && failure.loadFailed ? <LoadFailed onRetry={failure.retry} retrying={failure.retrying} /> : null}
       {!isLoading && (
-        <div className="grid gap-4">
+        <div className="grid grid-cols-1 gap-4">
           <AppConfigList plugins={appConfigPlugins} isAdmin={isAdmin} onEditPlugin={onEditPlugin} onDeleteApp={onDeleteApp} onRunApp={onRunApp} />
           {scrapers.map((scraper) => (
             <ScraperCard key={scraper.id} scraper={scraper} isAdmin={isAdmin} onEdit={() => onEdit(scraper)} onDelete={() => onDelete(scraper.id)} onRun={() => onRun(scraper.id)} />
           ))}
           {syntheticPlugins.length > 0 ? (
-            <section aria-label={t('syntheticCard.sectionTitle')}>
-              <h2 className="text-sm font-semibold text-gray-700 mb-2">{t('syntheticCard.sectionTitle')}</h2>
-              <div className="grid gap-4">
+            <section aria-labelledby="synthetic-sources-heading" className="pt-2">
+              <h2 id="synthetic-sources-heading" className="text-[11px] font-semibold uppercase tracking-[.08em] text-muted mb-2">{t('syntheticCard.sectionTitle')}</h2>
+              <div className="grid grid-cols-1 gap-4">
                 {syntheticPlugins.map((plugin) => (
                   <SyntheticSourceCard key={plugin.id} plugin={plugin} onGenerate={() => onGenerate(plugin)} />
                 ))}
@@ -279,7 +141,7 @@ function ScrapersContent({
           ) : null}
         </div>
       )}
-      {!isLoading && scrapers.length === 0 && syntheticPlugins.length === 0 && <EmptyState onCreateClick={onShowTemplates} />}
+      {!isLoading && !failure.loadFailed && scrapers.length === 0 && syntheticPlugins.length === 0 && <EmptyState onCreateClick={onShowTemplates} />}
     </div>
   )
 }
@@ -306,13 +168,12 @@ export default function Scrapers() {
   const appConfigPlugins = getAppConfigPlugins()
   const syntheticPlugins = getSyntheticPlugins()
 
-  const {
-    data, isLoading, refetch,
-  } = useQuery({
+  const scrapersQuery = useQuery({
     queryKey: ['scrapers'],
     queryFn: scrapersApi.getScrapers,
     enabled: config.apiEndpoint.length > 0,
   })
+  const { data, isLoading, refetch } = scrapersQuery
 
   const {
     saveMutation,
@@ -347,18 +208,21 @@ export default function Scrapers() {
     setSelectedPlugin(plugin)
   }
 
-  const handleSaveScraper = (scraper: ScraperConfig) => {
-    saveMutation.mutate(scraper)
+  const handleCloseEditor = () => {
+    saveMutation.reset()
     setEditingScraper(null)
     setIsCreating(false)
     setSelectedTemplate(null)
   }
 
-  const handleCloseEditor = () => {
-    setEditingScraper(null)
-    setIsCreating(false)
-    setSelectedTemplate(null)
+  // The editor closes only once the save succeeded: a rejected save (e.g. a 400
+  // from the save limits) keeps the draft open and shows why. Returns the
+  // promise so the unsaved-changes guard's Save can wait for it.
+  const handleSaveScraper = async (scraper: ScraperConfig) => {
+    await saveMutation.mutateAsync(scraper)
+    handleCloseEditor()
   }
+  const saveError = saveErrorText(saveMutation.error, t('editor.saveFailed'))
 
   const handleConfirmDelete = () => {
     if (deleteScraperId != null && deleteScraperId !== '') {
@@ -369,12 +233,10 @@ export default function Scrapers() {
 
   if (config.apiEndpoint === '') {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center">
-          <AlertCircle className="mx-auto h-12 w-12 text-amber-500 mb-4" />
-          <p className="text-gray-500 mb-4">{t('configureApiFirst')}</p>
-          <a href="/settings" className="btn btn-primary">{t('goToSettings', { ns: 'common' })}</a>
-        </div>
+      <div className="card max-w-md mx-auto text-center py-12">
+        <AlertCircle size={20} className="mx-auto text-warn mb-3" aria-hidden="true" />
+        <p className="text-sm text-muted mb-4">{t('configureApiFirst')}</p>
+        <a href="/admin" className="btn btn-primary">{t('goToSettings', { ns: 'common' })}</a>
       </div>
     )
   }
@@ -397,8 +259,9 @@ export default function Scrapers() {
           pluginId,
           appId,
         })}
-        onRunApp={(pluginId, appIdentifier) => void api.runSource(pluginId, appIdentifier)}
+        onRunApp={(pluginId, appIdentifier) => api.runSource(pluginId, appIdentifier)}
         onGenerate={(plugin) => setSelectedGenerator(plugin)}
+        failure={failedReads([scrapersQuery])}
       />
 
       <ManualImportModal />
@@ -431,7 +294,7 @@ export default function Scrapers() {
         }}
       />}
 
-      {(isCreating || editingScraper != null) ? <ScraperEditor scraper={editingScraper} template={selectedTemplate} isAdmin={isAdmin} onSave={handleSaveScraper} onClose={handleCloseEditor} /> : null}
+      {(isCreating || editingScraper != null) ? <ScraperEditor scraper={editingScraper} template={selectedTemplate} isAdmin={isAdmin} onSave={handleSaveScraper} onClose={handleCloseEditor} saveError={saveError} isSaving={saveMutation.isPending} /> : null}
 
       {deleteScraperId != null && deleteScraperId !== '' ? <ConfirmModal
         isOpen={deleteScraperId !== ''}
@@ -444,9 +307,9 @@ export default function Scrapers() {
 
       {deleteAppInfo == null ? null : <ConfirmModal
         isOpen
-        title="Delete App"
-        message="Are you sure you want to remove this app configuration?"
-        confirmLabel="Delete"
+        title={t('appCard.deleteConfirmTitle')}
+        message={t('appCard.deleteConfirmMessage')}
+        confirmLabel={t('deleteConfirmLabel')}
         onConfirm={() => {
           deleteAppMutation.mutate(deleteAppInfo)
         }}

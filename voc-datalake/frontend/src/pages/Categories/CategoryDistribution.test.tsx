@@ -1,3 +1,4 @@
+import type { ComponentProps } from 'react'
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -11,10 +12,10 @@ const mockCategories: CategoryData[] = [
   { name: 'app', value: 2, color: '#8b5cf6' },
 ]
 
-const defaultProps = {
+const defaultProps: ComponentProps<typeof CategoryDistribution> = {
   categoryData: mockCategories,
   totalIssues: 10,
-  selectedCategories: [] as string[],
+  selectedCategories: [],
   onToggleCategory: vi.fn(),
 }
 
@@ -133,7 +134,7 @@ describe('CategoryDistribution', () => {
 
       const pricingRow = screen.getByRole('button', { pressed: true })
       expect(pricingRow).toHaveTextContent('pricing')
-      expect(pricingRow).toHaveClass('bg-blue-50')
+      expect(pricingRow).toHaveClass('bg-accent-subtle')
     })
 
     it('leaves unselected rows unpressed', () => {
@@ -142,5 +143,62 @@ describe('CategoryDistribution', () => {
       const unpressed = screen.getAllByRole('button', { pressed: false })
       expect(unpressed).toHaveLength(3)
     })
+  })
+})
+
+/**
+ * Design audit D-14: every production category is a custom name, and all eight
+ * bars fell back to the neutral grey. Colours are now assigned by rank, each row
+ * carries a legend swatch in its bar's colour, and the name + count stay the
+ * accessible content (the bar itself is decorative).
+ */
+describe('CategoryDistribution colours for custom categories (D-14)', () => {
+  const custom: CategoryData[] = [
+    { name: 'subscription_billing', value: 30, color: '' },
+    { name: 'cartridge_quality', value: 25, color: '' },
+    { name: 'app_connectivity', value: 20, color: '' },
+    { name: 'shipping_delays', value: 10, color: '' },
+    { name: 'customer_care', value: 8, color: '' },
+    { name: 'setup_experience', value: 4, color: '' },
+    { name: 'water_taste', value: 2, color: '' },
+    { name: 'refunds', value: 1, color: '' },
+  ]
+  const colourOf = (el: HTMLElement) => el.style.backgroundColor
+
+  async function renderExpanded() {
+    const user = userEvent.setup()
+    render(<CategoryDistribution {...defaultProps} categoryData={custom} totalIssues={100} />)
+    await user.click(screen.getByText('Show all 8 categories'))
+  }
+
+  it('paints the top seven bars seven different ramp colours, by rank, none grey', async () => {
+    await renderExpanded()
+    const bars = screen.getAllByTestId('category-bar').map(colourOf)
+    expect(bars).toStrictEqual([
+      'var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)',
+      'var(--chart-5)', 'var(--chart-7)', 'var(--chart-8)', 'var(--chart-6)',
+    ])
+  })
+
+  it('gives every row a legend swatch in its own bar colour', async () => {
+    await renderExpanded()
+    expect(screen.getAllByTestId('category-swatch').map(colourOf)).toStrictEqual(screen.getAllByTestId('category-bar').map(colourOf))
+  })
+
+  it('does not recolour a row when the card collapses to the top five', async () => {
+    const user = userEvent.setup()
+    render(<CategoryDistribution {...defaultProps} categoryData={custom} totalIssues={100} />)
+    const collapsed = screen.getAllByTestId('category-bar').map(colourOf)
+    await user.click(screen.getByText('Show all 8 categories'))
+    expect(screen.getAllByTestId('category-bar').map(colourOf).slice(0, 5)).toStrictEqual(collapsed)
+  })
+
+  it('keeps colour from being the only cue: each row is named by its text, the bar is hidden from AT', () => {
+    render(<CategoryDistribution {...defaultProps} categoryData={custom} totalIssues={100} />)
+    expect(screen.getByRole('button', { name: /subscription billing\s*30 \(30\.0%\)/i })).toBeInTheDocument()
+    for (const bar of screen.getAllByTestId('category-bar')) {
+      expect(bar.closest('[aria-hidden="true"]')).not.toBeNull()
+    }
+    for (const swatch of screen.getAllByTestId('category-swatch')) expect(swatch).toHaveAttribute('aria-hidden', 'true')
   })
 })

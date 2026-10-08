@@ -5,8 +5,11 @@ import {
   useState, useCallback,
 } from 'react'
 import type {
-  ProjectPersona, ProjectDocument,
+  ProjectDocument,
 } from '../../api/types'
+import type {
+  ProjectPersona,
+} from '../../api/projectTypes'
 
 export function useSelectionState() {
   const [selectedPersona, setSelectedPersona] = useState<ProjectPersona | null>(null)
@@ -39,12 +42,6 @@ export function useDocModalState() {
     setNewDocContent(doc.content)
   }, [])
 
-  const openSaveAsModal = useCallback((content: string) => {
-    setNewDocTitle(`Chat Response - ${new Date().toLocaleDateString()}`)
-    setNewDocContent(content)
-    setShowDocModal(true)
-  }, [])
-
   const closeModal = useCallback(() => {
     setShowDocModal(false)
     setEditingDoc(null)
@@ -68,7 +65,6 @@ export function useDocModalState() {
     setNewDocContent,
     openCreateModal,
     openEditModal,
-    openSaveAsModal,
     closeModal,
     resetAfterSave,
   }
@@ -96,7 +92,8 @@ export function useImportModalState() {
     reader.onload = () => {
       const result = reader.result
       if (typeof result === 'string') {
-        const base64 = result.split(',')[1]
+        // A data URL always carries the comma; '' only if a reader ever answers without one.
+        const base64 = result.split(',').at(1) ?? ''
         setImportContent(base64)
       }
     }

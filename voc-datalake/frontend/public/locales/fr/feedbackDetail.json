@@ -52,5 +52,15 @@
   "type": "Catégorie",
   "unknown": "Inconnu",
   "urgent": "Prioritaire",
-  "viewOriginal": "Voir l'original"
+  "viewOriginal": "Voir l'original",
+  "sourceId": "ID : {{id}}",
+  "reviewDate": "Date de l’avis : {{date}}",
+  "reviewDateHint": "Quand le client a rédigé cet avis",
+  "imported": "Importé : {{date}}",
+  "importedHint": "Quand cet avis a été importé dans la plateforme",
+  "noSimilar": "Aucun avis similaire trouvé",
+  "loading": "Chargement de l’avis…",
+  "similarFailed": "Impossible de charger les avis similaires. Réessayez plus tard.",
+  "author": "Auteur",
+  "reviewTitle": "Titre"
 }

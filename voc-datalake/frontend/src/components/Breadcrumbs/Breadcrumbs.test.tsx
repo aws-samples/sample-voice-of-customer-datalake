@@ -1,15 +1,16 @@
 /**
  * @fileoverview Tests for Breadcrumbs component.
  */
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
-import type { MockInstance } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import i18n from 'i18next'
-import { TestRouter } from '../../test/test-utils'
+import { useLocale } from '../../test/i18n-locale'
+import { createTestQueryClient } from '../../test/query-client'
+import { TestRouter } from '../../test/TestRouter'
 import { routes } from '../../routes'
 import { projectsApi } from '../../api/projectsApi'
 import { useProjectData } from '../../pages/ProjectDetail/useProjectData'
+import { contextWith, makeProject } from '../../pages/ProjectDetail/project-detail-fixtures'
 import Breadcrumbs from './Breadcrumbs'
 import { RECORD_CRUMBS, SEGMENT_CRUMBS } from './routeCrumbs'
 import deCommon from '../../../public/locales/de/common.json'
@@ -17,10 +18,6 @@ import deCommon from '../../../public/locales/de/common.json'
 const PROJECT_ID = 'proj_20260101120000'
 
 const PROJECT_NAME = 'Checkout Friction'
-
-function createQueryClient() {
-  return new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
-}
 
 /**
  * @param seed populates the query cache the way the page on that route would
@@ -31,7 +28,7 @@ function renderWithRouter(
   initialEntries: string[] = ['/'],
   seed?: (client: QueryClient) => void,
 ) {
-  const queryClient = createQueryClient()
+  const queryClient = createTestQueryClient()
   seed?.(queryClient)
   return render(
     <QueryClientProvider client={queryClient}>
@@ -76,9 +73,9 @@ describe('Breadcrumbs', () => {
       expect(screen.getByText('Web Scrapers')).toBeInTheDocument()
     })
 
-    it('displays correct label for settings route', () => {
-      renderWithRouter(['/settings'])
-      expect(screen.getByText('Settings')).toBeInTheDocument()
+    it('displays correct label for the administration route', () => {
+      renderWithRouter(['/admin'])
+      expect(screen.getByText('Administration')).toBeInTheDocument()
     })
 
     it('displays correct label for projects route', () => {
@@ -172,24 +169,23 @@ describe('Breadcrumbs', () => {
     // resolves to `undefined` and fails as an unrelated TypeError. Spies are
     // checked against the real signatures, and `restoreAllMocks` gives each case
     // a fresh call history without relying on the suite-wide `clearAllMocks`.
-    let getProject: MockInstance<typeof projectsApi.getProject>
-
     beforeEach(() => {
-      getProject = vi.spyOn(projectsApi, 'getProject').mockResolvedValue({
-        project: { project_id: PROJECT_ID, name: PROJECT_NAME },
+      vi.spyOn(projectsApi, 'getProject').mockResolvedValue({
+        project: makeProject({ project_id: PROJECT_ID, name: PROJECT_NAME }),
         personas: [],
         documents: [],
       })
-      vi.spyOn(projectsApi, 'getJobs').mockResolvedValue({ jobs: [] })
-      vi.spyOn(projectsApi, 'getProductContext').mockResolvedValue({ context: {} })
+      vi.spyOn(projectsApi, 'getJobs').mockResolvedValue({ success: true, jobs: [] })
+      vi.spyOn(projectsApi, 'getProductContext').mockResolvedValue({ context: contextWith() })
     })
 
     afterEach(() => {
       vi.restoreAllMocks()
     })
 
-    it("fills the crumb from the page's fetch, and adds no request of its own", async () => {
-      const queryClient = createQueryClient()
+    /** Renders the crumbs above the page probe; returns the breadcrumb nav. */
+    function renderHandover() {
+      const queryClient = createTestQueryClient()
       render(
         <QueryClientProvider client={queryClient}>
           <TestRouter initialEntries={[`/projects/${PROJECT_ID}`]}>
@@ -198,17 +194,28 @@ describe('Breadcrumbs', () => {
           </TestRouter>
         </QueryClientProvider>,
       )
+      // Scoped to the nav: the probe renders the same string, so an unscoped
+      // query matches twice and cannot say which of the two resolved.
+      return screen.getByRole('navigation', { name: /breadcrumb/i })
+    }
+
+    it("fills the crumb from the page's fetch, replacing the stand-in", async () => {
+      const nav = renderHandover()
 
       // Breadcrumbs mounts first and creates the cache entry with `skipToken`;
       // the stand-in is what it shows until the page's own fetch lands.
       expect(screen.getByText('Project')).toBeInTheDocument()
+      await waitFor(() => expect(within(nav).getByText(PROJECT_NAME)).toBeInTheDocument())
+      expect(within(nav).queryByText('Project')).not.toBeInTheDocument()
+    })
 
-      // Scoped to the nav: the probe renders the same string, so an unscoped
-      // query matches twice and cannot say which of the two resolved.
-      const nav = screen.getByRole('navigation', { name: /breadcrumb/i })
+    it('adds no request of its own: the page fetch is the only one', async () => {
+      const nav = renderHandover()
+
       await waitFor(() => expect(within(nav).getByText(PROJECT_NAME)).toBeInTheDocument())
       expect(screen.getByTestId('page')).toHaveTextContent(PROJECT_NAME)
-      expect(within(nav).queryByText('Project')).not.toBeInTheDocument()
+      // `spyOn` replaced the member, so the client's own property is the spy.
+      const getProject = vi.mocked(projectsApi.getProject)
       expect(getProject).toHaveBeenCalledTimes(1)
       expect(getProject).toHaveBeenCalledWith(PROJECT_ID)
     })
@@ -322,23 +329,7 @@ describe('Breadcrumbs', () => {
   describe('localization', () => {
     const de = deCommon.breadcrumbs
 
-    beforeAll(async () => {
-      i18n.addResourceBundle('de', 'common', deCommon)
-      await i18n.changeLanguage('de')
-    })
-
-    afterAll(async () => {
-      await i18n.changeLanguage('en')
-    })
-
-    beforeEach(() => {
-      // The i18next singleton is shared. Vitest isolates per file today, so the
-      // beforeAll switch holds — but assert it rather than assume, since a switch
-      // to a shared pool would make every case below silently vacuous: the German
-      // assertions would fail loudly, but the "no English literal" ones would pass
-      // for the wrong reason.
-      expect(i18n.language).toBe('de')
-    })
+    useLocale('de', { common: deCommon })
 
     it('translates static route labels', () => {
       renderWithRouter(['/data-explorer'])
@@ -375,7 +366,9 @@ describe('Breadcrumbs', () => {
 describe('route coverage', () => {
   const layoutRoutes = routes.find((route) => route.path === '/')?.children ?? []
   // Only routes under the layout matter: /login renders no breadcrumbs.
-  const paths = layoutRoutes.map((route) => route.path).filter((path): path is string => path != null)
+  // `*` is the not-found catch-all: it has no segment of its own to label.
+  const paths = layoutRoutes.map((route) => route.path)
+    .filter((path): path is string => path != null && path !== '*')
 
   it('finds the layout routes', () => {
     // Anti-vacuous guard: an empty list would make every case below pass.

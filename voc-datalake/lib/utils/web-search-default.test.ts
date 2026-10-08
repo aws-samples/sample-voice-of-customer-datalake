@@ -7,7 +7,7 @@
  * the stack.
  */
 import { describe, it, expect } from 'vitest';
-import { shouldDeployWebSearch } from './web-search-default';
+import { shouldDeployWebSearch, shouldDeployWebSearchInScope } from './web-search-default';
 
 describe('shouldDeployWebSearch', () => {
   it('deploys by default when no context is provided', () => {
@@ -33,5 +33,27 @@ describe('shouldDeployWebSearch', () => {
       expect(() => shouldDeployWebSearch(bad), `value: ${JSON.stringify(bad)}`)
         .toThrow(/Unrecognized enableWebSearch/);
     }
+  });
+});
+
+describe('shouldDeployWebSearchInScope (inferenceScope, docs/eu-deployment.md)', () => {
+  it('keeps the default-on semantics for global', () => {
+    expect(shouldDeployWebSearchInScope(undefined, 'global')).toBe(true);
+    expect(shouldDeployWebSearchInScope('false', 'global')).toBe(false);
+  });
+
+  it('never deploys web search for eu: absent or false is simply off', () => {
+    expect(shouldDeployWebSearchInScope(undefined, 'eu')).toBe(false);
+    expect(shouldDeployWebSearchInScope(null, 'eu')).toBe(false);
+    expect(shouldDeployWebSearchInScope(false, 'eu')).toBe(false);
+    expect(shouldDeployWebSearchInScope('false', 'eu')).toBe(false);
+  });
+
+  it.each([true, 'true', 'TRUE'])('throws on an explicit enableWebSearch=%s with eu', (value) => {
+    expect(() => shouldDeployWebSearchInScope(value, 'eu')).toThrow(/inferenceScope=eu/);
+  });
+
+  it('still rejects an unrecognized value under eu', () => {
+    expect(() => shouldDeployWebSearchInScope('flase', 'eu')).toThrow(/Unrecognized enableWebSearch/);
   });
 });

@@ -3,7 +3,10 @@
     "docs_one": "{{count}} Dok.",
     "docs_other": "{{count}} Dok.",
     "personas_one": "{{count}} Persona",
-    "personas_other": "{{count}} Personas"
+    "personas_other": "{{count}} Personas",
+    "deleteProject": "Projekt {{name}} löschen",
+    "editProject": "Projekt {{name}} bearbeiten",
+    "owner": "Inhaber: {{name}}"
   },
   "configureEndpoint": "Bitte konfigurieren Sie zuerst den API-Endpunkt in den Einstellungen",
   "createModal": {
@@ -21,6 +24,14 @@
     "message": "Sind Sie sicher, dass Sie dieses Projekt löschen möchten? Alle Personas und Dokumente werden dauerhaft gelöscht.",
     "title": "Projekt löschen"
   },
+  "editModal": {
+    "nameRequired": "Geben Sie einen Projektnamen ein.",
+    "save": "Speichern",
+    "saveFailed": "Das Projekt konnte nicht gespeichert werden. Prüfen Sie Ihren Zugriff und versuchen Sie es erneut.",
+    "saving": "Wird gespeichert...",
+    "title": "Projekt bearbeiten",
+    "visibilityManageOnly": "Nur der Projektinhaber oder ein Administrator kann ändern, wer das Projekt sieht."
+  },
   "description": "Erstellen Sie Projekte, um Personas, PRDs und PR/FAQs aus Feedback zu erstellen",
   "emptyState": {
     "createButton": "Projekt erstellen",
@@ -29,5 +40,58 @@
   },
   "newProject": "Neues Projekt",
   "openProject": "Projekt öffnen",
-  "title": "Projekte"
+  "title": "Projekte",
+  "readOnlyBanner": "Sie haben nur Lesezugriff auf dieses Projekt. Bitten Sie den Inhaber um Bearbeitungsrechte.",
+  "sharing": {
+    "cancel": "Abbrechen",
+    "description": "Lege fest, wer dieses Projekt sehen kann und was eingeladene Personen tun dürfen.",
+    "errors": {
+      "conflict": "Diese Person hat bereits Zugriff auf dieses Projekt.",
+      "forbidden": "Sie sind nicht berechtigt, die Freigabe dieses Projekts zu ändern.",
+      "generic": "Die Änderung konnte nicht gespeichert werden. Bitte versuchen Sie es erneut.",
+      "invalid": "Die Anfrage wurde abgelehnt. Möglicherweise hat das Projekt die maximale Mitgliederzahl erreicht.",
+      "notFound": "Der Benutzer oder das Mitglied wurde nicht gefunden."
+    },
+    "invite": "Einladen",
+    "inviteHeading": "Personen einladen",
+    "inviteRoleLabel": "Rolle der eingeladenen Person",
+    "leave": "Projekt verlassen",
+    "leaveConfirm": "Verlassen",
+    "leaveMessage": "Sie verlieren den Zugriff auf dieses Projekt, sofern es nicht öffentlich ist.",
+    "leaveTitle": "Projekt verlassen?",
+    "loadError": "Die Freigabeeinstellungen konnten nicht geladen werden.",
+    "loading": "Freigabeeinstellungen werden geladen...",
+    "makeOwner": "{{name}} zum Inhaber machen",
+    "members": "Mitglieder",
+    "noMembers": "Bisher wurde niemand eingeladen.",
+    "noOwner": "Kein Inhaber",
+    "noResults": "Keine passenden Benutzer",
+    "owner": "Inhaber",
+    "readOnlyNotice": "Nur der Projektinhaber oder ein Administrator kann die Freigabe ändern.",
+    "remove": "{{name}} entfernen",
+    "roleLabel": "Rolle für {{name}}",
+    "roles": {
+      "editor": "Kann bearbeiten",
+      "viewer": "Kann ansehen"
+    },
+    "searchLabel": "Benutzer suchen",
+    "searchPlaceholder": "Benutzername oder E-Mail",
+    "searchMinLength": "Geben Sie mindestens {{min}} Zeichen ein, um zu suchen.",
+    "searching": "Suche läuft...",
+    "select": "{{name}} auswählen",
+    "selected": "Ausgewählt: {{name}}",
+    "share": "Teilen",
+    "title": "„{{name}}“ teilen",
+    "transferConfirm": "Übertragen",
+    "transferMessage": "{{name}} wird Inhaber dieses Projekts. Der bisherige Inhaber bleibt als Bearbeiter dabei.",
+    "transferTitle": "Inhaberschaft übertragen?",
+    "you": "(Sie)"
+  },
+  "visibility": {
+    "label": "Wer auf dieses Projekt zugreifen kann",
+    "private": "Privat",
+    "privateHint": "Nur der Inhaber, eingeladene Mitglieder und Administratoren können es sehen.",
+    "public": "Öffentlich",
+    "publicHint": "Alle in diesem Arbeitsbereich können es ansehen und bearbeiten."
+  }
 }

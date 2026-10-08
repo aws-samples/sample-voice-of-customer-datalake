@@ -9,6 +9,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { z } from 'zod';
+import { byCodeUnit } from './utils/compare';
 
 // ============================================
 // Zod Schema for Manifest Validation
@@ -66,7 +67,7 @@ const ConfigFieldSchema = z.object({
 const WebhookInfoSchema = z.object({
   name: SafeStringSchema,
   events: z.array(SafeStringSchema).max(10),
-  docUrl: z.string().url().max(256).optional(),
+  docUrl: z.url().max(256).optional(),
 });
 
 const SetupSchema = z.object({
@@ -137,12 +138,6 @@ export const ManifestSchema = z.object({
 // ============================================
 
 export type PluginManifest = z.infer<typeof ManifestSchema>;
-export type ConfigField = z.infer<typeof ConfigFieldSchema>;
-export type WebhookInfo = z.infer<typeof WebhookInfoSchema>;
-export type SetupInfo = z.infer<typeof SetupSchema>;
-export type IngestorInfra = z.infer<typeof IngestorInfraSchema>;
-export type WebhookInfra = z.infer<typeof WebhookInfraSchema>;
-export type Infrastructure = z.infer<typeof InfrastructureSchema>;
 
 // ============================================
 // Plugin Discovery
@@ -150,6 +145,30 @@ export type Infrastructure = z.infer<typeof InfrastructureSchema>;
 
 export interface LoadPluginsOptions {
   verifyIntegrity?: boolean;
+}
+
+/**
+ * The plugin folders under `pluginsDir` that carry a manifest.json, as
+ * `{ id, manifestPath }`. Files and `_`-prefixed folders (the template and the
+ * shared helpers) are skipped silently; a plugin folder with no manifest is
+ * skipped with a warning. `onlyPluginId` narrows the walk to one folder.
+ */
+export function* pluginManifestEntries(
+  pluginsDir: string,
+  onlyPluginId?: string,
+): Generator<{ id: string; manifestPath: string }> {
+  for (const entry of fs.readdirSync(pluginsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name.startsWith('_')) continue;
+    if (onlyPluginId && entry.name !== onlyPluginId) continue;
+
+    const manifestPath = path.join(pluginsDir, entry.name, 'manifest.json');
+    if (!fs.existsSync(manifestPath)) {
+      console.warn(`No manifest.json found in plugins/${entry.name}, skipping`);
+      continue;
+    }
+    yield { id: entry.name, manifestPath };
+  }
 }
 
 export function loadPlugins(pluginsDir: string, options: LoadPluginsOptions = {}): PluginManifest[] {
@@ -161,27 +180,14 @@ export function loadPlugins(pluginsDir: string, options: LoadPluginsOptions = {}
     return plugins;
   }
 
-  const entries = fs.readdirSync(pluginsDir, { withFileTypes: true });
-
-  for (const entry of entries) {
-    // Skip non-directories and special folders
-    if (!entry.isDirectory()) continue;
-    if (entry.name.startsWith('_')) continue;
-
-    const manifestPath = path.join(pluginsDir, entry.name, 'manifest.json');
-
-    if (!fs.existsSync(manifestPath)) {
-      console.warn(`No manifest.json found in plugins/${entry.name}, skipping`);
-      continue;
-    }
-
+  for (const entry of pluginManifestEntries(pluginsDir)) {
     try {
-      const raw = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+      const raw = JSON.parse(fs.readFileSync(entry.manifestPath, 'utf-8'));
       const parsed = ManifestSchema.parse(raw);
 
       // Validate folder name matches manifest ID
-      if (parsed.id !== entry.name) {
-        errors.push(`Plugin folder '${entry.name}' does not match manifest id '${parsed.id}'`);
+      if (parsed.id !== entry.id) {
+        errors.push(`Plugin folder '${entry.id}' does not match manifest id '${parsed.id}'`);
         continue;
       }
 
@@ -196,10 +202,10 @@ export function loadPlugins(pluginsDir: string, options: LoadPluginsOptions = {}
       plugins.push(parsed);
     } catch (err) {
       if (err instanceof z.ZodError) {
-        const zodErrors = err.errors.map(e => `${e.path.join('.')}: ${e.message}`);
-        errors.push(`Invalid manifest in plugins/${entry.name}: ${zodErrors.join(', ')}`);
+        const zodErrors = err.issues.map(e => `${e.path.join('.')}: ${e.message}`);
+        errors.push(`Invalid manifest in plugins/${entry.id}: ${zodErrors.join(', ')}`);
       } else {
-        errors.push(`Failed to load plugins/${entry.name}: ${err}`);
+        errors.push(`Failed to load plugins/${entry.id}: ${err}`);
       }
     }
   }
@@ -306,7 +312,7 @@ function computeDirectoryHash(dirPath: string): string {
   }
 
   collectFiles(dirPath);
-  files.sort();
+  files.sort(byCodeUnit);
 
   const hash = crypto.createHash('sha256');
   for (const file of files) {
@@ -317,42 +323,35 @@ function computeDirectoryHash(dirPath: string): string {
   return 'sha256-' + hash.digest('hex');
 }
 
+/**
+ * Throws when the code under `plugins/<id>/<component>` no longer hashes to the
+ * value recorded in the manifest. A component that is disabled, absent on disk,
+ * or carries no recorded hash is not checked.
+ */
+function verifyComponentIntegrity(
+  plugin: PluginManifest,
+  pluginDir: string,
+  component: 'ingestor' | 'webhook',
+): void {
+  if (plugin.infrastructure[component]?.enabled !== true) return;
+  const componentDir = path.join(pluginDir, component);
+  if (!fs.existsSync(componentDir)) return;
+
+  const actualHash = computeDirectoryHash(componentDir);
+  const expectedHash = plugin.integrity?.[component];
+  if (expectedHash && actualHash !== expectedHash) {
+    throw new Error(
+      `Plugin ${plugin.id}: ${component} code integrity check failed.\n` +
+      `Expected: ${expectedHash}\n` +
+      `Actual: ${actualHash}`
+    );
+  }
+}
+
 function verifyPluginIntegrity(plugin: PluginManifest, pluginsDir: string): void {
   const pluginDir = path.join(pluginsDir, plugin.id);
-
-  // Verify ingestor code
-  if (plugin.infrastructure.ingestor?.enabled) {
-    const ingestorDir = path.join(pluginDir, 'ingestor');
-    if (fs.existsSync(ingestorDir)) {
-      const actualHash = computeDirectoryHash(ingestorDir);
-      const expectedHash = plugin.integrity?.ingestor;
-
-      if (expectedHash && actualHash !== expectedHash) {
-        throw new Error(
-          `Plugin ${plugin.id}: ingestor code integrity check failed.\n` +
-          `Expected: ${expectedHash}\n` +
-          `Actual: ${actualHash}`
-        );
-      }
-    }
-  }
-
-  // Verify webhook code
-  if (plugin.infrastructure.webhook?.enabled) {
-    const webhookDir = path.join(pluginDir, 'webhook');
-    if (fs.existsSync(webhookDir)) {
-      const actualHash = computeDirectoryHash(webhookDir);
-      const expectedHash = plugin.integrity?.webhook;
-
-      if (expectedHash && actualHash !== expectedHash) {
-        throw new Error(
-          `Plugin ${plugin.id}: webhook code integrity check failed.\n` +
-          `Expected: ${expectedHash}\n` +
-          `Actual: ${actualHash}`
-        );
-      }
-    }
-  }
+  verifyComponentIntegrity(plugin, pluginDir, 'ingestor');
+  verifyComponentIntegrity(plugin, pluginDir, 'webhook');
 }
 
 // ============================================
@@ -399,7 +398,7 @@ export function aggregateSecretsByPlugin(
 ): Record<string, Record<string, string>> {
   const byPlugin: Record<string, Record<string, string>> = {};
   for (const plugin of plugins) {
-    byPlugin[plugin.id] = { ...(plugin.secrets ?? {}) };
+    byPlugin[plugin.id] = { ...plugin.secrets };
   }
   return byPlugin;
 }
@@ -414,6 +413,19 @@ export function getPluginsWithWebhook(plugins: PluginManifest[]): PluginManifest
 
 export function getPluginsWithS3Trigger(plugins: PluginManifest[]): PluginManifest[] {
   return plugins.filter(p => p.infrastructure.s3Trigger?.enabled);
+}
+
+/**
+ * Every plugin DIRECTORY on disk (not `_`-prefixed), manifest or not — the set a
+ * root-staged plugin bundle excludes its siblings by (`rootPluginAssetExcludes`).
+ * From disk rather than the loader on purpose: a directory the loader skips (a
+ * fresh scaffold, a malformed manifest) must still be excluded from every other
+ * bundle's hash, or editing it churns them all.
+ */
+export function pluginDirectoryIds(pluginsDir: string): string[] {
+  return fs.readdirSync(pluginsDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith('_'))
+    .map((entry) => entry.name);
 }
 
 export function capitalize(str: string): string {
@@ -434,7 +446,7 @@ export function generateIntegrityHashes(pluginId: string, pluginsDir: string): v
 
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
 
-  manifest.integrity = manifest.integrity || {};
+  manifest.integrity = manifest.integrity ?? {};
 
   const ingestorDir = path.join(pluginDir, 'ingestor');
   if (fs.existsSync(ingestorDir)) {

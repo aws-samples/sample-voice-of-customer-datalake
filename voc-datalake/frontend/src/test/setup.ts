@@ -14,7 +14,8 @@ import { initReactI18next } from 'react-i18next'
 import commonEn from '../../public/locales/en/common.json'
 import dashboardEn from '../../public/locales/en/dashboard.json'
 import feedbackDetailEn from '../../public/locales/en/feedbackDetail.json'
-import chatEn from '../../public/locales/en/chat.json'
+import assistantEn from '../../public/locales/en/assistant.json'
+import assistantToolsEn from '../../public/locales/en/assistantTools.json'
 import loginEn from '../../public/locales/en/login.json'
 import settingsEn from '../../public/locales/en/settings.json'
 import projectsEn from '../../public/locales/en/projects.json'
@@ -26,6 +27,8 @@ import prioritizationEn from '../../public/locales/en/prioritization.json'
 import problemAnalysisEn from '../../public/locales/en/problemAnalysis.json'
 import scrapersEn from '../../public/locales/en/scrapers.json'
 import projectDetailEn from '../../public/locales/en/projectDetail.json'
+import memoryEn from '../../public/locales/en/memory.json'
+import agentsEn from '../../public/locales/en/agents.json'
 
 // Single source of truth for namespaces and their resources.
 // Adding a new locale namespace only requires one entry here.
@@ -33,7 +36,8 @@ const namespaceResources = {
   common: commonEn,
   dashboard: dashboardEn,
   feedbackDetail: feedbackDetailEn,
-  chat: chatEn,
+  assistant: assistantEn,
+  assistantTools: assistantToolsEn,
   login: loginEn,
   settings: settingsEn,
   projects: projectsEn,
@@ -45,6 +49,8 @@ const namespaceResources = {
   problemAnalysis: problemAnalysisEn,
   scrapers: scrapersEn,
   projectDetail: projectDetailEn,
+  memory: memoryEn,
+  agents: agentsEn,
 } as const
 
 void i18n.use(initReactI18next).init({
@@ -96,22 +102,26 @@ Object.defineProperty(window, 'matchMedia', {
   })),
 })
 
-// Mock ResizeObserver for chart components
-global.ResizeObserver = vi.fn().mockImplementation(() => ({
-  observe: vi.fn(),
-  unobserve: vi.fn(),
-  disconnect: vi.fn(),
-})) as unknown as typeof ResizeObserver
+// Stub ResizeObserver for chart components (jsdom has none). A class rather
+// than a `vi.fn()` cast to the constructor type: it satisfies the type as is.
+class ResizeObserverStub {
+  observe = vi.fn()
+  unobserve = vi.fn()
+  disconnect = vi.fn()
+}
+global.ResizeObserver = ResizeObserverStub
 
-// Mock IntersectionObserver for lazy loading
-global.IntersectionObserver = vi.fn().mockImplementation(() => ({
-  observe: vi.fn(),
-  unobserve: vi.fn(),
-  disconnect: vi.fn(),
-  root: null,
-  rootMargin: '',
-  thresholds: [],
-})) as unknown as typeof IntersectionObserver
+// Stub IntersectionObserver for lazy loading
+class IntersectionObserverStub {
+  readonly root = null
+  readonly rootMargin = ''
+  readonly thresholds: readonly number[] = []
+  observe = vi.fn()
+  unobserve = vi.fn()
+  disconnect = vi.fn()
+  takeRecords = vi.fn((): IntersectionObserverEntry[] => [])
+}
+global.IntersectionObserver = IntersectionObserverStub
 
 // Mock scrollTo for navigation tests
 window.scrollTo = vi.fn()

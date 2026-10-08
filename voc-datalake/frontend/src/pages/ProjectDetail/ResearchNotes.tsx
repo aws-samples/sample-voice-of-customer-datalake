@@ -2,7 +2,7 @@
  * ResearchNotes - Editable research notes section for personas
  */
 import {
-  FileText, X, Loader2,
+  FileText, X, Loader2, Lightbulb,
 } from 'lucide-react'
 import {
   useState, useMemo,
@@ -11,13 +11,14 @@ import { useTranslation } from 'react-i18next'
 import type {
   ResearchNotesProps, NoteItem,
 } from './types'
+import StickyActionBar from '../../components/StickyActionBar/StickyActionBar'
 
 function getNoteText(note: NoteItem): string {
   return typeof note === 'string' ? note : note.text
 }
 
 export default function ResearchNotes({
-  persona, onSave, isSaving,
+  persona, canEdit, onSave, isSaving,
 }: Readonly<ResearchNotesProps>) {
   const { t } = useTranslation('projectDetail')
   // Use useMemo to derive initial state from props instead of useEffect + setState
@@ -54,13 +55,13 @@ export default function ResearchNotes({
       {/* Header with count badge */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-500">
+          <span className="text-sm text-muted">
             {getNotesLabel()}
           </span>
           {notes.length > 0 && (
             <button
               onClick={() => setIsExpanded(!isExpanded)}
-              className="text-xs text-purple-600 hover:text-purple-700"
+              className="text-xs link"
             >
               {isExpanded ? t('personas.collapse') : t('personas.expand')}
             </button>
@@ -69,69 +70,79 @@ export default function ResearchNotes({
       </div>
 
       {/* Empty state with call to action */}
-      {notes.length === 0 && (
-        <div className="text-center py-6 bg-white rounded-lg border-2 border-dashed border-gray-200">
-          <div className="w-12 h-12 mx-auto mb-3 bg-purple-100 rounded-full flex items-center justify-center">
-            <FileText size={24} className="text-purple-500" />
+      {notes.length === 0 && canEdit && (
+        <div className="text-center py-6 bg-card rounded-lg border-2 border-dashed border-border">
+          <div className="w-12 h-12 mx-auto mb-3 bg-aim-subtle rounded-full flex items-center justify-center">
+            <FileText size={24} className="text-aim" />
           </div>
-          <p className="text-gray-600 font-medium mb-1">{t('personas.addResearchNotes')}</p>
-          <p className="text-gray-400 text-sm mb-4">{t('personas.addResearchNotesDesc')}</p>
+          <p className="text-text font-medium mb-1">{t('personas.addResearchNotes')}</p>
+          <p className="text-muted text-sm mb-4">{t('personas.addResearchNotesDesc')}</p>
         </div>
       )}
 
       {/* Notes list */}
       {notes.length > 0 && isExpanded ? <ul className="space-y-2">
         {notes.map((note, i) => (
-          <li key={getNoteText(note)} className="group flex items-start gap-3 text-sm text-gray-700 bg-white p-3 rounded-lg border hover:border-purple-200 transition-colors">
-            <div className="w-6 h-6 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-              <span className="text-xs text-purple-600 font-medium">{i + 1}</span>
+          <li key={getNoteText(note)} className="group flex items-start gap-3 text-sm text-text bg-card p-3 rounded-lg border border-border hover:border-accent/30 transition-colors">
+            <div className="w-6 h-6 bg-aim-subtle rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+              <span className="text-xs text-aim font-medium font-mono">{i + 1}</span>
             </div>
             <span className="flex-1 leading-relaxed">{getNoteText(note)}</span>
-            <button
-              onClick={() => removeNote(i)}
-              className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 p-1 transition-opacity"
-              disabled={isSaving}
-              title={t('personas.removeNote')}
-            >
-              <X size={16} />
-            </button>
+            {canEdit ? (
+              <button
+                type="button"
+                onClick={() => removeNote(i)}
+                className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-muted hover:text-danger p-1 transition-opacity"
+                disabled={isSaving}
+                title={t('personas.removeNote')}
+                aria-label={t('personas.removeNote')}
+              >
+                <X size={16} aria-hidden />
+              </button>
+            ) : null}
           </li>
         ))}
       </ul> : null}
 
-      {/* Add note input - always visible */}
-      <div className="flex gap-2">
-        <div className="flex-1 relative">
+      {/* Add note input — for anyone who may edit. Stacks on phones, where the
+          input was squeezed to a few characters beside the button and hint. */}
+      {canEdit ? <StickyActionBar variant="inline" className="flex flex-col sm:flex-row gap-2 py-2">
+        <div className="flex-1 relative min-w-0">
           <input
             type="text"
             value={newNote}
             onChange={(e) => setNewNote(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && addNote()}
+            // Not while an IME is composing: in ja/ko/zh, Enter confirms the
+            // candidate, and would otherwise submit a half-typed note.
+            onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && addNote()}
             placeholder={t('personas.notePlaceholder')}
-            className="w-full px-4 py-3 text-sm border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 pr-24"
+            aria-label={t('personas.notePlaceholder')}
+            className="input sm:pr-24"
           />
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">
+          <span className="hidden sm:block absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted pointer-events-none" aria-hidden>
             {t('personas.pressEnter')}
           </span>
         </div>
         <button
+          type="button"
           onClick={addNote}
           disabled={newNote.trim() === '' || isSaving}
-          className="px-4 py-3 bg-purple-600 text-white rounded-lg text-sm font-medium disabled:opacity-50 hover:bg-purple-700 flex items-center gap-2 transition-colors"
+          className="btn btn-primary w-full sm:w-auto"
         >
-          {isSaving ? <Loader2 size={16} className="animate-spin" /> : (
+          {isSaving ? <Loader2 size={16} className="animate-spin" aria-hidden /> : (
             <>
-              <FileText size={16} />
+              <FileText size={16} aria-hidden />
               {t('personas.addNote')}
             </>
           )}
         </button>
-      </div>
+      </StickyActionBar> : null}
 
-      {/* Helper text */}
-      <p className="text-xs text-gray-400">
+      {/* Helper text explains the input above, so it goes with it. */}
+      {canEdit ? <p className="text-xs text-muted flex items-start gap-1.5">
+        <Lightbulb size={12} aria-hidden="true" className="flex-shrink-0 mt-0.5" />
         {t('personas.notesTip')}
-      </p>
+      </p> : null}
     </div>
   )
 }

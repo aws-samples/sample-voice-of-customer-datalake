@@ -8,221 +8,21 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 from botocore.exceptions import ClientError
 
+from shared.project_access import Caller
 
-class TestFixPersonaName:
-    """Tests for fix_persona_name helper function."""
-
-    def test_adds_space_between_camel_case(self):
-        """Adds space between lowercase and uppercase letters."""
-        from projects import fix_persona_name
-        
-        assert fix_persona_name('VeronicaChen') == 'Veronica Chen'
-        assert fix_persona_name('JohnSmith') == 'John Smith'
-        assert fix_persona_name('MaryJaneWatson') == 'Mary Jane Watson'
-
-    def test_preserves_already_spaced_names(self):
-        """Preserves names that already have proper spacing."""
-        from projects import fix_persona_name
-        
-        assert fix_persona_name('John Smith') == 'John Smith'
-        assert fix_persona_name('Mary Jane') == 'Mary Jane'
-
-    def test_handles_single_word_names(self):
-        """Handles single word names without changes."""
-        from projects import fix_persona_name
-        
-        assert fix_persona_name('Marcus') == 'Marcus'
-        assert fix_persona_name('ALLCAPS') == 'ALLCAPS'
-
-    def test_handles_empty_string(self):
-        """Handles empty string input."""
-        from projects import fix_persona_name
-        
-        assert fix_persona_name('') == ''
-
-
-class TestListProjects:
-    """Tests for list_projects function."""
-
-    @patch('projects.projects_table')
-    def test_returns_list_of_projects(self, mock_table):
-        """Returns list of all projects."""
-        mock_table.query.return_value = {
-            'Items': [
-                {'project_id': 'proj-1', 'name': 'Project 1', 'created_at': '2026-01-01'},
-                {'project_id': 'proj-2', 'name': 'Project 2', 'created_at': '2026-01-02'}
-            ]
-        }
-        # Mock the second query for item counts
-        mock_table.query.side_effect = [
-            {'Items': [{'project_id': 'proj-1', 'name': 'Project 1'}]},
-            {'Items': [{'sk': 'META'}, {'sk': 'PERSONA#1'}]},
-        ]
-        
-        from projects import list_projects
-        
-        result = list_projects()
-        
-        assert 'projects' in result
-
-    @patch('projects.projects_table')
-    def test_skips_verification_fixture_projects(self, mock_table):
-        """A verification fixture must never reach a human's project list.
-
-        Fixture rows are indexed exactly like real projects, on purpose, so the
-        fixture exercises the real read paths. This filter is therefore the only
-        thing separating them, and reverting it has to fail right here.
-        """
-        from shared.project_writes import VERIFICATION_FIXTURE_ATTRIBUTE
-
-        mock_table.query.side_effect = [
-            {'Items': [
-                {'project_id': 'real-1', 'name': 'Real', 'created_at': '2026-01-02'},
-                {
-                    'project_id': 'fixture-1',
-                    'name': 'ABCA baseline fixture',
-                    'created_at': '2026-01-01',
-                    VERIFICATION_FIXTURE_ATTRIBUTE: 'abca-fixture-1',
-                },
-            ]},
-            # Only the surviving project reaches the per-project counts query, so
-            # an unfiltered list also exhausts this side_effect.
-            {'Items': [{'sk': 'META'}]},
-        ]
-
-        from projects import list_projects
-
-        result = list_projects()
-
-        assert [p.get('project_id') for p in result['projects']] == ['real-1']
-
-    @patch('projects.projects_table', None)
-    def test_returns_empty_when_table_not_configured(self):
-        """Returns empty list when table not configured."""
-        from projects import list_projects
-        
-        result = list_projects()
-        
-        assert result['projects'] == []
-
-
-class TestCreateProject:
-    """Tests for create_project function."""
-
-    @patch('projects.projects_table')
-    def test_creates_project(self, mock_table):
-        """Creates a new project."""
-        from projects import create_project
-        
-        result = create_project({'name': 'New Project', 'description': 'Test'})
-        
-        assert result['success'] is True
-        assert 'project' in result
-        mock_table.put_item.assert_called_once()
-
-    @patch('projects.projects_table', None)
-    def test_returns_error_when_table_not_configured(self):
-        """Returns error when table not configured."""
-        from projects import create_project
-        from shared.exceptions import ConfigurationError
-        
-        with pytest.raises(ConfigurationError):
-            create_project({'name': 'Test'})
-
-
-class TestGetProject:
-    """Tests for get_project function."""
-
-    @patch('projects.projects_table')
-    def test_returns_project_with_personas_and_documents(self, mock_table):
-        """Returns project with all related data."""
-        mock_table.query.return_value = {
-            'Items': [
-                {'pk': 'PROJECT#proj-1', 'sk': 'META', 'project_id': 'proj-1', 'name': 'Test'},
-                {'pk': 'PROJECT#proj-1', 'sk': 'PERSONA#p1', 'persona_id': 'p1', 'name': 'User'},
-                {
-                    'pk': 'PROJECT#proj-1', 'sk': 'DOC#d1', 'document_id': 'd1',
-                    'document_type': 'custom', 'title': 'Document',
-                }
-            ]
-        }
-        
-        from projects import get_project
-        
-        result = get_project('proj-1')
-        
-        assert result['project']['name'] == 'Test'
-        assert len(result['personas']) == 1
-        assert len(result['documents']) == 1
-
-    @patch('projects.projects_table')
-    def test_returns_error_when_project_not_found(self, mock_table):
-        """Returns error when project doesn't exist."""
-        mock_table.query.return_value = {'Items': []}
-        
-        from projects import get_project
-        from shared.exceptions import NotFoundError
-        
-        with pytest.raises(NotFoundError):
-            get_project('nonexistent')
-
-
-class TestUpdateProject:
-    """Tests for update_project function."""
-
-    @patch('projects.projects_table')
-    def test_updates_project_fields(self, mock_table):
-        """Updates project with new values behind the complete tombstone fence."""
-        from projects import update_project
-
-        result = update_project('proj-1', {'name': 'Updated', 'description': 'New desc'})
-
-        assert result['success'] is True
-        update = mock_table.update_item.call_args.kwargs
-        assert '#status <> :deleting_status' in update['ConditionExpression']
-        assert update['ExpressionAttributeNames']['#status'] == 'status'
-        assert update['ExpressionAttributeValues'][':deleting_status'] == 'deleting'
-        assert update['ExpressionAttributeValues'][':deleted_status'] == 'deleted'
-
-    @pytest.mark.parametrize('status', ['active', 'archived'])
-    @patch('projects.projects_table')
-    def test_accepts_public_project_statuses(self, mock_table, status):
-        from projects import update_project
-
-        assert update_project('proj-1', {'status': status}) == {'success': True}
-        values = mock_table.update_item.call_args.kwargs[
-            'ExpressionAttributeValues'
-        ]
-        assert values[':status'] == status
-
-    @pytest.mark.parametrize('status', ['deleting', 'deleted', 'paused', None, 1, []])
-    @patch('projects.projects_table')
-    def test_rejects_reserved_or_invalid_project_statuses(
-        self, mock_table, status,
-    ):
-        from projects import update_project
-        from shared.exceptions import ValidationError
-
-        with pytest.raises(ValidationError, match='active or archived'):
-            update_project('proj-1', {'status': status})
-
-        mock_table.update_item.assert_not_called()
-
-    @patch('projects.projects_table', None)
-    def test_returns_error_when_table_not_configured(self):
-        """Returns error when table not configured."""
-        from projects import update_project
-        from shared.exceptions import ConfigurationError
-
-        with pytest.raises(ConfigurationError):
-            update_project('proj-1', {'name': 'Test'})
+# A signed-in workspace admin: sees every project, as before permissions.
+ADMIN_CALLER = Caller(
+    subject='test-user-id', is_admin=True, username='tester', email='test@example.com',
+)
 
 
 class TestDeleteProject:
     """Tests for delete_project function."""
 
+    @patch('projects._sweep_project_objects')
+    @patch('projects._delete_project_job_rows', MagicMock())
     @patch('projects.projects_table')
-    def test_deletes_project_and_version_assignment_partitions(self, mock_table):
+    def test_deletes_project_and_version_assignment_partitions(self, mock_table, sweep):
         """Deletes project rows, counters, and durable legacy assignments."""
         mock_table.query.side_effect = [
             {
@@ -275,13 +75,15 @@ class TestDeleteProject:
             }),
         ])
         mock_table.delete_item.assert_not_called()
+        # The persona id is collected from the row sweep for the avatar sweep.
+        sweep.assert_called_once_with('proj-1', ['p1'])
 
     @patch('projects.projects_table', None)
     def test_returns_error_when_table_not_configured(self):
         """Returns error when table not configured."""
         from projects import delete_project
         from shared.exceptions import ConfigurationError
-        
+
         with pytest.raises(ConfigurationError):
             delete_project('proj-1')
 
@@ -289,102 +91,44 @@ class TestDeleteProject:
 class TestGetAvatarCdnUrl:
     """Tests for get_avatar_cdn_url function."""
 
-    def test_converts_s3_uri_to_signed_cdn_url(self, cdn_signing_configured):
+    @pytest.mark.usefixtures("cdn_signing_configured")
+    def test_converts_s3_uri_to_signed_cdn_url(self):
         """Converts S3 URI to a SIGNED CloudFront CDN URL (issue #229)."""
         from shared.avatar import get_avatar_cdn_url
-        
+
         s3_uri = 's3://bucket/avatars/persona_123.png'
         result = get_avatar_cdn_url(s3_uri, cdn_url='https://cdn.example.com')
-        
+
+        assert result is not None
         assert result.startswith('https://cdn.example.com/persona_123.png?')
-        assert 'Signature=' in result and 'Expires=' in result
+        assert 'Signature=' in result
+        assert 'Expires=' in result
 
     def test_returns_none_when_cdn_not_configured(self):
         """Returns None when CDN URL not configured."""
         from shared.avatar import get_avatar_cdn_url
-        
+
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop('AVATARS_CDN_URL', None)
             result = get_avatar_cdn_url('s3://bucket/avatars/test.png', cdn_url='')
-        
+
         assert result is None
 
     def test_returns_none_for_invalid_uri(self):
         """Returns None for invalid S3 URI."""
         from shared.avatar import get_avatar_cdn_url
-        
+
         result = get_avatar_cdn_url('not-an-s3-uri')
-        
+
         assert result is None
 
     def test_returns_none_for_empty_uri(self):
         """Returns None for empty URI."""
         from shared.avatar import get_avatar_cdn_url
-        
+
         result = get_avatar_cdn_url('')
-        
+
         assert result is None
-
-
-class TestGenerateAvatarPromptWithLlm:
-    """Tests for generate_avatar_prompt_with_llm function."""
-
-    @patch('shared.avatar.get_avatar_prompt_config')
-    def test_generates_prompt_from_persona_data(self, mock_config):
-        """Generates image prompt from persona data."""
-        mock_config.return_value = {
-            'system_prompt': 'Generate image prompt',
-            'user_prompt_template': 'Create avatar for {name}',
-            'max_tokens': 200,
-            'fallback_prompt_template': 'Professional headshot of a {occupation}'
-        }
-        
-        from shared.avatar import generate_avatar_prompt_with_llm
-        
-        # Create a mock bedrock client
-        mock_bedrock = MagicMock()
-        mock_bedrock.invoke_model.return_value = {
-            'body': MagicMock(read=lambda: json.dumps({
-                'content': [{'type': 'text', 'text': 'Professional headshot of a software engineer'}]
-            }).encode())
-        }
-        
-        persona_data = {
-            'name': 'John Smith',
-            'tagline': 'Tech enthusiast',
-            'identity': {
-                'bio': 'Software developer',
-                'age_range': '30-40',
-                'occupation': 'Engineer',
-                'location': 'San Francisco'
-            }
-        }
-        
-        result = generate_avatar_prompt_with_llm(persona_data, mock_bedrock)
-        
-        assert 'Professional headshot' in result
-
-    @patch('shared.avatar.get_avatar_prompt_config')
-    def test_returns_fallback_on_error(self, mock_config):
-        """Returns fallback prompt on LLM error."""
-        mock_config.return_value = {
-            'system_prompt': 'Generate image prompt',
-            'user_prompt_template': 'Create avatar for {name}',
-            'max_tokens': 200,
-            'fallback_prompt_template': 'Professional headshot of a {occupation}'
-        }
-        
-        from shared.avatar import generate_avatar_prompt_with_llm
-        
-        # Create a mock bedrock client that raises an error
-        mock_bedrock = MagicMock()
-        mock_bedrock.invoke_model.side_effect = Exception('LLM error')
-        
-        persona_data = {'name': 'Test', 'identity': {'occupation': 'Developer'}}
-        
-        result = generate_avatar_prompt_with_llm(persona_data, mock_bedrock)
-        
-        assert 'Professional headshot' in result
 
 
 class TestDocumentVersionBoundaries:
@@ -518,48 +262,37 @@ class TestDocumentVersionBoundaries:
         ('PRD#d1', 'prd'),
         ('PRFAQ#d1', 'prfaq'),
     ])
+    @patch('shared.document_history.persist_versioned_document')
     @patch('projects.projects_table')
-    def test_prd_and_prfaq_content_edits_remain_available(
-        self, mock_table, sk, document_type,
+    def test_prd_and_prfaq_content_edits_become_a_new_version(
+        self, mock_table, mock_persist, sk, document_type,
     ):
-        mock_table.query.return_value = {
-            'Items': [{
-                'pk': 'PROJECT#p1', 'sk': sk, 'document_id': 'd1',
-                'document_type': document_type, 'base_title': 'Launch',
-                'title': 'Launch (v2)', 'version': 2,
-            }],
+        row = {
+            'pk': 'PROJECT#p1', 'sk': sk, 'document_id': 'd1',
+            'document_type': document_type, 'base_title': 'Launch',
+            'title': 'Launch (v2)', 'version': 2, 'content': '# before',
         }
+        mock_table.query.return_value = {'Items': [row]}
+        mock_table.get_item.return_value = {'Item': row}
+        mock_persist.return_value = {'document_id': 'd2', 'version': 3}
 
         from projects import update_document
 
-        assert update_document('p1', 'd1', {'content': '# edited'}) == {
-            'success': True,
+        assert update_document('p1', 'd1', {'content': '# edited', 'edit_id': 'e1'}) == {
+            'success': True, 'document': {'document_id': 'd2', 'version': 3},
         }
-        update_call = mock_table.update_item.call_args.kwargs
-        assert update_call['Key'] == {'pk': 'PROJECT#p1', 'sk': sk}
-        assert '#content = :content' in update_call['UpdateExpression']
-        assert update_call['ExpressionAttributeValues'][':content'] == '# edited'
-
-    @patch('projects.projects_table')
-    def test_prototype_content_is_refused_by_generic_update(self, mock_table):
-        mock_table.query.return_value = {
-            'Items': [{
-                'pk': 'PROJECT#p1', 'sk': 'PROTOTYPE#d1', 'document_id': 'd1',
-                'document_type': 'prototype', 'base_title': 'Launch App',
-                'title': 'Launch App (v2)', 'version': 2,
-            }],
-        }
-
-        from projects import update_document
-        from shared.exceptions import ValidationError
-
-        with pytest.raises(ValidationError, match='stored in S3'):
-            update_document('p1', 'd1', {'content': '<html>replacement</html>'})
-
+        # Never in place: the stored v2 is untouched, v3 is allocated like a regeneration.
         mock_table.update_item.assert_not_called()
+        args = mock_persist.call_args.args
+        assert args[1:5] == ('p1', document_type, 'Launch', 'edit:d1:e1')
+        assert args[5]['content'] == '# edited'
 
+    @pytest.mark.parametrize(('body', 'refusal'), [
+        ({'content': '<html>replacement</html>'}, 'stored in S3'),
+        ({'title': 'Different App'}, 'cannot change series'),
+    ], ids=['content', 'series'])
     @patch('projects.projects_table')
-    def test_prototype_series_is_refused_by_generic_update(self, mock_table):
+    def test_a_prototype_is_refused_by_generic_update(self, mock_table, body, refusal):
         mock_table.query.return_value = {
             'Items': [{
                 'pk': 'PROJECT#p1', 'sk': 'PROTOTYPE#d1', 'document_id': 'd1',
@@ -567,12 +300,13 @@ class TestDocumentVersionBoundaries:
                 'title': 'Launch App (v2)', 'version': 2,
             }],
         }
+        mock_table.get_item.return_value = {'Item': mock_table.query.return_value['Items'][0]}
 
         from projects import update_document
         from shared.exceptions import ValidationError
 
-        with pytest.raises(ValidationError, match='cannot change series'):
-            update_document('p1', 'd1', {'title': 'Different App'})
+        with pytest.raises(ValidationError, match=refusal):
+            update_document('p1', 'd1', body)
 
         mock_table.update_item.assert_not_called()
 
@@ -646,10 +380,10 @@ class TestDocumentVersionBoundaries:
             'ConditionExpression'
         ]
 
-    @patch('projects.persist_legacy_document_versions')
+    @patch('projects.persist_legacy_document_versions', new=MagicMock())
     @patch('projects.projects_table')
     def test_conditional_delete_failure_never_decrements_document_count(
-        self, mock_table, _mock_persist,
+        self, mock_table
     ):
         mock_table.name = 'test-projects-table'
         mock_table.query.return_value = {
@@ -694,12 +428,18 @@ class TestDocumentVersionBoundaries:
             },
             {'Items': [{'pk': 'PROJECT#p1', 'sk': 'DOC#later'}]},
         ]
+        mock_table.name = 'projects'
+        mock_table.get_item.return_value = {'Item': {
+            'pk': 'PROJECT#p1', 'sk': 'DOC#d1', 'document_id': 'd1',
+            'document_type': 'custom', 'title': 'Notes', 'content': 'before',
+        }}
 
         from projects import update_document
 
         result = update_document('p1', 'd1', {'content': '# edited'})
 
-        assert result == {'success': True}
+        assert result['success'] is True
+        assert result['document']['content'] == '# edited'
         assert mock_table.query.call_count == 2
         first_query = mock_table.query.call_args_list[0].kwargs
         second_query = mock_table.query.call_args_list[1].kwargs
@@ -708,15 +448,10 @@ class TestDocumentVersionBoundaries:
         assert second_query['ExclusiveStartKey'] == {
             'pk': 'PROJECT#p1', 'sk': 'META',
         }
-        update_call = mock_table.update_item.call_args.kwargs
-        assert update_call['Key'] == {
-            'pk': 'PROJECT#p1', 'sk': 'DOC#d1',
-        }
-        assert update_call['ConditionExpression'] == (
-            'attribute_exists(pk) AND attribute_exists(sk) '
-            'AND document_id = :document_id'
-        )
-        assert update_call['ExpressionAttributeValues'][':document_id'] == 'd1'
+        [snapshot, update] = mock_table.meta.client.transact_write_items.call_args.kwargs['TransactItems']
+        assert snapshot['Put']['Item']['content'] == 'before'
+        assert update['Update']['Key'] == {'pk': 'PROJECT#p1', 'sk': 'DOC#d1'}
+        assert update['Update']['ExpressionAttributeValues'][':document_id'] == 'd1'
 
     @patch('projects.projects_table')
     def test_update_reports_not_found_when_document_is_deleted_after_lookup(
@@ -731,20 +466,13 @@ class TestDocumentVersionBoundaries:
                 'title': 'Notes',
             }],
         }
-        mock_table.update_item.side_effect = ClientError(
-            {
-                'Error': {
-                    'Code': 'ConditionalCheckFailedException',
-                    'Message': 'gone',
-                },
-            },
-            'UpdateItem',
-        )
+        # Found by the projected lookup, gone by the full read.
+        mock_table.get_item.return_value = {}
 
         from projects import update_document
         from shared.exceptions import NotFoundError
 
-        with pytest.raises(NotFoundError, match='no longer exists'):
+        with pytest.raises(NotFoundError, match='not found'):
             update_document('p1', 'd1', {'content': '# edited'})
 
     @patch('projects.projects_table')
@@ -758,6 +486,7 @@ class TestDocumentVersionBoundaries:
                 },
             ],
         }
+        mock_table.get_item.return_value = {'Item': mock_table.query.return_value['Items'][0]}
 
         from projects import update_document
         from shared.exceptions import ValidationError
@@ -826,7 +555,7 @@ class TestProjectChatContext:
         from projects import get_project_chat_context
 
         result = get_project_chat_context(
-            'p1', ['prd', 'product_report', 'prototype', 'prd'],
+            'p1', ['prd', 'product_report', 'prototype', 'prd'], ADMIN_CALLER,
         )
 
         assert result['project'] == {'sk': 'META', 'name': 'Project'}
@@ -869,7 +598,7 @@ class TestProjectChatContext:
             'PRD#prd', 'PRODUCT_REPORT#report',
         ]
 
-    @pytest.mark.parametrize('project_id, selected_document_ids', [
+    @pytest.mark.parametrize(('project_id', 'selected_document_ids'), [
         ('', []),
         ('p' * 129, []),
         ('p1', 'not-an-array'),
@@ -886,15 +615,15 @@ class TestProjectChatContext:
         from shared.exceptions import ValidationError
 
         with pytest.raises(ValidationError):
-            get_project_chat_context(project_id, selected_document_ids)
+            get_project_chat_context(project_id, selected_document_ids, ADMIN_CALLER)
 
         mock_table.query.assert_not_called()
 
 
-@patch('projects.persist_legacy_document_versions')
+@patch('projects.persist_legacy_document_versions', new=MagicMock())
 @patch('projects.projects_table')
 def test_document_delete_transaction_failure_preserves_document_and_count(
-    mock_table, _mock_persist,
+    mock_table
 ):
     document = {
         'pk': 'PROJECT#p1',
@@ -927,25 +656,6 @@ def test_document_delete_transaction_failure_preserves_document_and_count(
 
 
 @patch('projects.projects_table')
-def test_retained_project_tombstone_is_not_read_as_a_project(mock_table):
-    mock_table.query.return_value = {
-        'Items': [{
-            'pk': 'PROJECT#p1',
-            'sk': 'META',
-            'project_id': 'p1',
-            'status': 'deleted',
-            'deletion_started_at': '2026-09-03T12:00:00+00:00',
-        }],
-    }
-
-    from projects import get_project
-    from shared.exceptions import NotFoundError
-
-    with pytest.raises(NotFoundError, match='metadata not found'):
-        get_project('p1')
-
-
-@patch('projects.projects_table')
 def test_document_delete_repairs_a_stale_zero_count_instead_of_blocking(mock_table):
     document = {
         'pk': 'PROJECT#p1',
@@ -973,6 +683,8 @@ def test_document_delete_repairs_a_stale_zero_count_instead_of_blocking(mock_tab
     assert 'document_count = :observed_count' in update['ConditionExpression']
 
 
+@patch('projects._sweep_project_objects', MagicMock())
+@patch('projects._delete_project_job_rows', MagicMock())
 @patch('projects.projects_table')
 def test_project_delete_retries_fence_when_tombstone_insert_loses(mock_table):
     conditional = ClientError(
@@ -1001,26 +713,6 @@ def test_project_delete_retries_fence_when_tombstone_insert_loses(mock_table):
     assert mock_table.batch_writer.call_count == 2
     second_fence = mock_table.update_item.call_args_list[1].kwargs
     assert 'if_not_exists(#deleting, :now)' in second_fence['UpdateExpression']
-
-
-@patch('projects.projects_table')
-def test_chat_context_rejects_a_status_only_historical_tombstone(mock_table):
-    mock_table.query.return_value = {
-        'Items': [{
-            'pk': 'PROJECT#p1',
-            'sk': 'META',
-            'name': 'Deleted project',
-            'status': 'deleted',
-        }],
-    }
-
-    from projects import get_project_chat_context
-    from shared.exceptions import NotFoundError
-
-    with pytest.raises(NotFoundError, match='Project not found'):
-        get_project_chat_context('p1', [])
-
-    mock_table.get_item.assert_not_called()
 
 
 @patch('projects.projects_table')

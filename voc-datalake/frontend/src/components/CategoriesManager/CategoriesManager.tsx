@@ -12,28 +12,42 @@
 
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { 
-  Plus, Trash2, Loader2, Sparkles, ChevronDown, ChevronRight,
-  Check, AlertCircle, GripVertical
-} from 'lucide-react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { Plus, Loader2, Sparkles, Check, AlertCircle } from 'lucide-react'
 import { api } from '../../api/client'
-import ConfirmModal from '../ConfirmModal'
+import { categoriesConfigKey, useCategoriesConfig } from '../../hooks/useCategories'
+import ConfirmModal from '../ConfirmModal/ConfirmModal'
 import { normalizeCategories } from './categoriesSchema'
+import CategoryRow from './CategoryRow'
+import { subcategoriesOf, toSlug } from './categoryEntries'
+import ReprocessPanel from './ReprocessPanel'
 
 /**
  * Unique id for a new (sub)category, minted at interaction time.
  * crypto.randomUUID over Date.now(): two adds in the same millisecond
- * produced identical ids (same hazard as issue #160 in chatStore).
+ * produced identical ids (same hazard as issue #160 in the former chat store).
  */
 function makeEntryId(prefix: string): string {
   return `${prefix}_${crypto.randomUUID()}`
 }
 
+/** A product owner accountable for a category (and implicitly able to see its feedback). */
+export interface CategoryOwner {
+  sub: string
+  username: string
+  email: string
+}
+
 export interface Category {
   id: string
+  /** snake_case identifier stored on every review (≤64). */
   name: string
+  /** Human label / explanation (≤500). */
   description?: string
+  /** The product or area this category belongs to (≤120). */
+  product?: string
+  /** Product owners responsible for it (≤20). */
+  owners?: CategoryOwner[]
   subcategories: Subcategory[]
 }
 
@@ -41,11 +55,6 @@ export interface Subcategory {
   id: string
   name: string
   description?: string
-}
-
-export interface CategoriesConfig {
-  categories: Category[]
-  updated_at?: string
 }
 
 export default function CategoriesManager() {
@@ -58,28 +67,25 @@ export default function CategoriesManager() {
   const [editingCategory, setEditingCategory] = useState<string | null>(null)
   const [editingSubcategory, setEditingSubcategory] = useState<string | null>(null)
   const [newCategoryName, setNewCategoryName] = useState('')
-  const [newSubcategoryName, setNewSubcategoryName] = useState<Record<string, string>>({})
+  const [newSubcategoryName, setNewSubcategoryName] = useState<Partial<Record<string, string>>>({})
 
-  const { data: categoriesConfig, isLoading } = useQuery({
-    queryKey: ['categories-config'],
-    queryFn: () => api.getCategoriesConfig(),
-    // Normalize once at the query boundary so the declared Category contract
-    // is true for every consumer — legacy rows lack id/subcategories and
-    // crashed this tab (issue #181).
-    select: (data) => ({ ...data, categories: normalizeCategories(data.categories ?? []) }),
-  })
+  // Normalized once at the shared query boundary — legacy rows lack
+  // id/subcategories and crashed this tab (issue #181).
+  const { data: categoriesConfig, isLoading } = useCategoriesConfig()
 
   const saveMutation = useMutation({
     mutationFn: (categories: Category[]) => api.saveCategoriesConfig({ categories }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['categories-config'] })
+    // Refetch on failure too: the route validates (and is admin-only), so a
+    // refused save must not leave the editor showing what was not stored.
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: categoriesConfigKey() })
     },
   })
 
   const generateMutation = useMutation({
     mutationFn: (description: string) => api.generateCategories(description),
     onSuccess: (data) => {
-      if (data.categories) {
+      if (Array.isArray(data.categories)) {
         // The LLM response is a wire boundary too — normalize before saving.
         saveMutation.mutate(normalizeCategories(data.categories))
       }
@@ -90,7 +96,7 @@ export default function CategoriesManager() {
     },
   })
 
-  const categories = categoriesConfig?.categories || []
+  const categories = categoriesConfig?.categories ?? []
 
   const toggleExpanded = (categoryId: string) => {
     const newExpanded = new Set(expandedCategories)
@@ -106,7 +112,7 @@ export default function CategoriesManager() {
     if (!newCategoryName.trim()) return
     const newCategory: Category = {
       id: makeEntryId('cat'),
-      name: newCategoryName.trim().toLowerCase().replace(/\s+/g, '_'),
+      name: toSlug(newCategoryName.trim()),
       description: newCategoryName.trim(),
       subcategories: [],
     }
@@ -137,12 +143,12 @@ export default function CategoriesManager() {
     if (!name) return
     const newSub: Subcategory = {
       id: makeEntryId('sub'),
-      name: name.toLowerCase().replace(/\s+/g, '_'),
+      name: toSlug(name),
       description: name,
     }
     saveMutation.mutate(
       categories.map(c => c.id === categoryId 
-        ? { ...c, subcategories: [...(c.subcategories ?? []), newSub] }
+        ? { ...c, subcategories: [...subcategoriesOf(c), newSub] }
         : c
       )
     )
@@ -154,12 +160,12 @@ export default function CategoriesManager() {
       if (c.id !== categoryId) return c
       return {
         ...c,
-        subcategories: (c.subcategories ?? []).map(s => {
+        subcategories: subcategoriesOf(c).map(s => {
           if (s.id !== subcategoryId) return s
           return {
             ...s,
             description: newValue,
-            name: newValue.toLowerCase().replace(/\s+/g, '_'),
+            name: toSlug(newValue),
           }
         }),
       }
@@ -171,7 +177,7 @@ export default function CategoriesManager() {
   const handleDeleteSubcategory = (categoryId: string, subcategoryId: string) => {
     saveMutation.mutate(
       categories.map(c => c.id === categoryId 
-        ? { ...c, subcategories: (c.subcategories ?? []).filter(s => s.id !== subcategoryId) }
+        ? { ...c, subcategories: subcategoriesOf(c).filter(s => s.id !== subcategoryId) }
         : c
       )
     )
@@ -186,7 +192,7 @@ export default function CategoriesManager() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-8">
-        <Loader2 className="animate-spin text-gray-400" size={24} />
+        <Loader2 className="animate-spin text-muted" size={24} />
       </div>
     )
   }
@@ -194,20 +200,21 @@ export default function CategoriesManager() {
   return (
     <div className="space-y-6">
       {/* AI Generation Section */}
-      <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg p-3 sm:p-4 border border-purple-200">
+      <div className="bg-aim-subtle rounded-lg p-3 sm:p-4 border border-aim/30">
         <div className="flex flex-col sm:flex-row sm:items-start gap-3">
-          <div className="p-2 bg-purple-100 rounded-lg w-fit">
-            <Sparkles className="text-purple-600" size={20} />
+          <div className="p-2 bg-aim-subtle rounded-lg w-fit">
+            <Sparkles className="text-aim" size={20} />
           </div>
           <div className="flex-1 min-w-0">
-            <h4 className="font-semibold text-gray-900 mb-1">{t('aiTitle')}</h4>
-            <p className="text-sm text-gray-600 mb-3">
+            <h3 className="text-sm font-semibold tracking-tight text-text-strong mb-1">{t('aiTitle')}</h3>
+            <p className="text-sm text-text mb-3">
               {t('aiDescription')}
             </p>
             <textarea
               value={companyDescription}
               onChange={(e) => setCompanyDescription(e.target.value)}
               placeholder={t('aiPlaceholder')}
+              aria-label={t('companyLabel')}
               className="input min-h-[80px] text-sm mb-3 w-full"
             />
             <button
@@ -228,8 +235,8 @@ export default function CategoriesManager() {
               )}
             </button>
             {generateMutation.isError && (
-              <p className="text-sm text-red-600 mt-2 flex items-center gap-1">
-                <AlertCircle size={14} />
+              <p role="alert" className="text-sm text-text mt-3 flex items-center gap-2 bg-danger-subtle border border-danger/30 rounded-md px-3 py-2">
+                <AlertCircle size={14} className="text-danger flex-shrink-0" />
                 {t('generateError')}
               </p>
             )}
@@ -240,133 +247,38 @@ export default function CategoriesManager() {
       {/* Categories List */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h4 className="font-semibold text-gray-900">{t('listTitle')}</h4>
-          <span className="text-sm text-gray-500">{t('categoryCount', { count: categories.length })}</span>
+          <h3 className="text-sm font-semibold tracking-tight text-text-strong">{t('listTitle')}</h3>
+          <span className="text-sm font-mono text-muted">{t('categoryCount', { count: categories.length })}</span>
         </div>
+        <p className="text-sm text-text mb-3">{t('listHelp')}</p>
 
         {categories.length === 0 ? (
-          <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+          <div className="text-center py-8 text-muted bg-bg-accent rounded-lg border border-dashed border-border-strong">
             <p className="mb-2">{t('emptyTitle')}</p>
             <p className="text-sm">{t('emptyHint')}</p>
           </div>
         ) : (
           <div className="space-y-2">
             {categories.map((category) => (
-              <div key={category.id} className="border border-gray-200 rounded-lg overflow-hidden">
-                {/* Category Header */}
-                <div className="flex flex-wrap items-center gap-2 p-2 sm:p-3 bg-gray-50 hover:bg-gray-100">
-                  <GripVertical size={16} className="text-gray-400 cursor-grab hidden sm:block" />
-                  <button
-                    onClick={() => toggleExpanded(category.id)}
-                    className="p-1 hover:bg-gray-200 rounded flex-shrink-0"
-                  >
-                    {expandedCategories.has(category.id) ? (
-                      <ChevronDown size={16} />
-                    ) : (
-                      <ChevronRight size={16} />
-                    )}
-                  </button>
-                  
-                  {editingCategory === category.id ? (
-                    <input
-                      type="text"
-                      defaultValue={category.description || category.name}
-                      onBlur={(e) => handleUpdateCategory(category.id, { 
-                        description: e.target.value,
-                        name: e.target.value.toLowerCase().replace(/\s+/g, '_')
-                      })}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          handleUpdateCategory(category.id, { 
-                            description: e.currentTarget.value,
-                            name: e.currentTarget.value.toLowerCase().replace(/\s+/g, '_')
-                          })
-                        }
-                        if (e.key === 'Escape') setEditingCategory(null)
-                      }}
-                      className="flex-1 min-w-0 px-2 py-1 border border-blue-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      autoFocus
-                    />
-                  ) : (
-                    <span 
-                      className="flex-1 min-w-0 font-medium text-gray-900 cursor-pointer hover:text-blue-600 truncate"
-                      onClick={() => setEditingCategory(category.id)}
-                    >
-                      {category.description || category.name}
-                    </span>
-                  )}
-                  
-                  <span className="text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded hidden sm:inline">
-                    {category.name}
-                  </span>
-                  <span className="text-xs text-gray-400 flex-shrink-0">
-                    {/* Belt-and-braces for issue #181: the query boundary
-                        normalizes, but the render must stay safe standalone. */}
-                    {t('subCount', { count: (category.subcategories ?? []).length })}
-                  </span>
-                  <button
-                    onClick={() => handleDeleteCategory(category.id)}
-                    className="p-1.5 sm:p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded flex-shrink-0"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-
-                {/* Subcategories */}
-                {expandedCategories.has(category.id) && (
-                  <div className="p-2 sm:p-3 pl-4 sm:pl-10 space-y-2 bg-white">
-                    {(category.subcategories ?? []).map((sub) => (
-                      <div key={sub.id} className="flex items-center gap-2 text-sm">
-                        <span className="w-2 h-2 bg-gray-300 rounded-full flex-shrink-0" />
-                        {editingSubcategory === sub.id ? (
-                          <input
-                            type="text"
-                            defaultValue={sub.description || sub.name}
-                            onBlur={(e) => handleUpdateSubcategory(category.id, sub.id, e.target.value)}
-                            className="flex-1 min-w-0 px-2 py-1 border border-blue-300 rounded text-sm"
-                            autoFocus
-                          />
-                        ) : (
-                          <span 
-                            className="flex-1 min-w-0 text-gray-700 cursor-pointer hover:text-blue-600 truncate"
-                            onClick={() => setEditingSubcategory(sub.id)}
-                          >
-                            {sub.description || sub.name}
-                          </span>
-                        )}
-                        <span className="text-xs text-gray-400 hidden sm:inline flex-shrink-0">{sub.name}</span>
-                        <button
-                          onClick={() => handleDeleteSubcategory(category.id, sub.id)}
-                          className="p-1.5 sm:p-1 text-gray-400 hover:text-red-600 rounded flex-shrink-0"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    ))}
-                    
-                    {/* Add Subcategory */}
-                    <div className="flex items-center gap-2 mt-2">
-                      <input
-                        type="text"
-                        value={newSubcategoryName[category.id] || ''}
-                        onChange={(e) => setNewSubcategoryName(prev => ({ ...prev, [category.id]: e.target.value }))}
-                        placeholder={t('addSubcategoryPlaceholder')}
-                        className="flex-1 min-w-0 px-2 py-1.5 sm:py-1 border border-gray-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleAddSubcategory(category.id)
-                        }}
-                      />
-                      <button
-                        onClick={() => handleAddSubcategory(category.id)}
-                        disabled={!newSubcategoryName[category.id]?.trim()}
-                        className="p-1.5 sm:p-1 text-blue-600 hover:bg-blue-50 rounded disabled:opacity-50 flex-shrink-0"
-                      >
-                        <Plus size={16} />
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
+              <CategoryRow
+                key={category.id}
+                category={category}
+                isOpen={expandedCategories.has(category.id)}
+                saving={saveMutation.isPending}
+                isEditing={editingCategory === category.id}
+                editingSubcategoryId={editingSubcategory}
+                newSubcategoryName={newSubcategoryName[category.id] ?? ''}
+                onToggle={() => toggleExpanded(category.id)}
+                onStartEdit={() => setEditingCategory(category.id)}
+                onCancelEdit={() => setEditingCategory(null)}
+                onUpdate={(updates) => handleUpdateCategory(category.id, updates)}
+                onDelete={() => handleDeleteCategory(category.id)}
+                onStartEditSubcategory={setEditingSubcategory}
+                onRenameSubcategory={(subId, value) => handleUpdateSubcategory(category.id, subId, value)}
+                onDeleteSubcategory={(subId) => handleDeleteSubcategory(category.id, subId)}
+                onNewSubcategoryNameChange={(value) => setNewSubcategoryName(prev => ({ ...prev, [category.id]: value }))}
+                onAddSubcategory={() => handleAddSubcategory(category.id)}
+              />
             ))}
           </div>
         )}
@@ -378,6 +290,7 @@ export default function CategoriesManager() {
             value={newCategoryName}
             onChange={(e) => setNewCategoryName(e.target.value)}
             placeholder={t('addCategoryPlaceholder')}
+            aria-label={t('addCategory')}
             className="flex-1 input"
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleAddCategory()
@@ -386,7 +299,7 @@ export default function CategoriesManager() {
           <button
             onClick={handleAddCategory}
             disabled={!newCategoryName.trim() || saveMutation.isPending}
-            className="btn btn-primary flex items-center justify-center gap-2 w-full sm:w-auto"
+            className="btn btn-secondary flex items-center justify-center gap-2 w-full sm:w-auto"
           >
             <Plus size={16} />
             {t('addCategory')}
@@ -396,17 +309,25 @@ export default function CategoriesManager() {
 
       {/* Save Status */}
       {saveMutation.isPending && (
-        <div className="flex items-center gap-2 text-sm text-blue-600">
+        <div className="flex items-center gap-2 text-sm text-accent-text">
           <Loader2 size={14} className="animate-spin" />
           {t('saving')}
         </div>
       )}
       {saveMutation.isSuccess && (
-        <div className="flex items-center gap-2 text-sm text-green-600">
+        <div className="flex items-center gap-2 text-sm text-ok">
           <Check size={14} />
           {t('saved')}
         </div>
       )}
+      {saveMutation.isError && (
+        <p role="alert" className="text-sm text-text flex items-center gap-2 bg-danger-subtle border border-danger/30 rounded-md px-3 py-2">
+          <AlertCircle size={14} className="text-danger flex-shrink-0" aria-hidden="true" />
+          {t('saveError')}
+        </p>
+      )}
+
+      <ReprocessPanel />
 
       <ConfirmModal
         isOpen={deleteCategoryId !== null}

@@ -1,0 +1,123 @@
+{
+  "add": {
+    "expiresAt": "到期日",
+    "failed": "无法保存记忆，请重试。",
+    "label": {
+      "company": "为整个公司记住",
+      "personal": "为我记住"
+    },
+    "placeholder": {
+      "company": "例如：客户在结账前会比较价格",
+      "personal": "例如：我喜欢简短的回答"
+    },
+    "proposedNotice": "只有策展人能直接发布公司记忆——你的将先进入审核。",
+    "retention": "保留方式",
+    "saved": "已记住。",
+    "submit": "记住"
+  },
+  "cancel": "取消",
+  "configureFirst": "请先在设置中连接 API 端点。",
+  "confirm": "+1",
+  "confirmHint": "我同意——算我一个支持者",
+  "empty": "这里还没有记忆。",
+  "expires": "{{date}} 到期",
+  "filters": {
+    "anyKind": "任意类型",
+    "anyStatus": "任意状态",
+    "kind": "类型",
+    "search": "搜索记忆",
+    "status": "状态筛选"
+  },
+  "forget": "忘记",
+  "forgetMessage": "“{{statement}}”将被归档，且不会被自动重新学习。之后可以恢复。",
+  "forgetTitle": "要忘记这条记忆吗？",
+  "imports": {
+    "content": "内容",
+    "contentPlaceholder": "在此粘贴页面文本…",
+    "counter": "{{count}} / {{max}} 个字符",
+    "created": "已创建记忆：{{count}}",
+    "description": "粘贴文档或网页。从中学到的内容按常规置信度规则发布，原文会保留。",
+    "failed": "无法开始导入，请重试。",
+    "history": "你最近的导入",
+    "noHistory": "此浏览器尚无导入记录。",
+    "pageTitle": "标题",
+    "status": {
+      "completed": "已完成",
+      "failed": "失败",
+      "processing": "处理中",
+      "queued": "排队中"
+    },
+    "submit": "导入",
+    "title": "导入页面",
+    "url": "来源链接（可选）"
+  },
+  "kind": {
+    "agents": "代理",
+    "customer": "客户",
+    "objective": "目标",
+    "other": "其他",
+    "product": "产品",
+    "strategy": "战略",
+    "working_style": "工作方式"
+  },
+  "loadFailed": "无法加载记忆。",
+  "loadMore": "加载更多",
+  "loading": "正在加载记忆…",
+  "merge": {
+    "description": "用一条陈述替代它们；原记忆将归档，支持者会保留。",
+    "failed": "合并失败，请重试。",
+    "open": "合并所选",
+    "statement": "合并后的陈述",
+    "submit": "合并",
+    "title": "合并记忆（{{count}}）"
+  },
+  "meta": "自 {{created}} · {{retention}}",
+  "restore": "恢复",
+  "retention": {
+    "dated": "保留至某日期",
+    "decay": "不用则淡出",
+    "long_term": "长期保留"
+  },
+  "retry": "重试",
+  "review": {
+    "actions": {
+      "keep": "保留这条",
+      "keep_both": "两者都保留",
+      "merge": "合并为一条",
+      "replace": "保留现有的"
+    },
+    "aligned": "契合目标：{{objectives}}",
+    "apply": "应用",
+    "empty": "没有需要审核的内容——无提议或冲突。",
+    "existing": "目前的记忆",
+    "failed": "无法应用处理方式，请重试。",
+    "newClaim": "新的说法",
+    "proposed": "提议的记忆",
+    "resolution": "处理方式",
+    "suggested": "建议：{{action}}"
+  },
+  "reviewLoadFailed": "无法加载审核队列。待审核的记忆可能未在此显示。",
+  "selectForMerge": "选择以合并：{{statement}}",
+  "selected": "已选择：{{count}}",
+  "source": {
+    "agent": "自主代理",
+    "extracted": "从对话中学习",
+    "import": "已导入",
+    "user_explicit": "由人添加"
+  },
+  "status": {
+    "active": "生效",
+    "archived": "已归档",
+    "conflict": "冲突",
+    "proposed": "待定"
+  },
+  "subtitle": "助手和自主代理所记住的内容——共享的公司知识与你自己的偏好。",
+  "supportersHint": "说过或确认过这一点的人",
+  "tabs": {
+    "company": "公司",
+    "imports": "导入",
+    "personal": "个人",
+    "review": "待审核"
+  },
+  "title": "记忆"
+}

@@ -5,10 +5,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { SYNTHETIC_PLUGIN_MANIFEST } from './scrapers-fixtures'
 import SyntheticSourceCard from './SyntheticSourceCard'
 import { parseRunRecord } from './sourceRunStatus'
 import { api } from '../../api/client'
-import type { PluginManifest } from '../../plugins/types'
 
 vi.mock('../../api/client', () => ({
   api: {
@@ -18,19 +18,7 @@ vi.mock('../../api/client', () => ({
 
 const mockGetStatus = vi.mocked(api.getSourceRunStatus)
 
-// Fully-typed fixture — satisfies PluginManifestSchema without assertions.
-const plugin: PluginManifest = {
-  id: 'synthetic_reviews',
-  name: 'Synthetic Data Review Generator',
-  icon: '🧪',
-  description: 'Generate realistic synthetic customer reviews with AI.',
-  category: 'synthetic',
-  config: [],
-  hasIngestor: true,
-  hasWebhook: false,
-  hasS3Trigger: false,
-  enabled: true,
-}
+const plugin = SYNTHETIC_PLUGIN_MANIFEST
 
 function renderCard(onGenerate: () => void = vi.fn()) {
   const queryClient = new QueryClient({
@@ -104,7 +92,8 @@ describe('SyntheticSourceCard', () => {
     const expectedDate = new Date('2026-07-16T10:01:00Z').toLocaleDateString()
     expect(await screen.findByText(new RegExp(`5 items generated on ${expectedDate.replace(/[/\\]/g, '\\$&')}`)))
       .toBeInTheDocument()
-    expect(screen.getByText('✓')).toBeInTheDocument()
+    // Outcome badge: tone + icon + word (was a bare ✓ glyph).
+    expect(screen.getByText('Completed')).toBeInTheDocument()
   })
 
   it('shows a failure badge and the first error for an errored run', async () => {
@@ -117,7 +106,8 @@ describe('SyntheticSourceCard', () => {
     })
     renderCard()
 
-    expect(await screen.findByText('✗')).toBeInTheDocument()
+    // Outcome badge: tone + icon + word (was a bare ✗ glyph).
+    expect(await screen.findByText('Failed')).toBeInTheDocument()
     expect(screen.getByText('Bedrock throttled')).toBeInTheDocument()
   })
 

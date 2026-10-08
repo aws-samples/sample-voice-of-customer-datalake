@@ -35,6 +35,7 @@ vi.mock('qrcode.react', async (importOriginal) => {
 })
 
 import FormQrCode from './FormQrCode'
+import { at } from '@test/defined'
 
 const { t } = i18n
 
@@ -73,13 +74,13 @@ describe('a feedback form QR', () => {
     renderQr()
 
     expect(spy.encoded).toHaveLength(1)
-    expect(spy.encoded[0].value).toBe('https://api.example.com/feedback-forms/form_1/iframe')
+    expect(at(spy.encoded, 0).value).toBe('https://api.example.com/feedback-forms/form_1/iframe')
   })
 
   it('points a different form\'s QR at that form', () => {
     renderQr('form_42')
 
-    expect(spy.encoded[0].value).toBe('https://api.example.com/feedback-forms/form_42/iframe')
+    expect(at(spy.encoded, 0).value).toBe('https://api.example.com/feedback-forms/form_42/iframe')
   })
 
   it('renders large enough, with the quiet zone and the error correction, to scan from across a room', () => {
@@ -92,9 +93,9 @@ describe('a feedback form QR', () => {
     // recovers a symbol partly lost to glare or a head in the way. Dropping to
     // the library's cheaper 'L' would still render a valid QR — and fail in the
     // room, which is the only place anyone would find out.
-    expect(spy.encoded[0].size).toBeGreaterThanOrEqual(200)
-    expect(spy.encoded[0].marginSize).toBeGreaterThanOrEqual(4)
-    expect(spy.encoded[0].level).toBe('M')
+    expect(at(spy.encoded, 0).size).toBeGreaterThanOrEqual(200)
+    expect(at(spy.encoded, 0).marginSize).toBeGreaterThanOrEqual(4)
+    expect(at(spy.encoded, 0).level).toBe('M')
   })
 
   it('fills the width it is given rather than rendering at a fixed small size', () => {
@@ -110,7 +111,7 @@ describe('a feedback form QR', () => {
     expect(qr).toHaveClass('h-auto')
     // And it is fed a generous intrinsic size, so scaling is a cap rather than a
     // stretch: a symbol drawn at 200 and blown up to 384 is soft at the edges.
-    expect(spy.encoded[0].size).toBeGreaterThanOrEqual(320)
+    expect(at(spy.encoded, 0).size).toBeGreaterThanOrEqual(320)
   })
 
   it('says so in words instead of encoding an address that resolves nowhere', () => {

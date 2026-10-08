@@ -12,6 +12,7 @@
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuthStore, useIsAdmin } from '../../store/authStore'
 import { authService } from '../../services/auth'
+import { LoginRedirect, UnconfiguredAuthFallback } from '../ProtectedRoute/authRedirects'
 
 interface AdminRouteProps {
   /** Child components to render if user is admin */
@@ -40,16 +41,12 @@ export default function AdminRoute({ children, redirectTo = '/' }: AdminRoutePro
 
   // If Cognito is not configured, allow access in development mode
   if (!authService.isConfigured()) {
-    if (import.meta.env.DEV) {
-      return <>{children}</>
-    }
-    // In production, fail closed - require auth configuration
-    return <Navigate to="/login" state={{ from: location.pathname }} replace />
+    return <UnconfiguredAuthFallback from={location.pathname}>{children}</UnconfiguredAuthFallback>
   }
 
   // If not authenticated, redirect to login
   if (!isAuthenticated) {
-    return <Navigate to="/login" state={{ from: location.pathname }} replace />
+    return <LoginRedirect from={location.pathname} />
   }
 
   // If authenticated but not admin, redirect to dashboard

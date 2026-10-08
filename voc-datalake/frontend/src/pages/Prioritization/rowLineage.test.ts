@@ -97,6 +97,18 @@
  *    version" (the case `lineage.staleReason`'s wording answers to);
  *  * `selectionEntry`'s id requirement deleted → "an unreadable document decides
  *    nothing";
+ *  * `lineageSourcesOf`'s nullish guard deleted (back to a bare `'sourceIndex' in
+ *    project`) → "resolves nothing rather than throwing when the project read is
+ *    missing entirely", which is the module's "no throwing" promise at the one input
+ *    `in` raises a TypeError on;
+ *  * either arm of `ProjectLineageRead` diverging from the other — `lineageSourcesOf`
+ *    ignoring a prepared read's `sourceIndex`, or `fresherCoherentSelection` reading
+ *    `newestOfType` off a different list than its nested classify's index → "answers
+ *    the same for a document list as for a read prepared from it", plus the empty-list
+ *    case beside it. Pinned where the union is DECLARED rather than left to
+ *    `prioritizationUtils.indexReuse.test.ts`, because the "one delegates to the
+ *    other" argument that carries the resolver seam does not carry here: the two arms
+ *    diverge at three separate reads;
  *  * any two `LINEAGE_REASON_KEY` entries cross-wired → "gives each reason the sentence
  *    that describes IT". `tsc` pins that table's COVERAGE (a `Record` over the union)
  *    and "names every state and every reason with a key the catalogue holds" pins that
@@ -191,14 +203,17 @@
  * asks which shape an answer came from. Every expectation is a literal.
  */
 import { describe, it, expect } from 'vitest'
+import { defined } from '@test/defined'
 import {
   classifySelectionLineage,
   fresherCoherentSelection,
   LINEAGE_REASON_KEY,
   LINEAGE_STYLE,
+  projectLineageSources,
   rowLineageOf,
 } from './rowLineage'
 import type { LineageReason } from './rowLineage'
+import { builtFrom } from './prioritization-unit-fixtures'
 import { supportedLanguages, type SupportedLanguage } from '../../i18n/languages'
 import prioritizationEn from '../../../public/locales/en/prioritization.json'
 // The other seven catalogues, imported statically rather than read from disk so a
@@ -255,17 +270,6 @@ const doc = (
   ...extra,
 })
 
-/** A declared derivation naming one source in the reference role. */
-const builtFrom = (...ids: readonly string[]) => ({
-  derivation: {
-    sources: ids.map((id) => ({ document_id: id, role: 'reference' })),
-    selected_document_count: ids.length,
-    feedback_count: 0,
-    persona_ids: [],
-    visual_document_ids: [],
-    product_context_included: false,
-  },
-})
 
 /** A derivation recording feedback and nothing else — lineage present, no source. */
 const builtFromFeedback = {
@@ -297,9 +301,8 @@ describe('the lineage tables are complete and resolvable', () => {
     }
     // The stale copy is not in either table (staleness is a second axis, not a
     // state), so it is named here or nothing checks it exists.
-    expect(lineage.stale).toBeTruthy()
-    expect(lineage.staleReason).toBeTruthy()
-    expect(lineage.staleAction).toBeTruthy()
+    expect([lineage.stale, lineage.staleReason, lineage.staleAction].map((text) => (text ?? '').trim() !== ''))
+      .toStrictEqual([true, true, true])
   })
 
   it('keeps staleReason\'s claim scoped to the DIRECT crossing the rule checks', () => {
@@ -333,9 +336,10 @@ describe('the lineage tables are complete and resolvable', () => {
     // too, and resolved against the shipped English catalogue rather than through `t`,
     // matching the case above: this is about the DATA, not i18next's fallbacks.
     const lineage: Record<string, string> = prioritizationEn.lineage
-    const sentenceOf = (reason: LineageReason) => lineage[
-      LINEAGE_REASON_KEY[reason].sentenceKey.replace('prioritization:lineage.', '')
-    ]
+    const sentenceOf = (reason: LineageReason) => defined(
+      lineage[LINEAGE_REASON_KEY[reason].sentenceKey.replace('prioritization:lineage.', '')],
+      `lineage sentence for ${reason}`,
+    )
     // A phrase only that reason's own copy carries. `supersededSource` is asserted on
     // 'different generation' and NOT on 'earlier': the rule compares a source's TYPE
     // against the other selected documents' types and never a timestamp or an ordinal,
@@ -349,8 +353,10 @@ describe('the lineage tables are complete and resolvable', () => {
       noneRecorded: 'records what it was built from',
     }
 
-    for (const [reason, phrase] of Object.entries(OWN_PHRASE) as [LineageReason, string][]) {
-      expect(sentenceOf(reason), reason).toContain(phrase)
+    const isReason = (key: string): key is LineageReason => key in OWN_PHRASE
+    const reasons = Object.keys(OWN_PHRASE).filter(isReason)
+    for (const reason of reasons) {
+      expect(sentenceOf(reason), reason).toContain(OWN_PHRASE[reason])
     }
     // And it must not claim a direction the rule does not compute.
     expect(sentenceOf('supersededSource')).not.toContain('earlier')
@@ -375,11 +381,14 @@ describe('the lineage tables are complete and resolvable', () => {
     // `merge_input` sources — earlier generations of its own type — are never read,
     // and an unqualified "nothing recorded here" is false for the commonest shape
     // that reaches `coherent`.
-    expect(sentenceOf('oneChain')).toContain('of another document in this row')
-    expect(sentenceOf('oneChain')).not.toContain('points at a different generation.')
+    const oneChain = sentenceOf('oneChain')
+    expect({
+      scoped: oneChain.includes('of another document in this row'),
+      widened: oneChain.includes('points at a different generation.'),
+    }).toStrictEqual({ scoped: true, widened: false })
     // Distinctness catches a swap that keeps every sentence a real one — the phrase
     // assertions above catch a two-way swap, this catches a collapse onto one key.
-    const sentences = (Object.keys(OWN_PHRASE) as LineageReason[]).map(sentenceOf)
+    const sentences = reasons.map(sentenceOf)
 
     expect(new Set(sentences).size).toBe(sentences.length)
   })
@@ -532,7 +541,7 @@ describe('a selection of documents reads as coherent, crossing generations, or u
     const prd = doc('prd_2', 'prd', '2025-03-01', builtFromFeedback)
     const prfaq = doc('prfaq_2', 'prfaq', '2025-03-01', builtFromFeedback)
 
-    expect(classifySelectionLineage([prd, prfaq], [prd, prfaq])).toEqual({
+    expect(classifySelectionLineage([prd, prfaq], [prd, prfaq])).toStrictEqual({
       state: 'coherent',
       reason: 'oneChain',
     })
@@ -542,7 +551,7 @@ describe('a selection of documents reads as coherent, crossing generations, or u
     const older = doc('prd_1', 'prd', '2025-01-01', builtFromFeedback)
     const newer = doc('prd_2', 'prd', '2025-03-01', builtFromFeedback)
 
-    expect(classifySelectionLineage([newer, older], [newer, older])).toEqual({
+    expect(classifySelectionLineage([newer, older], [newer, older])).toStrictEqual({
       state: 'crossGeneration',
       reason: 'repeatedType',
     })
@@ -571,7 +580,7 @@ describe('a selection of documents reads as coherent, crossing generations, or u
     const prd2 = doc('prd_2', 'prd', '2025-03-01', builtFromFeedback)
     const prfaq = doc('prfaq_1', 'prfaq', '2025-02-01', builtFrom('prd_1'))
 
-    expect(classifySelectionLineage([prfaq, prd2], [prd1, prd2, prfaq])).toEqual({
+    expect(classifySelectionLineage([prfaq, prd2], [prd1, prd2, prfaq])).toStrictEqual({
       state: 'crossGeneration',
       reason: 'supersededSource',
     })
@@ -612,7 +621,7 @@ describe('a selection of documents reads as coherent, crossing generations, or u
     const prd = doc('prd_1', 'prd', '2025-01-01')
     const prfaq = doc('prfaq_1', 'prfaq', '2025-01-01', { derivation: null })
 
-    expect(classifySelectionLineage([prd, prfaq], [prd, prfaq])).toEqual({
+    expect(classifySelectionLineage([prd, prfaq], [prd, prfaq])).toStrictEqual({
       state: 'absent',
       reason: 'noneRecorded',
     })
@@ -639,7 +648,7 @@ describe('a selection of documents reads as coherent, crossing generations, or u
     const prd2 = doc('prd_2', 'prd', '2025-03-01')
     const merged = doc('custom_1', 'custom', '2025-02-01', { source_documents: ['prd_1'] })
 
-    expect(classifySelectionLineage([merged, prd2], [prd1, prd2, merged])).toEqual({
+    expect(classifySelectionLineage([merged, prd2], [prd1, prd2, merged])).toStrictEqual({
       state: 'crossGeneration',
       reason: 'supersededSource',
     })
@@ -683,7 +692,7 @@ describe('a selection of documents reads as coherent, crossing generations, or u
     const plain = doc('prd_1', 'prd', '2025-01-01')
 
     expect(classifySelectionLineage([plain, bare], [plain, bare]))
-      .toEqual({ state: 'absent', reason: 'noneRecorded' })
+      .toStrictEqual({ state: 'absent', reason: 'noneRecorded' })
 
     // Now the same row plus a record with NO id that DOES carry a derivation. Counted
     // in, its lineage was the only thing that could speak, so the row claimed a chain
@@ -693,7 +702,7 @@ describe('a selection of documents reads as coherent, crossing generations, or u
     }
 
     expect(classifySelectionLineage([plain, bare, idlessRecording], [plain, bare]))
-      .toEqual({ state: 'absent', reason: 'noneRecorded' })
+      .toStrictEqual({ state: 'absent', reason: 'noneRecorded' })
   })
 
   it('does not treat two documents of unreadable type as versions of one type', () => {
@@ -709,7 +718,7 @@ describe('a selection of documents reads as coherent, crossing generations, or u
   it('does not cross an unreadable source type with an unreadable held type', () => {
     // '' is not a type, on EITHER side of the comparison, and `null` is not its only
     // spelling: a source that resolved to a document whose `document_type` could not
-    // be read comes back as '' (`sourceFieldIndex` runs it through `displayString`),
+    // be read comes back as '' (`derivationSourceIndex` runs it through `displayString`),
     // so an unfiltered `otherTypes` matches '' against '' and declares a crossing
     // between two documents neither of which was shown to be of the same kind — the
     // trap `repeatsAType` skips and the staleness gate withholds for.
@@ -725,7 +734,7 @@ describe('a selection of documents reads as coherent, crossing generations, or u
     const readableSource = doc('s', 'prfaq', '2024-01-01', builtFromFeedback)
     const heldPrfaq = doc('x', 'prfaq', '2025-01-01', builtFromFeedback)
     expect(classifySelectionLineage([heldPrfaq, prd], [heldPrfaq, readableSource, prd]))
-      .toEqual({ state: 'crossGeneration', reason: 'supersededSource' })
+      .toStrictEqual({ state: 'crossGeneration', reason: 'supersededSource' })
   })
 
   it('reads only a document\'s OWN sources, so a crossing two hops out is not reported', () => {
@@ -747,12 +756,96 @@ describe('a selection of documents reads as coherent, crossing generations, or u
     // The PR/FAQ descends from PRD 1 while the row holds PRD 2 — and reads coherent,
     // because nothing here walks a source's sources.
     expect(classifySelectionLineage([prd2, transitive], project))
-      .toEqual({ state: 'coherent', reason: 'oneChain' })
+      .toStrictEqual({ state: 'coherent', reason: 'oneChain' })
     // THE CONTROL, asserted so the case cannot pass by the rule having gone missing:
     // the same shape one hop shorter — the PR/FAQ naming PRD 1 itself — does cross.
     const direct = doc('prfaq_d', 'prfaq', '2025-01-20', builtFrom('prd_1'))
     expect(classifySelectionLineage([prd2, direct], [prd1, prd2, direct]))
-      .toEqual({ state: 'crossGeneration', reason: 'supersededSource' })
+      .toStrictEqual({ state: 'crossGeneration', reason: 'supersededSource' })
+  })
+
+  it('resolves nothing rather than throwing when the project read is missing entirely', () => {
+    // NOT an unreachable branch dressed up as a case: every in-repo call site is typed,
+    // but this module's docstring promises "no throwing" and the rules are reachable
+    // from component code, where a project detail that has not landed is `undefined`
+    // rather than `[]`. `lineageSourcesOf` narrows on `'sourceIndex' in project`, and
+    // `in` raises a TypeError on a nullish value — where the pre-index path bottomed out
+    // in `resolveDerivation`'s `projectDocuments = []` default and simply resolved
+    // nothing. Both spellings, because `== null` is what covers them together.
+    // `Reflect.apply` (the `prototypePinWidget.test.ts` precedent) is how an untyped
+    // caller is modelled without an `as` cast.
+    const prfaq = doc('prfaq_1', 'prfaq', '2025-02-01', builtFrom('prd_1'))
+
+    for (const missing of [undefined, null]) {
+      expect(Reflect.apply(classifySelectionLineage, undefined, [[prfaq], missing]))
+        .toStrictEqual({ state: 'coherent', reason: 'oneChain' })
+      expect(Reflect.apply(fresherCoherentSelection, undefined, [[prfaq], missing])).toBeNull()
+      expect(Reflect.apply(rowLineageOf, undefined, [{ is_frozen: true, documents: [prfaq] }, missing]))
+        .toHaveProperty('stale', false)
+    }
+    // The control: `prd_1` is the source this PR/FAQ names, so with a project read that
+    // CARRIES it beside another PRD the same selection crosses generations. The answers
+    // above are therefore "the sources resolved against nothing", not a classifier that
+    // answers `coherent` regardless.
+    const prd1 = doc('prd_1', 'prd', '2025-01-01', builtFromFeedback)
+    const prd2 = doc('prd_2', 'prd', '2025-03-01', builtFromFeedback)
+    expect(classifySelectionLineage([prfaq, prd2], [prd1, prd2, prfaq]))
+      .toStrictEqual({ state: 'crossGeneration', reason: 'supersededSource' })
+  })
+})
+
+describe('the two shapes of project read a rule accepts answer identically', () => {
+  /**
+   * PINNED WHERE THE UNION IS DECLARED, and not left to `collectRows`' coverage. The
+   * equivalence argument that carries `resolveDerivationAgainst` — one function
+   * delegating to the other — does not carry here: `fresherCoherentSelection` reads
+   * `sources.documents` for `newestOfType` and `sources.sourceIndex` for its nested
+   * classify, so the prepared arm and the list arm diverge at three separate reads
+   * rather than one. Each rule is asked both ways over one fixture, and the answers
+   * must be the same object.
+   */
+  const prd1 = doc('prd_1', 'prd', '2025-01-01', builtFromFeedback)
+  const prfaq1 = doc('prfaq_1', 'prfaq', '2025-01-01', builtFrom('prd_1'))
+  const prd2 = doc('prd_2', 'prd', '2025-03-01', builtFrom('prd_1'))
+  const prfaq2 = doc('prfaq_2', 'prfaq', '2025-03-01', builtFrom('prd_2'))
+  const documents = [prd1, prfaq1, prd2, prfaq2]
+
+  // A row crossing generations (its PR/FAQ names the PRD the row's other document
+  // supersedes) AND stale, so all three rules have something to say.
+  const crossingRow = { is_frozen: true, documents: [prd2, prfaq1] }
+
+  it('has a non-default answer from every rule for the crossing row (the control)', () => {
+    // Asserted as literals, so the equalities in the next case are over answers that
+    // are not the empty or default one.
+    expect(classifySelectionLineage(crossingRow.documents, documents))
+      .toStrictEqual({ state: 'crossGeneration', reason: 'supersededSource' })
+    expect(fresherCoherentSelection(crossingRow.documents, documents)).toStrictEqual(['prd_2', 'prfaq_2'])
+    expect(rowLineageOf(crossingRow, documents).stale).toBe(true)
+  })
+
+  it('answers the same for a document list as for a read prepared from it', () => {
+    const prepared = projectLineageSources(documents)
+    const row = crossingRow
+    expect(classifySelectionLineage(row.documents, prepared))
+      .toStrictEqual(classifySelectionLineage(row.documents, documents))
+    expect(fresherCoherentSelection(row.documents, prepared))
+      .toStrictEqual(fresherCoherentSelection(row.documents, documents))
+    expect(rowLineageOf(row, prepared)).toStrictEqual(rowLineageOf(row, documents))
+  })
+
+  it('answers the same for a read prepared from an EMPTY list as for that list', () => {
+    // The other end of the fixture range, and the one that would catch a prepared arm
+    // reading its documents from somewhere other than the read it was given: with no
+    // project documents nothing resolves, so a row that crosses generations above is
+    // merely coherent, and no candidate can be formed.
+    const row = { is_frozen: true, documents: [prd2, prfaq1] }
+    expect(classifySelectionLineage(row.documents, projectLineageSources([])))
+      .toStrictEqual(classifySelectionLineage(row.documents, []))
+    expect(rowLineageOf(row, projectLineageSources([]))).toStrictEqual(rowLineageOf(row, []))
+    // The control that these are the "resolved nothing" answers rather than the
+    // crossing ones, so the equalities are not both reporting the same rich answer.
+    expect(rowLineageOf(row, projectLineageSources([])))
+      .toStrictEqual({ state: 'coherent', reason: 'oneChain', stale: false, fresherDocumentIds: [] })
   })
 })
 
@@ -772,7 +865,7 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
     expect(lineage.stale).toBe(true)
     // The ids, so the caller can name what to score without recomputing it — and in
     // the order the row's own types appear.
-    expect(lineage.fresherDocumentIds).toEqual(['prd_2', 'prfaq_2'])
+    expect(lineage.fresherDocumentIds).toStrictEqual(['prd_2', 'prfaq_2'])
     // Still coherent and still described: staleness is a second axis, so a
     // superseded row that is internally consistent says so rather than being
     // relabelled as incoherent.
@@ -790,14 +883,14 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
     const lineage = rowLineageOf(frozenRow([prd1, prfaq1]), [prd1, prfaq1, prd2])
 
     expect(lineage.stale).toBe(true)
-    expect(lineage.fresherDocumentIds).toEqual(['prd_2', 'prfaq_1'])
+    expect(lineage.fresherDocumentIds).toStrictEqual(['prd_2', 'prfaq_1'])
   })
 
   it('leaves a frozen row holding the newest of each type current', () => {
     const lineage = rowLineageOf(frozenRow([prd2, prfaq2]), project)
 
     expect(lineage.stale).toBe(false)
-    expect(lineage.fresherDocumentIds).toEqual([])
+    expect(lineage.fresherDocumentIds).toStrictEqual([])
   })
 
   it('never marks an UN-frozen row stale, however much newer the alternatives are', () => {
@@ -823,13 +916,11 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
 
     expect(rowLineageOf(survivor, project).stale).toBe(true)
 
-    const truncated = rowLineageOf({ ...survivor, composition_truncated: true }, project)
-    expect(truncated.stale).toBe(false)
-    expect(truncated.fresherDocumentIds).toEqual([])
-    // Still described, and by the same rule as before — withholding the advisory is not
-    // withholding the state.
-    expect(truncated.state).toBe('coherent')
-    expect(truncated.reason).toBe('oneChain')
+    // Not stale, and still described by the same rule as before — withholding the
+    // advisory is not withholding the state.
+    expect(rowLineageOf({ ...survivor, composition_truncated: true }, project)).toMatchObject({
+      stale: false, fresherDocumentIds: [], state: 'coherent', reason: 'oneChain',
+    })
     // `false` reads as "resolved fully", the same as absent: the flag may only ever
     // take staleness away.
     expect(rowLineageOf({ ...survivor, composition_truncated: false }, project).stale).toBe(true)
@@ -863,7 +954,7 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
     // fresher coherent combination.
     const coherentPrfaq2 = doc('prfaq_2', 'prfaq', '2025-03-01', builtFrom('prd_2'))
     expect(fresherCoherentSelection([prd1, prfaq1], [prd1, prfaq1, prd2, coherentPrfaq2]))
-      .toEqual(['prd_2', 'prfaq_2'])
+      .toStrictEqual(['prd_2', 'prfaq_2'])
   })
 
   it('advises a candidate that crosses generations only two hops out, because the check is depth-1', () => {
@@ -886,10 +977,10 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
     expect(fresherCoherentSelection([prd1, prfaq1], [prd1, prfaq1, prd2, directPrfaq2]))
       .toBeNull()
     // Two hops out, the crossing is invisible and the combination is advised.
-    expect(fresherCoherentSelection([prd1, prfaq1], project2)).toEqual(['prd_2', 'prfaq_2'])
+    expect(fresherCoherentSelection([prd1, prfaq1], project2)).toStrictEqual(['prd_2', 'prfaq_2'])
     // And the candidate's own classification is why: nothing walks a source's sources.
     expect(classifySelectionLineage([prd2, transitivePrfaq2], project2))
-      .toEqual({ state: 'coherent', reason: 'oneChain' })
+      .toStrictEqual({ state: 'coherent', reason: 'oneChain' })
     // Through the entry point the page uses, which is where the badge and the sentence
     // come from — so the shape is recorded as a user-visible outcome, not just as an
     // arithmetic result.
@@ -917,13 +1008,15 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
 
     const lineage = rowLineageOf(frozenRow([legacyPrd1, legacyPrfaq1]), legacy)
 
-    expect(lineage.stale).toBe(true)
-    expect(lineage.fresherDocumentIds).toEqual(['legacy_prd_2', 'legacy_prfaq_2'])
     // The row's own state is unchanged by the fix and is asserted so the case cannot
     // be read as claiming absent lineage now reads as coherent: it does not. The
     // staleness axis simply stops being gated on it.
-    expect(lineage.state).toBe('absent')
-    expect(lineage.reason).toBe('noneRecorded')
+    expect(lineage).toMatchObject({
+      stale: true,
+      fresherDocumentIds: ['legacy_prd_2', 'legacy_prfaq_2'],
+      state: 'absent',
+      reason: 'noneRecorded',
+    })
     // A row holding the newest of each type on the SAME lineage-less project is still
     // current, so the assertions above are the arithmetic answering and not staleness
     // firing for anything `absent`.
@@ -960,7 +1053,7 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
     // shape IS a fresher combination — so the case above is the regression guard and
     // not the PR/FAQ having gone missing.
     expect(fresherCoherentSelection([prd1, prfaq1], [prd1, prd2, prfaq1]))
-      .toEqual(['prd_2', 'prfaq_1'])
+      .toStrictEqual(['prd_2', 'prfaq_1'])
   })
 
   it('withholds staleness on a timestamp tie, in both array orders', () => {
@@ -980,12 +1073,14 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
     const prdA = doc('prd_a', 'prd', sameInstant, builtFromFeedback)
     const prdB = doc('prd_b', 'prd', sameInstant, builtFromFeedback)
 
-    for (const order of [[prdA, prdB], [prdB, prdA]]) {
-      expect(fresherCoherentSelection([prdA], order), JSON.stringify(order)).toBeNull()
-      expect(fresherCoherentSelection([prdB], order), JSON.stringify(order)).toBeNull()
-      // Through the entry point the page uses, which is what a reviewer sees.
-      expect(rowLineageOf(frozenRow([prdA]), order).stale, JSON.stringify(order)).toBe(false)
-    }
+    // Per order: each held PRD's verdict, then the row's staleness through the entry
+    // point the page uses, which is what a reviewer sees.
+    const tieVerdicts = [[prdA, prdB], [prdB, prdA]].map((order) => [
+      fresherCoherentSelection([prdA], order),
+      fresherCoherentSelection([prdB], order),
+      rowLineageOf(frozenRow([prdA]), order).stale,
+    ])
+    expect(tieVerdicts).toStrictEqual([[null, null, false], [null, null, false]])
 
     // AND THE TIE IS ON THE INSTANT, not on the string. `prd_a`'s moment is respelled
     // as an offset here — the SAME instant as `prd_b`'s Z form, so nothing is fresher
@@ -993,8 +1088,10 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
     // higher: a string comparison would therefore report `prd_b`'s row superseded by a
     // copy of the moment it already holds.
     const offsetA = doc('prd_a', 'prd', '2025-01-01T11:00:00+02:00', builtFromFeedback)
-    expect(fresherCoherentSelection([offsetA], [offsetA, prdB])).toBeNull()
-    expect(fresherCoherentSelection([prdB], [offsetA, prdB])).toBeNull()
+    expect([
+      fresherCoherentSelection([offsetA], [offsetA, prdB]),
+      fresherCoherentSelection([prdB], [offsetA, prdB]),
+    ]).toStrictEqual([null, null])
 
     // THE POSITIVE CONTROL, and it is the one shape that tells withholding apart from
     // a comparison that stopped working: a genuinely newer document is still reported
@@ -1002,10 +1099,9 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
     // the tuple comparison got right only because the instant dominated it.
     const heldOlder = doc('prd_z', 'prd', '2025-01-01', builtFromFeedback)
     const newerLowerId = doc('prd_a', 'prd', '2025-06-01', builtFromFeedback)
-    for (const order of [[heldOlder, newerLowerId], [newerLowerId, heldOlder]]) {
-      expect(fresherCoherentSelection([heldOlder], order), JSON.stringify(order))
-        .toEqual(['prd_a'])
-    }
+    const newerVerdicts = [[heldOlder, newerLowerId], [newerLowerId, heldOlder]]
+      .map((order) => fresherCoherentSelection([heldOlder], order))
+    expect(newerVerdicts).toStrictEqual([['prd_a'], ['prd_a']])
 
     // Two date-only values from ONE day tie for the whole day, which is the widest
     // window an id could have decided over.
@@ -1042,7 +1138,7 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
     // reported, so the assertions below pin the tie and not the arithmetic refusing
     // every held document the read is missing.
     const newerSibling = doc('prd_sib', 'prd', '2025-06-01', builtFromFeedback)
-    expect(fresherCoherentSelection([held], [newerSibling, older])).toEqual(['prd_sib'])
+    expect(fresherCoherentSelection([held], [newerSibling, older])).toStrictEqual(['prd_sib'])
     expect(rowLineageOf(frozenRow([held]), [newerSibling, older]).stale).toBe(true)
 
     // The project read carries the sibling and NOT the held document — reachable at
@@ -1072,13 +1168,13 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
       [newerPrfaq, tiedPrd, heldPrfaq, heldPrd],
     ]) {
       expect(fresherCoherentSelection([heldPrd, heldPrfaq], order), JSON.stringify(order))
-        .toEqual(['prd_a', 'faq_2'])
+        .toStrictEqual(['prd_a', 'faq_2'])
       // Through the entry point the page uses, so the field a future Add-row picker
       // reads is the one asserted.
       expect(
         rowLineageOf(frozenRow([heldPrd, heldPrfaq]), order).fresherDocumentIds,
         JSON.stringify(order),
-      ).toEqual(['prd_a', 'faq_2'])
+      ).toStrictEqual(['prd_a', 'faq_2'])
     }
 
     // THE POSITIVE CONTROL, in the same case: a type whose newest is GENUINELY newer
@@ -1089,11 +1185,11 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
     expect(fresherCoherentSelection(
       [heldPrd, heldPrfaq],
       [heldPrd, heldPrfaq, tiedPrd, newerPrd, newerPrfaq],
-    )).toEqual(['prd_c', 'faq_2'])
+    )).toStrictEqual(['prd_c', 'faq_2'])
     // And with no tie at all the answer is unchanged — the documented shape
     // `fresherDocumentIds` promises, which the tie was the one input contradicting.
     expect(fresherCoherentSelection([heldPrd, heldPrfaq], [heldPrd, heldPrfaq, newerPrfaq]))
-      .toEqual(['prd_a', 'faq_2'])
+      .toStrictEqual(['prd_a', 'faq_2'])
   })
 
   it('withholds staleness for a row already holding two versions of one type', () => {
@@ -1133,10 +1229,12 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
     // The state is unchanged — staleness is a second axis, so this row shows BOTH
     // badges (see `RowStaleBadge`'s "a second badge, not a fourth state"). Pinning
     // the coexistence rather than only the boolean.
-    expect(lineage.state).toBe('crossGeneration')
-    expect(lineage.reason).toBe('supersededSource')
-    expect(lineage.stale).toBe(true)
-    expect(lineage.fresherDocumentIds).toEqual(['prd_2', 'faq_2'])
+    expect(lineage).toMatchObject({
+      state: 'crossGeneration',
+      reason: 'supersededSource',
+      stale: true,
+      fresherDocumentIds: ['prd_2', 'faq_2'],
+    })
     // And the combination it names does not itself cross generations, which is what
     // makes advising it honest rather than trading one bad row for another.
     expect(classifySelectionLineage([prd2, faqFromPrd2], crossing).state).toBe('coherent')
@@ -1174,7 +1272,7 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
     // fresher. '2025-03-11T09:00:00+00:00' is five hours after the held 04:00Z.
     const genuinelyNewer = doc('prd_new', 'prd', '2025-03-11T09:00:00+00:00', builtFromFeedback)
     expect(fresherCoherentSelection([heldLater], [heldLater, genuinelyNewer]))
-      .toEqual(['prd_new'])
+      .toStrictEqual(['prd_new'])
   })
 
   it('answers the same in every timezone, because a zone-less datetime is UTC', () => {
@@ -1235,7 +1333,7 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
     /** Asserts one answer is `expected` in all four zones, naming the zone that broke. */
     const agreesEverywhere = <T>(answer: () => T, expected: T): void => {
       for (const [zone, actual] of inEveryZone(answer)) {
-        expect(actual, zone).toEqual(expected)
+        expect(actual, zone).toStrictEqual(expected)
       }
     }
 
@@ -1356,7 +1454,7 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
       '2025-01-01T09:00:00+0300',
       '2025-01-01T09:00:00-05',
     ]) {
-      expect(readsAs(stored), stored).toEqual(['newer'])
+      expect(readsAs(stored), stored).toStrictEqual(['newer'])
     }
 
     // WITHHELD: the two zone-less non-ISO spellings `Date.parse` would read as local
@@ -1409,15 +1507,17 @@ describe('a frozen row is stale only when a real fresher coherent combination ex
     const dateless = doc('nd', 'prd', '', builtFromFeedback)
     const ancient = doc('old_prd', 'prd', '2020-01-01', builtFromFeedback)
 
-    expect(fresherCoherentSelection([dateless], [dateless, ancient])).toBeNull()
-    expect(rowLineageOf(frozenRow([dateless]), [dateless, ancient]).stale).toBe(false)
     const unparseable = doc('nd', 'prd', 'unknown', builtFromFeedback)
-    expect(fresherCoherentSelection([unparseable], [unparseable, ancient])).toBeNull()
+    expect([
+      fresherCoherentSelection([dateless], [dateless, ancient]),
+      rowLineageOf(frozenRow([dateless]), [dateless, ancient]).stale,
+      fresherCoherentSelection([unparseable], [unparseable, ancient]),
+    ]).toStrictEqual([null, false, null])
     // The positive control, in two halves. Once the row's own timestamp is readable
     // and genuinely older, the same shape IS stale — so the case above is the gate and
     // not staleness failing to fire.
     const dated = doc('nd', 'prd', '2019-01-01', builtFromFeedback)
-    expect(fresherCoherentSelection([dated], [dated, ancient])).toEqual(['old_prd'])
+    expect(fresherCoherentSelection([dated], [dated, ancient])).toStrictEqual(['old_prd'])
     // The candidate's side needs no gate of its own, and this is the case that shows
     // why: a date-less project document can still be the newest of its type
     // (`newestOfType` ranks it last, so it wins only a type nothing else answers), and

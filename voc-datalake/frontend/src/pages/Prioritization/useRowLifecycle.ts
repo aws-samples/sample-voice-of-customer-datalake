@@ -42,7 +42,7 @@ import type { ProjectDocument } from '../../api/types'
 import type { RefObject } from 'react'
 
 /** Which of the three writes a failure is about. */
-export type RowAction = 'compose' | 'recompose' | 'delete'
+type RowAction = 'compose' | 'recompose' | 'delete'
 
 /**
  * A write that did not land, as the page states it.

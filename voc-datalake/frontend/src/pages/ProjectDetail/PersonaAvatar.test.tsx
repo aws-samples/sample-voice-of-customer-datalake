@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import PersonaAvatar from './PersonaAvatar'
-import type { ProjectPersona } from '../../api/types'
+import type { ProjectPersona } from '../../api/projectTypes'
 
 const mockPersona: ProjectPersona = {
   persona_id: '1',
@@ -56,6 +56,6 @@ describe('PersonaAvatar', () => {
     const persona = { ...mockPersona, avatar_url: undefined }
     render(<PersonaAvatar persona={persona} />)
     const avatar = screen.getByText('T')
-    expect(avatar).toHaveClass('bg-gradient-to-br', 'from-purple-500', 'to-pink-500')
+    expect(avatar).toHaveClass('bg-accent', 'text-accent-fg')
   })
 })

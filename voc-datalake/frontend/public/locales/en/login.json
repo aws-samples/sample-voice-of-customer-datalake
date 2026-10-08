@@ -43,5 +43,7 @@
     "resettingPassword": "Resetting password...",
     "submit": "Reset Password",
     "title": "Enter Verification Code"
-  }
+  },
+  "showPassword": "Show password",
+  "hidePassword": "Hide password"
 }

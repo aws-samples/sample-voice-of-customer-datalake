@@ -43,5 +43,7 @@
     "resettingPassword": "Restableciendo contraseña...",
     "submit": "Restablecer Contraseña",
     "title": "Ingrese Código de Verificación"
-  }
+  },
+  "showPassword": "Mostrar contraseña",
+  "hidePassword": "Ocultar contraseña"
 }

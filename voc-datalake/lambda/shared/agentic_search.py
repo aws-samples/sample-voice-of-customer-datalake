@@ -24,7 +24,7 @@ Budgets ($7 / 1k queries — every query is billed):
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from shared.converse import converse
 from shared.logging import logger, tracer
@@ -75,7 +75,7 @@ def _parse_strict_json(raw: str) -> dict:
     (repo pattern — see projects.py assists). Line-wise fence stripping would
     corrupt JSON whose string values themselves contain fenced blocks; fine
     here because the planner shape is a flat query list."""
-    text = (raw or '').strip()
+    text = raw.strip()
     if text.startswith('```'):
         lines = [ln for ln in text.splitlines() if not ln.strip().startswith('```')]
         text = '\n'.join(lines).strip()
@@ -94,8 +94,6 @@ def _clean_queries(raw_queries, executed_normalized: set[str], budget: int) -> l
     cleaned: list[str] = []
     seen = set(executed_normalized)
     for raw in raw_queries:
-        if len(cleaned) >= min(MAX_QUERIES_PER_ROUND, budget):
-            break
         if not isinstance(raw, str):
             continue
         query = raw.strip()
@@ -104,13 +102,13 @@ def _clean_queries(raw_queries, executed_normalized: set[str], budget: int) -> l
             continue
         seen.add(normalized)
         cleaned.append(query)
-    return cleaned
+    return cleaned[:min(MAX_QUERIES_PER_ROUND, budget)]
 
 
 def _plan_initial_queries(question: str, context_hint: str) -> list[str]:
     """Round 1: propose the first searches. Raises on planner failure —
     the caller falls back to the literal question."""
-    today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    today = datetime.now(UTC).strftime('%Y-%m-%d')
     hint_section = ''
     if context_hint:
         hint_section = (
@@ -193,16 +191,17 @@ Return STRICT JSON in this exact shape (no prose, no markdown fences):
     return _clean_queries(parsed.get('queries'), executed_normalized, budget)
 
 
-def _result_key(result: dict) -> str:
-    """Dedupe key across queries: URL when present, else the fact text
-    (knowledge-graph observations have no URL)."""
+def _result_key(result: dict) -> tuple[bool, str]:
+    """Dedupe key across queries: (True, URL) when present, else (False, fact
+    text) — knowledge-graph observations have no URL, and a fact whose text
+    happens to equal some URL is still a different result."""
     url = (result.get('url') or '').strip()
     if url:
-        return f'url:{url}'
-    return f'text:{(result.get("text") or "").strip().lower()[:200]}'
+        return True, url
+    return False, (result.get('text') or '').strip().lower()[:200]
 
 
-def _run_queries(queries: list[str], seen_keys: set[str],
+def _run_queries(queries: list[str], seen_keys: set[tuple[bool, str]],
                  all_results: list[dict], sections: list[str]) -> list[str]:
     """Execute one round's queries; returns those that actually ran (failed
     queries still count as executed so the planner doesn't loop on them)."""
@@ -259,31 +258,31 @@ def run_agentic_web_search(question: str, context_hint: str = '') -> AgenticSear
     try:
         queries = _plan_initial_queries(question, context_hint)
     except Exception as e:
-        logger.warning(f"Web search planning failed ({e}); falling back to a single literal search")
+        logger.exception(f"Web search planning failed ({e}); falling back to a single literal search")
         return _fallback_single_search(question)
     if not queries:
         logger.warning("Web search planner proposed no queries; falling back to a single literal search")
         return _fallback_single_search(question)
 
-    executed: list[str] = []
     all_results: list[dict] = []
     sections: list[str] = []
-    seen_keys: set[str] = set()
+    seen_keys: set[tuple[bool, str]] = set()
+    executed = _run_queries(queries, seen_keys, all_results, sections)
 
-    for round_number in range(1, MAX_PLANNING_ROUNDS + 1):
-        executed.extend(_run_queries(queries, seen_keys, all_results, sections))
-
+    # Round 1 was the plan; each further planning round assesses, then searches.
+    round_number = 1
+    while round_number < MAX_PLANNING_ROUNDS and len(executed) < MAX_TOTAL_QUERIES:
         budget = MAX_TOTAL_QUERIES - len(executed)
-        if budget <= 0 or round_number >= MAX_PLANNING_ROUNDS:
-            break
         try:
             queries = _assess_and_refine(question, executed, all_results, budget, round_number)
         except Exception as e:
-            logger.warning(f"Web search assess round {round_number} failed ({e}); stopping with gathered results")
+            logger.exception(f"Web search assess round {round_number} failed ({e}); stopping with gathered results")
             break
         if not queries:
             logger.info(f"Web search planner declared coverage sufficient after {len(executed)} queries")
             break
+        executed.extend(_run_queries(queries, seen_keys, all_results, sections))
+        round_number += 1
 
     context = '\n\n'.join(sections)
     if len(context) > WEB_CONTEXT_MAX_CHARS:

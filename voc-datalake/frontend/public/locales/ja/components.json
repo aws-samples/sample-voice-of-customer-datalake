@@ -20,7 +20,76 @@
     "saved": "カテゴリを保存しました",
     "deleteTitle": "カテゴリを削除",
     "deleteMessage": "このカテゴリとすべてのサブカテゴリを削除してもよろしいですか？この操作は元に戻せません。",
-    "deleteConfirm": "削除"
+    "deleteConfirm": "削除",
+    "expandLabel": "{{name}} を展開",
+    "collapseLabel": "{{name}} を折りたたむ",
+    "renameHint": "クリックして名前を変更",
+    "renameLabel": "{{name}} の名前を変更",
+    "deleteCategoryLabel": "{{name}} を削除",
+    "deleteSubcategoryLabel": "サブカテゴリ {{name}} を削除",
+    "addSubcategoryLabel": "サブカテゴリを追加",
+    "companyLabel": "会社の説明",
+    "listHelp": "各カテゴリには、すべてのレビューに保存される ID、説明、所属するプロダクト、プロダクトオーナーがあります。オーナーは担当カテゴリのフィードバックを自動的に閲覧でき、対応する担当者となります。",
+    "noProduct": "プロダクト未設定",
+    "saveError": "カテゴリを保存できませんでした。名前と上限、および管理者であることを確認してください。",
+    "details": {
+      "productLabel": "プロダクト",
+      "productPlaceholder": "例：モバイルアプリ",
+      "productHint": "このカテゴリが属するプロダクトまたは領域です。",
+      "ownersLabel": "プロダクトオーナー",
+      "removeOwner": "{{name}} を削除",
+      "ownersLimit": "オーナーは最大 {{max}} 人です",
+      "addOwner": "オーナーを追加…",
+      "ownersUnavailable": "ユーザー一覧を読み込めなかったため、現在オーナーを追加できません。",
+      "ownersHint": "オーナーはこのカテゴリのフィードバックを自動的に閲覧できます。"
+    },
+    "reprocess": {
+      "title": "既存のフィードバックを再処理",
+      "description": "カテゴリを変更した後、保存済みのレビューを再分類します。レビューはその場で更新され、何も削除されません。",
+      "modeLabel": "モード",
+      "modes": {
+        "processed": {
+          "title": "処理済みレビューを再分類",
+          "description": "保存済み（翻訳済み）のテキストを現在のカテゴリで分類します。変わるのはカテゴリとサブカテゴリのみです。"
+        },
+        "raw": {
+          "title": "生データから再処理",
+          "description": "元の生データから、感情・カテゴリ・ペルソナ・課題分析を含む完全なエンリッチメントを再実行します。"
+        },
+        "dimensions": {
+          "title": "ディメンションを再推定",
+          "description": "推定可能なディメンションについてモデルを再実行します。ソース、そのプロファイル、または人が設定した値は変更されません。"
+        }
+      },
+      "status": {
+        "queued": "待機中",
+        "running": "実行中",
+        "completed": "完了",
+        "failed": "失敗",
+        "cancelled": "キャンセル済み"
+      },
+      "counters": {
+        "scanned": "スキャン済み",
+        "updated": "更新",
+        "unchanged": "変更なし",
+        "skipped_manual": "手動設定（維持）",
+        "failed": "失敗"
+      },
+      "allTime": "全期間",
+      "lastNDays_one": "過去{{count}}日間",
+      "lastNDays_other": "過去{{count}}日間",
+      "cancel": "ジョブをキャンセル",
+      "alreadyRunning": "再処理ジョブはすでに実行中です。完了を待つか、先にキャンセルしてください。",
+      "stoppedAtCeiling": "モデルのコストを抑えるため、ジョブあたりの上限 {{max}} 件で停止しました。残りのレビューは再処理されていません。期間を絞って対象にしてください。",
+      "startError": "再処理ジョブを開始できませんでした。",
+      "daysLabel": "期間（日数）",
+      "includeManual": "手動の修正も上書きする",
+      "daysHint": "1〜{{max}}日、または全期間の場合は0。別途選択しない限り、手動の修正は維持されます。",
+      "costNote": "コスト：期間内のレビュー1件につきモデル呼び出し1回。大規模なデータレイクで全期間を処理すると数時間かかることがあります。",
+      "start": "再処理を開始",
+      "confirmTitle": "既存のフィードバックを再処理しますか？",
+      "confirmMessage": "{{window}}を対象に「{{mode}}」を実行します。この期間のレビュー1件につきモデルを1回呼び出します。レビューはその場で更新され、何も削除されません。"
+    }
   },
   "dataSourceWizard": {
     "all": "すべて",
@@ -87,14 +156,16 @@
     "downloadMarkdown": "Markdownでダウンロード",
     "downloadOptions": "ダウンロードオプション",
     "downloadPDF": "PDFでダウンロード",
-    "downloadTXT": "TXTでダウンロード",
-    "kiroPromptTip": "ヒント：Export / MCPタブでKiroプロンプトを設定してください"
+    "downloadTXT": "TXTでダウンロード"
   },
   "errorBoundary": {
     "description": "このページで予期しないエラーが発生しました。再読み込みするか、ホームに戻ってください。アプリの他の部分には影響ありません。",
     "goHome": "ホームへ戻る",
     "reload": "ページを再読み込み",
-    "title": "問題が発生しました"
+    "title": "問題が発生しました",
+    "notFoundTitle": "ページが見つかりません",
+    "notFoundDescription": "このアドレスに該当するページはありません。移動したか、リンクが間違っている可能性があります。",
+    "goBack": "戻る"
   },
   "feedbackCard": {
     "copyText": "テキストをコピー",
@@ -102,13 +173,9 @@
     "issue": "問題: {{summary}}",
     "rootCause": "根本原因: {{cause}}",
     "urgent": "緊急",
-    "webScraper": "ウェブスクレイパー"
-  },
-  "feedbackCarousel": {
-    "issue": "問題: {{summary}}",
-    "urgent": "緊急",
-    "viewDetails": "詳細を表示",
-    "webScraper": "ウェブスクレイパー"
+    "webScraper": "ウェブスクレイパー",
+    "openOriginal": "元のレビューを開く",
+    "reviewDateHint": "レビューが書かれた日付"
   },
   "formQrCode": {
     "accessibleName": "フィードバックフォーム「{{formName}}」のQRコード",
@@ -151,9 +218,11 @@
     "refresh": "更新",
     "sourcePlaceholder": "ソース名...",
     "supportedFormats": "CSV、JSON、JSONLに対応",
+    "unknownError": "不明なエラー",
     "unsupportedFile": "サポートされていないファイル形式: {{filename}}。CSV、JSON、JSONLファイルのみがサポートされています。",
     "uploaded": "{{filename}}をアップロードしました",
     "uploadFailed": "{{filename}}のアップロードに失敗しました: {{error}}",
+    "uploadUrlFailed": "アップロードURLを取得できませんでした",
     "uploading": "{{count}}個のファイルをアップロード中...",
     "uploading_one": "{{count}}個のファイルをアップロード中...",
     "uploading_other": "{{count}}個のファイルをアップロード中...",
@@ -162,7 +231,8 @@
   "socialFeed": {
     "all": "すべて",
     "noFeedback": "この期間のフィードバックが見つかりません",
-    "view": "表示"
+    "view": "表示",
+    "filterLabel": "ソースで絞り込み"
   },
   "userAdmin": {
     "active": "アクティブ",
@@ -191,7 +261,6 @@
     "firstNameLabel": "名",
     "lastNameLabel": "姓",
     "loadError": "ユーザーの読み込みに失敗しました。管理者アクセス権があることを確認してください。",
-    "nameLabel": "名前（オプション）",
     "noUsers": "ユーザーが見つかりません。上記から最初のユーザーを追加してください。",
     "passwordResetSent": "パスワードリセットメールが送信されました",
     "pendingStatus": "保留中",
@@ -209,40 +278,222 @@
     "userDeleted": "ユーザーが削除されました",
     "userDisabled": "ユーザーが無効化されました",
     "userEnabled": "ユーザーが有効化されました",
-    "userManagement": "ユーザー管理",
     "userRole": "ユーザー",
     "usersCount": "（{{count}}ユーザー）",
     "usersCount_one": "（{{count}}ユーザー）",
     "usersCount_other": "（{{count}}ユーザー）",
-    "userUpdated": "ユーザーが更新されました"
+    "roleFor": "{{email}} のロール",
+    "categoryAccess": {
+      "title": "カテゴリへのアクセス",
+      "noCategories": "カテゴリはまだ設定されていません。",
+      "adminNote": "このユーザーは管理者のため、ここでの設定に関係なく常にすべてのカテゴリを閲覧できます。",
+      "all": "すべてのカテゴリ",
+      "selected": "選択したカテゴリのみ",
+      "ownersNote": "プロダクトオーナーは、ここで選択されていなくても担当カテゴリを常に閲覧できます。",
+      "saveError": "カテゴリへのアクセスを保存できませんでした。",
+      "loadError": "カテゴリへのアクセスを読み込めませんでした。",
+      "saved": "{{email}} のカテゴリへのアクセスを更新しました"
+    },
+    "flags": {
+      "title": "メモリと所有者のフラグ",
+      "description": "メモリレビュー担当は会社のメモリを管理します。代替オーナー（管理者 1 名）は、カテゴリにオーナーがいないエージェント作成プロジェクトを受け取ります。",
+      "fallbackOwner": "代替オーナー",
+      "memoryReviewer": "メモリレビュー担当",
+      "fallbackOwnerFor": "代替オーナー: {{user}}",
+      "memoryReviewerFor": "メモリレビュー担当: {{user}}",
+      "fallbackAdminOnly": "代替オーナーになれるのは管理者のみです。",
+      "saveFailed": "フラグを更新できませんでした。もう一度お試しください。"
+    },
+    "sourceAccess": {
+      "title": "ソース",
+      "default": "制限されていないすべてのソース(既定)",
+      "all": "制限付きを含むすべてのソース",
+      "selected": "選択したソースのみ",
+      "restricted": "制限付き",
+      "noProfiles": "ソースプロファイルはまだありません(管理 → ソースとプライバシー)。"
+    }
   },
-  "userProfile": {
-    "administrator": "管理者",
-    "allFieldsRequired": "すべてのフィールドが必須です",
-    "changePassword": "パスワードを変更",
-    "changing": "変更中...",
-    "confirmNewPassword": "新しいパスワードを確認",
-    "confirmPasswordPlaceholder": "新しいパスワードを確認",
-    "currentPassword": "現在のパスワード",
-    "currentPasswordPlaceholder": "現在のパスワードを入力",
-    "email": "メール",
-    "failedToChange": "パスワードの変更に失敗しました",
-    "groups": "グループ",
-    "incorrectPassword": "現在のパスワードが正しくありません",
-    "language": "言語",
-    "myProfile": "マイプロフィール",
-    "name": "名前",
-    "newPassword": "新しいパスワード",
-    "newPasswordPlaceholder": "新しいパスワードを入力",
-    "passwordChanged": "パスワードが正常に変更されました!",
-    "passwordIntro": "現在のパスワードを入力し、新しいパスワードを選択してください",
-    "passwordRequirements": "パスワードは8文字以上で、大文字、小文字、数字を含む必要があります",
-    "passwordTooShort": "パスワードは8文字以上である必要があります",
-    "passwordsMismatch": "新しいパスワードが一致しません",
-    "profile": "プロフィール",
-    "role": "ロール",
-    "showPasswords": "パスワードを表示",
-    "user": "ユーザー",
-    "username": "ユーザー名"
+  "confirmModal": {
+    "delete": "削除"
+  },
+  "pageLoader": {
+    "loading": "ページを読み込み中…"
+  },
+  "ratingStars": {
+    "label": "{{max}}つ星中{{rating}}"
+  },
+  "categoryChange": {
+    "previous": "変更前：{{category}}",
+    "manual": "手動で変更",
+    "manualBy": "{{user}} が変更",
+    "loading": "カテゴリを読み込み中",
+    "category": "カテゴリ",
+    "choose": "カテゴリを選択",
+    "subcategory": "サブカテゴリ",
+    "noSubcategory": "なし",
+    "cancel": "キャンセル",
+    "save": "カテゴリを保存",
+    "open": "カテゴリを変更",
+    "errors": {
+      "invalid": "そのカテゴリはもう存在しません。更新して別のカテゴリを選んでください。",
+      "notFound": "このレビューは利用できないか、カテゴリがアクセス範囲外です。",
+      "conflict": "他の人が同時にこのレビューを変更しました。更新してもう一度お試しください。",
+      "generic": "カテゴリを変更できませんでした。"
+    }
+  },
+  "unsavedChanges": {
+    "title": "未保存の変更",
+    "message": "保存されていない変更があります。移動する前に保存しますか、それとも破棄しますか?",
+    "save": "保存",
+    "discard": "破棄",
+    "cancel": "キャンセル",
+    "saveFailed": "保存できませんでした。変更はそのまま残っています。再試行するかキャンセルしてください。",
+    "cannotSave": "保存する前に表示された問題を修正するか、変更を破棄してください。"
+  },
+  "dimensionFields": {
+    "tagsLabel": "タグ",
+    "tagsPlaceholder": "vip, 請求; 返金",
+    "tagsHint": "タグはカンマまたはセミコロンで区切ります(最大 20 件)。",
+    "tagsInvalid": "使用できません(「#」「,」「:」は不可、最大 64 文字): {{tags}}",
+    "tagsTooMany": "タグは最大 {{max}} 件です。",
+    "sourceLabel": "ソース",
+    "manualImport": "手動インポート(既定)",
+    "restrictedOption": "{{name}}(制限付き)",
+    "sourceHint": "これらの行の個人データポリシー、保持期間、表示範囲、既定のディメンションを決めます。",
+    "sourceRestrictedHint": "制限付き: 管理者と、このソースを許可された人だけがこれらの行を見られます。",
+    "defaultsTitle": "ディメンションとタグ",
+    "defaultsHint": "ここからのレビューにはすべてこの値が付きます。レビュー自身の値がディメンションごとに優先されます。",
+    "noDimensions": "ディメンションはまだ設定されていません(管理 → ディメンション)。",
+    "noDefault": "既定なし"
+  },
+  "draftSaveBar": {
+    "save": "保存",
+    "discard": "変更を破棄",
+    "saving": "保存中…",
+    "saved": "保存しました",
+    "saveError": "保存されませんでした: {{reason}}",
+    "remove": "削除"
+  },
+  "dimensionsManager": {
+    "newValue": "新しい値",
+    "valueNameLabel": "{{name}} の保存名",
+    "valueNamePlaceholder": "stored_name",
+    "valueLabelLabel": "{{name}} の表示ラベル",
+    "valueLabelPlaceholder": "表示ラベル(任意)",
+    "valueParentLabel": "{{name}} が属する {{parent}} の値",
+    "anyParentValue": "すべての親の値に属する",
+    "removeValue": "値 {{name}} を削除",
+    "parentLabel": "親ディメンション",
+    "noParent": "なし(最上位)",
+    "parentOfChildren": "{{children}} の親なので、自身は親を持てません。",
+    "parentHint": "子は親の値によって値が絞り込まれます(1 階層のみ)。",
+    "newDimension": "新しいディメンション",
+    "removeDimension": "ディメンション {{name}} を削除",
+    "keyLabel": "キー(レビューに保存)",
+    "labelLabel": "ラベル",
+    "labelPlaceholder": "製品",
+    "descriptionLabel": "説明(モデルに提示)",
+    "inferLabel": "モデルに推定させる",
+    "inferHint": "オフ: ソース、そのプロファイル、または人だけが設定します。",
+    "valuesTitle": "値({{n}})",
+    "addValueLabel": "{{name}} の新しい値",
+    "addValue": "値を追加",
+    "emptyTitle": "ディメンションはまだありません",
+    "emptyHint": "製品、モジュール、ユーザー種別などでフィードバックを分類するには追加してください。",
+    "addDimension": "ディメンションを追加(最大 {{max}})",
+    "loadError": "ディメンションを読み込めませんでした。",
+    "problems": {
+      "tooMany": "ディメンションは最大 {{max}} 件です。",
+      "keyFormat": "キー「{{key}}」: 英小文字・数字・「_」で、先頭は英字(最大 32 文字)。",
+      "keyReserved": "「{{key}}」は予約済みです。別のキーを選んでください。",
+      "keyDuplicate": "2 つのディメンションがキー「{{key}}」を使っています。",
+      "labelLength": "「{{key}}」のラベルが {{max}} 文字を超えています。",
+      "descriptionLength": "「{{key}}」の説明が {{max}} 文字を超えています。",
+      "parentInvalid": "「{{key}}」の親には別の最上位ディメンションを指定してください。",
+      "parentValueMissing": "「{{key}}」の値「{{value}}」が、存在しない親の値に属しています。",
+      "tooManyValues": "「{{key}}」の値が {{max}} 件を超えています。",
+      "valueFormat": "「{{key}}」の値「{{value}}」: 1〜64 文字、空白・「#」「,」「:」は不可。",
+      "valueDuplicate": "「{{key}}」に値「{{value}}」が 2 回あります。"
+    }
+  },
+  "sourcesManager": {
+    "keepForever": "レビューを無期限に保持",
+    "retentionLabel": "次より古いレビューを削除(日)",
+    "retentionHint": "{{min}}〜{{max}} 日。毎日のジョブがこのソースの古いレビューと元データのアーカイブを削除します。",
+    "removeProfile": "{{name}} のプロファイルを削除",
+    "labelLabel": "ラベル",
+    "piiLabel": "個人データ",
+    "pii": {
+      "allow": "受信したまま保持",
+      "allowHint": "テキスト・作成者・タイトルはソースから届いたまま保存されます。",
+      "redact": "伏せ字にする",
+      "redactHint": "メール・電話番号・IBAN・カード番号・IP アドレスは保存前に置き換えられ、作成者は削除され、元データは保持されません。",
+      "summary_only": "要約のみ",
+      "summaryOnlyHint": "派生フィールド(要約・カテゴリ・感情・ディメンション)のみ保持し、元のテキストは保存しません。"
+    },
+    "restrictedLabel": "制限付き",
+    "restrictedHint": "管理者と、ユーザー → アクセスでこのソースを許可されたユーザーだけがレビューを見られます。",
+    "defaultsTitle": "このソースのすべてのレビューに付けるディメンションの値",
+    "noDefault": "既定なし",
+    "empty": "プロファイルはまだありません。すべてのソースはすべてを無期限に保持し、全員に表示します。",
+    "loadError": "ソースプロファイルを読み込めませんでした。",
+    "addLabel": "ソースプロファイルを追加",
+    "add": "追加",
+    "addHint": "プラグイン、feedback_form、manual_import を選ぶか、sales_csv のようなインポートソース ID を入力します。",
+    "scraperHint": "Web スクレイパーのレビューはスクレイパー名をソース ID として持つため、この形式の名前(小文字、数字、_ または -。例: trustpilot_reviews)のスクレイパーだけがプロファイルを持てます。",
+    "problems": {
+      "tooMany": "ソースプロファイルは最大 {{max}} 件です。",
+      "retention": "{{name}}: 保持期間は {{min}}〜{{max}} 日、または無期限にしてください。",
+      "tags": "{{name}}: 先にタグを修正してください。",
+      "idFormat": "英小文字・数字・「_」・「-」を使ってください(最大 48 文字)。",
+      "idDuplicate": "そのソースには既にプロファイルがあります。"
+    }
+  },
+  "erasure": {
+    "title": "特定の人物のフィードバックを消去",
+    "description": "一致するレビューと元データのアーカイブをすべて削除します。元に戻せません。値はハッシュのみ保持されます。",
+    "fieldLabel": "照合する項目",
+    "fields": {
+      "author": "作成者",
+      "source_id": "ソース ID",
+      "csv_row_id": "CSV 行 ID",
+      "email": "メールアドレス"
+    },
+    "valueLabel": "値",
+    "sourceLabel": "対象ソース",
+    "allSources": "すべてのソース",
+    "sourceRequired": "IDはソース内でのみ一意です。ソースを選択してください。",
+    "start": "消去",
+    "startError": "消去を開始できませんでした: {{reason}}",
+    "jobsTitle": "最近の消去",
+    "noJobs": "まだありません。",
+    "counts": "レビュー {{items}} 件、元データ {{objects}} 件を削除",
+    "status": {
+      "queued": "待機中",
+      "running": "実行中",
+      "completed": "完了",
+      "failed": "失敗"
+    },
+    "confirmTitle": "この人物のフィードバックを消去しますか?",
+    "confirmMessage": "{{field}} が値と一致するすべてのレビュー({{source}})と元データのアーカイブが完全に削除されます。"
+  },
+  "dimensionsEdit": {
+    "errors": {
+      "invalid": "そのディメンションの値またはタグは使用できません。",
+      "notFound": "このレビューは利用できなくなりました。",
+      "conflict": "同時に別の人がこのレビューを変更しました。再読み込みしてやり直してください。",
+      "generic": "変更を保存できませんでした。"
+    }
+  },
+  "feedbackDimensions": {
+    "edit": "ディメンションを編集",
+    "none": "なし",
+    "cancel": "キャンセル",
+    "save": "保存",
+    "setByHand": "手動で設定",
+    "redacted": "伏せ字済み",
+    "redactedHint": "このレビューの個人データは保存前に置き換えられました。",
+    "summaryOnly": "要約のみ",
+    "summaryOnlyHint": "このソースは派生フィールドのみを保持し、元のテキストは保存されていません。"
   }
 }

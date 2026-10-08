@@ -8,41 +8,30 @@
  * (there is no in-editor switch), so the "create scraper from JSON-LD" flow from
  * the issue is covered via the template prop.
  *
- * Admin gate on Save: `POST /scrapers` is admin-gated server-side, and this
- * editor's Save is the only UI entrance to it. The gate shipped absent — the
- * component took no `isAdmin` at all — while three comments elsewhere justified
- * leaving Edit and New Source enabled by claiming that "the form's own Save
- * carries the gate". Measured before the fix, rendering with a non-admin: Save
- * `disabled` false, `title` null, and one `onSave` call. Because
- * `Scrapers.handleSaveScraper` closes the editor unconditionally and its
- * `saveMutation` has no `onError`, the 403 was invisible: the modal closed as
- * though the edit had been stored.
- *
- * The non-admin cases assert the CALLBACK is not invoked, not merely that the
- * button carries `disabled` — the request not being issued is the observable, and
- * `disabled` on a styled button is easy to render and easy to bypass.
+ * Save and the schedule (owner decision, 2026-10-04): `POST /scrapers` is open to
+ * every authenticated user, so Save works for both roles, creating and editing.
+ * Only the frequency is admin-only — the server keeps a non-admin's schedule — so
+ * that one control is disabled for them. Each locked case has an admin positive
+ * control, so "disable everything" cannot pass.
  */
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
+import { renderWithQueryClient as render } from '@test/query-client'
 import userEvent from '@testing-library/user-event'
 import i18n from 'i18next'
+import {
+  buttonWithIcon, makeScraper as makeBaseScraper, scrapersApiStubModule,
+} from './scrapers-fixtures'
 import ScraperEditor from './ScraperEditor'
 // Imported rather than restated: the subject of these assertions is the GATE, not
 // the wording. See the constant's own docstring.
 import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import { DEFAULT_SCRAPER } from './constants'
+import { at } from '@test/defined'
 import type { ScraperConfig, ScraperTemplate } from '../../api/types'
 
-vi.mock('../../api/scrapersApi', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../api/scrapersApi')>()
-  // Stub the WHOLE real API surface: a future call from the component hits
-  // an assertable vi.fn() instead of an opaque "x is not a function", and
-  // newly added methods are covered automatically.
-  const stubs = Object.fromEntries(
-    Object.keys(actual.scrapersApi).map((name) => [name, vi.fn()]),
-  )
-  return { scrapersApi: stubs }
-})
+// Stub the WHOLE real API surface — see `scrapersApiStubModule`.
+vi.mock('../../api/scrapersApi', async (importOriginal) => scrapersApiStubModule(importOriginal))
 
 // Derive the shipped strings from the shared i18n test setup (the single
 // owner of locale loading — src/test/setup.ts) instead of coupling this file
@@ -51,19 +40,19 @@ const AUTO_DETECT_LABEL = i18n.t('editor.autoDetect', { ns: 'scrapers' })
 const AUTO_DETECT_HINT = i18n.t('editor.autoDetectHint', { ns: 'scrapers' })
 
 function makeScraper(overrides: Partial<ScraperConfig>): ScraperConfig {
-  return {
-    ...DEFAULT_SCRAPER,
-    id: 's-1',
-    name: 'Test scraper',
-    base_url: 'https://example.com/reviews',
-    ...overrides,
-  }
+  return makeBaseScraper({ base_url: 'https://example.com/reviews', ...overrides })
 }
 
 function renderEditor(scraper: ScraperConfig | null, template?: ScraperTemplate) {
   return render(
     <ScraperEditor scraper={scraper} template={template} isAdmin onSave={vi.fn()} onClose={vi.fn()} />
   )
+}
+
+/** Neither the auto-detect button nor its hint is rendered. */
+function expectAutoDetectHidden() {
+  expect(screen.queryByRole('button', { name: AUTO_DETECT_LABEL })).not.toBeInTheDocument()
+  expect(screen.queryByText(AUTO_DETECT_HINT)).not.toBeInTheDocument()
 }
 
 describe('ScraperEditor auto-detect visibility', () => {
@@ -85,8 +74,7 @@ describe('ScraperEditor auto-detect visibility', () => {
   it('hides the auto-detect button and hint for JSON-LD scrapers', () => {
     renderEditor(makeScraper({ extraction_method: 'jsonld' }))
 
-    expect(screen.queryByRole('button', { name: AUTO_DETECT_LABEL })).not.toBeInTheDocument()
-    expect(screen.queryByText(AUTO_DETECT_HINT)).not.toBeInTheDocument()
+    expectAutoDetectHidden()
   })
 
   it('hides auto-detect when creating a new scraper from a JSON-LD template', () => {
@@ -96,7 +84,7 @@ describe('ScraperEditor auto-detect visibility', () => {
       id: 'generic-jsonld',
       name: 'Generic (JSON-LD)',
       description: 'Structured data scraper',
-      icon: '🧩',
+      icon: 'JSON-LD',
       extraction_method: 'jsonld',
       url_pattern: 'example.com',
       url_placeholder: 'https://example.com/reviews',
@@ -107,8 +95,7 @@ describe('ScraperEditor auto-detect visibility', () => {
 
     renderEditor(null, jsonLdTemplate)
 
-    expect(screen.queryByRole('button', { name: AUTO_DETECT_LABEL })).not.toBeInTheDocument()
-    expect(screen.queryByText(AUTO_DETECT_HINT)).not.toBeInTheDocument()
+    expectAutoDetectHidden()
   })
 
   it('shows auto-detect when creating a new scraper without a template (CSS default)', () => {
@@ -126,49 +113,27 @@ describe('ScraperEditor auto-detect visibility', () => {
   })
 })
 
-describe('ScraperEditor admin gate on Save', () => {
-  /** The Save button, located by its lucide icon rather than by `title`: `title`
-   *  is part of what these assertions are about, and the accessible name changes
-   *  with the locale. */
-  function saveButton(): HTMLElement {
-    const found = screen.getAllByRole('button').find(
-      (el) => el.querySelector('svg.lucide-save') !== null
-    )
-    if (found == null) throw new Error('no button carrying svg.lucide-save')
-    return found
-  }
+describe('ScraperEditor save is open, schedule is admin-only', () => {
+  /** The Save button, located by its lucide icon rather than by its accessible
+   *  name, which changes with the locale. */
+  const saveButton = () => buttonWithIcon('lucide-save')
+  const frequencySelect = () => screen.getByRole('combobox', { name: i18n.t('editor.frequency', { ns: 'scrapers' }) })
 
-  function renderWith(isAdmin: boolean, onSave = vi.fn(), onClose = vi.fn()) {
-    render(
-      <ScraperEditor
-        scraper={makeScraper({})}
-        isAdmin={isAdmin}
-        onSave={onSave}
-        onClose={onClose}
-      />
-    )
+  function renderWith(isAdmin: boolean, scraper: ScraperConfig | null = makeScraper({})) {
+    const onSave = vi.fn<(s: ScraperConfig) => Promise<unknown>>(() => Promise.resolve())
+    const onClose = vi.fn()
+    render(<ScraperEditor scraper={scraper} isAdmin={isAdmin} onSave={onSave} onClose={onClose} />)
     return { onSave, onClose }
   }
 
-  it('does not save for a non-admin', async () => {
+  // Owner decision (2026-10-04): any authenticated user may create or edit a
+  // scraper, so Save works for both roles — creating (scraper=null) and editing.
+  it.each([
+    ['non-admin', false, 'create'], ['non-admin', false, 'edit'],
+    ['admin', true, 'create'], ['admin', true, 'edit'],
+  ] as const)('saves for a %s (%s)', async (_role, isAdmin, mode) => {
     const user = userEvent.setup()
-    const { onSave } = renderWith(false)
-
-    const save = saveButton()
-    expect(save).toBeDisabled()
-    expect(save).toHaveAttribute('title', ADMIN_ONLY_TITLE)
-    await user.click(save)
-    // The observable: the request is never issued. Asserting only `disabled`
-    // would pass against a button that fires anyway.
-    expect(onSave).not.toHaveBeenCalled()
-  })
-
-  it('saves for an admin', async () => {
-    // Positive control. Without it, disabling Save unconditionally would satisfy
-    // the case above while making the editor useless for the administrators it
-    // exists for.
-    const user = userEvent.setup()
-    const { onSave } = renderWith(true)
+    const { onSave } = renderWith(isAdmin, mode === 'create' ? null : makeScraper({}))
 
     const save = saveButton()
     expect(save).toBeEnabled()
@@ -177,11 +142,33 @@ describe('ScraperEditor admin gate on Save', () => {
     expect(onSave).toHaveBeenCalledTimes(1)
   })
 
+  it('locks the frequency for a non-admin and saves the stored value', async () => {
+    // The server keeps a non-admin's schedule, so offering the choice would be a lie.
+    const user = userEvent.setup()
+    const { onSave } = renderWith(false, makeScraper({ frequency_minutes: 360 }))
+
+    const frequency = frequencySelect()
+    expect(frequency).toBeDisabled()
+    expect(frequency).toHaveAttribute('title', ADMIN_ONLY_TITLE)
+    await user.selectOptions(frequency, '15')
+    await user.click(saveButton())
+    expect(at(onSave.mock.calls, 0)[0].frequency_minutes).toBe(360)
+  })
+
+  it('lets an admin change the frequency', async () => {
+    // Positive control: disabling the select for everyone would pass the case above.
+    const user = userEvent.setup()
+    const { onSave } = renderWith(true, makeScraper({ frequency_minutes: 360 }))
+
+    const frequency = frequencySelect()
+    expect(frequency).toBeEnabled()
+    expect(frequency).not.toHaveAttribute('title', ADMIN_ONLY_TITLE)
+    await user.selectOptions(frequency, '15')
+    await user.click(saveButton())
+    expect(at(onSave.mock.calls, 0)[0].frequency_minutes).toBe(15)
+  })
+
   it.each([true, false])('still closes on cancel (isAdmin=%s)', async (isAdmin) => {
-    // The gate's boundary: a non-admin who opened this editor to READ a config
-    // (`GET /scrapers` is deliberately open) must still be able to leave it. This
-    // is what stops a future "disable everything for non-admins" from passing the
-    // first case.
     const user = userEvent.setup()
     const { onClose } = renderWith(isAdmin)
 
@@ -191,14 +178,28 @@ describe('ScraperEditor admin gate on Save', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it.each([true, false])('leaves the form readable and editable (isAdmin=%s)', (isAdmin) => {
-    // Only Save is gated. The fields stay interactive because a non-admin can
-    // already read every one of them through `GET /scrapers`, so blanking or
-    // freezing the form would hide data the API serves them.
+  it.each([true, false])('leaves the rest of the form editable (isAdmin=%s)', (isAdmin) => {
     renderWith(isAdmin)
 
-    const name = screen.getByDisplayValue('Test scraper')
-    expect(name).toBeEnabled()
+    expect(screen.getByDisplayValue('Test scraper')).toBeEnabled()
     expect(screen.getByDisplayValue('https://example.com/reviews')).toBeEnabled()
+  })
+})
+
+describe('ScraperEditor save feedback', () => {
+  const saveName = () => i18n.t('editor.save', { ns: 'scrapers' })
+
+  it('shows a rejected save as an alert and keeps Save available', () => {
+    render(<ScraperEditor scraper={makeScraper({})} isAdmin onSave={vi.fn()} onClose={vi.fn()} saveError="A scraper may list at most 20 URLs" />)
+
+    expect(screen.getByRole('alert')).toHaveTextContent('A scraper may list at most 20 URLs')
+    expect(screen.getByRole('button', { name: saveName() })).toBeEnabled()
+  })
+
+  it('shows no alert without an error and disables Save while one is in flight', () => {
+    render(<ScraperEditor scraper={makeScraper({})} isAdmin onSave={vi.fn()} onClose={vi.fn()} isSaving />)
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: saveName() })).toBeDisabled()
   })
 })

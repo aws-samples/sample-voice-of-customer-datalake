@@ -1,0 +1,346 @@
+{
+  "nav": {
+    "label": "Autonomous agents"
+  },
+  "common": {
+    "cancel": "Cancel"
+  },
+  "status": {
+    "enabled": "Enabled",
+    "disabled": "Disabled"
+  },
+  "scope": {
+    "all": "All categories",
+    "some": "Watches: {{list}}"
+  },
+  "list": {
+    "title": "Autonomous agents",
+    "subtitle": "Agents watch the feedback in their scope and, when a trigger fires, run a workflow: research, personas, PR/FAQ, PRD and a prototype, reviewed by personas before handing off a project.",
+    "create": "New agent",
+    "createTitle": "Create an autonomous agent",
+    "createHint": "It is created disabled with the built-in “Reviews → Prototype” workflow. Configure triggers and the workflow, then enable it.",
+    "createFailed": "The agent couldn't be created.",
+    "emptyTitle": "No autonomous agents yet",
+    "emptyAdmin": "Create one to turn new feedback into researched projects and prototypes automatically.",
+    "emptyUser": "An administrator hasn't set up any agent you can see yet.",
+    "loadFailed": "Agents couldn't be loaded.",
+    "spend": "{{runs}} scheduled runs today · {{calls}} model calls this month",
+    "spendHint": "Manual runs are not counted against the daily scheduled-run limit."
+  },
+  "library": {
+    "title": "Workflow library",
+    "subtitle": "Every workflow agents can run. Archive the ones you no longer need: they leave the library and become read-only, and their revisions are kept.",
+    "loadFailed": "The workflow library couldn't be loaded.",
+    "archive": "Archive",
+    "archiveNamed": "Archive {{name}}",
+    "archiveTitle": "Archive this workflow?",
+    "archiveMessage": "“{{name}}” will be hidden from the library and the workflow picker and become read-only. Its revisions are kept.",
+    "archiveInUse": "An active agent still runs this workflow. Archive that agent or give it another workflow first.",
+    "archiveFailed": "The workflow couldn't be archived."
+  },
+  "fields": {
+    "name": "Name",
+    "description": "Description",
+    "scope": "Feedback it watches",
+    "instructions": "Instructions",
+    "instructionsHint": "Custom guidance for the whole crew (up to {{n}} characters).",
+    "visibility": "Visibility of the projects it hands off",
+    "visibilityHint": "Private projects are visible to their owner, members and administrators only.",
+    "workflow": "Workflow",
+    "workflowDefault": "Reviews → Prototype (built-in)",
+    "workflowHint": "Edit the steps on the Workflow tab."
+  },
+  "visibility": {
+    "private": "Private",
+    "public": "Public"
+  },
+  "detail": {
+    "back": "All agents",
+    "tabs": "Agent sections",
+    "enabledLabel": "Enabled",
+    "toggleFailed": "The agent couldn't be enabled or disabled.",
+    "save": "Save",
+    "saved": "Saved",
+    "saveFailed": "The changes couldn't be saved.",
+    "discard": "Discard changes",
+    "archive": "Archive",
+    "archiveTitle": "Archive this agent?",
+    "archiveMessage": "It stops running and disappears from the list. Projects it created stay.",
+    "notFound": "This agent doesn't exist or you can't see it.",
+    "stats": "{{runs}} runs in total · {{today}} scheduled today · {{calls}} model calls this month"
+  },
+  "tabs": {
+    "settings": "Settings",
+    "triggers": "Triggers",
+    "personas": "Personas",
+    "instructions": "Instructions",
+    "models": "Models",
+    "budget": "Budget",
+    "workflow": "Workflow",
+    "runs": "Runs"
+  },
+  "triggers": {
+    "hint": "What wakes the agent. It runs at most twice a day on its own and never twice at the same time.",
+    "none": "No triggers — it only runs when someone presses Run now.",
+    "remove": "Remove trigger",
+    "minNew": "New reviews needed",
+    "cooldown": "Cooldown (hours)",
+    "every": "Every",
+    "cron": "Cron expression",
+    "cronHint": "Five fields, e.g. 0 9 * * 1 for Mondays at 09:00.",
+    "timezone": "Time zone",
+    "count": "Reviews",
+    "per": "Per",
+    "windowDays": "Within (days)",
+    "kinds": {
+      "new_reviews": "New reviews",
+      "schedule": "Schedule",
+      "threshold": "Threshold"
+    },
+    "kindHints": {
+      "new_reviews": "Runs when enough new feedback arrived in its scope since the last run.",
+      "schedule": "Runs on a fixed schedule.",
+      "threshold": "Runs when a category or subcategory reaches a number of reviews within a window."
+    },
+    "everyOptions": {
+      "12h": "12 hours",
+      "24h": "24 hours",
+      "cron": "Custom (cron)"
+    },
+    "perOptions": {
+      "category": "Category",
+      "subcategory": "Subcategory"
+    }
+  },
+  "personas": {
+    "fixed": "Fixed personas ({{n}} of {{max}})",
+    "none": "No fixed personas — the agent picks them from the project.",
+    "add": "Add persona",
+    "remove": "Remove persona",
+    "project": "Project",
+    "persona": "Persona",
+    "chooseProject": "Choose a project",
+    "choosePersona": "Choose a persona",
+    "allowGenerate": "Allow the agent to generate new personas when none fit"
+  },
+  "models": {
+    "hint": "Override the model per crew role. Leave the default to follow Settings → AI models.",
+    "default": "Settings default",
+    "roleHint": {
+      "orchestrator": "Decides the next step and verifies each result.",
+      "worker": "Writes research, documents and prototypes.",
+      "reviewer": "Reviews the work before hand-off.",
+      "persona": "Speaks for each persona in reviews."
+    }
+  },
+  "roles": {
+    "orchestrator": "Orchestrator",
+    "worker": "Worker",
+    "reviewer": "Reviewer",
+    "persona": "Persona"
+  },
+  "budget": {
+    "runsPerDay": "Scheduled runs per day",
+    "runsPerDayHint": "At most 2. Manual runs are not counted.",
+    "callsPerRun": "Model calls per run",
+    "monthlyCap": "Monthly model-call cap",
+    "monthlyCapHint": "The agent stops starting runs once the month's calls reach this cap.",
+    "uncapped": "No monthly cap"
+  },
+  "run": {
+    "hint": "Each run follows the workflow. The graph lights up the steps as they run; it is a view, not a control.",
+    "list": "Runs",
+    "none": "No runs yet.",
+    "runNow": "Run now",
+    "alreadyRunning": "A run is already in progress.",
+    "startFailed": "The run couldn't be started.",
+    "cancel": "Cancel run",
+    "cancelFailed": "The run couldn't be cancelled.",
+    "calls": "{{n}} model calls",
+    "openProject": "Open project",
+    "eventLog": "Event log",
+    "noEvents": "No events yet.",
+    "noGraph": "The workflow of this run couldn't be loaded.",
+    "olderRevision": "This run used revision {{n}} of the workflow.",
+    "graphLabel": "Run progress graph",
+    "showAll": "Show all events (filtered to {{step}})",
+    "rounds": "Round {{n}}",
+    "status": {
+      "queued": "Queued",
+      "running": "Running",
+      "needs_human": "Needs a human",
+      "completed": "Completed",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
+    },
+    "triggers": {
+      "manual": "Manual",
+      "schedule": "Schedule",
+      "new_reviews": "New reviews",
+      "threshold": "Threshold"
+    },
+    "stepStatus": {
+      "idle": "Not started",
+      "running": "Running",
+      "done": "Done",
+      "failed": "Failed"
+    },
+    "eventKinds": {
+      "node_started": "Step started",
+      "node_finished": "Step finished",
+      "node_failed": "Step failed",
+      "message": "Message",
+      "verdict": "Verdict",
+      "decision": "Decision",
+      "artifact": "Artifact"
+    }
+  },
+  "editor": {
+    "canvasLabel": "Workflow canvas",
+    "minimap": "Workflow overview",
+    "palette": "Steps",
+    "paletteHint": "Drag a step onto the canvas, or press Enter to add it.",
+    "panel": "Step settings",
+    "nothingSelected": "Select a step, an arrow or a loop — on the canvas or in the outline below — to configure it.",
+    "loopFrameLabel": "Loop {{n}}: until {{until}}, at most {{rounds}} rounds",
+    "loopFrameHint": "Click to configure this loop",
+    "arrowLabel": "Arrow from {{source}} to {{target}} ({{condition}})",
+    "conditionHint": "The arrow runs when the step reports this result; \"Always\" is the default path.",
+    "noConditions": "This step reports no verdict, so its arrows always run.",
+    "arrowsOut": "Arrows out",
+    "noArrowsOut": "No arrows leave this step yet.",
+    "addArrow": "Add an arrow",
+    "addArrowButton": "Add arrow",
+    "noArrowTargets": "Every other step is already connected from here.",
+    "deleteArrowTo": "Delete the arrow to {{target}}",
+    "conditionTo": "Condition to {{target}}",
+    "loopStepsLegend": "Steps in this loop",
+    "maxRoundsHint": "A whole number from {{min}} to {{max}}; at the limit the run stops and asks a human.",
+    "joinLoop": "Add to loop",
+    "joinLoopHint": "A loop repeats its steps until its exit condition is met.",
+    "newLoop": "A new loop",
+    "loopOption_one": "Loop {{n}} ({{count}} step)",
+    "loopOption_other": "Loop {{n}} ({{count}} steps)",
+    "leaveLoop": "Take this step out of the loop",
+    "outlineSteps": "Steps in this workflow",
+    "outlineStepsCount": "Steps ({{n}})",
+    "outlineLoops": "Loops",
+    "emptyCanvas": "The canvas is empty: add steps from the palette.",
+    "selectStep": "Configure step {{title}}",
+    "backToWorkflow": "Workflow settings",
+    "clear": "Clear canvas",
+    "clearTitle": "Clear the canvas?",
+    "clearMessage": "Every step, arrow and loop is removed from the draft so you can build the workflow from scratch. Nothing is saved until you save.",
+    "multiSelected": "{{n}} steps selected",
+    "groupLoop": "Group as a loop",
+    "ungroupLoop": "Remove the loop",
+    "loopTitle": "Loop {{n}}",
+    "loopMembers": "{{n}} steps",
+    "loopFrame": "Loop until {{until}}",
+    "arrow": "Arrow",
+    "deleteArrow": "Delete arrow",
+    "deleteStep": "Delete step",
+    "builtin": "Built-in template — save a copy to change it.",
+    "revision": "Revision {{n}}",
+    "unsaved": "Unsaved changes",
+    "save": "Save",
+    "saveAs": "Save as…",
+    "saveAsTitle": "Save as a new workflow",
+    "copyName": "{{name}} (copy)",
+    "import": "Import",
+    "export": "Export",
+    "reset": "Reset to template",
+    "resetTitle": "Reset to the template?",
+    "resetMessage": "Your unsaved changes are replaced by the built-in “Reviews → Prototype” workflow.",
+    "conflict": "Someone saved a newer revision meanwhile.",
+    "conflictReload": "Load the latest",
+    "conflictSaveAs": "Save mine as a copy",
+    "loadFailed": "The workflow couldn't be loaded.",
+    "generalIssues": "Workflow issues",
+    "issueCount_one": "{{count}} issue",
+    "issueCount_other": "{{count}} issues",
+    "valid": "The workflow is valid.",
+    "validUnsaved": "Valid — not saved yet.",
+    "outcome": {
+      "saved": "Saved.",
+      "conflict": "Someone saved a newer revision meanwhile.",
+      "invalid": "The server rejected the workflow — fix the issues and save again.",
+      "failed": "The workflow couldn't be saved.",
+      "import_failed": "That file is not a valid workflow."
+    },
+    "fields": {
+      "workflowName": "Workflow name",
+      "title": "Title",
+      "instructions": "Instructions",
+      "instructionsRequired": "Instructions (required)",
+      "role": "Role",
+      "roleNone": "No role",
+      "label": "Condition",
+      "labelNone": "Always",
+      "until": "Until",
+      "maxRounds": "Maximum rounds",
+      "description": "Description",
+      "arrowTarget": "To step",
+      "arrowTargetNone": "Choose a step…",
+      "joinLoop": "Loop"
+    },
+    "params": {
+      "target": "Target",
+      "targetAny": "Whatever was produced last",
+      "maxNew": "Maximum new personas",
+      "useWebSearch": "Use web search",
+      "endStatus": "Run ends as"
+    }
+  },
+  "paletteGroups": {
+    "flow": "Flow",
+    "research": "Research",
+    "documents": "Documents",
+    "review": "Review",
+    "prototype": "Prototype",
+    "delivery": "Delivery"
+  },
+  "edgeLabels": {
+    "pass": "Pass",
+    "fail": "Fail",
+    "agreed": "Agreed",
+    "not_agreed": "Not agreed"
+  },
+  "loopUntil": {
+    "persona_agreement": "personas agree",
+    "review_pass": "the review passes"
+  },
+  "loopUntilHint": {
+    "persona_agreement": "Repeats while the persona review in the loop answers \"Not agreed\".",
+    "review_pass": "Repeats while a review step in the loop answers \"Fail\"."
+  },
+  "reviewTargets": {
+    "prfaq": "PR/FAQ",
+    "prd": "PRD",
+    "prototype": "Prototype"
+  },
+  "endStatuses": {
+    "completed": "Completed",
+    "needs_human": "Needs a human"
+  },
+  "nodeTypes": {
+    "start": { "label": "Start", "description": "Where every run begins." },
+    "aggregate_reviews": { "label": "Aggregate reviews", "description": "Collects the new feedback in the agent's scope and finds the main themes." },
+    "select_or_create_project": { "label": "Select or create project", "description": "Reuses a project with the same purpose, or creates a new one." },
+    "select_personas": { "label": "Select personas", "description": "Picks the personas that matter for these reviews." },
+    "generate_personas": { "label": "Generate personas", "description": "Creates new personas from the feedback when none fit." },
+    "deep_research": { "label": "Deep research", "description": "Runs a research job on the project, optionally with web search." },
+    "write_prfaq": { "label": "Write PR/FAQ", "description": "Drafts a press release and FAQ for the idea." },
+    "write_prd": { "label": "Write PRD", "description": "Drafts a product requirements document." },
+    "revise_document": { "label": "Revise document", "description": "Rewrites a document from the review's objections." },
+    "duplicate_document": { "label": "Duplicate document", "description": "Copies a document into another project." },
+    "persona_review": { "label": "Persona review", "description": "Personas score the work; agreement = average 4+ and nothing blocking." },
+    "final_review": { "label": "Final review", "description": "A reviewer checks the whole package before hand-off." },
+    "custom_llm": { "label": "Custom step", "description": "A step driven by your own instructions." },
+    "build_prototype": { "label": "Build prototype", "description": "Builds an HTML prototype using the design system." },
+    "collect_prototype_feedback": { "label": "Collect tester pins", "description": "Reads the open pins testers dropped on the prototype, for the next revision." },
+    "revise_prototype": { "label": "Revise prototype", "description": "Changes the prototype from the review's objections." },
+    "handoff": { "label": "Hand off", "description": "Gives the project to the owner of its main category." },
+    "end": { "label": "End", "description": "Where the run finishes." }
+  }
+}

@@ -16,7 +16,11 @@
     "similarityLow": "Baixa",
     "similarityMed": "Média",
     "similarityOff": "Desativado",
-    "urgentOnly": "Apenas urgentes"
+    "urgentOnly": "Apenas urgentes",
+    "source": "Fonte",
+    "category": "Categoria",
+    "subcategory": "Subcategoria",
+    "similarityHint": "Agrupa problemas com redação semelhante. Baixo agrupa mais; Desligado lista cada problema separadamente."
   },
   "noDataHint": "Tente expandir o intervalo de tempo ou ajustar os filtros",
   "noDataTitle": "Nenhum dado de análise de problemas encontrado para o período selecionado",
@@ -47,5 +51,7 @@
     "sub_many": "{{count}} subcategorias",
     "sub_other": "{{count}} subcategorias",
     "unknown": "Desconhecido"
-  }
+  },
+  "title": "Análise de problemas",
+  "subtitle": "Problemas recorrentes de clientes agrupados por categoria, com causas prováveis"
 }

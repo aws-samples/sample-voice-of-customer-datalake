@@ -17,30 +17,25 @@
  * opaque error — the class of failure this PR exists to close.
  */
 import {
-  describe, it, expect, vi, beforeAll, afterAll, beforeEach,
+  describe, it, expect, vi, beforeEach,
 } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { productTabApiModule, productTabMocks } from './product-tab-fixtures'
+// After the fixtures on purpose: this imports ProductTab, whose module graph runs
+// the `vi.mock` factory below, which needs the fixture module evaluated.
 import ProductTab from './ProductTab'
 import { emptyProductContext } from './productContextFields'
-import { stubElementScrollTo } from '../../test/stubScrollTo'
+import { stubScrollToForSuite } from './project-detail-fixtures'
 import { readSentHistory } from '../../test/historyPayload'
 import { MAX_INTERVIEW_HISTORY_ENTRIES } from '../../constants/chat'
 
-const mockInterview = vi.fn()
-const mockGetProductContext = vi.fn()
-const mockListProductDocs = vi.fn()
-
-vi.mock('../../api/projectsApi', () => ({
-  projectsApi: {
-    getProductContext: (...args: unknown[]) => mockGetProductContext(...args),
-    updateProductContext: vi.fn(),
-    listProductDocs: (...args: unknown[]) => mockListProductDocs(...args),
-    productContextInterview: (...args: unknown[]) => mockInterview(...args),
-    generateProductReport: vi.fn(),
-    getProductDocUploadUrl: vi.fn(),
-  },
-}))
+vi.mock('../../api/projectsApi', () => productTabApiModule())
+const {
+  productContextInterview: mockInterview,
+  getProductContext: mockGetProductContext,
+  listProductDocs: mockListProductDocs,
+} = productTabMocks
 
 /** Read the history the tab passed to the interview endpoint, guarded not cast. */
 const sentHistory = (callIndex: number) => readSentHistory(mockInterview, callIndex)
@@ -52,16 +47,8 @@ async function askInterview(question: string): Promise<void> {
 }
 
 describe('ProductTab interview history', () => {
-  // The interview effect scrolls the transcript; jsdom has no Element.scrollTo
-  // and the exception would render the tab as an empty div, turning these
-  // assertions into vacuous passes.
-  let restoreScrollTo: () => void
-  beforeAll(() => {
-    restoreScrollTo = stubElementScrollTo()
-  })
-  afterAll(() => {
-    restoreScrollTo()
-  })
+  // jsdom has no Element.scrollTo; see stubScrollToForSuite for why that matters here.
+  stubScrollToForSuite()
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -75,7 +62,7 @@ describe('ProductTab interview history', () => {
   })
 
   it('omits the assistant greeting and the new message from the first payload', async () => {
-    render(<ProductTab projectId="proj-interview" />)
+    render(<ProductTab canEdit projectId="proj-interview" />)
 
     await askInterview('we sell telemetry dashboards')
     await waitFor(() => expect(mockInterview).toHaveBeenCalledTimes(1))
@@ -88,11 +75,11 @@ describe('ProductTab interview history', () => {
     // `interview_turn` rebuilds the interview instructions and CURRENT CONTEXT
     // into its system prompt on every turn, so turn 1 is self-sufficient
     // without the greeting. See the comment at the call site in ProductTab.tsx.
-    expect(sentHistory(0)).toEqual([])
+    expect(sentHistory(0)).toStrictEqual([])
   })
 
   it('sends prior turns starting with a user turn and never repeats the new message', async () => {
-    render(<ProductTab projectId="proj-interview" />)
+    render(<ProductTab canEdit projectId="proj-interview" />)
 
     await askInterview('we sell telemetry dashboards')
     await waitFor(() => expect(mockInterview).toHaveBeenCalledTimes(1))
@@ -103,17 +90,43 @@ describe('ProductTab interview history', () => {
     await waitFor(() => expect(mockInterview).toHaveBeenCalledTimes(2))
 
     const history = sentHistory(1)
-    // Not vacuous: the second send has a real answered turn to carry.
-    expect(history.length).toBeGreaterThan(0)
-    expect(history[0].role).toBe('user')
-    // The greeting must not lead the list.
-    expect(history[0].content).toContain('telemetry dashboards')
-    // The message being sent must not also appear in the history.
-    expect(history.some((entry) => entry.content.includes('teams miss outages'))).toBe(false)
-    // Strict alternation, which is what Bedrock Converse requires.
-    history.forEach((entry, i) => {
-      if (i > 0) expect(entry.role).not.toBe(history[i - 1].role)
+    const roles = history.map((entry) => entry.role)
+    expect({
+      // Not vacuous: the second send has a real answered turn to carry, and the
+      // greeting must not lead the list — the first entry is the user's own answer.
+      firstRole: history.at(0)?.role,
+      firstIsTheAnswer: history.at(0)?.content.includes('telemetry dashboards'),
+      // The message being sent must not also appear in the history.
+      repeatsNewMessage: history.some((entry) => entry.content.includes('teams miss outages')),
+      // Strict alternation, which is what Bedrock Converse requires.
+      sameRoleTwiceInARow: roles.slice(1).filter((role, i) => role === roles[i]),
+      withinCap: history.length <= MAX_INTERVIEW_HISTORY_ENTRIES,
+    }).toStrictEqual({
+      firstRole: 'user',
+      firstIsTheAnswer: true,
+      repeatsNewMessage: false,
+      sameRoleTwiceInARow: [],
+      withinCap: true,
     })
-    expect(history.length).toBeLessThanOrEqual(MAX_INTERVIEW_HISTORY_ENTRIES)
+  })
+
+  it('marks a failed turn with an alert icon and keeps the display-only flag out of the next payload', async () => {
+    mockInterview.mockRejectedValueOnce(new Error('model unavailable'))
+    render(<ProductTab canEdit projectId="proj-interview" />)
+
+    await askInterview('we sell telemetry dashboards')
+    const errorBubble = await screen.findByText('model unavailable')
+    expect(errorBubble.querySelector('svg.lucide-triangle-alert')).not.toBeNull()
+
+    await askInterview('teams miss outages')
+    await waitFor(() => expect(mockInterview).toHaveBeenCalledTimes(2))
+
+    const history = sentHistory(1)
+    expect({
+      // The failed reply is still a real assistant turn, so it is carried...
+      carriesFailedTurn: history.some((entry) => entry.content === 'model unavailable'),
+      // ...but only as role + content: `failed` is UI state, not wire shape.
+      keys: [...new Set(history.flatMap((entry) => Object.keys(entry)))].sort((a, b) => a.localeCompare(b)),
+    }).toStrictEqual({ carriesFailedTurn: true, keys: ['content', 'role'] })
   })
 })

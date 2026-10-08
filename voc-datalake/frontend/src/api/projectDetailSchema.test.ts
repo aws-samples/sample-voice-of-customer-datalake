@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { normalizeProjectDetail } from './projectDetailSchema'
+import { at } from '@test/defined'
 
 function envelope(personas: unknown[] = [], documents: unknown[] = []) {
   return { project: { project_id: 'project-1' }, personas, documents }
@@ -29,10 +30,10 @@ describe('normalizeProjectDetail', () => {
       persona_count: 0,
       document_count: 0,
     })
-    expect(result.personas).toEqual([
+    expect(result.personas).toStrictEqual([
       expect.objectContaining({ persona_id: 'persona-1', name: '', tagline: '', created_at: '' }),
     ])
-    expect(result.documents).toEqual([
+    expect(result.documents).toStrictEqual([
       expect.objectContaining({
         document_id: 'document-1', document_type: 'custom', title: '', content: '', created_at: '',
       }),
@@ -46,7 +47,7 @@ describe('normalizeProjectDetail', () => {
       title: 'Checkout prototype (v1)',
     }]))
 
-    expect(result.documents).toEqual([
+    expect(result.documents).toStrictEqual([
       expect.objectContaining({
         document_id: 'prototype-legacy',
         document_type: 'prototype',
@@ -77,11 +78,19 @@ describe('normalizeProjectDetail', () => {
 
     const result = normalizeProjectDetail(raw)
 
-    expect(record(result).future_envelope_field).toBe('kept')
-    expect(record(result.project).future_project_field).toBe(42)
-    expect(record(result.personas[0]).future_persona_field).toEqual({ enabled: true })
-    expect(record(result.personas[0].identity).future_identity_field).toBe('kept')
-    expect(record(result.documents[0]).future_document_field).toEqual(['kept'])
+    expect({
+      envelope: record(result).future_envelope_field,
+      project: record(result.project).future_project_field,
+      persona: record(result.personas[0]).future_persona_field,
+      identity: record(at(result.personas, 0).identity).future_identity_field,
+      document: record(result.documents[0]).future_document_field,
+    }).toStrictEqual({
+      envelope: 'kept',
+      project: 42,
+      persona: { enabled: true },
+      identity: 'kept',
+      document: ['kept'],
+    })
   })
 
   it('keeps only string base titles and positive integral versions', () => {
@@ -97,7 +106,7 @@ describe('normalizeProjectDetail', () => {
       id: document.document_id,
       baseTitle: document.base_title,
       version: document.version,
-    }))).toEqual([
+    }))).toStrictEqual([
       { id: 'valid', baseTitle: 'Checkout', version: 2 },
       { id: 'zero', baseTitle: undefined, version: undefined },
       { id: 'negative', baseTitle: undefined, version: undefined },
@@ -115,8 +124,8 @@ describe('normalizeProjectDetail', () => {
       prototype_url: prototypeUrl,
     }]))
 
-    expect(result.documents[0].content).toBe('')
-    expect(result.documents[0].prototype_url).toBe(prototypeUrl)
+    expect(at(result.documents, 0).content).toBe('')
+    expect(at(result.documents, 0).prototype_url).toBe(prototypeUrl)
   })
 
   it('normalizes a malformed prototype URL to undefined without dropping the document', () => {
@@ -126,8 +135,8 @@ describe('normalizeProjectDetail', () => {
       prototype_url: 'not a URL',
     }]))
 
-    expect(result.documents.map((document) => document.document_id)).toEqual(['prototype-1'])
-    expect(result.documents[0].prototype_url).toBeUndefined()
+    expect(result.documents.map((document) => document.document_id)).toStrictEqual(['prototype-1'])
+    expect(at(result.documents, 0).prototype_url).toBeUndefined()
   })
 
   it('drops malformed row identities while preserving a persona with malformed optional identity data', () => {
@@ -145,9 +154,9 @@ describe('normalizeProjectDetail', () => {
       ],
     ))
 
-    expect(result.personas.map((persona) => persona.persona_id)).toEqual(['persona-kept'])
-    expect(result.personas[0].identity).toBeUndefined()
-    expect(result.documents.map((document) => document.document_id)).toEqual(['document-kept'])
+    expect(result.personas.map((persona) => persona.persona_id)).toStrictEqual(['persona-kept'])
+    expect(at(result.personas, 0).identity).toBeUndefined()
+    expect(result.documents.map((document) => document.document_id)).toStrictEqual(['document-kept'])
     expect(warn).toHaveBeenCalledTimes(4)
     warn.mockRestore()
   })
@@ -159,7 +168,7 @@ describe('normalizeProjectDetail', () => {
       title: 'Architecture decision',
     }]))
 
-    expect(result.documents).toEqual([
+    expect(result.documents).toStrictEqual([
       expect.objectContaining({
         document_id: 'future-1',
         document_type: 'decision_record',

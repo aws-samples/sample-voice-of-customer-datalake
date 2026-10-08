@@ -4,43 +4,46 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { openExportMenu, openThenClickOutside, renderExportMenu } from '../../test/export-menu'
 import DocumentExportMenu from './DocumentExportMenu'
-import type { ProjectDocument, Project } from '../../api/types'
+import { exportProject, prdDocument } from './documentExport-fixtures'
+import { ariaExpandedAcrossClick } from '../ExportMenuShell/exportMenu-fixtures'
+import type { ProjectDocument } from '../../api/types'
+import type { Project } from '../../api/projectTypes'
 
 // Mock printUtils
-const mockOpenPrintWindow = vi.fn()
+const mockOpenPrintWindow = vi.fn<(options: unknown) => unknown>()
 vi.mock('../../utils/printUtils', () => ({
   openPrintWindow: (options: unknown) => mockOpenPrintWindow(options),
 }))
 
 // Mock react-markdown for DocumentPDFContent
-vi.mock('react-markdown', () => ({
-  default: ({ children }: { children: string }) => children,
-}))
+vi.mock('react-markdown', () => import('@test/markdown-mocks').then(m => m.reactMarkdownMock()))
+vi.mock('remark-gfm', () => import('@test/markdown-mocks').then(m => m.remarkGfmMock()))
 
-vi.mock('remark-gfm', () => ({
-  default: vi.fn(),
-}))
-
-const mockDocument: ProjectDocument = {
-  document_id: 'doc-1',
-  document_type: 'prd',
+const mockDocument = prdDocument({
   title: 'Test PRD Document',
   content: '# Overview\n\nThis is a **test** document with [links](https://example.com).',
-  created_at: '2025-01-01T00:00:00Z',
-}
+})
 
-const mockProject: Project = {
-  project_id: 'proj-1',
-  name: 'Test Project',
+const mockProject = exportProject({
   description: 'Test description',
-  status: 'active',
-  created_at: '2025-01-01T00:00:00Z',
-  updated_at: '2025-01-01T00:00:00Z',
   persona_count: 2,
   document_count: 3,
-  kiro_export_prompt: 'Build this feature using React and TypeScript.',
+  kiro_default_export_prompt: 'Build this feature using React and TypeScript.',
+})
+
+const TRIGGER = /download options/i
+
+/** Mount the menu for `document` (and optionally `project`) and open it. */
+function openMenu(document: ProjectDocument = mockDocument, project?: Project) {
+  return openExportMenu(<DocumentExportMenu document={document} project={project} />, TRIGGER)
+}
+
+/** Assert that the menu renders nothing at all for `document`. */
+function expectRendersNothing(document: ProjectDocument | null) {
+  const { container } = render(<DocumentExportMenu document={document} />)
+  expect(container).toBeEmptyDOMElement()
 }
 
 describe('DocumentExportMenu', () => {
@@ -51,150 +54,89 @@ describe('DocumentExportMenu', () => {
 
   describe('Rendering', () => {
     it('renders menu button', () => {
-      render(<DocumentExportMenu document={mockDocument} />)
-      expect(screen.getByRole('button', { name: /download options/i })).toBeInTheDocument()
+      expect(renderExportMenu(<DocumentExportMenu document={mockDocument} />, TRIGGER)).toBeInTheDocument()
     })
 
     it('returns null when document is null', () => {
-      const { container } = render(<DocumentExportMenu document={null} />)
-      // eslint-disable-next-line testing-library/no-node-access
-      expect(container.firstChild).toBeNull()
+      expectRendersNothing(null)
     })
 
     it('menu is closed by default', () => {
-      render(<DocumentExportMenu document={mockDocument} />)
+      renderExportMenu(<DocumentExportMenu document={mockDocument} />, TRIGGER)
       expect(screen.queryByRole('menu')).not.toBeInTheDocument()
     })
   })
 
   describe('Menu Toggle', () => {
     it('opens menu when button is clicked', async () => {
-      const user = userEvent.setup()
-      render(<DocumentExportMenu document={mockDocument} />)
-
-      await user.click(screen.getByRole('button', { name: /download options/i }))
+      await openMenu()
 
       expect(screen.getByRole('menu')).toBeInTheDocument()
     })
 
     it('closes menu when button is clicked again', async () => {
-      const user = userEvent.setup()
-      render(<DocumentExportMenu document={mockDocument} />)
-
-      await user.click(screen.getByRole('button', { name: /download options/i }))
+      const user = await openMenu()
       expect(screen.getByRole('menu')).toBeInTheDocument()
 
-      await user.click(screen.getByRole('button', { name: /download options/i }))
+      await user.click(screen.getByRole('button', { name: TRIGGER }))
       expect(screen.queryByRole('menu')).not.toBeInTheDocument()
     })
 
     it('sets aria-expanded correctly', async () => {
-      const user = userEvent.setup()
-      render(<DocumentExportMenu document={mockDocument} />)
-
-      const button = screen.getByRole('button', { name: /download options/i })
-      expect(button).toHaveAttribute('aria-expanded', 'false')
-
-      await user.click(button)
-      expect(button).toHaveAttribute('aria-expanded', 'true')
+      expect(await ariaExpandedAcrossClick(<DocumentExportMenu document={mockDocument} />, TRIGGER))
+        .toStrictEqual({ before: 'false', after: 'true' })
     })
   })
 
   describe('Menu Options', () => {
     it('shows copy option', async () => {
-      const user = userEvent.setup()
-      render(<DocumentExportMenu document={mockDocument} />)
-
-      await user.click(screen.getByRole('button', { name: /download options/i }))
+      await openMenu()
 
       const copyButtons = screen.getAllByRole('menuitem').filter(el => el.textContent === 'Copy')
       expect(copyButtons.length).toBeGreaterThanOrEqual(1)
     })
 
-    it('shows download as markdown option', async () => {
-      const user = userEvent.setup()
-      render(<DocumentExportMenu document={mockDocument} />)
+    it.each([
+      ['markdown', /download as markdown/i],
+      ['PDF', /download as pdf/i],
+      ['TXT', /download as txt/i],
+    ])('shows an enabled download as %s option', async (_format, name) => {
+      await openMenu()
 
-      await user.click(screen.getByRole('button', { name: /download options/i }))
-
-      expect(screen.getByRole('menuitem', { name: /download as markdown/i })).toBeInTheDocument()
+      const option = screen.getByRole('menuitem', { name })
+      expect(option).toBeInTheDocument()
+      expect(option).not.toBeDisabled()
     })
 
-    it('shows download as PDF option', async () => {
-      const user = userEvent.setup()
-      render(<DocumentExportMenu document={mockDocument} />)
-
-      await user.click(screen.getByRole('button', { name: /download options/i }))
-
-      expect(screen.getByRole('menuitem', { name: /download as pdf/i })).toBeInTheDocument()
-    })
-
-    it('shows download as TXT option', async () => {
-      const user = userEvent.setup()
-      render(<DocumentExportMenu document={mockDocument} />)
-
-      await user.click(screen.getByRole('button', { name: /download options/i }))
-
-      expect(screen.getByRole('menuitem', { name: /download as txt/i })).toBeInTheDocument()
-    })
-
-    it('shows copy to Kiro option for PRD documents', async () => {
-      const user = userEvent.setup()
-      render(<DocumentExportMenu document={mockDocument} project={mockProject} />)
-
-      await user.click(screen.getByRole('button', { name: /download options/i }))
-
-      expect(screen.getByRole('menuitem', { name: /copy to kiro/i })).toBeInTheDocument()
-    })
-
-    it('shows copy to Kiro option for PRFAQ documents', async () => {
-      const user = userEvent.setup()
-      const prfaqDoc = { ...mockDocument, document_type: 'prfaq' as const }
-      render(<DocumentExportMenu document={prfaqDoc} project={mockProject} />)
-
-      await user.click(screen.getByRole('button', { name: /download options/i }))
+    it.each([
+      ['PRD', 'prd'],
+      ['PRFAQ', 'prfaq'],
+    ] as const)('shows copy to Kiro option for %s documents', async (_label, documentType) => {
+      await openMenu({ ...mockDocument, document_type: documentType }, mockProject)
 
       expect(screen.getByRole('menuitem', { name: /copy to kiro/i })).toBeInTheDocument()
     })
 
     it('does not show copy to Kiro for research documents', async () => {
-      const user = userEvent.setup()
-      const researchDoc = { ...mockDocument, document_type: 'research' as const }
-      render(<DocumentExportMenu document={researchDoc} project={mockProject} />)
-
-      await user.click(screen.getByRole('button', { name: /download options/i }))
+      await openMenu({ ...mockDocument, document_type: 'research' }, mockProject)
 
       expect(screen.queryByRole('menuitem', { name: /copy to kiro/i })).not.toBeInTheDocument()
-    })
-
-    it('shows tip when no kiro prompt configured', async () => {
-      const user = userEvent.setup()
-      const projectWithoutPrompt = { ...mockProject, kiro_export_prompt: undefined }
-      render(<DocumentExportMenu document={mockDocument} project={projectWithoutPrompt} />)
-
-      await user.click(screen.getByRole('button', { name: /download options/i }))
-
-      expect(screen.getByText(/configure kiro prompt/i)).toBeInTheDocument()
     })
   })
 
   describe('Copy Action', () => {
     it('copies content to clipboard', async () => {
+      const user = await openMenu()
       const writeTextSpy = vi.spyOn(navigator.clipboard, 'writeText')
-      const user = userEvent.setup()
-      render(<DocumentExportMenu document={mockDocument} />)
 
-      await user.click(screen.getByRole('button', { name: /download options/i }))
       await user.click(screen.getByRole('menuitem', { name: /^copy$/i }))
 
       expect(writeTextSpy).toHaveBeenCalledWith(mockDocument.content)
     })
 
     it('shows copied feedback', async () => {
-      const user = userEvent.setup()
-      render(<DocumentExportMenu document={mockDocument} />)
+      const user = await openMenu()
 
-      await user.click(screen.getByRole('button', { name: /download options/i }))
       await user.click(screen.getByRole('menuitem', { name: /^copy$/i }))
 
       expect(screen.getByText('Copied!')).toBeInTheDocument()
@@ -203,57 +145,21 @@ describe('DocumentExportMenu', () => {
 
   describe('Copy to Kiro Action', () => {
     it('copies content with kiro prompt', async () => {
+      const user = await openMenu(mockDocument, mockProject)
       const writeTextSpy = vi.spyOn(navigator.clipboard, 'writeText')
-      const user = userEvent.setup()
-      render(<DocumentExportMenu document={mockDocument} project={mockProject} />)
 
-      await user.click(screen.getByRole('button', { name: /download options/i }))
       await user.click(screen.getByRole('menuitem', { name: /copy to kiro/i }))
 
-      // eslint-disable-next-line vitest/prefer-called-with
-      expect(writeTextSpy).toHaveBeenCalled()
+      expect(writeTextSpy).toHaveBeenCalledExactlyOnceWith(
+        `${mockProject.kiro_default_export_prompt ?? ''}\n\n---\n\n## PRD Document\n\n# ${mockDocument.title}\n\n${mockDocument.content}`,
+      )
     })
   })
 
   describe('Download Actions', () => {
-    it('has markdown download option available', async () => {
-      const user = userEvent.setup()
-      render(<DocumentExportMenu document={mockDocument} />)
-
-      await user.click(screen.getByRole('button', { name: /download options/i }))
-      
-      const markdownOption = screen.getByRole('menuitem', { name: /download as markdown/i })
-      expect(markdownOption).toBeInTheDocument()
-      expect(markdownOption).not.toBeDisabled()
-    })
-
-    it('has txt download option available', async () => {
-      const user = userEvent.setup()
-      render(<DocumentExportMenu document={mockDocument} />)
-
-      await user.click(screen.getByRole('button', { name: /download options/i }))
-      
-      const txtOption = screen.getByRole('menuitem', { name: /download as txt/i })
-      expect(txtOption).toBeInTheDocument()
-      expect(txtOption).not.toBeDisabled()
-    })
-
-    it('has PDF download option available', async () => {
-      const user = userEvent.setup()
-      render(<DocumentExportMenu document={mockDocument} />)
-
-      await user.click(screen.getByRole('button', { name: /download options/i }))
-      
-      const pdfOption = screen.getByRole('menuitem', { name: /download as pdf/i })
-      expect(pdfOption).toBeInTheDocument()
-      expect(pdfOption).not.toBeDisabled()
-    })
-
     it('calls openPrintWindow when PDF option is clicked', async () => {
-      const user = userEvent.setup()
-      render(<DocumentExportMenu document={mockDocument} />)
+      const user = await openMenu()
 
-      await user.click(screen.getByRole('button', { name: /download options/i }))
       await user.click(screen.getByRole('menuitem', { name: /download as pdf/i }))
 
       expect(mockOpenPrintWindow).toHaveBeenCalledWith(
@@ -266,18 +172,7 @@ describe('DocumentExportMenu', () => {
 
   describe('Click Outside', () => {
     it('closes menu when clicking outside', async () => {
-      const user = userEvent.setup()
-      render(
-        <div>
-          <DocumentExportMenu document={mockDocument} />
-          <button>Outside</button>
-        </div>
-      )
-
-      await user.click(screen.getByRole('button', { name: /download options/i }))
-      expect(screen.getByRole('menu')).toBeInTheDocument()
-
-      await user.click(screen.getByRole('button', { name: /outside/i }))
+      await openThenClickOutside(<DocumentExportMenu document={mockDocument} />, TRIGGER)
 
       await waitFor(() => {
         expect(screen.queryByRole('menu')).not.toBeInTheDocument()
@@ -287,50 +182,37 @@ describe('DocumentExportMenu', () => {
 })
 
 describe('DocumentExportMenu with prototypes', () => {
-  it('returns null for a new (S3-only) prototype with prototype_url and no content', () => {
+  it.each([
     // New prototypes have no inline content — text export does not make sense for
     // a rendered iframe, so the menu should not render at all.
-    const s3OnlyPrototype: ProjectDocument = {
+    ['a new (S3-only) prototype with prototype_url and no content', {
       document_id: 'proto-1',
-      document_type: 'prototype',
       title: 'Test Prototype',
       content: '',
-      prototype_format: 'html',
       prototype_url: 'https://cdn.example.com/prototypes/proj-1/proto-1.html',
-      created_at: '2025-01-01T00:00:00Z',
-    }
-    const { container } = render(<DocumentExportMenu document={s3OnlyPrototype} />)
-    // eslint-disable-next-line testing-library/no-node-access
-    expect(container.firstChild).toBeNull()
-  })
-
-  it('returns null for an inline legacy prototype without a URL', () => {
-    const legacyPrototype: ProjectDocument = {
+    }],
+    ['an inline legacy prototype without a URL', {
       document_id: 'proto-legacy-1',
-      document_type: 'prototype',
       title: 'Legacy Prototype',
       content: '<!DOCTYPE html><html><body>Legacy</body></html>',
+    }],
+  ])('returns null for %s', (_title, fields) => {
+    expectRendersNothing({
+      document_type: 'prototype',
       prototype_format: 'html',
       created_at: '2025-01-01T00:00:00Z',
-    }
-    const { container } = render(<DocumentExportMenu document={legacyPrototype} />)
-    // eslint-disable-next-line testing-library/no-node-access
-    expect(container.firstChild).toBeNull()
+      ...fields,
+    })
   })
 })
 
 describe('stripMarkdownLinks helper', () => {
   it('handles document with markdown links in TXT export', async () => {
-    const user = userEvent.setup()
-    const docWithLinks: ProjectDocument = {
+    await openMenu({
       ...mockDocument,
       content: 'Check [this link](https://example.com) and [another](https://test.com).',
-    }
+    })
 
-    render(<DocumentExportMenu document={docWithLinks} />)
-
-    await user.click(screen.getByRole('button', { name: /download options/i }))
-    
     expect(screen.getByRole('menuitem', { name: /download as txt/i })).toBeInTheDocument()
   })
 })

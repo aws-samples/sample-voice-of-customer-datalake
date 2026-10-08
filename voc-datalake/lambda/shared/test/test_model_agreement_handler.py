@@ -16,19 +16,17 @@ Precedent for reading a TS file from a Python test:
 import re
 import sys
 import types
-from pathlib import Path
+from collections.abc import Callable
+from typing import Any
 
 import pytest
 
-
-def _repo_root() -> Path:
-    # …/voc-datalake/lambda/shared/test/this_file.py -> …/voc-datalake
-    return Path(__file__).resolve().parents[3]
+from shared.test.repo_paths import repo_root
 
 
 def _handler_source() -> str:
     """Extract the inline handler body from the CDK stack."""
-    ts = (_repo_root() / 'lib' / 'stacks' / 'bedrock-access-stack.ts').read_text(encoding='utf-8')
+    ts = (repo_root() / 'lib' / 'stacks' / 'bedrock-access-stack.ts').read_text(encoding='utf-8')
     match = re.search(
         r'private getModelAgreementLambdaCode\(\): string \{\s*return `(.*?)`;\s*\}',
         ts,
@@ -63,38 +61,65 @@ class _FakeConflict(_FakeClientError):
         super().__init__('ConflictException', message)
 
 
+class _FakeBoto3(types.ModuleType):
+    """The `boto3` module as the exec'd handler sees it: only `client`."""
+
+    client: Callable[..., Any]
+
+
+class _FakeBotocoreExceptions(types.ModuleType):
+    """`botocore.exceptions`, carrying only the stand-in `ClientError`."""
+
+    ClientError: type[Exception]
+
+
+class _FakeBotocore(types.ModuleType):
+    """`botocore`, carrying only its `exceptions` submodule."""
+
+    exceptions: _FakeBotocoreExceptions
+
+
 def _load_handler(*, create_raises: Exception | None = None,
                   availability_raises: Exception | None = None,
                   offers_raises: Exception | None = None):
     """exec the extracted handler with boto3/botocore stubbed out."""
     calls: dict[str, int] = {'create': 0}
 
-    class _Bedrock:
-        class exceptions:  # noqa: N801 — mirrors botocore's client.exceptions
-            ConflictException = _FakeConflict
-            AccessDeniedException = _FakeClientError
+    # The exec'd handler calls these by boto3's API names, which no Python source
+    # spells out, so the fake client is assembled from keyword arguments.
+    def availability(**_kwargs):
+        if availability_raises is not None:
+            raise availability_raises
+        return {'agreementAvailability': {'status': 'NOT_AVAILABLE'}}
 
-        def get_foundation_model_availability(self, modelId):  # noqa: N803
-            if availability_raises is not None:
-                raise availability_raises
-            return {'agreementAvailability': {'status': 'NOT_AVAILABLE'}}
+    def offers(**_kwargs):
+        if offers_raises is not None:
+            raise offers_raises
+        return {'offers': [{'offerToken': 'tok'}]}
 
-        def list_foundation_model_agreement_offers(self, modelId):  # noqa: N803
-            if offers_raises is not None:
-                raise offers_raises
-            return {'offers': [{'offerToken': 'tok'}]}
+    def create(**_kwargs):
+        calls['create'] += 1
+        if create_raises is not None:
+            raise create_raises
+        return {}
 
-        def create_foundation_model_agreement(self, modelId, offerToken):  # noqa: N803
-            calls['create'] += 1
-            if create_raises is not None:
-                raise create_raises
-            return {}
+    def bedrock_client():
+        return types.SimpleNamespace(
+            # mirrors botocore's client.exceptions
+            exceptions=types.SimpleNamespace(
+                ConflictException=_FakeConflict,
+                AccessDeniedException=_FakeClientError,
+            ),
+            get_foundation_model_availability=availability,
+            list_foundation_model_agreement_offers=offers,
+            create_foundation_model_agreement=create,
+        )
 
-    fake_boto3 = types.ModuleType('boto3')
-    fake_boto3.client = lambda *a, **k: _Bedrock()
+    fake_boto3 = _FakeBoto3('boto3')
+    fake_boto3.client = lambda *_a, **_k: bedrock_client()
 
-    fake_botocore = types.ModuleType('botocore')
-    fake_exceptions = types.ModuleType('botocore.exceptions')
+    fake_botocore = _FakeBotocore('botocore')
+    fake_exceptions = _FakeBotocoreExceptions('botocore.exceptions')
     fake_exceptions.ClientError = _FakeClientError
     fake_botocore.exceptions = fake_exceptions
 

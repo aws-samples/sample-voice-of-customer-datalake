@@ -1,0 +1,123 @@
+{
+  "add": {
+    "expiresAt": "期限日",
+    "failed": "記憶を保存できませんでした。もう一度お試しください。",
+    "label": {
+      "company": "会社全体で覚える",
+      "personal": "自分用に覚える"
+    },
+    "placeholder": {
+      "company": "例：お客様は購入前に価格を比較することがわかった",
+      "personal": "例：短い回答が好き"
+    },
+    "proposedNotice": "会社の記憶を直接公開できるのはキュレーターのみです。あなたの記憶はまずレビューに回ります。",
+    "retention": "保持期間",
+    "saved": "覚えました。",
+    "submit": "覚える"
+  },
+  "cancel": "キャンセル",
+  "configureFirst": "先に設定で API エンドポイントを接続してください。",
+  "confirm": "+1",
+  "confirmHint": "同意します（支持者に加える）",
+  "empty": "ここにはまだ記憶がありません。",
+  "expires": "{{date}} に期限切れ",
+  "filters": {
+    "anyKind": "すべての種類",
+    "anyStatus": "すべてのステータス",
+    "kind": "種類",
+    "search": "記憶を検索",
+    "status": "ステータスで絞り込み"
+  },
+  "forget": "忘れる",
+  "forgetMessage": "「{{statement}}」はアーカイブされ、自動で再学習されることはありません。後で復元できます。",
+  "forgetTitle": "この記憶を忘れますか？",
+  "imports": {
+    "content": "本文",
+    "contentPlaceholder": "ここにページの本文を貼り付け…",
+    "counter": "{{count}} / {{max}} 文字",
+    "created": "作成された記憶: {{count}}",
+    "description": "ドキュメントやウェブページを貼り付けてください。学んだ内容は通常の信頼度ルールで公開され、原文は保持されます。",
+    "failed": "インポートを開始できませんでした。もう一度お試しください。",
+    "history": "最近のインポート",
+    "noHistory": "このブラウザからのインポートはまだありません。",
+    "pageTitle": "タイトル",
+    "status": {
+      "completed": "完了",
+      "failed": "失敗",
+      "processing": "処理中",
+      "queued": "待機中"
+    },
+    "submit": "インポート",
+    "title": "ページをインポート",
+    "url": "出典リンク（任意）"
+  },
+  "kind": {
+    "agents": "エージェント",
+    "customer": "顧客",
+    "objective": "目標",
+    "other": "その他",
+    "product": "プロダクト",
+    "strategy": "戦略",
+    "working_style": "仕事の進め方"
+  },
+  "loadFailed": "記憶を読み込めませんでした。",
+  "loadMore": "さらに読み込む",
+  "loading": "記憶を読み込み中…",
+  "merge": {
+    "description": "1 つの記述に置き換えます。元の記憶はアーカイブされ、支持者は引き継がれます。",
+    "failed": "統合できませんでした。もう一度お試しください。",
+    "open": "選択項目を統合",
+    "statement": "統合後の記述",
+    "submit": "統合",
+    "title": "記憶を統合（{{count}}）"
+  },
+  "meta": "{{created}} から · {{retention}}",
+  "restore": "復元",
+  "retention": {
+    "dated": "期日まで",
+    "decay": "使われないと消える",
+    "long_term": "長期保持"
+  },
+  "retry": "再試行",
+  "review": {
+    "actions": {
+      "keep": "こちらを残す",
+      "keep_both": "両方残す",
+      "merge": "1 つに統合",
+      "replace": "既存を残す"
+    },
+    "aligned": "一致する目標: {{objectives}}",
+    "apply": "適用",
+    "empty": "レビュー対象はありません（提案も矛盾もありません）。",
+    "existing": "現在の記憶",
+    "failed": "解決方法を適用できませんでした。もう一度お試しください。",
+    "newClaim": "新しい主張",
+    "proposed": "提案された記憶",
+    "resolution": "解決方法",
+    "suggested": "提案: {{action}}"
+  },
+  "reviewLoadFailed": "レビュー待ちキューを読み込めませんでした。レビュー待ちのメモリーがここに表示されていない可能性があります。",
+  "selectForMerge": "統合対象に選択: {{statement}}",
+  "selected": "選択中: {{count}}",
+  "source": {
+    "agent": "自律エージェント",
+    "extracted": "チャットから学習",
+    "import": "インポート済み",
+    "user_explicit": "人が追加"
+  },
+  "status": {
+    "active": "有効",
+    "archived": "アーカイブ済み",
+    "conflict": "矛盾",
+    "proposed": "提案中"
+  },
+  "subtitle": "アシスタントと自律エージェントが覚えていること：共有された会社の知識と、あなた自身の好み。",
+  "supportersHint": "これを述べた、または確認した人",
+  "tabs": {
+    "company": "会社",
+    "imports": "インポート",
+    "personal": "個人",
+    "review": "要レビュー"
+  },
+  "title": "メモリ"
+}

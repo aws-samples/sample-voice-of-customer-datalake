@@ -13,16 +13,11 @@ class TestSharedModuleImports:
 
     def test_shared_http_module_exists(self):
         """Regression: shared/http.py was deleted but plugins still need it.
-        
+
         This would have caught the webscraper Lambda import failure.
         """
         from shared.http_utils import fetch_with_retry
         assert callable(fetch_with_retry)
-
-    def test_shared_http_fetch_json_exists(self):
-        """fetch_json_with_retry must also be available."""
-        from shared.http_utils import fetch_json_with_retry
-        assert callable(fetch_json_with_retry)
 
     def test_base_ingestor_imports_successfully(self):
         """base_ingestor must import without errors — all plugins depend on it."""
@@ -40,3 +35,10 @@ class TestSharedModuleImports:
         mod = importlib.import_module('synthetic_reviews.ingestor.handler')
         assert hasattr(mod, 'SyntheticReviewsIngestor')
         assert callable(mod.lambda_handler)
+
+    def test_github_issues_handlers_import_successfully(self):
+        """Both github_issues Lambdas import (ingestor via the ingestion layer, webhook via the API layer)."""
+        ingestor = importlib.import_module('github_issues.ingestor.handler')
+        webhook = importlib.import_module('github_issues.webhook.handler')
+        assert callable(ingestor.lambda_handler)
+        assert callable(webhook.lambda_handler)

@@ -15,25 +15,28 @@
  * Kept deliberately small and capped: these strings land in a system prompt that
  * competes with the conversation history budget (`src/history-budget.ts`).
  */
-import type { ProjectItem } from './project-context.js';
+/**
+ * The persona sections these readers touch. Structural on purpose: the
+ * assistant's persona record from the chat-context route satisfies it without
+ * this module depending on that reader.
+ */
+export interface PersonaFieldSource {
+  quotes?: unknown[];
+  goals_motivations?: Record<string, unknown>;
+  pain_points?: Record<string, unknown>;
+}
 
 /** Chat prompts have more room than the Python document paths, which cap at 3. */
-export const DEFAULT_PERSONA_ITEMS = 4;
+const DEFAULT_PERSONA_ITEMS = 4;
 
 /**
  * One key off a value that is only believed to be an object.
  *
- * The persona sections arrive as opaque records — `project-context.ts` declares
- * them that way on purpose, because naming their leaves would let one malformed
- * row throw and take down the whole context build. So every read goes through a
- * guard here rather than trusting the declared type.
- */
-/**
- * Duplicated from `project-context.ts`'s `isPlainRecord` on purpose, three lines
- * rather than an import: `project-context.ts` imports the readers in this module
- * as VALUES, so importing a value back would be a real runtime cycle — the
- * existing type-only import in `persona-prompt.ts` is erased at compile time and
- * is not a precedent for one.
+ * The persona sections arrive as opaque records — the chat-context reader
+ * (`assistant/tools/server/chat-context.ts`) declares them that way on purpose,
+ * because naming their leaves would let one malformed row throw and take down
+ * the whole read. So every read goes through a guard here rather than trusting
+ * the declared type. Kept local (three lines) so this leaf module imports nothing.
  */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -54,7 +57,8 @@ const TEXTUAL_KEYS = ['text', 'description', 'value', 'name'] as const;
 /** The readable text of one list entry, or '' when it holds none. */
 function entryText(entry: unknown): string {
   if (typeof entry === 'string') return entry.trim();
-  if (typeof entry === 'number' && Number.isFinite(entry)) return String(entry);
+  // Number.isFinite is false for every non-number, so it is the type test too.
+  if (Number.isFinite(entry)) return String(entry);
   if (isRecord(entry)) {
     for (const key of TEXTUAL_KEYS) {
       const candidate = entry[key];
@@ -74,9 +78,9 @@ function cleanStrings(values: unknown, limit: number): string[] {
   if (!Array.isArray(values)) return [];
   const out: string[] = [];
   for (const value of values) {
+    if (out.length >= limit) break;
     const text = entryText(value);
     if (text) out.push(text);
-    if (out.length >= limit) break;
   }
   return out;
 }
@@ -87,7 +91,7 @@ function cleanStrings(values: unknown, limit: number): string[] {
  * `quotes` entries are `{text, context}` objects; a bare string is tolerated
  * because the Python renderer tolerates it and rows exist in both shapes.
  */
-export function personaVoice(persona: ProjectItem): string {
+export function personaVoice(persona: PersonaFieldSource): string {
   const quotes = persona.quotes;
   if (!Array.isArray(quotes)) return '';
   for (const quote of quotes) {
@@ -98,9 +102,8 @@ export function personaVoice(persona: ProjectItem): string {
 }
 
 /** Primary goal first, then secondary goals. */
-export function personaGoals(persona: ProjectItem, limit = DEFAULT_PERSONA_ITEMS): string[] {
+export function personaGoals(persona: PersonaFieldSource, limit = DEFAULT_PERSONA_ITEMS): string[] {
   const section = persona.goals_motivations;
-  if (!section) return [];
   const goals: string[] = [];
   const primary = readKey(section, 'primary_goal');
   if (typeof primary === 'string' && primary.trim()) goals.push(primary.trim());
@@ -114,15 +117,14 @@ export function personaGoals(persona: ProjectItem, limit = DEFAULT_PERSONA_ITEMS
  * Both belong under "frustrations" for a prompt: a challenge is what hurts, a
  * blocker is what stops them, and a model reasoning about a feature needs both.
  */
-export function personaFrustrations(persona: ProjectItem, limit = DEFAULT_PERSONA_ITEMS): string[] {
+export function personaFrustrations(persona: PersonaFieldSource, limit = DEFAULT_PERSONA_ITEMS): string[] {
   const section = persona.pain_points;
-  if (!section) return [];
   const pains = cleanStrings(readKey(section, 'current_challenges'), limit);
   for (const blocker of cleanStrings(readKey(section, 'blockers'), limit)) {
     if (pains.length >= limit) break;
     if (!pains.includes(blocker)) pains.push(blocker);
   }
-  return pains.slice(0, limit);
+  return pains;
 }
 
 /**
@@ -134,13 +136,13 @@ export function personaFrustrations(persona: ProjectItem, limit = DEFAULT_PERSON
  * today (`pain_points.workarounds`) and what actually drives them
  * (`goals_motivations.underlying_motivations`).
  */
-export function personaNeeds(persona: ProjectItem, limit = DEFAULT_PERSONA_ITEMS): string[] {
+export function personaNeeds(persona: PersonaFieldSource, limit = DEFAULT_PERSONA_ITEMS): string[] {
   const needs = cleanStrings(readKey(persona.goals_motivations, 'underlying_motivations'), limit);
   for (const workaround of cleanStrings(readKey(persona.pain_points, 'workarounds'), limit)) {
     if (needs.length >= limit) break;
     if (!needs.includes(workaround)) needs.push(workaround);
   }
-  return needs.slice(0, limit);
+  return needs;
 }
 
 /** `- one\n- two`, or '' when there is nothing — so a caller can omit the label. */

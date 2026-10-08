@@ -1,3 +1,4 @@
+import { byCodeUnit } from './compare';
 /**
  * Shared staging excludes for Lambda `Code.fromAsset(...)` bundles
  * (issues #194/#201 follow-ups, #203).
@@ -50,6 +51,16 @@ export const PY_LAMBDA_ASSET_EXCLUDES = [
   // Node.js streaming Lambda — bundled separately by NodejsFunction
   '/stream/',
 ];
+
+/**
+ * The two worker trees VocProcessingStack bundles on their own (memory
+ * extraction/scanning/retention, and the autonomous-agent runtime). Every
+ * OTHER `fromAsset('lambda')` site spreads this so an edit under
+ * lambda/memory/ or lambda/agents/ does not redeploy the ~25 unrelated
+ * functions; each worker bundle excludes only the OTHER tree (see
+ * lib/stacks/worker-lambda.ts).
+ */
+export const WORKER_TREE_ASSET_EXCLUDES = ['/agents/', '/memory/'];
 
 /**
  * Provider-only source must not churn every API/job Lambda rooted at `lambda/`.
@@ -110,18 +121,20 @@ export function rootPluginAssetExcludes(pluginId: string, allPluginIds: string[]
     '/Workshop/',
     '/plugins/_template/',
     // lambda/: only shared/ ships in ingestor bundles.
+    '/lambda/agents/',
     '/lambda/aggregator/',
     '/lambda/api/',
     '/lambda/custom_resources/',
     '/lambda/jobs/',
     '/lambda/layers/',
+    '/lambda/memory/',
     '/lambda/processor/',
     '/lambda/research/',
     '/lambda/stream/',
     // Sibling plugins: their edits must not churn THIS plugin's hash.
     ...allPluginIds
       .filter((id) => id !== pluginId)
-      .sort()
+      .sort(byCodeUnit)
       .map((id) => `/plugins/${id}/`),
   ];
 }

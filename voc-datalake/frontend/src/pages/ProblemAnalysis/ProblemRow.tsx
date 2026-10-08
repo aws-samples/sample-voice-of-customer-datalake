@@ -2,8 +2,9 @@ import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronRight, AlertTriangle, Lightbulb, CheckCircle2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import clsx from 'clsx'
-import SentimentBadge from '../../components/SentimentBadge'
-import type { FeedbackItem } from '../../api/client'
+import SentimentBadge from '../../components/SentimentBadge/SentimentBadge'
+import RatingStars from '../../components/RatingStars'
+import type { FeedbackItem } from '../../api/types'
 import type { ProblemGroup } from './problemResolution'
 
 function getSentimentLabel(score: number): 'positive' | 'negative' | 'neutral' {
@@ -25,17 +26,17 @@ function ProblemTitle({ problemGroup, resolved }: Readonly<{ problemGroup: Probl
   const { t } = useTranslation('common')
   return (
     <div className="flex items-center gap-1.5 sm:gap-2 mb-1 flex-wrap">
-      <AlertTriangle size={12} className="text-orange-500 flex-shrink-0 sm:w-[14px] sm:h-[14px]" />
-      <span className={clsx('font-medium text-gray-800 text-xs sm:text-sm', resolved && 'line-through')}>
+      <AlertTriangle size={12} className="text-warn flex-shrink-0 sm:w-[14px] sm:h-[14px]" />
+      <span className={clsx('font-medium text-text-strong text-xs sm:text-sm', resolved && 'line-through')}>
         {problemGroup.problem}
       </span>
       {resolved && (
-        <span className="px-1.5 py-0.5 bg-green-100 text-green-700 text-xs rounded-full flex-shrink-0">
+        <span className="badge badge-ok flex-shrink-0">
           {t('problemResolution.resolved')}
         </span>
       )}
       {problemGroup.similarProblems.length > 0 && (
-        <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full" title={problemGroup.similarProblems.join(', ')}>
+        <span className="badge badge-info font-mono" title={problemGroup.similarProblems.join(', ')}>
           +{problemGroup.similarProblems.length}
         </span>
       )}
@@ -59,8 +60,8 @@ function ResolveToggleButton({ resolved, onToggleResolved, disabled }: Readonly<
         disabled && 'opacity-40 cursor-not-allowed',
         'absolute right-2 sm:right-3 top-2.5 sm:top-3 p-1 rounded-full transition-colors',
         resolved
-          ? 'text-green-600 hover:bg-green-50 active:bg-green-100'
-          : 'text-gray-300 hover:text-green-600 hover:bg-green-50 active:bg-green-100',
+          ? 'text-ok hover:bg-ok-subtle active:bg-ok-subtle'
+          : 'text-muted-strong hover:text-ok hover:bg-ok-subtle active:bg-ok-subtle',
       )}
     >
       <CheckCircle2 size={16} className="sm:w-[18px] sm:h-[18px]" />
@@ -69,33 +70,36 @@ function ResolveToggleButton({ resolved, onToggleResolved, disabled }: Readonly<
 }
 
 export function ProblemRow({ problemGroup, problemKey, isExpanded, onToggle, onToggleResolved, resolvePending }: ProblemRowProps) {
+  const { t } = useTranslation('common')
   const resolved = problemGroup.resolved === true
   return (
-    <div key={problemKey} className="bg-white relative">
+    <div key={problemKey} className="bg-card relative">
       <button
+        type="button"
         onClick={onToggle}
+        aria-expanded={isExpanded}
         className={clsx(
-          'w-full px-3 sm:px-6 py-2.5 sm:py-3 pl-10 sm:pl-16 pr-12 sm:pr-14 flex flex-col sm:flex-row sm:items-start justify-between hover:bg-gray-50 active:bg-gray-100 transition-colors text-left gap-2',
+          'w-full px-3 sm:px-5 py-2.5 sm:py-3 pl-10 sm:pl-16 pr-12 sm:pr-14 flex flex-col sm:flex-row sm:items-start justify-between hover:bg-bg-hover active:bg-border transition-colors text-left gap-2 focus-ring',
           resolved && 'opacity-60',
         )}
       >
         <div className="flex items-start gap-2 sm:gap-3 flex-1 min-w-0">
           {isExpanded ? (
-            <ChevronDown size={16} className="text-gray-400 mt-0.5 flex-shrink-0 sm:w-[18px] sm:h-[18px]" />
+            <ChevronDown size={16} className="text-muted mt-0.5 flex-shrink-0 sm:w-[18px] sm:h-[18px]" />
           ) : (
-            <ChevronRight size={16} className="text-gray-400 mt-0.5 flex-shrink-0 sm:w-[18px] sm:h-[18px]" />
+            <ChevronRight size={16} className="text-muted mt-0.5 flex-shrink-0 sm:w-[18px] sm:h-[18px]" />
           )}
           <div className="flex-1 min-w-0">
             <ProblemTitle problemGroup={problemGroup} resolved={resolved} />
             {problemGroup.rootCause && (
-              <div className="flex items-start gap-1.5 sm:gap-2 text-xs text-gray-600">
-                <Lightbulb size={12} className="text-yellow-500 mt-0.5 flex-shrink-0 sm:w-[14px] sm:h-[14px]" />
+              <div className="flex items-start gap-1.5 sm:gap-2 text-xs text-text">
+                <Lightbulb size={12} className="text-warn mt-0.5 flex-shrink-0 sm:w-[14px] sm:h-[14px]" />
                 <span className="line-clamp-2">{problemGroup.rootCause}</span>
               </div>
             )}
             {problemGroup.similarProblems.length > 0 && isExpanded && (
-              <div className="mt-2 text-xs text-gray-500">
-                <span className="font-medium">Similar:</span>{' '}
+              <div className="mt-2 text-xs text-muted">
+                <span className="font-medium">{t('problemAnalysis:tree.similar')}</span>{' '}
                 {problemGroup.similarProblems.slice(0, 2).join(' • ')}
                 {problemGroup.similarProblems.length > 2 && ` (+${problemGroup.similarProblems.length - 2})`}
               </div>
@@ -103,9 +107,10 @@ export function ProblemRow({ problemGroup, problemKey, isExpanded, onToggle, onT
           </div>
         </div>
         <div className="flex items-center gap-2 sm:gap-3 ml-6 sm:ml-4 flex-shrink-0">
-          <span className="text-xs text-gray-500">{problemGroup.items.length}</span>
+          <span className="text-xs font-mono text-muted" title={t('problemAnalysis:tree.reviews', { count: problemGroup.items.length })}>{problemGroup.items.length}</span>
           {problemGroup.urgentCount > 0 && (
-            <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-xs rounded-full">
+            <span className="badge badge-warn font-mono" title={t('problemAnalysis:stats.urgent')}>
+              <AlertTriangle size={12} aria-hidden="true" />
               {problemGroup.urgentCount}
             </span>
           )}
@@ -140,30 +145,31 @@ function formatDateSafe(dateString: string | null | undefined): string {
 }
 
 function FeedbackItemCard({ item, problemSummary }: Readonly<{ item: FeedbackItem; problemSummary: string }>) {
+  const { t } = useTranslation('problemAnalysis')
   return (
     <Link
       to={`/feedback/${item.feedback_id}`}
-      className="block p-3 sm:p-4 bg-gray-50 rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors border border-gray-100"
+      className="block p-3 sm:p-4 bg-bg-accent rounded-lg hover:bg-bg-hover hover:border-border-strong active:bg-border transition-colors border border-border focus-ring"
     >
       <div className="flex items-start justify-between mb-1.5 sm:mb-2 gap-2">
         <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-          <span className="text-xs font-medium text-gray-700 capitalize">
+          <span className="text-xs font-medium text-text capitalize">
             {item.source_platform.replace(/_/g, ' ')}
           </span>
           {item.urgency === 'high' && (
-            <span className="px-1 py-0.5 bg-red-100 text-red-700 text-xs rounded">Urgent</span>
+            <span className="badge badge-warn">Urgent</span>
           )}
         </div>
         <SentimentBadge sentiment={item.sentiment_label} score={item.sentiment_score} />
       </div>
-      <p className="text-xs sm:text-sm text-gray-600 line-clamp-3">{item.original_text}</p>
+      <p className="text-xs sm:text-sm text-text line-clamp-3">{item.original_text}</p>
       {item.problem_summary && item.problem_summary !== problemSummary && (
-        <p className="text-xs text-gray-400 mt-1 italic line-clamp-1">Original: {item.problem_summary}</p>
+        <p className="text-xs text-muted mt-1 italic line-clamp-1">{t('problemAnalysis:tree.original', { text: item.problem_summary })}</p>
       )}
-      <div className="flex flex-wrap items-center gap-2 sm:gap-4 mt-1.5 sm:mt-2 text-xs text-gray-400">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-4 mt-1.5 sm:mt-2 text-xs text-muted">
         <span>{formatDateSafe(item.source_created_at)}</span>
-        {item.rating && <span>★ {item.rating}/5</span>}
-        {item.persona_name && <span className="hidden xs:inline">{item.persona_name}</span>}
+        {item.rating ? <RatingStars rating={item.rating} size={12} /> : null}
+        {item.persona_name && <span className="hidden sm:inline">{item.persona_name}</span>}
       </div>
     </Link>
   )

@@ -82,7 +82,7 @@ describe('WindowCoverageNotice', () => {
       render(<WindowCoverageNotice {...complete} hasFailed loadedCount={0} totalCount={0} onRetry={onRetry} />)
 
       await user.click(screen.getByRole('button', { name: 'Retry' }))
-      expect(onRetry).toHaveBeenCalledOnce()
+      expect(onRetry).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'click' }))
     })
 
     it('omits the retry control when no handler is supplied', () => {

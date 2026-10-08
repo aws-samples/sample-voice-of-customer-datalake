@@ -3,7 +3,10 @@
     "docs_one": "{{count}} ドキュメント",
     "docs_other": "{{count}} ドキュメント",
     "personas_one": "{{count}} ペルソナ",
-    "personas_other": "{{count}} ペルソナ"
+    "personas_other": "{{count}} ペルソナ",
+    "deleteProject": "プロジェクト {{name}} を削除",
+    "editProject": "プロジェクト {{name}} を編集",
+    "owner": "オーナー: {{name}}"
   },
   "configureEndpoint": "まず設定でAPIエンドポイントを構成してください",
   "createModal": {
@@ -21,6 +24,14 @@
     "message": "このプロジェクトを削除してもよろしいですか？すべてのペルソナとドキュメントが完全に削除されます。",
     "title": "プロジェクトを削除"
   },
+  "editModal": {
+    "nameRequired": "プロジェクト名を入力してください。",
+    "save": "保存",
+    "saveFailed": "プロジェクトを保存できませんでした。アクセス権を確認して、もう一度お試しください。",
+    "saving": "保存中...",
+    "title": "プロジェクトを編集",
+    "visibilityManageOnly": "公開範囲を変更できるのは、プロジェクトのオーナーまたは管理者だけです。"
+  },
   "description": "フィードバックからペルソナ、PRD、PR/FAQを作成するプロジェクトを作成",
   "emptyState": {
     "createButton": "プロジェクトを作成",
@@ -29,5 +40,58 @@
   },
   "newProject": "新規プロジェクト",
   "openProject": "プロジェクトを開く",
-  "title": "プロジェクト"
+  "title": "プロジェクト",
+  "readOnlyBanner": "このプロジェクトへのアクセスは閲覧のみです。編集権限はオーナーに依頼してください。",
+  "sharing": {
+    "cancel": "キャンセル",
+    "description": "このプロジェクトを閲覧できるユーザーと、招待したユーザーができることを選択します。",
+    "errors": {
+      "conflict": "このユーザーはすでにこのプロジェクトにアクセスできます。",
+      "forbidden": "このプロジェクトの共有設定を変更する権限がありません。",
+      "generic": "変更を保存できませんでした。もう一度お試しください。",
+      "invalid": "リクエストが拒否されました。プロジェクトのメンバー数が上限に達している可能性があります。",
+      "notFound": "ユーザーまたはメンバーが見つかりませんでした。"
+    },
+    "invite": "招待",
+    "inviteHeading": "ユーザーを招待",
+    "inviteRoleLabel": "招待するユーザーのロール",
+    "leave": "プロジェクトから退出",
+    "leaveConfirm": "退出",
+    "leaveMessage": "プロジェクトが公開されていない限り、アクセスできなくなります。",
+    "leaveTitle": "プロジェクトから退出しますか?",
+    "loadError": "共有設定を読み込めませんでした。",
+    "loading": "共有設定を読み込んでいます...",
+    "makeOwner": "{{name}} をオーナーにする",
+    "members": "メンバー",
+    "noMembers": "まだ誰も招待されていません。",
+    "noOwner": "オーナーなし",
+    "noResults": "一致するユーザーはいません",
+    "owner": "オーナー",
+    "readOnlyNotice": "共有設定を変更できるのはプロジェクトのオーナーまたは管理者のみです。",
+    "remove": "{{name}} を削除",
+    "roleLabel": "{{name}} のロール",
+    "roles": {
+      "editor": "編集可能",
+      "viewer": "閲覧のみ"
+    },
+    "searchLabel": "ユーザーを検索",
+    "searchPlaceholder": "ユーザー名またはメールアドレス",
+    "searchMinLength": "検索するには {{min}} 文字以上入力してください。",
+    "searching": "検索中...",
+    "select": "{{name}} を選択",
+    "selected": "選択中: {{name}}",
+    "share": "共有",
+    "title": "「{{name}}」を共有",
+    "transferConfirm": "移譲",
+    "transferMessage": "{{name}} がこのプロジェクトのオーナーになります。現在のオーナーは編集者として残ります。",
+    "transferTitle": "オーナー権限を移譲しますか?",
+    "you": "(あなた)"
+  },
+  "visibility": {
+    "label": "このプロジェクトにアクセスできるユーザー",
+    "private": "非公開",
+    "privateHint": "オーナー、招待されたメンバー、管理者のみが閲覧できます。",
+    "public": "公開",
+    "publicHint": "このワークスペースの全員が閲覧・編集できます。"
+  }
 }

@@ -46,14 +46,13 @@ const prototypeScreenSchema = z.object({
   blocks: z.array(prototypeBlockSchema).optional(),
 })
 
-export const prototypeSpecSchema = z.object({
+const prototypeSpecSchema = z.object({
   title: z.string().optional(),
   banner: z.string().optional(),
   screens: z.array(prototypeScreenSchema),
 })
 
 export type PrototypeBlock = z.infer<typeof prototypeBlockSchema>
-export type PrototypeScreen = z.infer<typeof prototypeScreenSchema>
 export type PrototypeSpec = z.infer<typeof prototypeSpecSchema>
 
 /**

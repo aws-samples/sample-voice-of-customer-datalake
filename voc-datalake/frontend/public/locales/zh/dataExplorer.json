@@ -6,12 +6,7 @@
     "summary_one": "{{count}} 个分类 • {{total}} 项 • 最近 {{days}} 天",
     "summary_other": "{{count}} 个分类 • {{total}} 项 • 最近 {{days}} 天"
   },
-  "deleteConfirm": {
-    "deleteFeedback": "删除反馈",
-    "deleteS3File": "删除 S3 文件",
-    "message": "确定要删除吗？此操作无法撤销。"
-  },
-  "description": "浏览、编辑和同步原始 S3 数据和处理后的 DynamoDB 记录",
+  "description": "浏览 S3 原始数据和已处理的 DynamoDB 记录。这里的数据永不删除，已存储的原始文件为只读。",
   "editModal": {
     "cancel": "取消",
     "close": "关闭",
@@ -24,36 +19,42 @@
     "key": "键",
     "save": "保存",
     "syncToDynamo": "同时更新 DynamoDB",
-    "syncToS3": "同时更新 S3",
     "type": "类型",
     "viewFeedback": "查看反馈",
-    "viewS3File": "查看 S3 文件"
+    "viewS3File": "查看 S3 文件",
+    "content": "文件内容"
   },
   "feedback": {
     "category": "分类：{{category}}",
-    "delete": "删除",
     "edit": "编辑",
     "errorLoading": "加载反馈出错",
     "noFeedback": "未找到反馈",
     "showingRecords": "显示 {{filtered}} / {{total}} 条记录",
     "urgent": "紧急",
-    "view": "查看"
+    "view": "查看",
+    "noFeedbackHint": "请尝试其他来源或更长的时间范围。",
+    "showDetails": "显示详情",
+    "hideDetails": "隐藏详情"
   },
   "filters": {
     "allSources": "所有来源",
-    "searchPlaceholder": "搜索..."
+    "searchPlaceholder": "搜索...",
+    "bucket": "存储桶",
+    "source": "来源",
+    "search": "搜索反馈"
   },
   "newFile": "新文件",
   "notConfigured": "在设置中配置 API 端点以浏览数据",
   "refresh": "刷新",
   "s3Browser": {
     "back": "返回",
-    "delete": "删除",
     "download": "下载",
     "edit": "编辑",
     "errorLoading": "加载文件出错",
     "noFiles": "未找到文件",
-    "view": "查看"
+    "view": "查看",
+    "path": "文件夹路径",
+    "noFilesHint": "此文件夹为空。可在此创建文件，或从数据源导入数据。"
   },
   "tabs": {
     "categories": "分类",
@@ -61,7 +62,8 @@
     "feedbackShort": "反馈",
     "processedFeedback": "处理后的反馈",
     "s3RawData": "S3 原始数据",
-    "s3Short": "S3"
+    "s3Short": "S3",
+    "label": "数据视图"
   },
   "title": "数据浏览器"
 }

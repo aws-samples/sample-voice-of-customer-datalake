@@ -52,5 +52,15 @@
   "type": "Typ",
   "unknown": "Unbekannt",
   "urgent": "Dringend",
-  "viewOriginal": "Original ansehen"
+  "viewOriginal": "Original ansehen",
+  "sourceId": "ID: {{id}}",
+  "reviewDate": "Bewertungsdatum: {{date}}",
+  "reviewDateHint": "Wann der Kunde dieses Feedback geschrieben hat",
+  "imported": "Importiert: {{date}}",
+  "importedHint": "Wann dieses Feedback in die Plattform importiert wurde",
+  "noSimilar": "Kein ähnliches Feedback gefunden",
+  "loading": "Feedback wird geladen…",
+  "similarFailed": "Ähnliches Feedback konnte nicht geladen werden. Bitte später erneut versuchen.",
+  "author": "Autor",
+  "reviewTitle": "Titel"
 }

@@ -4,14 +4,16 @@ Template Ingestor - Starting point for new plugins.
 Copy this folder to plugins/{your_source_id}/ and customize.
 """
 
-from typing import Generator
+import os
 
 # Import from shared plugin modules
 import sys
-import os
+from collections.abc import Generator
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from _shared.base_ingestor import BaseIngestor, logger, tracer, metrics
+from _shared.base_ingestor import BaseIngestor, logger, metrics, tracer
+from shared.invocation_cost import measure_invocation_cost
 
 
 class MySourceIngestor(BaseIngestor):
@@ -33,13 +35,13 @@ class MySourceIngestor(BaseIngestor):
     def fetch_new_items(self) -> Generator[dict, None, None]:
         """
         Fetch new items from the data source.
-        
+
         This method should:
         1. Use watermarks to track progress (get_watermark/set_watermark)
         2. Yield items one at a time for memory efficiency
         3. Handle pagination if the API supports it
         4. Return items in the expected format (see below)
-        
+
         Expected item format:
         {
             "id": "unique_id_from_source",
@@ -51,6 +53,28 @@ class MySourceIngestor(BaseIngestor):
             "author": "John D.",  # Optional
             "title": "Great product!",  # Optional
         }
+
+        Example implementation (replace the placeholder below with it):
+
+            import requests
+
+            response = requests.get(
+                "https://api.mysource.com/reviews",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                params={"since_id": last_id} if last_id else {},
+            )
+            response.raise_for_status()
+
+            for item in response.json().get("reviews", []):
+                yield {
+                    "id": item["id"],
+                    "text": item["content"],
+                    "rating": item.get("score"),
+                    "created_at": item["created_at"],
+                    "url": item.get("url"),
+                    "channel": "review",
+                    "author": item.get("author_name"),
+                }
         """
         if not self.api_key:
             logger.warning("No API key configured for My Source")
@@ -60,38 +84,17 @@ class MySourceIngestor(BaseIngestor):
         last_id = self.get_watermark("last_id")
         logger.info(f"Fetching items since last_id: {last_id}")
 
-        # TODO: Implement your API fetching logic here
-        # Example:
-        #
-        # import requests
-        # 
-        # response = requests.get(
-        #     "https://api.mysource.com/reviews",
-        #     headers={"Authorization": f"Bearer {self.api_key}"},
-        #     params={"since_id": last_id} if last_id else {}
-        # )
-        # response.raise_for_status()
-        # 
-        # for item in response.json().get("reviews", []):
-        #     yield {
-        #         "id": item["id"],
-        #         "text": item["content"],
-        #         "rating": item.get("score"),
-        #         "created_at": item["created_at"],
-        #         "url": item.get("url"),
-        #         "channel": "review",
-        #         "author": item.get("author_name"),
-        #     }
+        # TODO: Implement your API fetching logic here (see the docstring example).
 
         # Placeholder - remove this when implementing
         logger.info("Template ingestor - no items to fetch")
-        return
-        yield  # Makes this a generator
+        yield from ()  # Keeps this a generator that yields nothing
 
 
 @logger.inject_lambda_context
 @tracer.capture_lambda_handler
 @metrics.log_metrics(capture_cold_start_metric=True)
+@measure_invocation_cost
 def lambda_handler(event, context):
     """Lambda entry point."""
     execution_id = event.get("execution_id") if isinstance(event, dict) else None

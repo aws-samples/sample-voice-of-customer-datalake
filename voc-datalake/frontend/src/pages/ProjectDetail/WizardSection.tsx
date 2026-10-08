@@ -1,16 +1,20 @@
 /**
  * WizardSection - Renders the active wizard based on wizard state
  */
+import { DocWizard } from './DocWizard'
 import {
-  PersonaWizard, ResearchWizard, DocWizard, MergeWizard,
+  PersonaWizard, ResearchWizard, MergeWizard,
 } from './Wizards'
 import type {
   PersonaToolConfig, ResearchToolConfig, DocToolConfig, MergeToolConfig,
 } from './types'
 import type {
-  ProjectPersona, ProjectDocument,
+  ProjectDocument,
 } from '../../api/types'
-import type { ContextConfig } from '../../components/DataSourceWizard/exports'
+import type {
+  ProjectPersona,
+} from '../../api/projectTypes'
+import type { ContextConfig } from '../../components/DataSourceWizard/types'
 
 type WizardType = 'persona' | 'research' | 'doc' | 'merge' | null
 
@@ -25,6 +29,9 @@ interface WizardSectionProps {
   readonly docConfig: DocToolConfig
   readonly mergeConfig: MergeToolConfig
   readonly generating: string | null
+  /** Why the persona / research start was refused; the other wizards keep their own handling. */
+  readonly personaStartError?: unknown
+  readonly researchStartError?: unknown
   readonly onContextChange: (c: ContextConfig) => void
   readonly onPersonaConfigChange: (c: PersonaToolConfig) => void
   readonly onResearchConfigChange: (c: ResearchToolConfig) => void
@@ -48,6 +55,8 @@ export default function WizardSection({
   docConfig,
   mergeConfig,
   generating,
+  personaStartError,
+  researchStartError,
   onContextChange,
   onPersonaConfigChange,
   onResearchConfigChange,
@@ -67,6 +76,7 @@ export default function WizardSection({
         contextConfig={contextConfig}
         personaConfig={personaConfig}
         generating={generating}
+        startError={personaStartError}
         onContextChange={onContextChange}
         onPersonaConfigChange={onPersonaConfigChange}
         onClose={onClose}
@@ -84,6 +94,7 @@ export default function WizardSection({
         contextConfig={contextConfig}
         researchConfig={researchConfig}
         generating={generating}
+        startError={researchStartError}
         onContextChange={onContextChange}
         onResearchConfigChange={onResearchConfigChange}
         onClose={onClose}

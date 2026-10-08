@@ -1,0 +1,123 @@
+{
+  "add": {
+    "expiresAt": "Expires on",
+    "failed": "Could not save the memory. Try again.",
+    "label": {
+      "company": "Remember for the whole company",
+      "personal": "Remember for me"
+    },
+    "placeholder": {
+      "company": "e.g. Our customers demonstrated they compare prices before checkout",
+      "personal": "e.g. I like short answers"
+    },
+    "proposedNotice": "Only curators publish company memories directly — yours goes to review first.",
+    "retention": "Retention",
+    "saved": "Remembered.",
+    "submit": "Remember"
+  },
+  "cancel": "Cancel",
+  "configureFirst": "Connect the API endpoint in Settings first.",
+  "confirm": "+1",
+  "confirmHint": "I agree — count me as a supporter",
+  "empty": "Nothing remembered here yet.",
+  "expires": "expires {{date}}",
+  "filters": {
+    "anyKind": "Any kind",
+    "anyStatus": "Any status",
+    "kind": "Kind",
+    "search": "Search memories",
+    "status": "Status filter"
+  },
+  "forget": "Forget",
+  "forgetMessage": "\"{{statement}}\" is archived and never re-learned automatically. You can restore it later.",
+  "forgetTitle": "Forget this memory?",
+  "imports": {
+    "content": "Content",
+    "contentPlaceholder": "Paste the page text here…",
+    "counter": "{{count}} / {{max}} characters",
+    "created": "Memories created: {{count}}",
+    "description": "Paste a document or web page. What it teaches is published under the usual confidence rules; the original is kept.",
+    "failed": "Could not start the import. Try again.",
+    "history": "Your recent imports",
+    "noHistory": "No imports from this browser yet.",
+    "pageTitle": "Title",
+    "status": {
+      "completed": "Completed",
+      "failed": "Failed",
+      "processing": "Processing",
+      "queued": "Queued"
+    },
+    "submit": "Import",
+    "title": "Import a page",
+    "url": "Source link (optional)"
+  },
+  "kind": {
+    "agents": "Agents",
+    "customer": "Customer",
+    "objective": "Objective",
+    "other": "Other",
+    "product": "Product",
+    "strategy": "Strategy",
+    "working_style": "Working style"
+  },
+  "loadFailed": "Could not load memories.",
+  "loadMore": "Load more",
+  "loading": "Loading memories…",
+  "merge": {
+    "description": "One statement replaces them; the originals are archived and their supporters carry over.",
+    "failed": "Could not merge. Try again.",
+    "open": "Merge selected",
+    "statement": "Merged statement",
+    "submit": "Merge",
+    "title": "Merge memories ({{count}})"
+  },
+  "meta": "Since {{created}} · {{retention}}",
+  "restore": "Restore",
+  "retention": {
+    "dated": "Until a date",
+    "decay": "Fades when unused",
+    "long_term": "Long-term"
+  },
+  "retry": "Retry",
+  "review": {
+    "actions": {
+      "keep": "Keep this one",
+      "keep_both": "Keep both",
+      "merge": "Merge into one",
+      "replace": "Keep the existing one"
+    },
+    "aligned": "Aligned with: {{objectives}}",
+    "apply": "Apply",
+    "empty": "Nothing to review — no proposals or conflicts.",
+    "existing": "What we remember today",
+    "failed": "Could not apply the resolution. Try again.",
+    "newClaim": "New claim",
+    "proposed": "Proposed memory",
+    "resolution": "Resolution",
+    "suggested": "Suggested: {{action}}"
+  },
+  "reviewLoadFailed": "Could not load the review queue. Memories awaiting review may be missing here.",
+  "selectForMerge": "Select for merging: {{statement}}",
+  "selected": "Selected: {{count}}",
+  "source": {
+    "agent": "Autonomous agent",
+    "extracted": "Learned from chats",
+    "import": "Imported",
+    "user_explicit": "Added by a person"
+  },
+  "status": {
+    "active": "Active",
+    "archived": "Archived",
+    "conflict": "Conflict",
+    "proposed": "Proposed"
+  },
+  "subtitle": "What the assistant and the autonomous agents remember — shared company knowledge and your own preferences.",
+  "supportersHint": "People who said or confirmed this",
+  "tabs": {
+    "company": "Company",
+    "imports": "Imports",
+    "personal": "Personal",
+    "review": "Needs review"
+  },
+  "title": "Memory"
+}

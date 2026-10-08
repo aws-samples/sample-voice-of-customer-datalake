@@ -20,7 +20,7 @@ import { api } from '../api/client'
 import type { DateRangeParams } from '../api/client'
 
 /** Query key for the summary of a given window. Single source of truth. */
-export const summaryQueryKey = (dateParams: DateRangeParams) =>
+const summaryQueryKey = (dateParams: DateRangeParams) =>
   ['summary', dateParams] as const
 
 /**
