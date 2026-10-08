@@ -1000,3 +1000,52 @@ class TestManualRunSecretCacheClear:
 
         mock_clear.assert_not_called()
         assert ingestor.execution_id is None
+
+
+class TestBaseIngestorUrlValidation:
+    """Pin the URL contract across normalization and schema validation."""
+
+    @pytest.mark.parametrize(('url', 'valid'), [
+        ('https://example.com/review', True),
+        ('  https://example.com/review \r\n', True),
+        ('https://example.com/review%0Aextra', True),
+        ('', True),
+        ('https://example.com/x\nb', False),
+        ('https://example.com/x\tb', False),
+        ('https://example.com/x\x00b', False),
+        ('https://example.com/x\x7fb', False),
+        ('   ', False),
+    ])
+    @patch('_shared.base_ingestor.get_dynamodb_resource')
+    @patch('_shared.base_ingestor.get_s3_client')
+    @patch('_shared.base_ingestor.get_sqs_client')
+    @patch('_shared.base_ingestor.get_secret')
+    def test_normalized_url_obeys_schema_contract(
+        self, mock_get_secret, mock_sqs, mock_s3, mock_dynamo, url, valid
+    ):
+        from _shared.base_ingestor import BaseIngestor
+        from _shared.schemas import safe_validate_message
+
+        mock_get_secret.return_value = scoped_secret()
+
+        class Source(BaseIngestor):
+            def fetch_new_items(self):
+                yield from []
+
+        source = Source()
+        source.store_raw_to_s3 = MagicMock(return_value=None)
+        normalized = source.normalize_item({
+            'id': 'review-123',
+            'text': 'Feedback',
+            'created_at': '2025-01-01T12:00:00Z',
+            'url': url,
+        })
+        assert normalized['url'] == url
+        message, errors = safe_validate_message(normalized)
+        if valid:
+            assert errors == []
+            assert message.url == (url.strip() or None)
+            assert message.source_url == message.url
+        else:
+            assert message is None
+            assert any(error.startswith('url:') for error in errors)

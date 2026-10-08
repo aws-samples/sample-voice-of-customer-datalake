@@ -562,3 +562,47 @@ class TestBaseWebhookExtractClientIp:
         result = webhook._extract_client_ip(event)
         
         assert result == 'unknown'
+
+
+class TestBaseWebhookUrlValidation:
+    """Pin the URL contract across normalization and schema validation."""
+
+    @pytest.mark.parametrize(('url', 'valid'), [
+        ('https://example.com/review', True),
+        ('  https://example.com/review \r\n', True),
+        ('https://example.com/review%0Aextra', True),
+        ('', True),
+        ('https://example.com/x\nb', False),
+        ('https://example.com/x\tb', False),
+        ('https://example.com/x\x00b', False),
+        ('https://example.com/x\x7fb', False),
+        ('   ', False),
+    ])
+    @patch('_shared.base_webhook.get_sqs_client')
+    @patch('_shared.base_webhook.get_secret')
+    def test_normalized_url_obeys_schema_contract(self, mock_get_secret, mock_sqs, url, valid):
+        from _shared.base_webhook import BaseWebhook
+        from _shared.schemas import safe_validate_message
+
+        mock_get_secret.return_value = scoped_secret()
+
+        class Source(BaseWebhook):
+            def parse_webhook_payload(self, body, headers):
+                return []
+
+        source = Source()
+        normalized = source.normalize_item({
+            'id': 'review-123',
+            'text': 'Feedback',
+            'created_at': '2025-01-01T12:00:00Z',
+            'url': url,
+        })
+        assert normalized['url'] == url
+        message, errors = safe_validate_message(normalized)
+        if valid:
+            assert errors == []
+            assert message.url == (url.strip() or None)
+            assert message.source_url == message.url
+        else:
+            assert message is None
+            assert any(error.startswith('url:') for error in errors)

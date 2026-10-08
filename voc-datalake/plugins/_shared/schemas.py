@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 MAX_TEXT_LENGTH = 50_000  # 50KB max for feedback text
 MAX_ID_LENGTH = 256
 MAX_URL_LENGTH = 2048
+MAX_INGESTION_METHOD_LENGTH = 64
 MAX_METADATA_KEYS = 20
 MAX_METADATA_VALUE_LENGTH = 1000
 
@@ -102,7 +103,15 @@ class MessageMetadata(BaseModel):
 # ============================================
 
 class IngestMessage(BaseModel):
-    """Schema for messages sent to processing queue."""
+    """Schema for messages sent to processing queue.
+
+    URL contract for every producer: a single supplied link is exposed as both
+    ``url`` and ``source_url``; two supplied links retain their distinct values.
+    Field presence in validated output is therefore not producer provenance.
+    Use the original payload to determine which links the producer supplied.
+    Embedded ASCII control characters invalidate the message; normalizers do
+    not repair malformed links. See plugins/_template/README.md.
+    """
     model_config = {"extra": "forbid"}  # Reject unknown fields
     
     # Required fields
@@ -117,9 +126,16 @@ class IngestMessage(BaseModel):
     # cannot key the item — see CSV_ROW_ID_FIELDS in manual_import_handler).
     csv_row_id: Optional[str] = Field(None, max_length=MAX_ID_LENGTH)
     rating: Optional[float] = Field(None, ge=1, le=5)
+    # Keep distinct review/source links; use the supplied link as a fallback
+    # only when its counterpart is absent or explicitly empty.
     url: Optional[str] = Field(None, max_length=MAX_URL_LENGTH)
+    source_url: Optional[str] = Field(None, max_length=MAX_URL_LENGTH)
     source_channel: Optional[str] = Field(None, max_length=64)
     channel: Optional[str] = Field(None, max_length=64)  # Alias for source_channel
+    # Provenance, not a routing enum: plugins may introduce additional methods.
+    ingestion_method: Optional[str] = Field(None, max_length=MAX_INGESTION_METHOD_LENGTH)
+    source_origin: Optional[str] = Field(None, max_length=MAX_ID_LENGTH)
+    manual_import_job_id: Optional[str] = Field(None, max_length=MAX_ID_LENGTH)
     author: Optional[str] = Field(None, max_length=256)
     title: Optional[str] = Field(None, max_length=500)
     language: Optional[str] = Field(None, pattern=r"^[a-z]{2}(-[A-Z]{2})?$")
@@ -135,7 +151,10 @@ class IngestMessage(BaseModel):
     is_update: Optional[bool] = None
     is_deleted: Optional[bool] = None
 
-    @field_validator("id", "csv_row_id", "source_platform", "source_channel", "channel", "author", "title")
+    @field_validator(
+        "id", "csv_row_id", "source_platform", "source_channel", "channel",
+        "ingestion_method", "source_origin", "manual_import_job_id", "author", "title",
+    )
     @classmethod
     def sanitize_string(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
@@ -153,14 +172,32 @@ class IngestMessage(BaseModel):
         v = re.sub(r"\n{3,}", "\n\n", v)
         return v.strip()
 
-    @field_validator("url")
+    @field_validator("url", "source_url", mode="before")
     @classmethod
     def validate_url(cls, v: Optional[str]) -> Optional[str]:
         if v is None or v == "":
             return None
+        if not isinstance(v, str):
+            return v  # Let Pydantic report invalid field types.
+        # Trim surrounding whitespace before Field checks the length bound.
+        # Reject remaining controls instead of joining separate URL fragments.
+        v = v.strip()
+        if re.search(r"[\x00-\x1f\x7f]", v):
+            raise ValueError("URL must not contain control characters")
         if not v.startswith(("http://", "https://")):
             raise ValueError("URL must start with http:// or https://")
         return v
+
+    @model_validator(mode="after")
+    def backfill_missing_url(self) -> "IngestMessage":
+        """Expose a lone validated link through either consumer field."""
+        # Assign only when filling a real gap. If assignment validation is
+        # enabled, the nested validation sees no gap and does not assign again.
+        if self.url is None and self.source_url is not None:
+            self.url = self.source_url
+        if self.source_url is None and self.url is not None:
+            self.source_url = self.url
+        return self
 
     @model_validator(mode="after")
     def validate_created_at_not_future(self) -> "IngestMessage":

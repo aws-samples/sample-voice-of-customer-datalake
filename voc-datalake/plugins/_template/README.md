@@ -89,6 +89,38 @@ Your `fetch_new_items()` should yield items with these fields:
 }
 ```
 
+### Validated URL contract
+
+`IngestMessage` applies the following rules to every producer, including plugin
+ingestors, webhooks, and manual imports:
+
+- URLs must use `http://` or `https://`. Surrounding whitespace is trimmed before
+  the 2,048-character length bound is checked. An omitted field, `null`, or an
+  explicit empty string is absent; whitespace-only strings are invalid.
+- Embedded ASCII control characters (including newlines, tabs, and DEL) are
+  rejected. This intentionally tightens the earlier scheme-only URL check.
+  `BaseIngestor.normalize_item` and `BaseWebhook.normalize_item` pass URLs
+  through unchanged; they do not remove or splice malformed characters. When
+  schema validation is enabled, a malformed URL fails the entire message.
+  Producers must emit valid URLs, rather than rely on normalization to repair
+  them. Percent-encoded characters such as `%0A` are not literal control bytes.
+- If only `url` or `source_url` is supplied, the validated output exposes that
+  link through both fields. For example, `{"url": "https://example.com/review"}`
+  produces both `url` and `source_url` with that value. If both are absent, both
+  remain `None`; if both are supplied and differ, both values are preserved.
+- With `validate_assignment=True`, assigning `None` to either URL while the
+  other remains populated restores it from the other field; assignment cannot
+  be used to remove a link in that case.
+- This fallback applies to all producers. Presence of `source_url` in validated
+  output does **not** mean the producer supplied a separate source link. Use the
+  original producer payload (retained inline or in raw S3 storage) for that
+  distinction; do not use validated field presence as a provenance, join, or
+  deduplication signal.
+
+These rules describe schema-validated output. Packaging and enabling processor
+validation remain separate work under issue #249; raw normalization alone does
+not apply the schema's fallback or rejection rules.
+
 ## Testing Locally
 
 ```bash
