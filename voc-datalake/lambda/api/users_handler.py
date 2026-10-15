@@ -11,17 +11,14 @@ Provides Cognito user management for admins:
 Only accessible by users in the 'admins' group.
 """
 import os
-import json
-import sys
 import uuid
 import boto3
 from typing import Any
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from botocore.exceptions import ClientError, BotoCoreError
 
 from shared.logging import logger, tracer
-from shared.api import create_api_resolver, api_handler
-from shared.exceptions import ValidationError, NotFoundError, ServiceError, ConflictError, AuthorizationError
+from shared.api import create_api_resolver, api_handler, require_admin
+from shared.exceptions import ValidationError, NotFoundError, ServiceError, ConflictError
 
 # AWS Clients
 cognito = boto3.client('cognito-idp')
@@ -32,39 +29,16 @@ USER_POOL_ID = os.environ.get('USER_POOL_ID', '')
 app = create_api_resolver()
 
 
-def get_caller_groups(event: dict) -> list[str]:
-    """Extract user groups from Cognito authorizer claims."""
-    try:
-        claims = event.get('requestContext', {}).get('authorizer', {}).get('claims', {})
-        groups_str = claims.get('cognito:groups', '')
-        logger.info(f"Claims: {claims}")
-        logger.info(f"Groups string: {groups_str}, type: {type(groups_str)}")
-        if not groups_str:
-            return []
-        # Groups come as space-separated string or already a list
-        if isinstance(groups_str, list):
-            return groups_str
-        # Handle comma-separated groups (API Gateway format)
-        if ',' in groups_str:
-            return [g.strip() for g in groups_str.split(',')]
-        return groups_str.split(' ') if ' ' in groups_str else [groups_str]
-    except Exception as e:
-        logger.error(f"Error parsing groups: {e}")
-        return []
-
-
-def require_admin(event: dict) -> None:
-    """Verify caller is in admins group."""
-    groups = get_caller_groups(event)
-    if 'admins' not in groups:
-        raise AuthorizationError('Admin access required')
+# Admin gating uses the shared require_admin/get_caller_groups (shared/api.py):
+# same semantics as the old local copy, plus handling for the REST-authorizer
+# bracket-wrapped groups claim ("[admins, users]") the local copy missed.
 
 
 @app.get('/users')
 @tracer.capture_method
 def list_users():
     """List all users in the Cognito User Pool."""
-    require_admin(app.current_event._data)
+    require_admin(app.current_event.raw_event)
     
     try:
         users = []
@@ -95,6 +69,8 @@ def list_users():
                     'username': user['Username'],
                     'email': attrs.get('email', ''),
                     'name': attrs.get('name', ''),
+                    'given_name': attrs.get('given_name', ''),
+                    'family_name': attrs.get('family_name', ''),
                     'status': user['UserStatus'],
                     'enabled': user['Enabled'],
                     'groups': groups,
@@ -117,11 +93,13 @@ def list_users():
 @tracer.capture_method
 def create_user():
     """Create a new user in Cognito."""
-    require_admin(app.current_event._data)
+    require_admin(app.current_event.raw_event)
     
     body = app.current_event.json_body or {}
     email = body.get('email', '').strip()
     name = body.get('name', '').strip()
+    given_name = body.get('given_name', '').strip()
+    family_name = body.get('family_name', '').strip()
     group = body.get('group', 'users')  # Default to users
     
     if not email:
@@ -136,8 +114,15 @@ def create_user():
             {'Name': 'email', 'Value': email},
             {'Name': 'email_verified', 'Value': 'true'},
         ]
-        if name:
-            user_attrs.append({'Name': 'name', 'Value': name})
+        # Build display name from given/family name if provided
+        if given_name:
+            user_attrs.append({'Name': 'given_name', 'Value': given_name})
+        if family_name:
+            user_attrs.append({'Name': 'family_name', 'Value': family_name})
+        # Use given_name + family_name as display name, or fall back to provided name
+        display_name = f'{given_name} {family_name}'.strip() if (given_name or family_name) else name
+        if display_name:
+            user_attrs.append({'Name': 'name', 'Value': display_name})
         
         response = cognito.admin_create_user(
             UserPoolId=USER_POOL_ID,
@@ -155,13 +140,16 @@ def create_user():
             GroupName=group
         )
         
+        display_name = f'{given_name} {family_name}'.strip() if (given_name or family_name) else name
         return {
             'success': True,
             'message': f'User created. Temporary password sent to {email}',
             'user': {
                 'username': username,
                 'email': email,
-                'name': name,
+                'name': display_name,
+                'given_name': given_name,
+                'family_name': family_name,
                 'groups': [group],
                 'status': 'FORCE_CHANGE_PASSWORD',
             }
@@ -174,11 +162,78 @@ def create_user():
         raise ServiceError(str(e))
 
 
+@app.put('/users/<username>')
+@tracer.capture_method
+def update_user(username: str):
+    """Update user attributes (given_name, family_name)."""
+    require_admin(app.current_event.raw_event)
+
+    body = app.current_event.json_body or {}
+
+    if 'given_name' not in body and 'family_name' not in body:
+        raise ValidationError('At least one of given_name or family_name is required')
+
+    # Validate types
+    for field in ('given_name', 'family_name'):
+        if field in body and not isinstance(body[field], str):
+            raise ValidationError(f'{field} must be a string')
+
+    try:
+        # Fetch current attributes to merge with incoming changes
+        current_user = cognito.admin_get_user(
+            UserPoolId=USER_POOL_ID,
+            Username=username,
+        )
+        current_attrs = {
+            attr['Name']: attr['Value']
+            for attr in current_user.get('UserAttributes', [])
+        }
+
+        given_name = body['given_name'].strip() if 'given_name' in body else current_attrs.get('given_name', '')
+        family_name = body['family_name'].strip() if 'family_name' in body else current_attrs.get('family_name', '')
+
+        # After merging, at least one name must be non-empty
+        if not given_name and not family_name:
+            raise ValidationError('At least one of given_name or family_name must be non-empty')
+
+        user_attrs = []
+        if 'given_name' in body:
+            user_attrs.append({'Name': 'given_name', 'Value': given_name})
+        if 'family_name' in body:
+            user_attrs.append({'Name': 'family_name', 'Value': family_name})
+
+        # Compute display name from merged values
+        display_name = f'{given_name} {family_name}'.strip()
+        if display_name:
+            user_attrs.append({'Name': 'name', 'Value': display_name})
+
+        cognito.admin_update_user_attributes(
+            UserPoolId=USER_POOL_ID,
+            Username=username,
+            UserAttributes=user_attrs,
+        )
+
+        return {
+            'success': True,
+            'message': 'User updated',
+            'username': username,
+            'given_name': given_name,
+            'family_name': family_name,
+            'name': display_name,
+        }
+
+    except cognito.exceptions.UserNotFoundException:
+        raise NotFoundError('User not found')
+    except (ClientError, BotoCoreError) as e:
+        logger.exception(f'Error updating user: {e}')
+        raise ServiceError(str(e))
+
+
 @app.put('/users/<username>/group')
 @tracer.capture_method
 def update_user_group(username: str):
     """Update user's group (admins/users)."""
-    require_admin(app.current_event._data)
+    require_admin(app.current_event.raw_event)
     
     body = app.current_event.json_body or {}
     new_group = body.get('group', '').strip()
@@ -228,7 +283,7 @@ def update_user_group(username: str):
 @tracer.capture_method
 def reset_user_password(username: str):
     """Reset user's password (sends new temporary password via email)."""
-    require_admin(app.current_event._data)
+    require_admin(app.current_event.raw_event)
     
     try:
         cognito.admin_reset_user_password(
@@ -253,7 +308,7 @@ def reset_user_password(username: str):
 @tracer.capture_method
 def enable_user(username: str):
     """Enable a disabled user."""
-    require_admin(app.current_event._data)
+    require_admin(app.current_event.raw_event)
     
     try:
         cognito.admin_enable_user(
@@ -278,7 +333,7 @@ def enable_user(username: str):
 @tracer.capture_method
 def disable_user(username: str):
     """Disable a user (prevents login)."""
-    require_admin(app.current_event._data)
+    require_admin(app.current_event.raw_event)
     
     try:
         cognito.admin_disable_user(
@@ -303,7 +358,7 @@ def disable_user(username: str):
 @tracer.capture_method
 def delete_user(username: str):
     """Delete a user from Cognito."""
-    require_admin(app.current_event._data)
+    require_admin(app.current_event.raw_event)
     
     try:
         cognito.admin_delete_user(

@@ -1,12 +1,14 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { FeedbackItem } from '../api/client'
+import type { FeedbackItem, WebSource } from '../api/client'
 
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
   sources?: FeedbackItem[]
+  webSources?: WebSource[]
+  thinking?: string
   timestamp: Date
   filters?: ChatFilters
 }
@@ -15,6 +17,9 @@ export interface ChatFilters {
   source?: string
   category?: string
   sentiment?: string
+  // Opt-in public web search for this conversation (only offered when the
+  // deployment has the AgentCore web search gateway).
+  useWebSearch?: boolean
 }
 
 export interface Conversation {
@@ -29,6 +34,11 @@ export interface Conversation {
 interface ChatStore {
   conversations: Conversation[]
   activeConversationId: string | null
+  /** Filters chosen while NO conversation is active (issue #161: they used
+   * to silently no-op). Ephemeral by design (not persisted): the next
+   * conversation to be created consumes them, however it is created (first
+   * message on the Chat page or the sidebar's New Chat). */
+  draftFilters: ChatFilters
   
   // Actions
   createConversation: () => string
@@ -37,6 +47,7 @@ interface ChatStore {
   addMessage: (conversationId: string, message: Omit<ChatMessage, 'id' | 'timestamp'>) => void
   updateConversationTitle: (id: string, title: string) => void
   updateConversationFilters: (id: string, filters: ChatFilters) => void
+  setDraftFilters: (filters: ChatFilters) => void
   getActiveConversation: () => Conversation | null
   clearAllConversations: () => void
 }
@@ -46,22 +57,37 @@ export const useChatStore = create<ChatStore>()(
     (set, get) => ({
       conversations: [],
       activeConversationId: null,
+      draftFilters: {},
 
       createConversation: () => {
-        const id = `conv_${Date.now()}`
+        // crypto.randomUUID over Date.now(): two calls in the same
+        // millisecond produced identical IDs (issue #160) — a real store
+        // corruption risk and an observed test flake under full-suite load.
+        // randomUUID requires a secure context (https/localhost); dev over a
+        // plain-http LAN IP is not a supported workflow.
+        const id = `conv_${crypto.randomUUID()}`
         const newConversation: Conversation = {
           id,
           title: 'New Conversation',
           messages: [],
-          filters: {},
+          // The new conversation consumes any draft filters chosen before it
+          // existed instead of silently resetting them — regardless of
+          // whether it was created by the first message or the sidebar's
+          // New Chat. Copied so no live reference is shared with the draft.
+          filters: { ...get().draftFilters },
           createdAt: new Date(),
           updatedAt: new Date(),
         }
         set((state) => ({
           conversations: [newConversation, ...state.conversations],
           activeConversationId: id,
+          draftFilters: {},
         }))
         return id
+      },
+
+      setDraftFilters: (filters) => {
+        set({ draftFilters: filters })
       },
 
       deleteConversation: (id) => {
@@ -78,7 +104,8 @@ export const useChatStore = create<ChatStore>()(
       addMessage: (conversationId, message) => {
         const newMessage: ChatMessage = {
           ...message,
-          id: `msg_${Date.now()}`,
+          // Collision-proof (see createConversation).
+          id: `msg_${crypto.randomUUID()}`,
           timestamp: new Date(),
         }
         

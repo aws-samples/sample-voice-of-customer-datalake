@@ -1,0 +1,33 @@
+{
+  "card": {
+    "docs_one": "{{count}} ドキュメント",
+    "docs_other": "{{count}} ドキュメント",
+    "personas_one": "{{count}} ペルソナ",
+    "personas_other": "{{count}} ペルソナ"
+  },
+  "configureEndpoint": "まず設定でAPIエンドポイントを構成してください",
+  "createModal": {
+    "cancel": "キャンセル",
+    "create": "プロジェクトを作成",
+    "creating": "作成中...",
+    "descriptionLabel": "説明",
+    "descriptionPlaceholder": "このプロジェクトについて教えてください",
+    "nameLabel": "プロジェクト名",
+    "namePlaceholder": "例：Q1製品改善",
+    "title": "新規プロジェクトを作成"
+  },
+  "deleteModal": {
+    "confirm": "削除",
+    "message": "このプロジェクトを削除してもよろしいですか？すべてのペルソナとドキュメントが完全に削除されます。",
+    "title": "プロジェクトを削除"
+  },
+  "description": "フィードバックからペルソナ、PRD、PR/FAQを作成するプロジェクトを作成",
+  "emptyState": {
+    "createButton": "プロジェクトを作成",
+    "description": "最初のプロジェクトを作成して、ペルソナとドキュメントの構築を始めましょう",
+    "title": "プロジェクトはまだありません"
+  },
+  "newProject": "新規プロジェクト",
+  "openProject": "プロジェクトを開く",
+  "title": "プロジェクト"
+}

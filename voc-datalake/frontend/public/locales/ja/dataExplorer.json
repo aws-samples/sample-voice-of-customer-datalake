@@ -1,0 +1,67 @@
+{
+  "categories": {
+    "errorLoading": "カテゴリの読み込みエラー",
+    "noCategories": "カテゴリなし",
+    "summary": "{{count}} カテゴリ • {{total}} 件 • 過去 {{days}} 日間",
+    "summary_one": "{{count}} カテゴリ • {{total}} 件 • 過去 {{days}} 日間",
+    "summary_other": "{{count}} カテゴリ • {{total}} 件 • 過去 {{days}} 日間"
+  },
+  "deleteConfirm": {
+    "deleteFeedback": "フィードバックを削除",
+    "deleteS3File": "S3 ファイルを削除",
+    "message": "よろしいですか？この操作は取り消せません。"
+  },
+  "description": "S3 の生データと DynamoDB の処理済みレコードを参照、編集、同期します",
+  "editModal": {
+    "cancel": "キャンセル",
+    "close": "閉じる",
+    "create": "作成",
+    "createNewFile": "新しいファイルを作成",
+    "editFeedback": "フィードバックを編集",
+    "editS3File": "S3 ファイルを編集",
+    "id": "ID",
+    "invalidJson": "無効な JSON: {{error}}",
+    "key": "キー",
+    "save": "保存",
+    "syncToDynamo": "DynamoDB も更新",
+    "syncToS3": "S3 も更新",
+    "type": "タイプ",
+    "viewFeedback": "フィードバックを表示",
+    "viewS3File": "S3 ファイルを表示"
+  },
+  "feedback": {
+    "category": "カテゴリ: {{category}}",
+    "delete": "削除",
+    "edit": "編集",
+    "errorLoading": "フィードバックの読み込みエラー",
+    "noFeedback": "フィードバックが見つかりません",
+    "showingRecords": "{{total}} 件中 {{filtered}} 件を表示",
+    "urgent": "緊急",
+    "view": "表示"
+  },
+  "filters": {
+    "allSources": "すべてのソース",
+    "searchPlaceholder": "検索..."
+  },
+  "newFile": "新しいファイル",
+  "notConfigured": "設定で API エンドポイントを構成してデータを探索してください",
+  "refresh": "更新",
+  "s3Browser": {
+    "back": "戻る",
+    "delete": "削除",
+    "download": "ダウンロード",
+    "edit": "編集",
+    "errorLoading": "ファイルの読み込みエラー",
+    "noFiles": "ファイルが見つかりません",
+    "view": "表示"
+  },
+  "tabs": {
+    "categories": "カテゴリ",
+    "categoriesShort": "カテゴリ",
+    "feedbackShort": "フィードバック",
+    "processedFeedback": "処理済みフィードバック",
+    "s3RawData": "S3 生データ",
+    "s3Short": "S3"
+  },
+  "title": "データエクスプローラー"
+}

@@ -3,33 +3,106 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
+/**
+ * Mock defaults, shared between the `vi.mock` factories below and the
+ * `beforeEach` that restores them.
+ *
+ * `vi.hoisted` is what makes the sharing possible: the factories are hoisted
+ * above the imports, so a plain module-level `const` would still be in its
+ * temporal dead zone when a factory first runs.
+ *
+ * They have to be restored per-test, not just declared once, because neither
+ * hook in this suite puts back the implementation of a `vi.fn(impl)` created
+ * inside a `vi.mock` factory: `vi.clearAllMocks()` only drops call history, and
+ * `vi.restoreAllMocks()` only reverts `vi.spyOn` spies. So a test calling
+ * `mockReturnValue` on `getRuntimeConfig` changed the trusted-origin allowlist
+ * for every test after it in this file. Confirmed under vitest 4.1.11: an
+ * override set in one test was still in force in the next.
+ *
+ * Nothing was failing because of it — the one test that asserts on the
+ * Authorization header runs before the override, and none after it look at the
+ * header. That ordering was the only thing keeping the file green, which is the
+ * reason to fix it rather than leave it.
+ */
+const {
+  DEFAULT_ENDPOINT, DEFAULT_ID_TOKEN, DEFAULT_RUNTIME_CONFIG, DEFAULT_STORE_STATE,
+} = vi.hoisted(() => {
+  const endpoint = 'https://api.example.com'
+  return {
+    DEFAULT_ENDPOINT: endpoint,
+    DEFAULT_ID_TOKEN: 'mock-id-token',
+    DEFAULT_RUNTIME_CONFIG: {
+      apiEndpoint: endpoint,
+      cognito: {
+        userPoolId: 'pool-1',
+        clientId: 'client-1',
+        region: 'us-east-1',
+        identityPoolId: 'id-pool',
+      },
+    },
+    DEFAULT_STORE_STATE: {
+      config: { apiEndpoint: endpoint },
+      dateBasis: 'imported',
+    },
+  }
+})
+
 // Mock stores and auth before importing client
 vi.mock('../store/configStore', () => ({
   useConfigStore: {
-    getState: vi.fn(() => ({
-      config: { 
-        apiEndpoint: 'https://api.example.com'
-      },
-    })),
+    getState: vi.fn(() => DEFAULT_STORE_STATE),
   },
+}))
+
+// The origin-check in baseUrl.ts reads the runtime config to build the
+// trusted-origins allowlist. Without this mock, isConfigLoaded() returns
+// false, the allowlist is empty, and Authorization is never attached —
+// breaking every test that asserts the header is present.
+vi.mock('../runtimeConfig', () => ({
+  isConfigLoaded: vi.fn(() => true),
+  getRuntimeConfig: vi.fn(() => DEFAULT_RUNTIME_CONFIG),
 }))
 
 vi.mock('../services/auth', () => ({
   authService: {
     isConfigured: vi.fn(() => true),
-    getIdToken: vi.fn(() => 'mock-id-token'),
+    getIdToken: vi.fn(() => DEFAULT_ID_TOKEN),
     getAccessToken: vi.fn(() => Promise.resolve('mock-access-token')),
     refreshSession: vi.fn().mockResolvedValue(undefined),
     signOut: vi.fn(),
   },
 }))
 
-import { api, getDaysFromRange, getDateRangeParams } from './client'
+import { api, getDaysFromRange, getDateRangeParams, ALL_TIME_DAYS } from './client'
 import { authService } from '../services/auth'
+import * as runtimeConfig from '../runtimeConfig'
+import { useConfigStore } from '../store/configStore'
+import { SESSION_EXPIRED_PATH, resetSessionExpiryForTests } from '../services/sessionExpiry'
 
 describe('API Client', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Re-establish the mock implementations, which clearAllMocks does not.
+    // See the note on DEFAULT_RUNTIME_CONFIG: without this, a test that
+    // overrides the runtime config leaks a foreign trusted-origin allowlist
+    // into every test after it.
+    vi.mocked(runtimeConfig.isConfigLoaded).mockReturnValue(true)
+    vi.mocked(runtimeConfig.getRuntimeConfig).mockReturnValue(DEFAULT_RUNTIME_CONFIG)
+    // The 401-retry tests reach inside `refreshSession` to re-point
+    // `getIdToken` at a fresh token; both overrides survive the hooks the same
+    // way, so both are restored here. Found by the regression guard below, not
+    // by inspection — it failed on `getIdToken` still returning 'fresh-token'.
+    vi.mocked(authService.getIdToken).mockReturnValue(DEFAULT_ID_TOKEN)
+    // These two go through the file's existing `as ReturnType<typeof vi.fn>`
+    // idiom rather than `vi.mocked`, because the mocks are deliberately PARTIAL:
+    // the store state carries only the two fields the client reads (a whole
+    // `ConfigStore` would mean stubbing every setter), and `refreshSession`
+    // resolves `undefined` rather than a `CognitoUserSession` nobody asserts on.
+    // `vi.mocked` type-checks the argument and would reject both — and since
+    // `tsconfig.app.json` excludes test files, that rejection would not surface
+    // in `npm run check`, only in the un-gated `typecheck:tests` baseline.
+    ;(useConfigStore.getState as ReturnType<typeof vi.fn>).mockReturnValue(DEFAULT_STORE_STATE)
+    ;(authService.refreshSession as ReturnType<typeof vi.fn>).mockResolvedValue(undefined)
     global.fetch = vi.fn()
   })
 
@@ -56,7 +129,9 @@ describe('API Client', () => {
           }),
         })
       )
-      expect(result).toEqual(mockResponse)
+      // Items are normalized to the FeedbackItem contract at the client boundary.
+      expect(result.count).toBe(2)
+      expect(result.items.map((i) => i.feedback_id)).toEqual(['1', '2'])
     })
 
     it('throws error on non-ok response', async () => {
@@ -130,19 +205,118 @@ describe('API Client', () => {
       expect(global.fetch).toHaveBeenCalledTimes(2)
     })
 
-    it('signs out and redirects when refresh fails', async () => {
+    /**
+     * The 401 retry must re-run the origin check, not just re-send the token.
+     *
+     * `handleUnauthorized` rebuilds headers through `buildHeaders(…, fullUrl)`
+     * so a server that answers the first (unauthenticated) request with 401
+     * cannot collect the refreshed token on the second. These two cases pin
+     * that: the trusted one proves the retry does carry the fresh token, so
+     * the untrusted one cannot pass just because the header stopped being
+     * attached at all.
+     *
+     * Both fail if `handleUnauthorized` goes back to writing
+     * `authService.getIdToken()` into a mutated headers object.
+     */
+    it('carries the refreshed token on the retry when the origin is trusted', async () => {
+      ;(authService.refreshSession as ReturnType<typeof vi.fn>).mockImplementation(() => {
+        ;(authService.getIdToken as ReturnType<typeof vi.fn>).mockReturnValue('fresh-token')
+        return Promise.resolve(undefined)
+      })
+      ;(global.fetch as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ ok: false, status: 401 })
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ count: 0, items: [] }) })
+
+      await api.getFeedback({ days: 7 })
+
+      // Rebuilt headers re-read the token, so the retry carries the new one
+      // rather than the one that just 401'd.
+      const [, retryInit] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[1]
+      expect(retryInit.headers['Authorization']).toBe('fresh-token')
+    })
+
+    it('does NOT attach Authorization on the retry when the origin is untrusted', async () => {
+      // The deployment's real endpoint is elsewhere, so the configured base URL
+      // (DEFAULT_ENDPOINT — e.g. a stale persisted value) is foreign.
+      // This override is undone by the suite's beforeEach, which re-applies
+      // DEFAULT_RUNTIME_CONFIG; `vi.clearAllMocks()` alone would leave it in
+      // place for every later test in this file.
+      vi.mocked(runtimeConfig.getRuntimeConfig).mockReturnValue({
+        ...DEFAULT_RUNTIME_CONFIG,
+        apiEndpoint: 'https://deployment.example.com/v1',
+      })
+      expect(DEFAULT_ENDPOINT).not.toContain('deployment.example.com')
+      ;(authService.refreshSession as ReturnType<typeof vi.fn>).mockImplementation(() => {
+        ;(authService.getIdToken as ReturnType<typeof vi.fn>).mockReturnValue('fresh-token')
+        return Promise.resolve(undefined)
+      })
+      ;(global.fetch as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ ok: false, status: 401 })
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ count: 0, items: [] }) })
+
+      await api.getFeedback({ days: 7 })
+
+      expect(global.fetch).toHaveBeenCalledTimes(2)
+      const [, firstInit] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+      const [, retryInit] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[1]
+      // Withheld on the first request…
+      expect(firstInit.headers['Authorization']).toBeUndefined()
+      // …and still withheld after the refresh, which is the property the
+      // rebuilt headers exist to guarantee.
+      expect(retryInit.headers['Authorization']).toBeUndefined()
+    })
+
+    /**
+     * Regression guard for the overrides in the two tests above.
+     *
+     * Order-dependence is inherent, not an oversight: a leak detector has to run
+     * AFTER the test that leaks, so this must stay below the untrusted-origin
+     * case. Making it order-INDEPENDENT would also make it useless — with no
+     * preceding override there is nothing left behind to detect.
+     *
+     * Two assertions on purpose. The first reads the mock state directly, so a
+     * failure names the cause ("the runtime config is still the previous test's
+     * foreign endpoint"). The second checks the consequence the cause produces,
+     * so the guard still fires if some future leak reaches the request by another
+     * route. Either fails if `beforeEach` stops re-applying the defaults.
+     */
+    it('starts from the default trusted allowlist, not the previous test override', async () => {
+      // Cause: the mocks are back at their defaults.
+      expect(runtimeConfig.getRuntimeConfig().apiEndpoint).toBe(DEFAULT_ENDPOINT)
+      expect(authService.getIdToken()).toBe(DEFAULT_ID_TOKEN)
+
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ count: 0, items: [] }),
+      })
+
+      await api.getFeedback({ days: 7 })
+
+      // Consequence: the request goes to the trusted origin, carrying the token.
+      const [calledUrl, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+      expect(calledUrl).toContain(DEFAULT_ENDPOINT)
+      expect(init.headers['Authorization']).toBe(DEFAULT_ID_TOKEN)
+    })
+
+    it('signs out and redirects with a reason when refresh fails', async () => {
       ;(global.fetch as ReturnType<typeof vi.fn>)
         .mockResolvedValueOnce({ ok: false, status: 401 })
         .mockResolvedValueOnce({ ok: false, status: 401 })
 
       const originalLocation = window.location
+      const replace = vi.fn()
       Object.defineProperty(window, 'location', {
-        value: { href: '' },
+        value: { href: '', replace },
         writable: true,
       })
+      // The redirect is idempotent and only a real page load resets it.
+      resetSessionExpiryForTests()
 
       await expect(api.getFeedback({ days: 7 })).rejects.toThrow('Session expired')
       expect(authService.signOut).toHaveBeenCalled()
+      // The reason must travel with the redirect: without it /login cannot
+      // tell the user why the app they were using stopped working.
+      expect(replace).toHaveBeenCalledWith(SESSION_EXPIRED_PATH)
 
       window.location = originalLocation
     })
@@ -162,7 +336,8 @@ describe('API Client', () => {
         'https://api.example.com/feedback/abc123',
         expect.any(Object)
       )
-      expect(result).toEqual(mockFeedback)
+      // Response is normalized to the FeedbackItem contract at the client boundary.
+      expect(result.feedback_id).toBe('abc123')
     })
   })
 
@@ -191,7 +366,7 @@ describe('API Client', () => {
         json: () => Promise.resolve(mockSummary),
       })
 
-      const result = await api.getSummary(30)
+      const result = await api.getSummary({ days: 30 })
 
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.example.com/metrics/summary?days=30',
@@ -206,10 +381,24 @@ describe('API Client', () => {
         json: () => Promise.resolve({}),
       })
 
-      await api.getSummary(7, 'webscraper')
+      await api.getSummary({ days: 7 }, 'webscraper')
 
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.example.com/metrics/summary?days=7&source=webscraper',
+        expect.any(Object)
+      )
+    })
+
+    it('sends a rolling day count for a custom window', async () => {
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({}),
+      })
+
+      await api.getSummary({ days: 21 })
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://api.example.com/metrics/summary?days=21',
         expect.any(Object)
       )
     })
@@ -223,7 +412,7 @@ describe('API Client', () => {
         json: () => Promise.resolve(mockSentiment),
       })
 
-      const result = await api.getSentiment(7)
+      const result = await api.getSentiment({ days: 7 })
 
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.example.com/metrics/sentiment?days=7',
@@ -241,7 +430,7 @@ describe('API Client', () => {
         json: () => Promise.resolve(mockCategories),
       })
 
-      const result = await api.getCategories(14)
+      const result = await api.getCategories({ days: 14 })
 
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.example.com/metrics/categories?days=14',
@@ -259,7 +448,7 @@ describe('API Client', () => {
         json: () => Promise.resolve(mockSources),
       })
 
-      const result = await api.getSources(7)
+      const result = await api.getSources({ days: 7 })
 
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.example.com/metrics/sources?days=7',
@@ -303,6 +492,37 @@ describe('API Client', () => {
           body: JSON.stringify({ message: 'Question', context: 'Additional context' }),
         })
       )
+    })
+
+    it('threads the review date basis into the body (issue #150)', async () => {
+      ;(useConfigStore.getState as ReturnType<typeof vi.fn>).mockReturnValue({
+        ...DEFAULT_STORE_STATE,
+        dateBasis: 'review',
+      })
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ response: 'Response' }),
+      })
+
+      await api.chat('Question')
+
+      const [, options] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+      expect(JSON.parse(options.body)).toMatchObject({ date_basis: 'review' })
+    })
+
+    it('omits date_basis on the default imported basis', async () => {
+      // No override needed: 'imported' is the default the beforeEach restores.
+      // Asserting it from the restored default is the point — if the previous
+      // test's 'review' leaked, this would fail.
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ response: 'Response' }),
+      })
+
+      await api.chat('Question')
+
+      const [, options] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+      expect(JSON.parse(options.body)).not.toHaveProperty('date_basis')
     })
   })
 
@@ -608,24 +828,6 @@ describe('API Client', () => {
     })
   })
 
-  describe('getFeedbackFormConfig', () => {
-    it('fetches feedback form configuration', async () => {
-      const mockConfig = { success: true, config: { enabled: true, title: 'Feedback' } }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(mockConfig),
-      })
-
-      const result = await api.getFeedbackFormConfig()
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/feedback-form/config',
-        expect.any(Object)
-      )
-      expect(result).toEqual(mockConfig)
-    })
-  })
-
   describe('getS3ImportSources', () => {
     it('fetches S3 import sources', async () => {
       const mockResponse = { sources: [{ name: 'default', display_name: 'Default' }], bucket: 'test-bucket' }
@@ -662,13 +864,18 @@ describe('API Client', () => {
 
   describe('getPersonas', () => {
     it('fetches personas with days parameter', async () => {
-      const mockResponse = { period_days: 7, personas: { 'Power User': 50, 'Casual User': 30 } }
+      // Contract archetype codes, which is what this route now returns: the persona
+      // axis buckets on `persona_type` and is closed to the enrichment enum, so a
+      // free-text key here would document a shape the API cannot produce.
+      const mockResponse = {
+        period_days: 7, personas: { existing_customer: 50, churn_risk: 30 },
+      }
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve(mockResponse),
       })
 
-      const result = await api.getPersonas(7)
+      const result = await api.getPersonas({ days: 7 })
 
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.example.com/metrics/personas?days=7',
@@ -683,7 +890,7 @@ describe('API Client', () => {
         json: () => Promise.resolve({ period_days: 7, personas: {} }),
       })
 
-      await api.getPersonas(7, 'webscraper')
+      await api.getPersonas({ days: 7 }, 'webscraper')
 
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.example.com/metrics/personas?days=7&source=webscraper',
@@ -934,46 +1141,6 @@ describe('API Client', () => {
     })
   })
 
-  describe('saveFeedbackFormConfig', () => {
-    it('sends PUT request with form config', async () => {
-      const config = { enabled: true, title: 'Feedback', description: 'Share your thoughts' }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, message: 'Saved' }),
-      })
-
-      await api.saveFeedbackFormConfig(config as any)
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/feedback-form/config',
-        expect.objectContaining({
-          method: 'PUT',
-          body: JSON.stringify(config),
-        })
-      )
-    })
-  })
-
-  describe('submitFeedbackForm', () => {
-    it('sends POST request with feedback data', async () => {
-      const data = { text: 'Great product!', rating: 5, email: 'test@example.com' }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true, feedback_id: 'fb-1' }),
-      })
-
-      await api.submitFeedbackForm(data)
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/feedback-form/submit',
-        expect.objectContaining({
-          method: 'POST',
-          body: JSON.stringify(data),
-        })
-      )
-    })
-  })
-
   describe('getFeedbackForms', () => {
     it('fetches all feedback forms', async () => {
       const mockForms = { success: true, forms: [{ form_id: 'f1', name: 'Form 1' }] }
@@ -1147,25 +1314,53 @@ describe('API Client', () => {
       )
       expect(result).toEqual(mockScores)
     })
+
+    it('passes through the aggregates the endpoint returns beside scores', async () => {
+      // `aggregates` exists so a later frontend change can show what every
+      // reviewer together said. Type-erasing it would leave the next author
+      // reaching for a cast, with nothing saying the field is already on the wire.
+      const response = {
+        scores: {
+          doc1: {
+            document_id: 'doc1', impact: 5, time_to_market: 3, confidence: 2, strategic_fit: 4, notes: '',
+          },
+        },
+        aggregates: {
+          doc1: {
+            impact: 4, time_to_market: 3, confidence: 2, strategic_fit: 4, reviewer_count: 2, score_spread: 0.4,
+          },
+        },
+      }
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(response),
+      })
+
+      const result = await api.getPrioritizationScores()
+
+      expect(result.aggregates?.doc1.reviewer_count).toBe(2)
+      expect(result.aggregates?.doc1.score_spread).toBe(0.4)
+    })
+
+    it('still resolves when an older deployment omits aggregates', async () => {
+      // Which is why the field is optional in the type rather than required.
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ scores: {} }),
+      })
+
+      const result = await api.getPrioritizationScores()
+
+      expect(result.aggregates).toBeUndefined()
+    })
   })
 
   describe('savePrioritizationScores', () => {
-    it('sends PUT request with scores', async () => {
-      const scores = { issue1: { impact: 5, effort: 3 } }
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: true }),
-      })
-
-      await api.savePrioritizationScores(scores as any)
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.example.com/projects/prioritization',
-        expect.objectContaining({
-          method: 'PUT',
-          body: JSON.stringify({ scores }),
-        })
-      )
+    it('is gone, because a whole-map PUT overwrote every reviewer', () => {
+      // Scores are per-reviewer ballots now, so one caller's map is not
+      // everyone's scores. The endpoint refuses PUT, so a client function for it
+      // could only ever produce a 400.
+      expect('savePrioritizationScores' in api).toBe(false)
     })
   })
 
@@ -1532,13 +1727,16 @@ describe('getDaysFromRange', () => {
     expect(getDaysFromRange('unknown')).toBe(7)
   })
 
-  it('calculates days from custom date range', () => {
-    const customRange = { start: '2025-01-01', end: '2025-01-10' }
-    expect(getDaysFromRange('custom', customRange)).toBe(10)
+  it('returns the custom lookback in days', () => {
+    expect(getDaysFromRange('custom', 10)).toBe(10)
   })
 
-  it('returns default when custom range is null', () => {
+  it('returns default when custom days is null', () => {
     expect(getDaysFromRange('custom', null)).toBe(7)
+  })
+
+  it('returns default when custom days is invalid', () => {
+    expect(getDaysFromRange('custom', 0)).toBe(7)
   })
 })
 
@@ -1548,15 +1746,99 @@ describe('getDateRangeParams', () => {
     expect(getDateRangeParams('30d')).toEqual({ days: 30 })
   })
 
-  it('returns start_date and end_date for custom range', () => {
-    const customRange = { start: '2025-01-01', end: '2025-01-31' }
-    expect(getDateRangeParams('custom', customRange)).toEqual({
-      start_date: '2025-01-01',
-      end_date: '2025-01-31',
+  it('returns the custom lookback as days', () => {
+    expect(getDateRangeParams('custom', 21)).toEqual({ days: 21 })
+  })
+
+  it('returns default days when custom days is null', () => {
+    expect(getDateRangeParams('custom', null)).toEqual({ days: 7 })
+  })
+
+  it('caps the "all" range at ALL_TIME_DAYS', () => {
+    expect(getDateRangeParams('all')).toEqual({ days: ALL_TIME_DAYS })
+    // The cap must not exceed the backend validate_days max (365) to avoid
+    // silent clamping server-side.
+    expect(ALL_TIME_DAYS).toBeLessThanOrEqual(365)
+  })
+
+  it('only ever carries a days param (no calendar window)', () => {
+    const params = getDateRangeParams('custom', 30)
+    expect(params).toEqual({ days: 30 })
+    expect(params).not.toHaveProperty('start_date')
+    expect(params).not.toHaveProperty('end_date')
+  })
+
+  it('omits date_basis for the default imported basis', () => {
+    // Keeping the params shape unchanged for 'imported' preserves existing
+    // request URLs and TanStack Query cache keys.
+    expect(getDateRangeParams('7d', null, 'imported')).toEqual({ days: 7 })
+    expect(getDateRangeParams('7d')).toEqual({ days: 7 })
+  })
+
+  it('includes date_basis=review when filtering by review date', () => {
+    expect(getDateRangeParams('30d', null, 'review')).toEqual({
+      days: 30,
+      date_basis: 'review',
     })
   })
 
-  it('returns days when custom range is null', () => {
-    expect(getDateRangeParams('custom', null)).toEqual({ days: 7 })
+  it('combines the custom lookback with the review basis', () => {
+    expect(getDateRangeParams('custom', 14, 'review')).toEqual({
+      days: 14,
+      date_basis: 'review',
+    })
+  })
+})
+
+describe('searchFeedback trims the query at the boundary', () => {
+  // `/feedback/search` trims `q` before applying its minimum and refuses a
+  // present-but-too-short term with a 400. Trimming here means the string that
+  // is SENT is the string the route measures, whatever a caller passed in.
+  //
+  // Asserted on the REQUEST URL, not on the source text of client.ts. Matching a
+  // literal like `q: params.q.trim()` would pin characters rather than behaviour,
+  // and break on a reformat or an extracted local with nothing having changed.
+  beforeEach(() => {
+    ;(useConfigStore.getState as ReturnType<typeof vi.fn>).mockReturnValue(DEFAULT_STORE_STATE)
+    ;(authService.refreshSession as ReturnType<typeof vi.fn>).mockResolvedValue(undefined)
+    global.fetch = vi.fn()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const okOnce = (body: unknown) =>
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve(body),
+    })
+
+  const requestedUrl = () =>
+    String((global.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0])
+
+  it('sends the trimmed term when the caller passes surrounding whitespace', async () => {
+    okOnce({ count: 0, items: [], entities: {}, query: 'delivery' })
+
+    await api.searchFeedback({ q: '  delivery  ' })
+
+    expect(requestedUrl()).toContain('q=delivery')
+  })
+
+  it('preserves interior spaces, which are part of the term', async () => {
+    okOnce({ count: 0, items: [], entities: {}, query: 'slow delivery' })
+
+    await api.searchFeedback({ q: '  slow delivery  ' })
+
+    // URLSearchParams encodes the space; what matters is that it survives.
+    expect(decodeURIComponent(requestedUrl().replace(/\+/g, ' '))).toContain('q=slow delivery')
+  })
+
+  it('surfaces the truncation flag the route reports', async () => {
+    okOnce({ count: 1, items: [{ feedback_id: '1' }], entities: {}, query: 'x', is_partial_window: true })
+
+    const result = await api.searchFeedback({ q: 'delivery' })
+
+    expect(result.is_partial_window).toBe(true)
   })
 })

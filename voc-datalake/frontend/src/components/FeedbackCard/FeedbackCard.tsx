@@ -83,7 +83,10 @@ function CompactCard({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
           <p className="text-sm text-gray-700 line-clamp-2">{feedback.original_text}</p>
           <div className="flex items-center gap-2 mt-1">
             <SentimentBadge sentiment={feedback.sentiment_label} score={feedback.sentiment_score} />
-            <span className="text-xs text-gray-400">
+            <span
+              className="text-xs text-gray-400"
+              title="Review date — when the customer wrote this feedback"
+            >
               {formatDate(feedback.source_created_at, 'MMM d')}
             </span>
           </div>
@@ -184,7 +187,10 @@ interface CardFooterProps {
 function CardFooter({ feedback, showActions, onCopy }: Readonly<CardFooterProps>) {
   return (
     <div className="flex items-center justify-between pt-3 border-t border-gray-100 gap-2">
-      <span className="text-xs text-gray-400 truncate">
+      <span
+        className="text-xs text-gray-400 truncate"
+        title="Review date — when the customer wrote this feedback"
+      >
         {formatDate(feedback.source_created_at, 'MMM d, yyyy')}
         <span className="hidden sm:inline"> {formatDate(feedback.source_created_at, 'h:mm a')}</span>
       </span>

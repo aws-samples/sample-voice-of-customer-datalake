@@ -112,7 +112,7 @@ describe('CategoriesManager', () => {
       renderComponent()
       
       await waitFor(() => {
-        expect(screen.getByText('2 sub')).toBeInTheDocument()
+        expect(screen.getByText('2 subs')).toBeInTheDocument()
       })
     })
   })
@@ -978,5 +978,43 @@ describe('CategoriesManager', () => {
         })
       })
     })
+  })
+})
+
+
+describe('sparse legacy rows (issue #181)', () => {
+  let queryClient: QueryClient
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: 0 } },
+    })
+    mockSaveCategoriesConfig.mockResolvedValue({ success: true })
+  })
+
+  function renderComponent() {
+    return render(
+      <QueryClientProvider client={queryClient}>
+        <CategoriesManager />
+      </QueryClientProvider>
+    )
+  }
+
+  it('renders a legacy row without id/subcategories instead of crashing the tab', async () => {
+    // Exactly what the wire delivered when Settings → Categories crashed:
+    // old DynamoDB rows carry {name, display_name, color} only.
+    mockGetCategoriesConfig.mockResolvedValue({
+      categories: [
+        { name: 'app', display_name: 'Mobile App', description: 'App experience', color: '#EC4899' },
+      ],
+    })
+
+    renderComponent()
+
+    await waitFor(() => {
+      expect(screen.getByText('App experience')).toBeInTheDocument()
+    })
+    expect(screen.getByText('0 subs')).toBeInTheDocument()
   })
 })

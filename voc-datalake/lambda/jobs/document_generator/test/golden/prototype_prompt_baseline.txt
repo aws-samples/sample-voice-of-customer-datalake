@@ -1,0 +1,16 @@
+Build a clickable HTML prototype for the product/feature below. Output ONE complete HTML document only — no prose, no code fences.
+
+PROJECT: Golden Project
+
+
+PRD:
+PRD body for the golden prompt
+
+PR/FAQ:
+PRFAQ body for the golden prompt
+
+Requirements:
+- Single self-contained HTML file (inline CSS + vanilla JS), offline-first, no external resources.
+- 3-6 clickable screens toggled by inline JS, with a navigation bar.
+- Realistic placeholder content from the brief above.
+- Match the language of the brief.

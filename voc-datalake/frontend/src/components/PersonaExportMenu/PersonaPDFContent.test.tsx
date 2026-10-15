@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import PersonaPDFContent from './PersonaPDFContent'
-import type { ProjectPersona } from '../../api/client'
+import type { ProjectPersona } from '../../api/types'
 
 const createMinimalPersona = (overrides: Partial<ProjectPersona> = {}): ProjectPersona => ({
   persona_id: 'persona-1',
@@ -188,7 +188,7 @@ describe('PersonaPDFContent', () => {
   })
 
   describe('Behaviors Section', () => {
-    it('renders behaviors object with current solutions', () => {
+    it('renders behaviors section header and solutions', () => {
       const persona = createMinimalPersona({
         behaviors: {
           current_solutions: ['Competitor A', 'Manual process'],
@@ -202,6 +202,18 @@ describe('PersonaPDFContent', () => {
       expect(screen.getByText('🔄 Behaviors & Habits')).toBeInTheDocument()
       expect(screen.getByText('Current Solutions')).toBeInTheDocument()
       expect(screen.getByText('Competitor A')).toBeInTheDocument()
+    })
+
+    it('renders behavior attributes', () => {
+      const persona = createMinimalPersona({
+        behaviors: {
+          tech_savviness: 'High',
+          activity_frequency: 'Daily',
+          decision_style: 'Data-driven',
+        },
+      })
+      render(<PersonaPDFContent persona={persona} />)
+
       expect(screen.getByText('Tech: High')).toBeInTheDocument()
       expect(screen.getByText('Daily')).toBeInTheDocument()
       expect(screen.getByText('Data-driven')).toBeInTheDocument()
@@ -275,7 +287,7 @@ describe('PersonaPDFContent', () => {
   })
 
   describe('Scenario Section', () => {
-    it('renders scenario object', () => {
+    it('renders scenario title and narrative', () => {
       const persona = createMinimalPersona({
         scenario: {
           title: 'Morning Routine',
@@ -289,6 +301,19 @@ describe('PersonaPDFContent', () => {
       expect(screen.getByText('📖 Scenario')).toBeInTheDocument()
       expect(screen.getByText('Morning Routine')).toBeInTheDocument()
       expect(screen.getByText('User starts their day by checking notifications.')).toBeInTheDocument()
+    })
+
+    it('renders scenario trigger and outcome', () => {
+      const persona = createMinimalPersona({
+        scenario: {
+          title: 'Morning Routine',
+          narrative: 'User starts their day by checking notifications.',
+          trigger: 'Alarm goes off',
+          outcome: 'All tasks reviewed',
+        },
+      })
+      render(<PersonaPDFContent persona={persona} />)
+
       expect(screen.getByText('Trigger')).toBeInTheDocument()
       expect(screen.getByText('Alarm goes off')).toBeInTheDocument()
       expect(screen.getByText('Desired Outcome')).toBeInTheDocument()

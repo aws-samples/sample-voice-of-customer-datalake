@@ -3,11 +3,9 @@
 Note: Path setup and environment variables are configured in plugins/conftest.py
 which is loaded first by pytest.
 """
-import os
 import json
 import pytest
 from unittest.mock import MagicMock
-from datetime import datetime, timezone
 
 
 @pytest.fixture

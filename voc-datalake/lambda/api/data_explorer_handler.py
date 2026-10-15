@@ -22,6 +22,7 @@ from shared.logging import logger, tracer
 from shared.aws import get_s3_client, get_dynamodb_resource, get_sqs_client
 from shared.api import create_api_resolver, api_handler, DecimalEncoder
 from shared.exceptions import ConfigurationError, ValidationError, NotFoundError, ServiceError
+from shared.indexes import FEEDBACK_BY_ID_INDEX
 
 s3_client = get_s3_client()
 dynamodb = get_dynamodb_resource()
@@ -37,6 +38,11 @@ AVAILABLE_BUCKETS = {
 }
 
 app = create_api_resolver()
+
+
+def _reject_prototype_mutation(key: str) -> None:
+    if key.startswith('prototypes/'):
+        raise ValidationError('Generated prototypes are read-only in Data Explorer')
 
 
 def decimal_to_native(obj):
@@ -213,6 +219,7 @@ def save_s3_file():
     
     if not key:
         raise ValidationError('File key is required')
+    _reject_prototype_mutation(key)
     
     try:
         # Ensure content is a string
@@ -266,6 +273,7 @@ def delete_s3_file():
     
     if not key:
         raise ValidationError('File key is required')
+    _reject_prototype_mutation(key)
     
     try:
         s3_client.delete_object(Bucket=bucket_name, Key=key)
@@ -293,6 +301,15 @@ def save_feedback():
     
     if not feedback_id:
         raise ValidationError('Feedback ID is required')
+
+    s3_sync_target: tuple[str, str] | None = None
+    if sync_to_s3 and RAW_DATA_BUCKET:
+        s3_raw_uri = data.get('s3_raw_uri', '')
+        if isinstance(s3_raw_uri, str) and s3_raw_uri.startswith('s3://'):
+            bucket, separator, key = s3_raw_uri.removeprefix('s3://').partition('/')
+            if separator and bucket == RAW_DATA_BUCKET and key:
+                _reject_prototype_mutation(key)
+                s3_sync_target = (bucket, key)
     
     try:
         table = dynamodb.Table(FEEDBACK_TABLE)
@@ -349,7 +366,7 @@ def save_feedback():
         else:
             # Need to find the item first
             response = table.query(
-                IndexName='feedback-id-index',
+                IndexName=FEEDBACK_BY_ID_INDEX,
                 KeyConditionExpression='feedback_id = :fid',
                 ExpressionAttributeValues={':fid': feedback_id},
                 Limit=1
@@ -366,26 +383,18 @@ def save_feedback():
                 raise NotFoundError('Feedback not found')
         
         synced = False
-        if sync_to_s3 and RAW_DATA_BUCKET:
-            # Update S3 raw data if s3_raw_uri exists
-            s3_raw_uri = data.get('s3_raw_uri', '')
-            if s3_raw_uri and s3_raw_uri.startswith('s3://'):
-                try:
-                    # Parse S3 URI
-                    uri_parts = s3_raw_uri.replace('s3://', '').split('/', 1)
-                    bucket = uri_parts[0]
-                    key = uri_parts[1] if len(uri_parts) > 1 else ''
-                    
-                    if bucket == RAW_DATA_BUCKET and key:
-                        s3_client.put_object(
-                            Bucket=bucket,
-                            Key=key,
-                            Body=json.dumps(data, indent=2, cls=DecimalEncoder),
-                            ContentType='application/json'
-                        )
-                        synced = True
-                except Exception as e:
-                    logger.warning(f"Failed to sync to S3: {e}")
+        if s3_sync_target is not None:
+            bucket, key = s3_sync_target
+            try:
+                s3_client.put_object(
+                    Bucket=bucket,
+                    Key=key,
+                    Body=json.dumps(data, indent=2, cls=DecimalEncoder),
+                    ContentType='application/json'
+                )
+                synced = True
+            except Exception as e:
+                logger.warning(f"Failed to sync to S3: {e}")
         
         return {'success': True, 'message': 'Feedback updated', 'synced': synced}
         
@@ -412,7 +421,7 @@ def delete_feedback():
         
         # Find the item first using GSI
         response = table.query(
-            IndexName='feedback-id-index',
+            IndexName=FEEDBACK_BY_ID_INDEX,
             KeyConditionExpression='feedback_id = :fid',
             ExpressionAttributeValues={':fid': feedback_id},
             Limit=1

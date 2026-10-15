@@ -1,16 +1,21 @@
 /**
  * @fileoverview Authentication state management using Zustand with localStorage persistence.
- * 
- * Features:
- * - Uses localStorage to persist auth across tabs and browser sessions
- * - Allows multiple tabs to share the same authenticated session
- * - Tokens persist until explicit logout or expiration
- * 
+ *
+ * Security model:
+ * - Short-lived tokens (access, ID) persisted in localStorage for cross-tab UX
+ * - Refresh token kept in memory only (never persisted) to limit XSS blast radius
+ * - Non-secret data (user info, auth state) persisted in localStorage
+ *
+ * When a new tab opens with expired short-lived tokens, the auth service
+ * falls back to Cognito's getSession() which uses Cognito's own cookies
+ * for silent re-authentication — no re-login needed.
+ *
  * @module store/authStore
  */
 
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { getRuntimeConfig, isConfigLoaded } from '../runtimeConfig'
 
 /**
  * Authenticated user information extracted from Cognito ID token.
@@ -40,6 +45,8 @@ interface AuthState {
   refreshToken: string | null
   /** Whether the user is currently authenticated */
   isAuthenticated: boolean
+  /** Whether the session has been validated/refreshed after page load */
+  sessionReady: boolean
   /** Loading state for async auth operations */
   isLoading: boolean
   /** Error message from failed auth operations */
@@ -47,7 +54,11 @@ interface AuthState {
   /** Update the current user */
   setUser: (user: User | null) => void
   /** Store all authentication tokens */
-  setTokens: (tokens: { accessToken: string; idToken: string; refreshToken: string }) => void
+  setTokens: (tokens: {
+    accessToken: string;
+    idToken: string;
+    refreshToken: string
+  }) => void
   /** Set loading state */
   setLoading: (loading: boolean) => void
   /** Set error message */
@@ -64,14 +75,25 @@ export const useAuthStore = create<AuthState>()(
       idToken: null,
       refreshToken: null,
       isAuthenticated: false,
+      sessionReady: false,
       isLoading: false,
       error: null,
-      setUser: (user) => set({ user, isAuthenticated: !!user }),
+      setUser: (user) => set({
+        user,
+        isAuthenticated: !!user,
+      }),
       setTokens: (tokens) => set({
         accessToken: tokens.accessToken,
         idToken: tokens.idToken,
         refreshToken: tokens.refreshToken,
         isAuthenticated: true,
+        // Tokens only ever arrive from Cognito — sign-in, the new-password
+        // challenge, or a refresh — so this is the one moment a session
+        // becomes *validated*, as opposed to merely restored from
+        // localStorage. Setting it here rather than at each call site means a
+        // future fourth caller cannot forget it and strand ProtectedRoute on
+        // its loading state.
+        sessionReady: true,
       }),
       setLoading: (isLoading) => set({ isLoading }),
       setError: (error) => set({ error }),
@@ -81,29 +103,62 @@ export const useAuthStore = create<AuthState>()(
         idToken: null,
         refreshToken: null,
         isAuthenticated: false,
+        sessionReady: false,
         error: null,
       }),
     }),
-    { 
+    {
       name: 'voc-auth',
-      // Use localStorage to persist auth across tabs and browser sessions
-      // This allows opening multiple tabs without re-authenticating
+      // Persist short-lived tokens + user info in localStorage for cross-tab UX.
+      // refreshToken is deliberately excluded — it stays in memory only.
+      // This limits XSS blast radius: stolen access/ID tokens expire in ~1hr,
+      // while the 30-day refresh token is never written to disk.
       partialize: (state) => ({
         user: state.user,
         accessToken: state.accessToken,
         idToken: state.idToken,
-        refreshToken: state.refreshToken,
         isAuthenticated: state.isAuthenticated,
       }),
-    }
-  )
+    },
+  ),
 )
 
 /**
+ * Whether Cognito is configured in the runtime config. Mirrors
+ * authService.isConfigured(), which cannot be imported here because
+ * services/auth.ts imports this store (import cycle).
+ *
+ * Pre-load: "config not loaded yet" is treated as "not configured", which
+ * in a DEV build activates the bypass below. This is safe ONLY because
+ * App.tsx gates <RouterProvider> on loadRuntimeConfig() resolving
+ * (configReady state), so no component calls this hook pre-load. If that
+ * loading gate is ever refactored away, a DEV build pointed at real
+ * Cognito would briefly report admin during the load window — keep the
+ * gate, or make this reactive to config load. The unloaded short-circuit
+ * itself is pinned by a test (getRuntimeConfig must not be called).
+ */
+function cognitoConfigured(): boolean {
+  if (!isConfigLoaded()) return false
+  const cfg = getRuntimeConfig()
+  return cfg.cognito.userPoolId !== '' && cfg.cognito.clientId !== ''
+}
+
+/**
  * Helper hook to check if current user is an admin.
- * @returns true if user is in the 'admins' group
+ *
+ * Local-dev bypass (issue #177): when Cognito is NOT configured and this is
+ * a DEV build, report admin — mirroring the documented bypass in
+ * ProtectedRoute/AdminRoute. Without it the routes open but every
+ * isAdmin-driven surface (Settings sidebar link, Users tab, AI Models card)
+ * stays hidden in mock-only dev. A production build without Cognito still
+ * fails closed here, exactly like the routes.
+ *
+ * @returns true if user is in the 'admins' group (or in the dev bypass)
  */
 export const useIsAdmin = (): boolean => {
   const user = useAuthStore((state) => state.user)
-  return user?.groups?.includes('admins') ?? false
+  if (import.meta.env.DEV && !cognitoConfigured()) {
+    return true
+  }
+  return user?.groups.includes('admins') ?? false
 }

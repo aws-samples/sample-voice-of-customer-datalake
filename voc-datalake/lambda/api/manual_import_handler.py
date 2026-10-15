@@ -3,6 +3,9 @@ Manual Import API Lambda - Handles /scrapers/manual/*
 Allows users to paste raw review text and have it parsed by LLM.
 """
 
+import csv
+import hashlib
+import io
 import json
 import os
 import sys
@@ -14,7 +17,7 @@ from urllib.parse import urlparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from shared.logging import logger, tracer, metrics
+from shared.logging import logger, tracer
 from shared.aws import get_dynamodb_resource, get_sqs_client, get_s3_client, invoke_lambda_async
 from shared.api import create_api_resolver, api_handler, decimal_default
 from shared.exceptions import ConfigurationError, ValidationError, NotFoundError, ServiceError
@@ -345,6 +348,388 @@ def confirm_import():
     except Exception as e:
         logger.exception(f"Failed to confirm import: {e}")
         raise ServiceError('Failed to import reviews')
+
+
+# Max rows per CSV/JSON upload. Rows are pushed to SQS in batches of 10 (see
+# _send_items_to_sqs), so even tens of thousands send well within the API
+# Gateway 29s / Lambda timeout. Bumped from 500 once batch-send was added.
+# Practical sync-path ceiling is ~9k rows (measured ~15.7s for 5k) — beyond
+# that, use the S3 import path.
+MAX_JSON_UPLOAD_ITEMS = 50000
+
+MAX_CSV_BYTES = 10 * 1024 * 1024  # 10 MB
+
+# Bound on the informational copy of a row's own identifier. Mirrors
+# `IngestMessage.csv_row_id`'s max_length: this Lambda's bundle does not include
+# the plugin schema package, so the value is restated rather than imported. Keep
+# the two in step — exceeding the model's bound would reject the whole message.
+MAX_CSV_ROW_ID_LENGTH = 256
+
+
+# ── CSV row identity ────────────────────────────────────────────────────────
+#
+# The processor derives BOTH its idempotency key and its DynamoDB item key from
+# `source_platform + id`, and `source_platform` is the constant 'manual_import'
+# for every CSV upload. The id emitted here is therefore the only thing that
+# separates one imported row from another — including rows in a different file
+# that reuse the same `id` column value, which is what made two files numbered
+# 1..400 collapse into a single 400-row set.
+#
+# Identity is a SHA-256 over the version tag followed by these fields, in this
+# order. Both the order and the normalization are a PERSISTED CONTRACT: rows
+# already stored were keyed with this recipe, so changing it re-keys them and
+# every prior upload would re-import as new records. Add a new version tag
+# instead of editing v1.
+CSV_ROW_ID_VERSION = 'csv-row-v1'
+CSV_ROW_ID_FIELDS = (
+    'source_id',   # the row's own id/review_id column; '' when absent
+    'row_index',   # 1-based position; '' when the row HAS an id
+    'text',
+    'rating',
+    'created_at',  # the row's own date column, NOT the import-time default
+    'author',
+    'title',
+    'url',
+    'source',      # the row's own source column, NOT the request default_source
+)
+
+
+def _csv_row_id(fields: dict[str, str]) -> str:
+    """
+    Return the identity of one CSV row from its normalized column values.
+
+    Raises KeyError when a field named in the contract is missing, so a partial
+    call fails at the first test rather than silently keying rows differently.
+    """
+    payload = json.dumps(
+        [CSV_ROW_ID_VERSION, *(fields[name] for name in CSV_ROW_ID_FIELDS)],
+        ensure_ascii=False,
+        separators=(',', ':'),
+    )
+    return hashlib.sha256(payload.encode('utf-8')).hexdigest()[:32]
+
+
+def _send_items_to_sqs(messages: list[dict], label: str = 'row') -> tuple[int, list[str]]:
+    """
+    Push messages to the processing queue using SendMessageBatch (10 per call).
+
+    Batching cuts the number of SQS round-trips ~10x vs one send_message per
+    row, so tens of thousands of rows enqueue within the API Gateway 29s window.
+    When no queue is configured (local/test), this is a no-op that reports all
+    messages as imported — matching the pre-batching json-upload behavior.
+    Returns (imported_count, errors).
+    """
+    if not PROCESSING_QUEUE_URL:
+        return len(messages), []
+
+    imported = 0
+    errors: list[str] = []
+    for start in range(0, len(messages), 10):
+        chunk = messages[start:start + 10]
+        entries = [
+            {'Id': str(i), 'MessageBody': json.dumps(msg)}
+            for i, msg in enumerate(chunk)
+        ]
+        try:
+            resp = sqs.send_message_batch(QueueUrl=PROCESSING_QUEUE_URL, Entries=entries)
+            imported += len(resp.get('Successful', []))
+            for failed in resp.get('Failed', []):
+                row = start + int(failed.get('Id', 0))
+                errors.append(f"{label} {row}: {failed.get('Message', 'send failed')}")
+        except Exception as e:
+            logger.warning(f"Failed to send SQS batch at {label} {start}: {e}")
+            errors.append(f"{label}s {start}-{start + len(chunk) - 1}: {str(e)}")
+    return imported, errors
+
+
+def _parse_csv_to_items(csv_text: str, default_source: str) -> tuple[list[dict], list[str]]:
+    """Parse CSV text into the same item shape as json_upload. Returns (items, warnings)."""
+    warnings: list[str] = []
+    items: list[dict] = []
+
+    # csv.DictReader handles quoted commas, embedded newlines, and BOM.
+    reader = csv.DictReader(io.StringIO(csv_text))
+    if not reader.fieldnames:
+        raise ValidationError('CSV is empty or has no header row')
+
+    # Case-insensitive lookup for required/optional columns.
+    headers = {h.strip().lower(): h for h in reader.fieldnames if h}
+
+    def col(row: dict, *names: str) -> str:
+        for name in names:
+            actual = headers.get(name)
+            if actual is not None:
+                value = row.get(actual)
+                if value is not None and str(value).strip():
+                    return str(value).strip()
+        return ''
+
+    if 'text' not in headers and 'review' not in headers and 'comment' not in headers and 'feedback' not in headers:
+        raise ValidationError(
+            'CSV must include a "text" column (also accepted: review / comment / feedback)'
+        )
+
+    seen_row_ids: set[str] = set()
+    for idx, row in enumerate(reader, start=1):
+        text = col(row, 'text', 'review', 'comment', 'feedback')
+        if not text:
+            warnings.append(f'row {idx}: empty text — skipped')
+            continue
+
+        source_id = col(row, 'id', 'review_id')
+        rating_raw = col(row, 'rating', 'stars', 'score')
+        created_at_raw = col(row, 'date', 'timestamp', 'created_at')
+        author = col(row, 'author', 'user', 'user_id', 'name')
+        title = col(row, 'title', 'subject')
+        url = col(row, 'url', 'link')
+        source_column = col(row, 'source', 'source_channel')
+
+        feedback_id = _csv_row_id({
+            'source_id': source_id,
+            # A row carrying an id is identified by it, so the file can be
+            # reordered without re-keying. A row without one has nothing but
+            # its position to distinguish it, so two rows reading "Good" stay
+            # two rows instead of collapsing into one.
+            'row_index': '' if source_id else str(idx),
+            'text': text,
+            'rating': rating_raw,
+            'created_at': created_at_raw,
+            'author': author,
+            'title': title,
+            'url': url,
+            'source': source_column,
+        })
+
+        if feedback_id in seen_row_ids:
+            warnings.append(f'row {idx}: duplicate row — skipped')
+            continue
+        seen_row_ids.add(feedback_id)
+
+        rating: int | None = None
+        if rating_raw:
+            try:
+                rating = int(float(rating_raw))
+            except (ValueError, TypeError):
+                warnings.append(f'row {idx}: rating "{rating_raw}" is not a number — left blank')
+
+        created_at = created_at_raw or datetime.now(timezone.utc).isoformat()
+
+        # The customer's own row identifier, kept so an operator can still answer
+        # "find the record for review_id 4711". It is deliberately NOT the item
+        # id: it is unique only within one file. The fingerprint above consumed
+        # it at full length; this carried copy is informational and has to fit
+        # the message schema's bound. An over-long value is dropped rather than
+        # truncated, because a truncated identifier would not match what an
+        # operator searches for — and dropping it must not cost us the row.
+        csv_row_id = source_id
+        if len(csv_row_id) > MAX_CSV_ROW_ID_LENGTH:
+            warnings.append(
+                f'row {idx}: id exceeds {MAX_CSV_ROW_ID_LENGTH} characters — '
+                'not kept for lookup, row imported'
+            )
+            csv_row_id = ''
+
+        items.append({
+            'id': feedback_id,
+            'csv_row_id': csv_row_id,
+            'text': text,
+            'rating': rating,
+            'author': author,
+            'title': title,
+            'url': url,
+            'timestamp': created_at,
+            'source': source_column or default_source,
+        })
+
+    return items, warnings
+
+
+@app.post("/scrapers/manual/csv-upload")
+@tracer.capture_method
+def csv_upload():
+    """
+    Import customer feedback rows from a CSV file. The frontend posts the raw CSV
+    text in `csv_text` plus an optional `default_source` label; we parse it, save
+    the original to S3 for archival, then push each row to the same SQS queue
+    that downstream Bedrock enrichment + DynamoDB storage already drains. End
+    result: rows show up in the feedback table the same way iOS/Android reviews do.
+    """
+    body = app.current_event.json_body or {}
+    csv_text = body.get('csv_text', '')
+    default_source = (body.get('default_source') or 'csv_upload').strip() or 'csv_upload'
+
+    if not isinstance(csv_text, str) or not csv_text.strip():
+        raise ValidationError('csv_text is required')
+    if len(csv_text.encode('utf-8')) > MAX_CSV_BYTES:
+        raise ValidationError(f'CSV exceeds {MAX_CSV_BYTES // (1024 * 1024)} MB limit')
+
+    items, warnings = _parse_csv_to_items(csv_text, default_source)
+    if not items:
+        raise ValidationError('CSV produced no valid rows. ' + '; '.join(warnings[:5]))
+    if len(items) > MAX_JSON_UPLOAD_ITEMS:
+        raise ValidationError(
+            f'Maximum {MAX_JSON_UPLOAD_ITEMS} rows per upload (got {len(items)}). '
+            'Split the file and try again.'
+        )
+
+    user_id = 'unknown'
+    try:
+        claims = app.current_event.request_context.authorizer.get('claims', {})
+        user_id = claims.get('sub', claims.get('cognito:username', 'unknown'))
+    except Exception:
+        pass
+
+    now = datetime.now(timezone.utc)
+    job_id = str(uuid.uuid4())
+
+    s3_uri = None
+    if RAW_DATA_BUCKET:
+        s3_key = f"raw/csv_upload/{now.year}/{now.month:02d}/{now.day:02d}/{job_id}.csv"
+        try:
+            s3.put_object(
+                Bucket=RAW_DATA_BUCKET,
+                Key=s3_key,
+                Body=csv_text.encode('utf-8'),
+                ContentType='text/csv; charset=utf-8',
+                Metadata={'uploaded_by': user_id, 'default_source': default_source},
+            )
+            s3_uri = f"s3://{RAW_DATA_BUCKET}/{s3_key}"
+        except Exception as e:
+            logger.warning(f"Failed to store CSV upload to S3: {e}")
+
+    messages = [
+        {
+            'id': item['id'],
+            'csv_row_id': item.get('csv_row_id') or None,
+            'source_platform': 'manual_import',
+            'source_channel': item['source'],
+            'ingestion_method': 'csv_upload',
+            'text': item['text'],
+            'rating': item.get('rating'),
+            'author': item.get('author'),
+            'title': item.get('title'),
+            'url': item.get('url'),
+            'created_at': item['timestamp'],
+            's3_raw_uri': s3_uri,
+        }
+        for item in items
+    ]
+    imported_count, send_errors = _send_items_to_sqs(messages)
+
+    result: dict = {
+        'success': True,
+        'imported_count': imported_count,
+        'total_rows': len(items),
+        's3_uri': s3_uri,
+    }
+    if warnings:
+        result['warnings'] = warnings[:20]
+    if send_errors:
+        result['errors'] = send_errors
+    return result
+
+
+@app.post("/scrapers/manual/json-upload")
+@tracer.capture_method
+def json_upload():
+    """Import pre-structured JSON feedback items directly into the pipeline."""
+    body = app.current_event.json_body
+    items = body.get('items', [])
+
+    if not isinstance(items, list) or len(items) == 0:
+        raise ValidationError('Request must contain a non-empty "items" array')
+
+    if len(items) > MAX_JSON_UPLOAD_ITEMS:
+        raise ValidationError(f'Maximum {MAX_JSON_UPLOAD_ITEMS} items per upload')
+
+    # Validate required fields: text, id, source, timestamp
+    errors = []
+    for idx, item in enumerate(items):
+        if not isinstance(item, dict):
+            errors.append(f'Item {idx}: must be an object')
+            continue
+        text = item.get('text', '')
+        if not isinstance(text, str) or not text.strip():
+            errors.append(f'Item {idx}: "text" is required and must be a non-empty string')
+        if not item.get('id'):
+            errors.append(f'Item {idx}: "id" is required for deduplication')
+        if not (item.get('source') or item.get('source_channel')):
+            errors.append(f'Item {idx}: "source" is required')
+        if not (item.get('timestamp') or item.get('created_at')):
+            errors.append(f'Item {idx}: "timestamp" is required (ISO 8601 format)')
+
+    if errors:
+        raise ValidationError(f'Validation failed: {"; ".join(errors[:10])}')
+
+    # Get user from request context
+    user_id = 'unknown'
+    try:
+        claims = app.current_event.request_context.authorizer.get('claims', {})
+        user_id = claims.get('sub', claims.get('cognito:username', 'unknown'))
+    except Exception:
+        pass
+
+    now = datetime.now(timezone.utc)
+    job_id = str(uuid.uuid4())
+
+    # Store raw upload to S3
+    s3_uri = None
+    if RAW_DATA_BUCKET:
+        s3_key = f"raw/json_upload/{now.year}/{now.month:02d}/{now.day:02d}/{job_id}.json"
+        try:
+            s3.put_object(
+                Bucket=RAW_DATA_BUCKET,
+                Key=s3_key,
+                Body=json.dumps({
+                    'job_id': job_id,
+                    'items': items,
+                    'uploaded_at': now.isoformat(),
+                    'uploaded_by': user_id,
+                }, default=decimal_default),
+                ContentType='application/json',
+            )
+            s3_uri = f"s3://{RAW_DATA_BUCKET}/{s3_key}"
+        except Exception as e:
+            logger.warning(f"Failed to store JSON upload to S3: {e}")
+
+    # Send items to SQS in batches of 10. With the 50k cap, per-item
+    # send_message would exceed the API Gateway 29s window; batching keeps
+    # large uploads inside it.
+    messages = []
+    for item in items:
+        message = {
+            'id': item.get('id', ''),
+            'source_platform': 'manual_import',
+            'source_channel': item.get('source') or item.get('source_channel'),
+            'ingestion_method': 'json_upload',
+            'text': item.get('text', '').strip(),
+            'rating': item.get('rating'),
+            'author': item.get('user_id') or item.get('author'),
+            'title': item.get('title'),
+            'url': item.get('url'),
+            'created_at': item.get('timestamp') or item.get('created_at'),
+            's3_raw_uri': s3_uri,
+        }
+
+        # Pass through metadata if present
+        if item.get('metadata') and isinstance(item['metadata'], dict):
+            message['metadata'] = item['metadata']
+
+        messages.append(message)
+
+    imported_count, send_errors = _send_items_to_sqs(messages, label='item')
+
+    result = {
+        'success': True,
+        'imported_count': imported_count,
+        'total_items': len(items),
+        's3_uri': s3_uri,
+    }
+
+    if send_errors:
+        result['errors'] = send_errors
+
+    return result
 
 
 @api_handler

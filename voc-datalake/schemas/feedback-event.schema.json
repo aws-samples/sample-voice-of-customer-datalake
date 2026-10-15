@@ -33,6 +33,10 @@
       "enum": ["review", "comment", "post", "message", "thread", "tweet", "mention", "reply", "other"],
       "description": "Type of content"
     },
+    "ingestion_method": {
+      "type": "string",
+      "description": "Optional ingestion-path provenance (e.g. manual, csv_upload, json_upload). Omitted by sources that do not send it."
+    },
     "source_url": {
       "type": ["string", "null"],
       "format": "uri",

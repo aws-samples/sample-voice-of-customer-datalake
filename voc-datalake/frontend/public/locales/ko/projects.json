@@ -1,0 +1,33 @@
+{
+  "card": {
+    "docs_one": "문서 {{count}}개",
+    "docs_other": "문서 {{count}}개",
+    "personas_one": "페르소나 {{count}}개",
+    "personas_other": "페르소나 {{count}}개"
+  },
+  "configureEndpoint": "먼저 설정에서 API 엔드포인트를 구성하세요",
+  "createModal": {
+    "cancel": "취소",
+    "create": "프로젝트 만들기",
+    "creating": "생성 중...",
+    "descriptionLabel": "설명",
+    "descriptionPlaceholder": "이 프로젝트는 무엇에 관한 것인가요?",
+    "nameLabel": "프로젝트 이름",
+    "namePlaceholder": "예: Q1 제품 개선",
+    "title": "새 프로젝트 만들기"
+  },
+  "deleteModal": {
+    "confirm": "삭제",
+    "message": "이 프로젝트를 삭제하시겠습니까? 모든 페르소나와 문서가 영구적으로 삭제됩니다.",
+    "title": "프로젝트 삭제"
+  },
+  "description": "피드백에서 페르소나, PRD, PR/FAQ를 생성하는 프로젝트를 만드세요",
+  "emptyState": {
+    "createButton": "프로젝트 만들기",
+    "description": "첫 번째 프로젝트를 만들어 페르소나와 문서 작성을 시작하세요",
+    "title": "아직 프로젝트가 없습니다"
+  },
+  "newProject": "새 프로젝트",
+  "openProject": "프로젝트 열기",
+  "title": "프로젝트"
+}

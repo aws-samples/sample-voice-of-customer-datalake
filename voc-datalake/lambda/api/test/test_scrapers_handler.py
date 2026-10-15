@@ -3,9 +3,7 @@ Tests for scrapers_handler.py - /scrapers/* endpoints.
 Manages web scraper configurations and runs.
 """
 import json
-import pytest
 from unittest.mock import patch, MagicMock
-from datetime import datetime, timezone
 
 
 class TestValidateUrl:
@@ -221,6 +219,65 @@ class TestSaveScraper:
         # Assert - now returns 400 with error key
         assert response['statusCode'] == 400
         assert 'error' in body
+
+
+class TestSecretSizeGuardSurfacesAs400:
+    """
+    An over-limit secret must reach the caller as a 400, on BOTH write routes.
+
+    put_secret_json refuses a serialized secret over the Secrets Manager limit by
+    raising ValidationError. Each route wraps its work in `except Exception ->
+    ServiceError`, so without an explicit re-raise that actionable 400 is
+    flattened into an opaque 500.
+
+    delete_scraper matters even though a delete only ever SHRINKS this key: the
+    secret can already be over the limit from before the guard existed, and the
+    caller hitting that is precisely the one deleting to get back under it.
+    """
+
+    @staticmethod
+    def _oversized_secret() -> dict:
+        from shared.aws import SECRET_STRING_MAX_BYTES
+
+        return {
+            'webscraper_configs': json.dumps([{'id': 'delete-this', 'name': 'D'}]),
+            'other_feature_blob': 'y' * SECRET_STRING_MAX_BYTES,
+        }
+
+    @patch('scrapers_handler.secretsmanager')
+    def test_save_returns_400_not_500(self, mock_secrets, api_gateway_event, lambda_context):
+        mock_secrets.get_secret_value.return_value = {
+            'SecretString': json.dumps(self._oversized_secret())
+        }
+        from scrapers_handler import lambda_handler
+
+        response = lambda_handler(
+            api_gateway_event(
+                method='POST', path='/scrapers',
+                body={'scraper': {'id': 's1', 'name': 'New'}},
+            ),
+            lambda_context,
+        )
+        assert response['statusCode'] == 400, response['body']
+        mock_secrets.put_secret_value.assert_not_called()
+
+    @patch('scrapers_handler.secretsmanager')
+    def test_delete_returns_400_not_500(self, mock_secrets, api_gateway_event, lambda_context):
+        """Regression: removing `except ValidationError: raise` makes this a 500."""
+        mock_secrets.get_secret_value.return_value = {
+            'SecretString': json.dumps(self._oversized_secret())
+        }
+        from scrapers_handler import lambda_handler
+
+        response = lambda_handler(
+            api_gateway_event(
+                method='DELETE', path='/scrapers/delete-this',
+                path_params={'scraper_id': 'delete-this'},
+            ),
+            lambda_context,
+        )
+        assert response['statusCode'] == 400, response['body']
+        mock_secrets.put_secret_value.assert_not_called()
 
 
 class TestDeleteScraper:
@@ -497,6 +554,11 @@ class TestAnalyzeUrl:
         assert body['success'] is True
         assert 'selectors' in body
         assert body['selectors']['container_selector'] == '.review'
+        # Regression (live-caught on voc-deploy, PR #166): strict-JSON output
+        # must fit ONE Bedrock call — adaptive-thinking models spend output
+        # budget on thinking, and continuation is unreliable mid-JSON.
+        assert mock_converse.call_args.kwargs['max_tokens'] >= 2048
+        assert mock_converse.call_args.kwargs['surface'] == 'utility'
 
     @patch('scrapers_handler.socket.getaddrinfo')
     def test_rejects_invalid_url(

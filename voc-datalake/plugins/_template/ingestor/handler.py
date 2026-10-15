@@ -17,9 +17,17 @@ from _shared.base_ingestor import BaseIngestor, logger, tracer, metrics
 class MySourceIngestor(BaseIngestor):
     """Ingestor for My Source API."""
 
-    def __init__(self):
-        super().__init__()
-        # Access your secrets (prefixed keys are stripped automatically)
+    def __init__(self, execution_id: str | None = None):
+        # Pass execution_id through — BaseIngestor clears the shared secret
+        # cache on manual runs BEFORE secrets are read (issues #141/#215).
+        # Never assign ingestor.execution_id after construction; that would
+        # skip the guard (enforced by plugins/test_manual_run_guard.py).
+        super().__init__(execution_id=execution_id)
+        # Access your secrets by their BARE name — the `<plugin_id>_` prefix they
+        # are stored under is stripped for you. Declare every key in
+        # manifest.json's "secrets" block: construction FAILS if the shared secret
+        # holds no key under this plugin's prefix, rather than quietly handing you
+        # every other plugin's credentials (issue #251).
         self.api_key = self.secrets.get("api_key", "")
 
     def fetch_new_items(self) -> Generator[dict, None, None]:
@@ -86,5 +94,6 @@ class MySourceIngestor(BaseIngestor):
 @metrics.log_metrics(capture_cold_start_metric=True)
 def lambda_handler(event, context):
     """Lambda entry point."""
-    ingestor = MySourceIngestor()
+    execution_id = event.get("execution_id") if isinstance(event, dict) else None
+    ingestor = MySourceIngestor(execution_id=execution_id)
     return ingestor.run()

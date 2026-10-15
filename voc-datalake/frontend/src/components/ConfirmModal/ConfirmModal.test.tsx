@@ -124,4 +124,41 @@ describe('ConfirmModal', () => {
       expect(confirmButton.querySelector('.animate-spin')).toBeInTheDocument()
     })
   })
+
+  // Adopting ModalShell added Escape and focus management, and made dismissal
+  // conditional on isLoading. That last part is a deliberate BEHAVIOUR CHANGE:
+  // previously a backdrop click during an in-flight confirm called onCancel,
+  // which did not cancel the work it had already started.
+  describe('dismissal (ModalShell adoption)', () => {
+    it('is exposed as a modal dialog named by its title', () => {
+      render(<ConfirmModal {...defaultProps} />)
+
+      const dialog = screen.getByRole('dialog')
+      expect(dialog).toHaveAttribute('aria-modal', 'true')
+      expect(dialog).toHaveAccessibleName('Delete Item')
+    })
+
+    it('cancels on Escape and on overlay click when idle', async () => {
+      const user = userEvent.setup()
+      const onCancel = vi.fn()
+      render(<ConfirmModal {...defaultProps} onCancel={onCancel} />)
+
+      await user.keyboard('{Escape}')
+      expect(onCancel).toHaveBeenCalledTimes(1)
+
+      await user.click(screen.getByTestId('modal-overlay'))
+      expect(onCancel).toHaveBeenCalledTimes(2)
+    })
+
+    it('ignores Escape and overlay click while the confirmation is in flight', async () => {
+      const user = userEvent.setup()
+      const onCancel = vi.fn()
+      render(<ConfirmModal {...defaultProps} onCancel={onCancel} isLoading={true} />)
+
+      await user.keyboard('{Escape}')
+      await user.click(screen.getByTestId('modal-overlay'))
+
+      expect(onCancel).not.toHaveBeenCalled()
+    })
+  })
 })

@@ -12,8 +12,6 @@ vi.mock('./useDataExplorerQueries', () => ({
     s3Loading: false,
     feedbackData: { items: [], count: 0 },
     feedbackLoading: false,
-    categoriesData: { categories: {} },
-    categoriesLoading: false,
     bucketsData: { buckets: [{ id: 'raw-data', label: 'Raw Data' }] },
     sourcesData: { sources: {} },
     refetch: vi.fn(),
@@ -55,10 +53,6 @@ vi.mock('./ProcessedFeedbackView', () => ({
   default: ({ searchQuery }: { searchQuery: string }) => (
     <div data-testid="processed-feedback-view">Search: {searchQuery}</div>
   ),
-}))
-
-vi.mock('./CategoriesView', () => ({
-  default: () => <div data-testid="categories-view">Categories View</div>,
 }))
 
 vi.mock('./EditModal', () => ({

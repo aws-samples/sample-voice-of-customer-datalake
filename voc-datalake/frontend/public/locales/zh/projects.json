@@ -1,0 +1,33 @@
+{
+  "card": {
+    "docs_one": "{{count}} 个文档",
+    "docs_other": "{{count}} 个文档",
+    "personas_one": "{{count}} 个画像",
+    "personas_other": "{{count}} 个画像"
+  },
+  "configureEndpoint": "请先在设置中配置API端点",
+  "createModal": {
+    "cancel": "取消",
+    "create": "创建项目",
+    "creating": "创建中...",
+    "descriptionLabel": "描述",
+    "descriptionPlaceholder": "这个项目是关于什么的？",
+    "nameLabel": "项目名称",
+    "namePlaceholder": "例如：Q1产品改进",
+    "title": "创建新项目"
+  },
+  "deleteModal": {
+    "confirm": "删除",
+    "message": "确定要删除此项目吗？所有用户画像和文档将被永久删除。",
+    "title": "删除项目"
+  },
+  "description": "创建项目，从反馈中生成用户画像、PRD和PR/FAQ",
+  "emptyState": {
+    "createButton": "创建项目",
+    "description": "创建您的第一个项目，开始构建用户画像和文档",
+    "title": "暂无项目"
+  },
+  "newProject": "新建项目",
+  "openProject": "打开项目",
+  "title": "项目"
+}

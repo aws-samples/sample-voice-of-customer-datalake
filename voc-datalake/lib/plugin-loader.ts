@@ -78,8 +78,13 @@ const SetupSchema = z.object({
 const IngestorInfraSchema = z.object({
   enabled: z.boolean(),
   schedule: ScheduleSchema.optional(),
-  timeout: z.number().int().min(1).max(300).default(120),
+  timeout: z.number().int().min(1).max(900).default(120), // 900s = AWS Lambda hard max
   memory: z.number().int().min(128).max(1024).default(256),
+  // Opt-in capability: when true, the plugin's Lambda gets a dedicated IAM role
+  // with a scoped bedrock:InvokeModel grant (Claude models only) instead of the
+  // shared ingestion role. Keeps least-privilege: only plugins that declare this
+  // can call Bedrock. See ingestion-stack.ts createIngestorLambda().
+  bedrock: z.boolean().optional().default(false),
 });
 
 const WebhookInfraSchema = z.object({
@@ -108,12 +113,15 @@ const IntegritySchema = z.object({
 
 const SecretsSchema = z.record(ConfigKeySchema, z.string());
 
-const ManifestSchema = z.object({
+/** Exported so tests can assert against the canonical manifest contract instead
+ *  of re-declaring a partial shape. A local re-declaration would keep passing if
+ *  a field here were renamed or moved, which silently disables such a guard. */
+export const ManifestSchema = z.object({
   id: PluginIdSchema,
   name: SafeStringSchema,
   icon: IconSchema,
   description: SafeStringSchema.optional(),
-  category: z.enum(['reviews', 'social', 'import', 'search', 'scraper']).optional(),
+  category: z.enum(['reviews', 'social', 'import', 'search', 'scraper', 'synthetic']).optional(),
   infrastructure: InfrastructureSchema,
   config: z.array(ConfigFieldSchema).max(20).default([]),
   webhooks: z.array(WebhookInfoSchema).max(5).optional(),
@@ -196,6 +204,10 @@ export function loadPlugins(pluginsDir: string, options: LoadPluginsOptions = {}
     }
   }
 
+  // Cross-plugin checks, after the per-manifest ones: this is the only place that
+  // sees the whole id set at once.
+  errors.push(...namespaceCollisionErrors(plugins));
+
   if (errors.length > 0) {
     console.error('Plugin loading errors:');
     errors.forEach(e => console.error(`  - ${e}`));
@@ -206,12 +218,60 @@ export function loadPlugins(pluginsDir: string, options: LoadPluginsOptions = {}
   return plugins;
 }
 
+/**
+ * Reject an id that is a PREFIX of another id.
+ *
+ * The shared API-credentials secret namespaces every key `<plugin_id>_<key>`, and
+ * both readers of it match that namespace by plain string prefix — the runtime one
+ * in `plugins/_shared/plugin_secrets.py`, which is the entire isolation boundary
+ * between plugins (all ingestion Lambdas share one IAM role), and the status one in
+ * `integrations_handler.get_credentials`. So `app_reviews` alongside the existing
+ * `app_reviews_ios` would hand the shorter plugin every key of the longer one, under
+ * mangled names (`app_reviews_ios_app_id` arriving as `ios_app_id`).
+ *
+ * Enforced HERE and not at runtime because this is the only vantage point with the
+ * whole id set: a plugin Lambda knows its own id and, by design since issue #251,
+ * nothing about the others — a hand-maintained list of sibling prefixes is exactly
+ * the hole that change closed. Ids are a synth-time input, so synth is also the last
+ * moment at which refusing one is free.
+ *
+ * SCOPE: this constrains MANIFEST IDS, which is not the whole collision class. A
+ * colliding key can also be STORED without any colliding manifest existing:
+ * `PUT /integrations/app_reviews/credentials` with key `ios_app_id` writes
+ * `app_reviews_ios_app_id`, which `app_reviews_ios` then reads as its own `app_id`.
+ * That entrance is a request parameter this function never sees, and is closed in
+ * `integrations_handler._validate_source_parameter` — applied on EVERY route taking a
+ * `<source>`, not only the credentials ones — by restricting the namespace a request
+ * may address to the ids below. Both guards are needed.
+ *
+ * Neither is retroactive: a key stored before either existed survives, and the plugin
+ * whose namespace it landed in still reads it.
+ */
+function namespaceCollisionErrors(plugins: PluginManifest[]): string[] {
+  const ids = plugins.map(p => p.id);
+  const errors: string[] = [];
+
+  for (const id of ids) {
+    for (const other of ids) {
+      if (other !== id && other.startsWith(`${id}_`)) {
+        errors.push(
+          `Plugin id '${id}' is a namespace prefix of '${other}': the shared secret ` +
+          `keys both plugins' credentials as <plugin_id>_<key>, so '${id}' would also ` +
+          `receive every '${other}' key. Rename one of them.`
+        );
+      }
+    }
+  }
+
+  return errors;
+}
+
 function validateManifestLimits(manifest: PluginManifest): void {
   const infra = manifest.infrastructure;
 
   if (infra.ingestor) {
-    if (infra.ingestor.timeout > 300) {
-      throw new Error(`Plugin ${manifest.id}: timeout cannot exceed 300 seconds`);
+    if (infra.ingestor.timeout > 900) {
+      throw new Error(`Plugin ${manifest.id}: timeout cannot exceed 900 seconds`);
     }
     if (infra.ingestor.memory > 1024) {
       throw new Error(`Plugin ${manifest.id}: memory cannot exceed 1024 MB`);
@@ -317,6 +377,31 @@ export function aggregateSecrets(plugins: PluginManifest[]): Record<string, stri
     }
   }
   return secrets;
+}
+
+/**
+ * The same declared secret defaults as {@link aggregateSecrets}, keyed by plugin
+ * rather than flattened into `<plugin_id>_<key>`.
+ *
+ * Both shapes are needed and neither derives from the other at runtime. The flat
+ * form is what Secrets Manager stores, so that is what seeds the secret. The
+ * nested form is what a consumer needs to answer "which plugin owns this key, and
+ * what did it default to" — you cannot split `app_reviews_ios_app_id` back into
+ * plugin and key without already knowing the plugin ids, which is precisely the
+ * thing the consumer is missing.
+ *
+ * Plugins that declare no secrets still get an (empty) entry: the key set doubles
+ * as the list of sources that exist, and a plugin with nothing to configure is
+ * still a source.
+ */
+export function aggregateSecretsByPlugin(
+  plugins: PluginManifest[]
+): Record<string, Record<string, string>> {
+  const byPlugin: Record<string, Record<string, string>> = {};
+  for (const plugin of plugins) {
+    byPlugin[plugin.id] = { ...(plugin.secrets ?? {}) };
+  }
+  return byPlugin;
 }
 
 export function getPluginsWithIngestor(plugins: PluginManifest[]): PluginManifest[] {

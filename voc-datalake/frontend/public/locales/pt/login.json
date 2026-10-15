@@ -1,0 +1,47 @@
+{
+  "contactAdmin": "Contacte o seu administrador se precisar de acesso.",
+  "enterPassword": "Introduza a sua palavra-passe",
+  "enterUsername": "Introduza o seu nome de utilizador",
+  "errors": {
+    "failedNewPassword": "Falha ao definir nova palavra-passe",
+    "failedResetPassword": "Falha ao redefinir palavra-passe",
+    "failedSendCode": "Falha ao enviar código de verificação",
+    "loginFailed": "Falha no início de sessão",
+    "passwordResetSuccess": "Palavra-passe redefinida com sucesso. Inicie sessão.",
+    "passwordsDoNotMatch": "As palavras-passe não coincidem",
+    "passwordTooShort": "A palavra-passe deve ter pelo menos 8 caracteres",
+    "sessionExpired": "Sessão expirada. Inicie sessão novamente.",
+    "verificationCodeSent": "Código de verificação enviado para o seu e-mail"
+  },
+  "forgotPassword": "Esqueceu a palavra-passe?",
+  "newPassword": {
+    "confirmLabel": "Confirmar Palavra-passe",
+    "confirmPlaceholder": "Confirme a nova palavra-passe",
+    "description": "Precisa de definir uma nova palavra-passe para a sua conta.",
+    "label": "Nova Palavra-passe",
+    "placeholder": "Introduza a nova palavra-passe",
+    "settingPassword": "A definir palavra-passe...",
+    "showPassword": "Mostrar palavra-passe",
+    "submit": "Definir Palavra-passe",
+    "title": "Definir Nova Palavra-passe"
+  },
+  "password": "Palavra-passe",
+  "resetPassword": {
+    "backToLogin": "Voltar ao início de sessão",
+    "description": "Introduza o seu nome de utilizador para receber um código de verificação.",
+    "sendCode": "Enviar Código",
+    "sendingCode": "A enviar código...",
+    "title": "Redefinir Palavra-passe"
+  },
+  "signIn": "Iniciar sessão",
+  "signingIn": "A iniciar sessão...",
+  "usernameOrEmail": "Nome de utilizador ou E-mail",
+  "verifyCode": {
+    "description": "Verifique o seu e-mail para o código de verificação.",
+    "label": "Código de Verificação",
+    "placeholder": "Introduza o código",
+    "resettingPassword": "A redefinir palavra-passe...",
+    "submit": "Redefinir Palavra-passe",
+    "title": "Introduzir Código de Verificação"
+  }
+}

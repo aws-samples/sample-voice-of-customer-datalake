@@ -1,7 +1,7 @@
 /**
  * @fileoverview Tests for ManualImportModal component.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ManualImportModal from './ManualImportModal'
@@ -12,8 +12,8 @@ const mockStartManualImportParse = vi.fn()
 const mockGetManualImportStatus = vi.fn()
 const mockConfirmManualImport = vi.fn()
 
-vi.mock('../../api/client', () => ({
-  api: {
+vi.mock('../../api/scrapersApi', () => ({
+  scrapersApi: {
     startManualImportParse: (...args: unknown[]) => mockStartManualImportParse(...args),
     getManualImportStatus: (...args: unknown[]) => mockGetManualImportStatus(...args),
     confirmManualImport: (...args: unknown[]) => mockConfirmManualImport(...args),
@@ -145,11 +145,9 @@ describe('ManualImportModal', () => {
       const user = userEvent.setup()
       render(<ManualImportModal />)
 
-      const closeButtons = screen.getAllByRole('button')
-      const xButton = closeButtons.find(btn => btn.querySelector('svg'))
-      if (xButton) {
-        await user.click(xButton)
-      }
+      // The close button should be accessible via aria-label or similar
+      const closeButton = screen.getAllByRole('button')[0]
+      await user.click(closeButton)
 
       expect(useManualImportStore.getState().isModalOpen).toBe(false)
     })
@@ -338,10 +336,32 @@ describe('ManualImportModal', () => {
       })
     })
 
+    // This suite shares ONE jsdom across every test file (`singleFork` in
+    // vitest.config.ts), so a `window.location` replaced here and left in place
+    // leaks into every file that runs after this one — where `location.origin` is
+    // then undefined. It cost the room-vote QR tests an afternoon: they passed
+    // alone and failed in the full run, because the component reads the live
+    // origin to build the address a phone opens.
+    //
+    // Captured in `beforeEach` rather than at collection time, and for the same
+    // reason the restore exists at all: at collection this file has not run yet,
+    // but earlier FILES have, so a snapshot taken then could preserve a value one
+    // of them leaked. Taken per test, it is whatever was in place immediately
+    // before this test replaced it.
+    let originalLocation: Location
+
+    beforeEach(() => {
+      originalLocation = window.location
+    })
+
+    afterEach(() => {
+      Object.defineProperty(window, 'location', { value: originalLocation, writable: true })
+    })
+
     it('calls confirmManualImport when Import is clicked', async () => {
       const user = userEvent.setup()
       mockConfirmManualImport.mockResolvedValue({ success: true, imported_count: 1 })
-      
+
       // Mock window.location.reload
       const reloadMock = vi.fn()
       Object.defineProperty(window, 'location', {
@@ -435,6 +455,60 @@ describe('ManualImportModal', () => {
       await user.click(importButton)
 
       expect(mockConfirmManualImport).not.toHaveBeenCalled()
+    })
+
+    it('shows Importing... state while confirm is in flight', async () => {
+      // Regression: previously isConfirming was tracked via useRef, which
+      // mutates without re-rendering, so the button never showed the loading
+      // state. After moving to useState, the button should re-render to show
+      // the spinner + "Importing..." label while the API call is pending.
+      const user = userEvent.setup()
+      let resolveConfirm: ((value: { success: boolean }) => void) | null = null
+      mockConfirmManualImport.mockReturnValue(
+        new Promise((resolve) => {
+          resolveConfirm = resolve
+        })
+      )
+
+      render(<ManualImportModal />)
+
+      const importButton = screen.getByRole('button', { name: /import 1 review/i })
+      await user.click(importButton)
+
+      // While the promise is unresolved, the button label should change.
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /importing/i })).toBeInTheDocument()
+      })
+      expect(screen.queryByRole('button', { name: /import 1 review/i })).not.toBeInTheDocument()
+
+      // Resolve so the test can clean up.
+      resolveConfirm?.({ success: false })
+    })
+
+    it('prevents double-submit when import button is clicked twice rapidly', async () => {
+      // The disabled + "Importing…" button (driven by the isConfirming state)
+      // is what blocks the second click; the in-handler guard alone can't,
+      // because the second click's closure still sees the pre-update state.
+      const user = userEvent.setup()
+      let resolveConfirm: ((value: { success: boolean }) => void) | null = null
+      mockConfirmManualImport.mockReturnValue(
+        new Promise((resolve) => {
+          resolveConfirm = resolve
+        })
+      )
+
+      render(<ManualImportModal />)
+
+      const importButton = screen.getByRole('button', { name: /import 1 review/i })
+      await user.click(importButton)
+
+      // Second click should be a no-op while the first is in flight.
+      const importingButton = await screen.findByRole('button', { name: /importing/i })
+      await user.click(importingButton)
+
+      expect(mockConfirmManualImport).toHaveBeenCalledTimes(1)
+
+      resolveConfirm?.({ success: false })
     })
   })
 

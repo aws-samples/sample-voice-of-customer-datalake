@@ -10,7 +10,7 @@
  * - User Administration (admin only)
  */
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { 
   Save, Check, AlertCircle, Loader2, CheckCircle2, Tags, Users, 
@@ -25,8 +25,9 @@ import clsx from 'clsx'
 import ConfirmModal from '../../components/ConfirmModal'
 import SourceCard from './SourceCard'
 import LogsSection from './LogsSection'
+import AiModelSection from './AiModelSection'
+import { useApiEndpointField, useBrandForm } from './useSettingsSync'
 import { getEnabledPlugins } from '../../plugins'
-import { getRuntimeConfig, isConfigLoaded } from '../../runtimeConfig'
 
 type SettingsTab = 'brand' | 'plugins' | 'categories' | 'logs' | 'users'
 
@@ -40,28 +41,7 @@ export default function Settings() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('brand')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
-  const [apiEndpoint, setApiEndpoint] = useState(() => {
-    // Prefer runtime config (from config.json) over persisted store value
-    if (isConfigLoaded()) {
-      return getRuntimeConfig().apiEndpoint
-    }
-    return config.apiEndpoint
-  })
-  const [brandName, setBrandName] = useState(config.brandName)
-  const [brandHandles, setBrandHandles] = useState(config.brandHandles.join(', '))
-  const [hashtags, setHashtags] = useState(config.hashtags.join(', '))
-  const [urlsToTrack, setUrlsToTrack] = useState(config.urlsToTrack.join('\n'))
-
-  // Sync config store with runtime config on mount
-  useEffect(() => {
-    if (isConfigLoaded()) {
-      const runtimeConfig = getRuntimeConfig()
-      if (runtimeConfig.apiEndpoint && runtimeConfig.apiEndpoint !== config.apiEndpoint) {
-        setConfig({ apiEndpoint: runtimeConfig.apiEndpoint })
-        setApiEndpoint(runtimeConfig.apiEndpoint)
-      }
-    }
-  }, [config.apiEndpoint, setConfig])
+  const { apiEndpoint, setApiEndpoint } = useApiEndpointField(config.apiEndpoint, setConfig)
 
   const { data: backendSettings, isLoading: loadingSettings } = useQuery({
     queryKey: ['brand-settings'],
@@ -69,21 +49,12 @@ export default function Settings() {
     enabled: !!config.apiEndpoint,
   })
 
-  useEffect(() => {
-    if (!backendSettings) return
-    if ('error' in backendSettings && backendSettings.error) return
-
-    const name = backendSettings.brand_name ?? ''
-    const handles = backendSettings.brand_handles ?? []
-    const tags = backendSettings.hashtags ?? []
-    const urls = backendSettings.urls_to_track ?? []
-
-    setBrandName(name)
-    setBrandHandles(handles.join(', '))
-    setHashtags(tags.join(', '))
-    setUrlsToTrack(urls.join('\n'))
-    setConfig({ brandName: name, brandHandles: handles, hashtags: tags, urlsToTrack: urls })
-  }, [backendSettings, setConfig])
+  const {
+    brandName, setBrandName,
+    brandHandles, setBrandHandles,
+    hashtags, setHashtags,
+    urlsToTrack, setUrlsToTrack,
+  } = useBrandForm(config, setConfig, backendSettings)
 
   const parseArrayInput = (input: string, separator: string): string[] =>
     input.split(separator).map(s => s.trim()).filter(Boolean)
@@ -211,6 +182,7 @@ export default function Settings() {
               onHashtagsChange={setHashtags}
               onUrlsToTrackChange={setUrlsToTrack}
             />
+            <AiModelSection apiEndpoint={apiEndpoint} isAdmin={isAdmin} />
             <DangerZoneSection
               showResetConfirm={showResetConfirm}
               onShowResetConfirm={setShowResetConfirm}
@@ -228,7 +200,7 @@ export default function Settings() {
         )}
 
         {activeTab === 'plugins' && (
-          <DataSourcesSection apiEndpoint={apiEndpoint} />
+          <DataSourcesSection apiEndpoint={apiEndpoint} isAdmin={isAdmin} />
         )}
 
         {activeTab === 'categories' && (
@@ -294,8 +266,22 @@ interface ApiConfigSectionProps {
   readonly onApiEndpointChange: (value: string) => void
 }
 
+/**
+ * API Configuration section — shown only in development builds.
+ *
+ * In a production build the API endpoint comes solely from the deployment's
+ * runtime config (config.json) and cannot be edited. This prevents a
+ * social-engineering attack where a user is persuaded to paste a foreign URL
+ * and the app then sends their Cognito bearer token to it.
+ *
+ * The dev gate lives here rather than in the parent Settings component so the
+ * parent's cyclomatic complexity stays within the lint budget.
+ */
 function ApiConfigSection({ apiEndpoint, onApiEndpointChange }: ApiConfigSectionProps) {
   const [showApiConfig, setShowApiConfig] = useState(!apiEndpoint)
+
+  // Production builds: no editable endpoint field.
+  if (!import.meta.env.DEV) return null
 
   return (
     <div className="card">
@@ -309,7 +295,7 @@ function ApiConfigSection({ apiEndpoint, onApiEndpointChange }: ApiConfigSection
           <ChevronDown size={18} className={clsx('text-gray-400 transition-transform', showApiConfig && 'rotate-180')} />
         </div>
       </button>
-      
+
       {showApiConfig && (
         <div className="space-y-4 mt-4 pt-4 border-t border-gray-100">
           <div>
@@ -410,9 +396,10 @@ function CategoriesSection({ apiEndpoint }: CategoriesSectionProps) {
 
 interface DataSourcesSectionProps {
   readonly apiEndpoint: string
+  readonly isAdmin: boolean
 }
 
-function DataSourcesSection({ apiEndpoint }: DataSourcesSectionProps) {
+function DataSourcesSection({ apiEndpoint, isAdmin }: DataSourcesSectionProps) {
   const pluginManifests = getEnabledPlugins()
 
   return (
@@ -434,7 +421,7 @@ function DataSourcesSection({ apiEndpoint }: DataSourcesSectionProps) {
           </div>
         ) : (
           pluginManifests.map((manifest) => (
-            <SourceCard key={manifest.id} manifest={manifest} apiEndpoint={apiEndpoint} />
+            <SourceCard key={manifest.id} manifest={manifest} apiEndpoint={apiEndpoint} isAdmin={isAdmin} />
           ))
         )}
       </div>

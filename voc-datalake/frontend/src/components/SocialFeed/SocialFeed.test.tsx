@@ -21,6 +21,7 @@ vi.mock('../../api/client', () => ({
     getSources: vi.fn(),
   },
   getDaysFromRange: vi.fn().mockReturnValue(7),
+  getDateRangeParams: () => ({ days: 7 }),
 }))
 
 // Helper to render with QueryClient
@@ -81,7 +82,7 @@ describe('SocialFeed', () => {
     vi.clearAllMocks()
     ;(useConfigStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
       timeRange: '7d',
-      customDateRange: null,
+      customDays: null,
       config: { apiEndpoint: 'https://api.example.com' },
     })
     ;(api.getFeedback as ReturnType<typeof vi.fn>).mockResolvedValue({

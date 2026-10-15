@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import UserProfileModal from './UserProfileModal'
+import { changeLanguage, languageNames, supportedLanguages } from '../../i18n/languages'
 import { useAuthStore } from '../../store/authStore'
 import { authService } from '../../services/auth'
 
@@ -19,6 +20,16 @@ vi.mock('../../services/auth', () => ({
     changePassword: vi.fn(),
   },
 }))
+
+// Mock only the change helper — keep the real language constants so the
+// picker options assert against the shipped locale list.
+vi.mock('../../i18n/languages', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../i18n/languages')>()
+  return {
+    ...actual,
+    changeLanguage: vi.fn().mockResolvedValue(undefined),
+  }
+})
 
 describe('UserProfileModal', () => {
   const mockOnClose = vi.fn()
@@ -41,6 +52,7 @@ describe('UserProfileModal', () => {
       const { container } = render(
         <UserProfileModal isOpen={false} onClose={mockOnClose} />
       )
+      // eslint-disable-next-line testing-library/no-node-access
       expect(container.firstChild).toBeNull()
     })
 
@@ -52,6 +64,7 @@ describe('UserProfileModal', () => {
       const { container } = render(
         <UserProfileModal isOpen={true} onClose={mockOnClose} />
       )
+      // eslint-disable-next-line testing-library/no-node-access
       expect(container.firstChild).toBeNull()
     })
 
@@ -99,8 +112,39 @@ describe('UserProfileModal', () => {
     it('displays avatar with first letter of name', () => {
       render(<UserProfileModal isOpen={true} onClose={mockOnClose} />)
       // Avatar should show 'T' for 'Test User'
+      // eslint-disable-next-line testing-library/no-node-access
       const avatar = document.querySelector('.rounded-full')
       expect(avatar).toHaveTextContent('T')
+    })
+  })
+
+  describe('language picker (issue #147)', () => {
+    it('renders a Language select on the profile tab', () => {
+      render(<UserProfileModal isOpen={true} onClose={mockOnClose} />)
+      expect(screen.getByRole('combobox', { name: 'Language' })).toBeInTheDocument()
+    })
+
+    it('lists all shipped locales as options with native names', () => {
+      render(<UserProfileModal isOpen={true} onClose={mockOnClose} />)
+      const options = screen.getAllByRole('option')
+      expect(options).toHaveLength(supportedLanguages.length)
+      for (const lang of supportedLanguages) {
+        expect(screen.getByRole('option', { name: languageNames[lang] })).toBeInTheDocument()
+      }
+    })
+
+    it('defaults to the active language (English in tests)', () => {
+      render(<UserProfileModal isOpen={true} onClose={mockOnClose} />)
+      expect(screen.getByRole('combobox', { name: 'Language' })).toHaveValue('en')
+    })
+
+    it('calls changeLanguage when a different locale is selected', async () => {
+      const user = userEvent.setup()
+      render(<UserProfileModal isOpen={true} onClose={mockOnClose} />)
+
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Language' }), 'de')
+
+      expect(changeLanguage).toHaveBeenCalledWith('de')
     })
   })
 
@@ -244,11 +288,88 @@ describe('UserProfileModal', () => {
   })
 
   describe('close behavior', () => {
+    // U12 regression: the dialog was a keyboard trap — Escape and overlay click
+    // did nothing, and the only exit was an icon button with no accessible name.
+    it('closes when Escape is pressed', async () => {
+      const user = userEvent.setup()
+      render(<UserProfileModal isOpen={true} onClose={mockOnClose} />)
+
+      await user.keyboard('{Escape}')
+
+      expect(mockOnClose).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not close on Escape while closed', async () => {
+      const user = userEvent.setup()
+      render(<UserProfileModal isOpen={false} onClose={mockOnClose} />)
+
+      await user.keyboard('{Escape}')
+
+      expect(mockOnClose).not.toHaveBeenCalled()
+    })
+
+    it('clears typed password state when closed with Escape', async () => {
+      // Escape must route through handleClose. Asserting only that onClose fired
+      // would pass even when wired to onClose directly, leaving passwords in state.
+      const user = userEvent.setup()
+      const { rerender } = render(<UserProfileModal isOpen={true} onClose={mockOnClose} />)
+      await user.click(screen.getByRole('button', { name: /change password/i }))
+      const currentPassword = screen.getByLabelText(/current password/i)
+      await user.type(currentPassword, 'secret-value')
+      expect(currentPassword).toHaveValue('secret-value')
+
+      await user.keyboard('{Escape}')
+      rerender(<UserProfileModal isOpen={false} onClose={mockOnClose} />)
+      rerender(<UserProfileModal isOpen={true} onClose={mockOnClose} />)
+
+      await user.click(screen.getByRole('button', { name: /change password/i }))
+      expect(screen.getByLabelText(/current password/i)).toHaveValue('')
+    })
+
+    it('labels the close control "Close", not the sidebar menu string', () => {
+      render(<UserProfileModal isOpen={true} onClose={mockOnClose} />)
+
+      // Exact string, not /close/i: a regex also matches "Close menu" (the wrong
+      // key) and an unresolved namespace returning the raw key path.
+      expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument()
+    })
+
+    it('marks the panel as a modal dialog labelled by its heading', () => {
+      render(<UserProfileModal isOpen={true} onClose={mockOnClose} />)
+
+      const dialog = screen.getByRole('dialog')
+      expect(dialog).toHaveAttribute('aria-modal', 'true')
+      expect(dialog).toHaveAccessibleName(/my profile/i)
+    })
+
+    it('closes when the overlay is clicked', async () => {
+      const user = userEvent.setup()
+      render(<UserProfileModal isOpen={true} onClose={mockOnClose} />)
+
+      const overlay = document.querySelector('.absolute.inset-0')
+      expect(overlay).not.toBeNull()
+      await user.click(overlay as Element)
+
+      expect(mockOnClose).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not close when the panel itself is clicked', async () => {
+      // The important half: guards the relative-panel / absolute-overlay layering
+      // from being refactored back into one fused element, which is what made the
+      // overlay unclickable in the first place.
+      const user = userEvent.setup()
+      render(<UserProfileModal isOpen={true} onClose={mockOnClose} />)
+
+      await user.click(screen.getByRole('dialog'))
+
+      expect(mockOnClose).not.toHaveBeenCalled()
+    })
+
     it('calls onClose when X button is clicked', async () => {
       const user = userEvent.setup()
       render(<UserProfileModal isOpen={true} onClose={mockOnClose} />)
       
-      const closeButton = screen.getByRole('button', { name: '' })
+      const closeButton = screen.getByRole('button', { name: /close/i })
       await user.click(closeButton)
       
       expect(mockOnClose).toHaveBeenCalledTimes(1)
@@ -263,10 +384,10 @@ describe('UserProfileModal', () => {
       await user.type(screen.getByLabelText(/current password/i), 'test')
       
       // Close the modal
-      const closeButton = screen.getByRole('button', { name: '' })
+      const closeButton = screen.getByRole('button', { name: /close/i })
       await user.click(closeButton)
       
-      expect(mockOnClose).toHaveBeenCalled()
+      expect(mockOnClose).toHaveBeenCalledWith()
     })
   })
 })

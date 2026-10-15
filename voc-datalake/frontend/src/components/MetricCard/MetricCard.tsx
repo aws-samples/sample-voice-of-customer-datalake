@@ -30,6 +30,8 @@ interface MetricCardProps {
   trend?: TrendDirection
   /** Color theme for icon background */
   color?: ColorTheme
+  /** Disclosure tooltip on the value (e.g. partial/approximate data) */
+  hint?: string
 }
 
 const COLOR_CLASSES: Record<ColorTheme, string> = {
@@ -80,13 +82,19 @@ function TrendIndicator({ trend, change }: Readonly<{ trend?: TrendDirection; ch
   )
 }
 
-export default function MetricCard({ title, value, change, icon, trend, color = 'blue' }: Readonly<MetricCardProps>) {
+export default function MetricCard({ title, value, change, icon, trend, color = 'blue', hint }: Readonly<MetricCardProps>) {
   return (
     <div className="card !p-3 sm:!p-4 md:!p-6">
       <div className="flex items-start justify-between gap-2 sm:gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-xs sm:text-sm text-gray-500 mb-0.5 sm:mb-1 truncate">{title}</p>
-          <p className="text-lg sm:text-xl md:text-2xl font-bold text-gray-900 truncate">{value}</p>
+          <p
+            className="text-lg sm:text-xl md:text-2xl font-bold text-gray-900 truncate"
+            title={hint}
+            aria-label={hint ? `${value} — ${hint}` : undefined}
+          >
+            {value}
+          </p>
           {change !== undefined && (
             <TrendIndicator trend={trend} change={change} />
           )}

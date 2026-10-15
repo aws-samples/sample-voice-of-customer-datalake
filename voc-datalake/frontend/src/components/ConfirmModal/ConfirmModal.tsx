@@ -9,13 +9,29 @@
  * @module components/ConfirmModal
  */
 
+import type { ReactNode } from 'react'
 import { Loader2, AlertTriangle } from 'lucide-react'
 import clsx from 'clsx'
+import ModalShell from '../ModalShell'
 
 interface ConfirmModalProps {
   isOpen: boolean
   title: string
   message: string
+  /**
+   * Optional detail rendered under the message, above the buttons — for a
+   * confirmation that needs the user to inspect or adjust something before
+   * answering, rather than only to read.
+   *
+   * Deliberately additive: `message` stays required, so a dialog cannot end up
+   * with controls and no question. Every existing caller is unaffected.
+   *
+   * Rendered with no wrapper element. A wrapper carrying its own margin would
+   * leave a visible gap whenever the child COMPONENT returns null — which
+   * `children != null` cannot detect, since a React element that renders nothing
+   * is still a non-null child. Spacing therefore belongs to the child.
+   */
+  children?: ReactNode
   confirmLabel?: string
   cancelLabel?: string
   variant?: 'danger' | 'warning' | 'info'
@@ -28,6 +44,7 @@ export default function ConfirmModal({
   isOpen,
   title,
   message,
+  children,
   confirmLabel = 'Delete',
   cancelLabel = 'Cancel',
   variant = 'danger',
@@ -55,12 +72,18 @@ export default function ConfirmModal({
   const styles = variantStyles[variant]
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/50" onClick={onCancel} />
+    <ModalShell
+      isOpen={isOpen}
+      onClose={onCancel}
+      ariaLabel={title}
+      panelClassName="max-w-md"
+      // An in-flight confirmation must not be dismissable: closing the dialog
+      // would not cancel the work it already started.
+      dismissable={!isLoading}
+    >
       
       {/* Modal */}
-      <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full p-4 sm:p-6">
+      <div className="p-4 sm:p-6">
         <div className="flex items-start gap-3 sm:gap-4">
           <div className={clsx('w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center flex-shrink-0', styles.icon)}>
             <AlertTriangle size={18} className="sm:w-5 sm:h-5" />
@@ -68,6 +91,7 @@ export default function ConfirmModal({
           <div className="flex-1 min-w-0">
             <h3 className="text-base sm:text-lg font-semibold text-gray-900">{title}</h3>
             <p className="mt-2 text-sm text-gray-600">{message}</p>
+            {children}
           </div>
         </div>
         
@@ -89,6 +113,6 @@ export default function ConfirmModal({
           </button>
         </div>
       </div>
-    </div>
+    </ModalShell>
   )
 }

@@ -11,12 +11,12 @@ from typing import Any
 # Add shared module to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from shared.logging import logger, tracer, metrics
+from shared.logging import logger, tracer
 from shared.aws import get_dynamodb_resource
 from shared.api import create_api_resolver, api_handler
 from shared.exceptions import ConfigurationError, ServiceError
 
-from boto3.dynamodb.conditions import Key, Attr
+from boto3.dynamodb.conditions import Key
 
 dynamodb = get_dynamodb_resource()
 AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
@@ -151,10 +151,16 @@ def get_scraper_logs(scraper_id: str):
         
         logs = []
         for item in response.get('Items', []):
+            # Filter by lookback window — items older than `cutoff` are skipped.
+            # (`cutoff` was previously computed but never applied, making the
+            # `days` query param a no-op.) Runs missing `started_at` are kept.
+            started_at = item.get('started_at', '')
+            if started_at and started_at < cutoff:
+                continue
             logs.append({
                 'run_id': item.get('sk', ''),
                 'status': item.get('status'),
-                'started_at': item.get('started_at'),
+                'started_at': started_at,
                 'completed_at': item.get('completed_at'),
                 'pages_scraped': item.get('pages_scraped', 0),
                 'items_found': item.get('items_found', 0),

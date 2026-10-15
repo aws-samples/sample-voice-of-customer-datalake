@@ -4,11 +4,14 @@
  */
 
 import { X, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import type { ProjectPersona, ProjectDocument } from '../../api/client'
 import clsx from 'clsx'
 import type { ContextConfig } from './types'
 import { DataSourcesStep, FeedbackFiltersStep, ItemSelectionStep } from './DataSourceSteps'
+import type { ExtraDataSource } from './DataSourceSteps'
 import { useWizardState } from './useWizardState'
+import ModalShell from '../ModalShell'
 
 type AccentColor = 'purple' | 'amber' | 'blue' | 'green'
 
@@ -28,6 +31,8 @@ interface DataSourceWizardProps {
   readonly submitLabel: React.ReactNode
   readonly hideDataSources?: ReadonlyArray<'feedback' | 'personas' | 'documents' | 'research'>
   readonly combineDocuments?: boolean
+  /** Wizard-specific sources appended to the Data Sources step as peer cards. */
+  readonly extraDataSources?: ReadonlyArray<ExtraDataSource>
 }
 
 const colorClasses = {
@@ -53,6 +58,7 @@ export default function DataSourceWizard({
   submitLabel,
   hideDataSources = [],
   combineDocuments = false,
+  extraDataSources = [],
 }: DataSourceWizardProps) {
   const {
     step,
@@ -80,67 +86,71 @@ export default function DataSourceWizard({
   const colors = colorClasses[accentColor]
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 sm:p-6">
-      <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
-        <WizardHeader title={title} icon={icon} step={step} totalSteps={totalSteps} onClose={onClose} />
-        <ProgressBar step={step} totalSteps={totalSteps} bgClass={colors.bg} />
-        
-        <div className="p-4 sm:p-6 overflow-y-auto max-h-[60vh]">
-          {stepContent === 'dataSources' && (
-            <DataSourcesStep
-              contextConfig={contextConfig}
-              onContextChange={onContextChange}
-              showFeedback={showFeedback}
-              showPersonas={showPersonas}
-              showDocuments={showDocuments}
-              showResearch={showResearch}
-              combineDocuments={combineDocuments}
-              personasCount={personas.length}
-              documentsCount={documents.length}
-              otherDocsCount={otherDocs.length}
-              researchDocsCount={researchDocs.length}
-            />
-          )}
+    <ModalShell
+      isOpen
+      onClose={onClose}
+      ariaLabel={title}
+      panelClassName="max-w-2xl max-h-[90vh] overflow-hidden"
+    >
+      <WizardHeader title={title} icon={icon} step={step} totalSteps={totalSteps} onClose={onClose} />
+      <ProgressBar step={step} totalSteps={totalSteps} bgClass={colors.bg} />
 
-          {stepContent === 'feedbackFilters' && (
-            <FeedbackFiltersStep
-              contextConfig={contextConfig}
-              onContextChange={onContextChange}
-              sources={sources}
-              categories={categories}
-              loadingCategories={loadingCategories}
-              colors={colors}
-            />
-          )}
+      <div className="p-4 sm:p-6 overflow-y-auto max-h-[60vh]">
+        {stepContent === 'dataSources' && (
+          <DataSourcesStep
+            contextConfig={contextConfig}
+            onContextChange={onContextChange}
+            showFeedback={showFeedback}
+            showPersonas={showPersonas}
+            showDocuments={showDocuments}
+            showResearch={showResearch}
+            combineDocuments={combineDocuments}
+            personasCount={personas.length}
+            documentsCount={documents.length}
+            otherDocsCount={otherDocs.length}
+            researchDocsCount={researchDocs.length}
+            extraDataSources={extraDataSources}
+          />
+        )}
 
-          {stepContent === 'itemSelection' && (
-            <ItemSelectionStep
-              contextConfig={contextConfig}
-              onContextChange={onContextChange}
-              personas={personas}
-              documents={documents}
-              otherDocs={otherDocs}
-              researchDocs={researchDocs}
-              combineDocuments={combineDocuments}
-            />
-          )}
+        {stepContent === 'feedbackFilters' && (
+          <FeedbackFiltersStep
+            contextConfig={contextConfig}
+            onContextChange={onContextChange}
+            sources={sources}
+            categories={categories}
+            loadingCategories={loadingCategories}
+            colors={colors}
+          />
+        )}
 
-          {stepContent === 'final' && renderFinalStep()}
-        </div>
+        {stepContent === 'itemSelection' && (
+          <ItemSelectionStep
+            contextConfig={contextConfig}
+            onContextChange={onContextChange}
+            personas={personas}
+            documents={documents}
+            otherDocs={otherDocs}
+            researchDocs={researchDocs}
+            combineDocuments={combineDocuments}
+          />
+        )}
 
-        <WizardFooter
-          step={step}
-          totalSteps={totalSteps}
-          colors={colors}
-          finalStepValid={finalStepValid}
-          isSubmitting={isSubmitting}
-          submitLabel={submitLabel}
-          onBack={handleBack}
-          onNext={handleNext}
-          onSubmit={onSubmit}
-        />
+        {stepContent === 'final' && renderFinalStep()}
       </div>
-    </div>
+
+      <WizardFooter
+        step={step}
+        totalSteps={totalSteps}
+        colors={colors}
+        finalStepValid={finalStepValid}
+        isSubmitting={isSubmitting}
+        submitLabel={submitLabel}
+        onBack={handleBack}
+        onNext={handleNext}
+        onSubmit={onSubmit}
+      />
+    </ModalShell>
   )
 }
 
@@ -154,19 +164,22 @@ interface WizardHeaderProps {
 }
 
 function WizardHeader({ title, icon, step, totalSteps, onClose }: WizardHeaderProps) {
+  const { t } = useTranslation('components')
   return (
     <div className="flex items-center justify-between p-3 sm:p-4 border-b">
       <div className="flex items-center gap-2 sm:gap-3 min-w-0">
         <div className="flex-shrink-0">{icon}</div>
         <div className="min-w-0">
           <h2 className="text-base sm:text-lg font-semibold truncate">{title}</h2>
-          <p className="text-xs sm:text-sm text-gray-500">Step {step} of {totalSteps}</p>
+          <p className="text-xs sm:text-sm text-gray-500">
+            {t('components:dataSourceWizard.stepOf', { step, total: totalSteps })}
+          </p>
         </div>
       </div>
       <button 
         onClick={onClose} 
         className="p-2 hover:bg-gray-100 rounded-lg flex-shrink-0"
-        aria-label="Close wizard"
+        aria-label={t('components:dataSourceWizard.closeWizard')}
       >
         <X size={20} />
       </button>
@@ -213,6 +226,7 @@ function WizardFooter({
   onNext,
   onSubmit,
 }: WizardFooterProps) {
+  const { t } = useTranslation('components')
   return (
     <div className="flex justify-between p-3 sm:p-4 border-t bg-gray-50 gap-2">
       <button
@@ -221,7 +235,7 @@ function WizardFooter({
         className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 text-gray-600 hover:bg-gray-100 active:bg-gray-200 rounded-lg disabled:opacity-50 text-sm sm:text-base"
       >
         <ChevronLeft size={16} className="flex-shrink-0" />
-        <span className="hidden sm:inline">Back</span>
+        <span className="hidden sm:inline">{t('components:dataSourceWizard.back')}</span>
       </button>
       
       {step < totalSteps ? (
@@ -229,7 +243,7 @@ function WizardFooter({
           onClick={onNext}
           className={clsx('flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 text-white rounded-lg text-sm sm:text-base', colors.bg, colors.hover)}
         >
-          <span>Next</span>
+          <span>{t('components:dataSourceWizard.next')}</span>
           <ChevronRight size={16} className="flex-shrink-0" />
         </button>
       ) : (
@@ -241,7 +255,7 @@ function WizardFooter({
           {isSubmitting ? (
             <>
               <Loader2 size={16} className="animate-spin flex-shrink-0" />
-              <span className="truncate">Processing...</span>
+              <span className="truncate">{t('components:dataSourceWizard.processing')}</span>
             </>
           ) : (
             submitLabel

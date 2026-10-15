@@ -1,0 +1,250 @@
+{
+  "actions": {
+    "reset": "Redefinir",
+    "save": "Salvar Pontuações",
+    "saveMobile": "Salvar",
+    "saving": "Salvando...",
+    "savingMobile": "..."
+  },
+  "ballot": {
+    "anonymousNotice": "Seu voto é anônimo: ele conta para a pontuação da equipe deste documento, mas não é atribuído a você nem a mais ninguém.",
+    "axes": {
+      "confidence": "Confiança",
+      "confidenceHint": "Qual é a sua certeza sobre as duas estimativas acima?",
+      "impact": "Impacto",
+      "impactHint": "Valor de negócio e benefício para o cliente.",
+      "strategicFit": "Alinhamento Estratégico",
+      "strategicFitHint": "Alinhamento com os objetivos da empresa.",
+      "timeToMarket": "Tempo até o Mercado",
+      "timeToMarketHint": "Com que rapidez isso pode ser entregue? 5 é o mais rápido."
+    },
+    "closed": {
+      "capReached": "Esta votação já coletou todos os votos que aceita. Peça ao facilitador para abrir outra sessão.",
+      "closed": "O facilitador encerrou esta votação, portanto não são aceitos mais votos.",
+      "expired": "Esta votação expirou, portanto não são aceitos mais votos.",
+      "invalid": "Não foi possível ler este voto, portanto nada foi registrado. Verifique os números e a nota e envie novamente.",
+      "notFound": "Este link não abre nenhuma votação. Verifique se você escaneou o código que está na tela agora.",
+      "title": "Esta votação não está aberta",
+      "unknown": "Não foi possível registrar seu voto neste momento. Tente novamente em um instante."
+    },
+    "displayName": {
+      "hint": "Opcional. Os votos não são atribuídos a nenhuma pessoa, então você pode deixar em branco.",
+      "label": "Seu nome (opcional)"
+    },
+    "done": {
+      "description": "Seu voto conta para a pontuação da equipe deste documento. Você pode reabrir esta página no mesmo celular para alterá-lo enquanto a votação estiver aberta.",
+      "title": "Voto registrado"
+    },
+    "loading": "Carregando esta votação...",
+    "notes": {
+      "label": "Notas (opcional)",
+      "placeholder": "Aquilo que os números não dizem..."
+    },
+    "rejected": {
+      "title": "Seu voto não foi registrado"
+    },
+    "scopeNote": "Você está pontuando uma proposta completa: esta votação cobre o conjunto de documentos por trás dela, em uma única cédula.",
+    "submit": {
+      "label": "Enviar voto",
+      "pending": "Enviando..."
+    },
+    "title": "Pontue esta proposta",
+    "unavailable": {
+      "description": "Nada foi enviado. Recarregue a página para tentar novamente — a votação em si pode estar aberta.",
+      "title": "Não foi possível carregar esta votação"
+    }
+  },
+  "composition": {
+    "addRow": "Adicionar linha",
+    "addRowHint": "Escolha os documentos que a nova linha deve conter. Ela terá as suas próprias cédulas, então este projeto pode ser pontuado como mais de uma combinação.",
+    "cancel": "Cancelar",
+    "delete": {
+      "cancel": "Manter a linha",
+      "confirm": "Excluir linha e cédulas",
+      "message": "Isso exclui a linha e todas as cédulas registradas nela, inclusive as de outros revisores. A pontuação da equipe para esta combinação vai com ela, e isso não pode ser desfeito.",
+      "title": "Excluir esta linha e suas cédulas?"
+    },
+    "deleteAction": "Excluir linha",
+    "documentsLegend": "Documentos que esta linha contém",
+    "edit": "Editar documentos",
+    "editHint": "Escolha em quais documentos deste projeto esta linha é pontuada. Uma única cédula cobre todos eles.",
+    "locked": "Bloqueada desde a primeira cédula — adicione outra linha para pontuar uma combinação diferente.",
+    "onlyRow": "A única linha padrão de um projeto não pode ser excluída — adicione outra linha primeiro e depois exclua esta.",
+    "requiresOne": "Escolha pelo menos um documento, para que a linha tenha algo a pontuar.",
+    "save": "Salvar documentos",
+    "saveNewRow": "Adicionar a linha",
+    "saving": "Salvando...",
+    "title": "O que esta linha contém"
+  },
+  "configureApiEndpoint": "Configure o endpoint da API em Configurações para visualizar a priorização.",
+  "docType": {
+    "prd": "PRD",
+    "prfaq": "PR/FAQ"
+  },
+  "empty": {
+    "description": "Crie um PRD ou PR/FAQ em seus projetos para começar a priorizar.",
+    "title": "Nenhum Documento Encontrado",
+    "wrongTypeDescription": "Seus projetos têm documentos, mas nenhum é PRD nem PR/FAQ. Abra um projeto e gere um PRD ou PR/FAQ para pontuá-lo aqui.",
+    "wrongTypeTitle": "Nenhum Documento Pontuável"
+  },
+  "evidence": {
+    "avgRating": "Avaliação Média",
+    "noLinkedForm": "Nenhum formulário de feedback está vinculado a este documento.",
+    "noRatings": "Nenhuma avaliação coletada",
+    "submissions": "Respostas",
+    "title": "Feedback Coletado",
+    "unavailable": "Avaliações indisponíveis"
+  },
+  "framework": {
+    "description": "Pontue cada documento em: <strong>Impacto</strong>, <strong>Tempo para o Mercado</strong>, <strong>Alinhamento Estratégico</strong> e <strong>Confiança</strong>.",
+    "title": "Framework de Priorização"
+  },
+  "lineage": {
+    "absent": "Sem linhagem",
+    "absentReason": "Nenhum destes documentos registra a partir de que foi criado — a resposta habitual para um documento escrito à mão ou criado antes de a linhagem ser registrada. A linha continua pontuável; apenas não há nada com que verificar a combinação.",
+    "coherent": "Uma geração",
+    "coherentReason": "Nada nesta linha cruza gerações: não há dois documentos que sejam versões do mesmo tipo, e nada do que está registrado aqui aponta para outra geração de outro documento desta linha. Uma cédula cobre uma geração da ideia.",
+    "crossGeneration": "Cruza gerações",
+    "repeatedTypeReason": "Esta linha contém mais de uma versão do mesmo tipo de documento, então uma cédula cobre duas gerações ao mesmo tempo. Ela continua pontuável — adicione uma linha se quiser pontuar uma única geração.",
+    "stale": "Superada",
+    "staleAction": "Esta linha está bloqueada, portanto seus documentos e suas cédulas permanecem como estão. Use “{{action}}” para pontuar a combinação mais recente.",
+    "staleReason": "Existe uma versão mais recente de pelo menos um tipo de documento desta linha. Os documentos mais recentes de cada tipo que a linha contém formam uma combinação na qual nenhum foi criado diretamente a partir de uma versão anterior de outro documento dessa combinação, e nenhum documento da linha é mais recente que essa combinação.",
+    "supersededSourceReason": "Um destes documentos foi criado a partir de outra geração de outro documento desta linha, então a combinação cruza gerações. Ela continua pontuável."
+  },
+  "loading": "Carregando documentos...",
+  "noteTooLong": {
+    "description": "As notas são limitadas a {{max}} caracteres, e uma nota mais longa é recusada em vez de encurtada. Reduza a nota da linha que você editou e salve novamente. Nada foi salvo ainda.",
+    "title": "Uma nota é longa demais para salvar"
+  },
+  "notes": {
+    "label": "Notas",
+    "placeholder": "Adicione notas sobre esta decisão de priorização..."
+  },
+  "preview": {
+    "enlarge": "Ampliar",
+    "prototypeTitle": "Protótipo",
+    "title": "Visualização do Documento",
+    "viewFull": "Visualizar Documento Completo",
+    "viewMobile": "Visualizar"
+  },
+  "priority": {
+    "high": "Alta Prioridade",
+    "low": "Baixa Prioridade",
+    "medium": "Média Prioridade",
+    "none": "Não Pontuado"
+  },
+  "roomVote": {
+    "anonymousNote": "Os votos registrados aqui contam para a pontuação da equipe acima e não são atribuídos a nenhuma pessoa.",
+    "ballotsIn": "{{received}} de {{cap}} votos recebidos",
+    "close": "Encerrar a votação",
+    "closeFailed": "Não foi possível encerrar a votação. Tente novamente — até que ela seja encerrada, os votos continuam sendo aceitos.",
+    "closed": "Esta votação está encerrada. Não são aceitos mais votos.",
+    "closing": "Encerrando...",
+    "description": "Coloque um código QR na tela e deixe que todos na sala enviem um voto anônimo pelo celular, sem conta.",
+    "expired": "Esta votação expirou. Não são aceitos mais votos.",
+    "open": "Abrir uma votação de sala",
+    "openAnother": "Abrir outra votação",
+    "openFailed": "Não foi possível abrir a votação. Tente novamente.",
+    "opening": "Abrindo...",
+    "qrAccessibleName": "Código QR que abre a página de voto anônimo de {{title}}",
+    "qrCaption": "Escaneie para pontuar esta proposta pelo celular",
+    "qrUnavailable": "O código QR está indisponível porque o endereço desta página não pode ser compartilhado.",
+    "scopeDocuments": "Uma cédula cobre todos os {{documents}} documentos por trás dela, então a sala pontua a proposta completa.",
+    "scopeNote": "Esta votação pontua uma proposta: {{title}}.",
+    "title": "Pontuar em sala"
+  },
+  "row": {
+    "multiDocument": "{{documents}} documentos, uma cédula"
+  },
+  "rowAction": {
+    "composeConflict": "A linha não foi adicionada ao projeto de {{row}}. Ou o projeto já tem todas as linhas que pode ter, ou seus documentos mudaram. Recarregue a página para ver as linhas atuais.",
+    "composeFailed": "A linha não foi adicionada. Nada foi criado, então você pode tentar de novo.",
+    "composeRefused": "A linha não foi adicionada, e a solicitação foi recusada em vez de falhar: verifique o que você escolheu — uma linha só pode conter um número limitado de documentos, e todos precisam continuar no projeto.",
+    "deleteConflict": "\"{{row}}\" não foi excluída: ela mudou enquanto estava sendo removida, ou é a única linha de um projeto e não pode ser excluída. Recarregue a página para ver as linhas atuais.",
+    "deleteFailed": "\"{{row}}\" não foi excluída. A linha e suas cédulas estão inalteradas, então você pode tentar de novo.",
+    "deleteRefused": "\"{{row}}\" não foi excluída, e a solicitação foi recusada em vez de falhar: a linha pode já não existir, ou excluir uma linha junto com suas cédulas pode não ser algo que cabe a você. Tentar de novo dará a mesma resposta.",
+    "dismiss": "Dispensar esta mensagem",
+    "recomposeConflict": "Os documentos de \"{{row}}\" não foram alterados: uma cédula já foi registrada, então a composição está bloqueada. Adicione outra linha para pontuar uma combinação diferente.",
+    "recomposeFailed": "Os documentos de \"{{row}}\" não foram alterados. Nada foi salvo, então você pode tentar de novo.",
+    "recomposeRefused": "Os documentos de \"{{row}}\" não foram alterados, e a solicitação foi recusada em vez de falhar: verifique o que você escolheu — uma linha só pode conter um número limitado de documentos, e todos precisam continuar no projeto.",
+    "title": "Essa alteração nas linhas não foi salva"
+  },
+  "rowCount_one": "{{count}} proposta",
+  "rowCount_other": "{{count}} propostas",
+  "rowDeleted": {
+    "descriptionNoCount": "\"{{row}}\" não existe mais, junto com quaisquer cédulas registradas nela. Nenhuma contagem de cédulas foi informada.",
+    "description_one": "\"{{row}}\" não existe mais, e a única cédula registrada nela foi excluída com ela.",
+    "description_other": "\"{{row}}\" não existe mais, e as {{count}} cédulas registradas nela foram excluídas com ela.",
+    "dismiss": "Dispensar esta mensagem",
+    "title": "A linha foi excluída"
+  },
+  "rowUnavailable": {
+    "description": "Estes projetos têm mais documentos do que uma linha de priorização consegue compor, então eles estão ausentes da lista abaixo em vez de não pontuados. Remover documentos de que o projeto não precisa mais o traz de volta.",
+    "title": "Alguns projetos não puderam receber uma linha"
+  },
+  "scores": {
+    "confidence": "Confiança",
+    "confidenceDescription": "Certeza nas estimativas de impacto e TTM",
+    "fast": "Rápido",
+    "high": "Alto",
+    "impact": "Impacto",
+    "impactDescription": "Valor comercial e benefício ao cliente",
+    "low": "Baixo",
+    "notScored": "Sem pontuação",
+    "slow": "Lento",
+    "strategicFit": "Alinhamento Estratégico",
+    "strategicFitDescription": "Alinhamento com objetivos da empresa",
+    "timeToMarket": "Tempo para o Mercado",
+    "timeToMarketDescription": "Com que rapidez isso pode ser entregue?",
+    "title": "Pontuações de Priorização",
+    "wholeRow": "Uma única cédula para os {{documents}} documentos desta linha.",
+    "yoursOnly": "Sua própria pontuação. Ao salvar, apenas os seus valores são gravados."
+  },
+  "scoresUnavailable": {
+    "description": "Suas pontuações salvas estão indisponíveis neste momento, portanto os números abaixo são valores padrão e não o que alguém inseriu. Recarregue a página antes de salvar.",
+    "staleDescription": "A última atualização das pontuações salvas falhou, portanto os números exibidos são os últimos lidos com sucesso. A sua própria avaliação não foi afetada — não é necessário recarregar antes de salvar.",
+    "title": "Não foi possível carregar as pontuações"
+  },
+  "sort": {
+    "date": "Data",
+    "dateFull": "Data de Criação",
+    "impact": "Impacto",
+    "label": "Ordenar por:",
+    "priority": "Prioridade",
+    "priorityFull": "Pontuação de Prioridade",
+    "teamOrdered": "{{fields}} ordenam pelos números da equipe, os que cada linha mostra — não pela sua própria pontuação.",
+    "ttm": "TTM",
+    "ttmFull": "Tempo para o Mercado"
+  },
+  "stats": {
+    "highPriority": "Alta Prioridade",
+    "mediumPriority": "Média Prioridade",
+    "notScored": "Não Pontuado",
+    "totalRows": "Total de propostas",
+    "unreadable_one": "A pontuação da equipe de {{count}} proposta não pôde ser lida, portanto ela conta apenas no total e em nenhuma das outras contagens. Recarregue a página para vê-la.",
+    "unreadable_other": "As pontuações da equipe de {{count}} propostas não puderam ser lidas, portanto elas contam apenas no total e em nenhuma das outras contagens. Recarregue a página para vê-las."
+  },
+  "subtitle": "Pontue e priorize PRDs e PR/FAQs em todos os projetos",
+  "team": {
+    "disagreement": "Dispersão {{spread}}",
+    "disagreementDescription": "Os revisores divergem em {{spread}} nesta pontuação. As notas deles explicam por quê — esta página mostra apenas a sua própria nota.",
+    "loading": "Carregando pontuação da equipe",
+    "loadingDescription": "As pontuações da equipe ainda estão carregando, portanto esta linha ainda não mostra se alguém votou. Ela será preenchida sozinha.",
+    "noScores": "Ainda não pontuado",
+    "noScoresDescription": "Nenhum revisor pontuou isto ainda, portanto não está mal avaliado, e sim sem avaliação. Os controles abaixo registram o primeiro voto.",
+    "reviewers": "Revisores",
+    "score": "Pontuação da equipe",
+    "summary": "Média da equipe {{score}} de 5 · Votos de revisores: {{reviewers}}",
+    "title": "O que a equipe disse",
+    "unattributedNote": "Alguns votos podem ser votos anônimos de sala, que contam como um revisor cada e não são atribuídos a nenhuma pessoa.",
+    "unavailable": "Pontuação da equipe indisponível",
+    "unavailableDescription": "As pontuações da equipe não puderam ser lidas agora, portanto esta linha não mostra nada sobre elas — não que ninguém tenha votado. Recarregue a página para ver o que a equipe disse."
+  },
+  "title": "Priorização",
+  "unsavedChanges": {
+    "cancel": "Permanecer na Página",
+    "confirm": "Descartar Alterações",
+    "message": "Você tem pontuações de priorização não salvas. Deseja descartar suas alterações e sair desta página?",
+    "title": "Alterações Não Salvas"
+  }
+}

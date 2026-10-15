@@ -12,8 +12,10 @@ from typing import Any
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer, metrics
-from shared.aws import get_dynamodb_resource, get_bedrock_client, BEDROCK_MODEL_ID
+from shared.aws import get_dynamodb_resource, get_bedrock_client
 from shared.exceptions import ValidationError
+from shared.model_config import get_active_model_id, uses_adaptive_thinking
+from shared.converse import bedrock_call_with_retry
 
 dynamodb = get_dynamodb_resource()
 bedrock = get_bedrock_client()
@@ -121,27 +123,48 @@ def process_job(job_id: str) -> None:
             raw_text=raw_text
         )
         
-        # Call Bedrock with extended thinking
-        # Note: temperature must be 1 when extended thinking is enabled
+        # Call Bedrock with extended thinking. Parsing pasted reviews is a
+        # utility workload, so it follows the utility-surface model pick.
+        #
+        # Capability-aware body: adaptive-thinking models (Sonnet 5, Opus 5)
+        # reject an explicit `thinking` budget, and temperature is omitted
+        # everywhere — it defaults to 1, which is also the only accepted value
+        # with thinking enabled, while temperature-restricted models (Sonnet 5,
+        # Opus 5) reject the parameter outright when sent explicitly.
+        #
+        # This raw invoke_model path bypasses converse() and has NO
+        # auto-continuation, so the strict-JSON doctrine (shared/converse.py)
+        # applies in its single-call form: max_tokens=16000 must fit the whole
+        # JSON answer in one call; a truncated response falls through
+        # parse_llm_response() into unparsed_sections rather than corrupting.
+        model_id = get_active_model_id('utility')
         request_body = {
             "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": 16000,
-            "temperature": 1,
-            "thinking": {
-                "type": "enabled",
-                "budget_tokens": 5000
-            },
             "system": PARSE_SYSTEM_PROMPT,
             "messages": [{"role": "user", "content": user_prompt}]
         }
+        if not uses_adaptive_thinking(model_id):
+            request_body["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": 5000
+            }
         
-        logger.info(f"Invoking Bedrock for job {job_id}")
+        logger.info(f"Invoking Bedrock for job {job_id} with model {model_id}")
         
-        bedrock_response = bedrock.invoke_model(
-            modelId=BEDROCK_MODEL_ID,
-            body=json.dumps(request_body),
-            contentType="application/json",
-            accept="application/json"
+        # Through the shared retry policy: this raw invoke_model path does not go
+        # through converse(), and the shared client makes one botocore attempt by
+        # design (see BEDROCK_READ_TIMEOUT_SECONDS), so without this a single
+        # throttle would fail the whole import job.
+        bedrock_response = bedrock_call_with_retry(
+            lambda: bedrock.invoke_model(
+                modelId=model_id,
+                body=json.dumps(request_body),
+                contentType="application/json",
+                accept="application/json"
+            ),
+            step_name=f'manual_import_parse_{job_id}',
+            call_label='client.invoke_model()',
         )
         
         response_body = json.loads(bedrock_response['body'].read())

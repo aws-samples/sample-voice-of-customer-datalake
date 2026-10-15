@@ -1,0 +1,68 @@
+{
+  "categories": {
+    "errorLoading": "Error al cargar categorías",
+    "noCategories": "Sin categorías",
+    "summary": "{{count}} categorías • {{total}} elementos • Últimos {{days}} días",
+    "summary_one": "{{count}} categorías • {{total}} elementos • Últimos {{days}} días",
+    "summary_many": "{{count}} categorías • {{total}} elementos • Últimos {{days}} días",
+    "summary_other": "{{count}} categorías • {{total}} elementos • Últimos {{days}} días"
+  },
+  "deleteConfirm": {
+    "deleteFeedback": "Eliminar Comentario",
+    "deleteS3File": "Eliminar Archivo S3",
+    "message": "¿Estás seguro? Esto no se puede deshacer."
+  },
+  "description": "Explora, edita y sincroniza datos S3 sin procesar y registros DynamoDB procesados",
+  "editModal": {
+    "cancel": "Cancelar",
+    "close": "Cerrar",
+    "create": "Crear",
+    "createNewFile": "Crear Nuevo Archivo",
+    "editFeedback": "Editar Comentario",
+    "editS3File": "Editar Archivo S3",
+    "id": "ID",
+    "invalidJson": "JSON inválido: {{error}}",
+    "key": "Clave",
+    "save": "Guardar",
+    "syncToDynamo": "También actualizar DynamoDB",
+    "syncToS3": "También actualizar S3",
+    "type": "Tipo",
+    "viewFeedback": "Ver Comentario",
+    "viewS3File": "Ver Archivo S3"
+  },
+  "feedback": {
+    "category": "Categoría: {{category}}",
+    "delete": "Eliminar",
+    "edit": "Editar",
+    "errorLoading": "Error al cargar comentarios",
+    "noFeedback": "No se encontraron comentarios",
+    "showingRecords": "Mostrando {{filtered}} de {{total}} registros",
+    "urgent": "Urgente",
+    "view": "Ver"
+  },
+  "filters": {
+    "allSources": "Todas las Fuentes",
+    "searchPlaceholder": "Buscar..."
+  },
+  "newFile": "Nuevo Archivo",
+  "notConfigured": "Configura el endpoint de API en Configuración para explorar datos",
+  "refresh": "Actualizar",
+  "s3Browser": {
+    "back": "Atrás",
+    "delete": "Eliminar",
+    "download": "Descargar",
+    "edit": "Editar",
+    "errorLoading": "Error al cargar archivos",
+    "noFiles": "No se encontraron archivos",
+    "view": "Ver"
+  },
+  "tabs": {
+    "categories": "Categorías",
+    "categoriesShort": "Categorías",
+    "feedbackShort": "Comentarios",
+    "processedFeedback": "Comentarios Procesados",
+    "s3RawData": "Datos S3 Sin Procesar",
+    "s3Short": "S3"
+  },
+  "title": "Explorador de Datos"
+}

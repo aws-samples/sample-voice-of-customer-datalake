@@ -1,0 +1,250 @@
+{
+  "actions": {
+    "reset": "Restablecer",
+    "save": "Guardar puntuaciones",
+    "saveMobile": "Guardar",
+    "saving": "Guardando...",
+    "savingMobile": "..."
+  },
+  "ballot": {
+    "anonymousNotice": "Tu voto es anónimo: cuenta para la puntuación del equipo de este documento, pero no se atribuye a ti ni a nadie más.",
+    "axes": {
+      "confidence": "Confianza",
+      "confidenceHint": "¿Qué seguridad tienes en las dos estimaciones anteriores?",
+      "impact": "Impacto",
+      "impactHint": "Valor de negocio y beneficio para el cliente.",
+      "strategicFit": "Encaje Estratégico",
+      "strategicFitHint": "Alineación con los objetivos de la empresa.",
+      "timeToMarket": "Tiempo de Lanzamiento",
+      "timeToMarketHint": "¿Con qué rapidez se puede entregar? 5 es lo más rápido."
+    },
+    "closed": {
+      "capReached": "Esta votación ya ha recogido todos los votos que acepta. Pide al facilitador que abra otra sesión.",
+      "closed": "El facilitador ha cerrado esta votación, por lo que no se aceptan más votos.",
+      "expired": "Esta votación ha caducado, por lo que no se aceptan más votos.",
+      "invalid": "No se ha podido leer este voto, por lo que no se ha registrado nada. Revisa los números y la nota, y envíalo de nuevo.",
+      "notFound": "Este enlace no abre ninguna votación. Comprueba que has escaneado el código que está en pantalla ahora.",
+      "title": "Esta votación no está abierta",
+      "unknown": "No se ha podido registrar tu voto en este momento. Inténtalo de nuevo en un instante."
+    },
+    "displayName": {
+      "hint": "Opcional. Los votos no se atribuyen a ninguna persona, así que puedes dejarlo en blanco.",
+      "label": "Tu nombre (opcional)"
+    },
+    "done": {
+      "description": "Tu voto cuenta para la puntuación del equipo de este documento. Puedes volver a abrir esta página desde el mismo teléfono para cambiarlo mientras la votación esté abierta.",
+      "title": "Voto registrado"
+    },
+    "loading": "Cargando esta votación...",
+    "notes": {
+      "label": "Notas (opcional)",
+      "placeholder": "Lo que los números no dicen..."
+    },
+    "rejected": {
+      "title": "Tu voto no se ha registrado"
+    },
+    "scopeNote": "Estás puntuando una propuesta completa: este voto cubre el conjunto de documentos que hay detrás, en una sola papeleta.",
+    "submit": {
+      "label": "Enviar voto",
+      "pending": "Enviando..."
+    },
+    "title": "Puntúa esta propuesta",
+    "unavailable": {
+      "description": "No se ha enviado nada. Vuelve a cargar la página para intentarlo de nuevo; la votación en sí puede estar abierta.",
+      "title": "No se ha podido cargar esta votación"
+    }
+  },
+  "composition": {
+    "addRow": "Añadir fila",
+    "addRowHint": "Elija los documentos que debe contener la nueva fila. Tendrá sus propias papeletas, así que este proyecto puede puntuarse como más de una combinación.",
+    "cancel": "Cancelar",
+    "delete": {
+      "cancel": "Conservar la fila",
+      "confirm": "Eliminar fila y papeletas",
+      "message": "Esto elimina la fila y todas las papeletas emitidas sobre ella, incluidas las de otros revisores. La puntuación del equipo para esta combinación desaparece con ella y no se puede deshacer.",
+      "title": "¿Eliminar esta fila y sus papeletas?"
+    },
+    "deleteAction": "Eliminar fila",
+    "documentsLegend": "Documentos que contiene esta fila",
+    "edit": "Editar documentos",
+    "editHint": "Elija sobre qué documentos de este proyecto se puntúa esta fila. Una sola papeleta cubre todos ellos.",
+    "locked": "Bloqueada desde la primera papeleta: añada otra fila para puntuar una combinación distinta.",
+    "onlyRow": "La única fila predeterminada de un proyecto no puede eliminarse: añada otra fila primero y luego elimine esta.",
+    "requiresOne": "Elija al menos un documento, para que la fila tenga algo que puntuar.",
+    "save": "Guardar documentos",
+    "saveNewRow": "Añadir la fila",
+    "saving": "Guardando...",
+    "title": "Qué contiene esta fila"
+  },
+  "configureApiEndpoint": "Configure el endpoint de la API en Configuración para ver la priorización.",
+  "docType": {
+    "prd": "PRD",
+    "prfaq": "PR/FAQ"
+  },
+  "empty": {
+    "description": "Cree un PRD o PR/FAQ en sus proyectos para comenzar a priorizar.",
+    "title": "No se encontraron documentos",
+    "wrongTypeDescription": "Sus proyectos tienen documentos, pero ninguno es PRD ni PR/FAQ. Abra un proyecto y genere un PRD o PR/FAQ para puntuarlo aquí.",
+    "wrongTypeTitle": "No hay documentos puntuables"
+  },
+  "evidence": {
+    "avgRating": "Valoración media",
+    "noLinkedForm": "Ningún formulario de comentarios está vinculado a este documento.",
+    "noRatings": "Sin valoraciones recopiladas",
+    "submissions": "Respuestas",
+    "title": "Comentarios recopilados",
+    "unavailable": "Valoraciones no disponibles"
+  },
+  "framework": {
+    "description": "Puntúe cada documento en: <strong>Impacto</strong>, <strong>Tiempo de comercialización</strong>, <strong>Ajuste estratégico</strong> y <strong>Confianza</strong>.",
+    "title": "Marco de priorización"
+  },
+  "lineage": {
+    "absent": "Sin linaje",
+    "absentReason": "Ninguno de estos documentos registra a partir de qué se creó — la respuesta habitual para un documento escrito a mano o creado antes de que se registrara el linaje. La fila se puede puntuar igualmente; simplemente no hay nada con lo que comprobar la combinación.",
+    "coherent": "Una generación",
+    "coherentReason": "Nada en esta fila cruza generaciones: no hay dos documentos que sean versiones del mismo tipo, y nada de lo registrado aquí apunta a otra generación de otro documento de esta fila. Una papeleta cubre una generación de la idea.",
+    "crossGeneration": "Cruza generaciones",
+    "repeatedTypeReason": "Esta fila contiene más de una versión del mismo tipo de documento, así que una papeleta cubre dos generaciones a la vez. Se puede puntuar igualmente: añada una fila si quiere una sola generación por separado.",
+    "stale": "Superada",
+    "staleAction": "Esta fila está bloqueada, por lo que sus documentos y sus papeletas quedan tal como están. Use «{{action}}» para puntuar la combinación más reciente.",
+    "staleReason": "Existe una versión más reciente de al menos un tipo de documento de esta fila. Los documentos más recientes de cada tipo que la fila contiene forman una combinación en la que ninguno se creó directamente a partir de una versión anterior de otro documento de esa combinación, y ningún documento de la fila es más reciente que esa combinación.",
+    "supersededSourceReason": "Uno de estos documentos se creó a partir de otra generación de otro documento de esta fila, así que la combinación cruza generaciones. Se puede puntuar igualmente."
+  },
+  "loading": "Cargando documentos...",
+  "noteTooLong": {
+    "description": "Las notas están limitadas a {{max}} caracteres, y una nota más larga se rechaza en lugar de recortarse. Acorte la nota de la fila que editó y vuelva a guardar. Todavía no se ha guardado nada.",
+    "title": "Una nota es demasiado larga para guardarla"
+  },
+  "notes": {
+    "label": "Notas",
+    "placeholder": "Agregar notas sobre esta decisión de priorización..."
+  },
+  "preview": {
+    "enlarge": "Ampliar",
+    "prototypeTitle": "Prototipo",
+    "title": "Vista previa del documento",
+    "viewFull": "Ver documento completo",
+    "viewMobile": "Ver"
+  },
+  "priority": {
+    "high": "Alta prioridad",
+    "low": "Baja prioridad",
+    "medium": "Prioridad media",
+    "none": "Sin puntuar"
+  },
+  "roomVote": {
+    "anonymousNote": "Los votos emitidos aquí cuentan para la puntuación del equipo de arriba y no se atribuyen a ninguna persona.",
+    "ballotsIn": "{{received}} de {{cap}} votos recibidos",
+    "close": "Cerrar la votación",
+    "closeFailed": "No se ha podido cerrar la votación. Inténtalo de nuevo: hasta que se cierre, se siguen aceptando votos.",
+    "closed": "Esta votación está cerrada. No se aceptan más votos.",
+    "closing": "Cerrando...",
+    "description": "Pon un código QR en pantalla y deja que todos los presentes envíen un voto anónimo desde su teléfono, sin cuenta.",
+    "expired": "Esta votación ha caducado. No se aceptan más votos.",
+    "open": "Abrir una votación en sala",
+    "openAnother": "Abrir otra votación",
+    "openFailed": "No se ha podido abrir la votación. Inténtalo de nuevo.",
+    "opening": "Abriendo...",
+    "qrAccessibleName": "Código QR que abre la página de voto anónimo de {{title}}",
+    "qrCaption": "Escanea para puntuar esta propuesta desde un teléfono",
+    "qrUnavailable": "El código QR no está disponible porque la dirección de esta página no se puede compartir.",
+    "scopeDocuments": "Una papeleta cubre los {{documents}} documentos que hay detrás, así que la sala puntúa la propuesta completa.",
+    "scopeNote": "Esta votación puntúa una propuesta: {{title}}.",
+    "title": "Puntuar en sala"
+  },
+  "row": {
+    "multiDocument": "{{documents}} documentos, una papeleta"
+  },
+  "rowAction": {
+    "composeConflict": "No se ha añadido la fila al proyecto de {{row}}. O el proyecto ya tiene todas las filas que puede tener, o sus documentos han cambiado. Vuelva a cargar la página para ver las filas actuales.",
+    "composeFailed": "No se ha añadido la fila. No se ha creado nada, así que puede volver a intentarlo.",
+    "composeRefused": "No se ha añadido la fila, y la solicitud se ha rechazado en lugar de fallar: revise lo que ha elegido — una fila solo puede contener un número limitado de documentos, y todos deben seguir estando en el proyecto.",
+    "deleteConflict": "«{{row}}» no se ha eliminado: cambió mientras se estaba borrando, o es la única fila de un proyecto y no puede eliminarse. Vuelva a cargar la página para ver las filas actuales.",
+    "deleteFailed": "«{{row}}» no se ha eliminado. La fila y sus papeletas no han cambiado, así que puede volver a intentarlo.",
+    "deleteRefused": "No se ha eliminado «{{row}}», y la solicitud se ha rechazado en lugar de fallar: puede que la fila ya no exista, o que eliminar una fila junto con sus papeletas no sea algo que le corresponda hacer. Volver a intentarlo dará la misma respuesta.",
+    "dismiss": "Descartar este mensaje",
+    "recomposeConflict": "Los documentos de «{{row}}» no se han cambiado: ya se ha emitido una papeleta, por lo que su composición está bloqueada. Añada otra fila para puntuar una combinación distinta.",
+    "recomposeFailed": "Los documentos de «{{row}}» no se han cambiado. No se ha guardado nada, así que puede volver a intentarlo.",
+    "recomposeRefused": "Los documentos de «{{row}}» no se han cambiado, y la solicitud se ha rechazado en lugar de fallar: revise lo que ha elegido — una fila solo puede contener un número limitado de documentos, y todos deben seguir estando en el proyecto.",
+    "title": "Ese cambio en las filas no se ha guardado"
+  },
+  "rowCount_one": "{{count}} propuesta",
+  "rowCount_other": "{{count}} propuestas",
+  "rowDeleted": {
+    "descriptionNoCount": "«{{row}}» ya no existe, junto con las papeletas que se hubieran emitido. No se ha informado del número de papeletas.",
+    "description_one": "«{{row}}» ya no existe, y con ella se ha eliminado la única papeleta emitida.",
+    "description_other": "«{{row}}» ya no existe, y con ella se han eliminado las {{count}} papeletas emitidas.",
+    "dismiss": "Descartar este mensaje",
+    "title": "La fila se ha eliminado"
+  },
+  "rowUnavailable": {
+    "description": "Estos proyectos tienen más documentos de los que puede componer una fila de priorización, así que faltan en la lista de abajo en lugar de estar sin puntuar. Eliminar los documentos que un proyecto ya no necesita lo devuelve a la lista.",
+    "title": "Algunos proyectos no han podido recibir una fila"
+  },
+  "scores": {
+    "confidence": "Confianza",
+    "confidenceDescription": "Certeza en las estimaciones de impacto y TdC",
+    "fast": "Rápido",
+    "high": "Alto",
+    "impact": "Impacto",
+    "impactDescription": "Valor comercial y beneficio para el cliente",
+    "low": "Bajo",
+    "notScored": "Sin puntuar",
+    "slow": "Lento",
+    "strategicFit": "Ajuste estratégico",
+    "strategicFitDescription": "Alineación con los objetivos de la empresa",
+    "timeToMarket": "Tiempo de comercialización",
+    "timeToMarketDescription": "¿Qué tan rápido se puede entregar?",
+    "title": "Puntuaciones de priorización",
+    "wholeRow": "Una sola papeleta para los {{documents}} documentos de esta fila.",
+    "yoursOnly": "Tu propia puntuación. Al guardar solo se escriben tus valores."
+  },
+  "scoresUnavailable": {
+    "description": "Sus puntuaciones guardadas no están disponibles en este momento, por lo que los números que se muestran a continuación son valores predeterminados y no los que alguien introdujo. Vuelva a cargar la página antes de guardar.",
+    "staleDescription": "La última actualización de las puntuaciones guardadas falló, por lo que las cifras que se muestran son las últimas que se leyeron correctamente. Su propia valoración no se ha visto afectada: no hace falta recargar antes de guardar.",
+    "title": "No se pudieron cargar las puntuaciones"
+  },
+  "sort": {
+    "date": "Fecha",
+    "dateFull": "Fecha de creación",
+    "impact": "Impacto",
+    "label": "Ordenar por:",
+    "priority": "Prioridad",
+    "priorityFull": "Puntuación de prioridad",
+    "teamOrdered": "{{fields}} ordenan según los números del equipo, los que muestra cada fila, no según tu propia puntuación.",
+    "ttm": "TdC",
+    "ttmFull": "Tiempo de comercialización"
+  },
+  "stats": {
+    "highPriority": "Alta prioridad",
+    "mediumPriority": "Prioridad media",
+    "notScored": "Sin puntuar",
+    "totalRows": "Propuestas totales",
+    "unreadable_one": "No se ha podido leer la puntuación del equipo de {{count}} propuesta, así que solo cuenta en el total y en ninguno de los demás recuentos. Vuelve a cargar la página para verla.",
+    "unreadable_other": "No se han podido leer las puntuaciones del equipo de {{count}} propuestas, así que solo cuentan en el total y en ninguno de los demás recuentos. Vuelve a cargar la página para verlas."
+  },
+  "subtitle": "Puntuar y priorizar PRD y PR/FAQs en todos los proyectos",
+  "team": {
+    "disagreement": "Dispersión {{spread}}",
+    "disagreementDescription": "Los revisores difieren en {{spread}} sobre esta puntuación. Sus notas explican por qué; esta página solo muestra tu propia nota.",
+    "loading": "Cargando puntuación del equipo",
+    "loadingDescription": "Las puntuaciones del equipo aún se están cargando, así que esta fila todavía no indica si alguien ha votado. Se completará por sí sola.",
+    "noScores": "Aún sin puntuar",
+    "noScoresDescription": "Ningún revisor lo ha puntuado todavía, así que no está mal valorado sino sin valorar. Con los controles de abajo emites el primer voto.",
+    "reviewers": "Revisores",
+    "score": "Puntuación del equipo",
+    "summary": "Media del equipo {{score}} de 5 · Votos de revisores: {{reviewers}}",
+    "title": "Lo que dijo el equipo",
+    "unattributedNote": "Algunos votos pueden ser votos anónimos de sala, que cuentan como un revisor cada uno y no se atribuyen a ninguna persona.",
+    "unavailable": "Puntuación del equipo no disponible",
+    "unavailableDescription": "Las puntuaciones del equipo no se han podido leer ahora mismo, así que esta fila no muestra nada sobre ellas; no significa que nadie haya votado. Vuelve a cargar la página para ver lo que dijo el equipo."
+  },
+  "title": "Priorización",
+  "unsavedChanges": {
+    "cancel": "Permanecer en la página",
+    "confirm": "Descartar cambios",
+    "message": "Tiene puntuaciones de priorización sin guardar. ¿Desea descartar los cambios y abandonar esta página?",
+    "title": "Cambios sin guardar"
+  }
+}

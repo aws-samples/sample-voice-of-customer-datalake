@@ -10,11 +10,17 @@
  * @module pages/Login
  */
 
-import { useState } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { type CognitoUser } from 'amazon-cognito-identity-js'
 import { MessageSquare } from 'lucide-react'
+import {
+  useState, type SyntheticEvent,
+} from 'react'
+import { useTranslation } from 'react-i18next'
+import {
+  useNavigate, useLocation,
+} from 'react-router-dom'
 import { authService } from '../../services/auth'
-import { CognitoUser } from 'amazon-cognito-identity-js'
+import { isSessionExpiredRedirect } from '../../services/sessionExpiry'
 import {
   LoginForm,
   NewPasswordForm,
@@ -35,7 +41,7 @@ function isCognitoError(err: unknown): err is CognitoError {
 }
 
 function getFromPath(state: unknown): string {
-  if (state && typeof state === 'object' && 'from' in state) {
+  if (state != null && typeof state === 'object' && 'from' in state) {
     const fromValue = state.from
     if (typeof fromValue === 'string') return fromValue
   }
@@ -43,7 +49,7 @@ function getFromPath(state: unknown): string {
 }
 
 function extractErrorMessage(err: unknown, fallback: string): string {
-  if (isCognitoError(err) && err.message) {
+  if (isCognitoError(err) && err.message != null && err.message !== '') {
     return err.message
   }
   return fallback
@@ -68,10 +74,10 @@ interface AuthFormContentProps {
   readonly onVerificationCodeChange: (value: string) => void
   readonly onToggleShowPassword: () => void
   readonly onSetShowPassword: (checked: boolean) => void
-  readonly onLogin: (e: React.SyntheticEvent) => void
-  readonly onNewPassword: (e: React.SyntheticEvent) => void
-  readonly onForgotPassword: (e: React.SyntheticEvent) => void
-  readonly onConfirmPassword: (e: React.SyntheticEvent) => void
+  readonly onLogin: (e: SyntheticEvent) => void
+  readonly onNewPassword: (e: SyntheticEvent) => void
+  readonly onForgotPassword: (e: SyntheticEvent) => void
+  readonly onConfirmPassword: (e: SyntheticEvent) => void
   readonly onSwitchToForgotPassword: () => void
   readonly onBackToLogin: () => void
 }
@@ -167,6 +173,7 @@ function AuthFormContent({
 
 // Main Login Component
 export default function Login() {
+  const { t } = useTranslation('login')
   const navigate = useNavigate()
   const location = useLocation()
   const from = getFromPath(location.state)
@@ -183,43 +190,54 @@ export default function Login() {
   const [message, setMessage] = useState<string | null>(null)
   const [cognitoUser, setCognitoUser] = useState<CognitoUser | null>(null)
 
-  const handleLogin = async (e: React.SyntheticEvent) => {
+  /*
+   * Arriving here because a session died is not the same as arriving here to
+   * sign in, and the user is owed the difference — otherwise an app that was
+   * working a moment ago just becomes a login form. Derived per render rather
+   * than seeded into state so it survives translations loading late, and a
+   * real submit error (wrong password) takes precedence over it.
+   */
+  const expiredNotice = isSessionExpiredRedirect(location.search)
+    ? t('errors.sessionExpired')
+    : null
+
+  const handleLogin = async (e: SyntheticEvent) => {
     e.preventDefault()
     setError(null)
     setIsLoading(true)
 
     try {
       await authService.signIn(username, password)
-      navigate(from, { replace: true })
+      void navigate(from, { replace: true })
     } catch (err: unknown) {
       if (isCognitoError(err) && err.code === 'NewPasswordRequired') {
         setCognitoUser(err.cognitoUser ?? null)
         setMode('newPassword')
         setError(null)
       } else {
-        setError(extractErrorMessage(err, 'Login failed'))
+        setError(extractErrorMessage(err, t('errors.loginFailed')))
       }
     } finally {
       setIsLoading(false)
     }
   }
 
-  const handleNewPassword = async (e: React.SyntheticEvent) => {
+  const handleNewPassword = async (e: SyntheticEvent) => {
     e.preventDefault()
     setError(null)
 
     if (newPassword !== confirmNewPassword) {
-      setError('Passwords do not match')
+      setError(t('errors.passwordsDoNotMatch'))
       return
     }
 
     if (newPassword.length < 8) {
-      setError('Password must be at least 8 characters')
+      setError(t('errors.passwordTooShort'))
       return
     }
 
     if (cognitoUser == null) {
-      setError('Session expired. Please login again.')
+      setError(t('errors.sessionExpired'))
       setMode('login')
       return
     }
@@ -228,15 +246,15 @@ export default function Login() {
 
     try {
       await authService.completeNewPassword(cognitoUser, newPassword)
-      navigate(from, { replace: true })
+      void navigate(from, { replace: true })
     } catch (err: unknown) {
-      setError(extractErrorMessage(err, 'Failed to set new password'))
+      setError(extractErrorMessage(err, t('errors.failedNewPassword')))
     } finally {
       setIsLoading(false)
     }
   }
 
-  const handleForgotPassword = async (e: React.SyntheticEvent) => {
+  const handleForgotPassword = async (e: SyntheticEvent) => {
     e.preventDefault()
     setError(null)
     setMessage(null)
@@ -244,21 +262,21 @@ export default function Login() {
 
     try {
       await authService.forgotPassword(username)
-      setMessage('Verification code sent to your email')
+      setMessage(t('errors.verificationCodeSent'))
       setMode('confirmPassword')
     } catch (err: unknown) {
-      setError(extractErrorMessage(err, 'Failed to send verification code'))
+      setError(extractErrorMessage(err, t('errors.failedSendCode')))
     } finally {
       setIsLoading(false)
     }
   }
 
-  const handleConfirmPassword = async (e: React.SyntheticEvent) => {
+  const handleConfirmPassword = async (e: SyntheticEvent) => {
     e.preventDefault()
     setError(null)
 
     if (newPassword !== confirmNewPassword) {
-      setError('Passwords do not match')
+      setError(t('errors.passwordsDoNotMatch'))
       return
     }
 
@@ -266,14 +284,14 @@ export default function Login() {
 
     try {
       await authService.confirmPassword(username, verificationCode, newPassword)
-      setMessage('Password reset successful. Please login.')
+      setMessage(t('errors.passwordResetSuccess'))
       setMode('login')
       setPassword('')
       setNewPassword('')
       setConfirmNewPassword('')
       setVerificationCode('')
     } catch (err: unknown) {
-      setError(extractErrorMessage(err, 'Failed to reset password'))
+      setError(extractErrorMessage(err, t('errors.failedResetPassword')))
     } finally {
       setIsLoading(false)
     }
@@ -301,8 +319,8 @@ export default function Login() {
           <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-2xl mb-4">
             <MessageSquare className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">VoC Analytics</h1>
-          <p className="text-gray-500 mt-1">Voice of the Customer Analytics</p>
+          <h1 className="text-2xl font-bold text-gray-900">{t('appName', { ns: 'common' })}</h1>
+          <p className="text-gray-500 mt-1">{t('appTagline', { ns: 'common' })}</p>
         </div>
 
         <div className="bg-white rounded-2xl shadow-xl p-8">
@@ -315,7 +333,7 @@ export default function Login() {
             verificationCode={verificationCode}
             showPassword={showPassword}
             isLoading={isLoading}
-            error={error}
+            error={error ?? expiredNotice}
             message={message}
             onUsernameChange={setUsername}
             onPasswordChange={setPassword}
@@ -324,17 +342,17 @@ export default function Login() {
             onVerificationCodeChange={setVerificationCode}
             onToggleShowPassword={handleToggleShowPassword}
             onSetShowPassword={setShowPassword}
-            onLogin={handleLogin}
-            onNewPassword={handleNewPassword}
-            onForgotPassword={handleForgotPassword}
-            onConfirmPassword={handleConfirmPassword}
+            onLogin={(e) => void handleLogin(e)}
+            onNewPassword={(e) => void handleNewPassword(e)}
+            onForgotPassword={(e) => void handleForgotPassword(e)}
+            onConfirmPassword={(e) => void handleConfirmPassword(e)}
             onSwitchToForgotPassword={handleSwitchToForgotPassword}
             onBackToLogin={handleBackToLogin}
           />
         </div>
 
         <p className="text-center text-gray-500 text-sm mt-6">
-          Contact your administrator if you need access.
+          {t('contactAdmin')}
         </p>
       </div>
     </div>

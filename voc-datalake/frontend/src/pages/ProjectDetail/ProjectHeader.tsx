@@ -9,7 +9,9 @@ interface ProjectHeaderProps {
   readonly onBack: () => void
 }
 
-export default function ProjectHeader({ name, description, onBack }: ProjectHeaderProps) {
+export default function ProjectHeader({
+  name, description, onBack,
+}: ProjectHeaderProps) {
   return (
     <div className="flex items-center gap-4">
       <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg">
@@ -17,7 +19,7 @@ export default function ProjectHeader({ name, description, onBack }: ProjectHead
       </button>
       <div>
         <h1 className="text-2xl font-bold text-gray-900">{name}</h1>
-        {description && <p className="text-gray-500">{description}</p>}
+        {description != null && description !== '' ? <p className="text-gray-500">{description}</p> : null}
       </div>
     </div>
   )

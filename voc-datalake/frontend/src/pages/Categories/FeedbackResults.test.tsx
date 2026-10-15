@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { FeedbackResults } from './FeedbackResults'
 import type { FeedbackItem } from '../../api/client'
-import type { SentimentFilter, ViewMode } from './types'
+import type { RatingFilter, SentimentFilter, ViewMode } from './types'
 
 const mockFeedback: FeedbackItem[] = [
   {
@@ -62,10 +62,14 @@ const defaultProps = {
   onViewModeChange: vi.fn(),
   selectedSource: null as string | null,
   selectedCategories: ['delivery'],
-  selectedKeywords: [] as string[],
   sentimentFilter: 'all' as SentimentFilter,
-  minRating: 0,
+  ratingFilter: { value: 0, direction: 'up' } as RatingFilter,
   onExport: vi.fn(),
+  totalCount: 2,
+  isPartialWindow: false,
+  hasMore: false,
+  onLoadMore: vi.fn(),
+  isLoadingMore: false,
 }
 
 function renderWithRouter(ui: React.ReactElement) {
@@ -89,19 +93,62 @@ describe('FeedbackResults', () => {
       expect(screen.getByText(/Source: webscraper/)).toBeInTheDocument()
     })
 
-    it('shows selected keywords in subtitle', () => {
-      renderWithRouter(<FeedbackResults {...defaultProps} selectedKeywords={['slow', 'broken']} />)
-      expect(screen.getByText(/slow, broken/)).toBeInTheDocument()
-    })
-
-    it('shows sentiment filter in subtitle', () => {
+    it('shows the localized sentiment filter in the subtitle', () => {
       renderWithRouter(<FeedbackResults {...defaultProps} sentimentFilter="positive" filteredFeedback={[]} />)
-      expect(screen.getByText(/positive/)).toBeInTheDocument()
+      expect(screen.getByText(/• Positive/)).toBeInTheDocument()
     })
 
-    it('shows min rating in subtitle', () => {
-      renderWithRouter(<FeedbackResults {...defaultProps} minRating={4} />)
+    it('shows the & up rating filter in the subtitle', () => {
+      renderWithRouter(<FeedbackResults {...defaultProps} ratingFilter={{ value: 4, direction: 'up' }} />)
       expect(screen.getByText(/4\+ stars/)).toBeInTheDocument()
+    })
+
+    it('shows the & below rating filter in the subtitle', () => {
+      renderWithRouter(<FeedbackResults {...defaultProps} ratingFilter={{ value: 3, direction: 'below' }} />)
+      expect(screen.getByText(/≤3 stars/)).toBeInTheDocument()
+    })
+  })
+
+  describe('results count line (ported from Feedback page, issue #198)', () => {
+    it('shows "Showing N of TOTAL" from the backend candidate window', () => {
+      renderWithRouter(<FeedbackResults {...defaultProps} totalCount={40} />)
+      expect(screen.getByText(/Showing 2 of 40 results/)).toBeInTheDocument()
+    })
+
+    it('shows "N+" with the narrow-filters hint when the window is partial', () => {
+      renderWithRouter(<FeedbackResults {...defaultProps} totalCount={100} isPartialWindow={true} />)
+      expect(screen.getByText(/Showing 2 of 100\+ results/)).toBeInTheDocument()
+      expect(screen.getByText(/narrow filters to see all/)).toBeInTheDocument()
+    })
+
+    it('does not show "N+" when the partial window has no extra matches', () => {
+      renderWithRouter(<FeedbackResults {...defaultProps} totalCount={2} isPartialWindow={true} />)
+      expect(screen.getByText(/Showing 2 of 2 results/)).toBeInTheDocument()
+      expect(screen.queryByText(/narrow filters to see all/)).not.toBeInTheDocument()
+    })
+  })
+
+  describe('pagination (Load more)', () => {
+    it('shows a Load more button when more pages exist and fires onLoadMore', async () => {
+      const user = userEvent.setup()
+      const onLoadMore = vi.fn()
+      renderWithRouter(<FeedbackResults {...defaultProps} hasMore onLoadMore={onLoadMore} />)
+
+      await user.click(screen.getByRole('button', { name: 'Load more' }))
+      expect(onLoadMore).toHaveBeenCalledOnce()
+    })
+
+    it('hides the Load more button when everything is loaded', () => {
+      renderWithRouter(<FeedbackResults {...defaultProps} hasMore={false} />)
+      expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument()
+    })
+
+    it('disables the button and shows the loading label while the next page loads', () => {
+      renderWithRouter(<FeedbackResults {...defaultProps} hasMore isLoadingMore />)
+
+      const button = screen.getByRole('button', { name: 'Loading...' })
+      expect(button).toBeDisabled()
+      expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument()
     })
   })
 
@@ -137,18 +184,24 @@ describe('FeedbackResults', () => {
     })
   })
 
-  describe('export button', () => {
-    it('renders export button', () => {
+  describe('CSV export button', () => {
+    it('has an accessible name even when the text label is hidden (icon-only on small screens)', () => {
       renderWithRouter(<FeedbackResults {...defaultProps} />)
-      expect(screen.getByRole('button', { name: /export/i })).toBeInTheDocument()
+      const button = screen.getByRole('button', { name: 'Export as CSV' })
+      expect(button).toHaveAttribute('title', 'Export as CSV')
     })
 
-    it('calls onExport when export button clicked', async () => {
+    it('does not render a second PDF button (single PDF export lives in the filter bar)', () => {
+      renderWithRouter(<FeedbackResults {...defaultProps} />)
+      expect(screen.queryByTitle('Export as PDF')).not.toBeInTheDocument()
+    })
+
+    it('calls onExport when the CSV button is clicked', async () => {
       const user = userEvent.setup()
       const onExport = vi.fn()
       renderWithRouter(<FeedbackResults {...defaultProps} onExport={onExport} />)
 
-      await user.click(screen.getByRole('button', { name: /export/i }))
+      await user.click(screen.getByRole('button', { name: 'Export as CSV' }))
       expect(onExport).toHaveBeenCalled()
     })
   })

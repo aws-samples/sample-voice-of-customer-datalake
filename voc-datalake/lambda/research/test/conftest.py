@@ -31,6 +31,27 @@ def mock_dynamodb_tables():
     with patch('research_step_handler.feedback_table') as mock_feedback, \
          patch('research_step_handler.projects_table') as mock_projects, \
          patch('research_step_handler.jobs_table') as mock_jobs:
+        mock_projects.name = 'test-projects'
+
+        def transact_write_items(*, TransactItems):
+            for action in TransactItems:
+                put = action.get('Put')
+                if put:
+                    mock_projects.put_item(Item=put['Item'])
+                update = action.get('Update')
+                if update:
+                    mock_projects.update_item(
+                        Key=update['Key'],
+                        UpdateExpression=update['UpdateExpression'],
+                        ExpressionAttributeValues=update.get(
+                            'ExpressionAttributeValues', {},
+                        ),
+                    )
+            return {}
+
+        mock_projects.meta.client.transact_write_items.side_effect = (
+            transact_write_items
+        )
         yield {
             'feedback': mock_feedback,
             'projects': mock_projects,

@@ -3,7 +3,6 @@ Tests for data_explorer_handler.py - /data-explorer/* endpoints.
 Full CRUD for S3 raw data and DynamoDB feedback.
 """
 import json
-import pytest
 from unittest.mock import patch, MagicMock
 from decimal import Decimal
 
@@ -301,6 +300,39 @@ class TestSaveFeedback:
         assert body['success'] is True
 
     @patch('data_explorer_handler.dynamodb')
+    def test_lookup_queries_the_real_gsi_name(
+        self, mock_dynamodb, api_gateway_event, lambda_context
+    ):
+        """Regression (#140): the feedback-id lookup must query the GSI that
+        actually exists on the table (gsi4-by-feedback-id, core-stack.ts) —
+        'feedback-id-index' does not exist and made every non-key edit 500."""
+        # Arrange — no pk/sk in data forces the GSI lookup path
+        mock_table = MagicMock()
+        mock_dynamodb.Table.return_value = mock_table
+        mock_table.query.return_value = {
+            'Items': [{'pk': 'SOURCE#webscraper', 'sk': 'FEEDBACK#fb-123'}]
+        }
+        mock_table.update_item.return_value = {}
+
+        from data_explorer_handler import lambda_handler
+        event = api_gateway_event(
+            method='PUT',
+            path='/data-explorer/feedback',
+            body={
+                'feedback_id': 'fb-123',
+                'data': {'original_text': 'Updated via GSI lookup'}
+            }
+        )
+
+        # Act
+        response = lambda_handler(event, lambda_context)
+
+        # Assert
+        assert response['statusCode'] == 200
+        mock_table.query.assert_called_once()
+        assert mock_table.query.call_args.kwargs['IndexName'] == 'gsi4-by-feedback-id'
+
+    @patch('data_explorer_handler.dynamodb')
     def test_returns_error_when_feedback_id_missing(
         self, mock_dynamodb, api_gateway_event, lambda_context
     ):
@@ -353,6 +385,36 @@ class TestDeleteFeedback:
         # Assert
         assert response['statusCode'] == 200
         assert body['success'] is True
+
+    @patch('data_explorer_handler.dynamodb')
+    def test_delete_queries_the_real_gsi_name(
+        self, mock_dynamodb, api_gateway_event, lambda_context
+    ):
+        """Regression (#140): delete's feedback-id lookup must use
+        gsi4-by-feedback-id — the nonexistent 'feedback-id-index' made every
+        Data Explorer record delete fail with a ValidationException."""
+        # Arrange
+        mock_table = MagicMock()
+        mock_dynamodb.Table.return_value = mock_table
+        mock_table.query.return_value = {
+            'Items': [{'pk': 'SOURCE#webscraper', 'sk': 'FEEDBACK#fb-123'}]
+        }
+        mock_table.delete_item.return_value = {}
+
+        from data_explorer_handler import lambda_handler
+        event = api_gateway_event(
+            method='DELETE',
+            path='/data-explorer/feedback',
+            query_params={'feedback_id': 'fb-123'}
+        )
+
+        # Act
+        response = lambda_handler(event, lambda_context)
+
+        # Assert
+        assert response['statusCode'] == 200
+        mock_table.query.assert_called_once()
+        assert mock_table.query.call_args.kwargs['IndexName'] == 'gsi4-by-feedback-id'
 
     @patch('data_explorer_handler.dynamodb')
     def test_returns_error_when_feedback_not_found(
@@ -472,3 +534,137 @@ class TestDecimalToNative:
         
         result = decimal_to_native(data)
         assert result == [1, 2.5, 3]
+
+
+class TestGeneratedPrototypeStorageBoundary:
+    @patch('data_explorer_handler.s3_client')
+    def test_prototype_prefix_remains_browsable(
+        self, mock_s3, api_gateway_event, lambda_context,
+    ):
+        mock_s3.list_objects_v2.return_value = {
+            'CommonPrefixes': [],
+            'Contents': [],
+        }
+
+        from data_explorer_handler import lambda_handler
+
+        response = lambda_handler(
+            api_gateway_event(
+                method='GET',
+                path='/data-explorer/s3',
+                query_params={'bucket': 'raw-data', 'prefix': 'prototypes'},
+            ),
+            lambda_context,
+        )
+
+        assert response['statusCode'] == 200
+        assert json.loads(response['body'])['prefix'] == 'prototypes'
+        assert mock_s3.list_objects_v2.call_args.kwargs['Prefix'] == 'prototypes/'
+
+    @patch('data_explorer_handler.s3_client')
+    def test_prototype_html_remains_previewable(
+        self, mock_s3, api_gateway_event, lambda_context,
+    ):
+        prototype = '<html><body>generated</body></html>'
+        mock_s3.head_object.return_value = {
+            'ContentLength': len(prototype),
+            'ContentType': 'text/html',
+        }
+        body = MagicMock()
+        body.read.return_value = prototype.encode('utf-8')
+        mock_s3.get_object.return_value = {'Body': body}
+
+        from data_explorer_handler import lambda_handler
+
+        response = lambda_handler(
+            api_gateway_event(
+                method='GET',
+                path='/data-explorer/s3/preview',
+                query_params={
+                    'bucket': 'raw-data',
+                    'key': 'prototypes/p1/prototype-1.html',
+                },
+            ),
+            lambda_context,
+        )
+
+        assert response['statusCode'] == 200
+        assert json.loads(response['body'])['content'] == prototype
+        mock_s3.get_object.assert_called_once()
+
+    @patch('data_explorer_handler.s3_client')
+    def test_put_rejects_prototype_before_s3_mutation(
+        self, mock_s3, api_gateway_event, lambda_context,
+    ):
+        from data_explorer_handler import lambda_handler
+
+        response = lambda_handler(
+            api_gateway_event(
+                method='PUT',
+                path='/data-explorer/s3',
+                body={
+                    'bucket': 'raw-data',
+                    'key': 'prototypes/p1/prototype-1.html',
+                    'content': '<html>replacement</html>',
+                },
+            ),
+            lambda_context,
+        )
+
+        assert response['statusCode'] == 400
+        assert 'read-only' in json.loads(response['body'])['error']
+        mock_s3.put_object.assert_not_called()
+
+    @patch('data_explorer_handler.s3_client')
+    def test_delete_rejects_prototype_before_s3_mutation(
+        self, mock_s3, api_gateway_event, lambda_context,
+    ):
+        from data_explorer_handler import lambda_handler
+
+        response = lambda_handler(
+            api_gateway_event(
+                method='DELETE',
+                path='/data-explorer/s3',
+                query_params={
+                    'bucket': 'raw-data',
+                    'key': 'prototypes/p1/prototype-1.html',
+                },
+            ),
+            lambda_context,
+        )
+
+        assert response['statusCode'] == 400
+        assert 'read-only' in json.loads(response['body'])['error']
+        mock_s3.delete_object.assert_not_called()
+
+    @patch('data_explorer_handler.RAW_DATA_BUCKET', 'test-raw-data')
+    @patch('data_explorer_handler.dynamodb')
+    @patch('data_explorer_handler.s3_client')
+    def test_feedback_sync_rejects_prototype_before_s3_or_dynamo_mutation(
+        self, mock_s3, mock_dynamodb, api_gateway_event, lambda_context,
+    ):
+        from data_explorer_handler import lambda_handler
+
+        response = lambda_handler(
+            api_gateway_event(
+                method='PUT',
+                path='/data-explorer/feedback',
+                body={
+                    'feedback_id': 'fb-1',
+                    'sync_to_s3': True,
+                    'data': {
+                        'source_platform': 'webscraper',
+                        'original_text': 'edited',
+                        's3_raw_uri': (
+                            's3://test-raw-data/prototypes/p1/prototype-1.html'
+                        ),
+                    },
+                },
+            ),
+            lambda_context,
+        )
+
+        assert response['statusCode'] == 400
+        assert 'read-only' in json.loads(response['body'])['error']
+        mock_s3.put_object.assert_not_called()
+        mock_dynamodb.Table.assert_not_called()

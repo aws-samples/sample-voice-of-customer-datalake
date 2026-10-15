@@ -1,0 +1,216 @@
+/**
+ * Regression test for issue #171: FormCard crashed the whole /feedback-forms
+ * route with "Cannot read properties of undefined (reading 'primary_color')"
+ * when a form record arrived without a theme. The list normalizes at its
+ * query boundary, but FormCard must stay render-safe standalone.
+ */
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import i18n from 'i18next'
+
+const mockGetFeedbackFormStats = vi.fn()
+
+vi.mock('../../api/client', () => ({
+  api: {
+    getFeedbackFormStats: (formId: string) => mockGetFeedbackFormStats(formId),
+  },
+}))
+
+vi.mock('./SubmissionsModal', () => ({
+  default: () => <div data-testid="submissions-modal" />,
+}))
+
+import FormCard from './FormCard'
+import { defaultFormConfig } from './formTemplates'
+import type { FeedbackForm } from '../../api/client'
+
+function createWrapper() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  return ({ children }: { children: React.ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  )
+}
+
+function buildForm(): FeedbackForm {
+  return {
+    ...defaultFormConfig,
+    form_id: 'form_1',
+    name: 'Website Feedback',
+    enabled: true,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  }
+}
+
+const noop = () => undefined
+
+function renderCard(form: FeedbackForm, apiEndpoint = 'https://api.example.com') {
+  return render(
+    <FormCard form={form} onEdit={noop} onDelete={noop} onToggle={noop} apiEndpoint={apiEndpoint} />,
+    { wrapper: createWrapper() },
+  )
+}
+
+describe('FormCard (issue #171)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetFeedbackFormStats.mockResolvedValue({
+      success: true,
+      form_id: 'form_1',
+      stats: { total_submissions: 3, avg_rating: 4.5, rating_count: 2 },
+    })
+  })
+
+  it('renders a fully populated form with its own theme color', () => {
+    renderCard(buildForm())
+
+    expect(screen.getByText('Website Feedback')).toBeInTheDocument()
+    expect(screen.getByText(defaultFormConfig.theme.primary_color)).toBeInTheDocument()
+  })
+
+  // U12: these icon-only controls carried hardcoded English titles, so they read
+  // the same in every locale. They now take translated aria-labels — the
+  // accessible name is what assistive tech actually announces.
+  it('gives every icon-only card action an accessible name', () => {
+    renderCard({ ...buildForm(), enabled: true })
+
+    // Resolve through the same i18n instance the component uses, so these stay
+    // correct whether the harness echoes keys or returns real strings.
+    const { t } = i18n
+    expect(screen.getByRole('button', { name: t('feedbackForms:card.disableForm') })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: t('feedbackForms:card.editForm') })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: t('feedbackForms:card.deleteForm') })).toBeInTheDocument()
+  })
+
+  // Resolving through i18n.t alone cannot catch a WRONG key path: the harness
+  // echoes the key, so component and expectation agree even when the key does
+  // not exist. This asserts against the real en catalogue instead, which is what
+  // caught these labels rendering as raw keys in the deployed build.
+  it('uses key paths that actually exist in the en catalogue', async () => {
+    const en = (await import('../../../public/locales/en/feedbackForms.json')).default
+    const card = en.card as Record<string, string>
+
+    for (const key of ['editForm', 'deleteForm', 'enableForm', 'disableForm']) {
+      expect(card[key], `feedbackForms:card.${key} missing from en catalogue`).toBeTruthy()
+    }
+  })
+
+  it('names the toggle for the action it performs when the form is disabled', () => {
+    renderCard({ ...buildForm(), enabled: false })
+
+    const { t } = i18n
+    expect(screen.getByRole('button', { name: t('feedbackForms:card.enableForm') })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: t('feedbackForms:card.disableForm') })).not.toBeInTheDocument()
+  })
+
+  it('still prints the public URL a customer pastes into their own page', async () => {
+    const user = userEvent.setup()
+    renderCard(buildForm())
+
+    await user.click(screen.getByText('Show Embed Code'))
+
+    expect(screen.getByText('https://api.example.com/feedback-forms/form_1/iframe')).toBeInTheDocument()
+  })
+
+  it('opens a scannable QR from the card without expanding the embed disclosure', async () => {
+    const user = userEvent.setup()
+    renderCard(buildForm())
+
+    // The whole point of the change: a facilitator reaches the QR without going
+    // through a developer-facing disclosure about iframe snippets.
+    await user.click(screen.getByRole('button', { name: i18n.t('components:formQrCode.show') }))
+
+    expect(screen.getByRole('dialog')).toHaveAccessibleName(i18n.t('components:formQrCode.title'))
+    expect(screen.getByRole('img', {
+      name: i18n.t('components:formQrCode.accessibleName', { formName: 'Website Feedback' }),
+    })).toBeInTheDocument()
+  })
+
+  it('keeps the QR out of the card until it is asked for, then dismisses on Escape', async () => {
+    const user = userEvent.setup()
+    renderCard(buildForm())
+
+    const qrName = i18n.t('components:formQrCode.accessibleName', { formName: 'Website Feedback' })
+    expect(screen.queryByRole('img', { name: qrName })).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: i18n.t('components:formQrCode.show') }))
+    expect(screen.getByRole('img', { name: qrName })).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('offers exactly one QR affordance, not one per disclosure state', async () => {
+    const user = userEvent.setup()
+    renderCard(buildForm())
+
+    await user.click(screen.getByText('Show Embed Code'))
+
+    // The embed section used to render its own inline QR. Two entry points to the
+    // same artifact is the state this change exists to end, and it is invisible in
+    // review because both of them work.
+    expect(screen.getAllByRole('button', { name: i18n.t('components:formQrCode.show') })).toHaveLength(1)
+    expect(screen.queryByRole('img', {
+      name: i18n.t('components:formQrCode.accessibleName', { formName: 'Website Feedback' }),
+    })).not.toBeInTheDocument()
+  })
+
+  it('escapes a double quote in the form name so the embed snippet stays well formed', async () => {
+    const user = userEvent.setup()
+    renderCard({ ...buildForm(), name: 'The "Best" Form & Co' })
+
+    await user.click(screen.getByText('Show Embed Code'))
+
+    // The snippet is pasted verbatim into the customer's own page: a raw quote
+    // closes title=" early and hands them broken markup to debug.
+    const snippet = screen.getByText((_, node) => node?.tagName === 'CODE' && (node.textContent ?? '').includes('<iframe'))
+    expect(snippet.textContent).toContain('title="The &quot;Best&quot; Form &amp; Co"')
+    expect(snippet.textContent).not.toContain('title="The "Best"')
+  })
+
+  it('offers no link or snippet when the endpoint cannot address the form', async () => {
+    const user = userEvent.setup()
+    // Reachable with a non-absolute endpoint: the page gate only checks for a
+    // non-empty string, so '/api' or a scheme-less paste arrives here.
+    renderCard(buildForm(), '/api')
+
+    await user.click(screen.getByText('Show Embed Code'))
+
+    expect(screen.getByText(i18n.t('feedbackForms:configureApiFirst'))).toBeInTheDocument()
+    expect(screen.queryByText(/feedback-forms\/form_1\/iframe/)).not.toBeInTheDocument()
+  })
+
+  it('says why there is no QR when the endpoint cannot address the form', async () => {
+    const user = userEvent.setup()
+    renderCard(buildForm(), '/api')
+
+    await user.click(screen.getByRole('button', { name: i18n.t('components:formQrCode.show') }))
+
+    // The dialog opens and explains itself rather than presenting a symbol that
+    // scans perfectly and opens nothing — a room pointing phones at a dead QR
+    // gets no error message.
+    expect(screen.getByText(i18n.t('components:formQrCode.unavailable'))).toBeInTheDocument()
+    expect(screen.queryByRole('img', {
+      name: i18n.t('components:formQrCode.accessibleName', { formName: 'Website Feedback' }),
+    })).not.toBeInTheDocument()
+  })
+
+  it('survives a runtime record without a theme (the #171 crash)', () => {
+    const form = buildForm()
+    // The wire can deliver records persisted before the theme field existed;
+    // static types say theme is required, runtime reality disagrees.
+    Reflect.deleteProperty(form, 'theme')
+
+    renderCard(form)
+
+    expect(screen.getByText('Website Feedback')).toBeInTheDocument()
+    // Falls back to the default theme swatch instead of crashing.
+    expect(screen.getByText(defaultFormConfig.theme.primary_color)).toBeInTheDocument()
+  })
+})

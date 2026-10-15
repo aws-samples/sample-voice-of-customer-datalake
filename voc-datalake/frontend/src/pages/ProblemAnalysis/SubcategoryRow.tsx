@@ -1,22 +1,7 @@
 import { ChevronDown, ChevronRight, Layers } from 'lucide-react'
 import { ProblemRow } from './ProblemRow'
-import type { FeedbackItem } from '../../api/client'
-
-interface ProblemGroup {
-  problem: string
-  similarProblems: string[]
-  rootCause: string | null
-  items: FeedbackItem[]
-  avgSentiment: number
-  urgentCount: number
-}
-
-interface SubcategoryGroup {
-  subcategory: string
-  problems: ProblemGroup[]
-  totalItems: number
-  urgentCount: number
-}
+import { buildResolutionKey } from './problemResolution'
+import type { SubcategoryGroup } from './problemResolution'
 
 interface SubcategoryRowProps {
   readonly categoryName: string
@@ -25,6 +10,10 @@ interface SubcategoryRowProps {
   readonly onToggle: () => void
   readonly expandedProblems: Set<string>
   readonly onToggleProblem: (key: string) => void
+  readonly onToggleResolved: (key: string, resolved: boolean) => void
+  /** Resolution keys with an in-flight toggle — disables only their own
+   * button (issue #159: no page-wide lock). */
+  readonly pendingKeys?: ReadonlySet<string>
 }
 
 export function SubcategoryRow({
@@ -34,6 +23,8 @@ export function SubcategoryRow({
   onToggle,
   expandedProblems,
   onToggleProblem,
+  onToggleResolved,
+  pendingKeys,
 }: SubcategoryRowProps) {
   const subcategoryKey = `${categoryName}:${subcategoryGroup.subcategory}`
 
@@ -68,6 +59,7 @@ export function SubcategoryRow({
         <div className="divide-y divide-gray-50">
           {subcategoryGroup.problems.map((problemGroup) => {
             const problemKey = `${categoryName}:${subcategoryGroup.subcategory}:${problemGroup.problem}`
+            const resolutionKey = buildResolutionKey(categoryName, subcategoryGroup.subcategory, problemGroup.problem)
             return (
               <ProblemRow
                 key={problemKey}
@@ -75,6 +67,8 @@ export function SubcategoryRow({
                 problemKey={problemKey}
                 isExpanded={expandedProblems.has(problemKey)}
                 onToggle={() => onToggleProblem(problemKey)}
+                onToggleResolved={() => onToggleResolved(resolutionKey, !problemGroup.resolved)}
+                resolvePending={pendingKeys?.has(resolutionKey) === true}
               />
             )
           })}

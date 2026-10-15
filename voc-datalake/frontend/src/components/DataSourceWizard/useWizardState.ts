@@ -117,7 +117,7 @@ export function useWizardState({
   useEffect(() => {
     if (!config.apiEndpoint) return
     
-    api.getSources(30).then(data => {
+    api.getSources({ days: 30 }).then(data => {
       if (data.sources && Object.keys(data.sources).length > 0) {
         const apiSources = Object.keys(data.sources).sort((a, b) => data.sources[b] - data.sources[a])
         setSources(apiSources)

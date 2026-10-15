@@ -23,7 +23,8 @@ MAX_METADATA_VALUE_LENGTH = 1000
 
 # Known plugin IDs (for validation)
 KNOWN_SOURCES = {
-    "webscraper", "s3_import", "manual_import"
+    "webscraper", "s3_import", "manual_import",
+    "app_reviews_ios", "app_reviews_android",
 }
 
 
@@ -111,6 +112,10 @@ class IngestMessage(BaseModel):
     created_at: datetime
     
     # Optional fields
+    # The identifier the source's own export carried, when `id` had to be
+    # derived instead (a CSV `id` column is unique only within its file, so it
+    # cannot key the item — see CSV_ROW_ID_FIELDS in manual_import_handler).
+    csv_row_id: Optional[str] = Field(None, max_length=MAX_ID_LENGTH)
     rating: Optional[float] = Field(None, ge=1, le=5)
     url: Optional[str] = Field(None, max_length=MAX_URL_LENGTH)
     source_channel: Optional[str] = Field(None, max_length=64)
@@ -130,7 +135,7 @@ class IngestMessage(BaseModel):
     is_update: Optional[bool] = None
     is_deleted: Optional[bool] = None
 
-    @field_validator("id", "source_platform", "source_channel", "channel", "author", "title")
+    @field_validator("id", "csv_row_id", "source_platform", "source_channel", "channel", "author", "title")
     @classmethod
     def sanitize_string(cls, v: Optional[str]) -> Optional[str]:
         if v is None:

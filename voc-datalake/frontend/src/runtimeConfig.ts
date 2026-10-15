@@ -22,6 +22,11 @@ const RuntimeConfigSchema = z.object({
     region: z.string().min(1),
     identityPoolId: z.string().min(1),
   }),
+  // Optional capability flags: deployments without a given capability omit
+  // the flag (or the whole block) and the UI hides the feature.
+  features: z.object({
+    webSearch: z.boolean().optional(),
+  }).optional(),
 })
 
 export type RuntimeConfig = z.infer<typeof RuntimeConfigSchema>
@@ -71,6 +76,15 @@ export function isConfigLoaded(): boolean {
   return configState.config !== null
 }
 
+/**
+ * Whether this deployment has the AgentCore web search gateway, i.e. the
+ * chat/research "search the web" options should be offered at all.
+ * Safe to call before config load (returns false).
+ */
+export function isWebSearchAvailable(): boolean {
+  return configState.config?.features?.webSearch === true
+}
+
 async function fetchConfig(): Promise<RuntimeConfig> {
   try {
     const response = await fetch('/config.json', {
@@ -108,6 +122,14 @@ function getEnvString(key: string, defaultValue = ''): string {
  * Used for local development or when config.json is unavailable.
  */
 function getEnvConfig(): RuntimeConfig {
+  // Constructed as a literal boolean (=== 'true'), so this object is
+  // schema-conformant BY CONSTRUCTION — which is what lets the invalid-env
+  // fallback below reuse it verbatim. Single construction site on purpose.
+  const features = {
+    // Local development: VITE_ENABLE_WEB_SEARCH=true surfaces the web search
+    // toggles without a deployed config.json.
+    webSearch: getEnvString('VITE_ENABLE_WEB_SEARCH') === 'true',
+  }
   const envConfig = {
     apiEndpoint: getEnvString('VITE_API_ENDPOINT'),
     cognito: {
@@ -116,21 +138,33 @@ function getEnvConfig(): RuntimeConfig {
       region: getEnvString('VITE_COGNITO_REGION', 'us-east-1'),
       identityPoolId: getEnvString('VITE_IDENTITY_POOL_ID'),
     },
+    features,
   }
 
   // Validate env config
   const parsed = RuntimeConfigSchema.safeParse(envConfig)
   if (!parsed.success) {
     console.error('Invalid environment config:', parsed.error.message)
-    // Return a minimal config to prevent crashes
+    // Partial env config is normal in local development (Cognito vars are
+    // usually absent). Keep a valid VITE_API_ENDPOINT instead of discarding
+    // it; otherwise point at the documented local mock port (`npm run mock`
+    // serves http://localhost:3001, which the Vite /api proxy also targets).
+    const fallbackEndpoint = urlPattern.test(envConfig.apiEndpoint)
+      ? envConfig.apiEndpoint
+      : 'http://localhost:3001'
     return {
-      apiEndpoint: 'http://localhost:3000',
+      apiEndpoint: fallbackEndpoint,
       cognito: {
         userPoolId: '',
         clientId: '',
         region: 'us-east-1',
         identityPoolId: '',
       },
+      // Keep the feature flags: mock-only dev (no Cognito vars) is exactly
+      // when this branch runs, and it's also exactly when the
+      // VITE_ENABLE_WEB_SEARCH escape hatch is needed. Safe to reuse: the
+      // shared `features` object above is boolean-by-construction.
+      features,
     }
   }
 
