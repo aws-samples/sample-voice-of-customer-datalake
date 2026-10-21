@@ -18,6 +18,7 @@ import { ALLOWED_MODEL_IDS, MAX_IMAGE_BYTES, MAX_IMAGE_DIMENSION_PX, allowlisted
 import { NagSuppressions } from 'cdk-nag';
 import { idempotencyTableSuppressions, cloudfrontDefaultCertSuppressions, cognitoSecuritySuppressions, cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, cdnSigningKeySuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions, s3BucketSuppressions, bedrockModelSuppressions } from '../utils/nag-suppressions';
 import { VocStack, VocStackProps } from '../utils/voc-stack';
+import { BedrockModelAgreements } from './bedrock-access-stack';
 
 export interface VocCoreStackProps extends VocStackProps {
   brandName: string;
@@ -1018,6 +1019,18 @@ export class VocCoreStack extends VocStack {
         true
       );
     }
+
+    // ============================================
+    // BEDROCK MODEL AGREEMENTS (every deploy, best effort)
+    // ============================================
+    // A Marketplace agreement per allowlisted model, created in this (the app's)
+    // region. Bedrock also subscribes on first invoke, but only for a caller with
+    // aws-marketplace:Subscribe, and most of the app's roles have none: in a new
+    // account the processor's first Haiku call would fail. Here rather than in the
+    // us-east-1 VocWebSearchStack so `-c enableWebSearch=false` keeps a deployment
+    // out of us-east-1 entirely, and here rather than a later stack so the
+    // agreements exist before Ingestion and Processing first call a model.
+    new BedrockModelAgreements(this, 'BedrockModelAgreements');
 
     // ============================================
     // COGNITO IDENTITY POOL (for AWS IAM authentication)

@@ -88,5 +88,7 @@
   "topIssue": "상위 이슈",
   "totalFeedback": "전체 피드백",
   "trendingKeywords": "트렌딩 키워드",
-  "urgentOnly": "긴급만 표시"
+  "urgentOnly": "긴급만 표시",
+  "allOf": "모든 {{label}}",
+  "filterByCustom": "{{label}}(으)로 필터링"
 }

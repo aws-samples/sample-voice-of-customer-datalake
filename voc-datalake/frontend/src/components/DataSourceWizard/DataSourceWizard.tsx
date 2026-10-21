@@ -33,6 +33,8 @@ interface DataSourceWizardProps {
   readonly combineDocuments?: boolean
   /** Wizard-specific sources appended to the Data Sources step as peer cards. */
   readonly extraDataSources?: ReadonlyArray<ExtraDataSource>
+  /** Rendered at the bottom of the feedback-filters step (e.g. a live match count). */
+  readonly feedbackStepFooter?: React.ReactNode
 }
 
 const colorClasses = {
@@ -59,6 +61,7 @@ export default function DataSourceWizard({
   hideDataSources = [],
   combineDocuments = false,
   extraDataSources = [],
+  feedbackStepFooter,
 }: DataSourceWizardProps) {
   const {
     step,
@@ -67,6 +70,7 @@ export default function DataSourceWizard({
     sources,
     categories,
     loadingCategories,
+    customFilterControls,
     researchDocs,
     otherDocs,
     showFeedback,
@@ -121,6 +125,8 @@ export default function DataSourceWizard({
             categories={categories}
             loadingCategories={loadingCategories}
             colors={colors}
+            customFilterControls={customFilterControls}
+            footer={feedbackStepFooter}
           />
         )}
 

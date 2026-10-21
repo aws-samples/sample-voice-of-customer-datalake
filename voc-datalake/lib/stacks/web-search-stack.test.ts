@@ -2,15 +2,15 @@
  * Template-level tests for the merged us-east-1 AI-enablement stack.
  *
  * VocWebSearchStack hosts two independently switchable halves — the web-search
- * AgentCore Gateway and Bedrock model access — because they are one deployment
- * unit and splitting them put the app one CloudFormation template over Workshop
- * Studio's ceiling of five.
+ * AgentCore Gateway and the Anthropic use-case form submission — because they
+ * are one deployment unit and splitting them put the app one CloudFormation
+ * template over Workshop Studio's ceiling of five.
  *
  * These tests fail if:
  *  - either half stops being independently switchable (e.g. someone makes the
- *    gateway unconditional again, which would break `-c enableWebSearch=false`,
- *    or makes the agreements unconditional, breaking accounts that already have
- *    Bedrock access);
+ *    gateway unconditional again, which would break `-c enableWebSearch=false`);
+ *  - the model agreements creep back in. They live in VocCoreStack so that a
+ *    deployment with both halves off has nothing in us-east-1;
  *  - the gateway's export names drift. VocProcessingStack and VocApiStack import
  *    them by literal name, so a rename silently breaks both consumer stacks at
  *    deploy time with "No export named ..." and zero resources created — the
@@ -25,7 +25,6 @@ import { Template, Match } from 'aws-cdk-lib/assertions';
 import { z } from 'zod';
 import { VocWebSearchStack, VocWebSearchStackProps } from './web-search-stack';
 import { shouldDeployAiEnablement } from '../utils/ai-enablement-default';
-import { ALLOWED_FOUNDATION_MODEL_IDS } from '../utils/model-allowlist';
 
 /** `Template.toJSON()` is untyped, so validate rather than assert. */
 const ExportedOutputSchema = z.object({ Export: z.object({ Name: z.string() }) });
@@ -47,33 +46,50 @@ const ANTHROPIC_USE_CASE = {
   otherIndustryOption: '',
 };
 
-function synth(props: Omit<VocWebSearchStackProps, 'env'>): Template {
+const ENV = { account: '111111111111', region: 'us-east-1' };
+
+function newStack(props: Omit<VocWebSearchStackProps, 'env'>): VocWebSearchStack {
   // Skip asset bundling — template assertions only need structure.
   const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [] } });
-  const stack = new VocWebSearchStack(app, 'VocWebSearchStack', {
-    env: { account: '111111111111', region: 'us-east-1' },
+  return new VocWebSearchStack(app, 'VocWebSearchStack', {
+    env: ENV,
     crossRegionReferences: true,
-    modelRegion: 'us-east-1',
     ...props,
   });
-  return Template.fromStack(stack);
+}
+
+function synth(props: Omit<VocWebSearchStackProps, 'env'>): Template {
+  return Template.fromStack(newStack(props));
 }
 
 const GATEWAY = 'AWS::BedrockAgentCore::Gateway';
 const GATEWAY_TARGET = 'AWS::BedrockAgentCore::GatewayTarget';
-/** One per allowlisted model; `cdk.CustomResource` renders as this type. */
+/** A model agreement; `cdk.CustomResource` renders as this type. */
 const AGREEMENT = 'AWS::CloudFormation::CustomResource';
 /** The AwsCustomResource wrapping PutUseCaseForModelAccess. */
 const USE_CASE_SUBMISSION = 'Custom::AWS';
 
-describe('VocWebSearchStack — both halves on (the default)', () => {
+describe('VocWebSearchStack — both halves on', () => {
   const template = synth({ deployWebSearch: true, anthropicUseCase: ANTHROPIC_USE_CASE });
 
-  it('creates the gateway and one agreement per allowlisted model', () => {
+  it('creates the gateway and the use-case submission', () => {
     template.resourceCountIs(GATEWAY, 1);
     template.resourceCountIs(GATEWAY_TARGET, 1);
-    template.resourceCountIs(AGREEMENT, ALLOWED_FOUNDATION_MODEL_IDS.length);
     template.resourceCountIs(USE_CASE_SUBMISSION, 1);
+  });
+
+  it('submits the form in us-east-1 with the configured details', () => {
+    // `Create` is the serialized SDK call; its region and form data are what
+    // reach PutUseCaseForModelAccess.
+    const [submission] = Object.values(template.findResources(USE_CASE_SUBMISSION));
+    const create = JSON.stringify(submission?.Properties?.Create ?? '');
+    expect(create).toContain('putUseCaseForModelAccess');
+    expect(create).toContain('us-east-1');
+    expect(create).toContain('Test Co');
+  });
+
+  it('creates no model agreements, which belong to VocCoreStack', () => {
+    template.resourceCountIs(AGREEMENT, 0);
   });
 
   it('scopes the gateway role to the concrete gateway ARN, not a wildcard', () => {
@@ -101,15 +117,13 @@ describe('VocWebSearchStack — the cross-stack contract with Processing and Api
    */
   it('exports the gateway ARN and URL under their established names', () => {
     const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [] } });
-    const env = { account: '111111111111', region: 'us-east-1' };
     const producer = new VocWebSearchStack(app, 'VocWebSearchStack', {
-      env,
+      env: ENV,
       crossRegionReferences: true,
-      modelRegion: 'us-east-1',
       deployWebSearch: true,
       anthropicUseCase: ANTHROPIC_USE_CASE,
     });
-    const consumer = new cdk.Stack(app, 'Consumer', { env });
+    const consumer = new cdk.Stack(app, 'Consumer', { env: ENV });
     new cdk.CfnOutput(consumer, 'Arn', { value: producer.gatewayArn! });
     new cdk.CfnOutput(consumer, 'Url', { value: producer.gatewayUrl! });
 
@@ -122,21 +136,14 @@ describe('VocWebSearchStack — the cross-stack contract with Processing and Api
   it('exposes the gateway properties as undefined when the half is off', () => {
     // This is what lets processing-stack-consolidated.ts and api-stack.ts skip
     // their web-search wiring with no change of their own.
-    const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [] } });
-    const stack = new VocWebSearchStack(app, 'VocWebSearchStack', {
-      env: { account: '111111111111', region: 'us-east-1' },
-      crossRegionReferences: true,
-      modelRegion: 'us-east-1',
-      deployWebSearch: false,
-      anthropicUseCase: ANTHROPIC_USE_CASE,
-    });
+    const stack = newStack({ deployWebSearch: false, anthropicUseCase: ANTHROPIC_USE_CASE });
     expect(stack.gatewayArn).toBeUndefined();
     expect(stack.gatewayUrl).toBeUndefined();
     expect(stack.toolName).toBeUndefined();
   });
 });
 
-describe('VocWebSearchStack — model access only (-c enableWebSearch=false)', () => {
+describe('VocWebSearchStack — use-case submission only (-c enableWebSearch=false)', () => {
   const template = synth({ deployWebSearch: false, anthropicUseCase: ANTHROPIC_USE_CASE });
 
   it('creates no gateway resources at all', () => {
@@ -148,12 +155,12 @@ describe('VocWebSearchStack — model access only (-c enableWebSearch=false)', (
     expect(exportNames(template)).toEqual([]);
   });
 
-  it('still creates the agreements', () => {
-    template.resourceCountIs(AGREEMENT, ALLOWED_FOUNDATION_MODEL_IDS.length);
+  it('still submits the form', () => {
+    template.resourceCountIs(USE_CASE_SUBMISSION, 1);
   });
 });
 
-describe('VocWebSearchStack — gateway only (account already has Bedrock access)', () => {
+describe('VocWebSearchStack — gateway only (the default: no anthropicUseCase)', () => {
   const template = synth({ deployWebSearch: true });
 
   it('creates the gateway', () => {
@@ -161,51 +168,18 @@ describe('VocWebSearchStack — gateway only (account already has Bedrock access
     template.resourceCountIs(GATEWAY_TARGET, 1);
   });
 
-  it('creates no agreements and no use-case submission', () => {
-    template.resourceCountIs(AGREEMENT, 0);
+  it('creates no use-case submission and no agreements', () => {
     template.resourceCountIs(USE_CASE_SUBMISSION, 0);
+    template.resourceCountIs(AGREEMENT, 0);
   });
 });
 
-describe('VocWebSearchStack — model agreements target the app region, not the stack region', () => {
-  it('passes modelRegion through as a custom-resource property', () => {
-    // The stack is pinned to us-east-1; the agreements must still be created in
-    // whichever region the app runs in. This is what made merging the two
-    // stacks free rather than a regional behaviour change.
-    const template = synth({
-      deployWebSearch: false,
-      anthropicUseCase: ANTHROPIC_USE_CASE,
-      modelRegion: 'eu-central-1',
-    });
-    template.hasResourceProperties(AGREEMENT, {
-      region: 'eu-central-1',
-      modelId: ALLOWED_FOUNDATION_MODEL_IDS[0],
-    });
-  });
-});
-
-describe('VocWebSearchStack — modelRegion is required only when the model-access half is on', () => {
-  it('is not needed for a gateway-only deployment', () => {
-    // A gateway-only caller has no agreements, so it must not be forced to
-    // invent a region it never reads.
-    const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [] } });
-    expect(() => new VocWebSearchStack(app, 'VocWebSearchStack', {
-      env: { account: '111111111111', region: 'us-east-1' },
-      crossRegionReferences: true,
+describe('VocWebSearchStack — invalid use-case details', () => {
+  it('fails the synth rather than submitting a malformed form', () => {
+    expect(() => newStack({
       deployWebSearch: true,
-    })).not.toThrow();
-  });
-
-  it('throws when the model-access half is on without it', () => {
-    // Silently defaulting would create the agreements in a region the app never
-    // calls Bedrock in.
-    const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [] } });
-    expect(() => new VocWebSearchStack(app, 'VocWebSearchStack', {
-      env: { account: '111111111111', region: 'us-east-1' },
-      crossRegionReferences: true,
-      deployWebSearch: false,
-      anthropicUseCase: ANTHROPIC_USE_CASE,
-    })).toThrow(/modelRegion is required/);
+      anthropicUseCase: { ...ANTHROPIC_USE_CASE, companyWebsite: 'not a url' },
+    })).toThrow(/Invalid anthropicUseCase configuration: companyWebsite/);
   });
 });
 
@@ -214,13 +188,7 @@ describe('VocWebSearchStack — the both-halves-off invariant is enforced, not j
     // An empty stack becomes an invalid `Resources: {}` once
     // convert-template.mjs strips CDKMetadata, so this must be impossible to
     // reach even if a caller skips shouldDeployAiEnablement().
-    const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [] } });
-    expect(() => new VocWebSearchStack(app, 'VocWebSearchStack', {
-      env: { account: '111111111111', region: 'us-east-1' },
-      crossRegionReferences: true,
-      modelRegion: 'us-east-1',
-      deployWebSearch: false,
-    })).toThrow(/both halves are disabled/);
+    expect(() => newStack({ deployWebSearch: false })).toThrow(/both halves are disabled/);
   });
 });
 
@@ -232,10 +200,10 @@ describe('shouldDeployAiEnablement', () => {
   });
 
   it('does NOT construct the stack when both halves are off', () => {
-    // Reachable in the normal deploy path: an account that already has Bedrock
-    // access, deployed with -c enableWebSearch=false. Constructing here would
-    // emit a resource-less stack, which the workshop converter turns into an
-    // invalid `Resources: {}`.
+    // The default deploy with -c enableWebSearch=false, and the only way to keep
+    // a deployment out of us-east-1. Constructing here would emit a
+    // resource-less stack, which the workshop converter turns into an invalid
+    // `Resources: {}`.
     expect(shouldDeployAiEnablement(false, undefined)).toBe(false);
   });
 });

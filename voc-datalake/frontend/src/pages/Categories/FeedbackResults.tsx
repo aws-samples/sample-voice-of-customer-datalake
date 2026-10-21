@@ -4,17 +4,19 @@ import { useTranslation } from 'react-i18next'
 import type { FeedbackItem } from '../../api/client'
 import FeedbackCard from '../../components/FeedbackCard'
 import { ratingFilterLabel } from './types'
-import type { ViewMode, SentimentFilter, RatingFilter } from './types'
+import type { ViewMode, RatingFilter } from './types'
 
 interface FeedbackResultsProps {
   readonly filteredFeedback: FeedbackItem[]
   readonly feedbackLoading: boolean
   readonly viewMode: ViewMode
   readonly onViewModeChange: (mode: ViewMode) => void
-  readonly selectedSource: string | null
-  readonly selectedCategories: string[]
-  readonly sentimentFilter: SentimentFilter
+  readonly selectedSources: readonly string[]
+  readonly selectedCategories: readonly string[]
+  readonly selectedSentiments: readonly string[]
   readonly ratingFilter: RatingFilter
+  /** Opens the in-page detail pop-up for an item. */
+  readonly onOpenFeedback?: (item: FeedbackItem) => void
   /** CSV export of the currently filtered items. PDF export lives in the page-level filter bar. */
   readonly onExport: () => void
   /** Candidate-window size reported by the backend ("N of TOTAL"). */
@@ -50,26 +52,24 @@ function ResultsCountLine({
 }
 
 function ActiveFiltersLine({
-  selectedSource,
+  selectedSources,
   selectedCategories,
-  sentimentFilter,
+  selectedSentiments,
   ratingFilter,
 }: Readonly<{
-  selectedSource: string | null
-  selectedCategories: string[]
-  sentimentFilter: SentimentFilter
+  selectedSources: readonly string[]
+  selectedCategories: readonly string[]
+  selectedSentiments: readonly string[]
   ratingFilter: RatingFilter
 }>) {
   const { t } = useTranslation(['common', 'categories'])
-  const sentimentText = sentimentFilter !== 'all' ? t(`categories:${sentimentFilter}`) : null
-  return (
-    <p className="text-xs sm:text-sm text-gray-500 truncate">
-      {selectedSource && t('categories:sourceFilterLabel', { source: selectedSource })}
-      {selectedCategories.length > 0 && `${selectedSource ? ' • ' : ''}${selectedCategories.map(c => c.replace('_', ' ')).join(', ')}`}
-      {sentimentText && ` • ${sentimentText}`}
-      {ratingFilter.value > 0 && ` • ${ratingFilterLabel(ratingFilter, t)}`}
-    </p>
-  )
+  const parts = [
+    selectedSources.length > 0 ? t('categories:sourceFilterLabel', { source: selectedSources.join(', ') }) : null,
+    selectedCategories.length > 0 ? selectedCategories.map((c) => c.replace(/_/g, ' ')).join(', ') : null,
+    selectedSentiments.length > 0 ? selectedSentiments.map((s) => t(`common:sentiment.${s}`, { defaultValue: s })).join(', ') : null,
+    ratingFilter.value > 0 ? ratingFilterLabel(ratingFilter, t) : null,
+  ].filter((part): part is string => part !== null)
+  return <p className="text-xs sm:text-sm text-gray-500 truncate">{parts.join(' • ')}</p>
 }
 
 export function FeedbackResults({
@@ -77,10 +77,11 @@ export function FeedbackResults({
   feedbackLoading,
   viewMode,
   onViewModeChange,
-  selectedSource,
+  selectedSources,
   selectedCategories,
-  sentimentFilter,
+  selectedSentiments,
   ratingFilter,
+  onOpenFeedback,
   onExport,
   totalCount,
   isPartialWindow,
@@ -103,9 +104,9 @@ export function FeedbackResults({
             isPartialWindow={isPartialWindow}
           />
           <ActiveFiltersLine
-            selectedSource={selectedSource}
+            selectedSources={selectedSources}
             selectedCategories={selectedCategories}
-            sentimentFilter={sentimentFilter}
+            selectedSentiments={selectedSentiments}
             ratingFilter={ratingFilter}
           />
         </div>
@@ -137,7 +138,7 @@ export function FeedbackResults({
           </button>
         </div>
       </div>
-      <FeedbackContentDisplay isLoading={feedbackLoading} items={filteredFeedback} viewMode={viewMode} />
+      <FeedbackContentDisplay isLoading={feedbackLoading} items={filteredFeedback} viewMode={viewMode} onOpenFeedback={onOpenFeedback} />
       {hasMore && !feedbackLoading && (
         <div className="flex justify-center mt-3 sm:mt-4">
           <button
@@ -153,7 +154,12 @@ export function FeedbackResults({
   )
 }
 
-function FeedbackContentDisplay({ isLoading, items, viewMode }: Readonly<{ isLoading: boolean; items: FeedbackItem[]; viewMode: ViewMode }>) {
+function FeedbackContentDisplay({ isLoading, items, viewMode, onOpenFeedback }: Readonly<{
+  isLoading: boolean
+  items: FeedbackItem[]
+  viewMode: ViewMode
+  onOpenFeedback?: (item: FeedbackItem) => void
+}>) {
   const { t } = useTranslation(['common', 'categories'])
   if (isLoading) {
     return (
@@ -168,7 +174,7 @@ function FeedbackContentDisplay({ isLoading, items, viewMode }: Readonly<{ isLoa
   return (
     <div className={clsx(viewMode === 'grid' ? 'grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4' : 'space-y-2 sm:space-y-3')}>
       {items.map((item) => (
-        <FeedbackCard key={item.feedback_id} feedback={item} compact={viewMode === 'list'} />
+        <FeedbackCard key={item.feedback_id} feedback={item} compact={viewMode === 'list'} onOpen={onOpenFeedback} />
       ))}
     </div>
   )

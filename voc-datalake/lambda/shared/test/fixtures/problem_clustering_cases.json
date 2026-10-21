@@ -1,0 +1,26 @@
+{
+  "_comment": "Parity fixture for problem-text clustering. Asserted by BOTH shared/test/test_problem_clustering.py (Python) and frontend/src/pages/ProblemAnalysis/problemClustering.test.ts (TS). Keep the two algorithms in lockstep: a drift in normalize/keywords/jaccard fails one side here. keywords are sorted for a stable, language-agnostic comparison.",
+  "normalize": [
+    { "input": "Delivery was LATE!!!", "expected": "delivery was late" },
+    { "input": "  Multiple   spaces\tand\ntabs ", "expected": "multiple spaces and tabs" },
+    { "input": "Price/Quality: 100% off-putting", "expected": "pricequality 100 offputting" },
+    { "input": "already-normalized text", "expected": "alreadynormalized text" },
+    { "input": "", "expected": "" },
+    { "input": "!!!@@@###", "expected": "" }
+  ],
+  "keywords": [
+    { "input": "The delivery was very late and damaged", "expected": ["damaged", "delivery", "late"] },
+    { "input": "it is a big problem", "expected": ["big", "problem"] },
+    { "input": "", "expected": [] },
+    { "input": "the a an is are", "expected": [] },
+    { "input": "Checkout checkout CHECKOUT", "expected": ["checkout"] },
+    { "input": "app crashes on login screen repeatedly", "expected": ["app", "crashes", "login", "repeatedly", "screen"] }
+  ],
+  "jaccard": [
+    { "a": "delivery was late", "b": "late delivery problem", "expected": 0.6666666666666666 },
+    { "a": "app crashes on login", "b": "app crashes on login", "expected": 1.0 },
+    { "a": "", "b": "", "expected": 1.0 },
+    { "a": "something here", "b": "", "expected": 0.0 },
+    { "a": "delivery late", "b": "pricing expensive", "expected": 0.0 }
+  ]
+}

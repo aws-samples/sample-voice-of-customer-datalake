@@ -20,6 +20,8 @@ from shared.api import (
     AGGREGATE_RETENTION_DAYS,
 )
 from shared.exceptions import ValidationError
+from shared.enrichment_fields import ENRICHMENT_FIELDS, item_value
+from shared.feedback_filters import FeedbackFilters
 from shared.feedback import (
     PERSONA_PREFIX,
     has_legacy_persona_buckets,
@@ -34,6 +36,7 @@ from shared.indexes import (
     FEEDBACK_BY_ID_INDEX,
     FEEDBACK_BY_URGENCY_INDEX,
 )
+from shared.problem_clustering import extract_keywords
 
 # Pagination bounds for /feedback. The candidate window is a function of
 # offset+limit, capped to prevent unbounded DynamoDB scans. The cap also defines
@@ -54,6 +57,9 @@ CANDIDATES_SOFT_CAP = 1000
 # LastEvaluatedKey, so a huge backfill can't make one request run forever.
 # Matches shared/feedback.py's MAX_ITEMS_PER_PARTITION rationale.
 MAX_SCANNED_PER_PARTITION = 10000
+
+# One source or several (FeedbackFilters.sources); None/empty means "any".
+SourceSelection = str | list[str] | tuple[str, ...] | None
 
 # AWS Clients
 dynamodb = get_dynamodb_resource()
@@ -90,7 +96,7 @@ def _query_partition(
     index_name: str,
     key_expr,
     max_matched: int,
-    source: str | None = None,
+    source: SourceSelection = None,
 ) -> tuple[list[dict[str, Any]], bool]:
     """Page one GSI partition via LastEvaluatedKey.
 
@@ -115,8 +121,9 @@ def _query_partition(
             'Limit': DATE_QUERY_LIMIT,
             'ScanIndexForward': False,
         }
-        if source:
-            kwargs['FilterExpression'] = Attr('source_platform').eq(source)
+        source_expr = _source_filter_expression(source)
+        if source_expr is not None:
+            kwargs['FilterExpression'] = source_expr
         if last_key:
             kwargs['ExclusiveStartKey'] = last_key
         response = feedback_table.query(**kwargs)
@@ -136,7 +143,7 @@ def _scan_recent_items(
     days: int,
     per_day_limit: int | None = None,
     soft_cap: int = MAX_FEEDBACK_OFFSET,
-    source: str | None = None,
+    source: SourceSelection = None,
 ) -> tuple[list[dict[str, Any]], bool]:
     """Collect items imported in the last `days` days via gsi1-by-date.
 
@@ -174,7 +181,9 @@ def _scan_recent_items(
 
 
 def _scan_window_items(
-    days: int, date_basis: str, source: str | None = None,
+    days: int, date_basis: str,
+    source: SourceSelection = None,
+    soft_cap: int = MAX_FEEDBACK_OFFSET,
 ) -> tuple[list[dict[str, Any]], bool]:
     """Collect items whose basis date falls within the last `days` days.
 
@@ -183,8 +192,12 @@ def _scan_window_items(
     For 'imported' this is the raw gsi1-by-date window. For 'review' the same
     window is post-filtered down to items actually written within it (see the
     containment note above).
+
+    ``soft_cap`` defaults to ``MAX_FEEDBACK_OFFSET`` (matching every existing
+    caller) but Problem Analysis raises it to ``PROBLEM_SCAN_CAP`` to read a
+    full large window rather than the first 5000 rows.
     """
-    items, is_partial = _scan_recent_items(days, source=source)
+    items, is_partial = _scan_recent_items(days, source=source, soft_cap=soft_cap)
     if date_basis == DATE_BASIS_REVIEW:
         cutoff = window_cutoff(days)
         items = [i for i in items if basis_date(i, date_basis) >= cutoff]
@@ -328,6 +341,42 @@ def _persona_bucket(item: dict) -> str:
 
 
 # ============================================
+# Filtering
+# ============================================
+#
+# Every read endpoint parses its query params into ONE `FeedbackFilters`
+# (shared/feedback_filters.py): multi-value source/category/subcategory/sentiment,
+# urgent-only, registry enrichment fields (e.g. usefulness) and `cf_<key>`
+# custom fields. Only the source list is pushed down to DynamoDB (as a
+# FilterExpression on each partition read); everything else is a post-filter over
+# the windowed candidates, because no GSI covers those attributes.
+
+
+def _source_filter_expression(sources: SourceSelection):
+    """A server-side FilterExpression for one or many sources, or None.
+
+    `IN` takes at most 100 operands; FeedbackFilters caps a dimension at 50.
+    """
+    if not sources:
+        return None
+    if isinstance(sources, str):
+        return Attr('source_platform').eq(sources)
+    values = list(sources)
+    if len(values) == 1:
+        return Attr('source_platform').eq(values[0])
+    return Attr('source_platform').is_in(values)
+
+
+def _request_filters(params: dict[str, Any]) -> FeedbackFilters:
+    """The shared filters of the current request.
+
+    A multi-select custom field arrives as a REPEATED `cf_<key>`, which only the
+    multi-value view of the query string carries, so both views are passed.
+    """
+    return FeedbackFilters.from_mapping(params, app.current_event.multi_value_query_string_parameters)
+
+
+# ============================================
 # Feedback Endpoints
 # ============================================
 
@@ -359,15 +408,20 @@ def list_feedback():
 
     days = validate_days(params.get('days'), default=7)
     date_basis = validate_date_basis(params.get('date_basis'))
-    source = params.get('source')
-    category = params.get('category')
-    sentiment = params.get('sentiment')
+    filters = _request_filters(params)
     limit = validate_limit(params.get('limit'), default=50, max_val=100)
     offset = validate_int(
         params.get('offset'),
         default=0,
         min_val=0,
         max_val=MAX_FEEDBACK_OFFSET,
+    )
+    # A single category with no source list reads the category GSI directly;
+    # anything else walks the date partitions with the sources pushed down.
+    category_partition = (
+        filters.categories[0]
+        if len(filters.categories) == 1 and not filters.sources
+        else None
     )
 
     # Sizing the candidate window:
@@ -380,10 +434,7 @@ def list_feedback():
     #   filter are a small subset of the scanned window. In that case we scan the
     #   full window (up to MAX_FEEDBACK_OFFSET) so the filtered count is exact and
     #   `is_partial_window` only trips on genuine cap truncation.
-    has_post_filter = (
-        bool(source) or bool(sentiment) or bool(category)
-        or date_basis == DATE_BASIS_REVIEW
-    )
+    has_post_filter = not filters.is_empty or date_basis == DATE_BASIS_REVIEW
     candidate_cap = (
         MAX_FEEDBACK_OFFSET if has_post_filter
         else max((offset + limit) * 2, MIN_CANDIDATE_CAP)
@@ -393,12 +444,12 @@ def list_feedback():
     current_date = datetime.now(timezone.utc)
     window_truncated = False
 
-    if category and not source:
+    if category_partition:
         # Category is the partition key here, so no source push-down needed;
         # paging still matters because one query returns at most one page.
         candidates, window_truncated = _query_partition(
             FEEDBACK_BY_CATEGORY_INDEX,
-            Key('gsi2pk').eq(f'CATEGORY#{category}'),
+            Key('gsi2pk').eq(f'CATEGORY#{category_partition}'),
             max_matched=candidate_cap,
         )
     else:
@@ -411,7 +462,7 @@ def list_feedback():
                 FEEDBACK_BY_DATE_INDEX,
                 Key('gsi1pk').eq(f'DATE#{date}'),
                 max_matched=candidate_cap - len(candidates),
-                source=source,
+                source=filters.sources,
             )
             candidates.extend(day_items)
             if len(candidates) >= candidate_cap:
@@ -419,7 +470,7 @@ def list_feedback():
                 window_truncated = day_has_more or i < days - 1
                 break
 
-    if date_basis == DATE_BASIS_REVIEW or (category and not source):
+    if date_basis == DATE_BASIS_REVIEW or category_partition:
         # The `days` window applies to the selected basis date. The date-loop
         # branch already bounds imported-basis candidates by construction, but
         # the category-GSI branch is time-unbounded (sorted by sentiment), so
@@ -430,12 +481,8 @@ def list_feedback():
         # was written.
         cutoff = window_cutoff(days)
         candidates = [c for c in candidates if basis_date(c, date_basis) >= cutoff]
-    if source:
-        candidates = [i for i in candidates if i.get('source_platform') == source]
-    if category and source:
-        candidates = [i for i in candidates if i.get('category') == category]
-    if sentiment:
-        candidates = [i for i in candidates if i.get('sentiment_label') == sentiment]
+    if not filters.is_empty:
+        candidates = [i for i in candidates if filters.matches(i)]
 
     total = len(candidates)
     page = candidates[offset:offset + limit]
@@ -458,18 +505,13 @@ def get_urgent_feedback():
     limit = validate_limit(params.get('limit'), default=50, max_val=100)
     days = validate_days(params.get('days'), default=30)
     date_basis = validate_date_basis(params.get('date_basis'))
-    source_filter = params.get('source')
-    sentiment_filter = params.get('sentiment')
-    category_filter = params.get('category')
+    filters = _request_filters(params)
     
     # Unified window definition: a days-long window ending today (same as
     # /feedback and /metrics/*). Previously spanned days+1 calendar days.
     cutoff_date = window_cutoff(days)
     
-    has_filters = bool(
-        source_filter or sentiment_filter or category_filter
-        or date_basis == DATE_BASIS_REVIEW
-    )
+    has_filters = not filters.is_empty or date_basis == DATE_BASIS_REVIEW
     fetch_limit = limit * 5 if has_filters else limit
     
     response = feedback_table.query(
@@ -492,11 +534,7 @@ def get_urgent_feedback():
         
         if basis_date(item, date_basis) < cutoff_date:
             continue
-        if source_filter and item.get('source_platform') != source_filter:
-            continue
-        if sentiment_filter and item.get('sentiment_label') != sentiment_filter:
-            continue
-        if category_filter and item.get('category') != category_filter:
+        if not filters.matches(item):
             continue
         
         items.append(item)
@@ -693,9 +731,7 @@ def search_feedback():
     days = validate_days(params.get('days'), default=30)
     limit = validate_limit(params.get('limit'), default=50, max_val=100)
     date_basis = validate_date_basis(params.get('date_basis'))
-    source_filter = params.get('source')
-    sentiment_filter = params.get('sentiment')
-    category_filter = params.get('category')
+    filters = _request_filters(params)
     
     # Unified window definition: a days-long window ending today (same as
     # /feedback and /metrics/*). Previously spanned days+1 calendar days.
@@ -717,18 +753,14 @@ def search_feedback():
     # would only make an incomplete answer slower and no more honest.
     candidates, window_truncated = _scan_recent_items(
         days, per_day_limit=300, soft_cap=CANDIDATES_SOFT_CAP,
-        source=source_filter,
+        source=filters.sources,
     )
     
     items = []
     for item in candidates:
         if basis_date(item, date_basis) < cutoff_date:
             continue
-        if source_filter and item.get('source_platform') != source_filter:
-            continue
-        if sentiment_filter and item.get('sentiment_label') != sentiment_filter:
-            continue
-        if category_filter and item.get('category') != category_filter:
+        if not filters.matches(item):
             continue
         
         original_text = (item.get('original_text') or '').lower()
@@ -837,12 +869,20 @@ def _summary_from_items(days: int) -> dict:
     and the numbers are a lower bound.
     """
     items, is_partial = _scan_window_items(days, DATE_BASIS_REVIEW)
+    return _summarize_items(items, days, DATE_BASIS_REVIEW, is_partial)
 
+
+def _summarize_items(items: list[dict], days: int, date_basis: str, is_partial: bool) -> dict:
+    """The `/metrics/summary` response shape, computed from raw items.
+
+    Shared by the review-basis summary and `/metrics/overview`, so a filtered
+    dashboard and an unfiltered review-basis one bucket days the same way.
+    """
     daily_counts: dict[str, int] = {}
     daily_sentiment: dict[str, dict[str, float]] = {}
     urgent_count = 0
     for item in items:
-        day = basis_date(item, DATE_BASIS_REVIEW)
+        day = basis_date(item, date_basis)
         daily_counts[day] = daily_counts.get(day, 0) + 1
         score = item.get('sentiment_score')
         if score is not None:
@@ -1124,6 +1164,410 @@ def get_persona_metrics():
         'has_legacy_persona_buckets': has_legacy_persona_buckets(personas),
         'personas': dict(sorted(personas.items(), key=lambda x: x[1], reverse=True))
     }
+
+
+# How far back the review-basis latest-date probe scans before giving up. The
+# imported-basis probe is a single indexed query with no such bound; the review
+# basis has to walk day partitions on the feedback GSI (reviews are keyed by
+# import date, so there is no index on review date to answer this in one read).
+# Bounded by the aggregate retention horizon because a fallback cannot surface a
+# complete picture older than that anyway — see AGGREGATE_RETENTION_DAYS.
+LATEST_DATE_REVIEW_SCAN_DAYS = AGGREGATE_RETENTION_DAYS
+
+
+@tracer.capture_method
+def _latest_imported_date() -> str | None:
+    """Newest date (YYYY-MM-DD) that has any feedback, by import date.
+
+    One indexed read: `METRIC#daily_total` carries one row per date that had any
+    ingestion, keyed by `sk='YYYY-MM-DD'`, and the aggregator writes it for every
+    item unconditionally. ISO dates sort lexicographically, so the newest
+    populated date is the first row of a descending key scan. Returns None when
+    no date has data (empty deployment, or every row aged out of retention).
+    """
+    if not aggregates_table:
+        return None
+    response = aggregates_table.query(
+        KeyConditionExpression=Key('pk').eq('METRIC#daily_total'),
+        ScanIndexForward=False,
+        Limit=1,
+    )
+    items = response.get('Items', [])
+    if not items:
+        return None
+    sk = items[0].get('sk')
+    return sk if isinstance(sk, str) and sk else None
+
+
+@tracer.capture_method
+def _latest_review_date() -> str | None:
+    """Newest review date (YYYY-MM-DD) across recent feedback, or None.
+
+    Reviews are keyed by import date on the feedback GSI, not by review date, so
+    there is no single index read for this. Walk day partitions newest-first by
+    IMPORT date and take the maximum REVIEW date seen, bounded by
+    LATEST_DATE_REVIEW_SCAN_DAYS. The bound makes this a bounded number of reads
+    rather than an open-ended scan; past it, no complete fallback exists anyway.
+    """
+    if not feedback_table:
+        return None
+    current_date = datetime.now(timezone.utc)
+    for i in range(LATEST_DATE_REVIEW_SCAN_DAYS):
+        date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
+        response = feedback_table.query(
+            IndexName=FEEDBACK_BY_DATE_INDEX,
+            KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
+            ScanIndexForward=False,
+        )
+        items = response.get('Items', [])
+        if not items:
+            continue
+        # A day's items were imported together but can carry different review
+        # dates; take the max review date in this partition. basis_date falls
+        # back to the import date when a review date is absent, so this is never
+        # empty for a non-empty partition.
+        review_dates = [basis_date(item, DATE_BASIS_REVIEW) for item in items]
+        review_dates = [d for d in review_dates if d]
+        if review_dates:
+            return max(review_dates)
+    return None
+
+
+@app.get("/metrics/latest-date")
+@tracer.capture_method
+def get_latest_date():
+    """Return the most recent date that has feedback, for the empty-window fallback.
+
+    When the UI's selected time window is empty, the client re-queries at this
+    date so the user sees their most recent data instead of a blank page. Honors
+    `date_basis` so the fallback window matches the basis the pages filter on.
+    `latest_date` is null when no feedback exists at all.
+    """
+    params = app.current_event.query_string_parameters or {}
+    date_basis = validate_date_basis(params.get('date_basis'))
+
+    if date_basis == DATE_BASIS_REVIEW:
+        latest = _latest_review_date()
+    else:
+        latest = _latest_imported_date()
+
+    return {'latest_date': latest, 'date_basis': date_basis}
+
+
+# A custom field is a good filter facet when its values REPEAT: few distinct
+# values, each covering many records (e.g. `region` with 5 values). It is a poor
+# facet when nearly every value is unique (an id/timestamp) or when there is only
+# one value. These bounds encode "moderate cardinality" — confirmed with the
+# product owner — and are the heart of the recommendation.
+MIN_CUSTOM_FIELD_DISTINCT_VALUES = 2    # a single value is not a filter
+MAX_CUSTOM_FIELD_DISTINCT_VALUES = 50   # above this it reads like an id, not a facet
+# A field only recommends if its non-null values cover at least this fraction of
+# the sampled records — a field present on a handful of rows is noise.
+MIN_CUSTOM_FIELD_COVERAGE = 0.1
+# How many values to preview per recommended field (the picker shows a sample).
+CUSTOM_FIELD_VALUE_PREVIEW = 10
+
+
+def _rank_custom_field_candidates(items: list[dict]) -> list[dict]:
+    """Rank custom_fields keys by how well their values REPEAT (facet quality).
+
+    Pure function over already-fetched records, so it is testable without AWS.
+    For each key seen in any item's `custom_fields`, it counts how many records
+    carry it and the frequency of each value, then keeps only keys whose
+    distinct-value count and coverage fall in the "moderate cardinality" band
+    that makes a good filter — see the MIN/MAX constants. Near-unique fields
+    (ids) and single-value fields are dropped.
+
+    Returns a list of ``{key, distinct_values, coverage, top_values}`` sorted
+    best-facet-first (most records covered, then fewest distinct values), where
+    ``top_values`` is a preview of the most common values with counts.
+    """
+    total = len(items)
+    if total == 0:
+        return []
+
+    # key -> {value: count}. str() the value so a numeric custom field and its
+    # string twin bucket together, matching how the filter will compare them.
+    value_counts: dict[str, dict[str, int]] = {}
+    for item in items:
+        fields = item.get('custom_fields')
+        if not isinstance(fields, dict):
+            continue
+        for key, value in fields.items():
+            if value is None or value == '':
+                continue
+            counts = value_counts.setdefault(key, {})
+            sval = str(value)
+            counts[sval] = counts.get(sval, 0) + 1
+
+    candidates: list[dict] = []
+    for key, counts in value_counts.items():
+        distinct = len(counts)
+        covered = sum(counts.values())
+        coverage = covered / total
+        if distinct < MIN_CUSTOM_FIELD_DISTINCT_VALUES:
+            continue
+        if distinct > MAX_CUSTOM_FIELD_DISTINCT_VALUES:
+            continue
+        if coverage < MIN_CUSTOM_FIELD_COVERAGE:
+            continue
+        top = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:CUSTOM_FIELD_VALUE_PREVIEW]
+        candidates.append({
+            'key': key,
+            'distinct_values': distinct,
+            'coverage': round(coverage, 3),
+            'top_values': [{'value': v, 'count': c} for v, c in top],
+        })
+
+    # Best facet first: widest coverage, then fewest distinct values (tightest
+    # choice set), then key for a stable order.
+    candidates.sort(key=lambda c: (-c['coverage'], c['distinct_values'], c['key']))
+    return candidates
+
+
+@app.get("/feedback/custom-field-candidates")
+@tracer.capture_method
+def get_custom_field_candidates():
+    """Recommend custom_fields keys that would make good filter facets.
+
+    Samples recent stored records and ranks their extra fields by how much their
+    values REPEAT (see `_rank_custom_field_candidates`). This is what populates
+    the admin custom-filter picker — a field is suggested when it has a handful
+    of recurring values, not when every row carries a unique id.
+
+    `is_partial` is true when the sampled window was truncated at the candidate
+    cap, so the recommendation reflects recent records rather than the whole
+    corpus — the same honesty the other scan endpoints carry.
+    """
+    params = app.current_event.query_string_parameters or {}
+    days = validate_days(params.get('days'), default=30)
+
+    items, is_partial = _scan_recent_items(days)
+    candidates = _rank_custom_field_candidates(items)
+
+    return {
+        'period_days': days,
+        'sampled_count': len(items),
+        'is_partial': is_partial,
+        'candidates': candidates,
+    }
+
+
+# ============================================
+# Problem Analysis aggregation
+# ============================================
+#
+# Problem Analysis used to ship the whole window to the browser and build its
+# category→subcategory→problem tree there, bounded by `/feedback`'s 5000-row
+# offset ceiling (so a large corpus silently truncated). This endpoint does the
+# O(rows) pass server-side instead and returns the FINEST-GRAIN tree — rows
+# bucketed by (category, subcategory, exact problem_summary) — with each leaf's
+# count, urgency, mean sentiment, a root-cause hypothesis, and the keyword set
+# the client needs to RE-MERGE leaves at its chosen similarity threshold (the
+# slider stays instant because it works over a few hundred distinct problems,
+# never the raw rows). Raw feedback items are fetched on demand per problem via
+# `/feedback`, so the tree stays lean.
+
+# Full-window scan ceiling for this endpoint, above `/feedback`'s 5000 (the
+# product requirement is up to ~50k rows). A window past this reports
+# `is_partial`, matching every other scan endpoint rather than failing. The
+# aggregation is O(rows) to bucket plus O(distinct_problems**2) to describe, and
+# the distinct count is far smaller than the row count, so 50k fits the
+# synchronous API Gateway budget.
+PROBLEM_SCAN_CAP = 50000
+
+
+def _aggregate_problems(items: list[dict]) -> list[dict]:
+    """Bucket feedback into finest-grain problem leaves for the client to merge.
+
+    Pure over already-fetched rows (testable without AWS). Groups by
+    ``(category, subcategory, problem_summary)`` — EXACT text, no similarity
+    here; the similarity merge is the client's, at its slider threshold. Rows
+    with no ``problem_summary`` are skipped (they carry no problem to analyse),
+    mirroring the client's ``.filter(item => item.problem_summary)``.
+
+    Each leaf carries what the client's merge and render need without the rows:
+    the representative ``problem`` text, its ``keywords`` (for the Jaccard
+    merge), ``count``, ``urgent_count``, ``avg_sentiment``, and the first
+    non-empty ``root_cause`` hypothesis seen — the same fields the browser tree
+    computed per group.
+    """
+    # (category, subcategory, problem) -> accumulator
+    leaves: dict[tuple[str, str, str], dict] = {}
+    for item in items:
+        problem = (item.get('problem_summary') or '').strip()
+        if not problem:
+            continue
+        category = item.get('category') or 'uncategorized'
+        subcategory = item.get('subcategory') or 'general'
+        key = (category, subcategory, problem)
+        leaf = leaves.get(key)
+        if leaf is None:
+            leaf = {
+                'category': category,
+                'subcategory': subcategory,
+                'problem': problem,
+                'count': 0,
+                'urgent_count': 0,
+                '_sentiment_sum': 0.0,
+                'root_cause': None,
+            }
+            leaves[key] = leaf
+        leaf['count'] += 1
+        if item.get('urgency') == 'high':
+            leaf['urgent_count'] += 1
+        # sentiment_score may be absent/None on legacy rows; treat as 0 like the
+        # client's `i.sentiment_score` (which is a number there).
+        score = item.get('sentiment_score')
+        leaf['_sentiment_sum'] += float(score) if isinstance(score, (int, float)) else 0.0
+        if not leaf['root_cause'] and item.get('problem_root_cause_hypothesis'):
+            leaf['root_cause'] = item['problem_root_cause_hypothesis']
+
+    result: list[dict] = []
+    for leaf in leaves.values():
+        count = leaf['count']
+        result.append({
+            'category': leaf['category'],
+            'subcategory': leaf['subcategory'],
+            'problem': leaf['problem'],
+            # Sorted for a stable, platform-independent payload; the client only
+            # ever intersects/unions these, so order does not matter to it.
+            'keywords': sorted(extract_keywords(leaf['problem'])),
+            'count': count,
+            'urgent_count': leaf['urgent_count'],
+            'avg_sentiment': leaf['_sentiment_sum'] / count if count else 0.0,
+            'root_cause': leaf['root_cause'],
+        })
+    # Biggest problems first — a stable starting order; the client re-sorts after
+    # merging and applying filters.
+    result.sort(key=lambda leaf: leaf['count'], reverse=True)
+    return result
+
+
+@app.get("/feedback/problems")
+@tracer.capture_method
+def get_problems():
+    """Finest-grain problem leaves over the full window for Problem Analysis.
+
+    Scans up to ``PROBLEM_SCAN_CAP`` rows (far past `/feedback`'s 5000 offset
+    ceiling), buckets them by exact ``(category, subcategory, problem_summary)``,
+    and returns the leaves with keyword sets so the client re-merges at its
+    similarity threshold. ``is_partial`` is true when the window exceeded the
+    cap, the same honesty the other scan endpoints carry.
+    """
+    params = app.current_event.query_string_parameters or {}
+    days = validate_days(params.get('days'), default=30)
+    date_basis = validate_date_basis(params.get('date_basis'))
+    filters = _request_filters(params)
+
+    items, is_partial = _scan_window_items(
+        days, date_basis, source=filters.sources, soft_cap=PROBLEM_SCAN_CAP,
+    )
+    # Every other dimension (category, sentiment, usefulness, urgent, custom
+    # fields) is a row-level post-filter applied BEFORE aggregation, so the tree
+    # (counts, keywords, everything derived) reflects only the matching rows —
+    # the same predicate the feedback-list endpoints use.
+    if filters.has_post_filters:
+        items = [i for i in items if filters.matches(i)]
+    problems = _aggregate_problems(items)
+
+    return {
+        'period_days': days,
+        'feedback_count': len(items),
+        'is_partial': is_partial,
+        'problems': problems,
+    }
+
+
+# ============================================
+# Filtered overview (Dashboard / Categories)
+# ============================================
+#
+# Aggregates are bucketed by import date and a handful of dimensions, so they
+# cannot answer "negative, high-usefulness feedback from these two sources".
+# When a page has filters active it calls this ONE endpoint, which scans the
+# window once and returns every breakdown those pages chart, in the same shapes
+# as /metrics/summary|sentiment|categories|sources and /feedback/entities.
+# Unfiltered pages keep using the exact, cheap aggregate endpoints.
+
+# Same ceiling Problem Analysis scans to: the response is a handful of counters,
+# so the cost is the read, not the payload.
+OVERVIEW_SCAN_CAP = PROBLEM_SCAN_CAP
+OVERVIEW_ISSUES_LIMIT = 20
+SENTIMENT_LABELS = ('positive', 'neutral', 'negative', 'mixed')
+
+
+def _sorted_counts(values) -> dict[str, int]:
+    """Occurrence counts, largest first."""
+    counts: dict[str, int] = {}
+    for value in values:
+        counts[value] = counts.get(value, 0) + 1
+    return dict(sorted(counts.items(), key=lambda kv: kv[1], reverse=True))
+
+
+def _issue_counts(items: list[dict]) -> dict[str, int]:
+    """Top problem summaries, keyed the way /feedback/entities keys them."""
+    keys = (
+        (item.get('problem_summary') or '')[:100].lower().strip()
+        for item in items
+        if len(item.get('problem_summary') or '') > 5
+    )
+    return dict(list(_sorted_counts(keys).items())[:OVERVIEW_ISSUES_LIMIT])
+
+
+def _overview_from_items(items: list[dict], days: int, date_basis: str, is_partial: bool) -> dict:
+    """Every dashboard breakdown over one already-filtered item list. Pure."""
+    sentiment = {label: 0 for label in SENTIMENT_LABELS}
+    for item in items:
+        label = item.get('sentiment_label', 'neutral')
+        if label in sentiment:
+            sentiment[label] += 1
+    sentiment_total = sum(sentiment.values())
+    return {
+        'period_days': days,
+        'feedback_count': len(items),
+        'is_partial': is_partial,
+        'summary': _summarize_items(items, days, date_basis, is_partial),
+        'sentiment': {
+            'period_days': days,
+            'total': sentiment_total,
+            'is_partial': is_partial,
+            'breakdown': sentiment,
+            'percentages': {
+                k: round(v / max(sentiment_total, 1) * 100, 1) for k, v in sentiment.items()
+            },
+        },
+        'categories': _sorted_counts(i.get('category', 'other') for i in items),
+        'sources': _sorted_counts(i.get('source_platform', 'unknown') for i in items),
+        'personas': _sorted_counts(_persona_bucket(i) for i in items),
+        'issues': _issue_counts(items),
+        'enrichment': {
+            ef.name: _sorted_counts(item_value(i, ef) for i in items)
+            for ef in ENRICHMENT_FIELDS
+        },
+    }
+
+
+@app.get("/metrics/overview")
+@tracer.capture_method
+def get_metrics_overview():
+    """Summary, sentiment, category, source, persona, issue and enrichment
+    breakdowns for one filtered window, from a single scan.
+
+    Accepts every FeedbackFilters dimension. `is_partial` is true when the scan
+    stopped at OVERVIEW_SCAN_CAP, so every number is then a lower bound.
+    """
+    params = app.current_event.query_string_parameters or {}
+    days = validate_days(params.get('days'), default=30)
+    date_basis = validate_date_basis(params.get('date_basis'))
+    filters = _request_filters(params)
+
+    items, is_partial = _scan_window_items(
+        days, date_basis, source=filters.sources, soft_cap=OVERVIEW_SCAN_CAP,
+    )
+    if filters.has_post_filters:
+        items = [i for i in items if filters.matches(i)]
+    return _overview_from_items(items, days, date_basis, is_partial)
 
 
 # ============================================

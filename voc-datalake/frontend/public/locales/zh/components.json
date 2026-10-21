@@ -60,6 +60,18 @@
     "loadingCategories": "加载分类中...",
     "next": "下一步",
     "noDataSourcesSelected": "未选择数据源",
+    "personaPreview": {
+      "counting": "正在统计匹配的评论…",
+      "error": "无法统计匹配的评论。",
+      "matchesAtLeast": "{{matched}}+ 条评论符合这些筛选条件",
+      "matchesEstimated": "约 {{matched, number}} 条评论符合这些筛选条件",
+      "confirming": "正在确认精确数量…",
+      "matches_one": "{{count}} 条评论符合这些筛选条件",
+      "matches_other": "{{count}} 条评论符合这些筛选条件",
+      "noMatches": "没有评论符合这些筛选条件——用户角色生成将会失败。",
+      "sampled": "用户角色会从中均匀抽取 {{limit}} 条使用。",
+      "usesAll": "用户角色会使用全部评论。"
+    },
     "personas": "角色",
     "personasCount": "角色（{{count}}）",
     "personasCount_one": "角色 ({{count}})",
@@ -124,7 +136,8 @@
     "downloadMarkdown": "下载为 Markdown",
     "downloadPDF": "下载为 PDF",
     "downloadTXT": "下载为 TXT",
-    "exportPersona": "导出角色"
+    "exportPersona": "导出角色",
+    "viewSourceFeedback": "查看来源反馈"
   },
   "prototypeLink": {
     "downloadHtml": "下载 .html",

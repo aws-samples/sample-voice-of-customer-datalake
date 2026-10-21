@@ -23,16 +23,16 @@ import remarkGfm from 'remark-gfm'
 import type { TFunction } from 'i18next'
 import { getDaysFromRange } from '../../api/baseUrl'
 import type { FeedbackItem, WebSource } from '../../api/client'
-import { MAX_CHAT_MESSAGE_LENGTH } from '../../api/streamLimits'
-import { buildChatContext } from './chatContext'
+import { toFeedbackQueryParams } from '../../api/feedbackFilters'
+import { MAX_CHAT_FEEDBACK_ITEMS, MAX_CHAT_MESSAGE_LENGTH } from '../../api/streamLimits'
 import { composerState } from './composerState'
 import ChatExportMenu from '../../components/ChatExportMenu'
-import ChatFilters from '../../components/ChatFilters'
+import ChatFilterPanel from './ChatFilterPanel'
 import ChatMessage from '../../components/ChatMessage'
 import ChatSidebar from '../../components/ChatSidebar'
 import { useStreamChat } from '../../hooks/useStreamChat'
 import {
-  useChatStore, type ChatFilters as ChatFiltersType, type ChatMessage as StoredChatMessage,
+  useChatStore, type ConversationFilters, type ChatMessage as StoredChatMessage,
   type Conversation,
 } from '../../store/chatStore'
 import { useConfigStore } from '../../store/configStore'
@@ -208,7 +208,7 @@ interface FinishedStreamValues {
   streamError: string | null
   sources: FeedbackItem[]
   webSources: WebSource[]
-  filters: ChatFiltersType
+  filters: ConversationFilters
   addMessage: (conversationId: string, message: Omit<StoredChatMessage, 'id' | 'timestamp'>) => void
   t: TFunction
 }
@@ -259,7 +259,7 @@ function saveFinishedStream(convId: string | null, values: FinishedStreamValues)
       sources: src.length > 0 ? src : undefined,
       webSources: webSrc.length > 0 ? webSrc : undefined,
       thinking: thinking === '' ? undefined : thinking,
-      filters: f,
+      filters: f.feedback,
     })
   } else if (error != null && error !== '') {
     add(convId, {
@@ -300,7 +300,7 @@ export default function Chat() {
   // store's draft (issue #161: filter changes — including the web-search
   // toggle — used to silently no-op on a fresh page and snap back). The
   // next conversation to be created consumes the draft.
-  const filters: ChatFiltersType = activeConversation?.filters ?? draftFilters
+  const filters: ConversationFilters = activeConversation?.filters ?? draftFilters
 
   const {
     isStreaming,
@@ -386,7 +386,7 @@ export default function Chat() {
     originConversationIdRef.current = null
   }, [isStreaming])
 
-  const handleFiltersChange = (newFilters: ChatFiltersType) => {
+  const handleFiltersChange = (newFilters: ConversationFilters) => {
     if (hasActiveConversation) {
       updateConversationFilters(activeConversationId, newFilters)
     } else {
@@ -418,7 +418,7 @@ export default function Chat() {
     addMessage(conversationId, {
       role: 'user',
       content: input,
-      filters,
+      filters: filters.feedback,
     })
 
     // Capture the origin conversation id NOW, before any potential
@@ -426,13 +426,16 @@ export default function Chat() {
     // (mutable) active conversation id, so the reply always lands here.
     originConversationIdRef.current = conversationId
 
-    const context = buildChatContext(days, filters)
-
+    // Filters are sent STRUCTURED now (the backend reads the `filters` field,
+    // the same wire params the other pages send) rather than as prose clauses
+    // in `context`. `context` is dropped entirely — the time-range hint it
+    // used to carry is redundant with the `days` field the backend already has.
     void sendStreamMessage(input, {
-      context,
       days,
       responseLanguage: i18n.language,
       useWebSearch: filters.useWebSearch,
+      filters: toFeedbackQueryParams(filters.feedback),
+      limit: MAX_CHAT_FEEDBACK_ITEMS,
       history,
     })
     setInput('')
@@ -495,7 +498,12 @@ export default function Chat() {
         </div>
 
         <div className="p-3 sm:p-4 border-t border-gray-100">
-          <ChatFilters filters={filters} onChange={handleFiltersChange} />
+          <ChatFilterPanel
+            filters={filters}
+            onChange={handleFiltersChange}
+            days={days}
+            apiEndpoint={config.apiEndpoint}
+          />
 
           <form onSubmit={handleSubmit} className="flex gap-2">
             <div className="flex-1">

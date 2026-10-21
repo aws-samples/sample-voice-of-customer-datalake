@@ -85,7 +85,19 @@
     "sentiments": "Sentimentos",
     "sources": "Fontes",
     "stepOf": "Etapa {{step}} de {{total}}",
-    "timeRange": "Intervalo de Tempo"
+    "timeRange": "Intervalo de Tempo",
+    "personaPreview": {
+      "counting": "Contando avaliações correspondentes…",
+      "error": "Não foi possível contar as avaliações correspondentes.",
+      "matchesAtLeast": "{{matched}}+ avaliações correspondem a estes filtros",
+      "matchesEstimated": "Cerca de {{matched, number}} avaliações correspondem a estes filtros",
+      "confirming": "Confirmando a contagem exata…",
+      "matches_one": "{{count}} avaliação corresponde a estes filtros",
+      "matches_other": "{{count}} avaliações correspondem a estes filtros",
+      "noMatches": "Nenhuma avaliação corresponde a estes filtros — a geração de personas falhará.",
+      "sampled": "As personas usam uma amostra uniforme de {{limit}} delas.",
+      "usesAll": "As personas usam todas elas."
+    }
   },
   "documentExport": {
     "copied": "Copiado!",
@@ -131,7 +143,8 @@
     "downloadMarkdown": "Baixar como Markdown",
     "downloadPDF": "Baixar como PDF",
     "downloadTXT": "Baixar como TXT",
-    "exportPersona": "Exportar persona"
+    "exportPersona": "Exportar persona",
+    "viewSourceFeedback": "Ver feedback de origem"
   },
   "prototypeLink": {
     "downloadHtml": "Baixar .html",

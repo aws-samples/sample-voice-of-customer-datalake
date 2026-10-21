@@ -22,6 +22,24 @@ describe('attachmentSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts a structured filters scope and a limit', () => {
+    const result = chatRequestSchema.safeParse({
+      message: 'hi',
+      filters: { source: 'webscraper,manual_import', usefulness: ['high'], urgent: true },
+      limit: 500,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('tolerates cf_* keys inside filters (the tool ignores them)', () => {
+    const result = chatRequestSchema.safeParse({ message: 'hi', filters: { cf_tier: 'Gold' } });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a non-positive limit', () => {
+    expect(chatRequestSchema.safeParse({ message: 'hi', limit: 0 }).success).toBe(false);
+  });
+
   it('accepts a valid PDF attachment', () => {
     const result = attachmentSchema.safeParse({
       name: 'report.pdf',

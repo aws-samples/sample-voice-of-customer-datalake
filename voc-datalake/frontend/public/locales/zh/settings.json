@@ -154,6 +154,7 @@
   "subtitle": "配置您的VoC平台",
   "tabs": {
     "categories": "分类",
+    "dataQuality": "数据质量",
     "general": "常规",
     "logs": "日志",
     "plugins": "数据源",
@@ -164,5 +165,93 @@
     "configureFirst": "请在常规选项卡中配置API端点以管理用户。",
     "description": "管理VoC平台的用户、角色和权限。",
     "title": "用户管理"
+  },
+  "customFilters": {
+    "title": "自定义筛选器",
+    "intro": "在反馈页面上将最多 3 个额外数据字段显示为筛选器。",
+    "keyPlaceholder": "字段键",
+    "labelPlaceholder": "显示名称",
+    "add": "添加筛选器",
+    "remove": "移除",
+    "save": "保存筛选器",
+    "saved": "已保存",
+    "saveFailed": "保存自定义筛选器失败。请重试。",
+    "loadFailed": "无法加载自定义筛选器。",
+    "loading": "正在加载自定义筛选器...",
+    "capHint": "最多 3 个筛选器。",
+    "empty": "未配置自定义筛选器。",
+    "suggestionsTitle": "建议的字段",
+    "noSuggestions": "最近的数据中没有字段建议。"
+  },
+  "dataQuality": {
+    "title": "数据质量",
+    "intro": "已存储反馈的按来源统计，以及用于计算缺失的 AI 增强值或为整个来源重新计算这些值的后台任务。",
+    "refresh": "刷新统计",
+    "snapshot_one": "{{time}} 的快照 · 已扫描 {{count, number}} 行",
+    "snapshot_other": "{{time}} 的快照 · 已扫描 {{count, number}} 行",
+    "noStats": "暂无统计 — 请运行“刷新统计”。",
+    "noSources": "上次扫描未找到任何反馈。",
+    "loading": "正在加载数据质量...",
+    "loadFailed": "无法加载数据质量统计。",
+    "rows_one": "{{count, number}} 行",
+    "rows_other": "{{count, number}} 行",
+    "charts": {
+      "rating": "评分",
+      "sentiment": "情感",
+      "length": "文本长度（字符）"
+    },
+    "noRating": "无",
+    "unscoredShare": "{{unscored, number}} 条未评估（{{percent}}%）",
+    "calculateMissing": "计算缺失项",
+    "recalculateAll": "全部重新计算",
+    "recalculateTitle": "要为 {{source}} 重新计算 {{field}} 吗？",
+    "recalculateMessage_one": "这将为 {{source}} 的每一行（{{count, number}} 行）重新推导 {{field}}，并替换已存储的值。每行需要调用一次模型。",
+    "recalculateMessage_other": "这将为 {{source}} 的每一行（{{count, number}} 行）重新推导 {{field}}，并替换已存储的值。每行需要调用一次模型。",
+    "startConflict": "该目标已有任务正在运行。请等待其完成，或先将其取消。",
+    "startFailed": "无法启动任务。请重试。",
+    "cancelConflict": "该任务已经停止。",
+    "cancelFailed": "无法取消任务。请重试。",
+    "fields": {
+      "usefulness": "有用性"
+    },
+    "values": {
+      "high": "高",
+      "medium": "中",
+      "low": "低",
+      "unscored": "未评估"
+    },
+    "sentiments": {
+      "positive": "正面",
+      "neutral": "中性",
+      "negative": "负面",
+      "mixed": "混合",
+      "unknown": "未知"
+    },
+    "jobs": {
+      "title": "最近的任务",
+      "empty": "暂无任务。",
+      "profile": "刷新统计",
+      "enrich": "{{field}} · {{source}}",
+      "mode": {
+        "missing": "仅缺失项",
+        "all": "所有行"
+      },
+      "status": {
+        "running": "运行中",
+        "completed": "已完成",
+        "failed": "失败",
+        "cancelled": "已取消"
+      },
+      "scanning_one": "正在扫描… {{count, number}} 行",
+      "scanning_other": "正在扫描… {{count, number}} 行",
+      "scanned_one": "已扫描 {{count, number}} 行",
+      "scanned_other": "已扫描 {{count, number}} 行",
+      "progress": "{{processed, number}} / {{total, number}}",
+      "planning": "仍在规划 — 可能还会增加行",
+      "counts": "已更新 {{updated, number}} · 已跳过 {{skipped, number}} · 失败 {{failed, number}}",
+      "started": "开始于 {{time}}",
+      "cancel": "取消",
+      "progressLabel": "任务进度"
+    }
   }
 }

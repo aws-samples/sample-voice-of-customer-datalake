@@ -119,7 +119,18 @@
     "preview_one": "Vorschau — {{count}} Element{{plural}}",
     "preview_other": "Vorschau — {{count}} Element{{plural}}",
     "templateNote": "Die Vorlagendatei enthält vollständige Anweisungen und LLM-fähige Dokumentation.",
-    "title": "JSON-Upload"
+    "title": "JSON-Upload",
+    "largeFileDetected": "Große Datei ({{size}} MB) — sie wird hochgeladen und im Hintergrund verarbeitet, statt hier als Vorschau angezeigt.",
+    "largeUploadStarted": "Große Datei hochgeladen — Verarbeitung im Hintergrund",
+    "largeUploadNote": "Die Datei wird importiert und angereichert. Zeilen erscheinen nach und nach auf der Feedback-Seite — bei großen Dateien kann das einige Minuten dauern.",
+    "sourceLabel": "Quelle",
+    "sourcePlaceholder": "z. B. trustpilot, zendesk",
+    "sourceHint": "Gibt an, woher dieser Stapel stammt. Zeilen mit eigenem Quellfeld überschreiben dies.",
+    "sourceFieldLabel": "Quellfeld pro Zeile",
+    "sourceFieldNone": "Keines — die obige Quelle für jede Zeile verwenden",
+    "sourceFieldHint": "Optional. Wählen Sie eine Spalte, deren Wert die Quelle jeder Zeile festlegt — nützlich, wenn eine Datei mehrere Quellen enthält.",
+    "uploading": "Wird hochgeladen…",
+    "uploadLargeFile": "Hochladen & verarbeiten"
   },
   "manualImport": {
     "addReviewManually": "Bewertung manuell hinzufügen",

@@ -15,9 +15,11 @@
     "share": "Share"
   },
   "filters": {
-    "clear": "Clear",
-    "focusingOn": "Focusing on: {{summary}}",
-    "title": "Filter Context (max 30 reviews)"
+    "count_one": "{{count}} review",
+    "count_other": "{{count}} reviews",
+    "countPartial_one": "{{count}}+ review",
+    "countPartial_other": "{{count}}+ reviews",
+    "dropped": "This scope has more than {{max}} reviews. The chat will use the first {{max}} and some feedback will be dropped — narrow the filters for focused results."
   },
   "hideHistory": "Hide history",
   "inputPlaceholder": "Ask about your feedback...",

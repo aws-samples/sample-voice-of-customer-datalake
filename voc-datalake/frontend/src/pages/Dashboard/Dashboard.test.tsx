@@ -2,10 +2,13 @@
  * @fileoverview Tests for Dashboard page component.
  * @module pages/Dashboard
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TestRouter } from '../../test/test-utils'
+import { EMPTY_FEEDBACK_FILTERS } from '../../api/feedbackFilters'
+import { restorePages, useFeedbackFilterStore } from '../../store/feedbackFilterStore'
 // The copy under test, read from the locale file the app itself renders from —
 // the same source src/test/setup.ts loads into i18next.
 import enCommon from '../../../public/locales/en/common.json'
@@ -16,6 +19,11 @@ const mockGetSentiment = vi.fn()
 const mockGetCategories = vi.fn()
 const mockGetSources = vi.fn()
 const mockGetUrgentFeedback = vi.fn()
+const mockGetMetricsOverview = vi.fn()
+
+vi.mock('../../api/metricsOverviewApi', () => ({
+  getMetricsOverview: (...args: unknown[]) => mockGetMetricsOverview(...args),
+}))
 
 vi.mock('../../api/client', () => ({
   api: {
@@ -482,5 +490,73 @@ describe('empty-state onboarding (P11)', () => {
       expect(screen.getByText('Feedback Volume & Sentiment Trend')).toBeInTheDocument()
     })
     expect(screen.queryByText(/get your feedback flowing/i)).not.toBeInTheDocument()
+  })
+})
+
+describe('filtered dashboard', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    useFeedbackFilterStore.setState({ pages: restorePages({}) })
+    useFeedbackFilterStore.getState().setPageFilters('dashboard', {
+      ...EMPTY_FEEDBACK_FILTERS,
+      sentiments: ['negative'],
+    })
+    mockGetUrgentFeedback.mockResolvedValue({ count: 0, items: [] })
+  })
+
+  // The store is a module singleton: never leak this block's filters into a
+  // describe added after it.
+  afterEach(() => {
+    useFeedbackFilterStore.setState({ pages: restorePages({}) })
+  })
+
+  it('says nothing matches when the filtered scan succeeds empty', async () => {
+    mockGetMetricsOverview.mockResolvedValue({
+      summary: { total_feedback: 0, avg_sentiment: 0, urgent_count: 0, daily_totals: [] },
+    })
+
+    render(<Dashboard />, { wrapper: createWrapper() })
+
+    expect(await screen.findByText(enCommon.feedbackFilters.noMatches)).toBeInTheDocument()
+    expect(screen.queryByText(enCommon.feedbackFilters.loadFailed)).not.toBeInTheDocument()
+    // The aggregates cannot answer a sentiment filter, so they are never read.
+    expect(mockGetSummary).not.toHaveBeenCalled()
+  })
+
+  it('keeps the earlier numbers and the open panel up while a filter change loads', async () => {
+    const user = userEvent.setup()
+    // A first scan for the current (negative) selection, then a change whose
+    // scan never answers.
+    mockGetMetricsOverview
+      .mockResolvedValueOnce({ summary: { total_feedback: 77, avg_sentiment: -0.5, urgent_count: 0, daily_totals: [] } })
+      .mockReturnValue(new Promise(() => {}))
+
+    render(<Dashboard />, { wrapper: createWrapper() })
+    expect(await screen.findByText('77')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /^Filters/ }))
+    await user.click(screen.getByRole('checkbox', { name: 'Mixed' }))
+    await waitFor(() => expect(mockGetMetricsOverview).toHaveBeenCalledTimes(2))
+
+    expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Filters/ })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText('77')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Updating…')
+  })
+
+  it('reports a failed filtered scan with a retry instead of claiming nothing matches', async () => {
+    const user = userEvent.setup()
+    mockGetMetricsOverview.mockRejectedValueOnce(new Error('boom')).mockResolvedValue({
+      summary: { total_feedback: 0, avg_sentiment: 0, urgent_count: 0, daily_totals: [] },
+    })
+
+    render(<Dashboard />, { wrapper: createWrapper() })
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(enCommon.feedbackFilters.loadFailed)
+    expect(screen.queryByText(enCommon.feedbackFilters.noMatches)).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: enCommon.feedbackFilters.retry }))
+    expect(await screen.findByText(enCommon.feedbackFilters.noMatches)).toBeInTheDocument()
+    expect(mockGetMetricsOverview).toHaveBeenCalledTimes(2)
   })
 })

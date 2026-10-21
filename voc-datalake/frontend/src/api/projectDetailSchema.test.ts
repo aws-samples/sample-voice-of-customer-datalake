@@ -152,6 +152,41 @@ describe('normalizeProjectDetail', () => {
     warn.mockRestore()
   })
 
+  it('keeps persona source tracking and degrades its malformed parts', () => {
+    const provenance = { items_used: 4, items_matched: 9, matched_is_lower_bound: false, sample_limit: 145 }
+    const result = normalizeProjectDetail(envelope([
+      {
+        persona_id: 'tracked',
+        evidence_feedback_ids: ['f1', 7, 'f2'],
+        input_feedback_ids: ['f1', 'f2', 'f3'],
+        feedback_provenance: provenance,
+      },
+      { persona_id: 'malformed', evidence_feedback_ids: 'f1', feedback_provenance: { items_used: 'four' } },
+      { persona_id: 'legacy' },
+    ], []))
+    const [tracked, malformed, legacy] = result.personas
+
+    expect(tracked).toMatchObject({
+      evidence_feedback_ids: ['f1', 'f2'], input_feedback_ids: ['f1', 'f2', 'f3'], feedback_provenance: provenance,
+    })
+    expect(malformed.evidence_feedback_ids).toBeUndefined()
+    expect(malformed.feedback_provenance).toBeUndefined()
+    // Absent stays absent, so the UI can tell a legacy persona from an empty list.
+    expect(legacy.evidence_feedback_ids).toBeUndefined()
+    expect(legacy.input_feedback_ids).toBeUndefined()
+  })
+
+  it('reads only a real boolean as the protected flag', () => {
+    const result = normalizeProjectDetail(envelope([
+      { persona_id: 'kept', protected: true },
+      { persona_id: 'released', protected: false },
+      { persona_id: 'string', protected: 'true' },
+      { persona_id: 'legacy' },
+    ], []))
+
+    expect(result.personas.map((p) => p.protected)).toStrictEqual([true, false, undefined, undefined])
+  })
+
   it('preserves an unknown future document type instead of dropping the row', () => {
     const result = normalizeProjectDetail(envelope([], [{
       document_id: 'future-1',

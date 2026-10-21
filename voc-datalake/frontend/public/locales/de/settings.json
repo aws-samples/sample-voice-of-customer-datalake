@@ -154,6 +154,7 @@
   "subtitle": "Konfigurieren Sie Ihre VoC-Plattform",
   "tabs": {
     "categories": "Kategorien",
+    "dataQuality": "Datenqualität",
     "general": "Allgemein",
     "logs": "Protokolle",
     "plugins": "Datenquellen",
@@ -164,5 +165,93 @@
     "configureFirst": "Konfigurieren Sie den API-Endpunkt im Tab Allgemein, um Benutzer zu verwalten.",
     "description": "Benutzer, Rollen und Berechtigungen für die VoC-Plattform verwalten.",
     "title": "Benutzerverwaltung"
+  },
+  "customFilters": {
+    "title": "Benutzerdefinierte Filter",
+    "intro": "Blenden Sie bis zu 3 zusätzliche Datenfelder als Filter auf der Feedbackseite ein.",
+    "keyPlaceholder": "Feldschlüssel",
+    "labelPlaceholder": "Anzeigename",
+    "add": "Filter hinzufügen",
+    "remove": "Entfernen",
+    "save": "Filter speichern",
+    "saved": "Gespeichert",
+    "saveFailed": "Benutzerdefinierte Filter konnten nicht gespeichert werden. Erneut versuchen.",
+    "loadFailed": "Benutzerdefinierte Filter konnten nicht geladen werden.",
+    "loading": "Benutzerdefinierte Filter werden geladen...",
+    "capHint": "Bis zu 3 Filter.",
+    "empty": "Keine benutzerdefinierten Filter konfiguriert.",
+    "suggestionsTitle": "Vorgeschlagene Felder",
+    "noSuggestions": "Keine Feldvorschläge aus aktuellen Daten."
+  },
+  "dataQuality": {
+    "title": "Datenqualität",
+    "intro": "Statistiken pro Quelle für gespeichertes Feedback sowie Hintergrundjobs, die fehlende KI-Anreicherungswerte berechnen oder sie für eine ganze Quelle neu berechnen.",
+    "refresh": "Statistiken aktualisieren",
+    "snapshot_one": "Stand {{time}} · {{count, number}} Zeile gescannt",
+    "snapshot_other": "Stand {{time}} · {{count, number}} Zeilen gescannt",
+    "noStats": "Noch keine Statistiken – führen Sie „Statistiken aktualisieren“ aus.",
+    "noSources": "Der letzte Scan hat kein Feedback gefunden.",
+    "loading": "Datenqualität wird geladen...",
+    "loadFailed": "Die Datenqualitätsstatistiken konnten nicht geladen werden.",
+    "rows_one": "{{count, number}} Zeile",
+    "rows_other": "{{count, number}} Zeilen",
+    "charts": {
+      "rating": "Bewertung",
+      "sentiment": "Stimmung",
+      "length": "Textlänge (Zeichen)"
+    },
+    "noRating": "Keine",
+    "unscoredShare": "{{unscored, number}} ohne Wert ({{percent}} %)",
+    "calculateMissing": "Fehlende berechnen",
+    "recalculateAll": "Alle neu berechnen",
+    "recalculateTitle": "{{field}} für {{source}} neu berechnen?",
+    "recalculateMessage_one": "Damit wird {{field}} für jede Zeile aus {{source}} ({{count, number}} Zeile) neu abgeleitet, und bereits gespeicherte Werte werden ersetzt. Pro Zeile fällt ein Modellaufruf an.",
+    "recalculateMessage_other": "Damit wird {{field}} für jede Zeile aus {{source}} ({{count, number}} Zeilen) neu abgeleitet, und bereits gespeicherte Werte werden ersetzt. Pro Zeile fällt ein Modellaufruf an.",
+    "startConflict": "Für dieses Ziel läuft bereits ein Job. Warten Sie, bis er abgeschlossen ist, oder brechen Sie ihn zuerst ab.",
+    "startFailed": "Der Job konnte nicht gestartet werden. Bitte erneut versuchen.",
+    "cancelConflict": "Dieser Job war bereits beendet.",
+    "cancelFailed": "Der Job konnte nicht abgebrochen werden. Bitte erneut versuchen.",
+    "fields": {
+      "usefulness": "Nützlichkeit"
+    },
+    "values": {
+      "high": "Hoch",
+      "medium": "Mittel",
+      "low": "Niedrig",
+      "unscored": "Ohne Wert"
+    },
+    "sentiments": {
+      "positive": "Positiv",
+      "neutral": "Neutral",
+      "negative": "Negativ",
+      "mixed": "Gemischt",
+      "unknown": "Unbekannt"
+    },
+    "jobs": {
+      "title": "Letzte Jobs",
+      "empty": "Noch keine Jobs.",
+      "profile": "Statistiken aktualisieren",
+      "enrich": "{{field}} · {{source}}",
+      "mode": {
+        "missing": "Nur fehlende",
+        "all": "Alle Zeilen"
+      },
+      "status": {
+        "running": "Läuft",
+        "completed": "Abgeschlossen",
+        "failed": "Fehlgeschlagen",
+        "cancelled": "Abgebrochen"
+      },
+      "scanning_one": "Scan läuft… {{count, number}} Zeile",
+      "scanning_other": "Scan läuft… {{count, number}} Zeilen",
+      "scanned_one": "{{count, number}} Zeile gescannt",
+      "scanned_other": "{{count, number}} Zeilen gescannt",
+      "progress": "{{processed, number}} / {{total, number}}",
+      "planning": "Planung läuft noch – weitere Zeilen können hinzukommen",
+      "counts": "{{updated, number}} aktualisiert · {{skipped, number}} übersprungen · {{failed, number}} fehlgeschlagen",
+      "started": "Gestartet {{time}}",
+      "cancel": "Abbrechen",
+      "progressLabel": "Job-Fortschritt"
+    }
   }
 }

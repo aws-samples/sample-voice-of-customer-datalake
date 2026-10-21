@@ -1,53 +1,48 @@
 /**
- * @fileoverview Tests for useProblemFeedback (U5b).
+ * @fileoverview Tests for useProblemFeedback — the server-aggregated problem
+ * tree hook.
  *
- * The defect being pinned: Problem Analysis asked `/feedback` for `limit: 500`,
- * the endpoint clamped it to 100 without saying so, and every stat card and
- * tree level was computed from that first page as if it were the whole window.
+ * The page used to walk `/feedback` client-side (capped at ~2000 rows, hard-
+ * walled at the server's 5000 offset). The hook now fetches the server
+ * aggregate once via `getProblems` and merges the leaves to the slider
+ * threshold in-browser, so the whole window is covered and the slider is
+ * instant. These tests pin that new contract.
  */
-import { act, renderHook, waitFor } from '@testing-library/react'
+import { renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
-const mockGetFeedback = vi.fn()
-
-vi.mock('../../api/client', () => ({
-  api: { getFeedback: (params: unknown) => mockGetFeedback(params) },
+const mockGetProblems = vi.fn()
+vi.mock('../../api/problemsApi', () => ({
+  getProblems: (...args: unknown[]) => mockGetProblems(...args),
 }))
 
-import { useProblemFeedback, MAX_AUTO_PAGES } from './useProblemFeedback'
-import { FEEDBACK_PAGE_LIMIT } from '../../api/feedbackPagination'
+import { EMPTY_FEEDBACK_FILTERS } from '../../api/feedbackFilters'
+import type { FeedbackFilterState } from '../../api/feedbackFilters'
+import { useProblemFeedback } from './useProblemFeedback'
+import type { ProblemLeaf } from '../../api/problemsApi'
 
 const API_ENDPOINT = 'https://api.example.com'
 const DATE_PARAMS = { days: 7 }
 
-interface PageRequest {
-  offset?: number
-  limit?: number
+function leaf(partial: Partial<ProblemLeaf> & { problem: string }): ProblemLeaf {
+  return {
+    category: 'delivery',
+    subcategory: 'late',
+    keywords: [],
+    count: 1,
+    urgent_count: 0,
+    avg_sentiment: 0,
+    root_cause: null,
+    ...partial,
+  }
 }
 
-/**
- * Requests the hook actually made. Recorded here rather than read back out of
- * `mock.calls`, which is `any[][]` and so cannot be inspected without a cast.
- */
-let requests: PageRequest[] = []
-
-/**
- * Serves a synthetic window of `total` rows, honouring offset/limit the way
- * `/feedback` does.
- */
-function serveWindow(total: number, opts: { isPartialWindow?: boolean } = {}) {
-  mockGetFeedback.mockImplementation((params: PageRequest) => {
-    requests.push(params)
-    const offset = params.offset ?? 0
-    const limit = params.limit ?? FEEDBACK_PAGE_LIMIT
-    const size = Math.max(0, Math.min(limit, total - offset))
-    return Promise.resolve({
-      count: size,
-      total,
-      offset,
-      items: Array.from({ length: size }, (_, i) => ({ feedback_id: `f${offset + i}` })),
-      is_partial_window: opts.isPartialWindow ?? false,
-    })
+function serve(problems: ProblemLeaf[], opts: { is_partial?: boolean } = {}) {
+  mockGetProblems.mockResolvedValue({
+    period_days: 7,
+    feedback_count: problems.reduce((s, p) => s + p.count, 0),
+    is_partial: opts.is_partial ?? false,
+    problems,
   })
 }
 
@@ -61,211 +56,104 @@ function createWrapper(queryClient: QueryClient) {
   )
 }
 
-/**
- * Pass an explicit `queryClient` to share a cache across two renders — a fresh
- * client per render cannot observe caching at all.
- */
-function renderFeedback(apiEndpoint = API_ENDPOINT, queryClient = makeClient()) {
-  return renderHook(() => useProblemFeedback(DATE_PARAMS, apiEndpoint), {
-    wrapper: createWrapper(queryClient),
-  })
+function render(threshold = 0.4, filters: FeedbackFilterState = EMPTY_FEEDBACK_FILTERS) {
+  return renderHook(
+    () => useProblemFeedback(DATE_PARAMS, API_ENDPOINT, threshold, filters),
+    { wrapper: createWrapper(makeClient()) },
+  )
 }
 
 beforeEach(() => {
-  vi.clearAllMocks()
-  requests = []
-  serveWindow(FEEDBACK_PAGE_LIMIT)
+  mockGetProblems.mockReset()
 })
 
 describe('useProblemFeedback', () => {
-  describe('page size', () => {
-    // The regression guard. Reinstating `limit: 500` makes this fail.
-    it('never requests a page larger than the endpoint allows', async () => {
-      serveWindow(250)
-      const { result } = renderFeedback()
-
-      await waitFor(() => expect(result.current.loadedCount).toBe(250))
-
-      expect(requests.every((r) => (r.limit ?? 0) <= FEEDBACK_PAGE_LIMIT)).toBe(true)
-      expect(requests.map((r) => r.limit)).toEqual([
-        FEEDBACK_PAGE_LIMIT,
-        FEEDBACK_PAGE_LIMIT,
-        FEEDBACK_PAGE_LIMIT,
-      ])
+  it('does not fetch without an API endpoint', () => {
+    renderHook(() => useProblemFeedback(DATE_PARAMS, '', 0.4), {
+      wrapper: createWrapper(makeClient()),
     })
+    expect(mockGetProblems).not.toHaveBeenCalled()
   })
 
-  describe('reading the whole window', () => {
-    it('pages until every row in the window is loaded', async () => {
-      serveWindow(250)
-      const { result } = renderFeedback()
-
-      await waitFor(() => expect(result.current.loadedCount).toBe(250))
-
-      expect(requests.map((r) => r.offset)).toEqual([0, 100, 200])
-      expect(result.current.totalCount).toBe(250)
-      expect(result.current.isPartial).toBe(false)
-      expect(result.current.isLoadingMore).toBe(false)
-    })
-
-    it('stops after one request when the window fits in a single page', async () => {
-      serveWindow(40)
-      const { result } = renderFeedback()
-
-      await waitFor(() => expect(result.current.loadedCount).toBe(40))
-      // A short page means the window is exhausted — no speculative second call.
-      expect(mockGetFeedback).toHaveBeenCalledTimes(1)
-      expect(result.current.isPartial).toBe(false)
-    })
-
-    it('does not treat a full final page as though more remained', async () => {
-      serveWindow(FEEDBACK_PAGE_LIMIT)
-      const { result } = renderFeedback()
-
-      await waitFor(() => expect(result.current.loadedCount).toBe(FEEDBACK_PAGE_LIMIT))
-      expect(mockGetFeedback).toHaveBeenCalledTimes(1)
-      expect(result.current.isPartial).toBe(false)
-    })
-
-    it('reports rows already in hand even when the total lags behind them', async () => {
-      // Without a post-query filter the server sizes its candidate window from
-      // offset+limit, so `total` can trail the rows already returned.
-      mockGetFeedback.mockResolvedValue({ count: 100, total: 50, offset: 0, items: Array.from({ length: 100 }, (_, i) => ({ feedback_id: `f${i}` })) })
-      const { result } = renderFeedback()
-
-      await waitFor(() => expect(result.current.loadedCount).toBe(100))
-      expect(result.current.totalCount).toBe(100)
-    })
+  it('builds the category → subcategory → problem tree from the leaves', async () => {
+    serve([
+      leaf({ category: 'delivery', subcategory: 'late', problem: 'order late', count: 5, urgent_count: 2 }),
+      leaf({ category: 'pricing', subcategory: 'cost', problem: 'too expensive', count: 3 }),
+    ])
+    const { result } = render()
+    await waitFor(() => expect(result.current.categories).toHaveLength(2))
+    // Biggest category first.
+    expect(result.current.categories[0].category).toBe('delivery')
+    expect(result.current.categories[0].totalItems).toBe(5)
+    expect(result.current.categories[0].urgentCount).toBe(2)
+    expect(result.current.loadedCount).toBe(8)
   })
 
-  describe('honest partiality', () => {
-    it('stops at the page budget and reports the counts as partial', async () => {
-      serveWindow((MAX_AUTO_PAGES + 5) * FEEDBACK_PAGE_LIMIT)
-      const { result } = renderFeedback()
-
-      await waitFor(() => expect(result.current.isPartial).toBe(true))
-
-      expect(mockGetFeedback).toHaveBeenCalledTimes(MAX_AUTO_PAGES)
-      expect(result.current.loadedCount).toBe(MAX_AUTO_PAGES * FEEDBACK_PAGE_LIMIT)
-    })
-
-    it('reports partial when the server truncated the candidate window', async () => {
-      serveWindow(40, { isPartialWindow: true })
-      const { result } = renderFeedback()
-
-      await waitFor(() => expect(result.current.loadedCount).toBe(40))
-      expect(result.current.isPartial).toBe(true)
-    })
-
-    it('stops paging when a page fails, and calls the result partial', async () => {
-      // Regression guard for the effect loop: on failure the query settles with
-      // more pages still outstanding, which would re-arm the auto-advance.
-      // Reporting complete counts here would also recreate the original defect.
-      mockGetFeedback
-        .mockResolvedValueOnce({
-          count: 100,
-          total: 500,
-          items: Array.from({ length: 100 }, (_, i) => ({ feedback_id: `f${i}` })),
-        })
-        .mockRejectedValue(new Error('boom'))
-
-      const { result } = renderFeedback()
-
-      await waitFor(() => expect(result.current.isPartial).toBe(true))
-
-      // Asserting the state that *guarantees* no further advance beats sleeping
-      // and hoping: `isError` is what disarms the auto-advance.
-      expect(result.current.isError).toBe(true)
-      expect(result.current.loadedCount).toBe(100)
-      expect(mockGetFeedback).toHaveBeenCalledTimes(2)
-    })
-
-    it('reports an outright failure rather than a complete empty window', async () => {
-      // The gap the first round of tests missed: when the FIRST page rejects
-      // there is no next page, so nothing "stopped early" — yet nothing was
-      // read either. Left unflagged, the page renders zeroed stat cards that
-      // read as a finding. `isError` is what lets the caller tell "empty" from
-      // "unknown".
-      mockGetFeedback.mockRejectedValue(new Error('boom'))
-
-      const { result } = renderFeedback()
-
-      await waitFor(() => expect(result.current.isError).toBe(true))
-      expect(result.current.loadedCount).toBe(0)
-      expect(result.current.items).toEqual([])
-      expect(result.current.isLoading).toBe(false)
-    })
-
-    it('leaves isError false on a clean complete read', async () => {
-      serveWindow(40)
-      const { result } = renderFeedback()
-
-      await waitFor(() => expect(result.current.loadedCount).toBe(40))
-      expect(result.current.isError).toBe(false)
-      expect(result.current.isPartial).toBe(false)
-    })
-
-    it('recovers on retry after an outright failure', async () => {
-      mockGetFeedback.mockRejectedValueOnce(new Error('boom'))
-      const { result } = renderFeedback()
-      await waitFor(() => expect(result.current.isError).toBe(true))
-
-      serveWindow(150)
-      // `act` keeps the state update the retry triggers inside React's batch,
-      // so the run is free of act warnings rather than merely correct.
-      await act(async () => {
-        result.current.retry()
-      })
-
-      await waitFor(() => expect(result.current.loadedCount).toBe(150))
-      expect(result.current.isError).toBe(false)
-      expect(result.current.isPartial).toBe(false)
-    })
-
-    it('does not call a completed window partial when a later refetch fails', async () => {
-      // Raised in review: `isError` feeds `stoppedEarly`, so could a failed
-      // background refetch flag an already-complete window as short? It cannot,
-      // because a completed walk leaves `hasNextPage` false and `stoppedEarly`
-      // is gated on it. Pinned so that gate cannot be dropped.
-      serveWindow(150)
-      const { result } = renderFeedback()
-      await waitFor(() => expect(result.current.loadedCount).toBe(150))
-      expect(result.current.isPartial).toBe(false)
-
-      mockGetFeedback.mockRejectedValue(new Error('boom'))
-      await act(async () => {
-        result.current.retry()
-      })
-
-      await waitFor(() => expect(result.current.isError).toBe(true))
-      expect(result.current.isPartial).toBe(false)
-    })
+  it('merges similar leaves within a subcategory at the threshold', async () => {
+    serve([
+      leaf({ problem: 'order arrived late', keywords: ['order', 'arrived', 'late'], count: 5 }),
+      leaf({ problem: 'order delivered late', keywords: ['order', 'delivered', 'late'], count: 3 }),
+    ])
+    const { result } = render(0.3)
+    await waitFor(() => expect(result.current.categories).toHaveLength(1))
+    const problems = result.current.categories[0].subcategories[0].problems
+    expect(problems).toHaveLength(1)
+    expect(problems[0].itemCount).toBe(8)
   })
 
-  describe('request volume', () => {
-    it('holds the loaded window settled instead of re-walking it', async () => {
-      // Each refetch re-issues EVERY page, so the app-wide 30s staleTime plus
-      // refetch-on-focus would replay the whole walk. Pinning both here keeps
-      // that cost from creeping back in.
-      serveWindow(250)
-      const queryClient = makeClient()
-      const { result } = renderFeedback(API_ENDPOINT, queryClient)
+  it('a stricter threshold splits what a looser one merged', async () => {
+    const leaves = [
+      leaf({ problem: 'order arrived late', keywords: ['order', 'arrived', 'late'], count: 5 }),
+      leaf({ problem: 'order delivered late', keywords: ['order', 'delivered', 'late'], count: 3 }),
+    ]
+    serve(leaves)
+    const loose = render(0.3)
+    await waitFor(() => expect(loose.result.current.categories[0].subcategories[0].problems).toHaveLength(1))
 
-      await waitFor(() => expect(result.current.loadedCount).toBe(250))
-      const callsAfterWalk = requests.length
-
-      // A remount against the same cache, inside the staleTime window, must not
-      // re-issue a single page.
-      const remounted = renderFeedback(API_ENDPOINT, queryClient)
-      await waitFor(() => expect(remounted.result.current.loadedCount).toBe(250))
-      expect(requests.length).toBe(callsAfterWalk)
-    })
+    serve(leaves)
+    const strict = render(0.95)
+    await waitFor(() => expect(strict.result.current.categories[0].subcategories[0].problems).toHaveLength(2))
   })
 
-  describe('gating', () => {
-    it('does not call the API until an endpoint is configured', () => {
-      renderFeedback('')
-      expect(mockGetFeedback).not.toHaveBeenCalled()
-    })
+  it('passes the window and the filters through to the server query', async () => {
+    serve([])
+    const filters = { ...EMPTY_FEEDBACK_FILTERS, sources: ['webscraper', 'manual_import'], urgentOnly: true }
+    render(0.4, filters)
+    await waitFor(() => expect(mockGetProblems).toHaveBeenCalled())
+    expect(mockGetProblems).toHaveBeenCalledWith(DATE_PARAMS, filters)
+  })
+
+  it('refetches when the filters change but not when only the threshold moves', async () => {
+    serve([leaf({ problem: 'order late' })])
+    const client = makeClient()
+    const { rerender } = renderHook(
+      ({ threshold, filters }: { threshold: number; filters: FeedbackFilterState }) =>
+        useProblemFeedback(DATE_PARAMS, API_ENDPOINT, threshold, filters),
+      {
+        wrapper: createWrapper(client),
+        initialProps: { threshold: 0.4, filters: EMPTY_FEEDBACK_FILTERS },
+      },
+    )
+    await waitFor(() => expect(mockGetProblems).toHaveBeenCalledTimes(1))
+
+    rerender({ threshold: 0.8, filters: EMPTY_FEEDBACK_FILTERS })
+    expect(mockGetProblems).toHaveBeenCalledTimes(1)
+
+    rerender({ threshold: 0.8, filters: { ...EMPTY_FEEDBACK_FILTERS, categories: ['delivery'] } })
+    await waitFor(() => expect(mockGetProblems).toHaveBeenCalledTimes(2))
+  })
+
+  it('surfaces the partial-window flag', async () => {
+    serve([leaf({ problem: 'x' })], { is_partial: true })
+    const { result } = render()
+    await waitFor(() => expect(result.current.isPartial).toBe(true))
+  })
+
+  it('reports an error when the fetch fails', async () => {
+    mockGetProblems.mockRejectedValue(new Error('boom'))
+    const { result } = render()
+    await waitFor(() => expect(result.current.isError).toBe(true))
+    expect(result.current.categories).toEqual([])
+    expect(result.current.loadedCount).toBe(0)
   })
 })

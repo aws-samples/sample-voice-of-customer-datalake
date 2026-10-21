@@ -15,9 +15,11 @@
     "share": "Teilen"
   },
   "filters": {
-    "clear": "Löschen",
-    "focusingOn": "Fokus auf: {{summary}}",
-    "title": "Filterkontext (max. 30 Bewertungen)"
+    "count_one": "{{count}} Bewertung",
+    "count_other": "{{count}} Bewertungen",
+    "countPartial_one": "{{count}}+ Bewertung",
+    "countPartial_other": "{{count}}+ Bewertungen",
+    "dropped": "Dieser Bereich umfasst mehr als {{max}} Bewertungen. Der Chat verwendet die ersten {{max}}, einige Rückmeldungen werden ausgelassen – grenzen Sie die Filter für gezieltere Ergebnisse ein."
   },
   "hideHistory": "Verlauf ausblenden",
   "inputPlaceholder": "Fragen Sie zu Ihrem Feedback...",

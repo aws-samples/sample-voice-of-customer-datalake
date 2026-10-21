@@ -84,5 +84,7 @@
   "topIssue": "Top Issue",
   "totalFeedback": "Total Feedback",
   "trendingKeywords": "Trending Keywords",
-  "urgentOnly": "Urgent only"
+  "urgentOnly": "Urgent only",
+  "allOf": "All {{label}}",
+  "filterByCustom": "Filter by {{label}}"
 }

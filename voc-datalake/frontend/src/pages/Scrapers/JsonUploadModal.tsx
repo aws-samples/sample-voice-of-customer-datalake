@@ -12,26 +12,37 @@ import {
 import { useTranslation } from 'react-i18next'
 import { scrapersApi } from '../../api/scrapersApi'
 import {
-  parseJsonFeedback, downloadTemplate, validateFileBasics,
+  parseJsonFeedback, downloadTemplate, validateFileBasics, isLargeJsonFile,
 } from './jsonUploadSchema'
 import type { JsonFeedbackItem } from './jsonUploadSchema'
+import { uploadFileToS3 } from '../../api/s3Upload'
+import { detectFileFields } from './extraFieldDetection'
 
 // ============================================
 // Sub-components
 // ============================================
 
 function SuccessView({
-  count, onClose,
+  count, isAsync, onClose,
 }: Readonly<{
   count: number;
+  isAsync: boolean;
   onClose: () => void
 }>) {
   const { t } = useTranslation('scrapers')
   return (
     <div className="text-center py-8">
       <CheckCircle className="mx-auto h-12 w-12 text-green-500 mb-4" />
-      <h3 className="text-lg font-medium text-gray-900 mb-2">{t('jsonUpload.itemsImported', { count })}</h3>
-      <p className="text-sm text-gray-500 mb-6">{t('jsonUpload.pipelineNote')}</p>
+      <h3 className="text-lg font-medium text-gray-900 mb-2">
+        {isAsync
+          ? t('jsonUpload.largeUploadStarted', { defaultValue: 'Large file uploaded — processing in the background' })
+          : t('jsonUpload.itemsImported', { count })}
+      </h3>
+      <p className="text-sm text-gray-500 mb-6">
+        {isAsync
+          ? t('jsonUpload.largeUploadNote', { defaultValue: 'The file is being imported and enriched. Rows will appear on the Feedback page as they finish — this can take several minutes for a large file.' })
+          : t('jsonUpload.pipelineNote')}
+      </p>
       <button onClick={onClose} className="btn btn-primary">{t('jsonUpload.done')}</button>
     </div>
   )
@@ -97,6 +108,116 @@ function PreviewList({ items }: Readonly<{ items: JsonFeedbackItem[] }>) {
           <div className="px-3 py-2 text-xs text-gray-400 text-center">{t('jsonUpload.moreItems', { count: items.length - 20 })}</div>
         )}
       </div>
+    </div>
+  )
+}
+
+function LargeFilePanel({
+  file, source, onSourceChange, detectedFields, sourceField, onSourceFieldChange,
+}: Readonly<{
+  file: File;
+  source: string;
+  onSourceChange: (value: string) => void;
+  detectedFields: string[];
+  sourceField: string;
+  onSourceFieldChange: (value: string) => void
+}>) {
+  const { t } = useTranslation('scrapers')
+  const sizeMb = (file.size / (1024 * 1024)).toFixed(1)
+  return (
+    <div className="space-y-3">
+      <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
+        {t('jsonUpload.largeFileDetected', {
+          size: sizeMb,
+          defaultValue: `Large file (${sizeMb} MB) — it will be uploaded and processed in the background rather than previewed here.`,
+        })}
+      </div>
+      <div>
+        <label htmlFor="large-import-source" className="block text-sm font-medium text-gray-700 mb-1">
+          {t('jsonUpload.sourceLabel', { defaultValue: 'Source' })} <span className="text-red-500">*</span>
+        </label>
+        <input
+          id="large-import-source"
+          type="text"
+          value={source}
+          onChange={(e) => onSourceChange(e.target.value)}
+          placeholder={t('jsonUpload.sourcePlaceholder', { defaultValue: 'e.g. trustpilot, zendesk' })}
+          className="w-full px-3 py-2 border rounded-md text-sm"
+        />
+        <p className="text-xs text-gray-500 mt-1">
+          {t('jsonUpload.sourceHint', { defaultValue: 'Labels where this batch came from. Rows that carry their own source field override this.' })}
+        </p>
+      </div>
+      <SourceFieldMapper
+        detectedFields={detectedFields}
+        sourceField={sourceField}
+        onSourceFieldChange={onSourceFieldChange}
+      />
+    </div>
+  )
+}
+
+/**
+ * Phase 5: map a per-row source column. When the file carries a few distinct
+ * sources (e.g. a column named "platform"), picking it here makes each row take
+ * its own source instead of the single file-level label above. Only shown once
+ * the file head has yielded field names; a file whose head couldn't be sniffed
+ * simply offers no mapping and falls back to the file-level source.
+ */
+function SourceFieldMapper({
+  detectedFields, sourceField, onSourceFieldChange,
+}: Readonly<{
+  detectedFields: string[];
+  sourceField: string;
+  onSourceFieldChange: (value: string) => void
+}>) {
+  const { t } = useTranslation('scrapers')
+  if (detectedFields.length === 0) return null
+  // Keep a previously-chosen value selectable even if it's not in the sniffed
+  // head (the first record may omit an optional column present later).
+  const options = sourceField && !detectedFields.includes(sourceField)
+    ? [sourceField, ...detectedFields]
+    : detectedFields
+  return (
+    <div>
+      <label htmlFor="large-import-source-field" className="block text-sm font-medium text-gray-700 mb-1">
+        {t('jsonUpload.sourceFieldLabel', { defaultValue: 'Per-row source field' })}
+      </label>
+      <select
+        id="large-import-source-field"
+        value={sourceField}
+        onChange={(e) => onSourceFieldChange(e.target.value)}
+        className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+      >
+        <option value="">{t('jsonUpload.sourceFieldNone', { defaultValue: 'None — use the source above for every row' })}</option>
+        {options.map((field) => (
+          <option key={field} value={field}>{field}</option>
+        ))}
+      </select>
+      <p className="text-xs text-gray-500 mt-1">
+        {t('jsonUpload.sourceFieldHint', { defaultValue: "Optional. Pick a column whose value sets each row's source — useful when one file holds a few sources." })}
+      </p>
+    </div>
+  )
+}
+
+function LargeFileFooter({
+  isUploading, canUpload, onUpload, onClose,
+}: Readonly<{
+  isUploading: boolean;
+  canUpload: boolean;
+  onUpload: () => void;
+  onClose: () => void
+}>) {
+  const { t } = useTranslation('scrapers')
+  return (
+    <div className="flex justify-end gap-3 px-6 py-4 border-t bg-gray-50">
+      <button onClick={onClose} className="btn btn-secondary">{t('jsonUpload.cancel')}</button>
+      <button onClick={onUpload} disabled={!canUpload || isUploading} className="btn btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+        {isUploading
+          ? <><Loader2 size={16} className="animate-spin" /> {t('jsonUpload.uploading', { defaultValue: 'Uploading…' })}</>
+          : <><Upload size={16} /> {t('jsonUpload.uploadLargeFile', { defaultValue: 'Upload & process' })}</>}
+      </button>
     </div>
   )
 }
@@ -187,11 +308,20 @@ export default function JsonUploadModal({
   } | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
+  // Set when the picked file is too large to parse/preview in the browser; it is
+  // uploaded to S3 and processed asynchronously instead (see handleImport).
+  const [largeFile, setLargeFile] = useState<File | null>(null)
+  const [largeFileSource, setLargeFileSource] = useState('')
+  // Phase 5 mapping: the file's detected field names, and the one the user
+  // picks to supply each row's source_platform (empty = none, keep file source).
+  const [detectedFields, setDetectedFields] = useState<string[]>([])
+  const [sourceField, setSourceField] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const reset = useCallback(() => {
     setItems([]); setValidationErrors([]); setFileName(null)
     setIsUploading(false); setUploadResult(null); setUploadError(null); setIsDragging(false)
+    setLargeFile(null); setLargeFileSource(''); setDetectedFields([]); setSourceField('')
   }, [])
 
   const handleClose = () => {
@@ -199,10 +329,21 @@ export default function JsonUploadModal({
   }
 
   const processFile = useCallback((file: File) => {
-    setUploadResult(null); setUploadError(null)
+    setUploadResult(null); setUploadError(null); setLargeFile(null); setItems([])
+    setDetectedFields([]); setSourceField('')
     const basicError = validateFileBasics(file)
     if (basicError != null && basicError !== '') {
       setValidationErrors([basicError]); return
+    }
+    // Large files are not parsed in the browser — they go straight to S3 and
+    // are processed asynchronously. Stage the file and collect a source label
+    // instead of previewing rows. Sniff the file head for field names so the
+    // mapping step can offer a per-row source column (Phase 5); best-effort, so
+    // a head that can't be read just leaves the dropdown empty.
+    if (isLargeJsonFile(file)) {
+      setLargeFile(file); setFileName(file.name); setValidationErrors([])
+      void detectFileFields(file).then(({ fields }) => setDetectedFields(fields))
+      return
     }
     const reader = new FileReader()
     reader.onload = (e) => {
@@ -256,6 +397,21 @@ export default function JsonUploadModal({
     }
   }
 
+  const handleLargeImport = async () => {
+    const source = largeFileSource.trim()
+    if (largeFile == null || source === '' || isUploading) return
+    setIsUploading(true); setUploadError(null)
+    const result = await uploadFileToS3(largeFile, source, sourceField.trim() || undefined)
+    setIsUploading(false)
+    if (result.ok) {
+      // Async path: the file is now in S3 and will be ingested + enriched in the
+      // background, so there is no synchronous imported count to report.
+      setUploadResult({ success: true, count: 0 })
+    } else {
+      setUploadError(result.error ?? 'Upload failed')
+    }
+  }
+
   if (!isOpen) return null
 
   return (
@@ -270,7 +426,7 @@ export default function JsonUploadModal({
           <button onClick={handleClose} className="p-2 hover:bg-gray-100 rounded-lg transition-colors"><X size={20} /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          {uploadResult?.success === true ? <SuccessView count={uploadResult.count} onClose={handleClose} /> : (
+          {uploadResult?.success === true ? <SuccessView count={uploadResult.count} isAsync={largeFile != null} onClose={handleClose} /> : (
             <>
               <FormatGuide />
               <DropZone isDragging={isDragging} fileName={fileName} fileInputRef={fileInputRef}
@@ -286,14 +442,21 @@ export default function JsonUploadModal({
                   </div>
                 </div>
               )}
-              <PreviewList items={items} />
+              {largeFile != null
+                ? <LargeFilePanel file={largeFile} source={largeFileSource} onSourceChange={setLargeFileSource}
+                    detectedFields={detectedFields} sourceField={sourceField} onSourceFieldChange={setSourceField} />
+                : <PreviewList items={items} />}
               {uploadError != null && uploadError !== '' ? <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-start gap-2">
                 <AlertCircle size={16} className="mt-0.5 flex-shrink-0" /><span>{uploadError}</span>
               </div> : null}
             </>
           )}
         </div>
-        {uploadResult?.success !== true && <UploadFooter isUploading={isUploading} itemCount={items.length} onImport={() => void handleImport()} onClose={handleClose} />}
+        {uploadResult?.success !== true && (
+          largeFile != null
+            ? <LargeFileFooter isUploading={isUploading} canUpload={largeFileSource.trim() !== ''} onUpload={() => void handleLargeImport()} onClose={handleClose} />
+            : <UploadFooter isUploading={isUploading} itemCount={items.length} onImport={() => void handleImport()} onClose={handleClose} />
+        )}
       </div>
     </div>
   )

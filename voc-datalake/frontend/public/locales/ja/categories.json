@@ -88,5 +88,7 @@
   "topIssue": "トップ問題",
   "totalFeedback": "総フィードバック数",
   "trendingKeywords": "トレンドキーワード",
-  "urgentOnly": "緊急のみ"
+  "urgentOnly": "緊急のみ",
+  "allOf": "すべての{{label}}",
+  "filterByCustom": "{{label}}で絞り込む"
 }

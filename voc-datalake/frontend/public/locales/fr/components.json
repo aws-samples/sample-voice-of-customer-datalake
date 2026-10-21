@@ -85,7 +85,19 @@
     "sentiments": "Tonalités",
     "sources": "Canaux",
     "stepOf": "Étape {{step}} sur {{total}}",
-    "timeRange": "Plage horaire"
+    "timeRange": "Plage horaire",
+    "personaPreview": {
+      "counting": "Comptage des avis correspondants…",
+      "error": "Impossible de compter les avis correspondants.",
+      "matchesAtLeast": "{{matched}}+ avis correspondent à ces filtres",
+      "matchesEstimated": "Environ {{matched, number}} avis correspondent à ces filtres",
+      "confirming": "Confirmation du nombre exact…",
+      "matches_one": "{{count}} avis correspond à ces filtres",
+      "matches_other": "{{count}} avis correspondent à ces filtres",
+      "noMatches": "Aucun avis ne correspond à ces filtres — la génération des personas échouera.",
+      "sampled": "Les personas utilisent un échantillon régulier de {{limit}} d’entre eux.",
+      "usesAll": "Les personas les utilisent tous."
+    }
   },
   "documentExport": {
     "copied": "Copié !",
@@ -131,7 +143,8 @@
     "downloadMarkdown": "Télécharger en Markdown",
     "downloadPDF": "Télécharger en PDF",
     "downloadTXT": "Télécharger en TXT",
-    "exportPersona": "Exporter le persona"
+    "exportPersona": "Exporter le persona",
+    "viewSourceFeedback": "Voir les avis sources"
   },
   "prototypeLink": {
     "downloadHtml": "Télécharger le .html",

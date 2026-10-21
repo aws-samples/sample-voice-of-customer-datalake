@@ -69,10 +69,19 @@ MODEL_SETTINGS_SK = "config"
 #                       Bedrock ValidationException.
 ALLOWED_MODELS = [
     {
+        "key": "sonnet55",
+        "id": "global.anthropic.claude-sonnet-5-5",
+        "label": "Claude Sonnet 5.5",
+        "description": "Newest Sonnet — highest-quality analysis and generation",
+        "omit_temperature": True,
+        "adaptive_thinking": True,
+        "context_window": 200_000,
+    },
+    {
         "key": "sonnet5",
         "id": "global.anthropic.claude-sonnet-5",
         "label": "Claude Sonnet 5",
-        "description": "Latest, highest-quality Sonnet — best for analysis and generation",
+        "description": "High-quality Sonnet — strong for analysis and generation",
         "omit_temperature": True,
         "adaptive_thinking": True,
         "context_window": 200_000,
@@ -89,6 +98,15 @@ ALLOWED_MODELS = [
         "context_window": 200_000,
     },
     {
+        "key": "opus55",
+        "id": "global.anthropic.claude-opus-5-5",
+        "label": "Claude Opus 5.5",
+        "description": "Newest Opus — deepest reasoning for prototypes and complex documents",
+        "omit_temperature": True,
+        "adaptive_thinking": True,
+        "context_window": 200_000,
+    },
+    {
         "key": "opus5",
         "id": "global.anthropic.claude-opus-5",
         "label": "Claude Opus 5",
@@ -102,6 +120,18 @@ ALLOWED_MODELS = [
         "id": "global.anthropic.claude-opus-4-8",
         "label": "Claude Opus 4.8",
         "description": "Previous-generation Opus — also the automatic fallback when Opus 5 declines a request",
+        "omit_temperature": True,
+        "adaptive_thinking": True,
+        "context_window": 200_000,
+    },
+    {
+        "key": "haiku55",
+        "id": "global.anthropic.claude-haiku-5-5",
+        "label": "Claude Haiku 5.5",
+        # Newest Haiku moved to adaptive-thinking-only (rejects temperature and
+        # an explicit thinking budget), unlike Haiku 4.5 — verified by live
+        # Converse against the account before adding.
+        "description": "Newest Haiku — fast and cheap for high-volume enrichment",
         "omit_temperature": True,
         "adaptive_thinking": True,
         "context_window": 200_000,

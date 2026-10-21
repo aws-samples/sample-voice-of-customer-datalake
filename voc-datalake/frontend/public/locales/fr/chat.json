@@ -15,9 +15,11 @@
     "share": "Partager"
   },
   "filters": {
-    "clear": "Effacer",
-    "focusingOn": "Filtrage actif : {{summary}}",
-    "title": "Filtrer le contexte (max 30 avis)"
+    "count_one": "{{count}} avis",
+    "count_other": "{{count}} avis",
+    "countPartial_one": "{{count}}+ avis",
+    "countPartial_other": "{{count}}+ avis",
+    "dropped": "Cette sélection contient plus de {{max}} avis. Le chat utilisera les {{max}} premiers et certains retours seront ignorés — affinez les filtres pour des résultats ciblés."
   },
   "hideHistory": "Masquer l'historique",
   "inputPlaceholder": "Posez une question sur vos retours...",

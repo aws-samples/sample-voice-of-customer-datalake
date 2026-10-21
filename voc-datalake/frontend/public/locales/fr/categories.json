@@ -89,5 +89,7 @@
   "topIssue": "Problème principal",
   "totalFeedback": "Total des commentaires",
   "trendingKeywords": "Mots-clés tendance",
-  "urgentOnly": "Urgents uniquement"
+  "urgentOnly": "Urgents uniquement",
+  "allOf": "Tous : {{label}}",
+  "filterByCustom": "Filtrer par {{label}}"
 }

@@ -2,7 +2,6 @@ import type { TFunction } from 'i18next'
 import type { FeedbackItem } from '../../api/client'
 
 export type ViewMode = 'grid' | 'list'
-export type SentimentFilter = 'all' | 'positive' | 'negative' | 'neutral' | 'mixed'
 
 /** Direction of the star-rating filter: at least N stars, or at most N stars. */
 export type RatingDirection = 'up' | 'below'

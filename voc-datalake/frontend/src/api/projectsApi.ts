@@ -2,7 +2,12 @@
 // Uses shared fetchApi from client.ts for consistent 401 retry + token refresh
 import { fetchApi } from './client'
 import { getDateBasisBodyParams } from './baseUrl'
+import { normalizePersonaFeedbackPreview, normalizePersonaSourceFeedback } from './personaFeedbackSchema'
 import { normalizeProjectDetail } from './projectDetailSchema'
+import type { FilterParamValue } from './feedbackFilters'
+import type {
+  PersonaFeedbackPreview, PersonaFeedbackScope, PersonaPreviewMode, PersonaSourceFeedbackPage,
+} from './personaFeedbackSchema'
 import type {
   Project, ProjectDetail, ProjectPersona, ProjectDocument, ProjectJob,
   ProductContext, ProductDoc, ProductInterviewTurnResponse,
@@ -11,6 +16,79 @@ import type {
   // it for the signature pin at the foot of this file.
   GenerateDocumentBody, BothWays,
 } from './types'
+
+/**
+ * The richer shared-model filter dimensions (subcategory / urgent / enrichment
+ * / cf_*) as `toFeedbackQueryParams` emits them: wire keys to a string or a
+ * repeated-key list.
+ *
+ * Carried on the persona/research requests as a SEPARATE `extraFilters` bag
+ * rather than merged into the request type, because this string/list index
+ * signature cannot coexist with the numeric `days` / boolean `use_web_search`
+ * those requests also carry. `mergeFilterBody` flattens it into the POST body,
+ * where the backend parses the whole thing with FeedbackFilters.
+ */
+type FilterBody = Readonly<Record<string, FilterParamValue>>
+
+/**
+ * Which feedback a persona request draws from. Generation and the wizard's live
+ * preview count both send exactly this, through `mergeFilterBody`, and the
+ * backend parses both with one `_persona_feedback_scope` — so the number the
+ * wizard shows and the set generation samples cannot be read two ways.
+ */
+export interface PersonaPreviewBody {
+  sources?: string[]
+  categories?: string[]
+  sentiments?: string[]
+  days?: number
+  extraFilters?: FilterBody
+}
+
+interface PersonaGenerateBody extends PersonaPreviewBody {
+  persona_count?: number
+  custom_instructions?: string
+  response_language?: string
+}
+
+/** One page of a persona's source feedback. The route caps `limit` at 50. */
+interface PersonaSourceFeedbackQuery {
+  scope: PersonaFeedbackScope
+  offset: number
+  limit: number
+}
+
+const personaPath = (projectId: string, personaId: string) =>
+  `/projects/${encodeURIComponent(projectId)}/personas/${encodeURIComponent(personaId)}`
+
+interface ResearchBody {
+  question: string
+  title?: string
+  sources?: string[]
+  categories?: string[]
+  sentiments?: string[]
+  days?: number
+  selected_persona_ids?: string[]
+  selected_document_ids?: string[]
+  response_language?: string
+  use_web_search?: boolean
+  extraFilters?: FilterBody
+}
+
+/**
+ * The request body: the named fields minus `extraFilters`, with the filter bag
+ * flattened to the top level (so `cf_tier`, `urgent`, etc. sit beside `days`).
+ * Done here rather than with an index-signature intersection, which TypeScript
+ * rejects when a named field (`days: number`) is not assignable to the
+ * signature's value type.
+ */
+function mergeFilterBody(
+  base: Record<string, unknown>,
+  body: { extraFilters?: FilterBody } | undefined,
+): Record<string, unknown> {
+  if (!body) return base
+  const { extraFilters, ...named } = body
+  return { ...base, ...named, ...(extraFilters ?? {}) }
+}
 
 export const projectsApi = {
   getProjects: () => fetchApi<{ projects: Project[] }>('/projects'),
@@ -42,15 +120,7 @@ export const projectsApi = {
   deleteProject: (id: string) =>
     fetchApi<{ success: boolean }>(`/projects/${id}`, { method: 'DELETE' }),
 
-  generatePersonas: (projectId: string, filters?: {
-    sources?: string[]
-    categories?: string[]
-    sentiments?: string[]
-    persona_count?: number
-    custom_instructions?: string
-    days?: number
-    response_language?: string
-  }) =>
+  generatePersonas: (projectId: string, filters?: PersonaGenerateBody) =>
     // Async since the work moved to the persona-generator Lambda: the route answers
     // with a job id and the UI polls the jobs list. It has not returned `personas`
     // (or an `analysis` blob) for some time — the old synchronous shape lingered here
@@ -62,8 +132,31 @@ export const projectsApi = {
       message: string;
     }>(`/projects/${projectId}/personas/generate`, {
       method: 'POST',
-      body: JSON.stringify({ ...getDateBasisBodyParams(), ...(filters ?? {}) }),
+      body: JSON.stringify(mergeFilterBody(getDateBasisBodyParams(), filters)),
     }),
+
+  // How many reviews a generation with this scope would match, and how many of
+  // them it would sample. Built exactly like generatePersonas' body (above).
+  previewPersonaFeedback: async (
+    projectId: string, body: PersonaPreviewBody, mode: PersonaPreviewMode = 'exact',
+  ): Promise<PersonaFeedbackPreview> => {
+    const raw = await fetchApi<unknown>(`/projects/${encodeURIComponent(projectId)}/personas/preview-feedback`, {
+      method: 'POST',
+      body: JSON.stringify({ ...mergeFilterBody(getDateBasisBodyParams(), body), mode }),
+    })
+    return normalizePersonaFeedbackPreview(raw)
+  },
+
+  // The reviews a persona was generated from. A page can hold fewer than `limit`
+  // items (deleted feedback is counted in `missing` instead), so the next page
+  // starts at `offset + limit`, never `offset + items.length`.
+  getPersonaSourceFeedback: async (
+    projectId: string, personaId: string, { scope, offset, limit }: PersonaSourceFeedbackQuery,
+  ): Promise<PersonaSourceFeedbackPage> => {
+    const params = new URLSearchParams({ scope, offset: String(offset), limit: String(limit) })
+    const raw = await fetchApi<unknown>(`${personaPath(projectId, personaId)}/feedback?${params.toString()}`)
+    return normalizePersonaSourceFeedback(raw)
+  },
 
   createPersona: (projectId: string, persona: Omit<ProjectPersona, 'persona_id' | 'created_at'>) =>
     fetchApi<{
@@ -100,18 +193,7 @@ export const projectsApi = {
       body: JSON.stringify(data),
     }),
 
-  runResearch: (projectId: string, data: {
-    question: string
-    title?: string
-    sources?: string[]
-    categories?: string[]
-    sentiments?: string[]
-    days?: number
-    selected_persona_ids?: string[]
-    selected_document_ids?: string[]
-    response_language?: string
-    use_web_search?: boolean
-  }) =>
+  runResearch: (projectId: string, data: ResearchBody) =>
     fetchApi<{
       success: boolean;
       job_id: string;
@@ -119,7 +201,7 @@ export const projectsApi = {
       message: string
     }>(`/projects/${projectId}/research`, {
       method: 'POST',
-      body: JSON.stringify({ ...getDateBasisBodyParams(), ...data }),
+      body: JSON.stringify(mergeFilterBody(getDateBasisBodyParams(), data)),
     }),
 
   // Keep this signature on ONE line, and keep `data` taking the shared type by name:

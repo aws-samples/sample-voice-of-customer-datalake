@@ -16,9 +16,17 @@ from botocore.exceptions import ClientError
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger, tracer
-from shared.aws import get_dynamodb_resource
-from shared.api import create_api_resolver, api_handler, require_admin
-from shared.exceptions import ConfigurationError, ValidationError, ServiceError
+from shared.aws import get_dynamodb_resource, get_sqs_client
+from shared.api import create_api_resolver, api_handler, require_admin, get_caller_subject
+from shared.exceptions import (
+    ConfigurationError, ConflictError, NotFoundError, ValidationError, ServiceError,
+)
+from shared import data_quality as dq
+from shared.enrichment_fields import (
+    ENRICHMENT_FIELDS,
+    field_names as enrichment_field_names,
+    get_field as get_enrichment_field,
+)
 from shared.model_config import (
     ALLOWED_MODELS, ALLOWED_MODEL_IDS, PICKER_SURFACES, SURFACE_DEFAULTS,
     MODEL_SETTINGS_PK, MODEL_SETTINGS_SK, clear_model_cache,
@@ -32,6 +40,20 @@ SETTINGS_PK = "SETTINGS#brand"
 SETTINGS_SK = "config"
 CATEGORIES_PK = "SETTINGS#categories"
 CATEGORIES_SK = "config"
+CUSTOM_FILTERS_PK = "SETTINGS#custom_filters"
+CUSTOM_FILTERS_SK = "config"
+
+# Admins may expose at most this many custom-field filters on the feedback UI.
+# A hard cap (not just UI advice) because each one is an in-memory post-filter
+# over the candidate window on three read endpoints — the ceiling bounds that
+# cost and keeps the filter bar legible.
+MAX_CUSTOM_FILTERS = 3
+# A custom-filter key is a custom_fields map key; mirror the processor's
+# MAX_CUSTOM_FIELD_KEY_LENGTH (64) so a configured key can actually match a
+# stored one. Restated rather than imported — the settings bundle does not
+# include the processor module.
+MAX_CUSTOM_FILTER_KEY_LENGTH = 64
+MAX_CUSTOM_FILTER_LABEL_LENGTH = 64
 RESOLVED_PROBLEMS_PK = "SETTINGS#resolved_problems"
 RESOLVED_PROBLEMS_SK = "config"
 
@@ -511,6 +533,96 @@ def save_categories_config():
         raise ServiceError('Failed to save categories')
 
 
+@app.get("/settings/custom-filters")
+@tracer.capture_method
+def get_custom_filters():
+    """Get the admin-chosen custom-field filters exposed on the feedback UI.
+
+    Shape: ``{'custom_filters': [{'key': str, 'label': str}, ...]}`` — up to
+    MAX_CUSTOM_FILTERS entries. Readable by any authenticated user: the filter
+    UI is for everyone; only CHOOSING the filters is admin-gated (the PUT).
+    """
+    if not aggregates_table:
+        return {'custom_filters': []}
+    try:
+        response = aggregates_table.get_item(Key={'pk': CUSTOM_FILTERS_PK, 'sk': CUSTOM_FILTERS_SK})
+        item = response.get('Item')
+        if not item:
+            return {'custom_filters': [], 'updated_at': None}
+        return {
+            'custom_filters': item.get('custom_filters', []),
+            'updated_at': item.get('updated_at'),
+        }
+    except Exception as e:
+        logger.exception(f"Failed to get custom filters: {e}")
+        return {'custom_filters': [], 'error': 'Failed to retrieve custom filters'}
+
+
+def _validate_custom_filters(raw) -> list[dict]:
+    """Validate and normalize a custom-filters payload into stored shape.
+
+    Accepts a list of entries, each an object with a non-empty ``key`` (a
+    custom_fields map key) and an optional ``label``. Enforces the count cap,
+    bounds the key/label lengths, trims, drops blanks, and de-duplicates by key
+    (first wins). Raises ValidationError on a malformed payload so a bad admin
+    request is a 400, not a silently-stored broken config.
+    """
+    if not isinstance(raw, list):
+        raise ValidationError('custom_filters must be a list')
+    if len(raw) > MAX_CUSTOM_FILTERS:
+        raise ValidationError(f'At most {MAX_CUSTOM_FILTERS} custom filters are allowed')
+
+    cleaned: list[dict] = []
+    seen_keys: set[str] = set()
+    for idx, entry in enumerate(raw):
+        if not isinstance(entry, dict):
+            raise ValidationError(f'custom_filters[{idx}] must be an object')
+        key = entry.get('key')
+        if not isinstance(key, str) or not key.strip():
+            raise ValidationError(f'custom_filters[{idx}].key is required')
+        key = key.strip()
+        if len(key) > MAX_CUSTOM_FILTER_KEY_LENGTH:
+            raise ValidationError(
+                f'custom_filters[{idx}].key exceeds {MAX_CUSTOM_FILTER_KEY_LENGTH} characters'
+            )
+        if key in seen_keys:
+            continue  # Duplicate key — first occurrence wins.
+        seen_keys.add(key)
+        # Label is a display name; default to the key when absent.
+        label = entry.get('label')
+        label = label.strip() if isinstance(label, str) and label.strip() else key
+        cleaned.append({'key': key, 'label': label[:MAX_CUSTOM_FILTER_LABEL_LENGTH]})
+    return cleaned
+
+
+@app.put("/settings/custom-filters")
+@tracer.capture_method
+def save_custom_filters():
+    """Save the custom-field filters exposed on the feedback UI.
+
+    Admin-only: this is an org-wide configuration (every user sees the same
+    filters), so it is gated on the ``admins`` Cognito group server-side,
+    matching the model-picker handler — not the un-gated brand/categories ones.
+    """
+    if not aggregates_table:
+        raise ConfigurationError('Aggregates table not configured')
+    require_admin(app.current_event.raw_event)
+    body = app.current_event.json_body or {}
+    custom_filters = _validate_custom_filters(body.get('custom_filters', []))
+    try:
+        item = {
+            'pk': CUSTOM_FILTERS_PK,
+            'sk': CUSTOM_FILTERS_SK,
+            'custom_filters': custom_filters,
+            'updated_at': datetime.now(timezone.utc).isoformat(),
+        }
+        aggregates_table.put_item(Item=item)
+        return {'success': True, 'custom_filters': custom_filters}
+    except Exception as e:
+        logger.exception(f"Failed to save custom filters: {e}")
+        raise ServiceError('Failed to save custom filters')
+
+
 @app.post("/settings/categories/generate")
 @tracer.capture_method
 def generate_categories():
@@ -557,6 +669,143 @@ Return ONLY valid JSON in this exact format (no markdown, no explanation):
     except Exception as e:
         logger.exception(f"Failed to generate categories: {e}")
         raise ServiceError('Failed to generate categories')
+
+
+# ============================================
+# Data Quality (async profile + enrichment jobs)
+# ============================================
+#
+# The routes only record a job and enqueue its first message; the
+# voc-data-quality-worker Lambda does the scanning and the Bedrock calls (see
+# shared/data_quality.py). Admin-only: a recalculation spends one model call per
+# row of a source.
+
+DATA_QUALITY_QUEUE_URL = os.environ.get('DATA_QUALITY_QUEUE_URL', '')
+_DATA_QUALITY_JOB_ID = re.compile(r'^dq_\d{14}_[0-9a-f]{8}$')
+_JOB_COUNTERS = ('total', 'processed', 'updated', 'skipped', 'failed')
+
+
+def _public_job(item: dict) -> dict:
+    """A job record as the UI reads it: counters as ints, no table keys."""
+    job = {
+        key: item.get(key)
+        for key in ('job_id', 'kind', 'source', 'field', 'mode', 'status',
+                    'created_at', 'updated_at', 'completed_at', 'error')
+        if item.get(key) is not None
+    }
+    job.update({key: int(item.get(key, 0) or 0) for key in _JOB_COUNTERS})
+    job['planned'] = bool(item.get('planned'))
+    return job
+
+
+def _require_data_quality_backend() -> None:
+    if not aggregates_table or not DATA_QUALITY_QUEUE_URL:
+        raise ConfigurationError('Data quality jobs are not configured')
+
+
+def _validated_job_request(body: dict) -> dict:
+    """The job description to store, or a ValidationError naming the bad field."""
+    kind = body.get('kind')
+    if kind == dq.KIND_PROFILE:
+        return {'kind': dq.KIND_PROFILE}
+    if kind != dq.KIND_ENRICH:
+        raise ValidationError(f'kind must be one of: {dq.KIND_PROFILE}, {dq.KIND_ENRICH}')
+    field = body.get('field')
+    if not isinstance(field, str) or get_enrichment_field(field) is None:
+        raise ValidationError(f'field must be one of: {", ".join(enrichment_field_names())}')
+    mode = body.get('mode')
+    if mode not in dq.ENRICH_MODES:
+        raise ValidationError(f'mode must be one of: {", ".join(dq.ENRICH_MODES)}')
+    source = body.get('source')
+    if not isinstance(source, str) or not source.strip() or len(source) > dq.MAX_SOURCE_LENGTH:
+        raise ValidationError(f'source must be a non-empty string of at most {dq.MAX_SOURCE_LENGTH} characters')
+    return {'kind': dq.KIND_ENRICH, 'field': field, 'mode': mode, 'source': source}
+
+
+def _first_message(job: dict) -> dict:
+    if job['kind'] == dq.KIND_PROFILE:
+        return {'type': dq.MSG_PROFILE_SCAN, 'job_id': job['job_id']}
+    return {
+        'type': dq.MSG_ENRICH_PLAN, 'job_id': job['job_id'],
+        'source': job['source'], 'field': job['field'], 'mode': job['mode'],
+    }
+
+
+@app.get("/settings/data-quality")
+@tracer.capture_method
+def get_data_quality():
+    """The last profile snapshot, the registry fields, and recent jobs."""
+    require_admin(app.current_event.raw_event)
+    if not aggregates_table:
+        raise ConfigurationError('Aggregates table not configured')
+    snapshot = aggregates_table.get_item(Key={'pk': dq.STATS_PK, 'sk': dq.STATS_SK}).get('Item')
+    return {
+        'fields': [{'name': f.name, 'values': list(f.values)} for f in ENRICHMENT_FIELDS],
+        'stats': dq.to_plain({
+            'generated_at': snapshot.get('generated_at'),
+            'scanned': snapshot.get('scanned', 0),
+            'sources': snapshot.get('sources', []),
+        }) if snapshot else None,
+        'jobs': [_public_job(item) for item in dq.list_recent_jobs(aggregates_table)],
+    }
+
+
+@app.post("/settings/data-quality/jobs")
+@tracer.capture_method
+def start_data_quality_job():
+    """Start a profile or an enrichment job; 409 when one already runs for the target."""
+    event = app.current_event.raw_event
+    require_admin(event)
+    _require_data_quality_backend()
+    body = app.current_event.json_body
+    if not isinstance(body, dict):
+        raise ValidationError('Request body must be a JSON object')
+    request = _validated_job_request(body)
+
+    job = {**request, 'job_id': dq.new_job_id(), 'started_by': get_caller_subject(event)}
+    lock = dq.job_lock_sk(job)
+    if not dq.acquire_lock(aggregates_table, lock, job['job_id']):
+        raise ConflictError('A data quality job is already running for this target')
+    try:
+        record = dq.create_job_record(aggregates_table, job)
+        get_sqs_client().send_message(
+            QueueUrl=DATA_QUALITY_QUEUE_URL, MessageBody=dq.to_json(_first_message(job)),
+        )
+    except ClientError as e:
+        logger.exception(f"Failed to start data quality job: {e}")
+        _abandon_unstarted_job(job, lock)
+        raise ServiceError('Failed to start data quality job')
+    return {'success': True, 'job': _public_job(record)}
+
+
+def _abandon_unstarted_job(job: dict, lock: str) -> None:
+    """Undo a start that failed after taking the lock, so the target is not blocked.
+
+    `finish_job` releases the lock when it moves an existing record to failed;
+    when the record was never written there is nothing to transition, so the lock
+    is released directly.
+    """
+    try:
+        if not dq.finish_job(aggregates_table, job, dq.STATUS_FAILED, 'Could not enqueue the job'):
+            dq.release_lock(aggregates_table, lock, job['job_id'])
+    except ClientError:
+        logger.warning("Could not clean up the unstarted data quality job; its lock expires on its own")
+
+
+@app.post("/settings/data-quality/jobs/<job_id>/cancel")
+@tracer.capture_method
+def cancel_data_quality_job(job_id: str):
+    """Stop a running job; queued messages for it are dropped by the worker."""
+    require_admin(app.current_event.raw_event)
+    _require_data_quality_backend()
+    if not _DATA_QUALITY_JOB_ID.match(job_id):
+        raise ValidationError('Invalid job id')
+    job = dq.get_job(aggregates_table, job_id)
+    if not job:
+        raise NotFoundError('Job not found')
+    if not dq.finish_job(aggregates_table, job, dq.STATUS_CANCELLED):
+        raise ConflictError('Job is not running')
+    return {'success': True, 'job': _public_job({**job, 'status': dq.STATUS_CANCELLED})}
 
 
 @api_handler

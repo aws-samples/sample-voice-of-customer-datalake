@@ -60,6 +60,18 @@
     "loadingCategories": "카테고리 로드 중...",
     "next": "다음",
     "noDataSourcesSelected": "선택된 데이터 소스 없음",
+    "personaPreview": {
+      "counting": "일치하는 리뷰를 세는 중…",
+      "error": "일치하는 리뷰 수를 확인할 수 없습니다.",
+      "matchesAtLeast": "이 필터와 일치하는 리뷰 {{matched}}개 이상",
+      "matchesEstimated": "이 필터와 일치하는 리뷰 약 {{matched, number}}개",
+      "confirming": "정확한 개수를 확인하는 중…",
+      "matches_one": "이 필터와 일치하는 리뷰 {{count}}개",
+      "matches_other": "이 필터와 일치하는 리뷰 {{count}}개",
+      "noMatches": "이 필터와 일치하는 리뷰가 없습니다. 페르소나 생성이 실패합니다.",
+      "sampled": "페르소나는 이 중 {{limit}}개를 고르게 추출해 사용합니다.",
+      "usesAll": "페르소나는 이 리뷰를 모두 사용합니다."
+    },
     "personas": "페르소나",
     "personasCount": "페르소나 ({{count}})",
     "personasCount_one": "페르소나 ({{count}})",
@@ -124,7 +136,8 @@
     "downloadMarkdown": "Markdown으로 다운로드",
     "downloadPDF": "PDF로 다운로드",
     "downloadTXT": "TXT로 다운로드",
-    "exportPersona": "페르소나 내보내기"
+    "exportPersona": "페르소나 내보내기",
+    "viewSourceFeedback": "원본 피드백 보기"
   },
   "prototypeLink": {
     "downloadHtml": "HTML 다운로드",

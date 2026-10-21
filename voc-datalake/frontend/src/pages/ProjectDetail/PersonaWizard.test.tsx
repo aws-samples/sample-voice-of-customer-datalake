@@ -10,6 +10,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PersonaWizard, ResearchWizard } from './Wizards'
 import { defaultContextConfig } from '../../components/DataSourceWizard/exports'
@@ -23,9 +24,12 @@ vi.mock('../../api/client', () => ({
     getCategoriesConfig: () => mockGetCategoriesConfig(),
   },
 }))
+const mockPreviewPersonaFeedback = vi.fn()
+
 vi.mock('../../api/projectsApi', () => ({
   projectsApi: {
     suggestResearchQuestions: vi.fn().mockResolvedValue({ suggestions: [] }),
+    previewPersonaFeedback: (...args: unknown[]) => mockPreviewPersonaFeedback(...args),
   },
 }))
 vi.mock('../../store/configStore', () => ({
@@ -55,6 +59,7 @@ const documents: ProjectDocument[] = [
 
 function personaProps() {
   return {
+    projectId: 'proj-1',
     personas,
     documents,
     contextConfig: defaultContextConfig,
@@ -90,6 +95,17 @@ describe('PersonaWizard data sources', () => {
     expect(screen.queryByText('Personas (2)')).not.toBeInTheDocument()
     expect(screen.queryByText('Existing Documents (1)')).not.toBeInTheDocument()
     expect(screen.queryByText('Research Documents (1)')).not.toBeInTheDocument()
+  })
+
+  it('shows the live match count on the feedback step', async () => {
+    const user = userEvent.setup()
+    mockPreviewPersonaFeedback.mockResolvedValue({ matched: 612, matched_is_lower_bound: false, sample_limit: 145 })
+    render(<PersonaWizard {...personaProps()} />, { wrapper: createWrapper() })
+
+    await user.click(await screen.findByRole('button', { name: /next/i }))
+
+    expect(await screen.findByText('612 reviews match these filters')).toBeInTheDocument()
+    expect(mockPreviewPersonaFeedback).toHaveBeenCalledWith('proj-1', expect.objectContaining({ days: 30 }), 'exact')
   })
 
   it('still offers personas in the research wizard, which can read them', async () => {

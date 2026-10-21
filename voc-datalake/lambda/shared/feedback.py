@@ -5,13 +5,21 @@ and job Lambdas (document generator, document merger).
 """
 
 import logging
+import math
 import re
+import time
 from collections.abc import Iterable
+from typing import TYPE_CHECKING, NamedTuple
 from datetime import datetime, timezone, timedelta
 
 from boto3.dynamodb.conditions import Key
 
-from shared.indexes import FEEDBACK_BY_CATEGORY_INDEX, FEEDBACK_BY_DATE_INDEX
+from shared.indexes import FEEDBACK_BY_CATEGORY_INDEX, FEEDBACK_BY_DATE_INDEX, FEEDBACK_BY_ID_INDEX
+
+if TYPE_CHECKING:
+    # Type-only: the module imports the filter model lazily (see
+    # _parse_extra_filters) to keep its runtime import graph narrow.
+    from shared.feedback_filters import FeedbackFilters
 
 logger = logging.getLogger(__name__)
 
@@ -234,6 +242,15 @@ MAX_LOOKBACK_DAYS = 90
 # ever see the first ~500 items of a partition (the "500개 중" truncation bug).
 MAX_ITEMS_PER_PARTITION = 10000
 
+# Candidate window for the LLM-context post-filter path (get_feedback_context
+# with extra `feedback_filters`). The extra dimensions are matched in memory
+# AFTER the date/source/category/sentiment query, so that query must return a
+# wider set than the caller's final `limit` or the post-pass has nothing to
+# narrow. Bounded so a wide window cannot pull an unbounded set into memory for
+# the match loop; comfortably above every FEEDBACK_LIMIT_* the Projects callers
+# pass (all <= a few hundred) while leaving headroom for a selective filter.
+MAX_CONTEXT_CANDIDATES = 2000
+
 # Shape guard for basis dates: a malformed source_created_at (e.g.
 # "unavailable") would otherwise compare lexicographically above any
 # YYYY-MM-DD cutoff.
@@ -420,10 +437,19 @@ def window_cutoff(days: int) -> str:
     return (now - timedelta(days=days - 1)).strftime('%Y-%m-%d')
 
 
-def _query_all_pages(feedback_table, *, index_name, key_expr, max_items):
+def _query_all_pages(feedback_table, *, index_name, key_expr, max_items, projection=None, deadline=None):
     """Query a GSI partition, following LastEvaluatedKey until exhausted or
     `max_items` collected. DynamoDB caps each page at 1MB, so a single query()
-    only returns a slice of a large partition — this pages through the rest."""
+    only returns a slice of a large partition — this pages through the rest.
+
+    ``projection`` is an optional ``(ProjectionExpression,
+    ExpressionAttributeNames)`` pair (see :func:`_projection`). The 1MB page
+    limit applies BEFORE the projection, so it saves transfer and, above all,
+    deserialization — not read capacity or pages.
+
+    ``deadline`` is an optional ``time.monotonic()`` value; paging stops at the
+    first page boundary after it. The caller decides what a short read means.
+    """
     collected: list[dict] = []
     last_key = None
     while True:
@@ -432,6 +458,8 @@ def _query_all_pages(feedback_table, *, index_name, key_expr, max_items):
             'KeyConditionExpression': key_expr,
             'ScanIndexForward': False,
         }
+        if projection:
+            kwargs['ProjectionExpression'], kwargs['ExpressionAttributeNames'] = projection
         if last_key:
             kwargs['ExclusiveStartKey'] = last_key
         response = feedback_table.query(**kwargs)
@@ -439,7 +467,55 @@ def _query_all_pages(feedback_table, *, index_name, key_expr, max_items):
         last_key = response.get('LastEvaluatedKey')
         if not last_key or len(collected) >= max_items:
             break
+        if deadline is not None and time.monotonic() >= deadline:
+            break
     return collected[:max_items]
+
+
+def _window_partitions(days: int, sources: list[str], categories: list[str]) -> list[tuple]:
+    """The ``(index_name, key_condition)`` of every partition a window reads.
+
+    Categories without sources read the category GSI, whose partitions span
+    all time, so the date window is applied to the rows afterwards. Everything
+    else reads one date partition per day, newest first.
+    """
+    if categories and not sources:
+        return [
+            (FEEDBACK_BY_CATEGORY_INDEX, Key('gsi2pk').eq(f'CATEGORY#{category}'))
+            for category in categories
+        ]
+    now = datetime.now(timezone.utc)
+    return [
+        (FEEDBACK_BY_DATE_INDEX,
+         Key('gsi1pk').eq(f"DATE#{(now - timedelta(days=i)).strftime('%Y-%m-%d')}"))
+        for i in range(days)
+    ]
+
+
+def _within_window(items: list[dict], days: int, date_basis: str, by_category: bool) -> list[dict]:
+    """Drop rows outside the window when the partitions read did not bound it.
+
+    Date partitions ARE the import window, so only the 'review' basis needs a
+    post-filter there; category partitions are unbounded in time.
+    """
+    if by_category or date_basis == DATE_BASIS_REVIEW:
+        cutoff_date = window_cutoff(days)
+        return [i for i in items if basis_date(i, date_basis) >= cutoff_date]
+    return items
+
+
+def _apply_list_filters(
+    items: list[dict], sources: list[str], sentiments: list[str], categories: list[str],
+) -> list[dict]:
+    """The source/sentiment/category post-filters. Categories without sources
+    were already applied by the category GSI read, so they are skipped here."""
+    if sources:
+        items = [i for i in items if i.get('source_platform') in sources]
+    if sentiments:
+        items = [i for i in items if i.get('sentiment_label') in sentiments]
+    if categories and sources:
+        items = [i for i in items if i.get('category') in categories]
+    return items
 
 
 def _fetch_and_filter(
@@ -465,47 +541,25 @@ def _fetch_and_filter(
             always contains the review window (no extra GSI needed).
     """
     has_post_filters = bool(sources or sentiments) or date_basis == DATE_BASIS_REVIEW
+    by_category = bool(categories and not sources)
     items: list[dict] = []
-    current_date = datetime.now(timezone.utc)
 
     # Per-partition page cap: honour fetch_ceiling when set (early-break path),
     # otherwise page through the whole partition up to a safety ceiling so we
     # don't truncate days/categories that hold more than one DynamoDB page.
     page_cap = fetch_ceiling if fetch_ceiling else MAX_ITEMS_PER_PARTITION
 
-    if categories and not sources:
-        for category in categories:
-            items.extend(_query_all_pages(
-                feedback_table,
-                index_name=FEEDBACK_BY_CATEGORY_INDEX,
-                key_expr=Key('gsi2pk').eq(f'CATEGORY#{category}'),
-                max_items=page_cap,
-            ))
-        cutoff_date = window_cutoff(days)
-        items = [i for i in items if basis_date(i, date_basis) >= cutoff_date]
-    else:
-        for i in range(days):
-            date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
-            items.extend(_query_all_pages(
-                feedback_table,
-                index_name=FEEDBACK_BY_DATE_INDEX,
-                key_expr=Key('gsi1pk').eq(f'DATE#{date}'),
-                max_items=page_cap,
-            ))
-            if not has_post_filters and fetch_ceiling and len(items) >= fetch_ceiling:
-                break
-        if date_basis == DATE_BASIS_REVIEW:
-            cutoff_date = window_cutoff(days)
-            items = [i for i in items if basis_date(i, date_basis) >= cutoff_date]
+    for index_name, key_expr in _window_partitions(days, sources, categories):
+        items.extend(_query_all_pages(
+            feedback_table, index_name=index_name, key_expr=key_expr, max_items=page_cap,
+        ))
+        # Early break on the date path only: stopping after the first category
+        # would drop every later category from the result entirely.
+        if not by_category and not has_post_filters and fetch_ceiling and len(items) >= fetch_ceiling:
+            break
 
-    if sources:
-        items = [i for i in items if i.get('source_platform') in sources]
-    if sentiments:
-        items = [i for i in items if i.get('sentiment_label') in sentiments]
-    if categories and sources:
-        items = [i for i in items if i.get('category') in categories]
-
-    return items
+    items = _within_window(items, days, date_basis, by_category)
+    return _apply_list_filters(items, sources, sentiments, categories)
 
 
 def query_feedback_by_date(
@@ -609,21 +663,373 @@ def get_feedback_context(feedback_table, filters: dict, limit: int = 50) -> list
     Args:
         feedback_table: DynamoDB Table resource for feedback
         filters: Dict with keys: days, categories, sentiments, sources,
-            date_basis ('imported' default | 'review')
+            date_basis ('imported' default | 'review'). May also carry
+            ``feedback_filters``: the full shared filter model's ``to_dict()``
+            (subcategory / urgent / enrichment / ``custom_fields``), applied as
+            an in-memory post-pass on top of the date/source/category/sentiment
+            window above. Absent or empty means no extra narrowing, so existing
+            callers are unaffected.
         limit: Maximum number of items to return
 
     Returns:
         List of feedback items matching filters
     """
-    return query_feedback_by_date(
+    extra = _parse_extra_filters(filters.get('feedback_filters'))
+    # No extra dimensions: the original single-pass path, limit applied in the
+    # query. Nothing changes for callers that do not send ``feedback_filters``.
+    if extra is None or extra.is_empty:
+        return query_feedback_by_date(
+            feedback_table,
+            days=filters.get('days', 30),
+            sources=filters.get('sources'),
+            categories=filters.get('categories'),
+            sentiments=filters.get('sentiments'),
+            limit=limit,
+            date_basis=filters.get('date_basis') or DATE_BASIS_IMPORTED,
+        )
+
+    # Extra dimensions are matched in memory AFTER the date/source/category/
+    # sentiment query, so the query's own ``limit`` would truncate the window
+    # BEFORE the post-pass ran and silently under-return. Fetch a wider
+    # candidate window (bounded by MAX_CONTEXT_CANDIDATES), post-filter, then
+    # slice to ``limit``.
+    candidates = query_feedback_by_date(
         feedback_table,
         days=filters.get('days', 30),
         sources=filters.get('sources'),
         categories=filters.get('categories'),
         sentiments=filters.get('sentiments'),
-        limit=limit,
+        limit=MAX_CONTEXT_CANDIDATES,
         date_basis=filters.get('date_basis') or DATE_BASIS_IMPORTED,
     )
+    matched = [item for item in candidates if extra.matches(item)]
+    return matched[:limit]
+
+
+def _parse_extra_filters(raw: dict | None):
+    """Build a FeedbackFilters from a stored ``to_dict()`` map, or None.
+
+    Imported lazily so this data-layer module keeps a narrow import graph (the
+    same reason the lazy imports elsewhere in it exist) and does not pull the
+    filter model into every consumer of ``shared.feedback``.
+    """
+    if not raw:
+        return None
+    from shared.feedback_filters import FeedbackFilters
+    return FeedbackFilters.from_mapping(raw)
+
+
+# --- Persona sample pool -----------------------------------------------------
+# Persona generation can only put FEEDBACK_LIMIT_PERSONA items in front of the
+# model, but a filter routinely matches thousands. Taking the first N of the
+# date loop's order (newest import first) made a bulk-imported corpus collapse
+# onto the last few minutes of one import — one source, one slice — however the
+# filters were set. So the persona path reads every MATCHING row in the window
+# (projected to the fields the filters need), samples evenly across them, and
+# only then fetches the chosen items in full.
+
+# Rows the pool may read before it stops. Past it, the count is reported as a
+# lower bound rather than presented as the whole match.
+#
+# Sized against the projects API's 30s timeout, which the wizard's preview
+# count runs under. The 1MB page limit applies before projection, so a read
+# costs one page per ~1MB of FULL items however little it keeps: 42,612 items
+# (93MB) are 91 pages. What the projection DOES decide is deserialization, and
+# that is CPU-bound on a 512MB Lambda — keeping every filterable field (the
+# whole custom_fields map included) timed the deployed preview out at 30s on
+# that corpus, while keeping only the active filters' paths reads it at about
+# Select=COUNT speed (~7s vs ~6s measured from a laptop). Hence the per-request
+# projection in _pool_projection, and a cap with headroom above that corpus.
+FEEDBACK_POOL_MAX_ROWS = 50_000
+
+
+def _projection(paths) -> tuple[str, dict[str, str]]:
+    """``(ProjectionExpression, ExpressionAttributeNames)`` for attribute paths.
+
+    Every segment is aliased: `date` is a DynamoDB reserved word, and a
+    custom-field key is admin-chosen text, so nothing is spelled inline.
+    """
+    aliases: dict[str, str] = {}
+    expressions = []
+    for path in dict.fromkeys(paths):
+        expressions.append('.'.join(aliases.setdefault(part, f'#p{len(aliases)}') for part in path))
+    return ', '.join(expressions), {alias: part for part, alias in aliases.items()}
+
+
+class _PoolScope(NamedTuple):
+    """A persona request's feedback scope, parsed once for the pool read and the estimate."""
+    days: int
+    sources: list[str]
+    categories: list[str]
+    sentiments: list[str]
+    date_basis: str
+    # None when no shared-model dimension is active.
+    extra: 'FeedbackFilters | None'
+
+    @property
+    def by_category(self) -> bool:
+        return bool(self.categories and not self.sources)
+
+
+def _pool_scope(filters: dict) -> _PoolScope:
+    extra = _parse_extra_filters(filters.get('feedback_filters'))
+    return _PoolScope(
+        days=min(int(filters.get('days') or 30), MAX_LOOKBACK_DAYS),
+        sources=list(filters.get('sources') or []),
+        categories=list(filters.get('categories') or []),
+        sentiments=list(filters.get('sentiments') or []),
+        date_basis=filters.get('date_basis') or DATE_BASIS_IMPORTED,
+        extra=None if extra is None or extra.is_empty else extra,
+    )
+
+
+def _filter_paths(scope: _PoolScope) -> list[tuple[str, ...]]:
+    """What the list filters and FeedbackFilters.matches read for this scope."""
+    paths: list[tuple[str, ...]] = []
+    if scope.sources:
+        paths.append(('source_platform',))
+    if scope.sentiments:
+        paths.append(('sentiment_label',))
+    if scope.categories:
+        paths.append(('category',))
+    if scope.extra is not None:
+        paths.extend(scope.extra.attribute_paths())
+    return paths
+
+
+def _pool_projection(scope: _PoolScope) -> tuple[str, dict[str, str]]:
+    """Only what this request's filters read, plus the id the sample is
+    fetched by. Mirrors the reads in _within_window, _apply_list_filters and
+    FeedbackFilters.matches, so the projection changes no filtering answer."""
+    paths: list[tuple[str, ...]] = [('feedback_id',)]
+    if scope.by_category or scope.date_basis == DATE_BASIS_REVIEW:
+        paths += [('date',), ('source_created_at',)]
+    return _projection(paths + _filter_paths(scope))
+
+
+def read_feedback_pool(
+    feedback_table, filters: dict, max_rows: int = FEEDBACK_POOL_MAX_ROWS,
+    deadline: float | None = None,
+) -> tuple[list[dict], bool]:
+    """Every row matching ``filters`` in the window, in read order, projected to
+    ``feedback_id`` plus whatever the active filters read.
+
+    Applies the same window and filters as :func:`get_feedback_context` (the
+    source/category/sentiment lists, ``date_basis`` and ``feedback_filters``),
+    so a count from here and a generation from here describe the same set.
+
+    ``deadline`` (a ``time.monotonic()`` value) bounds a read that must answer
+    inside a request timeout. A window whose rows all share one import date
+    lives in ONE index partition, and DynamoDB throttles a single partition
+    well before a full read of a large corpus finishes, so the read time is
+    not bounded by the row count alone.
+
+    Returns:
+        ``(rows, capped)``. ``capped`` means the read stopped early, at
+        ``max_rows`` raw rows or at the deadline, so ``len(rows)`` is a lower
+        bound on the match, not its size.
+    """
+    if not feedback_table:
+        return [], False
+    scope = _pool_scope(filters)
+    projection = _pool_projection(scope)
+
+    rows: list[dict] = []
+    capped = False
+    for index_name, key_expr in _window_partitions(scope.days, scope.sources, scope.categories):
+        rows.extend(_query_all_pages(
+            feedback_table, index_name=index_name, key_expr=key_expr,
+            max_items=max_rows - len(rows), projection=projection, deadline=deadline,
+        ))
+        # Conservative on both counts: a window that holds exactly max_rows, or
+        # finishes just as the deadline passes, also lands here. Saying "at
+        # least" about a complete count is the safe error.
+        if len(rows) >= max_rows or (deadline is not None and time.monotonic() >= deadline):
+            capped = True
+            break
+
+    rows = _within_window(rows, scope.days, scope.date_basis, scope.by_category)
+    rows = _apply_list_filters(rows, scope.sources, scope.sentiments, scope.categories)
+    if scope.extra is not None:
+        rows = [row for row in rows if scope.extra.matches(row)]
+    return rows, capped
+
+
+# --- Fast match estimate -----------------------------------------------------
+# The exact count above reads every row in the window, and a bulk import puts a
+# whole corpus in one date partition, which DynamoDB serves at about 3,000 read
+# units a second: 93MB is ~4s however it is projected or parallelised (a
+# segmented parallel scan measured slower, not faster). So the wizard asks for a
+# quick estimate first and the exact count second.
+#
+# The sample comes from the feedback-id index, NOT the date index. Each row there
+# is its own partition and feedback ids are hashes, so a Scan returns rows in an
+# order unrelated to how or when they were imported — a random sample. The date
+# index returns import order: its first page under-counted the Gold/Platinum
+# match on f by 5% (26,945), while 4 pages of the id index (1,860 rows, 0.31s)
+# estimated 28,202 against an exact 28,374.
+ESTIMATE_SAMPLE_PAGES = 4
+
+# Fewer matching sample rows than this is too noisy to show, and a zero would read
+# as "nothing matches"; the caller then waits for the exact count instead.
+ESTIMATE_MIN_SAMPLE_MATCHES = 20
+
+# How long the index's row count (DescribeTable, which AWS itself refreshes about
+# every six hours) is reused before it is asked for again.
+_INDEX_COUNT_TTL_SECONDS = 600
+_index_count_cache: dict[str, tuple[float, int]] = {}
+
+
+def _indexed_feedback_count(feedback_table) -> int:
+    """Approximate number of feedback rows: the feedback-id index's ItemCount."""
+    now = time.monotonic()
+    cached = _index_count_cache.get(feedback_table.name)
+    if cached is not None and now - cached[0] < _INDEX_COUNT_TTL_SECONDS:
+        return cached[1]
+    table = feedback_table.meta.client.describe_table(TableName=feedback_table.name)['Table']
+    count = next(
+        (int(index.get('ItemCount') or 0)
+         for index in table.get('GlobalSecondaryIndexes') or []
+         if index.get('IndexName') == FEEDBACK_BY_ID_INDEX),
+        0,
+    )
+    _index_count_cache[feedback_table.name] = (now, count)
+    return count
+
+
+def _round_significant(value: float, digits: int = 2) -> int:
+    """``value`` to ``digits`` significant figures (28,202 -> 28,000), so an
+    estimate does not claim precision it does not have."""
+    if value < 1:
+        return 0
+    step = 10 ** max(int(math.floor(math.log10(value))) - (digits - 1), 0)
+    return int(round(value / step) * step)
+
+
+def _sample_matches(rows: list[dict], scope: _PoolScope) -> list[dict]:
+    """The sample rows the exact read would count. Sampled rows span every
+    date, so the window is checked on the import date (the date index's
+    partitions) and, for the review basis, on the review date too."""
+    cutoff = window_cutoff(scope.days)
+    rows = [
+        row for row in rows
+        if row.get('date', '') >= cutoff and basis_date(row, scope.date_basis) >= cutoff
+    ]
+    rows = _apply_list_filters(rows, scope.sources, scope.sentiments, [])
+    if scope.categories:
+        rows = [row for row in rows if row.get('category') in scope.categories]
+    if scope.extra is not None:
+        rows = [row for row in rows if scope.extra.matches(row)]
+    return rows
+
+
+def estimate_feedback_matches(
+    feedback_table, filters: dict, pages: int = ESTIMATE_SAMPLE_PAGES,
+) -> int | None:
+    """A fast estimate of how many rows :func:`read_feedback_pool` would match.
+
+    Returns:
+        The estimate (rounded to two significant figures; exact when the sample
+        happened to cover every row), or None when the sample is too thin to
+        say anything — the caller should wait for the exact count.
+    """
+    if not feedback_table:
+        return None
+    scope = _pool_scope(filters)
+    paths = [('date',), *([('source_created_at',)] if scope.date_basis == DATE_BASIS_REVIEW else [])]
+    expression, names = _projection(paths + _filter_paths(scope))
+    kwargs = {
+        'IndexName': FEEDBACK_BY_ID_INDEX,
+        'ProjectionExpression': expression,
+        'ExpressionAttributeNames': names,
+    }
+    sample: list[dict] = []
+    complete = False
+    for _ in range(pages):
+        response = feedback_table.scan(**kwargs)
+        sample.extend(response.get('Items', []))
+        last_key = response.get('LastEvaluatedKey')
+        if not last_key:
+            complete = True
+            break
+        kwargs['ExclusiveStartKey'] = last_key
+
+    matched = len(_sample_matches(sample, scope))
+    if complete:
+        # The "sample" is the whole index: this is a count, not an estimate.
+        return matched if matched else None
+    if matched < ESTIMATE_MIN_SAMPLE_MATCHES:
+        return None
+    total = _indexed_feedback_count(feedback_table)
+    if total <= 0:
+        return None
+    return _round_significant(matched / len(sample) * total)
+
+
+def sample_evenly(rows: list[dict], size: int) -> list[dict]:
+    """``size`` rows spread evenly across ``rows``, keeping their order.
+
+    Deterministic (a fixed stride, no randomness), so the same filters over
+    the same data choose the same items and a regenerated persona set is
+    comparable with the last one. Indices are distinct whenever
+    ``len(rows) > size``, because the stride is then at least 1.
+    """
+    if size <= 0:
+        return []
+    count = len(rows)
+    if count <= size:
+        return list(rows)
+    return [rows[(i * count) // size] for i in range(size)]
+
+
+def get_feedback_by_ids(feedback_table, feedback_ids: list[str]) -> tuple[list[dict], list[str]]:
+    """Full feedback items for ``feedback_ids``, in the given order.
+
+    One query per id on the feedback-id GSI: the ids are all a caller has
+    (persona rows store ids, not table keys), and every caller asks for a
+    page or a sample, never an unbounded list.
+
+    Returns:
+        ``(items, missing_ids)`` — ids with no row (deleted since they were
+        recorded) are reported rather than silently shortening the list.
+    """
+    items: list[dict] = []
+    missing: list[str] = []
+    for feedback_id in feedback_ids:
+        if not isinstance(feedback_id, str) or not feedback_id:
+            continue
+        response = feedback_table.query(
+            IndexName=FEEDBACK_BY_ID_INDEX,
+            KeyConditionExpression=Key('feedback_id').eq(feedback_id),
+            Limit=1,
+        )
+        found = response.get('Items') or []
+        if found:
+            items.append(found[0])
+        else:
+            missing.append(feedback_id)
+    return items, missing
+
+
+def sample_feedback(
+    feedback_table, filters: dict, sample_size: int, max_rows: int = FEEDBACK_POOL_MAX_ROWS,
+) -> tuple[list[dict], int, bool]:
+    """An even sample of the feedback matching ``filters``, fetched in full.
+
+    Returns:
+        ``(items, matched, matched_is_lower_bound)``: the sampled items (in
+        sample order, which is what the model's "Review #N" numbering follows),
+        how many rows matched, and whether that count is only a floor.
+    """
+    pool, capped = read_feedback_pool(feedback_table, filters, max_rows)
+    picked = sample_evenly(pool, sample_size)
+    items, missing = get_feedback_by_ids(feedback_table, [row.get('feedback_id') for row in picked])
+    if missing:
+        logger.warning(
+            "[FEEDBACK] Sampled rows vanished before they could be fetched",
+            extra={'missing': len(missing), 'sampled': len(picked)},
+        )
+    return items, len(pool), capped
 def format_feedback_for_llm(items: list[dict]) -> str:
     """Format feedback items for LLM context with rich details.
     

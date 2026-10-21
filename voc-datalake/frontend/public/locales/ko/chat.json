@@ -15,9 +15,9 @@
     "share": "공유"
   },
   "filters": {
-    "clear": "초기화",
-    "focusingOn": "필터링 중: {{summary}}",
-    "title": "필터 컨텍스트 (최대 30개 리뷰)"
+    "count_other": "리뷰 {{count}}개",
+    "countPartial_other": "리뷰 {{count}}개 이상",
+    "dropped": "이 범위에는 리뷰가 {{max}}개를 초과합니다. 채팅은 처음 {{max}}개만 사용하며 일부 피드백은 제외됩니다. 더 집중된 결과를 보려면 필터를 좁히세요."
   },
   "hideHistory": "기록 숨기기",
   "inputPlaceholder": "피드백에 대해 질문하세요...",

@@ -78,10 +78,13 @@
     "settings": "設定"
   },
   "partialCountsHint": "概算値: 期間全体を読み取れなかったため、件数は下限値です",
+  "emptyWindowFallback": "選択した期間にフィードバックがありません。代わりに最新のデータを表示しています（{{date}} 時点）。",
   "partialWindowHint": "すべて表示するにはフィルターを絞り込んでください",
   "problemAnalysisPage": {
     "emptyHint": "期間を広げるかフィルターを調整してください",
-    "emptyTitle": "選択した期間の問題分析データが見つかりません"
+    "emptyTitle": "選択した期間の問題分析データが見つかりません",
+    "itemsLoadFailed": "例を読み込めませんでした。",
+    "noExamples": "例となるフィードバックが見つかりません。"
   },
   "problemResolution": {
     "allResolvedHint": "上の「解決済みを表示 ({{total}})」を有効にすると確認できます",
@@ -124,5 +127,45 @@
     "endDate": "終了日",
     "selectDateRange": "期間を選択",
     "startDate": "開始日"
+  },
+  "feedbackFilters": {
+    "title": "フィルター",
+    "activeCount_one": "{{count}}件適用中",
+    "activeCount_other": "{{count}}件適用中",
+    "clearAll": "すべてクリア",
+    "clearGroup": "クリア",
+    "noOptions": "この期間にはありません",
+    "sources": "ソース",
+    "categories": "カテゴリ",
+    "subcategories": "サブカテゴリ",
+    "sentiment": "感情",
+    "urgency": "緊急度",
+    "urgentOnly": "緊急のみ",
+    "noMatches": "条件に一致するフィードバックはありません",
+    "noMatchesHint": "期間を広げるか、フィルターを減らしてください。",
+    "loadFailed": "絞り込み結果を読み込めませんでした。",
+    "retry": "再試行",
+    "updating": "更新中…"
+  },
+  "feedbackOverlay": {
+    "problem": "課題:",
+    "rootCause": "根本原因:",
+    "urgent": "緊急",
+    "close": "閉じる",
+    "viewSource": "ソースを表示",
+    "openFullDetails": "詳細をすべて表示"
+  },
+  "enrichment": {
+    "values": {
+      "unscored": "未評価"
+    },
+    "usefulness": {
+      "label": "有用性",
+      "values": {
+        "high": "高",
+        "medium": "中",
+        "low": "低"
+      }
+    }
   }
 }

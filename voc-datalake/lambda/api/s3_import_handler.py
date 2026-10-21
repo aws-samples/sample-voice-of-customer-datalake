@@ -106,6 +106,35 @@ def list_files():
         raise ServiceError('Failed to list files')
 
 
+# Bound on the source-field column NAME. Generous (it names a column, not a
+# value), but capped so it stays a sane S3 metadata header value.
+MAX_SOURCE_FIELD_LENGTH = 128
+
+
+def _validate_source_field(raw: Any) -> str | None:
+    """Validate the optional per-row source column name for upload metadata.
+
+    Returns the trimmed name, or None when absent/blank (the common case — most
+    uploads have no per-row source). This is a COLUMN NAME, not a source value;
+    the ingestor reads each row's value at that column and normalizes it. It only
+    has to be a safe S3 metadata header value here: printable ASCII, bounded, no
+    control characters (S3 rejects non-ASCII metadata and it would break the
+    signed header).
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        raise ValidationError('source_field must be a string')
+    value = raw.strip()
+    if not value:
+        return None
+    if len(value) > MAX_SOURCE_FIELD_LENGTH:
+        raise ValidationError(f'source_field exceeds {MAX_SOURCE_FIELD_LENGTH} characters')
+    if not all(32 <= ord(ch) <= 126 for ch in value):
+        raise ValidationError('source_field must be printable ASCII (it names a column)')
+    return value
+
+
 @app.post("/s3-import/upload-url")
 @tracer.capture_method
 def get_upload_url():
@@ -117,6 +146,7 @@ def get_upload_url():
     filename = body.get('filename', '').strip()
     source = body.get('source', 'default').strip()
     content_type = body.get('content_type', 'application/octet-stream')
+    source_field = _validate_source_field(body.get('source_field'))
     
     if not filename:
         raise ValidationError('Filename is required')
@@ -127,15 +157,31 @@ def get_upload_url():
     safe_source = re.sub(r'[^a-zA-Z0-9_-]', '_', source)
     safe_filename = re.sub(r'[^a-zA-Z0-9_.-]', '_', filename)
     key = f"{safe_source}/{safe_filename}"
+
+    # The per-row source column (Phase 5): sign it INTO the URL as object
+    # metadata so S3 stores `x-amz-meta-source-field`. It must be signed here —
+    # a presigned PUT only accepts the headers baked into the signature — and the
+    # ingestor reads `head_object().Metadata['source-field']` to apply it per row
+    # (see plugins/s3_import/ingestor/handler.py). Absent, every row keeps the
+    # file-level source, exactly as before.
+    params: dict[str, Any] = {'Bucket': S3_IMPORT_BUCKET, 'Key': key, 'ContentType': content_type}
+    if source_field:
+        params['Metadata'] = {'source-field': source_field}
     
     try:
         expires_in = 7200  # 2 hours for large file uploads
         url = s3_client.generate_presigned_url(
             'put_object',
-            Params={'Bucket': S3_IMPORT_BUCKET, 'Key': key, 'ContentType': content_type},
+            Params=params,
             ExpiresIn=expires_in
         )
-        return {'success': True, 'upload_url': url, 'key': key, 'bucket': S3_IMPORT_BUCKET, 'expires_in': expires_in}
+        return {
+            'success': True, 'upload_url': url, 'key': key,
+            'bucket': S3_IMPORT_BUCKET, 'expires_in': expires_in,
+            # Echoed so the client can send the matching PUT header, and so the
+            # response is self-describing about what the URL was signed for.
+            'source_field': source_field,
+        }
     except Exception as e:
         logger.exception(f"Failed to generate upload URL: {e}")
         raise ServiceError('Failed to generate upload URL')

@@ -187,6 +187,13 @@
         "latency_ms": { "type": "integer" }
       },
       "description": "LLM inference metadata for tracing"
+    },
+    "custom_fields": {
+      "type": "object",
+      "additionalProperties": {
+        "type": ["string", "number", "integer", "boolean", "null"]
+      },
+      "description": "Extra fields carried from the import (flat primitives only), e.g. region, product line, plan tier. Up to 20 keys; string values truncated to 1000 chars. Used for optional custom filters."
     }
   }
 }

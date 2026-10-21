@@ -165,6 +165,7 @@
   "subtitle": "Configure su plataforma VoC",
   "tabs": {
     "categories": "Categorías",
+    "dataQuality": "Calidad de datos",
     "general": "Configuración general",
     "logs": "Registros",
     "plugins": "Fuentes de datos",
@@ -175,5 +176,93 @@
     "configureFirst": "Configure el endpoint de API en la pestaña General para gestionar usuarios.",
     "description": "Gestione usuarios, roles y permisos para la plataforma VoC.",
     "title": "Administración de usuarios"
+  },
+  "customFilters": {
+    "title": "Filtros personalizados",
+    "intro": "Muestra hasta 3 campos de datos adicionales como filtros en la página de comentarios.",
+    "keyPlaceholder": "Clave del campo",
+    "labelPlaceholder": "Etiqueta visible",
+    "add": "Agregar filtro",
+    "remove": "Quitar",
+    "save": "Guardar filtros",
+    "saved": "Guardado",
+    "saveFailed": "No se pudieron guardar los filtros personalizados. Inténtalo de nuevo.",
+    "loadFailed": "No se pudieron cargar los filtros personalizados.",
+    "loading": "Cargando filtros personalizados...",
+    "capHint": "Hasta 3 filtros.",
+    "empty": "No hay filtros personalizados configurados.",
+    "suggestionsTitle": "Campos sugeridos",
+    "noSuggestions": "No hay sugerencias de campos a partir de datos recientes."
+  },
+  "dataQuality": {
+    "title": "Calidad de datos",
+    "intro": "Estadísticas por fuente de los comentarios almacenados y trabajos en segundo plano que calculan los valores de enriquecimiento con IA que faltan o los recalculan para toda una fuente.",
+    "refresh": "Actualizar estadísticas",
+    "snapshot_one": "Instantánea del {{time}} · {{count, number}} fila analizada",
+    "snapshot_other": "Instantánea del {{time}} · {{count, number}} filas analizadas",
+    "noStats": "Aún no hay estadísticas: ejecute Actualizar estadísticas.",
+    "noSources": "El último análisis no encontró comentarios.",
+    "loading": "Cargando calidad de datos...",
+    "loadFailed": "No se pudieron cargar las estadísticas de calidad de datos.",
+    "rows_one": "{{count, number}} fila",
+    "rows_other": "{{count, number}} filas",
+    "charts": {
+      "rating": "Valoración",
+      "sentiment": "Sentimiento",
+      "length": "Longitud del texto (caracteres)"
+    },
+    "noRating": "Ninguna",
+    "unscoredShare": "{{unscored, number}} sin valor ({{percent}} %)",
+    "calculateMissing": "Calcular los que faltan",
+    "recalculateAll": "Recalcular todo",
+    "recalculateTitle": "¿Recalcular {{field}} para {{source}}?",
+    "recalculateMessage_one": "Esto vuelve a derivar {{field}} para cada fila de {{source}} ({{count, number}} fila) y reemplaza los valores ya almacenados. Cuesta una llamada al modelo por fila.",
+    "recalculateMessage_other": "Esto vuelve a derivar {{field}} para cada fila de {{source}} ({{count, number}} filas) y reemplaza los valores ya almacenados. Cuesta una llamada al modelo por fila.",
+    "startConflict": "Ya hay un trabajo en curso para ese destino. Espere a que termine o cancélelo primero.",
+    "startFailed": "No se pudo iniciar el trabajo. Inténtelo de nuevo.",
+    "cancelConflict": "Ese trabajo ya se había detenido.",
+    "cancelFailed": "No se pudo cancelar el trabajo. Inténtelo de nuevo.",
+    "fields": {
+      "usefulness": "Utilidad"
+    },
+    "values": {
+      "high": "Alta",
+      "medium": "Media",
+      "low": "Baja",
+      "unscored": "Sin valor"
+    },
+    "sentiments": {
+      "positive": "Positivo",
+      "neutral": "Neutral",
+      "negative": "Negativo",
+      "mixed": "Mixto",
+      "unknown": "Desconocido"
+    },
+    "jobs": {
+      "title": "Trabajos recientes",
+      "empty": "Aún no hay trabajos.",
+      "profile": "Actualizar estadísticas",
+      "enrich": "{{field}} · {{source}}",
+      "mode": {
+        "missing": "Solo los que faltan",
+        "all": "Todas las filas"
+      },
+      "status": {
+        "running": "En curso",
+        "completed": "Completado",
+        "failed": "Fallido",
+        "cancelled": "Cancelado"
+      },
+      "scanning_one": "Analizando… {{count, number}} fila",
+      "scanning_other": "Analizando… {{count, number}} filas",
+      "scanned_one": "{{count, number}} fila analizada",
+      "scanned_other": "{{count, number}} filas analizadas",
+      "progress": "{{processed, number}} / {{total, number}}",
+      "planning": "Aún planificando: se pueden añadir más filas",
+      "counts": "{{updated, number}} actualizadas · {{skipped, number}} omitidas · {{failed, number}} con error",
+      "started": "Iniciado {{time}}",
+      "cancel": "Cancelar",
+      "progressLabel": "Progreso del trabajo"
+    }
   }
 }

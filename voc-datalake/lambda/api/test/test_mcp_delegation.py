@@ -1847,7 +1847,11 @@ class TestMetricsToolsDeclareTheFlagTheyPassThrough:
         does not find and `list_feedback` declares under the route's own name.
         """
         publishing = set(routes_publishing_is_partial())
-        assert len(publishing) == 6, f"derivation looks wrong: {sorted(publishing)}"
+        # 7th/8th publishers: /feedback/custom-field-candidates and
+        # /feedback/problems (both scan-only). Neither is in DOMAIN_ROUTES, so
+        # neither enters `publishing & reachable` below — this count is only the
+        # derivation's positive control.
+        assert len(publishing) == 8, f"derivation looks wrong: {sorted(publishing)}"
 
         reachable = {path for _domain, _method, path in mcp_handler.DOMAIN_ROUTES.values()}
         serving_tool = {

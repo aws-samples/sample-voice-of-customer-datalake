@@ -84,7 +84,9 @@ def projects_table():
 
 @pytest.fixture
 def feedback():
-    with patch('api.projects.get_feedback_context', return_value=FEEDBACK_ITEMS):
+    # (sampled items, matched count, matched is a lower bound)
+    with patch('api.projects.sample_persona_feedback',
+               return_value=(FEEDBACK_ITEMS, len(FEEDBACK_ITEMS), False)):
         yield FEEDBACK_ITEMS
 
 
@@ -227,8 +229,7 @@ class TestReplaceSemantics:
 
         result = generate_personas('proj-1', {'persona_count': 2})
 
-        batch = projects_table.batch_writer.return_value.__enter__.return_value
-        deleted = {c.kwargs['Key']['sk'] for c in batch.delete_item.call_args_list}
+        deleted = {c.kwargs['Key']['sk'] for c in projects_table.delete_item.call_args_list}
         assert deleted == {'PERSONA#old-1', 'PERSONA#old-2', 'PERSONA#old-3'}
 
         # Replace, not increment: two personas saved, so the META count is 2
@@ -236,6 +237,149 @@ class TestReplaceSemantics:
         values = projects_table.update_item.call_args.kwargs['ExpressionAttributeValues']
         assert values[':count'] == 2
         assert len(result['personas']) == 2
+
+    def test_protected_personas_are_kept_and_counted(
+        self, projects_table, feedback, chain, avatars
+    ):
+        from api.projects import generate_personas
+
+        projects_table.query.return_value = {'Items': [
+            {'pk': 'PROJECT#proj-1', 'sk': 'PERSONA#keep', 'name': 'Darlene', 'protected': True},
+            {'pk': 'PROJECT#proj-1', 'sk': 'PERSONA#old', 'name': 'Mike'},
+        ]}
+
+        generate_personas('proj-1', {'persona_count': 2})
+
+        deleted = {c.kwargs['Key']['sk'] for c in projects_table.delete_item.call_args_list}
+        assert deleted == {'PERSONA#old'}
+        # Kept + new: one protected persona survives beside the two just made.
+        values = projects_table.update_item.call_args.kwargs['ExpressionAttributeValues']
+        assert values[':count'] == 3
+
+    def test_each_delete_is_conditional_on_the_persona_still_being_unprotected(
+        self, projects_table, feedback, chain, avatars
+    ):
+        """Generation takes minutes; a persona protected meanwhile must survive."""
+        from api.projects import generate_personas
+
+        projects_table.query.return_value = {'Items': [{'pk': 'PROJECT#proj-1', 'sk': 'PERSONA#old'}]}
+
+        generate_personas('proj-1', {'persona_count': 2})
+
+        call = projects_table.delete_item.call_args
+        assert 'attribute_not_exists(#protected)' in call.kwargs['ConditionExpression']
+        assert call.kwargs['ExpressionAttributeNames'] == {'#protected': 'protected'}
+
+    def test_a_persona_protected_mid_run_is_not_deleted_or_fatal(
+        self, projects_table, feedback, chain, avatars
+    ):
+        from botocore.exceptions import ClientError
+        from api.projects import generate_personas
+
+        projects_table.query.return_value = {'Items': [
+            {'pk': 'PROJECT#proj-1', 'sk': 'PERSONA#raced'},
+            {'pk': 'PROJECT#proj-1', 'sk': 'PERSONA#old'},
+        ]}
+        conditional = ClientError({'Error': {'Code': 'ConditionalCheckFailedException'}}, 'DeleteItem')
+        projects_table.delete_item.side_effect = [conditional, {}]
+
+        result = generate_personas('proj-1', {'persona_count': 2})
+
+        assert len(result['personas']) == 2
+        # 'raced' failed its condition, so it was kept and is counted.
+        values = projects_table.update_item.call_args.kwargs['ExpressionAttributeValues']
+        assert values[':count'] == 3
+
+    def test_a_persona_that_fails_to_delete_is_counted_and_the_rest_still_go(
+        self, projects_table, feedback, chain, avatars
+    ):
+        """A throttled delete leaves its row in place. Raising would skip every
+        later delete and write a count that ignores the rows still there."""
+        from botocore.exceptions import ClientError
+        from api.projects import generate_personas
+
+        projects_table.query.return_value = {'Items': [
+            {'pk': 'PROJECT#proj-1', 'sk': 'PERSONA#stuck'},
+            {'pk': 'PROJECT#proj-1', 'sk': 'PERSONA#old'},
+        ]}
+        throttled = ClientError({'Error': {'Code': 'ProvisionedThroughputExceededException'}}, 'DeleteItem')
+        projects_table.delete_item.side_effect = [throttled, {}]
+
+        result = generate_personas('proj-1', {'persona_count': 2})
+
+        deleted = [c.kwargs['Key']['sk'] for c in projects_table.delete_item.call_args_list]
+        assert deleted == ['PERSONA#stuck', 'PERSONA#old']
+        assert len(result['personas']) == 2
+        # 'stuck' is still a row, so it is part of the count beside the two new ones.
+        values = projects_table.update_item.call_args.kwargs['ExpressionAttributeValues']
+        assert values[':count'] == 3
+
+    def test_personas_past_the_first_query_page_are_kept_or_cleared_too(
+        self, projects_table, feedback, chain, avatars
+    ):
+        from api.projects import generate_personas
+
+        first_page = {
+            'Items': [{'pk': 'PROJECT#proj-1', 'sk': 'PERSONA#old-1'}],
+            'LastEvaluatedKey': {'pk': 'PROJECT#proj-1', 'sk': 'PERSONA#old-1'},
+        }
+        second_page = {'Items': [
+            {'pk': 'PROJECT#proj-1', 'sk': 'PERSONA#keep', 'name': 'Darlene', 'protected': True},
+            {'pk': 'PROJECT#proj-1', 'sk': 'PERSONA#old-2'},
+        ]}
+
+        def paged_query(**kwargs):
+            return second_page if 'ExclusiveStartKey' in kwargs else first_page
+
+        projects_table.query.side_effect = paged_query
+
+        generate_personas('proj-1', {'persona_count': 2})
+
+        deleted = {c.kwargs['Key']['sk'] for c in projects_table.delete_item.call_args_list}
+        assert deleted == {'PERSONA#old-1', 'PERSONA#old-2'}
+        values = projects_table.update_item.call_args.kwargs['ExpressionAttributeValues']
+        assert values[':count'] == 3
+        # The protected persona on page two still reaches the prompt.
+        assert all('Darlene' in step['user'] for step in chain.call_args.args[0])
+
+    def test_a_failed_read_of_protected_personas_only_drops_the_prompt_hint(
+        self, projects_table, feedback, chain, avatars
+    ):
+        """The prompt read is best-effort; the delete step re-reads protection
+        itself, so the protected persona is still kept."""
+        from api.projects import generate_personas
+
+        rows = {'Items': [
+            {'pk': 'PROJECT#proj-1', 'sk': 'PERSONA#keep', 'name': 'Darlene', 'protected': True},
+            {'pk': 'PROJECT#proj-1', 'sk': 'PERSONA#old'},
+        ]}
+        projects_table.query.side_effect = [RuntimeError('throttled'), rows]
+
+        result = generate_personas('proj-1', {'persona_count': 2})
+
+        assert len(result['personas']) == 2
+        assert all('EXISTING PERSONAS' not in step['user'] for step in chain.call_args.args[0])
+        deleted = {c.kwargs['Key']['sk'] for c in projects_table.delete_item.call_args_list}
+        assert deleted == {'PERSONA#old'}
+
+    def test_protected_personas_are_named_to_the_model_so_it_does_not_recreate_them(
+        self, projects_table, feedback, chain, avatars
+    ):
+        from api.projects import generate_personas
+
+        projects_table.query.return_value = {'Items': [
+            {'pk': 'PROJECT#proj-1', 'sk': 'PERSONA#keep', 'name': 'Darlene Whitaker',
+             'tagline': 'The loyal regular', 'protected': True},
+            {'pk': 'PROJECT#proj-1', 'sk': 'PERSONA#old', 'name': 'Mike Kowalski'},
+        ]}
+
+        generate_personas('proj-1', {'persona_count': 2})
+
+        steps = chain.call_args.args[0]
+        for step in steps:
+            assert 'Darlene Whitaker — The loyal regular' in step['user']
+            # Only the kept persona: an unprotected one is about to be replaced.
+            assert 'Mike Kowalski' not in step['user']
 
     def test_saved_persona_keeps_the_full_documented_shape(
         self, projects_table, feedback, chain, avatars
@@ -253,6 +397,25 @@ class TestReplaceSemantics:
         assert item['source_breakdown'] == {'app_store': len(FEEDBACK_ITEMS)}
         assert item['source_feedback_ids'] == [f['feedback_id'] for f in FEEDBACK_ITEMS]
         assert set(item['llm_metadata']) == {'model', 'prompt_version', 'generation_time_ms'}
+
+    def test_saved_persona_records_the_feedback_it_came_from(
+        self, projects_table, feedback, chain, avatars
+    ):
+        """'Review #1' is resolved to the id at position 1 while that list still
+        exists, and the batch's whole input is kept beside it."""
+        from api.projects import generate_personas, persona_context_budget
+
+        generate_personas('proj-1', {'persona_count': 2})
+
+        item = _saved_items(projects_table)[0]
+        assert item['evidence_feedback_ids'] == [FEEDBACK_ITEMS[0]['feedback_id']]
+        assert item['input_feedback_ids'] == [f['feedback_id'] for f in FEEDBACK_ITEMS]
+        assert item['feedback_provenance'] == {
+            'items_used': len(FEEDBACK_ITEMS),
+            'items_matched': len(FEEDBACK_ITEMS),
+            'matched_is_lower_bound': False,
+            'sample_limit': persona_context_budget()[1],
+        }
 
 
 class TestAvatarConcurrency:

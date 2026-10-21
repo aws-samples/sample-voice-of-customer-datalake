@@ -8,7 +8,6 @@
  * @module pages/ProblemAnalysis/problemResolution
  */
 import { z } from 'zod'
-import type { FeedbackItem } from '../../api/client'
 
 /** Map of resolution keys to their resolution metadata, as stored server-side. */
 export type ResolvedProblemsMap = Record<string, { resolved_at: string }>
@@ -40,7 +39,13 @@ export interface ProblemGroup {
   problem: string
   similarProblems: string[]
   rootCause: string | null
-  items: FeedbackItem[]
+  /**
+   * Row count for this problem. The server aggregates the full window and the
+   * client merges leaves to the slider threshold, so the tree carries counts,
+   * NOT the rows — individual feedback items are fetched on demand when a
+   * problem is expanded (see ProblemRow's drill-down).
+   */
+  itemCount: number
   avgSentiment: number
   urgentCount: number
   resolved?: boolean
@@ -131,7 +136,7 @@ function withoutResolved(subcategoryGroup: SubcategoryGroup): SubcategoryGroup {
   return {
     ...subcategoryGroup,
     problems,
-    totalItems: problems.reduce((sum, p) => sum + p.items.length, 0),
+    totalItems: problems.reduce((sum, p) => sum + p.itemCount, 0),
     urgentCount: problems.reduce((sum, p) => sum + p.urgentCount, 0),
   }
 }

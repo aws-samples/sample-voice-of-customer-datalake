@@ -4,10 +4,13 @@
  */
 
 import { Loader2, FileText } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ProjectPersona, ProjectDocument } from '../../api/client'
 import { SENTIMENTS } from '../../constants/filters'
 import clsx from 'clsx'
+import type { CustomFilterControl } from '../FeedbackFilterPanel'
+import { AdvancedFeedbackFilters } from './AdvancedFeedbackFilters'
 import type { ContextConfig } from './types'
 import { useSentimentLabels } from './sentimentLabels'
 
@@ -267,6 +270,9 @@ interface FeedbackFiltersStepProps {
   readonly categories: ReadonlyArray<{ id: string; name: string }>
   readonly loadingCategories: boolean
   readonly colors: ColorConfig
+  readonly customFilterControls: readonly CustomFilterControl[]
+  /** Caller-supplied content after the filters; unwrapped, so it may be sticky. */
+  readonly footer?: ReactNode
 }
 
 export function FeedbackFiltersStep({
@@ -276,6 +282,8 @@ export function FeedbackFiltersStep({
   categories,
   loadingCategories,
   colors,
+  customFilterControls,
+  footer,
 }: FeedbackFiltersStepProps) {
   const { t } = useTranslation('components')
   const sentimentLabels = useSentimentLabels()
@@ -359,6 +367,14 @@ export function FeedbackFiltersStep({
           <option value={3650}>{t('components:dataSourceWizard.allTime')}</option>
         </select>
       </div>
+
+      <AdvancedFeedbackFilters
+        feedback={contextConfig.feedback}
+        onChange={(feedback) => onContextChange({ ...contextConfig, feedback })}
+        customFilterControls={customFilterControls}
+      />
+
+      {footer}
     </div>
   )
 }

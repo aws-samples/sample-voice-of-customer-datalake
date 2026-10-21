@@ -60,6 +60,18 @@
     "loadingCategories": "Loading categories...",
     "next": "Next",
     "noDataSourcesSelected": "No data sources selected",
+    "personaPreview": {
+      "counting": "Counting matching reviews…",
+      "error": "Couldn't count matching reviews.",
+      "matchesAtLeast": "{{matched}}+ reviews match these filters",
+      "matchesEstimated": "About {{matched, number}} reviews match these filters",
+      "confirming": "Confirming the exact count…",
+      "matches_one": "{{count}} review matches these filters",
+      "matches_other": "{{count}} reviews match these filters",
+      "noMatches": "No reviews match these filters — persona generation will fail.",
+      "sampled": "Personas use an even sample of {{limit}} of them.",
+      "usesAll": "Personas use all of them."
+    },
     "personas": "Personas",
     "personasCount": "Personas ({{count}})",
     "personasCount_one": "Personas ({{count}})",
@@ -124,7 +136,8 @@
     "downloadMarkdown": "Download as Markdown",
     "downloadPDF": "Download as PDF",
     "downloadTXT": "Download as TXT",
-    "exportPersona": "Export persona"
+    "exportPersona": "Export persona",
+    "viewSourceFeedback": "View source feedback"
   },
   "prototypeLink": {
     "downloadHtml": "Download .html",

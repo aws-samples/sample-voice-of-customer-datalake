@@ -232,6 +232,65 @@ class TestBaseIngestorNormalizeItem:
     @patch('_shared.base_ingestor.get_s3_client')
     @patch('_shared.base_ingestor.get_sqs_client')
     @patch('_shared.base_ingestor.get_secret')
+    @patch('_shared.base_ingestor.RAW_DATA_BUCKET', '')
+    def test_forwards_metadata_onto_queued_message(
+        self, mock_get_secret, mock_sqs, mock_s3, mock_dynamo
+    ):
+        """Regression: an item's `metadata` map must reach the SQS message so
+        the processor can persist it as custom_fields. It was dropped before."""
+        from _shared.base_ingestor import BaseIngestor
+
+        mock_dynamo.return_value.Table.return_value = MagicMock()
+        mock_get_secret.return_value = scoped_secret()
+
+        class TestIngestor(BaseIngestor):
+            def fetch_new_items(self):
+                yield from []
+
+        ingestor = TestIngestor()
+
+        result = ingestor.normalize_item({
+            'id': 'r1',
+            'text': 'Great product!',
+            'created_at': '2025-01-01T12:00:00Z',
+            'metadata': {'tier_status': 'Diamond', 'nps': '9'},
+        })
+
+        assert result['metadata'] == {'tier_status': 'Diamond', 'nps': '9'}
+
+    @patch('_shared.base_ingestor.get_dynamodb_resource')
+    @patch('_shared.base_ingestor.get_s3_client')
+    @patch('_shared.base_ingestor.get_sqs_client')
+    @patch('_shared.base_ingestor.get_secret')
+    @patch('_shared.base_ingestor.RAW_DATA_BUCKET', '')
+    def test_omits_metadata_key_when_item_carries_none(
+        self, mock_get_secret, mock_sqs, mock_s3, mock_dynamo
+    ):
+        """No metadata on the item means no `metadata` key on the message, so
+        IngestMessage's optional field stays None."""
+        from _shared.base_ingestor import BaseIngestor
+
+        mock_dynamo.return_value.Table.return_value = MagicMock()
+        mock_get_secret.return_value = scoped_secret()
+
+        class TestIngestor(BaseIngestor):
+            def fetch_new_items(self):
+                yield from []
+
+        ingestor = TestIngestor()
+
+        result = ingestor.normalize_item({
+            'id': 'r1',
+            'text': 'Great product!',
+            'created_at': '2025-01-01T12:00:00Z',
+        })
+
+        assert 'metadata' not in result
+
+    @patch('_shared.base_ingestor.get_dynamodb_resource')
+    @patch('_shared.base_ingestor.get_s3_client')
+    @patch('_shared.base_ingestor.get_sqs_client')
+    @patch('_shared.base_ingestor.get_secret')
     @patch('_shared.base_ingestor.RAW_DATA_BUCKET', 'test-bucket')
     def test_stores_raw_data_to_s3_when_configured(
         self, mock_get_secret, mock_sqs, mock_s3, mock_dynamo

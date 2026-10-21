@@ -165,6 +165,7 @@
   "subtitle": "Configure sua plataforma VoC",
   "tabs": {
     "categories": "Categorias",
+    "dataQuality": "Qualidade dos dados",
     "general": "Geral",
     "logs": "Registros",
     "plugins": "Fontes de dados",
@@ -175,5 +176,93 @@
     "configureFirst": "Configure o endpoint de API na aba Geral para gerenciar usuários.",
     "description": "Gerencie usuários, funções e permissões para a plataforma VoC.",
     "title": "Administração de usuários"
+  },
+  "customFilters": {
+    "title": "Filtros personalizados",
+    "intro": "Exiba até 3 campos de dados adicionais como filtros na página de feedback.",
+    "keyPlaceholder": "Chave do campo",
+    "labelPlaceholder": "Rótulo exibido",
+    "add": "Adicionar filtro",
+    "remove": "Remover",
+    "save": "Salvar filtros",
+    "saved": "Salvo",
+    "saveFailed": "Falha ao salvar os filtros personalizados. Tente novamente.",
+    "loadFailed": "Não foi possível carregar os filtros personalizados.",
+    "loading": "Carregando filtros personalizados...",
+    "capHint": "Até 3 filtros.",
+    "empty": "Nenhum filtro personalizado configurado.",
+    "suggestionsTitle": "Campos sugeridos",
+    "noSuggestions": "Nenhuma sugestão de campo a partir de dados recentes."
+  },
+  "dataQuality": {
+    "title": "Qualidade dos dados",
+    "intro": "Estatísticas por fonte do feedback armazenado e tarefas em segundo plano que calculam os valores de enriquecimento por IA ausentes ou os recalculam para uma fonte inteira.",
+    "refresh": "Atualizar estatísticas",
+    "snapshot_one": "Instantâneo de {{time}} · {{count, number}} linha analisada",
+    "snapshot_other": "Instantâneo de {{time}} · {{count, number}} linhas analisadas",
+    "noStats": "Ainda não há estatísticas — execute Atualizar estatísticas.",
+    "noSources": "A última análise não encontrou feedback.",
+    "loading": "Carregando qualidade dos dados...",
+    "loadFailed": "Não foi possível carregar as estatísticas de qualidade dos dados.",
+    "rows_one": "{{count, number}} linha",
+    "rows_other": "{{count, number}} linhas",
+    "charts": {
+      "rating": "Avaliação",
+      "sentiment": "Sentimento",
+      "length": "Tamanho do texto (caracteres)"
+    },
+    "noRating": "Nenhuma",
+    "unscoredShare": "{{unscored, number}} sem valor ({{percent}}%)",
+    "calculateMissing": "Calcular ausentes",
+    "recalculateAll": "Recalcular tudo",
+    "recalculateTitle": "Recalcular {{field}} para {{source}}?",
+    "recalculateMessage_one": "Isso deriva novamente {{field}} para cada linha de {{source}} ({{count, number}} linha), substituindo os valores já armazenados. Custa uma chamada ao modelo por linha.",
+    "recalculateMessage_other": "Isso deriva novamente {{field}} para cada linha de {{source}} ({{count, number}} linhas), substituindo os valores já armazenados. Custa uma chamada ao modelo por linha.",
+    "startConflict": "Já existe uma tarefa em execução para esse destino. Aguarde a conclusão ou cancele-a primeiro.",
+    "startFailed": "Não foi possível iniciar a tarefa. Tente novamente.",
+    "cancelConflict": "Essa tarefa já havia parado.",
+    "cancelFailed": "Não foi possível cancelar a tarefa. Tente novamente.",
+    "fields": {
+      "usefulness": "Utilidade"
+    },
+    "values": {
+      "high": "Alta",
+      "medium": "Média",
+      "low": "Baixa",
+      "unscored": "Sem valor"
+    },
+    "sentiments": {
+      "positive": "Positivo",
+      "neutral": "Neutro",
+      "negative": "Negativo",
+      "mixed": "Misto",
+      "unknown": "Desconhecido"
+    },
+    "jobs": {
+      "title": "Tarefas recentes",
+      "empty": "Nenhuma tarefa ainda.",
+      "profile": "Atualizar estatísticas",
+      "enrich": "{{field}} · {{source}}",
+      "mode": {
+        "missing": "Somente ausentes",
+        "all": "Todas as linhas"
+      },
+      "status": {
+        "running": "Em execução",
+        "completed": "Concluída",
+        "failed": "Falhou",
+        "cancelled": "Cancelada"
+      },
+      "scanning_one": "Analisando… {{count, number}} linha",
+      "scanning_other": "Analisando… {{count, number}} linhas",
+      "scanned_one": "{{count, number}} linha analisada",
+      "scanned_other": "{{count, number}} linhas analisadas",
+      "progress": "{{processed, number}} / {{total, number}}",
+      "planning": "Ainda planejando — mais linhas podem ser adicionadas",
+      "counts": "{{updated, number}} atualizadas · {{skipped, number}} ignoradas · {{failed, number}} com falha",
+      "started": "Iniciada {{time}}",
+      "cancel": "Cancelar",
+      "progressLabel": "Progresso da tarefa"
+    }
   }
 }

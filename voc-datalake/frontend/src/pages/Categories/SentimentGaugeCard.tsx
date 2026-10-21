@@ -2,7 +2,7 @@ import { PieChart, Pie, ResponsiveContainer, Tooltip } from 'recharts'
 import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
-import type { SentimentData, SentimentFilter } from './types'
+import type { SentimentData } from './types'
 import { getSentimentScoreColorClass } from './types'
 
 const SENTIMENT_LABEL_KEYS = ['positive', 'negative', 'neutral', 'mixed'] as const
@@ -15,16 +15,17 @@ function sentimentLabel(t: TFunction<'categories'>, name: string): string {
 interface SentimentGaugeProps {
   readonly sentimentData: SentimentData[]
   readonly avgSentiment: number
-  readonly sentimentFilter: SentimentFilter
-  readonly onSentimentFilterChange: (filter: SentimentFilter) => void
+  /** Sentiments currently filtering the page; the legend toggles them. */
+  readonly selectedSentiments: readonly string[]
+  readonly onToggleSentiment: (sentiment: string) => void
   readonly percentages: Record<string, number>
 }
 
 export function SentimentGauge({
   sentimentData,
   avgSentiment,
-  sentimentFilter,
-  onSentimentFilterChange,
+  selectedSentiments,
+  onToggleSentiment,
   percentages,
 }: SentimentGaugeProps) {
   const { t } = useTranslation('categories')
@@ -68,14 +69,15 @@ export function SentimentGauge({
       </div>
       <div className="grid grid-cols-2 gap-1.5 mt-2 max-w-[280px] mx-auto">
         {sentimentData.map(s => {
-          const filterValue = s.name === 'positive' || s.name === 'negative' || s.name === 'neutral' || s.name === 'mixed' ? s.name : 'all'
+          const isSelected = selectedSentiments.includes(s.name)
           return (
             <button
               key={s.name}
-              onClick={() => onSentimentFilterChange(sentimentFilter === s.name ? 'all' : filterValue)}
+              onClick={() => onToggleSentiment(s.name)}
+              aria-pressed={isSelected}
               className={clsx(
                 'flex items-center justify-center gap-1.5 px-2 py-1 rounded-full text-xs transition-all active:scale-95',
-                sentimentFilter === s.name ? 'bg-gray-900 text-white' : 'bg-gray-100 hover:bg-gray-200'
+                isSelected ? 'bg-gray-900 text-white' : 'bg-gray-100 hover:bg-gray-200'
               )}
             >
               <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />

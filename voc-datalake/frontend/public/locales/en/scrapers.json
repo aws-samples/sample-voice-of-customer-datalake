@@ -119,7 +119,18 @@
     "preview_one": "Preview — {{count}} item{{plural}}",
     "preview_other": "Preview — {{count}} item{{plural}}",
     "templateNote": "The template file includes full instructions and LLM-ready documentation.",
-    "title": "JSON Upload"
+    "title": "JSON Upload",
+    "largeFileDetected": "Large file ({{size}} MB) — it will be uploaded and processed in the background rather than previewed here.",
+    "largeUploadStarted": "Large file uploaded — processing in the background",
+    "largeUploadNote": "The file is being imported and enriched. Rows will appear on the Feedback page as they finish — this can take several minutes for a large file.",
+    "sourceLabel": "Source",
+    "sourcePlaceholder": "e.g. trustpilot, zendesk",
+    "sourceHint": "Labels where this batch came from. Rows that carry their own source field override this.",
+    "sourceFieldLabel": "Per-row source field",
+    "sourceFieldNone": "None — use the source above for every row",
+    "sourceFieldHint": "Optional. Pick a column whose value sets each row's source — useful when one file holds a few sources.",
+    "uploading": "Uploading…",
+    "uploadLargeFile": "Upload & process"
   },
   "manualImport": {
     "addReviewManually": "Add Review Manually",

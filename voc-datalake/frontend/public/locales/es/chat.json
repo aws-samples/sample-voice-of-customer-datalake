@@ -15,9 +15,11 @@
     "share": "Compartir"
   },
   "filters": {
-    "clear": "Limpiar",
-    "focusingOn": "Enfocado en: {{summary}}",
-    "title": "Filtrar contexto (máx. 30 reseñas)"
+    "count_one": "{{count}} reseña",
+    "count_other": "{{count}} reseñas",
+    "countPartial_one": "{{count}}+ reseña",
+    "countPartial_other": "{{count}}+ reseñas",
+    "dropped": "Este alcance tiene más de {{max}} reseñas. El chat usará las primeras {{max}} y se omitirán algunos comentarios; acota los filtros para obtener resultados más precisos."
   },
   "hideHistory": "Ocultar historial",
   "inputPlaceholder": "Pregunte sobre su retroalimentación...",

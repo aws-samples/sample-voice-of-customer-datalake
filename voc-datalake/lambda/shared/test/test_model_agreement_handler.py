@@ -1,14 +1,16 @@
-"""Behavioural tests for BedrockAccessStack's inline ModelAgreement handler.
+"""Behavioural tests for BedrockModelAgreements' inline ModelAgreement handler.
 
 The handler lives as an inline Python string inside
 ``lib/stacks/bedrock-access-stack.ts`` (``getModelAgreementLambdaCode``), so it
 has no import path of its own. These tests extract that string and ``exec`` it
 with a stubbed boto3, which is the only way to exercise its branches.
 
-Fail-on-revert intent: a Private-Marketplace ``AccessDeniedException`` on
-CreateFoundationModelAgreement must NOT fail the stack (the whole point of the
-non-fatal branch), while every other error must still raise. Reverting either
-half turns one of these red.
+Fail-on-revert intent: the handler runs in VocCoreStack on every deploy, where a
+raise rolls back the stack holding every table, so an AWS error that describes
+the ACCOUNT (Private Marketplace refusal, model not offered in the region,
+throttling) must be reported, not raised. The one exception is AccessDenied from
+the two read calls, which means the stack's own role lacks a permission and must
+still fail. Reverting either half turns one of these red.
 
 Precedent for reading a TS file from a Python test:
 ``test_avatar_image_model_lockstep.py``.
@@ -48,6 +50,10 @@ class _FakeClientError(Exception):
         self.response = {'Error': {'Code': code, 'Message': message}}
 
 
+class _FakeBotoCoreError(Exception):
+    """Stand-in for botocore BotoCoreError: a connection-level failure with no .response."""
+
+
 class _FakeConflict(_FakeClientError):
     """Stand-in for bedrock's ConflictException.
 
@@ -65,7 +71,8 @@ class _FakeConflict(_FakeClientError):
 
 def _load_handler(*, create_raises: Exception | None = None,
                   availability_raises: Exception | None = None,
-                  offers_raises: Exception | None = None):
+                  offers_raises: Exception | None = None,
+                  offers: list | None = None):
     """exec the extracted handler with boto3/botocore stubbed out."""
     calls: dict[str, int] = {'create': 0}
 
@@ -82,7 +89,7 @@ def _load_handler(*, create_raises: Exception | None = None,
         def list_foundation_model_agreement_offers(self, modelId):  # noqa: N803
             if offers_raises is not None:
                 raise offers_raises
-            return {'offers': [{'offerToken': 'tok'}]}
+            return {'offers': [{'offerToken': 'tok'}] if offers is None else offers}
 
         def create_foundation_model_agreement(self, modelId, offerToken):  # noqa: N803
             calls['create'] += 1
@@ -96,6 +103,7 @@ def _load_handler(*, create_raises: Exception | None = None,
     fake_botocore = types.ModuleType('botocore')
     fake_exceptions = types.ModuleType('botocore.exceptions')
     fake_exceptions.ClientError = _FakeClientError
+    fake_exceptions.BotoCoreError = _FakeBotoCoreError
     fake_botocore.exceptions = fake_exceptions
 
     saved = {k: sys.modules.get(k) for k in ('boto3', 'botocore', 'botocore.exceptions')}
@@ -137,12 +145,10 @@ def test_access_denied_is_non_fatal_and_reported():
 
 
 def test_access_denied_from_the_availability_call_STILL_RAISES():
-    """The absorption is scoped to create_foundation_model_agreement only.
-
-    An AccessDenied from get_foundation_model_availability means this stack's
+    """An AccessDenied from get_foundation_model_availability means this stack's
     own role lacks a permission — a real bug — so it must fail the deployment
     instead of being reported as an unavailable model. (Caught in review of
-    PR #269: the first version wrapped the whole try block.)
+    PR #269: the first version absorbed it with everything else.)
     """
     handler, calls = _load_handler(
         availability_raises=_FakeClientError('AccessDeniedException', 'no bedrock:GetFoundationModelAvailability')
@@ -166,12 +172,52 @@ def test_access_denied_from_the_offers_call_STILL_RAISES():
     assert calls['create'] == 0
 
 
-def test_other_client_errors_still_fail_the_stack():
-    """Absorbing everything would hide real breakage, so only the allowlisted code is caught."""
-    handler, _ = _load_handler(create_raises=_FakeClientError('ThrottlingException', 'slow down'))
+@pytest.mark.parametrize('code', ['ThrottlingException', 'ValidationException', 'ResourceNotFoundException'])
+def test_other_create_errors_are_reported_instead_of_rolling_back_core(code):
+    """Raising here would roll back VocCoreStack over an optional pre-subscription."""
+    handler, calls = _load_handler(create_raises=_FakeClientError(code, 'account says no'))
 
-    with pytest.raises(_FakeClientError):
-        handler(_event(), None)
+    result = handler(_event(), None)
+
+    assert calls['create'] == 1
+    assert result['Data'] == {'status': 'UNAVAILABLE', 'modelId': 'anthropic.claude-sonnet-5', 'errorCode': code}
+
+
+def test_a_model_not_offered_in_this_region_is_reported_not_raised():
+    """Every allowlisted model is attempted in every region the app deploys to;
+    a region without one must not block the deploy."""
+    handler, calls = _load_handler(
+        availability_raises=_FakeClientError('ValidationException', 'model not supported in this region')
+    )
+
+    result = handler(_event(), None)
+
+    assert calls['create'] == 0
+    assert result['Data']['status'] == 'UNAVAILABLE'
+    assert result['Data']['errorCode'] == 'ValidationException'
+
+
+@pytest.mark.parametrize('stage', ['availability', 'create'])
+def test_a_connection_failure_is_reported_instead_of_rolling_back_core(stage):
+    """A dropped connection has no AWS error code, but it is no more a reason to
+    roll back VocCoreStack than throttling is."""
+    failure = _FakeBotoCoreError('Could not connect to the endpoint URL')
+    handler, _ = _load_handler(**{f'{stage}_raises': failure})
+
+    result = handler(_event(), None)
+
+    assert result['Data']['status'] == 'UNAVAILABLE'
+    assert result['Data']['errorCode'] == '_FakeBotoCoreError'
+
+
+@pytest.mark.parametrize('offers', [[], [{}], [{'offerToken': ''}]])
+def test_no_usable_offer_is_reported_without_attempting_the_agreement(offers):
+    handler, calls = _load_handler(offers=offers)
+
+    result = handler(_event(), None)
+
+    assert calls['create'] == 0
+    assert result['Data']['status'] == 'NO_OFFERS'
 
 
 def test_happy_path_still_reports_created():

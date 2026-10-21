@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SentimentGauge } from './SentimentGaugeCard'
-import type { SentimentData, SentimentFilter } from './types'
+import type { SentimentData } from './types'
 
 // Mock recharts to avoid rendering issues in tests
 vi.mock('recharts', () => ({
@@ -22,8 +22,8 @@ const mockSentimentData: SentimentData[] = [
 const defaultProps = {
   sentimentData: mockSentimentData,
   avgSentiment: 45,
-  sentimentFilter: 'all' as SentimentFilter,
-  onSentimentFilterChange: vi.fn(),
+  selectedSentiments: [],
+  onToggleSentiment: vi.fn(),
   percentages: { positive: 60, neutral: 25, negative: 15 },
 }
 
@@ -55,29 +55,33 @@ describe('SentimentGauge', () => {
     expect(screen.getByText('15%')).toBeInTheDocument()
   })
 
-  it('calls onSentimentFilterChange when filter clicked', async () => {
+  it('calls onToggleSentiment with the clicked sentiment', async () => {
     const user = userEvent.setup()
-    const onChange = vi.fn()
-    render(<SentimentGauge {...defaultProps} onSentimentFilterChange={onChange} />)
+    const onToggle = vi.fn()
+    render(<SentimentGauge {...defaultProps} onToggleSentiment={onToggle} />)
 
     await user.click(screen.getByRole('button', { name: /positive/i }))
-    expect(onChange).toHaveBeenCalledWith('positive')
+    expect(onToggle).toHaveBeenCalledWith('positive')
   })
 
-  it('toggles filter off when same filter clicked', async () => {
+  it('toggles an already-selected sentiment through the same callback', async () => {
     const user = userEvent.setup()
-    const onChange = vi.fn()
-    render(<SentimentGauge {...defaultProps} sentimentFilter="positive" onSentimentFilterChange={onChange} />)
+    const onToggle = vi.fn()
+    render(<SentimentGauge {...defaultProps} selectedSentiments={['positive']} onToggleSentiment={onToggle} />)
 
     await user.click(screen.getByRole('button', { name: /positive/i }))
-    expect(onChange).toHaveBeenCalledWith('all')
+    expect(onToggle).toHaveBeenCalledWith('positive')
   })
 
-  it('highlights active filter', () => {
-    render(<SentimentGauge {...defaultProps} sentimentFilter="negative" />)
+  it('highlights every selected sentiment and marks it pressed', () => {
+    render(<SentimentGauge {...defaultProps} selectedSentiments={['negative', 'neutral']} />)
 
-    const negativeButton = screen.getByRole('button', { name: /negative/i })
-    expect(negativeButton).toHaveClass('bg-gray-900', 'text-white')
+    for (const name of [/negative/i, /neutral/i]) {
+      const button = screen.getByRole('button', { name })
+      expect(button).toHaveClass('bg-gray-900', 'text-white')
+      expect(button).toHaveAttribute('aria-pressed', 'true')
+    }
+    expect(screen.getByRole('button', { name: /positive/i })).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('applies green color for positive sentiment', () => {

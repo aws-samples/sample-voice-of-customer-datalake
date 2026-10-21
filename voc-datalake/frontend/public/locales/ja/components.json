@@ -60,6 +60,18 @@
     "loadingCategories": "カテゴリを読み込み中...",
     "next": "次へ",
     "noDataSourcesSelected": "データソースが選択されていません",
+    "personaPreview": {
+      "counting": "一致するレビューを集計中…",
+      "error": "一致するレビューを集計できませんでした。",
+      "matchesAtLeast": "{{matched}} 件以上のレビューがこのフィルターに一致します",
+      "matchesEstimated": "約 {{matched, number}} 件のレビューがこのフィルターに一致します",
+      "confirming": "正確な件数を確認中…",
+      "matches_one": "{{count}} 件のレビューがこのフィルターに一致します",
+      "matches_other": "{{count}} 件のレビューがこのフィルターに一致します",
+      "noMatches": "このフィルターに一致するレビューはありません。ペルソナの生成は失敗します。",
+      "sampled": "ペルソナはそのうち {{limit}} 件を均等に抽出して使用します。",
+      "usesAll": "ペルソナはそのすべてを使用します。"
+    },
     "personas": "ペルソナ",
     "personasCount": "ペルソナ（{{count}}）",
     "personasCount_one": "ペルソナ ({{count}})",
@@ -124,7 +136,8 @@
     "downloadMarkdown": "Markdownでダウンロード",
     "downloadPDF": "PDFでダウンロード",
     "downloadTXT": "TXTでダウンロード",
-    "exportPersona": "ペルソナをエクスポート"
+    "exportPersona": "ペルソナをエクスポート",
+    "viewSourceFeedback": "元のフィードバックを表示"
   },
   "prototypeLink": {
     "downloadHtml": ".html をダウンロード",

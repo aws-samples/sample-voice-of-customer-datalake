@@ -212,6 +212,86 @@ describe('projectsApi', () => {
     })
   })
 
+  describe('getPersonaSourceFeedback', () => {
+    it('requests the scope, offset and limit and normalizes the page', async () => {
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          available: true, scope: 'used', total: 30, offset: 25,
+          items: [{ feedback_id: 'f1', sentiment_score: '0.5' }], missing: 1, provenance: null,
+        }),
+      })
+
+      const page = await projectsApi.getPersonaSourceFeedback('p1', 'persona-1', { scope: 'used', offset: 25, limit: 25 })
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://api.example.com/projects/p1/personas/persona-1/feedback?scope=used&offset=25&limit=25',
+        expect.any(Object),
+      )
+      expect(page).toMatchObject({ available: true, total: 30, missing: 1 })
+      expect(page.items[0]).toMatchObject({ feedback_id: 'f1', sentiment_score: 0.5 })
+    })
+
+    it('URL-encodes the project and persona path segments', async () => {
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ available: false }),
+      })
+
+      await projectsApi.getPersonaSourceFeedback('p/1', 'a b', { scope: 'cited', offset: 0, limit: 25 })
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://api.example.com/projects/p%2F1/personas/a%20b/feedback?scope=cited&offset=0&limit=25',
+        expect.any(Object),
+      )
+    })
+  })
+
+  describe('previewPersonaFeedback', () => {
+    it('posts the feedback scope with the shared filter keys flattened to the top level', async () => {
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ matched: 612, matched_is_lower_bound: false, sample_limit: 145 }),
+      })
+
+      const preview = await projectsApi.previewPersonaFeedback('p1', {
+        sources: ['webscraper'],
+        categories: ['billing'],
+        sentiments: ['negative'],
+        days: 30,
+        extraFilters: { urgent: 'true', usefulness: 'high', cf_tier: ['Gold', 'Platinum'] },
+      })
+
+      const [url, options] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+      expect(url).toBe('https://api.example.com/projects/p1/personas/preview-feedback')
+      expect(options.method).toBe('POST')
+      expect(JSON.parse(options.body)).toStrictEqual({
+        sources: ['webscraper'],
+        categories: ['billing'],
+        sentiments: ['negative'],
+        days: 30,
+        urgent: 'true',
+        usefulness: 'high',
+        cf_tier: ['Gold', 'Platinum'],
+        mode: 'exact',
+      })
+      expect(preview).toStrictEqual({ matched: 612, matched_is_lower_bound: false, sample_limit: 145, estimated: false })
+    })
+
+    it('asks for a sampled estimate when the mode says so', async () => {
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ matched: 28000, matched_is_lower_bound: false, sample_limit: 145, estimated: true }),
+      })
+
+      const preview = await projectsApi.previewPersonaFeedback('p1', { days: 30 }, 'estimate')
+
+      const [, options] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+      expect(JSON.parse(options.body)).toStrictEqual({ days: 30, mode: 'estimate' })
+      expect(preview.estimated).toBe(true)
+    })
+  })
+
   describe('createPersona', () => {
     it('sends POST request with persona data', async () => {
       const persona = {
@@ -618,6 +698,15 @@ describe('date basis threading (issue #150)', () => {
     })
 
     expect(lastRequestBody()).toMatchObject({ date_basis: 'review' })
+  })
+
+  it('persona preview carries date_basis on review basis, like generation', async () => {
+    await setDateBasis('review')
+    mockOkFetch()
+
+    await projectsApi.previewPersonaFeedback('p1', { days: 30 })
+
+    expect(lastRequestBody()).toMatchObject({ date_basis: 'review', days: 30 })
   })
 
   it('payloads stay unchanged on the default imported basis', async () => {

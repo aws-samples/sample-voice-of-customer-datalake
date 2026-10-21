@@ -68,8 +68,8 @@ const env = {
 // Stack 0: VocWebSearchStack — the us-east-1 AI-enablement stack
 // ============================================
 // Two independently switchable halves in ONE stack, because they are one
-// deployment unit: both must live in us-east-1 (the web-search connector
-// exists only there; PutUseCaseForModelAccess works only there), both are
+// deployment unit: both run in us-east-1 (the web-search connector exists only
+// there; the use-case form has only ever been submitted there), both are
 // one-shot account enablement, and neither depends on the core stack chain.
 // They used to be two stacks, which put the app at six CloudFormation
 // templates — one over Workshop Studio's ceiling of five.
@@ -80,9 +80,13 @@ const env = {
 //           lib/utils/web-search-default.ts (single source of truth).
 //           Per-request search stays opt-in in both UIs ($7/1k queries; the
 //           gateway itself has no standing cost).
-//   half 2: Bedrock model access — Anthropic use-case submission plus the
-//           model agreements. Skipped entirely when `anthropicUseCase` is
-//           absent, e.g. for an account that already has access.
+//   half 2: Anthropic use-case form submission. Opt-in: only when
+//           `anthropicUseCase` is set and `skipUseCaseSubmission` is not.
+//           Unset by default, so the form is submitted in the Bedrock console.
+//
+// The model agreements are NOT here: VocCoreStack creates them in the app's
+// region on every deploy. So with web search off and no form to submit, this
+// stack is not created and nothing is deployed to us-east-1.
 //
 // The BASE id stays `VocWebSearchStack` deliberately: it determines the
 // CloudFormation export names VocProcessingStack and VocApiStack import. It goes
@@ -108,12 +112,15 @@ if (anthropicUseCaseRaw) {
   } else {
     console.warn('⚠️  Invalid anthropicUseCase config in cdk.context.json:');
     console.warn(parseResult.error.format());
-    console.warn('Skipping Bedrock model access. See cdk.context.example.json for the required format.');
+    console.warn('Skipping the use case submission. See "Anthropic Model Access" in docs/deployment.md for the required format.');
   }
 }
+// What half 2 submits, if anything. Skipping applies here, so a skipped
+// submission with web search off leaves no reason to create the stack.
+const useCaseToSubmit = skipUseCaseSubmission ? undefined : anthropicUseCase;
 
 let webSearchStack: VocWebSearchStack | undefined;
-if (shouldDeployAiEnablement(deployWebSearch, anthropicUseCase)) {
+if (shouldDeployAiEnablement(deployWebSearch, useCaseToSubmit)) {
   webSearchStack = new VocWebSearchStack(app, stackId('VocWebSearchStack'), {
     env: { account: env.account, region: 'us-east-1' },
     deploymentPrefix,
@@ -123,9 +130,7 @@ if (shouldDeployAiEnablement(deployWebSearch, anthropicUseCase)) {
     crossRegionReferences: true,
     description: 'VoC Data Lake - AI Enablement (web search gateway, Bedrock model access) (uksb-0q2jyqfvlm)(tag:VocWebSearchStack)',
     deployWebSearch,
-    anthropicUseCase,
-    modelRegion: env.region, // Create model agreements in the same region as other stacks
-    skipUseCaseSubmission,
+    anthropicUseCase: useCaseToSubmit,
   });
   tagStack(webSearchStack, 'AiEnablement');
   if (webSearchCrossRegion) {
@@ -151,6 +156,12 @@ const coreStack = new VocCoreStack(app, stackId('VocCoreStack'), {
   brandName: config.brandName,
 });
 tagStack(coreStack, 'Core');
+// The form goes in before Core's model agreements are attempted, as it did
+// when both lived in one construct. Only when there IS a form: otherwise Core
+// must not wait on (or, with `cdk deploy VocCoreStack`, drag in) a us-east-1 stack.
+if (webSearchStack && useCaseToSubmit) {
+  coreStack.addDependency(webSearchStack);
+}
 
 // ============================================
 // Stack 2: VocIngestionStack

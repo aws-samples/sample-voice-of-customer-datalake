@@ -154,6 +154,7 @@
   "subtitle": "VoCプラットフォームを設定",
   "tabs": {
     "categories": "カテゴリ",
+    "dataQuality": "データ品質",
     "general": "一般",
     "logs": "ログ",
     "plugins": "データソース",
@@ -164,5 +165,93 @@
     "configureFirst": "ユーザーを管理するには、一般タブでAPIエンドポイントを設定してください。",
     "description": "VoCプラットフォームのユーザー、ロール、権限を管理します。",
     "title": "ユーザー管理"
+  },
+  "customFilters": {
+    "title": "カスタムフィルター",
+    "intro": "フィードバックページで最大3つの追加データ項目をフィルターとして表示します。",
+    "keyPlaceholder": "項目キー",
+    "labelPlaceholder": "表示ラベル",
+    "add": "フィルターを追加",
+    "remove": "削除",
+    "save": "フィルターを保存",
+    "saved": "保存しました",
+    "saveFailed": "カスタムフィルターの保存に失敗しました。もう一度お試しください。",
+    "loadFailed": "カスタムフィルターを読み込めませんでした。",
+    "loading": "カスタムフィルターを読み込んでいます...",
+    "capHint": "最大3つのフィルター。",
+    "empty": "カスタムフィルターが設定されていません。",
+    "suggestionsTitle": "おすすめの項目",
+    "noSuggestions": "最近のデータからの項目候補はありません。"
+  },
+  "dataQuality": {
+    "title": "データ品質",
+    "intro": "保存済みフィードバックのソース別統計と、不足しているAI付加情報の値を計算する、またはソース全体で再計算するバックグラウンドジョブです。",
+    "refresh": "統計を更新",
+    "snapshot_one": "{{time}} 時点のスナップショット · {{count, number}}行をスキャン",
+    "snapshot_other": "{{time}} 時点のスナップショット · {{count, number}}行をスキャン",
+    "noStats": "まだ統計はありません。「統計を更新」を実行してください。",
+    "noSources": "前回のスキャンではフィードバックが見つかりませんでした。",
+    "loading": "データ品質を読み込んでいます...",
+    "loadFailed": "データ品質の統計を読み込めませんでした。",
+    "rows_one": "{{count, number}}行",
+    "rows_other": "{{count, number}}行",
+    "charts": {
+      "rating": "評価",
+      "sentiment": "センチメント",
+      "length": "テキストの長さ（文字数）"
+    },
+    "noRating": "なし",
+    "unscoredShare": "未評価 {{unscored, number}}件（{{percent}}%）",
+    "calculateMissing": "不足分を計算",
+    "recalculateAll": "すべて再計算",
+    "recalculateTitle": "{{source}} の {{field}} を再計算しますか？",
+    "recalculateMessage_one": "{{source}} のすべての行（{{count, number}}行）について {{field}} を導出し直し、保存済みの値を置き換えます。1行につきモデル呼び出しが1回発生します。",
+    "recalculateMessage_other": "{{source}} のすべての行（{{count, number}}行）について {{field}} を導出し直し、保存済みの値を置き換えます。1行につきモデル呼び出しが1回発生します。",
+    "startConflict": "この対象のジョブはすでに実行中です。完了を待つか、先にキャンセルしてください。",
+    "startFailed": "ジョブを開始できませんでした。もう一度お試しください。",
+    "cancelConflict": "そのジョブはすでに停止していました。",
+    "cancelFailed": "ジョブをキャンセルできませんでした。もう一度お試しください。",
+    "fields": {
+      "usefulness": "有用性"
+    },
+    "values": {
+      "high": "高",
+      "medium": "中",
+      "low": "低",
+      "unscored": "未評価"
+    },
+    "sentiments": {
+      "positive": "ポジティブ",
+      "neutral": "ニュートラル",
+      "negative": "ネガティブ",
+      "mixed": "混在",
+      "unknown": "不明"
+    },
+    "jobs": {
+      "title": "最近のジョブ",
+      "empty": "まだジョブはありません。",
+      "profile": "統計を更新",
+      "enrich": "{{field}} · {{source}}",
+      "mode": {
+        "missing": "不足分のみ",
+        "all": "すべての行"
+      },
+      "status": {
+        "running": "実行中",
+        "completed": "完了",
+        "failed": "失敗",
+        "cancelled": "キャンセル済み"
+      },
+      "scanning_one": "スキャン中… {{count, number}}行",
+      "scanning_other": "スキャン中… {{count, number}}行",
+      "scanned_one": "{{count, number}}行をスキャン済み",
+      "scanned_other": "{{count, number}}行をスキャン済み",
+      "progress": "{{processed, number}} / {{total, number}}",
+      "planning": "計画中 — 行が追加される場合があります",
+      "counts": "更新 {{updated, number}} · スキップ {{skipped, number}} · 失敗 {{failed, number}}",
+      "started": "開始 {{time}}",
+      "cancel": "キャンセル",
+      "progressLabel": "ジョブの進行状況"
+    }
   }
 }

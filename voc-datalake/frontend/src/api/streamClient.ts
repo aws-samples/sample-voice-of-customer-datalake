@@ -7,6 +7,7 @@
 import {
   getBaseUrl, getAuthHeaders, getDateBasisBodyParams,
 } from './baseUrl'
+import type { FilterParamValue } from './feedbackFilters'
 import { authService } from '../services/auth'
 import { endExpiredSession } from '../services/sessionExpiry'
 
@@ -188,11 +189,26 @@ interface VocChatOptions {
   days?: number
   responseLanguage?: string
   useWebSearch?: boolean
+  /**
+   * The structured feedback filters the backend scopes the turn to — the same
+   * wire params the filter-aware pages send (`toFeedbackQueryParams`), which
+   * means repeated `cf_` keys and comma-joined multi-selects. Omitted keys mean
+   * "no filter"; an empty object (or undefined) scopes to the whole window.
+   */
+  filters?: Readonly<Record<string, FilterParamValue>>
+  /** Most reviews the backend feeds the model (MAX_CHAT_FEEDBACK_ITEMS). */
+  limit?: number
   history?: Array<{
     role: string;
     content: string
   }>
   signal?: AbortSignal
+}
+
+/** Omit the `filters` key entirely when there is nothing to scope by. */
+function filtersBody(filters: VocChatOptions['filters']): { filters: Record<string, FilterParamValue> } | Record<string, never> {
+  if (!filters || Object.keys(filters).length === 0) return {}
+  return { filters }
 }
 
 /** Stream VoC chat. */
@@ -205,6 +221,8 @@ export function streamVocChat(options: VocChatOptions): AsyncGenerator<StreamEve
     ...getDateBasisBodyParams(),
     response_language: options.responseLanguage,
     history: options.history,
+    ...filtersBody(options.filters),
+    ...(options.limit != null ? { limit: options.limit } : {}),
     ...(options.useWebSearch === true ? { use_web_search: true } : {}),
   }, options.signal)
 }

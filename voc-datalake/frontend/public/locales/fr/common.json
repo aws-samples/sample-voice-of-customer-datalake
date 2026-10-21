@@ -81,10 +81,13 @@
     "settings": "Paramètres"
   },
   "partialCountsHint": "Approximatif : la période complète n'a pas pu être lue, les décomptes sont une borne inférieure",
+  "emptyWindowFallback": "Aucun retour sur la période sélectionnée. Affichage de vos données les plus récentes (depuis le {{date}}).",
   "partialWindowHint": "affinez les filtres pour tout voir",
   "problemAnalysisPage": {
     "emptyHint": "Essayez d'élargir la plage de temps ou d'ajuster les filtres",
-    "emptyTitle": "Aucune donnée d'analyse de problèmes trouvée pour la période sélectionnée"
+    "emptyTitle": "Aucune donnée d'analyse de problèmes trouvée pour la période sélectionnée",
+    "itemsLoadFailed": "Impossible de charger les exemples.",
+    "noExamples": "Aucun exemple de retour trouvé."
   },
   "problemResolution": {
     "allResolvedHint": "Activez « Afficher les résolus ({{total}}) » ci-dessus pour les consulter",
@@ -128,5 +131,45 @@
     "endDate": "Date de fin",
     "selectDateRange": "Sélectionner la période",
     "startDate": "Date de début"
+  },
+  "feedbackFilters": {
+    "title": "Filtres",
+    "activeCount_one": "{{count}} actif",
+    "activeCount_other": "{{count}} actifs",
+    "clearAll": "Tout effacer",
+    "clearGroup": "Effacer",
+    "noOptions": "Aucun sur cette période",
+    "sources": "Sources",
+    "categories": "Catégories",
+    "subcategories": "Sous-catégories",
+    "sentiment": "Sentiment",
+    "urgency": "Urgence",
+    "urgentOnly": "Urgents uniquement",
+    "noMatches": "Aucun avis ne correspond à ces filtres",
+    "noMatchesHint": "Élargissez la période ou retirez des filtres.",
+    "loadFailed": "Impossible de charger les résultats filtrés.",
+    "retry": "Réessayer",
+    "updating": "Mise à jour…"
+  },
+  "feedbackOverlay": {
+    "problem": "Problème :",
+    "rootCause": "Cause racine :",
+    "urgent": "Urgent",
+    "close": "Fermer",
+    "viewSource": "Voir la source",
+    "openFullDetails": "Ouvrir tous les détails"
+  },
+  "enrichment": {
+    "values": {
+      "unscored": "Non évalué"
+    },
+    "usefulness": {
+      "label": "Utilité",
+      "values": {
+        "high": "Élevée",
+        "medium": "Moyenne",
+        "low": "Faible"
+      }
+    }
   }
 }

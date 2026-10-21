@@ -15,7 +15,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
-  MAX_CHAT_CONTEXT_LENGTH, MAX_CHAT_MESSAGE_LENGTH, MAX_SELECTED_PERSONAS,
+  MAX_CHAT_CONTEXT_LENGTH, MAX_CHAT_FEEDBACK_ITEMS, MAX_CHAT_MESSAGE_LENGTH, MAX_SELECTED_PERSONAS,
 } from './streamLimits'
 
 // Relative to the frontend package root, which is where vitest runs. A literal
@@ -74,6 +74,10 @@ describe('stream limits lockstep', () => {
   // this number, so a server-side change to it must not pass silently.
   it('mirrors the server context cap', () => {
     expect(MAX_CHAT_CONTEXT_LENGTH).toBe(serverConstant('MAX_CONTEXT_LENGTH'))
+  })
+
+  it('mirrors the server chat feedback-item cap', () => {
+    expect(MAX_CHAT_FEEDBACK_ITEMS).toBe(serverConstant('MAX_CHAT_FEEDBACK_ITEMS'))
   })
 
   it('fails loudly when a server constant is renamed rather than defaulting', () => {

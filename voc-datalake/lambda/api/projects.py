@@ -5,6 +5,7 @@ Handles projects, personas, PRDs, PR/FAQs with multi-step LLM orchestration.
 import json
 import os
 import re
+import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -33,12 +34,17 @@ from shared.prompts import (
 )
 from shared.feedback import (
     get_feedback_context as _get_feedback_context,
+    estimate_feedback_matches as _estimate_feedback_matches,
+    get_feedback_by_ids as _get_feedback_by_ids,
+    read_feedback_pool as _read_feedback_pool,
+    sample_feedback as _sample_feedback,
     feedback_char_budget,
     feedback_item_limit,
     format_feedback_for_llm,
     get_feedback_statistics,
     truncate_feedback_context,
 )
+from shared.persona_evidence import input_feedback_ids, resolve_evidence_ids
 from shared.model_config import surface_context_window_tokens
 from shared.avatar import (
     generate_persona_avatar as _generate_persona_avatar,
@@ -245,7 +251,9 @@ AVATAR_MAX_CONCURRENCY = MAX_PERSONAS_PER_GENERATION
 # Must equal persona-generation.json's "version"; a lockstep test pins the pair, since this
 # is a literal in the house style of processor/handler.py's PROMPT_VERSION rather than a
 # value read back out of the file.
-PERSONA_PROMPT_VERSION = '2.1.0'
+# 2.1.0 -> 2.2.0: both steps gained {existing_section}, which names the protected personas
+# a regeneration keeps so the new ones cover other segments.
+PERSONA_PROMPT_VERSION = '2.2.0'
 
 
 def generate_persona_avatar(persona_data: dict, s3_bucket: str | None = None) -> dict:
@@ -267,8 +275,179 @@ def get_feedback_context(filters: dict, limit: int = 50) -> list[dict]:
     return _get_feedback_context(feedback_table, filters, limit)
 
 
+def sample_persona_feedback(filters: dict, sample_size: int) -> tuple[list[dict], int, bool]:
+    """An even sample of the matching feedback: ``(items, matched, is_lower_bound)``.
+
+    See shared/feedback.py::sample_feedback for why persona generation samples
+    instead of taking the newest N.
+    """
+    return _sample_feedback(feedback_table, filters, sample_size)
+
+
+# How long the wizard's preview count may read before answering "at least N".
+# The projects API Lambda times out at 30s and API Gateway at 29s; a full read of
+# the f deployment's 42,612-row corpus measured 4-7s in-region, but one import
+# date is one index partition and DynamoDB can throttle it to far longer.
+PERSONA_PREVIEW_READ_SECONDS = 20
+
+# What the wizard asks for: a fast sampled estimate (~0.3s) and the exact count
+# (~4-7s on f), concurrently, so a number appears at once and is then confirmed.
+PERSONA_PREVIEW_MODES = ('exact', 'estimate')
+
+# Previews are reused for this long, per container. Toggling a filter off and on
+# again, or returning to the step, then answers immediately. Five minutes keeps a
+# count no staler than the wizard session it serves; a fresh import shows up once
+# it expires (or in another container, which has its own cache).
+PERSONA_PREVIEW_CACHE_SECONDS = 300
+PERSONA_PREVIEW_CACHE_MAX_ENTRIES = 128
+_preview_cache: dict[str, tuple[float, dict]] = {}
+
+
+def _canonical(value):
+    """``value`` with lists sorted and dict keys ordered, so the same selection
+    made in a different click order is the same cache key."""
+    if isinstance(value, dict):
+        return {key: _canonical(value[key]) for key in sorted(value)}
+    if isinstance(value, (list, tuple)):
+        return sorted((_canonical(item) for item in value), key=str)
+    return value
+
+
+def _preview_cache_key(filters: dict, mode: str) -> str:
+    scope = {key: filters.get(key) for key in (
+        'days', 'date_basis', 'sources', 'categories', 'sentiments', 'feedback_filters',
+    )}
+    return json.dumps({'mode': mode, **_canonical(scope)}, sort_keys=True, default=str)
+
+
+def _cached_preview(key: str, now: float) -> dict | None:
+    hit = _preview_cache.get(key)
+    if hit is None or now - hit[0] >= PERSONA_PREVIEW_CACHE_SECONDS:
+        return None
+    return hit[1]
+
+
+def _store_preview(key: str, now: float, result: dict) -> None:
+    _preview_cache.pop(key, None)
+    _preview_cache[key] = (now, result)
+    while len(_preview_cache) > PERSONA_PREVIEW_CACHE_MAX_ENTRIES:
+        # Insertion order is age order (a re-store moves the key to the end).
+        _preview_cache.pop(next(iter(_preview_cache)))
+
+
+def preview_persona_feedback(filters: dict, mode: str = 'exact') -> dict:
+    """How much feedback a persona generation with ``filters`` would draw from.
+
+    'exact' reads the same pool generation samples from, so the wizard's number
+    and the job's input describe one set. Unlike generation (a 15-minute job,
+    which reads to the end), it must answer inside a request timeout, so a slow
+    read stops at PERSONA_PREVIEW_READ_SECONDS and reports a lower bound.
+
+    'estimate' scales a random sample instead (see
+    shared/feedback.py::estimate_feedback_matches); ``matched`` is None when the
+    sample is too thin to say. It answers with the exact count when one is
+    already cached, since that is strictly better.
+    """
+    if mode not in PERSONA_PREVIEW_MODES:
+        raise ValidationError(f"mode must be one of: {', '.join(PERSONA_PREVIEW_MODES)}")
+    now = time.monotonic()
+    exact_key = _preview_cache_key(filters, 'exact')
+    cached = _cached_preview(exact_key, now)
+    if cached is None and mode == 'estimate':
+        cached = _cached_preview(_preview_cache_key(filters, 'estimate'), now)
+    if cached is not None:
+        return cached
+
+    _, sample_limit = persona_context_budget()
+    if mode == 'estimate':
+        result = {
+            'matched': _estimate_feedback_matches(feedback_table, filters),
+            'matched_is_lower_bound': False,
+            'sample_limit': sample_limit,
+            'estimated': True,
+        }
+        _store_preview(_preview_cache_key(filters, 'estimate'), now, result)
+        return result
+
+    pool, capped = _read_feedback_pool(
+        feedback_table, filters, deadline=now + PERSONA_PREVIEW_READ_SECONDS,
+    )
+    result = {
+        'matched': len(pool),
+        'matched_is_lower_bound': capped,
+        'sample_limit': sample_limit,
+        'estimated': False,
+    }
+    # A read cut short by the deadline might finish next time; only a complete
+    # count is worth reusing.
+    if not capped:
+        _store_preview(exact_key, now, result)
+    return result
+
+
 projects_table = get_projects_table()
 feedback_table = get_feedback_table()
+
+
+# A protected persona is kept when personas are regenerated (see generate_personas).
+# Absent means unprotected, so every persona written before this existed keeps the
+# old replace-on-regenerate behaviour.
+PERSONA_PROTECTED_FIELD = 'protected'
+
+
+def _is_protected(persona: dict) -> bool:
+    return persona.get(PERSONA_PROTECTED_FIELD) is True
+
+
+def _query_project_personas(project_id: str) -> list[dict]:
+    """Every persona row's key, name, tagline and protection, all pages."""
+    query = {
+        'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}') & Key('sk').begins_with('PERSONA#'),
+        'ProjectionExpression': 'pk, sk, #name, tagline, #protected',
+        'ExpressionAttributeNames': {'#name': 'name', '#protected': PERSONA_PROTECTED_FIELD},
+    }
+    items: list[dict] = []
+    while True:
+        response = projects_table.query(**query)
+        if not isinstance(response, dict):
+            return items
+        page = response.get('Items')
+        if isinstance(page, list):
+            items.extend(item for item in page if isinstance(item, dict))
+        cursor = response.get('LastEvaluatedKey')
+        if not isinstance(cursor, dict) or not cursor:
+            return items
+        query['ExclusiveStartKey'] = cursor
+
+
+def _delete_unprotected_personas(project_id: str) -> tuple[int, int]:
+    """Delete the project's unprotected personas. Returns ``(deleted, kept)``.
+
+    Protection is re-read here rather than taken from the start of the run, and
+    each delete is conditional on the row still being unprotected: generation
+    takes minutes, and a persona protected meanwhile must survive it.
+
+    A row whose delete fails for any other reason is still there, so it counts
+    as kept and the loop moves on: the caller writes ``kept + new`` as the
+    project's persona count, which must match the rows that actually remain.
+    """
+    existing = _query_project_personas(project_id)
+    deleted = 0
+    for item in existing:
+        if _is_protected(item):
+            continue
+        try:
+            projects_table.delete_item(
+                Key={'pk': item['pk'], 'sk': item['sk']},
+                ConditionExpression='attribute_not_exists(#protected) OR #protected <> :true',
+                ExpressionAttributeNames={'#protected': PERSONA_PROTECTED_FIELD},
+                ExpressionAttributeValues={':true': True},
+            )
+            deleted += 1
+        except ClientError as e:
+            if e.response.get('Error', {}).get('Code') != 'ConditionalCheckFailedException':
+                logger.warning(f"[PERSONA] Could not delete {item['sk']} (keeping it): {e}")
+    return deleted, len(existing) - deleted
 
 
 def fix_persona_name(name: str) -> str:
@@ -940,10 +1119,16 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
         f"[PERSONA] Context budget: {context_budget} chars, fetch limit: {fetch_limit} items"
     )
 
-    # Get feedback data
+    # Get feedback data: an even sample across EVERY matching item, not the
+    # newest fetch_limit of them (see shared/feedback.py::sample_feedback).
     try:
-        feedback_items = get_feedback_context(filters, limit=fetch_limit)
-        logger.info(f"[PERSONA] Fetched {len(feedback_items) if feedback_items else 0} feedback items")
+        feedback_items, feedback_matched, matched_is_lower_bound = sample_persona_feedback(
+            filters, fetch_limit,
+        )
+        logger.info(
+            f"[PERSONA] Sampled {len(feedback_items)} of {feedback_matched}"
+            f"{'+' if matched_is_lower_bound else ''} matching feedback items"
+        )
     except Exception as e:
         logger.error(f"[PERSONA] Failed to fetch feedback: {e}")
         raise
@@ -965,17 +1150,22 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
         raise
 
     # The fetch limit is a cap in its own right, and the one that bounds a large
-    # project: filters matching thousands of records yield exactly fetch_limit of
-    # them, with the rest never read. That loss is invisible to the truncation
-    # signal below (which compares what reached the model against what was
-    # FETCHED), so report it separately rather than letting "N of N items" imply
-    # N was the whole corpus.
-    fetch_limit_reached = len(feedback_items) >= fetch_limit
+    # project: filters matching thousands of records yield a fetch_limit-sized
+    # sample of them. That loss is invisible to the truncation signal below
+    # (which compares what reached the model against what was FETCHED), so
+    # report it separately rather than letting "N of N items" imply N was the
+    # whole corpus. Known exactly now that the pool is counted.
+    fetch_limit_reached = matched_is_lower_bound or feedback_matched > fetch_limit
     if fetch_limit_reached:
         logger.warning(
-            "[PERSONA] Fetch limit reached — more feedback may match the filters "
-            "than one generation reads",
-            extra={'fetch_limit': fetch_limit, 'items_fetched': len(feedback_items)},
+            "[PERSONA] More feedback matches the filters than one generation reads; "
+            "personas use an even sample",
+            extra={
+                'fetch_limit': fetch_limit,
+                'items_fetched': len(feedback_items),
+                'items_matched': feedback_matched,
+                'matched_is_lower_bound': matched_is_lower_bound,
+            },
         )
 
     # Trim on a record boundary so the model never receives half a review, and
@@ -1000,6 +1190,15 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
         logger.info("[PERSONA] Step 3/6: Building LLM chain steps from prompts...")
         update_progress(15, 'building_prompts')
 
+        # Protected personas survive this run, so the model is told about them
+        # and asked for other segments. Best-effort: a failed read only loses
+        # that hint — the deletion below re-reads protection for itself.
+        try:
+            kept_personas = [p for p in _query_project_personas(project_id) if _is_protected(p)]
+        except Exception as e:
+            logger.warning(f"[PERSONA] Could not read protected personas (continuing): {e}")
+            kept_personas = []
+
         # Build chain steps from external prompt files
         try:
             chain_steps = get_persona_generation_steps(
@@ -1009,6 +1208,7 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
                 custom_instructions=custom_instructions,
                 response_language=filters.get('response_language'),
                 sample_chars=context_budget,
+                existing_personas=kept_personas,
             )
             logger.info(f"[PERSONA] Built {len(chain_steps)} chain steps")
         except Exception as e:
@@ -1098,23 +1298,18 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
         logger.info("[PERSONA] Step 6/6: Saving personas to database...")
         update_progress(80, 'saving_personas')
 
-        # Replace semantics: delete any existing personas for this project first,
-        # so re-running generation doesn't accumulate duplicates (e.g. "김지수" x2).
-        # Without this, each generation appended a fresh set and @all roundtable
-        # chat would have the same persona answer multiple times.
-        existing_count = 0
+        # Replace semantics for UNPROTECTED personas: delete them first, so
+        # re-running generation doesn't accumulate duplicates (e.g. "김지수" x2) —
+        # each run used to append a fresh set and @all roundtable chat had the same
+        # persona answer multiple times. Protected personas are kept, which is what
+        # makes generation additive for the ones the user chose to keep.
+        kept_count = 0
         try:
-            existing = projects_table.query(
-                KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}')
-                & Key('sk').begins_with('PERSONA#'),
-                ProjectionExpression='pk, sk',
-            ).get('Items', [])
-            if existing:
-                with projects_table.batch_writer() as batch:
-                    for it in existing:
-                        batch.delete_item(Key={'pk': it['pk'], 'sk': it['sk']})
-                existing_count = len(existing)
-                logger.info(f"[PERSONA] Cleared {existing_count} existing persona(s) before regeneration")
+            deleted_count, kept_count = _delete_unprotected_personas(project_id)
+            logger.info(
+                f"[PERSONA] Cleared {deleted_count} persona(s) before regeneration; "
+                f"kept {kept_count} protected"
+            )
         except Exception as e:
             logger.warning(f"[PERSONA] Failed to clear existing personas (continuing): {e}")
 
@@ -1137,6 +1332,19 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
         # each id unique, and the avatar seed is derived from the id, so a stable
         # id keeps the same persona reproducing the same image.
         id_stamp = now_dt.strftime('%Y%m%d%H%M%S')
+
+        # What this batch was built from, recorded while the prompt's numbering
+        # still means something: "Review #N" in supporting_evidence is a
+        # position in feedback_items, and only the first feedback_items_used of
+        # them reached the model. Stored on every persona (not the job, whose
+        # TTL is 7 days) so "View source feedback" works for the persona's life.
+        batch_input_ids = input_feedback_ids(feedback_items, feedback_items_used)
+        feedback_provenance = {
+            'items_used': feedback_items_used,
+            'items_matched': feedback_matched,
+            'matched_is_lower_bound': matched_is_lower_bound,
+            'sample_limit': fetch_limit,
+        }
 
         # Build every persona item first, in parsed order. Avatars are attached
         # afterwards (concurrently) and the writes then follow this same order,
@@ -1165,6 +1373,12 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
                 'scenario': persona.get('scenario', {}),
                 'research_notes': [],
                 'supporting_evidence': persona.get('supporting_evidence', []),
+                # The reviews THIS persona cites, as ids (see batch_input_ids).
+                'evidence_feedback_ids': resolve_evidence_ids(
+                    persona.get('supporting_evidence'), feedback_items, feedback_items_used,
+                ),
+                'input_feedback_ids': batch_input_ids,
+                'feedback_provenance': feedback_provenance,
                 'source_breakdown': source_breakdown,
                 'source_feedback_ids': [item.get('feedback_id', '') for item in feedback_items[:20]],
                 'avatar_url': None,
@@ -1275,8 +1489,9 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
             saved_personas.append(item)
             logger.info(f"[PERSONA] Saved persona: {persona.get('name')}")
 
-        # Set persona count to the new total (we cleared the old set above, so
-        # this is a replace, not an increment — keeps the count accurate).
+        # Set persona count to the new total: the protected personas kept above
+        # plus the ones just saved (a replace, not an increment, so it stays
+        # accurate however many unprotected ones were cleared).
         projects_table.update_item(
             Key=project_meta_key(project_id),
             UpdateExpression='SET persona_count = :count, updated_at = :now',
@@ -1286,7 +1501,7 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
             ),
             ExpressionAttributeValues={
                 **PROJECT_WRITABLE_ATTRIBUTE_VALUES,
-                ':count': len(saved_personas),
+                ':count': kept_count + len(saved_personas),
                 ':now': now,
             },
         )
@@ -1310,6 +1525,10 @@ def generate_personas(project_id: str, filters: dict, progress_callback: callabl
                 # older job records already read it; prefer feedback_items_used
                 # for "what the personas are actually based on".
                 'feedback_count': len(feedback_items),
+                # Items matching the filters, which the fetched set was sampled
+                # from evenly; a floor when matched_is_lower_bound is True.
+                'feedback_matched': feedback_matched,
+                'matched_is_lower_bound': matched_is_lower_bound,
                 # Items that reached the persona-writing step. Equals
                 # feedback_count unless a cap dropped records, in which case
                 # context_truncated is True and this is the smaller, true number.
@@ -2149,9 +2368,15 @@ def update_persona(project_id: str, persona_id: str, body: dict) -> dict:
         'name', 'tagline', 'confidence',
         'identity', 'goals_motivations', 'pain_points', 'behaviors',
         'context_environment', 'quotes', 'scenario', 'research_notes',
-        'avatar_url', 'avatar_prompt',
+        'avatar_url', 'avatar_prompt', PERSONA_PROTECTED_FIELD,
     ]
     
+    # Validated, not coerced: `"false"` read as truthy would protect a persona
+    # the caller meant to release, and it would then silently survive every
+    # regeneration. Same contract as the generate route's `generate_avatars`.
+    if PERSONA_PROTECTED_FIELD in body and not isinstance(body[PERSONA_PROTECTED_FIELD], bool):
+        raise ValidationError(f'{PERSONA_PROTECTED_FIELD} must be true or false')
+
     for field in updatable_fields:
         if field in body:
             attr_name = f'#{field}'
@@ -2350,6 +2575,60 @@ def regenerate_persona_avatar(project_id: str, persona_id: str) -> dict:
         'success': True,
         'avatar_url': avatar_result['avatar_url'],
         'avatar_prompt': avatar_result['avatar_prompt']
+    }
+
+
+# Which stored id list each "View source feedback" scope reads.
+PERSONA_FEEDBACK_SCOPES = {
+    'cited': 'evidence_feedback_ids',
+    'used': 'input_feedback_ids',
+}
+
+
+@tracer.capture_method
+def get_persona_source_feedback(
+    project_id: str, persona_id: str, scope: str, offset: int, limit: int,
+) -> dict:
+    """One page of the feedback a persona was generated from.
+
+    ``scope`` is 'cited' (the reviews this persona's evidence names) or 'used'
+    (every review its generation batch read). A persona generated before these
+    lists were recorded answers ``available: False`` — its "Review #N"
+    citations point into a list nothing kept, so there is nothing to resolve.
+    """
+    if not projects_table:
+        raise ConfigurationError('Projects table not configured')
+    field = PERSONA_FEEDBACK_SCOPES.get(scope)
+    if field is None:
+        raise ValidationError(f"scope must be one of: {', '.join(PERSONA_FEEDBACK_SCOPES)}")
+
+    response = projects_table.get_item(
+        Key={'pk': f'PROJECT#{project_id}', 'sk': f'PERSONA#{persona_id}'},
+        ProjectionExpression='persona_id, #ids, feedback_provenance',
+        ExpressionAttributeNames={'#ids': field},
+    )
+    item = response.get('Item')
+    if not item:
+        raise NotFoundError('Persona not found')
+
+    stored = item.get(field)
+    if not isinstance(stored, list):
+        return {
+            'available': False, 'scope': scope, 'total': 0, 'offset': 0,
+            'items': [], 'missing': 0, 'provenance': None,
+        }
+    ids = [value for value in stored if isinstance(value, str) and value]
+    items, missing = _get_feedback_by_ids(feedback_table, ids[offset:offset + limit])
+    return {
+        'available': True,
+        'scope': scope,
+        'total': len(ids),
+        'offset': offset,
+        'items': items,
+        # Deleted since generation: counted so the page can say so instead of
+        # showing a shorter list with no explanation.
+        'missing': len(missing),
+        'provenance': item.get('feedback_provenance'),
     }
 
 

@@ -8,13 +8,15 @@
  * - Categories
  * - Logs (validation failures, processing errors, scraper logs)
  * - User Administration (admin only)
+ * - Data Quality (admin only)
  */
 
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { 
   Save, Check, AlertCircle, Loader2, CheckCircle2, Tags, Users, 
-  Building2, Plug, FileWarning, ChevronDown 
+  Building2, Plug, FileWarning, ChevronDown, Gauge 
 } from 'lucide-react'
 import { useConfigStore } from '../../store/configStore'
 import { useIsAdmin } from '../../store/authStore'
@@ -26,12 +28,15 @@ import ConfirmModal from '../../components/ConfirmModal'
 import SourceCard from './SourceCard'
 import LogsSection from './LogsSection'
 import AiModelSection from './AiModelSection'
+import CustomFiltersSection from './CustomFiltersSection'
+import DataQualitySection from './DataQualitySection'
 import { useApiEndpointField, useBrandForm } from './useSettingsSync'
 import { getEnabledPlugins } from '../../plugins'
 
-type SettingsTab = 'brand' | 'plugins' | 'categories' | 'logs' | 'users'
+type SettingsTab = 'brand' | 'plugins' | 'categories' | 'logs' | 'users' | 'dataQuality'
 
 export default function Settings() {
+  const { t } = useTranslation('settings')
   const queryClient = useQueryClient()
   const { config, setConfig } = useConfigStore()
   const isAdmin = useIsAdmin()
@@ -103,7 +108,10 @@ export default function Settings() {
     { id: 'plugins' as const, label: 'Data Sources', icon: Plug },
     { id: 'categories' as const, label: 'Categories', icon: Tags },
     { id: 'logs' as const, label: 'Logs', icon: FileWarning },
-    ...(isAdmin ? [{ id: 'users' as const, label: 'Users', icon: Users }] : []),
+    ...(isAdmin ? [
+      { id: 'users' as const, label: 'Users', icon: Users },
+      { id: 'dataQuality' as const, label: t('tabs.dataQuality'), icon: Gauge },
+    ] : []),
   ]
 
   const activeTabData = tabs.find(t => t.id === activeTab)
@@ -183,6 +191,7 @@ export default function Settings() {
               onUrlsToTrackChange={setUrlsToTrack}
             />
             <AiModelSection apiEndpoint={apiEndpoint} isAdmin={isAdmin} />
+            <CustomFiltersSection apiEndpoint={apiEndpoint} isAdmin={isAdmin} />
             <DangerZoneSection
               showResetConfirm={showResetConfirm}
               onShowResetConfirm={setShowResetConfirm}
@@ -211,9 +220,7 @@ export default function Settings() {
           <LogsSection apiEndpoint={apiEndpoint} />
         )}
 
-        {activeTab === 'users' && isAdmin && (
-          <UserAdminSection apiEndpoint={apiEndpoint} />
-        )}
+        <AdminTabContent activeTab={activeTab} apiEndpoint={apiEndpoint} isAdmin={isAdmin} />
       </div>
     </div>
   )
@@ -427,6 +434,24 @@ function DataSourcesSection({ apiEndpoint, isAdmin }: DataSourcesSectionProps) {
       </div>
     </div>
   )
+}
+
+// ============================================
+// Admin-only tabs
+// ============================================
+
+interface AdminTabContentProps {
+  readonly activeTab: SettingsTab
+  readonly apiEndpoint: string
+  readonly isAdmin: boolean
+}
+
+/** The admin-only tabs, split out so the Settings component stays within its complexity budget. */
+function AdminTabContent({ activeTab, apiEndpoint, isAdmin }: AdminTabContentProps) {
+  if (!isAdmin) return null
+  if (activeTab === 'users') return <UserAdminSection apiEndpoint={apiEndpoint} />
+  if (activeTab === 'dataQuality') return <DataQualitySection apiEndpoint={apiEndpoint} isAdmin={isAdmin} />
+  return null
 }
 
 // ============================================

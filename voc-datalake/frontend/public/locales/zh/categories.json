@@ -88,5 +88,7 @@
   "topIssue": "主要问题",
   "totalFeedback": "总反馈数",
   "trendingKeywords": "热门关键词",
-  "urgentOnly": "仅显示紧急"
+  "urgentOnly": "仅显示紧急",
+  "allOf": "全部{{label}}",
+  "filterByCustom": "按{{label}}筛选"
 }

@@ -73,6 +73,14 @@ const mockGetActiveConversation = vi.fn()
 const mockUpdateConversationFilters = vi.fn()
 const mockSetDraftFilters = vi.fn()
 
+// The empty feedback-filter shape, inlined (a hoisted vi.mock factory cannot
+// reference an imported binding). The `mock` prefix is required so vitest's
+// hoist guard allows it inside the factory. Matches EMPTY_FEEDBACK_FILTERS.
+const mockEmptyFeedbackFilters = {
+  sources: [], categories: [], subcategories: [], sentiments: [],
+  urgentOnly: false, enrichment: {}, customFields: {},
+}
+
 vi.mock('../../store/chatStore', () => ({
   useChatStore: () => ({
     activeConversationId: null,
@@ -80,10 +88,9 @@ vi.mock('../../store/chatStore', () => ({
     addMessage: mockAddMessage,
     getActiveConversation: mockGetActiveConversation,
     updateConversationFilters: mockUpdateConversationFilters,
-    draftFilters: {},
+    draftFilters: { feedback: mockEmptyFeedbackFilters },
     setDraftFilters: mockSetDraftFilters,
   }),
-  // Export types for the component
 }))
 
 // Mock child components
@@ -103,10 +110,16 @@ vi.mock('../../components/ChatMessage', () => ({
   ),
 }))
 
-vi.mock('../../components/ChatFilters', () => ({
+vi.mock('./ChatFilterPanel', () => ({
   default: ({ onChange }: { filters: object; onChange: (f: object) => void }) => (
     <div data-testid="chat-filters">
-      <button onClick={() => onChange({ source: 'webscraper' })}>Set Source Filter</button>
+      <button
+        onClick={() => onChange({
+          feedback: { ...mockEmptyFeedbackFilters, sources: ['webscraper'] },
+        })}
+      >
+        Set Source Filter
+      </button>
     </div>
   ),
 }))
@@ -298,7 +311,7 @@ describe('Chat', () => {
           { id: 'msg_1', role: 'user', content: 'Hello', timestamp: new Date() },
           { id: 'msg_2', role: 'assistant', content: 'Hi there!', timestamp: new Date() },
         ],
-        filters: {},
+        filters: { feedback: mockEmptyFeedbackFilters },
         createdAt: new Date(),
         updatedAt: new Date(),
       })
@@ -316,7 +329,7 @@ describe('Chat', () => {
         messages: [
           { id: 'msg_1', role: 'user', content: 'Hello', timestamp: new Date() },
         ],
-        filters: {},
+        filters: { feedback: mockEmptyFeedbackFilters },
         createdAt: new Date(),
         updatedAt: new Date(),
       })
@@ -358,7 +371,7 @@ describe('Chat', () => {
         id: 'conv_123',
         title: 'Test',
         messages: [{ id: 'msg_1', role: 'user', content: 'Hello', timestamp: new Date() }],
-        filters: {},
+        filters: { feedback: mockEmptyFeedbackFilters },
         createdAt: new Date(),
         updatedAt: new Date(),
       })
@@ -399,7 +412,9 @@ describe('Chat', () => {
 
       await user.click(screen.getByRole('button', { name: 'Set Source Filter' }))
 
-      expect(mockSetDraftFilters).toHaveBeenCalledWith({ source: 'webscraper' })
+      expect(mockSetDraftFilters).toHaveBeenCalledWith({
+        feedback: { ...mockEmptyFeedbackFilters, sources: ['webscraper'] },
+      })
       expect(mockUpdateConversationFilters).not.toHaveBeenCalled()
     })
   })

@@ -154,6 +154,7 @@
   "subtitle": "Configure your VoC platform",
   "tabs": {
     "categories": "Categories",
+    "dataQuality": "Data Quality",
     "general": "General",
     "logs": "Logs",
     "plugins": "Data Sources",
@@ -164,5 +165,93 @@
     "configureFirst": "Configure the API endpoint in the General tab to manage users.",
     "description": "Manage users, roles, and permissions for the VoC platform.",
     "title": "User Administration"
+  },
+  "customFilters": {
+    "title": "Custom Filters",
+    "intro": "Expose up to 3 extra data fields as filters on the feedback page.",
+    "keyPlaceholder": "Field key",
+    "labelPlaceholder": "Display label",
+    "add": "Add filter",
+    "remove": "Remove",
+    "save": "Save filters",
+    "saved": "Saved",
+    "saveFailed": "Failed to save custom filters. Try again.",
+    "loadFailed": "Could not load custom filters.",
+    "loading": "Loading custom filters...",
+    "capHint": "Up to 3 filters.",
+    "empty": "No custom filters configured.",
+    "suggestionsTitle": "Suggested fields",
+    "noSuggestions": "No field suggestions from recent data."
+  },
+  "dataQuality": {
+    "title": "Data Quality",
+    "intro": "Per-source statistics for stored feedback, and background jobs that calculate missing AI enrichment values or recalculate them for a whole source.",
+    "refresh": "Refresh statistics",
+    "snapshot_one": "Snapshot from {{time}} · {{count, number}} row scanned",
+    "snapshot_other": "Snapshot from {{time}} · {{count, number}} rows scanned",
+    "noStats": "No statistics yet — run Refresh statistics.",
+    "noSources": "The last scan found no feedback.",
+    "loading": "Loading data quality...",
+    "loadFailed": "Could not load data quality statistics.",
+    "rows_one": "{{count, number}} row",
+    "rows_other": "{{count, number}} rows",
+    "charts": {
+      "rating": "Rating",
+      "sentiment": "Sentiment",
+      "length": "Text length (characters)"
+    },
+    "noRating": "None",
+    "unscoredShare": "{{unscored, number}} unscored ({{percent}}%)",
+    "calculateMissing": "Calculate missing",
+    "recalculateAll": "Recalculate all",
+    "recalculateTitle": "Recalculate {{field}} for {{source}}?",
+    "recalculateMessage_one": "This re-derives {{field}} for every row from {{source}} ({{count, number}} row), replacing values already stored. It costs one model call per row.",
+    "recalculateMessage_other": "This re-derives {{field}} for every row from {{source}} ({{count, number}} rows), replacing values already stored. It costs one model call per row.",
+    "startConflict": "A job is already running for that target. Wait for it to finish or cancel it first.",
+    "startFailed": "Could not start the job. Try again.",
+    "cancelConflict": "That job had already stopped.",
+    "cancelFailed": "Could not cancel the job. Try again.",
+    "fields": {
+      "usefulness": "Usefulness"
+    },
+    "values": {
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low",
+      "unscored": "Unscored"
+    },
+    "sentiments": {
+      "positive": "Positive",
+      "neutral": "Neutral",
+      "negative": "Negative",
+      "mixed": "Mixed",
+      "unknown": "Unknown"
+    },
+    "jobs": {
+      "title": "Recent jobs",
+      "empty": "No jobs yet.",
+      "profile": "Refresh statistics",
+      "enrich": "{{field}} · {{source}}",
+      "mode": {
+        "missing": "Missing only",
+        "all": "All rows"
+      },
+      "status": {
+        "running": "Running",
+        "completed": "Completed",
+        "failed": "Failed",
+        "cancelled": "Cancelled"
+      },
+      "scanning_one": "Scanning… {{count, number}} row",
+      "scanning_other": "Scanning… {{count, number}} rows",
+      "scanned_one": "{{count, number}} row scanned",
+      "scanned_other": "{{count, number}} rows scanned",
+      "progress": "{{processed, number}} / {{total, number}}",
+      "planning": "Still planning — more rows may be added",
+      "counts": "{{updated, number}} updated · {{skipped, number}} skipped · {{failed, number}} failed",
+      "started": "Started {{time}}",
+      "cancel": "Cancel",
+      "progressLabel": "Job progress"
+    }
   }
 }

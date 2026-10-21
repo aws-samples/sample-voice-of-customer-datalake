@@ -2,6 +2,7 @@ import { ChevronDown, ChevronRight, Layers } from 'lucide-react'
 import { ProblemRow } from './ProblemRow'
 import { buildResolutionKey } from './problemResolution'
 import type { SubcategoryGroup } from './problemResolution'
+import type { ProblemDrillParams } from './ProblemRow'
 
 interface SubcategoryRowProps {
   readonly categoryName: string
@@ -14,6 +15,8 @@ interface SubcategoryRowProps {
   /** Resolution keys with an in-flight toggle — disables only their own
    * button (issue #159: no page-wide lock). */
   readonly pendingKeys?: ReadonlySet<string>
+  /** Window + source for the on-demand drill-down fetch of a problem's rows. */
+  readonly drillParams: ProblemDrillParams
 }
 
 export function SubcategoryRow({
@@ -25,6 +28,7 @@ export function SubcategoryRow({
   onToggleProblem,
   onToggleResolved,
   pendingKeys,
+  drillParams,
 }: SubcategoryRowProps) {
   const subcategoryKey = `${categoryName}:${subcategoryGroup.subcategory}`
 
@@ -65,6 +69,9 @@ export function SubcategoryRow({
                 key={problemKey}
                 problemGroup={problemGroup}
                 problemKey={problemKey}
+                categoryName={categoryName}
+                subcategoryName={subcategoryGroup.subcategory}
+                drillParams={drillParams}
                 isExpanded={expandedProblems.has(problemKey)}
                 onToggle={() => onToggleProblem(problemKey)}
                 onToggleResolved={() => onToggleResolved(resolutionKey, !problemGroup.resolved)}

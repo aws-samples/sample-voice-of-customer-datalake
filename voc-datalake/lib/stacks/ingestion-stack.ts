@@ -495,6 +495,25 @@ export class VocIngestionStack extends VocStack {
     // Grant S3 permissions
     this.s3ImportBucket.grantReadWrite(fn);
 
+    // Large-file fan-out (s3_import): the S3-triggered invocation acts as a
+    // splitter and async-invokes ITSELF once per row-range chunk, so a
+    // 100k–500k-row file is processed across many invocations instead of one
+    // that would hit the timeout. That needs lambda:InvokeFunction on itself.
+    //
+    // Granted via a CONSTRUCTED ARN string, not `fn.grantInvoke(fn)`: the latter
+    // adds the function's ARN token to the SHARED ingestion role, and since the
+    // function already depends on that role, CloudFormation sees a circular
+    // dependency (role -> function -> role). A string ARN built from the known
+    // function name carries no construct edge, so there is no cycle — and
+    // because it is the exact ARN with no version/alias wildcard, cdk-nag's
+    // IAM5 does not fire (no suppression needed).
+    const stack = cdk.Stack.of(this);
+    const selfArn = `arn:aws:lambda:${stack.region}:${stack.account}:function:${this.uniqueName(`voc-ingestor-${plugin.id}`)}`;
+    fn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['lambda:InvokeFunction'],
+      resources: [selfArn],
+    }));
+
     // Add event notifications for each suffix
     for (const suffix of s3Trigger.suffixes) {
       this.s3ImportBucket.addEventNotification(

@@ -108,16 +108,24 @@ def _corpus_of_at_least(chars: int) -> list[dict]:
     return corpus
 
 
-def _run_generate_personas(feedback_items):
+def _run_generate_personas(feedback_items, matched=None, matched_is_lower_bound=False):
     """Run ``generate_personas`` over ``feedback_items``.
 
     Only I/O is stubbed: DynamoDB, Bedrock, and avatar generation. The feedback
     formatter and the prompt builder run for real, so the captured prompts are
     what a deployed Lambda would send.
 
+    ``matched`` is how many items the sample was drawn from (default: exactly
+    the items given, i.e. nothing was left out).
+
     Returns:
         ``(result, chain_steps)`` — the chain steps as actually built.
     """
+    sample = (
+        feedback_items,
+        len(feedback_items) if matched is None else matched,
+        matched_is_lower_bound,
+    )
     import projects
 
     captured_steps = []
@@ -145,7 +153,7 @@ def _run_generate_personas(feedback_items):
     ]
 
     with patch("projects.projects_table", mock_table), \
-         patch("projects.get_feedback_context", return_value=feedback_items), \
+         patch("projects.sample_persona_feedback", return_value=sample), \
          patch("projects.get_persona_generation_steps", side_effect=capturing_builder), \
          patch("projects.converse_chain", return_value=chain_results), \
          patch("projects.generate_persona_avatar",
@@ -340,8 +348,21 @@ class TestLimitsReachTheirCallSites:
             return kwargs["limit"]
         return gfc.call_args.args[1]
 
+    @staticmethod
+    def sample_size_of_the_persona_fetch(call_fn):
+        """Invoke ``call_fn`` and return the sample size the persona path asked for."""
+        with patch("projects.sample_persona_feedback",
+                   side_effect=_StopAfterFetch) as spf, \
+             pytest.raises(_StopAfterFetch):
+            call_fn()
+        assert spf.called, "the persona path did not fetch feedback at all"
+        kwargs = spf.call_args.kwargs
+        if "sample_size" in kwargs:
+            return kwargs["sample_size"]
+        return spf.call_args.args[1]
+
     def test_persona_path_uses_the_resolved_limit(self):
-        """The persona fetch uses the limit resolved WITH the char budget.
+        """The persona sample uses the limit resolved WITH the char budget.
 
         Asserted against ``persona_context_budget()`` rather than the
         import-time constant, because the constant is only the default: the
@@ -350,10 +371,10 @@ class TestLimitsReachTheirCallSites:
         passing while the fetch and the trim drifted apart.
         """
         import projects
-        limit = self._limit_passed_to_get_feedback_context(
+        size = self.sample_size_of_the_persona_fetch(
             lambda: projects.generate_personas("proj-test", {})
         )
-        assert limit == projects.persona_context_budget()[1]
+        assert size == projects.persona_context_budget()[1]
 
     def test_autofill_path_uses_the_named_limit(self):
         import projects
@@ -549,9 +570,10 @@ class TestOversizedInputErrorIsNamed:
 
         mock_table = MagicMock()
         mock_table.query.return_value = {"Items": []}
+        items = [_make_feedback_item(i) for i in range(5)]
         with patch("projects.projects_table", mock_table), \
-             patch("projects.get_feedback_context",
-                   return_value=[_make_feedback_item(i) for i in range(5)]), \
+             patch("projects.sample_persona_feedback",
+                   return_value=(items, len(items), False)), \
              patch("projects.converse_chain", side_effect=error):
             projects.generate_personas("proj-test", {"persona_count": 1})
 
@@ -638,7 +660,7 @@ class TestBudgetAndFetchLimitCannotDrift:
 
         with patch("projects.surface_context_window_tokens", return_value=60_000):
             expected = projects.persona_context_budget()[1]
-            limit = TestLimitsReachTheirCallSites._limit_passed_to_get_feedback_context(
+            limit = TestLimitsReachTheirCallSites.sample_size_of_the_persona_fetch(
                 lambda: projects.generate_personas("proj-test", {})
             )
         assert limit == expected
@@ -766,19 +788,42 @@ class TestTheFetchLimitIsReported:
     number as if it were the whole corpus.
     """
 
-    def test_a_corpus_at_the_fetch_limit_is_flagged(self):
+    def test_a_match_larger_than_the_fetch_limit_is_flagged(self):
         import projects
 
         limit = projects.persona_context_budget()[1]
         corpus = [_make_feedback_item(i) for i in range(limit)]
-        result, _ = _run_generate_personas(corpus)
+        result, _ = _run_generate_personas(corpus, matched=limit + 500)
 
         meta = result["metadata"]
         assert meta["fetch_limit_reached"] is True
         assert meta["fetch_limit"] == limit
+        assert meta["feedback_matched"] == limit + 500
         # The distinct failure mode: nothing was trimmed, yet the corpus is a
-        # floor rather than a total.
+        # sample rather than a total.
         assert meta["context_truncated"] is False
+
+    def test_a_match_exactly_at_the_fetch_limit_is_not_flagged(self):
+        """The match is counted now, so filling the limit exactly loses nothing.
+
+        The old check (`fetched >= limit`) had to guess that more might exist;
+        flagging this case would claim a loss that did not happen.
+        """
+        import projects
+
+        limit = projects.persona_context_budget()[1]
+        corpus = [_make_feedback_item(i) for i in range(limit)]
+        result, _ = _run_generate_personas(corpus, matched=limit)
+        assert result["metadata"]["fetch_limit_reached"] is False
+
+    def test_a_lower_bound_match_is_flagged_even_when_small(self):
+        """A pool read that hit its row cap counted only a floor of the match."""
+        corpus = [_make_feedback_item(i) for i in range(5)]
+        result, _ = _run_generate_personas(corpus, matched=5, matched_is_lower_bound=True)
+
+        meta = result["metadata"]
+        assert meta["fetch_limit_reached"] is True
+        assert meta["matched_is_lower_bound"] is True
 
     def test_a_corpus_below_the_fetch_limit_is_not_flagged(self):
         result, _ = _run_generate_personas([_make_feedback_item(i) for i in range(5)])

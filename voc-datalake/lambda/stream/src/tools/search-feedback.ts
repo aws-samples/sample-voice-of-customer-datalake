@@ -19,6 +19,7 @@ import {
   type FeedbackItem,
   type TruncationReason,
 } from './feedback-scan.js';
+import { matchesChatFilters, type ChatFilters } from '../context/feedback-filters.js';
 
 // Re-exported so the constants keep one import path for callers and tests. They
 // are declared in feedback-scan.ts, which the lockstep guard parses.
@@ -58,13 +59,25 @@ function compareByUrgency(a: FeedbackItem, b: FeedbackItem): number {
 
 type SearchInput = z.infer<typeof searchInputSchema>;
 
-interface ContextFilters {
+/**
+ * The window + scope every search inherits from the chat request. The single
+ * value is the one exported copy (handler.ts and executor.ts import it); it was
+ * duplicated structurally in three files before `scope` was added.
+ */
+export interface ContextFilters {
   source?: string;
   category?: string;
   sentiment?: string;
   days?: number;
   /** 'imported' (default) or 'review' — which date the days window uses. */
   dateBasis?: 'imported' | 'review';
+  /**
+   * The user's structured scope from the chat filter panel (shared model).
+   * When set, it is a hard floor the tool cannot widen: the model's own tool
+   * input narrows further within it, never past it. Multi-value, so it carries
+   * what the single-value `source`/`category`/`sentiment` above cannot.
+   */
+  scope?: ChatFilters;
 }
 
 
@@ -133,9 +146,13 @@ function matchesFeedbackItem(
   query: string,
   filters: Record<string, string | undefined>,
   cutoffDate: string,
-  dateBasis?: 'imported' | 'review',
+  dateBasis: 'imported' | 'review' | undefined,
+  scope: ChatFilters | undefined,
 ): boolean {
+  // `scope` is the user's panel selection — a hard floor the model cannot widen.
+  // `filters` is the model's own tool input, narrowing further within it.
   return passesDateFilter(item, cutoffDate, dateBasis)
+    && (scope === undefined || matchesChatFilters(item, scope))
     && passesFieldFilters(item, filters)
     && passesTextSearch(item, query);
 }
@@ -262,12 +279,13 @@ export async function executeSearchFeedback(
   // import-date scan above always contains those items, since a review can't
   // be imported before it was written (issue #150).
   const dateBasis = contextFilters.dateBasis;
+  const scope = contextFilters.scope;
   const cutoff = new Date();
   cutoff.setUTCDate(cutoff.getUTCDate() - (days - 1));
   const cutoffDate = cutoff.toISOString().slice(0, 10);
 
   const allMatched = scan.candidates.filter((item) =>
-    matchesFeedbackItem(item, query, filters, cutoffDate, dateBasis),
+    matchesFeedbackItem(item, query, filters, cutoffDate, dateBasis, scope),
   );
 
   const notice = truncationNotice(reasons, days, requestedDays);

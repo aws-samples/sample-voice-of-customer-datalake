@@ -119,7 +119,18 @@
     "preview_one": "미리보기 — {{count}}개 항목{{plural}}",
     "preview_other": "미리보기 — {{count}}개 항목{{plural}}",
     "templateNote": "템플릿 파일에는 전체 지침과 LLM 지원 문서가 포함되어 있습니다.",
-    "title": "JSON 업로드"
+    "title": "JSON 업로드",
+    "largeFileDetected": "큰 파일({{size}} MB) — 여기서 미리 보지 않고 업로드하여 백그라운드에서 처리합니다.",
+    "largeUploadStarted": "큰 파일 업로드됨 — 백그라운드에서 처리 중",
+    "largeUploadNote": "파일을 가져오고 보강하는 중입니다. 완료되는 대로 피드백 페이지에 행이 표시되며, 큰 파일은 몇 분이 걸릴 수 있습니다.",
+    "sourceLabel": "소스",
+    "sourcePlaceholder": "예: trustpilot, zendesk",
+    "sourceHint": "이 배치의 출처를 나타냅니다. 자체 소스 필드가 있는 행이 이를 재정의합니다.",
+    "sourceFieldLabel": "행별 소스 필드",
+    "sourceFieldNone": "없음 — 모든 행에 위 소스 사용",
+    "sourceFieldHint": "선택 사항. 각 행의 소스를 지정하는 열을 선택하세요. 한 파일에 여러 소스가 있을 때 유용합니다.",
+    "uploading": "업로드 중…",
+    "uploadLargeFile": "업로드 및 처리"
   },
   "manualImport": {
     "addReviewManually": "수동으로 리뷰 추가",

@@ -165,6 +165,7 @@
   "subtitle": "Configurez votre plateforme VoC",
   "tabs": {
     "categories": "Catégories",
+    "dataQuality": "Qualité des données",
     "general": "Général",
     "logs": "Journaux",
     "plugins": "Sources de données",
@@ -175,5 +176,93 @@
     "configureFirst": "Configurez le point de terminaison API dans l'onglet Général pour gérer les utilisateurs.",
     "description": "Gérez les utilisateurs, les rôles et les permissions pour la plateforme VoC.",
     "title": "Administration des utilisateurs"
+  },
+  "customFilters": {
+    "title": "Filtres personnalisés",
+    "intro": "Exposez jusqu'à 3 champs de données supplémentaires comme filtres sur la page des retours.",
+    "keyPlaceholder": "Clé du champ",
+    "labelPlaceholder": "Libellé affiché",
+    "add": "Ajouter un filtre",
+    "remove": "Supprimer",
+    "save": "Enregistrer les filtres",
+    "saved": "Enregistré",
+    "saveFailed": "Échec de l'enregistrement des filtres personnalisés. Réessayez.",
+    "loadFailed": "Impossible de charger les filtres personnalisés.",
+    "loading": "Chargement des filtres personnalisés...",
+    "capHint": "Jusqu'à 3 filtres.",
+    "empty": "Aucun filtre personnalisé configuré.",
+    "suggestionsTitle": "Champs suggérés",
+    "noSuggestions": "Aucune suggestion de champ à partir des données récentes."
+  },
+  "dataQuality": {
+    "title": "Qualité des données",
+    "intro": "Statistiques par source sur les retours stockés, et tâches en arrière-plan qui calculent les valeurs d’enrichissement IA manquantes ou les recalculent pour toute une source.",
+    "refresh": "Actualiser les statistiques",
+    "snapshot_one": "Instantané du {{time}} · {{count, number}} ligne analysée",
+    "snapshot_other": "Instantané du {{time}} · {{count, number}} lignes analysées",
+    "noStats": "Aucune statistique pour l’instant — lancez « Actualiser les statistiques ».",
+    "noSources": "La dernière analyse n’a trouvé aucun retour.",
+    "loading": "Chargement de la qualité des données...",
+    "loadFailed": "Impossible de charger les statistiques de qualité des données.",
+    "rows_one": "{{count, number}} ligne",
+    "rows_other": "{{count, number}} lignes",
+    "charts": {
+      "rating": "Note",
+      "sentiment": "Sentiment",
+      "length": "Longueur du texte (caractères)"
+    },
+    "noRating": "Aucune",
+    "unscoredShare": "{{unscored, number}} sans valeur ({{percent}} %)",
+    "calculateMissing": "Calculer les manquants",
+    "recalculateAll": "Tout recalculer",
+    "recalculateTitle": "Recalculer {{field}} pour {{source}} ?",
+    "recalculateMessage_one": "Cette action recalcule {{field}} pour chaque ligne de {{source}} ({{count, number}} ligne) et remplace les valeurs déjà enregistrées. Chaque ligne coûte un appel au modèle.",
+    "recalculateMessage_other": "Cette action recalcule {{field}} pour chaque ligne de {{source}} ({{count, number}} lignes) et remplace les valeurs déjà enregistrées. Chaque ligne coûte un appel au modèle.",
+    "startConflict": "Une tâche est déjà en cours pour cette cible. Attendez qu’elle se termine ou annulez-la d’abord.",
+    "startFailed": "Impossible de démarrer la tâche. Réessayez.",
+    "cancelConflict": "Cette tâche était déjà arrêtée.",
+    "cancelFailed": "Impossible d’annuler la tâche. Réessayez.",
+    "fields": {
+      "usefulness": "Utilité"
+    },
+    "values": {
+      "high": "Élevée",
+      "medium": "Moyenne",
+      "low": "Faible",
+      "unscored": "Sans valeur"
+    },
+    "sentiments": {
+      "positive": "Positif",
+      "neutral": "Neutre",
+      "negative": "Négatif",
+      "mixed": "Mitigé",
+      "unknown": "Inconnu"
+    },
+    "jobs": {
+      "title": "Tâches récentes",
+      "empty": "Aucune tâche pour l’instant.",
+      "profile": "Actualiser les statistiques",
+      "enrich": "{{field}} · {{source}}",
+      "mode": {
+        "missing": "Manquants uniquement",
+        "all": "Toutes les lignes"
+      },
+      "status": {
+        "running": "En cours",
+        "completed": "Terminée",
+        "failed": "Échouée",
+        "cancelled": "Annulée"
+      },
+      "scanning_one": "Analyse… {{count, number}} ligne",
+      "scanning_other": "Analyse… {{count, number}} lignes",
+      "scanned_one": "{{count, number}} ligne analysée",
+      "scanned_other": "{{count, number}} lignes analysées",
+      "progress": "{{processed, number}} / {{total, number}}",
+      "planning": "Planification en cours — d’autres lignes peuvent s’ajouter",
+      "counts": "{{updated, number}} mises à jour · {{skipped, number}} ignorées · {{failed, number}} en échec",
+      "started": "Démarrée {{time}}",
+      "cancel": "Annuler",
+      "progressLabel": "Progression de la tâche"
+    }
   }
 }

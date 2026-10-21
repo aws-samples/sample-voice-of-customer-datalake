@@ -2,8 +2,14 @@
 Tests for metrics_handler.py - /feedback/* and /metrics/* endpoints.
 """
 import json
+import pytest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
+
+# conftest.py puts lambda/api on sys.path, so the handler imports at module load.
+# The per-method `import sys/os` blocks in the older tests predate that and are
+# left as-is; new tests below use this top-level import.
+from metrics_handler import lambda_handler as metrics_lambda_handler
 
 
 class TestListFeedbackEndpoint:
@@ -1062,3 +1068,511 @@ class TestSearchScansTheRequestedWindow:
         assert len(self._day_partitions(mock_fb)) < 365, (
             f"the soft cap of {CANDIDATES_SOFT_CAP} should have stopped the scan early"
         )
+
+
+class TestGetLatestDateEndpoint:
+    """Tests for GET /metrics/latest-date — the empty-window fallback probe."""
+
+    @patch('metrics_handler.aggregates_table')
+    def test_returns_newest_populated_date_imported_basis(
+        self, mock_agg_table, api_gateway_event, lambda_context
+    ):
+        """Returns the newest METRIC#daily_total sk via a descending Limit=1 query."""
+        mock_agg_table.query.return_value = {'Items': [{'sk': '2026-09-21', 'count': 296}]}
+
+        event = api_gateway_event(method='GET', path='/metrics/latest-date')
+        response = metrics_lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert body['latest_date'] == '2026-09-21'
+        assert body['date_basis'] == 'imported'
+        # The probe must be a single descending read bounded to one row — not a
+        # full partition scan — so the newest date is row zero.
+        _, kwargs = mock_agg_table.query.call_args
+        assert kwargs['ScanIndexForward'] is False
+        assert kwargs['Limit'] == 1
+
+    @patch('metrics_handler.aggregates_table')
+    def test_returns_null_when_no_aggregates_exist(
+        self, mock_agg_table, api_gateway_event, lambda_context
+    ):
+        """latest_date is null when no date has data (empty / fully-expired)."""
+        mock_agg_table.query.return_value = {'Items': []}
+
+        event = api_gateway_event(method='GET', path='/metrics/latest-date')
+        response = metrics_lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert body['latest_date'] is None
+        assert body['date_basis'] == 'imported'
+
+    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.aggregates_table')
+    def test_review_basis_uses_feedback_date_gsi_not_aggregates(
+        self, mock_agg_table, mock_fb_table, api_gateway_event, lambda_context
+    ):
+        """Review basis walks the feedback date GSI and returns the max review date.
+
+        Reviews are keyed by IMPORT date, so the newest review date is the max of
+        the review dates in the newest non-empty import partition — not the
+        import date itself, and not the aggregates sentinel.
+        """
+        # Newest import partition carries two items whose REVIEW dates differ;
+        # the later one wins.
+        mock_fb_table.query.return_value = {
+            'Items': [
+                {'source_created_at': '2026-09-18T10:00:00Z', 'date': '2026-09-21'},
+                {'source_created_at': '2026-09-20T10:00:00Z', 'date': '2026-09-21'},
+            ]
+        }
+
+        event = api_gateway_event(
+            method='GET', path='/metrics/latest-date',
+            query_params={'date_basis': 'review'},
+        )
+        response = metrics_lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert body['date_basis'] == 'review'
+        # Max review date across the partition, not the import date (2026-09-21).
+        assert body['latest_date'] == '2026-09-20'
+        # Review basis must NOT consult the aggregates sentinel.
+        mock_agg_table.query.assert_not_called()
+
+    @patch('metrics_handler.feedback_table')
+    def test_review_basis_returns_null_when_no_recent_feedback(
+        self, mock_fb_table, api_gateway_event, lambda_context
+    ):
+        """Review basis returns null when every scanned partition is empty."""
+        mock_fb_table.query.return_value = {'Items': []}
+
+        event = api_gateway_event(
+            method='GET', path='/metrics/latest-date',
+            query_params={'date_basis': 'review'},
+        )
+        response = metrics_lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert body['latest_date'] is None
+
+
+class TestRankCustomFieldCandidates:
+    """Tests for _rank_custom_field_candidates() — the facet recommender."""
+
+    @staticmethod
+    def _items(*custom_fields_list):
+        return [{'custom_fields': cf} for cf in custom_fields_list]
+
+    def test_returns_empty_for_no_items(self):
+        from metrics_handler import _rank_custom_field_candidates
+        assert _rank_custom_field_candidates([]) == []
+
+    def test_recommends_a_moderate_cardinality_field(self):
+        from metrics_handler import _rank_custom_field_candidates
+        items = self._items(
+            {'region': 'EMEA'}, {'region': 'EMEA'}, {'region': 'APAC'}, {'region': 'APAC'},
+        )
+        result = _rank_custom_field_candidates(items)
+        assert len(result) == 1
+        rec = result[0]
+        assert rec['key'] == 'region'
+        assert rec['distinct_values'] == 2
+        assert rec['coverage'] == 1.0
+        # Top values previewed with counts, most common first.
+        assert {'value': 'EMEA', 'count': 2} in rec['top_values']
+
+    def test_excludes_a_near_unique_id_field(self):
+        from metrics_handler import _rank_custom_field_candidates
+        # 60 distinct values across 60 rows — an id, not a facet.
+        items = self._items(*[{'order_id': f'o{i}'} for i in range(60)])
+        result = _rank_custom_field_candidates(items)
+        assert all(c['key'] != 'order_id' for c in result)
+
+    def test_excludes_a_single_value_field(self):
+        from metrics_handler import _rank_custom_field_candidates
+        items = self._items(*[{'env': 'prod'} for _ in range(10)])
+        assert _rank_custom_field_candidates(items) == []
+
+    def test_excludes_a_sparse_field_below_coverage_floor(self):
+        from metrics_handler import _rank_custom_field_candidates
+        # 'plan' present on only 1 of 20 records → below the coverage floor.
+        items = self._items({'plan': 'enterprise'}, *[{'region': 'EMEA'} for _ in range(19)])
+        keys = {c['key'] for c in _rank_custom_field_candidates(items)}
+        assert 'plan' not in keys
+
+    def test_ranks_wider_coverage_first(self):
+        from metrics_handler import _rank_custom_field_candidates
+        # Both qualify; 'region' covers all 4, 'tier' covers 2 → region first.
+        items = self._items(
+            {'region': 'EMEA', 'tier': 'gold'},
+            {'region': 'APAC', 'tier': 'gold'},
+            {'region': 'EMEA'},
+            {'region': 'APAC'},
+        )
+        result = _rank_custom_field_candidates(items)
+        assert [c['key'] for c in result][0] == 'region'
+
+    def test_ignores_items_without_custom_fields(self):
+        from metrics_handler import _rank_custom_field_candidates
+        items = [{'text': 'no fields'}, {'custom_fields': None}, {'custom_fields': {'region': 'EMEA'}}]
+        # Only one item has a usable value → coverage 1/3, single value → excluded.
+        # Confirms non-dict custom_fields don't crash the tally.
+        assert _rank_custom_field_candidates(items) == []
+
+    def test_null_and_empty_values_do_not_count_toward_coverage(self):
+        from metrics_handler import _rank_custom_field_candidates
+        # 'region' has two real values on 2 of 4 rows; the None and '' rows are
+        # skipped, so coverage is 2/4 (not 4/4) and the empty values never seed a
+        # phantom distinct value.
+        items = self._items(
+            {'region': 'EMEA'}, {'region': 'APAC'}, {'region': None}, {'region': ''},
+        )
+        result = _rank_custom_field_candidates(items)
+        assert len(result) == 1
+        rec = result[0]
+        assert rec['key'] == 'region'
+        assert rec['distinct_values'] == 2
+        assert rec['coverage'] == 0.5
+        assert all(tv['value'] not in (None, '') for tv in rec['top_values'])
+
+    def test_numeric_and_string_twins_bucket_together(self):
+        from metrics_handler import _rank_custom_field_candidates
+        # 5 and "5" are the same facet value — the ranker str()s before tallying,
+        # matching how the filter compares. Two distinct values (5, 7), not three.
+        items = self._items(
+            {'tier': 5}, {'tier': '5'}, {'tier': 7}, {'tier': 7},
+        )
+        result = _rank_custom_field_candidates(items)
+        assert len(result) == 1
+        rec = result[0]
+        assert rec['distinct_values'] == 2
+        assert {'value': '5', 'count': 2} in rec['top_values']
+
+
+class TestAggregateProblems:
+    """Tests for _aggregate_problems() — the finest-grain problem bucketer."""
+
+    @staticmethod
+    def _row(**kw):
+        return kw
+
+    def test_returns_empty_for_no_items(self):
+        from metrics_handler import _aggregate_problems
+        assert _aggregate_problems([]) == []
+
+    def test_skips_rows_without_problem_summary(self):
+        from metrics_handler import _aggregate_problems
+        rows = [
+            {'category': 'delivery', 'problem_summary': ''},
+            {'category': 'delivery'},  # no key at all
+            {'category': 'delivery', 'problem_summary': '   '},  # whitespace only
+        ]
+        assert _aggregate_problems(rows) == []
+
+    def test_buckets_by_category_subcategory_and_exact_problem(self):
+        from metrics_handler import _aggregate_problems
+        rows = [
+            {'category': 'delivery', 'subcategory': 'late', 'problem_summary': 'order arrived late', 'sentiment_score': -0.5},
+            {'category': 'delivery', 'subcategory': 'late', 'problem_summary': 'order arrived late', 'sentiment_score': -0.9},
+            {'category': 'delivery', 'subcategory': 'damaged', 'problem_summary': 'order arrived late', 'sentiment_score': -0.1},
+        ]
+        result = _aggregate_problems(rows)
+        # Same text but different subcategory → two leaves, not one.
+        assert len(result) == 2
+        late = next(r for r in result if r['subcategory'] == 'late')
+        assert late['count'] == 2
+        assert late['avg_sentiment'] == pytest.approx(-0.7)
+
+    def test_defaults_missing_category_and_subcategory(self):
+        from metrics_handler import _aggregate_problems
+        result = _aggregate_problems([{'problem_summary': 'something broke'}])
+        assert result[0]['category'] == 'uncategorized'
+        assert result[0]['subcategory'] == 'general'
+
+    def test_counts_urgent_and_captures_first_root_cause(self):
+        from metrics_handler import _aggregate_problems
+        rows = [
+            {'problem_summary': 'app crashes', 'urgency': 'high'},
+            {'problem_summary': 'app crashes', 'urgency': 'low',
+             'problem_root_cause_hypothesis': 'memory leak'},
+            {'problem_summary': 'app crashes', 'urgency': 'high',
+             'problem_root_cause_hypothesis': 'ignored (first non-empty wins)'},
+        ]
+        leaf = _aggregate_problems(rows)[0]
+        assert leaf['count'] == 3
+        assert leaf['urgent_count'] == 2
+        assert leaf['root_cause'] == 'memory leak'
+
+    def test_emits_keywords_for_client_merge(self):
+        from metrics_handler import _aggregate_problems
+        leaf = _aggregate_problems([{'problem_summary': 'The delivery was very late'}])[0]
+        # Stopwords dropped, sorted; matches shared.problem_clustering.extract_keywords.
+        assert leaf['keywords'] == ['delivery', 'late']
+
+    def test_tolerates_missing_or_nonnumeric_sentiment(self):
+        from metrics_handler import _aggregate_problems
+        rows = [
+            {'problem_summary': 'x'},  # no sentiment_score
+            {'problem_summary': 'x', 'sentiment_score': None},
+            {'problem_summary': 'x', 'sentiment_score': 0.6},
+        ]
+        leaf = _aggregate_problems(rows)[0]
+        assert leaf['count'] == 3
+        assert leaf['avg_sentiment'] == pytest.approx(0.2)
+
+    def test_sorts_biggest_problem_first(self):
+        from metrics_handler import _aggregate_problems
+        rows = (
+            [{'problem_summary': 'rare'}]
+            + [{'problem_summary': 'common'} for _ in range(5)]
+        )
+        result = _aggregate_problems(rows)
+        assert [r['problem'] for r in result] == ['common', 'rare']
+
+
+class TestProblemsEndpoint:
+    """Tests for GET /feedback/problems."""
+
+    @patch('metrics_handler.feedback_table')
+    def test_returns_aggregated_problems_from_the_window(
+        self, mock_fb_table, api_gateway_event, lambda_context
+    ):
+        rows = [
+            {'pk': 'SOURCE#x', 'sk': f'FEEDBACK#{i}', 'category': 'delivery',
+             'subcategory': 'late', 'problem_summary': 'order late', 'urgency': 'high'}
+            for i in range(3)
+        ]
+        mock_fb_table.query.return_value = {'Items': rows}
+        event = api_gateway_event(
+            method='GET', path='/feedback/problems', query_params={'days': '1'},
+        )
+        response = metrics_lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+        assert response['statusCode'] == 200
+        assert body['feedback_count'] == 3
+        assert len(body['problems']) == 1
+        assert body['problems'][0]['count'] == 3
+        assert body['problems'][0]['urgent_count'] == 3
+        assert body['problems'][0]['keywords'] == ['late', 'order']
+
+    @patch('metrics_handler.feedback_table')
+    def test_applies_custom_field_filter_before_aggregation(
+        self, mock_fb_table, api_gateway_event, lambda_context
+    ):
+        # Two rows, same problem, different custom_fields.tier — a cf_tier filter
+        # must keep only the matching row, and the aggregated count must reflect
+        # that (the filter is applied before bucketing, not after).
+        rows = [
+            {'pk': 'SOURCE#x', 'sk': 'FEEDBACK#1', 'category': 'delivery',
+             'subcategory': 'late', 'problem_summary': 'order late',
+             'custom_fields': {'tier': 'Gold'}},
+            {'pk': 'SOURCE#x', 'sk': 'FEEDBACK#2', 'category': 'delivery',
+             'subcategory': 'late', 'problem_summary': 'order late',
+             'custom_fields': {'tier': 'Platinum'}},
+        ]
+        mock_fb_table.query.return_value = {'Items': rows}
+        event = api_gateway_event(
+            method='GET', path='/feedback/problems',
+            query_params={'days': '1', 'cf_tier': 'Gold'},
+        )
+        response = metrics_lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+        assert response['statusCode'] == 200
+        assert body['feedback_count'] == 1
+        assert len(body['problems']) == 1
+        assert body['problems'][0]['count'] == 1
+
+
+class TestParseCustomFieldFilters:
+    """Tests for _parse_custom_field_filters() — cf_<key> query-param extraction."""
+
+    def test_extracts_prefixed_params_and_strips_prefix(self):
+        from shared.feedback_filters import (
+            parse_custom_field_filters as _parse_custom_field_filters,
+        )
+        result = _parse_custom_field_filters({'cf_region': 'EMEA', 'cf_tier': 'gold'})
+        assert result == {'region': ('EMEA',), 'tier': ('gold',)}
+
+    def test_ignores_non_prefixed_params(self):
+        from shared.feedback_filters import (
+            parse_custom_field_filters as _parse_custom_field_filters,
+        )
+        result = _parse_custom_field_filters({'source': 'webscraper', 'days': '7', 'cf_region': 'EMEA'})
+        assert result == {'region': ('EMEA',)}
+
+    def test_drops_empty_and_none_values(self):
+        from shared.feedback_filters import (
+            parse_custom_field_filters as _parse_custom_field_filters,
+        )
+        # An empty value is the UI's "no selection" — it must not filter.
+        result = _parse_custom_field_filters({'cf_region': '', 'cf_tier': None, 'cf_plan': 'pro'})
+        assert result == {'plan': ('pro',)}
+
+    def test_ignores_bare_prefix_with_empty_key(self):
+        from shared.feedback_filters import (
+            parse_custom_field_filters as _parse_custom_field_filters,
+        )
+        result = _parse_custom_field_filters({'cf_': 'value'})
+        assert result == {}
+
+    def test_returns_empty_for_no_matching_params(self):
+        from shared.feedback_filters import (
+            parse_custom_field_filters as _parse_custom_field_filters,
+        )
+        assert _parse_custom_field_filters({'days': '7'}) == {}
+
+
+class TestItemMatchesCustomFields:
+    """Tests for _item_matches_custom_fields() — the per-item AND match."""
+
+    def test_matches_when_all_filters_satisfied(self):
+        from shared.feedback_filters import (
+            item_matches_custom_fields as _item_matches_custom_fields,
+        )
+        item = {'custom_fields': {'region': 'EMEA', 'tier': 'gold'}}
+        assert _item_matches_custom_fields(item, {'region': 'EMEA', 'tier': 'gold'}) is True
+
+    def test_fails_when_any_filter_unsatisfied(self):
+        from shared.feedback_filters import (
+            item_matches_custom_fields as _item_matches_custom_fields,
+        )
+        item = {'custom_fields': {'region': 'EMEA', 'tier': 'silver'}}
+        assert _item_matches_custom_fields(item, {'region': 'EMEA', 'tier': 'gold'}) is False
+
+    def test_matches_numeric_value_against_string_filter(self):
+        from shared.feedback_filters import (
+            item_matches_custom_fields as _item_matches_custom_fields,
+        )
+        # Stored 5 (number) matches requested "5" (query params are strings).
+        item = {'custom_fields': {'tier': 5}}
+        assert _item_matches_custom_fields(item, {'tier': '5'}) is True
+
+    def test_fails_when_field_missing(self):
+        from shared.feedback_filters import (
+            item_matches_custom_fields as _item_matches_custom_fields,
+        )
+        item = {'custom_fields': {'region': 'EMEA'}}
+        assert _item_matches_custom_fields(item, {'tier': 'gold'}) is False
+
+    def test_fails_when_field_value_is_none(self):
+        from shared.feedback_filters import (
+            item_matches_custom_fields as _item_matches_custom_fields,
+        )
+        item = {'custom_fields': {'region': None}}
+        assert _item_matches_custom_fields(item, {'region': 'EMEA'}) is False
+
+    def test_fails_when_item_has_no_custom_fields_map(self):
+        from shared.feedback_filters import (
+            item_matches_custom_fields as _item_matches_custom_fields,
+        )
+        assert _item_matches_custom_fields({'text': 'x'}, {'region': 'EMEA'}) is False
+        assert _item_matches_custom_fields({'custom_fields': None}, {'region': 'EMEA'}) is False
+
+    def test_matches_everything_when_no_filters(self):
+        from shared.feedback_filters import (
+            item_matches_custom_fields as _item_matches_custom_fields,
+        )
+        # No active custom filters → every item passes, even one with no map.
+        assert _item_matches_custom_fields({'text': 'x'}, {}) is True
+
+
+class TestCustomFieldFilteringEndpoints:
+    """cf_<key> filtering applied by /feedback, /feedback/urgent, /feedback/search."""
+
+    @patch('metrics_handler.feedback_table')
+    @patch('metrics_handler.aggregates_table')
+    def test_list_feedback_narrows_to_matching_custom_field(
+        self, mock_agg_table, mock_fb_table, api_gateway_event, lambda_context
+    ):
+        rows = [
+            {'pk': 'SOURCE#x', 'sk': 'FEEDBACK#1', 'date': '2025-01-01', 'custom_fields': {'region': 'EMEA'}},
+            {'pk': 'SOURCE#x', 'sk': 'FEEDBACK#2', 'date': '2025-01-01', 'custom_fields': {'region': 'APAC'}},
+            {'pk': 'SOURCE#x', 'sk': 'FEEDBACK#3', 'date': '2025-01-01', 'custom_fields': {'region': 'EMEA'}},
+        ]
+        # One day with rows, then empty for the remaining days of the window.
+        mock_fb_table.query.side_effect = [{'Items': rows}] + [{'Items': []}] * 10
+        event = api_gateway_event(
+            method='GET', path='/feedback', query_params={'cf_region': 'EMEA', 'days': '7'},
+        )
+        response = metrics_lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+        assert response['statusCode'] == 200
+        assert body['total'] == 2
+        assert all(i['custom_fields']['region'] == 'EMEA' for i in body['items'])
+
+    @patch('metrics_handler.feedback_table')
+    def test_urgent_feedback_narrows_to_matching_custom_field(
+        self, mock_fb_table, api_gateway_event, lambda_context
+    ):
+        today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        gsi_rows = [{'pk': 'SOURCE#x', 'sk': f'FEEDBACK#{i}'} for i in range(2)]
+        full = {
+            ('SOURCE#x', 'FEEDBACK#0'): {'pk': 'SOURCE#x', 'sk': 'FEEDBACK#0', 'date': today,
+                                         'custom_fields': {'region': 'EMEA'}},
+            ('SOURCE#x', 'FEEDBACK#1'): {'pk': 'SOURCE#x', 'sk': 'FEEDBACK#1', 'date': today,
+                                         'custom_fields': {'region': 'APAC'}},
+        }
+        mock_fb_table.query.return_value = {'Items': gsi_rows}
+        mock_fb_table.get_item.side_effect = lambda Key: {
+            'Item': full[(Key['pk'], Key['sk'])]
+        }
+        event = api_gateway_event(
+            method='GET', path='/feedback/urgent', query_params={'cf_region': 'EMEA'},
+        )
+        response = metrics_lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+        assert response['statusCode'] == 200
+        assert body['count'] == 1
+        assert body['items'][0]['custom_fields']['region'] == 'EMEA'
+
+    @patch('metrics_handler.feedback_table')
+    def test_search_feedback_narrows_to_matching_custom_field(
+        self, mock_fb_table, api_gateway_event, lambda_context
+    ):
+        today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        rows = [
+            {'pk': 'SOURCE#x', 'sk': 'FEEDBACK#1', 'date': today, 'original_text': 'slow checkout',
+             'custom_fields': {'region': 'EMEA'}},
+            {'pk': 'SOURCE#x', 'sk': 'FEEDBACK#2', 'date': today, 'original_text': 'slow checkout',
+             'custom_fields': {'region': 'APAC'}},
+        ]
+        mock_fb_table.query.side_effect = [{'Items': rows}] + [{'Items': []}] * 40
+        event = api_gateway_event(
+            method='GET', path='/feedback/search',
+            query_params={'q': 'checkout', 'cf_region': 'EMEA', 'days': '30'},
+        )
+        response = metrics_lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+        assert response['statusCode'] == 200
+        assert body['count'] == 1
+        assert body['items'][0]['custom_fields']['region'] == 'EMEA'
+
+
+class TestCustomFieldCandidatesEndpoint:
+    """Tests for GET /feedback/custom-field-candidates."""
+
+    @patch('metrics_handler.feedback_table')
+    def test_returns_ranked_candidates_from_sampled_records(
+        self, mock_fb_table, api_gateway_event, lambda_context
+    ):
+        # One day partition of records carrying a repeating custom field.
+        rows = [
+            {'pk': 'SOURCE#x', 'sk': f'FEEDBACK#{i}', 'custom_fields': {'region': 'EMEA' if i % 2 else 'APAC'}}
+            for i in range(6)
+        ]
+        mock_fb_table.query.return_value = {'Items': rows}
+
+        event = api_gateway_event(
+            method='GET', path='/feedback/custom-field-candidates', query_params={'days': '1'},
+        )
+        response = metrics_lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 200
+        assert body['sampled_count'] == 6
+        keys = [c['key'] for c in body['candidates']]
+        assert 'region' in keys

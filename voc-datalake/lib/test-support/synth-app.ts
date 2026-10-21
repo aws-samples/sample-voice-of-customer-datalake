@@ -308,8 +308,14 @@ export function cleanupAssemblyDirs(): void {
   }
 }
 
-/** Synthesize the app with the given extra context. Throws {@link SynthFailure}. */
-export function synthApp(context: Record<string, unknown> = {}): SynthResult {
+/**
+ * Synthesize the app with the given extra context. Throws {@link SynthFailure}.
+ *
+ * @param region the app's region. Defaults to {@link SYNTH_REGION}, which the
+ *               baseline is fingerprinted in; pass another only to observe what
+ *               does and does not follow the app out of us-east-1.
+ */
+export function synthApp(context: Record<string, unknown> = {}, region: string = SYNTH_REGION): SynthResult {
   const outdir = createAssemblyDir('voc-synth-');
   try {
     // `ts-node/register` is a documented entry point; `ts-node/dist/bin` is
@@ -329,7 +335,7 @@ export function synthApp(context: Record<string, unknown> = {}): SynthResult {
           TS_NODE_PREFER_TS_EXTS: 'true',
           CDK_OUTDIR: outdir,
           CDK_DEFAULT_ACCOUNT: SYNTH_ACCOUNT,
-          CDK_DEFAULT_REGION: SYNTH_REGION,
+          CDK_DEFAULT_REGION: region,
           CDK_CONTEXT_JSON: JSON.stringify({ ...baseContext(), ...context }),
         },
       },

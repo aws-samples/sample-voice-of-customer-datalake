@@ -81,10 +81,13 @@
     "settings": "Configuración"
   },
   "partialCountsHint": "Aproximado: no se pudo leer el periodo completo, los recuentos son un límite inferior",
+  "emptyWindowFallback": "No hay comentarios en el periodo seleccionado. Mostrando tus datos más recientes (desde {{date}}).",
   "partialWindowHint": "acota los filtros para verlos todos",
   "problemAnalysisPage": {
     "emptyHint": "Prueba a ampliar el rango de tiempo o ajustar los filtros",
-    "emptyTitle": "No se encontraron datos de análisis de problemas para el período seleccionado"
+    "emptyTitle": "No se encontraron datos de análisis de problemas para el período seleccionado",
+    "itemsLoadFailed": "No se pudieron cargar los ejemplos.",
+    "noExamples": "No se encontraron comentarios de ejemplo."
   },
   "problemResolution": {
     "allResolvedHint": "Activa \"Mostrar resueltos ({{total}})\" arriba para revisarlos",
@@ -128,5 +131,45 @@
     "endDate": "Fecha fin",
     "selectDateRange": "Seleccionar rango de fechas",
     "startDate": "Fecha inicio"
+  },
+  "feedbackFilters": {
+    "title": "Filtros",
+    "activeCount_one": "{{count}} activo",
+    "activeCount_other": "{{count}} activos",
+    "clearAll": "Borrar todo",
+    "clearGroup": "Borrar",
+    "noOptions": "Ninguno en este periodo",
+    "sources": "Fuentes",
+    "categories": "Categorías",
+    "subcategories": "Subcategorías",
+    "sentiment": "Sentimiento",
+    "urgency": "Urgencia",
+    "urgentOnly": "Solo urgentes",
+    "noMatches": "Ningún comentario coincide con estos filtros",
+    "noMatchesHint": "Amplía el rango de tiempo o quita algunos filtros.",
+    "loadFailed": "No se pudieron cargar los resultados filtrados.",
+    "retry": "Reintentar",
+    "updating": "Actualizando…"
+  },
+  "feedbackOverlay": {
+    "problem": "Problema:",
+    "rootCause": "Causa raíz:",
+    "urgent": "Urgente",
+    "close": "Cerrar",
+    "viewSource": "Ver origen",
+    "openFullDetails": "Abrir todos los detalles"
+  },
+  "enrichment": {
+    "values": {
+      "unscored": "Sin puntuar"
+    },
+    "usefulness": {
+      "label": "Utilidad",
+      "values": {
+        "high": "Alta",
+        "medium": "Media",
+        "low": "Baja"
+      }
+    }
   }
 }

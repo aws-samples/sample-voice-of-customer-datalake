@@ -34,6 +34,12 @@ export interface FeedbackItem {
   direct_customer_quote?: string
   persona_name?: string
   persona_type?: string
+  /**
+   * Validated registry enrichment values (e.g. `{ usefulness: 'high' }`), filled
+   * at the API boundary by `normalizeFeedbackItem`. A field absent here is
+   * unscored. Optional so fixtures and older call sites need not supply it.
+   */
+  enrichment?: Readonly<Record<string, string>>
 }
 
 /**
@@ -150,6 +156,22 @@ export interface CategoryBreakdown {
   /** See {@link MetricsSummary.is_partial} — same flag, same three reasons. */
   is_partial?: boolean
   categories: Record<string, number>
+}
+
+/**
+ * Response envelope for `/metrics/latest-date`.
+ *
+ * Powers the empty-window fallback: when the user's selected time range returns
+ * no data, the page asks for the newest date that DOES have feedback and
+ * re-queries at a window ending there. `latest_date` is `null` when the
+ * deployment has no feedback at all (nothing to fall back to). `date_basis`
+ * echoes the basis the date was computed under, so the caller re-queries on the
+ * same basis it filters on.
+ */
+export interface LatestDateResponse {
+  /** Newest populated date as 'YYYY-MM-DD', or null when no feedback exists. */
+  latest_date: string | null
+  date_basis: DateBasis
 }
 
 export interface SourceBreakdown {
@@ -399,6 +421,27 @@ export interface ProjectPersona {
   // Metadata
   supporting_evidence?: string[]
   source_breakdown?: Record<string, number>
+  // Source tracking. All three are absent on personas generated before it was
+  // recorded; `feedback_count` above is the model's own estimate, not a count.
+  /** The reviews this persona's evidence cites. */
+  evidence_feedback_ids?: string[]
+  /** Every review the persona's generation batch read. */
+  input_feedback_ids?: string[]
+  feedback_provenance?: PersonaFeedbackProvenance
+  /** Survives persona regeneration instead of being replaced. Absent means unprotected. */
+  protected?: boolean
+}
+
+/** How the feedback a persona was generated from was drawn from the matching set. */
+export interface PersonaFeedbackProvenance {
+  /** Reviews the generation batch actually read. */
+  items_used: number
+  /** Reviews that matched the request's filters. */
+  items_matched: number
+  /** The match count stopped at a row cap, so `items_matched` means "at least". */
+  matched_is_lower_bound: boolean
+  /** The even-sample size generation draws from the matching set. */
+  sample_limit: number
 }
 
 // 🔑 The ONE declaration of what POST /projects/{id}/document accepts in

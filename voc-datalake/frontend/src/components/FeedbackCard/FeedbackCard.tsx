@@ -16,6 +16,7 @@ import { ExternalLink, Copy, MessageCircle, Star, AlertTriangle } from 'lucide-r
 import { format, isValid, parseISO } from 'date-fns'
 import type { FeedbackItem } from '../../api/client'
 import SentimentBadge from '../SentimentBadge'
+import { EnrichmentBadges } from '../EnrichmentBadges'
 import clsx from 'clsx'
 
 // Safe date formatting helper
@@ -33,6 +34,11 @@ interface FeedbackCardProps {
   feedback: FeedbackItem
   showActions?: boolean
   compact?: boolean
+  /**
+   * Open the item in place (the detail pop-up) instead of navigating to
+   * `/feedback/:id`. When absent the card links to the detail page as before.
+   */
+  onOpen?: (feedback: FeedbackItem) => void
 }
 
 const SOURCE_ICONS: Record<string, string> = {
@@ -68,12 +74,27 @@ function RatingStars({ rating }: Readonly<{ rating: number }>) {
   )
 }
 
-function CompactCard({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
+/** A link to the detail page, or a button that opens it in place. */
+function OpenTarget({
+  feedback, onOpen, className, children,
+}: Readonly<{ feedback: FeedbackItem; onOpen?: (f: FeedbackItem) => void; className: string; children: React.ReactNode }>) {
+  if (onOpen) {
+    return (
+      <button type="button" onClick={() => onOpen(feedback)} className={clsx(className, 'text-left')}>
+        {children}
+      </button>
+    )
+  }
+  return <Link to={`/feedback/${feedback.feedback_id}`} className={className}>{children}</Link>
+}
+
+function CompactCard({ feedback, onOpen }: Readonly<{ feedback: FeedbackItem; onOpen?: (f: FeedbackItem) => void }>) {
   return (
-    <Link
-      to={`/feedback/${feedback.feedback_id}`}
+    <OpenTarget
+      feedback={feedback}
+      onOpen={onOpen}
       className={clsx(
-        'block p-3 rounded-lg border hover:bg-gray-50 transition-colors',
+        'block w-full p-3 rounded-lg border hover:bg-gray-50 transition-colors',
         feedback.urgency === 'high' && 'border-l-4 border-l-orange-500'
       )}
     >
@@ -89,10 +110,11 @@ function CompactCard({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
             >
               {formatDate(feedback.source_created_at, 'MMM d')}
             </span>
+            <EnrichmentBadges enrichment={feedback.enrichment} />
           </div>
         </div>
       </div>
-    </Link>
+    </OpenTarget>
   )
 }
 
@@ -174,6 +196,7 @@ function CardTags({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
           {feedback.persona_name}
         </span>
       )}
+      <EnrichmentBadges enrichment={feedback.enrichment} />
     </div>
   )
 }
@@ -182,9 +205,10 @@ interface CardFooterProps {
   feedback: FeedbackItem
   showActions: boolean
   onCopy: (text: string) => void
+  onOpen?: (feedback: FeedbackItem) => void
 }
 
-function CardFooter({ feedback, showActions, onCopy }: Readonly<CardFooterProps>) {
+function CardFooter({ feedback, showActions, onCopy, onOpen }: Readonly<CardFooterProps>) {
   return (
     <div className="flex items-center justify-between pt-3 border-t border-gray-100 gap-2">
       <span
@@ -197,13 +221,14 @@ function CardFooter({ feedback, showActions, onCopy }: Readonly<CardFooterProps>
 
       {showActions && (
         <div className="flex items-center gap-2 flex-shrink-0">
-          <Link
-            to={`/feedback/${feedback.feedback_id}`}
+          <OpenTarget
+            feedback={feedback}
+            onOpen={onOpen}
             className="text-blue-600 hover:text-blue-700 text-xs sm:text-sm flex items-center gap-1"
           >
             <MessageCircle size={14} />
             <span className="hidden sm:inline">Details</span>
-          </Link>
+          </OpenTarget>
           {feedback.source_url && (
             <a
               href={feedback.source_url}
@@ -227,13 +252,13 @@ function CardFooter({ feedback, showActions, onCopy }: Readonly<CardFooterProps>
   )
 }
 
-export default function FeedbackCard({ feedback, showActions = true, compact = false }: Readonly<FeedbackCardProps>) {
+export default function FeedbackCard({ feedback, showActions = true, compact = false, onOpen }: Readonly<FeedbackCardProps>) {
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
   }
 
   if (compact) {
-    return <CompactCard feedback={feedback} />
+    return <CompactCard feedback={feedback} onOpen={onOpen} />
   }
 
   return (
@@ -245,7 +270,7 @@ export default function FeedbackCard({ feedback, showActions = true, compact = f
       {feedback.rating != null && <RatingStars rating={feedback.rating} />}
       <CardContent feedback={feedback} />
       <CardTags feedback={feedback} />
-      <CardFooter feedback={feedback} showActions={showActions} onCopy={copyToClipboard} />
+      <CardFooter feedback={feedback} showActions={showActions} onCopy={copyToClipboard} onOpen={onOpen} />
     </div>
   )
 }

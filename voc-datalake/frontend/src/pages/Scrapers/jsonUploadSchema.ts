@@ -2,6 +2,7 @@
  * Zod schema and template data for JSON feedback upload.
  */
 import { z } from 'zod'
+import { SYNC_JSON_UPLOAD_MAX_BYTES } from '../../api/s3Upload'
 
 // ============================================
 // Zod Schema — matches pipeline minimum fields
@@ -165,8 +166,23 @@ export function downloadTemplate() {
   URL.revokeObjectURL(url)
 }
 
+/**
+ * Basic file-type check for the JSON upload modal.
+ *
+ * No longer caps size: a file over {@link SYNC_JSON_UPLOAD_MAX_BYTES} is still
+ * valid — the modal routes it to the async S3 path instead of parsing it in the
+ * browser (see `isLargeJsonFile`). Only the extension is enforced here.
+ */
 export function validateFileBasics(file: File): string | null {
   if (!file.name.endsWith('.json')) return 'File must be a .json file'
-  if (file.size > 5 * 1024 * 1024) return 'File must be smaller than 5MB'
   return null
+}
+
+/**
+ * True when a picked JSON file is too large for the synchronous preview + upload
+ * path and must go through the S3 async import instead. The browser never reads
+ * a large file into memory, so there is no in-browser size ceiling on this path.
+ */
+export function isLargeJsonFile(file: File): boolean {
+  return file.size > SYNC_JSON_UPLOAD_MAX_BYTES
 }

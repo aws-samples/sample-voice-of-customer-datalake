@@ -15,7 +15,7 @@ import * as cdk from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { z } from 'zod';
 import { VocCoreStack } from './core-stack';
-import { ALLOWED_MODEL_IDS, MAX_IMAGE_BYTES, MAX_IMAGE_DIMENSION_PX } from '../utils/model-allowlist';
+import { ALLOWED_FOUNDATION_MODEL_IDS, ALLOWED_MODEL_IDS, MAX_IMAGE_BYTES, MAX_IMAGE_DIMENSION_PX } from '../utils/model-allowlist';
 import {
   BEDROCK_FAILURE_RECORDING_RESERVE_SECONDS,
   pythonIntConstant,
@@ -61,7 +61,7 @@ import { SYNTH_ACCOUNT, SYNTH_REGION, cdkJsonContextStrict, committedFeatureFlag
  */
 const CDK_FEATURE_FLAGS = committedFeatureFlags();
 
-function synthCoreTemplate(context: Record<string, unknown> = {}): Template {
+function synthCoreTemplate(context: Record<string, unknown> = {}, region: string = SYNTH_REGION): Template {
   // Skip asset bundling (Docker) — template assertions only need structure.
   const app = new cdk.App({
     context: {
@@ -72,7 +72,7 @@ function synthCoreTemplate(context: Record<string, unknown> = {}): Template {
     },
   });
   const stack = new VocCoreStack(app, 'TestCoreStack', {
-    env: { account: SYNTH_ACCOUNT, region: SYNTH_REGION },
+    env: { account: SYNTH_ACCOUNT, region },
     brandName: 'TestBrand',
   });
   return Template.fromStack(stack);
@@ -1307,5 +1307,47 @@ describe('DynamoDB TTL, as the verification fixture relies on it', () => {
       + 'Update this case, docs/deployment.md and the header of '
       + 'lambda/api/verification_fixture_provider.py together.',
     ).toBeUndefined();
+  });
+});
+
+/**
+ * The model agreements moved here from the us-east-1 VocWebSearchStack, where
+ * they were created only alongside the opt-in use case form. They must now be
+ * unconditional: most of the app's Bedrock roles cannot subscribe a model on
+ * first invoke, so a deploy without them breaks enrichment in a new account.
+ */
+describe('VocCoreStack Bedrock model agreements', () => {
+  const AGREEMENT = 'AWS::CloudFormation::CustomResource';
+  const agreementProperties = (template: Template) => Object.values(template.findResources(AGREEMENT))
+    .map((resource) => resource.Properties ?? {});
+  const template = synthCoreTemplate();
+
+  it('creates one agreement per allowlisted model with no context set', () => {
+    expect(agreementProperties(template).map((p) => p.modelId).sort())
+      .toEqual([...ALLOWED_FOUNDATION_MODEL_IDS].sort());
+  });
+
+  it('creates every agreement in the stack\'s own region', () => {
+    expect(new Set(agreementProperties(template).map((p) => p.region))).toEqual(new Set([SYNTH_REGION]));
+  });
+
+  it('follows the stack to another region rather than staying in us-east-1', () => {
+    const regions = agreementProperties(synthCoreTemplate({}, 'eu-central-1')).map((p) => p.region);
+
+    expect(regions).toHaveLength(ALLOWED_FOUNDATION_MODEL_IDS.length);
+    expect(new Set(regions)).toEqual(new Set(['eu-central-1']));
+  });
+
+  it('grants the agreement role Marketplace subscribe, which first-invoke callers lack', () => {
+    template.hasResourceProperties('AWS::IAM::Policy', {
+      PolicyDocument: Match.objectLike({
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Action: Match.arrayWith(['aws-marketplace:Subscribe']),
+          }),
+        ]),
+      }),
+      Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp('^BedrockModelAgreementsModelAgreementLambda') }]),
+    });
   });
 });

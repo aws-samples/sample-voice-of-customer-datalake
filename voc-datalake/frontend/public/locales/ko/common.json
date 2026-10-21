@@ -78,10 +78,13 @@
     "settings": "설정"
   },
   "partialCountsHint": "근사치: 전체 기간을 읽을 수 없어 집계는 최소값입니다",
+  "emptyWindowFallback": "선택한 기간에 피드백이 없습니다. 대신 가장 최근 데이터를 표시합니다({{date}} 기준).",
   "partialWindowHint": "모두 보려면 필터를 좁히세요",
   "problemAnalysisPage": {
     "emptyHint": "기간을 넓히거나 필터를 조정해 보세요",
-    "emptyTitle": "선택한 기간에 대한 문제 분석 데이터가 없습니다"
+    "emptyTitle": "선택한 기간에 대한 문제 분석 데이터가 없습니다",
+    "itemsLoadFailed": "예시를 불러오지 못했습니다.",
+    "noExamples": "예시 피드백을 찾을 수 없습니다."
   },
   "problemResolution": {
     "allResolvedHint": "위의 \"해결됨 표시 ({{total}})\"를 켜면 확인할 수 있습니다",
@@ -124,5 +127,45 @@
     "endDate": "종료일",
     "selectDateRange": "기간 선택",
     "startDate": "시작일"
+  },
+  "feedbackFilters": {
+    "title": "필터",
+    "activeCount_one": "{{count}}개 적용됨",
+    "activeCount_other": "{{count}}개 적용됨",
+    "clearAll": "모두 지우기",
+    "clearGroup": "지우기",
+    "noOptions": "이 기간에 없음",
+    "sources": "소스",
+    "categories": "카테고리",
+    "subcategories": "하위 카테고리",
+    "sentiment": "감정",
+    "urgency": "긴급도",
+    "urgentOnly": "긴급만",
+    "noMatches": "필터와 일치하는 피드백이 없습니다",
+    "noMatchesHint": "기간을 넓히거나 일부 필터를 해제하세요.",
+    "loadFailed": "필터링된 결과를 불러오지 못했습니다.",
+    "retry": "다시 시도",
+    "updating": "업데이트 중…"
+  },
+  "feedbackOverlay": {
+    "problem": "문제:",
+    "rootCause": "근본 원인:",
+    "urgent": "긴급",
+    "close": "닫기",
+    "viewSource": "원본 보기",
+    "openFullDetails": "전체 상세 보기"
+  },
+  "enrichment": {
+    "values": {
+      "unscored": "미평가"
+    },
+    "usefulness": {
+      "label": "유용성",
+      "values": {
+        "high": "높음",
+        "medium": "보통",
+        "low": "낮음"
+      }
+    }
   }
 }

@@ -260,6 +260,42 @@ def get_response_language_instruction(language_code: str | None) -> str:
 MAX_PERSONA_SAMPLE_CHARS = feedback_char_budget()
 
 
+# Protected personas survive a regeneration, so the model is told about them and
+# asked for segments they do not cover — otherwise it rebuilds a near-copy of each
+# from the same feedback. Bounded: a project can protect any number, and every
+# one listed costs prompt space on both chain steps.
+MAX_EXISTING_PERSONAS_IN_PROMPT = 20
+MAX_EXISTING_PERSONA_NAME_CHARS = 80
+MAX_EXISTING_PERSONA_TAGLINE_CHARS = 160
+
+
+def _prompt_line(value, max_chars: int) -> str:
+    """User-edited text made safe for one line of a prompt: newlines collapsed,
+    and no '#', so it cannot open a markdown section — in particular the
+    '### Review ' marker the record count reads — and clipped."""
+    text = ' '.join(str(value or '').replace('#', '').split())
+    return text if len(text) <= max_chars else text[:max_chars] + '…'
+
+
+def existing_personas_section(personas: list[dict] | None) -> str:
+    """The prompt section naming personas this generation must not recreate."""
+    lines = []
+    for persona in (personas or [])[:MAX_EXISTING_PERSONAS_IN_PROMPT]:
+        name = _prompt_line(persona.get('name'), MAX_EXISTING_PERSONA_NAME_CHARS)
+        if not name:
+            continue
+        tagline = _prompt_line(persona.get('tagline'), MAX_EXISTING_PERSONA_TAGLINE_CHARS)
+        lines.append(f"- {name} — {tagline}" if tagline else f"- {name}")
+    if not lines:
+        return ''
+    return (
+        "\n\n## EXISTING PERSONAS (already in this project, and being kept):\n"
+        + '\n'.join(lines)
+        + "\n\nThe new personas must represent customer segments these do not already "
+        "cover. Do not recreate any of them, including under a different name.\n"
+    )
+
+
 def get_persona_generation_steps(
     persona_count: int,
     feedback_stats: str,
@@ -267,6 +303,7 @@ def get_persona_generation_steps(
     custom_instructions: str = '',
     response_language: str | None = None,
     sample_chars: int | None = None,
+    existing_personas: list[dict] | None = None,
 ) -> list[dict]:
     """Build persona generation chain steps.
 
@@ -280,6 +317,9 @@ def get_persona_generation_steps(
             persona_synthesis step reads. Defaults to
             MAX_PERSONA_SAMPLE_CHARS; pass the budget of the model actually
             resolved for the surface to keep the cap model-aware.
+        existing_personas: Personas the generation keeps (protected ones),
+            each with `name` and `tagline`; both steps are told to cover other
+            segments. None or empty leaves the prompts as they were.
 
     Returns:
         Chain steps ready for converse_chain. Use
@@ -300,6 +340,7 @@ def get_persona_generation_steps(
         'feedback_context': feedback_context,
         'feedback_sample': feedback_sample,
         'custom_section': custom_section,
+        'existing_section': existing_personas_section(existing_personas),
         'previous': '{previous}',  # Placeholder for chain
         'response_language': response_language,
     }

@@ -9,7 +9,7 @@
  */
 
 import {
-  Copy, Check, FileDown, MoreVertical, FileText, FileType,
+  Copy, Check, FileDown, MoreVertical, FileText, FileType, ListChecks,
 } from 'lucide-react'
 import {
   useState, useRef, useEffect,
@@ -22,7 +22,11 @@ import { generatePersonaPDF } from './pdfGenerator'
 import { personaToMarkdown } from './personaToMarkdown'
 import type { ProjectPersona } from '../../api/types'
 
-interface PersonaExportMenuProps { readonly persona: ProjectPersona | null }
+interface PersonaExportMenuProps {
+  readonly persona: ProjectPersona | null
+  /** When given, the menu opens with a "View source feedback" item that calls this. */
+  readonly onViewSourceFeedback?: () => void
+}
 
 function markdownToPlainText(markdown: string): string {
   return markdown
@@ -32,7 +36,25 @@ function markdownToPlainText(markdown: string): string {
     .replaceAll(/^>\s/gm, '')
 }
 
-export default function PersonaExportMenu({ persona }: PersonaExportMenuProps) {
+function ViewSourceFeedbackItem({ onSelect }: { readonly onSelect: () => void }) {
+  const { t } = useTranslation('components')
+  return (
+    <>
+      <button
+        onClick={onSelect}
+        className="w-full flex items-center gap-2 px-3 py-2.5 sm:py-2 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100"
+        role="menuitem"
+      >
+        <ListChecks size={16} className="flex-shrink-0" />
+        <span className="truncate">{t('personaExport.viewSourceFeedback')}</span>
+      </button>
+
+      <hr className="my-1 border-gray-100" />
+    </>
+  )
+}
+
+export default function PersonaExportMenu({ persona, onViewSourceFeedback }: PersonaExportMenuProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -98,6 +120,15 @@ export default function PersonaExportMenu({ persona }: PersonaExportMenuProps) {
         role="menu"
         aria-orientation="vertical"
       >
+        {onViewSourceFeedback ? (
+          <ViewSourceFeedbackItem
+            onSelect={() => {
+              setIsOpen(false)
+              onViewSourceFeedback()
+            }}
+          />
+        ) : null}
+
         <button
           onClick={() => void copyContent()}
           className="w-full flex items-center gap-2 px-3 py-2.5 sm:py-2 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100"

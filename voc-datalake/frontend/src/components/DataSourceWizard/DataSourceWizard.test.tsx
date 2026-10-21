@@ -276,6 +276,44 @@ describe('DataSourceWizard', () => {
       })
     })
 
+    it('selects a configured category by its stored name, not its id', async () => {
+      // Feedback stores the category NAME (`category`, gsi2pk CATEGORY#{name});
+      // an admin-added category's id is `cat_<uuid>`, so toggling the id matched
+      // no feedback at all.
+      const user = userEvent.setup()
+      const onContextChange = vi.fn()
+      mockGetCategoriesConfig.mockResolvedValue({
+        categories: [{ id: 'cat_123', name: 'billing', description: 'Billing problems' }],
+      })
+
+      render(
+        <DataSourceWizard {...defaultProps} onContextChange={onContextChange} contextConfig={{ ...defaultContextConfig, useFeedback: true }} />,
+        { wrapper: createWrapper() }
+      )
+      await user.click(screen.getByRole('button', { name: /next/i }))
+      await user.click(await screen.findByRole('button', { name: 'billing' }))
+
+      expect(onContextChange).toHaveBeenCalledWith(expect.objectContaining({ categories: ['billing'] }))
+    })
+
+    it('shows the feedback step footer only on the feedback step', async () => {
+      const user = userEvent.setup()
+
+      render(
+        <DataSourceWizard
+          {...defaultProps}
+          contextConfig={{ ...defaultContextConfig, useFeedback: true }}
+          feedbackStepFooter={<p>Live match count</p>}
+        />,
+        { wrapper: createWrapper() }
+      )
+      expect(screen.queryByText('Live match count')).not.toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: /next/i }))
+
+      expect(await screen.findByText('Live match count')).toBeInTheDocument()
+    })
+
     it('displays time range selector', async () => {
       const user = userEvent.setup()
       

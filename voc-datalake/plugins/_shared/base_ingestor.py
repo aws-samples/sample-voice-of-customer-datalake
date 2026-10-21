@@ -331,7 +331,7 @@ class BaseIngestor(ABC):
 
         s3_raw_uri = self.store_raw_to_s3(item, raw_content)
 
-        return {
+        message = {
             "id": item.get("id", ""),
             "source_platform": source_platform,
             "source_channel": item.get("channel", "unknown"),
@@ -347,6 +347,17 @@ class BaseIngestor(ABC):
             "s3_raw_uri": s3_raw_uri,
             "raw_data": item if not s3_raw_uri else None,
         }
+
+        # Forward an import's extra columns so the processor can persist them as
+        # custom_fields (the admin-pickable filters). Only a non-empty dict is
+        # carried; MessageMetadata validates it as flat primitives downstream.
+        # Omitted entirely when absent so IngestMessage's optional `metadata`
+        # stays None for the common no-metadata case.
+        metadata = item.get("metadata")
+        if isinstance(metadata, dict) and metadata:
+            message["metadata"] = metadata
+
+        return message
 
     def send_to_queue(self, items: list[dict]) -> int:
         """Send items to SQS processing queue.

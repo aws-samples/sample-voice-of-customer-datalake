@@ -11,7 +11,6 @@ import userEvent from '@testing-library/user-event'
 import { WindowCoverageNotice } from './WindowCoverageNotice'
 
 const complete = {
-  isLoadingMore: false,
   isPartial: false,
   hasFailed: false,
   loadedCount: 40,
@@ -26,12 +25,6 @@ describe('WindowCoverageNotice', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('reports progress while further pages are loading', () => {
-    render(<WindowCoverageNotice {...complete} isLoadingMore loadedCount={200} totalCount={615} />)
-
-    expect(screen.getByText('Loading feedback… 200 of 615 so far.')).toBeInTheDocument()
-  })
-
   it('says the counts undercount when the walk stopped short', () => {
     render(<WindowCoverageNotice {...complete} isPartial loadedCount={2000} totalCount={5000} />)
 
@@ -41,29 +34,10 @@ describe('WindowCoverageNotice', () => {
     ).toBeInTheDocument()
   })
 
-  it('shows progress rather than the partial caveat while still loading', () => {
-    // Both can be true at once; "still arriving" is the more useful reading,
-    // because the partial verdict is not final until the walk stops.
-    render(<WindowCoverageNotice {...complete} isLoadingMore isPartial loadedCount={100} totalCount={900} />)
-
-    expect(screen.getByText('Loading feedback… 100 of 900 so far.')).toBeInTheDocument()
-    expect(screen.queryByText(/Counts cover/)).not.toBeInTheDocument()
-  })
-
   it('announces the terminal partial state to assistive technology', () => {
     render(<WindowCoverageNotice {...complete} isPartial loadedCount={100} totalCount={900} />)
 
     expect(screen.getByRole('status')).toBeInTheDocument()
-  })
-
-  it('does not announce progress, which would fire once per page of the walk', () => {
-    // A full walk settles a dozen times; a live region would talk over
-    // everything else on the page. Only terminal states are announced.
-    render(<WindowCoverageNotice {...complete} isLoadingMore loadedCount={200} totalCount={615} />)
-
-    expect(screen.queryByRole('status')).not.toBeInTheDocument()
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    expect(screen.getByText(/Loading feedback/)).toBeInTheDocument()
   })
 
   describe('when nothing could be read', () => {
@@ -96,11 +70,10 @@ describe('WindowCoverageNotice', () => {
       // Failure outranks the rest: a partial count nobody can trust is worse
       // than saying the window is unknown.
       render(
-        <WindowCoverageNotice {...complete} hasFailed isPartial isLoadingMore loadedCount={0} totalCount={0} />
+        <WindowCoverageNotice {...complete} hasFailed isPartial loadedCount={0} totalCount={0} />
       )
 
       expect(screen.getByRole('alert')).toBeInTheDocument()
-      expect(screen.queryByText(/Loading feedback/)).not.toBeInTheDocument()
       expect(screen.queryByText(/Counts cover/)).not.toBeInTheDocument()
     })
 

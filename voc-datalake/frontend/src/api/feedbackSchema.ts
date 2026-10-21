@@ -18,6 +18,7 @@
 
 import { z } from 'zod'
 import type { FeedbackItem } from './types'
+import { pickEnrichmentValues } from './enrichmentFields'
 
 /** Coerce an unknown value to a finite number, or `0` when not numeric. */
 function toFiniteNumberOrZero(value: unknown): number {
@@ -72,12 +73,18 @@ export const FeedbackItemSchema = z.object({
   persona_type: z.string().optional(),
 })
 
-/** Normalize a single raw feedback item, coercing numeric fields. */
+/**
+ * Normalize a single raw feedback item, coercing numeric fields.
+ *
+ * Registry enrichment fields (api/enrichmentFields.ts, e.g. `usefulness`) are
+ * collected into `enrichment` rather than declared one by one, so a new field
+ * needs no schema edit here; values outside a field's enum are dropped.
+ */
 export function normalizeFeedbackItem(raw: unknown): FeedbackItem {
-  return FeedbackItemSchema.parse(raw)
+  return { ...FeedbackItemSchema.parse(raw), enrichment: pickEnrichmentValues(raw) }
 }
 
 /** Normalize a list of raw feedback items, coercing numeric fields. */
 export function normalizeFeedbackItems(items: readonly unknown[]): FeedbackItem[] {
-  return items.map((item) => FeedbackItemSchema.parse(item))
+  return items.map(normalizeFeedbackItem)
 }

@@ -7,8 +7,10 @@ import {
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { projectsApi } from '../../api/projectsApi'
+import { toFeedbackQueryParams } from '../../api/feedbackFilters'
 import { projectKey } from '../../api/projectQueryKeys'
 import { usePrototypeLinkRefresh } from '../../components/usePrototypeLinkRefresh'
+import { personaFeedbackScope } from './personaFeedbackScope'
 import type {
   PersonaToolConfig, ResearchToolConfig, DocToolConfig, MergeToolConfig, NoteItem,
 } from './types'
@@ -249,12 +251,11 @@ export function useProjectMutations({
 
   const personaMut = useMutation({
     mutationFn: () => projectsApi.generatePersonas(projectId, {
-      sources: contextConfig.sources,
-      categories: contextConfig.categories,
-      sentiments: contextConfig.sentiments,
+      // Shared with the wizard's live preview count, so the number it shows
+      // describes the set this request samples.
+      ...personaFeedbackScope(contextConfig),
       persona_count: personaConfig.personaCount,
       custom_instructions: personaConfig.customInstructions,
-      days: contextConfig.days,
       response_language: i18n.language,
     }),
     onSuccess: () => {
@@ -307,6 +308,8 @@ export function useProjectMutations({
       selected_document_ids: [...contextConfig.selectedDocumentIds, ...contextConfig.selectedResearchIds],
       response_language: i18n.language,
       use_web_search: researchConfig.useWebSearch,
+      // See personaMut: the richer shared-model dimensions, post-filtered server-side.
+      extraFilters: toFeedbackQueryParams(contextConfig.feedback),
     }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
@@ -382,6 +385,18 @@ export function usePersonaMutations({
     },
   })
 
+  // Separate from updatePersonaMut so a toggle doesn't light the notes/edit
+  // "saving" state. onSuccess returns the refetch, so the mutation stays pending
+  // until the new flag is on screen and the button never shows the old state.
+  const togglePersonaProtectedMut = useMutation({
+    mutationFn: (data: {
+      personaId: string;
+      isProtected: boolean
+    }) =>
+      projectsApi.updatePersona(projectId, data.personaId, { protected: data.isProtected }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKey(id) }),
+  })
+
   const deletePersonaMut = useMutation({
     mutationFn: (personaId: string) => projectsApi.deletePersona(projectId, personaId),
     onSuccess: () => {
@@ -413,6 +428,7 @@ export function usePersonaMutations({
 
   return {
     updatePersonaMut,
+    togglePersonaProtectedMut,
     deletePersonaMut,
     importPersonaMut,
     saveNotes,

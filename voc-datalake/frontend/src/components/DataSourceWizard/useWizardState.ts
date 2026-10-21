@@ -9,6 +9,7 @@ import type { ProjectPersona, ProjectDocument } from '../../api/client'
 import { api } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import { SOURCES as DEFAULT_SOURCES, CATEGORIES } from '../../constants/filters'
+import { useCustomFilterControls } from '../../pages/Categories/useCustomFilterControls'
 import type { ContextConfig } from './types'
 
 interface UseWizardStateProps {
@@ -106,7 +107,10 @@ export function useWizardState({
 
   const categories = useMemo(() => {
     if (categoriesData?.categories && categoriesData.categories.length > 0) {
-      return categoriesData.categories.map(c => ({ id: c.id, name: c.name }))
+      // The selection value is the category NAME: feedback stores the name (its
+      // `category` attribute and gsi2pk `CATEGORY#{name}`), while admin-added
+      // categories get ids like `cat_<uuid>`, so filtering on the id matched nothing.
+      return categoriesData.categories.map(c => ({ id: c.name, name: c.name }))
     }
     return CATEGORIES.map(c => ({ 
       id: c, 
@@ -126,6 +130,11 @@ export function useWizardState({
       // Keep default sources on error
     })
   }, [config.apiEndpoint])
+
+  // Admin-configured custom-field filters for the advanced-filters section of
+  // the feedback step; the same hook the Categories/Dashboard panels use, so
+  // the wizard shows exactly the fields the rest of the app exposes.
+  const customFilterControls = useCustomFilterControls(config.apiEndpoint)
 
   const researchDocs = useMemo(() => documents.filter(d => d.document_type === 'research'), [documents])
   const otherDocs = useMemo(() => documents.filter(d => d.document_type !== 'research'), [documents])
@@ -153,6 +162,7 @@ export function useWizardState({
     sources,
     categories,
     loadingCategories,
+    customFilterControls,
     researchDocs,
     otherDocs,
     showFeedback,

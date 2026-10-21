@@ -180,9 +180,9 @@ export async function fetchApi<T>(endpoint: string, options?: RequestInit): Prom
 function buildSearchParams(params: object): URLSearchParams {
   const searchParams = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
-    if (value != null) {
-      searchParams.set(key, String(value))
-    }
+    // A list is a repeated key (multi-select custom fields: `cf_tier=Gold&cf_tier=Platinum`).
+    const values: unknown[] = Array.isArray(value) ? value : [value]
+    for (const item of values) if (item != null) searchParams.append(key, String(item))
   }
   return searchParams
 }
@@ -647,12 +647,13 @@ export const api = {
     return fetchApi<{ files: S3ImportFile[]; bucket: string | null }>(`/s3-import/files?${searchParams}`)
   },
   
-  getS3UploadUrl: (filename: string, source: string, contentType?: string) =>
-    fetchApi<{ success: boolean; upload_url?: string; key?: string; error?: string }>('/s3-import/upload-url', {
+  // `source_field` (Phase 5) is signed into the URL as object metadata, so the
+  // browser PUT must echo it as x-amz-meta-source-field.
+  getS3UploadUrl: (filename: string, source: string, contentType?: string, sourceField?: string) =>
+    fetchApi<{ success: boolean; upload_url?: string; key?: string; error?: string; source_field?: string | null }>('/s3-import/upload-url', {
       method: 'POST',
-      body: JSON.stringify({ filename, source, content_type: contentType || 'application/octet-stream' })
+      body: JSON.stringify({ filename, source, content_type: contentType || 'application/octet-stream', ...(sourceField ? { source_field: sourceField } : {}) })
     }),
-  
   deleteS3ImportFile: (key: string) =>
     fetchApi<{ success: boolean; message?: string }>(`/s3-import/file/${encodeURIComponent(key)}`, {
       method: 'DELETE'

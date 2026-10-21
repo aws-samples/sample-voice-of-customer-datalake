@@ -777,10 +777,13 @@ class TestGetModelSettings:
         assert response['statusCode'] == 200
         model_ids = {m['id'] for m in body['available_models']}
         assert model_ids == {
+            'global.anthropic.claude-sonnet-5-5',
             'global.anthropic.claude-sonnet-5',
             'global.anthropic.claude-sonnet-4-6',
+            'global.anthropic.claude-opus-5-5',
             'global.anthropic.claude-opus-5',
             'global.anthropic.claude-opus-4-8',
+            'global.anthropic.claude-haiku-5-5',
             'global.anthropic.claude-haiku-4-5-20251001-v1:0',
         }
         surfaces = {s['key']: s for s in body['surfaces']}
@@ -964,5 +967,126 @@ class TestSaveModelSettings:
         del event['requestContext']['authorizer']['claims']['cognito:groups']
         response = lambda_handler(event, lambda_context)
 
+        assert response['statusCode'] == 403
+        mock_table.put_item.assert_not_called()
+
+
+class TestGetCustomFilters:
+    """Tests for GET /settings/custom-filters."""
+
+    @patch('settings_handler.aggregates_table')
+    def test_returns_empty_list_when_unset(self, mock_table, api_gateway_event, lambda_context):
+        mock_table.get_item.return_value = {}
+        from settings_handler import lambda_handler
+        event = api_gateway_event(method='GET', path='/settings/custom-filters')
+        body = json.loads(lambda_handler(event, lambda_context)['body'])
+        assert body['custom_filters'] == []
+
+    @patch('settings_handler.aggregates_table')
+    def test_returns_stored_filters(self, mock_table, api_gateway_event, lambda_context):
+        mock_table.get_item.return_value = {
+            'Item': {
+                'pk': 'SETTINGS#custom_filters', 'sk': 'config',
+                'custom_filters': [{'key': 'region', 'label': 'Region'}],
+                'updated_at': '2026-01-01T00:00:00Z',
+            }
+        }
+        from settings_handler import lambda_handler
+        event = api_gateway_event(method='GET', path='/settings/custom-filters')
+        body = json.loads(lambda_handler(event, lambda_context)['body'])
+        assert body['custom_filters'] == [{'key': 'region', 'label': 'Region'}]
+
+    @patch('settings_handler.aggregates_table')
+    def test_non_admin_can_read(self, mock_table, api_gateway_event, lambda_context):
+        """The filter UI is for everyone — only CHOOSING filters is admin-gated."""
+        mock_table.get_item.return_value = {}
+        from settings_handler import lambda_handler
+        event = api_gateway_event(method='GET', path='/settings/custom-filters')
+        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'users'
+        response = lambda_handler(event, lambda_context)
+        assert response['statusCode'] == 200
+
+
+class TestSaveCustomFilters:
+    """Tests for PUT /settings/custom-filters (admin-gated)."""
+
+    @patch('settings_handler.aggregates_table')
+    def test_saves_valid_filters(self, mock_table, api_gateway_event, lambda_context):
+        from settings_handler import lambda_handler
+        event = api_gateway_event(
+            method='PUT', path='/settings/custom-filters',
+            body={'custom_filters': [
+                {'key': 'region', 'label': 'Region'},
+                {'key': 'plan'},
+            ]},
+        )
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+        assert response['statusCode'] == 200
+        item = mock_table.put_item.call_args.kwargs['Item']
+        assert item['pk'] == 'SETTINGS#custom_filters'
+        # Label defaults to the key when omitted.
+        assert item['custom_filters'] == [
+            {'key': 'region', 'label': 'Region'},
+            {'key': 'plan', 'label': 'plan'},
+        ]
+        assert body['success'] is True
+
+    @patch('settings_handler.aggregates_table')
+    def test_rejects_more_than_the_cap(self, mock_table, api_gateway_event, lambda_context):
+        from settings_handler import lambda_handler, MAX_CUSTOM_FILTERS
+        event = api_gateway_event(
+            method='PUT', path='/settings/custom-filters',
+            body={'custom_filters': [{'key': f'k{i}'} for i in range(MAX_CUSTOM_FILTERS + 1)]},
+        )
+        response = lambda_handler(event, lambda_context)
+        assert response['statusCode'] == 400
+        mock_table.put_item.assert_not_called()
+
+    @patch('settings_handler.aggregates_table')
+    def test_rejects_entry_without_a_key(self, mock_table, api_gateway_event, lambda_context):
+        from settings_handler import lambda_handler
+        event = api_gateway_event(
+            method='PUT', path='/settings/custom-filters',
+            body={'custom_filters': [{'label': 'No key here'}]},
+        )
+        response = lambda_handler(event, lambda_context)
+        assert response['statusCode'] == 400
+        mock_table.put_item.assert_not_called()
+
+    @patch('settings_handler.aggregates_table')
+    def test_deduplicates_by_key_first_wins(self, mock_table, api_gateway_event, lambda_context):
+        from settings_handler import lambda_handler
+        event = api_gateway_event(
+            method='PUT', path='/settings/custom-filters',
+            body={'custom_filters': [
+                {'key': 'region', 'label': 'First'},
+                {'key': 'region', 'label': 'Second'},
+            ]},
+        )
+        response = lambda_handler(event, lambda_context)
+        item = mock_table.put_item.call_args.kwargs['Item']
+        assert item['custom_filters'] == [{'key': 'region', 'label': 'First'}]
+
+    @patch('settings_handler.aggregates_table')
+    def test_clearing_to_empty_is_allowed(self, mock_table, api_gateway_event, lambda_context):
+        from settings_handler import lambda_handler
+        event = api_gateway_event(
+            method='PUT', path='/settings/custom-filters', body={'custom_filters': []},
+        )
+        response = lambda_handler(event, lambda_context)
+        assert response['statusCode'] == 200
+        item = mock_table.put_item.call_args.kwargs['Item']
+        assert item['custom_filters'] == []
+
+    @patch('settings_handler.aggregates_table')
+    def test_non_admin_put_is_403(self, mock_table, api_gateway_event, lambda_context):
+        from settings_handler import lambda_handler
+        event = api_gateway_event(
+            method='PUT', path='/settings/custom-filters',
+            body={'custom_filters': [{'key': 'region'}]},
+        )
+        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'users'
+        response = lambda_handler(event, lambda_context)
         assert response['statusCode'] == 403
         mock_table.put_item.assert_not_called()

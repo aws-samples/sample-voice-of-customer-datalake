@@ -9,6 +9,7 @@ import {
 } from '../api/streamClient'
 import { isRecord } from '../lib/typeGuards'
 import type { StreamEvent } from '../api/streamClient'
+import type { FilterParamValue } from '../api/feedbackFilters'
 import type { FeedbackItem, WebSource } from '../api/types'
 
 interface ChatOptions {
@@ -19,6 +20,10 @@ interface ChatOptions {
   selectedDocuments?: string[]
   responseLanguage?: string
   useWebSearch?: boolean
+  /** Structured feedback filters for the VoC chat path (see VocChatOptions). */
+  filters?: Readonly<Record<string, FilterParamValue>>
+  /** Most reviews the backend feeds the model (MAX_CHAT_FEEDBACK_ITEMS). */
+  limit?: number
   attachments?: Array<{
     name: string;
     media_type: string;
@@ -295,6 +300,8 @@ function createStream(message: string, options: ChatOptions | undefined, signal:
     days: options?.days,
     responseLanguage: options?.responseLanguage,
     useWebSearch: options?.useWebSearch,
+    filters: options?.filters,
+    limit: options?.limit,
     history: options?.history,
     signal,
   })

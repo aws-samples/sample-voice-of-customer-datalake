@@ -25,6 +25,7 @@ import { converseStream } from './bedrock/converse-stream.js';
 import { resolveModelOverride } from './bedrock/model-override.js';
 import { processStreamEvent, createStreamState, type ToolUseBlock } from './bedrock/stream-processor.js';
 import { executeTool } from './tools/executor.js';
+import type { ContextFilters } from './tools/search-feedback.js';
 import { getSearchFeedbackTool, getUpdateDocumentTool, getCreateDocumentTool, getCreateProjectTool, getWebSearchTool } from './tools/index.js';
 import { isWebSearchConfigured } from './tools/web-search.js';
 import type { WebSource } from './tools/web-search.js';
@@ -57,18 +58,6 @@ const MAX_TOOL_LOOPS = 15;
 // Roundtable tuning: one turn per persona, generous budget for a full perspective.
 const ROUNDTABLE_MAX_TOKENS = 4000;
 const ROUNDTABLE_THINKING_BUDGET = 2000;
-
-
-// ── Types ──
-
-interface ContextFilters {
-  source?: string;
-  category?: string;
-  sentiment?: string;
-  days?: number;
-  /** 'imported' (default) or 'review' — which date the days window uses. */
-  dateBasis?: 'imported' | 'review';
-}
 
 // ── Tool execution helpers ──
 
@@ -216,6 +205,7 @@ async function handleVocChat(body: ChatRequest, stream: NodeJS.WritableStream): 
   const ctx = await buildVocChatContext(docClient, AGGREGATES_TABLE, {
     message: body.message,
     context: body.context,
+    filters: body.filters,
     days: body.days,
     date_basis: body.date_basis,
     response_language: body.response_language,

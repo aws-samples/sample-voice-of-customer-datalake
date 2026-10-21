@@ -60,6 +60,18 @@
     "loadingCategories": "Kategorien werden geladen...",
     "next": "Weiter",
     "noDataSourcesSelected": "Keine Datenquellen ausgewählt",
+    "personaPreview": {
+      "counting": "Passende Bewertungen werden gezählt…",
+      "error": "Passende Bewertungen konnten nicht gezählt werden.",
+      "matchesAtLeast": "{{matched}}+ Bewertungen entsprechen diesen Filtern",
+      "matchesEstimated": "Etwa {{matched, number}} Bewertungen entsprechen diesen Filtern",
+      "confirming": "Genaue Anzahl wird bestätigt…",
+      "matches_one": "{{count}} Bewertung entspricht diesen Filtern",
+      "matches_other": "{{count}} Bewertungen entsprechen diesen Filtern",
+      "noMatches": "Keine Bewertung entspricht diesen Filtern – die Persona-Generierung wird fehlschlagen.",
+      "sampled": "Personas nutzen eine gleichmäßige Stichprobe von {{limit}} davon.",
+      "usesAll": "Personas nutzen alle davon."
+    },
     "personas": "Zielgruppen",
     "personasCount": "Zielgruppen ({{count}})",
     "personasCount_one": "Persona ({{count}})",
@@ -124,7 +136,8 @@
     "downloadMarkdown": "Als Markdown herunterladen",
     "downloadPDF": "Als PDF herunterladen",
     "downloadTXT": "Als TXT herunterladen",
-    "exportPersona": "Persona exportieren"
+    "exportPersona": "Persona exportieren",
+    "viewSourceFeedback": "Quell-Feedback anzeigen"
   },
   "prototypeLink": {
     "downloadHtml": ".html herunterladen",

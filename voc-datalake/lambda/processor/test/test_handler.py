@@ -944,3 +944,106 @@ class TestRecordHandler:
         assert result['status'] == 'skipped'
         assert result['reason'] == 'duplicate'
         mock_write.assert_not_called()
+
+
+class TestBuildCustomFields:
+    """Tests for _build_custom_fields() — the import-metadata sanitizer."""
+
+    def test_returns_none_for_absent_or_empty_metadata(self):
+        from processor.handler import _build_custom_fields
+        assert _build_custom_fields(None) is None
+        assert _build_custom_fields({}) is None
+        assert _build_custom_fields('not a dict') is None
+
+    def test_keeps_primitive_values(self):
+        from processor.handler import _build_custom_fields
+        result = _build_custom_fields({
+            'region': 'EMEA', 'plan': 'enterprise', 'seats': 50, 'is_trial': False, 'notes': None,
+        })
+        assert result == {
+            'region': 'EMEA', 'plan': 'enterprise', 'seats': 50, 'is_trial': False, 'notes': None,
+        }
+
+    def test_converts_floats_to_decimal(self):
+        from decimal import Decimal
+        from processor.handler import _build_custom_fields
+        result = _build_custom_fields({'nps': 8.5})
+        assert result == {'nps': Decimal('8.5')}
+        assert isinstance(result['nps'], Decimal)
+
+    def test_skips_nested_values_rather_than_failing(self):
+        from processor.handler import _build_custom_fields
+        # A nested object/array must not reach DynamoDB and must not cost the
+        # record — the primitive siblings survive, the nested value is dropped.
+        result = _build_custom_fields({'region': 'EMEA', 'tags': ['a', 'b'], 'extra': {'x': 1}})
+        assert result == {'region': 'EMEA'}
+
+    def test_truncates_over_long_string_values(self):
+        from processor.handler import _build_custom_fields, MAX_CUSTOM_FIELD_VALUE_LENGTH
+        result = _build_custom_fields({'blob': 'x' * (MAX_CUSTOM_FIELD_VALUE_LENGTH + 500)})
+        assert len(result['blob']) == MAX_CUSTOM_FIELD_VALUE_LENGTH
+
+    def test_caps_number_of_keys(self):
+        from processor.handler import _build_custom_fields, MAX_CUSTOM_FIELD_KEYS
+        oversized = {f'k{i}': i for i in range(MAX_CUSTOM_FIELD_KEYS + 10)}
+        result = _build_custom_fields(oversized)
+        assert len(result) == MAX_CUSTOM_FIELD_KEYS
+
+    def test_skips_over_long_keys(self):
+        from processor.handler import _build_custom_fields, MAX_CUSTOM_FIELD_KEY_LENGTH
+        result = _build_custom_fields({'x' * (MAX_CUSTOM_FIELD_KEY_LENGTH + 1): 'v', 'ok': 'keep'})
+        assert result == {'ok': 'keep'}
+
+
+class TestProcessFeedbackCustomFields:
+    """process_feedback() must persist import metadata as custom_fields (#P2)."""
+
+    @patch('processor.handler.invoke_bedrock_llm')
+    @patch('processor.handler.get_comprehend_sentiment')
+    @patch('processor.handler.translate_text')
+    @patch('processor.handler.detect_language')
+    @patch('processor.handler.check_duplicate')
+    def test_persists_custom_fields_when_metadata_sent(
+        self, mock_check_dup, mock_detect, mock_translate, mock_sentiment, mock_llm,
+        sample_sqs_record, sample_llm_insights
+    ):
+        """Extra import fields survive to the stored item under custom_fields —
+        the gap this phase closed (the processor used to drop metadata)."""
+        from processor.handler import process_feedback
+
+        mock_check_dup.return_value = False
+        mock_detect.return_value = 'en'
+        mock_translate.return_value = sample_sqs_record['text']
+        mock_sentiment.return_value = {'label': 'positive', 'score': 0.8}
+        mock_llm.return_value = {'insights': sample_llm_insights, 'metadata': {}}
+
+        sample_sqs_record['metadata'] = {'region': 'EMEA', 'plan': 'enterprise'}
+
+        result = process_feedback(sample_sqs_record)
+
+        assert result['custom_fields'] == {'region': 'EMEA', 'plan': 'enterprise'}
+
+    @patch('processor.handler.invoke_bedrock_llm')
+    @patch('processor.handler.get_comprehend_sentiment')
+    @patch('processor.handler.translate_text')
+    @patch('processor.handler.detect_language')
+    @patch('processor.handler.check_duplicate')
+    def test_omits_custom_fields_when_no_metadata(
+        self, mock_check_dup, mock_detect, mock_translate, mock_sentiment, mock_llm,
+        sample_sqs_record, sample_llm_insights
+    ):
+        """Records with no extra fields must not gain an empty custom_fields
+        attribute (None-stripping keeps the item shape unchanged)."""
+        from processor.handler import process_feedback
+
+        mock_check_dup.return_value = False
+        mock_detect.return_value = 'en'
+        mock_translate.return_value = sample_sqs_record['text']
+        mock_sentiment.return_value = {'label': 'positive', 'score': 0.8}
+        mock_llm.return_value = {'insights': sample_llm_insights, 'metadata': {}}
+
+        assert 'metadata' not in sample_sqs_record
+
+        result = process_feedback(sample_sqs_record)
+
+        assert 'custom_fields' not in result

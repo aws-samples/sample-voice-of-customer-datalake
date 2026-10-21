@@ -119,7 +119,18 @@
     "preview_one": "プレビュー — {{count}}個のアイテム{{plural}}",
     "preview_other": "プレビュー — {{count}}個のアイテム{{plural}}",
     "templateNote": "テンプレートファイルには完全な手順とLLM対応のドキュメントが含まれています。",
-    "title": "JSONアップロード"
+    "title": "JSONアップロード",
+    "largeFileDetected": "大きなファイル（{{size}} MB）— ここでプレビューせず、アップロードしてバックグラウンドで処理します。",
+    "largeUploadStarted": "大きなファイルをアップロードしました — バックグラウンドで処理中",
+    "largeUploadNote": "ファイルをインポートして拡充しています。完了した行から順にフィードバックページに表示されます。大きなファイルでは数分かかることがあります。",
+    "sourceLabel": "ソース",
+    "sourcePlaceholder": "例: trustpilot、zendesk",
+    "sourceHint": "このバッチの出所を示します。独自のソースフィールドを持つ行はこれを上書きします。",
+    "sourceFieldLabel": "行ごとのソースフィールド",
+    "sourceFieldNone": "なし — すべての行に上記のソースを使用",
+    "sourceFieldHint": "任意。各行のソースを決める列を選びます。1つのファイルに複数のソースが含まれる場合に便利です。",
+    "uploading": "アップロード中…",
+    "uploadLargeFile": "アップロードして処理"
   },
   "manualImport": {
     "addReviewManually": "手動でレビューを追加",

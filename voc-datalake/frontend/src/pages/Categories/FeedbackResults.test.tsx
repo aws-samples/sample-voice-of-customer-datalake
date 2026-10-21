@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { FeedbackResults } from './FeedbackResults'
 import type { FeedbackItem } from '../../api/client'
-import type { RatingFilter, SentimentFilter, ViewMode } from './types'
+import type { ComponentProps } from 'react'
 
 const mockFeedback: FeedbackItem[] = [
   {
@@ -55,15 +55,15 @@ const mockFeedback: FeedbackItem[] = [
   },
 ]
 
-const defaultProps = {
+const defaultProps: ComponentProps<typeof FeedbackResults> = {
   filteredFeedback: mockFeedback,
   feedbackLoading: false,
-  viewMode: 'grid' as ViewMode,
+  viewMode: 'grid',
   onViewModeChange: vi.fn(),
-  selectedSource: null as string | null,
+  selectedSources: [],
   selectedCategories: ['delivery'],
-  sentimentFilter: 'all' as SentimentFilter,
-  ratingFilter: { value: 0, direction: 'up' } as RatingFilter,
+  selectedSentiments: [],
+  ratingFilter: { value: 0, direction: 'up' },
   onExport: vi.fn(),
   totalCount: 2,
   isPartialWindow: false,
@@ -88,14 +88,16 @@ describe('FeedbackResults', () => {
       expect(screen.getByText(/delivery, pricing/)).toBeInTheDocument()
     })
 
-    it('shows selected source in subtitle', () => {
-      renderWithRouter(<FeedbackResults {...defaultProps} selectedSource="webscraper" />)
-      expect(screen.getByText(/Source: webscraper/)).toBeInTheDocument()
+    it('shows every selected source in subtitle', () => {
+      renderWithRouter(<FeedbackResults {...defaultProps} selectedSources={['webscraper', 'manual_import']} />)
+      expect(screen.getByText(/Source: webscraper, manual_import/)).toBeInTheDocument()
     })
 
-    it('shows the localized sentiment filter in the subtitle', () => {
-      renderWithRouter(<FeedbackResults {...defaultProps} sentimentFilter="positive" filteredFeedback={[]} />)
-      expect(screen.getByText(/• Positive/)).toBeInTheDocument()
+    it('shows the localized sentiment filters in the subtitle', () => {
+      renderWithRouter(
+        <FeedbackResults {...defaultProps} selectedSentiments={['positive', 'negative']} filteredFeedback={[]} />
+      )
+      expect(screen.getByText(/• Positive, Negative/)).toBeInTheDocument()
     })
 
     it('shows the & up rating filter in the subtitle', () => {
@@ -240,6 +242,21 @@ describe('FeedbackResults', () => {
     it('renders in list layout when viewMode is list', () => {
       const { container } = renderWithRouter(<FeedbackResults {...defaultProps} viewMode="list" />)
       expect(container.querySelector('.space-y-2')).toBeInTheDocument()
+    })
+
+    it('hands the clicked item to onOpenFeedback instead of navigating', async () => {
+      const user = userEvent.setup()
+      const onOpenFeedback = vi.fn()
+      renderWithRouter(<FeedbackResults {...defaultProps} viewMode="list" onOpenFeedback={onOpenFeedback} />)
+
+      await user.click(screen.getByRole('button', { name: /slow support response/i }))
+      expect(onOpenFeedback).toHaveBeenCalledWith(mockFeedback[1])
+      expect(screen.queryByRole('link', { name: /slow support response/i })).not.toBeInTheDocument()
+    })
+
+    it('links to the detail page when no onOpenFeedback is given', () => {
+      renderWithRouter(<FeedbackResults {...defaultProps} viewMode="list" />)
+      expect(screen.getByRole('link', { name: /slow support response/i })).toHaveAttribute('href', '/feedback/2')
     })
   })
 })

@@ -31,10 +31,13 @@ function toFoundationModelId(inferenceProfileId: string): string {
  * passes to Bedrock as `modelId`, and what the picker stores/validates.
  */
 export const ALLOWED_MODEL_IDS: readonly string[] = [
+  'global.anthropic.claude-sonnet-5-5',
   'global.anthropic.claude-sonnet-5',
   'global.anthropic.claude-sonnet-4-6',
+  'global.anthropic.claude-opus-5-5',
   'global.anthropic.claude-opus-5',
   'global.anthropic.claude-opus-4-8',
+  'global.anthropic.claude-haiku-5-5',
   'global.anthropic.claude-haiku-4-5-20251001-v1:0',
 ];
 

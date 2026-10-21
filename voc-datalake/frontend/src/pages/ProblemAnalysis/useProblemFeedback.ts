@@ -1,165 +1,144 @@
 /**
- * @fileoverview Windowed feedback for the Problem Analysis page.
+ * @fileoverview Server-aggregated problem tree for the Problem Analysis page.
  *
  * Problem Analysis is an aggregation view: every stat card and every level of
- * the category → subcategory → problem tree is derived from the *whole* set of
- * feedback in the window, not from a page of it. It used to ask `/feedback` for
- * `limit: 500` in a single request — but that endpoint clamps `limit` to 100
- * without complaining, so the entire page was computed from the first 100 rows
- * and presented as if complete (U5b).
+ * the category → subcategory → problem tree is derived from the WHOLE window of
+ * feedback, not a page of it. It used to page `/feedback` client-side (capped at
+ * ~2000 rows by MAX_AUTO_PAGES, and hard-walled at the server's 5000-row offset
+ * ceiling), computing the tree in the browser — so a large corpus silently
+ * truncated.
  *
- * Asking for a bigger `limit` cannot fix that; the cap is server-side. So this
- * hook pages through the window instead, advancing automatically rather than
- * behind a "Load more" button, because the totals are wrong until the window is
- * read. Results render progressively as pages land, so the page stays usable
- * while it fills.
- *
- * Two independent stops keep that from running away: `nextPageOffset` refuses a
- * zero-length page, and `MAX_AUTO_PAGES` bounds the walk outright. When either
- * stop (or the server's own `is_partial_window`) leaves rows unread, `isPartial`
- * says so, so a truncated view is visibly truncated instead of silently wrong.
- *
- * The real cure is server-side aggregation, so one request answers "how many
- * problems per category" without shipping every row to the browser. That is
- * U5a's territory; this hook makes the current design honest.
+ * Now the server does the O(rows) pass (`GET /feedback/problems`, up to a 50k
+ * scan cap) and returns FINEST-GRAIN problem leaves — rows bucketed by exact
+ * (category, subcategory, problem_summary) with each leaf's keyword set. This
+ * hook merges those leaves to the similarity-slider threshold IN THE BROWSER,
+ * over the few hundred distinct problems rather than the raw rows, so the slider
+ * stays instant and the full window is covered. Individual feedback items are
+ * fetched on demand when a problem is expanded (see ProblemRow drill-down).
  *
  * @module pages/ProblemAnalysis/useProblemFeedback
  */
 
-import { useCallback, useEffect, useMemo } from 'react'
-import { useInfiniteQuery } from '@tanstack/react-query'
-import { api } from '../../api/client'
-import type { DateRangeParams, FeedbackItem } from '../../api/client'
-import { FEEDBACK_PAGE_LIMIT, nextPageOffset } from '../../api/feedbackPagination'
-import type { FeedbackPage } from '../../api/feedbackPagination'
+import { useMemo } from 'react'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import type { DateRangeParams } from '../../api/client'
+import { EMPTY_FEEDBACK_FILTERS, filtersKey } from '../../api/feedbackFilters'
+import type { FeedbackFilterState } from '../../api/feedbackFilters'
+import { getProblems } from '../../api/problemsApi'
+import type { ProblemLeaf } from '../../api/problemsApi'
+import { mergeLeaves } from './problemClustering'
+import type { CategoryGroup, ProblemGroup, SubcategoryGroup } from './problemResolution'
 
 /**
- * Ceiling on pages fetched automatically — 20 pages of
- * {@link FEEDBACK_PAGE_LIMIT} rows.
- *
- * A bound is required, not defensive: `/feedback` will paginate to
- * `MAX_FEEDBACK_OFFSET` (5000) rows, and walking that on mount would be 50
- * sequential requests. Past this point the view reports itself partial rather
- * than keeping the user waiting.
- */
-export const MAX_AUTO_PAGES = 20
-
-/**
- * How long a loaded window counts as fresh — longer than the app-wide 30s
- * default because re-walking costs one request per 100 rows.
+ * How long a loaded window counts as fresh — the window is an explicit control
+ * (the time-range picker), so hold it settled rather than refetching on focus.
  */
 export const WINDOW_STALE_MS = 5 * 60 * 1000
 
-export interface ProblemFeedback {
-  /** Every row loaded so far, across pages. */
-  items: FeedbackItem[]
-  /** First page in flight — nothing to show yet. */
+export interface ProblemTree {
+  /** The full category→subcategory→problem tree, merged at `similarityThreshold`. */
+  categories: CategoryGroup[]
+  /** First load in flight — nothing to show yet. */
   isLoading: boolean
-  /** A later page is in flight; `items` is usable but still growing. */
-  isLoadingMore: boolean
+  /** Rows the server read into the aggregate (feedback_count). */
   loadedCount: number
-  /** Candidate-window size. A lower bound while pages are still being read. */
+  /** Same as loadedCount — the server reports exactly what it aggregated. */
   totalCount: number
-  /** True when rows in the window were left unread, so counts undercount. */
+  /** True when the window exceeded the server's scan cap, so counts undercount. */
   isPartial: boolean
-  /**
-   * A request failed. With `items` empty this means **nothing** was read, which
-   * must not be rendered as a window that legitimately contains nothing —
-   * callers show an error rather than zeroed aggregates.
-   */
+  /** A request failed; with no data this means nothing was read. */
   isError: boolean
-  /** Re-reads the window from the first page. */
+  /** The tree shown belongs to an earlier window/selection while the current one loads. */
+  isUpdating: boolean
+  /** Re-fetch the window. */
   retry: () => void
 }
 
+/**
+ * Build the tree for one date window at one similarity threshold.
+ *
+ * The fetch is keyed on the window ONLY — the threshold is applied in the
+ * `useMemo` merge, so moving the slider re-merges the already-fetched leaves
+ * without a network round trip.
+ */
 export function useProblemFeedback(
   dateParams: DateRangeParams,
-  apiEndpoint: string
-): ProblemFeedback {
-  const query = useInfiniteQuery({
-    queryKey: ['feedback-problems', dateParams],
-    queryFn: ({ pageParam }) =>
-      api.getFeedback({ ...dateParams, limit: FEEDBACK_PAGE_LIMIT, offset: pageParam }),
-    initialPageParam: 0,
-    getNextPageParam: nextPageOffset,
+  apiEndpoint: string,
+  similarityThreshold: number,
+  filters: FeedbackFilterState = EMPTY_FEEDBACK_FILTERS,
+): ProblemTree {
+  const query = useQuery({
+    // Keyed on window AND filters — both change the aggregated leaves (the
+    // server applies every filter before bucketing). Threshold is NOT in the
+    // key: it is applied in the merge below, so the slider re-merges the cached
+    // leaves without a round trip.
+    queryKey: ['feedback-problems', dateParams, filtersKey(filters)],
+    queryFn: () => getProblems(dateParams, filters),
     enabled: !!apiEndpoint,
-    // A walk is one request per 100 rows, and TanStack refetches EVERY page of
-    // an infinite query — so the app-wide 30s `staleTime` plus the default
-    // refetch-on-focus would re-issue the whole walk each time the tab regains
-    // focus. Hold the window settled instead; the time range is an explicit
-    // control, so the user says when to look again.
     staleTime: WINDOW_STALE_MS,
     refetchOnWindowFocus: false,
-    // Deliberately NOT `maxPages`: it evicts pages from the cache, and every
-    // count on this screen is an aggregate over all of them.
+    // A filter change keeps the previous tree on screen (dimmed by the page)
+    // until the new aggregate lands, instead of dropping back to "loading".
+    placeholderData: keepPreviousData,
   })
 
-  const { data, hasNextPage, isFetchingNextPage, isError, fetchNextPage, refetch } = query
-  const pageCount = data?.pages.length ?? 0
-  const budgetSpent = pageCount >= MAX_AUTO_PAGES
-
-  // `isError` is load-bearing: without it a persistently failing page would
-  // settle with `hasNextPage` still true, re-arming this effect forever.
-  const shouldAdvance = hasNextPage && !budgetSpent && !isError
-
-  // `pageCount` is the ratchet, not an incidental dependency. Once a page
-  // settles, `shouldAdvance` is true and `isFetchingNextPage` is false again —
-  // exactly the values they held when the previous page settled — so without a
-  // per-page dependency the array is unchanged, the effect never re-runs, and
-  // the walk stalls after a single extra page. Pinned by "pages until every row
-  // in the window is loaded".
-  useEffect(() => {
-    if (shouldAdvance && !isFetchingNextPage) {
-      void fetchNextPage()
-    }
-  }, [shouldAdvance, isFetchingNextPage, pageCount, fetchNextPage])
-
-  // Keyed on `data` rather than a derived array: TanStack keeps `data` stable
-  // between settles, so this recomputes per page rather than per render.
-  const items = useMemo(() => collectItems(data?.pages), [data])
-
-  // Stable identity so a memoized consumer isn't re-rendered by the handler.
-  const retry = useCallback(() => {
-    void refetch()
-  }, [refetch])
-
-  // The walk stopped early with rows still unread: the budget ran out, or a
-  // page failed. A failed page has to count here too — otherwise a mid-walk
-  // error reproduces the very defect this hook exists to fix, presenting short
-  // counts as complete ones.
-  const stoppedEarly = hasNextPage && (budgetSpent || isError)
+  const leaves = query.data?.problems
+  const categories = useMemo(
+    () => buildTree(leaves ?? [], similarityThreshold),
+    [leaves, similarityThreshold],
+  )
 
   return {
-    items,
+    categories,
     isLoading: query.isLoading,
-    isLoadingMore: isFetchingNextPage,
-    loadedCount: items.length,
-    isError,
-    retry,
-    ...summarizeCoverage(data?.pages, items.length, stoppedEarly),
+    loadedCount: query.data?.feedback_count ?? 0,
+    totalCount: query.data?.feedback_count ?? 0,
+    isPartial: query.data?.is_partial ?? false,
+    isError: query.isError,
+    isUpdating: query.isPlaceholderData,
+    retry: () => void query.refetch(),
   }
 }
 
-/** Every row loaded so far, flattened across pages. */
-function collectItems(pages: readonly FeedbackPage[] | undefined): FeedbackItem[] {
-  return (pages ?? []).flatMap((page) => page.items ?? [])
-}
-
-/**
- * How much of the window the loaded rows actually cover.
- *
- * `totalCount` floors at `loadedCount` because without a post-query filter the
- * server sizes its candidate window from `offset+limit`, so its `total` is a
- * lower bound that can trail the rows already in hand.
- */
-function summarizeCoverage(
-  pages: readonly FeedbackPage[] | undefined,
-  loadedCount: number,
-  stoppedEarly: boolean
-): { totalCount: number; isPartial: boolean } {
-  const lastPage = pages?.at(-1)
-  return {
-    totalCount: Math.max(lastPage?.total ?? loadedCount, loadedCount),
-    isPartial: stoppedEarly || (lastPage?.is_partial_window ?? false),
+/** Group leaves by category → subcategory, merge each bucket at the threshold. */
+function buildTree(leaves: ProblemLeaf[], threshold: number): CategoryGroup[] {
+  // category -> subcategory -> leaves
+  const byCategory = new Map<string, Map<string, ProblemLeaf[]>>()
+  for (const leaf of leaves) {
+    const subMap = byCategory.get(leaf.category) ?? new Map<string, ProblemLeaf[]>()
+    byCategory.set(leaf.category, subMap)
+    const bucket = subMap.get(leaf.subcategory) ?? []
+    bucket.push(leaf)
+    subMap.set(leaf.subcategory, bucket)
   }
+
+  const categories: CategoryGroup[] = []
+  for (const [category, subMap] of byCategory) {
+    const subcategories: SubcategoryGroup[] = []
+    for (const [subcategory, bucket] of subMap) {
+      const problems: ProblemGroup[] = mergeLeaves(bucket, threshold).map((merged) => ({
+        problem: merged.problem,
+        similarProblems: merged.similarProblems,
+        rootCause: merged.rootCause,
+        itemCount: merged.count,
+        avgSentiment: merged.avgSentiment,
+        urgentCount: merged.urgentCount,
+      }))
+      subcategories.push({
+        subcategory,
+        problems,
+        totalItems: problems.reduce((sum, p) => sum + p.itemCount, 0),
+        urgentCount: problems.reduce((sum, p) => sum + p.urgentCount, 0),
+      })
+    }
+    subcategories.sort((a, b) => b.totalItems - a.totalItems)
+    categories.push({
+      category,
+      subcategories,
+      totalItems: subcategories.reduce((sum, s) => sum + s.totalItems, 0),
+      urgentCount: subcategories.reduce((sum, s) => sum + s.urgentCount, 0),
+    })
+  }
+  categories.sort((a, b) => b.totalItems - a.totalItems)
+  return categories
 }

@@ -2,6 +2,7 @@
 Tests for s3_import_handler.py - S3 import bucket file explorer.
 """
 import json
+import pytest
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone
 
@@ -260,6 +261,116 @@ class TestGetUploadUrlEndpoint:
         assert response['statusCode'] == 400
         assert 'error' in body
         assert 'supported' in body['error'].lower()
+
+    @patch('s3_import_handler.s3_client')
+    @patch('s3_import_handler.S3_IMPORT_BUCKET', 'test-bucket')
+    def test_signs_source_field_as_object_metadata(self, mock_s3, api_gateway_event, lambda_context):
+        """A source_field is baked into the presigned URL's Metadata and echoed."""
+        mock_s3.generate_presigned_url.return_value = 'https://s3.example.com/presigned'
+        from s3_import_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='POST', path='/s3-import/upload-url',
+            body={'filename': 'data.json', 'source': 'webscraper', 'source_field': 'platform'},
+        )
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert body['success'] is True
+        assert body['source_field'] == 'platform'
+        _, kwargs = mock_s3.generate_presigned_url.call_args
+        assert kwargs['Params']['Metadata'] == {'source-field': 'platform'}
+
+    @patch('s3_import_handler.s3_client')
+    @patch('s3_import_handler.S3_IMPORT_BUCKET', 'test-bucket')
+    def test_omits_metadata_when_no_source_field(self, mock_s3, api_gateway_event, lambda_context):
+        """Without a source_field, the URL is signed with no Metadata (unchanged behavior)."""
+        mock_s3.generate_presigned_url.return_value = 'https://s3.example.com/presigned'
+        from s3_import_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='POST', path='/s3-import/upload-url',
+            body={'filename': 'data.json', 'source': 'webscraper'},
+        )
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert body['source_field'] is None
+        _, kwargs = mock_s3.generate_presigned_url.call_args
+        assert 'Metadata' not in kwargs['Params']
+
+    @patch('s3_import_handler.s3_client')
+    @patch('s3_import_handler.S3_IMPORT_BUCKET', 'test-bucket')
+    def test_blank_source_field_is_treated_as_absent(self, mock_s3, api_gateway_event, lambda_context):
+        """A blank/whitespace source_field signs no metadata rather than an empty value."""
+        mock_s3.generate_presigned_url.return_value = 'https://s3.example.com/presigned'
+        from s3_import_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='POST', path='/s3-import/upload-url',
+            body={'filename': 'data.json', 'source': 'webscraper', 'source_field': '   '},
+        )
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert body['source_field'] is None
+        _, kwargs = mock_s3.generate_presigned_url.call_args
+        assert 'Metadata' not in kwargs['Params']
+
+    @patch('s3_import_handler.S3_IMPORT_BUCKET', 'test-bucket')
+    def test_rejects_non_ascii_source_field(self, api_gateway_event, lambda_context):
+        """A non-ASCII source_field is rejected — it can't be a safe S3 metadata header."""
+        from s3_import_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='POST', path='/s3-import/upload-url',
+            body={'filename': 'data.json', 'source': 'webscraper', 'source_field': 'región'},
+        )
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+
+        assert response['statusCode'] == 400
+        assert 'error' in body
+        assert 'ascii' in body['error'].lower()
+
+    @patch('s3_import_handler.S3_IMPORT_BUCKET', 'test-bucket')
+    def test_rejects_overlong_source_field(self, api_gateway_event, lambda_context):
+        """A source_field over the length cap is rejected."""
+        from s3_import_handler import lambda_handler
+
+        event = api_gateway_event(
+            method='POST', path='/s3-import/upload-url',
+            body={'filename': 'data.json', 'source': 'webscraper', 'source_field': 'x' * 200},
+        )
+        response = lambda_handler(event, lambda_context)
+
+        assert response['statusCode'] == 400
+
+
+class TestValidateSourceField:
+    """Unit tests for _validate_source_field()."""
+
+    def test_returns_none_for_absent_or_blank(self):
+        from s3_import_handler import _validate_source_field
+        assert _validate_source_field(None) is None
+        assert _validate_source_field('') is None
+        assert _validate_source_field('   ') is None
+
+    def test_trims_and_returns_a_valid_name(self):
+        from s3_import_handler import _validate_source_field
+        assert _validate_source_field('  platform  ') == 'platform'
+
+    def test_rejects_non_string(self):
+        from s3_import_handler import _validate_source_field
+        from shared.exceptions import ValidationError
+        with pytest.raises(ValidationError):
+            _validate_source_field(123)
+
+    def test_rejects_control_characters(self):
+        from s3_import_handler import _validate_source_field
+        from shared.exceptions import ValidationError
+        with pytest.raises(ValidationError):
+            _validate_source_field('bad\tfield')
 
 
 class TestDeleteFileEndpoint:

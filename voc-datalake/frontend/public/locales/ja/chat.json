@@ -15,9 +15,9 @@
     "share": "共有"
   },
   "filters": {
-    "clear": "クリア",
-    "focusingOn": "フォーカス中: {{summary}}",
-    "title": "フィルターコンテキスト（最大30件のレビュー）"
+    "count_other": "{{count}} 件のレビュー",
+    "countPartial_other": "{{count}}+ 件のレビュー",
+    "dropped": "この範囲には {{max}} 件を超えるレビューがあります。チャットは最初の {{max}} 件を使用し、一部のフィードバックは除外されます。絞り込んだ結果を得るにはフィルターを狭めてください。"
   },
   "hideHistory": "履歴を非表示",
   "inputPlaceholder": "フィードバックについて質問...",

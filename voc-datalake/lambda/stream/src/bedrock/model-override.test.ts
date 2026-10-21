@@ -15,10 +15,13 @@ import {
   ALLOWED_MODEL_IDS,
 } from './model-override.js';
 
+const SONNET55 = 'global.anthropic.claude-sonnet-5-5';
 const SONNET5 = 'global.anthropic.claude-sonnet-5';
 const SONNET46 = 'global.anthropic.claude-sonnet-4-6';
+const OPUS55 = 'global.anthropic.claude-opus-5-5';
 const OPUS5 = 'global.anthropic.claude-opus-5';
 const OPUS48 = 'global.anthropic.claude-opus-4-8';
+const HAIKU55 = 'global.anthropic.claude-haiku-5-5';
 const HAIKU45 = 'global.anthropic.claude-haiku-4-5-20251001-v1:0';
 
 interface DocClientLike {
@@ -111,26 +114,27 @@ describe('resolveModelOverride', () => {
 });
 
 describe('capability sets', () => {
-  it('allowlist has exactly the four picker models', () => {
+  it('allowlist has exactly the eight picker models', () => {
     expect(ALLOWED_MODEL_IDS).toStrictEqual(
-      new Set([SONNET5, SONNET46, OPUS5, OPUS48, HAIKU45]),
+      new Set([SONNET55, SONNET5, SONNET46, OPUS55, OPUS5, OPUS48, HAIKU55, HAIKU45]),
     );
   });
 
-  it('both Opus generations and Sonnet 5 omit temperature', () => {
-    expect(omitsTemperature(SONNET5)).toBe(true);
-    expect(omitsTemperature(OPUS5)).toBe(true);
-    expect(omitsTemperature(OPUS48)).toBe(true);
+  it('the adaptive 5.x/4.8 models and Haiku 5.5 omit temperature', () => {
+    for (const id of [SONNET55, SONNET5, OPUS55, OPUS5, OPUS48, HAIKU55]) {
+      expect(omitsTemperature(id)).toBe(true);
+    }
     expect(omitsTemperature(SONNET46)).toBe(false);
     expect(omitsTemperature(HAIKU45)).toBe(false);
   });
 
-  // Opus 4.7 and later reject a manual `thinking.budget_tokens` with a 400, so
-  // BOTH Opus generations join Sonnet 5 in the always-on adaptive-thinking set.
-  it('both Opus generations and Sonnet 5 use always-on adaptive thinking', () => {
-    expect(usesAdaptiveThinking(SONNET5)).toBe(true);
-    expect(usesAdaptiveThinking(OPUS5)).toBe(true);
-    expect(usesAdaptiveThinking(OPUS48)).toBe(true);
+  // Models that reject a manual `thinking.budget_tokens` with a 400 run
+  // always-on adaptive thinking, so converse() must skip the field. Sonnet
+  // 4.6 and Haiku 4.5 still accept the explicit budget.
+  it('the adaptive 5.x/4.8 models and Haiku 5.5 use always-on adaptive thinking', () => {
+    for (const id of [SONNET55, SONNET5, OPUS55, OPUS5, OPUS48, HAIKU55]) {
+      expect(usesAdaptiveThinking(id)).toBe(true);
+    }
     expect(usesAdaptiveThinking(SONNET46)).toBe(false);
     expect(usesAdaptiveThinking(HAIKU45)).toBe(false);
   });

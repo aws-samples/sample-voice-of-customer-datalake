@@ -130,6 +130,12 @@ def step_initialize(event: dict) -> dict:
         'sources': config.get('sources', []),
         'categories': config.get('categories', []),
         'sentiments': config.get('sentiments', []),
+        # The shared-model extra dimensions the API layer persisted (subcategory
+        # / urgent / enrichment / custom_fields). get_feedback_context re-parses
+        # this and applies it as a post-pass; empty/absent is a no-op. Passed
+        # through as stored — FeedbackFilters.from_mapping re-validates it, so a
+        # tampered Step Functions input cannot smuggle an out-of-bounds filter.
+        'feedback_filters': config.get('feedback_filters') or {},
         'days': config.get('days', 30),
         # Step Functions execution input is an unvalidated boundary (anyone
         # with StartExecution can pass arbitrary JSON), so validate here

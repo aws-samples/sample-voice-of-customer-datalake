@@ -1,8 +1,17 @@
 /**
- * NOTE ON THIS FILE'S NAME: it exports a Construct (BedrockModelAccess), not a
- * stack, despite living in lib/stacks/ and being called *-stack.ts. This used
- * to be BedrockAccessStack; it was folded into VocWebSearchStack to stay within
- * Workshop Studio's five-template ceiling.
+ * NOTE ON THIS FILE'S NAME: it exports two Constructs, not a stack, despite
+ * living in lib/stacks/ and being called *-stack.ts. This used to be
+ * BedrockAccessStack; it was folded into other stacks to stay within Workshop
+ * Studio's five-template ceiling, and later split in two:
+ *
+ *   - AnthropicUseCaseSubmission — Anthropic's first-time use case form. Opt-in
+ *     (`anthropicUseCase` in context), hosted by the us-east-1 VocWebSearchStack.
+ *   - BedrockModelAgreements — a Marketplace agreement per allowlisted model.
+ *     On for every deploy, hosted by VocCoreStack in the app's own region.
+ *
+ * They were split so the agreements no longer need the us-east-1 stack: with the
+ * form unset and `-c enableWebSearch=false`, a deployment touches no region but
+ * its own.
  *
  * The path was kept deliberately: lambda/shared/test/test_model_agreement_handler.py
  * reads THIS path and regexes `getModelAgreementLambdaCode()` out of it to test
@@ -70,172 +79,160 @@ export type AnthropicUseCaseConfig = z.infer<typeof AnthropicUseCaseSchema>;
  */
 const REQUIRED_MODELS = [...ALLOWED_FOUNDATION_MODEL_IDS];
 
-export interface BedrockModelAccessProps {
-  /**
-   * Anthropic use case configuration for first-time model access.
-   *
-   * Required: the caller decides whether this half is deployed at all by
-   * choosing whether to construct it. See VocWebSearchStack.
-   */
-  anthropicUseCase: AnthropicUseCaseConfig;
-
-  /**
-   * AWS region where the models will be used.
-   * Model agreements are created in this region.
-   *
-   * This is a custom-resource *property*, not a placement decision — the
-   * handler does `boto3.client('bedrock', region_name=region)` — so the
-   * agreements land in the app's region even though this construct is hosted
-   * by a stack pinned to us-east-1.
-   *
-   * Required deliberately: a default here would be a silently-wrong region for
-   * every caller that forgot to pass one, and the agreements would be created
-   * somewhere the app never calls Bedrock.
-   */
-  modelRegion: string;
-
-  /**
-   * Skip the use case submission step.
-   * @default false
-   */
-  skipUseCaseSubmission?: boolean;
+export interface AnthropicUseCaseSubmissionProps {
+  /** The form's contents. Validated again here, since a caller may skip bin's parse. */
+  readonly anthropicUseCase: AnthropicUseCaseConfig;
 }
 
 /**
- * Bedrock model access for Anthropic models.
+ * Submits Anthropic's first-time use case form (PutUseCaseForModelAccess).
  *
- * Performs two operations:
- * 1. Submits the Anthropic use case form (required once per account, us-east-1 only)
- * 2. Creates model agreements for required Claude models (accepts EULA)
+ * Anthropic requires the form once per account, or once at the organization's
+ * management account, before Claude can be invoked. Opt-in: built only when
+ * `anthropicUseCase` is set, because the form states who the deployer is, and a
+ * committed default would file it in every deployer's account under somebody
+ * else's name. Without it, the form is submitted once in the Bedrock console.
  *
- * IMPORTANT: The PutUseCaseForModelAccess API ONLY works in us-east-1, so the
- * hosting stack must be pinned there. Model agreements can be created in any
- * region where the models are available (see `modelRegion`).
- *
- * This is a Construct rather than a Stack: it is hosted by VocWebSearchStack,
- * which is already pinned to us-east-1 for the same reason. The two used to be
- * separate stacks, which put the app one template over Workshop Studio's
- * five-template ceiling. Nothing else imports from this half — it publishes no
- * consumed exports — so folding it in cost no cross-stack wiring.
+ * The call is made in us-east-1 (the `region` below), which is why the hosting
+ * stack is VocWebSearchStack. Whether PutUseCaseForModelAccess also works in
+ * other regions is untested; GetUseCaseForModelAccess does answer in us-west-2.
  */
-export class BedrockModelAccess extends Construct {
-  constructor(scope: Construct, id: string, props: BedrockModelAccessProps) {
+export class AnthropicUseCaseSubmission extends Construct {
+  constructor(scope: Construct, id: string, props: AnthropicUseCaseSubmissionProps) {
     super(scope, id);
 
     const stack = cdk.Stack.of(this);
-    const anthropicUseCase = props.anthropicUseCase;
-    const modelRegion = props.modelRegion;
 
-    // Validate and transform config at runtime
-    const parseResult = AnthropicUseCaseSchema.safeParse(anthropicUseCase);
+    const parseResult = AnthropicUseCaseSchema.safeParse(props.anthropicUseCase);
     if (!parseResult.success) {
       throw new Error(
         'Invalid anthropicUseCase configuration: ' +
         parseResult.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
       );
     }
-
     const validatedConfig = parseResult.data;
 
     // Prepare form data for the API - must match exact format
-    const formData = {
+    const formDataJson = JSON.stringify({
       companyName: validatedConfig.companyName,
       companyWebsite: validatedConfig.companyWebsite,
       intendedUsers: validatedConfig.intendedUsers,
       industryOption: validatedConfig.industryOption,
       otherIndustryOption: validatedConfig.otherIndustryOption,
       useCases: validatedConfig.useCases,
-    };
+    });
 
-    const formDataJson = JSON.stringify(formData);
-
-    // Create log group for custom resources
     const logGroup = new logs.LogGroup(this, 'BedrockAccessLogGroup', {
       retention: logs.RetentionDays.ONE_WEEK,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    // ============================================
-    // Step 1: Submit Anthropic Use Case (us-east-1 only)
-    // Skip for internal accounts
-    // ============================================
-    const skipUseCaseSubmission = props.skipUseCaseSubmission ?? false;
-    let submitUseCase: cr.AwsCustomResource | undefined;
-    
-    if (!skipUseCaseSubmission) {
-      submitUseCase = new cr.AwsCustomResource(this, 'SubmitAnthropicUseCase', {
-        onCreate: {
-          service: 'Bedrock',
-          action: 'putUseCaseForModelAccess',
-          parameters: {
-            formData: formDataJson,
-          },
-          physicalResourceId: cr.PhysicalResourceId.of('anthropic-use-case-submission'),
-          region: 'us-east-1',
-          // Best-effort submission: accounts that already have Anthropic
-          // access (prior submission, org-level grants, internal accounts)
-          // reject the call, e.g. with "Internal Accounts should not submit
-          // use case details". That must not fail the whole deployment —
-          // model agreements in Step 2 will surface any real access problem.
-          // Access/permission/throttling errors still fail loudly. See #103.
-          ignoreErrorCodesMatching: 'ValidationException|ConflictException',
+    const submitUseCase = new cr.AwsCustomResource(this, 'SubmitAnthropicUseCase', {
+      onCreate: {
+        service: 'Bedrock',
+        action: 'putUseCaseForModelAccess',
+        parameters: {
+          formData: formDataJson,
         },
-        onUpdate: undefined,
-        onDelete: undefined,
-        policy: cr.AwsCustomResourcePolicy.fromStatements([
-          new iam.PolicyStatement({
-            actions: ['bedrock:PutUseCaseForModelAccess'],
-            resources: ['*'],
-          }),
-        ]),
-        logGroup,
-        installLatestAwsSdk: true,
-      });
-      
-      // Suppress CDK custom resource Lambda runtime warnings for AwsCustomResource.
-      // Object-based rather than path-based: this is now a Construct, so a
-      // hardcoded `<stackName>/SubmitAnthropicUseCase/...` path would no longer
-      // resolve (the real path gains this construct's id as a segment).
-      NagSuppressions.addResourceSuppressions(
-        submitUseCase,
-        [...cdkCustomResourceSuppressions, ...bedrockAgreementSuppressions],
-        true
-      );
+        physicalResourceId: cr.PhysicalResourceId.of('anthropic-use-case-submission'),
+        region: 'us-east-1',
+        // Best-effort submission: accounts that already have Anthropic
+        // access (prior submission, org-level grants, internal accounts)
+        // reject the call, e.g. with "Internal Accounts should not submit
+        // use case details". That must not fail the whole deployment —
+        // invoking a model surfaces any real access problem.
+        // Access/permission/throttling errors still fail loudly. See #103.
+        ignoreErrorCodesMatching: 'ValidationException|ConflictException',
+      },
+      onUpdate: undefined,
+      onDelete: undefined,
+      policy: cr.AwsCustomResourcePolicy.fromStatements([
+        new iam.PolicyStatement({
+          actions: ['bedrock:PutUseCaseForModelAccess'],
+          resources: ['*'],
+        }),
+      ]),
+      logGroup,
+      installLatestAwsSdk: true,
+    });
 
-      // The AwsCustomResource construct creates a singleton Lambda with a
-      // deterministic UUID. It is scoped to the STACK, not to this construct,
-      // so these paths stay stack-relative.
-      //
-      // Built from the stack's CONSTRUCT ID, not `stack.stackName`: these are
-      // matched against `node.path`, which uses construct ids. The two only
-      // coincide while no explicit `stackName` is set, so using stackName here
-      // would silently stop matching — and therefore silently drop the
-      // suppressions — the day someone overrides it.
-      const customResourceId = `AWS${cr.AwsCustomResource.PROVIDER_FUNCTION_UUID.split('-').join('')}`;
-      const customResourceSuppressPaths = new Set([
-        `/${stack.node.id}/${customResourceId}/ServiceRole/Resource`,
-        `/${stack.node.id}/${customResourceId}/Resource`,
-      ]);
+    // Object-based rather than path-based: this is a Construct, so a hardcoded
+    // `<stackName>/SubmitAnthropicUseCase/...` path would not resolve (the real
+    // path gains this construct's id as a segment).
+    NagSuppressions.addResourceSuppressions(
+      submitUseCase,
+      [...cdkCustomResourceSuppressions, ...bedrockAgreementSuppressions],
+      true
+    );
 
-      const allExistingPaths = new Set(
-        stack.node.findAll().map((node) => `/${node.node.path}`)
-      );
+    // The AwsCustomResource construct creates a singleton Lambda with a
+    // deterministic UUID. It is scoped to the STACK, not to this construct,
+    // so these paths stay stack-relative.
+    //
+    // Built from the stack's CONSTRUCT ID, not `stack.stackName`: these are
+    // matched against `node.path`, which uses construct ids. The two only
+    // coincide while no explicit `stackName` is set, so using stackName here
+    // would silently stop matching — and therefore silently drop the
+    // suppressions — the day someone overrides it.
+    const customResourceId = `AWS${cr.AwsCustomResource.PROVIDER_FUNCTION_UUID.split('-').join('')}`;
+    const customResourceSuppressPaths = new Set([
+      `/${stack.node.id}/${customResourceId}/ServiceRole/Resource`,
+      `/${stack.node.id}/${customResourceId}/Resource`,
+    ]);
 
-      for (const path of customResourceSuppressPaths) {
-        if (allExistingPaths.has(path)) {
-          NagSuppressions.addResourceSuppressionsByPath(
-            stack,
-            path,
-            [...cdkCustomResourceSuppressions, ...lambdaBasicExecutionRoleSuppressions],
-            true
-          );
-        }
+    const allExistingPaths = new Set(
+      stack.node.findAll().map((node) => `/${node.node.path}`)
+    );
+
+    for (const path of customResourceSuppressPaths) {
+      if (allExistingPaths.has(path)) {
+        NagSuppressions.addResourceSuppressionsByPath(
+          stack,
+          path,
+          [...cdkCustomResourceSuppressions, ...lambdaBasicExecutionRoleSuppressions],
+          true
+        );
       }
     }
 
-    // ============================================
-    // Step 2: Create Model Agreements (accepts EULA)
-    // ============================================
+    // Outputs. Informational only — nothing imports these.
+    new cdk.CfnOutput(this, 'BedrockAccessStatus', {
+      value: 'SUBMITTED',
+      description: 'Status of Anthropic model access request',
+    });
+
+    new cdk.CfnOutput(this, 'CompanyName', {
+      value: validatedConfig.companyName,
+      description: 'Company name submitted for Anthropic access',
+    });
+  }
+}
+
+/**
+ * Creates the Bedrock model agreement (the Marketplace subscription that
+ * accepts the EULA) for every allowlisted model, in the hosting stack's region.
+ *
+ * Bedrock also subscribes a model on its first invocation, but only when the
+ * caller holds `aws-marketplace:Subscribe`, and most of this app's Lambda roles
+ * do not. Without these agreements, a new account's first call from such a role
+ * fails, and keeps failing until a role that can subscribe calls the same model.
+ *
+ * Best effort by design: the hosting stack is VocCoreStack, where a failed
+ * custom resource rolls back the stack that holds every table, so an account
+ * that cannot take an agreement gets an UNAVAILABLE result and a log line, not a
+ * failed deploy. See the handler for the one error that still fails.
+ *
+ * Runs on Create only. An agreement is account state, and Update and Delete
+ * leave it alone, so removing this construct revokes nothing.
+ */
+export class BedrockModelAgreements extends Construct {
+  constructor(scope: Construct, id: string) {
+    super(scope, id);
+
+    // Created where the app runs. The handler is told the region explicitly
+    // rather than reading its own, so the custom-resource property states it.
+    const modelRegion = cdk.Stack.of(this).region;
+
     // Lambda function to fetch offer token and create agreement
     const modelAgreementLambda = new lambda.Function(this, 'ModelAgreementLambda', {
       runtime: lambda.Runtime.PYTHON_3_14,
@@ -274,7 +271,7 @@ export class BedrockModelAccess extends Construct {
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
     });
-    
+
     // Suppress CDK custom resource Lambda runtime warnings for Provider.
     //
     // pluginSystemSuppressions() takes NO prefix here, deliberately. It is a
@@ -284,9 +281,7 @@ export class BedrockModelAccess extends Construct {
     // references, which carry no VoC physical name and so no prefix. The
     // ingestor/schedule entries in that set simply do not apply here.
     //
-    // BedrockModelAccess is a Construct, not a VocStack, so it has no access to
-    // the prefix either; threading one through would be work with no effect. If
-    // that ever stopped being true, the zero-warnings assertion over the
+    // If that ever stopped being true, the zero-warnings assertion over the
     // PREFIXED synth in lib/app-deployment-prefix.test.ts would fail, since an
     // unmatched suppression leaves an AwsSolutions-IAM5 finding behind.
     NagSuppressions.addResourceSuppressions(
@@ -294,7 +289,7 @@ export class BedrockModelAccess extends Construct {
       [...cdkCustomResourceSuppressions, ...lambdaBasicExecutionRoleSuppressions, ...pluginSystemSuppressions()],
       true
     );
-    
+
     // Suppress for ModelAgreementLambda
     NagSuppressions.addResourceSuppressions(
       modelAgreementLambda,
@@ -304,35 +299,19 @@ export class BedrockModelAccess extends Construct {
 
     // Create model agreements for each required model
     REQUIRED_MODELS.forEach((modelId, index) => {
-      const agreement = new cdk.CustomResource(this, `ModelAgreement${index}`, {
+      new cdk.CustomResource(this, `ModelAgreement${index}`, {
         serviceToken: modelAgreementProvider.serviceToken,
         properties: {
           modelId,
           region: modelRegion,
         },
       });
-      
-      // Ensure use case is submitted before creating agreements (if not skipped)
-      if (submitUseCase) {
-        agreement.node.addDependency(submitUseCase);
-      }
     });
 
-    // Outputs. Informational only — nothing imports these, which is precisely
-    // why this half could be folded into another stack without rewiring.
-    new cdk.CfnOutput(this, 'BedrockAccessStatus', {
-      value: 'SUBMITTED',
-      description: 'Status of Anthropic model access request',
-    });
-
-    new cdk.CfnOutput(this, 'CompanyName', {
-      value: validatedConfig.companyName,
-      description: 'Company name submitted for Anthropic access',
-    });
-
+    // Outputs. Informational only — nothing imports these.
     new cdk.CfnOutput(this, 'ModelsEnabled', {
       value: REQUIRED_MODELS.join(', '),
-      description: 'Models with agreements created',
+      description: 'Models this stack creates agreements for (best effort; see the ModelAgreementLambda log)',
     });
 
     new cdk.CfnOutput(this, 'ModelRegion', {
@@ -350,18 +329,45 @@ export class BedrockModelAccess extends Construct {
 import boto3
 import json
 import logging
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-# Agreement failures that are a property of the ACCOUNT, not a bug in this
-# stack, and must not fail the deployment. Workshop Studio accounts sit behind
-# an AWS Private Marketplace that refuses CreateFoundationModelAgreement for
-# the newest models, which would otherwise take the whole stack (and, when it
-# is not last in the deploy order, everything after it) down over a model the
-# deployment may not even use.
-NON_FATAL_ERROR_CODES = ('AccessDeniedException',)
+# The one AWS error that still fails the deployment, and only from the two read
+# calls: AccessDenied there means THIS stack's own role is missing a permission,
+# which is a bug in the stack rather than a property of the account.
+#
+# Every other AWS error is reported as UNAVAILABLE instead of raised. This runs
+# in VocCoreStack, on every deploy, in every account and region the app is
+# deployed to, and a raise rolls back the stack that holds every table — over a
+# step that only pre-subscribes models. The account-state failures it absorbs
+# include an AWS Private Marketplace refusing the newest models (Workshop
+# Studio), a model not offered in this region, a missing Anthropic use case
+# form, throttling that outlasted the SDK's retries, and connection failures
+# (BotoCoreError, which carries no AWS error code).
+OWN_ROLE_ERROR_CODES = ('AccessDeniedException',)
+AWS_ERRORS = (ClientError, BotoCoreError)
+
+def _error_code(error):
+    response = getattr(error, 'response', None)
+    if isinstance(response, dict):
+        return response.get('Error', {}).get('Code', '')
+    return type(error).__name__
+
+def _result(model_id, status, **extra):
+    return {
+        'PhysicalResourceId': f'model-agreement-{model_id}',
+        'Data': {'status': status, 'modelId': model_id, **extra}
+    }
+
+def _unavailable(model_id, error):
+    code = _error_code(error)
+    logger.warning(
+        f"Agreement unavailable for {model_id} ({code}): {str(error)}. "
+        "Continuing — this model will not be invocable in this account until it is subscribed."
+    )
+    return _result(model_id, 'UNAVAILABLE', errorCode=code)
 
 def handler(event, context):
     """
@@ -381,95 +387,56 @@ def handler(event, context):
     # Only process Create requests
     if request_type != 'Create':
         logger.info(f"Skipping {request_type} request - agreements persist")
-        return {
-            'PhysicalResourceId': f'model-agreement-{model_id}',
-            'Data': {'status': 'SKIPPED', 'modelId': model_id}
-        }
+        return _result(model_id, 'SKIPPED')
     
+    bedrock = boto3.client('bedrock', region_name=region)
+
     try:
-        bedrock = boto3.client('bedrock', region_name=region)
-        
         # Check current availability
         availability = bedrock.get_foundation_model_availability(modelId=model_id)
         agreement_status = availability.get('agreementAvailability', {}).get('status', 'UNKNOWN')
-        
+
         logger.info(f"Current agreement status for {model_id}: {agreement_status}")
-        
+
         # If already available, skip
         if agreement_status == 'AVAILABLE':
             logger.info(f"Model {model_id} already has agreement - skipping")
-            return {
-                'PhysicalResourceId': f'model-agreement-{model_id}',
-                'Data': {'status': 'ALREADY_AVAILABLE', 'modelId': model_id}
-            }
-        
+            return _result(model_id, 'ALREADY_AVAILABLE')
+
         # Get offer token
         logger.info(f"Fetching offer token for {model_id}")
         offers_response = bedrock.list_foundation_model_agreement_offers(modelId=model_id)
-        offers = offers_response.get('offers', [])
-        
-        if not offers:
-            logger.warning(f"No offers available for {model_id}")
-            return {
-                'PhysicalResourceId': f'model-agreement-{model_id}',
-                'Data': {'status': 'NO_OFFERS', 'modelId': model_id}
-            }
-        
-        offer_token = offers[0].get('offerToken')
-        if not offer_token:
-            raise Exception(f"Offer token not found for {model_id}")
-        
-        logger.info(f"Creating agreement for {model_id}")
+    except AWS_ERRORS as e:
+        if _error_code(e) in OWN_ROLE_ERROR_CODES:
+            logger.error(f"This stack's role cannot read agreement state for {model_id}: {str(e)}")
+            raise
+        return _unavailable(model_id, e)
 
-        # Create the agreement (accepts EULA).
-        # The non-fatal absorption below is scoped to THIS call only. An
-        # AccessDeniedException from get_foundation_model_availability or
-        # list_foundation_model_agreement_offers above means this stack's own
-        # role is missing a permission — a real bug — and must still fail the
-        # deployment rather than be reported as an unavailable model.
-        try:
-            bedrock.create_foundation_model_agreement(
-                modelId=model_id,
-                offerToken=offer_token
-            )
-        except ClientError as e:
-            code = e.response.get('Error', {}).get('Code', '')
-            if code not in NON_FATAL_ERROR_CODES:
-                # Includes ConflictException, which the outer handler below
-                # turns into ALREADY_EXISTS.
-                raise
-            # The account is not allowed to accept this model's agreement (e.g.
-            # a Private Marketplace restriction). Report it instead of failing:
-            # the models whose agreements DID succeed remain usable, and a
-            # model that is unavailable here would only surface as an
-            # AccessDenied at inference time anyway.
-            logger.warning(
-                f"Agreement unavailable for {model_id} ({code}): {str(e)}. "
-                "Continuing — this model will not be invocable in this account."
-            )
-            return {
-                'PhysicalResourceId': f'model-agreement-{model_id}',
-                'Data': {'status': 'UNAVAILABLE', 'modelId': model_id, 'errorCode': code}
-            }
-        
-        logger.info(f"Successfully created agreement for {model_id}")
-        
-        return {
-            'PhysicalResourceId': f'model-agreement-{model_id}',
-            'Data': {'status': 'CREATED', 'modelId': model_id}
-        }
-        
+    # An offer without a token is as unusable as no offer at all, and is reported
+    # the same way rather than raised, for the rollback reason above.
+    offers = offers_response.get('offers', [])
+    offer_token = offers[0].get('offerToken') if offers else None
+    if not offer_token:
+        logger.warning(f"No usable agreement offer for {model_id}")
+        return _result(model_id, 'NO_OFFERS')
+
+    logger.info(f"Creating agreement for {model_id}")
+
+    # Create the agreement (accepts EULA). ConflictException is a ClientError
+    # subclass, so it must be caught first: it means the agreement exists.
+    try:
+        bedrock.create_foundation_model_agreement(
+            modelId=model_id,
+            offerToken=offer_token
+        )
     except bedrock.exceptions.ConflictException as e:
-        # Agreement already exists
         logger.info(f"Agreement already exists for {model_id}: {str(e)}")
-        return {
-            'PhysicalResourceId': f'model-agreement-{model_id}',
-            'Data': {'status': 'ALREADY_EXISTS', 'modelId': model_id}
-        }
+        return _result(model_id, 'ALREADY_EXISTS')
+    except AWS_ERRORS as e:
+        return _unavailable(model_id, e)
 
-    except Exception as e:
-        logger.error(f"Error creating agreement for {model_id}: {str(e)}")
-        raise
+    logger.info(f"Successfully created agreement for {model_id}")
+    return _result(model_id, 'CREATED')
 `;
   }
 }

@@ -58,6 +58,16 @@
 import { z } from 'zod';
 import { SUPPORTED_LANGUAGES, isSupportedLanguage } from './context/language.js';
 import { clampHistoryToBudget, MAX_HISTORY_ARRAY } from './history-budget.js';
+import { chatFiltersSchema } from './context/feedback-filters.js';
+
+/**
+ * Most reviews a single chat turn feeds the model. Non-blocking: when more
+ * match, the scan keeps the first MAX_CHAT_FEEDBACK_ITEMS and the UI warns that
+ * the rest were dropped. Above this, prompt size and latency degrade with no
+ * gain in answer quality. Mirrored by `MAX_CHAT_FEEDBACK_ITEMS` in
+ * `frontend/src/api/streamLimits.ts` (pinned by the lockstep test).
+ */
+export const MAX_CHAT_FEEDBACK_ITEMS = 1_000;
 
 const ALLOWED_MEDIA_TYPES = [
   'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf',
@@ -99,6 +109,15 @@ export const chatRequestSchema = z.object({
   message: z.string().min(1, 'Message is required').max(MAX_MESSAGE_LENGTH),
   // VoC chat fields
   context: z.string().max(MAX_CONTEXT_LENGTH).optional(),
+  // Structured scope for the feedback the chat reasons over, in the shared
+  // filter model's wire shape (source/category/subcategory/sentiment as comma
+  // strings or arrays, urgent, usefulness). Supersedes the prose `context`
+  // channel for filters; `context` stays only as a human-readable hint.
+  // `.passthrough()` on chatFiltersSchema tolerates cf_* keys the tool ignores.
+  filters: chatFiltersSchema.optional(),
+  // Upper bound on reviews fed to the model for this turn. Clamped to
+  // MAX_CHAT_FEEDBACK_ITEMS; the UI warns when the matched set exceeds it.
+  limit: z.number().int().min(1).optional(),
   days: z.number().int().min(1).max(365).optional(),
   // Which date the days window applies to: 'imported' (default, ingestion
   // date) or 'review' (when the customer wrote the feedback). Issue #150.

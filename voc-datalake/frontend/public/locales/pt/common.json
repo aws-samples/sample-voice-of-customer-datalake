@@ -81,10 +81,13 @@
     "settings": "Configurações"
   },
   "partialCountsHint": "Aproximado: não foi possível ler o período completo, as contagens são um limite inferior",
+  "emptyWindowFallback": "Nenhum feedback no período selecionado. Mostrando seus dados mais recentes (de {{date}}).",
   "partialWindowHint": "refine os filtros para ver tudo",
   "problemAnalysisPage": {
     "emptyHint": "Tente ampliar o intervalo de tempo ou ajustar os filtros",
-    "emptyTitle": "Nenhum dado de análise de problemas encontrado para o período selecionado"
+    "emptyTitle": "Nenhum dado de análise de problemas encontrado para o período selecionado",
+    "itemsLoadFailed": "Não foi possível carregar os exemplos.",
+    "noExamples": "Nenhum feedback de exemplo encontrado."
   },
   "problemResolution": {
     "allResolvedHint": "Ative \"Mostrar resolvidos ({{total}})\" acima para revisá-los",
@@ -128,5 +131,45 @@
     "endDate": "Data final",
     "selectDateRange": "Selecionar período",
     "startDate": "Data inicial"
+  },
+  "feedbackFilters": {
+    "title": "Filtros",
+    "activeCount_one": "{{count}} ativo",
+    "activeCount_other": "{{count}} ativos",
+    "clearAll": "Limpar tudo",
+    "clearGroup": "Limpar",
+    "noOptions": "Nenhum neste período",
+    "sources": "Fontes",
+    "categories": "Categorias",
+    "subcategories": "Subcategorias",
+    "sentiment": "Sentimento",
+    "urgency": "Urgência",
+    "urgentOnly": "Somente urgentes",
+    "noMatches": "Nenhum feedback corresponde a estes filtros",
+    "noMatchesHint": "Amplie o período ou remova alguns filtros.",
+    "loadFailed": "Não foi possível carregar os resultados filtrados.",
+    "retry": "Tentar novamente",
+    "updating": "Atualizando…"
+  },
+  "feedbackOverlay": {
+    "problem": "Problema:",
+    "rootCause": "Causa raiz:",
+    "urgent": "Urgente",
+    "close": "Fechar",
+    "viewSource": "Ver origem",
+    "openFullDetails": "Abrir todos os detalhes"
+  },
+  "enrichment": {
+    "values": {
+      "unscored": "Não avaliado"
+    },
+    "usefulness": {
+      "label": "Utilidade",
+      "values": {
+        "high": "Alta",
+        "medium": "Média",
+        "low": "Baixa"
+      }
+    }
   }
 }

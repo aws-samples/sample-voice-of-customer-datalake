@@ -10,7 +10,7 @@ const mockGetSentiment = vi.fn()
 const mockGetEntities = vi.fn()
 const mockGetFeedback = vi.fn()
 const mockSearchFeedback = vi.fn()
-const mockGetUrgentFeedback = vi.fn()
+const mockGetMetricsOverview = vi.fn()
 
 vi.mock('../../api/client', () => ({
   api: {
@@ -19,10 +19,13 @@ vi.mock('../../api/client', () => ({
     getEntities: (...args: unknown[]) => mockGetEntities(...args),
     getFeedback: (...args: unknown[]) => mockGetFeedback(...args),
     searchFeedback: (...args: unknown[]) => mockSearchFeedback(...args),
-    getUrgentFeedback: (...args: unknown[]) => mockGetUrgentFeedback(...args),
   },
   getDaysFromRange: () => 7,
   getDateRangeParams: () => ({ days: 7 }),
+}))
+
+vi.mock('../../api/metricsOverviewApi', () => ({
+  getMetricsOverview: (...args: unknown[]) => mockGetMetricsOverview(...args),
 }))
 
 vi.mock('../../store/configStore', () => ({
@@ -41,6 +44,7 @@ vi.mock('recharts', () => ({
   Tooltip: () => null,
 }))
 
+import { restorePages, useFeedbackFilterStore } from '../../store/feedbackFilterStore'
 import Categories from './Categories'
 
 function createWrapper(initialEntries = ['/categories']) {
@@ -104,15 +108,34 @@ const mockFeedbackData = {
   count: 1,
 }
 
+/** `/metrics/overview` answer for a source-filtered window (webscraper only). */
+const mockOverviewData = {
+  period_days: 7,
+  feedback_count: 40,
+  is_partial: false,
+  categories: { period_days: 7, categories: { delivery: 25, pricing: 15 } },
+  sentiment: mockSentimentData,
+  issues: { 'slow delivery': 12 },
+}
+
+/** The panel body is collapsed by default; open it to reach the checkboxes. */
+async function openFilterPanel(user: ReturnType<typeof userEvent.setup>) {
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name: /^Filters/ })).toBeInTheDocument()
+  })
+  await user.click(screen.getByRole('button', { name: /^Filters/ }))
+}
+
 describe('Categories', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    useFeedbackFilterStore.setState({ pages: restorePages({}) })
     mockGetCategories.mockResolvedValue(mockCategoriesData)
     mockGetSentiment.mockResolvedValue(mockSentimentData)
     mockGetEntities.mockResolvedValue(mockEntitiesData)
     mockGetFeedback.mockResolvedValue(mockFeedbackData)
     mockSearchFeedback.mockResolvedValue(mockFeedbackData)
-    mockGetUrgentFeedback.mockResolvedValue(mockFeedbackData)
+    mockGetMetricsOverview.mockResolvedValue(mockOverviewData)
   })
 
   describe('loading states', () => {
@@ -223,33 +246,46 @@ describe('Categories', () => {
       })
     })
 
-    it('uses the urgent endpoint when the urgent toggle is enabled', async () => {
+    it('sends urgent-only to the paginated list as a server filter', async () => {
       const user = userEvent.setup()
       render(<Categories />, { wrapper: createWrapper() })
 
-      await waitFor(() => {
-        expect(screen.getByText('Urgent only')).toBeInTheDocument()
-      })
-      await user.click(screen.getByRole('checkbox'))
+      await openFilterPanel(user)
+      await user.click(screen.getByRole('checkbox', { name: 'Urgent only' }))
 
       await waitFor(() => {
-        expect(mockGetUrgentFeedback).toHaveBeenCalled()
+        expect(mockGetFeedback).toHaveBeenCalledWith(expect.objectContaining({ urgent: 'true' }))
       })
     })
 
-    it('filters analytics by source when a source is selected', async () => {
+    it('filters the analytics and the list by every selected source', async () => {
       const user = userEvent.setup()
       render(<Categories />, { wrapper: createWrapper() })
 
-      await waitFor(() => {
-        expect(screen.getByRole('combobox')).toBeInTheDocument()
-      })
-
-      await user.selectOptions(screen.getByRole('combobox'), 'webscraper')
+      await openFilterPanel(user)
+      await user.click(screen.getByRole('checkbox', { name: /webscraper/i }))
 
       await waitFor(() => {
-        expect(mockGetCategories).toHaveBeenCalledWith({ days: 7 }, 'webscraper')
+        expect(mockGetMetricsOverview).toHaveBeenCalledWith(
+          { days: 7 },
+          expect.objectContaining({ sources: ['webscraper'] }),
+        )
       })
+      expect(mockGetFeedback).toHaveBeenCalledWith(expect.objectContaining({ source: 'webscraper' }))
+      // The distribution now reflects the filtered scan.
+      await waitFor(() => {
+        expect(screen.getByText('25 (62.5%)')).toBeInTheDocument()
+      })
+    })
+
+    it('keeps every category selectable in the distribution while a category is picked', async () => {
+      render(<Categories />, { wrapper: createWrapper(['/categories?category=delivery']) })
+
+      await waitFor(() => {
+        expect(screen.getByText('30 (30.0%)')).toBeInTheDocument()
+      })
+      // Category is a list filter, not an analytics facet: no overview scan.
+      expect(mockGetMetricsOverview).not.toHaveBeenCalled()
     })
 
     it('clears all filters back to browse-all', async () => {
@@ -257,16 +293,52 @@ describe('Categories', () => {
       render(<Categories />, { wrapper: createWrapper(['/categories?category=delivery']) })
 
       await waitFor(() => {
-        expect(screen.getByText('Clear filters')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Clear all' })).toBeInTheDocument()
       })
 
-      await user.click(screen.getByText('Clear filters'))
+      await user.click(screen.getByRole('button', { name: 'Clear all' }))
 
       await waitFor(() => {
         expect(screen.queryByRole('button', { pressed: true })).not.toBeInTheDocument()
       })
       // The list stays visible: browse-all is the default state
       expect(screen.getByText('Feedback Results')).toBeInTheDocument()
+    })
+  })
+
+  describe('changing filters does not reload the page', () => {
+    it('keeps the panel open and the earlier numbers up while the new selection loads', async () => {
+      const user = userEvent.setup()
+      mockGetMetricsOverview.mockReturnValue(new Promise(() => {}))
+      render(<Categories />, { wrapper: createWrapper() })
+
+      await openFilterPanel(user)
+      await user.click(screen.getByRole('checkbox', { name: /webscraper/i }))
+      await waitFor(() => expect(mockGetMetricsOverview).toHaveBeenCalled())
+
+      // No full-page spinner: the panel is still expanded with the box ticked,
+      // the unfiltered distribution is still on screen, and the panel says why.
+      expect(screen.getByRole('button', { name: /^Filters/ })).toHaveAttribute('aria-expanded', 'true')
+      expect(screen.getByRole('checkbox', { name: /webscraper/i })).toBeChecked()
+      expect(screen.getByText('50 (50.0%)')).toBeInTheDocument()
+      expect(screen.getByRole('status')).toHaveTextContent('Updating…')
+    })
+
+    it('sends one request for several quick selections', async () => {
+      const user = userEvent.setup()
+      render(<Categories />, { wrapper: createWrapper() })
+
+      await openFilterPanel(user)
+      await user.click(screen.getByRole('checkbox', { name: /webscraper/i }))
+      await user.click(screen.getByRole('checkbox', { name: /manual import/i }))
+      await user.click(screen.getByRole('checkbox', { name: 'Urgent only' }))
+
+      await waitFor(() => expect(mockGetMetricsOverview).toHaveBeenCalled())
+      expect(mockGetMetricsOverview).toHaveBeenCalledTimes(1)
+      expect(mockGetMetricsOverview).toHaveBeenCalledWith(
+        { days: 7 },
+        expect.objectContaining({ sources: ['webscraper', 'manual_import'], urgentOnly: true }),
+      )
     })
   })
 

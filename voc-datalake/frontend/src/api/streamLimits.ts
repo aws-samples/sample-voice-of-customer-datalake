@@ -43,3 +43,12 @@ export const MAX_CHAT_CONTEXT_LENGTH = 500
  * lockstep test and buildChatContext's bound are both checked against.
  */
 export const MAX_SELECTED_PERSONAS = 20
+
+/**
+ * Most reviews a single chat turn feeds the model (the chat filter panel's
+ * cap). Non-blocking: when the scoped set is larger, the backend keeps the
+ * first MAX_CHAT_FEEDBACK_ITEMS and the panel warns that the rest were dropped,
+ * so the user can narrow if they care. Mirrors `MAX_CHAT_FEEDBACK_ITEMS` in the
+ * stream Lambda's schema.ts, pinned by the lockstep test.
+ */
+export const MAX_CHAT_FEEDBACK_ITEMS = 1000

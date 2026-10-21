@@ -31,10 +31,16 @@ import {
 import { useProjectWizardState } from './useProjectWizardState'
 import WizardSection from './WizardSection'
 import type { Tab } from './types'
-import type { ProductContext } from '../../api/types'
+import type { ProductContext, ProjectPersona } from '../../api/types'
 
 /** The product-context query's data shape, taken from the call that produces it. */
 type ProductContextResponse = Awaited<ReturnType<typeof projectsApi.getProductContext>>
+
+/** The loaded copy of the selected persona, or null once it no longer exists. */
+function findCurrentPersona(personas: ProjectPersona[], selected: ProjectPersona | null): ProjectPersona | null {
+  if (selected == null) return null
+  return personas.find((p) => p.persona_id === selected.persona_id) ?? null
+}
 
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>()
@@ -79,7 +85,7 @@ export default function ProjectDetail() {
   })
 
   const {
-    updatePersonaMut, deletePersonaMut, importPersonaMut, saveNotes,
+    updatePersonaMut, togglePersonaProtectedMut, deletePersonaMut, importPersonaMut, saveNotes,
   } = usePersonaMutations({
     id,
     selectedPersona: selection.selectedPersona,
@@ -224,6 +230,11 @@ export default function ProjectDetail() {
     project, personas, documents,
   } = data
   const jobs = jobsData?.jobs ?? []
+  // The selection state holds the persona as it was when clicked. Read the
+  // current copy instead, so the protect toggle shows the saved flag and the
+  // edit modal can't send a stale `protected` back. A persona that
+  // regeneration replaced has no current copy and drops out of view.
+  const selectedPersona = findCurrentPersona(personas, selection.selectedPersona)
 
   return (
     <div className="space-y-6">
@@ -282,7 +293,7 @@ export default function ProjectDetail() {
         documents={documents}
         productContext={productContext}
         productDocs={productDocs}
-        selectedPersona={selection.selectedPersona}
+        selectedPersona={selectedPersona}
         selectedDoc={selection.selectedDoc}
         isDeleting={deletePersonaMut.isPending || deleteDocMut.isPending}
         isSavingNotes={updatePersonaMut.isPending}
@@ -293,9 +304,15 @@ export default function ProjectDetail() {
         onOpenProductTool={() => setActiveTab('product')}
         onSaveKiroPrompt={handleSaveKiroPrompt}
         onSelectPersona={selection.setSelectedPersona}
-        onEditPersona={() => selection.selectedPersona && selection.setEditingPersona(selection.selectedPersona)}
-        onDeletePersona={() => selection.selectedPersona && confirm.openPersonaConfirm(selection.selectedPersona.persona_id)}
+        onEditPersona={() => selectedPersona && selection.setEditingPersona(selectedPersona)}
+        onDeletePersona={() => selectedPersona && confirm.openPersonaConfirm(selectedPersona.persona_id)}
         onSaveNotes={saveNotes}
+        onTogglePersonaProtected={() => selectedPersona && togglePersonaProtectedMut.mutate({
+          personaId: selectedPersona.persona_id,
+          isProtected: selectedPersona.protected !== true,
+        })}
+        isTogglingPersonaProtected={togglePersonaProtectedMut.isPending
+          && togglePersonaProtectedMut.variables.personaId === selectedPersona?.persona_id}
         onImportPersona={() => importModal.setShowImportModal(true)}
         onSelectDoc={selection.setSelectedDoc}
         onEditDoc={() => selection.selectedDoc && docModal.openEditModal(selection.selectedDoc)}

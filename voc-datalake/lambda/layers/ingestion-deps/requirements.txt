@@ -5,3 +5,8 @@ lxml>=5.0.0
 tenacity>=8.2.0
 app-store-web-scraper>=0.2.0
 google-play-scraper>=1.2.7
+# Ingestors validate/normalize rows through plugins/_shared/schemas.py, which
+# uses pydantic (IngestMessage / MessageMetadata). Powertools does not pull it
+# in, so without this the s3_import ingestor fails at import with
+# "No module named 'pydantic'". Pinned to match processing-deps.
+pydantic>=2.12.0

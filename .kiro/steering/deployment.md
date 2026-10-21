@@ -84,18 +84,18 @@ The platform consists of 4 core stacks plus 1 AI-enablement stack.
 > packaging, and the failure appears only there — never at `cdk synth`. Fold new
 > infrastructure into an existing stack, or drop one first.
 >
-> This is why the web-search gateway and Bedrock model access share
-> `VocWebSearchStack`. Nested stacks are not an escape hatch: `NestedStackProps`
+> This is why the web-search gateway and the Anthropic use-case submission share
+> `VocWebSearchStack`, and why the model agreements live in `VocCoreStack`. Nested stacks are not an escape hatch: `NestedStackProps`
 > has no `env`, so a nested stack inherits the parent region, and that stack must
 > be pinned to us-east-1.
 
 | Stack | Description | Dependencies |
 |-------|-------------|--------------|
-| `VocCoreStack` | DynamoDB tables, KMS, S3 buckets, Cognito, CloudFront | None |
+| `VocCoreStack` | DynamoDB tables, KMS, S3 buckets, Cognito, CloudFront, Bedrock model agreements (app region, every deploy, best effort) | None (`VocWebSearchStack` when `anthropicUseCase` is set) |
 | `VocIngestionStack` | Plugin Lambdas, EventBridge schedules, SQS, Secrets | Core |
 | `VocProcessingStack` | Processor, Aggregator, Step Functions, Bedrock | Core, Ingestion |
 | `VocApiStack` | API Gateway, API Lambdas, Webhooks, WAF | Core, Ingestion, Processing |
-| `VocWebSearchStack` (AI enablement, always us-east-1) | Two independently switchable halves: AgentCore web-search gateway (default-on, `-c enableWebSearch=false` opts out) + Bedrock model access / Anthropic use case (only when `anthropicUseCase` is set). Not created when both are off | None |
+| `VocWebSearchStack` (AI enablement, always us-east-1) | Two independently switchable halves: AgentCore web-search gateway (default-on, `-c enableWebSearch=false` opts out) + Anthropic use-case form submission (only when `anthropicUseCase` is set; unset by default). Not created when both are off, which is how a deployment stays out of us-east-1 | None |
 
 ### Deploy All Stacks
 

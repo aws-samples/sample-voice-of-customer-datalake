@@ -7,6 +7,7 @@
  * the components that consume them.
  */
 import { z } from 'zod'
+import { optionalProvenanceSchema } from './personaFeedbackSchema'
 import { asRecord } from './wireRecord'
 import type { ProjectDetail, ProjectDocument, ProjectPersona } from './types'
 
@@ -119,6 +120,14 @@ const ProjectPersonaSchema = z.looseObject({
   research_notes: optionalResearchNotesSchema,
   supporting_evidence: optionalStringArray,
   source_breakdown: z.record(z.string(), z.number()).optional().catch(undefined),
+  // Source tracking; absent on personas generated before it was recorded, which
+  // must stay distinguishable from "recorded, and empty".
+  evidence_feedback_ids: optionalStringArray,
+  input_feedback_ids: optionalStringArray,
+  feedback_provenance: optionalProvenanceSchema,
+  // Strictly boolean, like the API's own check: a stray "false" read as truthy
+  // would show a persona as kept when regeneration is about to replace it.
+  protected: z.boolean().optional().catch(undefined),
 })
 
 function withLegacyManagedDocumentType(raw: unknown): unknown {

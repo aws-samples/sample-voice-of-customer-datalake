@@ -20,9 +20,7 @@
 import { useTranslation } from 'react-i18next'
 
 interface WindowCoverageNoticeProps {
-  /** A later page is in flight; the counts are still climbing. */
-  readonly isLoadingMore: boolean
-  /** Rows in the window were left unread, so the counts undercount. */
+  /** The window exceeded the server scan cap, so the counts undercount. */
   readonly isPartial: boolean
   /** A request failed. With `loadedCount` 0 this means nothing was read. */
   readonly hasFailed: boolean
@@ -42,7 +40,6 @@ interface WindowCoverageNoticeProps {
  * an unknown one.
  */
 export function WindowCoverageNotice({
-  isLoadingMore,
   isPartial,
   hasFailed,
   loadedCount,
@@ -76,13 +73,6 @@ export function WindowCoverageNotice({
         )}
       </div>
     )
-  }
-
-  // Progress is deliberately NOT a live region: a full walk settles a dozen
-  // times, and announcing each one talks over everything else on the page.
-  // Only the terminal states below are announced.
-  if (isLoadingMore) {
-    return <p className={className}>{t('stats.loadingWindow', counts)}</p>
   }
 
   if (isPartial) {

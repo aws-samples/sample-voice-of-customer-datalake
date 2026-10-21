@@ -154,6 +154,7 @@
   "subtitle": "VoC 플랫폼 구성",
   "tabs": {
     "categories": "카테고리",
+    "dataQuality": "데이터 품질",
     "general": "일반",
     "logs": "로그",
     "plugins": "데이터 소스",
@@ -164,5 +165,93 @@
     "configureFirst": "사용자를 관리하려면 일반 탭에서 API 엔드포인트를 구성하세요.",
     "description": "VoC 플랫폼의 사용자, 역할 및 권한을 관리합니다.",
     "title": "사용자 관리"
+  },
+  "customFilters": {
+    "title": "사용자 지정 필터",
+    "intro": "피드백 페이지에 최대 3개의 추가 데이터 필드를 필터로 표시합니다.",
+    "keyPlaceholder": "필드 키",
+    "labelPlaceholder": "표시 레이블",
+    "add": "필터 추가",
+    "remove": "제거",
+    "save": "필터 저장",
+    "saved": "저장됨",
+    "saveFailed": "사용자 지정 필터를 저장하지 못했습니다. 다시 시도하세요.",
+    "loadFailed": "사용자 지정 필터를 불러오지 못했습니다.",
+    "loading": "사용자 지정 필터를 불러오는 중...",
+    "capHint": "최대 3개의 필터.",
+    "empty": "구성된 사용자 지정 필터가 없습니다.",
+    "suggestionsTitle": "추천 필드",
+    "noSuggestions": "최근 데이터에서 추천할 필드가 없습니다."
+  },
+  "dataQuality": {
+    "title": "데이터 품질",
+    "intro": "저장된 피드백의 소스별 통계와, 누락된 AI 보강 값을 계산하거나 소스 전체에 대해 다시 계산하는 백그라운드 작업입니다.",
+    "refresh": "통계 새로 고침",
+    "snapshot_one": "{{time}} 기준 스냅샷 · {{count, number}}개 행 스캔",
+    "snapshot_other": "{{time}} 기준 스냅샷 · {{count, number}}개 행 스캔",
+    "noStats": "아직 통계가 없습니다. 통계 새로 고침을 실행하세요.",
+    "noSources": "마지막 스캔에서 피드백을 찾지 못했습니다.",
+    "loading": "데이터 품질을 불러오는 중...",
+    "loadFailed": "데이터 품질 통계를 불러오지 못했습니다.",
+    "rows_one": "{{count, number}}개 행",
+    "rows_other": "{{count, number}}개 행",
+    "charts": {
+      "rating": "평점",
+      "sentiment": "감성",
+      "length": "텍스트 길이(문자)"
+    },
+    "noRating": "없음",
+    "unscoredShare": "미평가 {{unscored, number}}개({{percent}}%)",
+    "calculateMissing": "누락분 계산",
+    "recalculateAll": "전체 다시 계산",
+    "recalculateTitle": "{{source}}의 {{field}}을(를) 다시 계산할까요?",
+    "recalculateMessage_one": "{{source}}의 모든 행({{count, number}}개 행)에 대해 {{field}}을(를) 다시 도출하고 이미 저장된 값을 대체합니다. 행마다 모델 호출이 한 번 발생합니다.",
+    "recalculateMessage_other": "{{source}}의 모든 행({{count, number}}개 행)에 대해 {{field}}을(를) 다시 도출하고 이미 저장된 값을 대체합니다. 행마다 모델 호출이 한 번 발생합니다.",
+    "startConflict": "해당 대상에 대한 작업이 이미 실행 중입니다. 완료될 때까지 기다리거나 먼저 취소하세요.",
+    "startFailed": "작업을 시작하지 못했습니다. 다시 시도하세요.",
+    "cancelConflict": "해당 작업은 이미 중지되었습니다.",
+    "cancelFailed": "작업을 취소하지 못했습니다. 다시 시도하세요.",
+    "fields": {
+      "usefulness": "유용성"
+    },
+    "values": {
+      "high": "높음",
+      "medium": "보통",
+      "low": "낮음",
+      "unscored": "미평가"
+    },
+    "sentiments": {
+      "positive": "긍정",
+      "neutral": "중립",
+      "negative": "부정",
+      "mixed": "혼합",
+      "unknown": "알 수 없음"
+    },
+    "jobs": {
+      "title": "최근 작업",
+      "empty": "아직 작업이 없습니다.",
+      "profile": "통계 새로 고침",
+      "enrich": "{{field}} · {{source}}",
+      "mode": {
+        "missing": "누락분만",
+        "all": "모든 행"
+      },
+      "status": {
+        "running": "실행 중",
+        "completed": "완료",
+        "failed": "실패",
+        "cancelled": "취소됨"
+      },
+      "scanning_one": "스캔 중… {{count, number}}개 행",
+      "scanning_other": "스캔 중… {{count, number}}개 행",
+      "scanned_one": "{{count, number}}개 행 스캔됨",
+      "scanned_other": "{{count, number}}개 행 스캔됨",
+      "progress": "{{processed, number}} / {{total, number}}",
+      "planning": "계획 중 — 행이 더 추가될 수 있습니다",
+      "counts": "업데이트 {{updated, number}} · 건너뜀 {{skipped, number}} · 실패 {{failed, number}}",
+      "started": "시작 {{time}}",
+      "cancel": "취소",
+      "progressLabel": "작업 진행률"
+    }
   }
 }

@@ -11,6 +11,8 @@ import { projectsApi } from '../../api/projectsApi'
 import DataSourceWizard from '../../components/DataSourceWizard'
 import ContextSummary from '../../components/DataSourceWizard/ContextSummary'
 import { isWebSearchAvailable } from '../../runtimeConfig'
+import PersonaFeedbackPreview from './PersonaFeedbackPreview'
+import PersonaRegenerationNote from './PersonaRegenerationNote'
 import type {
   PersonaToolConfig, ResearchToolConfig, DocToolConfig, MergeToolConfig, DocType,
 } from './types'
@@ -26,6 +28,7 @@ import type { ContextConfig, ExtraDataSource } from '../../components/DataSource
 const PERSONA_HIDDEN_DATA_SOURCES = ['personas', 'documents', 'research'] as const
 
 interface PersonaWizardProps {
+  readonly projectId: string
   readonly personas: ProjectPersona[]
   readonly documents: ProjectDocument[]
   readonly contextConfig: ContextConfig
@@ -38,7 +41,7 @@ interface PersonaWizardProps {
 }
 
 export function PersonaWizard({
-  personas, documents, contextConfig, personaConfig, generating, onContextChange, onPersonaConfigChange, onClose, onSubmit,
+  projectId, personas, documents, contextConfig, personaConfig, generating, onContextChange, onPersonaConfigChange, onClose, onSubmit,
 }: PersonaWizardProps) {
   return (
     <DataSourceWizard
@@ -57,6 +60,9 @@ export function PersonaWizard({
       // sequence, since this is exactly where someone would look for "use my
       // research".
       hideDataSources={PERSONA_HIDDEN_DATA_SOURCES}
+      // Generation samples the matching feedback, so show how much matches (and
+      // whether it will be sampled) while the filters are being chosen.
+      feedbackStepFooter={<PersonaFeedbackPreview projectId={projectId} contextConfig={contextConfig} />}
       renderFinalStep={() => (
         <div className="space-y-6">
           <div>
@@ -74,6 +80,7 @@ export function PersonaWizard({
             })} placeholder="e.g., Focus on business travelers..." rows={4} className="w-full px-3 py-2 border rounded-lg" />
           </div>
           <ContextSummary config={contextConfig} personas={personas} documents={documents} />
+          <PersonaRegenerationNote personas={personas} />
         </div>
       )}
       finalStepValid

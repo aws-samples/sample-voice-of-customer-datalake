@@ -15,9 +15,11 @@
     "share": "Compartilhar"
   },
   "filters": {
-    "clear": "Limpar",
-    "focusingOn": "Focando em: {{summary}}",
-    "title": "Filtrar contexto (máx. 30 avaliações)"
+    "count_one": "{{count}} avaliação",
+    "count_other": "{{count}} avaliações",
+    "countPartial_one": "{{count}}+ avaliação",
+    "countPartial_other": "{{count}}+ avaliações",
+    "dropped": "Este escopo tem mais de {{max}} avaliações. O chat usará as primeiras {{max}} e alguns comentários serão descartados — restrinja os filtros para resultados mais focados."
   },
   "hideHistory": "Ocultar histórico",
   "inputPlaceholder": "Pergunte sobre o seu feedback...",

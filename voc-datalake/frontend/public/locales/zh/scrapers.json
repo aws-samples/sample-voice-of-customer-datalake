@@ -119,7 +119,18 @@
     "preview_one": "预览 — {{count}} 个项目{{plural}}",
     "preview_other": "预览 — {{count}} 个项目{{plural}}",
     "templateNote": "模板文件包含完整说明和LLM就绪文档。",
-    "title": "JSON上传"
+    "title": "JSON上传",
+    "largeFileDetected": "大文件（{{size}} MB）— 将上传并在后台处理，而不是在此预览。",
+    "largeUploadStarted": "大文件已上传 — 正在后台处理",
+    "largeUploadNote": "文件正在导入和丰富处理。完成的行将陆续显示在反馈页面上；大文件可能需要几分钟。",
+    "sourceLabel": "来源",
+    "sourcePlaceholder": "例如 trustpilot、zendesk",
+    "sourceHint": "标明此批次的来源。带有自身来源字段的行将覆盖此设置。",
+    "sourceFieldLabel": "逐行来源字段",
+    "sourceFieldNone": "无 — 所有行均使用上面的来源",
+    "sourceFieldHint": "可选。选择一个其值用于设置每行来源的列 — 当一个文件包含多个来源时很有用。",
+    "uploading": "上传中…",
+    "uploadLargeFile": "上传并处理"
   },
   "manualImport": {
     "addReviewManually": "手动添加评论",

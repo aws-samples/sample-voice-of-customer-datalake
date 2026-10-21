@@ -101,6 +101,41 @@ describe('PersonaExportMenu', () => {
     })
   })
 
+  describe('view source feedback', () => {
+    it('shows no "View source feedback" item when no callback is given', async () => {
+      const user = userEvent.setup()
+      render(<PersonaExportMenu persona={mockPersona} />)
+
+      await user.click(screen.getByLabelText('Export persona'))
+
+      expect(screen.queryByRole('menuitem', { name: 'View source feedback' })).not.toBeInTheDocument()
+    })
+
+    it('shows "View source feedback" as the first item when a callback is given', async () => {
+      const user = userEvent.setup()
+      render(<PersonaExportMenu persona={mockPersona} onViewSourceFeedback={vi.fn()} />)
+
+      await user.click(screen.getByLabelText('Export persona'))
+
+      const items = screen.getAllByRole('menuitem')
+      expect(items[0]).toHaveAccessibleName('View source feedback')
+      // The export items are still there, after it.
+      expect(items.map((item) => item.textContent)).toContain('Copy as Markdown')
+    })
+
+    it('calls the callback and closes the menu when the item is clicked', async () => {
+      const user = userEvent.setup()
+      const onViewSourceFeedback = vi.fn()
+      render(<PersonaExportMenu persona={mockPersona} onViewSourceFeedback={onViewSourceFeedback} />)
+
+      await user.click(screen.getByLabelText('Export persona'))
+      await user.click(screen.getByRole('menuitem', { name: 'View source feedback' }))
+
+      expect(onViewSourceFeedback).toHaveBeenCalledTimes(1)
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    })
+  })
+
   describe('copy functionality', () => {
     it('copies persona as markdown to clipboard', async () => {
       const user = userEvent.setup()

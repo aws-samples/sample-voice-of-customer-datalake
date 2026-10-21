@@ -63,6 +63,17 @@ from shared.api import AGGREGATE_RETENTION_DAYS, MAX_FEEDBACK_WINDOW_DAYS, clear
 # _the_flag` below is its positive control.
 PUBLISHING_ROUTES = routes_publishing_is_partial()
 
+# Routes that publish `is_partial` but have NO aggregate path — they answer
+# purely from a raw-feedback scan. Their `is_partial` means "the sampled scan
+# window was truncated", not "an aggregate read was short" or "the window
+# exceeds the 90-day aggregate retention". The two aggregate-specific suites
+# below (`_call_route` drives the aggregate path) cannot apply to them, so they
+# are excluded there — and `TestScanPathIsUnchanged` already owns the contract
+# that a scan must NOT inherit the aggregate retention horizon. The
+# flag-present and derivation-wiring checks still cover them.
+_SCAN_ONLY_PUBLISHING_ROUTES = {'/feedback/custom-field-candidates', '/feedback/problems'}
+AGGREGATE_PUBLISHING_ROUTES = PUBLISHING_ROUTES.keys() - _SCAN_ONLY_PUBLISHING_ROUTES
+
 _HELPER = '_query_metric_window'
 # test/ → api/ → lambda/. Every Lambda package lives under here, so this is the
 # scope in which "nobody else calls the helper" can be checked at all.
@@ -154,12 +165,15 @@ class TestEveryPublishingRouteIsWired:
 
         An empty or short derivation would make every parametrized case below
         pass by never running, which is the failure mode this whole file exists
-        to close. The six named here are the response sites `is_partial` was
-        already published from; a seventh is welcome and belongs in this list
-        once it is wired.
+        to close. The sites named here are where `is_partial` is published;
+        `/feedback/custom-field-candidates` is a SCAN-ONLY publisher (no
+        aggregate path), so it is in this set but excluded from the two
+        aggregate-specific suites via `_SCAN_ONLY_PUBLISHING_ROUTES`.
         """
         assert set(PUBLISHING_ROUTES) == {
             '/feedback/entities',
+            '/feedback/custom-field-candidates',
+            '/feedback/problems',
             '/metrics/summary',
             '/metrics/sentiment',
             '/metrics/categories',
@@ -244,13 +258,16 @@ class TestEveryCallerUnpacksTheTruncationFlag:
 class TestAggregatePathReportsPagingTruncation:
     """Fault 1: the paging bound, which the helper detected and discarded."""
 
-    @pytest.mark.parametrize('path', sorted(PUBLISHING_ROUTES))
+    @pytest.mark.parametrize('path', sorted(AGGREGATE_PUBLISHING_ROUTES))
     @patch('metrics_handler.feedback_table')
     @patch('metrics_handler.aggregates_table')
     def test_a_truncated_aggregate_read_is_reported_partial(
         self, agg, fb, path, api_gateway_event, lambda_context
     ):
-        """Every page hands back another cursor, so every read stops short."""
+        """Every page hands back another cursor, so every read stops short.
+
+        Over AGGREGATE_PUBLISHING_ROUTES only: a scan-only publisher has no
+        aggregate read to truncate (see _SCAN_ONLY_PUBLISHING_ROUTES)."""
         agg.query.return_value = _aggregate_page(truncated=True)
         body = _call_route(path, INSIDE_RETENTION_DAYS, agg, fb,
                            api_gateway_event, lambda_context)
@@ -332,12 +349,16 @@ class TestWindowWiderThanAggregateRetention:
     read succeeds and returns every row that still exists.
     """
 
-    @pytest.mark.parametrize('path', sorted(PUBLISHING_ROUTES))
+    @pytest.mark.parametrize('path', sorted(AGGREGATE_PUBLISHING_ROUTES))
     @patch('metrics_handler.feedback_table')
     @patch('metrics_handler.aggregates_table')
     def test_a_window_beyond_the_retention_is_partial_by_construction(
         self, agg, fb, path, api_gateway_event, lambda_context
     ):
+        # Aggregate-path routes only: the horizon is a property of the 90-day
+        # aggregate rows. A scan-only publisher reads raw feedback (365-day TTL),
+        # so it must NOT call a wide window partial — the contract that
+        # TestScanPathIsUnchanged pins.
         agg.query.return_value = _aggregate_page(truncated=False)
         body = _call_route(path, MAX_FEEDBACK_WINDOW_DAYS, agg, fb,
                            api_gateway_event, lambda_context)

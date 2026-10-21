@@ -37,6 +37,9 @@ interface TabContentProps {
   readonly onEditPersona: () => void
   readonly onDeletePersona: () => void
   readonly onSaveNotes: (notes: NoteItem[]) => void
+  /** Flip whether the selected persona survives regeneration. */
+  readonly onTogglePersonaProtected: () => void
+  readonly isTogglingPersonaProtected: boolean
   readonly onImportPersona: () => void
   readonly onSelectDoc: (d: ProjectDocument | null) => void
   readonly onEditDoc: () => void
@@ -71,6 +74,8 @@ export default function TabContent({
   onEditPersona,
   onDeletePersona,
   onSaveNotes,
+  onTogglePersonaProtected,
+  isTogglingPersonaProtected,
   onImportPersona,
   onSelectDoc,
   onEditDoc,
@@ -105,16 +110,19 @@ export default function TabContent({
   if (activeTab === 'personas') {
     return (
       <PersonasTab
+        projectId={project.project_id}
         personas={personas}
         selectedPersona={selectedPersona}
         onSelectPersona={onSelectPersona}
         onEditPersona={onEditPersona}
         onDeletePersona={onDeletePersona}
         onSaveNotes={onSaveNotes}
+        onToggleProtected={onTogglePersonaProtected}
         onGeneratePersonas={onGeneratePersonas}
         onImportPersona={onImportPersona}
         isDeleting={isDeleting}
         isSavingNotes={isSavingNotes}
+        isTogglingProtected={isTogglingPersonaProtected}
       />
     )
   }

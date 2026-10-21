@@ -2,7 +2,18 @@
  * @fileoverview Tests for chatStore.
  */
 import { describe, it, expect, beforeEach } from 'vitest'
-import { useChatStore } from './chatStore'
+import { useChatStore, EMPTY_CONVERSATION_FILTERS, type ConversationFilters } from './chatStore'
+import { EMPTY_FEEDBACK_FILTERS, type FeedbackFilterState } from '../api/feedbackFilters'
+
+/** A feedback-filter state with the given source selected. */
+function withSource(source: string): FeedbackFilterState {
+  return { ...EMPTY_FEEDBACK_FILTERS, sources: [source] }
+}
+
+/** A conversation-filter selection with one feedback source set. */
+function convWithSource(source: string): ConversationFilters {
+  return { feedback: withSource(source) }
+}
 
 describe('chatStore', () => {
   beforeEach(() => {
@@ -10,7 +21,7 @@ describe('chatStore', () => {
     useChatStore.setState({
       conversations: [],
       activeConversationId: null,
-      draftFilters: {},
+      draftFilters: EMPTY_CONVERSATION_FILTERS,
     })
   })
 
@@ -61,7 +72,7 @@ describe('chatStore', () => {
       
       const conversation = useChatStore.getState().getActiveConversation()
       expect(conversation?.messages).toEqual([])
-      expect(conversation?.filters).toEqual({})
+      expect(conversation?.filters).toEqual(EMPTY_CONVERSATION_FILTERS)
     })
   })
 
@@ -244,29 +255,42 @@ describe('chatStore', () => {
 
   describe('draftFilters (issue #161)', () => {
     it('buffers filters set before any conversation exists', () => {
-      useChatStore.getState().setDraftFilters({ source: 'webscraper', useWebSearch: true })
+      const draft: ConversationFilters = { feedback: withSource('webscraper'), useWebSearch: true }
+      useChatStore.getState().setDraftFilters(draft)
 
-      expect(useChatStore.getState().draftFilters).toEqual({ source: 'webscraper', useWebSearch: true })
+      expect(useChatStore.getState().draftFilters).toEqual(draft)
     })
 
     it('is consumed by the next conversation, however it is created', () => {
       // Covers both entry points: the first message on the Chat page and
       // the sidebar's New Chat both go through createConversation.
-      useChatStore.getState().setDraftFilters({ sentiment: 'negative' })
+      const draft: ConversationFilters = { feedback: { ...EMPTY_FEEDBACK_FILTERS, sentiments: ['negative'] } }
+      useChatStore.getState().setDraftFilters(draft)
 
       const id = useChatStore.getState().createConversation()
 
       const conversation = useChatStore.getState().conversations.find(c => c.id === id)
-      expect(conversation?.filters).toEqual({ sentiment: 'negative' })
+      expect(conversation?.filters.feedback.sentiments).toEqual(['negative'])
       // Draft is cleared so the NEXT fresh conversation starts clean.
-      expect(useChatStore.getState().draftFilters).toEqual({})
+      expect(useChatStore.getState().draftFilters).toEqual(EMPTY_CONVERSATION_FILTERS)
+    })
+
+    it('carries the web-search flag onto the new conversation', () => {
+      // useWebSearch is NOT a feedback dimension but is still per-conversation,
+      // so the draft must preserve it across creation.
+      useChatStore.getState().setDraftFilters({ feedback: EMPTY_FEEDBACK_FILTERS, useWebSearch: true })
+
+      const id = useChatStore.getState().createConversation()
+
+      const conversation = useChatStore.getState().conversations.find(c => c.id === id)
+      expect(conversation?.filters.useWebSearch).toBe(true)
     })
 
     it('creates conversations with empty filters when no draft is set', () => {
       const id = useChatStore.getState().createConversation()
 
       const conversation = useChatStore.getState().conversations.find(c => c.id === id)
-      expect(conversation?.filters).toEqual({})
+      expect(conversation?.filters).toEqual(EMPTY_CONVERSATION_FILTERS)
     })
 
     it('consumes a lingering draft even after the active conversation was deleted', () => {
@@ -274,32 +298,32 @@ describe('chatStore', () => {
       // active conversation" (e.g. delete), the next creation consumes it.
       const store = useChatStore.getState()
       const firstId = store.createConversation()
-      store.setDraftFilters({ category: 'delivery' })
+      store.setDraftFilters({ feedback: { ...EMPTY_FEEDBACK_FILTERS, categories: ['delivery'] } })
       store.deleteConversation(firstId)
 
       const secondId = useChatStore.getState().createConversation()
 
       const conversation = useChatStore.getState().conversations.find(c => c.id === secondId)
-      expect(conversation?.filters).toEqual({ category: 'delivery' })
-      expect(useChatStore.getState().draftFilters).toEqual({})
+      expect(conversation?.filters.feedback.categories).toEqual(['delivery'])
+      expect(useChatStore.getState().draftFilters).toEqual(EMPTY_CONVERSATION_FILTERS)
     })
 
     it('hands the conversation its own copy of the draft, not a shared reference', () => {
-      useChatStore.getState().setDraftFilters({ source: 'webscraper' })
+      useChatStore.getState().setDraftFilters(convWithSource('webscraper'))
       const draftBefore = useChatStore.getState().draftFilters
 
       const id = useChatStore.getState().createConversation()
 
       const conversation = useChatStore.getState().conversations.find(c => c.id === id)
       expect(conversation?.filters).not.toBe(draftBefore)
-      expect(conversation?.filters).toEqual({ source: 'webscraper' })
+      expect(conversation?.filters.feedback.sources).toEqual(['webscraper'])
     })
 
     it('is excluded from the persisted payload', () => {
       // A stale draft applying to a conversation created in a LATER session
       // would be the same surprising-filter-state bug in reverse — the
       // draft is ephemeral by design.
-      useChatStore.getState().setDraftFilters({ useWebSearch: true })
+      useChatStore.getState().setDraftFilters({ feedback: EMPTY_FEEDBACK_FILTERS, useWebSearch: true })
 
       const options = useChatStore.persist.getOptions()
       const persisted = options.partialize?.(useChatStore.getState()) ?? useChatStore.getState()
@@ -313,13 +337,76 @@ describe('chatStore', () => {
   describe('updateConversationFilters', () => {
     it('updates conversation filters', () => {
       const { createConversation, updateConversationFilters } = useChatStore.getState()
-      
+
       const convId = createConversation()
-      updateConversationFilters(convId, { source: 'webscraper', sentiment: 'positive' })
-      
+      const next: ConversationFilters = {
+        feedback: { ...EMPTY_FEEDBACK_FILTERS, sources: ['webscraper'], sentiments: ['positive'] },
+      }
+      updateConversationFilters(convId, next)
+
       const state = useChatStore.getState()
       const conv = state.conversations.find(c => c.id === convId)
-      expect(conv?.filters).toEqual({ source: 'webscraper', sentiment: 'positive' })
+      expect(conv?.filters).toEqual(next)
+    })
+  })
+
+  describe('persisted-shape migration', () => {
+    it('degrades an old flat filter record to the shared empty filters without crashing', () => {
+      // Issue #161 stored `{ source, category, sentiment, useWebSearch }`. The
+      // merge step must read that leniently: a legacy record maps its single
+      // values into the shared multi-select model.
+      const migrated = useChatStore.persist.getOptions().merge?.(
+        {
+          conversations: [{
+            id: 'conv_old',
+            title: 'Legacy',
+            messages: [],
+            filters: { source: 'webscraper', category: 'delivery', sentiment: 'negative', useWebSearch: true },
+            createdAt: '2024-01-01T00:00:00.000Z',
+            updatedAt: '2024-01-01T00:00:00.000Z',
+          }],
+          activeConversationId: 'conv_old',
+        },
+        useChatStore.getState(),
+      )
+      const conv = migrated?.conversations.find((c) => c.id === 'conv_old')
+      expect(conv?.filters.feedback.sources).toEqual(['webscraper'])
+      expect(conv?.filters.feedback.categories).toEqual(['delivery'])
+      expect(conv?.filters.feedback.sentiments).toEqual(['negative'])
+      expect(conv?.filters.useWebSearch).toBe(true)
+    })
+
+    it('degrades a malformed persisted filter record to empty rather than throwing', () => {
+      // A corrupt `{ source: 42 }` must not crash a render — it becomes empty.
+      const migrated = useChatStore.persist.getOptions().merge?.(
+        {
+          conversations: [{
+            id: 'conv_bad', title: 'Corrupt', messages: [],
+            filters: { source: 42 }, createdAt: 'x', updatedAt: 'x',
+          }],
+          activeConversationId: null,
+        },
+        useChatStore.getState(),
+      )
+      const conv = migrated?.conversations.find((c) => c.id === 'conv_bad')
+      expect(conv?.filters.feedback).toEqual(EMPTY_FEEDBACK_FILTERS)
+      expect(conv?.filters.useWebSearch).toBeUndefined()
+    })
+
+    it('keeps an already-migrated nested filter record', () => {
+      const migrated = useChatStore.persist.getOptions().merge?.(
+        {
+          conversations: [{
+            id: 'conv_new', title: 'New-shape', messages: [],
+            filters: { feedback: withSource('manual_import'), useWebSearch: false },
+            createdAt: 'x', updatedAt: 'x',
+          }],
+          activeConversationId: null,
+        },
+        useChatStore.getState(),
+      )
+      const conv = migrated?.conversations.find((c) => c.id === 'conv_new')
+      expect(conv?.filters.feedback.sources).toEqual(['manual_import'])
     })
   })
 

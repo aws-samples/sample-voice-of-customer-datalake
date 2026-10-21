@@ -39,7 +39,8 @@ vi.mock('../services/sessionExpiry', () => ({
   endExpiredSession: vi.fn(),
 }))
 
-import { streamChat } from './streamClient'
+import { streamChat, streamVocChat } from './streamClient'
+import { MAX_CHAT_FEEDBACK_ITEMS } from './streamLimits'
 import { authService } from '../services/auth'
 import { endExpiredSession } from '../services/sessionExpiry'
 
@@ -146,5 +147,62 @@ describe('streamChat auth handling', () => {
     ).rejects.toThrow('Access denied')
 
     expect(endExpiredSession).not.toHaveBeenCalled()
+  })
+})
+
+/** Capture the JSON body of the single POST a streamVocChat drain performs. */
+async function captureVocBody(options: Parameters<typeof streamVocChat>[0]): Promise<Record<string, unknown>> {
+  const fetchMock = global.fetch as ReturnType<typeof vi.fn>
+  fetchMock.mockReset()
+  fetchMock.mockResolvedValueOnce(okStream())
+  await drain(streamVocChat(options))
+  const [, init] = fetchMock.mock.calls[0]
+  const parsed: unknown = JSON.parse(init.body)
+  if (typeof parsed !== 'object' || parsed === null) throw new Error('body was not an object')
+  return { ...parsed }
+}
+
+describe('streamVocChat request body', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    ;(authService.getIdToken as ReturnType<typeof vi.fn>).mockReturnValue('tok')
+    global.fetch = vi.fn()
+  })
+
+  it('sends the structured filters field and the item limit', async () => {
+    const body = await captureVocBody({
+      message: 'hi',
+      filters: { source: 'webscraper,manual_import', sentiment: 'negative', cf_tier: ['Gold', 'Platinum'] },
+      limit: MAX_CHAT_FEEDBACK_ITEMS,
+    })
+
+    expect(body.filters).toEqual({
+      source: 'webscraper,manual_import',
+      sentiment: 'negative',
+      cf_tier: ['Gold', 'Platinum'],
+    })
+    expect(body.limit).toBe(MAX_CHAT_FEEDBACK_ITEMS)
+  })
+
+  it('omits the filters key entirely when no filters are active', async () => {
+    const body = await captureVocBody({ message: 'hi', filters: {}, limit: MAX_CHAT_FEEDBACK_ITEMS })
+
+    expect(body).not.toHaveProperty('filters')
+    expect(body.limit).toBe(MAX_CHAT_FEEDBACK_ITEMS)
+  })
+
+  it('omits the limit key when none is given', async () => {
+    const body = await captureVocBody({ message: 'hi' })
+
+    expect(body).not.toHaveProperty('limit')
+    expect(body).not.toHaveProperty('filters')
+  })
+
+  it('still sends use_web_search only when enabled', async () => {
+    const on = await captureVocBody({ message: 'hi', useWebSearch: true })
+    expect(on.use_web_search).toBe(true)
+
+    const off = await captureVocBody({ message: 'hi', useWebSearch: false })
+    expect(off).not.toHaveProperty('use_web_search')
   })
 })

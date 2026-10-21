@@ -12,6 +12,8 @@ import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
+import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as path from 'path';
 import { Construct } from 'constructs';
 import { NagSuppressions } from 'cdk-nag';
@@ -686,7 +688,10 @@ export class VocApiStack extends VocStack {
       code: createApiLambdaCode('projects_handler.py'),
       role: projectsRole,
       timeout: cdk.Duration.seconds(30),
-      memorySize: 512,
+      // 1024, not 512: Lambda CPU scales with memory, and the persona wizard's
+      // exact preview count is CPU-bound past DynamoDB's read floor (unpacking
+      // ~42k projected rows took it from 3.9s to 6.5s at 512MB on the f corpus).
+      memorySize: 1024,
       environment: {
         PROJECTS_TABLE: projectsTable.tableName,
         FEEDBACK_TABLE: feedbackTable.tableName,
@@ -1091,6 +1096,18 @@ export class VocApiStack extends VocStack {
     const documentStateMachine = this.createDocumentStateMachine(documentGeneratorLambda);
     documentStateMachine.grantStartExecution(projectsRole);
     projectsLambda.addEnvironment('DOCUMENT_STATE_MACHINE_ARN', documentStateMachine.stateMachineArn);
+
+    // Settings → Data Quality: async profile scans and enrichment (re)calculation.
+    const dataQualityQueue = this.createDataQualityWorker({
+      code: createJobLambdaCode('data_quality'),
+      layer: apiLayer,
+      feedbackTable,
+      aggregatesTable,
+      kmsKey,
+      modelResources: claudeModelResources,
+    });
+    dataQualityQueue.grantSendMessages(settingsRole);
+    settingsLambda.addEnvironment('DATA_QUALITY_QUEUE_URL', dataQualityQueue.queueUrl);
 
     // Chat Stream (Node.js — API Gateway response streaming, replaces Python Function URL)
     const chatStreamLambda = new NodejsFunction(this, 'ChatStreamApi', {
@@ -1662,7 +1679,13 @@ export class VocApiStack extends VocStack {
     feedbackResource.addResource('urgent').addMethod('GET', metricsIntegration, authMethodOptions);
     feedbackResource.addResource('entities').addMethod('GET', metricsIntegration, authMethodOptions);
     feedbackResource.addResource('search').addMethod('GET', metricsIntegration, authMethodOptions);
+    // Literal segment; coexists with the {id} sibling because API Gateway
+    // prefers an exact path part over a greedy variable at the same level
+    // (same as urgent/entities/search above).
+    feedbackResource.addResource('custom-field-candidates').addMethod('GET', metricsIntegration, authMethodOptions);
     const problemsResource = feedbackResource.addResource('problems');
+    // Server-side Problem Analysis aggregation (the finest-grain problem tree).
+    problemsResource.addMethod('GET', metricsIntegration, authMethodOptions);
     problemsResource.addResource('resolved').addMethod('GET', metricsIntegration, authMethodOptions);
     const problemIdResource = problemsResource.addResource('{problemId}');
     const problemResolveResource = problemIdResource.addResource('resolve');
@@ -2122,6 +2145,113 @@ exports.handler = async (event) => {
       retention: logs.RetentionDays.TWO_WEEKS,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
+  }
+
+  /**
+   * The Data Quality queue and its worker (lambda/jobs/data_quality, protocol in
+   * lambda/shared/data_quality.py). The settings API only records a job and
+   * enqueues its first message; this consumer pages the table, fans out one
+   * message per row and makes the Bedrock calls, so no request meets API
+   * Gateway's 29 s ceiling however large the corpus.
+   *
+   * Throughput is bounded by `maxConcurrency` (context `dataQualityMaxConcurrency`,
+   * default 5): a recalculation shares the account's Bedrock quota with ingestion
+   * enrichment, so it is deliberately not allowed to fan out without limit.
+   *
+   * Returns the queue so the caller can grant the settings API send access.
+   */
+  private createDataQualityWorker(props: {
+    code: lambda.Code;
+    layer: lambda.ILayerVersion;
+    feedbackTable: dynamodb.ITable;
+    aggregatesTable: dynamodb.ITable;
+    kmsKey: kms.IKey;
+    modelResources: string[];
+  }): sqs.Queue {
+    const timeoutMinutes = 5;
+    const timeout = cdk.Duration.minutes(timeoutMinutes);
+    // The worker counts an item as failed on this delivery rather than letting
+    // it reach the DLQ, so the env var and the redrive policy must agree.
+    const maxReceiveCount = 5;
+    const maxConcurrency = this.dataQualityMaxConcurrency();
+
+    const deadLetterQueue = new sqs.Queue(this, 'DataQualityDlq', {
+      queueName: this.uniqueName('voc-data-quality-dlq'),
+      encryption: sqs.QueueEncryption.KMS,
+      encryptionMasterKey: props.kmsKey,
+      retentionPeriod: cdk.Duration.days(14),
+      enforceSSL: true,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+    const queue = new sqs.Queue(this, 'DataQualityQueue', {
+      queueName: this.uniqueName('voc-data-quality'),
+      encryption: sqs.QueueEncryption.KMS,
+      encryptionMasterKey: props.kmsKey,
+      // AWS guidance for an SQS event source: at least 6x the function timeout.
+      visibilityTimeout: cdk.Duration.minutes(timeoutMinutes * 6),
+      deadLetterQueue: { queue: deadLetterQueue, maxReceiveCount },
+      enforceSSL: true,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    const role = this.createLambdaRole('DataQualityWorkerRole');
+    // Exactly what lambda/jobs/data_quality/handler.py calls. `grantReadWriteData`
+    // would add PutItem, DeleteItem and BatchWriteItem on the feedback table — the
+    // worker only ever sets one enrichment attribute on rows that already exist.
+    props.feedbackTable.grant(role, 'dynamodb:Scan', 'dynamodb:Query', 'dynamodb:GetItem', 'dynamodb:UpdateItem');
+    // Job records, per-source locks (Put/Delete) and the profile snapshot, plus
+    // the model picker's override read (shared/model_config.py GetItem).
+    props.aggregatesTable.grant(
+      role,
+      'dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem',
+    );
+    props.kmsKey.grantEncryptDecrypt(role);
+    role.addToPolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel'],
+      resources: props.modelResources,
+    }));
+    queue.grantConsumeMessages(role);
+    // Continuations and per-row fan-out go back onto the same queue.
+    queue.grantSendMessages(role);
+
+    const worker = new lambda.Function(this, 'DataQualityWorker', {
+      functionName: this.uniqueName('voc-data-quality-worker'),
+      runtime: lambda.Runtime.PYTHON_3_14,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'handler.lambda_handler',
+      code: props.code,
+      role,
+      timeout,
+      memorySize: 512,
+      environment: {
+        FEEDBACK_TABLE: props.feedbackTable.tableName,
+        AGGREGATES_TABLE: props.aggregatesTable.tableName,
+        DATA_QUALITY_QUEUE_URL: queue.queueUrl,
+        DQ_MAX_RECEIVE_COUNT: String(maxReceiveCount),
+        POWERTOOLS_SERVICE_NAME: 'voc-data-quality-worker',
+        LOG_LEVEL: 'INFO',
+      },
+      layers: [props.layer],
+      logGroup: this.createLogGroup('DataQualityWorkerLogs', this.uniqueName('voc-data-quality-worker')),
+    });
+    worker.addEventSource(new lambdaEventSources.SqsEventSource(queue, {
+      batchSize: 10,
+      maxBatchingWindow: cdk.Duration.seconds(5),
+      reportBatchItemFailures: true,
+      maxConcurrency,
+    }));
+    return queue;
+  }
+
+  /** `-c dataQualityMaxConcurrency=N`; SQS event sources accept 2..1000. */
+  private dataQualityMaxConcurrency(): number {
+    const raw: unknown = this.node.tryGetContext('dataQualityMaxConcurrency');
+    if (raw === undefined) return 5;
+    const value = typeof raw === 'number' ? raw : Number(raw);
+    if (!Number.isInteger(value) || value < 2 || value > 1000) {
+      throw new Error(`dataQualityMaxConcurrency must be an integer from 2 to 1000 (got ${String(raw)})`);
+    }
+    return value;
   }
 
   /**

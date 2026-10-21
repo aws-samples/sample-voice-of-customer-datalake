@@ -3239,3 +3239,103 @@ it('private fixture provider has exact shape, table IAM, output, and no public e
   const methods = JSON.stringify(template.findResources('AWS::ApiGateway::Method'));
   expect(methods.includes(providerLogicalId)).toBe(false);
 });
+
+describe('the Data Quality worker', () => {
+  // lambda/jobs/data_quality + lambda/shared/data_quality.py. The worker counts an
+  // item as failed on its last delivery instead of letting it reach the DLQ, which
+  // only works while its env var and the queue's redrive policy agree.
+  const FunctionSchema = z.object({
+    Properties: z.object({
+      Timeout: z.number(),
+      Environment: z.object({ Variables: z.record(z.string(), z.unknown()) }),
+    }),
+  });
+  const QueueSchema = z.object({
+    Properties: z.object({
+      VisibilityTimeout: z.number().optional(),
+      RedrivePolicy: z.object({ maxReceiveCount: z.number() }).optional(),
+    }),
+  });
+
+  const worker = () => {
+    const matches = Object.entries(apiTemplate().findResources('AWS::Lambda::Function'))
+      .filter(([logicalId]) => logicalId.startsWith('DataQualityWorker'));
+    expect(matches, 'expected exactly one DataQualityWorker').toHaveLength(1);
+    return { logicalId: matches[0][0], ...FunctionSchema.parse(matches[0][1]).Properties };
+  };
+  const workQueue = () => {
+    const matches = Object.entries(apiTemplate().findResources('AWS::SQS::Queue'))
+      .filter(([logicalId]) => logicalId.startsWith('DataQualityQueue'));
+    expect(matches, 'expected exactly one DataQualityQueue').toHaveLength(1);
+    return { logicalId: matches[0][0], ...QueueSchema.parse(matches[0][1]).Properties };
+  };
+
+  it('agrees with the queue about the final delivery', () => {
+    const queue = workQueue();
+    expect(queue.RedrivePolicy?.maxReceiveCount).toBeDefined();
+    expect(worker().Environment.Variables.DQ_MAX_RECEIVE_COUNT).toBe(String(queue.RedrivePolicy?.maxReceiveCount));
+  });
+
+  it('keeps a message invisible for at least six worker timeouts', () => {
+    expect(workQueue().VisibilityTimeout).toBeGreaterThanOrEqual(worker().Timeout * 6);
+  });
+
+  it('consumes with partial-batch failures and a bounded concurrency', () => {
+    apiTemplate().hasResourceProperties('AWS::Lambda::EventSourceMapping', {
+      FunctionName: { Ref: worker().logicalId },
+      FunctionResponseTypes: ['ReportBatchItemFailures'],
+      ScalingConfig: { MaximumConcurrency: 5 },
+    });
+  });
+
+  it('accepts a concurrency override and rejects an out-of-range one', () => {
+    Template.fromStack(buildApiStack({ dataQualityMaxConcurrency: '12' }))
+      .hasResourceProperties('AWS::Lambda::EventSourceMapping', { ScalingConfig: { MaximumConcurrency: 12 } });
+    expect(() => buildApiStack({ dataQualityMaxConcurrency: 1 })).toThrow(/dataQualityMaxConcurrency/);
+  });
+
+  it('hands the settings API the queue it enqueues jobs on', () => {
+    // safeParse: CDK's own helper functions (custom resources) carry no Environment.
+    const settings = Object.values(apiTemplate().findResources('AWS::Lambda::Function'))
+      .map((fn) => FunctionSchema.safeParse(fn))
+      .flatMap((parsed) => (parsed.success ? [parsed.data.Properties.Environment.Variables] : []))
+      .find((vars) => vars.POWERTOOLS_SERVICE_NAME === 'voc-settings-api');
+    expect(settings, 'no voc-settings-api function').toBeDefined();
+    expect(settings?.DATA_QUALITY_QUEUE_URL).toEqual({ Ref: workQueue().logicalId });
+  });
+
+  it('can only read and update feedback rows, never create or delete them', () => {
+    // The worker sets one enrichment attribute on rows that already exist. A
+    // `grantReadWriteData` here would hand a prompt-driven job PutItem, DeleteItem
+    // and BatchWriteItem over the whole corpus.
+    const StatementSchema = z.object({ Action: z.union([z.string(), z.array(z.string())]), Resource: z.unknown() });
+    const PolicySchema = z.object({
+      Properties: z.object({
+        Roles: z.array(z.object({ Ref: z.string() })),
+        PolicyDocument: z.object({ Statement: z.array(StatementSchema) }),
+      }),
+    });
+    const RoleRefSchema = z.object({ Properties: z.object({ Role: z.object({ 'Fn::GetAtt': z.tuple([z.string(), z.string()]) }) }) });
+
+    const fn = apiTemplate().findResources('AWS::Lambda::Function')[worker().logicalId];
+    const roleRef = RoleRefSchema.parse(fn).Properties.Role['Fn::GetAtt'][0];
+    const statements = Object.values(apiTemplate().findResources('AWS::IAM::Policy'))
+      .flatMap((resource) => {
+        const parsed = PolicySchema.safeParse(resource);
+        return parsed.success && parsed.data.Properties.Roles.some((role) => role.Ref === roleRef)
+          ? parsed.data.Properties.PolicyDocument.Statement
+          : [];
+      });
+    const actionsOn = (table: string) => new Set(statements
+      .filter((statement) => JSON.stringify(statement.Resource).includes(table))
+      .flatMap((statement) => (Array.isArray(statement.Action) ? statement.Action : [statement.Action]))
+      .filter((action) => action.startsWith('dynamodb:')));
+
+    expect([...actionsOn('Feedback')].sort()).toEqual([
+      'dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:Scan', 'dynamodb:UpdateItem',
+    ]);
+    expect([...actionsOn('Aggregates')].sort()).toEqual([
+      'dynamodb:DeleteItem', 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:Query', 'dynamodb:UpdateItem',
+    ]);
+  });
+});

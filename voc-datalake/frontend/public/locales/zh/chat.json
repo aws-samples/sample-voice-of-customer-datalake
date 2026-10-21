@@ -15,9 +15,9 @@
     "share": "分享"
   },
   "filters": {
-    "clear": "清除",
-    "focusingOn": "筛选条件：{{summary}}",
-    "title": "筛选上下文（最多 30 条评论）"
+    "count_other": "{{count}} 条评论",
+    "countPartial_other": "{{count}}+ 条评论",
+    "dropped": "此范围包含超过 {{max}} 条评论。聊天将仅使用前 {{max}} 条，部分反馈会被忽略——请收窄筛选条件以获得更聚焦的结果。"
   },
   "hideHistory": "隐藏历史记录",
   "inputPlaceholder": "询问有关反馈的问题...",

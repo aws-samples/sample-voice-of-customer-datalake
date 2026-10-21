@@ -84,5 +84,7 @@
   "topIssue": "Häufigstes Problem",
   "totalFeedback": "Gesamtes Feedback",
   "trendingKeywords": "Trend-Schlüsselwörter",
-  "urgentOnly": "Nur dringende"
+  "urgentOnly": "Nur dringende",
+  "allOf": "Alle {{label}}",
+  "filterByCustom": "Nach {{label}} filtern"
 }

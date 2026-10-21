@@ -6,6 +6,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { DataSourcesStep, FeedbackFiltersStep, ItemSelectionStep } from './DataSourceSteps'
 import { SENTIMENTS } from '../../constants/filters'
+import { EMPTY_FEEDBACK_FILTERS } from '../../api/feedbackFilters'
 import type { ContextConfig } from './types'
 import type { ProjectPersona, ProjectDocument } from '../../api/client'
 
@@ -26,6 +27,7 @@ const defaultContextConfig: ContextConfig = {
   categories: [],
   sentiments: [],
   days: 30,
+  feedback: EMPTY_FEEDBACK_FILTERS,
   selectedPersonaIds: [],
   selectedDocumentIds: [],
   selectedResearchIds: [],

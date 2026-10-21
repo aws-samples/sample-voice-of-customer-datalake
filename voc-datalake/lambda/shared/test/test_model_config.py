@@ -16,10 +16,13 @@ from shared.model_config import (  # noqa: E402
 )
 from shared.aws import BEDROCK_MODEL_ID  # noqa: E402
 
+SONNET55 = "global.anthropic.claude-sonnet-5-5"
 SONNET5 = "global.anthropic.claude-sonnet-5"
 SONNET46 = "global.anthropic.claude-sonnet-4-6"
+OPUS55 = "global.anthropic.claude-opus-5-5"
 OPUS5 = "global.anthropic.claude-opus-5"
 OPUS48 = "global.anthropic.claude-opus-4-8"
+HAIKU55 = "global.anthropic.claude-haiku-5-5"
 HAIKU45 = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
 
 
@@ -42,8 +45,12 @@ class TestAllowlist:
     def test_default_model_is_allowlisted(self):
         assert BEDROCK_MODEL_ID in ALLOWED_MODEL_IDS
 
-    def test_allowlist_has_all_five_models(self):
-        assert ALLOWED_MODEL_IDS == {SONNET5, SONNET46, OPUS5, OPUS48, HAIKU45}
+    def test_allowlist_has_all_eight_models(self):
+        assert ALLOWED_MODEL_IDS == {
+            SONNET55, SONNET5, SONNET46,
+            OPUS55, OPUS5, OPUS48,
+            HAIKU55, HAIKU45,
+        }
 
     def test_every_surface_default_is_allowlisted(self):
         """A surface whose Automatic default isn't invocable would break that
@@ -57,7 +64,11 @@ class TestAllowlist:
 
     def test_model_entries_carry_stable_keys(self):
         keys = [m['key'] for m in ALLOWED_MODELS]
-        assert keys == ['sonnet5', 'sonnet46', 'opus5', 'opus48', 'haiku45']
+        assert keys == [
+            'sonnet55', 'sonnet5', 'sonnet46',
+            'opus55', 'opus5', 'opus48',
+            'haiku55', 'haiku45',
+        ]
 
     def test_every_model_declares_both_capability_flags(self):
         """Both flags are data on the row so a new model can't land in one
@@ -70,24 +81,25 @@ class TestAllowlist:
 
 class TestCapabilityFlags:
     def test_adaptive_models_omit_temperature(self):
-        """Sonnet 5 and both Opus generations run adaptive thinking always-on,
-        which rules out sampling controls; sending `temperature` would 400."""
-        assert omits_temperature(SONNET5)
-        assert omits_temperature(OPUS5)
-        assert omits_temperature(OPUS48)
+        """Sonnet 5/5.5, all Opus 5.x/4.8, and Haiku 5.5 run adaptive thinking
+        always-on, which rules out sampling controls; sending `temperature`
+        would 400. Verified by live Converse against the account for the 5.5
+        models before they were added to the allowlist."""
+        for model_id in (SONNET55, SONNET5, OPUS55, OPUS5, OPUS48, HAIKU55):
+            assert omits_temperature(model_id), model_id
 
-    def test_sonnet46_and_haiku_accept_temperature(self):
+    def test_sonnet46_and_haiku45_accept_temperature(self):
         assert not omits_temperature(SONNET46)
         assert not omits_temperature(HAIKU45)
 
-    def test_adaptive_thinking_covers_sonnet5_and_both_opus(self):
-        """Opus 4.7 and later reject a manual `thinking.budget_tokens` with a
-        400, so converse() must skip the field for BOTH Opus generations as it
-        does for Sonnet 5. Opus 4.8 being selectable makes this load-bearing:
-        it was previously in the omit-temperature set only."""
-        assert uses_adaptive_thinking(SONNET5)
-        assert uses_adaptive_thinking(OPUS5)
-        assert uses_adaptive_thinking(OPUS48)
+    def test_adaptive_thinking_covers_sonnet_opus_and_haiku55(self):
+        """Models that reject a manual `thinking.budget_tokens` with a 400, so
+        converse() must skip the field for them. Covers Sonnet 5/5.5, every
+        Opus 5.x and 4.8, and Haiku 5.5 (newest Haiku moved to adaptive-only,
+        unlike Haiku 4.5). The 5.5 trio was confirmed by live Converse before
+        being added."""
+        for model_id in (SONNET55, SONNET5, OPUS55, OPUS5, OPUS48, HAIKU55):
+            assert uses_adaptive_thinking(model_id), model_id
         for model_id in (SONNET46, HAIKU45):
             assert not uses_adaptive_thinking(model_id)
 

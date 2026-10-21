@@ -514,3 +514,52 @@ class TestSafeValidateMessage:
         assert message is None
         assert len(errors) > 0
         assert any('source_platform' in e for e in errors)
+
+
+class TestNormalizeSourcePlatform:
+    """Tests for normalize_source_platform() — per-row source + s3 cleanup."""
+
+    def test_lowercases_and_underscores_a_label(self):
+        from _shared.schemas import normalize_source_platform
+        assert normalize_source_platform('Trustpilot Reviews', fallback='s3_import') == 'trustpilot_reviews'
+
+    def test_collapses_runs_of_non_alnum_to_single_underscore(self):
+        from _shared.schemas import normalize_source_platform
+        # The legacy s3_import label "S3 - sales" is the cleanup case: space,
+        # dash and space collapse to one underscore, leading token kept.
+        assert normalize_source_platform('S3 - sales', fallback='s3_import') == 's3_sales'
+
+    def test_prefixes_s_when_value_starts_with_a_digit(self):
+        from _shared.schemas import normalize_source_platform
+        assert normalize_source_platform('2024 reviews', fallback='s3_import') == 's_2024_reviews'
+
+    def test_strips_leading_and_trailing_separators(self):
+        from _shared.schemas import normalize_source_platform
+        assert normalize_source_platform('  **zendesk**  ', fallback='s3_import') == 'zendesk'
+
+    def test_falls_back_when_value_is_none_or_unusable(self):
+        from _shared.schemas import normalize_source_platform
+        assert normalize_source_platform(None, fallback='s3_import') == 's3_import'
+        assert normalize_source_platform('', fallback='s3_import') == 's3_import'
+        assert normalize_source_platform('!!!', fallback='s3_import') == 's3_import'
+
+    def test_truncates_to_max_length(self):
+        from _shared.schemas import normalize_source_platform, MAX_SOURCE_PLATFORM_LENGTH
+        result = normalize_source_platform('a' * 200, fallback='s3_import')
+        assert len(result) == MAX_SOURCE_PLATFORM_LENGTH
+
+    def test_every_normalized_value_passes_ingest_validation(self):
+        """The contract that makes this safe: whatever normalize produces must
+        satisfy IngestMessage.source_platform, or a normalized row is still
+        rejected downstream. Pins normalization and validation together."""
+        from _shared.schemas import normalize_source_platform, validate_message
+        labels = ['Trustpilot Reviews', 'S3 - sales', '2024 reviews', '  **zendesk**  ', 'G2.com', 'é—café']
+        for label in labels:
+            platform = normalize_source_platform(label, fallback='s3_import')
+            raw = {
+                'id': 'x', 'source_platform': platform, 'text': 't',
+                'created_at': '2025-01-01T00:00:00Z',
+            }
+            # Raises MessageValidationError if the normalized value is invalid.
+            result = validate_message(raw)
+            assert result.source_platform == platform

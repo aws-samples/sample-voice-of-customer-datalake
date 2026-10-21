@@ -126,7 +126,18 @@
     "preview_many": "Aperçu — {{count}} élément{{plural}}",
     "preview_other": "Aperçu — {{count}} élément{{plural}}",
     "templateNote": "Le fichier modèle inclut des instructions complètes et une documentation prête pour LLM.",
-    "title": "Upload JSON"
+    "title": "Upload JSON",
+    "largeFileDetected": "Fichier volumineux ({{size}} Mo) — il sera téléversé et traité en arrière-plan plutôt que prévisualisé ici.",
+    "largeUploadStarted": "Fichier volumineux téléversé — traitement en arrière-plan",
+    "largeUploadNote": "Le fichier est en cours d'importation et d'enrichissement. Les lignes apparaîtront sur la page Retours au fur et à mesure ; cela peut prendre plusieurs minutes pour un gros fichier.",
+    "sourceLabel": "Source",
+    "sourcePlaceholder": "par ex. trustpilot, zendesk",
+    "sourceHint": "Indique d'où provient ce lot. Les lignes ayant leur propre champ source le remplacent.",
+    "sourceFieldLabel": "Champ source par ligne",
+    "sourceFieldNone": "Aucun — utiliser la source ci-dessus pour chaque ligne",
+    "sourceFieldHint": "Facultatif. Choisissez une colonne dont la valeur définit la source de chaque ligne — utile quand un fichier contient plusieurs sources.",
+    "uploading": "Téléversement…",
+    "uploadLargeFile": "Téléverser et traiter"
   },
   "manualImport": {
     "addReviewManually": "Ajouter un avis manuellement",

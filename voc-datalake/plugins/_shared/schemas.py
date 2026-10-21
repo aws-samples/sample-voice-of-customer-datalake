@@ -27,6 +27,48 @@ KNOWN_SOURCES = {
     "app_reviews_ios", "app_reviews_android",
 }
 
+# Longest a normalized source_platform may be. IngestMessage.source_platform has
+# no explicit max_length, but it becomes the DynamoDB partition-key stem
+# (SOURCE#{value}) and part of the raw-S3 key path, so an unbounded value is
+# undesirable. 64 is generous for a human-facing source label.
+MAX_SOURCE_PLATFORM_LENGTH = 64
+
+
+def normalize_source_platform(value: str | None, *, fallback: str) -> str:
+    """Normalize an arbitrary label into a valid ``source_platform``.
+
+    ``source_platform`` must match ``^[a-z][a-z0-9_]*$`` (see IngestMessage): it
+    is the DynamoDB partition-key stem and part of the dedup key, so a free-text
+    import value like ``"Trustpilot Reviews"`` or the legacy s3_import
+    ``"S3 - sales"`` cannot be used as-is — it would be rejected at validation
+    and the whole row lost.
+
+    Rules (confirmed with the product owner):
+      - lowercase;
+      - every run of characters outside ``[a-z0-9]`` collapses to a single ``_``;
+      - leading/trailing ``_`` stripped;
+      - if the result does not start with a letter (empty, or digit-leading),
+        prefix ``s_`` so the required ``^[a-z]`` start is satisfied — a
+        digit-leading label keeps its digits (``"2024 reviews"`` -> ``s_2024_reviews``);
+      - truncated to ``MAX_SOURCE_PLATFORM_LENGTH``;
+      - a value that normalizes to nothing usable falls back to ``fallback``
+        rather than rejecting the row. ``fallback`` is assumed already valid
+        (it is a plugin's own ``source_platform``); it is returned as-is.
+
+    This is deliberately a pure function in the shared schema module so the
+    ingest paths and any future caller normalize identically — the value is a
+    persisted contract, and two code paths disagreeing would split one logical
+    source across two partitions.
+    """
+    if value is None:
+        return fallback
+    slug = re.sub(r"[^a-z0-9]+", "_", value.strip().lower()).strip("_")
+    if not slug:
+        return fallback
+    if not slug[0].isalpha():
+        slug = f"s_{slug}"
+    return slug[:MAX_SOURCE_PLATFORM_LENGTH]
+
 
 # ============================================
 # Exceptions

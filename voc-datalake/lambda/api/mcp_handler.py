@@ -568,7 +568,7 @@ DOMAIN_ROUTES: dict[str, tuple[str, str, str]] = {
 # reachable. That is the same lockstep shape as the route and throttle tests.
 _RESERVED_PATH_SEGMENTS: dict[str, frozenset[str]] = {
     '/projects': frozenset({'config', 'prioritization'}),
-    '/feedback': frozenset({'search', 'urgent', 'entities'}),
+    '/feedback': frozenset({'search', 'urgent', 'entities', 'custom-field-candidates', 'problems'}),
 }
 
 # Characters that would let a value escape its segment or its path entirely.

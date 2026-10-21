@@ -1,107 +1,39 @@
 /**
- * @fileoverview Unified filter bar for the Categories page (issue #198 UX
- * rationalization). Merges the previously scattered controls — free-text
- * search, source select, urgent-only toggle, min-rating — into one card,
- * with a clear-all button next to everything it clears.
+ * @fileoverview The Categories page's own controls, hosted inside the shared
+ * FeedbackFilterPanel: the free-text search box (always visible in the panel
+ * header) and the star-rating picker (in the expanded body). Every other
+ * dimension — sources, categories, sentiment, urgency, enrichment fields, custom
+ * fields — is the shared panel's job.
  *
- * Sentiment is intentionally NOT here: the Overall Sentiment gauge legend
- * is the single sentiment control. Categories are selected via the
- * Category Distribution rows.
+ * Sentiment and category also stay clickable on the cards themselves: the
+ * gauge legend toggles sentiments and the distribution rows toggle categories,
+ * both writing the same filter state the panel shows.
  *
  * @module pages/Categories/FilterBar
  */
 
-import { Search, Star, X } from 'lucide-react'
+import { Search, Star } from 'lucide-react'
 import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import type { RatingDirection, RatingFilter } from './types'
 
-interface FilterBarProps {
-  readonly searchText: string
-  readonly onSearchChange: (value: string) => void
-  readonly selectedSource: string | null
-  readonly onSourceChange: (source: string | null) => void
-  readonly allSources: string[]
-  readonly showUrgentOnly: boolean
-  readonly onUrgentChange: (value: boolean) => void
-  readonly ratingFilter: RatingFilter
-  readonly onRatingFilterChange: (filter: RatingFilter) => void
-  readonly hasActiveFilters: boolean
-  readonly onClearFilters: () => void
-  /** Optional content pinned to the far right of the bar (e.g. Export PDF). */
-  readonly trailing?: React.ReactNode
-}
-
-export function FilterBar({
+export function SearchBox({
   searchText,
   onSearchChange,
-  selectedSource,
-  onSourceChange,
-  allSources,
-  showUrgentOnly,
-  onUrgentChange,
-  ratingFilter,
-  onRatingFilterChange,
-  hasActiveFilters,
-  onClearFilters,
-  trailing,
-}: FilterBarProps) {
+}: Readonly<{ searchText: string; onSearchChange: (value: string) => void }>) {
   const { t } = useTranslation('categories')
   return (
-    <div className="card !p-4 sm:!p-6">
-      <div className="flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-4">
-        <div className="relative flex-1 min-w-0">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={18} />
-          <input
-            type="text"
-            placeholder={t('searchPlaceholder')}
-            value={searchText}
-            onChange={(e) => onSearchChange(e.target.value)}
-            className="input !pl-11"
-          />
-        </div>
-        <div className="flex flex-wrap items-center gap-3 sm:gap-4">
-          <select
-            value={selectedSource || ''}
-            onChange={(e) => onSourceChange(e.target.value || null)}
-            aria-label={t('filterBySource')}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="">{t('allSources')}</option>
-            {allSources.map(source => (
-              <option key={source} value={source}>{source}</option>
-            ))}
-          </select>
-          <RatingPicker ratingFilter={ratingFilter} onRatingFilterChange={onRatingFilterChange} />
-          <label className="flex items-center gap-2 cursor-pointer whitespace-nowrap">
-            <input
-              type="checkbox"
-              checked={showUrgentOnly}
-              onChange={(e) => onUrgentChange(e.target.checked)}
-              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-            />
-            <span className="text-sm text-gray-700">{t('urgentOnly')}</span>
-          </label>
-          {hasActiveFilters && (
-            <button
-              onClick={onClearFilters}
-              className="flex items-center gap-1 text-xs sm:text-sm text-gray-500 hover:text-gray-700 whitespace-nowrap"
-            >
-              <X size={14} />
-              {t('clearFilters')}
-            </button>
-          )}
-        </div>
-        {trailing && (
-          <div
-            data-testid="filter-bar-trailing"
-            className="flex items-center lg:ml-auto lg:border-l lg:border-gray-200 lg:pl-4"
-          >
-            {trailing}
-          </div>
-        )}
-      </div>
+    <div className="relative min-w-0">
+      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={16} />
+      <input
+        type="text"
+        placeholder={t('searchPlaceholder')}
+        aria-label={t('searchPlaceholder')}
+        value={searchText}
+        onChange={(e) => onSearchChange(e.target.value)}
+        className="input !pl-9 !py-1.5 text-sm"
+      />
     </div>
   )
 }
@@ -111,7 +43,7 @@ function starTitle(t: TFunction<'categories'>, rating: number, direction: Rating
   return direction === 'up' ? t('starsMin', { count: rating }) : t('starsMax', { count: rating })
 }
 
-function RatingPicker({
+export function RatingPicker({
   ratingFilter,
   onRatingFilterChange,
 }: Readonly<{ ratingFilter: RatingFilter; onRatingFilterChange: (filter: RatingFilter) => void }>) {

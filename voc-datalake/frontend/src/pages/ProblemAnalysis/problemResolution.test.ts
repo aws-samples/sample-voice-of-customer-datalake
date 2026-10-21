@@ -55,7 +55,7 @@ describe('buildResolutionKey', () => {
 
 const makeProblem = (problem: string, items: number, urgent: number) => ({
   problem,
-  items: Array.from({ length: items }, (_, i) => ({ id: i })),
+  itemCount: items,
   urgentCount: urgent,
 })
 

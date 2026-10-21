@@ -7,6 +7,9 @@ import { z } from 'zod';
 import { getLanguageInstruction } from './language.js';
 import type { SupportedLanguage } from './language.js';
 import { PERSISTENT_QUERY_ERRORS } from './query-errors.js';
+import {
+  describeChatFilters, isEmptyChatFilters, parseChatFilters, type ChatFilters,
+} from './feedback-filters.js';
 
 const SENTIMENT_LABELS = ['positive', 'negative', 'neutral', 'mixed'] as const;
 
@@ -125,6 +128,8 @@ interface VocChatContext {
       sentiment?: string;
       days: number;
       dateBasis?: 'imported' | 'review';
+      /** The user's structured panel scope, carried to the search tool. */
+      scope?: ChatFilters;
     };
   };
 }
@@ -523,12 +528,21 @@ Format your responses clearly with bullet points or numbered lists when appropri
   return langInstruction ? `${base}\n\n${langInstruction}` : base;
 }
 
+/** The single-value prose fallback's "Active Filters" summary, or ''. */
+function describeLegacyFilters(source?: string, category?: string, sentiment?: string): string {
+  const parts: string[] = [];
+  if (source) parts.push(`Source: ${source}`);
+  if (category) parts.push(`Category: ${category}`);
+  if (sentiment) parts.push(`Sentiment: ${sentiment}`);
+  return parts.join(', ');
+}
+
 function buildDataContext(
   days: number,
   totals: { totalFeedback: number; urgentCount: number; degraded: boolean },
   sentimentMap: Record<string, number>,
   topCategories: [string, number][],
-  filters: { source?: string; category?: string; sentiment?: string },
+  activeFilters: string,
 ): string {
   const { totalFeedback, urgentCount, degraded } = totals;
   const pct = (n: number) => ((n / Math.max(totalFeedback, 1)) * 100).toFixed(1);
@@ -573,12 +587,8 @@ ${degradedNote}
 ${topCatLines}
 `;
 
-  const activeFilters: string[] = [];
-  if (filters.source) activeFilters.push(`Source: ${filters.source}`);
-  if (filters.category) activeFilters.push(`Category: ${filters.category}`);
-  if (filters.sentiment) activeFilters.push(`Sentiment: ${filters.sentiment}`);
-  if (activeFilters.length > 0) {
-    return `${context}\n## Active Filters: ${activeFilters.join(', ')}\nWhen using the search_feedback tool, apply these filters.\n`;
+  if (activeFilters !== '') {
+    return `${context}\n## Active Filters: ${activeFilters}\nWhen using the search_feedback tool, apply these filters.\n`;
   }
   return context;
 }
@@ -589,19 +599,25 @@ export async function buildVocChatContext(
   body: {
     message: string;
     context?: string;
+    filters?: unknown;
     days?: number;
     date_basis?: 'imported' | 'review';
     response_language?: SupportedLanguage;
   },
 ): Promise<VocChatContext> {
   const message = body.message;
-  const contextHint = body.context ?? '';
   const days = Math.min(Math.max(body.days ?? 7, 1), 365);
 
-  const parsed = parseContextFilters(contextHint);
-  const sourceFilter = parsed.source;
-  const categoryFilter = parsed.category;
-  const sentimentFilter = parsed.sentiment;
+  // Structured `filters` is the scope channel; the prose `context` regex is the
+  // back-compat fallback for an older client that sends no `filters`. A present
+  // `filters` wins even when empty — an explicit "all feedback" must not be
+  // overridden by stale prose. The single-value regex fields only seed the
+  // prompt's "Active Filters" line when no structured scope is given.
+  const scope = body.filters === undefined ? undefined : parseChatFilters(body.filters);
+  const legacy = scope ? {} : parseContextFilters(body.context ?? '');
+  const sourceFilter = legacy.source;
+  const categoryFilter = legacy.category;
+  const sentimentFilter = legacy.sentiment;
 
   // Fetch metrics in parallel
   const [totalRead, urgentRead, ...sentimentReads] = await Promise.all([
@@ -632,13 +648,19 @@ export async function buildVocChatContext(
     totalRead, urgentRead, ...sentimentReads, ...categories.reads,
   ]) || categories.taxonomyErrorName !== undefined;
 
+  // One description from whichever channel is active: the structured scope's
+  // multi-value summary, else the legacy single-value prose fields.
+  const activeFilters = scope !== undefined && !isEmptyChatFilters(scope)
+    ? describeChatFilters(scope)
+    : describeLegacyFilters(sourceFilter, categoryFilter, sentimentFilter);
+
   const systemPrompt = buildSystemPrompt(body.response_language);
   const dataContext = buildDataContext(
     days,
     { totalFeedback, urgentCount, degraded },
     sentimentMap,
     categories.top,
-    { source: sourceFilter, category: categoryFilter, sentiment: sentimentFilter },
+    activeFilters,
   );
   const userMessage = `${dataContext}\n\n---\n\nUser Question: ${message}`;
 
@@ -657,6 +679,12 @@ export async function buildVocChatContext(
         // Rides through to the search tool; the aggregate headline numbers
         // above stay import-bucketed (they come from daily aggregates).
         dateBasis: body.date_basis,
+        // The user's structured panel scope — the hard floor the tool scan
+        // honours. `scope` is already the parsed filters when the client sent a
+        // `filters` field (EMPTY_CHAT_FILTERS for an explicit "all feedback"),
+        // and undefined only when no field was sent, so it carries the
+        // present-but-empty vs absent distinction directly.
+        scope,
       },
     },
   };

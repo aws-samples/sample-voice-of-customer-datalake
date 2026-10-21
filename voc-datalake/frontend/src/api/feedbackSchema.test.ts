@@ -74,6 +74,16 @@ describe('normalizeFeedbackItem', () => {
     const item = normalizeFeedbackItem(rawItem())
     expect(item.ingestion_method).toBeUndefined()
   })
+
+  it('collects registry enrichment fields into `enrichment`', () => {
+    const item = normalizeFeedbackItem(rawItem({ usefulness: 'high' }))
+    expect(item.enrichment).toEqual({ usefulness: 'high' })
+  })
+
+  it('gives an empty `enrichment` for a legacy record or an out-of-enum value', () => {
+    expect(normalizeFeedbackItem(rawItem()).enrichment).toEqual({})
+    expect(normalizeFeedbackItem(rawItem({ usefulness: 'amazing' })).enrichment).toEqual({})
+  })
 })
 
 describe('normalizeFeedbackItems', () => {

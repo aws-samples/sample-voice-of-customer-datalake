@@ -24,10 +24,13 @@ const MODEL_SETTINGS_SK = 'config';
 // Curated allowlist — MUST stay in lockstep with model_config.py::ALLOWED_MODELS
 // and lib/stacks/api-stack.ts::allowlistedModelArns.
 export const ALLOWED_MODEL_IDS = new Set<string>([
+  'global.anthropic.claude-sonnet-5-5',
   'global.anthropic.claude-sonnet-5',
   'global.anthropic.claude-sonnet-4-6',
+  'global.anthropic.claude-opus-5-5',
   'global.anthropic.claude-opus-5',
   'global.anthropic.claude-opus-4-8',
+  'global.anthropic.claude-haiku-5-5',
   'global.anthropic.claude-haiku-4-5-20251001-v1:0',
 ]);
 
@@ -35,18 +38,24 @@ export const ALLOWED_MODEL_IDS = new Set<string>([
 // thinking always-on, which rules out sampling controls. Mirrors
 // model_config.py (`omit_temperature`).
 export const OMIT_TEMPERATURE_IDS = new Set<string>([
+  'global.anthropic.claude-sonnet-5-5',
   'global.anthropic.claude-sonnet-5',
+  'global.anthropic.claude-opus-5-5',
   'global.anthropic.claude-opus-5',
   'global.anthropic.claude-opus-4-8',
+  'global.anthropic.claude-haiku-5-5',
 ]);
 
 // Models with always-on adaptive thinking that reject an explicit thinking
 // budget with a 400 (Sonnet 5, and Opus 4.7 and later) — skip the `thinking`
 // request field for these. Mirrors model_config.py (`adaptive_thinking`).
 export const ADAPTIVE_THINKING_IDS = new Set<string>([
+  'global.anthropic.claude-sonnet-5-5',
   'global.anthropic.claude-sonnet-5',
+  'global.anthropic.claude-opus-5-5',
   'global.anthropic.claude-opus-5',
   'global.anthropic.claude-opus-4-8',
+  'global.anthropic.claude-haiku-5-5',
 ]);
 
 /** True when the model rejects the `temperature` inference parameter. */

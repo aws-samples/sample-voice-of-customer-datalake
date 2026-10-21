@@ -2,7 +2,7 @@
   "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
   "stacks": {
     "VocApiStack": {
-      "templateSha256": "1beac3e41a2ba0dcb4cbd68a5138efc83a787aebc3235e7d744b074ec0a9f1cc",
+      "templateSha256": "0e5031b7d56ee4e255f187dddc4f4d9c0bcb4a5f15815a945718920fe7a7b7e1",
       "names": {
         "physicalNames": [
           "AWS::ApiGateway::Authorizer Name = voc-cognito-authorizer",
@@ -12,6 +12,7 @@
           "AWS::Lambda::Function FunctionName = voc-chat-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-chat-stream-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-data-explorer-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-data-quality-worker-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-feedback-form-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-integrations-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-job-document-generator-<AWS::AccountId>-<AWS::Region>",
@@ -34,6 +35,7 @@
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-chat-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-chat-stream-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-data-explorer-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-data-quality-worker-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-feedback-form-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-integrations-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-job-document-generator-<AWS::AccountId>-<AWS::Region>",
@@ -52,6 +54,8 @@
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-settings-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-users-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/stepfunctions/voc-document-workflow-<AWS::AccountId>-<AWS::Region>",
+          "AWS::SQS::Queue QueueName = voc-data-quality-<AWS::AccountId>-<AWS::Region>",
+          "AWS::SQS::Queue QueueName = voc-data-quality-dlq-<AWS::AccountId>-<AWS::Region>",
           "AWS::StepFunctions::StateMachine StateMachineName = voc-document-workflow-<AWS::AccountId>-<AWS::Region>"
         ],
         "exportNames": [],
@@ -70,6 +74,7 @@
           "POWERTOOLS_SERVICE_NAME = voc-ballots-api",
           "POWERTOOLS_SERVICE_NAME = voc-chat-api",
           "POWERTOOLS_SERVICE_NAME = voc-data-explorer-api",
+          "POWERTOOLS_SERVICE_NAME = voc-data-quality-worker",
           "POWERTOOLS_SERVICE_NAME = voc-feedback-form-api",
           "POWERTOOLS_SERVICE_NAME = voc-integrations-api",
           "POWERTOOLS_SERVICE_NAME = voc-job-document-generator",
@@ -91,7 +96,7 @@
       }
     },
     "VocCoreStack": {
-      "templateSha256": "aa5ab6f599c7b1ad4556bad293ebe17ef36483d17728daabfd3c8f4841140410",
+      "templateSha256": "47e64fc8bfda88eba9935e027b7d795fa3e6a0f7dee71fffe439266b2423f773",
       "names": {
         "physicalNames": [
           "AWS::Cognito::IdentityPool IdentityPoolName = voc-identity-pool-<AWS::AccountId>-<AWS::Region>",
@@ -153,7 +158,7 @@
       }
     },
     "VocIngestionStack": {
-      "templateSha256": "477259a9981bade27ceec96e1f1363b4871700e0e89ff1173aac51cb9b92e51e",
+      "templateSha256": "85afc2ab6d7988285c7a6787c830a21406bae48c79cefe7a29bafb365fd063ee",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-ingest-app_reviews_android-schedule-<AWS::AccountId>-<AWS::Region>",
@@ -181,14 +186,16 @@
           "VocIngestionStack:ExportsOutputRefS3ImportBucket676867E6394A2C6C",
           "VocIngestionStack:ExportsOutputRefVocApiSecrets2054A4655D3D7F49"
         ],
-        "policyResources": [],
+        "policyResources": [
+          "arn:aws:lambda:us-east-1:111111111111:function:voc-ingestor-s3_import-<AWS::AccountId>-<AWS::Region>"
+        ],
         "environmentNames": [
           "POWERTOOLS_SERVICE_NAME = voc-ingestion"
         ]
       }
     },
     "VocProcessingStack": {
-      "templateSha256": "be632c9d1172b3cd25eb6335447219884f0678b2885033a19ca791dc4970b9a8",
+      "templateSha256": "b17a3de398ed81a4796ae7cd98cd1bea27d5944f2b8f87062747604efe13c618",
       "names": {
         "physicalNames": [
           "AWS::Lambda::Function FunctionName = voc-aggregation-processor-<AWS::AccountId>-<AWS::Region>",
@@ -212,7 +219,7 @@
       }
     },
     "VocWebSearchStack": {
-      "templateSha256": "0adf6b54c157c7d81365195954a4863bb2dbf62d3124af074870d89afb9dc6cb",
+      "templateSha256": "0f9e5a35fc76b02b334c29708c9ed3316e433af236617fd2df3a6f3f4b060205",
       "names": {
         "physicalNames": [
           "AWS::BedrockAgentCore::Gateway Name = voc-web-search-<AWS::AccountId>-<AWS::Region>"

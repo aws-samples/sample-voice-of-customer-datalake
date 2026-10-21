@@ -14,7 +14,7 @@ import { render, screen, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TestRouter } from '../../test/test-utils'
-import { useChatStore } from '../../store/chatStore'
+import { useChatStore, EMPTY_CONVERSATION_FILTERS } from '../../store/chatStore'
 import { readSentHistory, hasAdjacentSameRole } from '../../test/historyPayload'
 
 // ---------------------------------------------------------------------------
@@ -118,7 +118,7 @@ vi.mock('../../components/ChatMessage', () => ({
   ),
 }))
 
-vi.mock('../../components/ChatFilters', () => ({
+vi.mock('./ChatFilterPanel', () => ({
   default: () => <div data-testid="chat-filters" />,
 }))
 
@@ -164,7 +164,7 @@ beforeEach(() => {
   useChatStore.setState({
     conversations: [],
     activeConversationId: null,
-    draftFilters: {},
+    draftFilters: EMPTY_CONVERSATION_FILTERS,
   })
 })
 

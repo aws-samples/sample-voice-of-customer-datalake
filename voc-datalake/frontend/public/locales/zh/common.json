@@ -78,10 +78,13 @@
     "settings": "设置"
   },
   "partialCountsHint": "近似值：无法读取完整时间范围，计数为下限",
+  "emptyWindowFallback": "所选时间范围内没有反馈。改为显示您的最新数据（自 {{date}}）。",
   "partialWindowHint": "缩小筛选范围以查看全部",
   "problemAnalysisPage": {
     "emptyHint": "请尝试扩大时间范围或调整筛选条件",
-    "emptyTitle": "未找到所选时间段的问题分析数据"
+    "emptyTitle": "未找到所选时间段的问题分析数据",
+    "itemsLoadFailed": "无法加载示例。",
+    "noExamples": "未找到示例反馈。"
   },
   "problemResolution": {
     "allResolvedHint": "启用上方的\"显示已解决 ({{total}})\"即可查看",
@@ -124,5 +127,45 @@
     "endDate": "结束日期",
     "selectDateRange": "选择日期范围",
     "startDate": "开始日期"
+  },
+  "feedbackFilters": {
+    "title": "筛选",
+    "activeCount_one": "已启用 {{count}} 项",
+    "activeCount_other": "已启用 {{count}} 项",
+    "clearAll": "全部清除",
+    "clearGroup": "清除",
+    "noOptions": "此期间无数据",
+    "sources": "来源",
+    "categories": "类别",
+    "subcategories": "子类别",
+    "sentiment": "情感",
+    "urgency": "紧急程度",
+    "urgentOnly": "仅紧急",
+    "noMatches": "没有符合这些筛选条件的反馈",
+    "noMatchesHint": "请扩大时间范围或清除部分筛选条件。",
+    "loadFailed": "无法加载筛选结果。",
+    "retry": "重试",
+    "updating": "正在更新…"
+  },
+  "feedbackOverlay": {
+    "problem": "问题：",
+    "rootCause": "根本原因：",
+    "urgent": "紧急",
+    "close": "关闭",
+    "viewSource": "查看来源",
+    "openFullDetails": "打开完整详情"
+  },
+  "enrichment": {
+    "values": {
+      "unscored": "未评分"
+    },
+    "usefulness": {
+      "label": "有用性",
+      "values": {
+        "high": "高",
+        "medium": "中",
+        "low": "低"
+      }
+    }
   }
 }

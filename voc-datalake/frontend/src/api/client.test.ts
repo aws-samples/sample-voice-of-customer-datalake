@@ -134,6 +134,21 @@ describe('API Client', () => {
       expect(result.items.map((i) => i.feedback_id)).toEqual(['1', '2'])
     })
 
+    it('sends a list-valued param as a repeated key, never comma-joined', async () => {
+      // Multi-select custom fields: values are free text ("Las Vegas, NV").
+      ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ count: 0, items: [] }),
+      })
+      const params = { days: 7, cf_city: ['Reno', 'Las Vegas, NV'] }
+
+      await api.getFeedback(params)
+
+      const url = new URL(String(vi.mocked(global.fetch).mock.calls[0][0]))
+      expect(url.searchParams.getAll('cf_city')).toEqual(['Reno', 'Las Vegas, NV'])
+      expect(url.searchParams.get('days')).toBe('7')
+    })
+
     it('throws error on non-ok response', async () => {
       ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: false,

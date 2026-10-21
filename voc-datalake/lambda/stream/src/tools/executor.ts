@@ -14,14 +14,7 @@ import { sendSSE } from '../lib/streaming.js';
 import { ServiceError } from '../lib/errors.js';
 import type { ToolUseBlock } from '../bedrock/stream-processor.js';
 
-interface ContextFilters {
-  source?: string;
-  category?: string;
-  sentiment?: string;
-  days?: number;
-  /** 'imported' (default) or 'review' — which date the days window uses. */
-  dateBasis?: 'imported' | 'review';
-}
+import type { ContextFilters } from './search-feedback.js';
 
 interface ToolResult {
   toolUseId: string;

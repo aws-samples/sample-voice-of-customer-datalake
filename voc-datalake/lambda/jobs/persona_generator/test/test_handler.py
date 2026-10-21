@@ -259,7 +259,8 @@ class TestGroundingMetadataReachesTheStoredJob:
         projects_table.batch_writer.return_value = batch_writer
 
         with patch('api.projects.projects_table', projects_table), \
-             patch('api.projects.get_feedback_context', return_value=corpus), \
+             patch('api.projects.sample_persona_feedback',
+                   return_value=(corpus, len(corpus), False)), \
              patch('api.projects.converse_chain',
                    return_value=['Research analysis text.', persona_json]), \
              patch('api.projects.generate_persona_avatar',
