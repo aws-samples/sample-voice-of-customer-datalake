@@ -6,23 +6,40 @@ and job Lambdas (document generator, document merger).
 
 import logging
 import re
-from collections.abc import Iterable
-from datetime import datetime, timezone, timedelta
+from collections.abc import Iterable, Iterator, Mapping
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from functools import cached_property
 
 from boto3.dynamodb.conditions import Key
 
+from shared import category_access
+from shared.category_access import CategoryScope
+from shared.feedback_sampling import (
+    POOL_MAX_ROWS,
+    FeedbackPool,
+    Partition,
+    fetch_full,
+    read_channel_pool,
+    read_pool,
+    sample_evenly,
+)
 from shared.indexes import FEEDBACK_BY_CATEGORY_INDEX, FEEDBACK_BY_DATE_INDEX
+from shared.item_filters import NO_ITEM_FILTERS, ItemFilters, parse_item_filters
+from shared.logging import logger as powertools_logger
+from shared.prompt_labels import PromptLabels
+from shared.time_budget import WalkBudget
 
 logger = logging.getLogger(__name__)
 
 # Date-basis values for time filtering. Defined here (the data layer) so job
 # Lambdas and Step Functions handlers don't pull API-resolver machinery just
 # for the constants; shared.api re-exports them for API handlers.
-# 'imported': filter by when the item entered the data lake (processing date,
-#             the `date` attribute backing gsi1-by-date) — historical default.
-# 'review':   filter by when the customer originally wrote the feedback
-#             (`source_created_at`), e.g. to exclude years-old reviews that
-#             were only imported recently.
+# The imported basis filters by when the item entered the data lake (processing
+#   date, the `date` attribute backing gsi1-by-date) — the historical default.
+# The review basis filters by when the customer originally wrote the feedback
+#   (`source_created_at`), e.g. to exclude years-old reviews that were only
+#   imported recently.
 DATE_BASIS_IMPORTED = 'imported'
 DATE_BASIS_REVIEW = 'review'
 VALID_DATE_BASES = (DATE_BASIS_IMPORTED, DATE_BASIS_REVIEW)
@@ -225,19 +242,55 @@ def has_legacy_persona_buckets(buckets: Iterable[str]) -> bool:
     return any(bucket not in PERSONA_ARCHETYPES for bucket in buckets)
 
 
-# Maximum number of days to look back when querying by date
+# Maximum number of days to look back when querying by date.
+#
+# Deliberately BOUNDED even though windows now reach all time (`days=0`, up to
+# MAX_FEEDBACK_WINDOW_DAYS): this path SAMPLES feedback into an LLM prompt (chat,
+# research, persona and document jobs), it does not count it, and a prompt holds a
+# few hundred items however wide the window. The stream Lambda's
+# `feedback-scan.ts` mirrors the same 90 (`test_lookback_window_lockstep.py`).
 MAX_LOOKBACK_DAYS = 90
 
-# Hard ceiling on how many items a single partition (one date / one category)
-# query will page through, so a huge backfill can't make one query run forever.
-# DynamoDB returns up to 1MB per page; without LastEvaluatedKey paging we'd only
-# ever see the first ~500 items of a partition (the "500개 중" truncation bug).
-MAX_ITEMS_PER_PARTITION = 10000
+# The persona / research pre-check's read (``feedback_context_exists``): it runs on a
+# synchronous REST call, so it reads at most this much and, if it could not finish,
+# lets the job decide instead of answering "no feedback".
+PROBE_BUDGET_SECONDS = 8
+PROBE_MAX_ROWS = 5_000
+
+
+def lookback_days(days: int) -> int:
+    """The sampled window for a `days` request: 0 (all time) samples the widest
+    window this path allows, anything else is capped at MAX_LOOKBACK_DAYS.
+
+    Since the sample-walk change this is a budget of days WITH DATA, not of
+    calendar days: see ``sample_walk_days``."""
+    return MAX_LOOKBACK_DAYS if days <= 0 else min(days, MAX_LOOKBACK_DAYS)
+
+
+# How far back (calendar days) the date walk may go to fill its sample when the
+# newest days hold no feedback. Without it a 90-calendar-day cap made "Last year"
+# and "All time" read only the last 90 days: on a deployment whose newest
+# feedback is older than that, every persona / document / research job failed
+# with "No feedback data found" while thousands of records sat in the window the
+# user picked. The walk still stops after MAX_LOOKBACK_DAYS days that returned
+# data (or at the fetch ceiling), so the sample size is unchanged; only empty
+# days are skipped past. An empty-day query is one cheap GSI read, so the worst
+# case (an empty table, all time) is this many reads.
+MAX_SAMPLE_WALK_DAYS = 400
+
+
+def sample_walk_days(days: int) -> int:
+    """Calendar days the date walk may cover for a `days` request (0 = all time)."""
+    return MAX_SAMPLE_WALK_DAYS if days <= 0 else min(days, MAX_SAMPLE_WALK_DAYS)
+
+# The read behind every sample (shared/feedback_sampling.py) is bounded by its
+# pool row cap (POOL_MAX_ROWS) and the walk time budget, not per partition: a
+# per-partition ceiling is exactly what made one big import day the whole sample.
 
 # Shape guard for basis dates: a malformed source_created_at (e.g.
 # "unavailable") would otherwise compare lexicographically above any
 # YYYY-MM-DD cutoff.
-_ISO_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+_ISO_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}\Z')
 
 # --- LLM context budgeting (issue #231) --------------------------------------
 # Lives here, next to format_feedback_for_llm, because the producer of the
@@ -395,7 +448,7 @@ def truncate_feedback_context(context: str, max_chars: int) -> tuple[str, int, b
     )
 
 
-def basis_date(item: dict, date_basis: str) -> str:
+def basis_date(item: Mapping, date_basis: str) -> str:
     """Return the YYYY-MM-DD date used to filter/bucket an item.
 
     'imported' uses the processing date (`date`, mirrors gsi1-by-date).
@@ -408,7 +461,7 @@ def basis_date(item: dict, date_basis: str) -> str:
     at window edges. Accepted at date granularity.
     """
     if date_basis == DATE_BASIS_REVIEW:
-        source_created = (item.get('source_created_at') or '')[:10]
+        source_created = (item.get('source_created_at') or '')[:10]  # pragma: no mutate  any non-date default fails the ISO match below
         if _ISO_DATE_RE.match(source_created):
             return source_created
     return item.get('date', '')
@@ -416,96 +469,109 @@ def basis_date(item: dict, date_basis: str) -> str:
 
 def window_cutoff(days: int) -> str:
     """Oldest YYYY-MM-DD covered by an N-day window ending today (UTC)."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return (now - timedelta(days=days - 1)).strftime('%Y-%m-%d')
 
 
-def _query_all_pages(feedback_table, *, index_name, key_expr, max_items):
-    """Query a GSI partition, following LastEvaluatedKey until exhausted or
-    `max_items` collected. DynamoDB caps each page at 1MB, so a single query()
-    only returns a slice of a large partition — this pages through the rest."""
-    collected: list[dict] = []
-    last_key = None
-    while True:
-        kwargs = {
-            'IndexName': index_name,
-            'KeyConditionExpression': key_expr,
-            'ScanIndexForward': False,
-        }
-        if last_key:
-            kwargs['ExclusiveStartKey'] = last_key
-        response = feedback_table.query(**kwargs)
-        collected.extend(response.get('Items', []))
-        last_key = response.get('LastEvaluatedKey')
-        if not last_key or len(collected) >= max_items:
-            break
-    return collected[:max_items]
+@dataclass(frozen=True)
+class _PoolRequest:
+    """One window read: the partitions to walk and the predicate every row must pass."""
+
+    days: int
+    sources: list[str]
+    categories: list[str]
+    sentiments: list[str]
+    date_basis: str
+    max_dated_days: int
+    extra: ItemFilters
+    scope: CategoryScope | None
+
+    @property
+    def by_category(self) -> bool:
+        return bool(self.categories and not self.sources)
+
+    def partitions(self) -> Iterator[Partition]:
+        """Category partitions (all time, windowed by ``admits``) or one day partition per day, newest first."""
+        if self.by_category:
+            for category in self.categories:
+                yield Partition(FEEDBACK_BY_CATEGORY_INDEX, Key('gsi2pk').eq(f'CATEGORY#{category}'))
+            return
+        today = datetime.now(UTC)
+        for i in range(self.days):
+            date = (today - timedelta(days=i)).strftime('%Y-%m-%d')
+            yield Partition(FEEDBACK_BY_DATE_INDEX, Key('gsi1pk').eq(f'DATE#{date}'), dated=True)
+
+    @cached_property
+    def window_floor(self) -> str:
+        """The cutoff rows must reach, or '' when the partitions already bound the window.
+
+        Day partitions and the channel index's key range ARE the import window;
+        category partitions span all time, and the 'review' basis narrows any read
+        (a review is never imported before it was written, so the import window
+        always contains the review window).
+        """
+        if self.by_category or self.date_basis == DATE_BASIS_REVIEW:
+            return window_cutoff(self.days)
+        return ''
+
+    def admits(self, item: Mapping) -> bool:
+        """Every filter of the request, the window and the caller's scope included."""
+        return (
+            (not self.window_floor or basis_date(item, self.date_basis) >= self.window_floor)
+            and (not self.sources or item.get('source_platform') in self.sources)
+            and (not self.sentiments or item.get('sentiment_label') in self.sentiments)
+            # Checked on category-index rows too: the re-check of the fully fetched sample must
+            # see a review re-categorised since the (eventually consistent) index read.
+            and (not self.categories or item.get('category') in self.categories)
+            and self.extra.admits(item)
+            and (self.scope is None or category_access.admits_item(self.scope, item))
+        )
 
 
-def _fetch_and_filter(
-    feedback_table,
-    days: int,
-    sources: list[str],
-    categories: list[str],
-    sentiments: list[str],
-    fetch_ceiling: int,
-    per_day_limit: int,  # deprecated: superseded by LastEvaluatedKey paging
-    date_basis: str = DATE_BASIS_IMPORTED,
-) -> list[dict]:
-    """Internal: fetch items from DynamoDB and apply in-memory filters.
+def _read_matching_pool(
+    feedback_table, request: _PoolRequest, stop_after: int = 0, *,
+    budget: WalkBudget | None = None, max_rows: int = POOL_MAX_ROWS,
+) -> FeedbackPool:
+    """The window's matching rows (projected): the channel index when a channel is set, else the walk.
 
-    Args:
-        fetch_ceiling: When no post-filters are active, stop querying
-            once we have this many raw items (early-break optimisation).
-            Pass 0 to disable early break (scan all dates).
-        date_basis: Which date the `days` window applies to. 'imported'
-            (default) keeps the raw import window; 'review' post-filters it
-            down to items actually written within the window — a review can
-            never be imported before it was written, so the import window
-            always contains the review window (no extra GSI needed).
+    ``stop_after`` (0 = never) ends the read once that many rows matched (the existence probe).
     """
-    has_post_filters = bool(sources or sentiments) or date_basis == DATE_BASIS_REVIEW
-    items: list[dict] = []
-    current_date = datetime.now(timezone.utc)
+    budget = budget or WalkBudget()
+    if request.extra.channel:
+        pool = read_channel_pool(
+            feedback_table, request.extra.channel, window_cutoff(request.days),
+            admit=request.admits, budget=budget, max_rows=max_rows,
+        )
+        if pool is not None:
+            return pool
+    return read_pool(
+        feedback_table, request.partitions(), admit=request.admits, budget=budget,
+        row_condition=request.extra.row_condition(),
+        max_dated=0 if request.by_category else request.max_dated_days,
+        stop_after=stop_after, max_rows=max_rows,
+    )
 
-    # Per-partition page cap: honour fetch_ceiling when set (early-break path),
-    # otherwise page through the whole partition up to a safety ceiling so we
-    # don't truncate days/categories that hold more than one DynamoDB page.
-    page_cap = fetch_ceiling if fetch_ceiling else MAX_ITEMS_PER_PARTITION
 
-    if categories and not sources:
-        for category in categories:
-            items.extend(_query_all_pages(
-                feedback_table,
-                index_name=FEEDBACK_BY_CATEGORY_INDEX,
-                key_expr=Key('gsi2pk').eq(f'CATEGORY#{category}'),
-                max_items=page_cap,
-            ))
-        cutoff_date = window_cutoff(days)
-        items = [i for i in items if basis_date(i, date_basis) >= cutoff_date]
-    else:
-        for i in range(days):
-            date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
-            items.extend(_query_all_pages(
-                feedback_table,
-                index_name=FEEDBACK_BY_DATE_INDEX,
-                key_expr=Key('gsi1pk').eq(f'DATE#{date}'),
-                max_items=page_cap,
-            ))
-            if not has_post_filters and fetch_ceiling and len(items) >= fetch_ceiling:
-                break
-        if date_basis == DATE_BASIS_REVIEW:
-            cutoff_date = window_cutoff(days)
-            items = [i for i in items if basis_date(i, date_basis) >= cutoff_date]
+def _sample_window(feedback_table, request: _PoolRequest, size: int) -> list[dict]:
+    """An even sample of ``size`` of the window's matching feedback, fetched in full.
 
-    if sources:
-        items = [i for i in items if i.get('source_platform') in sources]
-    if sentiments:
-        items = [i for i in items if i.get('sentiment_label') in sentiments]
-    if categories and sources:
-        items = [i for i in items if i.get('category') in categories]
-
-    return items
+    In spread order (``feedback_sampling.spread_order``): every prefix is itself an even
+    sample, so a caller that trims the tail to fit a token budget still covers the window.
+    """
+    pool = _read_matching_pool(feedback_table, request)
+    # Category partitions are not in date order; the pool is, so the sample is too.
+    rows = sorted(pool.rows, key=lambda row: str(row.get('date') or ''), reverse=True) \
+        if request.by_category else pool.rows
+    picked = sample_evenly(rows, size)
+    powertools_logger.info(
+        f"[FEEDBACK] Sampled {len(picked)} of {len(rows)} matching reviews"
+        f"{' (at least; the read was capped)' if pool.capped else ''}",
+        extra={'sampled': len(picked), 'matched': len(rows), 'read': pool.read, 'capped': pool.capped,
+               'sampled_days': len({str(row.get('date') or '') for row in picked})},
+    )
+    # Re-checked on the full items: a review re-categorised (or moved out of the caller's
+    # scope) between the projected read and the fetch must not reach the model.
+    return [item for item in fetch_full(feedback_table, picked) if request.admits(item)]
 
 
 def query_feedback_by_date(
@@ -516,8 +582,9 @@ def query_feedback_by_date(
     sentiments: list[str] | None = None,
     limit: int = 500,
     offset: int = 0,
-    per_day_limit: int = 500,
     date_basis: str = DATE_BASIS_IMPORTED,
+    category_scope: CategoryScope | None = None,
+    item_filters: ItemFilters = NO_ITEM_FILTERS,
 ) -> list[dict]:
     """Query feedback items by date range with optional filters.
 
@@ -526,77 +593,84 @@ def query_feedback_by_date(
 
     Args:
         feedback_table: DynamoDB Table resource for feedback.
-        days: Number of days to look back from today.
+        days: Number of days to look back from today; 0 = all time. The read
+            covers up to ``sample_walk_days(days)`` calendar days and stops
+            after ``lookback_days(days)`` days that returned feedback, so
+            empty recent days do not empty the sample.
         sources: Optional list of source_platform values to keep.
         categories: Optional list of category values to keep.
             When set *without* sources, queries GSI2 by category instead.
         sentiments: Optional list of sentiment_label values to keep.
         limit: Maximum number of items to return after filtering.
         offset: Number of items to skip (for pagination).
-        per_day_limit: Deprecated — retained for call-site compatibility.
-            Partition reads now page through LastEvaluatedKey and are bounded
-            by fetch_ceiling / MAX_ITEMS_PER_PARTITION instead.
         date_basis: 'imported' (default) windows by ingestion date;
             'review' windows by the date the customer wrote the feedback
             (source_created_at, import-date fallback).
+        category_scope: The category scope of the user the read is FOR (a
+            job captures its starter's). None = unrestricted (legacy jobs).
+            A restricted scope intersects ``categories``; if nothing is left
+            the result is empty, never "unfiltered".
+        item_filters: channel (pushed down; ``gsi5-by-channel`` when it
+            exists), dims, tag and rating (in memory).
 
     Returns:
-        Filtered list of feedback items, sliced by offset/limit.
+        An EVEN sample of everything the window matches (``offset + limit``
+        items spread across the whole window in proportion, in spread order: any
+        prefix covers the whole window too),
+        sliced by offset/limit. Not the newest N: see shared/feedback_sampling.py.
     """
+    request = _pool_request(
+        feedback_table, days=days, sources=sources, categories=categories, sentiments=sentiments,
+        date_basis=date_basis, category_scope=category_scope, item_filters=item_filters,
+    )
+    if request is None:
+        return []
+    return _sample_window(feedback_table, request, offset + limit)[offset:offset + limit]
+
+
+def _pool_request(
+    feedback_table, *, days: int, sources: list[str] | None, categories: list[str] | None,
+    sentiments: list[str] | None, date_basis: str, category_scope: CategoryScope | None,
+    item_filters: ItemFilters,
+) -> _PoolRequest | None:
+    """The read a request makes, or None when it can match nothing (no table, an emptied scope)."""
     if not feedback_table:
         logger.warning("No feedback table provided, returning empty list")
-        return []
-
-    target = offset + limit
-    items = _fetch_and_filter(
-        feedback_table,
-        days=min(days, MAX_LOOKBACK_DAYS),
-        sources=sources or [],
-        categories=categories or [],
-        sentiments=sentiments or [],
-        fetch_ceiling=target * 3,
-        per_day_limit=per_day_limit,
+        return None
+    categories = category_access.intersect_requested(category_scope, categories)
+    # Only the CATEGORY rule can empty the request: a source-restricted scope with
+    # every category still reads, and `admits` applies its source rule per row.
+    if category_scope is not None and not category_scope.categories_all and not categories:
+        return None
+    return _PoolRequest(
+        days=sample_walk_days(days),
+        sources=list(sources or []),
+        categories=list(categories or []),
+        sentiments=list(sentiments or []),
         date_basis=date_basis or DATE_BASIS_IMPORTED,
+        max_dated_days=lookback_days(days),
+        extra=item_filters,
+        scope=category_scope,
     )
-    return items[offset:offset + limit]
 
 
-def query_feedback_page(
-    feedback_table,
-    days: int = 30,
-    sources: list[str] | None = None,
-    categories: list[str] | None = None,
-    sentiments: list[str] | None = None,
-    limit: int = 100,
-    offset: int = 0,
-    per_day_limit: int = 500,
-    date_basis: str = DATE_BASIS_IMPORTED,
-) -> tuple[list[dict], int]:
-    """Query a page of feedback items and return the total count.
+def feedback_context_exists(feedback_table, filters: dict) -> bool:
+    """Does anything match ``filters`` (the :func:`get_feedback_context` dict)?
 
-    Same as :func:`query_feedback_by_date` but scans all matching dates
-    to return an accurate total count for pagination.
-
-    Returns:
-        Tuple of (page_items, total_count).
+    The synchronous pre-check of the persona and research routes: the same
+    window, filters and scope as the job's read, stopping at the first match
+    instead of reading the whole pool.
     """
-    if not feedback_table:
-        return [], 0
-
-    # fetch_ceiling=0 disables early break so we get the true total
-    items = _fetch_and_filter(
-        feedback_table,
-        days=min(days, MAX_LOOKBACK_DAYS),
-        sources=sources or [],
-        categories=categories or [],
-        sentiments=sentiments or [],
-        fetch_ceiling=0,
-        per_day_limit=per_day_limit,
-        date_basis=date_basis or DATE_BASIS_IMPORTED,
+    request = _pool_request(feedback_table, **_context_query_args(filters))
+    if request is None:
+        return False
+    # The probe sits on a synchronous REST call: a bounded read, and a read it could
+    # not finish counts as "may match" so the job (which has minutes) decides.
+    pool = _read_matching_pool(
+        feedback_table, request, stop_after=1,
+        budget=WalkBudget(seconds=PROBE_BUDGET_SECONDS), max_rows=PROBE_MAX_ROWS,
     )
-    total = len(items)
-    page = items[offset:offset + limit]
-    return page, total
+    return bool(pool.rows) or pool.capped
 
 
 def get_feedback_context(feedback_table, filters: dict, limit: int = 50) -> list[dict]:
@@ -609,30 +683,62 @@ def get_feedback_context(feedback_table, filters: dict, limit: int = 50) -> list
     Args:
         feedback_table: DynamoDB Table resource for feedback
         filters: Dict with keys: days, categories, sentiments, sources,
-            date_basis ('imported' default | 'review')
+            date_basis ('imported' default | 'review'), category_scope
+            (the starter's scope as stored by ``category_access.scope_to_config``)
         limit: Maximum number of items to return
 
     Returns:
-        List of feedback items matching filters
+        An even sample (see :func:`query_feedback_by_date`) of the matching feedback
     """
-    return query_feedback_by_date(
-        feedback_table,
-        days=filters.get('days', 30),
-        sources=filters.get('sources'),
-        categories=filters.get('categories'),
-        sentiments=filters.get('sentiments'),
-        limit=limit,
-        date_basis=filters.get('date_basis') or DATE_BASIS_IMPORTED,
-    )
-def format_feedback_for_llm(items: list[dict]) -> str:
+    return query_feedback_by_date(feedback_table, limit=limit, **_context_query_args(filters))
+
+
+def _context_query_args(filters: dict) -> dict:
+    """The :func:`query_feedback_by_date` keyword arguments a stored filters dict means."""
+    return {
+        'days': filters.get('days', 30),
+        'sources': filters.get('sources'),
+        'categories': filters.get('categories'),
+        'sentiments': filters.get('sentiments'),
+        'date_basis': filters.get('date_basis') or DATE_BASIS_IMPORTED,
+        'category_scope': category_access.scope_from_config(filters.get(category_access.SCOPE_CONFIG_KEY)),
+        'item_filters': _context_item_filters(filters),
+    }
+
+
+def _context_item_filters(filters: dict) -> ItemFilters:
+    """``channel`` / ``dims`` / ``tag`` from a stored filters dict; a malformed ``dims`` is ignored.
+
+    ``dims`` may be the query-string form (``'key:value,...'``) or a mapping.
+    Ignored rather than raised: these dicts come from stored jobs and tool calls,
+    and a bad filter must narrow nothing rather than fail the job.
+    """
+    dims = filters.get('dims')
+    if isinstance(dims, Mapping):
+        dims = ','.join(f'{key}:{value}' for key, value in dims.items())
+    params = {'channel': filters.get('channel'), 'tag': filters.get('tag'), 'dims': dims}
+    try:
+        return parse_item_filters(params)
+    except ValueError:
+        logger.warning('Ignoring a malformed dims filter')
+        return parse_item_filters({**params, 'dims': None})
+
+
+def format_feedback_for_llm(items: list[dict], labels: PromptLabels | None = None) -> str:
     """Format feedback items for LLM context with rich details.
-    
+
+    Categories and sources are named by their labels (``labels``; humanised ids without
+    one), never by their ids; the prompt around the block carries
+    ``shared.prompt_labels.LABEL_INSTRUCTION``.
+
     Args:
         items: List of feedback items from DynamoDB
-        
+        labels: The category config and source profiles the names come from
+
     Returns:
         Formatted string for LLM context
     """
+    names = labels or PromptLabels()
     lines = []
     # Per-field clipping is not free of information loss, and this formatter is
     # shared by the persona path, the research step handler, and every helper in
@@ -662,27 +768,35 @@ def format_feedback_for_llm(items: list[dict]) -> str:
         # Counted but NOT clipped here: the [:MAX_ORIGINAL_TEXT_CHARS] slice
         # below predates this change. Counting it keeps the report honest about
         # the largest per-record loss without altering what the model receives.
-        if len(_as_text(item.get('original_text', ''))) > MAX_ORIGINAL_TEXT_CHARS:
+        if len(_as_text(item.get('original_text'))) > MAX_ORIGINAL_TEXT_CHARS:
             clipped['original_text'] = clipped.get('original_text', 0) + 1
 
         lines.append(f"""
 ### Review {i}
-- Source: {_clip(item.get('source_platform', 'unknown'), MAX_LABEL_CHARS)}
-- Date: {item.get('source_created_at', '')[:10] if item.get('source_created_at') else 'N/A'}
+- Source: {_clip(names.source(item.get('source_platform')), MAX_LABEL_CHARS)}
+- Date: {item['source_created_at'][:10] if item.get('source_created_at') else 'N/A'}
 - Sentiment: {_clip(item.get('sentiment_label', 'unknown'), MAX_LABEL_CHARS)} (score: {float(item.get('sentiment_score', 0)):.2f})
-- Category: {_clip(item.get('category', 'other'), MAX_LABEL_CHARS)}
+- Category: {_clip(names.category(item.get('category')), MAX_LABEL_CHARS)}
 - Rating: {item.get('rating', 'N/A')}/5
 - Urgency: {_clip(item.get('urgency', 'low'), MAX_LABEL_CHARS)}
-- Customer Type: {persona_type if persona_type else 'unknown'}
-- Journey Stage: {journey_stage if journey_stage else 'unknown'}
+- Customer Type: {persona_type or 'unknown'}
+- Journey Stage: {journey_stage or 'unknown'}
 - Full Text: "{item.get('original_text', '')[:MAX_ORIGINAL_TEXT_CHARS]}"
 {f'- Key Quote: "{quote}"' if quote else ''}
 {f'- Problem Summary: {problem_summary}' if problem_summary else ''}
 {f'- Root Cause Hypothesis: {root_cause}' if root_cause else ''}
 """)
     if clipped:
-        logger.warning(
-            "[FEEDBACK] Per-field caps clipped text out of the LLM context",
+        # INFO, not WARNING: the per-field caps are a designed bound (they keep
+        # FEEDBACK_CHARS_PER_ITEM_MAX a real limit), so clipping is expected on
+        # long reviews, not a fault. Through the shared Powertools logger, not
+        # this module's stdlib one: the Lambda runtime's root logger sits at
+        # WARNING (a stdlib INFO line never reaches CloudWatch) and its default
+        # handler drops `extra`. Powertools emits INFO as JSON with the fields;
+        # the counts are in the text too, so the line reads on its own.
+        counts = ', '.join(f'{field}={n}' for field, n in sorted(clipped.items()))
+        powertools_logger.info(
+            f"[FEEDBACK] Per-field caps clipped text out of the LLM context ({counts}; {len(items)} items)",
             extra={
                 'items': len(items),
                 'clipped_fields': clipped,
@@ -692,45 +806,46 @@ def format_feedback_for_llm(items: list[dict]) -> str:
             },
         )
     return '\n'.join(lines)
-def get_feedback_statistics(items: list[dict]) -> str:
-    """Generate summary statistics from feedback items.
-    
+def get_feedback_statistics(items: list[dict], labels: PromptLabels | None = None) -> str:
+    """Generate summary statistics from feedback items (categories and sources by their labels).
+
     Args:
         items: List of feedback items from DynamoDB
-        
+
     Returns:
         Formatted statistics string for LLM context
     """
     if not items:
         return "No feedback data available."
-    
+    names = labels or PromptLabels()
+
     # Count by sentiment
     sentiments = {}
     categories = {}
     sources = {}
     urgency_counts = {'high': 0, 'medium': 0, 'low': 0}
     ratings = []
-    
+
     for item in items:
         sent = item.get('sentiment_label', 'unknown')
         sentiments[sent] = sentiments.get(sent, 0) + 1
-        
-        cat = item.get('category', 'other')
+
+        cat = names.category(item.get('category'))
         categories[cat] = categories.get(cat, 0) + 1
-        
-        src = item.get('source_platform', 'unknown')
+
+        src = names.source(item.get('source_platform'))
         sources[src] = sources.get(src, 0) + 1
-        
+
         urg = item.get('urgency', 'low')
         if urg in urgency_counts:
             urgency_counts[urg] += 1
-        
+
         if item.get('rating'):
             ratings.append(float(item['rating']))
-    
+
     avg_rating = sum(ratings) / len(ratings) if ratings else 0
-    
-    stats = f"""## Feedback Statistics (n={len(items)})
+
+    return f"""## Feedback Statistics (n={len(items)})
 
 **Sentiment Distribution:**
 {chr(10).join([f"- {k}: {v} ({v/len(items)*100:.1f}%)" for k, v in sorted(sentiments.items(), key=lambda x: x[1], reverse=True)])}
@@ -746,4 +861,3 @@ def get_feedback_statistics(items: list[dict]) -> str:
 
 **Average Rating:** {avg_rating:.1f}/5 (from {len(ratings)} rated reviews)
 """
-    return stats

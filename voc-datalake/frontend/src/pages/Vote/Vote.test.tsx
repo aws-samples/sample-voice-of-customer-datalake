@@ -21,9 +21,10 @@ import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import i18n from 'i18next'
 
 import type { BallotSessionConfig, BallotSubmission } from '../../api/votingSessionsApi'
+import { DEFAULT_AXES, activeAxes } from '../../api/prioritizationAxes'
 
-const mockGetBallotSessionConfig = vi.fn()
-const mockSubmitBallot = vi.fn()
+const mockGetBallotSessionConfig = vi.fn<(...args: unknown[]) => unknown>()
+const mockSubmitBallot = vi.fn<(...args: unknown[]) => unknown>()
 
 vi.mock('../../api/votingSessionsApi', () => ({
   votingSessionsApi: {
@@ -36,7 +37,14 @@ import Vote from './Vote'
 
 const { t } = i18n
 const SESSION_ID = 'vs_0123456789abcdef0123456789abcdef'
-const OPEN: BallotSessionConfig = { open: true, reason: null, row_title: 'Instant refunds' }
+const OPEN: BallotSessionConfig = { open: true, reason: null, row_title: 'Instant refunds', axes: activeAxes(DEFAULT_AXES) }
+
+/** A RICE setup as the public config sends it (no weights): Effort is lower-is-better. */
+const RICE_AXES: BallotSessionConfig['axes'] = [
+  { id: 'reach', builtin: false, label: 'Reach', description: 'How many people this reaches', weight: 0, direction: 'higher_better', low_label: null, high_label: null, archived: false },
+  { id: 'impact', builtin: true, label: null, description: null, weight: 0, direction: 'higher_better', low_label: null, high_label: null, archived: false },
+  { id: 'effort', builtin: false, label: 'Effort', description: null, weight: 0, direction: 'lower_better', low_label: 'Little work', high_label: 'A lot of work', archived: false },
+]
 
 function renderVotePage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -61,7 +69,7 @@ async function submit() {
   const button = await screen.findByRole('button', { name: key('ballot.submit.label') })
   await user.click(button)
   await waitFor(() => {
-    expect(mockSubmitBallot).toHaveBeenCalled()
+    expect(mockSubmitBallot).toHaveBeenCalledWith(SESSION_ID, expect.any(Object))
   })
 }
 
@@ -97,6 +105,30 @@ describe('an open vote', () => {
     await submit()
 
     expect(await screen.findByText(key('ballot.done.title'))).toBeInTheDocument()
+  })
+
+  it.each([
+    'ballot.axes.impact', 'ballot.axes.timeToMarket', 'ballot.axes.strategicFit', 'ballot.axes.confidence',
+  ])('names the %s slider by its visible label', async (axis) => {
+    renderVotePage()
+
+    const slider = await screen.findByRole('slider', { name: key(axis) })
+    const labelId = slider.getAttribute('aria-labelledby') ?? ''
+    expect(document.getElementById(labelId)).toHaveTextContent(key(axis))
+  })
+
+  it('says a typed name is saved with the ballot — and saves it', async () => {
+    // The copy used to say ballots are "not attributed to a person" right under a
+    // name field whose value the API stores on the ballot.
+    const user = userEvent.setup()
+    renderVotePage()
+    await user.type(await screen.findByRole('textbox', { name: key('ballot.displayName.label') }), 'Sam')
+    expect(screen.getByText(key('ballot.displayName.hint'))).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: key('ballot.submit.label') }))
+
+    await waitFor(() => {
+      expect(mockSubmitBallot).toHaveBeenCalledWith(SESSION_ID, expect.objectContaining({ display_name: 'Sam' }))
+    })
   })
 
   it('remembers this device\'s ballot, scoped to this session', async () => {
@@ -151,6 +183,17 @@ describe('a refusal of THIS BALLOT', () => {
     expect(screen.queryByText(key('ballot.closed.title'))).not.toBeInTheDocument()
   })
 
+  it('keeps the form under a refusal that asks for another try', async () => {
+    // "Check the numbers and the note, then submit again" used to replace the form
+    // it was talking about.
+    mockSubmitBallot.mockResolvedValue({ ok: false, failure: 'invalid' })
+
+    await submit()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(key('ballot.closed.invalid'))
+    expect(screen.getByRole('button', { name: key('ballot.submit.label') })).toBeInTheDocument()
+  })
+
   it('tells a permanent failure apart from a transient one', async () => {
     // The whole point of `invalid` having a reason of its own: "try again in a
     // moment" is what this state must NOT say.
@@ -163,6 +206,28 @@ describe('a refusal of THIS BALLOT', () => {
   })
 })
 
+describe('a vote on a CONFIGURED scoring setup', () => {
+  beforeEach(() => {
+    mockGetBallotSessionConfig.mockResolvedValue({ ...OPEN, axes: RICE_AXES })
+  })
+
+  it('shows one slider per configured metric, by its configured or translated name', async () => {
+    renderVotePage()
+
+    await screen.findByRole('slider', { name: 'Reach' })
+    expect(screen.getAllByRole('slider')).toHaveLength(3)
+    expect(screen.getByRole('slider', { name: key('ballot.axes.impact') })).toBeInTheDocument()
+    expect(screen.getByText('A lot of work')).toBeInTheDocument()
+  })
+
+  it('sends exactly the configured metric ids, never the old four', async () => {
+    await submit()
+
+    const sent = mockSubmitBallot.mock.calls.at(0)?.at(1)
+    expect(sent).toStrictEqual({ reach: 3, impact: 3, effort: 3 })
+  })
+})
+
 describe('a vote that will not take a ballot', () => {
   it.each([
     ['closed', 'ballot.closed.closed'],
@@ -170,13 +235,25 @@ describe('a vote that will not take a ballot', () => {
     ['cap_reached', 'ballot.closed.capReached'],
     ['not_found', 'ballot.closed.notFound'],
   ] as const)('says which state it is in, and shows no form: %s', async (reason, sentence) => {
-    mockGetBallotSessionConfig.mockResolvedValue({ open: false, reason, row_title: '' })
+    mockGetBallotSessionConfig.mockResolvedValue({ ...OPEN, open: false, reason, row_title: '' })
 
     renderVotePage()
 
     expect(await screen.findByText(key(sentence))).toBeInTheDocument()
     expect(screen.getByText(key('ballot.closed.title'))).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: key('ballot.submit.label') })).not.toBeInTheDocument()
+  })
+
+  it('drops every instruction about the fields once the vote is closed', async () => {
+    // Prod 5.10.00: a closed vote still said "type one below" with nothing below.
+    mockGetBallotSessionConfig.mockResolvedValue({ ...OPEN, open: false, reason: 'closed' })
+
+    renderVotePage()
+
+    expect(await screen.findByText(key('ballot.closed.closed'))).toBeInTheDocument()
+    expect(screen.queryByText(key('ballot.anonymousNotice'))).not.toBeInTheDocument()
+    expect(screen.queryByText(key('ballot.scopeNote'))).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(key('ballot.titleInactive'))
   })
 
   it('refuses mid-meeting without losing the reason', async () => {

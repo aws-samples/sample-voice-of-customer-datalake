@@ -5,41 +5,44 @@ Provides common helpers, encoders, validators, and decorators.
 
 import json
 import os
-import functools
+from collections.abc import Callable, Mapping
+from datetime import UTC, date, datetime
 from decimal import Decimal
-from datetime import datetime, timezone
+from typing import Any
 
 from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConfig, Response, content_types
 
-from shared.logging import logger, tracer, metrics
+from shared import http_cache
+from shared.category_override import redact_category_overrides
+from shared.earliest_date import parse_iso_date
 from shared.exceptions import (
     ApiError,
-    ValidationError,
-    NotFoundError,
-    ConfigurationError,
-    SecretUnreadableError,
-    ServiceError,
     AuthorizationError,
+    ConfigurationError,
     ConflictError,
+    NotFoundError,
+    PayloadTooLargeError,
+    ServiceError,
+    ValidationError,
 )
 
 # Date-basis values live in shared.feedback (the data layer) so job Lambdas
 # don't import API-resolver machinery for constants; re-exported here for
 # API handlers and backward compatibility.
 from shared.feedback import (  # noqa: F401 — re-export
-    DATE_BASIS_IMPORTED, DATE_BASIS_REVIEW, VALID_DATE_BASES, validate_date_basis,
+    DATE_BASIS_IMPORTED,
+    DATE_BASIS_REVIEW,
+    VALID_DATE_BASES,
+    validate_date_basis,
 )
-
-
-class DecimalEncoder(json.JSONEncoder):
-    """JSON encoder that handles Decimal types from DynamoDB."""
-    def default(self, obj):
-        return decimal_default(obj)
+from shared.invocation_cost import measure_invocation_cost
+from shared.logging import logger, metrics, tracer
+from shared.project_access import ADMIN_GROUP
 
 
 def decimal_default(obj):
     """JSON serializer for Decimal types.
-    
+
     Use with json.dumps: json.dumps(data, default=decimal_default)
     """
     if isinstance(obj, Decimal):
@@ -69,46 +72,58 @@ SEARCH_QUERY_MIN_LENGTH = 2
 
 # The longest window any route will honour, and `validate_days`' ceiling.
 #
-# Named rather than left as a bare default in the signature because it is now
-# COUPLED to infrastructure: `/feedback/search` walks one DynamoDB query per day
-# partition (gsi1-by-date is partitioned BY DAY), so the widest window a caller
-# can ask for decides the worst-case duration of that route — and therefore
-# whether the metrics Lambda's timeout and API Gateway's 29 s integration limit
-# still cover it. `api-stack.test.ts` § "the search fan-out fits the metrics
-# timeout" READS this value and fails if raising it outgrows the budget.
-MAX_FEEDBACK_WINDOW_DAYS = 365
+# Nothing is ever deleted (feedback items and aggregate rows carry no TTL), so the
+# ceiling is a sanity bound on the integer rather than a retention horizon: ~27
+# years. The frontend's `MAX_CUSTOM_DAYS` and the stream contract's maximum are
+# the same number (`frontend/src/api/daysWindow.lockstep.test.ts` pins all three).
+#
+# It no longer bounds a request's DURATION: per-day `gsi1-by-date` walks are cut by
+# the wall-clock budget in `shared/time_budget.py` instead, and the responses say so
+# (`partial_reason: 'time_budget'`). `api-stack.test.ts` pins THAT budget against the
+# metrics Lambda timeout.
+MAX_FEEDBACK_WINDOW_DAYS = 9999
 
-# How long a pre-computed aggregate row survives, in days.
-#
-# The aggregator stamps a TTL on every counter and average row it writes
-# (`aggregator/handler.py`'s `update_counter`/`update_average`, `ttl_days`), and
-# DynamoDB deletes the row once it passes. So this is not a tuning knob: it is
-# the widest window the aggregate partitions can answer COMPLETELY.
-#
-# 🔑 It is declared here, beside MAX_FEEDBACK_WINDOW_DAYS, because the two are
-# in tension and nothing used to say so. `validate_days` admits up to 365 while
-# aggregates only reach back ~90, so `/metrics/*?days=365` reads a partition
-# whose older rows no longer exist and answers with a total that under-reports
-# by however much has expired — silently, because the read itself succeeds and
-# returns rows. `metrics_handler` now compares the requested window against this
-# value and reports `is_partial` when it is wider.
-#
-# The aggregator OWNS the value; this is the consumer's copy of it, and
-# `lambda/api/test/test_aggregate_retention_lockstep.py` reads the aggregator's
-# `ttl_days` default via `inspect.signature` and fails if the two drift. Shorten
-# the TTL there without shortening this and the endpoints go back to asserting
-# completeness over a window the data no longer covers.
-AGGREGATE_RETENTION_DAYS = 90
+# `days=0` means "all time": from the earliest-data watermark to today.
+ALL_TIME_DAYS = 0
+
+# What `days=0` resolves to when no watermark exists yet (a deployment that has not
+# ingested since the watermark was introduced and has not run
+# `scripts/retention/remove_ttl.py --apply`): one year, the widest window the
+# routes served before all-time windows existed.
+ALL_TIME_FALLBACK_DAYS = 365
 
 
 def validate_days(
     value: str | int | None,
     default: int = 7,
-    min_val: int = 1,
+    min_val: int = ALL_TIME_DAYS,
     max_val: int = MAX_FEEDBACK_WINDOW_DAYS
 ) -> int:
-    """Validate and bound days parameter. Convenience wrapper around validate_int."""
+    """Validate and bound a `days` parameter: 0 (all time) through MAX_FEEDBACK_WINDOW_DAYS.
+
+    A 0 is returned as 0 — callers that walk or sum a window must resolve it to a
+    concrete day count with `effective_window_days`.
+    """
     return validate_int(value, default=default, min_val=min_val, max_val=max_val)
+
+
+def effective_window_days(days: int, earliest_date: str | None, today: date) -> int:
+    """The concrete number of days a `days` request covers, given the data's history.
+
+    * With a watermark: `0` (all time) and any window reaching past the earliest data
+      both become "days since `earliest_date`, inclusive" (at least 1), so an all-time
+      request walks exactly the history and no further. Shorter windows are unchanged.
+    * Without one (absent or malformed): `days` as given, and `0` falls back to
+      `ALL_TIME_FALLBACK_DAYS` — the history length is unknown, so a year is served.
+
+    Never more than MAX_FEEDBACK_WINDOW_DAYS, so a corrupt watermark cannot make
+    a window loop unbounded.
+    """
+    earliest = parse_iso_date(earliest_date)
+    if earliest is None:
+        return days if days > ALL_TIME_DAYS else ALL_TIME_FALLBACK_DAYS
+    history = min(max((today - earliest).days + 1, 1), MAX_FEEDBACK_WINDOW_DAYS)
+    return history if days <= ALL_TIME_DAYS else min(days, history)
 
 
 def validate_limit(
@@ -215,7 +230,9 @@ def get_caller_groups(event: dict) -> list[str]:
         if ',' in cleaned:
             return [g.strip() for g in cleaned.split(',')]
         return cleaned.split(' ') if ' ' in cleaned else [cleaned]
-    except Exception:
+    except (AttributeError, TypeError):
+        # Only dict/str operations above: a malformed event or claim shape
+        # (non-dict level, non-string groups) surfaces as one of these.
         return []
 
 
@@ -244,23 +261,28 @@ def get_caller_subject(event: dict) -> str:
     raise AuthorizationError('Caller identity could not be determined')
 
 
+def is_admin(event: dict) -> bool:
+    """Whether the caller is in the admins group (Cognito authorizer claims)."""
+    return ADMIN_GROUP in get_caller_groups(event)
+
+
 def require_admin(event: dict) -> None:
     """Raise AuthorizationError (403) unless the caller is in the admins group.
 
     The Cognito authorizer only proves authentication; org-wide mutations
     (user administration, AI model selection) must also check the group.
     """
-    if 'admins' not in get_caller_groups(event):
+    if not is_admin(event):
         raise AuthorizationError('Admin access required')
 
 
 def create_cors_config(allowed_origin: str | None = None) -> CORSConfig:
     """
     Create standard CORS configuration for API Gateway.
-    
+
     Args:
         allowed_origin: Override origin, defaults to ALLOWED_ORIGIN env var
-    
+
     Returns:
         Configured CORSConfig instance
     """
@@ -275,164 +297,157 @@ def create_cors_config(allowed_origin: str | None = None) -> CORSConfig:
             "X-Api-Key",
             "X-Amz-Security-Token",
         ],
-        expose_headers=["Content-Type"],
+        expose_headers=["Content-Type", "ETag"],
         max_age=300,
         allow_credentials=False,
     )
 
 
+class CachingRestResolver(APIGatewayRestResolver):
+    """The REST resolver plus HTTP revalidation of GET answers (``shared.http_cache``).
+
+    Applied to the finished proxy response, so the ETag hashes the exact body sent
+    and a matching ``If-None-Match`` becomes a bodiless 304 (docs/caching.md).
+    """
+
+    def resolve(self, event: Mapping[str, Any], context: Any) -> dict[str, Any]:
+        response = super().resolve(event, context)
+        http_cache.apply(event, response)
+        return response
+
+
 def create_api_resolver(allowed_origin: str | None = None) -> APIGatewayRestResolver:
     """
     Create pre-configured API Gateway resolver with standard CORS and exception handlers.
-    
+
     Args:
         allowed_origin: Override origin, defaults to ALLOWED_ORIGIN env var
-    
+
     Returns:
         Configured APIGatewayRestResolver instance with exception handlers registered
+        and GET answers tagged for revalidation (ETag / 304, ``shared.http_cache``)
     """
     cors_config = create_cors_config(allowed_origin)
-    app = APIGatewayRestResolver(cors=cors_config, enable_validation=True)
-    
+    app = CachingRestResolver(cors=cors_config, enable_validation=True)
+
     # Register exception handlers for consistent error responses
     _register_exception_handlers(app)
-    
+    app.use(middlewares=[_redact_response_overrides])
+
     return app
+
+
+def _redact_response_overrides(app: APIGatewayRestResolver, next_middleware):
+    """Strip ``category_override.by_sub`` from every JSON body this API returns.
+
+    See ``shared.category_override``: one choke point for every route, so a raw
+    feedback item can never carry the editor's Cognito subject to a client.
+    """
+    response = next_middleware(app)
+    if isinstance(response, Response) and isinstance(response.body, (dict, list)):
+        response.body = redact_category_overrides(response.body)
+    return response
 
 
 def _register_exception_handlers(app: APIGatewayRestResolver) -> None:
     """
     Register exception handlers for all custom API exceptions.
-    
+
     This ensures all API errors return a consistent format:
     {
         "success": false,
         "error": "Human-readable error message"
     }
+
+    Log levels: a client error (400, 404, 409, 413) is the API working as designed, so it
+    is logged at INFO and WARNING stays meaningful for operators; a refused authorization
+    (403) is security-relevant and stays WARNING; server faults (500) are ERROR.
     """
-    
-    @app.exception_handler(ValidationError)
-    def handle_validation_error(ex: ValidationError):
-        logger.warning(f"Validation error: {ex.message}")
-        return Response(
-            status_code=400,
-            content_type=content_types.APPLICATION_JSON,
-            body=json.dumps({'success': False, 'error': ex.message})
-        )
-    
-    @app.exception_handler(NotFoundError)
-    def handle_not_found_error(ex: NotFoundError):
-        logger.warning(f"Not found: {ex.message}")
-        return Response(
-            status_code=404,
-            content_type=content_types.APPLICATION_JSON,
-            body=json.dumps({'success': False, 'error': ex.message})
-        )
-    
+    for exception_type, status_code, log_level, label, both_keys in _EXCEPTION_ANSWERS:
+        app.exception_handler(exception_type)(_exception_answer(status_code, log_level, label, both_keys))
+
+
+# (exception, HTTP status, logger method, log prefix, the body also carries `message`).
+# Powertools picks a handler by walking the raised type's ``__mro__``, so ApiError, the
+# catch-all, answers with the exception's own ``status_code`` (None below) for any
+# subclass not listed.
+_EXCEPTION_ANSWERS: tuple[tuple[type[ApiError], int | None, str, str, bool], ...] = (
+    (ValidationError, 400, 'info', 'Validation error', False),
+    (NotFoundError, 404, 'info', 'Not found', False),
     # Intentionally covers the SecretUnreadableError SUBCLASS too, with no handler
     # of its own: Powertools resolves a handler by walking `exp_type.__mro__`, and
     # the HTTP answer is the same 500 — only callers that must decide whether to
     # COUNT the failure (see BaseIngestor._report_construction_failure) care which
     # of the two it is.
-    @app.exception_handler(ConfigurationError)
-    def handle_configuration_error(ex: ConfigurationError):
-        logger.error(f"Configuration error: {ex.message}")
+    (ConfigurationError, 500, 'error', 'Configuration error', False),
+    (ServiceError, 500, 'exception', 'Service error', False),
+    (AuthorizationError, 403, 'warning', 'Authorization error', False),
+    (ConflictError, 409, 'info', 'Conflict error', False),
+    # A client-side sizing problem, not a fault: logged at INFO (no stack
+    # trace) and answered with BOTH keys, because callers parse `error ?? message`.
+    (PayloadTooLargeError, 413, 'info', 'Payload too large', True),
+    (ApiError, None, 'exception', 'API error', False),
+)
+
+
+def _exception_answer(status_code: int | None, log_level: str, label: str,
+                      both_keys: bool) -> Callable[[ApiError], Response]:
+    """The handler for one row of ``_EXCEPTION_ANSWERS``: log, then ``{success: false, error}``."""
+    def answer(ex: ApiError) -> Response:
+        # The logger method is looked up per call, so a test that patches the module logger sees it.
+        getattr(logger, log_level)(f"{label}: {ex.message}")
+        body: dict[str, Any] = {'success': False, 'error': ex.message}
+        if both_keys:
+            body['message'] = ex.message
         return Response(
-            status_code=500,
+            status_code=ex.status_code if status_code is None else status_code,
             content_type=content_types.APPLICATION_JSON,
-            body=json.dumps({'success': False, 'error': ex.message})
+            body=json.dumps(body),
         )
-    
-    @app.exception_handler(ServiceError)
-    def handle_service_error(ex: ServiceError):
-        logger.exception(f"Service error: {ex.message}")
-        return Response(
-            status_code=500,
-            content_type=content_types.APPLICATION_JSON,
-            body=json.dumps({'success': False, 'error': ex.message})
-        )
-    
-    @app.exception_handler(AuthorizationError)
-    def handle_authorization_error(ex: AuthorizationError):
-        logger.warning(f"Authorization error: {ex.message}")
-        return Response(
-            status_code=403,
-            content_type=content_types.APPLICATION_JSON,
-            body=json.dumps({'success': False, 'error': ex.message})
-        )
-    
-    @app.exception_handler(ConflictError)
-    def handle_conflict_error(ex: ConflictError):
-        logger.warning(f"Conflict error: {ex.message}")
-        return Response(
-            status_code=409,
-            content_type=content_types.APPLICATION_JSON,
-            body=json.dumps({'success': False, 'error': ex.message})
-        )
-    
-    @app.exception_handler(ApiError)
-    def handle_api_error(ex: ApiError):
-        """Catch-all for any ApiError subclass not explicitly handled."""
-        logger.exception(f"API error: {ex.message}")
-        return Response(
-            status_code=ex.status_code,
-            content_type=content_types.APPLICATION_JSON,
-            body=json.dumps({'success': False, 'error': ex.message})
-        )
+    return answer
 
 
 def api_handler(func):
     """
     Combined decorator for Lambda API handlers.
-    
+
     Applies in order:
     1. logger.inject_lambda_context - Adds request context to logs
     2. tracer.capture_lambda_handler - X-Ray tracing
     3. metrics.log_metrics - CloudWatch metrics with cold start
-    
+    4. measure_invocation_cost - one `invocation_cost` CPU line per request
+       (innermost, so it is written inside the Powertools context)
+
     Usage:
         @api_handler
         def lambda_handler(event, context):
             return app.resolve(event, context)
     """
-    @logger.inject_lambda_context
-    @tracer.capture_lambda_handler
-    @metrics.log_metrics(capture_cold_start_metric=True)
-    @functools.wraps(func)
-    def wrapper(event, context):
-        return func(event, context)
-    return wrapper
+    measured = measure_invocation_cost(func)
+    return logger.inject_lambda_context(
+        tracer.capture_lambda_handler(
+            metrics.log_metrics(capture_cold_start_metric=True)(measured)))
 
 
-# Re-export exceptions for convenience
 __all__ = [
-    'DecimalEncoder',
-    'validate_days',
-    'validate_limit', 
-    'validate_int',
-    'validate_bool',
-    'validate_date_basis',
-    'MAX_PERSONAS_PER_GENERATION',
-    'AGGREGATE_RETENTION_DAYS',
+    'ALL_TIME_DAYS',
     'DATE_BASIS_IMPORTED',
     'DATE_BASIS_REVIEW',
-    'create_cors_config',
-    'create_api_resolver',
+    'DEFAULT_CATEGORIES',
+    'MAX_FEEDBACK_WINDOW_DAYS',
+    'MAX_PERSONAS_PER_GENERATION',
     'api_handler',
+    'create_api_resolver',
+    'effective_window_days',
     'get_caller_groups',
     'get_caller_subject',
-    'require_admin',
     'get_configured_categories',
-    'DEFAULT_CATEGORIES',
-    # Exceptions
-    'ApiError',
-    'ValidationError',
-    'NotFoundError',
-    'ConfigurationError',
-    'SecretUnreadableError',
-    'ServiceError',
-    'AuthorizationError',
-    'ConflictError',
+    'require_admin',
+    'validate_bool',
+    'validate_date_basis',
+    'validate_days',
+    'validate_int',
+    'validate_limit',
 ]
 
 
@@ -451,7 +466,7 @@ CATEGORIES_CACHE_TTL = 300  # 5 minutes
 def get_raw_categories_config(aggregates_table) -> list[dict]:
     """
     Fetch raw categories config objects from DynamoDB settings with caching.
-    
+
     Returns list of category dicts (with name, description, subcategories).
     Returns empty list if not configured.
     """
@@ -460,7 +475,7 @@ def get_raw_categories_config(aggregates_table) -> list[dict]:
     if not aggregates_table:
         return []
 
-    now = datetime.now(timezone.utc).timestamp()
+    now = datetime.now(UTC).timestamp()
 
     if _categories_cache is not None and _categories_cache_time and (now - _categories_cache_time) < CATEGORIES_CACHE_TTL:
         return _categories_cache
@@ -468,13 +483,14 @@ def get_raw_categories_config(aggregates_table) -> list[dict]:
     try:
         response = aggregates_table.get_item(Key={'pk': 'SETTINGS#categories', 'sk': 'config'})
         item = response.get('Item')
-        if item and item.get('categories'):
-            _categories_cache = item.get('categories', [])
+        categories = item.get('categories') if item else None
+        if categories:
+            _categories_cache = categories
             _categories_cache_time = now
-            logger.info(f"Loaded {len(_categories_cache)} categories from settings")
-            return _categories_cache
+            logger.info(f"Loaded {len(categories)} categories from settings")
+            return categories
     except Exception as e:
-        logger.warning(f"Could not fetch categories from settings: {e}")
+        logger.exception(f"Could not fetch categories from settings: {e}")
 
     _categories_cache = []
     _categories_cache_time = now
@@ -484,7 +500,7 @@ def get_raw_categories_config(aggregates_table) -> list[dict]:
 def get_configured_categories(aggregates_table) -> list:
     """
     Fetch configured category names from DynamoDB settings with caching.
-    
+
     Returns list of category name strings, falling back to DEFAULT_CATEGORIES.
     """
     raw = get_raw_categories_config(aggregates_table)

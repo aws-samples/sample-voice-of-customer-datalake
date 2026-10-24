@@ -5,8 +5,10 @@
  * Declared once, and HERE rather than under one page, because two pages now render
  * such a control: `pages/Scrapers` (`AppConfigComponents`' Run and Delete,
  * `PluginConfigModal`'s Add/Save/Delete/Run and schedule toggle,
- * `GeneratorConfigModal`'s Generate — where this wording came from) and
- * `pages/Settings` (`SourceCard`'s Enabled toggle). It began in
+ * `GeneratorConfigModal`'s Generate — where this wording came from — and
+ * `ScraperEditor`'s Save and Auto-detect, `TemplateSelector`'s scraper
+ * templates) and `pages/Settings` (`SourceCard`'s Enabled toggle,
+ * `LogsSection`'s Clear). It began in
  * `pages/Scrapers/constants.ts`, which was right while Scrapers was the only page
  * with a gated control; the Settings toggle calls the same
  * `PUT /sources/{source}/enable|disable` pair, so a page-local home would have
@@ -15,11 +17,22 @@
  * 403.
  *
  * The routes: `POST`/`DELETE /integrations/{source}/apps`,
- * `POST /sources/{source}/run`, `PUT /sources/{source}/enable|disable`, and
- * `POST`/`DELETE /scrapers` plus `POST /scrapers/{id}/run`. None of them were
- * gated — a `users`-group caller could write the shared API-credentials secret and
+ * `POST /sources/{source}/run`, `PUT /sources/{source}/enable|disable`,
+ * `POST /scrapers` (save), `POST /scrapers/analyze-url`, `DELETE /scrapers/{id}`
+ * plus `POST /scrapers/{id}/run` (all admin-only by owner decision 2026-10-08, so
+ * `ScraperEditor` opens read-only and `TemplateSelector` disables the scraper
+ * templates for a non-admin), `DELETE /logs/validation/{source}`, and
+ * `PUT /settings/brand` (the Settings header Save; owner decision 2026-10-08, #242), and every
+ * `/scrapers/manual/*` and `/s3-import/*` route (owner decision 2026-10-08, #242 follow-up:
+ * `TemplateSelector`'s paste / JSON / CSV / S3 import tiles, `SourceCard`'s S3 file explorer). None of
+ * them were once gated — a `users`-group caller could write the shared API-credentials secret and
  * invoke an ingestor — so the gate is the SERVER's and this string is only the
  * explanation. Disabling a control is never the boundary.
+ *
+ * On `pages/Settings` the non-admin state is defence in depth, not a state a user meets: `/admin`
+ * renders behind `AdminRoute`, and `useIsAdmin()` is true in a DEV build without Cognito, so
+ * `SourceCard`'s and `LogsSection`'s disabled controls are reachable only from their unit tests.
+ * They stay gated so the card is safe to reuse outside that route.
  *
  * NOT routed through i18n, and that is a decision rather than an oversight — but a
  * weak one, recorded so the next reader does not have to guess.

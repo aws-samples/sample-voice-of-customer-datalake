@@ -1,8 +1,10 @@
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
+import { changelogPlugin } from './changelogPlugin'
 
 /**
  * Build id for cache-busting runtime-fetched locale JSONs (issue #191).
@@ -23,18 +25,40 @@ import { defineConfig } from 'vite'
  * no-cache headers keep same-sha fetches revalidating regardless.
  */
 function buildId(): string {
+  return gitShortSha() ?? `${Date.now()}`
+}
+
+/** The short HEAD sha (what `git rev-parse --short HEAD` prints, read via fs
+ * for the reason above), or null without git (a tarball). Never throws. */
+function gitShortSha(): string | null {
   const ciSha = [process.env.GITHUB_SHA, process.env.CODEBUILD_RESOLVED_SOURCE_VERSION]
     .find((value) => value !== undefined && value !== '')
   if (ciSha !== undefined) return ciSha.slice(0, 7)
   try {
     const gitDir = resolveGitDir()
-    if (gitDir === null) return `${Date.now()}`
+    if (gitDir === null) return null
     const head = readFileSync(join(gitDir, 'HEAD'), 'utf8').trim()
     if (!head.startsWith('ref: ')) return head.slice(0, 7) // detached HEAD
     const sha = resolveRef(gitDir, head.slice(5))
-    return sha !== null ? sha.slice(0, 7) : `${Date.now()}`
+    return sha !== null ? sha.slice(0, 7) : null
   } catch {
-    return `${Date.now()}`
+    return null
+  }
+}
+
+/** Repo root (the frontend lives at voc-datalake/frontend), where package.json carries the platform version. */
+const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url))
+
+/** The platform version from the repo-root package.json, 'unknown' when unreadable. */
+function platformVersion(): string {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8'))
+    if (typeof parsed === 'object' && parsed !== null && 'version' in parsed && typeof parsed.version === 'string') {
+      return parsed.version
+    }
+    return 'unknown'
+  } catch {
+    return 'unknown'
   }
 }
 
@@ -43,11 +67,23 @@ function buildId(): string {
 function resolveGitDir(): string | null {
   const found = findUp('.git')
   if (found === null) return null
-  if (statSync(found).isDirectory()) return found
-  const content = readFileSync(found, 'utf8').trim()
+  // One read decides: a directory is the git dir itself; a file holds the pointer.
+  const content = readGitDirPointer(found)
+  if (content === null) return found
   if (!content.startsWith('gitdir: ')) return null
   const target = content.slice(8)
   return isAbsolute(target) ? target : join(dirname(found), target)
+}
+
+/** The text of `.git` when it is a pointer FILE (worktrees, submodules); null when it is the directory. */
+function readGitDirPointer(found: string): string | null {
+  try {
+    return readFileSync(found, 'utf8').trim()
+  } catch (error: unknown) {
+    // EISDIR: `.git` is the real directory, which is the common case.
+    if (error instanceof Error && 'code' in error && error.code === 'EISDIR') return null
+    throw error
+  }
 }
 
 /** Resolve a symbolic ref to a sha: loose ref file first, then packed-refs
@@ -64,7 +100,7 @@ function resolveRef(gitDir: string, ref: string): string | null {
   const line = readFileSync(packedPath, 'utf8')
     .split('\n')
     .find((entry) => !entry.startsWith('#') && !entry.startsWith('^') && entry.endsWith(` ${ref}`))
-  return line !== undefined ? line.split(' ')[0] : null
+  return line?.split(' ')[0] ?? null
 }
 
 /** Base directory for refs: the worktree common dir when `commondir`
@@ -89,13 +125,18 @@ function findUp(name: string): string | null {
 }
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), changelogPlugin()],
   define: {
     global: 'globalThis',
     // Namespaced under import.meta.env: a bare identifier define would be
     // replaced ANYWHERE the identifier appears in source (Vite does
     // identifier-level substitution), silently corrupting unrelated code.
     'import.meta.env.APP_VERSION': JSON.stringify(buildId()),
+    // The Administration > Version card (pages/Settings/buildInfo.ts); vitest.config.ts pins
+    // fixed values so specs are deterministic. Stamped once per server start in dev.
+    'import.meta.env.PLATFORM_VERSION': JSON.stringify(platformVersion()),
+    'import.meta.env.BUILD_COMMIT': JSON.stringify(gitShortSha() ?? 'unknown'),
+    'import.meta.env.BUILD_TIME': JSON.stringify(new Date().toISOString()),
   },
   build: {
     rollupOptions: {

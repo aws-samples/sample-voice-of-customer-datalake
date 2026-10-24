@@ -1,0 +1,49 @@
+{
+  "contactAdmin": "Jeśli potrzebujesz dostępu, skontaktuj się z administratorem.",
+  "enterPassword": "Wpisz hasło",
+  "enterUsername": "Wpisz nazwę użytkownika",
+  "errors": {
+    "failedNewPassword": "Nie udało się ustawić nowego hasła",
+    "failedResetPassword": "Nie udało się zresetować hasła",
+    "failedSendCode": "Nie udało się wysłać kodu weryfikacyjnego",
+    "loginFailed": "Logowanie nie powiodło się",
+    "passwordResetSuccess": "Hasło zostało zresetowane. Zaloguj się ponownie.",
+    "passwordsDoNotMatch": "Hasła nie są zgodne",
+    "passwordTooShort": "Hasło musi mieć co najmniej 8 znaków",
+    "sessionExpired": "Sesja wygasła. Zaloguj się ponownie.",
+    "verificationCodeSent": "Kod weryfikacyjny został wysłany na Twój adres e-mail"
+  },
+  "forgotPassword": "Nie pamiętasz hasła?",
+  "newPassword": {
+    "confirmLabel": "Potwierdź hasło",
+    "confirmPlaceholder": "Potwierdź nowe hasło",
+    "description": "Musisz ustawić nowe hasło do swojego konta.",
+    "label": "Nowe hasło",
+    "placeholder": "Wpisz nowe hasło",
+    "settingPassword": "Ustawianie hasła...",
+    "showPassword": "Pokaż hasło",
+    "submit": "Ustaw hasło",
+    "title": "Ustaw nowe hasło"
+  },
+  "password": "Hasło",
+  "resetPassword": {
+    "backToLogin": "Wróć do logowania",
+    "description": "Wpisz nazwę użytkownika, aby otrzymać kod weryfikacyjny.",
+    "sendCode": "Wyślij kod",
+    "sendingCode": "Wysyłanie kodu...",
+    "title": "Resetuj hasło"
+  },
+  "signIn": "Zaloguj się",
+  "signingIn": "Logowanie...",
+  "usernameOrEmail": "Nazwa użytkownika lub e-mail",
+  "verifyCode": {
+    "description": "Sprawdź swoją skrzynkę e-mail, aby znaleźć kod weryfikacyjny.",
+    "label": "Kod weryfikacyjny",
+    "placeholder": "Wpisz kod",
+    "resettingPassword": "Resetowanie hasła...",
+    "submit": "Resetuj hasło",
+    "title": "Wpisz kod weryfikacyjny"
+  },
+  "showPassword": "Pokaż hasło",
+  "hidePassword": "Ukryj hasło"
+}

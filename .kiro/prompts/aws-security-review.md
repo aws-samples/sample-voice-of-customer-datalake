@@ -218,41 +218,35 @@ VoC Data Lake is a **fully serverless** AWS platform for ingesting, processing, 
 ### AWS Services in Use
 | Service | Purpose | Security Considerations |
 |---------|---------|------------------------|
-| Lambda (Python 3.12, ARM64) | Ingestors, Processor, Aggregator, Split API handlers | IAM 20KB policy limit, Powertools |
-| DynamoDB | Feedback, Aggregates, Watermarks, Projects, Jobs, Conversations | On-demand, KMS encryption, TTL |
+| Lambda (Python 3.14 + Node.js 22 for the assistant stream, ARM64) | Ingestors, Processor, Aggregator, Split API handlers, agent runtime | IAM 20KB policy limit, Powertools |
+| DynamoDB | Feedback, Aggregates, Watermarks, Projects, Jobs, Conversations, Memory, Agents | On-demand, KMS encryption, TTL |
 | S3 | Raw data lake (partitioned by source/date), persona avatars | KMS encryption, lifecycle policies |
 | API Gateway | REST API with split Lambda backends | Throttling, CORS, Cognito auth |
 | SQS | Processing queue with DLQ | Visibility timeout, batch processing |
 | EventBridge | Scheduled ingestion (1-30 min intervals) | Rate expressions |
 | Secrets Manager | API credentials for data source plugins | Auto-rotation capable |
 | KMS | Customer-managed encryption key | Key rotation enabled |
-| Bedrock | Claude Sonnet 4.5 (global inference profile) | Model ARN scoping |
+| Bedrock | Claude, per-surface model picker over an allowlist (`lib/utils/model-allowlist.ts`) | Model ARN scoping |
 | Comprehend | Sentiment, language detection, key phrases | - |
 | Translate | Multi-language support | Auto language pair detection |
 | Step Functions | Research workflows, persona generation | Execution role scoping |
 | CloudFront | CDN for React dashboard | OAC for S3 |
 | Cognito | User authentication | User pools, admin/viewer groups |
-| WAF | API Gateway protection | Rate limiting, SQL injection, XSS protection |
+| API Gateway throttling | API protection | Per-method stage throttles in `lib/stacks/api-gateway.ts`. **No WAF is deployed** (cost decision) — recommend one for production |
 
 ### Lambda API Split Architecture (20KB IAM Policy Limit)
-| Lambda | Handler | Routes | Permissions |
-|--------|---------|--------|-------------|
-| `voc-metrics-api` | `metrics_handler.py` | `/feedback/*`, `/metrics/*` | DynamoDB read |
-| `voc-chat-api` | `chat_handler.py` | `/chat/*` | DynamoDB RW, Bedrock |
-| `voc-integrations-api` | `integrations_handler.py` | `/integrations/*`, `/sources/*` | Secrets Manager, EventBridge |
-| `voc-scrapers-api` | `scrapers_handler.py` | `/scrapers/*` | Secrets Manager, Lambda invoke, Bedrock |
-| `voc-settings-api` | `settings_handler.py` | `/settings/*` | DynamoDB, Bedrock |
-| `voc-projects-api` | `projects_handler.py` | `/projects/*` | DynamoDB, Step Functions, Bedrock, S3 |
-| `voc-users-api` | `users_handler.py` | `/users/*` | Cognito admin |
-| `voc-feedback-form-api` | `feedback_form_handler.py` | `/feedback-forms/*` | DynamoDB, SQS |
-| `voc-chat-stream` | `chat_stream_handler.py` | Function URL (streaming) | DynamoDB read, Bedrock streaming |
-| `voc-data-explorer-api` | `data_explorer_handler.py` | `/data-explorer/*` | S3, DynamoDB (feedback) |
+One Lambda per domain, each with its own least-privilege role. Handlers live in `lambda/api/*_handler.py`
+(metrics, feedback_edit, chat, integrations, scrapers, settings, projects, users, feedback_form, data_explorer,
+logs, manual_import, s3_import, memory, agents, mcp_global, mcp_tokens, ballots); the AI assistant is
+`voc-chat-stream` (TypeScript, `lambda/stream`, SSE at `POST /chat/stream` through API Gateway with Cognito auth).
+The authoritative Lambda/route/permission table is `.kiro/steering/tech.md` → "API Lambda Split"; routes are wired
+explicitly in `lib/stacks/api-routes.ts`.
 
 ### Known Security Status
 
 #### ✅ Implemented Controls
 - Cognito User Pool authentication with admin/viewer groups
-- WAF protection on API Gateway (rate limiting, SQL injection, XSS)
+- API Gateway per-method throttling (a stage default plus tighter explicit limits on every unauthenticated route; the numbers live in `voc-datalake/lib/stacks/api-gateway.ts`)
 - S3 buckets with `BlockPublicAccess.BLOCK_ALL`
 - CloudFront Origin Access Control (OAC) for S3
 - DynamoDB encryption at rest (KMS customer-managed key)
@@ -269,49 +263,31 @@ VoC Data Lake is a **fully serverless** AWS platform for ingesting, processing, 
   `GET /feedback-forms/{id}/iframe` (the embeddable widget runs on the customer's own site).
   Every other route under `/feedback-forms` requires Cognito; `api-stack.test.ts` enforces this.
   - Mitigated by: Rate limiting, input validation
+- **No WAF**: none is deployed (cost decision; cdk-nag suppressions in `lib/utils/nag-suppressions.ts` record it).
+  Throttling limits rate only — it does not filter SQL injection / XSS payloads. Recommend AWS WAF for production.
 - **Bedrock Global Inference Profile**: Uses cross-region inference for availability
   - Ensure IAM scoped to specific inference profile ARN
 
 ### Key Files to Review
 ```
 voc-datalake/
-├── bin/voc-datalake.ts               # CDK app entry point
-├── lib/stacks/                       # CDK stack definitions
-│   ├── storage-stack.ts              # DynamoDB, S3, KMS
-│   ├── auth-stack.ts                 # Cognito User Pool, groups
-│   ├── ingestion-stack.ts            # Ingestors, EventBridge, SQS, Secrets
-│   ├── processing-stack.ts           # Processor, Bedrock/Comprehend
-│   ├── analytics-stack.ts            # API Gateway, Split API Lambdas, WAF
-│   ├── research-stack.ts             # Step Functions
-│   └── frontend-stack.ts             # S3 + CloudFront
-├── plugins/                          # Data source plugins
-│   ├── _shared/                      # Shared plugin utilities
-│   │   └── base_ingestor.py          # Abstract base class
-│   ├── _template/                    # Template for new plugins
-│   └── webscraper/                   # Web scraper plugin
-│       └── ingestor/handler.py
+├── bin/voc-datalake.ts               # CDK app entry point (5 stacks)
+├── lib/stacks/
+│   ├── core-stack.ts                 # DynamoDB, KMS (+ core-buckets.ts S3, core-cdn.ts CloudFront, core-auth.ts Cognito)
+│   ├── ingestion-stack.ts            # Plugin Lambdas, EventBridge, SQS, Secrets (+ ingestion-roles.ts)
+│   ├── processing-stack-consolidated.ts # Processor, Aggregator, Step Functions, workers
+│   ├── api-stack.ts                  # VocApiStack: composes the api-*.ts builders
+│   ├── api-gateway.ts                # Stage, throttles, CORS, Cognito authorizer (no WAF)
+│   ├── api-routes.ts                 # Every route + its auth (explicit, no {proxy+} defaults)
+│   └── web-search-stack.ts           # AgentCore web-search gateway, Bedrock model access
+├── lib/utils/nag-suppressions.ts     # cdk-nag suppressions and their reasons
+├── plugins/                          # Data source plugins (_shared, _template, webscraper, github_issues, web_reviews)
 ├── lambda/
-│   ├── processor/handler.py          # SQS consumer
-│   ├── aggregator/handler.py         # DynamoDB Streams consumer
-│   ├── research/                     # Step Functions tasks
-│   ├── api/                          # Split API handlers
-│   │   ├── metrics_handler.py
-│   │   ├── chat_handler.py
-│   │   ├── chat_stream_handler.py
-│   │   ├── integrations_handler.py
-│   │   ├── scrapers_handler.py
-│   │   ├── settings_handler.py
-│   │   ├── projects_handler.py
-│   │   ├── users_handler.py
-│   │   ├── feedback_form_handler.py
-│   │   ├── data_explorer_handler.py
-│   │   └── projects.py               # Shared business logic
-│   └── layers/                       # Lambda layers
-└── frontend/                         # React dashboard
-    └── src/
-        ├── api/client.ts             # API client
-        ├── services/auth.ts          # Cognito authentication
-        └── store/authStore.ts        # Auth state management
+│   ├── processor/, aggregator/       # SQS + DynamoDB Streams consumers
+│   ├── api/*_handler.py              # Split API handlers (see above)
+│   ├── stream/                       # AI assistant (TypeScript)
+│   └── shared/                       # auth.py, url_policy.py (SSRF guard), source_policy.py, pii_redaction.py
+└── frontend/src/                     # React dashboard (api/client.ts, services/auth.ts, store/authStore.ts)
 ```
 
 ### DynamoDB Tables Security Matrix
@@ -419,15 +395,15 @@ Perform a quick security scan of the Lambda API handlers
 ```
 
 ```
-Check IAM policies in analytics-stack.ts for least privilege violations
+Check IAM policies in the api-*-lambdas.ts builders for least privilege violations
 ```
 
 ```
-Review the S3 bucket configurations in storage-stack.ts
+Review the S3 bucket configurations in core-buckets.ts
 ```
 
 ```
-Analyze the Cognito setup in auth-stack.ts for authentication best practices
+Analyze the Cognito setup in core-auth.ts for authentication best practices
 ```
 
 ```
@@ -437,10 +413,10 @@ Review the ingestor Lambdas for secrets handling
 ### Scope the Review
 Be specific about what you want reviewed:
 
-- **Single file**: "Review `lib/stacks/analytics-stack.ts` for security issues"
+- **Single file**: "Review `lib/stacks/api-gateway.ts` for security issues"
 - **Directory**: "Scan all Lambda handlers in `lambda/api/` for input validation"
 - **Specific concern**: "Check for hard-coded credentials in the ingestors"
-- **Service focus**: "Review all DynamoDB table configurations in storage-stack.ts"
+- **Service focus**: "Review all DynamoDB table configurations in core-stack.ts"
 - **Domain focus**: "Review the Cognito authentication flow"
 
 ### Request Specific Output
@@ -456,20 +432,20 @@ Ask for the format you need:
 ## Example Review Output
 
 ### Summary
-The VoC Data Lake demonstrates strong security posture with Cognito authentication, WAF protection, KMS encryption, and domain-isolated Lambda functions (20KB IAM policy compliance). The architecture follows AWS Well-Architected principles with proper secrets management and least-privilege IAM roles.
+The VoC Data Lake demonstrates strong security posture with Cognito authentication, per-method API Gateway throttling (no WAF), KMS encryption, and domain-isolated Lambda functions (20KB IAM policy compliance). The architecture follows AWS Well-Architected principles with proper secrets management and least-privilege IAM roles.
 
 ### Findings
 
 **Finding**: Feedback form submission endpoint is public
 **Severity**: Low
-**Location**: `lib/stacks/analytics-stack.ts` - `/feedback-form/submit` route
+**Location**: `lib/stacks/api-routes.ts` - `POST /feedback-forms/{id}/submit` route
 **Impact**: Public endpoint could receive spam submissions
 **Principle Violated**: Defense in Depth
 **Remediation**: 
 - This is intentional for embeddable forms (required functionality)
 - Ensure input validation is thorough in `feedback_form_handler.py`
 - Consider adding CAPTCHA or honeypot fields for spam prevention
-- WAF rate limiting provides baseline protection
+- The route's per-method stage throttle (`lib/stacks/api-gateway.ts`) provides baseline rate protection; no WAF is deployed
 
 ---
 

@@ -1,0 +1,56 @@
+{
+  "title": "E-Mail-Posteingang",
+  "description": "Kunden, Mitarbeitende und Partner senden Feedback per E-Mail an diese Adressen. Jede E-Mail wird geprüft, dedupliziert und geschwärzt, bevor sie zu einem Feedback-Eintrag wird.",
+  "on": "An",
+  "off": "Aus",
+  "loading": "E-Mail-Posteingang wird geladen…",
+  "notDeployed": "Der E-Mail-Posteingang ist nicht bereitgestellt. Mit -c inboundEmailDomain=<Ihre Domain> bereitstellen (siehe docs/email-intake.md).",
+  "addresses": "Adressen",
+  "ruleSetInactive": "Der Empfangsregelsatz {{ruleSet}} ist nicht aktiv, daher kommen noch keine E-Mails an. Aktivieren Sie ihn in Amazon SES oder stellen Sie mit -c inboundEmailRuleSet in den aktiven Regelsatz bereit.",
+  "pii": {
+    "redact": "Personenbezogene Daten werden geschwärzt: Namen, E-Mail-Adressen und Telefonnummern werden vor dem Speichern ersetzt.",
+    "allow": "Personenbezogene Daten bleiben wie empfangen (das Quellprofil erlaubt es).",
+    "summary_only": "Nur abgeleitete Felder werden gespeichert (das Quellprofil ist nur Zusammenfassung)."
+  },
+  "dimension": {
+    "missing": "Legen Sie die Dimension Feedback-Typ an, damit die Adressen ideas@, bugs@ und reviews@ sowie Betreff-Tags wie [bug] jeden Eintrag kennzeichnen.",
+    "create": "Dimension anlegen"
+  },
+  "today": {
+    "title": "Heute (UTC)",
+    "accepted": "Angenommen",
+    "deduped": "Dedupliziert",
+    "dropped": "Verworfen",
+    "deferred": "Zurückgestellt",
+    "modelCalls": "Modellaufrufe"
+  },
+  "reasons": {
+    "duplicate_message": "Dieselbe E-Mail zweimal zugestellt",
+    "seen_in_thread": "Text bereits im Verlauf",
+    "no_new_info": "Antwort ohne neue Information",
+    "forward_duplicate": "Original bereits weitergeleitet",
+    "spam": "Spam-Bewertung",
+    "virus": "Viren-Bewertung",
+    "auto_reply": "Automatische Antwort",
+    "bulk": "Massen-E-Mail oder Mailingliste",
+    "loop_sender": "Absender ist ein Mailsystem",
+    "sender_cap": "Absenderlimit erreicht",
+    "no_text": "Kein Text",
+    "unparseable": "Nicht lesbar",
+    "too_large": "Zu groß"
+  },
+  "caps": {
+    "title": "Tageslimits",
+    "daily_cap": "E-Mails pro Tag",
+    "sender_daily_cap": "E-Mails pro Absender und Tag",
+    "daily_model_calls": "Modellaufrufe pro Tag",
+    "range": "Von {{min, number}} bis {{max, number}}",
+    "save": "Limits speichern",
+    "saved": "Limits gespeichert"
+  },
+  "errors": {
+    "load": "Der Status des E-Mail-Posteingangs konnte nicht geladen werden.",
+    "save": "Die Limits konnten nicht gespeichert werden.",
+    "dimension": "Die Dimension konnte nicht angelegt werden."
+  }
+}

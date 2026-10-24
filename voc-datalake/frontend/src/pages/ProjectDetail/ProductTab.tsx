@@ -1,6 +1,6 @@
 /**
  * ProductTab — capture the current product/service description that downstream
- * PRD / PR-FAQ generation will use as context.
+ * PRD / PR/FAQ generation will use as context.
  *
  * Three operating modes (segmented control, persisted in localStorage per-project):
  *   - chat:   AI interview only
@@ -14,27 +14,19 @@
  * Bedrock-backed call passes response_language: i18n.language so output matches
  * the language picked in Settings.
  */
-import {
-  MessageSquare, Upload, Send, Loader2,
-  CheckCircle2, AlertCircle, Sparkles, FileOutput,
-} from 'lucide-react'
-import {
-  useCallback, useEffect, useRef, useState,
-} from 'react'
+
+import { MessageSquare, Upload, Loader2, Sparkles } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
 import { projectsApi } from '../../api/projectsApi'
+import { loadWhileMounted } from './loadWhileMounted'
 import { DocsUpload } from './ProductDocsUpload'
-import {
-  countFilledProductContextFields, emptyProductContext,
-} from './productContextFields'
-import { useTransientFlag } from './useTransientFlag'
-import { buildHistory, MAX_INTERVIEW_HISTORY_ENTRIES } from '../../constants/chat'
-import {
-  SelectField, TextAreaField, TextField,
-} from './ProductFormFields'
-import type {
-  ProductContext, ProductLifecycleState,
-} from '../../api/types'
+import ProductReportCard from './ProductReportCard'
+import { countFilledProductContextFields, emptyProductContext } from './productContextFields'
+import { SelectField, TextAreaField, TextField } from './ProductFormFields'
+import type { ProductContext, ProductLifecycleState } from '../../api/projectTypes'
+import { InterviewChat } from './ProductInterviewChat'
 
 const LIFECYCLE_STATES: readonly ProductLifecycleState[] = ['', 'idea', 'mvp', 'beta', 'ga', 'mature']
 
@@ -49,23 +41,6 @@ function singleFieldPatch<K extends keyof ProductContext>(field: K, value: Produ
   return patch
 }
 
-/**
- * The other half of the backend's rule: it accepts at least one field **or** a
- * ready uploaded document. Asked only when the fields are empty, so this costs a
- * request on a path that would otherwise start a job doomed to fail.
- *
- * A failure to answer resolves to `true` — better to let the backend decide than
- * to block a user because a list call failed.
- */
-async function hasReadyProductDoc(projectId: string): Promise<boolean> {
-  try {
-    const { docs } = await projectsApi.listProductDocs(projectId)
-    return docs.some((doc) => doc.status === 'ready')
-  } catch {
-    return true
-  }
-}
-
 type Mode = 'both' | 'chat' | 'upload'
 
 const modeKey = (projectId: string) => `voc:productTabMode:${projectId}`
@@ -78,6 +53,12 @@ function readSavedMode(projectId: string): Mode {
 
 interface ProductTabProps {
   readonly projectId: string
+  /**
+   * False for a viewer (`can_edit: false`): the form is shown disabled, the uploaded
+   * docs are listed without upload/delete, and the interview and report — both of
+   * which write — are not offered. Every one of those would otherwise 403.
+   */
+  readonly canEdit: boolean
   /**
    * The context was just saved, with the server's copy of it.
    *
@@ -98,7 +79,7 @@ interface ProductTabProps {
   readonly onJobStarted?: () => void
 }
 
-export default function ProductTab({ projectId, onContextSaved, onJobStarted }: ProductTabProps) {
+export default function ProductTab({ projectId, canEdit, onContextSaved, onJobStarted }: ProductTabProps) {
   const { t, i18n } = useTranslation('projectDetail')
   const [mode, setMode] = useState<Mode>(() => readSavedMode(projectId))
   const [context, setContext] = useState<ProductContext>(emptyProductContext)
@@ -121,17 +102,11 @@ export default function ProductTab({ projectId, onContextSaved, onJobStarted }: 
     localStorage.setItem(modeKey(projectId), m)
   }, [projectId])
 
-  useEffect(() => {
-    const lifecycle = { cancelled: false }
-    projectsApi.getProductContext(projectId).then((r) => {
-      if (!lifecycle.cancelled) setContext({ ...emptyProductContext(), ...r.context })
-    }).catch((e) => {
-      console.error('Failed to load product context', e)
-    }).finally(() => {
-      if (!lifecycle.cancelled) setLoading(false)
-    })
-    return () => { lifecycle.cancelled = true }
-  }, [projectId])
+  useEffect(() => loadWhileMounted(projectsApi.getProductContext(projectId), {
+    onLoaded: (r) => setContext({ ...emptyProductContext(), ...r.context }),
+    errorMessage: 'Failed to load product context',
+    onSettled: () => setLoading(false),
+  }), [projectId])
 
   /**
    * Adopt a saved context: normalise it, then tell the page it changed.
@@ -174,7 +149,7 @@ export default function ProductTab({ projectId, onContextSaved, onJobStarted }: 
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-16 text-gray-500">
+      <div className="flex items-center justify-center py-16 text-muted">
         <Loader2 size={20} className="animate-spin mr-2" /> {t('product.loading')}
       </div>
     )
@@ -185,44 +160,59 @@ export default function ProductTab({ projectId, onContextSaved, onJobStarted }: 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold flex items-center gap-2">
-            <Sparkles size={18} className="text-blue-600" />
+            <Sparkles size={18} className="text-accent" />
             {t('product.title')}
           </h2>
-          <p className="text-sm text-gray-500">{t('product.subtitle')}</p>
+          <p className="text-sm text-muted">{t('product.subtitle')}</p>
         </div>
-        <ModeToggle mode={mode} onChange={setModePersist} t={t} />
+        {canEdit ? <ModeToggle mode={mode} onChange={setModePersist} t={t} /> : null}
       </div>
 
-      <div className={`grid gap-4 ${mode === 'both' ? 'lg:grid-cols-2' : 'grid-cols-1'}`}>
-        <ProductForm
-          context={context}
-          savingField={savingField}
-          highlightFields={highlightFields}
-          onPersistField={persistField}
-          t={t}
-        />
-
-        <div className="space-y-4">
-          {(mode === 'chat' || mode === 'both') && (
-            <InterviewChat
-              projectId={projectId}
-              language={i18n.language}
-              onPatch={onPatchFromChat}
-              t={t}
-            />
-          )}
-          {(mode === 'upload' || mode === 'both') && (
-            <DocsUpload projectId={projectId} />
-          )}
-          <ReportCard
-            projectId={projectId}
-            language={i18n.language}
-            hasNoFields={countFilledProductContextFields(context) === 0}
-            onJobStarted={onJobStarted}
+      {canEdit ? (
+        <div className={`grid gap-4 ${mode === 'both' ? 'lg:grid-cols-2' : 'grid-cols-1'}`}>
+          <ProductForm
+            context={context}
+            readOnly={false}
+            savingField={savingField}
+            highlightFields={highlightFields}
+            onPersistField={persistField}
             t={t}
           />
+
+          <div className="space-y-4">
+            {(mode === 'chat' || mode === 'both') && (
+              <InterviewChat
+                projectId={projectId}
+                language={i18n.language}
+                onPatch={onPatchFromChat}
+                t={t}
+              />
+            )}
+            {(mode === 'upload' || mode === 'both') && (
+              <DocsUpload projectId={projectId} canEdit />
+            )}
+            <ProductReportCard
+              projectId={projectId}
+              hasNoFields={countFilledProductContextFields(context) === 0}
+              onJobStarted={onJobStarted}
+            />
+          </div>
         </div>
-      </div>
+      ) : (
+        // A viewer reads the description and the uploaded docs; the mode toggle is
+        // moot because the two write-only panes it switches between are not shown.
+        <div className="grid gap-4 lg:grid-cols-2">
+          <ProductForm
+            context={context}
+            readOnly
+            savingField={savingField}
+            highlightFields={highlightFields}
+            onPersistField={persistField}
+            t={t}
+          />
+          <DocsUpload projectId={projectId} canEdit={false} />
+        </div>
+      )}
     </div>
   )
 }
@@ -238,14 +228,12 @@ function ModeToggle({ mode, onChange, t }: { readonly mode: Mode; readonly onCha
     { id: 'upload', labelKey: 'product.modeUpload', icon: Upload },
   ]
   return (
-    <div className="inline-flex rounded-lg border bg-white p-0.5 text-xs">
+    <div className="tabs-track">
       {opts.map((o) => (
         <button
           key={o.id}
           onClick={() => onChange(o.id)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md whitespace-nowrap ${
-            mode === o.id ? 'bg-blue-600 text-white' : 'text-gray-600 hover:text-gray-900'
-          }`}
+          className={clsx('tab', mode === o.id && 'tab-active')}
         >
           <o.icon size={14} />
           {t(o.labelKey)}
@@ -258,9 +246,11 @@ function ModeToggle({ mode, onChange, t }: { readonly mode: Mode; readonly onCha
 // ── Form ────────────────────────────────────────────────────────────────────
 
 function ProductForm({
-  context, savingField, highlightFields, onPersistField, t,
+  context, readOnly, savingField, highlightFields, onPersistField, t,
 }: {
   readonly context: ProductContext
+  /** Disables every field at once (a native `<fieldset disabled>`), so no field can save. */
+  readonly readOnly: boolean
   readonly savingField: string | null
   readonly highlightFields: Set<string>
   readonly onPersistField: <K extends keyof ProductContext>(field: K, value: ProductContext[K]) => void
@@ -276,7 +266,7 @@ function ProductForm({
   ]
 
   return (
-    <div className="bg-white border rounded-xl p-4 sm:p-6 space-y-4">
+    <fieldset disabled={readOnly} className="bg-card border rounded-xl p-4 sm:p-6 space-y-4 min-w-0">
       <TextField
         label={t('product.fields.productName')} field="product_name" value={context.product_name}
         max={200} savingField={savingField} highlight={highlightFields.has('product_name')}
@@ -351,208 +341,6 @@ function ProductForm({
         placeholder={t('product.fields.placeholderEmpty')}
         onSave={(v) => onPersistField('free_form_notes', v)}
       />
-    </div>
-  )
-}
-
-// ── Interview chat ──────────────────────────────────────────────────────────
-
-interface ChatTurn { role: 'user' | 'assistant'; content: string }
-
-function InterviewChat({
-  projectId, language, onPatch, t,
-}: {
-  readonly projectId: string
-  readonly language: string
-  readonly onPatch: (patch: Partial<ProductContext>, fresh: ProductContext) => void
-  readonly t: TFunc
-}) {
-  const [history, setHistory] = useState<ChatTurn[]>([{
-    role: 'assistant',
-    content: t('product.interview.greeting'),
-  }])
-  const [input, setInput] = useState('')
-  const [busy, setBusy] = useState(false)
-  const scrollRef = useRef<HTMLDivElement>(null)
-
-  // When the language flips after mount, refresh the greeting (only if
-  // nothing else has been said). Render-phase adjustment keyed on the
-  // language prop replaces the previous setState-in-effect sync on t.
-  const [prevLanguage, setPrevLanguage] = useState(language)
-  if (prevLanguage !== language) {
-    setPrevLanguage(language)
-    if (history.length === 1) {
-      setHistory([{ role: 'assistant', content: t('product.interview.greeting') }])
-    }
-  }
-
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
-  }, [history])
-
-  const decode = useCallback((message: string) => {
-    if (message === '__captured__') return t('product.interview.captured')
-    if (message === '__elaborate__') return t('product.interview.elaborate')
-    return message
-  }, [t])
-
-  const send = useCallback(async () => {
-    const message = input.trim()
-    if (!message || busy) return
-    setInput('')
-    setBusy(true)
-    const nextHistory: ChatTurn[] = [...history, { role: 'user', content: message }]
-    setHistory(nextHistory)
-    try {
-      const r = await projectsApi.productContextInterview(projectId, {
-        message,
-        // Prior turns only: the server appends `message` itself, so sending
-        // nextHistory here would repeat it and produce two user turns in a
-        // row.  buildHistory also drops the assistant-only greeting, which
-        // Bedrock rejects as a leading non-user turn.
-        //
-        // On turn 1 that leaves this empty, which is intended rather than
-        // incidental: `interview_turn`
-        // (`voc-datalake/lambda/api/product_context.py`) rebuilds the full
-        // interview instructions plus `CURRENT CONTEXT` into its system prompt
-        // on *every* turn, so the model is told what it is interviewing for and
-        // which fields are still empty without needing the greeting in history.
-        // The greeting only ever restated that standing instruction.
-        history: buildHistory(history, MAX_INTERVIEW_HISTORY_ENTRIES),
-        response_language: language,
-      })
-      setHistory([...nextHistory, { role: 'assistant', content: decode(r.assistant_message) }])
-      if (r.applied_patch && Object.keys(r.applied_patch).length > 0) {
-        onPatch(r.applied_patch, r.context)
-      }
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Interview failed'
-      setHistory([...nextHistory, { role: 'assistant', content: `⚠️ ${msg}` }])
-    } finally {
-      setBusy(false)
-    }
-  }, [input, busy, history, projectId, onPatch, language, decode])
-
-  return (
-    <div className="bg-white border rounded-xl p-4 flex flex-col" style={{ height: 480 }}>
-      <div className="flex items-center gap-2 mb-3">
-        <MessageSquare size={16} className="text-blue-600" />
-        <h3 className="text-sm font-semibold">{t('product.interview.heading')}</h3>
-        <span className="text-xs text-gray-400">— {t('product.interview.hint')}</span>
-      </div>
-      <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-3 pr-1">
-        {history.map((m, i) => (
-          <div key={i} className={`text-sm ${m.role === 'user' ? 'text-right' : ''}`}>
-            <div className={`inline-block max-w-[90%] rounded-lg px-3 py-2 whitespace-pre-wrap ${
-              m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800'
-            }`}>
-              {m.content}
-            </div>
-          </div>
-        ))}
-        {busy && (
-          <div className="text-xs text-gray-400 inline-flex items-center gap-1">
-            <Loader2 size={12} className="animate-spin" /> {t('product.interview.thinking')}
-          </div>
-        )}
-      </div>
-      <div className="mt-3 flex gap-2">
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
-          disabled={busy}
-          placeholder={t('product.interview.placeholder')}
-          className="flex-1 px-3 py-2 border rounded-md text-sm"
-        />
-        <button
-          onClick={send}
-          disabled={busy || !input.trim()}
-          aria-label={t('product.interview.send')}
-          className="px-3 py-2 rounded-md bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-50 inline-flex items-center gap-1"
-        >
-          <Send size={14} />
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// ── Generate report ─────────────────────────────────────────────────────────
-
-function ReportCard({
-  projectId, language, hasNoFields, onJobStarted, t,
-}: {
-  readonly projectId: string
-  readonly language: string
-  readonly hasNoFields: boolean
-  readonly onJobStarted?: () => void
-  readonly t: TFunc
-}) {
-  const [busy, setBusy] = useState(false)
-  // Lowers itself once the panel has had time to pick the job up.
-  const started = useTransientFlag()
-  const [error, setError] = useState<string | null>(null)
-
-  // Fire-and-forget: the server creates the job record and the Background Jobs
-  // panel renders its progress, so nothing here needs to survive until the
-  // report is written — which is what the old five-minute local poll got wrong,
-  // reporting a still-running job as "took too long". This card keeps a local
-  // "started" line because it sits below the fold of an 11-field form, so the
-  // panel at the top of the page may be scrolled out of view at click time.
-  //
-  // The pre-flight check exists because the backend's own rejection now happens
-  // *inside* the job: without it the user pays for a job that cannot succeed and
-  // reads the reason as an untranslated job error. It mirrors the backend rule in
-  // full — fields OR a ready uploaded document — and asks for the document list
-  // only when the fields are empty, so the common path costs nothing and a
-  // docs-only project is never falsely blocked.
-  const onGenerate = useCallback(async () => {
-    setBusy(true)
-    setError(null)
-    started.clear()
-    try {
-      if (hasNoFields && !await hasReadyProductDoc(projectId)) {
-        setError(t('product.report.errorEmpty'))
-        return
-      }
-      await projectsApi.generateProductReport(projectId, { response_language: language })
-      started.set()
-      onJobStarted?.()
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Report failed')
-    } finally {
-      setBusy(false)
-    }
-  }, [projectId, language, hasNoFields, onJobStarted, started, t])
-
-  return (
-    <div className="bg-white border rounded-xl p-4">
-      <div className="flex items-center gap-2 mb-2">
-        <FileOutput size={16} className="text-emerald-600" />
-        <h3 className="text-sm font-semibold">{t('product.report.title')}</h3>
-      </div>
-      <p className="text-xs text-gray-500 mb-3">{t('product.report.description')}</p>
-      <button
-        onClick={onGenerate}
-        disabled={busy}
-        className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center justify-center gap-2 text-sm disabled:opacity-50"
-      >
-        {busy ? <Loader2 size={14} className="animate-spin" /> : <FileOutput size={14} />}
-        {busy ? t('product.report.generating') : t('product.report.button')}
-      </button>
-      {started.isSet && (
-        <div className="mt-2 text-xs text-emerald-700 inline-flex items-center gap-1">
-          <CheckCircle2 size={12} />
-          <span><strong>{t('product.report.startedTitle')}.</strong> {t('product.report.startedMessage')}</span>
-        </div>
-      )}
-      {error && (
-        <div className="mt-2 text-xs text-red-600 inline-flex items-center gap-1">
-          <AlertCircle size={12} /> {error}
-        </div>
-      )}
-    </div>
+    </fieldset>
   )
 }

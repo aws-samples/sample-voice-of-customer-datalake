@@ -1,0 +1,94 @@
+{
+  "tab": "의사결정",
+  "title": "의사결정",
+  "subtitle": "추진, 보류 또는 기각과 그 이유, 성공 측정 방법, 중단 기준을 기록합니다.",
+  "new": "새 의사결정",
+  "empty": "아직 의사결정이 없습니다. 문제에 대한 대응을 정하면 기록하세요.",
+  "formLabel": "의사결정",
+  "verdict": {
+    "label": "판단",
+    "pursue": "추진",
+    "park": "보류",
+    "reject": "기각"
+  },
+  "fields": {
+    "title": "제목",
+    "rationale": "근거",
+    "successMetric": "성공 지표",
+    "killCriterion": "중단 기준",
+    "reviewBy": "재검토 기한",
+    "launchedAt": "출시일",
+    "feedbackIds": "피드백 ID",
+    "feedbackIdsHint": "ID는 공백이나 쉼표로 구분하세요.",
+    "documents": "근거 문서"
+  },
+  "actions": {
+    "save": "의사결정 저장",
+    "cancel": "취소",
+    "edit": "편집",
+    "pursue": "PR/FAQ 작성",
+    "pursueAgain": "다른 PR/FAQ 작성",
+    "pursueHint": "이 의사결정을 브리프로 PR/FAQ 생성을 시작합니다.",
+    "pursueConfirmTitle": "PR/FAQ를 작성할까요?",
+    "pursueConfirmMessage": "AI가 \"{{title}}\"을(를) 브리프로 PR/FAQ를 작성합니다. 몇 분 걸리며, 완성되면 문서에 표시됩니다.",
+    "pursueConfirm": "PR/FAQ 작성",
+    "pursued": "이 의사결정으로 PR/FAQ를 요청했습니다. 작업이 끝나면 문서에 표시됩니다.",
+    "prfaqReady": "PR/FAQ 준비됨: {{title}}",
+    "prfaqFailed": "이 의사결정의 PR/FAQ를 생성하지 못했습니다. 다시 작성해 재시도하세요.",
+    "revisit": "재검토",
+    "releaseWatch": "릴리스 워치",
+    "hideReleaseWatch": "릴리스 워치 숨기기"
+  },
+  "picker": {
+    "label": "근거 리뷰",
+    "placeholder": "추가할 리뷰 검색 (예: \"배송 지연\")",
+    "results": "일치하는 리뷰",
+    "picked": "추가한 리뷰",
+    "searching": "검색 중…",
+    "failed": "검색에 실패했습니다. 다시 시도하세요.",
+    "noMatch": "\"{{q}}\"와(과) 일치하는 리뷰가 없습니다.",
+    "linked": "연결된 리뷰 {{n}}",
+    "remove": "{{label}} 제거",
+    "advanced": "고급: 리뷰 ID 붙여넣기"
+  },
+  "decidedBy": "{{name}}님이 {{date}}에 결정",
+  "decidedOn": "{{date}}에 결정",
+  "evidence": "근거 자료",
+  "errors": {
+    "save": "의사결정을 저장하지 못했습니다.",
+    "conflict": "연 이후에 이 의사결정이 변경되었습니다. 페이지를 새로 고친 후 다시 시도하세요.",
+    "pursue": "PR/FAQ를 시작하지 못했습니다."
+  },
+  "releaseWatch": {
+    "title": "릴리스 워치",
+    "subtitle": "각 릴리스 전후 {{days, number}}일 동안의 피드백입니다.",
+    "empty": "이 기간에 릴리스가 없습니다.",
+    "regression": "악화",
+    "noRegression": "악화 없음",
+    "before": "이전",
+    "after": "이후",
+    "volume": "건수",
+    "negative": "부정",
+    "sentiment": "감성",
+    "afterDays": "릴리스 후 관찰 일수: {{days, number}}",
+    "reasons": {
+      "sentiment_drop": "감성이 하락함",
+      "negative_rise": "부정적인 피드백이 증가함"
+    },
+    "complaints": "증가하는 불만",
+    "evidenceItem": "리뷰 {{n}}",
+    "evidence": "릴리스 이후 가장 부정적인 피드백",
+    "partial": "일부만: {{date}}까지 읽음",
+    "loading": "릴리스 워치를 불러오는 중",
+    "error": "릴리스 워치를 불러오지 못했습니다.",
+    "topCategories": {
+      "before": "릴리스 전 상위 카테고리",
+      "after": "릴리스 후 상위 카테고리",
+      "new": "상위 목록에 새로 진입",
+      "grew_one": "{{count, number}}건에서 증가",
+      "grew_other": "{{count, number}}건에서 증가",
+      "count_one": "리뷰 {{count, number}}건",
+      "count_other": "리뷰 {{count, number}}건"
+    }
+  }
+}

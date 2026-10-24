@@ -56,7 +56,7 @@ class FakeS3:
         self.puts: list[dict] = []
 
     # Capitalised parameter names because these are boto3's own kwargs.
-    def get_object(self, Bucket=None, Key=None, Range=None):
+    def get_object(self, Key: str, Range: str | None = None, **_kwargs):
         self.gets.append((Key, Range))
         data = self.body
         if Range:
@@ -79,7 +79,7 @@ class FakeTable:
         self.update_error = update_error
         self.updates: list[dict] = []
 
-    def get_item(self, Key=None, **_kwargs):
+    def get_item(self, **_kwargs):
         if self.get_error is not None:
             raise self.get_error
         return {'Item': self.item} if self.item is not None else {}
@@ -104,10 +104,9 @@ def conditional_check_failed(*, by: str = 'code') -> Exception:
     right class name and no response payload.
     """
     if by == 'code':
-        error = type('ClientError', (Exception,), {})('An error occurred')
-        error.response = {'Error': {'Code': 'ConditionalCheckFailedException',
-                                    'Message': 'The conditional request failed'}}
-        return error
+        response = {'Error': {'Code': 'ConditionalCheckFailedException',
+                              'Message': 'The conditional request failed'}}
+        return type('ClientError', (Exception,), {'response': response})('An error occurred')
     return type('ConditionalCheckFailedException', (Exception,), {})(
         'The conditional request failed'
     )

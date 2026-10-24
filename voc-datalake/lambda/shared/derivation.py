@@ -85,7 +85,7 @@ def _ids(values) -> list[str]:
     return [v for v in values if isinstance(v, str) and v]
 
 
-def derivation_source(document_id: str | None, role: str) -> dict | None:
+def derivation_source(document_id: object, role: str) -> dict | None:
     """One `sources` entry, or None when there is nothing to record.
 
     A caller may hold an absent document (`(prd or {}).get('document_id')` is a
@@ -113,6 +113,10 @@ def build_derivation(
     persona_ids=(),
     visual_document_ids=(),
     product_context_included: bool = False,
+    memory_ids=(),
+    web_search_count: int = 0,
+    company_context_included: bool = False,
+    design_system_included: bool | None = None,
 ) -> dict:
     """Assemble the `derivation` map for a document item.
 
@@ -128,10 +132,22 @@ def build_derivation(
             brief. Ids only, never the descriptions.
         product_context_included: whether the project product-context block was
             injected into the prompt.
+        memory_ids: COMPANY memory ids that reached the prompt (grounding.py).
+            Written only when non-empty.
+        web_search_count: web searches actually run. Written only when > 0.
+        company_context_included: whether the company vision/objectives block
+            reached the prompt. Written only when True.
+        design_system_included: prototypes only — True when the company design
+            system reached the prompt, False when the build was told not to read
+            it. Written only when not None (None: not a prototype, or no design
+            system configured).
+
+    The three knowledge keys are omitted when empty so a document built without
+    them stores exactly the shape it stored before they existed.
 
     Counts and identifiers only — never copied content.
     """
-    return {
+    record = {
         'sources': [s for s in sources if s],
         'selected_document_count': _count(selected_document_count),
         'feedback_count': _count(feedback_count),
@@ -150,3 +166,14 @@ def build_derivation(
         'visual_document_ids': _ids(visual_document_ids),
         'product_context_included': bool(product_context_included),
     }
+    memories = _ids(memory_ids)
+    if memories:
+        record['memory_ids'] = memories
+    searches = _count(web_search_count)
+    if searches:
+        record['web_search_count'] = searches
+    if company_context_included:
+        record['company_context_included'] = True
+    if design_system_included is not None:
+        record['design_system_included'] = bool(design_system_included)
+    return record

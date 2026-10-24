@@ -19,7 +19,13 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import { IgnoreStrategy } from 'aws-cdk-lib';
-import { PY_LAMBDA_ASSET_EXCLUDES, rootPluginAssetExcludes } from './lambda-asset-excludes';
+import {
+  PY_LAMBDA_ASSET_EXCLUDES,
+  VERIFICATION_FIXTURE_PROVIDER_ASSET_EXCLUDES,
+  WORKER_TREE_ASSET_EXCLUDES,
+  rootPluginAssetExcludes,
+} from './lambda-asset-excludes';
+import { byCodeUnit } from './compare';
 
 const stacksDir = path.join(process.cwd(), 'lib', 'stacks');
 // Derived from disk exactly as ingestion-stack derives its sibling excludes —
@@ -27,7 +33,7 @@ const stacksDir = path.join(process.cwd(), 'lib', 'stacks');
 const PLUGIN_IDS = fs.readdirSync(path.join(process.cwd(), 'plugins'), { withFileTypes: true })
   .filter((entry) => entry.isDirectory() && !entry.name.startsWith('_'))
   .map((entry) => entry.name)
-  .sort();
+  .sort(byCodeUnit);
 
 function stackSources(): Array<{ file: string; source: string }> {
   return fs.readdirSync(stacksDir)
@@ -89,19 +95,55 @@ function ignoresWith(excludes: string[]): (relativePath: string) => boolean {
   };
 }
 
-describe('asset staging sites use the shared lists in GIT ignore mode', () => {
-  it("every fromAsset('lambda') spreads PY_LAMBDA_ASSET_EXCLUDES with IgnoreMode.GIT", () => {
-    forEachCallSite("fromAsset('lambda'", (file, options) => {
+describe('asset staging sites use the shared lists (pythonLambdaAsset stages in GIT ignore mode)', () => {
+  it("every pythonLambdaAsset('lambda') spreads PY_LAMBDA_ASSET_EXCLUDES", () => {
+    forEachCallSite("pythonLambdaAsset('lambda'", (file, options) => {
       expect(options, `${file} stages lambda/ without PY_LAMBDA_ASSET_EXCLUDES`).toContain('...PY_LAMBDA_ASSET_EXCLUDES');
-      expect(options, `${file} must pin IgnoreMode.GIT — the lists are written for gitignore semantics`).toContain('IgnoreMode.GIT');
     });
   });
 
-  it("every root-based fromAsset('.') uses rootPluginAssetExcludes with IgnoreMode.GIT", () => {
-    forEachCallSite("fromAsset('.'", (file, options) => {
+  it("every root-based pythonLambdaAsset('.') uses rootPluginAssetExcludes", () => {
+    let sites = 0;
+    forEachCallSite("pythonLambdaAsset('.'", (file, options) => {
+      sites += 1;
       expect(options, `${file} stages the project root without the shared exclude helper`).toContain('rootPluginAssetExcludes(');
-      expect(options, `${file} must pin IgnoreMode.GIT`).toContain('IgnoreMode.GIT');
     });
+    expect(sites, 'no root call sites found — scan drifted?').toBeGreaterThan(0);
+  });
+
+  it('no stack stages Python code without the helper', () => {
+    for (const { file, source } of stackSources()) {
+      expect(source, `${file} builds a Python asset by hand; use pythonLambdaAsset`).not.toMatch(/fromAsset\('(lambda|\.)'/);
+    }
+  });
+
+  /**
+   * Source text, deliberately, and it is worth saying why rather than leaving it
+   * looking like laziness.
+   *
+   * The invariant is that the provider's own file is excluded from every OTHER
+   * function's staged input, and not from its own. That exclude list is a
+   * synth-time input: it decides which files are hashed, then leaves no trace in
+   * the template. So there is nothing in the synthesized output to assert against
+   * — a template-level check on asset keys looks stronger and is vacuous, because
+   * the bundling command already embeds `handlerFileName`, giving every api
+   * function a distinct asset hash whether or not this exclusion exists.
+   *
+   * The assertion that would be behavioral is a two-synth comparison: synthesize,
+   * edit the provider source on disk, synthesize again, and require every other
+   * function's asset hash to be unchanged while the provider's moves. That is the
+   * real statement, and worth building if this exclusion grows siblings.
+   */
+  it('provider-only source feeds its bundle but not ordinary API/job fingerprints', () => {
+    // The API bundler (createApiLambdaCode) lives in api-stack.ts; the job
+    // bundler in api-job-lambdas.ts. Counted across the WHOLE VocApiStack
+    // module family (api-*.ts), so moving either cannot make this vacuous.
+    const apiStack = fs.readFileSync(path.join(stacksDir, 'api-stack.ts'), 'utf8');
+    const family = stackSources().filter(({ file }) => file.startsWith('api-')).map(({ source }) => source).join('\n');
+    expect(apiStack).toContain("handlerFileName === 'verification_fixture_provider.py'");
+    expect(apiStack).toContain(': VERIFICATION_FIXTURE_PROVIDER_ASSET_EXCLUDES;');
+    expect(fs.readFileSync(path.join(stacksDir, 'api-job-lambdas.ts'), 'utf8')).toContain('...VERIFICATION_FIXTURE_PROVIDER_ASSET_EXCLUDES');
+    expect(family.match(/\.\.\.VERIFICATION_FIXTURE_PROVIDER_ASSET_EXCLUDES/g)).toHaveLength(1);
   });
 });
 
@@ -121,24 +163,27 @@ describe('root staging behavior (aws-cdk-lib IgnoreStrategy.git)', () => {
     expect(ignores('cdk.out/.cache/0ce2e32d12eb43f7.zip')).toBe(true);
   });
 
-  it('never hashes nor ships dev secrets, at any depth', () => {
-    // Staging excludes also gate the bundling container's /asset-input, so
-    // this keeps a stray .env out of the DEPLOYED bundle, not just the hash.
+  it('never hashes dev secrets, at any depth', () => {
+    // Hash only: the bundling container mounts the UNFILTERED source, so keeping
+    // a stray .env out of the deployed zip is PYTHON_BUNDLE_PRUNE's job
+    // (python-lambda-asset.test.ts).
     expect(ignores('.env.local')).toBe(true);
     expect(ignores('plugins/webscraper/.env')).toBe(true);
     expect(ignores('lambda/shared/.env.production')).toBe(true);
   });
 
-  it('prunes repo metadata and tool dirs with their dot-children', () => {
-    // .git/index changes on every commit/checkout — without this the
-    // ingestor hashes churn across commits with zero payload changes.
-    expect(ignores('.git/index')).toBe(true);
-    expect(ignores('.git/refs/heads/development')).toBe(true);
-    expect(ignores('node_modules/.bin/tsc')).toBe(true);
-    expect(ignores('.venv/.gitignore')).toBe(true);
-    expect(ignores('.ruff_cache/.gitignore')).toBe(true);
-    expect(ignores('frontend/.env.local')).toBe(true);
-    expect(ignores('.env.local')).toBe(true);
+  // .git/index changes on every commit/checkout — without this the
+  // ingestor hashes churn across commits with zero payload changes.
+  it.each([
+    '.git/index',
+    '.git/refs/heads/development',
+    'node_modules/.bin/tsc',
+    '.venv/.gitignore',
+    '.ruff_cache/.gitignore',
+    'frontend/.env.local',
+    '.env.local',
+  ])('prunes repo metadata and tool dirs with their dot-children: %s', (path) => {
+    expect(ignores(path)).toBe(true);
   });
 
   it('keeps everything the plugin bundle actually copies', () => {
@@ -153,7 +198,9 @@ describe('root staging behavior (aws-cdk-lib IgnoreStrategy.git)', () => {
     expect(ignores('plugins/webscraper/ingestor/lib/parser.py')).toBe(false);
     expect(ignores('plugins/webscraper/ingestor/scripts/seed.py')).toBe(false);
     expect(ignores('lambda/shared/bin/helper.py')).toBe(false);
-    // ...while the top-level dirs themselves stay excluded.
+  });
+
+  it('keeps the top-level tool dirs themselves excluded', () => {
     expect(ignores('lib/stacks/core-stack.ts')).toBe(true);
     expect(ignores('scripts/build-layers.sh')).toBe(true);
   });
@@ -178,6 +225,16 @@ describe('root staging behavior (aws-cdk-lib IgnoreStrategy.git)', () => {
 
 describe('lambda staging behavior (aws-cdk-lib IgnoreStrategy.git)', () => {
   const ignores = ignoresWith(PY_LAMBDA_ASSET_EXCLUDES);
+  const unrelatedIgnores = ignoresWith([
+    ...PY_LAMBDA_ASSET_EXCLUDES,
+    ...VERIFICATION_FIXTURE_PROVIDER_ASSET_EXCLUDES,
+  ]);
+
+  it('keeps provider source out of unrelated Lambda fingerprints', () => {
+    expect(unrelatedIgnores('api/verification_fixture_provider.py')).toBe(true);
+    expect(unrelatedIgnores('api/metrics_handler.py')).toBe(false);
+    expect(ignores('api/verification_fixture_provider.py')).toBe(false);
+  });
 
   it('prunes layer build output and the stream package, dot-children included', () => {
     expect(ignores('layers/processing-deps/python/pydantic/main.py')).toBe(true);
@@ -197,5 +254,22 @@ describe('lambda staging behavior (aws-cdk-lib IgnoreStrategy.git)', () => {
     expect(ignores('shared/test/test_api.py')).toBe(true);
     expect(ignores('jobs/document_generator/test/test_handler.py')).toBe(true);
     expect(ignores('api/test/conftest.py')).toBe(true);
+  });
+
+  it('keeps the memory/agents/briefing worker trees out of every other bundle', () => {
+    const otherBundles = ignoresWith([...PY_LAMBDA_ASSET_EXCLUDES, ...WORKER_TREE_ASSET_EXCLUDES]);
+    expect(['memory/extractor/handler.py', 'agents/conductor/handler.py', 'briefing/handler.py'].map(otherBundles))
+      .toStrictEqual([true, true, true]);
+    expect(otherBundles('shared/api.py')).toBe(false);
+    expect(otherBundles('api/memory_handler.py')).toBe(false);
+  });
+
+  it("spreads WORKER_TREE_ASSET_EXCLUDES at every pythonLambdaAsset('lambda') site outside worker-lambda.ts", () => {
+    let sites = 0;
+    forEachCallSite("pythonLambdaAsset('lambda'", (file, options) => {
+      sites += 1;
+      expect(options, `${file} would hash lambda/memory and lambda/agents`).toContain('...WORKER_TREE_ASSET_EXCLUDES');
+    });
+    expect(sites, 'no call sites found — scan drifted?').toBeGreaterThan(0);
   });
 });

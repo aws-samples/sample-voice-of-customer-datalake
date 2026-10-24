@@ -26,8 +26,7 @@ the AWS-shaped Python import graph nor a bundler.
 
 Pattern follows test_research_selection_bound_lockstep.py (same directory).
 """
-import re
-from pathlib import Path
+from lockstep_fixtures import read_source, single_int
 
 # The constant moved here from projects_handler so the visual-brief character
 # budget could be DERIVED from it — an independently chosen budget had silently
@@ -39,29 +38,13 @@ PYTHON_PATTERN = r'^MAX_SELECTED_PRODUCT_DOC_IDS\s*=\s*(\d+)'
 FRONTEND_PATTERN = r'^export const MAX_SELECTED_PRODUCT_DOC_IDS\s*=\s*(\d+)'
 
 
-def _read(relative: str) -> str:
-    # lambda/api/test/ -> voc-datalake/
-    path = Path(__file__).resolve().parents[3] / relative
-    assert path.is_file(), (
-        f'{relative} not found — did the file move? '
-        f'If so, update the path constant in this test file.'
-    )
-    return path.read_text(encoding='utf-8')
-
-
-def _single_int(source: str, pattern: str, where: str) -> int:
-    matches = re.findall(pattern, source, re.MULTILINE)
-    assert len(matches) == 1, (
-        f'Expected exactly one MAX_SELECTED_PRODUCT_DOC_IDS assignment in {where}; '
-        f'found {len(matches)}. A second copy is the drift this test exists to '
-        f'prevent — if the declaration was restructured, update this helper.'
-    )
-    return int(matches[0])
+def _bound(where: str, pattern: str) -> int:
+    return single_int(read_source(where), pattern, where, 'MAX_SELECTED_PRODUCT_DOC_IDS assignment')
 
 
 def test_the_visual_selection_bound_is_the_same_number_in_both_files():
-    python_value = _single_int(_read(PYTHON_SOURCE), PYTHON_PATTERN, PYTHON_SOURCE)
-    frontend_value = _single_int(_read(FRONTEND_SOURCE), FRONTEND_PATTERN, FRONTEND_SOURCE)
+    python_value = _bound(PYTHON_SOURCE, PYTHON_PATTERN)
+    frontend_value = _bound(FRONTEND_SOURCE, FRONTEND_PATTERN)
 
     assert python_value == frontend_value, (
         f'{PYTHON_SOURCE} allows {python_value} visual ids but '
@@ -77,7 +60,7 @@ def test_the_bound_is_a_plausible_visual_selection_size():
     purpose: the reason this number is small is that every visual competes for the
     same eight CSS custom properties, so a long list is contradiction rather than
     grounding."""
-    value = _single_int(_read(PYTHON_SOURCE), PYTHON_PATTERN, PYTHON_SOURCE)
+    value = _bound(PYTHON_SOURCE, PYTHON_PATTERN)
 
     assert 2 <= value <= 10
 
@@ -87,7 +70,7 @@ def test_the_frontend_declaration_keeps_the_shape_this_test_reads():
     into an object, computing it, or exporting a second assignment would leave this
     file green only because the research lockstep's own helper asserts a single
     match — so assert the shape here too, where the failure names the cause."""
-    source = _read(FRONTEND_SOURCE)
+    source = read_source(FRONTEND_SOURCE)
 
     assert 'export const MAX_SELECTED_PRODUCT_DOC_IDS' in source, (
         f'{FRONTEND_SOURCE} no longer exports MAX_SELECTED_PRODUCT_DOC_IDS as a '

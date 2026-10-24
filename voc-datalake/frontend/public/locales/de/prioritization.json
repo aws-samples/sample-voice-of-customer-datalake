@@ -7,7 +7,7 @@
     "savingMobile": "..."
   },
   "ballot": {
-    "anonymousNotice": "Ihre Stimme ist anonym: Sie zählt für die Teambewertung dieses Dokuments, wird aber weder Ihnen noch jemand anderem zugeordnet.",
+    "anonymousNotice": "Ihre Stimme zählt für die Teambewertung dieses Vorschlags. Sie ist an kein Konto gebunden, und Ihr Name wird nur gespeichert, wenn Sie unten einen eingeben.",
     "axes": {
       "confidence": "Zuversicht",
       "confidenceHint": "Wie sicher sind Sie sich bei den beiden Schätzungen oben?",
@@ -28,7 +28,7 @@
       "unknown": "Ihre Stimme konnte gerade nicht erfasst werden. Versuchen Sie es in einem Moment erneut."
     },
     "displayName": {
-      "hint": "Optional. Stimmen werden keiner Person zugeordnet, Sie können das Feld also leer lassen.",
+      "hint": "Optional. Wenn Sie einen Namen eingeben, wird er mit Ihrer Stimme gespeichert; in der Teambewertung wird er nicht angezeigt. Lassen Sie das Feld leer, um ohne Namen abzustimmen.",
       "label": "Ihr Name (optional)"
     },
     "done": {
@@ -49,6 +49,7 @@
       "pending": "Wird gesendet..."
     },
     "title": "Diesen Vorschlag bewerten",
+    "titleInactive": "Abstimmung zum Vorschlag",
     "unavailable": {
       "description": "Es wurde nichts gesendet. Laden Sie die Seite neu, um es erneut zu versuchen — die Abstimmung selbst kann durchaus offen sein.",
       "title": "Diese Abstimmung konnte nicht geladen werden"
@@ -76,7 +77,7 @@
     "saving": "Speichern...",
     "title": "Was diese Zeile enthält"
   },
-  "configureApiEndpoint": "Konfigurieren Sie den API-Endpunkt in den Einstellungen, um die Priorisierung anzuzeigen.",
+  "configureApiEndpoint": "Konfigurieren Sie den API-Endpunkt unter Administration → Allgemein, um die Priorisierung anzuzeigen.",
   "docType": {
     "prd": "PRD",
     "prfaq": "PR/FAQ"
@@ -96,7 +97,7 @@
     "unavailable": "Bewertungen nicht verfügbar"
   },
   "framework": {
-    "description": "Bewerten Sie jedes Dokument nach: <strong>Auswirkung</strong>, <strong>Markteinführungszeit</strong>, <strong>Strategische Passung</strong> und <strong>Konfidenz</strong>.",
+    "configured": "Bewerten Sie jeden Vorschlag nach: <strong>{{metrics}}</strong>.",
     "title": "Priorisierungsrahmen"
   },
   "lineage": {
@@ -113,7 +114,7 @@
   },
   "loading": "Dokumente werden geladen...",
   "noteTooLong": {
-    "description": "Notizen sind auf {{max}} Zeichen begrenzt, und eine längere Notiz wird nicht gekürzt, sondern abgelehnt. Kürzen Sie die Notiz in der bearbeiteten Zeile und speichern Sie dann erneut. Es wurde noch nichts gespeichert.",
+    "description": "Notizen sind auf {{max, number}} Zeichen begrenzt, und eine längere Notiz wird nicht gekürzt, sondern abgelehnt. Kürzen Sie die Notiz in der bearbeiteten Zeile und speichern Sie dann erneut. Es wurde noch nichts gespeichert.",
     "title": "Notiz ist zu lang zum Speichern"
   },
   "notes": {
@@ -134,12 +135,16 @@
     "none": "Nicht bewertet"
   },
   "roomVote": {
-    "anonymousNote": "Hier abgegebene Stimmen zählen für die Teambewertung oben und werden keiner Person zugeordnet.",
-    "ballotsIn": "{{received}} von {{cap}} Stimmen eingegangen",
+    "anonymousNote": "Hier abgegebene Stimmen zählen für die Teambewertung oben. Sie sind an kein Konto gebunden; ein Name wird nur gespeichert, wenn die abstimmende Person einen eingibt, und er wird hier nicht angezeigt.",
+    "ballotsIn": "{{received, number}} von {{cap, number}} Stimmen eingegangen",
+    "checking": "Es wird geprüft, ob bereits eine Abstimmung läuft...",
     "close": "Abstimmung schließen",
     "closeFailed": "Die Abstimmung konnte nicht geschlossen werden. Versuchen Sie es erneut — bis sie geschlossen ist, werden weiterhin Stimmen angenommen.",
     "closed": "Diese Abstimmung ist geschlossen. Weitere Stimmen werden nicht angenommen.",
     "closing": "Wird geschlossen...",
+    "confirmMessage": "Dadurch werden ein öffentlicher Link und ein QR-Code für „{{title}}“ erstellt. Jeder mit dem Link kann ohne Anmeldung eine Stimme abgeben, bis Sie die Abstimmung schließen oder sie abläuft.",
+    "confirmOpen": "Abstimmung öffnen",
+    "confirmTitle": "Öffentliche Raumabstimmung öffnen?",
     "description": "Zeigen Sie einen QR-Code auf dem Bildschirm und lassen Sie alle im Raum ohne Konto eine anonyme Stimme vom Telefon abgeben.",
     "expired": "Diese Abstimmung ist abgelaufen. Weitere Stimmen werden nicht angenommen.",
     "open": "Raumabstimmung öffnen",
@@ -149,12 +154,12 @@
     "qrAccessibleName": "QR-Code, der die anonyme Stimmabgabe für {{title}} öffnet",
     "qrCaption": "Scannen, um diesen Vorschlag per Telefon zu bewerten",
     "qrUnavailable": "Der QR-Code ist nicht verfügbar, weil die Adresse dieser Seite nicht geteilt werden kann.",
-    "scopeDocuments": "Ein Stimmzettel umfasst alle {{documents}} dahinterliegenden Dokumente, der Raum bewertet also den ganzen Vorschlag.",
+    "scopeDocuments": "Ein Stimmzettel umfasst alle {{documents, number}} dahinterliegenden Dokumente, der Raum bewertet also den ganzen Vorschlag.",
     "scopeNote": "Diese Abstimmung bewertet einen Vorschlag: {{title}}.",
     "title": "Im Raum bewerten"
   },
   "row": {
-    "multiDocument": "{{documents}} Dokumente, ein Stimmzettel"
+    "multiDocument": "{{documents, number}} Dokumente, ein Stimmzettel"
   },
   "rowAction": {
     "composeConflict": "Die Zeile wurde dem Projekt von {{row}} nicht hinzugefügt. Entweder hat das Projekt schon so viele Zeilen, wie es haben darf, oder seine Dokumente haben sich geändert. Laden Sie die Seite neu, um die aktuellen Zeilen zu sehen.",
@@ -169,12 +174,12 @@
     "recomposeRefused": "Die Dokumente von „{{row}}“ wurden nicht geändert, und die Anfrage wurde abgelehnt und nicht bloß nicht ausgeführt: Prüfen Sie Ihre Auswahl — eine Zeile kann nur eine begrenzte Anzahl an Dokumenten enthalten, und jedes davon muss noch im Projekt sein.",
     "title": "Diese Änderung an den Zeilen wurde nicht gespeichert"
   },
-  "rowCount_one": "{{count}} Vorschlag",
-  "rowCount_other": "{{count}} Vorschläge",
+  "rowCount_one": "{{count, number}} Vorschlag",
+  "rowCount_other": "{{count, number}} Vorschläge",
   "rowDeleted": {
     "descriptionNoCount": "„{{row}}“ ist gelöscht, samt allen darauf abgegebenen Stimmzetteln. Eine Anzahl der Stimmzettel wurde nicht gemeldet.",
     "description_one": "„{{row}}“ ist gelöscht, und der eine darauf abgegebene Stimmzettel wurde mit gelöscht.",
-    "description_other": "„{{row}}“ ist gelöscht, und die {{count}} darauf abgegebenen Stimmzettel wurden mit gelöscht.",
+    "description_other": "„{{row}}“ ist gelöscht, und die {{count, number}} darauf abgegebenen Stimmzettel wurden mit gelöscht.",
     "dismiss": "Diese Meldung ausblenden",
     "title": "Die Zeile wurde gelöscht"
   },
@@ -197,32 +202,115 @@
     "timeToMarket": "Markteinführungszeit",
     "timeToMarketDescription": "Wie schnell kann dies geliefert werden?",
     "title": "Priorisierungsbewertungen",
-    "wholeRow": "Ein Stimmzettel für alle {{documents}} Dokumente dieser Zeile.",
-    "yoursOnly": "Ihre eigene Bewertung. Beim Speichern werden nur Ihre Werte geschrieben."
+    "wholeRow": "Ein Stimmzettel für alle {{documents, number}} Dokumente dieser Zeile.",
+    "yoursOnly": "Ihre eigene Bewertung. Beim Speichern werden nur Ihre Werte geschrieben.",
+    "valueOfMax": "{{value}} von {{max, number}}"
   },
   "scoresUnavailable": {
     "description": "Ihre gespeicherten Bewertungen sind derzeit nicht verfügbar. Die unten angezeigten Zahlen sind daher Standardwerte und nicht die eingegebenen Werte. Laden Sie die Seite vor dem Speichern neu.",
     "staleDescription": "Die letzte Aktualisierung der gespeicherten Bewertungen ist fehlgeschlagen. Angezeigt werden daher die zuletzt erfolgreich gelesenen Werte. Ihre eigene Bewertung ist davon nicht betroffen – ein Neuladen vor dem Speichern ist nicht nötig.",
     "title": "Bewertungen konnten nicht geladen werden"
   },
+  "setup": {
+    "open": "Bewertungsschema",
+    "viewOpen": "So wird bewertet",
+    "title": "Bewertungsschema",
+    "description": "Legen Sie fest, nach welchen Kennzahlen alle die Vorschläge bewerten (1 bis 5) und wie stark jede zählt. Die Änderung gilt für alle Zeilen.",
+    "viewTitle": "So wird bewertet",
+    "viewDescription": "Alle bewerten jeden Vorschlag nach diesen Kennzahlen von 1 bis 5. Der Prioritätswert gewichtet sie wie angezeigt.",
+    "adminsOnly": "Nur Administratoren können das Bewertungsschema ändern.",
+    "loading": "Bewertungsschema wird geladen",
+    "loadFailed": "Das Bewertungsschema konnte nicht geladen werden. Schließen Sie das Fenster und versuchen Sie es erneut.",
+    "templatesTitle": "Mit einer Vorlage beginnen",
+    "templateConfirmTitle": "Vorlage {{template}} verwenden?",
+    "templateBecomes": "Ihre Kennzahlen werden: {{metrics}}.",
+    "templateArchives": "Diese werden archiviert – ihre Bewertungen bleiben erhalten, zählen aber nicht mehr: {{metrics}}.",
+    "templateNotSaved": "Für niemanden ändert sich etwas, bis Sie auf Speichern klicken.",
+    "templateApply": "Vorlage verwenden",
+    "metricsTitle": "Kennzahlen ({{active, number}} von {{max, number}})",
+    "addMetric": "Kennzahl hinzufügen",
+    "untitled": "Neue Kennzahl",
+    "name": "Name",
+    "descriptionLabel": "Beschreibung",
+    "weight": "Gewicht",
+    "weightOf": "Gewicht von {{name}}",
+    "share": "{{share}} % des Werts",
+    "direction": "Was ist besser",
+    "higherBetter": "Höher ist besser",
+    "lowerBetter": "Niedriger ist besser",
+    "higherBetterHint": "Eine 5 lässt den Vorschlag höher ranken.",
+    "lowerBetterHint": "Eine 1 lässt den Vorschlag höher ranken – für Kosten wie den Aufwand.",
+    "lowLabel": "Was 1 bedeutet",
+    "highLabel": "Was 5 bedeutet",
+    "scale": "1 = {{low}}, 5 = {{high}}",
+    "moveUp": "{{name}} nach oben",
+    "moveDown": "{{name}} nach unten",
+    "archive": "Archivieren",
+    "archiveMetric": "{{name}} archivieren",
+    "archiveHint": "Blendet diese Kennzahl aus. Bereits vergebene Bewertungen bleiben erhalten, und Sie können sie wiederherstellen.",
+    "archivedTitle": "Archivierte Kennzahlen ({{archived, number}})",
+    "archivedHint": "Archivierte Kennzahlen werden weder angezeigt noch bewertet noch gezählt. Ihre Bewertungen bleiben erhalten; stellen Sie eine wieder her, um sie erneut zu nutzen.",
+    "restore": "Wiederherstellen",
+    "conflict": "Jemand anderes hat das Bewertungsschema geändert, während Sie es bearbeitet haben. Laden Sie es neu, um diese Version zu sehen, und nehmen Sie Ihre Änderung erneut vor.",
+    "reload": "Schema neu laden",
+    "saveFailed": "Das Bewertungsschema konnte nicht gespeichert werden. Versuchen Sie es erneut.",
+    "cancel": "Abbrechen",
+    "save": "Schema speichern",
+    "saving": "Wird gespeichert…",
+    "close": "Schließen",
+    "neverChanged": "Das Standardschema wird verwendet.",
+    "changedBy": "Zuletzt geändert von {{name}} am {{date}}",
+    "changedOn": "Zuletzt geändert am {{date}}",
+    "problems": {
+      "missingName": "Geben Sie jeder Kennzahl einen Namen.",
+      "noActive": "Behalten Sie mindestens eine Kennzahl.",
+      "tooManyActive": "Verwenden Sie höchstens {{max, number}} Kennzahlen gleichzeitig – archivieren Sie zuerst eine.",
+      "tooMany": "Ein Schema kann höchstens {{total, number}} Kennzahlen enthalten, archivierte eingeschlossen.",
+      "noWeight": "Geben Sie mindestens einer Kennzahl ein Gewicht über 0."
+    },
+    "templates": {
+      "default": "Aktueller Standard",
+      "defaultDescription": "Wirkung, Time-to-Market, strategische Passung und Zuversicht.",
+      "rice": "RICE",
+      "riceDescription": "Reichweite, Wirkung und Zuversicht im Verhältnis zum Aufwand.",
+      "ice": "ICE",
+      "iceDescription": "Wirkung, Zuversicht und Einfachheit – schnell bewertet.",
+      "valueEffort": "Nutzen vs. Aufwand",
+      "valueEffortDescription": "Zwei Kennzahlen: was es wert ist und was es kostet."
+    },
+    "templateAxes": {
+      "reach": "Reichweite",
+      "reachDescription": "Wie viele Menschen das erreicht",
+      "reachLow": "Wenige Menschen",
+      "reachHigh": "Viele Menschen",
+      "effort": "Aufwand",
+      "effortDescription": "Wie viel Arbeit das erfordert",
+      "effortLow": "Wenig Arbeit",
+      "effortHigh": "Viel Arbeit",
+      "ease": "Einfachheit",
+      "easeDescription": "Wie einfach das umzusetzen ist",
+      "easeLow": "Schwer",
+      "easeHigh": "Einfach",
+      "value": "Nutzen",
+      "valueDescription": "Wie viel das für Kunden und das Unternehmen wert ist"
+    }
+  },
   "sort": {
     "date": "Datum",
     "dateFull": "Erstellungsdatum",
-    "impact": "Auswirkung",
     "label": "Sortieren nach:",
     "priority": "Priorität",
     "priorityFull": "Prioritätswert",
-    "teamOrdered": "{{fields}} sortieren nach den Zahlen des Teams, die in jeder Zeile angezeigt werden – nicht nach Ihrer eigenen Bewertung.",
-    "ttm": "MeZ",
-    "ttmFull": "Markteinführungszeit"
+    "teamOrdered": "{{fields}} sortieren nach dem Teamdurchschnitt – der Zahl, die jede Zeile zeigt –, nicht nach Ihren eigenen Werten.",
+    "ttm": "MeZ"
   },
   "stats": {
     "highPriority": "Hohe Priorität",
     "mediumPriority": "Mittlere Priorität",
     "notScored": "Nicht bewertet",
     "totalRows": "Vorschläge insgesamt",
-    "unreadable_one": "Die Teambewertung für {{count}} Vorschlag konnte nicht gelesen werden. Er zählt daher nur zur Gesamtzahl, nicht zu den übrigen Zählungen. Laden Sie die Seite neu, um sie zu sehen.",
-    "unreadable_other": "Die Teambewertungen für {{count}} Vorschläge konnten nicht gelesen werden. Sie zählen daher nur zur Gesamtzahl, nicht zu den übrigen Zählungen. Laden Sie die Seite neu, um sie zu sehen."
+    "unreadable_one": "Die Teambewertung für {{count, number}} Vorschlag konnte nicht gelesen werden. Er zählt daher nur zur Gesamtzahl, nicht zu den übrigen Zählungen. Laden Sie die Seite neu, um sie zu sehen.",
+    "unreadable_other": "Die Teambewertungen für {{count, number}} Vorschläge konnten nicht gelesen werden. Sie zählen daher nur zur Gesamtzahl, nicht zu den übrigen Zählungen. Laden Sie die Seite neu, um sie zu sehen."
   },
   "subtitle": "PRDs und PR/FAQs über alle Projekte hinweg bewerten und priorisieren",
   "team": {
@@ -241,10 +329,14 @@
     "unavailableDescription": "Die Bewertungen des Teams konnten gerade nicht gelesen werden. Diese Zeile zeigt daher nichts darüber an — nicht, dass niemand abgestimmt hat. Laden Sie die Seite neu, um zu sehen, was das Team gesagt hat."
   },
   "title": "Priorisierung",
-  "unsavedChanges": {
-    "cancel": "Auf Seite bleiben",
-    "confirm": "Änderungen verwerfen",
-    "message": "Sie haben ungespeicherte Priorisierungsbewertungen. Möchten Sie Ihre Änderungen verwerfen und diese Seite verlassen?",
-    "title": "Ungespeicherte Änderungen"
+  "explainer": {
+    "title": "So wird bewertet",
+    "scoreConfigured": "Jede Person bewertet jede Kennzahl von 1 bis 5. Der Prioritätswert gewichtet sie so: {{weights}}.",
+    "unscored": "Eine Kennzahl, die jemand nicht bewertet, fließt nicht in dessen Wert ein, statt als 0 zu zählen.",
+    "weightEntry": "{{name}} {{share}} %",
+    "weightEntryLower": "{{name}} {{share}} % (niedriger ist besser)",
+    "team": "Jede Zeile zeigt den Teamdurchschnitt aller, die sie bewertet haben, und wie viele es waren. Ihre eigenen Werte sind die Schieberegler in der Zeile.",
+    "lineageTitle": "Was die Kennzeichnung einer Zeile bedeutet",
+    "rowNote": "{{label}} – erklärt unter „So wird bewertet“ über der Liste."
   }
 }

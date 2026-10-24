@@ -4,11 +4,13 @@
  */
 
 import clsx from 'clsx'
+import type { Ref } from 'react'
 import {
-  PanelLeftClose, PanelLeft, LogOut, X,
+  PanelLeftClose, PanelLeft, X,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { NavLink } from 'react-router-dom'
+import KiroGhost from '../KiroGhost/KiroGhost'
 import type { LucideIcon } from 'lucide-react'
 
 export interface NavItem {
@@ -18,50 +20,71 @@ export interface NavItem {
   menuKey: string
   adminOnly?: boolean
   /**
-   * AI-PDLC workshop phase this item belongs to. Items are grouped under a
-   * section header in the sidebar so the lifecycle order (home → sources →
-   * signals → ideation → validation) is visible instead of a flat 11-item list.
+   * Section this item belongs to (listen → understand →
+   * build → validate → knowledge → connect → admin). Items are grouped under a
+   * section header in the sidebar so the loop is visible instead of a flat list.
    */
   section?: string
 }
 
+/**
+ * The sidebar subtitle: the brand, or the "Configure brand" prompt only once the
+ * brand is KNOWN to be unset — never as a placeholder that flips to the real
+ * name a moment later (E2E F12). A non-breaking space holds the line's height.
+ */
+function brandSubtitle(brandName: string, brandLoading: boolean, configurePrompt: string): string {
+  if (brandName !== '') return brandName
+  return brandLoading ? '\u00a0' : configurePrompt
+}
+
 // Sidebar header component
-export function SidebarHeader({
+function SidebarHeader({
   sidebarCollapsed,
   mobileMenuOpen,
   brandName,
+  brandLoading,
   onClose,
   onToggleCollapse,
 }: Readonly<{
   sidebarCollapsed: boolean
   mobileMenuOpen: boolean
   brandName: string
+  /** While the brand is being fetched an empty name is not yet "unconfigured". */
+  brandLoading: boolean
   onClose: () => void
   onToggleCollapse: () => void
 }>) {
   const { t } = useTranslation()
   return (
     <div className={clsx(
-      'p-4 flex items-center flex-shrink-0',
-      sidebarCollapsed ? 'lg:justify-center justify-between' : 'justify-between',
+      'px-4 pt-4 pb-3 flex items-center gap-2.5 flex-shrink-0',
+      sidebarCollapsed ? 'lg:justify-center justify-between lg:px-2' : 'justify-between',
     )}>
-      {(!sidebarCollapsed || mobileMenuOpen) ? <div>
-        <h1 className="text-lg font-bold">{t('appName')}</h1>
-        <p className="text-gray-400 text-xs mt-0.5">{brandName === '' ? t('configureBrand') : brandName}</p>
+      {(!sidebarCollapsed || mobileMenuOpen) ? <div className="flex items-center gap-2.5 min-w-0">
+        <KiroGhost className="w-7 h-7 text-accent-text flex-shrink-0" />
+        <div className="min-w-0">
+          {/* Brand wordmark, not a heading: the page's own <h1> is the only one (D-STRUCT). */}
+          <p className="text-[0.8125rem] font-bold tracking-[.14em] uppercase text-text-strong break-words">{t('appName')}</p>
+          <p className="text-muted text-[0.75rem] mt-0.5 break-words" aria-busy={brandName === '' && brandLoading}>
+            {brandSubtitle(brandName, brandLoading, t('configureBrand'))}
+          </p>
+        </div>
       </div> : null}
       <button
         onClick={onClose}
-        className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors lg:hidden"
+        className="icon-btn lg:hidden"
         aria-label={t('sidebar.closeMenu')}
       >
-        <X size={20} />
+        <X size={18} />
       </button>
       <button
+        type="button"
         onClick={onToggleCollapse}
-        className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors hidden lg:block"
+        className="icon-btn hidden lg:inline-flex"
+        aria-label={sidebarCollapsed ? t('sidebar.expandSidebar') : t('sidebar.collapseSidebar')}
         title={sidebarCollapsed ? t('sidebar.expandSidebar') : t('sidebar.collapseSidebar')}
       >
-        {sidebarCollapsed ? <PanelLeft size={18} /> : <PanelLeftClose size={18} />}
+        {sidebarCollapsed ? <PanelLeft size={16} /> : <PanelLeftClose size={16} />}
       </button>
     </div>
   )
@@ -72,7 +95,7 @@ function SectionHeader({ labelKey, first }: Readonly<{ labelKey: string; first: 
   const { t } = useTranslation()
   return (
     <div className={clsx(
-      'px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-500',
+      'px-3 pb-1 text-[0.6875rem] font-semibold uppercase tracking-[.08em] text-muted-strong',
       first ? 'pt-1' : 'pt-4',
     )}>
       {t(labelKey)}
@@ -81,16 +104,19 @@ function SectionHeader({ labelKey, first }: Readonly<{ labelKey: string; first: 
 }
 
 // Navigation item component
-export function NavItemLink({
+function NavItemLink({
   item,
   sidebarCollapsed,
   mobileMenuOpen,
   urgentCount,
+  decisionCount = 0,
 }: Readonly<{
   item: NavItem
   sidebarCollapsed: boolean
   mobileMenuOpen: boolean
   urgentCount: number
+  /** Agents whose last run needs a person (count on "Autonomous agents"). */
+  decisionCount?: number
 }>) {
   const { t } = useTranslation()
   const Icon = item.icon
@@ -103,197 +129,97 @@ export function NavItemLink({
       title={sidebarCollapsed && !mobileMenuOpen ? label : undefined}
       className={({ isActive }) =>
         clsx(
-          'flex items-center gap-3 py-2.5 rounded-lg mb-1 transition-colors',
-          sidebarCollapsed && !mobileMenuOpen ? 'lg:justify-center lg:px-2 px-4' : 'px-4',
-          isActive ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-800',
+          'flex items-center gap-2.5 py-2 rounded-md mb-0.5 text-sm font-medium border border-transparent transition-colors duration-200',
+          sidebarCollapsed && !mobileMenuOpen ? 'lg:justify-center lg:px-2 px-3' : 'px-3',
+          isActive ? 'nav-active' : 'text-muted hover:text-text hover:bg-bg-hover',
         )
       }
     >
-      <Icon size={20} className="flex-shrink-0" />
+      <Icon size={16} className="flex-shrink-0" />
       {showLabel ? <>
-        <span>{label}</span>
-        {item.to === '/categories' && urgentCount > 0 && (
-          <span className="ml-auto bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">
-            {urgentCount}
-          </span>
+        {/* Wraps instead of truncating (WCAG 1.4.4): "Autonomous agents" beside its
+            count, and every label in de/fr/pt or at 200 % text size, were cut. */}
+        <span className="min-w-0 flex-1 break-words">{label}</span>
+        {item.to === '/categories' && <NavCount count={urgentCount} tone="danger" />}
+        {item.to === '/agents' && (
+          <NavCount count={decisionCount} tone="warn" label={t('agents:nav.needsDecision', { count: decisionCount })} />
         )}
       </> : null}
     </NavLink>
   )
 }
 
-// User avatar component
-function UserAvatar({
-  initial, size,
-}: Readonly<{
-  initial: string;
-  size: 'sm' | 'md'
-}>) {
-  const sizeClasses = size === 'sm' ? 'w-6 h-6 text-xs' : 'w-8 h-8 text-sm'
+const NAV_COUNT_TONE = { danger: 'bg-danger text-danger-fg', warn: 'bg-warn text-warn-fg' } as const
+
+/** A count pill at the end of a nav row (nothing at zero); `label` names it for screen readers. */
+function NavCount({ count, tone, label }: Readonly<{ count: number; tone: keyof typeof NAV_COUNT_TONE; label?: string }>) {
+  if (count <= 0) return null
   return (
-    <div className={clsx(sizeClasses, 'rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold flex-shrink-0')}>
-      {initial}
-    </div>
-  )
-}
-
-function getUserInitial(user?: {
-  name?: string
-  email?: string
-}): string {
-  const source = user?.name ?? user?.email
-  const initial = source?.charAt(0).toUpperCase()
-  return initial != null && initial !== '' ? initial : 'U'
-}
-
-// Resolve the best display label for the user
-function getUserDisplayName(user: {
-  name?: string
-  email?: string
-  username?: string
-}): string {
-  if (user.name != null && user.name !== '') return user.name
-  if (user.email != null && user.email !== '') return user.email
-  return user.username ?? ''
-}
-
-// Profile button - renders expanded or collapsed variant
-function ProfileButton({
-  user,
-  userInitial,
-  expanded,
-  onShowProfile,
-}: Readonly<{
-  user: {
-    name?: string;
-    email?: string;
-    username?: string
-  }
-  userInitial: string
-  expanded: boolean
-  onShowProfile: () => void
-}>) {
-  if (expanded) {
-    return (
-      <button
-        onClick={onShowProfile}
-        className="flex items-center gap-2 mb-3 text-sm w-full text-left hover:bg-gray-800 rounded-lg px-2 py-1.5 -mx-2 transition-colors"
-        title="View profile"
-      >
-        <UserAvatar initial={userInitial} size="sm" />
-        <span className="text-gray-300 truncate">{getUserDisplayName(user)}</span>
-      </button>
-    )
-  }
-  return (
-    <button
-      onClick={onShowProfile}
-      className="hidden lg:flex items-center justify-center w-full py-2 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors mb-2"
-      title="View profile"
-    >
-      <UserAvatar initial={userInitial} size="md" />
-    </button>
-  )
-}
-
-// User section component
-export function UserSection({
-  user,
-  sidebarCollapsed,
-  mobileMenuOpen,
-  onShowProfile,
-  onLogout,
-}: Readonly<{
-  user: {
-    name?: string;
-    email?: string;
-    username?: string
-  }
-  sidebarCollapsed: boolean
-  mobileMenuOpen: boolean
-  onShowProfile: () => void
-  onLogout: () => void
-}>) {
-  const { t } = useTranslation()
-  const showExpanded = !sidebarCollapsed || mobileMenuOpen
-  const showCollapsed = sidebarCollapsed && !mobileMenuOpen
-  const userInitial = getUserInitial(user)
-
-  return (
-    <div className={clsx('border-t border-gray-700 p-4 flex-shrink-0', showCollapsed && 'lg:px-2')}>
-      <ProfileButton
-        user={user}
-        userInitial={userInitial}
-        expanded={showExpanded}
-        onShowProfile={onShowProfile}
-      />
-      <button
-        onClick={onLogout}
-        title={t('sidebar.signOut')}
-        className={clsx(
-          'flex items-center gap-2 w-full py-2 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors',
-          showCollapsed ? 'lg:justify-center lg:px-2 px-4' : 'px-4',
-        )}
-      >
-        <LogOut size={18} />
-        {showExpanded ? <span>{t('sidebar.signOut')}</span> : null}
-      </button>
-    </div>
+    <span className={clsx('ml-auto flex-shrink-0 font-mono text-[0.6875rem] font-semibold px-1.5 py-px rounded-full', NAV_COUNT_TONE[tone])} title={label}>
+      {count}
+      {label !== undefined && <span className="sr-only"> {label}</span>}
+    </span>
   )
 }
 
 // Full sidebar component
 export function Sidebar({
+  panelRef,
   sidebarCollapsed,
   mobileMenuOpen,
   brandName,
+  brandLoading,
   visibleNavItems,
   urgentCount,
-  isAuthenticated,
-  user,
+  decisionCount = 0,
   onClose,
   onToggleCollapse,
-  onShowProfile,
-  onLogout,
 }: Readonly<{
+  /** The drawer element (mobile focus management in Layout). */
+  panelRef?: Ref<HTMLElement>
   sidebarCollapsed: boolean
   mobileMenuOpen: boolean
   brandName: string
+  brandLoading: boolean
   visibleNavItems: NavItem[]
   urgentCount: number
-  isAuthenticated: boolean
-  user: {
-    name?: string;
-    email?: string;
-    username?: string
-  } | null
+  decisionCount?: number
   onClose: () => void
   onToggleCollapse: () => void
-  onShowProfile: () => void
-  onLogout: () => void
 }>) {
+  const { t } = useTranslation()
   return (
     <aside
+      ref={panelRef}
+      // Named: pages render their own <aside>s (the workflow editor has two), and
+      // unnamed complementary landmarks side by side fail axe landmark-unique (E2E F9).
+      aria-label={t('common:sidebar.label')}
       className={clsx(
-        'bg-gray-900 text-white flex flex-col flex-shrink-0 h-screen transition-all duration-200 z-50',
+        'bg-panel text-text border-r border-border flex flex-col flex-shrink-0 h-screen transition-all duration-150 z-50',
         'fixed lg:relative',
-        mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
-        sidebarCollapsed ? 'lg:w-16' : 'w-64',
+        // Closed on a phone it is off-canvas: `invisible` takes it out of the Tab
+        // order and the accessibility tree, so focus never lands on links nobody
+        // can see (design audit D-NAV; visibility is transitioned, so the slide-out
+        // still plays).
+        mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0 max-lg:invisible',
+        // rem, not px: the rail grows with the text size, so labels at 200 % still fit (WCAG 1.4.4).
+        sidebarCollapsed ? 'lg:w-[74px] w-[14.75rem]' : 'w-[14.75rem]',
       )}
     >
       <SidebarHeader
         sidebarCollapsed={sidebarCollapsed}
         mobileMenuOpen={mobileMenuOpen}
         brandName={brandName}
+        brandLoading={brandLoading}
         onClose={onClose}
         onToggleCollapse={onToggleCollapse}
       />
 
-      <nav className={clsx('flex-1 overflow-y-auto', sidebarCollapsed && !mobileMenuOpen ? 'lg:px-2 px-4' : 'px-4')}>
+      <nav className={clsx('flex-1 overflow-y-auto', sidebarCollapsed && !mobileMenuOpen ? 'lg:px-2 px-3' : 'px-3')}>
         {visibleNavItems.map((item, i) => {
           const showLabels = !sidebarCollapsed || mobileMenuOpen
           // Render a section header when this item starts a new section.
-          const prevSection = i > 0 ? visibleNavItems[i - 1].section : undefined
+          const prevSection = i > 0 ? visibleNavItems[i - 1]?.section : undefined
           const isNewSection = item.section && item.section !== prevSection
           return (
             <div key={item.to}>
@@ -301,26 +227,19 @@ export function Sidebar({
                 <SectionHeader labelKey={item.section ?? ''} first={i === 0} />
               ) : null}
               {isNewSection && !showLabels && i > 0 ? (
-                <div className="border-t border-gray-800 my-2" aria-hidden />
+                <div className="border-t border-border my-2" aria-hidden />
               ) : null}
               <NavItemLink
                 item={item}
                 sidebarCollapsed={sidebarCollapsed}
                 mobileMenuOpen={mobileMenuOpen}
                 urgentCount={urgentCount}
+                decisionCount={decisionCount}
               />
             </div>
           )
         })}
       </nav>
-
-      {isAuthenticated && user ? <UserSection
-        user={user}
-        sidebarCollapsed={sidebarCollapsed}
-        mobileMenuOpen={mobileMenuOpen}
-        onShowProfile={onShowProfile}
-        onLogout={onLogout}
-      /> : null}
     </aside>
   )
 }

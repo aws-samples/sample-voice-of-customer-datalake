@@ -8,7 +8,18 @@
  */
 import { z } from 'zod'
 import { asRecord } from './wireRecord'
-import type { ProjectDetail, ProjectDocument, ProjectPersona } from './types'
+import type {
+  ProjectDocument,
+} from './types'
+import type {
+  Project,
+  ProjectAccess,
+  ProjectDetail,
+  ProjectMember,
+  ProjectMemberCandidate,
+  ProjectMembersResponse,
+  ProjectPersona,
+} from './projectTypes'
 
 const optionalString = z.string().optional().catch(undefined)
 const optionalNullableString = z.string().nullable().optional().catch(undefined)
@@ -139,6 +150,8 @@ const ProjectDocumentSchema = z.preprocess(withLegacyManagedDocumentType, z.loos
   title: z.string().catch(''),
   base_title: optionalString,
   version: z.number().int().positive().optional().catch(undefined),
+  /** An unmanaged (research / custom) document's edit counter; absent = 1. */
+  revision: z.number().int().positive().optional().catch(undefined),
   // S3-backed prototypes intentionally omit inline content. Keeping content a
   // required string after this boundary lets every consumer stay honest.
   content: z.string().catch(''),
@@ -158,7 +171,67 @@ const ProjectDocumentSchema = z.preprocess(withLegacyManagedDocumentType, z.loos
   updated_at: optionalString,
 }))
 
+// ── Sharing fields (see voc-datalake/lambda/shared/project_access.py) ──
+// A legacy payload without them is a public project the caller can view; it
+// is NOT assumed editable or manageable — the server stays the authority, so
+// a missing field can only hide controls, never grant them.
+
+const DEFAULT_PROJECT_ACCESS: ProjectAccess = Object.freeze({
+  role: null, can_view: true, can_edit: false, can_manage: false,
+})
+
+const ProjectAccessSchema = z.object({
+  role: z.enum(['owner', 'admin', 'editor', 'viewer']).nullable().catch(null),
+  can_view: z.boolean().catch(true),
+  can_edit: z.boolean().catch(false),
+  can_manage: z.boolean().catch(false),
+}).catch(() => ({ ...DEFAULT_PROJECT_ACCESS }))
+
+const ProjectOwnerSchema = z.object({
+  sub: z.string().min(1),
+  username: z.string().catch(''),
+  email: z.string().catch(''),
+}).nullable().catch(null)
+
+const ProjectMemberSchema = z.object({
+  sub: z.string().min(1),
+  role: z.enum(['editor', 'viewer']).catch('viewer'),
+  username: z.string().catch(''),
+  email: z.string().catch(''),
+  added_by: optionalString,
+  added_at: optionalString,
+})
+
+const MemberCandidateSchema = z.object({
+  sub: z.string().min(1),
+  username: z.string().catch(''),
+  email: z.string().catch(''),
+  name: optionalString,
+})
+
+const VisibilitySchema = z.enum(['public', 'private']).catch('public')
+
+/** Keep only the rows `schema` accepts; a non-array becomes []. */
+function lenientList<T>(schema: z.ZodType<T>, raw: unknown): T[] {
+  if (!Array.isArray(raw)) return []
+  return raw.flatMap((item) => {
+    const parsed = schema.safeParse(item)
+    return parsed.success ? [parsed.data] : []
+  })
+}
+
+const optionalMembersSchema = z
+  .array(z.unknown())
+  .optional()
+  .catch(undefined)
+  .transform((items) => (items === undefined ? undefined : lenientList(ProjectMemberSchema, items)))
+
 const ProjectSchema = z.looseObject({
+  visibility: VisibilitySchema,
+  owner: ProjectOwnerSchema,
+  access: ProjectAccessSchema,
+  member_count: z.number().int().nonnegative().catch(0),
+  members: optionalMembersSchema,
   project_id: z.string().min(1),
   name: z.string().catch(''),
   description: z.string().catch(''),
@@ -168,7 +241,6 @@ const ProjectSchema = z.looseObject({
   persona_count: z.number().int().nonnegative().catch(0),
   document_count: z.number().int().nonnegative().catch(0),
   filters: z.record(z.string(), z.unknown()).optional().catch(undefined),
-  kiro_export_prompt: optionalString,
   kiro_default_export_prompt: optionalString,
 })
 
@@ -178,9 +250,12 @@ const ProjectDetailEnvelopeSchema = z.looseObject({
   documents: z.array(z.unknown()).catch(() => []),
 })
 
-/** Normalize one project detail response, dropping only rows with no usable identity/type. */
+/** One project detail response, dropping only rows with no usable identity/type. */
 export function normalizeProjectDetail(raw: unknown): ProjectDetail {
-  const parsed = ProjectDetailEnvelopeSchema.parse(raw)
+  return normalizedDetail(ProjectDetailEnvelopeSchema.parse(raw))
+}
+
+function normalizedDetail(parsed: z.infer<typeof ProjectDetailEnvelopeSchema>): ProjectDetail {
   const personas: ProjectPersona[] = []
   const documents: ProjectDocument[] = []
 
@@ -197,4 +272,85 @@ export function normalizeProjectDetail(raw: unknown): ProjectDetail {
   }
 
   return { ...parsed, personas, documents }
+}
+
+const ProjectDetailBatchSchema = z.looseObject({ details: z.array(z.unknown()).catch(() => []) })
+
+/**
+ * `GET /projects?ids=…`: the details the caller can view (no personas — the batch
+ * read omits them). An entry without a usable project is dropped, not fatal: one
+ * damaged record must not blank the Prioritization board.
+ */
+export function normalizeProjectDetailBatch(raw: unknown): ProjectDetail[] {
+  return ProjectDetailBatchSchema.parse(raw).details.flatMap((entry) => {
+    const parsed = ProjectDetailEnvelopeSchema.safeParse(entry)
+    return parsed.success ? [normalizedDetail(parsed.data)] : []
+  })
+}
+
+/** One document from a write answer (an edit / restore), or null when it is unusable. */
+export function normalizeProjectDocument(raw: unknown): ProjectDocument | null {
+  const parsed = ProjectDocumentSchema.safeParse(raw)
+  return parsed.success ? parsed.data : null
+}
+
+// ── Document versions (GET /projects/{id}/documents/{doc}/versions) ──
+// A PRD / PR-FAQ version is a document row of its own (`version_id` = its
+// document_id); a research / custom version is a saved revision (`r{n}`).
+const DocumentVersionSchema = z.object({
+  version_id: z.string().min(1),
+  document_id: optionalString,
+  version: z.number().int().positive(),
+  title: z.string().catch(''),
+  content: z.string().catch(''),
+  created_at: z.string().nullable().catch(null),
+  current: z.boolean().catch(false),
+  edit_kind: z.enum(['edit', 'restore']).nullable().optional().catch(null),
+  restored_from_version: z.number().int().positive().nullable().optional().catch(null),
+})
+export type DocumentVersion = z.output<typeof DocumentVersionSchema>
+
+/** The versions list, newest first; an unusable row costs only itself. */
+export function normalizeDocumentVersions(raw: unknown): DocumentVersion[] {
+  const items = asRecord(raw)?.versions
+  if (!Array.isArray(items)) return []
+  return items.flatMap((item) => {
+    const parsed = DocumentVersionSchema.safeParse(item)
+    return parsed.success ? [parsed.data] : []
+  })
+}
+
+/** Normalize GET /projects, dropping only rows without a usable project_id. */
+export function normalizeProjectList(raw: unknown): { projects: Project[] } {
+  const record = asRecord(raw)
+  const projects = lenientList(ProjectSchema, record?.projects)
+  return { ...record, projects }
+}
+
+/** Normalize one project object (e.g. the `project` of a POST /projects response). */
+export function normalizeProject(raw: unknown): Project | null {
+  const parsed = ProjectSchema.safeParse(raw)
+  return parsed.success ? parsed.data : null
+}
+
+/** Normalize GET /projects/{id}/members. */
+export function normalizeProjectMembers(raw: unknown): ProjectMembersResponse {
+  const record = asRecord(raw) ?? {}
+  return {
+    visibility: VisibilitySchema.parse(record.visibility),
+    owner: ProjectOwnerSchema.parse(record.owner),
+    members: lenientList(ProjectMemberSchema, record.members),
+    access: ProjectAccessSchema.parse(record.access),
+  }
+}
+
+/** Normalize one member row (POST / PUT member responses); null when unusable. */
+export function normalizeProjectMember(raw: unknown): ProjectMember | null {
+  const parsed = ProjectMemberSchema.safeParse(raw)
+  return parsed.success ? parsed.data : null
+}
+
+/** Normalize GET /projects/{id}/members/candidates. */
+export function normalizeMemberCandidates(raw: unknown): ProjectMemberCandidate[] {
+  return lenientList(MemberCandidateSchema, asRecord(raw)?.users)
 }

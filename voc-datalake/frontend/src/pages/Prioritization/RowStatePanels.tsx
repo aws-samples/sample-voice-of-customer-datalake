@@ -166,6 +166,25 @@ const TAKE_FOCUS = true
 const ANNOUNCE_ONLY = false
 
 /**
+ * The icon-only close control both row-state panels end with.
+ *
+ * `label` is the already-translated screen-reader text, chosen by the caller so the
+ * `t('...')` key stays a literal at the call site, where `scripts/i18n-check.mjs` reads it.
+ */
+function DismissButton({ onDismiss, label }: { readonly onDismiss: () => void; readonly label: string }): ReactElement {
+  return (
+    <button
+      type="button"
+      onClick={onDismiss}
+      className="icon-btn flex-shrink-0"
+    >
+      <X size={16} aria-hidden="true" />
+      <span className="sr-only">{label}</span>
+    </button>
+  )
+}
+
+/**
  * What did not happen when a reviewer added, edited or deleted a row.
  *
  * DISMISSABLE, unlike the read-state panels above it: this describes an action the
@@ -195,37 +214,30 @@ export function RowActionFailurePanel({
     <div
       role="alert"
       aria-labelledby="row-action-failed-title"
-      className="bg-red-50 border border-red-200 rounded-lg p-3 sm:p-4"
+      className="bg-danger-subtle border border-danger/30 rounded-lg p-3 sm:p-4"
     >
       <div className="flex items-start gap-3">
-        <AlertTriangle className="text-red-600 mt-0.5 flex-shrink-0" size={20} aria-hidden="true" />
+        <AlertTriangle className="text-danger mt-0.5 flex-shrink-0" size={20} aria-hidden="true" />
         <div className="flex-1 min-w-0">
-          <h3
+          <h2
             ref={heading}
             id="row-action-failed-title"
             // Focusable without joining the tab order, so `useAnnouncePanel` can land the
             // reader here — on the heading rather than the live region, which would be
             // announced twice. See there.
             tabIndex={-1}
-            className="font-medium text-red-900 text-sm sm:text-base"
+            className="font-medium text-text-strong text-sm sm:text-base"
           >
             {t('rowAction.title')}
-          </h3>
-          <p className="text-xs sm:text-sm text-red-700 mt-1">
+          </h2>
+          <p className="text-xs sm:text-sm text-text mt-1">
             {/* The key is chosen OUTSIDE `t(...)`, per the rule the scores panel above
                 records: `i18n-check` only sees a key it reads verbatim, so a condition
                 inside the call reports every branch unused. */}
             {t(failureSentenceKey(failure), { row: failure.rowTitle })}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onDismiss}
-          className="flex-shrink-0 rounded-lg p-1 text-red-700 hover:bg-red-100"
-        >
-          <X size={16} aria-hidden="true" />
-          <span className="sr-only">{t('rowAction.dismiss')}</span>
-        </button>
+        <DismissButton onDismiss={onDismiss} label={t('rowAction.dismiss')} />
       </div>
     </div>
   )
@@ -277,23 +289,23 @@ export function RowDeletedPanel({
     <div
       role="status"
       aria-labelledby="row-deleted-title"
-      className="bg-green-50 border border-green-200 rounded-lg p-3 sm:p-4"
+      className="bg-ok-subtle border border-ok/30 rounded-lg p-3 sm:p-4"
     >
       <div className="flex items-start gap-3">
-        <CheckCircle2 className="text-green-700 mt-0.5 flex-shrink-0" size={20} aria-hidden="true" />
+        <CheckCircle2 className="text-ok mt-0.5 flex-shrink-0" size={20} aria-hidden="true" />
         <div className="flex-1 min-w-0">
-          <h3
+          <h2
             ref={heading}
             id="row-deleted-title"
             // NO `tabIndex`, unlike the failure panel's heading: nothing focuses this
             // one. The ref is here for the scroll alone, and a programmatically-focusable
             // heading nothing ever focuses would read as an in-flight intention this code
             // does not have. See `useAnnouncePanel`.
-            className="font-medium text-green-900 text-sm sm:text-base"
+            className="font-medium text-text-strong text-sm sm:text-base"
           >
             {t('rowDeleted.title')}
-          </h3>
-          <p className="text-xs sm:text-sm text-green-800 mt-1">
+          </h2>
+          <p className="text-xs sm:text-sm text-text mt-1">
             {/* Both keys are literals with the condition outside the call. The counted
                 one takes i18next's `count`, whose `_one`/`_other` forms this catalog
                 already carries in every locale — see the component docstring. */}
@@ -302,14 +314,7 @@ export function RowDeletedPanel({
               : t('rowDeleted.descriptionNoCount', { row: deleted.rowTitle })}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onDismiss}
-          className="flex-shrink-0 rounded-lg p-1 text-green-800 hover:bg-green-100"
-        >
-          <X size={16} aria-hidden="true" />
-          <span className="sr-only">{t('rowDeleted.dismiss')}</span>
-        </button>
+        <DismissButton onDismiss={onDismiss} label={t('rowDeleted.dismiss')} />
       </div>
     </div>
   )
@@ -341,15 +346,15 @@ export function EnsureRefusalPanel({
   const projectIds = Object.keys(refusals)
   if (projectIds.length === 0) return null
   return (
-    <div role="alert" aria-labelledby="row-unavailable-title" className="bg-amber-50 border border-amber-200 rounded-lg p-3 sm:p-4">
+    <div role="alert" aria-labelledby="row-unavailable-title" className="bg-warn-subtle border border-warn/30 rounded-lg p-3 sm:p-4">
       <div className="flex items-start gap-3">
-        <AlertTriangle className="text-amber-600 mt-0.5 flex-shrink-0" size={20} aria-hidden="true" />
+        <AlertTriangle className="text-warn mt-0.5 flex-shrink-0" size={20} aria-hidden="true" />
         <div>
-          <h3 id="row-unavailable-title" className="font-medium text-amber-900 text-sm sm:text-base">
+          <h2 id="row-unavailable-title" className="font-medium text-text-strong text-sm sm:text-base">
             {t('rowUnavailable.title')}
-          </h3>
-          <p className="text-xs sm:text-sm text-amber-700 mt-1">{t('rowUnavailable.description')}</p>
-          <ul className="text-xs sm:text-sm text-amber-800 mt-2 list-disc list-inside">
+          </h2>
+          <p className="text-xs sm:text-sm text-text mt-1">{t('rowUnavailable.description')}</p>
+          <ul className="text-xs sm:text-sm text-text mt-2 list-disc list-inside">
             {projectIds.map((projectId) => (
               <li key={projectId}>{namesByProject[projectId] ?? projectId}</li>
             ))}

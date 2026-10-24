@@ -4,9 +4,9 @@
  */
 
 import clsx from 'clsx'
-import { useRef } from 'react'
+import { useId, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { getScoreColor } from './prioritizationUtils'
+import { getScoreColor } from './teamScore'
 
 /**
  * Where an unscored slider's handle rests. A range input must hold SOME
@@ -16,6 +16,9 @@ import { getScoreColor } from './prioritizationUtils'
  * which point `onChange` reports the dragged value and the axis becomes real.
  */
 const UNSCORED_HANDLE_POSITION = 3
+
+/** The top of every axis (1 … 5). */
+const SCORE_MAX = 5
 
 interface ScoreSliderProps {
   readonly label: string
@@ -43,6 +46,10 @@ export default function ScoreSlider({
   label, value, onChange, description, lowLabel = '1', highLabel = '5', inverted = false,
 }: ScoreSliderProps) {
   const { t } = useTranslation('prioritization')
+  const inputId = useId()
+  const labelId = useId()
+  const descriptionId = useId()
+  const hasDescription = description != null && description !== ''
   const unscored = value === 0
   const position = unscored ? UNSCORED_HANDLE_POSITION : value
   // Was the press that is now ending a press ON THIS CONTROL? `pointerup` also
@@ -69,25 +76,31 @@ export default function ScoreSlider({
   return (
     <div className="space-y-2">
       <div className="flex justify-between items-center">
-        <label className="text-sm font-medium text-gray-700">{label}</label>
+        <label id={labelId} htmlFor={inputId} className="text-sm font-medium text-text">{label}</label>
         {unscored ? (
           /* The dash is decorative (the same treatment as the team summary's);
              the state itself is announced on the input via aria-valuetext, which
              is where a screen reader is listening. */
-          <span className="text-sm font-bold px-2 py-0.5 rounded bg-gray-100 text-gray-600" aria-hidden="true">—</span>
+          <span className="text-sm font-bold px-2 py-0.5 rounded-sm bg-bg-hover text-text" aria-hidden="true">—</span>
         ) : (
-          <span className={clsx('text-sm font-bold px-2 py-0.5 rounded', getScoreColor(inverted ? 6 - value : value))}>{value}</span>
+          <span className={clsx('text-sm font-bold px-2 py-0.5 rounded-sm', getScoreColor(inverted ? 6 - value : value))}>{value}</span>
         )}
       </div>
-      {description != null && description !== '' ? <p className="text-xs text-gray-500">{description}</p> : null}
+      {hasDescription ? <p id={descriptionId} className="text-xs text-muted">{description}</p> : null}
       <div className="flex items-center gap-2">
-        <span className="text-xs text-gray-400 w-16">{lowLabel}</span>
+        <span className="text-xs text-muted w-16">{lowLabel}</span>
         <input
+          id={inputId}
           type="range"
           min={1}
-          max={5}
+          max={SCORE_MAX}
           value={position}
-          aria-valuetext={unscored ? t('scores.notScored') : undefined}
+          /* Named by the visible label explicitly, not only through `htmlFor`, so
+             every accessibility tree (and audit) reads the axis name off the slider. */
+          aria-labelledby={labelId}
+          aria-label={label}
+          aria-describedby={hasDescription ? descriptionId : undefined}
+          aria-valuetext={unscored ? t('scores.notScored') : t('scores.valueOfMax', { value, max: SCORE_MAX })}
           onChange={(e) => onChange(Number(e.target.value))}
           onPointerDown={() => { pressedHere.current = true }}
           onPointerLeave={releasePress}
@@ -109,11 +122,11 @@ export default function ScoreSlider({
             if (unscored && pressed) onChange(Number(e.currentTarget.value))
           }}
           className={clsx(
-            'flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer',
-            unscored ? 'accent-gray-400' : 'accent-blue-600',
+            'range flex-1 w-auto',
+            unscored && 'range-unscored',
           )}
         />
-        <span className="text-xs text-gray-400 w-16 text-right">{highLabel}</span>
+        <span className="text-xs text-muted w-16 text-right">{highLabel}</span>
       </div>
     </div>
   )

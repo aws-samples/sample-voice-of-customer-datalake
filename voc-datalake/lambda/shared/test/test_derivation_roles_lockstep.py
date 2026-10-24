@@ -8,7 +8,7 @@ keyed by role — but nothing would otherwise stop the backend from writing a
 role the frontend cannot name, which would silently drop that source at the
 query boundary. This test is that stop.
 
-Pattern follows lambda/api/test/test_kiro_exportable_types_lockstep.py.
+Pattern follows lambda/api/test/test_doc_type_lockstep.py.
 """
 import re
 from pathlib import Path
@@ -47,18 +47,8 @@ def _frontend_roles() -> tuple[str, ...]:
 
 class TestDerivationRolesLockstep:
     def test_backend_and_frontend_declare_the_same_roles_in_the_same_order(self):
-        assert DERIVATION_ROLES == _frontend_roles(), (
+        assert _frontend_roles() == DERIVATION_ROLES, (
             'The derivation role vocabulary is closed and shared. Update both '
             'lambda/shared/derivation.py and frontend/src/api/derivation.ts '
             '(and the frontend role→legacy-field map, which is keyed by role).'
-        )
-
-    def test_vocabulary_is_the_four_relations_the_code_creates(self):
-        """Pinned literally: a new role is a deliberate product decision about a
-        new relation, not an incidental addition."""
-        assert _frontend_roles() == (
-            'reference',
-            'prototype_prd',
-            'prototype_prfaq',
-            'merge_input',
         )

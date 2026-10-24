@@ -1,0 +1,94 @@
+{
+  "tab": "Decisiones",
+  "title": "Decisiones",
+  "subtitle": "Seguir, aparcar o descartar: el motivo, cómo medirás el éxito y cuándo pararías.",
+  "new": "Nueva decisión",
+  "empty": "Aún no hay decisiones. Registra una cuando elijas qué hacer con un problema.",
+  "formLabel": "Decisión",
+  "verdict": {
+    "label": "Veredicto",
+    "pursue": "Seguir",
+    "park": "Aparcar",
+    "reject": "Descartar"
+  },
+  "fields": {
+    "title": "Título",
+    "rationale": "Motivo",
+    "successMetric": "Métrica de éxito",
+    "killCriterion": "Criterio de parada",
+    "reviewBy": "Revisar antes de",
+    "launchedAt": "Lanzado el",
+    "feedbackIds": "Ids de comentarios",
+    "feedbackIdsHint": "Separa los ids con espacios o comas.",
+    "documents": "Documentos de apoyo"
+  },
+  "actions": {
+    "save": "Guardar decisión",
+    "cancel": "Cancelar",
+    "edit": "Editar",
+    "pursue": "Redactar PR/FAQ",
+    "pursueAgain": "Redactar otro PR/FAQ",
+    "pursueHint": "Inicia la generación del PR/FAQ con esta decisión como brief.",
+    "pursueConfirmTitle": "¿Redactar un PR/FAQ?",
+    "pursueConfirmMessage": "La IA redacta un PR/FAQ con \"{{title}}\" como brief. Tarda unos minutos; el borrador aparece en Documentos cuando está listo.",
+    "pursueConfirm": "Redactar PR/FAQ",
+    "pursued": "Se pidió un PR/FAQ a partir de esta decisión. Aparecerá en Documentos cuando termine el trabajo.",
+    "prfaqReady": "PR/FAQ listo: {{title}}",
+    "prfaqFailed": "No se pudo generar el PR/FAQ de esta decisión. Vuelve a redactarlo para intentarlo de nuevo.",
+    "revisit": "Revisar de nuevo",
+    "releaseWatch": "Seguimiento de lanzamiento",
+    "hideReleaseWatch": "Ocultar seguimiento de lanzamiento"
+  },
+  "picker": {
+    "label": "Reseñas de respaldo",
+    "placeholder": "Busca reseñas para añadir, p. ej. \"entrega tardía\"",
+    "results": "Reseñas que coinciden",
+    "picked": "Reseñas añadidas",
+    "searching": "Buscando…",
+    "failed": "La búsqueda falló. Inténtalo de nuevo.",
+    "noMatch": "Ninguna reseña coincide con \"{{q}}\".",
+    "linked": "Reseña vinculada {{n}}",
+    "remove": "Quitar {{label}}",
+    "advanced": "Avanzado: pegar ids de reseñas"
+  },
+  "decidedBy": "Decidido por {{name}} el {{date}}",
+  "decidedOn": "Decidido el {{date}}",
+  "evidence": "Evidencia",
+  "errors": {
+    "save": "No se pudo guardar la decisión.",
+    "conflict": "Esta decisión cambió desde que la abriste. Recarga la página e inténtalo de nuevo.",
+    "pursue": "No se pudo iniciar el PR/FAQ."
+  },
+  "releaseWatch": {
+    "title": "Seguimiento de lanzamiento",
+    "subtitle": "Comentarios de los {{days, number}} días antes y después de cada lanzamiento.",
+    "empty": "No hay lanzamientos en este periodo.",
+    "regression": "Regresión",
+    "noRegression": "Sin regresión",
+    "before": "Antes",
+    "after": "Después",
+    "volume": "Volumen",
+    "negative": "Negativos",
+    "sentiment": "Sentimiento",
+    "afterDays": "Días observados después: {{days, number}}",
+    "reasons": {
+      "sentiment_drop": "El sentimiento bajó",
+      "negative_rise": "Aumentaron los comentarios negativos"
+    },
+    "complaints": "Quejas en aumento",
+    "evidenceItem": "Opinión {{n}}",
+    "evidence": "Lo más negativo tras el lanzamiento",
+    "partial": "Parcial: leído hasta {{date}}",
+    "loading": "Cargando el seguimiento de lanzamiento",
+    "error": "No se pudo cargar el seguimiento de lanzamiento.",
+    "topCategories": {
+      "before": "Categorías principales antes",
+      "after": "Categorías principales después",
+      "new": "Nueva entre las principales",
+      "grew_one": "Sube desde {{count, number}}",
+      "grew_other": "Sube desde {{count, number}}",
+      "count_one": "{{count, number}} reseña",
+      "count_other": "{{count, number}} reseñas"
+    }
+  }
+}

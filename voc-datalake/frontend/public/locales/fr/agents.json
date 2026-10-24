@@ -1,0 +1,557 @@
+{
+  "nav": {
+    "label": "Agents autonomes",
+    "needsDecision_one": "{{count, number}} agent attend une décision",
+    "needsDecision_other": "{{count, number}} agents attendent une décision"
+  },
+  "common": {
+    "cancel": "Annuler"
+  },
+  "status": {
+    "enabled": "Activé",
+    "disabled": "Désactivé"
+  },
+  "scope": {
+    "all": "Toutes les catégories",
+    "some": "Surveille : {{list}}"
+  },
+  "views": {
+    "label": "Sections de la page des agents",
+    "agents": "Agents",
+    "workflows": "Workflows"
+  },
+  "list": {
+    "title": "Agents autonomes",
+    "subtitle": "Les agents surveillent le feedback de leur périmètre et, lorsqu'un déclencheur s'active, exécutent un workflow : recherche, personas, PR/FAQ, PRD et prototype, évalués par des personas avant de transmettre un projet.",
+    "create": "Nouvel agent",
+    "createTitle": "Créer un agent autonome",
+    "createHint": "Il est créé désactivé avec sa propre copie modifiable du workflow « Avis → Prototype ». Configurez les déclencheurs et le workflow, puis activez-le.",
+    "createFailed": "Impossible de créer l'agent.",
+    "emptyTitle": "Aucun agent autonome pour l'instant",
+    "emptyAdmin": "Créez-en un pour transformer automatiquement le nouveau feedback en projets documentés et en prototypes.",
+    "emptyUser": "Aucun administrateur n'a encore configuré d'agent visible pour vous.",
+    "loadFailed": "Impossible de charger les agents.",
+    "spend": "{{runs, number}} exécutions planifiées aujourd'hui · {{calls, number}} appels de modèle ce mois-ci",
+    "spendHint": "Les exécutions manuelles ne sont pas comptées dans la limite quotidienne d'exécutions planifiées.",
+    "needsDecision": "Attend votre décision",
+    "reviewRun": "Examiner l'exécution de {{name}}",
+    "rename": "Renommer",
+    "renameNamed": "Renommer {{name}}",
+    "renameTitle": "Renommer cet agent",
+    "renameFailed": "L’agent n’a pas pu être renommé.",
+    "delete": "Supprimer",
+    "deleteNamed": "Supprimer {{name}}",
+    "deleteTitle": "Supprimer cet agent ?",
+    "deleteMessage": "« {{name}} » ne s’exécute plus et quitte vos agents. Ses exécutions passées et les projets et documents qu’il a créés sont conservés. Une exécution en cours se termine d’abord.",
+    "deleteFailed": "L’agent n’a pas pu être supprimé."
+  },
+  "library": {
+    "title": "Bibliothèque de workflows",
+    "subtitle": "Tous les workflows que les agents peuvent exécuter. Archivez ceux dont vous n’avez plus besoin : ils quittent la bibliothèque, passent en lecture seule et leurs révisions sont conservées.",
+    "loadFailed": "La bibliothèque de workflows n’a pas pu être chargée.",
+    "archive": "Archiver",
+    "archiveNamed": "Archiver {{name}}",
+    "archiveTitle": "Archiver ce workflow ?",
+    "archiveMessage": "« {{name}} » sera masqué de la bibliothèque et du sélecteur de workflow et passera en lecture seule. Ses révisions sont conservées.",
+    "archiveInUse": "Un agent actif exécute encore ce workflow. Archivez cet agent ou attribuez-lui un autre workflow d’abord.",
+    "archiveFailed": "Le workflow n’a pas pu être archivé.",
+    "open": "Ouvrir",
+    "openNamed": "Ouvrir {{name}}",
+    "newWorkflow": "Nouveau workflow",
+    "createTitle": "Créer un workflow",
+    "createHint": "Il commence par Début → Fin. Ajoutez des étapes dans l’éditeur, puis choisissez-le sur un agent.",
+    "create": "Créer le workflow",
+    "newWorkflowFailed": "Le workflow n’a pas pu être créé.",
+    "rename": "Renommer",
+    "renameNamed": "Renommer {{name}}",
+    "renameTitle": "Renommer ce workflow",
+    "renameConflict": "Quelqu’un a modifié ce workflow entre-temps, ou c’est le workflow intégré. Rechargez et réessayez.",
+    "renameFailed": "Le workflow n’a pas pu être renommé."
+  },
+  "fields": {
+    "name": "Nom",
+    "description": "Description",
+    "scope": "Feedback surveillé",
+    "instructions": "Instructions",
+    "instructionsHint": "Consignes que l'agent suit à chaque étape (jusqu'à {{n, number}} caractères).",
+    "visibility": "Visibilité des projets transmis",
+    "visibilityHint": "Les projets privés ne sont visibles que par leur propriétaire, leurs membres et les administrateurs.",
+    "workflow": "Workflow",
+    "workflowDefault": "Avis → Prototype (intégré)",
+    "workflowHint": "Modifiez les étapes dans l'onglet Workflow."
+  },
+  "visibility": {
+    "private": "Privé",
+    "public": "Public"
+  },
+  "detail": {
+    "back": "Tous les agents",
+    "tabs": "Sections de l'agent",
+    "enabledLabel": "Activé",
+    "toggleFailed": "Impossible d'activer ou de désactiver l'agent.",
+    "save": "Enregistrer",
+    "saved": "Enregistré",
+    "saveFailed": "Impossible d'enregistrer les modifications.",
+    "discard": "Annuler les modifications",
+    "archive": "Archiver",
+    "archiveTitle": "Archiver cet agent ?",
+    "archiveMessage": "Il cesse de s'exécuter et disparaît de la liste. Les projets qu'il a créés sont conservés.",
+    "notFound": "Cet agent n'existe pas ou vous n'y avez pas accès.",
+    "stats": "{{runs, number}} exécutions au total · {{today, number}} planifiées aujourd'hui · {{calls, number}} appels de modèle ce mois-ci"
+  },
+  "tabs": {
+    "settings": "Paramètres",
+    "triggers": "Déclencheurs",
+    "personas": "Personas",
+    "instructions": "Instructions",
+    "models": "Modèles",
+    "budget": "Budget",
+    "workflow": "Workflow",
+    "runs": "Exécutions"
+  },
+  "triggers": {
+    "hint": "Ce qui réveille l'agent. Il s'exécute au maximum deux fois par jour de lui-même et jamais deux fois simultanément.",
+    "none": "Aucun déclencheur — il ne s'exécute que si quelqu'un clique sur Exécuter maintenant.",
+    "remove": "Supprimer le déclencheur",
+    "minNew": "Nouveaux avis requis",
+    "cooldown": "Délai de récupération (heures)",
+    "every": "Toutes les",
+    "cron": "Expression cron",
+    "cronHint": "Cinq champs, par ex. 0 9 * * 1 pour le lundi à 09:00.",
+    "timezone": "Fuseau horaire",
+    "count": "Avis",
+    "per": "Par",
+    "windowDays": "En (jours)",
+    "kinds": {
+      "new_reviews": "Nouveaux avis",
+      "schedule": "Planification",
+      "threshold": "Seuil"
+    },
+    "kindHints": {
+      "new_reviews": "S'exécute lorsque suffisamment de nouveau feedback est arrivé dans son périmètre depuis la dernière exécution.",
+      "schedule": "S'exécute selon une planification fixe.",
+      "threshold": "S'exécute lorsqu'une catégorie ou sous-catégorie atteint un nombre d'avis sur une période donnée."
+    },
+    "everyOptions": {
+      "12h": "12 heures",
+      "24h": "24 heures",
+      "cron": "Personnalisé (cron)"
+    },
+    "perOptions": {
+      "category": "Catégorie",
+      "subcategory": "Sous-catégorie"
+    }
+  },
+  "personas": {
+    "fixed": "Personas fixes ({{n, number}} sur {{max, number}})",
+    "none": "Aucun persona fixe — l'agent les choisit dans le projet.",
+    "add": "Ajouter un persona",
+    "remove": "Supprimer le persona",
+    "project": "Projet",
+    "persona": "Persona",
+    "chooseProject": "Choisir un projet",
+    "choosePersona": "Choisir un persona",
+    "allowGenerate": "Autoriser l'agent à générer de nouveaux personas si aucun ne convient"
+  },
+  "models": {
+    "hint": "Choisissez le modèle d'IA pour chaque partie du travail de l'agent. Laissez la valeur par défaut pour suivre Administration → Modèles d'IA.",
+    "default": "Valeur par défaut des Paramètres",
+    "roleHint": {
+      "orchestrator": "Décide de l'étape suivante et vérifie chaque résultat.",
+      "worker": "Rédige la recherche, les documents et les prototypes.",
+      "reviewer": "Évalue le travail avant la transmission.",
+      "persona": "S'exprime au nom de chaque persona lors des évaluations."
+    }
+  },
+  "roles": {
+    "orchestrator": "Planificateur",
+    "worker": "Rédacteur",
+    "reviewer": "Relecteur",
+    "persona": "Persona"
+  },
+  "budget": {
+    "runsPerDay": "Exécutions planifiées par jour",
+    "runsPerDayHint": "2 au maximum. Les exécutions manuelles ne sont pas comptées.",
+    "callsPerRun": "Appels de modèle par exécution",
+    "monthlyCap": "Plafond mensuel d'appels de modèle",
+    "monthlyCapHint": "L'agent cesse de lancer des exécutions une fois ce plafond mensuel atteint.",
+    "uncapped": "Aucun plafond mensuel"
+  },
+  "run": {
+    "hint": "Chaque exécution suit le workflow. Le graphe met en évidence les étapes en cours ; c'est une vue, pas une commande.",
+    "list": "Exécutions",
+    "none": "Aucune exécution pour l'instant.",
+    "runNow": "Exécuter maintenant",
+    "alreadyRunning": "Une exécution est déjà en cours.",
+    "startFailed": "Impossible de lancer l'exécution.",
+    "confirmTitle": "Lancer une exécution maintenant ?",
+    "confirmMessage": "L’agent exécute maintenant son workflow. Il appelle les modèles d’IA (jusqu’à {{calls, number}} appels) et peut prendre plusieurs minutes. Vous pouvez l’annuler depuis cet onglet.",
+    "confirmStart": "Lancer l’exécution",
+    "confirmAgent": "Agent",
+    "confirmWorkflow": "Workflow",
+    "confirmScope": "Retours concernés",
+    "failureReason": "Raison : {{reason}}",
+    "cancel": "Annuler l'exécution",
+    "cancelFailed": "Impossible d'annuler l'exécution.",
+    "calls": "{{n, number}} appels de modèle",
+    "openProject": "Ouvrir le projet",
+    "openNamedProject": "Ouvrir {{name}}",
+    "showTechnical": "Afficher le journal technique",
+    "hideTechnical": "Masquer le journal technique",
+    "summary": {
+      "title": "Ce qui s'est passé",
+      "started": { "manual": "Lancée à la main.", "schedule": "Lancée selon sa planification.", "new_reviews": "Lancée parce que de nouveaux avis sont arrivés.", "threshold": "Lancée parce qu'un seuil a été franchi." },
+      "startedAt": { "manual": "Lancée à la main le {{when}}.", "schedule": "Lancée selon sa planification le {{when}}.", "new_reviews": "Lancée le {{when}} parce que de nouveaux avis sont arrivés.", "threshold": "Lancée le {{when}} parce qu'un seuil a été franchi." },
+      "outcome": { "queued": "En attente de démarrage.", "running": "En cours.", "runningStep": "En cours : « {{step}} ».", "completed": "Terminée.", "completedAt": "Terminée le {{when}}.", "cancelled": "Annulée.", "cancelledAt": "Annulée le {{when}}.", "failed": "Arrêtée avant la fin.", "failedBecause": "Arrêtée avant la fin : {{reason}}", "needs_human": "En pause : elle attend votre décision." },
+      "produced": "Ce qu'elle a produit",
+      "producedNothing": "Rien pour l'instant.",
+      "anArtifact": "Un nouveau document",
+      "inProject": "dans {{name}}",
+      "needsYou": "Ce qui vous attend",
+      "needsDecision": "Décidez de la suite dans la carte ci-dessus.",
+      "needsNothing": "Rien : aucune action nécessaire."
+    },
+    "eventLog": "Journal des événements",
+    "noEvents": "Aucun événement pour l'instant.",
+    "noGraph": "Impossible de charger le workflow de cette exécution.",
+    "olderRevision": "Cette exécution a utilisé la révision {{n}} du workflow.",
+    "graphLabel": "Graphe de progression de l'exécution",
+    "showAll": "Afficher tous les événements (filtrés sur {{step}})",
+    "rounds": "Tour {{n}}",
+    "status": {
+      "queued": "En file d'attente",
+      "running": "En cours",
+      "needs_human": "Intervention requise",
+      "completed": "Terminée",
+      "failed": "Échouée",
+      "cancelled": "Annulée"
+    },
+    "triggers": {
+      "manual": "Manuel",
+      "schedule": "Planification",
+      "new_reviews": "Nouveaux avis",
+      "threshold": "Seuil"
+    },
+    "stepStatus": {
+      "idle": "Non démarrée",
+      "running": "En cours",
+      "done": "Terminée",
+      "failed": "Échouée"
+    },
+    "eventKinds": {
+      "node_started": "Étape démarrée",
+      "node_finished": "Étape terminée",
+      "node_failed": "Étape échouée",
+      "message": "Message",
+      "verdict": "Verdict",
+      "decision": "Décision",
+      "artifact": "Artefact"
+    }
+  },
+  "editor": {
+    "canvasLabel": "Canevas du workflow",
+    "minimap": "Vue d'ensemble du workflow",
+    "palette": "Étapes",
+    "paletteHint": "Faites glisser une étape sur le canevas, ou appuyez sur Entrée pour l'ajouter.",
+    "panel": "Paramètres de l'étape",
+    "nothingSelected": "Sélectionnez une étape, une flèche ou une boucle (sur le canevas ou dans le plan ci-dessous) pour la configurer.",
+    "multiSelected": "{{n, number}} étapes sélectionnées",
+    "groupLoop": "Regrouper en boucle",
+    "ungroupLoop": "Supprimer la boucle",
+    "loopTitle": "Boucle {{n}}",
+    "loopMembers": "{{n, number}} étapes",
+    "loopFrame": "Boucler jusqu'à ce que {{until}}",
+    "arrow": "Flèche",
+    "deleteArrow": "Supprimer la flèche",
+    "deleteStep": "Supprimer l'étape",
+    "builtin": "Modèle intégré — enregistrez une copie pour le modifier.",
+    "revision": "Révision {{n}}",
+    "history": {
+      "open": "Historique",
+      "title": "Historique des révisions",
+      "listLabel": "Révisions",
+      "current": "Actuelle",
+      "savedBy": "Enregistrée par {{name}}",
+      "builtinRevision": "Modèle intégré",
+      "empty": "Aucune révision enregistrée pour le moment.",
+      "loading": "Chargement de la révision…",
+      "loadFailed": "Impossible de charger cette révision.",
+      "unreadable": "Le workflow de cette révision est illisible.",
+      "isCurrent": "Il s’agit de la révision actuelle.",
+      "changesTitle": "La restaurer modifierait",
+      "restore": "Restaurer dans l’éditeur",
+      "restoreHint": "Charge cette révision dans l’éditeur comme modifications non enregistrées. Enregistrez pour la conserver comme nouvelle révision.",
+      "close": "Fermer",
+      "confirmTitle": "Remplacer vos modifications non enregistrées ?",
+      "confirmMessage": "La révision {{revision}} remplace le workflow dans l’éditeur et vos modifications non enregistrées sont perdues.",
+      "confirmAction": "Remplacer",
+      "steps_one": "{{count, number}} étape",
+      "arrows_one": "{{count, number}} flèche",
+      "steps_other": "{{count, number}} étapes",
+      "arrows_other": "{{count, number}} flèches"
+    },
+    "unsaved": "Modifications non enregistrées",
+    "save": "Enregistrer",
+    "saveAs": "Enregistrer sous…",
+    "saveAsTitle": "Enregistrer comme nouveau workflow",
+    "copyName": "{{name}} (copie)",
+    "import": "Importer",
+    "export": "Exporter",
+    "reset": "Réinitialiser au modèle",
+    "resetTitle": "Réinitialiser au modèle ?",
+    "resetMessage": "Vos modifications non enregistrées sont remplacées par le workflow intégré « Avis → Prototype ».",
+    "conflict": "Quelqu'un a enregistré une révision plus récente entre-temps.",
+    "conflictReload": "Charger la dernière version",
+    "conflictSaveAs": "Enregistrer la mienne comme copie",
+    "loadFailed": "Impossible de charger le workflow.",
+    "generalIssues": "Problèmes du workflow",
+    "issueCount_one": "{{count, number}} problème",
+    "issueCount_other": "{{count, number}} problèmes",
+    "valid": "Le workflow est valide.",
+    "validUnsaved": "Valide — pas encore enregistré.",
+    "outcome": {
+      "saved": "Enregistré.",
+      "conflict": "Quelqu'un a enregistré une révision plus récente entre-temps.",
+      "invalid": "Le serveur a rejeté le workflow — corrigez les problèmes et enregistrez à nouveau.",
+      "failed": "Impossible d'enregistrer le workflow.",
+      "import_failed": "Ce fichier n'est pas un workflow valide."
+    },
+    "fields": {
+      "workflowName": "Nom du workflow",
+      "title": "Titre",
+      "instructions": "Instructions",
+      "instructionsRequired": "Instructions (obligatoire)",
+      "role": "Rôle",
+      "roleNone": "Aucun rôle",
+      "label": "Condition",
+      "labelNone": "Toujours",
+      "until": "Jusqu'à",
+      "maxRounds": "Nombre maximal de tours",
+      "description": "Description",
+      "arrowTarget": "Vers l’étape",
+      "arrowTargetNone": "Choisissez une étape…",
+      "joinLoop": "Boucle"
+    },
+    "params": {
+      "target": "Cible",
+      "targetAny": "Le dernier élément produit",
+      "maxNew": "Nombre maximal de nouveaux personas",
+      "useWebSearch": "Utiliser la recherche web",
+      "useWebSearchHint": "Compte dans la limite de {{limit, number}} recherches web par exécution.",
+      "endStatus": "Statut de fin de l'exécution"
+    },
+    "loopFrameLabel": "Boucle {{n}} : jusqu’à ce que {{until}}, au plus {{rounds, number}} tours",
+    "loopFrameHint": "Cliquez pour configurer cette boucle",
+    "arrowLabel": "Flèche de {{source}} vers {{target}} ({{condition}})",
+    "conditionHint": "La flèche est suivie quand l’étape rend ce résultat ; « Toujours » est le chemin par défaut.",
+    "noConditions": "Cette étape ne rend pas de verdict : ses flèches sont toujours suivies.",
+    "arrowsOut": "Flèches sortantes",
+    "noArrowsOut": "Aucune flèche ne part encore de cette étape.",
+    "addArrow": "Ajouter une flèche",
+    "addArrowButton": "Ajouter la flèche",
+    "noArrowTargets": "Toutes les autres étapes sont déjà reliées depuis celle-ci.",
+    "deleteArrowTo": "Supprimer la flèche vers {{target}}",
+    "conditionTo": "Condition vers {{target}}",
+    "loopStepsLegend": "Étapes de cette boucle",
+    "maxRoundsHint": "Un nombre entier de {{min, number}} à {{max, number}} ; à la limite, l’exécution s’arrête et demande un humain.",
+    "joinLoop": "Ajouter à la boucle",
+    "joinLoopHint": "Une boucle répète ses étapes jusqu’à ce que sa condition de sortie soit remplie.",
+    "newLoop": "Une nouvelle boucle",
+    "loopOption_one": "Boucle {{n}} ({{count, number}} étape)",
+    "loopOption_other": "Boucle {{n}} ({{count, number}} étapes)",
+    "leaveLoop": "Retirer cette étape de la boucle",
+    "outlineSteps": "Étapes de ce workflow",
+    "outlineStepsCount": "Étapes ({{n, number}})",
+    "outlineLoops": "Boucles",
+    "emptyCanvas": "Le canevas est vide : ajoutez des étapes depuis la palette.",
+    "selectStep": "Configurer l’étape {{title}}",
+    "backToWorkflow": "Paramètres du workflow",
+    "clear": "Vider le canevas",
+    "clearTitle": "Vider le canevas ?",
+    "clearMessage": "Toutes les étapes, flèches et boucles sont retirées du brouillon pour construire le workflow à partir de zéro. Rien n’est enregistré tant que vous n’enregistrez pas.",
+    "savedAsAgent": "Enregistré sous « {{name}} ». Cet agent l’exécute désormais.",
+    "savedAsSwitchFailed": "La copie a été enregistrée, mais cet agent n’a pas pu y être basculé. Choisissez-la dans les paramètres de l’agent.",
+    "savedAsOpened": "Enregistré sous « {{name}} ».",
+    "switchLabel": "Workflow",
+    "switchTitle": "Changer de workflow ?",
+    "switchMessage": "Vos modifications non enregistrées de {{name}} seront perdues.",
+    "switchConfirm": "Changer de workflow",
+    "switched": "Cet agent exécute désormais {{name}}.",
+    "switchFailed": "L'agent n'a pas pu passer à ce workflow."
+  },
+  "paletteGroups": {
+    "flow": "Flux",
+    "research": "Recherche",
+    "documents": "Documents",
+    "review": "Évaluation",
+    "prototype": "Prototype",
+    "delivery": "Livraison"
+  },
+  "edgeLabels": {
+    "pass": "Réussite",
+    "fail": "Échec",
+    "agreed": "Accord",
+    "not_agreed": "Désaccord"
+  },
+  "loopUntil": {
+    "persona_agreement": "les personas soient d'accord",
+    "review_pass": "l'évaluation soit validée"
+  },
+  "reviewTargets": {
+    "prfaq": "PR/FAQ",
+    "prd": "PRD",
+    "prototype": "Prototype"
+  },
+  "endStatuses": {
+    "completed": "Terminée",
+    "needs_human": "Intervention requise"
+  },
+  "nodeTypes": {
+    "start": {
+      "label": "Début",
+      "description": "Point de départ de chaque exécution."
+    },
+    "aggregate_reviews": {
+      "label": "Agréger les avis",
+      "description": "Rassemble le nouveau feedback du périmètre de l'agent et en dégage les thèmes principaux."
+    },
+    "select_or_create_project": {
+      "label": "Sélectionner ou créer un projet",
+      "description": "Réutilise un projet ayant le même objectif, ou en crée un nouveau."
+    },
+    "select_personas": {
+      "label": "Sélectionner des personas",
+      "description": "Choisit les personas pertinents pour ces avis."
+    },
+    "generate_personas": {
+      "label": "Générer des personas",
+      "description": "Crée de nouveaux personas à partir du feedback si aucun ne convient."
+    },
+    "deep_research": {
+      "label": "Recherche approfondie",
+      "description": "Lance une tâche de recherche sur le projet, éventuellement avec recherche web."
+    },
+    "write_prfaq": {
+      "label": "Rédiger le PR/FAQ",
+      "description": "Rédige un communiqué de presse et une FAQ pour l'idée."
+    },
+    "write_prd": {
+      "label": "Rédiger le PRD",
+      "description": "Rédige un document d'exigences produit."
+    },
+    "revise_document": {
+      "label": "Réviser le document",
+      "description": "Réécrit un document à partir des objections de l'évaluation."
+    },
+    "duplicate_document": {
+      "label": "Dupliquer le document",
+      "description": "Copie un document dans un autre projet."
+    },
+    "persona_review": {
+      "label": "Évaluation par les personas",
+      "description": "Les personas notent le travail ; accord = moyenne de 4+ et aucun point bloquant."
+    },
+    "final_review": {
+      "label": "Évaluation finale",
+      "description": "Un relecteur vérifie l'ensemble avant la transmission."
+    },
+    "custom_llm": {
+      "label": "Étape personnalisée",
+      "description": "Une étape pilotée par vos propres instructions."
+    },
+    "build_prototype": {
+      "label": "Construire le prototype",
+      "description": "Construit un prototype HTML avec le design system."
+    },
+    "collect_prototype_feedback": {
+      "label": "Collecter les épingles des testeurs",
+      "description": "Lit les épingles ouvertes laissées par les testeurs sur le prototype, pour la prochaine révision."
+    },
+    "revise_prototype": {
+      "label": "Réviser le prototype",
+      "description": "Modifie le prototype à partir des objections de l'évaluation."
+    },
+    "handoff": {
+      "label": "Transmettre",
+      "description": "Confie le projet au propriétaire de sa catégorie principale."
+    },
+    "end": {
+      "label": "Fin",
+      "description": "Point d'arrivée de l'exécution."
+    }
+  },
+  "loopUntilHint": {
+    "persona_agreement": "Se répète tant que la revue des personas de la boucle répond « Pas d’accord ».",
+    "review_pass": "Se répète tant qu’une étape de revue de la boucle répond « Échec »."
+  },
+  "plans": {
+    "title": "Plans",
+    "subtitle": "Demandes en plusieurs étapes que vous avez approuvées dans l’assistant IA. Elles s’exécutent en arrière-plan ; ouvrez-en une pour suivre ses étapes, approuver une étape qui le demande ou l’annuler.",
+    "loadFailed": "Impossible de charger vos plans.",
+    "empty": "Aucun plan pour l’instant. Demandez à l’assistant IA quelque chose en plusieurs étapes, puis approuvez le plan qu’il propose.",
+    "remove": "Supprimer",
+    "removeNamed": "Supprimer le plan « {{goal}} »",
+    "removeTitle": "Supprimer ce plan ?",
+    "removeMessage": "« {{goal}} » sera retiré de vos plans. Ses résultats restent dans vos projets.",
+    "removeFailed": "Le plan n’a pas pu être supprimé. Un plan en cours doit d’abord être annulé."
+  },
+  "workflowPage": {
+    "title": "Workflow",
+    "subtitle": "Un workflow de la bibliothèque. Les agents qui l’exécutent utilisent sa dernière révision enregistrée."
+  },
+  "decision": {
+    "title": "Cette exécution attend votre décision",
+    "reason": {
+      "loop_exhausted": "Les personas ne se sont pas accordés sur {{node}} après {{rounds, number}} tours.",
+      "no_fail_path": "{{node}} n'a pas réussi et le workflow n'a pas de chemin pour ce cas.",
+      "end_node": "Le workflow confie cette exécution à une personne à {{node}}.",
+      "budget": "L'exécution a épuisé son budget d'appels au modèle.",
+      "verification": "Le résultat d'une étape n'a pas pu être vérifié.",
+      "unknown": "L'exécution s'est arrêtée pour qu'une personne décide."
+    },
+    "verdicts_one": "{{count, number}} avis de persona",
+    "verdicts_other": "{{count, number}} avis de personas",
+    "score": "{{score}}/5",
+    "blocking": "Bloquant",
+    "stop": "Clore l'exécution",
+    "stopTitle": "Clore cette exécution ?",
+    "stopMessage": "L'exécution se termine comme terminée et ce qu'elle a produit reste dans le projet. Action irréversible.",
+    "adminOnly": "Un administrateur peut décider.",
+    "failed": "La décision n'a pas pu être enregistrée.",
+    "conflict": "Cette exécution a déjà été décidée ou n'attend plus de décision.",
+    "decided": {
+      "accept": "{{by}} a choisi d’accepter et de continuer le {{at}}.",
+      "another_round": "{{by}} a choisi un tour de plus le {{at}}.",
+      "stop": "{{by}} a choisi de clore l’exécution le {{at}}."
+    },
+    "decidedNote": "Note : {{note}}",
+    "banner": "La dernière exécution de cet agent attend votre décision.",
+    "reviewRun": "Examiner l'exécution",
+    "form": {
+      "question": "Que doit-il se passer ensuite ?",
+      "submit": "Prendre la décision",
+      "pickObjections": "Objections à corriger (celles d’une persona bloquante sont cochées)",
+      "instructions": "Vos instructions (facultatif)",
+      "instructionsRequired": "Vos instructions",
+      "instructionsPlaceholder": "Par exemple : s’engager à payer l’hôtel et les repas au-delà de 12 heures d’attente.",
+      "fix": {
+        "label": "Réviser une fois de plus en corrigeant les objections choisies",
+        "help": "Le document est révisé avec vos choix et vos notes, puis les personas le relisent. Si elles ne sont toujours pas d’accord, l’exécution vous redemande.",
+        "incomplete": "Choisissez au moins une objection ou écrivez une instruction."
+      },
+      "accept": {
+        "label": "L’accepter tel quel et continuer",
+        "help": "Le workflow continue après « {{node}} » comme si les personas étaient d’accord. Leurs objections ne sont pas corrigées."
+      },
+      "other": {
+        "label": "Autre chose : dire à l’agent quoi faire",
+        "help": "Vos instructions vont à la prochaine révision, puis les personas relisent.",
+        "incomplete": "Écrivez ce que l’agent doit faire."
+      },
+      "stop": {
+        "label": "Clore l’exécution",
+        "help": "Plus rien ne s’exécute. Ce que l’exécution a produit reste dans le projet."
+      }
+    }
+  }
+}

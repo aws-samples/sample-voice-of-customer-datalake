@@ -1,0 +1,277 @@
+{
+  "launcher": {
+    "open": "Assistent öffnen",
+    "close": "Assistent schließen",
+    "askAboutProject": "Assistent fragen",
+    "moveHint": "Ziehen oder mit den Pfeiltasten verschieben. Pos1 setzt die Position zurück.",
+    "resetPosition": "Position der Assistent-Schaltfläche zurücksetzen"
+  },
+  "panel": {
+    "title": "Assistent",
+    "using": "Kontext: {{context}}",
+    "newChat": "Neuer Chat",
+    "sessions": "Frühere Unterhaltungen",
+    "export": "Unterhaltung exportieren (Markdown)",
+    "expand": "Vergrößern",
+    "fullscreen": "Vollbild",
+    "exitFullscreen": "Vollbild beenden",
+    "more": "Weitere Aktionen",
+    "close": "Schließen",
+    "messages": "Unterhaltung",
+    "thinking": "Denkt nach…",
+    "stillGenerating": "Wird noch generiert…"
+  },
+  "pages": {
+    "home": "Startseite",
+    "dashboard": "Übersicht",
+    "feedback": "Feedback",
+    "categories": "Kategorien",
+    "problems": "Problemanalyse",
+    "chat": "KI-Chat",
+    "projects": "Projekte",
+    "project": "Projekt",
+    "prioritization": "Priorisierung",
+    "data-explorer": "Daten-Explorer",
+    "scrapers": "Scraper",
+    "feedback-forms": "Feedback-Formulare",
+    "settings": "Einstellungen",
+    "admin": "Administration",
+    "memory": "Gedächtnis",
+    "agents": "Autonome Agenten",
+    "agent": "Agent",
+    "workflow": "Workflow",
+    "company": "Unternehmen",
+    "connect": "Verbinden",
+    "radar": "Radar",
+    "account": "Konto",
+    "other": "Diese Seite"
+  },
+  "message": {
+    "reasoning": "Überlegungen",
+    "toolSteps": "Ausgeführte Schritte",
+    "feedbackSources": "Zugehöriges Feedback",
+    "webSources": "Webquellen",
+    "personaAnswers": "Antworten der Personas",
+    "toolGroupRunning_other": "{{count, number}} Quellen werden geprüft…",
+    "toolGroupRunning_one": "{{count, number}} Quelle wird geprüft…",
+    "toolGroup_other": "{{count, number}} Quellen geprüft",
+    "toolGroup_one": "{{count, number}} Quelle geprüft",
+    "externalLink": "{{host}}, öffnet in einem neuen Tab",
+    "copy": "Kopieren",
+    "copied": "Kopiert",
+    "savedDocumentTitle": "Antwort des Assistenten – {{date}}",
+    "saveAsDocument": {
+      "idle": "Als Dokument speichern",
+      "saving": "Wird gespeichert…",
+      "saved": "In Dokumenten gespeichert",
+      "error": "Speichern fehlgeschlagen – erneut versuchen"
+    }
+  },
+  "toolStatus": {
+    "streaming": "wird vorbereitet",
+    "running": "läuft",
+    "complete": "erledigt",
+    "awaiting_approval": "wartet auf Ihre Freigabe",
+    "executed": "erledigt",
+    "failed": "fehlgeschlagen",
+    "declined": "abgelehnt",
+    "cancelled": "abgebrochen"
+  },
+  "approvals": {
+    "title": "Aktionen mit ausstehender Freigabe",
+    "resolved": {
+      "executed": "erledigt",
+      "failed": "fehlgeschlagen",
+      "declined": "abgelehnt"
+    }
+  },
+  "composer": {
+    "label": "Nachricht an den Assistenten",
+    "placeholder": "Fragen Sie zu Feedback, Projekten oder dieser Seite…",
+    "send": "Senden",
+    "stop": "Stopp",
+    "attach": "Bild oder Dokument anhängen",
+    "webSearch": "Im Web suchen",
+    "removeAttachment": "{{name}} entfernen",
+    "counter": "{{length, number}} / {{max, number}}",
+    "awaitingApproval": "Geben Sie die ausstehende Aktion frei oder lehnen Sie sie ab, um fortzufahren.",
+    "restoring": "Ihre letzte Unterhaltung wird geöffnet…",
+    "attachmentError": {
+      "type": "Nur Bilder (PNG, JPEG, GIF, WebP) und Dokumente (PDF, Word, Excel, CSV, HTML, Text, Markdown) können angehängt werden.",
+      "count": "Sie können höchstens {{max, number}} Dateien anhängen.",
+      "size": "Anhänge dürfen insgesamt höchstens {{mb}} MB groß sein.",
+      "read": "Die Datei konnte nicht gelesen werden."
+    },
+    "stillGenerating": "Die Antwort wird noch geschrieben. Sie erscheint hier, sobald sie fertig ist."
+  },
+  "errors": {
+    "streamClosed": "Die Verbindung wurde vor dem Ende der Antwort getrennt. Bitte versuchen Sie es erneut.",
+    "generic": "Etwas ist schiefgelaufen: {{message}}",
+    "followTimeout": "Die Antwort dauert länger als erwartet. Öffnen Sie diese Unterhaltung später erneut, um sie zu sehen."
+  },
+  "export": {
+    "user": "Sie",
+    "assistant": "Assistent"
+  },
+  "sessions": {
+    "title": "Frühere Unterhaltungen",
+    "close": "Schließen",
+    "loading": "Unterhaltungen werden geladen",
+    "error": "Unterhaltungen konnten nicht geladen werden.",
+    "empty": "Noch keine gespeicherten Unterhaltungen.",
+    "untitled": "Unbenannte Unterhaltung",
+    "deleteConfirmTitle": "„{{title}}“ löschen?",
+    "deleteConfirmMessage": "Die Unterhaltung und ihre Nachrichten werden endgültig gelöscht. Das lässt sich nicht rückgängig machen.",
+    "deleteConfirm": "Unterhaltung löschen",
+    "renameInput": "Name der Unterhaltung",
+    "closeRunningItem": "Stoppen und schließen",
+    "closeItem": "Schließen",
+    "deleteItem": "Löschen",
+    "renameItem": "Umbenennen",
+    "more": "Weitere Aktionen für „{{title}}“",
+    "renameFailed": "Die Unterhaltung konnte nicht umbenannt werden.",
+    "renameBusy": "Es wird noch eine Antwort erstellt. Benennen Sie sie um, wenn sie fertig ist.",
+    "newConversation": "Neue Unterhaltung",
+    "sidebar": "Unterhaltungen",
+    "collapseSidebar": "Unterhaltungsliste einklappen",
+    "expandSidebar": "Unterhaltungsliste ausklappen",
+    "openGroup": "Geöffnet",
+    "historyGroup": "Verlauf",
+    "search": "Unterhaltungen durchsuchen",
+    "searchPlaceholder": "Unterhaltungen durchsuchen",
+    "noMatch": "Keine Unterhaltung passt zu Ihrer Suche.",
+    "when": { "today": "Heute", "week": "Diese Woche", "older": "Älter" },
+    "status": {
+      "streaming": "Läuft",
+      "awaiting": "Wartet auf Ihre Freigabe",
+      "error": "Fehlgeschlagen",
+      "unread": "Neue Antwort"
+    }
+  },
+  "empty": {
+    "title": "Wie kann ich helfen?",
+    "subtitle": "Ich kann Ihre Daten lesen und Änderungen vorschlagen – ohne Ihre Freigabe wird nichts geändert."
+  },
+  "suggestions": {
+    "dashboard": { "1": "Wie hat sich die Kundenstimmung diese Woche verändert?", "2": "Welche Quellen liefern das meiste Feedback?", "3": "Fasse dieses Dashboard in drei Sätzen zusammen" },
+    "categories": { "1": "Welche Kategorie hat die meisten Beschwerden?", "2": "Was sagen Kunden über die größte Kategorie?", "3": "Welche Kategorien werden schlechter?" },
+    "projects": { "1": "Starte ein Projekt zur häufigsten Beschwerde dieser Woche", "2": "Welche Projekte laufen gerade?", "3": "Was sollte unser nächstes Forschungsprojekt sein?" },
+    "agents": { "1": "Was haben die Agenten diese Woche gemacht?", "2": "Welche Agenten warten auf meine Entscheidung?", "3": "Hilf mir, einen Agenten einzurichten, der dringendes Feedback beobachtet" },
+    "memory": { "1": "Was weißt du über unser Unternehmen?", "2": "Welche Erinnerungen warten auf eine Prüfung?", "3": "Wie bringe ich dir etwas über unser Unternehmen bei?" },
+    "company": { "1": "Fasse unsere Vision und Ziele zusammen", "2": "Auf welche Ziele bezieht sich das aktuelle Feedback?", "3": "Schlage KPIs auf Basis des Kundenfeedbacks vor" },
+    "dataExplorer": { "1": "Wie viel Feedback haben wir diesen Monat importiert?", "2": "Welche Quellen haben zuletzt Daten gesendet?", "3": "Was enthält ein Feedback-Datensatz?" },
+    "default": {
+      "1": "Worüber sind Kunden diese Woche am unzufriedensten?",
+      "2": "Was braucht gerade meine Aufmerksamkeit?",
+      "3": "Über welche Themen sprechen Kunden mehr?"
+    },
+    "project": {
+      "1": "Fasse dieses Projekt und seine Personas zusammen",
+      "2": "Was würden unsere Personas von dieser Idee halten?",
+      "3": "Entwirf ein PRD (Produktanforderungen) aus dieser Recherche"
+    },
+    "forms": {
+      "1": "Wie schneiden meine Feedback-Formulare ab?",
+      "2": "Fasse die neuesten Formulareinsendungen zusammen",
+      "3": "Welches Formular erhält die schlechtesten Bewertungen?"
+    },
+    "prioritization": {
+      "1": "Was sollten wir als Nächstes priorisieren?",
+      "2": "Warum stehen die obersten Einträge vorne?",
+      "3": "Welche Einträge haben die größte Wirkung auf Kunden?"
+    },
+    "scrapers": {
+      "1": "Welche Bewertungsquellen haben kürzlich Bewertungen gesammelt?",
+      "2": "Funktioniert eine Bewertungsquelle nicht?",
+      "3": "Was hat die letzte Sammlung gebracht?"
+    },
+    "radar": {
+      "1": "Radar für einen Wettbewerber einrichten",
+      "2": "Wo sind uns die verfolgten Marken voraus?",
+      "3": "Produktideen aus ihren zufriedensten Bewertungen ziehen"
+    },
+    "settings": {
+      "1": "Wie sind unsere Markeneinstellungen?",
+      "2": "Welche Feedback-Kategorien verwenden wir?",
+      "3": "Schlage Hashtags vor, die wir für unsere Marke verfolgen sollten"
+    },
+    "problems": {
+      "1": "Was sind die größten ungelösten Probleme?",
+      "2": "Gruppiere diese Probleme nach ihrer wahrscheinlichen Ursache",
+      "3": "Welche Probleme wurden kürzlich gelöst?"
+    },
+    "feedback": {
+      "1": "Fasse dieses Feedback zusammen",
+      "2": "Finde ähnliches Feedback",
+      "3": "Warum könnte dieser Kunde unzufrieden sein?"
+    }
+  },
+  "notifications": {
+    "approval": {
+      "title": "Der Assistent braucht Ihre Freigabe",
+      "body": "Eine Unterhaltung wartet darauf, dass Sie eine Aktion freigeben."
+    },
+    "reply": {
+      "title": "Der Assistent hat geantwortet",
+      "body": "Eine Unterhaltung hat eine neue Antwort."
+    },
+    "failed": {
+      "title": "Ein Assistentenlauf ist fehlgeschlagen",
+      "body": "Öffnen Sie die Unterhaltung, um den Fehler zu sehen."
+    },
+    "toggle": {
+      "turnOn": "Benachrichtigen, wenn eine Unterhaltung mich braucht",
+      "turnOff": "Benachrichtigungen ausschalten",
+      "blocked": "Benachrichtigungen sind für diese Website in den Browsereinstellungen blockiert",
+      "unsupported": "Dieser Browser unterstützt keine Benachrichtigungen"
+    },
+    "planDone": {
+      "title": "Ein Plan ist fertig",
+      "body": "Alle Schritte eines freigegebenen Plans sind fertig."
+    },
+    "planIssues": {
+      "title": "Ein Plan endete mit Problemen",
+      "body": "Öffnen Sie den Plan, um zu sehen, welche Schritte fehlschlugen oder übersprungen wurden."
+    },
+    "planApproval": {
+      "title": "Ein Planschritt braucht Ihre Freigabe",
+      "body": "Ein laufender Plan wartet darauf, dass Sie einen Schritt freigeben."
+    }
+  },
+  "plan": {
+    "title": "Planfortschritt",
+    "steps": "Planschritte",
+    "loading": "Plan wird geladen…",
+    "loadFailed": "Der Plan konnte nicht geladen werden.",
+    "actionFailed": "Das hat nicht geklappt; neu laden und erneut versuchen.",
+    "cancel": "Plan abbrechen",
+    "openProject": "Projekt öffnen",
+    "approval": {
+      "title": "„{{tool}}“ braucht Ihre Freigabe",
+      "fields": "Was „{{tool}}“ schreiben würde",
+      "destructive": "Dadurch werden Daten dauerhaft gelöscht; das lässt sich nicht rückgängig machen.",
+      "approve": "Schritt freigeben",
+      "decline": "Schritt ablehnen"
+    },
+    "stepStatus": {
+      "pending": "Ausstehend",
+      "running": "Läuft",
+      "waiting": "Wartet",
+      "done": "Fertig",
+      "failed": "Fehlgeschlagen",
+      "skipped": "Übersprungen",
+      "needs_approval": "Freigabe nötig",
+      "cancelled": "Abgebrochen"
+    },
+    "status": {
+      "awaiting_approval": "Wartet auf Freigabe",
+      "approved": "Freigegeben",
+      "running": "Läuft",
+      "completed": "Abgeschlossen",
+      "completed_with_errors": "Mit Problemen abgeschlossen",
+      "failed": "Fehlgeschlagen",
+      "cancelled": "Abgebrochen",
+      "expired": "Abgelaufen"
+    }
+  }
+}

@@ -9,11 +9,11 @@
 import { Amplify } from 'aws-amplify'
 import { getConfig } from '../config'
 
-// eslint-disable-next-line no-restricted-syntax -- Singleton pattern requires mutation
-let isConfigured = false
+/** Process-wide flag: Amplify is configured once per page load. */
+const amplifyState = { configured: false }
 
 export function configureAmplify(): void {
-  if (isConfigured) return
+  if (amplifyState.configured) return
 
   const cfg = getConfig()
   
@@ -35,6 +35,6 @@ export function configureAmplify(): void {
     }
   }, { ssr: false })
 
-  isConfigured = true
+  amplifyState.configured = true
   console.log('Amplify configured for IAM signing')
 }

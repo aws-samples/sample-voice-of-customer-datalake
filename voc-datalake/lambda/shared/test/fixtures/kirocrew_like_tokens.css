@@ -1,0 +1,33 @@
+/* A small stand-in for a Tailwind v4 design-token file (shape of KiroCrew's
+   website/src/styles/design-tokens.css + tailwind-theme.css, values invented). */
+:root {
+  --color-primary: #7c3aed;
+  --color-primary-foreground: #ffffff;
+  --color-surface: oklch(0.98 0.01 290);
+  --color-text: rgb(17 17 27);
+  --color-accent: var(--color-primary);
+  --border-muted: hsl(250 10% 85%);
+  --font-sans: "Space Grotesk", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-weight-bold: 700;
+  --font-size-lg: 1.125rem;
+  --radius-sm: 4px;
+  --radius-card: 0.75rem !important;
+  --space-2: 0.5rem;
+  --spacing-section: 48px;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.1);
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --brand-name: inherit;
+}
+
+[data-theme="dark"] {
+  --color-primary: #a78bfa;
+  --color-surface: #0b0b12;
+}
+
+@theme {
+  --color-danger: #ef4444;
+  --font-display: var(--font-sans);
+  --radius-pill: 9999px;
+  --color-broken: url(javascript:alert(1));
+}

@@ -1,0 +1,52 @@
+{
+  "$comment": "The default prioritization scoring setup: what GET /projects/prioritization answers when no setup is stored (config_version 0). The backend copy is DEFAULT_AXES in lambda/shared/prioritization_axes.py (schemas/ is not bundled into Lambdas); test_prioritization_default_axes_lockstep.py pins the two. The frontend imports this file as its offline default. Each axis is scored 1-5 (0 = not scored); weights are relative integers 0-100, the composite normalises over their sum. See docs/prioritization.md.",
+  "scale": { "min": 1, "max": 5, "unscored": 0 },
+  "max_active_axes": 8,
+  "max_axes": 20,
+  "axes": [
+    {
+      "id": "impact",
+      "builtin": true,
+      "label": null,
+      "description": null,
+      "weight": 40,
+      "direction": "higher_better",
+      "low_label": null,
+      "high_label": null,
+      "archived": false
+    },
+    {
+      "id": "time_to_market",
+      "builtin": true,
+      "label": null,
+      "description": null,
+      "weight": 30,
+      "direction": "higher_better",
+      "low_label": null,
+      "high_label": null,
+      "archived": false
+    },
+    {
+      "id": "strategic_fit",
+      "builtin": true,
+      "label": null,
+      "description": null,
+      "weight": 20,
+      "direction": "higher_better",
+      "low_label": null,
+      "high_label": null,
+      "archived": false
+    },
+    {
+      "id": "confidence",
+      "builtin": true,
+      "label": null,
+      "description": null,
+      "weight": 10,
+      "direction": "higher_better",
+      "low_label": null,
+      "high_label": null,
+      "archived": false
+    }
+  ]
+}

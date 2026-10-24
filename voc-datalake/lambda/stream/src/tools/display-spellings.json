@@ -1,0 +1,7 @@
+{
+  "ai": "AI", "api": "API", "apis": "APIs", "b2b": "B2B", "b2c": "B2C", "csat": "CSAT", "csv": "CSV", "faq": "FAQ",
+  "faqs": "FAQs", "id": "ID", "ios": "iOS", "ipad": "iPad", "iphone": "iPhone", "json": "JSON", "kpi": "KPI",
+  "llm": "LLM", "macos": "macOS", "mcp": "MCP", "nps": "NPS", "os": "OS", "pdf": "PDF", "pii": "PII", "prd": "PRD",
+  "qa": "QA", "sdk": "SDK", "seo": "SEO", "sla": "SLA", "sms": "SMS", "sso": "SSO", "tv": "TV", "ui": "UI", "url": "URL",
+  "ux": "UX", "cx": "CX", "vpn": "VPN", "android": "Android", "github": "GitHub", "trustpilot": "Trustpilot"
+}

@@ -84,22 +84,21 @@ jobs:
 
       # Two files, both needed:
       #
-      # requirements-dev.txt supplies pytest and `jsonschema`, which
-      # test_mcp_output_schema_conformance.py uses to validate every declared
-      # `outputSchema` against a payload the tool really produces.
+      # requirements-dev.txt supplies pytest and moto.
       #
       # processing-deps/requirements.txt supplies the tracer extra
       # (`aws-lambda-powertools[tracer]`, hence aws_xray_sdk) and pydantic.
-      # The MCP handler and the domain API modules it delegates to decorate
+      # The global MCP handler and the domain API modules it delegates to decorate
       # helpers with `@tracer.capture_method` at import time, so without this
       # file collection fails on ModuleNotFoundError before a single
       # assertion runs. requirements-dev.txt's own header names it as the
       # companion install for exactly this reason.
       #
       # The modules under `lambda/shared/test/` need nothing beyond these two:
-      # the token, vocabulary-mirror, runtime-lockstep and gate-audit modules are
-      # pure Python over `shared/mcp_tokens.py`, over source files read as text,
-      # and over `scripts/mcp_gate.py` respectively.
+      # the token, runtime-lockstep and gate-audit modules are pure Python over
+      # `shared/mcp_tokens.py`, over source files read as text, and over
+      # `scripts/mcp_gate.py` respectively. (The per-project MCP server and its
+      # suites were retired in 3.00.00; the gate now covers the global server.)
       #
       # No Lambda layer *build* is needed — these are host-side unit tests
       # importing the modules directly, not a packaged bundle. Node, AWS
@@ -107,8 +106,8 @@ jobs:
       # nothing here synthesizes CDK, builds the frontend, or reaches an AWS
       # endpoint: the conftest layers mock AWS at the import boundary.
       #
-      # Known exposure: both files bound their dependencies with `>=` and only
-      # `jsonschema` is capped (`<5`), and `.python-version` pins a floating
+      # Known exposure: both files bound most dependencies with `>=`, and
+      # `.python-version` pins a floating
       # patch of 3.14. So a breaking upstream release can turn this gate red
       # on a pull request that changed nothing. A red run whose failure is an
       # import error, a resolver conflict, or a message naming a third-party

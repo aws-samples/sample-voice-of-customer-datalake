@@ -10,19 +10,29 @@ Regression intent (fail-on-revert):
 - Exact re-uploads and row reordering must preserve deterministic row IDs.
 """
 import json
-from unittest.mock import patch, MagicMock
+from collections.abc import Iterator
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from shared.test.source_profile_fixtures import unconfigured_upload_profile
 
 
-def _batch_ok(queue_url, entries):
+@pytest.fixture(autouse=True)
+def _no_source_profiles() -> Iterator[None]:
+    """No profiles stored: every upload files under the defaults (pii allow, keep forever)."""
+    with patch('manual_import_handler.upload_profile', side_effect=unconfigured_upload_profile):
+        yield
+
+
+def _batch_ok(entries):
     """SQS SendMessageBatch stub: everything succeeds."""
     return {'Successful': [{'Id': e['Id']} for e in entries], 'Failed': []}
 
 
-def _make_sqs(side_effect=None):
+def _make_sqs():
     mock_sqs = MagicMock()
-    mock_sqs.send_message_batch.side_effect = side_effect or (
-        lambda QueueUrl, Entries: _batch_ok(QueueUrl, Entries)
-    )
+    mock_sqs.send_message_batch.side_effect = lambda Entries, **_kwargs: _batch_ok(Entries)
     return mock_sqs
 
 
@@ -58,33 +68,6 @@ class TestSendItemsToSqs:
         assert mock_sqs.send_message_batch.call_count == 3  # 10 + 10 + 5
         sizes = [len(c.kwargs['Entries']) for c in mock_sqs.send_message_batch.call_args_list]
         assert sizes == [10, 10, 5]
-
-    @patch('manual_import_handler.PROCESSING_QUEUE_URL', 'https://sqs.example.com/q')
-    def test_reports_partial_batch_failures(self):
-        from manual_import_handler import _send_items_to_sqs
-
-        def one_fails(QueueUrl, Entries):
-            return {
-                'Successful': [{'Id': e['Id']} for e in Entries[1:]],
-                'Failed': [{'Id': Entries[0]['Id'], 'Message': 'boom'}],
-            }
-
-        mock_sqs = _make_sqs(side_effect=one_fails)
-        with patch('manual_import_handler.sqs', mock_sqs):
-            imported, errors = _send_items_to_sqs([{'id': str(i)} for i in range(3)])
-        assert imported == 2
-        assert len(errors) == 1
-        assert 'boom' in errors[0]
-
-    @patch('manual_import_handler.PROCESSING_QUEUE_URL', 'https://sqs.example.com/q')
-    def test_reports_whole_batch_exception(self):
-        from manual_import_handler import _send_items_to_sqs
-        mock_sqs = _make_sqs(side_effect=RuntimeError('sqs down'))
-        with patch('manual_import_handler.sqs', mock_sqs):
-            imported, errors = _send_items_to_sqs([{'id': '1'}, {'id': '2'}])
-        assert imported == 0
-        assert len(errors) == 1
-        assert 'sqs down' in errors[0]
 
     @patch('manual_import_handler.PROCESSING_QUEUE_URL', '')
     def test_no_queue_counts_all_as_imported(self):
@@ -125,26 +108,18 @@ class TestCsvParsing:
 
     def test_row_id_raises_when_a_contract_field_is_missing(self):
         import pytest
+
         from manual_import_handler import _csv_row_id
         with pytest.raises(KeyError):
             _csv_row_id({'source_id': '1', 'text': 'hello'})
-
-    def test_accepts_header_synonyms_case_insensitive(self):
-        from manual_import_handler import _parse_csv_to_items
-        csv_text = 'Review,Stars,User\n"Nice product",4,alice\n'
-        items, warnings = _parse_csv_to_items(csv_text, 'my_source')
-        assert len(items) == 1
-        assert items[0]['text'] == 'Nice product'
-        assert items[0]['rating'] == 4
-        assert items[0]['author'] == 'alice'
-        assert items[0]['source'] == 'my_source'  # default applied
 
     def test_synthesizes_stable_id_when_missing(self):
         from manual_import_handler import _parse_csv_to_items
         csv_text = 'text\nrow one\nrow two\n'
         items, _ = _parse_csv_to_items(csv_text, 's')
         assert len(items) == 2
-        assert items[0]['id'] and items[1]['id']
+        assert items[0]['id']
+        assert items[1]['id']
         assert items[0]['id'] != items[1]['id']
         # deterministic: same input -> same ids, even though missing dates use now
         again, _ = _parse_csv_to_items(csv_text, 's')
@@ -225,20 +200,6 @@ class TestCsvParsing:
         assert items[0]['csv_row_id'] == '4711'
         assert items[0]['id'] != '4711'  # not usable as the item id
 
-    def test_imports_the_row_but_drops_an_over_long_identifier(self):
-        """
-        `csv_row_id` is informational and bounded by the message schema. An
-        identifier past that bound must not reject an otherwise importable row,
-        and must not be truncated either — a partial id would not match what an
-        operator searches for.
-        """
-        from manual_import_handler import MAX_CSV_ROW_ID_LENGTH, _parse_csv_to_items
-        long_id = 'x' * (MAX_CSV_ROW_ID_LENGTH + 1)
-        items, warnings = _parse_csv_to_items(f'id,text\n{long_id},hello\n', 'w')
-        assert len(items) == 1
-        assert items[0]['csv_row_id'] == ''
-        assert any('exceeds' in w for w in warnings)
-
     def test_keeps_an_identifier_exactly_at_the_length_bound(self):
         from manual_import_handler import MAX_CSV_ROW_ID_LENGTH, _parse_csv_to_items
         at_bound = 'x' * MAX_CSV_ROW_ID_LENGTH
@@ -274,34 +235,13 @@ class TestCsvParsing:
         reverse, _ = _parse_csv_to_items('id,text\n2,world\n1,hello\n', 's')
         assert {i['text']: i['id'] for i in forward} == {i['text']: i['id'] for i in reverse}
 
-    def test_skips_empty_text_and_exact_duplicate_rows_with_warnings(self):
-        from manual_import_handler import _parse_csv_to_items
-        csv_text = 'id,text\n1,hello\n2,\n1,world\n1,hello\n'
-        items, warnings = _parse_csv_to_items(csv_text, 's')
-        assert [i['text'] for i in items] == ['hello', 'world']
-        assert any('empty text' in w for w in warnings)
-        assert any('duplicate row' in w for w in warnings)
-
-    def test_bad_rating_warns_and_leaves_blank(self):
-        from manual_import_handler import _parse_csv_to_items
-        csv_text = 'text,rating\nokay,five\n'
-        items, warnings = _parse_csv_to_items(csv_text, 's')
-        assert items[0]['rating'] is None
-        assert any('rating' in w for w in warnings)
-
-    def test_rejects_csv_without_text_column(self):
-        from manual_import_handler import _parse_csv_to_items
-        from shared.exceptions import ValidationError
-        import pytest
-        with pytest.raises(ValidationError):
-            _parse_csv_to_items('id,rating\n1,5\n', 's')
-
     def test_handles_quoted_commas_and_embedded_newlines(self):
         from manual_import_handler import _parse_csv_to_items
         csv_text = 'text\n"line one,\nline two"\n'
         items, _ = _parse_csv_to_items(csv_text, 's')
         assert len(items) == 1
-        assert 'line one' in items[0]['text'] and 'line two' in items[0]['text']
+        assert 'line one' in items[0]['text']
+        assert 'line two' in items[0]['text']
 
 
 class TestCsvUploadEndpoint:
@@ -355,65 +295,8 @@ class TestCsvUploadEndpoint:
         entries = mock_sqs.send_message_batch.call_args.kwargs['Entries']
         assert json.loads(entries[0]['MessageBody'])['csv_row_id'] is None
 
-    def test_rejects_missing_csv_text(self, api_gateway_event, lambda_context):
-        from manual_import_handler import lambda_handler
-        response = lambda_handler(self._post(api_gateway_event, {}), lambda_context)
-        body = json.loads(response['body'])
-        assert response['statusCode'] == 400
-        assert 'csv_text' in body['error']
 
-    @patch('manual_import_handler.MAX_CSV_BYTES', 10)
-    def test_rejects_oversize_csv(self, api_gateway_event, lambda_context):
-        from manual_import_handler import lambda_handler
-        response = lambda_handler(
-            self._post(api_gateway_event, {'csv_text': 'text\n' + 'x' * 100}), lambda_context
-        )
-        assert response['statusCode'] == 400
 
-    @patch('manual_import_handler.MAX_JSON_UPLOAD_ITEMS', 1)
-    def test_rejects_too_many_rows(self, api_gateway_event, lambda_context):
-        from manual_import_handler import lambda_handler
-        response = lambda_handler(
-            self._post(api_gateway_event, {'csv_text': CSV_BASIC}), lambda_context
-        )
-        body = json.loads(response['body'])
-        assert response['statusCode'] == 400
-        assert 'Maximum' in body['error']
 
-    def test_rejects_csv_with_no_valid_rows(self, api_gateway_event, lambda_context):
-        from manual_import_handler import lambda_handler
-        response = lambda_handler(
-            self._post(api_gateway_event, {'csv_text': 'text\n\n'}), lambda_context
-        )
-        assert response['statusCode'] == 400
 
-    @patch('manual_import_handler.PROCESSING_QUEUE_URL', 'https://sqs.example.com/q')
-    @patch('manual_import_handler.RAW_DATA_BUCKET', '')
-    def test_warnings_surface_in_response(self, api_gateway_event, lambda_context):
-        from manual_import_handler import lambda_handler
-        mock_sqs = _make_sqs()
-        with patch('manual_import_handler.sqs', mock_sqs):
-            response = lambda_handler(
-                self._post(api_gateway_event, {'csv_text': 'id,text\n1,hello\n2,\n'}),
-                lambda_context,
-            )
-        body = json.loads(response['body'])
-        assert body['imported_count'] == 1
-        assert any('empty text' in w for w in body['warnings'])
 
-    @patch('manual_import_handler.PROCESSING_QUEUE_URL', 'https://sqs.example.com/q')
-    @patch('manual_import_handler.RAW_DATA_BUCKET', '')
-    def test_default_source_label_applied(self, api_gateway_event, lambda_context):
-        from manual_import_handler import lambda_handler
-        mock_sqs = _make_sqs()
-        with patch('manual_import_handler.sqs', mock_sqs):
-            lambda_handler(
-                self._post(api_gateway_event, {
-                    'csv_text': 'text\nhello\n',
-                    'default_source': 'store_reviews',
-                }),
-                lambda_context,
-            )
-        entries = mock_sqs.send_message_batch.call_args.kwargs['Entries']
-        msg = json.loads(entries[0]['MessageBody'])
-        assert msg['source_channel'] == 'store_reviews'

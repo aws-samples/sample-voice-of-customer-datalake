@@ -4,9 +4,14 @@ Google Play Store review client using google-play-scraper.
 Wraps the library with pagination, error handling, and structured output.
 """
 
+from typing import TYPE_CHECKING, cast
+
 from google_play_scraper import Sort, reviews
+
 from _shared.base_ingestor import logger
 
+if TYPE_CHECKING:
+    from google_play_scraper.features.reviews import _ContinuationToken
 
 SORT_MAP = {
     "newest": Sort.NEWEST,
@@ -22,12 +27,35 @@ _PAGE_SIZE = 200
 _MAX_ROUNDS = 200
 
 
+def _fetch_page(
+    package_name: str,
+    *,
+    lang: str,
+    country: str,
+    sort_order: Sort,
+    count: int,
+    token: "_ContinuationToken | None",
+) -> "tuple[list[dict], _ContinuationToken | None]":
+    """One `reviews()` page; *token* None requests the first page."""
+    return reviews(
+        package_name,
+        lang=lang,
+        country=country,
+        sort=sort_order,
+        count=count,
+        # The library declares `continuation_token: _ContinuationToken = None`
+        # (an implicit Optional) — None is its documented first-page value.
+        # A string first argument to cast() is never evaluated, so mutating it is equivalent.
+        continuation_token=cast("_ContinuationToken", token),  # pragma: no mutate
+    )
+
+
 def fetch_reviews_for_country(
     package_name: str,
     country: str,
-    count: int = 100,
-    sort_by: str = "newest",
-    lang: str = "en",
+    count: int,
+    sort_by: str,
+    lang: str,
 ) -> list[dict]:
     """
     Fetch up to `count` reviews for a single app in a single country.
@@ -41,20 +69,22 @@ def fetch_reviews_for_country(
     """
     sort_order = SORT_MAP.get(sort_by, Sort.NEWEST)
     collected: list[dict] = []
-    token = None
+    # A local annotation is never evaluated at runtime, so its mutant is equivalent.
+    token: _ContinuationToken | None = None  # pragma: no mutate
 
     try:
         for _ in range(_MAX_ROUNDS):
             remaining = count - len(collected)
             if remaining <= 0:
-                break
-            result, token = reviews(
+                # `continue` here would only idle out the remaining rounds; same result.
+                break  # pragma: no mutate
+            result, token = _fetch_page(
                 package_name,
                 lang=lang,
                 country=country,
-                sort=sort_order,
+                sort_order=sort_order,
                 count=min(_PAGE_SIZE, remaining),
-                continuation_token=token,
+                token=token,
             )
             if not result:
                 break
@@ -64,8 +94,9 @@ def fetch_reviews_for_country(
                 break
         return collected[:count]
     except Exception as e:
-        logger.warning(
-            f"Failed to fetch Android reviews for {package_name} in {country}: {e}"
+        # Log text is not behaviour; the mutant that rewrites it is equivalent.
+        logger.exception(
+            f"Failed to fetch Android reviews for {package_name} in {country}: {e}"  # pragma: no mutate
         )
         # Return whatever we managed to collect before the error rather than
         # dropping a partial-but-useful result.

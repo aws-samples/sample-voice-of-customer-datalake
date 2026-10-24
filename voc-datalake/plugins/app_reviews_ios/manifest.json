@@ -28,7 +28,7 @@
       "key": "app_id",
       "label": "App Store ID",
       "type": "text",
-      "placeholder": "585629514",
+      "placeholder": "123456789",
       "required": true,
       "secret": false
     },
@@ -39,8 +39,7 @@
       "required": false,
       "secret": false,
       "options": [
-        { "value": "most_recent", "label": "Most Recent (recommended)" },
-        { "value": "most_critical", "label": "Most Critical" }
+        { "value": "most_recent", "label": "Most Recent (recommended)" }
       ]
     },
     {
@@ -74,7 +73,7 @@
     "title": "iOS App Reviews Setup",
     "color": "blue",
     "steps": [
-      "Find your app's numeric ID from the App Store URL (e.g. 585629514)",
+      "Find your app's numeric ID from the App Store URL (e.g. 123456789)",
       "Enter the App Name and App Store ID above",
       "Choose a run frequency to start collecting reviews",
       "Enable the schedule to start collecting reviews"

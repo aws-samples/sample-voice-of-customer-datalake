@@ -14,25 +14,19 @@ TS ↔ Python mirror: parse the other language's source and assert equality, so 
 change on either side fails CI instead of the live UI.
 """
 import re
-from pathlib import Path
 
 import pytest
 
 from shared.api import SEARCH_QUERY_MIN_LENGTH
+from shared.test.repo_paths import repo_root
 
-
-def _repo_root() -> Path:
-    # lambda/shared/test/ -> voc-datalake/
-    return Path(__file__).resolve().parents[3]
-
-
-_GATE_SOURCE = _repo_root() / 'frontend' / 'src' / 'pages' / 'Categories' / 'useFeedbackListData.ts'
+_GATE_SOURCE = repo_root() / 'frontend' / 'src' / 'pages' / 'Categories' / 'useFeedbackListData.ts'
 
 
 def _frontend_minimum() -> int | None:
     """`SEARCH_MIN_CHARS` as declared in the hook, or None if not found."""
     match = re.search(
-        r'export\s+const\s+SEARCH_MIN_CHARS\s*=\s*(\d+)',
+        r'(?:export\s+)?const\s+SEARCH_MIN_CHARS\s*=\s*(\d+)',
         _GATE_SOURCE.read_text(),
     )
     return int(match.group(1)) if match else None
@@ -46,10 +40,9 @@ class TestSearchMinimumMirror:
     `FileNotFoundError` masquerading as a finding, so the equality test carries a
     `skipif`.
 
-    `test_the_frontend_constant_is_findable` carries NO skip marker on purpose: it
-    asserts the file exists and the constant parses, which is exactly the check
-    that has to run. Skipping it would leave the equality test able to pass while
-    comparing against nothing.
+    `test_the_frontend_constant_is_findable` is this file's positive control and
+    carries NO skip marker on purpose (see "Positive controls" in
+    `shared/test/repo_paths.py`).
     """
 
     def test_the_frontend_constant_is_findable(self):

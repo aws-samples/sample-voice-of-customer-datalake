@@ -1,36 +1,15 @@
+import type { ComponentProps } from 'react'
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
+import { render } from '../../test/test-utils'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { feedbackItem } from './categories-fixtures'
 import { FeedbackResults } from './FeedbackResults'
-import type { FeedbackItem } from '../../api/client'
-import type { RatingFilter, SentimentFilter, ViewMode } from './types'
+import type { FeedbackItem } from '../../api/types'
 
 const mockFeedback: FeedbackItem[] = [
-  {
-    feedback_id: '1',
-    source_platform: 'webscraper',
-    original_text: 'Great delivery service!',
-    sentiment_label: 'positive',
-    sentiment_score: 0.9,
-    category: 'delivery',
-    source_created_at: '2026-01-01T10:00:00Z',
-    rating: 5,
-    problem_summary: null,
-    brand_name: 'test',
-    urgency_level: 'low',
-    persona: null,
-    keywords: [],
-    root_cause_hypothesis: null,
-    suggested_response: null,
-    language: 'en',
-    translated_text: null,
-    source_url: null,
-    author_name: null,
-    author_location: null,
-    processed_at: '2026-01-01T10:00:00Z',
-  },
-  {
+  feedbackItem({ original_text: 'Great delivery service!' }),
+  feedbackItem({
     feedback_id: '2',
     source_platform: 'manual_import',
     original_text: 'Slow support response',
@@ -40,30 +19,19 @@ const mockFeedback: FeedbackItem[] = [
     source_created_at: '2026-01-02T10:00:00Z',
     rating: 2,
     problem_summary: 'Slow response',
-    brand_name: 'test',
-    urgency_level: 'high',
-    persona: null,
-    keywords: [],
-    root_cause_hypothesis: null,
-    suggested_response: null,
-    language: 'en',
-    translated_text: null,
-    source_url: null,
-    author_name: null,
-    author_location: null,
     processed_at: '2026-01-02T10:00:00Z',
-  },
+  }),
 ]
 
-const defaultProps = {
+const defaultProps: ComponentProps<typeof FeedbackResults> = {
   filteredFeedback: mockFeedback,
   feedbackLoading: false,
-  viewMode: 'grid' as ViewMode,
+  viewMode: 'grid',
   onViewModeChange: vi.fn(),
-  selectedSource: null as string | null,
+  selectedSource: null,
   selectedCategories: ['delivery'],
-  sentimentFilter: 'all' as SentimentFilter,
-  ratingFilter: { value: 0, direction: 'up' } as RatingFilter,
+  sentimentFilter: 'all',
+  ratingFilter: { value: 0, direction: 'up' },
   onExport: vi.fn(),
   totalCount: 2,
   isPartialWindow: false,
@@ -73,24 +41,25 @@ const defaultProps = {
 }
 
 function renderWithRouter(ui: React.ReactElement) {
-  return render(<MemoryRouter>{ui}</MemoryRouter>)
+  return render(ui)
 }
 
 describe('FeedbackResults', () => {
   describe('header display', () => {
-    it('renders feedback count in header', () => {
-      renderWithRouter(<FeedbackResults {...defaultProps} />)
-      expect(screen.getByText('(2)')).toBeInTheDocument()
+    it('says the count once, in words, when everything is shown', () => {
+      renderWithRouter(<FeedbackResults {...defaultProps} totalCount={2} />)
+      expect(screen.getByText('2 reviews')).toBeInTheDocument()
+      expect(screen.queryByText('(2)')).not.toBeInTheDocument()
     })
 
     it('shows selected categories in subtitle', () => {
       renderWithRouter(<FeedbackResults {...defaultProps} selectedCategories={['delivery', 'pricing']} />)
-      expect(screen.getByText(/delivery, pricing/)).toBeInTheDocument()
+      expect(screen.getByText(/Delivery, Pricing/)).toBeInTheDocument()
     })
 
     it('shows selected source in subtitle', () => {
       renderWithRouter(<FeedbackResults {...defaultProps} selectedSource="webscraper" />)
-      expect(screen.getByText(/Source: webscraper/)).toBeInTheDocument()
+      expect(screen.getByText(/Source: Webscraper/)).toBeInTheDocument()
     })
 
     it('shows the localized sentiment filter in the subtitle', () => {
@@ -110,21 +79,48 @@ describe('FeedbackResults', () => {
   })
 
   describe('results count line (ported from Feedback page, issue #198)', () => {
-    it('shows "Showing N of TOTAL" from the backend candidate window', () => {
+    it('says "N shown of TOTAL" when the server counted more than is loaded', () => {
       renderWithRouter(<FeedbackResults {...defaultProps} totalCount={40} />)
-      expect(screen.getByText(/Showing 2 of 40 results/)).toBeInTheDocument()
+      expect(screen.getByText('2 shown of 40')).toBeInTheDocument()
     })
 
-    it('shows "N+" with the narrow-filters hint when the window is partial', () => {
+    it('says to narrow the filters when the server capped the window', () => {
       renderWithRouter(<FeedbackResults {...defaultProps} totalCount={100} isPartialWindow={true} />)
-      expect(screen.getByText(/Showing 2 of 100\+ results/)).toBeInTheDocument()
-      expect(screen.getByText(/narrow filters to see all/)).toBeInTheDocument()
+      expect(screen.getByText('2 shown · narrow the filters to see the rest')).toBeInTheDocument()
     })
 
-    it('does not show "N+" when the partial window has no extra matches', () => {
+    it('says nothing is missing when the partial window has no extra matches', () => {
       renderWithRouter(<FeedbackResults {...defaultProps} totalCount={2} isPartialWindow={true} />)
-      expect(screen.getByText(/Showing 2 of 2 results/)).toBeInTheDocument()
-      expect(screen.queryByText(/narrow filters to see all/)).not.toBeInTheDocument()
+      expect(screen.getByText('2 reviews')).toBeInTheDocument()
+      expect(screen.queryByText(/narrow the filters/)).not.toBeInTheDocument()
+    })
+
+    it('says a subcategory match count is out of the reviews LOADED, never "94 of 100" as if 100 were the total', () => {
+      renderWithRouter(<FeedbackResults {...defaultProps} totalCount={2} hasMore={true} loadedCount={100} />)
+      expect(screen.getByText('2 matches in the first 100 reviews · Load more below')).toBeInTheDocument()
+      expect(screen.queryByText(/shown of/)).not.toBeInTheDocument()
+    })
+
+    it('points to Load more instead of "N of N+" when another page exists', () => {
+      renderWithRouter(<FeedbackResults {...defaultProps} totalCount={200} isPartialWindow={true} hasMore={true} />)
+      expect(screen.getByText('2 shown · Load more below')).toBeInTheDocument()
+      expect(screen.queryByText(/\+/)).not.toBeInTheDocument()
+    })
+
+    it('shows a skeleton, never "0 of 0", while the list loads', () => {
+      renderWithRouter(<FeedbackResults {...defaultProps} filteredFeedback={[]} totalCount={0} feedbackLoading />)
+      expect(screen.getByTestId('results-count-skeleton')).toBeInTheDocument()
+      expect(screen.queryByText(/0 reviews|of 0/)).not.toBeInTheDocument()
+    })
+
+    it('shows the subcategory filter as a labelled chip that removes it', async () => {
+      const user = userEvent.setup()
+      const onClear = vi.fn()
+      renderWithRouter(<FeedbackResults {...defaultProps} selectedCategories={['delivery']} subcategory={{ id: 'late_arrival', onClear }} />)
+
+      expect(screen.getByText('Subcategory: Late arrival')).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Remove the Late arrival filter' }))
+      expect(onClear).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'click' }))
     })
   })
 
@@ -135,7 +131,7 @@ describe('FeedbackResults', () => {
       renderWithRouter(<FeedbackResults {...defaultProps} hasMore onLoadMore={onLoadMore} />)
 
       await user.click(screen.getByRole('button', { name: 'Load more' }))
-      expect(onLoadMore).toHaveBeenCalledOnce()
+      expect(onLoadMore).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'click' }))
     })
 
     it('hides the Load more button when everything is loaded', () => {
@@ -180,7 +176,8 @@ describe('FeedbackResults', () => {
     it('highlights active view mode button', () => {
       renderWithRouter(<FeedbackResults {...defaultProps} viewMode="grid" />)
       const gridButton = screen.getByRole('button', { name: /grid view/i })
-      expect(gridButton).toHaveClass('bg-white', 'shadow-sm')
+      expect(gridButton).toHaveClass('tab', 'tab-active')
+      expect(screen.getByRole('button', { name: /list view/i })).not.toHaveClass('tab-active')
     })
   })
 
@@ -202,19 +199,19 @@ describe('FeedbackResults', () => {
       renderWithRouter(<FeedbackResults {...defaultProps} onExport={onExport} />)
 
       await user.click(screen.getByRole('button', { name: 'Export as CSV' }))
-      expect(onExport).toHaveBeenCalled()
+      expect(onExport).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'click' }))
     })
   })
 
   describe('loading state', () => {
-    it('shows loading spinner when feedbackLoading is true', () => {
+    it('shows skeleton cards when feedbackLoading is true', () => {
       renderWithRouter(<FeedbackResults {...defaultProps} feedbackLoading={true} />)
-      expect(document.querySelector('.animate-spin')).toBeInTheDocument()
+      expect(screen.getAllByTestId('feedback-skeleton')).toHaveLength(4)
     })
 
-    it('hides loading spinner when feedbackLoading is false', () => {
+    it('hides the skeleton when feedbackLoading is false', () => {
       renderWithRouter(<FeedbackResults {...defaultProps} feedbackLoading={false} />)
-      expect(document.querySelector('.animate-spin')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('feedback-skeleton')).not.toBeInTheDocument()
     })
   })
 

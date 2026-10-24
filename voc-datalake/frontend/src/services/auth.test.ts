@@ -1,11 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // Mock amazon-cognito-identity-js
-const mockAuthenticateUser = vi.fn()
+/** The callback object amazon-cognito-identity-js hands its async calls. */
+interface CognitoCallbacks {
+  onSuccess: (result?: unknown) => void
+  onFailure: (error: unknown) => void
+}
+
+const mockAuthenticateUser = vi.fn<(details: unknown, callbacks: CognitoCallbacks) => void>()
 const mockGetSession = vi.fn()
 const mockRefreshSession = vi.fn()
-const mockForgotPassword = vi.fn()
-const mockConfirmPassword = vi.fn()
+const mockForgotPassword = vi.fn<(callbacks: CognitoCallbacks) => void>()
+const mockConfirmPassword = vi.fn<(code: string, newPassword: string, callbacks: CognitoCallbacks) => void>()
 const mockCompleteNewPasswordChallenge = vi.fn()
 const mockSignOut = vi.fn()
 
@@ -71,6 +77,9 @@ vi.mock('../store/authStore', () => ({
 
 import { authService } from './auth'
 
+/** What every Cognito call must be handed: both outcomes wired. */
+const CALLBACKS: Record<string, unknown> = { onSuccess: expect.any(Function), onFailure: expect.any(Function) }
+
 describe('authService', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -102,9 +111,28 @@ describe('authService', () => {
 
       const result = await authService.signIn('testuser', 'password123')
 
-      // eslint-disable-next-line vitest/prefer-called-with
-      expect(mockAuthenticateUser).toHaveBeenCalled()
+      expect(mockAuthenticateUser).toHaveBeenCalledWith(expect.anything(), expect.objectContaining(CALLBACKS))
       expect(result).toBe(mockSession)
+    })
+
+    it('extracts the Cognito sub into the stored user', async () => {
+      const payload = { sub: 'sub-123', 'cognito:username': 'alice', email: 'a@example.com', 'cognito:groups': ['users'] }
+      const toBase64Url = (value: unknown) => btoa(JSON.stringify(value)).replaceAll('+', '-').replaceAll('/', '_').replace(/={1,2}$/, '')
+      const idToken = `${toBase64Url({ alg: 'none' })}.${toBase64Url(payload)}.sig`
+      const mockSession = {
+        getIdToken: () => ({ getJwtToken: () => idToken }),
+        getAccessToken: () => ({ getJwtToken: () => 'mock-access-token' }),
+        getRefreshToken: () => ({ getToken: () => 'mock-refresh-token' }),
+      }
+      mockAuthenticateUser.mockImplementation((_authDetails, callbacks) => {
+        callbacks.onSuccess(mockSession)
+      })
+
+      await authService.signIn('alice', 'password123')
+
+      expect(mockSetUser).toHaveBeenCalledWith(expect.objectContaining({
+        username: 'alice', email: 'a@example.com', groups: ['users'], sub: 'sub-123',
+      }))
     })
 
     it('rejects with error on authentication failure', async () => {
@@ -131,8 +159,7 @@ describe('authService', () => {
       })
 
       await expect(authService.forgotPassword('testuser')).resolves.not.toThrow()
-      // eslint-disable-next-line vitest/prefer-called-with
-      expect(mockForgotPassword).toHaveBeenCalled()
+      expect(mockForgotPassword).toHaveBeenCalledWith(expect.objectContaining(CALLBACKS))
     })
   })
 
@@ -143,8 +170,7 @@ describe('authService', () => {
       })
 
       await expect(authService.confirmPassword('testuser', '123456', 'newpassword')).resolves.not.toThrow()
-      // eslint-disable-next-line vitest/prefer-called-with
-      expect(mockConfirmPassword).toHaveBeenCalled()
+      expect(mockConfirmPassword).toHaveBeenCalledWith('123456', 'newpassword', expect.objectContaining(CALLBACKS))
     })
   })
 })

@@ -1,0 +1,20 @@
+X-SES-Spam-Verdict: PASS
+X-SES-Virus-Verdict: PASS
+X-SES-SPF-Verdict: PASS
+X-SES-DKIM-Verdict: GRAY
+From: Ana <ana@customer.example>
+To: feedback@voc.example.com
+Subject: RE: Checkout keeps failing
+Date: Thu, 05 Mar 2026 09:00:00 +0000
+Message-ID: <reply-004@customer.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+One more thing: the confirmation email never arrives either.
+
+From: Support <support@voc.example.com>
+Sent: Wednesday, March 4, 2026 10:00 AM
+To: Ana
+Subject: Checkout keeps failing
+
+We fixed it.

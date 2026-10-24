@@ -12,7 +12,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { generateIntegrityHashes } from '../lib/plugin-loader';
+import { generateIntegrityHashes, pluginManifestEntries } from '../lib/plugin-loader';
 
 const pluginsDir = path.join(__dirname, '../plugins');
 
@@ -25,28 +25,15 @@ function main() {
     process.exit(1);
   }
 
-  const entries = fs.readdirSync(pluginsDir, { withFileTypes: true });
   let processed = 0;
 
-  for (const entry of entries) {
-    // Skip non-directories and special folders
-    if (!entry.isDirectory()) continue;
-    if (entry.name.startsWith('_')) continue;
-
-    // If target plugin specified, only process that one
-    if (targetPlugin && entry.name !== targetPlugin) continue;
-
-    const manifestPath = path.join(pluginsDir, entry.name, 'manifest.json');
-    if (!fs.existsSync(manifestPath)) {
-      console.warn(`No manifest.json found in plugins/${entry.name}, skipping`);
-      continue;
-    }
-
+  // If a target plugin is specified, only process that one
+  for (const entry of pluginManifestEntries(pluginsDir, targetPlugin)) {
     try {
-      generateIntegrityHashes(entry.name, pluginsDir);
+      generateIntegrityHashes(entry.id, pluginsDir);
       processed++;
     } catch (err) {
-      console.error(`Failed to generate integrity for ${entry.name}: ${err}`);
+      console.error(`Failed to generate integrity for ${entry.id}: ${err}`);
     }
   }
 

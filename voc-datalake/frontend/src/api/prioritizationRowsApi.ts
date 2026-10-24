@@ -30,7 +30,7 @@
  */
 import { z } from 'zod'
 import { fetchApi } from './client'
-import type { PrioritizationRow } from './types'
+import type { PrioritizationRow } from './projectTypes'
 
 /**
  * What a row HOLDS, as a request states it: one project, and the concrete document

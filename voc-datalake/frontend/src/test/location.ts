@@ -44,3 +44,17 @@ export function setLocationOrigin(origin: string): void {
     configurable: true,
   })
 }
+
+/**
+ * Spellings that start with `/` (so a naive "path-relative" check passes them)
+ * but resolve to a FOREIGN host. `\` is a path separator for http(s) in the
+ * WHATWG URL parser, so the backslash forms resolve cross-origin while still
+ * failing a `startsWith('//')` guard — the exact gap a two-prefix check leaves.
+ * Shared by every suite that pins the trusted-origin check.
+ */
+export const FOREIGN_HOST_SPELLINGS = [
+  '//evil.example.com/collect',
+  '/\\evil.example.com/collect',
+  '/\\/evil.example.com',
+  '/\\\\evil.example.com/collect',
+] as const

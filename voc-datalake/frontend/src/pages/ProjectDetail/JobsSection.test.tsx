@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import JobsSection from './JobsSection'
-import type { ProjectJob } from '../../api/types'
+import type { ProjectJob } from '../../api/projectTypes'
 
 const createJob = (overrides: Partial<ProjectJob> = {}): ProjectJob => ({
   job_id: 'job-1',
@@ -19,11 +19,17 @@ const expandCompleted = async (user: ReturnType<typeof userEvent.setup>) => {
   await user.click(screen.getByRole('button', { expanded: false }))
 }
 
+/** Renders one completed job and expands the completed list so its row is visible. */
+async function renderCompleted(job: ProjectJob) {
+  const user = userEvent.setup()
+  render(<JobsSection jobs={[job]} onDismiss={vi.fn()} />)
+  await expandCompleted(user)
+}
+
 describe('JobsSection', () => {
   it('returns null when jobs array is empty', () => {
     const { container } = render(<JobsSection jobs={[]} onDismiss={vi.fn()} />)
-    // eslint-disable-next-line testing-library/no-node-access -- checking null render
-    expect(container.firstChild).toBeNull()
+    expect(container).toBeEmptyDOMElement()
   })
 
   it('renders Background Jobs header when jobs exist', () => {
@@ -50,7 +56,7 @@ describe('JobsSection', () => {
 
   it('renders current step for running jobs', () => {
     render(<JobsSection jobs={[createJob({ status: 'running', current_step: 'analyzing_data' })]} onDismiss={vi.fn()} />)
-    expect(screen.getByText('analyzing data')).toBeInTheDocument()
+    expect(screen.getByText('Analyzing data')).toBeInTheDocument()
   })
 
   it('renders error message for failed jobs', () => {
@@ -68,6 +74,17 @@ describe('JobsSection', () => {
   it('shows dismiss button for failed jobs', () => {
     render(<JobsSection jobs={[createJob({ status: 'failed' })]} onDismiss={vi.fn()} />)
     expect(screen.getByTitle('Dismiss')).toBeInTheDocument()
+  })
+
+  // Dismissing is a DELETE the project gate refuses for a viewer, so the page
+  // passes no handler for them — and no handler must mean no button, for every
+  // status that would otherwise offer one.
+  it('offers no dismiss button when the caller passes no onDismiss (a viewer)', async () => {
+    const user = userEvent.setup()
+    render(<JobsSection jobs={[createJob({ status: 'failed', error: 'Something went wrong' }), createJob({ job_id: 'job-2', status: 'completed' })]} />)
+    await expandCompleted(user)
+    expect(screen.getByText('Something went wrong')).toBeInTheDocument()
+    expect(screen.queryByTitle('Dismiss')).not.toBeInTheDocument()
   })
 
   it('calls onDismiss when dismiss button is clicked', async () => {
@@ -173,17 +190,20 @@ describe('JobsSection resting state', () => {
     expect(screen.getByText('failure number 4')).toBeInTheDocument()
   })
 
+  // The locale's clock ("9:05 AM" in English, with ICU's narrow no-break space), nothing else.
+  const TIME_ONLY = /^\d{1,2}:\d{2}(?:\s[AP]M)?$/u
+
   it('shows only a time for a job created today', () => {
     render(<JobsSection jobs={[createJob({ created_at: new Date().toISOString() })]} onDismiss={vi.fn()} />)
-    expect(screen.getByText(/^\d{1,2}:\d{2}$/)).toBeInTheDocument()
+    expect(screen.getByText(TIME_ONLY)).toBeInTheDocument()
   })
 
   it('dates a job that is not from today', () => {
     const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()
     render(<JobsSection jobs={[createJob({ created_at: threeDaysAgo })]} onDismiss={vi.fn()} />)
 
-    // A bare HH:mm is ambiguous across days, so the label must carry a date part.
-    expect(screen.queryByText(/^\d{1,2}:\d{2}$/)).not.toBeInTheDocument()
+    // A bare time is ambiguous across days, so the label must carry a date part.
+    expect(screen.queryByText(TIME_ONLY)).not.toBeInTheDocument()
     expect(screen.getByText(/[A-Za-z]{3} \d{1,2}, \d{1,2}:\d{2}/)).toBeInTheDocument()
   })
 
@@ -216,32 +236,18 @@ describe('JobsSection resting state', () => {
     })
 
     it('reports how many feedback items the result was actually based on', async () => {
-      const user = userEvent.setup()
-      render(
-        <JobsSection
-          jobs={[truncatedPersonaJob({
-            context_truncated: true, feedback_items_used: 145, feedback_count: 300,
-          })]}
-          onDismiss={vi.fn()}
-        />,
-      )
-      await expandCompleted(user)
+      await renderCompleted(truncatedPersonaJob({
+        context_truncated: true, feedback_items_used: 145, feedback_count: 300,
+      }))
       expect(
         screen.getByText(/Based on 145 of the 300 feedback items read/),
       ).toBeInTheDocument()
     })
 
     it('names the total as what was READ, not as the size of the corpus', async () => {
-      const user = userEvent.setup()
-      render(
-        <JobsSection
-          jobs={[truncatedPersonaJob({
-            context_truncated: true, feedback_items_used: 145, feedback_count: 300,
-          })]}
-          onDismiss={vi.fn()}
-        />,
-      )
-      await expandCompleted(user)
+      await renderCompleted(truncatedPersonaJob({
+        context_truncated: true, feedback_items_used: 145, feedback_count: 300,
+      }))
       // feedback_count is the number of records the job FETCHED, which its own
       // fetch limit bounds. Presenting it as the whole corpus would be
       // confidently wrong about the denominator on exactly the projects where
@@ -250,41 +256,20 @@ describe('JobsSection resting state', () => {
     })
 
     it('stays silent when the whole corpus reached the model', async () => {
-      const user = userEvent.setup()
-      render(
-        <JobsSection
-          jobs={[truncatedPersonaJob({
-            context_truncated: false, feedback_items_used: 60, feedback_count: 60,
-          })]}
-          onDismiss={vi.fn()}
-        />,
-      )
-      await expandCompleted(user)
+      await renderCompleted(truncatedPersonaJob({
+        context_truncated: false, feedback_items_used: 60, feedback_count: 60,
+      }))
       // A notice on every job would train the user to ignore it.
       expect(screen.queryByText(/did not fit in one generation/)).not.toBeInTheDocument()
     })
 
     it('stays silent for a job whose result carries no metadata', async () => {
-      const user = userEvent.setup()
-      render(
-        <JobsSection
-          jobs={[createJob({ status: 'completed', result: { document_id: 'doc-1' } })]}
-          onDismiss={vi.fn()}
-        />,
-      )
-      await expandCompleted(user)
+      await renderCompleted(createJob({ status: 'completed', result: { document_id: 'doc-1' } }))
       expect(screen.queryByText(/did not fit in one generation/)).not.toBeInTheDocument()
     })
 
     it('still warns when the counts are missing but truncation is flagged', async () => {
-      const user = userEvent.setup()
-      render(
-        <JobsSection
-          jobs={[truncatedPersonaJob({ context_truncated: true })]}
-          onDismiss={vi.fn()}
-        />,
-      )
-      await expandCompleted(user)
+      await renderCompleted(truncatedPersonaJob({ context_truncated: true }))
       // Losing the counts must not lose the warning: "some feedback was
       // dropped" is still the thing the user needs to know.
       expect(
@@ -293,23 +278,16 @@ describe('JobsSection resting state', () => {
     })
 
     it('shows the artifact label and the notice together', async () => {
-      const user = userEvent.setup()
-      render(
-        <JobsSection
-          jobs={[createJob({
-            status: 'completed',
-            result: {
-              document_id: 'doc-1',
-              title: 'Q3 Persona Set',
-              metadata: {
-                context_truncated: true, feedback_items_used: 90, feedback_count: 145,
-              },
-            },
-          })]}
-          onDismiss={vi.fn()}
-        />,
-      )
-      await expandCompleted(user)
+      await renderCompleted(createJob({
+        status: 'completed',
+        result: {
+          document_id: 'doc-1',
+          title: 'Q3 Persona Set',
+          metadata: {
+            context_truncated: true, feedback_items_used: 90, feedback_count: 145,
+          },
+        },
+      }))
       // The common case for document generation: a named artifact that is also
       // partially grounded. Both paragraphs render, and neither suppresses the
       // other.
@@ -320,20 +298,13 @@ describe('JobsSection resting state', () => {
     })
 
     it('reports the fetch limit separately from trimming', async () => {
-      const user = userEvent.setup()
-      render(
-        <JobsSection
-          jobs={[truncatedPersonaJob({
-            context_truncated: false,
-            feedback_items_used: 145,
-            feedback_count: 145,
-            fetch_limit_reached: true,
-            fetch_limit: 145,
-          })]}
-          onDismiss={vi.fn()}
-        />,
-      )
-      await expandCompleted(user)
+      await renderCompleted(truncatedPersonaJob({
+        context_truncated: false,
+        feedback_items_used: 145,
+        feedback_count: 145,
+        fetch_limit_reached: true,
+        fetch_limit: 145,
+      }))
       // Nothing was trimmed, so the trimming notice must stay away — but the
       // corpus is a ceiling rather than a total, and context_truncated cannot
       // express that: it compares what the model saw against what was READ.
@@ -346,20 +317,13 @@ describe('JobsSection resting state', () => {
     })
 
     it('shows both notices when the fetch was capped and the read was trimmed', async () => {
-      const user = userEvent.setup()
-      render(
-        <JobsSection
-          jobs={[truncatedPersonaJob({
-            context_truncated: true,
-            feedback_items_used: 120,
-            feedback_count: 145,
-            fetch_limit_reached: true,
-            fetch_limit: 145,
-          })]}
-          onDismiss={vi.fn()}
-        />,
-      )
-      await expandCompleted(user)
+      await renderCompleted(truncatedPersonaJob({
+        context_truncated: true,
+        feedback_items_used: 120,
+        feedback_count: 145,
+        fetch_limit_reached: true,
+        fetch_limit: 145,
+      }))
       expect(
         screen.getByText(/Based on 120 of the 145 feedback items read/),
       ).toBeInTheDocument()
@@ -383,26 +347,19 @@ describe('JobsSection resting state', () => {
      *
      * The declared type is the shape the API intends, and the point of these
      * cases is what happens when the wire disagrees with it — so the fixture has
-     * to widen past the declared type to express its own input. Confined to this
-     * helper, and routed through `unknown` rather than `any` so nothing else here
-     * loses type checking.
+     * to carry a value past the declared type. `Object.assign` does that at runtime,
+     * exactly as the wire would, without a type assertion: the merged type is the
+     * job intersected with `{ metadata: unknown }`, which is still a `ProjectJob`.
      */
-    const jobWithMetadata = (metadata: unknown) => createJob({
-      result: { metadata } as unknown as ProjectJob['result'],
-      status: 'completed',
-    })
+    const jobWithMetadata = (metadata: unknown) => Object.assign(
+      createJob({ status: 'completed' }),
+      { result: { metadata } },
+    )
 
     it('renders numeric counts that arrive as strings', async () => {
-      const user = userEvent.setup()
-      render(
-        <JobsSection
-          jobs={[jobWithMetadata({
-            context_truncated: true, feedback_items_used: '9', feedback_count: '100',
-          })]}
-          onDismiss={vi.fn()}
-        />,
-      )
-      await expandCompleted(user)
+      await renderCompleted(jobWithMetadata({
+        context_truncated: true, feedback_items_used: '9', feedback_count: '100',
+      }))
       // 9 and 100 on purpose. Left as strings, the coherence check compares them
       // lexicographically — '9' <= '100' is FALSE — so an unparsed read falls back
       // to the count-free wording and loses both numbers. A pair like '145'/'300'
@@ -414,16 +371,9 @@ describe('JobsSection resting state', () => {
     })
 
     it('does not render a fractional count as if it were a record count', async () => {
-      const user = userEvent.setup()
-      render(
-        <JobsSection
-          jobs={[jobWithMetadata({
-            context_truncated: true, feedback_items_used: 1.5, feedback_count: 100,
-          })]}
-          onDismiss={vi.fn()}
-        />,
-      )
-      await expandCompleted(user)
+      await renderCompleted(jobWithMetadata({
+        context_truncated: true, feedback_items_used: 1.5, feedback_count: 100,
+      }))
       // "Based on 1.5 of the 100 feedback items read" is not a thing that can be
       // true of a count of records.
       expect(screen.queryByText(/1\.5/)).not.toBeInTheDocument()
@@ -433,16 +383,9 @@ describe('JobsSection resting state', () => {
     })
 
     it('does not announce a loss for a string "false" flag', async () => {
-      const user = userEvent.setup()
-      render(
-        <JobsSection
-          jobs={[jobWithMetadata({
-            context_truncated: 'false', feedback_items_used: 60, feedback_count: 60,
-          })]}
-          onDismiss={vi.fn()}
-        />,
-      )
-      await expandCompleted(user)
+      await renderCompleted(jobWithMetadata({
+        context_truncated: 'false', feedback_items_used: 60, feedback_count: 60,
+      }))
       // A non-empty string is truthy in JavaScript, so a coercing read would
       // warn about a loss that never happened on every completed job.
       expect(
@@ -451,16 +394,9 @@ describe('JobsSection resting state', () => {
     })
 
     it('falls back to the count-free wording for unusable numbers', async () => {
-      const user = userEvent.setup()
-      render(
-        <JobsSection
-          jobs={[jobWithMetadata({
-            context_truncated: true, feedback_items_used: 'many', feedback_count: 300,
-          })]}
-          onDismiss={vi.fn()}
-        />,
-      )
-      await expandCompleted(user)
+      await renderCompleted(jobWithMetadata({
+        context_truncated: true, feedback_items_used: 'many', feedback_count: 300,
+      }))
       // The warning is the load-bearing part; the numbers are the detail.
       expect(
         screen.getByText(/Some feedback did not fit in one generation/),
@@ -468,16 +404,9 @@ describe('JobsSection resting state', () => {
     })
 
     it('falls back rather than claiming more was used than was read', async () => {
-      const user = userEvent.setup()
-      render(
-        <JobsSection
-          jobs={[jobWithMetadata({
-            context_truncated: true, feedback_items_used: 300, feedback_count: 145,
-          })]}
-          onDismiss={vi.fn()}
-        />,
-      )
-      await expandCompleted(user)
+      await renderCompleted(jobWithMetadata({
+        context_truncated: true, feedback_items_used: 300, feedback_count: 145,
+      }))
       expect(
         screen.getByText(/Some feedback did not fit in one generation/),
       ).toBeInTheDocument()
@@ -485,11 +414,7 @@ describe('JobsSection resting state', () => {
     })
 
     it('survives a metadata block that is not an object', async () => {
-      const user = userEvent.setup()
-      render(
-        <JobsSection jobs={[jobWithMetadata('truncated')]} onDismiss={vi.fn()} />,
-      )
-      await expandCompleted(user)
+      await renderCompleted(jobWithMetadata('truncated'))
       expect(screen.getByText('completed')).toBeInTheDocument()
       expect(
         screen.queryByText(/did not fit in one generation/),

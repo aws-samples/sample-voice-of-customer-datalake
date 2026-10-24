@@ -5,22 +5,16 @@ Mocks the session so these run offline. Verifies that an intermittent empty
 page in the middle of a populated feed is SKIPPED (not treated as the end) —
 the bug that truncated Korean reviews to ~150 instead of ~450.
 """
-import sys
-import types
-import logging
+import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
-# Stub _shared.base_ingestor.logger so the module imports offline.
-_shared = types.ModuleType("_shared")
-_base = types.ModuleType("_shared.base_ingestor")
-_base.logger = logging.getLogger("test")
-sys.modules.setdefault("_shared", _shared)
-sys.modules.setdefault("_shared.base_ingestor", _base)
+import urllib3
+from app_store_web_scraper._errors import AppStoreError
 
-sys.path.insert(0, str(Path(__file__).parent))
-import itunes_client  # noqa: E402
-from app_store_web_scraper._errors import AppStoreError  # noqa: E402
+from _shared.test.offline_plugin_imports import import_plugin_client_offline
+
+itunes_client = import_plugin_client_offline(__file__, "itunes_client")
 
 
 def _entry(i):
@@ -98,3 +92,63 @@ class TestPagination:
         ]
         result = itunes_client.fetch_reviews_for_country("1", "kr", session, limit=500)
         assert len(result) == 1
+
+
+class TestFailures:
+    def test_connection_failure_returns_what_was_collected(self):
+        """A urllib3 error (retries exhausted) ends the country, keeping earlier pages."""
+        session = MagicMock()
+        session._get.side_effect = [
+            _page([_entry(i) for i in range(50)]),
+            urllib3.exceptions.MaxRetryError(
+                urllib3.HTTPSConnectionPool("itunes.apple.com"), "/x", None
+            ),
+            _page([_entry(99)]),
+        ]
+        result = itunes_client.fetch_reviews_for_country("1", "kr", session, limit=500)
+        assert len(result) == 50
+        assert session._get.call_count == 2
+
+    def test_undecodable_page_returns_what_was_collected(self):
+        session = MagicMock()
+        session._get.side_effect = [_page([_entry(0)]), ValueError("bad json"), _page([_entry(1)])]
+        result = itunes_client.fetch_reviews_for_country("1", "kr", session, limit=500)
+        assert [review["id"] for review in result] == ["0"]
+
+    def test_non_list_entry_is_a_non_empty_page_without_reviews(self):
+        """A present-but-odd `entry` resets the empty counter and yields nothing."""
+        session = MagicMock()
+        session._get.side_effect = [
+            _page(None), _page(None),
+            {"feed": {"entry": {"id": {"label": "x"}}}},
+            _page(None), _page(None), _page([_entry(7)]),
+            _page(None), _page(None), _page(None),
+        ]
+        result = itunes_client.fetch_reviews_for_country("1", "kr", session, limit=500)
+        assert [review["id"] for review in result] == ["7"]
+        assert session._get.call_count == 9
+
+
+class TestSortBy:
+    """`sort_by` reaches the RSS URL (it used to be accepted and ignored)."""
+
+    @staticmethod
+    def _requested_paths(sort_by):
+        session = MagicMock()
+        session._get.side_effect = [_page([_entry(0)]), _page(None), _page(None), _page(None)]
+        itunes_client.fetch_reviews_for_country("1", "kr", session, limit=500, sort_by=sort_by)
+        return [call.args[0] for call in session._get.call_args_list]
+
+    def test_legacy_most_critical_falls_back_to_most_recent(self):
+        """Apple answers `sortby=mostcritical` with HTTP 500 (live feed, verified),
+        so a config saved with the removed option must not request it."""
+        paths = self._requested_paths("most_critical")
+        assert paths
+        assert all("/sortby=mostrecent/" in path for path in paths)
+        assert not any("mostcritical" in path for path in paths)
+
+    def test_the_mapping_covers_every_manifest_option(self):
+        manifest = json.loads((Path(__file__).resolve().parents[1] / "manifest.json").read_text())
+        field = next(f for f in manifest["config"] if f["key"] == "sort_by")
+        options = {option["value"] for option in field["options"]}
+        assert options == set(itunes_client._RSS_SORT_BY)

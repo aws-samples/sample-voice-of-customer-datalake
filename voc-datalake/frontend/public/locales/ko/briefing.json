@@ -1,0 +1,92 @@
+{
+  "greeting": {
+    "morning": "좋은 아침입니다, {{name}}님",
+    "afternoon": "좋은 오후입니다, {{name}}님",
+    "evening": "좋은 저녁입니다, {{name}}님"
+  },
+  "freshness": {
+    "generatedAt": "{{time}} 브리핑",
+    "none": "아직 브리핑이 없습니다. 새로 고침을 눌러 첫 브리핑을 만드세요.",
+    "failed": "지난 브리핑을 만들지 못했습니다. 새로 고침을 눌러 다시 시도하세요."
+  },
+  "tiles": {
+    "title": "최근 7일",
+    "reviews": "리뷰",
+    "sentiment": "평균 감성",
+    "urgent": "긴급 리뷰"
+  },
+  "cards": {
+    "title": "내 브리핑",
+    "empty": "브리핑에 새로운 내용이 없습니다.",
+    "evidence": "이 카드의 근거 리뷰: {{count, number}}개",
+    "quotes": "고객의 목소리",
+    "dismiss": "닫기",
+    "sources": "출처",
+    "newTab": "새 탭에서 열림",
+    "type": {
+      "spike": "급증",
+      "urgent": "긴급",
+      "whatsNew": "새 소식",
+      "trending": "트렌드",
+      "sentiment": "감정 변화",
+      "competitor": "경쟁사",
+      "nextStep": "다음 단계",
+      "update": "업데이트"
+    },
+    "reviewN": "리뷰 {{n}}",
+    "openReview": "리뷰 {{count, number}}개 중 {{n}}번째 열기",
+    "moreReviews": "외 {{count, number}}개"
+  },
+  "actions": {
+    "investigate": "조사하기",
+    "prfaq": "PR/FAQ 초안 작성",
+    "compare": "지난달과 비교",
+    "openRadar": "레이더 열기",
+    "investigatePrompt": "내 아침 브리핑의 이 카드를 조사해 주세요: \"{{title}}\". {{body}} 원인은 무엇이고 규모는 어느 정도인가요?",
+    "prfaqPrompt": "내 아침 브리핑의 이 카드를 바탕으로 해결책에 대한 PR/FAQ 초안을 작성해 주세요: \"{{title}}\". {{body}}",
+    "comparePrompt": "지난달과 비교해 주세요: \"{{title}}\". 무엇이 바뀌었고, 나아지고 있나요 아니면 나빠지고 있나요?"
+  },
+  "todo": {
+    "title": "할 일",
+    "empty": "처리할 항목이 없습니다.",
+    "open": "열기"
+  },
+  "refresh": {
+    "label": "새로 고침",
+    "generating": "생성 중...",
+    "upToDate": "브리핑이 최신 상태입니다.",
+    "failed": "브리핑을 시작하지 못했습니다. 다시 시도하세요."
+  },
+  "subscribe": {
+    "title": "아침 브리핑 구독",
+    "description": "매일 아침 선택한 시간에 새 브리핑을 받아 보세요. 시간대: {{zone}}",
+    "oneClick": "매일 아침 {{time}}에 새 브리핑을 받아 보세요. 시간대: {{zone}}",
+    "customise": "계정에서 맞춤 설정",
+    "button": "구독하기"
+  },
+  "settings": {
+    "title": "브리핑 설정",
+    "enabled": "아침 브리핑 켜기",
+    "language": "브리핑 언어",
+    "languageSameAsApp": "앱과 동일({{language}})",
+    "time": "발송 시간",
+    "instructions": "브리핑에 원하는 내용",
+    "instructionsHint": "중점 분야, 주시할 경쟁사, 어조 등. 최대 2,000자.",
+    "email": "브리핑을 이메일로 받기",
+    "emailHint": "계정의 인증된 이메일 주소로 발송됩니다.",
+    "emailPending": "받은편지함에서 AWS 이메일을 확인하고 승인하면 브리핑 수신이 시작됩니다.",
+    "emailConfirmed": "이메일이 확인되었습니다.",
+    "save": "저장",
+    "saved": "저장됨",
+    "saveFailed": "브리핑 설정을 저장하지 못했습니다.",
+    "open": "설정",
+    "loading": "브리핑 설정을 불러오는 중..."
+  },
+  "agentDecision": {
+    "sectionLabel": "에이전트 결정 대기",
+    "title": "{{name}}에 대한 결정이 필요합니다",
+    "node": "단계: {{node}}",
+    "stopped": "{{time}}에 중지됨"
+  },
+  "closeCard": "닫기: {{title}}"
+}

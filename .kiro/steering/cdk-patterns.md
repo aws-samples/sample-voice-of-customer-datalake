@@ -53,7 +53,7 @@ const table = new dynamodb.Table(this, 'MyTable', {
   encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
   encryptionKey: kmsKey,
   pointInTimeRecovery: true,
-  removalPolicy: cdk.RemovalPolicy.RETAIN,
+  removalPolicy: cdk.RemovalPolicy.DESTROY,  // teardown deletes data; back up first (docs/deployment.md)
   timeToLiveAttribute: 'ttl',  // Enable TTL for cost control
   stream: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,  // If needed
 });

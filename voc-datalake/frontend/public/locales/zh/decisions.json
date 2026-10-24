@@ -1,0 +1,94 @@
+{
+  "tab": "决策",
+  "title": "决策",
+  "subtitle": "推进、搁置或否决：记录原因、成功的衡量方式以及何时停止。",
+  "new": "新建决策",
+  "empty": "暂无决策。决定如何处理某个问题时，请记录下来。",
+  "formLabel": "决策",
+  "verdict": {
+    "label": "结论",
+    "pursue": "推进",
+    "park": "搁置",
+    "reject": "否决"
+  },
+  "fields": {
+    "title": "标题",
+    "rationale": "理由",
+    "successMetric": "成功指标",
+    "killCriterion": "终止标准",
+    "reviewBy": "复审截止日期",
+    "launchedAt": "上线日期",
+    "feedbackIds": "反馈 ID",
+    "feedbackIdsHint": "用空格或逗号分隔 ID。",
+    "documents": "支持文档"
+  },
+  "actions": {
+    "save": "保存决策",
+    "cancel": "取消",
+    "edit": "编辑",
+    "pursue": "起草 PR/FAQ",
+    "pursueAgain": "再起草一份 PR/FAQ",
+    "pursueHint": "以此决策为简报开始生成 PR/FAQ。",
+    "pursueConfirmTitle": "起草 PR/FAQ？",
+    "pursueConfirmMessage": "AI 将以“{{title}}”为简报起草 PR/FAQ。需要几分钟；完成后会显示在“文档”中。",
+    "pursueConfirm": "起草 PR/FAQ",
+    "pursued": "已根据此决策请求生成 PR/FAQ。任务完成后会显示在文档中。",
+    "prfaqReady": "PR/FAQ 已就绪：{{title}}",
+    "prfaqFailed": "无法根据此决策生成 PR/FAQ。请重新起草以重试。",
+    "revisit": "重新评估",
+    "releaseWatch": "发布观察",
+    "hideReleaseWatch": "隐藏发布观察"
+  },
+  "picker": {
+    "label": "支持性评论",
+    "placeholder": "搜索要添加的评论，例如“配送延迟”",
+    "results": "匹配的评论",
+    "picked": "已添加的评论",
+    "searching": "搜索中…",
+    "failed": "搜索失败，请重试。",
+    "noMatch": "没有与“{{q}}”匹配的评论。",
+    "linked": "已关联的评论 {{n}}",
+    "remove": "移除 {{label}}",
+    "advanced": "高级：粘贴评论 ID"
+  },
+  "decidedBy": "{{name}} 于 {{date}} 决定",
+  "decidedOn": "于 {{date}} 决定",
+  "evidence": "依据",
+  "errors": {
+    "save": "无法保存决策。",
+    "conflict": "此决策在你打开后已被修改。请刷新页面后重试。",
+    "pursue": "无法启动 PR/FAQ。"
+  },
+  "releaseWatch": {
+    "title": "发布观察",
+    "subtitle": "每次发布前后 {{days, number}} 天的反馈。",
+    "empty": "此期间没有发布。",
+    "regression": "回退",
+    "noRegression": "无回退",
+    "before": "发布前",
+    "after": "发布后",
+    "volume": "数量",
+    "negative": "负面",
+    "sentiment": "情感",
+    "afterDays": "发布后已观察天数：{{days, number}}",
+    "reasons": {
+      "sentiment_drop": "情感下降",
+      "negative_rise": "负面反馈增加"
+    },
+    "complaints": "增长中的投诉",
+    "evidenceItem": "评价 {{n}}",
+    "evidence": "发布后最负面的反馈",
+    "partial": "部分数据：已读取至 {{date}}",
+    "loading": "正在加载发布观察",
+    "error": "无法加载发布观察。",
+    "topCategories": {
+      "before": "发布前的主要类别",
+      "after": "发布后的主要类别",
+      "new": "新进入前列",
+      "grew_one": "较之前的 {{count, number}} 条增加",
+      "grew_other": "较之前的 {{count, number}} 条增加",
+      "count_one": "{{count, number}} 条评价",
+      "count_other": "{{count, number}} 条评价"
+    }
+  }
+}

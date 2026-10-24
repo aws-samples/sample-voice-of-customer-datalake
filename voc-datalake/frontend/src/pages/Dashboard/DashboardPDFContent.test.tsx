@@ -22,13 +22,13 @@ describe('DashboardPDFContent', () => {
   it('renders the total feedback metric', () => {
     render(<DashboardPDFContent {...makeProps()} />)
     expect(screen.getByText('Total Feedback')).toBeInTheDocument()
-    expect(screen.getByText('1234')).toBeInTheDocument()
+    expect(screen.getByText('1,234')).toBeInTheDocument()
   })
 
-  it('formats average sentiment to two decimals', () => {
+  it('formats average sentiment to two signed decimals, like the app', () => {
     render(<DashboardPDFContent {...makeProps({ avgSentiment: 0.4567 })} />)
     expect(screen.getByText('Avg Sentiment')).toBeInTheDocument()
-    expect(screen.getByText('0.46')).toBeInTheDocument()
+    expect(screen.getByText('+0.46')).toBeInTheDocument()
   })
 
   it('renders the urgent issues count', () => {
@@ -39,7 +39,7 @@ describe('DashboardPDFContent', () => {
 
   it('renders category breakdown entries', () => {
     render(<DashboardPDFContent {...makeProps({ categoryBreakdown: [{ name: 'shipping', value: 42 }] })} />)
-    expect(screen.getByText('shipping')).toBeInTheDocument()
+    expect(screen.getByText('Shipping')).toBeInTheDocument()
     expect(screen.getByText('42')).toBeInTheDocument()
   })
 

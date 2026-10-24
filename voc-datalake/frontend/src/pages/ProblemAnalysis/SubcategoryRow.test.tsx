@@ -2,145 +2,37 @@
  * @fileoverview Tests for SubcategoryRow component
  */
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
-import { SubcategoryRow } from './SubcategoryRow'
+import { clientApiModule, feedbackById, problemAnalysisApiMocks, SHIPPING_SPEED_SUBCATEGORY } from './problem-analysis-fixtures'
+import { renderSubcategoryRow } from './problem-row-fixtures'
 import { buildResolutionKey } from './problemResolution'
 
-const mockSubcategoryGroup = {
-  subcategory: 'shipping_speed',
-  problems: [
-    {
-      problem: 'Slow delivery times',
-      similarProblems: [],
-      rootCause: 'Logistics issues',
-      items: [
-        {
-          feedback_id: 'f1',
-          source_platform: 'webscraper',
-          brand_name: 'TestBrand',
-          original_text: 'Delivery was slow',
-          category: 'delivery',
-          subcategory: 'shipping_speed',
-          problem_summary: 'Slow delivery times',
-          sentiment_score: -0.5,
-          sentiment_label: 'negative' as const,
-          urgency: 'high' as const,
-          source_created_at: '2025-01-01',
-          processed_at: '2025-01-01',
-          original_language: 'en',
-          source_id: 's1',
-          source_channel: 'social',
-          journey_stage: 'post_purchase',
-          impact_area: 'delivery',
-        },
-      ],
-      avgSentiment: -0.5,
-      urgentCount: 1,
-    },
-    {
-      problem: 'Package damaged',
-      similarProblems: [],
-      rootCause: null,
-      items: [
-        {
-          feedback_id: 'f2',
-          source_platform: 'manual_import',
-          brand_name: 'TestBrand',
-          original_text: 'Package arrived damaged',
-          category: 'delivery',
-          subcategory: 'shipping_speed',
-          problem_summary: 'Package damaged',
-          sentiment_score: -0.7,
-          sentiment_label: 'negative' as const,
-          urgency: 'medium' as const,
-          source_created_at: '2025-01-02',
-          processed_at: '2025-01-02',
-          original_language: 'en',
-          source_id: 's2',
-          source_channel: 'review',
-          journey_stage: 'post_purchase',
-          impact_area: 'delivery',
-        },
-      ],
-      avgSentiment: -0.7,
-      urgentCount: 0,
-    },
-  ],
-  totalItems: 2,
-  urgentCount: 1,
-}
-
-function renderWithRouter(ui: React.ReactElement) {
-  return render(<MemoryRouter>{ui}</MemoryRouter>)
-}
+vi.mock('../../api/client', () => clientApiModule())
 
 describe('SubcategoryRow', () => {
   describe('collapsed state', () => {
     it('renders subcategory name', () => {
-      renderWithRouter(
-        <SubcategoryRow
-          categoryName="delivery"
-          subcategoryGroup={mockSubcategoryGroup}
-          isExpanded={false}
-          onToggle={vi.fn()}
-          expandedProblems={new Set()}
-          onToggleProblem={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+      renderSubcategoryRow()
 
-      expect(screen.getByText('shipping speed')).toBeInTheDocument()
+      expect(screen.getByText('Shipping speed')).toBeInTheDocument()
     })
 
     it('shows problem and review counts', () => {
-      renderWithRouter(
-        <SubcategoryRow
-          categoryName="delivery"
-          subcategoryGroup={mockSubcategoryGroup}
-          isExpanded={false}
-          onToggle={vi.fn()}
-          expandedProblems={new Set()}
-          onToggleProblem={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+      renderSubcategoryRow()
 
       expect(screen.getByText(/2 problems/)).toBeInTheDocument()
       expect(screen.getByText(/2 reviews/)).toBeInTheDocument()
     })
 
     it('shows urgent count badge when has urgent items', () => {
-      renderWithRouter(
-        <SubcategoryRow
-          categoryName="delivery"
-          subcategoryGroup={mockSubcategoryGroup}
-          isExpanded={false}
-          onToggle={vi.fn()}
-          expandedProblems={new Set()}
-          onToggleProblem={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+      renderSubcategoryRow()
 
-      expect(screen.getByText('1')).toBeInTheDocument()
+      expect(screen.getByText('1 urgent')).toBeInTheDocument()
     })
 
     it('does not show urgent badge when no urgent items', () => {
-      const groupNoUrgent = { ...mockSubcategoryGroup, urgentCount: 0 }
-
-      renderWithRouter(
-        <SubcategoryRow
-          categoryName="delivery"
-          subcategoryGroup={groupNoUrgent}
-          isExpanded={false}
-          onToggle={vi.fn()}
-          expandedProblems={new Set()}
-          onToggleProblem={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+      renderSubcategoryRow({ subcategoryGroup: { ...SHIPPING_SPEED_SUBCATEGORY, urgentCount: 0 } })
 
       // Only the counts in the text should be visible
       expect(screen.queryByText('0')).not.toBeInTheDocument()
@@ -149,17 +41,7 @@ describe('SubcategoryRow', () => {
 
   describe('expanded state', () => {
     it('shows problem rows when expanded', () => {
-      renderWithRouter(
-        <SubcategoryRow
-          categoryName="delivery"
-          subcategoryGroup={mockSubcategoryGroup}
-          isExpanded={true}
-          onToggle={vi.fn()}
-          expandedProblems={new Set()}
-          onToggleProblem={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+      renderSubcategoryRow({ isExpanded: true })
 
       expect(screen.getByText('Slow delivery times')).toBeInTheDocument()
       expect(screen.getByText('Package damaged')).toBeInTheDocument()
@@ -171,37 +53,17 @@ describe('SubcategoryRow', () => {
       const onToggle = vi.fn()
       const user = userEvent.setup()
 
-      renderWithRouter(
-        <SubcategoryRow
-          categoryName="delivery"
-          subcategoryGroup={mockSubcategoryGroup}
-          isExpanded={false}
-          onToggle={onToggle}
-          expandedProblems={new Set()}
-          onToggleProblem={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+      renderSubcategoryRow({ onToggle })
 
-      await user.click(screen.getByText('shipping speed'))
-      expect(onToggle).toHaveBeenCalled()
+      await user.click(screen.getByText('Shipping speed'))
+      expect(onToggle).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'click' }))
     })
 
     it('calls onToggleProblem when problem row clicked', async () => {
       const onToggleProblem = vi.fn()
       const user = userEvent.setup()
 
-      renderWithRouter(
-        <SubcategoryRow
-          categoryName="delivery"
-          subcategoryGroup={mockSubcategoryGroup}
-          isExpanded={true}
-          onToggle={vi.fn()}
-          expandedProblems={new Set()}
-          onToggleProblem={onToggleProblem}
-          onToggleResolved={vi.fn()}
-        />
-      )
+      renderSubcategoryRow({ isExpanded: true, onToggleProblem })
 
       await user.click(screen.getByText('Slow delivery times'))
       expect(onToggleProblem).toHaveBeenCalledWith('delivery:shipping_speed:Slow delivery times')
@@ -209,40 +71,29 @@ describe('SubcategoryRow', () => {
   })
 
   describe('problem expansion', () => {
-    it('expands problem when in expandedProblems set', () => {
+    it('expands problem when in expandedProblems set', async () => {
+      problemAnalysisApiMocks.getFeedbackById.mockImplementation(feedbackById)
       const expandedProblems = new Set(['delivery:shipping_speed:Slow delivery times'])
 
-      renderWithRouter(
-        <SubcategoryRow
-          categoryName="delivery"
-          subcategoryGroup={mockSubcategoryGroup}
-          isExpanded={true}
-          onToggle={vi.fn()}
-          expandedProblems={expandedProblems}
-          onToggleProblem={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+      renderSubcategoryRow({ isExpanded: true, expandedProblems })
 
-      // When problem is expanded, feedback items should be visible
-      expect(screen.getByText('Delivery was slow')).toBeInTheDocument()
+      // When problem is expanded, its example reviews are read and shown
+      expect(await screen.findByText('The delivery was very slow')).toBeInTheDocument()
+    })
+
+    it('counts every problem the server found, not only the listed ones', () => {
+      renderSubcategoryRow({ subcategoryGroup: { ...SHIPPING_SPEED_SUBCATEGORY, problemCount: 40 } })
+
+      expect(screen.getByText(/40 problems/)).toBeInTheDocument()
     })
   })
 
   describe('per-key pending (issue #159)', () => {
     it('disables only the resolve button whose key is pending', () => {
-      renderWithRouter(
-        <SubcategoryRow
-          categoryName="delivery"
-          subcategoryGroup={mockSubcategoryGroup}
-          isExpanded={true}
-          onToggle={vi.fn()}
-          expandedProblems={new Set()}
-          onToggleProblem={vi.fn()}
-          onToggleResolved={vi.fn()}
-          pendingKeys={new Set([buildResolutionKey('delivery', 'shipping_speed', 'Slow delivery times')])}
-        />
-      )
+      renderSubcategoryRow({
+        isExpanded: true,
+        pendingKeys: new Set([buildResolutionKey('delivery', 'shipping_speed', 'Slow delivery times')]),
+      })
 
       const [slowDeliveryButton, damagedButton] = screen.getAllByRole('button', { name: /resolved/i })
       expect(slowDeliveryButton).toBeDisabled()

@@ -99,11 +99,12 @@ import ast
 import re
 from pathlib import Path
 
+from aggregator.handler import counter_dimensions
 from shared.feedback import PERSONA_FIELD, PERSONA_PREFIX, PERSONA_UNKNOWN
 
-from aggregator.handler import counter_dimensions
-
-PROCESSOR_SOURCE = 'lambda/processor/handler.py'
+# The enrichment prompt and the enrichment item fields moved out of the
+# processor into the module it shares with the category-reprocess worker.
+PROCESSOR_SOURCE = 'lambda/shared/categorization.py'
 AGGREGATOR_SOURCE = 'lambda/aggregator/handler.py'
 # The one derivation both Lambdas call, and so the one place the field is READ. The
 # pin below follows it here rather than staying on `counter_dimensions`, which no
@@ -192,13 +193,13 @@ def _persona_field_reads() -> list[str]:
         f'Expected exactly one {BUCKET_FUNCTION} in {SHARED_SOURCE}; found '
         f'{len(functions)}. A second copy is the drift this file exists to prevent.'
     )
-    reads: list[str] = []
-    for statement in functions[0].body:
-        for node in ast.walk(statement):
-            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-                    and node.func.attr == 'get' and node.args):
-                reads.append(ast.unparse(node.args[0]))
-    return reads
+    return [
+        ast.unparse(node.args[0])
+        for statement in functions[0].body
+        for node in ast.walk(statement)
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr == 'get' and node.args)
+    ]
 
 
 def _aggregator_derives_the_bucket_through_the_shared_function() -> bool:

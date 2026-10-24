@@ -6,37 +6,26 @@
  * @module pages/Categories/FeedbackPDFContent
  */
 
+import type { CSSProperties } from 'react'
+import { ClipboardList } from 'lucide-react'
 import type { FeedbackItem } from '../../api/types'
+import { PDF_REPORT_LOCALE, PdfIcon, PdfSectionHeading } from '../../components/PdfParts/pdfParts'
+import { pdfToneStyle, pdfZebraRow, type PdfTone } from '../../components/PdfParts/pdfTones'
+import { signedAverage } from '../../components/SentimentWords/sentimentWords'
+import { formatDate } from '../../utils/dateUtils'
+import { formatCount } from '../../utils/numberFormat'
+import { categoryLabel, sourceLabel } from '../../utils/displayLabels'
 
-function getSentimentStyle(label: string): {
-  bg: string;
-  color: string
-} {
-  if (label === 'positive') return {
-    bg: '#dcfce7',
-    color: '#166534',
-  }
-  if (label === 'negative') return {
-    bg: '#fef2f2',
-    color: '#991b1b',
-  }
-  if (label === 'mixed') return {
-    bg: '#fef9c3',
-    color: '#854d0e',
-  }
-  return {
-    bg: '#f3f4f6',
-    color: '#374151',
-  }
+/** The tone a sentiment label prints in; anything else (neutral, unknown) is muted. */
+function sentimentPdfTone(label: string): PdfTone {
+  if (label === 'positive') return 'ok'
+  if (label === 'negative') return 'danger'
+  if (label === 'mixed') return 'warn'
+  return 'muted'
 }
 
-function formatDate(dateString: string | null | undefined): string {
-  if ((dateString == null || dateString === '')) return '—'
-  try {
-    return new Date(dateString).toLocaleDateString()
-  } catch {
-    return '—'
-  }
+function formatPdfDate(dateString: string | null | undefined): string {
+  return formatDate(dateString, PDF_REPORT_LOCALE, '—')
 }
 
 function truncateText(text: string, maxLength: number): string {
@@ -57,6 +46,13 @@ function toFiniteNumber(value: unknown, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback
 }
 
+const HEADER_CELL = {
+  textAlign: 'left',
+  padding: '8px 6px',
+  color: '#5e5966',
+  fontWeight: '600',
+} satisfies CSSProperties
+
 /**
  * Feedback items table for the PDF report. Renders nothing when the list is
  * empty (mirrors the other report sections).
@@ -66,12 +62,7 @@ export function FeedbackTableSection({ items }: { readonly items: readonly Feedb
 
   return (
     <div data-pdf-section style={{ marginBottom: '28px' }}>
-      <h2 style={{
-        fontSize: '18px',
-        fontWeight: '600',
-        color: '#1e293b',
-        marginBottom: '12px',
-      }}>📋 Feedback Items ({items.length})</h2>
+      <PdfSectionHeading><PdfIcon icon={ClipboardList} />Feedback Items ({formatCount(items.length, PDF_REPORT_LOCALE)})</PdfSectionHeading>
       <table style={{
         width: '100%',
         borderCollapse: 'collapse',
@@ -79,110 +70,72 @@ export function FeedbackTableSection({ items }: { readonly items: readonly Feedb
       }}>
         <thead>
           <tr style={{
-            borderBottom: '2px solid #e5e7eb',
-            backgroundColor: '#f8fafc',
+            borderBottom: '2px solid #e4e4e7',
+            backgroundColor: '#f5f5f5',
           }}>
+            <th style={HEADER_CELL}>Date</th>
+            <th style={HEADER_CELL}>Source</th>
+            <th style={HEADER_CELL}>Category</th>
+            <th style={HEADER_CELL}>Sentiment</th>
             <th style={{
-              textAlign: 'left',
-              padding: '8px 6px',
-              color: '#6b7280',
-              fontWeight: '600',
-            }}>Date</th>
-            <th style={{
-              textAlign: 'left',
-              padding: '8px 6px',
-              color: '#6b7280',
-              fontWeight: '600',
-            }}>Source</th>
-            <th style={{
-              textAlign: 'left',
-              padding: '8px 6px',
-              color: '#6b7280',
-              fontWeight: '600',
-            }}>Category</th>
-            <th style={{
-              textAlign: 'left',
-              padding: '8px 6px',
-              color: '#6b7280',
-              fontWeight: '600',
-            }}>Sentiment</th>
-            <th style={{
+              ...HEADER_CELL,
               textAlign: 'center',
-              padding: '8px 6px',
-              color: '#6b7280',
-              fontWeight: '600',
               width: '50px',
             }}>Rating</th>
-            <th style={{
-              textAlign: 'left',
-              padding: '8px 6px',
-              color: '#6b7280',
-              fontWeight: '600',
-            }}>Feedback</th>
-            <th style={{
-              textAlign: 'left',
-              padding: '8px 6px',
-              color: '#6b7280',
-              fontWeight: '600',
-            }}>Problem</th>
+            <th style={HEADER_CELL}>Feedback</th>
+            <th style={HEADER_CELL}>Problem</th>
           </tr>
         </thead>
         <tbody>
           {items.map((item, i) => {
-            const sentStyle = getSentimentStyle(item.sentiment_label)
+            const sentStyle = pdfToneStyle(sentimentPdfTone(item.sentiment_label))
             return (
-              <tr key={item.feedback_id} style={{
-                borderBottom: '1px solid #f3f4f6',
-                backgroundColor: i % 2 === 0 ? '#ffffff' : '#f9fafb',
-              }}>
+              <tr key={item.feedback_id} style={pdfZebraRow(i)}>
                 <td style={{
                   padding: '6px',
                   whiteSpace: 'nowrap',
-                  color: '#6b7280',
+                  color: '#5e5966',
                   fontSize: '11px',
                 }}>
-                  {formatDate(item.source_created_at)}
+                  {formatPdfDate(item.source_created_at)}
                 </td>
                 <td style={{
                   padding: '6px',
-                  textTransform: 'capitalize',
-                  color: '#374151',
+                  color: '#4a464f',
                   fontSize: '11px',
                 }}>
-                  {item.source_platform.replaceAll('_', ' ')}
+                  {sourceLabel(item.source_platform)}
                 </td>
                 <td style={{
                   padding: '6px',
-                  textTransform: 'capitalize',
-                  color: '#374151',
+                  color: '#4a464f',
                   fontSize: '11px',
                 }}>
-                  {item.category.replaceAll('_', ' ')}
+                  {categoryLabel(item.category)}
                 </td>
                 <td style={{ padding: '6px' }}>
                   <span style={{
                     padding: '2px 8px',
-                    backgroundColor: sentStyle.bg,
-                    color: sentStyle.color,
+                    ...sentStyle,
                     borderRadius: '10px',
                     fontSize: '10px',
                     fontWeight: '500',
                     whiteSpace: 'nowrap',
                   }}>
-                    {item.sentiment_label} ({toFiniteNumber(item.sentiment_score).toFixed(2)})
+                    {item.sentiment_label} ({signedAverage(toFiniteNumber(item.sentiment_score), PDF_REPORT_LOCALE)})
                   </span>
                 </td>
                 <td style={{
                   padding: '6px',
                   textAlign: 'center',
-                  color: '#374151',
+                  color: '#4a464f',
                   fontSize: '11px',
                 }}>
                   {item.rating == null ? '—' : `${item.rating}/5`}
                 </td>
                 <td style={{
                   padding: '6px',
-                  color: '#374151',
+                  color: '#4a464f',
                   fontSize: '11px',
                   maxWidth: '250px',
                 }}>
@@ -190,7 +143,7 @@ export function FeedbackTableSection({ items }: { readonly items: readonly Feedb
                 </td>
                 <td style={{
                   padding: '6px',
-                  color: '#6b7280',
+                  color: '#5e5966',
                   fontSize: '11px',
                   fontStyle: 'italic',
                   maxWidth: '180px',

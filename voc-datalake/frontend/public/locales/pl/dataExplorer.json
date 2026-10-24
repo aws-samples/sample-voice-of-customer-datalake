@@ -1,0 +1,78 @@
+{
+  "editModal": {
+    "cancel": "Anuluj",
+    "close": "Zamknij",
+    "create": "Utwórz",
+    "createNewFile": "Utwórz nowy plik",
+    "editFeedback": "Edytuj opinię",
+    "editS3File": "Edytuj plik S3",
+    "id": "ID",
+    "invalidJson": "Nieprawidłowy JSON: {{error}}",
+    "key": "Klucz",
+    "save": "Zapisz",
+    "syncToDynamo": "Zaktualizuj także DynamoDB",
+    "type": "Typ",
+    "viewFeedback": "Podgląd opinii",
+    "viewS3File": "Podgląd pliku S3",
+    "content": "Zawartość pliku"
+  },
+  "feedback": {
+    "category": "Kategoria: {{category}}",
+    "edit": "Edytuj",
+    "noFeedback": "Nie znaleziono opinii",
+    "showingRecords": "Wyświetlono {{filtered, number}} z {{total, number}} rekordów",
+    "urgent": "Pilne",
+    "view": "Podgląd",
+    "noFeedbackHint": "Spróbuj innego źródła lub szerszego zakresu czasu.",
+    "showDetails": "Pokaż szczegóły",
+    "hideDetails": "Ukryj szczegóły",
+    "showingRecordsAtLeast": "Wyświetlono {{filtered, number}}, dostępne więcej",
+    "showingRecordsShown": "Wyświetlono {{filtered, number}}",
+    "loadMore": "Załaduj więcej",
+    "loadingMore": "Ładowanie…"
+  },
+  "filters": {
+    "allSources": "Wszystkie źródła",
+    "searchPlaceholder": "Szukaj...",
+    "bucket": "Bucket",
+    "source": "Źródło",
+    "search": "Szukaj opinii"
+  },
+  "s3Browser": {
+    "back": "Wstecz",
+    "download": "Pobierz",
+    "edit": "Edytuj",
+    "noFiles": "Nie znaleziono plików",
+    "view": "Podgląd",
+    "path": "Ścieżka folderu",
+    "noFilesHint": "Ten folder jest pusty. Utwórz tutaj plik lub zaimportuj dane ze Źródeł danych."
+  },
+  "tabs": {
+    "categories": "Kategorie",
+    "categoriesShort": "Kategorie",
+    "feedbackShort": "Opinie",
+    "processedFeedback": "Przetworzone opinie",
+    "s3RawData": "Surowe dane S3",
+    "s3Short": "S3",
+    "label": "Widok danych"
+  },
+  "details": {
+    "title": "Tytuł",
+    "text": "Recenzja",
+    "source": "Źródło",
+    "date": "Data",
+    "category": "Kategoria",
+    "rating": "Ocena",
+    "language": "Język",
+    "author": "Autor",
+    "problem": "Problem",
+    "persona": "Persona",
+    "showRaw": "Pokaż surowy JSON",
+    "hideRaw": "Ukryj surowy JSON"
+  },
+  "description": "Przeglądaj surowe dane S3 i przetworzone rekordy DynamoDB. Nic stąd nigdy nie jest usuwane, a zapisane surowe pliki są tylko do odczytu.",
+  "newFile": "Nowy plik",
+  "notConfigured": "Skonfiguruj endpoint API w Administracja → Ogólne, aby przeglądać dane",
+  "refresh": "Odśwież",
+  "title": "Eksplorator danych"
+}

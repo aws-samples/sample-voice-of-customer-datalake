@@ -4,17 +4,42 @@
     "edit": "Bearbeiten",
     "frequency": "Häufigkeit",
     "lastRun": "Letzter Lauf",
-    "lastSummary": "Letzter: {{pages}} Seiten, {{reviews}} Bewertungen",
+    "lastSummary": "Letzter: {{pages, number}} Seiten, {{reviews, number}} Bewertungen",
     "never": "Nie",
     "notConfigured": "Nicht konfiguriert",
+    "radarBadge": "Radar: {{brand}}",
+    "runConfirmTitle": "Bewertungen jetzt abrufen?",
+    "runConfirmMessage": "Dabei wird {{site}} kontaktiert, und neu gefundene Bewertungen werden hinzugefügt. Das kann einige Minuten dauern.",
+    "runConfirmLabel": "Bewertungen abrufen",
+    "runStarted": "Gestartet. Neue Bewertungen erscheinen in Ihren Daten, sobald der Lauf fertig ist.",
+    "siteAppStore": "der App Store",
+    "siteGooglePlay": "Google Play",
+    "siteUnknown": "die Quelle",
     "runNow": "Jetzt ausführen",
-    "urls": "Adressen"
+    "urls": "Adressen",
+    "state": {
+      "scheduled": "Geplant",
+      "manual": "Manuell",
+      "paused": "Pausiert"
+    }
   },
   "configureApiFirst": "Zuerst API-Endpunkt konfigurieren",
+  "radarSource": {
+    "label": "Radar-Quelle: Bewertungen einer anderen Marke",
+    "hint": "Ihre Bewertungen gehen unter der gewählten Marke an Radar, nie in Ihre eigenen Dashboards.",
+    "brandLabel": "Radar-Marke",
+    "choose": "Marke wählen",
+    "unknownBrand": "{{key}} (nicht in der Markenliste)",
+    "noBrand": "Noch keine Radar-Marke.",
+    "addBrand": "Marke unter Administration → Quellen → Radar hinzufügen",
+    "needsBrand": "Wählen Sie eine Marke, sonst bleibt dies eine normale Quelle.",
+    "loading": "Radar-Marken werden geladen...",
+    "loadFailed": "Die Radar-Marken konnten nicht geladen werden."
+  },
   "csvUpload": {
     "cancel": "Abbrechen",
-    "defaultSourceHint": "Wird für Zeilen ohne \"source\"-Spalte verwendet.",
-    "defaultSourceLabel": "Standard-Quellenbezeichnung",
+    "defaultSourceHint": "Für Zeilen ohne Kanalspalte. Leer lassen für „CSV-Upload“.",
+    "defaultSourceLabel": "Standardkanal",
     "done": "Fertig",
     "downloadTemplate": "Vorlage herunterladen",
     "dropZone": ".csv-Datei hier ablegen oder klicken zum Auswählen",
@@ -24,13 +49,41 @@
     "fieldText": "— erforderlich. Der Feedback-Inhalt.",
     "formatGuide": "CSV-Format",
     "headerNote": "Spaltenüberschriften sind unabhängig von Groß-/Kleinschreibung. Bis zu 50.000 Zeilen / 10 MB pro Upload.",
-    "imported_one": "{{count}} Zeile zur Verarbeitung eingereiht",
-    "imported_other": "{{count}} Zeilen zur Verarbeitung eingereiht",
+    "imported_one": "{{count, number}} Zeile zur Verarbeitung eingereiht",
+    "imported_other": "{{count, number}} Zeilen zur Verarbeitung eingereiht",
     "pipelineNote": "Die Zeilen erscheinen auf der Feedback-Seite, sobald die Bedrock-Anreicherung abgeschlossen ist (meist innerhalb einer Minute).",
+    "pipelineNoteRadar": "Die Zeilen erscheinen auf der Radar-Seite unter {{brand}}, sobald die Bedrock-Anreicherung abgeschlossen ist (meist innerhalb einer Minute). Sie erreichen nie Ihre eigenen Dashboards.",
     "title": "CSV-Upload",
     "upload": "Hochladen",
     "uploading": "Wird hochgeladen…",
-    "warningsHeader": "Warnungen"
+    "warningsHeader": "Warnungen",
+    "errorNoHeader": "Die Datei hat keine Kopfzeile.",
+    "errorUnreadable": "Die Datei konnte nicht gelesen werden.",
+    "uploadFailed": "Hochladen fehlgeschlagen",
+    "mapping": {
+      "title": "Spaltenzuordnung",
+      "hint": "Aus der Kopfzeile vorgeschlagen. Unbekannte Spalten bleiben als Metadaten erhalten; verworfen wird nur, was Sie auf Ignorieren setzen.",
+      "columnLabel": "Ziel von {{header}}",
+      "dimensionTarget": "Dimension: {{name}}",
+      "targets": {
+        "text": "Feedbacktext",
+        "id": "Zeilen-ID",
+        "rating": "Bewertung",
+        "date": "Datum",
+        "author": "Autor",
+        "title": "Titel",
+        "url": "Link",
+        "channel": "Kanal",
+        "tags": "Tags",
+        "metadata": "Als Metadaten behalten",
+        "ignore": "Ignorieren"
+      },
+      "problems": {
+        "noText": "Ordnen Sie eine Spalte dem Feedbacktext zu.",
+        "twice": "{{target}} ist mehr als einer Spalte zugeordnet."
+      }
+    },
+    "defaultSourcePlaceholder": "z. B. Support-Umfrage"
   },
   "deleteConfirmLabel": "Löschen",
   "deleteConfirmMessage": "Möchten Sie diesen Scraper wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
@@ -52,11 +105,12 @@
     "enablePagination": "Paginierung aktivieren",
     "enterUrlFirst": "Geben Sie zuerst eine URL ein",
     "failedToAnalyze": "URL-Analyse fehlgeschlagen",
-    "foundReviews": "{{count}} Bewertungen gefunden. {{notes}}",
-    "foundReviews_one": "{{count}} Bewertungen gefunden. {{notes}}",
-    "foundReviews_other": "{{count}} Bewertungen gefunden. {{notes}}",
+    "foundReviews": "{{count, number}} Bewertungen gefunden. {{notes}}",
+    "foundReviews_one": "{{count, number}} Bewertungen gefunden. {{notes}}",
+    "foundReviews_other": "{{count, number}} Bewertungen gefunden. {{notes}}",
+    "noReviewsFound": "Auf dieser Seite wurden keine Bewertungen gefunden. Prüfen Sie, ob die URL eine Seite mit Bewertungen öffnet, oder geben Sie die CSS-Selektoren selbst ein.",
     "frequency": "Häufigkeit",
-    "hideCssSelectors": "CSS-Selektoren ausblenden",
+    "hideCssSelectors": "Erweiterte Einstellungen ausblenden",
     "jsonLdDescription": "Dieser Scraper verwendet strukturierte Daten (Schema.org), die in der Seite eingebettet sind. Keine CSS-Selektoren erforderlich.",
     "jsonLdTitle": "JSON-LD-Extraktion",
     "maxPages": "Max. Seiten",
@@ -67,27 +121,29 @@
     "rating": "Bewertung",
     "reviewContainer": "Bewertungs-Container *",
     "save": "Scraper speichern",
+    "saveFailed": "Der Scraper konnte nicht gespeichert werden. Bitte versuchen Sie es erneut.",
     "scraperName": "Scraper-Name",
     "scraperNamePlaceholder": "Mein Bewertungs-Scraper",
     "selectorsAutoDetected": "Diese Selektoren wurden automatisch erkannt. Passen Sie sie bei Bedarf an.",
     "selectorsDefault": "Diese Selektoren wurden auf Standardwerte gesetzt. Passen Sie sie bei Bedarf an.",
     "selectorTitle": "Titel",
-    "showCssSelectors": "CSS-Selektoren anzeigen",
+    "showCssSelectors": "Erweitert: welcher Teil der Seite eine Bewertung ist (CSS-Selektoren)",
     "start": "Starten",
     "textContent": "Textinhalt *",
     "warnings": "Warnungen:",
     "websiteUrl": "Website-URL",
-    "websiteUrlPlaceholder": "https://beispiel.de/bewertungen"
+    "websiteUrlPlaceholder": "https://beispiel.de/bewertungen",
+    "adminOnlyNotice": "Nur Administratoren können Web-Scraper erstellen oder ändern. Sie können diese Konfiguration ansehen."
   },
   "empty": {
-    "createButton": "Scraper erstellen",
-    "description": "Erstellen Sie einen Scraper, um Feedback von Websites zu sammeln",
-    "title": "Keine Scraper konfiguriert"
+    "createButton": "Datenquelle hinzufügen",
+    "description": "Fügen Sie eine Bewertungsseite, eine App, eine Datei oder ein Tool hinzu, um Feedback zu sammeln.",
+    "title": "Noch keine Datenquellen"
   },
   "generator": {
-    "completed": "{{count}} synthetische Bewertungen generiert. Sie erscheinen kurz nach der Verarbeitung.",
-    "completed_one": "{{count}} synthetische Bewertung generiert. Sie erscheint kurz nach der Verarbeitung.",
-    "completed_other": "{{count}} synthetische Bewertungen generiert. Sie erscheinen kurz nach der Verarbeitung.",
+    "completed": "{{count, number}} synthetische Bewertungen generiert. Sie erscheinen kurz nach der Verarbeitung.",
+    "completed_one": "{{count, number}} synthetische Bewertung generiert. Sie erscheint kurz nach der Verarbeitung.",
+    "completed_other": "{{count, number}} synthetische Bewertungen generiert. Sie erscheinen kurz nach der Verarbeitung.",
     "generate": "Generieren",
     "generating": "Wird generiert…",
     "runningNote": "Bewertungen werden mit KI generiert. Das kann bis zu einer Minute dauern.",
@@ -105,19 +161,27 @@
     "fieldTimestamp": "ISO 8601 UTC (z.B. 2026-03-20T14:30:00Z). Wann das Feedback ursprünglich erstellt wurde.",
     "formatGuide": "Formatanleitung",
     "importing": "Importiere...",
-    "importItems": "{{count}} Element{{plural}} importieren",
-    "importItems_one": "{{count}} Element{{plural}} importieren",
-    "importItems_other": "{{count}} Element{{plural}} importieren",
-    "itemsImported_one": "{{count}} Element importiert",
-    "itemsImported_other": "{{count}} Elemente importiert",
-    "moreItems": "...und {{count}} weitere Elemente",
-    "moreItems_one": "...und {{count}} weitere Elemente",
-    "moreItems_other": "...und {{count}} weitere Elemente",
+    "importItems": "{{count, number}} Element{{plural}} importieren",
+    "importItems_one": "{{count, number}} Element{{plural}} importieren",
+    "importItems_other": "{{count, number}} Element{{plural}} importieren",
+    "itemsImported_one": "{{count, number}} Element importiert",
+    "itemsImported_other": "{{count, number}} Elemente importiert",
+    "moreItems": "...und {{count, number}} weitere Elemente",
+    "moreItems_one": "...und {{count, number}} weitere Elemente",
+    "moreItems_other": "...und {{count, number}} weitere Elemente",
     "optionalFields": "Optional: rating (1-5), title, user_id, url, metadata (flache Schlüssel-Wert-Paare).",
     "pipelineNote": "Elemente werden jetzt durch die Pipeline verarbeitet. Sie erscheinen in Kürze im Dashboard.",
-    "preview": "Vorschau — {{count}} Element{{plural}}",
-    "preview_one": "Vorschau — {{count}} Element{{plural}}",
-    "preview_other": "Vorschau — {{count}} Element{{plural}}",
+    "preview": "Vorschau — {{count, number}} Element{{plural}}",
+    "preview_one": "Vorschau — {{count, number}} Element{{plural}}",
+    "preview_other": "Vorschau — {{count, number}} Element{{plural}}",
+    "reasonInvalid": "{{field}}: {{message}}",
+    "reasonNotObject": "kein JSON-Objekt",
+    "reasonRequired": "{{field}} ist erforderlich",
+    "reasonType": "{{field}} hat den falschen Typ",
+    "removeFile": "Datei entfernen",
+    "skippedItem": "Element {{position}}: {{reasons}}",
+    "skippedTitle_one": "{{count, number}} Element wird übersprungen. Korrigieren Sie es in der Datei und laden Sie sie erneut hoch, um es einzuschließen.",
+    "skippedTitle_other": "{{count, number}} Elemente werden übersprungen. Korrigieren Sie sie in der Datei und laden Sie sie erneut hoch, um sie einzuschließen.",
     "templateNote": "Die Vorlagendatei enthält vollständige Anweisungen und LLM-fähige Dokumentation.",
     "title": "JSON-Upload"
   },
@@ -125,14 +189,14 @@
     "addReviewManually": "Bewertung manuell hinzufügen",
     "backToEdit": "Zurück zur Bearbeitung",
     "cancel": "Abbrechen",
-    "charCount": "{{count}} von {{max}}",
     "detected": "Erkannt: {{source}}",
     "enterBothFields": "Bitte geben Sie sowohl URL als auch Bewertungstext ein",
     "exceedsMax": "Text überschreitet das Maximum von {{max}} Zeichen",
     "importing": "Importiere...",
-    "importReviews": "{{count}} Bewertungen importieren",
-    "importReviews_one": "{{count}} Bewertungen importieren",
-    "importReviews_other": "{{count}} Bewertungen importieren",
+    "importReviews": "{{count, number}} Bewertungen importieren",
+    "importReviews_one": "{{count, number}} Bewertungen importieren",
+    "importReviews_other": "{{count, number}} Bewertungen importieren",
+    "invalidUrl": "Geben Sie eine vollständige Webadresse ein, die mit http:// oder https:// beginnt",
     "noReviewsDescription": "Der eingefügte Text enthielt keine erkennbaren Bewertungen. Sie können unten manuell Bewertungen hinzufügen.",
     "noReviewsDetected": "Keine Bewertungen erkannt",
     "noReviewsTitle": "Keine Bewertungen erkannt",
@@ -141,74 +205,173 @@
     "parsingTitle": "Bewertungen werden mit KI geparst...",
     "pasteReviews": "Bewertungen einfügen",
     "pasteReviewsPlaceholder": "Fügen Sie die kopierten Bewertungen hier ein...",
-    "reviewsFound_one": "{{count}} Bewertung gefunden",
-    "reviewsFound_other": "{{count}} Bewertungen gefunden",
+    "reviewsFound_one": "{{count, number}} Bewertung gefunden",
+    "reviewsFound_other": "{{count, number}} Bewertungen gefunden",
     "source": "Quelle: {{source}}",
     "sourceUrl": "Quell-URL",
     "sourceUrlPlaceholder": "https://beispiel.de/bewertungen",
     "title": "Manueller Import",
-    "unparsedSections_one": "⚠️ {{count}} Abschnitt konnte nicht geparst werden",
-    "unparsedSections_other": "⚠️ {{count}} Abschnitte konnten nicht geparst werden"
+    "unparsedSections_one": "{{count, number}} Abschnitt konnte nicht geparst werden",
+    "unparsedSections_other": "{{count, number}} Abschnitte konnten nicht geparst werden",
+    "datesRequired_one": "{{count, number}} Bewertung braucht ein Datum, bevor der Import starten kann.",
+    "datesRequired_other": "{{count, number}} Bewertungen brauchen ein Datum, bevor der Import starten kann.",
+    "datesDefaulted_one": "{{count, number}} Bewertung hatte im Text kein Datum und erhält das heutige Importdatum. Sie können es unten ändern.",
+    "datesDefaulted_other": "{{count, number}} Bewertungen hatten im Text kein Datum und erhalten das heutige Importdatum. Sie können es unten ändern.",
+    "importFailed": "Bewertungen konnten nicht importiert werden",
+    "clearDraft": "Entwurf löschen",
+    "draftDropped": "Ihr gespeicherter Entwurf war länger als {{max}} Zeichen und wurde gelöscht. Fügen Sie einen kürzeren Text ein, um fortzufahren."
   },
   "newSource": "Neue Quelle",
   "parsedReview": {
     "authorPlaceholder": "Autor",
-    "deleteReview": "Bewertung löschen",
     "noRating": "Keine Bewertung",
-    "star_one": "{{count}} Stern",
-    "star_other": "{{count}} Sterne",
+    "star_one": "{{count, number}} Stern",
+    "star_other": "{{count, number}} Sterne",
     "textPlaceholder": "Bewertungstext",
-    "titlePlaceholder": "Bewertungstitel (optional)"
+    "titlePlaceholder": "Bewertungstitel (optional)",
+    "dateLabel": "Bewertungsdatum (Pflichtfeld)",
+    "dateDefaulted": "Kein Datum gefunden: Importdatum gesetzt"
   },
   "pluginConfig": {
     "automaticSchedule": "Automatischer Zeitplan",
     "close": "Schließen",
-    "configuration": "Konfiguration",
     "disabled": "Deaktiviert",
     "enabled": "Aktiviert",
-    "hide": "Ausblenden",
     "runNow": "Jetzt ausführen",
     "runTriggered": "Ausführung gestartet",
     "save": "Speichern",
-    "saved": "Gespeichert!",
     "scheduleDescription": "Diese Quelle nach konfiguriertem Zeitplan ausführen",
     "select": "Auswählen...",
-    "show": "Anzeigen",
-    "test": "Testen"
+    "configuredInSettings": "{{name}} wird unter {{where}} verbunden: Fügen Sie dort das Token und die Einstellungen ein und kommen Sie dann hierher zurück.",
+    "openDataSourceSettings": "Quelleneinstellungen öffnen"
   },
   "refresh": "Aktualisieren",
   "status": {
     "completed": "Abgeschlossen",
     "completedWithErrors": "Mit Fehlern abgeschlossen",
     "failed": "Fehlgeschlagen",
-    "moreErrors": "...und {{count}} weitere Fehler",
-    "moreErrors_one": "...und {{count}} weitere Fehler",
-    "moreErrors_other": "...und {{count}} weitere Fehler",
+    "moreErrors": "...und {{count, number}} weitere Fehler",
+    "moreErrors_one": "...und {{count, number}} weitere Fehler",
+    "moreErrors_other": "...und {{count, number}} weitere Fehler",
     "pagesScraped": "Seiten gescrapt:",
     "reviewsFound": "Bewertungen gefunden:",
     "running": "Läuft..."
   },
-  "subtitle": "Konfigurieren Sie Web-Scraper und App-Review-Quellen zur Feedback-Erfassung",
+  "subtitle": "Alle Herkünfte Ihres Feedbacks: Bewertungsseiten, Apps, Dateien und Tools",
   "syntheticCard": {
     "generate": "Generieren",
-    "lastSummary": "Letzter Lauf: {{items}} Elemente generiert am {{date}}",
+    "lastSummary": "Letzter Lauf: {{items, number}} Elemente generiert am {{date}}",
     "neverRun": "Noch nicht ausgeführt — klicken Sie auf Generieren, um synthetische Bewertungen zu erstellen.",
     "sectionTitle": "Synthetische Daten"
   },
   "templateSelector": {
-    "appReviewSources": "App-Bewertungsquellen",
-    "autoDiscovered": "Automatisch erkannt",
     "cancel": "Abbrechen",
-    "csvUpload": "CSV-Upload",
-    "csvUploadDescription": "Laden Sie eine CSV-Datei mit Feedback-Zeilen hoch. Jede Zeile wird angereichert und der Feedback-Tabelle hinzugefügt.",
-    "jsonUpload": "JSON-Upload",
-    "jsonUploadDescription": "Laden Sie eine JSON-Datei mit strukturierten Feedback-Daten hoch. Laden Sie eine Vorlage herunter, um zu beginnen.",
-    "manualImport": "Manueller Import",
-    "manualImportDescription": "Fügen Sie Bewertungen von einer Website ein und importieren Sie sie mit KI-Parsing.",
-    "manualInput": "Manuelle Eingabe",
-    "syntheticData": "Synthetische Daten",
     "title": "Datenquelle hinzufügen",
-    "webScraperTemplates": "Web-Scraper-Vorlagen"
+    "scrapersAdminOnly": "Nur Administratoren können Web-Scraper hinzufügen.",
+    "importsAdminOnly": "Nur Administratoren können Daten importieren (Einfügen, JSON- oder CSV-Upload, S3-Import)."
   },
-  "title": "Datenquellen"
+  "title": "Datenquellen",
+  "loading": "Datenquellen werden geladen…",
+  "appCard": {
+    "maxReviews": "Max. Bewertungen",
+    "maxPages": "Max. Seiten",
+    "allPages": "Alle",
+    "unnamed": "Unbenannte App",
+    "loading": "App-Konfigurationen werden geladen…",
+    "deleteConfirmTitle": "App löschen",
+    "deleteConfirmMessage": "Möchten Sie diese App-Konfiguration wirklich entfernen?",
+    "editApp": "App bearbeiten",
+    "addNewApp": "Neue App hinzufügen",
+    "addApp": "App hinzufügen",
+    "configuredApps": "Konfigurierte Apps",
+    "noApps": "Noch keine Apps konfiguriert",
+    "addFirstApp": "Erste App hinzufügen",
+    "web": {
+      "configuredPages": "Bewertungsseiten",
+      "addPage": "Seite hinzufügen",
+      "addNewPage": "Bewertungsseite hinzufügen",
+      "editPage": "Bewertungsseite bearbeiten",
+      "noPages": "Noch keine Bewertungsseiten hinzugefügt",
+      "addFirstPage": "Erste Bewertungsseite hinzufügen",
+      "unnamed": "Unbenannte Seite",
+      "deleteConfirmTitle": "Bewertungsseite entfernen",
+      "deleteConfirmMessage": "Möchten Sie diese Bewertungsseite wirklich entfernen?"
+    },
+    "kindLabel": "Art",
+    "kind": {
+      "reviewPage": "Bewertungsseite",
+      "ios": "iPhone-App",
+      "android": "Android-App",
+      "app": "App"
+    }
+  },
+  "sourceMenu": {
+    "prompt": "Was haben Sie?",
+    "advancedHint": "Für technische Einrichtungen",
+    "groups": {
+      "website": "Einen Website-Link",
+      "app": "Eine App",
+      "file": "Eine Datei",
+      "paste": "Text einfügen",
+      "tool": "Ein Tool",
+      "advanced": "Erweitert"
+    },
+    "items": {
+      "webReviews": {
+        "title": "Bewertungsseite",
+        "description": "Eine öffentliche Seite mit Bewertungen, etwa Trustpilot, TripAdvisor oder ein Forum."
+      },
+      "customScraper": {
+        "title": "Eigener Scraper",
+        "description": "Die Bewertungsseiten Ihrer eigenen Website, gelesen in dem Rhythmus, den Sie wählen."
+      },
+      "cssScraper": {
+        "title": "Scraper mit CSS-Selektoren",
+        "description": "Für Seiten ohne Bewertungs-Markup: Sie zeigen auf jeden Teil einer Bewertung."
+      },
+      "ios": {
+        "title": "iPhone-App (App Store)",
+        "description": "Bewertungen einer App im Apple App Store."
+      },
+      "android": {
+        "title": "Android-App (Google Play)",
+        "description": "Bewertungen einer App bei Google Play."
+      },
+      "csv": {
+        "title": "Tabelle (CSV)",
+        "description": "Laden Sie eine CSV-Datei mit einer Bewertung pro Zeile hoch."
+      },
+      "json": {
+        "title": "JSON-Datei",
+        "description": "Laden Sie eine aus einem anderen Tool exportierte Datei hoch."
+      },
+      "s3": {
+        "title": "Viele Dateien auf einmal (S3)",
+        "description": "Legen Sie CSV- oder JSON-Dateien in den Importordner, sie werden für Sie gelesen."
+      },
+      "paste": {
+        "title": "Bewertungen einfügen",
+        "description": "Fügen Sie irgendwo kopierte Bewertungen ein; die KI trennt sie in einzelne Bewertungen."
+      },
+      "github": {
+        "title": "GitHub Issues",
+        "description": "Issues und Kommentare aus Ihren GitHub-Repositorys."
+      },
+      "synthetic": {
+        "title": "Beispielbewertungen für Demos",
+        "description": "Von der KI geschriebene Bewertungen, als Beispieldaten markiert, zum Ausprobieren."
+      }
+    }
+  },
+  "frequency": {
+    "manual": "Nur manuell",
+    "hourly": "Stündlich",
+    "daily": "Täglich",
+    "everyMinutes_one": "Jede Minute",
+    "everyMinutes_other": "Alle {{count, number}} Minuten",
+    "everyHours_one": "Stündlich",
+    "everyHours_other": "Alle {{count, number}} Stunden",
+    "everyDays_one": "Täglich",
+    "everyDays_other": "Alle {{count, number}} Tage"
+  }
 }

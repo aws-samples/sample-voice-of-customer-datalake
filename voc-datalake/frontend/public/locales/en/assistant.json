@@ -1,0 +1,277 @@
+{
+  "launcher": {
+    "open": "Open assistant",
+    "close": "Close assistant",
+    "askAboutProject": "Ask the assistant",
+    "moveHint": "Drag, or use the arrow keys, to move the assistant button. Home puts it back.",
+    "resetPosition": "Reset assistant button position"
+  },
+  "panel": {
+    "title": "Assistant",
+    "using": "Using: {{context}}",
+    "newChat": "New chat",
+    "sessions": "Past conversations",
+    "export": "Export conversation (Markdown)",
+    "expand": "Expand",
+    "fullscreen": "Full screen",
+    "exitFullscreen": "Exit full screen",
+    "more": "More actions",
+    "close": "Close",
+    "messages": "Conversation",
+    "thinking": "Thinking…",
+    "stillGenerating": "Still generating…"
+  },
+  "pages": {
+    "home": "Home",
+    "dashboard": "Dashboard",
+    "feedback": "Feedback",
+    "categories": "Categories",
+    "problems": "Problem analysis",
+    "chat": "AI chat",
+    "projects": "Projects",
+    "project": "Project",
+    "prioritization": "Prioritization",
+    "data-explorer": "Data explorer",
+    "scrapers": "Scrapers",
+    "feedback-forms": "Feedback forms",
+    "settings": "Settings",
+    "admin": "Administration",
+    "memory": "Memory",
+    "agents": "Autonomous agents",
+    "agent": "Agent",
+    "workflow": "Workflow",
+    "company": "Company",
+    "connect": "Connect",
+    "radar": "Radar",
+    "account": "Account",
+    "other": "This page"
+  },
+  "message": {
+    "reasoning": "Reasoning",
+    "toolSteps": "Steps taken",
+    "feedbackSources": "Related feedback",
+    "webSources": "Web sources",
+    "personaAnswers": "Persona answers",
+    "toolGroupRunning_other": "Looking at {{count, number}} things…",
+    "toolGroupRunning_one": "Looking at {{count, number}} thing…",
+    "toolGroup_other": "Looked at {{count, number}} things",
+    "toolGroup_one": "Looked at {{count, number}} thing",
+    "externalLink": "{{host}}, opens in a new tab",
+    "copy": "Copy",
+    "copied": "Copied",
+    "savedDocumentTitle": "Assistant answer – {{date}}",
+    "saveAsDocument": {
+      "idle": "Save as document",
+      "saving": "Saving…",
+      "saved": "Saved to documents",
+      "error": "Save failed – retry"
+    }
+  },
+  "toolStatus": {
+    "streaming": "preparing",
+    "running": "running",
+    "complete": "done",
+    "awaiting_approval": "waiting for your approval",
+    "executed": "done",
+    "failed": "failed",
+    "declined": "declined",
+    "cancelled": "cancelled"
+  },
+  "approvals": {
+    "title": "Actions awaiting approval",
+    "resolved": {
+      "executed": "done",
+      "failed": "failed",
+      "declined": "declined"
+    }
+  },
+  "composer": {
+    "label": "Message the assistant",
+    "placeholder": "Ask about your feedback, projects or this page…",
+    "send": "Send",
+    "stop": "Stop",
+    "attach": "Attach an image or document",
+    "webSearch": "Search the web",
+    "removeAttachment": "Remove {{name}}",
+    "counter": "{{length, number}} / {{max, number}}",
+    "awaitingApproval": "Approve or decline the pending action to continue.",
+    "restoring": "Opening your last conversation…",
+    "attachmentError": {
+      "type": "Only images (PNG, JPEG, GIF, WebP) and documents (PDF, Word, Excel, CSV, HTML, text, Markdown) can be attached.",
+      "count": "You can attach at most {{max, number}} files.",
+      "size": "Attachments can total at most {{mb}} MB.",
+      "read": "The file could not be read."
+    },
+    "stillGenerating": "The answer is still being written. It will appear here when it's ready."
+  },
+  "errors": {
+    "streamClosed": "The connection closed before the answer finished. Please try again.",
+    "generic": "Something went wrong: {{message}}",
+    "followTimeout": "The answer is taking longer than expected. Reopen this conversation later to see it."
+  },
+  "export": {
+    "user": "You",
+    "assistant": "Assistant"
+  },
+  "sessions": {
+    "title": "Past conversations",
+    "close": "Close",
+    "loading": "Loading conversations",
+    "error": "Could not load conversations.",
+    "empty": "No saved conversations yet.",
+    "untitled": "Untitled conversation",
+    "deleteConfirmTitle": "Delete “{{title}}”?",
+    "deleteConfirmMessage": "The conversation and its messages are deleted for good. This cannot be undone.",
+    "deleteConfirm": "Delete conversation",
+    "renameInput": "Conversation name",
+    "closeRunningItem": "Stop and close",
+    "closeItem": "Close",
+    "deleteItem": "Delete",
+    "renameItem": "Rename",
+    "more": "More actions for “{{title}}”",
+    "renameFailed": "Could not rename the conversation.",
+    "renameBusy": "A reply is still being generated. Rename it when it finishes.",
+    "newConversation": "New conversation",
+    "sidebar": "Conversations",
+    "collapseSidebar": "Collapse conversation list",
+    "expandSidebar": "Expand conversation list",
+    "openGroup": "Open",
+    "historyGroup": "History",
+    "search": "Search conversations",
+    "searchPlaceholder": "Search conversations",
+    "noMatch": "No conversations match your search.",
+    "when": { "today": "Today", "week": "This week", "older": "Older" },
+    "status": {
+      "streaming": "Running",
+      "awaiting": "Waiting for your approval",
+      "error": "Failed",
+      "unread": "New reply"
+    }
+  },
+  "empty": {
+    "title": "How can I help?",
+    "subtitle": "I can read your data and propose changes — nothing is changed without your approval."
+  },
+  "suggestions": {
+    "dashboard": { "1": "How did customer sentiment change this week?", "2": "Which sources bring in the most feedback?", "3": "Summarize this dashboard in three sentences" },
+    "categories": { "1": "Which category has the most complaints?", "2": "What do customers say about the biggest category?", "3": "Which categories are getting worse?" },
+    "projects": { "1": "Start a project from this week's top complaint", "2": "Which projects are in progress?", "3": "What should our next research project be?" },
+    "agents": { "1": "What did the agents do this week?", "2": "Which agents are waiting for my decision?", "3": "Help me set up an agent that watches urgent feedback" },
+    "memory": { "1": "What do you remember about our company?", "2": "Which memories are waiting for review?", "3": "How do I teach you something about our company?" },
+    "company": { "1": "Summarize our vision and objectives", "2": "Which objectives does recent feedback relate to?", "3": "Suggest KPIs based on customer feedback" },
+    "dataExplorer": { "1": "How much feedback did we import this month?", "2": "Which sources sent data most recently?", "3": "What does one feedback record contain?" },
+    "default": {
+      "1": "What are customers most unhappy about this week?",
+      "2": "What needs my attention right now?",
+      "3": "Which topics are customers talking about more?"
+    },
+    "project": {
+      "1": "Summarize this project and its personas",
+      "2": "What would our personas think of this idea?",
+      "3": "Draft a PRD (product requirements) from this research"
+    },
+    "forms": {
+      "1": "How are my feedback forms performing?",
+      "2": "Summarize the latest form submissions",
+      "3": "Which form gets the lowest ratings?"
+    },
+    "prioritization": {
+      "1": "What should we prioritize next?",
+      "2": "Why are the top items ranked first?",
+      "3": "Which items have the most customer impact?"
+    },
+    "scrapers": {
+      "1": "Which review sources collected reviews recently?",
+      "2": "Is any review source not working?",
+      "3": "What did the last collection bring in?"
+    },
+    "radar": {
+      "1": "Set up Radar for a competitor",
+      "2": "Where do the brands we track beat us?",
+      "3": "Pull product ideas from their happiest reviews"
+    },
+    "settings": {
+      "1": "What are our brand settings?",
+      "2": "Which feedback categories do we use?",
+      "3": "Suggest hashtags to track for our brand"
+    },
+    "problems": {
+      "1": "What are the biggest unresolved problems?",
+      "2": "Group these problems by their likely cause",
+      "3": "Which problems were resolved recently?"
+    },
+    "feedback": {
+      "1": "Summarize this feedback",
+      "2": "Find similar feedback",
+      "3": "Why might this customer be unhappy?"
+    }
+  },
+  "notifications": {
+    "approval": {
+      "title": "The assistant needs your approval",
+      "body": "A conversation is waiting for you to approve an action."
+    },
+    "reply": {
+      "title": "The assistant replied",
+      "body": "A conversation has a new reply."
+    },
+    "failed": {
+      "title": "An assistant run failed",
+      "body": "Open the conversation to see what went wrong."
+    },
+    "toggle": {
+      "turnOn": "Notify me when a conversation needs me",
+      "turnOff": "Turn off notifications",
+      "blocked": "Notifications are blocked for this site in the browser settings",
+      "unsupported": "This browser does not support notifications"
+    },
+    "planDone": {
+      "title": "A plan finished",
+      "body": "Every step of an approved plan finished."
+    },
+    "planIssues": {
+      "title": "A plan finished with problems",
+      "body": "Open the plan to see which steps failed or were skipped."
+    },
+    "planApproval": {
+      "title": "A plan step needs your approval",
+      "body": "A running plan is waiting for you to approve a step."
+    }
+  },
+  "plan": {
+    "title": "Plan progress",
+    "steps": "Plan steps",
+    "loading": "Loading the plan…",
+    "loadFailed": "The plan could not be loaded.",
+    "actionFailed": "That did not work; reload and try again.",
+    "cancel": "Cancel plan",
+    "openProject": "Open the project",
+    "approval": {
+      "title": "“{{tool}}” needs your approval",
+      "fields": "What “{{tool}}” would write",
+      "destructive": "This permanently deletes data and cannot be undone.",
+      "approve": "Approve step",
+      "decline": "Decline step"
+    },
+    "stepStatus": {
+      "pending": "Pending",
+      "running": "Running",
+      "waiting": "Waiting",
+      "done": "Done",
+      "failed": "Failed",
+      "skipped": "Skipped",
+      "needs_approval": "Needs approval",
+      "cancelled": "Cancelled"
+    },
+    "status": {
+      "awaiting_approval": "Awaiting approval",
+      "approved": "Approved",
+      "running": "Running",
+      "completed": "Completed",
+      "completed_with_errors": "Completed with problems",
+      "failed": "Failed",
+      "cancelled": "Cancelled",
+      "expired": "Expired"
+    }
+  }
+}

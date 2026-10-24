@@ -3,7 +3,8 @@
  * @module components/PersonaExportMenu/personaToMarkdown
  */
 
-import type { ProjectPersona } from '../../api/types'
+import type { ProjectPersona } from '../../api/projectTypes'
+import { humanizeId } from '../../utils/displayLabels'
 
 function addIdentitySection(lines: string[], persona: ProjectPersona): void {
   const identity = persona.identity
@@ -14,7 +15,7 @@ function addIdentitySection(lines: string[], persona: ProjectPersona): void {
   lines.push('')
   const attrs = Object.entries(identity).filter(([k, v]) => k !== 'bio' && Boolean(v))
   if (attrs.length > 0) {
-    for (const [k, v] of attrs) lines.push(`- **${k.replaceAll('_', ' ')}:** ${v}`)
+    for (const [k, v] of attrs) lines.push(`- **${humanizeId(k)}:** ${v}`)
     lines.push('')
   }
 }

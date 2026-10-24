@@ -1,0 +1,22 @@
+X-SES-Spam-Verdict: PASS
+X-SES-Virus-Verdict: PASS
+X-SES-SPF-Verdict: PASS
+X-SES-DKIM-Verdict: GRAY
+From: Ana <ana@customer.example>
+To: feedback@voc.example.com
+Subject: Checkout keeps failing
+Date: Mon, 02 Mar 2026 09:00:00 +0000
+Message-ID: <root-001@customer.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Hello,
+
+The checkout fails every time I pay with my card. It says "card declined"
+although the card works everywhere else.
+
+Best regards,
+Ana
+
+-- 
+Ana, Customer since 2019

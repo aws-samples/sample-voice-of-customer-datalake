@@ -1,0 +1,130 @@
+{
+  "description": "canonicalWriteFingerprint cases computed by the TypeScript implementation; Python must reproduce them byte for byte",
+  "cases": [
+    {
+      "tool": "create_project",
+      "args": {
+        "name": "Example Air – Ancillaries",
+        "description": "Hotels, cars & eSIM"
+      },
+      "canonical": "{\"args\":{\"description\":\"Hotels, cars & eSIM\",\"name\":\"Example Air – Ancillaries\"},\"tool\":\"create_project\"}",
+      "sha256": "66b8590975a47ecb8c40bc209a686a9a00c7d4fcb5d1ed04364a59a567ea7569"
+    },
+    {
+      "tool": "generate_personas",
+      "args": {
+        "project_id": "p_1",
+        "persona_count": 4
+      },
+      "canonical": "{\"args\":{\"persona_count\":4,\"project_id\":\"p_1\"},\"tool\":\"generate_personas\"}",
+      "sha256": "825b9cb0ca3859d0d24bb1424f3e361ea469d3727d66754e15c06b0690f81d3c"
+    },
+    {
+      "tool": "update_persona",
+      "args": {
+        "project_id": "p",
+        "persona_id": "q",
+        "updates": {
+          "scenario": {
+            "title": "Ä",
+            "narrative": "line\nnext\t\"quoted\" \\ \u0001"
+          },
+          "tagline": "日本語 🚀"
+        }
+      },
+      "canonical": "{\"args\":{\"persona_id\":\"q\",\"project_id\":\"p\",\"updates\":{\"scenario\":{\"narrative\":\"line\\nnext\\t\\\"quoted\\\" \\\\ \\u0001\",\"title\":\"Ä\"},\"tagline\":\"日本語 🚀\"}},\"tool\":\"update_persona\"}",
+      "sha256": "0737bf6b5fe9c5c3b64cf854e84da2e0bd6dcf2e39f4264197f7088cae01ef36"
+    },
+    {
+      "tool": "update_company_context",
+      "args": {
+        "kpis": [
+          {
+            "name": "NPS",
+            "target": 0.5
+          },
+          {
+            "name": "big",
+            "target": 1e+21
+          },
+          {
+            "name": "tiny",
+            "target": 1e-7
+          },
+          {
+            "name": "x",
+            "target": 123.456
+          },
+          {
+            "name": "neg",
+            "target": -2
+          },
+          {
+            "name": "z",
+            "target": 0
+          }
+        ]
+      },
+      "canonical": "{\"args\":{\"kpis\":[{\"name\":\"NPS\",\"target\":0.5},{\"name\":\"big\",\"target\":1e+21},{\"name\":\"tiny\",\"target\":1e-7},{\"name\":\"x\",\"target\":123.456},{\"name\":\"neg\",\"target\":-2},{\"name\":\"z\",\"target\":0}]},\"tool\":\"update_company_context\"}",
+      "sha256": "93179c6e8aba3b52bb67c2dc7c53c5e5ca8bf9b6bf6f486313c99fe7c01505bb"
+    },
+    {
+      "tool": "set_problem_resolved",
+      "args": {
+        "resolved": false,
+        "problem_key": "b",
+        "é": null,
+        "Z": [],
+        "a": {}
+      },
+      "canonical": "{\"args\":{\"Z\":[],\"a\":{},\"problem_key\":\"b\",\"resolved\":false,\"é\":null},\"tool\":\"set_problem_resolved\"}",
+      "sha256": "53f6a350e11e1c5a6bec75d5d83f798e2080d177063d9e41cb0a9da0586cac5c"
+    },
+    {
+      "tool": "create_document",
+      "args": {
+        "title": "T",
+        "content": "  ",
+        "zeta": 1,
+        "éclair": 2,
+        "𝒜": 3,
+        "￿": 4
+      },
+      "canonical": "{\"args\":{\"content\":\"  \",\"title\":\"T\",\"zeta\":1,\"éclair\":2,\"￿\":4,\"𝒜\":3},\"tool\":\"create_document\"}",
+      "sha256": "b6f6ed569ce9ca49fc73bd7845a218a5ff160f2689ca082fb772a540b4060119"
+    },
+    {
+      "tool": "update_company_context",
+      "args": {
+        "kpis": [
+          {
+            "name": "a",
+            "target": 1152921504606847000
+          },
+          {
+            "name": "b",
+            "target": 100000000000000000000
+          },
+          {
+            "name": "c",
+            "target": 9007199254740992
+          },
+          {
+            "name": "d",
+            "target": 0.000001
+          },
+          {
+            "name": "e",
+            "target": -1.5e-9
+          },
+          {
+            "name": "f",
+            "target": 5e-324
+          }
+        ]
+      },
+      "canonical": "{\"args\":{\"kpis\":[{\"name\":\"a\",\"target\":1152921504606847000},{\"name\":\"b\",\"target\":100000000000000000000},{\"name\":\"c\",\"target\":9007199254740992},{\"name\":\"d\",\"target\":0.000001},{\"name\":\"e\",\"target\":-1.5e-9},{\"name\":\"f\",\"target\":5e-324}]},\"tool\":\"update_company_context\"}",
+      "sha256": "6a3802a3ffca366e0b253d5a2e85f816149b244a9619c05e553d0ed03fd8ade1"
+    }
+  ]
+}

@@ -1,8 +1,8 @@
 {
+  "categoryOther": "기타",
   "actions": {
     "close": "닫기"
   },
-  "appDescription": "통합 고객 피드백 인텔리전스 플랫폼",
   "appName": "VoC 애널리틱스",
   "appTagline": "고객의 목소리 분석",
   "breadcrumbs": {
@@ -17,8 +17,17 @@
     "problems": "문제 분석",
     "project": "프로젝트",
     "projects": "프로젝트",
-    "scrapers": "웹 스크레이퍼",
-    "settings": "설정"
+    "scrapers": "데이터 소스",
+    "memory": "메모리",
+    "company": "회사",
+    "agents": "자율 에이전트",
+    "agent": "에이전트",
+    "admin": "관리",
+    "connect": "연결",
+    "account": "계정",
+    "workflows": "워크플로 목록",
+    "workflow": "워크플로",
+    "radar": "레이더"
   },
   "cancel": "취소",
   "configureBrand": "브랜드 설정",
@@ -26,33 +35,30 @@
   "exportCsvShort": "CSV",
   "exportCsvTooltip": "CSV로 내보내기",
   "exportPdf": "PDF 내보내기",
-  "exportPdfShort": "PDF",
   "exportPdfTooltip": "PDF로 내보내기",
   "filters": {
     "allCategories": "모든 카테고리",
-    "allSentiments": "모든 감정",
     "allSources": "모든 소스",
-    "clearFilters": "필터 초기화",
-    "mostRecent": "최신순",
-    "searchFeedback": "피드백 검색...",
     "urgentOnly": "긴급만"
   },
-  "forQuery": "\"{{query}}\" 검색 결과",
   "goToSettings": "설정으로 이동",
   "loading": "로딩 중...",
   "loadMore": "더 보기",
+  "loadFailed": {
+    "message": "불러오지 못했습니다. 연결을 확인한 후 다시 시도하세요.",
+    "retry": "다시 시도"
+  },
   "logs": {
-    "daysAgo_one": "{{count}}일 전",
-    "daysAgo_other": "{{count}}일 전",
-    "hoursAgo_one": "{{count}}시간 전",
-    "hoursAgo_other": "{{count}}시간 전",
+    "daysAgo_one": "{{count, number}}일 전",
+    "daysAgo_other": "{{count, number}}일 전",
+    "hoursAgo_one": "{{count, number}}시간 전",
+    "hoursAgo_other": "{{count, number}}시간 전",
     "justNow": "방금",
-    "minutesAgo_one": "{{count}}분 전",
-    "minutesAgo_other": "{{count}}분 전"
+    "minutesAgo_one": "{{count, number}}분 전",
+    "minutesAgo_other": "{{count, number}}분 전"
   },
   "metrics": {
     "avgSentiment": "평균 감정",
-    "sourcesActive": "활성 소스",
     "totalFeedback": "전체 피드백",
     "urgentIssues": "긴급 문제"
   },
@@ -66,47 +72,53 @@
     "prioritization": "우선순위",
     "problemAnalysis": "문제 분석",
     "projects": "프로젝트",
-    "scrapers": "스크레이퍼",
+    "scrapers": "데이터 소스",
     "section": {
-      "home": "홈",
-      "ideation": "아이디어",
-      "settings": "설정",
-      "signals": "신호",
-      "sources": "데이터 소스",
-      "validation": "검증"
+      "listen": "수집",
+      "understand": "이해",
+      "build": "구축",
+      "validate": "검증",
+      "knowledge": "지식",
+      "connect": "연결",
+      "admin": "관리"
     },
-    "settings": "설정"
+    "memory": "메모리",
+    "company": "회사",
+    "admin": "관리",
+    "connect": "MCP 및 스킬"
   },
   "partialCountsHint": "근사치: 전체 기간을 읽을 수 없어 집계는 최소값입니다",
-  "partialWindowHint": "모두 보려면 필터를 좁히세요",
   "problemAnalysisPage": {
     "emptyHint": "기간을 넓히거나 필터를 조정해 보세요",
     "emptyTitle": "선택한 기간에 대한 문제 분석 데이터가 없습니다"
   },
   "problemResolution": {
-    "allResolvedHint": "위의 \"해결됨 표시 ({{total}})\"를 켜면 확인할 수 있습니다",
+    "allResolvedHint": "위의 \"해결됨 표시 ({{total, number}})\"를 켜면 확인할 수 있습니다",
     "allResolvedTitle": "이 보기의 모든 문제가 해결됨으로 표시되어 있습니다",
     "markResolved": "해결됨으로 표시",
     "markUnresolved": "미해결로 표시",
     "resolved": "해결됨",
     "saveFailed": "상태를 업데이트하지 못했습니다. 다시 시도하세요.",
-    "showResolved": "해결됨 표시 ({{total}})"
+    "showResolved": "해결됨 표시 ({{total, number}})"
   },
-  "send": "보내기",
   "sentiment": {
     "mixed": "혼합",
     "negative": "부정적",
     "neutral": "중립",
     "positive": "긍정적"
   },
-  "showingOf_one": "{{total}}개 중 {{count}}개 표시",
-  "showingOf_other": "{{total}}개 중 {{count}}개 표시",
   "sidebar": {
     "closeMenu": "메뉴 닫기",
     "collapseSidebar": "사이드바 접기",
     "expandSidebar": "사이드바 펼치기",
     "openMenu": "메뉴 열기",
-    "signOut": "로그아웃"
+    "label": "기본 사이드바"
+  },
+  "profileMenu": {
+    "trigger": "{{name}}님의 계정 메뉴",
+    "myProfile": "내 프로필",
+    "signOut": "로그아웃",
+    "admin": "관리자"
   },
   "timeRange": {
     "24h": "24시간",
@@ -121,8 +133,204 @@
     "cancel": "취소",
     "clear": "지우기",
     "custom": "사용자 지정",
-    "endDate": "종료일",
-    "selectDateRange": "기간 선택",
-    "startDate": "시작일"
+    "90d": "90일",
+    "90dFull": "90일",
+    "label": "기간",
+    "lastNDays_one": "최근 {{count, number}}일",
+    "lastNDays_other": "최근 {{count, number}}일",
+    "filterBy": "날짜 기준",
+    "filterByCurrent": "날짜 기준: {{basis}}",
+    "imported": "가져온 날짜",
+    "importedDescription": "피드백이 플랫폼에 수집된 시점입니다.",
+    "importedTooltip": "리뷰 작성일이 아닌 데이터 수집일 기준으로 필터링합니다.",
+    "review": "리뷰 날짜",
+    "reviewDescription": "고객이 피드백을 처음 작성한 시점입니다.",
+    "reviewTooltip": "가져온 날짜가 아닌 리뷰 작성일 기준으로 필터링합니다.",
+    "customRange": "사용자 지정 기간",
+    "closeCustom": "사용자 지정 기간 닫기",
+    "lastNDaysInput": "최근 N일",
+    "daysUnit": "일",
+    "customHint": "1–{{max, number}}일을 입력하세요. 모든 리뷰를 보려면 전체 기간을 선택하세요.",
+    "customPlaceholder": "예: 14",
+    "allTime": "전체 기간",
+    "customError": "1에서 {{max, number}} 사이의 정수로 일수를 입력하세요."
+  },
+  "theme": {
+    "system": "시스템 테마",
+    "light": "라이트 테마",
+    "dark": "다크 테마",
+    "toggle": "{{current}} — {{next}}(으)로 전환"
+  },
+  "partialTimeBudgetHint": "근사치: 제시간에 응답하기 위해 {{date}} 이후만 집계했습니다. 전체 합계를 보려면 기간을 좁히세요",
+  "account": {
+    "title": "계정",
+    "subtitle": "프로필, 비밀번호, 환경설정, 내 목표 및 KPI.",
+    "profile": "프로필",
+    "name": "이름",
+    "email": "이메일",
+    "username": "사용자 이름",
+    "role": "역할",
+    "roleAdmin": "관리자",
+    "roleUser": "사용자",
+    "preferences": "언어 및 테마",
+    "theme": "테마",
+    "mcpTitle": "내 MCP 토큰",
+    "mcpHint": "외부 어시스턴트는 연결 페이지에서 발급하는 앱 전체용 MCP 토큰 하나로 연결할 수 있습니다.",
+    "mcpLink": "연결로 이동",
+    "groups": "그룹",
+    "language": "언어",
+    "password": {
+      "title": "비밀번호 변경",
+      "allRequired": "모든 필드는 필수입니다",
+      "submit": "비밀번호 변경",
+      "changing": "변경 중...",
+      "confirm": "새 비밀번호 확인",
+      "confirmPlaceholder": "새 비밀번호 확인",
+      "current": "현재 비밀번호",
+      "currentPlaceholder": "현재 비밀번호 입력",
+      "failed": "비밀번호 변경 실패",
+      "incorrect": "현재 비밀번호가 올바르지 않습니다",
+      "new": "새 비밀번호",
+      "newPlaceholder": "새 비밀번호 입력",
+      "changed": "비밀번호가 성공적으로 변경되었습니다!",
+      "intro": "현재 비밀번호를 입력하고 새 비밀번호를 선택하세요",
+      "requirements": "비밀번호는 최소 8자 이상이며 대문자, 소문자, 숫자를 포함해야 합니다",
+      "tooShort": "비밀번호는 최소 8자 이상이어야 합니다",
+      "mismatch": "새 비밀번호가 일치하지 않습니다",
+      "show": "비밀번호 표시"
+    },
+    "signOut": "로그아웃",
+    "signOutHint": "이 기기에서 세션을 종료합니다.",
+    "onboardingTitle": "설정 체크리스트",
+    "onboardingHint": "홈에 표시되는 시작하기 체크리스트입니다.",
+    "onboardingShown": "홈에 표시 중",
+    "onboardingHiddenUntil": "{{when}}까지 숨김",
+    "onboardingOff": "꺼짐",
+    "onboardingShow": "홈에 표시",
+    "nav": {
+      "briefing": "아침 브리핑",
+      "assistant": "어시스턴트",
+      "access": "내 액세스 권한"
+    },
+    "tabsLabel": "계정",
+    "tabs": {
+      "profile": "프로필",
+      "preferences": "환경설정",
+      "briefing": "아침 브리핑",
+      "objectives": "목표",
+      "access": "액세스 및 토큰"
+    },
+    "briefHint": "나만의 브리핑: 도착 시간, 언어, 중점 내용, 이메일 수신 여부.",
+    "guideOpen": "홈에서 \"작동 방식\"을 펼쳐서 표시",
+    "assistant": {
+      "hint": "이 브라우저에서 AI 어시스턴트가 동작하는 방식입니다.",
+      "notify": "데스크톱 알림",
+      "notifyHint": "보고 있지 않은 대화가 승인을 기다리거나, 응답하거나, 실패할 때. 어시스턴트 헤더의 종 아이콘과 같은 설정입니다.",
+      "bubble": "어시스턴트 버블",
+      "bubbleMoved": "버블을 옮겼습니다. 재설정하면 오른쪽 아래 모서리로 돌아갑니다.",
+      "bubbleDefault": "버블이 기본 위치에 있습니다.",
+      "resetBubble": "버블 위치 재설정"
+    },
+    "access": {
+      "hint": "이 앱에서 볼 수 있는 범위입니다. 관리자가 관리 > 개인정보 및 액세스 > 사용자에서 변경합니다.",
+      "categories": "카테고리",
+      "sources": "소스",
+      "everyCategory": "모든 카테고리",
+      "everySource": "모든 소스",
+      "allowedSources": "다음 소스만:",
+      "deniedSources": "다음을 제외한 모든 소스:",
+      "loading": "액세스 권한을 불러오는 중...",
+      "failed": "액세스 권한을 불러오지 못했습니다."
+    },
+    "browser": {
+      "advanced": "고급",
+      "hint": "이 브라우저의 로컬 저장소에만 보관됩니다. 여기서는 서버가 변경되지 않습니다.",
+      "endpoint": "API 엔드포인트",
+      "endpointNone": "구성되지 않음"
+    }
+  },
+  "connect": {
+    "title": "연결",
+    "subtitle": "Kiro, Copilot, Amazon Quick 같은 외부 어시스턴트가 MCP를 통해 내 권한으로 VoC에 접근하도록 허용합니다.",
+    "actsAsTitle": "토큰은 내 권한으로 동작합니다",
+    "actsAsBody": "토큰은 내가 볼 수 있는 프로젝트와 피드백 카테고리만 볼 수 있습니다. 관리자로 동작하지 않으며 모든 프로젝트에서 최대 편집자 권한입니다. 읽기 전용, 단일 프로젝트, 짧은 유효 기간으로 더 좁힐 수도 있습니다.",
+    "notConfigured": "먼저 API 엔드포인트를 설정하세요.",
+    "loading": "토큰을 불러오는 중…",
+    "loadFailed": "MCP 토큰을 불러오지 못했습니다. 다시 시도하세요.",
+    "endpointTitle": "어시스턴트 연결",
+    "endpointLabel": "통합 MCP 엔드포인트",
+    "mcpJsonLabel": "mcp.json",
+    "mcpJsonHint": "<YOUR_VOC_TOKEN>을 아래에서 만든 토큰으로 바꾸세요. Kiro, Copilot, Cowork, Amazon Quick 등 헤더가 포함된 Streamable HTTP를 지원하는 모든 MCP 클라이언트에서 사용할 수 있습니다.",
+    "skillLabel": "스킬",
+    "skillBody": "마크다운 스킬은 어시스턴트에게 VoC가 무엇인지, 연결 방법, 언제 어떤 도구를 쓰는지, 안전 규칙을 알려 줍니다. 이 엔드포인트가 채워진 파일을 내려받거나 고정 링크를 공유하세요.",
+    "downloadSkill": "스킬 다운로드",
+    "openSkill": "스킬 열기",
+    "downloadFailed": "스킬을 다운로드하지 못했습니다. 다시 시도하세요.",
+    "copy": "복사",
+    "copied": "복사됨",
+    "mintTitle": "토큰 만들기",
+    "newTokenTitle": "지금 토큰을 복사하세요. 다시 표시되지 않습니다",
+    "newTokenBody": "비밀번호처럼 보관하세요. 유출되면 아래에서 폐기하세요.",
+    "newTokenDone": "복사했습니다",
+    "scopeLabel": "접근 권한",
+    "scope": {
+      "read": "읽기 전용",
+      "write": "읽기 및 쓰기"
+    },
+    "scopeHint": {
+      "read": "피드백, 지표, 카테고리, 메모리, 회사 컨텍스트, 프로젝트와 문서.",
+      "write": "프로젝트 문서 생성과 수정도 가능합니다.",
+      "writeAdmin": "관리자가 만든 이 토큰은 자율 에이전트도 실행할 수 있습니다."
+    },
+    "nameLabel": "이름",
+    "nameHint": "나중에 알아볼 수 있도록 (예: 사용할 어시스턴트).",
+    "namePlaceholder": "내 노트북의 Kiro",
+    "expiryLabel": "만료 기간",
+    "expiryDays_one": "{{count, number}}일",
+    "expiryDays_other": "{{count, number}}일",
+    "projectLabel": "프로젝트",
+    "projectHint": "선택 사항: 프로젝트 도구를 한 프로젝트로 제한합니다.",
+    "projectAll": "내 모든 프로젝트",
+    "mintFailed": "토큰을 만들지 못했습니다. 입력값을 확인하고 다시 시도하세요.",
+    "minting": "만드는 중…",
+    "mint": "토큰 만들기",
+    "tokensTitle": "내 토큰",
+    "tokensEmpty": "아직 MCP 토큰이 없습니다.",
+    "revokeFailed": "토큰을 폐기하지 못했습니다. 다시 시도하세요.",
+    "revokeTitle": "이 토큰을 폐기할까요?",
+    "revokedGroup": "폐기됨 ({{count, number}})",
+    "revokeBody": "“{{name}}”은(는) 이를 사용하는 모든 어시스턴트에서 즉시 작동을 멈춥니다. 되돌릴 수 없습니다.",
+    "revoke": "폐기",
+    "toggleAudit": "{{name}} 활동 보기",
+    "status": {
+      "active": "활성",
+      "expired": "만료됨",
+      "revoked": "폐기됨"
+    },
+    "runsAgents": "에이전트 실행 가능",
+    "projectColumn": "프로젝트",
+    "expires": "만료",
+    "lastUsed": "마지막 사용",
+    "never": "없음",
+    "created": "생성",
+    "auditTitle": "도구 호출",
+    "auditLoading": "활동을 불러오는 중…",
+    "auditFailed": "활동을 불러오지 못했습니다.",
+    "auditEmpty": "아직 도구 호출이 없습니다.",
+    "auditTime": "시간",
+    "auditTool": "도구",
+    "auditProject": "프로젝트",
+    "auditOutcomeLabel": "결과",
+    "auditOutcome": {
+      "ok": "성공",
+      "error": "오류",
+      "denied": "거부됨",
+      "failed": "실패"
+    },
+    "shortcutTitle": "이 프로젝트에 외부 어시스턴트 연결"
+  },
+  "header": {
+    "title": "고객의 소리",
+    "subtitle": "통합 고객 피드백 인텔리전스 플랫폼"
   }
 }

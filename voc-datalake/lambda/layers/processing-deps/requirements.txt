@@ -1,7 +1,8 @@
 aws-lambda-powertools[tracer]>=2.30.0
 pydantic>=2.12.0
 requests>=2.31.0
-tenacity>=8.2.0
+# Exact pin: an open range let CI resolve a newer LoggerProtocol than local (pyright drift).
+tenacity==9.2.1
 # RSA-SHA1 signing for CloudFront signed URLs (shared/cloudfront_signing.py).
 # botocore ships the CloudFrontSigner but not the crypto primitive, and
 # kms:Sign cannot substitute — it offers no SHA-1 variant. Native wheels exist

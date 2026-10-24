@@ -90,7 +90,7 @@ export function PrototypeLinkLifetimeNote({
   return (
     <span
       id={noteId}
-      className={clsx('inline-flex items-start gap-1', expired ? 'text-amber-700' : 'text-gray-400', className)}
+      className={clsx('inline-flex items-start gap-1', expired ? 'text-warn' : 'text-muted', className)}
     >
       <Clock size={11} className="flex-shrink-0 mt-0.5" />
       {/* Wraps rather than truncates. Under `truncate` the clipped end was the hint —
@@ -138,7 +138,7 @@ export default function PrototypeLinkActions({
         href={url}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-blue-600 hover:underline"
+        className="link"
         aria-describedby={describedBy}
       >
         {t('prototypeLink.openNewTab')}
@@ -147,7 +147,7 @@ export default function PrototypeLinkActions({
         <a
           href={url}
           download={`${downloadName}.html`}
-          className="text-blue-600 hover:underline"
+          className="link"
           aria-describedby={describedBy}
         >
           {t('prototypeLink.downloadHtml')}

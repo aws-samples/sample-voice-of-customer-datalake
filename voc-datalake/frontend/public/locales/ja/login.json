@@ -43,5 +43,7 @@
     "resettingPassword": "パスワードをリセット中...",
     "submit": "パスワードをリセット",
     "title": "確認コードの入力"
-  }
+  },
+  "showPassword": "パスワードを表示",
+  "hidePassword": "パスワードを非表示"
 }

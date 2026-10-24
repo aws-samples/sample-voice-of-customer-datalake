@@ -1,0 +1,32 @@
+{
+  "entries": [
+    {"key": "frontend:src/assistant/contract.ts#*", "reason": "Lockstep mirror of the stream's contract.ts: contract.lockstep.test.ts compares every export with the server file (knip-ignored for the same reason)."},
+    {"key": "stream:src/assistant/contract.ts#*", "reason": "Wire contract the SPA mirrors; the SPA lockstep specs read this FILE as text with `export const` regexes, so SPA-only names stay exported here."},
+    {"key": "stream:src/assistant/tools/client/allowlists.ts#*", "reason": "Allowlist pins compared with the SPA copy by allowlists.lockstep.test.ts (as text)."},
+    {"key": "frontend:src/assistant/plan/schema.ts#*", "reason": "SPA mirror of the stream plan contract: plan.lockstep.test.ts requires every stream export here (limits and wait kinds are read only by the stream's runner)."},
+    {"key": "frontend:src/assistant/plan/canonical.ts#*", "reason": "Plan contract mirror pinned by plan.lockstep.test.ts (write fingerprint is the stream runner's)."},
+    {"key": "frontend:src/assistant/approvals/schemas.ts#*_UPDATABLE_FIELDS", "reason": "Allowlist pins compared with the stream contract by allowlists.lockstep.test.ts."},
+    {"key": "frontend:src/assistant/approvals/userSchemas.ts#SPA_USER_LIMITS.*", "reason": "Bounds lockstepped with the stream's user schemas by userSchemas.lockstep.test.ts; only the spec reads these three."},
+    {"key": "frontend:src/assistant/approvals/registry.ts#listWriteTools", "reason": "Test seam: registry.test.ts compares the registry with the stream's write-tool list."},
+    {"key": "frontend:src/assistant/approvals/executionStore.ts#resetExecutions", "reason": "Test seam over the module-private execution store (knip ignoreIssues)."},
+    {"key": "frontend:src/services/sessionExpiry.ts#resetSessionExpiryForTests", "reason": "Test seam over module-private redirect state; production resets with a full page load."},
+    {"key": "stream:src/tools/web-search.ts#resetToolNameCacheForTesting", "reason": "@internal test seam over the gateway tool-name cache."},
+    {"key": "frontend:src/api/client.ts#api.generateDocument", "reason": "lambda/api/test/test_doc_type_lockstep.py requires both generateDocument signatures (deadts.md 1a #3)."},
+    {"key": "frontend:src/api/types.ts#DocTypeField*", "reason": "Compile-time pins: test_doc_type_lockstep.py pins their exact text; they exist to fail tsc on drift."},
+    {"key": "frontend:src/api/types.ts#MustBeTrue", "reason": "Helper of the DocTypeField* compile-time pins."},
+    {"key": "frontend:src/api/types.ts#BothWays", "reason": "Helper of the DocTypeField* compile-time pins."},
+    {"key": "frontend:src/api/types.ts#FeedbackFormConfig", "reason": "Public widget wire shape pinned by test_widget_config_type_lockstep.py."},
+    {"key": "frontend:src/api/projectsApi.ts#GenerateDocument*", "reason": "Compile-time signature pins (fail tsc when generateDocument drifts from the shared body)."},
+    {"key": "frontend:src/api/projectsApi.ts#SignatureMustMatch", "reason": "Helper of the GenerateDocument* compile-time pins."},
+    {"key": "frontend:src/assistant/bubble/geometry.ts#PanelAnchor.--ap-*", "reason": "CSS custom properties: passed as `style`, read by the browser through the Tailwind arbitrary values `var(--ap-*)` in AssistantPanel.tsx (ANCHORED), invisible to the type system."},
+    {"key": "frontend:src/pages/Dashboard/dashboardData.ts#ChartRow.value", "reason": "Recharts reads it by string: <Bar dataKey=\"value\">."},
+    {"key": "stream:src/lib/streaming.ts#AwsLambdaRuntime.HttpResponseStream.from.*", "reason": "Metadata handed to the Lambda managed runtime's HttpResponseStream.from (an ambient platform API)."},
+    {"key": "frontend:src/api/types.ts#PrioritizationScore.row_id", "reason": "Decoder output: each read-back ballot names its row, set from the map key (ownRead.ts); callers address ballots by the key instead (wire/decoder class, deadts.md section 4)."},
+    {"key": "frontend:src/api/types.ts#ScraperTemplate.*", "reason": "Wire shape of GET /scrapers/templates kept whole for the template fixtures/mocks; the SPA shows name/description only (wire/decoder class, deadts.md section 4)."},
+    {"key": "frontend:src/pages/DataExplorer/dataExplorerSchema.ts#S3Listing.prefix", "reason": "Decoder output of the S3 listing (wire/decoder class excluded by the 5.28 audit, deadts.md section 4)."},
+    {"key": "frontend:src/pages/Scrapers/CsvUploadModal.tsx#UploadResult.*", "reason": "Decoder output of the CSV upload answer (wire/decoder class excluded by the 5.28 audit, deadts.md section 4)."},
+    {"key": "frontend:src/api/designSystemApi.ts#CreatedReference.reference", "reason": "Decoder output; the create-reference envelope is validated here (wire/decoder class, deadts.md section 4)."},
+    {"key": "frontend:src/assistant/approvals/registry.ts#ToolSpec.Preview.page", "reason": "Shared `{args, page}` preview signature: every preview gets the page, only some read it (deadts.md 1b PlanCard, cosmetic)."},
+    {"key": "frontend:src/api/projectsApi.ts#projectsApi.createProject.success", "reason": "Envelope member of the create answer (fetchApi<{success; project}> wire type)."}
+  ]
+}

@@ -161,18 +161,6 @@ export function refreshDelayMs(expiresAt: number | null, now: number): number | 
 }
 
 /**
- * True once the link is past its deadline.
- *
- * Only reachable if the scheduled refresh could not run — a suspended machine, a
- * throttled background tab, or a refetch that failed — so it is a display concern
- * rather than a state to prevent: the label stops promising a window it cannot
- * honour, and the next focus refetch or timer fires replaces the URL.
- */
-export function isExpired(expiresAt: number | null, now: number): boolean {
-  return expiresAt != null && expiresAt <= now
-}
-
-/**
  * The deadline as a string for the viewer's locale.
  *
  * Two things this is careful about, both of which a bare `HH:mm` got wrong:
@@ -203,7 +191,8 @@ export function formatExpiry(expiresAt: number, now: number, locale: string): st
     // i18next's detection chain — which reads a querystring, a cookie and
     // navigator.language, none of which this code controls. Falling back to the runtime
     // default costs a possibly-wrong clock convention; letting it throw would take down
-    // the whole document pane over a bad tag.
-    return new Intl.DateTimeFormat(undefined, options).format(deadline)
+    // the whole document pane over a bad tag. The fallback is the app's own fallback
+    // language (`fallbackLng: 'en'`), not the browser's: one rule for every format call.
+    return new Intl.DateTimeFormat('en', options).format(deadline)
   }
 }

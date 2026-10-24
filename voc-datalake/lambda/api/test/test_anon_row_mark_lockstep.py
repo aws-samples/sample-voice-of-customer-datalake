@@ -40,63 +40,30 @@ Every value is read as SOURCE TEXT rather than imported, for the reason
 whatever either module happens to resolve at import time.
 """
 import re
-from pathlib import Path
+
+# `read_source` ASSERTS a missing file rather than skipping, and the difference
+# from `test_prioritization_row_payload_lockstep.py` is deliberate. BOTH files this
+# reads are backend sources in this same tree, packaged and checked out together
+# with the test — so an absent one means the file MOVED, which is a real drift
+# this test should report rather than step around.
+#
+# The locksteps that skip reach ACROSS into the frontend tree, which can
+# legitimately be absent (packaging a lambda bundle, a partial checkout): there is
+# nothing to compare, and skipping beats a failure that says nothing about the code
+# under test. Neither policy is the general rule; which one is right follows from
+# whether a missing file is possible without anything having gone wrong.
+from lockstep_fixtures import py_int_const, py_str_const, read_source
 
 BALLOTS_SOURCE = 'lambda/api/ballots_handler.py'
 PROJECTS_SOURCE = 'lambda/api/projects_handler.py'
-
-
-def _read(relative: str) -> str:
-    # lambda/api/test/ -> voc-datalake/
-    path = Path(__file__).resolve().parents[3] / relative
-    # ASSERTED, not skipped, and the difference from
-    # `test_prioritization_row_payload_lockstep.py` is deliberate. BOTH files this
-    # reads are backend sources in this same tree, packaged and checked out together
-    # with the test — so an absent one means the file MOVED, which is a real drift
-    # this test should report rather than step around.
-    #
-    # The locksteps that skip reach ACROSS into the frontend tree, which can
-    # legitimately be absent (packaging a lambda bundle, a partial checkout): there is
-    # nothing to compare, and skipping beats a failure that says nothing about the code
-    # under test. Neither policy is the general rule; which one is right follows from
-    # whether a missing file is possible without anything having gone wrong.
-    assert path.is_file(), (
-        f'{relative} not found — did the file move? '
-        f'If so, update the path constant in this test file.'
-    )
-    return path.read_text(encoding='utf-8')
-
-
-def _single(source: str, pattern: str, where: str, what: str) -> str:
-    """The one match for `pattern`, or a failure naming what drifted.
-
-    Exactly one is required deliberately: a second assignment of the same constant
-    is itself the drift this file exists to prevent, and taking the first match
-    would hide it.
-    """
-    matches = re.findall(pattern, source, re.MULTILINE)
-    assert len(matches) == 1, (
-        f'Expected exactly one {what} assignment in {where}; found {len(matches)}. '
-        f'A second copy is the drift this test exists to prevent — if the '
-        f'declaration was restructured, update the pattern in this test file.'
-    )
-    return matches[0]
-
-
-def _str_const(source: str, name: str, where: str) -> str:
-    return _single(source, rf"^{name}\s*=\s*'([^']*)'", where, name)
-
-
-def _int_const(source: str, name: str, where: str) -> int:
-    return int(_single(source, rf'^{name}\s*=\s*(\d+)', where, name))
 
 
 class TestTheFreezeMarkIsOneAttributeInBothBundles:
     """The mark a composition change asserts the absence of."""
 
     def test_both_writers_name_the_same_attribute(self):
-        anon = _str_const(_read(BALLOTS_SOURCE), 'ROW_FROZEN_AT_FIELD', BALLOTS_SOURCE)
-        owner = _str_const(_read(PROJECTS_SOURCE), 'ROW_FROZEN_AT_FIELD',
+        anon = py_str_const(read_source(BALLOTS_SOURCE), 'ROW_FROZEN_AT_FIELD', BALLOTS_SOURCE)
+        owner = py_str_const(read_source(PROJECTS_SOURCE), 'ROW_FROZEN_AT_FIELD',
                            PROJECTS_SOURCE)
 
         assert anon == owner, (
@@ -112,7 +79,7 @@ class TestTheFreezeMarkIsOneAttributeInBothBundles:
         """That the constant AGREES is not the contract; that the refusal is built on
         it is. A condition naming the attribute literally would satisfy the assertion
         above while ignoring the constant entirely."""
-        source = _read(PROJECTS_SOURCE)
+        source = read_source(PROJECTS_SOURCE)
 
         assert re.search(
             r'attribute_not_exists\(\{?ROW_FROZEN_AT_FIELD\}?\)', source
@@ -126,7 +93,7 @@ class TestTheFreezeMarkIsOneAttributeInBothBundles:
         """`if_not_exists` is what makes the mark a FREEZE INSTANT rather than a
         last-modified stamp. A plain assignment would move it on every correction, so
         "the first ballot froze this" would name whichever phone submitted last."""
-        source = _read(BALLOTS_SOURCE)
+        source = read_source(BALLOTS_SOURCE)
 
         assert re.search(r'if_not_exists\(#frozen_at, :now\)', source), (
             f'{BALLOTS_SOURCE} does not stamp the freeze mark with `if_not_exists`. '
@@ -138,9 +105,9 @@ class TestTheDeleteFenceIsOneAttributeInBothBundles:
     """The counter a row delete asserts has not moved."""
 
     def test_both_writers_name_the_same_attribute(self):
-        anon = _str_const(_read(BALLOTS_SOURCE), 'ROW_BALLOT_WRITES_FIELD',
+        anon = py_str_const(read_source(BALLOTS_SOURCE), 'ROW_BALLOT_WRITES_FIELD',
                           BALLOTS_SOURCE)
-        owner = _str_const(_read(PROJECTS_SOURCE), 'ROW_BALLOT_WRITES_FIELD',
+        owner = py_str_const(read_source(PROJECTS_SOURCE), 'ROW_BALLOT_WRITES_FIELD',
                            PROJECTS_SOURCE)
 
         assert anon == owner, (
@@ -154,7 +121,7 @@ class TestTheDeleteFenceIsOneAttributeInBothBundles:
     def test_the_anonymous_writer_moves_it_with_ADD(self):
         """`ADD` rather than a read-then-increment, so a room of phones submitting at
         once each move it and none of them reads it first."""
-        source = _read(BALLOTS_SOURCE)
+        source = read_source(BALLOTS_SOURCE)
 
         assert re.search(r'ADD #ballot_writes :one', source), (
             f'{BALLOTS_SOURCE} does not ADD to the fence counter. An increment that '
@@ -165,9 +132,9 @@ class TestTheDeleteFenceIsOneAttributeInBothBundles:
         """One name for both marks would make the freeze instant and the write count
         the same field: the freeze would be overwritten by a counter, and the fence
         would compare timestamps."""
-        source = _read(PROJECTS_SOURCE)
-        frozen = _str_const(source, 'ROW_FROZEN_AT_FIELD', PROJECTS_SOURCE)
-        writes = _str_const(source, 'ROW_BALLOT_WRITES_FIELD', PROJECTS_SOURCE)
+        source = read_source(PROJECTS_SOURCE)
+        frozen = py_str_const(source, 'ROW_FROZEN_AT_FIELD', PROJECTS_SOURCE)
+        writes = py_str_const(source, 'ROW_BALLOT_WRITES_FIELD', PROJECTS_SOURCE)
 
         assert frozen != writes
 
@@ -176,9 +143,9 @@ class TestBothBundlesReadTheCancellationReasonAtTheSamePosition:
     """Two items each, the row's write second, in both handlers."""
 
     def test_the_row_index_agrees(self):
-        anon = _int_const(_read(BALLOTS_SOURCE), 'BALLOT_TRANSACT_ROW_INDEX',
+        anon = py_int_const(read_source(BALLOTS_SOURCE), 'BALLOT_TRANSACT_ROW_INDEX',
                           BALLOTS_SOURCE)
-        owner = _int_const(_read(PROJECTS_SOURCE), 'BALLOT_TRANSACT_ROW_INDEX',
+        owner = py_int_const(read_source(PROJECTS_SOURCE), 'BALLOT_TRANSACT_ROW_INDEX',
                            PROJECTS_SOURCE)
 
         assert anon == owner, (
@@ -191,6 +158,6 @@ class TestBothBundlesReadTheCancellationReasonAtTheSamePosition:
     def test_the_index_names_the_second_of_two_items(self):
         """Stated as a number rather than derived, so a transaction that grew a third
         participant — or reordered the two — fails here."""
-        for source, where in ((_read(BALLOTS_SOURCE), BALLOTS_SOURCE),
-                              (_read(PROJECTS_SOURCE), PROJECTS_SOURCE)):
-            assert _int_const(source, 'BALLOT_TRANSACT_ROW_INDEX', where) == 1
+        for source, where in ((read_source(BALLOTS_SOURCE), BALLOTS_SOURCE),
+                              (read_source(PROJECTS_SOURCE), PROJECTS_SOURCE)):
+            assert py_int_const(source, 'BALLOT_TRANSACT_ROW_INDEX', where) == 1

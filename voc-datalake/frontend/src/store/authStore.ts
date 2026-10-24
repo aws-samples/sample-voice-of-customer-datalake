@@ -15,7 +15,9 @@
 
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { z } from 'zod'
 import { getRuntimeConfig, isConfigLoaded } from '../runtimeConfig'
+import { versionedPersist } from './persistVersion'
 
 /**
  * Authenticated user information extracted from Cognito ID token.
@@ -27,8 +29,13 @@ export interface User {
   email: string
   /** User's display name (fullname attribute) */
   name?: string
-  /** Cognito user groups for authorization */
+  /** Cognito groups for authorization */
   groups: string[]
+  /**
+   * Cognito `sub` (stable user id) — what project ownership and membership are
+   * keyed by. Optional so sessions persisted before it existed still load.
+   */
+  sub?: string
 }
 
 /**
@@ -47,10 +54,6 @@ interface AuthState {
   isAuthenticated: boolean
   /** Whether the session has been validated/refreshed after page load */
   sessionReady: boolean
-  /** Loading state for async auth operations */
-  isLoading: boolean
-  /** Error message from failed auth operations */
-  error: string | null
   /** Update the current user */
   setUser: (user: User | null) => void
   /** Store all authentication tokens */
@@ -59,13 +62,23 @@ interface AuthState {
     idToken: string;
     refreshToken: string
   }) => void
-  /** Set loading state */
-  setLoading: (loading: boolean) => void
-  /** Set error message */
-  setError: (error: string | null) => void
   /** Clear all auth state and tokens */
   logout: () => void
 }
+
+/** The persisted part of the store ('voc-auth'), validated on rehydrate. */
+const PersistedAuthSchema = z.object({
+  user: z.object({
+    username: z.string(),
+    email: z.string(),
+    name: z.string().optional(),
+    groups: z.array(z.string()),
+    sub: z.string().optional(),
+  }).nullable(),
+  accessToken: z.string().nullable(),
+  idToken: z.string().nullable(),
+  isAuthenticated: z.boolean(),
+}).partial()
 
 export const useAuthStore = create<AuthState>()(
   persist(
@@ -76,8 +89,6 @@ export const useAuthStore = create<AuthState>()(
       refreshToken: null,
       isAuthenticated: false,
       sessionReady: false,
-      isLoading: false,
-      error: null,
       setUser: (user) => set({
         user,
         isAuthenticated: !!user,
@@ -95,8 +106,6 @@ export const useAuthStore = create<AuthState>()(
         // its loading state.
         sessionReady: true,
       }),
-      setLoading: (isLoading) => set({ isLoading }),
-      setError: (error) => set({ error }),
       logout: () => set({
         user: null,
         accessToken: null,
@@ -104,7 +113,6 @@ export const useAuthStore = create<AuthState>()(
         refreshToken: null,
         isAuthenticated: false,
         sessionReady: false,
-        error: null,
       }),
     }),
     {
@@ -113,12 +121,13 @@ export const useAuthStore = create<AuthState>()(
       // refreshToken is deliberately excluded — it stays in memory only.
       // This limits XSS blast radius: stolen access/ID tokens expire in ~1hr,
       // while the 30-day refresh token is never written to disk.
-      partialize: (state) => ({
+      partialize: (state): z.infer<typeof PersistedAuthSchema> => ({
         user: state.user,
         accessToken: state.accessToken,
         idToken: state.idToken,
         isAuthenticated: state.isAuthenticated,
       }),
+      ...versionedPersist(PersistedAuthSchema),
     },
   ),
 )

@@ -9,11 +9,14 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
-describe('loadRuntimeConfig env fallback', () => {
+/**
+ * A fresh `./runtimeConfig` module per test (it holds the loaded config in a
+ * module-level singleton), with the fallback paths' expected console noise
+ * silenced and every env/global stub undone afterwards.
+ */
+function useFreshRuntimeConfigModule(): void {
   beforeEach(() => {
-    // Reset the module-level config singleton between tests.
     vi.resetModules()
-    // Silence expected warn/error noise from the fallback paths.
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     vi.spyOn(console, 'error').mockImplementation(() => {})
   })
@@ -23,35 +26,23 @@ describe('loadRuntimeConfig env fallback', () => {
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
+}
 
-  it('keeps a valid VITE_API_ENDPOINT when cognito vars are missing', async () => {
-    vi.stubEnv('VITE_API_ENDPOINT', 'http://localhost:9999')
+describe('loadRuntimeConfig env fallback', () => {
+  useFreshRuntimeConfigModule()
+
+  it.each([
+    ['keeps a valid VITE_API_ENDPOINT when cognito vars are missing', 'http://localhost:9999', 'http://localhost:9999'],
+    ['falls back to the documented mock port when no endpoint is configured', '', 'http://localhost:3001'],
+    ['falls back to the documented mock port for a malformed endpoint', 'not-a-url', 'http://localhost:3001'],
+  ])('%s', async (_title, envEndpoint, expected) => {
+    vi.stubEnv('VITE_API_ENDPOINT', envEndpoint)
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('config.json unavailable')))
 
     const { loadRuntimeConfig } = await import('./runtimeConfig')
     const config = await loadRuntimeConfig()
 
-    expect(config.apiEndpoint).toBe('http://localhost:9999')
-  })
-
-  it('falls back to the documented mock port when no endpoint is configured', async () => {
-    vi.stubEnv('VITE_API_ENDPOINT', '')
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('config.json unavailable')))
-
-    const { loadRuntimeConfig } = await import('./runtimeConfig')
-    const config = await loadRuntimeConfig()
-
-    expect(config.apiEndpoint).toBe('http://localhost:3001')
-  })
-
-  it('falls back to the documented mock port for a malformed endpoint', async () => {
-    vi.stubEnv('VITE_API_ENDPOINT', 'not-a-url')
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('config.json unavailable')))
-
-    const { loadRuntimeConfig } = await import('./runtimeConfig')
-    const config = await loadRuntimeConfig()
-
-    expect(config.apiEndpoint).toBe('http://localhost:3001')
+    expect(config.apiEndpoint).toBe(expected)
   })
 
   it('prefers a valid config.json over env vars', async () => {
@@ -78,17 +69,7 @@ describe('loadRuntimeConfig env fallback', () => {
 
 
 describe('isWebSearchAvailable', () => {
-  beforeEach(() => {
-    vi.resetModules()
-    vi.spyOn(console, 'warn').mockImplementation(() => {})
-    vi.spyOn(console, 'error').mockImplementation(() => {})
-  })
-
-  afterEach(() => {
-    vi.unstubAllEnvs()
-    vi.unstubAllGlobals()
-    vi.restoreAllMocks()
-  })
+  useFreshRuntimeConfigModule()
 
   const baseConfig = {
     apiEndpoint: 'https://real-api.example.com',

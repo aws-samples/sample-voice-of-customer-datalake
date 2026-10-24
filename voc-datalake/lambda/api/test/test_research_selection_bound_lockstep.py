@@ -19,43 +19,20 @@ needs neither the AWS-shaped Python import graph nor a bundler.
 
 Pattern follows test_product_context_placeholder_lockstep.py (same directory).
 """
-import re
-from pathlib import Path
+from lockstep_fixtures import py_int_const, read_source, ts_int_const
 
 PYTHON_SOURCE = 'lambda/api/projects_handler.py'
 FRONTEND_SOURCE = 'frontend/src/pages/ProjectDetail/overviewState.ts'
 
 
-def _read(relative: str) -> str:
-    # lambda/api/test/ -> voc-datalake/
-    path = Path(__file__).resolve().parents[3] / relative
-    assert path.is_file(), (
-        f'{relative} not found — did the file move? '
-        f'If so, update the path constant in this test file.'
-    )
-    return path.read_text(encoding='utf-8')
-
-
-def _single_int(source: str, pattern: str, where: str) -> int:
-    matches = re.findall(pattern, source, re.MULTILINE)
-    assert len(matches) == 1, (
-        f'Expected exactly one MAX_SELECTED_RESEARCH_IDS assignment in {where}; '
-        f'found {len(matches)}. A second copy is the drift this test exists to '
-        f'prevent — if the declaration was restructured, update this helper.'
-    )
-    return int(matches[0])
+def _python_bound() -> int:
+    return py_int_const(read_source(PYTHON_SOURCE), 'MAX_SELECTED_RESEARCH_IDS', PYTHON_SOURCE)
 
 
 def test_the_research_selection_bound_is_the_same_number_in_both_files():
-    python_value = _single_int(
-        _read(PYTHON_SOURCE),
-        r'^MAX_SELECTED_RESEARCH_IDS\s*=\s*(\d+)',
-        PYTHON_SOURCE,
-    )
-    frontend_value = _single_int(
-        _read(FRONTEND_SOURCE),
-        r'^export const MAX_SELECTED_RESEARCH_IDS\s*=\s*(\d+)',
-        FRONTEND_SOURCE,
+    python_value = _python_bound()
+    frontend_value = ts_int_const(
+        read_source(FRONTEND_SOURCE), 'MAX_SELECTED_RESEARCH_IDS', FRONTEND_SOURCE,
     )
 
     assert python_value == frontend_value, (
@@ -70,10 +47,6 @@ def test_the_bound_is_a_plausible_selection_size():
     """A bound that is 0 or 1 would make the feature useless while keeping the
     lockstep test green, and an enormous one would defeat its purpose — the whole
     reason it exists is that each id is a read."""
-    value = _single_int(
-        _read(PYTHON_SOURCE),
-        r'^MAX_SELECTED_RESEARCH_IDS\s*=\s*(\d+)',
-        PYTHON_SOURCE,
-    )
+    value = _python_bound()
 
     assert 2 <= value <= 50

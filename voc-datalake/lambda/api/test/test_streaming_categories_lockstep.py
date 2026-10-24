@@ -1,5 +1,11 @@
 """Lockstep test: the configured category taxonomy is one DynamoDB key, one
-field, and one fallback in two languages.
+field, and one fallback.
+
+STREAM HALF REMOVED: the streaming Lambda no longer reads the taxonomy itself
+(`context/voc-context.ts` is gone; the assistant's `get_categories_config` and
+`get_metrics` tools go through the Python settings/metrics APIs), so only the
+Python writer ⇄ reader ⇄ processor ⇄ aggregator pins below remain. The history
+that follows explains why each pin exists.
 
 The aggregates item that holds the taxonomy is written in exactly one place —
 the PUT /settings/categories handler in lambda/api/settings_handler.py, which
@@ -32,7 +38,7 @@ each of them:
   * the not-configured fallback (DEFAULT_CATEGORIES, so the two surfaces report
     the same categories for the same table rather than one reporting nothing) —
     at all THREE of its copies, including the pipe-delimited string in
-    lambda/processor/handler.py, which is the copy that decides which names the
+    lambda/shared/categorization.py (the processor's enrichment prompt), which is the copy that decides which names the
     enrichment model may emit and therefore the only reason falling back to that
     list is right rather than arbitrary.
 
@@ -56,18 +62,15 @@ from pathlib import Path
 
 PYTHON_READER_SOURCE = 'lambda/shared/api.py'
 PYTHON_WRITER_SOURCE = 'lambda/api/settings_handler.py'
-PROCESSOR_SOURCE = 'lambda/processor/handler.py'
+# The enrichment prompt and the enrichment item fields moved out of the
+# processor into the module it shares with the category-reprocess worker.
+PROCESSOR_SOURCE = 'lambda/shared/categorization.py'
 AGGREGATOR_SOURCE = 'lambda/aggregator/handler.py'
-STREAM_SOURCE = 'lambda/stream/src/context/voc-context.ts'
-
 # Quoting is not part of the contract, so no pattern here insists on it: these
 # three modules already use different conventions, and a reformat must not fail a
 # pin whose subject is the key's VALUE.
 _Q = r"""['"]"""
 
-# The key as the streaming reader declares it, as two module constants.
-STREAM_PK_PATTERN = rf'^const CATEGORY_SETTINGS_PK = {_Q}([^\'"]+){_Q};'
-STREAM_SK_PATTERN = rf'^const CATEGORY_SETTINGS_SK = {_Q}([^\'"]+){_Q};'
 # The key as the Python reader spends it, inline in the get_item call.
 PYTHON_READER_KEY_PATTERN = (
     rf'get_item\(\s*Key=\{{\s*{_Q}pk{_Q}:\s*{_Q}([^\'"]+){_Q},'
@@ -122,13 +125,6 @@ AGGREGATOR_KEY_ITERATION = 'sorted(keys)'
 # longer costs nothing — an unpinned fourth name fails the sibling assertion.
 AGGREGATOR_DATE_NAMES = ('date', 'old_date', 'new_date')
 
-# The never-written key streaming chat used to ask for, assembled rather than
-# written out so that a repository-wide search for it keeps returning nothing
-# outside build artifacts — which is itself part of the fix.
-ABANDONED_PK = 'CONFIG' + '#categories'
-ABANDONED_SK = 'CURR' + 'ENT'
-
-
 def _read(relative: str) -> str:
     # lambda/api/test/ -> voc-datalake/
     path = Path(__file__).resolve().parents[3] / relative
@@ -148,73 +144,6 @@ def _single(source: str, pattern: str, where: str, what: str) -> tuple[str, ...]
     )
     match = matches[0]
     return match if isinstance(match, tuple) else (match,)
-
-
-def _stream_key() -> tuple[str, str]:
-    source = _read(STREAM_SOURCE)
-    pk = _single(source, STREAM_PK_PATTERN, STREAM_SOURCE, 'CATEGORY_SETTINGS_PK')[0]
-    sk = _single(source, STREAM_SK_PATTERN, STREAM_SOURCE, 'CATEGORY_SETTINGS_SK')[0]
-    return pk, sk
-
-
-def _stream_function_body(marker: str) -> str:
-    """The body of one function in the streaming module.
-
-    Scoped so another function cannot answer for this one — every field and
-    fallback assertion in this file reads a body, never the whole file, because a
-    comment or an unrelated helper elsewhere in the module must not be able to
-    satisfy a pin whose whole purpose is to fail when this reader drifts. The
-    body ends at the next top-level declaration, which in this module is always a
-    `function`, `async function` or exported form at column 0.
-    """
-    source = _read(STREAM_SOURCE)
-    start = source.find(marker)
-    assert start != -1, (
-        f'{marker} not found in {STREAM_SOURCE} — if the function was renamed, '
-        f'update this helper.'
-    )
-    rest = source[start + len(marker):]
-    next_decl = re.search(r'^(export )?(async )?function ', rest, re.MULTILINE)
-    assert next_decl, (
-        f'No declaration follows {marker} in {STREAM_SOURCE}, so this helper can '
-        f'no longer tell where the body ends and would scope the assertion to the '
-        f'rest of the file — which would let unrelated code satisfy it. If the '
-        f'function is now the last declaration in the module, give this helper an '
-        f'explicit end marker rather than letting it over-scope.'
-    )
-    return rest[:next_decl.start()]
-
-
-def _stream_reader_body() -> str:
-    """The body of getConfiguredCategories's read in the streaming module.
-
-    The reader was split so the cache wraps it: `readConfiguredCategories` is
-    the part that spends the key, maps the field and chooses the fallback, so
-    that is the body these assertions scope to.
-    """
-    return _stream_function_body('async function readConfiguredCategories(')
-
-
-def _stream_not_configured_path() -> str:
-    """The reader's not-configured path only: everything before its `catch`.
-
-    The distinction is load-bearing. A read that THREW and a table with nothing
-    configured are different situations that happen to share an answer, and each
-    has its own return. Pinning the fallback against the whole body would let the
-    not-configured path return `[]` — the original bug, for the overwhelmingly
-    common case — while the error path alone keeps returning the defaults and the
-    assertion stays green.
-    """
-    body = _stream_reader_body()
-    catch = re.search(r'\}\s*catch\b', body)
-    assert catch, (
-        f'{STREAM_SOURCE}::readConfiguredCategories no longer has a `catch`, so '
-        f'this helper cannot separate its not-configured path from its error '
-        f'path. The settings read must not be able to break a chat turn — if the '
-        f'error handling moved, move this helper with it rather than widening it '
-        f'to the whole body.'
-    )
-    return body[:catch.start()]
 
 
 def _python_function_body(source: str, marker: str, where: str) -> str:
@@ -261,81 +190,6 @@ def _python_default_categories() -> list[str]:
     match = re.search(r'^DEFAULT_CATEGORIES = \[(.*?)\]', source, re.MULTILINE | re.DOTALL)
     assert match, f'DEFAULT_CATEGORIES list literal not found in {PYTHON_READER_SOURCE}'
     return re.findall(r"'([^']+)'", match.group(1))
-
-
-def _stream_default_categories() -> list[str]:
-    source = _read(STREAM_SOURCE)
-    match = re.search(
-        r'^const DEFAULT_CATEGORIES = \[(.*?)\] as const;', source, re.MULTILINE | re.DOTALL,
-    )
-    assert match, (
-        f'DEFAULT_CATEGORIES array literal not found in {STREAM_SOURCE}. Streaming '
-        f'chat must fall back to the same list Python does, or an unconfigured '
-        f'table gives the two surfaces different answers.'
-    )
-    return re.findall(r"'([^']+)'", match.group(1))
-
-
-def _split_object_properties(object_literal: str) -> list[str]:
-    """One fragment per property of an object literal, split on TOP-LEVEL commas.
-
-    Bracket depth is tracked, and characters inside quotes are skipped, so
-    neither a nested `z.object({ ... })` nor a validator message containing a
-    comma or a bracket can split one property into two.
-    """
-    fragments: list[str] = []
-    depth = 0
-    quote = ''
-    start = 0
-    for index, char in enumerate(object_literal):
-        if quote:
-            if char == quote:
-                quote = ''
-        elif char in '\'"`':
-            quote = char
-        elif char in '([{':
-            depth += 1
-        elif char in ')]}':
-            depth -= 1
-        elif char == ',' and depth == 1:
-            fragments.append(object_literal[start:index])
-            start = index + 1
-    fragments.append(object_literal[start:])
-    return fragments
-
-
-def _required_zod_properties(object_literal: str) -> set[str]:
-    """The property names a Zod object literal REQUIRES.
-
-    Every declared property is required unless its chain carries `.optional()` or
-    `.nullish()`. Reading only the first key was how a second required property
-    could hide: `z.object({ name: z.string(), id: z.string() })` looks right to a
-    pattern anchored on the leading key while dropping every stored category the
-    writer never gave an `id`.
-
-    Properties are split on top-level commas rather than on every comma because a
-    validator may take a message: `id: z.string().min(1, 'x').optional()` is ONE
-    property whose chain ends in `.optional()`, and reading it only as far as the
-    first comma reports it as REQUIRED — failing a correct schema with a message
-    telling the author to make the property optional, which is what they did.
-    TestTheZodPropertyHelperItself pins that case directly.
-
-    Two limits, both of which fail loudly rather than passing silently: an
-    object-level `.partial()` after `z.object({...})` makes every property
-    optional and is invisible here, so a schema restructured that way must update
-    this test; and a validator message containing an escaped copy of its own
-    quote character would mis-split, which surfaces as a missing property name
-    (a failed assertion), never as a pass.
-    """
-    required = set()
-    for fragment in _split_object_properties(object_literal):
-        text = fragment.strip().lstrip('{').rstrip('}').strip()
-        name, separator, chain = text.partition(':')
-        if not separator:
-            continue
-        if '.optional()' not in chain and '.nullish()' not in chain:
-            required.add(name.strip())
-    return required
 
 
 def _aggregator_counter_parameters(tree: ast.Module) -> dict[str, tuple[str, str]]:
@@ -491,7 +345,7 @@ def _aggregator_sort_key_bindings() -> list[ast.expr]:
             # side would make a correct aggregator look unexplained.
             if (isinstance(target, ast.Tuple) and isinstance(value, ast.Tuple)
                     and len(target.elts) == len(value.elts)):
-                pairs = list(zip(target.elts, value.elts))
+                pairs = list(zip(target.elts, value.elts, strict=True))
             elif isinstance(target, ast.Tuple):
                 # Unpacking something that is not a literal tuple (a triple built
                 # elsewhere): the whole iterable explains every name in it.
@@ -523,14 +377,15 @@ def _aggregator_counter_key_sort_keys() -> list[str]:
         f'keys are built — if that moved or was renamed, follow it here rather '
         f'than deleting the assertion that depends on it.'
     )
-    sort_keys: list[str] = []
     # The BODY only. The return annotation `set[tuple[str, str, str]]` is a
     # three-element tuple too, and reading it would report the type name `str` as
     # a sort key — a correct aggregator failing on its own type hint.
-    for statement in producers[0].body:
-        for node in ast.walk(statement):
-            if isinstance(node, ast.Tuple) and len(node.elts) == 3:
-                sort_keys.append(ast.unparse(node.elts[1]))
+    sort_keys: list[str] = [
+        ast.unparse(node.elts[1])
+        for statement in producers[0].body
+        for node in ast.walk(statement)
+        if isinstance(node, ast.Tuple) and len(node.elts) == 3
+    ]
     assert sort_keys, (
         f'{AGGREGATOR_SOURCE}::{AGGREGATOR_KEY_PRODUCER} no longer builds a '
         f'(pk, sk, field) triple, so its sort key cannot be read here and the '
@@ -556,41 +411,18 @@ def _processor_default_categories() -> list[str]:
 
 
 class TestCategorySettingsKeyLockstep:
-    def test_the_streaming_reader_asks_for_the_key_the_writer_writes(self):
-        assert _stream_key() == _python_writer_key(), (
-            f'{STREAM_SOURCE} queries {_stream_key()} but '
-            f'{PYTHON_WRITER_SOURCE} writes the item at {_python_writer_key()}. A '
-            f'streaming read of a key nobody writes returns no item, so the Top '
-            f'Categories section is empty on every turn and nothing fails.'
-        )
-
-    def test_the_streaming_reader_asks_for_the_key_the_python_reader_asks_for(self):
-        assert _stream_key() == _python_reader_key(), (
-            f'{STREAM_SOURCE} queries {_stream_key()} but '
+    def test_the_python_reader_asks_for_the_key_the_writer_writes(self):
+        assert _python_reader_key() == _python_writer_key(), (
             f'{PYTHON_READER_SOURCE}::get_raw_categories_config reads '
-            f'{_python_reader_key()}. The two surfaces must describe the same '
-            f'configuration or they report different categories for one table.'
-        )
-
-    def test_the_abandoned_streaming_key_is_gone(self):
-        source = _read(STREAM_SOURCE)
-        assert ABANDONED_PK not in source, (
-            f"{STREAM_SOURCE} still mentions '{ABANDONED_PK}', a partition key "
-            f'nothing in this repository writes. Its only occurrence used to be '
-            f'this module\'s own read.'
-        )
-        # Both halves, not just the partition: the sort key is equally
-        # never-written, and a reader that got the partition right and this wrong
-        # still reads no item and still empties the section.
-        assert ABANDONED_SK not in source, (
-            f"{STREAM_SOURCE} still mentions the sort key '{ABANDONED_SK}'. The "
-            f'settings item is written under a different sort key, so this one '
-            f'returns no item however right the partition is.'
+            f'{_python_reader_key()} but {PYTHON_WRITER_SOURCE} writes the item at '
+            f'{_python_writer_key()}. A read of a key nobody writes returns no '
+            f'item, so every category surface (including the assistant tools that '
+            f'call these APIs) silently reports the defaults.'
         )
 
 
 class TestCategoryNameFieldLockstep:
-    """The field read must be the taxonomy NAME on both sides.
+    """The field read must be the taxonomy NAME.
 
     `METRIC#daily_category#<category>` partitions are keyed by the enrichment
     output, which is the category name. Reading any other field yields
@@ -610,118 +442,6 @@ class TestCategoryNameFieldLockstep:
             f'each category to its `name`. If the owning side changed field, the '
             f'streaming mirror and the aggregator partitions must change with it.'
         )
-
-    def test_the_streaming_reader_maps_categories_to_their_name(self):
-        # Scoped to the mapping function for the same reason, and because the
-        # negative assertion below would otherwise fire on a mere mention of the
-        # field in a comment anywhere in the module.
-        body = _stream_function_body('function namesFromStoredList(')
-        assert 'parsed.data.name' in body, (
-            f'{STREAM_SOURCE} no longer reads `name` off each parsed category. '
-            f'The counter partitions are named after the category name, so any '
-            f'other field sums partitions that do not exist.'
-        )
-        assert 'parsed.data.id' not in body, (
-            f'{STREAM_SOURCE} reads an internal identifier instead of the '
-            f'taxonomy name. That names counter partitions the aggregator never '
-            f'writes, so the section is empty however right the item key is.'
-        )
-
-    def test_the_streaming_schema_requires_the_field_that_is_read(self):
-        """The Zod object at the top of the module decides which configured
-        categories survive the parse. Requiring `id` while reading `name` drops
-        every category that carries no `id` — silently, because safeParse
-        failures are filtered out.
-
-        EVERY property is inspected, not just the first. Capturing only the
-        leading key let `z.object({ name: z.string(), id: z.string() })` satisfy
-        this pin while reinstating the exact defect the test is named for: the
-        frontend's own normalizer has to DERIVE ids from names
-        (frontend/src/components/CategoriesManager/categoriesSchema.ts), so
-        id-less rows are what real and legacy data looks like, and a schema
-        requiring one drops them."""
-        source = _read(STREAM_SOURCE)
-        match = re.search(
-            r'^const categoryItemSchema = z\.object\((\{.*?\})\)', source,
-            re.MULTILINE | re.DOTALL,
-        )
-        assert match, (
-            f'categoryItemSchema not found in {STREAM_SOURCE}, or its shape '
-            f'changed. It must keep validating at this boundary — this repository '
-            f'does not permit a type assertion here — so update this pattern '
-            f'rather than removing the schema.'
-        )
-        literal = match.group(1)
-        required = _required_zod_properties(literal)
-        assert 'name' in required, (
-            f'categoryItemSchema requires {sorted(required)} but the read takes '
-            f'`name`. The key, the field, and the schema must describe one '
-            f'contract, or the parse rejects the very categories it is meant to '
-            f'admit.'
-        )
-        assert required == {'name'}, (
-            f'categoryItemSchema requires {sorted(required)}; only `name` may be '
-            f'required. Any other required property — `id` above all — drops '
-            f'every configured category the writer stored without one, silently, '
-            f'because safeParse failures become an empty string and are removed '
-            f'by filter(Boolean) rather than reported. Make the extra property '
-            f'.optional() if the reader really needs to see it.'
-        )
-
-
-class TestTheZodPropertyHelperItself:
-    """The helper decides whether the schema pin above passes, so its own failure
-    modes matter as much as the pin's.
-
-    A lockstep whose failures are sometimes WRONG is worse than none: the pin's
-    message offers an escape hatch — make the extra property `.optional()` — and
-    a helper that reads a chain only as far as its first comma does not honour it
-    for any property whose validator also carries a message. The author would be
-    told to do the thing they had already done.
-    """
-
-    def test_a_bare_property_is_required(self):
-        assert _required_zod_properties('{ name: z.string() }') == {'name'}
-
-    def test_every_declared_property_is_read_not_just_the_first(self):
-        literal = '{ name: z.string(), id: z.string() }'
-        assert _required_zod_properties(literal) == {'name', 'id'}, (
-            'A second required property must be visible — reading only the '
-            'leading key is how a required `id` hid from this pin.'
-        )
-
-    def test_an_optional_property_is_not_required(self):
-        assert _required_zod_properties('{ name: z.string(), id: z.string().optional() }') == {
-            'name',
-        }
-
-    def test_a_nullish_property_is_not_required(self):
-        assert _required_zod_properties('{ name: z.string(), id: z.string().nullish() }') == {
-            'name',
-        }
-
-    def test_a_validator_message_does_not_hide_the_optional_marker(self):
-        # The regression this class exists for. `.min(1, 'x')` puts a comma inside
-        # the chain, which used to truncate it before `.optional()` was seen — so
-        # a correct schema failed the pin, with a message telling its author to
-        # make the property optional.
-        literal = "{ name: z.string(), id: z.string().min(1, 'x').optional() }"
-        assert _required_zod_properties(literal) == {'name'}, (
-            'A property is optional if its chain says so, wherever the commas '
-            'fall inside its validators.'
-        )
-
-    def test_a_message_containing_a_comma_is_not_a_second_property(self):
-        literal = "{ name: z.string().min(1, 'set a name, please') }"
-        assert _required_zod_properties(literal) == {'name'}
-
-    def test_a_nested_object_does_not_contribute_its_own_properties(self):
-        # The inner comma sits at bracket depth 3, so it must not split the outer
-        # literal — otherwise `a` and `b` would be reported as top-level
-        # properties of a schema that does not declare them.
-        literal = '{ name: z.string(), meta: z.object({ a: z.string(), b: z.string() }) }'
-        assert _required_zod_properties(literal) == {'name', 'meta'}
-
 
 class TestCounterSortKeyShapeLockstep:
     """The streaming reader sums a window with `sk BETWEEN :oldest AND :newest`,
@@ -775,11 +495,11 @@ class TestCounterSortKeyShapeLockstep:
         composite = sorted({sk for _, sk in writes if sk not in AGGREGATOR_DATE_NAMES})
         assert not composite, (
             f'{AGGREGATOR_SOURCE} keys a counter by {composite} rather than by '
-            f'the bare `date`. {STREAM_SOURCE} sums these partitions with '
+            f'the bare `date`. Date-window readers sum these partitions with '
             f'`sk BETWEEN :oldest AND :newest`, and a composite sort key sorts '
-            f'inside a date window — so streaming chat would silently count rows '
+            f'inside a date window — so they would silently count rows '
             f'that are not days. If a composite sort key is really wanted here, '
-            f'the streaming reader needs a different predicate, not a wider one.'
+            f'the readers need a different predicate, not a wider one.'
         )
 
     def test_the_only_sort_key_the_aggregator_builds_is_the_item_date(self):
@@ -795,7 +515,7 @@ class TestCounterSortKeyShapeLockstep:
         assert sort_keys == ['date'], (
             f'{AGGREGATOR_SOURCE}::{AGGREGATOR_KEY_PRODUCER} builds counter keys '
             f'whose sort key is {sort_keys} rather than the bare `date`. '
-            f'{STREAM_SOURCE} sums these partitions with a range predicate over '
+            f'Date-window readers sum these partitions with a range predicate over '
             f'dates, so anything else sorts inside a window it is unrelated to.'
         )
 
@@ -827,7 +547,7 @@ class TestCounterSortKeyShapeLockstep:
             f'{AGGREGATOR_SOURCE} binds a counter sort key from {unexplained}. '
             f'Only {list(AGGREGATOR_DATE_ACCESSORS)}, {AGGREGATOR_KEY_PRODUCER}() '
             f'and `{AGGREGATOR_KEY_ITERATION}` may produce one, because '
-            f'{STREAM_SOURCE} reads these sort keys as bare dates. If a new '
+            f'date-window readers treat these sort keys as bare dates. If a new '
             f'source is genuinely right, add it here deliberately.'
         )
 
@@ -876,53 +596,18 @@ class TestTheSortKeyAllowlistItself:
 
 
 class TestNotConfiguredFallbackLockstep:
-    """Both surfaces answer the same way when nothing is configured.
+    """The reader and the enrichment prompt agree when nothing is configured.
 
-    Python falls back to DEFAULT_CATEGORIES; streaming used to fall back to an
-    empty array, and that silent difference is how these two copies drifted this
-    far. The default list wins because the enrichment prompt labels feedback with
-    those same names when no taxonomy is configured, so the counters exist under
-    them — an empty fallback reports nothing where the metrics surface reports
-    counts.
+    Python falls back to DEFAULT_CATEGORIES (the removed streaming reader once
+    fell back to an empty array, which is how the copies drifted). The default
+    list wins because the enrichment prompt labels feedback with those same
+    names when no taxonomy is configured, so the counters exist under them.
     """
-
-    def test_both_sides_fall_back_to_the_same_default_list(self):
-        python_defaults = _python_default_categories()
-        stream_defaults = _stream_default_categories()
-        assert stream_defaults == python_defaults, (
-            f'{STREAM_SOURCE} falls back to {stream_defaults} but '
-            f'{PYTHON_READER_SOURCE} falls back to {python_defaults}. An '
-            f'unconfigured table must look the same to streaming chat as it does '
-            f'to the metrics surface.'
-        )
-
-    def test_the_streaming_reader_actually_returns_its_default_list(self):
-        """Declaring the list is not the same as spending it. A reader that keeps
-        DEFAULT_CATEGORIES for documentation and still returns `[]` on the
-        unconfigured path keeps the comparison above green while the section
-        stays empty — the exact shape of the original bug.
-
-        Pinned as a positive match on the RETURN, not as a ban on the text
-        `return []`: Python really does answer `[]` for a configured-but-nameless
-        list, so a reader that spells that outcome out explicitly is correct and
-        must not fail here.
-
-        Scoped to the not-configured path rather than the whole body, so that
-        returning the defaults from the error path alone cannot answer for it."""
-        reader = _stream_not_configured_path()
-        assert re.search(r'\[\s*\.\.\.\s*DEFAULT_CATEGORIES\s*\]', reader), (
-            f'{STREAM_SOURCE}::readConfiguredCategories no longer returns a copy '
-            f'of DEFAULT_CATEGORIES from its not-configured path. Python returns '
-            f'the default list there, so returning an empty array makes streaming '
-            f'chat report no categories for a table the metrics surface reports '
-            f'counts for. Declaring the list without returning it keeps the '
-            f'sibling comparison green while the section stays empty.'
-        )
 
     def test_the_enrichment_prompt_offers_the_same_default_list(self):
         """The third copy, and the one the other two depend on.
 
-        lambda/processor/handler.py decides which category names the enrichment
+        lambda/shared/categorization.py decides which category names the enrichment
         model may emit when no taxonomy is configured. That is the only reason
         falling back to the default list is right rather than arbitrary: the
         `METRIC#daily_category#<name>` counters exist under exactly those names.
@@ -933,9 +618,7 @@ class TestNotConfiguredFallbackLockstep:
         # Compared as MEMBERSHIP, not as sequence. What has to hold is that the
         # names match: the counters are written under whichever name the model
         # emits, and a reader asks for all of its names regardless of their order.
-        # Order IS pinned between the two readers' list literals above, where they
-        # are hand-maintained mirrors of each other and a divergence is worth
-        # seeing — but this copy is a pipe-delimited prompt string, where insisting
+        # This copy is a pipe-delimited prompt string, where insisting
         # on the same sequence would fail a harmless reordering and say the
         # counters are wrong. Sorted rather than set-compared so a duplicated name
         # still shows up.
@@ -946,12 +629,6 @@ class TestNotConfiguredFallbackLockstep:
             f'{sorted(_python_default_categories())}. The counters are written '
             f'under the names the model emits, so the readers would ask for '
             f'partitions that are never written.'
-        )
-        assert processor_defaults == sorted(_stream_default_categories()), (
-            f'{PROCESSOR_SOURCE} lets the enrichment model emit '
-            f'{processor_defaults} but {STREAM_SOURCE} falls back to '
-            f'{sorted(_stream_default_categories())}. Streaming chat would ask '
-            f'for counter partitions the enrichment output never names.'
         )
 
     def test_the_default_list_is_not_empty(self):

@@ -2,20 +2,24 @@
  * @fileoverview Tests for Dashboard page component.
  * @module pages/Dashboard
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { TestRouter } from '../../test/test-utils'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import type { ComponentProps } from 'react'
+import { screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { renderWithQueryClient } from '../../test/query-client'
+import { TestRouter } from '../../test/TestRouter'
 // The copy under test, read from the locale file the app itself renders from —
 // the same source src/test/setup.ts loads into i18next.
 import enCommon from '../../../public/locales/en/common.json'
+import enDashboard from '../../../public/locales/en/dashboard.json'
+import { resetViewerScope, viewerScope as viewer } from '@test/viewerScopeMock'
 
 // Mock API before importing component
-const mockGetSummary = vi.fn()
-const mockGetSentiment = vi.fn()
-const mockGetCategories = vi.fn()
-const mockGetSources = vi.fn()
-const mockGetUrgentFeedback = vi.fn()
+const mockGetSummary = vi.fn<(...args: unknown[]) => unknown>()
+const mockGetSentiment = vi.fn<(...args: unknown[]) => unknown>()
+const mockGetCategories = vi.fn<(...args: unknown[]) => unknown>()
+const mockGetSources = vi.fn<(...args: unknown[]) => unknown>()
+const mockGetUrgentFeedback = vi.fn<(...args: unknown[]) => unknown>()
 
 vi.mock('../../api/client', () => ({
   api: {
@@ -25,43 +29,50 @@ vi.mock('../../api/client', () => ({
     getSources: (days: number) => mockGetSources(days),
     getUrgentFeedback: (params: unknown) => mockGetUrgentFeedback(params),
   },
-  getDaysFromRange: vi.fn(() => 7),
   getDateRangeParams: () => ({ days: 7 }),
 }))
 
 // Mock config store
-vi.mock('../../store/configStore', () => ({
-  useConfigStore: vi.fn(() => ({
-    timeRange: '7d',
-    customDays: null,
-    config: { apiEndpoint: 'https://api.example.com', brandName: 'Test Brand' },
-  })),
+const { mockSetTimeRange, mockSetCustomDays } = vi.hoisted(() => ({
+  mockSetTimeRange: vi.fn(),
+  mockSetCustomDays: vi.fn(),
 }))
+vi.mock('../../store/configStore', () => import('@test/page-mocks').then((m) => m.configStoreHookMock({
+  timeRange: '7d',
+  customDays: null,
+  config: { apiEndpoint: 'https://api.example.com', brandName: 'Test Brand' },
+  setTimeRange: mockSetTimeRange,
+  setCustomDays: mockSetCustomDays,
+})))
 
-// Mock child components to simplify testing.
+// The caller's scope (GET /feedback/access) as a per-test switch (@test/viewerScopeMock).
+vi.mock('../../components/ScopeNotice/useViewerScope', (importOriginal) =>
+  import('@test/viewerScopeMock').then((m) => m.viewerScopeModule(importOriginal)))
 //
 // `hint` is forwarded, not dropped: it is the only user-visible statement that a
 // total is a lower bound rather than exact, and a mock that swallows it lets the
 // hint be deleted — or left as an untranslated literal — with this suite green.
-// MetricCard's own test covers what it DOES with the value (title + aria-label);
-// here it just has to be reachable.
-vi.mock('../../components/MetricCard', () => ({
-  default: ({ title, value, hint }: { title: string; value: string | number; hint?: string }) => (
-    <div data-testid={`metric-${title.toLowerCase().replace(/\s/g, '-')}`}>
-      <span>{title}</span>
-      <span>{value}</span>
-      {hint && <span data-testid="metric-hint">{hint}</span>}
-    </div>
-  ),
-}))
+// MetricCard's own test covers what it DOES with the value (grouping, "~", title + aria-label);
+// the wrapper renders the REAL card, so the formatting is the shipped one, and exposes the hint.
+vi.mock('../../components/MetricCard/MetricCard', async (importOriginal) => {
+  const { default: Real } = await importOriginal<typeof import('../../components/MetricCard/MetricCard')>()
+  return {
+    default: (props: ComponentProps<typeof Real>) => (
+      <div data-testid={`metric-${props.title.toLowerCase().replace(/\s/g, '-')}`}>
+        <Real {...props} />
+        {props.hint && <span data-testid="metric-hint">{props.hint}</span>}
+      </div>
+    ),
+  }
+})
 
-vi.mock('../../components/FeedbackCard', () => ({
+vi.mock('../../components/FeedbackCard/FeedbackCard', () => ({
   default: ({ feedback }: { feedback: { feedback_id: string; original_text: string } }) => (
     <div data-testid={`feedback-${feedback.feedback_id}`}>{feedback.original_text}</div>
   ),
 }))
 
-vi.mock('../../components/SocialFeed', () => ({
+vi.mock('../../components/SocialFeed/SocialFeed', () => ({
   default: () => <div data-testid="social-feed">Social Feed</div>,
 }))
 
@@ -69,6 +80,7 @@ vi.mock('../../components/SocialFeed', () => ({
 vi.mock('recharts', () => ({
   ResponsiveContainer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   LineChart: () => <div data-testid="line-chart">Line Chart</div>,
+  ComposedChart: () => <div data-testid="trend-chart">Trend Chart</div>,
   Line: () => null,
   XAxis: () => null,
   YAxis: () => null,
@@ -82,18 +94,11 @@ vi.mock('recharts', () => ({
 }))
 
 import Dashboard from './Dashboard'
+import { clickLoadFailedRetry } from '@test/loadFailed'
 
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
-  return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>
-      <TestRouter initialEntries={['/']}>
-        {children}
-      </TestRouter>
-    </QueryClientProvider>
-  )
+/** Renders `ui` (the page by default) with a no-retry query client inside its router. */
+function renderDashboard(ui: React.ReactElement = <Dashboard />) {
+  return renderWithQueryClient(<TestRouter initialEntries={['/']}>{ui}</TestRouter>)
 }
 
 describe('Dashboard', () => {
@@ -129,15 +134,41 @@ describe('Dashboard', () => {
     it('displays loading indicator while fetching data', () => {
       mockGetSummary.mockReturnValue(new Promise(() => {}))
       
-      render(<Dashboard />, { wrapper: createWrapper() })
+      renderDashboard()
       
       expect(screen.getByText('Loading...')).toBeInTheDocument()
     })
   })
 
+  describe('load failed', () => {
+    it('says the summary could not be loaded instead of showing the empty state', async () => {
+      mockGetSummary.mockRejectedValue(new Error('Failed to fetch'))
+
+      renderDashboard()
+
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent(enCommon.loadFailed.message)
+      expect(screen.queryByText(enDashboard.onboarding.heading)).not.toBeInTheDocument()
+      expect(screen.queryByText(enDashboard.windowEmpty.heading)).not.toBeInTheDocument()
+      // The all-time check behind the empty states is never asked.
+      expect(mockGetSummary).toHaveBeenCalledTimes(1)
+    })
+
+    it('recovers in place when Try again succeeds', async () => {
+      mockGetSummary.mockRejectedValueOnce(new Error('API Error: 500'))
+      const user = userEvent.setup()
+      renderDashboard()
+
+      await clickLoadFailedRetry(user)
+
+      expect(await screen.findByText('1,234')).toBeInTheDocument()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+  })
+
   describe('metrics display', () => {
     it('displays total feedback count after loading', async () => {
-      render(<Dashboard />, { wrapper: createWrapper() })
+      renderDashboard()
       
       await waitFor(() => {
         expect(screen.getByTestId('metric-total-feedback')).toBeInTheDocument()
@@ -155,7 +186,7 @@ describe('Dashboard', () => {
         daily_sentiment: [{ date: '2025-01-01', avg_sentiment: 0.5, count: 100 }],
       })
 
-      render(<Dashboard />, { wrapper: createWrapper() })
+      renderDashboard()
 
       await waitFor(() => {
         expect(screen.getByText('~1,234')).toBeInTheDocument()
@@ -181,7 +212,7 @@ describe('Dashboard', () => {
       // The positive control for the case above. Without it the hint could be
       // rendered unconditionally — a permanent "approximate" is as uninformative
       // as never showing it, and both read as "ignore this".
-      render(<Dashboard />, { wrapper: createWrapper() })
+      renderDashboard()
 
       await waitFor(() => {
         expect(screen.getByText('1,234')).toBeInTheDocument()
@@ -190,15 +221,15 @@ describe('Dashboard', () => {
     })
 
     it('displays average sentiment metric', async () => {
-      render(<Dashboard />, { wrapper: createWrapper() })
+      renderDashboard()
       
       await waitFor(() => {
-        expect(screen.getByTestId('metric-avg-sentiment')).toBeInTheDocument()
+        expect(screen.getByTestId('metric-average-sentiment')).toBeInTheDocument()
       })
     })
 
     it('displays urgent issues count', async () => {
-      render(<Dashboard />, { wrapper: createWrapper() })
+      renderDashboard()
       
       await waitFor(() => {
         expect(screen.getByTestId('metric-urgent-issues')).toBeInTheDocument()
@@ -206,25 +237,25 @@ describe('Dashboard', () => {
     })
 
     it('displays sources active count', async () => {
-      render(<Dashboard />, { wrapper: createWrapper() })
+      renderDashboard()
       
       await waitFor(() => {
-        expect(screen.getByTestId('metric-sources-active')).toBeInTheDocument()
+        expect(screen.getByTestId('metric-sources-with-reviews')).toBeInTheDocument()
       })
     })
   })
 
   describe('charts', () => {
     it('renders trend chart', async () => {
-      render(<Dashboard />, { wrapper: createWrapper() })
+      renderDashboard()
       
       await waitFor(() => {
-        expect(screen.getByText('Feedback Volume & Sentiment Trend')).toBeInTheDocument()
+        expect(screen.getByText('Reviews and sentiment per day')).toBeInTheDocument()
       })
     })
 
     it('renders sentiment distribution chart', async () => {
-      render(<Dashboard />, { wrapper: createWrapper() })
+      renderDashboard()
       
       await waitFor(() => {
         expect(screen.getByText('Sentiment Distribution')).toBeInTheDocument()
@@ -232,7 +263,7 @@ describe('Dashboard', () => {
     })
 
     it('renders category chart', async () => {
-      render(<Dashboard />, { wrapper: createWrapper() })
+      renderDashboard()
       
       await waitFor(() => {
         expect(screen.getByText('Top Issue Categories')).toBeInTheDocument()
@@ -240,7 +271,7 @@ describe('Dashboard', () => {
     })
 
     it('renders source chart', async () => {
-      render(<Dashboard />, { wrapper: createWrapper() })
+      renderDashboard()
       
       await waitFor(() => {
         expect(screen.getByText('Feedback by Source')).toBeInTheDocument()
@@ -250,7 +281,7 @@ describe('Dashboard', () => {
 
   describe('urgent feedback section', () => {
     it('displays urgent issues section with count', async () => {
-      render(<Dashboard />, { wrapper: createWrapper() })
+      renderDashboard()
       
       await waitFor(() => {
         // Use getAllByText since "Urgent Issues" appears in both MetricCard and UrgentFeedback section
@@ -259,17 +290,15 @@ describe('Dashboard', () => {
       })
     })
 
-    // Regression: the heading used to report the preview list's `count`, which
-    // is one page's length and is clamped by the limit the list was fetched
-    // with. It must report the summary aggregate instead. The fixtures diverge
-    // on purpose — summary says 5 urgent, the preview page says 3.
-    it('reports the summary total in the urgent heading, not the preview page size', async () => {
-      // Own the divergence rather than inheriting it from shared fixtures: 11
-      // urgent items exist, the preview page carries 2. The heading must say 11.
+    /**
+     * A summary claiming `urgentCount` urgent items while the preview page
+     * carries exactly two — the divergence both heading cases are about.
+     */
+    function loadDivergingUrgentCounts(urgentCount: number) {
       mockGetSummary.mockResolvedValue({
         total_feedback: 1234,
         avg_sentiment: 0.65,
-        urgent_count: 11,
+        urgent_count: urgentCount,
         daily_totals: [{ date: '2025-01-01', count: 100 }],
         daily_sentiment: [{ date: '2025-01-01', avg_sentiment: 0.5, count: 100 }],
       })
@@ -280,8 +309,25 @@ describe('Dashboard', () => {
           { feedback_id: '2', original_text: 'Urgent issue 2', urgency: 'high' },
         ],
       })
+    }
 
-      render(<Dashboard />, { wrapper: createWrapper() })
+    // Design audit: Urgent Issues showed "11268" beside Total Feedback's "16,809".
+    it('groups the urgent metric digits like the total', async () => {
+      loadDivergingUrgentCounts(11268)
+      renderDashboard()
+      expect(await screen.findByText('11,268')).toBeInTheDocument()
+    })
+
+    // Regression: the heading used to report the preview list's `count`, which
+    // is one page's length and is clamped by the limit the list was fetched
+    // with. It must report the summary aggregate instead. The fixtures diverge
+    // on purpose — summary says 5 urgent, the preview page says 3.
+    it('reports the summary total in the urgent heading, not the preview page size', async () => {
+      // Own the divergence rather than inheriting it from shared fixtures: 11
+      // urgent items exist, the preview page carries 2. The heading must say 11.
+      loadDivergingUrgentCounts(11)
+
+      renderDashboard()
 
       await waitFor(() => {
         expect(screen.getByText('Urgent Issues (11)')).toBeInTheDocument()
@@ -296,22 +342,9 @@ describe('Dashboard', () => {
     // not catch it. This is the reachable case; a summary *failure* instead
     // swaps the whole dashboard for its empty state.
     it('never reports fewer urgent items than it renders', async () => {
-      mockGetSummary.mockResolvedValue({
-        total_feedback: 1234,
-        avg_sentiment: 0.65,
-        urgent_count: 0,
-        daily_totals: [{ date: '2025-01-01', count: 100 }],
-        daily_sentiment: [{ date: '2025-01-01', avg_sentiment: 0.5, count: 100 }],
-      })
-      mockGetUrgentFeedback.mockResolvedValue({
-        count: 2,
-        items: [
-          { feedback_id: '1', original_text: 'Urgent issue 1', urgency: 'high' },
-          { feedback_id: '2', original_text: 'Urgent issue 2', urgency: 'high' },
-        ],
-      })
+      loadDivergingUrgentCounts(0)
 
-      render(<Dashboard />, { wrapper: createWrapper() })
+      renderDashboard()
 
       await waitFor(() => {
         expect(screen.getByText('Urgent Issues (2)')).toBeInTheDocument()
@@ -328,7 +361,7 @@ describe('Dashboard', () => {
       }))
       mockGetUrgentFeedback.mockResolvedValue({ count: many.length, items: many })
 
-      render(<Dashboard />, { wrapper: createWrapper() })
+      renderDashboard()
 
       await waitFor(() => {
         expect(screen.getByText('Urgent issue 0')).toBeInTheDocument()
@@ -341,7 +374,7 @@ describe('Dashboard', () => {
     })
 
     it('displays urgent feedback items', async () => {
-      render(<Dashboard />, { wrapper: createWrapper() })
+      renderDashboard()
       
       await waitFor(() => {
         expect(screen.getByTestId('feedback-1')).toBeInTheDocument()
@@ -352,7 +385,7 @@ describe('Dashboard', () => {
     it('displays celebration message when no urgent issues', async () => {
       mockGetUrgentFeedback.mockResolvedValue({ count: 0, items: [] })
       
-      render(<Dashboard />, { wrapper: createWrapper() })
+      renderDashboard()
       
       await waitFor(() => {
         expect(screen.getByText(/No urgent issues/)).toBeInTheDocument()
@@ -362,7 +395,7 @@ describe('Dashboard', () => {
 
   describe('social feed', () => {
     it('renders social feed component', async () => {
-      render(<Dashboard />, { wrapper: createWrapper() })
+      renderDashboard()
       
       await waitFor(() => {
         expect(screen.getByTestId('social-feed')).toBeInTheDocument()
@@ -372,34 +405,34 @@ describe('Dashboard', () => {
 
   describe('API calls', () => {
     it('fetches summary with correct days parameter', async () => {
-      render(<Dashboard />, { wrapper: createWrapper() })
+      renderDashboard()
       
       await waitFor(() => {
-        expect(mockGetSummary).toHaveBeenCalled()
+        expect(mockGetSummary).toHaveBeenCalledWith({ days: 7 }, undefined)
       })
     })
 
     it('fetches sentiment data', async () => {
-      render(<Dashboard />, { wrapper: createWrapper() })
+      renderDashboard()
       
       await waitFor(() => {
-        expect(mockGetSentiment).toHaveBeenCalled()
+        expect(mockGetSentiment).toHaveBeenCalledWith({ days: 7 }, undefined)
       })
     })
 
     it('fetches categories data', async () => {
-      render(<Dashboard />, { wrapper: createWrapper() })
+      renderDashboard()
       
       await waitFor(() => {
-        expect(mockGetCategories).toHaveBeenCalled()
+        expect(mockGetCategories).toHaveBeenCalledWith({ days: 7 }, undefined)
       })
     })
 
     it('fetches sources data', async () => {
-      render(<Dashboard />, { wrapper: createWrapper() })
+      renderDashboard()
       
       await waitFor(() => {
-        expect(mockGetSources).toHaveBeenCalled()
+        expect(mockGetSources).toHaveBeenCalledWith({ days: 7 })
       })
     })
   })
@@ -429,22 +462,25 @@ describe('Dashboard not configured', () => {
     
     const { default: DashboardNotConfigured } = await import('./Dashboard')
     
-    render(<DashboardNotConfigured />, { wrapper: createWrapper() })
+    renderDashboard(<DashboardNotConfigured />)
     
     expect(screen.getByText('Welcome to VoC Analytics')).toBeInTheDocument()
     expect(screen.getByText(/Configure your API endpoint/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Go to Settings/i })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Go to Settings/i })).toHaveAttribute('href', '/account?tab=preferences')
   })
 })
 
+/** Every mock cleared, and every breakdown answering empty. */
+function resetToEmptyBreakdowns() {
+  vi.clearAllMocks()
+  mockGetSentiment.mockResolvedValue({ breakdown: {}, percentages: {} })
+  mockGetCategories.mockResolvedValue({ categories: {} })
+  mockGetSources.mockResolvedValue({ sources: {} })
+  mockGetUrgentFeedback.mockResolvedValue({ count: 0, items: [] })
+}
+
 describe('empty-state onboarding (P11)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockGetSentiment.mockResolvedValue({ breakdown: {}, percentages: {} })
-    mockGetCategories.mockResolvedValue({ categories: {} })
-    mockGetSources.mockResolvedValue({ sources: {} })
-    mockGetUrgentFeedback.mockResolvedValue({ count: 0, items: [] })
-  })
+  beforeEach(resetToEmptyBreakdowns)
 
   it('shows a compact empty state that points to Home when there is no feedback', async () => {
     mockGetSummary.mockResolvedValue({
@@ -454,7 +490,7 @@ describe('empty-state onboarding (P11)', () => {
       daily_totals: [],
     })
 
-    render(<Dashboard />, { wrapper: createWrapper() })
+    renderDashboard()
 
     await waitFor(() => {
       expect(screen.getByText(/get your feedback flowing/i)).toBeInTheDocument()
@@ -465,7 +501,7 @@ describe('empty-state onboarding (P11)', () => {
     expect(homeLink).toHaveAttribute('href', '/')
     expect(screen.queryByText('Collect reviews')).not.toBeInTheDocument()
     // The normal dashboard widgets are not rendered in the empty state.
-    expect(screen.queryByText('Feedback Volume & Sentiment Trend')).not.toBeInTheDocument()
+    expect(screen.queryByText('Reviews and sentiment per day')).not.toBeInTheDocument()
   })
 
   it('shows the normal dashboard when feedback exists', async () => {
@@ -476,11 +512,139 @@ describe('empty-state onboarding (P11)', () => {
       daily_totals: [{ date: '2025-01-01', count: 42 }],
     })
 
-    render(<Dashboard />, { wrapper: createWrapper() })
+    renderDashboard()
 
     await waitFor(() => {
-      expect(screen.getByText('Feedback Volume & Sentiment Trend')).toBeInTheDocument()
+      expect(screen.getByText('Reviews and sentiment per day')).toBeInTheDocument()
     })
     expect(screen.queryByText(/get your feedback flowing/i)).not.toBeInTheDocument()
+  })
+})
+
+describe('window empty vs workspace empty (E2E F4)', () => {
+  /** The production shape: nothing in the window, 16,799 items all time, newest 2026-06-15. */
+  const ALL_TIME_SUMMARY = {
+    total_feedback: 16799,
+    avg_sentiment: 0.1,
+    urgent_count: 12,
+    daily_totals: [
+      { date: '2026-06-14', count: 40 },
+      { date: '2026-06-16', count: 0 },
+      { date: '2026-06-15', count: 21 },
+      { date: '2025-01-02', count: 16738 },
+    ],
+    daily_sentiment: [],
+  }
+  const EMPTY_WINDOW = { total_feedback: 0, avg_sentiment: 0, urgent_count: 0, daily_totals: [], daily_sentiment: [] }
+
+  /** Answer `/metrics/summary` per window: 0 for `days=0`, the empty window for anything else. */
+  function summaryByWindow(allTime: unknown) {
+    mockGetSummary.mockImplementation((range: unknown) => {
+      const days = typeof range === 'object' && range !== null && 'days' in range ? range.days : undefined
+      if (days === 0) return allTime instanceof Error ? Promise.reject(allTime) : Promise.resolve(allTime)
+      return Promise.resolve(EMPTY_WINDOW)
+    })
+  }
+
+  beforeEach(resetToEmptyBreakdowns)
+
+  it('names the newest feedback date and the all-time count instead of calling the workspace empty', async () => {
+    summaryByWindow(ALL_TIME_SUMMARY)
+
+    renderDashboard()
+
+    expect(await screen.findByRole('heading', { name: 'No feedback in this time range' })).toBeInTheDocument()
+    expect(screen.getByText(
+      'Your workspace has 16,799 feedback items. The newest is from Jun 15, 2026, outside the selected range.',
+    )).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /start here/i })).not.toBeInTheDocument()
+  })
+
+  it('asks the all-time summary with only `days` widened to 0', async () => {
+    summaryByWindow(ALL_TIME_SUMMARY)
+
+    renderDashboard()
+
+    await screen.findByRole('heading', { name: 'No feedback in this time range' })
+    expect(mockGetSummary).toHaveBeenCalledWith({ days: 0 }, undefined)
+  })
+
+  it('"Show all time" switches the selector to the All time preset in one click', async () => {
+    summaryByWindow(ALL_TIME_SUMMARY)
+    renderDashboard()
+
+    const button = await screen.findByRole('button', { name: 'Show all time' })
+    button.click()
+
+    expect(mockSetTimeRange).toHaveBeenCalledWith('all')
+    expect(mockSetCustomDays).toHaveBeenCalledWith(null)
+  })
+
+  it('shows the welcome state only when the all-time total is 0', async () => {
+    summaryByWindow(EMPTY_WINDOW)
+
+    renderDashboard()
+
+    expect(await screen.findByText(/get your feedback flowing/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Show all time' })).not.toBeInTheDocument()
+  })
+
+  it('never claims the workspace is empty when the all-time check fails', async () => {
+    summaryByWindow(new Error('502'))
+
+    renderDashboard()
+
+    expect(await screen.findByRole('heading', { name: 'No feedback in this time range' })).toBeInTheDocument()
+    expect(screen.getByText('Nothing was collected in the selected range. Older feedback may exist.')).toBeInTheDocument()
+    expect(screen.queryByText(/get your feedback flowing/i)).not.toBeInTheDocument()
+  })
+})
+
+describe('a restricted or regular viewer (owner rule 2026-10-21)', () => {
+  const EMPTY = { total_feedback: 0, avg_sentiment: 0, urgent_count: 0, daily_totals: [], daily_sentiment: [] }
+  const WITH_REVIEWS = { ...EMPTY, total_feedback: 108, daily_totals: [{ date: '2026-10-20', count: 108 }] }
+
+  beforeEach(() => {
+    resetToEmptyBreakdowns()
+    viewer.isAdmin = false
+    viewer.scope = { kind: 'categories', categories: ['technical_support'] }
+  })
+  afterEach(resetViewerScope)
+
+  it('names the allowed categories instead of the empty-workspace welcome, with no setup action', async () => {
+    mockGetSummary.mockResolvedValue(EMPTY)
+    renderDashboard()
+    expect(await screen.findByText('You can see reviews in: Technical support. None have arrived yet.')).toBeInTheDocument()
+    expect(screen.queryByText(/workspace is empty|get your feedback flowing/i)).toBeNull()
+    expect(screen.queryByRole('link', { name: /start here/i })).toBeNull()
+  })
+
+  it('tells a viewer whose access covers nothing to ask an administrator', async () => {
+    viewer.scope = { kind: 'categories', categories: [] }
+    mockGetSummary.mockResolvedValue(EMPTY)
+    renderDashboard()
+    expect(await screen.findByText("Your access doesn't include any reviews yet — ask an administrator.")).toBeInTheDocument()
+  })
+
+  it('gives an unrestricted non-admin the waiting state, not the setup welcome', async () => {
+    viewer.scope = { kind: 'all' }
+    mockGetSummary.mockResolvedValue(EMPTY)
+    renderDashboard()
+    expect(await screen.findByText('Customer feedback appears here once an administrator connects a source.')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /start here/i })).toBeNull()
+  })
+
+  it('shows the scope notice under the title when there are totals', async () => {
+    mockGetSummary.mockResolvedValue(WITH_REVIEWS)
+    renderDashboard()
+    expect(await screen.findByRole('note')).toHaveTextContent('Showing Technical support only — the category you have access to.')
+  })
+
+  it('shows no notice to an unrestricted viewer', async () => {
+    viewer.scope = { kind: 'all' }
+    mockGetSummary.mockResolvedValue(WITH_REVIEWS)
+    renderDashboard()
+    await screen.findByText('Reviews and sentiment per day')
+    expect(screen.queryByRole('note')).toBeNull()
   })
 })

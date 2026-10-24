@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {"key": "kind:dead-fallback-empty", "reason": "The '' default is how this repo spells 'unset' (callers test it for falsiness): the import-under-test / lazy-getter pattern, so a test can import a handler with no env. It adds no second value that can drift from the CDK. Remove this entry to list every site."},
+    {"key": "*::AVATARS_ENABLED", "kind": "set-never-read", "reason": "lib/utils/inference-scope.ts applies the EU env (AVATARS_ENABLED=false) to EVERY Lambda on purpose, so a function added later cannot miss it; only the avatar code reads it."},
+    {"key": "*::BEDROCK_INFERENCE_SCOPE", "kind": "set-never-read", "reason": "lib/utils/inference-scope.ts applies BEDROCK_INFERENCE_SCOPE=eu to EVERY Lambda on purpose (docs/eu-deployment.md); only Bedrock callers read it."},
+    {"key": "lambda/shared/api.py::create_cors_config::ALLOWED_ORIGIN", "reason": "Deliberate fail-CLOSED default (the local-dev origin, never '*'): documented beside create_api_resolver() in feedback_form_handler.py; every test imports handlers through it."},
+    {"key": "lambda/processor/handler.py::<module>::PRIMARY_LANGUAGE", "reason": "Import-under-test default equal to the CDK's own default ('en', bin/voc-datalake.ts primaryLanguage); the processor suites import the module without it."},
+    {"key": "lambda/jobs/category_reprocess/handler.py::<module>::PRIMARY_LANGUAGE", "reason": "Import-under-test default equal to the CDK's own default ('en', bin/voc-datalake.ts primaryLanguage)."},
+    {"key": "lambda/processor/handler.py::<module>::ENRICHMENT_CONCURRENCY", "reason": "Import-under-test default; DEFAULT_ENRICHMENT_CONCURRENCY (5) is the documented value the CDK sets."},
+    {"key": "lambda/product_doc_extractor/handler.py::<module>::SERVICE_NAME", "reason": "Import-under-test default equal to the CDK value (core-stack.ts serviceName 'voc-product-doc-extractor'); the handler has no powertools and names its own log field."},
+    {"key": "VocApiStack/RadarApi2273834E::PII_COMPREHEND", "reason": "Read-time display redaction (radar_reviews._redacted) is patterns-only by design: PII_COMPREHEND and the DetectPiiEntities grant belong to the ingestion-side functions (docs/source-policies.md)."},
+    {"key": "VocProcessingStack/BriefingWorkerBriefing6043746C::PII_COMPREHEND", "reason": "Briefing quotes are redacted at read time with patterns only (radar_views._quote), like the Radar API; Comprehend runs at ingestion."},
+    {"key": "VocIngestionStack/IngestorS3Import121F4967::INGEST_SCHEDULE_RULE_NAME", "reason": "Unscheduled plugin: ingestion-stack.ts sets the rule name only for a scheduled plugin, and circuit_breaker.py then disables nothing (docs/plugin-architecture.md)."},
+    {"key": "VocIngestionStack/IngestorSyntheticReviews6B711D80::INGEST_SCHEDULE_RULE_NAME", "reason": "Unscheduled plugin: no schedule rule exists to name (docs/plugin-architecture.md)."},
+    {"key": "*::CDN_SIGNED_URL_TTL_SECONDS", "kind": "read-never-set-fatal", "reason": "Documented operator knob (docs/project-workspace.md: 'which no stack sets, so the fallback of 3600 s applies'); the subscript sits in try/except KeyError, so it is not fatal."}
+  ]
+}

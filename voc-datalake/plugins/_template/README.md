@@ -28,7 +28,7 @@ plugins/your_source/
 |-------|----------|-------------|
 | `id` | Yes | Unique identifier (lowercase, underscores) |
 | `name` | Yes | Display name in UI |
-| `icon` | Yes | Emoji or SVG filename |
+| `icon` | Yes | Icon word mapped to a lucide icon (`Web`, `iOS`, `Android`, `GitHub`, `Package`, `Synthetic`, `Plugin`); never an emoji |
 | `description` | No | Short description |
 | `category` | No | One of: reviews, social, import, search, scraper |
 | `infrastructure` | Yes | AWS resources to deploy |
@@ -88,6 +88,15 @@ Your `fetch_new_items()` should yield items with these fields:
     "title": "Title",            # Optional
 }
 ```
+
+`url` must be an `http://` or `https://` link. The processing queue's schema
+(`lambda/shared/ingest_schemas.py`) trims surrounding whitespace, but refuses a
+link that still contains a control character (CR, LF, tab, NUL, DEL, C1 such as
+NEL), an invisible format character (zero-width space, bidi override) or a Unicode
+line/paragraph separator, and so
+dead-letters the whole item: emit clean links rather than relying on cleanup.
+Percent-encoded characters such as `%0A` are fine. The processor reads `url`
+(stored as the item's `source_url`), so put the review's link there.
 
 ## Testing Locally
 

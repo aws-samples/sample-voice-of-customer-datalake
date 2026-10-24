@@ -8,6 +8,8 @@ the missing one visible.
 """
 import pytest
 
+from jobs.test.project_tables_fixtures import feedback_table_beside, negative_webscraper_reviews
+
 
 def _saved_item(mock_dynamodb):
     return mock_dynamodb['table'].put_item.call_args.kwargs['Item']
@@ -38,8 +40,9 @@ class TestMergeProvenance:
             ],
         }
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse")
     def test_records_the_documents_merged_not_the_ones_requested(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, event, lambda_context,
+        self, mock_dynamodb, event, lambda_context,
     ):
         from jobs.document_merger.handler import lambda_handler
 
@@ -52,8 +55,9 @@ class TestMergeProvenance:
         ]
         assert item['derivation']['selected_document_count'] == 3
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse")
     def test_keeps_writing_its_original_shape_unchanged(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, event, lambda_context,
+        self, mock_dynamodb, event, lambda_context,
     ):
         """Additive: `source_documents` and `merge_instructions` are untouched,
         so every existing reader keeps working."""
@@ -65,8 +69,9 @@ class TestMergeProvenance:
         assert item['source_documents'] == ['doc_1', 'doc_gone', 'doc_2']
         assert item['merge_instructions'] == 'Combine the key insights'
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse")
     def test_records_the_personas_used(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, event, lambda_context,
+        self, mock_dynamodb, event, lambda_context,
     ):
         from jobs.document_merger.handler import lambda_handler
 
@@ -74,24 +79,14 @@ class TestMergeProvenance:
 
         assert _saved_item(mock_dynamodb)['derivation']['persona_ids'] == ['persona_1']
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse")
     def test_records_the_feedback_items_used(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, event, lambda_context,
+        self, mock_dynamodb, event, lambda_context,
     ):
-        from unittest.mock import MagicMock
-
         event['merge_config']['use_feedback'] = True
         # One day of lookback, so the mocked table answers the date loop once.
         event['merge_config']['days'] = 1
-        feedback_table = MagicMock()
-        feedback_table.query.return_value = {
-            'Items': [
-                {'original_text': f'review {i}', 'source_platform': 'webscraper', 'sentiment_label': 'negative'}
-                for i in range(3)
-            ],
-        }
-        mock_dynamodb['resource'].Table.side_effect = (
-            lambda name: feedback_table if 'feedback' in name.lower() else mock_dynamodb['table']
-        )
+        feedback_table_beside(mock_dynamodb, negative_webscraper_reviews(3))
 
         from jobs.document_merger.handler import lambda_handler
 

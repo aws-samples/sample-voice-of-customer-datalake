@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/explicit-function-return-type */
-import { existsSync, readdirSync } from 'node:fs';
+import { copyFileSync, existsSync, readdirSync } from 'node:fs';
 import { mkdir, readFile, writeFile, rm, rename } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { execSync } from 'node:child_process';
@@ -14,6 +14,7 @@ const readJSON = async (path) => {
   } catch (err) {
     console.error(err);
     console.error(`Unable to read JSON file ${path}`);
+    return null;
   }
 };
 
@@ -66,7 +67,9 @@ const processFileAssets = async (assets, basePath, assetsOutDir) => {
         await rename(resolve(assetPath, fileName), resolve(assetsOutDir, fileName));
       } else {
         console.log(`Copying file asset: ${fileName}`);
-        execSync(`cp "${join(basePath, srcPath)}" "${resolve(assetsOutDir, fileName)}"`, { stdio: 'inherit' });
+        // A direct copy, not `cp` through a shell: the paths come from the synthesized
+        // template, and a shell would reinterpret quotes or `$` in them.
+        copyFileSync(join(basePath, srcPath), resolve(assetsOutDir, fileName));
         console.log(`✓ Copied file asset to ${resolve(assetsOutDir, fileName)}`);
       }
     } catch (err) {
@@ -151,7 +154,7 @@ const updateIAMPolicies = (template) => {
 };
 
 const updateBucketDeployment = (template) => {
-  for (const [key, resource] of Object.entries(template.Resources)) {
+  for (const resource of Object.values(template.Resources)) {
     if (resource.Type !== 'Custom::CDKBucketDeployment') continue;
 
     const props = resource.Properties;
@@ -247,7 +250,7 @@ const fixFnJoinStrings = (obj, parentKey = '', inFnJoin = false, grandparentKey 
       }
 
       if (earliest.idx < 0) {
-        if (current) parts.push(current);
+        parts.push(current);
         break;
       }
 

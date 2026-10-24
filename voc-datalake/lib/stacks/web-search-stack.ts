@@ -4,6 +4,7 @@ import * as bedrockagentcore from 'aws-cdk-lib/aws-bedrockagentcore';
 import { Construct } from 'constructs';
 import { BedrockModelAccess, AnthropicUseCaseConfig } from './bedrock-access-stack';
 import { VocStack, VocStackProps } from '../utils/voc-stack';
+import { WEB_SEARCH_CONFIGURATION_NAME, WEB_SEARCH_CONNECTOR_ID, pinWebSearchConnector } from './web-search-connector-pin';
 
 /**
  * VocWebSearchStack — the us-east-1 AI-enablement stack. Two independent
@@ -106,7 +107,8 @@ export class VocWebSearchStack extends VocStack {
           'where the app runs. Pass the app region.',
         );
       }
-      new BedrockModelAccess(this, 'BedrockModelAccess', {
+      // The Bedrock model-access half.
+      BedrockModelAccess.addTo(this, 'BedrockModelAccess', {
         anthropicUseCase: props.anthropicUseCase,
         modelRegion: props.modelRegion,
         skipUseCaseSubmission: props.skipUseCaseSubmission,
@@ -172,8 +174,8 @@ export class VocWebSearchStack extends VocStack {
         TargetConfiguration: {
           Mcp: {
             Connector: {
-              Source: { ConnectorId: 'web-search' },
-              Configurations: [{ Name: 'WebSearch', ParameterValues: {} }],
+              Source: { ConnectorId: WEB_SEARCH_CONNECTOR_ID },
+              Configurations: [{ Name: WEB_SEARCH_CONFIGURATION_NAME, ParameterValues: {} }],
             },
           },
         },
@@ -185,6 +187,8 @@ export class VocWebSearchStack extends VocStack {
     // Target provisioning exercises the service role, so make sure the
     // permissions exist before CloudFormation creates the target.
     target.node.addDependency(servicePolicy);
+    // Connector 1.2.0 (request filters for Radar's release scan): an in-place update.
+    pinWebSearchConnector(this, { gateway, target, targetName });
 
     this.gatewayUrl = gateway.attrGatewayUrl;
     this.gatewayArn = gateway.attrGatewayArn;

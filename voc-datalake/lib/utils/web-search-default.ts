@@ -1,3 +1,6 @@
+import { booleanContextFlag } from './context-flag';
+import type { InferenceScope } from './inference-scope';
+
 /**
  * Web-search deployment default (issue #205) — SINGLE SOURCE OF TRUTH for
  * the `enableWebSearch` context flag's semantics (bin/voc-datalake.ts,
@@ -11,15 +14,29 @@
  * force) — fail loud, not open.
  */
 export function shouldDeployWebSearch(contextValue: unknown): boolean {
-  if (contextValue === undefined || contextValue === null) return true;
-  if (contextValue === true || contextValue === false) return contextValue;
-  if (typeof contextValue === 'string') {
-    const normalized = contextValue.trim().toLowerCase();
-    if (normalized === 'true') return true;
-    if (normalized === 'false') return false;
-  }
-  throw new Error(
-    `Unrecognized enableWebSearch context value: ${JSON.stringify(contextValue)}. ` +
-    "Use true/false (web search deploys by default; opt out with -c enableWebSearch=false).",
+  return booleanContextFlag(
+    contextValue, 'enableWebSearch', true,
+    'Use true/false (web search deploys by default; opt out with -c enableWebSearch=false).',
   );
+}
+
+/**
+ * `enableWebSearch` under an inference scope (docs/eu-deployment.md). The
+ * web-search connector exists only in us-east-1, so an EU deployment never
+ * deploys it: absent → off, `false` → off, an explicit `true` throws rather than
+ * quietly sending queries out of the EU. `global` keeps the default-on semantics
+ * of {@link shouldDeployWebSearch}.
+ */
+export function shouldDeployWebSearchInScope(contextValue: unknown, scope: InferenceScope): boolean {
+  const requested = shouldDeployWebSearch(contextValue);
+  if (scope !== 'eu') return requested;
+  // Absent means "the default", which is on for global — only an explicit true is a conflict.
+  const explicitlyEnabled = requested && contextValue !== undefined && contextValue !== null;
+  if (explicitlyEnabled) {
+    throw new Error(
+      'enableWebSearch=true cannot be combined with inferenceScope=eu: the web-search connector runs only in ' +
+      'us-east-1. Drop -c enableWebSearch (it is off by default for eu) — see docs/eu-deployment.md.',
+    );
+  }
+  return false;
 }

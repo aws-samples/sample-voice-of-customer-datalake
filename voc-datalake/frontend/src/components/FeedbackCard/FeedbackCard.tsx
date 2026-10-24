@@ -5,29 +5,31 @@
  * - Source icon and platform name
  * - Sentiment badge and rating
  * - Category and urgency indicators
+ * - Dimension values, tags and the PII policy badge (redacted / summary only)
  * - Truncated text with link to detail view
  * - Compact mode for list views
  *
  * @module components/FeedbackCard
  */
 
-import { Link } from 'react-router-dom'
-import { ExternalLink, Copy, MessageCircle, Star, AlertTriangle } from 'lucide-react'
-import { format, isValid, parseISO } from 'date-fns'
-import type { FeedbackItem } from '../../api/client'
-import SentimentBadge from '../SentimentBadge'
+import ReviewLink from '../ReviewLink/ReviewLink'
+import { useCopiedFlag } from '../../hooks/useCopiedFlag'
+import type { ReactNode } from 'react'
+import { ExternalLink, Copy, Check, MessageCircle, AlertTriangle } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
+import { formatDate, formatTime } from '../../utils/dateUtils'
+import type { FeedbackItem } from '../../api/types'
+import ReviewSentimentBadge from '../SentimentBadge/ReviewSentimentBadge'
+import { cleanFeedbackText, cleanReviewText } from '../../utils/cleanReviewText'
+import RatingStars from '../RatingStars'
+import CategoryChangeControl, { ManualCategoryBadge } from '../CategoryChangeControl/CategoryChangeControl'
+import { SourceIcon } from '../SourceIcon/SourceIcon'
+import FeedbackDimensionChips from '../FeedbackDimensions/FeedbackDimensionChips'
+import DimensionsEditControl from '../FeedbackDimensions/DimensionsEditControl'
 import clsx from 'clsx'
-
-// Safe date formatting helper
-function formatDate(dateStr: string | undefined, formatStr: string, fallback = 'N/A'): string {
-  if (!dateStr) return fallback
-  try {
-    const date = parseISO(dateStr)
-    return isValid(date) ? format(date, formatStr) : fallback
-  } catch {
-    return fallback
-  }
-}
+import { useDisplayLabels } from '../../hooks/useDisplayLabels'
+import type { DisplayLabels } from '../../hooks/useDisplayLabels'
 
 interface FeedbackCardProps {
   feedback: FeedbackItem
@@ -35,120 +37,109 @@ interface FeedbackCardProps {
   compact?: boolean
 }
 
-const SOURCE_ICONS: Record<string, string> = {
-  web_scrape: '🌐',
-  web_scrape_jsonld: '🌐',
-  webscraper: '🌐',
-  manual_import: '📝',
-  s3_import: '📦',
-}
-
-function getSourceIcon(platform: string, channel?: string): string {
-  return SOURCE_ICONS[platform] || SOURCE_ICONS[channel ?? ''] || '📝'
-}
-
-function formatSourceName(source: string): string {
+/** Legacy scraper ids read as one "Web scraper"; every other id goes through the label helper. */
+function formatSourceName(source: string, t: TFunction<'components'>, labels: DisplayLabels): string {
   if (source.startsWith('scraper_') || source === 'web_scrape' || source === 'web_scrape_jsonld') {
-    return 'Web Scraper'
+    return t('feedbackCard.webScraper')
   }
-  return source.replace(/_/g, ' ')
-}
-
-function RatingStars({ rating }: Readonly<{ rating: number }>) {
-  return (
-    <div className="flex items-center gap-1 mb-2">
-      {Array.from({ length: 5 }, (_, i) => (
-        <Star
-          key={i}
-          size={14}
-          className={i < rating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'}
-        />
-      ))}
-    </div>
-  )
+  return labels.source(source)
 }
 
 function CompactCard({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
+  const { t, i18n } = useTranslation('components')
   return (
-    <Link
-      to={`/feedback/${feedback.feedback_id}`}
+    <ReviewLink
+      feedbackId={feedback.feedback_id}
       className={clsx(
-        'block p-3 rounded-lg border hover:bg-gray-50 transition-colors',
-        feedback.urgency === 'high' && 'border-l-4 border-l-orange-500'
+        'block p-3 rounded-lg border border-border hover:bg-bg-hover hover:border-border-strong transition-colors focus-ring',
+        feedback.urgency === 'high' && 'border-l-4 border-l-warn'
       )}
     >
       <div className="flex items-start gap-2">
-        <span className="text-lg">{getSourceIcon(feedback.source_platform)}</span>
+        <SourceIcon platform={feedback.source_platform} size={18} className="flex-shrink-0 mt-0.5 text-accent-text" />
         <div className="flex-1 min-w-0">
-          <p className="text-sm text-gray-700 line-clamp-2">{feedback.original_text}</p>
-          <div className="flex items-center gap-2 mt-1">
-            <SentimentBadge sentiment={feedback.sentiment_label} score={feedback.sentiment_score} />
+          <p className="text-sm text-text line-clamp-2">{cleanReviewText(feedback.original_text)}</p>
+          <div className="flex flex-wrap items-center gap-2 mt-1">
+            {feedback.urgency === 'high' && (
+              <span className="badge badge-warn">
+                <AlertTriangle size={12} aria-hidden="true" />
+                {t('feedbackCard.urgent')}
+              </span>
+            )}
+            <ReviewSentimentBadge sentiment={feedback.sentiment_label} score={feedback.sentiment_score} />
             <span
-              className="text-xs text-gray-400"
-              title="Review date — when the customer wrote this feedback"
+              className="text-xs text-muted"
+              title={t('feedbackCard.reviewDateHint')}
             >
-              {formatDate(feedback.source_created_at, 'MMM d')}
+              {formatDate(feedback.source_created_at, i18n.language, 'N/A')}
             </span>
           </div>
         </div>
       </div>
-    </Link>
+    </ReviewLink>
   )
 }
 
 function CardHeader({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
+  const { t } = useTranslation('components')
+  const labels = useDisplayLabels()
+  const channel = labels.channel(feedback.source_channel, feedback.source_platform)
   return (
     <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
       <div className="flex items-center gap-2 min-w-0">
-        <span className="text-lg sm:text-xl flex-shrink-0">
-          {getSourceIcon(feedback.source_platform, feedback.source_channel)}
+        <span className="flex-shrink-0 w-8 h-8 rounded-lg bg-accent-subtle text-accent-text flex items-center justify-center">
+          <SourceIcon platform={feedback.source_platform} channel={feedback.source_channel} />
         </span>
         <div className="min-w-0">
-          <span className="font-medium text-gray-900 capitalize text-sm sm:text-base">
-            {formatSourceName(feedback.source_platform)}
+          <span className="font-medium text-text-strong text-sm sm:text-base">
+            {formatSourceName(feedback.source_platform, t, labels)}
           </span>
-          {feedback.source_channel && feedback.source_channel !== feedback.source_platform && (
+          {channel !== undefined && (
             <>
-              <span className="text-gray-400 mx-1 sm:mx-2 hidden sm:inline">•</span>
-              <span className="text-gray-500 text-xs sm:text-sm block sm:inline">{feedback.source_channel}</span>
+              <span className="text-muted-strong mx-1 sm:mx-2 hidden sm:inline">•</span>
+              <span className="text-muted text-xs sm:text-sm block sm:inline">{channel}</span>
             </>
           )}
         </div>
       </div>
       <div className="flex items-center gap-2 flex-shrink-0">
         {feedback.urgency === 'high' && (
-          <span className="badge badge-urgent flex items-center gap-1 text-xs">
-            <AlertTriangle size={12} />
-            <span className="hidden sm:inline">Urgent</span>
+          <span className="badge badge-warn">
+            <AlertTriangle size={12} aria-hidden="true" />
+            {/* Visually icon-only on phones, but never nameless. */}
+            <span className="sr-only sm:not-sr-only">{t('feedbackCard.urgent')}</span>
           </span>
         )}
-        <SentimentBadge sentiment={feedback.sentiment_label} score={feedback.sentiment_score} />
+        <ReviewSentimentBadge sentiment={feedback.sentiment_label} score={feedback.sentiment_score} />
       </div>
     </div>
   )
 }
 
 function CardContent({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
+  const { t } = useTranslation('components')
   const showQuote = feedback.direct_customer_quote &&
     !feedback.original_text.includes(feedback.direct_customer_quote) &&
     feedback.direct_customer_quote !== feedback.original_text
 
   return (
     <>
-      <p className="text-sm sm:text-base text-gray-700 mb-3 line-clamp-3">{feedback.original_text}</p>
+      <p className="text-sm sm:text-base text-text mb-3 line-clamp-3 hyphens-auto [overflow-wrap:break-word]">{feedback.original_text}</p>
 
       {showQuote && (
-        <blockquote className="border-l-2 border-blue-300 pl-3 mb-3 text-xs sm:text-sm text-gray-600 italic">
+        <blockquote className="border-l-2 border-accent/30 pl-3 mb-3 text-xs sm:text-sm text-text italic">
           "{feedback.direct_customer_quote}"
         </blockquote>
       )}
 
       {feedback.problem_summary && (
-        <div className="bg-gray-50 rounded-lg p-2 sm:p-3 mb-3">
-          <p className="text-xs sm:text-sm font-medium text-gray-700">Issue: {feedback.problem_summary}</p>
+        // Long words break (hyphenated where the language allows) instead of
+        // pushing the card wider than its column at 390 px / 200 % text.
+        <div data-testid="feedback-issue" className="bg-bg-accent rounded-lg p-2 sm:p-3 mb-3 min-w-0 hyphens-auto [overflow-wrap:break-word]">
+          <p className="text-xs sm:text-sm font-medium text-text-strong">{t('feedbackCard.issue', { summary: feedback.problem_summary })}</p>
           {feedback.problem_root_cause_hypothesis && (
-            <p className="text-xs text-gray-500 mt-1 hidden sm:block">
-              Root cause: {feedback.problem_root_cause_hypothesis}
+            <p className="text-xs text-muted mt-1 hidden sm:block">
+              {t('feedbackCard.rootCause', { cause: feedback.problem_root_cause_hypothesis })}
             </p>
           )}
         </div>
@@ -157,24 +148,52 @@ function CardContent({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
   )
 }
 
-function CardTags({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
+/**
+ * A descriptive label: neutral by the design system's labels-vs-status rule,
+ * and hidden on phones so the row keeps to the category and the state badges.
+ */
+function LabelBadge({ children }: Readonly<{ children: ReactNode }>) {
+  return <span className="badge badge-muted hidden sm:inline-flex">{children}</span>
+}
+
+/**
+ * The card's label row. Tones follow docs/kiro-design-system.md › Labels vs
+ * status: the category is the ONE emphasised label (`badge-accent`); every
+ * other descriptive label (subcategory, journey stage, persona, dimensions,
+ * tags) is neutral, and colour is left to state — the hand-set marker
+ * (`ManualCategoryBadge`, provenance) and the PII policy badge.
+ */
+function CardTags({ feedback, showActions }: Readonly<{ feedback: FeedbackItem; showActions: boolean }>) {
+  const labels = useDisplayLabels()
   return (
-    <div className="flex flex-wrap gap-1.5 sm:gap-2 mb-3">
-      <span className="badge bg-blue-100 text-blue-800 text-xs">{feedback.category}</span>
-      {feedback.subcategory && (
-        <span className="badge bg-purple-100 text-purple-800 text-xs hidden sm:inline-flex">
-          {feedback.subcategory}
-        </span>
-      )}
-      <span className="badge bg-gray-100 text-gray-600 text-xs hidden sm:inline-flex">
-        {feedback.journey_stage}
-      </span>
-      {feedback.persona_name && (
-        <span className="badge bg-indigo-100 text-indigo-800 text-xs hidden sm:inline-flex">
-          {feedback.persona_name}
-        </span>
-      )}
+    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mb-3">
+      <span className="badge badge-accent">{labels.category(feedback.category)}</span>
+      <ManualCategoryBadge feedback={feedback} />
+      {feedback.subcategory && <LabelBadge>{labels.subcategory(feedback.subcategory, feedback.category)}</LabelBadge>}
+      {feedback.journey_stage && <LabelBadge>{labels.plain(feedback.journey_stage)}</LabelBadge>}
+      {feedback.persona_name && <LabelBadge>{feedback.persona_name}</LabelBadge>}
+      <FeedbackDimensionChips feedback={feedback} />
+      {showActions && <CategoryChangeControl feedback={feedback} />}
+      {showActions && <DimensionsEditControl feedback={feedback} />}
     </div>
+  )
+}
+
+/** "Copy text", confirming with a check and "Copied" (announced politely) for two seconds. */
+function CopyTextButton({ text, onCopy }: Readonly<{ text: string; onCopy: (text: string) => void }>) {
+  const { t } = useTranslation('components')
+  const [copied, markCopied] = useCopiedFlag()
+  return (
+    <button
+      type="button"
+      onClick={() => { onCopy(text); markCopied() }}
+      className={clsx('icon-btn gap-1', copied && 'text-ok')}
+      aria-label={t('feedbackCard.copyText')}
+      title={t('feedbackCard.copyText')}
+    >
+      {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+      <span role="status" className={copied ? 'text-xs' : 'sr-only'}>{copied ? t('feedbackCard.copied') : ''}</span>
+    </button>
   )
 }
 
@@ -185,42 +204,41 @@ interface CardFooterProps {
 }
 
 function CardFooter({ feedback, showActions, onCopy }: Readonly<CardFooterProps>) {
+  const { t, i18n } = useTranslation('components')
   return (
-    <div className="flex items-center justify-between pt-3 border-t border-gray-100 gap-2">
+    <div className="flex flex-wrap items-center justify-between pt-3 border-t border-border gap-2">
       <span
-        className="text-xs text-gray-400 truncate"
-        title="Review date — when the customer wrote this feedback"
+        className="text-xs font-mono text-muted min-w-0 break-words"
+        title={t('feedbackCard.reviewDateHint')}
       >
-        {formatDate(feedback.source_created_at, 'MMM d, yyyy')}
-        <span className="hidden sm:inline"> {formatDate(feedback.source_created_at, 'h:mm a')}</span>
+        {formatDate(feedback.source_created_at, i18n.language, 'N/A')}
+        <span className="hidden sm:inline"> {formatTime(feedback.source_created_at, i18n.language, 'N/A')}</span>
       </span>
 
       {showActions && (
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <Link
-            to={`/feedback/${feedback.feedback_id}`}
-            className="text-blue-600 hover:text-blue-700 text-xs sm:text-sm flex items-center gap-1"
+        // Wraps (and may shrink) so "Details" + the two icon buttons never push
+        // the card past its column at 390 px / 200 % text.
+        <div data-testid="feedback-card-actions" className="flex flex-wrap items-center gap-1 min-w-0 max-w-full">
+          <ReviewLink
+            feedbackId={feedback.feedback_id}
+            className="btn btn-ghost btn-sm text-accent-text"
           >
-            <MessageCircle size={14} />
-            <span className="hidden sm:inline">Details</span>
-          </Link>
+            <MessageCircle size={14} aria-hidden="true" />
+            {t('feedbackCard.details')}
+          </ReviewLink>
           {feedback.source_url && (
             <a
               href={feedback.source_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-gray-500 hover:text-gray-700 p-1"
+              className="icon-btn"
+              aria-label={t('feedbackCard.openOriginal')}
+              title={t('feedbackCard.openOriginal')}
             >
-              <ExternalLink size={14} />
+              <ExternalLink size={14} aria-hidden="true" />
             </a>
           )}
-          <button
-            onClick={() => onCopy(feedback.original_text)}
-            className="text-gray-500 hover:text-gray-700 p-1"
-            title="Copy text"
-          >
-            <Copy size={14} />
-          </button>
+          <CopyTextButton text={feedback.original_text} onCopy={onCopy} />
         </div>
       )}
     </div>
@@ -229,7 +247,10 @@ function CardFooter({ feedback, showActions, onCopy }: Readonly<CardFooterProps>
 
 export default function FeedbackCard({ feedback, showActions = true, compact = false }: Readonly<FeedbackCardProps>) {
   const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text)
+    // Best-effort: a denied permission or insecure context rejects, and the
+    // text stays on screen to copy by hand — so the rejection is absorbed
+    // rather than surfacing as an unhandled promise.
+    navigator.clipboard.writeText(text).catch(() => undefined)
   }
 
   if (compact) {
@@ -238,13 +259,13 @@ export default function FeedbackCard({ feedback, showActions = true, compact = f
 
   return (
     <div className={clsx(
-      'card !p-4 sm:!p-6 hover:shadow-md transition-shadow',
-      feedback.urgency === 'high' && 'border-l-4 border-l-orange-500'
+      'card !p-4 sm:!p-5 hover:border-border-strong transition-colors',
+      feedback.urgency === 'high' && 'border-l-4 border-l-warn'
     )}>
       <CardHeader feedback={feedback} />
-      {feedback.rating != null && <RatingStars rating={feedback.rating} />}
-      <CardContent feedback={feedback} />
-      <CardTags feedback={feedback} />
+      {feedback.rating != null && <RatingStars rating={feedback.rating} className="mb-2" />}
+      <CardContent feedback={cleanFeedbackText(feedback)} />
+      <CardTags feedback={feedback} showActions={showActions} />
       <CardFooter feedback={feedback} showActions={showActions} onCopy={copyToClipboard} />
     </div>
   )

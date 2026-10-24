@@ -1,17 +1,5 @@
 {
-  "categories": {
-    "errorLoading": "Fehler beim Laden der Kategorien",
-    "noCategories": "Keine Kategorien",
-    "summary": "{{count}} Kategorien • {{total}} Einträge • Letzte {{days}} Tage",
-    "summary_one": "{{count}} Kategorien • {{total}} Elemente • Letzte {{days}} Tage",
-    "summary_other": "{{count}} Kategorien • {{total}} Elemente • Letzte {{days}} Tage"
-  },
-  "deleteConfirm": {
-    "deleteFeedback": "Feedback löschen",
-    "deleteS3File": "S3-Datei löschen",
-    "message": "Sind Sie sicher? Dies kann nicht rückgängig gemacht werden."
-  },
-  "description": "Rohe S3-Daten und verarbeitete DynamoDB-Datensätze durchsuchen, bearbeiten und synchronisieren",
+  "description": "Rohdaten in S3 und verarbeitete DynamoDB-Datensätze durchsuchen. Hier wird nie etwas gelöscht, und gespeicherte Rohdateien sind schreibgeschützt.",
   "editModal": {
     "cancel": "Abbrechen",
     "close": "Schließen",
@@ -24,36 +12,44 @@
     "key": "Schlüssel",
     "save": "Speichern",
     "syncToDynamo": "Auch DynamoDB aktualisieren",
-    "syncToS3": "Auch S3 aktualisieren",
     "type": "Typ",
     "viewFeedback": "Feedback anzeigen",
-    "viewS3File": "S3-Datei anzeigen"
+    "viewS3File": "S3-Datei anzeigen",
+    "content": "Dateiinhalt"
   },
   "feedback": {
     "category": "Kategorie: {{category}}",
-    "delete": "Löschen",
     "edit": "Bearbeiten",
-    "errorLoading": "Fehler beim Laden des Feedbacks",
     "noFeedback": "Kein Feedback gefunden",
-    "showingRecords": "{{filtered}} von {{total}} Datensätzen",
+    "showingRecords": "{{filtered, number}} von {{total, number}} Datensätzen",
     "urgent": "Dringend",
-    "view": "Anzeigen"
+    "view": "Anzeigen",
+    "noFeedbackHint": "Versuchen Sie eine andere Quelle oder einen größeren Zeitraum.",
+    "showDetails": "Details anzeigen",
+    "hideDetails": "Details ausblenden",
+    "showingRecordsAtLeast": "{{filtered, number}} angezeigt, weitere verfügbar",
+    "showingRecordsShown": "{{filtered, number}} angezeigt",
+    "loadMore": "Mehr laden",
+    "loadingMore": "Wird geladen…"
   },
   "filters": {
     "allSources": "Alle Quellen",
-    "searchPlaceholder": "Suchen..."
+    "searchPlaceholder": "Suchen...",
+    "bucket": "S3-Bucket",
+    "source": "Quelle",
+    "search": "Feedback durchsuchen"
   },
   "newFile": "Neue Datei",
-  "notConfigured": "API-Endpunkt in den Einstellungen konfigurieren, um Daten zu erkunden",
+  "notConfigured": "API-Endpunkt unter Administration → Allgemein konfigurieren, um Daten zu erkunden",
   "refresh": "Aktualisieren",
   "s3Browser": {
     "back": "Zurück",
-    "delete": "Löschen",
     "download": "Herunterladen",
     "edit": "Bearbeiten",
-    "errorLoading": "Fehler beim Laden der Dateien",
     "noFiles": "Keine Dateien gefunden",
-    "view": "Anzeigen"
+    "view": "Anzeigen",
+    "path": "Ordnerpfad",
+    "noFilesHint": "Dieser Ordner ist leer. Erstellen Sie hier eine Datei oder importieren Sie Daten über Datenquellen."
   },
   "tabs": {
     "categories": "Kategorien",
@@ -61,7 +57,22 @@
     "feedbackShort": "Rückmeldungen",
     "processedFeedback": "Verarbeitetes Feedback",
     "s3RawData": "S3-Rohdaten",
-    "s3Short": "S3"
+    "s3Short": "S3",
+    "label": "Datenansicht"
   },
-  "title": "Daten-Explorer"
+  "title": "Daten-Explorer",
+  "details": {
+    "title": "Titel",
+    "text": "Bewertung",
+    "source": "Quelle",
+    "date": "Datum",
+    "category": "Kategorie",
+    "rating": "Bewertung (Sterne)",
+    "language": "Sprache",
+    "author": "Verfasser",
+    "problem": "Problem",
+    "persona": "Persona",
+    "showRaw": "Roh-JSON anzeigen",
+    "hideRaw": "Roh-JSON ausblenden"
+  }
 }

@@ -59,9 +59,8 @@ describe('readKeyMaterial', () => {
     expect(readKeyMaterial('9RandomlyGeneratedPassword!')).toBeNull();
   });
 
-  it('returns null for absent or empty input', () => {
-    expect(readKeyMaterial(undefined)).toBeNull();
-    expect(readKeyMaterial('')).toBeNull();
+  it.each([undefined, ''])('returns null for absent or empty input (%j)', (input) => {
+    expect(readKeyMaterial(input)).toBeNull();
   });
 
   it('returns null for valid JSON that is not a key pair', () => {
@@ -83,7 +82,7 @@ describe('readKeyMaterial', () => {
 
   it('round-trips a complete key pair', () => {
     const created = generateKeyPair();
-    expect(readKeyMaterial(JSON.stringify(created))).toEqual(created);
+    expect(readKeyMaterial(JSON.stringify(created))).toStrictEqual(created);
   });
 });
 
@@ -109,7 +108,7 @@ describe('handler', () => {
 
     const result = await onEvent(createEvent('Create'), { secrets });
 
-    expect(secrets.put).toHaveBeenCalledOnce();
+    expect(secrets.put).toHaveBeenCalledExactlyOnceWith(SECRET_ID, expect.any(String));
     const stored = JSON.parse(secrets.store.value ?? '{}');
     expect(stored.privateKeyPem).toMatch(/^-----BEGIN PRIVATE KEY-----/);
     // Only the PUBLIC half crosses back through CloudFormation.
@@ -144,7 +143,7 @@ describe('handler', () => {
 
     const result = await onEvent(createEvent('Update'), { secrets });
 
-    expect(secrets.put).toHaveBeenCalledOnce();
+    expect(secrets.put).toHaveBeenCalledExactlyOnceWith(SECRET_ID, expect.any(String));
     expect(result.Data?.PublicKeyPem).toMatch(/^-----BEGIN PUBLIC KEY-----/);
   });
 

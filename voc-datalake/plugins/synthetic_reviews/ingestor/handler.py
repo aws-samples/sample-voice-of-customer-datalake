@@ -21,15 +21,18 @@ import random
 import re
 import sys
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Generator
+from collections.abc import Generator
+from datetime import UTC, datetime, timedelta
 
-# Add shared module path (mirrors plugin template); _shared/shared resolve as
-# top-level packages in the bundled Lambda and via conftest in tests.
+# Copied from plugins/_template: this inserts the plugin's own folder
+# (`plugins/synthetic_reviews/`; `/var` in the bundle), not `plugins/`. `_shared`
+# and `shared` resolve because CDK copies them next to this handler in the bundle
+# (lib/stacks/ingestion-stack.ts bundlePluginCode), and via plugins/conftest.py in tests.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from _shared.base_ingestor import BaseIngestor, logger, tracer, metrics
+from _shared.base_ingestor import BaseIngestor, logger, metrics, tracer
 from shared.converse import converse
+from shared.invocation_cost import measure_invocation_cost
 
 # Generation limits. Generation is SEQUENTIAL — one Bedrock call per BATCH_SIZE inside a
 # single ingestor invocation — so the cap is bounded by the Lambda timeout (900s in the
@@ -80,7 +83,7 @@ class SyntheticReviewsIngestor(BaseIngestor):
         """Parse and clamp the requested review count to [1, MAX_REVIEWS]."""
         try:
             value = int(str(raw).strip())
-        except (TypeError, ValueError):
+        except ValueError:
             return DEFAULT_REVIEWS
         return max(1, min(value, MAX_REVIEWS))
 
@@ -176,19 +179,17 @@ class SyntheticReviewsIngestor(BaseIngestor):
         except json.JSONDecodeError as e:
             logger.warning(f"Failed to parse synthetic reviews JSON: {e}")
             return []
-        if not isinstance(data, list):
-            return []
         return [r for r in data if isinstance(r, dict) and r.get("text")]
 
     def _build_item(self, review: dict) -> dict | None:
         """Convert a raw model review object into an ingestor item dict."""
-        text = str(review.get("text", "")).strip()
+        text = str(review["text"]).strip()
         if not text:
             return None
 
-        focus_area = str(review.get("focus_area", "") or "").strip() or "general"
-        author = str(review.get("author", "") or "").strip() or None
-        title = str(review.get("title", "") or "").strip() or None
+        focus_area = str(review.get("focus_area") or "").strip() or "general"
+        author = str(review.get("author") or "").strip() or None
+        title = str(review.get("title") or "").strip() or None
 
         return {
             "id": f"synthetic-{uuid.uuid4().hex}",
@@ -209,17 +210,22 @@ class SyntheticReviewsIngestor(BaseIngestor):
 
     @staticmethod
     def _coerce_rating(raw) -> float | None:
-        """Coerce a rating into a 1-5 float, or None if not parseable."""
+        """Coerce a rating into a 1-5 float, or None if not parseable.
+
+        NaN and ±Infinity parse as floats but `round()` rejects them (ValueError /
+        OverflowError), and an int too large for a float fails `float()` with
+        OverflowError. Each is an unparseable rating like any other — before, the
+        `round()` ran outside the guard, so one such rating failed the whole run.
+        """
         try:
-            value = float(raw)
-        except (TypeError, ValueError):
+            return float(max(1, min(5, round(float(raw)))))
+        except (TypeError, ValueError, OverflowError):
             return None
-        return float(max(1, min(5, round(value))))
 
     @staticmethod
     def _random_created_at() -> str:
         """Spread synthetic reviews over a recent window (non-cryptographic jitter)."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         offset = timedelta(
             days=random.randint(0, GENERATION_WINDOW_DAYS),  # noqa: S311 - synthetic timestamps, not security-sensitive
             hours=random.randint(0, 23),  # noqa: S311
@@ -227,7 +233,7 @@ class SyntheticReviewsIngestor(BaseIngestor):
         )
         return (now - offset).isoformat()
 
-    def normalize_item(self, item: dict, raw_content: str = None) -> dict:
+    def normalize_item(self, item: dict, raw_content: str | None = None) -> dict:
         """Extend base normalization to carry synthetic tagging fields through to SQS.
 
         author/title/language/metadata are accepted by the IngestMessage schema
@@ -245,6 +251,7 @@ class SyntheticReviewsIngestor(BaseIngestor):
 @logger.inject_lambda_context
 @tracer.capture_lambda_handler
 @metrics.log_metrics(capture_cold_start_metric=True)
+@measure_invocation_cost
 def lambda_handler(event, context):
     """Lambda entry point. Honors execution_id from the manual-run payload for status tracking."""
     # Manual-run secret-cache clearing (issue #141) is centralized in

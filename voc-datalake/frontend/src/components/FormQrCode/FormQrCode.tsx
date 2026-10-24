@@ -82,7 +82,7 @@ export default function FormQrCode({
   // that resolves to nothing. `feedbackFormPublicUrl` decides — the only thing
   // left to do here is say it in words rather than draw it.
   if (url === null) {
-    return <p className="text-xs text-gray-500 text-center">{t('formQrCode.unavailable')}</p>
+    return <p className="text-xs text-muted text-center">{t('formQrCode.unavailable')}</p>
   }
   return (
     <div className="flex flex-col items-center gap-2">
@@ -99,7 +99,7 @@ export default function FormQrCode({
         // overflowing the dialog, and `h-auto` keeps it square via the viewBox.
         className="bg-white w-full h-auto"
       />
-      <p className="text-xs text-gray-500 text-center">{t('formQrCode.caption')}</p>
+      <p className="text-xs text-muted text-center">{t('formQrCode.caption')}</p>
     </div>
   )
 }

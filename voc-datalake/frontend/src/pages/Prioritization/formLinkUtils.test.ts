@@ -10,7 +10,9 @@ import {
   buildLinkedFormsByDocument, collectProjectDocumentIds, normalizeLinkedForms, selectLinkedForms,
 } from './formLinkUtils'
 import type { LinkedForm } from './formLinkUtils'
-import type { Project, ProjectDocument } from '../../api/types'
+import type { ProjectDocument } from '../../api/types'
+import type { Project } from '../../api/projectTypes'
+import { onlyItem } from './prioritization-unit-fixtures'
 
 function form(overrides: Partial<LinkedForm> & { form_id: string }): LinkedForm {
   return {
@@ -29,7 +31,7 @@ describe('selectLinkedForms', () => {
 
     const matched = selectLinkedForms([pinned], { project_id: 'p1', document_id: 'doc_prfaq' }, liveDocs)
 
-    expect(matched).toEqual([pinned])
+    expect(matched).toStrictEqual([pinned])
   })
 
   it('returns nothing for a row with no linked form', () => {
@@ -37,7 +39,7 @@ describe('selectLinkedForms', () => {
 
     const matched = selectLinkedForms([elsewhere], { project_id: 'p1', document_id: 'doc_prfaq' }, liveDocs)
 
-    expect(matched).toEqual([])
+    expect(matched).toStrictEqual([])
   })
 
   it('never matches an unlinked standalone survey to any row', () => {
@@ -45,7 +47,7 @@ describe('selectLinkedForms', () => {
     // nothing and must stay off this page.
     const standalone = form({ form_id: 'f1', name: 'Website Footer Form' })
 
-    expect(selectLinkedForms([standalone], { project_id: 'p1', document_id: 'doc_prfaq' }, liveDocs)).toEqual([])
+    expect(selectLinkedForms([standalone], { project_id: 'p1', document_id: 'doc_prfaq' }, liveDocs)).toStrictEqual([])
   })
 
   it('matches nothing to a row with no project of its own', () => {
@@ -55,7 +57,7 @@ describe('selectLinkedForms', () => {
     const standalone = form({ form_id: 'f1', name: 'Website Footer Form' })
     const projectWide = form({ form_id: 'f2', project_id: 'p1' })
 
-    expect(selectLinkedForms([standalone, projectWide], { project_id: '', document_id: 'doc_prfaq' })).toEqual([])
+    expect(selectLinkedForms([standalone, projectWide], { project_id: '', document_id: 'doc_prfaq' })).toStrictEqual([])
   })
 
   it('returns every form validating the same document', () => {
@@ -64,16 +66,16 @@ describe('selectLinkedForms', () => {
 
     const matched = selectLinkedForms([first, second], { project_id: 'p1', document_id: 'doc_prfaq' }, liveDocs)
 
-    expect(matched.map((f) => f.form_id)).toEqual(['f1', 'f2'])
+    expect(matched.map((f) => f.form_id)).toStrictEqual(['f1', 'f2'])
   })
 
   it('matches a project-wide link (no document_id) on every scorable row', () => {
     const projectWide = form({ form_id: 'f1', project_id: 'p1' })
 
     expect(selectLinkedForms([projectWide], { project_id: 'p1', document_id: 'doc_prfaq' }, liveDocs))
-      .toEqual([projectWide])
+      .toStrictEqual([projectWide])
     expect(selectLinkedForms([projectWide], { project_id: 'p1', document_id: 'doc_prd' }, liveDocs))
-      .toEqual([projectWide])
+      .toStrictEqual([projectWide])
   })
 
   it('keeps showing a form whose document was regenerated', () => {
@@ -84,7 +86,7 @@ describe('selectLinkedForms', () => {
 
     const matched = selectLinkedForms([stale], { project_id: 'p1', document_id: 'doc_prfaq' }, liveDocs)
 
-    expect(matched).toEqual([stale])
+    expect(matched).toStrictEqual([stale])
   })
 
   it('does not show a document-pinned form on a live sibling document', () => {
@@ -93,7 +95,7 @@ describe('selectLinkedForms', () => {
 
     const matched = selectLinkedForms([pinnedToSibling], { project_id: 'p1', document_id: 'doc_prfaq' }, liveDocs)
 
-    expect(matched).toEqual([])
+    expect(matched).toStrictEqual([])
   })
 
   it('prefers the exact document match over the project fallback', () => {
@@ -102,7 +104,7 @@ describe('selectLinkedForms', () => {
 
     const matched = selectLinkedForms([exact, projectWide], { project_id: 'p1', document_id: 'doc_prfaq' }, liveDocs)
 
-    expect(matched.map((f) => f.form_id)).toEqual(['f1'])
+    expect(matched.map((f) => f.form_id)).toStrictEqual(['f1'])
   })
 
   it('treats no link as stale while the project detail is still loading', () => {
@@ -110,36 +112,38 @@ describe('selectLinkedForms', () => {
     // evidence appears rather than flickering to "no linked form".
     const pinned = form({ form_id: 'f1', project_id: 'p1', document_id: 'doc_old' })
 
-    expect(selectLinkedForms([pinned], { project_id: 'p1', document_id: 'doc_prfaq' })).toEqual([pinned])
+    expect(selectLinkedForms([pinned], { project_id: 'p1', document_id: 'doc_prfaq' })).toStrictEqual([pinned])
   })
 })
 
 describe('normalizeLinkedForms', () => {
   it('reads a stored link off a wire record', () => {
-    const [normalized] = normalizeLinkedForms([
+    const normalized = onlyItem(normalizeLinkedForms([
       { form_id: 'f1', name: 'PR/FAQ validation', project_id: 'p1', document_id: 'doc_prfaq' },
-    ])
+    ]), 'the linked form')
 
     expect(normalized.project_id).toBe('p1')
     expect(normalized.document_id).toBe('doc_prfaq')
   })
 
   it('defaults the link to unlinked on a record that predates the fields', () => {
-    const [normalized] = normalizeLinkedForms([{ form_id: 'f1', name: 'Legacy Form' }])
+    const normalized = onlyItem(normalizeLinkedForms([{ form_id: 'f1', name: 'Legacy Form' }]), 'the legacy form')
 
     expect(normalized.project_id).toBe('')
     expect(normalized.document_id).toBe('')
   })
 
   it('degrades a wrong-typed link to unlinked rather than dropping the form', () => {
-    const [normalized] = normalizeLinkedForms([{ form_id: 'f1', project_id: 42, document_id: null }])
+    const normalized = onlyItem(
+      normalizeLinkedForms([{ form_id: 'f1', project_id: 42, document_id: null }]), 'the kept form',
+    )
 
     expect(normalized.project_id).toBe('')
     expect(normalized.document_id).toBe('')
   })
 
   it('drops records without a usable form_id — it keys the stats query', () => {
-    expect(normalizeLinkedForms([{ name: 'No identity' }, { form_id: '' }, 'nonsense', null])).toEqual([])
+    expect(normalizeLinkedForms([{ name: 'No identity' }, { form_id: '' }, 'nonsense', null])).toStrictEqual([])
   })
 })
 
@@ -171,8 +175,8 @@ describe('collectProjectDocumentIds', () => {
       [project('p1'), project('p2')],
     )
 
-    expect([...(byProject.get('p1') ?? [])]).toEqual(['doc_a', 'doc_b'])
-    expect([...(byProject.get('p2') ?? [])]).toEqual(['doc_c'])
+    expect([...(byProject.get('p1') ?? [])]).toStrictEqual(['doc_a', 'doc_b'])
+    expect([...(byProject.get('p2') ?? [])]).toStrictEqual(['doc_c'])
   })
 
   it('returns an empty index before the data has loaded', () => {
@@ -193,8 +197,8 @@ describe('buildLinkedFormsByDocument', () => {
 
     const byDocument = buildLinkedFormsByDocument([pinned], rows, new Map([['p1', liveDocs]]))
 
-    expect(byDocument.get('doc_prfaq')).toEqual([pinned])
-    expect(byDocument.get('doc_prd')).toEqual([])
+    expect(byDocument.get('doc_prfaq')).toStrictEqual([pinned])
+    expect(byDocument.get('doc_prd')).toStrictEqual([])
   })
 
   it('keys documents from every row, not only the first', () => {
@@ -208,8 +212,8 @@ describe('buildLinkedFormsByDocument', () => {
       [forP1], rows, new Map([['p1', liveDocs], ['p2', new Set(['doc_other'])]]),
     )
 
-    expect(byDocument.get('doc_prfaq')).toEqual([forP1])
-    expect(byDocument.get('doc_other')).toEqual([])
+    expect(byDocument.get('doc_prfaq')).toStrictEqual([forP1])
+    expect(byDocument.get('doc_other')).toStrictEqual([])
   })
 
   it('a row holding no documents contributes no keys rather than throwing', () => {

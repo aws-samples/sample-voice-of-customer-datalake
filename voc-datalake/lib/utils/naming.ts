@@ -63,9 +63,8 @@ const WIDEST_REGION_NAME = 'ap-southeast-7';
  * Placeholder a Lambda substitutes at runtime in the name patterns CDK hands
  * it (`INGESTOR_FUNCTION_NAME_PATTERN`, `INGEST_SCHEDULE_RULE_NAME_PATTERN`).
  *
- * MUST stay in lockstep with the Python side — `lambda/api/integrations_handler.py`
- * and `plugins/_shared/circuit_breaker.py` — which
- * lambda/api/test/test_integrations_handler_prefix.py pins.
+ * MUST stay in lockstep with the Python side — `lambda/api/integrations_handler.py` —
+ * which lambda/api/test/test_integrations_handler_prefix.py pins.
  */
 export const SOURCE_PLACEHOLDER = '{source}';
 
@@ -151,7 +150,7 @@ export function validateDeploymentPrefix(contextValue: unknown): string | undefi
  * indistinguishable from a Lambda name by inspection, so it comes from the call
  * site via {@link DeploymentNaming.uniqueDnsName}.
  */
-export function nameLengthLimit(baseName: string): number {
+function nameLengthLimit(baseName: string): number {
   return baseName.includes('/') ? PATH_NAME_LENGTH_LIMIT : NAME_LENGTH_LIMIT;
 }
 
@@ -284,8 +283,9 @@ export class DeploymentNaming {
       .filter(({ limit, length }) => length + cost > limit)
       .map(({ baseName, kind, limit, length }) => {
         const budget = limit - length - 1; // -1 for the separator
+        const unit = budget === 1 ? 'character' : 'characters';
         const affordable = budget > 0
-          ? `Use a prefix of at most ${budget} character${budget === 1 ? '' : 's'}`
+          ? `Use a prefix of at most ${budget} ${unit}`
           : 'No prefix fits this name';
         return (
           `deploymentPrefix "${prefix}" makes "${this.prefixed(baseName)}-<account>-<region>" ` +

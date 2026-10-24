@@ -1,0 +1,48 @@
+{
+  "description": "invalid admin tool for user",
+  "ctx": {
+    "isAdmin": false,
+    "packsAllowed": [
+      "core",
+      "insights",
+      "project",
+      "forms",
+      "prioritization",
+      "scrapers",
+      "memory",
+      "agents",
+      "company"
+    ]
+  },
+  "plan": {
+    "schema": "voc-plan/1",
+    "goal": "Connect",
+    "steps": [
+      {
+        "id": "s1",
+        "pack": "scrapers",
+        "kind": "write",
+        "title": "Connect the ExampleAir iOS app",
+        "write": {
+          "tool": "create_app_connector",
+          "args": {
+            "source": "app_reviews_ios",
+            "app_id": "1234567890",
+            "app_name": "ExampleAir iOS"
+          }
+        },
+        "produces": [
+          "app_config_id"
+        ]
+      }
+    ]
+  },
+  "valid": false,
+  "errors": [
+    {
+      "step": "s1",
+      "field": "write.tool"
+    }
+  ],
+  "needs_args_schema": false
+}

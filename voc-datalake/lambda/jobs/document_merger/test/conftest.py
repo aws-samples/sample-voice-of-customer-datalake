@@ -2,8 +2,8 @@
 
 import pytest
 
-# Import shared fixtures
-from jobs.conftest import *
+# The shared job fixtures come from lambda/jobs/conftest.py, which pytest applies
+# to every test below lambda/jobs/ — no import needed.
 
 
 @pytest.fixture

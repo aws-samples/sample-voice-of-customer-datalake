@@ -13,7 +13,7 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
-import { pythonLayerCode } from './python-layer-bundling';
+import { BUILD_VENV, BUILD_VENV_SETUP, pythonLayerCode } from './python-layer-bundling';
 
 // AssetCode keeps its constructor args in TypeScript-private fields, which
 // still exist at runtime; parse them with Zod instead of reaching in with
@@ -49,10 +49,15 @@ describe('pythonLayerCode', () => {
 
   it('targets ARM64 and installs from requirements.txt via a throwaway venv', () => {
     expect(parsed.options.bundling.platform).toBe('linux/arm64');
-    expect(command).toContain('/tmp/buildenv/bin/pip install -r requirements.txt');
+    expect(command).toContain(`${BUILD_VENV}/bin/pip install -r requirements.txt`);
     for (const token of REQUIRED_RECIPE_TOKENS) {
       expect(command).toContain(token);
     }
+  });
+
+  it('builds the venv in a private mktemp dir, never a fixed world-writable path', () => {
+    expect(command).toContain(`${BUILD_VENV_SETUP} && python -m venv ${BUILD_VENV}`);
+    expect(command).not.toMatch(/\/tmp\//);
   });
 
   it('strips boto3/botocore so the runtime-provided matched pair wins', () => {
@@ -72,9 +77,13 @@ describe('lockstep with scripts/build-layers.sh', () => {
   const script = fs.readFileSync(path.join(process.cwd(), 'scripts', 'build-layers.sh'), 'utf8');
 
   it('manual builds use the same venv + flags recipe', () => {
-    for (const token of [...REQUIRED_RECIPE_TOKENS, '/tmp/buildenv/bin/pip install']) {
+    for (const token of [...REQUIRED_RECIPE_TOKENS, BUILD_VENV_SETUP, `${BUILD_VENV}/bin/pip install`]) {
       expect(script).toContain(token);
     }
+  });
+
+  it('manual builds never use a fixed path under /tmp either', () => {
+    expect(script).not.toMatch(/\/tmp\//);
   });
 
   it('manual builds strip boto3/botocore too', () => {
@@ -95,7 +104,7 @@ describe('layer source dirs', () => {
     it(`${layerDir} contains no first-party files that would silently not deploy`, () => {
       const entries = fs.readdirSync(path.join(layersRoot, layerDir));
       const unexpected = entries.filter((entry) => !allowedEntries.has(entry));
-      expect(unexpected).toEqual([]);
+      expect(unexpected).toStrictEqual([]);
     });
   }
 });
@@ -108,6 +117,6 @@ describe('stacks use the shared helper', () => {
       // stack test may legitimately mention "pip install" in a string.
       .filter((file) => file.endsWith('.ts') && !file.endsWith('.test.ts'))
       .filter((file) => fs.readFileSync(path.join(stacksDir, file), 'utf8').includes('pip install'));
-    expect(offenders).toEqual([]);
+    expect(offenders).toStrictEqual([]);
   });
 });

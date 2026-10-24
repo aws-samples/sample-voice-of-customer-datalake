@@ -25,13 +25,6 @@ export class ValidationError extends ApiError {
   }
 }
 
-export class NotFoundError extends ApiError {
-  constructor(message: string) {
-    super(message, 404);
-    this.name = 'NotFoundError';
-  }
-}
-
 export class ConfigurationError extends ApiError {
   constructor(message: string) {
     super(message, 500);

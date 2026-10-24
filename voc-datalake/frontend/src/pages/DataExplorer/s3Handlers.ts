@@ -41,7 +41,8 @@ export async function downloadS3File(
     ? await fetch(preview.content).then(r => r.blob())
     : new Blob(
         [typeof preview.content === 'string' ? preview.content : JSON.stringify(preview.content, null, 2)],
-        { type: preview.contentType ?? 'application/json' }
+        // `contentType` is declared but the preview is not normalized; a missing one stays JSON.
+        { type: typeof preview.contentType === 'string' ? preview.contentType : 'application/json' }
       )
 
   const url = URL.createObjectURL(blob)

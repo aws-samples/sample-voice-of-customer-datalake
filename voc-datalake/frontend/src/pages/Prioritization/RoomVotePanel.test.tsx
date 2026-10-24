@@ -18,68 +18,42 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import i18n from 'i18next'
+import {
+  prioritizationMocks, projectsApiModule, clientApiModuleOverOriginal, configStoreModule, reactMarkdownModule, project,
+} from './prioritization-fixtures'
+import { openRow, renderUntilRow } from './prioritization-render-fixtures'
 
 import type { VotingSession } from '../../api/votingSessionsApi'
 
-const mockCreateVotingSession = vi.fn()
-const mockGetVotingSession = vi.fn()
-const mockCloseVotingSession = vi.fn()
+const mockCreateVotingSession = vi.fn<(...args: unknown[]) => unknown>()
+const mockGetVotingSession = vi.fn<(...args: unknown[]) => unknown>()
+const mockCloseVotingSession = vi.fn<(...args: unknown[]) => unknown>()
+const mockFindOpenVotingSession = vi.fn<(...args: unknown[]) => unknown>()
 
 vi.mock('../../api/votingSessionsApi', () => ({
   votingSessionsApi: {
     createVotingSession: (input: unknown) => mockCreateVotingSession(input),
     getVotingSession: (id: string) => mockGetVotingSession(id),
     closeVotingSession: (id: string) => mockCloseVotingSession(id),
+    findOpenVotingSession: (rowId: string) => mockFindOpenVotingSession(rowId),
   },
 }))
 
 // The page harness for the one test that has to drive the whole table — see the
 // PRD-row describe at the bottom.
-const mockGetProjects = vi.fn()
-const mockGetProject = vi.fn()
-const mockGetPrioritizationScores = vi.fn()
-const mockGetFeedbackForms = vi.fn()
-const mockCreatePrioritizationRow = vi.fn()
-
-vi.mock('../../api/projectsApi', () => ({
-  projectsApi: {
-    getProjects: () => mockGetProjects(),
-    getProject: (id: string) => mockGetProject(id),
-  },
-}))
+vi.mock('../../api/projectsApi', () => projectsApiModule())
 // The REAL module is spread and only `api` replaced. A factory that returns just
 // `api` makes every other export of `client` disappear for this whole file —
 // `fetchApi` among them, which `votingSessionsApi` imports — so a component
 // anywhere in the Prioritization tree that reached for one would fail to resolve
 // it, and being file-wide the mock would take the panel-only tests down with it.
-vi.mock('../../api/client', async (importOriginal) => ({
-  ...await importOriginal<typeof import('../../api/client')>(),
-  api: {
-    getPrioritizationScores: () => mockGetPrioritizationScores(),
-    patchPrioritizationScores: () => Promise.resolve({ success: true }),
-    // The page asks for a default row per project on mount, so a project with
-    // something to score has a row without anybody performing a setup step. Stubbed
-    // rather than omitted: the effect fires before the list first renders, and an
-    // absent function is a TypeError that leaves the page with no rows at all.
-    // Answering with the row the read already carries is what the real route does
-    // for a project that has one — the create is idempotent.
-    createPrioritizationRow: (projectId: string) => mockCreatePrioritizationRow(projectId),
-    getFeedbackForms: () => mockGetFeedbackForms(),
-    getFeedbackFormStats: () => Promise.resolve({ success: true, stats: {} }),
-  },
-}))
-vi.mock('../../store/configStore', () => ({
-  useConfigStore: () => ({ config: { apiEndpoint: 'https://api.example.com' } }),
-}))
-vi.mock('react-markdown', () => ({
-  default: ({ children }: { children: string }) => <div>{children}</div>,
-}))
+vi.mock('../../api/client', async (importOriginal) => clientApiModuleOverOriginal(importOriginal))
+vi.mock('../../store/configStore', () => configStoreModule())
+vi.mock('react-markdown', () => reactMarkdownModule())
 
 import RoomVotePanel from './RoomVotePanel'
 import { ballotCountRefetchInterval } from './roomVotePolling'
-import Prioritization from './Prioritization'
 
 const { t } = i18n
 // A ROW id, not a document id: the session names the row, and every ballot's key
@@ -126,9 +100,10 @@ function renderPanel() {
 async function openVote() {
   const user = userEvent.setup()
   renderPanel()
-  await user.click(screen.getByRole('button', { name: t('prioritization:roomVote.open') }))
+  await user.click(await screen.findByRole('button', { name: t('prioritization:roomVote.open') }))
+  await user.click(screen.getByRole('button', { name: t('prioritization:roomVote.confirmOpen') }))
   await waitFor(() => {
-    expect(mockCreateVotingSession).toHaveBeenCalled()
+    expect(mockCreateVotingSession).toHaveBeenCalledWith({ row_id: ROW_ID, row_title: ROW_TITLE })
   })
   return user
 }
@@ -137,6 +112,44 @@ async function openVote() {
 const qr = () => screen.queryByRole('img', {
   name: t('prioritization:roomVote.qrAccessibleName', { title: ROW_TITLE }),
 })
+
+/** Both the open and the poll answer `record`. */
+function givenTheSessionIs(record: VotingSession) {
+  mockCreateVotingSession.mockResolvedValue(record)
+  mockGetVotingSession.mockResolvedValue(record)
+}
+
+/**
+ * A session that ran out its clock: `status` still reads `open` — and will until the
+ * TTL sweeper gets to it — while `state` folds the deadline in.
+ */
+function givenAnExpiredSession() {
+  givenTheSessionIs(session({ status: 'open', state: 'expired' }))
+}
+
+/** Open the vote and wait for the panel to say the session expired. */
+async function expectExpiredAfterOpening() {
+  await openVote()
+
+  await waitFor(() => {
+    expect(screen.getByText(t('prioritization:roomVote.expired'))).toBeInTheDocument()
+  })
+}
+
+/** Open the row titled `title` and its room vote, then check the session was created on the ROW. */
+async function expectVoteOpenedOnTheRow(title: string) {
+  givenTheSessionIs(session())
+  const user = await openRow(title)
+
+  await user.click(await screen.findByRole('button', {
+    name: t('prioritization:roomVote.open'),
+  }))
+  await user.click(screen.getByRole('button', { name: t('prioritization:roomVote.confirmOpen') }))
+
+  await waitFor(() => {
+    expect(mockCreateVotingSession).toHaveBeenCalledWith({ row_id: ROW_ID, row_title: title })
+  })
+}
 
 /**
  * The QR is built on the LIVE origin — the ballot page is a route of this SPA —
@@ -159,15 +172,19 @@ function withKnownOrigin() {
   })
 }
 
+/** The row has no open vote; opening one answers a fresh session, closing it a closed one. */
+function givenNoOpenVoteYet() {
+  vi.clearAllMocks()
+  mockFindOpenVotingSession.mockResolvedValue(null)
+  mockCreateVotingSession.mockResolvedValue(session())
+  mockGetVotingSession.mockResolvedValue(session())
+  mockCloseVotingSession.mockResolvedValue(session({ status: 'closed', state: 'closed' }))
+}
+
 describe('a room vote a facilitator opens', () => {
   withKnownOrigin()
 
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockCreateVotingSession.mockResolvedValue(session())
-    mockGetVotingSession.mockResolvedValue(session())
-    mockCloseVotingSession.mockResolvedValue(session({ status: 'closed', state: 'closed' }))
-  })
+  beforeEach(givenNoOpenVoteYet)
 
   it('puts a QR for THIS document on screen', async () => {
     await openVote()
@@ -197,7 +214,7 @@ describe('a room vote a facilitator opens', () => {
   it('names the one document the session scores', async () => {
     renderPanel()
 
-    expect(screen.getByText(
+    expect(await screen.findByText(
       t('prioritization:roomVote.scopeNote', { title: ROW_TITLE }),
     )).toBeInTheDocument()
   })
@@ -208,6 +225,7 @@ describe('a room vote that has ended', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mockFindOpenVotingSession.mockResolvedValue(null)
   })
 
   it('takes the QR down when the facilitator closes it', async () => {
@@ -231,15 +249,9 @@ describe('a room vote that has ended', () => {
     // The blocker: `status` is `open` on this record and always will be until the
     // TTL sweeper gets to it. A panel keyed on `status` leaves the QR up and sends
     // a room to a page that refuses all of them.
-    const expired = session({ status: 'open', state: 'expired' })
-    mockCreateVotingSession.mockResolvedValue(expired)
-    mockGetVotingSession.mockResolvedValue(expired)
+    givenAnExpiredSession()
 
-    await openVote()
-
-    await waitFor(() => {
-      expect(screen.getByText(t('prioritization:roomVote.expired'))).toBeInTheDocument()
-    })
+    await expectExpiredAfterOpening()
     expect(qr()).not.toBeInTheDocument()
   })
 
@@ -247,9 +259,7 @@ describe('a room vote that has ended', () => {
     // A vote ends without the facilitator choosing to: it expires. With no exit
     // from the ended panel, asking the room again meant reloading the
     // prioritization page and losing the expanded row.
-    const expired = session({ status: 'open', state: 'expired' })
-    mockCreateVotingSession.mockResolvedValue(expired)
-    mockGetVotingSession.mockResolvedValue(expired)
+    givenAnExpiredSession()
     const user = await openVote()
     await screen.findByText(t('prioritization:roomVote.expired'))
 
@@ -272,7 +282,7 @@ describe('a room vote that has ended', () => {
     mockCreateVotingSession
       .mockResolvedValueOnce(session())
       .mockResolvedValueOnce(second)
-    mockGetVotingSession.mockImplementation((id: string) => Promise.resolve(
+    mockGetVotingSession.mockImplementation((id: unknown) => Promise.resolve(
       id === second.session_id ? second : session(),
     ))
     mockCloseVotingSession.mockResolvedValue(session({ status: 'closed', state: 'closed' }))
@@ -282,6 +292,7 @@ describe('a room vote that has ended', () => {
     await user.click(screen.getByRole('button', { name: t('prioritization:roomVote.openAnother') }))
 
     await user.click(screen.getByRole('button', { name: t('prioritization:roomVote.open') }))
+    await user.click(screen.getByRole('button', { name: t('prioritization:roomVote.confirmOpen') }))
 
     await waitFor(() => {
       expect(qr()).toBeInTheDocument()
@@ -292,15 +303,9 @@ describe('a room vote that has ended', () => {
   })
 
   it('says it expired rather than blaming the facilitator', async () => {
-    const expired = session({ status: 'open', state: 'expired' })
-    mockCreateVotingSession.mockResolvedValue(expired)
-    mockGetVotingSession.mockResolvedValue(expired)
+    givenAnExpiredSession()
 
-    await openVote()
-
-    await waitFor(() => {
-      expect(screen.getByText(t('prioritization:roomVote.expired'))).toBeInTheDocument()
-    })
+    await expectExpiredAfterOpening()
     expect(screen.queryByText(t('prioritization:roomVote.closed'))).not.toBeInTheDocument()
   })
 })
@@ -330,10 +335,6 @@ describe('when the ballot count is read again', () => {
 })
 
 describe('a room vote opens on the ROW, covering every document it holds', () => {
-  const project = {
-    project_id: 'p1', name: 'Project 1', status: 'active',
-    created_at: '2025-01-01', updated_at: '2025-01-01', persona_count: 0, document_count: 2,
-  }
   /**
    * The row's two documents, PR/FAQ older than PRD.
    *
@@ -363,21 +364,13 @@ describe('a room vote opens on the ROW, covering every document it holds', () =>
 
   beforeEach(() => {
     vi.clearAllMocks()
-    mockGetProjects.mockResolvedValue({ projects: [project] })
-    mockGetProject.mockResolvedValue({ project_id: 'p1', documents: [prfaqOlder, prdNewer] })
-    mockGetPrioritizationScores.mockResolvedValue({ scores: {}, rows: { [ROW_ID]: row } })
-    mockCreatePrioritizationRow.mockResolvedValue({ success: true, created: false, row })
-    mockGetFeedbackForms.mockResolvedValue({ forms: [] })
+    mockFindOpenVotingSession.mockResolvedValue(null)
+    prioritizationMocks.getProjects.mockResolvedValue({ projects: [project] })
+    prioritizationMocks.getProject.mockResolvedValue({ project_id: 'p1', documents: [prfaqOlder, prdNewer] })
+    prioritizationMocks.getPrioritizationScores.mockResolvedValue({ scores: {}, rows: { [ROW_ID]: row } })
+    prioritizationMocks.createPrioritizationRow.mockResolvedValue({ success: true, created: false, row })
+    prioritizationMocks.getFeedbackForms.mockResolvedValue({ forms: [] })
   })
-
-  const renderPage = () => {
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={createMemoryRouter([{ path: '/', element: <Prioritization /> }])} />
-      </QueryClientProvider>,
-    )
-  }
 
   it('a project whose PRD and PR/FAQ describe one idea offers ONE room vote', async () => {
     // The defect this change removes, at the facilitator's end: two rows meant two
@@ -385,10 +378,7 @@ describe('a room vote opens on the ROW, covering every document it holds', () =>
     // idea. The row is named after its newest document — the PRD here — and there
     // is no second row to open a competing session on.
     const user = userEvent.setup()
-    renderPage()
-    await waitFor(() => {
-      expect(screen.getByText('Feature A PRD')).toBeInTheDocument()
-    })
+    await renderUntilRow('Feature A PRD')
     expect(screen.queryByRole('button', {
       name: t('prioritization:roomVote.open'),
     })).not.toBeInTheDocument()
@@ -403,37 +393,14 @@ describe('a room vote opens on the ROW, covering every document it holds', () =>
   it('opens the session on the ROW id, so the room scores the whole proposal', async () => {
     // What the ballots are keyed to. Sending a document id here is how a room ends
     // up scoring one half of a proposal from their phones.
-    mockCreateVotingSession.mockResolvedValue(session())
-    mockGetVotingSession.mockResolvedValue(session())
-    const user = userEvent.setup()
-    renderPage()
-    await waitFor(() => {
-      expect(screen.getByText('Feature A PRD')).toBeInTheDocument()
-    })
-    await user.click(screen.getByText('Feature A PRD'))
-
-    await user.click(await screen.findByRole('button', {
-      name: t('prioritization:roomVote.open'),
-    }))
-
-    await waitFor(() => {
-      expect(mockCreateVotingSession).toHaveBeenCalledWith({
-        row_id: ROW_ID, row_title: 'Feature A PRD',
-      })
-    })
+    await expectVoteOpenedOnTheRow('Feature A PRD')
   })
 
   it('tells the facilitator how many documents that one ballot covers', async () => {
     // The public page states plainly what is being scored, and so does this half:
     // "one ballot covers all N documents behind it" is what makes a room's single
     // vote on a two-document proposal legible rather than surprising.
-    const user = userEvent.setup()
-    renderPage()
-    await waitFor(() => {
-      expect(screen.getByText('Feature A PRD')).toBeInTheDocument()
-    })
-
-    await user.click(screen.getByText('Feature A PRD'))
+    await openRow('Feature A PRD')
 
     expect(await screen.findByText(
       t('prioritization:roomVote.scopeDocuments', { documents: 2 }),
@@ -445,30 +412,81 @@ describe('a room vote opens on the ROW, covering every document it holds', () =>
     // title is its LEADING document's, so a project whose PR/FAQ is the newer of the two
     // opens a session named after the PR/FAQ. Same row id either way — that is the point,
     // and it is what makes the title cosmetic and the id load-bearing.
-    mockGetProject.mockResolvedValue({
+    prioritizationMocks.getProject.mockResolvedValue({
       project_id: 'p1',
       documents: [
         { ...prfaqOlder, created_at: '2025-01-03' },
         prdNewer,
       ],
     })
-    mockCreateVotingSession.mockResolvedValue(session())
-    mockGetVotingSession.mockResolvedValue(session())
+
+    await expectVoteOpenedOnTheRow('Feature A PR/FAQ')
+  })
+})
+
+describe('opening a room vote asks first, because it publishes a link', () => {
+  withKnownOrigin()
+
+  beforeEach(givenNoOpenVoteYet)
+
+  it('explains the public link and opens nothing until confirmed', async () => {
     const user = userEvent.setup()
-    renderPage()
-    await waitFor(() => {
-      expect(screen.getByText('Feature A PR/FAQ')).toBeInTheDocument()
-    })
-    await user.click(screen.getByText('Feature A PR/FAQ'))
+    renderPanel()
 
-    await user.click(await screen.findByRole('button', {
-      name: t('prioritization:roomVote.open'),
-    }))
+    await user.click(await screen.findByRole('button', { name: t('prioritization:roomVote.open') }))
 
-    await waitFor(() => {
-      expect(mockCreateVotingSession).toHaveBeenCalledWith({
-        row_id: ROW_ID, row_title: 'Feature A PR/FAQ',
-      })
-    })
+    expect(screen.getByText(t('prioritization:roomVote.confirmMessage', { title: ROW_TITLE }))).toBeInTheDocument()
+    expect(mockCreateVotingSession).not.toHaveBeenCalled()
+  })
+
+  it('opens nothing when the facilitator cancels', async () => {
+    const user = userEvent.setup()
+    renderPanel()
+    await user.click(await screen.findByRole('button', { name: t('prioritization:roomVote.open') }))
+
+    await user.click(screen.getByRole('button', { name: t('common:cancel') }))
+
+    expect(screen.queryByText(t('prioritization:roomVote.confirmMessage', { title: ROW_TITLE }))).not.toBeInTheDocument()
+    expect(mockCreateVotingSession).not.toHaveBeenCalled()
+  })
+})
+
+describe('a room vote that was opened before the page loaded', () => {
+  withKnownOrigin()
+  const running = session({ session_id: 'vs_' + '3c'.repeat(16), ballot_count: 7, ballot_cap: 40 })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockFindOpenVotingSession.mockResolvedValue(running)
+    mockGetVotingSession.mockResolvedValue(running)
+    mockCloseVotingSession.mockResolvedValue({ ...running, status: 'closed', state: 'closed' })
+  })
+
+  it('is found for this row and shown with its link and ballot count', async () => {
+    renderPanel()
+
+    expect(await screen.findByText(`https://app.example.com/vote/${running.session_id}`)).toBeInTheDocument()
+    expect(mockFindOpenVotingSession).toHaveBeenCalledWith(ROW_ID)
+    expect(screen.getByText(/7/)).toHaveTextContent('40')
+    expect(screen.queryByRole('button', { name: t('prioritization:roomVote.open') })).not.toBeInTheDocument()
+  })
+
+  it('can be closed from the panel', async () => {
+    const user = userEvent.setup()
+    renderPanel()
+
+    await user.click(await screen.findByRole('button', { name: t('prioritization:roomVote.close') }))
+
+    expect(mockCloseVotingSession).toHaveBeenCalledWith(running.session_id)
+    expect(await screen.findByText(t('prioritization:roomVote.closed'))).toBeInTheDocument()
+  })
+
+  it('stays dismissed after "Open another vote", instead of coming straight back', async () => {
+    const user = userEvent.setup()
+    renderPanel()
+    await user.click(await screen.findByRole('button', { name: t('prioritization:roomVote.close') }))
+    await user.click(await screen.findByRole('button', { name: t('prioritization:roomVote.openAnother') }))
+
+    expect(screen.getByRole('button', { name: t('prioritization:roomVote.open') })).toBeInTheDocument()
   })
 })

@@ -1,0 +1,94 @@
+{
+  "tab": "意思決定",
+  "title": "意思決定",
+  "subtitle": "推進・保留・却下と、その理由、成功の測り方、中止する条件を記録します。",
+  "new": "新しい意思決定",
+  "empty": "意思決定はまだありません。課題への対応を決めたときに記録してください。",
+  "formLabel": "意思決定",
+  "verdict": {
+    "label": "判断",
+    "pursue": "推進",
+    "park": "保留",
+    "reject": "却下"
+  },
+  "fields": {
+    "title": "タイトル",
+    "rationale": "理由",
+    "successMetric": "成功指標",
+    "killCriterion": "中止基準",
+    "reviewBy": "見直し期限",
+    "launchedAt": "リリース日",
+    "feedbackIds": "フィードバック ID",
+    "feedbackIdsHint": "ID はスペースまたはカンマで区切ってください。",
+    "documents": "根拠となるドキュメント"
+  },
+  "actions": {
+    "save": "意思決定を保存",
+    "cancel": "キャンセル",
+    "edit": "編集",
+    "pursue": "PR/FAQ を作成",
+    "pursueAgain": "別の PR/FAQ を作成",
+    "pursueHint": "この意思決定をブリーフとして PR/FAQ の生成を開始します。",
+    "pursueConfirmTitle": "PR/FAQ を作成しますか？",
+    "pursueConfirmMessage": "AI が「{{title}}」をブリーフとして PR/FAQ を作成します。数分かかります。完成するとドキュメントに表示されます。",
+    "pursueConfirm": "PR/FAQ を作成",
+    "pursued": "この意思決定から PR/FAQ がリクエストされました。ジョブが完了するとドキュメントに表示されます。",
+    "prfaqReady": "PR/FAQ の準備ができました: {{title}}",
+    "prfaqFailed": "この意思決定から PR/FAQ を生成できませんでした。もう一度作成して再試行してください。",
+    "revisit": "再検討",
+    "releaseWatch": "リリースウォッチ",
+    "hideReleaseWatch": "リリースウォッチを隠す"
+  },
+  "picker": {
+    "label": "根拠となるレビュー",
+    "placeholder": "追加するレビューを検索（例：「配達の遅れ」）",
+    "results": "一致するレビュー",
+    "picked": "追加したレビュー",
+    "searching": "検索中…",
+    "failed": "検索に失敗しました。もう一度お試しください。",
+    "noMatch": "「{{q}}」に一致するレビューはありません。",
+    "linked": "リンクされたレビュー {{n}}",
+    "remove": "{{label}} を削除",
+    "advanced": "詳細：レビュー ID を貼り付け"
+  },
+  "decidedBy": "{{name}} が {{date}} に決定",
+  "decidedOn": "{{date}} に決定",
+  "evidence": "根拠",
+  "errors": {
+    "save": "意思決定を保存できませんでした。",
+    "conflict": "開いた後にこの意思決定が変更されました。ページを再読み込みしてもう一度お試しください。",
+    "pursue": "PR/FAQ を開始できませんでした。"
+  },
+  "releaseWatch": {
+    "title": "リリースウォッチ",
+    "subtitle": "各リリースの前後 {{days, number}} 日間のフィードバック。",
+    "empty": "この期間にリリースはありません。",
+    "regression": "悪化",
+    "noRegression": "悪化なし",
+    "before": "前",
+    "after": "後",
+    "volume": "件数",
+    "negative": "ネガティブ",
+    "sentiment": "センチメント",
+    "afterDays": "リリース後の観測日数: {{days, number}}",
+    "reasons": {
+      "sentiment_drop": "センチメントが低下",
+      "negative_rise": "ネガティブなフィードバックが増加"
+    },
+    "complaints": "増えている不満",
+    "evidenceItem": "レビュー {{n}}",
+    "evidence": "リリース後で最もネガティブなもの",
+    "partial": "一部のみ: {{date}} まで読み込み済み",
+    "loading": "リリースウォッチを読み込み中",
+    "error": "リリースウォッチを読み込めませんでした。",
+    "topCategories": {
+      "before": "リリース前の上位カテゴリ",
+      "after": "リリース後の上位カテゴリ",
+      "new": "新たに上位入り",
+      "grew_one": "{{count, number}} 件から増加",
+      "grew_other": "{{count, number}} 件から増加",
+      "count_one": "レビュー {{count, number}} 件",
+      "count_other": "レビュー {{count, number}} 件"
+    }
+  }
+}

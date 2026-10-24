@@ -4,17 +4,42 @@
     "edit": "Edit",
     "frequency": "Frequency",
     "lastRun": "Last Run",
-    "lastSummary": "Last: {{pages}} pages, {{reviews}} reviews",
+    "lastSummary": "Last: {{pages, number}} pages, {{reviews, number}} reviews",
     "never": "Never",
     "notConfigured": "Not configured",
+    "radarBadge": "Radar: {{brand}}",
+    "runConfirmTitle": "Fetch reviews now?",
+    "runConfirmMessage": "This contacts {{site}} and adds any new reviews it finds. It can take a few minutes.",
+    "runConfirmLabel": "Fetch reviews",
+    "runStarted": "Started. New reviews show up in your data when the run finishes.",
+    "siteAppStore": "the App Store",
+    "siteGooglePlay": "Google Play",
+    "siteUnknown": "the source",
     "runNow": "Run now",
-    "urls": "URLs"
+    "urls": "URLs",
+    "state": {
+      "scheduled": "Scheduled",
+      "manual": "Manual",
+      "paused": "Paused"
+    }
   },
   "configureApiFirst": "Configure API endpoint first",
+  "radarSource": {
+    "label": "Radar source: reviews of another brand",
+    "hint": "Its reviews go to Radar under the brand you choose, never to your own dashboards.",
+    "brandLabel": "Radar brand",
+    "choose": "Choose a brand",
+    "unknownBrand": "{{key}} (not in the brand list)",
+    "noBrand": "No Radar brand yet.",
+    "addBrand": "Add a brand in Administration → Sources → Radar",
+    "needsBrand": "Choose a brand, or this stays an ordinary source.",
+    "loading": "Loading the Radar brands...",
+    "loadFailed": "The Radar brands could not be loaded."
+  },
   "csvUpload": {
     "cancel": "Cancel",
-    "defaultSourceHint": "Used for rows that don't have a \"source\" column.",
-    "defaultSourceLabel": "Default source label",
+    "defaultSourceHint": "Used for rows without a channel column. Leave empty to use \"CSV upload\".",
+    "defaultSourceLabel": "Default channel",
     "done": "Done",
     "downloadTemplate": "Download template",
     "dropZone": "Drop a .csv file here or click to choose",
@@ -24,13 +49,41 @@
     "fieldText": "— required. The feedback content.",
     "formatGuide": "CSV format",
     "headerNote": "Headers are case-insensitive. Up to 50,000 rows / 10 MB per upload.",
-    "imported_one": "{{count}} row queued for processing",
-    "imported_other": "{{count}} rows queued for processing",
+    "imported_one": "{{count, number}} row queued for processing",
+    "imported_other": "{{count, number}} rows queued for processing",
     "pipelineNote": "Rows will appear on the Feedback page once Bedrock enrichment completes (usually within a minute).",
+    "pipelineNoteRadar": "Rows will appear on the Radar page under {{brand}} once Bedrock enrichment completes (usually within a minute). They never reach your own dashboards.",
     "title": "CSV upload",
     "upload": "Upload",
     "uploading": "Uploading…",
-    "warningsHeader": "Warnings"
+    "warningsHeader": "Warnings",
+    "errorNoHeader": "The file has no header row.",
+    "errorUnreadable": "The file could not be read.",
+    "uploadFailed": "Upload failed",
+    "mapping": {
+      "title": "Column mapping",
+      "hint": "Suggested from the header row. Unrecognised columns are kept as metadata, so nothing is dropped unless you choose Ignore.",
+      "columnLabel": "Where {{header}} goes",
+      "dimensionTarget": "Dimension: {{name}}",
+      "targets": {
+        "text": "Feedback text",
+        "id": "Row id",
+        "rating": "Rating",
+        "date": "Date",
+        "author": "Author",
+        "title": "Title",
+        "url": "Link",
+        "channel": "Channel",
+        "tags": "Tags",
+        "metadata": "Keep as metadata",
+        "ignore": "Ignore"
+      },
+      "problems": {
+        "noText": "Map one column to Feedback text.",
+        "twice": "{{target}} is chosen for more than one column."
+      }
+    },
+    "defaultSourcePlaceholder": "e.g. Support survey"
   },
   "deleteConfirmLabel": "Delete",
   "deleteConfirmMessage": "Are you sure you want to delete this scraper? This action cannot be undone.",
@@ -52,11 +105,12 @@
     "enablePagination": "Enable Pagination",
     "enterUrlFirst": "Enter a URL first",
     "failedToAnalyze": "Failed to analyze URL",
-    "foundReviews": "Found {{count}} reviews. {{notes}}",
-    "foundReviews_one": "Found {{count}} review. {{notes}}",
-    "foundReviews_other": "Found {{count}} reviews. {{notes}}",
+    "foundReviews": "Found {{count, number}} reviews. {{notes}}",
+    "foundReviews_one": "Found {{count, number}} review. {{notes}}",
+    "foundReviews_other": "Found {{count, number}} reviews. {{notes}}",
+    "noReviewsFound": "No reviews found on this page. Check that the URL opens a page that lists reviews, or enter the CSS selectors yourself.",
     "frequency": "Frequency",
-    "hideCssSelectors": "Hide CSS Selectors",
+    "hideCssSelectors": "Hide advanced settings",
     "jsonLdDescription": "This scraper uses structured data (Schema.org) embedded in the page. No CSS selectors needed.",
     "jsonLdTitle": "JSON-LD Extraction",
     "maxPages": "Max Pages",
@@ -67,27 +121,29 @@
     "rating": "Rating",
     "reviewContainer": "Review Container *",
     "save": "Save Scraper",
+    "saveFailed": "Could not save the scraper. Please try again.",
     "scraperName": "Scraper Name",
     "scraperNamePlaceholder": "My Review Scraper",
     "selectorsAutoDetected": "These selectors were auto-detected. Adjust if needed.",
     "selectorsDefault": "These selectors were set to defaults. Adjust if needed.",
     "selectorTitle": "Title",
-    "showCssSelectors": "Show CSS Selectors",
+    "showCssSelectors": "Advanced: which part of the page is a review (CSS selectors)",
     "start": "Start",
     "textContent": "Text Content *",
     "warnings": "Warnings:",
     "websiteUrl": "Website URL",
-    "websiteUrlPlaceholder": "https://example.com/reviews"
+    "websiteUrlPlaceholder": "https://example.com/reviews",
+    "adminOnlyNotice": "Only admins can create or change web scrapers. You can view this configuration."
   },
   "empty": {
-    "createButton": "Create Scraper",
-    "description": "Create a scraper to start collecting feedback from websites",
-    "title": "No scrapers configured"
+    "createButton": "Add a data source",
+    "description": "Add a review page, an app, a file or a tool to start collecting feedback.",
+    "title": "No data sources yet"
   },
   "generator": {
-    "completed": "Generated {{count}} synthetic reviews. They'll appear shortly after processing.",
-    "completed_one": "Generated {{count}} synthetic review. It'll appear shortly after processing.",
-    "completed_other": "Generated {{count}} synthetic reviews. They'll appear shortly after processing.",
+    "completed": "Generated {{count, number}} synthetic reviews. They'll appear shortly after processing.",
+    "completed_one": "Generated {{count, number}} synthetic review. It'll appear shortly after processing.",
+    "completed_other": "Generated {{count, number}} synthetic reviews. They'll appear shortly after processing.",
     "generate": "Generate",
     "generating": "Generating…",
     "runningNote": "Generating reviews with AI. This can take up to a minute.",
@@ -105,19 +161,27 @@
     "fieldTimestamp": "ISO 8601 UTC (e.g. 2026-03-20T14:30:00Z). When the feedback was originally created.",
     "formatGuide": "Format guide",
     "importing": "Importing...",
-    "importItems": "Import {{count}} Item{{plural}}",
-    "importItems_one": "Import {{count}} Item{{plural}}",
-    "importItems_other": "Import {{count}} Item{{plural}}",
-    "itemsImported_one": "{{count}} item imported",
-    "itemsImported_other": "{{count}} items imported",
-    "moreItems": "...and {{count}} more items",
-    "moreItems_one": "...and {{count}} more item",
-    "moreItems_other": "...and {{count}} more items",
+    "importItems": "Import {{count, number}} Item{{plural}}",
+    "importItems_one": "Import {{count, number}} Item{{plural}}",
+    "importItems_other": "Import {{count, number}} Item{{plural}}",
+    "itemsImported_one": "{{count, number}} item imported",
+    "itemsImported_other": "{{count, number}} items imported",
+    "moreItems": "...and {{count, number}} more items",
+    "moreItems_one": "...and {{count, number}} more item",
+    "moreItems_other": "...and {{count, number}} more items",
     "optionalFields": "Optional: rating (1-5), title, user_id, url, metadata (flat key-value).",
     "pipelineNote": "Items are now being processed through the pipeline. They'll appear on the dashboard shortly.",
-    "preview": "Preview — {{count}} item{{plural}}",
-    "preview_one": "Preview — {{count}} item{{plural}}",
-    "preview_other": "Preview — {{count}} item{{plural}}",
+    "preview": "Preview — {{count, number}} item{{plural}}",
+    "preview_one": "Preview — {{count, number}} item{{plural}}",
+    "preview_other": "Preview — {{count, number}} item{{plural}}",
+    "reasonInvalid": "{{field}}: {{message}}",
+    "reasonNotObject": "not a JSON object",
+    "reasonRequired": "{{field}} is required",
+    "reasonType": "{{field}} has the wrong type",
+    "removeFile": "Remove file",
+    "skippedItem": "Item {{position}}: {{reasons}}",
+    "skippedTitle_one": "{{count, number}} item will be skipped. Fix it in the file and upload again to include it.",
+    "skippedTitle_other": "{{count, number}} items will be skipped. Fix them in the file and upload again to include them.",
     "templateNote": "The template file includes full instructions and LLM-ready documentation.",
     "title": "JSON Upload"
   },
@@ -125,14 +189,14 @@
     "addReviewManually": "Add Review Manually",
     "backToEdit": "Back to edit",
     "cancel": "Cancel",
-    "charCount": "{{count}} / {{max}}",
     "detected": "Detected: {{source}}",
     "enterBothFields": "Please enter both URL and review text",
     "exceedsMax": "Text exceeds maximum of {{max}} characters",
     "importing": "Importing...",
-    "importReviews": "Import {{count}} Reviews",
-    "importReviews_one": "Import {{count}} Review",
-    "importReviews_other": "Import {{count}} Reviews",
+    "importReviews": "Import {{count, number}} Reviews",
+    "importReviews_one": "Import {{count, number}} Review",
+    "importReviews_other": "Import {{count, number}} Reviews",
+    "invalidUrl": "Enter a full web address that starts with http:// or https://",
     "noReviewsDescription": "The pasted text didn't contain recognizable reviews. You can add reviews manually below.",
     "noReviewsDetected": "No reviews detected",
     "noReviewsTitle": "No reviews could be detected",
@@ -141,74 +205,173 @@
     "parsingTitle": "Parsing reviews with AI...",
     "pasteReviews": "Paste reviews",
     "pasteReviewsPlaceholder": "Paste the reviews you copied from the website here...",
-    "reviewsFound_one": "{{count}} review found",
-    "reviewsFound_other": "{{count}} reviews found",
+    "reviewsFound_one": "{{count, number}} review found",
+    "reviewsFound_other": "{{count, number}} reviews found",
     "source": "Source: {{source}}",
     "sourceUrl": "Source URL",
     "sourceUrlPlaceholder": "https://example.com/reviews",
     "title": "Manual Import",
-    "unparsedSections_one": "⚠️ {{count}} section could not be parsed",
-    "unparsedSections_other": "⚠️ {{count}} sections could not be parsed"
+    "unparsedSections_one": "{{count, number}} section could not be parsed",
+    "unparsedSections_other": "{{count, number}} sections could not be parsed",
+    "datesRequired_one": "{{count, number}} review needs a date before the import can run.",
+    "datesRequired_other": "{{count, number}} reviews need a date before the import can run.",
+    "datesDefaulted_one": "{{count, number}} review had no date in the text, so it uses today's import date. You can change it below.",
+    "datesDefaulted_other": "{{count, number}} reviews had no date in the text, so they use today's import date. You can change them below.",
+    "importFailed": "Failed to import reviews",
+    "clearDraft": "Clear draft",
+    "draftDropped": "Your saved draft was longer than {{max}} characters, so it was cleared. Paste a shorter text to continue."
   },
-  "newSource": "New Source",
+  "newSource": "New source",
   "parsedReview": {
     "authorPlaceholder": "Author",
-    "deleteReview": "Delete review",
     "noRating": "No rating",
-    "star_one": "{{count}} star",
-    "star_other": "{{count}} stars",
+    "star_one": "{{count, number}} star",
+    "star_other": "{{count, number}} stars",
     "textPlaceholder": "Review text",
-    "titlePlaceholder": "Review title (optional)"
+    "titlePlaceholder": "Review title (optional)",
+    "dateLabel": "Review date (required)",
+    "dateDefaulted": "No date found: set to the import date"
   },
   "pluginConfig": {
     "automaticSchedule": "Automatic Schedule",
     "close": "Close",
-    "configuration": "Configuration",
     "disabled": "Disabled",
     "enabled": "Enabled",
-    "hide": "Hide",
     "runNow": "Run Now",
     "runTriggered": "Run triggered",
     "save": "Save",
-    "saved": "Saved!",
     "scheduleDescription": "Run this source on its configured schedule",
     "select": "Select...",
-    "show": "Show",
-    "test": "Test"
+    "configuredInSettings": "{{name}} is connected in {{where}}: paste the token and its settings there, then come back here.",
+    "openDataSourceSettings": "Open source settings"
   },
   "refresh": "Refresh",
   "status": {
     "completed": "Completed",
     "completedWithErrors": "Completed with errors",
     "failed": "Failed",
-    "moreErrors": "...and {{count}} more errors",
-    "moreErrors_one": "...and {{count}} more error",
-    "moreErrors_other": "...and {{count}} more errors",
+    "moreErrors": "...and {{count, number}} more errors",
+    "moreErrors_one": "...and {{count, number}} more error",
+    "moreErrors_other": "...and {{count, number}} more errors",
     "pagesScraped": "Pages scraped:",
     "reviewsFound": "Reviews found:",
     "running": "Running..."
   },
-  "subtitle": "Configure web scrapers and app review sources to collect feedback",
+  "subtitle": "Everywhere your feedback comes from: review pages, apps, files and tools",
   "syntheticCard": {
     "generate": "Generate",
-    "lastSummary": "Last run: {{items}} items generated on {{date}}",
+    "lastSummary": "Last run: {{items, number}} items generated on {{date}}",
     "neverRun": "Not run yet — click Generate to create synthetic reviews.",
     "sectionTitle": "Synthetic Data"
   },
   "templateSelector": {
-    "appReviewSources": "App Review Sources",
-    "autoDiscovered": "Auto-discovered",
     "cancel": "Cancel",
-    "csvUpload": "CSV Upload",
-    "csvUploadDescription": "Upload a CSV file with feedback rows. Each row is enriched and added to the feedback table.",
-    "jsonUpload": "JSON Upload",
-    "jsonUploadDescription": "Upload a JSON file with structured feedback data. Download a template to get started.",
-    "manualImport": "Manual Import",
-    "manualImportDescription": "Paste reviews from any website and import them with AI parsing.",
-    "manualInput": "Manual Input",
-    "syntheticData": "Synthetic Data",
-    "title": "Add Data Source",
-    "webScraperTemplates": "Web Scraper Templates"
+    "title": "Add a data source",
+    "scrapersAdminOnly": "Only admins can add web scrapers.",
+    "importsAdminOnly": "Only admins can import data (paste, JSON or CSV upload, S3 import)."
   },
-  "title": "Data Sources"
+  "title": "Data sources",
+  "loading": "Loading data sources…",
+  "appCard": {
+    "maxReviews": "Max Reviews",
+    "maxPages": "Max Pages",
+    "allPages": "All",
+    "unnamed": "Unnamed App",
+    "loading": "Loading app configurations…",
+    "deleteConfirmTitle": "Delete App",
+    "deleteConfirmMessage": "Are you sure you want to remove this app configuration?",
+    "editApp": "Edit App",
+    "addNewApp": "Add New App",
+    "addApp": "Add App",
+    "configuredApps": "Configured Apps",
+    "noApps": "No apps configured yet",
+    "addFirstApp": "Add your first app",
+    "web": {
+      "configuredPages": "Review pages",
+      "addPage": "Add page",
+      "addNewPage": "Add review page",
+      "editPage": "Edit review page",
+      "noPages": "No review pages added yet",
+      "addFirstPage": "Add your first review page",
+      "unnamed": "Unnamed page",
+      "deleteConfirmTitle": "Remove review page",
+      "deleteConfirmMessage": "Are you sure you want to remove this review page?"
+    },
+    "kindLabel": "Type",
+    "kind": {
+      "reviewPage": "Review page",
+      "ios": "iPhone app",
+      "android": "Android app",
+      "app": "App"
+    }
+  },
+  "sourceMenu": {
+    "prompt": "What do you have?",
+    "advancedHint": "For technical setups",
+    "groups": {
+      "website": "A website link",
+      "app": "An app",
+      "file": "A file",
+      "paste": "Paste text",
+      "tool": "A tool",
+      "advanced": "Advanced"
+    },
+    "items": {
+      "webReviews": {
+        "title": "Review page",
+        "description": "A public page that lists reviews, such as Trustpilot, TripAdvisor or a forum."
+      },
+      "customScraper": {
+        "title": "Custom scraper",
+        "description": "Your own site's review pages, read on a schedule you choose."
+      },
+      "cssScraper": {
+        "title": "Scraper with CSS selectors",
+        "description": "For pages without review markup: you point at each part of a review."
+      },
+      "ios": {
+        "title": "iPhone app (App Store)",
+        "description": "Reviews of an app on the Apple App Store."
+      },
+      "android": {
+        "title": "Android app (Google Play)",
+        "description": "Reviews of an app on Google Play."
+      },
+      "csv": {
+        "title": "Spreadsheet (CSV)",
+        "description": "Upload a CSV file with one review per row."
+      },
+      "json": {
+        "title": "JSON file",
+        "description": "Upload a file exported from another tool."
+      },
+      "s3": {
+        "title": "Many files at once (S3)",
+        "description": "Drop CSV or JSON files into the import folder and they are read for you."
+      },
+      "paste": {
+        "title": "Paste reviews",
+        "description": "Paste reviews copied from anywhere; AI splits them into separate reviews."
+      },
+      "github": {
+        "title": "GitHub Issues",
+        "description": "Issues and comments from your GitHub repositories."
+      },
+      "synthetic": {
+        "title": "Sample reviews for demos",
+        "description": "AI-written reviews, marked as sample data, to try the platform."
+      }
+    }
+  },
+  "frequency": {
+    "manual": "Manual only",
+    "hourly": "Every hour",
+    "daily": "Daily",
+    "everyMinutes_one": "Every minute",
+    "everyMinutes_other": "Every {{count, number}} minutes",
+    "everyHours_one": "Every hour",
+    "everyHours_other": "Every {{count, number}} hours",
+    "everyDays_one": "Daily",
+    "everyDays_other": "Every {{count, number}} days"
+  }
 }

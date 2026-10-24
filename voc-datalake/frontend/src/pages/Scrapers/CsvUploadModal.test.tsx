@@ -2,17 +2,27 @@
  * @fileoverview Tests for CsvUploadModal component (prd-fix #7 / P9).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { ReactElement } from 'react'
+import { renderWithQueryClient } from '@test/query-client'
+import { dimensionsWire, sourcesWire } from '@test/dimensionFixtures'
+
+vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
+import { resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import CsvUploadModal from './CsvUploadModal'
 
-const mockUploadCsvFeedback = vi.fn()
+const render = (ui: ReactElement) => renderWithQueryClient(ui)
+
+const mockUploadCsvFeedback = vi.fn<(...args: unknown[]) => unknown>()
 
 vi.mock('../../api/scrapersApi', () => ({
   scrapersApi: {
     uploadCsvFeedback: (...args: unknown[]) => mockUploadCsvFeedback(...args),
   },
 }))
+const mockAfterIngest = vi.fn()
+vi.mock('../../api/invalidateFeedbackData', () => ({ useInvalidateFeedbackData: () => mockAfterIngest }))
 
 const CSV = 'id,text,rating\n1,"Great app",5\n2,"Login fails",1\n'
 
@@ -29,9 +39,26 @@ function getFileInput(): HTMLInputElement {
   return input
 }
 
+/** Render the open modal with `uploadCsvFeedback` resolving to `result`; returns a user. */
+function renderOpenWithUploadResult(result: Record<string, unknown>, onClose: () => void = () => {}) {
+  mockUploadCsvFeedback.mockResolvedValue(result)
+  render(<CsvUploadModal isOpen onClose={onClose} />)
+  return userEvent.setup()
+}
+
+/** Pick the default CSV fixture and press Upload. */
+async function uploadDefaultCsv(user: ReturnType<typeof userEvent.setup>) {
+  await user.upload(getFileInput(), makeCsvFile())
+  await user.click(screen.getByRole('button', { name: /upload/i }))
+}
+
+const DEFAULT_MAP = { id: 'id', text: 'text', rating: 'rating' }
+
 describe('CsvUploadModal', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    resetFetchApi()
+    routeFetchApi({ 'GET /settings/dimensions': () => dimensionsWire, 'GET /settings/sources': () => sourcesWire })
   })
 
   it('renders nothing when closed', () => {
@@ -68,11 +95,9 @@ describe('CsvUploadModal', () => {
   })
 
   it('uploads the file text and shows the queued-count success view', async () => {
-    const user = userEvent.setup()
-    mockUploadCsvFeedback.mockResolvedValue({
+    const user = renderOpenWithUploadResult({
       success: true, imported_count: 2, total_rows: 2,
     })
-    render(<CsvUploadModal isOpen onClose={() => {}} />)
 
     await user.upload(getFileInput(), makeCsvFile())
     expect(screen.getByText('feedback.csv')).toBeInTheDocument()
@@ -82,43 +107,43 @@ describe('CsvUploadModal', () => {
     await waitFor(() => {
       expect(mockUploadCsvFeedback).toHaveBeenCalledWith({
         csv_text: CSV,
-        default_source: 'csv_upload',
+        default_source: undefined,
+        source_id: 'manual_import',
+        column_map: DEFAULT_MAP,
       })
     })
     expect(await screen.findByText(/2 rows queued for processing/i)).toBeInTheDocument()
+    expect(mockAfterIngest).toHaveBeenCalledExactlyOnceWith({ afterIngest: true })
   })
 
   it('passes a custom default source label', async () => {
-    const user = userEvent.setup()
-    mockUploadCsvFeedback.mockResolvedValue({
+    const user = renderOpenWithUploadResult({
       success: true, imported_count: 1, total_rows: 1,
     })
-    render(<CsvUploadModal isOpen onClose={() => {}} />)
 
-    const sourceInput = screen.getByPlaceholderText('csv_upload')
+    const sourceInput = screen.getByLabelText('Default channel')
+
     await user.clear(sourceInput)
     await user.type(sourceInput, 'store_reviews')
-    await user.upload(getFileInput(), makeCsvFile())
-    await user.click(screen.getByRole('button', { name: /upload/i }))
+    await uploadDefaultCsv(user)
 
     await waitFor(() => {
       expect(mockUploadCsvFeedback).toHaveBeenCalledWith({
         csv_text: CSV,
         default_source: 'store_reviews',
+        source_id: 'manual_import',
+        column_map: DEFAULT_MAP,
       })
     })
   })
 
   it('surfaces server warnings in the success view', async () => {
-    const user = userEvent.setup()
-    mockUploadCsvFeedback.mockResolvedValue({
+    const user = renderOpenWithUploadResult({
       success: true, imported_count: 1, total_rows: 2,
       warnings: ['row 2: empty text — skipped'],
     })
-    render(<CsvUploadModal isOpen onClose={() => {}} />)
 
-    await user.upload(getFileInput(), makeCsvFile())
-    await user.click(screen.getByRole('button', { name: /upload/i }))
+    await uploadDefaultCsv(user)
 
     expect(await screen.findByText(/row 2: empty text/i)).toBeInTheDocument()
   })
@@ -128,8 +153,7 @@ describe('CsvUploadModal', () => {
     mockUploadCsvFeedback.mockRejectedValue(new Error('API Error: 400'))
     render(<CsvUploadModal isOpen onClose={() => {}} />)
 
-    await user.upload(getFileInput(), makeCsvFile())
-    await user.click(screen.getByRole('button', { name: /upload/i }))
+    await uploadDefaultCsv(user)
 
     expect(await screen.findByText(/API Error: 400/i)).toBeInTheDocument()
     // still on the form (no success view)
@@ -146,15 +170,12 @@ describe('CsvUploadModal', () => {
   })
 
   it('closes from the Done button after a successful upload', async () => {
-    const user = userEvent.setup()
     const onClose = vi.fn()
-    mockUploadCsvFeedback.mockResolvedValue({
+    const user = renderOpenWithUploadResult({
       success: true, imported_count: 2, total_rows: 2,
-    })
-    render(<CsvUploadModal isOpen onClose={onClose} />)
+    }, onClose)
 
-    await user.upload(getFileInput(), makeCsvFile())
-    await user.click(screen.getByRole('button', { name: /upload/i }))
+    await uploadDefaultCsv(user)
     await user.click(await screen.findByRole('button', { name: /done/i }))
 
     expect(onClose).toHaveBeenCalledTimes(1)
@@ -163,5 +184,73 @@ describe('CsvUploadModal', () => {
   it('offers a template download', () => {
     render(<CsvUploadModal isOpen onClose={() => {}} />)
     expect(screen.getByRole('button', { name: /download template/i })).toBeInTheDocument()
+  })
+
+  it('suggests a mapping from the header: fields, dimension columns, and metadata for the rest', async () => {
+    const user = renderOpenWithUploadResult({ success: true, imported_count: 1, total_rows: 1 })
+    await user.upload(getFileInput(), makeCsvFile('Comment,Product,Region,Labels\n"Login fails",mobile_app,EU,vip\n'))
+    const mapping = await screen.findByRole('group', { name: 'Column mapping' })
+    expect(within(mapping).getByLabelText('Where Comment goes')).toHaveValue('text')
+    expect(within(mapping).getByLabelText('Where Product goes')).toHaveValue('dimension:product')
+    expect(within(mapping).getByLabelText('Where Region goes')).toHaveValue('metadata')
+    expect(within(mapping).getByLabelText('Where Labels goes')).toHaveValue('tags')
+  })
+
+  it('sends the chosen source profile and an edited mapping', async () => {
+    const user = renderOpenWithUploadResult({ success: true, imported_count: 1, total_rows: 1 })
+    await screen.findByRole('option', { name: 'Sales CSV' })
+    await user.selectOptions(screen.getByLabelText('Source'), 'sales_csv')
+    const csv = 'Comment,Segment,Internal\n"Great",partner,x\n'
+    await user.upload(getFileInput(), makeCsvFile(csv))
+    await user.selectOptions(await screen.findByLabelText('Where Segment goes'), 'dimension:user_type')
+    await user.selectOptions(screen.getByLabelText('Where Internal goes'), 'ignore')
+    await user.click(screen.getByRole('button', { name: /upload/i }))
+    await waitFor(() => expect(mockUploadCsvFeedback).toHaveBeenCalledWith({
+      csv_text: csv, default_source: undefined, source_id: 'sales_csv',
+      column_map: { Comment: 'text', Segment: 'dimension:user_type', Internal: 'ignore' },
+    }))
+  })
+
+  it('marks a restricted source and blocks an upload without a text column', async () => {
+    const user = renderOpenWithUploadResult({ success: true, imported_count: 1, total_rows: 1 })
+    expect(await screen.findByRole('option', { name: 'Support tickets (restricted)' })).toBeInTheDocument()
+    await user.upload(getFileInput(), makeCsvFile('Note,When\nhello,2026-01-01\n'))
+    expect(await screen.findByRole('status')).toHaveTextContent('Map one column to Feedback text')
+    expect(screen.getByRole('button', { name: /upload/i })).toBeDisabled()
+  })
+})
+
+// A Radar source (docs/radar.md): its rows go to the Radar page, never the Feedback page.
+const RADAR_SOURCES = {
+  sources: [{
+    id: 'rival_reviews', label: 'Rival reviews', pii: 'redact', retention_days: null, restricted: false,
+    dimension_defaults: {}, tags: [], radar_brand: 'Acme', radar_domains: ['acme.com'],
+  }],
+}
+
+async function chooseRadarSource() {
+  const user = renderOpenWithUploadResult({ success: true, imported_count: 1, total_rows: 1 })
+  await screen.findByRole('option', { name: 'Rival reviews' })
+  await user.selectOptions(screen.getByRole('combobox', { name: /source/i }), 'rival_reviews')
+  return user
+}
+
+describe('CsvUploadModal with a Radar source', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetFetchApi()
+    routeFetchApi({ 'GET /settings/dimensions': () => dimensionsWire, 'GET /settings/sources': () => RADAR_SOURCES })
+  })
+
+  it('says under the picker that the rows go to the Radar page', async () => {
+    await chooseRadarSource()
+    expect(screen.getByText(/Radar source \(Acme\): these rows go to the Radar page/)).toBeInTheDocument()
+  })
+
+  it('tells that the uploaded rows will appear on the Radar page, not the Feedback page', async () => {
+    const user = await chooseRadarSource()
+    await uploadDefaultCsv(user)
+    expect(await screen.findByText(/appear on the Radar page under Acme/)).toBeInTheDocument()
+    expect(screen.queryByText(/appear on the Feedback page/)).not.toBeInTheDocument()
   })
 })

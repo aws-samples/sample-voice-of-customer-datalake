@@ -1,14 +1,21 @@
+import { useState } from 'react'
 import { ChevronDown, ChevronRight, Layers } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import { ProblemRow } from './ProblemRow'
+import { UrgentBadge } from './UrgentBadge'
 import { buildResolutionKey } from './problemResolution'
-import type { SubcategoryGroup } from './problemResolution'
+import type { SubcategoryGroup } from '../../api/problemsApi'
+
+/** Problems a subcategory shows at a time. */
+const PROBLEMS_PAGE = 10
 
 interface SubcategoryRowProps {
   readonly categoryName: string
   readonly subcategoryGroup: SubcategoryGroup
   readonly isExpanded: boolean
   readonly onToggle: () => void
-  readonly expandedProblems: Set<string>
+  readonly expandedProblems: ReadonlySet<string>
   readonly onToggleProblem: (key: string) => void
   readonly onToggleResolved: (key: string, resolved: boolean) => void
   /** Resolution keys with an in-flight toggle — disables only their own
@@ -26,38 +33,42 @@ export function SubcategoryRow({
   onToggleResolved,
   pendingKeys,
 }: SubcategoryRowProps) {
+  const { t } = useTranslation('problemAnalysis')
+  const labels = useDisplayLabels()
   const subcategoryKey = `${categoryName}:${subcategoryGroup.subcategory}`
+  // A long subcategory opens on its first problems, with "Show more" for the rest.
+  const [shown, setShown] = useState(PROBLEMS_PAGE)
+  const problems = subcategoryGroup.problems.slice(0, shown)
+  const remaining = subcategoryGroup.problems.length - problems.length
 
   return (
-    <div key={subcategoryKey} className="bg-white">
+    <div key={subcategoryKey} className="bg-card">
       <button
+        type="button"
         onClick={onToggle}
-        className="w-full px-3 sm:px-6 py-2.5 sm:py-3 pl-6 sm:pl-10 flex items-center justify-between hover:bg-gray-50 active:bg-gray-100 transition-colors"
+        aria-expanded={isExpanded}
+        className="w-full px-3 sm:px-5 py-2.5 sm:py-3 pl-6 sm:pl-10 flex items-center justify-between hover:bg-bg-hover active:bg-border transition-colors focus-ring text-left"
       >
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           {isExpanded ? (
-            <ChevronDown size={16} className="text-gray-400 flex-shrink-0 sm:w-[18px] sm:h-[18px]" />
+            <ChevronDown size={16} className="text-muted flex-shrink-0 sm:w-[18px] sm:h-[18px]" />
           ) : (
-            <ChevronRight size={16} className="text-gray-400 flex-shrink-0 sm:w-[18px] sm:h-[18px]" />
+            <ChevronRight size={16} className="text-muted flex-shrink-0 sm:w-[18px] sm:h-[18px]" />
           )}
-          <Layers size={12} className="text-blue-500 flex-shrink-0 sm:w-[14px] sm:h-[14px]" />
-          <span className="font-medium text-gray-700 capitalize text-xs sm:text-sm truncate">
-            {subcategoryGroup.subcategory.replace(/_/g, ' ')}
+          <Layers size={14} className="text-muted flex-shrink-0" aria-hidden="true" />
+          <span className="font-medium text-text text-xs sm:text-sm min-w-0 break-words">
+            {labels.subcategory(subcategoryGroup.subcategory, categoryName)}
           </span>
-          <span className="text-xs text-gray-500 hidden xs:inline whitespace-nowrap">
-            {subcategoryGroup.problems.length} problems • {subcategoryGroup.totalItems} reviews
+          <span className="text-xs text-muted hidden sm:inline whitespace-nowrap">
+            {t('tree.problems', { count: subcategoryGroup.problemCount })} • {t('tree.reviews', { count: subcategoryGroup.totalItems })}
           </span>
-          {subcategoryGroup.urgentCount > 0 && (
-            <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-xs rounded-full flex-shrink-0">
-              {subcategoryGroup.urgentCount}
-            </span>
-          )}
+          <UrgentBadge count={subcategoryGroup.urgentCount} />
         </div>
       </button>
 
       {isExpanded && (
-        <div className="divide-y divide-gray-50">
-          {subcategoryGroup.problems.map((problemGroup) => {
+        <div className="divide-y divide-border">
+          {problems.map((problemGroup) => {
             const problemKey = `${categoryName}:${subcategoryGroup.subcategory}:${problemGroup.problem}`
             const resolutionKey = buildResolutionKey(categoryName, subcategoryGroup.subcategory, problemGroup.problem)
             return (
@@ -72,6 +83,13 @@ export function SubcategoryRow({
               />
             )
           })}
+          {remaining > 0 && (
+            <div className="px-3 sm:px-5 py-2 pl-10 sm:pl-16">
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShown((n) => n + PROBLEMS_PAGE)}>
+                {t('tree.showMoreProblems', { count: Math.min(remaining, PROBLEMS_PAGE), total: remaining })}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

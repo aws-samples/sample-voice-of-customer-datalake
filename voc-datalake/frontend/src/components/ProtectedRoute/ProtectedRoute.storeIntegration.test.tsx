@@ -17,41 +17,15 @@
  * @module components/ProtectedRoute
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter, Routes, Route } from 'react-router-dom'
-import ProtectedRoute from './ProtectedRoute'
+import { screen, waitFor } from '@testing-library/react'
+import { renderProtected } from './protectedRoute-fixtures'
+import { emptySession } from './protectedRoute-mock-fixtures'
 import { useAuthStore } from '../../store/authStore'
 import { authService } from '../../services/auth'
 import { endExpiredSession } from '../../services/sessionExpiry'
 
-vi.mock('../../services/auth', () => ({
-  authService: {
-    isConfigured: vi.fn(() => true),
-    refreshSession: vi.fn(),
-    signOut: vi.fn(),
-  },
-}))
-
-vi.mock('../../services/sessionExpiry', () => ({
-  endExpiredSession: vi.fn(),
-}))
-
-function renderProtected() {
-  return render(
-    <MemoryRouter
-      initialEntries={['/protected']}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-    >
-      <Routes>
-        <Route path="/login" element={<div>Login Page</div>} />
-        <Route
-          path="/protected"
-          element={<ProtectedRoute><div>Protected Content</div></ProtectedRoute>}
-        />
-      </Routes>
-    </MemoryRouter>,
-  )
-}
+vi.mock('../../services/auth', () => import('./protectedRoute-mock-fixtures'))
+vi.mock('../../services/sessionExpiry', () => import('./protectedRoute-mock-fixtures'))
 
 /**
  * The state a page load produces: `isAuthenticated` came back from
@@ -71,14 +45,14 @@ function restoreUnvalidatedSession() {
 describe('ProtectedRoute against the real auth store', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    ;(authService.isConfigured as ReturnType<typeof vi.fn>).mockReturnValue(true)
+    vi.mocked(authService.isConfigured).mockReturnValue(true)
     useAuthStore.getState().logout()
   })
 
   it('ends the session with the reason even though the refresh clears auth state first', async () => {
     restoreUnvalidatedSession()
     // Exactly what the real refreshSession does on a rejected refresh.
-    ;(authService.refreshSession as ReturnType<typeof vi.fn>).mockImplementation(() => {
+    vi.mocked(authService.refreshSession).mockImplementation(() => {
       useAuthStore.getState().logout()
       return Promise.reject(new Error('Session refresh failed'))
     })
@@ -93,13 +67,13 @@ describe('ProtectedRoute against the real auth store', () => {
 
   it('renders the app once a real refresh validates the restored session', async () => {
     restoreUnvalidatedSession()
-    ;(authService.refreshSession as ReturnType<typeof vi.fn>).mockImplementation(() => {
+    vi.mocked(authService.refreshSession).mockImplementation(() => {
       useAuthStore.getState().setTokens({
         accessToken: 'fresh-access',
         idToken: 'fresh-id',
         refreshToken: 'fresh-refresh',
       })
-      return Promise.resolve(undefined)
+      return Promise.resolve(emptySession())
     })
 
     renderProtected()

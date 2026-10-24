@@ -1,0 +1,94 @@
+{
+  "tab": "Entscheidungen",
+  "title": "Entscheidungen",
+  "subtitle": "Verfolgen, zurückstellen oder verwerfen: der Grund, wie Erfolg gemessen wird und wann Sie aufhören würden.",
+  "new": "Neue Entscheidung",
+  "empty": "Noch keine Entscheidungen. Halten Sie eine fest, wenn Sie entscheiden, was mit einem Problem geschieht.",
+  "formLabel": "Entscheidung",
+  "verdict": {
+    "label": "Urteil",
+    "pursue": "Verfolgen",
+    "park": "Zurückstellen",
+    "reject": "Verwerfen"
+  },
+  "fields": {
+    "title": "Titel",
+    "rationale": "Begründung",
+    "successMetric": "Erfolgskennzahl",
+    "killCriterion": "Abbruchkriterium",
+    "reviewBy": "Überprüfen bis",
+    "launchedAt": "Gestartet am",
+    "feedbackIds": "Feedback-IDs",
+    "feedbackIdsHint": "IDs durch Leerzeichen oder Kommas trennen.",
+    "documents": "Belegdokumente"
+  },
+  "actions": {
+    "save": "Entscheidung speichern",
+    "cancel": "Abbrechen",
+    "edit": "Bearbeiten",
+    "pursue": "PR/FAQ entwerfen",
+    "pursueAgain": "Weiteres PR/FAQ entwerfen",
+    "pursueHint": "Startet die PR/FAQ-Erstellung mit dieser Entscheidung als Briefing.",
+    "pursueConfirmTitle": "PR/FAQ entwerfen?",
+    "pursueConfirmMessage": "Die KI entwirft ein PR/FAQ mit „{{title}}“ als Briefing. Das dauert einige Minuten; der Entwurf erscheint unter Dokumente, sobald er fertig ist.",
+    "pursueConfirm": "PR/FAQ entwerfen",
+    "pursued": "Aus dieser Entscheidung wurde ein PR/FAQ angefordert. Es erscheint unter Dokumente, sobald der Auftrag fertig ist.",
+    "prfaqReady": "PR/FAQ fertig: {{title}}",
+    "prfaqFailed": "Der PR/FAQ aus dieser Entscheidung konnte nicht erstellt werden. Entwerfen Sie ihn erneut, um es noch einmal zu versuchen.",
+    "revisit": "Neu bewerten",
+    "releaseWatch": "Release-Beobachtung",
+    "hideReleaseWatch": "Release-Beobachtung ausblenden"
+  },
+  "picker": {
+    "label": "Belegende Bewertungen",
+    "placeholder": "Bewertungen suchen und hinzufügen, z. B. „späte Lieferung“",
+    "results": "Passende Bewertungen",
+    "picked": "Hinzugefügte Bewertungen",
+    "searching": "Suche…",
+    "failed": "Die Suche ist fehlgeschlagen. Bitte erneut versuchen.",
+    "noMatch": "Keine Bewertung passt zu „{{q}}“.",
+    "linked": "Verknüpfte Bewertung {{n}}",
+    "remove": "{{label}} entfernen",
+    "advanced": "Erweitert: Bewertungs-IDs einfügen"
+  },
+  "decidedBy": "Entschieden von {{name}} am {{date}}",
+  "decidedOn": "Entschieden am {{date}}",
+  "evidence": "Belege",
+  "errors": {
+    "save": "Die Entscheidung konnte nicht gespeichert werden.",
+    "conflict": "Diese Entscheidung wurde geändert, seit Sie sie geöffnet haben. Laden Sie die Seite neu und versuchen Sie es erneut.",
+    "pursue": "Das PR/FAQ konnte nicht gestartet werden."
+  },
+  "releaseWatch": {
+    "title": "Release-Beobachtung",
+    "subtitle": "Feedback der {{days, number}} Tage vor und nach jedem Release.",
+    "empty": "Kein Release in diesem Zeitraum.",
+    "regression": "Regression",
+    "noRegression": "Keine Regression",
+    "before": "Vorher",
+    "after": "Nachher",
+    "volume": "Menge",
+    "negative": "Negativ",
+    "sentiment": "Stimmung",
+    "afterDays": "Beobachtete Tage danach: {{days, number}}",
+    "reasons": {
+      "sentiment_drop": "Die Stimmung ist gesunken",
+      "negative_rise": "Negatives Feedback hat zugenommen"
+    },
+    "complaints": "Zunehmende Beschwerden",
+    "evidenceItem": "Bewertung {{n}}",
+    "evidence": "Am negativsten nach dem Release",
+    "partial": "Unvollständig: gelesen bis {{date}}",
+    "loading": "Release-Beobachtung wird geladen",
+    "error": "Die Release-Beobachtung konnte nicht geladen werden.",
+    "topCategories": {
+      "before": "Top-Kategorien vorher",
+      "after": "Top-Kategorien nachher",
+      "new": "Neu unter den Top-Kategorien",
+      "grew_one": "Gestiegen von {{count, number}}",
+      "grew_other": "Gestiegen von {{count, number}}",
+      "count_one": "{{count, number}} Bewertung",
+      "count_other": "{{count, number}} Bewertungen"
+    }
+  }
+}

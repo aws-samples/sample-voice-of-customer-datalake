@@ -1,0 +1,188 @@
+{
+  "$comment": "Clone groups of scripts/audit/clones_struct.mjs kept on purpose. A group is silenced when EVERY copy's file matches one of `files` (and, with `name`, one copy is that function). Triaged 2026-10-24 (docs/code-audit.md).",
+  "entries": [
+    {
+      "files": [
+        "voc-datalake/frontend/src/assistant/plan/*.ts",
+        "voc-datalake/lambda/stream/src/assistant/plan/*.ts"
+      ],
+      "reason": "SPA <-> stream Lambda plan mirror (schema, validate, placeholders, graph, canonical), pinned by plan.lockstep tests; separate packages that must not import each other (jscpd ignores them too)"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/assistant/contract.ts",
+        "voc-datalake/lambda/stream/src/assistant/contract.ts"
+      ],
+      "reason": "the AG-UI contract mirror, pinned by contract.lockstep"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/assistant/sessions/serialize.ts",
+        "voc-datalake/lambda/stream/src/assistant/session/record.ts"
+      ],
+      "name": "sessionTitle",
+      "reason": "the session title rule both sides of the server-side session must agree on (SPA save vs stream Lambda save); separate packages"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/assistant/approvals/reviewImportSchemas.ts",
+        "voc-datalake/lambda/stream/src/assistant/tools/client/review-import-schemas.ts"
+      ],
+      "reason": "approval-card bounds mirrored from the stream tool schema, pinned by its lockstep test"
+    },
+    {
+      "files": [
+        "voc-datalake/lib/stacks/agent-runtime.ts",
+        "voc-datalake/lib/stacks/memory-workers.ts",
+        "voc-datalake/lib/stacks/api-assistant-lambdas.ts",
+        "voc-datalake/lib/stacks/api-engagement-lambdas.ts"
+      ],
+      "reason": "CDK builders repeat a Lambda/role construct shape per function on purpose: one function, one role (the 20 KB IAM policy split); logical ids and asset hashes must not move"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/assistant/approvals/scraperExecutors.ts",
+        "voc-datalake/frontend/src/assistant/approvals/userExecutors.ts"
+      ],
+      "reason": "approval executors of two tool families: same re-check-then-write flow, different routes, fingerprints and error mapping (pinned by their lockstep and approval tests)"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/components/FormQrCode/FormQrCode.tsx",
+        "voc-datalake/frontend/src/pages/Prioritization/SessionQrCode.tsx"
+      ],
+      "reason": "QR panels for a feedback form and a voting room: different URLs, labels and download names; similar JSX only"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/api/githubMetricsSchema.ts",
+        "voc-datalake/frontend/src/api/releaseWatchSchema.ts"
+      ],
+      "reason": "lenient Zod boundary normalisers of two wire shapes (the wire-shape rule wants one per payload)"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/stream/src/assistant/tools/server/agents.ts",
+        "voc-datalake/lambda/stream/src/assistant/tools/server/core.ts",
+        "voc-datalake/lambda/stream/src/assistant/tools/server/project.ts",
+        "voc-datalake/lambda/stream/src/assistant/tools/client/radar.ts",
+        "voc-datalake/lambda/stream/src/assistant/tools/client/scrapers.ts"
+      ],
+      "reason": "assistant tool definitions: each tool reads its own route with its own arguments and answer shape (one tool = one readable unit, pinned by tool tests)"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/api/prioritizationAxes.ts",
+        "voc-datalake/frontend/src/pages/Prioritization/scoringDraft.ts"
+      ],
+      "reason": "weight shares of saved axes (by id, activeAxes rule) vs of the unsaved editor draft (by key, archived flag): two shapes on purpose, four lines each"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/pages/ProblemAnalysis/ProblemAnalysis.tsx",
+        "voc-datalake/frontend/src/pages/ProblemAnalysis/ProblemAnalysisPDFContent.tsx"
+      ],
+      "reason": "header totals of the screen and of the PDF over two different group types (CategoryGroup vs CategoryGroupPDF)"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/components/ProfileMenu/useMenuButton.ts",
+        "voc-datalake/frontend/src/pages/FeedbackForms/FormEditor.tsx"
+      ],
+      "reason": "the planted-style look-alike: a menu moves on ArrowUp/ArrowDown, a tablist on ArrowLeft/ArrowRight (WAI-ARIA); same shape, different keys"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/pages/FeedbackForms/FormsList.tsx",
+        "voc-datalake/frontend/src/pages/Projects/Projects.tsx"
+      ],
+      "reason": "two empty states (no forms / no projects) with their own copy and call to action"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/pages/Login/LoginSharedComponents.tsx",
+        "voc-datalake/frontend/src/pages/ProjectDetail/PersonaEditModal.tsx"
+      ],
+      "reason": "labelled inputs of the login forms (autocomplete, error wiring) and of the persona editor (onChange of a persona field)"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/pages/Company/ContextParts.tsx",
+        "voc-datalake/frontend/src/pages/Settings/DataGovernanceSections.tsx"
+      ],
+      "reason": "section headers of two admin pages with different actions"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/pages/Agents/AgentDetail.tsx",
+        "voc-datalake/frontend/src/pages/Agents/Agents.tsx",
+        "voc-datalake/frontend/src/pages/Company/Company.tsx"
+      ],
+      "reason": "three icon tab strips (agent detail, agents views, company) with different prefetch/guard handlers; CANDIDATE for one TabStrip, but Company's icons lack aria-hidden, so merging changes its accessibility tree (not a byte-identical consolidation)"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/pages/Agents/AgentDetail.tsx",
+        "voc-datalake/frontend/src/pages/Memory/Memory.tsx"
+      ],
+      "reason": "a needs-decision banner and a load-failed notice: same alert shape, different meaning"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/pages/DataExplorer/ProcessedFeedbackView.tsx",
+        "voc-datalake/frontend/src/pages/DataExplorer/S3Browser.tsx"
+      ],
+      "reason": "row action buttons of the two explorer views (record vs object), each with its own icon set"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/pages/Prioritization/ListEmptyState.tsx",
+        "voc-datalake/frontend/src/pages/Vote/Vote.tsx"
+      ],
+      "reason": "empty/finished states of the prioritization list and the public ballot page (different bundles of the same SPA, different copy)"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/pages/DataExplorer/S3Browser.tsx",
+        "voc-datalake/frontend/src/pages/ProjectDetail/JobsSection.tsx"
+      ],
+      "reason": "an empty-folder note and a jobs header"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/pages/ProjectDetail/decisions/VerdictBadge.tsx",
+        "voc-datalake/frontend/src/pages/Scrapers/SourceCardParts.tsx"
+      ],
+      "reason": "badges mapping different enums (decision verdict, run outcome) to tones"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/components/MetricCard/MetricCard.tsx",
+        "voc-datalake/frontend/src/pages/Home/onboarding/OnboardingBuddy.tsx"
+      ],
+      "reason": "status icons for a trend and an onboarding step"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/pages/Company/CompanyContextSection.tsx",
+        "voc-datalake/frontend/src/pages/Company/MyContextSection.tsx"
+      ],
+      "reason": "company vs personal context editors: same query/draft/save wiring over two endpoints and query keys"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/components/WorkflowEditor/LoopSettings.tsx",
+        "voc-datalake/frontend/src/pages/Agents/AgentSections.tsx",
+        "voc-datalake/frontend/src/pages/Agents/AgentTriggers.tsx"
+      ],
+      "reason": "form rows (label + select/number input) of the agent and workflow editors: different fields, bounds and i18n keys"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/components/WorkflowEditor/ArrowSettings.tsx",
+        "voc-datalake/frontend/src/pages/Connect/MintTokenForm.tsx"
+      ],
+      "reason": "a select row of the workflow editor and of the token form"
+    }
+  ]
+}

@@ -1,0 +1,94 @@
+{
+  "tab": "Décisions",
+  "title": "Décisions",
+  "subtitle": "Poursuivre, mettre en attente ou rejeter : la raison, la mesure du succès et le moment où vous arrêteriez.",
+  "new": "Nouvelle décision",
+  "empty": "Aucune décision pour l'instant. Enregistrez-en une lorsque vous choisissez quoi faire d'un problème.",
+  "formLabel": "Décision",
+  "verdict": {
+    "label": "Verdict",
+    "pursue": "Poursuivre",
+    "park": "En attente",
+    "reject": "Rejeter"
+  },
+  "fields": {
+    "title": "Titre",
+    "rationale": "Justification",
+    "successMetric": "Indicateur de succès",
+    "killCriterion": "Critère d'arrêt",
+    "reviewBy": "À revoir avant le",
+    "launchedAt": "Lancé le",
+    "feedbackIds": "Identifiants des retours",
+    "feedbackIdsHint": "Séparez les identifiants par des espaces ou des virgules.",
+    "documents": "Documents justificatifs"
+  },
+  "actions": {
+    "save": "Enregistrer la décision",
+    "cancel": "Annuler",
+    "edit": "Modifier",
+    "pursue": "Rédiger un PR/FAQ",
+    "pursueAgain": "Rédiger un autre PR/FAQ",
+    "pursueHint": "Lance la génération du PR/FAQ avec cette décision comme brief.",
+    "pursueConfirmTitle": "Rédiger un PR/FAQ ?",
+    "pursueConfirmMessage": "L'IA rédige un PR/FAQ à partir de « {{title}} ». Cela prend quelques minutes ; le brouillon apparaît dans Documents une fois prêt.",
+    "pursueConfirm": "Rédiger le PR/FAQ",
+    "pursued": "Un PR/FAQ a été demandé à partir de cette décision. Il apparaîtra dans Documents à la fin de la tâche.",
+    "prfaqReady": "PR/FAQ prêt : {{title}}",
+    "prfaqFailed": "Le PR/FAQ de cette décision n’a pas pu être généré. Rédigez-le à nouveau pour réessayer.",
+    "revisit": "Réexaminer",
+    "releaseWatch": "Suivi de lancement",
+    "hideReleaseWatch": "Masquer le suivi de lancement"
+  },
+  "picker": {
+    "label": "Avis à l'appui",
+    "placeholder": "Recherchez des avis à ajouter, ex. « livraison en retard »",
+    "results": "Avis correspondants",
+    "picked": "Avis ajoutés",
+    "searching": "Recherche…",
+    "failed": "La recherche a échoué. Réessayez.",
+    "noMatch": "Aucun avis ne correspond à « {{q}} ».",
+    "linked": "Avis lié {{n}}",
+    "remove": "Retirer {{label}}",
+    "advanced": "Avancé : coller des identifiants d'avis"
+  },
+  "decidedBy": "Décidé par {{name}} le {{date}}",
+  "decidedOn": "Décidé le {{date}}",
+  "evidence": "Éléments",
+  "errors": {
+    "save": "La décision n'a pas pu être enregistrée.",
+    "conflict": "Cette décision a changé depuis que vous l'avez ouverte. Rechargez la page et réessayez.",
+    "pursue": "Le PR/FAQ n'a pas pu être lancé."
+  },
+  "releaseWatch": {
+    "title": "Suivi de lancement",
+    "subtitle": "Retours des {{days, number}} jours avant et après chaque lancement.",
+    "empty": "Aucun lancement sur cette période.",
+    "regression": "Régression",
+    "noRegression": "Pas de régression",
+    "before": "Avant",
+    "after": "Après",
+    "volume": "Volume",
+    "negative": "Négatifs",
+    "sentiment": "Sentiment",
+    "afterDays": "Jours observés après : {{days, number}}",
+    "reasons": {
+      "sentiment_drop": "Le sentiment a baissé",
+      "negative_rise": "Les retours négatifs ont augmenté"
+    },
+    "complaints": "Plaintes en hausse",
+    "evidenceItem": "Avis {{n}}",
+    "evidence": "Les plus négatifs après le lancement",
+    "partial": "Partiel : lu jusqu'au {{date}}",
+    "loading": "Chargement du suivi de lancement",
+    "error": "Le suivi de lancement n'a pas pu être chargé.",
+    "topCategories": {
+      "before": "Catégories principales avant",
+      "after": "Catégories principales après",
+      "new": "Nouvelle dans le classement",
+      "grew_one": "En hausse depuis {{count, number}}",
+      "grew_other": "En hausse depuis {{count, number}}",
+      "count_one": "{{count, number}} avis",
+      "count_other": "{{count, number}} avis"
+    }
+  }
+}

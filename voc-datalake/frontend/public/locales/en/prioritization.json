@@ -7,7 +7,7 @@
     "savingMobile": "..."
   },
   "ballot": {
-    "anonymousNotice": "Your ballot is anonymous: it counts toward the team's score for this document, but it is not attributed to you or to anyone else.",
+    "anonymousNotice": "Your ballot counts toward the team's score for this proposal. It is not tied to an account, and your name is saved with it only if you type one below.",
     "axes": {
       "confidence": "Confidence",
       "confidenceHint": "How certain are you about the two estimates above?",
@@ -28,7 +28,7 @@
       "unknown": "Your ballot could not be recorded just now. Try again in a moment."
     },
     "displayName": {
-      "hint": "Optional. Ballots are not attributed to a person, so you can leave this blank.",
+      "hint": "Optional. If you type a name it is saved with your ballot; it is not shown on the team score. Leave it blank to vote without one.",
       "label": "Your name (optional)"
     },
     "done": {
@@ -49,6 +49,7 @@
       "pending": "Submitting..."
     },
     "title": "Score this proposal",
+    "titleInactive": "Proposal vote",
     "unavailable": {
       "description": "Nothing was submitted. Reload the page to try again — the vote itself may well be open.",
       "title": "This vote could not be loaded"
@@ -76,7 +77,7 @@
     "saving": "Saving...",
     "title": "What this row holds"
   },
-  "configureApiEndpoint": "Configure API endpoint in Settings to view prioritization.",
+  "configureApiEndpoint": "Configure API endpoint in Administration → General to view prioritization.",
   "docType": {
     "prd": "PRD",
     "prfaq": "PR/FAQ"
@@ -96,7 +97,7 @@
     "unavailable": "Ratings unavailable"
   },
   "framework": {
-    "description": "Score each document on: <strong>Impact</strong>, <strong>Time to Market</strong>, <strong>Strategic Fit</strong>, and <strong>Confidence</strong>.",
+    "configured": "Score each proposal on: <strong>{{metrics}}</strong>.",
     "title": "Prioritization Framework"
   },
   "lineage": {
@@ -113,7 +114,7 @@
   },
   "loading": "Loading documents...",
   "noteTooLong": {
-    "description": "Notes are limited to {{max}} characters, and a longer note is refused rather than shortened. Trim the note on the row you edited, then save again. Nothing has been saved yet.",
+    "description": "Notes are limited to {{max, number}} characters, and a longer note is refused rather than shortened. Trim the note on the row you edited, then save again. Nothing has been saved yet.",
     "title": "A note is too long to save"
   },
   "notes": {
@@ -134,12 +135,16 @@
     "none": "Not Scored"
   },
   "roomVote": {
-    "anonymousNote": "Ballots cast here count toward the team score above and are not attributed to a person.",
-    "ballotsIn": "{{received}} of {{cap}} ballots in",
+    "anonymousNote": "Ballots cast here count toward the team score above. They are not tied to an account; a name is saved with a ballot only if the voter types one, and it is not shown here.",
+    "ballotsIn": "{{received, number}} of {{cap, number}} ballots in",
+    "checking": "Checking whether a vote is already open...",
     "close": "Close the vote",
     "closeFailed": "The vote could not be closed. Try again — until it closes, ballots are still accepted.",
     "closed": "This vote is closed. No further ballots are accepted.",
     "closing": "Closing...",
+    "confirmMessage": "This creates a public link and QR code for \"{{title}}\". Anyone who has the link can submit a ballot, without signing in, until you close the vote or it expires.",
+    "confirmOpen": "Open the vote",
+    "confirmTitle": "Open a public room vote?",
     "description": "Put a QR on screen and let everyone in the room submit one anonymous ballot from their phone, without an account.",
     "expired": "This vote has expired. No further ballots are accepted.",
     "open": "Open a room vote",
@@ -149,12 +154,12 @@
     "qrAccessibleName": "QR code opening the anonymous ballot page for {{title}}",
     "qrCaption": "Scan to score this proposal from a phone",
     "qrUnavailable": "The QR code is unavailable because this page's address cannot be shared.",
-    "scopeDocuments": "One ballot covers all {{documents}} documents behind it, so the room scores the whole proposal.",
+    "scopeDocuments": "One ballot covers all {{documents, number}} documents behind it, so the room scores the whole proposal.",
     "scopeNote": "This vote scores one proposal: {{title}}.",
     "title": "Score this as a room"
   },
   "row": {
-    "multiDocument": "{{documents}} documents, one ballot"
+    "multiDocument": "{{documents, number}} documents, one ballot"
   },
   "rowAction": {
     "composeConflict": "The row was not added to {{row}}'s project. Either the project already holds as many rows as it may, or its documents changed. Reload the page to see the current rows.",
@@ -169,12 +174,12 @@
     "recomposeRefused": "The documents on \"{{row}}\" were not changed, and the request was refused rather than failing: check what you picked — a row can hold only so many documents, and every one of them must still be in the project.",
     "title": "That change to the rows was not saved"
   },
-  "rowCount_one": "{{count}} proposal",
-  "rowCount_other": "{{count}} proposals",
+  "rowCount_one": "{{count, number}} proposal",
+  "rowCount_other": "{{count, number}} proposals",
   "rowDeleted": {
     "descriptionNoCount": "\"{{row}}\" is gone, together with any ballots cast on it. No ballot count was reported.",
     "description_one": "\"{{row}}\" is gone, and the one ballot cast on it went with it.",
-    "description_other": "\"{{row}}\" is gone, and the {{count}} ballots cast on it went with it.",
+    "description_other": "\"{{row}}\" is gone, and the {{count, number}} ballots cast on it went with it.",
     "dismiss": "Dismiss this message",
     "title": "The row was deleted"
   },
@@ -197,32 +202,115 @@
     "timeToMarket": "Time to Market",
     "timeToMarketDescription": "How quickly can this be delivered?",
     "title": "Prioritization Scores",
-    "wholeRow": "One ballot for all {{documents}} documents on this row.",
-    "yoursOnly": "Your own ballot. Saving writes only your scores."
+    "wholeRow": "One ballot for all {{documents, number}} documents on this row.",
+    "yoursOnly": "Your own ballot. Saving writes only your scores.",
+    "valueOfMax": "{{value}} of {{max, number}}"
   },
   "scoresUnavailable": {
     "description": "Your saved scores are unavailable right now, so the numbers below are defaults rather than what anyone entered. Reload the page before saving.",
     "staleDescription": "The latest refresh of the saved scores failed, so the figures shown are the last ones read successfully. Your own ballot is unaffected — there is no need to reload before saving.",
     "title": "Scores could not be loaded"
   },
+  "setup": {
+    "open": "Scoring setup",
+    "viewOpen": "How scoring works",
+    "title": "Scoring setup",
+    "description": "Choose the metrics everyone scores proposals on, from 1 to 5, and how much each one counts. The change applies to every row.",
+    "viewTitle": "How scoring works",
+    "viewDescription": "Everyone scores each proposal on these metrics, from 1 to 5. The priority score weighs them as shown.",
+    "adminsOnly": "Only admins can change the scoring setup.",
+    "loading": "Loading the scoring setup",
+    "loadFailed": "The scoring setup could not be loaded. Close this and try again.",
+    "templatesTitle": "Start from a template",
+    "templateConfirmTitle": "Use the {{template}} template?",
+    "templateBecomes": "Your metrics become {{metrics}}.",
+    "templateArchives": "These are archived — their scores are kept, but they stop counting: {{metrics}}.",
+    "templateNotSaved": "Nothing changes for anyone until you press Save.",
+    "templateApply": "Use template",
+    "metricsTitle": "Metrics ({{active, number}} of {{max, number}})",
+    "addMetric": "Add metric",
+    "untitled": "New metric",
+    "name": "Name",
+    "descriptionLabel": "Description",
+    "weight": "Weight",
+    "weightOf": "Weight of {{name}}",
+    "share": "{{share}} % of the score",
+    "direction": "Which way is better",
+    "higherBetter": "Higher is better",
+    "lowerBetter": "Lower is better",
+    "higherBetterHint": "A 5 makes the proposal rank higher.",
+    "lowerBetterHint": "A 1 makes the proposal rank higher — use this for costs such as effort.",
+    "lowLabel": "What 1 means",
+    "highLabel": "What 5 means",
+    "scale": "1 = {{low}}, 5 = {{high}}",
+    "moveUp": "Move {{name}} up",
+    "moveDown": "Move {{name}} down",
+    "archive": "Archive",
+    "archiveMetric": "Archive {{name}}",
+    "archiveHint": "Hide this metric. Scores already given are kept, and you can restore it.",
+    "archivedTitle": "Archived metrics ({{archived, number}})",
+    "archivedHint": "Archived metrics are not shown, scored or counted. Their scores are kept; restore one to use it again.",
+    "restore": "Restore",
+    "conflict": "Someone else changed the scoring setup while you were editing. Reload it to see their version, then make your change again.",
+    "reload": "Reload setup",
+    "saveFailed": "The scoring setup could not be saved. Try again.",
+    "cancel": "Cancel",
+    "save": "Save setup",
+    "saving": "Saving…",
+    "close": "Close",
+    "neverChanged": "Using the standard setup.",
+    "changedBy": "Last changed by {{name}} on {{date}}",
+    "changedOn": "Last changed on {{date}}",
+    "problems": {
+      "missingName": "Give every metric a name.",
+      "noActive": "Keep at least one metric.",
+      "tooManyActive": "Use at most {{max, number}} metrics at a time — archive one first.",
+      "tooMany": "A setup can hold at most {{total, number}} metrics, archived ones included.",
+      "noWeight": "Give at least one metric a weight above 0."
+    },
+    "templates": {
+      "default": "Current default",
+      "defaultDescription": "Impact, time to market, strategic fit and confidence.",
+      "rice": "RICE",
+      "riceDescription": "Reach, impact and confidence, against the effort it takes.",
+      "ice": "ICE",
+      "iceDescription": "Impact, confidence and ease — quick to score.",
+      "valueEffort": "Value vs Effort",
+      "valueEffortDescription": "Two metrics: what it is worth and what it costs."
+    },
+    "templateAxes": {
+      "reach": "Reach",
+      "reachDescription": "How many people this reaches",
+      "reachLow": "Few people",
+      "reachHigh": "Many people",
+      "effort": "Effort",
+      "effortDescription": "How much work this takes",
+      "effortLow": "Little work",
+      "effortHigh": "A lot of work",
+      "ease": "Ease",
+      "easeDescription": "How easy this is to do",
+      "easeLow": "Hard",
+      "easeHigh": "Easy",
+      "value": "Value",
+      "valueDescription": "How much this is worth to customers and the business"
+    }
+  },
   "sort": {
     "date": "Date",
     "dateFull": "Date Created",
-    "impact": "Impact",
     "label": "Sort by:",
     "priority": "Priority",
     "priorityFull": "Priority Score",
-    "teamOrdered": "{{fields}} order by the team's numbers, the ones each row shows — not by your own ballot.",
-    "ttm": "TTM",
-    "ttmFull": "Time to Market"
+    "teamOrdered": "{{fields}} sort by the team's average — the number each row shows — not by your own scores.",
+    "ttm": "TTM"
   },
   "stats": {
     "highPriority": "High Priority",
     "mediumPriority": "Medium Priority",
     "notScored": "Not Scored",
     "totalRows": "Total Proposals",
-    "unreadable_one": "The team score for {{count}} proposal could not be read, so it is counted in the total but in none of the other counts. Reload the page to see it.",
-    "unreadable_other": "The team scores for {{count}} proposals could not be read, so they are counted in the total but in none of the other counts. Reload the page to see them."
+    "unreadable_one": "The team score for {{count, number}} proposal could not be read, so it is counted in the total but in none of the other counts. Reload the page to see it.",
+    "unreadable_other": "The team scores for {{count, number}} proposals could not be read, so they are counted in the total but in none of the other counts. Reload the page to see them."
   },
   "subtitle": "Score and prioritize PRDs and PR/FAQs across all projects",
   "team": {
@@ -241,10 +329,14 @@
     "unavailableDescription": "The team's scores could not be read just now, so this row shows nothing about them — not that nobody has voted. Reload the page to see what the team said."
   },
   "title": "Prioritization",
-  "unsavedChanges": {
-    "cancel": "Stay on Page",
-    "confirm": "Discard Changes",
-    "message": "You have unsaved prioritization scores. Do you want to discard your changes and leave this page?",
-    "title": "Unsaved Changes"
+  "explainer": {
+    "title": "How this is scored",
+    "scoreConfigured": "Each reviewer scores each metric from 1 to 5. The priority score weighs them: {{weights}}.",
+    "unscored": "A metric a reviewer leaves unscored is left out of their score rather than counted as 0.",
+    "weightEntry": "{{name}} {{share}} %",
+    "weightEntryLower": "{{name}} {{share}} % (lower is better)",
+    "team": "Each row shows the team's average over everyone who scored it, and how many did. Your own scores are the sliders inside the row.",
+    "lineageTitle": "What the label on a row means",
+    "rowNote": "{{label}} — explained in “How this is scored” above the list."
   }
 }

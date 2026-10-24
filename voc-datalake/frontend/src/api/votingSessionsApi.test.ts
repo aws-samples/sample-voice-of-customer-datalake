@@ -18,22 +18,28 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 vi.mock('./baseUrl', () => ({ getBaseUrl: () => 'https://api.example.com' }))
 
-const mockFetchApi = vi.fn()
+const mockFetchApi = vi.fn<(path: string, init?: RequestInit) => Promise<unknown>>()
 vi.mock('./client', () => ({ fetchApi: (path: string, init?: RequestInit) => mockFetchApi(path, init) }))
 
 import { votingSessionsApi } from './votingSessionsApi'
+import { DEFAULT_AXES, activeAxes } from './prioritizationAxes'
+import { at } from '@test/defined'
 
 const SESSION_ID = 'vs_0123456789abcdef0123456789abcdef'
 
-function jsonResponse(body: unknown, status = 200): Response {
+/** The parts of a `Response` this client reads. A stub, not a real `Response`,
+ *  so a test whose code reads the body twice still sees it the second time. */
+type StubResponse = Pick<Response, 'ok' | 'status' | 'json'>
+
+function jsonResponse(body: unknown, status = 200): StubResponse {
   return {
     ok: status >= 200 && status < 300,
     status,
     json: () => Promise.resolve(body),
-  } as unknown as Response
+  }
 }
 
-const fetchMock = vi.fn()
+const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<StubResponse>>()
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -80,6 +86,23 @@ describe('reading a session as the facilitator', () => {
   })
 })
 
+describe("finding a row's open vote after a reload", () => {
+  it('asks for the row by query string and returns its open session', async () => {
+    mockFetchApi.mockResolvedValue({ session: { session_id: SESSION_ID, state: 'open', ballot_count: 2 } })
+
+    const session = await votingSessionsApi.findOpenVotingSession('row_p1 default')
+
+    expect(mockFetchApi).toHaveBeenCalledWith('/voting-sessions?row_id=row_p1+default', undefined)
+    expect([session?.session_id, session?.ballot_count]).toStrictEqual([SESSION_ID, 2])
+  })
+
+  it.each([{ session: null }, { session: 'garbled' }, {}])('reads %o as no open vote', async (body) => {
+    mockFetchApi.mockResolvedValue(body)
+
+    expect(await votingSessionsApi.findOpenVotingSession('row_p1_default')).toBeNull()
+  })
+})
+
 describe('what the ballot page is told before it renders a form', () => {
   it('reads an open session', async () => {
     fetchMock.mockResolvedValue(jsonResponse({
@@ -88,7 +111,24 @@ describe('what the ballot page is told before it renders a form', () => {
 
     const config = await votingSessionsApi.getBallotSessionConfig(SESSION_ID)
 
-    expect(config).toEqual({ open: true, reason: null, row_title: 'Refunds' })
+    // No `axes` (a deployment predating configurable metrics): the shipped default.
+    expect(config).toStrictEqual({ open: true, reason: null, row_title: 'Refunds', axes: activeAxes(DEFAULT_AXES) })
+  })
+
+  it('reads the ACTIVE configured metrics the public config carries', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({
+      session: {
+        open: true, reason: null, row_title: 'Refunds',
+        axes: [
+          { id: 'reach', label: 'Reach', description: null, low_label: null, high_label: null, direction: 'higher_better', builtin: false },
+          { id: 'effort', label: 'Effort', description: null, low_label: null, high_label: null, direction: 'lower_better', builtin: false },
+        ],
+      },
+    }))
+
+    const config = await votingSessionsApi.getBallotSessionConfig(SESSION_ID)
+
+    expect(config.axes.map((axis) => [axis.id, axis.direction])).toStrictEqual([['reach', 'higher_better'], ['effort', 'lower_better']])
   })
 
   it('asks for it without a Content-Type, which a GET has no body to describe', async () => {
@@ -98,7 +138,7 @@ describe('what the ballot page is told before it renders a form', () => {
 
     await votingSessionsApi.getBallotSessionConfig(SESSION_ID)
 
-    const [, init] = fetchMock.mock.calls[0]
+    const [, init] = at(fetchMock.mock.calls, 0)
     expect(init?.headers).toBeUndefined()
   })
 
@@ -110,7 +150,7 @@ describe('what the ballot page is told before it renders a form', () => {
 
     const config = await votingSessionsApi.getBallotSessionConfig(SESSION_ID)
 
-    expect(config).toEqual({ open: false, reason: null, row_title: '' })
+    expect(config).toStrictEqual({ open: false, reason: null, row_title: '', axes: activeAxes(DEFAULT_AXES) })
   })
 
   it('normalises an absent reason to null rather than leaving it undefined', async () => {
@@ -130,7 +170,7 @@ describe('casting a ballot', () => {
 
     const result = await votingSessionsApi.submitBallot(SESSION_ID, { impact: 4 })
 
-    expect(result).toEqual({ ok: true, ballotId: 'abc', corrected: false })
+    expect(result).toStrictEqual({ ok: true, ballotId: 'abc' })
   })
 
   it.each(['closed', 'expired', 'cap_reached', 'not_found', 'invalid'] as const)(
@@ -141,7 +181,7 @@ describe('casting a ballot', () => {
 
       const result = await votingSessionsApi.submitBallot(SESSION_ID, { impact: 4 })
 
-      expect(result).toEqual({ ok: false, failure: reason })
+      expect(result).toStrictEqual({ ok: false, failure: reason })
     })
 
   it.each([
@@ -153,16 +193,16 @@ describe('casting a ballot', () => {
 
     const result = await votingSessionsApi.submitBallot(SESSION_ID, { impact: 4 })
 
-    expect(result).toEqual({ ok: false, failure: 'unknown' })
+    expect(result).toStrictEqual({ ok: false, failure: 'unknown' })
   })
 
   it('survives a response that is not JSON at all', async () => {
     fetchMock.mockResolvedValue({
       ok: false, status: 502, json: () => Promise.reject(new Error('not json')),
-    } as unknown as Response)
+    })
 
     const result = await votingSessionsApi.submitBallot(SESSION_ID, { impact: 4 })
 
-    expect(result).toEqual({ ok: false, failure: 'unknown' })
+    expect(result).toStrictEqual({ ok: false, failure: 'unknown' })
   })
 })
