@@ -2,20 +2,25 @@
  * ProjectModals - Renders all modals for the project detail page
  */
 import { useTranslation } from 'react-i18next'
-import ConfirmModal from '../../components/ConfirmModal'
+import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
 import DocumentModal from './DocumentModal'
+import type { DocumentEditorProps } from './DocumentModal'
 import { isVersionManagedDocument } from '../../api/documentLineage'
+import { documentRevision } from './documentEdit'
 import ImportPersonaModal from './ImportPersonaModal'
 import PersonaEditModal from './PersonaEditModal'
 import type {
-  ProjectPersona, ProjectDocument,
+  ProjectDocument,
 } from '../../api/types'
+import type {
+  ProjectPersona,
+} from '../../api/projectTypes'
 
 interface PersonaEditModalWrapperProps {
   readonly editingPersona: ProjectPersona | null
   readonly isSaving: boolean
   readonly onChange: (p: ProjectPersona | null) => void
-  readonly onSave: () => void
+  readonly onSave: () => Promise<unknown>
   readonly onClose: () => void
 }
 
@@ -44,7 +49,6 @@ interface ImportPersonaModalWrapperProps {
   readonly importType: 'image' | 'text'
   readonly importContent: string
   readonly importFileName: string
-  readonly importMediaType: string
   readonly isImporting: boolean
   readonly onTypeChange: (type: 'image' | 'text') => void
   readonly onContentChange: (content: string) => void
@@ -58,7 +62,6 @@ export function ImportPersonaModalWrapper({
   importType,
   importContent,
   importFileName,
-  importMediaType,
   isImporting,
   onTypeChange,
   onContentChange,
@@ -73,7 +76,6 @@ export function ImportPersonaModalWrapper({
       importType={importType}
       importContent={importContent}
       importFileName={importFileName}
-      importMediaType={importMediaType}
       isImporting={isImporting}
       onTypeChange={onTypeChange}
       onContentChange={onContentChange}
@@ -84,16 +86,9 @@ export function ImportPersonaModalWrapper({
   )
 }
 
-interface DocumentModalWrapperProps {
+interface DocumentModalWrapperProps extends DocumentEditorProps {
   readonly showModal: boolean
   readonly editingDoc: ProjectDocument | null
-  readonly title: string
-  readonly content: string
-  readonly isSaving: boolean
-  readonly onTitleChange: (title: string) => void
-  readonly onContentChange: (content: string) => void
-  readonly onSave: () => void
-  readonly onClose: () => void
 }
 
 export function DocumentModalWrapper({
@@ -106,11 +101,15 @@ export function DocumentModalWrapper({
   onContentChange,
   onSave,
   onClose,
+  conflict,
 }: DocumentModalWrapperProps) {
   if (!showModal && !editingDoc) return null
 
   return (
     <DocumentModal
+      // A new key per loaded revision: "Load the latest" reopens the editor on fresh
+      // text, which its unsaved-changes guard must take as the new baseline.
+      key={editingDoc === null ? 'new' : `${editingDoc.document_id}:${documentRevision(editingDoc) ?? 0}`}
       isEditing={!!editingDoc}
       title={title}
       titleReadOnly={editingDoc != null && isVersionManagedDocument(editingDoc)}
@@ -120,6 +119,7 @@ export function DocumentModalWrapper({
       onContentChange={onContentChange}
       onSave={onSave}
       onClose={onClose}
+      conflict={conflict}
     />
   )
 }

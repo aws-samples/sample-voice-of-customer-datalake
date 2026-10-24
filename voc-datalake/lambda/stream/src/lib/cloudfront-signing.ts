@@ -3,10 +3,10 @@
  * (issue #229).
  *
  * WHY THIS EXISTS IN TYPESCRIPT TOO
- * This Lambda emits persona avatar URLs in the `persona_turn` SSE event, which
- * the SPA renders with `<img src>` (frontend ChatBubbles.tsx). Once
+ * This Lambda returns persona avatar URLs in consult_personas results, which
+ * the SPA renders with `<img src>` (assistant persona cards). Once
  * `/avatars/*` requires a signature, an unsigned URL from here would 403 and
- * project-chat avatars would silently break — so the Python signer in
+ * persona avatars would silently break — so the Python signer in
  * `lambda/shared/cloudfront_signing.py` is not sufficient on its own.
  *
  * DELIBERATE PORT, kept byte-compatible with that module: both produce the
@@ -24,6 +24,7 @@
  */
 import { createSign } from 'node:crypto';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+import { isRecord } from './is-record.js';
 
 /** See FALLBACK_TTL_SECONDS in shared/cloudfront_signing.py. */
 const FALLBACK_TTL_SECONDS = 3600;
@@ -85,11 +86,6 @@ const secretsClient = new SecretsManagerClient({});
  */
 const privateKeyPemCache = new Map<string, string>();
 
-/** Narrow parsed JSON without an `as` assertion. */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 /** The secret holds {privateKeyPem, publicKeyPem}; only the private half is needed here. */
 function extractPrivateKeyPem(secretString: string): string | undefined {
   const parsed: unknown = JSON.parse(secretString);
@@ -120,7 +116,7 @@ async function loadPrivateKeyPem(secretArn: string): Promise<string | undefined>
   } catch (error) {
     // Failing closed is correct, but silence is not: an IAM denial or a missing
     // secret otherwise shows up only as avatars quietly vanishing from
-    // persona_turn, with nothing to grep for. Name is enough — never log the
+    // consult_personas cards, with nothing to grep for. Name is enough — never log the
     // secret payload.
     console.warn(
       `cloudfront-signing: could not read the signing secret (${error instanceof Error ? error.name : 'unknown'}); avatars will be omitted`,
@@ -129,13 +125,9 @@ async function loadPrivateKeyPem(secretArn: string): Promise<string | undefined>
   }
 }
 
-/** Test seam: drop the cached PEM. */
-export function clearSigningCache(): void {
-  privateKeyPemCache.clear();
-}
-
 function ttlSeconds(): number {
-  const parsed = Number.parseInt(process.env.CDN_SIGNED_URL_TTL_SECONDS ?? '', 10);
+  // Unset reads as String(undefined) = 'undefined', which parses to NaN like any non-number.
+  const parsed = Number.parseInt(String(process.env.CDN_SIGNED_URL_TTL_SECONDS), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : FALLBACK_TTL_SECONDS;
 }
 

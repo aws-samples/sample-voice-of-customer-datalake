@@ -4,7 +4,7 @@
   "model": "claude-opus-4.6",
   "prompt": "file://./prompts/quality-reviewer.md",
   "tools": [
-    "fs_read",
+    "read",
     "thinking"
   ],
   "allowedTools": [
@@ -15,5 +15,13 @@
     "file://.kiro/steering/tech.md",
     "file://.kiro/steering/coding-standards.md",
     "file://.kiro/steering/structure.md"
-  ]
+  ],
+  "permissions": {
+    "rules": [
+      {
+        "capability": "fs_read",
+        "effect": "allow"
+      }
+    ]
+  }
 }

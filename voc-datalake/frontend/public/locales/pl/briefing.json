@@ -1,0 +1,92 @@
+{
+  "greeting": {
+    "morning": "Dzień dobry, {{name}}",
+    "afternoon": "Miłego popołudnia, {{name}}",
+    "evening": "Dobry wieczór, {{name}}"
+  },
+  "freshness": {
+    "generatedAt": "Podsumowanie z {{time}}",
+    "none": "Brak podsumowania. Naciśnij Odśwież, aby przygotować pierwsze.",
+    "failed": "Ostatniego podsumowania nie udało się przygotować. Naciśnij Odśwież, aby spróbować ponownie."
+  },
+  "tiles": {
+    "title": "Ostatnie 7 dni",
+    "reviews": "Recenzje",
+    "sentiment": "Średni sentyment",
+    "urgent": "Pilne recenzje"
+  },
+  "cards": {
+    "type": {
+      "spike": "Skok",
+      "urgent": "Pilne",
+      "whatsNew": "Nowość",
+      "trending": "Trend",
+      "sentiment": "Zmiana sentymentu",
+      "competitor": "Konkurencja",
+      "nextStep": "Następny krok",
+      "update": "Aktualizacja"
+    },
+    "title": "Twoje podsumowanie",
+    "empty": "Brak nowości w podsumowaniu.",
+    "evidence": "Liczba recenzji stojących za tą kartą: {{count, number}}",
+    "quotes": "Ich słowami",
+    "dismiss": "Odrzuć",
+    "sources": "Źródła",
+    "newTab": "otwiera się w nowej karcie",
+    "reviewN": "Recenzja {{n}}",
+    "openReview": "Otwórz recenzję {{n}} z {{count, number}}",
+    "moreReviews": "i jeszcze {{count, number}}"
+  },
+  "actions": {
+    "investigate": "Zbadaj",
+    "prfaq": "Przygotuj PR/FAQ",
+    "compare": "Porównaj z zeszłym miesiącem",
+    "openRadar": "Otwórz Radar",
+    "investigatePrompt": "Zbadaj tę kartę z mojego porannego podsumowania: \"{{title}}\". {{body}} Co za tym stoi i jak duży to problem?",
+    "prfaqPrompt": "Przygotuj PR/FAQ dotyczący poprawki na podstawie tej karty z mojego porannego podsumowania: \"{{title}}\". {{body}}",
+    "comparePrompt": "Porównaj to z zeszłym miesiącem: \"{{title}}\". Co się zmieniło i czy jest lepiej, czy gorzej?"
+  },
+  "todo": {
+    "title": "Do zrobienia",
+    "empty": "Nic na Ciebie nie czeka.",
+    "open": "Otwórz"
+  },
+  "refresh": {
+    "label": "Odśwież",
+    "generating": "Generowanie...",
+    "upToDate": "Twoje podsumowanie jest aktualne.",
+    "failed": "Nie udało się uruchomić podsumowania. Spróbuj ponownie."
+  },
+  "subscribe": {
+    "title": "Subskrybuj poranne podsumowanie",
+    "description": "Otrzymuj świeże podsumowanie każdego ranka o wybranej godzinie, w Twojej strefie czasowej ({{zone}}).",
+    "oneClick": "Otrzymuj świeże podsumowanie każdego ranka o {{time}}, w Twojej strefie czasowej ({{zone}}).",
+    "customise": "Dostosuj w Koncie",
+    "button": "Subskrybuj"
+  },
+  "settings": {
+    "emailConfirmed": "Adres e-mail potwierdzony.",
+    "save": "Zapisz",
+    "saved": "Zapisano",
+    "saveFailed": "Nie udało się zapisać ustawień podsumowania.",
+    "open": "Ustawienia",
+    "loading": "Ładowanie ustawień podsumowania...",
+    "title": "Ustawienia podsumowania",
+    "enabled": "Poranne podsumowanie włączone",
+    "language": "Język podsumowania",
+    "languageSameAsApp": "Taki jak w aplikacji ({{language}})",
+    "time": "Godzina wysyłki",
+    "instructions": "Czego chcę w podsumowaniu",
+    "instructionsHint": "Obszary uwagi, konkurenci do obserwowania, ton. Maksymalnie 2000 znaków.",
+    "email": "Wyślij mi podsumowanie e-mailem",
+    "emailHint": "Wysyłane na zweryfikowany adres e-mail Twojego konta.",
+    "emailPending": "Sprawdź skrzynkę i potwierdź e-mail od AWS, aby zacząć otrzymywać podsumowanie."
+  },
+  "agentDecision": {
+    "sectionLabel": "Decyzje agenta",
+    "title": "{{name}} wymaga Twojej decyzji",
+    "node": "Krok: {{node}}",
+    "stopped": "Zatrzymano {{time}}"
+  },
+  "closeCard": "Zamknij: {{title}}"
+}

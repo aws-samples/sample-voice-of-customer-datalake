@@ -1,0 +1,8 @@
+{
+  "entries": [
+    { "key": "projectDetail:importPersona.pdf", "reason": "Deliberate keep (ImportPersonaModal.tsx 'RETAINED DEAD KEYS'): translated copy for the PDF persona import, unused until PDF extraction lands." },
+    { "key": "projectDetail:importPersona.pdfDesc", "reason": "Deliberate keep (ImportPersonaModal.tsx 'RETAINED DEAD KEYS'): PDF persona import copy." },
+    { "key": "projectDetail:importPersona.pdfOnly", "reason": "Deliberate keep (ImportPersonaModal.tsx 'RETAINED DEAD KEYS'): PDF persona import copy." },
+    { "key": "projectDetail:importPersona.uploadPdf", "reason": "Deliberate keep (ImportPersonaModal.tsx 'RETAINED DEAD KEYS'): PDF persona import copy." }
+  ]
+}

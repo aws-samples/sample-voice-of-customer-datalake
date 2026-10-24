@@ -1,0 +1,130 @@
+{
+  "$comment": "Clone groups of scripts/audit/clones_struct.py kept on purpose. A group is silenced when EVERY copy's file matches one of `files` (and, with `name`, one copy is that function). Triaged 2026-10-24 (docs/code-audit.md).",
+  "entries": [
+    {
+      "files": [
+        "voc-datalake/lambda/product_doc_extractor/handler.py",
+        "voc-datalake/lambda/shared/invocation_cost.py",
+        "voc-datalake/lambda/shared/aws.py"
+      ],
+      "reason": "product_doc_extractor is stdlib + boto3 only by design (no powertools, cannot import shared; its module docstring) and keeps marked copies of is_conditional_check_failure and the invocation-cost helpers"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/api/integrations_handler.py",
+        "voc-datalake/lambda/api/scrapers_handler.py"
+      ],
+      "name": "get_scraper_status",
+      "reason": "different answers: a scraper run adds pages_scraped, redacts its errors for every reader and reports a read failure; the source run does neither (separate API Lambdas)"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/shared/design_components.py",
+        "voc-datalake/lambda/shared/extracted_design.py"
+      ],
+      "reason": "merge rules for two record types (component specs vs extracted design groups) with different keys and precedence; same loop shape only"
+    },
+    {
+      "files": [
+        "voc-datalake/scripts/**"
+      ],
+      "reason": "one-off operator scripts (backfills, retention) each carry their own argparse and stack-output lookup on purpose, so a script runs alone from a checkout (dupes.md section 3)"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/api/projects_handler.py",
+        "voc-datalake/lambda/shared/radar_brands.py"
+      ],
+      "reason": "id-list / domain-list validators: same shape, each with its own limits, normalisation and 400 wording for its route"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/api/ballots_handler.py",
+        "voc-datalake/lambda/api/product_context.py"
+      ],
+      "reason": "wire DTOs of two unrelated records (a voting session, a product document); equal only in being dict projections"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/design_capture/capture_worker.py",
+        "voc-datalake/plugins/web_reviews/ingestor/page_reader.py"
+      ],
+      "reason": "page-settle polling in two separately bundled functions (design capture vs the web_reviews plugin, which cannot import lambda/shared)"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/api/projects.py",
+        "voc-datalake/lambda/shared/decision_records.py"
+      ],
+      "reason": "views of two stored record types (source document, decision) with different fields"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/api/ballots_handler.py",
+        "voc-datalake/lambda/api/chat_handler.py",
+        "voc-datalake/lambda/api/feedback_form_handler.py"
+      ],
+      "reason": "free-text validators of three routes (ballot note, assistant title, form submission): different limits, control-character rules and 400 wording per public contract"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/shared/feedback_cursor.py",
+        "voc-datalake/lambda/shared/radar_reviews.py"
+      ],
+      "reason": "two cursor formats with their own size limit and error wording; sharing the 7-line base64-JSON decode would couple the feedback and Radar cursor contracts"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/api/projects_handler.py",
+        "voc-datalake/lambda/api/settings_handler.py"
+      ],
+      "reason": "caller display labels for different audiences (project setup editor, settings audit, username); same claim lookups, different fallbacks"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/api/feedback_form_handler.py",
+        "voc-datalake/lambda/shared/company_context.py",
+        "voc-datalake/lambda/shared/dimension_config.py",
+        "voc-datalake/lambda/shared/draft_intent.py",
+        "voc-datalake/lambda/shared/prioritization_axes.py"
+      ],
+      "reason": "optional-field validators with per-feature limits and messages; the settings rows already share dimension_config.bounded_text/bounded_list, the others are request contracts of their own routes"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/shared/agents_store.py",
+        "voc-datalake/lambda/shared/briefing_store.py",
+        "voc-datalake/lambda/shared/agent_run_resume.py",
+        "voc-datalake/lambda/shared/plans_store.py"
+      ],
+      "reason": "UpdateExpression builders and conditional updates on different rows (agent run fields vs brief card_state.#c paths; last-run stamp vs run-lock release), each with its own ServiceError message"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/shared/category_gate.py",
+        "voc-datalake/lambda/shared/project_gate.py"
+      ],
+      "reason": "access-row reads of two gates: different keys and projections, and each raises its own user-facing ServiceError text"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/shared/briefing_prefs.py",
+        "voc-datalake/lambda/shared/onboarding.py"
+      ],
+      "reason": "the same 'unknown field / at least one field' preamble of two PUT bodies (brief preferences, onboarding), each with its own field list and value rules; a shared helper would save about four lines"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/shared/github_design.py",
+        "voc-datalake/lambda/shared/tailwind_components.py"
+      ],
+      "reason": "component labels from two sources (GitHub paths vs Tailwind class names): same 4-line shape, different inputs"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/agents/nodes/**"
+      ],
+      "reason": "agent workflow nodes each check their own domain-API answer and raise their own NodeFailure text (one node = one readable file)"
+    }
+  ]
+}

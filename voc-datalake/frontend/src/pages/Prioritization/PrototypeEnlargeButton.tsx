@@ -58,9 +58,9 @@
  * @module pages/Prioritization/PrototypeEnlargeButton
  */
 import { Maximize2, X } from 'lucide-react'
-import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import ModalShell from '../../components/ModalShell'
+import { isNonEmptyString } from '../../api/lenientFields'
+import DialogTrigger from '../../components/ModalShell/DialogTrigger'
 import type { ReactElement, ReactNode } from 'react'
 
 /**
@@ -91,83 +91,66 @@ export default function PrototypeEnlargeButton({
   // unqualified key here is filed under `common` and reported both missing-in-source
   // and unused, i.e. as a deletion candidate.
   const { t } = useTranslation(['prioritization', 'common'])
-  const [isOpen, setIsOpen] = useState(false)
-  // Names the dialog after the heading it already shows, so the accessible name
-  // cannot drift from the visible one. `useId` because the page renders one of
-  // these per expanded row, and a module constant would point every dialog at the
-  // first row's heading.
-  const headingId = useId()
+  // The trigger's dialog semantics (`aria-haspopup`, the heading-named dialog,
+  // one `useId` per expanded row) are `DialogTrigger`'s, shared with
+  // `FormQrButton`; see its header.
   return (
-    <>
-      {/* `aria-haspopup="dialog"` for the same reason `FormQrButton` carries it:
-          without it the control announces as a plain button and a screen-reader
-          user learns they are in a dialog only after focus has moved there.
-          `aria-expanded` would be wrong — this is not a disclosure revealing
-          adjacent content, it is a modal that does not exist until asked for.
-
-          `hover:text-blue-700` and NOT the `hover:underline` of the anchor beside
-          it, following `FormQrButton`: underline on hover is what this app's links
-          do, and this control stays on the page. The two share the blue and sit
-          together because they answer the same question — "I cannot see this
-          properly" — but the hover is where a reader learns which of them is about
-          to take them somewhere. Stated because the neighbouring anchor's classes
-          are one line away and copying them looks like consistency. */}
-      <button
-        type="button"
-        onClick={() => setIsOpen(true)}
-        aria-haspopup="dialog"
-        className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-700"
-      >
-        <Maximize2 size={12} />
-        {t('prioritization:preview.enlarge', { defaultValue: 'Enlarge' })}
-      </button>
-      <ModalShell
-        isOpen={isOpen}
-        onClose={() => setIsOpen(false)}
-        ariaLabelledBy={headingId}
-        // No max-width cap and a full-height panel: the point of this overlay is
-        // that the artifact gets the screen. `ModalShell`'s own container keeps a
-        // `p-4` gutter, so the panel's rounded corners and the overlay behind them
-        // stay visible — a viewer can still see they are in a dialog they can
-        // dismiss, which a literally edge-to-edge panel hides.
-        panelClassName="h-full flex flex-col overflow-hidden"
-      >
-        <div className="flex items-center justify-between gap-3 border-b px-4 py-2 flex-shrink-0">
-          {/* `min-w-0 flex-1` is what makes the `truncate` fire at all: a flex item's
-              default `min-width: auto` refuses to shrink below its content, so a long
-              document title would push this row wider and overflow the panel instead
-              of ellipsising. Same shape as the `min-h-0` below, on the other axis —
-              and the `flex-1 min-w-0 … truncate` pattern CategoriesManager uses. */}
-          <h3 id={headingId} className="font-medium text-gray-900 truncate min-w-0 flex-1">
-            {documentTitle || t('prioritization:preview.prototypeTitle', { defaultValue: 'Prototype' })}
-          </h3>
-          {/* Visible, and the panel's first focusable so this is where the shell
-              puts focus on open. The shell's own ways out — Escape and an overlay
-              click — are both invisible, and this overlay covers the row a viewer
-              would otherwise click back to.
-              It is also the only exit that cannot be swallowed by the artifact: a
-              cross-origin or sandboxed prototype raises its keys in a document this
-              page is not allowed to read, so Escape genuinely does not reach the
-              shell from inside one (the shell listens through same-origin frames —
-              see its NESTED FRAMES note — which is all it can do). A prototype
-              served from another origin must still be dismissable, and this is how. */}
-          <button
-            type="button"
-            onClick={() => setIsOpen(false)}
-            className="inline-flex items-center gap-1 text-sm text-gray-700 hover:text-gray-900 flex-shrink-0"
-          >
-            <X size={16} />
-            {t('common:actions.close', { defaultValue: 'Close' })}
-          </button>
-        </div>
-        {/* `min-h-0` beside `flex-1`: a flex child's default `min-height: auto`
-            refuses to shrink below its content, and an iframe's content is not
-            something this box can measure — without it the frame pushes the panel
-            past the viewport and the header scrolls away. */}
-        <div className="flex-1 min-h-0">
-          {children}
-        </div>
-      </ModalShell>
-    </>
+    <DialogTrigger
+      // `hover:text-accent` and NOT the `hover:underline` of the anchor beside
+      // it, following `FormQrButton`: underline on hover is what this app's links
+      // do, and this control stays on the page. The two share the accent and sit
+      // together because they answer the same question — "I cannot see this
+      // properly" — but the hover is where a reader learns which of them is about
+      // to take them somewhere. Stated because the neighbouring anchor's classes
+      // are one line away and copying them looks like consistency.
+      triggerClassName="inline-flex items-center gap-1 text-accent-text hover:text-accent focus-ring rounded-sm"
+      trigger={<><Maximize2 size={12} />{t('prioritization:preview.enlarge', { defaultValue: 'Enlarge' })}</>}
+      // No max-width cap and a full-height panel: the point of this overlay is
+      // that the artifact gets the screen. `ModalShell`'s own container keeps a
+      // `p-4` gutter, so the panel's rounded corners and the overlay behind them
+      // stay visible — a viewer can still see they are in a dialog they can
+      // dismiss, which a literally edge-to-edge panel hides.
+      panelClassName="h-full"
+    >
+      {({ headingId, close }) => (
+        <>
+          <div className="dialog-header justify-between">
+            {/* `min-w-0 flex-1` is what makes the `truncate` fire at all: a flex item's
+                default `min-width: auto` refuses to shrink below its content, so a long
+                document title would push this row wider and overflow the panel instead
+                of ellipsising. Same shape as the `min-h-0` below, on the other axis —
+                and the `flex-1 min-w-0 … truncate` pattern CategoriesManager uses. */}
+            <h3 id={headingId} className="dialog-title flex-1">
+              {isNonEmptyString(documentTitle) ? documentTitle : t('prioritization:preview.prototypeTitle', { defaultValue: 'Prototype' })}
+            </h3>
+            {/* Visible, and the panel's first focusable so this is where the shell
+                puts focus on open. The shell's own ways out — Escape and an overlay
+                click — are both invisible, and this overlay covers the row a viewer
+                would otherwise click back to.
+                It is also the only exit that cannot be swallowed by the artifact: a
+                cross-origin or sandboxed prototype raises its keys in a document this
+                page is not allowed to read, so Escape genuinely does not reach the
+                shell from inside one (the shell listens through same-origin frames —
+                see its NESTED FRAMES note — which is all it can do). A prototype
+                served from another origin must still be dismissable, and this is how. */}
+            <button
+              type="button"
+              onClick={close}
+              className="btn btn-ghost btn-sm flex-shrink-0"
+            >
+              <X size={16} />
+              {t('common:actions.close', { defaultValue: 'Close' })}
+            </button>
+          </div>
+          {/* `min-h-0` beside `flex-1`: a flex child's default `min-height: auto`
+              refuses to shrink below its content, and an iframe's content is not
+              something this box can measure — without it the frame pushes the panel
+              past the viewport and the header scrolls away. */}
+          <div className="flex-1 min-h-0">
+            {children}
+          </div>
+        </>
+      )}
+    </DialogTrigger>
   )
 }

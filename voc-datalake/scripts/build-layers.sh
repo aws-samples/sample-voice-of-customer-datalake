@@ -48,11 +48,12 @@ install_layer_deps() {
   "$CONTAINER_CMD" run --rm --platform "$PLATFORM" \
     -v "$layer_dir:/var/task" \
     "$DOCKER_IMAGE" \
-    sh -c "python -m venv /tmp/buildenv \
-           && /tmp/buildenv/bin/pip install -r /var/task/requirements.txt -t /var/task/python \
+    sh -c 'venv="$(mktemp -d)" \
+           && python -m venv "$venv" \
+           && "$venv"/bin/pip install -r /var/task/requirements.txt -t /var/task/python \
                 --upgrade --quiet --no-cache-dir --root-user-action=ignore --disable-pip-version-check \
            && rm -rf /var/task/python/boto3 /var/task/python/botocore \
-                     /var/task/python/boto3-* /var/task/python/botocore-*"
+                     /var/task/python/boto3-* /var/task/python/botocore-*'
 }
 
 # Build processing-deps layer

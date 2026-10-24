@@ -5,10 +5,18 @@
  */
 
 import { sentimentLabelFromScore } from '../../lib/sentiment'
+import { CircleCheck, TriangleAlert, Lightbulb } from 'lucide-react'
+import { PDF_REPORT_LOCALE, PdfIcon, PdfReport, PdfReportHeader } from '../../components/PdfParts/pdfParts'
+import { PDF_TONES, pdfToneStyle } from '../../components/PdfParts/pdfTones'
+import { signedAverage } from '../../components/SentimentWords/sentimentWords'
+import { formatDate } from '../../utils/dateUtils'
+import { formatCount } from '../../utils/numberFormat'
+import { problemsLine } from './problemGrouping'
 
 interface ProblemGroupPDF {
   readonly problem: string
-  readonly similarProblems: string[]
+  /** How many other wordings were merged into this problem. */
+  readonly similarCount: number
   readonly rootCause: string | null
   readonly itemCount: number
   readonly avgSentiment: number
@@ -19,6 +27,8 @@ interface ProblemGroupPDF {
 interface SubcategoryGroupPDF {
   readonly subcategory: string
   readonly problems: ProblemGroupPDF[]
+  /** Every problem of the subcategory; `problems` may list only the largest (`problems_truncated`). */
+  readonly problemCount: number
   readonly totalItems: number
   readonly urgentCount: number
 }
@@ -45,10 +55,15 @@ export interface ProblemAnalysisPDFProps {
   }
 }
 
+/** A count as the report language writes it ("26,622"). */
+function pdfCount(n: number): string {
+  return formatCount(n, PDF_REPORT_LOCALE)
+}
+
 function getSentimentColor(score: number): string {
-  if (score > 0) return '#16a34a'
-  if (score < -0.3) return '#dc2626'
-  return '#6b7280'
+  if (score > 0) return PDF_TONES.ok.color
+  if (score < -0.3) return PDF_TONES.danger.color
+  return '#5e5966'
 }
 
 function buildActiveFilters(filters: ProblemAnalysisPDFProps['filters']): string[] {
@@ -67,33 +82,30 @@ function buildActiveFilters(filters: ProblemAnalysisPDFProps['filters']): string
 
 function buildHeaderStats(categories: CategoryGroupPDF[]) {
   const totalProblems = categories.reduce((sum, c) =>
-    sum + c.subcategories.reduce((s, sub) => s + sub.problems.length, 0), 0)
+    sum + c.subcategories.reduce((s, sub) => s + sub.problemCount, 0), 0)
   const totalFeedback = categories.reduce((sum, c) => sum + c.totalItems, 0)
   const totalUrgent = categories.reduce((sum, c) => sum + c.urgentCount, 0)
   return [
     {
       label: 'Categories',
       value: categories.length,
-      bg: '#f0f9ff',
-      color: '#1d4ed8',
+      bg: '#f1e9ff',
+      color: '#723acc',
     },
     {
       label: 'Problems',
       value: totalProblems,
-      bg: '#fef3c7',
-      color: '#92400e',
+      ...PDF_TONES.warn,
     },
     {
       label: 'Feedback Items',
       value: totalFeedback,
-      bg: '#f0fdf4',
-      color: '#166534',
+      ...PDF_TONES.ok,
     },
     {
       label: 'Urgent',
       value: totalUrgent,
-      bg: '#fef2f2',
-      color: '#991b1b',
+      ...PDF_TONES.danger,
     },
   ]
 }
@@ -102,65 +114,29 @@ function HeaderSection({
   categories, timeRange, filters,
 }: ProblemAnalysisPDFProps) {
   const activeFilters = buildActiveFilters(filters)
-  const stats = buildHeaderStats(categories)
+  const subtitle = activeFilters.length > 0
+    ? `Time range: ${timeRange} • ${activeFilters.join(' • ')}`
+    : `Time range: ${timeRange}`
 
   return (
-    <div data-pdf-section style={{ marginBottom: '24px' }}>
-      <h1 style={{
-        fontSize: '28px',
-        fontWeight: 'bold',
-        margin: '0 0 4px 0',
-        color: '#111827',
-      }}>
-        Problem Analysis Report
-      </h1>
-      <p style={{
-        fontSize: '14px',
-        color: '#6b7280',
-        margin: '0 0 16px 0',
-      }}>
-        Time range: {timeRange}
-        {activeFilters.length > 0 && ` • ${activeFilters.join(' • ')}`}
-      </p>
-      <div style={{
-        display: 'flex',
-        gap: '16px',
-        flexWrap: 'wrap',
-      }}>
-        {stats.map((stat) => (
-          <div key={stat.label} style={{
-            padding: '12px 20px',
-            backgroundColor: stat.bg,
-            borderRadius: '8px',
-            minWidth: '120px',
-          }}>
-            <p style={{
-              fontSize: '12px',
-              color: stat.color,
-              fontWeight: '500',
-              margin: '0 0 4px 0',
-            }}>{stat.label}</p>
-            <p style={{
-              fontSize: '24px',
-              fontWeight: 'bold',
-              color: stat.color,
-              margin: 0,
-            }}>{stat.value}</p>
-          </div>
-        ))}
-      </div>
-    </div>
+    <PdfReportHeader
+      title="Problem Analysis Report"
+      subtitle={subtitle}
+      stats={buildHeaderStats(categories)}
+      statMinWidth="120px"
+    />
   )
 }
 
 function ProblemItem({ problem, resolvedLabel }: { readonly problem: ProblemGroupPDF; readonly resolvedLabel: string }) {
   const resolved = problem.resolved === true
+  const tone = PDF_TONES[resolved ? 'ok' : 'warn']
   return (
     <div data-pdf-section style={{
       padding: '10px 16px',
-      borderLeft: resolved ? '3px solid #16a34a' : '3px solid #f59e0b',
+      borderLeft: `3px solid ${tone.color}`,
       marginBottom: '8px',
-      backgroundColor: resolved ? '#f0fdf4' : '#fffbeb',
+      backgroundColor: tone.bg,
       borderRadius: '0 6px 6px 0',
       opacity: resolved ? 0.75 : 1,
     }}>
@@ -174,16 +150,15 @@ function ProblemItem({ problem, resolvedLabel }: { readonly problem: ProblemGrou
           <p style={{
             fontSize: '13px',
             fontWeight: '600',
-            color: '#1f2937',
+            color: '#19161d',
             margin: '0 0 4px 0',
           }}>
-            {resolved ? '✅' : '⚠️'} {problem.problem}
+            <PdfIcon icon={resolved ? CircleCheck : TriangleAlert} color={tone.color} />{problem.problem}
             {resolved && (
               <span style={{
                 fontSize: '10px',
                 fontWeight: '600',
-                color: '#166534',
-                backgroundColor: '#dcfce7',
+                ...pdfToneStyle('ok'),
                 borderRadius: '9999px',
                 padding: '2px 8px',
                 marginLeft: '8px',
@@ -191,22 +166,22 @@ function ProblemItem({ problem, resolvedLabel }: { readonly problem: ProblemGrou
                 {resolvedLabel.toUpperCase()}
               </span>
             )}
-            {problem.similarProblems.length > 0 && (
+            {problem.similarCount > 0 && (
               <span style={{
                 fontSize: '11px',
-                color: '#6b7280',
+                color: '#5e5966',
                 fontWeight: 'normal',
               }}>
-                {' '}(+{problem.similarProblems.length} similar)
+                {' '}(+{pdfCount(problem.similarCount)} similar)
               </span>
             )}
           </p>
           {problem.rootCause != null && problem.rootCause !== '' ? <p style={{
             fontSize: '12px',
-            color: '#6b7280',
+            color: '#5e5966',
             margin: '0 0 2px 0',
           }}>
-            💡 {problem.rootCause}
+            <PdfIcon icon={Lightbulb} color="#5e5966" />{problem.rootCause}
           </p> : null}
         </div>
         <div style={{
@@ -217,29 +192,28 @@ function ProblemItem({ problem, resolvedLabel }: { readonly problem: ProblemGrou
         }}>
           <span style={{
             fontSize: '12px',
-            color: '#6b7280',
-          }}>{problem.itemCount} items</span>
+            color: '#5e5966',
+          }}>{pdfCount(problem.itemCount)} items</span>
           {problem.urgentCount > 0 && (
             <span style={{
               padding: '2px 8px',
-              backgroundColor: '#fecaca',
-              color: '#991b1b',
+              ...pdfToneStyle('danger'),
               borderRadius: '10px',
               fontSize: '11px',
               fontWeight: '500',
             }}>
-              {problem.urgentCount} urgent
+              {pdfCount(problem.urgentCount)} urgent
             </span>
           )}
           <span style={{
             padding: '2px 8px',
-            backgroundColor: '#f3f4f6',
+            backgroundColor: '#f5f5f5',
             color: getSentimentColor(problem.avgSentiment),
             borderRadius: '10px',
             fontSize: '11px',
             fontWeight: '500',
           }}>
-            {sentimentLabelFromScore(problem.avgSentiment).replace(/^./, (c) => c.toUpperCase())} ({problem.avgSentiment.toFixed(2)})
+            {sentimentLabelFromScore(problem.avgSentiment).replace(/^./, (c) => c.toUpperCase())} ({signedAverage(problem.avgSentiment, PDF_REPORT_LOCALE)})
           </span>
         </div>
       </div>
@@ -268,27 +242,25 @@ function SubcategorySection({
         <h3 style={{
           fontSize: '15px',
           fontWeight: '600',
-          color: '#374151',
+          color: '#4a464f',
           margin: 0,
-          textTransform: 'capitalize',
         }}>
-          {subcategory.subcategory.replaceAll('_', ' ')}
+          {subcategory.subcategory}
         </h3>
         <span style={{
           fontSize: '12px',
-          color: '#9ca3af',
+          color: '#5e5966',
         }}>
-          {subcategory.problems.length} problems • {subcategory.totalItems} items
+          {problemsLine(subcategory)} • {pdfCount(subcategory.totalItems)} items
         </span>
         {subcategory.urgentCount > 0 && (
           <span style={{
             padding: '2px 8px',
-            backgroundColor: '#fecaca',
-            color: '#991b1b',
+            ...pdfToneStyle('danger'),
             borderRadius: '10px',
             fontSize: '11px',
           }}>
-            {subcategory.urgentCount} urgent
+            {pdfCount(subcategory.urgentCount)} urgent
           </span>
         )}
       </div>
@@ -307,39 +279,37 @@ function CategorySection({ category, resolvedLabel }: { readonly category: Categ
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: '12px 16px',
-        backgroundColor: '#f8fafc',
+        backgroundColor: '#f5f5f5',
         borderRadius: '8px',
-        borderLeft: '4px solid #3b82f6',
+        borderLeft: '4px solid #8e48ff',
         marginBottom: '12px',
       }}>
         <h2 style={{
           fontSize: '18px',
           fontWeight: '700',
-          color: '#1e293b',
+          color: '#19161d',
           margin: 0,
-          textTransform: 'capitalize',
         }}>
-          {category.category.replaceAll('_', ' ')}
+          {category.category}
         </h2>
         <div style={{
           display: 'flex',
           gap: '12px',
           alignItems: 'center',
           fontSize: '13px',
-          color: '#64748b',
+          color: '#5e5966',
         }}>
-          <span>{category.subcategories.length} subcategories</span>
-          <span>{category.totalItems} items</span>
+          <span>{pdfCount(category.subcategories.length)} subcategories</span>
+          <span>{pdfCount(category.totalItems)} items</span>
           {category.urgentCount > 0 && (
             <span style={{
               padding: '2px 8px',
-              backgroundColor: '#fecaca',
-              color: '#991b1b',
+              ...pdfToneStyle('danger'),
               borderRadius: '10px',
               fontSize: '12px',
               fontWeight: '500',
             }}>
-              {category.urgentCount} urgent
+              {pdfCount(category.urgentCount)} urgent
             </span>
           )}
         </div>
@@ -358,34 +328,13 @@ function CategorySection({ category, resolvedLabel }: { readonly category: Categ
 
 export default function ProblemAnalysisPDFContent(props: ProblemAnalysisPDFProps) {
   return (
-    <div style={{
-      padding: '40px',
-      backgroundColor: 'white',
-    }}>
-      <HeaderSection {...props} />
-      <hr style={{
-        border: 'none',
-        borderTop: '2px solid #e5e7eb',
-        marginBottom: '24px',
-      }} />
+    <PdfReport
+      header={<HeaderSection {...props} />}
+      footer={`Generated on ${formatDate(new Date(), PDF_REPORT_LOCALE)} • VoC Analytics — Problem Analysis Report`}
+    >
       {props.categories.map((category) => (
         <CategorySection key={category.category} category={category} resolvedLabel={props.resolvedLabel} />
       ))}
-      <div data-pdf-section>
-        <hr style={{
-          border: 'none',
-          borderTop: '1px solid #e5e7eb',
-          marginTop: '32px',
-          marginBottom: '16px',
-        }} />
-        <p style={{
-          fontSize: '11px',
-          color: '#9ca3af',
-          textAlign: 'center',
-        }}>
-          Generated on {new Date().toLocaleDateString()} • VoC Analytics — Problem Analysis Report
-        </p>
-      </div>
-    </div>
+    </PdfReport>
   )
 }

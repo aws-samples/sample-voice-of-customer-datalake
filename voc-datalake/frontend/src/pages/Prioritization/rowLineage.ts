@@ -16,6 +16,16 @@
  * — plus the documents' own `document_type` and `created_at`, which the project
  * read already carries. No route changes, no new field on the wire.
  *
+ * ONE SOURCE INDEX PER PROJECT READ, NOT PER CALL, which is the only thing about
+ * these rules a caller has to know (issue #399 B). The resolver looks each recorded
+ * source up in an index of the project's documents; these rules are asked per ROW
+ * and each of them asks the resolver per DOCUMENT on that row, so an index built
+ * inside the resolver was rebuilt (rows × documents × rules) times over one
+ * unchanging project read. Every exported rule therefore takes EITHER the document
+ * list or a read `projectLineageSources` prepared from it. See
+ * `ProjectLineageSources` for why the index is the caller's to hold rather than a
+ * memo inside the shared helper, and for the measurement.
+ *
  * ROLE-BLIND ON PURPOSE. Every entry of the closed role vocabulary
  * (`DERIVATION_ROLES`: reference, prototype_prd, prototype_prfaq, merge_input) is
  * read as one thing — "this document was built from that one" — because that is
@@ -42,7 +52,8 @@
  * @module pages/Prioritization/rowLineage
  */
 
-import { resolveDerivation } from '../../api/derivation'
+import { derivationSourceIndex, resolveDerivationAgainst } from '../../api/derivation'
+import type { DerivationSourceIndex } from '../../api/derivation'
 import { asRecord, displayString } from '../../api/wireRecord'
 
 /**
@@ -133,6 +144,86 @@ export interface RowLineage extends SelectionLineage {
 
 /** Shared empty list, so the common non-stale answer allocates nothing. */
 const NO_IDS: readonly string[] = []
+
+/**
+ * A project read prepared for these rules: the documents themselves, plus the
+ * derivation source index built ONCE over them.
+ *
+ * WHY THE INDEX TRAVELS WITH THE DOCUMENTS RATHER THAN BESIDE THEM. Every rule
+ * below asks the project read one of two questions — "what IS the document this
+ * source names" (the index) and "what does the project hold of this type" (the
+ * list) — and they have to be asking about the SAME read, or a row is classified
+ * against one project and advised against another. A second parameter carrying a
+ * prebuilt index could be handed a stale one by a caller that resolved its
+ * documents twice; one object built by `projectLineageSources` cannot.
+ *
+ * WHY IT IS THE CALLER'S TO BUILD, and not a memo inside `resolveDerivation`
+ * (issue #399 B). These classifiers are called per ROW and each of them calls the
+ * resolver per DOCUMENT on that row, so the index the resolver used to build per
+ * call was rebuilt (rows × documents × rules) times over one unchanging project
+ * read. Passing it in keeps the index's LIFETIME the collection pass's own
+ * (`collectRows`), so there is no cache to invalidate when a project read lands, a
+ * document is deleted, or a row is recomposed: the next pass builds a new one and
+ * the old one is garbage.
+ *
+ * THE MEASUREMENT, STATED ONCE HERE because this is the type the fix introduced and
+ * every other site states the invariant instead. At 200 rows / 1000 documents one
+ * `collectRows` pass indexed the same 1000-document list roughly 2,600 times rather
+ * than once, which was 1644 ms and is 615 ms — a 2.7× pass, jsdom under this
+ * container. The same fixture's before was reported at 562 ms on the reviewing
+ * machine (issue #399 B), which is the useful thing to know about the figures: wall
+ * clock here is ~3× a reviewer's and reproduces nowhere, so the RATIO is the
+ * evidence and the invariant above is what the code has to hold. Counted rather
+ * than timed by `prioritizationUtils.indexReuse.test.ts`, for that reason.
+ */
+export interface ProjectLineageSources {
+  /** The project's documents, as the project read supplied them. */
+  readonly documents: readonly unknown[]
+  /** `derivationSourceIndex` over exactly those documents. */
+  readonly sourceIndex: DerivationSourceIndex
+}
+
+/**
+ * A project read prepared once for every row and every rule that will be asked
+ * about it.
+ */
+export function projectLineageSources(projectDocuments: readonly unknown[]): ProjectLineageSources {
+  return { documents: projectDocuments, sourceIndex: derivationSourceIndex(projectDocuments) }
+}
+
+/**
+ * What the exported rules accept for "the project read": the documents, or a
+ * `ProjectLineageSources` already prepared from them.
+ *
+ * BOTH, so hoisting the index is the CALLER'S optimisation and not a new contract
+ * every call site has to satisfy. A caller holding one selection and one document
+ * list — every case at this seam, and `RowLineagePanels`' eventual one — passes the
+ * list and pays for one index, exactly as before; the page's per-row loop prepares
+ * the read once and passes that. The two paths are the same code one line down:
+ * `lineageSourcesOf` builds from a list and returns a prepared read untouched.
+ */
+export type ProjectLineageRead = readonly unknown[] | ProjectLineageSources
+
+/**
+ * The prepared read, building one only for the caller that passed a plain list.
+ *
+ * Narrowed on `'sourceIndex' in project` rather than on `Array.isArray`, which
+ * `tsc` refuses to narrow a `readonly unknown[]` arm out of (its signature answers
+ * `any[]`, and a readonly array is not one) — leaving the list in the prepared
+ * branch's type.
+ *
+ * NULLISH IS AN EMPTY READ, not a throw, which restores this module's "no throwing"
+ * contract: `in` raises a `TypeError` on null or undefined, where the pre-#399 B path
+ * bottomed out in `resolveDerivation`'s `projectDocuments = []` default and simply
+ * resolved nothing. Every in-repo call site is typed, so the guard is unreachable
+ * today — but a project detail that has not landed is exactly the shape a component
+ * passes through, and silence is the failure mode every other rule here chose. The
+ * parameter admits nullish for that reason, so the guard is a typed branch.
+ */
+function lineageSourcesOf(project: ProjectLineageRead | null | undefined): ProjectLineageSources {
+  if (project == null) return projectLineageSources([])
+  return 'sourceIndex' in project ? project : projectLineageSources(project)
+}
 
 /**
  * One document reduced to what a generation check reads off it.
@@ -244,7 +335,7 @@ function repeatsAType(selected: readonly SelectedDocument[]): boolean {
  * AN UNREADABLE TYPE IS NOT A TYPE, on both sides of the comparison, and `null` is
  * not the only spelling of one. A source that DID resolve to a document whose
  * `document_type` could not be read comes back as '' rather than null
- * (`sourceFieldIndex` runs it through `displayString`), and a held document whose
+ * (`derivationSourceIndex` runs it through `displayString`), and a held document whose
  * type could not be read carries '' too — so an unfiltered `otherTypes` matches ''
  * against '' and declares a crossing between two documents neither of which was
  * shown to be of the same kind. Type-less held documents are therefore dropped
@@ -285,7 +376,7 @@ function repeatsAType(selected: readonly SelectedDocument[]): boolean {
 function hasSupersededSource(
   selection: readonly unknown[],
   selected: readonly SelectedDocument[],
-  projectDocuments: readonly unknown[],
+  sourceIndex: DerivationSourceIndex,
 ): boolean {
   const selectedIds = new Set(selected.map((entry) => entry.id))
   return selection.some((raw) => {
@@ -299,7 +390,7 @@ function hasSupersededSource(
         .filter((held) => held.id !== entry.id && held.type !== '')
         .map((held) => held.type),
     )
-    return resolveDerivation(raw, projectDocuments).sources.some((source) => (
+    return resolveDerivationAgainst(raw, sourceIndex).sources.some((source) => (
       !selectedIds.has(source.document_id)
       && source.document_type !== null
       && otherTypes.has(source.document_type)
@@ -334,11 +425,11 @@ function hasSupersededSource(
  */
 function recordsNoLineage(
   selection: readonly unknown[],
-  projectDocuments: readonly unknown[],
+  sourceIndex: DerivationSourceIndex,
 ): boolean {
   return selection
     .filter((raw) => selectionEntry(raw) !== null)
-    .every((raw) => resolveDerivation(raw, projectDocuments).origin === 'none')
+    .every((raw) => resolveDerivationAgainst(raw, sourceIndex).origin === 'none')
 }
 
 /**
@@ -365,14 +456,18 @@ function recordsNoLineage(
  * @param selection The row's own documents, as the project read supplied them.
  *   Concrete records rather than ids, because the caller has already resolved
  *   them (`collectRows`) and a second lookup could disagree with the first.
- * @param projectDocuments The project's documents, used only to resolve what each
+ * @param project The project's documents, used only to resolve what each
  *   recorded source IS — its type. A source that is not among them stays
- *   unresolved and decides nothing; see `hasSupersededSource`.
+ *   unresolved and decides nothing; see `hasSupersededSource`. A caller
+ *   classifying MANY selections against one project read passes
+ *   `projectLineageSources(documents)` instead of the list, which is the same
+ *   answer with the source index built once — see `ProjectLineageRead`.
  */
 export function classifySelectionLineage(
   selection: readonly unknown[],
-  projectDocuments: readonly unknown[],
+  project: ProjectLineageRead,
 ): SelectionLineage {
+  const sources = lineageSourcesOf(project)
   const selected = selectionEntries(selection)
   if (repeatsAType(selected)) {
     return {
@@ -380,13 +475,13 @@ export function classifySelectionLineage(
       reason: 'repeatedType',
     }
   }
-  if (hasSupersededSource(selection, selected, projectDocuments)) {
+  if (hasSupersededSource(selection, selected, sources.sourceIndex)) {
     return {
       state: 'crossGeneration',
       reason: 'supersededSource',
     }
   }
-  if (recordsNoLineage(selection, projectDocuments)) {
+  if (recordsNoLineage(selection, sources.sourceIndex)) {
     return {
       state: 'absent',
       reason: 'noneRecorded',
@@ -471,16 +566,18 @@ function offsetMinutes(designator: string): number | null {
  * record say", and that one is "what instant is that".
  */
 function timestampFields(createdAt: string): { readonly utc: string; readonly zone: string } | null {
-  const [date, ...rest] = createdAt.split(DATE_TIME_SEPARATOR)
-  if (rest.length > 1 || !READABLE_DATE.test(date ?? '')) return null
+  const parts = createdAt.split(DATE_TIME_SEPARATOR)
+  const date = parts.at(0) ?? ''
+  const rest = parts.slice(1)
+  if (rest.length > 1 || !READABLE_DATE.test(date)) return null
   // Date-only: midnight UTC, which is what `Date.parse` already answers for it.
-  if (rest.length === 0) return { utc: `${date ?? ''}T00:00:00Z`, zone: '' }
-  const afterDate = rest[0] ?? ''
+  if (rest.length === 0) return { utc: `${date}T00:00:00Z`, zone: '' }
+  const afterDate = rest.at(0) ?? ''
   const clock = READABLE_TIME.exec(afterDate)
   if (clock === null) return null
   // Everything past the clock is the zone — including '' for a value that named
   // none, which `offsetMinutes` reads as UTC rather than as unrecognised.
-  return { utc: `${date ?? ''}T${clock[0]}Z`, zone: afterDate.slice(clock[0].length) }
+  return { utc: `${date}T${clock[0]}Z`, zone: afterDate.slice(clock[0].length) }
 }
 
 /**
@@ -774,8 +871,10 @@ function newestOfType(
  */
 export function fresherCoherentSelection(
   selection: readonly unknown[],
-  projectDocuments: readonly unknown[],
+  project: ProjectLineageRead,
 ): readonly string[] | null {
+  const sources = lineageSourcesOf(project)
+  const projectDocuments = sources.documents
   const selected = selectionEntries(selection)
   // `repeatsAType` AND NOT `hasSupersededSource`, which is the one place the two
   // rules that both answer `crossGeneration` are treated differently — deliberately,
@@ -810,9 +909,13 @@ export function fresherCoherentSelection(
     if (entry !== null) byId.set(entry.id, raw)
   }
   const available = selectionEntries(projectDocuments)
-  const candidate = selected.map((held) => newestOfType(available, held.type))
-  if (candidate.some((entry) => entry === null)) return null
-  const newest = candidate.flatMap((entry) => (entry === null ? [] : [entry]))
+  // Each held document beside its type's newest, so no comparison below indexes one
+  // list by the other's position. A type with no newest refuses the whole candidate.
+  const candidate = selected.flatMap((held) => {
+    const entry = newestOfType(available, held.type)
+    return entry === null ? [] : [{ held, entry }]
+  })
+  if (candidate.length !== selected.length) return null
   // A TIE KEEPS THE DOCUMENT THE ROW ALREADY HOLDS, which is the other half of "an id
   // is not evidence of recency" — the half about WHAT is advised rather than WHETHER
   // anything is. `newestOfType` breaks a same-instant tie on `document_id` and must:
@@ -840,11 +943,11 @@ export function fresherCoherentSelection(
   // a tie the project read does not carry the held document for" covers, and the reason
   // the ordinary tie case cannot: measured, restoring `isNewer(rankOf(...))` on the two
   // verdict lines leaves that case, and every other, green.
-  const chosen = newest.map((entry, index) => {
-    const held = selected[index]
+  const paired = candidate.map(({ held, entry }) => {
     const tied = instantOf(entry.createdAt) === instantOf(held.createdAt)
-    return tied && byId.has(held.id) ? held : entry
+    return { held, chosen: tied && byId.has(held.id) ? held : entry }
   })
+  const chosen = paired.map((pair) => pair.chosen)
   // NO SECOND GATE FOR THE CANDIDATE'S timestamps, and that is a proof rather than an
   // omission: the row's own name instants by the check above, so a candidate naming
   // none is `NO_INSTANT` against a real instant on the document the row holds of that
@@ -895,11 +998,11 @@ export function fresherCoherentSelection(
   // trivially. What is left is a tie whose held document the read is missing, where the
   // substitution is declined — the sole input under which this line and
   // `isNewer(rankOf(...))` differ, and the one the regression case uses.
-  const fresher = chosen.some(
-    (entry, index) => instantOf(entry.createdAt) > instantOf(selected[index].createdAt),
+  const fresher = paired.some(
+    ({ held, chosen: entry }) => instantOf(entry.createdAt) > instantOf(held.createdAt),
   )
-  const regressed = chosen.some(
-    (entry, index) => instantOf(selected[index].createdAt) > instantOf(entry.createdAt),
+  const regressed = paired.some(
+    ({ held, chosen: entry }) => instantOf(held.createdAt) > instantOf(entry.createdAt),
   )
   if (!fresher || regressed) return null
   const records = chosen.flatMap((entry) => {
@@ -917,7 +1020,10 @@ export function fresherCoherentSelection(
   // not. `lineage.staleReason` is worded to that limit rather than to the stronger
   // claim — see the fifth condition, and `hasSupersededSource` for why traversing
   // would grey the ordinary regenerated row instead of fixing this.
-  if (classifySelectionLineage(records, projectDocuments).state === 'crossGeneration') return null
+  // The PREPARED read, not `projectDocuments`: the candidate is classified against
+  // the same project and the same source index this call was asked about, so the
+  // nested call cannot re-index a list the caller already indexed.
+  if (classifySelectionLineage(records, sources).state === 'crossGeneration') return null
   return chosen.map((entry) => entry.id)
 }
 
@@ -974,11 +1080,18 @@ export function rowLineageOf(
      */
     readonly composition_truncated?: boolean
   },
-  projectDocuments: readonly unknown[],
+  /**
+   * The project's documents, or a read `projectLineageSources` already prepared
+   * from them. A caller with ONE row passes the list; `collectRows` prepares the
+   * read once and passes it for every row of that project, which is what stops one
+   * project read being re-indexed per row — see `ProjectLineageSources`.
+   */
+  project: ProjectLineageRead,
 ): RowLineage {
-  const lineage = classifySelectionLineage(row.documents, projectDocuments)
+  const sources = lineageSourcesOf(project)
+  const lineage = classifySelectionLineage(row.documents, sources)
   const fresher = row.is_frozen && row.composition_truncated !== true
-    ? fresherCoherentSelection(row.documents, projectDocuments)
+    ? fresherCoherentSelection(row.documents, sources)
     : null
   return {
     ...lineage,
@@ -1001,22 +1114,11 @@ export function rowLineageOf(
  *
  * COLOUR IS NEVER THE SIGNAL, only its reinforcement: every state carries a text
  * label and a reason, so a reader who cannot tell amber from grey still reads
- * which state a row is in. Contrast measured against the same Tailwind v4 palette
- * `BAND_STYLE` records, on each tint at `text-xs` where AA wants 4.5:1 —
- * emerald-800 #006045 on emerald-100 #d0fae5 is 6.70:1, amber-800 #973c00 on
- * amber-100 #fef3c6 is 6.36:1, gray-600 #4a5565 on gray-100 #f3f4f6 is 6.87:1.
- * (`RowStaleBadge`'s orange pair carries its own figure, beside the classes it
- * uses.)
- *
- * EACH HEX RECOMPUTED FROM `node_modules/tailwindcss/theme.css` rather than
- * carried over, because two of these were wrong when written and one of them
- * was wrong in the way that matters: `#016630`/`#dbfce7` are **green**-800/-100,
- * a different palette entry from the `emerald` the `color` below actually names,
- * so the figure documented a colour this file does not use. v4 states these as
- * OKLCH, so a hex quoted here is a conversion and not a value to be found in the
- * stylesheet — the same trap `BAND_STYLE`'s "that was the v3 hex, and wrong"
- * note records one module over. Every pair still clears AA comfortably; only the
- * evidence needed correcting.
+ * which state a row is in. The tints are semantic theme tokens (`ok`, `warn`,
+ * and the neutral `bg-hover`/`text` pair `BAND_STYLE` uses), so they flip with
+ * the Kiro dark/light theme and their colour values — and the contrast they are
+ * chosen to clear at `text-xs` — live in `index.css`, not here.
+ * (`RowStaleBadge` uses a third status tint so a stale row's two badges differ.)
  */
 export const LINEAGE_STYLE: Record<LineageState, {
   readonly labelKey: `prioritization:${string}`
@@ -1024,18 +1126,18 @@ export const LINEAGE_STYLE: Record<LineageState, {
 }> = {
   coherent: {
     labelKey: 'prioritization:lineage.coherent',
-    color: 'bg-emerald-100 text-emerald-800',
+    color: 'bg-ok-subtle text-ok',
   },
   crossGeneration: {
     labelKey: 'prioritization:lineage.crossGeneration',
-    color: 'bg-amber-100 text-amber-800',
+    color: 'bg-warn-subtle text-warn',
   },
   // The same grey the read-state bands use, and for a related reason: this says
   // what the DOCUMENTS can tell us, not how good the proposal is. A tint that read
   // as a warning would present a hand-authored PRD as a problem with the row.
   absent: {
     labelKey: 'prioritization:lineage.absent',
-    color: 'bg-gray-100 text-gray-600',
+    color: 'bg-bg-hover text-text',
   },
 }
 

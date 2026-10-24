@@ -15,24 +15,10 @@
  * @module pages/FeedbackForms/formSchema
  */
 import { z } from 'zod'
-import type { FeedbackForm } from '../../api/client'
+import type { FeedbackForm } from '../../api/types'
+import { OptionalStringMapSchema, OptionalTagsSchema } from '../../api/dimensionsSchema'
 import { defaultFormConfig } from './formTemplates'
-
-/** What the wire is expected to deliver for a stored form: identity fields
- * plus any subset of the rest — including a partial nested theme. Used by
- * tests to build sparse fixtures without type assertions. */
-export type SparseFeedbackForm =
-  Partial<Omit<FeedbackForm, 'theme'>> &
-  Pick<FeedbackForm, 'form_id' | 'name' | 'enabled'> &
-  { theme?: Partial<FeedbackForm['theme']> }
-
-/** Coerce DynamoDB string round-trips like "5" to numbers; null/'' become
- * undefined so the field-level catch supplies the default instead of 0. */
-function toOptionalFiniteNumber(value: unknown): number | undefined {
-  if (value === null || value === undefined || value === '') return undefined
-  const n = typeof value === 'number' ? value : Number(value)
-  return Number.isFinite(n) ? n : undefined
-}
+import { toOptionalFiniteNumber } from '../../api/lenientFields'
 
 // Per-field catches deep-merge a PARTIAL theme (set colors survive, missing
 // ones default); the object-level catch covers theme: null/absent wholesale.
@@ -45,6 +31,11 @@ const themeSchema = z
     border_radius: z.string().catch(defaultFormConfig.theme.border_radius),
   })
   .catch(() => ({ ...defaultFormConfig.theme }))
+
+/** A form's theme, render-safe: a missing theme or colour falls back to the default. */
+export function normalizeFormTheme(raw: unknown): FeedbackForm['theme'] {
+  return themeSchema.parse(raw)
+}
 
 const customFieldSchema = z.looseObject({
   id: z.string().catch(''),
@@ -85,7 +76,7 @@ const customFieldsSchema = z
  *   each other or with inputs. Passthrough (unknown) values are shallow-
  *   copied and DO share references with the input object.
  */
-export const FeedbackFormSchema = z.looseObject({
+const FeedbackFormSchema = z.looseObject({
   form_id: z.string().min(1),
   name: z.string().catch(''),
   enabled: z.boolean().catch(false),
@@ -113,28 +104,25 @@ export const FeedbackFormSchema = z.looseObject({
   // reads them off a normalized record and writes them straight back.
   project_id: z.string().catch(''),
   document_id: z.string().catch(''),
+  // Older records have no type and stay that way (absent = an ordinary form).
+  form_type: z.enum(['standard', 'prototype_pin']).optional().catch(undefined),
+  // Stamped on every submission (an embed's `dimensions` option wins per key).
+  dimension_defaults: OptionalStringMapSchema,
+  tags: OptionalTagsSchema,
   created_at: z.string().catch(''),
   updated_at: z.string().catch(''),
 })
 
 /**
- * Make the declared FeedbackForm contract true for one wire record.
- * Non-identity fields degrade to defaults per the schema; a record without
- * a usable form_id (or a non-object) is a hard error — identity can't be
- * invented, and a broken API response shouldn't be silently rendered.
- */
-export function normalizeFeedbackForm(raw: unknown): FeedbackForm {
-  return FeedbackFormSchema.parse(raw)
-}
-
-/**
  * Normalize a wire list for rendering: records without a usable form_id are
  * dropped with a warning instead of defaulting to '' — an invented identity
  * would collide React list keys and the ['form-stats', form_id] query key
- * across records. Sparse-but-identified records normalize as usual.
+ * across records. Sparse-but-identified records normalize as usual. A list
+ * that is missing (or not a list) normalizes to no forms.
  */
-export function normalizeFeedbackForms(rawForms: readonly unknown[]): FeedbackForm[] {
-  return rawForms.flatMap((raw) => {
+export function normalizeFeedbackForms(rawForms: unknown): FeedbackForm[] {
+  if (!Array.isArray(rawForms)) return []
+  return rawForms.flatMap((raw: unknown) => {
     const parsed = FeedbackFormSchema.safeParse(raw)
     if (!parsed.success) {
       // Neutral wording: today the only non-catching field is form_id, but

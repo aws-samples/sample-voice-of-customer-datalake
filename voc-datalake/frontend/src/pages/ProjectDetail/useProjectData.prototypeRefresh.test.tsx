@@ -11,66 +11,62 @@
  * leaked across files in this suite before (see the note in useProjectData.test.ts).
  * The pure arithmetic stays in the other file precisely so this one can be small.
  */
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { renderHook, waitFor, act } from '@testing-library/react'
-import type { ReactNode } from 'react'
+import { QueryClient } from '@tanstack/react-query'
+import { waitFor, act } from '@testing-library/react'
 import {
   describe, it, expect, vi, beforeEach, afterEach,
 } from 'vitest'
+import {
+  PROJECT_DATA_ARGS, projectDataApiModule, projectDataMocks, projectPayload, renderWithQueryClient,
+} from './project-data-fixtures'
+import { HOUR_MS, signedPrototypeUrl, urlPrototypeDoc as prototypeDoc } from './prototype-fixtures'
+// After the fixtures on purpose: the hook imports the mocked `projectsApi`, whose
+// `vi.mock` factory below needs the fixture module evaluated first.
 import { useProjectData } from './useProjectData'
 import { REFRESH_LEAD_MS } from '../../components/prototypeLinkLifetime'
 import type { ProjectDocument } from '../../api/types'
 
-const getProject = vi.fn()
-const getJobs = vi.fn()
-const getProductContext = vi.fn()
+vi.mock('../../api/projectsApi', () => projectDataApiModule())
+const { getProject, getJobs, getProductContext } = projectDataMocks
 
-vi.mock('../../api/projectsApi', () => ({
-  projectsApi: {
-    getProject: (...args: unknown[]) => getProject(...args),
-    getJobs: (...args: unknown[]) => getJobs(...args),
-    getProductContext: (...args: unknown[]) => getProductContext(...args),
-  },
-}))
-
-const HOUR_MS = 60 * 60_000
 const PATH = 'https://d1.cloudfront.net/prototypes/proj-1/doc-1.html'
 
-const signed = (expiresAtMs: number, signature: string) =>
-  `${PATH}?Expires=${Math.floor(expiresAtMs / 1000)}&Signature=${signature}&Key-Pair-Id=K1`
+const signed = (expiresAtMs: number, signature: string) => signedPrototypeUrl(PATH, expiresAtMs, signature)
 
-const prototypeDoc = (prototypeUrl?: string): ProjectDocument => ({
-  document_id: 'doc-1',
-  title: 'My Prototype',
-  content: '',
-  document_type: 'prototype',
-  prototype_format: 'html',
-  prototype_url: prototypeUrl,
-  created_at: new Date().toISOString(),
-})
+const PROJECT_KEY = JSON.stringify(['project', 'proj-1'])
 
-const projectPayload = (documents: ProjectDocument[]) => ({
-  project: { project_id: 'proj-1', name: 'P' },
-  personas: [],
-  documents,
-})
+/**
+ * Mounts the hook on a fresh client whose `invalidateQueries` is observed, so no
+ * client or spy outlives the test that made it.
+ */
+function renderProjectData() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+  const rendered = renderWithQueryClient(queryClient, () => useProjectData(PROJECT_DATA_ARGS))
+  const invalidatedProject = () => invalidateSpy.mock.calls.some(
+    ([filters]) => JSON.stringify(filters?.queryKey) === PROJECT_KEY,
+  )
+  return { result: rendered.result, invalidateSpy, invalidatedProject }
+}
 
-let queryClient: QueryClient
-let invalidateSpy: ReturnType<typeof vi.spyOn>
+/** Serves `documents`, mounts the hook, waits for data and forgets the mount-time invalidations. */
+async function loadProject(documents: ProjectDocument[]) {
+  getProject.mockResolvedValue(projectPayload(documents))
+  const { result, invalidateSpy, invalidatedProject } = renderProjectData()
+  await waitFor(() => expect(result.current.data).toBeDefined())
+  invalidateSpy.mockClear()
+  return invalidatedProject
+}
 
-const wrapper = ({ children }: { children: ReactNode }) => (
-  <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-)
-
-const renderProjectData = () => renderHook(
-  () => useProjectData({ id: 'proj-1', apiEndpoint: 'https://api.example.test' }),
-  { wrapper },
-)
+/** Moves the fake clock forward inside `act`, so effects scheduled by the hook run. */
+async function advanceClock(ms: number) {
+  await act(async () => {
+    vi.advanceTimersByTime(ms)
+  })
+}
 
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
-  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
   getJobs.mockResolvedValue({ jobs: [] })
   getProductContext.mockResolvedValue({ context: {} })
 })
@@ -80,36 +76,20 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-const invalidatedProject = () => invalidateSpy.mock.calls.some(
-  ([arg]) => JSON.stringify((arg as { queryKey?: unknown })?.queryKey) === JSON.stringify(['project', 'proj-1']),
-)
-
 describe('pre-expiry re-sign', () => {
   it('invalidates the project query before the signature expires', async () => {
-    getProject.mockResolvedValue(projectPayload([prototypeDoc(signed(Date.now() + HOUR_MS, 'sig-1'))]))
-    const { result } = renderProjectData()
-    await waitFor(() => expect(result.current.data).toBeDefined())
-
-    invalidateSpy.mockClear()
+    const invalidatedProject = await loadProject([prototypeDoc(signed(Date.now() + HOUR_MS, 'sig-1'))])
     expect(invalidatedProject()).toBe(false)
 
     // Just past the scheduled moment: one hour of life minus the five-minute lead.
-    await act(async () => {
-      vi.advanceTimersByTime(HOUR_MS - REFRESH_LEAD_MS + 1000)
-    })
+    await advanceClock(HOUR_MS - REFRESH_LEAD_MS + 1000)
 
     expect(invalidatedProject()).toBe(true)
   })
 
   it('does not invalidate before the lead time is reached', async () => {
-    getProject.mockResolvedValue(projectPayload([prototypeDoc(signed(Date.now() + HOUR_MS, 'sig-1'))]))
-    const { result } = renderProjectData()
-    await waitFor(() => expect(result.current.data).toBeDefined())
-
-    invalidateSpy.mockClear()
-    await act(async () => {
-      vi.advanceTimersByTime(HOUR_MS - REFRESH_LEAD_MS - 60_000)
-    })
+    const invalidatedProject = await loadProject([prototypeDoc(signed(Date.now() + HOUR_MS, 'sig-1'))])
+    await advanceClock(HOUR_MS - REFRESH_LEAD_MS - 60_000)
 
     expect(invalidatedProject()).toBe(false)
   })
@@ -117,33 +97,21 @@ describe('pre-expiry re-sign', () => {
   it('schedules nothing for a project whose prototype has no signature', async () => {
     // A legacy prototype is rendered from inline content and has no deadline. A timer
     // here would be a refetch loop with nothing to refresh.
-    getProject.mockResolvedValue(projectPayload([prototypeDoc(undefined)]))
-    const { result } = renderProjectData()
-    await waitFor(() => expect(result.current.data).toBeDefined())
-
-    invalidateSpy.mockClear()
-    await act(async () => {
-      vi.advanceTimersByTime(4 * HOUR_MS)
-    })
+    const invalidatedProject = await loadProject([prototypeDoc()])
+    await advanceClock(4 * HOUR_MS)
 
     expect(invalidatedProject()).toBe(false)
   })
 
   it('schedules nothing for a project with no prototype at all', async () => {
-    getProject.mockResolvedValue(projectPayload([{
+    const invalidatedProject = await loadProject([{
       document_id: 'doc-2',
       title: 'A PRD',
       content: '# H',
       document_type: 'prd',
       created_at: new Date().toISOString(),
-    }]))
-    const { result } = renderProjectData()
-    await waitFor(() => expect(result.current.data).toBeDefined())
-
-    invalidateSpy.mockClear()
-    await act(async () => {
-      vi.advanceTimersByTime(4 * HOUR_MS)
-    })
+    }])
+    await advanceClock(4 * HOUR_MS)
 
     expect(invalidatedProject()).toBe(false)
   })
@@ -158,7 +126,7 @@ describe('pre-expiry re-sign', () => {
       .mockResolvedValueOnce(projectPayload([prototypeDoc(signed(Date.now() + HOUR_MS, 'sig-1'))]))
       .mockResolvedValue(projectPayload([prototypeDoc(signed(Date.now() + 2 * HOUR_MS, 'sig-2'))]))
 
-    const { result } = renderProjectData()
+    const { result, invalidateSpy, invalidatedProject } = renderProjectData()
     await waitFor(() => expect(result.current.data).toBeDefined())
 
     await act(async () => {

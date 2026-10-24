@@ -1,0 +1,92 @@
+{
+  "greeting": {
+    "morning": "Buenos días, {{name}}",
+    "afternoon": "Buenas tardes, {{name}}",
+    "evening": "Buenas noches, {{name}}"
+  },
+  "freshness": {
+    "generatedAt": "Resumen de las {{time}}",
+    "none": "Aún no hay resumen. Pulsa Actualizar para crear el primero.",
+    "failed": "No se pudo crear el último resumen. Pulsa Actualizar para intentarlo de nuevo."
+  },
+  "tiles": {
+    "title": "Últimos 7 días",
+    "reviews": "Reseñas",
+    "sentiment": "Sentimiento medio",
+    "urgent": "Reseñas urgentes"
+  },
+  "cards": {
+    "title": "Tu resumen",
+    "empty": "No hay novedades en tu resumen.",
+    "evidence": "Reseñas detrás de esta tarjeta: {{count, number}}",
+    "quotes": "En sus palabras",
+    "dismiss": "Descartar",
+    "sources": "Fuentes",
+    "newTab": "se abre en una pestaña nueva",
+    "type": {
+      "spike": "Pico",
+      "urgent": "Urgente",
+      "whatsNew": "Novedades",
+      "trending": "Tendencia",
+      "sentiment": "Cambio de sentimiento",
+      "competitor": "Competidor",
+      "nextStep": "Siguiente paso",
+      "update": "Actualización"
+    },
+    "reviewN": "Reseña {{n}}",
+    "openReview": "Abrir la reseña {{n}} de {{count, number}}",
+    "moreReviews": "y {{count, number}} más"
+  },
+  "actions": {
+    "investigate": "Investigar",
+    "prfaq": "Redactar un PR/FAQ",
+    "compare": "Comparar con el mes pasado",
+    "openRadar": "Abrir Radar",
+    "investigatePrompt": "Investiga esta tarjeta de mi resumen matinal: \"{{title}}\". {{body}} ¿Qué hay detrás y qué alcance tiene?",
+    "prfaqPrompt": "Redacta un PR/FAQ para una solución basada en esta tarjeta de mi resumen matinal: \"{{title}}\". {{body}}",
+    "comparePrompt": "Compara esto con el mes pasado: \"{{title}}\". ¿Qué ha cambiado y va a mejor o a peor?"
+  },
+  "todo": {
+    "title": "Tareas pendientes",
+    "empty": "No tienes nada pendiente.",
+    "open": "Abrir"
+  },
+  "refresh": {
+    "label": "Actualizar",
+    "generating": "Generando...",
+    "upToDate": "Tu resumen está al día.",
+    "failed": "No se pudo iniciar el resumen. Inténtalo de nuevo."
+  },
+  "subscribe": {
+    "title": "Suscríbete al resumen matinal",
+    "description": "Recibe un resumen nuevo cada mañana a la hora que elijas, en tu zona horaria ({{zone}}).",
+    "oneClick": "Recibe un resumen nuevo cada mañana a las {{time}}, en tu zona horaria ({{zone}}).",
+    "customise": "Personalizar en Cuenta",
+    "button": "Suscribirme"
+  },
+  "settings": {
+    "title": "Ajustes del resumen",
+    "enabled": "Resumen matinal activado",
+    "language": "Idioma del resumen",
+    "languageSameAsApp": "El mismo que la aplicación ({{language}})",
+    "time": "Hora de envío",
+    "instructions": "Lo que quiero en mi resumen",
+    "instructionsHint": "Temas clave, competidores que vigilar, tono. Como máximo 2000 caracteres.",
+    "email": "Enviarme el resumen por correo",
+    "emailHint": "Se envía a la dirección de correo verificada de tu cuenta.",
+    "emailPending": "Revisa tu bandeja de entrada y confirma el correo de AWS para empezar a recibir el resumen.",
+    "emailConfirmed": "Correo confirmado.",
+    "save": "Guardar",
+    "saved": "Guardado",
+    "saveFailed": "No se pudieron guardar los ajustes del resumen.",
+    "open": "Ajustes",
+    "loading": "Cargando los ajustes de tu resumen..."
+  },
+  "agentDecision": {
+    "sectionLabel": "Decisiones de agentes",
+    "title": "{{name}} necesita tu decisión",
+    "node": "Paso: {{node}}",
+    "stopped": "Se detuvo el {{time}}"
+  },
+  "closeCard": "Cerrar: {{title}}"
+}

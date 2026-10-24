@@ -3,16 +3,16 @@
  * @module pages/Login
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { TestRouter } from '../../test/test-utils'
+import { renderWithQueryClient } from '../../test/query-client'
+import { TestRouter } from '../../test/TestRouter'
 
 // Mock auth service
-const mockSignIn = vi.fn()
-const mockCompleteNewPassword = vi.fn()
-const mockForgotPassword = vi.fn()
-const mockConfirmPassword = vi.fn()
+const mockSignIn = vi.fn<(...args: unknown[]) => unknown>()
+const mockCompleteNewPassword = vi.fn<(...args: unknown[]) => unknown>()
+const mockForgotPassword = vi.fn<(...args: unknown[]) => unknown>()
+const mockConfirmPassword = vi.fn<(...args: unknown[]) => unknown>()
 
 vi.mock('../../services/auth', () => ({
   authService: {
@@ -26,38 +26,78 @@ vi.mock('../../services/auth', () => ({
 // Mock react-router-dom
 const mockNavigate = vi.fn()
 // Mutable so a test can arrive here the way an expired session does.
-let mockLocation: { state?: unknown; search: string } = {
-  state: { from: '/dashboard' },
-  search: '',
+const mockLocation: { value: { state?: unknown; search: string } } = {
+  value: { state: { from: '/dashboard' }, search: '' },
 }
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual('react-router-dom')
   return {
     ...actual,
     useNavigate: () => mockNavigate,
-    useLocation: () => mockLocation,
+    useLocation: () => mockLocation.value,
   }
 })
 
 import Login from './Login'
 
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+
+type User = ReturnType<typeof userEvent.setup>
+
+/** Renders the page with a no-retry query client inside its router. */
+function renderLogin() {
+  return renderWithQueryClient(<TestRouter initialEntries={['/login']}><Login /></TestRouter>)
+}
+
+/** Fill both credential fields and press Sign In. */
+async function submitCredentials(user: User, username: string, password: string) {
+  await user.type(screen.getByPlaceholderText(/Enter your username/i), username)
+  await user.type(screen.getByPlaceholderText(/Enter your password/i), password)
+  await user.click(screen.getByRole('button', { name: /sign in/i }))
+}
+
+/** Render and sign in with `password`, handing back the user for what follows. */
+async function renderAndSignIn(password: string) {
+  const user = userEvent.setup()
+  renderLogin()
+  await submitCredentials(user, 'testuser', password)
+  return user
+}
+
+/** Sign in against a NewPasswordRequired challenge and land on the new-password form. */
+async function expectNewPasswordChallenge() {
+  const mockCognitoUser = { username: 'testuser' }
+  mockSignIn.mockRejectedValue({ 
+    code: 'NewPasswordRequired', 
+    cognitoUser: mockCognitoUser 
   })
-  return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>
-      <TestRouter initialEntries={['/login']}>
-        {children}
-      </TestRouter>
-    </QueryClientProvider>
-  )
+  const user = await renderAndSignIn('temppassword')
+  await waitFor(() => {
+    expect(screen.getByText(/Set New Password/i)).toBeInTheDocument()
+  })
+  return user
+}
+
+/** Render and click through to the forgot-password form. */
+async function openForgotPassword() {
+  const user = userEvent.setup()
+  renderLogin()
+  await user.click(screen.getByText(/forgot password/i))
+  return user
+}
+
+/** Open forgot-password, enter the username and request a code. */
+async function requestResetCode() {
+  mockForgotPassword.mockResolvedValue({})
+  const user = await openForgotPassword()
+  await user.type(screen.getByPlaceholderText(/Enter your username/i), 'testuser')
+  await user.click(screen.getByRole('button', { name: /send code/i }))
+  return user
 }
 
 describe('Login', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockLocation = { state: { from: '/dashboard' }, search: '' }
+    mockLocation.value = { state: { from: '/dashboard' }, search: '' }
   })
 
   /*
@@ -67,28 +107,24 @@ describe('Login', () => {
    */
   describe('expired-session notice', () => {
     it('explains itself when redirected by an expired session', () => {
-      mockLocation = { search: '?expired=1' }
+      mockLocation.value = { search: '?expired=1' }
 
-      render(<Login />, { wrapper: createWrapper() })
+      renderLogin()
 
       expect(screen.getByText(/session expired/i)).toBeInTheDocument()
     })
 
     it('says nothing on an ordinary visit', () => {
-      render(<Login />, { wrapper: createWrapper() })
+      renderLogin()
 
       expect(screen.queryByText(/session expired/i)).not.toBeInTheDocument()
     })
 
     it('yields to a real submit error', async () => {
-      mockLocation = { search: '?expired=1' }
+      mockLocation.value = { search: '?expired=1' }
       mockSignIn.mockRejectedValue(new Error('Incorrect username or password'))
-      const user = userEvent.setup()
 
-      render(<Login />, { wrapper: createWrapper() })
-      await user.type(screen.getByPlaceholderText(/Enter your username/i), 'testuser')
-      await user.type(screen.getByPlaceholderText(/Enter your password/i), 'wrong')
-      await user.click(screen.getByRole('button', { name: /sign in/i }))
+      await renderAndSignIn('wrong')
 
       await waitFor(() => {
         expect(screen.getByText(/incorrect username or password/i)).toBeInTheDocument()
@@ -99,33 +135,33 @@ describe('Login', () => {
 
   describe('initial render', () => {
     it('displays VoC Analytics branding', () => {
-      render(<Login />, { wrapper: createWrapper() })
+      renderLogin()
       
       expect(screen.getByText('VoC Analytics')).toBeInTheDocument()
       expect(screen.getByText('Voice of the Customer Analytics')).toBeInTheDocument()
     })
 
     it('displays login form with username and password fields', () => {
-      render(<Login />, { wrapper: createWrapper() })
+      renderLogin()
       
       expect(screen.getByPlaceholderText(/Enter your username/i)).toBeInTheDocument()
       expect(screen.getByPlaceholderText(/Enter your password/i)).toBeInTheDocument()
     })
 
     it('displays sign in button', () => {
-      render(<Login />, { wrapper: createWrapper() })
+      renderLogin()
       
       expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument()
     })
 
     it('displays forgot password link', () => {
-      render(<Login />, { wrapper: createWrapper() })
+      renderLogin()
       
       expect(screen.getByText(/forgot password/i)).toBeInTheDocument()
     })
 
     it('displays contact administrator message', () => {
-      render(<Login />, { wrapper: createWrapper() })
+      renderLogin()
       
       expect(screen.getByText(/Contact your administrator/i)).toBeInTheDocument()
     })
@@ -133,14 +169,9 @@ describe('Login', () => {
 
   describe('login form submission', () => {
     it('calls signIn with username and password on submit', async () => {
-      const user = userEvent.setup()
       mockSignIn.mockResolvedValue({})
       
-      render(<Login />, { wrapper: createWrapper() })
-      
-      await user.type(screen.getByPlaceholderText(/Enter your username/i), 'testuser')
-      await user.type(screen.getByPlaceholderText(/Enter your password/i), 'password123')
-      await user.click(screen.getByRole('button', { name: /sign in/i }))
+      await renderAndSignIn('password123')
       
       await waitFor(() => {
         expect(mockSignIn).toHaveBeenCalledWith('testuser', 'password123')
@@ -148,29 +179,30 @@ describe('Login', () => {
     })
 
     it('navigates to original destination after successful login', async () => {
-      const user = userEvent.setup()
       mockSignIn.mockResolvedValue({})
       
-      render(<Login />, { wrapper: createWrapper() })
-      
-      await user.type(screen.getByPlaceholderText(/Enter your username/i), 'testuser')
-      await user.type(screen.getByPlaceholderText(/Enter your password/i), 'password123')
-      await user.click(screen.getByRole('button', { name: /sign in/i }))
+      await renderAndSignIn('password123')
       
       await waitFor(() => {
         expect(mockNavigate).toHaveBeenCalledWith('/dashboard', { replace: true })
       })
     })
 
+    it('marks a sign-in to "/" as a landing, so Home can honour the start page', async () => {
+      mockLocation.value = { state: null, search: '' }
+      mockSignIn.mockResolvedValue({})
+
+      await renderAndSignIn('password123')
+
+      await waitFor(() => {
+        expect(mockNavigate).toHaveBeenCalledWith('/', { replace: true, state: { landing: true } })
+      })
+    })
+
     it('displays error message on login failure', async () => {
-      const user = userEvent.setup()
       mockSignIn.mockRejectedValue({ message: 'Invalid credentials' })
       
-      render(<Login />, { wrapper: createWrapper() })
-      
-      await user.type(screen.getByPlaceholderText(/Enter your username/i), 'testuser')
-      await user.type(screen.getByPlaceholderText(/Enter your password/i), 'wrongpassword')
-      await user.click(screen.getByRole('button', { name: /sign in/i }))
+      await renderAndSignIn('wrongpassword')
       
       await waitFor(() => {
         expect(screen.getByText('Invalid credentials')).toBeInTheDocument()
@@ -178,14 +210,9 @@ describe('Login', () => {
     })
 
     it('disables submit button while loading', async () => {
-      const user = userEvent.setup()
       mockSignIn.mockReturnValue(new Promise(() => {}))
       
-      render(<Login />, { wrapper: createWrapper() })
-      
-      await user.type(screen.getByPlaceholderText(/Enter your username/i), 'testuser')
-      await user.type(screen.getByPlaceholderText(/Enter your password/i), 'password123')
-      await user.click(screen.getByRole('button', { name: /sign in/i }))
+      await renderAndSignIn('password123')
       
       await waitFor(() => {
         expect(screen.getByRole('button', { name: /signing in/i })).toBeDisabled()
@@ -195,46 +222,20 @@ describe('Login', () => {
 
   describe('new password challenge', () => {
     it('shows new password form when NewPasswordRequired error occurs', async () => {
-      const user = userEvent.setup()
-      const mockCognitoUser = { username: 'testuser' }
-      mockSignIn.mockRejectedValue({ 
-        code: 'NewPasswordRequired', 
-        cognitoUser: mockCognitoUser 
-      })
-      
-      render(<Login />, { wrapper: createWrapper() })
-      
-      await user.type(screen.getByPlaceholderText(/Enter your username/i), 'testuser')
-      await user.type(screen.getByPlaceholderText(/Enter your password/i), 'temppassword')
-      await user.click(screen.getByRole('button', { name: /sign in/i }))
-      
-      await waitFor(() => {
-        expect(screen.getByText(/Set New Password/i)).toBeInTheDocument()
-      })
+      await expectNewPasswordChallenge()
     })
   })
 
   describe('forgot password flow', () => {
     it('shows forgot password form when link is clicked', async () => {
-      const user = userEvent.setup()
-      
-      render(<Login />, { wrapper: createWrapper() })
-      
-      await user.click(screen.getByText(/forgot password/i))
+      await openForgotPassword()
       
       expect(screen.getByText(/Reset Password/i)).toBeInTheDocument()
       expect(screen.getByRole('button', { name: /send code/i })).toBeInTheDocument()
     })
 
     it('sends verification code when forgot password form is submitted', async () => {
-      const user = userEvent.setup()
-      mockForgotPassword.mockResolvedValue({})
-      
-      render(<Login />, { wrapper: createWrapper() })
-      
-      await user.click(screen.getByText(/forgot password/i))
-      await user.type(screen.getByPlaceholderText(/Enter your username/i), 'testuser')
-      await user.click(screen.getByRole('button', { name: /send code/i }))
+      await requestResetCode()
       
       await waitFor(() => {
         expect(mockForgotPassword).toHaveBeenCalledWith('testuser')
@@ -242,14 +243,7 @@ describe('Login', () => {
     })
 
     it('shows confirmation form after code is sent', async () => {
-      const user = userEvent.setup()
-      mockForgotPassword.mockResolvedValue({})
-      
-      render(<Login />, { wrapper: createWrapper() })
-      
-      await user.click(screen.getByText(/forgot password/i))
-      await user.type(screen.getByPlaceholderText(/Enter your username/i), 'testuser')
-      await user.click(screen.getByRole('button', { name: /send code/i }))
+      await requestResetCode()
       
       await waitFor(() => {
         // After sending code, the form should switch to confirm password mode
@@ -258,11 +252,7 @@ describe('Login', () => {
     })
 
     it('allows returning to login from forgot password', async () => {
-      const user = userEvent.setup()
-      
-      render(<Login />, { wrapper: createWrapper() })
-      
-      await user.click(screen.getByText(/forgot password/i))
+      const user = await openForgotPassword()
       await user.click(screen.getByText(/back to login/i))
       
       expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument()
@@ -273,40 +263,32 @@ describe('Login', () => {
     it('toggles password visibility when eye icon is clicked', async () => {
       const user = userEvent.setup()
       
-      render(<Login />, { wrapper: createWrapper() })
+      renderLogin()
       
       const passwordInput = screen.getByPlaceholderText(/Enter your password/i)
       expect(passwordInput).toHaveAttribute('type', 'password')
       
-      // The toggle button is inside the same container as the password input
-      // eslint-disable-next-line testing-library/no-node-access
-      const toggleButton = passwordInput.parentElement!.querySelector('button')!
-      expect(toggleButton).toBeInTheDocument()
-      
-      await user.click(toggleButton)
+      await user.click(screen.getByRole('button', { name: 'Show password' }))
       expect(passwordInput).toHaveAttribute('type', 'text')
+    })
+
+    it('names the toggle and the fields for assistive tech', async () => {
+      const user = userEvent.setup()
+      renderLogin()
+
+      expect(screen.getByRole('main')).toBeInTheDocument()
+      expect(screen.getByLabelText('Username or Email')).toHaveAttribute('autocomplete', 'username')
+      expect(screen.getByLabelText('Password')).toHaveAttribute('autocomplete', 'current-password')
+
+      await user.click(screen.getByRole('button', { name: 'Show password' }))
+      expect(screen.getByRole('button', { name: 'Hide password' })).toHaveAttribute('aria-pressed', 'true')
     })
   })
 
   describe('form validation', () => {
     it('shows error when passwords do not match in new password form', async () => {
-      const user = userEvent.setup()
-      const mockCognitoUser = { username: 'testuser' }
-      mockSignIn.mockRejectedValue({ 
-        code: 'NewPasswordRequired', 
-        cognitoUser: mockCognitoUser 
-      })
-      
-      render(<Login />, { wrapper: createWrapper() })
-      
       // Trigger new password flow
-      await user.type(screen.getByPlaceholderText(/Enter your username/i), 'testuser')
-      await user.type(screen.getByPlaceholderText(/Enter your password/i), 'temppassword')
-      await user.click(screen.getByRole('button', { name: /sign in/i }))
-      
-      await waitFor(() => {
-        expect(screen.getByText(/Set New Password/i)).toBeInTheDocument()
-      })
+      const user = await expectNewPasswordChallenge()
       
       // Enter mismatched passwords
       await user.type(screen.getByPlaceholderText(/Enter new password/i), 'newpassword123')

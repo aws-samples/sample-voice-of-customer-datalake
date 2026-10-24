@@ -4,10 +4,10 @@
   "model": "claude-opus-4.6",
   "prompt": "file://./prompts/test-generator.md",
   "tools": [
-    "fs_read",
-    "fs_write",
+    "read",
+    "shell",
     "thinking",
-    "shell"
+    "write"
   ],
   "allowedTools": [
     "fs_read",
@@ -20,5 +20,21 @@
     "file://.kiro/steering/coding-standards.md",
     "file://.kiro/steering/structure.md",
     "file://.kiro/steering/testing.md"
-  ]
+  ],
+  "permissions": {
+    "rules": [
+      {
+        "capability": "fs_read",
+        "effect": "allow"
+      },
+      {
+        "capability": "fs_write",
+        "effect": "allow"
+      },
+      {
+        "capability": "shell",
+        "effect": "allow"
+      }
+    ]
+  }
 }

@@ -8,21 +8,29 @@ import importX from 'eslint-plugin-import-x'
 import unusedImports from 'eslint-plugin-unused-imports'
 import vitest from '@vitest/eslint-plugin'
 import globals from 'globals'
+import noReExports from '../../../eslint-rules/no-re-exports.mjs'
+import {
+  SOURCE_RULES,
+  SPEC_FILES,
+  SPEC_RULES,
+  SUPPRESSION_RULES,
+  withPending,
+} from '../../../eslint-rules/quality-gates.mjs'
+
+// Rules of the shared quality-gate set (../../../eslint-rules/quality-gates.mjs) whose findings in
+// this package are not fixed yet, each with the setting this package enforced before ('off' when
+// it had none). Delete an entry in the change that brings its count to zero; never add one back.
+const PENDING_SOURCE = {}
+const PENDING_SPEC = {}
+const PENDING_SUPPRESSION = {}
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**'],
+    ignores: ['dist/**', 'node_modules/**', '.stryker-tmp/**', 'reports/**', 'stryker.config.mjs', 'vitest.config.ts'],
   },
   ...tseslint.configs.recommended,
   eslintComments.recommended,
-  {
-    rules: {
-      '@eslint-community/eslint-comments/no-use': [
-        'error',
-        { allow: ['eslint-disable', 'eslint-enable', 'eslint-disable-next-line'] },
-      ],
-    },
-  },
+  { rules: withPending(SUPPRESSION_RULES, PENDING_SUPPRESSION) },
   sonarjs.configs.recommended,
   pluginPromise.configs['flat/recommended'],
   pluginSecurity.configs.recommended,
@@ -37,14 +45,12 @@ export default tseslint.config(
     },
   },
 
-  // ─── Main rules for all TS files ───
+  // ─── Shared quality-gate set, for every TS file (specs included) ───
   {
     files: ['**/*.ts'],
-    ignores: ['**/*.test.ts'],
     plugins: {
       unicorn,
-      'import-x': importX,
-      'unused-imports': unusedImports,
+      custom: { rules: { 'no-re-exports': noReExports } },
     },
     languageOptions: {
       ecmaVersion: 2022,
@@ -53,6 +59,17 @@ export default tseslint.config(
         projectService: true,
         tsconfigRootDir: import.meta.dirname,
       },
+    },
+    rules: withPending(SOURCE_RULES, PENDING_SOURCE),
+  },
+
+  // ─── Main rules for all TS files ───
+  {
+    files: ['**/*.ts'],
+    ignores: ['**/*.test.ts'],
+    plugins: {
+      'import-x': importX,
+      'unused-imports': unusedImports,
     },
     rules: {
       // ── Comments policy ──
@@ -74,24 +91,16 @@ export default tseslint.config(
           message: 'Use custom error classes instead of generic Error.',
         },
       ],
-      'prefer-const': 'error',
-      'no-var': 'error',
       'no-negated-condition': 'error',
 
       // ── Type safety ──
-      '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-unsafe-assignment': 'error',
       '@typescript-eslint/no-unsafe-member-access': 'error',
       '@typescript-eslint/no-unsafe-call': 'error',
       '@typescript-eslint/no-unsafe-return': 'error',
-      '@typescript-eslint/consistent-type-assertions': [
-        'error',
-        { assertionStyle: 'never' },
-      ],
       '@typescript-eslint/no-non-null-assertion': 'error',
-      '@typescript-eslint/prefer-includes': 'error',
-      '@typescript-eslint/prefer-nullish-coalescing': 'error',
       '@typescript-eslint/prefer-optional-chain': 'error',
+      '@typescript-eslint/prefer-includes': 'error',
 
       // ── Promise best practices ──
       'promise/always-return': 'error',
@@ -115,13 +124,7 @@ export default tseslint.config(
       'unicorn/prefer-number-properties': 'error',
       'unicorn/prefer-string-starts-ends-with': 'error',
       'unicorn/no-array-for-each': 'error',
-      'unicorn/no-useless-spread': 'error',
       'unicorn/no-useless-undefined': 'error',
-
-      // ── Complexity limits ──
-      'max-lines': ['error', { max: 400, skipBlankLines: true, skipComments: true }],
-      'max-depth': ['error', 3],
-      complexity: ['error', 12],
 
       // ── Naming conventions ──
       '@typescript-eslint/naming-convention': [
@@ -160,33 +163,22 @@ export default tseslint.config(
     },
   },
 
-  // ─── Test files: relaxed limits, strict test quality ───
+  // ─── Test files: shared spec rules, plus this package's own ───
   {
-    files: ['**/*.test.ts'],
+    files: SPEC_FILES,
     plugins: { vitest },
     rules: {
-      // Relax production rules for tests
-      'max-lines': ['error', { max: 700, skipBlankLines: true, skipComments: true }],
+      ...withPending(SPEC_RULES, PENDING_SPEC),
+      // Relax production rules for tests (pre-existing; the shared set has no such relaxation)
       'no-inline-comments': 'off',
       '@typescript-eslint/no-unsafe-assignment': 'off',
       '@typescript-eslint/consistent-type-assertions': 'off',
       'no-restricted-syntax': 'off',
       'security/detect-non-literal-regexp': 'off',
 
-      // Strict test quality
-      'vitest/no-conditional-expect': 'error',
-      'vitest/no-conditional-in-test': 'error',
-      'vitest/prefer-strict-equal': 'error',
       'vitest/consistent-test-it': ['error', { fn: 'it' }],
       'vitest/consistent-test-filename': ['error', { pattern: '.*\\.test\\.[tj]sx?$' }],
-      // These are integration-style suites asserting whole SSE event
-      // sequences and multi-field tool results in one behavioral scenario;
-      // 10 is the observed ceiling across the suite (issue #187). Splitting
-      // such tests fragments one behavior across several test names.
-      'vitest/max-expects': ['error', { max: 10 }],
-      'vitest/prefer-called-with': 'error',
       'vitest/prefer-to-have-length': 'error',
-      'vitest/require-to-throw-message': 'error',
       'vitest/prefer-spy-on': 'error',
     },
   },

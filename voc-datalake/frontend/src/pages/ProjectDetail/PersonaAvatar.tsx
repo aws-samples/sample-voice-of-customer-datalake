@@ -14,7 +14,7 @@ function FallbackAvatar({
   sizeClass: string
 }>) {
   return (
-    <div className={clsx(sizeClass, 'bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0')}>
+    <div className={clsx(sizeClass, 'bg-accent rounded-full flex items-center justify-center text-accent-fg font-bold flex-shrink-0')}>
       {name.charAt(0)}
     </div>
   )
@@ -23,19 +23,21 @@ function FallbackAvatar({
 export default function PersonaAvatar({
   persona, size = 'md',
 }: Readonly<PersonaAvatarProps>) {
-  const [imageError, setImageError] = useState(false)
+  // The URL that failed, not a flag: a regenerated avatar is a NEW URL, which
+  // must get its own chance to load instead of inheriting the old failure.
+  const [failedUrl, setFailedUrl] = useState<string | null>(null)
 
   const sizeClass = SIZE_CLASSES[size]
   const avatarUrl = persona.avatar_url
 
-  if (avatarUrl != null && avatarUrl !== '' && !imageError) {
+  if (avatarUrl != null && avatarUrl !== '' && avatarUrl !== failedUrl) {
     return (
       <div className="relative flex-shrink-0">
         <img
           src={avatarUrl}
           alt={persona.name}
-          className={clsx(sizeClass, 'rounded-full object-cover border-2 border-purple-200 flex-shrink-0')}
-          onError={() => setImageError(true)}
+          className={clsx(sizeClass, 'rounded-full object-cover border-2 border-accent/30 flex-shrink-0')}
+          onError={() => setFailedUrl(avatarUrl)}
         />
       </div>
     )

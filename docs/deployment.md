@@ -44,7 +44,14 @@ npm run deploy:all
 
 ## Quality Checks
 
-Always run quality checks before deploying:
+The release gate is `npm run validate` (`scripts/validate.sh`): every check below plus ruff, vulture, pyright,
+knip, jscpd, the i18n audit, the mock-coverage check, a gitleaks scan of the working tree and the code-audit
+detectors ([Code audit → In the gate](code-audit.md#in-the-gate)), run in parallel
+lanes with a per-step timing table at the end. Run it **once on the integration branch, just before the release
+commit and the deploy**; track and agent branches run only `bash scripts/validate-affected.sh` (the steps for the
+paths they changed). The process and the options are in [CONTRIBUTING.md](../CONTRIBUTING.md#quality-gates).
+
+The narrower npm scripts are for iterating on one area:
 
 ```bash
 # From project root
@@ -53,20 +60,22 @@ npm run typecheck    # frontend TypeScript only
 npm run test         # frontend Vitest only
 
 # Or run all at once
-npm run check        # lint + typecheck:all + test + test:cdk + test:stream + test:backend
+npm run check        # lint + typecheck:all + test + check:mock + check:i18n + build + test:cdk + test:stream + test:backend
 ```
 
 ### What Each Check Does
 
 | Command | Covers |
 |---------|--------|
-| `npm run lint` | `lint:frontend` + `lint:stream` (ESLint) + `lint:python` (ruff over `lambda/`, `plugins/`, and `scripts/`) |
+| `npm run lint` | `lint:cdk` + `lint:frontend` + `lint:stream` + `lint:gates` (ESLint; `lint:gates` lints `eslint-rules/` itself) + `lint:python` (ruff over `lambda/`, `plugins/`, and `scripts/`) |
 | `npm run typecheck` | Frontend only — use `typecheck:all` for frontend + CDK + stream |
 | `npm run test` | Frontend Vitest only |
+| `npm run check:mock` | Every `fetchApi` call site is listed in `frontend/mock-coverage.json` and its probes reach a real mock route |
+| `npm run check:i18n` | The i18n audit (`frontend/scripts/i18n-check.mjs`, after its own regression tests): every key the source uses exists in English, and no locale has missing, extra or empty keys (untranslated values and unused keys only warn). It never writes files. The frontend's `i18n:validate` / `i18n:extract` run `i18next-parser`, which REWRITES the locale files (re-sorted, new keys empty), so they are an authoring tool, not a gate |
 | `npm run test:cdk` | CDK Vitest (`voc-datalake`) |
-| `npm run test:stream` | Streaming chat Lambda Vitest |
+| `npm run test:stream` | AI assistant stream Lambda Vitest |
 | `npm run test:backend` | Python pytest via `.venv/bin/python` |
-| `npm run check` | All of the above, chained with `&&` |
+| `npm run check` | All of the above, chained with `&&`; it runs `npm run build` (the SPA) before `test:cdk`, whose synth needs `frontend/dist` |
 | `npm run test:coverage` | Frontend tests with coverage report |
 
 Two things to know about the gate:
@@ -74,8 +83,8 @@ Two things to know about the gate:
 - **`check` chains with `&&`, so the first failure hides every later step.** If
   `lint:python` fails you never find out whether the CDK or backend tests pass.
   When triaging, run the individual scripts rather than inferring from `check`.
-- **There is no ESLint leg for the CDK TypeScript.** `bin/` and `lib/` are covered
-  only by `typecheck:cdk`, so "lint is clean" says nothing about the CDK app.
+- **`test:cdk` alone needs a built SPA.** The API stack deploys `frontend/dist`; without
+  it the synth fails with `CannotFindAsset`. Run `npm run build` first (`check` does).
 
 ### Python Lambda Tests
 
@@ -84,8 +93,8 @@ Lambda handlers have their own test suite using pytest:
 ```bash
 cd voc-datalake
 
-# Run all Lambda tests
-pytest
+# Run all Lambda tests (in parallel: pytest-xdist is in requirements-dev.txt)
+pytest -n auto
 
 # Run with coverage report
 pytest --cov=lambda --cov-report=html:coverage_html
@@ -163,12 +172,66 @@ You can also skip the submission entirely via `cdk.context.json`:
 
 or on the CLI: `cdk deploy --all --context skipUseCaseSubmission=true`.
 
-### Security Note
+### Security Note: the form values end up in the template
 
-The `anthropicUseCase` config contains company information. For open source forks:
-- Don't commit your actual company details to public repos
-- Use the example file as a template
-- Consider using environment variables in CI/CD pipelines
+The `anthropicUseCase` values are not only configuration. The stack passes them
+to the `PutUseCaseForModelAccess` custom resource as properties, so
+`companyName`, `companyWebsite`, `intendedUsers`, `industryOption` and
+`useCases` are **literals in the synthesized `VocWebSearchStack` template**
+(`cdk.out/`, and the template CloudFormation stores). Anyone who can read
+`cdk.out`, run `cloudformation get-template`, or open the stack in the console
+can read them, and `companyName` is also a stack output (`CompanyName`). Treat
+them as public:
+
+- Don't commit your actual company details, or a `cdk.out/` built with them, to
+  a public repository; use the example file as a template.
+- `cdk.context.json` is tracked in this repository: in a fork, add the
+  `anthropicUseCase` block only in the deploy job that needs it (written from
+  the pipeline's own variables) rather than committing it. The block is read
+  as a JSON object, so it belongs in `cdk.context.json`; a plain
+  `-c anthropicUseCase=…` arrives as a string and is skipped with a warning.
+- Once the submission has been accepted, the values have done their job:
+  drop them on the next deploy (see the table below for what each setting
+  keeps).
+
+### Do you need the submission at all?
+
+Per the Bedrock guide ([Request access to models](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html)),
+the Anthropic use-case form is needed **once per account or once at the
+organization's management account**; a submission made at the management
+account is inherited by the other accounts in the organization. It must be
+repeated in opt-in Regions. So:
+
+- **Account in an organization whose management account already submitted:**
+  no submission is needed. Check before deploying with
+  `aws bedrock get-foundation-model-availability --model-id <claude model id> --region us-east-1`
+  (`agreementAvailability.status: AVAILABLE` means access is already in place).
+- **Standalone account that never submitted:** submit once, either here or in
+  the Bedrock console (model catalog, then an Anthropic model, then "Submit use
+  case details"). The console route keeps the values out of CloudFormation
+  entirely.
+
+**`CreateFoundationModelAgreement` is a separate step and can still be needed.**
+The same guide says a serverless third-party model is enabled automatically the
+first time it is invoked, but only when the invoking principal holds
+`aws-marketplace:Subscribe` / `ViewSubscriptions`. This platform's runtime
+Lambda roles do not hold them for the Claude listings (the only API-stack
+Marketplace grant is scoped to the image model, `lib/stacks/api-marketplace.ts`).
+So when `anthropicUseCase` is set, the model-access half of `VocWebSearchStack`
+creates the agreement for each allowlisted model at deploy time
+(`GetFoundationModelAvailability`, then `ListFoundationModelAgreementOffers` +
+`CreateFoundationModelAgreement`; a model already `AVAILABLE` is skipped, and an
+account whose Private Marketplace refuses an agreement logs it and carries on).
+It is redundant once someone with Marketplace permissions has invoked each model
+in the account, for example from the Bedrock console playground.
+
+How the switches combine today:
+
+| Context | Use-case submission | Model agreements | Form values in the template |
+|---|---|---|---|
+| no `anthropicUseCase` | no | no (invoke each model once with Marketplace permissions instead) | none |
+| `anthropicUseCase` + `skipUseCaseSubmission` | no | yes | `companyName` only, as the `CompanyName` output (every field is still validated) |
+| `anthropicUseCase` | yes | yes | every field |
 
 ### Manual Alternative
 
@@ -207,17 +270,46 @@ The platform consists of 4 core stacks plus 1 AI-enablement stack.
 
 | Stack | Description | Dependencies |
 |-------|-------------|--------------|
-| `VocCoreStack` | DynamoDB tables, KMS, S3 buckets, Cognito, CloudFront | None |
+| `VocCoreStack` | DynamoDB tables (incl. `voc-memory`, `voc-agents`), KMS, S3 buckets, Cognito, CloudFront, the `voc/design-integrations` secret | None |
 | `VocIngestionStack` | Plugin Lambdas, EventBridge schedules, SQS, Secrets | Core |
-| `VocProcessingStack` | Processor, Aggregator, Step Functions, Bedrock | Core, Ingestion |
-| `VocApiStack` | API Gateway, domain-specific API Lambdas, Webhooks | Core, Ingestion, Processing |
+| `VocProcessingStack` | Processor, Aggregator, Step Functions (research, `voc-agent-run`), category reprocess worker, memory workers (scanner, `voc-memory-extract` queue + extractor, retention), agent heartbeat / conductor / persona panel, Bedrock | Core, Ingestion |
+| `VocApiStack` | API Gateway, domain-specific API Lambdas (incl. `voc-memory-api`, `voc-agents-api`), Webhooks | Core, Ingestion, Processing |
 | `VocWebSearchStack` (AI enablement) | **Two independently switchable halves in one us-east-1 stack:** (a) the AgentCore Gateway for public web search — on by default, opt out via `enableWebSearch: false`; (b) Bedrock model access / Anthropic use-case submission — created only when `anthropicUseCase` is set in `cdk.context.json`. The stack is not created at all when both are off. Always deploys to us-east-1: the web-search connector exists only there, and `PutUseCaseForModelAccess` works only there. **Upgrade note:** existing non-us-east-1 deployments must bootstrap us-east-1 once (`cdk bootstrap aws://ACCOUNT_ID/us-east-1`) or set the opt-out flag | None |
 
 ### Deploy All Stacks
 
 ```bash
-npm run deploy:infra    # Deploy all CDK stacks
+npm run deploy:infra    # Deploy all CDK stacks, then refresh the API stage
 ```
+
+### Refresh the API stage after every deploy (removed routes)
+
+Every deploy command (`npm run deploy:infra` at the root, `npm run deploy` and
+`npm run deploy:api` in `voc-datalake/`) runs `voc-datalake/scripts/cdk-deploy.sh`:
+`cdk deploy <args>` and then `scripts/refresh-api-stage.sh`, which creates a fresh
+deployment of the `v1` stage. Arguments pass through
+(`npm run deploy:infra -- -c frontendDomain=example.com`).
+
+Why: when a route is removed from `lib/stacks/api-routes.ts`, CloudFormation
+creates the new `AWS::ApiGateway::Deployment` (a snapshot of the API) during the
+update phase but deletes the removed methods only in the **cleanup** phase,
+afterwards. The snapshot still holds them, so the stage keeps serving the removed
+routes (3.00.00: `POST /mcp` answered 500 until the stage was redeployed by hand).
+Nothing inside the stack can run after its own cleanup phase, so the refresh is a
+deploy step. It is idempotent, keeps the stage's settings, and makes one write
+(`apigateway create-deployment`).
+
+**If you run `cdk deploy` directly**, or deploy the synthesized templates with
+CloudFormation, run the refresh yourself once the stack update is complete:
+
+```bash
+bash voc-datalake/scripts/refresh-api-stage.sh                           # default deployment
+API_STACK=b-VocApiStack bash voc-datalake/scripts/refresh-api-stage.sh   # -c deploymentPrefix=b
+```
+
+The post-deploy ops check (`E2E_OPS=1 … tests/ops-postdeploy.spec.ts`, needs
+`E2E_API`) fails when the stage serves a method the API definition no longer has,
+or when a route retired in 3.00.00 answers 2xx or 5xx.
 
 ### Deploy Individual Stacks
 
@@ -228,13 +320,13 @@ cd voc-datalake
 cdk deploy VocCoreStack
 cdk deploy VocIngestionStack
 cdk deploy VocProcessingStack
-cdk deploy VocApiStack
+npm run deploy:api            # VocApiStack + the stage refresh (or: cdk deploy VocApiStack && bash scripts/refresh-api-stage.sh)
 
 # Deploy multiple stacks
 cdk deploy VocCoreStack VocIngestionStack
 
-# Deploy with auto-approve (no confirmation prompts)
-cdk deploy --all --require-approval never
+# Deploy with auto-approve (no confirmation prompts), then refresh the stage
+cdk deploy --all --require-approval never && bash scripts/refresh-api-stage.sh
 ```
 
 A clean `cdk synth`/`cdk deploy` prints **zero warnings** — treat any new
@@ -348,6 +440,63 @@ but both are worth knowing before running several copies:
   inside their own RestApi, and each deployment has its own, so prefixing them
   would add churn without preventing a collision.
 
+### Verification fixture provider (opt-in, never on production)
+
+`.abca/fixture-manifest.json` at the repository root is this repo's contract with
+[ABCA](https://github.com/aws-samples/sample-autonomous-cloud-coding-agents), an
+autonomous coding-agent harness that deploys a pull request to a throwaway slot
+and verifies it. The manifest is **declaration only** — it states which fixture
+capability the repo offers, the shape of the records, and a protocol version. It
+carries no ARN, IAM, secret, table name or write recipe, so a commit cannot grant
+itself privileged access by editing it.
+
+The half that *has* authority is a private Lambda, `voc-fixture-provider`
+(`lambda/api/verification_fixture_provider.py`), which seeds and removes a
+deterministic prioritization baseline. It can **write and delete rows in the live
+Projects and Aggregates tables**, so it is created only when *both* of these hold:
+
+```bash
+cdk deploy --all -c deploymentPrefix=b -c enableVerificationFixtureProvider=true
+```
+
+- `deploymentPrefix` — a throwaway side-by-side copy, never the primary deployment.
+- `enableVerificationFixtureProvider` — explicit intent. Accepts only `true` or
+  `"true"`; `TRUE`, `1`, `yes` and anything else mean off.
+
+**Never set `enableVerificationFixtureProvider` on a production deployment.** The
+prefix alone is not a safeguard: a production copy can also be prefixed, which is
+why the flag exists as a second, independent condition. Omit it and the function,
+its role, its table and KMS grants, its log group and its ARN output do not exist
+at all — a default `cdk deploy` is byte-identical with and without this feature
+(`lib/app-baseline.test.ts` asserts exactly that).
+
+The provider has no API Gateway route, Function URL, Cognito authorizer, frontend
+configuration or model access; it is reachable only by direct
+`lambda:InvokeFunction`. By default that is governed by identity policies alone,
+which for a same-account caller means any principal holding that permission on the
+ARN. To pin it to exactly one caller, pass its role ARN and a resource-based
+policy is attached:
+
+```bash
+cdk deploy --all -c deploymentPrefix=b -c enableVerificationFixtureProvider=true \
+  -c verificationFixtureInvokerArn=arn:aws:iam::111122223333:role/my-verification-role
+```
+
+The value must be an IAM role or user ARN; anything else fails at synth rather
+than deploying a policy that grants nobody. Fixture rows are indexed like ordinary projects
+on purpose, so the fixture exercises the real read paths, and they are excluded
+from the project list *and* from the one read that enumerates the prioritization
+partition, by the `verification_fixture_id` marker (`is_verification_fixture` in
+`lambda/shared/project_writes.py`). Every other access to that partition is by
+exact key — voting sessions and ballot writes name a single row — so those are
+unaffected by design.
+
+Cleanup is an explicit teardown call, and the TTL backstop is **partial**: the
+provider stamps a `ttl` attribute on every record, but only the Aggregates table
+has TTL enabled, so the prioritization row expires on its own while the fixture's
+project and document rows do not. An abandoned fixture therefore needs its
+teardown; `lib/stacks/core-stack.test.ts` pins both halves of that asymmetry.
+
 ### Stack Deployment Order
 
 Due to dependencies, stacks should be deployed in this order:
@@ -360,6 +509,22 @@ Due to dependencies, stacks should be deployed in this order:
 5. `VocApiStack`
 
 The `cdk deploy --all` command handles this automatically.
+
+### EU deployment (`-c inferenceScope=eu`)
+
+`-c inferenceScope=eu` keeps Bedrock inference in the EU. Bedrock calls use `eu.` inference
+profiles, and IAM grants only those profiles. Web search is never deployed; an explicit
+`enableWebSearch=true` fails the synth. Persona avatars are disabled. The default is
+`global`. Model availability, region choice and the PII language limits are covered in
+[eu-deployment.md](eu-deployment.md).
+
+### Source policies and the retention worker
+
+`voc-retention` (VocProcessingStack) runs daily at 04:15 UTC. It deletes data only for
+sources whose profile sets `retention_days`, and for erasure requests an admin starts. It
+is the only role with a delete permission on customer data. Sources without a profile are
+kept forever, so a deploy changes nothing until an admin configures one. See
+[source-policies.md](source-policies.md) and [dimensions.md](dimensions.md).
 
 ### Web Search (on by default)
 
@@ -382,6 +547,256 @@ entirely (the deployment reports `WebSearchAvailable=false` and
 Cost model (per `bin/voc-datalake.ts`): the gateway has no standing cost;
 searches bill per query ($7/1k at the time of writing — check AgentCore
 pricing) and only run for requests where the user turned the toggle on.
+
+### Operational alerts (Administration → System → Logs → Alerts)
+
+No CloudWatch alarm is deployed by CDK: an alarm is billed every hour it exists,
+and one nobody is subscribed to notifies nobody. An admin turns alerting on in
+**Administration → System → Logs → Alerts**; the logs API (`voc-logs-api`,
+`lambda/shared/ops_alerts.py`) then creates the alarms with `PutMetricAlarm`, and
+turning it off deletes them. Turning it on twice is harmless (an alarm is
+overwritten), and turning it off deletes exactly the alarms under this
+deployment's reserved prefix, `voc-alerts-<account>-<region>-` (with a
+`deploymentPrefix`, `<prefix>-voc-alerts-…`). The on/off state, who changed it
+and when are kept in the aggregates table (`SETTINGS#alerts`); when that row is
+missing, the alarms themselves say whether alerting is on.
+
+| Alarm (`voc-alerts-<account>-<region>-…`) | Watches | Fires when |
+|-------|---------|------------|
+| `processing-dlq` | `voc-processing-dlq` (Ingestion): feedback the processor failed 3 times | Max of `ApproximateNumberOfMessagesVisible` > 0 over one 5-minute period |
+| `ingest-schedule-dlq` (only when an enabled plugin is scheduled) | `voc-ingest-schedule-dlq`: schedule ticks EventBridge could not deliver | same |
+| `aggregator-stream-failures` | `voc-aggregator-stream-failures` (Processing): stream ranges the aggregator gave up on | same |
+| `memory-extract-dlq` | `voc-memory-extract-dlq` (Processing): memory-extraction messages that failed 3 times | same |
+| `api-async-failures` | `voc-api-async-failures` (Core): failed/expired async invocations of API-stack Lambdas | same |
+| `briefing-dlq` | `voc-briefing-dlq` (Processing): morning-brief builds that failed 3 times ([docs/briefing.md](briefing.md)) | same |
+| `email-intake-dlq` | `voc-email-intake-dlq` (Ingestion, only with `-c inboundEmailDomain`): received emails that failed 8 times ([docs/email-intake.md](email-intake.md)) | same |
+| `processor-errors` | `voc-feedback-processor` Lambda `Errors` | Sum > 0 over 5 minutes |
+| `aggregator-errors` | `voc-aggregation-processor` Lambda `Errors` | Sum > 0 over 5 minutes |
+| `aggregator-iterator-age` | `voc-aggregation-processor` `IteratorAge` | Max > 15 minutes for 3 consecutive 5-minute periods (dashboard metrics going stale) |
+| `ingestor-errors` | every enabled plugin ingestor's `Errors`, one metric-math `SUM` | Sum > 0 over 5 minutes (more than 10 ingestors split into `ingestor-errors-2`, …) |
+
+Missing data is never breaching, so an idle queue or function stays OK.
+
+**Recipients.** All alarms notify ONE SNS topic, `voc-ops-alarms-<account>-<region>`,
+created in VocCoreStack (its own rotating KMS key that CloudWatch may use, TLS-only
+publishes). Add or remove email addresses on the same card (at most 10). AWS mails
+each address a confirmation link; the card shows **Pending confirmation** until it
+is clicked, and nothing is delivered before then. A pending address added on the
+card can be removed again; one added elsewhere (console, CLI) cannot be cancelled
+until it is confirmed, and SNS deletes an unconfirmed subscription on its own. For
+other channels (Slack via AWS Chatbot, PagerDuty, …) subscribe them to the topic
+yourself; the card lists email recipients only.
+
+**Permissions.** The logs API role may `PutMetricAlarm` / `DeleteAlarms` /
+`DescribeAlarms` only on `arn:aws:cloudwatch:<region>:<account>:alarm:voc-alerts-<account>-<region>-*`,
+and `Subscribe` / `Unsubscribe` / `ListSubscriptionsByTopic` only on the topic ARN.
+Every route is admin-only. Addresses are never logged.
+
+**Cost.** CloudWatch bills $0.10 per standard alarm metric per month (us-east-1, at
+the time of writing), and the first 10 alarm metrics in an account each month are
+free. A metric-math alarm is billed per metric it reads, so the one ingestor `SUM`
+costs the same as one alarm per ingestor, but notifies once. With every alarm above
+and N enabled ingestors that is 8 + N alarm metrics: about $1.40 a month with 6
+ingestors, before the free tier. The topic's KMS key is about $1 per month whether
+or not alerting is on; SNS email delivery is free at alarm volumes. Check current
+CloudWatch and KMS pricing for your region.
+
+**Upgrading from a release that deployed the alarms.** The next deploy DELETES the
+five `…-messages-visible` alarms and any `-c alarmEmail` subscription; the
+`alarmEmail` context key is no longer read (remove it from `cdk.context.json`). Turn
+alerting on in Administration → System → Logs → Alerts and add the addresses there.
+
+**VocApiStack resource budget.** Every Lambda behind an API Gateway method gets ONE
+invoke permission scoped to this RestApi (any stage, method and path of it), not
+CDK's default of two per method (`frugalIntegration` in `lib/stacks/api-routes.ts`).
+That took the all-plugins template from 479 to 388 resources.
+`lib/stacks/api-stack-snapstart.test.ts` keeps it at least 75 under the 500 limit,
+and `lib/stacks/api-stack-invoke-permissions.test.ts` fails if a per-method permission
+comes back. Each function can still be invoked only by API Gateway, only from this
+RestApi.
+
+### Lambda sizing and post-deploy capacity check
+
+Every function's MemorySize follows the sizing policy in [lambda-sizing.md](lambda-sizing.md): peak memory
+≤ 70 % (≤ 60 % for variable-payload functions) and CPU ≤ 70 % of the function's share. After a deploy that
+had traffic, run the read-only check (`voc-datalake/scripts/capacity/capacity-query.sh --hours 24`, or the
+`E2E_OPS=1` ops specs in `frontend/e2e`). AWS Lambda Power Tuning is the follow-up for a flagged function and
+needs owner approval — see the runbook there.
+
+### What a Python Lambda bundle contains
+
+Every Python function's code asset is built by one helper, `pythonLambdaAsset` in
+`voc-datalake/lib/utils/python-lambda-asset.ts`. Docker bundling mounts the source tree unfiltered as
+`/asset-input`, so the staging `exclude` lists (`lambda-asset-excludes.ts`) decide only the asset hash; what
+ships is what the bundling command copies, and every command ends by deleting `test/`, `tests/`,
+`__pycache__/`, `.pytest_cache/`, `test_*.py`, `*_test.py`, `conftest.py`, `*.pyc` and `.env*` from the
+output. A local `cdk synth` with Docker writes the bundles to `voc-datalake/cdk.out/asset.*` if you want to
+inspect one. `lib/utils/python-lambda-asset.test.ts` checks every bundling command, and (when Docker and the
+`public.ecr.aws/sam/build-python3.14` image are present locally) builds one bundle and checks its contents.
+
+<a id="data-retention-nothing-is-ever-deleted"></a>
+
+## Data Retention: nothing is deleted while the platform runs
+
+A VoC data lake reads and interprets customer feedback; while it runs it does not
+delete it (apart from the opt-in per-source retention and erasure of
+[Source policies](source-policies.md)). The platform enforces that at two layers;
+deleting the stacks is the one way to remove everything:
+
+- **No expiry.** Feedback items in `voc-feedback` carry no `ttl` (TTL is
+  disabled on that table) and the aggregator no longer stamps `METRIC#…` rows
+  in `voc-aggregates`. `voc-aggregates` keeps TTL *enabled* because its
+  operational rows (processor logs, voting sessions, fixtures) still expire.
+  Every window accepts `days` from 0 to 9999, and `days=0` means all time.
+- **No delete path.** `DELETE /data-explorer/s3` and `DELETE /data-explorer/feedback`
+  are gone (not wired at API Gateway, which has explicit routes and no
+  `{proxy+}` under `/data-explorer`). The data explorer role holds no
+  `s3:DeleteObject*` or `dynamodb:DeleteItem`, and `PUT /data-explorer/s3`
+  refuses to overwrite an existing object under `raw/`. Category corrections and
+  reprocessing update items in place.
+- **Deleted with the stack.** `voc-feedback`, `voc-aggregates`, `voc-projects`,
+  `voc-memory`, `voc-agents`, the raw-data bucket (`voc-raw-data-…`) and the KMS
+  key that encrypts them have `RemovalPolicy.DESTROY`: see
+  [Teardown deletes everything](#teardown-deletes-everything-back-up-first).
+
+### Migrating an existing deployment
+
+Deploying the new code stops *new* stamps, but items written before the deploy
+still carry `ttl`, and the `METRIC#` rows would keep expiring because the
+aggregates table keeps TTL enabled. Run the migration once, promptly after
+deploying (from `voc-datalake/`, with credentials for the target account):
+
+```bash
+# Dry run (default): scans and reports what it would change. Writes nothing.
+.venv/bin/python scripts/retention/remove_ttl.py --stack VocCoreStack --region us-east-1
+
+# Apply: REMOVE ttl from feedback items and METRIC# rows, and lower the
+# earliest-data watermark (METRIC#meta / earliest_date) to the oldest feedback date.
+.venv/bin/python scripts/retention/remove_ttl.py --stack VocCoreStack --region us-east-1 --apply
+
+# Explicit table names instead of reading them from the stack outputs
+.venv/bin/python scripts/retention/remove_ttl.py \
+  --feedback-table <voc-feedback-name> --aggregates-table <voc-aggregates-name> --apply
+```
+
+Every write is conditional and idempotent, so the script is safe to interrupt
+and re-run. It never deletes anything. Without the watermark, `days=0` falls
+back to a 365-day window until the aggregator records a new earliest date.
+
+### Memory and autonomous agents (upgrade notes)
+
+The first deploy after this change creates two tables, one secret, a
+queue + DLQ, six worker Lambdas, three EventBridge rules and the `voc-agent-run`
+state machine; no existing resource is renamed or replaced (pinned by
+`lib/app-baseline.test.ts`). Nothing to migrate: both tables start empty, and
+no agent runs until an admin creates and enables one. The memory scanner starts
+learning from assistant sessions idle for 30 minutes on its first 15-minute tick.
+The Titan Text Embeddings V2 model (`amazon.titan-embed-text-v2:0`) must be
+enabled in the deployment region for memory dedup and recall. See
+[Memory](memory.md), [Autonomous agents](autonomous-agents.md) and
+[Company context](company-context.md).
+
+### Teardown deletes everything: back up first
+
+Deleting the stacks (`npm run destroy`, `cdk destroy --all`, or deleting them in
+the CloudFormation console) is a **full cleanup**: no customer data is left behind
+in the account. With the Core stack go the customer-data tables
+(`voc-feedback`, `voc-aggregates`, `voc-projects`, `voc-memory`, `voc-agents`),
+the operational tables, the `voc/design-integrations` secret, every bucket and
+the KMS key:
+
+- **Buckets are emptied first.** The raw-data bucket (`voc-raw-data-…`) is
+  versioned; its `autoDeleteObjects` custom resource deletes every object
+  version and delete marker, then CloudFormation deletes the bucket.
+- **A replacement never deletes data.** Only deleting the stack does: the data
+  tables, the raw bucket, the KMS key and the Cognito user pool carry
+  `UpdateReplacePolicy: Retain`, so a change that forces CloudFormation to
+  replace one leaves the old resource for you to migrate or remove. One caveat:
+  the raw bucket's `autoDeleteObjects` provider still empties the OLD bucket
+  when the bucket's name changes, so never change `deploymentPrefix` (or the
+  account/region suffix) of a live deployment.
+- **Tables have no deletion protection** (it would block the teardown) and keep
+  point-in-time recovery on. DynamoDB keeps a **system backup** of each deleted
+  PITR table for 35 days.
+- **The KMS key is scheduled for deletion with a 30-day pending window** (the
+  maximum KMS allows). Until the window ends the deletion can be cancelled with
+  `aws kms cancel-key-deletion --key-id <key id>`; afterwards anything still
+  encrypted with that key, including those system backups and any on-demand
+  `create-backup` backup you took, can no longer be restored. Keep your copy
+  outside the key (below).
+- A redeploy into the same account and region starts with empty tables and
+  buckets.
+
+To keep a copy, back up **before** deleting, into a bucket that is not part of
+the platform (from any shell with credentials for the account; replace the
+placeholders):
+
+```bash
+BACKUP_BUCKET=<your-backup-bucket>   # created outside the VoC stacks
+ACCOUNT=<account id>; REGION=<region>
+
+# Raw data lake (current object versions)
+aws s3 sync "s3://voc-raw-data-${ACCOUNT}-${REGION}" "s3://${BACKUP_BUCKET}/voc-raw-data/"
+
+# Every customer-data table, exported from point-in-time recovery to S3. Exports run
+# asynchronously and read from PITR, so they do not consume table capacity.
+for table in voc-feedback voc-aggregates voc-projects voc-memory voc-agents; do
+  aws dynamodb export-table-to-point-in-time \
+    --table-arn "arn:aws:dynamodb:${REGION}:${ACCOUNT}:table/${table}-${ACCOUNT}-${REGION}" \
+    --s3-bucket "${BACKUP_BUCKET}" --s3-prefix "voc-dynamodb/${table}" \
+    --export-format DYNAMODB_JSON --s3-sse-algorithm AES256 \
+    --region "${REGION}"
+done
+
+# Wait until every export reports COMPLETED before deleting the stacks
+aws dynamodb list-exports --region "${REGION}" \
+  --query 'ExportSummaries[].[ExportArn,ExportStatus]' --output table
+```
+
+Under a deployment prefix the names carry it (`<prefix>-voc-feedback-…`); the
+exact names are the `VocCoreStack` resources (`aws cloudformation
+list-stack-resources --stack-name VocCoreStack`). `--s3-sse-algorithm AES256`
+keeps the export readable after the platform's KMS key is gone. An export can be
+loaded into a new table with `aws dynamodb import-table`.
+
+**Upgrading an existing deployment** to this policy changes only the
+`DeletionPolicy` of those resources (and sets the KMS key's pending window); the
+next deploy deletes and replaces nothing. Data is removed only when the stacks
+are deleted. Releases before this one RETAINed the customer-data resources, so a
+stack deleted earlier may have left them in the account: delete those by hand
+once you no longer need them.
+
+`lib/stacks/core-stack-teardown.test.ts` pins these policies, in both modes.
+
+### Production: protectData
+
+**Deploying for production? Set `protectData`.** The full-cleanup default above is
+right for demos, workshops and temporary environments; a production deployment
+should keep its data whatever happens to the stacks:
+
+```bash
+npm run deploy:infra -- -c protectData=true
+# or in voc-datalake/cdk.context.json: { "protectData": true }
+```
+
+With it on (lib/utils/data-protection.ts):
+
+- the data tables, the raw-data bucket, the KMS key, the `voc/design-integrations`
+  secret and the Cognito user pool use CloudFormation's `RetainExceptOnCreate`:
+  deleting the stacks, or a change that replaces one of them, leaves the
+  resource and its data in the account (a failed FIRST deploy still cleans up);
+- every DynamoDB table and the user pool get **deletion protection**, which also
+  blocks a delete from the console, the CLI or an SDK;
+- the raw-data bucket has **no auto-delete provider**, so neither a teardown nor
+  a rename (a changed `deploymentPrefix`) can empty it.
+
+Only the value `true` or `false` is accepted; anything else (a typo) fails the
+synth rather than deploying an unprotected stack. Turning it on for an existing
+deployment changes deletion policies and protection only, nothing is replaced.
+To tear down a protected deployment on purpose, deploy once with
+`-c protectData=false` (or remove deletion protection by hand), then delete the
+stacks. The website and access-log buckets and the operational queues hold no
+customer data and are always deleted with their stacks.
 
 ## Frontend Deployment
 
@@ -511,7 +926,10 @@ Enable/disable plugins in `voc-datalake/cdk.context.json`:
 
 ### Menu Configuration
 
-Enable/disable menu items in `voc-datalake/cdk.context.json`:
+Enable/disable menu items in `voc-datalake/cdk.context.json`. `memory` (Memory)
+and `agents` (Autonomous agents) are on by default; turning a menu item off
+hides the page but leaves its API and workers deployed — the memory scanner and
+the agent heartbeat still run (an agent only runs when an admin enabled it).
 
 ```json
 {
@@ -563,11 +981,15 @@ set `VITE_ENABLE_WEB_SEARCH=true`.
 
 ### Pinning All AI Surfaces to One Model
 
-Each AI surface (chat, documents, prototypes, enrichment, utilities) has its own
-default model, and some accounts cannot invoke all of them — Bedrock model access
+Each AI surface has its own default model — Claude Sonnet 5.5 for the AI
+assistant (chat), documents, utilities, agent workers and the persona panel;
+Claude Opus 5.5 for prototypes and the agent conductor and final reviewer;
+Claude Haiku 5.5 for enrichment and memory — and some accounts cannot invoke all of them — Bedrock model access
 is granted per account, and organizations behind an AWS Private Marketplace are
-commonly restricted to a subset. When a surface's default is unavailable, that
-feature fails at inference time with `AccessDeniedException`.
+commonly restricted to a subset. When a surface's model is unavailable, the
+request now falls back to the next model of that surface's chain (see
+[Model Capacity Fallback](#model-capacity-fallback)) — pin a model when you want
+a predictable choice rather than a per-request fallback.
 
 To pin every surface to one known-available model at deploy time:
 
@@ -579,7 +1001,7 @@ This creates a `Custom::ModelPin` resource in `VocCoreStack` that writes
 `model_id` to the `SETTINGS#model` configuration item. Behaviour worth knowing:
 
 - **Write-once.** The value is only set if absent, so an administrator's later
-  choice in Settings is never clobbered by a redeploy. It is a floor, not a lock —
+  choice in Administration → AI models is never clobbered by a redeploy. It is a floor, not a lock —
   per-surface overrides still take precedence.
 - **Validated at synth.** The id must be in `ALLOWED_MODEL_IDS`
   (`lib/utils/model-allowlist.ts`); an unrecognized value fails the synth rather
@@ -598,6 +1020,98 @@ aws bedrock-runtime converse --region us-east-1 \
   --messages '[{"role":"user","content":[{"text":"say ok"}]}]' \
   --inference-config '{"maxTokens":5}'
 ```
+
+### Testing a Model Before Saving It (Administration → AI models)
+
+The AI models card edits a **draft**: changing a surface's select does not save
+it. Each row has a **Test** button that sends ONE minimal Converse request
+("Reply with OK", `maxTokens` 16) to exactly the model the draft resolves to —
+Automatic included — shaped like every other request to that model
+(`shared/converse.py::build_single_turn_request`: no `temperature` or thinking
+budget where the model rejects them, no Flex, the `eu.` profile under
+`-c inferenceScope=eu`). There is **no fallback and no retry**: a test of model X
+is never answered by model Y. **Save** / **Discard** appear while the draft
+differs from what is stored; saving a model whose last test was not *Available*
+(or that was never tested) asks for confirmation but is allowed. **Test all
+models** runs the test for every allowlisted model one at a time and shows a
+table with each model's status, latency and tokens-per-minute quota (the quota
+column is filled before any test from `GET /settings/model/capacity`, which reads
+Service Quotas and calls no model).
+
+| Status | Meaning | What to do |
+|---|---|---|
+| Available | The model answered (latency and tokens/min shown) | Nothing |
+| No access | `AccessDeniedException`, or a validation error about model access / use case / agreement | Fix model access ([Anthropic Model Access](#anthropic-model-access-first-time-setup)) |
+| No capacity | Throttled AND the account's tokens-per-minute quota for this profile is **0** | **Wait.** The model is subscribed but has no capacity in this account; the quota increase has already been requested internally, so there is nothing to file |
+| Throttled | Throttled with a non-zero or unknown quota | Retry in a moment |
+| Not in this region | `ResourceNotFoundException` / unknown profile | Use a region or scope that offers it |
+| Not ready / Unavailable | `ModelNotReadyException` / `ServiceUnavailableException`, `ModelTimeoutException` | Retry later |
+| Error | Anything else (only the error code is shown) | Check the settings Lambda log |
+
+The quota is matched by name in `servicequotas:ListServiceQuotas` (service code
+`bedrock`, cached 10 minutes per container): `Global cross-region model inference
+tokens per minute for Anthropic <model>` for `global.` profiles, `Cross-region model
+inference tokens per minute for Anthropic <model>` for `eu.` / `us.` profiles. When
+the lookup is denied or fails, the quota shows as unknown and the test still runs.
+Both routes are admin-only; the settings Lambda role holds the read-only
+`servicequotas:ListServiceQuotas` (on `*`, the API has no resource-level
+permission) and already holds `bedrock:InvokeModel` on every allowlisted profile.
+
+### Model Capacity Fallback
+
+Access is not capacity. Bedrock can grant an account a model and still give it
+**zero capacity** for it, and a young account cannot request a quota increase
+until it has some history. Such a model passes every access check and then
+throttles every call. So when the model a surface resolved cannot serve right
+now, the request is re-run on the next model of one ordered chain:
+
+1. the surface's resolved model (admin per-surface pin › legacy global pin ›
+   built-in default, or an explicit `model_id=`),
+2. the surface's built-in default, when different,
+3. then `MODEL_FALLBACK_ORDER`: **Sonnet 5.5 → Sonnet 5 → Sonnet 4.6 → Haiku 5.5 → Haiku 4.5**.
+
+Opus is only ever reached as the configured or default model of a surface
+(prototype, agent conductor/reviewer), never as a stand-in. This is separate
+from Bedrock's own Opus **safety fallback** — Opus 5.5 re-runs a request its
+classifiers decline on Opus 5, and Opus 5 on Opus 4.8 — which is why both older
+Opus models stay allowlisted (and so granted and agreed). The chain is defined
+in `lambda/shared/model_config.py` (`MODEL_FALLBACK_ORDER`, `fallback_chain`) and
+mirrored for the streaming assistant in `lambda/stream/src/bedrock/model-fallback.ts`;
+`test_model_fallback_lockstep.py` fails the build on drift.
+
+What falls back (`shared/model_fallback.py::is_model_unavailable`): a
+`ThrottlingException` or `ServiceUnavailableException` that outlasted the
+existing retry budget (5 attempts with backoff in `converse()`, the SDK's 3 in
+the stream), `ModelNotReadyException`, `ServiceQuotaExceededException`,
+`ResourceNotFoundException`, and an `AccessDeniedException` /
+`ValidationException` whose message names model availability (no access to the
+model, not enabled, on-demand throughput not supported, invalid model
+identifier, end of life, not authorized to invoke). **Input errors never fall
+back** (context too long, bad request shape, guardrail): they would fail on
+every model.
+
+Behaviour worth knowing:
+
+- **Cooldown.** A model that failed for capacity is tried last for 5 minutes in
+  that Lambda container, so a burst pays the failed attempt once. When every
+  model is cooling, all are still tried — a request never fails untried.
+- **Whole request.** `converse()` re-runs the whole call (continuations
+  included) on the next model, with the request rebuilt for it (temperature and
+  thinking differ per model). When every model fails, the FIRST model's error is
+  raised.
+- **Stream: before the first token only.** The assistant falls back only while
+  nothing of the turn has reached the browser; once text streamed, the error is
+  shown. Later tool rounds and `consult_personas` stay on the model that served.
+- **Provenance.** `ConverseResult.model_id` is the model that answered and
+  `requested_model_id` the one asked for (`model_fallback` is true when they
+  differ); the stream's `RUN_FINISHED` usage names the serving model.
+- **Observability.** Each fallback logs a warning and emits the `ModelFallback`
+  metric (namespace `VoC` for the stream, the Lambda's Powertools namespace
+  otherwise) with dimensions `Surface`, `From`, `To`; a cooldown skip is counted
+  too. Alarm on it to learn that a model has lost capacity.
+- **Cost.** A Haiku 5.5 surface (enrichment, memory) falls back to Sonnet 5.5, which
+  costs more per token. That is deliberate — availability first — and bounded by
+  the 5-minute re-probe.
 
 After changing configuration:
 
@@ -817,8 +1331,8 @@ this is worth writing down:
 | an API path (`/feedback-forms/{form_id}/widget.js`) | **`403 Missing Authentication Token`** | no such route — the per-form routes are declared explicitly, not behind a `{proxy+}` (see above), so an unwired path never reaches the Lambda |
 
 Both rows are derived from the checked-in template, not from a live probe: the `200`
-from the `errorResponses` `404 -> 200 /index.html` mapping in `core-stack.ts` (pinned
-by the `core-stack.test.ts` case named above), and the `403` from `api-stack.ts`
+from the `errorResponses` `404 -> 200 /index.html` mapping in `core-cdn.ts` (pinned
+by the `core-stack.test.ts` case named above), and the `403` from `api-routes.ts`
 calling `addResource` for exactly `config`, `submit`, `iframe`, `submissions` and
 `stats` under `{form_id}` — there is no `widget.js` resource, and no `{proxy+}` to
 absorb one. Consequences worth knowing: a `<script
@@ -834,11 +1348,14 @@ invalidate `/*` after pruning (`BucketDeployment` passes `distributionPaths:
 ['/*']`; `deploy.sh` runs an explicit `create-invalidation`), but the object leaves
 the bucket before the invalidation lands. During that window the edge still serves
 the old widget, which loads fine and fails on its own `config` fetch instead — the
-retired `/feedback-form/*` (singular) path answers `403`, and because the
-`DEFAULT_4XX` gateway response sets `Access-Control-Allow-Origin: *`
-(`api-stack.ts`) the widget can read it and renders its own `Feedback form
-unavailable.` inside the embed. So: a widget-authored message first, a console
-`Unexpected token '<'` afterwards. That is one removal, not two problems.
+retired `/feedback-form/*` (singular) path answers `403`. The `DEFAULT_4XX`
+gateway response carries the deployment's own frontend origin in
+`Access-Control-Allow-Origin` (`*` only under `-c environment=dev`;
+`api-gateway.ts`), so on a customer's site the browser hides that `403` from the
+widget, its fetch fails, and it renders `Failed to load form.` inside the embed (a
+dev deployment, where the origin is `*`, shows `Feedback form unavailable.`
+instead). So: a widget-authored message first, a console `Unexpected token '<'`
+afterwards. That is one removal, not two problems.
 
 ### CloudFront Cache
 
@@ -849,6 +1366,20 @@ aws cloudfront create-invalidation \
   --distribution-id DISTRIBUTION_ID \
   --paths '/*'
 ```
+
+### Log retention of CDK's own provider Lambdas
+
+Every Lambda logs to a log group with a 14-day retention (`lib/utils/log-retention.ts`, pinned by
+`lib/utils/log-retention.test.ts`), including the functions CDK creates for you (S3 auto-delete, bucket
+notifications, the website `BucketDeployment`). Two kinds need one manual step:
+
+- **Cross-region export reader/writer** (`crossRegionReferences`): CDK adds them after the retention aspect runs,
+  so Lambda creates `/aws/lambda/<Stack>-CustomCrossRegionExport…` with no retention on their first deploy. Set it
+  once: `aws logs put-retention-policy --log-group-name <group> --retention-in-days 14`.
+- **Deployments from before 5.25.04**: the provider functions logged to groups Lambda created, with no retention.
+  After this release they log to the new stack-owned groups; the old `/aws/lambda/<Stack>-Custom…`,
+  `-BucketNotificationsHandler…` and `-CustomCDKBucketDeployment…` groups are left behind. Give them a retention (as
+  above) or delete them.
 
 ### View Stack Outputs
 
@@ -870,7 +1401,8 @@ aws cloudformation describe-stacks \
 | `npm run deploy:infra` | Deploy CDK stacks only |
 | `npm run deploy:frontend` | Deploy frontend only |
 | `npm run generate:config` | Regenerate plugin/menu config |
-| `npm run dev` | Start frontend dev server |
+| `npm run dev` | Start the mock API (`localhost:3001`, sample data) and the frontend dev server (`localhost:5173`) together; Ctrl+C stops both. An already-running mock is reused |
+| `npm run dev:frontend` | Start only the frontend dev server (no mock) |
 | `npm run cdk:diff` | Preview infrastructure changes |
 | `npm run cdk:synth` | Generate CloudFormation templates |
-| `npm run destroy` | Destroy all stacks |
+| `npm run destroy` | Destroy all stacks, customer data included: back up first (see [Teardown deletes everything](#teardown-deletes-everything-back-up-first)) |

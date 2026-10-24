@@ -18,7 +18,7 @@ import { Construct } from 'constructs';
 import { z } from 'zod';
 import { ALLOWED_FOUNDATION_MODEL_IDS } from '../utils/model-allowlist';
 import { NagSuppressions } from 'cdk-nag';
-import { cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, pluginSystemSuppressions, bedrockAgreementSuppressions, marketplaceSuppressions } from '../utils/nag-suppressions';
+import { cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, pluginSystemSuppressions, bedrockAgreementSuppressions, marketplaceSuppressions, suppressAwsCustomResourceProvider } from '../utils/nag-suppressions';
 
 /**
  * Valid industry options for Anthropic use case form.
@@ -50,7 +50,7 @@ const INTENDED_USERS_OPTIONS = ['0', '1', '2'] as const;
  */
 export const AnthropicUseCaseSchema = z.object({
   companyName: z.string().min(1, 'Company name is required'),
-  companyWebsite: z.string().url('Company website must be a valid URL'),
+  companyWebsite: z.url('Company website must be a valid URL'),
   // intendedUsers is an index: "0" = internal, "1" = external, "2" = both
   intendedUsers: z.enum(INTENDED_USERS_OPTIONS).default('0'),
   industryOption: z.enum(INDUSTRY_OPTIONS).default('Technology'),
@@ -63,9 +63,10 @@ export type AnthropicUseCaseConfig = z.infer<typeof AnthropicUseCaseSchema>;
 /**
  * Models that require agreement acceptance for the VoC platform. Sourced from
  * the shared allowlist so every model the per-surface picker can select
- * (issue #96) has its agreement created — Sonnet 5, Sonnet 4.6, Opus 5, Opus
- * 4.8 and Haiku 4.5. Opus 4.8 needs its agreement both as a picker option and
- * because Opus 5 automatically falls back to it. Kept in lockstep with
+ * (issue #96) has its agreement created — Opus 5.5, Sonnet 5.5, Sonnet 5,
+ * Sonnet 4.6, Opus 5, Opus 4.8, Haiku 5.5 and Haiku 4.5. Opus 5 and Opus 4.8
+ * need their agreements both as picker options and as safety-fallback targets
+ * (Opus 5.5 falls back to Opus 5, Opus 5 to Opus 4.8). Kept in lockstep with
  * lambda/shared/model_config.py.
  */
 const REQUIRED_MODELS = [...ALLOWED_FOUNDATION_MODEL_IDS];
@@ -119,7 +120,15 @@ export interface BedrockModelAccessProps {
  * consumed exports — so folding it in cost no cross-stack wiring.
  */
 export class BedrockModelAccess extends Construct {
-  constructor(scope: Construct, id: string, props: BedrockModelAccessProps) {
+  /**
+   * Adds the model-access half to `scope`. The host stack keeps no reference:
+   * the construct publishes nothing another construct reads.
+   */
+  public static addTo(scope: Construct, id: string, props: BedrockModelAccessProps): BedrockModelAccess {
+    return new BedrockModelAccess(scope, id, props);
+  }
+
+  private constructor(scope: Construct, id: string, props: BedrockModelAccessProps) {
     super(scope, id);
 
     const stack = cdk.Stack.of(this);
@@ -131,7 +140,7 @@ export class BedrockModelAccess extends Construct {
     if (!parseResult.success) {
       throw new Error(
         'Invalid anthropicUseCase configuration: ' +
-        parseResult.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+        parseResult.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
       );
     }
 
@@ -211,26 +220,7 @@ export class BedrockModelAccess extends Construct {
       // coincide while no explicit `stackName` is set, so using stackName here
       // would silently stop matching — and therefore silently drop the
       // suppressions — the day someone overrides it.
-      const customResourceId = `AWS${cr.AwsCustomResource.PROVIDER_FUNCTION_UUID.split('-').join('')}`;
-      const customResourceSuppressPaths = new Set([
-        `/${stack.node.id}/${customResourceId}/ServiceRole/Resource`,
-        `/${stack.node.id}/${customResourceId}/Resource`,
-      ]);
-
-      const allExistingPaths = new Set(
-        stack.node.findAll().map((node) => `/${node.node.path}`)
-      );
-
-      for (const path of customResourceSuppressPaths) {
-        if (allExistingPaths.has(path)) {
-          NagSuppressions.addResourceSuppressionsByPath(
-            stack,
-            path,
-            [...cdkCustomResourceSuppressions, ...lambdaBasicExecutionRoleSuppressions],
-            true
-          );
-        }
-      }
+      suppressAwsCustomResourceProvider(stack, stack.node.id);
     }
 
     // ============================================
@@ -350,7 +340,14 @@ export class BedrockModelAccess extends Construct {
 import boto3
 import json
 import logging
-from botocore.exceptions import ClientError
+from botocore.exceptions import (
+    ClientError, ConnectionClosedError, ConnectTimeoutError, EndpointConnectionError, ReadTimeoutError,
+)
+
+# A transient network failure reaching Bedrock. Deliberately NOT BotoCoreError, whose
+# family also holds ParamValidationError, NoCredentialsError, NoRegionError...: those are
+# a wrong model id, region or role, and must fail the deploy instead of passing as UNAVAILABLE.
+TRANSIENT_ERRORS = (EndpointConnectionError, ConnectTimeoutError, ReadTimeoutError, ConnectionClosedError)
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -362,6 +359,13 @@ logger.setLevel(logging.INFO)
 # is not last in the deploy order, everything after it) down over a model the
 # deployment may not even use.
 NON_FATAL_ERROR_CODES = ('AccessDeniedException',)
+
+def _unavailable(model_id, code):
+    """The custom-resource result for a model whose agreement step was absorbed."""
+    return {
+        'PhysicalResourceId': f'model-agreement-{model_id}',
+        'Data': {'status': 'UNAVAILABLE', 'modelId': model_id, 'errorCode': code}
+    }
 
 def handler(event, context):
     """
@@ -447,10 +451,7 @@ def handler(event, context):
                 f"Agreement unavailable for {model_id} ({code}): {str(e)}. "
                 "Continuing — this model will not be invocable in this account."
             )
-            return {
-                'PhysicalResourceId': f'model-agreement-{model_id}',
-                'Data': {'status': 'UNAVAILABLE', 'modelId': model_id, 'errorCode': code}
-            }
+            return _unavailable(model_id, code)
         
         logger.info(f"Successfully created agreement for {model_id}")
         
@@ -459,6 +460,20 @@ def handler(event, context):
             'Data': {'status': 'CREATED', 'modelId': model_id}
         }
         
+    except TRANSIENT_ERRORS as e:
+        # A connection-level failure from any Bedrock call above. It carries no AWS
+        # error code and says nothing about this stack's role or code, so it is
+        # reported like the absorbed AccessDenied instead of rolling the stack back.
+        # Listed first: it is not a ClientError, and it can occur before 'bedrock'
+        # exists. Every ClientError still reaches the handlers below.
+        code = type(e).__name__
+        logger.warning(
+            f"Agreement step for {model_id} could not reach Bedrock ({code}): {str(e)}. "
+            "Continuing without it: accept this model's agreement in the Bedrock console "
+            "(a later deploy does not retry it, because Update leaves the resource as created)."
+        )
+        return _unavailable(model_id, code)
+
     except bedrock.exceptions.ConflictException as e:
         # Agreement already exists
         logger.info(f"Agreement already exists for {model_id}: {str(e)}")

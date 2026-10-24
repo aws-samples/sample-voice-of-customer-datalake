@@ -1,0 +1,277 @@
+{
+  "launcher": {
+    "open": "어시스턴트 열기",
+    "close": "어시스턴트 닫기",
+    "askAboutProject": "어시스턴트에게 묻기",
+    "moveHint": "드래그하거나 화살표 키로 어시스턴트 버튼을 옮깁니다. Home 키로 원래 위치로 돌아갑니다.",
+    "resetPosition": "어시스턴트 버튼 위치 초기화"
+  },
+  "panel": {
+    "title": "어시스턴트",
+    "using": "사용 중: {{context}}",
+    "newChat": "새 채팅",
+    "sessions": "이전 대화",
+    "export": "대화 내보내기(Markdown)",
+    "expand": "확장",
+    "fullscreen": "전체 화면",
+    "exitFullscreen": "전체 화면 종료",
+    "more": "더 많은 작업",
+    "close": "닫기",
+    "messages": "대화",
+    "thinking": "생각 중…",
+    "stillGenerating": "아직 생성 중…"
+  },
+  "pages": {
+    "home": "홈",
+    "dashboard": "대시보드",
+    "feedback": "피드백",
+    "categories": "카테고리",
+    "problems": "문제 분석",
+    "chat": "AI 채팅",
+    "projects": "프로젝트",
+    "project": "프로젝트",
+    "prioritization": "우선순위",
+    "data-explorer": "데이터 탐색기",
+    "scrapers": "스크레이퍼",
+    "feedback-forms": "피드백 양식",
+    "settings": "설정",
+    "admin": "관리",
+    "memory": "메모리",
+    "agents": "자율 에이전트",
+    "agent": "에이전트",
+    "workflow": "워크플로",
+    "company": "회사",
+    "connect": "연결",
+    "radar": "레이더",
+    "account": "계정",
+    "other": "이 페이지"
+  },
+  "message": {
+    "reasoning": "추론 과정",
+    "toolSteps": "수행한 단계",
+    "feedbackSources": "관련 피드백",
+    "webSources": "웹 출처",
+    "personaAnswers": "페르소나 답변",
+    "toolGroupRunning_other": "{{count, number}}개 항목 확인 중…",
+    "toolGroupRunning_one": "{{count, number}}개 항목 확인 중…",
+    "toolGroup_other": "{{count, number}}개 항목 확인함",
+    "toolGroup_one": "{{count, number}}개 항목 확인함",
+    "externalLink": "{{host}}, 새 탭에서 열림",
+    "copy": "복사",
+    "copied": "복사됨",
+    "savedDocumentTitle": "어시스턴트 답변 – {{date}}",
+    "saveAsDocument": {
+      "idle": "문서로 저장",
+      "saving": "저장 중…",
+      "saved": "문서에 저장됨",
+      "error": "저장 실패 – 다시 시도"
+    }
+  },
+  "toolStatus": {
+    "streaming": "준비 중",
+    "running": "실행 중",
+    "complete": "완료",
+    "awaiting_approval": "승인 대기 중",
+    "executed": "완료",
+    "failed": "실패",
+    "declined": "거절됨",
+    "cancelled": "취소됨"
+  },
+  "approvals": {
+    "title": "승인 대기 중인 작업",
+    "resolved": {
+      "executed": "완료",
+      "failed": "실패",
+      "declined": "거절됨"
+    }
+  },
+  "composer": {
+    "label": "어시스턴트에게 메시지",
+    "placeholder": "피드백, 프로젝트 또는 이 페이지에 대해 질문하세요…",
+    "send": "보내기",
+    "stop": "중지",
+    "attach": "이미지 또는 문서 첨부",
+    "webSearch": "웹 검색",
+    "removeAttachment": "{{name}} 제거",
+    "counter": "{{length, number}} / {{max, number}}",
+    "awaitingApproval": "계속하려면 대기 중인 작업을 승인하거나 거절하세요.",
+    "restoring": "마지막 대화를 여는 중…",
+    "attachmentError": {
+      "type": "이미지(PNG, JPEG, GIF, WebP)와 문서(PDF, Word, Excel, CSV, HTML, 텍스트, Markdown)만 첨부할 수 있습니다.",
+      "count": "최대 {{max, number}}개의 파일을 첨부할 수 있습니다.",
+      "size": "첨부 파일은 합계 최대 {{mb}}MB까지 가능합니다.",
+      "read": "파일을 읽을 수 없습니다."
+    },
+    "stillGenerating": "답변을 아직 작성하고 있습니다. 준비되면 여기에 표시됩니다."
+  },
+  "errors": {
+    "streamClosed": "답변이 끝나기 전에 연결이 종료되었습니다. 다시 시도하세요.",
+    "generic": "문제가 발생했습니다: {{message}}",
+    "followTimeout": "답변이 예상보다 오래 걸리고 있습니다. 나중에 이 대화를 다시 열어 확인하세요."
+  },
+  "export": {
+    "user": "나",
+    "assistant": "어시스턴트"
+  },
+  "sessions": {
+    "title": "이전 대화",
+    "close": "닫기",
+    "loading": "대화를 불러오는 중",
+    "error": "대화를 불러올 수 없습니다.",
+    "empty": "저장된 대화가 아직 없습니다.",
+    "untitled": "제목 없는 대화",
+    "deleteConfirmTitle": "\"{{title}}\"을(를) 삭제할까요?",
+    "deleteConfirmMessage": "대화와 메시지가 영구적으로 삭제됩니다. 되돌릴 수 없습니다.",
+    "deleteConfirm": "대화 삭제",
+    "renameInput": "대화 이름",
+    "closeRunningItem": "중지하고 닫기",
+    "closeItem": "닫기",
+    "deleteItem": "삭제",
+    "renameItem": "이름 바꾸기",
+    "more": "“{{title}}”에 대한 추가 작업",
+    "renameFailed": "대화 이름을 바꾸지 못했습니다.",
+    "renameBusy": "아직 답변을 생성하는 중입니다. 완료된 후 이름을 바꾸세요.",
+    "newConversation": "새 대화",
+    "sidebar": "대화",
+    "collapseSidebar": "대화 목록 접기",
+    "expandSidebar": "대화 목록 펼치기",
+    "openGroup": "열린 대화",
+    "historyGroup": "기록",
+    "search": "대화 검색",
+    "searchPlaceholder": "대화 검색",
+    "noMatch": "검색과 일치하는 대화가 없습니다.",
+    "when": { "today": "오늘", "week": "이번 주", "older": "이전" },
+    "status": {
+      "streaming": "실행 중",
+      "awaiting": "승인 대기 중",
+      "error": "실패",
+      "unread": "새 답변"
+    }
+  },
+  "empty": {
+    "title": "무엇을 도와드릴까요?",
+    "subtitle": "데이터를 읽고 변경을 제안할 수 있습니다. 승인 없이는 아무것도 변경되지 않습니다."
+  },
+  "suggestions": {
+    "dashboard": { "1": "이번 주 고객 감정은 어떻게 바뀌었어?", "2": "피드백이 가장 많이 들어오는 소스는?", "3": "이 대시보드를 세 문장으로 요약해 줘" },
+    "categories": { "1": "불만이 가장 많은 카테고리는?", "2": "가장 큰 카테고리에 대해 고객들은 뭐라고 해?", "3": "나빠지고 있는 카테고리는?" },
+    "projects": { "1": "이번 주 가장 많은 불만으로 프로젝트를 시작해 줘", "2": "진행 중인 프로젝트는?", "3": "다음 리서치 프로젝트는 무엇이 좋을까?" },
+    "agents": { "1": "이번 주 에이전트들은 무엇을 했어?", "2": "내 결정을 기다리는 에이전트는?", "3": "긴급 피드백을 지켜보는 에이전트를 만들도록 도와줘" },
+    "memory": { "1": "우리 회사에 대해 무엇을 기억하고 있어?", "2": "검토를 기다리는 메모리는?", "3": "우리 회사에 대해 어떻게 알려 줄 수 있어?" },
+    "company": { "1": "우리의 비전과 목표를 요약해 줘", "2": "최근 피드백은 어떤 목표와 관련이 있어?", "3": "고객 피드백을 바탕으로 KPI를 제안해 줘" },
+    "dataExplorer": { "1": "이번 달에 피드백을 얼마나 가져왔어?", "2": "가장 최근에 데이터를 보낸 소스는?", "3": "피드백 기록 하나에는 무엇이 들어 있어?" },
+    "default": {
+      "1": "이번 주 고객이 가장 불만스러워하는 점은?",
+      "2": "지금 내가 신경 써야 할 것은?",
+      "3": "고객들이 더 많이 이야기하는 주제는?"
+    },
+    "project": {
+      "1": "이 프로젝트와 페르소나를 요약해 줘",
+      "2": "우리 페르소나는 이 아이디어를 어떻게 생각할까?",
+      "3": "이 리서치로 PRD(제품 요구 사항) 초안을 작성해 줘"
+    },
+    "forms": {
+      "1": "피드백 양식의 성과는 어때?",
+      "2": "최근 양식 제출 내용을 요약해 줘",
+      "3": "평점이 가장 낮은 양식은?"
+    },
+    "prioritization": {
+      "1": "다음에 무엇을 우선해야 할까?",
+      "2": "상위 항목이 위에 있는 이유는?",
+      "3": "고객 영향이 가장 큰 항목은?"
+    },
+    "scrapers": {
+      "1": "최근 리뷰를 수집한 리뷰 소스는?",
+      "2": "작동하지 않는 리뷰 소스가 있어?",
+      "3": "마지막 수집에서 무엇이 들어왔어?"
+    },
+    "radar": {
+      "1": "경쟁사에 대한 Radar 설정",
+      "2": "추적 중인 브랜드가 우리보다 나은 점은?",
+      "3": "가장 만족한 리뷰에서 제품 아이디어 얻기"
+    },
+    "settings": {
+      "1": "우리 브랜드 설정은 어떻게 되어 있어?",
+      "2": "어떤 피드백 카테고리를 쓰고 있어?",
+      "3": "브랜드를 위해 추적할 해시태그를 추천해 줘"
+    },
+    "problems": {
+      "1": "해결되지 않은 가장 큰 문제는?",
+      "2": "이 문제들을 예상 원인별로 묶어 줘",
+      "3": "최근 해결된 문제는?"
+    },
+    "feedback": {
+      "1": "이 피드백을 요약해 줘",
+      "2": "비슷한 피드백을 찾아 줘",
+      "3": "이 고객이 불만스러운 이유는 무엇일까?"
+    }
+  },
+  "notifications": {
+    "approval": {
+      "title": "어시스턴트가 승인을 기다리고 있습니다",
+      "body": "대화에서 작업 승인을 기다리고 있습니다."
+    },
+    "reply": {
+      "title": "어시스턴트가 답변했습니다",
+      "body": "대화에 새 답변이 있습니다."
+    },
+    "failed": {
+      "title": "어시스턴트 실행이 실패했습니다",
+      "body": "대화를 열어 무엇이 잘못되었는지 확인하세요."
+    },
+    "toggle": {
+      "turnOn": "대화에서 내가 필요할 때 알림 받기",
+      "turnOff": "알림 끄기",
+      "blocked": "브라우저 설정에서 이 사이트의 알림이 차단되어 있습니다",
+      "unsupported": "이 브라우저는 알림을 지원하지 않습니다"
+    },
+    "planDone": {
+      "title": "계획이 완료되었습니다",
+      "body": "승인한 계획의 모든 단계가 완료되었습니다."
+    },
+    "planIssues": {
+      "title": "계획이 문제와 함께 종료되었습니다",
+      "body": "계획을 열어 실패하거나 건너뛴 단계를 확인하세요."
+    },
+    "planApproval": {
+      "title": "계획 단계에 승인이 필요합니다",
+      "body": "실행 중인 계획이 단계 승인을 기다리고 있습니다."
+    }
+  },
+  "plan": {
+    "title": "계획 진행 상황",
+    "steps": "계획 단계",
+    "loading": "계획을 불러오는 중…",
+    "loadFailed": "계획을 불러올 수 없습니다.",
+    "actionFailed": "실패했습니다. 새로고침 후 다시 시도하세요.",
+    "cancel": "계획 취소",
+    "openProject": "프로젝트 열기",
+    "approval": {
+      "title": "“{{tool}}”에 승인이 필요합니다",
+      "fields": "“{{tool}}”가 기록할 내용",
+      "destructive": "데이터가 영구적으로 삭제되며 되돌릴 수 없습니다.",
+      "approve": "단계 승인",
+      "decline": "단계 거절"
+    },
+    "stepStatus": {
+      "pending": "대기 중",
+      "running": "실행 중",
+      "waiting": "기다리는 중",
+      "done": "완료",
+      "failed": "실패",
+      "skipped": "건너뜀",
+      "needs_approval": "승인 필요",
+      "cancelled": "취소됨"
+    },
+    "status": {
+      "awaiting_approval": "승인 대기 중",
+      "approved": "승인됨",
+      "running": "실행 중",
+      "completed": "완료됨",
+      "completed_with_errors": "문제와 함께 완료됨",
+      "failed": "실패",
+      "cancelled": "취소됨",
+      "expired": "만료됨"
+    }
+  }
+}

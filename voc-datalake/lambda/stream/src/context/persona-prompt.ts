@@ -1,19 +1,31 @@
 /**
- * Roundtable persona prompt building, split out of project-context.ts to keep
- * that module inside its size budget. The type-only import back into
- * project-context is erased at compile time, so there is no runtime cycle.
+ * Persona prompt building (roundtable and the assistant's consult_personas).
+ * Typed structurally (`PersonaPromptSource`), so it depends on no context
+ * builder's row schema.
  *
  * `getLanguageInstruction` lives in ./language.js; consumers import it from there
  * directly rather than through a re-export here.
  */
-import type { ProjectItem } from './project-context.js';
 import {
   bulletList,
   personaFrustrations,
   personaGoals,
   personaNeeds,
   personaVoice,
+  type PersonaFieldSource,
 } from './persona-fields.js';
+
+/** What the persona prompt reads: identity fields plus the persona sections. */
+export interface PersonaPromptSource extends PersonaFieldSource {
+  name?: string;
+  tagline?: string;
+}
+
+/** Documents are only named in the prompt. */
+export interface PersonaPromptDocument {
+  document_id?: string;
+  title?: string;
+}
 import { getLanguageInstruction } from './language.js';
 import type { SupportedLanguage } from './language.js';
 
@@ -25,7 +37,7 @@ import type { SupportedLanguage } from './language.js';
  * empty identity — "**Your Goals:**" with nothing under it. It answered anyway,
  * inventing a character. Field paths now come from persona-fields.js.
  */
-function personaIdentitySection(projectName: string, persona: ProjectItem): string {
+function personaIdentitySection(projectName: string, persona: PersonaPromptSource): string {
   const parts = [
     `You are "${persona.name}" — a customer persona in the project "${projectName}".\n`,
   ];
@@ -55,12 +67,12 @@ function personaIdentitySection(projectName: string, persona: ProjectItem): stri
 
 export function buildSinglePersonaPrompt(
   projectName: string,
-  persona: ProjectItem,
+  persona: PersonaPromptSource,
   selectedContent: string,
   otherDocsList: string[],
   feedbackSection: string,
   selectedDocumentIds: string[],
-  documents: ProjectItem[],
+  documents: PersonaPromptDocument[],
   previousResponses: Array<{ name: string; response: string }>,
   responseLanguage?: SupportedLanguage,
 ): string {
@@ -70,7 +82,8 @@ export function buildSinglePersonaPrompt(
     parts.push(`## REFERENCED DOCUMENTS\n${selectedContent}\n`);
   }
 
-  if (feedbackSection) parts.push(feedbackSection);
+  // An empty section joins to nothing, so it needs no guard.
+  parts.push(feedbackSection);
 
   if (previousResponses.length > 0) {
     parts.push('## What other personas have said (you may agree, disagree, or build on their points)\n\n');

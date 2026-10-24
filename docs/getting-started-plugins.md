@@ -42,7 +42,7 @@ Edit `manifest.json` with your source details:
 {
   "id": "your_source_id",
   "name": "Your Source Name",
-  "icon": "🔌",
+  "icon": "Plugin",
   "description": "Brief description of what this plugin does",
   "category": "reviews",
   "version": "1.0.0",
@@ -214,6 +214,16 @@ Processes files uploaded to S3:
   "suffixes": [".csv", ".json", ".jsonl"]
 }
 ```
+
+### Capabilities: Bedrock and the managed browser
+
+Two opt-in flags on `ingestor` give the plugin a dedicated IAM role with one extra grant each:
+
+- `"bedrock": true` — `bedrock:InvokeModel` on the curated model allowlist (call models through
+  `shared/converse.py`), as `synthetic_reviews` does.
+- `"browser": true` — sessions of the AWS-managed Amazon Bedrock AgentCore Browser (`aws.browser.v1`), driven
+  over the Chrome DevTools Protocol, as the generic **web reviews** plugin does to read review pages that only a
+  real browser can load ([web-reviews.md](web-reviews.md)).
 
 ## Using Watermarks
 

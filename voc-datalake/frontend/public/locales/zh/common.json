@@ -1,8 +1,8 @@
 {
+  "categoryOther": "其他",
   "actions": {
     "close": "关闭"
   },
-  "appDescription": "统一客户反馈智能平台",
   "appName": "VoC 分析",
   "appTagline": "客户之声分析平台",
   "breadcrumbs": {
@@ -17,8 +17,17 @@
     "problems": "问题分析",
     "project": "项目",
     "projects": "项目",
-    "scrapers": "网页抓取器",
-    "settings": "设置"
+    "scrapers": "数据源",
+    "memory": "记忆",
+    "company": "公司",
+    "agents": "自主智能体",
+    "agent": "智能体",
+    "admin": "管理",
+    "connect": "连接",
+    "account": "账户",
+    "workflows": "工作流列表",
+    "workflow": "工作流",
+    "radar": "雷达"
   },
   "cancel": "取消",
   "configureBrand": "配置品牌",
@@ -26,33 +35,30 @@
   "exportCsvShort": "CSV",
   "exportCsvTooltip": "导出为CSV",
   "exportPdf": "导出 PDF",
-  "exportPdfShort": "PDF",
   "exportPdfTooltip": "导出为 PDF",
   "filters": {
     "allCategories": "所有分类",
-    "allSentiments": "所有情感",
     "allSources": "所有来源",
-    "clearFilters": "清除筛选",
-    "mostRecent": "最新",
-    "searchFeedback": "搜索反馈...",
     "urgentOnly": "仅紧急"
   },
-  "forQuery": "关于\"{{query}}\"",
   "goToSettings": "前往设置",
   "loading": "加载中...",
   "loadMore": "加载更多",
+  "loadFailed": {
+    "message": "无法加载。请检查网络连接后重试。",
+    "retry": "重试"
+  },
   "logs": {
-    "daysAgo_one": "{{count}}天前",
-    "daysAgo_other": "{{count}}天前",
-    "hoursAgo_one": "{{count}}小时前",
-    "hoursAgo_other": "{{count}}小时前",
+    "daysAgo_one": "{{count, number}}天前",
+    "daysAgo_other": "{{count, number}}天前",
+    "hoursAgo_one": "{{count, number}}小时前",
+    "hoursAgo_other": "{{count, number}}小时前",
     "justNow": "刚刚",
-    "minutesAgo_one": "{{count}}分钟前",
-    "minutesAgo_other": "{{count}}分钟前"
+    "minutesAgo_one": "{{count, number}}分钟前",
+    "minutesAgo_other": "{{count, number}}分钟前"
   },
   "metrics": {
     "avgSentiment": "平均情感",
-    "sourcesActive": "活跃来源",
     "totalFeedback": "反馈总数",
     "urgentIssues": "紧急问题"
   },
@@ -66,47 +72,53 @@
     "prioritization": "优先级排序",
     "problemAnalysis": "问题分析",
     "projects": "项目",
-    "scrapers": "抓取器",
+    "scrapers": "数据源",
     "section": {
-      "home": "主页",
-      "ideation": "构思",
-      "settings": "设置",
-      "signals": "信号",
-      "sources": "数据源",
-      "validation": "验证"
+      "listen": "倾听",
+      "understand": "理解",
+      "build": "构建",
+      "validate": "验证",
+      "knowledge": "知识",
+      "connect": "连接",
+      "admin": "管理"
     },
-    "settings": "设置"
+    "memory": "记忆",
+    "company": "公司",
+    "admin": "管理",
+    "connect": "MCP 与技能"
   },
   "partialCountsHint": "近似值：无法读取完整时间范围，计数为下限",
-  "partialWindowHint": "缩小筛选范围以查看全部",
   "problemAnalysisPage": {
     "emptyHint": "请尝试扩大时间范围或调整筛选条件",
     "emptyTitle": "未找到所选时间段的问题分析数据"
   },
   "problemResolution": {
-    "allResolvedHint": "启用上方的\"显示已解决 ({{total}})\"即可查看",
+    "allResolvedHint": "启用上方的\"显示已解决 ({{total, number}})\"即可查看",
     "allResolvedTitle": "此视图中的所有问题均已标记为已解决",
     "markResolved": "标记为已解决",
     "markUnresolved": "标记为未解决",
     "resolved": "已解决",
     "saveFailed": "无法更新解决状态，请重试。",
-    "showResolved": "显示已解决 ({{total}})"
+    "showResolved": "显示已解决 ({{total, number}})"
   },
-  "send": "发送",
   "sentiment": {
     "mixed": "混合",
     "negative": "消极",
     "neutral": "中性",
     "positive": "积极"
   },
-  "showingOf_one": "显示{{total}}条中的{{count}}条",
-  "showingOf_other": "显示{{total}}条中的{{count}}条",
   "sidebar": {
     "closeMenu": "关闭菜单",
     "collapseSidebar": "折叠侧边栏",
     "expandSidebar": "展开侧边栏",
     "openMenu": "打开菜单",
-    "signOut": "退出登录"
+    "label": "主侧边栏"
+  },
+  "profileMenu": {
+    "trigger": "{{name}} 的账户菜单",
+    "myProfile": "我的资料",
+    "signOut": "退出登录",
+    "admin": "管理员"
   },
   "timeRange": {
     "24h": "24小时",
@@ -121,8 +133,204 @@
     "cancel": "取消",
     "clear": "清除",
     "custom": "自定义",
-    "endDate": "结束日期",
-    "selectDateRange": "选择日期范围",
-    "startDate": "开始日期"
+    "90d": "90天",
+    "90dFull": "90天",
+    "label": "时间范围",
+    "lastNDays_one": "最近 {{count, number}} 天",
+    "lastNDays_other": "最近 {{count, number}} 天",
+    "filterBy": "日期依据",
+    "filterByCurrent": "日期依据：{{basis}}",
+    "imported": "导入日期",
+    "importedDescription": "反馈被收集到平台的时间。",
+    "importedTooltip": "按数据收集时间筛选，而非评论撰写时间。",
+    "review": "评论日期",
+    "reviewDescription": "客户最初撰写反馈的时间。",
+    "reviewTooltip": "按评论撰写时间筛选，而非导入时间。",
+    "customRange": "自定义范围",
+    "closeCustom": "关闭自定义范围",
+    "lastNDaysInput": "最近 N 天",
+    "daysUnit": "天",
+    "customHint": "请输入 1–{{max, number}} 天。要查看全部评论，请选择“全部时间”。",
+    "customPlaceholder": "例如 14",
+    "allTime": "全部时间",
+    "customError": "请输入 1 到 {{max, number}} 之间的整数天数。"
+  },
+  "theme": {
+    "system": "跟随系统",
+    "light": "浅色主题",
+    "dark": "深色主题",
+    "toggle": "{{current}} — 切换到{{next}}"
+  },
+  "partialTimeBudgetHint": "近似值：为及时响应，计数仅覆盖 {{date}} 起的数据——缩小时间范围可获得完整总数",
+  "account": {
+    "title": "账户",
+    "subtitle": "您的个人资料、密码、偏好设置以及您自己的目标与 KPI。",
+    "profile": "个人资料",
+    "name": "姓名",
+    "email": "邮箱",
+    "username": "用户名",
+    "role": "角色",
+    "roleAdmin": "管理员",
+    "roleUser": "用户",
+    "preferences": "语言与主题",
+    "theme": "主题",
+    "mcpTitle": "我的 MCP 令牌",
+    "mcpHint": "使用在“连接”页面创建的一个全应用 MCP 令牌即可连接外部助手。",
+    "mcpLink": "前往“连接”",
+    "groups": "组",
+    "language": "语言",
+    "password": {
+      "title": "更改密码",
+      "allRequired": "所有字段都是必需的",
+      "submit": "更改密码",
+      "changing": "更改中...",
+      "confirm": "确认新密码",
+      "confirmPlaceholder": "确认新密码",
+      "current": "当前密码",
+      "currentPlaceholder": "输入当前密码",
+      "failed": "更改密码失败",
+      "incorrect": "当前密码不正确",
+      "new": "新密码",
+      "newPlaceholder": "输入新密码",
+      "changed": "密码更改成功！",
+      "intro": "输入当前密码并选择新密码",
+      "requirements": "密码必须至少 8 个字符，包含大写字母、小写字母和数字",
+      "tooShort": "密码必须至少 8 个字符",
+      "mismatch": "新密码不匹配",
+      "show": "显示密码"
+    },
+    "signOut": "退出登录",
+    "signOutHint": "结束您在此设备上的会话。",
+    "onboardingTitle": "设置清单",
+    "onboardingHint": "首页上的快速上手清单。",
+    "onboardingShown": "正在首页显示",
+    "onboardingHiddenUntil": "隐藏至 {{when}}",
+    "onboardingOff": "已关闭",
+    "onboardingShow": "在首页显示",
+    "nav": {
+      "briefing": "晨间简报",
+      "assistant": "助手",
+      "access": "我的访问权限"
+    },
+    "tabsLabel": "账户",
+    "tabs": {
+      "profile": "个人资料",
+      "preferences": "偏好设置",
+      "briefing": "晨间简报",
+      "objectives": "目标",
+      "access": "访问权限与令牌"
+    },
+    "briefHint": "你自己的简报：何时送达、使用哪种语言、关注什么，以及是否通过电子邮件发送给你。",
+    "guideOpen": "在首页展开显示“工作原理”",
+    "assistant": {
+      "hint": "AI 助手在此浏览器中为你的表现方式。",
+      "notify": "桌面通知",
+      "notifyHint": "当你未查看的对话需要你批准、给出回复或失败时。与助手标题栏中的铃铛是同一设置。",
+      "bubble": "助手气泡",
+      "bubbleMoved": "你移动了气泡。重置会将其放回右下角。",
+      "bubbleDefault": "气泡位于默认角落。",
+      "resetBubble": "重置气泡位置"
+    },
+    "access": {
+      "hint": "你在此应用中可以查看的内容。管理员可在“管理 > 隐私与访问 > 用户”中更改。",
+      "categories": "类别",
+      "sources": "来源",
+      "everyCategory": "所有类别",
+      "everySource": "所有来源",
+      "allowedSources": "仅以下来源：",
+      "deniedSources": "除以下来源外的所有来源：",
+      "loading": "正在加载你的访问权限...",
+      "failed": "无法加载你的访问权限。"
+    },
+    "browser": {
+      "advanced": "高级",
+      "hint": "仅保存在此浏览器的本地存储中。此处的操作不会更改服务器。",
+      "endpoint": "API 端点",
+      "endpointNone": "未配置"
+    }
+  },
+  "connect": {
+    "title": "连接",
+    "subtitle": "通过 MCP 让 Kiro、Copilot 或 Amazon Quick 等外部助手以您自己的权限访问 VoC。",
+    "actsAsTitle": "令牌以您的身份操作",
+    "actsAsBody": "令牌只能看到您能看到的项目和反馈类别。它绝不会以管理员身份操作，在任何项目中最多为编辑者；您还可以进一步缩小范围：只读、单个项目、较短的有效期。",
+    "notConfigured": "请先配置 API 端点。",
+    "loading": "正在加载您的令牌…",
+    "loadFailed": "无法加载您的 MCP 令牌，请重试。",
+    "endpointTitle": "连接助手",
+    "endpointLabel": "全局 MCP 端点",
+    "mcpJsonLabel": "mcp.json",
+    "mcpJsonHint": "将 <YOUR_VOC_TOKEN> 替换为下方创建的令牌。适用于 Kiro、Copilot、Cowork、Amazon Quick 以及任何支持带请求头的 Streamable HTTP 的 MCP 客户端。",
+    "skillLabel": "技能",
+    "skillBody": "Markdown 技能会告诉助手 VoC 是什么、如何连接、何时使用哪个工具以及安全规则。下载已填好此端点的文件，或分享固定链接。",
+    "downloadSkill": "下载技能",
+    "openSkill": "打开技能",
+    "downloadFailed": "无法下载技能，请重试。",
+    "copy": "复制",
+    "copied": "已复制",
+    "mintTitle": "创建令牌",
+    "newTokenTitle": "请立即复制您的令牌——它不会再次显示",
+    "newTokenBody": "请像密码一样妥善保管。如有泄露，请在下方撤销。",
+    "newTokenDone": "我已复制",
+    "scopeLabel": "访问权限",
+    "scope": {
+      "read": "只读",
+      "write": "读写"
+    },
+    "scopeHint": {
+      "read": "反馈、指标、类别、记忆、公司背景、项目和文档。",
+      "write": "还可以创建和更新项目文档。",
+      "writeAdmin": "由管理员创建时，此令牌还可以运行自主代理。"
+    },
+    "nameLabel": "名称",
+    "nameHint": "便于日后识别，例如它所用于的助手。",
+    "namePlaceholder": "我笔记本上的 Kiro",
+    "expiryLabel": "有效期",
+    "expiryDays_one": "{{count, number}} 天",
+    "expiryDays_other": "{{count, number}} 天",
+    "projectLabel": "项目",
+    "projectHint": "可选：将项目工具限定在一个项目内。",
+    "projectAll": "我的所有项目",
+    "mintFailed": "无法创建令牌。请检查字段后重试。",
+    "minting": "正在创建…",
+    "mint": "创建令牌",
+    "tokensTitle": "我的令牌",
+    "tokensEmpty": "您还没有 MCP 令牌。",
+    "revokeFailed": "无法撤销令牌，请重试。",
+    "revokeTitle": "撤销此令牌？",
+    "revokedGroup": "已撤销 ({{count, number}})",
+    "revokeBody": "“{{name}}”将立即对所有使用它的助手失效。此操作无法撤消。",
+    "revoke": "撤销",
+    "toggleAudit": "显示 {{name}} 的活动",
+    "status": {
+      "active": "有效",
+      "expired": "已过期",
+      "revoked": "已撤销"
+    },
+    "runsAgents": "可运行代理",
+    "projectColumn": "项目",
+    "expires": "过期时间",
+    "lastUsed": "上次使用",
+    "never": "从未",
+    "created": "创建时间",
+    "auditTitle": "工具调用",
+    "auditLoading": "正在加载活动…",
+    "auditFailed": "无法加载活动。",
+    "auditEmpty": "尚无工具调用。",
+    "auditTime": "时间",
+    "auditTool": "工具",
+    "auditProject": "项目",
+    "auditOutcomeLabel": "结果",
+    "auditOutcome": {
+      "ok": "成功",
+      "error": "错误",
+      "denied": "已拒绝",
+      "failed": "失败"
+    },
+    "shortcutTitle": "将外部助手连接到此项目"
+  },
+  "header": {
+    "title": "客户之声",
+    "subtitle": "统一的客户反馈智能平台"
   }
 }

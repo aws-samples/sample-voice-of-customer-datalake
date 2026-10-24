@@ -5,15 +5,16 @@
 
 import clsx from 'clsx'
 import {
-  Play, Settings, Trash2, Smartphone, Loader2, CheckCircle2, AlertCircle,
+  Globe, Smartphone, Loader2, CheckCircle2, AlertCircle,
 } from 'lucide-react'
-import { ADMIN_ONLY_TITLE } from '../../constants/admin'
+import { useTranslation } from 'react-i18next'
 import {
-  getAppIdentifier, getFrequencyLabel,
+  WEB_REVIEWS_PLUGIN_ID, appField, getAppIdentifier, getFrequencyLabel,
 } from './scraper-helpers'
+import { CardActions, CardStat, RadarBadge, RunStartedNotice } from './SourceCardParts'
+import { ToneTile } from './SourceDialogHeader'
+import type { AppConfig } from './scraper-helpers'
 import type { PluginManifest } from '../../plugins/types'
-
-type AppConfig = Record<string, string>
 
 export interface RunStatusInfo {
   status: string
@@ -21,17 +22,72 @@ export interface RunStatusInfo {
   errors: string[]
 }
 
-function getPlatformLabel(pluginId: string): string {
-  if (pluginId === 'app_reviews_ios') return 'iOS'
-  if (pluginId === 'app_reviews_android') return 'Android'
-  return 'App'
+/** What kind of source a card is, in words (a web-review target is a "Review page", not "Platform: Web"). */
+function kindLabelKey(pluginId: string): string {
+  if (pluginId === 'app_reviews_ios') return 'appCard.kind.ios'
+  if (pluginId === 'app_reviews_android') return 'appCard.kind.android'
+  if (pluginId === WEB_REVIEWS_PLUGIN_ID) return 'appCard.kind.reviewPage'
+  return 'appCard.kind.app'
+}
+
+/** A web-review page's host without `www.` ("trustpilot.com"); undefined when the URL does not parse. */
+function reviewPageHost(url: string): string | undefined {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return undefined
+  }
+}
+
+/** Who a run of this card contacts, in words: the review page's site, or the app store. */
+function useRunSite(app: AppConfig, pluginId: string): string {
+  const { t } = useTranslation('scrapers')
+  if (pluginId === 'app_reviews_ios') return t('card.siteAppStore')
+  if (pluginId === 'app_reviews_android') return t('card.siteGooglePlay')
+  const url = getAppIdentifier(app, pluginId)
+  return reviewPageHost(url) ?? (url === '' ? t('card.siteUnknown') : url)
+}
+
+/** A web_reviews target without `max_pages` reads this many (lambda/shared/web_review_targets.py DEFAULT_PAGES). */
+const WEB_DEFAULT_PAGES = '10'
+
+/** The per-run bounds a card shows: pages (and a review limit when set) for a web-review target, reviews for an app. */
+function RunBoundStat({ app, pluginId }: Readonly<{ app: AppConfig; pluginId: string }>) {
+  const { t } = useTranslation('scrapers')
+  if (pluginId === WEB_REVIEWS_PLUGIN_ID) {
+    const pages = appField(app, 'max_pages')
+    const pagesValue = pages === '' ? WEB_DEFAULT_PAGES : pages
+    const reviewLimit = appField(app, 'max_reviews')
+    return (
+      <>
+        <CardStat label={t('appCard.maxPages')} value={pagesValue === '0' ? t('appCard.allPages') : pagesValue} mono />
+        {reviewLimit === '' || reviewLimit === '0' ? null : <CardStat label={t('appCard.maxReviews')} value={reviewLimit} mono />}
+      </>
+    )
+  }
+  const reviews = appField(app, 'max_reviews_per_run')
+  return <CardStat label={t('appCard.maxReviews')} value={reviews === '' ? '500' : reviews} mono />
+}
+
+/** Up to two run errors (a web target reports "<name>: blocked by <vendor>"), then how many more. */
+const SHOWN_ERRORS = 2
+
+function RunErrors({ errors }: Readonly<{ errors: string[] }>) {
+  const { t } = useTranslation('scrapers')
+  if (errors.length === 0) return null
+  return (
+    <div className="mt-1 text-xs text-danger space-y-0.5">
+      {errors.slice(0, SHOWN_ERRORS).map((error) => <div key={error} className="break-words [overflow-wrap:anywhere]">{error}</div>)}
+      {errors.length > SHOWN_ERRORS ? <div>{t('status.moreErrors', { count: errors.length - SHOWN_ERRORS })}</div> : null}
+    </div>
+  )
 }
 
 function getStatusColor(status: string, hasErrors: boolean): string {
-  if (status === 'running') return 'bg-blue-50 border-blue-200'
-  if (status === 'error') return 'bg-red-50 border-red-200'
-  if (hasErrors) return 'bg-amber-50 border-amber-200'
-  return 'bg-green-50 border-green-200'
+  if (status === 'running') return 'bg-info-subtle border-info/30'
+  if (status === 'error') return 'bg-danger-subtle border-danger/30'
+  if (hasErrors) return 'bg-warn-subtle border-warn/30'
+  return 'bg-ok-subtle border-ok/30'
 }
 
 function StatusIcon({
@@ -40,37 +96,42 @@ function StatusIcon({
   status: string
   hasErrors: boolean
 }>) {
+  const { t } = useTranslation('scrapers')
   if (status === 'running') {
-    return <><Loader2 size={14} className="animate-spin text-blue-600" /><span className="font-medium text-blue-700">Running...</span></>
+    return <><Loader2 size={14} className="animate-spin text-info" /><span className="font-medium text-info">{t('status.running')}</span></>
   }
   if (status === 'error') {
-    return <><AlertCircle size={14} className="text-red-600" /><span className="font-medium text-red-700">Failed</span></>
+    return <><AlertCircle size={14} className="text-danger" /><span className="font-medium text-danger">{t('status.failed')}</span></>
   }
   if (hasErrors) {
-    return <><AlertCircle size={14} className="text-amber-600" /><span className="font-medium text-amber-700">Completed with errors</span></>
+    return <><AlertCircle size={14} className="text-warn" /><span className="font-medium text-warn">{t('status.completedWithErrors')}</span></>
   }
-  return <><CheckCircle2 size={14} className="text-green-600" /><span className="font-medium text-green-700">Completed</span></>
+  return <><CheckCircle2 size={14} className="text-ok" /><span className="font-medium text-ok">{t('status.completed')}</span></>
 }
 
 function AppRunStatusBar({ status }: Readonly<{ status: RunStatusInfo }>) {
+  const { t } = useTranslation('scrapers')
   return (
     <div className={clsx('mt-3 p-3 rounded-lg text-sm border', getStatusColor(status.status, status.errors.length > 0))}>
       <div className="flex items-center gap-2 mb-1">
         <StatusIcon status={status.status} hasErrors={status.errors.length > 0} />
       </div>
-      <div className="text-xs text-gray-600">
-        Reviews found: <span className="font-semibold">{status.items_found}</span>
+      <div className="text-xs text-text">
+        {t('status.reviewsFound')} <span className="font-mono font-semibold text-text-strong">{status.items_found}</span>
       </div>
-      {status.errors.length > 0 ? <div className="mt-1 text-xs text-red-600 truncate">{status.errors[0]}</div> : null}
+      {status.status === 'running' ? <RunStartedNotice /> : null}
+      <RunErrors errors={status.errors} />
     </div>
   )
 }
 
 export function AppConfigCard({
-  app, plugin, isAdmin, onEdit, onDelete, onRun, isRunning, runStatus,
+  app, plugin, radarBrandLabel, isAdmin, onEdit, onDelete, onRun, isRunning, runStatus,
 }: Readonly<{
   app: AppConfig
   plugin: PluginManifest
+  /** The label of the Radar brand the connector's `radar_brand` names (its reviews go to Radar), else undefined. */
+  radarBrandLabel?: string
   /** Whether the current user is an admin. `POST /sources/{source}/run` and
    *  `DELETE /integrations/{source}/apps/{id}` are admin-gated server-side, so Run
    *  and Delete are disabled rather than allowed to fire a 403. Edit stays enabled:
@@ -84,33 +145,41 @@ export function AppConfigCard({
   isRunning: boolean
   runStatus?: RunStatusInfo
 }>) {
-  const frequencyMinutes = Number.parseInt(app.frequency_minutes === '' ? '1440' : app.frequency_minutes, 10)
-  const frequencyLabel = getFrequencyLabel(frequencyMinutes)
+  const { t } = useTranslation('scrapers')
+  const frequency = appField(app, 'frequency_minutes')
+  const frequencyMinutes = Number.parseInt(frequency === '' ? '1440' : frequency, 10)
+  const frequencyLabel = getFrequencyLabel(frequencyMinutes, t)
+  const name = app.app_name === '' ? t('appCard.unnamed') : app.app_name
+  const identifier = getAppIdentifier(app, plugin.id)
+  const runSite = useRunSite(app, plugin.id)
 
   return (
-    <div className="card border-2 border-purple-200 bg-purple-50/30 transition-all">
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center"><Smartphone size={20} /></div>
-          <div>
-            <h3 className="font-semibold">{app.app_name === '' ? 'Unnamed App' : app.app_name}</h3>
-            <p className="text-sm text-gray-500">{getAppIdentifier(app, plugin.id)}</p>
+    <div className="card">
+      <div className="flex items-start gap-3 mb-4 min-w-0">
+        <ToneTile icon={plugin.id === WEB_REVIEWS_PLUGIN_ID ? Globe : Smartphone} />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+            <h2 className="text-sm font-semibold tracking-tight text-text-strong break-words [overflow-wrap:anywhere] min-w-0">{name}</h2>
+            <RadarBadge brandLabel={radarBrandLabel} />
           </div>
-        </div>
-        <div className="flex items-center gap-1">
-          <button onClick={onRun} disabled={isRunning || !isAdmin} className={clsx('p-2 rounded transition-colors disabled:cursor-not-allowed', isRunning ? 'bg-blue-100 text-blue-600' : 'hover:bg-green-100 text-green-600', isAdmin ? '' : 'opacity-50')} title={isAdmin ? 'Run now' : ADMIN_ONLY_TITLE}>
-            {isRunning ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
-          </button>
-          <button onClick={onEdit} className="p-2 hover:bg-gray-100 rounded" title="Edit"><Settings size={16} className="text-gray-500" /></button>
-          <button onClick={onDelete} disabled={!isAdmin} className="p-2 hover:bg-gray-100 rounded text-red-500 disabled:opacity-50 disabled:cursor-not-allowed" title={isAdmin ? 'Delete' : ADMIN_ONLY_TITLE}><Trash2 size={16} /></button>
+          <p className="text-sm text-muted font-mono break-all">{identifier}</p>
         </div>
       </div>
-      <div className="grid grid-cols-3 gap-4 text-sm">
-        <div><span className="text-gray-500">Frequency</span><p className="font-medium">{frequencyLabel}</p></div>
-        <div><span className="text-gray-500">Platform</span><p className="font-medium">{getPlatformLabel(plugin.id)}</p></div>
-        <div><span className="text-gray-500">Max Reviews</span><p className="font-medium">{app.max_reviews_per_run === '' ? '500' : app.max_reviews_per_run}</p></div>
-      </div>
+      <dl className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
+        <CardStat label={t('card.frequency')} value={frequencyLabel} />
+        <CardStat label={t('appCard.kindLabel')} value={t(kindLabelKey(plugin.id))} />
+        <RunBoundStat app={app} pluginId={plugin.id} />
+      </dl>
       {runStatus == null ? null : <AppRunStatusBar status={runStatus} />}
+      <CardActions
+        isAdmin={isAdmin}
+        isRunning={isRunning}
+        runDisabled={isRunning}
+        runSite={runSite}
+        onRun={onRun}
+        onEdit={onEdit}
+        onDelete={onDelete}
+      />
     </div>
   )
 }

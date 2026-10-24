@@ -1,0 +1,81 @@
+{
+  "description": "invalid free in wait",
+  "ctx": {
+    "isAdmin": true,
+    "packsAllowed": [
+      "core",
+      "insights",
+      "project",
+      "forms",
+      "prioritization",
+      "scrapers",
+      "settings",
+      "memory",
+      "agents",
+      "company"
+    ]
+  },
+  "plan": {
+    "schema": "voc-plan/1",
+    "goal": "Create a checkout project and derive personas",
+    "steps": [
+      {
+        "id": "s1",
+        "pack": "core",
+        "kind": "write",
+        "title": "Create the project",
+        "write": {
+          "tool": "create_project",
+          "args": {
+            "name": "Checkout"
+          }
+        },
+        "produces": [
+          "project_id"
+        ]
+      },
+      {
+        "id": "s2",
+        "pack": "project",
+        "kind": "write",
+        "after": [
+          "s1"
+        ],
+        "title": "Generate personas",
+        "write": {
+          "tool": "generate_personas",
+          "args": {
+            "project_id": "{{s1.project_id}}",
+            "persona_count": 3,
+            "custom_instructions": "Checkout customers, from their checkout reviews only"
+          }
+        },
+        "produces": [
+          "job_id"
+        ]
+      },
+      {
+        "id": "s3",
+        "pack": "project",
+        "kind": "wait",
+        "after": [
+          "s2"
+        ],
+        "title": "Wait",
+        "wait": {
+          "for": "project_job",
+          "project_id": "{{s1.project_id}}",
+          "job_id": "{{free}}"
+        }
+      }
+    ]
+  },
+  "valid": false,
+  "errors": [
+    {
+      "step": "s3",
+      "field": "wait.job_id"
+    }
+  ],
+  "needs_args_schema": false
+}

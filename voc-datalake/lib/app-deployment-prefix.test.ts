@@ -29,6 +29,9 @@ import {
   SYNTH_REGION,
   SYNTH_TIMEOUT_MS,
 } from './test-support/synth-app';
+import { byCodeUnit } from './utils/compare';
+import { DESIGN_CAPTURE_FUNCTION_BASE_NAME } from './utils/function-names';
+import { valueAt } from './test-support/guards';
 
 /**
  * Short on purpose. The tightest budget in the app is the
@@ -80,9 +83,9 @@ describe('a prefixed deployment', () => {
   it('names its stacks distinctly from an unprefixed one, without adding a stack', () => {
     // Still five templates: a downstream packaging consumer accepts at most
     // five, and that ceiling is invisible to `cdk synth`.
-    expect(prefixed.stackNames).toEqual(BASE_STACK_IDS.map((id) => `${PREFIX}-${id}`).sort());
+    expect(prefixed.stackNames).toStrictEqual(BASE_STACK_IDS.map((id) => `${PREFIX}-${id}`).sort(byCodeUnit));
     expect(prefixed.stackNames).toHaveLength(5);
-    expect(new Set(prefixed.stackNames)).not.toEqual(new Set(BASE_STACK_IDS));
+    expect(new Set(prefixed.stackNames)).not.toStrictEqual(new Set(BASE_STACK_IDS));
   });
 
   it('prefixes every physical resource name', () => {
@@ -97,11 +100,11 @@ describe('a prefixed deployment', () => {
       // otherwise throw "Cannot read properties of undefined (reading 'filter')"
       // instead of saying which stack the baseline does not know about.
       expect(Object.keys(UNPREFIXED_NAMES), `${baseId} is absent from ${BASELINE_PATH}`).toContain(baseId);
-      const before = UNPREFIXED_NAMES[baseId].filter((entry) => !isApiScopedName(entry));
+      const before = valueAt(UNPREFIXED_NAMES, baseId).filter((entry) => !isApiScopedName(entry));
       expect(before.length, `${baseId} has no baseline names to map`).toBeGreaterThan(0);
       const after = nameInventory(prefixed.template(`${PREFIX}-${baseId}`)).physicalNames
         .filter((entry) => !isApiScopedName(entry));
-      expect(after, baseId).toEqual(before.map((name) => insertPrefix(name)));
+      expect(after, baseId).toStrictEqual(before.map((name) => insertPrefix(name)));
     }
   });
 
@@ -116,22 +119,31 @@ describe('a prefixed deployment', () => {
     // flat names, `/aws/lambda/...` log groups where the prefix must land on the
     // `voc` SEGMENT rather than in front of `/aws`, and a secret name whose own
     // base contains a slash (`voc-datalake/api-credentials`).
-    expect(nameInventory(prefixed.template(`${PREFIX}-VocIngestionStack`)).physicalNames).toEqual([
+    expect(nameInventory(prefixed.template(`${PREFIX}-VocIngestionStack`)).physicalNames).toStrictEqual([
       'AWS::Events::Rule Name = b-voc-ingest-app_reviews_android-schedule-<AWS::AccountId>-<AWS::Region>',
       'AWS::Events::Rule Name = b-voc-ingest-app_reviews_ios-schedule-<AWS::AccountId>-<AWS::Region>',
+      'AWS::Events::Rule Name = b-voc-ingest-github_issues-schedule-<AWS::AccountId>-<AWS::Region>',
+      'AWS::Events::Rule Name = b-voc-ingest-web_reviews-schedule-<AWS::AccountId>-<AWS::Region>',
       'AWS::Events::Rule Name = b-voc-ingest-webscraper-schedule-<AWS::AccountId>-<AWS::Region>',
+      'AWS::Lambda::Function FunctionName = b-voc-design-capture-<AWS::AccountId>-<AWS::Region>',
       'AWS::Lambda::Function FunctionName = b-voc-ingestor-app_reviews_android-<AWS::AccountId>-<AWS::Region>',
       'AWS::Lambda::Function FunctionName = b-voc-ingestor-app_reviews_ios-<AWS::AccountId>-<AWS::Region>',
+      'AWS::Lambda::Function FunctionName = b-voc-ingestor-github_issues-<AWS::AccountId>-<AWS::Region>',
       'AWS::Lambda::Function FunctionName = b-voc-ingestor-s3_import-<AWS::AccountId>-<AWS::Region>',
       'AWS::Lambda::Function FunctionName = b-voc-ingestor-synthetic_reviews-<AWS::AccountId>-<AWS::Region>',
+      'AWS::Lambda::Function FunctionName = b-voc-ingestor-web_reviews-<AWS::AccountId>-<AWS::Region>',
       'AWS::Lambda::Function FunctionName = b-voc-ingestor-webscraper-<AWS::AccountId>-<AWS::Region>',
       // Note `/aws/lambda/b-voc-…`, NOT `b-/aws/lambda/voc-…`.
+      'AWS::Logs::LogGroup LogGroupName = /aws/lambda/b-voc-design-capture-<AWS::AccountId>-<AWS::Region>',
       'AWS::Logs::LogGroup LogGroupName = /aws/lambda/b-voc-ingestor-app_reviews_android-<AWS::AccountId>-<AWS::Region>',
       'AWS::Logs::LogGroup LogGroupName = /aws/lambda/b-voc-ingestor-app_reviews_ios-<AWS::AccountId>-<AWS::Region>',
+      'AWS::Logs::LogGroup LogGroupName = /aws/lambda/b-voc-ingestor-github_issues-<AWS::AccountId>-<AWS::Region>',
       'AWS::Logs::LogGroup LogGroupName = /aws/lambda/b-voc-ingestor-s3_import-<AWS::AccountId>-<AWS::Region>',
       'AWS::Logs::LogGroup LogGroupName = /aws/lambda/b-voc-ingestor-synthetic_reviews-<AWS::AccountId>-<AWS::Region>',
+      'AWS::Logs::LogGroup LogGroupName = /aws/lambda/b-voc-ingestor-web_reviews-<AWS::AccountId>-<AWS::Region>',
       'AWS::Logs::LogGroup LogGroupName = /aws/lambda/b-voc-ingestor-webscraper-<AWS::AccountId>-<AWS::Region>',
       'AWS::S3::Bucket BucketName = b-voc-import-<AWS::AccountId>-<AWS::Region>',
+      'AWS::SQS::Queue QueueName = b-voc-ingest-schedule-dlq-<AWS::AccountId>-<AWS::Region>',
       'AWS::SQS::Queue QueueName = b-voc-processing-dlq-<AWS::AccountId>-<AWS::Region>',
       'AWS::SQS::Queue QueueName = b-voc-processing-queue-<AWS::AccountId>-<AWS::Region>',
       // The prefix lands on the leading `voc-datalake` segment, not on the
@@ -148,7 +160,7 @@ describe('a prefixed deployment', () => {
     // decision instead of quietly widening.
     const exempt = nameInventory(prefixed.template(`${PREFIX}-VocApiStack`)).physicalNames
       .filter((entry) => isApiScopedName(entry));
-    expect(exempt).toEqual([
+    expect(exempt).toStrictEqual([
       'AWS::ApiGateway::Authorizer Name = voc-cognito-authorizer',
       'AWS::ApiGateway::Authorizer Name = voc-mcp-token-authorizer',
     ]);
@@ -174,25 +186,45 @@ describe('a prefixed deployment', () => {
     }
   });
 
-  it('scopes the three ingestor IAM wildcards to its own deployment', () => {
-    // Unprefixed, one copy's API role can invoke the OTHER copy's ingestors and
-    // toggle its schedules — which makes the isolation worthless. The trailing
-    // `*` stays: it stands in for `-<account>-<region>`, and narrowing these to
-    // exact names is issue #234, deliberately separate.
-    const resources = nameInventory(prefixed.template(`${PREFIX}-VocApiStack`)).policyResources;
-    const arn = (service: string, tail: string): string =>
-      `arn:aws:${service}:${SYNTH_REGION}:${SYNTH_ACCOUNT}:${tail}`;
+  // Unprefixed, one copy's API role could invoke the OTHER copy's ingestors and
+  // toggle its schedules — which makes the isolation worthless. The Lambda
+  // invoke grants name each function exactly (#234): the enabled plugins'
+  // ingestors, the webscraper ingestor and the manual-import processor. The
+  // schedule-rule grant keeps its trailing `*` for the `-<account>-<region>`
+  // suffix, prefixed so it stays inside this deployment.
+  const apiPolicyResources = (): string[] => nameInventory(prefixed.template(`${PREFIX}-VocApiStack`)).policyResources;
+  const prefixedArn = (service: string, tail: string): string =>
+    `arn:aws:${service}:${SYNTH_REGION}:${SYNTH_ACCOUNT}:${tail}`;
 
-    expect(resources).toContain(arn('lambda', `function:${PREFIX}-voc-ingestor-*`));
-    expect(resources).toContain(arn('lambda', `function:${PREFIX}-voc-ingestor-webscraper-*`));
-    expect(resources).toContain(arn('lambda', `function:${PREFIX}-voc-manual-import-processor-*`));
-    expect(resources).toContain(arn('events', `rule/${PREFIX}-voc-ingest-*-schedule*`));
+  it('grants invoke and the schedule rules on exact names, with no wildcard', () => {
+    const resources = apiPolicyResources();
+    expect(resources.filter((resource) => /:function:|:rule\//.test(resource) && resource.includes('*'))).toStrictEqual([]);
+    expect(resources).toContain(prefixedArn('lambda', `function:${PREFIX}-voc-manual-import-processor-<AWS::AccountId>-<AWS::Region>`));
+  });
 
-    // And nothing still points at the unprefixed namespace, which is the other
-    // deployment's.
-    for (const resource of resources) {
-      expect(resource).not.toMatch(/:(?:function|rule\/)voc-/);
-    }
+  it('grants invoke on exactly the ingestors this deployment creates', () => {
+    const functionPrefix = 'AWS::Lambda::Function FunctionName = ';
+    const createdIngestors = nameInventory(prefixed.template(`${PREFIX}-VocIngestionStack`)).physicalNames
+      .filter((name) => name.startsWith(`${functionPrefix}${PREFIX}-voc-ingestor-`))
+      .map((name) => prefixedArn('lambda', `function:${name.slice(functionPrefix.length)}`));
+    const grantedIngestors = apiPolicyResources().filter((resource) => resource.includes(`:function:${PREFIX}-voc-ingestor-`));
+    expect(createdIngestors.length).toBeGreaterThan(0);
+    expect(new Set(grantedIngestors)).toStrictEqual(new Set(createdIngestors));
+  });
+
+  it('grants the schedule-rule actions on exactly the rules this deployment creates', () => {
+    const rulePrefix = 'AWS::Events::Rule Name = ';
+    const createdRules = nameInventory(prefixed.template(`${PREFIX}-VocIngestionStack`)).physicalNames
+      .filter((name) => name.startsWith(`${rulePrefix}${PREFIX}-voc-ingest-`) && name.includes('-schedule-'))
+      .map((name) => prefixedArn('events', `rule/${name.slice(rulePrefix.length)}`));
+    const grantedRules = apiPolicyResources().filter((resource) => resource.includes(`:rule/${PREFIX}-voc-ingest-`));
+    expect(createdRules.length).toBeGreaterThan(0);
+    expect(new Set(grantedRules)).toStrictEqual(new Set(createdRules));
+  });
+
+  it('points no grant at the unprefixed namespace, which is the other deployment', () => {
+    const unprefixed = apiPolicyResources().filter((resource) => /:(?:function:|rule\/)voc-/.test(resource));
+    expect(unprefixed).toStrictEqual([]);
   });
 
   it('resolves the manually triggered ingestor name in CDK, not in the handler', () => {
@@ -210,8 +242,10 @@ describe('a prefixed deployment', () => {
     );
 
     // The pattern must name functions that this deployment actually creates.
+    // voc-design-capture lives in this stack too but is not an ingestor (no source, never run by source).
     const ingestors = nameInventory(prefixed.template(`${PREFIX}-VocIngestionStack`)).physicalNames
-      .filter((name) => name.includes('AWS::Lambda::Function FunctionName'));
+      .filter((name) => name.includes('AWS::Lambda::Function FunctionName'))
+      .filter((name) => !name.includes(`${PREFIX}-${DESIGN_CAPTURE_FUNCTION_BASE_NAME}-`));
     expect(ingestors.length).toBeGreaterThan(0);
     for (const ingestor of ingestors) {
       expect(ingestor).toContain(`${PREFIX}-voc-ingestor-`);
@@ -220,9 +254,10 @@ describe('a prefixed deployment', () => {
 
   it('tells each ingestor the schedule rule its circuit breaker must disable', () => {
     // The breaker disables the plugin's own schedule after repeated failures,
-    // deriving the rule name from DEPLOY_ACCOUNT_ID/DEPLOY_REGION. Under a
-    // prefix that name does not exist, so a failing plugin would keep hammering
-    // the source — the exact thing the breaker exists to stop.
+    // using the name CDK hands it. Under a prefix a name built any other way
+    // would not exist, so a failing plugin would keep hammering the source —
+    // the exact thing the breaker exists to stop. (The unprefixed half, and the
+    // matching DisableRule grant, are pinned in lib/stacks/ingestion-stack.test.ts.)
     const template = prefixed.template(`${PREFIX}-VocIngestionStack`);
     const ruleNames = nameInventory(template).physicalNames
       .filter((name) => name.startsWith('AWS::Events::Rule Name = '))
@@ -233,7 +268,7 @@ describe('a prefixed deployment', () => {
       .filter((entry) => entry.startsWith('INGEST_SCHEDULE_RULE_NAME = '))
       .map((entry) => entry.slice('INGEST_SCHEDULE_RULE_NAME = '.length));
     // One per scheduled plugin, and each one an actual rule in this template.
-    expect(new Set(declared)).toEqual(new Set(ruleNames));
+    expect(new Set(declared)).toStrictEqual(new Set(ruleNames));
   });
 
   it('synthesizes with zero warnings', () => {
@@ -249,7 +284,7 @@ describe('a prefixed deployment', () => {
     // emitted.
     expect(prefixed.readsRealAnnotations, 'the annotation collector found nothing at all').toBe(true);
     const found = diagnostics(prefixed);
-    expect(found, JSON.stringify(found, null, 2)).toEqual([]);
+    expect(found, JSON.stringify(found, null, 2)).toStrictEqual([]);
   });
 }, SYNTH_TIMEOUT_MS);
 
@@ -306,6 +341,7 @@ function isApiScopedName(inventoryEntry: string): boolean {
  * log groups are `/aws/lambda/${uniqueName(base)}`, so front-prefixing would
  * give two shapes for the same kind of resource in one deployment.
  */
+// jscpd:ignore-start — restates DeploymentNaming.prefixed() on purpose: the test must not import the rule it pins
 function insertPrefix(inventoryEntry: string): string {
   const marker = ' = ';
   const at = inventoryEntry.indexOf(marker);
@@ -321,3 +357,4 @@ function insertPrefix(inventoryEntry: string): string {
   segments[target] = `${PREFIX}-${segments[target]}`;
   return `${head}${segments.join('/')}`;
 }
+// jscpd:ignore-end of the accepted pair

@@ -34,6 +34,7 @@ from botocore import exceptions as botocore_exceptions
 from botocore.config import Config
 
 from shared.logging import logger
+from shared.project_access import ACTING_SUBJECT_CLAIM
 
 # A DEDICATED Lambda client, not shared.aws.get_lambda_client().
 #
@@ -81,6 +82,12 @@ SYNTHETIC_SUBJECT_PREFIX: Final = 'mcp:'
 # so the claim-synthesis test can assert the set is EXACTLY this — a claim
 # nobody considered cannot arrive unremarked.
 SYNTHETIC_CLAIM_KEYS: Final[frozenset[str]] = frozenset({'sub', 'cognito:groups', 'email'})
+
+# Claims a delegated call MAY additionally carry — each derived from the stored
+# token row, never the request. The acting subject is present only when the row
+# names a usable minter (see synthetic_claims). The security test asserts every
+# synthesized claim set is a subset of required | optional.
+OPTIONAL_SYNTHETIC_CLAIM_KEYS: Final[frozenset[str]] = frozenset({ACTING_SUBJECT_CLAIM})
 
 
 class DelegationUnavailable(Exception):
@@ -137,8 +144,8 @@ def synthetic_claims(token_info: Mapping[str, Any]) -> dict[str, str]:
     `sub`, not a nested `requestContext`, not a `cognito:groups` in the tool
     arguments. A filtering implementation would have to enumerate what to strip
     and would be wrong the first time somebody added a field; this one cannot be
-    wrong because the data is not in scope. `test_mcp_security.py` pins it with
-    a request that tries.
+    wrong because the data is not in scope. `test_mcp_delegate_mutation.py` pins
+    the claims a token row yields.
 
     `cognito:groups` is ALWAYS empty, and that is a decision rather than a
     placeholder. No token record carries a group — the mint route records
@@ -147,6 +154,15 @@ def synthetic_claims(token_info: Mapping[str, Any]) -> dict[str, str]:
     Empty means `shared.api.get_caller_groups` returns `[]` and `require_admin`
     refuses, so an admin-gated route stays refused even if a future tool is
     mapped onto one by mistake. Fail-closed by construction, not by review.
+
+    `voc:acting_subject` (``project_access.ACTING_SUBJECT_CLAIM``) carries the
+    minter's Cognito sub from the token row's `created_by`, so per-project
+    permissions evaluate the credential as the person who minted it (capped at
+    editor, never admin — see shared/project_access.py). It is added only when
+    `created_by` is a non-empty string that is not itself a delegated subject;
+    a token minted before `created_by` existed omits the claim and so reaches
+    public projects only. Like every other claim it comes from the stored row,
+    never from the request.
     """
     token_id = token_info.get('token_id')
     if not isinstance(token_id, str) or not token_id:
@@ -154,7 +170,7 @@ def synthetic_claims(token_info: Mapping[str, Any]) -> dict[str, str]:
         # is the only honest answer: the alternative is a delegated write (in a
         # later phase) landing under a subject nobody can trace.
         raise DelegationUnavailable('token record has no usable token_id')
-    return {
+    claims = {
         'sub': f'{SYNTHETIC_SUBJECT_PREFIX}{token_id}',
         'cognito:groups': '',
         # Not a mailbox, and deliberately not the minter's. The routes that read
@@ -169,6 +185,11 @@ def synthetic_claims(token_info: Mapping[str, Any]) -> dict[str, str]:
         # `mcp+{token_id}@<domain>`, not relaxing the validation.
         'email': f'{SYNTHETIC_SUBJECT_PREFIX}{token_id}',
     }
+    raw_minter = token_info.get('created_by')
+    minter = raw_minter.strip() if isinstance(raw_minter, str) else ''
+    if minter and not minter.startswith(SYNTHETIC_SUBJECT_PREFIX):
+        claims[ACTING_SUBJECT_CLAIM] = minter
+    return claims
 
 
 def build_proxy_event(call: DomainCall, claims: Mapping[str, str]) -> dict:

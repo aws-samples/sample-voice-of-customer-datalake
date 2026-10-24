@@ -1,10 +1,11 @@
 """Test fixtures for persona importer job."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 # Import shared fixtures
-from jobs.conftest import *  # noqa: F401, F403
+from jobs.conftest import *  # noqa: F403
 
 
 @pytest.fixture
@@ -17,12 +18,12 @@ def text_import_event(sample_job_event):
             'content': '''
             Name: Sarah Chen
             Role: Product Manager at a mid-size tech company
-            
+
             Goals:
             - Ship features faster
             - Better understand customer needs
             - Reduce time spent on documentation
-            
+
             Frustrations:
             - Too many meetings
             - Scattered feedback across tools

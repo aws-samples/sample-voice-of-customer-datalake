@@ -53,6 +53,7 @@ class TestDefaultModelLockstep:
         match = re.search(
             r"const documentsSurfaceDefaultModelId = '([^']+)';", _core_stack_source()
         )
+        assert match is not None, 'documentsSurfaceDefaultModelId not found in the core stack'
         assert match.group(1) in ALLOWED_MODEL_IDS
 
     def test_env_uses_that_constant_rather_than_a_third_literal(self):

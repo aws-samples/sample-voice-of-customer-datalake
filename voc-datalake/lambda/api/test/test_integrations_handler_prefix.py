@@ -19,6 +19,10 @@ lib/app-deployment-prefix.test.ts, so the two halves cannot drift apart.
 import json
 from unittest.mock import MagicMock, patch
 
+from handler_events_fixtures import call_route
+
+from integrations_handler import lambda_handler
+
 
 class TestScheduleRuleNameUnderAPrefix:
     def test_uses_the_pattern_cdk_supplied(self):
@@ -36,8 +40,8 @@ class TestScheduleRuleNameUnderAPrefix:
         # default path and must keep producing exactly today's name.
         from integrations_handler import _build_rule_name
         with patch('integrations_handler.INGEST_SCHEDULE_RULE_NAME_PATTERN', ''), \
-             patch('integrations_handler.AWS_ACCOUNT_ID', '123456789012'), \
-             patch('integrations_handler.AWS_REGION', 'us-east-1'):
+             patch('integrations_handler.DEPLOY_ACCOUNT_ID', '123456789012'), \
+             patch('integrations_handler.DEPLOY_REGION', 'us-east-1'):
             assert _build_rule_name('webscraper') == (
                 'voc-ingest-webscraper-schedule-123456789012-us-east-1'
             )
@@ -57,8 +61,8 @@ class TestIngestorFunctionNameUnderAPrefix:
     def test_falls_back_to_its_own_derivation_when_no_pattern_is_set(self):
         from integrations_handler import _build_ingestor_function_name
         with patch('integrations_handler.INGESTOR_FUNCTION_NAME_PATTERN', ''), \
-             patch('integrations_handler.AWS_ACCOUNT_ID', '123456789012'), \
-             patch('integrations_handler.AWS_REGION', 'us-east-1'):
+             patch('integrations_handler.DEPLOY_ACCOUNT_ID', '123456789012'), \
+             patch('integrations_handler.DEPLOY_REGION', 'us-east-1'):
             assert _build_ingestor_function_name('webscraper') == (
                 'voc-ingestor-webscraper-123456789012-us-east-1'
             )
@@ -81,13 +85,12 @@ class TestManualRunInvokesThePrefixedIngestor:
             'integrations_handler.INGESTOR_FUNCTION_NAME_PATTERN',
             'stg-voc-ingestor-{source}-123456789012-us-east-1',
         ):
-            from integrations_handler import lambda_handler
-            event = api_gateway_event(
+            response, _ = call_route(
+                lambda_handler, api_gateway_event, lambda_context,
                 method='POST',
                 path='/sources/webscraper/run',
                 path_params={'source': 'webscraper'},
             )
-            response = lambda_handler(event, lambda_context)
 
         assert response['statusCode'] == 200
         assert json.loads(response['body'])['success'] is True

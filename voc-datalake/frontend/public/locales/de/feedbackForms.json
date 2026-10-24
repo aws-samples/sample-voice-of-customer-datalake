@@ -1,16 +1,13 @@
 {
   "card": {
-    "active": "Aktiv",
     "avgRating": "Ø Bewertung",
     "category": "Kategorie:",
     "collects": "Erfasst",
     "copy": "Kopieren",
     "deleteForm": "Formular löschen",
     "directLink": "Direktlink",
-    "disabled": "Deaktiviert",
-    "disableForm": "Formular deaktivieren",
+    "prototypePins": "Prototyp-Pins",
     "editForm": "Formular bearbeiten",
-    "enableForm": "Formular aktivieren",
     "hideEmbedCode": "Einbettungscode ausblenden",
     "iframeEmbed": "iFrame-Einbettung",
     "preview": "Vorschau",
@@ -19,18 +16,28 @@
     "showEmbedCode": "Einbettungscode anzeigen",
     "submissions": "Einreichungen",
     "themeLabel": "Design",
-    "viewSubmissions": "Einreichungen anzeigen"
+    "themeDefault": "Standardfarben",
+    "themeCustom": "Eigene Farbe",
+    "viewSubmissions": "Einreichungen anzeigen",
+    "collectsName": "Name",
+    "collectsEmail": "E-Mail",
+    "disabledNotice": "Dieses Formular ist deaktiviert. Link und Einbettung zeigen „Feedback form unavailable.“, bis Sie es aktivieren.",
+    "live": "Live",
+    "off": "Aus",
+    "noSubmissionsYet": "Noch keine Einsendungen – teilen Sie das Formular, um welche zu erhalten.",
+    "themeSwatch": "Formularfarbe"
   },
-  "configureApiFirst": "Konfigurieren Sie den API-Endpunkt in den Einstellungen, um Feedback-Formulare zu verwalten.",
+  "configureApiFirst": "Konfigurieren Sie den API-Endpunkt unter Administration → Allgemein, um Feedback-Formulare zu verwalten.",
   "createForm": "Formular erstellen",
   "deleteConfirmLabel": "Löschen",
   "deleteConfirmMessage": "Möchten Sie dieses Formular wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
+  "deleteConfirmMessageNamed": "Das Formular „{{name}}“ löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
   "deleteConfirmTitle": "Formular löschen",
   "editor": {
     "backgroundColor": "Hintergrundfarbe",
     "borderRadius": "Eckenradius",
     "cancel": "Abbrechen",
-    "categoryHint": "Kategorien werden unter Einstellungen → Feedback-Kategorien konfiguriert",
+    "categoryHint": "Kategorien werden unter Administration → Taxonomie → Kategorien konfiguriert",
     "categoryLabel": "Kategorie",
     "categoryRoutingDescription": "Weisen Sie diesem Formular eine Kategorie zu. Alle über dieses Formular eingereichten Rückmeldungen werden automatisch mit der ausgewählten Kategorie versehen.",
     "categoryRoutingTitle": "Kategorie-Routing",
@@ -51,9 +58,9 @@
     "previewTagged": "Feedback aus diesem Formular wird markiert als:",
     "primaryColor": "Primärfarbe",
     "question": "Frage",
-    "ratingEmoji": "Emoji-Bewertung 😀",
+    "ratingEmoji": "Emoji-Bewertung",
     "ratingNumeric": "Numerisch (1-10)",
-    "ratingStars": "Sterne ⭐",
+    "ratingStars": "Sterne",
     "saveChanges": "Änderungen speichern",
     "saving": "Speichern...",
     "selectCategory": "-- Kategorie auswählen --",
@@ -68,8 +75,9 @@
       "formSettings": "Formulareinstellungen",
       "settings": "Einstellungen",
       "theme": "Design",
-      "validates": "Validiert",
-      "validatesShort": "Validiert"
+      "validates": "Verknüpftes Projekt",
+      "validatesShort": "Projekt",
+      "label": "Bereiche des Formular-Editors"
     },
     "textColor": "Textfarbe",
     "validationDescription": "Erfassen Sie optional, zu welchem Projekt — und zu welchem PRD oder PR/FAQ — dieses Formular Feedback sammelt. Die erfassten Bewertungen erscheinen dann neben diesem Dokument auf der Priorisierungsseite. Lassen Sie beide Felder leer für ein eigenständiges Formular, etwa eine Website-Umfrage.",
@@ -80,12 +88,14 @@
     "validationNoProject": "-- Nicht verknüpft --",
     "validationProjectHint": "Wird das Projekt geleert, ist dieses Formular nicht mehr verknüpft.",
     "validationProjectLabel": "Projekt",
-    "validationTitle": "Was dieses Formular validiert",
+    "validationTitle": "Verknüpftes Projekt oder Dokument",
     "validationUnknownDocument": "Verknüpftes Dokument (nicht mehr verfügbar)",
     "validationUnknownProject": "Verknüpftes Projekt (nicht mehr verfügbar)",
     "validationUnverifiedDocument": "Verknüpftes Dokument (nicht überprüfbar)",
     "validationUnverifiedProject": "Verknüpftes Projekt (nicht überprüfbar)",
-    "validationWholeProject": "-- Gesamtes Projekt --"
+    "validationWholeProject": "-- Gesamtes Projekt --",
+    "dimensionsHint": "Jede Einsendung erhält diese Werte. Eine Einbettung kann mit der Option dimensions eigene Werte pro Seite setzen, z. B.",
+    "dimensionsDevHint": "Für Entwickler: pro Seite im Einbettungscode festlegen"
   },
   "empty": {
     "createButton": "Erstes Formular erstellen",
@@ -97,7 +107,7 @@
     "item2": "Jedes Formular hat seine eigene URL und Einbettungscode",
     "item3": "Weisen Sie Kategorien zu, um Feedback automatisch zu routen",
     "item4": "Alle Einreichungen durchlaufen KI-Anreicherung (Stimmung, Personas usw.)",
-    "title": "Typeform-ähnliche Feedback-Erfassung"
+    "title": "So funktionieren Feedback-Formulare"
   },
   "submissions": {
     "avgRating": "Ø Bewertung",
@@ -129,5 +139,14 @@
     "selectPrompt": "Wählen Sie eine Vorlage zum Fortfahren",
     "subtitle": "Wählen Sie eine Vorlage zum Starten",
     "title": "Neues Formular erstellen"
+  },
+  "createdDisabled": {
+    "dismiss": "Schließen",
+    "enable": "Jetzt aktivieren",
+    "message": "„{{name}}“ wurde erstellt und ist deaktiviert: Wer den Link öffnet, sieht „Feedback form unavailable.“, bis Sie es aktivieren."
+  },
+  "systemForms": {
+    "title": "Systemformulare ({{n, number}})",
+    "description": "Werden für jeden erstellten Prototyp automatisch angelegt, um die Pins der Tester zu sammeln. Sie müssen sie weder teilen noch bearbeiten."
   }
 }

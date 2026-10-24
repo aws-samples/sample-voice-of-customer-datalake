@@ -5,14 +5,36 @@
  *
  * Every expectation is a literal — nothing here is derived from the code under
  * test.
+ *
+ * REVERT MAP for the prebuilt-index seam (issue #399 B):
+ *
+ *  * `resolveDerivationAgainst` diverging from `resolveDerivation` in ANY of the
+ *    three origins → "answers exactly what resolveDerivation answers", which pins
+ *    a declared, a legacy and an unresolved-source document as whole objects
+ *    rather than field by field, because the promise is the whole answer;
+ *  * a memo creeping in behind `resolveDerivationAgainst`, or the resolver reading
+ *    the wire a second time instead of the index it was handed → "consults the index
+ *    once per source and holds no state between calls" and "reads what a source is
+ *    from the given index and never from the wire again", which count the index's
+ *    lookups through a `Map` subclass instead of timing anything. Their positive
+ *    control is the first assertion of each — the titles the index actually resolved
+ *    — because a count is otherwise indistinguishable from the silence of a resolver
+ *    that looks nothing up;
+ *  * `derivationSourceIndex` dropping a field a source displays, or keeping an
+ *    entry for a record naming no document → "indexes a document list once for
+ *    every field a source displays", which is what lets `resolved: false` mean "not
+ *    among the documents supplied" rather than "supplied without a title".
  */
 import { describe, it, expect } from 'vitest'
 import {
   DERIVATION_ROLES,
+  derivationSourceIndex,
   emptyDerivation,
   normalizeDerivation,
   resolveDerivation,
+  resolveDerivationAgainst,
 } from './derivation'
+import type { DerivationSourceFields } from './derivation'
 
 const PRD = { document_id: 'prd_1', document_type: 'prd', title: 'Onboarding PRD' }
 const PRFAQ = { document_id: 'prfaq_1', document_type: 'prfaq', title: 'Onboarding PR/FAQ' }
@@ -35,7 +57,7 @@ const EMPTY_RECORD = {
 
 describe('the role vocabulary', () => {
   it('is closed and lists the four relations the backend creates', () => {
-    expect(DERIVATION_ROLES).toEqual(['reference', 'prototype_prd', 'prototype_prfaq', 'merge_input'])
+    expect(DERIVATION_ROLES).toStrictEqual(['reference', 'prototype_prd', 'prototype_prfaq', 'merge_input'])
   })
 })
 
@@ -55,7 +77,7 @@ describe('a document with a declared derivation', () => {
   }
 
   it('reports the sources in the order they were recorded', () => {
-    expect(resolveDerivation(doc).sources.map((s) => s.document_id)).toEqual(['doc_e', 'doc_d'])
+    expect(resolveDerivation(doc).sources.map((s) => s.document_id)).toStrictEqual(['doc_e', 'doc_d'])
   })
 
   it('reports the selected count separately, so the dropped documents are visible', () => {
@@ -67,7 +89,7 @@ describe('a document with a declared derivation', () => {
   it('reports the non-document inputs', () => {
     const resolved = resolveDerivation(doc)
     expect(resolved.feedback_count).toBe(12)
-    expect(resolved.persona_ids).toEqual(['persona_1'])
+    expect(resolved.persona_ids).toStrictEqual(['persona_1'])
     expect(resolved.product_context_included).toBe(true)
   })
 
@@ -105,7 +127,7 @@ describe('a declared derivation whose every selected document was dropped', () =
 
   it('reports the count it recorded, so a consumer can say none of five was used', () => {
     const resolved = resolveDerivation(noneReached)
-    expect(resolved.sources).toEqual([])
+    expect(resolved.sources).toStrictEqual([])
     expect(resolved.selected_document_count).toBe(5)
   })
 
@@ -115,7 +137,7 @@ describe('a declared derivation whose every selected document was dropped', () =
     // with a lineage this document does not have.
     const resolved = resolveDerivation({ ...noneReached, source_documents: ['legacy_1'] })
     expect(resolved.origin).toBe('declared')
-    expect(resolved.sources).toEqual([])
+    expect(resolved.sources).toStrictEqual([])
     expect(resolved.selected_document_count).toBe(5)
   })
 })
@@ -138,14 +160,14 @@ describe('a document grounded in uploaded visuals', () => {
   }
 
   it('keeps the recorded visual ids, in order', () => {
-    expect(resolveDerivation(grounded, [PRD]).visual_document_ids).toEqual([
+    expect(resolveDerivation(grounded, [PRD]).visual_document_ids).toStrictEqual([
       'a1b2c3d4e5f60718',
       'ff00ee11dd22cc33',
     ])
   })
 
   it('keeps them through normalization alone, before any resolving', () => {
-    expect(normalizeDerivation(grounded.derivation).visual_document_ids).toEqual([
+    expect(normalizeDerivation(grounded.derivation).visual_document_ids).toStrictEqual([
       'a1b2c3d4e5f60718',
       'ff00ee11dd22cc33',
     ])
@@ -154,7 +176,7 @@ describe('a document grounded in uploaded visuals', () => {
   it('does not turn a visual into a source', () => {
     // A source promises a title lookup; a visual id can never satisfy one, so it
     // stays out of `sources` rather than sitting there permanently unresolved.
-    expect(resolveDerivation(grounded, [PRD]).sources.map((s) => s.document_id)).toEqual(['prd_1'])
+    expect(resolveDerivation(grounded, [PRD]).sources.map((s) => s.document_id)).toStrictEqual(['prd_1'])
   })
 
   it('drops junk entries and keeps the valid ids around them', () => {
@@ -164,7 +186,7 @@ describe('a document grounded in uploaded visuals', () => {
         visual_document_ids: ['vis_1', 42, null, '', {}, ['vis_x'], 'vis_2'],
       },
     })
-    expect(resolved.visual_document_ids).toEqual(['vis_1', 'vis_2'])
+    expect(resolved.visual_document_ids).toStrictEqual(['vis_1', 'vis_2'])
   })
 
   it.each([
@@ -176,9 +198,9 @@ describe('a document grounded in uploaded visuals', () => {
     const resolved = resolveDerivation({
       derivation: { ...grounded.derivation, visual_document_ids: value },
     })
-    expect(resolved.visual_document_ids).toEqual([])
+    expect(resolved.visual_document_ids).toStrictEqual([])
     // The rest of the record is untouched: one bad field costs exactly itself.
-    expect(resolved.sources.map((s) => s.document_id)).toEqual(['prd_1'])
+    expect(resolved.sources.map((s) => s.document_id)).toStrictEqual(['prd_1'])
     expect(resolved.selected_document_count).toBe(1)
     expect(resolved.origin).toBe('declared')
   })
@@ -203,14 +225,14 @@ describe('a document grounded in uploaded visuals', () => {
     }
     const resolved = resolveDerivation(visualOnly, [PRD])
     expect(resolved.origin).toBe('declared')
-    expect(resolved.visual_document_ids).toEqual(['9f8e7d6c5b4a3928'])
-    expect(resolved.sources).toEqual([])
+    expect(resolved.visual_document_ids).toStrictEqual(['9f8e7d6c5b4a3928'])
+    expect(resolved.sources).toStrictEqual([])
   })
 
   it('reports no visuals for a legacy document, because no legacy shape had any', () => {
     const resolved = resolveDerivation({ document_id: 'prototype_0', source_prd_id: 'prd_1' }, [PRD])
     expect(resolved.origin).toBe('legacy')
-    expect(resolved.visual_document_ids).toEqual([])
+    expect(resolved.visual_document_ids).toStrictEqual([])
   })
 
   /**
@@ -245,18 +267,18 @@ describe('a document grounded in uploaded visuals', () => {
       [],
     )
 
-    expect(resolved.visual_document_ids).toEqual([])
+    expect(resolved.visual_document_ids).toStrictEqual([])
     // Declared, NOT reconstructed from source_prd_id — the fixture carries that
     // legacy field too, so a fall-through would be invisible without this.
     expect(resolved.origin).toBe('declared')
-    expect(resolved.sources).toEqual([
+    expect(resolved.sources).toStrictEqual([
       { document_id: 'prd_1', role: 'prototype_prd', title: null, document_type: null, resolved: false },
     ])
     expect(resolved.product_context_included).toBe(true)
   })
 
   it('normalizes an absent field to an empty list', () => {
-    expect(normalizeDerivation({ persona_ids: ['p1'] }).visual_document_ids).toEqual([])
+    expect(normalizeDerivation({ persona_ids: ['p1'] }).visual_document_ids).toStrictEqual([])
   })
 })
 
@@ -275,7 +297,7 @@ describe('resolving sources against the project documents', () => {
   }
 
   it('names a source that still exists', () => {
-    expect(resolveDerivation(doc, [PRD]).sources[0]).toEqual({
+    expect(resolveDerivation(doc, [PRD]).sources[0]).toStrictEqual({
       document_id: 'prd_1',
       role: 'prototype_prd',
       title: 'Onboarding PRD',
@@ -285,7 +307,7 @@ describe('resolving sources against the project documents', () => {
   })
 
   it('keeps a source whose document no longer exists, marked unresolved', () => {
-    expect(resolveDerivation(doc, [PRD]).sources[1]).toEqual({
+    expect(resolveDerivation(doc, [PRD]).sources[1]).toStrictEqual({
       document_id: 'deleted_1',
       role: 'prototype_prfaq',
       title: null,
@@ -298,7 +320,7 @@ describe('resolving sources against the project documents', () => {
     const resolved = resolveDerivation(doc)
     expect(resolved.sources).toHaveLength(2)
     expect(
-      resolved.sources.every((s) => s.resolved === false && s.title === null && s.document_type === null),
+      resolved.sources.every((s) => !s.resolved && s.title === null && s.document_type === null),
     ).toBe(true)
   })
 
@@ -307,7 +329,7 @@ describe('resolving sources against the project documents', () => {
     // is. A consumer that renders a type badge beside a title must get both
     // from this one call rather than searching the document list again.
     const resolved = resolveDerivation(doc, [PRD, PRFAQ])
-    expect(resolved.sources.map((s) => s.document_type)).toEqual(['prd', null])
+    expect(resolved.sources.map((s) => s.document_type)).toStrictEqual(['prd', null])
   })
 
   it('reports an empty type for a source that resolved without one', () => {
@@ -318,7 +340,7 @@ describe('resolving sources against the project documents', () => {
       { derivation: { sources: [{ document_id: 'doc_x', role: 'reference' }] } },
       [untyped],
     )
-    expect(resolved.sources[0]).toEqual({
+    expect(resolved.sources[0]).toStrictEqual({
       document_id: 'doc_x',
       role: 'reference',
       title: 'No type on the wire',
@@ -334,7 +356,7 @@ describe('a legacy document with no declared derivation', () => {
       { document_id: 'prototype_1', source_prd_id: 'prd_1', source_prfaq_id: 'prfaq_1' },
       [PRD, PRFAQ],
     )
-    expect(resolved.sources).toEqual([
+    expect(resolved.sources).toStrictEqual([
       { document_id: 'prd_1', role: 'prototype_prd', title: 'Onboarding PRD', document_type: 'prd', resolved: true },
       { document_id: 'prfaq_1', role: 'prototype_prfaq', title: 'Onboarding PR/FAQ', document_type: 'prfaq', resolved: true },
     ])
@@ -346,10 +368,10 @@ describe('a legacy document with no declared derivation', () => {
     // sibling key is absent entirely. Both must read as "no such source".
     const storedNull = resolveDerivation({ source_prd_id: null, source_prfaq_id: 'prfaq_1' })
     const absent = resolveDerivation({ source_prfaq_id: 'prfaq_1' })
-    expect(storedNull.sources).toEqual([
+    expect(storedNull.sources).toStrictEqual([
       { document_id: 'prfaq_1', role: 'prototype_prfaq', title: null, document_type: null, resolved: false },
     ])
-    expect(storedNull).toEqual(absent)
+    expect(storedNull).toStrictEqual(absent)
   })
 
   it('reads a merge output built from a list of documents', () => {
@@ -357,7 +379,7 @@ describe('a legacy document with no declared derivation', () => {
       source_documents: ['doc_1', 'doc_2'],
       merge_instructions: 'Combine them',
     })
-    expect(resolved.sources).toEqual([
+    expect(resolved.sources).toStrictEqual([
       { document_id: 'doc_1', role: 'merge_input', title: null, document_type: null, resolved: false },
       { document_id: 'doc_2', role: 'merge_input', title: null, document_type: null, resolved: false },
     ])
@@ -367,7 +389,7 @@ describe('a legacy document with no declared derivation', () => {
   it('reads a research report that only ever recorded a feedback count', () => {
     const resolved = resolveDerivation({ document_type: 'research', feedback_count: 42 })
     expect(resolved.feedback_count).toBe(42)
-    expect(resolved.sources).toEqual([])
+    expect(resolved.sources).toStrictEqual([])
     expect(resolved.origin).toBe('legacy')
   })
 
@@ -382,7 +404,7 @@ describe('a legacy document with no declared derivation', () => {
         product_context_included: false,
       },
     })
-    expect(resolved.sources.map((s) => s.document_id)).toEqual(['prd_1'])
+    expect(resolved.sources.map((s) => s.document_id)).toStrictEqual(['prd_1'])
     expect(resolved.origin).toBe('declared')
   })
 })
@@ -401,7 +423,7 @@ describe('a document with no recoverable lineage', () => {
   ])('reports exactly that, and does not throw: %s', (_case, input) => {
     const resolved = resolveDerivation(input)
     expect(resolved.origin).toBe('none')
-    expect(resolved).toEqual({ ...EMPTY_RECORD, origin: 'none' })
+    expect(resolved).toStrictEqual({ ...EMPTY_RECORD, origin: 'none' })
   })
 })
 
@@ -424,7 +446,7 @@ describe('a malformed record', () => {
         product_context_included: false,
       },
     })
-    expect(resolved.sources).toEqual([
+    expect(resolved.sources).toStrictEqual([
       { document_id: 'doc_1', role: 'reference', title: null, document_type: null, resolved: false },
       { document_id: 'doc_4', role: 'merge_input', title: null, document_type: null, resolved: false },
     ])
@@ -442,12 +464,14 @@ describe('a malformed record', () => {
         product_context_included: 'yes',
       },
     })
-    expect(resolved.sources).toEqual([])
-    expect(resolved.selected_document_count).toBe(0)
-    expect(resolved.feedback_count).toBe(0)
-    expect(resolved.persona_ids).toEqual(['persona_1'])
-    expect(resolved.visual_document_ids).toEqual([])
-    expect(resolved.product_context_included).toBe(false)
+    expect(resolved).toMatchObject({
+      sources: [],
+      selected_document_count: 0,
+      feedback_count: 0,
+      persona_ids: ['persona_1'],
+      visual_document_ids: [],
+      product_context_included: false,
+    })
   })
 
   it('does not let a malformed sibling reject the surrounding documents', () => {
@@ -457,13 +481,13 @@ describe('a malformed record', () => {
       { document_id: 'c', source_documents: ['doc_1'] },
     ]
     const resolved = documents.map((d) => resolveDerivation(d, [PRD]))
-    expect(resolved.map((r) => r.origin)).toEqual(['declared', 'none', 'legacy'])
+    expect(resolved.map((r) => r.origin)).toStrictEqual(['declared', 'none', 'legacy'])
     expect(resolved).toHaveLength(3)
   })
 
   it('normalizes any value to a usable derivation', () => {
     for (const raw of [undefined, null, 0, '', [], 'x', { sources: null }]) {
-      expect(normalizeDerivation(raw)).toEqual(EMPTY_RECORD)
+      expect(normalizeDerivation(raw)).toStrictEqual(EMPTY_RECORD)
     }
   })
 })
@@ -489,10 +513,10 @@ describe('a cyclic reference chain', () => {
     const fromA = resolveDerivation(a, [a, b])
     const fromB = resolveDerivation(b, [a, b])
 
-    expect(fromA.sources).toEqual([
+    expect(fromA.sources).toStrictEqual([
       { document_id: 'b', role: 'merge_input', title: 'B', document_type: 'custom', resolved: true },
     ])
-    expect(fromB.sources).toEqual([
+    expect(fromB.sources).toStrictEqual([
       { document_id: 'a', role: 'merge_input', title: 'A', document_type: 'custom', resolved: true },
     ])
   })
@@ -505,8 +529,107 @@ describe('a cyclic reference chain', () => {
       derivation: { sources: [{ document_id: 'self', role: 'reference' }] },
     }
 
-    expect(resolveDerivation(self, [self]).sources).toEqual([
+    expect(resolveDerivation(self, [self]).sources).toStrictEqual([
       { document_id: 'self', role: 'reference', title: 'Self', document_type: 'prd', resolved: true },
     ])
+  })
+})
+
+describe('resolving against an index the caller already built', () => {
+  const DOCUMENTS = [PRD, PRFAQ]
+
+  /**
+   * One document per origin the contract distinguishes, plus the shape whose
+   * sources do NOT resolve — which is the case an index can get wrong in a way the
+   * other two cannot, because a missing entry and an empty one are what `resolved`
+   * tells apart.
+   */
+  const BY_ORIGIN = {
+    declared: {
+      document_id: 'prototype_1',
+      derivation: {
+        sources: [
+          { document_id: 'prd_1', role: 'prototype_prd' },
+          { document_id: 'prfaq_1', role: 'prototype_prfaq' },
+        ],
+        selected_document_count: 3,
+        feedback_count: 7,
+        persona_ids: ['persona_1'],
+        visual_document_ids: ['vis_1'],
+        product_context_included: true,
+      },
+    },
+    legacy: { document_id: 'merge_1', source_documents: ['prd_1', 'prfaq_1'] },
+    unresolved: { document_id: 'merge_2', source_documents: ['deleted_1'] },
+    none: { document_id: 'handwritten_1', title: 'Typed by hand' },
+  }
+
+  it('answers exactly what resolveDerivation answers', () => {
+    // WHOLE OBJECTS, not fields: the promise of the seam is the whole answer, and a
+    // per-field comparison is the one that lets `origin` or `resolved` drift. Asked
+    // of all four origins — declared, legacy, a source the project no longer holds,
+    // and nothing recoverable — because each takes a different path to the index.
+    const index = derivationSourceIndex(DOCUMENTS)
+    for (const [origin, document] of Object.entries(BY_ORIGIN)) {
+      expect(resolveDerivationAgainst(document, index), origin)
+        .toStrictEqual(resolveDerivation(document, DOCUMENTS))
+    }
+    // The control: the four documents really do exercise the three origins, so the
+    // equality above is over answers that DIFFER rather than four empty ones.
+    expect(Object.values(BY_ORIGIN).map((d) => resolveDerivation(d, DOCUMENTS).origin))
+      .toStrictEqual(['declared', 'legacy', 'legacy', 'none'])
+  })
+
+  it('reads what a source is from the given index and never from the wire again', () => {
+    // The decisive case for "the index is the caller's": an index disagreeing with
+    // any document list, so an answer carrying its titles could not have come from
+    // re-indexing anything. A resolver that rebuilt internally has no list to
+    // rebuild from here and would report both sources unresolved.
+    const index = new Map<string, DerivationSourceFields>([
+      ['prd_1', { title: 'Indexed PRD', document_type: 'prd' }],
+      ['prfaq_1', { title: 'Indexed PR/FAQ', document_type: 'prfaq' }],
+    ])
+
+    expect(resolveDerivationAgainst(BY_ORIGIN.legacy, index).sources).toStrictEqual([
+      { document_id: 'prd_1', role: 'merge_input', title: 'Indexed PRD', document_type: 'prd', resolved: true },
+      { document_id: 'prfaq_1', role: 'merge_input', title: 'Indexed PR/FAQ', document_type: 'prfaq', resolved: true },
+    ])
+  })
+
+  it('consults the index once per source and holds no state between calls', () => {
+    // Counted rather than timed, so the assertion is about the work done and not
+    // about this machine: a Map that records every lookup. Two calls over one index
+    // is the shape the prioritization page's loop takes, and the second must cost
+    // the same as the first — a resolver caching its answers would show fewer
+    // lookups on the second pass and start reporting a document deleted between two
+    // reads as still present.
+    const lookups: string[] = []
+    class CountingIndex extends Map<string, DerivationSourceFields> {
+      override get(id: string): DerivationSourceFields | undefined {
+        lookups.push(id)
+        return super.get(id)
+      }
+    }
+    const index = new CountingIndex(derivationSourceIndex(DOCUMENTS))
+
+    const first = resolveDerivationAgainst(BY_ORIGIN.declared, index)
+    const second = resolveDerivationAgainst(BY_ORIGIN.declared, index)
+
+    // The positive control: the index WAS the source of the answer, so the count
+    // below is a real measurement rather than the silence of a resolver that never
+    // looked anything up.
+    expect(first.sources.map((s) => s.title)).toStrictEqual(['Onboarding PRD', 'Onboarding PR/FAQ'])
+    expect(second).toStrictEqual(first)
+    expect(lookups).toStrictEqual(['prd_1', 'prfaq_1', 'prd_1', 'prfaq_1'])
+  })
+
+  it('indexes a document list once for every field a source displays', () => {
+    // One entry per readable document, carrying both resolved fields, and nothing
+    // for a record naming no document — which is what lets `resolved: false` mean
+    // "not among the documents supplied" rather than "supplied without a title".
+    const index = derivationSourceIndex([PRD, { title: 'No id' }, null, 'garbage', { document_id: '' }])
+
+    expect([...index.keys()]).toStrictEqual(['prd_1'])
+    expect(index.get('prd_1')).toStrictEqual({ title: 'Onboarding PRD', document_type: 'prd' })
   })
 })

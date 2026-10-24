@@ -1,0 +1,94 @@
+{
+  "tab": "Decisões",
+  "title": "Decisões",
+  "subtitle": "Seguir, adiar ou rejeitar: o motivo, como medir o sucesso e quando você pararia.",
+  "new": "Nova decisão",
+  "empty": "Ainda não há decisões. Registre uma quando escolher o que fazer com um problema.",
+  "formLabel": "Decisão",
+  "verdict": {
+    "label": "Veredito",
+    "pursue": "Seguir",
+    "park": "Adiar",
+    "reject": "Rejeitar"
+  },
+  "fields": {
+    "title": "Título",
+    "rationale": "Justificativa",
+    "successMetric": "Métrica de sucesso",
+    "killCriterion": "Critério de encerramento",
+    "reviewBy": "Revisar até",
+    "launchedAt": "Lançado em",
+    "feedbackIds": "Ids de feedback",
+    "feedbackIdsHint": "Separe os ids com espaços ou vírgulas.",
+    "documents": "Documentos de apoio"
+  },
+  "actions": {
+    "save": "Salvar decisão",
+    "cancel": "Cancelar",
+    "edit": "Editar",
+    "pursue": "Redigir PR/FAQ",
+    "pursueAgain": "Redigir outro PR/FAQ",
+    "pursueHint": "Inicia a geração do PR/FAQ com esta decisão como briefing.",
+    "pursueConfirmTitle": "Redigir um PR/FAQ?",
+    "pursueConfirmMessage": "A IA redige um PR/FAQ usando \"{{title}}\" como briefing. Leva alguns minutos; o rascunho aparece em Documentos quando estiver pronto.",
+    "pursueConfirm": "Redigir PR/FAQ",
+    "pursued": "Um PR/FAQ foi solicitado a partir desta decisão. Ele aparece em Documentos quando o trabalho terminar.",
+    "prfaqReady": "PR/FAQ pronto: {{title}}",
+    "prfaqFailed": "Não foi possível gerar o PR/FAQ desta decisão. Rascunhe-o novamente para tentar de novo.",
+    "revisit": "Reavaliar",
+    "releaseWatch": "Acompanhamento de lançamento",
+    "hideReleaseWatch": "Ocultar acompanhamento de lançamento"
+  },
+  "picker": {
+    "label": "Avaliações de apoio",
+    "placeholder": "Busque avaliações para adicionar, ex. \"entrega atrasada\"",
+    "results": "Avaliações correspondentes",
+    "picked": "Avaliações adicionadas",
+    "searching": "Buscando…",
+    "failed": "A busca falhou. Tente novamente.",
+    "noMatch": "Nenhuma avaliação corresponde a \"{{q}}\".",
+    "linked": "Avaliação vinculada {{n}}",
+    "remove": "Remover {{label}}",
+    "advanced": "Avançado: colar ids de avaliações"
+  },
+  "decidedBy": "Decidido por {{name}} em {{date}}",
+  "decidedOn": "Decidido em {{date}}",
+  "evidence": "Evidências",
+  "errors": {
+    "save": "Não foi possível salvar a decisão.",
+    "conflict": "Esta decisão mudou desde que você a abriu. Recarregue a página e tente novamente.",
+    "pursue": "Não foi possível iniciar o PR/FAQ."
+  },
+  "releaseWatch": {
+    "title": "Acompanhamento de lançamento",
+    "subtitle": "Feedback dos {{days, number}} dias antes e depois de cada lançamento.",
+    "empty": "Nenhum lançamento neste período.",
+    "regression": "Regressão",
+    "noRegression": "Sem regressão",
+    "before": "Antes",
+    "after": "Depois",
+    "volume": "Volume",
+    "negative": "Negativos",
+    "sentiment": "Sentimento",
+    "afterDays": "Dias observados depois: {{days, number}}",
+    "reasons": {
+      "sentiment_drop": "O sentimento caiu",
+      "negative_rise": "O feedback negativo aumentou"
+    },
+    "complaints": "Reclamações em alta",
+    "evidenceItem": "Avaliação {{n}}",
+    "evidence": "Mais negativos após o lançamento",
+    "partial": "Parcial: lido até {{date}}",
+    "loading": "Carregando o acompanhamento de lançamento",
+    "error": "Não foi possível carregar o acompanhamento de lançamento.",
+    "topCategories": {
+      "before": "Principais categorias antes",
+      "after": "Principais categorias depois",
+      "new": "Nova entre as principais",
+      "grew_one": "Subiu de {{count, number}}",
+      "grew_other": "Subiu de {{count, number}}",
+      "count_one": "{{count, number}} avaliação",
+      "count_other": "{{count, number}} avaliações"
+    }
+  }
+}

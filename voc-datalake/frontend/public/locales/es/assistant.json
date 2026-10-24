@@ -1,0 +1,277 @@
+{
+  "launcher": {
+    "open": "Abrir asistente",
+    "close": "Cerrar asistente",
+    "askAboutProject": "Preguntar al asistente",
+    "moveHint": "Arrastra o usa las flechas para mover el botón del asistente. Inicio lo devuelve a su sitio.",
+    "resetPosition": "Restablecer la posición del botón del asistente"
+  },
+  "panel": {
+    "title": "Asistente",
+    "using": "Contexto: {{context}}",
+    "newChat": "Nuevo chat",
+    "sessions": "Conversaciones anteriores",
+    "export": "Exportar conversación (Markdown)",
+    "expand": "Ampliar",
+    "fullscreen": "Pantalla completa",
+    "exitFullscreen": "Salir de pantalla completa",
+    "more": "Más acciones",
+    "close": "Cerrar",
+    "messages": "Conversación",
+    "thinking": "Pensando…",
+    "stillGenerating": "Aún generando…"
+  },
+  "pages": {
+    "home": "Inicio",
+    "dashboard": "Panel",
+    "feedback": "Comentarios",
+    "categories": "Categorías",
+    "problems": "Análisis de problemas",
+    "chat": "Chat con IA",
+    "projects": "Proyectos",
+    "project": "Proyecto",
+    "prioritization": "Priorización",
+    "data-explorer": "Explorador de datos",
+    "scrapers": "Scrapers",
+    "feedback-forms": "Formularios de comentarios",
+    "settings": "Configuración",
+    "admin": "Administración",
+    "memory": "Memoria",
+    "agents": "Agentes autónomos",
+    "agent": "Agente",
+    "workflow": "Flujo de trabajo",
+    "company": "Empresa",
+    "connect": "Conectar",
+    "radar": "Radar",
+    "account": "Cuenta",
+    "other": "Esta página"
+  },
+  "message": {
+    "reasoning": "Razonamiento",
+    "toolSteps": "Pasos realizados",
+    "feedbackSources": "Comentarios relacionados",
+    "webSources": "Fuentes web",
+    "personaAnswers": "Respuestas de las personas",
+    "toolGroupRunning_other": "Revisando {{count, number}} fuentes…",
+    "toolGroupRunning_one": "Revisando {{count, number}} fuente…",
+    "toolGroup_other": "Revisó {{count, number}} fuentes",
+    "toolGroup_one": "Revisó {{count, number}} fuente",
+    "externalLink": "{{host}}, se abre en una pestaña nueva",
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "savedDocumentTitle": "Respuesta del asistente – {{date}}",
+    "saveAsDocument": {
+      "idle": "Guardar como documento",
+      "saving": "Guardando…",
+      "saved": "Guardado en documentos",
+      "error": "Error al guardar – reintentar"
+    }
+  },
+  "toolStatus": {
+    "streaming": "preparando",
+    "running": "en ejecución",
+    "complete": "hecho",
+    "awaiting_approval": "esperando tu aprobación",
+    "executed": "hecho",
+    "failed": "fallido",
+    "declined": "rechazado",
+    "cancelled": "cancelado"
+  },
+  "approvals": {
+    "title": "Acciones pendientes de aprobación",
+    "resolved": {
+      "executed": "hecho",
+      "failed": "fallido",
+      "declined": "rechazado"
+    }
+  },
+  "composer": {
+    "label": "Mensaje para el asistente",
+    "placeholder": "Pregunta sobre tus comentarios, proyectos o esta página…",
+    "send": "Enviar",
+    "stop": "Detener",
+    "attach": "Adjuntar imagen o documento",
+    "webSearch": "Buscar en la web",
+    "removeAttachment": "Quitar {{name}}",
+    "counter": "{{length, number}} / {{max, number}}",
+    "awaitingApproval": "Aprueba o rechaza la acción pendiente para continuar.",
+    "restoring": "Abriendo tu última conversación…",
+    "attachmentError": {
+      "type": "Solo se pueden adjuntar imágenes (PNG, JPEG, GIF, WebP) y documentos (PDF, Word, Excel, CSV, HTML, texto, Markdown).",
+      "count": "Puedes adjuntar como máximo {{max, number}} archivos.",
+      "size": "Los archivos adjuntos pueden sumar como máximo {{mb}} MB.",
+      "read": "No se pudo leer el archivo."
+    },
+    "stillGenerating": "La respuesta aún se está escribiendo. Aparecerá aquí cuando esté lista."
+  },
+  "errors": {
+    "streamClosed": "La conexión se cerró antes de terminar la respuesta. Inténtalo de nuevo.",
+    "generic": "Algo salió mal: {{message}}",
+    "followTimeout": "La respuesta está tardando más de lo esperado. Vuelve a abrir esta conversación más tarde para verla."
+  },
+  "export": {
+    "user": "Tú",
+    "assistant": "Asistente"
+  },
+  "sessions": {
+    "title": "Conversaciones anteriores",
+    "close": "Cerrar",
+    "loading": "Cargando conversaciones",
+    "error": "No se pudieron cargar las conversaciones.",
+    "empty": "Aún no hay conversaciones guardadas.",
+    "untitled": "Conversación sin título",
+    "deleteConfirmTitle": "¿Eliminar «{{title}}»?",
+    "deleteConfirmMessage": "La conversación y sus mensajes se eliminan de forma definitiva. No se puede deshacer.",
+    "deleteConfirm": "Eliminar conversación",
+    "renameInput": "Nombre de la conversación",
+    "closeRunningItem": "Detener y cerrar",
+    "closeItem": "Cerrar",
+    "deleteItem": "Eliminar",
+    "renameItem": "Cambiar nombre",
+    "more": "Más acciones para «{{title}}»",
+    "renameFailed": "No se pudo cambiar el nombre de la conversación.",
+    "renameBusy": "Todavía se está generando una respuesta. Cambia el nombre cuando termine.",
+    "newConversation": "Nueva conversación",
+    "sidebar": "Conversaciones",
+    "collapseSidebar": "Contraer la lista de conversaciones",
+    "expandSidebar": "Expandir la lista de conversaciones",
+    "openGroup": "Abiertas",
+    "historyGroup": "Historial",
+    "search": "Buscar conversaciones",
+    "searchPlaceholder": "Buscar conversaciones",
+    "noMatch": "Ninguna conversación coincide con tu búsqueda.",
+    "when": { "today": "Hoy", "week": "Esta semana", "older": "Anteriores" },
+    "status": {
+      "streaming": "En curso",
+      "awaiting": "Esperando tu aprobación",
+      "error": "Error",
+      "unread": "Nueva respuesta"
+    }
+  },
+  "empty": {
+    "title": "¿En qué puedo ayudarte?",
+    "subtitle": "Puedo leer tus datos y proponer cambios; nada se modifica sin tu aprobación."
+  },
+  "suggestions": {
+    "dashboard": { "1": "¿Cómo cambió el sentimiento de los clientes esta semana?", "2": "¿Qué fuentes aportan más comentarios?", "3": "Resume este panel en tres frases" },
+    "categories": { "1": "¿Qué categoría tiene más quejas?", "2": "¿Qué dicen los clientes sobre la categoría más grande?", "3": "¿Qué categorías están empeorando?" },
+    "projects": { "1": "Crea un proyecto a partir de la queja principal de esta semana", "2": "¿Qué proyectos están en curso?", "3": "¿Cuál debería ser nuestro próximo proyecto de investigación?" },
+    "agents": { "1": "¿Qué hicieron los agentes esta semana?", "2": "¿Qué agentes esperan mi decisión?", "3": "Ayúdame a crear un agente que vigile los comentarios urgentes" },
+    "memory": { "1": "¿Qué recuerdas de nuestra empresa?", "2": "¿Qué memorias esperan revisión?", "3": "¿Cómo te enseño algo sobre nuestra empresa?" },
+    "company": { "1": "Resume nuestra visión y objetivos", "2": "¿Con qué objetivos se relacionan los comentarios recientes?", "3": "Sugiere KPI basados en los comentarios de los clientes" },
+    "dataExplorer": { "1": "¿Cuántos comentarios importamos este mes?", "2": "¿Qué fuentes enviaron datos más recientemente?", "3": "¿Qué contiene un registro de comentario?" },
+    "default": {
+      "1": "¿Qué es lo que más molesta a los clientes esta semana?",
+      "2": "¿Qué necesita mi atención ahora mismo?",
+      "3": "¿De qué temas hablan más los clientes?"
+    },
+    "project": {
+      "1": "Resume este proyecto y sus personas",
+      "2": "¿Qué opinarían nuestras personas de esta idea?",
+      "3": "Redacta un PRD (requisitos de producto) a partir de esta investigación"
+    },
+    "forms": {
+      "1": "¿Qué tal funcionan mis formularios de comentarios?",
+      "2": "Resume los envíos más recientes",
+      "3": "¿Qué formulario recibe las peores valoraciones?"
+    },
+    "prioritization": {
+      "1": "¿Qué deberíamos priorizar a continuación?",
+      "2": "¿Por qué los primeros elementos están arriba?",
+      "3": "¿Qué elementos tienen más impacto en los clientes?"
+    },
+    "scrapers": {
+      "1": "¿Qué fuentes de reseñas recopilaron reseñas hace poco?",
+      "2": "¿Hay alguna fuente de reseñas que no funcione?",
+      "3": "¿Qué trajo la última recopilación?"
+    },
+    "radar": {
+      "1": "Configura Radar para un competidor",
+      "2": "¿En qué nos superan las marcas que seguimos?",
+      "3": "Saca ideas de producto de sus reseñas más satisfechas"
+    },
+    "settings": {
+      "1": "¿Cuál es la configuración de nuestra marca?",
+      "2": "¿Qué categorías de comentarios usamos?",
+      "3": "Sugiere hashtags para seguir nuestra marca"
+    },
+    "problems": {
+      "1": "¿Cuáles son los mayores problemas sin resolver?",
+      "2": "Agrupa estos problemas por su causa probable",
+      "3": "¿Qué problemas se resolvieron recientemente?"
+    },
+    "feedback": {
+      "1": "Resume este comentario",
+      "2": "Busca comentarios similares",
+      "3": "¿Por qué podría estar descontento este cliente?"
+    }
+  },
+  "notifications": {
+    "approval": {
+      "title": "El asistente necesita tu aprobación",
+      "body": "Una conversación espera que apruebes una acción."
+    },
+    "reply": {
+      "title": "El asistente respondió",
+      "body": "Una conversación tiene una respuesta nueva."
+    },
+    "failed": {
+      "title": "Falló una ejecución del asistente",
+      "body": "Abre la conversación para ver qué pasó."
+    },
+    "toggle": {
+      "turnOn": "Avisarme cuando una conversación me necesite",
+      "turnOff": "Desactivar notificaciones",
+      "blocked": "Las notificaciones están bloqueadas para este sitio en la configuración del navegador",
+      "unsupported": "Este navegador no admite notificaciones"
+    },
+    "planDone": {
+      "title": "Un plan ha terminado",
+      "body": "Todos los pasos de un plan aprobado han terminado."
+    },
+    "planIssues": {
+      "title": "Un plan terminó con problemas",
+      "body": "Abre el plan para ver qué pasos fallaron o se omitieron."
+    },
+    "planApproval": {
+      "title": "Un paso del plan necesita tu aprobación",
+      "body": "Un plan en curso espera a que apruebes un paso."
+    }
+  },
+  "plan": {
+    "title": "Progreso del plan",
+    "steps": "Pasos del plan",
+    "loading": "Cargando el plan…",
+    "loadFailed": "No se pudo cargar el plan.",
+    "actionFailed": "No funcionó; recarga e inténtalo de nuevo.",
+    "cancel": "Cancelar el plan",
+    "openProject": "Abrir el proyecto",
+    "approval": {
+      "title": "«{{tool}}» necesita tu aprobación",
+      "fields": "Lo que «{{tool}}» escribiría",
+      "destructive": "Esto borra datos de forma permanente y no se puede deshacer.",
+      "approve": "Aprobar el paso",
+      "decline": "Rechazar el paso"
+    },
+    "stepStatus": {
+      "pending": "Pendiente",
+      "running": "En curso",
+      "waiting": "Esperando",
+      "done": "Hecho",
+      "failed": "Falló",
+      "skipped": "Omitido",
+      "needs_approval": "Requiere aprobación",
+      "cancelled": "Cancelado"
+    },
+    "status": {
+      "awaiting_approval": "Pendiente de aprobación",
+      "approved": "Aprobado",
+      "running": "En curso",
+      "completed": "Completado",
+      "completed_with_errors": "Completado con problemas",
+      "failed": "Falló",
+      "cancelled": "Cancelado",
+      "expired": "Caducado"
+    }
+  }
+}

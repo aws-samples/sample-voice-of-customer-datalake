@@ -11,23 +11,28 @@ import {
   useMutation, useQuery, useQueryClient,
 } from '@tanstack/react-query'
 import clsx from 'clsx'
+import { Save, Loader2, Play, Plus, Trash2, Pencil } from 'lucide-react'
+import { manifestIcon } from '../../components/SourceIcon/sourceIcons'
 import {
-  Save, Loader2, Play, AlertCircle, CheckCircle2, Plus, Trash2, Pencil, Smartphone,
-} from 'lucide-react'
-import {
-  useState, useEffect,
+  useId, useState, useEffect,
 } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
 import { api } from '../../api/client'
-import ConfirmModal from '../../components/ConfirmModal'
+import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
 import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import {
-  SetupInstructions, PluginField,
+  SetupInstructions, PluginFieldGrid, ResultMessage,
 } from './PluginConfigParts'
-import { getAppIdentifier } from './scraper-helpers'
+import { appField, getAppIdentifier, ownValue, supportsAppConfigs } from './scraper-helpers'
+import type { AppConfig } from './scraper-helpers'
 import type { PluginManifest } from '../../plugins/types'
-
-type AppConfig = Record<string, string>
+import ModalShell from '../../components/ModalShell/ModalShell'
+import SourceDialogHeader from './SourceDialogHeader'
+import { appCopy } from './appCopy'
+import RadarSourcePicker from './RadarSourcePicker'
+import { RadarBadge } from './SourceCardParts'
+import { useRadarBrandLabel } from './useRadarBrands'
 
 interface PluginConfigModalProps {
   readonly plugin: PluginManifest
@@ -41,21 +46,10 @@ interface PluginConfigModalProps {
    *  Disabling the controls is presentation only; the gate that matters is the
    *  server's, and this exists so a non-admin sees why rather than a silent 403. */
   readonly isAdmin: boolean
+  /** Opened from one card's Edit: show just that app / review page's form, and close when it is saved or cancelled. */
+  readonly focusAppId?: string
 }
 
-function ResultMessage({
-  success, message,
-}: {
-  readonly success: boolean;
-  readonly message: string
-}) {
-  const Icon = success ? CheckCircle2 : AlertCircle
-  return (
-    <div className={clsx('p-3 rounded-lg text-sm', success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700')}>
-      <Icon size={14} className="inline mr-2" />{message}
-    </div>
-  )
-}
 
 function ScheduleToggle({
   scheduleLoading, scheduleEnabled, isAdmin, onToggle,
@@ -67,15 +61,15 @@ function ScheduleToggle({
 }) {
   const { t } = useTranslation('scrapers')
   return (
-    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+    <div className="flex items-center justify-between p-3 bg-bg-accent rounded-lg">
       <div>
         <p className="text-sm font-medium">{t('pluginConfig.automaticSchedule')}</p>
-        <p className="text-xs text-gray-500">{t('pluginConfig.scheduleDescription')}</p>
+        <p className="text-xs text-muted">{t('pluginConfig.scheduleDescription')}</p>
       </div>
-      {scheduleLoading ? <Loader2 size={16} className="animate-spin text-blue-600" /> : (
+      {scheduleLoading ? <Loader2 size={16} className="animate-spin text-accent" /> : (
         <label className={clsx('flex items-center gap-2', isAdmin ? 'cursor-pointer' : 'cursor-not-allowed')} title={isAdmin ? undefined : ADMIN_ONLY_TITLE}>
-          <input type="checkbox" checked={scheduleEnabled} disabled={!isAdmin} onChange={(e) => onToggle(e.target.checked)} className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50" />
-          <span className="text-sm text-gray-600">{scheduleEnabled ? t('pluginConfig.enabled') : t('pluginConfig.disabled')}</span>
+          <input type="checkbox" checked={scheduleEnabled} disabled={!isAdmin} onChange={(e) => onToggle(e.target.checked)} className="rounded-sm accent-accent focus-ring disabled:opacity-50" />
+          <span className="text-sm text-text">{scheduleEnabled ? t('pluginConfig.enabled') : t('pluginConfig.disabled')}</span>
         </label>
       )}
     </div>
@@ -91,21 +85,28 @@ function AppCard({
   readonly onEdit: () => void;
   readonly onDelete: () => void
 }) {
+  const { t } = useTranslation('scrapers')
+  const copy = appCopy(pluginId)
+  const Icon = copy.icon
+  const radarBrandLabel = useRadarBrandLabel(appField(app, 'radar_brand'))
   return (
-    <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50">
+    <div className="flex items-center justify-between gap-2 p-3 border border-border rounded-lg">
       <div className="flex items-center gap-3 min-w-0">
-        <div className="w-9 h-9 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center flex-shrink-0"><Smartphone size={18} /></div>
+        <div className="w-9 h-9 rounded-lg bg-accent-subtle text-accent-text flex items-center justify-center flex-shrink-0"><Icon size={18} aria-hidden="true" /></div>
         <div className="min-w-0">
-          <p className="text-sm font-medium truncate">{app.app_name === '' ? 'Unnamed App' : app.app_name}</p>
-          <p className="text-xs text-gray-500 truncate">{getAppIdentifier(app, pluginId)}</p>
+          <div className="flex items-center gap-2 min-w-0">
+            <p className="text-sm font-medium text-text-strong truncate">{app.app_name === '' ? t(copy.unnamed) : app.app_name}</p>
+            <RadarBadge brandLabel={radarBrandLabel} />
+          </div>
+          <p className="text-xs text-muted font-mono truncate">{getAppIdentifier(app, pluginId)}</p>
         </div>
       </div>
       <div className="flex items-center gap-1 flex-shrink-0">
         {/* Edit stays enabled for everyone: it only opens the form. The SAVE inside
             it is what writes, and that is disabled below — so a non-admin can read
             an app's settings without being handed a button that 403s. */}
-        <button onClick={onEdit} className="p-1.5 hover:bg-gray-200 rounded" title="Edit"><Pencil size={14} className="text-gray-500" /></button>
-        <button onClick={onDelete} disabled={!isAdmin} title={isAdmin ? 'Delete' : ADMIN_ONLY_TITLE} className="p-1.5 hover:bg-gray-200 rounded disabled:opacity-50 disabled:cursor-not-allowed"><Trash2 size={14} className="text-red-500" /></button>
+        <button type="button" onClick={onEdit} className="icon-btn p-2" aria-label={t('card.edit')} title={t('card.edit')}><Pencil size={16} /></button>
+        <button type="button" onClick={onDelete} disabled={!isAdmin} aria-label={t('card.delete')} title={isAdmin ? t('card.delete') : ADMIN_ONLY_TITLE} className="icon-btn p-2 hover:text-danger hover:bg-danger-subtle disabled:opacity-40 disabled:cursor-not-allowed"><Trash2 size={16} /></button>
       </div>
     </div>
   )
@@ -121,27 +122,32 @@ function AppEditorForm({
   readonly onCancel: () => void;
   readonly isPending: boolean
 }) {
+  const { t } = useTranslation('scrapers')
   const [values, setValues] = useState<AppConfig>(initialValues)
-  const isEditing = initialValues.id != null && initialValues.id !== ''
-  const hasRequired = plugin.config.filter((f) => f.required === true).every((f) => (values[f.key] ?? '').trim() !== '')
+  const isEditing = appField(initialValues, 'id') !== ''
+  const copy = appCopy(plugin.id)
+  const hasRequired = plugin.config.filter((f) => f.required === true).every((f) => appField(values, f.key).trim() !== '')
 
   return (
-    <div className="space-y-4 p-4 border border-blue-200 bg-blue-50/30 rounded-lg">
-      <h4 className="text-sm font-semibold text-gray-700">{isEditing ? 'Edit App' : 'Add New App'}</h4>
-      <div className="grid gap-3">
-        {plugin.config.map((field) => (
-          <PluginField key={field.key} field={field} value={values[field.key] ?? ''} showSecrets={false} onChange={(v) => setValues((prev) => ({
-            ...prev,
-            [field.key]: v,
-          }))} />
-        ))}
-      </div>
+    <div className="space-y-4 p-4 border border-accent/30 bg-accent-subtle rounded-lg">
+      <h3 className="text-sm font-semibold text-text-strong">{isEditing ? t(copy.edit) : t(copy.addNew)}</h3>
+      <PluginFieldGrid
+        fields={plugin.config}
+        values={values}
+        onChange={(key, v) => setValues((prev) => ({
+          ...prev,
+          [key]: v,
+        }))}
+      />
+      {/* `radar_brand` (docs/radar.md): this page or app is another brand's, its reviews go to Radar. */}
+      <RadarSourcePicker value={appField(values, 'radar_brand')} disabled={!isAdmin}
+        onChange={(radarBrand) => setValues((prev) => ({ ...prev, radar_brand: radarBrand }))} />
       <div className="flex items-center gap-2">
-        <button onClick={() => onSave({ ...values })} disabled={isPending || !hasRequired || !isAdmin} title={isAdmin ? undefined : ADMIN_ONLY_TITLE} className="btn btn-primary flex items-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed">
+        <button onClick={() => onSave({ ...values })} disabled={isPending || !hasRequired || !isAdmin} title={isAdmin ? undefined : ADMIN_ONLY_TITLE} className="btn btn-primary">
           {isPending ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-          {isEditing ? 'Save' : 'Add App'}
+          {isEditing ? t('pluginConfig.save') : t(copy.add)}
         </button>
-        <button onClick={onCancel} className="btn btn-secondary text-sm">Cancel</button>
+        <button type="button" onClick={onCancel} className="btn btn-secondary">{t('editor.cancel')}</button>
       </div>
     </div>
   )
@@ -163,26 +169,29 @@ function AppListSection({
   readonly onSaveApp: (v: AppConfig) => void;
   readonly onCancelEditor: () => void
 }) {
+  const { t } = useTranslation('scrapers')
+  const copy = appCopy(plugin.id)
+  const EmptyIcon = copy.icon
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h4 className="text-sm font-semibold text-gray-700">Configured Apps</h4>
-        {!showEditor && <button onClick={onStartAdd} disabled={!isAdmin} title={isAdmin ? undefined : ADMIN_ONLY_TITLE} className="btn btn-primary flex items-center gap-1.5 text-xs px-3 py-1.5 disabled:opacity-50 disabled:cursor-not-allowed"><Plus size={14} /> Add App</button>}
+        <h3 className="text-sm font-semibold text-text-strong">{t(copy.list)}</h3>
+        {!showEditor && <button type="button" onClick={onStartAdd} disabled={!isAdmin} title={isAdmin ? undefined : ADMIN_ONLY_TITLE} className="btn btn-secondary btn-sm"><Plus size={14} /> {t(copy.add)}</button>}
       </div>
-      {appsLoading ? <div className="flex items-center justify-center py-6"><Loader2 className="animate-spin h-6 w-6 text-blue-500" /></div> : null}
+      {appsLoading ? <div className="flex items-center justify-center py-6"><Loader2 className="animate-spin h-6 w-6 text-accent" /></div> : null}
       {!appsLoading && apps.length === 0 && !showEditor && (
-        <div className="text-center py-6 text-gray-400 text-sm">
-          <Smartphone className="mx-auto h-8 w-8 mb-2 opacity-50" />
-          <p>No apps configured yet</p>
+        <div className="text-center py-6 text-sm border border-dashed border-border rounded-lg">
+          <EmptyIcon size={20} className="mx-auto mb-2 text-muted" aria-hidden="true" />
+          <p className="text-muted">{t(copy.empty)}</p>
           {/* Not rendered at all for a non-admin, rather than rendered disabled: it
               is a prompt to do something they cannot do, and the empty state has no
               other content to anchor a disabled control to. */}
-          {isAdmin ? <button onClick={onStartAdd} className="text-blue-600 hover:underline text-sm mt-1">Add your first app</button> : null}
+          {isAdmin ? <button type="button" onClick={onStartAdd} className="btn btn-primary btn-sm mt-3"><Plus size={14} /> {t(copy.addFirst)}</button> : null}
         </div>
       )}
       {!appsLoading && apps.length > 0 && (
         <div className="space-y-2">
-          {apps.map((app) => <AppCard key={app.id} app={app} pluginId={plugin.id} isAdmin={isAdmin} onEdit={() => onStartEdit(app)} onDelete={() => onDelete(app.id)} />)}
+          {apps.map((app) => <AppCard key={appField(app, 'id')} app={app} pluginId={plugin.id} isAdmin={isAdmin} onEdit={() => onStartEdit(app)} onDelete={() => onDelete(appField(app, 'id'))} />)}
         </div>
       )}
       {showEditor ? <AppEditorForm plugin={plugin} initialValues={editorInitialValues} isAdmin={isAdmin} onSave={onSaveApp} onCancel={onCancelEditor} isPending={savePending} /> : null}
@@ -190,11 +199,91 @@ function AppListSection({
   )
 }
 
-// eslint-disable-next-line complexity
+/**
+ * For a plugin without app configs (S3 import, GitHub Issues): its token and
+ * settings are entered in Administration, so say where in plain words, with
+ * the link, instead of the manifest's setup steps — those are written for the
+ * Administration card ("paste the token above") and pointed at a field this
+ * dialog does not have (live finding).
+ */
+function SettingsPointer({ pluginName }: Readonly<{ pluginName: string }>) {
+  const { t } = useTranslation(['scrapers', 'settings'])
+  const where = `${t('settings:title')} → ${t('settings:tabs.sources')} → ${t('settings:sections.plugins')}`
+  return (
+    <div className="p-3 rounded-lg border border-border bg-bg-accent space-y-2">
+      <p className="text-sm text-text">{t('pluginConfig.configuredInSettings', { name: pluginName, where })}</p>
+      <Link to="/admin?tab=sources&section=plugins" className="btn btn-primary btn-sm">{t('pluginConfig.openDataSourceSettings')}</Link>
+    </div>
+  )
+}
+
+function RunNowRow({
+  isAdmin, isPending, result, onRun,
+}: {
+  readonly isAdmin: boolean
+  readonly isPending: boolean
+  readonly result: { success: boolean; message: string } | undefined
+  readonly onRun: () => void
+}) {
+  const { t } = useTranslation('scrapers')
+  return (
+    <div className="flex items-center gap-2">
+      <button onClick={onRun} disabled={isPending || !isAdmin} title={isAdmin ? undefined : ADMIN_ONLY_TITLE} className="btn btn-secondary">
+        {isPending ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+        {t('pluginConfig.runNow')}
+      </button>
+      {result == null ? null : <ResultMessage success={result.success} message={result.message === '' ? t('pluginConfig.runTriggered') : result.message} />}
+    </div>
+  )
+}
+
+/**
+ * A card's Edit opened the dialog for one app: that app, and the dialog's title.
+ * A focused edit whose app is gone (deleted elsewhere) falls back to the whole list.
+ */
+function focusState(apps: readonly AppConfig[], appsLoading: boolean, focusAppId: string | undefined, pluginName: string) {
+  const focusedApp = focusAppId === undefined ? undefined : apps.find((app) => appField(app, 'id') === focusAppId)
+  const focused = focusAppId !== undefined && (appsLoading || focusedApp !== undefined)
+  const focusedName = focusedApp === undefined ? '' : appField(focusedApp, 'app_name')
+  return { focused, focusedApp, title: focusedName === '' ? pluginName : focusedName }
+}
+
+/** The manifest's setup steps; only app-config plugins show them here (the others are set up in Administration). */
+function AppSetup({ plugin }: Readonly<{ plugin: PluginManifest }>) {
+  return plugin.setup == null ? null : <SetupInstructions setup={plugin.setup} />
+}
+
+function DeleteAppConfirm({ appId, pluginId, onConfirm, onCancel }: Readonly<{
+  appId: string | null
+  pluginId: string
+  onConfirm: (appId: string) => void
+  onCancel: () => void
+}>) {
+  const { t } = useTranslation('scrapers')
+  if (appId == null || appId === '') return null
+  const copy = appCopy(pluginId)
+  return <ConfirmModal isOpen title={t(copy.deleteTitle)} message={t(copy.deleteMessage)} confirmLabel={t('deleteConfirmLabel')} onConfirm={() => onConfirm(appId)} onCancel={onCancel} />
+}
+
+/** The one-app form a card's Edit opens; a spinner while the configs load. */
+function FocusedAppEditor({ plugin, app, loading, isAdmin, isPending, onSave, onCancel }: Readonly<{
+  plugin: PluginManifest
+  app: AppConfig | undefined
+  loading: boolean
+  isAdmin: boolean
+  isPending: boolean
+  onSave: (v: AppConfig) => void
+  onCancel: () => void
+}>) {
+  if (loading || app === undefined) return <div className="flex items-center justify-center py-6"><Loader2 className="animate-spin h-6 w-6 text-accent" aria-hidden="true" /></div>
+  return <AppEditorForm plugin={plugin} initialValues={app} isAdmin={isAdmin} onSave={onSave} onCancel={onCancel} isPending={isPending} />
+}
+
 export default function PluginConfigModal({
-  plugin, onClose, isAdmin,
+  plugin, onClose, isAdmin, focusAppId,
 }: PluginConfigModalProps) {
   const { t } = useTranslation('scrapers')
+  const titleId = useId()
   const queryClient = useQueryClient()
   const [scheduleEnabled, setScheduleEnabled] = useState(false)
   const [scheduleLoading, setScheduleLoading] = useState(true)
@@ -202,11 +291,14 @@ export default function PluginConfigModal({
   const [isAdding, setIsAdding] = useState(false)
   const [deleteAppId, setDeleteAppId] = useState<string | null>(null)
 
+  // `/integrations/{source}/apps` serves only the app-review plugins (400 for any other).
+  const hasApps = supportsAppConfigs(plugin.id)
   const {
     data: appConfigsData, isLoading: appsLoading,
   } = useQuery({
     queryKey: ['app-configs', plugin.id],
     queryFn: () => api.getAppConfigs(plugin.id),
+    enabled: hasApps,
   })
   const apps = appConfigsData?.apps ?? []
 
@@ -214,7 +306,7 @@ export default function PluginConfigModal({
     const fetchStatus = async () => {
       try {
         const response = await api.getSourcesStatus([plugin.id])
-        const status = response.sources[plugin.id]
+        const status = ownValue(response.sources, plugin.id)
         if (status != null) setScheduleEnabled(status.enabled)
       } catch {
         // ignored — schedule status is non-critical
@@ -256,49 +348,40 @@ export default function PluginConfigModal({
   }
 
   const showEditor = isAdding || editingApp !== null
+  const { focused, focusedApp, title } = focusState(apps, appsLoading, focusAppId, plugin.name)
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="p-4 border-b flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="w-10 h-10 rounded-lg bg-gray-100 text-gray-600 flex items-center justify-center text-[10px] font-semibold overflow-hidden truncate px-1">{plugin.icon.slice(0, 8)}</span>
-            <div>
-              <h3 className="font-semibold text-lg">{plugin.name}</h3>
-              {plugin.description != null && plugin.description !== '' ? <p className="text-sm text-gray-500">{plugin.description}</p> : null}
-            </div>
+    // Escape / backdrop close only when no app form is open — a half-filled
+    // app config would otherwise be lost to a stray key.
+    <ModalShell isOpen onClose={onClose} ariaLabelledBy={titleId} dismissable={!showEditor && !focused} panelClassName="max-w-2xl max-h-[95vh] sm:max-h-[90vh]">
+        <SourceDialogHeader titleId={titleId} title={title} description={focused ? undefined : plugin.description} icon={manifestIcon(plugin.icon, plugin.category)} onClose={onClose} />
+        {focused ? (
+          <div className="dialog-body">
+            <FocusedAppEditor plugin={plugin} app={focusedApp} loading={appsLoading} isAdmin={isAdmin} isPending={saveMutation.isPending}
+              onSave={(v) => saveMutation.mutate(v, { onSuccess: onClose })} onCancel={onClose} />
           </div>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
-        </div>
-        <div className="p-4 overflow-y-auto flex-1 space-y-5">
+        ) : (
+        <div className="dialog-body space-y-5">
           <ScheduleToggle scheduleLoading={scheduleLoading} scheduleEnabled={scheduleEnabled} isAdmin={isAdmin} onToggle={(e) => void handleToggleSchedule(e)} />
-          <AppListSection plugin={plugin} apps={apps} appsLoading={appsLoading} showEditor={showEditor} editorInitialValues={editingApp ?? {}} savePending={saveMutation.isPending} isAdmin={isAdmin}
-            onStartAdd={() => {
-              setEditingApp(null); setIsAdding(true)
-            }} onStartEdit={(app) => {
-              setIsAdding(false); setEditingApp(app)
-            }}
-            onDelete={(id) => setDeleteAppId(id)} onSaveApp={(v) => saveMutation.mutate(v)} onCancelEditor={() => {
-              setEditingApp(null); setIsAdding(false)
-            }} />
-          {apps.length > 0 && (
-            <div className="flex items-center gap-2">
-              <button onClick={() => runMutation.mutate()} disabled={runMutation.isPending || !isAdmin} title={isAdmin ? undefined : ADMIN_ONLY_TITLE} className="btn btn-secondary flex items-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed">
-                {runMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-                {t('pluginConfig.runNow')}
-              </button>
-              {runMutation.data == null ? null : <ResultMessage success={runMutation.data.success} message={runMutation.data.message === '' ? t('pluginConfig.runTriggered') : runMutation.data.message} />}
-            </div>
-          )}
-          {plugin.setup == null ? null : <SetupInstructions setup={plugin.setup} />}
+          {hasApps ? (
+            <AppListSection plugin={plugin} apps={apps} appsLoading={appsLoading} showEditor={showEditor} editorInitialValues={editingApp ?? {}} savePending={saveMutation.isPending} isAdmin={isAdmin}
+              onStartAdd={() => {
+                setEditingApp(null); setIsAdding(true)
+              }} onStartEdit={(app) => {
+                setIsAdding(false); setEditingApp(app)
+              }}
+              onDelete={(id) => setDeleteAppId(id)} onSaveApp={(v) => saveMutation.mutate(v)} onCancelEditor={() => {
+                setEditingApp(null); setIsAdding(false)
+              }} />
+          ) : <SettingsPointer pluginName={plugin.name} />}
+          {apps.length > 0 && <RunNowRow isAdmin={isAdmin} isPending={runMutation.isPending} result={runMutation.data} onRun={() => runMutation.mutate()} />}
+          {hasApps ? <AppSetup plugin={plugin} /> : null}
         </div>
-        <div className="p-4 border-t">
-          <button onClick={onClose} className="btn btn-secondary w-full text-sm">{t('pluginConfig.close')}</button>
+        )}
+        <div className="dialog-footer">
+          <button type="button" onClick={onClose} className="btn btn-secondary">{t('pluginConfig.close')}</button>
         </div>
-      </div>
-      {deleteAppId == null || deleteAppId === '' ? null : <ConfirmModal isOpen title="Delete App" message="Are you sure you want to remove this app configuration?" confirmLabel="Delete" onConfirm={() => {
-        deleteMutation.mutate(deleteAppId)
-      }} onCancel={() => setDeleteAppId(null)} />}
-    </div>
+      <DeleteAppConfirm appId={deleteAppId} pluginId={plugin.id} onConfirm={(id) => deleteMutation.mutate(id)} onCancel={() => setDeleteAppId(null)} />
+    </ModalShell>
   )
 }

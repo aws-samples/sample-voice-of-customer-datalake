@@ -38,6 +38,8 @@ import {
   SYNTH_TIMEOUT_MS,
   type Baseline,
 } from './test-support/synth-app';
+import { byCodeUnit } from './utils/compare';
+import { valueAt } from './test-support/guards';
 
 const PROJECT_ROOT = join(__dirname, '..');
 
@@ -95,7 +97,7 @@ afterAll(cleanupAssemblyDirs);
 
 describe('the default (no deploymentPrefix) synth', () => {
   it('produces exactly the stacks the baseline recorded', () => {
-    expect(synthed.stackNames).toEqual(Object.keys(baseline.stacks).sort());
+    expect(synthed.stackNames).toStrictEqual(Object.keys(baseline.stacks).sort(byCodeUnit));
   });
 
   it.each(Object.keys(baseline.stacks))(
@@ -105,8 +107,9 @@ describe('the default (no deploymentPrefix) synth', () => {
       // file fails, the message should say which name moved, not just that a
       // digest did. The hash then catches everything the inventory does not
       // model (resource shape, policy actions, output values).
+      const expected = valueAt(baseline.stacks, stackName);
       const names = nameInventory(synthed.template(stackName));
-      expect(names).toEqual(baseline.stacks[stackName].names);
+      expect(names).toStrictEqual(expected.names);
 
       const sha = createHash('sha256').update(synthed.canonicalTemplate(stackName)).digest('hex');
       expect(
@@ -114,7 +117,7 @@ describe('the default (no deploymentPrefix) synth', () => {
         `${stackName}.template.json changed against ${BASELINE_PATH}. If that is intended, ` +
           'regenerate with `npx ts-node scripts/generate-baseline.ts` AND review the diff: ' +
           'renaming a table, bucket or user pool is a CloudFormation REPLACEMENT.',
-      ).toBe(baseline.stacks[stackName].templateSha256);
+      ).toBe(expected.templateSha256);
     },
   );
 
@@ -133,7 +136,7 @@ describe('the default (no deploymentPrefix) synth', () => {
         `${stackName}: these render to a VoC name but no inventory watches them. Add the ` +
           'CloudFormation property name to NAME_PROPERTIES in lib/test-support/name-inventory.ts ' +
           '(and regenerate the baseline), or establish that it is not a physical name.',
-      ).toEqual([]);
+      ).toStrictEqual([]);
     }
   });
 
@@ -147,14 +150,14 @@ describe('the default (no deploymentPrefix) synth', () => {
       },
     };
     expect(unlistedNameProperties(template))
-      .toEqual(['AWS::Service::Thing ThingName = voc-thing-not-in-the-list']);
+      .toStrictEqual(['AWS::Service::Thing ThingName = voc-thing-not-in-the-list']);
     // ...and a listed property, or a property with no VoC name, is not flagged.
     expect(unlistedNameProperties({
       Resources: {
         Table: { Type: 'AWS::DynamoDB::Table', Properties: { TableName: 'voc-feedback' } },
         Other: { Type: 'AWS::Service::Thing', Properties: { ThingName: 'unrelated' } },
       },
-    })).toEqual([]);
+    })).toStrictEqual([]);
     // ...and something established NOT to be a physical name can be exempted
     // without adding it to NAME_PROPERTIES, which would feed a non-name into the
     // baseline inventory and the prefix mapping. Nothing in the app needs this
@@ -163,7 +166,7 @@ describe('the default (no deploymentPrefix) synth', () => {
       Resources: {
         Thing: { Type: 'AWS::Service::Thing', Properties: { Description: 'the voc-feedback table' } },
       },
-    }, ['Description'])).toEqual([]);
+    }, ['Description'])).toStrictEqual([]);
   });
 
   it('carries no deployment prefix anywhere in a name', () => {
@@ -184,16 +187,24 @@ describe('the default (no deploymentPrefix) synth', () => {
     // earlier in this file would still have caught a genuine leak, but this
     // assertion exists precisely so the invariant does not depend on reading a
     // hash, and half-doing that is worse than not doing it.
-    expect('AWS::DynamoDB::Table TableName = team-a-voc-feedback-123456789012-us-east-1').toMatch(PREFIXED_NAME);
-    expect('AWS::Logs::LogGroup LogGroupName = /aws/lambda/team-a-voc-x').toMatch(PREFIXED_NAME);
-    expect('AWS::DynamoDB::Table TableName = stg-voc-feedback-123456789012-us-east-1').toMatch(PREFIXED_NAME);
+    const prefixed = [
+      'AWS::DynamoDB::Table TableName = team-a-voc-feedback-123456789012-us-east-1',
+      'AWS::Logs::LogGroup LogGroupName = /aws/lambda/team-a-voc-x',
+      'AWS::DynamoDB::Table TableName = stg-voc-feedback-123456789012-us-east-1',
+    ];
+    expect(prefixed.filter((entry) => !PREFIXED_NAME.test(entry)), 'prefixed names the pattern misses')
+      .toStrictEqual([]);
 
     // ...and does not fire on the unprefixed names the app really produces,
     // including the ones whose own base name contains a hyphen.
-    expect('AWS::DynamoDB::Table TableName = voc-feedback-123456789012-us-east-1').not.toMatch(PREFIXED_NAME);
-    expect('AWS::S3::Bucket BucketName = voc-access-logs-123456789012-us-east-1').not.toMatch(PREFIXED_NAME);
-    expect('AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-ingestor-webscraper').not.toMatch(PREFIXED_NAME);
-    expect('Outputs Export.Name = VocCoreStack:ExportsOutputRefFeedbackTable').not.toMatch(PREFIXED_NAME);
+    const unprefixed = [
+      'AWS::DynamoDB::Table TableName = voc-feedback-123456789012-us-east-1',
+      'AWS::S3::Bucket BucketName = voc-access-logs-123456789012-us-east-1',
+      'AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-ingestor-webscraper',
+      'Outputs Export.Name = VocCoreStack:ExportsOutputRefFeedbackTable',
+    ];
+    expect(unprefixed.filter((entry) => PREFIXED_NAME.test(entry)), 'unprefixed names the pattern flags')
+      .toStrictEqual([]);
   });
 
   it('synthesizes with zero warnings', () => {
@@ -204,7 +215,7 @@ describe('the default (no deploymentPrefix) synth', () => {
     // (lib/test-support/synth-app.test.ts pins the collector itself).
     expect(synthed.readsRealAnnotations, 'the annotation collector found nothing at all').toBe(true);
     const found = diagnostics(synthed);
-    expect(found, JSON.stringify(found, null, 2)).toEqual([]);
+    expect(found, JSON.stringify(found, null, 2)).toStrictEqual([]);
   });
 // SYNTH_TIMEOUT_MS rather than a global testTimeout: only the suites that
 // synthesize the whole app out of process need longer than vitest's 5s default,

@@ -2,6 +2,12 @@ requests>=2.31.0
 aws-lambda-powertools[tracer]>=2.30.0
 beautifulsoup4>=4.12.0
 lxml>=5.0.0
-tenacity>=8.2.0
+# Exact pin: an open range let CI resolve a newer LoggerProtocol than local (pyright drift).
+tenacity==9.2.1
 app-store-web-scraper>=0.2.0
 google-play-scraper>=1.2.7
+# CDP websocket for the web_reviews plugin's managed browser (Apache-2.0). Exact pin.
+websocket-client==1.9.2
+# Ingest message schemas (shared/ingest_schemas.py, reached from _shared/base_ingestor via the
+# source policy). Same version the processing-deps layer resolves. Exact pin.
+pydantic==2.14.1

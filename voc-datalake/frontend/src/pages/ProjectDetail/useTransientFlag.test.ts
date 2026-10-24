@@ -40,7 +40,7 @@ describe('useTransientFlag', () => {
     const { result } = renderHook(() => useTransientFlag(1000))
     act(() => result.current.set())
 
-    act(() => vi.advanceTimersByTime(999))
+    act(() => { vi.advanceTimersByTime(999) })
 
     expect(result.current.isSet).toBe(true)
   })
@@ -49,7 +49,7 @@ describe('useTransientFlag', () => {
     const { result } = renderHook(() => useTransientFlag(1000))
     act(() => result.current.set())
 
-    act(() => vi.advanceTimersByTime(1000))
+    act(() => { vi.advanceTimersByTime(1000) })
 
     expect(result.current.isSet).toBe(false)
   })
@@ -57,10 +57,10 @@ describe('useTransientFlag', () => {
   it('restarts the window when raised again', () => {
     const { result } = renderHook(() => useTransientFlag(1000))
     act(() => result.current.set())
-    act(() => vi.advanceTimersByTime(800))
+    act(() => { vi.advanceTimersByTime(800) })
 
     act(() => result.current.set())
-    act(() => vi.advanceTimersByTime(800))
+    act(() => { vi.advanceTimersByTime(800) })
 
     // A second start must not be cut short by the first one's timer.
     expect(result.current.isSet).toBe(true)

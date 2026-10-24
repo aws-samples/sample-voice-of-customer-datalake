@@ -28,7 +28,7 @@ import type { HistoryEntry } from '../constants/chat'
  * Bedrock Converse rejects outright — would be narrowed to a type it does not
  * inhabit and sail through to a confusing failure downstream.
  */
-export function isHistoryEntry(value: unknown): value is HistoryEntry {
+function isHistoryEntry(value: unknown): value is HistoryEntry {
   if (typeof value !== 'object' || value === null) return false
   const record: Record<string, unknown> = { ...value }
   return (record.role === 'user' || record.role === 'assistant')
@@ -53,7 +53,7 @@ export function readSentHistory(
   callIndex = 0,
   argIndex = 1,
 ): HistoryEntry[] {
-  const call: unknown[] | undefined = recorder.mock.calls[callIndex]
+  const call: unknown[] | undefined = recorder.mock.calls.at(callIndex)
   if (call === undefined) throw new Error(`send was not called ${callIndex + 1} time(s)`)
   const carrier: unknown = call[argIndex]
   if (typeof carrier !== 'object' || carrier === null || !('history' in carrier)) {
@@ -66,12 +66,4 @@ export function readSentHistory(
     )
   }
   return history
-}
-
-/**
- * True when two adjacent entries share a role — the shape Bedrock Converse
- * rejects with a turn-alternation `ValidationException`.
- */
-export function hasAdjacentSameRole(history: readonly HistoryEntry[]): boolean {
-  return history.some((entry, i) => i > 0 && entry.role === history[i - 1].role)
 }

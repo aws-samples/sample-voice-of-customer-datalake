@@ -5,13 +5,15 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
-import type { FeedbackItem } from '../../api/client'
+import type { FeedbackItem } from '../../api/types'
 
+/**
+ * Save-only by design: customer data is never deleted, so the explorer has no
+ * delete mutations (the API removed both DELETE routes).
+ */
 interface MutationCallbacks {
   onS3SaveSuccess: () => void
-  onS3DeleteSuccess: () => void
   onFeedbackSaveSuccess: () => void
-  onFeedbackDeleteSuccess: () => void
 }
 
 export function useDataExplorerMutations(selectedBucket: string, callbacks: MutationCallbacks) {
@@ -21,37 +23,20 @@ export function useDataExplorerMutations(selectedBucket: string, callbacks: Muta
     mutationFn: (params: { key: string; content: string; syncToDynamo?: boolean }) =>
       api.saveDataExplorerS3(params.key, params.content, params.syncToDynamo, selectedBucket),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['data-explorer-s3'] })
-      queryClient.invalidateQueries({ queryKey: ['data-explorer-feedback'] })
+      void queryClient.invalidateQueries({ queryKey: ['data-explorer-s3'] })
+      void queryClient.invalidateQueries({ queryKey: ['data-explorer-feedback'] })
       callbacks.onS3SaveSuccess()
     },
   })
 
-  const deleteS3Mutation = useMutation({
-    mutationFn: (key: string) => api.deleteDataExplorerS3(key, selectedBucket),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['data-explorer-s3'] })
-      callbacks.onS3DeleteSuccess()
-    },
-  })
-
   const saveFeedbackMutation = useMutation({
-    mutationFn: (params: { feedbackId: string; data: Partial<FeedbackItem>; syncToS3?: boolean }) =>
-      api.saveDataExplorerFeedback(params.feedbackId, params.data, params.syncToS3),
+    mutationFn: (params: { feedbackId: string; data: Partial<FeedbackItem> }) =>
+      api.saveDataExplorerFeedback(params.feedbackId, params.data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['data-explorer-feedback'] })
-      queryClient.invalidateQueries({ queryKey: ['data-explorer-s3'] })
+      void queryClient.invalidateQueries({ queryKey: ['data-explorer-feedback'] })
       callbacks.onFeedbackSaveSuccess()
     },
   })
 
-  const deleteFeedbackMutation = useMutation({
-    mutationFn: (feedbackId: string) => api.deleteDataExplorerFeedback(feedbackId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['data-explorer-feedback'] })
-      callbacks.onFeedbackDeleteSuccess()
-    },
-  })
-
-  return { saveS3Mutation, deleteS3Mutation, saveFeedbackMutation, deleteFeedbackMutation }
+  return { saveS3Mutation, saveFeedbackMutation }
 }

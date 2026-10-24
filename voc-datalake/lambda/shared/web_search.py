@@ -33,6 +33,8 @@ MAX_QUERY_LENGTH = 200
 # query cost, but oversized snippets crowd out feedback context).
 DEFAULT_MAX_RESULTS = 8
 MAX_RESULTS_CAP = 10
+# The connector accepts up to 100 domains in each of include / exclude.
+MAX_FILTER_DOMAINS = 100
 
 _REQUEST_TIMEOUT_SECONDS = 20
 
@@ -75,10 +77,11 @@ def _configured_tool_name() -> str:
 def _region_from_gateway_url(url: str) -> str:
     """The gateway lives in its own region (web-search is us-east-1-only),
     which may differ from the Lambda's region — sign for the gateway's."""
-    host = urlparse(url).hostname or ''
-    match = re.search(r'\.gateway\.bedrock-agentcore\.([a-z0-9-]+)\.amazonaws\.com$', host)
-    if match:
-        return match.group(1)
+    host = urlparse(url).hostname
+    if host:
+        match = re.search(r'\.gateway\.bedrock-agentcore\.([a-z0-9-]+)\.amazonaws\.com\Z', host)
+        if match:
+            return match.group(1)
     return os.environ.get('AWS_REGION', 'us-east-1')
 
 
@@ -109,7 +112,7 @@ def _signed_post(url: str, payload: dict) -> dict:
     )
     try:
         with urllib.request.urlopen(http_request, timeout=_REQUEST_TIMEOUT_SECONDS) as response:  # noqa: S310
-            content_type = response.headers.get('Content-Type', '')
+            content_type = response.headers.get('Content-Type', '')  # pragma: no mutate - only ever tested for 'text/event-stream'; any other default behaves the same
             raw = response.read().decode('utf-8')
     except Exception as e:
         raise WebSearchError(f'Gateway request failed: {e}') from e
@@ -163,8 +166,10 @@ def _discover_tool_name() -> str:
     result = _rpc('tools/list', {})
     tools = result.get('tools', [])
     for tool in tools:
-        name = tool.get('name', '') if isinstance(tool, dict) else ''
-        if name.endswith('WebSearch'):
+        if not isinstance(tool, dict):
+            continue
+        name = tool.get('name')
+        if name and name.endswith('WebSearch'):
             return name
     raise WebSearchError('No WebSearch tool exposed by the gateway')
 
@@ -175,12 +180,14 @@ def _is_unknown_tool_error(error: WebSearchError) -> bool:
     )
 
 
-def _call_web_search_tool(query: str, max_results: int) -> dict:
+def _call_web_search_tool(query: str, max_results: int, filters: dict | None = None) -> dict:
     """tools/call with the configured (or previously discovered) name; on an
     unknown-tool error — including a stale cached name after a target rename
     — discover the real name via tools/list and retry once."""
     tool_name = _resolved_tool_name['name'] or _configured_tool_name()
-    arguments = {'query': query, 'maxResults': max_results}
+    arguments: dict = {'query': query, 'maxResults': max_results}
+    if filters:
+        arguments['filters'] = filters
     try:
         result = _rpc('tools/call', {'name': tool_name, 'arguments': arguments})
     except WebSearchError as e:
@@ -198,16 +205,15 @@ def _call_web_search_tool(query: str, max_results: int) -> dict:
 def _extract_results(tool_result: dict) -> list[dict]:
     """Unwrap the MCP envelope: content[0].text is a serialized JSON document
     with an `id` and a `results` array of observations."""
-    if tool_result.get('isError'):
-        content = tool_result.get('content', [])
-        detail = content[0].get('text', '') if content and isinstance(content[0], dict) else ''
-        raise WebSearchError(f'Web search tool error: {detail[:300]}')
-
     content = tool_result.get('content', [])
+    first_text = content[0].get('text', '') if content and isinstance(content[0], dict) else ''
+    if tool_result.get('isError'):
+        raise WebSearchError(f'Web search tool error: {first_text[:300]}')
+
     if not content or not isinstance(content[0], dict):
         raise WebSearchError('Web search returned an empty MCP content block')
     try:
-        payload = json.loads(content[0].get('text', ''))
+        payload = json.loads(first_text)
     except json.JSONDecodeError as e:
         raise WebSearchError('Web search returned non-JSON result text') from e
 
@@ -228,16 +234,78 @@ def _extract_results(tool_result: dict) -> list[dict]:
     return results
 
 
+_DOMAIN_RE = re.compile(r'^(?=.{1,253}\Z)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\Z')
+_ISO_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z)?\Z')
+
+
+def _domains(values: list[str] | tuple[str, ...] | None, field: str) -> list[str]:
+    """Lower-cased bare host names, de-duplicated in order (≤ MAX_FILTER_DOMAINS)."""
+    out: list[str] = []
+    for value in values or ():
+        host = str(value or '').strip().lower().removeprefix('www.')
+        if not _DOMAIN_RE.match(host):
+            raise WebSearchError(f'{field} entry is not a domain name: {str(value)[:80]!r}')
+        if host not in out:
+            out.append(host)
+    if len(out) > MAX_FILTER_DOMAINS:
+        raise WebSearchError(f'{field} may hold at most {MAX_FILTER_DOMAINS} domains')
+    return out
+
+
+def _iso_utc(value: str | None, field: str) -> str | None:
+    """A date ``YYYY-MM-DD`` (widened to midnight UTC) or a full ``…Z`` timestamp."""
+    if value in (None, ''):
+        return None
+    text = str(value).strip()
+    if not _ISO_DATE_RE.match(text):
+        raise WebSearchError(f'{field} must be YYYY-MM-DD or an ISO-8601 UTC timestamp')
+    return text if 'T' in text else f'{text}T00:00:00Z'
+
+
+def build_filters(*, include_domains=None, exclude_domains=None,
+                  published_after: str | None = None, published_before: str | None = None) -> dict:
+    """The connector's ``filters`` argument (web-search connector 1.2.0+), or {} for none.
+
+    Results whose domain or publication date the connector cannot verify are
+    dropped by the connector itself when the matching filter is set.
+    """
+    filters: dict = {}
+    domain_filter: dict = {}
+    include = _domains(include_domains, 'include_domains')
+    exclude = _domains(exclude_domains, 'exclude_domains')
+    if include:
+        domain_filter['include'] = include
+    if exclude:
+        domain_filter['exclude'] = exclude
+    if domain_filter:
+        filters['domainFilter'] = domain_filter
+    date_filter: dict = {}
+    after = _iso_utc(published_after, 'published_after')
+    before = _iso_utc(published_before, 'published_before')
+    if after:
+        date_filter['from'] = after
+    if before:
+        date_filter['to'] = before
+    if date_filter:
+        filters['publishedDateFilter'] = date_filter
+    return filters
+
+
 @tracer.capture_method
-def search_web(query: str, max_results: int = DEFAULT_MAX_RESULTS) -> list[dict]:
+def search_web(query: str, max_results: int = DEFAULT_MAX_RESULTS, *,
+               include_domains=None, exclude_domains=None,
+               published_after: str | None = None, published_before: str | None = None) -> list[dict]:
     """Run one web search and return normalized observations.
 
     Returns a list of {title, url, text, published_date} dicts. Knowledge-graph
     observations (structured facts) come back with empty title/url and are kept
     — their text is high-confidence factual grounding.
 
-    Raises WebSearchError on any failure; callers must treat web results as
-    optional enrichment.
+    The optional filters (domains, published date range) are sent only when
+    given, so an unfiltered call sends exactly ``{query, maxResults}``.
+
+    Raises WebSearchError on any failure (including an invalid filter); callers
+    must treat web results as optional enrichment.
     """
     if not is_web_search_configured():
         raise WebSearchError('Web search is not configured (WEB_SEARCH_GATEWAY_URL unset)')
@@ -245,8 +313,10 @@ def search_web(query: str, max_results: int = DEFAULT_MAX_RESULTS) -> list[dict]
     if not trimmed:
         raise WebSearchError('Web search query is empty')
     clamped = max(1, min(int(max_results), MAX_RESULTS_CAP))
+    filters = build_filters(include_domains=include_domains, exclude_domains=exclude_domains,
+                            published_after=published_after, published_before=published_before)
 
-    tool_result = _call_web_search_tool(trimmed, clamped)
+    tool_result = _call_web_search_tool(trimmed, clamped, filters or None)
     results = _extract_results(tool_result)
     logger.info(f"Web search returned {len(results)} results for query ({len(trimmed)} chars)")
     return results

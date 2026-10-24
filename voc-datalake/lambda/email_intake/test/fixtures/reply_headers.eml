@@ -1,0 +1,21 @@
+X-SES-Spam-Verdict: PASS
+X-SES-Virus-Verdict: PASS
+X-SES-SPF-Verdict: PASS
+X-SES-DKIM-Verdict: GRAY
+From: Ana <ana@customer.example>
+To: bugs@voc.example.com
+Subject: Re: Checkout keeps failing
+Date: Tue, 03 Mar 2026 09:00:00 +0000
+Message-ID: <reply-002@customer.example>
+In-Reply-To: <support-100@voc.example.com>
+References: <root-001@customer.example> <support-100@voc.example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+It also fails in the mobile app now, with error code 402.
+
+On Mon, 2 Mar 2026 at 10:00, Support <support@voc.example.com> wrote:
+> Thanks Ana, we are looking into it.
+> 
+> Hello,
+> The checkout fails every time

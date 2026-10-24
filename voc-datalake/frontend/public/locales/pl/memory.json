@@ -1,0 +1,139 @@
+{
+  "add": {
+    "label": {
+      "company": "Zapamiętaj dla całej firmy",
+      "personal": "Zapamiętaj dla mnie"
+    },
+    "placeholder": {
+      "company": "np. Nasi klienci porównują ceny przed złożeniem zamówienia",
+      "personal": "np. Lubię krótkie odpowiedzi"
+    },
+    "expiresAt": "Wygasa dnia",
+    "open": "Dodaj wspomnienie",
+    "sentForReview": "Wysłano do sprawdzenia — kurator je opublikuje.",
+    "statement": "Co powinno zostać zapamiętane?",
+    "failed": "Nie udało się zapisać wspomnienia. Spróbuj ponownie.",
+    "proposedNotice": "Wspomnienia firmowe publikują bezpośrednio tylko kuratorzy — Twoje trafi najpierw do sprawdzenia.",
+    "retention": "Okres przechowywania",
+    "saved": "Zapamiętano.",
+    "submit": "Zapamiętaj"
+  },
+  "filters": {
+    "anyKind": "Dowolny rodzaj",
+    "allStatuses": "Wszystkie statusy",
+    "kind": "Rodzaj",
+    "search": "Szukaj wspomnień",
+    "status": "Filtr statusu"
+  },
+  "imports": {
+    "status": {
+      "completed": "Zakończono",
+      "failed": "Niepowodzenie",
+      "processing": "Przetwarzanie",
+      "queued": "W kolejce"
+    },
+    "content": "Treść",
+    "contentPlaceholder": "Wklej tutaj tekst strony…",
+    "counter": "{{count, number}} / {{max}} znaków",
+    "created": "Utworzone wspomnienia: {{count, number}}",
+    "description": "Wklej dokument lub stronę internetową. Treść zostanie opublikowana zgodnie z ogólnymi zasadami pewności; oryginał zostanie zachowany.",
+    "failed": "Nie udało się rozpocząć importu. Spróbuj ponownie.",
+    "history": "Ostatnie importy",
+    "loadingRow": "Wczytywanie importu…",
+    "unavailable": "Ten import nie jest już dostępny.",
+    "noHistory": "Brak importów z tej przeglądarki.",
+    "pageTitle": "Tytuł",
+    "submit": "Importuj",
+    "title": "Importuj stronę",
+    "url": "Link źródłowy (opcjonalnie)"
+  },
+  "kind": {
+    "agents": "Agenci",
+    "customer": "Klient",
+    "objective": "Cel",
+    "other": "Inne",
+    "product": "Produkt",
+    "strategy": "Strategia",
+    "working_style": "Styl pracy"
+  },
+  "merge": {
+    "description": "Jedno stwierdzenie zastąpi je; oryginały zostaną zarchiwizowane, a ich zwolennicy zostaną przeniesieni.",
+    "failed": "Nie udało się scalić. Spróbuj ponownie.",
+    "open": "Scal zaznaczone",
+    "statement": "Scalone stwierdzenie",
+    "submit": "Scal",
+    "title": "Scal wspomnienia ({{count, number}})"
+  },
+  "privacy": {
+    "beforeSave": "Ze względów prywatności te szczegóły zostaną ukryte po zapisaniu:",
+    "hidden": "Niektóre szczegóły zostały ukryte ze względów prywatności."
+  },
+  "retention": {
+    "dated": "Do wybranej daty",
+    "decay": "Wygasa, gdy nieużywane",
+    "long_term": "Długoterminowe"
+  },
+  "retentionHint": {
+    "dated": "Przechowywane do wybranej daty, a następnie automatycznie archiwizowane.",
+    "decay": "Automatycznie archiwizowane po 90 dniach bez użycia, +1 lub potwierdzenia.",
+    "long_term": "Przechowywane, dopóki ktoś o tym nie zapomni."
+  },
+  "review": {
+    "actions": {
+      "keep": "Zachowaj ten",
+      "keep_both": "Zachowaj oba",
+      "merge": "Scal w jeden",
+      "replace": "Zachowaj istniejący"
+    },
+    "aligned": "Zgodne z celami: {{objectives}}",
+    "apply": "Zastosuj",
+    "empty": "Brak elementów do sprawdzenia — brak propozycji i konfliktów.",
+    "existing": "Co pamiętamy obecnie",
+    "failed": "Nie udało się zastosować rozwiązania. Spróbuj ponownie.",
+    "newClaim": "Nowe twierdzenie",
+    "proposed": "Proponowane wspomnienie",
+    "resolution": "Rozwiązanie",
+    "suggested": "Sugerowane: {{action}}"
+  },
+  "source": {
+    "agent": "Autonomiczny agent",
+    "extracted": "Nauczone z czatów",
+    "import": "Zaimportowane",
+    "user_explicit": "Dodane przez osobę"
+  },
+  "status": {
+    "active": "Aktywne",
+    "archived": "Zarchiwizowane",
+    "conflict": "Konflikt",
+    "proposed": "Propozycja"
+  },
+  "tabs": {
+    "company": "Firma",
+    "imports": "Importy",
+    "personal": "Osobiste",
+    "review": "Wymaga przeglądu"
+  },
+  "cancel": "Anuluj",
+  "configureFirst": "Najpierw podłącz endpoint API w Administracja → Ogólne.",
+  "confirm": "+1",
+  "confirmHint": "Zgadzam się — policz mnie jako zwolennika",
+  "alreadyBacked": "Już popierasz to wspomnienie. Każda osoba liczy się raz.",
+  "empty": "Nic jeszcze tutaj nie zapamiętano.",
+  "expires": "wygasa {{date}}",
+  "forget": "Zapomnij",
+  "forgetMessage": "\"{{statement}}\" zostanie zarchiwizowane i nigdy nie będzie ponownie uczone automatycznie. Możesz je przywrócić później.",
+  "forgetTitle": "Zapomnieć o tym wspomnieniu?",
+  "noMatch": "Brak wspomnień pasujących do \"{{q}}\".",
+  "loadFailed": "Nie udało się wczytać wspomnień.",
+  "loadMore": "Załaduj więcej",
+  "loading": "Wczytywanie wspomnień…",
+  "restore": "Przywróć",
+  "retry": "Ponów",
+  "reviewLoadFailed": "Nie udało się załadować kolejki przeglądu. Wspomnienia oczekujące na weryfikację mogą tutaj brakować.",
+  "selectForMerge": "Wybierz do scalenia: {{statement}}",
+  "selected": "Wybrane: {{count, number}}",
+  "since": "Od {{created}}",
+  "subtitle": "To, co asystent i autonomiczne agenty zapamiętują — wspólna wiedza firmy oraz Twoje osobiste preferencje.",
+  "supportersHint": "Osoby, które to powiedziały lub potwierdziły",
+  "title": "Pamięć"
+}

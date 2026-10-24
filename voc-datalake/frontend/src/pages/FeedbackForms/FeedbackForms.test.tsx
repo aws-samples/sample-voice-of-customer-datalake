@@ -1,31 +1,24 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter } from 'react-router-dom'
+import { at } from '@test/defined'
+import {
+  feedbackFormsApiMocks, clientApiModule, configStoreModule, createFormsWrapper,
+  CONFIGURED_API_ENDPOINT, formsConfigState,
+} from './feedback-forms-fixtures'
 
 // Mock API
-const mockGetFeedbackForms = vi.fn()
-const mockCreateFeedbackForm = vi.fn()
-const mockUpdateFeedbackForm = vi.fn()
-const mockDeleteFeedbackForm = vi.fn()
-const mockGetCategories = vi.fn()
+const {
+  getFeedbackForms: mockGetFeedbackForms,
+  createFeedbackForm: mockCreateFeedbackForm,
+  updateFeedbackForm: mockUpdateFeedbackForm,
+  deleteFeedbackForm: mockDeleteFeedbackForm,
+  getCategories: mockGetCategories,
+} = feedbackFormsApiMocks
 
-vi.mock('../../api/client', () => ({
-  api: {
-    getFeedbackForms: () => mockGetFeedbackForms(),
-    createFeedbackForm: (form: unknown) => mockCreateFeedbackForm(form),
-    updateFeedbackForm: (id: string, form: unknown) => mockUpdateFeedbackForm(id, form),
-    deleteFeedbackForm: (id: string) => mockDeleteFeedbackForm(id),
-    getCategories: () => mockGetCategories(),
-  },
-}))
+vi.mock('../../api/client', () => clientApiModule())
 
-vi.mock('../../store/configStore', () => ({
-  useConfigStore: () => ({
-    config: { apiEndpoint: 'https://api.example.com' },
-  }),
-}))
+vi.mock('../../store/configStore', () => configStoreModule())
 
 // Mock subcomponents
 vi.mock('./TemplateWizard', () => ({
@@ -60,15 +53,27 @@ vi.mock('./FormCard', () => ({
 import FeedbackForms from './FeedbackForms'
 import { defaultFormConfig } from './formTemplates'
 
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+function renderPage() {
+  render(<FeedbackForms />, { wrapper: createFormsWrapper() })
+}
+
+/** Resolve the list query with `response` and assert the empty state is shown. */
+async function expectEmptyStateFor(response: unknown) {
+  mockGetFeedbackForms.mockResolvedValue(response)
+
+  renderPage()
+
+  await waitFor(() => {
+    expect(screen.getByText('No feedback forms yet')).toBeInTheDocument()
   })
-  return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter>{children}</MemoryRouter>
-    </QueryClientProvider>
-  )
+}
+
+/** Render the page, open the first card's delete and confirm it. */
+async function confirmDeleteOfFirstForm() {
+  const user = userEvent.setup()
+  renderPage()
+  await user.click(at(await screen.findAllByRole('button', { name: 'Delete' }), 0))
+  await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete' }))
 }
 
 const mockForms = [
@@ -104,35 +109,48 @@ describe('FeedbackForms', () => {
 
   describe('rendering', () => {
     it('renders page header', async () => {
-      render(<FeedbackForms />, { wrapper: createWrapper() })
+      renderPage()
 
       expect(screen.getByText('Feedback Forms')).toBeInTheDocument()
     })
 
     it('renders create button', async () => {
-      render(<FeedbackForms />, { wrapper: createWrapper() })
+      renderPage()
 
       expect(screen.getByRole('button', { name: /create form/i })).toBeInTheDocument()
     })
 
     it('fetches forms on mount', async () => {
-      render(<FeedbackForms />, { wrapper: createWrapper() })
+      renderPage()
 
       await waitFor(() => {
-        expect(mockGetFeedbackForms).toHaveBeenCalled()
+        expect(mockGetFeedbackForms).toHaveBeenCalledWith()
       })
     })
   })
 
   describe('empty state', () => {
     it('shows empty state when no forms', async () => {
-      mockGetFeedbackForms.mockResolvedValue({ forms: [] })
+      await expectEmptyStateFor({ forms: [] })
+    })
 
-      render(<FeedbackForms />, { wrapper: createWrapper() })
+    // Regression (e2e network.spec.ts, P3): a failed list read used to fall
+    // through to "No feedback forms yet" and a create prompt — offline, the page
+    // claimed the user had no forms.
+    it('says the list could not be loaded, not "no forms", when the read fails, and recovers on retry', async () => {
+      mockGetFeedbackForms.mockRejectedValueOnce(new Error('Failed to fetch'))
+      const user = userEvent.setup()
 
-      await waitFor(() => {
-        expect(screen.getByText('No feedback forms yet')).toBeInTheDocument()
-      })
+      renderPage()
+
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent('This could not be loaded. Check your connection and try again.')
+      expect(screen.queryByText('No feedback forms yet')).not.toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: 'Try again' }))
+
+      expect(await screen.findByText('Customer Satisfaction')).toBeInTheDocument()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     })
   })
 
@@ -140,7 +158,7 @@ describe('FeedbackForms', () => {
     it('shows loading spinner while fetching', () => {
       mockGetFeedbackForms.mockReturnValue(new Promise(() => {}))
 
-      render(<FeedbackForms />, { wrapper: createWrapper() })
+      renderPage()
 
       expect(document.querySelector('.animate-spin')).toBeInTheDocument()
     })
@@ -154,7 +172,7 @@ describe('FeedbackForms', () => {
         forms: [{ form_id: 'form-legacy', name: 'Legacy Form', enabled: false }],
       })
 
-      render(<FeedbackForms />, { wrapper: createWrapper() })
+      renderPage()
 
       await waitFor(() => {
         expect(screen.getByTestId('form-card-form-legacy')).toBeInTheDocument()
@@ -166,34 +184,85 @@ describe('FeedbackForms', () => {
     })
 
     it('renders an empty list when the response has no forms array', async () => {
-      mockGetFeedbackForms.mockResolvedValue({})
-
-      render(<FeedbackForms />, { wrapper: createWrapper() })
-
-      await waitFor(() => {
-        expect(screen.getByText('No feedback forms yet')).toBeInTheDocument()
-      })
+      await expectEmptyStateFor({})
     })
   })
 
   describe('template wizard', () => {
     it('opens template wizard when create clicked', async () => {
       const user = userEvent.setup()
-      render(<FeedbackForms />, { wrapper: createWrapper() })
+      renderPage()
 
       await user.click(screen.getByRole('button', { name: /create form/i }))
 
       expect(screen.getByTestId('template-wizard')).toBeInTheDocument()
     })
   })
+
+  describe('delete confirmation', () => {
+    it('names the form it is about to delete', async () => {
+      const user = userEvent.setup()
+      renderPage()
+
+      await user.click(at(await screen.findAllByRole('button', { name: 'Delete' }), 0))
+
+      expect(await screen.findByRole('dialog')).toHaveTextContent('Delete the form “Customer Satisfaction”?')
+    })
+
+    // Live finding: a deleted card stayed listed until a reload.
+    it('removes the card as soon as the delete is confirmed, before the server answers', async () => {
+      mockDeleteFeedbackForm.mockReturnValue(new Promise(() => {}))
+      await confirmDeleteOfFirstForm()
+
+      await waitFor(() => expect(screen.queryByTestId('form-card-form-1')).not.toBeInTheDocument())
+      expect(screen.getByTestId('form-card-form-2')).toBeInTheDocument()
+    })
+
+    it('puts the card back when the delete fails', async () => {
+      mockDeleteFeedbackForm.mockRejectedValue(new Error('boom'))
+      await confirmDeleteOfFirstForm()
+
+      expect(await screen.findByTestId('form-card-form-1')).toBeInTheDocument()
+    })
+  })
+
+  describe('system forms', () => {
+    it('keeps a prototype pin form out of the list, under a collapsed "System forms" group', async () => {
+      mockGetFeedbackForms.mockResolvedValue({
+        forms: [...mockForms, { form_id: 'pf_1', name: 'Pins: Prototype', enabled: true, form_type: 'prototype_pin' }],
+      })
+      renderPage()
+
+      const group = (await screen.findByText('System forms (1)')).closest('details')
+      expect(group).not.toBeNull()
+      expect(group).not.toHaveAttribute('open')
+      expect(group).toContainElement(screen.getByTestId('form-card-pf_1'))
+      expect(group).not.toContainElement(screen.getByTestId('form-card-form-1'))
+    })
+
+    it('shows the empty state when only system forms exist', async () => {
+      mockGetFeedbackForms.mockResolvedValue({ forms: [{ form_id: 'pf_1', name: 'Pins', enabled: true, form_type: 'prototype_pin' }] })
+      renderPage()
+
+      expect(await screen.findByText('No feedback forms yet')).toBeInTheDocument()
+      expect(screen.getByText('System forms (1)')).toBeInTheDocument()
+    })
+  })
 })
 
 describe('FeedbackForms - not configured', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    formsConfigState.apiEndpoint = ''
+  })
+  afterEach(() => {
+    formsConfigState.apiEndpoint = CONFIGURED_API_ENDPOINT
+  })
+
   it('shows configuration message when API not configured', () => {
-    vi.doMock('../../store/configStore', () => ({
-      useConfigStore: () => ({
-        config: { apiEndpoint: '' },
-      }),
-    }))
+    renderPage()
+
+    expect(screen.getByText('Configure the API endpoint in Administration → General to manage feedback forms.')).toBeInTheDocument()
+    expect(mockGetFeedbackForms).not.toHaveBeenCalled()
   })
 })

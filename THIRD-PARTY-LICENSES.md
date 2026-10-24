@@ -102,3 +102,8 @@
 [yn@3.1.1](https://github.com/sindresorhus/yn) - MIT
 [zod@3.25.76](https://github.com/colinhacks/zod) - MIT
 
+
+Frontend design system:
+[kirodotdev/kirocrew](https://github.com/kirodotdev/kirocrew) - Apache-2.0 (Kiro colour tokens, component recipes and the Kiro ghost mark, adapted in voc-datalake/frontend/src/index.css and src/components/KiroGhost)
+[@fontsource/space-grotesk@5.3.0](https://github.com/fontsource/font-files) - OFL-1.1
+[@fontsource/jetbrains-mono@5.3.0](https://github.com/fontsource/font-files) - OFL-1.1

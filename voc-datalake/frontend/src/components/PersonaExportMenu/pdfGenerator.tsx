@@ -5,7 +5,7 @@
 
 import { createPdfGenerator } from '../../utils/printUtils'
 import PersonaPDFContent from './PersonaPDFContent'
-import type { ProjectPersona } from '../../api/types'
+import type { ProjectPersona } from '../../api/projectTypes'
 
 export const generatePersonaPDF = createPdfGenerator<ProjectPersona>(
   (persona) => persona.name,

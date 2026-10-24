@@ -6,6 +6,8 @@ gap the derivation contract closes.
 """
 from unittest.mock import MagicMock, patch
 
+from product_report_fixtures import wire_transactions
+
 CONTEXT = {
     'product_name': 'Acme',
     'one_liner': 'Does the thing',
@@ -24,15 +26,7 @@ CONTEXT = {
 def _generate(table):
     import product_context
 
-    table.name = 'test-projects'
-
-    def transact_write_items(*, TransactItems):
-        for action in TransactItems:
-            if 'Put' in action:
-                table.put_item(Item=action['Put']['Item'])
-        return {}
-
-    table.meta.client.transact_write_items.side_effect = transact_write_items
+    wire_transactions(table)
     with patch.object(product_context, 'projects_table', table), \
          patch.object(product_context, 'get_context', return_value={'context': CONTEXT}), \
          patch.object(product_context, 'build_product_context_block', return_value='### Structured product context\n**Product**: Acme'), \

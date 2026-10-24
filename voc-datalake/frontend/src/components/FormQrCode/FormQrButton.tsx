@@ -30,10 +30,9 @@
  */
 import clsx from 'clsx'
 import { QrCode } from 'lucide-react'
-import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import FormQrCode from './FormQrCode'
-import ModalShell from '../ModalShell'
+import DialogTrigger from '../ModalShell/DialogTrigger'
 import type { ReactElement } from 'react'
 
 /**
@@ -60,45 +59,25 @@ export default function FormQrButton({
   readonly className?: string
 }): ReactElement {
   const { t } = useTranslation('components')
-  const [isOpen, setIsOpen] = useState(false)
-  // Names the dialog after the heading it already shows, so the accessible name
-  // cannot drift from what is on screen. `useId` because one page can render
-  // several of these — a form card per form, or several linked forms on a row —
-  // each with its own dialog.
-  const headingId = useId()
+  // The trigger's dialog semantics (`aria-haspopup`, the heading-named dialog,
+  // one `useId` per instance — a page renders a form card per form, or several
+  // linked forms on a row) are `DialogTrigger`'s; see its header.
   return (
-    <>
-      {/* `aria-haspopup="dialog"` because this opens `ModalShell`, not a page or a
-          disclosure. Without it the trigger announces as a plain button and a
-          screen-reader user learns they are in a dialog only after focus has
-          already moved there — the difference between choosing to open it and
-          discovering they did. `aria-expanded` would be the wrong companion: it
-          belongs to disclosures that reveal adjacent content, and the dialog is
-          not adjacent, it is modal and unmounted until asked for. */}
-      <button
-        type="button"
-        onClick={() => setIsOpen(true)}
-        aria-haspopup="dialog"
-        className={clsx('inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-700', className)}
-      >
-        <QrCode size={14} />
-        {t('formQrCode.show')}
-      </button>
-      <ModalShell
-        isOpen={isOpen}
-        onClose={() => setIsOpen(false)}
-        ariaLabelledBy={headingId}
-        // Wide enough for the symbol at its intrinsic size rather than trimming it
-        // to fit: the QR is the entire content of this dialog, and one that has to
-        // be squinted at from a seat defeats the point. `ModalShell`'s panel is
-        // `w-full` under this cap, so a narrow viewport still shrinks both together.
-        panelClassName="max-w-md"
-      >
+    <DialogTrigger
+      triggerClassName={clsx('inline-flex items-center gap-1.5 text-accent-text hover:text-accent-hover', className)}
+      trigger={<><QrCode size={14} />{t('formQrCode.show')}</>}
+      // Wide enough for the symbol at its intrinsic size rather than trimming it
+      // to fit: the QR is the entire content of this dialog, and one that has to
+      // be squinted at from a seat defeats the point. `ModalShell`'s panel is
+      // `w-full` under this cap, so a narrow viewport still shrinks both together.
+      panelClassName="max-w-md"
+    >
+      {({ headingId, close }) => (
         <div className="p-4 space-y-3">
-          <h3 id={headingId} className="font-medium text-gray-900 text-center">
+          <h3 id={headingId} className="font-semibold tracking-tight text-text-strong text-center">
             {t('formQrCode.title')}
           </h3>
-          <p className="text-sm text-gray-600 text-center truncate">{formName}</p>
+          <p className="text-sm text-text text-center truncate">{formName}</p>
           <FormQrCode apiEndpoint={apiEndpoint} formId={formId} formName={formName} />
           {/* Not a duplicate of anything the shell provides: `ModalShell` renders
               the overlay, the panel and these children, and nothing else — its
@@ -107,13 +86,13 @@ export default function FormQrButton({
               is where the shell puts focus on open. */}
           <button
             type="button"
-            onClick={() => setIsOpen(false)}
-            className="w-full px-3 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg"
+            onClick={close}
+            className="btn btn-secondary w-full"
           >
             {t('formQrCode.close')}
           </button>
         </div>
-      </ModalShell>
-    </>
+      )}
+    </DialogTrigger>
   )
 }

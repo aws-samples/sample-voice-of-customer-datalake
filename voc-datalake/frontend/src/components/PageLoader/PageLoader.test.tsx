@@ -16,16 +16,16 @@ describe('PageLoader', () => {
   })
 
   it('renders centered container', () => {
-    const { container } = render(<PageLoader />)
+    render(<PageLoader />)
     
-    const wrapper = container.firstChild as HTMLElement
+    const wrapper = screen.getByRole('status')
     expect(wrapper).toHaveClass('flex', 'items-center', 'justify-center')
   })
 
   it('has correct height', () => {
-    const { container } = render(<PageLoader />)
+    render(<PageLoader />)
     
-    const wrapper = container.firstChild as HTMLElement
+    const wrapper = screen.getByRole('status')
     expect(wrapper).toHaveClass('h-64')
   })
 
@@ -33,6 +33,12 @@ describe('PageLoader', () => {
     render(<PageLoader />)
     
     const spinner = document.querySelector('.animate-spin')
-    expect(spinner).toHaveClass('rounded-full', 'h-8', 'w-8', 'border-b-2', 'border-blue-600')
+    expect(spinner).toHaveClass('rounded-full', 'h-8', 'w-8', 'border-b-2', 'border-accent')
+  })
+
+  it('announces the loading state to assistive technology', () => {
+    render(<PageLoader />)
+
+    expect(screen.getByRole('status')).toHaveTextContent('Loading page…')
   })
 })

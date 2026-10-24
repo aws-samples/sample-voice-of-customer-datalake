@@ -13,75 +13,51 @@
  * moved echoes its raw path and these matchers fail.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import OverviewTab from './OverviewTab'
-import type { Project, ProjectDocument } from '../../api/types'
+import {
+  PRFAQ, confirmWizardBuild, datedDoc, prototypeMocks, prototypeProjectsApiModule, resetPrototypeMocks,
+  sentBuildBody,
+} from './prototype-fixtures'
+// After the fixtures on purpose: this imports OverviewTab, whose module graph runs
+// the `vi.mock` factory below, which needs the fixture module evaluated.
+import { buildButton, renderOverviewTab } from './prototype-render-fixtures'
+import type { ProjectDocument } from '../../api/types'
 
-const mockBuildPrototype = vi.fn()
-vi.mock('../../api/projectsApi', () => ({
-  projectsApi: {
-    buildPrototype: (...args: unknown[]) => mockBuildPrototype(...args),
-  },
-}))
-
-const project: Project = {
-  project_id: 'proj_1',
-  name: 'Test project',
-  description: '',
-  status: 'active',
-  created_at: '2026-01-01T00:00:00Z',
-  updated_at: '2026-01-01T00:00:00Z',
-  persona_count: 0,
-  document_count: 0,
-}
-
-function doc(
-  documentType: ProjectDocument['document_type'],
-  id: string,
-  title: string,
-  createdAt: string,
-): ProjectDocument {
-  return { document_id: id, document_type: documentType, title, content: 'x', created_at: createdAt }
-}
+vi.mock('../../api/projectsApi', () => prototypeProjectsApiModule())
+const { buildPrototype: mockBuildPrototype } = prototypeMocks
 
 // Ids deliberately out of creation order, so a default that ranked by id rather
 // than by date would pick the older document.
-const PRD_OLD = doc('prd', 'zz_prd_old', 'Delivery spec', '2026-01-01T00:00:00Z')
-const PRD_NEW = doc('prd', 'aa_prd_new', 'Delivery spec v2', '2026-06-01T00:00:00Z')
-const PRFAQ = doc('prfaq', 'prfaq_1', 'Launch note', '2026-02-01T00:00:00Z')
+const PRD_OLD = datedDoc('prd', 'zz_prd_old', 'Delivery spec', '2026-01-01T00:00:00Z')
+const PRD_NEW = datedDoc('prd', 'aa_prd_new', 'Delivery spec v2', '2026-06-01T00:00:00Z')
 
 function renderTab(documents: ProjectDocument[]) {
-  return render(
-    <OverviewTab
-      project={project}
-      personas={[]}
-      documents={documents}
-      onGeneratePersonas={vi.fn()}
-      onGenerateDoc={vi.fn()}
-      onRunResearch={vi.fn()}
-      onRemixDocuments={vi.fn()}
-      onOpenProductTool={vi.fn()}
-      onJobStarted={vi.fn()}
-    />,
-  )
+  return renderOverviewTab({ documents })
 }
 
-const buildButton = () => screen.getByRole('button', { name: /configure & build prototype/i })
 const confirmButton = () => screen.getByRole('button', { name: /^build prototype$/i })
-const sentBody = () => mockBuildPrototype.mock.calls[0][1]
+const sentBody = sentBuildBody
 
-beforeEach(() => {
-  vi.clearAllMocks()
-  mockBuildPrototype.mockResolvedValue({ job_id: 'job_1' })
-})
+/** Renders `documents` and opens the build wizard; returns the user. */
+async function openWizard(documents: ProjectDocument[]) {
+  const user = userEvent.setup()
+  renderTab(documents)
+  await user.click(buildButton())
+  return user
+}
+
+/** Confirms the build and waits for exactly one request to be sent. */
+async function confirmAndAwait(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(confirmButton())
+  await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
+}
+
+beforeEach(resetPrototypeMocks)
 
 describe('the source picker appears only when there is a choice', () => {
   it('stops to ask when a type has more than one document', async () => {
-    const user = userEvent.setup()
-    renderTab([PRD_OLD, PRD_NEW, PRFAQ])
-
-    await user.click(buildButton())
+    await openWizard([PRD_OLD, PRD_NEW, PRFAQ])
 
     // Nothing billable before the user has seen which documents will be read.
     expect(mockBuildPrototype).not.toHaveBeenCalled()
@@ -95,10 +71,7 @@ describe('the source picker appears only when there is a choice', () => {
   // is the reason it existed: a choice with one possible answer must not be
   // presented AS a choice. So the picker is there, and it offers no select.
   it('presents the sources without a select when there is exactly one of each', async () => {
-    const user = userEvent.setup()
-    renderTab([PRD_NEW, PRFAQ])
-
-    await user.click(buildButton())
+    await openWizard([PRD_NEW, PRFAQ])
 
     expect(screen.getByTestId('prototype-source-picker')).toBeInTheDocument()
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
@@ -107,10 +80,7 @@ describe('the source picker appears only when there is a choice', () => {
   })
 
   it('offers a select for the type with several and a plain line for the type with one', async () => {
-    const user = userEvent.setup()
-    renderTab([PRD_OLD, PRD_NEW, PRFAQ])
-
-    await user.click(buildButton())
+    await openWizard([PRD_OLD, PRD_NEW, PRFAQ])
 
     expect(screen.getByRole('combobox', { name: 'PRD' })).toBeInTheDocument()
     // One PR/FAQ: still named, because "what will this read" is half the reason
@@ -122,10 +92,7 @@ describe('the source picker appears only when there is a choice', () => {
   it('still shows the picker when the more urgent rebuild warning is the message', async () => {
     // Two things are true at once: a prototype already exists AND there is a
     // choice. The costlier warning wins the sentence; the picker is not dropped.
-    const user = userEvent.setup()
-    renderTab([PRD_OLD, PRD_NEW, PRFAQ, doc('prototype', 'proto_1', 'Prototype', '2026-07-01T00:00:00Z')])
-
-    await user.click(buildButton())
+    await openWizard([PRD_OLD, PRD_NEW, PRFAQ, datedDoc('prototype', 'proto_1', 'Prototype', '2026-07-01T00:00:00Z')])
 
     expect(screen.getByText(/already has a prototype/i)).toBeInTheDocument()
     expect(screen.getByTestId('prototype-source-picker')).toBeInTheDocument()
@@ -134,13 +101,8 @@ describe('the source picker appears only when there is a choice', () => {
 
 describe('the build reads the documents the dialog named', () => {
   it('defaults to the newest of each type, by date and not by id', async () => {
-    const user = userEvent.setup()
-    renderTab([PRD_OLD, PRD_NEW, PRFAQ])
-
-    await user.click(buildButton())
-    await user.click(confirmButton())
-
-    await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
+    const user = await openWizard([PRD_OLD, PRD_NEW, PRFAQ])
+    await confirmAndAwait(user)
     expect(sentBody().source_prd_id).toBe('aa_prd_new')
     expect(sentBody().source_prfaq_id).toBe('prfaq_1')
   })
@@ -148,14 +110,9 @@ describe('the build reads the documents the dialog named', () => {
   it('sends the older document when the user picks it', async () => {
     // The feature: aim a build at an earlier spec. Nothing else in this file
     // fails if the selection is ignored and the default is sent regardless.
-    const user = userEvent.setup()
-    renderTab([PRD_OLD, PRD_NEW, PRFAQ])
-
-    await user.click(buildButton())
+    const user = await openWizard([PRD_OLD, PRD_NEW, PRFAQ])
     await user.selectOptions(screen.getByRole('combobox', { name: 'PRD' }), 'zz_prd_old')
-    await user.click(confirmButton())
-
-    await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
+    await confirmAndAwait(user)
     expect(sentBody().source_prd_id).toBe('zz_prd_old')
   })
 
@@ -163,14 +120,8 @@ describe('the build reads the documents the dialog named', () => {
     // With one of each there is nothing to choose, but the ids are still sent. Without
     // them the backend re-resolves "the newest" at build time, so a document
     // saved between render and click would be used instead of the one shown.
-    const user = userEvent.setup()
-    renderTab([PRD_NEW, PRFAQ])
-
-    await user.click(buildButton())
-    await user.click(within(screen.getByRole('dialog'))
-      .getByRole('button', { name: /^build prototype$/i }))
-
-    await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
+    const user = await openWizard([PRD_NEW, PRFAQ])
+    await confirmWizardBuild(user)
     expect(sentBody().source_prd_id).toBe('aa_prd_new')
     expect(sentBody().source_prfaq_id).toBe('prfaq_1')
   })
@@ -178,22 +129,14 @@ describe('the build reads the documents the dialog named', () => {
   it('sends a blank id for a type the project has none of', async () => {
     // Blank is what the API reads as "not aimed"; a fabricated id would be a 404
     // and an omitted key would be a different request shape to reason about.
-    const user = userEvent.setup()
-    renderTab([PRD_NEW])
-
-    await user.click(buildButton())
-    await user.click(confirmButton())
-
-    await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
+    const user = await openWizard([PRD_NEW])
+    await confirmAndAwait(user)
     expect(sentBody().source_prd_id).toBe('aa_prd_new')
     expect(sentBody().source_prfaq_id).toBe('')
   })
 
   it('marks which option is the one a default build would read', async () => {
-    const user = userEvent.setup()
-    renderTab([PRD_OLD, PRD_NEW, PRFAQ])
-
-    await user.click(buildButton())
+    await openWizard([PRD_OLD, PRD_NEW, PRFAQ])
 
     // The newest is first AND says so: the ordering alone is invisible to someone
     // who did not write it.
@@ -208,10 +151,7 @@ describe('the build reads the documents the dialog named', () => {
     // selection. Derived from the selection, choosing a document would dismiss the
     // dialog you chose it in — and the two tests above would still pass, because
     // both read the request rather than the screen.
-    const user = userEvent.setup()
-    renderTab([PRD_OLD, PRD_NEW, PRFAQ])
-
-    await user.click(buildButton())
+    const user = await openWizard([PRD_OLD, PRD_NEW, PRFAQ])
     await user.selectOptions(screen.getByRole('combobox', { name: 'PRD' }), 'zz_prd_old')
 
     expect(screen.getByTestId('prototype-source-picker')).toBeInTheDocument()
@@ -220,10 +160,7 @@ describe('the build reads the documents the dialog named', () => {
   })
 
   it('starts no build when the dialog is cancelled', async () => {
-    const user = userEvent.setup()
-    renderTab([PRD_OLD, PRD_NEW, PRFAQ])
-
-    await user.click(buildButton())
+    const user = await openWizard([PRD_OLD, PRD_NEW, PRFAQ])
     await user.click(screen.getByRole('button', { name: /^cancel$/i }))
 
     expect(mockBuildPrototype).not.toHaveBeenCalled()

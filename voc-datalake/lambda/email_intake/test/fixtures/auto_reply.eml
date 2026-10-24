@@ -1,0 +1,13 @@
+X-SES-Spam-Verdict: PASS
+X-SES-Virus-Verdict: PASS
+X-SES-SPF-Verdict: PASS
+X-SES-DKIM-Verdict: GRAY
+From: Kim <kim@customer.example>
+To: feedback@voc.example.com
+Subject: Automatic reply: Checkout keeps failing
+Auto-Submitted: auto-replied
+Message-ID: <ooo-007@customer.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+I am out of the office until Monday.

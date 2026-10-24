@@ -53,6 +53,15 @@ npm-debug.log*
 .coverage
 coverage/
 htmlcov/
+coverage_html/
+
+# Quality-gate tool state (scripts/validate.sh, scripts/mutation-report.sh)
+# validate.sh: per-run step logs (.cache/validate/logs/) and per-worktree tsc build info.
+.cache/
+.mutmut-cache
+*.py.bak
+.stryker-tmp/
+reports/
 
 # JUnit report written by the MCP CI gate (see scripts/mcp_gate.py). Produced on
 # any local run of that gate's pytest command too, so it is ignored rather than
@@ -88,3 +97,19 @@ voc-datalake/Workshop/*
 # .kiro/settings/ is otherwise tracked (context-rules.json), so without this line
 # sharing an MCP config with the team publishes a working credential to a PUBLIC repo.
 .kiro/settings/mcp.json
+
+# Scratch packages of voc-datalake/scripts/knip-production.test.ts (left behind if a run is interrupted).
+.knip-production-*/
+
+# Planning and working notes — local-only, NEVER commit (public repo).
+# Todo lists, backlogs, handovers, specs, pending/audit/request notes and roadmaps
+# describe unreleased plans and open issues; the maintained docs live in docs/.
+/todo*.md
+/TODO*.md
+/docs/history/
+/docs/pending*.md
+/.kiro/specs/
+/*roadmap*.md
+/*-audit*.md
+/*-request*.md
+/*-handover*.md

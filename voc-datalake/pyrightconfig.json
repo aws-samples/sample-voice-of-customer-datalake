@@ -1,0 +1,12 @@
+{
+  "include": ["lambda", "plugins", "scripts"],
+  "exclude": ["**/node_modules", "**/__pycache__", ".venv", "dist", "build", "cdk.out", "lambda/layers", "lambda/stream", "frontend"],
+  "pythonVersion": "3.12",
+  "extraPaths": ["lambda", "lambda/api", "plugins"],
+  "typeCheckingMode": "standard",
+  "reportUnnecessaryIsInstance": "error",
+  "reportUnnecessaryComparison": "error",
+  "reportUnnecessaryContains": "error",
+  "reportUnnecessaryCast": "error",
+  "reportUnnecessaryTypeIgnoreComment": "error"
+}

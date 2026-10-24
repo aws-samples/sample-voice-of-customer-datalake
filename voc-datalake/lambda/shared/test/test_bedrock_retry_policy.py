@@ -41,6 +41,9 @@ EXEMPT = {
     # shared/. Builds its own client, already at one attempt, and its caller marks
     # the record failed with a stall guard behind it.
     'product_doc_extractor/handler.py': 'cannot import shared/ by design',
+    # The Settings model test reports a throttle as its RESULT (throttled / no_capacity):
+    # a retry would wait out exactly what the admin asked to see, inside a 30 s API call.
+    'shared/model_capacity.py': 'a throttle is the probe result, never retried',
 }
 
 
@@ -168,8 +171,8 @@ class TestTheRetryPolicy:
         assert call.call_count == 1
         mock_sleep.assert_not_called()
 
-    @patch('shared.converse.time.sleep')
-    def test_sustained_throttling_raises_a_named_error(self, mock_sleep):
+    @patch('shared.converse.time.sleep', MagicMock())
+    def test_sustained_throttling_raises_a_named_error(self):
         from shared.converse import BedrockThrottlingError, bedrock_call_with_retry
 
         call = MagicMock(side_effect=self._throttle())
@@ -197,8 +200,8 @@ class TestTheRetryPolicy:
 
         call.assert_not_called()
 
-    @patch('shared.converse.time.sleep')
-    def test_sustained_throttling_returns_none_when_asked_not_to_raise(self, mock_sleep):
+    @patch('shared.converse.time.sleep', MagicMock())
+    def test_sustained_throttling_returns_none_when_asked_not_to_raise(self):
         """`None`, not `{}`: the helper is generic, so it cannot invent an empty
         response shape. `_converse_with_retry` maps it back to `{}` for its own
         callers, who are written against that."""

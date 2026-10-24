@@ -17,10 +17,12 @@ Ported from GitHub PR #108 (cluster 2, `.pr108-reconcile` P2).
 """
 import os
 import sys
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from unittest.mock import MagicMock, patch
 
-from _shared.test.scoped_secret import scoped_secret
+import pytest
+
+from _shared.test.ingestor_fixtures import offline_ingestor_construction
 
 _PLUGINS_DIR = os.path.dirname(os.path.abspath(__file__))
 ANDROID_DIR = os.path.join(_PLUGINS_DIR, "app_reviews_android", "ingestor")
@@ -28,15 +30,15 @@ IOS_DIR = os.path.join(_PLUGINS_DIR, "app_reviews_ios", "ingestor")
 
 _FLAT_MODULES = ["models", "countries", "play_client", "itunes_client"]
 
+# Both handlers delegate the enabled-filter loop to this shared generator,
+# which is where the per-app pipeline must be intercepted.
+PROCESS_APP_REVIEWS = "_shared.app_reviews_utils.process_app_reviews"
+
 
 @contextmanager
 def _patched_aws():
     """Mock the AWS client factories used by BaseIngestor.__init__."""
-    with patch("_shared.base_ingestor.get_dynamodb_resource") as mock_dynamo, \
-            patch("_shared.base_ingestor.get_s3_client"), \
-            patch("_shared.base_ingestor.get_sqs_client"), \
-            patch("_shared.base_ingestor.get_secret", return_value=scoped_secret()):
-        mock_dynamo.return_value.Table.return_value = MagicMock()
+    with offline_ingestor_construction():
         yield
 
 
@@ -63,124 +65,79 @@ def _import_ios_handler():
     return ios_handler
 
 
-class TestAndroidEnabledFilter:
-    """app_reviews_android fetch_new_items honors the per-app enabled flag."""
+@contextmanager
+def _android_ingestor():
+    """An AndroidAppReviewsIngestor plus a builder for its app configs."""
+    with _patched_aws():
+        android_handler = _import_android_handler()
+        # The handler's own `from models import AndroidAppConfig` binding.
+        android_app_config = android_handler.AndroidAppConfig
 
-    def test_skips_disabled_app(self):
-        with _patched_aws():
-            android_handler = _import_android_handler()
-            from models import AndroidAppConfig
+        def make_config(name, identifier, enabled):
+            return android_app_config(name=name, package_name=identifier, enabled=enabled)
 
-            ingestor = android_handler.AndroidAppReviewsIngestor()
-            ingestor.app_configs = [
-                AndroidAppConfig(name="Disabled", package_name="com.disabled", enabled=False),
-            ]
+        yield android_handler.AndroidAppReviewsIngestor(), make_config
 
-            with patch.object(android_handler, "process_app_reviews") as mock_process:
-                items = list(ingestor.fetch_new_items())
 
-            assert items == []
-            assert mock_process.call_count == 0
+@contextmanager
+def _ios_ingestor():
+    """An IOSAppReviewsIngestor plus a builder for its app configs."""
+    ios_handler = _import_ios_handler()
+    with _patched_aws(), patch.object(ios_handler, "create_session", return_value=MagicMock()):
+        # The handler's own `from models import IOSAppConfig` binding.
+        ios_app_config = ios_handler.IOSAppConfig
 
-    def test_processes_enabled_app(self):
-        with _patched_aws():
-            android_handler = _import_android_handler()
-            from models import AndroidAppConfig
+        def make_config(name, identifier, enabled):
+            return ios_app_config(name=name, app_id=identifier, enabled=enabled)
 
-            ingestor = android_handler.AndroidAppReviewsIngestor()
-            ingestor.app_configs = [
-                AndroidAppConfig(name="Enabled", package_name="com.enabled", enabled=True),
-            ]
+        yield ios_handler.IOSAppReviewsIngestor(), make_config
 
-            with patch.object(
-                android_handler, "process_app_reviews",
-                return_value=iter([{"id": "r1"}]),
-            ) as mock_process:
-                items = list(ingestor.fetch_new_items())
 
-            assert items == [{"id": "r1"}]
-            assert mock_process.call_count == 1
+@pytest.fixture(params=[_android_ingestor, _ios_ingestor], ids=["android", "ios"])
+def ingestor_and_config(request):
+    """(ingestor, make_config(name, identifier, enabled)) for each platform."""
+    with ExitStack() as stack:
+        yield stack.enter_context(request.param())
 
-    def test_skips_only_disabled_in_mixed_list(self):
+
+class TestEnabledFilter:
+    """fetch_new_items honors the per-app enabled flag on both platforms."""
+
+    def test_skips_disabled_app(self, ingestor_and_config):
+        ingestor, make_config = ingestor_and_config
+        ingestor.app_configs = [make_config("Disabled", "com.disabled", False)]
+
+        with patch(PROCESS_APP_REVIEWS) as mock_process:
+            items = list(ingestor.fetch_new_items())
+
+        assert items == []
+        assert mock_process.call_count == 0
+
+    def test_processes_enabled_app(self, ingestor_and_config):
+        ingestor, make_config = ingestor_and_config
+        ingestor.app_configs = [make_config("Enabled", "com.enabled", True)]
+
+        with patch(PROCESS_APP_REVIEWS, return_value=iter([{"id": "r1"}])) as mock_process:
+            items = list(ingestor.fetch_new_items())
+
+        assert items == [{"id": "r1"}]
+        assert mock_process.call_count == 1
+
+    def test_skips_only_disabled_in_mixed_list(self, ingestor_and_config):
         """Disabled apps are filtered out without affecting enabled neighbors."""
-        with _patched_aws():
-            android_handler = _import_android_handler()
-            from models import AndroidAppConfig
+        ingestor, make_config = ingestor_and_config
+        ingestor.app_configs = [
+            make_config("A", "1", True),
+            make_config("B", "2", False),
+            make_config("C", "3", True),
+        ]
 
-            ingestor = android_handler.AndroidAppReviewsIngestor()
-            ingestor.app_configs = [
-                AndroidAppConfig(name="A", package_name="com.a", enabled=True),
-                AndroidAppConfig(name="B", package_name="com.b", enabled=False),
-                AndroidAppConfig(name="C", package_name="com.c", enabled=True),
-            ]
+        with patch(
+            PROCESS_APP_REVIEWS,
+            side_effect=lambda **kw: iter([{"app": kw["app_name"]}]),
+        ) as mock_process:
+            items = list(ingestor.fetch_new_items())
 
-            with patch.object(
-                android_handler, "process_app_reviews",
-                side_effect=lambda **kw: iter([{"app": kw["app_name"]}]),
-            ) as mock_process:
-                items = list(ingestor.fetch_new_items())
-
-            processed_names = [c.kwargs["app_name"] for c in mock_process.call_args_list]
-            assert processed_names == ["A", "C"]
-            assert items == [{"app": "A"}, {"app": "C"}]
-
-
-class TestIOSEnabledFilter:
-    """app_reviews_ios fetch_new_items honors the per-app enabled flag."""
-
-    def test_skips_disabled_app(self):
-        ios_handler = _import_ios_handler()
-        with _patched_aws(), patch.object(ios_handler, "create_session", return_value=MagicMock()):
-            from models import IOSAppConfig
-
-            ingestor = ios_handler.IOSAppReviewsIngestor()
-            ingestor.app_configs = [
-                IOSAppConfig(name="Disabled", app_id="111", enabled=False),
-            ]
-
-            with patch.object(ios_handler, "process_app_reviews") as mock_process:
-                items = list(ingestor.fetch_new_items())
-
-            assert items == []
-            assert mock_process.call_count == 0
-
-    def test_processes_enabled_app(self):
-        ios_handler = _import_ios_handler()
-        with _patched_aws(), patch.object(ios_handler, "create_session", return_value=MagicMock()):
-            from models import IOSAppConfig
-
-            ingestor = ios_handler.IOSAppReviewsIngestor()
-            ingestor.app_configs = [
-                IOSAppConfig(name="Enabled", app_id="222", enabled=True),
-            ]
-
-            with patch.object(
-                ios_handler, "process_app_reviews",
-                return_value=iter([{"id": "r1"}]),
-            ) as mock_process:
-                items = list(ingestor.fetch_new_items())
-
-            assert items == [{"id": "r1"}]
-            assert mock_process.call_count == 1
-
-    def test_skips_only_disabled_in_mixed_list(self):
-        ios_handler = _import_ios_handler()
-        with _patched_aws(), patch.object(ios_handler, "create_session", return_value=MagicMock()):
-            from models import IOSAppConfig
-
-            ingestor = ios_handler.IOSAppReviewsIngestor()
-            ingestor.app_configs = [
-                IOSAppConfig(name="A", app_id="1", enabled=True),
-                IOSAppConfig(name="B", app_id="2", enabled=False),
-                IOSAppConfig(name="C", app_id="3", enabled=True),
-            ]
-
-            with patch.object(
-                ios_handler, "process_app_reviews",
-                side_effect=lambda **kw: iter([{"app": kw["app_name"]}]),
-            ) as mock_process:
-                items = list(ingestor.fetch_new_items())
-
-            processed_names = [c.kwargs["app_name"] for c in mock_process.call_args_list]
-            assert processed_names == ["A", "C"]
-            assert items == [{"app": "A"}, {"app": "C"}]
+        processed_names = [c.kwargs["app_name"] for c in mock_process.call_args_list]
+        assert processed_names == ["A", "C"]
+        assert items == [{"app": "A"}, {"app": "C"}]

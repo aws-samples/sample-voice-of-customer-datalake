@@ -8,25 +8,51 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../../api/client'
+import { useCategoryAdmits } from '../../hooks/useCategories'
 import type { DateRangeParams } from '../../api/client'
-import { categoryColors, getSentimentColor } from './types'
+import { normalizeEntityExtras, rankedNames } from '../../api/dimensionsSchema'
+import type { AttributeFilters } from '../../api/types'
+import { rankEntityKeys } from './entityCounts'
+import { NEUTRAL_CHART_STEP, categoryChartSteps, chartStepPrintHex } from './types'
+import { toSentimentData, useGaugeSentiment, type GaugeSentiment } from './useGaugeSentiment'
 import type { CategoryData, SentimentData, WordCloudItem } from './types'
+import { failedReads, type FailedReads } from '../../utils/failedReads'
+import { useDisplayLabels } from '../../hooks/useDisplayLabels'
+import { rankCategoryEntries } from '../../utils/categoryOrder'
 
-// Stop words for word cloud filtering
+/**
+ * Words that say nothing on their own in a review keyword cloud: English
+ * function words plus review filler ("app", "issue", "problem", …). Words of
+ * four letters or fewer are dropped by length already.
+ */
 const STOP_WORDS = new Set([
-  'with', 'that', 'this', 'from', 'have', 'been', 'were', 'they', 'their',
-  'about', 'would', 'could', 'should', 'very', 'more', 'some', 'than',
-  'when', 'what', 'which', 'there', 'other'
+  'with', 'that', 'this', 'from', 'have', 'been', 'were', 'they', 'their', 'them', 'then', 'these', 'those',
+  'about', 'would', 'could', 'should', 'very', 'more', 'some', 'than', 'also', 'just', 'only', 'even', 'much',
+  'when', 'what', 'which', 'there', 'other', 'where', 'while', 'into', 'over', 'after', 'before', 'because',
+  'really', 'still', 'every', 'being', 'does', 'doesnt', 'didnt', 'dont', 'cant', 'cannot', 'will', 'your',
+  'users', 'user', 'issue', 'issues', 'problem', 'problems', 'thing', 'things', 'something', 'anything',
+  'application', 'feature', 'features', 'experience', 'customer', 'customers', 'review', 'reviews',
 ])
 
-function isValidWord(word: string): boolean {
-  return word.length > 3 && !STOP_WORDS.has(word)
+/** `word` is worth a keyword chip: long enough, not filler, not the name of a category. */
+function isValidWord(word: string, categoryWords: ReadonlySet<string>): boolean {
+  return word.length > 3 && !STOP_WORDS.has(word) && !categoryWords.has(word)
 }
 
-function extractWordsFromIssues(issuesData: Record<string, number>): Record<string, number> {
+/** Lower-case words of every category id and label: the distribution card already shows them. */
+function categoryWordsOf(
+  categories: Readonly<Record<string, number>> | undefined,
+  label: (id: string) => string,
+): ReadonlySet<string> {
+  const ids = Object.keys(categories ?? {})
+  const texts = [...ids, ...ids.map(label)]
+  return new Set(texts.flatMap((text) => text.toLowerCase().split(/[^a-z]+/).filter(Boolean)))
+}
+
+function extractWordsFromIssues(issuesData: Record<string, number>, categoryWords: ReadonlySet<string>): Record<string, number> {
   const wordCounts: Record<string, number> = {}
   for (const [issue, count] of Object.entries(issuesData)) {
-    const words = issue.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(isValidWord)
+    const words = issue.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter((word) => isValidWord(word, categoryWords))
     const countNum = typeof count === 'number' ? count : 0
     for (const word of words) {
       wordCounts[word] = (wordCounts[word] ?? 0) + countNum
@@ -35,99 +61,141 @@ function extractWordsFromIssues(issuesData: Record<string, number>): Record<stri
   return wordCounts
 }
 
-export function buildWordCloudData(
-  entities: { issues?: Record<string, number>; categories?: Record<string, number> } | undefined
+type WordCloudLabels = Readonly<{ category: (id: string) => string; keyword: (word: string) => string }>
+
+/**
+ * Trending keywords from the issue phrases. Category names are NOT keywords —
+ * the distribution card beside it already ranks them — so the window's
+ * categories and their words, and any word that is a configured category id
+ * (`keyword` reads it as the category's name), are left out, as are stop words.
+ */
+function buildWordCloudData(
+  entities: { issues?: Record<string, number>; categories?: Record<string, number> } | undefined,
+  labels: WordCloudLabels,
 ): WordCloudItem[] {
   if (!entities) return []
-  const wordCounts = extractWordsFromIssues(entities.issues ?? {})
-
-  for (const [cat, count] of Object.entries(entities.categories ?? {})) {
-    const word = cat.replace('_', ' ')
-    const countNum = typeof count === 'number' ? count : 0
-    wordCounts[word] = (wordCounts[word] ?? 0) + countNum
-  }
-
+  const wordCounts = extractWordsFromIssues(entities.issues ?? {}, categoryWordsOf(entities.categories, labels.category))
   return Object.entries(wordCounts)
+    .filter(([word]) => labels.keyword(word) === word)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 30)
     .map(([word, count]) => ({ word, count }))
 }
 
-export interface CategoryAnalytics {
+/** `loadFailed`: the category or sentiment read failed with nothing cached (the cards would only show zeros). */
+export interface CategoryAnalytics extends FailedReads {
   categoryData: CategoryData[]
   sentimentData: SentimentData[]
   wordCloudData: WordCloudItem[]
   allSources: string[]
+  /** Channels and tags seen in the window (unfiltered), largest first — the filter options. */
+  allChannels: string[]
+  allTags: string[]
   totalIssues: number
+  /** Reviews in the window with no category (sentiment total − categorised), so the bars sum to the total. */
+  uncategorised: number
   avgSentiment: number
-  sentimentPercentages: Record<string, number>
+  /** What the sentiment gauge shows: the window, or the one selected category. */
+  gauge: GaugeSentiment
   periodDays: number | undefined
   isLoading: boolean
 }
 
+/** Reviews counted under a category, and the rest of the window's reviews (never below 0). */
+function categoryTotals(categoryData: readonly CategoryData[], windowTotal: number | undefined) {
+  const categorised = categoryData.reduce((sum, c) => sum + c.value, 0)
+  return { categorised, uncategorised: Math.max(0, (windowTotal ?? 0) - categorised) }
+}
+
+/** The `source` query parameter for a selection: none (`null`) and the empty "all sources" value both mean unfiltered. */
+function sourceFilter(selectedSource: string | null): string | undefined {
+  return selectedSource === null || selectedSource === '' ? undefined : selectedSource
+}
+
+/** The unfiltered entities read, shared by both entity queries when no source is selected. */
+function allSourcesEntitiesKey(dateParams: DateRangeParams): readonly unknown[] {
+  return ['entities-all-sources', dateParams]
+}
+
+/**
+ * `attributes` (channel / dims / tag) narrow the category, sentiment and
+ * entities reads like `source` does; the all-sources entities read stays
+ * unfiltered because it supplies the filter OPTIONS.
+ */
 export function useCategoryAnalytics(
   dateParams: DateRangeParams,
   selectedSource: string | null,
-  apiEndpoint: string
+  apiEndpoint: string,
+  attributes: AttributeFilters = {},
+  selectedCategories?: readonly string[],
 ): CategoryAnalytics {
   const enabled = !!apiEndpoint
+  const source = sourceFilter(selectedSource)
+  const unfiltered = source === undefined && Object.keys(attributes).length === 0
 
-  const { data: categories, isLoading: categoriesLoading } = useQuery({
-    queryKey: ['categories', dateParams, selectedSource],
-    queryFn: () => api.getCategories(dateParams, selectedSource || undefined),
+  const categoriesQuery = useQuery({
+    queryKey: ['categories', dateParams, selectedSource, attributes],
+    queryFn: () => api.getCategories(dateParams, source, attributes),
     enabled,
   })
+  const categories = categoriesQuery.data
 
-  const { data: sentiment, isLoading: sentimentLoading } = useQuery({
-    queryKey: ['sentiment', dateParams, selectedSource],
-    queryFn: () => api.getSentiment(dateParams, selectedSource || undefined),
+  const sentimentQuery = useQuery({
+    queryKey: ['sentiment', dateParams, selectedSource, attributes],
+    queryFn: () => api.getSentiment(dateParams, source, attributes),
     enabled,
   })
+  const sentiment = sentimentQuery.data
 
+  // With no filter this is the SAME request as the all-sources read below, so
+  // it shares that query's key and the page asks once, not twice
+  // (production: two identical /feedback/entities calls, 1.1 s and 1.7 s).
   const { data: entities } = useQuery({
-    queryKey: ['entities', dateParams, selectedSource],
-    queryFn: () => api.getEntities({ ...dateParams, limit: 50, source: selectedSource || undefined }),
+    queryKey: unfiltered ? allSourcesEntitiesKey(dateParams) : ['entities', dateParams, source, attributes],
+    queryFn: () => api.getEntities({ ...dateParams, limit: 50, source, ...attributes }),
     enabled,
   })
 
   const { data: allEntities } = useQuery({
-    queryKey: ['entities-all-sources', dateParams],
+    queryKey: allSourcesEntitiesKey(dateParams),
     queryFn: () => api.getEntities({ ...dateParams, limit: 50 }),
     enabled,
   })
 
-  const allSources = useMemo(() => {
-    if (!allEntities?.entities?.sources) return []
-    return Object.keys(allEntities.entities.sources).sort(
-      (a, b) => (allEntities.entities.sources[b] || 0) - (allEntities.entities.sources[a] || 0)
-    )
-  }, [allEntities])
+  const allSources = useMemo(() => rankEntityKeys(allEntities, 'sources'), [allEntities])
+  const extras = useMemo(() => normalizeEntityExtras(allEntities), [allEntities])
+  const allChannels = useMemo(() => rankedNames(extras.channels), [extras])
+  const allTags = useMemo(() => rankedNames(extras.tags), [extras])
 
+  // Belt-and-braces over the backend's per-category filtering: a category the
+  // caller cannot see never becomes a filter chip, even from a stale cache.
+  const admits = useCategoryAdmits()
   const categoryData: CategoryData[] = useMemo(() => {
     if (!categories) return []
-    return Object.entries(categories.categories)
-      .map(([name, value]) => ({ name, value, color: categoryColors[name] || categoryColors.other }))
-      .sort((a, b) => b.value - a.value)
-  }, [categories])
-
-  const sentimentData: SentimentData[] = useMemo(() => {
-    if (!sentiment) return []
-    return Object.entries(sentiment.breakdown).map(([name, value]) => ({
-      name,
-      value,
-      color: getSentimentColor(name),
-      percentage: sentiment.percentages[name] ?? 0,
+    // Ranked largest first, ties by name, so the same counts always give the
+    // same order — and therefore the same colours (colours are assigned by rank).
+    // "Other" (reviews outside the configured categories) is always last.
+    const ranked = rankCategoryEntries(Object.entries(categories.categories).filter(([name]) => admits(name)))
+    const steps = categoryChartSteps(ranked.map(([name]) => name))
+    return ranked.map(([name, value]) => ({
+      name, value, color: chartStepPrintHex(steps.get(name) ?? NEUTRAL_CHART_STEP),
     }))
-  }, [sentiment])
+  }, [categories, admits])
 
+  const sentimentData: SentimentData[] = useMemo(() => toSentimentData(sentiment), [sentiment])
+  const gauge = useGaugeSentiment({ dateParams, source, attributes, selectedCategories, enabled, windowSentiment: sentiment })
+
+  const labels = useDisplayLabels()
   const wordCloudData: WordCloudItem[] = useMemo(
-    () => buildWordCloudData(entities?.entities),
-    [entities]
+    () => buildWordCloudData(entities?.entities, labels),
+    [entities, labels]
   )
 
-  const totalIssues = categoryData.reduce((sum, c) => sum + c.value, 0)
+  const { categorised, uncategorised } = categoryTotals(categoryData, sentiment?.total)
+  // A label with no feedback may be absent from `percentages`; it counts as 0%
+  // (a present 0 already is 0, so `??` and the old `||` agree on every JSON value).
   const avgSentiment = sentiment
-    ? (sentiment.percentages.positive || 0) - (sentiment.percentages.negative || 0)
+    ? (sentiment.percentages.positive ?? 0) - (sentiment.percentages.negative ?? 0)
     : 0
 
   return {
@@ -135,10 +203,14 @@ export function useCategoryAnalytics(
     sentimentData,
     wordCloudData,
     allSources,
-    totalIssues,
+    allChannels,
+    allTags,
+    totalIssues: categorised + uncategorised,
+    uncategorised,
     avgSentiment,
-    sentimentPercentages: sentiment?.percentages ?? {},
+    gauge,
     periodDays: categories?.period_days,
-    isLoading: categoriesLoading || sentimentLoading,
+    isLoading: categoriesQuery.isLoading || sentimentQuery.isLoading,
+    ...failedReads([categoriesQuery, sentimentQuery]),
   }
 }

@@ -33,12 +33,13 @@
  * @module pages/Vote
  */
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { CheckCircle2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useParams } from 'react-router-dom'
 import BallotForm from './BallotForm'
 import { votingSessionsApi } from '../../api/votingSessionsApi'
-import type { AnonymousBallot, BallotFailure } from '../../api/votingSessionsApi'
+import type { AnonymousBallot, BallotFailure, BallotSessionConfig } from '../../api/votingSessionsApi'
 import type { ReactElement } from 'react'
 
 /**
@@ -115,6 +116,64 @@ function refusalTitle(failure: BallotFailure, t: (key: string) => string): strin
   }
 }
 
+/** A refusal of THIS BALLOT rather than of the session: the vote is still open, so
+ *  the form stays on the page under the sentence, and "check the note, then submit
+ *  again" or "try again in a moment" has something to act on. */
+function isBallotRefusal(failure: BallotFailure): boolean {
+  return failure === 'invalid' || failure === 'unknown'
+}
+
+/** What the page shows. Only `form` puts input fields on the page, so only `form`
+ *  carries the header's instructions about them ("score this", "type a name
+ *  below"): a closed vote that still said "type one below" pointed at nothing. */
+type VoteView =
+  | { readonly kind: 'loading' }
+  | { readonly kind: 'message'; readonly title: string; readonly text: string }
+  | { readonly kind: 'done' }
+  | {
+    readonly kind: 'form'
+    readonly notice: { readonly title: string; readonly text: string } | null
+    /** The metrics the room scores (the public config's active axes). */
+    readonly axes: BallotSessionConfig['axes']
+  }
+
+interface VoteState {
+  readonly sessionId: string
+  readonly isPending: boolean
+  readonly isError: boolean
+  readonly session: BallotSessionConfig | undefined
+  readonly failure: BallotFailure | null
+  readonly submitted: boolean
+}
+
+function resolveView(state: VoteState, t: (key: string) => string): VoteView {
+  const { sessionId, isPending, isError, session, failure, submitted } = state
+  if (!sessionId) return { kind: 'message', title: t('ballot.closed.title'), text: t('ballot.closed.notFound') }
+  if (isPending) return { kind: 'loading' }
+  // A failed CONFIG read is not a statement about the session and not a refusal
+  // of a ballot — nothing was submitted yet — so it gets copy of its own rather
+  // than borrowing either. "This vote is not open" would tell a room their vote
+  // is over because a fetch failed, and "your ballot could not be recorded"
+  // would claim to have refused a ballot nobody had cast.
+  if (isError || session === undefined) {
+    return { kind: 'message', title: t('ballot.unavailable.title'), text: t('ballot.unavailable.description') }
+  }
+  // A session-level refusal at Submit — closed, expired or full between loading
+  // the page and pressing the button — reads exactly like finding it so on arrival.
+  if (failure !== null && !isBallotRefusal(failure)) {
+    return { kind: 'message', title: refusalTitle(failure, t), text: refusalMessage(failure, t) }
+  }
+  if (submitted) return { kind: 'done' }
+  if (!session.open) {
+    return { kind: 'message', title: t('ballot.closed.title'), text: refusalMessage(session.reason ?? 'unknown', t) }
+  }
+  return {
+    kind: 'form',
+    notice: failure === null ? null : { title: refusalTitle(failure, t), text: refusalMessage(failure, t) },
+    axes: session.axes,
+  }
+}
+
 function VotePanel({
   title, children,
 }: {
@@ -122,9 +181,36 @@ function VotePanel({
   readonly children?: ReactElement | string
 }): ReactElement {
   return (
-    <div className="bg-white rounded-lg border p-4 space-y-2">
-      <h2 className="font-medium text-gray-900">{title}</h2>
-      {children === undefined ? null : <p className="text-sm text-gray-600">{children}</p>}
+    <div className="card p-4 space-y-2">
+      <h2 className="text-sm font-semibold tracking-tight text-text-strong">{title}</h2>
+      {children === undefined ? null : <p className="text-sm text-text">{children}</p>}
+    </div>
+  )
+}
+
+function BallotRecorded({ title, text }: { readonly title: string; readonly text: string }): ReactElement {
+  return (
+    <div role="status" className="bg-ok-subtle border border-ok/30 rounded-lg p-4 flex items-start gap-3">
+      <CheckCircle2 size={20} className="text-ok shrink-0 mt-0.5" aria-hidden="true" />
+      <div className="space-y-1">
+        <h2 className="text-sm font-semibold text-text-strong">{title}</h2>
+        <p className="text-sm text-text">{text}</p>
+      </div>
+    </div>
+  )
+}
+
+/** The loading state. A live region, so a screen reader hears the page is working
+ *  rather than landing on silence; the skeleton bars hold the form's place so the
+ *  ballot does not jump in under the reader's thumb when it arrives. */
+function BallotLoading({ label }: { readonly label: string }): ReactElement {
+  return (
+    <div role="status" aria-busy="true" className="card p-4 space-y-3">
+      <p className="text-sm font-medium text-text-strong">{label}</p>
+      <div className="skeleton h-4 w-2/3" aria-hidden="true" />
+      <div className="skeleton h-8 w-full" aria-hidden="true" />
+      <div className="skeleton h-4 w-1/2" aria-hidden="true" />
+      <div className="skeleton h-8 w-full" aria-hidden="true" />
     </div>
   )
 }
@@ -174,81 +260,70 @@ export default function Vote(): ReactElement {
     onError: () => setFailure('unknown'),
   })
 
+  const view = resolveView({ sessionId, isPending, isError, session, failure, submitted }, t)
+  const formShown = view.kind === 'form'
+
   const body = (): ReactElement => {
-    if (!sessionId) return <VotePanel title={t('ballot.closed.title')}>{t('ballot.closed.notFound')}</VotePanel>
-    if (isPending) return <VotePanel title={t('ballot.loading')} />
-    // A failed CONFIG read is not a statement about the session and not a refusal
-    // of a ballot — nothing was submitted yet — so it gets copy of its own rather
-    // than borrowing either. "This vote is not open" would tell a room their vote
-    // is over because a fetch failed, and "your ballot could not be recorded"
-    // would claim to have refused a ballot nobody had cast.
-    //
-    // No companion `session === undefined` check: `isPending` above already
-    // excluded the in-flight case, so TanStack's own result type proves the data is
-    // here and sonarjs reports the extra comparison as one that can never hold.
-    if (isError) {
-      return (
-        <VotePanel title={t('ballot.unavailable.title')}>
-          {t('ballot.unavailable.description')}
-        </VotePanel>
-      )
+    switch (view.kind) {
+      case 'loading': return <BallotLoading label={t('ballot.loading')} />
+      case 'message': return <VotePanel title={view.title}>{view.text}</VotePanel>
+      case 'done': return <BallotRecorded title={t('ballot.done.title')} text={t('ballot.done.description')} />
+      case 'form':
+        // ONE branch with and without the notice, so a refusal of this ballot
+        // keeps the form mounted — and the sliders and note as the submitter
+        // left them — under the sentence asking them to submit again.
+        return (
+          <div className="space-y-5">
+            {view.notice === null ? null : (
+              <div role="alert"><VotePanel title={view.notice.title}>{view.notice.text}</VotePanel></div>
+            )}
+            <BallotForm
+              axes={view.axes}
+              onSubmit={(ballot) => submitMutation.mutate(ballot)}
+              isSubmitting={submitMutation.isPending}
+            />
+          </div>
+        )
     }
-    if (failure !== null) {
-      return (
-        <VotePanel title={refusalTitle(failure, t)}>{refusalMessage(failure, t)}</VotePanel>
-      )
-    }
-    if (submitted) {
-      return (
-        <div role="status" className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-2">
-          <h2 className="font-medium text-green-900">{t('ballot.done.title')}</h2>
-          <p className="text-sm text-green-800">{t('ballot.done.description')}</p>
-        </div>
-      )
-    }
-    if (!session.open) {
-      return (
-        <VotePanel title={t('ballot.closed.title')}>
-          {refusalMessage(session.reason ?? 'unknown', t)}
-        </VotePanel>
-      )
-    }
-    return (
-      <BallotForm
-        onSubmit={(ballot) => submitMutation.mutate(ballot)}
-        isSubmitting={submitMutation.isPending}
-      />
-    )
   }
 
   return (
     // `max-w-lg` and centred: this is read on a phone, and the same page projected
     // on a laptop should not stretch a slider across a monitor.
-    <div className="min-h-screen bg-gray-50 px-4 py-6">
+    // `<main>`: this route renders outside the app shell, so it has to supply its
+    // own landmark — the shell's `<main>` is not on the page.
+    <main className="min-h-screen bg-bg px-4 py-6 sm:py-10">
       <div className="mx-auto max-w-lg space-y-5">
         <header className="space-y-1">
-          <h1 className="text-xl font-bold text-gray-900">{t('ballot.title')}</h1>
+          {/* "Score this proposal" is an instruction, so it heads the page only
+              while there is a ballot to fill in; every other state is named. */}
+          <h1 className="text-xl font-bold tracking-tight text-text-strong">
+            {formShown ? t('ballot.title') : t('ballot.titleInactive')}
+          </h1>
           {/* WHICH proposal this session scores. It names the prioritization ROW —
               a project's set of documents — so one ballot covers the whole proposal
               rather than whichever of its documents a QR happened to sit on, which
               is what the page used to have to hedge about. Empty until the config
               read lands, and blank for a session whose facilitator sent no title. */}
           {session?.row_title ? (
-            <p className="text-base text-gray-700">{session.row_title}</p>
+            <p className="text-base text-text">{session.row_title}</p>
           ) : null}
-          {/* And says plainly WHAT is being scored, since the room cannot see the
-              row: a proposal's documents, together, in one ballot. Unconditional,
-              because it is true of every session this page can open — the title
-              above may be blank, this sentence never is. */}
-          <p className="text-sm text-gray-700">{t('ballot.scopeNote')}</p>
-          {/* THE sentence this page must carry, wherever the page ends up: a
-              ballot cast here counts and is not attributed to anybody. Above the
-              form rather than under the button, because it is a condition of
-              voting and not a footnote about it. */}
-          <p className="text-sm text-gray-600">{t('ballot.anonymousNotice')}</p>
+          {/* Says plainly WHAT is being scored, since the room cannot see the
+              row (a proposal's documents, together, in one ballot), and THE
+              condition of voting: a ballot cast here counts and is not tied to an
+              account. Above the form rather than under the button, because it is
+              a condition of voting and not a footnote about it — and ONLY with
+              the form, because both sentences talk about the fields below ("type
+              one below"), and a closed vote has none. */}
+          {formShown ? (
+            <>
+              <p className="text-sm text-text">{t('ballot.scopeNote')}</p>
+              <p className="text-sm text-muted">{t('ballot.anonymousNotice')}</p>
+            </>
+          ) : null}
         </header>
         {body()}
       </div>
-    </div>
+    </main>
   )
 }

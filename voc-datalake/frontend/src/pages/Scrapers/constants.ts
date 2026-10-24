@@ -5,47 +5,17 @@
 
 import type { ScraperConfig } from '../../api/types'
 
-export const FREQUENCY_OPTIONS = [
-  {
-    value: 0,
-    label: 'Manual only',
-  },
-  {
-    value: 15,
-    label: 'Every 15 minutes',
-  },
-  {
-    value: 30,
-    label: 'Every 30 minutes',
-  },
-  {
-    value: 60,
-    label: 'Every hour',
-  },
-  {
-    value: 180,
-    label: 'Every 3 hours',
-  },
-  {
-    value: 360,
-    label: 'Every 6 hours',
-  },
-  {
-    value: 720,
-    label: 'Every 12 hours',
-  },
-  {
-    value: 1440,
-    label: 'Daily',
-  },
-] as const
+/** The schedules a scraper offers, in minutes (0 = manual only); labels come from `getFrequencyLabel`. */
+export const FREQUENCY_OPTIONS = [0, 15, 30, 60, 180, 360, 720, 1440] as const
 
 export const DEFAULT_SCRAPER: Omit<ScraperConfig, 'id'> = {
   name: 'New Scraper',
   enabled: true,
   base_url: '',
   urls: [],
-  frequency_minutes: 1440,
+  // Manual only: a new scraper does not run until someone schedules it
+  // (the industry default; it used to start daily runs on first save).
+  frequency_minutes: 0,
   extraction_method: 'css',
   container_selector: '.review',
   text_selector: '.review-text',

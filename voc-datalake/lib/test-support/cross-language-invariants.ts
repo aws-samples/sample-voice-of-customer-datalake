@@ -22,7 +22,7 @@ export function pythonIntConstant(name: string, ...pathSegments: string[]): numb
   // Matches `NAME = 840`, `NAME: Final = 840` and `NAME: Final[int] = 840`, at the
   // start of a line so a mention inside a comment or an f-string cannot match.
   const pattern = new RegExp(`^${name}(?::\\s*Final(?:\\[int\\])?)?\\s*=\\s*(\\d+)`, 'm');
-  const matched = source.match(pattern)?.[1];
+  const matched = pattern.exec(source)?.[1];
   if (matched === undefined) {
     throw new Error(
       `could not read ${name} from ${pathSegments.join('/')} — it was renamed, ` +

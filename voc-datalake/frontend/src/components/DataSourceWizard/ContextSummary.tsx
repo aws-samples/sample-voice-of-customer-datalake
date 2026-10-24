@@ -2,7 +2,9 @@
  * ContextSummary component - displays summary of selected context
  */
 import { useTranslation } from 'react-i18next'
-import type { ProjectPersona, ProjectDocument } from '../../api/client'
+import { ALL_TIME_CUSTOM_DAYS } from '../../api/baseUrl'
+import type { ProjectDocument } from '../../api/types'
+import type { ProjectPersona } from '../../api/projectTypes'
 import type { ContextConfig } from './types'
 import { useSentimentLabels, toSentimentLabels } from './sentimentLabels'
 
@@ -40,12 +42,12 @@ function FeedbackSection({ config }: Readonly<{ config: ContextConfig }>) {
   const sep = t('components:dataSourceWizard.labelSeparator')
   return (
     <div className="space-y-1">
-      <p><span className="text-gray-500">{withSeparator(t('components:dataSourceWizard.sources'), sep)}</span> {formatListOrFallback(config.sources, all)}</p>
-      <p><span className="text-gray-500">{withSeparator(t('components:dataSourceWizard.categories'), sep)}</span> {formatListOrFallback(config.categories, all)}</p>
-      <p><span className="text-gray-500">{withSeparator(t('components:dataSourceWizard.sentiments'), sep)}</span> {
+      <p><span className="text-muted">{withSeparator(t('components:dataSourceWizard.sources'), sep)}</span> {formatListOrFallback(config.sources, all)}</p>
+      <p><span className="text-muted">{withSeparator(t('components:dataSourceWizard.categories'), sep)}</span> {formatListOrFallback(config.categories, all)}</p>
+      <p><span className="text-muted">{withSeparator(t('components:dataSourceWizard.sentiments'), sep)}</span> {
         formatListOrFallback(toSentimentLabels(config.sentiments, sentimentLabels), all)
       }</p>
-      <p><span className="text-gray-500">{withSeparator(t('components:dataSourceWizard.timeRange'), sep)}</span> {t('components:dataSourceWizard.lastDays', { days: config.days })}</p>
+      <p><span className="text-muted">{withSeparator(t('components:dataSourceWizard.timeRange'), sep)}</span> {config.days === ALL_TIME_CUSTOM_DAYS ? t('components:dataSourceWizard.allTime') : t('components:dataSourceWizard.lastDays', { days: config.days })}</p>
     </div>
   )
 }
@@ -62,13 +64,13 @@ export default function ContextSummary({ config, personas, documents }: ContextS
   const hasNoSources = !config.useFeedback && !config.usePersonas && !config.useDocuments && !config.useResearch
 
   return (
-    <div className="bg-gray-50 rounded-lg p-4 space-y-2 text-sm">
+    <div className="bg-bg-accent rounded-lg p-4 space-y-2 text-sm">
       <h4 className="font-medium">{t('components:dataSourceWizard.contextSummary')}</h4>
       
       <FeedbackSection config={config} />
       
       {config.usePersonas && (
-        <p><span className="text-gray-500">{withSeparator(t('components:dataSourceWizard.personas'), sep)}</span> {
+        <p><span className="text-muted">{withSeparator(t('components:dataSourceWizard.personas'), sep)}</span> {
           formatListOrFallback(
             selectedPersonas.map(p => p.name),
             t('components:dataSourceWizard.allPersonas', { count: personas.length }),
@@ -77,7 +79,7 @@ export default function ContextSummary({ config, personas, documents }: ContextS
       )}
       
       {config.useDocuments && (
-        <p><span className="text-gray-500">{withSeparator(t('components:dataSourceWizard.documents'), sep)}</span> {
+        <p><span className="text-muted">{withSeparator(t('components:dataSourceWizard.documents'), sep)}</span> {
           formatListOrFallback(
             selectedDocs.map(d => d.title),
             t('components:dataSourceWizard.allDocuments', { count: otherDocs.length }),
@@ -86,7 +88,7 @@ export default function ContextSummary({ config, personas, documents }: ContextS
       )}
       
       {config.useResearch && (
-        <p><span className="text-gray-500">{withSeparator(t('components:dataSourceWizard.research'), sep)}</span> {
+        <p><span className="text-muted">{withSeparator(t('components:dataSourceWizard.research'), sep)}</span> {
           formatListOrFallback(
             selectedResearch.map(d => d.title),
             t('components:dataSourceWizard.allResearch', { count: researchDocs.length }),
@@ -95,7 +97,7 @@ export default function ContextSummary({ config, personas, documents }: ContextS
       )}
       
       {hasNoSources && (
-        <p className="text-gray-400 italic">{t('components:dataSourceWizard.noDataSourcesSelected')}</p>
+        <p className="text-muted italic">{t('components:dataSourceWizard.noDataSourcesSelected')}</p>
       )}
     </div>
   )

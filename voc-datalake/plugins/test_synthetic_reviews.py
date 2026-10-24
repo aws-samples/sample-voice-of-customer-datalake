@@ -6,7 +6,7 @@ are mocked so no network calls occur.
 """
 import json
 from contextlib import contextmanager
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from _shared.test.scoped_secret import scoped_secret
 
@@ -179,6 +179,7 @@ class TestBuildItem:
     def test_defaults_focus_area_when_missing(self):
         with _make_ingestor(_configured_secrets()) as ingestor:
             item = ingestor._build_item({'text': 'ok'})
+        assert item is not None
         assert item['metadata']['focus_area'] == 'general'
 
 
@@ -207,31 +208,31 @@ class TestFetchNewItems:
     """fetch_new_items generates reviews via Bedrock and yields synthetic items."""
 
     def test_yields_generated_reviews(self):
-        with _make_ingestor(_configured_secrets(num_reviews='3')) as ingestor:
-            with patch(
-                'synthetic_reviews.ingestor.handler.converse',
-                return_value=_reviews_json(3),
-            ) as mock_converse:
-                items = list(ingestor.fetch_new_items())
+        with _make_ingestor(_configured_secrets(num_reviews='3')) as ingestor, patch(
+            'synthetic_reviews.ingestor.handler.converse',
+            return_value=_reviews_json(3),
+        ) as mock_converse:
+            items = list(ingestor.fetch_new_items())
         assert len(items) == 3
         assert mock_converse.called
         assert all(i['metadata']['is_synthetic'] is True for i in items)
         assert all(i['id'].startswith('synthetic-') for i in items)
 
     def test_yields_nothing_when_not_configured(self):
-        with _make_ingestor(_configured_secrets(company_name='', product_name='')) as ingestor:
-            with patch('synthetic_reviews.ingestor.handler.converse') as mock_converse:
-                items = list(ingestor.fetch_new_items())
+        with (
+            _make_ingestor(_configured_secrets(company_name='', product_name='')) as ingestor,
+            patch('synthetic_reviews.ingestor.handler.converse') as mock_converse,
+        ):
+            items = list(ingestor.fetch_new_items())
         assert items == []
         assert not mock_converse.called
 
     def test_stops_early_when_generation_fails(self):
-        with _make_ingestor(_configured_secrets(num_reviews='20')) as ingestor:
-            with patch(
-                'synthetic_reviews.ingestor.handler.converse',
-                side_effect=RuntimeError('bedrock down'),
-            ):
-                items = list(ingestor.fetch_new_items())
+        with _make_ingestor(_configured_secrets(num_reviews='20')) as ingestor, patch(
+            'synthetic_reviews.ingestor.handler.converse',
+            side_effect=RuntimeError('bedrock down'),
+        ):
+            items = list(ingestor.fetch_new_items())
         assert items == []
 
 

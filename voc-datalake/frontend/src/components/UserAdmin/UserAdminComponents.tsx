@@ -5,13 +5,13 @@
 
 import clsx from 'clsx'
 import {
-  Key, UserX, UserCheck, Trash2, Pencil,
+  Key, UserX, UserCheck, Trash2, Pencil, ShieldCheck,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { CognitoUser } from '../../api/types'
 
 type UserGroup = 'admins' | 'users'
-export type ActionType = 'delete' | 'disable' | 'enable' | 'reset' | 'edit'
+export type ActionType = 'delete' | 'disable' | 'enable' | 'reset' | 'edit' | 'access'
 
 function getDisplayName(user: CognitoUser): string {
   const hasGivenName = user.given_name != null && user.given_name !== ''
@@ -22,18 +22,18 @@ function getDisplayName(user: CognitoUser): string {
 }
 
 // Status Badge Component
-export function StatusBadge({ user }: Readonly<{ user: CognitoUser }>) {
+function StatusBadge({ user }: Readonly<{ user: CognitoUser }>) {
   const { t } = useTranslation('components')
   if (!user.enabled) {
-    return <span className="px-2 py-0.5 text-xs rounded-full bg-red-100 text-red-700">{t('userAdmin.disabled')}</span>
+    return <span className="badge badge-danger">{t('userAdmin.disabled')}</span>
   }
   if (user.status === 'CONFIRMED') {
-    return <span className="px-2 py-0.5 text-xs rounded-full bg-green-100 text-green-700">{t('userAdmin.active')}</span>
+    return <span className="badge badge-ok">{t('userAdmin.active')}</span>
   }
   if (user.status === 'FORCE_CHANGE_PASSWORD') {
-    return <span className="px-2 py-0.5 text-xs rounded-full bg-yellow-100 text-yellow-700">{t('userAdmin.pendingStatus')}</span>
+    return <span className="badge badge-warn">{t('userAdmin.pendingStatus')}</span>
   }
-  return <span className="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-700">{user.status}</span>
+  return <span className="badge badge-muted">{user.status}</span>
 }
 
 // Role Select Component
@@ -44,7 +44,7 @@ interface RoleSelectProps {
   readonly size?: 'sm' | 'md'
 }
 
-export function RoleSelect({
+function RoleSelect({
   user, isPending, onChange, size = 'sm',
 }: RoleSelectProps) {
   const { t } = useTranslation('components')
@@ -61,12 +61,12 @@ export function RoleSelect({
       value={isAdmin ? 'admins' : 'users'}
       onChange={handleChange}
       disabled={isPending}
+      aria-label={t('userAdmin.roleFor', { email: user.email || user.username })}
+      title={t('userAdmin.roleFor', { email: user.email || user.username })}
       className={clsx(
-        'text-sm border rounded',
-        size === 'sm' ? 'px-2 py-1' : 'px-2 py-1.5',
-        isAdmin
-          ? 'border-purple-300 bg-purple-50 text-purple-700'
-          : 'border-gray-300 bg-white text-gray-700',
+        'select w-auto',
+        size === 'sm' ? 'select-sm' : 'py-1.5',
+        isAdmin && 'border-aim bg-aim-subtle text-aim',
       )}
     >
       <option value="users">{t('userAdmin.userRole')}</option>
@@ -83,7 +83,7 @@ interface UserActionButtonsProps {
   readonly buttonPadding?: string
 }
 
-export function UserActionButtons({
+function UserActionButtons({
   user, onAction, iconSize = 16, buttonPadding = 'p-1.5',
 }: UserActionButtonsProps) {
   const { t } = useTranslation('components')
@@ -91,14 +91,22 @@ export function UserActionButtons({
     <div className="flex items-center gap-1">
       <button
         onClick={() => onAction('edit', user)}
-        className={clsx(buttonPadding, 'text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded')}
+        className={clsx(buttonPadding, 'text-muted hover:text-accent-text hover:bg-accent-subtle rounded-sm')}
         title={t('userAdmin.editUserTitle')}
       >
         <Pencil size={iconSize} />
       </button>
       <button
+        onClick={() => onAction('access', user)}
+        className={clsx(buttonPadding, 'text-muted hover:text-accent-text hover:bg-accent-subtle rounded-sm')}
+        title={t('userAdmin.categoryAccess.title')}
+        aria-label={t('userAdmin.categoryAccess.title')}
+      >
+        <ShieldCheck size={iconSize} />
+      </button>
+      <button
         onClick={() => onAction('reset', user)}
-        className={clsx(buttonPadding, 'text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded')}
+        className={clsx(buttonPadding, 'text-muted hover:text-accent-text hover:bg-accent-subtle rounded-sm')}
         title={t('userAdmin.resetPasswordTitle')}
       >
         <Key size={iconSize} />
@@ -106,7 +114,7 @@ export function UserActionButtons({
       {user.enabled ? (
         <button
           onClick={() => onAction('disable', user)}
-          className={clsx(buttonPadding, 'text-gray-500 hover:text-orange-600 hover:bg-orange-50 rounded')}
+          className={clsx(buttonPadding, 'text-muted hover:text-warn hover:bg-warn-subtle rounded-sm')}
           title={t('userAdmin.disableUserTitle')}
         >
           <UserX size={iconSize} />
@@ -114,7 +122,7 @@ export function UserActionButtons({
       ) : (
         <button
           onClick={() => onAction('enable', user)}
-          className={clsx(buttonPadding, 'text-gray-500 hover:text-green-600 hover:bg-green-50 rounded')}
+          className={clsx(buttonPadding, 'text-muted hover:text-ok hover:bg-ok-subtle rounded-sm')}
           title={t('userAdmin.enableUserTitle')}
         >
           <UserCheck size={iconSize} />
@@ -122,7 +130,7 @@ export function UserActionButtons({
       )}
       <button
         onClick={() => onAction('delete', user)}
-        className={clsx(buttonPadding, 'text-gray-500 hover:text-red-600 hover:bg-red-50 rounded')}
+        className={clsx(buttonPadding, 'text-muted hover:text-danger hover:bg-danger-subtle rounded-sm')}
         title={t('userAdmin.deleteUserTitle')}
       >
         <Trash2 size={iconSize} />
@@ -143,11 +151,11 @@ function UserTableRow({
   user, onRoleChange, onAction, isRoleChangePending,
 }: UserTableRowProps) {
   return (
-    <tr className="hover:bg-gray-50">
+    <tr className="hover:bg-bg-hover">
       <td className="px-4 py-3">
         <div>
-          <p className="font-medium text-gray-900">{user.email}</p>
-          {user.name === '' ? null : <p className="text-sm text-gray-500">{getDisplayName(user)}</p>}
+          <p className="font-medium text-text-strong">{user.email}</p>
+          {user.name === '' ? null : <p className="text-sm text-muted">{getDisplayName(user)}</p>}
         </div>
       </td>
       <td className="px-4 py-3">
@@ -177,11 +185,11 @@ function UserCard({
   user, onRoleChange, onAction, isRoleChangePending,
 }: UserCardProps) {
   return (
-    <div className="border border-gray-200 rounded-lg p-4 space-y-3">
+    <div className="border border-border rounded-lg p-4 space-y-3">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="font-medium text-gray-900 truncate">{user.email}</p>
-          {user.name === '' ? null : <p className="text-sm text-gray-500">{getDisplayName(user)}</p>}
+          <p className="font-medium text-text-strong truncate" title={user.email}>{user.email}</p>
+          {user.name === '' ? null : <p className="text-sm text-muted">{getDisplayName(user)}</p>}
         </div>
         <StatusBadge user={user} />
       </div>
@@ -194,30 +202,32 @@ function UserCard({
   )
 }
 
-// Desktop Table Component
-interface UsersTableProps {
+/** Props of both user-list layouts: the desktop table and the mobile cards. */
+interface UsersListProps {
   readonly users: CognitoUser[]
   readonly onRoleChange: (username: string, group: UserGroup) => void
   readonly onAction: (type: ActionType, user: CognitoUser) => void
   readonly isRoleChangePending: boolean
 }
 
+// Desktop Table Component
+
 export function UsersTable({
   users, onRoleChange, onAction, isRoleChangePending,
-}: UsersTableProps) {
+}: UsersListProps) {
   const { t } = useTranslation('components')
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden hidden md:block">
+    <div className="border border-border rounded-lg overflow-hidden hidden md:block">
       <table className="w-full">
-        <thead className="bg-gray-50 border-b border-gray-200">
+        <thead className="bg-bg-accent border-b border-border">
           <tr>
-            <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">{t('userAdmin.tableUser')}</th>
-            <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">{t('userAdmin.tableStatus')}</th>
-            <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">{t('userAdmin.tableRole')}</th>
-            <th className="text-right px-4 py-3 text-sm font-medium text-gray-700">{t('userAdmin.tableActions')}</th>
+            <th className="text-left px-4 py-3 text-sm font-medium text-text">{t('userAdmin.tableUser')}</th>
+            <th className="text-left px-4 py-3 text-sm font-medium text-text">{t('userAdmin.tableStatus')}</th>
+            <th className="text-left px-4 py-3 text-sm font-medium text-text">{t('userAdmin.tableRole')}</th>
+            <th className="text-right px-4 py-3 text-sm font-medium text-text">{t('userAdmin.tableActions')}</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-200">
+        <tbody className="divide-y divide-border">
           {users.map((user) => (
             <UserTableRow
               key={user.username}
@@ -231,7 +241,7 @@ export function UsersTable({
       </table>
 
       {users.length === 0 && (
-        <div className="text-center py-8 text-gray-500">
+        <div className="text-center py-8 text-muted">
           {t('userAdmin.noUsers')}
         </div>
       )}
@@ -240,20 +250,14 @@ export function UsersTable({
 }
 
 // Mobile Cards Component
-interface UsersCardsProps {
-  readonly users: CognitoUser[]
-  readonly onRoleChange: (username: string, group: UserGroup) => void
-  readonly onAction: (type: ActionType, user: CognitoUser) => void
-  readonly isRoleChangePending: boolean
-}
 
 export function UsersCards({
   users, onRoleChange, onAction, isRoleChangePending,
-}: UsersCardsProps) {
+}: UsersListProps) {
   const { t } = useTranslation('components')
   if (users.length === 0) {
     return (
-      <div className="text-center py-8 text-gray-500 border border-gray-200 rounded-lg">
+      <div className="text-center py-8 text-muted border border-border rounded-lg">
         {t('userAdmin.noUsers')}
       </div>
     )

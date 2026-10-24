@@ -33,19 +33,13 @@ client), not one rule with two copies. Pinning them together would freeze a
 divergence nobody has decided to close.
 """
 import re
-from pathlib import Path
 
 import pytest
 
-from shared.feedback import MAX_LOOKBACK_DAYS
+from shared.feedback import MAX_LOOKBACK_DAYS, MAX_SAMPLE_WALK_DAYS
+from shared.test.repo_paths import repo_root
 
-
-def _repo_root() -> Path:
-    # lambda/shared/test/ -> voc-datalake/
-    return Path(__file__).resolve().parents[3]
-
-
-_TOOL_SOURCE = _repo_root() / 'lambda' / 'stream' / 'src' / 'tools' / 'feedback-scan.ts'
+_TOOL_SOURCE = repo_root() / 'lambda' / 'stream' / 'src' / 'tools' / 'feedback-scan.ts'
 
 # Every clamp idiom this codebase writes, so a re-introduced literal bound fails
 # here however it is spelled. A tripwire rather than a proof — see the module
@@ -78,6 +72,15 @@ def _stream_lookback_days() -> int | None:
     """`MAX_LOOKBACK_DAYS` as declared in the chat tool, or None if not found."""
     match = re.search(
         r'export\s+const\s+MAX_LOOKBACK_DAYS\s*=\s*(\d+)',
+        _TOOL_SOURCE.read_text(),
+    )
+    return int(match.group(1)) if match else None
+
+
+def _stream_sample_walk_days() -> int | None:
+    """`MAX_SAMPLE_WALK_DAYS` as declared in the chat tool, or None if not found."""
+    match = re.search(
+        r'export\s+const\s+MAX_SAMPLE_WALK_DAYS\s*=\s*(\d+)',
         _TOOL_SOURCE.read_text(),
     )
     return int(match.group(1)) if match else None
@@ -129,10 +132,9 @@ class TestLookbackWindowMirror:
     never measured — that is a `FileNotFoundError` masquerading as a finding — so
     the equality test carries a `skipif`.
 
-    `test_the_stream_constant_is_findable` carries NO skip marker on purpose: it
-    asserts the file exists and the constant parses, which is exactly the check
-    that has to run. Skipping it would leave the equality test able to pass while
-    comparing against nothing.
+    `test_the_stream_constant_is_findable` is this file's positive control and
+    carries NO skip marker on purpose (see "Positive controls" in
+    `shared/test/repo_paths.py`).
     """
 
     def test_the_stream_constant_is_findable(self):
@@ -159,6 +161,26 @@ class TestLookbackWindowMirror:
             f'chat tool scans {_stream_lookback_days()} days while the REST routes '
             f'allow {MAX_LOOKBACK_DAYS}'
         )
+
+    @pytest.mark.skipif(not _TOOL_SOURCE.exists(), reason='stream tree absent from this checkout')
+    def test_both_runtimes_agree_on_the_sample_walk(self):
+        """The calendar reach of the walk (55bbaa1c): MAX_LOOKBACK_DAYS became a
+        budget of days WITH data inside MAX_SAMPLE_WALK_DAYS calendar days. The
+        chat tool kept a 90-calendar-day cap after Python moved, so "last year"
+        on a deployment with no feedback in the last 90 days found nothing there
+        while the persona/document jobs found it."""
+        assert _stream_sample_walk_days() is not None, (
+            f'parsed no MAX_SAMPLE_WALK_DAYS from {_TOOL_SOURCE.name} — parser drift?'
+        )
+        assert _stream_sample_walk_days() == MAX_SAMPLE_WALK_DAYS, (
+            f'chat tool walks {_stream_sample_walk_days()} days while shared/feedback.py '
+            f'walks {MAX_SAMPLE_WALK_DAYS}'
+        )
+        uses = sum(
+            len(re.findall(r'\bMAX_SAMPLE_WALK_DAYS\b', strip_comments(text)))
+            for text in search_feedback_sources().values()
+        )
+        assert uses >= 2, 'MAX_SAMPLE_WALK_DAYS is declared but the chat tool never spends it'
 
     @pytest.mark.skipif(not _TOOL_SOURCE.exists(), reason='stream tree absent from this checkout')
     def test_the_chat_tool_spends_the_constant_rather_than_a_literal(self):
@@ -308,3 +330,23 @@ class TestTheGuardItself:
         assert not any(name.endswith('.test.ts') for name in sources), (
             'test files are in the set, so a clamp in a fixture would read as production drift'
         )
+
+
+_WIZARD_WINDOW_SOURCE = (
+    repo_root() / 'frontend' / 'src' / 'components' / 'DataSourceWizard' / 'sourceListWindow.ts'
+)
+
+
+class TestTheWizardSourceListFollowsTheSampleWalk:
+    """The wizard's source list counts over `sample_walk_days` (QA s3 Low).
+
+    It was a fixed 30 days, so a source generation could read was never offered.
+    The SPA cannot import Python, so it mirrors `MAX_SAMPLE_WALK_DAYS`; this pins
+    the copy. No skip marker: the file is part of every checkout.
+    """
+
+    def test_the_frontend_mirrors_the_walk_bound(self):
+        match = re.search(r'const\s+MAX_SAMPLE_WALK_DAYS\s*=\s*(\d+)', _WIZARD_WINDOW_SOURCE.read_text())
+
+        assert match is not None, f'parsed no MAX_SAMPLE_WALK_DAYS from {_WIZARD_WINDOW_SOURCE.name}'
+        assert int(match.group(1)) == MAX_SAMPLE_WALK_DAYS

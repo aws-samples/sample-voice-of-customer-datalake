@@ -1,9 +1,9 @@
 /**
- * Shared URL utilities used by API clients (client.ts, streamClient.ts).
+ * Shared URL utilities used by API clients (client.ts, assistant/agui/client.ts).
  */
 import { authService } from '../services/auth'
 import { useConfigStore } from '../store/configStore'
-import { buildTrustedApiOrigins, isTrustedOrigin } from '../lib/trustedOrigins'
+import { isTrustedOrigin } from '../lib/trustedOrigins'
 
 /**
  * Remove trailing slashes from a URL string.
@@ -26,61 +26,45 @@ export function getBaseUrl(): string {
 }
 
 /**
- * Build the allowlist of trusted API origins from the deployment runtime config.
- *
- * **Note**: the returned array contains only the origin derived from the
- * runtime config endpoint. `localhost` / `127.0.0.1` are NOT in the returned
- * array — localhost trust is enforced inside `isTrustedAbsoluteUrl` via a
- * hostname comparison, not via the origins array. Reading this array and
- * checking for a localhost entry will never find one.
- *
- * Returns an empty array when the runtime config is not loaded yet — the
- * caller treats an empty allowlist as "no origin is trusted", which is the
- * safe outcome.
- *
- * Delegates to {@link buildTrustedApiOrigins} from `lib/trustedOrigins` to
- * avoid duplicating security-critical logic.
+ * Lookback (in days) of the widest fixed preset ("90d"). The "All time" preset
+ * (`'all'`) sends 0, and the custom picker takes up to MAX_CUSTOM_DAYS (or 0);
+ * feedback is never deleted, so every one of them is served.
  */
-export { buildTrustedApiOrigins as getTrustedApiOrigins }
+export const WIDEST_PRESET_DAYS = 90
+
+/** Custom lookback the user types to mean "all time" — sent to the API as-is. */
+export const ALL_TIME_CUSTOM_DAYS = 0
 
 /**
- * Return true when `requestUrl` resolves to a trusted API origin.
- *
- * Parsing failures are treated as unsafe (return false), so a malformed or
- * crafted URL value in the config store can never receive the auth header.
- *
- * Every URL is resolved against `window.location.origin` before being
- * classified, so same-origin is determined by the resolved origin rather than
- * by the shape of the string. Path-relative URLs (`/api/...`) resolve to the
- * current origin and are safe; spellings that only *look* relative but resolve
- * elsewhere — `//evil.example.com/...`, `/\evil.example.com/...` — are not.
- *
- * Delegates to {@link isTrustedOrigin} from `lib/trustedOrigins`.
+ * Largest custom lookback the picker accepts. Equals the backend's
+ * `MAX_FEEDBACK_WINDOW_DAYS` (lambda/shared/api.py) and the stream Lambda's
+ * `MAX_WINDOW_DAYS`; pinned to both by `daysWindow.lockstep.test.ts`.
  */
-export { isTrustedOrigin as isTrustedRequestOrigin }
+export const MAX_CUSTOM_DAYS = 9999
+
+/** A custom lookback the picker can store: a whole number from 0 (all time) to MAX_CUSTOM_DAYS. */
+function isCustomDays(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= ALL_TIME_CUSTOM_DAYS && value <= MAX_CUSTOM_DAYS
+}
+
+/** Parse a days text input into a valid custom lookback (0 = all time), or null when invalid. */
+export function parseCustomDaysInput(value: string): number | null {
+  if (!/^\d+$/.test(value.trim())) return null
+  const n = Number(value.trim())
+  return isCustomDays(n) ? n : null
+}
 
 /**
- * Bounded lookback (in days) used for the widest ("90d") time range.
- *
- * The metrics backend iterates day-by-day (`for i in range(days)`) and some
- * endpoints (categories, sentiment) fan out into `categories × days` sequential
- * DynamoDB get_item calls. At 365 days that exceeds API Gateway's 29s timeout,
- * so those endpoints time out. We therefore cap the widest range at 90 days,
- * which also matches the aggregates table's 90-day TTL (data older than that
- * isn't retained anyway) and keeps every metrics endpoint within the timeout.
- * Must stay <= the backend's `validate_days` max (365) to avoid silent clamping.
- */
-export const ALL_TIME_DAYS = 90
-
-/**
- * Convert a time range string to a number of days.
+ * Convert a time range string to the number of days to request.
  *
  * For the 'custom' range the caller supplies a rolling lookback in days
- * (`customDays`); when absent or invalid we fall back to the 7-day default.
+ * (`customDays`), sent as-is: 0 means all time (the backend resolves it to the
+ * span since the earliest stored feedback). When absent or invalid we fall back
+ * to the 7-day default.
  */
 export function getDaysFromRange(range: string, customDays?: number | null): number {
   if (range === 'custom') {
-    return customDays && customDays > 0 ? customDays : 7
+    return isCustomDays(customDays) ? customDays : 7
   }
 
   switch (range) {
@@ -88,14 +72,15 @@ export function getDaysFromRange(range: string, customDays?: number | null): num
     case '48h': return 2
     case '7d': return 7
     case '30d': return 30
-    case 'all': return ALL_TIME_DAYS
+    case '90d': return WIDEST_PRESET_DAYS
+    case 'all': return ALL_TIME_CUSTOM_DAYS
     default: return 7
   }
 }
 
 /**
  * Build auth headers with Cognito ID token.
- * Shared by client.ts (REST) and streamClient.ts (SSE).
+ * Shared by client.ts (REST) and assistant/agui/client.ts (SSE).
  *
  * `targetUrl` is the URL the headers are about to be sent to, and it is
  * **required**: the Authorization header is attached only when that URL's
@@ -145,7 +130,7 @@ export function getAuthHeaders(
 
 /**
  * Body-payload variant of the date-basis convention (issue #150): the
- * user's "Filter dates by" selection rides along in POST bodies for chat,
+ * user's "Filter dates by" selection rides along in POST bodies for
  * project research, and generation requests. 'review' adds the field;
  * the default 'imported' omits it so existing payloads stay identical.
  */

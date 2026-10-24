@@ -1,0 +1,34 @@
+X-SES-Spam-Verdict: PASS
+X-SES-Virus-Verdict: PASS
+X-SES-SPF-Verdict: PASS
+X-SES-DKIM-Verdict: GRAY
+From: Sam Staff <sam@company.example>
+To: ideas@voc.example.com
+Subject: Fwd: Dark mode please
+Message-ID: <fwd-011@company.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="===============7790743756910403253=="
+
+--===============7790743756910403253==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+See attached.
+
+--===============7790743756910403253==
+Content-Type: message/rfc822
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+Content-Disposition: attachment
+
+From: Cy Customer <cy@customer.example>
+To: sam@company.example
+Subject: Dark mode please
+Message-ID: <inner-012@customer.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+Please add a dark mode to the dashboard, my eyes hurt at night.
+
+--===============7790743756910403253==--

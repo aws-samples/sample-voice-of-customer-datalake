@@ -13,16 +13,16 @@
 |---------|---------|------------|
 | **DynamoDB** | Processed data, streams | On-demand billing, KMS encryption, TTL |
 | **S3** | Raw data lake, avatars | KMS encryption, partitioned by source/date |
-| **Lambda** | Compute | Python 3.12, ARM64 (Graviton), Powertools |
+| **Lambda** | Compute | Python 3.14 (the assistant stream: Node.js 22), ARM64 (Graviton), Powertools |
 | **SQS** | Processing queue | DLQ, visibility timeout, batch processing |
 | **API Gateway** | REST API | Throttling, CORS, Cognito auth |
 | **Cognito** | Authentication | User Pool, admins/users groups |
-| **WAF** | API protection | Rate limiting, SQL injection, XSS protection |
+| **API Gateway throttling** | API protection | Per-method stage throttles (`lib/stacks/api-gateway.ts`); no WAF is deployed (cost decision) — add one for production |
 | **EventBridge** | Scheduled ingestion | Rate expressions (1-30 min) |
 | **Secrets Manager** | API credentials | Auto-rotation capable |
 | **KMS** | Encryption | Customer-managed key, key rotation |
-| **Bedrock** | LLM inference | Per-surface model picker (default Claude Sonnet 5; allowlist in `lib/utils/model-allowlist.ts`, resolution via `shared/model_config.py`) |
-| **Comprehend** | NLP | Sentiment, language detection, key phrases |
+| **Bedrock** | LLM inference | Per-surface model picker (Claude 5.5 generation: Sonnet 5.5 for the AI assistant, documents, utilities, agent workers/personas; Opus 5.5 for prototypes and the agent conductor/reviewer; Haiku 5.5 for enrichment and memory; allowlist in `lib/utils/model-allowlist.ts`, resolution via `shared/model_config.py`); `-c inferenceScope=eu` maps `global.` → `eu.` profiles at call time (docs/eu-deployment.md) |
+| **Comprehend** | NLP | Sentiment, language detection, key phrases; `DetectPiiEntities` for source-policy redaction (en/es, `PII_COMPREHEND=1`) |
 | **Translate** | Multi-language | Auto language pair detection |
 | **Step Functions** | Long-running jobs | Research workflows, persona generation |
 | **CloudFront** | CDN | Frontend distribution, avatar images |
@@ -33,12 +33,14 @@
 |--------|------|------|----------|
 | Web Scraper | HTTP | None | Configurable |
 | Feedback Forms | API | None (public) | Real-time |
+| GitHub Issues (plugin, enabled; idle until configured) | GitHub REST + webhook | Read-only token + webhook secret in the plugin's Secrets Manager secret | 30 min (+ real-time webhook) |
+| Web Reviews (plugin `web_reviews`, enabled; idle until a page is added) | AgentCore Browser `aws.browser.v1` over CDP (`websocket-client`), JSON-LD or `enrichment`-model extraction; one source per connector `web_<site>_<app_name>` (stored on the target as `source_id`); blocked sites reported (docs/web-reviews.md) | IAM only (Start/StopBrowserSession on aws.browser.v1, ConnectBrowserAutomationStream on `*`) | Manual / per-target frequency (15 min tick, rule disabled) |
 
 ## Backend (Lambda - Python)
 
 ### Runtime & Libraries
 
-- **Runtime**: Python 3.12
+- **Runtime**: Python 3.14 (CDK `Runtime.PYTHON_3_14`; ruff, pyright and CI still target 3.12)
 - **Architecture**: ARM64 (Graviton) for better price/performance
 - **Core**: `aws-lambda-powertools` (logging, tracing, metrics, batch processing)
 - **HTTP**: `requests`
@@ -52,17 +54,77 @@ AWS Lambda execution roles have a **20KB policy size limit**. To stay under this
 | Lambda | Handler | Routes | Permissions |
 |--------|---------|--------|-------------|
 | `voc-metrics-api` | `metrics_handler.py` | `/feedback/*`, `/metrics/*` | DynamoDB read (feedback, aggregates) |
-| `voc-chat-api` | `chat_handler.py` | `/chat/*` | DynamoDB (feedback read, aggregates/conversations RW), Bedrock |
+| `voc-chat-api` | `chat_handler.py` | `/chat/*` | DynamoDB RW (conversations) only — no feedback/aggregates access, no Bedrock (the assistant is `voc-chat-stream`) |
 | `voc-integrations-api` | `integrations_handler.py` | `/integrations/*`, `/sources/*` | Secrets Manager, EventBridge |
 | `voc-scrapers-api` | `scrapers_handler.py` | `/scrapers/*` | Secrets Manager, Lambda invoke, Bedrock, DynamoDB (aggregates) |
-| `voc-settings-api` | `settings_handler.py` | `/settings/*` | DynamoDB (aggregates), Bedrock |
+| `voc-settings-api` | `settings_handler.py` | `/settings/*` (incl. dimensions, sources, erasure, model test/capacity) | DynamoDB (aggregates), Bedrock, `servicequotas:ListServiceQuotas` (read-only), invoke `voc-category-reprocess` + `voc-retention` + its assist twin `voc-settings-assist` |
 | `voc-projects-api` | `projects_handler.py` | `/projects/*` | DynamoDB (projects, jobs, feedback), Step Functions, Bedrock, S3 |
 | `voc-users-api` | `users_handler.py` | `/users/*` | Cognito admin |
 | `voc-feedback-form-api` | `feedback_form_handler.py` | `/feedback-forms/*` | DynamoDB (aggregates), SQS |
-| `voc-chat-stream` | `lambda/stream` (TypeScript, esbuild-bundled) | `/chat/stream` SSE via API Gateway | DynamoDB read, Bedrock streaming |
+| `voc-chat-stream` | `lambda/stream` (TypeScript, esbuild-bundled) | `/chat/stream` — unified AI assistant, AG-UI 1.0 SSE via API Gateway | DynamoDB read (feedback, aggregates), Bedrock streaming, `lambda:InvokeFunction` on exactly ProjectsApi/MetricsApi/FeedbackFormApi/SettingsApi/ScrapersApi/MemoryApi/AgentsApi/UsersApi (UsersApi only for the admin-only `list_users` / `get_user_access` reads); conversations `GetItem`/`PutItem` (table ARN only) — its ONE write is the caller's own session, saved while a run streams (`assistant/session/`; partition `USER#{verified sub}` enforced in code, IAM cannot pin it); no projects-table access, no business-data writes; its only POSTs are reads (`READ_POSTS`: chat context, memory retrieve, workflow validate, `POST /scrapers/analyze-url` for admins, which starts an assist job the tool then polls); the Lambda and the `/chat/stream` integration run up to 15 min (900 s), `STALE_RUN_SECONDS` 960 |
 | `voc-data-explorer-api` | `data_explorer_handler.py` | `/data-explorer/*` | S3, DynamoDB (feedback) |
-| `voc-logs-api` | `logs_handler.py` | `/logs/*` | CloudWatch Logs read |
-| `voc-manual-import-api` | `manual_import_handler.py` | `/manual-import/*` | DynamoDB, SQS, S3 |
+| `voc-logs-api` | `logs_handler.py` | `/logs/*` | CloudWatch Logs read; CloudWatch Put/Delete/DescribeAlarms on `alarm:voc-alerts-<suffix>-*`; SNS Subscribe/Unsubscribe/ListSubscriptionsByTopic on the ops topic (Administration → System → Logs → Alerts) |
+| `voc-manual-import-api` | `manual_import_handler.py` | `/scrapers/manual/*` (admin-only) | DynamoDB, SQS, S3 |
+| `voc-feedback-edit-api` | `feedback_edit_handler.py` | `PUT /feedback/{id}/category`, `PUT /feedback/{id}/dimensions` (correct a review's category / dimensions + tags) | DynamoDB (feedback RW, aggregates read) |
+| `voc-memory-api` | `memory_handler.py` | `/memory`, `/memory/{proxy+}` | DynamoDB (memory Get/BatchGet/Put/Update/Query — no delete, aggregates read), SQS memory-extract, S3 `memory-imports/*` read+put, Bedrock + Titan Embed V2 |
+| `voc-agents-api` | `agents_handler.py` | `/agents/*` (incl. `/agents/plans*`, not admin-only), `/workflows/*` | DynamoDB (agents Get/Put/Update/Query, aggregates read), Step Functions start/stop on `voc-agent-run` only |
+| `voc-mcp-global-api` | `mcp_global_handler.py` | `POST /mcp/global` (global MCP token) | DynamoDB projects `MCPGTOKEN` Get/Update, jobs audit Put; Cognito AdminGetUser/AdminListGroupsForUser; `lambda:InvokeFunction` on exactly Metrics/Settings/Memory/Projects/Agents APIs |
+| `voc-mcp-tokens-api` | `mcp_tokens_handler.py` | `/connect/tokens/*` (Cognito) | DynamoDB projects `MCPGTOKEN` Query/Get/Put/Update + `PROJECT#*` Get (pin check), jobs audit Query |
+
+Assist twins (4.00.00, `lib/stacks/api-assist-workers.ts`): `voc-projects-assist`,
+`voc-settings-assist`, `voc-scrapers-assist` run the SAME code, handler, role and env as their API
+Lambda with a 15-minute timeout (async invoke, no retries, max event age 1 h, failure destination).
+The API Lambda answers a model-backed route 202 + `job_id` and async-invokes its twin
+(`ASSIST_WORKER_FUNCTION`); the handler's first line routes an assist event to
+`lambda/shared/assist_jobs.py` `run`. No model call sits on a 29 s REST path except the one-shot
+`POST /settings/model/test`. Routes and poll paths: structure.md → Scrapers → "Assist jobs".
+
+Not behind API Gateway (Processing stack), memory + agents: `voc-memory-scanner`
+(15 min) → SQS `voc-memory-extract` (+DLQ) → `voc-memory-extractor`; `voc-memory-retention`
+(daily); `voc-agent-heartbeat` (15 min) → Step Functions `voc-agent-run` (24 h max). The state
+machine is the runtime's own rendered definition (`lambda/agents/state_machine.asl.json`). It runs a
+conductor loop, `voc-agent-conductor` (init / advance / fail), dispatching each workflow node to
+`voc-agent-nodes`, or to `voc-agent-persona-panel` for `persona_review`. Handlers
+are path-style (`memory/extractor/handler.lambda_handler`). The runtime reaches
+project, feedback and memory data only by invoking `voc-projects-api` / `voc-metrics-api` /
+`voc-memory-api` as the `agent:` principal (names from `lib/utils/function-names.ts`); a finished
+run is queued to `voc-memory-extract` as an `agent_run` memory source. Settings also gains the
+`voc/design-integrations` secret and `company-context/*` (docs/company-context.md); the stream
+Lambda may now invoke eight domain APIs (+ memory, agents, users).
+
+Plan mode (docs/assistant-plan-mode.md, docs/autonomous-agents.md → "Plans"): an approved
+assistant plan runs on `voc-agent-run` too (input `{run_kind: 'plan', plan_id}`). The conductor's
+`plan_decide` / `plan_prepare` / `plan_record` / `plan_fail` walk it; `plan_prepare` re-checks the
+approver in Cognito (AdminGetUser/AdminListGroupsForUser) and forwards `admins` only for an
+admin-only step; the state machine (≤ 3 in a Map) invokes `voc-plan-step` (Node, built from
+`lambda/stream/src/plan-step/handler.ts`), which runs the step as the approver through the domain
+APIs (`lambda:InvokeFunction` on exactly `PLAN_STEP_DELEGATES` — the stream's eight + integrations +
+feedback edit — by name, aggregates GetItem/Query, feedback read for think steps, Bedrock allowlist,
+no table writes; bundled like `voc-chat-stream`). Its answers carry `model_calls` and the executed
+write's `fingerprint`. Waits read `SOURCE_RUN#…` / `SCRAPER_RUN#…` / jobs rows (the conductor's
+aggregates + jobs GetItem). Plans are proposed in the ordinary chat run (`plan_catalogue`,
+`plan_lookup`, then the `propose_plan` client tool, whose card is the plan card).
+
+Not behind API Gateway (Processing stack): `voc-category-reprocess` —
+`lambda/jobs/category_reprocess/handler.py`, async worker started by
+`POST /settings/categories/reprocess` (the settings Lambda holds its name in
+`CATEGORY_REPROCESS_FUNCTION` plus an invoke grant). Re-categorises stored
+feedback in place, checkpointing and re-invoking itself before its 15-minute
+timeout. Permissions: feedback Scan/GetItem/UpdateItem, aggregates
+Get/Put/Update/Query, raw-bucket read (`raw/*`), KMS, Bedrock, Comprehend,
+Translate, invoke itself.
+
+Not behind API Gateway (Processing stack): `voc-retention` —
+`lambda/jobs/retention/handler.py`, daily schedule (mode `retention`) + async
+invoke from `POST /settings/erasure` (mode `erase`, env `RETENTION_FUNCTION` on
+the settings Lambda). The ONLY role with a customer-data delete; does nothing
+unless a source profile sets `retention_days` or an erasure is requested; never
+touches `raw/csv_upload/*`. Permissions: feedback Get/Query/Scan/DeleteItem,
+aggregates Get/Put/Update/Query (jobs, `AUDIT#retention`), raw bucket
+`s3:DeleteObject`/`DeleteObjectVersion` on `raw/*` + `ListBucketVersions`, KMS,
+invoke itself. Ingestion-side Lambdas (plugins, webhooks, manual import,
+feedback forms, data explorer) apply the source policy before archive/SQS and
+hold `comprehend:DetectPiiEntities` (docs/source-policies.md).
 
 **Benefits:**
 - Each Lambda stays under 20KB policy limit
@@ -119,13 +181,13 @@ def lambda_handler(event, context):
 | Categories | `/categories` | Category breakdown, feedback list (All/search/urgent), filters |
 | Problem Analysis | `/problems` | Problem analysis dashboard |
 | Prioritization | `/prioritization` | Issue prioritization |
-| AI Chat | `/chat` | Conversational data queries with streaming |
+| AI Chat | `/chat` | Full-width view of the unified AI assistant: conversation sidebar (open conversations, which can run at the same time, plus saved history) beside the chat; also a floating bubble on every protected page |
 | Projects | `/projects` | Research projects list |
-| Project Detail | `/projects/:id` | Personas, PRDs, PR/FAQs, project chat |
+| Project Detail | `/projects/:id` | Personas, PRDs, PR/FAQs (the AI assistant is page-aware here) |
 | Data Explorer | `/data-explorer` | S3 raw data and DynamoDB browser |
-| Scrapers | `/scrapers` | CSS/JSON-LD selector config, templates |
+| Data sources (code: `pages/Scrapers`) | `/scrapers` | Every feedback source: web scrapers, app/review pages, imports; CSS/JSON-LD selectors behind Advanced |
 | Feedback Forms | `/feedback-forms` | Embeddable form management |
-| Settings | `/settings` | Brand config, integrations, user admin |
+| Settings | `/admin` (`/settings` redirects) | Software settings in six tabs with section switches (`?tab=&section=`, old tab ids redirect): General, Sources, Taxonomy, Privacy & access, AI models, System (`?tab=system&section=version`: build version/commit/time + CHANGELOG). Personal preferences live on `/account` (docs/account-vs-admin.md) |
 
 Note: Each page is organized in its own folder under `frontend/src/pages/` with an index.tsx entry point.
 
@@ -196,6 +258,23 @@ npm run generate:menu       # Generate menu config only
   precedents), and crash-prone render sites carry belt-and-braces guards.
   Route-level errors are contained by `RouteErrorBoundary` (one bad page
   never blanks the app).
+- **Every frontend API call must be mocked (gated).** When a feature adds or
+  changes a `fetchApi(...)` call, in the same change:
+  1. Mock the route in the dev mock with the real handler's wire shape
+     (envelope, field names, error statuses), stateful for the process
+     lifetime. Small additions go in `mock-server.js`. A new domain gets its
+     own `frontend/mock-<domain>.js`, wired in `handleDomainModules`. Domain
+     modules claim only their own routes and get shared fixtures through
+     `shared`; they never import back from `mock-server.js`. Unlike
+     `mock-server.js`, `mock-*.js` files are linted.
+  2. Add the call site to `frontend/mock-coverage.json` with a concrete probe
+     (real fixture ids, a minimal valid body).
+  3. Run `npm run check:mock`. It is a `validate.sh` step and part of
+     `npm run check`. It fails when a call site has no entry, an entry is
+     stale, or a probe gets the mock's generic `{"error":"Not found"}`, a 405
+     or a 5xx.
+  Then open the page against the mock (`npm run dev`) and make sure it shows
+  data, not an empty state.
 
 ## Secrets Manager Structure
 
@@ -208,7 +287,7 @@ npm run generate:menu       # Generate menu config only
 ## Security & Cost Best Practices
 
 - **Authentication**: Cognito User Pool with admins/users groups
-- **API Protection**: WAF with rate limiting, SQL injection, XSS protection
+- **API Protection**: per-method API Gateway throttling (`lib/stacks/api-gateway.ts`); no WAF is deployed (cost decision) — a WAF is recommended for production
 - **Encryption**: KMS at rest, TLS in transit
 - **IAM**: Least-privilege per Lambda
 - **Secrets**: Never hardcode; use Secrets Manager
@@ -216,3 +295,7 @@ npm run generate:menu       # Generate menu config only
 - **S3**: Raw data archival, partitioned for cost-effective querying
 - **Lambda**: ARM64 (Graviton), right-size memory, reserved concurrency
 - **Bedrock**: resolve models via `shared/model_config.py` (never hardcode ids); batch when possible
+- **Caching** (docs/caching.md): reads key on version counters (`shared/data_version.py`) bumped once per
+  write batch; warm-container memo on metrics/Radar GETs; ETag/304 on API GETs, `no-store` for per-user
+  live state (`http_cache.NO_STORE_PATTERNS`); SPA per-family query defaults (`api/queryPolicies.ts`) and
+  `invalidateFeedbackData` after writes that move feedback

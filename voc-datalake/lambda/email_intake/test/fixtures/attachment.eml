@@ -1,0 +1,76 @@
+X-SES-Spam-Verdict: PASS
+X-SES-Virus-Verdict: PASS
+X-SES-SPF-Verdict: PASS
+X-SES-DKIM-Verdict: GRAY
+From: Ana <ana@customer.example>
+To: feedback@voc.example.com
+Subject: [bug] Invoice download broken
+Date: Sat, 07 Mar 2026 09:00:00 +0000
+Message-ID: <attach-010@customer.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="===============6993730530348090705=="
+
+--===============6993730530348090705==
+Content-Type: multipart/alternative;
+ boundary="===============4119730699507473291=="
+
+--===============4119730699507473291==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+The invoice download gives an error, see the screenshot and the invoice.
+
+--===============4119730699507473291==
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+<p>The invoice download gives an error, see the screenshot and the invoice.</=
+p><img src=3D"cid:logo@customer.example">
+
+--===============4119730699507473291==--
+
+--===============6993730530348090705==
+Content-Type: application/pdf
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="invoice-2026-03.pdf"
+MIME-Version: 1.0
+
+JVBERi0xLjQKMSAwIG9iajw8Pj5lbmRvYmoKdHJhaWxlcjw8Pj4KJSVFT0YK
+
+--===============6993730530348090705==
+Content-Type: image/png
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="screenshot.png"
+MIME-Version: 1.0
+
+iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9
+awAAAABJRU5ErkJggg==
+
+--===============6993730530348090705==
+Content-Type: image/png
+Content-Transfer-Encoding: base64
+Content-Disposition: inline; filename="logo.png"
+Content-ID: <logo@customer.example>
+MIME-Version: 1.0
+
+iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9
+awAAAABJRU5ErkJggg==
+
+--===============6993730530348090705==
+Content-Type: text/calendar
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="invite.ics"
+MIME-Version: 1.0
+
+QkVHSU46VkNBTEVOREFSCkVORDpWQ0FMRU5EQVIK
+
+--===============6993730530348090705==
+Content-Type: application/zip
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="logs.zip"
+MIME-Version: 1.0
+
+UEsDBA==
+
+--===============6993730530348090705==--

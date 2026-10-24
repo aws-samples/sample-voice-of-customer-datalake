@@ -16,19 +16,17 @@ Precedent for reading a TS file from a Python test:
 import re
 import sys
 import types
-from pathlib import Path
+from collections.abc import Callable
+from typing import Any
 
 import pytest
 
-
-def _repo_root() -> Path:
-    # …/voc-datalake/lambda/shared/test/this_file.py -> …/voc-datalake
-    return Path(__file__).resolve().parents[3]
+from shared.test.repo_paths import repo_root
 
 
 def _handler_source() -> str:
     """Extract the inline handler body from the CDK stack."""
-    ts = (_repo_root() / 'lib' / 'stacks' / 'bedrock-access-stack.ts').read_text(encoding='utf-8')
+    ts = (repo_root() / 'lib' / 'stacks' / 'bedrock-access-stack.ts').read_text(encoding='utf-8')
     match = re.search(
         r'private getModelAgreementLambdaCode\(\): string \{\s*return `(.*?)`;\s*\}',
         ts,
@@ -48,6 +46,42 @@ class _FakeClientError(Exception):
         self.response = {'Error': {'Code': code, 'Message': message}}
 
 
+class _FakeBotoCoreError(Exception):
+    """Stand-in for botocore BotoCoreError: a connection-level failure with no .response."""
+
+
+class _FakeEndpointConnectionError(_FakeBotoCoreError):
+    """Stand-in for botocore EndpointConnectionError (a BotoCoreError subclass)."""
+
+
+class _FakeConnectTimeoutError(_FakeBotoCoreError):
+    """Stand-in for botocore ConnectTimeoutError."""
+
+
+class _FakeReadTimeoutError(_FakeBotoCoreError):
+    """Stand-in for botocore ReadTimeoutError."""
+
+
+class _FakeConnectionClosedError(_FakeBotoCoreError):
+    """Stand-in for botocore ConnectionClosedError."""
+
+
+_TRANSIENT_STAND_INS = {
+    'EndpointConnectionError': _FakeEndpointConnectionError,
+    'ConnectTimeoutError': _FakeConnectTimeoutError,
+    'ReadTimeoutError': _FakeReadTimeoutError,
+    'ConnectionClosedError': _FakeConnectionClosedError,
+}
+
+
+class _FakeParamValidationError(_FakeBotoCoreError):
+    """Stand-in for botocore ParamValidationError: a BotoCoreError that is OUR bug (a bad model id)."""
+
+
+class _FakeNoCredentialsError(_FakeBotoCoreError):
+    """Stand-in for botocore NoCredentialsError: a BotoCoreError that is a broken role, not the network."""
+
+
 class _FakeConflict(_FakeClientError):
     """Stand-in for bedrock's ConflictException.
 
@@ -63,39 +97,71 @@ class _FakeConflict(_FakeClientError):
         super().__init__('ConflictException', message)
 
 
+class _FakeBoto3(types.ModuleType):
+    """The `boto3` module as the exec'd handler sees it: only `client`."""
+
+    client: Callable[..., Any]
+
+
+class _FakeBotocoreExceptions(types.ModuleType):
+    """`botocore.exceptions`, carrying the stand-in `ClientError` and `BotoCoreError`."""
+
+    ClientError: type[Exception]
+    BotoCoreError: type[Exception]
+
+
+class _FakeBotocore(types.ModuleType):
+    """`botocore`, carrying only its `exceptions` submodule."""
+
+    exceptions: _FakeBotocoreExceptions
+
+
 def _load_handler(*, create_raises: Exception | None = None,
                   availability_raises: Exception | None = None,
                   offers_raises: Exception | None = None):
     """exec the extracted handler with boto3/botocore stubbed out."""
     calls: dict[str, int] = {'create': 0}
 
-    class _Bedrock:
-        class exceptions:  # noqa: N801 — mirrors botocore's client.exceptions
-            ConflictException = _FakeConflict
-            AccessDeniedException = _FakeClientError
+    # The exec'd handler calls these by boto3's API names, which no Python source
+    # spells out, so the fake client is assembled from keyword arguments.
+    def availability(**_kwargs):
+        if availability_raises is not None:
+            raise availability_raises
+        return {'agreementAvailability': {'status': 'NOT_AVAILABLE'}}
 
-        def get_foundation_model_availability(self, modelId):  # noqa: N803
-            if availability_raises is not None:
-                raise availability_raises
-            return {'agreementAvailability': {'status': 'NOT_AVAILABLE'}}
+    def offers(**_kwargs):
+        if offers_raises is not None:
+            raise offers_raises
+        return {'offers': [{'offerToken': 'tok'}]}
 
-        def list_foundation_model_agreement_offers(self, modelId):  # noqa: N803
-            if offers_raises is not None:
-                raise offers_raises
-            return {'offers': [{'offerToken': 'tok'}]}
+    def create(**_kwargs):
+        calls['create'] += 1
+        if create_raises is not None:
+            raise create_raises
+        return {}
 
-        def create_foundation_model_agreement(self, modelId, offerToken):  # noqa: N803
-            calls['create'] += 1
-            if create_raises is not None:
-                raise create_raises
-            return {}
+    def bedrock_client():
+        return types.SimpleNamespace(
+            # mirrors botocore's client.exceptions
+            exceptions=types.SimpleNamespace(
+                ConflictException=_FakeConflict,
+                AccessDeniedException=_FakeClientError,
+            ),
+            get_foundation_model_availability=availability,
+            list_foundation_model_agreement_offers=offers,
+            create_foundation_model_agreement=create,
+        )
 
-    fake_boto3 = types.ModuleType('boto3')
-    fake_boto3.client = lambda *a, **k: _Bedrock()
+    fake_boto3 = _FakeBoto3('boto3')
+    fake_boto3.client = lambda *_a, **_k: bedrock_client()
 
-    fake_botocore = types.ModuleType('botocore')
-    fake_exceptions = types.ModuleType('botocore.exceptions')
+    fake_botocore = _FakeBotocore('botocore')
+    fake_exceptions = _FakeBotocoreExceptions('botocore.exceptions')
     fake_exceptions.ClientError = _FakeClientError
+    fake_exceptions.BotoCoreError = _FakeBotoCoreError
+    # The transient errors the handler imports by name (TRANSIENT_ERRORS).
+    for name, stand_in in _TRANSIENT_STAND_INS.items():
+        setattr(fake_exceptions, name, stand_in)
     fake_botocore.exceptions = fake_exceptions
 
     saved = {k: sys.modules.get(k) for k in ('boto3', 'botocore', 'botocore.exceptions')}
@@ -190,3 +256,33 @@ def test_conflict_is_still_treated_as_already_existing():
     result = handler(_event(), None)
 
     assert result['Data']['status'] == 'ALREADY_EXISTS'
+
+
+@pytest.mark.parametrize('error', [
+    _FakeEndpointConnectionError, _FakeConnectTimeoutError, _FakeReadTimeoutError, _FakeConnectionClosedError,
+])
+@pytest.mark.parametrize('stage', ['availability', 'offers', 'create'])
+def test_a_connection_failure_is_reported_instead_of_rolling_back_the_stack(stage, error):
+    """A dropped connection or a timeout is a transient property of the network,
+    not a bug in this stack: it must be reported as UNAVAILABLE like an absorbed
+    AccessDenied, not fail the custom resource and roll back VocWebSearchStack
+    (which Processing/Api import from)."""
+    handler, _ = _load_handler(**{f'{stage}_raises': error('Could not connect to the endpoint URL')})
+
+    result = handler(_event(), None)
+
+    assert result['Data']['status'] == 'UNAVAILABLE'
+    assert result['Data']['modelId'] == 'anthropic.claude-sonnet-5'
+    assert result['Data']['errorCode'] == error.__name__
+
+
+@pytest.mark.parametrize('error', [_FakeParamValidationError, _FakeNoCredentialsError, _FakeBotoCoreError])
+@pytest.mark.parametrize('stage', ['availability', 'offers', 'create'])
+def test_any_other_botocore_error_still_fails_the_deploy(stage, error):
+    """A bad model id (ParamValidationError), missing credentials or region are
+    BotoCoreErrors too, but they are a broken stack, not the network: reporting
+    them as UNAVAILABLE would turn a real fault into a green deploy."""
+    handler, _ = _load_handler(**{f'{stage}_raises': error('bad')})
+
+    with pytest.raises(error):
+        handler(_event(), None)

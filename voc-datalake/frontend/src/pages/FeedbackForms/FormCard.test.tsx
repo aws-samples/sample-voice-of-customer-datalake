@@ -7,10 +7,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import i18n from 'i18next'
+import { createQueryWrapper } from './feedback-forms-fixtures'
 
-const mockGetFeedbackFormStats = vi.fn()
+const mockGetFeedbackFormStats = vi.fn<(...args: unknown[]) => unknown>()
 
 vi.mock('../../api/client', () => ({
   api: {
@@ -24,16 +24,7 @@ vi.mock('./SubmissionsModal', () => ({
 
 import FormCard from './FormCard'
 import { defaultFormConfig } from './formTemplates'
-import type { FeedbackForm } from '../../api/client'
-
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
-  return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
-}
+import type { FeedbackForm } from '../../api/types'
 
 function buildForm(): FeedbackForm {
   return {
@@ -51,11 +42,17 @@ const noop = () => undefined
 function renderCard(form: FeedbackForm, apiEndpoint = 'https://api.example.com') {
   return render(
     <FormCard form={form} onEdit={noop} onDelete={noop} onToggle={noop} apiEndpoint={apiEndpoint} />,
-    { wrapper: createWrapper() },
+    { wrapper: createQueryWrapper() },
   )
 }
 
 describe('FormCard (issue #171)', () => {
+  // Wave 4: the Theme tile read as an empty value (a swatch, no words).
+  it('says the theme in words beside its swatch', () => {
+    renderCard(buildForm())
+    expect(screen.getByText('Default colours')).toBeInTheDocument()
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetFeedbackFormStats.mockResolvedValue({
@@ -65,11 +62,39 @@ describe('FormCard (issue #171)', () => {
     })
   })
 
-  it('renders a fully populated form with its own theme color', () => {
+  it('shows the form colour as a swatch, never its hex code', () => {
     renderCard(buildForm())
 
     expect(screen.getByText('Website Feedback')).toBeInTheDocument()
-    expect(screen.getByText(defaultFormConfig.theme.primary_color)).toBeInTheDocument()
+    expect(screen.queryByText(defaultFormConfig.theme.primary_color)).not.toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Form colour' })).toHaveStyle({ backgroundColor: defaultFormConfig.theme.primary_color })
+  })
+
+  it('says Live or Off on a labelled switch and toggles the form', async () => {
+    const onToggle = vi.fn()
+    render(<FormCard form={buildForm()} onEdit={noop} onDelete={noop} onToggle={onToggle} apiEndpoint="https://api.example.com" />,
+      { wrapper: createQueryWrapper() })
+
+    const live = screen.getByRole('switch', { name: 'Live' })
+    expect(live).toBeChecked()
+    await userEvent.click(live)
+    expect(onToggle).toHaveBeenCalledWith('form_1', false)
+  })
+
+  it('names the category with its label, not its id', () => {
+    renderCard({ ...buildForm(), category: 'software_firmware', subcategory: 'boot_loop' })
+
+    expect(screen.getByText('Software firmware / Boot loop')).toBeInTheDocument()
+  })
+
+  it('explains why View submissions is disabled when there are none', async () => {
+    mockGetFeedbackFormStats.mockResolvedValue({ success: true, form_id: 'form_1', stats: { total_submissions: 0, avg_rating: null, rating_count: 0 } })
+    renderCard(buildForm())
+
+    const hint = 'No submissions yet — share the form to collect some.'
+    expect(await screen.findByText(hint)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'View Submissions' })).toBeDisabled()
+    expect(screen.getByTitle(hint)).toBeInTheDocument()
   })
 
   // U12: these icon-only controls carried hardcoded English titles, so they read
@@ -81,7 +106,6 @@ describe('FormCard (issue #171)', () => {
     // Resolve through the same i18n instance the component uses, so these stay
     // correct whether the harness echoes keys or returns real strings.
     const { t } = i18n
-    expect(screen.getByRole('button', { name: t('feedbackForms:card.disableForm') })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: t('feedbackForms:card.editForm') })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: t('feedbackForms:card.deleteForm') })).toBeInTheDocument()
   })
@@ -92,19 +116,28 @@ describe('FormCard (issue #171)', () => {
   // caught these labels rendering as raw keys in the deployed build.
   it('uses key paths that actually exist in the en catalogue', async () => {
     const en = (await import('../../../public/locales/en/feedbackForms.json')).default
-    const card = en.card as Record<string, string>
+    const card: Readonly<Record<string, string>> = en.card
 
-    for (const key of ['editForm', 'deleteForm', 'enableForm', 'disableForm']) {
+    for (const key of ['editForm', 'deleteForm', 'live', 'off']) {
       expect(card[key], `feedbackForms:card.${key} missing from en catalogue`).toBeTruthy()
     }
   })
 
-  it('names the toggle for the action it performs when the form is disabled', () => {
+  it('marks the form a prototype build created as prototype pins', () => {
+    renderCard({ ...buildForm(), form_type: 'prototype_pin' })
+    expect(screen.getByText('Prototype pins')).toBeInTheDocument()
+  })
+
+  it('does not mark an ordinary form', () => {
+    renderCard(buildForm())
+    expect(screen.queryByText('Prototype pins')).toBeNull()
+  })
+
+  it('says Off on the switch of a disabled form', () => {
     renderCard({ ...buildForm(), enabled: false })
 
-    const { t } = i18n
-    expect(screen.getByRole('button', { name: t('feedbackForms:card.enableForm') })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: t('feedbackForms:card.disableForm') })).not.toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: 'Off' })).not.toBeChecked()
+    expect(screen.queryByRole('switch', { name: 'Live' })).not.toBeInTheDocument()
   })
 
   it('still prints the public URL a customer pastes into their own page', async () => {
@@ -169,7 +202,7 @@ describe('FormCard (issue #171)', () => {
 
     // The snippet is pasted verbatim into the customer's own page: a raw quote
     // closes title=" early and hands them broken markup to debug.
-    const snippet = screen.getByText((_, node) => node?.tagName === 'CODE' && (node.textContent ?? '').includes('<iframe'))
+    const snippet = screen.getByText((_, node) => node?.tagName === 'CODE' && node.textContent.includes('<iframe'))
     expect(snippet.textContent).toContain('title="The &quot;Best&quot; Form &amp; Co"')
     expect(snippet.textContent).not.toContain('title="The "Best"')
   })
@@ -211,6 +244,35 @@ describe('FormCard (issue #171)', () => {
 
     expect(screen.getByText('Website Feedback')).toBeInTheDocument()
     // Falls back to the default theme swatch instead of crashing.
-    expect(screen.getByText(defaultFormConfig.theme.primary_color)).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Form colour' })).toHaveStyle({ backgroundColor: defaultFormConfig.theme.primary_color })
+  })
+})
+
+describe('FormCard: a disabled form says what that means (E2E F6)', () => {
+  const NOTICE = 'This form is off. Its link and embed show “Feedback form unavailable.” until you enable it.'
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetFeedbackFormStats.mockResolvedValue({ success: true, form_id: 'form_1', stats: { total_submissions: 0, avg_rating: null, rating_count: 0 } })
+  })
+
+  it('explains the disabled state and enables the form in one click', async () => {
+    const onToggle = vi.fn()
+    render(
+      <FormCard form={{ ...buildForm(), enabled: false }} onEdit={noop} onDelete={noop} onToggle={onToggle} apiEndpoint="https://api.example.com" />,
+      { wrapper: createQueryWrapper() },
+    )
+
+    expect(screen.getByRole('note')).toHaveTextContent(NOTICE)
+    await userEvent.click(screen.getByRole('button', { name: 'Enable now' }))
+
+    expect(onToggle).toHaveBeenCalledWith('form_1', true)
+  })
+
+  it('shows no notice on an enabled form', () => {
+    renderCard({ ...buildForm(), enabled: true })
+
+    expect(screen.queryByText(NOTICE)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Enable now' })).not.toBeInTheDocument()
   })
 })

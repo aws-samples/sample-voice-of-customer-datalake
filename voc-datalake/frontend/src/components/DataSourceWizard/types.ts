@@ -19,6 +19,16 @@ export interface ContextConfig {
   selectedResearchIds: string[]
 }
 
+/**
+ * One category chip in the feedback-filters step. `value` is the category NAME
+ * (what a review stores and the backend filters on), never the config `id`;
+ * `label` is the display text.
+ */
+export interface CategoryOption {
+  readonly value: string
+  readonly label: string
+}
+
 export const defaultContextConfig: ContextConfig = {
   useFeedback: true,
   usePersonas: false,

@@ -1,0 +1,277 @@
+{
+  "launcher": {
+    "open": "打开助手",
+    "close": "关闭助手",
+    "askAboutProject": "询问助手",
+    "moveHint": "拖动或使用方向键移动助手按钮。按 Home 键恢复原位。",
+    "resetPosition": "重置助手按钮位置"
+  },
+  "panel": {
+    "title": "助手",
+    "using": "当前上下文：{{context}}",
+    "newChat": "新对话",
+    "sessions": "历史对话",
+    "export": "导出对话（Markdown）",
+    "expand": "展开",
+    "fullscreen": "全屏",
+    "exitFullscreen": "退出全屏",
+    "more": "更多操作",
+    "close": "关闭",
+    "messages": "对话",
+    "thinking": "思考中…",
+    "stillGenerating": "仍在生成…"
+  },
+  "pages": {
+    "home": "首页",
+    "dashboard": "仪表盘",
+    "feedback": "反馈",
+    "categories": "类别",
+    "problems": "问题分析",
+    "chat": "AI 对话",
+    "projects": "项目",
+    "project": "项目",
+    "prioritization": "优先级",
+    "data-explorer": "数据浏览器",
+    "scrapers": "抓取器",
+    "feedback-forms": "反馈表单",
+    "settings": "设置",
+    "admin": "管理",
+    "memory": "记忆",
+    "agents": "自主智能体",
+    "agent": "智能体",
+    "workflow": "工作流",
+    "company": "公司",
+    "connect": "连接",
+    "radar": "雷达",
+    "account": "账户",
+    "other": "此页面"
+  },
+  "message": {
+    "reasoning": "推理过程",
+    "toolSteps": "已执行的步骤",
+    "feedbackSources": "相关反馈",
+    "webSources": "网页来源",
+    "personaAnswers": "用户画像的回答",
+    "toolGroupRunning_other": "正在查看 {{count, number}} 项…",
+    "toolGroupRunning_one": "正在查看 {{count, number}} 项…",
+    "toolGroup_other": "已查看 {{count, number}} 项",
+    "toolGroup_one": "已查看 {{count, number}} 项",
+    "externalLink": "{{host}}，在新标签页中打开",
+    "copy": "复制",
+    "copied": "已复制",
+    "savedDocumentTitle": "助手回答 – {{date}}",
+    "saveAsDocument": {
+      "idle": "保存为文档",
+      "saving": "正在保存…",
+      "saved": "已保存到文档",
+      "error": "保存失败 – 重试"
+    }
+  },
+  "toolStatus": {
+    "streaming": "准备中",
+    "running": "运行中",
+    "complete": "完成",
+    "awaiting_approval": "等待您的批准",
+    "executed": "完成",
+    "failed": "失败",
+    "declined": "已拒绝",
+    "cancelled": "已取消"
+  },
+  "approvals": {
+    "title": "等待批准的操作",
+    "resolved": {
+      "executed": "完成",
+      "failed": "失败",
+      "declined": "已拒绝"
+    }
+  },
+  "composer": {
+    "label": "给助手发消息",
+    "placeholder": "询问您的反馈、项目或此页面…",
+    "send": "发送",
+    "stop": "停止",
+    "attach": "附加图片或文档",
+    "webSearch": "搜索网络",
+    "removeAttachment": "移除 {{name}}",
+    "counter": "{{length, number}} / {{max, number}}",
+    "awaitingApproval": "请批准或拒绝待处理的操作以继续。",
+    "restoring": "正在打开您上次的对话…",
+    "attachmentError": {
+      "type": "只能附加图片（PNG、JPEG、GIF、WebP）和文档（PDF、Word、Excel、CSV、HTML、文本、Markdown）。",
+      "count": "最多可附加 {{max, number}} 个文件。",
+      "size": "附件总大小最多为 {{mb}} MB。",
+      "read": "无法读取该文件。"
+    },
+    "stillGenerating": "回答仍在生成中，完成后会显示在这里。"
+  },
+  "errors": {
+    "streamClosed": "回答完成前连接已断开，请重试。",
+    "generic": "出现问题：{{message}}",
+    "followTimeout": "回答所需时间比预期长。请稍后重新打开此对话查看。"
+  },
+  "export": {
+    "user": "您",
+    "assistant": "助手"
+  },
+  "sessions": {
+    "title": "历史对话",
+    "close": "关闭",
+    "loading": "正在加载对话",
+    "error": "无法加载对话。",
+    "empty": "还没有已保存的对话。",
+    "untitled": "未命名对话",
+    "deleteConfirmTitle": "删除“{{title}}”？",
+    "deleteConfirmMessage": "该对话及其消息将被永久删除，且无法撤销。",
+    "deleteConfirm": "删除对话",
+    "renameInput": "对话名称",
+    "closeRunningItem": "停止并关闭",
+    "closeItem": "关闭",
+    "deleteItem": "删除",
+    "renameItem": "重命名",
+    "more": "“{{title}}”的更多操作",
+    "renameFailed": "无法重命名该对话。",
+    "renameBusy": "回复仍在生成中。请在完成后再重命名。",
+    "newConversation": "新对话",
+    "sidebar": "对话",
+    "collapseSidebar": "折叠对话列表",
+    "expandSidebar": "展开对话列表",
+    "openGroup": "已打开",
+    "historyGroup": "历史记录",
+    "search": "搜索对话",
+    "searchPlaceholder": "搜索对话",
+    "noMatch": "没有与搜索匹配的对话。",
+    "when": { "today": "今天", "week": "本周", "older": "更早" },
+    "status": {
+      "streaming": "运行中",
+      "awaiting": "等待您的批准",
+      "error": "失败",
+      "unread": "新回复"
+    }
+  },
+  "empty": {
+    "title": "有什么可以帮您？",
+    "subtitle": "我可以读取您的数据并提出修改建议——未经您批准不会做任何更改。"
+  },
+  "suggestions": {
+    "dashboard": { "1": "本周客户情绪有什么变化？", "2": "哪些来源带来的反馈最多？", "3": "用三句话总结这个仪表板" },
+    "categories": { "1": "哪个类别的投诉最多？", "2": "客户对最大的类别怎么说？", "3": "哪些类别在变差？" },
+    "projects": { "1": "根据本周最多的投诉创建一个项目", "2": "哪些项目正在进行？", "3": "我们下一个调研项目应该是什么？" },
+    "agents": { "1": "本周智能体做了什么？", "2": "哪些智能体在等我做决定？", "3": "帮我设置一个关注紧急反馈的智能体" },
+    "memory": { "1": "你记得我们公司的哪些信息？", "2": "哪些记忆在等待审核？", "3": "我怎样教你关于我们公司的事？" },
+    "company": { "1": "总结我们的愿景和目标", "2": "最近的反馈与哪些目标有关？", "3": "根据客户反馈建议一些 KPI" },
+    "dataExplorer": { "1": "本月我们导入了多少反馈？", "2": "哪些来源最近发送了数据？", "3": "一条反馈记录包含什么？" },
+    "default": {
+      "1": "本周客户最不满意的是什么？",
+      "2": "现在有什么需要我关注？",
+      "3": "客户越来越多地在谈论哪些话题？"
+    },
+    "project": {
+      "1": "总结这个项目及其用户画像",
+      "2": "我们的用户画像会如何看待这个想法？",
+      "3": "根据这项调研起草一份 PRD（产品需求）"
+    },
+    "forms": {
+      "1": "我的反馈表单表现如何？",
+      "2": "总结最新的表单提交",
+      "3": "哪个表单评分最低？"
+    },
+    "prioritization": {
+      "1": "接下来应该优先做什么？",
+      "2": "为什么排在前面的事项排在前面？",
+      "3": "哪些事项对客户影响最大？"
+    },
+    "scrapers": {
+      "1": "最近有哪些评论来源收集了评论？",
+      "2": "有评论来源无法正常工作吗？",
+      "3": "上次收集带来了什么？"
+    },
+    "radar": {
+      "1": "为竞争对手设置 Radar",
+      "2": "我们跟踪的品牌在哪些方面胜过我们？",
+      "3": "从他们最满意的评论中提炼产品创意"
+    },
+    "settings": {
+      "1": "我们的品牌设置是什么？",
+      "2": "我们使用哪些反馈类别？",
+      "3": "为我们的品牌推荐要跟踪的话题标签"
+    },
+    "problems": {
+      "1": "最大的未解决问题是什么？",
+      "2": "按可能的原因对这些问题分组",
+      "3": "最近解决了哪些问题？"
+    },
+    "feedback": {
+      "1": "总结这条反馈",
+      "2": "查找类似反馈",
+      "3": "这位客户为什么可能不满意？"
+    }
+  },
+  "notifications": {
+    "approval": {
+      "title": "助手需要您的批准",
+      "body": "有一个对话正在等待您批准一项操作。"
+    },
+    "reply": {
+      "title": "助手已回复",
+      "body": "有一个对话收到了新回复。"
+    },
+    "failed": {
+      "title": "助手运行失败",
+      "body": "打开对话查看出了什么问题。"
+    },
+    "toggle": {
+      "turnOn": "对话需要我时通知我",
+      "turnOff": "关闭通知",
+      "blocked": "浏览器设置已阻止此网站的通知",
+      "unsupported": "此浏览器不支持通知"
+    },
+    "planDone": {
+      "title": "一个计划已完成",
+      "body": "已批准计划的所有步骤均已完成。"
+    },
+    "planIssues": {
+      "title": "一个计划已结束但有问题",
+      "body": "打开计划,查看哪些步骤失败或被跳过。"
+    },
+    "planApproval": {
+      "title": "计划中的一个步骤需要你的批准",
+      "body": "一个正在运行的计划正在等待你批准某个步骤。"
+    }
+  },
+  "plan": {
+    "title": "计划进度",
+    "steps": "计划步骤",
+    "loading": "正在加载计划…",
+    "loadFailed": "无法加载计划。",
+    "actionFailed": "操作未成功,请刷新后重试。",
+    "cancel": "取消计划",
+    "openProject": "打开项目",
+    "approval": {
+      "title": "“{{tool}}”需要你的批准",
+      "fields": "“{{tool}}”将写入的内容",
+      "destructive": "这会永久删除数据,且无法撤销。",
+      "approve": "批准此步骤",
+      "decline": "拒绝此步骤"
+    },
+    "stepStatus": {
+      "pending": "待处理",
+      "running": "运行中",
+      "waiting": "等待中",
+      "done": "已完成",
+      "failed": "失败",
+      "skipped": "已跳过",
+      "needs_approval": "需要批准",
+      "cancelled": "已取消"
+    },
+    "status": {
+      "awaiting_approval": "等待批准",
+      "approved": "已批准",
+      "running": "运行中",
+      "completed": "已完成",
+      "completed_with_errors": "已完成但有问题",
+      "failed": "失败",
+      "cancelled": "已取消",
+      "expired": "已过期"
+    }
+  }
+}

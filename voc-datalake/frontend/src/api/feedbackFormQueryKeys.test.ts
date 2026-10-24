@@ -34,8 +34,8 @@ describe('shared feedback-form query keys', () => {
   it('produces the keys the cache is actually addressed by', () => {
     // Pins the literals themselves: renaming one here would silently move every
     // consumer to a new cache entry at once, which no consumer-side test can see.
-    expect(feedbackFormsKey()).toEqual(['feedback-forms'])
-    expect(formStatsKey('abc123')).toEqual(['form-stats', 'abc123'])
+    expect(feedbackFormsKey()).toStrictEqual(['feedback-forms'])
+    expect(formStatsKey('abc123')).toStrictEqual(['form-stats', 'abc123'])
     expect(FORM_STATS_STALE_TIME_MS).toBe(30000)
   })
 

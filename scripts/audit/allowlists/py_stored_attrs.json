@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {"key": "lambda/api/manual_import_handler.py::imported_at", "reason": "Not a DynamoDB attribute: a field of the confirmed-import ARCHIVE object written to S3 (raw/manual_import/...), kept for whoever reads the raw data lake."},
+    {"key": "lambda/api/memory_handler.py::superseded_by", "reason": "Audit trail on an archived, tombstoned memory: which memory won the merge (the memory event journal records the same); read by an operator in the table."},
+    {"key": "lambda/api/projects.py::deleted_at", "reason": "Audit timestamp of a soft-deleted project META (kept until the sweep removes the partition)."},
+    {"key": "lambda/email_intake/state.py::seen_at", "reason": "Dedupe marker row in voc-watermarks: only its existence (and ttl) is checked; the timestamp is for an operator reading the table."},
+    {"key": "lambda/shared/agent_seed.py::settled_at", "reason": "Audit timestamp on the one-off agent seed marker; only `state` drives behaviour."},
+    {"key": "lambda/shared/decision_records.py::seeded_prfaq_at", "reason": "Audit timestamp next to seeded_prfaq_job_id (which is read): when a decision seeded its PR/FAQ job."},
+    {"key": "lambda/shared/document_history.py::edited_from_id", "reason": "Version provenance (which document a restore was edited from), stored with restored_from_id/_version for the version history audit."},
+    {"key": "lambda/shared/document_history.py::replaced_at", "reason": "Audit timestamp on a superseded revision snapshot (saved_at is served; replaced_at records when it stopped being current)."},
+    {"key": "lambda/shared/jobs.py::execution_owner", "reason": "Operator diagnostic: the aws_request_id holding a job's execution lease, matched against CloudWatch logs when a job is stuck."},
+    {"key": "lambda/shared/prototype_pins.py::status_by", "reason": "Audit trail: who last resolved / reopened a tester pin (the pin's replies carry their own authors)."}
+  ]
+}

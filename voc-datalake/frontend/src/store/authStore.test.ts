@@ -4,8 +4,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook } from '@testing-library/react'
 import { z } from 'zod'
+import { sortedStrings } from '@test/stringLists'
 import { useAuthStore, useIsAdmin } from './authStore'
 import { getRuntimeConfig, isConfigLoaded } from '../runtimeConfig'
+import { at } from '@test/defined'
 
 /** Validates the persisted envelope at the boundary instead of asserting a type. */
 const PersistedAuthSchema = z.object({
@@ -32,6 +34,14 @@ function stubCognito(configured: boolean) {
       ? { userPoolId: 'us-east-1_abc', clientId: 'client-123', region: 'us-east-1', identityPoolId: 'pool-1' }
       : { userPoolId: '', clientId: '', region: '', identityPoolId: '' },
   })
+}
+
+/** Populate user and tokens, then log out — the state every logout assertion inspects. */
+function signInThenLogout() {
+  const { setUser, setTokens, logout } = useAuthStore.getState()
+  setUser({ username: 'test', email: 'test@example.com', groups: ['admins'] })
+  setTokens({ accessToken: 'access', idToken: 'id', refreshToken: 'refresh' })
+  logout()
 }
 
 describe('authStore', () => {
@@ -108,15 +118,7 @@ describe('authStore', () => {
 
   describe('logout', () => {
     it('clears all authentication state', () => {
-      const { setUser, setTokens, logout } = useAuthStore.getState()
-
-      setUser({ username: 'test', email: 'test@example.com', groups: ['admins'] })
-      setTokens({
-        accessToken: 'access',
-        idToken: 'id',
-        refreshToken: 'refresh',
-      })
-      logout()
+      signInThenLogout()
 
       const state = useAuthStore.getState()
       expect(state.user).toBeNull()
@@ -125,20 +127,11 @@ describe('authStore', () => {
       expect(state.refreshToken).toBeNull()
     })
 
-    it('resets authenticated and error state on logout', () => {
-      const { setUser, setTokens, logout } = useAuthStore.getState()
-
-      setUser({ username: 'test', email: 'test@example.com', groups: ['admins'] })
-      setTokens({
-        accessToken: 'access',
-        idToken: 'id',
-        refreshToken: 'refresh',
-      })
-      logout()
+    it('resets authenticated state on logout', () => {
+      signInThenLogout()
 
       const state = useAuthStore.getState()
       expect(state.isAuthenticated).toBe(false)
-      expect(state.error).toBeNull()
     })
 
     it('un-validates the session so the next page load revalidates', () => {
@@ -176,54 +169,16 @@ describe('authStore', () => {
       const writes = vi.mocked(localStorage.setItem).mock.calls
         .filter(([key]) => key === 'voc-auth')
       expect(writes.length).toBeGreaterThan(0)
-      const raw = writes[writes.length - 1][1]
+      const raw = at(writes, -1)[1]
       const persisted: unknown = JSON.parse(raw)
       const shape = PersistedAuthSchema.parse(persisted)
 
-      expect(Object.keys(shape.state).toSorted()).toEqual([
+      expect(sortedStrings(Object.keys(shape.state))).toStrictEqual([
         'accessToken', 'idToken', 'isAuthenticated', 'user',
       ])
       // The refresh token is memory-only by design; see the store's docblock.
       expect(shape.state).not.toHaveProperty('refreshToken')
       expect(shape.state).not.toHaveProperty('sessionReady')
-    })
-  })
-
-  describe('setLoading', () => {
-    it('sets loading state to true', () => {
-      const { setLoading } = useAuthStore.getState()
-
-      setLoading(true)
-
-      expect(useAuthStore.getState().isLoading).toBe(true)
-    })
-
-    it('sets loading state to false', () => {
-      const { setLoading } = useAuthStore.getState()
-
-      setLoading(true)
-      setLoading(false)
-
-      expect(useAuthStore.getState().isLoading).toBe(false)
-    })
-  })
-
-  describe('setError', () => {
-    it('sets error message', () => {
-      const { setError } = useAuthStore.getState()
-
-      setError('Invalid credentials')
-
-      expect(useAuthStore.getState().error).toBe('Invalid credentials')
-    })
-
-    it('clears error when set to null', () => {
-      const { setError } = useAuthStore.getState()
-
-      setError('Some error')
-      setError(null)
-
-      expect(useAuthStore.getState().error).toBeNull()
     })
   })
 })

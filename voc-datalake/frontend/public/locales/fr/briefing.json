@@ -1,0 +1,92 @@
+{
+  "greeting": {
+    "morning": "Bonjour, {{name}}",
+    "afternoon": "Bon après-midi, {{name}}",
+    "evening": "Bonsoir, {{name}}"
+  },
+  "freshness": {
+    "generatedAt": "Brief de {{time}}",
+    "none": "Pas encore de brief. Appuyez sur Actualiser pour créer le premier.",
+    "failed": "Le dernier brief n'a pas pu être créé. Appuyez sur Actualiser pour réessayer."
+  },
+  "tiles": {
+    "title": "7 derniers jours",
+    "reviews": "Avis",
+    "sentiment": "Sentiment moyen",
+    "urgent": "Avis urgents"
+  },
+  "cards": {
+    "title": "Votre brief",
+    "empty": "Rien de nouveau dans votre brief.",
+    "evidence": "Avis derrière cette carte : {{count, number}}",
+    "quotes": "Dans leurs mots",
+    "dismiss": "Ignorer",
+    "sources": "Sources",
+    "newTab": "s’ouvre dans un nouvel onglet",
+    "type": {
+      "spike": "Pic",
+      "urgent": "Urgent",
+      "whatsNew": "Nouveautés",
+      "trending": "Tendance",
+      "sentiment": "Changement de sentiment",
+      "competitor": "Concurrent",
+      "nextStep": "Prochaine étape",
+      "update": "Mise à jour"
+    },
+    "reviewN": "Avis {{n}}",
+    "openReview": "Ouvrir l’avis {{n}} sur {{count, number}}",
+    "moreReviews": "et {{count, number}} de plus"
+  },
+  "actions": {
+    "investigate": "Analyser",
+    "prfaq": "Rédiger un PR/FAQ",
+    "compare": "Comparer avec le mois dernier",
+    "openRadar": "Ouvrir Radar",
+    "investigatePrompt": "Analyse cette carte de mon brief du matin : « {{title}} ». {{body}} Qu'y a-t-il derrière, et quelle est son ampleur ?",
+    "prfaqPrompt": "Rédige un PR/FAQ pour une correction à partir de cette carte de mon brief du matin : « {{title}} ». {{body}}",
+    "comparePrompt": "Compare ceci avec le mois dernier : « {{title}} ». Qu'est-ce qui a changé, et est-ce que cela s'améliore ou s'aggrave ?"
+  },
+  "todo": {
+    "title": "À faire",
+    "empty": "Rien ne vous attend.",
+    "open": "Ouvrir"
+  },
+  "refresh": {
+    "label": "Actualiser",
+    "generating": "Génération...",
+    "upToDate": "Votre brief est à jour.",
+    "failed": "Impossible de lancer le brief. Réessayez."
+  },
+  "subscribe": {
+    "title": "Recevoir le brief du matin",
+    "description": "Recevez un nouveau brief chaque matin à l'heure de votre choix, dans votre fuseau horaire ({{zone}}).",
+    "oneClick": "Recevez un nouveau brief chaque matin à {{time}}, dans votre fuseau horaire ({{zone}}).",
+    "customise": "Personnaliser dans Compte",
+    "button": "S'abonner"
+  },
+  "settings": {
+    "title": "Réglages du brief",
+    "enabled": "Brief du matin activé",
+    "language": "Langue du brief",
+    "languageSameAsApp": "Comme l'application ({{language}})",
+    "time": "Heure d'envoi",
+    "instructions": "Ce que je veux dans mon brief",
+    "instructionsHint": "Sujets prioritaires, concurrents à suivre, ton. 2 000 caractères maximum.",
+    "email": "M'envoyer le brief par e-mail",
+    "emailHint": "Envoyé à l'adresse e-mail vérifiée de votre compte.",
+    "emailPending": "Consultez votre boîte de réception et confirmez l'e-mail d'AWS pour commencer à recevoir le brief.",
+    "emailConfirmed": "E-mail confirmé.",
+    "save": "Enregistrer",
+    "saved": "Enregistré",
+    "saveFailed": "Impossible d'enregistrer les réglages du brief.",
+    "open": "Paramètres",
+    "loading": "Chargement des paramètres de votre brief..."
+  },
+  "agentDecision": {
+    "sectionLabel": "Décisions des agents",
+    "title": "{{name}} attend votre décision",
+    "node": "Étape : {{node}}",
+    "stopped": "Arrêté le {{time}}"
+  },
+  "closeCard": "Fermer : {{title}}"
+}

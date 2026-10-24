@@ -1,9 +1,10 @@
 /**
  * @fileoverview Coverage caveat for the Problem Analysis stat row.
  *
- * Renders nothing when the window was read in full — a complete count needs no
- * caveat. While pages are still arriving it reports progress; when the walk
- * stopped short it says the counts undercount (U5b).
+ * The server aggregates the whole window (`GET /feedback/problems`), so this renders
+ * nothing unless the server says otherwise: the read stopped early (`isPartial`, with
+ * the oldest day read in full when known), or only the largest problems are listed
+ * (the counts still cover them all). A failed read says so, with Retry.
  *
  * Its own file for a mechanical reason worth knowing: `scripts/i18n-check.mjs`
  * derives **one** namespace per file from the *first* translation-hook call it
@@ -18,16 +19,17 @@
  */
 
 import { useTranslation } from 'react-i18next'
+import { formatDate } from '../../utils/dateUtils'
 
 interface WindowCoverageNoticeProps {
-  /** A later page is in flight; the counts are still climbing. */
-  readonly isLoadingMore: boolean
-  /** Rows in the window were left unread, so the counts undercount. */
+  /** The server could not read the whole window, so the counts undercount. */
   readonly isPartial: boolean
-  /** A request failed. With `loadedCount` 0 this means nothing was read. */
+  /** The read failed: nothing is known about the window. */
   readonly hasFailed: boolean
-  readonly loadedCount: number
-  readonly totalCount: number
+  /** The oldest day the server read in full, when its read stopped early. */
+  readonly scannedThrough?: string | null
+  /** Set when only the largest problems are listed: how many, of how many. */
+  readonly truncated?: { readonly listed: number; readonly total: number }
   /**
    * Retries the read. Required whenever `hasFailed` can be true, because the
    * failure message tells the user to retry — an instruction with no control
@@ -36,62 +38,44 @@ interface WindowCoverageNoticeProps {
   readonly onRetry?: () => void
 }
 
-/**
- * Failure outranks everything, and nothing-was-read is a different statement
- * from some-was-read: zero rows after a failure is not an empty window, it is
- * an unknown one.
- */
-export function WindowCoverageNotice({
-  isLoadingMore,
-  isPartial,
-  hasFailed,
-  loadedCount,
-  totalCount,
-  onRetry,
-}: WindowCoverageNoticeProps) {
+function FailedNotice({ onRetry }: Readonly<{ onRetry?: () => void }>) {
   const { t } = useTranslation('problemAnalysis')
+  return (
+    // No alignment of its own: the caller centres this in the empty page.
+    <div role="alert">
+      <p className="text-xs text-text">{t('stats.loadFailed')}</p>
+      {onRetry && (
+        // `type="button"` is load-bearing: the default is `submit`, which
+        // would post any form this notice were ever nested in.
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-2 text-xs text-accent-text hover:text-accent underline"
+        >
+          {t('stats.retry')}
+        </button>
+      )}
+    </div>
+  )
+}
 
-  // `text-gray-600`, not a lighter grey: these carry information, so they need
-  // the audited contrast ratio.
-  const className = 'text-xs text-gray-600'
-  const counts = { loaded: loadedCount, total: totalCount }
+export function WindowCoverageNotice({ isPartial, hasFailed, scannedThrough, truncated, onRetry }: WindowCoverageNoticeProps) {
+  const { t, i18n } = useTranslation('problemAnalysis')
+  if (hasFailed) return <FailedNotice onRetry={onRetry} />
 
-  if (hasFailed && loadedCount === 0) {
-    return (
-      // No alignment of its own: the caller centres this in the empty page and
-      // leaves the coverage line under the stat row left-aligned, so imposing
-      // one here would fight one of them.
-      <div role="alert">
-        <p className={className}>{t('stats.loadFailed')}</p>
-        {onRetry && (
-          // `type="button"` is load-bearing: the default is `submit`, which
-          // would post any form this notice were ever nested in.
-          <button
-            type="button"
-            onClick={onRetry}
-            className="mt-2 text-xs text-blue-600 hover:text-blue-800 underline"
-          >
-            {t('stats.retry')}
-          </button>
-        )}
-      </div>
-    )
-  }
-
-  // Progress is deliberately NOT a live region: a full walk settles a dozen
-  // times, and announcing each one talks over everything else on the page.
-  // Only the terminal states below are announced.
-  if (isLoadingMore) {
-    return <p className={className}>{t('stats.loadingWindow', counts)}</p>
-  }
-
+  // `text-text` (body text), not `text-muted`: these carry information, so they
+  // need the audited contrast ratio on both themes.
+  const lines: string[] = []
   if (isPartial) {
-    return (
-      <p className={className} role="status">
-        {t('stats.partialWindow', counts)}
-      </p>
-    )
+    lines.push(scannedThrough
+      ? t('stats.partialThrough', { date: formatDate(scannedThrough, i18n.language, scannedThrough) })
+      : t('stats.partialCapped'))
   }
-
-  return null
+  if (truncated) lines.push(t('stats.problemsTruncated', truncated))
+  if (lines.length === 0) return null
+  return (
+    <div role="status" className="space-y-1">
+      {lines.map((line) => <p key={line} className="text-xs text-text">{line}</p>)}
+    </div>
+  )
 }

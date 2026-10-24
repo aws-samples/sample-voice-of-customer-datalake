@@ -7,7 +7,7 @@ import { z } from 'zod'
 // Zod Schema — matches pipeline minimum fields
 // ============================================
 
-export const JsonFeedbackItemSchema = z.object({
+const JsonFeedbackItemSchema = z.object({
   text: z.string().min(1, 'text is required').max(50_000),
   id: z.string().min(1, 'id is required for deduplication').max(256),
   source: z.string().min(1, 'source is required').max(64).optional(),
@@ -25,16 +25,19 @@ export const JsonFeedbackItemSchema = z.object({
   {
     message: 'timestamp (or created_at) is required — provide the original date of the feedback in ISO 8601 format',
     path: ['timestamp'],
+    // Run even when another field failed, so one pass lists every missing field.
+    when: (payload) => isRecord(payload.value),
   },
 ).refine(
   (item) => Boolean(item.source ?? item.source_channel),
   {
     message: 'source (or source_channel) is required — identifies where the feedback came from (e.g. "trustpilot", "zendesk")',
     path: ['source'],
+    when: (payload) => isRecord(payload.value),
   },
 )
 
-export const JsonFeedbackArraySchema = z.array(JsonFeedbackItemSchema).min(1, 'File must contain at least one item').max(500, 'Maximum 500 items per upload')
+const MAX_ITEMS = 500
 
 export type JsonFeedbackItem = z.infer<typeof JsonFeedbackItemSchema>
 
@@ -42,7 +45,7 @@ export type JsonFeedbackItem = z.infer<typeof JsonFeedbackItemSchema>
 // Template
 // ============================================
 
-export const TEMPLATE_DATA = {
+const TEMPLATE_DATA = {
   _instructions: {
     _note: 'This section is documentation only. Remove it before uploading, or leave it — it will be ignored.',
     _llm_instruction: 'If you are an LLM generating data for this template: produce a JSON array (or an object with an "items" array) following the field definitions below. Every item MUST have: text, id, source, and timestamp. Ensure each "id" is unique within its source to prevent duplicates. Output valid JSON only, no markdown fences.',
@@ -98,6 +101,10 @@ export const TEMPLATE_DATA = {
 // Helpers
 // ============================================
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 function isObjectWithItems(raw: unknown): raw is { items: unknown } {
   return typeof raw === 'object' && raw !== null && 'items' in raw
 }
@@ -112,26 +119,76 @@ function extractJsonArray(raw: unknown): unknown[] | null {
   return null
 }
 
-function formatValidationErrors(issues: ReadonlyArray<{
-  path: ReadonlyArray<PropertyKey>;
-  message: string
-}>): string[] {
-  return issues.map((issue) => {
-    const path = issue.path.length > 0 ? `Item ${String(issue.path[0])}` : 'Root'
-    const field = issue.path.length > 1 ? `.${issue.path.slice(1).map(String).join('.')}` : ''
-    return `${path}${field}: ${issue.message}`
-  }).slice(0, 10)
+/** Why one item cannot be imported, in a shape the dialog translates. */
+export interface SkipReason {
+  readonly kind: 'required' | 'type' | 'notObject' | 'invalid'
+  /** The field as the user wrote it (`timestamp (or created_at)` for an either-or pair). */
+  readonly field: string
+  /** Zod's own text, shown only for `invalid` (a bound such as a too-long text). */
+  readonly message: string
+}
+
+export interface SkippedItem {
+  /** 1-based position in the file, as a person counts. */
+  readonly position: number
+  readonly reasons: readonly SkipReason[]
+}
+
+const EITHER_OR: Readonly<Record<string, string>> = { timestamp: 'created_at', source: 'source_channel' }
+
+function fieldLabel(field: string): string {
+  const alternate = EITHER_OR[field]
+  return alternate == null ? field : `${field} (or ${alternate})`
+}
+
+function isBlank(value: unknown): boolean {
+  return value == null || value === ''
+}
+
+function skipReason(item: Record<string, unknown>, issue: z.core.$ZodIssue): SkipReason {
+  const field = issue.path.map(String).join('.')
+  const label = fieldLabel(field)
+  const absent = issue.path.length === 1 && isBlank(item[field])
+  // An either-or refine, a `min(1)` on a string, or a type error on an absent field
+  // all mean the same thing to the person fixing the file: the field is missing.
+  const missing = issue.code === 'custom' || (issue.code !== 'too_big' && absent)
+  if (missing) return { kind: 'required', field: label, message: issue.message }
+  if (issue.code === 'invalid_type') return { kind: 'type', field: label, message: issue.message }
+  return { kind: 'invalid', field: label, message: issue.message }
+}
+
+function uniqueByField(reasons: SkipReason[]): SkipReason[] {
+  return reasons.filter((r, i) => reasons.findIndex((o) => o.field === r.field) === i)
+}
+
+function itemSkipReasons(raw: unknown, issues: readonly z.core.$ZodIssue[]): SkipReason[] {
+  if (!isRecord(raw)) return [{ kind: 'notObject', field: '', message: '' }]
+  return uniqueByField(issues.map((issue) => skipReason(raw, issue)))
 }
 
 type ParseResult =
   | {
     ok: true;
+    /** The valid items: what Import sends (the server re-validates every one). */
     data: JsonFeedbackItem[]
+    /** The invalid items, 1-based, with why; never sent. */
+    skipped: SkippedItem[]
   }
   | {
     ok: false;
     errors: string[]
   }
+
+function partitionItems(arr: readonly unknown[]): { data: JsonFeedbackItem[]; skipped: SkippedItem[] } {
+  const results = arr.map((raw, index) => ({ raw, index, parsed: JsonFeedbackItemSchema.safeParse(raw) }))
+  return {
+    data: results.flatMap((r) => (r.parsed.success ? [r.parsed.data] : [])),
+    skipped: results.flatMap((r) => (r.parsed.success ? [] : [{
+      position: r.index + 1,
+      reasons: itemSkipReasons(r.raw, r.parsed.error.issues),
+    }])),
+  }
+}
 
 export function parseJsonFeedback(content: string): ParseResult {
   const raw: unknown = JSON.parse(content)
@@ -142,17 +199,9 @@ export function parseJsonFeedback(content: string): ParseResult {
       errors: ['File must contain a JSON array or an object with an "items" array'],
     }
   }
-  const result = JsonFeedbackArraySchema.safeParse(arr)
-  if (!result.success) {
-    return {
-      ok: false,
-      errors: formatValidationErrors(result.error.issues),
-    }
-  }
-  return {
-    ok: true,
-    data: result.data,
-  }
+  if (arr.length === 0) return { ok: false, errors: ['File must contain at least one item'] }
+  if (arr.length > MAX_ITEMS) return { ok: false, errors: [`Maximum ${MAX_ITEMS} items per upload`] }
+  return { ok: true, ...partitionItems(arr) }
 }
 
 export function downloadTemplate() {

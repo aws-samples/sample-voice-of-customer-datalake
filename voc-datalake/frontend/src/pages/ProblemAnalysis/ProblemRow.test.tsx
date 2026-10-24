@@ -1,194 +1,113 @@
 /**
  * @fileoverview Tests for ProblemRow component
  */
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
-import { ProblemRow } from './ProblemRow'
+import { clientApiModule, feedbackById, makeProblemGroup, problemAnalysisApiMocks } from './problem-analysis-fixtures'
+import { renderProblemRow } from './problem-row-fixtures'
 
-const mockProblemGroup = {
-  problem: 'Slow delivery times',
-  similarProblems: ['Delivery too slow', 'Shipping delays'],
-  rootCause: 'Logistics bottleneck in warehouse',
-  items: [
-    {
-      feedback_id: 'f1',
-      source_platform: 'webscraper',
-      brand_name: 'TestBrand',
-      original_text: 'The delivery was very slow',
-      category: 'delivery',
-      subcategory: 'shipping_speed',
-      problem_summary: 'Slow delivery times',
-      sentiment_score: -0.5,
-      sentiment_label: 'negative' as const,
-      urgency: 'high' as const,
-      source_created_at: '2025-01-01',
-      processed_at: '2025-01-01',
-      original_language: 'en',
-      source_id: 's1',
-      source_channel: 'social',
-      journey_stage: 'post_purchase',
-      impact_area: 'delivery',
-    },
-    {
-      feedback_id: 'f2',
-      source_platform: 'manual_import',
-      brand_name: 'TestBrand',
-      original_text: 'Shipping took forever',
-      category: 'delivery',
-      subcategory: 'shipping_speed',
-      problem_summary: 'Delivery too slow',
-      sentiment_score: -0.6,
-      sentiment_label: 'negative' as const,
-      urgency: 'medium' as const,
-      source_created_at: '2025-01-02',
-      processed_at: '2025-01-02',
-      original_language: 'en',
-      source_id: 's2',
-      source_channel: 'review',
-      journey_stage: 'post_purchase',
-      impact_area: 'delivery',
-    },
-  ],
-  avgSentiment: -0.55,
-  urgentCount: 1,
-}
+vi.mock('../../api/client', () => clientApiModule())
 
-function renderWithRouter(ui: React.ReactElement) {
-  return render(<MemoryRouter>{ui}</MemoryRouter>)
-}
+beforeEach(() => {
+  problemAnalysisApiMocks.getFeedbackById.mockReset()
+  problemAnalysisApiMocks.getFeedbackById.mockImplementation(feedbackById)
+})
 
 describe('ProblemRow', () => {
   describe('collapsed state', () => {
     it('renders problem summary', () => {
-      renderWithRouter(
-        <ProblemRow
-          problemGroup={mockProblemGroup}
-          problemKey="delivery:shipping:slow"
-          isExpanded={false}
-          onToggle={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+      renderProblemRow()
 
       expect(screen.getByText('Slow delivery times')).toBeInTheDocument()
     })
 
     it('shows similar problems count badge', () => {
-      renderWithRouter(
-        <ProblemRow
-          problemGroup={mockProblemGroup}
-          problemKey="delivery:shipping:slow"
-          isExpanded={false}
-          onToggle={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+      renderProblemRow()
 
-      expect(screen.getByText('+2')).toBeInTheDocument()
+      expect(screen.getByText('+2 similar')).toBeInTheDocument()
+    })
+
+    it('counts every merged wording, not only the ones the server listed', () => {
+      renderProblemRow({ problemGroup: makeProblemGroup({ similarCount: 25 }) })
+
+      expect(screen.getByText('+25 similar')).toBeInTheDocument()
+    })
+
+    // Labels vs status (design system rule 15): a count is a label, so it is
+    // neutral; only the urgent count carries a state tone.
+    it('tones the similar count neutral and the urgent count warn', () => {
+      renderProblemRow()
+
+      expect(screen.getByText('+2 similar')).toHaveClass('badge', 'badge-muted')
+      expect(screen.getByText('1 urgent')).toHaveClass('badge', 'badge-warn')
     })
 
     it('shows root cause hypothesis', () => {
-      renderWithRouter(
-        <ProblemRow
-          problemGroup={mockProblemGroup}
-          problemKey="delivery:shipping:slow"
-          isExpanded={false}
-          onToggle={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+      renderProblemRow()
 
       expect(screen.getByText(/logistics bottleneck/i)).toBeInTheDocument()
     })
 
-    it('shows item count', () => {
-      renderWithRouter(
-        <ProblemRow
-          problemGroup={mockProblemGroup}
-          problemKey="delivery:shipping:slow"
-          isExpanded={false}
-          onToggle={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+    it('shows the review count with its unit, not a bare number', () => {
+      renderProblemRow()
 
-      expect(screen.getByText('2')).toBeInTheDocument()
+      expect(screen.getByText('2 reviews')).toBeInTheDocument()
+      expect(screen.queryByText('2')).not.toBeInTheDocument()
     })
 
-    it('shows urgent count badge', () => {
-      renderWithRouter(
-        <ProblemRow
-          problemGroup={mockProblemGroup}
-          problemKey="delivery:shipping:slow"
-          isExpanded={false}
-          onToggle={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+    it('shows the urgent count with its unit', () => {
+      renderProblemRow()
 
-      expect(screen.getByText('1')).toBeInTheDocument()
+      expect(screen.getByText('1 urgent')).toBeInTheDocument()
     })
 
-    it('shows sentiment badge', () => {
-      renderWithRouter(
-        <ProblemRow
-          problemGroup={mockProblemGroup}
-          problemKey="delivery:shipping:slow"
-          isExpanded={false}
-          onToggle={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+    it('says the sentiment in words with the share, keeping the average as the number', () => {
+      renderProblemRow()
 
-      expect(screen.getByText('negative')).toBeInTheDocument()
+      expect(screen.getByText(/negative · \d+% negative/)).toBeInTheDocument()
+    })
+
+    it('labels the resolve action with text, not only an icon', () => {
+      renderProblemRow()
+
+      expect(screen.getByRole('button', { name: 'Mark as resolved' })).toHaveTextContent('Mark as resolved')
     })
   })
 
   describe('expanded state', () => {
-    it('shows feedback items when expanded', () => {
-      renderWithRouter(
-        <ProblemRow
-          problemGroup={mockProblemGroup}
-          problemKey="delivery:shipping:slow"
-          isExpanded={true}
-          onToggle={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+    it('reads its example reviews by id when expanded, and says how many it has in all', async () => {
+      renderProblemRow({ isExpanded: true, problemGroup: makeProblemGroup({ count: 40 }) })
 
-      expect(screen.getByText('The delivery was very slow')).toBeInTheDocument()
-      expect(screen.getByText('Shipping took forever')).toBeInTheDocument()
+      expect(await screen.findByText('The delivery was very slow')).toBeInTheDocument()
+      expect(await screen.findByText('Shipping took forever')).toBeInTheDocument()
+      expect(screen.getByText('Showing 2 of 40 reviews')).toBeInTheDocument()
+      expect(problemAnalysisApiMocks.getFeedbackById.mock.calls.map(([id]) => id)).toStrictEqual(['f1', 'f2'])
+    })
+
+    it('reads nothing while collapsed', () => {
+      renderProblemRow()
+
+      expect(problemAnalysisApiMocks.getFeedbackById).not.toHaveBeenCalled()
+    })
+
+    it('says so when no example could be read', async () => {
+      renderProblemRow({ isExpanded: true, problemGroup: makeProblemGroup({ sampleIds: ['gone'] }) })
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Could not load the example reviews.')
     })
 
     it('shows similar problems list when expanded', () => {
-      renderWithRouter(
-        <ProblemRow
-          problemGroup={mockProblemGroup}
-          problemKey="delivery:shipping:slow"
-          isExpanded={true}
-          onToggle={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+      renderProblemRow({ isExpanded: true })
 
       expect(screen.getByText(/similar:/i)).toBeInTheDocument()
     })
 
-    it('feedback items link to detail page', () => {
-      renderWithRouter(
-        <ProblemRow
-          problemGroup={mockProblemGroup}
-          problemKey="delivery:shipping:slow"
-          isExpanded={true}
-          onToggle={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+    it('feedback items open the review modal on this page', async () => {
+      renderProblemRow({ isExpanded: true })
 
-      const links = screen.getAllByRole('link')
-      expect(links[0]).toHaveAttribute('href', '/feedback/f1')
+      const links = await screen.findAllByRole('link')
+      expect(links[0]).toHaveAttribute('href', '/?review=f1')
     })
   })
 
@@ -197,70 +116,30 @@ describe('ProblemRow', () => {
       const onToggle = vi.fn()
       const user = userEvent.setup()
 
-      renderWithRouter(
-        <ProblemRow
-          problemGroup={mockProblemGroup}
-          problemKey="delivery:shipping:slow"
-          isExpanded={false}
-          onToggle={onToggle}
-          onToggleResolved={vi.fn()}
-        />
-      )
+      renderProblemRow({ onToggle })
 
       await user.click(screen.getByText('Slow delivery times'))
-      expect(onToggle).toHaveBeenCalled()
+      expect(onToggle).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'click' }))
     })
   })
 
   describe('edge cases', () => {
     it('handles problem with no similar problems', () => {
-      const groupNoSimilar = { ...mockProblemGroup, similarProblems: [] }
-
-      renderWithRouter(
-        <ProblemRow
-          problemGroup={groupNoSimilar}
-          problemKey="delivery:shipping:slow"
-          isExpanded={false}
-          onToggle={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+      renderProblemRow({ problemGroup: makeProblemGroup({ similarProblems: [], similarCount: 0 }) })
 
       expect(screen.queryByText(/\+\d/)).not.toBeInTheDocument()
     })
 
     it('handles problem with no root cause', () => {
-      const groupNoRootCause = { ...mockProblemGroup, rootCause: null }
-
-      renderWithRouter(
-        <ProblemRow
-          problemGroup={groupNoRootCause}
-          problemKey="delivery:shipping:slow"
-          isExpanded={false}
-          onToggle={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
+      renderProblemRow({ problemGroup: makeProblemGroup({ rootCause: null }) })
 
       expect(screen.queryByText(/logistics/i)).not.toBeInTheDocument()
     })
 
     it('handles problem with no urgent items', () => {
-      const groupNoUrgent = { ...mockProblemGroup, urgentCount: 0 }
+      renderProblemRow({ problemGroup: makeProblemGroup({ urgentCount: 0 }) })
 
-      renderWithRouter(
-        <ProblemRow
-          problemGroup={groupNoUrgent}
-          problemKey="delivery:shipping:slow"
-          isExpanded={false}
-          onToggle={vi.fn()}
-          onToggleResolved={vi.fn()}
-        />
-      )
-
-      // Should not show urgent badge (only the item count "2" should be visible)
-      const badges = screen.getAllByText('2')
-      expect(badges).toHaveLength(1)
+      expect(screen.queryByText(/urgent/)).not.toBeInTheDocument()
     })
   })
 })
@@ -270,15 +149,7 @@ describe('problem resolution (issue #66)', () => {
   it('fires onToggleResolved from the resolve control without toggling the row', async () => {
     const onToggle = vi.fn()
     const onToggleResolved = vi.fn()
-    renderWithRouter(
-      <ProblemRow
-        problemGroup={mockProblemGroup}
-        problemKey="delivery:shipping:slow"
-        isExpanded={false}
-        onToggle={onToggle}
-        onToggleResolved={onToggleResolved}
-      />
-    )
+    renderProblemRow({ onToggle, onToggleResolved })
 
     await userEvent.click(screen.getByRole('button', { name: /mark as resolved/i }))
 
@@ -287,30 +158,14 @@ describe('problem resolution (issue #66)', () => {
   })
 
   it('shows the resolved badge and unresolve control for resolved groups', () => {
-    renderWithRouter(
-      <ProblemRow
-        problemGroup={{ ...mockProblemGroup, resolved: true }}
-        problemKey="delivery:shipping:slow"
-        isExpanded={false}
-        onToggle={vi.fn()}
-        onToggleResolved={vi.fn()}
-      />
-    )
+    renderProblemRow({ problemGroup: makeProblemGroup({ resolved: true }) })
 
     expect(screen.getByText('Resolved')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /mark as unresolved/i })).toBeInTheDocument()
   })
 
   it('shows no resolved badge for unresolved groups', () => {
-    renderWithRouter(
-      <ProblemRow
-        problemGroup={mockProblemGroup}
-        problemKey="delivery:shipping:slow"
-        isExpanded={false}
-        onToggle={vi.fn()}
-        onToggleResolved={vi.fn()}
-      />
-    )
+    renderProblemRow()
 
     expect(screen.queryByText('Resolved')).not.toBeInTheDocument()
   })

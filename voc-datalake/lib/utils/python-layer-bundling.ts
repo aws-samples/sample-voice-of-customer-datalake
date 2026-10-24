@@ -1,6 +1,21 @@
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 
 /**
+ * Creates the throwaway venv directory the bundling command builds in.
+ *
+ * `mktemp -d` gives a fresh, unguessable directory with mode 0700 instead of a
+ * fixed, predictable path under the world-writable temp dir (CWE-377/379: a
+ * hard-coded `/tmp/<name>` can be pre-created or symlinked by another process).
+ * It runs inside the single-use bundling container, so the directory is still
+ * discarded with the container. scripts/build-layers.sh uses the same two
+ * shell fragments inside its container; the lockstep test pins both.
+ */
+export const BUILD_VENV_SETUP = 'venv="$(mktemp -d)"';
+
+/** Shell reference to the venv created by {@link BUILD_VENV_SETUP}. */
+export const BUILD_VENV = '"$venv"';
+
+/**
  * Bundled asset for a Python dependency layer, kept in lockstep with
  * scripts/build-layers.sh (issue #194) — lib/utils/python-layer-bundling.test.ts
  * fails if the two recipes drift. Every LayerVersion in the app must use
@@ -51,8 +66,9 @@ export function pythonLayerCode(layerDir: string): lambda.Code {
       platform: 'linux/arm64',
       command: [
         'bash', '-c',
-        'python -m venv /tmp/buildenv'
-        + ' && /tmp/buildenv/bin/pip install -r requirements.txt -t /asset-output/python'
+        BUILD_VENV_SETUP
+        + ` && python -m venv ${BUILD_VENV}`
+        + ` && ${BUILD_VENV}/bin/pip install -r requirements.txt -t /asset-output/python`
         + ' --upgrade --quiet --no-cache-dir --root-user-action=ignore --disable-pip-version-check'
         + ' && rm -rf /asset-output/python/boto3 /asset-output/python/botocore'
         + ' /asset-output/python/boto3-* /asset-output/python/botocore-*',

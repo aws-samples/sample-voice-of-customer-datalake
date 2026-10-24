@@ -1,0 +1,348 @@
+{
+  "actions": {
+    "reset": "Resetuj",
+    "save": "Zapisz wyniki",
+    "saveMobile": "Zapisz",
+    "saving": "Zapisywanie...",
+    "savingMobile": "..."
+  },
+  "ballot": {
+    "axes": {
+      "confidence": "Pewność",
+      "confidenceHint": "Jak pewne są powyższe dwa szacunki?",
+      "impact": "Wpływ",
+      "impactHint": "Wartość biznesowa i korzyść dla klienta.",
+      "strategicFit": "Dopasowanie strategiczne",
+      "strategicFitHint": "Zgodność z celami firmy.",
+      "timeToMarket": "Czas wejścia na rynek",
+      "timeToMarketHint": "Jak szybko można to dostarczyć? 5 oznacza najszybciej."
+    },
+    "closed": {
+      "capReached": "To głosowanie zebrało już maksymalną liczbę kart, które przyjmuje. Poproś moderatora o otwarcie kolejnej sesji.",
+      "closed": "Moderator zamknął to głosowanie, więc nie są przyjmowane kolejne karty.",
+      "expired": "To głosowanie wygasło, więc nie są przyjmowane kolejne karty.",
+      "invalid": "Nie udało się odczytać tej karty, więc nic nie zapisano. Sprawdź liczby i notatkę, a następnie wyślij ponownie.",
+      "notFound": "Ten link nie otwiera głosowania. Sprawdź, czy zeskanowałeś kod, który jest teraz na ekranie.",
+      "title": "To głosowanie nie jest otwarte",
+      "unknown": "Nie udało się teraz zapisać Twojej karty. Spróbuj ponownie za chwilę."
+    },
+    "displayName": {
+      "hint": "Opcjonalnie. Jeśli wpiszesz imię, zostanie zapisane razem z kartą; nie jest pokazywane w wyniku zespołu. Zostaw pole puste, aby głosować bez imienia.",
+      "label": "Twoje imię (opcjonalnie)"
+    },
+    "done": {
+      "description": "Twój głos wlicza się do wyniku zespołu dla tego dokumentu. Możesz ponownie otworzyć tę stronę z tego samego telefonu, aby go zmienić, dopóki głosowanie jest otwarte.",
+      "title": "Karta zapisana"
+    },
+    "notes": {
+      "label": "Notatki (opcjonalnie)",
+      "placeholder": "Wszystko, czego liczby nie mówią..."
+    },
+    "rejected": {
+      "title": "Twoja karta nie została zapisana"
+    },
+    "submit": {
+      "label": "Wyślij kartę",
+      "pending": "Wysyłanie..."
+    },
+    "unavailable": {
+      "description": "Nic nie zostało wysłane. Przeładuj stronę, aby spróbować ponownie — głosowanie może być nadal otwarte.",
+      "title": "Nie udało się załadować tego głosowania"
+    },
+    "anonymousNotice": "Twój głos wlicza się do wyniku zespołu dla tej propozycji. Nie jest powiązany z kontem, a Twoje imię zapisuje się razem z nim tylko wtedy, gdy wpiszesz je poniżej.",
+    "loading": "Ładowanie głosowania...",
+    "scopeNote": "Oceniasz całą propozycję: to głosowanie obejmuje zestaw dokumentów, których dotyczy, w jednej karcie.",
+    "title": "Oceń tę propozycję",
+    "titleInactive": "Głosowanie nad propozycją"
+  },
+  "composition": {
+    "delete": {
+      "cancel": "Zachowaj wiersz",
+      "confirm": "Usuń wiersz i karty",
+      "message": "To usunie wiersz i wszystkie karty oddane na nim, także od innych recenzentów. Wynik zespołu dla tej kombinacji zostanie usunięty razem z nimi. Tej operacji nie można cofnąć.",
+      "title": "Usunąć ten wiersz i jego karty?"
+    },
+    "addRow": "Dodaj wiersz",
+    "addRowHint": "Wybierz dokumenty, które ma zawierać nowy wiersz. Otrzyma on własne karty, więc ten projekt można ocenić w więcej niż jednej kombinacji.",
+    "cancel": "Anuluj",
+    "deleteAction": "Usuń wiersz",
+    "documentsLegend": "Dokumenty w tym wierszu",
+    "edit": "Edytuj dokumenty",
+    "editHint": "Wybierz, które dokumenty tego projektu są oceniane w tym wierszu. Jedna karta obejmuje wszystkie z nich.",
+    "locked": "Zablokowane od pierwszej karty. Dodaj kolejny wiersz, aby ocenić inną kombinację.",
+    "onlyRow": "Jedynego domyślnego wiersza projektu nie można usunąć. Najpierw dodaj inny wiersz, a potem usuń ten.",
+    "requiresOne": "Wybierz co najmniej jeden dokument, aby wiersz miał co ocenić.",
+    "save": "Zapisz dokumenty",
+    "saveNewRow": "Dodaj wiersz",
+    "saving": "Zapisywanie...",
+    "title": "Co zawiera ten wiersz"
+  },
+  "docType": {
+    "prd": "PRD",
+    "prfaq": "PR/FAQ"
+  },
+  "empty": {
+    "description": "Utwórz PRD lub PR/FAQ w swoich projektach, aby rozpocząć priorytetyzację.",
+    "title": "Nie znaleziono dokumentów",
+    "wrongTypeDescription": "Twoje projekty mają dokumenty, ale żaden nie jest PRD ani PR/FAQ. Otwórz projekt i wygeneruj PRD lub PR/FAQ, aby ocenić go tutaj.",
+    "wrongTypeTitle": "Brak dokumentów do oceny"
+  },
+  "evidence": {
+    "avgRating": "Średnia ocena",
+    "noLinkedForm": "Z tym dokumentem nie jest powiązany żaden formularz opinii.",
+    "noRatings": "Nie zebrano ocen",
+    "submissions": "Zgłoszenia",
+    "title": "Zebrane opinie",
+    "unavailable": "Oceny niedostępne"
+  },
+  "framework": {
+    "configured": "Oceń każdą propozycję pod kątem: <strong>{{metrics}}</strong>.",
+    "title": "Ramy priorytetyzacji"
+  },
+  "lineage": {
+    "absent": "Brak pochodzenia",
+    "absentReason": "Żaden z tych dokumentów nie zapisuje, z czego został zbudowany. Zwykle dotyczy to dokumentu napisanego ręcznie lub utworzonego przed wprowadzeniem śledzenia pochodzenia. Wiersz nadal można ocenić, po prostu nie ma nic, z czym można by sprawdzić tę kombinację.",
+    "coherent": "Jedna generacja",
+    "coherentReason": "Żaden element tego wiersza nie wykracza poza jedną generację: żadne dwa dokumenty nie są wersjami tego samego typu, a nic zapisanego tutaj nie wskazuje na inną generację innego dokumentu w tym wierszu. Jeden głos obejmuje jedną generację pomysłu.",
+    "crossGeneration": "Wykracza poza generacje",
+    "repeatedTypeReason": "Ten wiersz zawiera więcej niż jedną wersję tego samego typu dokumentu, więc jeden głos obejmuje naraz dwie generacje. Nadal można go ocenić. Dodaj wiersz, jeśli chcesz ocenić pojedynczą generację osobno.",
+    "stale": "Zastąpiony",
+    "staleAction": "Ten wiersz jest zablokowany, więc jego dokumenty i głosy pozostają bez zmian. Użyj {{action}}, aby ocenić nowszą kombinację.",
+    "staleReason": "Istnieje nowsza wersja co najmniej jednego typu dokumentu w tym wierszu. Najnowszy dokument każdego typu, który zawiera wiersz, tworzy kombinację, w której żaden nie został zbudowany bezpośrednio z wcześniejszej wersji innego dokumentu w nim, a nic w wierszu nie jest nowsze od tej kombinacji.",
+    "supersededSourceReason": "Jeden z tych dokumentów został zbudowany z innej generacji innego dokumentu w tym wierszu, więc kombinacja wykracza poza generacje. Nadal można ją ocenić."
+  },
+  "noteTooLong": {
+    "description": "Notatki są ograniczone do {{max, number}} znaków, a dłuższa notatka nie zostanie zapisana ani skrócona automatycznie. Skróć notatkę w edytowanym wierszu, a następnie zapisz ponownie. Nic jeszcze nie zostało zapisane.",
+    "title": "Notatka jest za długa, aby ją zapisać"
+  },
+  "notes": {
+    "label": "Notatki",
+    "placeholder": "Dodaj notatki do tej decyzji priorytetyzacyjnej..."
+  },
+  "preview": {
+    "enlarge": "Powiększ",
+    "prototypeTitle": "Prototyp",
+    "title": "Podgląd dokumentu",
+    "viewFull": "Otwórz pełny dokument",
+    "viewMobile": "Otwórz"
+  },
+  "priority": {
+    "high": "Wysoki priorytet",
+    "low": "Niski priorytet",
+    "medium": "Średni priorytet",
+    "none": "Nieocenione"
+  },
+  "roomVote": {
+    "anonymousNote": "Głosy oddane tutaj wliczają się do wyniku zespołu powyżej. Nie są powiązane z kontem. Nazwa jest zapisywana z głosem tylko wtedy, gdy wpisze ją głosujący, i nie jest tutaj wyświetlana.",
+    "ballotsIn": "Oddano {{received, number}} z {{cap, number}} głosów",
+    "checking": "Sprawdzanie, czy głosowanie jest już otwarte...",
+    "close": "Zamknij głosowanie",
+    "closeFailed": "Nie udało się zamknąć głosowania. Spróbuj ponownie. Dopóki głosowanie nie zostanie zamknięte, nadal przyjmowane są głosy.",
+    "closed": "To głosowanie jest zamknięte. Nie są przyjmowane kolejne głosy.",
+    "closing": "Zamykanie...",
+    "confirmMessage": "To utworzy publiczny link i kod QR dla „{{title}}”. Każdy, kto ma link, może oddać głos bez logowania, aż do momentu zamknięcia głosowania lub jego wygaśnięcia.",
+    "confirmOpen": "Otwórz głosowanie",
+    "confirmTitle": "Otworzyć publiczne głosowanie w sali?",
+    "description": "Wyświetl kod QR na ekranie i pozwól wszystkim w sali oddać jeden anonimowy głos ze swojego telefonu, bez konta.",
+    "expired": "To głosowanie wygasło. Nie są przyjmowane kolejne głosy.",
+    "open": "Otwórz głosowanie w sali",
+    "openAnother": "Otwórz kolejne głosowanie",
+    "openFailed": "Nie udało się otworzyć głosowania. Spróbuj ponownie.",
+    "opening": "Otwieranie...",
+    "qrAccessibleName": "Kod QR otwierający stronę anonimowego głosowania dla „{{title}}”",
+    "qrCaption": "Zeskanuj, aby ocenić tę propozycję z telefonu",
+    "qrUnavailable": "Kod QR jest niedostępny, ponieważ adres tej strony nie może zostać udostępniony.",
+    "scopeDocuments": "Jeden głos obejmuje wszystkie dokumenty stojące za propozycją ({{documents, number}}), więc sala ocenia całą propozycję.",
+    "scopeNote": "To głosowanie dotyczy jednej propozycji: {{title}}.",
+    "title": "Oceń to jako sala"
+  },
+  "row": {
+    "multiDocument": "Dokumenty ({{documents, number}}), jeden głos"
+  },
+  "rowAction": {
+    "composeConflict": "Wiersz nie został dodany do projektu {{row}}. Projekt albo już zawiera maksymalną dozwoloną liczbę wierszy, albo jego dokumenty uległy zmianie. Odśwież stronę, aby zobaczyć aktualne wiersze.",
+    "composeFailed": "Wiersz nie został dodany. Nic nie zostało utworzone, więc możesz spróbować ponownie.",
+    "composeRefused": "Wiersz nie został dodany, a żądanie zostało odrzucone, zamiast zakończyć się błędem. Sprawdź wybór: wiersz może zawierać tylko określoną liczbę dokumentów, a każdy z nich musi nadal należeć do projektu.",
+    "deleteConflict": "Nie usunięto wiersza „{{row}}”. Zmienił się podczas usuwania albo jest jedynym wierszem projektu i nie można go usunąć. Odśwież stronę, aby zobaczyć aktualne wiersze.",
+    "deleteFailed": "Wiersz „{{row}}” nie został usunięty. Wiersz i jego głosy pozostały bez zmian, więc możesz spróbować ponownie.",
+    "deleteRefused": "Wiersz „{{row}}” nie został usunięty, a żądanie zostało odrzucone zamiast zakończyć się błędem: wiersz mógł już zostać usunięty albo usunięcie wiersza razem z jego głosami nie należy do Ciebie. Ponowna próba da tę samą odpowiedź.",
+    "dismiss": "Zamknij tę wiadomość",
+    "recomposeConflict": "Dokumenty w wierszu „{{row}}” nie zostały zmienione: oddano już głos, więc ich skład jest zablokowany. Dodaj kolejny wiersz, aby ocenić inne zestawienie.",
+    "recomposeFailed": "Dokumenty w wierszu „{{row}}” nie zostały zmienione. Nic nie zapisano, więc możesz spróbować ponownie.",
+    "recomposeRefused": "Dokumenty w wierszu „{{row}}” nie zostały zmienione, a żądanie zostało odrzucone zamiast zakończyć się błędem: sprawdź swój wybór. Wiersz może zawierać tylko określoną liczbę dokumentów, a każdy z nich musi nadal należeć do projektu.",
+    "title": "Ta zmiana w wierszach nie została zapisana"
+  },
+  "rowDeleted": {
+    "descriptionNoCount": "Wiersz „{{row}}” został usunięty wraz z wszystkimi oddanymi na niego głosami. Nie podano liczby głosów.",
+    "description_one": "Wiersz „{{row}}” został usunięty, a wraz z nim jeden oddany na niego głos.",
+    "description_other": "Wiersz „{{row}}” został usunięty, a wraz z nim {{count, number}} oddanych na niego głosów.",
+    "dismiss": "Zamknij tę wiadomość",
+    "title": "Wiersz został usunięty",
+    "description_few": "\"{{row}}\" zostało usunięte, a {{count, number}} oddane na nie głosy przepadły razem z nim.",
+    "description_many": "\"{{row}}\" zostało usunięte, a {{count, number}} oddanych na nie głosów przepadło razem z nim."
+  },
+  "rowUnavailable": {
+    "description": "Te projekty zawierają więcej dokumentów, niż może obejmować wiersz priorytetyzacji, dlatego nie ma ich na poniższej liście zamiast być bez oceny. Usunięcie dokumentów, które projekt już nie potrzebuje, przywróci go na listę.",
+    "title": "Niektórym projektom nie udało się przypisać wiersza"
+  },
+  "scores": {
+    "confidence": "Pewność",
+    "confidenceDescription": "Pewność co do szacunków wpływu i czasu wprowadzenia na rynek",
+    "fast": "Szybko",
+    "high": "Wysoka",
+    "impact": "Wpływ",
+    "impactDescription": "Wartość biznesowa i korzyść dla klienta",
+    "low": "Niska",
+    "notScored": "Brak oceny",
+    "slow": "Wolno",
+    "strategicFit": "Dopasowanie strategiczne",
+    "strategicFitDescription": "Zgodność z celami firmy",
+    "timeToMarket": "Czas wprowadzenia na rynek",
+    "timeToMarketDescription": "Jak szybko można to dostarczyć?",
+    "title": "Wyniki priorytetyzacji",
+    "wholeRow": "Jeden głos dla wszystkich {{documents, number}} dokumentów w tym wierszu.",
+    "yoursOnly": "Twój własny głos. Zapis obejmuje wyłącznie Twoje oceny.",
+    "valueOfMax": "{{value}} z {{max, number}}"
+  },
+  "scoresUnavailable": {
+    "description": "Zapisane oceny są teraz niedostępne, więc poniższe wartości są domyślne, a nie to, co ktokolwiek wprowadził. Przed zapisaniem odśwież stronę.",
+    "staleDescription": "Ostatnie odświeżenie zapisanych ocen się nie powiodło, więc pokazane wartości to ostatnie, które udało się odczytać. Twój własny głos nie został naruszony, więc przed zapisem nie trzeba odświeżać strony.",
+    "title": "Nie udało się wczytać ocen"
+  },
+  "setup": {
+    "open": "Ustawienia oceniania",
+    "viewOpen": "Jak działa ocenianie",
+    "title": "Ustawienia oceniania",
+    "description": "Wybierz wskaźniki, według których wszyscy oceniają propozycje w skali od 1 do 5, i ile liczy się każdy z nich. Zmiana dotyczy wszystkich wierszy.",
+    "viewTitle": "Jak działa ocenianie",
+    "viewDescription": "Wszyscy oceniają każdą propozycję według tych wskaźników w skali od 1 do 5. Wynik priorytetu uwzględnia je z pokazanymi wagami.",
+    "adminsOnly": "Tylko administratorzy mogą zmieniać ustawienia oceniania.",
+    "loading": "Wczytywanie ustawień oceniania",
+    "loadFailed": "Nie udało się wczytać ustawień oceniania. Zamknij okno i spróbuj ponownie.",
+    "templatesTitle": "Zacznij od szablonu",
+    "templateConfirmTitle": "Użyć szablonu {{template}}?",
+    "templateBecomes": "Twoje wskaźniki to teraz: {{metrics}}.",
+    "templateArchives": "Te wskaźniki zostaną zarchiwizowane — ich oceny zostaną zachowane, ale przestaną się liczyć: {{metrics}}.",
+    "templateNotSaved": "Dla nikogo nic się nie zmieni, dopóki nie klikniesz Zapisz.",
+    "templateApply": "Użyj szablonu",
+    "metricsTitle": "Wskaźniki ({{active, number}} z {{max, number}})",
+    "addMetric": "Dodaj wskaźnik",
+    "untitled": "Nowy wskaźnik",
+    "name": "Nazwa",
+    "descriptionLabel": "Opis",
+    "weight": "Waga",
+    "weightOf": "Waga wskaźnika {{name}}",
+    "share": "{{share}} % wyniku",
+    "direction": "Co jest lepsze",
+    "higherBetter": "Im wyżej, tym lepiej",
+    "lowerBetter": "Im niżej, tym lepiej",
+    "higherBetterHint": "Ocena 5 przesuwa propozycję wyżej w rankingu.",
+    "lowerBetterHint": "Ocena 1 przesuwa propozycję wyżej w rankingu — używaj tego dla kosztów, takich jak nakład pracy.",
+    "lowLabel": "Co oznacza 1",
+    "highLabel": "Co oznacza 5",
+    "scale": "1 = {{low}}, 5 = {{high}}",
+    "moveUp": "Przenieś {{name}} wyżej",
+    "moveDown": "Przenieś {{name}} niżej",
+    "archive": "Archiwizuj",
+    "archiveMetric": "Archiwizuj {{name}}",
+    "archiveHint": "Ukrywa ten wskaźnik. Wystawione już oceny zostają zachowane i można go przywrócić.",
+    "archivedTitle": "Zarchiwizowane wskaźniki ({{archived, number}})",
+    "archivedHint": "Zarchiwizowane wskaźniki nie są pokazywane, oceniane ani liczone. Ich oceny są zachowane; przywróć wskaźnik, aby znów go używać.",
+    "restore": "Przywróć",
+    "conflict": "Ktoś inny zmienił ustawienia oceniania podczas Twojej edycji. Wczytaj je ponownie, aby zobaczyć tę wersję, i wprowadź swoją zmianę jeszcze raz.",
+    "reload": "Wczytaj ponownie",
+    "saveFailed": "Nie udało się zapisać ustawień oceniania. Spróbuj ponownie.",
+    "cancel": "Anuluj",
+    "save": "Zapisz ustawienia",
+    "saving": "Zapisywanie…",
+    "close": "Zamknij",
+    "neverChanged": "Używane są ustawienia standardowe.",
+    "changedBy": "Ostatnia zmiana: {{name}}, {{date}}",
+    "changedOn": "Ostatnia zmiana: {{date}}",
+    "problems": {
+      "missingName": "Nadaj nazwę każdemu wskaźnikowi.",
+      "noActive": "Zostaw co najmniej jeden wskaźnik.",
+      "tooManyActive": "Używaj najwyżej {{max, number}} wskaźników naraz — najpierw zarchiwizuj jeden.",
+      "tooMany": "Ustawienia mogą zawierać najwyżej {{total, number}} wskaźników, łącznie z zarchiwizowanymi.",
+      "noWeight": "Nadaj co najmniej jednemu wskaźnikowi wagę większą niż 0."
+    },
+    "templates": {
+      "default": "Obecne domyślne",
+      "defaultDescription": "Wpływ, czas wprowadzenia na rynek, dopasowanie strategiczne i pewność.",
+      "rice": "RICE",
+      "riceDescription": "Zasięg, wpływ i pewność w stosunku do potrzebnego nakładu pracy.",
+      "ice": "ICE",
+      "iceDescription": "Wpływ, pewność i łatwość — szybkie ocenianie.",
+      "valueEffort": "Wartość a nakład pracy",
+      "valueEffortDescription": "Dwa wskaźniki: ile coś jest warte i ile kosztuje."
+    },
+    "templateAxes": {
+      "reach": "Zasięg",
+      "reachDescription": "Do ilu osób to dotrze",
+      "reachLow": "Niewiele osób",
+      "reachHigh": "Wiele osób",
+      "effort": "Nakład pracy",
+      "effortDescription": "Ile pracy to wymaga",
+      "effortLow": "Mało pracy",
+      "effortHigh": "Dużo pracy",
+      "ease": "Łatwość",
+      "easeDescription": "Jak łatwo to zrobić",
+      "easeLow": "Trudne",
+      "easeHigh": "Łatwe",
+      "value": "Wartość",
+      "valueDescription": "Ile to jest warte dla klientów i firmy"
+    }
+  },
+  "sort": {
+    "date": "Data",
+    "dateFull": "Data utworzenia",
+    "label": "Sortuj według:",
+    "priority": "Priorytet",
+    "priorityFull": "Wynik priorytetu",
+    "teamOrdered": "{{fields}} sortuje według średniej zespołu, czyli liczby pokazywanej w każdym wierszu, a nie według Twoich ocen.",
+    "ttm": "TTM"
+  },
+  "stats": {
+    "highPriority": "Wysoki priorytet",
+    "mediumPriority": "Średni priorytet",
+    "notScored": "Bez oceny",
+    "totalRows": "Łącznie propozycji",
+    "unreadable_one": "Wyniku zespołu dla {{count, number}} propozycji nie udało się odczytać, dlatego jest wliczona do sumy, ale do żadnego z pozostałych zliczeń. Odśwież stronę, aby ją zobaczyć.",
+    "unreadable_other": "Wyników zespołu dla {{count, number}} propozycji nie udało się odczytać, dlatego są wliczone do sumy, ale do żadnego z pozostałych zliczeń. Odśwież stronę, aby je zobaczyć.",
+    "unreadable_few": "Wyniki oceny zespołu dla {{count, number}} propozycji nie mogły zostać odczytane, dlatego są uwzględnione w sumie, ale nie w pozostałych licznikach. Przeładuj stronę, aby je zobaczyć.",
+    "unreadable_many": "Wyniki oceny zespołu dla {{count, number}} propozycji nie mogły zostać odczytane, dlatego są uwzględnione w sumie, ale nie w pozostałych licznikach. Przeładuj stronę, aby je zobaczyć."
+  },
+  "team": {
+    "disagreement": "Rozrzut {{spread}}",
+    "disagreementDescription": "Recenzenci różnią się w tej ocenie o {{spread}}. Ich notatki wyjaśniają powody, a ta strona pokazuje tylko Twoją notatkę.",
+    "loading": "Wczytywanie wyniku zespołu",
+    "loadingDescription": "Oceny zespołu wciąż się wczytują, więc ten wiersz nie pokazuje jeszcze, czy ktokolwiek oddał głos. Dane uzupełnią się automatycznie.",
+    "noScores": "Jeszcze bez oceny",
+    "noScoresDescription": "Żaden recenzent jeszcze tego nie ocenił, więc pozycja nie jest sklasyfikowana jako niska, tylko nie ma jeszcze miejsca w rankingu. Suwaki poniżej oddadzą pierwszy głos.",
+    "reviewers": "Recenzenci",
+    "score": "Wynik zespołu",
+    "summary": "Średnia zespołu {{score}} z 5 · Liczba ocen recenzentów: {{reviewers}}",
+    "title": "Co powiedział zespół",
+    "unattributedNote": "Niektóre głosy mogą pochodzić z anonimowych głosowań w sali, które liczą się jako jeden recenzent każdy i nie są przypisane do konkretnej osoby.",
+    "unavailable": "Wynik zespołu niedostępny",
+    "unavailableDescription": "Wyników zespołu nie udało się teraz odczytać, więc ten wiersz nie pokazuje o nich żadnych informacji — nie oznacza to, że nikt nie głosował. Przeładuj stronę, aby zobaczyć, co powiedział zespół."
+  },
+  "explainer": {
+    "title": "Jak to jest oceniane",
+    "scoreConfigured": "Każdy recenzent ocenia każdy wskaźnik w skali od 1 do 5. Wynik priorytetu uwzględnia je z wagami: {{weights}}.",
+    "unscored": "Wskaźnik, którego recenzent nie ocenił, jest pomijany w jego wyniku zamiast liczyć się jako 0.",
+    "weightEntry": "{{name}} {{share}} %",
+    "weightEntryLower": "{{name}} {{share}} % (im niżej, tym lepiej)",
+    "team": "Każdy wiersz pokazuje średnią zespołu z wszystkich, którzy go ocenili, oraz liczbę tych osób. Twoje własne oceny znajdują się w suwakach w obrębie wiersza.",
+    "lineageTitle": "Co oznacza etykieta w wierszu",
+    "rowNote": "{{label}} — wyjaśnione w sekcji „Jak to jest oceniane” powyżej listy."
+  },
+  "configureApiEndpoint": "Skonfiguruj punkt końcowy API w Administracja → Ogólne, aby wyświetlić priorytetyzację.",
+  "loading": "Ładowanie dokumentów...",
+  "rowCount_one": "{{count, number}} propozycja",
+  "rowCount_other": "{{count, number}} propozycji",
+  "subtitle": "Oceniaj i priorytetyzuj PRD i PR/FAQ we wszystkich projektach",
+  "title": "Priorytetyzacja",
+  "rowCount_few": "{{count, number}} propozycje",
+  "rowCount_many": "{{count, number}} propozycji"
+}

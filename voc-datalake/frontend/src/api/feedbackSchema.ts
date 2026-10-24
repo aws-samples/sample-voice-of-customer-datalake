@@ -17,6 +17,8 @@
  */
 
 import { z } from 'zod'
+import { toOptionalFiniteNumber } from './lenientFields'
+import { StringMapSchema, TagsSchema } from './dimensionsSchema'
 import type { FeedbackItem } from './types'
 
 /** Coerce an unknown value to a finite number, or `0` when not numeric. */
@@ -25,17 +27,26 @@ function toFiniteNumberOrZero(value: unknown): number {
   return Number.isFinite(n) ? n : 0
 }
 
-/** Coerce an unknown value to a finite number, or `undefined` when absent/invalid. */
-function toOptionalFiniteNumber(value: unknown): number | undefined {
-  if (value === null || value === undefined || value === '') return undefined
-  const n = typeof value === 'number' ? value : Number(value)
-  return Number.isFinite(n) ? n : undefined
-}
-
 // Required string fields degrade to '' rather than rejecting the whole item:
 // the previous (no-op) parser never threw, so normalization must not regress a
 // currently-rendering response into a hard failure.
 const lenientString = z.string().catch('')
+
+const optionalText = z.string().optional().catch(undefined)
+
+/**
+ * Who changed a category by hand, and from what. Lenient on purpose: a badge
+ * with no author still beats a crashed card. `by_sub` is deliberately not read —
+ * the UI names people by username, never by Cognito subject.
+ */
+export const CategoryOverrideSchema = z.object({
+  previous_category: z.string().catch(''),
+  previous_subcategory: optionalText,
+  by_username: optionalText,
+  at: optionalText,
+})
+
+export type CategoryOverride = z.infer<typeof CategoryOverrideSchema>
 
 /**
  * Schema for a single feedback item.
@@ -44,7 +55,7 @@ const lenientString = z.string().catch('')
  * - Unknown keys (DynamoDB GSI/internal attributes the frontend never reads)
  *   are stripped, so the parsed object matches the `FeedbackItem` contract.
  */
-export const FeedbackItemSchema = z.object({
+const FeedbackItemSchema = z.object({
   feedback_id: lenientString,
   source_id: lenientString,
   source_platform: lenientString,
@@ -70,7 +81,21 @@ export const FeedbackItemSchema = z.object({
   direct_customer_quote: z.string().optional(),
   persona_name: z.string().optional(),
   persona_type: z.string().optional(),
+  category_source: z.string().optional().catch(undefined),
+  category_override: CategoryOverrideSchema.optional().catch(undefined),
+  author: optionalText,
+  title: optionalText,
+  // Absent, junk or empty maps / lists read as absent: most items carry none.
+  dimensions: StringMapSchema.transform(emptyAsUndefined),
+  dimension_sources: StringMapSchema.transform(emptyAsUndefined),
+  tags: TagsSchema.transform((tags) => (tags.length === 0 ? undefined : tags)),
+  // An unknown policy reads as absent (= allow): only a recognised one earns a badge.
+  pii_policy: z.enum(['allow', 'redact', 'summary_only']).optional().catch(undefined),
 })
+
+function emptyAsUndefined(map: Record<string, string>): Record<string, string> | undefined {
+  return Object.keys(map).length === 0 ? undefined : map
+}
 
 /** Normalize a single raw feedback item, coercing numeric fields. */
 export function normalizeFeedbackItem(raw: unknown): FeedbackItem {

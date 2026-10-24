@@ -131,11 +131,6 @@ export interface PreparedUpload {
   readonly contentType: string
   /** Always `blob.size`. Declare this to the API, not the source File's size. */
   readonly sizeBytes: number
-  /** Pixel dimensions of `blob`, or null when it was not an image. */
-  readonly width: number | null
-  readonly height: number | null
-  /** False when `blob` IS the input file (non-image, or already small enough). */
-  readonly reencoded: boolean
 }
 
 /** Replace the extension so it matches the bytes actually produced. */
@@ -293,16 +288,9 @@ async function encode(
   })
 }
 
-function passThrough(file: File, width: number | null, height: number | null): PreparedUpload {
-  return {
-    blob: file,
-    filename: file.name,
-    contentType: file.type,
-    sizeBytes: file.size,
-    width,
-    height,
-    reencoded: false,
-  }
+/** The input file itself: a non-image, or an image already within both limits. */
+function passThrough(file: File): PreparedUpload {
+  return { blob: file, filename: file.name, contentType: file.type, sizeBytes: file.size }
 }
 
 async function runLadder(decoded: DecodedImage, file: File): Promise<PreparedUpload> {
@@ -317,9 +305,6 @@ async function runLadder(decoded: DecodedImage, file: File): Promise<PreparedUpl
         filename: withExtensionFor(file.name, step.type),
         contentType: step.type,
         sizeBytes: blob.size,
-        width: size.width,
-        height: size.height,
-        reencoded: true,
       }
     }
   }
@@ -337,13 +322,13 @@ async function runLadder(decoded: DecodedImage, file: File): Promise<PreparedUpl
  * would silently flatten the animation to its first frame.
  */
 export async function resizeImageForUpload(file: File): Promise<PreparedUpload> {
-  if (!isImageContentType(file.type)) return passThrough(file, null, null)
+  if (!isImageContentType(file.type)) return passThrough(file)
 
   const decoded = await decodeImage(file)
   try {
     const withinPixels = Math.max(decoded.width, decoded.height) <= MAX_IMAGE_EDGE_PX
     if (withinPixels && file.size <= MAX_IMAGE_BYTES) {
-      return passThrough(file, decoded.width, decoded.height)
+      return passThrough(file)
     }
     return await runLadder(decoded, file)
   } finally {
