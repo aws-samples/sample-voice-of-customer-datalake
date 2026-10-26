@@ -1,7 +1,7 @@
 {
   "id": "synthetic_reviews",
   "name": "Synthetic Data Review Generator",
-  "icon": "🧪",
+  "icon": "Synthetic",
   "description": "Generate realistic synthetic customer reviews with AI (Amazon Bedrock) for demos, testing, and modeling. Ingested through the normal pipeline and tagged as synthetic data.",
   "category": "synthetic",
   "version": "1.0.0",

@@ -1,10 +1,11 @@
 """Test fixtures for persona generator job."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 # Import shared fixtures
-from jobs.conftest import *  # noqa: F401, F403
+from jobs.conftest import *  # noqa: F403
 
 
 @pytest.fixture
@@ -38,6 +39,16 @@ def mock_generate_personas():
     with patch('api.projects.generate_personas', mock), \
          patch('jobs.persona_generator.handler.generate_personas', mock):
         yield mock
+
+
+@pytest.fixture(autouse=True)
+def no_company_knowledge():
+    """No test reads company context or memories from a real table: the persona
+    grounding answers empty unless a test sets a return value."""
+    import jobs.persona_generator.handler  # noqa: F401  (bind the real function first)
+    from shared.grounding import Grounding
+    with patch('jobs.persona_generator.handler.persona_grounding', return_value=Grounding()) as grounding:
+        yield grounding
 
 
 @pytest.fixture

@@ -6,7 +6,7 @@
  * separately, in `OverviewTab.prototypeWizard.test.tsx` — they sit in the build
  * wizard now, so every test here opens it first via `renderWizard`.
  *
- * The one-PRD/one-PR-FAQ/no-prototype fixture is still the one worth naming, and
+ * The one-PRD/one-PR/FAQ/no-prototype fixture is still the one worth naming, and
  * still for the same reason: `warningKeyFor` returns null for it, so under the old
  * placement it was the project that opened no dialog at all and would have been
  * stranded by a control living in one. It is now the project a placement regression
@@ -16,13 +16,19 @@
  * is missing or has moved renders its raw path and these matchers fail.
  */
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import i18n from 'i18next'
-import OverviewTab from './OverviewTab'
+import {
+  FILLED_CONTEXT, PRD, PRFAQ, RESEARCH_A, RESEARCH_B, VISUAL_A,
+  productDoc, prototypeMocks, prototypeProjectsApiModule, resetPrototypeMocks, sentBuildBody,
+} from './prototype-fixtures'
+// After the fixtures on purpose: these import OverviewTab, whose module graph runs
+// the `vi.mock` factory below, which needs the fixture module evaluated.
+import { overviewTab, renderOverviewTab } from './prototype-render-fixtures'
 import { MAX_SELECTED_PRODUCT_DOC_IDS } from './overviewState'
-import { emptyProductContext } from './productContextFields'
-// All eight catalogues, imported statically so a locale cannot be skipped the way
+import { required } from '../../components/component-spec-fixtures'
+// All nine catalogues, imported statically so a locale cannot be skipped the way
 // a dynamic path could — same shape as components/DataSourceWizard/localization.test.tsx.
 import de from '../../../public/locales/de/projectDetail.json'
 import en from '../../../public/locales/en/projectDetail.json'
@@ -30,66 +36,34 @@ import es from '../../../public/locales/es/projectDetail.json'
 import fr from '../../../public/locales/fr/projectDetail.json'
 import ja from '../../../public/locales/ja/projectDetail.json'
 import ko from '../../../public/locales/ko/projectDetail.json'
+import pl from '../../../public/locales/pl/projectDetail.json'
 import pt from '../../../public/locales/pt/projectDetail.json'
 import zh from '../../../public/locales/zh/projectDetail.json'
-import type { Project, ProductContext, ProductDoc, ProjectDocument } from '../../api/types'
+import type { ProjectDocument } from '../../api/types'
+import { supportedLanguages, type SupportedLanguage } from '../../i18n/languages'
+import type { ProductContext, ProductDoc } from '../../api/projectTypes'
 
-const mockBuildPrototype = vi.fn()
-vi.mock('../../api/projectsApi', () => ({
-  projectsApi: {
-    buildPrototype: (...args: unknown[]) => mockBuildPrototype(...args),
-  },
-}))
+vi.mock('../../api/projectsApi', () => prototypeProjectsApiModule())
+const { buildPrototype: mockBuildPrototype } = prototypeMocks
 
-const project: Project = {
-  project_id: 'proj_1',
-  name: 'Test project',
-  description: '',
-  status: 'active',
-  created_at: '2026-01-01T00:00:00Z',
-  updated_at: '2026-01-01T00:00:00Z',
-  persona_count: 0,
-  document_count: 0,
+/** A shipped `projectDetail` catalogue; the union keeps every locale's own shape. */
+type Catalogue = typeof de | typeof en | typeof es | typeof fr | typeof ja | typeof ko | typeof pl | typeof pt | typeof zh
+
+/**
+ * Every shipped catalogue, keyed by locale: a `Record` over `SupportedLanguage`, so
+ * adding a locale without importing its catalogue here is a TYPECHECK failure
+ * rather than a silently skipped `it.each` row.
+ */
+const CATALOGUE_BY_LOCALE: Record<SupportedLanguage, Catalogue> = {
+  de, en, es, fr, ja, ko, pl, pt, zh,
 }
 
-function doc(
-  documentType: ProjectDocument['document_type'],
-  id: string,
-  title: string,
-  createdAt: string,
-): ProjectDocument {
-  return { document_id: id, document_type: documentType, title, content: 'x', created_at: createdAt }
-}
+/** Every shipped catalogue with its locale, for the `it.each` tables below. */
+const CATALOGUES: ReadonlyArray<[string, Catalogue]> = supportedLanguages
+  .map((locale): [string, Catalogue] => [locale, CATALOGUE_BY_LOCALE[locale]])
 
-const PRD = doc('prd', 'prd_1', 'Delivery spec', '2026-01-01T00:00:00Z')
-const PRFAQ = doc('prfaq', 'prfaq_1', 'Launch note', '2026-02-01T00:00:00Z')
-const RESEARCH_A = doc('research', 'research_a', 'Churn interviews', '2026-03-01T00:00:00Z')
-const RESEARCH_B = doc('research', 'research_b', 'Pricing survey', '2026-04-01T00:00:00Z')
-
-/** Exactly one filled field — enough to be non-empty, few enough to stay honest. */
-const FILLED_CONTEXT: ProductContext = { ...emptyProductContext(), one_liner: 'A console for wombats' }
-
-function tab(
-  documents: ProjectDocument[],
-  productContext?: ProductContext,
-  productDocs?: ProductDoc[],
-) {
-  return (
-    <OverviewTab
-      project={project}
-      personas={[]}
-      documents={documents}
-      productContext={productContext}
-      productDocs={productDocs}
-      onGeneratePersonas={vi.fn()}
-      onGenerateDoc={vi.fn()}
-      onRunResearch={vi.fn()}
-      onRemixDocuments={vi.fn()}
-      onOpenProductTool={vi.fn()}
-      onJobStarted={vi.fn()}
-    />
-  )
-}
+/** The translations only: English wording in these is a copy, not a choice. */
+const TRANSLATED_CATALOGUES = CATALOGUES.filter(([locale]) => locale !== 'en')
 
 /** The card only — for the two assertions that are about the card, not the panel. */
 function renderCard(
@@ -97,7 +71,7 @@ function renderCard(
   productContext?: ProductContext,
   productDocs?: ProductDoc[],
 ) {
-  return render(tab(documents, productContext, productDocs))
+  return renderOverviewTab({ documents, productContext, productDocs })
 }
 
 /**
@@ -114,7 +88,7 @@ function renderWizard(
   productContext?: ProductContext,
   productDocs?: ProductDoc[],
 ) {
-  const result = render(tab(documents, productContext, productDocs))
+  const result = renderCard(documents, productContext, productDocs)
   // Resolved through i18n rather than hardcoded English: one test in this file
   // switches the catalogue to German, and a hardcoded name would fail there with
   // "cannot find the button" — a message that points at the card rather than at the
@@ -129,23 +103,6 @@ function renderWizard(
   return result
 }
 
-/**
- * One uploaded product doc. Defaults to a ready PNG — the only combination the
- * visual picker may offer — so every fixture below states only the way it differs.
- */
-function productDoc(overrides: Partial<ProductDoc> & { doc_id: string; filename: string }): ProductDoc {
-  return {
-    content_type: 'image/png',
-    size_bytes: 1024,
-    status: 'ready',
-    error: null,
-    extracted_chars: 400,
-    created_at: '2026-05-01T00:00:00Z',
-    ...overrides,
-  }
-}
-
-const VISUAL_A = productDoc({ doc_id: 'pd_a', filename: 'home-screen.png' })
 const VISUAL_B = productDoc({ doc_id: 'pd_b', filename: 'settings-screen.png' })
 /** Extraction has not finished — it will, so the note asks for patience. */
 const VISUAL_EXTRACTING = productDoc({
@@ -164,7 +121,7 @@ const VISUAL_FAILED = productDoc({
 const label = (
   key: 'visuals' | 'visualsLimit' | 'visualsNotReady' | 'visualsFailed',
   value: number,
-) => en.documents.prototype[key].replace(/\{\{total\}\}|\{\{max\}\}/, String(value))
+) => en.documents.prototype[key].replace(/\{\{(?:total|max), number\}\}/, String(value))
 
 /**
  * A note's wording WITHOUT its count, for asserting the line is absent whatever
@@ -176,10 +133,10 @@ const label = (
  * kind of off-by-a-fixture pass these two counts can produce.
  */
 const noteStem = (key: 'visualsNotReady' | 'visualsFailed') =>
-  en.documents.prototype[key].replace('{{total}}', '').trim()
+  en.documents.prototype[key].replace('{{total, number}}', '').trim()
 
 /** Everything the visual group says, as one string. */
-const visualNotes = () => screen.getByTestId('prototype-visual-sources').textContent ?? ''
+const visualNotes = () => screen.getByTestId('prototype-visual-sources').textContent
 
 /** The card's button. It opens the wizard; it no longer starts anything. */
 const buildButton = () => screen.getByRole('button', { name: /configure & build prototype/i })
@@ -193,12 +150,58 @@ const startBuild = () => within(screen.getByRole('dialog'))
   .getByRole('button', { name: en.documents.prototype.button })
 const productContextBox = () => screen.getByRole('checkbox', { name: /product \/ service description/i })
 const researchBox = () => screen.getByRole('checkbox', { name: /research reports/i })
-const sentBody = () => mockBuildPrototype.mock.calls[0][1]
+const sentBody = sentBuildBody
 
-beforeEach(() => {
-  vi.clearAllMocks()
-  mockBuildPrototype.mockResolvedValue({ job_id: 'job_1' })
-})
+/** The tab element for `rerender`, with the same stubs `renderCard` uses. */
+const tab = (
+  documents: ProjectDocument[],
+  productContext?: ProductContext,
+  productDocs?: ProductDoc[],
+) => overviewTab({ documents, productContext, productDocs })
+
+/** Clicks the wizard's submit and waits for exactly one build request. */
+async function startBuildAndAwait(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(startBuild())
+  await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
+}
+
+/** Opens the wizard on a two-report project and ticks the research box. */
+async function openWithResearchTicked(user: ReturnType<typeof userEvent.setup>) {
+  const result = renderWizard([PRD, PRFAQ, RESEARCH_A, RESEARCH_B], FILLED_CONTEXT)
+  await user.click(researchBox())
+  return result
+}
+
+/** One more ready visual than the bound allows, so the guard has something to refuse. */
+function visualsOverBound() {
+  return Array.from(
+    { length: MAX_SELECTED_PRODUCT_DOC_IDS + 1 },
+    (_, i) => productDoc({ doc_id: `pd_${i}`, filename: `screen-${i}.png` }),
+  )
+}
+
+/** Ticks every visual in `options`, in order. */
+async function tickVisuals(user: ReturnType<typeof userEvent.setup>, options: ProductDoc[]) {
+  for (const option of options) {
+    await user.click(screen.getByRole('checkbox', { name: option.filename }))
+  }
+}
+
+/**
+ * Opens the wizard with one visual over the bound and ticks exactly the bound.
+ * Returns the ticked set (and its first visual) and the one left over.
+ */
+async function openWithBoundTicked(user: ReturnType<typeof userEvent.setup>) {
+  const all = visualsOverBound()
+  const atBound = all.slice(0, MAX_SELECTED_PRODUCT_DOC_IDS)
+  const firstTicked = required(atBound.at(0), 'the first ticked visual')
+  const spare = required(all.at(MAX_SELECTED_PRODUCT_DOC_IDS), 'the visual over the bound')
+  const { rerender } = renderWizard([PRD, PRFAQ], FILLED_CONTEXT, all)
+  await tickVisuals(user, atBound)
+  return { all, atBound, firstTicked, spare, rerender }
+}
+
+beforeEach(resetPrototypeMocks)
 
 /**
  * This block used to be called "the controls are reachable without a dialog", and
@@ -208,7 +211,7 @@ beforeEach(() => {
  * the placement is now pinned. What stays here is what the controls DO.
  */
 describe('what the optional inputs send', () => {
-  it('offers both tick-boxes on a project with one PRD, one PR-FAQ and no prototype', async () => {
+  it('offers both tick-boxes on a project with one PRD, one PR/FAQ and no prototype', async () => {
     // Still the fixture worth naming: this is the project that used to open no
     // dialog at all, so it is the one a placement regression would strand.
     renderWizard([PRD, PRFAQ, RESEARCH_A], FILLED_CONTEXT)
@@ -242,7 +245,7 @@ describe('what the optional inputs send', () => {
     await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
     expect(sentBody().use_product_context).toBe(false)
     expect(sentBody().use_research).toBe(false)
-    expect(sentBody().selected_research_ids).toEqual([])
+    expect(sentBody().selected_research_ids).toStrictEqual([])
   })
 
   it('offers no research box when the project has no research', () => {
@@ -259,30 +262,24 @@ describe('what the optional inputs send', () => {
 describe('which research reports the build reads', () => {
   it('ticking research selects every report on offer', async () => {
     const user = userEvent.setup()
-    renderWizard([PRD, PRFAQ, RESEARCH_A, RESEARCH_B], FILLED_CONTEXT)
+    await openWithResearchTicked(user)
+    await startBuildAndAwait(user)
 
-    await user.click(researchBox())
-    await user.click(startBuild())
-
-    await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
     expect(sentBody().use_research).toBe(true)
     // Newest first, matching the order `overviewState` derives and the backend's
     // own newest-of-type rule.
-    expect(sentBody().selected_research_ids).toEqual(['research_b', 'research_a'])
+    expect(sentBody().selected_research_ids).toStrictEqual(['research_b', 'research_a'])
   })
 
   it('sends only the reports left ticked', async () => {
     // The feature: choose the research, rather than take all of it. Nothing else
     // here fails if the per-report boxes are ignored.
     const user = userEvent.setup()
-    renderWizard([PRD, PRFAQ, RESEARCH_A, RESEARCH_B], FILLED_CONTEXT)
-
-    await user.click(researchBox())
+    await openWithResearchTicked(user)
     await user.click(screen.getByRole('checkbox', { name: 'Pricing survey' }))
-    await user.click(startBuild())
+    await startBuildAndAwait(user)
 
-    await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
-    expect(sentBody().selected_research_ids).toEqual(['research_a'])
+    expect(sentBody().selected_research_ids).toStrictEqual(['research_a'])
   })
 
   it('drops a report that is deleted between the tick and the click', async () => {
@@ -291,14 +288,11 @@ describe('which research reports the build reads', () => {
     // deletion becoming this build's failure. Found by mutation: without a
     // re-render in the fixture, the filter that prevents it has no test at all.
     const user = userEvent.setup()
-    const { rerender } = renderWizard([PRD, PRFAQ, RESEARCH_A, RESEARCH_B], FILLED_CONTEXT)
-
-    await user.click(researchBox())
+    const { rerender } = await openWithResearchTicked(user)
     rerender(tab([PRD, PRFAQ, RESEARCH_A], FILLED_CONTEXT))
-    await user.click(startBuild())
+    await startBuildAndAwait(user)
 
-    await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
-    expect(sentBody().selected_research_ids).toEqual(['research_a'])
+    expect(sentBody().selected_research_ids).toStrictEqual(['research_a'])
   })
 
   it('unticking research sends no ids at all', async () => {
@@ -307,11 +301,10 @@ describe('which research reports the build reads', () => {
 
     await user.click(researchBox())
     await user.click(researchBox())
-    await user.click(startBuild())
+    await startBuildAndAwait(user)
 
-    await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
     expect(sentBody().use_research).toBe(false)
-    expect(sentBody().selected_research_ids).toEqual([])
+    expect(sentBody().selected_research_ids).toStrictEqual([])
     expect(screen.queryByTestId('prototype-research-list')).not.toBeInTheDocument()
   })
 })
@@ -348,7 +341,7 @@ describe('which uploaded visuals the build reads', () => {
     await user.click(startBuild())
 
     await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
-    expect(sentBody().selected_product_doc_ids).toEqual(['pd_b', 'pd_a'])
+    expect(sentBody().selected_product_doc_ids).toStrictEqual(['pd_b', 'pd_a'])
   })
 
   it('sends no visual ids when none is ticked, and still builds', async () => {
@@ -361,7 +354,7 @@ describe('which uploaded visuals the build reads', () => {
     await user.click(startBuild())
 
     await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
-    expect(sentBody().selected_product_doc_ids).toEqual([])
+    expect(sentBody().selected_product_doc_ids).toStrictEqual([])
     expect(screen.getByText(en.documents.prototype.started)).toBeInTheDocument()
   })
 
@@ -376,9 +369,9 @@ describe('which uploaded visuals the build reads', () => {
       VISUAL_EXTRACTING,
     ])
 
-    expect(screen.getByRole('checkbox', { name: 'home-screen.png' })).toBeInTheDocument()
-    expect(screen.queryByRole('checkbox', { name: 'notes.md' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('checkbox', { name: 'wip.png' })).not.toBeInTheDocument()
+    const offered = ['home-screen.png', 'notes.md', 'wip.png']
+      .filter((name) => screen.queryByRole('checkbox', { name }) !== null)
+    expect(offered).toStrictEqual(['home-screen.png'])
     // The count in the heading counts what is SELECTABLE, not what was uploaded.
     expect(screen.getByText(label('visuals', 1))).toBeInTheDocument()
     expect(screen.getByText(label('visualsNotReady', 1))).toBeInTheDocument()
@@ -400,22 +393,13 @@ describe('which uploaded visuals the build reads', () => {
     // made and names no mockup to give up. Built one over the live bound so it
     // keeps testing whatever that number becomes.
     const user = userEvent.setup()
-    const many = Array.from(
-      { length: MAX_SELECTED_PRODUCT_DOC_IDS + 1 },
-      (_, i) => productDoc({ doc_id: `pd_${i}`, filename: `screen-${i}.png` }),
-    )
-    renderWizard([PRD, PRFAQ], FILLED_CONTEXT, many)
-
-    for (const option of many.slice(0, MAX_SELECTED_PRODUCT_DOC_IDS)) {
-      await user.click(screen.getByRole('checkbox', { name: option.filename }))
-    }
-    const overBound = screen.getByRole('checkbox', { name: many[MAX_SELECTED_PRODUCT_DOC_IDS].filename })
+    const { spare: overBoundVisual } = await openWithBoundTicked(user)
+    const overBound = screen.getByRole('checkbox', { name: overBoundVisual.filename })
     expect(overBound).toBeDisabled()
     expect(screen.getByText(label('visualsLimit', MAX_SELECTED_PRODUCT_DOC_IDS))).toBeInTheDocument()
 
-    await user.click(startBuild())
+    await startBuildAndAwait(user)
 
-    await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
     expect(sentBody().selected_product_doc_ids).toHaveLength(MAX_SELECTED_PRODUCT_DOC_IDS)
     expect(sentBody().selected_product_doc_ids).not.toContain(`pd_${MAX_SELECTED_PRODUCT_DOC_IDS}`)
   })
@@ -429,23 +413,14 @@ describe('which uploaded visuals the build reads', () => {
     // handler as a programmatic or assistive-tech path could, and it is what makes
     // the second guard load-bearing rather than decorative.
     const user = userEvent.setup()
-    const many = Array.from(
-      { length: MAX_SELECTED_PRODUCT_DOC_IDS + 1 },
-      (_, i) => productDoc({ doc_id: `pd_${i}`, filename: `screen-${i}.png` }),
-    )
-    renderWizard([PRD, PRFAQ], FILLED_CONTEXT, many)
-
-    for (const option of many.slice(0, MAX_SELECTED_PRODUCT_DOC_IDS)) {
-      await user.click(screen.getByRole('checkbox', { name: option.filename }))
-    }
+    await openWithBoundTicked(user)
     fireEvent.click(screen.getByRole('checkbox', { name: `screen-${MAX_SELECTED_PRODUCT_DOC_IDS}.png` }))
     fireEvent.change(
       screen.getByRole('checkbox', { name: `screen-${MAX_SELECTED_PRODUCT_DOC_IDS}.png` }),
       { target: { checked: true } },
     )
-    await user.click(startBuild())
+    await startBuildAndAwait(user)
 
-    await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
     expect(sentBody().selected_product_doc_ids).toHaveLength(MAX_SELECTED_PRODUCT_DOC_IDS)
   })
 
@@ -460,31 +435,20 @@ describe('which uploaded visuals the build reads', () => {
     // The replacement is asserted as SENT rather than as merely checked: the click
     // could set the box while the id never reaches the request.
     const user = userEvent.setup()
-    const all = Array.from(
-      { length: MAX_SELECTED_PRODUCT_DOC_IDS + 1 },
-      (_, i) => productDoc({ doc_id: `pd_${i}`, filename: `screen-${i}.png` }),
-    )
-    const atBound = all.slice(0, MAX_SELECTED_PRODUCT_DOC_IDS)
-    const spare = all[MAX_SELECTED_PRODUCT_DOC_IDS]
-    const { rerender } = renderWizard([PRD, PRFAQ], FILLED_CONTEXT, all)
-
-    for (const option of atBound) {
-      await user.click(screen.getByRole('checkbox', { name: option.filename }))
-    }
+    const { atBound, firstTicked, spare, rerender } = await openWithBoundTicked(user)
     // The first ticked visual is deleted elsewhere; the rest, and the spare, remain.
     rerender(tab([PRD, PRFAQ], FILLED_CONTEXT, [...atBound.slice(1), spare]))
 
     const spareBox = screen.getByRole('checkbox', { name: spare.filename })
     expect(spareBox).toBeEnabled()
     await user.click(spareBox)
-    await user.click(startBuild())
+    await startBuildAndAwait(user)
 
-    await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
     const sent = sentBody().selected_product_doc_ids
     expect(sent).toHaveLength(MAX_SELECTED_PRODUCT_DOC_IDS)
     expect(sent).toContain(spare.doc_id)
     // And the deleted one is gone rather than merely displaced.
-    expect(sent).not.toContain(atBound[0].doc_id)
+    expect(sent).not.toContain(firstTicked.doc_id)
   })
 
   it('never sends more than the bound after a visual re-extracts and returns', async () => {
@@ -496,32 +460,21 @@ describe('which uploaded visuals the build reads', () => {
     // and the API answers 400 naming a length the user never chose, which is exactly
     // what the bound exists to prevent.
     const user = userEvent.setup()
-    const all = Array.from(
-      { length: MAX_SELECTED_PRODUCT_DOC_IDS + 1 },
-      (_, i) => productDoc({ doc_id: `pd_${i}`, filename: `screen-${i}.png` }),
-    )
-    const atBound = all.slice(0, MAX_SELECTED_PRODUCT_DOC_IDS)
-    const spare = all[MAX_SELECTED_PRODUCT_DOC_IDS]
-    const { rerender } = renderWizard([PRD, PRFAQ], FILLED_CONTEXT, all)
-
-    for (const option of atBound) {
-      await user.click(screen.getByRole('checkbox', { name: option.filename }))
-    }
+    const { all, atBound, firstTicked, spare, rerender } = await openWithBoundTicked(user)
     // The first ticked visual goes back to extracting, so it leaves the options...
-    const reExtracting = { ...atBound[0], status: 'extracting' as const }
+    const reExtracting = { ...firstTicked, status: 'extracting' as const }
     rerender(tab([PRD, PRFAQ], FILLED_CONTEXT, [reExtracting, ...atBound.slice(1), spare]))
     // ...the user tops the selection back up...
     await user.click(screen.getByRole('checkbox', { name: spare.filename }))
     // ...and then extraction finishes, so it is offered again.
     rerender(tab([PRD, PRFAQ], FILLED_CONTEXT, all))
-    await user.click(startBuild())
+    await startBuildAndAwait(user)
 
-    await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
     const sent = sentBody().selected_product_doc_ids
     // The bound holds, and the survivors are the earliest ticks rather than an
     // arbitrary subset — a slice keeps the precedence order the prompt reads.
     expect(sent).toHaveLength(MAX_SELECTED_PRODUCT_DOC_IDS)
-    expect(sent).toEqual(atBound.map((d) => d.doc_id))
+    expect(sent).toStrictEqual(atBound.map((d) => d.doc_id))
     expect(sent).not.toContain(spare.doc_id)
   })
 
@@ -540,7 +493,7 @@ describe('which uploaded visuals the build reads', () => {
     await user.click(startBuild())
 
     await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
-    expect(sentBody().selected_product_doc_ids).toEqual(['pd_a'])
+    expect(sentBody().selected_product_doc_ids).toStrictEqual(['pd_a'])
   })
 })
 
@@ -625,9 +578,9 @@ describe('a card that cannot act offers no choices', () => {
   // reachable. Asserting the absence of tick-boxes alone would be WEAKER than the
   // old test, because they are absent on every unopened card, so the assertion that
   // carries the property is that the button does not open anything.
-  it('cannot open the wizard on a project with no PRD and no PR-FAQ', () => {
+  it('cannot open the wizard on a project with no PRD and no PR/FAQ', () => {
     // Research and a filled product context, so there IS something to offer, and no
-    // PRD or PR-FAQ, so nothing can be built.
+    // PRD or PR/FAQ, so nothing can be built.
     renderCard([RESEARCH_A], FILLED_CONTEXT)
 
     expect(buildButton()).toBeDisabled()
@@ -668,7 +621,7 @@ describe('two similarly-named reports are distinguishable', () => {
   })
 })
 
-describe('the card no longer presents PRD/PR-FAQ as the whole input list', () => {
+describe('the card no longer presents PRD/PR/FAQ as the whole input list', () => {
   it('states the optional inputs on an enabled card for a project that has them', () => {
     // The fixture matters twice over: with no research there would be nothing to
     // omit, so "states the omission" would be indistinguishable from "there was
@@ -683,44 +636,39 @@ describe('the card no longer presents PRD/PR-FAQ as the whole input list', () =>
     expect(en.overview.prototypeDesc).toMatch(/research/i)
   })
 
-  it.each([
-    ['de', de], ['en', en], ['es', es], ['fr', fr],
-    ['ja', ja], ['ko', ko], ['pt', pt], ['zh', zh],
-  ])('names no document type as the exhaustive input list in %s', (_locale, catalogue) => {
+  it.each(CATALOGUES)('names no document type as the exhaustive input list in %s', (_locale, catalogue) => {
     // Language-independent on purpose: every catalogue kept the Latin "PRD /
-    // PR-FAQ" verbatim in the old sentence, so naming either is the tell that a
+    // PR/FAQ" verbatim in the old sentence, so naming either is the tell that a
     // catalogue was left behind — and it is the one assertion that works for all
-    // eight without asserting on a translation's wording.
+    // nine without asserting on a translation's wording.
     expect(catalogue.overview.prototypeDesc).not.toMatch(/PRD|PR.?FAQ/i)
     expect(catalogue.overview.prototypeDesc).not.toBe('')
   })
 
-  it.each([
-    ['de', de], ['en', en], ['es', es], ['fr', fr],
-    ['ja', ja], ['ko', ko], ['pt', pt], ['zh', zh],
-  ])('carries the new control labels in %s', (_locale, catalogue) => {
+  it.each(CATALOGUES)('carries the new control labels in %s', (_locale, catalogue) => {
     // A catalogue missing one of these renders the raw key path in that language —
     // visible to a user of that locale, and to nobody running the tests under `en`.
     const prototype = catalogue.documents.prototype
-    expect(prototype.extraSources).toBeTruthy()
-    expect(prototype.useProductContext).toBeTruthy()
-    expect(prototype.useResearch).toContain('{{total}}')
-    expect(prototype.researchLimit).toContain('{{max}}')
-    expect(prototype.visuals).toContain('{{total}}')
-    expect(prototype.visualsLimit).toContain('{{max}}')
-    expect(prototype.visualsNotReady).toContain('{{total}}')
+    expect([prototype.extraSources, prototype.useProductContext].map((text) => text.trim() !== ''))
+      .toStrictEqual([true, true])
     // `{{total}}` and not i18next `count`, matching every neighbouring label: a
     // plural-suffixed key would be two more strings per catalogue for a number
     // that only ever opens a short grey line.
-    expect(prototype.visualsFailed).toContain('{{total}}')
+    const placeholders: Array<[key: string, text: string, token: string]> = [
+      ['useResearch', prototype.useResearch, '{{total, number}}'],
+      ['researchLimit', prototype.researchLimit, '{{max, number}}'],
+      ['visuals', prototype.visuals, '{{total, number}}'],
+      ['visualsLimit', prototype.visualsLimit, '{{max, number}}'],
+      ['visualsNotReady', prototype.visualsNotReady, '{{total, number}}'],
+      ['visualsFailed', prototype.visualsFailed, '{{total, number}}'],
+    ]
+    const missingPlaceholder = placeholders.filter(([, text, token]) => !text.includes(token)).map(([key]) => key)
+    expect(missingPlaceholder).toStrictEqual([])
   })
 
-  it.each([
-    ['de', de], ['es', es], ['fr', fr],
-    ['ja', ja], ['ko', ko], ['pt', pt], ['zh', zh],
-  ])('translates the visual labels rather than copying English in %s', (_locale, catalogue) => {
+  it.each(TRANSLATED_CATALOGUES)('translates the visual labels rather than copying English in %s', (_locale, catalogue) => {
     // The i18n gate counts a value identical to English as `untranslated`, and a
-    // key present in seven catalogues and absent from the eighth as `missing` —
+    // key present in eight catalogues and absent from the ninth as `missing` —
     // both of which are invisible to anyone running the suite under `en`. The
     // count assertion above proves the key exists; this proves it was translated.
     expect(catalogue.documents.prototype.visuals).not.toBe(en.documents.prototype.visuals)
@@ -733,12 +681,11 @@ describe('the card no longer presents PRD/PR-FAQ as the whole input list', () =>
 })
 
 describe('the failed note renders from a non-English catalogue', () => {
-  // The catalogue assertions above prove the key exists in all eight and differs
+  // The catalogue assertions above prove the key exists in all nine and differs
   // from English. This proves the COMPONENT resolves it in a non-English locale:
   // a value filed under a slightly different path in a translated catalogue
   // satisfies both of those and still renders its raw dotted key to a German user.
-  // Same shape as McpAccessTab.structure.test.tsx, which registers `de` the same
-  // way — the harness itself loads only `en`.
+  // The harness itself loads only `en`, so `de` is registered here.
   beforeAll(async () => {
     i18n.addResourceBundle('de', 'projectDetail', de)
     await i18n.changeLanguage('de')
@@ -752,7 +699,7 @@ describe('the failed note renders from a non-English catalogue', () => {
     renderWizard([PRD, PRFAQ], FILLED_CONTEXT, [VISUAL_A, VISUAL_FAILED])
 
     expect(screen.getByText(
-      de.documents.prototype.visualsFailed.replace('{{total}}', '1'),
+      de.documents.prototype.visualsFailed.replace('{{total, number}}', '1'),
     )).toBeInTheDocument()
     expect(visualNotes()).not.toContain('documents.prototype.visualsFailed')
     expect(visualNotes()).not.toContain(noteStem('visualsFailed'))

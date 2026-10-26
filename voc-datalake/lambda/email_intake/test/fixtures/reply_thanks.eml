@@ -1,0 +1,18 @@
+X-SES-Spam-Verdict: PASS
+X-SES-Virus-Verdict: PASS
+X-SES-SPF-Verdict: PASS
+X-SES-DKIM-Verdict: GRAY
+From: Ana <ana@customer.example>
+To: feedback@voc.example.com
+Subject: Re: Checkout keeps failing
+Date: Wed, 04 Mar 2026 09:00:00 +0000
+Message-ID: <reply-003@customer.example>
+References: <root-001@customer.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Thanks!
+
+On Tue, 3 Mar 2026, Support <support@voc.example.com>
+wrote:
+> We fixed it.

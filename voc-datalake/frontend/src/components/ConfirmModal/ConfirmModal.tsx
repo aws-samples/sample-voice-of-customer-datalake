@@ -12,7 +12,8 @@
 import type { ReactNode } from 'react'
 import { Loader2, AlertTriangle } from 'lucide-react'
 import clsx from 'clsx'
-import ModalShell from '../ModalShell'
+import { useTranslation } from 'react-i18next'
+import ModalShell from '../ModalShell/ModalShell'
 
 interface ConfirmModalProps {
   isOpen: boolean
@@ -45,27 +46,28 @@ export default function ConfirmModal({
   title,
   message,
   children,
-  confirmLabel = 'Delete',
-  cancelLabel = 'Cancel',
+  confirmLabel,
+  cancelLabel,
   variant = 'danger',
   isLoading = false,
   onConfirm,
   onCancel,
 }: Readonly<ConfirmModalProps>) {
+  const { t } = useTranslation()
   if (!isOpen) return null
 
   const variantStyles = {
     danger: {
-      icon: 'bg-red-100 text-red-600',
-      button: 'bg-red-600 hover:bg-red-700 text-white',
+      icon: 'bg-danger-subtle text-danger',
+      button: 'btn btn-danger-solid',
     },
     warning: {
-      icon: 'bg-amber-100 text-amber-600',
-      button: 'bg-amber-600 hover:bg-amber-700 text-white',
+      icon: 'bg-warn-subtle text-warn',
+      button: 'btn btn-primary',
     },
     info: {
-      icon: 'bg-blue-100 text-blue-600',
-      button: 'bg-blue-600 hover:bg-blue-700 text-white',
+      icon: 'bg-info-subtle text-info',
+      button: 'btn btn-primary',
     },
   }
 
@@ -81,37 +83,39 @@ export default function ConfirmModal({
       // would not cancel the work it already started.
       dismissable={!isLoading}
     >
-      
-      {/* Modal */}
       <div className="p-4 sm:p-6">
         <div className="flex items-start gap-3 sm:gap-4">
           <div className={clsx('w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center flex-shrink-0', styles.icon)}>
-            <AlertTriangle size={18} className="sm:w-5 sm:h-5" />
+            <AlertTriangle size={18} className="sm:w-5 sm:h-5" aria-hidden="true" />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="text-base sm:text-lg font-semibold text-gray-900">{title}</h3>
-            <p className="mt-2 text-sm text-gray-600">{message}</p>
+            {/* `whitespace-normal` undoes the recipe's truncate: a confirmation
+                title is the question being asked and must never be elided. */}
+            <h2 className="dialog-title whitespace-normal">{title}</h2>
+            <p className="dialog-description mt-2 text-sm">{message}</p>
             {children}
           </div>
         </div>
-        
-        <div className="mt-5 sm:mt-6 flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3">
-          <button
-            onClick={onCancel}
-            disabled={isLoading}
-            className="px-4 py-2.5 sm:py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg disabled:opacity-50 w-full sm:w-auto"
-          >
-            {cancelLabel}
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={isLoading}
-            className={clsx('px-4 py-2.5 sm:py-2 text-sm font-medium rounded-lg disabled:opacity-50 flex items-center justify-center gap-2 w-full sm:w-auto', styles.button)}
-          >
-            {isLoading && <Loader2 size={16} className="animate-spin" />}
-            {confirmLabel}
-          </button>
-        </div>
+      </div>
+
+      <div className="dialog-footer flex-col-reverse sm:flex-row sm:gap-3">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={isLoading}
+          className="btn btn-secondary py-2.5 sm:py-2 w-full sm:w-auto"
+        >
+          {cancelLabel ?? t('common:cancel')}
+        </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={isLoading}
+          className={clsx('py-2.5 sm:py-2 gap-2 w-full sm:w-auto', styles.button)}
+        >
+          {isLoading && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
+          {confirmLabel ?? t('components:confirmModal.delete')}
+        </button>
       </div>
     </ModalShell>
   )

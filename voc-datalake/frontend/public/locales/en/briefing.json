@@ -1,0 +1,92 @@
+{
+  "greeting": {
+    "morning": "Good morning, {{name}}",
+    "afternoon": "Good afternoon, {{name}}",
+    "evening": "Good evening, {{name}}"
+  },
+  "freshness": {
+    "generatedAt": "Brief from {{time}}",
+    "none": "No brief yet. Press Refresh to build your first one.",
+    "failed": "The last brief could not be built. Press Refresh to try again."
+  },
+  "tiles": {
+    "title": "Last 7 days",
+    "reviews": "Reviews",
+    "sentiment": "Average sentiment",
+    "urgent": "Urgent reviews"
+  },
+  "cards": {
+    "title": "Your brief",
+    "empty": "Nothing new in your brief.",
+    "evidence": "Reviews behind this card: {{count, number}}",
+    "quotes": "In their words",
+    "dismiss": "Dismiss",
+    "sources": "Sources",
+    "newTab": "opens in a new tab",
+    "type": {
+      "spike": "Spike",
+      "urgent": "Urgent",
+      "whatsNew": "What's new",
+      "trending": "Trending",
+      "sentiment": "Sentiment change",
+      "competitor": "Competitor",
+      "nextStep": "Next step",
+      "update": "Update"
+    },
+    "reviewN": "Review {{n}}",
+    "openReview": "Open review {{n}} of {{count, number}}",
+    "moreReviews": "and {{count, number}} more"
+  },
+  "actions": {
+    "investigate": "Investigate",
+    "prfaq": "Draft a PR/FAQ",
+    "compare": "Compare with last month",
+    "openRadar": "Open Radar",
+    "investigatePrompt": "Investigate this card from my morning brief: \"{{title}}\". {{body}} What is behind it, and how big is it?",
+    "prfaqPrompt": "Draft a PR/FAQ for a fix based on this card from my morning brief: \"{{title}}\". {{body}}",
+    "comparePrompt": "Compare this with last month: \"{{title}}\". What changed, and is it getting better or worse?"
+  },
+  "todo": {
+    "title": "Things to do",
+    "empty": "Nothing is waiting for you.",
+    "open": "Open"
+  },
+  "refresh": {
+    "label": "Refresh",
+    "generating": "Generating...",
+    "upToDate": "Your brief is up to date.",
+    "failed": "Could not start the brief. Try again."
+  },
+  "subscribe": {
+    "title": "Subscribe to the morning brief",
+    "description": "Get a fresh brief every morning at the hour you choose, in your time zone ({{zone}}).",
+    "oneClick": "Get a fresh brief every morning at {{time}}, in your time zone ({{zone}}).",
+    "customise": "Customise in Account",
+    "button": "Subscribe"
+  },
+  "settings": {
+    "title": "Brief settings",
+    "enabled": "Morning brief on",
+    "language": "Brief language",
+    "languageSameAsApp": "Same as the app ({{language}})",
+    "time": "Time to send",
+    "instructions": "What I want in my brief",
+    "instructionsHint": "Focus areas, competitors to watch, tone. At most 2,000 characters.",
+    "email": "Email me the brief",
+    "emailHint": "Sent to the verified email address of your account.",
+    "emailPending": "Check your inbox and confirm the email from AWS to start receiving the brief.",
+    "emailConfirmed": "Email confirmed.",
+    "save": "Save",
+    "saved": "Saved",
+    "saveFailed": "Could not save your brief settings.",
+    "open": "Settings",
+    "loading": "Loading your brief settings..."
+  },
+  "agentDecision": {
+    "sectionLabel": "Agent decisions",
+    "title": "{{name}} needs your decision",
+    "node": "Step: {{node}}",
+    "stopped": "Stopped {{time}}"
+  },
+  "closeCard": "Close: {{title}}"
+}

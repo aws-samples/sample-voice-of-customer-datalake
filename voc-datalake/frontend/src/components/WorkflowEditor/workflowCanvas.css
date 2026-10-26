@@ -1,0 +1,128 @@
+/*
+ * React Flow themed with Kiro design-system tokens only (docs/kiro-design-system.md).
+ * The library's structural stylesheet is imported by WorkflowCanvas.tsx; every
+ * colour variable it reads is overridden here, so none of its default palette
+ * reaches the screen and both themes follow `data-theme` automatically.
+ */
+.voc-workflow {
+  --xy-background-color: var(--bg-accent);
+  --xy-background-pattern-color: var(--border);
+  --xy-node-color: var(--text);
+  --xy-node-background-color: var(--card);
+  --xy-node-border: 1px solid var(--border);
+  --xy-node-border-radius: var(--radius-lg);
+  --xy-node-boxshadow-hover: none;
+  --xy-node-boxshadow-selected: 0 0 0 2px var(--accent);
+  --xy-node-group-background-color: transparent;
+  --xy-edge-stroke: var(--border-hover);
+  --xy-edge-stroke-selected: var(--accent);
+  --xy-edge-stroke-width: 1.5;
+  --xy-edge-label-color: var(--text);
+  --xy-edge-label-background-color: var(--bg-elevated);
+  --xy-connectionline-stroke: var(--accent);
+  --xy-connectionline-stroke-width: 1.5;
+  --xy-handle-background-color: var(--card);
+  --xy-handle-border-color: var(--border-strong);
+  --xy-selection-background-color: var(--accent-subtle);
+  --xy-selection-border: 1px dashed var(--accent);
+  --xy-controls-box-shadow: none;
+  --xy-controls-button-background-color: var(--bg-elevated);
+  --xy-controls-button-background-color-hover: var(--bg-hover);
+  --xy-controls-button-color: var(--text);
+  --xy-controls-button-color-hover: var(--text-strong);
+  --xy-controls-button-border-color: var(--border);
+  --xy-minimap-background-color: var(--card);
+  --xy-minimap-mask-background-color: var(--overlay);
+  --xy-minimap-mask-stroke-color: var(--border);
+  --xy-minimap-node-background-color: var(--bg-hover);
+  --xy-minimap-node-stroke-color: var(--border-strong);
+  --xy-attribution-background-color: transparent;
+  --xy-resize-background-color: var(--accent);
+  font-family: inherit;
+}
+
+/* Step nodes render their own card; the library's node chrome stays out of the way. */
+.voc-workflow .react-flow__node-step,
+.voc-workflow .react-flow__node-loopFrame {
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  width: auto;
+}
+
+/* `!important`: React Flow sets an inline `pointer-events: all` on selectable nodes. */
+.voc-workflow .react-flow__node-loopFrame {
+  pointer-events: none !important;
+}
+
+/* Only a loop's label pill takes the pointer (the click bubbles to React Flow's
+   node wrapper, which selects the loop and opens its settings); the rest of the
+   frame stays click-through so panning and box-select inside it keep working. */
+.voc-workflow .voc-loop-frame-label {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+/* Step nodes are Tab stops (React Flow gives them tabindex=0); the library draws
+   no focus state, so they show the design-system ring like every other control. */
+.voc-workflow .react-flow__node:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-lg);
+}
+
+.voc-workflow .react-flow__controls {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.voc-workflow .react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+.voc-workflow .react-flow__minimap {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.voc-workflow .react-flow__handle {
+  width: 9px;
+  height: 9px;
+}
+
+.voc-workflow .react-flow__handle:hover {
+  border-color: var(--accent);
+}
+
+/* Verdict arrows: tone by meaning (agreed / pass = ok, not agreed / fail = warn). */
+.voc-workflow .voc-edge-ok .react-flow__edge-path {
+  stroke: var(--ok);
+}
+
+.voc-workflow .voc-edge-warn .react-flow__edge-path {
+  stroke: var(--warn);
+  stroke-dasharray: 5 4;
+}
+
+.voc-workflow .react-flow__edge.selected .react-flow__edge-path {
+  stroke: var(--accent);
+}
+
+.voc-workflow .react-flow__edge-textbg {
+  fill: var(--bg-elevated);
+}
+
+/* Edge labels ("Agreed" / "Not agreed") are content: 12px, the content floor
+   (they were 11px — design audit D-READ). */
+.voc-workflow .react-flow__edge-text {
+  fill: var(--text);
+  font-size: 12px;
+}
+
+/* Run graph: steps that are done / running light their arrows. */
+.voc-workflow .voc-edge-lit .react-flow__edge-path {
+  stroke: var(--accent);
+  stroke-width: 2;
+}

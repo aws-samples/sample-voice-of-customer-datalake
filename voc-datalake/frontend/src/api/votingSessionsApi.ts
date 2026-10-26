@@ -4,11 +4,11 @@
  *
  * Its own module rather than more surface on `client.ts`, following the
  * `projectsApi` precedent — and for one reason specific to this feature: the two
- * PUBLIC calls cannot go through `fetchApi`. That helper throws
- * `API Error: <status>` and discards the response body, which is exactly the
- * information the ballot page exists to show: "this session is closed", "it has
- * expired", "the room is full". A phone that has just scanned a QR needs the
- * reason in words, so these two read the body and return it.
+ * PUBLIC calls cannot go through `fetchApi`. That helper attaches an auth header
+ * and refreshes a session on 401, and surfaces only the body's `message`; the
+ * ballot page needs the whole refusal body ("this session is closed", "it has
+ * expired", "the room is full") on a phone that has no session at all, so these
+ * two read the body and return it.
  *
  * The facilitator's three calls DO go through `fetchApi`, because they are
  * ordinary authenticated requests that want its 401 refresh-and-retry.
@@ -21,6 +21,7 @@
  * @module api/votingSessionsApi
  */
 import { z } from 'zod'
+import { DEFAULT_AXES, activeAxes, normalizeAxes } from './prioritizationAxes'
 import { getBaseUrl } from './baseUrl'
 import { fetchApi } from './client'
 
@@ -29,17 +30,17 @@ import { fetchApi } from './client'
  * (`ballots_handler.py`), and the page maps each to its own translated sentence —
  * so a new reason arrives as `unknown` rather than as a blank screen.
  */
-export const BALLOT_REFUSAL_REASONS = [
+const BALLOT_REFUSAL_REASONS = [
   'not_found', 'closed', 'expired', 'cap_reached', 'invalid',
 ] as const
 
-export type BallotRefusalReason = typeof BALLOT_REFUSAL_REASONS[number]
+type BallotRefusalReason = typeof BALLOT_REFUSAL_REASONS[number]
 
 /** Anything else that stopped the submission — a network fault, a 500, a shape
  *  this client cannot read. Distinct from the four above because it is not a
  *  statement about the session, and the page says "try again" rather than
  *  explaining a state. */
-export const BALLOT_REFUSAL_UNKNOWN = 'unknown'
+const BALLOT_REFUSAL_UNKNOWN = 'unknown'
 
 export type BallotFailure = BallotRefusalReason | typeof BALLOT_REFUSAL_UNKNOWN
 
@@ -93,6 +94,13 @@ export type VotingSession = z.infer<typeof votingSessionSchema>
 
 const votingSessionResponseSchema = z.object({ session: votingSessionSchema })
 
+/** `GET /voting-sessions?row_id=`: the row's open vote, or `null` when it has none.
+ *  An unreadable `session` reads as "no open vote" — the panel then offers to open
+ *  one, which the API answers with the running vote if there is one after all. */
+const openVotingSessionResponseSchema = z.object({
+  session: votingSessionSchema.nullable().catch(null),
+})
+
 /**
  * What the ballot page is told before it renders a form.
  *
@@ -108,6 +116,12 @@ const ballotSessionConfigSchema = z.object({
   reason: z.preprocess((value) => value ?? null, refusalReason.nullable().catch(null)),
   /** What the room is scoring, named as the ROW it is. */
   row_title: z.string().catch(''),
+  /**
+   * The ACTIVE metrics of the workspace scoring setup, without weights (the route is
+   * public). Absent — a deployment predating configurable metrics — reads as the shipped
+   * default, which is what such a deployment scores with.
+   */
+  axes: z.unknown().optional().transform((raw) => activeAxes(normalizeAxes(raw))),
 })
 
 export type BallotSessionConfig = z.infer<typeof ballotSessionConfigSchema>
@@ -116,21 +130,18 @@ const ballotConfigResponseSchema = z.object({ session: ballotSessionConfigSchema
 
 const ballotAcceptedSchema = z.object({
   ballot_id: z.string().min(1),
-  corrected: z.boolean().catch(false),
 })
 
 /** The refusal body every non-2xx submission carries. `reason` may be absent
  *  (a 500, an API Gateway error page), which reads as `unknown`. */
 const ballotRefusalSchema = z.object({ reason: refusalReason.nullish().catch(null) })
 
-/** One anonymous ballot, as the page composes it. Axes are optional because a
- *  submitter may rate some things and not others; the API requires at least one
- *  and refuses a ballot expressing none. */
+/** One anonymous ballot, as the page composes it: one top-level number (1–5) per
+ *  ACTIVE axis id of the public config — the shape ballots are stored in. The API
+ *  requires at least one, refuses a ballot expressing none, and refuses an archived or
+ *  unknown axis id with 400. */
 export interface AnonymousBallot {
-  impact?: number
-  time_to_market?: number
-  confidence?: number
-  strategic_fit?: number
+  readonly [axisId: string]: number | string | undefined
   notes?: string
   display_name?: string
   /**
@@ -145,7 +156,7 @@ export interface AnonymousBallot {
 }
 
 export type BallotSubmission =
-  | { readonly ok: true; readonly ballotId: string; readonly corrected: boolean }
+  | { readonly ok: true; readonly ballotId: string }
   | { readonly ok: false; readonly failure: BallotFailure }
 
 function sessionPath(sessionId: string): string {
@@ -177,6 +188,17 @@ export const votingSessionsApi = {
     return votingSessionResponseSchema.parse(raw).session
   },
 
+  /**
+   * The ROW's vote that still accepts ballots, or null. What lets a reloaded page
+   * show the link it opened and a way to close it, instead of offering to open a
+   * second public vote while the first keeps collecting ballots.
+   */
+  findOpenVotingSession: async (rowId: string): Promise<VotingSession | null> => {
+    const raw = await fetchApi<unknown>(`/voting-sessions?${new URLSearchParams({ row_id: rowId })}`)
+    const parsed = openVotingSessionResponseSchema.safeParse(raw)
+    return parsed.success ? parsed.data.session : null
+  },
+
   /** Close the session. THIS IS THE REVOCATION — it is what stops the room (and
    *  anyone who kept the link) from submitting anything further. Idempotent. */
   closeVotingSession: async (sessionId: string): Promise<VotingSession> => {
@@ -195,7 +217,7 @@ export const votingSessionsApi = {
    * failed.
    */
   getBallotSessionConfig: async (sessionId: string): Promise<BallotSessionConfig> => {
-    const closed: BallotSessionConfig = { open: false, reason: null, row_title: '' }
+    const closed: BallotSessionConfig = { open: false, reason: null, row_title: '', axes: activeAxes(DEFAULT_AXES) }
     // No headers at all. A GET carries no body, so `Content-Type` describes
     // nothing — and setting it is what turns a SIMPLE cross-origin request into
     // one that needs a preflight round trip first. On the first thing a phone does
@@ -230,6 +252,6 @@ export const votingSessionsApi = {
     }
     const accepted = ballotAcceptedSchema.safeParse(body)
     if (!accepted.success) return { ok: false, failure: BALLOT_REFUSAL_UNKNOWN }
-    return { ok: true, ballotId: accepted.data.ballot_id, corrected: accepted.data.corrected }
+    return { ok: true, ballotId: accepted.data.ballot_id }
   },
 }

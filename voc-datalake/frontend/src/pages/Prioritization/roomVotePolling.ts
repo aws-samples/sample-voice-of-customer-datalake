@@ -20,7 +20,7 @@ import type { VotingSession } from '../../api/votingSessionsApi'
  * slow enough that a session left on a projector for an hour costs a few hundred
  * cheap reads rather than thousands.
  */
-export const BALLOT_COUNT_POLL_MS = 5000
+const BALLOT_COUNT_POLL_MS = 5000
 
 /**
  * The next read delay, or `false` to stop.

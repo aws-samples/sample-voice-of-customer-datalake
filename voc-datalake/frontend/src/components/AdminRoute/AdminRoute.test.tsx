@@ -1,43 +1,69 @@
 /**
  * @fileoverview Tests for AdminRoute component.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import AdminRoute from './AdminRoute'
-import { useAuthStore } from '../../store/authStore'
 import { authService } from '../../services/auth'
 
-// Mock auth store
+/*
+ * AdminRoute reads only `isAuthenticated` from the store and the admin flag
+ * from `useIsAdmin`, so the stubs model exactly that slice — typed, with no
+ * cast to the full store state.
+ */
+interface AuthStub {
+  isAuthenticated: boolean
+}
+const { mockUseAuthStore, mockUseIsAdmin } = vi.hoisted(() => ({
+  mockUseAuthStore: vi.fn<() => AuthStub>(),
+  mockUseIsAdmin: vi.fn<() => boolean>(),
+}))
 vi.mock('../../store/authStore', () => ({
-  useAuthStore: vi.fn(),
-  useIsAdmin: vi.fn(),
+  useAuthStore: () => mockUseAuthStore(),
+  useIsAdmin: () => mockUseIsAdmin(),
 }))
 
-// Mock auth service
 vi.mock('../../services/auth', () => ({
   authService: {
     isConfigured: vi.fn(),
   },
 }))
 
-const mockUseAuthStore = vi.mocked(useAuthStore)
 const mockAuthService = vi.mocked(authService)
 
-// Import useIsAdmin after mocking
-import { useIsAdmin } from '../../store/authStore'
-const mockUseIsAdmin = vi.mocked(useIsAdmin)
+/** Point the mocked store at a signed-in user, with `isAdmin` as useIsAdmin's answer. */
+function signedIn(isAdmin: boolean) {
+  mockUseAuthStore.mockReturnValue({ isAuthenticated: true })
+  mockUseIsAdmin.mockReturnValue(isAdmin)
+}
 
-function renderWithRouter(
-  element: React.ReactElement,
-  { initialEntries = ['/admin'] } = {}
-) {
+/** Point the mocked store at an anonymous visitor. */
+function signedOut() {
+  mockUseAuthStore.mockReturnValue({ isAuthenticated: false })
+  mockUseIsAdmin.mockReturnValue(false)
+}
+
+/**
+ * Mount the guard at /admin around a marker child, beside every page it can
+ * send a visitor to: the dashboard (default for non-admins), the login page,
+ * and a custom `redirectTo` target.
+ */
+function renderAdminContent(guardProps: { redirectTo?: string } = {}) {
   return render(
-    <MemoryRouter initialEntries={initialEntries}>
+    <MemoryRouter initialEntries={['/admin']}>
       <Routes>
-        <Route path="/login" element={<div>Login Page</div>} />
         <Route path="/" element={<div>Dashboard</div>} />
-        <Route path="/admin" element={element} />
+        <Route path="/login" element={<div>Login Page</div>} />
+        <Route path="/custom" element={<div>Custom Page</div>} />
+        <Route
+          path="/admin"
+          element={
+            <AdminRoute {...guardProps}>
+              <div>Admin Content</div>
+            </AdminRoute>
+          }
+        />
       </Routes>
     </MemoryRouter>
   )
@@ -51,77 +77,35 @@ describe('AdminRoute', () => {
 
   describe('when Cognito is configured', () => {
     it('renders children when user is authenticated and admin', () => {
-      mockUseAuthStore.mockReturnValue({
-        isAuthenticated: true,
-        user: { username: 'admin', email: 'admin@test.com', groups: ['admins'] },
-      } as ReturnType<typeof useAuthStore>)
-      mockUseIsAdmin.mockReturnValue(true)
+      signedIn(true)
 
-      renderWithRouter(
-        <AdminRoute>
-          <div>Admin Content</div>
-        </AdminRoute>
-      )
+      renderAdminContent()
 
       expect(screen.getByText('Admin Content')).toBeInTheDocument()
     })
 
     it('redirects to login when user is not authenticated', () => {
-      mockUseAuthStore.mockReturnValue({
-        isAuthenticated: false,
-        user: null,
-      } as ReturnType<typeof useAuthStore>)
-      mockUseIsAdmin.mockReturnValue(false)
+      signedOut()
 
-      renderWithRouter(
-        <AdminRoute>
-          <div>Admin Content</div>
-        </AdminRoute>
-      )
+      renderAdminContent()
 
       expect(screen.getByText('Login Page')).toBeInTheDocument()
       expect(screen.queryByText('Admin Content')).not.toBeInTheDocument()
     })
 
     it('redirects to dashboard when user is authenticated but not admin', () => {
-      mockUseAuthStore.mockReturnValue({
-        isAuthenticated: true,
-        user: { username: 'user', email: 'user@test.com', groups: ['viewers'] },
-      } as ReturnType<typeof useAuthStore>)
-      mockUseIsAdmin.mockReturnValue(false)
+      signedIn(false)
 
-      renderWithRouter(
-        <AdminRoute>
-          <div>Admin Content</div>
-        </AdminRoute>
-      )
+      renderAdminContent()
 
       expect(screen.getByText('Dashboard')).toBeInTheDocument()
       expect(screen.queryByText('Admin Content')).not.toBeInTheDocument()
     })
 
     it('redirects to custom path when specified', () => {
-      mockUseAuthStore.mockReturnValue({
-        isAuthenticated: true,
-        user: { username: 'user', email: 'user@test.com', groups: ['viewers'] },
-      } as ReturnType<typeof useAuthStore>)
-      mockUseIsAdmin.mockReturnValue(false)
+      signedIn(false)
 
-      render(
-        <MemoryRouter initialEntries={['/admin']}>
-          <Routes>
-            <Route path="/custom" element={<div>Custom Page</div>} />
-            <Route
-              path="/admin"
-              element={
-                <AdminRoute redirectTo="/custom">
-                  <div>Admin Content</div>
-                </AdminRoute>
-              }
-            />
-          </Routes>
-        </MemoryRouter>
-      )
+      renderAdminContent({ redirectTo: '/custom' })
 
       expect(screen.getByText('Custom Page')).toBeInTheDocument()
     })
@@ -130,29 +114,19 @@ describe('AdminRoute', () => {
   describe('when Cognito is not configured', () => {
     beforeEach(() => {
       mockAuthService.isConfigured.mockReturnValue(false)
+      signedOut()
+    })
+
+    afterEach(() => {
+      vi.unstubAllEnvs()
     })
 
     it('allows access in development mode', () => {
-      const originalEnv = import.meta.env.DEV
-      // @ts-expect-error - modifying read-only property for test
-      import.meta.env.DEV = true
+      vi.stubEnv('DEV', true)
 
-      mockUseAuthStore.mockReturnValue({
-        isAuthenticated: false,
-        user: null,
-      } as ReturnType<typeof useAuthStore>)
-      mockUseIsAdmin.mockReturnValue(false)
-
-      renderWithRouter(
-        <AdminRoute>
-          <div>Admin Content</div>
-        </AdminRoute>
-      )
+      renderAdminContent()
 
       expect(screen.getByText('Admin Content')).toBeInTheDocument()
-
-      // @ts-expect-error - restoring read-only property
-      import.meta.env.DEV = originalEnv
     })
   })
 })

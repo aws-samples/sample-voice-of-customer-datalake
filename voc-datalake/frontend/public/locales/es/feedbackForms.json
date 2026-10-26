@@ -1,16 +1,13 @@
 {
   "card": {
-    "active": "Activo",
     "avgRating": "Calificación promedio",
     "category": "Categoría:",
     "collects": "Recopila",
     "copy": "Copiar",
     "deleteForm": "Eliminar formulario",
     "directLink": "Enlace directo",
-    "disabled": "Deshabilitado",
-    "disableForm": "Deshabilitar formulario",
+    "prototypePins": "Pines del prototipo",
     "editForm": "Editar formulario",
-    "enableForm": "Habilitar formulario",
     "hideEmbedCode": "Ocultar código de integración",
     "iframeEmbed": "Integración iFrame",
     "preview": "Vista previa",
@@ -19,18 +16,28 @@
     "showEmbedCode": "Mostrar código de integración",
     "submissions": "Envíos",
     "themeLabel": "Tema",
-    "viewSubmissions": "Ver envíos"
+    "themeDefault": "Colores predeterminados",
+    "themeCustom": "Color personalizado",
+    "viewSubmissions": "Ver envíos",
+    "collectsName": "Nombre",
+    "collectsEmail": "Correo electrónico",
+    "disabledNotice": "Este formulario está desactivado. Su enlace e inserción muestran «Feedback form unavailable.» hasta que lo actives.",
+    "live": "Activo",
+    "off": "Desactivado",
+    "noSubmissionsYet": "Aún no hay respuestas: comparte el formulario para recibirlas.",
+    "themeSwatch": "Color del formulario"
   },
-  "configureApiFirst": "Configure el endpoint de la API en Configuración para gestionar formularios de feedback.",
+  "configureApiFirst": "Configure el endpoint de la API en Administración → Configuración general para gestionar formularios de feedback.",
   "createForm": "Crear formulario",
   "deleteConfirmLabel": "Eliminar",
   "deleteConfirmMessage": "¿Está seguro de que desea eliminar este formulario? Esta acción no se puede deshacer.",
+  "deleteConfirmMessageNamed": "¿Eliminar el formulario «{{name}}»? Esta acción no se puede deshacer.",
   "deleteConfirmTitle": "Eliminar formulario",
   "editor": {
     "backgroundColor": "Color de fondo",
     "borderRadius": "Radio de borde",
     "cancel": "Cancelar",
-    "categoryHint": "Las categorías se configuran en Configuración → Categorías de feedback",
+    "categoryHint": "Las categorías se configuran en Administración → Taxonomía → Categorías",
     "categoryLabel": "Categoría",
     "categoryRoutingDescription": "Asigne una categoría a este formulario. Todo el feedback enviado a través de este formulario se etiquetará automáticamente con la categoría seleccionada.",
     "categoryRoutingTitle": "Enrutamiento de categoría",
@@ -51,9 +58,9 @@
     "previewTagged": "El feedback de este formulario se etiquetará como:",
     "primaryColor": "Color primario",
     "question": "Pregunta",
-    "ratingEmoji": "Emoticono 😀",
+    "ratingEmoji": "Emoticono",
     "ratingNumeric": "Numérico (1-10)",
-    "ratingStars": "Estrellas ⭐",
+    "ratingStars": "Estrellas",
     "saveChanges": "Guardar cambios",
     "saving": "Guardando...",
     "selectCategory": "-- Seleccionar categoría --",
@@ -68,8 +75,9 @@
       "formSettings": "Configuración del formulario",
       "settings": "Configuración",
       "theme": "Tema",
-      "validates": "Valida",
-      "validatesShort": "Valida"
+      "validates": "Proyecto vinculado",
+      "validatesShort": "Proyecto",
+      "label": "Secciones del editor de formularios"
     },
     "textColor": "Color de texto",
     "validationDescription": "Opcionalmente registre a qué proyecto — y a qué PRD o PR/FAQ — se refieren los comentarios de este formulario. Las valoraciones recopiladas aparecerán junto a ese documento en la página de Priorización. Deje ambos vacíos para un formulario independiente, como una encuesta del sitio web.",
@@ -80,12 +88,14 @@
     "validationNoProject": "-- Sin vincular --",
     "validationProjectHint": "Borrar el proyecto desvincula este formulario.",
     "validationProjectLabel": "Proyecto",
-    "validationTitle": "Qué valida este formulario",
+    "validationTitle": "Proyecto o documento vinculado",
     "validationUnknownDocument": "Documento vinculado (ya no disponible)",
     "validationUnknownProject": "Proyecto vinculado (ya no disponible)",
     "validationUnverifiedDocument": "Documento vinculado (no se pudo comprobar)",
     "validationUnverifiedProject": "Proyecto vinculado (no se pudo comprobar)",
-    "validationWholeProject": "-- Todo el proyecto --"
+    "validationWholeProject": "-- Todo el proyecto --",
+    "dimensionsHint": "Cada envío lleva estos valores. Cada inserción puede fijar los suyos por página con la opción dimensions, por ejemplo",
+    "dimensionsDevHint": "Para desarrolladores: defínelos por página en el código de inserción"
   },
   "empty": {
     "createButton": "Crear su primer formulario",
@@ -97,7 +107,7 @@
     "item2": "Cada formulario tiene su propia URL y código de integración",
     "item3": "Asigne categorías para enrutar feedback automáticamente",
     "item4": "Todas las respuestas pasan por enriquecimiento de IA (sentimiento, personas, etc.)",
-    "title": "Recopilación de feedback estilo Typeform"
+    "title": "Cómo funcionan los formularios de feedback"
   },
   "submissions": {
     "avgRating": "Calificación promedio",
@@ -129,5 +139,14 @@
     "selectPrompt": "Seleccione una plantilla para continuar",
     "subtitle": "Elija una plantilla para comenzar",
     "title": "Crear nuevo formulario"
+  },
+  "createdDisabled": {
+    "dismiss": "Descartar",
+    "enable": "Activar ahora",
+    "message": "Se creó «{{name}}» y está desactivado: quien abra su enlace verá «Feedback form unavailable.» hasta que lo actives."
+  },
+  "systemForms": {
+    "title": "Formularios del sistema ({{n, number}})",
+    "description": "Se crean automáticamente para cada prototipo que construyes, para recoger los comentarios de los testers. No necesitas compartirlos ni editarlos."
   }
 }

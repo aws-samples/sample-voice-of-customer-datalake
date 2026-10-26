@@ -1,0 +1,476 @@
+{
+  "card": {
+    "kicker": "Aprovação necessária",
+    "details": "Detalhes",
+    "toolName": "Ação: {{name}}",
+    "kickerDestructive": "Aprovação necessária · não pode ser desfeito",
+    "project": "Projeto",
+    "expired": "Expirada",
+    "expiresIn": "Expira em {{time}}",
+    "approve": "Aprovar",
+    "approveDestructive": "Aprovar e excluir",
+    "decline": "Recusar",
+    "confirmDecline": "Recusar",
+    "back": "Voltar",
+    "dismiss": "Dispensar",
+    "reasonLabel": "Motivo (opcional)",
+    "reasonPlaceholder": "Diga ao assistente o motivo para que ele possa se ajustar",
+    "executing": "Processando…",
+    "adminOnly": "Somente administradores podem aprovar esta ação. Você ainda pode recusá-la.",
+    "destructiveWarning": "Isto exclui dados permanentemente e não pode ser desfeito.",
+    "destructiveConfirm": "Entendo, excluir",
+    "invalidArgs": "A solicitação do assistente é inválida e não pode ser aprovada:",
+    "unknownTool": "Esta ação não está disponível aqui e não pode ser aprovada.",
+    "unknownToolTitle": "Uma ação que este app não reconhece",
+    "resolved": {
+      "executed": "Concluído",
+      "failed": "Falhou",
+      "declined": "Recusada",
+      "expired": "Expirada"
+    },
+    "openScraper": "Abrir este scraper na página Scrapers",
+    "openScrapers": "Abrir a página Scrapers",
+    "openUsers": "Abrir Privacidade e acesso → Usuários",
+    "approvePlan": "Aprovar e executar",
+    "change": "Alterar",
+    "changeLabel": "O que deve mudar?",
+    "changePlaceholder": "Por exemplo: deixe de fora o app Android ou use 3 personas",
+    "confirmChange": "Pedir alterações",
+    "openFeedback": "Abrir a lista de feedback",
+    "openRadar": "Abrir Radar",
+    "openRadarSettings": "Abrir Administração → Fontes → Radar"
+  },
+  "preview": {
+    "showMore": "Mostrar tudo ({{n, number}} caracteres)",
+    "showLess": "Mostrar menos",
+    "empty": "(vazio)",
+    "yes": "Sim",
+    "no": "Não",
+    "loading": "Carregando a versão atual…",
+    "before": "Atual",
+    "after": "Proposto",
+    "unchanged": "inalterado",
+    "document": "Documento",
+    "persona": "Persona",
+    "changeSummary": "Alteração",
+    "currentUnavailable": "Não foi possível carregar os valores atuais; apenas os valores propostos são exibidos.",
+    "unknownCategory": "A categoria “{{category}}” não está entre as que você pode ver — a alteração será recusada.",
+    "brandMerged": "Configurações após salvar (campos não mencionados mantêm o valor atual):",
+    "diff": {
+      "label": "Alterações no documento",
+      "stats": "{{added, number}} linhas adicionadas, {{removed, number}} linhas removidas",
+      "unchanged": "… {{n, number}} linhas inalteradas …",
+      "same": "Inalterado:",
+      "add": "Adicionado:",
+      "del": "Removido:",
+      "noChanges": "O conteúdo proposto é idêntico ao documento atual.",
+      "tooLarge": "O documento é grande demais para comparar linha a linha. Exibindo o início de cada versão.",
+      "currentUnavailable": "Não foi possível carregar o documento atual. Conteúdo proposto:"
+    },
+    "job": {
+      "timeWindow": "Lê o feedback dos últimos {{days, number}} dias (o período selecionado no aplicativo).",
+      "language": "Escreve o resultado em {{language}}.",
+      "background": "Isto é executado em segundo plano e aparece nos trabalhos do projeto. Você pode continuar trabalhando enquanto isso."
+    },
+    "agent": "Agente",
+    "run": "Execução",
+    "memory": {
+      "scope": {
+        "company": "Empresa — todos",
+        "personal": "Pessoal — só você"
+      },
+      "kind": {
+        "product": "Produto",
+        "customer": "Cliente",
+        "agents": "Agentes",
+        "working_style": "Estilo de trabalho",
+        "strategy": "Estratégia",
+        "objective": "Objetivo",
+        "other": "Outro"
+      },
+      "retention": {
+        "long_term": "Mantida a longo prazo",
+        "dated": "Até {{date}}",
+        "decay": "Expira após 90 dias sem uso"
+      },
+      "resolve": {
+        "keep_both": "manter ambas",
+        "keep": "manter uma",
+        "replace": "substituir",
+        "merge": "mesclar"
+      },
+      "companyVisible": "As memórias da empresa são visíveis para todos e usadas pelo assistente e pelos agentes para todos os usuários.",
+      "supporters_one": "{{count, number}} pessoa apoia a declaração atual.",
+      "supporters_other": "{{count, number}} pessoas apoiam a declaração atual.",
+      "reason": "Motivo",
+      "forEveryone": "Isso altera o que a empresa lembra, para todos. Se você não for administrador nem revisor de memória, será registrado como proposta para revisão."
+    },
+    "workflow": {
+      "unchanged": "A definição proposta é idêntica à atual.",
+      "meta": "Alterado: {{fields}}",
+      "addedSteps": "Etapas adicionadas",
+      "removedSteps": "Etapas removidas",
+      "changedSteps": "Etapas alteradas",
+      "showMoves": "Mostrar {{n, number}} etapas apenas movidas",
+      "hideMoves": "Ocultar etapas apenas movidas",
+      "addedArrows": "Setas adicionadas",
+      "removedArrows": "Setas removidas",
+      "changedArrows": "Setas alteradas",
+      "loopsChanged": "Loops alterados ({{n, number}} após salvar).",
+      "revision": "{{name}}: revisão {{from}} → {{to}}",
+      "stale": "Esta proposta foi criada sobre a revisão {{expected}}, mas a atual é {{current}} — o salvamento será recusado; peça ao assistente para recriá-la.",
+      "counts": "{{nodes, number}} etapas, {{edges, number}} setas, {{loops, number}} loops"
+    },
+    "radar": {
+      "notTracked": "Não acompanhada",
+      "removed": "Removida (as avaliações e lançamentos salvos são mantidos)",
+      "noDomains": "Sem domínios",
+      "unavailable": "Não foi possível ler a lista atual de marcas do Radar, então aprovar não salvará nada.",
+      "profileKept": "Mantidas a partir dos perfis de fonte: {{brands}}",
+      "removalKeepsData": "Remover uma marca interrompe as varreduras e o encaminhamento das avaliações; nada salvo é excluído.",
+      "everyBrand": "Todas as marcas acompanhadas",
+      "brand": "Marca",
+      "scanFields": "Varredura",
+      "scanCost": "Executa em segundo plano por alguns minutos e usa pesquisas na web (no máximo o limite de consultas das configurações do Radar)."
+    },
+    "scraper": {
+      "nothingSaved": "Nada é salvo até você aprovar.",
+      "savedFields": "Campos que serão salvos",
+      "changedFields": "Campos alterados",
+      "noChange": "Estes valores são iguais aos salvos; aprovar não muda nada.",
+      "unchangedFields_one": "{{count, number}} campo inalterado",
+      "unchangedFields_other": "{{count, number}} campos inalterados",
+      "notFound": "O scraper {{id}} não foi encontrado; aprovar não salvará nada.",
+      "none": "Nenhum",
+      "notSet": "Não definido",
+      "scheduleOff": "Desligado",
+      "scheduleEvery": "A cada {{n, number}} minutos",
+      "paginationOff": "Desligada",
+      "paginationOn": "Parâmetro \"{{param}}\", {{pages, number}} páginas a partir de {{start}}",
+      "pagesN": "{{n}} páginas",
+      "pagesAll": "Todas as páginas",
+      "reviewsN": "Até {{n}} avaliações",
+      "reviewsUnlimited": "Sem limite de avaliações",
+      "radarNone": "Não — nosso próprio feedback",
+      "method": {
+        "css": "Seletores CSS",
+        "jsonld": "JSON-LD (dados estruturados de avaliações)"
+      },
+      "store": {
+        "app_reviews_ios": "Apple App Store (iOS)",
+        "app_reviews_android": "Google Play (Android)",
+        "web_reviews": "Página de avaliações na web"
+      },
+      "sort": {
+        "most_recent": "Mais recentes",
+        "newest": "Mais novas",
+        "rating": "Por nota"
+      },
+      "fields": {
+        "id": "ID",
+        "name": "Nome",
+        "urls": "URLs",
+        "extraction_method": "Método",
+        "container_selector": "Seletor do bloco de avaliação",
+        "text_selector": "Seletor de texto",
+        "title_selector": "Seletor de título",
+        "rating_selector": "Seletor de nota",
+        "rating_attribute": "Atributo de nota",
+        "date_selector": "Seletor de data",
+        "author_selector": "Seletor de autor",
+        "link_selector": "Seletor de link",
+        "pagination": "Paginação",
+        "schedule": "Agendamento",
+        "enabled": "Ativado",
+        "dimension_defaults": "Valores padrão de dimensão",
+        "tags": "Tags",
+        "store": "Loja",
+        "app_name": "Nome do app",
+        "app_id": "ID da App Store",
+        "package_name": "Nome do pacote",
+        "sort_by": "Ordenação",
+        "max_reviews_per_run": "Máx. avaliações por execução",
+        "url": "URL da página de avaliações",
+        "max_pages": "Máx. páginas por execução",
+        "max_reviews": "Limite de avaliações",
+        "radar_brand": "Fonte do Radar"
+      }
+    },
+    "users": {
+      "userFields": "Dados do usuário",
+      "email": "E-mail",
+      "role": "Função",
+      "roleAdmins": "Administrador",
+      "roleUsers": "Usuário",
+      "firstName": "Nome",
+      "lastName": "Sobrenome",
+      "account": "Conta",
+      "enabled": "Ativado",
+      "disabled": "Desativado",
+      "notSet": "Não definido",
+      "categories": "Categorias",
+      "allCategories": "Todas as categorias",
+      "sources": "Fontes",
+      "allSources": "Todas as fontes, inclusive as restritas",
+      "defaultSources": "Todas as fontes não restritas (padrão)",
+      "temporaryPasswordNote": "O Cognito envia a esta pessoa uma senha temporária por e-mail. Nada mais é criado ou alterado.",
+      "notFound": "O usuário {{username}} não foi encontrado; aprovar não salvará nada.",
+      "usersTableLabel_one": "{{count, number}} usuário a criar",
+      "usersTableLabel_other": "{{count, number}} usuários a criar",
+      "temporaryPasswordsNote": "O Cognito envia a cada pessoa uma senha temporária por e-mail. Nada mais é criado ou alterado.",
+      "inOrderNote": "Os usuários são criados nesta ordem; se um falhar, os demais não são criados.",
+      "adminsNote": "{{n, number}} de {{total, number}} serão administradores, com acesso total a configurações, usuários e dados."
+    },
+    "plan": {
+      "goal": "Objetivo",
+      "result": {
+        "label": "Resultado",
+        "showMore": "Mostrar o resultado completo",
+        "showLess": "Mostrar menos",
+        "none": "Esta etapa terminou sem guardar nenhum resultado."
+      },
+      "steps": "Etapas do plano",
+      "free": "escrito quando for executado",
+      "reference": "← resultado da etapa {{n}} ({{output}})",
+      "fields": "Campos de “{{title}}”",
+      "noArgs": "Sem campos.",
+      "asksAgain": "perguntará de novo",
+      "after": "depois da etapa {{steps}}",
+      "limits": "{{steps, number}} de {{maxSteps, number}} etapas · {{writes, number}} de {{maxWrites, number}} alterações · {{waits, number}} de {{maxWaits, number}} esperas · {{thinks, number}} de {{maxThinks, number}} análises",
+      "invalid": "Este plano tem problemas e não será iniciado:",
+      "runsInBackground": "Ao aprovar, cada etapa é executada em segundo plano, como mostrado. Uma alteração diferente, ou uma etapa marcada “perguntará de novo”, pede sua confirmação antes. Enquanto isso, você pode fechar o navegador.",
+      "think": "Análise com as ferramentas somente leitura desta página",
+      "waitFor": {
+        "source_run": "Aguarda a importação terminar",
+        "project_job": "Aguarda a tarefa do projeto terminar",
+        "scraper_run": "Aguarda a execução do scraper terminar"
+      },
+      "kinds": {
+        "write": "Alteração",
+        "wait": "Espera",
+        "think": "Análise"
+      },
+      "packs": {
+        "core": "Geral",
+        "insights": "Insights",
+        "project": "Projeto",
+        "forms": "Formulários de feedback",
+        "prioritization": "Priorização",
+        "scrapers": "Fontes de dados",
+        "settings": "Configurações",
+        "memory": "Memória",
+        "agents": "Agentes",
+        "company": "Empresa"
+      }
+    },
+    "reviewImport": {
+      "summaryLabel": "Detalhes da importação",
+      "sourceName": "Nome da fonte",
+      "sourceId": "Perfil da fonte",
+      "count": "Avaliações",
+      "countValue_one": "{{count, number}} avaliação",
+      "countValue_other": "{{count, number}} avaliações",
+      "rated": "Com nota",
+      "dated": "Com data",
+      "ofTotal": "{{n, number}} de {{total, number}}",
+      "tableLabel": "Avaliações a importar",
+      "text": "Avaliação",
+      "rating": "Nota",
+      "author": "Autor",
+      "date": "Data",
+      "undatedNote_one": "{{count, number}} avaliação não tem data; ela recebe a data da importação.",
+      "undatedNote_other": "{{count, number}} avaliações não têm data; elas recebem a data da importação.",
+      "pipelineNote": "As avaliações passam pelo enriquecimento normal e aparecem em poucos minutos. Importar as mesmas avaliações de novo as guarda uma só vez.",
+      "url": "Link",
+      "title": "Título",
+      "reviewAllNote": "Todas as avaliações estão listadas; role para conferir cada linha antes de aprovar."
+    },
+    "sourceSchedule": {
+      "label": "Alteração de agendamento",
+      "source": "Fonte",
+      "schedule": "Agendamento",
+      "on": "Ativado",
+      "off": "Desativado",
+      "onNote": "As importações agendadas voltam a rodar e um disjuntor acionado é fechado.",
+      "offNote": "As importações agendadas param. Nada do que já foi importado muda."
+    }
+  },
+  "tools": {
+    "save_radar_brands": {
+      "title": "Salvar a lista de marcas do Radar",
+      "titleWith_one": "Salvar a lista de marcas do Radar ({{count, number}} marca)",
+      "titleWith_other": "Salvar a lista de marcas do Radar ({{count, number}} marcas)"
+    },
+    "run_radar_scan": {
+      "title": "Buscar agora lançamentos das marcas do Radar"
+    },
+    "create_project": {
+      "title": "Criar um projeto",
+      "titleWith": "Criar o projeto “{{name}}”"
+    },
+    "set_problem_resolved": {
+      "title": "Alterar o status de um problema",
+      "titleResolve": "Marcar um problema como resolvido",
+      "titleReopen": "Reabrir um problema"
+    },
+    "set_feedback_category": {
+      "title": "Alterar a categoria de uma avaliação",
+      "titleWith": "Alterar a categoria para “{{category}}”"
+    },
+    "update_document": {
+      "title": "Editar um documento"
+    },
+    "create_document": {
+      "title": "Criar um documento",
+      "titleWith": "Criar o documento “{{title}}”"
+    },
+    "delete_document": {
+      "title": "Excluir um documento"
+    },
+    "update_persona": {
+      "title": "Editar uma persona"
+    },
+    "add_persona_note": {
+      "title": "Adicionar uma nota de pesquisa a uma persona"
+    },
+    "update_project": {
+      "title": "Editar os detalhes do projeto"
+    },
+    "update_product_context": {
+      "title": "Atualizar a descrição do produto"
+    },
+    "start_research": {
+      "title": "Iniciar uma análise de pesquisa"
+    },
+    "generate_document": {
+      "title": "Gerar um documento",
+      "titlePrd": "Escrever um PRD (requisitos de produto)",
+      "titlePrfaq": "Gerar um PR/FAQ"
+    },
+    "generate_personas": {
+      "title": "Gerar personas",
+      "titleWith": "Gerar personas ({{n, number}})"
+    },
+    "merge_documents": {
+      "title": "Mesclar documentos"
+    },
+    "update_feedback_form": {
+      "title": "Atualizar um formulário de feedback"
+    },
+    "run_scraper": {
+      "title": "Coletar avaliações de uma fonte agora"
+    },
+    "save_brand_settings": {
+      "title": "Salvar as configurações da marca"
+    },
+    "remember": {
+      "title": "Lembrar",
+      "titleCompany": "Lembrar para a empresa",
+      "titlePersonal": "Lembrar para você"
+    },
+    "update_company_memory": {
+      "title": "Alterar uma memória da empresa"
+    },
+    "forget_memory": {
+      "title": "Esquecer uma memória"
+    },
+    "confirm_memory": {
+      "title": "Concordar com uma memória"
+    },
+    "merge_memories": {
+      "title": "Mesclar memórias",
+      "titleWith": "Mesclar {{n, number}} memórias"
+    },
+    "resolve_memory_conflict": {
+      "title": "Resolver um conflito de memória",
+      "titleWith": "Resolver um conflito de memória: {{action}}"
+    },
+    "create_agent": {
+      "title": "Criar um agente autônomo",
+      "titleWith": "Criar o agente “{{name}}”"
+    },
+    "update_agent": {
+      "title": "Alterar um agente autônomo"
+    },
+    "enable_agent": {
+      "title": "Ativar um agente autônomo"
+    },
+    "disable_agent": {
+      "title": "Desativar um agente autônomo"
+    },
+    "run_agent": {
+      "title": "Executar um agente autônomo agora"
+    },
+    "cancel_agent_run": {
+      "title": "Cancelar a execução de um agente"
+    },
+    "create_workflow": {
+      "title": "Criar um fluxo de trabalho",
+      "titleWith": "Criar o fluxo de trabalho “{{name}}”"
+    },
+    "update_workflow": {
+      "title": "Salvar alterações em um fluxo de trabalho"
+    },
+    "duplicate_workflow": {
+      "title": "Duplicar um fluxo de trabalho"
+    },
+    "update_company_context": {
+      "title": "Alterar a visão e os objetivos da empresa"
+    },
+    "update_my_context": {
+      "title": "Alterar seus objetivos e KPIs"
+    },
+    "update_design_system": {
+      "title": "Alterar o design system"
+    },
+    "create_scraper": {
+      "title": "Adicionar uma fonte de avaliações (página web)"
+    },
+    "update_scraper": {
+      "title": "Alterar uma fonte de avaliações"
+    },
+    "create_app_connector": {
+      "title": "Adicionar uma fonte de avaliações (app ou site de avaliações)"
+    },
+    "create_user": {
+      "title": "Criar um usuário",
+      "titleWith": "Criar o usuário {{email}}"
+    },
+    "update_user": {
+      "title": "Atualizar um usuário"
+    },
+    "set_user_access": {
+      "title": "Definir o acesso de um usuário",
+      "titleWith": "Definir o acesso de {{email}}"
+    },
+    "run_source": {
+      "title": "Importar agora de uma fonte",
+      "titleWith": "Importar agora de {{source}}"
+    },
+    "build_prototype": {
+      "title": "Criar um protótipo",
+      "titleWith": "Criar o protótipo “{{title}}”"
+    },
+    "cancel_plan": {
+      "title": "Cancelar um plano em execução"
+    },
+    "propose_plan": {
+      "title": "Aprovar um plano"
+    },
+    "set_source_enabled": {
+      "title": "Alterar o agendamento de uma fonte",
+      "titleEnable": "Ativar o agendamento de {{source}}",
+      "titleDisable": "Desativar o agendamento de {{source}}"
+    },
+    "import_reviews": {
+      "title": "Importar avaliações",
+      "titleWith_one": "Importar {{count, number}} avaliação de {{source}}",
+      "titleWith_other": "Importar {{count, number}} avaliações de {{source}}"
+    },
+    "create_users": {
+      "title": "Criar usuários",
+      "titleWith_one": "Criar {{count, number}} usuário",
+      "titleWith_other": "Criar {{count, number}} usuários"
+    }
+  }
+}

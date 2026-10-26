@@ -1,0 +1,98 @@
+{
+  "tab": "Decyzje",
+  "title": "Decyzje",
+  "subtitle": "Realizuj, wstrzymaj lub odrzuć: uzasadnienie, sposób mierzenia sukcesu i moment, w którym zrezygnujesz.",
+  "new": "Nowa decyzja",
+  "empty": "Brak decyzji. Zapisz decyzję, gdy wybierzesz sposób rozwiązania problemu.",
+  "formLabel": "Decyzja",
+  "verdict": {
+    "label": "Werdykt",
+    "pursue": "Realizuj",
+    "park": "Wstrzymaj",
+    "reject": "Odrzuć"
+  },
+  "fields": {
+    "title": "Tytuł",
+    "rationale": "Uzasadnienie",
+    "successMetric": "Miara sukcesu",
+    "killCriterion": "Kryterium zakończenia",
+    "reviewBy": "Przegląd do",
+    "launchedAt": "Wdrożono",
+    "feedbackIds": "Identyfikatory opinii",
+    "feedbackIdsHint": "Oddziel identyfikatory spacjami lub przecinkami.",
+    "documents": "Dokumenty pomocnicze"
+  },
+  "actions": {
+    "save": "Zapisz decyzję",
+    "cancel": "Anuluj",
+    "edit": "Edytuj",
+    "pursue": "Przygotuj PR/FAQ",
+    "pursueAgain": "Przygotuj kolejny PR/FAQ",
+    "pursueHint": "Rozpoczyna generowanie PR/FAQ na podstawie tej decyzji.",
+    "pursueConfirmTitle": "Przygotować PR/FAQ?",
+    "pursueConfirmMessage": "AI przygotuje PR/FAQ na podstawie decyzji \"{{title}}\". Zajmie to kilka minut; wersja robocza pojawi się w sekcji Dokumenty, gdy będzie gotowa.",
+    "pursueConfirm": "Przygotuj PR/FAQ",
+    "pursued": "Z tej decyzji zlecono PR/FAQ. Pojawi się w sekcji Dokumenty po zakończeniu zadania.",
+    "prfaqReady": "PR/FAQ gotowy: {{title}}",
+    "prfaqFailed": "Nie udało się wygenerować PR/FAQ z tej decyzji. Spróbuj przygotować go ponownie.",
+    "revisit": "Wróć do tematu",
+    "releaseWatch": "Monitoruj wydanie",
+    "hideReleaseWatch": "Ukryj monitoring wydania"
+  },
+  "picker": {
+    "label": "Wspierające opinie",
+    "placeholder": "Szukaj opinii do dodania, np. \"opóźniona dostawa\"",
+    "results": "Pasujące opinie",
+    "picked": "Dodane opinie",
+    "searching": "Wyszukiwanie…",
+    "failed": "Wyszukiwanie nie powiodło się. Spróbuj ponownie.",
+    "noMatch": "Brak opinii pasujących do \"{{q}}\".",
+    "linked": "Powiązana opinia {{n}}",
+    "remove": "Usuń {{label}}",
+    "advanced": "Zaawansowane: wklej identyfikatory opinii"
+  },
+  "decidedBy": "Decyzję podjął {{name}}, {{date}}",
+  "decidedOn": "Decyzja z dnia {{date}}",
+  "evidence": "Dowody",
+  "errors": {
+    "save": "Nie udało się zapisać decyzji.",
+    "conflict": "Ta decyzja zmieniła się od czasu jej otwarcia. Odśwież stronę i spróbuj ponownie.",
+    "pursue": "Nie udało się rozpocząć przygotowania PR/FAQ."
+  },
+  "releaseWatch": {
+    "title": "Monitoring wydania",
+    "subtitle": "Opinie z {{days, number}} dni przed i po każdym wydaniu.",
+    "empty": "Brak wydań w tym okresie.",
+    "regression": "Regresja",
+    "noRegression": "Brak regresji",
+    "before": "Przed",
+    "after": "Po",
+    "volume": "Liczba",
+    "negative": "Negatywne",
+    "sentiment": "Nastroje",
+    "afterDays": "Dni obserwacji po wydaniu: {{days, number}}",
+    "reasons": {
+      "sentiment_drop": "Spadek nastrojów",
+      "negative_rise": "Wzrost negatywnych opinii"
+    },
+    "complaints": "Rosnące skargi",
+    "evidenceItem": "Opinia {{n}}",
+    "evidence": "Najbardziej negatywne po wydaniu",
+    "partial": "Częściowo: odczytano do {{date}}",
+    "loading": "Ładowanie obserwacji wydania",
+    "error": "Nie udało się załadować obserwacji wydania.",
+    "topCategories": {
+      "before": "Najczęstsze kategorie przed",
+      "after": "Najczęstsze kategorie po",
+      "new": "Nowa wśród najczęstszych",
+      "grew_one": "Wzrost z {{count, number}}",
+      "grew_few": "Wzrost z {{count, number}}",
+      "grew_many": "Wzrost z {{count, number}}",
+      "grew_other": "Wzrost z {{count, number}}",
+      "count_one": "{{count, number}} opinia",
+      "count_few": "{{count, number}} opinie",
+      "count_many": "{{count, number}} opinii",
+      "count_other": "{{count, number}} opinii"
+    }
+  }
+}

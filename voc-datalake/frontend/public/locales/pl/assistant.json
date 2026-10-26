@@ -1,0 +1,313 @@
+{
+  "launcher": {
+    "open": "Otwórz asystenta",
+    "close": "Zamknij asystenta",
+    "askAboutProject": "Zapytaj asystenta",
+    "moveHint": "Przeciągnij lub użyj strzałek, aby przesunąć przycisk asystenta. Home przywraca jego pierwotne położenie.",
+    "resetPosition": "Zresetuj położenie przycisku asystenta"
+  },
+  "panel": {
+    "title": "Asystent",
+    "using": "Kontekst: {{context}}",
+    "newChat": "Nowy czat",
+    "sessions": "Poprzednie rozmowy",
+    "export": "Eksportuj rozmowę (Markdown)",
+    "expand": "Rozwiń",
+    "fullscreen": "Pełny ekran",
+    "exitFullscreen": "Wyjdź z pełnego ekranu",
+    "more": "Więcej akcji",
+    "close": "Zamknij",
+    "messages": "Rozmowa",
+    "thinking": "Myślę…",
+    "stillGenerating": "Nadal generuję…"
+  },
+  "pages": {
+    "home": "Strona główna",
+    "dashboard": "Pulpit",
+    "feedback": "Opinie",
+    "categories": "Kategorie",
+    "problems": "Analiza problemów",
+    "chat": "Czat AI",
+    "projects": "Projekty",
+    "project": "Projekt",
+    "prioritization": "Priorytetyzacja",
+    "data-explorer": "Eksplorator danych",
+    "scrapers": "Scrapery",
+    "feedback-forms": "Formularze opinii",
+    "settings": "Ustawienia",
+    "admin": "Administracja",
+    "memory": "Pamięć",
+    "agents": "Autonomiczni agenci",
+    "agent": "Agent",
+    "workflow": "Przepływ pracy",
+    "company": "Firma",
+    "connect": "Połączenia",
+    "radar": "Radar",
+    "account": "Konto",
+    "other": "Ta strona"
+  },
+  "message": {
+    "saveAsDocument": {
+      "idle": "Zapisz jako dokument",
+      "saving": "Zapisywanie…",
+      "saved": "Zapisano w dokumentach",
+      "error": "Zapis nie powiódł się – ponów"
+    },
+    "reasoning": "Rozumowanie",
+    "toolSteps": "Wykonane kroki",
+    "feedbackSources": "Powiązane opinie",
+    "webSources": "Źródła z sieci",
+    "personaAnswers": "Odpowiedzi person",
+    "toolGroupRunning_other": "Przeglądam {{count, number}} rzeczy…",
+    "toolGroupRunning_one": "Przeglądam {{count, number}} rzecz…",
+    "toolGroup_other": "Przejrzano {{count, number}} rzeczy",
+    "toolGroup_one": "Przejrzano {{count, number}} rzecz",
+    "externalLink": "{{host}}, otwiera się w nowej karcie",
+    "copy": "Kopiuj",
+    "copied": "Skopiowano",
+    "savedDocumentTitle": "Odpowiedź asystenta – {{date}}",
+    "toolGroupRunning_few": "Przeglądam {{count, number}} elementy…",
+    "toolGroupRunning_many": "Przeglądam {{count, number}} elementów…",
+    "toolGroup_few": "Przejrzano {{count, number}} elementy",
+    "toolGroup_many": "Przejrzano {{count, number}} elementów"
+  },
+  "toolStatus": {
+    "complete": "gotowe",
+    "awaiting_approval": "czeka na Twoją akceptację",
+    "executed": "wykonano",
+    "failed": "nie powiodło się",
+    "declined": "odrzucono",
+    "cancelled": "anulowano",
+    "streaming": "przygotowuję",
+    "running": "wykonuję"
+  },
+  "approvals": {
+    "title": "Działania oczekujące na akceptację",
+    "resolved": {
+      "executed": "wykonano",
+      "failed": "nie powiodło się",
+      "declined": "odrzucono"
+    }
+  },
+  "composer": {
+    "label": "Napisz do asystenta",
+    "placeholder": "Zapytaj o opinie klientów, projekty lub tę stronę…",
+    "send": "Wyślij",
+    "stop": "Zatrzymaj",
+    "attach": "Dołącz obraz lub dokument",
+    "webSearch": "Szukaj w sieci",
+    "removeAttachment": "Usuń {{name}}",
+    "awaitingApproval": "Zaakceptuj lub odrzuć oczekujące działanie, aby kontynuować.",
+    "restoring": "Otwieranie ostatniej rozmowy…",
+    "attachmentError": {
+      "type": "Można dołączać tylko obrazy (PNG, JPEG, GIF, WebP) oraz dokumenty (PDF, Word, Excel, CSV, HTML, tekst, Markdown).",
+      "count": "Można dołączyć maksymalnie {{max, number}} plików.",
+      "size": "Łączny rozmiar załączników nie może przekraczać {{mb}} MB.",
+      "read": "Nie udało się odczytać pliku."
+    },
+    "stillGenerating": "Odpowiedź jest wciąż przygotowywana. Pojawi się tutaj, gdy będzie gotowa.",
+    "counter": "{{length, number}} / {{max, number}}"
+  },
+  "errors": {
+    "streamClosed": "Połączenie zostało zamknięte, zanim odpowiedź została ukończona. Spróbuj ponownie.",
+    "generic": "Coś poszło nie tak: {{message}}",
+    "followTimeout": "Odpowiedź trwa dłużej niż zwykle. Otwórz tę rozmowę później, aby ją zobaczyć."
+  },
+  "export": {
+    "user": "Ty",
+    "assistant": "Asystent"
+  },
+  "sessions": {
+    "title": "Poprzednie rozmowy",
+    "close": "Zamknij",
+    "loading": "Ładowanie rozmów",
+    "error": "Nie udało się załadować rozmów.",
+    "empty": "Brak zapisanych rozmów.",
+    "untitled": "Rozmowa bez nazwy",
+    "deleteConfirmTitle": "Usunąć „{{title}}”?",
+    "deleteConfirmMessage": "Rozmowa i jej wiadomości zostaną trwale usunięte. Tej operacji nie można cofnąć.",
+    "deleteConfirm": "Usuń rozmowę",
+    "renameInput": "Nazwa rozmowy",
+    "closeRunningItem": "Zatrzymaj i zamknij",
+    "closeItem": "Zamknij",
+    "deleteItem": "Usuń",
+    "renameItem": "Zmień nazwę",
+    "more": "Więcej działań dla „{{title}}”",
+    "renameFailed": "Nie udało się zmienić nazwy rozmowy.",
+    "renameBusy": "Odpowiedź jest wciąż generowana. Zmień nazwę po jej zakończeniu.",
+    "newConversation": "Nowa rozmowa",
+    "sidebar": "Rozmowy",
+    "collapseSidebar": "Zwiń listę rozmów",
+    "expandSidebar": "Rozwiń listę rozmów",
+    "openGroup": "Otwarte",
+    "historyGroup": "Historia",
+    "search": "Szukaj rozmów",
+    "searchPlaceholder": "Szukaj rozmów",
+    "noMatch": "Brak rozmów pasujących do wyszukiwania.",
+    "when": {
+      "today": "Dziś",
+      "week": "W tym tygodniu",
+      "older": "Starsze"
+    },
+    "status": {
+      "streaming": "W toku",
+      "awaiting": "Oczekuje na Twoją akceptację",
+      "error": "Błąd",
+      "unread": "Nowa odpowiedź"
+    }
+  },
+  "empty": {
+    "title": "W czym mogę pomóc?",
+    "subtitle": "Mogę odczytywać Twoje dane i proponować zmiany, ale nic nie zostanie zmienione bez Twojej akceptacji."
+  },
+  "suggestions": {
+    "dashboard": {
+      "1": "Jak zmieniły się nastroje klientów w tym tygodniu?",
+      "2": "Które źródła dostarczają najwięcej opinii?",
+      "3": "Podsumuj ten pulpit w trzech zdaniach"
+    },
+    "categories": {
+      "1": "Która kategoria ma najwięcej reklamacji?",
+      "2": "Co klienci mówią o największej kategorii?",
+      "3": "Które kategorie się pogarszają?"
+    },
+    "projects": {
+      "1": "Rozpocznij projekt od najczęstszej skargi z tego tygodnia",
+      "2": "Które projekty są w toku?",
+      "3": "Jaki powinien być nasz następny projekt badawczy?"
+    },
+    "agents": {
+      "1": "Co zrobili agenci w tym tygodniu?",
+      "2": "Którzy agenci czekają na moją decyzję?",
+      "3": "Pomóż mi skonfigurować agenta, który monitoruje pilne opinie"
+    },
+    "memory": {
+      "1": "Co pamiętasz o naszej firmie?",
+      "2": "Które wspomnienia czekają na weryfikację?",
+      "3": "Jak mogę nauczyć Cię czegoś o naszej firmie?"
+    },
+    "company": {
+      "1": "Podsumuj naszą wizję i cele",
+      "2": "Z którymi celami wiążą się ostatnie opinie?",
+      "3": "Zaproponuj KPI na podstawie opinii klientów"
+    },
+    "dataExplorer": {
+      "1": "Ile opinii zaimportowaliśmy w tym miesiącu?",
+      "2": "Które źródła wysłały dane najpóźniej?",
+      "3": "Co zawiera jeden rekord opinii?"
+    },
+    "default": {
+      "1": "Z czego klienci są najbardziej niezadowoleni w tym tygodniu?",
+      "2": "Co teraz wymaga mojej uwagi?",
+      "3": "O czym klienci coraz częściej rozmawiają?"
+    },
+    "project": {
+      "1": "Podsumuj ten projekt i jego persony",
+      "2": "Co nasze persony sądzą o tym pomyśle?",
+      "3": "Przygotuj szkic PRD (wymagań produktowych) na podstawie tych badań"
+    },
+    "forms": {
+      "1": "Jak radzą sobie moje formularze opinii?",
+      "2": "Podsumuj najnowsze wypełnienia formularzy",
+      "3": "Który formularz ma najniższe oceny?"
+    },
+    "prioritization": {
+      "1": "Co powinniśmy zrobić priorytetowo?",
+      "2": "Dlaczego najważniejsze pozycje są na szczycie?",
+      "3": "Które pozycje mają największy wpływ na klientów?"
+    },
+    "scrapers": {
+      "1": "Które źródła recenzji zbierały ostatnio recenzje?",
+      "2": "Czy któreś źródło recenzji nie działa?",
+      "3": "Ile danych przyniosło ostatnie zbieranie?"
+    },
+    "radar": {
+      "1": "Skonfiguruj Radar dla konkurenta",
+      "2": "W czym marki, które śledzimy, są lepsze od nas?",
+      "3": "Wyciągnij pomysły na produkty z najbardziej zadowolonych recenzji"
+    },
+    "settings": {
+      "1": "Jakie mamy ustawienia marki?",
+      "2": "Których kategorii opinii używamy?",
+      "3": "Zaproponuj hashtagi do śledzenia dla naszej marki"
+    },
+    "problems": {
+      "1": "Jakie są największe nierozwiązane problemy?",
+      "2": "Pogrupuj te problemy według prawdopodobnej przyczyny",
+      "3": "Które problemy zostały ostatnio rozwiązane?"
+    },
+    "feedback": {
+      "1": "Podsumuj tę opinię",
+      "2": "Znajdź podobne opinie",
+      "3": "Dlaczego ten klient może być niezadowolony?"
+    }
+  },
+  "notifications": {
+    "approval": {
+      "title": "Asystent potrzebuje Twojej akceptacji",
+      "body": "Rozmowa czeka, aż zatwierdzisz działanie."
+    },
+    "reply": {
+      "title": "Asystent odpowiedział",
+      "body": "W rozmowie pojawiła się nowa odpowiedź."
+    },
+    "failed": {
+      "title": "Działanie asystenta nie powiodło się",
+      "body": "Otwórz rozmowę, aby zobaczyć, co poszło nie tak."
+    },
+    "toggle": {
+      "turnOn": "Powiadamiaj mnie, gdy rozmowa wymaga mojej uwagi",
+      "turnOff": "Wyłącz powiadomienia",
+      "blocked": "Powiadomienia są zablokowane dla tej strony w ustawieniach przeglądarki",
+      "unsupported": "Ta przeglądarka nie obsługuje powiadomień"
+    },
+    "planDone": {
+      "title": "Plan został zakończony",
+      "body": "Wszystkie kroki zatwierdzonego planu zostały wykonane."
+    },
+    "planIssues": {
+      "title": "Plan zakończony z problemami",
+      "body": "Otwórz plan, aby zobaczyć, które kroki się nie powiodły lub zostały pominięte."
+    },
+    "planApproval": {
+      "title": "Krok planu wymaga Twojej akceptacji",
+      "body": "Uruchomiony plan czeka, aż zatwierdzisz krok."
+    }
+  },
+  "plan": {
+    "approval": {
+      "title": "„{{tool}}” wymaga Twojej akceptacji",
+      "fields": "Co „{{tool}}” zapisze",
+      "destructive": "Ta operacja trwale usuwa dane i nie można jej cofnąć.",
+      "approve": "Zatwierdź krok",
+      "decline": "Odrzuć krok"
+    },
+    "stepStatus": {
+      "pending": "Oczekuje",
+      "running": "W toku",
+      "waiting": "Czeka",
+      "done": "Gotowe",
+      "failed": "Błąd",
+      "skipped": "Pominięto",
+      "needs_approval": "Wymaga zatwierdzenia",
+      "cancelled": "Anulowano"
+    },
+    "status": {
+      "awaiting_approval": "Oczekuje na zatwierdzenie",
+      "approved": "Zatwierdzono",
+      "running": "W toku",
+      "completed": "Zakończono",
+      "completed_with_errors": "Zakończono z problemami",
+      "failed": "Błąd",
+      "cancelled": "Anulowano",
+      "expired": "Wygasł"
+    },
+    "title": "Postęp planu",
+    "steps": "Kroki planu",
+    "loading": "Wczytywanie planu…",
+    "loadFailed": "Nie udało się wczytać planu.",
+    "actionFailed": "Nie udało się. Odśwież stronę i spróbuj ponownie.",
+    "cancel": "Anuluj plan",
+    "openProject": "Otwórz projekt"
+  }
+}

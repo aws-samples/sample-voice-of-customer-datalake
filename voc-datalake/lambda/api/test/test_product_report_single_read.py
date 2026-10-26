@@ -28,6 +28,7 @@ import os
 from unittest.mock import MagicMock, patch
 
 import pytest
+from product_report_fixtures import s3_serving, wire_transactions
 
 DOC_BODY = 'Onboarding takes three steps and the primary colour is #0F62FE.'
 EXTRACTED_KEY = 'projects/proj-1/product_docs/extracted/notes.txt'
@@ -58,35 +59,7 @@ def _context(**filled) -> dict:
 
 def _fake_s3(bodies: dict[str, str] | None = None) -> MagicMock:
     """An S3 stand-in keyed by object key, so a body cannot be misattributed."""
-    contents = {EXTRACTED_KEY: DOC_BODY} if bodies is None else bodies
-    s3 = MagicMock()
-    # Capitalised parameter names are boto3's own kwargs.
-    s3.get_object.side_effect = lambda Bucket, Key: {
-        'Body': MagicMock(read=lambda: contents[Key].encode('utf-8'))
-    }
-    return s3
-
-
-def _wire_transactions(table: MagicMock) -> None:
-    table.name = 'test-projects'
-
-    def transact_write_items(*, TransactItems):
-        for action in TransactItems:
-            put = action.get('Put')
-            if put:
-                table.put_item(Item=put['Item'])
-            update = action.get('Update')
-            if update:
-                table.update_item(
-                    Key=update['Key'],
-                    UpdateExpression=update['UpdateExpression'],
-                    ExpressionAttributeValues=update.get(
-                        'ExpressionAttributeValues', {},
-                    ),
-                )
-        return {}
-
-    table.meta.client.transact_write_items.side_effect = transact_write_items
+    return s3_serving({EXTRACTED_KEY: DOC_BODY} if bodies is None else bodies)
 
 
 def _run_report(table: MagicMock, ctx: dict, s3: MagicMock | None = None) -> dict:
@@ -99,7 +72,7 @@ def _run_report(table: MagicMock, ctx: dict, s3: MagicMock | None = None) -> dic
     import product_context
     import shared.converse
 
-    _wire_transactions(table)
+    wire_transactions(table)
     with patch.dict(os.environ, {'RAW_DATA_BUCKET': 'test-bucket'}), \
             patch.object(product_context, 'projects_table', table), \
             patch.object(product_context, 'get_context', return_value=ctx), \
@@ -113,6 +86,14 @@ def _run_report(table: MagicMock, ctx: dict, s3: MagicMock | None = None) -> dic
         'prompt': converse.call_args.kwargs['prompt'],
         'item': table.put_item.call_args.kwargs['Item'],
     }
+
+
+def _run_report_across_the_race() -> tuple[MagicMock, dict]:
+    """`(table, run)` for a report whose doc list answers READY_DOC on the first
+    read and nothing on a second — a delete landing between two reads."""
+    table = MagicMock()
+    table.query.side_effect = [{'Items': [READY_DOC]}, {'Items': []}]
+    return table, _run_report(table, _context())
 
 
 def _doc_query_count(table: MagicMock) -> int:
@@ -172,10 +153,7 @@ class TestTheDocumentListIsReadOnce:
         matching its content. A third read raises StopIteration, which is also a
         failure rather than a silent pass.
         """
-        table = MagicMock()
-        table.query.side_effect = [{'Items': [READY_DOC]}, {'Items': []}]
-
-        run = _run_report(table, _context())
+        table, run = _run_report_across_the_race()
 
         assert DOC_BODY in run['prompt']
         assert PLACEHOLDER not in run['prompt']
@@ -185,10 +163,7 @@ class TestTheDocumentListIsReadOnce:
         """The consequence the race produced, asserted on the saved document
         rather than on the prompt: a report whose input was the placeholder is a
         report about nothing, saved as a report about a product."""
-        table = MagicMock()
-        table.query.side_effect = [{'Items': [READY_DOC]}, {'Items': []}]
-
-        run = _run_report(table, _context())
+        _, run = _run_report_across_the_race()
 
         assert run['item']['content'] == '# Product description'
         assert run['item']['derivation']['product_context_included'] is True
@@ -202,7 +177,7 @@ class TestTheDerivationIsComputed:
     site is tested for actually consulting it.
     """
 
-    @pytest.mark.parametrize('has_any, docs, expected', [
+    @pytest.mark.parametrize(('has_any', 'docs', 'expected'), [
         ('Acme', None, True),        # fields only — the list was never read
         ('Acme', [], True),          # fields, and a read that found nothing
         ('', [READY_DOC], True),     # documents only

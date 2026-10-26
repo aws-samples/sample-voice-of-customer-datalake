@@ -1,0 +1,92 @@
+{
+  "greeting": {
+    "morning": "早上好，{{name}}",
+    "afternoon": "下午好，{{name}}",
+    "evening": "晚上好，{{name}}"
+  },
+  "freshness": {
+    "generatedAt": "{{time}} 的简报",
+    "none": "还没有简报。点击“刷新”生成第一份简报。",
+    "failed": "上一份简报未能生成。点击“刷新”重试。"
+  },
+  "tiles": {
+    "title": "最近 7 天",
+    "reviews": "评论",
+    "sentiment": "平均情绪",
+    "urgent": "紧急评论"
+  },
+  "cards": {
+    "title": "您的简报",
+    "empty": "简报中没有新内容。",
+    "evidence": "此卡片依据的评论：{{count, number}} 条",
+    "quotes": "客户原话",
+    "dismiss": "忽略",
+    "sources": "来源",
+    "newTab": "在新标签页中打开",
+    "type": {
+      "spike": "激增",
+      "urgent": "紧急",
+      "whatsNew": "新动态",
+      "trending": "趋势",
+      "sentiment": "情感变化",
+      "competitor": "竞争对手",
+      "nextStep": "下一步",
+      "update": "更新"
+    },
+    "reviewN": "评论 {{n}}",
+    "openReview": "打开第 {{n}} 条评论（共 {{count, number}} 条）",
+    "moreReviews": "还有 {{count, number}} 条"
+  },
+  "actions": {
+    "investigate": "调查",
+    "prfaq": "起草 PR/FAQ",
+    "compare": "与上月比较",
+    "openRadar": "打开雷达",
+    "investigatePrompt": "请调查我晨间简报中的这张卡片：“{{title}}”。{{body}} 背后的原因是什么，影响有多大？",
+    "prfaqPrompt": "请根据我晨间简报中的这张卡片，为解决方案起草一份 PR/FAQ:“{{title}}”。{{body}}",
+    "comparePrompt": "请与上月比较：“{{title}}”。有哪些变化，是在变好还是变差？"
+  },
+  "todo": {
+    "title": "待办事项",
+    "empty": "没有等待您处理的事项。",
+    "open": "打开"
+  },
+  "refresh": {
+    "label": "刷新",
+    "generating": "正在生成...",
+    "upToDate": "您的简报已是最新。",
+    "failed": "无法开始生成简报，请重试。"
+  },
+  "subscribe": {
+    "title": "订阅晨间简报",
+    "description": "每天早上在您选择的时间收到一份新简报，按您的时区 ({{zone}})。",
+    "oneClick": "每天早上 {{time}} 收到一份新简报，按您的时区 ({{zone}})。",
+    "customise": "在账户中自定义",
+    "button": "订阅"
+  },
+  "settings": {
+    "title": "简报设置",
+    "enabled": "开启晨间简报",
+    "language": "简报语言",
+    "languageSameAsApp": "与应用相同（{{language}}）",
+    "time": "发送时间",
+    "instructions": "我希望简报包含的内容",
+    "instructionsHint": "重点领域、要关注的竞争对手、语气。最多 2,000 个字符。",
+    "email": "通过邮件发送简报",
+    "emailHint": "发送到您账户已验证的电子邮件地址。",
+    "emailPending": "请查看收件箱并确认来自 AWS 的邮件，即可开始接收简报。",
+    "emailConfirmed": "邮件已确认。",
+    "save": "保存",
+    "saved": "已保存",
+    "saveFailed": "无法保存简报设置。",
+    "open": "设置",
+    "loading": "正在加载您的简报设置..."
+  },
+  "agentDecision": {
+    "sectionLabel": "智能体待决策",
+    "title": "{{name}} 需要您做出决定",
+    "node": "步骤：{{node}}",
+    "stopped": "于 {{time}} 停止"
+  },
+  "closeCard": "关闭：{{title}}"
+}

@@ -13,6 +13,7 @@ import { describe, it, expect } from 'vitest'
 import {
   MAX_HISTORY_ENTRIES, MAX_INTERVIEW_HISTORY_ENTRIES, buildHistory, type HistoryEntry,
 } from './chat'
+import { at } from '@test/defined'
 
 /**
  * Read a sibling package's source that a coupling assertion below is pinned to.
@@ -108,7 +109,21 @@ const INTERVIEW_PATH = path.join(__dirname, '../../../lambda/api/product_context
  * `matchAll`, which iterates a clone, so there is no `lastIndex` to carry between
  * calls.
  */
-const SERVER_INTERVIEW_WINDOW_PATTERN = /\bhistory\[\s*-(\d+)\s*:\s*\]/g
+const SERVER_INTERVIEW_WINDOW_PATTERN = /\bhistory\[\s*-(\d+|[A-Z][A-Z0-9_]*)\s*:\s*\]/g
+
+/**
+ * Resolve a slice bound: a literal, or an UPPER_SNAKE name bound at module level to
+ * an integer literal (`INTERVIEW_HISTORY_TURNS = 12`, optionally annotated). A name
+ * with no such binding — undefined, or bound to an expression — resolves to null,
+ * so the window reads as unknown (the loud direction) rather than as a guess.
+ */
+function resolveWindowBound(source: string, bound: string): number | null {
+  if (bound === '') return null
+  if (/^\d+$/.test(bound)) return Number(bound)
+  const binding = new RegExp(`^${bound}(?:\\s*:\\s*[\\w\\[\\]]+)?\\s*=\\s*(\\d[\\d_]*)\\s*(?:#.*)?$`, 'm')
+  const literal = binding.exec(source)?.[1]
+  return literal === undefined ? null : Number(literal.replaceAll('_', ''))
+}
 
 /**
  * Start of the `def` whose body owns the window this file pins.
@@ -151,22 +166,40 @@ function sliceTopLevelDef(source: string, defPattern: RegExp): string | null {
 }
 
 /**
- * Pull the interview's history window out of `interview_turn`'s own body.
+ * Every top-level function `body` calls by name, as the `def`'s own pattern.
  *
- * Scoped to the function rather than the file, which is what makes the number
- * read here the number that endpoint actually uses. Reading the whole file and
- * taking the first match was the one way this could pass *wrongly* that the null
- * cases below do not cover — another function slicing `history` with a different
- * window would have pinned whichever slice sat nearest the top of the file.
- * Scoping is strictly better than the file-wide distinct-window rule it replaces:
- * it gives the same protection without turning an *unrelated* backend slice into
- * a red frontend suite, and it also closes the residue that rule could not — a
- * deleted interview slice now yields zero windows and a loud failure instead of
+ * One level only: the interview's window lives either in `interview_turn` itself
+ * or in a helper it calls directly (today `_interview_messages`, extracted so the
+ * handler stays under the complexity gate). Following calls further would start
+ * reading functions whose `history` is not the request's.
+ */
+function directCallees(source: string, body: string): RegExp[] {
+  // The body opens with its own `def name(` line, which is not a call.
+  const calls = body.slice(body.indexOf('\n') + 1)
+  const called = new Set([...calls.matchAll(/\b([A-Za-z_]\w*)\(/g)].map((match) => match[1]))
+  const defined = [...source.matchAll(/^(?:async )?def ([A-Za-z_]\w*)\(/gm)].map((match) => match[1])
+  return defined
+    .filter((name) => called.has(name))
+    .map((name) => new RegExp(`^(?:async )?def ${name}\\(`, 'm'))
+}
+
+/**
+ * Pull the interview's history window out of `interview_turn`'s own body and the
+ * bodies of the top-level helpers it calls directly.
+ *
+ * Scoped to the function (and its direct callees) rather than the file, which is
+ * what makes the number read here the number that endpoint actually uses.
+ * Reading the whole file and taking the first match was the one way this could
+ * pass *wrongly* that the null cases below do not cover — another function
+ * slicing `history` with a different window would have pinned whichever slice
+ * sat nearest the top of the file. A function the interview never calls is still
+ * never read, so an *unrelated* backend slice cannot red this frontend suite, and
+ * a deleted interview slice yields zero windows and a loud failure instead of
  * silently adopting some other function's.
  *
- * Within that body, two *distinct* windows still collapse to null: if
- * `interview_turn` itself ever kept two different amounts of history there is no
- * single number to pin, and guessing is the failure this exists to prevent. Two
+ * Within that scope, two *distinct* windows still collapse to null: if the
+ * interview ever kept two different amounts of history there is no single
+ * number to pin, and guessing is the failure this exists to prevent. Two
  * *identical* windows are tolerated — they pin the same number, so the assertion
  * is exactly as sound, while rejecting them would red on a refactor that cannot
  * change what is pinned (a helper extracted, a second loop over the same
@@ -179,8 +212,13 @@ function sliceTopLevelDef(source: string, defPattern: RegExp): string | null {
 function extractInterviewWindow(source: string): number | null {
   const body = sliceTopLevelDef(source, INTERVIEW_DEF_PATTERN)
   if (body === null) return null
-  const windows = [...body.matchAll(SERVER_INTERVIEW_WINDOW_PATTERN)]
-    .map((match) => Number(match[1]))
+  const helperBodies = directCallees(source, body)
+    .map((pattern) => sliceTopLevelDef(source, pattern) ?? '')
+  const windows = [body, ...helperBodies]
+    .flatMap((scope) => [...scope.matchAll(SERVER_INTERVIEW_WINDOW_PATTERN)])
+    .map((match) => resolveWindowBound(source, match[1] ?? ''))
+  // An unresolvable bound poisons the read: guessing past it is the failure this exists to prevent.
+  if (windows.includes(null)) return null
   // `?? null` is unreachable while the size check guards it, and is kept so this
   // stays correct if `noUncheckedIndexedAccess` is ever enabled.
   return new Set(windows).size === 1 ? windows[0] ?? null : null
@@ -192,6 +230,11 @@ function alternating(total: number): HistoryEntry[] {
     role: i % 2 === 0 ? 'user' : 'assistant',
     content: `message ${i}`,
   }))
+}
+
+/** Indices where an entry repeats the previous entry's role (strict alternation broken). */
+function sameRoleNeighbours(history: readonly HistoryEntry[]): number[] {
+  return history.flatMap((entry, i) => (i > 0 && entry.role === at(history, i - 1).role ? [i] : []))
 }
 
 describe('extractServerWindow', () => {
@@ -310,9 +353,26 @@ describe('extractInterviewWindow', () => {
   })
 
   it('returns null when there is no slice at all', () => {
-    // The loud direction: if the window is dropped, or moved to a named
-    // constant, this must red rather than pass vacuously forever.
+    // The loud direction: if the window is dropped, this must red rather than
+    // pass vacuously forever.
     expect(extractInterviewWindow(pythonModule('for m in history:'))).toBeNull()
+  })
+
+  it('reads the window through a module-level integer constant', () => {
+    // The shape product_context.py has since 4.00.00: the assist route trims the
+    // job's history with the same INTERVIEW_HISTORY_TURNS the interview slices by.
+    expect(extractInterviewWindow(pythonModule(
+      'for m in history[-TURNS:]:', 'TURNS = 9',
+    ))).toBe(9)
+    expect(extractInterviewWindow(pythonModule(
+      'for m in history[-TURNS:]:', 'TURNS: Final = 1_0  # comment',
+    ))).toBe(10)
+  })
+
+  it('returns null when the constant is undefined or not an integer literal', () => {
+    expect(extractInterviewWindow(pythonModule('for m in history[-TURNS:]:'))).toBeNull()
+    expect(extractInterviewWindow(pythonModule('for m in history[-TURNS:]:', 'TURNS = BASE * 2'))).toBeNull()
+    expect(extractInterviewWindow(pythonModule('for m in history[-TURNS:]:', '    TURNS = 9'))).toBeNull()
   })
 
   it('does not borrow a slice of a differently-named list', () => {
@@ -341,6 +401,25 @@ describe('extractInterviewWindow', () => {
     expect(extractInterviewWindow(
       pythonModule('for m in history[-12:]:', '', 'def _later(history):\n    return history[-77:]'),
     )).toBe(12)
+  })
+
+  it('reads the window from a helper the interview calls', () => {
+    // The shape product_context.py has today: the slice lives in
+    // `_interview_messages`, which `interview_turn` calls. A helper defined but
+    // not called stays unread — see the scoping test above.
+    expect(extractInterviewWindow(pythonModule(
+      'messages = _interview_messages(history, message)',
+      'def _interview_messages(history, message):\n    return history[-12:]',
+    ))).toBe(12)
+  })
+
+  it('returns null when a called helper keeps a different window', () => {
+    // Following the call widens the scope, so divergence across the body and the
+    // helper is the same ambiguity as divergence inside one body.
+    expect(extractInterviewWindow(pythonModule(
+      'for m in history[-12:]:\n    messages = _interview_messages(history, message)',
+      'def _interview_messages(history, message):\n    return history[-99:]',
+    ))).toBeNull()
   })
 
   it('returns null when the interview keeps two different windows', () => {
@@ -429,7 +508,7 @@ describe('MAX_INTERVIEW_HISTORY_ENTRIES vs the interview window', () => {
       serverWindow,
       `Could not read a single history window from interview_turn in ${INTERVIEW_PATH}, in one `
       + 'of three ways. (1) interview_turn is no longer a top-level def under that name — the '
-      + 'likeliest cause, since the read is scoped to its body; update INTERVIEW_DEF_PATTERN. '
+      + 'likeliest cause, since the read is scoped to its body and the helpers it calls; update INTERVIEW_DEF_PATTERN. '
       + '(2) It no longer slices history as history[-N:] — a named constant, a different list '
       + 'name, or a different slice shape; update SERVER_INTERVIEW_WINDOW_PATTERN. (3) It keeps '
       + 'TWO DIFFERENT windows, so there is no single number to pin — decide which one bounds '
@@ -442,7 +521,7 @@ describe('MAX_INTERVIEW_HISTORY_ENTRIES vs the interview window', () => {
 
 describe('buildHistory', () => {
   it('returns an empty array for an empty conversation', () => {
-    expect(buildHistory([])).toEqual([])
+    expect(buildHistory([])).toStrictEqual([])
   })
 
   it('drops a trailing unanswered user turn', () => {
@@ -463,7 +542,7 @@ describe('buildHistory', () => {
         content: 'cancelled question',
       },
     ])
-    expect(history).toEqual([
+    expect(history).toStrictEqual([
       {
         role: 'user',
         content: 'first',
@@ -495,7 +574,7 @@ describe('buildHistory', () => {
         content: 'reply',
       },
     ])
-    expect(history).toEqual([
+    expect(history).toStrictEqual([
       {
         role: 'user',
         content: 'real',
@@ -529,7 +608,7 @@ describe('buildHistory', () => {
         content: 'answer',
       },
     ])
-    expect(history).toEqual([
+    expect(history).toStrictEqual([
       {
         role: 'user',
         content: 'question',
@@ -544,7 +623,7 @@ describe('buildHistory', () => {
   it('honours a caller-supplied cap for surfaces with a tighter window', () => {
     const history = buildHistory(alternating(40), 12)
     expect(history.length).toBeLessThanOrEqual(12)
-    expect(history[0].role).toBe('user')
+    expect(at(history, 0).role).toBe('user')
   })
 
   it('holds every invariant under an odd cap, which step 4 repairs', () => {
@@ -554,10 +633,8 @@ describe('buildHistory', () => {
     const history = buildHistory(alternating(40), 11)
     expect(history.length).toBeLessThanOrEqual(11)
     expect(history.length).toBeGreaterThan(0)
-    expect(history[0].role).toBe('user')
-    history.forEach((entry, i) => {
-      if (i > 0) expect(entry.role).not.toBe(history[i - 1].role)
-    })
+    expect(at(history, 0).role).toBe('user')
+    expect(sameRoleNeighbours(history)).toStrictEqual([])
   })
 
   it('merges runs of consecutive assistant turns (roundtable personas)', () => {
@@ -587,8 +664,8 @@ describe('buildHistory', () => {
         content: 'answer',
       },
     ])
-    expect(history.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'assistant'])
-    expect(history[1].content).toBe('persona A\n\npersona B\n\npersona C')
+    expect(history.map((m) => m.role)).toStrictEqual(['user', 'assistant', 'user', 'assistant'])
+    expect(at(history, 1).content).toBe('persona A\n\npersona B\n\npersona C')
   })
 
   it.each([50, 51, 52, 60, 61])(
@@ -597,11 +674,9 @@ describe('buildHistory', () => {
       const history = buildHistory(alternating(total))
       expect(history.length).toBeLessThanOrEqual(MAX_HISTORY_ENTRIES)
       expect(history.length).toBeGreaterThan(0)
-      expect(history[0].role).toBe('user')
+      expect(at(history, 0).role).toBe('user')
       // Strict alternation, which is what Bedrock Converse requires.
-      history.forEach((entry, i) => {
-        if (i > 0) expect(entry.role).not.toBe(history[i - 1].role)
-      })
+      expect(sameRoleNeighbours(history)).toStrictEqual([])
     },
   )
 
@@ -609,12 +684,12 @@ describe('buildHistory', () => {
     const history = buildHistory(alternating(60))
     // 60 messages: index 59 is assistant (answered), so nothing is trimmed
     // from the tail and the newest kept entry is the last one.
-    expect(history[history.length - 1].content).toBe('message 59')
+    expect(at(history, -1).content).toBe('message 59')
   })
 
   it('passes a short conversation through unchanged', () => {
     const messages = alternating(10)
-    expect(buildHistory(messages)).toEqual(messages)
+    expect(buildHistory(messages)).toStrictEqual(messages)
   })
 
   it('returns an empty array when no user turn survives the cap', () => {
@@ -623,6 +698,6 @@ describe('buildHistory', () => {
         role: 'assistant',
         content: 'orphan reply',
       },
-    ])).toEqual([])
+    ])).toStrictEqual([])
   })
 })

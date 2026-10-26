@@ -35,6 +35,14 @@ import {
 import { isImagePrepError, resizeImageForUpload } from './resizeImage'
 
 /**
+ * The files a drop carried. Typed `DataTransfer | null` on purpose: a synthetic drop
+ * (and a test's `fireEvent.drop` without one) arrives with no DataTransfer at runtime.
+ */
+function filesOf(transfer: DataTransfer | null): FileList | null {
+  return transfer?.files ?? null
+}
+
+/**
  * What the zone has to say about the last attempt.
  *
  * The `kind` is not decoration. A refusal and the "only the first image was
@@ -45,7 +53,7 @@ import { isImagePrepError, resizeImageForUpload } from './resizeImage'
  * slot with a severity keeps them distinguishable without a second element to
  * arbitrate between when both would apply: a refusal simply replaces the notice.
  */
-export interface PersonaImageMessage {
+interface PersonaImageMessage {
   readonly text: string
   readonly kind: 'error' | 'notice'
 }
@@ -190,7 +198,7 @@ export function usePersonaImageInput({
    */
   const handleFiles = useCallback((files: ArrayLike<File> | null) => {
     const all = toArray(files)
-    const [first] = all
+    const first = all.at(0)
     if (!first) return
     // A NOTICE, not an error: the first file was taken, so this reports what
     // happened rather than a failure, and must not be announced as one.
@@ -230,7 +238,7 @@ export function usePersonaImageInput({
     e.preventDefault()
     e.stopPropagation()
     setDragActive(false)
-    handleFiles(e.dataTransfer?.files ?? null)
+    handleFiles(filesOf(e.dataTransfer))
   }, [handleFiles])
 
   /**
@@ -277,8 +285,8 @@ export function usePersonaImageInput({
    * modal wrapper as a sibling on independent state, and no state machine makes
    * them exclusive — what does is this modal's own `fixed inset-0` backdrop, which
    * covers the viewport and leaves every trigger behind it unclickable while it is
-   * open. The other paste handlers on this page (ProductDocsUpload's pane,
-   * ChatTab's attachments) live in other tabs, behind the same backdrop. So the
+   * open. The other paste handler on this page (ProductDocsUpload's pane) lives
+   * in another tab, behind the same backdrop. So the
    * exclusivity is a CONSEQUENCE of the overlay rather than something enforced:
    * anything that could raise a surface ABOVE this one — a toast with a paste
    * target, a second overlay at a higher z-index — would need this listener to

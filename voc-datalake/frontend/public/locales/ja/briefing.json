@@ -1,0 +1,92 @@
+{
+  "greeting": {
+    "morning": "おはようございます、{{name}}さん",
+    "afternoon": "こんにちは、{{name}}さん",
+    "evening": "こんばんは、{{name}}さん"
+  },
+  "freshness": {
+    "generatedAt": "{{time}} のブリーフ",
+    "none": "まだブリーフはありません。「更新」を押して最初のブリーフを作成してください。",
+    "failed": "前回のブリーフを作成できませんでした。「更新」を押してもう一度お試しください。"
+  },
+  "tiles": {
+    "title": "過去 7 日間",
+    "reviews": "レビュー",
+    "sentiment": "平均センチメント",
+    "urgent": "緊急のレビュー"
+  },
+  "cards": {
+    "title": "あなたのブリーフ",
+    "empty": "ブリーフに新しい情報はありません。",
+    "evidence": "このカードの根拠となるレビュー： {{count, number}} 件",
+    "quotes": "お客様の声",
+    "dismiss": "閉じる",
+    "sources": "出典",
+    "newTab": "新しいタブで開きます",
+    "type": {
+      "spike": "急増",
+      "urgent": "緊急",
+      "whatsNew": "新着",
+      "trending": "トレンド",
+      "sentiment": "感情の変化",
+      "competitor": "競合",
+      "nextStep": "次のステップ",
+      "update": "お知らせ"
+    },
+    "reviewN": "レビュー {{n}}",
+    "openReview": "{{count, number}} 件中 {{n}} 件目のレビューを開く",
+    "moreReviews": "ほか {{count, number}} 件"
+  },
+  "actions": {
+    "investigate": "調査する",
+    "prfaq": "PR/FAQ を下書き",
+    "compare": "先月と比較",
+    "openRadar": "レーダーを開く",
+    "investigatePrompt": "朝のブリーフのこのカードを調査してください：「{{title}}」。{{body}} 背景には何があり、どの程度の規模ですか？",
+    "prfaqPrompt": "朝のブリーフのこのカードをもとに、改善策の PR/FAQ を下書きしてください：「{{title}}」。{{body}}",
+    "comparePrompt": "これを先月と比較してください：「{{title}}」。何が変わり、良くなっていますか、それとも悪くなっていますか？"
+  },
+  "todo": {
+    "title": "やること",
+    "empty": "対応待ちの項目はありません。",
+    "open": "開く"
+  },
+  "refresh": {
+    "label": "更新",
+    "generating": "作成中...",
+    "upToDate": "ブリーフは最新です。",
+    "failed": "ブリーフを開始できませんでした。もう一度お試しください。"
+  },
+  "subscribe": {
+    "title": "朝のブリーフを購読",
+    "description": "毎朝、選んだ時刻に新しいブリーフを受け取れます (タイムゾーン： {{zone}})。",
+    "oneClick": "毎朝 {{time}} に新しいブリーフを受け取れます (タイムゾーン： {{zone}})。",
+    "customise": "アカウントでカスタマイズ",
+    "button": "購読する"
+  },
+  "settings": {
+    "title": "ブリーフの設定",
+    "enabled": "朝のブリーフをオン",
+    "language": "ブリーフの言語",
+    "languageSameAsApp": "アプリと同じ（{{language}}）",
+    "time": "送信時刻",
+    "instructions": "ブリーフに含めてほしいこと",
+    "instructionsHint": "重点分野、注視する競合、トーンなど。2,000 文字以内。",
+    "email": "ブリーフをメールで受け取る",
+    "emailHint": "アカウントの確認済みメールアドレスに送信されます。",
+    "emailPending": "受信トレイを確認し、AWS からのメールを承認するとブリーフの受信が始まります。",
+    "emailConfirmed": "メールは確認済みです。",
+    "save": "保存",
+    "saved": "保存しました",
+    "saveFailed": "ブリーフの設定を保存できませんでした。",
+    "open": "設定",
+    "loading": "ブリーフの設定を読み込んでいます..."
+  },
+  "agentDecision": {
+    "sectionLabel": "エージェントの判断待ち",
+    "title": "{{name}} があなたの判断を待っています",
+    "node": "ステップ: {{node}}",
+    "stopped": "{{time}} に停止"
+  },
+  "closeCard": "閉じる: {{title}}"
+}

@@ -15,11 +15,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import {
+  expectAcceptsImagesNotPdf, imageFile, pasteFiles, pasteText, zoneChild,
+  stubImaging, stubOversizedImaging, stubUnreadableImage,
+} from './imaging-fixtures'
 import { DocsUpload } from './ProductDocsUpload'
 
-const mockListProductDocs = vi.fn()
-const mockCreateUploadUrl = vi.fn()
-const mockDeleteProductDoc = vi.fn()
+const mockListProductDocs = vi.fn<(...args: unknown[]) => unknown>()
+const mockCreateUploadUrl = vi.fn<(...args: unknown[]) => unknown>()
+const mockDeleteProductDoc = vi.fn<(...args: unknown[]) => unknown>()
 
 vi.mock('../../api/projectsApi', () => ({
   projectsApi: {
@@ -28,37 +32,6 @@ vi.mock('../../api/projectsApi', () => ({
     deleteProductDoc: (...args: unknown[]) => mockDeleteProductDoc(...args),
   },
 }))
-
-// ── Fake imaging primitives (jsdom has no codec) ──
-
-class FakeOffscreenCanvas {
-  readonly width: number
-  readonly height: number
-
-  constructor(width: number, height: number) {
-    this.width = width
-    this.height = height
-  }
-
-  getContext(contextId: string) {
-    if (contextId !== '2d') return null
-    return { fillStyle: '', fillRect: () => undefined, drawImage: () => undefined }
-  }
-
-  convertToBlob(options: { type: string }): Promise<Blob> {
-    // Half a byte per pixel — comfortably under the 3.75 MB cap at 1568 px, so
-    // the first (PNG) rung wins and the declared size is a resized one.
-    const bytes = Math.round((this.width * this.height) / 2)
-    return Promise.resolve(new Blob([new Uint8Array(bytes)], { type: options.type }))
-  }
-}
-
-function stubImaging(width: number, height: number) {
-  vi.stubGlobal('OffscreenCanvas', FakeOffscreenCanvas)
-  vi.stubGlobal('createImageBitmap', vi.fn(() => Promise.resolve({
-    width, height, close: () => undefined,
-  })))
-}
 
 // ── Runtime guards over the mock call arguments ──
 
@@ -96,13 +69,46 @@ function getFileInput(): HTMLInputElement {
   return input
 }
 
-function imageFile(name: string, type: string, sizeBytes: number): File {
-  const file = new File([new Uint8Array(8)], name, { type })
-  Object.defineProperty(file, 'size', { value: sizeBytes })
-  return file
+const dropZone = () => screen.getByText(/drop files here/i)
+
+/** Renders the pane and waits for the initial (empty) list to settle. */
+async function renderSettled() {
+  render(<DocsUpload projectId="proj-1" canEdit />)
+  await screen.findByText(/no documents yet/i)
 }
 
-const dropZone = () => screen.getByText(/drop files here/i)
+/** `renderSettled`, returning the drop zone by its button role. */
+async function renderSettledZone() {
+  await renderSettled()
+  return screen.getByRole('button', { name: /drop files here/i })
+}
+
+/**
+ * Renders the settled pane and counts clicks on the file input — the event that
+ * actually opens the picker. Returns the counter and the drop zone by role.
+ */
+async function renderWithPickerCounter() {
+  const zone = await renderSettledZone()
+  const clicks = vi.fn()
+  getFileInput().addEventListener('click', clicks)
+  return { clicks, zone }
+}
+
+/** Renders the pane and pastes `pasted` onto the drop zone once the list has loaded. */
+async function renderAndPaste(pasted: File) {
+  render(<DocsUpload projectId="proj-1" canEdit />)
+  await waitFor(() => expect(mockListProductDocs).toHaveBeenCalledWith('proj-1'))
+  pasteFiles(dropZone(), [pasted])
+  await waitFor(() => expect(mockCreateUploadUrl).toHaveBeenCalledTimes(1))
+  return readUploadUrlBody(mockCreateUploadUrl.mock.calls.at(0)?.[1])
+}
+
+/** Renders the pane and uploads `file` through the picker, bypassing `accept`. */
+async function renderAndUpload(file: File) {
+  const user = userEvent.setup({ applyAccept: false })
+  render(<DocsUpload projectId="proj-1" canEdit />)
+  await user.upload(getFileInput(), file)
+}
 
 describe('DocsUpload', () => {
   beforeEach(() => {
@@ -120,16 +126,13 @@ describe('DocsUpload', () => {
     // ContentLength is signed from size_bytes: declaring the source File's size
     // and PUTting the smaller resized blob makes S3 reject the upload.
     stubImaging(3000, 2000)
-    const user = userEvent.setup({ applyAccept: false })
     const source = imageFile('screenshot.png', 'image/png', 4_000_000)
-    render(<DocsUpload projectId="proj-1" />)
-
-    await user.upload(getFileInput(), source)
+    await renderAndUpload(source)
 
     await waitFor(() => expect(mockCreateUploadUrl).toHaveBeenCalledTimes(1))
-    const declared = readUploadUrlBody(mockCreateUploadUrl.mock.calls[0][1])
+    const declared = readUploadUrlBody(mockCreateUploadUrl.mock.calls.at(0)?.[1])
     await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1))
-    const putBody = readPutBlob(vi.mocked(fetch).mock.calls[0][1])
+    const putBody = readPutBlob(vi.mocked(fetch).mock.calls.at(0)?.[1])
 
     expect(putBody.size).toBe(declared.sizeBytes)
     // And it is the resized size, not the original's — otherwise the assertion
@@ -139,38 +142,21 @@ describe('DocsUpload', () => {
 
   it('uploads a pasted image without any file-input interaction', async () => {
     stubImaging(800, 600)
-    const pasted = new File([new Uint8Array(1024)], '', { type: 'image/png' })
-    render(<DocsUpload projectId="proj-1" />)
-    await waitFor(() => expect(mockListProductDocs).toHaveBeenCalled())
-
-    fireEvent.paste(dropZone(), {
-      clipboardData: {
-        items: [{ kind: 'file', type: 'image/png', getAsFile: () => pasted }],
-        files: [pasted],
-      },
-    })
-
-    await waitFor(() => expect(mockCreateUploadUrl).toHaveBeenCalledTimes(1))
-    const declared = readUploadUrlBody(mockCreateUploadUrl.mock.calls[0][1])
+    const declared = await renderAndPaste(new File([new Uint8Array(1024)], '', { type: 'image/png' }))
     // A pasted bitmap has no name of its own, so one is synthesized.
     expect(declared.filename).toMatch(/^pasted-.+\.png$/)
-    expect(declared.contentType).toBe('image/png')
-    expect(declared.sizeBytes).toBe(1024)
-    expect(readPutBlob(vi.mocked(fetch).mock.calls[0][1]).size).toBe(1024)
+    expect({ contentType: declared.contentType, sizeBytes: declared.sizeBytes })
+      .toStrictEqual({ contentType: 'image/png', sizeBytes: 1024 })
+    expect(readPutBlob(vi.mocked(fetch).mock.calls.at(0)?.[1]).size).toBe(1024)
     // The picker was never touched: this path is genuinely paste-driven.
     expect(getFileInput().files?.length ?? 0).toBe(0)
   })
 
   it('leaves a paste that carries no image alone', async () => {
-    render(<DocsUpload projectId="proj-1" />)
-    await waitFor(() => expect(mockListProductDocs).toHaveBeenCalled())
+    render(<DocsUpload projectId="proj-1" canEdit />)
+    await waitFor(() => expect(mockListProductDocs).toHaveBeenCalledWith('proj-1'))
 
-    const event = fireEvent.paste(dropZone(), {
-      clipboardData: {
-        items: [{ kind: 'string', type: 'text/plain', getAsFile: () => null }],
-        files: [],
-      },
-    })
+    const event = pasteText(dropZone())
 
     // Not cancelled ⇒ pasting text into a field inside this pane still works.
     expect(event).toBe(true)
@@ -178,10 +164,7 @@ describe('DocsUpload', () => {
   })
 
   it('refuses a PDF in the picker and names what is accepted instead', async () => {
-    const user = userEvent.setup({ applyAccept: false })
-    render(<DocsUpload projectId="proj-1" />)
-
-    await user.upload(getFileInput(), new File(['%PDF'], 'plan.pdf', { type: 'application/pdf' }))
+    await renderAndUpload(new File(['%PDF'], 'plan.pdf', { type: 'application/pdf' }))
 
     expect(await screen.findByText(/unsupported type: plan\.pdf/i)).toBeInTheDocument()
     // The exact list the API's own refusal names, so the two answers agree.
@@ -192,50 +175,27 @@ describe('DocsUpload', () => {
   })
 
   it('accepts the four image types in the picker filter and does not offer PDF', async () => {
-    render(<DocsUpload projectId="proj-1" />)
     // Settle the initial list before asserting, or the resolving promise updates
     // state after the test ends and React reports an unwrapped update.
-    await screen.findByText(/no documents yet/i)
+    await renderSettled()
 
     const accept = getFileInput().getAttribute('accept') ?? ''
 
-    expect(accept).toContain('image/png')
-    expect(accept).toContain('image/jpeg')
-    expect(accept).toContain('image/gif')
-    expect(accept).toContain('image/webp')
-    expect(accept).not.toContain('pdf')
+    expectAcceptsImagesNotPdf(accept)
     expect(accept).not.toContain('wordprocessingml')
   })
 
   it('says an image is still too large when no quality step gets it under the cap', async () => {
-    vi.stubGlobal('OffscreenCanvas', class {
-      getContext() {
-        return { fillStyle: '', fillRect: () => undefined, drawImage: () => undefined }
-      }
-      convertToBlob(options: { type: string }): Promise<Blob> {
-        const blob = new Blob([new Uint8Array(8)], { type: options.type })
-        Object.defineProperty(blob, 'size', { value: 3_900_000 })
-        return Promise.resolve(blob)
-      }
-    })
-    vi.stubGlobal('createImageBitmap', vi.fn(() => Promise.resolve({
-      width: 4000, height: 3000, close: () => undefined,
-    })))
-    const user = userEvent.setup({ applyAccept: false })
-    render(<DocsUpload projectId="proj-1" />)
-
-    await user.upload(getFileInput(), imageFile('huge.png', 'image/png', 9_000_000))
+    stubOversizedImaging()
+    await renderAndUpload(imageFile('huge.png', 'image/png', 9_000_000))
 
     expect(await screen.findByText(/still too large after resizing/i)).toBeInTheDocument()
     expect(mockCreateUploadUrl).not.toHaveBeenCalled()
   })
 
   it('says an image could not be read when decoding fails', async () => {
-    vi.stubGlobal('createImageBitmap', vi.fn(() => Promise.reject(new Error('bad bytes'))))
-    const user = userEvent.setup({ applyAccept: false })
-    render(<DocsUpload projectId="proj-1" />)
-
-    await user.upload(getFileInput(), imageFile('broken.png', 'image/png', 4_000_000))
+    stubUnreadableImage()
+    await renderAndUpload(imageFile('broken.png', 'image/png', 4_000_000))
 
     expect(await screen.findByText(/could not read that image/i)).toBeInTheDocument()
     expect(mockCreateUploadUrl).not.toHaveBeenCalled()
@@ -258,14 +218,14 @@ describe('DocsUpload', () => {
         created_at: '2026-08-13T10:00:00+00:00',
       }],
     })
-    render(<DocsUpload projectId="proj-1" />)
+    render(<DocsUpload projectId="proj-1" canEdit />)
 
     const reason = await screen.findByText('Extraction failed: image could not be decoded')
 
     // Asserted on the element that CARRIES the text, not an ancestor: the point
     // is that the reason overrides the inherited gray, so finding red anywhere up
     // the tree would pass while the text itself stayed unreadable.
-    expect(reason).toHaveClass('text-red-600')
+    expect(reason).toHaveClass('text-danger')
     // The separator stays metadata-coloured — it is punctuation, not the reason.
     expect(reason.textContent).not.toContain('·')
   })
@@ -277,15 +237,12 @@ describe('DocsUpload', () => {
     // the ladder has run; the cap that governs it is the image cap, on the
     // PREPARED blob, and the server enforces that one itself.
     stubImaging(3000, 2000)
-    const user = userEvent.setup({ applyAccept: false })
     const oversized = imageFile('big-screenshot.png', 'image/png', 12_000_000)
-    render(<DocsUpload projectId="proj-1" />)
-
-    await user.upload(getFileInput(), oversized)
+    await renderAndUpload(oversized)
 
     await waitFor(() => expect(mockCreateUploadUrl).toHaveBeenCalledTimes(1))
     expect(screen.queryByText(/too large \(>10 MB\)/i)).not.toBeInTheDocument()
-    const declared = readUploadUrlBody(mockCreateUploadUrl.mock.calls[0][1])
+    const declared = readUploadUrlBody(mockCreateUploadUrl.mock.calls.at(0)?.[1])
     expect(declared.sizeBytes).toBeLessThan(oversized.size)
   })
 
@@ -293,12 +250,9 @@ describe('DocsUpload', () => {
     // The other half of the change: the cap was not removed, it was scoped. A
     // .md has no resize path, so nothing downstream would rescue it — and the
     // server would refuse it after the round trip.
-    const user = userEvent.setup({ applyAccept: false })
     const huge = new File(['# notes'], 'handbook.md', { type: 'text/markdown' })
     Object.defineProperty(huge, 'size', { value: 12_000_000 })
-    render(<DocsUpload projectId="proj-1" />)
-
-    await user.upload(getFileInput(), huge)
+    await renderAndUpload(huge)
 
     expect(await screen.findByText(/too large \(>10 MB\): handbook\.md/i)).toBeInTheDocument()
     expect(mockCreateUploadUrl).not.toHaveBeenCalled()
@@ -311,19 +265,7 @@ describe('DocsUpload', () => {
     // image already inside both limits passes through resize untouched and keeps
     // whatever name it was given.
     stubImaging(400, 300)
-    const pasted = new File([new Uint8Array(512)], '', { type: 'image/jpeg' })
-    render(<DocsUpload projectId="proj-1" />)
-    await waitFor(() => expect(mockListProductDocs).toHaveBeenCalled())
-
-    fireEvent.paste(dropZone(), {
-      clipboardData: {
-        items: [{ kind: 'file', type: 'image/jpeg', getAsFile: () => pasted }],
-        files: [pasted],
-      },
-    })
-
-    await waitFor(() => expect(mockCreateUploadUrl).toHaveBeenCalledTimes(1))
-    const declared = readUploadUrlBody(mockCreateUploadUrl.mock.calls[0][1])
+    const declared = await renderAndPaste(new File([new Uint8Array(512)], '', { type: 'image/jpeg' }))
     expect(declared.filename).toMatch(/^pasted-.+\.jpg$/)
     expect(declared.filename).not.toMatch(/\.jpeg$/)
   })
@@ -338,11 +280,7 @@ describe('DocsUpload', () => {
     //
     // Which event activates is the ARIA APG button pattern: Enter on keydown,
     // Space on keyUP.
-    render(<DocsUpload projectId="proj-1" />)
-    await screen.findByText(/no documents yet/i)
-    const clicks = vi.fn()
-    getFileInput().addEventListener('click', clicks)
-    const zone = screen.getByRole('button', { name: /drop files here/i })
+    const { clicks, zone } = await renderWithPickerCounter()
 
     fireEvent.keyDown(zone, { key: 'Enter' })
     expect(clicks).toHaveBeenCalledTimes(1)
@@ -360,11 +298,7 @@ describe('DocsUpload', () => {
     // The reason Space belongs on keyup rather than keydown: holding the key
     // repeats keydown, so activating there opened a file dialog per repeat. This
     // is the case that makes the APG rule a real fix and not a formality.
-    render(<DocsUpload projectId="proj-1" />)
-    await screen.findByText(/no documents yet/i)
-    const clicks = vi.fn()
-    getFileInput().addEventListener('click', clicks)
-    const zone = screen.getByRole('button', { name: /drop files here/i })
+    const { clicks, zone } = await renderWithPickerCounter()
 
     fireEvent.keyDown(zone, { key: ' ' })
     fireEvent.keyDown(zone, { key: ' ', repeat: true })
@@ -385,11 +319,7 @@ describe('DocsUpload', () => {
     // mid-keypress — the keydown went somewhere else (or to the browser), and
     // only the release lands on the zone, which would open a file dialog the user
     // never asked for.
-    render(<DocsUpload projectId="proj-1" />)
-    await screen.findByText(/no documents yet/i)
-    const clicks = vi.fn()
-    getFileInput().addEventListener('click', clicks)
-    const zone = screen.getByRole('button', { name: /drop files here/i })
+    const { clicks, zone } = await renderWithPickerCounter()
 
     fireEvent.keyUp(zone, { key: ' ' })
     expect(clicks).not.toHaveBeenCalled()
@@ -405,11 +335,7 @@ describe('DocsUpload', () => {
     // A flag that is set but never cleared would leave the NEXT stray keyup armed,
     // which is the same bug with an extra step: two presses would then be three
     // pickers.
-    render(<DocsUpload projectId="proj-1" />)
-    await screen.findByText(/no documents yet/i)
-    const clicks = vi.fn()
-    getFileInput().addEventListener('click', clicks)
-    const zone = screen.getByRole('button', { name: /drop files here/i })
+    const { clicks, zone } = await renderWithPickerCounter()
 
     fireEvent.keyDown(zone, { key: ' ' })
     fireEvent.keyUp(zone, { key: ' ' })
@@ -425,11 +351,7 @@ describe('DocsUpload', () => {
     // The release then happens on whatever took focus, so the keyup that would
     // consume the flag never arrives here. Without the blur reset the zone stays
     // armed indefinitely, waiting to spend it on an unrelated Space release.
-    render(<DocsUpload projectId="proj-1" />)
-    await screen.findByText(/no documents yet/i)
-    const clicks = vi.fn()
-    getFileInput().addEventListener('click', clicks)
-    const zone = screen.getByRole('button', { name: /drop files here/i })
+    const { clicks, zone } = await renderWithPickerCounter()
 
     fireEvent.keyDown(zone, { key: ' ' })
     fireEvent.blur(zone)
@@ -442,12 +364,9 @@ describe('DocsUpload', () => {
     // Same guarantee for the mouse, and the reason the input is a SIBLING of the
     // drop zone rather than a child: input.click() dispatches a bubbling click,
     // so a nested input would re-enter the zone's own onClick.
-    render(<DocsUpload projectId="proj-1" />)
-    await screen.findByText(/no documents yet/i)
-    const clicks = vi.fn()
-    getFileInput().addEventListener('click', clicks)
+    const { clicks, zone } = await renderWithPickerCounter()
 
-    fireEvent.click(screen.getByRole('button', { name: /drop files here/i }))
+    fireEvent.click(zone)
 
     expect(clicks).toHaveBeenCalledTimes(1)
   })
@@ -455,10 +374,7 @@ describe('DocsUpload', () => {
   it('exposes the drop zone as a button with an accessible name', async () => {
     // A focusable div with no role announces as nothing; the name comes from the
     // existing drop-zone string rather than a second one to translate.
-    render(<DocsUpload projectId="proj-1" />)
-    await screen.findByText(/no documents yet/i)
-
-    const zone = screen.getByRole('button', { name: /drop files here/i })
+    const zone = await renderSettledZone()
 
     expect(zone).toHaveAttribute('tabIndex', '0')
     // Not a <label>: a label's own activation behaviour is the second path this
@@ -480,9 +396,7 @@ describe('DocsUpload', () => {
     // icon and a label inside it. Without the relatedTarget containment guard the
     // leave reported for a child unmarks a zone the pointer is still inside, and
     // the next dragover marks it again — a visible flicker of the highlight.
-    render(<DocsUpload projectId="proj-1" />)
-    await screen.findByText(/no documents yet/i)
-    const zone = screen.getByRole('button', { name: /drop files here/i })
+    const zone = await renderSettledZone()
     // Read from data-drag-active rather than the border-blue-500 Tailwind class: a
     // restyle is not a behaviour change and must not fail here. Baseline included,
     // so this cannot pass on a zone that is always marked.
@@ -491,8 +405,7 @@ describe('DocsUpload', () => {
     fireEvent.dragEnter(zone, { dataTransfer: { files: [], types: ['Files'] } })
     expect(zone).toHaveAttribute('data-drag-active', 'true')
 
-    const child = zone.querySelector('div')
-    if (!(child instanceof HTMLElement)) throw new Error('zone child not found')
+    const child = zoneChild(zone, 'div')
     // A real MouseEvent, NOT fireEvent.dragLeave(zone, { relatedTarget: child }):
     // jsdom has no DragEvent, so testing-library builds a plain `Event` for the
     // drag family and relatedTarget is dropped on the floor — the handler would
@@ -506,9 +419,7 @@ describe('DocsUpload', () => {
 
   it('unmarks the zone when the drag really does leave it', async () => {
     // Control: the guard must not be satisfiable by never unmarking at all.
-    render(<DocsUpload projectId="proj-1" />)
-    await screen.findByText(/no documents yet/i)
-    const zone = screen.getByRole('button', { name: /drop files here/i })
+    const zone = await renderSettledZone()
     fireEvent.dragEnter(zone, { dataTransfer: { files: [], types: ['Files'] } })
     expect(zone).toHaveAttribute('data-drag-active', 'true')
 
@@ -524,9 +435,7 @@ describe('DocsUpload', () => {
     // ungated zone volunteers for a text drag it then discards silently in onDrop,
     // and paints the accept highlight for it. Ungated, the browser keeps its "you
     // cannot drop that here" cursor. Same guard, same reason, as the persona zone.
-    render(<DocsUpload projectId="proj-1" />)
-    await screen.findByText(/no documents yet/i)
-    const zone = screen.getByRole('button', { name: /drop files here/i })
+    const zone = await renderSettledZone()
 
     const draggedOver = fireEvent.dragOver(zone, {
       dataTransfer: { types: ['text/plain'], files: [] },
@@ -542,13 +451,29 @@ describe('DocsUpload', () => {
   })
 
   it('tells the user that PDF and Word are not supported yet', async () => {
-    render(<DocsUpload projectId="proj-1" />)
-    await screen.findByText(/no documents yet/i)
+    await renderSettled()
 
     // "not yet" rather than silence: these used to be accepted here.
     expect(screen.getByText(/not supported yet/i)).toBeInTheDocument()
     // Same line names what IS accepted, and the two byte caps that differ.
     expect(screen.getByText(/PNG, JPEG, GIF, WebP up to 3\.5 MB/)).toBeInTheDocument()
     expect(screen.getByText(/MD, TXT up to 10 MB/)).toBeInTheDocument()
+  })
+
+  // A viewer (`canEdit` false) gets the list and nothing that writes: the gate
+  // would refuse the upload URL and the delete alike.
+  it('for a viewer, lists the docs with no drop zone, no picker and no Delete', async () => {
+    mockListProductDocs.mockResolvedValueOnce({
+      docs: [{
+        doc_id: 'd1', filename: 'notes.md', content_type: 'text/markdown', size_bytes: 1024,
+        status: 'ready', extracted_chars: 400, error: null, created_at: '2025-01-01T00:00:00Z',
+      }],
+    })
+    render(<DocsUpload projectId="proj-1" canEdit={false} />)
+
+    expect(await screen.findByText('notes.md')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /drop files here/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument()
+    expect(screen.queryByText(/not supported yet/i)).not.toBeInTheDocument()
   })
 })

@@ -1,0 +1,92 @@
+{
+  "greeting": {
+    "morning": "Guten Morgen, {{name}}",
+    "afternoon": "Guten Tag, {{name}}",
+    "evening": "Guten Abend, {{name}}"
+  },
+  "freshness": {
+    "generatedAt": "Briefing von {{time}}",
+    "none": "Noch kein Briefing. Klicken Sie auf Aktualisieren, um das erste zu erstellen.",
+    "failed": "Das letzte Briefing konnte nicht erstellt werden. Klicken Sie auf Aktualisieren, um es erneut zu versuchen."
+  },
+  "tiles": {
+    "title": "Letzte 7 Tage",
+    "reviews": "Bewertungen",
+    "sentiment": "Durchschnittliche Stimmung",
+    "urgent": "Dringende Bewertungen"
+  },
+  "cards": {
+    "title": "Ihr Briefing",
+    "empty": "Nichts Neues in Ihrem Briefing.",
+    "evidence": "Bewertungen hinter dieser Karte: {{count, number}}",
+    "quotes": "In ihren Worten",
+    "dismiss": "Ausblenden",
+    "sources": "Quellen",
+    "newTab": "öffnet in einem neuen Tab",
+    "type": {
+      "spike": "Anstieg",
+      "urgent": "Dringend",
+      "whatsNew": "Neuigkeiten",
+      "trending": "Im Trend",
+      "sentiment": "Stimmungswechsel",
+      "competitor": "Wettbewerber",
+      "nextStep": "Nächster Schritt",
+      "update": "Update"
+    },
+    "reviewN": "Bewertung {{n}}",
+    "openReview": "Bewertung {{n}} von {{count, number}} öffnen",
+    "moreReviews": "und {{count, number}} weitere"
+  },
+  "actions": {
+    "investigate": "Untersuchen",
+    "prfaq": "PR/FAQ entwerfen",
+    "compare": "Mit dem Vormonat vergleichen",
+    "openRadar": "Radar öffnen",
+    "investigatePrompt": "Untersuche diese Karte aus meinem Morgenbriefing: „{{title}}\". {{body}} Was steckt dahinter, und wie groß ist es?",
+    "prfaqPrompt": "Entwirf ein PR/FAQ für eine Lösung auf Basis dieser Karte aus meinem Morgenbriefing: „{{title}}\". {{body}}",
+    "comparePrompt": "Vergleiche das mit dem Vormonat: „{{title}}\". Was hat sich geändert, und wird es besser oder schlechter?"
+  },
+  "todo": {
+    "title": "Zu erledigen",
+    "empty": "Nichts wartet auf Sie.",
+    "open": "Öffnen"
+  },
+  "refresh": {
+    "label": "Aktualisieren",
+    "generating": "Wird erstellt...",
+    "upToDate": "Ihr Briefing ist aktuell.",
+    "failed": "Das Briefing konnte nicht gestartet werden. Versuchen Sie es erneut."
+  },
+  "subscribe": {
+    "title": "Morgenbriefing abonnieren",
+    "description": "Erhalten Sie jeden Morgen zur gewählten Stunde ein neues Briefing, in Ihrer Zeitzone ({{zone}}).",
+    "oneClick": "Erhalten Sie jeden Morgen um {{time}} ein neues Briefing, in Ihrer Zeitzone ({{zone}}).",
+    "customise": "In Konto anpassen",
+    "button": "Abonnieren"
+  },
+  "settings": {
+    "title": "Briefing-Einstellungen",
+    "enabled": "Morgenbriefing an",
+    "language": "Sprache des Briefings",
+    "languageSameAsApp": "Wie die App ({{language}})",
+    "time": "Versandzeit",
+    "instructions": "Was ich in meinem Briefing möchte",
+    "instructionsHint": "Schwerpunkte, zu beobachtende Wettbewerber, Tonfall. Höchstens 2.000 Zeichen.",
+    "email": "Briefing per E-Mail senden",
+    "emailHint": "Wird an die bestätigte E-Mail-Adresse Ihres Kontos gesendet.",
+    "emailPending": "Prüfen Sie Ihren Posteingang und bestätigen Sie die E-Mail von AWS, um das Briefing zu erhalten.",
+    "emailConfirmed": "E-Mail bestätigt.",
+    "save": "Speichern",
+    "saved": "Gespeichert",
+    "saveFailed": "Die Briefing-Einstellungen konnten nicht gespeichert werden.",
+    "open": "Einstellungen",
+    "loading": "Ihre Briefing-Einstellungen werden geladen..."
+  },
+  "agentDecision": {
+    "sectionLabel": "Agenten-Entscheidungen",
+    "title": "{{name}} braucht Ihre Entscheidung",
+    "node": "Schritt: {{node}}",
+    "stopped": "Angehalten am {{time}}"
+  },
+  "closeCard": "Schließen: {{title}}"
+}

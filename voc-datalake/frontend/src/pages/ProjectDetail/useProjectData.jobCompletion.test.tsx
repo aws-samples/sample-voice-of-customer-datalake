@@ -16,25 +16,22 @@
  * `completed_at` and needs no clock control, and fake timers in this suite have
  * leaked across files before (see the note in useProjectData.test.ts).
  */
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { renderHook, waitFor } from '@testing-library/react'
-import type { ReactNode } from 'react'
+import { QueryClient } from '@tanstack/react-query'
+import { waitFor } from '@testing-library/react'
 import {
   describe, it, expect, vi, beforeEach, afterEach,
 } from 'vitest'
+import {
+  PROJECT_DATA_ARGS, projectDataApiModule, projectDataMocks, projectPayload, renderWithQueryClient,
+} from './project-data-fixtures'
+// After the fixtures on purpose: the hook imports the mocked `projectsApi`, whose
+// `vi.mock` factory below needs the fixture module evaluated first.
 import { useProjectData } from './useProjectData'
-import type { ProjectDocument, ProjectJob } from '../../api/types'
+import type { ProjectDocument } from '../../api/types'
+import type { ProjectJob } from '../../api/projectTypes'
 
-const getProject = vi.fn()
-const getJobs = vi.fn()
-const getProductContext = vi.fn()
-vi.mock('../../api/projectsApi', () => ({
-  projectsApi: {
-    getProject: (...args: unknown[]) => getProject(...args),
-    getJobs: (...args: unknown[]) => getJobs(...args),
-    getProductContext: (...args: unknown[]) => getProductContext(...args),
-  },
-}))
+vi.mock('../../api/projectsApi', () => projectDataApiModule())
+const { getProject, getJobs, getProductContext } = projectDataMocks
 
 const prototypeDoc: ProjectDocument = {
   document_id: 'doc-1',
@@ -56,23 +53,16 @@ const job = (status: ProjectJob['status'], completedAt: string | undefined): Pro
   completed_at: completedAt,
 })
 
-let queryClient: QueryClient
-
-const wrapper = ({ children }: { children: ReactNode }) => (
-  <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-)
-
-const renderProjectData = () => renderHook(
-  () => useProjectData({ id: 'proj-1', apiEndpoint: 'https://api.example.test' }),
-  { wrapper },
+/** Mounts the hook on a fresh client, so no cache outlives the test that made it. */
+const renderProjectData = () => renderWithQueryClient(
+  new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  () => useProjectData(PROJECT_DATA_ARGS),
 )
 
 /**
  * Asserted as a second `getProject` call rather than by spying on
  * `invalidateQueries`, for two reasons: it is the outcome that actually matters
- * (fresh documents reach the card), and a `vi.spyOn` on that method cannot be
- * annotated without fighting its generic — the sibling
- * `useProjectData.prototypeRefresh.test.tsx` carries exactly that type error today.
+ * (fresh documents reach the card), and it needs no spy on the client's internals.
  *
  * Sound here because nothing else refetches the project in this fixture: the
  * document has no `prototype_url`, so the re-sign timer never arms.
@@ -80,12 +70,7 @@ const renderProjectData = () => renderHook(
 const PROJECT_FETCHES_ON_MOUNT = 1
 
 beforeEach(() => {
-  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  getProject.mockResolvedValue({
-    project: { project_id: 'proj-1', name: 'P' },
-    personas: [],
-    documents: [prototypeDoc],
-  })
+  getProject.mockResolvedValue(projectPayload([prototypeDoc]))
   getProductContext.mockResolvedValue({ context: {} })
 })
 
@@ -111,7 +96,7 @@ describe('project refetch on job completion', () => {
 
     renderProjectData()
 
-    await waitFor(() => expect(getJobs).toHaveBeenCalled())
+    await waitFor(() => expect(getJobs).toHaveBeenCalledWith('proj-1'))
     expect(getProject).toHaveBeenCalledTimes(PROJECT_FETCHES_ON_MOUNT)
   })
 
@@ -120,7 +105,7 @@ describe('project refetch on job completion', () => {
 
     renderProjectData()
 
-    await waitFor(() => expect(getJobs).toHaveBeenCalled())
+    await waitFor(() => expect(getJobs).toHaveBeenCalledWith('proj-1'))
     expect(getProject).toHaveBeenCalledTimes(PROJECT_FETCHES_ON_MOUNT)
   })
 })

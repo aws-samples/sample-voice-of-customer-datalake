@@ -1,0 +1,56 @@
+{
+  "title": "电子邮件收件箱",
+  "description": "客户、员工和合作伙伴可以将反馈通过电子邮件发送到这些地址。每封邮件在成为反馈条目之前都会经过检查、去重和脱敏。",
+  "on": "已开启",
+  "off": "已关闭",
+  "loading": "正在加载电子邮件收件箱…",
+  "notDeployed": "电子邮件收件箱尚未部署。请使用 -c inboundEmailDomain=<您的域名> 部署（参见 docs/email-intake.md）。",
+  "addresses": "地址",
+  "ruleSetInactive": "接收规则集 {{ruleSet}} 未激活，因此还收不到邮件。请在 Amazon SES 中激活它，或使用 -c inboundEmailRuleSet 重新部署到已激活的规则集。",
+  "pii": {
+    "redact": "个人数据会被脱敏：姓名、电子邮件地址和电话号码在存储前被替换。",
+    "allow": "个人数据按收到时的样子保留（来源配置允许）。",
+    "summary_only": "仅保留派生字段（来源配置为仅摘要）。"
+  },
+  "dimension": {
+    "missing": "创建“反馈类型”维度后，ideas@、bugs@ 和 reviews@ 地址以及 [bug] 等主题标签会为每个条目分类。",
+    "create": "创建维度"
+  },
+  "today": {
+    "title": "今天（UTC）",
+    "accepted": "已接收",
+    "deduped": "已去重",
+    "dropped": "已丢弃",
+    "deferred": "已推迟",
+    "modelCalls": "模型调用"
+  },
+  "reasons": {
+    "duplicate_message": "同一封邮件投递了两次",
+    "seen_in_thread": "会话中已有相同文本",
+    "no_new_info": "没有新信息的回复",
+    "forward_duplicate": "原始邮件已被转发过",
+    "spam": "垃圾邮件判定",
+    "virus": "病毒判定",
+    "auto_reply": "自动回复",
+    "bulk": "群发或邮件列表",
+    "loop_sender": "邮件系统发件人",
+    "sender_cap": "已达单个发件人上限",
+    "no_text": "无正文",
+    "unparseable": "无法读取",
+    "too_large": "过大"
+  },
+  "caps": {
+    "title": "每日上限",
+    "daily_cap": "每天邮件数",
+    "sender_daily_cap": "每个发件人每天邮件数",
+    "daily_model_calls": "每天模型调用次数",
+    "range": "{{min, number}} 到 {{max, number}}",
+    "save": "保存上限",
+    "saved": "上限已保存"
+  },
+  "errors": {
+    "load": "无法加载电子邮件收件箱状态。",
+    "save": "无法保存上限。",
+    "dimension": "无法创建维度。"
+  }
+}

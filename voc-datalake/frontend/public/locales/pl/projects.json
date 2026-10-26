@@ -1,0 +1,123 @@
+{
+  "card": {
+    "actions": "Działania dla: {{name}}",
+    "delete": "Usuń",
+    "edit": "Edytuj",
+    "deleteProject": "Usuń projekt {{name}}",
+    "editProject": "Edytuj projekt {{name}}",
+    "docs_one": "{{count, number}} dokument",
+    "docs_other": "{{count, number}} dokumentów",
+    "owner": "Właściciel: {{name}}",
+    "personas_one": "{{count, number}} persona",
+    "personas_other": "{{count, number}} person",
+    "docs_few": "{{count, number}} dokumenty",
+    "docs_many": "{{count, number}} dokumentów",
+    "personas_few": "{{count, number}} persony",
+    "personas_many": "{{count, number}} person"
+  },
+  "list": {
+    "scope": {
+      "all": "Wszystkie",
+      "mine": "Moje",
+      "shared": "Udostępnione mi"
+    },
+    "sort": {
+      "updated": "Ostatnio zaktualizowane",
+      "name": "Nazwa"
+    },
+    "search": "Szukaj projektów",
+    "scopeLabel": "Czyje projekty",
+    "sortLabel": "Sortuj projekty",
+    "noMatch": "Brak projektów pasujących do „{{q}}”.",
+    "noneInScope": "Brak projektów.",
+    "showAll": "Pokaż wszystkie projekty"
+  },
+  "createModal": {
+    "cancel": "Anuluj",
+    "create": "Utwórz projekt",
+    "creating": "Tworzenie...",
+    "descriptionLabel": "Opis",
+    "descriptionPlaceholder": "Czego dotyczy ten projekt?",
+    "nameLabel": "Nazwa projektu",
+    "namePlaceholder": "np. Ulepszenia produktu w I kwartale",
+    "title": "Nowy projekt"
+  },
+  "deleteModal": {
+    "confirm": "Usuń",
+    "message": "Czy na pewno chcesz usunąć ten projekt? Wszystkie persony i dokumenty zostaną trwale usunięte.",
+    "messageNamed": "Usunąć projekt „{{name}}”? Wszystkie jego persony i dokumenty zostaną trwale usunięte.",
+    "title": "Usuń projekt"
+  },
+  "editModal": {
+    "nameRequired": "Podaj nazwę projektu.",
+    "save": "Zapisz",
+    "saveFailed": "Nie udało się zapisać projektu. Sprawdź swoje uprawnienia i spróbuj ponownie.",
+    "saving": "Zapisywanie...",
+    "title": "Edytuj projekt",
+    "visibilityManageOnly": "Tylko właściciel projektu lub administrator może zmieniać, kto ma do niego dostęp."
+  },
+  "emptyState": {
+    "createButton": "Utwórz projekt",
+    "description": "Utwórz pierwszy projekt, aby zacząć budować persony i dokumenty",
+    "title": "Brak projektów"
+  },
+  "sharing": {
+    "errors": {
+      "conflict": "Ta osoba ma już dostęp do tego projektu.",
+      "forbidden": "Nie masz uprawnień do zmiany udostępniania tego projektu.",
+      "generic": "Nie udało się zapisać zmiany. Spróbuj ponownie.",
+      "invalid": "Żądanie zostało odrzucone. Projekt mógł osiągnąć limit członków.",
+      "notFound": "Nie znaleziono tego użytkownika ani członka."
+    },
+    "roles": {
+      "editor": "Może edytować",
+      "viewer": "Może przeglądać"
+    },
+    "cancel": "Anuluj",
+    "description": "Wybierz, kto może zobaczyć ten projekt i co zaproszone osoby mogą w nim robić.",
+    "invite": "Zaproś",
+    "inviteHeading": "Zaproś osoby",
+    "inviteRoleLabel": "Rola zaproszonej osoby",
+    "leave": "Opuść projekt",
+    "leaveConfirm": "Opuść",
+    "leaveMessage": "Stracisz dostęp do tego projektu, chyba że jest publiczny.",
+    "leaveTitle": "Opuścić projekt?",
+    "loadError": "Nie udało się wczytać ustawień udostępniania.",
+    "loading": "Wczytywanie ustawień udostępniania...",
+    "makeOwner": "Ustaw {{name}} jako właściciela",
+    "members": "Członkowie",
+    "noMembers": "Nikt jeszcze nie został zaproszony.",
+    "noOwner": "Brak właściciela",
+    "noResults": "Brak pasujących użytkowników",
+    "owner": "Właściciel",
+    "readOnlyNotice": "Tylko właściciel projektu lub administrator może zmieniać udostępnianie.",
+    "remove": "Usuń {{name}}",
+    "roleLabel": "Rola dla {{name}}",
+    "searchLabel": "Szukaj użytkowników",
+    "searchPlaceholder": "Nazwa użytkownika lub e-mail",
+    "searchMinLength": "Wpisz co najmniej {{min, number}} znaki, aby wyszukać.",
+    "searching": "Wyszukiwanie...",
+    "select": "Wybierz {{name}}",
+    "selected": "Wybrano: {{name}}",
+    "share": "Udostępnij",
+    "title": "Udostępnij „{{name}}”",
+    "transferConfirm": "Przenieś",
+    "transferMessage": "{{name}} stanie się właścicielem tego projektu. Obecny właściciel pozostanie na liście jako edytor.",
+    "transferTitle": "Przenieść własność?",
+    "you": "(ty)"
+  },
+  "visibility": {
+    "label": "Kto ma dostęp do tego projektu",
+    "private": "Prywatny",
+    "privateHint": "Widzą go tylko właściciel, zaproszeni członkowie i administratorzy.",
+    "public": "Publiczny",
+    "publicHint": "Każdy w tym obszarze roboczym może go przeglądać i edytować."
+  },
+  "aProject": "projekt",
+  "configureEndpoint": "Najpierw skonfiguruj endpoint API w sekcji Administracja → Ogólne",
+  "description": "Twórz projekty, aby na podstawie opinii budować persony, PRD i PR/FAQ",
+  "newProject": "Nowy projekt",
+  "openProject": "Otwórz projekt",
+  "readOnlyBanner": "Masz dostęp tylko do odczytu tego projektu. Poproś właściciela o dostęp do edycji.",
+  "title": "Projekty"
+}

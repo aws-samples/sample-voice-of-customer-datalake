@@ -5,26 +5,41 @@ Manages API credentials and data source schedules.
 
 import json
 import os
-from functools import lru_cache
+from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC
+from functools import cache
 from typing import Any
 
 import boto3
-from shared.api import api_handler, create_api_resolver, require_admin
-from shared.aws import get_secrets_client, put_secret_json
+from botocore.exceptions import BotoCoreError, ClientError
+
+from shared.api import api_handler, create_api_resolver, is_admin, require_admin
+from shared.aws import get_dynamodb_resource, get_secrets_client, put_secret_json
+from shared.enabled_sources import default_source_ids
 from shared.exceptions import (
     ConfigurationError,
     ServiceError,
     ValidationError,
 )
-from shared.logging import logger, tracer
+from shared.ids import timestamped_id
+from shared.logging import logger, metrics, tracer
+from shared.plugin_circuit import clear_circuit, closed_circuit, read_circuits
 from shared.plugin_identity import PLUGIN_IDENTIFIER_RULES, is_valid_plugin_identifier
+from shared.radar_brands import radar_brand_setting
+from shared.request_body import json_body_value, json_object_body
+from shared.snapstart import api_route_warmer, botocore_model_warmer, register_snapshot_hooks
+from shared.warm_init import warm_at_init
+from shared.web_review_targets import PLUGIN_ID as WEB_REVIEWS_PLUGIN
+from shared.web_review_targets import TargetError, target_source_id, validated_target
 
 secretsmanager = get_secrets_client()
 events_client = boto3.client("events")
 
 SECRETS_ARN = os.environ.get("SECRETS_ARN", "")
-AWS_ACCOUNT_ID = os.environ.get("DEPLOY_ACCOUNT_ID", os.environ.get("AWS_ACCOUNT_ID", ""))
-AWS_REGION = os.environ.get("DEPLOY_REGION", os.environ.get("AWS_REGION", ""))
+# Always set by CDK (api-data-lambdas.ts). Only the no-prefix name derivation in
+# _deploy_suffix() reads them; a prefixed deployment hands down the patterns below.
+DEPLOY_ACCOUNT_ID = os.environ.get("DEPLOY_ACCOUNT_ID", "")
+DEPLOY_REGION = os.environ.get("DEPLOY_REGION", "")
 
 # Name PATTERNS handed down by CDK, e.g.
 # "stg-voc-ingestor-{source}-123456789012-us-east-1". Both routes below address
@@ -58,8 +73,8 @@ SOURCE_PLACEHOLDER = "{source}"
 #
 # Read inside _plugin_secret_defaults() rather than at module scope, so a test
 # can set it and clear the cache. It is parsed once per execution context either
-# way, which is what the lru_cache is for.
-PLUGIN_SECRET_DEFAULTS_VAR = "PLUGIN_SECRET_DEFAULTS"
+# way, which is what the cache is for.
+PLUGIN_DEFAULTS_ENV_VAR = "PLUGIN_SECRET_DEFAULTS"
 
 app = create_api_resolver()
 
@@ -106,7 +121,7 @@ MAX_CREDENTIAL_KEYS_PER_REQUEST = 20
 MAX_SOURCES_PER_STATUS_REQUEST = 50
 
 
-def _validate_credential_key(key: str) -> None:
+def _validate_credential_key(key: object) -> None:
     """Raise ValidationError if *key* does not conform to the allowed form.
 
     The key preview in the error message is truncated to avoid reflecting
@@ -119,7 +134,7 @@ def _validate_credential_key(key: str) -> None:
         )
 
 
-def _validate_source(source: str) -> None:
+def _validate_source(source: object) -> None:
     """Raise ValidationError if *source* does not conform to the allowed form.
 
     'source' is used as a namespace prefix (f"{source}_"), so it must satisfy
@@ -209,9 +224,9 @@ def _is_addressable_source(source: str) -> bool:
     Needed because ONE route cannot raise. `GET /sources/status?sources=a,b,c`
     answers about several sources at once, so raising on the first unknown name
     would fail the whole response rather than that one entry — and its own default
-    list is `['webscraper', 'manual_import', 's3_import']`, where `manual_import`
-    is a deliberate non-plugin: it is a legitimate `source_platform` (it appears in
-    `KNOWN_SOURCES` in `plugins/_shared/schemas.py`) with no manifest, so it is
+    list (`shared.enabled_sources.default_source_ids`) ends with `manual_import`, which
+    is a deliberate non-plugin: it is a legitimate `source_platform` (manual
+    imports are written with it by `manual_import_handler`) with no manifest, so it is
     absent from `PLUGIN_SECRET_DEFAULTS` and a raising guard would answer 400 to
     the argument-less request `SourceCard.tsx` issues on every Settings render —
     for admins too.
@@ -222,17 +237,33 @@ def _is_addressable_source(source: str) -> bool:
     `plugin.id`), so for every value rejected here `describe_rule` could only have
     raised `ResourceNotFoundException`, which the route already answers with
     `{'enabled': False, 'exists': False}` — exactly what the default request
-    returns today for all three of its sources. What changes is that an arbitrary
+    returns for `manual_import`. What changes is that an arbitrary
     value stops reaching EventBridge and stops having a rule name reflected back.
 
     Inherits the fail-open on an unavailable `PLUGIN_SECRET_DEFAULTS`, because
-    `_validate_source_is_a_known_plugin` returns early in that state — so in that
-    state this accepts everything the other branch does too, and the deliberate
-    disagreement below is a property of the CONFIGURED state only.
+    `_validate_source_is_a_known_plugin` returns early in that state.
 
-    Applies to the `?sources=` branch ONLY. `?run_status=` raises on the same
-    `manual_import` this accepts, deliberately: see the comment at that branch for
-    why one identifier gets two answers from one route.
+    THE `manual_import` ASYMMETRY — the one statement of it; the other sites
+    (the `?run_status=` branch of `get_sources_status`, its tests) point here.
+    The two branches of `GET /sources/status` answer `manual_import` differently,
+    deliberately, because they report different things:
+
+    * `?sources=` (this predicate) reports SCHEDULE state, where "no rule
+      exists" is a real answer: `{'enabled': False, 'exists': False}`.
+    * `?run_status=` RAISES (400 "not a configured plugin"): it reports a run
+      record, and only `run_source` and `BaseIngestor` write a `SOURCE_RUN#`
+      partition. `manual_import` has no ingestor and `run_source` validates
+      against the same allowlist, so no current path writes
+      `SOURCE_RUN#manual_import`; a 400 naming the reason beats a 200
+      'never_run' about a source with nothing to report.
+
+    This holds in the CONFIGURED state only, and such a row is not impossible
+    (`_get_source_run_status` reports whatever it finds): neither guard is
+    retroactive, so a deployment upgraded from a build whose `run_source` had no
+    admin gate or validation may hold a stale row; and with
+    `PLUGIN_SECRET_DEFAULTS` unavailable the fail-open admits `manual_import` on
+    BOTH branches, so the disagreement disappears. Pinned in both directions by
+    `TestTheQueryStringSourceRouteIsValidated`.
     """
     try:
         _validate_source_parameter(source)
@@ -281,7 +312,7 @@ def _is_configured_value(value: object, seeded_default: str | None) -> bool:
     return stripped != default
 
 
-@lru_cache(maxsize=1)
+@cache
 def _plugin_secret_defaults() -> dict[str, dict[str, str]]:
     """Parse PLUGIN_SECRET_DEFAULTS into {plugin_id: {key: seeded_default}}.
 
@@ -295,7 +326,7 @@ def _plugin_secret_defaults() -> dict[str, dict[str, str]]:
     Entries that are not a str -> str mapping are dropped individually rather
     than voiding the whole variable, so one bad plugin cannot hide the others.
     """
-    raw = os.environ.get(PLUGIN_SECRET_DEFAULTS_VAR, "")
+    raw = os.environ.get(PLUGIN_DEFAULTS_ENV_VAR, "")
     if not raw:
         return {}
     try:
@@ -320,7 +351,8 @@ def _plugin_secret_defaults() -> dict[str, dict[str, str]]:
 
 
 def _deploy_suffix() -> str:
-    return f"-{AWS_ACCOUNT_ID}-{AWS_REGION}" if AWS_ACCOUNT_ID and AWS_REGION else ""
+    """`-<account>-<region>`, exactly what CDK's uniqueName() appends with no prefix."""
+    return f"-{DEPLOY_ACCOUNT_ID}-{DEPLOY_REGION}" if DEPLOY_ACCOUNT_ID and DEPLOY_REGION else ""
 
 
 def _build_rule_name(source: str) -> str:
@@ -391,13 +423,13 @@ def get_integration_status():
                 'configured': len(configured_keys) > 0,
                 'credentials_set': configured_keys,
             }
-
-        return status
     except ConfigurationError:
         raise
     except Exception as e:
         logger.exception(f"Failed to get integration status: {e}")
-        raise ServiceError('Failed to retrieve integration status')
+        raise ServiceError('Failed to retrieve integration status') from e
+    else:
+        return status
 
 
 @app.get("/integrations/<source>/credentials")
@@ -463,13 +495,13 @@ def get_credentials(source: str):
             # by the scrapers handler as a top-level secret key).
             if secrets.get(prefixed_key):
                 result[key] = secrets[prefixed_key]
-
-        return result
     except (ConfigurationError, ValidationError):
         raise
     except Exception as e:
         logger.exception(f"Failed to get credentials for {source}: {e}")
-        raise ServiceError('Failed to retrieve credentials')
+        raise ServiceError('Failed to retrieve credentials') from e
+    else:
+        return result
 
 
 @app.put("/integrations/<source>/credentials")
@@ -480,7 +512,7 @@ def update_credentials(source: str):
     Requires admin access — credential management is an administrative operation.
 
     Each key in the request body must conform to the allowed form (lowercase
-    letters, digits, and underscores only; 1–64 characters; no leading/trailing
+    letters, digits, and underscores only; 1-64 characters; no leading/trailing
     underscores).  Unrecognised or malformed keys are rejected with a 400 error
     before any write is attempted.
 
@@ -500,7 +532,7 @@ def update_credentials(source: str):
     if not SECRETS_ARN:
         raise ConfigurationError('Secrets not configured')
 
-    body = app.current_event.json_body
+    body = json_body_value(app)
 
     # Reject non-dict bodies (list, string, null) before any further processing.
     if not isinstance(body, dict):
@@ -537,19 +569,67 @@ def update_credentials(source: str):
                 secrets[f"{prefix}{key}"] = value
 
         put_secret_json(secretsmanager, SECRETS_ARN, secrets)
-        return {'success': True, 'message': f'Credentials updated for {source}'}
     except (ConfigurationError, ValidationError):
         raise
     except Exception as e:
         logger.exception(f"Failed to update credentials: {e}")
-        raise ServiceError('Failed to update credentials')
+        raise ServiceError('Failed to update credentials') from e
+    else:
+        return {'success': True, 'message': f'Credentials updated for {source}'}
 
 
 # ============================================
 # App Config CRUD (multi-instance plugins)
 # ============================================
 
-APP_CONFIG_PLUGINS = {'app_reviews_ios', 'app_reviews_android'}
+APP_CONFIG_PLUGINS = {'app_reviews_ios', 'app_reviews_android', 'web_reviews'}
+
+
+def _validated_app_config(source: str, app_config: dict) -> dict:
+    """The config as stored. A web_reviews target is checked in full (https, public host, bounds —
+    `shared.web_review_targets`); the app-review connectors keep their app_name-only check.
+
+    A client's `source_id` is dropped: the route mints it (`_with_source_id`)."""
+    if source == WEB_REVIEWS_PLUGIN:
+        try:
+            cleaned = validated_target({k: v for k, v in app_config.items() if k != 'source_id'})
+        except TargetError as error:
+            raise ValidationError(str(error)) from error
+        return cleaned
+    return _with_radar_brand(app_config)
+
+
+def _with_radar_brand(app_config: dict) -> dict:
+    """An app-review connector with its optional `radar_brand` (a Radar brand key, docs/radar.md)
+    checked: kept when set, dropped when blank, a 400 when malformed."""
+    try:
+        radar_brand = radar_brand_setting(app_config.get('radar_brand'))
+    except ValueError as error:
+        raise ValidationError(str(error)) from error
+    rest = {k: v for k, v in app_config.items() if k != 'radar_brand'}
+    return {**rest, 'radar_brand': radar_brand} if radar_brand else rest
+
+
+def _with_source_id(source: str, app_config: dict, stored: dict | None) -> dict:
+    """A web_reviews target with its source label: minted on create, the stored one on update
+    (a rename does not move its reviews), minted from the stored values for a target saved before
+    `source_id` existed. Other connectors are returned unchanged."""
+    if source != WEB_REVIEWS_PLUGIN:
+        return app_config
+    return {**app_config, 'source_id': target_source_id(app_config if stored is None else stored)}
+
+
+def _app_configs_in_secret(source: str) -> tuple[dict, str, list]:
+    """The shared secret as stored, the key `source`'s app configs live under, and those configs.
+
+    The read half of every app-config route's read-modify-write; the write half is
+    `put_secret_json` on the same `secrets` dict.
+    """
+    response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
+    secrets = json.loads(response.get('SecretString', '{}'))
+    configs_key = _get_app_configs_key(source)
+    configs = json.loads(secrets.get(configs_key, '[]'))
+    return secrets, configs_key, configs
 
 
 def _get_app_configs_key(source: str) -> str:
@@ -579,16 +659,15 @@ def list_app_configs(source: str):
         return {'apps': []}
 
     try:
-        response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
-        secrets = json.loads(response.get('SecretString', '{}'))
-        configs_key = _get_app_configs_key(source)
-        configs = json.loads(secrets.get(configs_key, '[]'))
-        return {'apps': configs}
+        _secrets, _configs_key, configs = _app_configs_in_secret(source)
     except (ConfigurationError, ValidationError):
         raise
-    except Exception as e:
+    except (ClientError, BotoCoreError, ValueError, TypeError, AttributeError) as e:
+        # An AWS failure, or a secret whose JSON is not the {key: str} shape.
         logger.warning(f"Could not read app configs for {source}: {e}")
         return {'apps': []}
+    else:
+        return {'apps': configs}
 
 
 @app.post("/integrations/<source>/apps")
@@ -609,10 +688,12 @@ def save_app_config(source: str):
     if not SECRETS_ARN:
         raise ConfigurationError('Secrets not configured')
 
-    body = app.current_event.json_body or {}
+    body = json_object_body(app)
     app_config = body.get('app')
     if not app_config:
         raise ValidationError('No app config provided')
+    if not isinstance(app_config, dict):  # a string, list or number would raise below (a 500)
+        raise ValidationError('app must be an object')
 
     # Validate required fields
     if not app_config.get('id'):
@@ -620,27 +701,28 @@ def save_app_config(source: str):
         app_config['id'] = str(uuid.uuid4())[:8]
     if not app_config.get('app_name'):
         raise ValidationError('app_name is required')
+    app_config = _validated_app_config(source, app_config)
 
     try:
-        response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
-        secrets = json.loads(response.get('SecretString', '{}'))
-        configs_key = _get_app_configs_key(source)
-        configs = json.loads(secrets.get(configs_key, '[]'))
+        secrets, configs_key, configs = _app_configs_in_secret(source)
 
-        existing_idx = next((i for i, c in enumerate(configs) if c.get('id') == app_config['id']), -1)
-        if existing_idx >= 0:
-            configs[existing_idx] = app_config
-        else:
+        existing_idx = next((i for i, c in enumerate(configs) if c.get('id') == app_config['id']), None)
+        stored = configs[existing_idx] if existing_idx is not None else None
+        app_config = _with_source_id(source, app_config, stored if isinstance(stored, dict) else None)
+        if existing_idx is None:
             configs.append(app_config)
+        else:
+            configs[existing_idx] = app_config
 
         secrets[configs_key] = json.dumps(configs)
         put_secret_json(secretsmanager, SECRETS_ARN, secrets)
-        return {'success': True, 'app': app_config}
     except (ConfigurationError, ValidationError):
         raise
     except Exception as e:
         logger.exception(f"Failed to save app config for {source}: {e}")
-        raise ServiceError('Failed to save app configuration')
+        raise ServiceError('Failed to save app configuration') from e
+    else:
+        return {'success': True, 'app': app_config}
 
 
 @app.delete("/integrations/<source>/apps/<app_id>")
@@ -661,19 +743,17 @@ def delete_app_config(source: str, app_id: str):
         raise ConfigurationError('Secrets not configured')
 
     try:
-        response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
-        secrets = json.loads(response.get('SecretString', '{}'))
-        configs_key = _get_app_configs_key(source)
-        configs = json.loads(secrets.get(configs_key, '[]'))
+        secrets, configs_key, configs = _app_configs_in_secret(source)
         configs = [c for c in configs if c.get('id') != app_id]
         secrets[configs_key] = json.dumps(configs)
         put_secret_json(secretsmanager, SECRETS_ARN, secrets)
-        return {'success': True}
     except (ConfigurationError, ValidationError):
         raise
     except Exception as e:
         logger.exception(f"Failed to delete app config for {source}: {e}")
-        raise ServiceError('Failed to delete app configuration')
+        raise ServiceError('Failed to delete app configuration') from e
+    else:
+        return {'success': True}
 
 
 @app.post("/sources/<source>/run")
@@ -696,7 +776,7 @@ def run_source(source: str):
     to invoke and wrote a `SOURCE_RUN#<source>` partition that nothing ever reads
     or expires.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from shared.tables import get_aggregates_table
 
@@ -705,14 +785,16 @@ def run_source(source: str):
 
     function_name = _build_ingestor_function_name(source)
 
-    execution_id = f"run_{source}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-    payload: dict = {"manual_trigger": True, "execution_id": execution_id}
+    execution_id = timestamped_id(f'run_{source}', datetime.now(UTC))
+    payload: dict = {"execution_id": execution_id}
+    # The body is optional: a missing or malformed one (not JSON, or not an
+    # object) runs every app config — deliberately not a 400.
     try:
-        body = app.current_event.json_body or {}
-        if body.get("app_id"):
-            payload["app_id"] = body["app_id"]
-    except Exception:
-        pass
+        body = json_object_body(app)
+    except ValidationError:
+        body = {}
+    if body.get("app_id"):
+        payload["app_id"] = body["app_id"]
 
     # Create initial run status record
     try:
@@ -721,9 +803,9 @@ def run_source(source: str):
             table.put_item(Item={
                 'pk': f'SOURCE_RUN#{source}', 'sk': execution_id,
                 'status': 'running', 'items_found': 0,
-                'started_at': datetime.now(timezone.utc).isoformat(),
+                'started_at': datetime.now(UTC).isoformat(),
             })
-    except Exception as e:
+    except (ClientError, BotoCoreError) as e:
         logger.warning(f"Failed to create run status: {e}")
 
     lambda_client = boto3.client("lambda")
@@ -733,22 +815,35 @@ def run_source(source: str):
             InvocationType="Event",
             Payload=json.dumps(payload).encode(),
         )
-        status_code = response.get("StatusCode", 0)
-        if status_code == 202:
-            return {"success": True, "message": f"Triggered {source} ingestor", "source": source, "execution_id": execution_id}
-        raise ServiceError(f"Lambda invoke returned status {status_code}")
-    except lambda_client.exceptions.ResourceNotFoundException:
-        raise ServiceError(f"Ingestor Lambda not found for source: {source}")
-    except ServiceError:
-        raise
+    except lambda_client.exceptions.ResourceNotFoundException as e:
+        raise ServiceError(f"Ingestor Lambda not found for source: {source}") from e
+    except ClientError as e:
+        # The role may invoke only the ingestors this deployment created, so a known
+        # plugin without one here (disabled, or webhook-only) is refused by IAM rather
+        # than reported missing by Lambda: the same answer for the caller.
+        if e.response.get("Error", {}).get("Code") == "AccessDeniedException":
+            # Logged, unlike a plain miss: an ENABLED plugin refused here means the
+            # grant drifted from the ingestion stack (or an SCP/boundary blocks it).
+            logger.warning(
+                "Ingestor invoke denied; answering as not found",
+                extra={"source": source, "function_name": function_name},
+            )
+            raise ServiceError(f"Ingestor Lambda not found for source: {source}") from e
+        logger.exception(f"Failed to trigger source {source}: {e}")
+        raise ServiceError(f"Failed to trigger {source} ingestor") from e
     except Exception as e:
         logger.exception(f"Failed to trigger source {source}: {e}")
-        raise ServiceError(f"Failed to trigger {source} ingestor")
+        raise ServiceError(f"Failed to trigger {source} ingestor") from e
+    status_code = response.get("StatusCode", 0)
+    if status_code != 202:
+        raise ServiceError(f"Lambda invoke returned status {status_code}")
+    return {"success": True, "message": f"Triggered {source} ingestor", "source": source, "execution_id": execution_id}
 
 
 def _get_source_run_status(source: str):
     """Get the latest run status for a data source plugin."""
     from boto3.dynamodb.conditions import Key
+
     from shared.tables import get_aggregates_table
 
     table = get_aggregates_table()
@@ -772,9 +867,46 @@ def _get_source_run_status(source: str):
             'items_found': run.get('items_found', 0),
             'errors': run.get('errors', []),
         }
-    except Exception as e:
+    except (ClientError, BotoCoreError) as e:
         logger.warning(f"Failed to get source run status: {e}")
         return {'source': source, 'status': 'unknown'}
+
+
+# Concurrent DescribeRule calls one GET /sources/status makes. The default list
+# is a handful of sources; the cap keeps a 50-source request (the per-request
+# maximum) from bursting EventBridge's per-account DescribeRule rate.
+MAX_PARALLEL_RULE_DESCRIBES = 8
+
+
+def _schedule_status(source: str) -> dict:
+    """One source's schedule state, from its EventBridge rule.
+
+    Deliberate per-item boundary: any failure degrades this source's entry only;
+    the batch still answers.
+
+    "Not scheduled" has two answers: ResourceNotFound, and AccessDenied — the
+    role may describe only the schedule rules the ingestion stack created (by
+    exact name), so a source without a rule is denied rather than not found.
+    """
+    rule_name = _build_rule_name(source)
+    try:
+        response = events_client.describe_rule(Name=rule_name)
+    except events_client.exceptions.ResourceNotFoundException:
+        return {'enabled': False, 'exists': False}
+    except ClientError as e:
+        if e.response.get('Error', {}).get('Code') == 'AccessDeniedException':
+            return {'enabled': False, 'exists': False}
+        logger.exception(f"Failed to get status for source {source}")
+        return {'enabled': False, 'error': 'Failed to retrieve status'}
+    except Exception:
+        logger.exception(f"Failed to get status for source {source}")
+        return {'enabled': False, 'error': 'Failed to retrieve status'}
+    return {
+        'enabled': response.get('State') == 'ENABLED',
+        'schedule': response.get('ScheduleExpression'),
+        'rule_name': rule_name,
+        'exists': True,
+    }
 
 
 @app.get("/sources/status")
@@ -784,7 +916,7 @@ def get_sources_status():
 
     The only route taking a source from the QUERY STRING rather than a `<source>`
     path parameter, which is why it is outside the path-parameter guard the other
-    seven share and validates its sources here instead. Both branches derive a
+    seven share and validates its sources here instead (`reset` is the eighth). Both branches derive a
     resource from the value — `_build_rule_name` for an EventBridge rule this
     `describe_rule`s, and a `SOURCE_RUN#` partition key for `_get_source_run_status`
     — so "is this a real plugin?" is as much the question here as on
@@ -806,42 +938,10 @@ def get_sources_status():
     # If source param provided, return run status for that source
     run_status_source = params.get('run_status')
     if run_status_source:
-        # RAISES here, unlike the batch branch below: this answers about a single
-        # source, so a 400 names the actual problem instead of reporting an empty
-        # status that reads as "never run". Every caller passes a real `plugin.id`
-        # (GeneratorConfigModal, SyntheticSourceCard, Scrapers).
-        #
-        # So the two branches of this ONE route answer `manual_import` differently
-        # — 400 here, `{'enabled': False, 'exists': False}` there — and that
-        # disagreement is deliberate, because the two branches report different
-        # things about it. This one reports a run record, and only `run_source` and
-        # `BaseIngestor` write a `SOURCE_RUN#` partition: no CURRENT path writes
-        # `SOURCE_RUN#manual_import` while the allowlist is available, since
-        # `manual_import` has no ingestor and `run_source` validates against the
-        # same allowlist. So on a clean deployment that partition is empty, and a
-        # 400 naming the reason beats a 200 saying 'never_run' about a source with
-        # nothing to report. The batch branch reports SCHEDULE state, where "no rule
-        # exists" is a real answer to a real question, which is why it must not
-        # raise — see `_is_addressable_source`, whose docstring argues that half.
-        #
-        # Two states this stops short of, so no reader concludes such a row is
-        # IMPOSSIBLE and skips handling one (`_get_source_run_status` reports
-        # whatever it finds):
-        #
-        #   * neither guard is retroactive. `run_source` on the pre-guard base had
-        #     neither `require_admin` nor this validation — measured, a `users`
-        #     caller got 200 and wrote `SOURCE_RUN#manual_import` — so a deployment
-        #     upgraded from that build may hold a stale row today. Same limitation
-        #     the namespace guards in `plugin-loader.ts` carry for secret keys: they
-        #     close the entrances, not what is already stored.
-        #   * with PLUGIN_SECRET_DEFAULTS unavailable the documented fail-open
-        #     admits `manual_import` on BOTH branches, so the asymmetry described
-        #     above disappears and an admin can write that partition again. That is
-        #     consistent — `_is_addressable_source` inherits the same fail-open —
-        #     but it means this whole comment describes the CONFIGURED state.
-        #
-        # Pinned in BOTH directions by TestTheQueryStringSourceRouteIsValidated, so
-        # neither answer can flip silently.
+        # RAISES, unlike the batch branch below: a 400 names the problem rather than a
+        # 'never_run' status. Why `manual_import` gets 400 here and a schedule answer
+        # there (and the two states this stops short of): see `_is_addressable_source`.
+        # Pinned in both directions by TestTheQueryStringSourceRouteIsValidated.
         _validate_source_parameter(run_status_source)
         return _get_source_run_status(run_status_source)
 
@@ -863,7 +963,8 @@ def get_sources_status():
             s.strip() for s in sources_param.split(',') if s.strip()
         ))
     else:
-        sources = ['webscraper', 'manual_import', 's3_import']
+        # The deployment's enabled plugins plus `manual_import` (issue #256).
+        sources = default_source_ids()
 
     # Raises, unlike the per-source check below: this is a malformed REQUEST, not
     # an unaddressable source, so there is no per-entry answer to report and no
@@ -874,30 +975,57 @@ def get_sources_status():
             f"{MAX_SOURCES_PER_STATUS_REQUEST}."
         )
 
-    status = {}
-    for source in sources:
-        if not _is_addressable_source(source):
-            # No rule can exist for a source that is not a plugin, so this is the
-            # answer `describe_rule` would have given — see `_is_addressable_source`
-            # for why that makes it output-identical, and why it must not raise.
-            status[source] = {'enabled': False, 'exists': False}
-            continue
-        rule_name = _build_rule_name(source)
-        try:
-            response = events_client.describe_rule(Name=rule_name)
-            status[source] = {
-                'enabled': response.get('State') == 'ENABLED',
-                'schedule': response.get('ScheduleExpression'),
-                'rule_name': rule_name,
-                'exists': True
-            }
-        except events_client.exceptions.ResourceNotFoundException:
-            status[source] = {'enabled': False, 'exists': False}
-        except Exception as e:
-            logger.warning(f"Failed to get status for source {source}: {e}")
-            status[source] = {'enabled': False, 'error': 'Failed to retrieve status'}
-    
+    # One DescribeRule per source, in parallel (E2E F10: the loop was serial, so
+    # the response waited for every call in turn). boto3 clients are thread-safe;
+    # `map` keeps the request order, which the response dict preserves.
+    addressable = [source for source in sources if _is_addressable_source(source)]
+    with ThreadPoolExecutor(max_workers=max(1, min(len(addressable), MAX_PARALLEL_RULE_DESCRIBES))) as pool:
+        described = dict(zip(addressable, pool.map(_schedule_status, addressable), strict=True))  # pragma: no mutate  map over the same list is always equal-length
+    # No rule can exist for a source that is not a plugin, so that entry is the
+    # answer `describe_rule` would have given — see `_is_addressable_source` for
+    # why that makes it output-identical, and why it must not raise.
+    circuits = _circuit_states(addressable, include_error=_caller_is_admin())
+    status = {
+        source: {
+            **described.get(source, {'enabled': False, 'exists': False}),
+            'circuit': circuits.get(source, closed_circuit()),
+        }
+        for source in sources
+    }
+
     return {'sources': status}
+
+
+def _caller_is_admin() -> bool:
+    return is_admin(app.current_event.raw_event)
+
+
+CIRCUIT_STATE_UNAVAILABLE = 'Failed to retrieve circuit state'
+
+
+def _circuit_states(sources: list[str], *, include_error: bool) -> dict[str, dict]:
+    """Each source's breaker state (`shared/plugin_circuit.py`), one batch read.
+
+    The same per-item boundary as `_schedule_status`: a failed read degrades the
+    `circuit` entries (closed, plus `error`) and the schedule half still answers.
+    Only ADDRESSABLE sources are read: a query-string value that is not a plugin
+    has no breaker, and must not become a DynamoDB key.
+    """
+    try:
+        return read_circuits(sources, include_error=include_error)
+    except Exception:
+        logger.exception("Failed to read circuit breaker state")
+        return {source: {**closed_circuit(), 'error': CIRCUIT_STATE_UNAVAILABLE} for source in sources}
+
+
+def _clear_tripped_circuit(source: str) -> None:
+    """Delete *source*'s TRIPPED row, or raise a ServiceError naming what failed."""
+    try:
+        clear_circuit(source)
+    except Exception as e:
+        logger.exception(f"Failed to reset the circuit breaker for {source}: {e}")
+        metrics.add_metric(name="CircuitResetFailed", unit="Count", value=1)
+        raise ServiceError('Failed to reset the data source circuit breaker') from e
 
 
 @app.put("/sources/<source>/enable")
@@ -912,13 +1040,34 @@ def enable_source(source: str):
     require_admin(app.current_event.raw_event)
     _validate_source_parameter(source)
 
+    # The TRIPPED row first: re-enabling only the schedule left every run skipped
+    # at `is_open` until someone deleted the row by hand (pending §8). Both steps
+    # are idempotent, so a failure of either is safe to retry.
+    _clear_tripped_circuit(source)
     rule_name = _build_rule_name(source)
     try:
         events_client.enable_rule(Name=rule_name)
-        return {'success': True, 'source': source, 'enabled': True}
     except Exception as e:
         logger.exception(f"Failed to enable source {source}: {e}")
-        raise ServiceError('Failed to enable data source')
+        raise ServiceError('Failed to enable data source') from e
+    return {'success': True, 'source': source, 'enabled': True, 'circuit': closed_circuit()}
+
+
+@app.post("/sources/<source>/reset")
+@tracer.capture_method
+def reset_source(source: str):
+    """Close a tripped circuit breaker WITHOUT turning the schedule back on.
+
+    For an admin who fixed the cause and wants the next manual or scheduled run
+    to go ahead, but not necessarily the schedule. Admin-gated and validated like
+    `enable_source`: `source` names a DynamoDB key. Answers the source's state
+    afterwards — the schedule as `GET /sources/status` reports it, circuit closed.
+    """
+    require_admin(app.current_event.raw_event)
+    _validate_source_parameter(source)
+
+    _clear_tripped_circuit(source)
+    return {'success': True, 'source': source, **_schedule_status(source), 'circuit': closed_circuit()}
 
 
 @app.put("/sources/<source>/disable")
@@ -936,10 +1085,24 @@ def disable_source(source: str):
     rule_name = _build_rule_name(source)
     try:
         events_client.disable_rule(Name=rule_name)
-        return {'success': True, 'source': source, 'enabled': False}
     except Exception as e:
         logger.exception(f"Failed to disable source {source}: {e}")
-        raise ServiceError('Failed to disable data source')
+        raise ServiceError('Failed to disable data source') from e
+    return {'success': True, 'source': source, 'enabled': False}
+
+
+
+# SnapStart (lib/utils/snapstart.ts): the Secrets Manager and EventBridge clients
+# are already built at import. Before the snapshot, also parse the plugin defaults,
+# the DynamoDB and Lambda model files (the run-status / run routes build that Table
+# and client lazily: ~250 ms of model parsing that landed on the first such call
+# after every restore) and every route's request model (3.00.00 capacity: the first
+# call after a restore ran at 83-93 % CPU). Pure computation: no client, no
+# credential, no AWS call. Reseed after restore.
+register_snapshot_hooks(_plugin_secret_defaults, botocore_model_warmer('dynamodb', 'lambda'), api_route_warmer(app))
+# A `$LATEST` environment (an unqualified invoke: assistant, MCP, agents) is not restored from the
+# snapshot; it builds its clients during its own INIT instead (shared/warm_init.py).
+warm_at_init(get_dynamodb_resource)
 
 
 @api_handler

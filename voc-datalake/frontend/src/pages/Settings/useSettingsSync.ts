@@ -11,9 +11,19 @@
 
 import { useState, useEffect } from 'react'
 import { getRuntimeConfig, isConfigLoaded } from '../../runtimeConfig'
+import { rebaseDraft } from '../../components/UnsavedChangesGuard/rebaseDraft'
 import type { Config } from '../../store/configStore'
 
 type SetConfig = (config: Partial<Config>) => void
+
+/** The brand form's four text fields, as the inputs hold them. */
+interface BrandFields {
+  readonly brandName: string
+  readonly brandHandles: string
+  readonly hashtags: string
+  readonly urlsToTrack: string
+}
+const BRAND_FIELDS: ReadonlyArray<keyof BrandFields> = ['brandName', 'brandHandles', 'hashtags', 'urlsToTrack']
 
 /** Brand settings payload returned by GET /settings/brand. */
 export interface BrandSettingsResponse {
@@ -57,7 +67,8 @@ export function useApiEndpointField(storeEndpoint: string, setConfig: SetConfig)
 /**
  * Owns the brand form drafts (name, handles, hashtags, URLs).
  *
- * - Drafts reset whenever a fresh, error-free brand-settings payload arrives.
+ * - A fresh, error-free brand-settings payload re-bases the drafts: fields the
+ *   user has not edited follow it, edited fields keep the edit (R2).
  * - The payload is mirrored into the persisted config store via an effect.
  */
 export function useBrandForm(
@@ -69,17 +80,36 @@ export function useBrandForm(
   const [brandHandles, setBrandHandles] = useState(config.brandHandles.join(', '))
   const [hashtags, setHashtags] = useState(config.hashtags.join(', '))
   const [urlsToTrack, setUrlsToTrack] = useState(config.urlsToTrack.join('\n'))
+  // What the fields held when last loaded or saved: the unsaved-changes guard's reference.
+  const [baseline, setBaseline] = useState<BrandFields>(() => ({
+    brandName: config.brandName,
+    brandHandles: config.brandHandles.join(', '),
+    hashtags: config.hashtags.join(', '),
+    urlsToTrack: config.urlsToTrack.join('\n'),
+  }))
 
   const usableSettings = backendSettings && !backendSettings.error ? backendSettings : undefined
+
+  const current: BrandFields = { brandName, brandHandles, hashtags, urlsToTrack }
 
   const [prevBackendSettings, setPrevBackendSettings] = useState<BrandSettingsResponse | undefined>(undefined)
   if (backendSettings !== prevBackendSettings) {
     setPrevBackendSettings(backendSettings)
     if (usableSettings) {
-      setBrandName(usableSettings.brand_name ?? '')
-      setBrandHandles((usableSettings.brand_handles ?? []).join(', '))
-      setHashtags((usableSettings.hashtags ?? []).join(', '))
-      setUrlsToTrack((usableSettings.urls_to_track ?? []).join('\n'))
+      const loaded: BrandFields = {
+        brandName: usableSettings.brand_name ?? '',
+        brandHandles: (usableSettings.brand_handles ?? []).join(', '),
+        hashtags: (usableSettings.hashtags ?? []).join(', '),
+        urlsToTrack: (usableSettings.urls_to_track ?? []).join('\n'),
+      }
+      // Re-base, never replace: the load (or a refetch) can land after the
+      // user typed, e.g. while the unsaved-changes dialog is open (R2).
+      const next = rebaseDraft(baseline, loaded, current, BRAND_FIELDS)
+      setBrandName(next.brandName)
+      setBrandHandles(next.brandHandles)
+      setHashtags(next.hashtags)
+      setUrlsToTrack(next.urlsToTrack)
+      setBaseline(loaded)
     }
   }
 
@@ -94,10 +124,23 @@ export function useBrandForm(
     })
   }, [backendSettings, setConfig])
 
+  const dirty = BRAND_FIELDS.some((field) => current[field] !== baseline[field])
+
   return {
     brandName, setBrandName,
     brandHandles, setBrandHandles,
     hashtags, setHashtags,
     urlsToTrack, setUrlsToTrack,
+    /** The fields differ from what was last loaded or saved (E2E F6). */
+    dirty,
+    /** After a successful save: the current values become the reference. */
+    markSaved: () => setBaseline(current),
+    /** Put every field back to what was last loaded or saved. */
+    discard: () => {
+      setBrandName(baseline.brandName)
+      setBrandHandles(baseline.brandHandles)
+      setHashtags(baseline.hashtags)
+      setUrlsToTrack(baseline.urlsToTrack)
+    },
   }
 }

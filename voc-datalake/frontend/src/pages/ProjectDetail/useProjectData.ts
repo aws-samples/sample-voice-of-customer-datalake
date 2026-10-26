@@ -6,16 +6,22 @@ import {
 } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { designSystemApi, designSystemKey } from '../../api/designSystemApi'
 import { projectsApi } from '../../api/projectsApi'
 import { projectKey } from '../../api/projectQueryKeys'
 import { usePrototypeLinkRefresh } from '../../components/usePrototypeLinkRefresh'
+import { generatedDocTitle, type SeriesDocument } from './generatedDocTitle'
 import type {
   PersonaToolConfig, ResearchToolConfig, DocToolConfig, MergeToolConfig, NoteItem,
 } from './types'
 import type {
-  ProjectPersona, ProjectDocument, ProjectJob,
+  ProjectDocument,
 } from '../../api/types'
-import type { ContextConfig } from '../../components/DataSourceWizard/exports'
+import type {
+  ProjectPersona,
+  ProjectJob,
+} from '../../api/projectTypes'
+import type { ContextConfig } from '../../components/DataSourceWizard/types'
 
 /**
  * Query key for a project's job list.
@@ -46,7 +52,7 @@ export const productContextKey = (id: string | undefined) => ['product-context',
  * deletes and polls them and owns that local state; if it ever moves onto React
  * Query this is the key it should share.
  */
-export const productDocsKey = (id: string | undefined) => ['product-docs', id] as const
+const productDocsKey = (id: string | undefined) => ['product-docs', id] as const
 
 /**
  * How long to keep polling the jobs list after an action reports that it started
@@ -179,6 +185,17 @@ export function useProjectData({
     retry: false,
   })
 
+  // The company design system, for the prototype build dialog's "Design system" box.
+  // Company-wide (one cached config GET shared with Knowledge → Design system, which
+  // invalidates it on save); a failure reaches the dialog as undefined, which hides
+  // the box and leaves the build on the API default.
+  const { data: designSystemData } = useQuery({
+    queryKey: designSystemKey(),
+    queryFn: designSystemApi.get,
+    enabled: isEnabled,
+    retry: false,
+  })
+
   // When a job completes, refresh project data
   useEffect(() => {
     const jobs = jobsData?.jobs ?? []
@@ -218,6 +235,7 @@ export function useProjectData({
     jobsData,
     productContext: productContextData?.context,
     productDocs: productDocsData?.docs,
+    designSystem: designSystemData,
     queryClient,
   }
 }
@@ -229,6 +247,8 @@ interface UseProjectMutationsProps {
   researchConfig: ResearchToolConfig
   docConfig: DocToolConfig
   mergeConfig: MergeToolConfig
+  /** The project's documents, so a generated title continues its existing series. */
+  documents?: readonly SeriesDocument[]
   onSuccess: () => void
   onError: () => void
 }
@@ -240,12 +260,26 @@ export function useProjectMutations({
   researchConfig,
   docConfig,
   mergeConfig,
+  documents = [],
   onSuccess,
   onError,
 }: UseProjectMutationsProps) {
   const queryClient = useQueryClient()
   const projectId = id ?? ''
   const { i18n } = useTranslation()
+
+  /**
+   * What every job-starting mutation does once the request is accepted: wake the
+   * jobs query (its poll is off while nothing is known to be running) and tell the
+   * caller; failures go straight to the caller.
+   */
+  const jobRequestCallbacks = {
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
+      onSuccess()
+    },
+    onError,
+  }
 
   const personaMut = useMutation({
     mutationFn: () => projectsApi.generatePersonas(projectId, {
@@ -257,15 +291,11 @@ export function useProjectMutations({
       days: contextConfig.days,
       response_language: i18n.language,
     }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
-      onSuccess()
-    },
-    onError,
+    ...jobRequestCallbacks,
   })
 
   const docMut = useMutation({
-    // One or both of PRD / PR-FAQ may be selected. Each fires as its own async
+    // One or both of PRD / PR/FAQ may be selected. Each fires as its own async
     // job (they run in parallel server-side), so the user can request both at once.
     mutationFn: async () => {
       const types = docConfig.docTypes.length > 0 ? docConfig.docTypes : ['prfaq' as const]
@@ -286,13 +316,11 @@ export function useProjectMutations({
         customer_questions: docConfig.customerQuestions.filter((q) => q.trim() !== ''),
         response_language: i18n.language,
       }
-      return Promise.all(types.map((docType) => projectsApi.generateDocument(projectId, { doc_type: docType, ...base })))
+      return Promise.all(types.map((docType) => projectsApi.generateDocument(projectId, {
+        doc_type: docType, ...base, title: generatedDocTitle(base.title, docType, types.length, documents),
+      })))
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
-      onSuccess()
-    },
-    onError,
+    ...jobRequestCallbacks,
   })
 
   const resMut = useMutation({
@@ -308,11 +336,7 @@ export function useProjectMutations({
       response_language: i18n.language,
       use_web_search: researchConfig.useWebSearch,
     }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
-      onSuccess()
-    },
-    onError,
+    ...jobRequestCallbacks,
   })
 
   const mergeMut = useMutation({
@@ -328,11 +352,7 @@ export function useProjectMutations({
       days: contextConfig.days,
       response_language: i18n.language,
     }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
-      onSuccess()
-    },
-    onError,
+    ...jobRequestCallbacks,
   })
 
   const dismissJobMut = useMutation({
@@ -459,15 +479,25 @@ export function useDocumentMutations({
     mutationFn: (data: {
       docId: string;
       title?: string;
-      content: string
+      content: string;
+      /** The revision the editor loaded (documentEdit.documentRevision); absent = no stale check. */
+      expectedRevision?: number
     }) =>
       projectsApi.updateDocument(projectId, data.docId, {
         ...(data.title === undefined ? {} : { title: data.title }),
         content: data.content,
+        ...(data.expectedRevision === undefined ? {} : { expected_revision: data.expectedRevision }),
+        // A fresh id per save, so the server can tell a replayed request from a second save.
+        edit_id: crypto.randomUUID(),
       }),
-    onSuccess: (_result, variables) => {
+    onSuccess: (result, variables) => {
       void queryClient.invalidateQueries({ queryKey: projectKey(id) })
-      if (selectedDoc?.document_id === variables.docId) {
+      if (selectedDoc?.document_id !== variables.docId) return
+      // Every edit is a new version, and a PRD / PR/FAQ version has a new id:
+      // show the version just saved (the edited one stays in Versions).
+      if (result.document !== null) {
+        setSelectedDoc(result.document)
+      } else {
         setSelectedDoc({
           ...selectedDoc,
           ...(variables.title === undefined ? {} : { title: variables.title }),

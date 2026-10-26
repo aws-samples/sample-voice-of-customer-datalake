@@ -86,10 +86,10 @@ WHAT REVIEW FOUND WRONG WITH TWO OF THESE PINS, recorded because the failures we
 """
 import ast
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from shared.feedback import PERSONA_PREFIX, PERSONA_UNKNOWN, persona_bucket
 
@@ -191,6 +191,13 @@ def _names_imported_from_the_shared_module(relative: str) -> set[str]:
     return imported
 
 
+def _functions_named(relative: str, names) -> list[ast.FunctionDef | ast.AsyncFunctionDef]:
+    """Every (async) function definition in `relative` whose name is in `names`."""
+    return [node for node in ast.walk(ast.parse(_read(relative)))
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name in names]
+
+
 def _string_constants_in(relative: str, functions: tuple[str, ...]) -> set[str]:
     """Every string literal appearing in the CODE of the named functions.
 
@@ -201,10 +208,7 @@ def _string_constants_in(relative: str, functions: tuple[str, ...]) -> set[str]:
     by that mutation. A lockstep that cannot fail for the drift it names is worse
     than none, so this reads the literals a function actually evaluates.
     """
-    tree = ast.parse(_read(relative))
-    wanted = [node for node in ast.walk(tree)
-              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-              and node.name in functions]
+    wanted = _functions_named(relative, functions)
     assert len(wanted) == len(functions), (
         f'Expected {list(functions)} in {relative}; found '
         f'{sorted(node.name for node in wanted)}. If one was renamed or moved, '
@@ -233,10 +237,7 @@ def _names_read_in(relative: str, function: str) -> set[str]:
     not a use, and this file's siblings have already been caught once by a pin a
     comment could satisfy.
     """
-    tree = ast.parse(_read(relative))
-    wanted = [node for node in ast.walk(tree)
-              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-              and node.name == function]
+    wanted = _functions_named(relative, (function,))
     assert len(wanted) == 1, (
         f'Expected exactly one {function} in {relative}; found {len(wanted)}.'
     )
@@ -244,7 +245,7 @@ def _names_read_in(relative: str, function: str) -> set[str]:
 
 
 def _day(days_ago: int) -> str:
-    return (datetime.now(timezone.utc) - timedelta(days=days_ago)).strftime('%Y-%m-%d')
+    return (datetime.now(UTC) - timedelta(days=days_ago)).strftime('%Y-%m-%d')
 
 
 def _feedback_item(**overrides) -> dict:
@@ -260,7 +261,7 @@ def _feedback_item(**overrides) -> dict:
         'sentiment_score': Decimal('-0.4'),
         'urgency': 'low',
         'date': _day(0),
-        'source_created_at': (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+        'source_created_at': (datetime.now(UTC) - timedelta(hours=1)).isoformat(),
     }
     item.update(overrides)
     return item
@@ -298,15 +299,7 @@ def _scan_personas(items, mock_fb, mock_agg, event_factory, context) -> dict:
 
 def _aggregate_personas(rows, mock_agg, event_factory, context) -> dict:
     """`/metrics/personas` down its AGGREGATES branch (default basis), parsed."""
-    mock_agg.query.return_value = {'Items': rows}
-    from metrics_handler import lambda_handler
-
-    event = event_factory(
-        method='GET', path='/metrics/personas', query_params={'days': '7'},
-    )
-    response = lambda_handler(event, context)
-    assert response['statusCode'] == 200, response['body']
-    return json.loads(response['body'])['personas']
+    return _aggregate_body(rows, mock_agg, event_factory, context)['personas']
 
 
 def _aggregate_body(rows, mock_agg, event_factory, context) -> dict:
@@ -327,7 +320,7 @@ def _aggregate_body(rows, mock_agg, event_factory, context) -> dict:
     return json.loads(response['body'])
 
 
-def _scan_entities(items, mock_fb, mock_agg, event_factory, context) -> dict:
+def _scan_entities(items, mock_fb, event_factory, context) -> dict:
     """`/feedback/entities` down its SCAN branch (review basis), parsed whole.
 
     The WHOLE body rather than just the persona map, because this route publishes
@@ -362,9 +355,9 @@ class TestBothScanBranchesCountEveryItem:
     """
 
     @patch('metrics_handler.feedback_table')
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     def test_the_entities_persona_map_sums_to_the_corpus_it_reports(
-        self, mock_agg, mock_fb, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
         """The positive control and the sum invariant in one assertion.
 
@@ -380,7 +373,7 @@ class TestBothScanBranchesCountEveryItem:
         body = _scan_entities(
             [_feedback_item(persona_type=ARCHETYPE),
              _feedback_item(sk='FEEDBACK#f2', feedback_id='f2')],
-            mock_fb, mock_agg, api_gateway_event, lambda_context,
+            mock_fb, api_gateway_event, lambda_context,
         )
         personas = body['entities']['personas']
 
@@ -393,16 +386,16 @@ class TestBothScanBranchesCountEveryItem:
         )
 
     @patch('metrics_handler.feedback_table')
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     def test_the_entities_scan_branch_buckets_on_the_archetype_not_the_name(
-        self, mock_agg, mock_fb, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
         """The field move, on this branch. Subject carries BOTH fields, so the two
         are distinguishable — an item with only one would bucket the same either
         way and this would pass over a branch left on the old field."""
         body = _scan_entities(
             [_feedback_item(persona_type=ARCHETYPE, persona_name=FREE_TEXT_NAME)],
-            mock_fb, mock_agg, api_gateway_event, lambda_context,
+            mock_fb, api_gateway_event, lambda_context,
         )
 
         assert body['entities']['personas'] == {ARCHETYPE: 1}, body['entities']
@@ -522,9 +515,9 @@ class TestTheMixedWindowSaysSoInTheRESPONSE:
         assert _json.loads(response['body'])['has_legacy_persona_buckets'] is True
 
     @patch('metrics_handler.feedback_table')
-    @patch('metrics_handler.aggregates_table')
+    @patch('metrics_handler.aggregates_table', new=MagicMock())
     def test_a_derived_branch_publishes_it_as_false(
-        self, mock_agg, mock_fb, api_gateway_event, lambda_context
+        self, mock_fb, api_gateway_event, lambda_context
     ):
         """The SCAN branch cannot produce a legacy bucket, and still says so.
 
@@ -534,7 +527,7 @@ class TestTheMixedWindowSaysSoInTheRESPONSE:
         branch as "not applicable".
         """
         body = _scan_entities([_feedback_item(persona_type=ARCHETYPE)], mock_fb,
-                              mock_agg, api_gateway_event, lambda_context)
+                              api_gateway_event, lambda_context)
 
         assert body['has_legacy_persona_buckets'] is False, body
 

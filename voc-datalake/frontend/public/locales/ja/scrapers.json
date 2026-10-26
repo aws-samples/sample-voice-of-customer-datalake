@@ -4,17 +4,42 @@
     "edit": "編集",
     "frequency": "頻度",
     "lastRun": "最終実行",
-    "lastSummary": "前回: {{pages}}ページ、{{reviews}}件のレビュー",
+    "lastSummary": "前回: {{pages, number}}ページ、{{reviews, number}}件のレビュー",
     "never": "なし",
     "notConfigured": "未設定",
+    "radarBadge": "レーダー: {{brand}}",
+    "runConfirmTitle": "今すぐレビューを取得しますか？",
+    "runConfirmMessage": "{{site}} にアクセスし、見つかった新しいレビューを追加します。数分かかる場合があります。",
+    "runConfirmLabel": "レビューを取得",
+    "runStarted": "開始しました。実行が終わると新しいレビューがデータに表示されます。",
+    "siteAppStore": "App Store",
+    "siteGooglePlay": "Google Play",
+    "siteUnknown": "ソース",
     "runNow": "今すぐ実行",
-    "urls": "URL"
+    "urls": "URL",
+    "state": {
+      "scheduled": "スケジュール実行",
+      "manual": "手動",
+      "paused": "一時停止"
+    }
   },
   "configureApiFirst": "まずAPIエンドポイントを設定してください",
+  "radarSource": {
+    "label": "レーダーソース: 他のブランドのレビュー",
+    "hint": "そのレビューは選んだブランドとしてレーダーに送られ、自社のダッシュボードには入りません。",
+    "brandLabel": "レーダーブランド",
+    "choose": "ブランドを選択",
+    "unknownBrand": "{{key}}(ブランドリストにありません)",
+    "noBrand": "レーダーブランドはまだありません。",
+    "addBrand": "管理 → ソース → レーダー でブランドを追加",
+    "needsBrand": "ブランドを選ばない場合、通常のソースのままです。",
+    "loading": "レーダーブランドを読み込み中...",
+    "loadFailed": "レーダーブランドを読み込めませんでした。"
+  },
   "csvUpload": {
     "cancel": "キャンセル",
-    "defaultSourceHint": "「source」列がない行に使用されます。",
-    "defaultSourceLabel": "デフォルトのソースラベル",
+    "defaultSourceHint": "チャネル列のない行に使われます。空欄なら「CSVアップロード」になります。",
+    "defaultSourceLabel": "既定のチャネル",
     "done": "完了",
     "downloadTemplate": "テンプレートをダウンロード",
     "dropZone": ".csv ファイルをここにドロップするか、クリックして選択",
@@ -24,13 +49,41 @@
     "fieldText": "— 必須。フィードバックの内容。",
     "formatGuide": "CSV 形式",
     "headerNote": "ヘッダーは大文字・小文字を区別しません。1 回のアップロードにつき最大 50,000 行 / 10 MB。",
-    "imported_one": "{{count}} 行が処理キューに追加されました",
-    "imported_other": "{{count}} 行が処理キューに追加されました",
+    "imported_one": "{{count, number}} 行が処理キューに追加されました",
+    "imported_other": "{{count, number}} 行が処理キューに追加されました",
     "pipelineNote": "Bedrock による情報付加が完了すると（通常 1 分以内）、フィードバックページに行が表示されます。",
+    "pipelineNoteRadar": "Bedrock による情報付加が完了すると（通常 1 分以内）、レーダーページの {{brand}} に行が表示されます。自社のダッシュボードには含まれません。",
     "title": "CSV アップロード",
     "upload": "アップロード",
     "uploading": "アップロード中…",
-    "warningsHeader": "警告"
+    "warningsHeader": "警告",
+    "errorNoHeader": "ファイルにヘッダー行がありません。",
+    "errorUnreadable": "ファイルを読み取れませんでした。",
+    "uploadFailed": "アップロードに失敗しました",
+    "mapping": {
+      "title": "列の割り当て",
+      "hint": "ヘッダー行から提案しています。認識できない列はメタデータとして保持され、「無視」を選ばない限り失われません。",
+      "columnLabel": "{{header}} の割り当て先",
+      "dimensionTarget": "ディメンション: {{name}}",
+      "targets": {
+        "text": "フィードバック本文",
+        "id": "行 ID",
+        "rating": "評価",
+        "date": "日付",
+        "author": "作成者",
+        "title": "タイトル",
+        "url": "リンク",
+        "channel": "チャネル",
+        "tags": "タグ",
+        "metadata": "メタデータとして保持",
+        "ignore": "無視"
+      },
+      "problems": {
+        "noText": "1 つの列を「フィードバック本文」に割り当ててください。",
+        "twice": "{{target}} が複数の列に割り当てられています。"
+      }
+    },
+    "defaultSourcePlaceholder": "例：サポートアンケート"
   },
   "deleteConfirmLabel": "削除",
   "deleteConfirmMessage": "このスクレイパーを削除してもよろしいですか？この操作は元に戻せません。",
@@ -52,11 +105,12 @@
     "enablePagination": "ページネーションを有効化",
     "enterUrlFirst": "まずURLを入力してください",
     "failedToAnalyze": "URL分析に失敗しました",
-    "foundReviews": "{{count}}件のレビューが見つかりました。{{notes}}",
-    "foundReviews_one": "{{count}}件のレビューが見つかりました。{{notes}}",
-    "foundReviews_other": "{{count}}件のレビューが見つかりました。{{notes}}",
+    "foundReviews": "{{count, number}}件のレビューが見つかりました。{{notes}}",
+    "foundReviews_one": "{{count, number}}件のレビューが見つかりました。{{notes}}",
+    "foundReviews_other": "{{count, number}}件のレビューが見つかりました。{{notes}}",
+    "noReviewsFound": "このページにレビューが見つかりませんでした。URL がレビューを掲載しているページを開くか確認するか、CSS セレクターを手動で入力してください。",
     "frequency": "頻度",
-    "hideCssSelectors": "CSSセレクターを非表示",
+    "hideCssSelectors": "詳細設定を隠す",
     "jsonLdDescription": "このスクレイパーはページに埋め込まれた構造化データ（Schema.org）を使用します。CSSセレクターは不要です。",
     "jsonLdTitle": "JSON-LD抽出",
     "maxPages": "最大ページ数",
@@ -67,27 +121,29 @@
     "rating": "評価",
     "reviewContainer": "レビューコンテナ *",
     "save": "スクレイパーを保存",
+    "saveFailed": "スクレイパーを保存できませんでした。もう一度お試しください。",
     "scraperName": "スクレイパー名",
     "scraperNamePlaceholder": "マイレビュースクレイパー",
     "selectorsAutoDetected": "これらのセレクターは自動検出されました。必要に応じて調整してください。",
     "selectorsDefault": "これらのセレクターはデフォルトに設定されています。必要に応じて調整してください。",
     "selectorTitle": "タイトル",
-    "showCssSelectors": "CSSセレクターを表示",
+    "showCssSelectors": "詳細設定：ページのどの部分がレビューか（CSSセレクター）",
     "start": "開始",
     "textContent": "テキストコンテンツ *",
     "warnings": "警告:",
     "websiteUrl": "WebサイトURL",
-    "websiteUrlPlaceholder": "https://example.com/reviews"
+    "websiteUrlPlaceholder": "https://example.com/reviews",
+    "adminOnlyNotice": "Web スクレイパーの作成と変更は管理者のみが行えます。この設定は閲覧できます。"
   },
   "empty": {
-    "createButton": "スクレイパーを作成",
-    "description": "スクレイパーを作成してWebサイトからフィードバックの収集を開始",
-    "title": "スクレイパーが設定されていません"
+    "createButton": "データソースを追加",
+    "description": "レビューページ、アプリ、ファイル、ツールを追加してフィードバックの収集を始めましょう。",
+    "title": "データソースはまだありません"
   },
   "generator": {
-    "completed": "{{count}} 件の合成レビューを生成しました。処理後まもなく表示されます。",
-    "completed_one": "{{count}} 件の合成レビューを生成しました。処理後まもなく表示されます。",
-    "completed_other": "{{count}} 件の合成レビューを生成しました。処理後まもなく表示されます。",
+    "completed": "{{count, number}} 件の合成レビューを生成しました。処理後まもなく表示されます。",
+    "completed_one": "{{count, number}} 件の合成レビューを生成しました。処理後まもなく表示されます。",
+    "completed_other": "{{count, number}} 件の合成レビューを生成しました。処理後まもなく表示されます。",
     "generate": "生成",
     "generating": "生成中…",
     "runningNote": "AIでレビューを生成しています。最大1分ほどかかる場合があります。",
@@ -105,19 +161,27 @@
     "fieldTimestamp": "ISO 8601 UTC（例：2026-03-20T14:30:00Z）。フィードバックが最初に作成された日時。",
     "formatGuide": "フォーマットガイド",
     "importing": "インポート中...",
-    "importItems": "{{count}}件のアイテム{{plural}}をインポート",
-    "importItems_one": "{{count}}個のアイテム{{plural}}をインポート",
-    "importItems_other": "{{count}}個のアイテム{{plural}}をインポート",
-    "itemsImported_one": "{{count}}件のアイテムがインポートされました",
-    "itemsImported_other": "{{count}}件のアイテムがインポートされました",
-    "moreItems": "...他{{count}}アイテム",
-    "moreItems_one": "...他{{count}}個のアイテム",
-    "moreItems_other": "...他{{count}}個のアイテム",
+    "importItems": "{{count, number}}件のアイテム{{plural}}をインポート",
+    "importItems_one": "{{count, number}}個のアイテム{{plural}}をインポート",
+    "importItems_other": "{{count, number}}個のアイテム{{plural}}をインポート",
+    "itemsImported_one": "{{count, number}}件のアイテムがインポートされました",
+    "itemsImported_other": "{{count, number}}件のアイテムがインポートされました",
+    "moreItems": "...他{{count, number}}アイテム",
+    "moreItems_one": "...他{{count, number}}個のアイテム",
+    "moreItems_other": "...他{{count, number}}個のアイテム",
     "optionalFields": "オプション: rating (1-5)、title、user_id、url、metadata（フラットなキー値）。",
     "pipelineNote": "アイテムはパイプラインで処理中です。まもなくダッシュボードに表示されます。",
-    "preview": "プレビュー — {{count}}アイテム{{plural}}",
-    "preview_one": "プレビュー — {{count}}個のアイテム{{plural}}",
-    "preview_other": "プレビュー — {{count}}個のアイテム{{plural}}",
+    "preview": "プレビュー — {{count, number}}アイテム{{plural}}",
+    "preview_one": "プレビュー — {{count, number}}個のアイテム{{plural}}",
+    "preview_other": "プレビュー — {{count, number}}個のアイテム{{plural}}",
+    "reasonInvalid": "{{field}}: {{message}}",
+    "reasonNotObject": "JSON オブジェクトではありません",
+    "reasonRequired": "{{field}} は必須です",
+    "reasonType": "{{field}} の型が正しくありません",
+    "removeFile": "ファイルを削除",
+    "skippedItem": "アイテム {{position}}: {{reasons}}",
+    "skippedTitle_one": "{{count, number}} 件のアイテムはスキップされます。含めるにはファイルを修正して再度アップロードしてください。",
+    "skippedTitle_other": "{{count, number}} 件のアイテムはスキップされます。含めるにはファイルを修正して再度アップロードしてください。",
     "templateNote": "テンプレートファイルには完全な手順とLLM対応のドキュメントが含まれています。",
     "title": "JSONアップロード"
   },
@@ -125,14 +189,14 @@
     "addReviewManually": "手動でレビューを追加",
     "backToEdit": "編集に戻る",
     "cancel": "キャンセル",
-    "charCount": "{{count}} / {{max}} 文字",
     "detected": "検出: {{source}}",
     "enterBothFields": "URLとレビューテキストの両方を入力してください",
     "exceedsMax": "テキストが最大{{max}}文字を超えています",
     "importing": "インポート中...",
-    "importReviews": "{{count}}件のレビューをインポート",
-    "importReviews_one": "{{count}}件のレビューをインポート",
-    "importReviews_other": "{{count}}件のレビューをインポート",
+    "importReviews": "{{count, number}}件のレビューをインポート",
+    "importReviews_one": "{{count, number}}件のレビューをインポート",
+    "importReviews_other": "{{count, number}}件のレビューをインポート",
+    "invalidUrl": "http:// または https:// で始まる完全なウェブアドレスを入力してください",
     "noReviewsDescription": "貼り付けたテキストに認識可能なレビューが含まれていませんでした。下で手動でレビューを追加できます。",
     "noReviewsDetected": "レビューが検出されませんでした",
     "noReviewsTitle": "レビューを検出できませんでした",
@@ -141,74 +205,173 @@
     "parsingTitle": "AIでレビューを解析中...",
     "pasteReviews": "レビューを貼り付け",
     "pasteReviewsPlaceholder": "Webサイトからコピーしたレビューをここに貼り付けてください...",
-    "reviewsFound_one": "{{count}}件のレビューが見つかりました",
-    "reviewsFound_other": "{{count}}件のレビューが見つかりました",
+    "reviewsFound_one": "{{count, number}}件のレビューが見つかりました",
+    "reviewsFound_other": "{{count, number}}件のレビューが見つかりました",
     "source": "ソース: {{source}}",
     "sourceUrl": "ソースURL",
     "sourceUrlPlaceholder": "https://example.com/reviews",
     "title": "手動インポート",
-    "unparsedSections_one": "⚠️ {{count}}セクションを解析できませんでした",
-    "unparsedSections_other": "⚠️ {{count}}セクションを解析できませんでした"
+    "unparsedSections_one": "{{count, number}}セクションを解析できませんでした",
+    "unparsedSections_other": "{{count, number}}セクションを解析できませんでした",
+    "datesRequired_one": "インポートするには、{{count, number}}件のレビューに日付が必要です。",
+    "datesRequired_other": "インポートするには、{{count, number}}件のレビューに日付が必要です。",
+    "datesDefaulted_one": "{{count, number}}件のレビューは本文に日付がないため、本日のインポート日を使用します。下で変更できます。",
+    "datesDefaulted_other": "{{count, number}}件のレビューは本文に日付がないため、本日のインポート日を使用します。下で変更できます。",
+    "importFailed": "レビューをインポートできませんでした",
+    "clearDraft": "下書きを消去",
+    "draftDropped": "保存された下書きが{{max}}文字を超えていたため消去しました。続けるには短いテキストを貼り付けてください。"
   },
   "newSource": "新しいソース",
   "parsedReview": {
     "authorPlaceholder": "著者",
-    "deleteReview": "レビューを削除",
     "noRating": "評価なし",
-    "star_one": "{{count}}つ星",
-    "star_other": "{{count}}つ星",
+    "star_one": "{{count, number}}つ星",
+    "star_other": "{{count, number}}つ星",
     "textPlaceholder": "レビューテキスト",
-    "titlePlaceholder": "レビュータイトル（オプション）"
+    "titlePlaceholder": "レビュータイトル（オプション）",
+    "dateLabel": "レビューの日付（必須）",
+    "dateDefaulted": "日付が見つかりません：インポート日を設定"
   },
   "pluginConfig": {
     "automaticSchedule": "自動スケジュール",
     "close": "閉じる",
-    "configuration": "設定",
     "disabled": "無効",
     "enabled": "有効",
-    "hide": "非表示",
     "runNow": "今すぐ実行",
     "runTriggered": "実行が開始されました",
     "save": "保存",
-    "saved": "保存しました！",
     "scheduleDescription": "設定されたスケジュールでこのソースを実行",
     "select": "選択...",
-    "show": "表示",
-    "test": "テスト"
+    "configuredInSettings": "{{name}} は {{where}} で接続します。そこにトークンと設定を貼り付けてから、ここに戻ってください。",
+    "openDataSourceSettings": "ソース設定を開く"
   },
   "refresh": "更新",
   "status": {
     "completed": "完了",
     "completedWithErrors": "エラーありで完了",
     "failed": "失敗",
-    "moreErrors": "...他{{count}}件のエラー",
-    "moreErrors_one": "...他{{count}}個のエラー",
-    "moreErrors_other": "...他{{count}}個のエラー",
+    "moreErrors": "...他{{count, number}}件のエラー",
+    "moreErrors_one": "...他{{count, number}}個のエラー",
+    "moreErrors_other": "...他{{count, number}}個のエラー",
     "pagesScraped": "スクレイプしたページ:",
     "reviewsFound": "見つかったレビュー:",
     "running": "実行中..."
   },
-  "subtitle": "Webスクレイパーとアプリレビューソースを設定してフィードバックを収集",
+  "subtitle": "フィードバックの取得元すべて：レビューページ、アプリ、ファイル、ツール",
   "syntheticCard": {
     "generate": "生成",
-    "lastSummary": "前回の実行: {{date}} に {{items}} 件生成",
+    "lastSummary": "前回の実行: {{date}} に {{items, number}} 件生成",
     "neverRun": "未実行 — 「生成」をクリックして合成レビューを作成します。",
     "sectionTitle": "合成データ"
   },
   "templateSelector": {
-    "appReviewSources": "アプリレビューソース",
-    "autoDiscovered": "自動検出",
     "cancel": "キャンセル",
-    "csvUpload": "CSV アップロード",
-    "csvUploadDescription": "フィードバック行を含む CSV ファイルをアップロードします。各行は情報付加のうえフィードバックテーブルに追加されます。",
-    "jsonUpload": "JSONアップロード",
-    "jsonUploadDescription": "構造化フィードバックデータのJSONファイルをアップロード。テンプレートをダウンロードして開始。",
-    "manualImport": "手動インポート",
-    "manualImportDescription": "任意のWebサイトからレビューを貼り付けてAI解析でインポート。",
-    "manualInput": "手動入力",
-    "syntheticData": "合成データ",
     "title": "データソースを追加",
-    "webScraperTemplates": "Webスクレイパーテンプレート"
+    "scrapersAdminOnly": "Web スクレイパーを追加できるのは管理者のみです。",
+    "importsAdminOnly": "データをインポートできるのは管理者のみです (貼り付け、JSON または CSV のアップロード、S3 インポート)。"
   },
-  "title": "データソース"
+  "title": "データソース",
+  "loading": "データソースを読み込み中…",
+  "appCard": {
+    "maxReviews": "最大レビュー数",
+    "maxPages": "最大ページ数",
+    "allPages": "すべて",
+    "unnamed": "名前のないアプリ",
+    "loading": "アプリ設定を読み込み中…",
+    "deleteConfirmTitle": "アプリを削除",
+    "deleteConfirmMessage": "このアプリ設定を削除してもよろしいですか？",
+    "editApp": "アプリを編集",
+    "addNewApp": "新しいアプリを追加",
+    "addApp": "アプリを追加",
+    "configuredApps": "設定済みのアプリ",
+    "noApps": "まだアプリが設定されていません",
+    "addFirstApp": "最初のアプリを追加",
+    "web": {
+      "configuredPages": "レビューページ",
+      "addPage": "ページを追加",
+      "addNewPage": "レビューページを追加",
+      "editPage": "レビューページを編集",
+      "noPages": "レビューページはまだ追加されていません",
+      "addFirstPage": "最初のレビューページを追加",
+      "unnamed": "名前のないページ",
+      "deleteConfirmTitle": "レビューページを削除",
+      "deleteConfirmMessage": "このレビューページを削除してもよろしいですか？"
+    },
+    "kindLabel": "種類",
+    "kind": {
+      "reviewPage": "レビューページ",
+      "ios": "iPhoneアプリ",
+      "android": "Androidアプリ",
+      "app": "アプリ"
+    }
+  },
+  "sourceMenu": {
+    "prompt": "お持ちのものは？",
+    "advancedHint": "技術的な設定向け",
+    "groups": {
+      "website": "ウェブサイトのリンク",
+      "app": "アプリ",
+      "file": "ファイル",
+      "paste": "テキストを貼り付け",
+      "tool": "ツール",
+      "advanced": "詳細設定"
+    },
+    "items": {
+      "webReviews": {
+        "title": "レビューページ",
+        "description": "Trustpilot、TripAdvisor、フォーラムなど、レビューが並ぶ公開ページ。"
+      },
+      "customScraper": {
+        "title": "カスタムスクレイパー",
+        "description": "自社サイトのレビューページを、選んだ間隔で読み取ります。"
+      },
+      "cssScraper": {
+        "title": "CSSセレクター付きスクレイパー",
+        "description": "レビューのマークアップがないページ向け：レビューの各部分を指定します。"
+      },
+      "ios": {
+        "title": "iPhoneアプリ（App Store）",
+        "description": "Apple App Store のアプリのレビュー。"
+      },
+      "android": {
+        "title": "Androidアプリ（Google Play）",
+        "description": "Google Play のアプリのレビュー。"
+      },
+      "csv": {
+        "title": "スプレッドシート（CSV）",
+        "description": "1行に1件のレビューを含むCSVファイルをアップロードします。"
+      },
+      "json": {
+        "title": "JSONファイル",
+        "description": "別のツールから書き出したファイルをアップロードします。"
+      },
+      "s3": {
+        "title": "複数ファイルを一括（S3）",
+        "description": "CSVやJSONファイルをインポートフォルダーに置くと自動で読み込まれます。"
+      },
+      "paste": {
+        "title": "レビューを貼り付け",
+        "description": "どこからでもコピーしたレビューを貼り付けると、AIが1件ずつに分けます。"
+      },
+      "github": {
+        "title": "GitHub Issues",
+        "description": "GitHubリポジトリのIssueとコメント。"
+      },
+      "synthetic": {
+        "title": "デモ用のサンプルレビュー",
+        "description": "AIが書いたレビュー（サンプルデータとして表示）でプラットフォームを試せます。"
+      }
+    }
+  },
+  "frequency": {
+    "manual": "手動のみ",
+    "hourly": "1 時間ごと",
+    "daily": "毎日",
+    "everyMinutes_one": "{{count, number}} 分ごと",
+    "everyMinutes_other": "{{count, number}} 分ごと",
+    "everyHours_one": "{{count, number}} 時間ごと",
+    "everyHours_other": "{{count, number}} 時間ごと",
+    "everyDays_one": "毎日",
+    "everyDays_other": "{{count, number}} 日ごと"
+  }
 }

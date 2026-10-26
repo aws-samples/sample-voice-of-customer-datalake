@@ -2,22 +2,15 @@
  * @fileoverview Tests for FeedbackCard component.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import i18n from 'i18next'
+import { screen } from '@testing-library/react'
+import { render } from '../../test/test-utils'
 import FeedbackCard from './FeedbackCard'
-import type { FeedbackItem } from '../../api/client'
+import type { FeedbackItem } from '../../api/types'
 
-// Helper to render with router
+// Router + QueryClient (the card reads the configured category / source names).
 function renderWithRouter(ui: React.ReactElement, initialEntries: string[] = ['/']) {
-  return render(
-    <MemoryRouter
-      initialEntries={initialEntries}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-    >
-      {ui}
-    </MemoryRouter>
-  )
+  return render(ui, { initialEntries })
 }
 
 const mockFeedback: FeedbackItem = {
@@ -56,25 +49,58 @@ describe('FeedbackCard', () => {
     })
 
     it('renders source platform with icon', () => {
-      renderWithRouter(<FeedbackCard feedback={mockFeedback} />)
-      // Component capitalizes the source name via CSS (capitalize class)
-      expect(screen.getByText('webscraper')).toBeInTheDocument()
-      expect(screen.getByText('🌐')).toBeInTheDocument()
+      const { container } = renderWithRouter(<FeedbackCard feedback={mockFeedback} />)
+      expect(screen.getByText('Webscraper')).toBeInTheDocument()
+      expect(container.querySelector('svg.lucide-globe')).not.toBeNull()
+      expect(container.textContent).not.toMatch(/\p{Extended_Pictographic}/u)
     })
 
-    it('renders sentiment badge', () => {
+    it('renders sentiment as a word and a percent, not the raw score', () => {
       renderWithRouter(<FeedbackCard feedback={mockFeedback} />)
-      expect(screen.getByText('positive')).toBeInTheDocument()
+      expect(screen.getByText('Positive · 92%')).toBeInTheDocument()
+      expect(screen.queryByText(/0\.92/)).not.toBeInTheDocument()
     })
 
-    it('renders category badge', () => {
+    it('shows scraped text without markdown escapes', () => {
+      renderWithRouter(<FeedbackCard feedback={{ ...mockFeedback, original_text: '**Fast** delivery\\.' }} />)
+      expect(screen.getByText('Fast delivery.')).toBeInTheDocument()
+    })
+
+    it('renders category badge as a label, never the stored id', () => {
       renderWithRouter(<FeedbackCard feedback={mockFeedback} />)
-      expect(screen.getByText('product_quality')).toBeInTheDocument()
+      expect(screen.getByText('Product quality')).toBeInTheDocument()
+    })
+
+    // Labels vs status (design system rule 15): the category is the one accent
+    // label; subcategory, journey stage and persona are neutral, never info/aim.
+    it('emphasises only the category among the descriptive labels', () => {
+      renderWithRouter(<FeedbackCard feedback={mockFeedback} />)
+      expect(screen.getByText('Product quality')).toHaveClass('badge', 'badge-accent')
+      expect(screen.getByText('Features')).toHaveClass('badge', 'badge-muted')
+      expect(screen.getByText('Post purchase')).toHaveClass('badge', 'badge-muted')
+      expect(screen.getByText('Happy Customer')).toHaveClass('badge', 'badge-muted')
+    })
+
+    it('never tints a descriptive label with a status tone', () => {
+      const { container } = renderWithRouter(<FeedbackCard feedback={mockFeedback} />)
+      expect(container.querySelectorAll('.badge-info, .badge-aim')).toHaveLength(0)
+      expect(container.querySelectorAll('.badge-accent')).toHaveLength(1)
     })
 
     it('renders formatted date', () => {
       renderWithRouter(<FeedbackCard feedback={mockFeedback} />)
       expect(screen.getByText(/Jan 15, 2025/)).toBeInTheDocument()
+    })
+
+    // verify5/V6 item 3: the review date was English ("Oct 19, 2026") under de.
+    it('writes the date in the UI language', async () => {
+      await i18n.changeLanguage('de')
+      try {
+        renderWithRouter(<FeedbackCard feedback={mockFeedback} />)
+        expect(screen.getByText('15.01.2025')).toBeInTheDocument()
+      } finally {
+        await i18n.changeLanguage('en')
+      }
     })
   })
 
@@ -82,14 +108,14 @@ describe('FeedbackCard', () => {
     it('renders star rating when provided', () => {
       renderWithRouter(<FeedbackCard feedback={mockFeedback} />)
       // Should have 5 star icons
-      const stars = document.querySelectorAll('.text-yellow-400')
+      const stars = document.querySelectorAll('.text-warn')
       expect(stars.length).toBe(5)
     })
 
     it('does not render rating when not provided', () => {
       const feedbackWithoutRating = { ...mockFeedback, rating: undefined }
       renderWithRouter(<FeedbackCard feedback={feedbackWithoutRating} />)
-      const stars = document.querySelectorAll('.text-yellow-400')
+      const stars = document.querySelectorAll('.text-warn')
       expect(stars.length).toBe(0)
     })
   })
@@ -104,7 +130,7 @@ describe('FeedbackCard', () => {
     it('applies urgent border styling for high urgency', () => {
       const urgentFeedback = { ...mockFeedback, urgency: 'high' }
       const { container } = renderWithRouter(<FeedbackCard feedback={urgentFeedback} />)
-      expect(container.querySelector('.border-l-orange-500')).toBeInTheDocument()
+      expect(container.querySelector('.border-l-warn')).toBeInTheDocument()
     })
 
     it('does not show urgent badge for low urgency', () => {
@@ -127,6 +153,19 @@ describe('FeedbackCard', () => {
     it('does not render problem section when not provided', () => {
       renderWithRouter(<FeedbackCard feedback={mockFeedback} />)
       expect(screen.queryByText(/Issue:/)).not.toBeInTheDocument()
+    })
+
+    // verify5/V6: at 390 px / 200 % text a long word in the issue pushed the card to 443 px.
+    it('lets the footer actions wrap instead of pushing the card wider', () => {
+      renderWithRouter(<FeedbackCard feedback={mockFeedback} showActions />)
+      const actions = screen.getByTestId('feedback-card-actions')
+      expect(actions).toHaveClass('flex-wrap', 'min-w-0')
+      expect(actions).not.toHaveClass('flex-shrink-0')
+    })
+
+    it('lets long words in the issue break inside the card', () => {
+      renderWithRouter(<FeedbackCard feedback={{ ...mockFeedback, problem_summary: 'Unprofessionalism' }} />)
+      expect(screen.getByTestId('feedback-issue')).toHaveClass('min-w-0', '[overflow-wrap:break-word]', 'hyphens-auto')
     })
   })
 
@@ -154,11 +193,16 @@ describe('FeedbackCard', () => {
   })
 
   describe('compact mode', () => {
-    it('renders compact card when compact is true', () => {
-      renderWithRouter(<FeedbackCard feedback={mockFeedback} compact={true} />)
+    it('renders compact card as a review-modal link on the current page', () => {
+      renderWithRouter(<FeedbackCard feedback={mockFeedback} compact={true} />, ['/categories?category=delivery'])
       // Compact mode renders as a link
       const link = screen.getByRole('link')
-      expect(link).toHaveAttribute('href', '/feedback/fb-123')
+      expect(link).toHaveAttribute('href', '/categories?category=delivery&review=fb-123')
+    })
+
+    it('opens the review modal from the Details action of the full card', () => {
+      renderWithRouter(<FeedbackCard feedback={mockFeedback} />, ['/dashboard'])
+      expect(screen.getByRole('link', { name: /details/i })).toHaveAttribute('href', '/dashboard?review=fb-123')
     })
 
     it('shows truncated text in compact mode', () => {
@@ -183,9 +227,9 @@ describe('FeedbackCard', () => {
 
     it('formats webscraper source correctly', () => {
       const webscraperFeedback = { ...mockFeedback, source_platform: 'web_scrape' }
-      renderWithRouter(<FeedbackCard feedback={webscraperFeedback} />)
+      const { container } = renderWithRouter(<FeedbackCard feedback={webscraperFeedback} />)
       expect(screen.getByText('Web Scraper')).toBeInTheDocument()
-      expect(screen.getByText('🌐')).toBeInTheDocument()
+      expect(container.querySelector('svg.lucide-globe')).not.toBeNull()
     })
   })
 

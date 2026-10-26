@@ -11,7 +11,7 @@ VoC Data Lake is a **fully serverless** AWS platform for ingesting, processing, 
 ### AWS Services in Use
 | Service | Purpose | Security Considerations |
 |---------|---------|------------------------|
-| Lambda (Python 3.12) | Ingestors, Processor, Aggregator, Split API handlers | IAM 20KB policy limit, Powertools |
+| Lambda (Python 3.14, ARM64; assistant on Node.js) | Ingestors, Processor, Aggregator, Split API handlers | IAM 20KB policy limit, Powertools |
 | DynamoDB | Feedback, Aggregates, Watermarks, Projects, Jobs, Conversations | On-demand, KMS encryption, TTL |
 | S3 | Raw data lake (partitioned by source/date) | KMS encryption, lifecycle policies |
 | API Gateway | REST API with split Lambda backends | Throttling, CORS, stage deployment |
@@ -19,7 +19,7 @@ VoC Data Lake is a **fully serverless** AWS platform for ingesting, processing, 
 | EventBridge | Scheduled ingestion (1-30 min intervals) | Rate expressions |
 | Secrets Manager | API credentials for 12+ data sources | Auto-rotation capable |
 | KMS | Customer-managed encryption key | Key rotation enabled |
-| Bedrock | Claude Sonnet 4.5 (global inference profile) | Model ARN scoping |
+| Bedrock | Claude, per-surface model picker (allowlist `lib/utils/model-allowlist.ts`) | Model ARN scoping |
 | Comprehend | Sentiment, language detection, key phrases | - |
 | Translate | Multi-language support | Auto language pair detection |
 | Step Functions | Research workflows, persona generation | Execution role scoping |
@@ -35,10 +35,13 @@ VoC Data Lake is a **fully serverless** AWS platform for ingesting, processing, 
 | `voc-scrapers-api` | `scrapers_handler.py` | `/scrapers/*` | Secrets Manager, Lambda invoke, Bedrock |
 | `voc-settings-api` | `settings_handler.py` | `/settings/*` | DynamoDB, Bedrock |
 | `voc-projects-api` | `projects_handler.py` | `/projects/*` | DynamoDB, Step Functions, Bedrock |
-| `voc-chat-stream` | `chat_stream_handler.py` | Function URL (streaming) | DynamoDB read, Bedrock streaming |
+| `voc-chat-stream` | `lambda/stream` (TypeScript) | `POST /chat/stream` (SSE via API Gateway) | DynamoDB read, Bedrock streaming, invoke domain APIs |
 | `voc-data-explorer-api` | `data_explorer_handler.py` | `/data-explorer/*` | S3, DynamoDB (feedback) |
 | `voc-feedback-form-api` | `feedback_form_handler.py` | `/feedback-forms/*` | DynamoDB, SQS |
-| `voc-users-api` | `users_handler.py` | `/users/*` | Cognito, DynamoDB |
+| `voc-users-api` | `users_handler.py` | `/users/*` | Cognito |
+
+Other handlers in `lambda/api/` (feedback edit, logs, manual/S3 import, memory, agents, MCP, ballots) follow the
+same pattern; `.kiro/steering/tech.md` holds the authoritative table.
 
 ### DynamoDB Tables
 | Table | PK | SK | Purpose |
@@ -58,57 +61,48 @@ Web Scraper (plugin-based), Feedback Forms
 ### Step 1: Map the Codebase Structure
 ```
 voc-datalake/
-├── bin/voc-datalake.ts           # CDK app entry point
-├── lib/stacks/                   # CDK stack definitions
-│   ├── storage-stack.ts          # DynamoDB, S3, KMS
-│   ├── ingestion-stack.ts        # Ingestors, EventBridge, SQS, Secrets
-│   ├── processing-stack.ts       # Processor, Bedrock/Comprehend
-│   ├── analytics-stack.ts        # API Gateway, Split API Lambdas
-│   ├── auth-stack.ts             # Cognito User Pool, Identity Pool
-│   ├── research-stack.ts         # Step Functions
-│   └── frontend-stack.ts         # S3 + CloudFront
-├── plugins/                      # Data source plugins
-│   ├── _shared/                  # Shared plugin utilities
-│   ├── _template/                # Template for new plugins
-│   └── webscraper/               # Web scraper plugin
+├── bin/voc-datalake.ts                  # CDK app entry point (5 stacks)
+├── lib/stacks/
+│   ├── core-stack.ts                    # VocCoreStack: DynamoDB tables, KMS (composes the three below)
+│   ├── core-buckets.ts / core-cdn.ts / core-auth.ts  # S3 buckets / CloudFront / Cognito
+│   ├── ingestion-stack.ts               # VocIngestionStack: plugin Lambdas, EventBridge, SQS, Secrets
+│   ├── processing-stack-consolidated.ts # VocProcessingStack: processor, aggregator, workers
+│   ├── processing-research-workflow.ts  # Research state machine
+│   ├── api-stack.ts                     # VocApiStack: composes the api-*.ts builders
+│   ├── api-gateway.ts / api-routes.ts   # Stage, throttles, CORS, authorizer / explicit routes
+│   ├── api-*-lambdas.ts                 # Domain-split API Lambdas and their roles
+│   └── web-search-stack.ts              # VocWebSearchStack (us-east-1)
+├── plugins/                             # Data source plugins (_shared, _template, webscraper, ...)
 ├── lambda/
-│   ├── processor/handler.py      # SQS consumer
-│   ├── aggregator/handler.py     # DynamoDB Streams consumer
-│   ├── research/                 # Step Functions tasks
-│   ├── api/                      # Split API handlers
-│   │   ├── metrics_handler.py    # /feedback/*, /metrics/*
-│   │   ├── chat_handler.py       # /chat/*
-│   │   ├── chat_stream_handler.py # Streaming chat (Function URL)
-│   │   ├── integrations_handler.py # /integrations/*, /sources/*
-│   │   ├── scrapers_handler.py   # /scrapers/*
-│   │   ├── settings_handler.py   # /settings/*
-│   │   ├── projects_handler.py   # /projects/*
-│   │   ├── data_explorer_handler.py # /data-explorer/*
-│   │   ├── feedback_form_handler.py # /feedback-forms/*
-│   │   ├── users_handler.py      # /users/*
-│   │   └── projects.py           # Shared business logic
-│   └── layers/                   # Lambda layers
-└── frontend/                     # React dashboard
+│   ├── processor/handler.py             # SQS consumer
+│   ├── aggregator/handler.py            # DynamoDB Streams consumer
+│   ├── research/research_step_handler.py # Step Functions tasks
+│   ├── jobs/, memory/, agents/          # Async workers
+│   ├── api/<domain>_handler.py          # Split API handlers, one per domain
+│   ├── stream/                          # AI assistant (TypeScript), POST /chat/stream
+│   ├── shared/                          # Shared Python helpers
+│   └── layers/                          # Lambda layers
+└── frontend/                            # React dashboard
 ```
+Refresh it with `git ls-files voc-datalake/lib/stacks voc-datalake/lambda/api` before relying on it.
 
 ### Step 2: Read Files in Priority Order
 
 **Priority 1 - Infrastructure (CDK Stacks):**
-- `lib/stacks/storage-stack.ts` - DynamoDB, S3, KMS configuration
-- `lib/stacks/ingestion-stack.ts` - Ingestors, EventBridge schedules, SQS, Secrets
-- `lib/stacks/processing-stack.ts` - Processor Lambda, Bedrock/Comprehend
-- `lib/stacks/analytics-stack.ts` - API Gateway, Split API Lambdas, IAM roles
-- `lib/stacks/auth-stack.ts` - Cognito User Pool, Identity Pool, authentication
-- `lib/stacks/research-stack.ts` - Step Functions state machine
-- `lib/stacks/frontend-stack.ts` - CloudFront, S3 web hosting
+- `lib/stacks/core-stack.ts`, `core-buckets.ts`, `core-cdn.ts`, `core-auth.ts` - DynamoDB, KMS, S3, CloudFront, Cognito
+- `lib/stacks/ingestion-stack.ts` - Plugin Lambdas, EventBridge schedules, SQS, Secrets
+- `lib/stacks/processing-stack-consolidated.ts`, `processing-research-workflow.ts` - Processor, Bedrock/Comprehend, Step Functions
+- `lib/stacks/api-stack.ts`, `api-gateway.ts`, `api-routes.ts`, `api-*-lambdas.ts` - API Gateway, split API Lambdas, IAM roles
+- `lib/stacks/web-search-stack.ts` - Web-search gateway, Bedrock model access
 
 **Priority 2 - Backend (Lambda Functions):**
-- `lambda/api/*.py` - All 11 API handlers (check IAM policy isolation)
+- `lambda/api/*_handler.py` - All API handlers (check IAM policy isolation)
+- `lambda/stream/src/` - AI assistant Lambda (TypeScript)
 - `lambda/processor/handler.py` - SQS batch processing, Bedrock invocation
 - `lambda/aggregator/handler.py` - DynamoDB Streams processing
-- `plugins/_shared/base_ingestor.py` - Base class patterns for plugins
-- `plugins/webscraper/ingestor/handler.py` - Web scraper plugin
-- `lambda/research/*.py` - Step Functions task handlers
+- `plugins/_shared/` - Base class patterns for plugins
+- `plugins/webscraper/` - Web scraper plugin
+- `lambda/research/research_step_handler.py` - Step Functions task handler
 
 **Priority 3 - Frontend:**
 - `frontend/src/api/client.ts` - API client, error handling
@@ -151,9 +145,8 @@ print\(
 def lambda_handler.*:
 (?!.*@logger\.inject_lambda_context)
 
-# Bedrock model ID (should use global inference profile)
-anthropic\.claude-3
-(?!global\.)anthropic\.claude
+# Bedrock model ids hardcoded outside shared/model_config.py / lib/utils/model-allowlist.ts
+anthropic\.claude
 ```
 
 ## Evaluation Checklist
@@ -168,7 +161,7 @@ anthropic\.claude-3
 - [ ] Input validation and sanitization in API handlers
 - [ ] No sensitive data in CloudWatch logs
 - [ ] S3 bucket policies (BlockPublicAccess)
-- [ ] Bedrock model ARN scoped to global inference profile
+- [ ] Bedrock model ARNs scoped to the allowlisted models
 - [ ] Cognito identity pool role trust policies
 
 ### Reliability (AWS Reliability Pillar)
@@ -263,9 +256,9 @@ def lambda_handler(event, context):  # HIGH: Add @logger.inject_lambda_context
 ```
 
 ```python
-# Wrong Bedrock model ID
-modelId='anthropic.claude-3-sonnet-20240229-v1:0'  # HIGH: Use global inference profile
-# Should be: 'global.anthropic.claude-sonnet-4-5-20250929-v1:0'
+# Hardcoded Bedrock model id
+modelId='anthropic.claude-3-sonnet-20240229-v1:0'  # HIGH: never hardcode model ids
+# Should be: converse(..., surface='utilities') - resolved via shared/model_config.py
 ```
 
 ### Medium Issues

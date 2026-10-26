@@ -59,7 +59,7 @@ const wireFlag = z.preprocess(
   z.literal(true).optional(),
 )
 
-export const JobGroundingSchema = z.object({
+const JobGroundingSchema = z.object({
   feedback_count: wireCount,
   feedback_items_used: wireCount,
   context_truncated: wireFlag,

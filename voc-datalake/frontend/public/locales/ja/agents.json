@@ -1,0 +1,557 @@
+{
+  "nav": {
+    "label": "自律エージェント",
+    "needsDecision_one": "判断が必要なエージェント {{count, number}} 件",
+    "needsDecision_other": "判断が必要なエージェント {{count, number}} 件"
+  },
+  "common": {
+    "cancel": "キャンセル"
+  },
+  "status": {
+    "enabled": "有効",
+    "disabled": "無効"
+  },
+  "scope": {
+    "all": "すべてのカテゴリ",
+    "some": "監視対象: {{list}}"
+  },
+  "views": {
+    "label": "エージェントページのセクション",
+    "agents": "エージェント",
+    "workflows": "ワークフロー"
+  },
+  "list": {
+    "title": "自律エージェント",
+    "subtitle": "エージェントは担当範囲のフィードバックを監視し、トリガーが発火するとワークフローを実行します。リサーチ、ペルソナ、PR/FAQ、PRD、プロトタイプを作成し、ペルソナによるレビューを経てプロジェクトを引き渡します。",
+    "create": "新規エージェント",
+    "createTitle": "自律エージェントを作成",
+    "createHint": "「レビュー → プロトタイプ」ワークフローの編集可能な専用コピー付きで、無効の状態で作成されます。トリガーとワークフローを設定してから有効にしてください。",
+    "createFailed": "エージェントを作成できませんでした。",
+    "emptyTitle": "自律エージェントはまだありません",
+    "emptyAdmin": "エージェントを作成すると、新しいフィードバックからリサーチ済みのプロジェクトやプロトタイプを自動で作成できます。",
+    "emptyUser": "表示できるエージェントはまだ管理者によって設定されていません。",
+    "loadFailed": "エージェントを読み込めませんでした。",
+    "spend": "本日のスケジュール実行 {{runs, number}} 回 · 今月のモデル呼び出し {{calls, number}} 回",
+    "spendHint": "手動実行は1日のスケジュール実行上限に含まれません。",
+    "needsDecision": "判断が必要です",
+    "reviewRun": "{{name}} の実行を確認",
+    "rename": "名前を変更",
+    "renameNamed": "{{name}} の名前を変更",
+    "renameTitle": "エージェントの名前を変更",
+    "renameFailed": "エージェントの名前を変更できませんでした。",
+    "delete": "削除",
+    "deleteNamed": "{{name}} を削除",
+    "deleteTitle": "このエージェントを削除しますか？",
+    "deleteMessage": "「{{name}}」は実行されなくなり、エージェント一覧から外れます。過去の実行と、作成したプロジェクトや文書は残ります。実行中のものは先に完了します。",
+    "deleteFailed": "エージェントを削除できませんでした。"
+  },
+  "library": {
+    "title": "ワークフローライブラリ",
+    "subtitle": "エージェントが実行できるすべてのワークフローです。不要になったものはアーカイブできます。ライブラリから外れて読み取り専用になり、リビジョンは保持されます。",
+    "loadFailed": "ワークフローライブラリを読み込めませんでした。",
+    "archive": "アーカイブ",
+    "archiveNamed": "{{name}} をアーカイブ",
+    "archiveTitle": "このワークフローをアーカイブしますか？",
+    "archiveMessage": "「{{name}}」はライブラリとワークフロー選択から非表示になり、読み取り専用になります。リビジョンは保持されます。",
+    "archiveInUse": "有効なエージェントがまだこのワークフローを実行しています。先にそのエージェントをアーカイブするか、別のワークフローを割り当ててください。",
+    "archiveFailed": "ワークフローをアーカイブできませんでした。",
+    "open": "開く",
+    "openNamed": "{{name}} を開く",
+    "newWorkflow": "新しいワークフロー",
+    "createTitle": "ワークフローを作成",
+    "createHint": "開始 → 終了 の状態から始まります。エディターでステップを追加し、エージェントで選択してください。",
+    "create": "ワークフローを作成",
+    "newWorkflowFailed": "ワークフローを作成できませんでした。",
+    "rename": "名前を変更",
+    "renameNamed": "{{name}} の名前を変更",
+    "renameTitle": "ワークフローの名前を変更",
+    "renameConflict": "その間に誰かがこのワークフローを変更したか、組み込みのワークフローです。再読み込みしてやり直してください。",
+    "renameFailed": "ワークフローの名前を変更できませんでした。"
+  },
+  "fields": {
+    "name": "名前",
+    "description": "説明",
+    "scope": "監視するフィードバック",
+    "instructions": "指示",
+    "instructionsHint": "エージェントがすべてのステップで従う指示（最大 {{n, number}} 文字）。",
+    "visibility": "引き渡すプロジェクトの公開範囲",
+    "visibilityHint": "非公開プロジェクトは、オーナー、メンバー、管理者のみが閲覧できます。",
+    "workflow": "ワークフロー",
+    "workflowDefault": "レビュー → プロトタイプ（組み込み）",
+    "workflowHint": "ステップは「ワークフロー」タブで編集します。"
+  },
+  "visibility": {
+    "private": "非公開",
+    "public": "公開"
+  },
+  "detail": {
+    "back": "すべてのエージェント",
+    "tabs": "エージェントのセクション",
+    "enabledLabel": "有効",
+    "toggleFailed": "エージェントの有効/無効を切り替えられませんでした。",
+    "save": "保存",
+    "saved": "保存しました",
+    "saveFailed": "変更を保存できませんでした。",
+    "discard": "変更を破棄",
+    "archive": "アーカイブ",
+    "archiveTitle": "このエージェントをアーカイブしますか？",
+    "archiveMessage": "実行が停止し、一覧から消えます。作成されたプロジェクトは残ります。",
+    "notFound": "このエージェントは存在しないか、閲覧権限がありません。",
+    "stats": "合計 {{runs, number}} 回実行 · 本日のスケジュール {{today, number}} 回 · 今月のモデル呼び出し {{calls, number}} 回"
+  },
+  "tabs": {
+    "settings": "設定",
+    "triggers": "トリガー",
+    "personas": "ペルソナ",
+    "instructions": "指示",
+    "models": "モデル",
+    "budget": "予算",
+    "workflow": "ワークフロー",
+    "runs": "実行"
+  },
+  "triggers": {
+    "hint": "エージェントを起動する条件です。自動実行は1日最大2回で、同時に2つ実行されることはありません。",
+    "none": "トリガーなし — 「今すぐ実行」を押したときのみ実行されます。",
+    "remove": "トリガーを削除",
+    "minNew": "必要な新規レビュー数",
+    "cooldown": "クールダウン（時間）",
+    "every": "間隔",
+    "cron": "cron 式",
+    "cronHint": "5つのフィールド。例: 0 9 * * 1 は毎週月曜 09:00。",
+    "timezone": "タイムゾーン",
+    "count": "レビュー数",
+    "per": "単位",
+    "windowDays": "期間（日）",
+    "kinds": {
+      "new_reviews": "新規レビュー",
+      "schedule": "スケジュール",
+      "threshold": "しきい値"
+    },
+    "kindHints": {
+      "new_reviews": "前回の実行以降、担当範囲に十分な新規フィードバックが届いたときに実行します。",
+      "schedule": "決まったスケジュールで実行します。",
+      "threshold": "カテゴリまたはサブカテゴリのレビュー数が期間内に一定数に達したときに実行します。"
+    },
+    "everyOptions": {
+      "12h": "12時間",
+      "24h": "24時間",
+      "cron": "カスタム（cron）"
+    },
+    "perOptions": {
+      "category": "カテゴリ",
+      "subcategory": "サブカテゴリ"
+    }
+  },
+  "personas": {
+    "fixed": "固定ペルソナ（{{n, number}} / {{max, number}}）",
+    "none": "固定ペルソナなし — エージェントがプロジェクトから選択します。",
+    "add": "ペルソナを追加",
+    "remove": "ペルソナを削除",
+    "project": "プロジェクト",
+    "persona": "ペルソナ",
+    "chooseProject": "プロジェクトを選択",
+    "choosePersona": "ペルソナを選択",
+    "allowGenerate": "適切なペルソナがない場合、エージェントに新しいペルソナの生成を許可する"
+  },
+  "models": {
+    "hint": "エージェントの作業ごとに AI モデルを選びます。デフォルトのままにすると「管理 → AIモデル」に従います。",
+    "default": "設定のデフォルト",
+    "roleHint": {
+      "orchestrator": "次のステップを決定し、各結果を検証します。",
+      "worker": "リサーチ、ドキュメント、プロトタイプを作成します。",
+      "reviewer": "引き渡し前に成果物をレビューします。",
+      "persona": "レビューで各ペルソナの立場から発言します。"
+    }
+  },
+  "roles": {
+    "orchestrator": "プランナー",
+    "worker": "ライター",
+    "reviewer": "レビュアー",
+    "persona": "ペルソナ"
+  },
+  "budget": {
+    "runsPerDay": "1日あたりのスケジュール実行数",
+    "runsPerDayHint": "最大2回。手動実行は含まれません。",
+    "callsPerRun": "1回の実行あたりのモデル呼び出し数",
+    "monthlyCap": "月間モデル呼び出し上限",
+    "monthlyCapHint": "当月の呼び出し数がこの上限に達すると、エージェントは新しい実行を開始しません。",
+    "uncapped": "月間上限なし"
+  },
+  "run": {
+    "hint": "各実行はワークフローに従います。グラフは実行中のステップを強調表示します。表示専用で、操作はできません。",
+    "list": "実行",
+    "none": "まだ実行はありません。",
+    "runNow": "今すぐ実行",
+    "alreadyRunning": "すでに実行中です。",
+    "startFailed": "実行を開始できませんでした。",
+    "confirmTitle": "今すぐ実行を開始しますか？",
+    "confirmMessage": "エージェントがワークフローを今すぐ実行します。AI モデルを呼び出し（最大 {{calls, number}} 回）、数分かかることがあります。このタブからキャンセルできます。",
+    "confirmStart": "実行を開始",
+    "confirmAgent": "エージェント",
+    "confirmWorkflow": "ワークフロー",
+    "confirmScope": "対象のフィードバック",
+    "failureReason": "理由: {{reason}}",
+    "cancel": "実行をキャンセル",
+    "cancelFailed": "実行をキャンセルできませんでした。",
+    "calls": "モデル呼び出し {{n, number}} 回",
+    "openProject": "プロジェクトを開く",
+    "openNamedProject": "{{name}} を開く",
+    "showTechnical": "技術ログを表示",
+    "hideTechnical": "技術ログを隠す",
+    "summary": {
+      "title": "何が起きたか",
+      "started": { "manual": "手動で開始しました。", "schedule": "スケジュールで開始しました。", "new_reviews": "新しいレビューが届いたため開始しました。", "threshold": "しきい値を超えたため開始しました。" },
+      "startedAt": { "manual": "{{when}} に手動で開始しました。", "schedule": "{{when}} にスケジュールで開始しました。", "new_reviews": "新しいレビューが届いたため {{when}} に開始しました。", "threshold": "しきい値を超えたため {{when}} に開始しました。" },
+      "outcome": { "queued": "開始を待っています。", "running": "現在作業中です。", "runningStep": "現在「{{step}}」に取り組んでいます。", "completed": "完了しました。", "completedAt": "{{when}} に完了しました。", "cancelled": "キャンセルされました。", "cancelledAt": "{{when}} にキャンセルされました。", "failed": "完了前に停止しました。", "failedBecause": "完了前に停止しました：{{reason}}", "needs_human": "一時停止中：あなたの判断が必要です。" },
+      "produced": "作成したもの",
+      "producedNothing": "まだありません。",
+      "anArtifact": "新しいドキュメント",
+      "inProject": "{{name}} 内",
+      "needsYou": "あなたに必要なこと",
+      "needsDecision": "上のカードで次にどうするか決めてください。",
+      "needsNothing": "ありません。操作は不要です。"
+    },
+    "eventLog": "イベントログ",
+    "noEvents": "まだイベントはありません。",
+    "noGraph": "この実行のワークフローを読み込めませんでした。",
+    "olderRevision": "この実行ではワークフローのリビジョン {{n}} が使用されました。",
+    "graphLabel": "実行進捗グラフ",
+    "showAll": "すべてのイベントを表示（{{step}} で絞り込み中）",
+    "rounds": "ラウンド {{n}}",
+    "status": {
+      "queued": "待機中",
+      "running": "実行中",
+      "needs_human": "人の対応が必要",
+      "completed": "完了",
+      "failed": "失敗",
+      "cancelled": "キャンセル済み"
+    },
+    "triggers": {
+      "manual": "手動",
+      "schedule": "スケジュール",
+      "new_reviews": "新規レビュー",
+      "threshold": "しきい値"
+    },
+    "stepStatus": {
+      "idle": "未開始",
+      "running": "実行中",
+      "done": "完了",
+      "failed": "失敗"
+    },
+    "eventKinds": {
+      "node_started": "ステップ開始",
+      "node_finished": "ステップ終了",
+      "node_failed": "ステップ失敗",
+      "message": "メッセージ",
+      "verdict": "判定",
+      "decision": "決定",
+      "artifact": "成果物"
+    }
+  },
+  "editor": {
+    "canvasLabel": "ワークフローキャンバス",
+    "minimap": "ワークフロー概要",
+    "palette": "ステップ",
+    "paletteHint": "ステップをキャンバスにドラッグするか、Enter キーで追加します。",
+    "panel": "ステップ設定",
+    "nothingSelected": "キャンバスまたは下のアウトラインで、ステップ・矢印・ループを選択して設定してください。",
+    "multiSelected": "{{n, number}} 個のステップを選択中",
+    "groupLoop": "ループとしてグループ化",
+    "ungroupLoop": "ループを解除",
+    "loopTitle": "ループ {{n}}",
+    "loopMembers": "{{n, number}} ステップ",
+    "loopFrame": "{{until}} までループ",
+    "arrow": "矢印",
+    "deleteArrow": "矢印を削除",
+    "deleteStep": "ステップを削除",
+    "builtin": "組み込みテンプレートです — 変更するにはコピーを保存してください。",
+    "revision": "リビジョン {{n}}",
+    "history": {
+      "open": "履歴",
+      "title": "リビジョン履歴",
+      "listLabel": "リビジョン",
+      "current": "現在",
+      "savedBy": "保存者: {{name}}",
+      "builtinRevision": "組み込みテンプレート",
+      "empty": "保存済みのリビジョンはまだありません。",
+      "loading": "リビジョンを読み込んでいます…",
+      "loadFailed": "このリビジョンを読み込めませんでした。",
+      "unreadable": "このリビジョンのワークフローを読み取れませんでした。",
+      "isCurrent": "これは現在のリビジョンです。",
+      "changesTitle": "復元すると次の点が変わります",
+      "restore": "エディターに復元",
+      "restoreHint": "このリビジョンを未保存の変更としてエディターに読み込みます。保存すると新しいリビジョンとして残ります。",
+      "close": "閉じる",
+      "confirmTitle": "未保存の変更を置き換えますか？",
+      "confirmMessage": "リビジョン {{revision}} がエディターのワークフローを置き換え、未保存の変更は失われます。",
+      "confirmAction": "置き換える",
+      "steps_one": "{{count, number}} ステップ",
+      "arrows_one": "{{count, number}} 本の矢印",
+      "steps_other": "{{count, number}} ステップ",
+      "arrows_other": "{{count, number}} 本の矢印"
+    },
+    "unsaved": "未保存の変更",
+    "save": "保存",
+    "saveAs": "名前を付けて保存…",
+    "saveAsTitle": "新しいワークフローとして保存",
+    "copyName": "{{name}}（コピー）",
+    "import": "インポート",
+    "export": "エクスポート",
+    "reset": "テンプレートにリセット",
+    "resetTitle": "テンプレートにリセットしますか？",
+    "resetMessage": "未保存の変更は、組み込みの「レビュー → プロトタイプ」ワークフローで置き換えられます。",
+    "conflict": "その間に他のユーザーが新しいリビジョンを保存しました。",
+    "conflictReload": "最新を読み込む",
+    "conflictSaveAs": "自分の変更をコピーとして保存",
+    "loadFailed": "ワークフローを読み込めませんでした。",
+    "generalIssues": "ワークフローの問題",
+    "issueCount_one": "{{count, number}} 件の問題",
+    "issueCount_other": "{{count, number}} 件の問題",
+    "valid": "ワークフローは有効です。",
+    "validUnsaved": "有効 — まだ保存されていません。",
+    "outcome": {
+      "saved": "保存しました。",
+      "conflict": "その間に他のユーザーが新しいリビジョンを保存しました。",
+      "invalid": "サーバーがワークフローを拒否しました — 問題を修正して再度保存してください。",
+      "failed": "ワークフローを保存できませんでした。",
+      "import_failed": "このファイルは有効なワークフローではありません。"
+    },
+    "fields": {
+      "workflowName": "ワークフロー名",
+      "title": "タイトル",
+      "instructions": "指示",
+      "instructionsRequired": "指示（必須）",
+      "role": "役割",
+      "roleNone": "役割なし",
+      "label": "条件",
+      "labelNone": "常に",
+      "until": "終了条件",
+      "maxRounds": "最大ラウンド数",
+      "description": "説明",
+      "arrowTarget": "接続先ステップ",
+      "arrowTargetNone": "ステップを選択…",
+      "joinLoop": "ループ"
+    },
+    "params": {
+      "target": "対象",
+      "targetAny": "最後に生成されたもの",
+      "maxNew": "新規ペルソナの最大数",
+      "useWebSearch": "Web検索を使用",
+      "useWebSearchHint": "1回の実行あたり{{limit, number}}件のWeb検索上限に含まれます。",
+      "endStatus": "実行の終了ステータス"
+    },
+    "loopFrameLabel": "ループ {{n}}：{{until}}まで、最大 {{rounds, number}} ラウンド",
+    "loopFrameHint": "クリックしてこのループを設定",
+    "arrowLabel": "{{source}} から {{target}} への矢印（{{condition}}）",
+    "conditionHint": "ステップがこの結果を返したときに矢印が使われます。「常に」は既定の経路です。",
+    "noConditions": "このステップは判定を返さないため、矢印は常に使われます。",
+    "arrowsOut": "出ていく矢印",
+    "noArrowsOut": "このステップからはまだ矢印が出ていません。",
+    "addArrow": "矢印を追加",
+    "addArrowButton": "矢印を追加",
+    "noArrowTargets": "ほかのすべてのステップにすでに接続されています。",
+    "deleteArrowTo": "{{target}} への矢印を削除",
+    "conditionTo": "{{target}} への条件",
+    "loopStepsLegend": "このループのステップ",
+    "maxRoundsHint": "{{min, number}}〜{{max, number}} の整数。上限に達すると実行は停止し、人の判断を求めます。",
+    "joinLoop": "ループに追加",
+    "joinLoopHint": "ループは終了条件を満たすまでステップを繰り返します。",
+    "newLoop": "新しいループ",
+    "loopOption_one": "ループ {{n}}（{{count, number}} ステップ）",
+    "loopOption_other": "ループ {{n}}（{{count, number}} ステップ）",
+    "leaveLoop": "このステップをループから外す",
+    "outlineSteps": "このワークフローのステップ",
+    "outlineStepsCount": "ステップ（{{n, number}}）",
+    "outlineLoops": "ループ",
+    "emptyCanvas": "キャンバスは空です。パレットからステップを追加してください。",
+    "selectStep": "ステップ「{{title}}」を設定",
+    "backToWorkflow": "ワークフローの設定",
+    "clear": "キャンバスをクリア",
+    "clearTitle": "キャンバスをクリアしますか？",
+    "clearMessage": "ワークフローを一から作れるよう、下書きからすべてのステップ・矢印・ループを削除します。保存するまで何も保存されません。",
+    "savedAsAgent": "「{{name}}」として保存しました。このエージェントは今後これを実行します。",
+    "savedAsSwitchFailed": "コピーは保存されましたが、このエージェントを切り替えられませんでした。エージェントの設定で選択してください。",
+    "savedAsOpened": "「{{name}}」として保存しました。",
+    "switchLabel": "ワークフロー",
+    "switchTitle": "ワークフローを切り替えますか？",
+    "switchMessage": "{{name}} への未保存の変更は失われます。",
+    "switchConfirm": "ワークフローを切り替え",
+    "switched": "このエージェントは {{name}} を実行するようになりました。",
+    "switchFailed": "エージェントをそのワークフローに切り替えられませんでした。"
+  },
+  "paletteGroups": {
+    "flow": "フロー",
+    "research": "リサーチ",
+    "documents": "ドキュメント",
+    "review": "レビュー",
+    "prototype": "プロトタイプ",
+    "delivery": "引き渡し"
+  },
+  "edgeLabels": {
+    "pass": "合格",
+    "fail": "不合格",
+    "agreed": "合意",
+    "not_agreed": "不合意"
+  },
+  "loopUntil": {
+    "persona_agreement": "ペルソナが合意する",
+    "review_pass": "レビューに合格する"
+  },
+  "reviewTargets": {
+    "prfaq": "PR/FAQ",
+    "prd": "PRD",
+    "prototype": "プロトタイプ"
+  },
+  "endStatuses": {
+    "completed": "完了",
+    "needs_human": "人の対応が必要"
+  },
+  "nodeTypes": {
+    "start": {
+      "label": "開始",
+      "description": "すべての実行の開始点。"
+    },
+    "aggregate_reviews": {
+      "label": "レビューを集約",
+      "description": "エージェントの担当範囲の新規フィードバックを収集し、主なテーマを抽出します。"
+    },
+    "select_or_create_project": {
+      "label": "プロジェクトを選択または作成",
+      "description": "同じ目的のプロジェクトを再利用するか、新しく作成します。"
+    },
+    "select_personas": {
+      "label": "ペルソナを選択",
+      "description": "これらのレビューに関連するペルソナを選びます。"
+    },
+    "generate_personas": {
+      "label": "ペルソナを生成",
+      "description": "適切なペルソナがない場合、フィードバックから新しいペルソナを作成します。"
+    },
+    "deep_research": {
+      "label": "ディープリサーチ",
+      "description": "プロジェクトでリサーチジョブを実行します（Web検索も利用可能）。"
+    },
+    "write_prfaq": {
+      "label": "PR/FAQ を作成",
+      "description": "アイデアのプレスリリースと FAQ の草案を作成します。"
+    },
+    "write_prd": {
+      "label": "PRD を作成",
+      "description": "製品要求仕様書の草案を作成します。"
+    },
+    "revise_document": {
+      "label": "ドキュメントを修正",
+      "description": "レビューの指摘に基づいてドキュメントを書き直します。"
+    },
+    "duplicate_document": {
+      "label": "ドキュメントを複製",
+      "description": "ドキュメントを別のプロジェクトにコピーします。"
+    },
+    "persona_review": {
+      "label": "ペルソナレビュー",
+      "description": "ペルソナが成果物を採点します。合意 = 平均4以上かつブロッカーなし。"
+    },
+    "final_review": {
+      "label": "最終レビュー",
+      "description": "引き渡し前にレビュアーがパッケージ全体を確認します。"
+    },
+    "custom_llm": {
+      "label": "カスタムステップ",
+      "description": "独自の指示で動作するステップ。"
+    },
+    "build_prototype": {
+      "label": "プロトタイプを作成",
+      "description": "デザインシステムを使って HTML プロトタイプを作成します。"
+    },
+    "collect_prototype_feedback": {
+      "label": "テスターのピンを収集",
+      "description": "テスターがプロトタイプに残した未対応のピンを、次の修正のために読み込みます。"
+    },
+    "revise_prototype": {
+      "label": "プロトタイプを修正",
+      "description": "レビューの指摘に基づいてプロトタイプを変更します。"
+    },
+    "handoff": {
+      "label": "引き渡し",
+      "description": "メインカテゴリのオーナーにプロジェクトを引き渡します。"
+    },
+    "end": {
+      "label": "終了",
+      "description": "実行の終了点。"
+    }
+  },
+  "loopUntilHint": {
+    "persona_agreement": "ループ内のペルソナレビューが「合意しない」と答える間、繰り返します。",
+    "review_pass": "ループ内のレビューステップが「不合格」と答える間、繰り返します。"
+  },
+  "plans": {
+    "title": "プラン",
+    "subtitle": "AI アシスタントで承認した複数手順のリクエストです。バックグラウンドで実行されます。開くと手順の確認、確認を求める手順の承認、キャンセルができます。",
+    "loadFailed": "プランを読み込めませんでした。",
+    "empty": "まだプランはありません。AI アシスタントに複数手順の作業を依頼し、提案されたプランを承認してください。",
+    "remove": "削除",
+    "removeNamed": "プラン「{{goal}}」を削除",
+    "removeTitle": "このプランを削除しますか？",
+    "removeMessage": "「{{goal}}」はプラン一覧から削除されます。結果はプロジェクトに残ります。",
+    "removeFailed": "プランを削除できませんでした。実行中のプランは先にキャンセルしてください。"
+  },
+  "workflowPage": {
+    "title": "ワークフロー",
+    "subtitle": "ライブラリのワークフローです。これを実行するエージェントは、最新の保存済みリビジョンを使用します。"
+  },
+  "decision": {
+    "title": "この実行にはあなたの判断が必要です",
+    "reason": {
+      "loop_exhausted": "ペルソナは {{rounds, number}} ラウンド後も {{node}} で合意しませんでした。",
+      "no_fail_path": "{{node}} は合格せず、ワークフローにその場合の経路がありません。",
+      "end_node": "ワークフローは {{node}} でこの実行を担当者に渡します。",
+      "budget": "実行がモデル呼び出しの予算を使い切りました。",
+      "verification": "ステップの結果を検証できませんでした。",
+      "unknown": "担当者が判断できるよう実行が停止しました。"
+    },
+    "verdicts_one": "ペルソナの評価 {{count, number}} 件",
+    "verdicts_other": "ペルソナの評価 {{count, number}} 件",
+    "score": "{{score}}/5",
+    "blocking": "ブロッキング",
+    "stop": "実行を終了",
+    "stopTitle": "この実行を終了しますか？",
+    "stopMessage": "実行は完了として終了し、成果物はプロジェクトに残ります。元に戻せません。",
+    "adminOnly": "管理者が判断できます。",
+    "failed": "判断を保存できませんでした。",
+    "conflict": "この実行はすでに判断済みか、判断待ちではなくなりました。",
+    "decided": {
+      "accept": "{{by}} が {{at}} に承認して続行を選びました。",
+      "another_round": "{{by}} が {{at}} にもう 1 ラウンドを選びました。",
+      "stop": "{{by}} が {{at}} に実行の終了を選びました。"
+    },
+    "decidedNote": "メモ: {{note}}",
+    "banner": "このエージェントの最新の実行にはあなたの判断が必要です。",
+    "reviewRun": "実行を確認",
+    "form": {
+      "question": "次にどうしますか？",
+      "submit": "決定する",
+      "pickObjections": "修正する指摘（ブロックしているペルソナの指摘は選択済み）",
+      "instructions": "独自の指示（任意）",
+      "instructionsRequired": "指示",
+      "instructionsPlaceholder": "例：12時間を超える待ち時間にはホテルと食事を補償すると明記する。",
+      "fix": {
+        "label": "選んだ指摘を直して、もう一度改訂する",
+        "help": "選択とメモをもとに文書を改訂し、ペルソナが再度レビューします。まだ合意しない場合は、再びあなたに確認します。",
+        "incomplete": "指摘を1つ以上選ぶか、指示を書いてください。"
+      },
+      "accept": {
+        "label": "このまま承認して続行する",
+        "help": "ペルソナが合意したものとして「{{node}}」の後へ進みます。指摘は修正されません。"
+      },
+      "other": {
+        "label": "その他：エージェントへの指示を書く",
+        "help": "指示は次の改訂に渡され、その後ペルソナが再度レビューします。",
+        "incomplete": "エージェントにしてほしいことを書いてください。"
+      },
+      "stop": {
+        "label": "実行を終了する",
+        "help": "これ以上何も実行されません。作成された成果物はプロジェクトに残ります。"
+      }
+    }
+  }
+}

@@ -7,23 +7,20 @@
  * as an untranslated job error. The guard has to be here, before the call.
  */
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { productTabApiModule, productTabMocks } from './product-tab-fixtures'
+// After the fixtures on purpose: this imports ProductTab, whose module graph runs
+// the `vi.mock` factory below, which needs the fixture module evaluated.
 import ProductTab from './ProductTab'
-import type { ProductContext } from '../../api/types'
+import type { ProductContext } from '../../api/projectTypes'
 
-const mockGetProductContext = vi.fn()
-const mockGenerateProductReport = vi.fn()
-const mockListProductDocs = vi.fn()
-
-vi.mock('../../api/projectsApi', () => ({
-  projectsApi: {
-    getProductContext: (...args: unknown[]) => mockGetProductContext(...args),
-    generateProductReport: (...args: unknown[]) => mockGenerateProductReport(...args),
-    updateProductContext: vi.fn(),
-    listProductDocs: (...args: unknown[]) => mockListProductDocs(...args),
-  },
-}))
+vi.mock('../../api/projectsApi', () => productTabApiModule())
+const {
+  getProductContext: mockGetProductContext,
+  generateProductReport: mockGenerateProductReport,
+  listProductDocs: mockListProductDocs,
+} = productTabMocks
 
 const readyDoc = {
   doc_id: 'doc-1',
@@ -44,6 +41,12 @@ const filledContext: Partial<ProductContext> = {
 }
 
 const generateButton = () => screen.getByRole('button', { name: /generate report/i })
+
+/** The card's button only asks; the dialog's button starts the (billable) report. */
+async function startReport(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await waitFor(generateButton))
+  await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: /generate report/i }))
+}
 
 describe('ProductTab report guard', () => {
   // The tab's default mode renders the AI interview, whose effect scrolls the
@@ -67,12 +70,23 @@ describe('ProductTab report guard', () => {
     mockListProductDocs.mockResolvedValue({ docs: [] })
   })
 
+  it('asks before starting: one click on the card starts nothing', async () => {
+    const user = userEvent.setup()
+    mockGetProductContext.mockResolvedValue({ context: filledContext })
+    render(<ProductTab canEdit projectId="proj-1" />)
+
+    await user.click(await waitFor(generateButton))
+
+    expect(screen.getByRole('dialog')).toHaveTextContent(/few minutes/)
+    expect(mockGenerateProductReport).not.toHaveBeenCalled()
+  })
+
   it('refuses to start a report when no context field is filled', async () => {
     const user = userEvent.setup()
     mockGetProductContext.mockResolvedValue({ context: emptyContext })
-    render(<ProductTab projectId="proj-1" />)
+    render(<ProductTab canEdit projectId="proj-1" />)
 
-    await user.click(await waitFor(generateButton))
+    await startReport(user)
 
     // No billable job, and the reason is the translated string rather than a
     // raw backend message surfaced later in the jobs panel.
@@ -84,9 +98,9 @@ describe('ProductTab report guard', () => {
     const user = userEvent.setup()
     const onJobStarted = vi.fn()
     mockGetProductContext.mockResolvedValue({ context: filledContext })
-    render(<ProductTab projectId="proj-1" onJobStarted={onJobStarted} />)
+    render(<ProductTab canEdit projectId="proj-1" onJobStarted={onJobStarted} />)
 
-    await user.click(await waitFor(generateButton))
+    await startReport(user)
 
     await waitFor(() => expect(mockGenerateProductReport).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(onJobStarted).toHaveBeenCalledTimes(1))
@@ -98,9 +112,9 @@ describe('ProductTab report guard', () => {
     // A context that has been saved and then cleared carries updated_at and
     // nothing else. Treating that as "filled" would reinstate the doomed job.
     mockGetProductContext.mockResolvedValue({ context: { updated_at: '2026-08-08T10:00:00Z' } })
-    render(<ProductTab projectId="proj-1" />)
+    render(<ProductTab canEdit projectId="proj-1" />)
 
-    await user.click(await waitFor(generateButton))
+    await startReport(user)
 
     expect(mockGenerateProductReport).not.toHaveBeenCalled()
   })
@@ -114,9 +128,9 @@ describe('ProductTab report guard', () => {
     const user = userEvent.setup()
     mockGetProductContext.mockResolvedValue({ context: emptyContext })
     mockListProductDocs.mockResolvedValue({ docs: [readyDoc] })
-    render(<ProductTab projectId="proj-1" />)
+    render(<ProductTab canEdit projectId="proj-1" />)
 
-    await user.click(await waitFor(generateButton))
+    await startReport(user)
 
     await waitFor(() => expect(mockGenerateProductReport).toHaveBeenCalledTimes(1))
     expect(screen.queryByText(/Add at least one product context field/i)).not.toBeInTheDocument()
@@ -127,9 +141,9 @@ describe('ProductTab report guard', () => {
     mockGetProductContext.mockResolvedValue({ context: emptyContext })
     // Not `ready` ⇒ the backend will not use it, so the job would still fail.
     mockListProductDocs.mockResolvedValue({ docs: [{ ...readyDoc, status: 'pending' as const }] })
-    render(<ProductTab projectId="proj-1" />)
+    render(<ProductTab canEdit projectId="proj-1" />)
 
-    await user.click(await waitFor(generateButton))
+    await startReport(user)
 
     expect(mockGenerateProductReport).not.toHaveBeenCalled()
   })
@@ -138,9 +152,9 @@ describe('ProductTab report guard', () => {
     const user = userEvent.setup()
     mockGetProductContext.mockResolvedValue({ context: emptyContext })
     mockListProductDocs.mockRejectedValue(new Error('network'))
-    render(<ProductTab projectId="proj-1" />)
+    render(<ProductTab canEdit projectId="proj-1" />)
 
-    await user.click(await waitFor(generateButton))
+    await startReport(user)
 
     // Failing open: a list call that fails is no reason to block the user.
     await waitFor(() => expect(mockGenerateProductReport).toHaveBeenCalledTimes(1))
@@ -149,14 +163,14 @@ describe('ProductTab report guard', () => {
   it('does not ask for the document list when a field is already filled', async () => {
     const user = userEvent.setup()
     mockGetProductContext.mockResolvedValue({ context: filledContext })
-    render(<ProductTab projectId="proj-1" />)
+    render(<ProductTab canEdit projectId="proj-1" />)
 
-    const button = await waitFor(generateButton)
+    await waitFor(generateButton)
     // DocsUpload lists docs for its own pane, so snapshot that and require the
     // click to add nothing: the common path must not pay for the guard.
     const callsBeforeClick = mockListProductDocs.mock.calls.length
 
-    await user.click(button)
+    await startReport(user)
 
     await waitFor(() => expect(mockGenerateProductReport).toHaveBeenCalledTimes(1))
     expect(mockListProductDocs.mock.calls.length).toBe(callsBeforeClick)

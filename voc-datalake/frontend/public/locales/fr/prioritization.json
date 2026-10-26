@@ -7,7 +7,7 @@
     "savingMobile": "..."
   },
   "ballot": {
-    "anonymousNotice": "Votre vote est anonyme : il compte dans le score de l'équipe pour ce document, mais il n'est attribué ni à vous ni à personne d'autre.",
+    "anonymousNotice": "Votre bulletin compte dans le score d’équipe de cette proposition. Il n’est lié à aucun compte, et votre nom n’est enregistré que si vous en saisissez un ci-dessous.",
     "axes": {
       "confidence": "Confiance",
       "confidenceHint": "Quelle est votre certitude sur les deux estimations ci-dessus ?",
@@ -28,7 +28,7 @@
       "unknown": "Votre bulletin n'a pas pu être enregistré pour l'instant. Réessayez dans un moment."
     },
     "displayName": {
-      "hint": "Facultatif. Les bulletins ne sont attribués à personne, vous pouvez donc laisser ce champ vide.",
+      "hint": "Facultatif. Si vous saisissez un nom, il est enregistré avec votre bulletin ; il n’apparaît pas dans le score d’équipe. Laissez vide pour voter sans nom.",
       "label": "Votre nom (facultatif)"
     },
     "done": {
@@ -49,6 +49,7 @@
       "pending": "Envoi..."
     },
     "title": "Notez cette proposition",
+    "titleInactive": "Vote sur la proposition",
     "unavailable": {
       "description": "Rien n'a été envoyé. Rechargez la page pour réessayer : le vote lui-même est peut-être bien ouvert.",
       "title": "Ce vote n'a pas pu être chargé"
@@ -76,7 +77,7 @@
     "saving": "Enregistrement...",
     "title": "Ce que contient cette ligne"
   },
-  "configureApiEndpoint": "Configurez le point de terminaison API dans les paramètres pour afficher la priorisation.",
+  "configureApiEndpoint": "Configurez le point de terminaison API dans Administration → Général pour afficher la priorisation.",
   "docType": {
     "prd": "PRD",
     "prfaq": "PR/FAQ"
@@ -96,7 +97,7 @@
     "unavailable": "Notes indisponibles"
   },
   "framework": {
-    "description": "Évaluez chaque document sur : <strong>Impact</strong>, <strong>Délai de mise sur le marché</strong>, <strong>Adéquation stratégique</strong> et <strong>Confiance</strong>.",
+    "configured": "Notez chaque proposition sur : <strong>{{metrics}}</strong>.",
     "title": "Cadre de priorisation"
   },
   "lineage": {
@@ -113,7 +114,7 @@
   },
   "loading": "Chargement des documents...",
   "noteTooLong": {
-    "description": "Les notes sont limitées à {{max}} caractères, et une note plus longue est refusée plutôt que tronquée. Raccourcissez la note de la ligne modifiée, puis enregistrez de nouveau. Rien n'a encore été enregistré.",
+    "description": "Les notes sont limitées à {{max, number}} caractères, et une note plus longue est refusée plutôt que tronquée. Raccourcissez la note de la ligne modifiée, puis enregistrez de nouveau. Rien n'a encore été enregistré.",
     "title": "Une note est trop longue pour être enregistrée"
   },
   "notes": {
@@ -134,12 +135,16 @@
     "none": "Non évalué"
   },
   "roomVote": {
-    "anonymousNote": "Les bulletins déposés ici comptent dans le score d'équipe ci-dessus et ne sont attribués à personne.",
-    "ballotsIn": "{{received}} bulletins sur {{cap}} reçus",
+    "anonymousNote": "Les bulletins déposés ici comptent dans le score d’équipe ci-dessus. Ils ne sont liés à aucun compte ; un nom n’est enregistré que si la personne qui vote en saisit un, et il n’est pas affiché ici.",
+    "ballotsIn": "{{received, number}} bulletins sur {{cap, number}} reçus",
+    "checking": "Vérification d’un vote déjà ouvert...",
     "close": "Clore le vote",
     "closeFailed": "Le vote n'a pas pu être clos. Réessayez : jusqu'à sa clôture, les bulletins sont encore acceptés.",
     "closed": "Ce vote est clos. Aucun autre bulletin n'est accepté.",
     "closing": "Clôture...",
+    "confirmMessage": "Cela crée un lien public et un code QR pour « {{title}} ». Toute personne disposant du lien peut déposer un bulletin, sans se connecter, jusqu’à ce que vous clôturiez le vote ou qu’il expire.",
+    "confirmOpen": "Ouvrir le vote",
+    "confirmTitle": "Ouvrir un vote public en salle ?",
     "description": "Affichez un QR code et laissez chaque personne présente envoyer un bulletin anonyme depuis son téléphone, sans compte.",
     "expired": "Ce vote a expiré. Aucun autre bulletin n'est accepté.",
     "open": "Ouvrir un vote en salle",
@@ -149,12 +154,12 @@
     "qrAccessibleName": "QR code ouvrant la page de vote anonyme pour {{title}}",
     "qrCaption": "Scannez pour noter cette proposition depuis un téléphone",
     "qrUnavailable": "Le QR code est indisponible car l'adresse de cette page ne peut pas être partagée.",
-    "scopeDocuments": "Un bulletin porte sur les {{documents}} documents qui la composent : la salle note donc la proposition entière.",
+    "scopeDocuments": "Un bulletin porte sur les {{documents, number}} documents qui la composent : la salle note donc la proposition entière.",
     "scopeNote": "Ce vote note une proposition : {{title}}.",
     "title": "Noter en salle"
   },
   "row": {
-    "multiDocument": "{{documents}} documents, un seul bulletin"
+    "multiDocument": "{{documents, number}} documents, un seul bulletin"
   },
   "rowAction": {
     "composeConflict": "La ligne n’a pas été ajoutée au projet de {{row}}. Soit le projet contient déjà le nombre maximal de lignes autorisé, soit ses documents ont changé. Rechargez la page pour voir les lignes actuelles.",
@@ -169,12 +174,12 @@
     "recomposeRefused": "Les documents de « {{row}} » n’ont pas été modifiés, et la demande a été refusée plutôt qu’échouée : vérifiez votre sélection — une ligne ne peut contenir qu’un nombre limité de documents, et chacun doit toujours faire partie du projet.",
     "title": "Cette modification des lignes n’a pas été enregistrée"
   },
-  "rowCount_one": "{{count}} proposition",
-  "rowCount_other": "{{count}} propositions",
+  "rowCount_one": "{{count, number}} proposition",
+  "rowCount_other": "{{count, number}} propositions",
   "rowDeleted": {
     "descriptionNoCount": "« {{row}} » a disparu, ainsi que les bulletins qui y avaient été déposés. Aucun nombre de bulletins n’a été communiqué.",
     "description_one": "« {{row}} » a disparu, ainsi que le seul bulletin déposé sur elle.",
-    "description_other": "« {{row}} » a disparu, ainsi que les {{count}} bulletins déposés sur elle.",
+    "description_other": "« {{row}} » a disparu, ainsi que les {{count, number}} bulletins déposés sur elle.",
     "dismiss": "Masquer ce message",
     "title": "La ligne a été supprimée"
   },
@@ -197,32 +202,115 @@
     "timeToMarket": "Délai de mise sur le marché",
     "timeToMarketDescription": "À quelle vitesse cela peut-il être livré ?",
     "title": "Scores de priorisation",
-    "wholeRow": "Un seul bulletin pour les {{documents}} documents de cette ligne.",
-    "yoursOnly": "Votre propre note. L'enregistrement n'écrit que vos valeurs."
+    "wholeRow": "Un seul bulletin pour les {{documents, number}} documents de cette ligne.",
+    "yoursOnly": "Votre propre note. L'enregistrement n'écrit que vos valeurs.",
+    "valueOfMax": "{{value}} sur {{max, number}}"
   },
   "scoresUnavailable": {
     "description": "Vos scores enregistrés sont actuellement indisponibles : les valeurs ci-dessous sont donc des valeurs par défaut et non celles qui ont été saisies. Rechargez la page avant d'enregistrer.",
     "staleDescription": "La dernière actualisation des scores enregistrés a échoué : les valeurs affichées sont les dernières lues correctement. Votre propre notation n'est pas affectée — inutile de recharger avant d'enregistrer.",
     "title": "Impossible de charger les scores"
   },
+  "setup": {
+    "open": "Configuration de la notation",
+    "viewOpen": "Comment la notation fonctionne",
+    "title": "Configuration de la notation",
+    "description": "Choisissez les critères sur lesquels chacun note les propositions, de 1 à 5, et le poids de chacun. Le changement s’applique à toutes les lignes.",
+    "viewTitle": "Comment la notation fonctionne",
+    "viewDescription": "Chacun note chaque proposition sur ces critères, de 1 à 5. Le score de priorité les pondère comme indiqué.",
+    "adminsOnly": "Seuls les administrateurs peuvent modifier la configuration de la notation.",
+    "loading": "Chargement de la configuration de la notation",
+    "loadFailed": "La configuration de la notation n’a pas pu être chargée. Fermez cette fenêtre et réessayez.",
+    "templatesTitle": "Partir d’un modèle",
+    "templateConfirmTitle": "Utiliser le modèle {{template}} ?",
+    "templateBecomes": "Vos critères deviennent {{metrics}}.",
+    "templateArchives": "Ceux-ci sont archivés — leurs notes sont conservées, mais ils ne comptent plus : {{metrics}}.",
+    "templateNotSaved": "Rien ne change pour personne tant que vous n’avez pas cliqué sur Enregistrer.",
+    "templateApply": "Utiliser le modèle",
+    "metricsTitle": "Critères ({{active, number}} sur {{max, number}})",
+    "addMetric": "Ajouter un critère",
+    "untitled": "Nouveau critère",
+    "name": "Nom",
+    "descriptionLabel": "Description",
+    "weight": "Poids",
+    "weightOf": "Poids de {{name}}",
+    "share": "{{share}} % du score",
+    "direction": "Dans quel sens c’est mieux",
+    "higherBetter": "Plus haut, c’est mieux",
+    "lowerBetter": "Plus bas, c’est mieux",
+    "higherBetterHint": "Un 5 fait monter la proposition dans le classement.",
+    "lowerBetterHint": "Un 1 fait monter la proposition dans le classement — à utiliser pour des coûts comme l’effort.",
+    "lowLabel": "Ce que signifie 1",
+    "highLabel": "Ce que signifie 5",
+    "scale": "1 = {{low}}, 5 = {{high}}",
+    "moveUp": "Monter {{name}}",
+    "moveDown": "Descendre {{name}}",
+    "archive": "Archiver",
+    "archiveMetric": "Archiver {{name}}",
+    "archiveHint": "Masque ce critère. Les notes déjà données sont conservées et vous pouvez le restaurer.",
+    "archivedTitle": "Critères archivés ({{archived, number}})",
+    "archivedHint": "Les critères archivés ne sont ni affichés, ni notés, ni comptés. Leurs notes sont conservées ; restaurez-en un pour le réutiliser.",
+    "restore": "Restaurer",
+    "conflict": "Quelqu’un d’autre a modifié la configuration de la notation pendant votre modification. Rechargez-la pour voir sa version, puis refaites votre changement.",
+    "reload": "Recharger la configuration",
+    "saveFailed": "La configuration de la notation n’a pas pu être enregistrée. Réessayez.",
+    "cancel": "Annuler",
+    "save": "Enregistrer la configuration",
+    "saving": "Enregistrement…",
+    "close": "Fermer",
+    "neverChanged": "Configuration standard utilisée.",
+    "changedBy": "Dernière modification par {{name}} le {{date}}",
+    "changedOn": "Dernière modification le {{date}}",
+    "problems": {
+      "missingName": "Donnez un nom à chaque critère.",
+      "noActive": "Gardez au moins un critère.",
+      "tooManyActive": "Utilisez au plus {{max, number}} critères à la fois — archivez-en un d’abord.",
+      "tooMany": "Une configuration peut contenir au plus {{total, number}} critères, archivés compris.",
+      "noWeight": "Donnez à au moins un critère un poids supérieur à 0."
+    },
+    "templates": {
+      "default": "Configuration par défaut",
+      "defaultDescription": "Impact, délai de mise sur le marché, adéquation stratégique et confiance.",
+      "rice": "RICE",
+      "riceDescription": "Portée, impact et confiance, face à l’effort nécessaire.",
+      "ice": "ICE",
+      "iceDescription": "Impact, confiance et facilité — rapide à noter.",
+      "valueEffort": "Valeur vs effort",
+      "valueEffortDescription": "Deux critères : ce que cela vaut et ce que cela coûte."
+    },
+    "templateAxes": {
+      "reach": "Portée",
+      "reachDescription": "Combien de personnes cela touche",
+      "reachLow": "Peu de personnes",
+      "reachHigh": "Beaucoup de personnes",
+      "effort": "Effort",
+      "effortDescription": "Quelle quantité de travail cela demande",
+      "effortLow": "Peu de travail",
+      "effortHigh": "Beaucoup de travail",
+      "ease": "Facilité",
+      "easeDescription": "À quel point c’est facile à faire",
+      "easeLow": "Difficile",
+      "easeHigh": "Facile",
+      "value": "Valeur",
+      "valueDescription": "Ce que cela vaut pour les clients et l’entreprise"
+    }
+  },
   "sort": {
     "date": "Par date",
     "dateFull": "Date de création",
-    "impact": "Par portée",
     "label": "Trier par :",
     "priority": "Priorité",
     "priorityFull": "Score de priorité",
-    "teamOrdered": "{{fields}} trient selon les chiffres de l'équipe, ceux affichés sur chaque ligne — pas selon votre propre note.",
-    "ttm": "DmM",
-    "ttmFull": "Délai de mise sur le marché"
+    "teamOrdered": "{{fields}} trient selon la moyenne de l'équipe — le nombre affiché sur chaque ligne — et non selon vos propres notes.",
+    "ttm": "DmM"
   },
   "stats": {
     "highPriority": "Haute priorité",
     "mediumPriority": "Priorité moyenne",
     "notScored": "Non évalué",
     "totalRows": "Propositions au total",
-    "unreadable_one": "La note de l'équipe pour {{count}} proposition n'a pas pu être lue : elle compte dans le total mais dans aucun des autres décomptes. Rechargez la page pour la voir.",
-    "unreadable_other": "Les notes de l'équipe pour {{count}} propositions n'ont pas pu être lues : elles comptent dans le total mais dans aucun des autres décomptes. Rechargez la page pour les voir."
+    "unreadable_one": "La note de l'équipe pour {{count, number}} proposition n'a pas pu être lue : elle compte dans le total mais dans aucun des autres décomptes. Rechargez la page pour la voir.",
+    "unreadable_other": "Les notes de l'équipe pour {{count, number}} propositions n'ont pas pu être lues : elles comptent dans le total mais dans aucun des autres décomptes. Rechargez la page pour les voir."
   },
   "subtitle": "Évaluer et prioriser les PRD et PR/FAQ de tous les projets",
   "team": {
@@ -241,10 +329,14 @@
     "unavailableDescription": "Les notes de l'équipe n'ont pas pu être lues pour le moment : cette ligne n'affiche donc rien à leur sujet — cela ne signifie pas que personne n'a voté. Rechargez la page pour voir ce que l'équipe a dit."
   },
   "title": "Priorisation",
-  "unsavedChanges": {
-    "cancel": "Rester sur la page",
-    "confirm": "Abandonner les modifications",
-    "message": "Vous avez des scores de priorisation non enregistrés. Voulez-vous abandonner vos modifications et quitter cette page ?",
-    "title": "Modifications non enregistrées"
+  "explainer": {
+    "title": "Comment c'est noté",
+    "scoreConfigured": "Chaque évaluateur note chaque critère de 1 à 5. Le score de priorité les pondère ainsi : {{weights}}.",
+    "unscored": "Un critère qu’un évaluateur ne note pas est exclu de son score au lieu de compter pour 0.",
+    "weightEntry": "{{name}} {{share}} %",
+    "weightEntryLower": "{{name}} {{share}} % (plus bas, c’est mieux)",
+    "team": "Chaque ligne affiche la moyenne de l'équipe parmi ceux qui l'ont notée, et leur nombre. Vos propres notes sont les curseurs dans la ligne.",
+    "lineageTitle": "Ce que signifie l'étiquette d'une ligne",
+    "rowNote": "{{label}} — expliqué dans « Comment c'est noté » au-dessus de la liste."
   }
 }

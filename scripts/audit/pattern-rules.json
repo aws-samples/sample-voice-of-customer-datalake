@@ -1,0 +1,217 @@
+{
+  "$comment": "Rules for scripts/audit/patterns.py (docs/code-audit.md). Each rule: id, language (python|ts|json), include globs, exclude [{glob, reason}], regex OR predicate, message, use. Every rule needs a planted hit and a legitimate look-alike in scripts/audit/test_patterns.py.",
+  "rules": [
+    {
+      "id": "dynamo-paging-loop",
+      "language": "python",
+      "include": [
+        "voc-datalake/lambda/**",
+        "voc-datalake/plugins/**"
+      ],
+      "exclude": [
+        {
+          "glob": "voc-datalake/lambda/shared/dynamo_paging.py",
+          "reason": "the helper's own home"
+        },
+        {
+          "glob": "voc-datalake/lambda/shared/dynamodb_fast_items.py",
+          "reason": "the response decoder copies the key through; it is not a loop"
+        }
+      ],
+      "regex": "LastEvaluatedKey",
+      "message": "hand-written DynamoDB pagination loop",
+      "use": "shared.dynamo_paging.iter_query / query_all (keep a loop only for a client cursor, a time budget or an early exit)"
+    },
+    {
+      "id": "decimal-plain-copy",
+      "language": "python",
+      "include": [
+        "voc-datalake/lambda/**",
+        "voc-datalake/plugins/**"
+      ],
+      "exclude": [
+        {
+          "glob": "voc-datalake/lambda/shared/dynamo_values.py",
+          "reason": "the helper's own home"
+        }
+      ],
+      "regex": "int\\((\\w+)\\) if \\1 == \\1\\.to_integral_value\\(\\) else float\\(\\1\\)",
+      "message": "local Decimal -> int/float conversion",
+      "use": "shared.dynamo_values.plain"
+    },
+    {
+      "id": "boto3-in-function",
+      "language": "python",
+      "include": [
+        "voc-datalake/lambda/**",
+        "voc-datalake/plugins/**"
+      ],
+      "exclude": [],
+      "predicate": "boto3_in_function",
+      "message": "boto3 client/resource built inside a function on every call (a new client per request)",
+      "use": "a module-level client, a cached getter (shared.aws get_*), run at init with shared.warm_init.warm_at_init"
+    },
+    {
+      "id": "lazy-getter-without-warm",
+      "language": "python",
+      "include": [
+        "voc-datalake/lambda/**/handler.py",
+        "voc-datalake/lambda/**/*_handler.py",
+        "voc-datalake/plugins/**/handler.py"
+      ],
+      "exclude": [],
+      "predicate": "lazy_getter_without_warm",
+      "message": "Lambda handler module with a lazy client getter that never runs it during init (the first request pays the client build)",
+      "use": "shared.warm_init.warm_at_init(<getter>, ...) at module level (SnapStart: shared.snapstart.register_snapshot_hooks)"
+    },
+    {
+      "id": "swallowed-exception",
+      "language": "python",
+      "include": [
+        "voc-datalake/lambda/**",
+        "voc-datalake/plugins/**",
+        "voc-datalake/scripts/**"
+      ],
+      "exclude": [],
+      "predicate": "swallowed_exception",
+      "message": "broad except whose whole body discards the error (pass / continue / return a constant), no log",
+      "use": "catch the specific exception, or log it (logger.exception / logger.warning) before falling back"
+    },
+    {
+      "id": "inline-admin-check",
+      "language": "python",
+      "include": [
+        "voc-datalake/lambda/**",
+        "voc-datalake/plugins/**"
+      ],
+      "exclude": [
+        {
+          "glob": "voc-datalake/lambda/shared/api.py",
+          "reason": "is_admin / require_admin live here"
+        },
+        {
+          "glob": "voc-datalake/lambda/shared/project_access.py",
+          "reason": "ADMIN_GROUP and the project access rule live here"
+        }
+      ],
+      "regex": "['\"]admins['\"]\\s+(not\\s+)?in\\b",
+      "message": "admin check re-implemented inline",
+      "use": "shared.api.is_admin / require_admin (shared.project_access.ADMIN_GROUP for the group name)"
+    },
+    {
+      "id": "raw-bedrock-call",
+      "language": "python",
+      "include": [
+        "voc-datalake/lambda/**",
+        "voc-datalake/plugins/**"
+      ],
+      "exclude": [
+        {
+          "glob": "voc-datalake/lambda/shared/converse.py",
+          "reason": "the helper's own home"
+        },
+        {
+          "glob": "voc-datalake/lambda/product_doc_extractor/handler.py",
+          "reason": "stdlib + boto3 only by design (no powertools, cannot import shared; see its module docstring)"
+        },
+        {
+          "glob": "voc-datalake/lambda/shared/embeddings.py",
+          "reason": "Titan embeddings: invoke_model, not a Converse model"
+        },
+        {
+          "glob": "voc-datalake/lambda/shared/avatar.py",
+          "reason": "image generation model: invoke_model, not Converse"
+        },
+        {
+          "glob": "voc-datalake/lambda/shared/model_capacity.py",
+          "reason": "the admin model test is a deliberately raw one-shot probe (no fallback, no retry)"
+        }
+      ],
+      "regex": "\\.(converse|converse_stream|invoke_model|invoke_model_with_response_stream)\\(",
+      "message": "Bedrock called directly (model resolution, temperature rules, retries and text extraction re-done)",
+      "use": "shared.converse.converse / converse_blocks (surface=...)",
+      "code_only": true
+    },
+    {
+      "id": "stream-raw-bedrock-command",
+      "language": "ts",
+      "include": [
+        "voc-datalake/lambda/stream/src/**"
+      ],
+      "exclude": [
+        {
+          "glob": "voc-datalake/lambda/stream/src/bedrock/**",
+          "reason": "the stream Lambda's Bedrock client home"
+        }
+      ],
+      "regex": "new (Converse|ConverseStream|InvokeModel)\\w*Command\\(",
+      "message": "Bedrock command built outside the stream Lambda's bedrock/ module",
+      "use": "lambda/stream/src/bedrock (one client, one request shape)"
+    },
+    {
+      "id": "ui-tofixed",
+      "language": "ts",
+      "include": [
+        "voc-datalake/frontend/src/**"
+      ],
+      "exclude": [],
+      "regex": "\\.toFixed\\(",
+      "message": "toFixed always writes '.' as the decimal mark",
+      "use": "utils/numberFormat formatDecimal(value, language, digits) (PDFs: PDF_REPORT_LOCALE)"
+    },
+    {
+      "id": "ui-locale-less-format",
+      "language": "ts",
+      "include": [
+        "voc-datalake/frontend/src/**"
+      ],
+      "exclude": [],
+      "regex": "\\.toLocale(String|DateString|TimeString)\\(\\s*(undefined\\s*)?[,)]",
+      "message": "toLocale*() without the app language formats in the browser's locale",
+      "use": "utils/numberFormat formatCount / formatDecimal, utils/dateUtils (pass the i18n language)"
+    },
+    {
+      "id": "local-date-formatter",
+      "language": "ts",
+      "include": [
+        "voc-datalake/frontend/src/**"
+      ],
+      "exclude": [
+        {
+          "glob": "voc-datalake/frontend/src/utils/dateUtils.ts",
+          "reason": "the helper's own home"
+        }
+      ],
+      "regex": "new Intl\\.DateTimeFormat\\(|\\.toLocaleDateString\\(|\\.toLocaleTimeString\\(|\\.toLocaleString\\([^)]*\\b(dateStyle|timeStyle|weekday|month|hour)\\b",
+      "message": "local date/time formatter",
+      "use": "utils/dateUtils formatDate / formatDateTime / formatTime / formatCalendarDay"
+    },
+    {
+      "id": "raw-clipboard",
+      "language": "ts",
+      "include": [
+        "voc-datalake/frontend/src/**"
+      ],
+      "exclude": [
+        {
+          "glob": "voc-datalake/frontend/src/hooks/useCopyToClipboard.ts",
+          "reason": "the helper's own home"
+        }
+      ],
+      "regex": "navigator\\.clipboard\\.writeText",
+      "message": "local copy-to-clipboard (and usually a local 'copied' timer)",
+      "use": "hooks/useCopyToClipboard (copy(text, key) + copiedKey) or hooks/useCopiedFlag"
+    },
+    {
+      "id": "locale-raw-count",
+      "language": "json",
+      "include": [
+        "voc-datalake/frontend/public/locales/**/*.json"
+      ],
+      "exclude": [],
+      "regex": "\\{\\{\\s*count\\s*\\}\\}",
+      "message": "count interpolated without the number format (no grouping: 26622)",
+      "use": "{{count, number}} (plural forms still pick from the number)"
+    }
+  ]
+}

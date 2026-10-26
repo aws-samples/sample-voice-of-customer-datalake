@@ -1,16 +1,13 @@
 {
   "card": {
-    "active": "アクティブ",
     "avgRating": "平均評価",
     "category": "カテゴリ：",
     "collects": "収集項目",
     "copy": "コピー",
     "deleteForm": "フォームを削除",
     "directLink": "直接リンク",
-    "disabled": "無効",
-    "disableForm": "フォームを無効化",
+    "prototypePins": "プロトタイプのピン",
     "editForm": "フォームを編集",
-    "enableForm": "フォームを有効化",
     "hideEmbedCode": "埋め込みコードを非表示",
     "iframeEmbed": "iFrame埋め込み",
     "preview": "プレビュー",
@@ -19,18 +16,28 @@
     "showEmbedCode": "埋め込みコードを表示",
     "submissions": "送信数",
     "themeLabel": "テーマ",
-    "viewSubmissions": "送信を表示"
+    "themeDefault": "既定の色",
+    "themeCustom": "カスタムカラー",
+    "viewSubmissions": "送信を表示",
+    "collectsName": "名前",
+    "collectsEmail": "メールアドレス",
+    "disabledNotice": "このフォームは無効です。有効にするまで、リンクと埋め込みには「Feedback form unavailable.」と表示されます。",
+    "live": "公開中",
+    "off": "オフ",
+    "noSubmissionsYet": "まだ回答はありません。フォームを共有して回答を集めましょう。",
+    "themeSwatch": "フォームの色"
   },
-  "configureApiFirst": "フィードバックフォームを管理するには、設定でAPIエンドポイントを構成してください。",
+  "configureApiFirst": "フィードバックフォームを管理するには、「管理 → 一般」でAPIエンドポイントを構成してください。",
   "createForm": "フォームを作成",
   "deleteConfirmLabel": "削除",
   "deleteConfirmMessage": "このフォームを削除してもよろしいですか？この操作は元に戻せません。",
+  "deleteConfirmMessageNamed": "フォーム「{{name}}」を削除しますか？この操作は元に戻せません。",
   "deleteConfirmTitle": "フォームを削除",
   "editor": {
     "backgroundColor": "背景色",
     "borderRadius": "角丸",
     "cancel": "キャンセル",
-    "categoryHint": "カテゴリは設定→フィードバックカテゴリで構成されます",
+    "categoryHint": "カテゴリは「管理 → 分類体系 → カテゴリ」で構成されます",
     "categoryLabel": "カテゴリ",
     "categoryRoutingDescription": "このフォームにカテゴリを割り当てます。このフォームから送信されたすべてのフィードバックは、選択したカテゴリで自動的にタグ付けされます。",
     "categoryRoutingTitle": "カテゴリルーティング",
@@ -51,9 +58,9 @@
     "previewTagged": "このフォームからのフィードバックは次のようにタグ付けされます：",
     "primaryColor": "プライマリカラー",
     "question": "質問",
-    "ratingEmoji": "絵文字 😀",
+    "ratingEmoji": "絵文字",
     "ratingNumeric": "数値 (1-10)",
-    "ratingStars": "星 ⭐",
+    "ratingStars": "星",
     "saveChanges": "変更を保存",
     "saving": "保存中...",
     "selectCategory": "-- カテゴリを選択 --",
@@ -68,8 +75,9 @@
       "formSettings": "フォーム設定",
       "settings": "設定",
       "theme": "テーマ",
-      "validates": "検証対象",
-      "validatesShort": "検証"
+      "validates": "リンク先プロジェクト",
+      "validatesShort": "プロジェクト",
+      "label": "フォームエディターのセクション"
     },
     "textColor": "テキスト色",
     "validationDescription": "このフォームがどのプロジェクトの、どのPRDまたはPR/FAQについてフィードバックを集めるのかを任意で記録できます。収集した評価は優先順位付けページの該当ドキュメントの横に表示されます。ウェブサイトのアンケートなど単独のフォームでは両方を空のままにしてください。",
@@ -80,12 +88,14 @@
     "validationNoProject": "-- リンクなし --",
     "validationProjectHint": "プロジェクトを空にするとこのフォームのリンクが解除されます。",
     "validationProjectLabel": "プロジェクト",
-    "validationTitle": "このフォームが検証する対象",
+    "validationTitle": "リンク先のプロジェクトまたはドキュメント",
     "validationUnknownDocument": "リンク済みドキュメント（現在利用できません）",
     "validationUnknownProject": "リンク済みプロジェクト（現在利用できません）",
     "validationUnverifiedDocument": "リンク済みドキュメント（確認できません）",
     "validationUnverifiedProject": "リンク済みプロジェクト（確認できません）",
-    "validationWholeProject": "-- プロジェクト全体 --"
+    "validationWholeProject": "-- プロジェクト全体 --",
+    "dimensionsHint": "すべての送信にこの値が付きます。埋め込みごとに dimensions オプションでページ単位の値を設定できます。例:",
+    "dimensionsDevHint": "開発者向け: 埋め込みコードでページごとに設定"
   },
   "empty": {
     "createButton": "最初のフォームを作成",
@@ -97,7 +107,7 @@
     "item2": "各フォームには独自のURLと埋め込みコードがあります",
     "item3": "カテゴリを割り当ててフィードバックを自動ルーティング",
     "item4": "すべての送信はAIエンリッチメント（感情、ペルソナなど）を通過",
-    "title": "Typeformスタイルのフィードバック収集"
+    "title": "フィードバックフォームの仕組み"
   },
   "submissions": {
     "avgRating": "平均評価",
@@ -129,5 +139,14 @@
     "selectPrompt": "続行するにはテンプレートを選択してください",
     "subtitle": "テンプレートを選択して開始",
     "title": "新しいフォームを作成"
+  },
+  "createdDisabled": {
+    "dismiss": "閉じる",
+    "enable": "今すぐ有効にする",
+    "message": "「{{name}}」を作成しました。現在は無効のため、有効にするまでリンクを開いた人には「Feedback form unavailable.」と表示されます。"
+  },
+  "systemForms": {
+    "title": "システムフォーム（{{n, number}}）",
+    "description": "作成したプロトタイプごとに自動で作られ、テスターのピンを集めます。共有や編集は不要です。"
   }
 }

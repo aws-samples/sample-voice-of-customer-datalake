@@ -4,8 +4,12 @@ Root pytest configuration for Lambda tests.
 This conftest sets up the environment consistently for all tests,
 preventing conflicts between different test directories.
 """
+import json
 import os
 import sys
+from unittest.mock import patch
+
+import pytest
 
 # Remove any layers directories from sys.path to avoid importing
 # incomplete packages (missing compiled extensions like pydantic_core)
@@ -14,6 +18,18 @@ sys.path = [p for p in sys.path if 'lambda/layers' not in p and 'layers/' not in
 # Set environment variables BEFORE any module imports
 # These are the common environment variables needed by all handlers
 os.environ.setdefault('AWS_DEFAULT_REGION', 'us-east-1')
+
+# NEVER reach a real AWS account from a unit test. A fixture that runs before
+# moto's mock starts (or a client cached from outside it) would otherwise sign
+# requests with the developer's own credentials — that once created a real SQS
+# queue. Forced, not setdefault: the developer's shell credentials must lose.
+for _credential in ('AWS_PROFILE', 'AWS_DEFAULT_PROFILE', 'AWS_SESSION_TOKEN', 'AWS_SECURITY_TOKEN'):
+    os.environ.pop(_credential, None)
+os.environ['AWS_ACCESS_KEY_ID'] = 'testing'
+os.environ['AWS_SECRET_ACCESS_KEY'] = 'testing'
+os.environ['AWS_CONFIG_FILE'] = os.devnull
+os.environ['AWS_SHARED_CREDENTIALS_FILE'] = os.devnull
+os.environ['AWS_EC2_METADATA_DISABLED'] = 'true'
 os.environ.setdefault('POWERTOOLS_SERVICE_NAME', 'test-voc')
 os.environ.setdefault('POWERTOOLS_METRICS_NAMESPACE', 'TestVoC')
 os.environ.setdefault('FEEDBACK_TABLE', 'test-feedback')
@@ -40,11 +56,6 @@ if lambda_dir not in sys.path:
 # expect a URL therefore have to opt in via the `cdn_signing_configured`
 # fixture; tests that omit it are exercising the fail-closed path, which is the
 # behavior worth defaulting to.
-import json
-from unittest.mock import patch
-
-import pytest
-
 SIGNING_SECRET_ARN = 'arn:aws:secretsmanager:us-east-1:123456789012:secret:test-cdn-signing'
 SIGNING_KEY_PAIR_ID = 'K2TESTKEYPAIRID'
 
@@ -55,6 +66,74 @@ SIGNING_KEY_PAIR_ID = 'K2TESTKEYPAIRID'
 # and any import-time problem in that module would have failed collection for the whole
 # suite — which matters because shared.avatar keeps a deliberately narrow import graph
 # (it has its own guard test that importing it must not pull in `cryptography`).
+
+
+@pytest.fixture(autouse=True)
+def _strict_dynamodb_queries(monkeypatch):
+    """moto made production-faithful for two rules it does not enforce.
+
+    - A Query FilterExpression on a key attribute -> ValidationException (the
+      /memory 502). See shared/test/strict_dynamodb.py.
+    - A memory/agents Lambda calling a DynamoDB action its role lacks ->
+      AccessDeniedException (the memory-scanner outage). See shared/test/strict_iam.py.
+    """
+    from shared.test import strict_dynamodb, strict_iam
+
+    strict_dynamodb.install(monkeypatch)
+    strict_iam.install(monkeypatch)
+
+
+@pytest.fixture(autouse=True)
+def _reset_model_cooldowns():
+    """Forget per-container model cooldowns between tests.
+
+    shared.model_fallback remembers a model that failed for capacity for five
+    minutes, so one test's throttled model would otherwise be skipped by the
+    next. Cleared only when the module is already loaded: importing it here
+    would pull powertools into every test's collection for no reason.
+    """
+    yield
+    module = sys.modules.get('shared.model_fallback')
+    if module is not None:
+        module.cooldown_until.clear()
+
+
+#: The random tail every `shared.ids.timestamped_id` gets under `fixed_id_suffix`.
+FIXED_ID_SUFFIX = 'a1b2c3d4'
+
+
+@pytest.fixture
+def fixed_id_suffix():
+    """Pin `shared.ids`' random suffix so a minted id is a literal to compare against.
+
+    Ids are ``<prefix>_<stamp>_<8 hex>``; with the clock pinned too, a test can
+    spell the exact id. Yields the suffix.
+    """
+    from unittest.mock import patch
+
+    with patch('shared.ids.secrets.token_hex', return_value=FIXED_ID_SUFFIX):
+        yield FIXED_ID_SUFFIX
+
+
+def _clear_signer_cache() -> None:
+    """Drop shared.cloudfront_signing's per-container key and signer caches.
+
+    Both are `lru_cache`d for the life of the execution environment, so a test
+    that configures signing would otherwise be served a signer an earlier test
+    built (or keep a stale one after it changes the secret).
+    """
+    from shared import cloudfront_signing
+
+    cloudfront_signing._load_private_key.cache_clear()
+    cloudfront_signing._signer.cache_clear()
+
+
+@pytest.fixture
+def reset_signer_cache():
+    """Clear the CloudFront signer caches on the way in and out of one test."""
+    _clear_signer_cache()
+    yield
+    _clear_signer_cache()
 
 
 @pytest.fixture(scope='session')
@@ -90,14 +169,13 @@ def cdn_signing_configured(cdn_signing_keypair):
     another's configuration.
     """
     from shared import aws as shared_aws
-    from shared import cloudfront_signing
 
     def fake_get_secret_value(SecretId=None, **_kwargs):
         assert SecretId == SIGNING_SECRET_ARN
         return {'SecretString': json.dumps(cdn_signing_keypair)}
 
     shared_aws.clear_secret_cache()
-    cloudfront_signing.clear_signer_cache()
+    _clear_signer_cache()
 
     env = {
         'CDN_SIGNING_SECRET_ARN': SIGNING_SECRET_ARN,
@@ -109,7 +187,7 @@ def cdn_signing_configured(cdn_signing_keypair):
         yield cdn_signing_keypair
 
     shared_aws.clear_secret_cache()
-    cloudfront_signing.clear_signer_cache()
+    _clear_signer_cache()
 
 
 @pytest.fixture(scope='session')

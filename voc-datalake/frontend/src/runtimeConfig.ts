@@ -9,6 +9,7 @@
  */
 
 import { z } from 'zod'
+import { getEnvString } from './lib/env'
 
 // URL regex pattern for validation (replaces deprecated z.string().url())
 const urlPattern = /^https?:\/\/.+/
@@ -110,11 +111,6 @@ async function fetchConfig(): Promise<RuntimeConfig> {
     console.warn('Error fetching config.json, using env vars:', error)
     return getEnvConfig()
   }
-}
-
-function getEnvString(key: string, defaultValue = ''): string {
-  const value: unknown = import.meta.env[key]
-  return typeof value === 'string' ? value : defaultValue
 }
 
 /**

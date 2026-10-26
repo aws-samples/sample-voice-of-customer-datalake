@@ -11,26 +11,21 @@ import { join } from 'node:path'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter } from 'react-router-dom'
 import i18n from 'i18next'
 import { SCORABLE_TYPE_META } from '../Prioritization/prioritizationUtils'
+import {
+  feedbackFormsApiMocks, clientApiModule, configStoreModule, createFormsWrapper,
+} from './feedback-forms-fixtures'
 
-const mockGetFeedbackForms = vi.fn()
-const mockUpdateFeedbackForm = vi.fn()
-const mockCreateFeedbackForm = vi.fn()
-const mockGetProjects = vi.fn()
-const mockGetProject = vi.fn()
+const {
+  getFeedbackForms: mockGetFeedbackForms,
+  updateFeedbackForm: mockUpdateFeedbackForm,
+  createFeedbackForm: mockCreateFeedbackForm,
+} = feedbackFormsApiMocks
+const mockGetProjects = vi.fn<(...args: unknown[]) => unknown>()
+const mockGetProject = vi.fn<(...args: unknown[]) => unknown>()
 
-vi.mock('../../api/client', () => ({
-  api: {
-    getFeedbackForms: () => mockGetFeedbackForms(),
-    createFeedbackForm: (form: unknown) => mockCreateFeedbackForm(form),
-    updateFeedbackForm: (id: string, form: unknown) => mockUpdateFeedbackForm(id, form),
-    deleteFeedbackForm: () => Promise.resolve({ success: true }),
-    getCategoriesConfig: () => Promise.resolve({ categories: [] }),
-  },
-}))
+vi.mock('../../api/client', () => clientApiModule())
 
 vi.mock('../../api/projectsApi', () => ({
   projectsApi: {
@@ -39,9 +34,7 @@ vi.mock('../../api/projectsApi', () => ({
   },
 }))
 
-vi.mock('../../store/configStore', () => ({
-  useConfigStore: () => ({ config: { apiEndpoint: 'https://api.example.com' } }),
-}))
+vi.mock('../../store/configStore', () => configStoreModule())
 
 vi.mock('./TemplateWizard', () => ({
   default: () => <div data-testid="template-wizard" />,
@@ -59,6 +52,7 @@ vi.mock('./FormCard', () => ({
 }))
 
 import FeedbackForms from './FeedbackForms'
+import { at } from '@test/defined'
 
 const { t } = i18n
 
@@ -80,30 +74,52 @@ const unlinkedForm = {
   updated_at: '2026-01-01T00:00:00Z',
 }
 
-function createWrapper() {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter>{children}</MemoryRouter>
-    </QueryClientProvider>
-  )
-}
-
 /** Open the editor for one form and switch to the validation tab. */
 async function openValidationTab(formName: string) {
   const user = userEvent.setup()
-  render(<FeedbackForms />, { wrapper: createWrapper() })
+  render(<FeedbackForms />, { wrapper: createFormsWrapper() })
 
   await waitFor(() => {
     expect(screen.getByText(`Edit ${formName}`)).toBeInTheDocument()
   })
   await user.click(screen.getByText(`Edit ${formName}`))
-  await user.click(screen.getAllByText(t('feedbackForms:editor.tabs.validates'))[0])
+  await user.click(at(screen.getAllByText(t('feedbackForms:editor.tabs.validates')), 0))
   return user
+}
+
+/** Serve a single linked form with `overrides` applied, then open its validation tab. */
+function openLinkedFormVariant(overrides: Partial<typeof linkedForm>) {
+  mockGetFeedbackForms.mockResolvedValue({
+    forms: [{ ...linkedForm, ...overrides }],
+  })
+  return openValidationTab('PR/FAQ concept test')
 }
 
 const projectSelect = () => screen.getByLabelText(t('feedbackForms:editor.validationProjectLabel'))
 const documentSelect = () => screen.getByLabelText(t('feedbackForms:editor.validationDocumentLabel'))
+
+type User = ReturnType<typeof userEvent.setup>
+
+async function expectProjectValue(value: string) {
+  await waitFor(() => {
+    expect(projectSelect()).toHaveValue(value)
+  })
+}
+
+async function expectDocumentValue(value: string) {
+  await waitFor(() => {
+    expect(documentSelect()).toHaveValue(value)
+  })
+}
+
+/** Press Save and assert the PUT body carried exactly these link fields. */
+async function expectSavedLink(user: User, link: Record<string, string>) {
+  await user.click(screen.getByText('Save Changes'))
+
+  await waitFor(() => {
+    expect(mockUpdateFeedbackForm).toHaveBeenNthCalledWith(1, expect.any(String), expect.objectContaining(link))
+  })
+}
 
 /**
  * The full option text for the `doc_prfaq` fixture: title, then its type.
@@ -120,6 +136,10 @@ describe('validation link in the form editor', () => {
     mockGetFeedbackForms.mockResolvedValue({ forms: [linkedForm, unlinkedForm] })
     mockUpdateFeedbackForm.mockResolvedValue({ success: true })
     mockCreateFeedbackForm.mockResolvedValue({ success: true })
+    // These two were fixed responses in this spec's own api mock before the
+    // mock surface moved to the shared fixtures; keep them resolving the same.
+    feedbackFormsApiMocks.deleteFeedbackForm.mockResolvedValue({ success: true })
+    feedbackFormsApiMocks.getCategoriesConfig.mockResolvedValue({ categories: [] })
     mockGetProjects.mockResolvedValue({
       projects: [
         { project_id: 'p1', name: 'Project One', status: 'active', created_at: '', updated_at: '', persona_count: 0, document_count: 1 },
@@ -138,9 +158,7 @@ describe('validation link in the form editor', () => {
   it('shows the stored link when the editor opens', async () => {
     await openValidationTab('PR/FAQ concept test')
 
-    await waitFor(() => {
-      expect(projectSelect()).toHaveValue('p1')
-    })
+    await expectProjectValue('p1')
     expect(documentSelect()).toHaveValue('doc_prfaq')
   })
 
@@ -149,77 +167,37 @@ describe('validation link in the form editor', () => {
     // touching the link must not clear it.
     const user = await openValidationTab('PR/FAQ concept test')
 
-    await waitFor(() => {
-      expect(projectSelect()).toHaveValue('p1')
-    })
-    await user.click(screen.getByText('Save Changes'))
-
-    await waitFor(() => {
-      expect(mockUpdateFeedbackForm).toHaveBeenCalled()
-    })
-    expect(mockUpdateFeedbackForm.mock.calls[0][1]).toMatchObject({
-      project_id: 'p1',
-      document_id: 'doc_prfaq',
-    })
+    await expectProjectValue('p1')
+    await expectSavedLink(user, { project_id: 'p1', document_id: 'doc_prfaq' })
   })
 
   it('lets an admin clear the link, and clears the document with the project', async () => {
     const user = await openValidationTab('PR/FAQ concept test')
 
-    await waitFor(() => {
-      expect(projectSelect()).toHaveValue('p1')
-    })
+    await expectProjectValue('p1')
     await user.selectOptions(projectSelect(), '')
-    await user.click(screen.getByText('Save Changes'))
-
-    await waitFor(() => {
-      expect(mockUpdateFeedbackForm).toHaveBeenCalled()
-    })
     // Empty strings, not undefined: the backend PUT only writes fields present
     // in the body, so an omitted field would leave the old link in place.
-    expect(mockUpdateFeedbackForm.mock.calls[0][1]).toMatchObject({
-      project_id: '',
-      document_id: '',
-    })
+    await expectSavedLink(user, { project_id: '', document_id: '' })
   })
 
   it('lets an admin link an unlinked form to a project and document', async () => {
     const user = await openValidationTab('Website Footer Form')
 
-    await waitFor(() => {
-      expect(projectSelect()).toHaveValue('')
-    })
+    await expectProjectValue('')
     await user.selectOptions(projectSelect(), 'p1')
     await waitFor(() => {
       expect(screen.getByText(PRFAQ_OPTION_LABEL)).toBeInTheDocument()
     })
     await user.selectOptions(documentSelect(), 'doc_prfaq')
-    await user.click(screen.getByText('Save Changes'))
-
-    await waitFor(() => {
-      expect(mockUpdateFeedbackForm).toHaveBeenCalled()
-    })
-    expect(mockUpdateFeedbackForm.mock.calls[0][1]).toMatchObject({
-      project_id: 'p1',
-      document_id: 'doc_prfaq',
-    })
+    await expectSavedLink(user, { project_id: 'p1', document_id: 'doc_prfaq' })
   })
 
   it('saves a form that validates nothing as unlinked', async () => {
     const user = await openValidationTab('Website Footer Form')
 
-    await waitFor(() => {
-      expect(projectSelect()).toHaveValue('')
-    })
-    await user.click(screen.getByText('Save Changes'))
-
-    await waitFor(() => {
-      expect(mockUpdateFeedbackForm).toHaveBeenCalled()
-    })
-    expect(mockUpdateFeedbackForm.mock.calls[0][1]).toMatchObject({
-      project_id: '',
-      document_id: '',
-    })
+    await expectProjectValue('')
+    await expectSavedLink(user, { project_id: '', document_id: '' })
   })
 
   it('offers only scorable document types — a form on research notes shows on no row', async () => {
@@ -236,22 +214,12 @@ describe('validation link in the form editor', () => {
   })
 
   it('keeps a link whose document no longer exists rather than silently clearing it', async () => {
-    mockGetFeedbackForms.mockResolvedValue({
-      forms: [{ ...linkedForm, document_id: 'doc_v1' }],
-    })
+    const user = await openLinkedFormVariant({ document_id: 'doc_v1' })
 
-    const user = await openValidationTab('PR/FAQ concept test')
-
-    await waitFor(() => {
-      expect(documentSelect()).toHaveValue('doc_v1')
-    })
+    await expectDocumentValue('doc_v1')
     expect(screen.getByText(t('feedbackForms:editor.validationUnknownDocument'))).toBeInTheDocument()
 
-    await user.click(screen.getByText('Save Changes'))
-    await waitFor(() => {
-      expect(mockUpdateFeedbackForm).toHaveBeenCalled()
-    })
-    expect(mockUpdateFeedbackForm.mock.calls[0][1]).toMatchObject({ document_id: 'doc_v1' })
+    await expectSavedLink(user, { document_id: 'doc_v1' })
   })
 
   it('disables the document select until a project is chosen', async () => {
@@ -267,22 +235,20 @@ describe('validation link in the form editor', () => {
     // deciding "missing" from an empty list alarms the admin about a link that
     // is perfectly fine. The stored id must still be the select's value — Save
     // has to round-trip it either way — but under a neutral label.
-    let resolveDetail: (detail: unknown) => void = () => {}
+    const detail = { resolve: (_detail: unknown) => {} }
     mockGetProject.mockImplementation(() => new Promise((resolve) => {
-      resolveDetail = resolve
+      detail.resolve = resolve
     }))
 
     await openValidationTab('PR/FAQ concept test')
 
-    await waitFor(() => {
-      expect(documentSelect()).toHaveValue('doc_prfaq')
-    })
+    await expectDocumentValue('doc_prfaq')
     expect(
       screen.queryByText(t('feedbackForms:editor.validationUnknownDocument')),
     ).not.toBeInTheDocument()
     expect(screen.getByText(t('feedbackForms:editor.validationLoadingLink'))).toBeInTheDocument()
 
-    resolveDetail({
+    detail.resolve({
       project_id: 'p1',
       documents: [
         { document_id: 'doc_prfaq', document_type: 'prfaq', title: 'Feature A PR/FAQ', content: '', created_at: '' },
@@ -294,52 +260,39 @@ describe('validation link in the form editor', () => {
     await waitFor(() => {
       expect(screen.getByText(PRFAQ_OPTION_LABEL)).toBeInTheDocument()
     })
-    expect(
-      screen.queryByText(t('feedbackForms:editor.validationLoadingLink')),
-    ).not.toBeInTheDocument()
-    expect(
-      screen.queryByText(t('feedbackForms:editor.validationUnknownDocument')),
-    ).not.toBeInTheDocument()
+    const transientLabels = [
+      t('feedbackForms:editor.validationLoadingLink'),
+      t('feedbackForms:editor.validationUnknownDocument'),
+    ]
+    expect(transientLabels.filter((label) => screen.queryByText(label) !== null)).toStrictEqual([])
   })
 
   it('keeps a link whose project no longer exists rather than showing it as unlinked', async () => {
     // Symmetric to the stale document: the id is still in formData, so showing
     // "-- Not linked --" tells the admin the form is unlinked while Save
     // persists the link anyway.
-    mockGetFeedbackForms.mockResolvedValue({
-      forms: [{ ...linkedForm, project_id: 'p_deleted' }],
-    })
+    const user = await openLinkedFormVariant({ project_id: 'p_deleted' })
 
-    const user = await openValidationTab('PR/FAQ concept test')
-
-    await waitFor(() => {
-      expect(projectSelect()).toHaveValue('p_deleted')
-    })
+    await expectProjectValue('p_deleted')
     expect(screen.getByText(t('feedbackForms:editor.validationUnknownProject'))).toBeInTheDocument()
 
-    await user.click(screen.getByText('Save Changes'))
-    await waitFor(() => {
-      expect(mockUpdateFeedbackForm).toHaveBeenCalled()
-    })
-    expect(mockUpdateFeedbackForm.mock.calls[0][1]).toMatchObject({ project_id: 'p_deleted' })
+    await expectSavedLink(user, { project_id: 'p_deleted' })
   })
 
   it('does not call an intact project link unavailable while the project list loads', async () => {
-    let resolveProjects: (projects: unknown) => void = () => {}
+    const projects = { resolve: (_projects: unknown) => {} }
     mockGetProjects.mockImplementation(() => new Promise((resolve) => {
-      resolveProjects = resolve
+      projects.resolve = resolve
     }))
 
     await openValidationTab('PR/FAQ concept test')
 
-    await waitFor(() => {
-      expect(projectSelect()).toHaveValue('p1')
-    })
+    await expectProjectValue('p1')
     expect(
       screen.queryByText(t('feedbackForms:editor.validationUnknownProject')),
     ).not.toBeInTheDocument()
 
-    resolveProjects({
+    projects.resolve({
       projects: [
         { project_id: 'p1', name: 'Project One', status: 'active', created_at: '', updated_at: '', persona_count: 0, document_count: 1 },
       ],
@@ -476,13 +429,7 @@ describe('validation link in the form editor', () => {
     ).not.toBeInTheDocument()
 
     // And the link still round-trips: a failed lookup must not clear it.
-    await user.click(screen.getByText('Save Changes'))
-    await waitFor(() => {
-      expect(mockUpdateFeedbackForm).toHaveBeenCalled()
-    })
-    expect(mockUpdateFeedbackForm.mock.calls[0][1]).toMatchObject({
-      project_id: 'p1', document_id: 'doc_prfaq',
-    })
+    await expectSavedLink(user, { project_id: 'p1', document_id: 'doc_prfaq' })
   })
 
   it('does not claim to be loading a document list it will never request', async () => {
@@ -491,11 +438,7 @@ describe('validation link in the form editor', () => {
     // this shape. It disables the detail query, so the list can never resolve and
     // "Loading link…" would sit there forever: the same defect one level down
     // from the one this control was fixed for.
-    mockGetFeedbackForms.mockResolvedValue({
-      forms: [{ ...linkedForm, project_id: '', document_id: 'doc_orphan' }],
-    })
-
-    await openValidationTab('PR/FAQ concept test')
+    await openLinkedFormVariant({ project_id: '', document_id: 'doc_orphan' })
 
     await waitFor(() => {
       expect(
@@ -504,10 +447,11 @@ describe('validation link in the form editor', () => {
     })
     expect(documentSelect()).toBeDisabled()
     expect(documentSelect()).toHaveValue('doc_orphan')
-    expect(mockGetProject).not.toHaveBeenCalled()
-    expect(
-      screen.queryByText(t('feedbackForms:editor.validationLoadingLink')),
-    ).not.toBeInTheDocument()
+    // No detail request without a project, so nothing to wait on either.
+    expect({
+      detailRequests: mockGetProject.mock.calls.length,
+      showsLoading: screen.queryByText(t('feedbackForms:editor.validationLoadingLink')) !== null,
+    }).toStrictEqual({ detailRequests: 0, showsLoading: false })
   })
 
   it('does not claim to be loading when the project detail request fails', async () => {

@@ -9,23 +9,30 @@
  */
 
 import { useState } from 'react'
-import { FileDown } from 'lucide-react'
 import { getDateRangeParams } from '../../api/client'
-import type { FeedbackItem } from '../../api/client'
+import type { FeedbackItem } from '../../api/types'
 import { useConfigStore } from '../../store/configStore'
 import { getTimeRangeLabel } from '../../utils/dateUtils'
 import type { ViewMode } from './types'
 import { FilterBar } from './FilterBar'
 import { SentimentGauge } from './SentimentGaugeCard'
+import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import { WordCloudCard } from './WordCloudCard'
 import { CategoryDistribution } from './CategoryDistribution'
 import { FeedbackResults } from './FeedbackResults'
 import { generateCategoriesPDF } from './categoriesPdfGenerator'
-import { useCategoryFilters } from './useCategoryFilters'
+import { attributeFiltersOf, useCategoryFilters } from './useCategoryFilters'
+import { AttributeFilterControls } from './AttributeFilterControls'
+import { useDimensionsConfig } from '../../hooks/useDimensions'
+import type { CategoryFiltersApi } from './useCategoryFilters'
 import { useFeedbackListData } from './useFeedbackListData'
 import { useCategoryAnalytics } from './useCategoryAnalytics'
+import type { CategoryAnalytics } from './useCategoryAnalytics'
 import { csvField } from '../../utils/csv'
 import { useTranslation } from 'react-i18next'
+import { CenteredSpinner, ExportPageHeader } from './ExportPageHeader'
+import LoadFailed from '../../components/LoadFailed/LoadFailed'
+import ScopeNotice from '../../components/ScopeNotice/ScopeNotice'
 
 function exportFeedbackCsv(items: FeedbackItem[]): void {
   const csv = [
@@ -65,6 +72,43 @@ function safeGeneratePdf(generate: () => void): void {
   }
 }
 
+/** The three analytics cards — or, when their reads failed, a LoadFailed (not "no categories" and 0 %). */
+function AnalyticsCards({ analytics, filters }: Readonly<{ analytics: CategoryAnalytics; filters: CategoryFiltersApi }>) {
+  const labels = useDisplayLabels()
+  if (analytics.loadFailed) {
+    return (
+      <div className="col-span-full">
+        <LoadFailed onRetry={analytics.retry} retrying={analytics.retrying} />
+      </div>
+    )
+  }
+  return (
+    <>
+      <CategoryDistribution
+        categoryData={analytics.categoryData}
+        totalIssues={analytics.totalIssues}
+        uncategorised={analytics.uncategorised}
+        periodDays={analytics.periodDays}
+        selectedCategories={filters.selectedCategories}
+        onToggleCategory={filters.toggleCategory}
+      />
+      <SentimentGauge
+        sentimentData={analytics.gauge.sentimentData}
+        sentimentFilter={filters.sentimentFilter}
+        onSentimentFilterChange={filters.setSentimentFilter}
+        percentages={analytics.gauge.percentages}
+        scopeLabel={analytics.gauge.scopeCategory === null ? null : labels.category(analytics.gauge.scopeCategory)}
+        isLoading={analytics.gauge.isLoading}
+      />
+      <WordCloudCard
+        wordCloudData={analytics.wordCloudData}
+        searchText={filters.searchText}
+        onSearchChange={filters.setSearchText}
+      />
+    </>
+  )
+}
+
 export default function Categories() {
   const { t } = useTranslation(['common', 'categories'])
   const { timeRange, customDays, dateBasis, config } = useConfigStore()
@@ -73,7 +117,10 @@ export default function Categories() {
   const filters = useCategoryFilters()
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
 
-  const analytics = useCategoryAnalytics(dateParams, filters.selectedSource, config.apiEndpoint)
+  const { data: dimensionsConfig } = useDimensionsConfig()
+  const analytics = useCategoryAnalytics(
+    dateParams, filters.selectedSource, config.apiEndpoint, attributeFiltersOf(filters), filters.selectedCategories,
+  )
   const feedback = useFeedbackListData(dateParams, filters, config.apiEndpoint)
 
   const exportCsv = () => exportFeedbackCsv(feedback.filteredFeedback)
@@ -93,21 +140,25 @@ export default function Categories() {
   if (!config.apiEndpoint) {
     return (
       <div className="flex items-center justify-center h-full">
-        <p className="text-gray-500">{t('categories:configureApiEndpoint')}</p>
+        <p className="text-muted">{t('categories:configureApiEndpoint')}</p>
       </div>
     )
   }
 
   if (analytics.isLoading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      </div>
-    )
+    return <CenteredSpinner />
   }
 
   return (
     <div className="space-y-4 sm:space-y-6">
+      <ExportPageHeader
+        title={t('categories:title')}
+        subtitle={t('categories:subtitle')}
+        onExport={exportPdf}
+      />
+
+      <ScopeNotice />
+
       <FilterBar
         searchText={filters.searchText}
         onSearchChange={filters.setSearchText}
@@ -120,38 +171,24 @@ export default function Categories() {
         onRatingFilterChange={filters.setRatingFilter}
         hasActiveFilters={filters.hasActiveFilters}
         onClearFilters={filters.clearFilters}
-        trailing={
-          <button
-            onClick={exportPdf}
-            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 whitespace-nowrap"
-            title={t('exportPdfTooltip')}
-          >
-            <FileDown size={14} />
-            {t('exportPdf')}
-          </button>
-        }
-      />
+      >
+        <AttributeFilterControls
+          channels={analytics.allChannels}
+          channel={filters.channel}
+          onChannelChange={filters.setChannel}
+          tags={analytics.allTags}
+          tag={filters.tag}
+          onTagChange={filters.setTag}
+          dimensions={dimensionsConfig?.dimensions ?? []}
+          dimensionFilter={filters.dimensionFilter}
+          onDimensionFilterChange={filters.setDimensionFilter}
+        />
+      </FilterBar>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-        <CategoryDistribution
-          categoryData={analytics.categoryData}
-          totalIssues={analytics.totalIssues}
-          periodDays={analytics.periodDays}
-          selectedCategories={filters.selectedCategories}
-          onToggleCategory={filters.toggleCategory}
-        />
-        <SentimentGauge
-          sentimentData={analytics.sentimentData}
-          avgSentiment={analytics.avgSentiment}
-          sentimentFilter={filters.sentimentFilter}
-          onSentimentFilterChange={filters.setSentimentFilter}
-          percentages={analytics.sentimentPercentages}
-        />
-        <WordCloudCard
-          wordCloudData={analytics.wordCloudData}
-          searchText={filters.searchText}
-          onSearchChange={filters.setSearchText}
-        />
+      {/* Columns by card width (rem), not viewport: at 200 % text the cards
+          stack instead of squeezing to ~175 px (WCAG 1.4.4 / 1.4.10). */}
+      <div data-testid="analytics-cards" className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,17rem),1fr))] gap-4 sm:gap-6">
+        <AnalyticsCards analytics={analytics} filters={filters} />
       </div>
 
       <FeedbackResults
@@ -167,8 +204,11 @@ export default function Categories() {
         totalCount={feedback.totalCount}
         isPartialWindow={feedback.isPartialWindow}
         hasMore={feedback.hasMore}
+        loadedCount={feedback.loadedCount}
         onLoadMore={feedback.loadMore}
         isLoadingMore={feedback.isLoadingMore}
+        failure={feedback.failure}
+        subcategory={filters.subcategory === null ? null : { id: filters.subcategory, onClear: () => filters.setSubcategory(null) }}
       />
     </div>
   )

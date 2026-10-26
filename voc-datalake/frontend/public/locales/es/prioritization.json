@@ -7,7 +7,7 @@
     "savingMobile": "..."
   },
   "ballot": {
-    "anonymousNotice": "Tu voto es anónimo: cuenta para la puntuación del equipo de este documento, pero no se atribuye a ti ni a nadie más.",
+    "anonymousNotice": "Tu voto cuenta para la puntuación del equipo de esta propuesta. No está vinculado a ninguna cuenta, y tu nombre solo se guarda si lo escribes abajo.",
     "axes": {
       "confidence": "Confianza",
       "confidenceHint": "¿Qué seguridad tienes en las dos estimaciones anteriores?",
@@ -28,7 +28,7 @@
       "unknown": "No se ha podido registrar tu voto en este momento. Inténtalo de nuevo en un instante."
     },
     "displayName": {
-      "hint": "Opcional. Los votos no se atribuyen a ninguna persona, así que puedes dejarlo en blanco.",
+      "hint": "Opcional. Si escribes un nombre, se guarda con tu voto; no se muestra en la puntuación del equipo. Déjalo en blanco para votar sin nombre.",
       "label": "Tu nombre (opcional)"
     },
     "done": {
@@ -49,6 +49,7 @@
       "pending": "Enviando..."
     },
     "title": "Puntúa esta propuesta",
+    "titleInactive": "Votación de la propuesta",
     "unavailable": {
       "description": "No se ha enviado nada. Vuelve a cargar la página para intentarlo de nuevo; la votación en sí puede estar abierta.",
       "title": "No se ha podido cargar esta votación"
@@ -76,7 +77,7 @@
     "saving": "Guardando...",
     "title": "Qué contiene esta fila"
   },
-  "configureApiEndpoint": "Configure el endpoint de la API en Configuración para ver la priorización.",
+  "configureApiEndpoint": "Configure el endpoint de la API en Administración → Configuración general para ver la priorización.",
   "docType": {
     "prd": "PRD",
     "prfaq": "PR/FAQ"
@@ -96,7 +97,7 @@
     "unavailable": "Valoraciones no disponibles"
   },
   "framework": {
-    "description": "Puntúe cada documento en: <strong>Impacto</strong>, <strong>Tiempo de comercialización</strong>, <strong>Ajuste estratégico</strong> y <strong>Confianza</strong>.",
+    "configured": "Puntúa cada propuesta en: <strong>{{metrics}}</strong>.",
     "title": "Marco de priorización"
   },
   "lineage": {
@@ -113,7 +114,7 @@
   },
   "loading": "Cargando documentos...",
   "noteTooLong": {
-    "description": "Las notas están limitadas a {{max}} caracteres, y una nota más larga se rechaza en lugar de recortarse. Acorte la nota de la fila que editó y vuelva a guardar. Todavía no se ha guardado nada.",
+    "description": "Las notas están limitadas a {{max, number}} caracteres, y una nota más larga se rechaza en lugar de recortarse. Acorte la nota de la fila que editó y vuelva a guardar. Todavía no se ha guardado nada.",
     "title": "Una nota es demasiado larga para guardarla"
   },
   "notes": {
@@ -134,12 +135,16 @@
     "none": "Sin puntuar"
   },
   "roomVote": {
-    "anonymousNote": "Los votos emitidos aquí cuentan para la puntuación del equipo de arriba y no se atribuyen a ninguna persona.",
-    "ballotsIn": "{{received}} de {{cap}} votos recibidos",
+    "anonymousNote": "Los votos emitidos aquí cuentan para la puntuación del equipo de arriba. No están vinculados a ninguna cuenta; solo se guarda un nombre si quien vota lo escribe, y no se muestra aquí.",
+    "ballotsIn": "{{received, number}} de {{cap, number}} votos recibidos",
+    "checking": "Comprobando si ya hay una votación abierta...",
     "close": "Cerrar la votación",
     "closeFailed": "No se ha podido cerrar la votación. Inténtalo de nuevo: hasta que se cierre, se siguen aceptando votos.",
     "closed": "Esta votación está cerrada. No se aceptan más votos.",
     "closing": "Cerrando...",
+    "confirmMessage": "Esto crea un enlace público y un código QR para «{{title}}». Cualquiera que tenga el enlace puede enviar un voto, sin iniciar sesión, hasta que cierres la votación o caduque.",
+    "confirmOpen": "Abrir la votación",
+    "confirmTitle": "¿Abrir una votación pública en la sala?",
     "description": "Pon un código QR en pantalla y deja que todos los presentes envíen un voto anónimo desde su teléfono, sin cuenta.",
     "expired": "Esta votación ha caducado. No se aceptan más votos.",
     "open": "Abrir una votación en sala",
@@ -149,12 +154,12 @@
     "qrAccessibleName": "Código QR que abre la página de voto anónimo de {{title}}",
     "qrCaption": "Escanea para puntuar esta propuesta desde un teléfono",
     "qrUnavailable": "El código QR no está disponible porque la dirección de esta página no se puede compartir.",
-    "scopeDocuments": "Una papeleta cubre los {{documents}} documentos que hay detrás, así que la sala puntúa la propuesta completa.",
+    "scopeDocuments": "Una papeleta cubre los {{documents, number}} documentos que hay detrás, así que la sala puntúa la propuesta completa.",
     "scopeNote": "Esta votación puntúa una propuesta: {{title}}.",
     "title": "Puntuar en sala"
   },
   "row": {
-    "multiDocument": "{{documents}} documentos, una papeleta"
+    "multiDocument": "{{documents, number}} documentos, una papeleta"
   },
   "rowAction": {
     "composeConflict": "No se ha añadido la fila al proyecto de {{row}}. O el proyecto ya tiene todas las filas que puede tener, o sus documentos han cambiado. Vuelva a cargar la página para ver las filas actuales.",
@@ -169,12 +174,12 @@
     "recomposeRefused": "Los documentos de «{{row}}» no se han cambiado, y la solicitud se ha rechazado en lugar de fallar: revise lo que ha elegido — una fila solo puede contener un número limitado de documentos, y todos deben seguir estando en el proyecto.",
     "title": "Ese cambio en las filas no se ha guardado"
   },
-  "rowCount_one": "{{count}} propuesta",
-  "rowCount_other": "{{count}} propuestas",
+  "rowCount_one": "{{count, number}} propuesta",
+  "rowCount_other": "{{count, number}} propuestas",
   "rowDeleted": {
     "descriptionNoCount": "«{{row}}» ya no existe, junto con las papeletas que se hubieran emitido. No se ha informado del número de papeletas.",
     "description_one": "«{{row}}» ya no existe, y con ella se ha eliminado la única papeleta emitida.",
-    "description_other": "«{{row}}» ya no existe, y con ella se han eliminado las {{count}} papeletas emitidas.",
+    "description_other": "«{{row}}» ya no existe, y con ella se han eliminado las {{count, number}} papeletas emitidas.",
     "dismiss": "Descartar este mensaje",
     "title": "La fila se ha eliminado"
   },
@@ -197,32 +202,115 @@
     "timeToMarket": "Tiempo de comercialización",
     "timeToMarketDescription": "¿Qué tan rápido se puede entregar?",
     "title": "Puntuaciones de priorización",
-    "wholeRow": "Una sola papeleta para los {{documents}} documentos de esta fila.",
-    "yoursOnly": "Tu propia puntuación. Al guardar solo se escriben tus valores."
+    "wholeRow": "Una sola papeleta para los {{documents, number}} documentos de esta fila.",
+    "yoursOnly": "Tu propia puntuación. Al guardar solo se escriben tus valores.",
+    "valueOfMax": "{{value}} de {{max, number}}"
   },
   "scoresUnavailable": {
     "description": "Sus puntuaciones guardadas no están disponibles en este momento, por lo que los números que se muestran a continuación son valores predeterminados y no los que alguien introdujo. Vuelva a cargar la página antes de guardar.",
     "staleDescription": "La última actualización de las puntuaciones guardadas falló, por lo que las cifras que se muestran son las últimas que se leyeron correctamente. Su propia valoración no se ha visto afectada: no hace falta recargar antes de guardar.",
     "title": "No se pudieron cargar las puntuaciones"
   },
+  "setup": {
+    "open": "Configuración de puntuación",
+    "viewOpen": "Cómo se puntúa",
+    "title": "Configuración de puntuación",
+    "description": "Elige las métricas con las que todos puntúan las propuestas, del 1 al 5, y cuánto cuenta cada una. El cambio se aplica a todas las filas.",
+    "viewTitle": "Cómo se puntúa",
+    "viewDescription": "Todos puntúan cada propuesta en estas métricas, del 1 al 5. La puntuación de prioridad las pondera como se muestra.",
+    "adminsOnly": "Solo los administradores pueden cambiar la configuración de puntuación.",
+    "loading": "Cargando la configuración de puntuación",
+    "loadFailed": "No se pudo cargar la configuración de puntuación. Ciérrala e inténtalo de nuevo.",
+    "templatesTitle": "Empezar con una plantilla",
+    "templateConfirmTitle": "¿Usar la plantilla {{template}}?",
+    "templateBecomes": "Tus métricas pasan a ser {{metrics}}.",
+    "templateArchives": "Estas se archivan: sus puntuaciones se conservan, pero dejan de contar: {{metrics}}.",
+    "templateNotSaved": "Nada cambia para nadie hasta que pulses Guardar.",
+    "templateApply": "Usar plantilla",
+    "metricsTitle": "Métricas ({{active, number}} de {{max, number}})",
+    "addMetric": "Añadir métrica",
+    "untitled": "Nueva métrica",
+    "name": "Nombre",
+    "descriptionLabel": "Descripción",
+    "weight": "Peso",
+    "weightOf": "Peso de {{name}}",
+    "share": "{{share}} % de la puntuación",
+    "direction": "Qué es mejor",
+    "higherBetter": "Más alto es mejor",
+    "lowerBetter": "Más bajo es mejor",
+    "higherBetterHint": "Un 5 hace que la propuesta suba en la clasificación.",
+    "lowerBetterHint": "Un 1 hace que la propuesta suba en la clasificación: úsalo para costes como el esfuerzo.",
+    "lowLabel": "Qué significa 1",
+    "highLabel": "Qué significa 5",
+    "scale": "1 = {{low}}, 5 = {{high}}",
+    "moveUp": "Subir {{name}}",
+    "moveDown": "Bajar {{name}}",
+    "archive": "Archivar",
+    "archiveMetric": "Archivar {{name}}",
+    "archiveHint": "Oculta esta métrica. Las puntuaciones ya dadas se conservan y puedes restaurarla.",
+    "archivedTitle": "Métricas archivadas ({{archived, number}})",
+    "archivedHint": "Las métricas archivadas no se muestran, no se puntúan ni cuentan. Sus puntuaciones se conservan; restaura una para volver a usarla.",
+    "restore": "Restaurar",
+    "conflict": "Otra persona cambió la configuración de puntuación mientras editabas. Vuelve a cargarla para ver su versión y repite tu cambio.",
+    "reload": "Volver a cargar",
+    "saveFailed": "No se pudo guardar la configuración de puntuación. Inténtalo de nuevo.",
+    "cancel": "Cancelar",
+    "save": "Guardar configuración",
+    "saving": "Guardando…",
+    "close": "Cerrar",
+    "neverChanged": "Se usa la configuración estándar.",
+    "changedBy": "Último cambio de {{name}} el {{date}}",
+    "changedOn": "Último cambio el {{date}}",
+    "problems": {
+      "missingName": "Pon un nombre a cada métrica.",
+      "noActive": "Mantén al menos una métrica.",
+      "tooManyActive": "Usa como máximo {{max, number}} métricas a la vez: archiva una primero.",
+      "tooMany": "Una configuración puede tener como máximo {{total, number}} métricas, incluidas las archivadas.",
+      "noWeight": "Da a al menos una métrica un peso mayor que 0."
+    },
+    "templates": {
+      "default": "Predeterminada actual",
+      "defaultDescription": "Impacto, tiempo de lanzamiento, encaje estratégico y confianza.",
+      "rice": "RICE",
+      "riceDescription": "Alcance, impacto y confianza, frente al esfuerzo que requiere.",
+      "ice": "ICE",
+      "iceDescription": "Impacto, confianza y facilidad: rápida de puntuar.",
+      "valueEffort": "Valor frente a esfuerzo",
+      "valueEffortDescription": "Dos métricas: lo que vale y lo que cuesta."
+    },
+    "templateAxes": {
+      "reach": "Alcance",
+      "reachDescription": "A cuántas personas llega",
+      "reachLow": "Pocas personas",
+      "reachHigh": "Muchas personas",
+      "effort": "Esfuerzo",
+      "effortDescription": "Cuánto trabajo requiere",
+      "effortLow": "Poco trabajo",
+      "effortHigh": "Mucho trabajo",
+      "ease": "Facilidad",
+      "easeDescription": "Qué tan fácil es de hacer",
+      "easeLow": "Difícil",
+      "easeHigh": "Fácil",
+      "value": "Valor",
+      "valueDescription": "Cuánto vale para los clientes y el negocio"
+    }
+  },
   "sort": {
     "date": "Fecha",
     "dateFull": "Fecha de creación",
-    "impact": "Impacto",
     "label": "Ordenar por:",
     "priority": "Prioridad",
     "priorityFull": "Puntuación de prioridad",
-    "teamOrdered": "{{fields}} ordenan según los números del equipo, los que muestra cada fila, no según tu propia puntuación.",
-    "ttm": "TdC",
-    "ttmFull": "Tiempo de comercialización"
+    "teamOrdered": "{{fields}} ordenan por la media del equipo —el número que muestra cada fila—, no por sus propias puntuaciones.",
+    "ttm": "TdC"
   },
   "stats": {
     "highPriority": "Alta prioridad",
     "mediumPriority": "Prioridad media",
     "notScored": "Sin puntuar",
     "totalRows": "Propuestas totales",
-    "unreadable_one": "No se ha podido leer la puntuación del equipo de {{count}} propuesta, así que solo cuenta en el total y en ninguno de los demás recuentos. Vuelve a cargar la página para verla.",
-    "unreadable_other": "No se han podido leer las puntuaciones del equipo de {{count}} propuestas, así que solo cuentan en el total y en ninguno de los demás recuentos. Vuelve a cargar la página para verlas."
+    "unreadable_one": "No se ha podido leer la puntuación del equipo de {{count, number}} propuesta, así que solo cuenta en el total y en ninguno de los demás recuentos. Vuelve a cargar la página para verla.",
+    "unreadable_other": "No se han podido leer las puntuaciones del equipo de {{count, number}} propuestas, así que solo cuentan en el total y en ninguno de los demás recuentos. Vuelve a cargar la página para verlas."
   },
   "subtitle": "Puntuar y priorizar PRD y PR/FAQs en todos los proyectos",
   "team": {
@@ -241,10 +329,14 @@
     "unavailableDescription": "Las puntuaciones del equipo no se han podido leer ahora mismo, así que esta fila no muestra nada sobre ellas; no significa que nadie haya votado. Vuelve a cargar la página para ver lo que dijo el equipo."
   },
   "title": "Priorización",
-  "unsavedChanges": {
-    "cancel": "Permanecer en la página",
-    "confirm": "Descartar cambios",
-    "message": "Tiene puntuaciones de priorización sin guardar. ¿Desea descartar los cambios y abandonar esta página?",
-    "title": "Cambios sin guardar"
+  "explainer": {
+    "title": "Cómo se puntúa",
+    "scoreConfigured": "Cada revisor puntúa cada métrica del 1 al 5. La puntuación de prioridad las pondera así: {{weights}}.",
+    "unscored": "Una métrica que un revisor deja sin puntuar no se tiene en cuenta en su puntuación, en lugar de contar como 0.",
+    "weightEntry": "{{name}} {{share}} %",
+    "weightEntryLower": "{{name}} {{share}} % (cuanto más bajo, mejor)",
+    "team": "Cada fila muestra la media del equipo entre quienes la puntuaron, y cuántos lo hicieron. Sus propias puntuaciones son los controles deslizantes dentro de la fila.",
+    "lineageTitle": "Qué significa la etiqueta de una fila",
+    "rowNote": "{{label}}: se explica en «Cómo se puntúa», encima de la lista."
   }
 }

@@ -1,0 +1,22 @@
+{
+  "schema": "verification.fixture.v1",
+  "capabilities": [
+    "seed.prioritization-baseline"
+  ],
+  "expectations": {
+    "seed.prioritization-baseline": {
+      "documentRoles": [
+        "scorable_prd"
+      ],
+      "rowRoles": [
+        "baseline_row"
+      ],
+      "counts": {
+        "projects": 1,
+        "documents": 1,
+        "rows": 1
+      },
+      "providerProtocol": "verification.fixture.provider.request.v1"
+    }
+  }
+}

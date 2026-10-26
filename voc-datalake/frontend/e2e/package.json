@@ -1,0 +1,15 @@
+{
+  "name": "voc-frontend-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Production end-to-end suite (Playwright). Isolated from the app's dependency tree on purpose; see README.md.",
+  "scripts": {
+    "test": "playwright test -c playwright.config.ts"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.63.0",
+    "@types/node": "24.10.1",
+    "typescript": "5.9.3"
+  }
+}

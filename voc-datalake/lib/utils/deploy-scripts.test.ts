@@ -13,11 +13,16 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
+import { byCodeUnit } from './compare';
+import { itemAt } from '../test-support/guards';
 
 const PROJECT_ROOT = join(__dirname, '..', '..');
 const UPDATE_ENV_SH = join(PROJECT_ROOT, 'frontend', 'scripts', 'update-env.sh');
 const DEPLOY_SH = join(PROJECT_ROOT, 'frontend', 'scripts', 'deploy.sh');
 const RUNTIME_CONFIG_TS = join(PROJECT_ROOT, 'frontend', 'src', 'runtimeConfig.ts');
+const REFRESH_API_STAGE_SH = join(PROJECT_ROOT, 'scripts', 'refresh-api-stage.sh');
+const CDK_DEPLOY_SH = join(PROJECT_ROOT, 'scripts', 'cdk-deploy.sh');
 
 /**
  * Stack ids the CDK app actually constructs. Two accepted shapes:
@@ -36,7 +41,7 @@ function declaredStackIds(): Set<string> {
   const source = readFileSync(join(PROJECT_ROOT, 'bin', 'voc-datalake.ts'), 'utf8');
   const ids = [
     ...source.matchAll(/new\s+\w+\s*\(\s*app\s*,\s*(?:stackId\(\s*)?'([^']+)'/g),
-  ].map((m) => m[1]);
+  ].map((m) => itemAt(m, 1));
   return new Set(ids);
 }
 
@@ -55,16 +60,19 @@ function declaredStackIds(): Set<string> {
  */
 const LITERAL_STACK_NAME = /--stack-name\s+['"]?([\w-]*Stack)\b/;
 
+/** The one part of package.json this suite reads. */
+const PackageScriptsSchema = z.object({ scripts: z.record(z.string(), z.string()).optional() });
+
 /** `deploy:*` scripts whose command is a bare `cdk deploy <SingleStack>`. */
 function stackTargetedScripts(): Array<{ name: string; stack: string }> {
-  const pkg = JSON.parse(
-    readFileSync(join(PROJECT_ROOT, 'package.json'), 'utf8'),
-  ) as { scripts?: Record<string, string> };
+  const pkg = PackageScriptsSchema.parse(
+    JSON.parse(readFileSync(join(PROJECT_ROOT, 'package.json'), 'utf8')),
+  );
   const out: Array<{ name: string; stack: string }> = [];
   for (const [name, command] of Object.entries(pkg.scripts ?? {})) {
     if (!name.startsWith('deploy')) continue;
-    const match = /^(?:npx\s+)?cdk\s+deploy\s+(\w+Stack)\s*$/.exec(command.trim());
-    if (match) out.push({ name, stack: match[1] });
+    const match = /^(?:(?:npx\s+)?cdk\s+deploy|bash\s+scripts\/cdk-deploy\.sh)\s+(\w+Stack)\s*$/.exec(command.trim());
+    if (match) out.push({ name, stack: itemAt(match, 1) });
   }
   return out;
 }
@@ -77,8 +85,8 @@ describe('package.json deploy scripts', () => {
       dead,
       `deploy script(s) target non-existent stacks: ${dead
         .map((d) => `${d.name} -> ${d.stack}`)
-        .join(', ')}. Known stacks: ${[...declared].sort().join(', ')}`,
-    ).toEqual([]);
+        .join(', ')}. Known stacks: ${[...declared].sort(byCodeUnit).join(', ')}`,
+    ).toStrictEqual([]);
   });
 
   it('finds stacks to check, so the guard cannot silently pass on a parse failure', () => {
@@ -98,6 +106,7 @@ describe('package.json deploy scripts', () => {
 describe.each([
   ['frontend/scripts/update-env.sh', UPDATE_ENV_SH],
   ['frontend/scripts/deploy.sh', DEPLOY_SH],
+  ['scripts/refresh-api-stage.sh', REFRESH_API_STAGE_SH],
 ])('%s', (label, path) => {
   const source = () => readFileSync(path, 'utf8');
 
@@ -107,14 +116,14 @@ describe.each([
     // wrote an empty env file and local dev looked broken for reasons nothing
     // pointed at.
     const declared = declaredStackIds();
-    const defaults = [...source().matchAll(/^\w*STACK="\$\{\w+:-(\w+Stack)\}"/gm)].map((m) => m[1]);
+    const defaults = [...source().matchAll(/^\w*STACK="\$\{\w+:-(\w+Stack)\}"/gm)].map((m) => itemAt(m, 1));
     expect(defaults.length, 'expected STACK="${OVERRIDE:-Default}" declarations').toBeGreaterThan(0);
     const dead = defaults.filter((stack) => !declared.has(stack));
     expect(
       dead,
       `${label} defaults to non-existent stack(s): ${dead.join(', ')}. ` +
-        `Known stacks: ${[...declared].sort().join(', ')}`,
-    ).toEqual([]);
+        `Known stacks: ${[...declared].sort(byCodeUnit).join(', ')}`,
+    ).toStrictEqual([]);
   });
 
   it('names no stack literally, so a prefixed deployment can redirect it', () => {
@@ -128,7 +137,7 @@ describe.each([
     expect(
       literals,
       `${label} hardcodes stack name(s): ${literals.join(', ')}. Use "$CORE_STACK"/"$API_STACK".`,
-    ).toEqual([]);
+    ).toStrictEqual([]);
     // ...and it really does query CloudFormation, so the assertion above cannot
     // pass merely because the script stopped resolving stacks altogether. This
     // also pins that the variable is QUOTED — an unquoted $CORE_STACK would word-
@@ -185,7 +194,7 @@ describe('frontend/scripts/update-env.sh', () => {
       [...source().matchAll(/^(VITE_[A-Z_]+)=/gm)].map((m) => m[1]),
     );
     const missing = required.filter((name) => !written.has(name));
-    expect(missing, `update-env.sh never writes: ${missing.join(', ')}`).toEqual([]);
+    expect(missing, `update-env.sh never writes: ${missing.join(', ')}`).toStrictEqual([]);
   });
 
   it('writes .env, which the vite dev server actually reads', () => {
@@ -193,5 +202,59 @@ describe('frontend/scripts/update-env.sh', () => {
     // script could not fix local development no matter what it put in the file.
     expect(source()).toMatch(/^cat > \.env <</m);
     expect(source()).not.toMatch(/^cat > \.env\.production <</m);
+  });
+});
+
+/** Every `deploy*` script of the repo root and voc-datalake package.json files. */
+function allDeployScripts(): Array<{ file: string; name: string; command: string }> {
+  return [join(PROJECT_ROOT, '..', 'package.json'), join(PROJECT_ROOT, 'package.json')].flatMap((file) => {
+    const pkg = PackageScriptsSchema.parse(JSON.parse(readFileSync(file, 'utf8')));
+    return Object.entries(pkg.scripts ?? {})
+      .filter(([name]) => name.startsWith('deploy'))
+      .map(([name, command]) => ({ file, name, command }));
+  });
+}
+
+// 3.00.00 R1: a removed route stayed live on the stage, because CloudFormation
+// snapshots the new Deployment BEFORE its cleanup phase deletes the removed
+// methods (scripts/refresh-api-stage.sh explains). The fix is a stage refresh
+// after the deploy, so every deploy command that can update the API must run it.
+describe('API stage refresh after deploy (R1)', () => {
+  it('every deploy script that can update VocApiStack goes through scripts/cdk-deploy.sh', () => {
+    const scripts = allDeployScripts();
+    const updatesApi = scripts.filter(({ command }) => /cdk(?:-deploy\.sh|\s+deploy|\s+--\s+deploy)/.test(command)
+      && (/--all\b/.test(command) || /VocApiStack/.test(command)));
+    expect(updatesApi.map((s) => s.name), 'expected deploy:infra, deploy and deploy:api').toStrictEqual(
+      expect.arrayContaining(['deploy:infra', 'deploy', 'deploy:api']),
+    );
+    const bypassing = updatesApi.filter(({ command }) => !command.includes('scripts/cdk-deploy.sh'));
+    expect(bypassing.map((s) => `${s.name}: ${s.command}`)).toStrictEqual([]);
+  });
+
+  it('cdk-deploy.sh refreshes the stage only after cdk deploy succeeded', () => {
+    const source = readFileSync(CDK_DEPLOY_SH, 'utf8');
+    expect(source).toMatch(/^set -euo pipefail$/m);
+    const deployAt = source.indexOf('npx cdk deploy "$@"');
+    const refreshAt = source.indexOf('bash scripts/refresh-api-stage.sh');
+    expect(deployAt).toBeGreaterThan(-1);
+    expect(refreshAt).toBeGreaterThan(deployAt);
+  });
+
+  it('refresh-api-stage.sh creates a fresh deployment OF THE STAGE and nothing else', () => {
+    const source = readFileSync(REFRESH_API_STAGE_SH, 'utf8');
+    expect(source).toMatch(/^set -euo pipefail$/m);
+    expect(source).toMatch(/aws apigateway create-deployment\s*\\\n\s*--rest-api-id "\$API_ID"\s*\\\n\s*--stage-name "\$STAGE"/);
+    // Read-only apart from that one call: no other mutating AWS verb.
+    // Every `aws <service> <verb>` the script runs (single spaces, as written there).
+    const verbs = [...source.matchAll(/\baws ([a-z0-9-]+) ([a-z0-9-]+)/g)].map((m) => itemAt(m, 2));
+    expect([...verbs].sort(byCodeUnit)).toStrictEqual(['create-deployment', 'describe-stacks']);
+  });
+
+  it('reads the outputs the API stack actually declares', () => {
+    const stack = readFileSync(join(PROJECT_ROOT, 'lib', 'stacks', 'api-stack.ts'), 'utf8');
+    for (const key of ['ApiId', 'ApiEndpoint']) {
+      expect(stack, `VocApiStack lost its ${key} output`).toMatch(new RegExp(`new cdk\\.CfnOutput\\(this, '${key}'`));
+      expect(readFileSync(REFRESH_API_STAGE_SH, 'utf8')).toContain(`output ${key}`);
+    }
   });
 });

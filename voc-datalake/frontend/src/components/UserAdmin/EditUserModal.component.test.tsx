@@ -3,11 +3,12 @@
  * submit mutation, and error display.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { screen, waitFor } from '@testing-library/react'
+import userEvent, { type UserEvent } from '@testing-library/user-event'
+import { renderWithQueryClient } from '../../test/query-client'
+import { cognitoUser } from './userAdmin-fixtures'
 
-const mockUpdateUser = vi.fn()
+const mockUpdateUser = vi.fn<(username: string, data: unknown) => Promise<unknown>>()
 
 vi.mock('../../api/client', () => ({
   api: {
@@ -16,35 +17,30 @@ vi.mock('../../api/client', () => ({
 }))
 
 import EditUserModal from './EditUserModal'
-import type { CognitoUser } from '../../api/types'
 
-const testUser: CognitoUser = {
-  username: 'user-123',
-  email: 'test@example.com',
-  name: 'Test User',
-  given_name: 'Test',
-  family_name: 'User',
-  status: 'CONFIRMED',
-  enabled: true,
-  groups: ['users'],
-  created_at: null,
-  last_modified: null,
+const testUser = cognitoUser({ username: 'user-123', name: 'Test User', given_name: 'Test', family_name: 'User' })
+
+type ModalProps = React.ComponentProps<typeof EditUserModal>
+
+/** Mount the modal open on `testUser`, with fresh close/success spies unless given. */
+function renderModal(overrides: Partial<ModalProps> = {}) {
+  const props: ModalProps = {
+    isOpen: true,
+    user: testUser,
+    onClose: vi.fn(),
+    onSuccess: vi.fn(),
+    ...overrides,
+  }
+  const user = userEvent.setup()
+  renderWithQueryClient(<EditUserModal {...props} />)
+  return { user, onClose: props.onClose, onSuccess: props.onSuccess }
 }
 
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
-  return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
-}
-
-const defaultProps = {
-  isOpen: true,
-  user: testUser,
-  onClose: vi.fn(),
-  onSuccess: vi.fn(),
+/** Replace the first name with `value` and press Save. */
+async function saveFirstName(user: UserEvent, value: string): Promise<void> {
+  await user.clear(screen.getByDisplayValue('Test'))
+  await user.type(screen.getByDisplayValue(''), value)
+  await user.click(screen.getByRole('button', { name: /save/i }))
 }
 
 describe('EditUserModal', () => {
@@ -54,28 +50,19 @@ describe('EditUserModal', () => {
   })
 
   it('renders nothing when isOpen is false', () => {
-    render(
-      <EditUserModal {...defaultProps} isOpen={false} />,
-      { wrapper: createWrapper() },
-    )
+    renderModal({ isOpen: false })
 
     expect(screen.queryByText('test@example.com')).not.toBeInTheDocument()
   })
 
   it('renders nothing when user is null', () => {
-    render(
-      <EditUserModal {...defaultProps} user={null} />,
-      { wrapper: createWrapper() },
-    )
+    renderModal({ user: null })
 
     expect(screen.queryByText('test@example.com')).not.toBeInTheDocument()
   })
 
   it('displays user email and pre-filled name fields when open', () => {
-    render(
-      <EditUserModal {...defaultProps} />,
-      { wrapper: createWrapper() },
-    )
+    renderModal()
 
     expect(screen.getByText('test@example.com')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Test')).toBeInTheDocument()
@@ -83,36 +70,22 @@ describe('EditUserModal', () => {
   })
 
   it('calls onClose when Cancel is clicked', async () => {
-    const onClose = vi.fn()
-    const user = userEvent.setup()
-
-    render(
-      <EditUserModal {...defaultProps} onClose={onClose} />,
-      { wrapper: createWrapper() },
-    )
+    const { user, onClose } = renderModal()
 
     await user.click(screen.getByRole('button', { name: /cancel/i }))
 
-    expect(onClose).toHaveBeenCalledOnce()
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 
   it('disables Save button when no changes are made', () => {
-    render(
-      <EditUserModal {...defaultProps} />,
-      { wrapper: createWrapper() },
-    )
+    renderModal()
 
     const saveButton = screen.getByRole('button', { name: /save/i })
     expect(saveButton).toBeDisabled()
   })
 
   it('enables Save button when name is changed', async () => {
-    const user = userEvent.setup()
-
-    render(
-      <EditUserModal {...defaultProps} />,
-      { wrapper: createWrapper() },
-    )
+    const { user } = renderModal()
 
     await user.clear(screen.getByDisplayValue('Test'))
     await user.type(screen.getByDisplayValue(''), 'Updated')
@@ -121,12 +94,7 @@ describe('EditUserModal', () => {
   })
 
   it('disables Save button when both name fields are cleared', async () => {
-    const user = userEvent.setup()
-
-    render(
-      <EditUserModal {...defaultProps} />,
-      { wrapper: createWrapper() },
-    )
+    const { user } = renderModal()
 
     await user.clear(screen.getByDisplayValue('Test'))
     await user.clear(screen.getByDisplayValue('User'))
@@ -135,18 +103,9 @@ describe('EditUserModal', () => {
   })
 
   it('calls updateUser API with correct args on submit', async () => {
-    const user = userEvent.setup()
-    const onClose = vi.fn()
-    const onSuccess = vi.fn()
+    const { user, onClose, onSuccess } = renderModal()
 
-    render(
-      <EditUserModal {...defaultProps} onClose={onClose} onSuccess={onSuccess} />,
-      { wrapper: createWrapper() },
-    )
-
-    await user.clear(screen.getByDisplayValue('Test'))
-    await user.type(screen.getByDisplayValue(''), 'NewFirst')
-    await user.click(screen.getByRole('button', { name: /save/i }))
+    await saveFirstName(user, 'NewFirst')
 
     await waitFor(() => {
       expect(mockUpdateUser).toHaveBeenCalledWith('user-123', {
@@ -156,23 +115,16 @@ describe('EditUserModal', () => {
     })
 
     await waitFor(() => {
-      expect(onSuccess).toHaveBeenCalledOnce()
-      expect(onClose).toHaveBeenCalledOnce()
+      expect(onSuccess).toHaveBeenCalledExactlyOnceWith()
+      expect(onClose).toHaveBeenCalledExactlyOnceWith()
     })
   })
 
   it('displays error when API returns success false', async () => {
     mockUpdateUser.mockResolvedValue({ success: false, message: 'Name too long' })
-    const user = userEvent.setup()
+    const { user } = renderModal()
 
-    render(
-      <EditUserModal {...defaultProps} />,
-      { wrapper: createWrapper() },
-    )
-
-    await user.clear(screen.getByDisplayValue('Test'))
-    await user.type(screen.getByDisplayValue(''), 'X')
-    await user.click(screen.getByRole('button', { name: /save/i }))
+    await saveFirstName(user, 'X')
 
     await waitFor(() => {
       expect(screen.getByText('Name too long')).toBeInTheDocument()
@@ -181,16 +133,9 @@ describe('EditUserModal', () => {
 
   it('displays error when API call throws', async () => {
     mockUpdateUser.mockRejectedValue(new Error('Network error'))
-    const user = userEvent.setup()
+    const { user } = renderModal()
 
-    render(
-      <EditUserModal {...defaultProps} />,
-      { wrapper: createWrapper() },
-    )
-
-    await user.clear(screen.getByDisplayValue('Test'))
-    await user.type(screen.getByDisplayValue(''), 'X')
-    await user.click(screen.getByRole('button', { name: /save/i }))
+    await saveFirstName(user, 'X')
 
     await waitFor(() => {
       expect(screen.getByText('Network error')).toBeInTheDocument()

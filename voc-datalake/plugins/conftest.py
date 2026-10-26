@@ -26,27 +26,29 @@ os.environ.setdefault('PROCESSING_QUEUE_URL', 'https://sqs.us-east-1.amazonaws.c
 os.environ.setdefault('RAW_DATA_BUCKET', '')
 os.environ.setdefault('SECRETS_ARN', 'arn:aws:secretsmanager:us-east-1:123456789:secret:test')
 os.environ.setdefault('BRAND_NAME', 'TestBrand')
-os.environ.setdefault('BRAND_HANDLES', '["@testbrand", "testbrand"]')
 os.environ.setdefault('SOURCE_PLATFORM', 'test_source')
 os.environ.setdefault('AWS_DEFAULT_REGION', 'us-east-1')
 os.environ.setdefault('POWERTOOLS_SERVICE_NAME', 'test-service')
 os.environ.setdefault('POWERTOOLS_METRICS_NAMESPACE', 'TestVoC')
-os.environ.setdefault('CIRCUIT_BREAKER_THRESHOLD', '3')
-os.environ.setdefault('CIRCUIT_BREAKER_WINDOW', '5')
-os.environ.setdefault('AUDIT_EVENT_BUS', '')
 os.environ.setdefault('WEBHOOK_SECRET', 'test-webhook-secret')
 
-# Credentials that cannot resolve to a real account. Belt to the braces of the
-# fixture below: if a call somehow escapes it, this is what stops the request from
-# being signed with a developer's or CI runner's live credentials.
-os.environ.setdefault('AWS_ACCESS_KEY_ID', 'testing')
-os.environ.setdefault('AWS_SECRET_ACCESS_KEY', 'testing')
-os.environ.setdefault('AWS_SESSION_TOKEN', 'testing')
-os.environ.setdefault('AWS_SECURITY_TOKEN', 'testing')
-# Stops botocore reading ~/.aws/{config,credentials} and an EC2/ECS metadata
-# endpoint, either of which can supply real credentials the four above do not
-# cover.
-os.environ.setdefault('AWS_EC2_METADATA_DISABLED', 'true')
+# Credentials that cannot resolve to a real account, ASSIGNED rather than
+# `setdefault`: a developer's or CI runner's exported keys would survive a
+# `setdefault`, which is exactly when this belt is needed. Environment keys come
+# first in botocore's credential chain, so with these in place nothing later in
+# the chain (profile, web identity, container or instance metadata) is consulted.
+# Belt to the braces of the fixture below: if a call somehow escapes it, the
+# request is signed with these placeholders, never with live credentials. `moto`
+# expects exactly these placeholder values.
+os.environ.update({
+    'AWS_ACCESS_KEY_ID': 'testing',
+    'AWS_SECRET_ACCESS_KEY': 'testing',
+    'AWS_SESSION_TOKEN': 'testing',
+    'AWS_SECURITY_TOKEN': 'testing',
+    # Stops botocore reading an EC2/ECS metadata endpoint, which can supply real
+    # credentials the four above do not cover.
+    'AWS_EC2_METADATA_DISABLED': 'true',
+})
 # `pop`, not `setdefault`: the point is to DISCARD a value inherited from the
 # developer's shell. Emptying the config file while leaving AWS_PROFILE pointing
 # into it makes the profile unresolvable, so botocore raises ProfileNotFound the
@@ -55,8 +57,8 @@ os.environ.setdefault('AWS_EC2_METADATA_DISABLED', 'true')
 # zero tests run. CI never sets a profile, so this lands only on developers.
 os.environ.pop('AWS_PROFILE', None)
 os.environ.pop('AWS_DEFAULT_PROFILE', None)
-os.environ.setdefault('AWS_CONFIG_FILE', os.devnull)
-os.environ.setdefault('AWS_SHARED_CREDENTIALS_FILE', os.devnull)
+os.environ['AWS_CONFIG_FILE'] = os.devnull
+os.environ['AWS_SHARED_CREDENTIALS_FILE'] = os.devnull
 
 
 @pytest.fixture(autouse=True)
@@ -107,7 +109,7 @@ def no_real_aws_calls():
 
     attempted = []
 
-    def _refuse(self, operation_name, api_params):
+    def _refuse(self, operation_name, _api_params):
         call = f"{self.meta.service_model.service_name}.{operation_name}"
         attempted.append(call)
         raise AssertionError(
@@ -130,3 +132,13 @@ def no_real_aws_calls():
         '`base_ingestor.CircuitBreaker.record_failure` or '
         '`_shared.circuit_breaker.get_dynamodb_resource` as well.'
     )
+
+
+@pytest.fixture(autouse=True)
+def no_source_profiles():
+    """Every plugin message passes the source policy (`_shared/source_policy_gate.py`);
+    serve "no profiles configured" from its cache instead of a DynamoDB read. A test
+    that needs a profile nests `seeded_source_profiles([...])` inside."""
+    from shared.test.source_profile_fixtures import seeded_source_profiles
+    with seeded_source_profiles():
+        yield

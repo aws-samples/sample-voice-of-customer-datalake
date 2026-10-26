@@ -11,11 +11,12 @@
  */
 
 import { useEffect, useState } from 'react'
-import { Navigate, useLocation } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
 import { authService } from '../../services/auth'
 import { endExpiredSession } from '../../services/sessionExpiry'
-import PageLoader from '../PageLoader'
+import PageLoader from '../PageLoader/PageLoader'
+import { LoginRedirect, UnconfiguredAuthFallback } from './authRedirects'
 
 /**
  * Pause before the single boot-validation retry. Long enough for a brief
@@ -80,8 +81,11 @@ export default function ProtectedRoute({ children }: Readonly<ProtectedRouteProp
      * /login and signed in again.
      *
      * Object rather than `let` because `no-restricted-syntax` bans `let`.
+     * Read through `isLive()` so control-flow narrowing cannot "remember" an
+     * earlier check across an `await` — the cleanup flips it meanwhile.
      */
     const run = { live: true }
+    const isLive = () => run.live
 
     /**
      * @returns whether the session came back validated
@@ -102,7 +106,7 @@ export default function ProtectedRoute({ children }: Readonly<ProtectedRouteProp
 
     const validate = async () => {
       if (await attemptRefresh()) {
-        if (run.live) setValidating(false)
+        if (isLive()) setValidating(false)
         return
       }
 
@@ -113,10 +117,10 @@ export default function ProtectedRoute({ children }: Readonly<ProtectedRouteProp
        * a forced logout; a real expiry just costs one extra round-trip.
        */
       await new Promise((resolve) => setTimeout(resolve, BOOT_REFRESH_RETRY_MS))
-      if (!run.live) return
+      if (!isLive()) return
 
       if (await attemptRefresh()) {
-        if (run.live) setValidating(false)
+        if (isLive()) setValidating(false)
         return
       }
 
@@ -129,7 +133,7 @@ export default function ProtectedRoute({ children }: Readonly<ProtectedRouteProp
        * and staying on the loader until it does is what stops a flash of the
        * unexplained login form.
        */
-      if (run.live) endExpiredSession()
+      if (isLive()) endExpiredSession()
     }
 
     void validate()
@@ -139,11 +143,7 @@ export default function ProtectedRoute({ children }: Readonly<ProtectedRouteProp
 
   // If Cognito is not configured, only allow access in development mode
   if (!authService.isConfigured()) {
-    if (import.meta.env.DEV) {
-      return <>{children}</>
-    }
-    // In production, fail closed - require auth configuration
-    return <Navigate to="/login" state={{ from: location.pathname }} replace />
+    return <UnconfiguredAuthFallback from={location.pathname}>{children}</UnconfiguredAuthFallback>
   }
 
   /*
@@ -159,7 +159,7 @@ export default function ProtectedRoute({ children }: Readonly<ProtectedRouteProp
 
   // If not authenticated, redirect to login
   if (!isAuthenticated) {
-    return <Navigate to="/login" state={{ from: location.pathname }} replace />
+    return <LoginRedirect from={location.pathname} />
   }
 
   return <>{children}</>

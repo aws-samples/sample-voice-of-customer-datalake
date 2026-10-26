@@ -8,7 +8,7 @@
  * configured so the caller falls back to its env default. The lookup must
  * never break a chat turn.
  *
- * The allowlist and the temperature/adaptive-thinking capability sets MIRROR
+ * The allowlist and the adaptive-thinking capability set MIRROR
  * lambda/shared/model_config.py and are enforced here too, so a tampered DB
  * value can't steer inference to an arbitrary model. The Python lockstep tests
  * read this file and assert the allowlist matches.
@@ -16,7 +16,7 @@
 import { GetCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { z } from 'zod';
 
-const settingsRecordSchema = z.record(z.unknown());
+const settingsRecordSchema = z.record(z.string(), z.unknown());
 
 const MODEL_SETTINGS_PK = 'SETTINGS#model';
 const MODEL_SETTINGS_SK = 'config';
@@ -24,34 +24,39 @@ const MODEL_SETTINGS_SK = 'config';
 // Curated allowlist — MUST stay in lockstep with model_config.py::ALLOWED_MODELS
 // and lib/stacks/api-stack.ts::allowlistedModelArns.
 export const ALLOWED_MODEL_IDS = new Set<string>([
+  'global.anthropic.claude-opus-5-5',
+  'global.anthropic.claude-sonnet-5-5',
   'global.anthropic.claude-sonnet-5',
   'global.anthropic.claude-sonnet-4-6',
   'global.anthropic.claude-opus-5',
   'global.anthropic.claude-opus-4-8',
+  'global.anthropic.claude-haiku-5-5',
   'global.anthropic.claude-haiku-4-5-20251001-v1:0',
 ]);
 
-// Models that reject the `temperature` inference param — they run adaptive
-// thinking always-on, which rules out sampling controls. Mirrors
-// model_config.py (`omit_temperature`).
-export const OMIT_TEMPERATURE_IDS = new Set<string>([
-  'global.anthropic.claude-sonnet-5',
-  'global.anthropic.claude-opus-5',
-  'global.anthropic.claude-opus-4-8',
-]);
-
 // Models with always-on adaptive thinking that reject an explicit thinking
-// budget with a 400 (Sonnet 5, and Opus 4.7 and later) — skip the `thinking`
+// budget with a 400 (Sonnet 5 / 5.5, Haiku 5.5, and Opus 4.7 and later) — skip the `thinking`
 // request field for these. Mirrors model_config.py (`adaptive_thinking`).
-export const ADAPTIVE_THINKING_IDS = new Set<string>([
+const ADAPTIVE_THINKING_IDS = new Set<string>([
+  'global.anthropic.claude-opus-5-5',
+  'global.anthropic.claude-sonnet-5-5',
   'global.anthropic.claude-sonnet-5',
   'global.anthropic.claude-opus-5',
   'global.anthropic.claude-opus-4-8',
+  'global.anthropic.claude-haiku-5-5',
 ]);
 
-/** True when the model rejects the `temperature` inference parameter. */
-export function omitsTemperature(modelId: string): boolean {
-  return OMIT_TEMPERATURE_IDS.has(modelId);
+/**
+ * The id to put on the wire for a canonical (`global.`) model id under the
+ * deployment's inference scope (docs/eu-deployment.md). An EU deployment sets
+ * BEDROCK_INFERENCE_SCOPE=eu and is granted only the `eu.` profiles, so every
+ * Converse command must go through this. Allowlist checks, capabilities, the
+ * fallback chain and usage reporting keep using the canonical id. Mirrors
+ * shared/model_config.py::invocation_model_id and lib/utils/model-allowlist.ts::scopedModelId.
+ */
+export function invocationModelId(modelId: string, scope = process.env.BEDROCK_INFERENCE_SCOPE): string {
+  if (scope?.trim().toLowerCase() !== 'eu' || !modelId.startsWith('global.')) return modelId;
+  return `eu.${modelId.slice('global.'.length)}`;
 }
 
 /** True when the model runs adaptive thinking always-on (no explicit budget). */
@@ -64,13 +69,8 @@ const CACHE_TTL_MS = 60_000;
 // silently pin streaming chat to the default for a full minute.
 const ERROR_CACHE_TTL_MS = 10_000;
 
-const cache: { item: Record<string, unknown> | null; expires: number } = { item: null, expires: 0 };
-
-/** Reset the container cache (tests). */
-export function clearModelOverrideCache(): void {
-  cache.item = null;
-  cache.expires = 0;
-}
+// Empty until the first read; `entry` is the item and when it goes stale.
+const settingsCache: { entry?: { item: Record<string, unknown>; expires: number } } = {};
 
 async function fetchSettings(
   docClient: DynamoDBDocumentClient,
@@ -94,18 +94,20 @@ async function loadSettings(
   tableName: string,
 ): Promise<Record<string, unknown>> {
   const now = Date.now();
-  if (cache.item !== null && now < cache.expires) {
-    return cache.item;
+  const cached = settingsCache.entry;
+  if (cached && now < cached.expires) {
+    return cached.item;
   }
   const { item, ttl } = await fetchSettings(docClient, tableName);
-  cache.item = item;
-  cache.expires = now + ttl;
+  settingsCache.entry = { item, expires: now + ttl };
   return item;
 }
 
 function allowlisted(value: unknown): string | undefined {
-  if (typeof value === 'string' && ALLOWED_MODEL_IDS.has(value)) {
-    return value;
+  // A lookup by equality (not Set.has) so a non-string value needs no separate type check.
+  const allowed = [...ALLOWED_MODEL_IDS].find((id) => id === value);
+  if (allowed) {
+    return allowed;
   }
   if (value) {
     console.warn(`Configured model '${String(value).slice(0, 80)}' not in allowlist; ignoring`);
@@ -132,7 +134,5 @@ export async function resolveModelOverride(
     const perSurface = allowlisted(surfaces.data[surface]);
     if (perSurface) return perSurface;
   }
-  const legacyGlobal = allowlisted(item.model_id);
-  if (legacyGlobal) return legacyGlobal;
-  return undefined;
+  return allowlisted(item.model_id);
 }

@@ -1,0 +1,590 @@
+{
+  "nav": {
+    "label": "Agenci autonomiczni",
+    "needsDecision_one": "{{count, number}} agent wymaga decyzji",
+    "needsDecision_other": "{{count, number}} agenta wymaga decyzji",
+    "needsDecision_few": "{{count, number}} agenci wymagają decyzji",
+    "needsDecision_many": "{{count, number}} agentów wymaga decyzji"
+  },
+  "common": {
+    "cancel": "Anuluj"
+  },
+  "status": {
+    "enabled": "Włączony",
+    "disabled": "Wyłączony"
+  },
+  "scope": {
+    "all": "Wszystkie kategorie",
+    "some": "Obserwuje: {{list}}"
+  },
+  "views": {
+    "label": "Sekcje strony agentów",
+    "agents": "Agenci",
+    "workflows": "Przepływy pracy"
+  },
+  "list": {
+    "title": "Agenci autonomiczni",
+    "subtitle": "Agenci obserwują opinie w swoim zakresie i gdy zadziała wyzwalacz, uruchamiają przepływ pracy: badania, persony, PR/FAQ, PRD i prototyp, który persony sprawdzają przed przekazaniem projektu.",
+    "create": "Nowy agent",
+    "createTitle": "Utwórz agenta autonomicznego",
+    "createHint": "Agent jest tworzony wyłączony, z własną edytowalną kopią przepływu „Recenzje → Prototyp”. Skonfiguruj wyzwalacze i przepływ, a następnie go włącz.",
+    "createFailed": "Nie udało się utworzyć agenta.",
+    "emptyTitle": "Nie ma jeszcze agentów autonomicznych",
+    "emptyAdmin": "Utwórz agenta, aby automatycznie zamieniać nowe opinie w zbadane projekty i prototypy.",
+    "emptyUser": "Administrator nie skonfigurował jeszcze żadnego agenta, który byłby dla Ciebie widoczny.",
+    "loadFailed": "Nie udało się wczytać agentów.",
+    "spend": "Zaplanowane uruchomienia dziś: {{runs, number}} · wywołania modelu w tym miesiącu: {{calls, number}}",
+    "spendHint": "Ręczne uruchomienia nie są wliczane do dziennego limitu zaplanowanych uruchomień.",
+    "needsDecision": "Wymaga Twojej decyzji",
+    "reviewRun": "Przejrzyj uruchomienie agenta {{name}}",
+    "rename": "Zmień nazwę",
+    "renameNamed": "Zmień nazwę: {{name}}",
+    "renameTitle": "Zmień nazwę tego agenta",
+    "renameFailed": "Nie udało się zmienić nazwy agenta.",
+    "delete": "Usuń",
+    "deleteNamed": "Usuń {{name}}",
+    "deleteTitle": "Usunąć tego agenta?",
+    "deleteMessage": "„{{name}}” przestanie działać i zniknie z listy agentów. Jego poprzednie uruchomienia oraz utworzone przez niego projekty i dokumenty zostaną zachowane. Uruchomienie w toku zostanie najpierw zakończone.",
+    "deleteFailed": "Nie udało się usunąć agenta."
+  },
+  "library": {
+    "title": "Biblioteka przepływów pracy",
+    "subtitle": "Wszystkie przepływy pracy, które mogą uruchamiać agenci. Zarchiwizuj te, których już nie potrzebujesz: znikną z biblioteki, staną się tylko do odczytu, a ich wersje zostaną zachowane.",
+    "loadFailed": "Nie udało się wczytać biblioteki przepływów pracy.",
+    "archive": "Archiwizuj",
+    "archiveNamed": "Zarchiwizuj {{name}}",
+    "archiveTitle": "Zarchiwizować ten przepływ pracy?",
+    "archiveMessage": "„{{name}}” zostanie ukryty w bibliotece i w selektorze przepływów pracy oraz stanie się tylko do odczytu. Jego wersje zostaną zachowane.",
+    "archiveInUse": "Aktywny agent nadal korzysta z tego przepływu pracy. Najpierw zarchiwizuj tego agenta albo przypisz mu inny przepływ.",
+    "archiveFailed": "Nie udało się zarchiwizować przepływu pracy.",
+    "open": "Otwórz",
+    "openNamed": "Otwórz {{name}}",
+    "newWorkflow": "Nowy przepływ pracy",
+    "createTitle": "Utwórz przepływ pracy",
+    "createHint": "Przepływ zaczyna się od węzłów Start → Koniec. Dodaj kroki w edytorze, a potem wybierz go dla agenta.",
+    "create": "Utwórz przepływ",
+    "newWorkflowFailed": "Nie udało się utworzyć przepływu pracy.",
+    "rename": "Zmień nazwę",
+    "renameNamed": "Zmień nazwę: {{name}}",
+    "renameTitle": "Zmień nazwę tego przepływu pracy",
+    "renameConflict": "Ktoś w międzyczasie zmienił ten przepływ pracy albo jest to przepływ wbudowany. Odśwież stronę i spróbuj ponownie.",
+    "renameFailed": "Nie udało się zmienić nazwy przepływu pracy."
+  },
+  "fields": {
+    "name": "Nazwa",
+    "description": "Opis",
+    "scope": "Opinie, które obserwuje",
+    "instructions": "Instrukcje",
+    "instructionsHint": "Wskazówki, których agent przestrzega w każdym kroku (do {{n, number}} znaków).",
+    "visibility": "Widoczność projektów, które przekazuje",
+    "visibilityHint": "Projekty prywatne są widoczne tylko dla ich właściciela, członków zespołu i administratorów.",
+    "workflow": "Przepływ pracy",
+    "workflowDefault": "Recenzje → Prototyp (wbudowany)",
+    "workflowHint": "Edytuj kroki na karcie Przepływ pracy."
+  },
+  "visibility": {
+    "private": "Prywatny",
+    "public": "Publiczny"
+  },
+  "detail": {
+    "back": "Wszystkie agenty",
+    "tabs": "Sekcje agenta",
+    "enabledLabel": "Włączony",
+    "toggleFailed": "Nie udało się włączyć ani wyłączyć agenta.",
+    "save": "Zapisz",
+    "saved": "Zapisano",
+    "saveFailed": "Nie udało się zapisać zmian.",
+    "discard": "Odrzuć zmiany",
+    "archive": "Archiwizuj",
+    "archiveTitle": "Zarchiwizować tego agenta?",
+    "archiveMessage": "Przestanie działać i zniknie z listy. Projekty, które utworzył, pozostaną.",
+    "notFound": "Ten agent nie istnieje lub nie masz do niego dostępu.",
+    "stats": "Łącznie uruchomień: {{runs, number}} · zaplanowanych na dziś: {{today, number}} · wywołań modelu w tym miesiącu: {{calls, number}}"
+  },
+  "tabs": {
+    "settings": "Ustawienia",
+    "triggers": "Wyzwalacze",
+    "personas": "Persony",
+    "instructions": "Instrukcje",
+    "models": "Modele",
+    "budget": "Budżet",
+    "workflow": "Przepływ pracy",
+    "runs": "Uruchomienia"
+  },
+  "triggers": {
+    "kinds": {
+      "new_reviews": "Nowe recenzje",
+      "schedule": "Harmonogram",
+      "threshold": "Próg"
+    },
+    "kindHints": {
+      "new_reviews": "Uruchamia się, gdy w jego zakresie od ostatniego uruchomienia pojawi się wystarczająco dużo nowych opinii.",
+      "schedule": "Uruchamia się według stałego harmonogramu.",
+      "threshold": "Uruchamia się, gdy kategoria lub podkategoria osiągnie określoną liczbę recenzji w danym przedziale czasu."
+    },
+    "everyOptions": {
+      "12h": "12 godzin",
+      "24h": "24 godziny",
+      "cron": "Własne (cron)"
+    },
+    "perOptions": {
+      "category": "Kategoria",
+      "subcategory": "Podkategoria"
+    },
+    "hint": "Co uruchamia agenta. Działa samodzielnie najwyżej dwa razy dziennie i nigdy dwa razy jednocześnie.",
+    "none": "Brak wyzwalaczy — agent uruchomi się tylko wtedy, gdy ktoś kliknie „Uruchom teraz”.",
+    "remove": "Usuń wyzwalacz",
+    "minNew": "Wymagane nowe recenzje",
+    "cooldown": "Przerwa (godziny)",
+    "every": "Co",
+    "cron": "Wyrażenie cron",
+    "cronHint": "Pięć pól, np. 0 9 * * 1 dla poniedziałków o 09:00.",
+    "timezone": "Strefa czasowa",
+    "count": "Recenzje",
+    "per": "Na",
+    "windowDays": "W ciągu (dni)"
+  },
+  "personas": {
+    "fixed": "Stałe persony ({{n, number}} z {{max, number}})",
+    "none": "Brak stałych person — agent wybierze je z projektu.",
+    "add": "Dodaj personę",
+    "remove": "Usuń personę",
+    "project": "Projekt",
+    "persona": "Persona",
+    "chooseProject": "Wybierz projekt",
+    "choosePersona": "Wybierz personę",
+    "allowGenerate": "Zezwól agentowi na generowanie nowych person, gdy żadna nie pasuje"
+  },
+  "models": {
+    "roleHint": {
+      "orchestrator": "Decyduje o kolejnym kroku i weryfikuje każdy wynik.",
+      "worker": "Przygotowuje badania, dokumenty i prototypy.",
+      "reviewer": "Sprawdza pracę przed przekazaniem.",
+      "persona": "Wypowiada się w imieniu każdej persony podczas recenzji."
+    },
+    "hint": "Wybierz model AI dla każdej części pracy agenta. Pozostaw wartość domyślną, aby korzystać z ustawienia Administracja → Modele AI.",
+    "default": "Domyślny z ustawień"
+  },
+  "roles": {
+    "orchestrator": "Planista",
+    "worker": "Autor",
+    "reviewer": "Recenzent",
+    "persona": "Persona"
+  },
+  "budget": {
+    "runsPerDay": "Zaplanowane przebiegi dziennie",
+    "runsPerDayHint": "Maksymalnie 2. Przebiegi ręczne nie są liczone.",
+    "callsPerRun": "Wywołania modeli na przebieg",
+    "monthlyCap": "Miesięczny limit wywołań modeli",
+    "monthlyCapHint": "Agent przestaje uruchamiać przebiegi, gdy liczba wywołań w miesiącu osiągnie ten limit.",
+    "uncapped": "Bez miesięcznego limitu"
+  },
+  "run": {
+    "summary": {
+      "started": {
+        "manual": "Uruchomiono ręcznie.",
+        "schedule": "Uruchomiono zgodnie z harmonogramem.",
+        "new_reviews": "Uruchomiono, ponieważ pojawiły się nowe recenzje.",
+        "threshold": "Uruchomiono, ponieważ przekroczono próg."
+      },
+      "startedAt": {
+        "manual": "Uruchomiono ręcznie {{when}}.",
+        "schedule": "Uruchomiono zgodnie z harmonogramem {{when}}.",
+        "new_reviews": "Uruchomiono {{when}}, ponieważ pojawiły się nowe recenzje.",
+        "threshold": "Uruchomiono {{when}}, ponieważ przekroczono próg."
+      },
+      "outcome": {
+        "queued": "Oczekuje na start.",
+        "running": "Trwa praca.",
+        "runningStep": "Trwa praca nad „{{step}}”.",
+        "completed": "Zakończono.",
+        "completedAt": "Zakończono {{when}}.",
+        "cancelled": "Anulowano.",
+        "cancelledAt": "Anulowano {{when}}.",
+        "failed": "Zatrzymano przed zakończeniem.",
+        "failedBecause": "Zatrzymano przed zakończeniem: {{reason}}",
+        "needs_human": "Wstrzymano — wymaga Twojej decyzji."
+      },
+      "title": "Co się wydarzyło",
+      "produced": "Co wygenerowano",
+      "producedNothing": "Jeszcze nic.",
+      "anArtifact": "Nowy dokument",
+      "inProject": "w {{name}}",
+      "needsYou": "Co wymaga Twojej uwagi",
+      "needsDecision": "Zdecyduj, co dalej, w karcie powyżej.",
+      "needsNothing": "Nic — nie wymaga działania."
+    },
+    "status": {
+      "queued": "W kolejce",
+      "running": "W toku",
+      "needs_human": "Wymaga interwencji",
+      "completed": "Zakończone",
+      "failed": "Nieudane",
+      "cancelled": "Anulowane"
+    },
+    "triggers": {
+      "manual": "Ręcznie",
+      "schedule": "Harmonogram",
+      "new_reviews": "Nowe opinie",
+      "threshold": "Próg"
+    },
+    "stepStatus": {
+      "idle": "Nie rozpoczęto",
+      "running": "W toku",
+      "done": "Gotowe",
+      "failed": "Nieudane"
+    },
+    "eventKinds": {
+      "node_started": "Krok rozpoczęty",
+      "node_finished": "Krok zakończony",
+      "node_failed": "Krok nieudany",
+      "message": "Wiadomość",
+      "verdict": "Werdykt",
+      "decision": "Decyzja",
+      "artifact": "Artefakt"
+    },
+    "hint": "Każdy przebieg realizuje workflow. Wykres podświetla kroki w miarę ich wykonywania; to widok, a nie element sterujący.",
+    "list": "Przebiegi",
+    "none": "Brak przebiegów.",
+    "runNow": "Uruchom teraz",
+    "alreadyRunning": "Przebieg jest już w toku.",
+    "startFailed": "Nie udało się uruchomić przebiegu.",
+    "confirmTitle": "Uruchomić przebieg teraz?",
+    "confirmMessage": "Agent uruchomi teraz swój workflow. Wywoła modele AI (do {{calls, number}} wywołań), co może potrwać kilka minut. Możesz anulować przebieg z tej karty.",
+    "confirmStart": "Uruchom",
+    "confirmAgent": "Agent",
+    "confirmWorkflow": "Przepływ pracy",
+    "confirmScope": "Feedback w zakresie",
+    "failureReason": "Przyczyna: {{reason}}",
+    "cancel": "Anuluj przebieg",
+    "cancelFailed": "Nie udało się anulować przebiegu.",
+    "calls": "{{n, number}} wywołań modeli",
+    "openProject": "Otwórz projekt",
+    "openNamedProject": "Otwórz {{name}}",
+    "showTechnical": "Pokaż log techniczny",
+    "hideTechnical": "Ukryj log techniczny",
+    "eventLog": "Dziennik zdarzeń",
+    "noEvents": "Brak zdarzeń.",
+    "noGraph": "Nie udało się wczytać przepływu pracy tego uruchomienia.",
+    "olderRevision": "To uruchomienie użyło wersji {{n}} przepływu pracy.",
+    "graphLabel": "Wykres postępu uruchomienia",
+    "showAll": "Pokaż wszystkie zdarzenia (filtr: {{step}})",
+    "rounds": "Runda {{n}}"
+  },
+  "editor": {
+    "outcome": {
+      "saved": "Zapisano.",
+      "conflict": "W międzyczasie ktoś zapisał nowszą wersję.",
+      "invalid": "Serwer odrzucił przepływ — napraw problemy i zapisz ponownie.",
+      "failed": "Nie udało się zapisać przepływu.",
+      "import_failed": "Ten plik nie jest poprawnym przepływem."
+    },
+    "fields": {
+      "workflowName": "Nazwa przepływu",
+      "title": "Tytuł",
+      "instructions": "Instrukcje",
+      "instructionsRequired": "Instrukcje (wymagane)",
+      "role": "Rola",
+      "roleNone": "Brak roli",
+      "label": "Warunek",
+      "labelNone": "Zawsze",
+      "until": "Do momentu",
+      "maxRounds": "Maksymalna liczba rund",
+      "description": "Opis",
+      "arrowTarget": "Do kroku",
+      "arrowTargetNone": "Wybierz krok…",
+      "joinLoop": "Pętla"
+    },
+    "params": {
+      "target": "Cel",
+      "targetAny": "Cokolwiek wygenerowano jako ostatnie",
+      "maxNew": "Maksymalna liczba nowych person",
+      "useWebSearch": "Użyj wyszukiwania w sieci",
+      "useWebSearchHint": "Wlicza się do limitu {{limit, number}} wyszukiwań w sieci w jednym uruchomieniu.",
+      "endStatus": "Uruchomienie kończy się jako"
+    },
+    "canvasLabel": "Płótno przepływu pracy",
+    "minimap": "Podgląd przepływu pracy",
+    "palette": "Kroki",
+    "paletteHint": "Przeciągnij krok na płótno lub naciśnij Enter, aby go dodać.",
+    "panel": "Ustawienia kroku",
+    "nothingSelected": "Wybierz krok, strzałkę lub pętlę — na płótnie lub w spisie poniżej — aby ją skonfigurować.",
+    "loopFrameLabel": "Pętla {{n}}: do spełnienia warunku {{until}}, najwyżej {{rounds, number}} rund",
+    "loopFrameHint": "Kliknij, aby skonfigurować tę pętlę",
+    "arrowLabel": "Strzałka z {{source}} do {{target}} ({{condition}})",
+    "conditionHint": "Strzałka uruchamia się, gdy krok zwróci ten wynik; „Zawsze” to domyślna ścieżka.",
+    "noConditions": "Ten krok nie zwraca werdyktu, więc jego strzałki zawsze się uruchamiają.",
+    "arrowsOut": "Strzałki wychodzące",
+    "noArrowsOut": "Z tego kroku nie wychodzą jeszcze żadne strzałki.",
+    "addArrow": "Dodaj strzałkę",
+    "addArrowButton": "Dodaj strzałkę",
+    "noArrowTargets": "Każdy inny krok jest już połączony z tego miejsca.",
+    "deleteArrowTo": "Usuń strzałkę do {{target}}",
+    "conditionTo": "Warunek dla {{target}}",
+    "loopStepsLegend": "Kroki w tej pętli",
+    "maxRoundsHint": "Liczba całkowita od {{min, number}} do {{max, number}}; po osiągnięciu limitu uruchomienie zatrzymuje się i prosi człowieka o decyzję.",
+    "joinLoop": "Dodaj do pętli",
+    "joinLoopHint": "Pętla powtarza swoje kroki, aż zostanie spełniony warunek wyjścia.",
+    "newLoop": "Nowa pętla",
+    "loopOption_one": "Pętla {{n}} ({{count, number}} krok)",
+    "loopOption_other": "Pętla {{n}} ({{count, number}} kroków)",
+    "leaveLoop": "Usuń ten krok z pętli",
+    "outlineSteps": "Kroki w tym przepływie pracy",
+    "outlineStepsCount": "Kroki ({{n, number}})",
+    "outlineLoops": "Pętle",
+    "emptyCanvas": "Płótno jest puste: dodaj kroki z palety.",
+    "selectStep": "Konfiguruj krok {{title}}",
+    "backToWorkflow": "Ustawienia przepływu",
+    "clear": "Wyczyść płótno",
+    "clearTitle": "Wyczyścić płótno?",
+    "clearMessage": "Wszystkie kroki, strzałki i pętle zostaną usunięte z wersji roboczej, abyś mógł zbudować przepływ od nowa. Nic nie zostanie zapisane, dopóki nie zapiszesz zmian.",
+    "multiSelected": "Zaznaczono kroków: {{n, number}}",
+    "groupLoop": "Zgrupuj jako pętlę",
+    "ungroupLoop": "Usuń pętlę",
+    "loopTitle": "Pętla {{n}}",
+    "loopMembers": "{{n, number}} kroków",
+    "loopFrame": "Pętla do momentu: {{until}}",
+    "arrow": "Strzałka",
+    "deleteArrow": "Usuń strzałkę",
+    "deleteStep": "Usuń krok",
+    "builtin": "Szablon wbudowany — zapisz kopię, aby go zmienić.",
+    "revision": "Wersja {{n}}",
+    "history": {
+      "open": "Historia",
+      "title": "Historia wersji",
+      "listLabel": "Wersje",
+      "current": "Bieżąca",
+      "savedBy": "Zapisał(a): {{name}}",
+      "builtinRevision": "Wbudowany szablon",
+      "empty": "Brak zapisanych wersji.",
+      "loading": "Wczytywanie wersji…",
+      "loadFailed": "Nie udało się wczytać tej wersji.",
+      "unreadable": "Nie udało się odczytać przepływu pracy tej wersji.",
+      "isCurrent": "To jest bieżąca wersja.",
+      "changesTitle": "Przywrócenie zmieniłoby",
+      "restore": "Przywróć do edytora",
+      "restoreHint": "Wczytuje tę wersję do edytora jako niezapisane zmiany. Zapisz, aby zachować ją jako nową wersję.",
+      "close": "Zamknij",
+      "confirmTitle": "Zastąpić niezapisane zmiany?",
+      "confirmMessage": "Wersja {{revision}} zastąpi przepływ pracy w edytorze, a niezapisane zmiany zostaną utracone.",
+      "confirmAction": "Zastąp",
+      "steps_one": "{{count, number}} krok",
+      "arrows_one": "{{count, number}} strzałka",
+      "steps_few": "{{count, number}} kroki",
+      "arrows_few": "{{count, number}} strzałki",
+      "steps_many": "{{count, number}} kroków",
+      "arrows_many": "{{count, number}} strzałek",
+      "steps_other": "{{count, number}} kroku",
+      "arrows_other": "{{count, number}} strzałki"
+    },
+    "unsaved": "Niezapisane zmiany",
+    "save": "Zapisz",
+    "saveAs": "Zapisz jako…",
+    "saveAsTitle": "Zapisz jako nowy przepływ",
+    "copyName": "{{name}} (kopia)",
+    "import": "Importuj",
+    "export": "Eksportuj",
+    "reset": "Przywróć szablon",
+    "resetTitle": "Przywrócić szablon?",
+    "resetMessage": "Twoje niezapisane zmiany zostaną zastąpione wbudowanym przepływem „Recenzje → Prototyp”.",
+    "conflict": "W międzyczasie ktoś zapisał nowszą wersję.",
+    "conflictReload": "Wczytaj najnowszą",
+    "conflictSaveAs": "Zapisz moją jako kopię",
+    "loadFailed": "Nie udało się wczytać przepływu.",
+    "generalIssues": "Problemy przepływu",
+    "issueCount_one": "{{count, number}} problem",
+    "issueCount_other": "{{count, number}} problemów",
+    "valid": "Przepływ jest poprawny.",
+    "validUnsaved": "Poprawny — jeszcze niezapisany.",
+    "savedAsAgent": "Zapisano jako „{{name}}”. Ten agent teraz go uruchamia.",
+    "savedAsSwitchFailed": "Kopia została zapisana, ale nie udało się przełączyć tego agenta na nią. Wybierz ją w ustawieniach agenta.",
+    "savedAsOpened": "Zapisano jako „{{name}}”.",
+    "switchLabel": "Przepływ pracy",
+    "switchTitle": "Zmienić przepływ pracy?",
+    "switchMessage": "Niezapisane zmiany w {{name}} zostaną utracone.",
+    "switchConfirm": "Zmień przepływ",
+    "switched": "Ten agent uruchamia teraz {{name}}.",
+    "switchFailed": "Nie udało się przełączyć agenta na ten przepływ pracy.",
+    "loopOption_few": "Pętla {{n}} ({{count, number}} kroki)",
+    "loopOption_many": "Pętla {{n}} ({{count, number}} kroków)",
+    "issueCount_few": "{{count, number}} problemy",
+    "issueCount_many": "{{count, number}} problemów"
+  },
+  "workflowPage": {
+    "title": "Przepływ pracy",
+    "subtitle": "Przepływ pracy z biblioteki. Agenci, którzy go uruchamiają, korzystają z jego najnowszej zapisanej wersji."
+  },
+  "paletteGroups": {
+    "flow": "Przebieg",
+    "research": "Badania",
+    "documents": "Dokumenty",
+    "review": "Przegląd",
+    "delivery": "Przekazanie",
+    "prototype": "Prototyp"
+  },
+  "edgeLabels": {
+    "pass": "Zaliczone",
+    "fail": "Niezaliczone",
+    "agreed": "Zgoda",
+    "not_agreed": "Brak zgody"
+  },
+  "loopUntil": {
+    "persona_agreement": "persony się zgadzają",
+    "review_pass": "przegląd zostaje zaliczony"
+  },
+  "loopUntilHint": {
+    "persona_agreement": "Powtarza się, dopóki przegląd person w pętli odpowiada „Brak zgody”.",
+    "review_pass": "Powtarza się, dopóki krok przeglądu w pętli odpowiada „Niezaliczone”."
+  },
+  "reviewTargets": {
+    "prfaq": "PR/FAQ",
+    "prd": "PRD",
+    "prototype": "Prototyp"
+  },
+  "endStatuses": {
+    "completed": "Zakończono",
+    "needs_human": "Wymaga interwencji"
+  },
+  "nodeTypes": {
+    "start": {
+      "label": "Start",
+      "description": "Tu zaczyna się każde uruchomienie."
+    },
+    "aggregate_reviews": {
+      "label": "Agregacja opinii",
+      "description": "Zbiera nowe opinie w zakresie agenta i wyodrębnia główne tematy."
+    },
+    "select_or_create_project": {
+      "label": "Wybierz lub utwórz projekt",
+      "description": "Wykorzystuje projekt o tym samym celu albo tworzy nowy."
+    },
+    "select_personas": {
+      "label": "Wybierz persony",
+      "description": "Wybiera persony istotne dla tych przeglądów."
+    },
+    "generate_personas": {
+      "label": "Generuj persony",
+      "description": "Tworzy nowe persony na podstawie opinii, gdy żadna nie pasuje."
+    },
+    "deep_research": {
+      "label": "Pogłębione badania",
+      "description": "Uruchamia zadanie badawcze w projekcie, opcjonalnie z wyszukiwaniem w sieci."
+    },
+    "write_prfaq": {
+      "label": "Napisz PR/FAQ",
+      "description": "Przygotowuje szkic komunikatu prasowego i FAQ dla pomysłu."
+    },
+    "write_prd": {
+      "label": "Napisz PRD",
+      "description": "Przygotowuje szkic dokumentu wymagań produktowych."
+    },
+    "revise_document": {
+      "label": "Popraw dokument",
+      "description": "Przepisuje dokument na podstawie zastrzeżeń z przeglądu."
+    },
+    "duplicate_document": {
+      "label": "Duplikuj dokument",
+      "description": "Kopiuje dokument do innego projektu."
+    },
+    "persona_review": {
+      "label": "Przegląd person",
+      "description": "Persony oceniają pracę; zgoda = średnia 4+ i brak blokad."
+    },
+    "final_review": {
+      "label": "Końcowy przegląd",
+      "description": "Recenzent sprawdza cały pakiet przed przekazaniem."
+    },
+    "custom_llm": {
+      "label": "Własny krok",
+      "description": "Krok sterowany Twoimi instrukcjami."
+    },
+    "build_prototype": {
+      "label": "Zbuduj prototyp",
+      "description": "Buduje prototyp HTML z użyciem systemu projektowego."
+    },
+    "collect_prototype_feedback": {
+      "label": "Zbierz pinezki testerów",
+      "description": "Odczytuje otwarte pinezki, które testerzy zostawili na prototypie, na potrzeby kolejnej wersji."
+    },
+    "revise_prototype": {
+      "label": "Popraw prototyp",
+      "description": "Zmienia prototyp zgodnie z zastrzeżeniami z recenzji."
+    },
+    "handoff": {
+      "label": "Przekaż dalej",
+      "description": "Przekazuje projekt właścicielowi jego głównej kategorii."
+    },
+    "end": {
+      "label": "Koniec",
+      "description": "Miejsce, w którym przebieg się kończy."
+    }
+  },
+  "plans": {
+    "title": "Plany",
+    "subtitle": "Wieloetapowe zlecenia zatwierdzone w asystencie AI. Działają w tle. Otwórz plan, aby śledzić jego kroki, zatwierdzić krok, który tego wymaga, lub anulować plan.",
+    "loadFailed": "Nie udało się wczytać planów.",
+    "empty": "Brak planów. Poproś asystenta AI o zadanie z kilkoma krokami i zatwierdź zaproponowany plan.",
+    "remove": "Usuń",
+    "removeNamed": "Usuń plan „{{goal}}”",
+    "removeTitle": "Usunąć ten plan?",
+    "removeMessage": "„{{goal}}” zostanie usunięty z Twoich planów. Jego wyniki pozostaną w projektach.",
+    "removeFailed": "Nie udało się usunąć planu. Plan, który jest nadal uruchomiony, trzeba najpierw anulować."
+  },
+  "decision": {
+    "reason": {
+      "loop_exhausted": "Persony nie doszły do porozumienia w sprawie {{node}} po {{rounds, number}} rundach.",
+      "no_fail_path": "{{node}} nie przeszło weryfikacji, a przepływ pracy nie ma dla tego przypadku ścieżki.",
+      "end_node": "Przepływ pracy kieruje ten przebieg do osoby na etapie {{node}}.",
+      "budget": "Przebieg wykorzystał limit wywołań modelu.",
+      "verification": "Wyniku jednego z kroków nie udało się zweryfikować.",
+      "unknown": "Przebieg zatrzymał się, aby osoba mogła podjąć decyzję."
+    },
+    "decided": {
+      "accept": "Wybrano akceptację i kontynuację przez {{by}} o {{at}}.",
+      "another_round": "Wybrano kolejną rundę przez {{by}} o {{at}}.",
+      "stop": "Wybrano zamknięcie przebiegu przez {{by}} o {{at}}."
+    },
+    "form": {
+      "fix": {
+        "label": "Popraw jeszcze raz, uwzględniając wybrane zastrzeżenia",
+        "help": "Dokument zostanie poprawiony zgodnie z Twoimi wyborami i notatkami, a następnie persony ponownie go ocenią. Jeśli nadal będą się nie zgadzać, przebieg zapyta Cię ponownie.",
+        "incomplete": "Wybierz co najmniej jedno zastrzeżenie lub napisz wskazówkę."
+      },
+      "accept": {
+        "label": "Zaakceptuj bez zmian i kontynuuj",
+        "help": "Przepływ pracy przechodzi dalej po etapie „{{node}}” tak, jakby persony się zgodziły. Ich zastrzeżenia nie zostaną poprawione."
+      },
+      "other": {
+        "label": "Coś innego: przekaż agentowi, co ma zrobić",
+        "help": "Twoje wskazówki trafią do kolejnej wersji, a następnie persony ponownie ocenią dokument.",
+        "incomplete": "Napisz, co agent ma zrobić."
+      },
+      "stop": {
+        "label": "Zakończ przebieg",
+        "help": "Nic więcej nie zostanie uruchomione. Wyniki przebiegu pozostaną w projekcie."
+      },
+      "question": "Co dalej?",
+      "submit": "Podejmij decyzję",
+      "pickObjections": "Zastrzeżenia do poprawy (zastrzeżenia blokujących person są zaznaczone)",
+      "instructions": "Twoje własne wskazówki (opcjonalnie)",
+      "instructionsRequired": "Twoje wskazówki",
+      "instructionsPlaceholder": "Na przykład: zobowiąż się do płacenia za hotele i posiłki, gdy czekanie trwa dłużej niż 12 godzin."
+    },
+    "title": "Ten przebieg wymaga Twojej decyzji",
+    "verdicts_one": "{{count, number}} opinia persony",
+    "verdicts_other": "{{count, number}} opinii person",
+    "score": "{{score}}/5",
+    "blocking": "Blokuje",
+    "stop": "Zakończ przebieg",
+    "stopTitle": "Zakończyć ten przebieg?",
+    "stopMessage": "Przebieg zakończy się jako ukończony, a wytworzone wyniki pozostaną w projekcie. Tej operacji nie można cofnąć.",
+    "adminOnly": "Decyzję może podjąć administrator.",
+    "failed": "Nie udało się zapisać decyzji.",
+    "conflict": "Ten przebieg został już rozstrzygnięty lub nie czeka na decyzję.",
+    "decidedNote": "Notatka: {{note}}",
+    "banner": "Ostatni przebieg tego agenta wymaga Twojej decyzji.",
+    "reviewRun": "Przejrzyj przebieg",
+    "verdicts_few": "{{count, number}} opinie person",
+    "verdicts_many": "{{count, number}} opinii person"
+  }
+}

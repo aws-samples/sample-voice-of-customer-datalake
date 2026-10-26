@@ -1,14 +1,22 @@
 #!/usr/bin/env node
 /**
- * Fix all missing/empty i18n translations using Amazon Bedrock (Claude Haiku).
- * Reads English source, finds gaps in target locales, translates in batches.
+ * Fix all missing/empty i18n translations using Amazon Bedrock (Claude Haiku 5.5).
+ * Reads English source, finds gaps in target locales, translates in batches. Each batch
+ * carries the page description and the JSX lines where every key is used, so the model
+ * sees the UI context of a string, not just the string.
  *
- * Usage: node scripts/fix-i18n.mjs
+ * Usage: node scripts/fix-i18n.mjs [--lang <code>]...   (default: every target locale)
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
-import { resolve, join, extname } from 'node:path'
+import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from 'node:fs'
+import { resolve, join, isAbsolute, delimiter } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
+import { collectSourceFiles, stripPlaceholders } from './i18n-locales.mjs'
+import { setNested, UNSAFE_SEGMENTS } from './set-nested.mjs'
+import {
+  flattenEntries, getNested, isStringList, listItemOf, missingPluralForms, parseAnswer, resolveEnValue,
+  selectedLanguages,
+} from './fix-i18n-helpers.mjs'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const LOCALES_DIR = resolve(__dirname, '..', 'public', 'locales')
@@ -16,23 +24,47 @@ const LOCALES_DIR = resolve(__dirname, '..', 'public', 'locales')
 // compares this list, i18n-check.mjs's copy, src/i18n/options.ts and src/test/setup.ts
 // against the files on disk. `feedback` was listed here with no catalogue in any
 // locale, so every run tried to load a namespace that does not exist.
-const NAMESPACES = ['categories', 'chat', 'common', 'components', 'dashboard',
-  'dataExplorer', 'feedbackDetail', 'feedbackForms', 'login',
-  'prioritization', 'problemAnalysis', 'projectDetail', 'projects', 'scrapers', 'settings']
-const LANGUAGES = ['es', 'fr', 'de', 'ko', 'pt', 'ja', 'zh']
+const NAMESPACES = ['agents', 'assistant', 'assistantTools', 'briefing', 'categories', 'common', 'components', 'dashboard',
+  'dataExplorer', 'decisions', 'emailInbox', 'feedbackDetail', 'feedbackForms', 'login', 'memory',
+  'prioritization', 'problemAnalysis', 'projectDetail', 'projects', 'radar', 'scrapers', 'settings']
+const ALL_LANGUAGES = ['es', 'fr', 'de', 'ko', 'pt', 'ja', 'zh', 'pl']
 const LANG_NAMES = {
   es: 'Spanish', fr: 'French', de: 'German',
-  ko: 'Korean', pt: 'Portuguese', ja: 'Japanese', zh: 'Simplified Chinese',
+  ko: 'Korean', pt: 'Portuguese', ja: 'Japanese', zh: 'Simplified Chinese', pl: 'Polish',
 }
-const MODEL_ID = 'us.anthropic.claude-haiku-4-5-20251001-v1:0'
+// Haiku 5.5 through the global cross-region profile (the app's own allowlist id). It rejects
+// `temperature` (like Sonnet 5.x and every Opus), so the request body sets none.
+const MODEL_ID = 'global.anthropic.claude-haiku-5-5'
 const REGION = 'us-east-1'
 const BATCH_SIZE = 60
+const LANGUAGES = selectedLanguages(process.argv.slice(2), ALL_LANGUAGES)
+
+/**
+ * Absolute path of the AWS CLI. `AWS_CLI` (absolute) wins; otherwise the first
+ * `aws` found in an ABSOLUTE `PATH` entry. Relative entries (`.`, `bin`) are
+ * skipped — they would let a file in the working directory stand in for the CLI
+ * that receives the caller's credentials.
+ */
+function awsCli() {
+  const override = process.env.AWS_CLI
+  if (override) {
+    if (!isAbsolute(override)) throw new Error('AWS_CLI must be an absolute path')
+    return override
+  }
+  for (const dir of (process.env.PATH ?? '').split(delimiter)) {
+    if (!isAbsolute(dir)) continue
+    const candidate = join(dir, 'aws')
+    if (existsSync(candidate) && statSync(candidate).isFile()) return candidate
+  }
+  throw new Error('AWS CLI not found on an absolute PATH entry (set AWS_CLI)')
+}
 
 // Context descriptions for each namespace so the LLM understands
 // where these strings appear in the UI
 const NS_CONTEXT = {
   categories: 'Category breakdown page — shows feedback categories, sentiment filters, keyword clouds, and PDF export for a customer feedback analytics dashboard.',
-  chat: 'AI Chat page — conversational interface where users ask questions about their customer feedback data. Includes suggested questions, chat history sidebar, and export options.',
+  assistant: 'Unified AI assistant — floating bubble / expanded panel / full screen on every page and the /chat page. Page-aware chat about customer feedback and projects; write actions need explicit approval. Includes suggested prompts, past conversations and export.',
+  assistantTools: 'AI assistant approval cards — each proposed write (create/update/delete documents, personas, projects, product context, feedback forms, research and generation jobs, scraper runs, brand settings) is shown with a preview/diff and Approve / Decline buttons, plus its executed / failed / declined / expired outcome.',
   common: 'Shared UI strings — navigation menu, sidebar, breadcrumbs, time range selectors, sentiment labels, pagination, and global filter controls used across all pages.',
   components: 'Reusable UI components — data source wizard (multi-step form), feedback cards, social feed, S3 file import, user administration panel, user profile/password management, document/persona export menus.',
   dashboard: 'Main dashboard — overview page with metric cards (total feedback, sentiment, urgent issues), charts (volume trend, source breakdown, sentiment distribution), and a live social feed.',
@@ -55,19 +87,6 @@ const SRC_DIR = resolve(__dirname, '..', 'src')
 // Scans frontend source files to find where each i18n key is used,
 // extracting surrounding JSX/TSX lines so the LLM can see the UI context
 // (e.g. button label vs tooltip vs paragraph).
-
-function collectSourceFiles(dir) {
-  const files = []
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry)
-    if (entry === 'node_modules' || entry === 'dist' || entry === 'test') continue
-    if (entry.endsWith('.test.tsx') || entry.endsWith('.test.ts')) continue
-    const stat = statSync(full)
-    if (stat.isDirectory()) files.push(...collectSourceFiles(full))
-    else if (['.ts', '.tsx'].includes(extname(entry))) files.push(full)
-  }
-  return files
-}
 
 /** Extract i18n key usages from a single source file. */
 function extractFileKeyUsages(file) {
@@ -151,45 +170,6 @@ function saveJSON(lang, ns, data) {
   writeFileSync(join(dir, `${ns}.json`), JSON.stringify(data, null, 2) + '\n')
 }
 
-function flattenEntries(obj, prefix = '') {
-  const out = []
-  for (const [k, v] of Object.entries(obj)) {
-    const full = prefix ? `${prefix}.${k}` : k
-    if (v && typeof v === 'object' && !Array.isArray(v))
-      out.push(...flattenEntries(v, full))
-    else out.push([full, v])
-  }
-  return out
-}
-
-function getNested(obj, key) {
-  return key.split('.').reduce((o, k) => o?.[k], obj)
-}
-
-const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
-
-function setNested(obj, key, val) {
-  const parts = key.split('.')
-  if (parts.some(p => UNSAFE_KEYS.has(p))) return
-  let cur = obj
-  for (let i = 0; i < parts.length - 1; i++) {
-    if (!cur[parts[i]] || typeof cur[parts[i]] !== 'object') cur[parts[i]] = {}
-    cur = cur[parts[i]]
-  }
-  cur[parts[parts.length - 1]] = val
-}
-
-// Resolve self-referencing plural values like "sidebar.messagesCount"
-// to the actual English text
-function resolveEnValue(enData, key, rawValue) {
-  if (typeof rawValue === 'string' && rawValue.includes('.') && !rawValue.includes(' ')) {
-    // Looks like a self-reference — try to resolve the base key
-    const resolved = getNested(enData, rawValue)
-    if (resolved && typeof resolved === 'string') return resolved
-  }
-  return rawValue
-}
-
 // ── Bedrock translation via AWS CLI ──
 
 function translateBatch(kvPairs, targetLang, namespace) {
@@ -208,13 +188,13 @@ Translate the following JSON values from English to ${langName}.
 
 RULES:
 - Return ONLY a valid JSON object with the exact same keys
-- Keep all {{variables}} exactly as-is (e.g. {{count}}, {{summary}}, {{name}}, {{error}}, {{percent}})
+- Keep all {{variables}} exactly as-is (e.g. {{count, number}}, {{summary}}, {{name}}, {{error}}, {{percent}})
 - Keep HTML tags (<code>, <strong>, <at>, <atAll>, <hash>, etc.) exactly as-is
 - Keep URLs, email addresses, and technical identifiers as-is
 - Keep product names as-is: "VoC Analytics", "Kiro", "Claude", "Amazon", "Bedrock", "Cognito", "MCP"
 - Keep technical terms as-is: JSON, PDF, CSV, URL, API, S3, PRD, PR-FAQ, DynamoDB, CloudWatch, SSE, Markdown
 - Keep file extensions and code references as-is: .json, mcp.json, Authorization
-- For plural forms (_one, _many, _other): ensure {{count}} template variable is included in the translation
+- For plural forms (keys ending _zero, _one, _two, _few, _many, _other): write the ${langName} grammatical form for that CLDR plural category and keep {{count}} in it. A key may arrive whose English text is the _other form (e.g. a ${langName} _few or _many form English does not have): still give the correct ${langName} form for that category
 - Use natural, professional ${langName} appropriate for a B2B SaaS dashboard — avoid overly formal or literal translations
 - For UI actions (buttons, labels), prefer concise wording that fits in compact UI elements
 - Do NOT add markdown fences or any text outside the JSON
@@ -225,7 +205,6 @@ ${JSON.stringify(input, null, 2)}`
   const body = {
     anthropic_version: 'bedrock-2023-05-31',
     max_tokens: 16000,
-    temperature: 0.1,
     messages: [{ role: 'user', content: prompt }],
   }
 
@@ -245,13 +224,9 @@ ${JSON.stringify(input, null, 2)}`
       '--body', 'fileb://' + tmpIn,
       tmpOut,
     ]
-    // eslint-disable-next-line sonarjs/no-os-command-from-path -- dev script intentionally invokes AWS CLI
-    execFileSync('aws', args, { stdio: 'pipe', timeout: 120_000 })
+    execFileSync(awsCli(), args, { stdio: 'pipe', timeout: 120_000 })
     const resp = JSON.parse(readFileSync(tmpOut, 'utf-8'))
-    const text = resp.content[0].text.trim()
-    // Strip markdown fences if present
-    const cleaned = text.replace(/^```json?\n?/, '').replace(/\n?```$/, '')
-    return JSON.parse(cleaned)
+    return parseAnswer(resp)
   } catch (err) {
     console.error(`  ⚠ Bedrock call failed for ${langName}:`, err.message)
     return null
@@ -261,6 +236,8 @@ ${JSON.stringify(input, null, 2)}`
 // ── Main ──
 
 let totalFixed = 0
+let totalSkipped = 0
+let totalUnwritable = 0
 
 for (const lang of LANGUAGES) {
   console.log(`\n🌐 Processing ${lang.toUpperCase()} (${LANG_NAMES[lang]})`)
@@ -272,9 +249,19 @@ for (const lang of LANGUAGES) {
 
     // Collect keys that are missing, empty, or untranslated (still in English) in target
     const toFix = []
+    // String-list values (e.g. suggested responses) are sent item by item as `<key>.<i>` and
+    // reassembled into a list after the batches; the whole list is redone when any item is missing.
+    const listKeys = []
     for (const [key, enValue] of enEntries) {
+      if (isStringList(enValue)) {
+        if (!isStringList(getNested(targetData, key)) || getNested(targetData, key).length !== enValue.length) {
+          listKeys.push([key, enValue.length])
+          enValue.forEach((item, i) => toFix.push([`${key}.${i}`, item]))
+        }
+        continue
+      }
       const targetValue = getNested(targetData, key)
-      const resolved = resolveEnValue(enData, key, enValue)
+      const resolved = resolveEnValue(enData, enValue)
       if (typeof resolved !== 'string' || resolved.trim() === '') continue
 
       const isMissing = targetValue === undefined
@@ -285,12 +272,18 @@ for (const lang of LANGUAGES) {
         && !targetValue.startsWith('http')
         && !targetValue.startsWith('@')
         && !targetValue.startsWith('#')
-        // eslint-disable-next-line sonarjs/slow-regex -- bounded input from JSON translation values, not user-controlled
-        && targetValue.replace(/\{\{[^}]+\}\}/g, '').trim().length > 0
+        && stripPlaceholders(targetValue).trim().length > 0
 
       if (isMissing || isEmpty || isUntranslated) {
         toFix.push([key, resolved])
       }
+    }
+
+    // Plural forms the target language has and English does not (Polish `_few` / `_many`,
+    // French `_many`): i18next asks for them by the language's CLDR categories, and a missing
+    // one falls back to English. Queue each with the English `_other` text as its source.
+    for (const pair of missingPluralForms(enData, enEntries, targetData, lang)) {
+      if (!toFix.some(([k]) => k === pair[0])) toFix.push(pair)
     }
 
     // Also fix empty _many/_one/_other plural forms in target that don't exist in English.
@@ -342,28 +335,46 @@ for (const lang of LANGUAGES) {
     console.log(`  📂 ${ns}.json — ${toFix.length} strings to translate`)
 
     // Translate in batches
+    const listItems = new Map()
+    // setNested refuses any key with a `__proto__` / `constructor` / `prototype` segment
+    // (prototype-pollution guard, set-nested.mjs). Real catalogue keys such as
+    // `documents.prototype.build` can therefore not be written here: report them instead of
+    // paying to translate strings that would be dropped.
+    const unwritable = toFix.filter(([key]) => key.split('.').some((part) => UNSAFE_SEGMENTS.has(part)))
+    if (unwritable.length > 0) {
+      console.log(`    ⚠ ${unwritable.length} keys under a guarded segment need adding by hand: ${unwritable.map(([k]) => k).join(', ')}`)
+      totalUnwritable += unwritable.length
+      toFix.splice(0, toFix.length, ...toFix.filter((pair) => !unwritable.includes(pair)))
+    }
     for (let i = 0; i < toFix.length; i += BATCH_SIZE) {
       const batch = toFix.slice(i, i + BATCH_SIZE)
       console.log(`    Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.length} strings...`)
 
       const translations = translateBatch(batch, lang, ns)
+      // A failed batch or key is LEFT missing, not filled with English: the app already falls
+      // back to English for a missing key, and a re-run then finds the gap again (an English
+      // copy of a short string like "Off" would look translated and never be retried).
       if (!translations) {
-        console.log(`    ⚠ Falling back to English for this batch`)
-        for (const [key, enVal] of batch) setNested(targetData, key, enVal)
-        totalFixed += batch.length
+        console.log(`    ⚠ Batch left untranslated (re-run to retry)`)
+        totalSkipped += batch.length
         continue
       }
 
       for (const [key] of batch) {
         if (translations[key] && typeof translations[key] === 'string') {
-          setNested(targetData, key, translations[key])
+          if (listItemOf(key, listKeys)) listItems.set(key, translations[key])
+          else setNested(targetData, key, translations[key])
           totalFixed++
         } else {
-          // Fallback to English
-          setNested(targetData, key, toFix.find(([k]) => k === key)?.[1] ?? '')
-          totalFixed++
+          totalSkipped++
         }
       }
+    }
+
+    // Reassemble each string list; a list with any untranslated item is left as it was.
+    for (const [key, length] of listKeys) {
+      const items = Array.from({ length }, (_, i) => listItems.get(`${key}.${i}`))
+      if (items.every((item) => typeof item === 'string')) setNested(targetData, key, items)
     }
 
     saveJSON(lang, ns, targetData)
@@ -371,3 +382,8 @@ for (const lang of LANGUAGES) {
 }
 
 console.log(`\n✅ Fixed ${totalFixed} translations across ${LANGUAGES.length} locales`)
+if (totalUnwritable > 0) console.log(`⚠ ${totalUnwritable} keys under a guarded segment were not written (listed above)`)
+if (totalSkipped > 0) {
+  console.log(`⚠ ${totalSkipped} strings left untranslated — re-run to retry`)
+  process.exitCode = 1
+}

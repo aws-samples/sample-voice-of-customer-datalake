@@ -1,0 +1,476 @@
+{
+  "card": {
+    "kicker": "Se necesita aprobación",
+    "details": "Detalles",
+    "toolName": "Acción: {{name}}",
+    "kickerDestructive": "Se necesita aprobación · no se puede deshacer",
+    "project": "Proyecto",
+    "expired": "Caducada",
+    "expiresIn": "Caduca en {{time}}",
+    "approve": "Aprobar",
+    "approveDestructive": "Aprobar y eliminar",
+    "decline": "Rechazar",
+    "confirmDecline": "Rechazar",
+    "back": "Volver",
+    "dismiss": "Descartar",
+    "reasonLabel": "Motivo (opcional)",
+    "reasonPlaceholder": "Explica al asistente el motivo para que pueda ajustarse",
+    "executing": "Procesando…",
+    "adminOnly": "Solo los administradores pueden aprobar esta acción. Aun así, puedes rechazarla.",
+    "destructiveWarning": "Esto elimina datos de forma permanente y no se puede deshacer.",
+    "destructiveConfirm": "Lo entiendo, eliminar",
+    "invalidArgs": "La solicitud del asistente no es válida y no se puede aprobar:",
+    "unknownTool": "Esta acción no está disponible aquí y no se puede aprobar.",
+    "unknownToolTitle": "Una acción que esta aplicación no reconoce",
+    "resolved": {
+      "executed": "Hecho",
+      "failed": "Error",
+      "declined": "Rechazada",
+      "expired": "Caducada"
+    },
+    "openScraper": "Abrir este scraper en la página Scrapers",
+    "openScrapers": "Abrir la página Scrapers",
+    "openUsers": "Abrir Privacidad y acceso → Usuarios",
+    "approvePlan": "Aprobar y ejecutar",
+    "change": "Cambiar",
+    "changeLabel": "¿Qué debería cambiar?",
+    "changePlaceholder": "Por ejemplo: omite la app de Android o usa 3 personas",
+    "confirmChange": "Pedir cambios",
+    "openFeedback": "Abrir la lista de comentarios",
+    "openRadar": "Abrir Radar",
+    "openRadarSettings": "Abrir Administración → Fuentes → Radar"
+  },
+  "preview": {
+    "showMore": "Mostrar todo ({{n, number}} caracteres)",
+    "showLess": "Mostrar menos",
+    "empty": "(vacío)",
+    "yes": "Sí",
+    "no": "No",
+    "loading": "Cargando la versión actual…",
+    "before": "Actual",
+    "after": "Propuesto",
+    "unchanged": "sin cambios",
+    "document": "Documento",
+    "persona": "Persona",
+    "changeSummary": "Cambio",
+    "currentUnavailable": "No se pudieron cargar los valores actuales; solo se muestran los propuestos.",
+    "unknownCategory": "La categoría «{{category}}» no es una de las que puedes ver: el cambio se rechazará.",
+    "brandMerged": "Configuración tras guardar (los campos no mencionados conservan su valor actual):",
+    "diff": {
+      "label": "Cambios en el documento",
+      "stats": "{{added, number}} líneas añadidas, {{removed, number}} líneas eliminadas",
+      "unchanged": "… {{n, number}} líneas sin cambios …",
+      "same": "Sin cambios:",
+      "add": "Añadido:",
+      "del": "Eliminado:",
+      "noChanges": "El contenido propuesto es idéntico al documento actual.",
+      "tooLarge": "El documento es demasiado grande para compararlo línea por línea. Se muestra el inicio de cada versión.",
+      "currentUnavailable": "No se pudo cargar el documento actual. Contenido propuesto:"
+    },
+    "job": {
+      "timeWindow": "Lee los comentarios de los últimos {{days, number}} días (el intervalo seleccionado en la aplicación).",
+      "language": "Escribe el resultado en {{language}}.",
+      "background": "Se ejecuta en segundo plano y aparece en los trabajos del proyecto. Puedes seguir trabajando mientras tanto."
+    },
+    "agent": "Agente",
+    "run": "Ejecución",
+    "memory": {
+      "scope": {
+        "company": "Empresa: todos",
+        "personal": "Personal: solo tú"
+      },
+      "kind": {
+        "product": "Producto",
+        "customer": "Cliente",
+        "agents": "Agentes",
+        "working_style": "Estilo de trabajo",
+        "strategy": "Estrategia",
+        "objective": "Objetivo",
+        "other": "Otro"
+      },
+      "retention": {
+        "long_term": "Se conserva a largo plazo",
+        "dated": "Hasta el {{date}}",
+        "decay": "Se desvanece tras 90 días sin uso"
+      },
+      "resolve": {
+        "keep_both": "conservar ambas",
+        "keep": "conservar una",
+        "replace": "sustituir",
+        "merge": "fusionar"
+      },
+      "companyVisible": "Las memorias de la empresa son visibles para todos y el asistente y los agentes las usan para todos los usuarios.",
+      "supporters_one": "{{count, number}} persona respalda la afirmación actual.",
+      "supporters_other": "{{count, number}} personas respaldan la afirmación actual.",
+      "reason": "Motivo",
+      "forEveryone": "Esto cambia lo que la empresa recuerda, para todos. Si no eres administrador ni revisor de memoria, se registrará como propuesta para revisión."
+    },
+    "workflow": {
+      "unchanged": "La definición propuesta es idéntica a la actual.",
+      "meta": "Cambiado: {{fields}}",
+      "addedSteps": "Pasos añadidos",
+      "removedSteps": "Pasos eliminados",
+      "changedSteps": "Pasos modificados",
+      "showMoves": "Mostrar {{n, number}} pasos solo movidos",
+      "hideMoves": "Ocultar pasos solo movidos",
+      "addedArrows": "Flechas añadidas",
+      "removedArrows": "Flechas eliminadas",
+      "changedArrows": "Flechas modificadas",
+      "loopsChanged": "Bucles modificados ({{n, number}} tras guardar).",
+      "revision": "{{name}}: revisión {{from}} → {{to}}",
+      "stale": "Esta propuesta se basó en la revisión {{expected}}, pero la actual es la {{current}}: se rechazará al guardar; pide al asistente que la vuelva a generar.",
+      "counts": "{{nodes, number}} pasos, {{edges, number}} flechas, {{loops, number}} bucles"
+    },
+    "radar": {
+      "notTracked": "Sin seguimiento",
+      "removed": "Eliminada (se conservan sus reseñas y lanzamientos guardados)",
+      "noDomains": "Sin dominios",
+      "unavailable": "No se pudo leer la lista actual de marcas de Radar, así que aprobar no guardará nada.",
+      "profileKept": "Se conservan desde los perfiles de fuente: {{brands}}",
+      "removalKeepsData": "Eliminar una marca detiene sus escaneos y el envío de reseñas; no se borra nada guardado.",
+      "everyBrand": "Todas las marcas seguidas",
+      "brand": "Marca",
+      "scanFields": "Escaneo",
+      "scanCost": "Se ejecuta en segundo plano durante unos minutos y usa búsquedas web (como máximo el límite de consultas de la configuración de Radar)."
+    },
+    "scraper": {
+      "nothingSaved": "No se guarda nada hasta que lo apruebes.",
+      "savedFields": "Campos que se guardarán",
+      "changedFields": "Campos modificados",
+      "noChange": "Estos valores coinciden con lo guardado; aprobar no cambia nada.",
+      "unchangedFields_one": "{{count, number}} campo sin cambios",
+      "unchangedFields_other": "{{count, number}} campos sin cambios",
+      "notFound": "No se encontró el scraper {{id}}, así que aprobar no guardará nada.",
+      "none": "Ninguno",
+      "notSet": "Sin definir",
+      "scheduleOff": "Desactivado",
+      "scheduleEvery": "Cada {{n, number}} minutos",
+      "paginationOff": "Desactivada",
+      "paginationOn": "Parámetro «{{param}}», {{pages, number}} páginas desde {{start}}",
+      "pagesN": "{{n}} páginas",
+      "pagesAll": "Todas las páginas",
+      "reviewsN": "Hasta {{n}} reseñas",
+      "reviewsUnlimited": "Sin límite de reseñas",
+      "radarNone": "No: nuestros propios comentarios",
+      "method": {
+        "css": "Selectores CSS",
+        "jsonld": "JSON-LD (datos de reseñas estructurados)"
+      },
+      "store": {
+        "app_reviews_ios": "Apple App Store (iOS)",
+        "app_reviews_android": "Google Play (Android)",
+        "web_reviews": "Página de reseñas web"
+      },
+      "sort": {
+        "most_recent": "Más recientes",
+        "newest": "Más nuevas",
+        "rating": "Por valoración"
+      },
+      "fields": {
+        "id": "ID",
+        "name": "Nombre",
+        "urls": "URL",
+        "extraction_method": "Método",
+        "container_selector": "Selector del bloque de reseña",
+        "text_selector": "Selector de texto",
+        "title_selector": "Selector de título",
+        "rating_selector": "Selector de valoración",
+        "rating_attribute": "Atributo de valoración",
+        "date_selector": "Selector de fecha",
+        "author_selector": "Selector de autor",
+        "link_selector": "Selector de enlace",
+        "pagination": "Paginación",
+        "schedule": "Programación",
+        "enabled": "Activado",
+        "dimension_defaults": "Valores de dimensión predeterminados",
+        "tags": "Etiquetas",
+        "store": "Tienda",
+        "app_name": "Nombre de la app",
+        "app_id": "ID de App Store",
+        "package_name": "Nombre del paquete",
+        "sort_by": "Orden",
+        "max_reviews_per_run": "Máx. reseñas por ejecución",
+        "url": "URL de la página de reseñas",
+        "max_pages": "Máx. páginas por ejecución",
+        "max_reviews": "Límite de reseñas",
+        "radar_brand": "Fuente de Radar"
+      }
+    },
+    "users": {
+      "userFields": "Datos del usuario",
+      "email": "Correo electrónico",
+      "role": "Rol",
+      "roleAdmins": "Administrador",
+      "roleUsers": "Usuario",
+      "firstName": "Nombre",
+      "lastName": "Apellido",
+      "account": "Cuenta",
+      "enabled": "Activado",
+      "disabled": "Desactivado",
+      "notSet": "Sin definir",
+      "categories": "Categorías",
+      "allCategories": "Todas las categorías",
+      "sources": "Fuentes",
+      "allSources": "Todas las fuentes, incluidas las restringidas",
+      "defaultSources": "Todas las fuentes no restringidas (predeterminado)",
+      "temporaryPasswordNote": "Cognito envía a esta persona una contraseña temporal por correo. No se crea ni se cambia nada más.",
+      "notFound": "No se encontró el usuario {{username}}, así que aprobar no guardará nada.",
+      "usersTableLabel_one": "{{count, number}} usuario por crear",
+      "usersTableLabel_other": "{{count, number}} usuarios por crear",
+      "temporaryPasswordsNote": "Cognito envía a cada persona una contraseña temporal por correo. No se crea ni cambia nada más.",
+      "inOrderNote": "Los usuarios se crean en este orden; si uno falla, el resto no se crea.",
+      "adminsNote": "{{n, number}} de {{total, number}} serán administradores, con acceso completo a configuración, usuarios y datos."
+    },
+    "plan": {
+      "goal": "Objetivo",
+      "result": {
+        "label": "Resultado",
+        "showMore": "Mostrar el resultado completo",
+        "showLess": "Mostrar menos",
+        "none": "Este paso terminó sin guardar ningún resultado."
+      },
+      "steps": "Pasos del plan",
+      "free": "se escribe al ejecutarse",
+      "reference": "← resultado del paso {{n}} ({{output}})",
+      "fields": "Campos de «{{title}}»",
+      "noArgs": "Sin campos.",
+      "asksAgain": "volverá a preguntar",
+      "after": "después del paso {{steps}}",
+      "limits": "{{steps, number}} de {{maxSteps, number}} pasos · {{writes, number}} de {{maxWrites, number}} cambios · {{waits, number}} de {{maxWaits, number}} esperas · {{thinks, number}} de {{maxThinks, number}} análisis",
+      "invalid": "Este plan tiene problemas y no se iniciará:",
+      "runsInBackground": "Al aprobar, cada paso se ejecuta en segundo plano tal como se muestra. Si un cambio difiere, o un paso está marcado con «volverá a preguntar», se te consulta antes. Mientras tanto puedes cerrar el navegador.",
+      "think": "Análisis con las herramientas de solo lectura de esta página",
+      "waitFor": {
+        "source_run": "Espera a que termine la importación",
+        "project_job": "Espera a que termine la tarea del proyecto",
+        "scraper_run": "Espera a que termine la ejecución del scraper"
+      },
+      "kinds": {
+        "write": "Cambio",
+        "wait": "Espera",
+        "think": "Análisis"
+      },
+      "packs": {
+        "core": "General",
+        "insights": "Análisis de feedback",
+        "project": "Proyecto",
+        "forms": "Formularios de feedback",
+        "prioritization": "Priorización",
+        "scrapers": "Fuentes de datos",
+        "settings": "Configuración",
+        "memory": "Memoria",
+        "agents": "Agentes",
+        "company": "Empresa"
+      }
+    },
+    "reviewImport": {
+      "summaryLabel": "Detalles de la importación",
+      "sourceName": "Nombre de la fuente",
+      "sourceId": "Perfil de fuente",
+      "count": "Reseñas",
+      "countValue_one": "{{count, number}} reseña",
+      "countValue_other": "{{count, number}} reseñas",
+      "rated": "Con valoración",
+      "dated": "Con fecha",
+      "ofTotal": "{{n, number}} de {{total, number}}",
+      "tableLabel": "Reseñas que se importarán",
+      "text": "Reseña",
+      "rating": "Valoración",
+      "author": "Autor",
+      "date": "Fecha",
+      "undatedNote_one": "{{count, number}} reseña no tiene fecha; se fecha al importarla.",
+      "undatedNote_other": "{{count, number}} reseñas no tienen fecha; se fechan al importarlas.",
+      "pipelineNote": "Las reseñas pasan por el enriquecimiento habitual y aparecen en pocos minutos. Si se importan de nuevo, se guardan una sola vez.",
+      "url": "Enlace",
+      "title": "Título",
+      "reviewAllNote": "Se muestran todas las reseñas; desplázate para revisar cada fila antes de aprobar."
+    },
+    "sourceSchedule": {
+      "label": "Cambio de programación",
+      "source": "Fuente",
+      "schedule": "Programación",
+      "on": "Activada",
+      "off": "Desactivada",
+      "onNote": "Las importaciones programadas vuelven a ejecutarse y se cierra un disyuntor activado.",
+      "offNote": "Las importaciones programadas se detienen. Lo ya importado no se modifica."
+    }
+  },
+  "tools": {
+    "save_radar_brands": {
+      "title": "Guardar la lista de marcas de Radar",
+      "titleWith_one": "Guardar la lista de marcas de Radar ({{count, number}} marca)",
+      "titleWith_other": "Guardar la lista de marcas de Radar ({{count, number}} marcas)"
+    },
+    "run_radar_scan": {
+      "title": "Buscar ahora lanzamientos de las marcas de Radar"
+    },
+    "create_project": {
+      "title": "Crear un proyecto",
+      "titleWith": "Crear el proyecto «{{name}}»"
+    },
+    "set_problem_resolved": {
+      "title": "Cambiar el estado de un problema",
+      "titleResolve": "Marcar un problema como resuelto",
+      "titleReopen": "Reabrir un problema"
+    },
+    "set_feedback_category": {
+      "title": "Cambiar la categoría de una reseña",
+      "titleWith": "Cambiar la categoría a «{{category}}»"
+    },
+    "update_document": {
+      "title": "Editar un documento"
+    },
+    "create_document": {
+      "title": "Crear un documento",
+      "titleWith": "Crear el documento «{{title}}»"
+    },
+    "delete_document": {
+      "title": "Eliminar un documento"
+    },
+    "update_persona": {
+      "title": "Editar una persona"
+    },
+    "add_persona_note": {
+      "title": "Añadir una nota de investigación a una persona"
+    },
+    "update_project": {
+      "title": "Editar los detalles del proyecto"
+    },
+    "update_product_context": {
+      "title": "Actualizar la descripción del producto"
+    },
+    "start_research": {
+      "title": "Iniciar un análisis de investigación"
+    },
+    "generate_document": {
+      "title": "Generar un documento",
+      "titlePrd": "Escribir un PRD (requisitos de producto)",
+      "titlePrfaq": "Generar un PR/FAQ"
+    },
+    "generate_personas": {
+      "title": "Generar personas",
+      "titleWith": "Generar personas ({{n, number}})"
+    },
+    "merge_documents": {
+      "title": "Combinar documentos"
+    },
+    "update_feedback_form": {
+      "title": "Actualizar un formulario de comentarios"
+    },
+    "run_scraper": {
+      "title": "Recopilar reseñas de una fuente ahora"
+    },
+    "save_brand_settings": {
+      "title": "Guardar la configuración de marca"
+    },
+    "remember": {
+      "title": "Recordar",
+      "titleCompany": "Recordar para la empresa",
+      "titlePersonal": "Recordar para ti"
+    },
+    "update_company_memory": {
+      "title": "Cambiar una memoria de la empresa"
+    },
+    "forget_memory": {
+      "title": "Olvidar una memoria"
+    },
+    "confirm_memory": {
+      "title": "Estar de acuerdo con una memoria"
+    },
+    "merge_memories": {
+      "title": "Fusionar memorias",
+      "titleWith": "Fusionar {{n, number}} memorias"
+    },
+    "resolve_memory_conflict": {
+      "title": "Resolver un conflicto de memoria",
+      "titleWith": "Resolver un conflicto de memoria: {{action}}"
+    },
+    "create_agent": {
+      "title": "Crear un agente autónomo",
+      "titleWith": "Crear el agente “{{name}}”"
+    },
+    "update_agent": {
+      "title": "Cambiar un agente autónomo"
+    },
+    "enable_agent": {
+      "title": "Activar un agente autónomo"
+    },
+    "disable_agent": {
+      "title": "Desactivar un agente autónomo"
+    },
+    "run_agent": {
+      "title": "Ejecutar ahora un agente autónomo"
+    },
+    "cancel_agent_run": {
+      "title": "Cancelar una ejecución del agente"
+    },
+    "create_workflow": {
+      "title": "Crear un flujo de trabajo",
+      "titleWith": "Crear el flujo de trabajo “{{name}}”"
+    },
+    "update_workflow": {
+      "title": "Guardar cambios en un flujo de trabajo"
+    },
+    "duplicate_workflow": {
+      "title": "Duplicar un flujo de trabajo"
+    },
+    "update_company_context": {
+      "title": "Cambiar la visión y los objetivos de la empresa"
+    },
+    "update_my_context": {
+      "title": "Cambiar tus objetivos y KPI"
+    },
+    "update_design_system": {
+      "title": "Cambiar el sistema de diseño"
+    },
+    "create_scraper": {
+      "title": "Añadir una fuente de reseñas (página web)"
+    },
+    "update_scraper": {
+      "title": "Cambiar una fuente de reseñas"
+    },
+    "create_app_connector": {
+      "title": "Añadir una fuente de reseñas (app o sitio de reseñas)"
+    },
+    "create_user": {
+      "title": "Crear un usuario",
+      "titleWith": "Crear el usuario {{email}}"
+    },
+    "update_user": {
+      "title": "Actualizar un usuario"
+    },
+    "set_user_access": {
+      "title": "Definir el acceso de un usuario",
+      "titleWith": "Definir el acceso de {{email}}"
+    },
+    "run_source": {
+      "title": "Importar ahora desde una fuente",
+      "titleWith": "Importar ahora desde {{source}}"
+    },
+    "build_prototype": {
+      "title": "Crear un prototipo",
+      "titleWith": "Crear el prototipo «{{title}}»"
+    },
+    "cancel_plan": {
+      "title": "Cancelar un plan en curso"
+    },
+    "propose_plan": {
+      "title": "Aprobar un plan"
+    },
+    "set_source_enabled": {
+      "title": "Cambiar la programación de una fuente",
+      "titleEnable": "Activar la programación de {{source}}",
+      "titleDisable": "Desactivar la programación de {{source}}"
+    },
+    "import_reviews": {
+      "title": "Importar reseñas",
+      "titleWith_one": "Importar {{count, number}} reseña de {{source}}",
+      "titleWith_other": "Importar {{count, number}} reseñas de {{source}}"
+    },
+    "create_users": {
+      "title": "Crear usuarios",
+      "titleWith_one": "Crear {{count, number}} usuario",
+      "titleWith_other": "Crear {{count, number}} usuarios"
+    }
+  }
+}

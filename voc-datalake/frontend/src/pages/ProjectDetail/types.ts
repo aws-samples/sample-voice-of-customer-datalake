@@ -1,11 +1,28 @@
 /**
  * Shared types for ProjectDetail components
  */
+// DocType (what POST /projects/{id}/document accepts) is declared in api/types.ts, which
+// owns that wire contract (issue #381). Import it from there; do not respell 'prd' | 'prfaq'.
 import type {
-  ProjectPersona, Project, DocType,
+  DocType,
 } from '../../api/types'
+import type {
+  ProjectPersona,
+} from '../../api/projectTypes'
+import type { Tone } from '../../theme/tones'
+import type { LucideIcon } from 'lucide-react'
 
-export type Tab = 'overview' | 'personas' | 'product' | 'documents' | 'chat' | 'mcp'
+export type Tab = 'overview' | 'personas' | 'product' | 'documents' | 'decisions'
+
+const TAB_IDS: readonly Tab[] = ['overview', 'personas', 'product', 'documents', 'decisions']
+
+/**
+ * `?tab=` → a known tab. Unknown values fall back to overview, including the
+ * removed `chat` and `mcp` (Export / MCP moved to the global Connect page).
+ */
+export function parseTab(value: string | null): Tab {
+  return TAB_IDS.find((tab) => tab === value) ?? 'overview'
+}
 
 export type NoteItem = string | {
   note_id?: string;
@@ -26,15 +43,8 @@ export interface ResearchToolConfig {
   useWebSearch: boolean
 }
 
-// What POST /projects/{id}/document accepts, RE-EXPORTED for the picker — the
-// declaration itself lives in `api/types.ts` beside the other wire types, because
-// that route owns the contract and the lockstep test pins it there. It was declared
-// here and imported by the two clients, which pointed `api/` at `pages/`; issue #381
-// turned it round. Do not respell `'prd' | 'prfaq'` from either side.
-export type { DocType } from '../../api/types'
-
 export interface DocToolConfig {
-  // Which documents to generate. Both can be selected to generate PRD + PR-FAQ
+  // Which documents to generate. Both can be selected to generate PRD + PR/FAQ
   // in one go (each runs as its own async job).
   docTypes: DocType[]
   title: string
@@ -55,64 +65,54 @@ export interface PersonaAvatarProps {
 
 export interface PersonaSectionProps {
   readonly title: string
-  readonly icon: string
-  readonly color: 'purple' | 'green' | 'red' | 'blue' | 'amber' | 'indigo' | 'teal' | 'gray' | 'emerald'
+  /** A lucide icon (KiroCrew rule: lucide only, never an emoji glyph). */
+  readonly icon: LucideIcon
+  /** A STATE tone only (`danger` = negative sentiment, `muted` = quiet); omitted = neutral card. */
+  readonly color?: SectionColor
   readonly children: React.ReactNode
 }
 
 export interface ResearchNotesProps {
   readonly persona: ProjectPersona
+  /** False for a viewer: the notes are listed but cannot be added to or removed. */
+  readonly canEdit: boolean
   readonly onSave: (notes: NoteItem[]) => void
   readonly isSaving: boolean
 }
 
-export interface KiroExportSettingsProps {
-  readonly project: Project
-  readonly onSave: (prompt: string) => void
+/**
+ * A persona detail section is a neutral card by default; its lucide icon and title say
+ * which one it is (labels vs status, rule 15). The two tones left are STATES:
+ * `danger` for the pain-points section (negative sentiment) and `muted` for the quiet
+ * research-notes panel. Until 3.14.02 every `Tone` was here and each section had its
+ * own — identity painted as six states.
+ */
+type SectionColor = Extract<Tone, 'danger' | 'muted'>
+
+interface SectionClasses {
+  readonly border: string
+  readonly title: string
 }
 
-type SectionColor = 'purple' | 'green' | 'red' | 'blue' | 'amber' | 'indigo' | 'teal' | 'gray' | 'emerald'
+const SECTION_COLOR_CLASSES: Record<SectionColor, SectionClasses> = {
+  danger: {
+    border: 'border-danger/30 bg-danger-subtle',
+    title: 'text-danger',
+  },
+  muted: {
+    border: 'border-border bg-bg-accent/50',
+    title: 'text-text-strong',
+  },
+}
 
-export const SECTION_COLOR_CLASSES: Record<SectionColor, {
-  border: string;
-  title: string
-}> = {
-  purple: {
-    border: 'border-purple-200 bg-purple-50/50',
-    title: 'text-purple-700',
-  },
-  green: {
-    border: 'border-green-200 bg-green-50/50',
-    title: 'text-green-700',
-  },
-  red: {
-    border: 'border-red-200 bg-red-50/50',
-    title: 'text-red-700',
-  },
-  blue: {
-    border: 'border-blue-200 bg-blue-50/50',
-    title: 'text-blue-700',
-  },
-  amber: {
-    border: 'border-amber-200 bg-amber-50/50',
-    title: 'text-amber-700',
-  },
-  indigo: {
-    border: 'border-indigo-200 bg-indigo-50/50',
-    title: 'text-indigo-700',
-  },
-  teal: {
-    border: 'border-teal-200 bg-teal-50/50',
-    title: 'text-teal-700',
-  },
-  gray: {
-    border: 'border-gray-200 bg-gray-50/50',
-    title: 'text-gray-700',
-  },
-  emerald: {
-    border: 'border-emerald-200 bg-emerald-50/50',
-    title: 'text-emerald-700',
-  },
+/** The default section: a plain card, heading in the strong text colour. */
+const NEUTRAL_SECTION_CLASSES: SectionClasses = {
+  border: 'border-border bg-card',
+  title: 'text-text-strong',
+}
+
+export function sectionClasses(color: SectionColor | undefined): SectionClasses {
+  return color === undefined ? NEUTRAL_SECTION_CLASSES : SECTION_COLOR_CLASSES[color]
 }
 
 export const SIZE_CLASSES = {

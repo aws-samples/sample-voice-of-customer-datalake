@@ -1,15 +1,16 @@
 {
   "feedbackBySource": "Retroalimentación por Fuente",
-  "feedbackVolumeTrend": "Volumen de Retroalimentación y Tendencia de Sentimiento",
+  "otherSources": "Otras fuentes ({{n, number}})",
+  "feedbackVolumeTrend": "Reseñas y sentimiento por día",
   "liveSocialFeed": "Feed Social en Vivo",
   "loading": "cargando",
   "metrics": {
-    "avgSentiment": "Sentimiento Promedio",
-    "sourcesActive": "Fuentes Activas",
+    "avgSentiment": "Sentimiento medio",
     "totalFeedback": "Total de Retroalimentación",
-    "urgentIssues": "Problemas Urgentes"
+    "urgentIssues": "Problemas Urgentes",
+    "sourcesWithReviews": "Fuentes con reseñas"
   },
-  "noUrgentIssues": "Sin problemas urgentes - ¡buen trabajo! 🎉",
+  "noUrgentIssues": "Sin problemas urgentes - ¡buen trabajo!",
   "sentiment": {
     "mixed": "Mixto",
     "negative": "Negativo",
@@ -18,16 +19,11 @@
   },
   "sentimentDistribution": "Distribución de sentimiento",
   "topIssueCategories": "Principales Categorías de Problemas",
-  "urgentIssues_one": "{{count}} problema urgente",
-  "urgentIssues_many": "{{count}} problemas urgentes",
-  "urgentIssues_other": "{{count}} problemas urgentes",
   "welcome": "Bienvenido a VoC Analytics",
   "welcomeDescription": "Configure su endpoint de API y la configuración de marca para comenzar a analizar la retroalimentación de los clientes.",
   "home": {
-    "badge": "Primeros pasos",
     "flowHint": "Cuatro pasos, reflejados por las secciones de la barra lateral.",
     "howItWorks": "Cómo funciona",
-    "intro": "Convierte el feedback disperso de los clientes en decisiones de producto. Reúne feedback desde cualquier fuente, deja que la IA revele los temas, transforma los hallazgos en personas y especificaciones, y luego valida y prioriza qué construir a continuación.",
     "phase1Desc": "Incorpora feedback de clientes con scrapers web o formularios integrables y luego explora los registros brutos y procesados.",
     "phase1Title": "Recopilar e inspeccionar datos",
     "phase2Desc": "Observa lo que dicen los clientes: el sentimiento, las categorías y los mayores problemas surgen automáticamente.",
@@ -36,19 +32,107 @@
     "phase3Title": "Convertir la información en ideas",
     "phase4Desc": "Confirma la demanda con formularios de feedback específicos y luego clasifica qué construir por frecuencia, gravedad y alcance.",
     "phase4Title": "Validar y priorizar",
-    "quickStart": "Inicio rápido",
-    "quickStartHint": "¿Con prisa? Ve directo al camino más rápido hacia tus primeras conclusiones.",
-    "title": "Te damos la bienvenida a Voice of the Customer"
+    "title": "Te damos la bienvenida a Voice of the Customer",
+    "categoriesTitle": "Configura tus categorías",
+    "categoriesDesc": "Las categorías deciden cómo se clasifica cada reseña. Asocia cada una al producto al que pertenece y al responsable de producto a cargo: los responsables ven automáticamente los comentarios de sus categorías y son quienes actúan sobre ellos.",
+    "categoriesCta": "Configurar categorías",
+    "buddy": {
+      "title": "Tu lista de configuración",
+      "progress": "{{done, number}} de {{total, number}} completados",
+      "progressLabel": "Progreso de la configuración",
+      "skip": "Omitir",
+      "readyTitle": "Todo listo",
+      "readyDesc": "Todo está configurado. Oculta la lista por ahora o desactívala. Puedes recuperarla desde tu página de Cuenta.",
+      "hide": "Ocultar por ahora",
+      "dontShowAgain": "No volver a mostrar",
+      "statusDone": "Hecho",
+      "statusTodo": "Pendiente",
+      "statusPending": "Comprobando…",
+      "saveFailed": "No se pudo guardar tu elección. Inténtalo de nuevo.",
+      "show": "Mostrar la lista de configuración",
+      "startOnDashboard": "Abrir el panel al iniciar sesión",
+      "sourceTitle": "Conecta una fuente de comentarios",
+      "sourceDesc": "Configura un scraper web o un formulario de comentarios para empezar a recibir opiniones de clientes.",
+      "sourceCta": "Añadir una fuente",
+      "sourceAltCta": "Crear un formulario",
+      "feedbackTitle": "Recibe tus primeros comentarios",
+      "feedbackDesc": "Cada comentario recibido se clasifica, se puntúa por sentimiento y urgencia y queda listo para explorar.",
+      "feedbackCta": "Ver comentarios",
+      "assistantTitle": "Pregunta al asistente de IA",
+      "assistantDesc": "Haz una pregunta sobre tus comentarios en lenguaje natural: tendencias, quejas principales, cambios.",
+      "assistantCta": "Abrir el asistente",
+      "projectTitle": "Inicia un proyecto de investigación",
+      "projectDesc": "Convierte los hallazgos en personas, PRD y PR/FAQ en un proyecto propio.",
+      "projectCta": "Crear un proyecto"
+    }
   },
   "onboarding": {
     "heading": "Bienvenido: pongamos en marcha tus comentarios",
     "subheading": "Tu espacio de trabajo está vacío. Empieza por incorporar comentarios de clientes y luego explóralos y analízalos.",
-    "cta": "Empieza aquí",
-    "step1Title": "Recopilar reseñas",
-    "step1Desc": "Conecta scrapers de tiendas de apps o web, o importa un CSV para incorporar comentarios de clientes.",
-    "step2Title": "O comparte un formulario",
-    "step2Desc": "Crea un formulario de comentarios y recopila respuestas directamente de los usuarios.",
-    "step3Title": "Luego analiza",
-    "step3Desc": "Cuando haya datos, usa el chat de IA para detectar tendencias y convertirlas en proyectos."
-  }
+    "cta": "Empieza aquí"
+  },
+  "title": "Panel",
+  "subtitle": "Volumen de comentarios, sentimiento y problemas urgentes de un vistazo",
+  "github": {
+    "title": "Issues de GitHub",
+    "subtitle_one": "{{count, number}} issue o comentario en este periodo ({{unversioned, number}} sin versión)",
+    "subtitle_other": "{{count, number}} issues y comentarios en este periodo ({{unversioned, number}} sin versión)",
+    "byRelease": "Comentarios por versión",
+    "byLabel": "Comentarios por etiqueta",
+    "newSinceLast": "Novedades desde la última versión",
+    "reports": "Informes",
+    "avgSentiment": "Sentimiento medio",
+    "reach": "Alcance (1 + votos +1)",
+    "open": "Abiertos",
+    "label": "Etiqueta",
+    "repo": "Repositorio",
+    "allRepos": "Todos los repositorios",
+    "noVersions": "Ningún issue de este periodo indica una versión de software.",
+    "noLabels": "No hay etiquetas en este periodo.",
+    "onlyOneRelease": "Solo la versión {{version}} en este periodo: no hay nada anterior con qué comparar.",
+    "comparedWith": "Versión {{version}} comparada con todas las versiones anteriores de este periodo (anterior: {{previous}}).",
+    "nothingNew": "Nada nuevo: cada error, componente y categoría de esta versión ya se había informado.",
+    "newErrors": "Nuevas firmas de error",
+    "newComponents": "Nuevos componentes",
+    "newCategories": "Nuevas categorías",
+    "topComplaints": "Principales quejas en esta versión",
+    "topErrors": "Principales errores en esta versión"
+  },
+  "windowEmpty": {
+    "body": "Tu espacio de trabajo tiene {{count, number}} comentarios. El más reciente es del {{date}}, fuera del periodo seleccionado.",
+    "bodyUnknown": "No se recopiló nada en el periodo seleccionado. Puede haber comentarios más antiguos.",
+    "heading": "No hay comentarios en este periodo",
+    "showAllTime": "Mostrar todo el periodo"
+  },
+  "byDimension": {
+    "title": "Por dimensión",
+    "pick": "Dimensión",
+    "split": "{{positive}} positivas · {{neutral}} neutras · {{mixed}} mixtas · {{negative}} negativas",
+    "unassigned": "{{n, number}} opiniones sin valor",
+    "empty": "No hay opiniones en este periodo.",
+    "loadError": "No se pudo cargar el desglose."
+  },
+  "sentimentWords": {
+    "mostlyPositive": "Mayormente positivo",
+    "leaningPositive": "Algo positivo",
+    "balanced": "Equilibrado",
+    "leaningNegative": "Algo negativo",
+    "mostlyNegative": "Mayormente negativo",
+    "withShare": "{{words}} · {{share}}",
+    "share": {
+      "positive": "{{ratio, number(style: percent)}} positivo",
+      "negative": "{{ratio, number(style: percent)}} negativo"
+    },
+    "scoreHint": "Puntuación media {{value}} en una escala de −1 (negativo) a +1 (positivo)",
+    "review": "{{word}} · {{ratio, number(style: percent)}}"
+  },
+  "trend": {
+    "reviews": "Reseñas",
+    "averageSentiment": "Sentimiento medio",
+    "legend": "Barras: reseñas por día. Línea: sentimiento medio, de −1 (negativo) a +1 (positivo)."
+  },
+  "openInCategories": "Abrir {{name}} en Categorías",
+  "seeAllUrgent_one": "Ver la reseña urgente",
+  "seeAllUrgent_other": "Ver las {{count, number}} reseñas urgentes",
+  "seeAllUrgent_many": "Ver las {{count, number}} reseñas urgentes"
 }

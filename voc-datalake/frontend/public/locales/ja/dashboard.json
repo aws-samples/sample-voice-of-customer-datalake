@@ -1,15 +1,16 @@
 {
   "feedbackBySource": "ソース別フィードバック",
-  "feedbackVolumeTrend": "フィードバック量とセンチメントの推移",
+  "otherSources": "その他のソース ({{n, number}})",
+  "feedbackVolumeTrend": "日別のレビュー数と感情",
   "liveSocialFeed": "ライブソーシャルフィード",
   "loading": "読み込み中",
   "metrics": {
-    "avgSentiment": "平均センチメント",
-    "sourcesActive": "アクティブなソース",
+    "avgSentiment": "平均感情",
     "totalFeedback": "フィードバック合計",
-    "urgentIssues": "緊急の問題"
+    "urgentIssues": "緊急の問題",
+    "sourcesWithReviews": "レビューのあるソース"
   },
-  "noUrgentIssues": "緊急の問題はありません。素晴らしいです！🎉",
+  "noUrgentIssues": "緊急の問題はありません。素晴らしいです！",
   "sentiment": {
     "mixed": "混合",
     "negative": "ネガティブ",
@@ -18,15 +19,11 @@
   },
   "sentimentDistribution": "感情分布",
   "topIssueCategories": "主要な問題カテゴリ",
-  "urgentIssues_one": "{{count}}件の緊急の問題",
-  "urgentIssues_other": "{{count}}件の緊急の問題",
   "welcome": "VoC Analyticsへようこそ",
   "welcomeDescription": "APIエンドポイントとブランド設定を構成して、カスタマーフィードバックの分析を開始しましょう。",
   "home": {
-    "badge": "はじめに",
     "flowHint": "4つのステップは、サイドバーのセクションに対応しています。",
     "howItWorks": "使い方",
-    "intro": "散在する顧客フィードバックを製品の意思決定に変えましょう。あらゆるソースからフィードバックを取り込み、AIにテーマを抽出させ、得られた知見をペルソナや仕様に落とし込み、次に何を作るべきかを検証・優先順位付けします。",
     "phase1Desc": "Webスクレイパーや埋め込みフォームで顧客フィードバックを取り込み、生データと処理済みレコードを閲覧します。",
     "phase1Title": "データの収集と確認",
     "phase2Desc": "顧客の声を把握しましょう。感情、カテゴリ、最も大きな問題が自動的に浮かび上がります。",
@@ -35,19 +32,106 @@
     "phase3Title": "知見をアイデアに変える",
     "phase4Desc": "ターゲットを絞ったフィードバックフォームで需要を確認し、頻度・深刻度・リーチで作るべきものを順位付けします。",
     "phase4Title": "検証と優先順位付け",
-    "quickStart": "クイックスタート",
-    "quickStartHint": "お急ぎですか？最初のインサイトへの最短ルートに直接進みましょう。",
-    "title": "Voice of the Customer へようこそ"
+    "title": "Voice of the Customer へようこそ",
+    "categoriesTitle": "カテゴリを設定する",
+    "categoriesDesc": "カテゴリは、すべてのレビューがどのように分類されるかを決めます。各カテゴリを所属するプロダクトと担当のプロダクトオーナーに対応付けてください。オーナーは担当カテゴリのフィードバックを自動的に閲覧でき、対応する担当者となります。",
+    "categoriesCta": "カテゴリを設定",
+    "buddy": {
+      "title": "セットアップチェックリスト",
+      "progress": "{{total, number}} 件中 {{done, number}} 件完了",
+      "progressLabel": "セットアップの進捗",
+      "skip": "スキップ",
+      "readyTitle": "準備完了",
+      "readyDesc": "すべてのセットアップが完了しました。チェックリストは一時的に非表示にするか、オフにできます。アカウントページからいつでも再表示できます。",
+      "hide": "今は非表示",
+      "dontShowAgain": "今後表示しない",
+      "statusDone": "完了",
+      "statusTodo": "未完了",
+      "statusPending": "確認中…",
+      "saveFailed": "選択を保存できませんでした。もう一度お試しください。",
+      "show": "セットアップチェックリストを表示",
+      "startOnDashboard": "サインイン時にダッシュボードを開く",
+      "sourceTitle": "フィードバックソースを接続",
+      "sourceDesc": "Web スクレイパーまたはフィードバックフォームを設定して、顧客の声を取り込み始めます。",
+      "sourceCta": "ソースを追加",
+      "sourceAltCta": "フォームを作成",
+      "feedbackTitle": "最初のフィードバックを受け取る",
+      "feedbackDesc": "届いたフィードバックは分類され、感情と緊急度が評価され、すぐに分析できます。",
+      "feedbackCta": "フィードバックを見る",
+      "assistantTitle": "AI アシスタントに質問",
+      "assistantDesc": "フィードバックについて自然な言葉で質問できます。傾向、主な不満、変化など。",
+      "assistantCta": "アシスタントを開く",
+      "projectTitle": "リサーチプロジェクトを開始",
+      "projectDesc": "自分のプロジェクトで、発見をペルソナ、PRD、PR/FAQ にまとめます。",
+      "projectCta": "プロジェクトを作成"
+    }
   },
   "onboarding": {
     "heading": "ようこそ — フィードバックを集め始めましょう",
     "subheading": "ワークスペースは空です。まず顧客フィードバックを取り込み、その後で探索・分析しましょう。",
-    "cta": "ここから開始",
-    "step1Title": "レビューを収集",
-    "step1Desc": "アプリストア／Web スクレイパーを接続するか、CSV をインポートして顧客フィードバックを取り込みます。",
-    "step2Title": "またはフォームを共有",
-    "step2Desc": "フィードバックフォームを作成し、ユーザーから直接回答を集めます。",
-    "step3Title": "そして分析",
-    "step3Desc": "データが入ったら、AI チャットでトレンドを見つけてプロジェクトに変えます。"
-  }
+    "cta": "ここから開始"
+  },
+  "title": "ダッシュボード",
+  "subtitle": "フィードバック量、センチメント、緊急の課題をひと目で確認",
+  "github": {
+    "title": "GitHub Issues",
+    "subtitle_one": "この期間の Issue・コメント {{count, number}} 件（バージョンなし {{unversioned, number}} 件）",
+    "subtitle_other": "この期間の Issue・コメント {{count, number}} 件（バージョンなし {{unversioned, number}} 件）",
+    "byRelease": "リリース別フィードバック",
+    "byLabel": "ラベル別フィードバック",
+    "newSinceLast": "前回リリース以降の新規",
+    "reports": "件数",
+    "avgSentiment": "平均センチメント",
+    "reach": "リーチ（1 + 賛成）",
+    "open": "オープン",
+    "label": "ラベル",
+    "repo": "リポジトリ",
+    "allRepos": "すべてのリポジトリ",
+    "noVersions": "この期間にソフトウェアバージョンを記載した Issue はありません。",
+    "noLabels": "この期間のラベルはありません。",
+    "onlyOneRelease": "この期間はリリース {{version}} のみです。比較対象がありません。",
+    "comparedWith": "リリース {{version}} をこの期間の以前のすべてのリリースと比較（前回: {{previous}}）。",
+    "nothingNew": "新規なし: このリリースのエラー・コンポーネント・カテゴリはすべて以前に報告済みです。",
+    "newErrors": "新しいエラーシグネチャ",
+    "newComponents": "新しいコンポーネント",
+    "newCategories": "新しいカテゴリ",
+    "topComplaints": "このリリースの主な不満",
+    "topErrors": "このリリースの主なエラー"
+  },
+  "windowEmpty": {
+    "body": "ワークスペースには {{count, number}} 件のフィードバックがあります。最新は {{date}} で、選択した期間外です。",
+    "bodyUnknown": "選択した期間には何も収集されていません。以前のフィードバックがある可能性があります。",
+    "heading": "この期間のフィードバックはありません",
+    "showAllTime": "全期間を表示"
+  },
+  "byDimension": {
+    "title": "ディメンション別",
+    "pick": "ディメンション",
+    "split": "ポジティブ {{positive}} · ニュートラル {{neutral}} · 混在 {{mixed}} · ネガティブ {{negative}}",
+    "unassigned": "値のないレビュー {{n, number}} 件",
+    "empty": "この期間のレビューはありません。",
+    "loadError": "内訳を読み込めませんでした。"
+  },
+  "sentimentWords": {
+    "mostlyPositive": "おおむね肯定的",
+    "leaningPositive": "やや肯定的",
+    "balanced": "中立",
+    "leaningNegative": "やや否定的",
+    "mostlyNegative": "おおむね否定的",
+    "withShare": "{{words}} · {{share}}",
+    "share": {
+      "positive": "肯定的 {{ratio, number(style: percent)}}",
+      "negative": "否定的 {{ratio, number(style: percent)}}"
+    },
+    "scoreHint": "平均スコア {{value}}（−1 = 否定的 ～ +1 = 肯定的）",
+    "review": "{{word}} · {{ratio, number(style: percent)}}"
+  },
+  "trend": {
+    "reviews": "レビュー",
+    "averageSentiment": "平均感情",
+    "legend": "棒: 1 日あたりのレビュー数。線: 平均感情（−1 = 否定的 ～ +1 = 肯定的）。"
+  },
+  "openInCategories": "カテゴリで {{name}} を開く",
+  "seeAllUrgent_one": "緊急のレビュー {{count, number}} 件をすべて見る",
+  "seeAllUrgent_other": "緊急のレビュー {{count, number}} 件をすべて見る"
 }

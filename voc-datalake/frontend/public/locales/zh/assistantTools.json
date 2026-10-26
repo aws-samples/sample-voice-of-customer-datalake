@@ -1,0 +1,476 @@
+{
+  "card": {
+    "kicker": "需要批准",
+    "details": "详细信息",
+    "toolName": "操作：{{name}}",
+    "kickerDestructive": "需要批准 · 无法撤销",
+    "project": "项目",
+    "expired": "已过期",
+    "expiresIn": "{{time}} 后过期",
+    "approve": "批准",
+    "approveDestructive": "批准并删除",
+    "decline": "拒绝",
+    "confirmDecline": "确认拒绝",
+    "back": "返回",
+    "dismiss": "关闭",
+    "reasonLabel": "原因（可选）",
+    "reasonPlaceholder": "告诉助手原因，以便它进行调整",
+    "executing": "处理中…",
+    "adminOnly": "只有管理员可以批准此操作。您仍然可以拒绝。",
+    "destructiveWarning": "此操作将永久删除数据，且无法撤销。",
+    "destructiveConfirm": "我已了解，确认删除",
+    "invalidArgs": "助手的请求无效，无法批准：",
+    "unknownTool": "此操作在这里不可用，无法批准。",
+    "unknownToolTitle": "本应用无法识别的操作",
+    "resolved": {
+      "executed": "已完成",
+      "failed": "失败",
+      "declined": "已拒绝",
+      "expired": "已过期"
+    },
+    "openScraper": "在抓取器页面打开此抓取器",
+    "openScrapers": "打开抓取器页面",
+    "openUsers": "打开 隐私与访问 → 用户",
+    "approvePlan": "批准并运行",
+    "change": "修改",
+    "changeLabel": "需要修改什么?",
+    "changePlaceholder": "例如:跳过 Android 应用,或使用 3 个用户画像",
+    "confirmChange": "请求修改",
+    "openFeedback": "打开反馈列表",
+    "openRadar": "打开 Radar",
+    "openRadarSettings": "打开 管理 → 来源 → 雷达"
+  },
+  "preview": {
+    "showMore": "显示全部（{{n, number}} 个字符）",
+    "showLess": "收起",
+    "empty": "（空）",
+    "yes": "是",
+    "no": "否",
+    "loading": "正在加载当前版本…",
+    "before": "当前",
+    "after": "建议",
+    "unchanged": "未更改",
+    "document": "文档",
+    "persona": "用户画像",
+    "changeSummary": "更改内容",
+    "currentUnavailable": "无法加载当前值；仅显示建议的值。",
+    "unknownCategory": "类别“{{category}}”不在你可见的范围内，此更改将被拒绝。",
+    "brandMerged": "保存后的设置（未提及的字段保留当前值）：",
+    "diff": {
+      "label": "文档更改",
+      "stats": "新增 {{added, number}} 行，删除 {{removed, number}} 行",
+      "unchanged": "… {{n, number}} 行未更改 …",
+      "same": "未更改：",
+      "add": "新增：",
+      "del": "删除：",
+      "noChanges": "建议的内容与当前文档完全相同。",
+      "tooLarge": "文档过大，无法逐行比较。显示每个版本的开头部分。",
+      "currentUnavailable": "无法加载当前文档。建议的内容："
+    },
+    "job": {
+      "timeWindow": "读取最近 {{days, number}} 天的反馈（应用中选择的时间范围）。",
+      "language": "结果将以{{language}}撰写。",
+      "background": "此任务在后台运行，并显示在项目的任务列表中。您可以同时继续工作。"
+    },
+    "agent": "智能体",
+    "run": "运行",
+    "memory": {
+      "scope": {
+        "company": "公司——所有人",
+        "personal": "个人——仅您自己"
+      },
+      "kind": {
+        "product": "产品",
+        "customer": "客户",
+        "agents": "智能体",
+        "working_style": "工作方式",
+        "strategy": "战略",
+        "objective": "目标",
+        "other": "其他"
+      },
+      "retention": {
+        "long_term": "长期保留",
+        "dated": "保留至 {{date}}",
+        "decay": "90 天未使用后淡化"
+      },
+      "resolve": {
+        "keep_both": "保留两者",
+        "keep": "保留其一",
+        "replace": "替换",
+        "merge": "合并"
+      },
+      "companyVisible": "公司记忆对所有人可见，助手和智能体会为所有用户使用这些记忆。",
+      "supporters_one": "{{count, number}} 人支持当前表述。",
+      "supporters_other": "{{count, number}} 人支持当前表述。",
+      "reason": "原因",
+      "forEveryone": "这会更改公司为所有人记住的内容。如果您不是管理员或记忆审核者，此更改将作为提议提交审核。"
+    },
+    "workflow": {
+      "unchanged": "提议的定义与当前定义相同。",
+      "meta": "已更改：{{fields}}",
+      "addedSteps": "新增步骤",
+      "removedSteps": "移除的步骤",
+      "changedSteps": "更改的步骤",
+      "showMoves": "显示 {{n, number}} 个仅移动的步骤",
+      "hideMoves": "隐藏仅移动的步骤",
+      "addedArrows": "新增箭头",
+      "removedArrows": "移除的箭头",
+      "changedArrows": "更改的箭头",
+      "loopsChanged": "循环已更改（保存后共 {{n, number}} 个）。",
+      "revision": "{{name}}：第 {{from}} 版 → 第 {{to}} 版",
+      "stale": "此提议基于第 {{expected}} 版，但当前为第 {{current}} 版——保存将被拒绝；请让助手重新生成。",
+      "counts": "{{nodes, number}} 个步骤，{{edges, number}} 个箭头，{{loops, number}} 个循环"
+    },
+    "radar": {
+      "notTracked": "未跟踪",
+      "removed": "已移除（已存储的评论和发布会保留）",
+      "noDomains": "无域名",
+      "unavailable": "无法读取当前的 Radar 品牌列表，因此批准不会保存任何内容。",
+      "profileKept": "从来源配置中保留：{{brands}}",
+      "removalKeepsData": "移除品牌会停止其扫描和评论分流；已存储的内容不会被删除。",
+      "everyBrand": "所有跟踪的品牌",
+      "brand": "品牌",
+      "scanFields": "扫描",
+      "scanCost": "在后台运行几分钟并使用网络搜索（最多为 Radar 设置中的查询上限）。"
+    },
+    "scraper": {
+      "nothingSaved": "在你批准之前不会保存任何内容。",
+      "savedFields": "将要保存的字段",
+      "changedFields": "变更的字段",
+      "noChange": "这些值与已保存的相同；批准不会改变任何内容。",
+      "unchangedFields_one": "{{count, number}} 个未变更字段",
+      "unchangedFields_other": "{{count, number}} 个未变更字段",
+      "notFound": "未找到抓取器 {{id}}，批准也不会保存任何内容。",
+      "none": "无",
+      "notSet": "未设置",
+      "scheduleOff": "关闭",
+      "scheduleEvery": "每 {{n, number}} 分钟",
+      "paginationOff": "关闭",
+      "paginationOn": "参数“{{param}}”，从 {{start}} 开始共 {{pages, number}} 页",
+      "pagesN": "{{n}} 页",
+      "pagesAll": "全部页面",
+      "reviewsN": "最多 {{n}} 条评论",
+      "reviewsUnlimited": "不限评论数",
+      "radarNone": "否 — 我们自己的反馈",
+      "method": {
+        "css": "CSS 选择器",
+        "jsonld": "JSON-LD（结构化评论数据）"
+      },
+      "store": {
+        "app_reviews_ios": "Apple App Store（iOS）",
+        "app_reviews_android": "Google Play（Android）",
+        "web_reviews": "网页评论页面"
+      },
+      "sort": {
+        "most_recent": "最新",
+        "newest": "最新优先",
+        "rating": "按评分"
+      },
+      "fields": {
+        "id": "ID",
+        "name": "名称",
+        "urls": "URL",
+        "extraction_method": "方式",
+        "container_selector": "评论块选择器",
+        "text_selector": "正文选择器",
+        "title_selector": "标题选择器",
+        "rating_selector": "评分选择器",
+        "rating_attribute": "评分属性",
+        "date_selector": "日期选择器",
+        "author_selector": "作者选择器",
+        "link_selector": "链接选择器",
+        "pagination": "分页",
+        "schedule": "计划",
+        "enabled": "已启用",
+        "dimension_defaults": "维度默认值",
+        "tags": "标签",
+        "store": "商店",
+        "app_name": "应用名称",
+        "app_id": "App Store ID",
+        "package_name": "包名",
+        "sort_by": "排序方式",
+        "max_reviews_per_run": "每次运行最多评论数",
+        "url": "评论页面 URL",
+        "max_pages": "每次运行最多页数",
+        "max_reviews": "评论数上限",
+        "radar_brand": "Radar 来源"
+      }
+    },
+    "users": {
+      "userFields": "用户详情",
+      "email": "邮箱",
+      "role": "角色",
+      "roleAdmins": "管理员",
+      "roleUsers": "用户",
+      "firstName": "名",
+      "lastName": "姓",
+      "account": "账户",
+      "enabled": "已启用",
+      "disabled": "已禁用",
+      "notSet": "未设置",
+      "categories": "类别",
+      "allCategories": "所有类别",
+      "sources": "来源",
+      "allSources": "所有来源（含受限来源）",
+      "defaultSources": "所有未受限的来源（默认）",
+      "temporaryPasswordNote": "Cognito 会通过邮件向此人发送临时密码。不会创建或更改其他任何内容。",
+      "notFound": "未找到用户 {{username}}，批准也不会保存任何内容。",
+      "usersTableLabel_one": "要创建的 {{count, number}} 个用户",
+      "usersTableLabel_other": "要创建的 {{count, number}} 个用户",
+      "temporaryPasswordsNote": "Cognito 会通过电子邮件向每个人发送临时密码。不会创建或更改其他任何内容。",
+      "inOrderNote": "用户按此顺序创建；任何一个失败时，其余的都不会创建。",
+      "adminsNote": "{{total, number}} 人中有 {{n, number}} 人将成为管理员，拥有设置、用户和数据的完全访问权限。"
+    },
+    "plan": {
+      "goal": "目标",
+      "result": {
+        "label": "结果",
+        "showMore": "显示完整结果",
+        "showLess": "收起",
+        "none": "此步骤已结束，但没有保存任何结果。"
+      },
+      "steps": "计划步骤",
+      "free": "运行时撰写",
+      "reference": "← 第 {{n}} 步的输出 ({{output}})",
+      "fields": "“{{title}}”的字段",
+      "noArgs": "没有字段。",
+      "asksAgain": "会再次询问",
+      "after": "在第 {{steps}} 步之后",
+      "limits": "步骤 {{steps, number}}/{{maxSteps, number}} · 写入 {{writes, number}}/{{maxWrites, number}} · 等待 {{waits, number}}/{{maxWaits, number}} · 分析 {{thinks, number}}/{{maxThinks, number}}",
+      "invalid": "此计划存在问题,无法启动:",
+      "runsInBackground": "批准后,每个步骤都会按所示内容在后台运行。任何不一致的写入,以及标记为“会再次询问”的步骤,都会先征求你的确认。期间你可以关闭浏览器。",
+      "think": "使用此页面的只读工具进行分析",
+      "waitFor": {
+        "source_run": "等待导入完成",
+        "project_job": "等待项目任务完成",
+        "scraper_run": "等待抓取任务完成"
+      },
+      "kinds": {
+        "write": "写入",
+        "wait": "等待",
+        "think": "分析"
+      },
+      "packs": {
+        "core": "通用",
+        "insights": "洞察",
+        "project": "项目",
+        "forms": "反馈表单",
+        "prioritization": "优先级",
+        "scrapers": "数据源",
+        "settings": "设置",
+        "memory": "记忆",
+        "agents": "智能体",
+        "company": "公司"
+      }
+    },
+    "reviewImport": {
+      "summaryLabel": "导入详情",
+      "sourceName": "来源名称",
+      "sourceId": "数据源配置",
+      "count": "评论",
+      "countValue_one": "{{count, number}} 条",
+      "countValue_other": "{{count, number}} 条",
+      "rated": "有评分",
+      "dated": "有日期",
+      "ofTotal": "{{total, number}} 条中的 {{n, number}} 条",
+      "tableLabel": "要导入的评论",
+      "text": "评论",
+      "rating": "评分",
+      "author": "作者",
+      "date": "日期",
+      "undatedNote_one": "{{count, number}} 条评论没有日期，将使用导入时间。",
+      "undatedNote_other": "{{count, number}} 条评论没有日期，将使用导入时间。",
+      "pipelineNote": "评论会经过常规的数据增强，几分钟内显示。再次导入相同的评论只会保存一次。",
+      "url": "链接",
+      "title": "标题",
+      "reviewAllNote": "已列出全部评论；请在批准前滚动查看每一行。"
+    },
+    "sourceSchedule": {
+      "label": "计划变更",
+      "source": "数据源",
+      "schedule": "计划",
+      "on": "开启",
+      "off": "关闭",
+      "onNote": "计划导入将重新运行，已触发的断路器会被关闭。",
+      "offNote": "计划导入将停止。已导入的内容不受影响。"
+    }
+  },
+  "tools": {
+    "save_radar_brands": {
+      "title": "保存 Radar 品牌列表",
+      "titleWith_one": "保存 Radar 品牌列表（{{count, number}} 个品牌）",
+      "titleWith_other": "保存 Radar 品牌列表（{{count, number}} 个品牌）"
+    },
+    "run_radar_scan": {
+      "title": "立即扫描 Radar 品牌的发布"
+    },
+    "create_project": {
+      "title": "创建项目",
+      "titleWith": "创建项目“{{name}}”"
+    },
+    "set_problem_resolved": {
+      "title": "更改问题状态",
+      "titleResolve": "将问题标记为已解决",
+      "titleReopen": "重新打开问题"
+    },
+    "set_feedback_category": {
+      "title": "更改评论的类别",
+      "titleWith": "将类别更改为“{{category}}”"
+    },
+    "update_document": {
+      "title": "编辑文档"
+    },
+    "create_document": {
+      "title": "创建文档",
+      "titleWith": "创建文档“{{title}}”"
+    },
+    "delete_document": {
+      "title": "删除文档"
+    },
+    "update_persona": {
+      "title": "编辑用户画像"
+    },
+    "add_persona_note": {
+      "title": "为用户画像添加研究笔记"
+    },
+    "update_project": {
+      "title": "编辑项目详情"
+    },
+    "update_product_context": {
+      "title": "更新产品描述"
+    },
+    "start_research": {
+      "title": "启动调研分析"
+    },
+    "generate_document": {
+      "title": "生成文档",
+      "titlePrd": "撰写 PRD（产品需求）",
+      "titlePrfaq": "生成 PR/FAQ"
+    },
+    "generate_personas": {
+      "title": "生成用户画像",
+      "titleWith": "生成用户画像（{{n, number}}）"
+    },
+    "merge_documents": {
+      "title": "合并文档"
+    },
+    "update_feedback_form": {
+      "title": "更新反馈表单"
+    },
+    "run_scraper": {
+      "title": "立即从来源收集评论"
+    },
+    "save_brand_settings": {
+      "title": "保存品牌设置"
+    },
+    "remember": {
+      "title": "记住",
+      "titleCompany": "为公司记住",
+      "titlePersonal": "为您记住"
+    },
+    "update_company_memory": {
+      "title": "更改公司记忆"
+    },
+    "forget_memory": {
+      "title": "忘记记忆"
+    },
+    "confirm_memory": {
+      "title": "认同一条记忆"
+    },
+    "merge_memories": {
+      "title": "合并记忆",
+      "titleWith": "合并 {{n, number}} 条记忆"
+    },
+    "resolve_memory_conflict": {
+      "title": "解决记忆冲突",
+      "titleWith": "解决记忆冲突：{{action}}"
+    },
+    "create_agent": {
+      "title": "创建自主智能体",
+      "titleWith": "创建智能体“{{name}}”"
+    },
+    "update_agent": {
+      "title": "更改自主智能体"
+    },
+    "enable_agent": {
+      "title": "启用自主智能体"
+    },
+    "disable_agent": {
+      "title": "停用自主智能体"
+    },
+    "run_agent": {
+      "title": "立即运行自主智能体"
+    },
+    "cancel_agent_run": {
+      "title": "取消智能体运行"
+    },
+    "create_workflow": {
+      "title": "创建工作流",
+      "titleWith": "创建工作流“{{name}}”"
+    },
+    "update_workflow": {
+      "title": "保存对工作流的更改"
+    },
+    "duplicate_workflow": {
+      "title": "复制工作流"
+    },
+    "update_company_context": {
+      "title": "更改公司愿景与目标"
+    },
+    "update_my_context": {
+      "title": "更改您的目标与 KPI"
+    },
+    "update_design_system": {
+      "title": "更改设计系统"
+    },
+    "create_scraper": {
+      "title": "添加评论来源（网页）"
+    },
+    "update_scraper": {
+      "title": "更改评论来源"
+    },
+    "create_app_connector": {
+      "title": "添加评论来源（应用或评论网站）"
+    },
+    "create_user": {
+      "title": "创建用户",
+      "titleWith": "创建用户 {{email}}"
+    },
+    "update_user": {
+      "title": "更新用户"
+    },
+    "set_user_access": {
+      "title": "设置用户的访问权限",
+      "titleWith": "设置 {{email}} 的访问权限"
+    },
+    "run_source": {
+      "title": "立即从数据源导入",
+      "titleWith": "立即从 {{source}} 导入"
+    },
+    "build_prototype": {
+      "title": "构建原型",
+      "titleWith": "构建原型“{{title}}”"
+    },
+    "cancel_plan": {
+      "title": "取消正在运行的计划"
+    },
+    "propose_plan": {
+      "title": "批准计划"
+    },
+    "set_source_enabled": {
+      "title": "更改数据源计划",
+      "titleEnable": "开启 {{source}} 的计划",
+      "titleDisable": "关闭 {{source}} 的计划"
+    },
+    "import_reviews": {
+      "title": "导入评论",
+      "titleWith_one": "从 {{source}} 导入 {{count, number}} 条评论",
+      "titleWith_other": "从 {{source}} 导入 {{count, number}} 条评论"
+    },
+    "create_users": {
+      "title": "创建用户",
+      "titleWith_one": "创建 {{count, number}} 个用户",
+      "titleWith_other": "创建 {{count, number}} 个用户"
+    }
+  }
+}

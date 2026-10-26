@@ -1,0 +1,22 @@
+{
+  "name": "kiro-acp-bridge",
+  "version": "0.1.0",
+  "description": "Localhost-only bridge that lets a browser page drive a local `kiro-cli acp` agent over the Agent Client Protocol",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "kiro-acp-bridge": "src/cli.mjs"
+  },
+  "scripts": {
+    "start": "node src/cli.mjs",
+    "test": "node --test test/*.test.mjs",
+    "e2e:kiro": "node test/e2e-kiro.mjs"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "ws": "8.22.0",
+    "zod": "4.6.5"
+  }
+}

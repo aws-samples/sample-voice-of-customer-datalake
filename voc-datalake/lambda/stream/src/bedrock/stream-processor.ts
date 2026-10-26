@@ -1,136 +1,203 @@
 /**
- * Processes Bedrock ConverseStream events and emits SSE events.
+ * Accumulates one Bedrock ConverseStream turn.
  *
- * Maps Bedrock stream events to our SSE protocol:
- *   contentBlockDelta.delta.text          → { type: 'text', content }
- *   contentBlockDelta.delta.reasoningContent.text → { type: 'thinking', content }
- *   contentBlockStart.start.toolUse       → { type: 'tool_use', toolName }
- *   contentBlockStop (tool)               → triggers tool execution
- *   messageStop                           → { type: 'done' }
+ * Pure with respect to transport: it never writes to the response stream.
+ * Live deltas (text, reasoning) are handed to a `TurnSink`, which the AG-UI
+ * runtime maps onto TEXT_MESSAGE_* / REASONING_* events. Everything needed
+ * after the turn — the assistant content blocks in arrival order (reasoning
+ * with its signature, text, toolUse), the tool calls, the stop reason and the
+ * token usage — is collected in `TurnState`.
+ *
+ * Reasoning blocks are kept verbatim (text + signature, or redacted bytes)
+ * because Claude requires the thinking block of the last tool-using assistant
+ * turn to be sent back unmodified while the tool loop continues.
  */
-import type { ConverseStreamOutput } from '@aws-sdk/client-bedrock-runtime';
-import { sendSSE } from '../lib/streaming.js';
+import type { ContentBlock, ConverseStreamOutput, TokenUsage } from '@aws-sdk/client-bedrock-runtime';
 
 /** Matches the Smithy DocumentType used by the Bedrock SDK for tool inputs. */
-type DocumentType = null | boolean | number | string | DocumentType[] | { [prop: string]: DocumentType };
-
-export interface StreamState {
-  stopReason: string | null;
-  toolUseBlocks: ToolUseBlock[];
-  currentToolUseId: string | null;
-  currentToolName: string | null;
-  toolInputChunks: string[];
-  textContent: string;
-}
+export type DocumentType = null | boolean | number | string | DocumentType[] | { [prop: string]: DocumentType };
 
 export interface ToolUseBlock {
   toolUseId: string;
   name: string;
-  input: DocumentType;
+  input: Record<string, DocumentType>;
 }
 
-export function createStreamState(): StreamState {
-  return {
-    stopReason: null,
-    toolUseBlocks: [],
-    currentToolUseId: null,
-    currentToolName: null,
-    toolInputChunks: [],
-    textContent: '',
-  };
+/** Receives live deltas while the turn streams. */
+export interface TurnSink {
+  onText(delta: string): void;
+  onReasoning(delta: string): void;
+  /** A content block closed (lets the sink end an open reasoning message). */
+  onBlockStop(kind: 'text' | 'reasoning' | 'toolUse'): void;
 }
 
-// ── Event handlers (one per event type to keep complexity low) ──
+type OpenBlock =
+  | { kind: 'text'; text: string }
+  | { kind: 'reasoning'; text: string; signature: string; redacted: Uint8Array | null }
+  | { kind: 'toolUse'; toolUseId: string; name: string; chunks: string[] };
 
-function handleTextDelta(event: ConverseStreamOutput, state: StreamState, stream: NodeJS.WritableStream): boolean {
-  const text = event.contentBlockDelta?.delta?.text;
-  if (!text) return false;
-  state.textContent += text;
-  sendSSE(stream, { type: 'text', content: text });
-  return true;
+export interface TurnState {
+  stopReason: string | null;
+  /** Assistant content in arrival order, ready to be replayed to Bedrock. */
+  content: ContentBlock[];
+  toolUses: ToolUseBlock[];
+  text: string;
+  usage: TokenUsage | null;
+  open: OpenBlock | null;
 }
 
-function handleThinkingDelta(event: ConverseStreamOutput, stream: NodeJS.WritableStream): boolean {
-  const text = event.contentBlockDelta?.delta?.reasoningContent?.text;
-  if (!text) return false;
-  sendSSE(stream, { type: 'thinking', content: text });
-  return true;
+export function createTurnState(): TurnState {
+  return { stopReason: null, content: [], toolUses: [], text: '', usage: null, open: null };
 }
 
-function handleToolInputChunk(event: ConverseStreamOutput, state: StreamState): boolean {
-  const chunk = event.contentBlockDelta?.delta?.toolUse?.input;
-  if (!chunk) return false;
-  state.toolInputChunks.push(chunk);
-  return true;
+/**
+ * A JSON object at the top level. JSON.parse only ever yields DocumentType
+ * values (null, booleans, numbers, strings, arrays and objects of them), so
+ * checking the top level is checking the whole value.
+ */
+function isJsonObject(parsed: unknown): parsed is Record<string, DocumentType> {
+  return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed);
 }
 
-function handleToolUseStart(event: ConverseStreamOutput, state: StreamState, stream: NodeJS.WritableStream): boolean {
-  const tu = event.contentBlockStart?.start?.toolUse;
-  if (!tu) return false;
-  state.currentToolUseId = tu.toolUseId ?? null;
-  state.currentToolName = tu.name ?? null;
-  state.toolInputChunks = [];
-  // Notify the frontend that a tool is being invoked
-  sendSSE(stream, { type: 'tool_use', toolName: tu.name ?? 'unknown' });
-  return true;
-}
-
-function isDocumentType(value: unknown): value is DocumentType {
-  if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return true;
-  if (Array.isArray(value)) return value.every(isDocumentType);
-  if (typeof value === 'object') return Object.values(value).every(isDocumentType);
-  return false;
-}
-
-function parseToolInput(chunks: string[]): Record<string, DocumentType> {
-  const inputStr = chunks.join('');
+/** Parse streamed tool-input JSON; anything that is not a JSON object becomes `{}`. */
+export function parseToolInput(raw: string): Record<string, DocumentType> {
   try {
-    const parsed: unknown = JSON.parse(inputStr || '{}');
-    if (isDocumentType(parsed) && typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-      return parsed;
-    }
-    return {};
+    const parsed: unknown = JSON.parse(raw);
+    return isJsonObject(parsed) ? parsed : {};
   } catch {
     return {};
   }
 }
 
-function handleContentBlockStop(event: ConverseStreamOutput, state: StreamState): boolean {
-  if (event.contentBlockStop === undefined || !state.currentToolUseId) return false;
-  const input = parseToolInput(state.toolInputChunks);
-  state.toolUseBlocks.push({
-    toolUseId: state.currentToolUseId,
-    name: state.currentToolName ?? 'unknown',
-    input,
-  });
-  state.currentToolUseId = null;
-  state.currentToolName = null;
-  state.toolInputChunks = [];
+type TextBlock = Extract<OpenBlock, { kind: 'text' }>;
+type ReasoningBlock = Extract<OpenBlock, { kind: 'reasoning' }>;
+type ToolUseOpenBlock = Extract<OpenBlock, { kind: 'toolUse' }>;
+
+function textToContent(text: string): ContentBlock | null {
+  return text ? { text } : null;
+}
+
+function reasoningToContent(block: ReasoningBlock): ContentBlock | null {
+  if (block.redacted) return { reasoningContent: { redactedContent: block.redacted } };
+  if (!block.text && !block.signature) return null;
+  return {
+    reasoningContent: {
+      reasoningText: { text: block.text, ...(block.signature ? { signature: block.signature } : {}) },
+    },
+  };
+}
+
+function commitToolUse(state: TurnState, block: ToolUseOpenBlock): void {
+  const input = parseToolInput(block.chunks.join(''));
+  state.toolUses.push({ toolUseId: block.toolUseId, name: block.name, input });
+  state.content.push({ toolUse: { toolUseId: block.toolUseId, name: block.name, input } });
+}
+
+function closeOpenBlock(state: TurnState, sink: TurnSink): void {
+  const block = state.open;
+  if (!block) return;
+  state.open = null;
+  if (block.kind === 'toolUse') {
+    commitToolUse(state, block);
+  } else {
+    const content = block.kind === 'text' ? textToContent(block.text) : reasoningToContent(block);
+    if (content) state.content.push(content);
+  }
+  sink.onBlockStop(block.kind);
+}
+
+function openText(state: TurnState, sink: TurnSink): TextBlock {
+  if (state.open?.kind === 'text') return state.open;
+  closeOpenBlock(state, sink);
+  const block: TextBlock = { kind: 'text', text: '' };
+  state.open = block;
+  return block;
+}
+
+function openReasoning(state: TurnState, sink: TurnSink): ReasoningBlock {
+  if (state.open?.kind === 'reasoning') return state.open;
+  closeOpenBlock(state, sink);
+  const block: ReasoningBlock = { kind: 'reasoning', text: '', signature: '', redacted: null };
+  state.open = block;
+  return block;
+}
+
+function handleReasoningDelta(event: ConverseStreamOutput, state: TurnState, sink: TurnSink): boolean {
+  const delta = event.contentBlockDelta?.delta?.reasoningContent;
+  if (!delta) return false;
+  const block = openReasoning(state, sink);
+  if (delta.text) {
+    block.text += delta.text;
+    sink.onReasoning(delta.text);
+  }
+  if (delta.signature) block.signature += delta.signature;
+  if (delta.redactedContent) block.redacted = delta.redactedContent;
   return true;
 }
 
-function handleMessageStop(event: ConverseStreamOutput, state: StreamState): boolean {
+function handleTextDelta(event: ConverseStreamOutput, state: TurnState, sink: TurnSink): boolean {
+  const text = event.contentBlockDelta?.delta?.text;
+  if (text === undefined) return false;
+  if (!text) return true;
+  openText(state, sink).text += text;
+  state.text += text;
+  sink.onText(text);
+  return true;
+}
+
+function handleToolInputChunk(event: ConverseStreamOutput, state: TurnState): boolean {
+  const chunk = event.contentBlockDelta?.delta?.toolUse?.input;
+  if (chunk === undefined) return false;
+  if (state.open?.kind === 'toolUse') state.open.chunks.push(chunk);
+  return true;
+}
+
+function handleToolUseStart(event: ConverseStreamOutput, state: TurnState, sink: TurnSink): boolean {
+  const toolUse = event.contentBlockStart?.start?.toolUse;
+  if (!toolUse) return false;
+  closeOpenBlock(state, sink);
+  state.open = {
+    kind: 'toolUse',
+    toolUseId: toolUse.toolUseId ?? '',
+    name: toolUse.name ?? 'unknown',
+    chunks: [],
+  };
+  return true;
+}
+
+function handleBlockStop(event: ConverseStreamOutput, state: TurnState, sink: TurnSink): boolean {
+  if (event.contentBlockStop === undefined) return false;
+  closeOpenBlock(state, sink);
+  return true;
+}
+
+function handleMessageStop(event: ConverseStreamOutput, state: TurnState, sink: TurnSink): boolean {
   if (!event.messageStop) return false;
+  closeOpenBlock(state, sink);
   state.stopReason = event.messageStop.stopReason ?? 'end_turn';
   return true;
 }
 
-// ── Main dispatcher ──
+/** Record the token usage (Bedrock sends it in the last event, after messageStop). */
+function applyMetadata(event: ConverseStreamOutput, state: TurnState): void {
+  const usage = event.metadata?.usage;
+  if (usage) state.usage = usage;
+}
 
-export function processStreamEvent(
-  event: ConverseStreamOutput,
-  state: StreamState,
-  stream: NodeJS.WritableStream,
-): void {
-  // Try each handler in priority order; first match wins
+/** Apply one stream event to the turn state; first matching handler wins, metadata only when none did. */
+export function processStreamEvent(event: ConverseStreamOutput, state: TurnState, sink: TurnSink): void {
   const handlers = [
-    () => handleTextDelta(event, state, stream),
-    () => handleThinkingDelta(event, stream),
+    () => handleReasoningDelta(event, state, sink),
+    () => handleTextDelta(event, state, sink),
     () => handleToolInputChunk(event, state),
-    () => handleToolUseStart(event, state, stream),
-    () => handleContentBlockStop(event, state),
-    () => handleMessageStop(event, state),
+    () => handleToolUseStart(event, state, sink),
+    () => handleBlockStop(event, state, sink),
+    () => handleMessageStop(event, state, sink),
   ];
-  handlers.some((handler) => handler());
-  // Metadata events (usage, etc.) are silently ignored
+  if (!handlers.some((handler) => handler())) applyMetadata(event, state);
+}
+
+/** Close whatever is still open (a stream that ended without messageStop). */
+export function finishTurn(state: TurnState, sink: TurnSink): void {
+  closeOpenBlock(state, sink);
 }

@@ -26,21 +26,19 @@
 import { describe, it, expect } from 'vitest'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { MCP_SCOPES } from '../api/mcpTokenSchema'
 
 const LOCALES_DIR = join(process.cwd(), 'public', 'locales')
 
 /**
  * Every leaf of a parsed locale file, as dot-joined path + value.
  *
- * Returns values as well as paths so both tests below can share one walker: the
- * colon check needs only paths, the scope-coverage check also needs to know the
- * entry is non-empty. That is what lets this file hold **no type assertion** —
- * `isRecord` narrows `unknown` instead, matching the rule the rest of this PR
- * follows (see the copy-and-delete note in api/mcpTokenSchema.ts). ESLint does
- * not enforce it here — `eslint.config.js` ignores test files — so it is a
- * choice rather than a constraint, and a walker that returns both is smaller
- * than a walker plus a cast.
+ * Returns values as well as paths (the colon check reads only paths; a future
+ * value check can share the walker). `isRecord` narrows `unknown` instead of a
+ * type assertion. ESLint does not enforce that here — `eslint.config.js`
+ * ignores test files — so it is a choice rather than a constraint.
+ *
+ * (The per-project mint form's `mcp.scopeDesc` coverage check went with the
+ * Export / MCP tab; the global Connect page has no per-scope descriptions.)
  */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -95,50 +93,6 @@ describe('locale key structure', () => {
       '',
       'Key the entry without a colon (e.g. `feedback_read`) and derive it at the',
       'call site from the identifier.',
-    ].join('\n')).toEqual([])
-  })
-
-  it('has a scopeDesc entry for every MCP scope, in every locale', () => {
-    // Closes the gap that DERIVING the key opens. The component renders
-    // `mcp.scopeDesc.${scope.replace(':', '_')}`, so the link between the scope
-    // constants and the locale entries is implicit — adding a scope (Phase 3
-    // adds a write scope) without adding the key to all 8 locales renders a raw
-    // key path in the mint form.
-    //
-    // Less severe than the original defect, because a visible `mcp.scopeDesc.x`
-    // is obviously broken where the literal "read" looked like real copy. But
-    // Phase 3 WILL add scopes, so the cheap loop is worth having now, and it
-    // covers every locale rather than the `en` a component test would exercise.
-    const missing: string[] = []
-    const blank: string[] = []
-    for (const { locale, file, path } of localeFiles()) {
-      if (file !== 'projectDetail.json') continue
-      const json: unknown = JSON.parse(readFileSync(path, 'utf-8'))
-      // Looked up in the FLATTENED leaf list, so no cast is needed to reach
-      // into mcp.scopeDesc — the walker has already resolved the shape.
-      const byPath = new Map(leafEntries(json).map((e) => [e.path, e.value]))
-      for (const scope of MCP_SCOPES) {
-        const key = `mcp.scopeDesc.${scope.replace(':', '_')}`
-        if (!byPath.has(key)) missing.push(`${locale}: ${key}`)
-        else {
-          const value = byPath.get(key)
-          if (typeof value !== 'string' || value.trim() === '') {
-            blank.push(`${locale}: ${key}`)
-          }
-        }
-      }
-    }
-    expect(missing, [
-      'A scope in MCP_SCOPES has no description key in some locale, so the mint',
-      'form will render the raw key path for it. The key is the scope with its',
-      'colon replaced by an underscore (`feedback:read` -> `feedback_read`).',
-    ].join('\n')).toEqual([])
-    expect(blank, 'a scopeDesc entry exists but is empty').toEqual([])
-
-    // Positive control: the loop must actually have compared something, or an
-    // empty MCP_SCOPES / a renamed file would make the assertions vacuous.
-    expect(MCP_SCOPES.length).toBeGreaterThan(0)
-    expect(localeFiles().filter((f) => f.file === 'projectDetail.json').length)
-      .toBeGreaterThanOrEqual(8)
+    ].join('\n')).toStrictEqual([])
   })
 })

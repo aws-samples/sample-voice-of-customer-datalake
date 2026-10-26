@@ -1,0 +1,5 @@
+{
+  "entries": [
+    { "key": "frontend:src/api/client.ts#api.generateDocument", "reason": "lambda/api/test/test_doc_type_lockstep.py requires both generateDocument signatures (the api delegate and projectsApi's)." }
+  ]
+}

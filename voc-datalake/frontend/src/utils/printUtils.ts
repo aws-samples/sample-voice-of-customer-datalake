@@ -1,6 +1,19 @@
 /**
  * @fileoverview Browser-based print utilities for PDF export.
  * Uses native browser print dialog instead of jsPDF for better quality and smaller bundle.
+ *
+ * The print document is loaded into a hidden, same-origin `<iframe srcdoc>` and
+ * printed with `iframe.contentWindow.print()` once its `load` event fires — the
+ * pattern MDN documents under "Print an external page without opening it"
+ * (https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Media_queries/Printing).
+ * This replaces the old `window.open('')` + `document.write()` popup:
+ * `document.write` is strongly discouraged by the HTML spec and MDN, and the
+ * popup was subject to popup blockers.
+ *
+ * CSP: an `about:srcdoc` document inherits the embedding page's policy and is
+ * not a fetch, so `frame-src 'self'` does not block it (a `blob:` URL would need
+ * `frame-src blob:`). The inline `<style>` below is allowed by the app's
+ * `style-src 'unsafe-inline'`; the document carries no script.
  * @module utils/printUtils
  */
 
@@ -8,7 +21,14 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import type { ReactElement } from 'react'
 
 /**
- * Print styles applied to the print window.
+ * Fallback removal delay after `print()` returns, for browsers whose `print()`
+ * is non-blocking and that never fire `afterprint` on the frame. Generous so a
+ * dialog that is still open is not torn down under the user.
+ */
+const CLEANUP_FALLBACK_MS = 60_000
+
+/**
+ * Print styles applied to the print document.
  * Includes page break controls and print-optimized typography.
  */
 const PRINT_STYLES = `
@@ -38,36 +58,6 @@ const PRINT_STYLES = `
       break-after: avoid;
       page-break-after: avoid;
     }
-    
-    /* Hide print button when printing */
-    .no-print {
-      display: none !important;
-    }
-  }
-  
-  @media screen {
-    .no-print {
-      position: fixed;
-      top: 16px;
-      right: 16px;
-      z-index: 1000;
-    }
-    
-    .print-button {
-      padding: 10px 20px;
-      background: #2563eb;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-    }
-    
-    .print-button:hover {
-      background: #1d4ed8;
-    }
   }
   
   * {
@@ -78,47 +68,24 @@ const PRINT_STYLES = `
     margin: 0;
     padding: 20px;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: white;
-    color: #1f2937;
+    background: #ffffff;
+    color: #19161d;
     line-height: 1.6;
   }
 `
 
 interface PrintOptions {
-  /** Document title shown in browser tab and print dialog */
+  /** Document title shown in the print dialog (and used as the default PDF file name) */
   title: string
   /** React component to render as print content */
   content: ReactElement
-  /** Optional callback when print window is closed */
+  /** Optional callback once printing has finished and the print frame is removed */
   onClose?: () => void
 }
 
-/**
- * Opens a new browser window with print-optimized content and triggers the print dialog.
- * Users can save as PDF or print directly from the browser's native dialog.
- *
- * @param options - Print configuration options
- * @returns The opened window reference, or null if blocked by popup blocker
- */
-export function openPrintWindow(options: PrintOptions): Window | null {
-  const {
-    title, content, onClose,
-  } = options
-
-  // Must be called from a user action to avoid popup blockers
-  const printWindow = window.open('', '_blank')
-
-  if (!printWindow) {
-    // Popup was blocked
-    return null
-  }
-
-  // Render React content to static HTML
-  const contentHtml = renderToStaticMarkup(content)
-
-  // Build the full HTML document (no inline event handlers to avoid CSP/browser blocking)
-  const html = `
-<!DOCTYPE html>
+/** Builds the complete, script-free HTML document that is printed. */
+function buildPrintHtml(title: string, content: ReactElement): string {
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -127,47 +94,108 @@ export function openPrintWindow(options: PrintOptions): Window | null {
   <style>${PRINT_STYLES}</style>
 </head>
 <body>
-  <div class="no-print">
-    <button class="print-button" id="print-btn">
-      Print / Save as PDF
-    </button>
-  </div>
-  ${contentHtml}
+  ${renderToStaticMarkup(content)}
 </body>
 </html>
 `
-
-  // Using document.write is the standard way to populate a new window's document
-  // eslint-disable-next-line sonarjs/deprecation
-  printWindow.document.write(html)
-  printWindow.document.close()
-
-  // Attach print button handler programmatically (inline onclick can be blocked by browsers)
-  const printBtn = printWindow.document.getElementById('print-btn')
-  if (printBtn) {
-    printBtn.addEventListener('click', () => {
-      printWindow.print()
-    })
-  }
-
-  // Set up close handler if provided
-  if (onClose) {
-    printWindow.onbeforeunload = onClose
-  }
-
-  // Auto-trigger print dialog after content loads
-  printWindow.onload = () => {
-    // Small delay to ensure styles are applied
-    setTimeout(() => {
-      printWindow.print()
-    }, 100)
-  }
-
-  return printWindow
 }
 
 /**
- * Creates a PDF generator function that opens a print window with the given content.
+ * Creates the off-screen print frame. Not `display: none`: a frame without a
+ * layout box may print blank in some engines, so it is sized to zero instead.
+ */
+function createPrintFrame(title: string, html: string): HTMLIFrameElement {
+  const frame = document.createElement('iframe')
+  frame.title = title
+  frame.setAttribute('aria-hidden', 'true')
+  frame.tabIndex = -1
+  Object.assign(frame.style, {
+    position: 'fixed',
+    right: '0',
+    bottom: '0',
+    width: '0',
+    height: '0',
+    border: '0',
+    visibility: 'hidden',
+  })
+  frame.srcdoc = html
+  return frame
+}
+
+/** Lifetime of one print frame: idempotent teardown plus its fallback timer. */
+interface PrintSession {
+  readonly cleanup: () => void
+  readonly scheduleFallbackCleanup: () => void
+  /** Aborted by `cleanup`; binds the frame's own (same-realm) listeners to the session. */
+  readonly signal: AbortSignal
+}
+
+function createPrintSession(frame: HTMLIFrameElement, onClose?: () => void): PrintSession {
+  // Aborted once torn down; the abort also detaches the frame's `load` listener.
+  const lifetime = new AbortController()
+  const timers: { fallback?: ReturnType<typeof setTimeout> } = {}
+  const cleanup = () => {
+    if (lifetime.signal.aborted) return
+    lifetime.abort()
+    clearTimeout(timers.fallback)
+    frame.remove()
+    onClose?.()
+  }
+  const scheduleFallbackCleanup = () => {
+    if (!lifetime.signal.aborted) timers.fallback = setTimeout(cleanup, CLEANUP_FALLBACK_MS)
+  }
+  return { cleanup, scheduleFallbackCleanup, signal: lifetime.signal }
+}
+
+/** Prints the loaded frame, then removes it on `afterprint` (or the fallback timeout). */
+function printLoadedFrame(frame: HTMLIFrameElement, session: PrintSession): void {
+  const frameWindow = frame.contentWindow
+  if (!frameWindow) {
+    session.cleanup()
+    return
+  }
+  // No `signal` here: the frame window is another realm, and `cleanup` is
+  // idempotent anyway; the listener dies with the removed frame.
+  frameWindow.addEventListener('afterprint', session.cleanup, { once: true })
+  try {
+    frameWindow.print()
+  } catch {
+    session.cleanup()
+    return
+  }
+  session.scheduleFallbackCleanup()
+}
+
+/**
+ * Renders print-optimized content into a hidden iframe and opens the browser's
+ * print dialog for it. Users can save as PDF or print directly from the native
+ * dialog. The frame removes itself after printing.
+ *
+ * @param options - Print configuration options
+ * @returns The print frame's window, or null if no browsing context could be created
+ */
+export function openPrintWindow(options: PrintOptions): Window | null {
+  const {
+    title, content, onClose,
+  } = options
+
+  const frame = createPrintFrame(title, buildPrintHtml(title, content))
+  const session = createPrintSession(frame, onClose)
+  // `once`: an srcdoc frame fires exactly one load (for about:srcdoc) per the
+  // HTML spec, but never print twice if an engine also reports about:blank.
+  frame.addEventListener('load', () => printLoadedFrame(frame, session), { once: true, signal: session.signal })
+  document.body.appendChild(frame)
+
+  const frameWindow = frame.contentWindow
+  if (!frameWindow) {
+    session.cleanup()
+    return null
+  }
+  return frameWindow
+}
+
+/**
+ * Creates a PDF generator function that prints the given content.
  * Eliminates boilerplate across per-page PDF generators.
  *
  * @example
@@ -189,7 +217,7 @@ export function createPdfGenerator<T>(
       content: render(props),
     })
     if (!printWindow) {
-      throw new TypeError('Failed to open print window. Please allow popups for this site.')
+      throw new TypeError('Failed to prepare the print document.')
     }
   }
 }

@@ -17,13 +17,13 @@
  * show that some page appeared for some URL.
  */
 import { describe, it, expect } from 'vitest'
+import { sortedStrings } from '@test/stringLists'
 import { isValidElement } from 'react'
-import type { ReactElement, ReactNode } from 'react'
 import type { RouteObject } from 'react-router-dom'
 
 import { routes } from './routes'
 import { BALLOT_PAGE_PATH_PREFIX } from './api/ballotPageUrl'
-import ProtectedRoute from './components/ProtectedRoute'
+import ProtectedRoute from './components/ProtectedRoute/ProtectedRoute'
 
 /** The ballot route as `routes.tsx` declares it — a TOP-LEVEL entry, which is
  *  half of what makes it reachable without an account. */
@@ -31,10 +31,13 @@ const ballotRoute = routes.find((route) => route.path === `${BALLOT_PAGE_PATH_PR
 
 /** Every element type in one route's element tree, so "is `ProtectedRoute`
  *  anywhere above this page" is answerable rather than assumed from the top node. */
-function elementTypes(node: ReactNode): unknown[] {
+function elementTypes(node: unknown): unknown[] {
   if (!isValidElement(node)) return []
-  const element: ReactElement<{ children?: ReactNode }> = node
-  return [element.type, ...elementTypes(element.props.children)]
+  // `props` is `unknown` on a bare `isValidElement` narrowing, so read
+  // `children` through a guard rather than asserting a props shape.
+  const props: unknown = node.props
+  const children: unknown = typeof props === 'object' && props !== null && 'children' in props ? props.children : undefined
+  return [node.type, ...elementTypes(children)]
 }
 
 function guardsChildren(route: RouteObject): boolean {
@@ -61,17 +64,17 @@ describe('the public ballot route', () => {
       .map((child) => child.path)
       .filter((path) => path?.startsWith(BALLOT_PAGE_PATH_PREFIX.replace(/^\//, '')))
 
-    expect(nested).toEqual([])
+    expect(nested).toStrictEqual([])
   })
 
   it('is the only unguarded route besides login', () => {
     // Stated as an exact list, so the next public page is a deliberate edit here
     // rather than an unremarked one. `/` is the protected layout itself.
-    const unguarded = routes
+    // `String()` so an index route (no path) shows up as "undefined" rather than vanishing.
+    const unguarded = sortedStrings(routes
       .filter((route) => !guardsChildren(route))
-      .map((route) => route.path)
-      .sort()
+      .map((route) => String(route.path)))
 
-    expect(unguarded).toEqual(['/login', `${BALLOT_PAGE_PATH_PREFIX}:sessionId`])
+    expect(unguarded).toStrictEqual(['/login', `${BALLOT_PAGE_PATH_PREFIX}:sessionId`])
   })
 })

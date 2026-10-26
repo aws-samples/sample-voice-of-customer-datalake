@@ -18,7 +18,7 @@
  * @module components/CategoriesManager/categoriesSchema
  */
 import { z } from 'zod'
-import type { Category, Subcategory } from './CategoriesManager'
+import type { Category, CategoryOwner, Subcategory } from './CategoriesManager'
 
 /** Slug of a name for derived ids: lowercase, non-alphanumerics collapsed
  * to underscores, trimmed — 'billing/refunds' → 'billing_refunds'.
@@ -81,10 +81,31 @@ const rawSubcategorySchema = z.looseObject({
   description: z.string().optional().catch(undefined),
 })
 
+/**
+ * A product owner. `sub` is the identity the backend grants read access by;
+ * `username`/`email` are what the editor shows. An entry without a usable `sub`
+ * is dropped: it could not grant anything, and saving it back would fail the
+ * route's validation.
+ */
+const ownerSchema = z.object({
+  sub: z.string().trim().min(1),
+  username: z.string().catch(''),
+  email: z.string().catch(''),
+})
+
+const ownersSchema = z.array(z.unknown()).optional().catch(undefined).transform((values) =>
+  values?.flatMap((raw) => {
+    const parsed = ownerSchema.safeParse(raw)
+    return parsed.success ? [parsed.data] : []
+  }),
+)
+
 const rawCategorySchema = z.looseObject({
   id: z.string().optional().catch(undefined),
   name: z.string().catch(''),
   description: z.string().optional().catch(undefined),
+  product: z.string().optional().catch(undefined),
+  owners: ownersSchema,
   subcategories: z.array(z.unknown()).catch(() => []),
 })
 
@@ -119,10 +140,15 @@ function normalizeCategory(parsed: RawCategory, allocator: IdAllocator): Categor
     console.warn('Dropping category record without usable id or name; keys present:', Object.keys(parsed))
     return []
   }
+  const { product, owners, ...rest } = parsed
   return [{
-    ...parsed,
+    ...rest,
     id: identity,
     name: parsed.name,
+    // Optional fields are omitted rather than set to undefined, so a legacy row
+    // round-trips byte-for-byte when nobody touched it.
+    ...(product === undefined ? {} : { product }),
+    ...(owners === undefined ? {} : { owners }),
     subcategories: normalizeSubcategories(parsed.subcategories),
   }]
 }
@@ -147,4 +173,18 @@ export function normalizeCategories(rawCategories: readonly unknown[]): Category
     new Set(parsedRows.map((row) => row.id).filter(usableStoredId)),
   )
   return parsedRows.flatMap((row) => normalizeCategory(row, allocator))
+}
+
+/**
+ * Owner candidates from the admin users list (`GET /users`): every enabled user
+ * that carries a Cognito `sub` — the identity a grant is stored under. A user
+ * without one cannot own a category, so it is not offered.
+ */
+export function normalizeOwnerCandidates(users: readonly unknown[]): CategoryOwner[] {
+  return users.flatMap((raw) => {
+    const parsed = ownerSchema.extend({ enabled: z.boolean().catch(true) }).safeParse(raw)
+    if (!parsed.success || !parsed.data.enabled) return []
+    const { sub, username, email } = parsed.data
+    return [{ sub, username, email }]
+  })
 }

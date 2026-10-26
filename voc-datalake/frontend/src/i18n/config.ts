@@ -15,9 +15,7 @@ import { I18N_INIT_OPTIONS } from './options'
 
 // Language constants and the change helper live in ./languages (side-effect
 // free) so UI components can import them without triggering this module's
-// i18n.init(). Re-exported here for backward compatibility.
-export { supportedLanguages, languageNames, changeLanguage } from './languages'
-export type { SupportedLanguage } from './languages'
+// i18n.init(). This module is imported only for that side effect (see main.tsx).
 
 // The init options live in ./options for that same reason: a test can then assert
 // on the REAL config — that `nsSeparator` is still ':', which every
@@ -42,5 +40,3 @@ void i18n
 i18n.on('languageChanged', (lng) => {
   document.documentElement.lang = i18n.resolvedLanguage ?? lng
 })
-
-export default i18n

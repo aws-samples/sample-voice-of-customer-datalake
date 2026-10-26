@@ -8,28 +8,23 @@
  * session — the state display looking authoritative while being wrong, which is the
  * defect U8 set out to remove.
  */
-import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { productTabApiModule, productTabMocks } from './product-tab-fixtures'
+// After the fixtures on purpose: this imports ProductTab, whose module graph runs
+// the `vi.mock` factory below, which needs the fixture module evaluated.
 import ProductTab from './ProductTab'
 import { emptyProductContext } from './productContextFields'
-import { stubElementScrollTo } from '../../test/stubScrollTo'
-import type { ProductContext } from '../../api/types'
+import { stubScrollToForSuite } from './project-detail-fixtures'
+import type { ProductContext } from '../../api/projectTypes'
 
-const mockGetProductContext = vi.fn()
-const mockUpdateProductContext = vi.fn()
-const mockListProductDocs = vi.fn()
-
-vi.mock('../../api/projectsApi', () => ({
-  projectsApi: {
-    getProductContext: (...args: unknown[]) => mockGetProductContext(...args),
-    updateProductContext: (...args: unknown[]) => mockUpdateProductContext(...args),
-    listProductDocs: (...args: unknown[]) => mockListProductDocs(...args),
-    productContextInterview: vi.fn(),
-    generateProductReport: vi.fn(),
-    getProductDocUploadUrl: vi.fn(),
-  },
-}))
+vi.mock('../../api/projectsApi', () => productTabApiModule())
+const {
+  getProductContext: mockGetProductContext,
+  updateProductContext: mockUpdateProductContext,
+  listProductDocs: mockListProductDocs,
+} = productTabMocks
 
 const context = (fields: Partial<ProductContext> = {}): ProductContext => ({
   ...emptyProductContext(),
@@ -37,18 +32,8 @@ const context = (fields: Partial<ProductContext> = {}): ProductContext => ({
 })
 
 describe('ProductTab onContextSaved', () => {
-  // The tab's default mode renders the AI interview, whose effect scrolls the
-  // transcript. jsdom has no Element.scrollTo, and the resulting exception renders
-  // the whole tab as an empty div — which would turn "the callback was not called"
-  // into a vacuous pass. Restored afterwards so the stub cannot leak into another
-  // file's expectations.
-  let restoreScrollTo: () => void
-  beforeAll(() => {
-    restoreScrollTo = stubElementScrollTo()
-  })
-  afterAll(() => {
-    restoreScrollTo()
-  })
+  // jsdom has no Element.scrollTo; see stubScrollToForSuite for why that matters here.
+  stubScrollToForSuite()
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -57,19 +42,14 @@ describe('ProductTab onContextSaved', () => {
   })
 
   it('hands the saved context back after a field is edited', async () => {
-    const user = userEvent.setup()
     const saved = context({ product_name: 'VoC' })
     mockUpdateProductContext.mockResolvedValue({ context: saved })
     const onContextSaved = vi.fn()
 
-    render(<ProductTab projectId="proj-1" onContextSaved={onContextSaved} />)
-
-    const field = await screen.findByLabelText(/product name/i)
-    await user.type(field, 'VoC')
-    await user.tab()
+    await editProductName(onContextSaved)
 
     await waitFor(() => {
-      expect(onContextSaved).toHaveBeenCalled()
+      expect(onContextSaved).toHaveBeenCalledWith(saved)
     })
     // The server's copy, normalised — the Overview derives a field count from it,
     // so a partial object would undercount.
@@ -82,35 +62,35 @@ describe('ProductTab onContextSaved', () => {
   })
 
   it('does not announce a save that failed', async () => {
-    const user = userEvent.setup()
     mockUpdateProductContext.mockRejectedValue(new Error('API Error: 500'))
     const onContextSaved = vi.fn()
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
 
-    render(<ProductTab projectId="proj-1" onContextSaved={onContextSaved} />)
-
-    const field = await screen.findByLabelText(/product name/i)
-    await user.type(field, 'VoC')
-    await user.tab()
+    await editProductName(onContextSaved)
 
     await waitFor(() => {
-      expect(mockUpdateProductContext).toHaveBeenCalled()
+      expect(mockUpdateProductContext).toHaveBeenCalledWith('proj-1', { product_name: 'VoC' })
     })
     expect(onContextSaved).not.toHaveBeenCalled()
   })
 
   it('works without the callback, since it is optional', async () => {
-    const user = userEvent.setup()
     mockUpdateProductContext.mockResolvedValue({ context: context({ product_name: 'VoC' }) })
 
-    render(<ProductTab projectId="proj-1" />)
-
-    const field = await screen.findByLabelText(/product name/i)
-    await user.type(field, 'VoC')
-    await user.tab()
+    await editProductName(undefined)
 
     await waitFor(() => {
-      expect(mockUpdateProductContext).toHaveBeenCalled()
+      expect(mockUpdateProductContext).toHaveBeenCalledWith('proj-1', { product_name: 'VoC' })
     })
   })
 })
+
+/** Renders the tab, types a product name and blurs the field, which is what triggers a save. */
+async function editProductName(onContextSaved: ((context: ProductContext) => void) | undefined) {
+  const user = userEvent.setup()
+  render(<ProductTab canEdit projectId="proj-1" onContextSaved={onContextSaved} />)
+
+  const field = await screen.findByLabelText(/product name/i)
+  await user.type(field, 'VoC')
+  await user.tab()
+}

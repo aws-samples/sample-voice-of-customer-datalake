@@ -96,8 +96,13 @@ describe('parseJobGrounding', () => {
     ['a number', 7],
     ['an array', [1, 2]],
   ])('returns an all-absent result for %s', (_label, value) => {
-    const parsed = parseJobGrounding(value)
-    expect(Object.values(parsed).every((v) => v === undefined)).toBe(true)
+    expect(parseJobGrounding(value)).toStrictEqual({
+      feedback_count: undefined,
+      feedback_items_used: undefined,
+      context_truncated: undefined,
+      fetch_limit_reached: undefined,
+      fetch_limit: undefined,
+    })
   })
 
   it('ignores unrelated keys instead of failing on them', () => {

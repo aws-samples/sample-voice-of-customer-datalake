@@ -1,7 +1,7 @@
 {
   "id": "my_source",
   "name": "My Source",
-  "icon": "🔌",
+  "icon": "Plugin",
   "description": "Template for creating new plugins",
   "category": "reviews",
   "version": "1.0.0",

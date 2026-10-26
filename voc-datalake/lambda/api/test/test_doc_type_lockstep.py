@@ -10,8 +10,8 @@ languages together, and the failure is user-visible rather than loud: a client
 offering a value the route refuses turns a click into an HTTP 400 from a document
 picker, and a client omitting one silently drops a feature the backend supports.
 
-Same pattern, and the same motivation, as `test_kiro_exportable_types_lockstep.py`
-and `lambda/shared/test/test_search_minimum_lockstep.py`.
+Same pattern, and the same motivation, as `lambda/shared/test/test_search_minimum_lockstep.py`
+(and the since-deleted Kiro-export lockstep).
 
 THE SCANNER IS GONE AND MUST NOT COME BACK (issue #381). This file used to carry
 ~300 lines of TypeScript scanner — `_parameter_list_end`, `GENERATE_DOCUMENT_ANCHOR`,
@@ -224,31 +224,20 @@ all of it, and an earlier version of this docstring claimed it did:
     not a way around that: the pin above makes it a compiler error.
 
 ⚠️ THOSE TWO EDITS ARE NOT THE WHOLE SUPPORTED CHANGE, and every round of this file
-claimed they were. TWO MORE are required — in the generator and in the picker — and
-neither this file nor the compiler asks for either.
+claimed they were. MORE are required — in the generator, the picker and the wire type.
+This file and the compiler ask for none of them; `test_document_generator_dispatch.py`
+now asks for the generator's.
 
-THE THIRD EDIT: the generator. `lambda/jobs/document_generator/handler.py` dispatches on
-`doc_type` as a BINARY with PR-FAQ as the unconditional `else`, in three places —
-anchored on the symbols rather than line numbers, since a citation into a file this
-test does not read is exactly what goes stale (it has three times on this branch):
-
-    `_generate_prd` vs `_generate_prfaq`                — the generation branch
-    `get_prd_generation_steps` vs `get_prfaq_...`       — the step-builder selection
-    `_assemble_and_save`'s `if doc_type == 'prd'`       — assembly, result indexing
-
-— and it never imports `GENERATED_DOC_TYPES` (zero references). So a third member
-added the blessed way passes `_validated_doc_type`, is routed into the Step Functions
-chain by `is_chain = doc_type in GENERATED_DOC_TYPES` (true BY CONSTRUCTION for the
-new member), and is then generated as a PR-FAQ, persisted with `sk = '{DOC_TYPE}#...'`
-and `document_type = doc_type`. The user gets a document of the WRONG KIND under the
-right label, after a Bedrock spend, with no error anywhere.
-
-Measured: `DocType` and `GENERATED_DOC_TYPES` widened together leaves `tsc` at exit 0
-and every test here green — the correct false-positive result for THESE guards, and
-exactly why the incompleteness was invisible for seven rounds. That is worse than the
-drift this file does catch: a refused value is a visible 400, this is a wrong-content
-success. Adding a member therefore also needs a step builder, a generation branch and
-an assembly branch there.
+THE THIRD EDIT: the generator. `lambda/jobs/document_generator/handler.py` dispatches
+every chain doc type through ONE map, `CHAIN_DOC_TYPES` (step builder + assembler per
+type; issue #397). It used to be a binary with PR-FAQ as the unconditional `else` in
+three places, so a third member added the blessed way was generated, billed and
+persisted as a PR-FAQ under the new label. Now an unmapped type raises
+`UnsupportedDocTypeError` before any feedback read or model call, and
+`test_document_generator_dispatch.py` asserts `set(CHAIN_DOC_TYPES) ==
+set(GENERATED_DOC_TYPES)`, so widening the tuple without registering a builder and an
+assembler fails CI rather than producing wrong content. The map's docstring is the
+widening recipe, including the frontend literal sites below.
 
 THE FOURTH EDIT: the picker. `frontend/src/pages/ProjectDetail/Wizards.tsx` names its
 members as LITERALS, so a widening leaves the new type accepted by this route but never
@@ -281,11 +270,10 @@ a widened `DocType` produces rows the wire type does not admit: latent rather th
 absent, since `tsc` is clean until something assigns a `DocType` into the field, and a
 probe that makes the two meet is a TS2322 (measured).
 
-Referencing `DocType` there would remove the edit, and was tried — it is NOT available.
-`test_kiro_exportable_types_lockstep.py` parses that union as string literals to derive
-the full document-type set, and a referenced type makes it read zero members; it fails
-loudly, but it fails. That parser answers a different contract (Kiro export inclusion),
-so the ceiling is named at the field instead, beside the literals.
+Referencing `DocType` there would remove the edit, and was tried — it was NOT available
+while a Kiro-export lockstep test parsed that union as string literals (a referenced
+type made it read zero members). That test went with the Export / MCP tab; the ceiling
+stays named at the field, beside the literals.
 
 Deliberately NOT guarded here, any of the three. Those are different contracts — the
 generator's dispatch, the picker's offering, and the wire type's superset, each against
@@ -363,14 +351,12 @@ type test becomes a reasonable home for it; until then it would be a control not
 runs.
 
 A LITERAL UNION IS THE REQUIRED SHAPE for `DocType`. A derivation
-(`typeof GENERATED_DOC_TYPES[number]`, as `KIRO_EXPORTABLE_DOC_TYPES` uses one
-directory away) is refused by `_doc_type_union`, deliberately and permanently:
+(`typeof GENERATED_DOC_TYPES[number]`) is refused by `_doc_type_union`, deliberately and permanently:
 resolving an alias means evaluating TypeScript, which is what the deleted scanner
 tried and is the whole reason it was deleted. If the frontend wants a runtime array
 of doc types, declare the array FROM the union (`const DOC_TYPES: DocType[] = [...]`)
 rather than the union from the array, so the pinned declaration stays a literal
-union. The same answer applies to `test_kiro_exportable_types_lockstep.py`, which
-therefore cannot share this parser.
+union.
 
 `suggestDocumentBrief` also takes a `doc_type` and is still NOT pinned here: it
 calls a different route which the comment above GENERATED_DOC_TYPES documents as
@@ -823,6 +809,18 @@ CONTROL_HEAD_DESYNCS = {
 }
 
 
+def _bracketed_decoy(opener: str, closer: str) -> str:
+    """A stale `DocType` union inside a template literal, between two desyncing statements,
+    followed by the live union — which carries `onepager` so a parser that read nothing
+    cannot pass by merely disagreeing with the decoy."""
+    return (
+        opener
+        + "const historical = `export type DocType = 'prd' | 'legacy'`\n"
+        + closer
+        + "export type DocType = 'prd' | 'prfaq' | 'onepager'\n"
+    )
+
+
 def _closes_control_head(text: str) -> bool:
     """Whether `text` ends with the `)` that closed an `if`/`for`/`while`/`switch` head.
 
@@ -987,9 +985,6 @@ def _without_comments(source: str, blank_strings: bool = False) -> str:
     eleven were one bug in this function surfacing in five constructs, which is why each fix
     belongs here and not in a guard.
     """
-    def blanked(text: str) -> str:
-        return ''.join('\n' if char == '\n' else ' ' for char in text)
-
     out: list[str] = []
     # A STACK, not a single quote character, because `${...}` inside a template
     # literal is CODE again — see the 🔑 note above on the seventh vacuity. Frames are
@@ -1000,87 +995,112 @@ def _without_comments(source: str, blank_strings: bool = False) -> str:
     while index < len(source):
         char = source[index]
         if frames and frames[-1][0] == 'str':
-            quote = frames[-1][1]
-            if char == '\\':
-                # Blank the escape as a unit, so a trailing `\` cannot swallow the
-                # closing quote and blank the rest of the file.
-                out.append(blanked(source[index:index + 2]) if blank_strings
-                           else source[index:index + 2])
-                index += 2
-                continue
-            if quote == '`' and source.startswith('${', index):
-                frames.append(('interp', 0))
-                out.append(blanked('${') if blank_strings else '${')
-                index += 2
-                continue
-            if char == quote:
-                out.append(char)
-                frames.pop()
-                index += 1
-                continue
-            out.append(blanked(char) if blank_strings else char)
-            index += 1
-            continue
-        if char in '\'"`':
+            text, index = _scan_string_body(source, index, frames, blank_strings)
+        elif char in '\'"`':
             frames.append(('str', char))
-            out.append(char)
-            index += 1
-            continue
-        if frames and frames[-1][0] == 'interp' and char in '{}':
-            depth = frames[-1][1]
-            assert isinstance(depth, int)
-            if char == '}' and depth == 0:
-                # Back into the enclosing template body.
-                frames.pop()
-            else:
-                frames[-1] = ('interp', depth + (1 if char == '{' else -1))
-            out.append(blanked(char) if blank_strings else char)
-            index += 1
-            continue
-        if source.startswith('//', index):
-            newline = source.find('\n', index)
-            stop = len(source) if newline == -1 else newline
-            out.append(blanked(source[index:stop]))
-            index = stop
-            continue
-        if source.startswith('/*', index):
-            close = source.find('*/', index + 2)
-            stop = len(source) if close == -1 else close + 2
-            out.append(blanked(source[index:stop]))
-            index = stop
-            continue
-        # ⚠️ AFTER the two comment branches, never before: a `/` that opens `//` or `/*`
-        # would otherwise be consumed as an empty regex, and reading a comment as code is
-        # the defect `_without_comments` exists for. Measured — placed first, the
-        # commented-out predecessor and commented-out pin cases all fail.
-        if char == '/' and _regex_allowed_here(out):
-            stop = index + 1
-            # A `/` inside a CHARACTER CLASS does not close the regex — `/[/`]/` is
-            # legal — and scanning to the first `/` regardless was the ninth vacuity.
-            # See the 🔑 note above; the class's own slash ended the body early, so the
-            # backtick after it opened a phantom template frame.
-            in_class = False
-            while stop < len(source) and source[stop] != '\n':
-                if source[stop] == '\\':
-                    stop += 2
-                    continue
-                if source[stop] == '[':
-                    in_class = True
-                elif source[stop] == ']':
-                    in_class = False
-                elif source[stop] == '/' and not in_class:
-                    break
-                stop += 1
-            if stop < len(source) and source[stop] == '/':
-                out.append(char)
-                body = source[index + 1:stop]
-                out.append(blanked(body) if blank_strings else body)
-                out.append('/')
-                index = stop + 1
-                continue
-        out.append(char)
-        index += 1
+            text, index = char, index + 1
+        elif frames and frames[-1][0] == 'interp' and char in '{}':
+            _step_interpolation(char, frames)
+            text, index = (_blanked(char) if blank_strings else char), index + 1
+        elif (comment_stop := _comment_end(source, index)) is not None:
+            text, index = _blanked(source[index:comment_stop]), comment_stop
+        else:
+            text, index = _scan_code_char(source, index, out, blank_strings)
+        out.append(text)
     return ''.join(out)
+
+
+def _blanked(text: str) -> str:
+    """`text` as spaces, newlines kept, so indices into it stay valid."""
+    return ''.join('\n' if char == '\n' else ' ' for char in text)
+
+
+def _scan_string_body(
+    source: str, index: int, frames: list[tuple[str, object]], blank_strings: bool,
+) -> tuple[str, int]:
+    """One step of `_without_comments` inside a string or template body."""
+    quote = frames[-1][1]
+    char = source[index]
+    if char == '\\':
+        # Blank the escape as a unit, so a trailing `\` cannot swallow the
+        # closing quote and blank the rest of the file.
+        escape = source[index:index + 2]
+        return (_blanked(escape) if blank_strings else escape), index + 2
+    if quote == '`' and source.startswith('${', index):
+        frames.append(('interp', 0))
+        return (_blanked('${') if blank_strings else '${'), index + 2
+    if char == quote:
+        frames.pop()
+        return char, index + 1
+    return (_blanked(char) if blank_strings else char), index + 1
+
+
+def _step_interpolation(char: str, frames: list[tuple[str, object]]) -> None:
+    """Track a brace inside a `${...}` frame; the depth-0 `}` pops back into the
+    enclosing template body."""
+    depth = frames[-1][1]
+    assert isinstance(depth, int)
+    if char == '}' and depth == 0:
+        frames.pop()
+    else:
+        frames[-1] = ('interp', depth + (1 if char == '{' else -1))
+
+
+def _comment_end(source: str, index: int) -> int | None:
+    """Where a `//` or `/* */` comment opening at `index` stops, or None."""
+    if source.startswith('//', index):
+        newline = source.find('\n', index)
+        return len(source) if newline == -1 else newline
+    if source.startswith('/*', index):
+        close = source.find('*/', index + 2)
+        return len(source) if close == -1 else close + 2
+    return None
+
+
+def _scan_code_char(
+    source: str, index: int, emitted: list[str], blank_strings: bool,
+) -> tuple[str, int]:
+    """One step of `_without_comments` in code: a whole regex literal, or one char.
+
+    ⚠️ Reached only AFTER the comment check, never before: a `/` that opens `//` or `/*`
+    would otherwise be consumed as an empty regex, and reading a comment as code is
+    the defect `_without_comments` exists for. Measured — placed first, the
+    commented-out predecessor and commented-out pin cases all fail.
+    """
+    char = source[index]
+    if char == '/' and _regex_allowed_here(emitted):
+        stop = _regex_close(source, index)
+        if stop is not None:
+            body = source[index + 1:stop]
+            return char + (_blanked(body) if blank_strings else body) + '/', stop + 1
+    return char, index + 1
+
+
+def _regex_close(source: str, index: int) -> int | None:
+    """The index of the `/` closing a regex literal opened at `index`, or None
+    when the line ends first.
+
+    A `/` inside a CHARACTER CLASS does not close the regex — `/[/`]/` is legal — and
+    scanning to the first `/` regardless was the ninth vacuity. See the 🔑 note on
+    `_without_comments`; the class's own slash ended the body early, so the backtick
+    after it opened a phantom template frame.
+    """
+    stop = index + 1
+    in_class = False
+    while stop < len(source) and source[stop] != '\n':
+        if source[stop] == '\\':
+            stop += 2
+            continue
+        if source[stop] == '[':
+            in_class = True
+        elif source[stop] == ']':
+            in_class = False
+        elif source[stop] == '/' and not in_class:
+            break
+        stop += 1
+    if stop < len(source) and source[stop] == '/':
+        return stop
+    return None
 
 
 def _declarations(raw: str) -> str:
@@ -1425,12 +1445,7 @@ class TestTheUnionParser:
         deliberately: this must read `onepager` rather than merely disagree with the decoy,
         or it would pass on a parser that read nothing at all.
         """
-        source = (
-            "const backtickMatcher = /`/\n"
-            "const historical = `export type DocType = 'prd' | 'legacy'`\n"
-            "const secondMatcher = /`/\n"
-            "export type DocType = 'prd' | 'prfaq' | 'onepager'\n"
-        )
+        source = _bracketed_decoy("const backtickMatcher = /`/\n", "const secondMatcher = /`/\n")
         assert _doc_type_union(source) == frozenset({'prd', 'prfaq', 'onepager'})
 
     def test_a_union_inside_a_class_desynced_template_is_not_read(self):
@@ -1443,12 +1458,7 @@ class TestTheUnionParser:
         read `onepager` rather than merely disagree with the decoy, or it would pass on a
         parser that read nothing at all.
         """
-        source = (
-            "const backtickMatcher = /[/`]/\n"
-            "const historical = `export type DocType = 'prd' | 'legacy'`\n"
-            "const secondMatcher = /[/`]/\n"
-            "export type DocType = 'prd' | 'prfaq' | 'onepager'\n"
-        )
+        source = _bracketed_decoy("const backtickMatcher = /[/`]/\n", "const secondMatcher = /[/`]/\n")
         assert _doc_type_union(source) == frozenset({'prd', 'prfaq', 'onepager'})
 
     @pytest.mark.parametrize(
@@ -1468,12 +1478,7 @@ class TestTheUnionParser:
         read at two depths: `for await` ends in `await`, so a check reading only the word
         before the `(` reopened this exactly as the tenth had.
         """
-        source = (
-            f'{desync}'
-            "const historical = `export type DocType = 'prd' | 'legacy'`\n"
-            f'{desync}'
-            "export type DocType = 'prd' | 'prfaq' | 'onepager'\n"
-        )
+        source = _bracketed_decoy(desync, desync)
         assert _doc_type_union(source) == frozenset({'prd', 'prfaq', 'onepager'})
 
     # The refusals `_doc_type_union` must carry: no readable term at the anchor, a
@@ -2146,13 +2151,14 @@ class TestDocTypeLockstep:
         from projects_handler import GENERATED_DOC_TYPES
 
         declared = _declared_doc_type_union()
-        assert declared == frozenset(GENERATED_DOC_TYPES), (
+        generated: frozenset[str] = frozenset(GENERATED_DOC_TYPES)
+        assert declared == generated, (
             f'DocType in {DOC_TYPE_UNION_SOURCE} declares {sorted(declared)} '
-            f'while the route accepts {sorted(GENERATED_DOC_TYPES)}.\n'
+            f'while the route accepts {sorted(generated)}.\n'
             f'  Offered but refused (a user-visible 400): '
-            f'{sorted(declared - frozenset(GENERATED_DOC_TYPES))}\n'
+            f'{sorted(declared - generated)}\n'
             f'  Accepted but never offered (unreachable): '
-            f'{sorted(frozenset(GENERATED_DOC_TYPES) - declared)}'
+            f'{sorted(generated - declared)}'
         )
 
     @pytest.mark.skipif(

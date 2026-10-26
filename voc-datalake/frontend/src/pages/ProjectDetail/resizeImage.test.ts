@@ -9,12 +9,23 @@
  * assertions are about the module's response to that number.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { imageFile } from './imaging-fixtures'
 import {
   MAX_IMAGE_BYTES,
   MAX_IMAGE_EDGE_PX,
   isImagePrepError,
   resizeImageForUpload,
 } from './resizeImage'
+import type { ImagePrepFailure } from './resizeImage'
+
+/** Runs the resize on `file` and checks that it rejected with a typed `failure`. */
+async function expectPrepFailure(file: File, failure: ImagePrepFailure) {
+  const error = await resizeImageForUpload(file).catch((e: unknown) => e)
+
+  expect(isImagePrepError(error)).toBe(true)
+  if (!isImagePrepError(error)) throw new Error('expected an ImagePrepError')
+  expect(error.failure).toBe(failure)
+}
 
 interface EncodeCall {
   readonly type: string
@@ -88,13 +99,6 @@ function fakeBitmap(name: string, width: number, height: number) {
   }
 }
 
-/** A File whose reported size is set independently of its actual bytes. */
-function imageFile(name: string, type: string, sizeBytes: number): File {
-  const file = new File([new Uint8Array(8)], name, { type })
-  Object.defineProperty(file, 'size', { value: sizeBytes })
-  return file
-}
-
 function stubDecoder(width: number, height: number, name = 'bitmap') {
   const decode = vi.fn(() => Promise.resolve(fakeBitmap(name, width, height)))
   vi.stubGlobal('createImageBitmap', decode)
@@ -124,9 +128,8 @@ describe('resizeImageForUpload', () => {
 
     expect(result.sizeBytes).toBeLessThan(source.size)
     expect(result.sizeBytes).toBeLessThanOrEqual(MAX_IMAGE_BYTES)
-    expect(result.width).toBe(MAX_IMAGE_EDGE_PX)
-    expect(result.height).toBe(1045)
-    expect(result.reencoded).toBe(true)
+    expect(result.blob).not.toBe(source)
+    expect(encodeCalls.map((c) => [c.width, c.height])).toStrictEqual([[MAX_IMAGE_EDGE_PX, 1045]])
   })
 
   it('encodes PNG first so UI text stays free of compression artefacts', async () => {
@@ -134,12 +137,11 @@ describe('resizeImageForUpload', () => {
 
     const result = await resizeImageForUpload(imageFile('shot.png', 'image/png', 4_000_000))
 
-    expect(result.contentType).toBe('image/png')
-    expect(result.filename).toBe('shot.png')
-    expect(encodeCalls).toHaveLength(1)
-    expect(encodeCalls[0].type).toBe('image/png')
-    // No white fill on the PNG path: alpha survives.
-    expect(encodeCalls[0].fills).toEqual([])
+    expect(result).toMatchObject({ contentType: 'image/png', filename: 'shot.png' })
+    // One encode, and no white fill on the PNG path: alpha survives.
+    expect(encodeCalls.map((c) => ({ type: c.type, fills: c.fills }))).toStrictEqual([
+      { type: 'image/png', fills: [] },
+    ])
   })
 
   it('returns the original file unchanged when the image is already within both limits', async () => {
@@ -150,22 +152,19 @@ describe('resizeImageForUpload', () => {
 
     // Not upscaled to the 1568 ceiling, and not re-encoded at all — which is
     // also what keeps an animated GIF animated.
-    expect(result.width).toBe(800)
-    expect(result.height).toBe(600)
+    expect(result).toMatchObject({ sizeBytes: 100_000, contentType: 'image/png', filename: 'small.png' })
     expect(result.blob).toBe(source)
-    expect(result.sizeBytes).toBe(100_000)
-    expect(result.reencoded).toBe(false)
     expect(encodeCalls).toHaveLength(0)
   })
 
   it('does not upscale an image that is under the pixel ceiling but over the byte cap', async () => {
     stubDecoder(900, 600)
 
-    const result = await resizeImageForUpload(imageFile('wide.png', 'image/png', 4_000_000))
+    const source = imageFile('wide.png', 'image/png', 4_000_000)
+    const result = await resizeImageForUpload(source)
 
-    expect(result.reencoded).toBe(true)
-    expect(result.width).toBe(900)
-    expect(result.height).toBe(600)
+    expect(result.blob).not.toBe(source)
+    expect(encodeCalls.map((c) => [c.width, c.height])).toStrictEqual([[900, 600]])
   })
 
   it('passes a non-image file through untouched without decoding it', async () => {
@@ -175,10 +174,9 @@ describe('resizeImageForUpload', () => {
     const result = await resizeImageForUpload(source)
 
     expect(result.blob).toBe(source)
-    expect(result.contentType).toBe('text/markdown')
-    expect(result.filename).toBe('notes.md')
-    expect(result.sizeBytes).toBe(source.size)
-    expect(result.width).toBeNull()
+    expect(result).toMatchObject({
+      contentType: 'text/markdown', filename: 'notes.md', sizeBytes: source.size,
+    })
     expect(decode).not.toHaveBeenCalled()
   })
 
@@ -188,16 +186,15 @@ describe('resizeImageForUpload', () => {
 
     const result = await resizeImageForUpload(imageFile('shot.png', 'image/png', 4_000_000))
 
-    expect(result.contentType).toBe('image/jpeg')
     // The extension has to follow the bytes: the S3 key is built from the
     // declared content type, so a .png name on JPEG bytes is a lie on the object.
-    expect(result.filename).toBe('shot.jpg')
-    expect(result.sizeBytes).toBe(1_000_000)
-    expect(encodeCalls.map((c) => c.type)).toEqual(['image/png', 'image/jpeg'])
-    expect(encodeCalls[1].quality).toBe(0.85)
+    expect(result).toMatchObject({ contentType: 'image/jpeg', filename: 'shot.jpg', sizeBytes: 1_000_000 })
     // JPEG has no alpha, so the canvas must be filled white before the draw or
     // transparent pixels come out black.
-    expect(encodeCalls[1].fills).toEqual(['#ffffff'])
+    expect(encodeCalls.map((c) => ({ type: c.type, quality: c.quality, fills: c.fills }))).toStrictEqual([
+      { type: 'image/png', quality: undefined, fills: [] },
+      { type: 'image/jpeg', quality: 0.85, fills: ['#ffffff'] },
+    ])
   })
 
   it('drops quality before resolution as it walks down the ladder', async () => {
@@ -206,7 +203,7 @@ describe('resizeImageForUpload', () => {
 
     await resizeImageForUpload(imageFile('shot.png', 'image/png', 4_000_000)).catch(() => undefined)
 
-    expect(encodeCalls.map((c) => [c.type, c.quality, c.width])).toEqual([
+    expect(encodeCalls.map((c) => [c.type, c.quality, c.width])).toStrictEqual([
       ['image/png', undefined, 1568],
       ['image/jpeg', 0.85, 1568],
       ['image/jpeg', 0.7, 1568],
@@ -219,40 +216,22 @@ describe('resizeImageForUpload', () => {
     config.sizeFor = () => 3_800_000
     stubDecoder(3000, 2000)
 
-    const error = await resizeImageForUpload(
-      imageFile('huge.png', 'image/png', 9_000_000),
-    ).catch((e: unknown) => e)
-
-    expect(isImagePrepError(error)).toBe(true)
-    if (!isImagePrepError(error)) throw new Error('expected an ImagePrepError')
-    expect(error.failure).toBe('too-large')
+    await expectPrepFailure(imageFile('huge.png', 'image/png', 9_000_000), 'too-large')
   })
 
   it('throws a typed unreadable error when the bytes cannot be decoded', async () => {
     vi.stubGlobal('createImageBitmap', vi.fn(() => Promise.reject(new Error('not an image'))))
 
-    const error = await resizeImageForUpload(
-      imageFile('broken.png', 'image/png', 4_000_000),
-    ).catch((e: unknown) => e)
-
     // Not a silent pass-through: an undecodable "image" must not be uploaded as
     // if it were fine.
-    expect(isImagePrepError(error)).toBe(true)
-    if (!isImagePrepError(error)) throw new Error('expected an ImagePrepError')
-    expect(error.failure).toBe('unreadable')
+    await expectPrepFailure(imageFile('broken.png', 'image/png', 4_000_000), 'unreadable')
   })
 
   it('throws a typed unreadable error when encoding fails', async () => {
     config.encodeRejects = true
     stubDecoder(3000, 2000)
 
-    const error = await resizeImageForUpload(
-      imageFile('shot.png', 'image/png', 4_000_000),
-    ).catch((e: unknown) => e)
-
-    expect(isImagePrepError(error)).toBe(true)
-    if (!isImagePrepError(error)) throw new Error('expected an ImagePrepError')
-    expect(error.failure).toBe('unreadable')
+    await expectPrepFailure(imageFile('shot.png', 'image/png', 4_000_000), 'unreadable')
   })
 
   it('releases the decoded bitmap on both the success and the failure path', async () => {
@@ -263,13 +242,15 @@ describe('resizeImageForUpload', () => {
     stubDecoder(3000, 2000, 'failed')
     await resizeImageForUpload(imageFile('shot.png', 'image/png', 4_000_000)).catch(() => undefined)
 
-    expect(closedBitmaps).toEqual(['ok', 'failed'])
+    expect(closedBitmaps).toStrictEqual(['ok', 'failed'])
   })
 
   it('encodes through a canvas element when OffscreenCanvas is unavailable', async () => {
     vi.stubGlobal('OffscreenCanvas', undefined)
     stubDecoder(3000, 2000)
-    const toBlob = vi.fn((callback: (blob: Blob | null) => void, type: string) => {
+    const canvasSizes: number[][] = []
+    const toBlob = vi.fn(function (this: HTMLCanvasElement, callback: (blob: Blob | null) => void, type: string) {
+      canvasSizes.push([this.width, this.height])
       callback(new Blob([new Uint8Array(1_000)], { type }))
     })
     const original = {
@@ -289,7 +270,7 @@ describe('resizeImageForUpload', () => {
       const result = await resizeImageForUpload(imageFile('shot.png', 'image/png', 4_000_000))
 
       expect(result.sizeBytes).toBe(1_000)
-      expect(result.width).toBe(MAX_IMAGE_EDGE_PX)
+      expect(canvasSizes).toStrictEqual([[MAX_IMAGE_EDGE_PX, 1045]])
       expect(toBlob).toHaveBeenCalledTimes(1)
     } finally {
       Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
@@ -317,8 +298,8 @@ describe('resizeImageForUpload', () => {
 
     const result = await resizeImageForUpload(imageFile('shot.png', 'image/png', 4_000_000))
 
-    expect(result.width).toBe(MAX_IMAGE_EDGE_PX)
-    expect(result.height).toBe(784)
+    expect(result.contentType).toBe('image/png')
+    expect(encodeCalls.map((c) => [c.width, c.height])).toStrictEqual([[MAX_IMAGE_EDGE_PX, 784]])
     // The object URL must be released, or every fallback decode leaks it.
     expect(revoke).toHaveBeenCalledWith('blob:fake')
   })

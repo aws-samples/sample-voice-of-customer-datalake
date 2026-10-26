@@ -79,9 +79,14 @@ voc-datalake/
 │   │   │   └── handler.py
 │   │   └── README.md
 │   │
-│   └── webscraper/                   # Web scraper plugin
-│       ├── manifest.json
-│       └── ingestor/
+│   ├── webscraper/                   # Web scraper plugin
+│   │   ├── manifest.json
+│   │   └── ingestor/
+│   │       └── handler.py
+│   │
+│   └── web_reviews/                  # Generic review pages via the AgentCore managed browser (docs/web-reviews.md)
+│       ├── manifest.json             # ingestor.bedrock + ingestor.browser capabilities
+│       └── ingestor/                 # handler, CDP client, page reader, JSON-LD / LLM extraction
 │           └── handler.py
 │
 ├── lib/
@@ -116,7 +121,7 @@ The `manifest.json` is the single source of truth for each plugin. It defines:
 {
   "id": "webscraper",
   "name": "Web Scraper",
-  "icon": "🌐",
+  "icon": "Web",
   "description": "Extract reviews from web pages using CSS selectors or JSON-LD",
   "category": "import",
   
@@ -163,7 +168,7 @@ The `manifest.json` is the single source of truth for each plugin. It defines:
 |-------|------|----------|-------------|
 | `id` | string | Yes | Unique identifier, used in folder name and AWS resource names |
 | `name` | string | Yes | Display name in UI |
-| `icon` | string | Yes | Emoji or path to SVG icon |
+| `icon` | string | Yes | Icon word, mapped to a lucide icon: `Web`, `iOS`, `Android`, `GitHub`, `Package`, `Synthetic`, `Plugin` (see `frontend/src/components/SourceIcon/sourceIcons.ts`). An unknown word falls back to `Package` for `import` plugins, otherwise `Plug`. Never an emoji — `frontend/src/noEmoji.test.ts` fails on one |
 | `description` | string | No | Short description shown in UI |
 | `category` | enum | No | One of: `reviews`, `social`, `import`, `search`, `scraper` |
 | `infrastructure` | object | Yes | AWS resources to deploy |
@@ -200,7 +205,7 @@ The `manifest.json` is the single source of truth for each plugin. It defines:
 
 - Creates a Lambda function and API Gateway integration
 - No authentication (webhooks must be accessible by external services)
-- Webhook URL is displayed in Settings UI for user to copy
+- Webhook URL is displayed in Administration → Sources → Data sources for user to copy
 
 #### S3 Trigger
 
@@ -248,7 +253,7 @@ The webscraper plugin extracts reviews from web pages using CSS selectors or JSO
 {
   "id": "webscraper",
   "name": "Web Scraper",
-  "icon": "🌐",
+  "icon": "Web",
   "description": "Extract reviews from web pages using CSS selectors or JSON-LD",
   "category": "import",
   
@@ -297,7 +302,7 @@ Use the `_template` folder as a starting point for creating new plugins:
 {
   "id": "my_custom_source",
   "name": "My Custom Source",
-  "icon": "🔌",
+  "icon": "Plugin",
   "description": "Custom data source connector",
   "category": "import",
   
@@ -417,7 +422,6 @@ const ManifestSchema = z.object({
 });
 
 export type PluginManifest = z.infer<typeof ManifestSchema>;
-export type ConfigField = z.infer<typeof ConfigFieldSchema>;
 
 // ============================================
 // Plugin Discovery
@@ -581,24 +585,21 @@ export class VocIngestionStack extends cdk.Stack {
     // ============================================
     if (infra.ingestor?.enabled) {
       // Bundle plugin code with shared modules
-      const ingestorCode = lambda.Code.fromAsset('plugins', {
-        exclude: ['**/__pycache__', '*.pyc'],
-        bundling: {
-          image: lambda.Runtime.PYTHON_3_12.bundlingImage,
-          command: [
-            'bash', '-c', [
-              'mkdir -p /asset-output',
-              `cp -r /asset-input/${plugin.id}/ingestor/* /asset-output/`,
-              'cp -r /asset-input/_shared/* /asset-output/',
-            ].join(' && '),
-          ],
-          platform: 'linux/arm64',
-        },
+      // pythonLambdaAsset (lib/utils/python-lambda-asset.ts) is the one way to build a Python
+      // asset: Python 3.14 / arm64, and every bundle ends by pruning tests and caches.
+      const ingestorCode = pythonLambdaAsset('.', {
+        exclude: rootPluginAssetExcludes(plugin.id, allPluginIds),
+        copy: [
+          'mkdir -p /asset-output',
+          `cp -r /asset-input/plugins/${plugin.id}/ingestor/* /asset-output/`,
+          'cp -r /asset-input/plugins/_shared /asset-output/',
+          'cp -r /asset-input/lambda/shared /asset-output/',
+        ],
       });
       
       const fn = new lambda.Function(this, `Ingestor${this.capitalize(plugin.id)}`, {
         functionName: `voc-ingestor-${plugin.id}`,
-        runtime: lambda.Runtime.PYTHON_3_12,
+        runtime: lambda.Runtime.PYTHON_3_14,
         architecture: lambda.Architecture.ARM_64,
         handler: 'handler.lambda_handler',
         code: ingestorCode,
@@ -676,22 +677,19 @@ export class VocApiStack extends cdk.Stack {
     const webhookConfig = plugin.infrastructure.webhook!;
     
     // Bundle webhook handler
-    const webhookCode = lambda.Code.fromAsset(`plugins/${plugin.id}/webhook`, {
-      bundling: {
-        image: lambda.Runtime.PYTHON_3_12.bundlingImage,
-        command: [
-          'bash', '-c', [
-            'mkdir -p /asset-output',
-            'cp -r /asset-input/* /asset-output/',
-            'cp -r /asset-input/../../_shared/* /asset-output/',
-          ].join(' && '),
-        ],
-      },
+    const webhookCode = pythonLambdaAsset('.', {
+      exclude: rootPluginAssetExcludes(plugin.id, pluginIds),
+      copy: [
+        'mkdir -p /asset-output',
+        `cp -r /asset-input/plugins/${plugin.id}/webhook/* /asset-output/`,
+        'cp -r /asset-input/plugins/_shared /asset-output/',
+        'cp -r /asset-input/lambda/shared /asset-output/',
+      ],
     });
     
     const webhookFn = new lambda.Function(this, `Webhook${this.capitalize(plugin.id)}`, {
       functionName: `voc-webhook-${plugin.id}`,
-      runtime: lambda.Runtime.PYTHON_3_12,
+      runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
       code: webhookCode,
@@ -1035,7 +1033,6 @@ function ConfigFieldInput({
 // cdk.context.json
 {
   "brandName": "MyBrand",
-  "brandHandles": ["@mybrand", "mybrand"],
   "primaryLanguage": "en",
   "enabledSources": [
     "webscraper"
@@ -1117,7 +1114,7 @@ mkdir -p plugins/my_source/ingestor
 {
   "id": "my_source",
   "name": "My Source",
-  "icon": "🔌",
+  "icon": "Plugin",
   "description": "Fetches data from My Source API",
   "category": "reviews",
   
@@ -1862,7 +1859,7 @@ function createPluginLambda(plugin: PluginManifest, role: iam.Role): lambda.Func
   
   return new lambda.Function(this, `Ingestor${plugin.id}`, {
     functionName: `voc-ingestor-${plugin.id}`,
-    runtime: lambda.Runtime.PYTHON_3_12,
+    runtime: lambda.Runtime.PYTHON_3_14,
     architecture: lambda.Architecture.ARM_64,
     handler: 'handler.lambda_handler',
     role: role,  // Shared role - no custom permissions
@@ -1983,8 +1980,8 @@ indistinguishable from the plugin's side, that branch raises `SecretUnreadableEr
 `ConfigurationError` subclass) and `_report_construction_failure` **does not count it
 against the circuit breaker**. Counting it would let five AWS-side blips inside the
 breaker's 15-minute window call `_trip_breaker`, which disables the plugin's EventBridge
-schedule — and nothing re-enables a disabled rule, so a healthy plugin's ingestion would
-stop until an operator noticed. Only the auto-disable is withheld: the `plugin.failed` audit
+schedule — and only an admin turning the source back on in Administration → Sources → Data sources (or the Reset action)
+recovers it, so a healthy plugin's ingestion would stop until an operator noticed. Only the auto-disable is withheld: the `plugin.failed` audit
 event still fires, and the run record does too on a manual run (on a scheduled one there is
 none to move — see the next paragraph). A malformed identity, a namespace that matches
 nothing, or a secret whose body is not a JSON object is someone's mistake, stays a plain
@@ -2002,9 +1999,8 @@ scheduled run that event is the only signal there is.
 exemption relies on. On a *manual* run the `SOURCE_RUN#` record clears the UI's spinner and
 carries the message. On a **scheduled** run there is no such record — `_update_source_run_status`
 is a no-op without an `execution_id` — so the only signals are the
-`Refusing to load plugin secrets` log line and the `plugin.failed` audit event, and that
-event reaches EventBridge only when `AUDIT_EVENT_BUS` is set (no stack in this repo sets it;
-otherwise it is a `logger.info("AUDIT", …)`). No stack creates a metric filter or alarm
+`Refusing to load plugin secrets` log line and the `plugin.failed` audit event, which is a
+CloudWatch log line (`logger.info("AUDIT", …)`) and nothing more. No stack creates a metric filter or alarm
 either. So a scheduled plugin with an unreadable secret is silently not ingesting, and the
 one mechanism that used to make that state visible in the console — the breaker disabling
 the rule — is now deliberately withheld. The trade is still the right one, but it moves the
@@ -2044,7 +2040,7 @@ a Secrets Manager key (`<source>_configs`), an ingestor Lambda name
 | `PUT /sources/<source>/enable\|disable` | yes | disabling silently stops ingestion |
 | `GET /integrations/<source>/apps` | **no** | the Scrapers page lists configs for everyone; a config holds a public app-store id and a display name, not a credential |
 
-The gate is the server's. The Scrapers page and the Settings page also disable the
+The gate is the server's. The Scrapers page and Administration → Sources → Data sources also disable the
 corresponding controls for a non-admin so the reason is visible on hover rather than arriving
 as a 403, but that is presentation only. Both properties are pinned by an `ast` pass over the
 route decorators in `test_integrations_security.py`, so a route added later is asserted rather
@@ -2065,33 +2061,33 @@ separately below.
 | `POST /scrapers` | yes | writes `webscraper_configs` on the shared secret — the URLs the ingestor fetches |
 | `DELETE /scrapers/<scraper_id>` | yes | same write, and destructive |
 | `POST /scrapers/<scraper_id>/run` | yes | billed third-party fetch, invocable in a loop |
-| `GET /scrapers`, `.../status`, `.../runs`, `/scrapers/templates` | **no** | the Scrapers page renders these for everyone |
-| `POST /scrapers/analyze-url` | **no** | persists nothing; the fetch is bounded by `validate_url`'s SSRF checks |
+| `GET /scrapers`, `.../status`, `/scrapers/templates` | **no** | the Scrapers page renders these for everyone |
+| `POST /scrapers/analyze-url` | yes | outbound fetch of a caller-chosen URL plus a Bedrock call; exists only for the admin-only editor (owner decision 2026-10-08) |
 
 `scraper_id` is deliberately **not** allowlisted the way `<source>` is. It is not a plugin id
 and reaches no secret key or function name — only a `SCRAPER_RUN#` partition and the invoke
 payload, where the webscraper matches it against its own configured list, so an unknown id is a
 run that finds nothing. The admin gate is what bounds who can write those partitions.
 
-#### `/scrapers/manual/*` is a second handler, and is **not** gated
+#### `/scrapers/manual/*` is a second handler, gated by a module middleware
 
-| Route | `require_admin` | Why |
+| Route | admin-only | Why |
 |-------|-----------------|-----|
-| `POST /scrapers/manual/parse`, `.../confirm`, `.../csv-upload`, `.../json-upload` | **no** | writes feedback **content** into the pipeline (S3 + the enrichment queue); reaches neither the shared secret nor any plugin resource |
-| `GET /scrapers/manual/parse/<job_id>` | **no** | reads the caller's own parse job |
+| `POST /scrapers/manual/parse`, `.../confirm`, `.../csv-upload`, `.../json-upload` | **yes** (middleware) | writes feedback **content** into the pipeline (S3 + the enrichment queue) |
+| `GET /scrapers/manual/parse/<job_id>` | **yes** (middleware) | reads a parse job of that content |
 
-Recorded rather than fixed, and the distinction is the reason. The three gated routes above were
-gated because they reach a **credential namespace** or **invoke a plugin**; these reach neither.
-Content ingestion is open to any authenticated user everywhere in this tree — `POST /feedback-forms`
-and `POST /s3-import/upload-url` answer 200 to a `users`-group caller on the same basis — so gating
-only the manual-import routes would reintroduce a boundary that depends on which page a write came
-from, which is exactly what this change removed for the secret. Whether content ingestion as a whole
-should be admin-only is a product decision spanning several handlers and their pages.
+Owner decision 2026-10-08 (#242 follow-up): importing data is an administrator's action, across
+every import path at once — these routes and every `/s3-import/*` route (`s3_import_handler`) —
+so the boundary does not depend on which page a write came from. Feedback forms (create/edit/delete
+and the public submit) stay open by a separate decision. Each import module installs one
+`app.use(middlewares=[_admins_only])` rather than a per-route call, so a route added later is gated
+by default.
 
 Asserted, not merely written down: `test_scrapers_security.py::TestTheInventoryIsOneHandlers` pins
-both this handler's route inventory and the fact that none of its routes is gated, so adding a gate
-to one of them fails and forces this section to be re-derived. The `ast` pass cannot see across
-module boundaries, which is why the scope needs stating at all.
+this handler's route inventory and its middleware; `test_route_admin_gates.py` lists the writes as
+`ADMIN_ONLY` and the reads in `ADMIN_ONLY_READS`; `test_import_admin_gates.py` asserts a non-admin's
+403 comes before any AWS call. The `ast` pass cannot see across module boundaries, which is why the
+scope needs stating at all.
 
 ### Cost Controls
 
@@ -3250,23 +3246,20 @@ def validate_metadata(metadata: dict) -> tuple[bool, list[str]]:
 
 **Problem**: No structured audit trail for plugin operations.
 
-**Solution**: Emit structured audit events to CloudWatch Logs and optionally to S3/EventBridge.
+**Solution**: Emit structured audit events to CloudWatch Logs. (An optional EventBridge
+copy behind an `AUDIT_EVENT_BUS` variable was removed: no stack ever created the bus or set
+the variable, so it never ran.)
 
 ```python
 # plugins/_shared/audit.py
 """
 Structured audit logging for plugin operations.
 """
-import json
-import os
 from datetime import datetime, timezone
 from typing import Literal
 from dataclasses import dataclass, asdict
 
 from shared.logging import logger
-from shared.aws import get_eventbridge_client
-
-AUDIT_EVENT_BUS = os.environ.get('AUDIT_EVENT_BUS', '')
 
 AuditAction = Literal[
     'plugin.invoked',
@@ -3327,21 +3320,8 @@ def emit_audit_event(
         ip_address=ip_address,
     )
     
-    # Always log to CloudWatch
+    # The one destination: CloudWatch
     logger.info('AUDIT', extra={'audit_event': event.to_dict()})
-    
-    # Optionally send to EventBridge for downstream processing
-    if AUDIT_EVENT_BUS:
-        try:
-            events = get_eventbridge_client()
-            events.put_events(Entries=[{
-                'Source': 'voc.plugins',
-                'DetailType': f'Plugin Audit: {action}',
-                'Detail': json.dumps(event.to_dict()),
-                'EventBusName': AUDIT_EVENT_BUS,
-            }])
-        except Exception as e:
-            logger.warning(f'Failed to send audit event to EventBridge: {e}')
 
 
 # Usage in base_ingestor.py
@@ -3475,6 +3455,46 @@ def record_plugin_deployment(plugin_id: str, version: str) -> None:
 
 **Solution**: Auto-disable plugins after repeated failures.
 
+**As deployed** (the sketch below predates these details):
+
+- 5 failures (`FAILURE_THRESHOLD`) inside 15 minutes (`WINDOW_MINUTES`, both constants in
+  `plugins/_shared/circuit_breaker.py`) trip the breaker. The state lives in the **aggregates** table (`pk`/`sk`, TTL
+  `ttl`): one `FAILURES#<plugin>` / `<iso timestamp>` row per counted failure (24 h TTL) and,
+  while tripped, `CIRCUIT#<plugin>` / `TRIPPED` (`tripped_at`, `failure_count`, `last_error`
+  cut at 500 characters). Every later run stops at that row (`status: skipped`,
+  `reason: circuit_breaker_open`); a successful run deletes it.
+- Before this fix the breaker addressed the **watermarks** table, whose only key is `source`, with
+  `pk`/`sk` keys. Every query, get and delete was a `ValidationException` (caught and logged as
+  a warning), so a deployed breaker never counted a failure and never tripped. There is no
+  stale state to migrate.
+- A trip runs three **independent** steps, each logged and metered on failure without skipping
+  the others: write the `TRIPPED` row first (it is what stops the runs and what Settings
+  shows), then `events:DisableRule` on the plugin's own schedule, then the `plugin.disabled`
+  audit event. Metrics (namespace `VoC`): `CircuitBreakerTripRecordFailed`,
+  `CircuitBreakerScheduleDisableFailed`.
+- The rule name comes from `INGEST_SCHEDULE_RULE_NAME`, which `lib/stacks/ingestion-stack.ts`
+  sets from the same string that names the rule — with or without a `deploymentPrefix`. An
+  unscheduled plugin has no such variable: it disables nothing and only records the trip.
+- Each scheduled ingestor runs as its own role (`lib/stacks/ingestion-roles.ts`), granted
+  `events:DisableRule` on exactly its own rule ARN — never a wildcard, never on the role the
+  unscheduled ingestors share — so no plugin can switch off a sibling's schedule.
+- **Recovery** is one admin action in Administration → Sources → Data sources, where a tripped source shows
+  "Paused after repeated failures" (when, how many failures, a short reason):
+  - **Turn the source back on.** `PUT /sources/{source}/enable` deletes the `TRIPPED` row and
+    then enables the schedule.
+  - **Reset.** `POST /sources/{source}/reset` deletes the `TRIPPED` row *without* enabling the
+    schedule (for a "Run now" first, or an unscheduled plugin). It answers the source's schedule
+    state and a closed `circuit`.
+
+  Both are admin-only and validate `source` as a known plugin (`integrations_handler.py`,
+  behind the existing `/sources/{source}/{proxy+}` route; the row access is in
+  `lambda/shared/plugin_circuit.py`). `GET /sources/status` reports each source's
+  `circuit: {tripped, tripped_at, failure_count, last_error}` in one strongly consistent batch
+  read; `last_error` is the plugin exception's free text, so only admins get it (`null` for
+  everyone else, the same rule as the run-status rows). A failed read degrades only the
+  `circuit` entries (closed, plus `error`). Failure rows are not cleared: a reset within the
+  window of a still-broken plugin trips again on its next failure, which is the point.
+
 ```python
 # plugins/_shared/circuit_breaker.py
 """
@@ -3485,8 +3505,8 @@ import os
 from datetime import datetime, timezone, timedelta
 from shared.aws import get_dynamodb_resource, get_eventbridge_client
 
-FAILURE_THRESHOLD = int(os.environ.get('CIRCUIT_BREAKER_THRESHOLD', '5'))
-WINDOW_MINUTES = int(os.environ.get('CIRCUIT_BREAKER_WINDOW', '15'))
+FAILURE_THRESHOLD = 5
+WINDOW_MINUTES = 15
 
 dynamodb = get_dynamodb_resource()
 events = get_eventbridge_client()
@@ -3495,7 +3515,7 @@ events = get_eventbridge_client()
 class CircuitBreaker:
     def __init__(self, plugin_id: str):
         self.plugin_id = plugin_id
-        self.table = dynamodb.Table(os.environ['WATERMARKS_TABLE'])
+        self.table = dynamodb.Table(os.environ['AGGREGATES_TABLE'])
     
     def record_failure(self, error: str) -> None:
         """Record a failure. May trigger circuit breaker."""
@@ -3597,26 +3617,12 @@ class BaseIngestor:
             raise
 ```
 
-**Manual reset via API:**
+**Recovery** — the real routes (see "As deployed" above), not a separate plugin handler:
 
-```python
-# lambda/api/plugin_handler.py
-def reset_circuit_breaker(plugin_id: str) -> dict:
-    """Manually reset circuit breaker and re-enable plugin."""
-    # Clear circuit breaker state
-    table = dynamodb.Table(os.environ['WATERMARKS_TABLE'])
-    table.delete_item(
-        Key={'pk': f'CIRCUIT#{plugin_id}', 'sk': 'TRIPPED'}
-    )
-    
-    # Re-enable the schedule
-    events.enable_rule(Name=f'voc-ingest-{plugin_id}-schedule')
-    
-    emit_audit_event('plugin.enabled', plugin_id, True, {
-        'reason': 'manual_reset',
-    })
-    
-    return {'status': 'reset', 'plugin': plugin_id}
+```text
+PUT  /sources/{source}/enable   admin  delete CIRCUIT#<source>/TRIPPED, then enable the schedule
+POST /sources/{source}/reset    admin  delete CIRCUIT#<source>/TRIPPED, schedule unchanged
+GET  /sources/status            any    per source: circuit {tripped, tripped_at, failure_count, last_error}
 ```
 
 ---
@@ -3628,7 +3634,7 @@ def reset_circuit_breaker(plugin_id: str) -> dict:
 **Solution**: Use Pydantic for runtime validation with automatic error messages.
 
 ```python
-# plugins/_shared/schemas.py
+# lambda/shared/ingest_schemas.py
 """
 Pydantic schemas for message validation.
 """

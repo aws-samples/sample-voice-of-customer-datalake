@@ -1,0 +1,94 @@
+{
+  "tab": "Decisions",
+  "title": "Decisions",
+  "subtitle": "Pursue, park or reject: the reason, how you will measure success and when you would stop.",
+  "new": "New decision",
+  "empty": "No decisions yet. Record one when you choose what to do about a problem.",
+  "formLabel": "Decision",
+  "verdict": {
+    "label": "Verdict",
+    "pursue": "Pursue",
+    "park": "Park",
+    "reject": "Reject"
+  },
+  "fields": {
+    "title": "Title",
+    "rationale": "Rationale",
+    "successMetric": "Success metric",
+    "killCriterion": "Kill criterion",
+    "reviewBy": "Review by",
+    "launchedAt": "Launched on",
+    "feedbackIds": "Feedback ids",
+    "feedbackIdsHint": "Separate ids with spaces or commas.",
+    "documents": "Supporting documents"
+  },
+  "actions": {
+    "save": "Save decision",
+    "cancel": "Cancel",
+    "edit": "Edit",
+    "pursue": "Draft PR/FAQ",
+    "pursueAgain": "Draft another PR/FAQ",
+    "pursueHint": "Starts the PR/FAQ generation with this decision as its brief.",
+    "pursueConfirmTitle": "Draft a PR/FAQ?",
+    "pursueConfirmMessage": "AI drafts a PR/FAQ using \"{{title}}\" as its brief. It takes a few minutes; the draft appears under Documents when it is ready.",
+    "pursueConfirm": "Draft PR/FAQ",
+    "pursued": "A PR/FAQ was requested from this decision. It appears under Documents when the job finishes.",
+    "prfaqReady": "PR/FAQ ready: {{title}}",
+    "prfaqFailed": "The PR/FAQ from this decision could not be generated. Draft it again to retry.",
+    "revisit": "Revisit",
+    "releaseWatch": "Release watch",
+    "hideReleaseWatch": "Hide release watch"
+  },
+  "picker": {
+    "label": "Supporting reviews",
+    "placeholder": "Search reviews to add, e.g. \"late delivery\"",
+    "results": "Matching reviews",
+    "picked": "Reviews you added",
+    "searching": "Searching…",
+    "failed": "The search failed. Try again.",
+    "noMatch": "No reviews match \"{{q}}\".",
+    "linked": "Linked review {{n}}",
+    "remove": "Remove {{label}}",
+    "advanced": "Advanced: paste review ids"
+  },
+  "decidedBy": "Decided by {{name}} on {{date}}",
+  "decidedOn": "Decided on {{date}}",
+  "evidence": "Evidence",
+  "errors": {
+    "save": "The decision could not be saved.",
+    "conflict": "This decision changed since you opened it. Reload the page and try again.",
+    "pursue": "The PR/FAQ could not be started."
+  },
+  "releaseWatch": {
+    "title": "Release watch",
+    "subtitle": "Feedback in the {{days, number}} days before and after each release.",
+    "empty": "No release in this period.",
+    "regression": "Regression",
+    "noRegression": "No regression",
+    "before": "Before",
+    "after": "After",
+    "volume": "Volume",
+    "negative": "Negative",
+    "sentiment": "Sentiment",
+    "afterDays": "Days observed after: {{days, number}}",
+    "reasons": {
+      "sentiment_drop": "Sentiment dropped",
+      "negative_rise": "Negative feedback rose"
+    },
+    "complaints": "Growing complaints",
+    "evidenceItem": "Review {{n}}",
+    "evidence": "Most negative after the release",
+    "partial": "Partial: read back to {{date}}",
+    "loading": "Loading release watch",
+    "error": "Release watch could not be loaded.",
+    "topCategories": {
+      "before": "Top categories before",
+      "after": "Top categories after",
+      "new": "New in the top list",
+      "grew_one": "Up from {{count, number}}",
+      "grew_other": "Up from {{count, number}}",
+      "count_one": "{{count, number}} review",
+      "count_other": "{{count, number}} reviews"
+    }
+  }
+}

@@ -3,11 +3,16 @@
   "dashboard": true,
   "categories": true,
   "problems": true,
+  "radar": true,
   "chat": true,
   "projects": true,
   "prioritization": true,
   "data-explorer": true,
   "scrapers": true,
   "feedback-forms": true,
+  "memory": true,
+  "agents": true,
+  "company": true,
+  "connect": true,
   "settings": true
 }

@@ -1,0 +1,52 @@
+{
+  "$comment": "Findings of scripts/audit/patterns.py that are kept on purpose. Every entry: rule, path (glob), optional scope (the enclosing Python function as reported) and contains (substring of the reported line), and the reason it stays. Triaged 2026-10-24 (docs/code-audit.md).",
+  "entries": [
+    {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/agents/heartbeat/handler.py", "scope": "count_new_reviews", "reason": "early exit: stops reading as soon as `needed` reviews are counted (iter_query's max_items counts items, not in-scope items)"},
+    {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/api/feedback_form_handler.py", "scope": "get_form_submissions", "reason": "stops at `limit` FILTERED rows after the category-access filter, while also feeding the rating stats per page"},
+    {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/api/mcp_tokens_handler.py", "scope": "token_detail", "reason": "one page plus a client cursor (next_cursor), not a drain"},
+    {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/api/metrics_handler.py", "reason": "metrics walks carry time budgets, projections, partial-window flags and client cursors (dupes.md section 1: keep)"},
+    {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/api/projects_handler.py", "scope": "_project_job_rows", "reason": "bounded by JOBS_LIST_SCAN_CAP scanned rows (counted before the assist-job filter)"},
+    {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/api/projects_handler.py", "scope": "_read_prioritization_partition", "reason": "page cap MAX_PRIORITIZATION_PAGES with an explicit refusal past it (the docstring explains why truncating would be worse)"},
+    {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/api/projects_handler.py", "scope": "_project_documents", "reason": "page cap MAX_PROJECT_DOCUMENT_PAGES with a logged refusal past it"},
+    {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/api/projects_handler.py", "scope": "_row_holds_a_value_bearing_ballot", "reason": "early exit on the first value-bearing ballot, plus the page cap"},
+    {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/api/projects_handler.py", "scope": "_project_row_sort_keys", "reason": "early exit at `limit` matching rows, plus the page cap"},
+    {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/api/projects_handler.py", "scope": "_row_ballot_sort_keys", "reason": "refuses (ConflictError) past MAX_ROW_BALLOTS_PER_DELETE mid-walk, plus the page cap"},
+    {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/briefing/signals.py", "scope": "_day_items", "reason": "returns (items, more_exist): the 'more' flag needs the cursor; Limit shrinks per page"},
+    {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/jobs/category_reprocess/handler.py", "scope": "_reprocess_pages", "reason": "checkpointed cursor: the worker re-invokes itself before its timeout and resumes from it"},
+    {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/jobs/retention/handler.py", "scope": "_walk", "reason": "checkpointed cursor across self re-invocations (time budget)"},
+    {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/memory/scanner/handler.py", "scope": "idle_sessions", "reason": "a Scan (not a Query) with a time-budget stop"},
+    {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/research/research_step_handler.py", "scope": "_project_items", "reason": "page cap MAX_PROJECT_ITEM_PAGES with a logged warning past it"},
+    {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/shared/agents_store.py", "scope": "list_runs", "reason": "one page plus an encoded client cursor"},
+    {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/shared/channel_index.py", "scope": "walk_channel", "reason": "row cap and time budget, returns a truncated flag; maps a missing index to ChannelIndexUnavailable"},
+    {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/shared/feedback_sampling.py", "scope": "_read_partition", "reason": "room cap and time budget, returns an overflow flag"},
+    {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/shared/memory_store.py", "scope": "list_company", "reason": "one page plus a client cursor"},
+    {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/shared/memory_store.py", "scope": "count_status", "reason": "Select COUNT: sums each page's Count, there are no items for iter_query to yield"},
+    {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/shared/radar_releases.py", "scope": "list_releases", "reason": "reads whole pages until at least `limit` rows, then re-sorts the views; max_items would stop mid-page and change which releases rank first"},
+    {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/shared/radar_store.py", "scope": "recent_items", "reason": "one budget shared across several partitions with a per-page Limit of what is left"},
+    {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/shared/urgent_pages.py", "scope": "read_urgent_page", "reason": "a client-cursor page walk that hydrates rows and stops when the page is full"},
+
+    {"rule": "boto3-in-function", "path": "voc-datalake/lambda/api/integrations_handler.py", "scope": "run_source", "reason": "admin 'Run now' only; ~25 integration tests pin a fresh boto3.client('lambda') per call, and caching it would leak one test's stub into the next. Candidate: shared.aws.get_lambda_client with those tests reworked"},
+    {"rule": "boto3-in-function", "path": "voc-datalake/lambda/api/projects_handler.py", "scope": "api_run_research", "reason": "one Step Functions start per research request; tests patch projects_handler.boto3.client per call. Candidate for a cached getter with the tests reworked"},
+    {"rule": "boto3-in-function", "path": "voc-datalake/lambda/api/projects_handler.py", "scope": "_start_document_generation", "reason": "same as api_run_research: one Step Functions start per document job, factory pinned per call by its tests"},
+    {"rule": "boto3-in-function", "path": "voc-datalake/lambda/custom_resources/model_pin.py", "scope": "handler", "reason": "a CloudFormation custom resource: runs once per deploy, never on a request path"},
+    {"rule": "boto3-in-function", "path": "voc-datalake/plugins/web_reviews/ingestor/agentcore_browser.py", "scope": "browser_session", "reason": "one client per managed-browser session (minutes long), injectable for tests; the build is noise next to the session"},
+
+    {"rule": "lazy-getter-without-warm", "path": "voc-datalake/lambda/jobs/category_reprocess/handler.py", "reason": "a 15-minute self re-invoking batch worker that also builds its DynamoDB resource lazily; the ~0.1 s client build is noise next to its Bedrock calls (5.27 warmed only request-path and per-tick workers)"},
+    {"rule": "lazy-getter-without-warm", "path": "voc-datalake/lambda/research/research_step_handler.py", "reason": "a Step Functions research step spending minutes in Bedrock; init-time warming would save ~0.1 s of a multi-minute task"},
+
+    {"rule": "raw-bedrock-call", "path": "voc-datalake/lambda/api/manual_import_processor.py", "scope": "process_job", "reason": "legacy Anthropic Messages body over invoke_model; moving it to Converse changes the request on the wire and the response parsing (dupes.md section 10), which a byte-identical consolidation must not do. Candidate for a behaviour change with its own tests"},
+
+    {"rule": "stream-raw-bedrock-command", "path": "voc-datalake/lambda/stream/src/assistant/tools/server/consult-personas.ts", "reason": "a one-shot (non-streaming) Converse with a thinking budget on non-adaptive models; bedrock/ hosts the streaming client only"},
+    {"rule": "stream-raw-bedrock-command", "path": "voc-datalake/lambda/stream/src/plan-step/deps.ts", "reason": "the plan-step Lambda's one-shot Converse (tools, no thinking); a separate bundle from the streaming assistant"},
+
+    {"rule": "swallowed-exception", "path": "voc-datalake/lambda/shared/avatar.py", "scope": "avatar_object_owner", "reason": "documented in place (noqa BLE001): an absent or unreadable object both mean 'cannot tell', which the caller treats as not owned"},
+
+    {"rule": "local-date-formatter", "path": "voc-datalake/frontend/src/components/prototypeLinkLifetime.ts", "reason": "a pure expiry formatter with an injected clock: short date only when not today, and a RangeError fallback for a malformed language tag that dateUtils does not have"},
+    {"rule": "local-date-formatter", "path": "voc-datalake/frontend/src/pages/Home/brief/BriefSettings.tsx", "contains": "toLocaleTimeString(language", "reason": "hour-of-day picker labels (hour numeric, minute 2-digit) in the app language; formatTime's timeStyle 'short' zero-pads the hour in some locales (de '09:00'), a visible change"},
+
+    {"rule": "raw-clipboard", "path": "voc-datalake/frontend/src/components/DocumentExportMenu/DocumentExportMenu.tsx", "reason": "the export menu shell shows the 'Copied' flash (useCopiedFlag); the raw write has no feedback of its own (dupes.md section 6)"},
+    {"rule": "raw-clipboard", "path": "voc-datalake/frontend/src/components/PersonaExportMenu/PersonaExportMenu.tsx", "reason": "same as DocumentExportMenu: the shell flashes"},
+    {"rule": "raw-clipboard", "path": "voc-datalake/frontend/src/components/FeedbackCard/FeedbackCard.tsx", "reason": "best-effort copy with no 'copied' state by design: a refused write is absorbed and the text stays on screen to copy by hand (comment in place)"},
+    {"rule": "raw-clipboard", "path": "voc-datalake/frontend/src/pages/FeedbackDetail/CopyReviewLink.tsx", "reason": "uses useCopiedFlag and flips the label only when the write resolves (a refused clipboard leaves it unchanged); useCopyToClipboard marks before the write settles"}
+  ]
+}

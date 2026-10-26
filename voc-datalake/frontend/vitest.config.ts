@@ -1,13 +1,18 @@
 import { defineConfig } from 'vitest/config'
+import { changelogPlugin } from './changelogPlugin'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), changelogPlugin()],
   define: {
     // Mirror vite.config.ts's build-id stamp (issue #191) — a stable value
     // in tests so assertions on versioned URLs are deterministic.
     'import.meta.env.APP_VERSION': JSON.stringify('test'),
+    // Mirror the Version card's build stamps (vite.config.ts) with fixed values.
+    'import.meta.env.PLATFORM_VERSION': JSON.stringify('3.4.0'),
+    'import.meta.env.BUILD_COMMIT': JSON.stringify('abc1234'),
+    'import.meta.env.BUILD_TIME': JSON.stringify('2026-01-02T03:04:05.000Z'),
   },
   test: {
     globals: true,

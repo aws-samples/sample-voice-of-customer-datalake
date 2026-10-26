@@ -5,7 +5,13 @@
  */
 
 import { sentimentHexColor } from '../../lib/sentiment'
+import { TrendingUp, Smile, Siren, ChartColumn, Link } from 'lucide-react'
 import { BreakdownTable } from './BreakdownTable'
+import { PDF_REPORT_LOCALE, PdfIcon, PdfReport, PdfReportHeader, PdfSectionHeading, PdfShareCards } from '../../components/PdfParts/pdfParts'
+import { PDF_TONES } from '../../components/PdfParts/pdfTones'
+import { signedAverage } from '../../components/SentimentWords/sentimentWords'
+import { formatDate } from '../../utils/dateUtils'
+import { formatCount } from '../../utils/numberFormat'
 import type { FeedbackItem } from '../../api/types'
 
 interface DailyTotal {
@@ -31,89 +37,46 @@ export interface DashboardPDFProps {
 }
 
 function getHeaderSentimentColor(avgSentiment: number): string {
-  if (avgSentiment > 0) return '#166534'
-  if (avgSentiment < 0) return '#991b1b'
-  return '#374151'
-}
-
-const sectionHeading = {
-  fontSize: '18px',
-  fontWeight: '600' as const,
-  color: '#1e293b',
-  marginBottom: '12px',
+  if (avgSentiment > 0) return PDF_TONES.ok.color
+  if (avgSentiment < 0) return PDF_TONES.danger.color
+  return PDF_TONES.muted.color
 }
 
 function HeaderSection({
   timeRange, totalFeedback, avgSentiment, urgentCount, sourcesCount,
 }: DashboardPDFProps) {
-  const sentimentColor = getHeaderSentimentColor(avgSentiment)
   const stats = [
     {
       label: 'Total Feedback',
-      value: String(totalFeedback),
-      bg: '#f0f9ff',
-      color: '#1d4ed8',
+      value: formatCount(totalFeedback, PDF_REPORT_LOCALE),
+      bg: '#f1e9ff',
+      color: '#723acc',
     },
     {
       label: 'Avg Sentiment',
-      value: avgSentiment.toFixed(2),
-      bg: '#f0fdf4',
-      color: sentimentColor,
+      value: signedAverage(avgSentiment, PDF_REPORT_LOCALE),
+      bg: PDF_TONES.ok.bg,
+      color: getHeaderSentimentColor(avgSentiment),
     },
     {
       label: 'Urgent Issues',
-      value: String(urgentCount),
-      bg: '#fef2f2',
-      color: '#991b1b',
+      value: formatCount(urgentCount, PDF_REPORT_LOCALE),
+      ...PDF_TONES.danger,
     },
     {
       label: 'Sources Active',
-      value: String(sourcesCount),
-      bg: '#f5f3ff',
-      color: '#5b21b6',
+      value: formatCount(sourcesCount, PDF_REPORT_LOCALE),
+      bg: '#f1e9ff',
+      color: '#723acc',
     },
   ]
   return (
-    <div data-pdf-section style={{ marginBottom: '24px' }}>
-      <h1 style={{
-        fontSize: '28px',
-        fontWeight: 'bold',
-        margin: '0 0 4px 0',
-        color: '#111827',
-      }}>Dashboard Report</h1>
-      <p style={{
-        fontSize: '14px',
-        color: '#6b7280',
-        margin: '0 0 16px 0',
-      }}>Time range: {timeRange}</p>
-      <div style={{
-        display: 'flex',
-        gap: '16px',
-        flexWrap: 'wrap',
-      }}>
-        {stats.map((stat) => (
-          <div key={stat.label} style={{
-            padding: '12px 20px',
-            backgroundColor: stat.bg,
-            borderRadius: '8px',
-            minWidth: '130px',
-          }}>
-            <p style={{
-              fontSize: '12px',
-              color: stat.color,
-              fontWeight: '500',
-              margin: '0 0 4px 0',
-            }}>{stat.label}</p>
-            <p style={{
-              fontSize: '24px',
-              fontWeight: 'bold',
-              color: stat.color,
-              margin: 0,
-            }}>{stat.value}</p>
-          </div>
-        ))}
-      </div>
-    </div>
+    <PdfReportHeader
+      title="Dashboard Report"
+      subtitle={`Time range: ${timeRange}`}
+      stats={stats}
+      statMinWidth="130px"
+    />
   )
 }
 
@@ -123,7 +86,7 @@ function TrendSection({ dailyTotals }: { readonly dailyTotals: DailyTotal[] }) {
   const maxCount = Math.max(...sorted.map((d) => d.count), 1)
   return (
     <div data-pdf-section style={{ marginBottom: '28px' }}>
-      <h2 style={sectionHeading}>📈 Feedback Volume Trend</h2>
+      <PdfSectionHeading><PdfIcon icon={TrendingUp} />Feedback Volume Trend</PdfSectionHeading>
       <div style={{
         display: 'flex',
         alignItems: 'flex-end',
@@ -143,13 +106,13 @@ function TrendSection({ dailyTotals }: { readonly dailyTotals: DailyTotal[] }) {
             }}>
               <span style={{
                 fontSize: '9px',
-                color: '#6b7280',
+                color: '#5e5966',
               }}>{day.count > 0 ? day.count : ''}</span>
               <div style={{
                 width: '100%',
                 maxWidth: '24px',
                 height: `${height}px`,
-                backgroundColor: '#3b82f6',
+                backgroundColor: '#8e48ff',
                 borderRadius: '2px 2px 0 0',
               }} />
             </div>
@@ -161,7 +124,7 @@ function TrendSection({ dailyTotals }: { readonly dailyTotals: DailyTotal[] }) {
         justifyContent: 'space-between',
         marginTop: '4px',
         fontSize: '10px',
-        color: '#9ca3af',
+        color: '#5e5966',
       }}>
         <span>{sorted[0]?.date}</span>
         <span>{sorted.at(-1)?.date}</span>
@@ -171,73 +134,21 @@ function TrendSection({ dailyTotals }: { readonly dailyTotals: DailyTotal[] }) {
 }
 
 function SentimentSection({ sentimentBreakdown }: { readonly sentimentBreakdown: BreakdownEntry[] }) {
-  if (sentimentBreakdown.length === 0) return null
   const total = sentimentBreakdown.reduce((sum, s) => sum + s.value, 0)
-  return (
-    <div data-pdf-section style={{ marginBottom: '28px' }}>
-      <h2 style={sectionHeading}>😊 Sentiment Distribution</h2>
-      <div style={{
-        display: 'flex',
-        gap: '12px',
-        flexWrap: 'wrap',
-      }}>
-        {sentimentBreakdown.map((s) => {
-          const pct = total > 0 ? ((s.value / total) * 100).toFixed(1) : '0'
-          return (
-            <div key={s.name} data-pdf-section style={{
-              padding: '12px 20px',
-              borderRadius: '8px',
-              border: '1px solid #e5e7eb',
-              flex: '1',
-              minWidth: '100px',
-            }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                marginBottom: '4px',
-              }}>
-                <span style={{
-                  display: 'inline-block',
-                  width: '10px',
-                  height: '10px',
-                  borderRadius: '50%',
-                  backgroundColor: sentimentHexColor(s.name),
-                }} />
-                <span style={{
-                  fontSize: '13px',
-                  fontWeight: '500',
-                  color: '#374151',
-                  textTransform: 'capitalize',
-                }}>{s.name}</span>
-              </div>
-              <p style={{
-                fontSize: '22px',
-                fontWeight: 'bold',
-                color: '#1f2937',
-                margin: '0 0 2px 0',
-              }}>{s.value}</p>
-              <p style={{
-                fontSize: '12px',
-                color: '#6b7280',
-                margin: 0,
-              }}>{pct}%</p>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
+  const cards = sentimentBreakdown.map((s) => ({
+    name: s.name,
+    value: s.value,
+    percentage: total > 0 ? (s.value / total) * 100 : 0,
+    color: sentimentHexColor(s.name),
+  }))
+  return <PdfShareCards heading={<><PdfIcon icon={Smile} />Sentiment Distribution</>} cards={cards} minWidth="100px" />
 }
 
 function UrgentSection({ urgentItems }: { readonly urgentItems: readonly FeedbackItem[] }) {
   if (urgentItems.length === 0) return null
   return (
     <div data-pdf-section style={{ marginBottom: '28px' }}>
-      <h2 style={{
-        ...sectionHeading,
-        color: '#dc2626',
-      }}>🚨 Urgent Issues</h2>
+      <PdfSectionHeading color={PDF_TONES.danger.color}><PdfIcon icon={Siren} color={PDF_TONES.danger.color} />Urgent Issues</PdfSectionHeading>
       {urgentItems.map((item) => (
         <UrgentItem key={item.feedback_id} item={item} />
       ))}
@@ -246,14 +157,14 @@ function UrgentSection({ urgentItems }: { readonly urgentItems: readonly Feedbac
 }
 
 function UrgentItem({ item }: { readonly item: FeedbackItem }) {
-  const dateStr = item.source_created_at === '' ? '' : new Date(item.source_created_at).toLocaleDateString()
+  const dateStr = formatDate(item.source_created_at, PDF_REPORT_LOCALE)
   const text = item.original_text.length > 200 ? item.original_text.slice(0, 200) + '…' : item.original_text
   return (
     <div data-pdf-section style={{
       padding: '10px 14px',
-      borderLeft: '3px solid #ef4444',
+      borderLeft: `3px solid ${PDF_TONES.danger.color}`,
       marginBottom: '8px',
-      backgroundColor: '#fef2f2',
+      backgroundColor: PDF_TONES.danger.bg,
       borderRadius: '0 6px 6px 0',
     }}>
       <div style={{
@@ -265,26 +176,25 @@ function UrgentItem({ item }: { readonly item: FeedbackItem }) {
         <span style={{
           fontSize: '12px',
           fontWeight: '500',
-          color: '#374151',
-          textTransform: 'capitalize',
+          color: '#4a464f',
         }}>
-          {item.source_platform.replaceAll('_', ' ')} • {item.category.replaceAll('_', ' ')}
+          {item.source_platform} • {item.category}
         </span>
         <span style={{
           fontSize: '11px',
-          color: '#6b7280',
+          color: '#5e5966',
         }}>{dateStr}</span>
       </div>
       <p style={{
         fontSize: '12px',
-        color: '#374151',
+        color: '#4a464f',
         margin: '0 0 4px 0',
         lineHeight: '1.5',
       }}>{text}</p>
       {item.problem_summary != null && item.problem_summary !== '' ? (
         <p style={{
           fontSize: '11px',
-          color: '#6b7280',
+          color: '#5e5966',
           margin: 0,
           fontStyle: 'italic',
         }}>Problem: {item.problem_summary}</p>
@@ -295,16 +205,10 @@ function UrgentItem({ item }: { readonly item: FeedbackItem }) {
 
 export default function DashboardPDFContent(props: DashboardPDFProps) {
   return (
-    <div style={{
-      padding: '40px',
-      backgroundColor: 'white',
-    }}>
-      <HeaderSection {...props} />
-      <hr style={{
-        border: 'none',
-        borderTop: '2px solid #e5e7eb',
-        marginBottom: '24px',
-      }} />
+    <PdfReport
+      header={<HeaderSection {...props} />}
+      footer={`Generated on ${formatDate(new Date(), PDF_REPORT_LOCALE)} • VoC Analytics — Dashboard Report`}
+    >
       <TrendSection dailyTotals={props.dailyTotals} />
       <SentimentSection sentimentBreakdown={props.sentimentBreakdown} />
       <div style={{
@@ -312,25 +216,10 @@ export default function DashboardPDFContent(props: DashboardPDFProps) {
         gap: '24px',
         flexWrap: 'wrap',
       }}>
-        <BreakdownTable title="Categories" emoji="📊" entries={props.categoryBreakdown} />
-        <BreakdownTable title="Sources" emoji="🔗" entries={props.sourceBreakdown} colorFn={() => '#8b5cf6'} />
+        <BreakdownTable title="Categories" icon={ChartColumn} entries={props.categoryBreakdown} />
+        <BreakdownTable title="Sources" icon={Link} entries={props.sourceBreakdown} colorFn={() => '#8e48ff'} />
       </div>
       <UrgentSection urgentItems={props.urgentItems} />
-      <div data-pdf-section>
-        <hr style={{
-          border: 'none',
-          borderTop: '1px solid #e5e7eb',
-          marginTop: '32px',
-          marginBottom: '16px',
-        }} />
-        <p style={{
-          fontSize: '11px',
-          color: '#9ca3af',
-          textAlign: 'center',
-        }}>
-          Generated on {new Date().toLocaleDateString()} • VoC Analytics — Dashboard Report
-        </p>
-      </div>
-    </div>
+    </PdfReport>
   )
 }

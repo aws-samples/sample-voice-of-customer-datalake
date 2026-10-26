@@ -18,13 +18,16 @@ STALE_UNSIGNED_URL = 'https://d111.cloudfront.net/prototypes/proj_1/prototype_1.
 
 
 @pytest.fixture
-def prototypes_cdn_configured(cdn_signing_configured):
+def prototypes_cdn_configured(request):
+    # Signing must be configured before the CDN URL is: request it first.
+    request.getfixturevalue('cdn_signing_configured')
     with patch.dict('os.environ', {'PROTOTYPES_CDN_URL': CDN}):
         yield
 
 
 class TestWithSignedPrototypeUrl:
-    def test_overwrites_a_stale_unsigned_url(self, prototypes_cdn_configured):
+    @pytest.mark.usefixtures("prototypes_cdn_configured")
+    def test_overwrites_a_stale_unsigned_url(self):
         from api.projects import _with_signed_prototype_url
 
         item = _with_signed_prototype_url(
@@ -40,7 +43,8 @@ class TestWithSignedPrototypeUrl:
         assert item['prototype_url'].startswith(f'{STALE_UNSIGNED_URL}?')
         assert 'Signature=' in item['prototype_url']
 
-    def test_mints_a_url_for_a_row_that_never_had_one(self, prototypes_cdn_configured):
+    @pytest.mark.usefixtures("prototypes_cdn_configured")
+    def test_mints_a_url_for_a_row_that_never_had_one(self):
         """New prototypes persist no prototype_url at all — the URL is derived
         from the ids."""
         from api.projects import _with_signed_prototype_url
@@ -52,7 +56,8 @@ class TestWithSignedPrototypeUrl:
 
         assert urlparse(item['prototype_url']).path == '/prototypes/proj_7/prototype_7.html'
 
-    def test_drops_the_stale_url_when_signing_is_unavailable(self, cdn_signing_configured):
+    @pytest.mark.usefixtures("cdn_signing_configured")
+    def test_drops_the_stale_url_when_signing_is_unavailable(self):
         """With no CDN configured we cannot sign, so the stale unsigned URL must
         be REMOVED, not left behind. The frontend treats a missing
         prototype_url as "fall back to legacy inline content", which degrades
@@ -72,7 +77,8 @@ class TestWithSignedPrototypeUrl:
 
         assert 'prototype_url' not in item
 
-    def test_mints_no_url_for_a_legacy_INLINE_prototype(self, prototypes_cdn_configured):
+    @pytest.mark.usefixtures("prototypes_cdn_configured")
+    def test_mints_no_url_for_a_legacy_INLINE_prototype(self):
         """Regression caught on the deployed stack.
 
         The oldest prototypes kept their HTML in `content` and never wrote an S3
@@ -97,7 +103,8 @@ class TestWithSignedPrototypeUrl:
         assert 'prototype_url' not in item
         assert item['content'].startswith('<!DOCTYPE html>')
 
-    def test_still_mints_for_an_s3_backed_prototype_with_no_content(self, prototypes_cdn_configured):
+    @pytest.mark.usefixtures("prototypes_cdn_configured")
+    def test_still_mints_for_an_s3_backed_prototype_with_no_content(self):
         from api.projects import _with_signed_prototype_url
 
         item = _with_signed_prototype_url(
@@ -107,14 +114,16 @@ class TestWithSignedPrototypeUrl:
 
         assert 'Signature=' in item['prototype_url']
 
-    def test_leaves_non_prototype_documents_untouched(self, prototypes_cdn_configured):
+    @pytest.mark.usefixtures("prototypes_cdn_configured")
+    def test_leaves_non_prototype_documents_untouched(self):
         from api.projects import _with_signed_prototype_url
 
         prd = {'document_type': 'prd', 'document_id': 'prd_1', 'content': 'body'}
 
         assert _with_signed_prototype_url(dict(prd), 'proj_1') == prd
 
-    def test_leaves_a_prototype_without_a_document_id_untouched(self, prototypes_cdn_configured):
+    @pytest.mark.usefixtures("prototypes_cdn_configured")
+    def test_leaves_a_prototype_without_a_document_id_untouched(self):
         from api.projects import _with_signed_prototype_url
 
         item = _with_signed_prototype_url({'document_type': 'prototype'}, 'proj_1')

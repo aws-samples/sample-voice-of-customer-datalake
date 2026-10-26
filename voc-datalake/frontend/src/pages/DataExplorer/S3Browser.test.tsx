@@ -1,25 +1,38 @@
+import type { ComponentProps } from 'react'
 /**
  * @fileoverview Tests for S3Browser component
  */
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
+import { render } from '@test/test-utils'
 import userEvent from '@testing-library/user-event'
 import S3Browser from './S3Browser'
+import { at } from '@test/defined'
 
 const mockData = {
   bucket: 'voc-raw-data',
   prefix: 'raw/',
   objects: [
-    { key: 'webscraper/', fullKey: 'raw/webscraper/', size: 0, lastModified: '2025-01-01T00:00:00Z', isFolder: true },
-    { key: 'manual_import/', fullKey: 'raw/manual_import/', size: 0, lastModified: '2025-01-01T00:00:00Z', isFolder: true },
+    { key: 'webscraper', fullKey: 'raw/webscraper/', size: 0, lastModified: '2025-01-01T00:00:00Z', isFolder: true },
+    { key: 'Acme Android_android', fullKey: 'raw/Acme Android_android/', size: 0, lastModified: '2025-01-01T00:00:00Z', isFolder: true },
     { key: 'feedback-001.json', fullKey: 'raw/feedback-001.json', size: 1024, lastModified: '2025-01-15T10:30:00Z', isFolder: false },
     { key: 'image.png', fullKey: 'raw/image.png', size: 2048, lastModified: '2025-01-15T11:00:00Z', isFolder: false },
   ],
 }
 
+// Outside `raw/`, where existing objects may still be edited.
+const editableData = {
+  bucket: 'voc-raw-data',
+  prefix: 'exports/',
+  objects: [
+    { key: 'report.json', fullKey: 'exports/report.json', size: 1024, lastModified: '2025-01-15T10:30:00Z', isFolder: false },
+    { key: 'chart.png', fullKey: 'exports/chart.png', size: 2048, lastModified: '2025-01-15T11:00:00Z', isFolder: false },
+  ],
+}
+
 describe('S3Browser', () => {
-  const defaultProps = {
-    path: [] as string[],
+  const defaultProps: ComponentProps<typeof S3Browser> = {
+    path: [],
     data: mockData,
     loading: false,
     onNavigateToFolder: vi.fn(),
@@ -27,7 +40,6 @@ describe('S3Browser', () => {
     onNavigateToBreadcrumb: vi.fn(),
     onView: vi.fn(),
     onEdit: vi.fn(),
-    onDelete: vi.fn(),
     onDownload: vi.fn(),
   }
 
@@ -41,8 +53,9 @@ describe('S3Browser', () => {
     it('renders folders', () => {
       render(<S3Browser {...defaultProps} />)
 
-      expect(screen.getByText('webscraper/')).toBeInTheDocument()
-      expect(screen.getByText('manual_import/')).toBeInTheDocument()
+      expect(screen.getByText('Webscraper')).toHaveAttribute('title', 'webscraper')
+      // Live finding: a connector folder read `Acme Android_android`.
+      expect(screen.getByText('Acme (Android)')).toHaveAttribute('title', 'Acme Android_android')
     })
 
     it('renders files with size', () => {
@@ -55,7 +68,7 @@ describe('S3Browser', () => {
     it('renders path breadcrumbs', () => {
       render(<S3Browser {...defaultProps} path={['raw', 'webscraper']} />)
 
-      expect(screen.getByText('raw')).toBeInTheDocument()
+      expect(screen.getByText('Raw')).toBeInTheDocument()
       expect(screen.getByText('webscraper')).toBeInTheDocument()
     })
 
@@ -95,8 +108,8 @@ describe('S3Browser', () => {
 
       render(<S3Browser {...defaultProps} onNavigateToFolder={onNavigateToFolder} />)
 
-      await user.click(screen.getByText('webscraper/'))
-      expect(onNavigateToFolder).toHaveBeenCalledWith('webscraper/')
+      await user.click(screen.getByText('Webscraper'))
+      expect(onNavigateToFolder).toHaveBeenCalledWith('webscraper')
     })
 
     it('calls onNavigateUp when back button clicked', async () => {
@@ -106,7 +119,7 @@ describe('S3Browser', () => {
       render(<S3Browser {...defaultProps} path={['raw']} onNavigateUp={onNavigateUp} />)
 
       await user.click(screen.getByText('Back'))
-      expect(onNavigateUp).toHaveBeenCalled()
+      expect(onNavigateUp).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'click' }))
     })
 
     it('calls onNavigateToBreadcrumb when breadcrumb clicked', async () => {
@@ -115,7 +128,7 @@ describe('S3Browser', () => {
 
       render(<S3Browser {...defaultProps} path={['raw', 'webscraper']} onNavigateToBreadcrumb={onNavigateToBreadcrumb} />)
 
-      await user.click(screen.getByText('raw'))
+      await user.click(screen.getByText('Raw'))
       expect(onNavigateToBreadcrumb).toHaveBeenCalledWith(0)
     })
 
@@ -148,30 +161,32 @@ describe('S3Browser', () => {
       render(<S3Browser {...defaultProps} onView={onView} />)
 
       const viewButtons = screen.getAllByTitle('View')
-      await user.click(viewButtons[0])
-      expect(onView).toHaveBeenCalled()
+      await user.click(at(viewButtons, 0))
+      expect(onView).toHaveBeenCalledWith('raw/feedback-001.json')
     })
 
-    it('calls onEdit when edit button clicked', async () => {
+    it('calls onEdit when edit button clicked on a non-raw object', async () => {
       const onEdit = vi.fn()
       const user = userEvent.setup()
 
-      render(<S3Browser {...defaultProps} onEdit={onEdit} />)
+      render(<S3Browser {...defaultProps} data={editableData} onEdit={onEdit} />)
 
       const editButtons = screen.getAllByTitle('Edit')
-      await user.click(editButtons[0])
-      expect(onEdit).toHaveBeenCalledWith('raw/feedback-001.json')
+      await user.click(at(editButtons, 0))
+      expect(onEdit).toHaveBeenCalledWith('exports/report.json')
     })
 
-    it('calls onDelete when delete button clicked', async () => {
-      const onDelete = vi.fn()
-      const user = userEvent.setup()
+    it('never offers to edit an existing raw object (raw data is immutable)', () => {
+      render(<S3Browser {...defaultProps} />)
 
-      render(<S3Browser {...defaultProps} onDelete={onDelete} />)
+      expect(screen.queryByTitle('Edit')).not.toBeInTheDocument()
+    })
 
-      const deleteButtons = screen.getAllByTitle('Delete')
-      await user.click(deleteButtons[0])
-      expect(onDelete).toHaveBeenCalled()
+    it('offers no delete action (customer data is never deleted)', () => {
+      render(<S3Browser {...defaultProps} data={editableData} />)
+
+      expect(screen.queryByTitle('Delete')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument()
     })
 
     it('calls onDownload when download button clicked', async () => {
@@ -181,12 +196,12 @@ describe('S3Browser', () => {
       render(<S3Browser {...defaultProps} onDownload={onDownload} />)
 
       const downloadButtons = screen.getAllByTitle('Download')
-      await user.click(downloadButtons[0])
-      expect(onDownload).toHaveBeenCalled()
+      await user.click(at(downloadButtons, 0))
+      expect(onDownload).toHaveBeenCalledWith('raw/feedback-001.json', 'feedback-001.json')
     })
 
     it('does not show edit button for image files', () => {
-      render(<S3Browser {...defaultProps} />)
+      render(<S3Browser {...defaultProps} data={editableData} />)
 
       // There should be 1 edit button (for json file) not 2
       const editButtons = screen.getAllByTitle('Edit')
@@ -218,6 +233,27 @@ describe('S3Browser', () => {
 
       render(<S3Browser {...defaultProps} data={largeFile} />)
       expect(screen.getByText(/2\.0 MB/)).toBeInTheDocument()
+    })
+  })
+
+  describe('what a raw file is about', () => {
+    it('leads with the review title and date when the listing knows them, keeping the file name', () => {
+      const data = { bucket: 'b', prefix: 'raw/x/2026/01/04', objects: [{
+        key: 'a81f.json', fullKey: 'raw/x/2026/01/04/a81f.json', size: 400, lastModified: '2026-01-05T00:00:00Z',
+        isFolder: false, summary: { title: 'Battery drains overnight', date: '2026-01-04T08:00:00Z' },
+      }] }
+      render(<S3Browser {...defaultProps} path={['raw', 'x', '2026']} data={data} />)
+
+      expect(screen.getByText('Battery drains overnight')).toHaveAttribute('title', 'a81f.json')
+      expect(screen.getByText(/a81f\.json/)).toBeInTheDocument()
+      expect(screen.getByText(/Jan 4, 2026/)).toBeInTheDocument()
+    })
+
+    it('keeps date folders as they are below the source level', () => {
+      const data = { bucket: 'b', prefix: 'raw/x', objects: [{ key: '2026', size: 0, lastModified: '', isFolder: true }] }
+      render(<S3Browser {...defaultProps} path={['raw', 'x']} data={data} />)
+
+      expect(screen.getByText('2026')).toBeInTheDocument()
     })
   })
 })

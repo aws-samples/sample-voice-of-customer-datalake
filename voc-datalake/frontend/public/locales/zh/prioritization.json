@@ -7,7 +7,7 @@
     "savingMobile": "..."
   },
   "ballot": {
-    "anonymousNotice": "你的投票是匿名的：它会计入该文档的团队评分，但不会归属于你或任何其他人。",
+    "anonymousNotice": "你的选票会计入此提案的团队评分。它不与任何账户关联，只有你在下方填写姓名时才会保存姓名。",
     "axes": {
       "confidence": "信心",
       "confidenceHint": "你对以上两项估计有多大把握？",
@@ -28,7 +28,7 @@
       "unknown": "暂时无法记录你的投票。请稍后再试。"
     },
     "displayName": {
-      "hint": "可选。选票不会归属于任何个人，因此可以留空。",
+      "hint": "可选。填写的姓名会与你的选票一起保存，但不会显示在团队评分中。留空即可不署名投票。",
       "label": "你的姓名（可选）"
     },
     "done": {
@@ -49,6 +49,7 @@
       "pending": "正在提交..."
     },
     "title": "为该提案评分",
+    "titleInactive": "提案投票",
     "unavailable": {
       "description": "尚未提交任何内容。请重新加载页面再试——本次投票本身可能仍在进行。",
       "title": "无法加载本次投票"
@@ -76,7 +77,7 @@
     "saving": "保存中...",
     "title": "该行包含的内容"
   },
-  "configureApiEndpoint": "在设置中配置 API 端点以查看优先级排序。",
+  "configureApiEndpoint": "在“管理 → 常规”中配置 API 端点以查看优先级排序。",
   "docType": {
     "prd": "PRD",
     "prfaq": "PR/FAQ"
@@ -96,7 +97,7 @@
     "unavailable": "评分不可用"
   },
   "framework": {
-    "description": "对每个文档进行评分：<strong>影响力</strong>、<strong>上市时间</strong>、<strong>战略契合度</strong>和<strong>置信度</strong>。",
+    "configured": "按以下指标为每个提案评分：<strong>{{metrics}}</strong>。",
     "title": "优先级排序框架"
   },
   "lineage": {
@@ -113,7 +114,7 @@
   },
   "loading": "加载文档中...",
   "noteTooLong": {
-    "description": "备注最多 {{max}} 个字符，超出长度的备注会被拒绝，而不会被截断。请缩短所编辑行的备注，然后重新保存。目前尚未保存任何内容。",
+    "description": "备注最多 {{max, number}} 个字符，超出长度的备注会被拒绝，而不会被截断。请缩短所编辑行的备注，然后重新保存。目前尚未保存任何内容。",
     "title": "备注过长，无法保存"
   },
   "notes": {
@@ -134,12 +135,16 @@
     "none": "未评分"
   },
   "roomVote": {
-    "anonymousNote": "在此投出的选票会计入上方的团队评分，且不会归属于任何个人。",
-    "ballotsIn": "已收到 {{received}} / {{cap}} 张选票",
+    "anonymousNote": "在此投出的选票会计入上方的团队评分。选票不与任何账户关联；只有投票人填写了姓名才会保存姓名，且不会在此显示。",
+    "ballotsIn": "已收到 {{received, number}} / {{cap, number}} 张选票",
+    "checking": "正在检查是否已有进行中的投票...",
     "close": "结束投票",
     "closeFailed": "无法结束投票。请重试——在结束之前仍会接受选票。",
     "closed": "本次投票已结束，不再接受新的选票。",
     "closing": "正在结束...",
+    "confirmMessage": "这会为“{{title}}”创建一个公开链接和二维码。在你结束投票或投票过期之前，任何拿到链接的人都无需登录即可投票。",
+    "confirmOpen": "开启投票",
+    "confirmTitle": "要开启公开的现场投票吗？",
     "description": "在屏幕上展示二维码，让会议室中的每个人无需账号即可用手机提交一张匿名选票。",
     "expired": "本次投票已过期，不再接受新的选票。",
     "open": "开启会场投票",
@@ -149,12 +154,12 @@
     "qrAccessibleName": "打开 {{title}} 匿名投票页面的二维码",
     "qrCaption": "扫码即可用手机为该提案评分",
     "qrUnavailable": "因无法共享本页地址，二维码不可用。",
-    "scopeDocuments": "一张选票覆盖其背后的全部 {{documents}} 个文档，因此现场评分的是整个提案。",
+    "scopeDocuments": "一张选票覆盖其背后的全部 {{documents, number}} 个文档，因此现场评分的是整个提案。",
     "scopeNote": "本次投票评分一个提案：{{title}}。",
     "title": "在会场共同评分"
   },
   "row": {
-    "multiDocument": "{{documents}} 个文档，一张选票"
+    "multiDocument": "{{documents, number}} 个文档，一张选票"
   },
   "rowAction": {
     "composeConflict": "未能向 {{row}} 所属项目添加行。可能该项目的行数已达上限，或其文档已发生变化。请重新加载页面查看当前的行。",
@@ -169,12 +174,12 @@
     "recomposeRefused": "“{{row}}”的文档未被修改，且请求是被拒绝而非执行失败：请检查您的选择——一行能包含的文档数量有上限，且每个文档都必须仍在该项目中。",
     "title": "对行的该项修改未保存"
   },
-  "rowCount_one": "{{count}} 个提案",
-  "rowCount_other": "{{count}} 个提案",
+  "rowCount_one": "{{count, number}} 个提案",
+  "rowCount_other": "{{count, number}} 个提案",
   "rowDeleted": {
     "descriptionNoCount": "“{{row}}”及其上投出的所有选票均已删除。未报告选票数量。",
-    "description_one": "“{{row}}”已删除，在其上投出的 {{count}} 张选票也一并删除。",
-    "description_other": "“{{row}}”已删除，在其上投出的 {{count}} 张选票也一并删除。",
+    "description_one": "“{{row}}”已删除，在其上投出的 {{count, number}} 张选票也一并删除。",
+    "description_other": "“{{row}}”已删除，在其上投出的 {{count, number}} 张选票也一并删除。",
     "dismiss": "关闭此消息",
     "title": "该行已删除"
   },
@@ -197,32 +202,115 @@
     "timeToMarket": "上市时间",
     "timeToMarketDescription": "能多快交付？",
     "title": "优先级排序评分",
-    "wholeRow": "一张选票覆盖本行的全部 {{documents}} 个文档。",
-    "yoursOnly": "这是你自己的评分。保存时只会写入你的分数。"
+    "wholeRow": "一张选票覆盖本行的全部 {{documents, number}} 个文档。",
+    "yoursOnly": "这是你自己的评分。保存时只会写入你的分数。",
+    "valueOfMax": "{{value}} / {{max, number}}"
   },
   "scoresUnavailable": {
     "description": "当前无法获取已保存的评分，因此下方显示的是默认值，而非任何人输入的数值。请在保存前重新加载页面。",
     "staleDescription": "最近一次重新获取已保存的评分失败，因此显示的是上次成功读取的数值。您自己的评分未受影响，保存前无需重新加载页面。",
     "title": "无法加载评分"
   },
+  "setup": {
+    "open": "评分设置",
+    "viewOpen": "评分方式",
+    "title": "评分设置",
+    "description": "选择大家为提案打分（1 到 5 分）所用的指标，以及每个指标的权重。更改会应用到所有行。",
+    "viewTitle": "评分方式",
+    "viewDescription": "大家按这些指标为每个提案打 1 到 5 分。优先级分数按所示权重计算。",
+    "adminsOnly": "只有管理员可以更改评分设置。",
+    "loading": "正在加载评分设置",
+    "loadFailed": "无法加载评分设置。请关闭后重试。",
+    "templatesTitle": "从模板开始",
+    "templateConfirmTitle": "使用 {{template}} 模板？",
+    "templateBecomes": "指标将变为：{{metrics}}。",
+    "templateArchives": "以下指标将被归档——已有分数会保留，但不再计入：{{metrics}}。",
+    "templateNotSaved": "在你点击保存之前，任何人都不会看到变化。",
+    "templateApply": "使用模板",
+    "metricsTitle": "指标（{{active, number}} / {{max, number}}）",
+    "addMetric": "添加指标",
+    "untitled": "新指标",
+    "name": "名称",
+    "descriptionLabel": "说明",
+    "weight": "权重",
+    "weightOf": "{{name}} 的权重",
+    "share": "占分数的 {{share}} %",
+    "direction": "哪个方向更好",
+    "higherBetter": "越高越好",
+    "lowerBetter": "越低越好",
+    "higherBetterHint": "打 5 分会让提案排名更高。",
+    "lowerBetterHint": "打 1 分会让提案排名更高——适用于工作量等成本。",
+    "lowLabel": "1 分表示",
+    "highLabel": "5 分表示",
+    "scale": "1 = {{low}}，5 = {{high}}",
+    "moveUp": "上移 {{name}}",
+    "moveDown": "下移 {{name}}",
+    "archive": "归档",
+    "archiveMetric": "归档 {{name}}",
+    "archiveHint": "隐藏此指标。已打的分数会保留，并且可以恢复。",
+    "archivedTitle": "已归档的指标（{{archived, number}}）",
+    "archivedHint": "已归档的指标不会显示、打分或计入。分数会保留；恢复后即可再次使用。",
+    "restore": "恢复",
+    "conflict": "在你编辑期间，其他人更改了评分设置。请重新加载查看对方的版本，然后再次进行你的更改。",
+    "reload": "重新加载设置",
+    "saveFailed": "无法保存评分设置。请重试。",
+    "cancel": "取消",
+    "save": "保存设置",
+    "saving": "正在保存…",
+    "close": "关闭",
+    "neverChanged": "正在使用标准设置。",
+    "changedBy": "最后由 {{name}} 于 {{date}} 更改",
+    "changedOn": "最后更改于 {{date}}",
+    "problems": {
+      "missingName": "请为每个指标命名。",
+      "noActive": "请至少保留一个指标。",
+      "tooManyActive": "同时最多使用 {{max, number}} 个指标——请先归档一个。",
+      "tooMany": "一个设置最多包含 {{total, number}} 个指标（含已归档的）。",
+      "noWeight": "请至少为一个指标设置大于 0 的权重。"
+    },
+    "templates": {
+      "default": "当前默认",
+      "defaultDescription": "影响、上市时间、战略契合度和信心。",
+      "rice": "RICE",
+      "riceDescription": "覆盖面、影响和信心，与所需工作量相比较。",
+      "ice": "ICE",
+      "iceDescription": "影响、信心和难易度——打分很快。",
+      "valueEffort": "价值与工作量",
+      "valueEffortDescription": "两个指标：值多少，花多少。"
+    },
+    "templateAxes": {
+      "reach": "覆盖面",
+      "reachDescription": "能触达多少人",
+      "reachLow": "很少的人",
+      "reachHigh": "很多人",
+      "effort": "工作量",
+      "effortDescription": "需要多少工作",
+      "effortLow": "工作很少",
+      "effortHigh": "工作很多",
+      "ease": "难易度",
+      "easeDescription": "做起来有多容易",
+      "easeLow": "困难",
+      "easeHigh": "容易",
+      "value": "价值",
+      "valueDescription": "对客户和业务有多大价值"
+    }
+  },
   "sort": {
     "date": "日期",
     "dateFull": "创建日期",
-    "impact": "影响力",
     "label": "排序方式：",
     "priority": "优先级",
     "priorityFull": "优先级评分",
-    "teamOrdered": "{{fields}} 按每行显示的团队数值排序，而不是按你自己的评分。",
-    "ttm": "上市时间",
-    "ttmFull": "上市时间"
+    "teamOrdered": "{{fields}} 按团队平均分（即每行显示的数字）排序，而不是按您自己的评分。",
+    "ttm": "上市时间"
   },
   "stats": {
     "highPriority": "高优先级",
     "mediumPriority": "中优先级",
     "notScored": "未评分",
     "totalRows": "提案总数",
-    "unreadable_one": "无法读取 {{count}} 个提案的团队评分，因此它只计入总数，不计入其他任何统计。请重新加载页面以查看。",
-    "unreadable_other": "无法读取 {{count}} 个提案的团队评分，因此它们只计入总数，不计入其他任何统计。请重新加载页面以查看。"
+    "unreadable_one": "无法读取 {{count, number}} 个提案的团队评分，因此它只计入总数，不计入其他任何统计。请重新加载页面以查看。",
+    "unreadable_other": "无法读取 {{count, number}} 个提案的团队评分，因此它们只计入总数，不计入其他任何统计。请重新加载页面以查看。"
   },
   "subtitle": "对所有项目中的 PRD 和 PR/FAQ 进行评分和优先级排序",
   "team": {
@@ -241,10 +329,14 @@
     "unavailableDescription": "目前无法读取团队的评分，因此本行不显示相关信息——这并不表示没有人投票。请重新加载页面以查看团队的评分。"
   },
   "title": "优先级排序",
-  "unsavedChanges": {
-    "cancel": "留在此页面",
-    "confirm": "放弃更改",
-    "message": "您有未保存的优先级排序评分。要放弃更改并离开此页面吗？",
-    "title": "未保存的更改"
+  "explainer": {
+    "title": "评分方式",
+    "scoreConfigured": "每位评审为每个指标打 1 到 5 分。优先级分数按以下权重计算：{{weights}}。",
+    "unscored": "评审未打分的指标不计入其分数，而不是按 0 分计算。",
+    "weightEntry": "{{name}} {{share}} %",
+    "weightEntryLower": "{{name}} {{share}} %（越低越好）",
+    "team": "每一行显示所有评分者的团队平均分以及评分人数。您自己的评分是行内的滑块。",
+    "lineageTitle": "行标签的含义",
+    "rowNote": "{{label}}——说明见列表上方的“评分方式”。"
   }
 }

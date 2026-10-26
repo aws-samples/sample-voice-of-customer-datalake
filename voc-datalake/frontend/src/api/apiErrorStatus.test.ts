@@ -12,22 +12,10 @@
  * produces.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { fetchMock, installFetchMock, mockStatusOnce } from '@test/fetch-mock'
 
-vi.mock('../store/configStore', () => ({
-  useConfigStore: {
-    getState: vi.fn(() => ({ config: { apiEndpoint: 'https://api.example.com' } })),
-  },
-}))
-
-vi.mock('../services/auth', () => ({
-  authService: {
-    isConfigured: vi.fn(() => true),
-    getIdToken: vi.fn(() => 'mock-id-token'),
-    getAccessToken: vi.fn(() => Promise.resolve('mock-access-token')),
-    refreshSession: vi.fn().mockResolvedValue(undefined),
-    signOut: vi.fn(),
-  },
-}))
+vi.mock('../store/configStore', () => import('@test/api-mocks').then(m => m.configStoreMock('https://api.example.com')))
+vi.mock('../services/auth', () => import('@test/api-mocks').then(m => m.authServiceMock()))
 
 import { apiErrorStatus, isPermanentRefusal } from './apiErrorStatus'
 import { fetchApi } from './client'
@@ -36,7 +24,7 @@ import { resetSessionExpiryForTests } from '../services/sessionExpiry'
 
 /** The rejection a non-OK response actually produces, whatever shape it has. */
 async function rejectionFor(status: number): Promise<unknown> {
-  ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ ok: false, status })
+  mockStatusOnce(status)
   try {
     await fetchApi('/anything')
     throw new Error(`fetchApi resolved on ${String(status)}`)
@@ -48,7 +36,7 @@ async function rejectionFor(status: number): Promise<unknown> {
 describe('the status behind a real fetchApi rejection', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    global.fetch = vi.fn()
+    installFetchMock()
   })
 
   afterEach(() => {
@@ -72,16 +60,13 @@ describe('the status behind a real fetchApi rejection', () => {
     expect(isPermanentRefusal(reason)).toBe(false)
   })
 
-  it('recovers every settled 4xx, not just the one a caller thought of', async () => {
-    // 404 (nothing there) and 409 (a conflict with stored state) answer the same however
-    // often they are asked, so the row-ensure must stop asking — as does the 400 its own
-    // case above covers. These are the statuses whose permanence is the POINT of the
-    // predicate: widening the retryable set until it swallows one of them turns the
-    // once-per-mount ask back into a per-refetch loop.
-    for (const status of [404, 409]) {
-      // eslint-disable-next-line no-await-in-loop
-      expect(isPermanentRefusal(await rejectionFor(status))).toBe(true)
-    }
+  // 404 (nothing there) and 409 (a conflict with stored state) answer the same however
+  // often they are asked, so the row-ensure must stop asking — as does the 400 its own
+  // case above covers. These are the statuses whose permanence is the POINT of the
+  // predicate: widening the retryable set until it swallows one of them turns the
+  // once-per-mount ask back into a per-refetch loop.
+  it.each([404, 409])('recovers the settled %i as a permanent refusal, not just the one a caller thought of', async (status) => {
+    expect(isPermanentRefusal(await rejectionFor(status))).toBe(true)
   })
 
   it('recovers a 429 and calls it worth retrying, because a throttle is not an answer', async () => {
@@ -121,7 +106,7 @@ describe('the status behind a real fetchApi rejection', () => {
     // sending the user to /login. So a caller reading a status can never be handed a
     // 401, and reads that rejection as retryable, which costs nothing: the page it
     // would retry on has been navigated away from.
-    ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: false, status: 401 })
+    fetchMock().mockResolvedValue({ ok: false, status: 401 })
     // The redirect is stubbed the way `client.test.ts` stubs it: `endExpiredSession`
     // calls `location.replace`, which jsdom refuses, and the noise would land in this
     // file's output rather than a failure.
@@ -174,8 +159,10 @@ describe('a typed status is preferred to a parsed one', () => {
     // 404 rather than the 403 it used to, because a 403 now answers `false` — and so
     // does a dropped `ApiError` branch, which would have left that one assertion passing
     // for the wrong reason while the line above it did all the pinning.
-    expect(isPermanentRefusal(new ApiError(404, 'No such project'))).toBe(true)
-    expect(isPermanentRefusal(new ApiError(503, 'Upstream unavailable'))).toBe(false)
-    expect(isPermanentRefusal(new ApiError(403, 'Blocked by WAF'))).toBe(false)
+    expect({
+      notFound: isPermanentRefusal(new ApiError(404, 'No such project')),
+      unavailable: isPermanentRefusal(new ApiError(503, 'Upstream unavailable')),
+      waf: isPermanentRefusal(new ApiError(403, 'Blocked by WAF')),
+    }).toStrictEqual({ notFound: true, unavailable: false, waf: false })
   })
 })

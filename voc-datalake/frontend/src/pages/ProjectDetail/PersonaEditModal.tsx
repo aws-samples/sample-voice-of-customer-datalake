@@ -1,16 +1,25 @@
 /**
  * PersonaEditModal - Modal for editing persona details
+ *
+ * Every label comes from the `personaEdit.*` catalogue and is tied to its
+ * control with a generated id, so each field has an accessible name (axe
+ * `label`) and the dialog reads in the user's language. The shell is
+ * `ModalShell` for dialog semantics and the focus trap (deliberately not
+ * dismissable — see the shell props below).
  */
-import {
-  X, Loader2, Pencil,
-} from 'lucide-react'
+import { BookOpen, Frown, IdCard, Loader2, Pencil, Quote, Target, User, type LucideIcon } from 'lucide-react'
+import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { ProjectPersona } from '../../api/types'
+import type { ProjectPersona } from '../../api/projectTypes'
+import DialogClose from '../../components/DialogClose/DialogClose'
+import ModalShell from '../../components/ModalShell/ModalShell'
+import { saveIgnoringFailure, useSnapshotGuard } from '../../components/UnsavedChangesGuard/useSnapshotGuard'
 
 interface PersonaEditModalProps {
   readonly persona: ProjectPersona
   readonly onChange: (persona: ProjectPersona) => void
-  readonly onSave: () => void
+  /** Resolves once saved, rejects on failure (the unsaved-changes guard waits for it). */
+  readonly onSave: () => Promise<unknown>
   readonly onClose: () => void
   readonly isSaving: boolean
 }
@@ -28,12 +37,14 @@ interface TextAreaFieldProps extends InputFieldProps { readonly rows?: number }
 
 // Reusable input field
 function InputField({
-  label, value, onChange, placeholder, className = 'w-full px-3 py-2 border rounded-lg',
+  label, value, onChange, placeholder, className = 'input',
 }: InputFieldProps) {
+  const id = useId()
   return (
     <div>
-      <label className="block text-sm font-medium mb-1">{label}</label>
+      <label htmlFor={id} className="block text-sm font-medium text-text mb-1">{label}</label>
       <input
+        id={id}
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -46,12 +57,14 @@ function InputField({
 
 // Reusable textarea field
 function TextAreaField({
-  label, value, onChange, placeholder, rows = 2, className = 'w-full px-3 py-2 border rounded-lg',
+  label, value, onChange, placeholder, rows = 2, className = 'input',
 }: TextAreaFieldProps) {
+  const id = useId()
   return (
     <div>
-      <label className="block text-sm font-medium mb-1">{label}</label>
+      <label htmlFor={id} className="block text-sm font-medium text-text mb-1">{label}</label>
       <textarea
+        id={id}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         rows={rows}
@@ -62,64 +75,61 @@ function TextAreaField({
   )
 }
 
-// Small input field for demographics
-function SmallInputField({
-  label, value, onChange, placeholder,
-}: InputFieldProps) {
-  return (
-    <div>
-      <label className="block text-xs font-medium mb-1">{label}</label>
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full px-2 py-1.5 border rounded text-sm"
-        placeholder={placeholder}
-      />
-    </div>
-  )
-}
-
 // Section header component
 function SectionHeader({
-  emoji, title,
+  icon: Icon, title,
 }: Readonly<{
-  emoji: string;
+  /** A lucide icon (KiroCrew rule: lucide only, never an emoji glyph). */
+  icon: LucideIcon;
   title: string
 }>) {
   return (
-    <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-      {emoji} {title}
+    <h3 className="text-sm font-semibold tracking-tight text-text-strong mb-3 flex items-center gap-2">
+      <Icon size={16} className="text-muted shrink-0" aria-hidden="true" />
+      {title}
     </h3>
   )
 }
 
-// Basic Info Section
-function BasicInfoSection({
-  persona, onChange,
-}: Readonly<{
-  persona: ProjectPersona;
+/** What every section receives: the persona being edited and the one way to change it. */
+type SectionProps = Readonly<{
+  persona: ProjectPersona
   onChange: (p: ProjectPersona) => void
-}>) {
+}>
+
+/** The persona's nested groups a section edits field by field. */
+type PersonaGroup = 'identity' | 'goals_motivations' | 'pain_points' | 'scenario'
+
+/**
+ * `setField(group, field)` → a change handler that replaces one field of one
+ * nested group, keeping the rest of the persona and of the group as they are.
+ */
+function fieldSetter({ persona, onChange }: SectionProps) {
+  return <G extends PersonaGroup, F extends keyof NonNullable<ProjectPersona[G]>>(group: G, field: F) =>
+    (value: NonNullable<ProjectPersona[G]>[F]) => onChange({ ...persona, [group]: { ...persona[group], [field]: value } })
+}
+
+/** One list item per non-blank line of a textarea. */
+function toLines(value: string): string[] {
+  return value.split('\n').filter((line) => line.trim() !== '')
+}
+
+// Basic Info Section
+function BasicInfoSection({ persona, onChange }: SectionProps) {
+  const { t } = useTranslation('projectDetail')
   return (
     <div>
-      <SectionHeader emoji="👤" title="Basic Info" />
+      <SectionHeader icon={User} title={t('personaEdit.basicInfo')} />
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <InputField
-          label="Name"
+          label={t('personaEdit.name')}
           value={persona.name}
-          onChange={(value) => onChange({
-            ...persona,
-            name: value,
-          })}
+          onChange={(value) => onChange({ ...persona, name: value })}
         />
         <InputField
-          label="Tagline"
+          label={t('personaEdit.tagline')}
           value={persona.tagline}
-          onChange={(value) => onChange({
-            ...persona,
-            tagline: value,
-          })}
+          onChange={(value) => onChange({ ...persona, tagline: value })}
         />
       </div>
     </div>
@@ -127,65 +137,37 @@ function BasicInfoSection({
 }
 
 // Identity & Demographics Section
-function IdentitySection({
-  persona, onChange,
-}: Readonly<{
-  persona: ProjectPersona;
-  onChange: (p: ProjectPersona) => void
-}>) {
-  const bio = persona.identity?.bio ?? ''
-
+function IdentitySection(props: SectionProps) {
+  const { t } = useTranslation('projectDetail')
+  const setField = fieldSetter(props)
+  const identity = props.persona.identity
   return (
     <div>
-      <SectionHeader emoji="🪪" title="Identity & Demographics" />
+      <SectionHeader icon={IdCard} title={t('personaEdit.identityDemographics')} />
       <TextAreaField
-        label="Bio"
-        value={bio}
-        onChange={(value) => onChange({
-          ...persona,
-          identity: {
-            ...persona.identity,
-            bio: value,
-          },
-        })}
-        placeholder="Brief background story..."
+        label={t('personaEdit.bio')}
+        value={identity?.bio ?? ''}
+        onChange={setField('identity', 'bio')}
+        placeholder={t('personaEdit.bioPlaceholder')}
       />
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
-        <SmallInputField
-          label="Age Range"
-          value={persona.identity?.age_range ?? ''}
-          onChange={(value) => onChange({
-            ...persona,
-            identity: {
-              ...persona.identity,
-              age_range: value,
-            },
-          })}
+        <InputField
+          label={t('personaEdit.ageRange')}
+          value={identity?.age_range ?? ''}
+          onChange={setField('identity', 'age_range')}
           placeholder="25-35"
         />
-        <SmallInputField
-          label="Location"
-          value={persona.identity?.location ?? ''}
-          onChange={(value) => onChange({
-            ...persona,
-            identity: {
-              ...persona.identity,
-              location: value,
-            },
-          })}
-          placeholder="Urban, US"
+        <InputField
+          label={t('personaEdit.location')}
+          value={identity?.location ?? ''}
+          onChange={setField('identity', 'location')}
+          placeholder={t('personaEdit.locationPlaceholder')}
         />
-        <SmallInputField
-          label="Occupation"
-          value={persona.identity?.occupation ?? ''}
-          onChange={(value) => onChange({
-            ...persona,
-            identity: {
-              ...persona.identity,
-              occupation: value,
-            },
-          })}
-          placeholder="Product Manager"
+        <InputField
+          label={t('personaEdit.occupation')}
+          value={identity?.occupation ?? ''}
+          onChange={setField('identity', 'occupation')}
+          placeholder={t('personaEdit.occupationPlaceholder')}
         />
       </div>
     </div>
@@ -193,46 +175,26 @@ function IdentitySection({
 }
 
 // Goals & Motivations Section
-function GoalsSection({
-  persona, onChange,
-}: Readonly<{
-  persona: ProjectPersona;
-  onChange: (p: ProjectPersona) => void
-}>) {
-  const secondaryGoals = persona.goals_motivations?.secondary_goals ?? []
-
-  const handleGoalsChange = (value: string) => {
-    const goals = value.split('\n').filter((g) => g.trim() !== '')
-    onChange({
-      ...persona,
-      goals_motivations: {
-        ...persona.goals_motivations,
-        secondary_goals: goals,
-      },
-    })
-  }
-
+function GoalsSection(props: SectionProps) {
+  const { t } = useTranslation('projectDetail')
+  const setField = fieldSetter(props)
+  const goals = props.persona.goals_motivations
+  const setSecondaryGoals = setField('goals_motivations', 'secondary_goals')
   return (
     <div>
-      <SectionHeader emoji="🎯" title="Goals & Motivations" />
+      <SectionHeader icon={Target} title={t('personaEdit.goalsMotivations')} />
       <InputField
-        label="Primary Goal"
-        value={persona.goals_motivations?.primary_goal ?? ''}
-        onChange={(value) => onChange({
-          ...persona,
-          goals_motivations: {
-            ...persona.goals_motivations,
-            primary_goal: value,
-          },
-        })}
-        placeholder="Main objective..."
+        label={t('personaEdit.primaryGoal')}
+        value={goals?.primary_goal ?? ''}
+        onChange={setField('goals_motivations', 'primary_goal')}
+        placeholder={t('personaEdit.primaryGoalPlaceholder')}
       />
       <div className="mt-3">
         <TextAreaField
-          label="Secondary Goals (one per line)"
-          value={secondaryGoals.join('\n')}
-          onChange={handleGoalsChange}
-          className="w-full px-3 py-2 border rounded-lg font-mono text-sm"
+          label={t('personaEdit.secondaryGoals')}
+          value={(goals?.secondary_goals ?? []).join('\n')}
+          onChange={(value) => setSecondaryGoals(toLines(value))}
+          className="input font-mono text-sm"
         />
       </div>
     </div>
@@ -240,54 +202,29 @@ function GoalsSection({
 }
 
 // Pain Points Section
-function PainPointsSection({
-  persona, onChange,
-}: Readonly<{
-  persona: ProjectPersona;
-  onChange: (p: ProjectPersona) => void
-}>) {
-  const challenges = persona.pain_points?.current_challenges ?? []
-  const workarounds = persona.pain_points?.workarounds ?? []
-
-  const handleChallengesChange = (value: string) => {
-    const items = value.split('\n').filter((f) => f.trim() !== '')
-    onChange({
-      ...persona,
-      pain_points: {
-        ...persona.pain_points,
-        current_challenges: items,
-      },
-    })
-  }
-
-  const handleWorkaroundsChange = (value: string) => {
-    const items = value.split('\n').filter((w) => w.trim() !== '')
-    onChange({
-      ...persona,
-      pain_points: {
-        ...persona.pain_points,
-        workarounds: items,
-      },
-    })
-  }
-
+function PainPointsSection(props: SectionProps) {
+  const { t } = useTranslation('projectDetail')
+  const setField = fieldSetter(props)
+  const painPoints = props.persona.pain_points
+  const setChallenges = setField('pain_points', 'current_challenges')
+  const setWorkarounds = setField('pain_points', 'workarounds')
   return (
     <div>
-      <SectionHeader emoji="😤" title="Pain Points & Frustrations" />
+      <SectionHeader icon={Frown} title={t('personaEdit.painPoints')} />
       <TextAreaField
-        label="Current Challenges (one per line)"
-        value={challenges.join('\n')}
-        onChange={handleChallengesChange}
+        label={t('personaEdit.currentChallenges')}
+        value={(painPoints?.current_challenges ?? []).join('\n')}
+        onChange={(value) => setChallenges(toLines(value))}
         rows={3}
-        className="w-full px-3 py-2 border rounded-lg font-mono text-sm"
+        className="input font-mono text-sm"
       />
       <div className="mt-3">
         <TextAreaField
-          label="Workarounds (one per line)"
-          value={workarounds.join('\n')}
-          onChange={handleWorkaroundsChange}
-          placeholder="How they currently cope..."
-          className="w-full px-3 py-2 border rounded-lg font-mono text-sm"
+          label={t('personaEdit.workarounds')}
+          value={(painPoints?.workarounds ?? []).join('\n')}
+          onChange={(value) => setWorkarounds(toLines(value))}
+          placeholder={t('personaEdit.workaroundsPlaceholder')}
+          className="input font-mono text-sm"
         />
       </div>
     </div>
@@ -295,12 +232,8 @@ function PainPointsSection({
 }
 
 // Quote Section
-function QuoteSection({
-  persona, onChange,
-}: Readonly<{
-  persona: ProjectPersona;
-  onChange: (p: ProjectPersona) => void
-}>) {
+function QuoteSection({ persona, onChange }: SectionProps) {
+  const { t } = useTranslation('projectDetail')
   const quote = persona.quotes?.[0]?.text ?? ''
 
   const handleQuoteChange = (value: string) => {
@@ -319,67 +252,54 @@ function QuoteSection({
 
   return (
     <div>
-      <SectionHeader emoji="💬" title="Representative Quote" />
+      <SectionHeader icon={Quote} title={t('personaEdit.representativeQuote')} />
       <textarea
         value={quote}
         onChange={(e) => handleQuoteChange(e.target.value)}
         rows={2}
-        className="w-full px-3 py-2 border rounded-lg"
-        placeholder="A quote that captures their voice..."
+        className="input"
+        aria-label={t('personaEdit.representativeQuote')}
+        placeholder={t('personaEdit.quotePlaceholder')}
       />
     </div>
   )
 }
 
 // Scenario Section
-function ScenarioSection({
-  persona, onChange,
-}: Readonly<{
-  persona: ProjectPersona;
-  onChange: (p: ProjectPersona) => void
-}>) {
-  const scenario = persona.scenario ?? {}
-
-  const updateScenarioField = (field: 'title' | 'narrative' | 'trigger' | 'outcome', value: string) => {
-    onChange({
-      ...persona,
-      scenario: {
-        ...scenario,
-        [field]: value,
-      },
-    })
-  }
-
+function ScenarioSection(props: SectionProps) {
+  const { t } = useTranslation('projectDetail')
+  const setField = fieldSetter(props)
+  const scenario = props.persona.scenario ?? {}
   return (
     <div>
-      <SectionHeader emoji="📖" title="Scenario" />
+      <SectionHeader icon={BookOpen} title={t('personaEdit.scenario')} />
       <InputField
-        label="Title"
+        label={t('personaEdit.scenarioTitle')}
         value={scenario.title ?? ''}
-        onChange={(value) => updateScenarioField('title', value)}
-        placeholder="Scenario title..."
+        onChange={setField('scenario', 'title')}
+        placeholder={t('personaEdit.scenarioTitlePlaceholder')}
       />
       <div className="mt-3">
         <TextAreaField
-          label="Narrative"
+          label={t('personaEdit.narrative')}
           value={scenario.narrative ?? ''}
-          onChange={(value) => updateScenarioField('narrative', value)}
+          onChange={setField('scenario', 'narrative')}
           rows={3}
-          placeholder="A story showing them in action..."
+          placeholder={t('personaEdit.narrativePlaceholder')}
         />
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
-        <SmallInputField
-          label="Trigger"
+        <InputField
+          label={t('personaEdit.triggerLabel')}
           value={scenario.trigger ?? ''}
-          onChange={(value) => updateScenarioField('trigger', value)}
-          placeholder="What triggers this scenario"
+          onChange={setField('scenario', 'trigger')}
+          placeholder={t('personaEdit.triggerPlaceholder')}
         />
-        <SmallInputField
-          label="Desired Outcome"
+        <InputField
+          label={t('personaEdit.desiredOutcome')}
           value={scenario.outcome ?? ''}
-          onChange={(value) => updateScenarioField('outcome', value)}
-          placeholder="What they hope to achieve"
+          onChange={setField('scenario', 'outcome')}
+          placeholder={t('personaEdit.desiredOutcomePlaceholder')}
         />
       </div>
     </div>
@@ -394,14 +314,23 @@ export default function PersonaEditModal({
   isSaving,
 }: PersonaEditModalProps) {
   const { t } = useTranslation('projectDetail')
+  const titleId = useId()
+  // Every exit (the X, Cancel, Escape, the backdrop) asks first when a field changed (E2E F6).
+  const { close, dialog: guardDialog } = useSnapshotGuard({ value: persona, onSave, onClose })
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl w-full max-w-3xl max-h-[90vh] overflow-hidden">
-        <div className="flex items-center justify-between p-4 border-b">
-          <h2 className="text-lg font-semibold">{t('personaEdit.title')}</h2>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
+    <ModalShell
+      isOpen
+      onClose={close}
+      ariaLabelledBy={titleId}
+      panelClassName="max-w-3xl max-h-[90vh]"
+      // Escape/backdrop go through the guard; off only while a save is in flight.
+      dismissable={!isSaving}
+    >
+        <div className="dialog-header justify-between">
+          <h2 id={titleId} className="dialog-title">{t('personaEdit.title')}</h2>
+          <DialogClose onClick={close} disabled={isSaving} />
         </div>
-        <div className="p-4 sm:p-6 space-y-6 overflow-y-auto max-h-[65vh]">
+        <div className="dialog-body space-y-6">
           <BasicInfoSection persona={persona} onChange={onChange} />
           <IdentitySection persona={persona} onChange={onChange} />
           <GoalsSection persona={persona} onChange={onChange} />
@@ -409,21 +338,22 @@ export default function PersonaEditModal({
           <QuoteSection persona={persona} onChange={onChange} />
           <ScenarioSection persona={persona} onChange={onChange} />
         </div>
-        <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 p-4 border-t bg-gray-50">
-          <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">{t('personaEdit.cancel')}</button>
+        <div className="dialog-footer flex-col-reverse sm:flex-row">
+          <button type="button" onClick={close} disabled={isSaving} className="btn btn-secondary w-full sm:w-auto">{t('personaEdit.cancel')}</button>
           <button
-            onClick={onSave}
+            type="button"
+            onClick={() => saveIgnoringFailure(onSave)}
             disabled={isSaving}
-            className="flex items-center justify-center gap-2 px-6 py-2 bg-purple-600 text-white rounded-lg disabled:opacity-50"
+            className="btn btn-primary w-full sm:w-auto"
           >
             {isSaving ? (
-              <><Loader2 size={16} className="animate-spin" />{t('personaEdit.saving')}</>
+              <><Loader2 size={16} className="animate-spin" aria-hidden />{t('personaEdit.saving')}</>
             ) : (
-              <><Pencil size={16} />{t('personaEdit.saveChanges')}</>
+              <><Pencil size={16} aria-hidden />{t('personaEdit.saveChanges')}</>
             )}
           </button>
         </div>
-      </div>
-    </div>
+        {guardDialog}
+    </ModalShell>
   )
 }

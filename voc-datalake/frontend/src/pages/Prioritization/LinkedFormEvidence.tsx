@@ -38,32 +38,13 @@
  */
 
 import { useQuery } from '@tanstack/react-query'
-import { MessageSquare, Star } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
 import { formStatsKey, FORM_STATS_STALE_TIME_MS } from '../../api/feedbackFormQueryKeys'
 import FormQrButton from '../../components/FormQrCode/FormQrButton'
+import FormStatsFigures from '../../components/FormStatsFigures/FormStatsFigures'
 import type { LinkedForm } from './formLinkUtils'
 import type { ReactElement } from 'react'
-
-/** One metric: a label and either a value or an em dash. */
-function EvidenceMetric({
-  icon, label, value,
-}: {
-  readonly icon: ReactElement
-  readonly label: string
-  readonly value: string
-}): ReactElement {
-  return (
-    <div className="flex items-center gap-2">
-      <div className="p-1.5 bg-white rounded border">{icon}</div>
-      <div>
-        <p className="text-base font-bold text-gray-900">{value}</p>
-        <p className="text-xs text-gray-500">{label}</p>
-      </div>
-    </div>
-  )
-}
 
 /**
  * One linked form's collected ratings.
@@ -89,34 +70,29 @@ function LinkedFormStats({
   const stats = data?.stats
   // A null average is what a ratings-disabled form (or one with only unrated
   // text submissions) actually returns. It must read as "no ratings", never as
-  // a score of 0 — a 0 would look like unanimously terrible feedback. Held as
-  // the narrowed number (not a boolean) so the render site cannot re-widen it.
-  const average = typeof stats?.avg_rating === 'number' ? stats.avg_rating : null
+  // a score of 0 — a 0 would look like unanimously terrible feedback. The figures
+  // show it as an em dash; this note says why.
+  const noRatings = stats?.avg_rating === null
 
   return (
-    <div className="bg-gray-50 rounded-lg border p-3">
-      <p className="text-sm font-medium text-gray-800 truncate">{form.name}</p>
+    <div className="bg-bg-accent rounded-lg border border-border p-3">
+      <p className="text-sm font-medium text-text-strong break-words">{form.name}</p>
       {/* One branch for the failed read and one for everything else, rather than
           three siblings each re-testing isError — that spelling put this
           component over the lint complexity ceiling. */}
       {isError ? (
-        <p className="text-xs text-gray-500 mt-1">{t('evidence.unavailable')}</p>
+        <p className="text-xs text-muted mt-1">{t('evidence.unavailable')}</p>
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 mt-2">
-            <EvidenceMetric
-              icon={<MessageSquare size={14} className="text-blue-600" />}
-              label={t('evidence.submissions')}
-              value={isPending || !stats ? '—' : String(stats.total_submissions)}
-            />
-            <EvidenceMetric
-              icon={<Star size={14} className="text-yellow-600" />}
-              label={t('evidence.avgRating')}
-              value={average === null ? '—' : average.toFixed(1)}
+            <FormStatsFigures
+              variant="compact"
+              stats={isPending ? undefined : stats}
+              labels={{ submissions: t('evidence.submissions'), avgRating: t('evidence.avgRating') }}
             />
           </div>
-          {!isPending && stats && average === null ? (
-            <p className="text-xs text-gray-500 mt-2">{t('evidence.noRatings')}</p>
+          {!isPending && noRatings ? (
+            <p className="text-xs text-muted mt-2">{t('evidence.noRatings')}</p>
           ) : null}
           {/* Inside this branch, so a form whose stats read failed offers no QR:
               that is how a deleted form presents here, and its public page is
@@ -153,9 +129,9 @@ export default function LinkedFormEvidence({
   const { t } = useTranslation('prioritization')
   return (
     <div className="space-y-2">
-      <h4 className="font-medium text-gray-900">{t('evidence.title')}</h4>
+      <h4 className="font-medium text-text-strong">{t('evidence.title')}</h4>
       {forms.length === 0 ? (
-        <p className="text-sm text-gray-500">{t('evidence.noLinkedForm')}</p>
+        <p className="text-sm text-muted">{t('evidence.noLinkedForm')}</p>
       ) : (
         <div className="space-y-2">
           {forms.map((form) => (
