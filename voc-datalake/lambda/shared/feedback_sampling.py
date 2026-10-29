@@ -37,7 +37,6 @@ from shared.time_budget import WalkBudget
 
 __all__ = [
     'INPUT_FEEDBACK_IDS_FIELD',
-    'MAX_INPUT_FEEDBACK_IDS',
     'POOL_MAX_ROWS',
     'FeedbackPool',
     'Partition',

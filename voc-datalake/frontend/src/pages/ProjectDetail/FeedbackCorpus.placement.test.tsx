@@ -10,7 +10,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { renderWithQueryClient } from '../../test/query-client'
 import { normalizeProjectDetail } from '../../api/projectDetailSchema'
 import DocumentsTab from './DocumentsTab'
-import PersonaDetailView from './PersonaDetailView'
+import { renderPersonaDetail } from './persona-detail-fixtures'
 import { documentsTabStubs, makeProject } from './project-detail-fixtures'
 import type { ProjectPersona } from '../../api/projectTypes'
 import type { ProjectDocument } from '../../api/types'
@@ -23,10 +23,7 @@ const project = makeProject({
 })
 
 function renderPersona(persona: ProjectPersona) {
-  return renderWithQueryClient(
-    <PersonaDetailView projectId="proj-1" persona={persona} canEdit={false}
-      onEdit={vi.fn()} onDelete={vi.fn()} onSaveNotes={vi.fn()} isDeleting={false} isSavingNotes={false} />,
-  )
+  return renderPersonaDetail(persona, { canEdit: false })
 }
 
 function renderDocument(doc: ProjectDocument) {
