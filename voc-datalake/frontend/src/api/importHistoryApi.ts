@@ -66,15 +66,14 @@ export function normalizeImportRunDetail(raw: unknown): ImportRunDetail | null {
 export const importHistoryKey = () => ['import-history'] as const
 export const importRunKey = (runId: string) => ['import-history', 'run', runId] as const
 
-const PATH = '/scrapers/manual/history'
 const IMPORT_HISTORY_PAGE_SIZE = 25
 
 export const importHistoryApi = {
   list: async (cursor?: string): Promise<ImportHistoryPage> => {
     const params = new URLSearchParams({ limit: String(IMPORT_HISTORY_PAGE_SIZE) })
     if (cursor !== undefined) params.set('cursor', cursor)
-    return normalizeImportHistoryPage(await fetchApi<unknown>(`${PATH}?${params.toString()}`))
+    return normalizeImportHistoryPage(await fetchApi<unknown>(`/scrapers/manual/history?${params.toString()}`))
   },
   get: async (runId: string): Promise<ImportRunDetail | null> =>
-    normalizeImportRunDetail(await fetchApi<unknown>(`${PATH}/${encodeURIComponent(runId)}`)),
+    normalizeImportRunDetail(await fetchApi<unknown>(`/scrapers/manual/history/${encodeURIComponent(runId)}`)),
 }
