@@ -52,9 +52,9 @@ MAX_MESSAGE_CHARS: Final = 300
 MAX_LIST_LIMIT: Final = 100
 DEFAULT_LIST_LIMIT: Final = 25
 METHODS: Final = frozenset({'paste', 'csv', 'json', 's3', 'assistant'})
-RUN_COMPLETED: Final = 'completed'
-RUN_PARTIAL: Final = 'partial'
-RUN_FAILED: Final = 'failed'
+IMPORT_COMPLETED: Final = 'completed'
+IMPORT_PARTIAL: Final = 'partial'
+IMPORT_FAILED: Final = 'failed'
 # The actor of a file dropped into the import bucket: the uploader is not known there.
 S3_UPLOAD_ACTOR: Final = 's3-upload'
 _COUNT_FIELDS: Final = ('received', 'imported', 'skipped', 'duplicate', 'failed')
@@ -97,10 +97,10 @@ def run_status(counts: ImportCounts) -> str:
     Skipped and duplicate rows are expected outcomes (they carry a warning), not failures.
     """
     if counts.imported <= 0:
-        return RUN_FAILED
+        return IMPORT_FAILED
     if counts.failed > 0:
-        return RUN_PARTIAL
-    return RUN_COMPLETED
+        return IMPORT_PARTIAL
+    return IMPORT_COMPLETED
 
 
 def _bounded(messages: Iterable[object]) -> tuple[list[str], int, bool]:
