@@ -64,7 +64,9 @@ voice-of-customer-datalake/       # Root repository
     │   │   ├── logging.py            # Logging utilities
     │   │   ├── prompts.py            # Prompt management utilities
     │   │   ├── scraper_run_errors.py # Read-time redaction of stored scraper-run errors
-    │   │   └── url_policy.py         # Outbound URL policy for scraper fetches (SSRF guard, #244)
+    │   │   ├── url_policy.py         # Outbound URL policy for scraper fetches (SSRF guard, #244)
+    │   │   ├── usefulness.py         # Heuristic usefulness band low|medium|high (processor, reprocess; docs/data-quality.md)
+    │   │   └── data_quality.py       # Per-source band distribution for GET /metrics/data-quality
     │   ├── api/                      # Split into domain-specific Lambdas (20KB IAM policy limit) - 20 handlers
     │   │   ├── metrics_handler.py        # /feedback/*, /metrics/* (read-only queries)
     │   │   ├── feedback_edit_handler.py  # PUT /feedback/{id}/category (the only feedback write route)
@@ -193,8 +195,8 @@ voice-of-customer-datalake/       # Root repository
 
 | Table | PK | SK | Purpose |
 |-------|----|----|---------|
-| `voc-feedback` | `SOURCE#{platform}` | `FEEDBACK#{id}` | Processed feedback with GSIs for date, category, urgency; optional `author`, `title`, `metadata`, `dimensions`, `dimension_sources`, `tags`, `pii_policy` — kept while the platform runs (no TTL), deleted with the stack; only `voc-retention` deletes at runtime (opt-in per source profile) |
-| `voc-aggregates` | `METRIC#{type}` | `{date}` | Pre-computed metrics (no TTL), brand config, category config, `CATEGORY_ACCESS`/`USER#{sub}` (+ `sources`), `SETTINGS#dimensions`/`SETTINGS#sources` `config`, `METRIC#daily_dim…`/`METRIC#daily_tag#…`, `JOB#erasure`/`er_…` (+ `SRCLOCK#{source}`, the whole-source erasure lock), `AUDIT#retention`, `JOB#category_reprocess`/`rp_…`, `METRIC#meta`/`earliest_date`, `data_version`, `config_version` (cache version counters, docs/caching.md), form configs — METRIC# rows kept while the platform runs (no TTL), deleted with the stack |
+| `voc-feedback` | `SOURCE#{platform}` | `FEEDBACK#{id}` | Processed feedback with GSIs for date, category, urgency; optional `author`, `title`, `metadata`, `dimensions`, `dimension_sources`, `tags`, `pii_policy`, `usefulness` (`low\|medium\|high` heuristic band, absent = unrated, docs/data-quality.md) — kept while the platform runs (no TTL), deleted with the stack; only `voc-retention` deletes at runtime (opt-in per source profile) |
+| `voc-aggregates` | `METRIC#{type}` | `{date}` | Pre-computed metrics (no TTL), brand config, category config, `CATEGORY_ACCESS`/`USER#{sub}` (+ `sources`), `SETTINGS#dimensions`/`SETTINGS#sources` `config`, `METRIC#daily_dim…`/`METRIC#daily_tag#…`/`METRIC#daily_usefulness#<source>#<band>` (docs/data-quality.md), `JOB#erasure`/`er_…` (+ `SRCLOCK#{source}`, the whole-source erasure lock), `AUDIT#retention`, `JOB#category_reprocess`/`rp_…`, `METRIC#meta`/`earliest_date`, `data_version`, `config_version` (cache version counters, docs/caching.md), form configs — METRIC# rows kept while the platform runs (no TTL), deleted with the stack |
 | `voc-watermarks` | `{source}` | - | Ingestion state tracking |
 | `voc-projects` | `PROJECT#{id}` | `META\|PERSONA#{id}\|PRD#{id}\|PRFAQ#{id}` | Projects with personas, PRDs, PR/FAQs — kept while the platform runs (no TTL), deleted with the stack |
 | `voc-jobs` | `PROJECT#{id}` | `JOB#{id}` | Long-running async jobs (research, persona generation) |
@@ -224,6 +226,7 @@ voice-of-customer-datalake/       # Root repository
 | GET | `/metrics/sources` | Source breakdown |
 | GET | `/metrics/personas` | Persona breakdown |
 | GET | `/metrics/dimensions` | `?key=<dim>`: per-value counts + sentiment split, `unassigned` (docs/dimensions.md) |
+| GET | `/metrics/data-quality` | Per-source usefulness distribution `{sources: [{source, low, medium, high, unrated, total}], overall}` (counters `METRIC#daily_usefulness#<source>#<band>`; restricted callers / review basis count the items; docs/data-quality.md) |
 | GET | `/metrics/github` | GitHub Issues per release and per label (counts, 👍 weight, sentiment, top complaints, new since the last release); `/feedback` also takes `version` and `label` filters |
 
 `days` is 0–9999 everywhere; `0` = all time. A review-date window's cutoff is the REQUESTED window

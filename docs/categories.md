@@ -165,6 +165,8 @@ the only feedback write path reachable from the browser.
 
 When the categories change, an admin can re-categorise what is already stored
 (Administration → Taxonomy → Categories → "Reprocess existing feedback").
+Every mode also rates each review's usefulness band, which backfills reviews stored
+before the band existed ([data quality](data-quality.md#backfill-optional-field-not-rated)).
 
 | Method | Path | Description |
 |--------|------|-------------|
