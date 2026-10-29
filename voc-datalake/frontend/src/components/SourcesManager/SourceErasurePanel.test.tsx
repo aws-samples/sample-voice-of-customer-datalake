@@ -12,8 +12,10 @@ import { supportProfile } from '@test/dimensionFixtures'
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 import { fetchApi, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import SourceErasurePanel from './SourceErasurePanel'
+import { normalizeSourceProfiles } from '../../api/sourceProfilesApi'
 
 const SOURCE = 'web_trustpilot_example_air'
+const PROFILES = normalizeSourceProfiles({ sources: [supportProfile] })
 const running = {
   job_id: 'er_00000000abcd', status: 'running', field: 'source', source: SOURCE, value_hash: 'f'.repeat(64),
   deleted_items: 40, deleted_objects: 12, started_by: 'admin', created_at: '2026-01-01', phase: 'raw',
@@ -50,7 +52,7 @@ describe('SourceErasurePanel', () => {
   }
 
   it('cannot open the dialog before a source is chosen', async () => {
-    renderWithQueryClient(<SourceErasurePanel profiles={[supportProfile]} />)
+    renderWithQueryClient(<SourceErasurePanel profiles={PROFILES} />)
     const region = await panel()
     await within(region).findByLabelText('Source')
     expect(within(region).getByRole('button', { name: 'Delete all data from this source' })).toBeDisabled()
@@ -58,7 +60,7 @@ describe('SourceErasurePanel', () => {
 
   it('keeps Delete off until the source id is typed exactly', async () => {
     const user = userEvent.setup()
-    renderWithQueryClient(<SourceErasurePanel profiles={[supportProfile]} />)
+    renderWithQueryClient(<SourceErasurePanel profiles={PROFILES} />)
     const { typed, confirm } = await openDialog(user)
     await user.type(typed, SOURCE.toUpperCase())
     expect(confirm).toBeDisabled()
@@ -69,7 +71,7 @@ describe('SourceErasurePanel', () => {
 
   it('sends what was typed as confirm and shows the job progress', async () => {
     const user = userEvent.setup()
-    renderWithQueryClient(<SourceErasurePanel profiles={[supportProfile]} />)
+    renderWithQueryClient(<SourceErasurePanel profiles={PROFILES} />)
     const { region, typed, confirm } = await openDialog(user)
     await user.type(typed, SOURCE)
     route({ jobs: [running] })
@@ -93,7 +95,7 @@ describe('SourceErasurePanel', () => {
   })
 
   it('names configured sources by their label', async () => {
-    renderWithQueryClient(<SourceErasurePanel profiles={[supportProfile]} />)
+    renderWithQueryClient(<SourceErasurePanel profiles={PROFILES} />)
     const select = await within(await panel()).findByLabelText('Source')
     expect(within(select).getByRole('option', { name: 'Support tickets' })).toHaveValue('support_tickets')
   })
