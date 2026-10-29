@@ -16,7 +16,7 @@ import { ingestorFunctionBaseName } from './dlq-alarms';
 import { functionArnByName } from './api-assist-workers';
 import type { ApiStackContext } from './api-context';
 
-export const S3_IMPORT_PLUGIN_ID = 's3_import';
+const S3_IMPORT_PLUGIN_ID = 's3_import';
 /** The reprocess run rows (`SOURCE_RUN#s3_import` / `<run id>`, lambda/shared/s3_import_runs.py SOURCE_RUN_PK). */
 export const S3_IMPORT_RUN_PARTITION = `SOURCE_RUN#${S3_IMPORT_PLUGIN_ID}`;
 
