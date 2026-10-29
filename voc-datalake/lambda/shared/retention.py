@@ -164,7 +164,7 @@ def delete_item(feedback_table: Any, s3: Any, bucket: str, item: Mapping[str, An
 def raw_source_prefix(source: str) -> str | None:
     """``raw/{source}/``: every per-item archive of ``source``; None for a whole-upload archive folder.
 
-    The trailing ``/`` keeps ``raw/web/`` from matching ``raw/web_reviews/``. A
+    The trailing ``/`` keeps source ``web`` from matching the folder of ``web_shop``. A
     source id never contains ``/`` (``SOURCE_ID_RE``), so no other folder can
     be reached from it.
     """
