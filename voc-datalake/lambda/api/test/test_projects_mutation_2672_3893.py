@@ -710,6 +710,7 @@ class TestRunResearch:
             'question': 'Why churn?',
             'content': content,
             'feedback_count': 2,
+            'input_feedback_ids': ['f1', 'f2'],
             'date_basis': 'review',
             'created_at': NOW,
         }
