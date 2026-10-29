@@ -127,6 +127,7 @@ with a delete permission on customer data, and `lib/customer-data-deletes.test.t
 |---|---|---|
 | `retention` | Daily schedule, 04:15 UTC | Items of sources whose profile sets `retention_days`, with `date` older than the cutoff |
 | `erase` | `POST /settings/erasure` (admin) | Items where `field == value`. `field` is `author`, `source_id`, `csv_row_id` or `email` (`metadata.email` / `metadata.submitter_email`); optionally limited to one `source`, which is **required** for `source_id` and `csv_row_id` (an id is unique only within its source; 400 without it) |
+| `erase`, `field: source` | `POST /settings/erasure` (admin), Administration → Privacy & access → Sources → **Delete all data from a source** | Every item whose `source_platform` is the source, then every object version left under `raw/<source>/` (see [Delete all data from a source](#delete-all-data-from-a-source)) |
 
 How it works:
 
@@ -134,7 +135,7 @@ How it works:
   from DynamoDB moves the aggregate counters through the aggregator's REMOVE path.
 - The worker hands over to a fresh invocation of itself before its 15-minute timeout.
 - `POST /settings/erasure` answers 202 `{job}`. `GET /settings/erasure` lists the newest 20
-  jobs.
+  jobs, and the sources a whole-source erasure may name.
 - The job row (`pk=JOB#erasure`) stores `value_hash`, the SHA-256 of the value. **The value
   itself is never stored or logged.** Each run also writes an audit row (`pk=AUDIT#retention`).
 - `raw/csv_upload/*` whole-file archives are never touched (see the limitation above).
@@ -148,6 +149,51 @@ How it works:
 - An `email` erasure is case-insensitive: ingestion stores `metadata.email` and
   `metadata.submitter_email` lower-cased, and the worker matches the lower-cased value as
   well as the value as typed (for items stored before that normalisation).
+
+### Delete all data from a source
+
+Removes a whole dataset in one job: a mis-imported CSV, a demo or test source, a Web Reviews page
+you no longer track. The request is `POST /settings/erasure` with
+`{field: 'source', value: '<source id>', confirm: '<source id>'}`:
+
+- `confirm` must repeat the source id exactly (a server-side type-to-confirm; the Settings dialog
+  sends what the person typed). Otherwise **400**.
+- The source must be known: a configured source profile, or a source the aggregator has counted
+  (a `METRIC#daily_source#<id>` row). That includes sources without a profile, such as each Web
+  Reviews page (`web_<site>_<app>`). Otherwise **400** `Unknown source`. `GET /settings/erasure`
+  answers `{jobs, sources}`, where `sources` is that list.
+- **409** while another erasure job of the same source is queued or running. A live job whose row
+  has not moved for an hour (`progress_at`, else `created_at`) is treated as dead and does not block.
+- The job row keeps `field: 'source'`, `source` and the usual `value_hash` (the SHA-256 of the
+  source id, for one audit shape across modes).
+
+What the worker does:
+
+1. **Reviews.** It scans `voc-feedback` with a `source_platform = <source>` filter, deleting each
+   item with its own per-item archive. It does not Query `pk = SOURCE#<source>`: an item's
+   partition is `SOURCE#<brand_name or source_platform>` (the processor), so a deployment with a
+   brand name keeps every plugin's items in one brand partition, and feedback forms use their own
+   brand's. Only the attribute tells sources apart.
+2. **Raw files.** It then deletes every object version and delete marker under `raw/<source>/`,
+   1,000 at a time, including archives no item points at any more. The trailing `/` keeps
+   `raw/web/` from reaching `raw/web_reviews/`.
+3. **Progress.** While it runs, the job row carries `deleted_items`, `deleted_objects`, `phase`
+   (`items`, then `raw`) and `progress_at`, refreshed when the counts move and at least every
+   minute. It hands over to a fresh invocation before its timeout, in either phase.
+4. **Metrics.** Each DeleteItem reaches the aggregator as a stream REMOVE, which decrements every
+   counter the insert added (pinned by `TestADeleteReversesExactlyWhatTheInsertAdded` in
+   `lambda/aggregator/test/test_handler.py`). Dashboard counts fall while the job runs. The
+   `METRIC#daily_source#<id>` rows stay at 0, so the source stays in the picker.
+
+What it keeps:
+
+| Kept | Why |
+|---|---|
+| Whole-file CSV / JSON upload archives (`raw/csv_upload/…`, `raw/json_upload/…`) | One file can hold rows of several imports and is not filed under the source; the role cannot delete them (explicit Deny). Remove the file by hand if needed |
+| The source profile, plugin settings, schedule and credentials | Deleting data is not removing the source. New reviews keep arriving until you disable the source (Data sources page) or remove its profile |
+| The source's watermark (`voc-watermarks`) | Kept on purpose: the next scheduled run continues from where it stopped and does not import the deleted history again. To re-import it, delete the source's `voc-watermarks` row by hand (admin role) |
+| Radar data | A Radar source writes to `voc-radar`, never to `voc-feedback`, so there is nothing to delete here |
+| Logs, run records and circuit-breaker rows of the source | Operational rows, not customer feedback |
 
 ### What erasure does not reach
 
