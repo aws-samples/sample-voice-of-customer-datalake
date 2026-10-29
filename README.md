@@ -166,6 +166,7 @@ See [Getting Started with Plugins](docs/getting-started-plugins.md).
 | [EU Deployment](docs/eu-deployment.md) | `inferenceScope=eu`: EU inference profiles, model availability, web search and avatars, region choice |
 | [Autonomous Agents](docs/autonomous-agents.md) | Agents, triggers, workflows, runs, decisions and plans |
 | [Assistant Plan Mode](docs/assistant-plan-mode.md) | Multi-step requests the assistant proposes and runs after approval |
+| [Persona Generation](docs/persona-generation.md) | Add personas next to the existing ones or replace them; how additive runs avoid repeating them |
 | [Assistant Mentions](docs/assistant-mentions.md) | `@persona`, `@all` and `#document` in the project assistant: personas review tagged documents |
 | [Memory](docs/memory.md) | Company and personal memory: extraction, review, retention |
 | [Problem Analysis](docs/problem-analysis.md) | How /problems counts the whole window: `GET /feedback/problems`, grouping, partial and truncated answers |

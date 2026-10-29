@@ -501,7 +501,7 @@ Owner and member `email` (and `owner_email`) appear in project list/get and
 | GET | `/projects/{id}` | Get project with personas/documents and members |
 | PUT | `/projects/{id}` | Update project |
 | DELETE | `/projects/{id}` | Delete project (manage) |
-| POST | `/projects/{id}/personas/generate` | Generate personas from feedback |
+| POST | `/projects/{id}/personas/generate` | Generate personas from feedback; `keep_existing_personas: true` adds next to the existing ones (name clashes dropped), absent/false replaces them (docs/persona-generation.md) |
 | POST | `/projects/{id}/research` | Run research job (Step Functions) |
 | POST | `/projects/{id}/documents` | Create a custom document, or a hand-written PR/FAQ / PRD from a blank template (`document_type: prfaq\|prd`, `{title, content?, create_id?}`, `origin: human`) |
 | — | (project chat) | Now the unified AI assistant at `POST /chat/stream` with `forwardedProps.page.projectId` |
