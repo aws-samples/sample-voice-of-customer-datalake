@@ -146,7 +146,7 @@ def test_the_reason_dollar_is_refused_holds_in_this_python():
 @pytest.mark.parametrize(('module', 'name', 'valid'), [
     ('shared.reprocess_jobs', 'JOB_ID_PATTERN', 'rp_0123456789ab'),
     ('shared.prototype_pins', '_FORM_ID_RE', 'pf_0123456789abcdef'),
-    ('shared.company_context', '_DATE_RE', '2026-10-15'),
+    ('shared.timestamps', 'ISO_DAY_RE', '2026-10-15'),
     ('shared.archive_keys', '_PLAIN_STEM_RE', 'abc'),
 ])
 @pytest.mark.parametrize('ending', ['\n', '\r\n'])

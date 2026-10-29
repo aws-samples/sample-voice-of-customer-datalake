@@ -25,6 +25,7 @@ import SourceProfileEditor from './SourceProfileEditor'
 import { draftProblem, knownSourceIds, newProfile, toDraft, toWire } from './sourceDraft'
 import type { SourceProfile } from '../../api/sourceProfilesApi'
 import type { DraftProfile } from './sourceDraft'
+import { scrapersKey } from '../../api/queryKeys'
 
 function ProfilesEditor({ stored }: Readonly<{ stored: readonly SourceProfile[] }>) {
   const { t } = useTranslation('components', { keyPrefix: 'sourcesManager' })
@@ -43,7 +44,7 @@ function ProfilesEditor({ stored }: Readonly<{ stored: readonly SourceProfile[] 
     },
   })
   // Scraper reviews carry the scraper's name as their source (docs/source-policies.md).
-  const { data: scrapersData } = useQuery({ queryKey: ['scrapers'], queryFn: scrapersApi.getScrapers })
+  const { data: scrapersData } = useQuery({ queryKey: scrapersKey(), queryFn: scrapersApi.getScrapers })
   const scraperNames = (scrapersData?.scrapers ?? []).map((s) => s.name)
   const knownIds = knownSourceIds(getEnabledPlugins().map((m) => m.id), scraperNames)
   const update = (id: string, change: Partial<DraftProfile>) =>

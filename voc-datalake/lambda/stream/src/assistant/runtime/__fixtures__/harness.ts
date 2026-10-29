@@ -111,6 +111,11 @@ export function firstCall(h: Harness): ConverseStreamParams {
   return call;
 }
 
+/** Names of the tools Bedrock was offered on the first turn. */
+export function offeredTools(h: Harness): string[] {
+  return (firstCall(h).tools ?? []).flatMap((tool) => (tool.toolSpec?.name === undefined ? [] : [tool.toolSpec.name]));
+}
+
 export function lastUserContent(params: ConverseStreamParams): ContentBlock[] {
   return params.messages.at(-1)?.content ?? [];
 }

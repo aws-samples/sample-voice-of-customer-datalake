@@ -21,6 +21,10 @@
     "evidence": "이 카드의 근거 리뷰: {{count, number}}개",
     "quotes": "고객의 목소리",
     "dismiss": "닫기",
+    "dismissed": "숨김: {{title}}",
+    "undo": "실행 취소",
+    "undoLabel": "{{title}} 숨김 실행 취소",
+    "closeNotice": "이 알림 닫기",
     "sources": "출처",
     "newTab": "새 탭에서 열림",
     "type": {

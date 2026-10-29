@@ -11,38 +11,11 @@ import { MemoryRouter } from 'react-router-dom'
 import { createTestQueryClient, renderWithQueryClient } from '@test/query-client'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
-import { fetchApi, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
+import { resetFetchApi } from '@test/fetchApiRoutes'
+import { ApiError } from '../../lib/errors'
 import { ACME_PROFILE_BRAND as ACME, GLOBEX_BRAND as GLOBEX } from '@test/radarBrandFixtures'
 import RadarBrandsEditor from './RadarBrandsEditor'
-
-function route(brands: unknown[], put: (body: unknown) => unknown = (body) => ({ success: true, brands: savedFrom(body) })): void {
-  routeFetchApi({
-    'GET /radar/brands': () => ({ brands }),
-    'PUT /radar/brands': put,
-    'GET /settings/sources': () => ({ sources: [{ id: 'rival_reviews', label: 'Rival reviews' }] }),
-  })
-}
-
-/** What the server would answer: every saved brand now on the list. */
-function savedFrom(body: unknown): unknown[] {
-  const brands = typeof body === 'object' && body !== null && 'brands' in body && Array.isArray(body.brands) ? body.brands : []
-  return brands.map((brand: unknown) => {
-    const label = typeof brand === 'object' && brand !== null && 'label' in brand ? String(brand.label) : ''
-    return { ...(typeof brand === 'object' ? brand : {}), key: label.toLowerCase(), origin: 'list', sources: [] }
-  })
-}
-
-const lastPut = (): unknown =>
-  JSON.parse(String(fetchApi.mock.calls.filter(([path, options]) => path === '/radar/brands' && options?.method === 'PUT').at(-1)?.[1]?.body))
-
-const renderEditor = () =>
-  renderWithQueryClient(<MemoryRouter><RadarBrandsEditor totals={new Map([['globex', 12]])} /></MemoryRouter>)
-
-const rowOf = async (label: string): Promise<HTMLElement> => {
-  const row = (await screen.findByText(label)).closest('li')
-  if (!(row instanceof HTMLElement)) throw new Error(`no row for ${label}`)
-  return row
-}
+import { lastPut, plain, renderEditor, route, rowOf } from './radar-brands-editor-fixtures'
 
 beforeEach(() => {
   resetFetchApi()
@@ -68,8 +41,8 @@ describe('RadarBrandsEditor', () => {
     await user.click(screen.getByRole('button', { name: 'Save brands' }))
     expect(await screen.findByText('Brands saved.')).toBeInTheDocument()
     expect(lastPut()).toStrictEqual({ brands: [
-      { label: 'Globex', domains: ['globex.example'] },
-      { label: 'Initech Labs', domains: ['initech.example', 'blog.initech.example'] },
+      plain('Globex', ['globex.example']),
+      plain('Initech Labs', ['initech.example', 'blog.initech.example']),
     ] })
   })
 
@@ -86,13 +59,13 @@ describe('RadarBrandsEditor', () => {
   it('edits a brand\'s domains', async () => {
     const user = userEvent.setup()
     renderEditor()
-    await user.click(within(await rowOf('Globex')).getByRole('button', { name: 'Edit domains' }))
+    await user.click(within(await rowOf('Globex')).getByRole('button', { name: 'Edit Globex' }))
     const input = screen.getByLabelText('Website domains of Globex')
     await user.clear(input)
     await user.type(input, 'globex.example, globex.dev')
     await user.click(screen.getByRole('button', { name: 'Save brands' }))
     await screen.findByText('Brands saved.')
-    expect(lastPut()).toStrictEqual({ brands: [{ label: 'Globex', domains: ['globex.example', 'globex.dev'] }] })
+    expect(lastPut()).toStrictEqual({ brands: [plain('Globex', ['globex.example', 'globex.dev'])] })
   })
 })
 
@@ -154,15 +127,14 @@ describe('RadarBrandsEditor with a legacy profile brand', () => {
     await user.click(screen.getByRole('button', { name: 'Save brands' }))
     await screen.findByText('Brands saved.')
     expect(lastPut()).toStrictEqual({ brands: [
-      { label: 'Globex', domains: ['globex.example'] }, { label: 'Acme', domains: ['acme.example'] },
-      { label: 'Initech', domains: [] },
+      plain('Globex', ['globex.example']), plain('Acme', ['acme.example']), plain('Initech', []),
     ] })
   })
 })
 
 describe('RadarBrandsEditor when the save is refused', () => {
   it('shows the server\'s reason and keeps the draft', async () => {
-    route([GLOBEX], () => { throw new Error('brands[1]: not a domain name: nope') })
+    route([GLOBEX], () => { throw new ApiError(400, 'brands[1]: not a domain name: nope') })
     const user = userEvent.setup()
     renderEditor()
     await rowOf('Globex')

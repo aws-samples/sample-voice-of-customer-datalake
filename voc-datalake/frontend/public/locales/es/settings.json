@@ -1,5 +1,30 @@
 {
   "aiModel": {
+    "image": {
+      "title": "Generación de imágenes (avatares de personas)",
+      "description": "El modelo de imagen que dibuja los avatares de las personas. Lo fija el despliegue, no se elige aquí; el despliegue solicita su acceso.",
+      "model": "Modelo",
+      "region": "Región",
+      "access": "Acceso",
+      "quota": "Cuota",
+      "requestsPerMinute": "{{count, number}} solicitudes/min",
+      "quotaPending": "Leyendo de Service Quotas, vuelve a comprobarlo en un minuto",
+      "avatarsOff": "Los avatares están desactivados en este despliegue (ámbito de inferencia UE), así que este modelo no se usa.",
+      "testTitle": "Generar una imagen de prueba pequeña con {{model}}. Cada clic cuesta unos centavos de dólar; la imagen no se guarda.",
+      "status": {
+        "available": "Disponible",
+        "no_access": "Sin acceso",
+        "not_subscribed": "Sin suscripción",
+        "not_in_region": "No disponible en esta región",
+        "unknown": "Desconocido"
+      },
+      "hint": {
+        "no_access": "Esta cuenta o sus roles no pueden usar el modelo. Revisa las políticas de la organización (SCP) para Bedrock y AWS Marketplace y vuelve a desplegar.",
+        "not_subscribed": "Falta el acuerdo o la suscripción de Marketplace del modelo. Vuelve a desplegar (el despliegue la solicita) o acéptalo en la consola de Bedrock, en Acceso a modelos.",
+        "not_in_region": "El modelo no se ofrece en esta región. Elige en avatar-generation.json un modelo de imagen que se ofrezca allí.",
+        "unknown": "No se pudo leer el acceso. Usa Probar para comprobar el modelo directamente."
+      }
+    },
     "automaticOption": "Automático — {{model}}",
     "groupOther": "Otros modelos",
     "groupRecommended": "Recomendado",
@@ -62,6 +87,7 @@
       "latency": "{{ms}} ms",
       "tokensPerMinute": "{{count, number}} tokens/min",
       "quotaUnknown": "Cuota desconocida",
+      "quotaStale": "Última lectura guardada: se está leyendo una nueva de Service Quotas",
       "all": "Probar todos los modelos",
       "allTitle": "Acceso y capacidad de los modelos",
       "allIntro": "Envía una solicitud breve a cada modelo, uno tras otro, y muestra su cuota de tokens por minuto para esta cuenta y región.",
@@ -146,7 +172,6 @@
   "logs": {
     "clear": "Limpiar",
     "configureFirst": "Configure el endpoint de API en la pestaña General para ver los registros.",
-    "daysAgo": "hace {{count, number}} d",
     "daysAgo_one": "hace {{count, number}} d",
     "daysAgo_other": "hace {{count, number}} d",
     "errorLabel": "Mensaje de error:",
@@ -155,10 +180,8 @@
     "errorsLabel": "Errores:",
     "failures_one": "{{count, number}} fallo",
     "failures_other": "{{count, number}} fallos",
-    "hoursAgo": "hace {{count, number}} h",
     "hoursAgo_one": "hace {{count, number}} h",
     "hoursAgo_other": "hace {{count, number}} h",
-    "items": "{{count, number}} elementos",
     "items_one": "{{count, number}} elemento",
     "items_other": "{{count, number}} elementos",
     "justNow": "ahora mismo",
@@ -168,26 +191,21 @@
     "loadingRuns": "Cargando ejecuciones...",
     "loadingSummary": "Cargando resumen...",
     "messageId": "ID del mensaje:",
-    "minutesAgo": "hace {{count, number}} min",
     "minutesAgo_one": "hace {{count, number}} min",
     "minutesAgo_other": "hace {{count, number}} min",
-    "moreEntries": "+{{count, number}} entradas más",
     "moreEntries_one": "+{{count, number}} entrada más",
     "moreEntries_other": "+{{count, number}} entradas más",
     "noProcessingErrors": "Sin errores de procesamiento en este período",
     "noRunsInPeriod": "Sin ejecuciones en este período",
     "noScrapersConfigured": "Aún no hay fuentes de datos que se ejecuten. Añade una en la página Fuentes de datos.",
     "noValidationFailures": "Sin fallos de validación en este período",
-    "pages": "{{count, number}} páginas",
     "pages_one": "{{count, number}} página",
     "pages_other": "{{count, number}} páginas",
     "processingErrors": "Errores de procesamiento",
     "recordKeys": "Campos presentes:",
-    "textLength": "Longitud del texto: {{count, number}} caracteres",
     "textLength_one": "Longitud del texto: {{count, number}} carácter",
     "textLength_other": "Longitud del texto: {{count, number}} caracteres",
     "refresh": "Actualizar",
-    "runErrors": "{{count, number}} errores",
     "runErrors_one": "{{count, number}} error registrado",
     "runErrors_other": "{{count, number}} errores",
     "scraperRuns": "Ejecuciones de scraper",
@@ -240,7 +258,87 @@
       "ios": "Apps de iPhone",
       "android": "Apps de Android"
     },
-    "noRunsYet": "Aún sin ejecuciones"
+    "noRunsYet": "Aún sin ejecuciones",
+    "system": {
+      "tab": "Errores del sistema",
+      "levelLabel": "Nivel de registro",
+      "levelError": "Errores",
+      "levelWarning": "Errores y advertencias",
+      "searchingStart": "Buscando en los registros…",
+      "searching_one": "Buscando en los registros de {{count, number}} función…",
+      "searching_many": "Buscando en los registros de {{count, number}} funciones…",
+      "searching_other": "Buscando en los registros de {{count, number}} funciones…",
+      "searched_one": "Se buscó en los registros de {{count, number}} función",
+      "searched_many": "Se buscó en los registros de {{count, number}} funciones",
+      "searched_other": "Se buscó en los registros de {{count, number}} funciones",
+      "empty": "No hay errores en este período",
+      "failed": "La búsqueda en los registros falló. Inténtalo de nuevo.",
+      "loadFailed": "No se pudieron cargar los registros del sistema.",
+      "truncated": "Se muestran las {{rows, number}} líneas de registro más recientes",
+      "download": "Descargar",
+      "downloadTitle": "Descargar estos errores como archivo JSON para compartirlos y analizarlos",
+      "adminOnly": "Solo los administradores pueden ver los errores del sistema.",
+      "times": "×{{n, number}}",
+      "occurrences_one": "{{count, number}} vez",
+      "occurrences_many": "{{count, number}} veces",
+      "occurrences_other": "{{count, number}} veces",
+      "firstSeen": "Primera vez",
+      "lastSeen": "Última vez",
+      "requestId": "ID de solicitud",
+      "sourceTitle": "De dónde vienen estas líneas",
+      "sourceApi": "API",
+      "sourceWorkflow": "Flujo de trabajo",
+      "request": {
+        "show": "Mostrar la solicitud completa",
+        "loading": "Leyendo todas las líneas de esta solicitud…",
+        "loadFailed": "No se pudieron cargar las líneas de la solicitud.",
+        "failed": "La búsqueda de esta solicitud falló. Inténtalo de nuevo.",
+        "retry": "Reintentar",
+        "empty": "No se encontraron líneas para esta solicitud (puede que sus registros hayan caducado).",
+        "truncated": "Se muestran las primeras {{lines, number}} líneas",
+        "linesLabel": "Líneas de registro de esta solicitud",
+        "title_one": "{{count, number}} línea de esta solicitud",
+        "title_many": "{{count, number}} líneas de esta solicitud",
+        "title_other": "{{count, number}} líneas de esta solicitud"
+      },
+      "queues": {
+        "title": "Colas de fallos",
+        "loading": "Revisando las colas de fallos…",
+        "loadFailed": "No se pudieron leer las colas de fallos.",
+        "oldest": "el más antiguo {{age}}",
+        "noSample": "No se pudo leer ningún mensaje de muestra.",
+        "unreadable": "No se pudo leer",
+        "peekNote": "Estos mensajes fallaron en todos los reintentos y no se vuelven a intentar. Leer una muestra no la elimina.",
+        "empty_one": "La cola de fallos está vacía",
+        "empty_many": "Las {{count, number}} colas de fallos están vacías",
+        "empty_other": "Las {{count, number}} colas de fallos están vacías",
+        "messages_one": "{{count, number}} mensaje",
+        "messages_many": "{{count, number}} mensajes",
+        "messages_other": "{{count, number}} mensajes"
+      },
+      "environment": {
+        "title": "Entorno",
+        "loading": "Cargando el entorno…",
+        "loadFailed": "No se pudo cargar el entorno.",
+        "on": "Activado",
+        "off": "Desactivado",
+        "none": "Ninguno",
+        "fields": {
+          "version": "Versión",
+          "region": "Región",
+          "account_suffix": "Cuenta (últimos 4 dígitos)",
+          "deployment_prefix": "Prefijo de la implementación",
+          "enabled_sources": "Fuentes habilitadas",
+          "web_search": "Búsqueda web",
+          "inference_scope": "Ámbito de inferencia",
+          "image_model": "Modelo de imagen",
+          "model_overrides": "Modelos elegidos",
+          "alerting": "Alertas",
+          "open_circuits": "Fuentes en pausa (disyuntor)",
+          "log_coverage": "Registros consultados"
+        }
+      }
+    }
   },
   "saveChanges": "Guardar cambios",
   "saved": "¡Guardado!",
@@ -261,8 +359,6 @@
     "saveToSecrets": "Guardar en Secrets Manager",
     "selectOption": "Seleccionar...",
     "show": "Mostrar",
-    "test": "Probar",
-    "unknownResult": "Resultado desconocido",
     "webhooks": "URL de webhooks",
     "circuit": {
       "paused": "En pausa tras fallos repetidos",
@@ -297,7 +393,8 @@
     "policies": "Políticas de fuentes",
     "users": "Usuarios",
     "logs": "Registros",
-    "version": "Versión"
+    "version": "Versión",
+    "boards": "Tableros"
   },
   "title": "Configuración",
   "users": {
@@ -322,6 +419,7 @@
     "retry": "Reintentar",
     "loading": "Cargando…",
     "saveFailed": "No se pudo guardar. Inténtalo de nuevo.",
+    "discardChanges": "Descartar cambios",
     "write": "Escribir",
     "preview": "Vista previa",
     "nothingToPreview": "Aún no hay nada que previsualizar.",
@@ -371,14 +469,26 @@
     "removeKpi": "Quitar KPI",
     "kpiName": "Nombre del KPI",
     "kpiTarget": "Meta",
-    "kpiUnit": "Unidad"
+    "kpiUnit": "Unidad",
+    "fieldRequired": "Obligatorio: rellénalo o elimina la fila",
+    "fieldTooLong": "Como máximo {{max, number}} caracteres",
+    "fixFields": "No se guardó: corrige los campos marcados."
   },
   "designSystem": {
     "title": "Sistema de diseño",
     "description": "Los tokens, pautas y referencias de tu marca. Los prototipos y las imágenes de PR/FAQ se crean con ellos para que coincidan con tu estilo.",
     "logo": "Logotipo",
     "logoAlt": "Logotipo de la empresa",
+    "logoInDraft": "Nuevo logotipo de una referencia: pasa a ser el logotipo de la empresa al guardar el sistema de diseño.",
     "uploadLogo": "Subir logotipo",
+    "logoHint": "PNG, JPEG, WebP o SVG (el SVG se convierte a PNG en tu navegador).",
+    "svg": {
+      "tooLarge": "{{name}} supera 1 MB. Un logotipo SVG puede ocupar como máximo 1 MB.",
+      "unreadable": "No se pudo leer {{name}} como imagen SVG. Expórtalo como PNG y sube ese archivo.",
+      "timeout": "La conversión de {{name}} tardó demasiado. Expórtalo como PNG y sube ese archivo.",
+      "notConverted": "Este SVG no se pudo convertir en tu navegador. Expórtalo como PNG y sube ese archivo.",
+      "resultTooLarge": "El PNG convertido supera los 5 MB. Exporta un PNG más pequeño y súbelo."
+    },
     "colors": "Colores",
     "typography": "Tipografía",
     "spacing": "Espaciado",
@@ -417,12 +527,22 @@
     "archive": "Archivar",
     "archiveTitle": "¿Archivar esta referencia?",
     "archiveMessage": "\"{{title}}\" dejará de usarse en nuevos prototipos. El archivo se conserva.",
+    "archiveMessageLink": "\"{{title}}\" dejará de usarse en nuevos prototipos. Se conservan el enlace y lo que se leyó de él.",
     "referenceKind": "Tipo de referencia",
     "referenceTitle": "Título",
     "referenceUrl": "Enlace (https://…)",
+    "urlProblems": {
+      "tooLong": "La dirección tiene más de 2.048 caracteres.",
+      "notUrl": "Esto no es una dirección web. Pega el enlace completo, empezando por https://",
+      "notHttps": "Solo se pueden leer direcciones https://; las direcciones {{scheme}}:// se rechazan.",
+      "noHost": "La dirección necesita un nombre de sitio después de https://, por ejemplo https://example.com",
+      "credentials": "Quita el nombre de usuario o la contraseña de la dirección.",
+      "localhost": "No se pueden leer direcciones de este equipo; usa un sitio público."
+    },
     "referenceFile": "Archivo",
     "addReference": "Añadir referencia",
     "addReferenceFailed": "No se pudo añadir la referencia. Inténtalo de nuevo.",
+    "duplicateReference": "Esta dirección ya es una referencia: \"{{title}}\".",
     "referenceTitleOptional": "Título (opcional)",
     "kindHints": {
       "website": "Abrimos la página en un navegador seguro y leemos sus colores, fuentes y logotipo.",
@@ -453,11 +573,10 @@
       "variantsCount_other": "{{count, number}} variantes",
       "onlyGuidelines": "Solo pautas",
       "logoCandidate": "Logotipo encontrado en esta referencia",
+      "logoRendered": "Generado a partir del logotipo SVG del sitio",
       "apply": "Usar como sistema de diseño",
       "useLogo": "Usar este logotipo",
-      "logoFailed": "No se pudo usar este logotipo. Inténtalo de nuevo.",
-      "replaceLogoTitle": "¿Reemplazar el logotipo actual?",
-      "replaceLogoMessage": "El logotipo de «{{title}}» reemplaza tu logotipo actual."
+      "logoFailed": "No se pudo usar este logotipo. Inténtalo de nuevo."
     },
     "applied": {
       "title": "De {{source}}: revisa los cambios y luego guarda.",
@@ -529,6 +648,7 @@
         "padding": "Relleno",
         "gap": "Separación",
         "height": "Altura",
+        "width": "Ancho",
         "font_family": "Fuente",
         "font_size": "Tamaño de fuente",
         "font_weight": "Grosor de fuente",
@@ -538,6 +658,7 @@
         "outline": "Contorno de foco"
       },
       "hoverField": "{{field}} al pasar el cursor",
+      "focusField": "{{field}} con foco",
       "hoverFocus": "Cursor y foco",
       "useToken": "Usar token…",
       "useTokenFor": "Usar un token de color para {{field}}",
@@ -555,6 +676,7 @@
         "padding": "Usa de una a cuatro longitudes, como 8px 16px.",
         "gap": "Usa una longitud como 8px.",
         "height": "Usa una longitud como 36px.",
+        "width": "Use una longitud como 36px.",
         "font_family": "Usa nombres de fuente separados por comas.",
         "font_size": "Usa una longitud como 14px.",
         "font_weight": "Usa 100–900, normal o bold.",
@@ -662,5 +784,180 @@
     "changelogTitle": "Notas de la versión",
     "changelogDescription": "Cambios por versión, de la más reciente a la más antigua, según CHANGELOG.md.",
     "showOlder": "Mostrar versiones anteriores ({{count, number}} más)"
+  },
+  "pluginCopy": {
+    "appReviewsAndroid": {
+      "name": "Reseñas de apps Android",
+      "description": "Recopila reseñas de clientes de Google Play Store"
+    },
+    "appReviewsIos": {
+      "name": "Reseñas de apps iOS",
+      "description": "Recopila reseñas de clientes de Apple App Store"
+    },
+    "githubIssues": {
+      "name": "Incidencias de GitHub",
+      "description": "Importa incidencias y comentarios de repositorios de GitHub, con versión de software, etiquetas y firmas de error"
+    },
+    "s3Import": {
+      "name": "Importación masiva desde S3",
+      "description": "Importa comentarios desde un bucket de S3 (CSV, JSON, JSONL)"
+    },
+    "syntheticReviews": {
+      "name": "Generador de reseñas sintéticas",
+      "description": "Genera reseñas de clientes sintéticas y realistas con IA (Amazon Bedrock) para demos, pruebas y modelado. Se procesan con el flujo normal y se marcan como datos sintéticos."
+    },
+    "webReviews": {
+      "name": "Reseñas web",
+      "description": "Lee reseñas de clientes de páginas públicas de reseñas (Trustpilot, TripAdvisor, foros) con un navegador gestionado. Cada página que añades es una fuente propia."
+    },
+    "webscraper": {
+      "name": "Extractor web",
+      "description": "Extractor configurable para obtener comentarios de sitios web"
+    }
+  },
+  "boards": {
+    "loading": "Cargando…",
+    "saved": "Guardado.",
+    "cancel": "Cancelar",
+    "domains": {
+      "title": "Dominios de la empresa",
+      "description": "Los dominios de correo que pertenecen a la empresa. Las personas con ellos pueden iniciar sesión en todos los tableros abiertos a la empresa y cuentan como colegas al añadir participantes.",
+      "label": "Dominios de correo de la empresa",
+      "hint": "Pulsa Intro después de cada dominio. Sin dominios, nadie puede iniciar sesión en un tablero de empresa.",
+      "save": "Guardar dominios",
+      "loadFailed": "No se pudieron cargar los dominios de la empresa."
+    },
+    "participantCard": {
+      "domains": "Dominios de la empresa: {{list}}.",
+      "noDomains": "Todavía no hay dominios de la empresa.",
+      "editInBoards": "Editarlos en Tableros"
+    },
+    "list": {
+      "title": "Tableros de feedback",
+      "description": "Cada tablero recoge solicitudes de un equipo o público y tiene su propio enlace, campos y estados.",
+      "create": "Nuevo tablero",
+      "empty": "Todavía no hay tableros. Crea uno a partir de una plantilla.",
+      "loadFailed": "No se pudieron cargar los tableros.",
+      "archived": "Archivado",
+      "edit": "Editar",
+      "editLabel": "Editar {{name}}",
+      "requests_one": "{{count, number}} solicitud",
+      "requests_many": "{{count, number}} solicitudes",
+      "requests_other": "{{count, number}} solicitudes"
+    },
+    "templates": {
+      "sales": "Solicitudes de funciones de ventas",
+      "salesHint": "Cliente, oportunidad e impacto en ingresos en cada solicitud y +1.",
+      "service": "Incidencias de atención al cliente",
+      "serviceHint": "Tipo de incidencia, gravedad, referencia y pasos; un +1 significa también afectado.",
+      "beta": "Feedback de la beta",
+      "betaHint": "Área del producto, resultado, valoración y un enlace para los testers.",
+      "blank": "En blanco",
+      "blankHint": "Solo título y descripción; añade campos después."
+    },
+    "create": {
+      "title": "Nuevo tablero",
+      "hint": "Elige una plantilla para empezar. Todos los campos y estados se pueden cambiar después.",
+      "template": "Plantilla",
+      "slugPreview": "Enlace para compartir: /board/{{slug}}",
+      "slugLater": "El enlace para compartir se crea a partir del nombre al crear el tablero.",
+      "submit": "Crear tablero"
+    },
+    "editor": {
+      "title": "Tablero",
+      "back": "Volver a los tableros",
+      "name": "Nombre",
+      "slug": "Nombre del enlace",
+      "slugHint": "Minúsculas, dígitos y guiones simples, como máximo 60 caracteres.",
+      "shareLink": "Enlace para compartir:",
+      "shareAfterSave": "(después de guardar)",
+      "copyLink": "Copiar enlace",
+      "copied": "Copiado.",
+      "description": "Descripción",
+      "save": "Guardar tablero",
+      "unsaved": "Cambios sin guardar."
+    },
+    "audience": {
+      "title": "Quién puede iniciar sesión y publicar",
+      "company": "Empresa",
+      "companyHint": "Personas con los dominios de la empresa.",
+      "list": "Personas concretas",
+      "listHint": "Dominios y direcciones de correo permitidos.",
+      "anyone": "Cualquiera",
+      "anyoneHint": "Cualquier dirección de correo que se confirme.",
+      "companyDomains": "Usa los dominios de la empresa: {{list}}.",
+      "noCompanyDomains": "Todavía no hay dominios de la empresa, así que nadie puede iniciar sesión en este tablero.",
+      "domains": "Dominios permitidos",
+      "emails": "Direcciones de correo permitidas",
+      "emailsCount_one": "{{count, number}} dirección (como máximo {{max, number}}).",
+      "emailsCount_many": "{{count, number}} direcciones (como máximo {{max, number}}).",
+      "emailsCount_other": "{{count, number}} direcciones (como máximo {{max, number}}).",
+      "emailsInvalid": "Direcciones de correo no válidas: {{list}}",
+      "anyoneWarning": "Cualquier dirección de correo puede iniciar sesión y publicar en este tablero. No hay moderación: cada persona está limitada a 20 solicitudes y 100 +1 al día."
+    },
+    "fieldsEditor": {
+      "title": "Campos",
+      "hint": "El título y la descripción se piden siempre. Activa los campos que necesita este tablero.",
+      "requestGroup": "En una solicitud nueva",
+      "supportGroup": "En un +1",
+      "required": "Obligatorio",
+      "requiredLabel": "{{field}} obligatorio"
+    },
+    "fields": {
+      "customer": "Cliente",
+      "deal": "Oportunidad",
+      "impact": "Impacto en ingresos",
+      "amount_usd": "Importe (USD)",
+      "contact_email": "Correo de contacto",
+      "kind": "Tipo de incidencia",
+      "severity": "Gravedad",
+      "reference": "Referencia de reserva o pedido",
+      "steps": "Pasos para reproducirlo",
+      "affected_count": "Personas afectadas",
+      "area": "Área del producto",
+      "outcome": "Resultado",
+      "rating": "Valoración",
+      "link": "Enlace",
+      "note": "Nota"
+    },
+    "statuses": {
+      "title": "Estados",
+      "hint": "Las solicitudes nuevas empiezan en el primer estado. Hasta {{max, number}} estados.",
+      "initial": "Inicial",
+      "labelFor": "Nombre del estado {{position, number}}",
+      "moveUp": "Subir {{status}}",
+      "moveDown": "Bajar {{status}}",
+      "remove": "Quitar {{status}}",
+      "newLabel": "Nuevo estado",
+      "add": "Añadir estado",
+      "full": "Un tablero tiene como máximo {{max, number}} estados."
+    },
+    "lifecycle": {
+      "title": "Archivar o eliminar",
+      "hint_one": "Este tablero tiene {{count, number}} solicitud. Archivarlo lo oculta a todos salvo a los administradores y conserva sus solicitudes; eliminarlo borra el tablero y sus solicitudes.",
+      "hint_many": "Este tablero tiene {{count, number}} solicitudes. Archivarlo lo oculta a todos salvo a los administradores y conserva sus solicitudes; eliminarlo borra el tablero y sus solicitudes.",
+      "hint_other": "Este tablero tiene {{count, number}} solicitudes. Archivarlo lo oculta a todos salvo a los administradores y conserva sus solicitudes; eliminarlo borra el tablero y sus solicitudes.",
+      "saveFirst": "Guarda o descarta antes tus cambios.",
+      "archive": "Archivar",
+      "restore": "Restaurar",
+      "delete": "Eliminar tablero"
+    },
+    "problems": {
+      "nameRequired": "El tablero necesita un nombre.",
+      "slugInvalid": "El nombre del enlace solo puede usar minúsculas, dígitos y guiones simples.",
+      "statusesEmpty": "El tablero necesita al menos un estado.",
+      "statusLabelRequired": "Cada estado necesita un nombre.",
+      "emailsInvalid": "Corrige o quita las direcciones de correo no válidas.",
+      "emailsTooMany": "Como máximo 500 direcciones de correo.",
+      "listEmpty": "Añade al menos un dominio o una dirección de correo permitidos."
+    },
+    "errors": {
+      "slugTaken": "Otro tablero ya usa este nombre de enlace. Elige otro.",
+      "statusInUse": "Un estado que has quitado todavía lo usan solicitudes de este tablero. Mueve antes esas solicitudes a otro estado o conserva el estado.",
+      "forbidden": "Solo los administradores pueden cambiar los tableros.",
+      "notFound": "Este tablero ya no existe.",
+      "conflict": "El tablero ha cambiado mientras tanto. Vuelve a cargarlo e inténtalo de nuevo.",
+      "generic": "Algo ha salido mal. Inténtalo de nuevo."
+    }
   }
 }

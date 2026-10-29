@@ -56,6 +56,21 @@ export function cognitoUsernameFor(role: Role): string {
   return typeof name === 'string' ? name : credentials(role).username
 }
 
+/**
+ * The labels the sharing dialog may show for the signed-in role (sharingHelpers.ts personLabel:
+ * the `name` attribute, else a human username — not a UUID one —, else the email). A spec matches
+ * any of them, since which one a pool carries is the deployment's.
+ */
+export function personLabelsFor(role: Role): string[] {
+  const claim = (name: string): string => {
+    const value = idTokenClaim(role, name)
+    return typeof value === 'string' ? value.trim() : ''
+  }
+  const username = cognitoUsernameFor(role)
+  const humanUsername = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(username) ? '' : username
+  return [claim('name'), humanUsername, claim('email')].filter((label) => label !== '')
+}
+
 /** Cognito `sub` of the signed-in role (what project membership is keyed by). */
 export function cognitoSubFor(role: Role): string {
   const sub = idTokenClaim(role, 'sub')

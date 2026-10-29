@@ -21,6 +21,10 @@
     "evidence": "Avaliações por trás deste cartão: {{count, number}}",
     "quotes": "Nas palavras deles",
     "dismiss": "Dispensar",
+    "dismissed": "Dispensado: {{title}}",
+    "undo": "Desfazer",
+    "undoLabel": "Desfazer a dispensa de {{title}}",
+    "closeNotice": "Fechar este aviso",
     "sources": "Fontes",
     "newTab": "abre em uma nova aba",
     "type": {

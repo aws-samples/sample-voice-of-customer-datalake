@@ -231,6 +231,7 @@ class TestAFreshContainer:
     def test_builds_each_client_once_with_the_probe_config_and_lists_at_first_use(self, monkeypatch):
         monkeypatch.delenv('BEDROCK_INFERENCE_SCOPE', raising=False)
         fresh = _fresh_module()
+        monkeypatch.setattr(fresh.model_quota_store, '_table', lambda: None)
         _clock(monkeypatch, fresh, [0.5], [1.0, 1.1, 2.0, 2.1])
         clients = {'bedrock-runtime': boto3.client('bedrock-runtime', region_name='us-east-1'),
                    'service-quotas': boto3.client('service-quotas', region_name='us-east-1')}
@@ -246,7 +247,7 @@ class TestAFreshContainer:
             bedrock.add_response('converse', OK_RESPONSE)
             for value in (5, 6):
                 quotas.add_response('list_service_quotas', {'Quotas': [quota_entry(OPUS_QUOTA, value)]},
-                                    {'ServiceCode': 'bedrock'})
+                                    {'ServiceCode': 'bedrock', 'MaxResults': 100})
 
             first = fresh.probe_model(OPUS55)
             fresh.clear_quota_cache()  # the second probe lists again, through the cached client
@@ -257,7 +258,7 @@ class TestAFreshContainer:
 
         assert [r['quota'] for r in results] == [{'name': OPUS_QUOTA, 'tokens_per_minute': 5},
                                                  {'name': OPUS_QUOTA, 'tokens_per_minute': 6}]
-        assert built == [('bedrock-runtime', {'config': fresh._PROBE_CLIENT_CONFIG}), ('service-quotas', {})]
+        assert built == [('bedrock-runtime', {'config': fresh._PROBE_CLIENT_CONFIG}), ('service-quotas', {'config': fresh._SERVICE_QUOTAS_CLIENT_CONFIG})]
         config = fresh._PROBE_CLIENT_CONFIG
         assert (config.connect_timeout, config.read_timeout, config.retries) == (
             5, 20, {'max_attempts': 1, 'mode': 'standard'})

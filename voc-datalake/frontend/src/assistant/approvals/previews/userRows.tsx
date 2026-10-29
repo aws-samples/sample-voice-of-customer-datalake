@@ -9,7 +9,7 @@
  * @module assistant/approvals/previews/userRows
  */
 import type { ReactNode } from 'react'
-import { roleOf } from '../userSchemas'
+import { roleOf, sortedStrings } from '../userSchemas'
 import type { UserRecord } from '../userSchemas'
 import type { CategoryScope, SourceGrant } from '../../../api/categoryAccessApi'
 import type { FieldRow } from './FieldDiff'
@@ -19,22 +19,20 @@ type Translate = (key: string, options?: Record<string, unknown>) => string
 
 const K = 'assistantTools:preview.users'
 
-const sorted = (values: readonly string[]) => [...values].sort((a, b) => a.localeCompare(b))
-
-function row(key: string, label: string, value: ReactNode, compare: unknown): FieldRow {
+function jsonRow(key: string, label: string, value: ReactNode, compare: unknown): FieldRow {
   return { key, label, value, compare: JSON.stringify(compare) }
 }
 
 function nameRow(key: 'given_name' | 'family_name', labelKey: string, value: string, t: Translate): FieldRow {
-  return row(key, t(`${K}.${labelKey}`), value === '' ? <Muted text={t(`${K}.notSet`)} /> : value, value)
+  return jsonRow(key, t(`${K}.${labelKey}`), value === '' ? <Muted text={t(`${K}.notSet`)} /> : value, value)
 }
 
 /** Email, role and names — every field a create writes, in a fixed order. */
 export function identityRows(user: UserRecord, t: Translate): FieldRow[] {
   const role = roleOf(user.groups)
   return [
-    row('email', t(`${K}.email`), user.email, user.email),
-    row('role', t(`${K}.role`), <span className="badge badge-muted">{t(role === 'admins' ? `${K}.roleAdmins` : `${K}.roleUsers`)}</span>, role),
+    jsonRow('email', t(`${K}.email`), user.email, user.email),
+    jsonRow('role', t(`${K}.role`), <span className="badge badge-muted">{t(role === 'admins' ? `${K}.roleAdmins` : `${K}.roleUsers`)}</span>, role),
     nameRow('given_name', 'firstName', user.given_name, t),
     nameRow('family_name', 'lastName', user.family_name, t),
   ]
@@ -45,11 +43,11 @@ export function userRows(user: UserRecord, t: Translate): FieldRow[] {
   const state = user.enabled
     ? <span className="badge badge-ok">{t(`${K}.enabled`)}</span>
     : <span className="badge badge-muted">{t(`${K}.disabled`)}</span>
-  return [...identityRows(user, t), row('enabled', t(`${K}.account`), state, user.enabled)]
+  return [...identityRows(user, t), jsonRow('enabled', t(`${K}.account`), state, user.enabled)]
 }
 
 function sourcesValue(sourceGrant: SourceGrant, t: Translate): ReactNode {
-  if (sourceGrant.mode === 'list') return <Lines items={sorted(sourceGrant.sources)} empty={t('assistantTools:preview.scraper.none')} />
+  if (sourceGrant.mode === 'list') return <Lines items={sortedStrings(sourceGrant.sources)} empty={t('assistantTools:preview.scraper.none')} />
   return <span>{t(sourceGrant.mode === 'default' ? `${K}.defaultSources` : `${K}.allSources`)}</span>
 }
 
@@ -57,9 +55,9 @@ function sourcesValue(sourceGrant: SourceGrant, t: Translate): ReactNode {
 export function accessRows(grant: CategoryScope, sourceGrant: SourceGrant, t: Translate): FieldRow[] {
   const categories = grant.all
     ? <span>{t(`${K}.allCategories`)}</span>
-    : <Lines items={sorted(grant.categories)} empty={t('assistantTools:preview.scraper.none')} />
+    : <Lines items={sortedStrings(grant.categories)} empty={t('assistantTools:preview.scraper.none')} />
   return [
-    row('categories', t(`${K}.categories`), categories, grant.all ? '*' : sorted(grant.categories)),
-    row('sources', t(`${K}.sources`), sourcesValue(sourceGrant, t), { mode: sourceGrant.mode, sources: sorted(sourceGrant.sources) }),
+    jsonRow('categories', t(`${K}.categories`), categories, grant.all ? '*' : sortedStrings(grant.categories)),
+    jsonRow('sources', t(`${K}.sources`), sourcesValue(sourceGrant, t), { mode: sourceGrant.mode, sources: sortedStrings(sourceGrant.sources) }),
   ]
 }

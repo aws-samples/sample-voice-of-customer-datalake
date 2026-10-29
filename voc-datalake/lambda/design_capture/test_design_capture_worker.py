@@ -52,27 +52,41 @@ def _styles(**overrides) -> str:
 
 
 class FakeCdp:
-    """Answers the commands a capture sends; records them."""
+    """Answers the commands a capture sends; records them.
 
-    def __init__(self, styles: str, final_url: str = 'https://kirocrew.dev/', navigate: dict | None = None):
+    The first ``Target.createTarget`` is the page tab (session ``s1``), a second one the logo render tab
+    (``s2``): its ``Runtime.callFunctionOn`` answers ``render_answer`` and its screenshot is ``logo_png``.
+    """
+
+    def __init__(self, styles: str, final_url: str = 'https://kirocrew.dev/', navigate: dict | None = None,
+                 render_answer: object = None, logo_png: bytes = b''):
         self.calls: list[tuple[str, dict]] = []
         self.routed: list[tuple[str | None, float]] = []
         self.styles, self.final_url, self.navigate = styles, final_url, navigate or {}
+        self.render_answer, self.logo_png = render_answer, logo_png
+        self.browser_session_id = ''
+        self._targets = 0
 
     def call(self, method: str, params: dict | None = None, *, session_id: str | None = None,
              timeout: float = 30.0) -> dict:
         self.calls.append((method, dict(params or {})))
         self.routed.append((session_id, timeout))
         if method == 'Target.createTarget':
-            return {'targetId': 't1'}
+            self._targets += 1
+            return {'targetId': f't{self._targets}'}
         if method == 'Target.attachToTarget':
-            return {'sessionId': 's1'}
+            return {'sessionId': 's' + str((params or {}).get('targetId', '')).removeprefix('t')}
         if method == 'Page.navigate':
             return self.navigate
         if method == 'Page.captureScreenshot':
-            return {'data': base64.b64encode(JPEG).decode()}
+            return {'data': base64.b64encode(self.logo_png if session_id == 's2' else JPEG).decode()}
+        if method == 'Runtime.callFunctionOn':
+            return {'result': {'value': self.render_answer}}
         if method == 'Runtime.evaluate':
-            return {'result': {'value': self._evaluate(str((params or {}).get('expression')))}}
+            expression = str((params or {}).get('expression'))
+            if expression == 'document':
+                return {'result': {'objectId': 'doc-1'}}
+            return {'result': {'value': self._evaluate(expression)}}
         return {}
 
     def _evaluate(self, expression: str) -> str:
@@ -132,7 +146,10 @@ class TestCapture:
         style_evaluates = [p for m, p in cdp.calls if m == 'Runtime.evaluate' and 'getComputedStyle' in p['expression']]
         assert len(style_evaluates) == 1
         assert cdp.methods().count('Page.captureScreenshot') == 1
-        assert {session for session, _ in cdp.routed[2:]} == {'s1'}   # every page command goes to the tab
+        assert {s for s, _ in cdp.routed if s not in (None, 's2')} == {'s1'}   # page commands go to the page tab
+        assert [m for (m, _), (s, _) in zip(cdp.calls, cdp.routed, strict=True) if s is None] == [
+            'Target.createTarget', 'Target.attachToTarget',              # except opening it,
+            'Target.createTarget', 'Target.attachToTarget', 'Target.closeTarget']   # and the logo render tab
         image, image_format, facts = vision.call_args.args
         assert (image, image_format) == (JPEG, 'jpeg')
         assert '"--color-primary": "#7c3aed"' in facts
@@ -172,6 +189,25 @@ class TestCapture:
         assert stored['status'] == 'error'
         assert stored['error'].startswith('The site blocked the secure browser (Cloudflare)')
         vision.assert_not_called()
+
+    def test_a_missing_page_is_not_found_not_blocked(self, table):
+        missing = _styles(title='404: This page could not be found', text='Not found. ' * 400, status=404)
+        _, stored, vision, _ = _run(table, FakeCdp(missing))
+        assert stored['error'] == 'The page was not found (HTTP 404); check the address, then Fetch again'
+        vision.assert_not_called()
+
+    def test_the_capture_log_names_the_browser_session_and_why_it_failed(self, table):
+        table.update_item(Key={'pk': DESIGN_SYSTEM_PK, 'sk': f'REF#{REF_ID}'}, UpdateExpression='SET #u = :u',
+                          ExpressionAttributeNames={'#u': 'url'},
+                          ExpressionAttributeValues={':u': 'https://kirocrew.dev/missing?token=s3cret'})
+        cdp = FakeCdp(_styles(text='Gone. ' * 900, status=503))
+        cdp.browser_session_id = 'bs-01'
+        with patch.object(cw, 'logger') as log:
+            _run(table, cdp)
+        message, = [c for c in log.info.call_args_list if c.args[0] == 'Design capture finished']
+        assert message.kwargs['extra'] == {'status': 'error', 'ref_id': REF_ID, 'host': 'kirocrew.dev',
+                                           'browser_session_id': 'bs-01', 'reason': 'site_error', 'http_status': 503}
+        assert 's3cret' not in str(log.mock_calls)
 
     def test_navigation_error(self, table):
         _, stored, _, _ = _run(table, FakeCdp(_styles(), navigate={'errorText': 'net::ERR_NAME_NOT_RESOLVED'}))
@@ -275,11 +311,13 @@ class TestComponents:
         assert button['example_html'] == '<button class="btn">Buy<img></button>'
         assert field['name'] == 'Input'
 
-    def test_the_models_components_win_and_borrow_the_measured_snippet(self, table):
+    def test_the_models_wording_stays_and_the_measured_styles_and_snippet_go_over_it(self, table):
         _, stored, _, _ = _run(table, FakeCdp(_styles(components=SAMPLES, rules=RULES)))
-        [button] = stored['extracted_design']['components']
+        button, field = stored['extracted_design']['components']
         assert button['description'] == 'Purple pill'
         assert button['example_html'] == '<button class="btn">Buy<img></button>'
+        assert button['variants'][0]['styles']['background'] == 'rgb(124, 58, 237)'
+        assert field['name'] == 'Input'
 
     def test_unknown_kinds_are_dropped_and_samples_capped(self):
         styles = ps.parse_page_styles(_styles(components={**SAMPLES, 'buttons': [SAMPLES['buttons'][0]] * 5,

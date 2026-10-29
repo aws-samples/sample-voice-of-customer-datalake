@@ -24,8 +24,10 @@ DUAL-ERA (``shared.mcp_protocol``): a legacy client (2025-11-25 and earlier) use
 exactly as before; a modern 2026-07-28 client sends per-request ``_meta`` plus the
 mirrored routing headers and gets ``server/discover`` and the reshaped results.
 ``GET``/``DELETE`` on the endpoint are answered 405 by API Gateway (global-mcp.ts).
-The API Gateway token authorizer only checks the ``Bearer voc_…`` shape; the real
-credential check is here, on every request, so revocation is immediate.
+The API Gateway token authorizer is THIS function (``_authorize``, uncached): it runs the same
+credential check, so a dead token is refused by the gateway with a real ``WWW-Authenticate: Bearer``
+challenge (a Lambda proxy 401 has that header remapped). The handler checks again on every request,
+so revocation is immediate either way.
 
 Every ``tools/call`` by an authenticated token writes one audit row (tool, time,
 project id, outcome — never arguments or content; ``shared.mcp_global_tokens``).
@@ -54,6 +56,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import mcp_global_tokens as gt
 from shared import mcp_protocol as mp
+from shared.e2e_tag import with_test_run_tag
 from shared.invocation_cost import measure_invocation_cost
 from shared.mcp_delegate import (
     DelegationUnavailable,
@@ -90,6 +93,8 @@ JSONRPC_METHOD_NOT_FOUND: Final = -32601
 JSONRPC_INVALID_PARAMS: Final = -32602
 JSONRPC_INTERNAL_ERROR: Final = -32603
 MCP_UNAUTHORIZED: Final = -32001
+# The 401 message; the ACCESS_DENIED gateway response sends the same body (MCP_UNAUTHORIZED_BODY, api-mcp.ts).
+MCP_UNAUTHORIZED_MESSAGE: Final = 'Unauthorized: invalid, expired or revoked token'
 MCP_RATE_LIMITED: Final = -32002
 
 # Per-token admission: at most this many authenticated requests per UTC minute.
@@ -412,7 +417,10 @@ def _run_tool(call: ToolCall, row: Mapping[str, Any]) -> tuple[dict, str]:
     if result.status_code >= 500:
         raise DelegationUnavailable(f'route answered {result.status_code}')
     if not result.ok:
-        return _tool_content(_route_message(result), is_error=True), gt.OUTCOME_ERROR
+        # A 403 is a policy refusal (project access, or the minter's way of working with AI
+        # for PR/FAQ / PRD writing, shared/ai_writing.py): audited as denied, not as an error.
+        outcome = gt.OUTCOME_DENIED if result.status_code == 403 else gt.OUTCOME_ERROR
+        return _tool_content(_route_message(result), is_error=True), outcome
     payload = tool.shape(result.payload, call.arguments)
     if tool.name == 'list_projects':
         payload = _pinned_projects(payload, gt.pinned_project(row))
@@ -502,8 +510,7 @@ def _authenticated(event: Mapping[str, Any], req_id: Any) -> dict:
         raise _Refused(_response(500, _error(req_id, JSONRPC_INTERNAL_ERROR,
                                              'Internal error: credential check unavailable'))) from exc
     if row is None:
-        raise _Refused(_response(401, _error(req_id, MCP_UNAUTHORIZED,
-                                             'Unauthorized: invalid, expired or revoked token')))
+        raise _Refused(_response(401, _error(req_id, MCP_UNAUTHORIZED, MCP_UNAUTHORIZED_MESSAGE)))
     return row
 
 
@@ -561,11 +568,43 @@ def _dispatch(event: Mapping[str, Any], message: Mapping[str, Any]) -> dict:
     return _modernised(response, method) if modern else response
 
 
-@logger.inject_lambda_context
-@tracer.capture_lambda_handler
-@metrics.log_metrics(capture_cold_start_metric=True)
-@measure_invocation_cost
-def lambda_handler(event: dict, context: Any) -> dict:
+def _authorizer_policy(effect: str, method_arn: str, token_id: str | None = None) -> dict:
+    """A TOKEN-authorizer answer for exactly ``method_arn``; an Allow names the token it verified."""
+    answer: dict[str, Any] = {
+        'principalId': f'mcp:{token_id}' if token_id else 'mcp-client',
+        'policyDocument': {'Version': '2012-10-17', 'Statement': [
+            {'Action': 'execute-api:Invoke', 'Effect': effect, 'Resource': method_arn},
+        ]},
+    }
+    if token_id:
+        answer['context'] = {'token_id': token_id}
+    return answer
+
+
+def _is_authorizer_event(event: Mapping[str, Any]) -> bool:
+    return event.get('type') == 'TOKEN' and isinstance(event.get('methodArn'), str)
+
+
+def _authorize(event: Mapping[str, Any]) -> dict:
+    """The API Gateway TOKEN authorizer for ``/mcp/global``: the SAME credential check as a request.
+
+    A dead credential (unknown, wrong secret, expired, revoked, minter gone) is a Deny, which the
+    ``ACCESS_DENIED`` gateway response (api-mcp.ts) answers as a 401 carrying a real
+    ``WWW-Authenticate: Bearer`` challenge and a JSON-RPC error body. The handler's own 401 cannot
+    carry the challenge: API Gateway remaps ``WWW-Authenticate`` from a Lambda proxy response to
+    ``x-amzn-Remapped-WWW-Authenticate``. A store or directory fault raises (the gateway's 500).
+    The result is never cached (TTL 0), so a revocation still takes effect on the next request.
+    """
+    method_arn = str(event['methodArn'])
+    token = event.get('authorizationToken')
+    row = _authenticate({'headers': {'authorization': token if isinstance(token, str) else ''}})
+    if row is None:
+        return _authorizer_policy('Deny', method_arn)
+    return _authorizer_policy('Allow', method_arn, str(row['token_id']))
+
+
+def _proxy_response(event: dict) -> dict:
+    """The answer to one ``POST /mcp/global`` (REST proxy event)."""
     if not _origin_allowed(event):
         return _response(403, _error(None, JSONRPC_INVALID_REQUEST, 'Forbidden: invalid Origin'))
     method = event.get('httpMethod')
@@ -586,6 +625,15 @@ def lambda_handler(event: dict, context: Any) -> dict:
         # A posted JSON-RPC response (we never send requests): accepted, ignored.
         return _response(202)
     return _dispatch(event, message)
+
+
+@with_test_run_tag(logger)  # e2e traffic: `test_run` on every line (shared/e2e_tag.py)
+@logger.inject_lambda_context
+@tracer.capture_lambda_handler
+@metrics.log_metrics(capture_cold_start_metric=True)
+@measure_invocation_cost
+def lambda_handler(event: dict, context: Any) -> dict:
+    return _authorize(event) if _is_authorizer_event(event) else _proxy_response(event)
 
 
 # Every request reads the token row and re-checks its minter in Cognito, and a tool call invokes a domain

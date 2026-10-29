@@ -133,5 +133,8 @@
   },
   "openInCategories": "{{name}} in Kategorien öffnen",
   "seeAllUrgent_one": "Die dringende Bewertung ansehen",
-  "seeAllUrgent_other": "Alle {{count, number}} dringenden Bewertungen ansehen"
+  "seeAllUrgent_other": "Alle {{count, number}} dringenden Bewertungen ansehen",
+  "partialNote": {
+    "reviewBasis": "Die Zählung nach Bewertungsdatum liest Bewertungen einzeln, daher wird ein großer Zeitraum abgekürzt; wechseln Sie zum Importdatum für die vollständige Summe."
+  }
 }

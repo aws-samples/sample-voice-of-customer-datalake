@@ -26,6 +26,9 @@ const F7_SCOPE_ATTR = 'data-e2e-f7-scope'
  * screen; the form editor's Theme tab is reached by Create Form → a template
  * → Continue → Theme (nothing is saved: the editor is cancelled).
  */
+/** Longer than the app's `.btn` colour transition, so a sampled fill is the resting one. */
+const HOVER_TRANSITION_SETTLE_MS = 400
+
 const F7_SCREENS: ReadonlyArray<{ step: string; scope?: string; open: (page: Page) => Promise<void> }> = [
   { step: 'home', open: async (page) => { await openScreen(page, '/') } },
   { step: 'dashboard', open: async (page) => { await openScreen(page, '/dashboard') } },
@@ -44,6 +47,10 @@ const F7_SCREENS: ReadonlyArray<{ step: string; scope?: string; open: (page: Pag
       const editor = dialogNamed(page, 'Create New Feedback Form')
       await editor.getByRole('tab', { name: /^Theme$/ }).click()
       await expect(page.getByText('Primary Color')).toBeVisible()
+      // The pointer still rests where the tab was: a primary button under it would be sampled
+      // mid-way through its hover transition (between --accent and --accent-hover). Park it.
+      await page.mouse.move(0, 0)
+      await page.waitForTimeout(HOVER_TRANSITION_SETTLE_MS)
       await editor.evaluate((el, attr) => el.setAttribute(attr, ''), F7_SCOPE_ATTR)
     },
   },

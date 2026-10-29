@@ -7,12 +7,10 @@
  */
 import { useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { apiErrorStatus } from '../../api/apiErrorStatus'
+import { apiErrorStatus, HTTP_CONFLICT } from '../../api/apiErrorStatus'
 import { renameSession } from '../sessions/sessionsApi'
 import { SESSIONS_QUERY_KEY } from '../sessions/queryKeys'
 import type { SessionSummary } from '../sessions/schema'
-
-const CONFLICT = 409
 
 export type RenameFailure = 'busy' | 'failed'
 
@@ -27,7 +25,7 @@ export function useSessionRename(): { rename: (id: string, title: string) => voi
       queryClient.setQueryData<SessionSummary[]>(SESSIONS_QUERY_KEY, (list) =>
         list?.map((s) => (s.id === id ? { ...s, title, customTitle: title } : s)))
     },
-    onError: (error) => setFailure(apiErrorStatus(error) === CONFLICT ? 'busy' : 'failed'),
+    onError: (error) => setFailure(apiErrorStatus(error) === HTTP_CONFLICT ? 'busy' : 'failed'),
     onSettled: () => queryClient.invalidateQueries({ queryKey: SESSIONS_QUERY_KEY }),
   })
   return { rename: (id, title) => mutation.mutate({ id, title }), failure }

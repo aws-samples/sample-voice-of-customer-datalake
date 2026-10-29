@@ -196,7 +196,7 @@ conversation with the prompt prefilled and the card's evidence ids on their own 
 sent.** The user reads the prompt and presses send, because a card can lead to a write (plan mode).
 The draft lives in memory only (`useAssistantUiStore.pendingDraft`) and is never persisted.
 
-"Things to do" rows link to Agents, Memory or Connect. Dismiss hides a card for the rest of the day.
+"Things to do" rows link to Agents, Memory or Connect. Dismiss hides a card for the rest of the day; an "Undo" notice right after (8 s, held while hovered or focused) puts it back in its previous state.
 
 ## Privacy
 

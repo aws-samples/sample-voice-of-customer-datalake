@@ -25,7 +25,8 @@ from collections.abc import Sequence
 
 __all__ = ['merge_by_similarity']
 
-# The browser's stopword set, verbatim (problemGrouping.ts `extractKeywords`).
+# The stopword set the browser's grouping used (copied when it was ported; the SPA no
+# longer groups problems, so this module is now the only copy).
 _STOP_WORDS = frozenset({
     'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
     'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might',

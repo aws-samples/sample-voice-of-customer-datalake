@@ -3,6 +3,7 @@
  * Reads need no route: a decision is a project document, listed by `GET /projects/{id}`.
  * @module api/decisionsApi
  */
+import { post } from './requestKit'
 import { z } from 'zod'
 import { fetchApi } from './client'
 import { normalizeProjectDocument } from './projectDetailSchema'
@@ -28,7 +29,7 @@ const savedDocument = (raw: unknown): ProjectDocument | null => normalizeProject
 
 export const decisionsApi = {
   createDecision: async (projectId: string, input: DecisionInput) => savedDocument(
-    await fetchApi<unknown>(`/projects/${projectId}/decisions`, { method: 'POST', body: JSON.stringify(input) }),
+    await fetchApi<unknown>(`/projects/${projectId}/decisions`, post(input)),
   ),
 
   updateDecision: async (projectId: string, documentId: string, input: DecisionInput, expectedRevision: number) => {

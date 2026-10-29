@@ -45,6 +45,7 @@ from moto_helpers import CATEGORY_EDIT_ITEM as ITEM
 from moto_helpers import invoke, rest_event, seeded_category_edit_tables
 
 import data_explorer_handler as h
+from shared.test.clock import frozen_clock
 from shared.test.instrumentation_fixtures import assert_handler_wrapped, assert_tracer_wrapped
 from shared.test.source_profile_fixtures import no_source_profiles
 
@@ -620,7 +621,7 @@ class TestTheFeedbackWrite:
 
     @pytest.fixture
     def frozen_now(self):
-        with patch.object(h, 'datetime') as dt:
+        with frozen_clock(h) as dt:
             dt.now.return_value.isoformat.return_value = ISO
             yield dt
 
@@ -646,7 +647,8 @@ class TestTheFeedbackWrite:
             ExpressionAttributeNames={'#original_text': 'original_text', '#updated_at': 'updated_at'},
             ExpressionAttributeValues={':original_text': 'edited', ':updated_at': ISO},
         )
-        frozen_now.now.assert_called_once_with(UTC)
+        # every read of the clock in the request (the cache-version bump stamps too) is a UTC one
+        assert {c.args for c in frozen_now.now.call_args_list} == {(UTC,)}
 
     def test_updated_at_is_an_aware_utc_iso_timestamp(self, table, api_gateway_event, lambda_context):
         self._save(api_gateway_event, lambda_context, {'source_platform': 'web', 'rating': 5})
@@ -932,7 +934,7 @@ class TestUpdateKwargs:
             sets=['#cat_c = :cat_c'], removes=['#cat_s'], names={'#cat_c': 'category', '#cat_s': 'subcategory'},
             values={':cat_c': 'app'}, condition=Attr('pk').exists() & Attr('category').eq('delivery'),
         )
-        with patch.object(h, 'datetime') as dt:
+        with frozen_clock(h) as dt:
             dt.now.return_value.isoformat.return_value = ISO
             kwargs = h._update_kwargs({'pk': 'p', 'sk': 's'}, {'rating': 3}, change)
         assert kwargs == {
@@ -945,7 +947,7 @@ class TestUpdateKwargs:
         }
 
     def test_without_a_change_the_only_condition_is_existence(self):
-        with patch.object(h, 'datetime') as dt:
+        with frozen_clock(h) as dt:
             dt.now.return_value.isoformat.return_value = ISO
             kwargs = h._update_kwargs({'pk': 'p', 'sk': 's'}, {}, None)
         assert kwargs['UpdateExpression'] == 'SET #updated_at = :updated_at'

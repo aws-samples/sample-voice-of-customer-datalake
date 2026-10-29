@@ -29,6 +29,7 @@ from typing import Final, TypeGuard
 from urllib.parse import urlparse
 
 from shared.radar_brands import radar_brand_setting
+from shared.row_ids import OPAQUE_ID_RE
 from shared.source_profiles import SOURCE_ID_RE
 from shared.url_policy import validate_url
 
@@ -52,7 +53,6 @@ NAME_RE: Final = re.compile(r'^[A-Za-z0-9][\w .-]*\Z')
 _SOURCE_PREFIX: Final = 'web_'
 _SOURCE_ID_MAX: Final = 48
 _HASH_CHARS: Final = 8
-_ID_RE: Final = re.compile(r'^[A-Za-z0-9_-]{1,64}\Z')
 _WEB_SOURCE_ID_RE: Final = re.compile(r'^web_[a-z0-9_-]{1,44}\Z')
 #: Second-level labels a registrable name sits under (``tripadvisor.co.uk``).
 _SECOND_LEVEL_LABELS: Final = frozenset({'co', 'com', 'org', 'net', 'ac', 'gov', 'edu'})
@@ -191,7 +191,7 @@ def validated_target(target: object) -> dict[str, str]:
     }
     target_id = _text(target, 'id')
     if target_id:
-        if not _ID_RE.match(target_id):
+        if not OPAQUE_ID_RE.match(target_id):
             raise TargetError('id must be 1-64 letters, digits, "_" or "-"')
         cleaned['id'] = target_id
     source_id = _text(target, 'source_id')

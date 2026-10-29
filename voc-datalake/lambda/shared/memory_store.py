@@ -49,12 +49,13 @@ from shared.aws import get_dynamodb_resource, is_conditional_check_failure
 from shared.category_access import CategoryScope, admits
 from shared.converse import converse_detailed
 from shared.dynamo_paging import query_all
-from shared.dynamo_values import plain
+from shared.dynamo_values import item_key, plain
 from shared.embeddings import EMBED_DIMENSIONS, embed_text
 from shared.exceptions import ValidationError
 from shared.indexes import MEMORY_BY_STATUS_INDEX
 from shared.logging import logger
 from shared.scope_names import HiddenNames
+from shared.timestamps import now_iso
 
 MEMORY_TABLE_ENV: Final = 'MEMORY_TABLE'
 # The voc-memory GSI over gsi1pk/gsi1sk — named in lib/stacks/core-stack.ts.
@@ -66,6 +67,10 @@ EVENT_PK_PREFIX: Final = 'MEMEVT#'
 CURSOR_PK: Final = 'MEMCURSOR'
 CURSOR_SK_PREFIX: Final = 'SESSION#'
 IMPORT_PK: Final = 'MEMIMPORT'
+# Where an import's uploaded file sits in the raw bucket (the memory API writes it, the extractor reads it).
+IMPORT_PREFIX: Final = 'memory-imports/'
+# The memory-extract message kind a finished agent run is queued as (agents/run_memory.py -> the extractor).
+KIND_AGENT_RUN: Final = 'agent_run'
 MEMORY_SURFACE: Final = 'memory'
 SERVICE_TIER_FLEX: Final = 'flex'
 POOL_CACHE_SECONDS: Final = 60
@@ -111,10 +116,6 @@ def memory_key(pk: str, memory_id: str) -> dict[str, str]:
     return {'pk': pk, 'sk': f'{MEMORY_SK_PREFIX}{memory_id}'}
 
 
-def item_key(item: Mapping[str, Any]) -> dict[str, str]:
-    return {'pk': str(item['pk']), 'sk': str(item['sk'])}
-
-
 def status_partition(scope: str, status: str) -> str:
     return f'MEMSTATUS#{scope}#{status}'
 
@@ -130,10 +131,6 @@ def new_import_id() -> str:
 def supporter_hash(subject: str) -> str:
     """A stable one-way token for "this person supported it" (never reversible)."""
     return hashlib.sha256(_SUPPORTER_NAMESPACE + subject.encode('utf-8')).hexdigest()[:32]
-
-
-def now_iso(now: datetime | None = None) -> str:
-    return (now or datetime.now(UTC)).isoformat()
 
 
 # ── Embedding encode / decode ────────────────────────────────────────────────

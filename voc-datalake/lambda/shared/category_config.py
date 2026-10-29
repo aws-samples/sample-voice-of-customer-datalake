@@ -24,7 +24,7 @@ from collections.abc import Mapping
 from typing import Any, Final
 
 from shared.category_access import WILDCARD
-from shared.dimension_config import bounded_text
+from shared.dimension_config import as_object, bounded_text
 
 MAX_CATEGORIES: Final = 50
 MAX_SUBCATEGORIES: Final = 50
@@ -50,12 +50,6 @@ def _name(entry: Mapping[str, Any], label: str) -> str:
             f'{label} name must be 1-{MAX_NAME_CHARS} characters with no spaces or "#"'
         )
     return name
-
-
-def _object(entry: object, label: str) -> Mapping[str, Any]:
-    if not isinstance(entry, Mapping):
-        raise ValueError(f'Each {label} must be an object')
-    return entry
 
 
 def _base(entry: Mapping[str, Any], label: str) -> dict[str, str]:
@@ -105,13 +99,13 @@ def _subcategories(value: object) -> list[dict[str, str]]:
         raise ValueError('subcategories must be a list')
     if len(value) > MAX_SUBCATEGORIES:
         raise ValueError(f'A category can have at most {MAX_SUBCATEGORIES} subcategories')
-    subcategories = [_base(_object(entry, 'subcategory'), 'subcategory') for entry in value]
+    subcategories = [_base(as_object(entry, 'subcategory'), 'subcategory') for entry in value]
     _unique_names(subcategories, 'Subcategory')
     return subcategories
 
 
 def _category(entry: object) -> dict[str, Any]:
-    source = _object(entry, 'category')
+    source = as_object(entry, 'category')
     category: dict[str, Any] = _base(source, 'category')
     product = _text(source, 'product', MAX_PRODUCT_CHARS, 'Category product')
     if product:

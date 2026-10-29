@@ -160,6 +160,17 @@ describe('ProjectSharingModal', () => {
       await waitFor(() => expect(screen.getByRole('searchbox', { name: 'Search users' })).toHaveValue(''))
     })
 
+    it('names a candidate whose Cognito username is a UUID by their email, never the UUID', async () => {
+      const uuid = 'aff8498b-61ed-4c35-b5eb-300a1e9e2bdf'
+      mockSearch.mockResolvedValue([{ sub: uuid, username: uuid, email: 'pat@example.com' }])
+      const user = userEvent.setup()
+      renderModal()
+
+      await user.type(await screen.findByRole('searchbox', { name: 'Search users' }), 'pat')
+      expect(await screen.findByRole('button', { name: 'Select pat@example.com' })).toBeInTheDocument()
+      expect(screen.queryByText(uuid)).not.toBeInTheDocument()
+    })
+
     it('strips characters the candidates endpoint rejects before searching', async () => {
       const user = userEvent.setup()
       renderModal()

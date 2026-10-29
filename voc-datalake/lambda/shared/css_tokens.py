@@ -1,7 +1,8 @@
 """Design tokens read deterministically from CSS custom properties (no model involved).
 
 ``custom_properties`` collects every ``--name: value`` declaration of a stylesheet — in
-``:root``, ``html``, Tailwind v4's ``@theme`` or any other block — first declaration wins
+``:root``, ``html``, Tailwind v4's ``@theme`` or any other block — first declaration wins, a
+self-reference (``@theme inline { --radius-md: var(--radius-md) }``) never counting
 (the light/default theme comes first in the files measured), and resolves ``var(--x)``
 references between them. ``tokens_from_properties`` sorts them into the four token groups
 by name AND value; anything the token editor would refuse is left out. The result is a raw
@@ -12,11 +13,10 @@ from __future__ import annotations
 import re
 
 from shared.company_context import is_css_color, is_css_length, is_font_family
+from shared.css_rules import COMMENT_RE, IMPORTANT_RE
 
-_COMMENT_RE = re.compile(r'/\*.*?\*/', re.DOTALL)
 _DECLARATION_RE = re.compile(r'--([A-Za-z0-9_-]{1,60})\s*:\s*([^;{}]{1,300})')
 _VAR_RE = re.compile(r'^var\(\s*--([A-Za-z0-9_-]{1,60})\s*(?:,\s*([^()]*))?\)\Z')
-_IMPORTANT_RE = re.compile(r'\s*!important\s*\Z', re.IGNORECASE)
 #: Colour values taken without a colour-ish name: written as a hex or a colour function only
 #: (a bare word such as ``inherit`` or ``none`` is not a design colour).
 _EXPLICIT_COLOR_RE = re.compile(r'^(#[0-9a-fA-F]{3,8}|(rgb|rgba|hsl|hsla|oklch|oklab|lab|lch)\()', re.IGNORECASE)
@@ -37,9 +37,22 @@ _COLOR_PREFIXES = ('color-', 'colour-', 'clr-')
 def custom_properties(css: str) -> dict[str, str]:
     """Every custom property in ``css`` (comments removed), first declaration wins, ``var()`` resolved."""
     raw: dict[str, str] = {}
-    for name, value in _DECLARATION_RE.findall(_COMMENT_RE.sub(' ', css)):
-        raw.setdefault(name.lower(), _IMPORTANT_RE.sub('', value.strip()))
+    for name, value in _DECLARATION_RE.findall(COMMENT_RE.sub(' ', css)):
+        key, clean = name.lower(), IMPORTANT_RE.sub('', value.strip())
+        if not _is_self_reference(key, clean):
+            raw.setdefault(key, clean)
     return {name: _resolved(raw, value) for name, value in raw.items()}
+
+
+def _is_self_reference(name: str, value: str) -> bool:
+    """``--radius-md: var(--radius-md)``: Tailwind v4's ``@theme inline`` alias, not the value (it comes first)."""
+    match = _VAR_RE.match(value)
+    return bool(match) and match.group(1).lower() == name
+
+
+def resolved_value(props: dict[str, str], value: str) -> str:
+    """``value`` with a whole-value ``var(--x[, fallback])`` chain resolved against ``props``."""
+    return _resolved(props, value)
 
 
 def _resolved(props: dict[str, str], value: str) -> str:

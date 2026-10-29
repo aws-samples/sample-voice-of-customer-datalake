@@ -386,21 +386,10 @@
       "knownLimitations": "Znane ograniczenia",
       "nonGoals": "Poza zakresem",
       "oneLiner": "Opis w jednym zdaniu",
-      "placeholderEmpty": "—",
       "problemSolved": "Rozwiązywany problem",
       "productName": "Nazwa produktu",
       "successMetrics": "Metryki sukcesu",
       "targetUsers": "Grupa docelowa"
-    },
-    "interview": {
-      "captured": "Zanotowane — dziękuję. Co jeszcze możesz powiedzieć o produkcie?",
-      "elaborate": "Czy możesz opowiedzieć o tym więcej?",
-      "greeting": "Cześć — pomogę Ci opisać Twój produkt lub usługę. Powiedz w jednym lub dwóch zdaniach, czym jest, a resztę zbudujemy na tej podstawie.",
-      "heading": "Wywiad",
-      "hint": "Będę wypełniać formularz po lewej stronie w miarę udzielania odpowiedzi.",
-      "placeholder": "Opowiedz mi o swoim produkcie…",
-      "send": "Wyślij",
-      "thinking": "Myślę…"
     },
     "lifecycle": {
       "beta": "Beta",
@@ -445,11 +434,38 @@
       "extractedChars_many": "{{count, number}} znaków wyodrębnionych"
     },
     "loading": "Ładowanie kontekstu produktu…",
-    "modeBoth": "Oba",
-    "modeChat": "Tylko czat",
-    "modeUpload": "Tylko przesyłanie",
     "subtitle": "Informacje podane tutaj są automatycznie wykorzystywane podczas generowania PRD i PR/FAQ jako bieżący kontekst produktu.",
-    "title": "Opis produktu / usługi"
+    "title": "Opis produktu / usługi",
+    "assistant": {
+      "button": "Wypełnij z asystentem AI",
+      "hint": "Asystent pyta o każde puste pole, po jednym pytaniu naraz, a potem pokazuje wszystkie odpowiedzi na jednej karcie do zatwierdzenia.",
+      "prompt": "Przeprowadź ze mną wywiad, aby wypełnić opis produktu w tym projekcie."
+    },
+    "lastSaved": "Ostatnio zapisano: {{at}}",
+    "neverSaved": "Jeszcze nie zapisano",
+    "saving": "Zapisywanie…",
+    "sections": {
+      "basics": {
+        "title": "Produkt",
+        "description": "Czym jest i na jakim jest etapie."
+      },
+      "customers": {
+        "title": "Klienci i problem",
+        "description": "Dla kogo jest i jaki problem dla nich rozwiązuje."
+      },
+      "offering": {
+        "title": "Oferta",
+        "description": "Co robi i czym różni się od alternatyw."
+      },
+      "scope": {
+        "title": "Cele i granice",
+        "description": "Jak mierzy się sukces, jakie są ograniczenia i co jest poza zakresem."
+      },
+      "notes": {
+        "title": "Notatki",
+        "description": "Wszystko inne, co powinni wiedzieć autorzy PRD i PR/FAQ."
+      }
+    }
   },
   "tabs": {
     "aiChat": "Czat AI",
@@ -485,6 +501,9 @@
     "generatePrd": "Generuj PRD",
     "generatePrdTitle": "Generuj PRD",
     "generatePrfaq": "Generuj PR/FAQ",
+    "startWritingTitle": "Napisz samodzielnie",
+    "startWriting": "Zacznij pisać",
+    "startWritingFailed": "Nie udało się utworzyć dokumentu. Spróbuj ponownie.",
     "generatePrfaqTitle": "Generuj PR/FAQ",
     "newDocTitle": "Tytuł nowego dokumentu",
     "newDocTitlePlaceholder": "np. PRD wirtualnego concierge'a",

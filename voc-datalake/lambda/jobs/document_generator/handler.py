@@ -37,7 +37,6 @@ import os
 import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, NamedTuple
 
 if TYPE_CHECKING:
@@ -68,6 +67,7 @@ from shared.document_versions import (
     series_base_title,
     versioned_document_id,
 )
+from shared.document_writer_brief import clean_stored_text, prompt_feature_idea, with_writer_brief
 from shared.dynamo_paging import iter_query
 from shared.feedback import (
     feedback_char_budget,
@@ -94,6 +94,7 @@ from shared.prototype_pins import (
     strip_pin_widget,
 )
 from shared.prototypes import prototype_s3_key
+from shared.timestamps import now_iso
 
 # Environment
 PROJECTS_TABLE = os.environ.get('PROJECTS_TABLE', '')
@@ -331,27 +332,40 @@ def _document_grounding(doc_config: dict, fallback_query: str = '') -> Grounding
     return shared_grounding(query, doc_config.get(category_access.SCOPE_CONFIG_KEY))
 
 
-def _org_context_blocks(grounding: Grounding | None = None) -> tuple[str, str]:
-    """(company knowledge, ``<design_system>`` block) — each '' when nothing is
-    configured or the read fails (the builders never raise).
+def _company_knowledge(grounding: Grounding | None = None, table: object = None) -> str:
+    """The company knowledge block, '' when nothing is configured or the read fails.
 
-    The company knowledge is ``grounding.text`` (company context + company
-    memories) when a grounding is given; otherwise the company context alone,
-    read WITHOUT a sub — a shared document must never carry anyone's own objectives.
+    ``grounding.text`` (company context + company memories) when a grounding is
+    given; otherwise the company context alone (from ``table``, else the aggregates
+    table), read WITHOUT a sub — a shared document must never carry anyone's own objectives.
     """
+    if grounding is not None:
+        return grounding.text
+    return company_context_block(table if table is not None else _aggregates_table())
+
+
+def _org_context_blocks(grounding: Grounding | None = None) -> tuple[str, str]:
+    """(company knowledge, ``<design_system>`` block) for a PROTOTYPE build — each ''
+    when nothing is configured or the read fails (the builders never raise)."""
     table = _aggregates_table()
-    company = grounding.text if grounding is not None else company_context_block(table)
     # Scoped like the company context: design text naming a category the job's starter
     # cannot see is left out (``shared.scope_names.scoped_design_system``).
-    return company, design_system_block(table, grounding.hidden if grounding is not None else None)
+    hidden = grounding.hidden if grounding is not None else None
+    return _company_knowledge(grounding, table), design_system_block(table, hidden)
 
 
 def _with_org_context(product_context: str, grounding: Grounding | None = None) -> str:
-    """The product-context prompt value with the company knowledge and design
-    system appended as DATA blocks. Unchanged when neither is configured, so an
-    unconfigured deployment's PRD/PR-FAQ prompts stay byte-identical."""
-    blocks = [b for b in _org_context_blocks(grounding) if b]
-    return '\n\n'.join([product_context, *blocks]) if blocks else product_context
+    """The PRD / PR-FAQ product-context prompt value with the company knowledge
+    appended as a DATA block. Unchanged when none is configured, so an unconfigured
+    deployment's PRD/PR-FAQ prompts stay byte-identical.
+
+    The company design system is deliberately NOT appended: it describes how a
+    prototype LOOKS (tokens, components, reference screenshots) and only the
+    prototype build reads it (``_prototype_org_sections``). In a written document
+    the model treated the reference summaries as product requirements.
+    """
+    company = _company_knowledge(grounding)
+    return f'{product_context}\n\n{company}' if company else product_context
 
 
 def _with_step_guidance(chain_steps: list[dict], grounding: Grounding | None) -> list[dict]:
@@ -471,13 +485,13 @@ def _run_document_chain(ctx: JobContext, build_steps, feature_idea: str,
                         grounding: Grounding | None = None) -> list[str]:
     """Build the chain steps with *build_steps* and run them, mapping the
     chain's 15-75% progress into this job's 50-85% range."""
-    chain_steps = _with_step_guidance(build_steps(
-        feature_idea=feature_idea,
+    chain_steps = with_writer_brief(_with_step_guidance(build_steps(
+        feature_idea=prompt_feature_idea({**doc_config, 'feature_idea': feature_idea}),
         personas_context=personas_context,
         feedback_context=feedback_context,
         product_context=product_context,
         response_language=doc_config.get('response_language'),
-    ), grounding)
+    ), grounding), doc_config)
 
     def progress_callback(progress, step):
         # Map chain progress (15-75%) into our 50-85% range
@@ -488,8 +502,12 @@ def _run_document_chain(ctx: JobContext, build_steps, feature_idea: str,
 
 
 class ChainOutput(NamedTuple):
-    """One finished chain: the feature it was for and each step's text, in order."""
-    feature_idea: str
+    """One finished chain: the document's heading (its title) and each step's text, in order.
+
+    The heading is the TITLE, never the feature idea: a caller's feature idea can carry
+    prompt context (an agent step's DATA blocks), which must not become the document.
+    """
+    heading: str
     results: list[str]
 
 
@@ -508,7 +526,7 @@ def _assemble_prfaq(output: ChainOutput) -> tuple[str, dict]:
     """(content, sections) from PR-FAQ chain results
     [customer_thinking, press_release, customer_faq, internal_faq]."""
     results = output.results
-    full_document = f"""# PR/FAQ: {output.feature_idea}
+    full_document = f"""# PR/FAQ: {output.heading}
 
 ## Press Release
 
@@ -626,7 +644,7 @@ def _generate_chain_document(ctx: JobContext, spec: ChainDocType, feature_idea: 
         ctx, spec.build_steps, feature_idea, feedback_context,
         personas_context, doc_config, product_context, grounding,
     )
-    return spec.assemble(ChainOutput(feature_idea, results))
+    return spec.assemble(ChainOutput(str(doc_config.get('title') or 'Untitled'), results))
 
 
 def _feedback_usage_fields(feedback: FeedbackSample) -> dict:
@@ -656,12 +674,12 @@ def _document_item_fields(project_id: str, job_id: str, feature_idea: str,
     ``date_basis_fields`` is ``_date_basis_fields``' output; either is ``{}``
     when unknown (a Step Functions execution gathered before it was recorded).
     """
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
     item_fields = {
         'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
         'gsi1sk': now,
-        'feature_idea': feature_idea,
-        'content': content,
+        'feature_idea': clean_stored_text(feature_idea),
+        'content': clean_stored_text(content),
         'job_id': job_id,
         DERIVATION_FIELD: derivation,
         'created_at': now,
@@ -1369,7 +1387,7 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
 
     ctx.update_progress(80, 'saving_prototype')
 
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
 
     # S3 remains first so a committed row never points at an object that was not
     # written. The deterministic key and conditional put make an S3-only partial
@@ -1683,13 +1701,13 @@ def _build_steps(project_id: str, job_id: str, doc_config: dict) -> dict:
     product_context_str, product_context_included = _product_context(project_id)
     grounding = _document_grounding(doc_config)
 
-    chain_steps = _with_step_guidance(spec.build_steps(
-        feature_idea=feature_idea,
+    chain_steps = with_writer_brief(_with_step_guidance(spec.build_steps(
+        feature_idea=prompt_feature_idea(doc_config),
         personas_context=gathered.personas_context,
         feedback_context=gathered.feedback_context,
         product_context=_with_org_context(product_context_str, grounding),
         response_language=doc_config.get('response_language'),
-    ), grounding)
+    ), grounding), doc_config)
 
     import json as _json
     _put_text(_scratch_key(job_id, 'steps'), _json.dumps(chain_steps))
@@ -1774,7 +1792,7 @@ def _assemble_and_save(project_id: str, job_id: str, doc_type: str, title: str,
 
     results = [_get_text(_scratch_key(job_id, f'result_{i}')) for i in range(num_steps)]
 
-    content, analysis = spec.assemble(ChainOutput(feature_idea, results))
+    content, analysis = spec.assemble(ChainOutput(title, results))
 
     feedback_usage = _read_feedback_usage(job_id)
     item_fields = _document_item_fields(

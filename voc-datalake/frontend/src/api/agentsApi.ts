@@ -10,11 +10,13 @@
  *
  * @module api/agentsApi
  */
+import { del, post, put } from './requestKit'
 import { z } from 'zod'
 import { fetchApi } from './client'
 import { lenientList } from './lenientFields'
 import { NeedsHumanSchema, RunActionsSchema, RunDecisionSchema } from './agentRunDecision'
-import { isObject, schemaGuard as guard } from './workflowsApi'
+import { isRecord } from '../lib/typeGuards'
+import { schemaGuard as guard } from './workflowsApi'
 import type { RunDecisionKind } from './agentRunDecision'
 
 export const AGENT_SCHEDULE_EVERY = ['12h', '24h', 'cron'] as const
@@ -69,7 +71,7 @@ export const API_AGENT_LIMITS: AgentLimits = {
   maxMinNew: 10_000,
   maxThresholdCount: 100_000,
   maxWindowDays: 90,
-  maxCronChars: 100,
+  maxCronChars: 120,
   maxTimezoneChars: 64,
   maxModelIdChars: 128,
   maxScheduledRunsPerDay: 2,
@@ -256,7 +258,7 @@ export type RunEvent = z.output<typeof RunEventSchema>
 
 /** `{key: {...}}` or the bare record. */
 function unwrap(raw: unknown, key: string): unknown {
-  return isObject(raw) && isObject(raw[key]) ? raw[key] : raw
+  return isRecord(raw) && isRecord(raw[key]) ? raw[key] : raw
 }
 
 export function normalizeAgent(raw: unknown): Agent | null {
@@ -265,7 +267,7 @@ export function normalizeAgent(raw: unknown): Agent | null {
 }
 
 function normalizeAgentList(raw: unknown): Agent[] {
-  const items: unknown[] = isObject(raw) && Array.isArray(raw.items) ? raw.items : []
+  const items: unknown[] = isRecord(raw) && Array.isArray(raw.items) ? raw.items : []
   return items.flatMap((item) => {
     const agent = normalizeAgent(item)
     return agent === null ? [] : [agent]
@@ -278,7 +280,7 @@ function normalizeRun(raw: unknown): AgentRun | null {
 }
 
 function normalizeRunPage(raw: unknown): { items: AgentRun[] } {
-  const items = isObject(raw) && Array.isArray(raw.items) ? raw.items : []
+  const items = isRecord(raw) && Array.isArray(raw.items) ? raw.items : []
   const runs = items.flatMap((item) => {
     const run = normalizeRun(item)
     return run === null ? [] : [run]
@@ -287,8 +289,8 @@ function normalizeRunPage(raw: unknown): { items: AgentRun[] } {
 }
 
 function normalizeEventPage(raw: unknown, after: number): { items: RunEvent[]; nextAfter: number } {
-  const items = lenientList(guard(RunEventSchema)).parse(isObject(raw) ? raw.items : undefined)
-  const next = isObject(raw) && typeof raw.next_after === 'number' ? raw.next_after : (items.at(-1)?.seq ?? after)
+  const items = lenientList(guard(RunEventSchema)).parse(isRecord(raw) ? raw.items : undefined)
+  const next = isRecord(raw) && typeof raw.next_after === 'number' ? raw.next_after : (items.at(-1)?.seq ?? after)
   return { items, nextAfter: next }
 }
 
@@ -305,7 +307,6 @@ export const agentsKeys = {
 
 const agentPath = (id: string, suffix = '') => `/agents/${encodeURIComponent(id)}${suffix}`
 const runPath = (id: string, runId: string, suffix = '') => agentPath(id, `/runs/${encodeURIComponent(runId)}${suffix}`)
-const post = (body?: unknown): RequestInit => ({ method: 'POST', ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
 
 function requireAgent(raw: unknown): Agent {
   const agent = normalizeAgent(raw)
@@ -324,9 +325,9 @@ export const agentsApi = {
   get: async (id: string): Promise<Agent> => requireAgent(await fetchApi<unknown>(agentPath(id))),
   create: async (fields: Partial<AgentForm>): Promise<Agent> => requireAgent(await fetchApi<unknown>('/agents', post(fields))),
   update: async (id: string, fields: Partial<AgentForm>): Promise<Agent> =>
-    requireAgent(await fetchApi<unknown>(agentPath(id), { method: 'PUT', body: JSON.stringify(fields) })),
+    requireAgent(await fetchApi<unknown>(agentPath(id), put(fields))),
   /** Archive (never delete): disabled and hidden, runs kept. */
-  archive: async (id: string): Promise<Agent> => requireAgent(await fetchApi<unknown>(agentPath(id), { method: 'DELETE' })),
+  archive: async (id: string): Promise<Agent> => requireAgent(await fetchApi<unknown>(agentPath(id), del())),
   enable: async (id: string): Promise<Agent> => requireAgent(await fetchApi<unknown>(agentPath(id, '/enable'), post())),
   disable: async (id: string): Promise<Agent> => requireAgent(await fetchApi<unknown>(agentPath(id, '/disable'), post())),
   /** "Run now" — 409 while a run is active. */

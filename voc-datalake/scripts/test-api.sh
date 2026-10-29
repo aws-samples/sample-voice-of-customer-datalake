@@ -46,13 +46,6 @@ DEFAULT_API=$(aws cloudformation describe-stacks \
   --query 'Stacks[0].Outputs[?OutputKey==`ApiEndpoint`].OutputValue' \
   --output text 2>/dev/null)
 
-# Legacy: a dedicated chat-stream Function URL. Newer deployments serve streaming
-# from the main API Gateway at /chat/stream, so this output may not exist.
-DEFAULT_STREAM_URL=$(aws cloudformation describe-stacks \
-  --stack-name VocApiStack \
-  --query 'Stacks[0].Outputs[?OutputKey==`ChatStreamUrl`].OutputValue' \
-  --output text 2>/dev/null)
-
 # Test credentials - should be created in Cognito for deployment testing
 # Create with: aws cognito-idp admin-create-user --user-pool-id <pool-id> --username deployment-test
 DEPLOY_USER="${VOC_TEST_USER:-deployment-test}"
@@ -62,13 +55,10 @@ DEPLOY_PASS="${VOC_TEST_PASS:-DeployTest!2025}"
 # Allow override via command line arguments
 API="${1:-$DEFAULT_API}"
 API="${API%/}"
-STREAM_URL="${2:-$DEFAULT_STREAM_URL}"
+# Streaming is served by the main API Gateway at /chat/stream; the optional
+# second argument points the stream checks at another base URL.
+STREAM_URL="${2:-$API}"
 STREAM_URL="${STREAM_URL%/}"
-# Fall back to the main API Gateway for streaming (/chat/stream) when there is no
-# dedicated Function URL output.
-if [ -z "$STREAM_URL" ] || [ "$STREAM_URL" = "None" ]; then
-  STREAM_URL="$API"
-fi
 
 if [ -z "$API" ] || [ "$API" = "None" ]; then
   echo "❌ Could not find API endpoint. Is VocApiStack deployed?"

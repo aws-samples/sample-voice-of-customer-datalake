@@ -12,10 +12,13 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { byCodeUnit } from './compare';
-import { itemAt } from '../test-support/guards';
+import { buildApiStack } from '../test-support/api-stack-template';
+import { isRecord, itemAt } from '../test-support/guards';
+import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 
 const PROJECT_ROOT = join(__dirname, '..', '..');
 const UPDATE_ENV_SH = join(PROJECT_ROOT, 'frontend', 'scripts', 'update-env.sh');
@@ -255,6 +258,104 @@ describe('API stage refresh after deploy (R1)', () => {
     for (const key of ['ApiId', 'ApiEndpoint']) {
       expect(stack, `VocApiStack lost its ${key} output`).toMatch(new RegExp(`new cdk\\.CfnOutput\\(this, '${key}'`));
       expect(readFileSync(REFRESH_API_STAGE_SH, 'utf8')).toContain(`output ${key}`);
+    }
+  });
+});
+
+// ---- runtime config.json: three writers/readers, one shape ------------------------------------------------
+//
+// `config.json` is written twice — by the CDK deploy (VocApiStack `runtimeConfig`, a BucketDeployment) and
+// by `npm run deploy:frontend` (deploy.sh, with jq from the stack outputs) — and read once, by
+// `RuntimeConfigSchema` in frontend/src/runtimeConfig.ts. They drifted: deploy.sh dropped `features.email`
+// and `board` (a frontend-only deploy hid the board sign-in and the email capability until the next CDK
+// deploy) and wrote `streamEndpoint` / `avatarsCdnUrl`, which nothing reads. The three key sets are pinned
+// equal here, the CDK one synthesized with every option on (the board block exists only with -c emailFrom).
+
+/** Dotted key paths of the object literal in deploy.sh's `jq -n ... '<program>' > dist/config.json`. */
+function deployShConfigKeys(): string[] {
+  const source = readFileSync(DEPLOY_SH, 'utf8');
+  const end = source.indexOf("' > dist/config.json");
+  const start = source.lastIndexOf("'{", end);
+  if (end < 0 || start < 0) throw new Error("deploy.sh: no jq program '{...}' > dist/config.json");
+  const program = source.slice(start + 1, end);
+  const keys: string[] = [];
+  // The enclosing object keys; `null` for an anonymous object (`then {` before `board:`). The program is
+  // written one key per line, so a line is read as: closing braces, an optional `key:`, an opening brace.
+  const stack: Array<string | null> = [];
+  for (const raw of program.split('\n')) {
+    const line = raw.trim();
+    if (line.startsWith('}')) stack.pop();
+    const key = /^(\w+):/.exec(line)?.[1];
+    if (key !== undefined) keys.push([...stack.filter((k): k is string => k !== null), key].join('.'));
+    if (line.endsWith('{')) stack.push(key ?? null);
+  }
+  // A key that opens an object is a branch, not a leaf: keep the leaves only.
+  return keys.filter((k) => !keys.some((other) => other.startsWith(`${k}.`))).sort(byCodeUnit);
+}
+
+/** Leaf key paths of a plain object (token strings and booleans are leaves). */
+function leafKeys(value: Record<string, unknown>, prefix = ''): string[] {
+  return Object.entries(value).flatMap(([key, child]) =>
+    isRecord(child) ? leafKeys(child, `${prefix}${key}.`) : [`${prefix}${key}`]).sort(byCodeUnit);
+}
+
+/** Leaf key paths of `RuntimeConfigSchema` (nested `z.object`s and named `*Schema` objects followed). */
+function schemaKeys(): string[] {
+  const file = ts.createSourceFile('runtimeConfig.ts', readFileSync(RUNTIME_CONFIG_TS, 'utf8'), ts.ScriptTarget.Latest, true);
+  const objects = new Map<string, ts.ObjectLiteralExpression>();
+  const zObjectOf = (node: ts.Node): ts.ObjectLiteralExpression | undefined => {
+    if (ts.isCallExpression(node)) {
+      const callee = node.expression;
+      if (ts.isPropertyAccessExpression(callee) && callee.name.text === 'object' && ts.isIdentifier(callee.expression)
+          && callee.expression.text === 'z') {
+        const arg = node.arguments[0];
+        return arg !== undefined && ts.isObjectLiteralExpression(arg) ? arg : undefined;
+      }
+      // `.optional()`, `.catch(undefined)`, ...: the object is the receiver
+      return ts.isPropertyAccessExpression(callee) ? zObjectOf(callee.expression) : undefined;
+    }
+    if (ts.isIdentifier(node)) return objects.get(node.text);
+    return undefined;
+  };
+  for (const statement of file.statements) {
+    if (!ts.isVariableStatement(statement)) continue;
+    for (const decl of statement.declarationList.declarations) {
+      const literal = decl.initializer ? zObjectOf(decl.initializer) : undefined;
+      if (ts.isIdentifier(decl.name) && literal) objects.set(decl.name.text, literal);
+    }
+  }
+  const walk = (literal: ts.ObjectLiteralExpression, prefix: string): string[] => literal.properties.flatMap((prop) => {
+    if (!ts.isPropertyAssignment(prop) || !ts.isIdentifier(prop.name)) return [];
+    const nested = zObjectOf(prop.initializer);
+    return nested ? walk(nested, `${prefix}${prop.name.text}.`) : [`${prefix}${prop.name.text}`];
+  });
+  const root = objects.get('RuntimeConfigSchema');
+  if (!root) throw new Error('runtimeConfig.ts: no `const RuntimeConfigSchema = z.object({...})`');
+  return walk(root, '').sort(byCodeUnit);
+}
+
+describe('runtime config.json keys', () => {
+  it('deploy.sh writes exactly what the CDK deploy writes (every option on) and RuntimeConfigSchema reads', () => {
+    const stack = buildApiStack({ emailFrom: 'noreply@voc.example.com' });
+    const cdkKeys = leafKeys(stack.runtimeConfig);
+    const schema = schemaKeys();
+    expect(deployShConfigKeys(), 'deploy.sh vs the CDK runtimeConfig').toStrictEqual(cdkKeys);
+    expect(schema, 'RuntimeConfigSchema vs the CDK runtimeConfig').toStrictEqual(cdkKeys);
+  }, SYNTH_TIMEOUT_MS);
+
+  it('reads real key sets (each parser sees nested keys), so equality is not vacuous', () => {
+    for (const keys of [deployShConfigKeys(), schemaKeys()]) {
+      expect(keys.length).toBeGreaterThanOrEqual(5);
+      expect(keys).toContain('cognito.identityPoolId');
+    }
+  });
+
+  it('reads the board and email flags from outputs a stack declares', () => {
+    const deploy = readFileSync(DEPLOY_SH, 'utf8');
+    const stacks = ['core-stack.ts', 'api-stack.ts'].map((f) => readFileSync(join(PROJECT_ROOT, 'lib', 'stacks', f), 'utf8')).join('\n');
+    for (const key of ['BoardUserPoolId', 'BoardUserPoolClientId', 'EmailAvailable']) {
+      expect(deploy).toContain(`select(.OutputKey=="${key}")`);
+      expect(stacks).toMatch(new RegExp(`new cdk\\.CfnOutput\\(this, '${key}'`));
     }
   });
 });

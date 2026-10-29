@@ -22,6 +22,7 @@
     "stillGenerating": "生成中…"
   },
   "pages": {
+    "participants": "参加者",
     "home": "ホーム",
     "dashboard": "ダッシュボード",
     "feedback": "フィードバック",
@@ -59,6 +60,8 @@
     "externalLink": "{{host}}（新しいタブで開きます）",
     "copy": "コピー",
     "copied": "コピーしました",
+    "stopped": "停止しました",
+    "regenerate": "再生成",
     "savedDocumentTitle": "アシスタントの回答 – {{date}}",
     "saveAsDocument": {
       "idle": "ドキュメントとして保存",
@@ -153,6 +156,7 @@
     "subtitle": "データを読み取り、変更を提案できます。承認なしに変更されることはありません。"
   },
   "suggestions": {
+    "participants": {"1": "参加者リストには何がありますか？", "2": "ベータ顧客のリストを作成して", "3": "貼り付けた表からリストに人を追加して"},
     "dashboard": { "1": "今週、顧客の感情はどう変わった？", "2": "フィードバックが最も多いソースは？", "3": "このダッシュボードを3文で要約して" },
     "categories": { "1": "苦情が最も多いカテゴリは？", "2": "最大のカテゴリについて顧客は何と言っている？", "3": "悪化しているカテゴリは？" },
     "projects": { "1": "今週いちばん多い苦情からプロジェクトを始めて", "2": "進行中のプロジェクトは？", "3": "次の調査プロジェクトは何にすべき？" },
@@ -273,5 +277,30 @@
       "cancelled": "キャンセル済み",
       "expired": "期限切れ"
     }
+  },
+  "mentions": {
+    "placeholder": "このプロジェクトについて質問できます。@ でペルソナ、# でドキュメントを指定…",
+    "allLabel": "すべてのペルソナ",
+    "allHint": "すべてのペルソナが回答します",
+    "heading": {
+      "persona": "ペルソナ",
+      "document": "ドキュメント"
+    },
+    "limit": {
+      "persona": "1 回のメッセージで指定できるペルソナは最大 {{max, number}} 件です。",
+      "document": "1 回のメッセージで指定できるドキュメントは最大 {{max, number}} 件です。"
+    },
+    "loading": "プロジェクトを読み込み中…",
+    "empty": {
+      "persona": "一致するペルソナはありません。",
+      "document": "一致するドキュメントはありません。"
+    },
+    "count_one": "候補 {{count, number}} 件",
+    "count_other": "候補 {{count, number}} 件",
+    "chips": "このメッセージで指定",
+    "remove": "{{name}} を削除",
+    "insertPersona": "ペルソナを指定",
+    "insertDocument": "ドキュメントを指定",
+    "allCapped": "@all は {{total, number}} 件中、最初の {{max, number}} 件のペルソナに質問します: {{names}}。"
   }
 }

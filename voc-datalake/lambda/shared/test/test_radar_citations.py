@@ -5,9 +5,20 @@ from unittest.mock import MagicMock
 import pytest
 from moto import mock_aws
 
-from shared.radar_citations import MAX_CITATIONS, clean_citations, is_feed_url, normalise_url
+from shared.radar_citations import MAX_CITATIONS, clean_citations, is_feed_url, normalise_url, page_key
 from shared.radar_releases import ReleaseCandidate, list_releases, public_release, store_candidate
 from shared.test.radar_fixtures import radar_pk_sk_table
+
+
+class TestPageKey:
+    def test_spellings_of_one_page_share_a_key(self):
+        spellings = ['https://www.acme.example.pl/feng-erp/?b=2&a=1', 'http://acme.example.pl/feng-erp?a=1&b=2&utm_source=x',
+                     'https://ACME.example.pl/feng-erp?a=1&b=2#top']
+        assert len({page_key(url) for url in spellings}) == 1
+
+    def test_another_page_or_a_non_web_url(self):
+        assert page_key('https://acme.example.pl/feng-erp') != page_key('https://acme.example.pl/other')
+        assert (page_key('ftp://acme.example.pl/x'), page_key(None)) == (None, None)
 
 
 class TestNormalise:

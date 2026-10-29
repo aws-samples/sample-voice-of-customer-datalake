@@ -14,7 +14,7 @@ import path from 'node:path'
 import { expect, type Page } from '@playwright/test'
 import { test } from '../lib/test'
 import { apiCall, listOf } from '../lib/api'
-import { OUT_DIR } from '../lib/env'
+import { OUT_DIR, type Role } from '../lib/env'
 import { ERROR_BOUNDARY_TEXT, pinTimeRange, roleOf, runStep, settle, site } from '../lib/fixtures'
 import { isRecord } from '../lib/guards'
 import { injectFailure, type InjectionSpec } from '../lib/inject'
@@ -51,6 +51,8 @@ test('dashboard data per window', async ({}, testInfo) => {
 
 /** dashboard.json emptyState.subheading (the welcome of a workspace with no feedback). */
 const WORKSPACE_EMPTY = 'Your workspace is empty'
+/** ScopedEmptyState (components.json scopedEmpty.heading): the non-admin's empty workspace. */
+const SCOPED_EMPTY_HEADING = 'No reviews to show yet'
 
 /** The Total Feedback card's figure (MetricCard: title `<p>`, then the `font-mono` value), as a number. */
 async function totalFeedbackShown(page: Page): Promise<number | null> {
@@ -82,14 +84,30 @@ test('dashboard UI agrees with the data on a 30-day window', async ({ page }, te
         await expect(page.getByText(WORKSPACE_EMPTY)).toHaveCount(0)
         expect((shown ?? 0) > 0 || showAllTime, 'counts, or the Show all time notice').toBe(true)
       } else {
-        await expect(page.getByText(WORKSPACE_EMPTY)).toBeVisible()
+        await expectEmptyWorkspace(page, role)
       }
     },
   })
   expect(problems, `dashboard-empty-state-logic: ${record.screenshot ?? ''}`).toEqual([])
 })
 
-test('an empty workspace shows the welcome, not the window notice', async ({ page }, testInfo) => {
+/**
+ * An empty workspace as `role` sees it: the admin gets the first-run welcome (they can set it up);
+ * anyone else gets ScopedEmptyState, which offers no setup action they could not take.
+ */
+async function expectEmptyWorkspace(page: Page, role: Role): Promise<void> {
+  if (role === 'admin') {
+    await expect(page.getByRole('heading', { name: /^Welcome — let.s get your feedback flowing$/ })).toBeVisible()
+    await expect(page.getByText(WORKSPACE_EMPTY)).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Start here' })).toHaveAttribute('href', '/')
+    return
+  }
+  await expect(page.getByRole('heading', { name: SCOPED_EMPTY_HEADING })).toBeVisible()
+  await expect(page.getByText(WORKSPACE_EMPTY)).toHaveCount(0)
+  await expect(page.getByRole('link', { name: 'Start here' })).toHaveCount(0)
+}
+
+test('an empty workspace shows the welcome (admin) or the scoped empty state, not the window notice', async ({ page }, testInfo) => {
   const role = roleOf(testInfo)
   const empty: InjectionSpec = { method: 'GET', path: /\/metrics\/summary$/, failure: { status: 200, body: { total_feedback: 0, avg_sentiment: 0, urgent_count: 0 } } }
   const injected = await injectFailure(page, empty)
@@ -97,9 +115,7 @@ test('an empty workspace shows the welcome, not the window notice', async ({ pag
     page, role, theme: 'dark', step: 'dashboard-empty-workspace', audit: false,
     action: async () => {
       await openDashboard(page)
-      await expect(page.getByRole('heading', { name: /^Welcome — let.s get your feedback flowing$/ })).toBeVisible()
-      await expect(page.getByText(WORKSPACE_EMPTY)).toBeVisible()
-      await expect(page.getByRole('link', { name: 'Start here' })).toHaveAttribute('href', '/')
+      await expectEmptyWorkspace(page, role)
       await expect(page.getByRole('button', { name: 'Show all time' })).toHaveCount(0)
       await expect(page.getByText(ERROR_BOUNDARY_TEXT, { exact: true })).toHaveCount(0)
     },

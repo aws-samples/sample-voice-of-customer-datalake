@@ -121,3 +121,23 @@ test('evidence re-checks a finding with LanguageService.findReferences', () => {
   assert.match(findings[0].detail, /findReferences prod 0, test 2/)
 })
 
+
+test('never-written: an optional option member that is read but that nothing sets', () => {
+  const lib = [
+    'export interface CollectOptions { start: number; maxPolls?: number; sleep?: (ms: number) => void; label?: string; via?: number }',
+    'interface Local { only?: number }',
+    'export interface Shaped { via?: number }',
+    'export function collect(o: CollectOptions, l: Local) { o.sleep?.(1); return [o.start, o.maxPolls ?? 90, o.label, o.via, l.only] }',
+    'export function fromShaped(s: Shaped) { return collect({ start: 1, ...s }, {}) }',
+  ].join('\n')
+  const tsconfig = { compilerOptions: { strict: true, target: 'ES2022', module: 'ESNext', moduleResolution: 'bundler', skipLibCheck: true, noEmit: true, types: [] }, include: ['src', 'lib'] }
+  const { findings } = run({
+    'tsconfig.json': JSON.stringify(tsconfig),
+    'lib/capacity.ts': lib,
+    'lib/capacity.test.ts': "import { collect } from './capacity'\ncollect({ start: 1, label: 'x' }, {})\n",
+    'src/main.ts': "import { collect, fromShaped } from '../lib/capacity'\ncollect({ start: 2, sleep: () => {} }, {})\nfromShaped({ via: 1 })\n",
+  })
+  // `sleep` set in production, `label` by a test, `via` through a spread of another shape, `only` is not an
+  // exported option shape, `start` is required: only `maxPolls` is a dead knob.
+  assert.deepEqual(Object.entries(kinds(findings)).filter(([, kind]) => kind === 'never-written'), [['fx:lib/capacity.ts#CollectOptions.maxPolls', 'never-written']])
+})

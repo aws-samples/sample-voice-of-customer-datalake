@@ -14,6 +14,7 @@ import type { CategoryOption, ContextConfig } from './types'
 import { sourceListDays } from './sourceListWindow'
 import { categoryLabel } from '../../utils/displayLabels'
 import { useViewerScope } from '../ScopeNotice/useViewerScope'
+import { categoriesConfigKey } from '../../hooks/useCategories'
 
 interface UseWizardStateProps {
   readonly personas: ReadonlyArray<ProjectPersona>
@@ -103,7 +104,7 @@ export function useWizardState({
   const { config } = useConfigStore()
 
   const { data: categoriesData, isLoading: loadingCategories } = useQuery({
-    queryKey: ['categories-config'],
+    queryKey: categoriesConfigKey(),
     queryFn: () => api.getCategoriesConfig(),
     enabled: !!config.apiEndpoint,
   })

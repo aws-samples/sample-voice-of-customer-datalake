@@ -16,6 +16,7 @@
     "prioritization": "優先順位付け",
     "problems": "問題分析",
     "project": "プロジェクト",
+    "board": "ボード",
     "projects": "プロジェクト",
     "scrapers": "データソース",
     "memory": "メモリ",
@@ -27,7 +28,9 @@
     "account": "アカウント",
     "workflows": "ワークフロー一覧",
     "workflow": "ワークフロー",
-    "radar": "レーダー"
+    "radar": "レーダー",
+    "featureRequests": "フィードバックボード",
+    "participants": "参加者"
   },
   "cancel": "キャンセル",
   "configureBrand": "ブランドを設定",
@@ -85,7 +88,9 @@
     "memory": "メモリ",
     "company": "会社",
     "admin": "管理",
-    "connect": "MCP とスキル"
+    "connect": "MCP とスキル",
+    "featureRequests": "フィードバックボード",
+    "participants": "参加者"
   },
   "partialCountsHint": "概算値: 期間全体を読み取れなかったため、件数は下限値です",
   "problemAnalysisPage": {
@@ -112,7 +117,8 @@
     "collapseSidebar": "サイドバーを折りたたむ",
     "expandSidebar": "サイドバーを展開",
     "openMenu": "メニューを開く",
-    "label": "メインサイドバー"
+    "label": "メインサイドバー",
+    "mainNav": "メイン"
   },
   "profileMenu": {
     "trigger": "{{name}} のアカウントメニュー",
@@ -129,6 +135,8 @@
     "48hFull": "48時間",
     "7d": "7日",
     "7dFull": "7日間",
+    "14d": "14日",
+    "14dFull": "14日間",
     "apply": "適用",
     "cancel": "キャンセル",
     "clear": "クリア",
@@ -301,6 +309,7 @@
     "revokedGroup": "失効済み ({{count, number}})",
     "revokeBody": "「{{name}}」は、使用しているすべてのアシスタントで直ちに使えなくなります。元に戻すことはできません。",
     "revoke": "失効",
+    "revokeNamed": "トークン「{{name}}」を取り消す",
     "toggleAudit": "{{name}} のアクティビティを表示",
     "status": {
       "active": "有効",
@@ -332,5 +341,46 @@
   "header": {
     "title": "顧客の声",
     "subtitle": "顧客フィードバックを統合的に分析するプラットフォーム"
+  },
+  "builtInSources": {
+    "webscraper": "Web スクレイパー",
+    "manual_import": "手動インポート",
+    "s3_import": "S3 インポート",
+    "feedback_form": "フィードバックフォーム",
+    "prototype_feedback": "プロトタイプへのフィードバック",
+    "github_issues": "GitHub Issues",
+    "app_reviews_ios": "iOS アプリのレビュー",
+    "app_reviews_android": "Android アプリのレビュー",
+    "synthetic_reviews": "合成レビュー",
+    "web_reviews": "Web レビュー",
+    "email_intake": "メール受信箱"
+  },
+  "feedbackDimension": {
+    "label": "フィードバックの種類",
+    "description": "レビューがどんな種類のフィードバックか。主な種類を1つ、すべてのソースでモデルが設定します。"
+  },
+  "feedbackTypes": {
+    "bug": "不具合",
+    "service_failure": "サービス障害",
+    "feature_request": "機能リクエスト",
+    "usability": "使いやすさ",
+    "performance": "パフォーマンス",
+    "pricing_billing": "料金と請求",
+    "support_experience": "サポート対応",
+    "praise": "称賛",
+    "question": "質問",
+    "other": "その他"
+  },
+  "feedbackTypeDescriptions": {
+    "bug": "何かが壊れている・誤っている：エラー、クラッシュ、誤ったデータ",
+    "service_failure": "サービスが提供されなかった：停止、配送や支払いの失敗、ログインできない",
+    "feature_request": "新しい機能や変更を求めている",
+    "usability": "動作はするが、分かりにくい・使いにくい",
+    "performance": "動作はするが遅い（クラッシュは不具合）",
+    "pricing_billing": "価格、手数料、請求、返金、請求書",
+    "support_experience": "カスタマーサポートやスタッフの対応",
+    "praise": "直すべき問題のない好意的なフィードバック",
+    "question": "使い方を尋ねている",
+    "other": "上記のいずれでもない"
   }
 }

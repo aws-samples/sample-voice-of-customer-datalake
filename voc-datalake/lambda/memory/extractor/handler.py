@@ -44,9 +44,12 @@ from shared import memory_store as store
 from shared.api import get_raw_categories_config
 from shared.aws import get_dynamodb_resource, get_s3_client, get_sqs_client
 from shared.category_access import WILDCARD, access_key
+from shared.conversations import ASSISTANT_KIND
 from shared.invocation_cost import instrumented_handler
 from shared.logging import logger, metrics, tracer
 from shared.memory_categories import category_guide, category_ids, config_entries
+from shared.memory_store import IMPORT_PREFIX, KIND_AGENT_RUN
+from shared.timestamps import now_iso
 
 CONVERSATIONS_TABLE = os.environ.get('CONVERSATIONS_TABLE', '')
 AGGREGATES_TABLE = os.environ.get('AGGREGATES_TABLE', '')
@@ -54,17 +57,14 @@ RAW_DATA_BUCKET = os.environ.get('RAW_DATA_BUCKET', '')
 # The CDK names the variable MEMORY_EXTRACT_QUEUE_URL (lib/stacks/memory-workers.ts).
 MEMORY_QUEUE_URL = os.environ.get('MEMORY_EXTRACT_QUEUE_URL', '')
 
-ASSISTANT_KIND: Final = 'assistant'
 MAX_MESSAGE_CHARS: Final = 4_000
 MAX_TRANSCRIPT_CHARS: Final = 40_000
 MAX_CANDIDATES_PER_CALL: Final = 12
 EXTRACTION_MAX_TOKENS: Final = 3_000
-IMPORT_PREFIX: Final = 'memory-imports/'
 TRANSCRIPT_ROLES: Final = ('user', 'assistant')
 
 KIND_SESSION: Final = 'session'
 KIND_PROJECT_CHAT: Final = 'project_chat'
-KIND_AGENT_RUN: Final = 'agent_run'
 KIND_IMPORT: Final = 'import'
 
 processor = BatchProcessor(event_type=EventType.SQS)
@@ -118,10 +118,6 @@ def get_conversations_table():
 
 def get_aggregates_table():
     return _table(AGGREGATES_TABLE)
-
-
-def get_memory_table():
-    return store.get_memory_table()
 
 
 def categories_config() -> tuple[Mapping[str, Any], ...]:
@@ -202,7 +198,7 @@ def extract_and_write(body: str, origin: ExtractionSource, now: datetime) -> tup
     )
     candidates, refused = candidates_from_reply(reply.text, origin, now.date(), categories)
     outcome = store.write_automated(
-        get_memory_table(), candidates, aggregates_table=get_aggregates_table(), now=now,
+        store.get_memory_table(), candidates, aggregates_table=get_aggregates_table(), now=now,
     ) if candidates else store.WriteOutcome()
     outcome.dropped += refused
     _emit_metrics(outcome)
@@ -294,22 +290,22 @@ def process_session(message: Mapping[str, Any], now: datetime) -> None:
     if not (isinstance(session_id, str) and session_id and isinstance(owner_sub, str) and owner_sub):
         logger.warning('Session message without ids; skipping')
         return
-    memory_table = get_memory_table()
+    memory_table = store.get_memory_table()
     messages = _load_messages(owner_sub, session_id)
     if messages is None:
         store.save_cursor(memory_table, session_id,
-                          {'owner_sub': owner_sub, 'missing': True, 'extracted_at': store.now_iso(now)}, now=now)
+                          {'owner_sub': owner_sub, 'missing': True, 'extracted_at': now_iso(now)}, now=now)
         return
     cursor = store.get_cursors(memory_table, [session_id]).get(session_id) or {}
     done = int(cursor.get('extracted_count') or 0)
     # A cursor past the end means the thread was trimmed client-side: start over on what is there.
     fresh = messages[done:] if done <= len(messages) else messages
     fields: dict[str, Any] = {'owner_sub': owner_sub, 'extracted_count': len(messages),
-                              'extracted_at': store.now_iso(now)}
+                              'extracted_at': now_iso(now)}
     if fresh and has_user_turn(fresh):
         outcome, reply = extract_and_write(render_transcript(fresh), ExtractionSource(
             block='transcript', source_kind=policy.SOURCE_EXTRACTED,
-            source={'type': 'session', 'ref': session_id, 'at': store.now_iso(now)},
+            source={'type': 'session', 'ref': session_id, 'at': now_iso(now)},
             supporter=store.supporter_hash(owner_sub), owner_sub=owner_sub, allow_personal=True,
             restricted=is_restricted(owner_sub),
         ), now)
@@ -331,7 +327,7 @@ def process_text_source(message: Mapping[str, Any], now: datetime) -> None:
     extract_and_write(text[-MAX_TRANSCRIPT_CHARS:], ExtractionSource(
         block='transcript',
         source_kind=policy.SOURCE_AGENT if is_agent else policy.SOURCE_EXTRACTED,
-        source={'type': 'agent_run' if is_agent else 'session', 'ref': ref, 'at': store.now_iso(now)},
+        source={'type': 'agent_run' if is_agent else 'session', 'ref': ref, 'at': now_iso(now)},
         supporter=store.supporter_hash(supporter_subject), owner_sub=owner,
         # An agent run produces company knowledge; its owner's personal memory is not its to write.
         allow_personal=not is_agent and owner is not None,
@@ -359,7 +355,7 @@ def _enqueue(payload: Mapping[str, Any]) -> None:
 
 def process_import(message: Mapping[str, Any], now: datetime) -> None:
     import_id, chunk = message.get('import_id'), message.get('chunk', 0)
-    memory_table = get_memory_table()
+    memory_table = store.get_memory_table()
     record = store.get_import(memory_table, import_id) if isinstance(import_id, str) else None
     if record is None or not isinstance(import_id, str) or isinstance(chunk, bool) or not isinstance(chunk, int) or chunk < 0:
         logger.warning('Import message for an unknown import; skipping')
@@ -373,7 +369,7 @@ def process_import(message: Mapping[str, Any], now: datetime) -> None:
         return
     outcome, reply = extract_and_write(chunks[chunk], ExtractionSource(
         block='document', source_kind=policy.SOURCE_IMPORT,
-        source={'type': 'import', 'ref': import_id, 'at': store.now_iso(now)},
+        source={'type': 'import', 'ref': import_id, 'at': now_iso(now)},
         supporter=str(record.get('created_by_hash') or store.supporter_hash(f'import:{import_id}')),
     ), now)
     last = chunk + 1 >= len(chunks)

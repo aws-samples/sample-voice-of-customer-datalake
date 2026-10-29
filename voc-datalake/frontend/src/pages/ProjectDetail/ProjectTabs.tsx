@@ -4,20 +4,20 @@
  * ARIA tabs (`tablist` / `tab` + `aria-selected`, the FeedbackForms precedent)
  * rather than a `<nav>`: these switch views inside one page, and a second
  * unlabelled navigation landmark next to the sidebar's tripped axe's
- * landmark-unique. Arrow keys / Home / End move between tabs (roving tabindex),
- * and the selected tab is scrolled into view so it is never hidden off the edge
- * of the horizontally scrolling rail on narrow screens.
+ * landmark-unique. Arrow keys / Home / End move between tabs (roving tabindex).
+ *
+ * ONE tab bar that WRAPS (the Settings section-switch precedent): at 390 px the six
+ * tabs take two rows. It used to scroll sideways with a hidden scrollbar and an edge
+ * fade, which a mouse or trackpad without horizontal scrolling could not reach. A
+ * wrapped bar shows every tab to every input with no scrolling at all.
  */
 import clsx from 'clsx'
 import {
-  Users, FileText, Sparkles, Package, Scale,
+  Users, FileText, Sparkles, Package, Scale, Contact,
 } from 'lucide-react'
-import {
-  useEffect, useRef, type KeyboardEvent,
-} from 'react'
+import { useRef, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Tab } from './types'
-import { useScrollEdges } from './useScrollEdges'
 
 const TABS: readonly {
   id: Tab;
@@ -49,6 +49,11 @@ const TABS: readonly {
     labelKey: 'decisions:tab',
     icon: Scale,
   },
+  {
+    id: 'participants',
+    labelKey: 'participants:projectTab',
+    icon: Contact,
+  },
 ]
 
 interface ProjectTabsProps {
@@ -71,19 +76,8 @@ function targetIndex(key: string, current: number): number | null {
 export default function ProjectTabs({
   activeTab, personasCount, documentsCount, onTabChange,
 }: ProjectTabsProps) {
-  const { t } = useTranslation(['projectDetail', 'decisions'])
+  const { t } = useTranslation(['projectDetail', 'decisions', 'participants'])
   const trackRef = useRef<HTMLDivElement>(null)
-  const edges = useScrollEdges(trackRef)
-
-  useEffect(() => {
-    const selected = trackRef.current?.querySelector<HTMLElement>('[aria-selected="true"]')
-    // Feature-tested: jsdom does not implement scrollIntoView.
-    if (selected === null || selected === undefined || !('scrollIntoView' in selected)) return
-    selected.scrollIntoView({
-      block: 'nearest',
-      inline: 'nearest',
-    })
-  }, [activeTab])
 
   const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {
     const next = targetIndex(e.key, index)
@@ -96,12 +90,8 @@ export default function ProjectTabs({
   }
 
   return (
-    // `relative` anchors the edge fades: at 390 px the five tabs overflow, and a fade on the
-    // side with more tabs says so (aria-hidden — the tabs themselves stay reachable by keys).
-    <div className="tabs-rail relative -mx-4 px-4 sm:mx-0 sm:px-0">
-      {edges.before && <span data-testid="tabs-fade-start" aria-hidden className="pointer-events-none absolute left-0 top-0 bottom-3 w-8 bg-gradient-to-r from-bg to-transparent z-10" />}
-      {edges.after && <span data-testid="tabs-fade-end" aria-hidden className="pointer-events-none absolute right-0 top-0 bottom-3 w-8 bg-gradient-to-l from-bg to-transparent z-10" />}
-      <div ref={trackRef} className="tabs-track" role="tablist" aria-label={t('tabs.label')}>
+    <div className="tabs-rail">
+      <div ref={trackRef} className="tabs-track flex-wrap" role="tablist" aria-label={t('tabs.label')}>
         {TABS.map((tab, index) => {
           const selected = activeTab === tab.id
           return (

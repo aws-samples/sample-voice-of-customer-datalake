@@ -25,6 +25,7 @@ from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
 
 from shared.logging import logger, tracer
+from shared.radar_brands import DOMAIN_RE
 
 # The web-search connector caps queries at 200 characters.
 MAX_QUERY_LENGTH = 200
@@ -234,7 +235,6 @@ def _extract_results(tool_result: dict) -> list[dict]:
     return results
 
 
-_DOMAIN_RE = re.compile(r'^(?=.{1,253}\Z)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\Z')
 _ISO_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z)?\Z')
 
 
@@ -243,7 +243,7 @@ def _domains(values: list[str] | tuple[str, ...] | None, field: str) -> list[str
     out: list[str] = []
     for value in values or ():
         host = str(value or '').strip().lower().removeprefix('www.')
-        if not _DOMAIN_RE.match(host):
+        if not DOMAIN_RE.match(host):
             raise WebSearchError(f'{field} entry is not a domain name: {str(value)[:80]!r}')
         if host not in out:
             out.append(host)

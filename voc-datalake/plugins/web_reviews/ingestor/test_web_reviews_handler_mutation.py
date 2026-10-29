@@ -26,6 +26,7 @@ from target_reader import ReadLimits, ReadReview, TargetResult
 from test_web_reviews_handler import URL, WatermarkTable, ingestor, target_config
 
 from _shared.base_ingestor import BaseIngestor, metrics
+from shared.test.clock import frozen_clock
 from shared.test.emf_fixtures import cold_start_metric_names
 from shared.test.instrumentation_fixtures import INSTRUMENTED_HANDLER_LAYERS, TRACER_SOURCE, handler_layers
 from web_reviews.ingestor import handler
@@ -184,7 +185,7 @@ class TestTheWatermarkWrites:
     def written(self, result: TargetResult, stored: str | None) -> Iterator[MagicMock]:
         table = WatermarkTable({f'test_source#{PREFIX}_newest_review': stored} if stored else {})
         with reading(result, table=table) as (run, _read), patch.object(run, 'set_watermark') as write, \
-                patch.object(handler, 'datetime') as clock_now:
+                frozen_clock(handler) as clock_now:
             clock_now.now.return_value = datetime(2026, 10, 15, 12, 0, tzinfo=UTC)
             list(run.fetch_new_items())
         yield write

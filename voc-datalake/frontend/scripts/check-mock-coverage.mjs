@@ -8,7 +8,10 @@
  * broken locally, and nothing else notices. This script makes that a failure:
  *
  *   1. Every `fetchApi(...)` call site under `src/` (specs and fixtures excluded)
- *      is read with the TypeScript compiler API as `{file, method, call}`.
+ *      is read with the TypeScript compiler API as `{file, method, call}`. So is
+ *      every raw `fetch` of the API base, `fetch(\`${getBaseUrl()}/…\`)` or
+ *      `fetch(\`${base}/…\`)` (public routes that must not carry the session
+ *      header); its `call` is the whole template.
  *   2. Each must have an entry in `mock-coverage.json`, and every entry must
  *      still name a real call site (no stale entries).
  *   3. The mock is started on a free port and every entry's probe requests are
@@ -59,13 +62,27 @@ function methodOf(options, source) {
   return (helper && OPTION_HELPERS[helper[1]]) ?? `UNKNOWN(${text.slice(0, 40)})`
 }
 
-/** `file\tmethod\tcall` for every fetchApi call site under `srcDir`, de-duplicated. */
+/** Base-URL expressions a raw `fetch` template may start with: `getBaseUrl()` or a `base` variable. */
+function isApiBase(expr) {
+  if (ts.isIdentifier(expr)) return expr.text === 'base'
+  return ts.isCallExpression(expr) && ts.isIdentifier(expr.expression) && expr.expression.text === 'getBaseUrl' && expr.arguments.length === 0
+}
+
+/** Is this call a request to the API: `fetchApi(path, …)`, or `fetch(\`${getBaseUrl()}…\`, …)`? */
+function isApiCall(node) {
+  if (!ts.isCallExpression(node) || !ts.isIdentifier(node.expression) || node.arguments.length === 0) return false
+  if (node.expression.text === 'fetchApi') return true
+  const [url] = node.arguments
+  return node.expression.text === 'fetch' && ts.isTemplateExpression(url) && url.head.text === '' && isApiBase(url.templateSpans[0].expression)
+}
+
+/** `file\tmethod\tcall` for every API call site under `srcDir`, de-duplicated. */
 export function collectCallSites(srcDir = SRC) {
   const sites = new Map()
   for (const file of sourceFiles(srcDir)) {
     const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true)
     const visit = (node) => {
-      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'fetchApi' && node.arguments.length > 0) {
+      if (isApiCall(node)) {
         const site = {
           file: relative(srcDir, file).split('\\').join('/'),
           method: methodOf(node.arguments[1], source),

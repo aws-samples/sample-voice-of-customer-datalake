@@ -21,9 +21,12 @@ import { runAssistant, type RunLimits, type RuntimeDeps } from './assistant/runt
 import { invocationDeadlineMs } from './lib/lambda-deadline.js';
 import { createCompanyBriefLoader } from './assistant/runtime/company-brief.js';
 import { createCategoryRestrictionLoader } from './assistant/runtime/category-restriction.js';
+import { createAiWritingLoader } from './assistant/runtime/ai-writing.js';
 import { createMemoryRecall } from './assistant/runtime/memory-recall.js';
 import { getInternalApiInvoker } from './assistant/tools/internal-api.js';
 import { createDynamoSessionStore } from './assistant/session/store.js';
+import { createPersonaRound } from './assistant/runtime/persona-round.js';
+import { getDefaultToolDeps } from './assistant/tools/deps.js';
 
 // ── AWS Clients (module-level for connection reuse) ──
 const docClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
@@ -44,7 +47,10 @@ const deps: RuntimeDeps = {
   recallMemory: createMemoryRecall(getInternalApiInvoker()),
   loadCompanyBrief: createCompanyBriefLoader(getInternalApiInvoker()),
   loadCategoryRestriction: createCategoryRestrictionLoader(getInternalApiInvoker()),
+  loadAiWriting: createAiWritingLoader(docClient, AGGREGATES_TABLE),
   now: () => new Date(),
+  // Lazy like the tool catalogue: the tool deps open their clients on the first mention.
+  personaRound: (input) => createPersonaRound(getDefaultToolDeps())(input),
   ...(CONVERSATIONS_TABLE
     ? { sessions: { store: createDynamoSessionStore(docClient, CONVERSATIONS_TABLE), nowMs: () => Date.now() } }
     : {}),

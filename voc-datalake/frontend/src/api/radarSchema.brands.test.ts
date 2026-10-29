@@ -6,6 +6,9 @@
 import { describe, expect, it } from 'vitest'
 import { normalizeRadarBrands, normalizeRadarReviewDetail } from './radarSchema'
 
+/** What an older API's brand reads as: auto language (English), no feed. */
+const NO_NEWS_FIELDS = { language: null, effective_language: 'en', feed_urls: [], search_terms: [], exclude_terms: [] }
+
 describe('normalizeRadarBrands', () => {
   it('keeps each usable brand with its origin and drops one without a key', () => {
     const brands = normalizeRadarBrands({ brands: [
@@ -14,8 +17,8 @@ describe('normalizeRadarBrands', () => {
       { key: 'globex', label: '' },
     ] })
     expect(brands).toStrictEqual([
-      { key: 'acme', label: 'Acme', domains: ['acme.example'], origin: 'profile', sources: ['rival_reviews'] },
-      { key: 'globex', label: 'globex', domains: [], origin: 'list', sources: [] },
+      { key: 'acme', label: 'Acme', domains: ['acme.example'], origin: 'profile', sources: ['rival_reviews'], ...NO_NEWS_FIELDS },
+      { key: 'globex', label: 'globex', domains: [], origin: 'list', sources: [], ...NO_NEWS_FIELDS },
     ])
   })
 

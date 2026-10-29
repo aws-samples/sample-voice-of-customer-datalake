@@ -71,8 +71,6 @@ def _get_projects_table():
     if projects_table is None:
         projects_table = get_projects_table()
     return projects_table
-# Alias for backward compatibility with Step Functions error handling
-BedrockThrottlingException = BedrockThrottlingError
 def invoke_bedrock_with_retry(
     system_prompt: str,
     user_message: str,
@@ -826,7 +824,7 @@ Public-web grounding for this report came from the following searches:
             }
 
         research_id = create_counted_project_child(
-            proj_table, project_id, 'research', build, 'document_count',
+            proj_table, project_id, 'research', build,
         )['document_id']
 
     # Update job as completed
@@ -896,7 +894,7 @@ def lambda_handler(event: dict, context: Any) -> dict:
 
     try:
         return _step_function(step)(event)
-    except BedrockThrottlingException as e:
+    except BedrockThrottlingError as e:
         # Re-raise with specific error type for Step Functions retry
         logger.exception(f"Bedrock throttling in step {step}: {e}")
         raise

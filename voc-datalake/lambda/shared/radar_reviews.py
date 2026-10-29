@@ -32,8 +32,10 @@ from shared import category_access
 from shared.api import validate_int
 from shared.category_access import CategoryScope
 from shared.dynamo_paging import iter_query
+from shared.dynamo_values import item_key
 from shared.pii_redaction import redact_text
 from shared.radar_store import SENTIMENT_LABELS, item_partitions, marker_key, radar_day
+from shared.timestamps import ISO_DAY_RE
 
 __all__ = [
     'ReviewFilter',
@@ -57,7 +59,6 @@ MAX_CURSOR_CHARS: Final = 1024
 MAX_FILTER_CHARS: Final = 200
 DAY_FORMAT_ERROR: Final = 'day must be a YYYY-MM-DD date'
 _SK_PATTERN: Final = re.compile(r'(\d{4}-\d{2}-\d{2})#.+')
-_DAY_PATTERN: Final = re.compile(r'\d{4}-\d{2}-\d{2}')
 
 
 @dataclass(frozen=True)
@@ -128,17 +129,13 @@ def _stored(table: Any, brand: str, start: date, end: date, after: Mapping[str, 
         yield from iter_query(table, kwargs)
 
 
-def _key(item: Mapping[str, Any]) -> dict[str, str]:
-    return {'pk': str(item['pk']), 'sk': str(item['sk'])}
-
-
 def written_day(item: Mapping[str, Any]) -> str:
     """The day the review was WRITTEN: ``radar_day``, or (a row stored before it existed, keyed by its
     import day) the same rule computed from ``source_created_at`` and ``date``."""
     stored = item.get('radar_day')
-    if isinstance(stored, str) and _DAY_PATTERN.fullmatch(stored):
+    if isinstance(stored, str) and ISO_DAY_RE.fullmatch(stored):
         return stored
-    if isinstance(item.get('date'), str) and _DAY_PATTERN.fullmatch(str(item['date'])[:10]):
+    if isinstance(item.get('date'), str) and ISO_DAY_RE.fullmatch(str(item['date'])[:10]):
         return radar_day({**item, 'date': str(item['date'])[:10]})
     return str(item['sk'])[:10]
 
@@ -181,10 +178,10 @@ def list_reviews(table: Any, brand: str, *, admits: Callable[[Mapping[str, Any]]
     for read, item, listed in _walk(table, brand, admits, start, end, after):
         if listed:
             if len(found) == limit:
-                return found, encode_cursor(_key(found[-1]))
+                return found, encode_cursor(item_key(found[-1]))
             found.append(item)
         if read >= MAX_READ:
-            return found, encode_cursor(_key(item))
+            return found, encode_cursor(item_key(item))
     return found, None
 
 
@@ -266,7 +263,7 @@ def _narrowed(params: Mapping[str, str], start: date, end: date) -> _ReadRange:
     raw = _param(params, 'day')
     if raw is None:
         return _ReadRange(start, end)
-    if _DAY_PATTERN.fullmatch(raw) is None:
+    if ISO_DAY_RE.fullmatch(raw) is None:
         raise ValueError(DAY_FORMAT_ERROR)
     try:
         day = date.fromisoformat(raw)

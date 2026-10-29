@@ -410,7 +410,7 @@ describe('searchFeedback trims the query at the boundary', () => {
 
 describe('getDaysFromRange', () => {
   it.each([
-    ['24h', 1], ['48h', 2], ['7d', 7], ['30d', 30], ['unknown', 7],
+    ['24h', 1], ['48h', 2], ['7d', 7], ['14d', 14], ['30d', 30], ['unknown', 14],
   ])('returns the day count for the %s range (%i)', (range, days) => {
     expect(getDaysFromRange(range)).toBe(days)
   })
@@ -419,8 +419,8 @@ describe('getDaysFromRange', () => {
     expect(getDaysFromRange('custom', 10)).toBe(10)
   })
 
-  it('returns default when custom days is null', () => {
-    expect(getDaysFromRange('custom', null)).toBe(7)
+  it('returns the 14-day default when custom days is null', () => {
+    expect(getDaysFromRange('custom', null)).toBe(14)
   })
 
   it('sends 0 (all time) as-is', () => {
@@ -431,14 +431,15 @@ describe('getDaysFromRange', () => {
     expect(getDaysFromRange('custom', days)).toBe(days)
   })
 
-  it.each([-1, 10000, 2.5, Number.NaN])('returns default when custom days is %s', (days) => {
-    expect(getDaysFromRange('custom', days)).toBe(7)
+  it.each([-1, 10000, 2.5, Number.NaN])('returns the 14-day default when custom days is %s', (days) => {
+    expect(getDaysFromRange('custom', days)).toBe(14)
   })
 })
 
 describe('getDateRangeParams', () => {
   it('returns days for standard ranges', () => {
     expect(getDateRangeParams('7d')).toStrictEqual({ days: 7 })
+    expect(getDateRangeParams('14d')).toStrictEqual({ days: 14 })
     expect(getDateRangeParams('30d')).toStrictEqual({ days: 30 })
   })
 
@@ -446,8 +447,8 @@ describe('getDateRangeParams', () => {
     expect(getDateRangeParams('custom', 21)).toStrictEqual({ days: 21 })
   })
 
-  it('returns default days when custom days is null', () => {
-    expect(getDateRangeParams('custom', null)).toStrictEqual({ days: 7 })
+  it('returns the 14-day default when custom days is null', () => {
+    expect(getDateRangeParams('custom', null)).toStrictEqual({ days: 14 })
   })
 
   it('maps the 90-day preset to WIDEST_PRESET_DAYS, within the custom range', () => {

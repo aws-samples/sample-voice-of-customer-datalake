@@ -212,6 +212,100 @@
       "regex": "\\{\\{\\s*count\\s*\\}\\}",
       "message": "count interpolated without the number format (no grouping: 26622)",
       "use": "{{count, number}} (plural forms still pick from the number)"
+    },
+    {
+      "id": "utc-now-iso",
+      "language": "python",
+      "include": [
+        "voc-datalake/lambda/**",
+        "voc-datalake/plugins/**"
+      ],
+      "exclude": [
+        {
+          "glob": "voc-datalake/lambda/shared/timestamps.py",
+          "reason": "the helper's own home"
+        }
+      ],
+      "regex": "datetime\\.now\\((UTC|timezone\\.utc)\\)\\.isoformat\\(\\)",
+      "code_only": true,
+      "message": "a local 'now' ISO timestamp (the format of every stored created_at / updated_at is decided once)",
+      "use": "shared.timestamps.now_iso() (tests freeze it with shared.test.clock.frozen_clock or by patching the caller's now_iso)"
+    },
+    {
+      "id": "ts-inline-is-record",
+      "language": "ts",
+      "include": [
+        "voc-datalake/frontend/src/**",
+        "voc-datalake/lambda/stream/src/**"
+      ],
+      "exclude": [
+        {
+          "glob": "voc-datalake/frontend/src/lib/typeGuards.ts",
+          "reason": "the SPA helper's own home"
+        },
+        {
+          "glob": "voc-datalake/lambda/stream/src/lib/is-record.ts",
+          "reason": "the stream Lambda helper's own home"
+        }
+      ],
+      "regex": "typeof ([\\w$]+(?:\\.[\\w$]+)*) === 'object' && \\1 !== null && !Array\\.isArray\\(\\1\\)",
+      "message": "an inline copy of the plain-object guard",
+      "use": "SPA lib/typeGuards isRecord; stream lib/is-record isRecord"
+    },
+    {
+      "id": "ts-local-request-init",
+      "language": "ts",
+      "include": [
+        "voc-datalake/frontend/src/**"
+      ],
+      "exclude": [
+        {
+          "glob": "voc-datalake/frontend/src/api/requestKit.ts",
+          "reason": "the shared request-init helpers' own home (cycle-free: client.ts and the endpoint groups both import it)"
+        }
+      ],
+      "regex": "\\bconst (post|put|del|patch) = \\([^)]*\\): RequestInit =>",
+      "message": "a module-local RequestInit builder (method + JSON body)",
+      "use": "api/requestKit post / put / patch / del"
+    },
+    {
+      "id": "locale-manual-plural",
+      "language": "json",
+      "include": [
+        "voc-datalake/frontend/public/locales/**/*.json"
+      ],
+      "exclude": [],
+      "regex": "\\{\\{\\s*plural\\s*\\}\\}|[A-Za-z]\\(s\\)",
+      "message": "English pluralisation spelled in the string ({{plural}} = 's', 'file(s)'): wrong in every other language",
+      "use": "_one / _other forms picked by {{count, number}}"
+    },
+    {
+      "id": "ts-manual-plural",
+      "language": "ts",
+      "include": [
+        "voc-datalake/frontend/src/**"
+      ],
+      "exclude": [],
+      "regex": "\\bplural:\\s",
+      "message": "a t() option carrying an English plural suffix",
+      "use": "pass count and let i18next pick the _one / _other form"
+    },
+    {
+      "id": "ts-json-equality",
+      "language": "ts",
+      "include": [
+        "voc-datalake/frontend/src/**",
+        "voc-datalake/lambda/stream/src/**"
+      ],
+      "exclude": [
+        {
+          "glob": "voc-datalake/frontend/src/lib/sameJson.ts",
+          "reason": "the helper's own home"
+        }
+      ],
+      "regex": "JSON\\.stringify\\([^()]*\\) === JSON\\.stringify\\(",
+      "message": "structural equality spelled as two JSON.stringify calls",
+      "use": "lib/sameJson sameJson(a, b)"
     }
   ]
 }

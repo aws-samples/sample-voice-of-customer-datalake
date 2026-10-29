@@ -96,7 +96,7 @@ describe('sourceLabel', () => {
     ['Foo iOS_android', 'Foo iOS (Android)'],
     ['AcmeAir_android', 'AcmeAir (Android)'],
     ['TinyBean_iOS', 'TinyBean (iOS)'],
-    ['zalando_ios', 'Zalando (iOS)'],
+    ['acmeshop_ios', 'Acmeshop (iOS)'],
     ['com.examplemusic.player_Android', 'com.examplemusic.player (Android)'],
     ['Biosphere_android', 'Biosphere (Android)'],
     ['web_trustpilot_acme', 'Acme (Trustpilot)'],

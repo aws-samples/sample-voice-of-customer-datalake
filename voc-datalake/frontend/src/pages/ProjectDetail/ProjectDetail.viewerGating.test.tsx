@@ -97,7 +97,7 @@ describe('ProjectDetail gates write controls on project.access.can_edit', () => 
     })
 
     it('hides Import / Generate / Edit / Delete on the Personas tab', async () => {
-      await openTabAndSelect(/personas/i, /^D Dana/)
+      await openTabAndSelect(/personas/i, /^Dana$/)
 
       expectNoButtons([/Import Persona/i, /Generate Personas/i, /Edit persona/i, /Delete persona/i])
     })
@@ -122,7 +122,7 @@ describe('ProjectDetail gates write controls on project.access.can_edit', () => 
     })
 
     it('keeps the write controls on the Personas and Documents tabs', async () => {
-      const user = await openTabAndSelect(/personas/i, /^D Dana/)
+      const user = await openTabAndSelect(/personas/i, /^Dana$/)
       expect(screen.getByRole('button', { name: /Generate Personas/i })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: /Edit persona/i })).toBeInTheDocument()
 

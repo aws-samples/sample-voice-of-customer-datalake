@@ -11,6 +11,7 @@
  *
  * @module assistant/runtime/plan-outcome
  */
+import { isRecord } from '../../lib/is-record.js';
 
 /** The tool whose approved outcome is annotated. */
 const PROPOSE_PLAN = 'propose_plan';
@@ -24,7 +25,7 @@ export const PLAN_APPROVED_NEXT = 'The plan is approved and now running in the b
 function parseRecord(text: string): Record<string, unknown> | null {
   try {
     const parsed: unknown = JSON.parse(text);
-    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? { ...parsed } : null;
+    return isRecord(parsed) ? { ...parsed } : null;
   } catch {
     return null;
   }

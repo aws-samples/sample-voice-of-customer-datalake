@@ -25,6 +25,7 @@ from __future__ import annotations
 import hashlib
 import json
 import threading
+from types import MappingProxyType
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -34,7 +35,6 @@ from shared import avatar
 from shared.avatar import (
     _MAX_SEED,
     AVATAR_OWNER_METADATA_KEY,
-    DEFAULT_ASPECT_RATIO,
     IMAGE_CLIENT_CONNECT_TIMEOUT,
     IMAGE_CLIENT_MAX_ATTEMPTS,
     IMAGE_CLIENT_POOL_CONNECTIONS,
@@ -49,6 +49,7 @@ from shared.avatar import (
     get_image_model_client,
     get_image_model_config,
 )
+from shared.prompts import get_avatar_prompt_config
 from shared.test.avatar_fixtures import image_model_response
 
 IMAGE_MODEL = {'model_id': 'test.image-model', 'region': 'us-west-2',
@@ -77,6 +78,7 @@ def _generate(persona: dict = PERSONA, *, config: dict = CONFIG, bedrock: MagicM
             patch('shared.aws.get_s3_client', return_value=s3), \
             patch('shared.avatar.boto3') as boto3_mock, \
             patch('shared.avatar.logger') as logger, \
+            patch('shared.avatar_failure.logger', logger), \
             patch.dict('os.environ', env or {}, clear=env is not None):
         boto3_mock.client.return_value = bedrock
         result = generate_persona_avatar(persona, **kwargs)
@@ -150,16 +152,11 @@ class TestImageModelClientConfiguration:
         assert cache.reads == 2
 
 
-class TestImageModelConfigDefaults:
-    def test_an_absent_block_yields_exactly_the_module_defaults(self):
-        with patch('shared.avatar.get_avatar_prompt_config', return_value={}):
-            assert get_image_model_config() == {
-                'model_id': 'stability.stable-image-core-v1:1',
-                'region': 'us-west-2',
-                'aspect_ratio': '1:1',
-                'output_format': 'jpeg',
-            }
-        assert DEFAULT_ASPECT_RATIO == '1:1'
+class TestImageModelConfig:
+    def test_the_block_is_read_as_written(self):
+        cfg = {'image_model': {'model_id': 'm.x', 'region': 'eu-west-1', 'aspect_ratio': '4:5', 'output_format': 'png'}}
+        with patch('shared.avatar.get_avatar_prompt_config', return_value=cfg):
+            assert get_image_model_config() == cfg['image_model']
 
     def test_an_unsupported_format_is_logged_verbatim(self):
         cfg = {'image_model': {**IMAGE_MODEL, 'output_format': 'webp'}}
@@ -242,12 +239,16 @@ class TestStableSeedAtTheTopOfTheRange:
         assert _stable_seed('persona_abc') == 664780407
 
 
+# Every key the bundled avatar-generation.json has (the code reads them unconditionally).
+PROMPT_BASE = MappingProxyType({'system_prompt': '', 'user_prompt_template': '', 'max_tokens': 200,
+                                'fallback_prompt_template': get_avatar_prompt_config()['fallback_prompt_template']})
+
+
 class TestAvatarPromptBuilder:
     FULL_TEMPLATE = '{name}|{tagline}|{age_range}|{occupation}|{location}|{bio}'
-
-    def _call(self, persona: dict, config: dict, converse: MagicMock | None = None) -> tuple[str, MagicMock, MagicMock]:
+    def _call(self, persona: dict, overrides: dict, converse: MagicMock | None = None) -> tuple[str, MagicMock, MagicMock]:
         converse = converse or MagicMock(return_value='p')
-        with patch('shared.avatar.get_avatar_prompt_config', return_value=config), \
+        with patch('shared.avatar.get_avatar_prompt_config', return_value={**PROMPT_BASE, **overrides}), \
                 patch('shared.converse.converse', converse), \
                 patch('shared.avatar.logger') as logger:
             result = generate_avatar_prompt_with_llm(persona)
@@ -268,17 +269,17 @@ class TestAvatarPromptBuilder:
         _, converse, _ = self._call(persona, {'user_prompt_template': '{bio}'})
         assert converse.call_args.kwargs['prompt'] == 'x' * 300
 
-    def test_config_defaults_and_fixed_call_arguments(self):
-        _, converse, _ = self._call({'name': 'A'}, {})
+    def test_config_values_and_fixed_call_arguments(self):
+        _, converse, _ = self._call({'name': 'A'}, {'system_prompt': 'S'})
         converse.assert_called_once_with(
-            prompt='', system_prompt='', max_tokens=2248, temperature=None, surface='utility',
+            prompt='', system_prompt='S', max_tokens=2248, temperature=None, surface='utility',
             step_name='persona_avatar_prompt', max_continuations=0)
 
     def test_configured_max_tokens_is_forwarded_with_thinking_headroom(self):
         _, converse, _ = self._call({'name': 'A'}, {'max_tokens': 64})
         assert converse.call_args.kwargs['max_tokens'] == 64 + 2048
 
-    def test_the_built_in_fallback_template_when_the_config_has_none(self):
+    def test_the_bundled_fallback_template_on_a_failed_call(self):
         converse = MagicMock(side_effect=RuntimeError('throttled'))
         result, _, logger = self._call({'name': 'A', 'identity': {'occupation': 'Chef'}}, {}, converse)
         assert result == ('Professional headshot of a Chef, friendly expression, soft studio '
@@ -347,22 +348,37 @@ class TestBucketResolution:
 
     def test_an_unset_env_var_stops_before_the_prompt_is_generated(self):
         result, logger, bedrock, _ = _generate(env={})
-        assert result == {'avatar_url': None, 'avatar_prompt': None}
-        logger.warning.assert_called_once_with(
-            '[PERSONA_AVATAR] No S3 bucket configured - RAW_DATA_BUCKET env var is empty')
+        assert result['avatar_url'] is None
+        assert result['avatar_prompt'] is None
+        assert result['failure']['reason'] == 'not_configured'
+        logger.error.assert_called_once()
+        assert 'RAW_DATA_BUCKET' in logger.error.call_args.args[0]
+        assert logger.error.call_args.kwargs['extra']['stage'] == 'config'
         bedrock.invoke_model.assert_not_called()
 
 
+def _no_image_bedrock(finish_reasons: list[str]) -> MagicMock:
+    bedrock = MagicMock()
+    bedrock.invoke_model.return_value = {'body': MagicMock(read=MagicMock(
+        return_value=json.dumps({'images': [], 'finish_reasons': finish_reasons}).encode()))}
+    return bedrock
+
+
 class TestNoImageReturned:
-    def test_the_warning_names_the_model_and_finish_reasons(self):
-        bedrock = MagicMock()
-        bedrock.invoke_model.return_value = {'body': MagicMock(read=MagicMock(
-            return_value=json.dumps({'images': [], 'finish_reasons': ['Filter reason']}).encode()))}
-        result, logger, _, s3 = _generate(bedrock=bedrock, s3_bucket='b')
-        assert result == {'avatar_url': None, 'avatar_prompt': 'A prompt'}
-        logger.warning.assert_called_once_with(
-            "[PERSONA_AVATAR] test.image-model returned no images (finish_reasons=['Filter reason'])")
+    def test_a_filtered_answer_is_one_error_line_with_the_finish_reasons(self):
+        result, logger, _, s3 = _generate(bedrock=_no_image_bedrock(['Filter reason']), s3_bucket='b')
+        assert result['avatar_url'] is None
+        assert result['avatar_prompt'] == 'A prompt'
+        assert result['failure']['reason'] == 'content_filtered'
+        assert result['failure']['error_code'] == 'NoImageReturned'
+        logger.error.assert_called_once()
+        assert logger.error.call_args.kwargs['extra']['aws_message'] == "finish_reasons=['Filter reason']"
+        logger.warning.assert_not_called()
         s3.put_object.assert_not_called()
+
+    def test_an_unexplained_empty_answer_is_an_error(self):
+        result, _, _, _ = _generate(bedrock=_no_image_bedrock(['SUCCESS?']), s3_bucket='b')
+        assert result['failure']['reason'] == 'error'
 
 
 class ResourceNotFoundException(Exception):
@@ -377,51 +393,82 @@ class ValidationException(Exception):
     pass
 
 
-class TestEveryFailureLogIsVerbatim:
-    ACCESS_DENIED = (
-        "[PERSONA_AVATAR] ACCESS DENIED - Check the role's IAM policy grants "
-        'bedrock:InvokeModel on arn:aws:bedrock:us-west-2::foundation-model/test.image-model '
-        'AND aws-marketplace:ViewSubscriptions + aws-marketplace:Subscribe '
-        '(Marketplace models such as Stability need these on first use in an account)')
-    NOT_FOUND = (
-        '[PERSONA_AVATAR] MODEL NOT AVAILABLE - test.image-model was not found in '
-        'us-west-2. A LEGACY model returns this once the account loses '
-        'access (idle 15+ days) or after its EOL date. Check its lifecycle '
-        'state and migrate: aws bedrock list-foundation-models '
-        '--by-output-modality IMAGE')
-    VALIDATION = (
-        '[PERSONA_AVATAR] VALIDATION ERROR - Check the request format for test.image-model. '
-        'Stability models take prompt/mode/aspect_ratio/output_format; a model '
-        'from another vendor needs its own request body, not this one')
+class FakeClientError(Exception):
+    """A botocore ClientError's shape: the code lives in ``response['Error']``."""
 
+    def __init__(self, code: str, message: str = 'aws says no'):
+        super().__init__(f'An error occurred ({code}): {message}')
+        self.response = {'Error': {'Code': code, 'Message': message}}
+
+
+class TestEveryFailureIsOneClassifiedErrorLine:
     @staticmethod
-    def _fail(error: Exception) -> tuple[dict, MagicMock]:
+    def _fail(error: Exception, *, at: str = 'invoke') -> tuple[dict, MagicMock]:
         bedrock = MagicMock()
-        bedrock.invoke_model.side_effect = error
-        result, logger, _, _ = _generate(bedrock=bedrock, s3_bucket='b')
+        s3 = MagicMock()
+        if at == 'invoke':
+            bedrock.invoke_model.side_effect = error
+        else:
+            bedrock.invoke_model.return_value = image_model_response(b'image-bytes')
+            s3.put_object.side_effect = error
+        result, logger, _, _ = _generate(bedrock=bedrock, s3=s3, s3_bucket='b')
         return result, logger
 
-    @pytest.mark.parametrize(('error', 'message', 'extra'), [
-        pytest.param(AccessDeniedException('no'), ACCESS_DENIED, {'error': 'no'}, id='access_denied_by_type'),
-        pytest.param(RuntimeError('AccessDenied: no'), ACCESS_DENIED, {'error': 'AccessDenied: no'},
-                     id='access_denied_by_message'),
-        pytest.param(ResourceNotFoundException('gone'), NOT_FOUND,
-                     {'error': 'gone', 'model_id': 'test.image-model', 'region': 'us-west-2'},
+    @pytest.mark.parametrize(('error', 'reason', 'code'), [
+        pytest.param(AccessDeniedException('no'), 'no_access', 'AccessDeniedException', id='access_denied_by_type'),
+        pytest.param(RuntimeError('AccessDenied: no'), 'no_access', 'RuntimeError', id='access_denied_by_message'),
+        pytest.param(FakeClientError('AccessDeniedException'), 'no_access', 'AccessDeniedException',
+                     id='access_denied_client_error'),
+        pytest.param(ResourceNotFoundException('gone'), 'model_not_found', 'ResourceNotFoundException',
                      id='not_found_by_type'),
-        pytest.param(RuntimeError('ResourceNotFound: gone'), NOT_FOUND,
-                     {'error': 'ResourceNotFound: gone', 'model_id': 'test.image-model', 'region': 'us-west-2'},
-                     id='not_found_by_message'),
-        pytest.param(ValidationException('bad'), VALIDATION, {'error': 'bad'}, id='validation_by_type'),
-        pytest.param(RuntimeError('ValidationException: bad'), VALIDATION,
-                     {'error': 'ValidationException: bad'}, id='validation_by_message'),
-        pytest.param(RuntimeError('boom'),
-                     '[PERSONA_AVATAR] FAILED - Avatar generation error: RuntimeError: boom',
-                     {'persona_id': 'p1', 'error_type': 'RuntimeError', 'error': 'boom'}, id='generic'),
+        pytest.param(FakeClientError('ValidationException', 'The provided model identifier is invalid.'),
+                     'model_not_found', 'ValidationException', id='invalid_model_identifier'),
+        pytest.param(FakeClientError('ThrottlingException'), 'throttled', 'ThrottlingException', id='throttled'),
+        pytest.param(FakeClientError('ValidationException', 'Your request was blocked by content filters'),
+                     'content_filtered', 'ValidationException', id='content_filtered'),
+        pytest.param(ValidationException('bad'), 'validation', 'ValidationException', id='validation_by_type'),
+        pytest.param(FakeClientError('ValidationException', 'This model is not supported in this region'),
+                     'region_unavailable', 'ValidationException', id='region_by_message'),
+        pytest.param(type('EndpointConnectionError', (Exception,), {})('no endpoint'), 'region_unavailable',
+                     'EndpointConnectionError', id='endpoint_unreachable'),
+        pytest.param(RuntimeError('boom'), 'error', 'RuntimeError', id='generic'),
     ])
-    def test_the_branch_logs_its_message_extra_and_traceback(self, error, message, extra):
+    def test_the_failure_names_reason_code_model_and_region(self, error, reason, code):
         result, logger = self._fail(error)
-        assert result == {'avatar_url': None, 'avatar_prompt': 'A prompt'}
-        logger.error.assert_called_once_with(message, extra=extra, exc_info=True)
+        assert result['avatar_url'] is None
+        assert result['avatar_prompt'] == 'A prompt'
+        assert result['failure']['reason'] == reason
+        assert result['failure']['error_code'] == code
+        assert result['failure']['model_id'] == 'test.image-model'
+        assert result['failure']['region'] == 'us-west-2'
+        logger.error.assert_called_once()
+        message = logger.error.call_args.args[0]
+        assert message.startswith(f'[PERSONA_AVATAR] Avatar generation failed ({reason}, {code}): ')
+        extra = logger.error.call_args.kwargs['extra']
+        assert extra == {
+            'persona_id': 'p1', 'avatar_failure_reason': reason, 'error_code': code,
+            'model_id': 'test.image-model', 'region': 'us-west-2', 'stage': 'invoke',
+            'aws_message': extra['aws_message'],
+        }
+        assert logger.error.call_args.kwargs['exc_info'] is True
+
+    def test_the_error_line_carries_no_persona_name_or_prompt(self):
+        _, logger = self._fail(FakeClientError('AccessDeniedException'))
+        logged = repr(logger.error.call_args)
+        assert 'Test Persona' not in logged
+        assert 'A prompt' not in logged
+
+    def test_an_access_denied_message_says_the_model_is_not_enabled_in_its_region(self):
+        result, _ = self._fail(FakeClientError('AccessDeniedException'))
+        assert result['failure']['message'].startswith(
+            'the image model test.image-model is not enabled in us-west-2 for this account')
+        assert '(AccessDeniedException)' in result['failure']['message']
+
+    def test_an_upload_access_denied_is_not_read_as_a_model_problem(self):
+        result, logger = self._fail(FakeClientError('AccessDenied'), at='upload')
+        assert result['failure']['reason'] == 'error'
+        assert 'storing it in the raw data bucket failed (AccessDenied)' in result['failure']['message']
+        assert logger.error.call_args.kwargs['extra']['stage'] == 'upload'
 
 
 class TestCdnUrl:

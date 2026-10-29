@@ -12,7 +12,7 @@ import {
   resetPrioritizationPage,
 } from './prioritization-fixtures'
 import {
-  renderPrioritization, renderUntilRow, openRow, saveButton,
+  renderPrioritization, renderUntilRow, openRow, saveButton, cardValue, statsGrid,
 } from './prioritization-render-fixtures'
 import { required } from '../../components/component-spec-fixtures'
 
@@ -161,6 +161,19 @@ describe('Prioritization', () => {
       await waitFor(() => {
         expect(screen.getByText('Loading documents...')).toBeInTheDocument()
       })
+    })
+
+    it('shows the stats cards as loading, not as zeros, until the documents arrive', async () => {
+      // The 5.34 e2e: "0 Total Proposals / 0 High / 0 Medium / 0 Not Scored" for ~5 s.
+      prioritizationMocks.getProjects.mockReturnValue(new Promise(() => {})) // Never resolves
+
+      renderPrioritization()
+
+      await screen.findByText('Loading documents...')
+      for (const label of ['Total Proposals', 'High Priority', 'Medium Priority', 'Not Scored']) {
+        expect(cardValue(label), label).toBe('Counting proposals...')
+      }
+      expect(statsGrid()).toHaveAttribute('aria-busy', 'true')
     })
   })
 

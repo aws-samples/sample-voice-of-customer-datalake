@@ -17,7 +17,6 @@ from collections.abc import Sequence
 from typing import Any
 
 from agents import context_blocks, llm
-from agents.fields import dict_field
 
 MAX_CANDIDATES = 30
 
@@ -46,21 +45,18 @@ def _candidate_line(project: dict) -> str:
 
 
 def reusable(project: object, agent: dict) -> bool:
-    """A project the agent may reuse: one it can edit that is ITS OWN business.
+    """A project the agent may reuse: one THIS agent created, and can still edit.
 
-    Public visibility grants edit to everyone, so "editable" alone would let
-    review text steer a run into any public project. Reuse is limited to
-    projects this agent created, projects its owner owns, and private projects
-    the agent was explicitly shared into.
+    Only ``created_by_agent`` (recorded by the Projects API when an agent principal
+    creates a project; no update can set it) counts. A project of the agent's owner,
+    or a private one the agent was shared into, is somebody's own work: 5.34.00 live,
+    a similar name sent a run into a tester's project, where it replaced the personas
+    (a manual edit included) and added documents. Least surprise wins over reuse.
     """
     if not isinstance(project, dict) or not (project.get('access') or {}).get('can_edit'):
         return False
-    if project.get('created_by_agent') == agent.get('agent_id'):
-        return True
-    owner = dict_field(project, 'owner')
-    if owner.get('sub') and owner.get('sub') == agent.get('owner_sub'):
-        return True
-    return project.get('visibility') == 'private'
+    agent_id = agent.get('agent_id')
+    return isinstance(agent_id, str) and bool(agent_id) and project.get('created_by_agent') == agent_id
 
 
 def decide_project(agent: dict, run_id: str, aggregate_text: str, candidates: list[dict],

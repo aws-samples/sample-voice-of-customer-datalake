@@ -100,12 +100,14 @@ export const dynamoDbGsiSuppressions: NagPackSuppression[] = [
     id: 'AwsSolutions-IAM5',
     reason: 'Wildcard required for DynamoDB Global Secondary Index access - GSI ARNs follow pattern <TableArn>/index/* per AWS best practices',
     appliesTo: [
-      { regex: '/Resource::<.*FeedbackTable.*\.Arn>/index/\*/' },
-      { regex: '/Resource::<.*AggregatesTable.*\.Arn>/index/\*/' },
-      { regex: '/Resource::<.*ProjectsTable.*\.Arn>/index/\*/' },
-      { regex: '/Resource::<.*JobsTable.*\.Arn>/index/\*/' },
-      { regex: '/Resource::<.*MemoryTable.*\.Arn>/index/\*/' },
-      { regex: '/Resource::<.*AgentsTable.*\.Arn>/index/\*/' },
+      { regex: '/^Resource::<.*FeedbackTable.*\\.Arn>/index/\\*$/' },
+      { regex: '/^Resource::<.*AggregatesTable.*\\.Arn>/index/\\*$/' },
+      { regex: '/^Resource::<.*ProjectsTable.*\\.Arn>/index/\\*$/' },
+      { regex: '/^Resource::<.*JobsTable.*\\.Arn>/index/\\*$/' },
+      { regex: '/^Resource::<.*MemoryTable.*\\.Arn>/index/\\*$/' },
+      { regex: '/^Resource::<.*AgentsTable.*\\.Arn>/index/\\*$/' },
+      { regex: '/^Resource::<.*ParticipantsTable.*\\.Arn>/index/\\*$/' },
+      { regex: '/^Resource::<.*FeatureRequestsTable.*\\.Arn>/index/\\*$/' },
     ],
   },
 ];
@@ -139,11 +141,32 @@ export const s3BucketSuppressions: NagPackSuppression[] = [
     id: 'AwsSolutions-IAM5',
     reason: 'S3 object access requires wildcard on bucket ARN (bucket-arn/*) - AWS best practice for object-level permissions',
     appliesTo: [
-      { regex: '/.*RawDataBucket.*\.Arn>/\*/' },
+      { regex: '/^Resource::<.*RawDataBucket.*\\.Arn>/\\*$/' },
       // Category reprocess worker (raw mode): read-only on the raw/ prefix.
-      { regex: '/.*RawDataBucket.*\.Arn>/raw/\*/' },
-      { regex: '/.*S3ImportBucket.*\.Arn>/\*/' },
-      { regex: '/.*WebsiteBucket.*\.Arn>/\*/' }
+      { regex: '/^Resource::<.*RawDataBucket.*\\.Arn>/raw/\\*$/' },
+      { regex: '/^Resource::<.*S3ImportBucket.*\\.Arn>/\\*$/' },
+      { regex: '/^Resource::<.*WebsiteBucket.*\\.Arn>/\\*$/' }
+    ],
+  },
+  {
+    id: 'AwsSolutions-IAM5',
+    reason: 'Object access scoped to ONE named key prefix of the raw data bucket (the data family the role owns); the trailing wildcard is the object key under that prefix, never the bucket or another prefix',
+    // Every item is anchored to exactly one prefix, so a grant on a new prefix (or on the whole bucket) is
+    // still reported. Owners as of 5.34.00, for the reviewer: avatars/ (projects API, persona generator and
+    // importer), company-context/ (settings API), company-context/design/logo_preview_ (design capture,
+    // logo previews only), memory-imports/ (memory API and extractor), projects/*/product_docs/ (projects API;
+    // extracted/ for the document generator), prototypes/ (projects API, document generator, agent nodes and
+    // persona panel), raw/github_issues/ (the GitHub webhook), scratch/document_jobs/ and scratch/research_jobs/
+    // (the document and research workflows' scratch space).
+    appliesTo: [
+      { regex: '/^Resource::<.*RawDataBucket.*\\.Arn>/avatars/\\*$/' },
+      { regex: '/^Resource::<.*RawDataBucket.*\\.Arn>/company-context/\\*$/' },
+      { regex: '/^Resource::<.*RawDataBucket.*\\.Arn>/company-context/design/logo_preview_\\*$/' },
+      { regex: '/^Resource::<.*RawDataBucket.*\\.Arn>/memory-imports/\\*$/' },
+      { regex: '/^Resource::<.*RawDataBucket.*\\.Arn>/projects/\\*/product_docs/(extracted/)?\\*$/' },
+      { regex: '/^Resource::<.*RawDataBucket.*\\.Arn>/prototypes/\\*$/' },
+      { regex: '/^Resource::<.*RawDataBucket.*\\.Arn>/raw/github_issues/\\*$/' },
+      { regex: '/^Resource::<.*RawDataBucket.*\\.Arn>/scratch/(document|research)_jobs/\\*$/' },
     ],
   },
 ];
@@ -175,15 +198,12 @@ export function pluginSystemSuppressions(): NagPackSuppression[] {
     id: 'AwsSolutions-IAM5',
     reason: 'Lambda version/alias wildcard required for Step Functions state machine invocations and async job Lambda invocations',
     appliesTo: [
-      { regex: '/Resource::<.*ResearchStepLambda.*\.Arn>:\*/' },
-      { regex: '/Resource::<.*ModelAgreementLambda.*\.Arn>:\*/' },
-      { regex: '/Resource::<.*PersonaGeneratorJob.*\.Arn>:\*/' },
-      { regex: '/Resource::<.*DocumentGeneratorJob.*\.Arn>:\*/' },
-      { regex: '/Resource::<.*DocumentMergerJob.*\.Arn>:\*/' },
-      { regex: '/Resource::<.*PersonaImporterJob.*\.Arn>:\*/' },
-      // voc-agent-run's task states (lib/stacks/agent-runtime.ts).
-      { regex: '/Resource::<.*AgentConductor.*\.Arn>:\*/' },
-      { regex: '/Resource::<.*AgentPersonaPanel.*\.Arn>:\*/' },
+      { regex: '/^Resource::<.*ResearchStepLambda.*\\.Arn>:\\*$/' },
+      { regex: '/^Resource::<.*ModelAgreementLambda.*\\.Arn>:\\*$/' },
+      { regex: '/^Resource::<.*PersonaGeneratorJob.*\\.Arn>:\\*$/' },
+      { regex: '/^Resource::<.*DocumentGeneratorJob.*\\.Arn>:\\*$/' },
+      { regex: '/^Resource::<.*DocumentMergerJob.*\\.Arn>:\\*$/' },
+      { regex: '/^Resource::<.*PersonaImporterJob.*\\.Arn>:\\*$/' },
     ],
   },
   ];
@@ -195,7 +215,7 @@ export const cdkAssetsSuppressions: NagPackSuppression[] = [
     id: 'AwsSolutions-IAM5',
     reason: 'CDK bootstrap bucket wildcard required for deployment assets',
     appliesTo: [
-      { regex: '/Resource::arn:aws:s3:::cdk-.*-assets-.*/' },
+      { regex: '/^Resource::arn:aws:s3:::cdk-[^:/]+-assets-[^/]+/\\*$/' },
     ],
   },
 ];
@@ -225,24 +245,21 @@ export const serviceQuotasReadSuppressions: NagPackSuppression[] = [
     reason: 'servicequotas:ListServiceQuotas supports no resource-level permission and is read-only: the settings Lambda lists the Bedrock tokens-per-minute quotas for POST /settings/model/test and GET /settings/model/capacity (shared/model_capacity.py); it holds no quota-increase or other write action',
     appliesTo: ['Resource::*'],
   },
-];
-
-// AWS Comprehend - real-time text analysis APIs
-export const comprehendSuppressions: NagPackSuppression[] = [
   {
     id: 'AwsSolutions-IAM5',
-    reason: 'Comprehend real-time detection APIs (DetectSentiment, DetectKeyPhrases, DetectDominantLanguage, DetectPiiEntities) do not support resource-level permissions - these are stateless analysis operations that require Resource:*',
-    appliesTo: [
-      'Resource::*',
-    ],
+    reason: 'servicequotas:GetServiceQuota is read-only and scoped to this account and region\'s Bedrock quotas (bedrock/*): the settings Lambda refreshes its stored tokens-per-minute readings one quota code at a time (shared/model_quota_store.py); the codes are learned from the listing, so they cannot be enumerated in the template',
+    appliesTo: [{ regex: '/^Resource::arn:<AWS::Partition>:servicequotas:<AWS::Region>:<AWS::AccountId>:bedrock\\/\\*$/' }],
   },
 ];
 
-// AWS Translate - real-time translation API
-export const translateSuppressions: NagPackSuppression[] = [
+// AWS Comprehend + Translate - real-time text analysis and translation APIs
+export const comprehendSuppressions: NagPackSuppression[] = [
   {
     id: 'AwsSolutions-IAM5',
-    reason: 'Translate TranslateText API requires Resource:* for real-time translation without custom parallel data - parallel data ARNs only apply when using custom terminology/translation memories',
+    // One entry for every `Resource::*` of a stateless AI API: cdk-nag reports the wildcard once per policy
+    // whatever the action, and uses the first entry that matches, so a second (Translate) entry with the same
+    // `appliesTo` never suppressed anything.
+    reason: 'Comprehend real-time detection APIs (DetectSentiment, DetectKeyPhrases, DetectDominantLanguage, DetectPiiEntities) and Translate TranslateText (no custom terminology or parallel data) do not support resource-level permissions - these are stateless analysis operations that require Resource:*',
     appliesTo: [
       'Resource::*',
     ],
@@ -306,6 +323,21 @@ export const publicWebhookEndpointSuppressions: NagPackSuppression[] = [
   {
     id: 'AwsSolutions-COG4',
     reason: 'A third-party webhook sender has no Cognito identity; the shared-secret request signature is the authorization, checked in the Lambda',
+  },
+];
+
+// The public unsubscribe endpoint (intentionally unauthenticated). Its own list, like the ballot
+// one: the control differs. The caller is a mail recipient (or their mail client's RFC 8058
+// one-click POST) with no account; the only thing the request can do is mark the ONE person an
+// unguessable emailed token names as unsubscribed, and it answers the same for any token.
+export const publicUnsubscribeEndpointSuppressions: NagPackSuppression[] = [
+  {
+    id: 'AwsSolutions-APIG4',
+    reason: 'Email recipients unsubscribe without an account (RFC 8058 one-click); the unguessable per-recipient token (only its SHA-256 is stored) is the authorization, it can only unsubscribe the person it names, and the answer never reveals whether it matched',
+  },
+  {
+    id: 'AwsSolutions-COG4',
+    reason: 'A participant who received an email has no Cognito identity, and a mail client posting the one-click unsubscribe cannot present one; the emailed token is the authorization',
   },
 ];
 

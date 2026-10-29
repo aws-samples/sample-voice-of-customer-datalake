@@ -18,18 +18,19 @@ import { buildForwardedProps } from '../agui/forwardedProps'
 import { allInterruptsResolved } from '../thread/reducer'
 import { buildResume } from '../thread/resume'
 import { toWireMessages } from '../thread/wire'
-import { getSession, saveSession } from '../sessions/sessionsApi'
+import { cancelServerRun, getSession, saveSession } from '../sessions/sessionsApi'
 import { threadFromSession, toSaveBody } from '../sessions/serialize'
 import { isValidSessionId } from '../sessions/schema'
 import { onAssistantSignOut, slotOf, useAssistantUiStore, useThreadStore } from '../store/assistantStore'
 import { announceRunEnd } from '../notifications/runNotifications'
 import { isChatRoute } from '../page/chatRoute'
-import { apiErrorStatus } from '../../api/apiErrorStatus'
+import { apiErrorStatus, HTTP_CONFLICT } from '../../api/apiErrorStatus'
 import { CUSTOM_EVENTS } from '../contract'
-import { adoptServerSession, followServerRun } from './followServerRun'
+import { adoptAfterStop, adoptServerSession, followServerRun } from './followServerRun'
+import { mentionsOfLastTurn } from '../mentions/mentionsOfTurn'
 import type { AguiEvent } from '../agui/sse'
 import type { ContentPart, Message, ResumeEntry } from '@ag-ui/core'
-import type { PageContext } from '../contract'
+import type { Mentions, PageContext } from '../contract'
 import type { ApprovalResolution } from '../types'
 import type { ThreadAction } from '../thread/reducer'
 import type { ThreadState } from '../thread/types'
@@ -43,6 +44,8 @@ export interface RunEnvironment {
 
 /** The live run of each thread, by thread id. */
 const inFlight = new Map<string, AbortController>()
+/** The run id of each thread's live run (what Stop asks the server to cancel). */
+const inFlightRunIds = new Map<string, string>()
 
 function isAborted(controller: AbortController): boolean {
   return controller.signal.aborted
@@ -73,8 +76,6 @@ function rememberInView(): void {
   useAssistantUiStore.getState().setActiveThreadId(thread.messages.length > 0 ? thread.threadId : null)
 }
 
-const CONFLICT = 409
-
 /**
  * Persist one thread; failures are non-fatal (the thread stays in memory).
  *
@@ -94,7 +95,7 @@ async function saveThreadNow(threadId: string, page: PageContext | null, adoptOn
     if (threadId === activeId()) rememberInView()
     if (refreshList) useThreadStore.getState().noteSaved()
   } catch (error) {
-    if (adoptOnConflict && apiErrorStatus(error) === CONFLICT) void adoptServerSession(threadId)
+    if (adoptOnConflict && apiErrorStatus(error) === HTTP_CONFLICT) void adoptServerSession(threadId)
     // Otherwise saving is best-effort; the next finished run retries with the full thread.
   }
 }
@@ -148,6 +149,13 @@ function persistThread(threadId: string, page: PageContext | null, adoptOnConfli
   return next
 }
 
+interface RunOptions {
+  resume?: ResumeEntry[]
+  beforeStream?: () => Promise<void>
+  /** The personas / documents the user mentioned in the message this run answers. */
+  mentions?: Mentions
+}
+
 /**
  * Run a thread that is open — both callers (sendMessage, resumeIfReady) have just checked it.
  *
@@ -158,7 +166,7 @@ function persistThread(threadId: string, page: PageContext | null, adoptOnConfli
  * by the browser as a failed request) — awaiting it first leaves the server the
  * only writer for the rest of the run.
  */
-async function executeRun(threadId: string, env: RunEnvironment, resume?: ResumeEntry[], beforeStream?: () => Promise<void>): Promise<void> {
+async function executeRun(threadId: string, env: RunEnvironment, { resume, beforeStream, mentions }: RunOptions): Promise<void> {
   inFlight.get(threadId)?.abort()
   const controller = new AbortController()
   inFlight.set(threadId, controller)
@@ -169,7 +177,7 @@ async function executeRun(threadId: string, env: RunEnvironment, resume?: Resume
     runId,
     // Stryker disable next-line ArrayDeclaration: toWireMessages keeps only user/assistant/tool messages, so a non-message placeholder is dropped and the wire list is [] either way
     messages: toWireMessages(started?.messages ?? []),
-    forwardedProps: buildForwardedProps({ page: env.page, language: env.language, useWebSearch: env.useWebSearch }),
+    forwardedProps: buildForwardedProps({ page: env.page, language: env.language, useWebSearch: env.useWebSearch, mentions }),
     resume,
   })
   const seen = { serverSaved: false }
@@ -178,6 +186,8 @@ async function executeRun(threadId: string, env: RunEnvironment, resume?: Resume
     // Stopped while the question was being saved: stopRun already settled the thread.
     // (Read through a call: a direct `signal.aborted` check would narrow it to false for the rest of the function.)
     if (isAborted(controller)) return
+    // Registered only now: from here on the server may own the run, so Stop must cancel it there.
+    inFlightRunIds.set(threadId, runId)
     await runAgent(input, (event) => {
       if (controller.signal.aborted) return
       if (noteServerRevision(threadId, event)) seen.serverSaved = true
@@ -188,7 +198,10 @@ async function executeRun(threadId: string, env: RunEnvironment, resume?: Resume
     if (controller.signal.aborted) return
     dispatchTo(threadId, { type: 'local/failed', error: { message: errorMessage(error) } })
   } finally {
-    if (inFlight.get(threadId) === controller) inFlight.delete(threadId)
+    if (inFlight.get(threadId) === controller) {
+      inFlight.delete(threadId)
+      inFlightRunIds.delete(threadId)
+    }
   }
   if (!controller.signal.aborted) {
     announceEnd(threadId)
@@ -221,7 +234,9 @@ function announceEnd(threadId: string): void {
  * Send a user message and run. Ignored while THAT thread streams or has open
  * approvals — other threads may be running at the same time.
  */
-export async function sendMessage(content: string | ContentPart[], env: RunEnvironment, threadId: string = activeId()): Promise<void> {
+export async function sendMessage(
+  content: string | ContentPart[], env: RunEnvironment, threadId: string = activeId(), mentions?: Mentions,
+): Promise<void> {
   const status = threadOf(threadId)?.status
   // `generating`: the server is still answering the previous message (followServerRun).
   if (status === undefined || status === 'streaming' || status === 'awaiting_approval' || status === 'generating') return
@@ -233,19 +248,51 @@ export async function sendMessage(content: string | ContentPart[], env: RunEnvir
   // starts — it used to race the stream Lambda's first write and lose with a
   // 409 on about half of first messages. No adopting on a refusal here: the
   // run about to start owns the answer, and adopting could drop the question.
-  await executeRun(threadId, env, undefined, () => persistThread(threadId, env.page, false, false))
+  await executeRun(threadId, env, { beforeStream: () => persistThread(threadId, env.page, false, false), mentions })
 }
 
-/** Abort a thread's run; partial text stays, unfinished tool calls are cancelled. */
+/**
+ * Abort a thread's run; partial text stays (marked Stopped), unfinished tool calls are cancelled.
+ *
+ * The browser's abort does not reach the stream Lambda, which would run on without a client
+ * (Bedrock still spent, and a reload showed the full answer — E2E 5.34). So Stop also asks the
+ * server to cancel the run: it stops within a couple of seconds and saves the partial answer as
+ * `stopped`. Until it has, a save from this tab would be refused (409), so none is sent: the tab
+ * waits for the server's copy (adoptAfterStop) and saves its own only when the server has none.
+ * Stopped before the stream was requested (the question still saving): no server run, a plain save.
+ */
 export function stopRun(page: PageContext | null = null, threadId: string = activeId()): void {
   const controller = inFlight.get(threadId)
   if (controller === undefined) return
+  const runId = inFlightRunIds.get(threadId)
   controller.abort()
   inFlight.delete(threadId)
+  inFlightRunIds.delete(threadId)
   dispatchTo(threadId, { type: 'local/aborted' })
-  // The user stopped: keep what they saw. The server may still finish the
-  // answer (it runs on without a client); reopening the session shows it.
+  if (runId !== undefined && isValidSessionId(threadId)) {
+    // Best effort: a failed cancel leaves the run to finish on its own, as before.
+    cancelServerRun(threadId, runId).catch(() => undefined)
+    void settleStoppedRun(threadId, page)
+    return
+  }
   void persistThread(threadId, page, false)
+}
+
+async function settleStoppedRun(threadId: string, page: PageContext | null): Promise<void> {
+  if (!(await adoptAfterStop(threadId))) await persistThread(threadId, page, false)
+}
+
+/**
+ * Answer the last question again: the last answer is dropped and the question re-run. Only on an
+ * idle or failed thread (not while it streams, waits for an approval or the server generates).
+ */
+export async function regenerate(env: RunEnvironment, threadId: string = activeId()): Promise<void> {
+  const status = threadOf(threadId)?.status
+  if (status !== 'idle' && status !== 'error') return
+  // The same personas answer again: the round's own calls name them (an @all is already resolved there).
+  const mentions = mentionsOfLastTurn(threadOf(threadId)?.messages ?? [])
+  dispatchTo(threadId, { type: 'local/regenerate' })
+  await executeRun(threadId, env, { beforeStream: () => persistThread(threadId, env.page, false, false), mentions })
 }
 
 /** Start the resume run once every pending approval has a resolution. */
@@ -256,7 +303,7 @@ function resumeIfReady(threadId: string, env: RunEnvironment): void {
   if (!allInterruptsResolved(state)) return
   const { toolMessages, resume } = buildResume(state.pendingInterrupts, state.resolutions)
   dispatchTo(threadId, { type: 'local/apply_resolutions', toolMessages })
-  void executeRun(threadId, env, resume)
+  void executeRun(threadId, env, { resume })
 }
 
 /**
@@ -324,4 +371,5 @@ export function showLoadedSession(record: SessionRecord, env: RunEnvironment): v
 onAssistantSignOut(() => {
   for (const controller of inFlight.values()) controller.abort()
   inFlight.clear()
+  inFlightRunIds.clear()
 })

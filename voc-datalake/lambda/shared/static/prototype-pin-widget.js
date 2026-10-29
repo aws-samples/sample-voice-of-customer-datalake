@@ -22,9 +22,19 @@
  * origin is still accepted, for a host that predates the port:
  *   widget → host  {source:'voc-pin-widget', type:'submit', formId, requestId, body}
  *                  {source:'voc-pin-widget', type:'ready', formId, review}
+ *                  {source:'voc-pin-widget', type:'escape'}
  *   host → widget  {source:'voc-pin-host', type:'result', requestId, ok}
  *                  {source:'voc-pin-host', type:'show', pins:[{pin_id, number, selector, bbox, status}]}
  *                  {source:'voc-pin-host', type:'hide'}
+ *
+ * Escape. A key pressed in this frame never reaches the host page, and the host
+ * cannot listen inside an opaque-origin document, so the widget forwards an Escape
+ * it does not use itself (no pin being picked, no widget panel open) as the escape
+ * message: the host's overlay (ModalShell, the Enlarge dialog) closes on it (#386).
+ * `document.open()` erases every listener on this window and document; a
+ * MutationObserver (which it keeps) sees the document's children replaced and
+ * re-attaches the key and message listeners, so a prototype that rewrites itself
+ * stays closable.
  *
  * Console errors and unhandled rejections are captured by this widget's own
  * listener (last 20, each ≤500 chars) and redacted here AND on the server.
@@ -180,7 +190,7 @@
   }
 
   // ---- UI ------------------------------------------------------------------------------
-  var state = { formId: '', submitUrl: '', seq: 0, pending: {}, markers: [] };
+  var state = { formId: '', submitUrl: '', seq: 0, pending: {}, markers: [], picking: false };
 
   function el(tag, attrs, text) {
     var node = document.createElement(tag);
@@ -289,6 +299,7 @@
   }
 
   function stopPicking() {
+    state.picking = false;
     document.documentElement.style.cursor = '';
     document.removeEventListener('click', onPick, true);
     document.removeEventListener('keydown', onKey, true);
@@ -307,12 +318,32 @@
     if (e.key === 'Escape') { stopPicking(); closePanel(); }
   }
 
+  // Escape the widget does not use itself goes to the host (see "Escape" above).
+  function onWindowKey(e) {
+    if (e.key !== 'Escape' || !hasParentFrame()) return;
+    if (state.picking || document.getElementById(PREFIX + 'panel')) return;
+    window.parent.postMessage({ source: 'voc-pin-widget', type: 'escape' }, window.location.origin);
+  }
+
+  // Idempotent: adding the same function again is a no-op while it is attached.
+  function armWindowListeners() {
+    window.addEventListener('message', onMessage);
+    window.addEventListener('keydown', onWindowKey, true);
+  }
+
+  // document.open() replaces the document's children and erases its listeners.
+  function rearmOnRewrite() {
+    if (typeof window.MutationObserver !== 'function') return;
+    new window.MutationObserver(armWindowListeners).observe(document, { childList: true });
+  }
+
   function startPicking() {
     if (transport() === 'none') {
       notice('Open this prototype from the VoC app (Projects → Documents) to leave feedback.');
       return;
     }
     closePanel();
+    state.picking = true;
     document.documentElement.style.cursor = 'crosshair';
     document.addEventListener('click', onPick, true);
     document.addEventListener('keydown', onKey, true);
@@ -402,7 +433,8 @@
     state.formId = formId;
     state.submitUrl = validSubmitUrl(options.submitUrl, formId);
     installConsoleCapture(window);
-    window.addEventListener('message', onMessage);
+    armWindowListeners();
+    rearmOnRewrite();
     var mount = function () {
       if (document.getElementById(PREFIX + 'button')) return;
       var button = el('button', { id: PREFIX + 'button', type: 'button', 'aria-label': 'Leave feedback on this prototype', style: BUTTON }, 'Feedback');
@@ -428,6 +460,8 @@
     record: record,
     transport: transport,
     send: send,
+    // The host may rely on the escape message (5.35); an older widget never sends it.
+    forwardsEscape: true,
     consoleEntries: function () { return consoleLog.slice(); }
   });
 })();

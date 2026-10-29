@@ -1,8 +1,10 @@
 /**
  * @fileoverview Problem Analysis filters, kept in the URL so a filtered view can be
  * shared, survives a reload, and Back returns to it: `source`, `category`,
- * `subcategory`, `urgent=1`, `resolved=1` and `similarity` (low|med|high|off;
- * absent = the default, med). The URL IS the state: each setter rewrites only
+ * `subcategory`, `urgent=1`, `resolved=1`, `similarity` (low|med|high|off;
+ * absent = the default, med) and `types` (absent = Problems only; `all`; or a comma
+ * list, `feedbackTypes.ts`). The period and date basis are the header's, like every
+ * other page. The URL IS the state: each setter rewrites only
  * these keys (replace, not push), so the review modal's `?review=` survives.
  *
  * Choosing a category clears the subcategory: one names the other.
@@ -11,6 +13,8 @@
  */
 import { useSearchParams } from 'react-router-dom'
 import { withOwnedParams } from '../../utils/searchParams'
+import { isProblemsOnly, readTypeSelection, writeTypeSelection } from './feedbackTypes'
+import type { TypeSelection } from './feedbackTypes'
 
 /** How aggressively near-duplicate problems merge, by its URL token. */
 const SIMILARITY_LEVELS = { low: 0.2, med: 0.4, high: 0.6, off: 1.0 } as const
@@ -21,7 +25,11 @@ function isSimilarityLevel(value: string | null): value is SimilarityLevel {
   return value !== null && Object.hasOwn(SIMILARITY_LEVELS, value)
 }
 
-const OWNED_PARAMS: readonly string[] = ['source', 'category', 'subcategory', 'urgent', 'resolved', 'similarity']
+/**
+ * Keys this page writes. `window` (the retired "Latest 2,000 reviews" select) is read
+ * by nothing; it is listed so the next filter change drops it from an old link.
+ */
+const OWNED_PARAMS: readonly string[] = ['source', 'category', 'subcategory', 'urgent', 'resolved', 'similarity', 'types', 'window']
 
 export interface ProblemFilters {
   readonly source: string | null
@@ -30,6 +38,7 @@ export interface ProblemFilters {
   readonly urgentOnly: boolean
   readonly showResolved: boolean
   readonly similarity: SimilarityLevel
+  readonly types: TypeSelection
 }
 
 export interface ProblemFiltersApi extends ProblemFilters {
@@ -38,7 +47,7 @@ export interface ProblemFiltersApi extends ProblemFilters {
   readonly anyActive: boolean
 }
 
-function nonEmpty(params: URLSearchParams, name: string): string | null {
+function paramOrNull(params: URLSearchParams, name: string): string | null {
   const value = params.get(name)
   return value === null || value === '' ? null : value
 }
@@ -47,12 +56,13 @@ function nonEmpty(params: URLSearchParams, name: string): string | null {
 function readProblemFilters(params: URLSearchParams): ProblemFilters {
   const similarity = params.get('similarity')
   return {
-    source: nonEmpty(params, 'source'),
-    category: nonEmpty(params, 'category'),
-    subcategory: nonEmpty(params, 'subcategory'),
+    source: paramOrNull(params, 'source'),
+    category: paramOrNull(params, 'category'),
+    subcategory: paramOrNull(params, 'subcategory'),
     urgentOnly: params.get('urgent') === '1',
     showResolved: params.get('resolved') === '1',
     similarity: isSimilarityLevel(similarity) ? similarity : DEFAULT_SIMILARITY,
+    types: readTypeSelection(params.get('types')),
   }
 }
 
@@ -65,6 +75,7 @@ function writeProblemFilters(filters: ProblemFilters): URLSearchParams {
     ['urgent', filters.urgentOnly ? '1' : null],
     ['resolved', filters.showResolved ? '1' : null],
     ['similarity', filters.similarity === DEFAULT_SIMILARITY ? null : filters.similarity],
+    ['types', writeTypeSelection(filters.types)],
   ]
   return new URLSearchParams(entries.filter((entry): entry is [string, string] => entry[1] !== null))
 }
@@ -80,9 +91,10 @@ export function useProblemFilters(): ProblemFiltersApi {
     const categoryChanged = change.category !== undefined && change.category !== filters.category
     write({ ...filters, ...(categoryChanged ? { subcategory: null } : {}), ...change })
   }
+  // Clear resets the narrowing filters; Similarity is a view setting and stays.
   const clear = () => write({ ...readProblemFilters(new URLSearchParams()), similarity: filters.similarity })
 
   const anyActive = filters.source !== null || filters.category !== null || filters.subcategory !== null
-    || filters.urgentOnly || filters.showResolved
+    || filters.urgentOnly || filters.showResolved || !isProblemsOnly(filters.types)
   return { ...filters, update, clear, anyActive }
 }

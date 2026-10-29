@@ -212,7 +212,8 @@ def test_a_session_predating_the_project_stamp_is_gated_through_its_row(tables):
 
 
 def test_the_stamp_outlives_the_row(tables):
-    """The row is deleted after the vote: the session still belongs to its project."""
+    """The row is deleted after the vote: the status read is over for everyone (there
+    is no vote to watch), but closing still follows the session's own project stamp."""
     import ballots_handler
 
     aggregates, _ = tables
@@ -220,8 +221,9 @@ def test_the_stamp_outlives_the_row(tables):
     aggregates.delete_item(Key={
         'pk': ballots_handler.PRIORITIZATION_PK, 'sk': f'{ballots_handler.ROW_SK_PREFIX}r-priv',
     })
-    assert _facilitator(tables, 'GET', f'/voting-sessions/{session_id}', STRANGER)[0] == 404
-    assert _facilitator(tables, 'GET', f'/voting-sessions/{session_id}', OWNER)[0] == 200
+    assert _facilitator(tables, 'GET', f'/voting-sessions/{session_id}', OWNER)[0] == 404
+    assert _facilitator(tables, 'POST', f'/voting-sessions/{session_id}/close', STRANGER)[0] == 404
+    assert _facilitator(tables, 'POST', f'/voting-sessions/{session_id}/close', OWNER)[0] == 200
 
 
 @pytest.mark.parametrize('row_id', ['r-legacy', 'r-unscoped'])

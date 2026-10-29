@@ -78,16 +78,53 @@ function lambdaEnv(template: Template, handler: string): Record<string, unknown>
 describe('feedback edit Lambda (PUT /feedback/{id}/category, PUT /feedback/{id}/dimensions)', () => {
   const ROLE = 'FeedbackEditLambdaRole';
 
-  it.each(['PUT /feedback/{id}/category', 'PUT /feedback/{id}/dimensions'])(
-    'wires %s behind Cognito to its own Lambda, not the read-only metrics one',
+  const EDIT_ROUTES = ['PUT /feedback/fb_1/category', 'PUT /feedback/fb_1/dimensions'];
+  const editMethod = (route: string) => {
+    const [verb = '', path = ''] = route.split(' ');
+    return resolveMethod(apiMethods(apiTemplate()), verb, path);
+  };
+
+  it.each(EDIT_ROUTES)(
+    'routes %s to its own Lambda, not the read-only metrics one',
     (route) => {
-      const method = apiMethods(apiTemplate()).find((m) => m.route === route);
+      const method = editMethod(route);
       expect(method, `${route} is not wired`).toBeDefined();
-      expect(method?.authorizationType).toBe('COGNITO_USER_POOLS');
-      expect(method?.hasAuthorizerId).toBe(true);
+      expect(method?.path).toBe('/feedback/{id}/{proxy+}');
       expect(method?.integrationFunctionId).toBe(functionIdForHandler(apiTemplate(), 'feedback_edit_handler.py'));
     },
   );
+
+  it.each(EDIT_ROUTES)(
+    'keeps %s behind the Cognito authorizer',
+    (route) => {
+      const method = editMethod(route);
+      expect(method?.authorizationType).toBe('COGNITO_USER_POOLS');
+      expect(method?.hasAuthorizerId).toBe(true);
+    },
+  );
+
+  it.each([
+    ['GET', '/feedback'], ['GET', '/feedback/fb_1'], ['GET', '/feedback/fb_1/similar'],
+    ['GET', '/feedback/access'], ['GET', '/feedback/urgent'], ['GET', '/feedback/entities'],
+    ['GET', '/feedback/search'], ['GET', '/feedback/problems'],
+  ])('routes %s %s to the read-only metrics Lambda behind Cognito', (verb, path) => {
+    const method = resolveMethod(apiMethods(apiTemplate()), verb, path);
+    expect(method?.integrationFunctionId, `${verb} ${path}`).toBe(functionIdForHandler(apiTemplate(), 'metrics_handler.py'));
+    expect(method?.authorizationType).toBe('COGNITO_USER_POOLS');
+  });
+
+  it('wires /feedback as three resources: GET on the collection and the item, GET + PUT on the item proxy', () => {
+    // 5.47.00 folded nine child resources into these. No ANY, no DELETE, no POST anywhere under /feedback,
+    // and never a `{proxy+}` sibling of `{id}` (two variable parts at one level cannot be deployed).
+    const routes = nonOptions(apiTemplate()).filter((m) => m.path === '/feedback' || m.path.startsWith('/feedback/'))
+      .map((m) => `${m.route} [${m.authorizationType}]`).sort(byCodeUnit);
+    expect(routes).toStrictEqual([
+      'GET /feedback [COGNITO_USER_POOLS]',
+      'GET /feedback/{id} [COGNITO_USER_POOLS]',
+      'GET /feedback/{id}/{proxy+} [COGNITO_USER_POOLS]',
+      'PUT /feedback/{id}/{proxy+} [COGNITO_USER_POOLS]',
+    ]);
+  });
 
   it('holds exactly GetItem/Query/UpdateItem on feedback — never Put, Delete or Scan', () => {
     // Customer data is never deleted, and a correction is an in-place update of
@@ -122,7 +159,7 @@ describe('feedback edit Lambda (PUT /feedback/{id}/category, PUT /feedback/{id}/
 
 describe('category access wiring', () => {
   it('serves GET /feedback/access from the metrics Lambda behind Cognito', () => {
-    const method = apiMethods(apiTemplate()).find((m) => m.route === 'GET /feedback/access');
+    const method = resolveMethod(apiMethods(apiTemplate()), 'GET', '/feedback/access');
     expect(method, 'GET /feedback/access is not wired').toBeDefined();
     expect(method?.authorizationType).toBe('COGNITO_USER_POOLS');
     expect(method?.integrationFunctionId).toBe(functionIdForHandler(apiTemplate(), 'metrics_handler.py'));
@@ -205,19 +242,22 @@ describe('the settings Lambda can test models and read their quotas', () => {
   const ROLE = 'SettingsLambdaRole';
 
   it('may invoke every allowlisted model (POST /settings/model/test calls Converse on it)', () => {
-    const invoke = roleStatements(apiTemplate(), ROLE).filter((s) => s.actions.includes('bedrock:InvokeModel'));
+    // The text models' statement; the image model's own one (ARN only) is pinned in
+    // api-settings-image-model-iam.test.ts.
+    const invoke = roleStatements(apiTemplate(), ROLE)
+      .filter((s) => s.actions.includes('bedrock:InvokeModel') && s.resource.includes('inference-profile/'));
     expect(invoke).toHaveLength(1);
     const resource = itemAt(invoke, 0).resource;
     for (const modelId of ALLOWED_MODEL_IDS) expect(resource).toContain(`inference-profile/${modelId}`);
   });
 
-  it('holds servicequotas:ListServiceQuotas and no other Service Quotas action', () => {
+  it('holds ListServiceQuotas on * and GetServiceQuota on Bedrock quotas only, no other Service Quotas action', () => {
     const quotaStatements = roleStatements(apiTemplate(), ROLE)
       .filter((s) => s.actions.some((action) => action.startsWith('servicequotas:')));
-    expect(quotaStatements).toHaveLength(1);
-    const statement = itemAt(quotaStatements, 0);
-    expect(statement.actions).toStrictEqual(['servicequotas:ListServiceQuotas']);
-    expect(JSON.parse(statement.resource)).toBe('*');
+    expect(quotaStatements.map((s) => s.actions)).toStrictEqual([['servicequotas:ListServiceQuotas'], ['servicequotas:GetServiceQuota']]);
+    expect(JSON.parse(itemAt(quotaStatements, 0).resource)).toBe('*');
+    // Scoped to this account and region's Bedrock quotas, never `*`.
+    expect(itemAt(quotaStatements, 1).resource).toMatch(/:servicequotas:.*:bedrock\/\*/);
   });
 
   it('documents the read-only wildcard with a scoped cdk-nag suppression', () => {
@@ -237,25 +277,30 @@ describe('the data explorer never deletes customer data', () => {
     expect(resolveMethod(methods, itemAt(parts, 0), itemAt(parts, 1)), `${route} reaches a Lambda`).toBeUndefined();
   });
 
-  it('has no catch-all under /data-explorer that could serve a DELETE', () => {
-    const anyOrProxy = apiMethods(apiTemplate())
+  it('routes no ANY and no DELETE anywhere under /data-explorer (the proxy lists its verbs)', () => {
+    const anyOrDelete = apiMethods(apiTemplate())
       .filter((m) => m.path.startsWith('/data-explorer'))
-      .filter((m) => m.httpMethod === 'ANY' || m.path.includes('+}') || m.httpMethod === 'DELETE');
-    expect(anyOrProxy.map((m) => m.route)).toStrictEqual([]);
+      .filter((m) => m.httpMethod === 'ANY' || m.httpMethod === 'DELETE');
+    expect(anyOrDelete.map((m) => m.route)).toStrictEqual([]);
   });
 
-  it('wires every remaining route behind Cognito', () => {
+  it('wires exactly GET and PUT on one Cognito proxy (5.47.00)', () => {
     const routes = nonOptions(apiTemplate())
       .filter((m) => m.path.startsWith('/data-explorer'))
       .map((m) => `${m.route} [${m.authorizationType}]`)
       .sort(byCodeUnit);
     expect(routes).toStrictEqual([
-      'GET /data-explorer/buckets [COGNITO_USER_POOLS]',
-      'GET /data-explorer/s3 [COGNITO_USER_POOLS]',
-      'GET /data-explorer/s3/preview [COGNITO_USER_POOLS]',
-      'PUT /data-explorer/feedback [COGNITO_USER_POOLS]',
-      'PUT /data-explorer/s3 [COGNITO_USER_POOLS]',
+      'GET /data-explorer/{proxy+} [COGNITO_USER_POOLS]',
+      'PUT /data-explorer/{proxy+} [COGNITO_USER_POOLS]',
     ]);
+  });
+
+  it.each([
+    ['GET', '/data-explorer/buckets'], ['GET', '/data-explorer/s3'], ['GET', '/data-explorer/s3/preview'],
+    ['PUT', '/data-explorer/s3'], ['PUT', '/data-explorer/feedback'],
+  ])('routes %s %s to the data explorer Lambda', (verb, path) => {
+    expect(resolveMethod(apiMethods(apiTemplate()), verb, path)?.integrationFunctionId)
+      .toBe(functionIdForHandler(apiTemplate(), 'data_explorer_handler.py'));
   });
 
   it('holds no s3:DeleteObject* and no dynamodb:DeleteItem', () => {
@@ -375,11 +420,10 @@ describe('the public ballot routes', () => {
   it('answers CORS preflight on both, which a cross-origin JSON POST requires', () => {
     // `submitBallot` sends Content-Type: application/json to a different host from
     // the SPA, which makes it a non-simple request: the browser sends OPTIONS
-    // first and never sends the POST if that fails. The RestApi's
-    // `defaultCorsPreflightOptions` generates these, so this asserts the
-    // inheritance actually reached the two resources added for this feature —
-    // nothing in `addResource` guarantees it, and the failure mode is a room whose
-    // ballots never leave the phone.
+    // first and never sends the POST if that fails. Each method-bearing resource
+    // adds its own preflight (`addBrowserPreflight`, api-gateway.ts; the RestApi has
+    // no default since 5.47.00), so this asserts the two resources carry one —
+    // the failure mode is a room whose ballots never leave the phone.
     const preflight = new Set(
       apiMethods(apiTemplate()).filter((m) => m.httpMethod === 'OPTIONS').map((m) => m.path),
     );
@@ -538,8 +582,9 @@ describe('Marketplace image model access (issue #274)', () => {
       .filter(([, statements]) => invokesImageModel(statements, imageArn));
 
     // Count first: a renamed grant must not turn this into a vacuous pass.
+    // SettingsLambdaRole since 5.45.00: POST /settings/model/test sends one image request.
     expect(invokers.map(([roleId]) => roleStem(roleId)).sort(byCodeUnit)).toStrictEqual([
-      'PersonaGeneratorRole', 'PersonaImporterRole', 'ProjectsLambdaRole',
+      'PersonaGeneratorRole', 'PersonaImporterRole', 'ProjectsLambdaRole', 'SettingsLambdaRole',
     ]);
     for (const [roleId, statements] of invokers) {
       const marketplace = statements
@@ -560,7 +605,7 @@ describe('Marketplace image model access (issue #274)', () => {
       .flatMap(statementActions).some((a) => a.startsWith('aws-marketplace:')));
     const invokers = byRole.filter(([, statements]) => invokesImageModel(statements, imageArn));
 
-    expect(stems(holders)).toStrictEqual(['PersonaGeneratorRole', 'PersonaImporterRole', 'ProjectsLambdaRole']);
+    expect(stems(holders)).toStrictEqual(['PersonaGeneratorRole', 'PersonaImporterRole', 'ProjectsLambdaRole', 'SettingsLambdaRole']);
     expect(stems(holders)).toStrictEqual(stems(invokers));
   });
 

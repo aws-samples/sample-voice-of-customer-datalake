@@ -33,6 +33,16 @@
     "status": "Filtro de estado"
   },
   "forget": "Olvidar",
+  "edit": "Editar",
+  "editLabel": "Editar recuerdo: {{statement}}",
+  "editField": "Texto del recuerdo",
+  "save": "Guardar",
+  "editFailed": "No se pudo guardar el recuerdo. Inténtalo de nuevo.",
+  "confirmPersonal": "Sigue siendo cierto",
+  "confirmPersonalHint": "Confirma que sigue siendo cierto para que no se archive tras 90 días sin uso",
+  "confirmPersonalLabel": "Sigue siendo cierto: {{statement}}",
+  "confirmLabel": "+1: {{statement}}",
+  "confirmedPersonal": "Confirmado como cierto.",
   "forgetMessage": "\"{{statement}}\" se archiva y nunca se vuelve a aprender automáticamente. Puedes restaurarlo más tarde.",
   "forgetTitle": "¿Olvidar este recuerdo?",
   "imports": {

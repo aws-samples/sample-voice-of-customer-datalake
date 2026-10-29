@@ -13,6 +13,7 @@
  * drift of the order, the cooldown, the error codes or the message patterns.
  */
 import { ALLOWED_MODEL_IDS } from './model-override.js';
+import { METRIC_NAMESPACE } from '../lib/metric-namespace.js';
 
 /**
  * Fallback order after the configured model (Opus only ever as the configured one).
@@ -33,7 +34,6 @@ export const CHAT_SURFACE_DEFAULT = 'global.anthropic.claude-sonnet-5-5';
 export const COOLDOWN_SECONDS = 300;
 
 const MODEL_FALLBACK_METRIC = 'ModelFallback';
-const METRIC_NAMESPACE = 'VoC';
 
 /** Error names that always mean the model cannot serve now. */
 const CAPACITY_ERROR_CODES: ReadonlySet<string> = new Set([

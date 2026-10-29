@@ -22,6 +22,8 @@ import { formatDate, formatTime } from '../../utils/dateUtils'
 import type { FeedbackItem } from '../../api/types'
 import ReviewSentimentBadge from '../SentimentBadge/ReviewSentimentBadge'
 import { cleanFeedbackText, cleanReviewText } from '../../utils/cleanReviewText'
+import { knownJourneyStage } from '../../utils/displayLabels'
+import { useChannelLabel } from '../../hooks/useChannelLabel'
 import RatingStars from '../RatingStars'
 import CategoryChangeControl, { ManualCategoryBadge } from '../CategoryChangeControl/CategoryChangeControl'
 import { SourceIcon } from '../SourceIcon/SourceIcon'
@@ -33,7 +35,6 @@ import type { DisplayLabels } from '../../hooks/useDisplayLabels'
 
 interface FeedbackCardProps {
   feedback: FeedbackItem
-  showActions?: boolean
   compact?: boolean
 }
 
@@ -83,7 +84,7 @@ function CompactCard({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
 function CardHeader({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
   const { t } = useTranslation('components')
   const labels = useDisplayLabels()
-  const channel = labels.channel(feedback.source_channel, feedback.source_platform)
+  const channel = useChannelLabel(feedback.source_channel, feedback.source_platform)
   return (
     <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
       <div className="flex items-center gap-2 min-w-0">
@@ -163,18 +164,18 @@ function LabelBadge({ children }: Readonly<{ children: ReactNode }>) {
  * tags) is neutral, and colour is left to state — the hand-set marker
  * (`ManualCategoryBadge`, provenance) and the PII policy badge.
  */
-function CardTags({ feedback, showActions }: Readonly<{ feedback: FeedbackItem; showActions: boolean }>) {
+function CardTags({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
   const labels = useDisplayLabels()
   return (
     <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mb-3">
       <span className="badge badge-accent">{labels.category(feedback.category)}</span>
       <ManualCategoryBadge feedback={feedback} />
       {feedback.subcategory && <LabelBadge>{labels.subcategory(feedback.subcategory, feedback.category)}</LabelBadge>}
-      {feedback.journey_stage && <LabelBadge>{labels.plain(feedback.journey_stage)}</LabelBadge>}
+      {knownJourneyStage(feedback.journey_stage) === undefined ? null : <LabelBadge>{labels.plain(feedback.journey_stage)}</LabelBadge>}
       {feedback.persona_name && <LabelBadge>{feedback.persona_name}</LabelBadge>}
       <FeedbackDimensionChips feedback={feedback} />
-      {showActions && <CategoryChangeControl feedback={feedback} />}
-      {showActions && <DimensionsEditControl feedback={feedback} />}
+      <CategoryChangeControl feedback={feedback} />
+      <DimensionsEditControl feedback={feedback} />
     </div>
   )
 }
@@ -199,11 +200,10 @@ function CopyTextButton({ text, onCopy }: Readonly<{ text: string; onCopy: (text
 
 interface CardFooterProps {
   feedback: FeedbackItem
-  showActions: boolean
   onCopy: (text: string) => void
 }
 
-function CardFooter({ feedback, showActions, onCopy }: Readonly<CardFooterProps>) {
+function CardFooter({ feedback, onCopy }: Readonly<CardFooterProps>) {
   const { t, i18n } = useTranslation('components')
   return (
     <div className="flex flex-wrap items-center justify-between pt-3 border-t border-border gap-2">
@@ -215,37 +215,35 @@ function CardFooter({ feedback, showActions, onCopy }: Readonly<CardFooterProps>
         <span className="hidden sm:inline"> {formatTime(feedback.source_created_at, i18n.language, 'N/A')}</span>
       </span>
 
-      {showActions && (
-        // Wraps (and may shrink) so "Details" + the two icon buttons never push
-        // the card past its column at 390 px / 200 % text.
-        <div data-testid="feedback-card-actions" className="flex flex-wrap items-center gap-1 min-w-0 max-w-full">
-          <ReviewLink
-            feedbackId={feedback.feedback_id}
-            className="btn btn-ghost btn-sm text-accent-text"
+      {/* Wraps (and may shrink) so "Details" + the two icon buttons never push
+          the card past its column at 390 px / 200 % text. */}
+      <div data-testid="feedback-card-actions" className="flex flex-wrap items-center gap-1 min-w-0 max-w-full">
+        <ReviewLink
+          feedbackId={feedback.feedback_id}
+          className="btn btn-ghost btn-sm text-accent-text"
+        >
+          <MessageCircle size={14} aria-hidden="true" />
+          {t('feedbackCard.details')}
+        </ReviewLink>
+        {feedback.source_url && (
+          <a
+            href={feedback.source_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="icon-btn"
+            aria-label={t('feedbackCard.openOriginal')}
+            title={t('feedbackCard.openOriginal')}
           >
-            <MessageCircle size={14} aria-hidden="true" />
-            {t('feedbackCard.details')}
-          </ReviewLink>
-          {feedback.source_url && (
-            <a
-              href={feedback.source_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="icon-btn"
-              aria-label={t('feedbackCard.openOriginal')}
-              title={t('feedbackCard.openOriginal')}
-            >
-              <ExternalLink size={14} aria-hidden="true" />
-            </a>
-          )}
-          <CopyTextButton text={feedback.original_text} onCopy={onCopy} />
-        </div>
-      )}
+            <ExternalLink size={14} aria-hidden="true" />
+          </a>
+        )}
+        <CopyTextButton text={cleanReviewText(feedback.original_text)} onCopy={onCopy} />
+      </div>
     </div>
   )
 }
 
-export default function FeedbackCard({ feedback, showActions = true, compact = false }: Readonly<FeedbackCardProps>) {
+export default function FeedbackCard({ feedback, compact = false }: Readonly<FeedbackCardProps>) {
   const copyToClipboard = (text: string) => {
     // Best-effort: a denied permission or insecure context rejects, and the
     // text stays on screen to copy by hand — so the rejection is absorbed
@@ -265,8 +263,8 @@ export default function FeedbackCard({ feedback, showActions = true, compact = f
       <CardHeader feedback={feedback} />
       {feedback.rating != null && <RatingStars rating={feedback.rating} className="mb-2" />}
       <CardContent feedback={cleanFeedbackText(feedback)} />
-      <CardTags feedback={feedback} showActions={showActions} />
-      <CardFooter feedback={feedback} showActions={showActions} onCopy={copyToClipboard} />
+      <CardTags feedback={feedback} />
+      <CardFooter feedback={feedback} onCopy={copyToClipboard} />
     </div>
   )
 }

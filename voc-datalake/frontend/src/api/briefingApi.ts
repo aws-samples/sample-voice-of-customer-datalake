@@ -4,6 +4,7 @@
  * Every answer is normalised through a lenient schema: a malformed field costs itself.
  * @module api/briefingApi
  */
+import { put } from './requestKit'
 import { z } from 'zod'
 import { fetchApi } from './client'
 import { lenientText, optionalText, parsedList } from './schemaList'
@@ -101,7 +102,7 @@ export const briefingApi = {
   getPreferences: async (): Promise<BriefPreferences> =>
     parsedOr(PreferencesSchema, await fetchApi<unknown>(PATH), DEFAULT_PREFERENCES),
   savePreferences: async (changes: BriefPreferenceChanges): Promise<BriefPreferences> =>
-    parsedOr(PreferencesSchema, await fetchApi<unknown>(PATH, { method: 'PUT', body: JSON.stringify(changes) }),
+    parsedOr(PreferencesSchema, await fetchApi<unknown>(PATH, put(changes)),
       DEFAULT_PREFERENCES),
   getBrief: async (): Promise<Brief> => parsedOr(BriefSchema, await fetchApi<unknown>(BRIEF_PATH), NO_BRIEF),
   /** `uiLanguage` = the language the reader uses the app in; the brief follows it unless they chose one. */
@@ -109,7 +110,5 @@ export const briefingApi = {
     parsedOr(RefreshSchema, await fetchApi<unknown>(REFRESH_PATH, { method: 'POST', ...refreshBody(uiLanguage) }),
       { status: 'pending', brief: NO_BRIEF }),
   setCardStates: async (day: string, states: Record<string, CardState>): Promise<Record<string, CardState>> =>
-    parsedOr(CardStatesResultSchema, await fetchApi<unknown>(CARDS_PATH, {
-      method: 'PUT', body: JSON.stringify({ day, states }),
-    }), { day: undefined, card_state: {} }).card_state,
+    parsedOr(CardStatesResultSchema, await fetchApi<unknown>(CARDS_PATH, put({ day, states })), { day: undefined, card_state: {} }).card_state,
 }

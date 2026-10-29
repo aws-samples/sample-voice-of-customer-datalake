@@ -73,3 +73,15 @@ describe('ProcessedFeedbackView paging and details', () => {
     expect(screen.getByText(/"feedback_id": "f1"/)).toBeInTheDocument()
   })
 })
+
+describe('ProcessedFeedbackView review text', () => {
+  it('previews and details a review stored with markdown escapes as plain text', async () => {
+    const stored = feedbackItem({ feedback_id: 'f2', original_text: 'Hard situation\\.On time **next** day', title: '**Fine**' })
+    render(<ProcessedFeedbackView data={{ items: [stored], total: 1, isLowerBound: false }} loading={false} onView={vi.fn()} onEdit={vi.fn()} />)
+
+    expect(screen.getByText('Hard situation. On time next day')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Show details' }))
+    expect(screen.getByText('Fine')).toBeInTheDocument()
+    expect(screen.getAllByText('Hard situation. On time next day')).toHaveLength(2)
+  })
+})

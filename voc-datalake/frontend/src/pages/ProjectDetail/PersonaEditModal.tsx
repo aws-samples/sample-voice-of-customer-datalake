@@ -30,14 +30,13 @@ interface InputFieldProps {
   readonly value: string
   readonly onChange: (value: string) => void
   readonly placeholder?: string
-  readonly className?: string
 }
 
-interface TextAreaFieldProps extends InputFieldProps { readonly rows?: number }
+interface TextAreaFieldProps extends InputFieldProps { readonly rows?: number; readonly className?: string }
 
 // Reusable input field
 function InputField({
-  label, value, onChange, placeholder, className = 'input',
+  label, value, onChange, placeholder,
 }: InputFieldProps) {
   const id = useId()
   return (
@@ -48,7 +47,7 @@ function InputField({
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={className}
+        className="input"
         placeholder={placeholder}
       />
     </div>

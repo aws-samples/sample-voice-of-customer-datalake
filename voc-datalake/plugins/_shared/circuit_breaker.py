@@ -27,13 +27,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.aws import get_dynamodb_resource, get_eventbridge_client
 from shared.logging import logger, metrics
+from shared.plugin_circuit import TRIPPED_SK
+from shared.timestamps import now_iso
 
 # Failures inside the window that trip the breaker. Constants, not env: no stack ever set one.
 FAILURE_THRESHOLD = 5
 WINDOW_MINUTES = 15
 AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
 MAX_ERROR_CHARS = 500
-TRIPPED_SK = "TRIPPED"
 
 
 def circuit_pk(plugin_id: str) -> str:
@@ -126,7 +127,7 @@ class CircuitBreaker:
             if self.table:
                 self.table.put_item(Item={
                     **self._tripped_key,
-                    "tripped_at": datetime.now(UTC).isoformat(),
+                    "tripped_at": now_iso(),
                     "failure_count": failure_count,
                     "last_error": last_error[:MAX_ERROR_CHARS],
                 })

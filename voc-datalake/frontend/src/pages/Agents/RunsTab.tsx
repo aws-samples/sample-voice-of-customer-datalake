@@ -15,7 +15,7 @@ import { useTranslation } from 'react-i18next'
 import { formatDateTime, formatTime } from '../../utils/dateUtils'
 import { isActiveRun } from '../../api/agentsApi'
 import { apiErrorStatus } from '../../api/apiErrorStatus'
-import { useLabelKnownIds, useProjectName } from '../../hooks/useLabelKnownIds'
+import { useLabelKnownIds } from '../../hooks/useLabelKnownIds'
 import { humanizeId } from '../../utils/displayLabels'
 import { DEFAULT_WORKFLOW_ID, workflowsApi, workflowsKeys } from '../../api/workflowsApi'
 import { WorkflowCanvas } from '../../components/WorkflowEditor/WorkflowCanvas'
@@ -26,6 +26,7 @@ import { RunDecisionCard } from './RunDecisionCard'
 import { RunNowConfirm } from './RunNowConfirm'
 import { RunSummaryCard } from './RunSummaryCard'
 import { useAgentMutations, useAgentRun, useAgentRuns, useRunEvents } from './useAgents'
+import { RunProjectsContext, useRunProjectName, useRunProjects } from './useRunProjects'
 import type { Agent, AgentRun, RunEvent } from '../../api/agentsApi'
 import type { WorkflowDefinition } from '../../api/workflowsApi'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
@@ -46,7 +47,7 @@ function failureReasonOf(run: Pick<AgentRun, 'status' | 'error'>, events: readon
 
 function EventRef({ event }: Readonly<{ event: RunEvent }>) {
   const { t } = useTranslation('agents')
-  const projectName = useProjectName()
+  const projectName = useRunProjectName()
   const projectId = event.ref?.project_id
   if (projectId === undefined) return null
   return (
@@ -117,14 +118,17 @@ function RunDetail({ agent, runId, canControl, technical, onToggleTechnical }: R
   const workflowId = run?.workflow_id ?? agent.workflow_id ?? DEFAULT_WORKFLOW_ID
   const { data: workflow } = useQuery({ queryKey: workflowsKeys.detail(workflowId), queryFn: () => workflowsApi.get(workflowId) })
   const definition = workflow?.workflow.definition ?? null
+  const runProjects = useRunProjects(run, events)
   if (run === undefined) return <div className="skeleton h-64" />
   return (
-    <div className="space-y-3">
-      <RunHeader agentId={agent.agent_id} run={run} currentRevision={workflow?.workflow.revision} canControl={canControl}
-        failureReason={failureReasonOf(run, events)} />
-      <RunSummaryCard run={run} events={events} definition={definition} />
-      <TechnicalLog run={run} events={events} definition={definition} open={technical} onToggle={onToggleTechnical} />
-    </div>
+    <RunProjectsContext.Provider value={runProjects}>
+      <div className="space-y-3">
+        <RunHeader agentId={agent.agent_id} run={run} currentRevision={workflow?.workflow.revision} canControl={canControl}
+          failureReason={failureReasonOf(run, events)} />
+        <RunSummaryCard run={run} events={events} definition={definition} />
+        <TechnicalLog run={run} events={events} definition={definition} open={technical} onToggle={onToggleTechnical} />
+      </div>
+    </RunProjectsContext.Provider>
   )
 }
 
@@ -160,7 +164,7 @@ function RunHeader({ agentId, run, currentRevision, canControl, failureReason }:
 }>) {
   const { t, i18n } = useTranslation('agents')
   const { cancelRun } = useAgentMutations(agentId)
-  const projectName = useProjectName()
+  const projectName = useRunProjectName()
   const olderRevision = run.workflow_revision !== null && currentRevision !== undefined && run.workflow_revision !== currentRevision
   return (
     <>

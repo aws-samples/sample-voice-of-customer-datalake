@@ -23,6 +23,9 @@ The VoC platform provides a customizable feedback form system that:
    - **Description**: Subtitle text
    - **Question**: The main prompt for feedback
    - **Rating Type**: Stars (1-5), Emoji, or Numeric (1-10)
+     In the widget every rating button is named for screen readers by its value on the scale
+     ("Good (4 of 5)", "3 stars of 5: Good", "7 of 10"), the buttons form a group named by the
+     question, and the chosen one is `aria-pressed`.
 4. Save, then enable the form
 
 New forms are created **disabled** on purpose: nothing is public until the owner
@@ -329,6 +332,15 @@ shared across every form). The limits did not change.
   `ready` message, because nothing can address an opaque-origin window by origin.
   A prototype built before 3.09.01 has no port: its pins are still stored, but it
   shows no "saved" notice and no markers in the app until it is regenerated.
+- **Escape** (5.35, #386): a key pressed inside the frame never reaches the app, so the
+  widget forwards an Escape it does not use itself (no pin being picked, no widget
+  panel open) as `{source: 'voc-pin-widget', type: 'escape'}`, posted the same way.
+  A dialog around the frame (the Prioritization Enlarge overlay, `ModalShell`'s
+  `useFrameEscape`) closes on it, accepting it only from a frame inside that dialog,
+  with the prototype's origin and that exact payload. `document.open()` erases the
+  widget's listeners; a MutationObserver re-attaches them, so a prototype that
+  rewrites its page stays closable. A prototype built before 5.35 sends nothing until
+  it is regenerated; the overlay's Close button always works.
 - **Opened standalone** (a prototype URL in its own tab), the widget posts the pin
   directly to `https://<api>/v1/feedback-forms/<its form_id>/submit`. The request
   sends no credentials, no `Authorization` header and no referrer, because the signed

@@ -58,7 +58,7 @@ def _row(sub: str, **flags: bool) -> dict:
 
 
 def _set(table: MagicMock, sub: str, **changes: bool) -> dict[str, bool]:
-    with patch.object(user_flags, '_now', return_value=NOW):
+    with patch.object(user_flags, 'now_iso', return_value=NOW):
         return user_flags.set_flags(table, sub=sub, username=f'user-{sub}', changes=changes, actor_sub='admin')
 
 
@@ -201,7 +201,7 @@ class TestPlainChangesAreOnePut:
     def test_unknown_flags_are_ignored(self):
         table = _fake_table({})
         changes: Any = {'admin': True, 'memory_reviewer': True}
-        with patch.object(user_flags, '_now', return_value=NOW):
+        with patch.object(user_flags, 'now_iso', return_value=NOW):
             user_flags.set_flags(table, sub='s1', username='u', changes=changes, actor_sub='admin')
         table.put_item.assert_called_once_with(Item=_row('s1', memory_reviewer=True))
 
@@ -288,7 +288,7 @@ class TestClearFallbackOwnerIf:
 
     def test_the_holder_is_cleared_by_the_actor(self):
         table = _fake_table(_pointer('s1'))
-        with patch.object(user_flags, '_now', return_value=NOW):
+        with patch.object(user_flags, 'now_iso', return_value=NOW):
             assert user_flags.clear_fallback_owner_if(table, sub='s1', actor_sub='admin') is True
         items = _transact_items(table)
         assert items[0]['Put']['Item'] == {**POINTER_KEY, 'updated_at': NOW}

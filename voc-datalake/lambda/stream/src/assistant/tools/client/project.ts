@@ -4,7 +4,11 @@
  * it, so the approval card always names the project touched.
  */
 import { z } from 'zod';
-import type { ClientToolDefinition } from '../../types.js';
+import type { AssistantRunContext, ClientToolDefinition } from '../../types.js';
+import { GATED_DOC_TYPES, mayWriteInteractively } from '../../runtime/ai-writing.js';
+import { interactiveRefusal } from '../ai-writing-guard.js';
+import type { ToolDeps } from '../deps.js';
+import { loadChatContext, type ChatContextDocument } from '../server/chat-context.js';
 import { idProperty, idSchema } from '../spec.js';
 import { personaUpdatesSchema, productContextUpdatesSchema } from './allowlists.js';
 import { SOURCES_PROPERTY, defineClientTool, idListProperty, idListSchema, presentParts, q, sourceListSchema, stringProperty } from './define.js';
@@ -13,7 +17,30 @@ const PROJECT_ID = idProperty('Project id (defaults to the project on screen).')
 const MAX_CONTENT_CHARS = 200_000;
 const MAX_LINKED_IDS = 20;
 
-const updateDocument = defineClientTool({
+/** A stored document's PR/FAQ / PRD type, from `document_type` or a legacy row's sort key. */
+function writtenType(document: ChatContextDocument): string | undefined {
+  if (document.document_type) return document.document_type;
+  if (document.sk.startsWith('PRFAQ#')) return 'prfaq';
+  return document.sk.startsWith('PRD#') ? 'prd' : undefined;
+}
+
+/**
+ * update_document on a PR/FAQ / PRD the AI may not rewrite with this person (Human-driven,
+ * not unlocked) is refused before its card. Reads the target only when a type is locked.
+ */
+async function updateRefusal(
+  deps: ToolDeps, args: { project_id: string; document_id: string }, ctx: AssistantRunContext,
+): Promise<string | undefined> {
+  const policy = ctx.aiWriting;
+  if (policy === undefined || GATED_DOC_TYPES.every((type) => policy.interactive.has(type))) return undefined;
+  const context = await loadChatContext(deps.invoke, args.project_id, [args.document_id], ctx.claims);
+  ctx.projectAccess.record(args.project_id, context.access);
+  const document = context.documents.find((d) => d.document_id === args.document_id);
+  const docType = document === undefined ? undefined : writtenType(document);
+  return mayWriteInteractively(policy, docType) ? undefined : interactiveRefusal(docType);
+}
+
+const updateDocument = (deps: ToolDeps) => defineClientTool({
   name: 'update_document',
   pack: 'project',
   description: 'Replace the content of a textual project document (PRD, PR/FAQ, research, custom). Read it with '
@@ -36,6 +63,7 @@ const updateDocument = defineClientTool({
     title: z.string().trim().min(1).max(200).optional(),
     change_summary: z.string().trim().min(1).max(500),
   }).strict(),
+  precheck: (args, ctx) => updateRefusal(deps, args, ctx),
   summarize: (args) => `Update document ${q(args.title ?? args.document_id)} in project ${args.project_id}: ${args.change_summary}`,
 });
 
@@ -248,9 +276,9 @@ const mergeDocuments = defineClientTool({
   summarize: (args) => `Merge ${args.document_ids.length} documents into ${q(args.title)} (${args.output_type}) in project ${args.project_id}.`,
 });
 
-export function createProjectClientTools(): ClientToolDefinition[] {
+export function createProjectClientTools(deps: ToolDeps): ClientToolDefinition[] {
   return [
-    updateDocument,
+    updateDocument(deps),
     createDocument,
     deleteDocument,
     updatePersona,

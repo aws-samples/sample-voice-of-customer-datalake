@@ -20,7 +20,7 @@ import {
   roleLabelKey,
 } from './sharingHelpers'
 import { memberCandidatesKey } from './useProjectSharing'
-import { useDebouncedValue } from './useDebouncedValue'
+import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import type { ProjectMemberCandidate, ProjectMemberRole } from '../../api/projectTypes'
 
 interface InviteSectionProps {

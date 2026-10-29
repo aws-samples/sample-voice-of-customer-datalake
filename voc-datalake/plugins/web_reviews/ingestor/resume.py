@@ -19,6 +19,7 @@ from page_reader import same_origin
 from target_reader import TargetResult
 from web_items import WebTarget
 
+from shared.llm_json import json_object_or_none
 from shared.web_review_targets import TargetError, checked_url
 
 #: The stops a later run may continue from.
@@ -42,13 +43,8 @@ def parsed_cursor(stored: str | None, target: WebTarget) -> ResumeCursor | None:
     It must name a URL on the target's origin the outbound policy allows, and the
     target's limits (perhaps lowered since) must not be reached already.
     """
-    if not stored:
-        return None
-    try:
-        data = json.loads(stored)
-    except ValueError:
-        return None
-    if not isinstance(data, dict):
+    data = json_object_or_none(stored) if stored else None
+    if data is None:
         return None
     url, page, reviews = data.get('url'), _count(data.get('page')), _count(data.get('reviews'))
     if not isinstance(url, str) or page is None or reviews is None or not same_origin(url, target.url):

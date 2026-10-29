@@ -13,6 +13,7 @@
  * turn to be sent back unmodified while the tool loop continues.
  */
 import type { ContentBlock, ConverseStreamOutput, TokenUsage } from '@aws-sdk/client-bedrock-runtime';
+import { isRecord } from '../lib/is-record.js';
 
 /** Matches the Smithy DocumentType used by the Bedrock SDK for tool inputs. */
 export type DocumentType = null | boolean | number | string | DocumentType[] | { [prop: string]: DocumentType };
@@ -56,11 +57,11 @@ export function createTurnState(): TurnState {
  * checking the top level is checking the whole value.
  */
 function isJsonObject(parsed: unknown): parsed is Record<string, DocumentType> {
-  return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed);
+  return isRecord(parsed);
 }
 
 /** Parse streamed tool-input JSON; anything that is not a JSON object becomes `{}`. */
-export function parseToolInput(raw: string): Record<string, DocumentType> {
+export function parseStreamedToolInput(raw: string): Record<string, DocumentType> {
   try {
     const parsed: unknown = JSON.parse(raw);
     return isJsonObject(parsed) ? parsed : {};
@@ -88,7 +89,7 @@ function reasoningToContent(block: ReasoningBlock): ContentBlock | null {
 }
 
 function commitToolUse(state: TurnState, block: ToolUseOpenBlock): void {
-  const input = parseToolInput(block.chunks.join(''));
+  const input = parseStreamedToolInput(block.chunks.join(''));
   state.toolUses.push({ toolUseId: block.toolUseId, name: block.name, input });
   state.content.push({ toolUse: { toolUseId: block.toolUseId, name: block.name, input } });
 }

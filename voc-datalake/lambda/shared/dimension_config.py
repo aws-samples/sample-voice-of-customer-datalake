@@ -21,9 +21,16 @@ Validation normalises like ``shared.category_config``: unknown keys are
 dropped, strings are trimmed, empty optional fields are omitted, ``infer``
 defaults to true. Every refusal is a ValueError with a client-safe message.
 
-This module imports nothing from the rest of ``shared`` so the processing-queue
-schema (``shared.ingest_schemas``) can reuse ``validate_tags`` without widening
-its import graph.
+Built-in dimensions (``shared.feedback_types``: ``feedback_type``) are defined in
+code and present on every deployment: ``with_builtin_dimensions`` puts them in
+front of the stored ones on every read, and ``validate_dimensions`` drops any
+entry using a built-in key, so an admin can neither redefine nor remove them
+and they never count against ``MAX_DIMENSIONS``.
+
+This module imports nothing from the rest of ``shared`` except the leaf module
+``shared.feedback_types``, so the processing-queue schema
+(``shared.ingest_schemas``) can reuse ``validate_tags`` without widening its
+import graph.
 """
 
 from __future__ import annotations
@@ -32,6 +39,8 @@ import re
 import unicodedata
 from collections.abc import Mapping
 from typing import Any, Final
+
+from shared.feedback_types import BUILTIN_DIMENSION_KEYS, feedback_type_dimension
 
 __all__ = [
     'DIMENSIONS_SETTINGS_KEY',
@@ -45,6 +54,7 @@ __all__ = [
     'resolve_dimensions',
     'validate_dimensions',
     'validate_tags',
+    'with_builtin_dimensions',
 ]
 
 DIMENSIONS_SETTINGS_KEY: Final = {'pk': 'SETTINGS#dimensions', 'sk': 'config'}
@@ -75,6 +85,11 @@ RESERVED_DIMENSION_KEYS: Final = frozenset({
 
 _DIMS_PAIR_SEPARATOR: Final = ','
 _DIMS_KEY_VALUE_SEPARATOR: Final = ':'
+# `key:a|b` lists several values of one key (shared/item_filters.py); each choice is a
+# value in its own right, so the list as a whole may be longer than one value. At most
+# every configured value plus the `~unset` choice.
+_DIMS_ANY_SEPARATOR: Final = '|'
+_MAX_DIMS_CHOICES: Final = MAX_DIMENSION_VALUES + 1
 
 
 def _without_controls(value: str) -> str:
@@ -204,9 +219,24 @@ def _check_hierarchy(dimensions: list[dict[str, Any]]) -> None:
                     f'Value "{value["name"]}" of dimension "{dimension["key"]}" names an unknown parent_value')
 
 
+def _is_builtin_entry(entry: object) -> bool:
+    return isinstance(entry, Mapping) and isinstance(entry.get('key'), str) \
+        and entry['key'].strip() in BUILTIN_DIMENSION_KEYS
+
+
+def _without_builtin(value: object) -> object:
+    """``value`` without its built-in entries when it is a list (anything else is left to the bounds check)."""
+    return [entry for entry in value if not _is_builtin_entry(entry)] if isinstance(value, list) else value
+
+
 def validate_dimensions(value: object) -> list[dict[str, Any]]:
-    """The normalised dimensions list, or ValueError with a client-safe message."""
-    dimensions = [_dimension(entry) for entry in bounded_list(value, MAX_DIMENSIONS, 'dimensions')]
+    """The normalised admin-defined dimensions, or ValueError with a client-safe message.
+
+    Entries keyed by a built-in dimension are dropped first (the SPA echoes the
+    built-in back on save; a stored legacy ``feedback_type`` is superseded).
+    """
+    entries = bounded_list(_without_builtin(value), MAX_DIMENSIONS, 'dimensions')
+    dimensions = [_dimension(entry) for entry in entries]
     keys = [dimension['key'] for dimension in dimensions]
     if len(set(keys)) != len(keys):
         raise ValueError('Dimension keys must be unique')
@@ -214,8 +244,13 @@ def validate_dimensions(value: object) -> list[dict[str, Any]]:
     return dimensions
 
 
+def with_builtin_dimensions(dimensions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The built-in dimensions followed by ``dimensions`` (already validated, built-ins dropped)."""
+    return [feedback_type_dimension(), *dimensions]
+
+
 def load_dimensions_config(table: Any) -> list[dict[str, Any]]:
-    """The stored dimensions, normalised; [] when none are configured.
+    """The built-in dimensions plus the stored ones, normalised (only the built-ins when none are stored).
 
     Uncached and strongly consistent, for callers that just saved or that run
     rarely. A DynamoDB error propagates; a stored row that no longer validates
@@ -223,7 +258,7 @@ def load_dimensions_config(table: Any) -> list[dict[str, Any]]:
     being half-applied.
     """
     item = table.get_item(Key=DIMENSIONS_SETTINGS_KEY, ConsistentRead=True).get('Item') or {}
-    return validate_dimensions(item.get('dimensions'))
+    return with_builtin_dimensions(validate_dimensions(item.get('dimensions')))
 
 
 def allowed_values(dimension: Mapping[str, Any]) -> list[str]:
@@ -292,6 +327,14 @@ def validate_tags(value: object) -> list[str]:
     return tags
 
 
+def _is_dims_value(value: str) -> bool:
+    """One ``dims`` pair's value: a dimension value, or a ``|`` list of them (each one well-formed)."""
+    if DIMENSION_VALUE_RE.match(value):
+        return True
+    choices = [choice for choice in value.split(_DIMS_ANY_SEPARATOR) if choice]
+    return 0 < len(choices) <= _MAX_DIMS_CHOICES and all(DIMENSION_VALUE_RE.match(c) for c in choices)
+
+
 def parse_dims_param(raw: str | None) -> dict[str, str]:
     """The ``dims=key:value[,key:value...]`` query parameter as a mapping.
 
@@ -308,7 +351,7 @@ def parse_dims_param(raw: str | None) -> dict[str, str]:
     parsed: dict[str, str] = {}
     for pair in pairs:
         key, separator, value = pair.strip().partition(_DIMS_KEY_VALUE_SEPARATOR)
-        if not separator or not DIMENSION_KEY_RE.match(key) or not DIMENSION_VALUE_RE.match(value):
+        if not separator or not DIMENSION_KEY_RE.match(key) or not _is_dims_value(value):
             raise ValueError('dims must be key:value pairs separated by commas')
         if key in parsed:
             raise ValueError(f'dims names "{key}" more than once')

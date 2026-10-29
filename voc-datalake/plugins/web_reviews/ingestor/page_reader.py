@@ -27,6 +27,8 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from block_detection import HTML_SAMPLE_CHARS, PageSignals
 from cdp_client import CdpConnection, CdpError
 
+from shared.cdp_page import HTTP_ERROR_RESPONSE, PROGRESS_JS
+
 #: Visible text kept per page (what the LLM extraction reads at most, in chunks).
 MAX_TEXT_CHARS: Final = 160000
 #: JSON-LD blocks kept per page, and characters per block.
@@ -46,8 +48,6 @@ SCROLL_PAUSE_SECONDS: Final = 0.6
 SETTLED_TEXT_CHARS: Final = 500
 EVALUATE_TIMEOUT_SECONDS: Final = 60.0
 PAGE_PARAMETERS: Final = ('page', 'p', 'pg')
-#: Page.navigate's errorText for a main document answered with an HTTP error status (a 403 bot wall).
-HTTP_ERROR_RESPONSE: Final = 'net::ERR_HTTP_RESPONSE_CODE_FAILURE'
 
 NEXT_WORDS: Final = (
     'next', 'next page', 'siguiente', 'página siguiente', 'próxima', 'suivant', 'page suivante',
@@ -103,9 +103,6 @@ async (mode, target, nextWords, limits) => {
 }
 """
 
-PROGRESS_JS: Final = (
-    "JSON.stringify([document.readyState, document.body ? document.body.innerText.length : 0])"
-)
 #: Scroll one window height down; answers ``[at the bottom, document height]``.
 SCROLL_JS: Final = (
     "(() => { window.scrollBy(0, window.innerHeight); const h = document.documentElement"

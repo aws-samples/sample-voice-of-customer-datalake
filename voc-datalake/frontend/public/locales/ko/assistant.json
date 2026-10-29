@@ -22,6 +22,7 @@
     "stillGenerating": "아직 생성 중…"
   },
   "pages": {
+    "participants": "참여자",
     "home": "홈",
     "dashboard": "대시보드",
     "feedback": "피드백",
@@ -59,6 +60,8 @@
     "externalLink": "{{host}}, 새 탭에서 열림",
     "copy": "복사",
     "copied": "복사됨",
+    "stopped": "중지됨",
+    "regenerate": "다시 생성",
     "savedDocumentTitle": "어시스턴트 답변 – {{date}}",
     "saveAsDocument": {
       "idle": "문서로 저장",
@@ -153,6 +156,7 @@
     "subtitle": "데이터를 읽고 변경을 제안할 수 있습니다. 승인 없이는 아무것도 변경되지 않습니다."
   },
   "suggestions": {
+    "participants": {"1": "어떤 참여자 목록이 있나요?", "2": "베타 고객 목록을 만들어 줘", "3": "붙여 넣은 표의 사람들을 목록에 추가해 줘"},
     "dashboard": { "1": "이번 주 고객 감정은 어떻게 바뀌었어?", "2": "피드백이 가장 많이 들어오는 소스는?", "3": "이 대시보드를 세 문장으로 요약해 줘" },
     "categories": { "1": "불만이 가장 많은 카테고리는?", "2": "가장 큰 카테고리에 대해 고객들은 뭐라고 해?", "3": "나빠지고 있는 카테고리는?" },
     "projects": { "1": "이번 주 가장 많은 불만으로 프로젝트를 시작해 줘", "2": "진행 중인 프로젝트는?", "3": "다음 리서치 프로젝트는 무엇이 좋을까?" },
@@ -273,5 +277,30 @@
       "cancelled": "취소됨",
       "expired": "만료됨"
     }
+  },
+  "mentions": {
+    "placeholder": "이 프로젝트에 대해 질문하세요. 페르소나는 @, 문서는 #을 입력하세요…",
+    "allLabel": "모든 페르소나",
+    "allHint": "모든 페르소나가 답변합니다",
+    "heading": {
+      "persona": "페르소나",
+      "document": "문서"
+    },
+    "limit": {
+      "persona": "메시지당 페르소나는 최대 {{max, number}}개입니다.",
+      "document": "메시지당 문서는 최대 {{max, number}}개입니다."
+    },
+    "loading": "프로젝트를 불러오는 중…",
+    "empty": {
+      "persona": "일치하는 페르소나가 없습니다.",
+      "document": "일치하는 문서가 없습니다."
+    },
+    "count_one": "추천 {{count, number}}개",
+    "count_other": "추천 {{count, number}}개",
+    "chips": "이 메시지에서 언급됨",
+    "remove": "{{name}} 제거",
+    "insertPersona": "페르소나 언급",
+    "insertDocument": "문서 태그",
+    "allCapped": "@all은 페르소나 {{total, number}}개 중 처음 {{max, number}}개에 질문합니다: {{names}}."
   }
 }

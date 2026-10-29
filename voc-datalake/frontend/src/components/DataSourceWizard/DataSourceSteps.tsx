@@ -215,6 +215,8 @@ export function FeedbackFiltersStep({
           {sources.map(s => (
             <button
               key={s}
+              type="button"
+              aria-pressed={contextConfig.sources.includes(s)}
               onClick={() => onContextChange({ ...contextConfig, sources: toggleArrayItem(contextConfig.sources, s) })}
               className={clsx(
                 'px-2 sm:px-3 py-2 rounded-lg border text-xs sm:text-sm truncate',
@@ -239,6 +241,8 @@ export function FeedbackFiltersStep({
             {categories.map(c => (
               <button
                 key={c.value}
+                type="button"
+                aria-pressed={contextConfig.categories.includes(c.value)}
                 onClick={() => onContextChange({ ...contextConfig, categories: toggleArrayItem(contextConfig.categories, c.value) })}
                 className={clsx(
                   'px-2 sm:px-3 py-2 rounded-lg border text-xs sm:text-sm truncate',
@@ -258,6 +262,8 @@ export function FeedbackFiltersStep({
           {SENTIMENTS.map(s => (
             <button
               key={s}
+              type="button"
+              aria-pressed={contextConfig.sentiments.includes(s)}
               onClick={() => onContextChange({ ...contextConfig, sentiments: toggleArrayItem(contextConfig.sentiments, s) })}
               className={clsx(
                 'px-3 sm:px-4 py-2 rounded-lg border text-sm flex-1',

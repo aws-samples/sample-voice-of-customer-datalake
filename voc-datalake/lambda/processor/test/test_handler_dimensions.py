@@ -6,6 +6,7 @@ import pytest
 from botocore.exceptions import ClientError
 
 from processor import handler
+from processor.test.process_fixtures import process_with_model
 from shared.source_profiles import SourceProfilesUnavailable
 
 DIMENSIONS = [
@@ -38,13 +39,7 @@ def process():
     """`process_feedback` with no AWS calls; the model answers ``INSIGHTS`` (or the given answer)."""
     def run(record, insights=None):
         llm = {'insights': INSIGHTS if insights is None else insights, 'metadata': {}}
-        with patch.object(handler, 'check_duplicate', return_value=False), \
-             patch.object(handler, 'detect_language', return_value='en'), \
-             patch.object(handler, 'translate_text', side_effect=lambda text, *_: text), \
-             patch.object(handler, 'get_comprehend_sentiment', return_value={'label': 'neutral', 'score': 0.0}), \
-             patch.object(handler, 'invoke_bedrock_llm', return_value=llm), \
-             patch.object(handler, 'get_categories_config', return_value=CATEGORIES):
-            return handler.process_feedback(record)
+        return process_with_model(record, llm, CATEGORIES)
     return run
 
 

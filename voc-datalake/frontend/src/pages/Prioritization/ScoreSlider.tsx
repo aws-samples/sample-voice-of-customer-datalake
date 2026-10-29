@@ -4,87 +4,90 @@
  */
 
 import clsx from 'clsx'
-import { useId, useRef } from 'react'
+import { X } from 'lucide-react'
+import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getScoreColor } from './teamScore'
 
-/**
- * Where an unscored slider's handle rests. A range input must hold SOME
- * position — `min={1}` cannot represent "no value" — so the handle sits in the
- * middle while the badge and `aria-valuetext` say "not scored". The position is
- * presentation only: it is never written anywhere until the reader drags, at
- * which point `onChange` reports the dragged value and the axis becomes real.
- */
-const UNSCORED_HANDLE_POSITION = 3
-
 /** The top of every axis (1 … 5). */
 const SCORE_MAX = 5
+/** The lowest score. */
+const SCORE_MIN = 1
+/** The API's own "unscored" value, and the slider's dedicated "Not scored" stop. */
+const UNSCORED = 0
 
 interface ScoreSliderProps {
   readonly label: string
-  /** The stored axis value, where 0 means UNSCORED (the API's own contract). */
+  /** The axis value on screen (saved, or the reader's unsaved choice), where 0 means UNSCORED. */
   readonly value: number
   readonly onChange: (v: number) => void
+  /**
+   * Whether this reviewer's SAVED ballot leaves the axis unscored. Only then does the
+   * slider offer its "Not scored" stop and the Clear button: a save cannot un-score a
+   * stored axis (the API reads 0 as "leave unchanged"), so offering either over a
+   * stored score would show "Not scored" for a value the save then keeps.
+   */
+  readonly canBeUnscored: boolean
   readonly description?: string
   readonly lowLabel?: string
   readonly highLabel?: string
   readonly inverted?: boolean
 }
 
+/** The badge beside the label: the value, or a visible "Not scored". */
+function ValueBadge({ value, inverted }: { readonly value: number; readonly inverted: boolean }) {
+  const { t } = useTranslation('prioritization')
+  if (value === UNSCORED) {
+    return <span className="text-xs font-medium px-2 py-0.5 rounded-sm bg-bg-hover text-text">{t('scores.notScored')}</span>
+  }
+  return <span className={clsx('text-sm font-bold px-2 py-0.5 rounded-sm', getScoreColor(inverted ? SCORE_MIN + SCORE_MAX - value : value))}>{value}</span>
+}
+
+/** Returns an unsaved choice to "Not scored"; named after the axis for assistive technology. */
+function ClearButton({ label, onClear }: { readonly label: string; readonly onClear: () => void }) {
+  const { t } = useTranslation('prioritization')
+  return (
+    <button
+      type="button"
+      onClick={onClear}
+      aria-label={t('scores.clearAxis', { name: label })}
+      className="btn btn-ghost btn-sm inline-flex items-center gap-1"
+    >
+      <X size={12} aria-hidden="true" />
+      {t('scores.clear')}
+    </button>
+  )
+}
+
 /**
  * One axis of the caller's own ballot.
  *
- * An axis nobody scored (value 0) renders as UNSCORED — a dash in the badge, a
- * muted handle, and `aria-valuetext` saying so — rather than as a 3. Painting a
- * 3 was #343: the editor asserted a mid-range value the record did not hold,
- * indistinguishable from a stored 3, so a reviewer could never discover on
- * screen that three quarters of their ballot was recorded as nothing. The dash
- * cannot be misread as a score, which is the same rule the team summary's em
- * dash follows one level up.
+ * "Not scored" is its OWN position, distinct from every score (decision, 5.35): a
+ * native range cannot be empty, and resting an unscored handle on 3 meant choosing 3
+ * changed nothing — no `change` event, so the axis stayed unscored and announced
+ * "Not scored" while the handle sat on 3. With an unscored stop below 1, the first
+ * interaction of any kind (a click or drag on any number, an arrow key, Home/End)
+ * is a real change, and `aria-valuetext` always names the real value. Clear returns
+ * an unsaved choice to "Not scored" in one press; Home does the same from the keyboard.
  */
 export default function ScoreSlider({
-  label, value, onChange, description, lowLabel = '1', highLabel = '5', inverted = false,
+  label, value, onChange, canBeUnscored, description, lowLabel = '1', highLabel = '5', inverted = false,
 }: ScoreSliderProps) {
   const { t } = useTranslation('prioritization')
   const inputId = useId()
   const labelId = useId()
   const descriptionId = useId()
   const hasDescription = description != null && description !== ''
-  const unscored = value === 0
-  const position = unscored ? UNSCORED_HANDLE_POSITION : value
-  // Was the press that is now ending a press ON THIS CONTROL? `pointerup` also
-  // fires when a pointer that went down elsewhere is released over the input,
-  // and that stray release must not cast a vote. A ref, not state: it changes
-  // nothing on screen. Cleared on every way a press stops mattering — the up
-  // itself, leaving the control, cancel — because a flag cleared only on
-  // pointerup-on-the-input sticks when the press ends elsewhere, and the NEXT
-  // unrelated release over the input would then cast the resting value: the
-  // exact stray vote the guard exists to prevent, one interaction later.
-  //
-  // The three clears are ORDERING-SAFE by construction: `pointercancel` fires
-  // instead of an up, and a `pointerleave` after an up runs after the commit
-  // already happened. `lostpointercapture` is deliberately NOT used — per spec
-  // it follows the up (so it would add nothing), and an engine firing it early
-  // would break the click-at-the-resting-position commit on touch; a clear
-  // whose only distinctive ordering is the harmful one earns no place here.
-  // Browser-verified caveat: jsdom models no implicit pointer capture, so the
-  // drag-off-and-release path (capture keeps `pointerleave` from firing
-  // mid-drag and the up still lands here) holds in real browsers, not in the
-  // test harness — the tests pin the guard's logic, not the capture model.
-  const pressedHere = useRef(false)
-  const releasePress = () => { pressedHere.current = false }
+  const unscored = value === UNSCORED
+  const minimum = canBeUnscored ? UNSCORED : SCORE_MIN
   return (
     <div className="space-y-2">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center gap-2">
         <label id={labelId} htmlFor={inputId} className="text-sm font-medium text-text">{label}</label>
-        {unscored ? (
-          /* The dash is decorative (the same treatment as the team summary's);
-             the state itself is announced on the input via aria-valuetext, which
-             is where a screen reader is listening. */
-          <span className="text-sm font-bold px-2 py-0.5 rounded-sm bg-bg-hover text-text" aria-hidden="true">—</span>
-        ) : (
-          <span className={clsx('text-sm font-bold px-2 py-0.5 rounded-sm', getScoreColor(inverted ? 6 - value : value))}>{value}</span>
-        )}
+        <div className="flex items-center gap-2">
+          {canBeUnscored && !unscored ? <ClearButton label={label} onClear={() => onChange(UNSCORED)} /> : null}
+          <ValueBadge value={value} inverted={inverted} />
+        </div>
       </div>
       {hasDescription ? <p id={descriptionId} className="text-xs text-muted">{description}</p> : null}
       <div className="flex items-center gap-2">
@@ -92,9 +95,10 @@ export default function ScoreSlider({
         <input
           id={inputId}
           type="range"
-          min={1}
+          min={minimum}
           max={SCORE_MAX}
-          value={position}
+          step={1}
+          value={Math.max(minimum, value)}
           /* Named by the visible label explicitly, not only through `htmlFor`, so
              every accessibility tree (and audit) reads the axis name off the slider. */
           aria-labelledby={labelId}
@@ -102,29 +106,7 @@ export default function ScoreSlider({
           aria-describedby={hasDescription ? descriptionId : undefined}
           aria-valuetext={unscored ? t('scores.notScored') : t('scores.valueOfMax', { value, max: SCORE_MAX })}
           onChange={(e) => onChange(Number(e.target.value))}
-          onPointerDown={() => { pressedHere.current = true }}
-          onPointerLeave={releasePress}
-          onPointerCancel={releasePress}
-          /* A reader who wants EXACTLY the resting position: clicking the track
-             at 3 leaves the value unchanged, so `onChange` never fires and the
-             axis would stay unscored with no way to say "3" short of wiggling.
-             Releasing a press that STARTED on an unscored slider commits the
-             value the control holds at release — read off the DOM, not off this
-             render's props, because on a click-at-5 the `change` event fires
-             first and a stale closure would rewrite that deliberate 5 back to
-             the resting 3 if the re-render has not flushed. `pressedHere` keeps
-             a pointer that went down elsewhere and was released over the input
-             from casting a vote nobody aimed at it. (Keyboard readers are
-             covered by onChange itself: the first arrow key scores the axis.) */
-          onPointerUp={(e) => {
-            const pressed = pressedHere.current
-            pressedHere.current = false
-            if (unscored && pressed) onChange(Number(e.currentTarget.value))
-          }}
-          className={clsx(
-            'range flex-1 w-auto',
-            unscored && 'range-unscored',
-          )}
+          className={clsx('range flex-1 w-auto', unscored && 'range-unscored')}
         />
         <span className="text-xs text-muted w-16 text-right">{highLabel}</span>
       </div>

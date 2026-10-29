@@ -74,10 +74,10 @@ def _submit(tables, ctx, body):
         'created_by': 'f', 'created_at': '2026-08-17T10:00:00+00:00',
         'expires_at': '2096-10-02T07:06:40+00:00', 'ttl': 4_000_000_000,
     })
-    return _public(ballots_handler, aggregates, ctx, 'POST', f'/voting-sessions/{SESSION_ID}/submit', body)
+    return _public(ballots_handler, tables, ctx, 'POST', f'/voting-sessions/{SESSION_ID}/submit', body)
 
 
-def _public(module, aggregates, ctx, method, path, body=None):
+def _public(module, tables, ctx, method, path, body=None):
     event = {
         'httpMethod': method, 'path': path, 'resource': path,
         'headers': {'Content-Type': 'application/json'},
@@ -88,7 +88,9 @@ def _public(module, aggregates, ctx, method, path, body=None):
         'multiValueQueryStringParameters': None, 'stageVariables': None, 'multiValueHeaders': {},
         'isBase64Encoded': False,
     }
-    with patch.object(module, 'get_aggregates_table', return_value=aggregates):
+    aggregates, projects = tables
+    with patch.object(module, 'get_aggregates_table', return_value=aggregates), \
+            patch.object(module, 'get_projects_table', return_value=projects):
         response = module.lambda_handler(event, ctx)
     return response['statusCode'], json.loads(response['body'])
 
@@ -205,8 +207,7 @@ class TestBallotsAgainstTheSetup:
 
         self._configure(tables, lambda_context)
         _submit(tables, lambda_context, {'value': 3})
-        aggregates, _ = tables
-        _, body = _public(ballots_handler, aggregates, lambda_context, 'GET',
+        _, body = _public(ballots_handler, tables, lambda_context, 'GET',
                           f'/voting-sessions/{SESSION_ID}/config')
         assert body['session']['axes'] == [
             {'id': 'value', 'label': 'Value', 'description': None, 'low_label': None, 'high_label': None,
@@ -228,13 +229,24 @@ class TestTheComposite:
         aggregate = self._scored(tables, lambda_context, {'alice': {'value': 5, 'effort': 2}})
         assert (aggregate['composite'], aggregate['value'], aggregate['effort']) == (4.6, 5.0, 2.0)
 
-    def test_the_team_composite_is_the_mean_of_fully_scored_ballots(self, tables, lambda_context):
+    def test_the_team_composite_counts_every_vote_through_the_team_axis_means(self, tables, lambda_context):
         aggregate = self._scored(tables, lambda_context, {
             'alice': {'value': 5, 'effort': 2},   # 4.6
             'bob': {'value': 3, 'effort': 5},     # (180 + 40) / 100 = 2.2
-            'cy': {'value': 1},                   # partial: not compared, not averaged
+            'cy': {'value': 1},                   # partial: in the means, not in the spread
         })
-        assert (aggregate['composite'], aggregate['score_spread'], aggregate['reviewer_count']) == (3.4, 2.4, 3)
+        # value mean (5+3+1)/3 = 3.0, effort mean 3.5 -> 6-3.5 = 2.5: 0.6*3 + 0.4*2.5 = 2.8
+        assert (aggregate['composite'], aggregate['score_spread'], aggregate['reviewer_count']) == (2.8, 2.4, 3)
+
+    def test_a_partial_owner_ballot_is_not_dropped_beside_a_full_room_ballot(self, tables, lambda_context):
+        # The 5.34 e2e: the owner left one metric unscored, a room ballot scored all of
+        # them, and the team score read the room ballot alone over "2 reviewers".
+        aggregate = self._scored(tables, lambda_context, {
+            'owner': {'value': 5},                # partial
+            'room': {'value': 1, 'effort': 5},    # full: 0.6*1 + 0.4*1 = 1.0
+        })
+        # value mean 3.0, effort mean 5 -> 1: 0.6*3 + 0.4*1 = 2.2 (not the room's 1.0)
+        assert (aggregate['composite'], aggregate['reviewer_count']) == (2.2, 2)
 
     def test_a_partial_ballot_alone_composites_over_what_it_scored(self, tables, lambda_context):
         aggregate = self._scored(tables, lambda_context, {'alice': {'effort': 1}})

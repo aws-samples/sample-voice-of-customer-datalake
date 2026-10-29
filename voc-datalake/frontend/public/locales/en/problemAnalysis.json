@@ -52,6 +52,14 @@
     "examplesLoading": "Loading example reviews…",
     "examplesFailed": "Could not load the example reviews."
   },
+  "types": {
+    "label": "Review types",
+    "problemsOnly": "Problems only",
+    "problemsOnlyHint": "Bugs, service failures, performance, usability, pricing and billing, and support experience. Feature requests, praise, questions and other reviews are hidden.",
+    "allTypes": "All types",
+    "untyped": "Reviews not typed yet: {{n, number}} (kept in view)",
+    "untypedHint": "Reviews stored before review types existed have no type until an administrator classifies them in Administration → Taxonomy. They stay in view under every type filter."
+  },
   "title": "Problem Analysis",
   "subtitle": "Recurring customer problems grouped by category, with likely root causes"
 }

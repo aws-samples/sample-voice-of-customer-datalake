@@ -4,6 +4,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { bedrockEvents, failingStream, fakeToolset, runBody } from './__fixtures__/fakes.js';
+import { buildPageContextBlock } from './page-context.js';
 import type { ConverseStreamOutput } from '@aws-sdk/client-bedrock-runtime';
 import {
   createProject,
@@ -237,7 +238,7 @@ describe('resume after approval', () => {
     expect(nth(h.calls, 0).messages).toStrictEqual([
       { role: 'user', content: [{ text: 'first' }] },
       { role: 'assistant', content: [{ text: 'answer\n[tool search_feedback({}) → old result]' }] },
-      { role: 'user', content: [{ text: 'second' }] },
+      { role: 'user', content: [{ text: buildPageContextBlock({ page: { kind: 'dashboard', path: '/' } }) }, { text: 'second' }] },
     ]);
     expect(nth(h.calls, 0).cacheMessageIndex).toBe(1);
   });

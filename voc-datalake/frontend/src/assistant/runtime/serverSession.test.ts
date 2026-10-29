@@ -10,7 +10,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { EventType } from '@ag-ui/core'
 import type { SessionRecord } from '../sessions/schema'
 
-vi.mock('../sessions/sessionsApi', () => ({ getSession: vi.fn(), saveSession: vi.fn() }))
+vi.mock('../sessions/sessionsApi', () => ({ getSession: vi.fn(), saveSession: vi.fn(), cancelServerRun: vi.fn(() => Promise.resolve()) }))
 vi.mock('../agui/client', async (importOriginal) => ({
   ...await importOriginal<typeof import('../agui/client')>(),
   runAgent: vi.fn(),
@@ -252,8 +252,8 @@ describe('the SPA never overwrites a newer server revision', () => {
     expect(slot(threadId)?.thread.messages.at(-1)).toMatchObject({ content: 'Done' })
   })
 
-  it('stop keeps what the user saw even when the server refuses the save', async () => {
-    // A run that streams one delta and then waits until it is aborted.
+  /** A run that streams one delta and then waits until it is aborted; resolves once the stream is requested. */
+  async function streamThenStop(threadId: string): Promise<void> {
     runAgentMock.mockImplementationOnce(async (input, onEvent, signal) => {
       const aborted = new Promise<never>((_resolve, reject) => {
         signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
@@ -264,19 +264,46 @@ describe('the SPA never overwrites a newer server revision', () => {
       ] as const) onEvent(event)
       await aborted
     })
-    // The save as the run starts lands; the one after Stop is refused (the server run is live).
-    saveSessionMock.mockResolvedValueOnce(undefined).mockRejectedValue(new ApiError(409))
-    getSessionMock.mockResolvedValue(record({ revision: 99 }))
-    const threadId = useThreadStore.getState().activeId
     const run = sendMessage('hi', env, threadId)
-    await vi.waitFor(() => expect(slot(threadId)?.thread.status).toBe('streaming'))
+    await vi.waitFor(() => expect(runAgentMock).toHaveBeenCalledTimes(1))
     stopRun(env.page, threadId)
     await run
+  }
+
+  // 5.35.03 (e2e 5.35.02): the save right after Stop was refused with 409 (a console error):
+  // the server owns the run until its cancel lands, so the tab waits for the server's copy.
+  it('after Stop sends no save while the server run is live, then shows the server copy', async () => {
+    const threadId = useThreadStore.getState().activeId
+    getSessionMock.mockResolvedValueOnce(record({ id: threadId, revision: 98 })).mockResolvedValue(record({
+      id: threadId, runStatus: 'stopped', revision: 99,
+      messages: [{ id: 'u', role: 'user', content: 'hi' }, { id: 'a', role: 'assistant', content: 'Seen so far, and a bit more' }],
+    }))
+    await streamThenStop(threadId)
+    await vi.waitFor(() => expect(slot(threadId)?.revision).toBe(99), { timeout: 5000 })
+    expect(saveSessionMock).toHaveBeenCalledTimes(1)
+    expect(slot(threadId)?.thread).toMatchObject({ status: 'idle', messages: [{ content: 'hi' }, { content: 'Seen so far, and a bit more' }] })
+  })
+
+  it('after Stop saves its own copy when the server stored nothing newer', async () => {
+    const threadId = useThreadStore.getState().activeId
+    getSessionMock.mockResolvedValue(record({ id: threadId, runStatus: 'finished', revision: 0, messages: [] }))
+    await streamThenStop(threadId)
+    await vi.waitFor(() => expect(saveSessionMock).toHaveBeenCalledTimes(2), { timeout: 3000 })
+    expect(slot(threadId)?.thread.messages.at(-1)).toMatchObject({ content: 'Seen so far' })
+  })
+
+  it('stopped while the question is still saving (no server run): saves at once, reads nothing', async () => {
+    const threadId = useThreadStore.getState().activeId
+    const held = { release: (): void => undefined }
+    saveSessionMock.mockImplementationOnce(() => new Promise((resolve) => {
+      held.release = () => resolve(undefined)
+    }))
+    const run = sendMessage('hi', env, threadId)
+    await vi.waitFor(() => expect(saveSessionMock).toHaveBeenCalledTimes(1))
+    stopRun(env.page, threadId)
+    held.release()
+    await run
     await vi.waitFor(() => expect(saveSessionMock).toHaveBeenCalledTimes(2))
-    await new Promise((resolve) => {
-      setTimeout(resolve, 0)
-    })
-    expect(getSessionMock).not.toHaveBeenCalled()
-    expect(slot(threadId)?.thread).toMatchObject({ status: 'idle' })
+    expect([runAgentMock.mock.calls.length, getSessionMock.mock.calls.length]).toStrictEqual([0, 0])
   })
 })

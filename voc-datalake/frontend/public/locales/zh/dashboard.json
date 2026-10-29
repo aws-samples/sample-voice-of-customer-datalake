@@ -133,5 +133,8 @@
   },
   "openInCategories": "在“类别”中打开 {{name}}",
   "seeAllUrgent_one": "查看全部 {{count, number}} 条紧急评论",
-  "seeAllUrgent_other": "查看全部 {{count, number}} 条紧急评论"
+  "seeAllUrgent_other": "查看全部 {{count, number}} 条紧急评论",
+  "partialNote": {
+    "reviewBasis": "按评论日期统计需要逐条读取评论，因此较宽的时间范围会被截断；切换到导入日期即可查看完整总数。"
+  }
 }

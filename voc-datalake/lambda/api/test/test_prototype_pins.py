@@ -272,7 +272,7 @@ class TestOpaqueOriginSubmit:
         answers = [post_with_origin(form, CONFIGURED_ORIGIN, body) for form, body in
                    ((FORM, PIN_BODY), (STANDARD_FORM, {'text': 'Great product'}))]
         assert [(status, h['access-control-allow-origin'], 'vary' in h) for status, h in answers] == [
-            (200, CONFIGURED_ORIGIN, False), (200, CONFIGURED_ORIGIN, False)]
+            (200, CONFIGURED_ORIGIN, True), (200, CONFIGURED_ORIGIN, True)]
 
     def test_other_routes_of_a_pin_form_never_echo_null(self, post_with_origin):
         status, headers = post_with_origin(FORM, 'null', method='GET', path_suffix='config')

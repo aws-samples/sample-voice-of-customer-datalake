@@ -42,6 +42,7 @@ from boto3.dynamodb.conditions import Key
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import agent_run_decisions, workflow_schema
+from shared.agent_run_decisions import RUN_NEEDS_HUMAN
 from shared.aws import get_dynamodb_resource, is_conditional_check_failure
 from shared.category_access import CategoryScope, item_category
 from shared.dynamo_paging import query_all
@@ -50,6 +51,7 @@ from shared.exceptions import ConflictError, NotFoundError, ServiceError, Valida
 from shared.indexes import AGENTS_LISTING_INDEX
 from shared.logging import logger
 from shared.model_config import ALLOWED_MODEL_IDS
+from shared.request_body import validated_text as _text
 from shared.row_ids import validated_row_id
 
 AGENTS_TABLE_ENV: Final = 'AGENTS_TABLE'
@@ -72,7 +74,6 @@ WORKFLOW_STATUS_ARCHIVED: Final = AGENT_STATUS_ARCHIVED
 
 RUN_QUEUED: Final = 'queued'
 RUN_RUNNING: Final = 'running'
-RUN_NEEDS_HUMAN: Final = 'needs_human'
 RUN_COMPLETED: Final = 'completed'
 RUN_FAILED: Final = 'failed'
 RUN_CANCELLED: Final = 'cancelled'
@@ -129,16 +130,6 @@ def utc_now() -> datetime:
 
 def iso(moment: datetime) -> str:
     return moment.astimezone(UTC).isoformat(timespec='seconds')
-
-
-def parse_iso(value: object) -> datetime | None:
-    if not isinstance(value, str) or not value:
-        return None
-    try:
-        moment = datetime.fromisoformat(value)
-    except ValueError:
-        return None
-    return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
 
 
 def new_agent_id() -> str:
@@ -332,19 +323,6 @@ def resolve_timezone(name: object) -> Any:
 # --------------------------------------------------------------------------
 # The agent model: validation of create/update bodies.
 # --------------------------------------------------------------------------
-
-def _text(value: object, label: str, max_chars: int, *, required: bool = False) -> str:
-    if value is None:
-        value = ''
-    if not isinstance(value, str):
-        raise ValidationError(f'{label} must be a string')
-    text = value.strip()
-    if required and not text:
-        raise ValidationError(f'{label} is required')
-    if len(text) > max_chars:
-        raise ValidationError(f'{label} must be at most {max_chars} characters')
-    return text
-
 
 def _whole(value: object, label: str, low: int, high: int, default: int) -> int:
     if value is None:
@@ -973,11 +951,18 @@ def list_runs(table: Any, agent_id: str, *, limit: int, cursor: object = None) -
 
 
 def run_view(item: Mapping[str, Any]) -> dict[str, Any]:
-    """The API shape of a run, with what a human may decide on a ``needs_human`` one."""
+    """The API shape of a run, with what a human may decide on a ``needs_human`` one.
+
+    A completed run answers ``error: None``: runs closed after needs_human up to 5.35.02
+    kept the pause reason stored ("Needs a human: the workflow asks for a human.").
+    """
     data = plain(dict(item))
     keys = ('run_id', 'agent_id', 'status', 'trigger', 'trigger_detail', 'started_at', 'finished_at',
             'project_id', 'current_node_id', 'model_calls', 'error', 'workflow_id', 'workflow_revision')
-    return {**{key: data.get(key) for key in keys},
+    view = {key: data.get(key) for key in keys}
+    if view['status'] == RUN_COMPLETED:
+        view['error'] = None
+    return {**view,
             'needs_human': agent_run_decisions.needs_human_view(data),
             'decision': agent_run_decisions.decision_view(data),
             'actions': agent_run_decisions.allowed_actions(data)}

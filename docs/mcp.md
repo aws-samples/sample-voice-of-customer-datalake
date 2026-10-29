@@ -36,14 +36,19 @@ rows stay in the projects table's `MCPTOKEN` partition, unused, and the global s
 whose role can read only `MCPGTOKEN` — answers such a token with a 401. Mint a global
 token on Connect instead. See [project-workspace.md](project-workspace.md#mcp-access).
 
-**Known limitation: the 401 challenge header.** When `/mcp/global` itself refuses a token
-(unknown, revoked, expired or per-project), the Lambda answers 401 with
-`WWW-Authenticate: Bearer …`, but API Gateway REST renames a Lambda-proxy response's
-`WWW-Authenticate` to `x-amzn-Remapped-WWW-Authenticate`. MCP clients therefore see the 401
-and its JSON-RPC error (code `-32001`) without the Bearer challenge. A gateway response can
-only set headers on API Gateway's own errors (the authorizer 401 does carry the challenge),
-not on a 401 the Lambda returns. Clients should treat any 401 from this endpoint as "mint a
-new token on Connect". The e2e `connect.spec.ts` keeps this as a soft check.
+**The 401 challenge header.** A refused token (unknown, wrong secret, revoked, expired,
+per-project, or its minter disabled) gets `401` with `WWW-Authenticate: Bearer
+realm="voc-mcp-global", error="invalid_token"` and the JSON-RPC error
+`{"jsonrpc": "2.0", "id": null, "error": {"code": -32001, …}}`. API Gateway REST renames a
+Lambda-proxy response's `WWW-Authenticate` to `x-amzn-Remapped-WWW-Authenticate`, so the
+refusal is not the handler's: the endpoint's token authorizer is the global MCP function
+itself (`_authorize`, the same credential check, never cached), and its Deny is answered by
+the `ACCESS_DENIED` gateway response (`lib/stacks/api-mcp.ts`), which sets the header as
+given. `id` is `null` because the gateway cannot read the request. A request with no
+`Authorization` header gets the API-wide 401 (`Bearer error="invalid_token"`). Clients should
+treat any 401 from this endpoint as "mint a new token on Connect". Cost: each request
+invokes the function twice (authorizer, then handler), and the handler checks again, so a
+token revoked between the two is still refused.
 
 ## Who a token acts as
 
@@ -65,7 +70,7 @@ The token can only narrow that:
 |---|---|---|
 | `scope` | `read` / `write` (required, no default) | `read` sees only the read tools; `write` adds document writes |
 | `project_id` | optional pin | Project tools (`get_project`, `get_document`, `create_document`, `update_document`) are confined to that project and default to it; `list_projects` shows only it; `run_agent` is refused. Workspace-wide reads (feedback, metrics, categories, memory, company context, agents) still answer |
-| `expires_in_days` | 1–90, default 30 | Always set; there is no non-expiring global token. Tokens minted before 3.02.00 keep their stored expiry (up to 365 days) |
+| `expires_in_days` | 1–90, default 30 (the Connect page offers 1, 7, 30 or 90 days) | Always set; there is no non-expiring global token. Tokens minted before 3.02.00 keep their stored expiry (up to 365 days) |
 
 `run_agent` (agent runs are admin-only) is offered only to a **write** token minted by
 an **admin**, and on every call the handler re-checks with `AdminListGroupsForUser`
@@ -91,7 +96,7 @@ credential is still not an admin anywhere else.
 | `list_agents` | read | `GET /agents` (agents) |
 | `get_agent_run` | read | `GET /agents/{id}/runs/{run_id}`, or without `run_id` `GET /agents/{id}/runs?limit=` (agents) — follow a run `run_agent` started |
 | `create_document` | write | `POST /projects/{id}/documents` (projects) — custom markdown documents |
-| `update_document` | write | `PUT /projects/{id}/documents/{doc}` (projects) |
+| `update_document` | write | `PUT /projects/{id}/documents/{doc}` (projects); a PR/FAQ or PRD only when the minter (and the project owner) work AI-driven, else denied ([ways-of-working.md](ways-of-working.md)) |
 | `run_agent` | write + admin-minted | `POST /agents/{id}/run` (agents) |
 
 The catalogue lives in `lambda/shared/mcp_global_tools.py`. Ids from arguments must
@@ -180,10 +185,10 @@ vitest (`connectSnippets.test.ts`) fails if the skill's tool table and
 
 `lib/stacks/global-mcp.ts` (a construct inside `VocApiStack`; no new stack):
 
-- `POST /mcp/global` behind the MCP token authorizer (`lib/stacks/api-mcp.ts`; shape
-  check only — the handler verifies the token on every request, so a revoke is
-  immediate), throttled at **20 rps / burst 40**. `/mcp` itself has no method;
-- `/connect/tokens` routes are explicit and Cognito-only;
+- `POST /mcp/global` behind the MCP token authorizer (`lib/stacks/api-mcp.ts`: the
+  global MCP function itself, results never cached, so a revoke is immediate; the
+  handler verifies the token again), throttled at **20 rps / burst 40**. `/mcp` itself has no method;
+- `/connect/tokens` routes sit behind one Cognito proxy, `/connect/{proxy+}` (since 5.47.00; the handler routes by path);
 - least-privilege roles, pinned by `lib/stacks/api-stack-mcp-global.test.ts`: the MCP
   role reads/updates only the `MCPGTOKEN` partition, appends only `MCPAUDIT#…` rows,
   calls `AdminGetUser` + `AdminListGroupsForUser`, and invokes exactly the five domain

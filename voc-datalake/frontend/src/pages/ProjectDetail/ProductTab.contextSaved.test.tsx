@@ -1,25 +1,28 @@
 /**
- * @fileoverview The Product tab must tell the page when it saves the context.
+ * @fileoverview The Product tab saves each field on its own and keeps the shared
+ * product-context query current.
  *
- * Found in review of the U8 work, not by the tests: the Overview card reads
- * completeness from a shared query while this tab edits the record in local state.
- * `ProjectDetail` stays mounted across tab switches, so a tab that saved without
- * announcing it left card 1 reporting the count from page load for the rest of the
- * session — the state display looking authoritative while being wrong, which is the
- * defect U8 set out to remove.
+ * The Overview card counts completeness from that query and `ProjectDetail` stays
+ * mounted across tab switches, so a save that left the cache alone would leave the
+ * card reporting the count from page load. And the assistant's approved
+ * `update_product_context` refreshes the same query — the form must show what the
+ * assistant filled in without a reload.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { productTabApiModule, productTabMocks } from './product-tab-fixtures'
+import { createTestQueryClient, renderWithQueryClient } from '@test/query-client'
+import { companyStripModule, productTabApiModule, productTabMocks } from './product-tab-fixtures'
 // After the fixtures on purpose: this imports ProductTab, whose module graph runs
 // the `vi.mock` factory below, which needs the fixture module evaluated.
 import ProductTab from './ProductTab'
 import { emptyProductContext } from './productContextFields'
-import { stubScrollToForSuite } from './project-detail-fixtures'
+import { productContextKey } from './useProjectData'
+import type { QueryClient } from '@tanstack/react-query'
 import type { ProductContext } from '../../api/projectTypes'
 
 vi.mock('../../api/projectsApi', () => productTabApiModule())
+vi.mock('./CompanyContextStrip', () => companyStripModule())
 const {
   getProductContext: mockGetProductContext,
   updateProductContext: mockUpdateProductContext,
@@ -31,64 +34,58 @@ const context = (fields: Partial<ProductContext> = {}): ProductContext => ({
   ...fields,
 })
 
-describe('ProductTab onContextSaved', () => {
-  // jsdom has no Element.scrollTo; see stubScrollToForSuite for why that matters here.
-  stubScrollToForSuite()
+const cached = (client: QueryClient) => client.getQueryData(productContextKey('proj-1'))
 
+describe('ProductTab saving', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetProductContext.mockResolvedValue({ context: context() })
     mockListProductDocs.mockResolvedValue({ docs: [] })
   })
 
-  it('hands the saved context back after a field is edited', async () => {
-    const saved = context({ product_name: 'VoC' })
-    mockUpdateProductContext.mockResolvedValue({ context: saved })
-    const onContextSaved = vi.fn()
+  it('saves one field on blur and seeds the shared query with the server copy', async () => {
+    const client = createTestQueryClient({ gcTime: Infinity })
+    mockUpdateProductContext.mockResolvedValue({ context: { product_name: 'VoC' } })
 
-    await editProductName(onContextSaved)
+    await editProductName(client)
 
     await waitFor(() => {
-      expect(onContextSaved).toHaveBeenCalledWith(saved)
+      expect(cached(client)).toStrictEqual({ context: context({ product_name: 'VoC' }) })
     })
-    // The server's copy, normalised — the Overview derives a field count from it,
-    // so a partial object would undercount.
-    expect(onContextSaved).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        product_name: 'VoC',
-        free_form_notes: '',
-      }),
-    )
+    expect(mockUpdateProductContext).toHaveBeenCalledExactlyOnceWith('proj-1', { product_name: 'VoC' })
   })
 
-  it('does not announce a save that failed', async () => {
+  it('keeps the cached context when the save fails', async () => {
+    const client = createTestQueryClient({ gcTime: Infinity })
     mockUpdateProductContext.mockRejectedValue(new Error('API Error: 500'))
-    const onContextSaved = vi.fn()
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
 
-    await editProductName(onContextSaved)
+    await editProductName(client)
 
     await waitFor(() => {
       expect(mockUpdateProductContext).toHaveBeenCalledWith('proj-1', { product_name: 'VoC' })
     })
-    expect(onContextSaved).not.toHaveBeenCalled()
+    expect(cached(client)).toStrictEqual({ context: context() })
   })
 
-  it('works without the callback, since it is optional', async () => {
-    mockUpdateProductContext.mockResolvedValue({ context: context({ product_name: 'VoC' }) })
+  it('shows what an approved assistant card wrote to the shared query, without a reload', async () => {
+    const client = createTestQueryClient({ gcTime: Infinity })
+    renderWithQueryClient(<ProductTab canEdit projectId="proj-1" />, client)
+    expect(await screen.findByLabelText(/target users/i)).toHaveValue('')
 
-    await editProductName(undefined)
-
-    await waitFor(() => {
-      expect(mockUpdateProductContext).toHaveBeenCalledWith('proj-1', { product_name: 'VoC' })
+    act(() => {
+      client.setQueryData(productContextKey('proj-1'), { context: context({ target_users: 'Commuters' }) })
     })
+
+    await waitFor(() => expect(screen.getByLabelText(/target users/i)).toHaveValue('Commuters'))
+    expect(mockGetProductContext).toHaveBeenCalledExactlyOnceWith('proj-1')
   })
 })
 
 /** Renders the tab, types a product name and blurs the field, which is what triggers a save. */
-async function editProductName(onContextSaved: ((context: ProductContext) => void) | undefined) {
+async function editProductName(client: QueryClient) {
   const user = userEvent.setup()
-  render(<ProductTab canEdit projectId="proj-1" onContextSaved={onContextSaved} />)
+  renderWithQueryClient(<ProductTab canEdit projectId="proj-1" />, client)
 
   const field = await screen.findByLabelText(/product name/i)
   await user.type(field, 'VoC')

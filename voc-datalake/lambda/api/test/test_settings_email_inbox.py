@@ -9,6 +9,7 @@ from moto import mock_aws
 import settings_handler
 from settings_handler import lambda_handler
 from shared import email_intake_settings as inbox
+from shared.feedback_types import feedback_type_dimension
 from shared.test.moto_tables import create_pk_sk_table
 
 ADMIN = {'sub': 'admin-sub', 'cognito:username': 'admin', 'cognito:groups': 'admins'}
@@ -43,7 +44,7 @@ class TestEmailInboxRoutes:
         assert body['addresses'][0] == 'feedback@voc.example.com'
         assert (body['rule_set'], body['rule_set_needs_activation']) == ('voc-email-intake', True)
         assert body['caps'] == inbox.DEFAULT_CAPS
-        assert (body['pii'], body['profile_configured'], body['feedback_type_dimension']) == ('redact', False, False)
+        assert (body['pii'], body['profile_configured'], body['feedback_type_dimension']) == ('redact', False, True)
 
     def test_get_counts_today(self, api_gateway_event, lambda_context, table):
         table.put_item(Item={**inbox.stats_key(inbox.today()), 'accepted': 3, 'dropped_spam': 2,
@@ -69,14 +70,18 @@ class TestEmailInboxRoutes:
         response, _ = _call(api_gateway_event, lambda_context, method, path=path, body=CAPS, claims=USER)
         assert response['statusCode'] == 403
 
-    def test_the_feedback_type_dimension_is_created_once(self, api_gateway_event, lambda_context):
+    def test_the_old_create_route_creates_nothing_since_feedback_type_is_built_in(
+            self, api_gateway_event, lambda_context, table):
         _, first = _call(api_gateway_event, lambda_context, 'POST', path=DIMENSION_PATH, body={})
         _, second = _call(api_gateway_event, lambda_context, 'POST', path=DIMENSION_PATH, body={})
-        assert (first['created'], second['created']) == (True, False)
-        [dimension] = second['dimensions']
-        assert [value['name'] for value in dimension['values']] == list(inbox.FEEDBACK_TYPES)
-        _, view = _call(api_gateway_event, lambda_context, 'GET')
-        assert view['feedback_type_dimension'] is True
+        assert (first['created'], second['created']) == (False, False)
+        assert [dimension['key'] for dimension in second['dimensions']] == ['feedback_type']
+        assert 'Item' not in table.get_item(Key={'pk': 'SETTINGS#dimensions', 'sk': 'config'})
+
+    def test_every_alias_forces_a_built_in_type_or_lets_the_model_decide(self):
+        values = {value['name'] for value in feedback_type_dimension()['values']}
+        assert inbox.ALIASES == {'feedback': None, 'ideas': 'feature_request', 'bugs': 'bug', 'reviews': None}
+        assert {forced for forced in inbox.ALIASES.values() if forced} <= values
 
 
 def test_caps_from_row_ignores_out_of_bounds_values():

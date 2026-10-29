@@ -24,6 +24,14 @@ from typing import Any, overload
 # categories, a handful of sources) runs in one wave.
 DEFAULT_MAX_WORKERS = 8
 
+# `concurrently` takes at most this many calls (its overloads; keep the two in step), and each of them may run its own
+# `ordered_map` (a category fan-out beside a total read), so ONE request can have up to
+# MAX_CONCURRENT_CALLS * DEFAULT_MAX_WORKERS reads in flight on one shared boto3 client. The shared
+# DynamoDB client's connection pool is sized from this (shared/aws.py): at botocore's default of 10,
+# `/metrics/*` logged "Connection pool is full, discarding connection" under load (5.35.02 e2e).
+MAX_CONCURRENT_CALLS = 4
+MAX_IN_FLIGHT_READS = MAX_CONCURRENT_CALLS * DEFAULT_MAX_WORKERS
+
 
 def ordered_map[T, R](fn: Callable[[T], R], items: Iterable[T], max_workers: int = DEFAULT_MAX_WORKERS) -> list[R]:
     """``[fn(item) for item in items]``, run concurrently, results in input order.

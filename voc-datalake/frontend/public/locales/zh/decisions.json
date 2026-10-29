@@ -37,7 +37,11 @@
     "prfaqFailed": "无法根据此决策生成 PR/FAQ。请重新起草以重试。",
     "revisit": "重新评估",
     "releaseWatch": "发布观察",
-    "hideReleaseWatch": "隐藏发布观察"
+    "hideReleaseWatch": "隐藏发布观察",
+    "delete": "删除",
+    "deleteConfirmTitle": "删除此决策？",
+    "deleteConfirmMessage": "“{{title}}”将从项目中为所有人移除。由它生成的文档会保留。",
+    "deleteConfirm": "删除决策"
   },
   "picker": {
     "label": "支持性评论",
@@ -57,7 +61,8 @@
   "errors": {
     "save": "无法保存决策。",
     "conflict": "此决策在你打开后已被修改。请刷新页面后重试。",
-    "pursue": "无法启动 PR/FAQ。"
+    "pursue": "无法启动 PR/FAQ。",
+    "delete": "无法删除该决策。"
   },
   "releaseWatch": {
     "title": "发布观察",

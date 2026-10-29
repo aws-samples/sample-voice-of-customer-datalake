@@ -16,6 +16,7 @@ const noop = () => undefined
 function renderHeaderAt(pathname: string) {
   render(
     <PanelHeader
+      titleId="panel-title"
       page={pageContextFromLocation({ pathname, search: '' })}
       variant="page"
       mode="bubble"

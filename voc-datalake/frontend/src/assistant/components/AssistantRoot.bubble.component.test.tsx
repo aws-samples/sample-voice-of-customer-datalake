@@ -69,8 +69,10 @@ function drag(dx: number, dy: number) {
   fireEvent.click(el)
 }
 
-beforeAll(() => {
+beforeAll(async () => {
   vi.stubGlobal('PointerEvent', TestPointerEvent)
+  // The panel is a lazy chunk (AssistantRoot): transform it once here, not inside a test's wait.
+  await import('./AssistantPanel')
 })
 
 beforeEach(() => {
@@ -185,7 +187,8 @@ describe('assistant launcher position', () => {
     const user = userEvent.setup()
     render(<AssistantRoot />, { initialEntries: ['/'] })
     await user.click(launcher())
-    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    // The panel is a lazy chunk (AssistantRoot): wait for it before reaching into it.
+    await user.click(await screen.findByRole('button', { name: 'More actions' }))
     expect(screen.queryByRole('menuitem', { name: 'Reset assistant button position' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'More actions' }))
     launcher().focus()
@@ -211,5 +214,13 @@ describe('assistant launcher position', () => {
     await waitFor(() => expect(offsets().bottom).toBe(60 + ACTION_BAR_GAP))
     view.rerender(<AssistantRoot />)
     await waitFor(() => expect(offsets().bottom).toBe(16))
+  })
+})
+
+describe('the launcher under the mobile navigation drawer', () => {
+  // 5.35 (E2E 5.34): the launcher floated over the open drawer.
+  it('is hidden while the drawer is open', () => {
+    render(<AssistantRoot launcherHidden />, { initialEntries: ['/'] })
+    expect(launcher()).toHaveClass('hidden')
   })
 })

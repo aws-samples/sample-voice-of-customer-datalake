@@ -2,7 +2,7 @@
  * @fileoverview Spec support for the ProductTab specs.
  *
  * Every ProductTab spec mocks the same slice of `projectsApi` — the context
- * read and write, the upload list, the interview and the report job — and
+ * read and write, the upload list and the report job — and
  * differs only in which of them it drives. The mocks live here once; each spec
  * pulls the ones it reads under its own local name.
  *
@@ -18,8 +18,16 @@ export const productTabMocks = {
   getProductContext: unknownFn(),
   updateProductContext: unknownFn(),
   listProductDocs: unknownFn(),
-  productContextInterview: unknownFn(),
   generateProductReport: unknownFn(),
+}
+
+/**
+ * `vi.mock('./CompanyContextStrip', () => companyStripModule())`: the strip reads the
+ * company context and design system through their own queries, which no Product tab
+ * spec is about.
+ */
+export function companyStripModule() {
+  return { default: () => null }
 }
 
 /** `vi.mock('../../api/projectsApi', () => productTabApiModule())` */
@@ -29,7 +37,6 @@ export function productTabApiModule() {
       getProductContext: (...args: unknown[]) => productTabMocks.getProductContext(...args),
       updateProductContext: (...args: unknown[]) => productTabMocks.updateProductContext(...args),
       listProductDocs: (...args: unknown[]) => productTabMocks.listProductDocs(...args),
-      productContextInterview: (...args: unknown[]) => productTabMocks.productContextInterview(...args),
       generateProductReport: (...args: unknown[]) => productTabMocks.generateProductReport(...args),
       getProductDocUploadUrl: vi.fn(),
     },

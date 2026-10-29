@@ -117,6 +117,32 @@ function LabeledSelect({ label, value, onChange, disabled, children }: Readonly<
   )
 }
 
+/**
+ * The subcategory picker. A stored subcategory the configuration no longer lists still shows
+ * as itself (the card's chip names it), never as "None" (5.34.00: chip and editor disagreed).
+ */
+function SubcategorySelect({ choice, subcategories, categories, onChange }: Readonly<{
+  choice: Choice
+  subcategories: readonly { id: string; name: string }[]
+  categories: readonly Category[]
+  onChange: (value: string) => void
+}>) {
+  const { t } = useTranslation('components')
+  const unlisted = choice.subcategory !== '' && !subcategories.some((s) => s.name === choice.subcategory)
+  return (
+    <LabeledSelect
+      label={t('categoryChange.subcategory')}
+      value={choice.subcategory}
+      onChange={onChange}
+      disabled={subcategories.length === 0 && !unlisted}
+    >
+      <option value="">{t('categoryChange.noSubcategory')}</option>
+      {unlisted && <option value={choice.subcategory}>{subcategoryLabel(choice.subcategory, choice.category, categories)}</option>}
+      {subcategories.map((s) => <option key={s.id} value={s.name}>{subcategoryLabel(s.name, choice.category, categories)}</option>)}
+    </LabeledSelect>
+  )
+}
+
 function ChangeForm({ feedback, onClose }: Readonly<{ feedback: FeedbackItem; onClose: () => void }>) {
   const { t } = useTranslation('components')
   const { categories, isLoading } = useVisibleCategories()
@@ -137,15 +163,7 @@ function ChangeForm({ feedback, onClose }: Readonly<{ feedback: FeedbackItem; on
           <option value="" disabled>{t('categoryChange.choose')}</option>
           {categories.map((c) => <option key={c.id} value={c.name}>{categoryLabel(c.name, categories)}</option>)}
         </LabeledSelect>
-        <LabeledSelect
-          label={t('categoryChange.subcategory')}
-          value={choice.subcategory}
-          onChange={pickSubcategory}
-          disabled={subcategories.length === 0}
-        >
-          <option value="">{t('categoryChange.noSubcategory')}</option>
-          {subcategories.map((s) => <option key={s.id} value={s.name}>{subcategoryLabel(s.name, choice.category, categories)}</option>)}
-        </LabeledSelect>
+        <SubcategorySelect choice={choice} subcategories={subcategories} categories={categories} onChange={pickSubcategory} />
       </div>
       {change.isError && (
         <p role="alert" className="text-xs text-danger flex items-center gap-1">

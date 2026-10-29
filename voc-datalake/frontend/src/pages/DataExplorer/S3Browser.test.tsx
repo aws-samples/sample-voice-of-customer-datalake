@@ -53,9 +53,32 @@ describe('S3Browser', () => {
     it('renders folders', () => {
       render(<S3Browser {...defaultProps} />)
 
-      expect(screen.getByText('Webscraper')).toHaveAttribute('title', 'webscraper')
+      expect(screen.getByText('Web scraper')).toHaveAttribute('title', 'webscraper')
       // Live finding: a connector folder read `Acme Android_android`.
       expect(screen.getByText('Acme (Android)')).toHaveAttribute('title', 'Acme Android_android')
+    })
+
+    it('names a persona avatar folder by the persona and when it was made, never its raw id', () => {
+      const avatars = { bucket: 'voc-raw-data', prefix: 'avatars/', objects: [
+        { key: 'persona_20261024123456_00000000_1', fullKey: 'avatars/persona_20261024123456_00000000_1/', size: 0, lastModified: '2026-10-24T12:34:56Z', isFolder: true },
+      ] }
+      render(<S3Browser {...defaultProps} path={['avatars']} data={avatars} />)
+
+      const row = screen.getByTitle('persona_20261024123456_00000000_1')
+      expect(row.textContent).toMatch(/^Persona 2 · Oct 24, 2026/)
+    })
+
+    // 5.35.02 e2e: an imported persona's folder (`persona_<stamp>_<hex>`, no batch index) showed its raw id.
+    it.each([
+      ['an imported persona', 'persona_20261024123456_ab12cd34'],
+      ['a pre-suffix persona', 'persona_20261024123456'],
+    ])('names %s avatar folder by when it was made, never its raw id', (_kind, id) => {
+      const avatars = { bucket: 'voc-raw-data', prefix: 'avatars/', objects: [
+        { key: id, fullKey: `avatars/${id}/`, size: 0, lastModified: '2026-10-24T12:34:56Z', isFolder: true },
+      ] }
+      render(<S3Browser {...defaultProps} path={['avatars']} data={avatars} />)
+
+      expect(screen.getByTitle(id).textContent).toMatch(/^Persona · Oct 24, 2026/)
     })
 
     it('renders files with size', () => {
@@ -108,7 +131,7 @@ describe('S3Browser', () => {
 
       render(<S3Browser {...defaultProps} onNavigateToFolder={onNavigateToFolder} />)
 
-      await user.click(screen.getByText('Webscraper'))
+      await user.click(screen.getByText('Web scraper'))
       expect(onNavigateToFolder).toHaveBeenCalledWith('webscraper')
     })
 

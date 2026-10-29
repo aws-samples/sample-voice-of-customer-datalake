@@ -9,6 +9,9 @@
  *   - aggregates: GetItem / Query (source profiles = the brands, category access
  *     and config, and OUR per-category counters for the comparison);
  *   - lambda:InvokeFunction on `voc-radar-scan` by name ("Scan now", admin);
+ *   - ssm:PutParameter / DeleteParameter / GetParameter on exactly the Exa key parameter
+ *     (`lib/utils/radar-exa-parameter.ts`; PUT / DELETE /radar/settings/exa-key, admin; GET reads it
+ *     WITHOUT decryption for `exa_configured`);
  *   - the read cache (docs/caching.md): BatchGetItem on both tables (one call reads
  *     the data/config/Radar versions) and UpdateItem on the `SETTINGS#radar` partition
  *     only (the Radar version bump after a brand-list or settings save).
@@ -19,10 +22,11 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 
 import { RADAR_API_FUNCTION_BASE_NAME, RADAR_SCAN_FUNCTION_BASE_NAME } from '../utils/function-names';
 import { grantCacheVersionBump, RADAR_VERSION_PARTITION } from '../utils/cache-version-grants';
+import { radarExaParameterName, radarExaParameterStatement } from '../utils/radar-exa-parameter';
 import type { ApiStackContext } from './api-context';
 
 export function createRadarLambda(ctx: ApiStackContext): lambda.Function {
-  const { stack, allowedOrigin, apiLayer, apiCode } = ctx;
+  const { stack, allowedOrigin, apiLayer, apiCode, deploymentPrefix } = ctx;
   const { radarTable, aggregatesTable, kmsKey } = ctx.props;
   const scanFunctionName = ctx.uniqueName(RADAR_SCAN_FUNCTION_BASE_NAME);
 
@@ -37,6 +41,8 @@ export function createRadarLambda(ctx: ApiStackContext): lambda.Function {
       service: 'lambda', resource: 'function', resourceName: scanFunctionName, arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
     })],
   }));
+  role.addToPolicy(radarExaParameterStatement(stack, deploymentPrefix,
+    ['ssm:PutParameter', 'ssm:DeleteParameter', 'ssm:GetParameter']));
 
   return new lambda.Function(stack, 'RadarApi', {
     functionName: ctx.uniqueName(RADAR_API_FUNCTION_BASE_NAME),
@@ -51,6 +57,7 @@ export function createRadarLambda(ctx: ApiStackContext): lambda.Function {
       RADAR_TABLE: radarTable.tableName,
       AGGREGATES_TABLE: aggregatesTable.tableName,
       RADAR_SCAN_FUNCTION: scanFunctionName,
+      RADAR_EXA_PARAMETER: radarExaParameterName(deploymentPrefix),
       ALLOWED_ORIGIN: allowedOrigin,
       POWERTOOLS_SERVICE_NAME: RADAR_API_FUNCTION_BASE_NAME,
       LOG_LEVEL: 'INFO',

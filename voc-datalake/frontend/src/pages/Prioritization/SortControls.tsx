@@ -24,7 +24,7 @@ export function SortControls({
    * Can the three score buttons actually order the list by the team's numbers?
    *
    * `teamOrderingAvailable(aggregates)` — see there for which states answer false. When
-   * they do, `sortPRFAQs` leaves the order as it arrived for those three fields, and the
+   * they do, `sortRows` leaves the order as it arrived for those three fields, and the
    * hint below the buttons is permanently visible — so leaving it up left the page
    * asserting the list is ordered by the team's numbers while nothing was ordering it.
    */

@@ -1,10 +1,11 @@
 /**
  * Memory (R16, M34, E2E F3): on the caller's OWN personal memory only, both roles.
  *
- * - Add a run-named personal memory on the Personal tab ("Remember for me" →
- *   Remember) → `POST /memory` 2xx, the row shows Active; "+1" → confirm 200;
- *   Forget → "Forget this memory?" → Forget → forget 200, gone from the default
- *   list; Status filter Archived → Restore → restore 200 → Active again.
+ * - Add a run-named personal memory on the Personal tab ("Add memory" → the
+ *   "Remember for me" dialog → Remember) → `POST /memory` 2xx, the row shows
+ *   Active; a personal memory offers no "+1" (5.x: its only supporter is you);
+ *   Forget (archive icon) → "Forget this memory?" → Forget → forget 200, gone from
+ *   the default list; Status filter Archived → Restore → restore 200 → Active again.
  * - The review queue failing: an injected 500 on `GET /memory/review` shows the
  *   page alert with Retry (not a silent empty page); a 403 (not a curator) is
  *   silent and, for a non-admin, hides the Needs review tab.
@@ -38,7 +39,8 @@ const lettersOf = (text: string): string => text.replace(/\d/g, (d) => 'abcdefgh
 const statementFor = (role: Role): string => `e2e memory check ${lettersOf(RUN_ID)} ${role}: prefers answers that end with one next step.`
 const ledgerNameFor = (role: Role): string => `${RUN_PREFIX}memory-${role}`
 
-const row = (page: Page, statement: string): Locator => page.getByRole('listitem').filter({ hasText: statement })
+/** A memory's card (MemoryCard's `memory-card`) showing `statement`. */
+const row = (page: Page, statement: string): Locator => page.getByTestId('memory-card').filter({ hasText: statement })
 
 async function openPersonal(page: Page): Promise<void> {
   await page.goto(site('/memory'), { waitUntil: 'domcontentloaded' })
@@ -48,7 +50,7 @@ async function openPersonal(page: Page): Promise<void> {
 }
 
 /** Clicks `trigger`, returns the `POST /memory/{id}/<action>` answer. */
-async function memoryAction(page: Page, id: string, action: 'confirm' | 'forget' | 'restore', trigger: () => Promise<void>): Promise<Response> {
+async function memoryAction(page: Page, id: string, action: 'forget' | 'restore', trigger: () => Promise<void>): Promise<Response> {
   const answered = page.waitForResponse((res) => isApi(res, 'POST', new RegExp(`/memory/${id}/${action}$`)))
   await trigger()
   return answered
@@ -66,14 +68,16 @@ async function step(page: Page, role: Role, name: string, action: (r: StepRecord
 }
 
 test.describe('memory: own personal memory', () => {
-  test('add, +1, forget, restore', async ({ page }, testInfo) => {
+  test('add (no +1 on a personal memory), forget, restore', async ({ page }, testInfo) => {
     const role = roleOf(testInfo)
     const statement = statementFor(role)
     await step(page, role, 'memory-personal-lifecycle', async (r) => {
       await openPersonal(page)
-      await page.getByLabel('Remember for me').fill(statement)
+      await page.getByRole('button', { name: 'Add memory' }).click()
+      const addDialog = dialogNamed(page, 'Remember for me')
+      await addDialog.getByLabel('What should be remembered?').fill(statement)
       const created = page.waitForResponse((res) => isApi(res, 'POST', /\/memory$/))
-      await page.getByRole('button', { name: 'Remember', exact: true }).click()
+      await addDialog.getByRole('button', { name: 'Remember', exact: true }).click()
       const response = await created
       const id = await createdMemoryId(response)
       r.note(`POST /memory -> ${response.status()} id=${id ?? '?'}`)
@@ -81,11 +85,10 @@ test.describe('memory: own personal memory', () => {
       if (id === undefined) throw new Error('POST /memory answered no memory id')
       recordCreated('memory', id, ledgerNameFor(role), role)
       await expect(page.getByRole('status').filter({ hasText: 'Remembered.' })).toBeVisible()
+      await expect(addDialog).toBeHidden()
       await expect(row(page, statement)).toContainText('Active')
-
-      const confirmed = await memoryAction(page, id, 'confirm', () => row(page, statement).getByRole('button', { name: '+1' }).click())
-      r.note(`+1 -> ${confirmed.status()}`)
-      expect(confirmed.status()).toBe(200)
+      // 5.x: "+1" is a company-memory action only; on your own memory it would count yourself.
+      await expect(row(page, statement).getByRole('button', { name: /\+1|count me as a supporter/ })).toHaveCount(0)
 
       const forgotten = await memoryAction(page, id, 'forget', async () => {
         await row(page, statement).getByRole('button', { name: 'Forget', exact: true }).click()

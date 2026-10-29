@@ -107,12 +107,14 @@ These rows preserve monotonic version numbers and retry identity. They deliberat
 
 - Job rows use TTL. Completed and failed jobs remain available briefly for progress and diagnostics.
 - Conversations are partitioned by authenticated user. Although the table has a `ttl` attribute configured, current conversation writes omit it, so rows persist until explicitly deleted or the stack is destroyed.
-- Two writers share an assistant conversation item: the SPA (`POST /chat/conversations/{id}`) and the stream Lambda, which saves the conversation while a run streams (user turn + in-progress answer, `run_id`, `run_status` running/finished/failed/interrupted, `revision`). A reload mid-answer therefore finds the partial answer and the SPA polls until it finishes. The server owns a run's answer: an SPA save is refused (409) while the run is live (last write < 960 s ago) or when its `baseRevision` is older than the stored `revision`. The stream Lambda's role holds only `GetItem`/`PutItem` on the table; it always writes the verified caller's own partition.
+- Two writers share an assistant conversation item: the SPA (`POST /chat/conversations/{id}`) and the stream Lambda, which saves the conversation while a run streams (user turn + in-progress answer, `run_id`, `run_status` running/finished/failed/interrupted/stopped, `revision`). A reload mid-answer therefore finds the partial answer and the SPA polls until it finishes. The server owns a run's answer: an SPA save is refused (409) while the run is live (last write < 960 s ago) or when its `baseRevision` is older than the stored `revision`. The stream Lambda's role holds only `GetItem`/`PutItem` on the table; it always writes the verified caller's own partition. Stop in the assistant writes a separate marker item `pk USER#{sub}`, `sk RUNCANCEL#{conversation id}` (`run_id`, `ttl` one day) through `POST /chat/conversations/{id}/cancel`; the running stream Lambda polls it (GetItem every 1.5 s), stops generating and saves the partial answer as `stopped`. The conversation list reads `CONV#` keys only, so the marker never lists.
 - Idempotency rows use the `expiration` TTL attribute. Processor and aggregator keys share the table but use distinct namespaces.
 
 ## Data Explorer
 
 The Data Explorer browses the raw-data bucket and edits selected S3 or feedback records. It is an operational/debugging surface, not a replacement for project and version APIs. It is **admin-only** on every route (raw S3 cannot be filtered by category access), and it cannot delete: there is no DELETE route at API Gateway and its role holds no delete permission.
+
+Folders read by name, the stored key staying the row's tooltip: the top folders and source folders by their label, and an avatar folder (`avatars/<persona id>`) by the persona and when it was made, "Persona 2 · Oct 24, 2026, 12:34 PM" (`persona_<stamp>_<hex>_<index>`), or "Persona · Oct 24, 2026, 12:34 PM" for an id without a batch index (an imported persona, or an id from before the random suffix).
 
 ### API endpoints
 

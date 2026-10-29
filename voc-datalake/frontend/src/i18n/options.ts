@@ -28,7 +28,7 @@ import { supportedLanguages } from './languages'
 // before this move. Consolidating them is a separate change.
 const DEFAULT_NS = 'common'
 
-const NAMESPACES = ['common', 'dashboard', 'dataExplorer', 'feedbackDetail', 'assistant', 'assistantTools', 'login', 'settings', 'components', 'scrapers', 'feedbackForms', 'projects', 'categories', 'prioritization', 'problemAnalysis', 'projectDetail', 'memory', 'agents', 'briefing', 'decisions', 'radar', 'emailInbox'] as const
+const NAMESPACES = ['common', 'dashboard', 'dataExplorer', 'feedbackDetail', 'assistant', 'assistantTools', 'login', 'settings', 'components', 'scrapers', 'feedbackForms', 'projects', 'categories', 'prioritization', 'problemAnalysis', 'projectDetail', 'memory', 'agents', 'briefing', 'decisions', 'radar', 'emailInbox', 'participants', 'featureRequests'] as const
 
 export const I18N_INIT_OPTIONS: InitOptions = {
   // No `lng` pin: the language switcher (Account page) now drives the

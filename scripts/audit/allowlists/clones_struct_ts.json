@@ -17,11 +17,10 @@
     },
     {
       "files": [
-        "voc-datalake/frontend/src/assistant/sessions/serialize.ts",
-        "voc-datalake/lambda/stream/src/assistant/session/record.ts"
+        "voc-datalake/frontend/src/assistant/sessions/personaResult.ts",
+        "voc-datalake/lambda/stream/src/assistant/session/persona-result.ts"
       ],
-      "name": "sessionTitle",
-      "reason": "the session title rule both sides of the server-side session must agree on (SPA save vs stream Lambda save); separate packages"
+      "reason": "persona-cards result storage mirrored by the SPA and the stream Lambda (both write the same session), pinned by personaResult.lockstep.test.ts; separate packages that must not import each other"
     },
     {
       "files": [
@@ -29,6 +28,13 @@
         "voc-datalake/lambda/stream/src/assistant/tools/client/review-import-schemas.ts"
       ],
       "reason": "approval-card bounds mirrored from the stream tool schema, pinned by its lockstep test"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/assistant/approvals/radarSchemas.ts",
+        "voc-datalake/lambda/stream/src/assistant/tools/client/radar-schemas.ts"
+      ],
+      "reason": "Radar brand-list bounds (languages, feed URL shape) mirrored from the stream tool schema and shared/radar_brand_fields.py, pinned by radarSchemas.lockstep.test.ts; separate packages that must not import each other"
     },
     {
       "files": [
@@ -164,13 +170,6 @@
     },
     {
       "files": [
-        "voc-datalake/frontend/src/pages/Company/CompanyContextSection.tsx",
-        "voc-datalake/frontend/src/pages/Company/MyContextSection.tsx"
-      ],
-      "reason": "company vs personal context editors: same query/draft/save wiring over two endpoints and query keys"
-    },
-    {
-      "files": [
         "voc-datalake/frontend/src/components/WorkflowEditor/LoopSettings.tsx",
         "voc-datalake/frontend/src/pages/Agents/AgentSections.tsx",
         "voc-datalake/frontend/src/pages/Agents/AgentTriggers.tsx"
@@ -180,9 +179,10 @@
     {
       "files": [
         "voc-datalake/frontend/src/components/WorkflowEditor/ArrowSettings.tsx",
-        "voc-datalake/frontend/src/pages/Connect/MintTokenForm.tsx"
+        "voc-datalake/frontend/src/pages/Connect/MintTokenForm.tsx",
+        "voc-datalake/frontend/src/pages/ProjectDetail/ProductFormFields.tsx"
       ],
-      "reason": "a select row of the workflow editor and of the token form"
+      "reason": "a LabeledField + native select row of the workflow editor, the token form and the Product tab's lifecycle field: different options, state and i18n keys"
     }
   ]
 }

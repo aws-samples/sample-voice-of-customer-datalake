@@ -34,6 +34,8 @@ export interface AssistantDelegates {
   usersLambda: lambda.Function;
   /** Other brands (`get_radar`, docs/radar.md): read as the caller. */
   radarLambda: lambda.Function;
+  /** Participant lists (`list_participant_lists`, docs/participants.md): voc-engagement-api, read as the caller. */
+  engagementLambda: lambda.Function;
 }
 
 export interface AssistantLambdas {
@@ -48,7 +50,9 @@ export interface AssistantLambdas {
 
 export function createAssistantLambdas(ctx: ApiStackContext, delegates: AssistantDelegates): AssistantLambdas {
   const { stack, allowedOrigin, apiLayer, apiCode: createApiLambdaCode } = ctx;
-  const { projectsLambda, metricsLambda, feedbackFormLambda, settingsLambda, scrapersLambda, usersLambda, radarLambda } = delegates;
+  const {
+    projectsLambda, metricsLambda, feedbackFormLambda, settingsLambda, scrapersLambda, usersLambda, radarLambda, engagementLambda,
+  } = delegates;
   const {
     feedbackTable, aggregatesTable, memoryTable, agentsTable, conversationsTable, kmsKey, rawDataBucket, s3ImportBucket,
     processingQueueUrl, processingQueueArn, memoryExtractQueueUrl, memoryExtractQueueArn, agentRunStateMachine,
@@ -188,6 +192,10 @@ export function createAssistantLambdas(ctx: ApiStackContext, delegates: Assistan
       // Radar (other brands, docs/radar.md): the read-only `get_radar` tool. Radar
       // reviews live in voc-radar, so the feedback search tools never see them.
       RADAR_FUNCTION: radarLambda.functionName,
+      // Participant lists (docs/participants.md): the read-only `list_participant_lists`
+      // (GET /participants/lists). Creating lists and adding people stay client tools
+      // the SPA executes after approval; voc-plan-step gets no ENGAGEMENT_FUNCTION.
+      ENGAGEMENT_FUNCTION: engagementLambda.functionName,
       FEEDBACK_TABLE: feedbackTable.tableName,
       AGGREGATES_TABLE: aggregatesTable.tableName,
       // Server-side session persistence (lambda/stream/src/assistant/session/):
@@ -251,7 +259,8 @@ export function createAssistantLambdas(ctx: ApiStackContext, delegates: Assistan
   feedbackTable.grantReadData(chatStreamLambda);
   aggregatesTable.grantReadData(chatStreamLambda);
   // The caller's own conversation, saved while the run streams: GetItem (the
-  // stored copy at run start) + conditional PutItem — nothing else (no Query,
+  // stored copy at run start, and the run's Stop marker RUNCANCEL#<id>, session/cancel.ts)
+  // + conditional PutItem — nothing else (no Query,
   // no Delete, no Update). IAM cannot pin the partition to a per-caller
   // Cognito sub (no LeadingKeys variable for a REST/Lambda caller), so the
   // stream code enforces USER#{verified sub} on every key (session/store.ts,
@@ -265,7 +274,7 @@ export function createAssistantLambdas(ctx: ApiStackContext, delegates: Assistan
   // reaches project data only through the Projects API below.
   // Read-only server tools delegate to the canonical domain APIs (internal
   // invoke with the caller's claims) rather than reimplementing their reads.
-  // Exactly these nine — pinned by 'ChatStream (AI assistant) delegation'.
+  // Exactly these ten — pinned by 'ChatStream (AI assistant) delegation'.
   // One explicit statement on the unqualified ARNs, not grantInvoke (which
   // adds `<fn>.Arn:*`, every version and alias): the invoker calls by
   // unqualified name, as the MCP role does below.
@@ -273,7 +282,7 @@ export function createAssistantLambdas(ctx: ApiStackContext, delegates: Assistan
     actions: ['lambda:InvokeFunction'],
     resources: [
       projectsLambda, metricsLambda, feedbackFormLambda, settingsLambda, scrapersLambda, memoryLambda, agentsLambda,
-      usersLambda, radarLambda,
+      usersLambda, radarLambda, engagementLambda,
     ].map((fn) => fn.functionArn),
   }));
   // Encrypt too: the conversations table's CMK encrypts the item it writes.

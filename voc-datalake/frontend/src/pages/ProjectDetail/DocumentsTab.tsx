@@ -17,9 +17,13 @@ import type { Project, ProductDoc } from '../../api/projectTypes'
 import { DerivationFooter, RevisionFooter } from './DocumentLineageFooters'
 import { stillPresent, hasDroppedSource, inheritedExtraSources } from './documentLineage'
 import { PrototypeView } from './DocumentPrototypeView'
+import { DocumentCoachingNotice } from '../../components/AiCoach/HumanDrivenNotice'
+import DocumentReviewView from './DocumentReviewView'
 
 /** Document types with no generic content editor and no content version history. */
 const NO_CONTENT_EDITOR: ReadonlySet<string> = new Set(['prototype', 'decision'])
+/** Document types shown with margin comments, persona review and a review link (docs/document-review.md). */
+const COMMENTABLE_TYPES: ReadonlySet<string> = new Set(['prfaq', 'prd'])
 
 interface DocumentsTabProps {
   readonly project: Project
@@ -113,6 +117,10 @@ export default function DocumentsTab({
                   ) : null}
                 </div>
               </div>
+              {canEdit ? (
+                <DocumentCoachingNotice documentType={selectedDoc.document_type} title={selectedDoc.title}
+                  hasContent={selectedDoc.content.trim() !== ''} />
+              ) : null}
               {selectedDoc.document_type === 'prototype' ? (
                 <PrototypeView
                   projectId={project.project_id}
@@ -137,9 +145,7 @@ export default function DocumentsTab({
                   onJobStarted={onJobStarted}
                 />
               ) : (
-                <div className="md-content overflow-y-auto flex-1">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{labelIds(selectedDoc.content)}</ReactMarkdown>
-                </div>
+                <ProseDocument project={project} document={selectedDoc} markdown={labelIds(selectedDoc.content)} />
               )}
               {/* Below the content, not above it: provenance is what the document
                   was made from, not what it says. Both branches above own the
@@ -161,6 +167,27 @@ export default function DocumentsTab({
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+/**
+ * A prose document: a PR/FAQ or PRD with margin comments, persona review and a review link
+ * (DocumentReviewView, keyed so a new version starts with a fresh selection), any other type as
+ * plain markdown.
+ */
+function ProseDocument({ project, document, markdown }: Readonly<{ project: Project; document: ProjectDocument; markdown: string }>) {
+  if (COMMENTABLE_TYPES.has(document.document_type)) {
+    return (
+      <div className="overflow-y-auto flex-1">
+        <DocumentReviewView key={document.document_id} projectId={project.project_id} document={document}
+          markdown={markdown} hasPersonas={project.persona_count > 0} />
+      </div>
+    )
+  }
+  return (
+    <div className="md-content overflow-y-auto flex-1">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>
     </div>
   )
 }

@@ -72,3 +72,19 @@ def json_object_body(app: CurrentEventSource) -> dict:
     if not isinstance(body, dict):
         raise ValidationError('the request body must be a JSON object')
     return body
+
+
+def validated_text(value: object, field: str, limit: int, *, required: bool = False) -> str:
+    """A body field as stripped text of at most ``limit`` characters, or a 400 naming ``field``.
+
+    None reads as empty (so a missing required field is "is required", not "must be a string").
+    """
+    text = '' if value is None else value
+    if not isinstance(text, str):
+        raise ValidationError(f'{field} must be a string')
+    text = text.strip()
+    if required and not text:
+        raise ValidationError(f'{field} is required')
+    if len(text) > limit:
+        raise ValidationError(f'{field} must be at most {limit} characters')
+    return text

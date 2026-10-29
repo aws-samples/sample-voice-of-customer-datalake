@@ -173,6 +173,7 @@ All routes require a signed-in (Cognito) user. "Admin" means the `admins` group.
 | POST | `/scrapers` | Admin | Create/update scraper (bounded, see below) |
 | DELETE | `/scrapers/{id}` | Admin | Delete scraper |
 | GET | `/scrapers/templates` | Any user | Get available templates |
+| GET | `/scrapers/connectors` | Any user | App connectors and Web Reviews pages with their `radar_brand`, selected fields only (the AI assistant's `list_scrapers` reads it; docs/radar.md) |
 | POST | `/scrapers/{id}/run` | Admin | Trigger manual run |
 | GET | `/scrapers/{id}/status` | Any user | Get latest run status |
 | POST | `/scrapers/analyze-url` | Admin | AI-assisted selector detection. Answers `202 {success, job_id, status: 'pending'}`; the work runs on `voc-scrapers-assist` |

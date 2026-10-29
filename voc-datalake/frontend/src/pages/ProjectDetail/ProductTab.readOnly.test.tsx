@@ -1,13 +1,15 @@
 /**
  * @fileoverview The Product tab for a viewer (`project.access.can_edit === false`).
  *
- * Every write on this tab — per-field autosave, the interview that patches the
- * context, uploads and deletes of product docs, the report job — is refused by
- * the project gate with 403. A viewer therefore gets the description and the
- * uploaded docs to read, and none of the controls that could only fail.
+ * Every write on this tab — per-field autosave, uploads and deletes of product
+ * docs, the report job, and the assistant interview that ends in an
+ * `update_product_context` card — is refused by the project gate with 403. A viewer
+ * therefore gets the description and the uploaded docs to read, and none of the
+ * controls that could only fail.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
+import { renderWithQueryClient } from '@test/query-client'
 import ProductTab from './ProductTab'
 import { emptyProductContext } from './productContextFields'
 import type { ProductDoc } from '../../api/projectTypes'
@@ -17,11 +19,11 @@ const api = vi.hoisted(() => ({
   updateProductContext: vi.fn(),
   listProductDocs: vi.fn(),
   deleteProductDoc: vi.fn(),
-  productContextInterview: vi.fn(),
   generateProductReport: vi.fn(),
   getProductDocUploadUrl: vi.fn(),
 }))
 vi.mock('../../api/projectsApi', () => ({ projectsApi: api }))
+vi.mock('./CompanyContextStrip', () => import('./product-tab-fixtures').then((m) => m.companyStripModule()))
 
 const readyDoc: ProductDoc = {
   doc_id: 'doc-1',
@@ -42,7 +44,7 @@ describe('ProductTab for a viewer', () => {
   })
 
   it('shows the description fields disabled, so no blur can save', async () => {
-    render(<ProductTab canEdit={false} projectId="proj-1" />)
+    renderWithQueryClient(<ProductTab canEdit={false} projectId="proj-1" />)
 
     const field = await screen.findByLabelText(/product name/i)
     expect(field).toHaveValue('VoC')
@@ -51,17 +53,16 @@ describe('ProductTab for a viewer', () => {
     expect(screen.getByLabelText(/target users/i)).toBeDisabled()
   })
 
-  it('offers neither the interview, the report, nor the mode toggle', async () => {
-    render(<ProductTab canEdit={false} projectId="proj-1" />)
+  it('offers neither the AI assistant interview nor the report', async () => {
+    renderWithQueryClient(<ProductTab canEdit={false} projectId="proj-1" />)
     await screen.findByLabelText(/product name/i)
 
-    expect(screen.queryByRole('button', { name: /send/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /fill with ai assistant/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /generate report/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /^both$/i })).not.toBeInTheDocument()
   })
 
   it('lists the uploaded docs read-only: no drop zone and no Delete', async () => {
-    render(<ProductTab canEdit={false} projectId="proj-1" />)
+    renderWithQueryClient(<ProductTab canEdit={false} projectId="proj-1" />)
 
     await waitFor(() => expect(screen.getByText('brief.md')).toBeInTheDocument())
     expect(screen.queryByRole('button', { name: /drop files/i })).not.toBeInTheDocument()
@@ -69,7 +70,7 @@ describe('ProductTab for a viewer', () => {
   })
 
   it('never issues a write while read-only', async () => {
-    render(<ProductTab canEdit={false} projectId="proj-1" />)
+    renderWithQueryClient(<ProductTab canEdit={false} projectId="proj-1" />)
     await waitFor(() => expect(screen.getByText('brief.md')).toBeInTheDocument())
 
     expect(api.updateProductContext).not.toHaveBeenCalled()

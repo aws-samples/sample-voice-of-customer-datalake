@@ -23,9 +23,9 @@ import { prepareContext, test } from '../lib/test'
 import { apiCall, listOf } from '../lib/api'
 import { dialogNamed } from '../lib/dialogs'
 import { MOCK, RUN_PREFIX, storageStatePath } from '../lib/env'
-import { isApi, roleOf, runStep, settle, site } from '../lib/fixtures'
+import { escapeRegExp, isApi, roleOf, runStep, settle, site } from '../lib/fixtures'
 import { ensureE2eProject, projectCard, readProject } from '../lib/projects'
-import { cognitoSubFor, cognitoUsernameFor } from '../lib/session'
+import { cognitoSubFor, cognitoUsernameFor, personLabelsFor } from '../lib/session'
 import type { StepRecorder } from '../lib/recorder'
 
 const NAME = { public: `${RUN_PREFIX}share-public`, viewer: `${RUN_PREFIX}share-viewer` }
@@ -71,16 +71,20 @@ test.describe('projects: sharing (admin shares, e2e-user sees it)', () => {
     const userSub = cognitoSubFor('user')
     const context = await userContext(browser)
     try {
-      await shareScenario(page, await context.newPage(), { publicId, viewerId, username, userSub })
+      await shareScenario(page, await context.newPage(), { publicId, viewerId, username, userSub, labels: personLabelsFor('user') })
     } finally {
       await context.close()
     }
   })
 })
 
-interface Scenario { publicId: string; viewerId: string; username: string; userSub: string }
+interface Scenario { publicId: string; viewerId: string; username: string; userSub: string; labels: string[] }
 
-async function shareScenario(page: Page, userPage: Page, { publicId, viewerId, username, userSub }: Scenario): Promise<void> {
+/** `<verb> <label>` for any label the dialog may show for the person (display name, username or email). */
+const labelled = (verb: string, labels: readonly string[]): RegExp =>
+  new RegExp(`^${verb} (${labels.map(escapeRegExp).join('|')})$`)
+
+async function shareScenario(page: Page, userPage: Page, { publicId, viewerId, username, userSub, labels }: Scenario): Promise<void> {
   await step(page, 'admin', 'share-make-public', async (r) => {
     const dialog = await openShare(page, publicId, NAME.public)
     const put = page.waitForResponse((res) => isApi(res, 'PUT', new RegExp(`/projects/${publicId}/visibility$`)))
@@ -102,14 +106,14 @@ async function shareScenario(page: Page, userPage: Page, { publicId, viewerId, u
   await step(page, 'admin', 'share-invite-viewer', async (r) => {
     const dialog = await openShare(page, viewerId, NAME.viewer)
     await dialog.getByLabel('Search users').fill(username)
-    await dialog.getByRole('button', { name: `Select ${username}` }).click()
+    await dialog.getByRole('button', { name: labelled('Select', labels) }).click()
     await dialog.getByLabel('Role for the invited person').selectOption('viewer')
     const invited = page.waitForResponse((res) => isApi(res, 'POST', new RegExp(`/projects/${viewerId}/members$`)))
     await dialog.getByRole('button', { name: 'Invite', exact: true }).click()
     const status = (await invited).status()
     r.note(`POST …/members -> ${status}`)
     expect(status).toBeLessThan(300)
-    await expect(dialog.getByRole('combobox', { name: `Role for ${username}` })).toHaveValue('viewer')
+    await expect(dialog.getByRole('combobox', { name: labelled('Role for', labels) })).toHaveValue('viewer')
     await page.keyboard.press('Escape')
   })
   await step(userPage, 'user', 'share-viewer-read-only', async (r) => {
@@ -123,7 +127,7 @@ async function shareScenario(page: Page, userPage: Page, { publicId, viewerId, u
     await expect(userPage.getByRole('button', { name: /New Document/i })).toHaveCount(0)
     await openList(userPage)
     await expect(card(userPage, NAME.viewer)).toBeVisible()
-    await expect(card(userPage, NAME.viewer).getByRole('button', { name: /^Edit project/ })).toHaveCount(0)
+    await expect(card(userPage, NAME.viewer).getByRole('button', { name: /^Actions for / })).toHaveCount(0)
     const forced = await apiCall('user', 'PUT', `/projects/${encodeURIComponent(viewerId)}`, { name: `${NAME.viewer}-hijacked` })
     r.note(`forced PUT as a viewer -> ${forced.status}`)
     expect(forced.status).toBe(403)
@@ -133,11 +137,11 @@ async function shareScenario(page: Page, userPage: Page, { publicId, viewerId, u
   await step(page, 'admin', 'share-remove-member', async (r) => {
     const dialog = await openShare(page, viewerId, NAME.viewer)
     const removed = page.waitForResponse((res) => isApi(res, 'DELETE', new RegExp(`/projects/${viewerId}/members/[^/]+$`)))
-    await dialog.getByRole('button', { name: `Remove ${username}` }).click()
+    await dialog.getByRole('button', { name: labelled('Remove', labels) }).click()
     const status = (await removed).status()
     r.note(`DELETE …/members/{sub} -> ${status}`)
     expect(status).toBe(200)
-    await expect(dialog.getByRole('button', { name: `Remove ${username}` })).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: labelled('Remove', labels) })).toHaveCount(0)
     const members = await apiCall('admin', 'GET', `/projects/${encodeURIComponent(viewerId)}/members`)
     expect(listOf(members.body, 'members').some((m) => m['sub'] === userSub)).toBe(false)
     await page.keyboard.press('Escape')

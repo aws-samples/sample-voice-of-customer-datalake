@@ -5,13 +5,17 @@
 import type { Tool } from '@aws-sdk/client-bedrock-runtime';
 import { toolSpec } from '../spec.js';
 import { ITEM_FILTER_PROPERTIES } from './item-filters.js';
+import { windowDaysProperty } from './common.js';
+import { MAX_LOOKBACK_DAYS } from '../../../tools/feedback-scan.js';
 
 export function searchFeedbackSpec(): Tool {
   return toolSpec(
     'search_feedback',
     'Search and retrieve customer feedback/reviews. Use it when the user asks about customer feedback, reviews, '
       + 'complaints or opinions — not for greetings or general questions. A 32-character hex query looks up one '
-      + 'review by id. The window is the page time range.\n\n'
+      + 'review by id. The window defaults to the page time range; set `days` when the user names another '
+      + `period ("last 90 days" → 90, "all time" → 0). It reads at most the newest ${MAX_LOOKBACK_DAYS} days that hold feedback: `
+      + 'for counts over a longer period use get_metrics with the same days.\n\n'
       + 'IMPORTANT for broad questions: to summarize, count, find trends or surface "the most urgent / top / biggest '
       + 'issues", set mode="aggregate" — it returns distribution stats over the ENTIRE match set in ONE call. To rank '
       + 'by urgency use urgency="high" and/or sort_by="urgency"; `query` is a literal substring match against the '
@@ -30,6 +34,7 @@ export function searchFeedbackSpec(): Tool {
         description: 'Software release filter for GitHub Issues feedback (e.g. "0.4.2"); items without a version never match.',
       },
       ...ITEM_FILTER_PROPERTIES,
+      days: windowDaysProperty('Window in days (default: page time range).'),
       limit: {
         type: 'integer',
         description: 'Max items to return (default 15, max 30). In aggregate mode it only caps the examples.',

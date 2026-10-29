@@ -11,24 +11,22 @@
 import { radarApi } from '../../api/radarApi'
 import { invalidateKeys, keysFor } from './invalidation'
 import { StaleApprovalError, shownOf } from './shown'
-import { brandKeyOf, radarListFingerprint } from './radarSchemas'
+import { brandKeyOf, radarListFingerprint, savedNewsFields } from './radarSchemas'
 import type { RunRadarScanArgs, SaveRadarBrandsArgs } from './radarSchemas'
-import type { RadarBrandEntry } from '../../api/radarSchema'
 import type { WriteToolExecutionContext } from '../types'
 
 export const RADAR_BRANDS_CHANGED_MESSAGE = 'The Radar brand list changed since this approval was shown (or was never shown); '
   + 'nothing was saved. Read get_radar view "brands" again and propose the complete list again.'
 
-/** Every brand the caller may see (list + legacy source-profile brands), read fresh. */
-export async function fetchRadarBrands(): Promise<RadarBrandEntry[]> {
-  return radarApi.getBrands()
-}
-
 export async function saveRadarBrands(args: SaveRadarBrandsArgs, ctx: WriteToolExecutionContext) {
   const shownBase = shownOf(ctx)?.radarBrandsBase
-  const current = await fetchRadarBrands()
+  const current = await radarApi.getBrands()
   if (shownBase === undefined || shownBase !== radarListFingerprint(current)) throw new StaleApprovalError(RADAR_BRANDS_CHANGED_MESSAGE)
-  const saved = await radarApi.saveBrands(args.brands.map((brand) => ({ label: brand.label, domains: brand.domains ?? [] })))
+  // A brand the card names a language, feeds or terms for gets them; otherwise a brand already tracked keeps its own.
+  const stored = new Map(current.map((entry) => [entry.key, entry]))
+  const saved = await radarApi.saveBrands(args.brands.map((brand) => ({
+    label: brand.label, domains: brand.domains ?? [], ...savedNewsFields(brand, stored.get(brandKeyOf(brand.label))),
+  })))
   void invalidateKeys(ctx.queryClient, keysFor.radar())
   const brands = args.brands.map((brand) => ({ key: brandKeyOf(brand.label), label: brand.label }))
   const named = brands.map((brand) => `${brand.label} (key ${brand.key})`).join(', ')

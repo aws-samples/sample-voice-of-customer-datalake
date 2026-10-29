@@ -12,7 +12,9 @@ class list and its variants, and maps the common Tailwind utilities to THE CONTR
 - ``bg-accent`` → the ``--color-accent`` / ``--accent`` value, ``text-sm`` → 14px, ``text-[13px]``,
   ``rounded-lg`` → ``--radius-lg`` or Tailwind's 0.5rem, ``px-4`` → 16px, ``border`` → 1px,
   ``font-semibold`` → 600, ``font-body`` → ``--font-body``, ``tracking-tight``, ``uppercase``,
-  ``shadow-sm`` / ``shadow-[0_0_12px_var(--x)]``; ``hover:`` utilities fill ``hover``.
+  ``shadow-sm`` (the repository's own ``--shadow-sm`` first, Tailwind's default otherwise) /
+  ``shadow-[0_0_12px_var(--x)]``, ``w-9`` → 36px; ``color-mix()`` values are computed
+  (``shared.css_color_mix``); ``hover:`` utilities fill ``hover``.
 
 Anything not mapped (responsive / dark / state prefixes, opacity modifiers, unknown colours) is
 left out: the model reads the source beside these facts and may infer it. The output is raw —
@@ -26,10 +28,11 @@ from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 from typing import Final
 
+from shared.css_color_mix import evaluate_color_mix
 from shared.css_values import is_css_color, is_css_length
+from shared.design_components import HOVER_KEYS, MAX_VARIANTS
 
 MAX_COMPONENTS_PER_FILE: Final = 12
-MAX_VARIANTS: Final = 6
 NAME_ALIASES: Final = {'Btn': 'Button', 'Btn group': 'Button group'}
 
 _DECLARATION_RE: Final = re.compile(r'^(export\s+)?(default\s+)?(function|const|let)\s+([A-Za-z_]\w*)', re.MULTILINE)
@@ -51,18 +54,20 @@ _WEIGHTS: Final = {'thin': '100', 'extralight': '200', 'light': '300', 'normal':
                    'semibold': '600', 'bold': '700', 'extrabold': '800', 'black': '900'}
 _TRACKING: Final = {'tighter': '-0.05em', 'tight': '-0.025em', 'normal': 'normal', 'wide': '0.025em',
                     'wider': '0.05em', 'widest': '0.1em'}
+#: Tailwind v4's default shadows — used only when the repository defines no ``--shadow-<key>`` itself.
 _SHADOWS: Final = {
-    'xs': '0 1px 1px rgb(0 0 0 / 5%)', 'sm': '0 1px 3px rgb(0 0 0 / 10%), 0 1px 2px -1px rgb(0 0 0 / 10%)',
+    '2xs': '0 1px rgb(0 0 0 / 5%)', 'xs': '0 1px 2px 0 rgb(0 0 0 / 5%)', 'sm': '0 1px 3px rgb(0 0 0 / 10%), 0 1px 2px -1px rgb(0 0 0 / 10%)',
     'DEFAULT': '0 1px 3px rgb(0 0 0 / 10%), 0 1px 2px -1px rgb(0 0 0 / 10%)',
     'md': '0 4px 6px -1px rgb(0 0 0 / 10%), 0 2px 4px -2px rgb(0 0 0 / 10%)',
-    'lg': '0 10px 15px -3px rgb(0 0 0 / 10%), 0 4px 6px -4px rgb(0 0 0 / 10%)', 'none': 'none',
+    'lg': '0 10px 15px -3px rgb(0 0 0 / 10%), 0 4px 6px -4px rgb(0 0 0 / 10%)',
+    'xl': '0 20px 25px -5px rgb(0 0 0 / 10%), 0 8px 10px -6px rgb(0 0 0 / 10%)',
+    '2xl': '0 25px 50px -12px rgb(0 0 0 / 25%)', 'none': 'none',
 }
 _TRANSFORMS: Final = {'uppercase': 'uppercase', 'capitalize': 'capitalize', 'normal-case': 'none'}
 _SIDES: Final = {'p': (0, 1, 2, 3), 'px': (1, 3), 'py': (0, 2), 'pt': (0,), 'pr': (1,), 'pb': (2,), 'pl': (3,)}
 #: An innermost ``var(--name[, fallback])`` (its fallback holds no parenthesis).
 _INNER_VAR_RE: Final = re.compile(r'var\(\s*--([\w-]+)\s*(?:,([^()]*))?\)')
 _RESOLVE_DEPTH: Final = 8
-_HOVER_KEYS: Final = ('background', 'color', 'border_color', 'shadow')
 
 
 # ── Values ──────────────────────────────────────────────────────────────────
@@ -83,13 +88,15 @@ class Theme:
             replacement = known if known is not None and 'var(' not in known else (match.group(2) or '')
             current = current[:match.start()] + replacement.strip() + current[match.end():]
         # A removed var() leaves an empty list item ("a, , b" / ", b"): drop it, keep every other separator.
-        return ','.join(part for part in current.split(',') if part.strip()).strip()
+        current = ','.join(part for part in current.split(',') if part.strip()).strip()
+        return evaluate_color_mix(current)
 
     def color(self, name: str) -> str | None:
         if name.startswith('[') and name.endswith(']'):
             value = self.resolve_vars(name[1:-1].replace('_', ' '))
         else:
             value = self.props.get(f'color-{name}') or self.props.get(name) or name
+            value = self.resolve_vars(value)  # `--color-info-subtle: color-mix(in srgb, var(--info) 12%, …)`
         return value if is_css_color(value) else None
 
     def radius(self, key: str) -> str | None:
@@ -114,8 +121,13 @@ def _spacing(key: str, theme: Theme) -> str | None:
 
 
 def _shadow(key: str, theme: Theme) -> str | None:
+    """``shadow-sm`` → the repository's own ``--shadow-sm`` when it defines one (Tailwind v4 reads the theme
+    variable too), else Tailwind's default; ``shadow`` alone is ``--shadow``."""
     if key.startswith('[') and key.endswith(']'):
         return theme.resolve_vars(key[1:-1].replace('_', ' '))
+    own = theme.props.get('shadow' if key == 'DEFAULT' else f'shadow-{key}')
+    if own and (resolved := theme.resolve_vars(own)):
+        return resolved
     return _SHADOWS.get(key)
 
 
@@ -183,6 +195,7 @@ _HANDLERS: Final[dict[str, _Handler]] = {
     'rounded': lambda rest, theme, box: _set(box, 'radius', theme.radius(rest or 'DEFAULT')),
     'gap': lambda rest, theme, box: _set(box, 'gap', _spacing(rest, theme)),
     'h': lambda rest, theme, box: _set(box, 'height', _spacing(rest, theme)),
+    'w': lambda rest, theme, box: _set(box, 'width', _spacing(rest, theme)),
     'font': _font_utility,
     'tracking': lambda rest, _theme, box: _set(box, 'letter_spacing', _TRACKING.get(rest)),
     'shadow': lambda rest, theme, box: _set(box, 'shadow', _shadow(rest or 'DEFAULT', theme)),
@@ -225,7 +238,7 @@ def styles_from_classes(classes: str, theme: Theme) -> tuple[dict[str, str], dic
             _apply_utility(utility, theme, base)
         elif prefixes == ['hover']:
             _apply_utility(utility, theme, hover)
-    hover_styles = {k: v for k, v in hover.finish().items() if k in _HOVER_KEYS}
+    hover_styles = {k: v for k, v in hover.finish().items() if k in HOVER_KEYS}
     return base.finish(), hover_styles
 
 

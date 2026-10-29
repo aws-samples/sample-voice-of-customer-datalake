@@ -3,6 +3,10 @@
 # To run tests, also install production dependencies:
 #   pip install -r lambda/layers/ingestion-deps/requirements.txt
 #   pip install -r lambda/layers/processing-deps/requirements.txt
+#   pip install -r lambda/layers/signing-deps/requirements.txt
+#   pip install -r lambda/layers/email-intake-deps/requirements.txt
+# (scripts/audit/py_layers.py resolves every layer against this venv: a missing or
+# differently-pinned one is a `version-mismatch` finding.)
 #
 pytest>=8.0.0
 pytest-cov>=6.0.0
@@ -18,7 +22,7 @@ boto3>=1.35.0
 boto3-stubs[dynamodb,s3,sqs,secretsmanager,bedrock-runtime]>=1.35.0
 
 # Lambda Powertools (same as production)
-aws-lambda-powertools>=3.0.0
+aws-lambda-powertools==3.38.0
 
 # Quality gates (scripts/validate.sh at the repo root runs every one of them).
 #

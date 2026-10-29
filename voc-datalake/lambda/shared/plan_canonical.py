@@ -111,6 +111,10 @@ def canonical_json(value: object) -> str:
     raise CanonicalJsonError(f'no canonical form for {type(value).__name__}')
 
 
+#: What :func:`canonical_write_fingerprint` returns: a lowercase sha256 hex digest.
+FINGERPRINT_RE: Final = re.compile(r'[0-9a-f]{64}')
+
+
 def canonical_write_fingerprint(tool: str, args: dict) -> str:
     """sha256 hex of ``{"args": args, "tool": tool}`` in canonical form."""
     return hashlib.sha256(canonical_json({'tool': tool, 'args': args}).encode('utf-8')).hexdigest()

@@ -116,10 +116,6 @@ class TestLazyTableAccessors:
 
 
 class TestBedrockCall:
-    def test_the_throttling_alias_is_the_shared_error(self) -> None:
-        from shared.converse import BedrockThrottlingError
-        assert rsh.BedrockThrottlingException is BedrockThrottlingError
-
     def test_defaults_reach_converse(self, converse: MagicMock) -> None:
         assert rsh.invoke_bedrock_with_retry('S', 'U') == 'MODEL TEXT'
         converse.assert_called_once_with(
@@ -620,8 +616,10 @@ class TestStepSave:
 
     def test_a_long_question_titles_on_its_first_50_characters(self, saved: MagicMock,
                                                                job_status: MagicMock) -> None:
+        # 5.35.03: clipped for reading (shared.text_clip): a single over-long word is cut hard with an ellipsis
+        # that counts towards the 50.
         result = rsh.step_save(_save_event({'question': 'abcde' * 12}))
-        title = 'Research: ' + 'abcde' * 10 + ' — 2026-03-04 05:06 UTC'
+        title = 'Research: ' + ('abcde' * 10)[:49] + '… — 2026-03-04 05:06 UTC'
         assert _saved_item(saved)['title'] == title
         assert job_status.call_args.kwargs == {'result': {'document_id': result['document_id'], 'title': title}}
 
@@ -731,9 +729,9 @@ class TestLambdaHandler:
         log.exception.assert_called_once_with('Step unknown failed: Unknown step: unknown')
 
     def test_throttling_is_logged_as_throttling_and_reraised(self, lambda_context: Any, log: MagicMock) -> None:
-        error = rsh.BedrockThrottlingException('slow down')
+        error = rsh.BedrockThrottlingError('slow down')
         with patch('research_step_handler.step_analyze', side_effect=error), \
-                pytest.raises(rsh.BedrockThrottlingException) as raised:
+                pytest.raises(rsh.BedrockThrottlingError) as raised:
             rsh.lambda_handler({'step': 'analyze'}, lambda_context)
         assert raised.value is error
         log.exception.assert_called_once_with('Bedrock throttling in step analyze: slow down')

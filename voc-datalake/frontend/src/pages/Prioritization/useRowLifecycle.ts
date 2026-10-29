@@ -125,7 +125,7 @@ export interface RowLifecycle {
    * The two halves belong in one call because they are one event: dismissing unmounts
    * the button the reader just pressed, so a keyboard reader is dropped on `<body>` at
    * the top of the document unless something claims focus in the same handler. The
-   * anchor is the control that OWNS the write (see `anchorFor`), not whatever happened
+   * anchor is the control that OWNS the write (see `anchor` below), not whatever happened
    * to be focused when the panel appeared — the picker's Save and the confirm dialog
    * both unmount as they submit, so `document.activeElement` at that moment is
    * frequently a node about to be detached.

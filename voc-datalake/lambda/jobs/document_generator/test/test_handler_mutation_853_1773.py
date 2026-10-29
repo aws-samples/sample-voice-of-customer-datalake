@@ -322,9 +322,8 @@ class _PrototypeBuild:
             'build_derivation': MagicMock(return_value={'deriv': 1}),
             'derivation_source': MagicMock(side_effect=lambda doc_id, role: (doc_id, role)),
             'persist_versioned_document': MagicMock(return_value={'document_id': 'doc_new', 'title': 'T'}),
-            'datetime': MagicMock(),
+            'now_iso': MagicMock(return_value=NOW),
         }
-        self._patches['datetime'].now.return_value.isoformat.return_value = NOW
 
     def run(self, **config):
         with patch.multiple(H, PROTOTYPE_HTML_USER_TEMPLATE=TEMPLATE, **self._patches), \
@@ -837,7 +836,7 @@ class TestAssembleAndSave:
         assert result == {'document_id': 'n', 'title': 'T', 'u': 1}
         mocks['JobContext'].return_value.update_progress.assert_called_once_with(90, 'saving_document')
         mocks['_chain_doc_type'].return_value.assemble.assert_called_once_with(H.ChainOutput(
-            'idea', ['<scratch/document_jobs/job_1/result_0.txt>', '<scratch/document_jobs/job_1/result_1.txt>'],
+            'Title', ['<scratch/document_jobs/job_1/result_0.txt>', '<scratch/document_jobs/job_1/result_1.txt>'],
         ))
         mocks['_document_item_fields'].assert_called_once_with(
             PROJECT, JOB, 'idea', 'DOC', {'d': 1}, {'an': 1}, {'u': 1}, {'b': 1},

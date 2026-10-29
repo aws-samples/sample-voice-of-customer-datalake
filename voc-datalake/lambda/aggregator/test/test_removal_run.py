@@ -1,6 +1,6 @@
 """A run of consecutive REMOVEs is reversed together, and leaves the aggregates EXACTLY as one at a time did.
 
-`_RemovalRunProcessor` sends one request per distinct counter (and per day for the
+`_RunCoalescingProcessor` sends one request per distinct counter (and per day for the
 average) instead of one per record, which is where this function's CPU went on a bulk
 delete. These tests run every batch twice against moto — once through the stock
 Powertools `BatchProcessor` calling `record_handler` per record (the old path), once

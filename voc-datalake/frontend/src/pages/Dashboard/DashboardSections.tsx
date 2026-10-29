@@ -23,6 +23,7 @@ import { formatPercent } from '../../utils/numberFormat'
 import DashboardCard from './DashboardCard'
 import { partialHintText } from './dashboardData'
 import { CHART_CONTAINER_PROPS, TOOLTIP_PROPS } from './chartTheme'
+import { tooltipFormatter } from './chartTooltip'
 
 /**
  * How many urgent items the dashboard previews. The list is a preview, not the
@@ -116,7 +117,7 @@ export function SentimentChart({ sentiment }: Readonly<{ sentiment: SentimentBre
         <ResponsiveContainer {...CHART_CONTAINER_PROPS}>
           <PieChart>
             <Pie data={pieData} cx="50%" cy="50%" innerRadius="55%" outerRadius="85%" paddingAngle={2} dataKey="value" nameKey="name" stroke="var(--card)" />
-            <Tooltip {...TOOLTIP_PROPS} />
+            <Tooltip {...TOOLTIP_PROPS} formatter={tooltipFormatter(i18n.language)} />
           </PieChart>
         </ResponsiveContainer>
       </div>

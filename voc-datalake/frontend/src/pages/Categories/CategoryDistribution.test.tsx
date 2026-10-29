@@ -94,11 +94,18 @@ describe('CategoryDistribution', () => {
       expect(screen.queryByText('Website')).not.toBeInTheDocument() // rank 7
     })
 
+    it('counts the same categories in the header and the show-all toggle ("Other" is the remainder in both)', () => {
+      render(<CategoryDistribution {...defaultProps} categoryData={manyCategories} totalIssues={100} />)
+
+      expect(screen.getByText(/^6 categories/)).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Show all 6 categories' })).toBeInTheDocument()
+    })
+
     it('reveals all categories via the show-all toggle and collapses back', async () => {
       const user = userEvent.setup()
       render(<CategoryDistribution {...defaultProps} categoryData={manyCategories} totalIssues={100} />)
 
-      await user.click(screen.getByText('Show all 7 categories'))
+      await user.click(screen.getByText('Show all 6 categories'))
       expect(screen.getByText('Billing')).toBeInTheDocument()
       expect(screen.getByText('Website')).toBeInTheDocument()
 

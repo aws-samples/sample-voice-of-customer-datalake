@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('./client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 const { fetchApi, resetFetchApi } = await import('@test/fetchApiRoutes')
-const { designSystemApi, normalizeAppliedDraft, normalizeDesignSystem, readLogoUrl, REFERENCE_KINDS } = await import('./designSystemApi')
+const { designSystemApi, designSystemBody, normalizeAppliedDraft, normalizeDesignSystem, readDraftLogo, REFERENCE_KINDS } = await import('./designSystemApi')
 
 const DESIGN = {
   colors: [{ name: 'primary', value: '#8e48ff' }, { name: '', value: '#000' }],
@@ -77,14 +77,33 @@ describe('apply and reference logo', () => {
     expect([draft.logo_candidate?.source_url, draft.logo_candidate?.preview_url]).toStrictEqual(['https://x.example/l.png', undefined])
   })
 
+  it.each([
+    [true, true],
+    [false, false],
+    ['yes', undefined],
+  ])('reads a logo candidate rendered: %j as %j (5.39, the capture browser drew an SVG logo)', (rendered, expected) => {
+    const logo = { source_url: 'https://x.example/l.svg', preview_url: '/design/logo/preview.png', rendered }
+    const draft = normalizeAppliedDraft({ draft: { tokens: {}, guidelines: '', logo_candidate: logo } })
+    expect([draft.logo_candidate?.source_url, draft.logo_candidate?.preview_url, draft.logo_candidate?.rendered]).toStrictEqual([logo.source_url, logo.preview_url, expected])
+  })
+
   it('refuses an answer without a draft rather than loading an empty editor', () => {
     expect(() => normalizeAppliedDraft({ tokens: {} })).toThrow('no draft')
   })
 
-  it('POSTs the logo route and reads logo_url', async () => {
-    fetchApi.mockResolvedValue({ logo_url: 'https://cdn.example/logo.png' })
-    await expect(designSystemApi.adoptReferenceLogo('r1')).resolves.toBe('https://cdn.example/logo.png')
+  it('POSTs the logo route and reads the drafted logo (nothing saved)', async () => {
+    fetchApi.mockResolvedValue({ logo_id: 'logo_0123456789ab.png', logo_url: 'https://cdn.example/logo.png' })
+    await expect(designSystemApi.draftReferenceLogo('r1')).resolves.toStrictEqual({ id: 'logo_0123456789ab.png', url: 'https://cdn.example/logo.png' })
     expect(fetchApi).toHaveBeenCalledWith('/settings/design-system/references/r1/logo', { method: 'POST' })
-    expect(readLogoUrl({})).toBeNull()
+  })
+
+  it.each([{}, { logo_url: 'https://cdn.example/l.png' }, { logo_id: '../x.png', logo_url: 'https://cdn.example/l.png' }])('reads %j as no drafted logo', (raw) => {
+    expect(readDraftLogo(raw)).toBeNull()
+  })
+
+  it('sends logo_id with the design system only when the draft carries a logo', () => {
+    const value = { tokens: { colors: [], typography: [], spacing: [], radius: [] }, guidelines: '', components: [] }
+    expect(designSystemBody(value)).not.toHaveProperty('logo_id')
+    expect(designSystemBody({ ...value, logo: { id: 'logo_0123456789ab.png', url: 'u' } })).toHaveProperty('logo_id', 'logo_0123456789ab.png')
   })
 })

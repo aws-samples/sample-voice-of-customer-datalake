@@ -28,6 +28,7 @@ from shared.exceptions import (
     ServiceError,
     ValidationError,
 )
+from shared.feedback_form_participants import record_response, resolve_participant
 
 if TYPE_CHECKING:
     from mypy_boto3_dynamodb.service_resource import Table
@@ -39,6 +40,7 @@ from shared.request_body import json_body_value, json_object_body
 from shared.snapstart import api_route_warmer, register_snapshot_hooks
 from shared.source_policy import apply_source_policy
 from shared.source_profiles import cached_source_profile_strict
+from shared.timestamps import now_iso
 
 # AWS Clients
 dynamodb = get_dynamodb_resource()
@@ -447,7 +449,7 @@ def _anchor_form_brand(form_id: str, effective_brand: str) -> None:
             ExpressionAttributeValues={
                 ':brand': effective_brand,
                 ':empty': '',
-                ':now': datetime.now(UTC).isoformat(),
+                ':now': now_iso(),
             },
         )
         logger.info(f"Anchored form {form_id} to brand '{effective_brand}'")
@@ -482,7 +484,7 @@ def build_form_item(body: dict, form_id: str | None = None) -> dict:
     reach the table with an unvalidated link by forgetting a line.
     """
     validate_link_fields(body)
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
     fid = form_id or str(uuid.uuid4())[:8]
 
     item = {
@@ -794,7 +796,7 @@ def update_form(form_id: str):
     body = json_object_body(app)
     validate_link_fields(body)
     _validate_form_labels(body)
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
 
     # Build update expression dynamically
     update_parts = []
@@ -938,6 +940,10 @@ def submit_form_feedback(form_id: str):
         metadata['submitter_name'] = body['name']
     if body.get('custom_fields'):
         metadata['custom_fields'] = body['custom_fields']
+    # A participant ask's link (shared/feedback_form_participants.py): ids only, or nothing.
+    participant = resolve_participant(body)
+    if participant:
+        metadata['participant'] = participant
 
     preset_category, preset_subcategory = _preset_routing(form)
     normalized_record = {
@@ -977,6 +983,7 @@ def submit_form_feedback(form_id: str):
     except Exception as e:
         logger.exception(f"Error submitting feedback: {e}")
         raise ServiceError('Failed to submit feedback. Please try again.') from e
+    record_response(participant)
     logger.info(f"Submitted feedback to form {form_id}: {feedback_id}")
     return {
         'success': True,
@@ -1023,6 +1030,19 @@ _IFRAME_SECURITY_HEADERS = {
 }
 
 
+# A participant ask's link opens this page with ``?r=<response token>``
+# (shared/feedback_form_participants.py). Only THIS page reads it (the widget embedded on a
+# customer's own site never looks at that site's query), hands it to the widget, which posts it
+# as ``participant_token``, and drops it from the address so neither ``page_url`` nor a Referer
+# carries it.
+_ASK_LINK_JS = (
+    "VoCFeedbackForm.participantToken = (function () { "
+    "var token = new URLSearchParams(window.location.search).get('r'); "
+    "if (token) { history.replaceState(null, '', window.location.pathname); } "
+    "return token; })();"
+)
+
+
 @app.get("/feedback-forms/<form_id>/iframe")
 @tracer.capture_method
 def get_form_iframe(form_id: str):
@@ -1067,6 +1087,7 @@ def get_form_iframe(form_id: str):
   <main id="voc-feedback-form"></main>
   <script>
   {get_widget_js()}
+  {_ASK_LINK_JS}
   VoCFeedbackForm.init({init_options});
   </script>
 </body>

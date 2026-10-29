@@ -13,6 +13,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { FlaskConical, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { usePluginCopy } from '../../plugins/pluginCopy'
 import { api } from '../../api/client'
 import { RunOutcomeBadge, type RunOutcome } from './SourceCardParts'
 import { ToneTile } from './SourceDialogHeader'
@@ -20,6 +21,7 @@ import { parseRunRecord } from './sourceRunStatus'
 import type { SourceRunStatus } from './sourceRunStatus'
 import type { PluginManifest } from '../../plugins/types'
 import { formatDate } from '../../utils/dateUtils'
+import { sourceRunStatusKey } from '../../api/queryKeys'
 
 function lastRunOutcome(status: SourceRunStatus): RunOutcome {
   if (status.status === 'completed' && (status.errors?.length ?? 0) === 0) return 'ok'
@@ -62,9 +64,10 @@ export default function SyntheticSourceCard({
   readonly onGenerate: () => void
 }) {
   const { t } = useTranslation('scrapers')
+  const copy = usePluginCopy()(plugin)
 
   const { data } = useQuery({
-    queryKey: ['source-run-status', plugin.id],
+    queryKey: sourceRunStatusKey(plugin.id),
     queryFn: () => api.getSourceRunStatus(plugin.id),
   })
   const lastRun = data === undefined ? null : parseRunRecord(data)
@@ -75,8 +78,8 @@ export default function SyntheticSourceCard({
         <div className="flex items-start gap-3 min-w-0">
           <ToneTile icon={FlaskConical} />
           <div className="min-w-0">
-            <h3 className="text-sm font-semibold tracking-tight text-text-strong">{plugin.name}</h3>
-            <p className="text-sm text-muted mt-0.5">{plugin.description}</p>
+            <h3 className="text-sm font-semibold tracking-tight text-text-strong">{copy.name}</h3>
+            <p className="text-sm text-muted mt-0.5">{copy.description}</p>
           </div>
         </div>
         <button

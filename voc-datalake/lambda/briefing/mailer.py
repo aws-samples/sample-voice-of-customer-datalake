@@ -18,8 +18,8 @@ from typing import Any, Final
 import boto3
 
 from shared.brief_cards import BriefCard
+from shared.briefing_store import TOPIC_ENV
 
-TOPIC_ENV: Final = 'BRIEFING_TOPIC_ARN'
 MAX_QUOTES: Final = 3
 MAX_SUBJECT_CHARS: Final = 99
 MAX_MESSAGE_CHARS: Final = 60_000

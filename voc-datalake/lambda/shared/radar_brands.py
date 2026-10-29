@@ -3,7 +3,8 @@
 THE BRAND LIST (Administration -> Sources -> Radar) is the source of truth. It is
 stored in the ``voc-radar`` table at ``SETTINGS#radar`` / ``brands``::
 
-    {brands: [{label: "Acme", domains: ["acme.com"]}], updated_at, updated_by}
+    {brands: [{label: "Acme", domains: ["acme.com"], language?: "pl", feed_urls?: [...], search_terms?: [...],
+               exclude_terms?: [...]}], updated_at, updated_by}
 
 (a sort key apart from ``SETTINGS#radar`` / ``config``, so saving the scan
 settings never clobbers it). A brand's key is ``brand_key(label)``, the table's
@@ -30,10 +31,14 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Final, TypeGuard
 
+from shared.radar_brand_fields import brand_language, effective_language, feed_urls
+from shared.radar_brand_terms import EXCLUDE_TERMS, SEARCH_TERMS, brand_terms
+
 __all__ = [
     'BRAND_LIST_KEY',
     'RadarBrand',
     'brand_key',
+    'brand_view',
     'effective_brands',
     'load_brand_list',
     'radar_brand_setting',
@@ -46,12 +51,14 @@ MAX_BRAND_CHARS: Final = 64
 MAX_BRAND_DOMAINS: Final = 10
 MAX_LIST_BRANDS: Final = 25
 BRAND_LIST_KEY: Final = {'pk': 'SETTINGS#radar', 'sk': 'brands'}
+#: Keys no listed brand may take: ``all`` names the Radar page's "All brands" view (GET /radar/all).
+RESERVED_BRAND_KEYS: Final = frozenset({'all'})
 #: A brand key as a scraper / connector config and a queue message carry it (``IngestMessage.radar_brand_key``).
 _BRAND_KEY_RE: Final = re.compile(r'[a-z0-9][a-z0-9_-]{0,63}')
 # Letters (any script), digits, spaces and a few name punctuation marks.
 _BRAND_RE: Final = re.compile(r"^[\w][\w .&'+-]{0,63}\Z")
 # Same shape as shared.web_search's filter check; kept here so source profiles never import the search client.
-_DOMAIN_RE: Final = re.compile(r'^(?=.{1,253}\Z)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\Z')
+DOMAIN_RE: Final = re.compile(r'^(?=.{1,253}\Z)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\Z')
 _SLUG_DROP: Final = re.compile(r'[^\w]+')
 ORIGIN_LIST: Final = 'list'
 ORIGIN_PROFILE: Final = 'profile'
@@ -70,6 +77,29 @@ class RadarBrand:
     domains: tuple[str, ...] = ()
     sources: tuple[str, ...] = ()
     origin: str = ORIGIN_PROFILE
+    #: The stored news-scan language (None = auto) and feed URLs (shared/radar_brand_fields.py).
+    language: str | None = None
+    feed_urls: tuple[str, ...] = ()
+    #: Words added to the general news queries, and words that drop a result (shared/radar_brand_terms.py).
+    search_terms: tuple[str, ...] = ()
+    exclude_terms: tuple[str, ...] = ()
+
+    @property
+    def effective_language(self) -> str:
+        return effective_language(self.language, self.domains)
+
+
+def brand_view(brand: RadarBrand) -> dict[str, Any]:
+    """The API view of a brand: ``{key, label, domains, sources, origin, language, effective_language, feed_urls,
+    search_terms, exclude_terms}``.
+
+    ``sources``: the legacy profile ids naming the brand. Only a VISIBLE brand reaches the API, and a
+    brand is visible only when the caller is admitted to every one of them (radar_handler._visible_brands).
+    """
+    return {'key': brand.key, 'label': brand.label, 'domains': list(brand.domains), 'sources': list(brand.sources),
+            'origin': brand.origin, 'language': brand.language, 'effective_language': brand.effective_language,
+            'feed_urls': list(brand.feed_urls), 'search_terms': list(brand.search_terms),
+            'exclude_terms': list(brand.exclude_terms)}
 
 
 def brand_key(name: str) -> str:
@@ -96,7 +126,7 @@ def _brand_name(raw: object, what: str, field: str = 'radar_brand') -> str:
 def _domain(raw: object, what: str, field: str) -> str:
     host = str(raw or '').strip().lower().removeprefix('https://').removeprefix('http://')
     host = host.split('/', 1)[0].removeprefix('www.')
-    if not _DOMAIN_RE.match(host):
+    if not DOMAIN_RE.match(host):
         raise ValueError(f'{what} {field} entry is not a domain name: {str(raw)[:80]!r}')
     return host
 
@@ -156,13 +186,25 @@ def _list_entry(raw: object, number: int) -> dict[str, Any]:
     if not isinstance(raw, Mapping):
         raise ValueError(f'{what} must be an object with a label and domains')
     label = _brand_name(raw.get('label'), what, 'label')
-    if not is_brand_key(brand_key(label)):
+    key = brand_key(label)
+    if not is_brand_key(key):
         raise ValueError(f'{what} label needs Latin letters or digits (a-z, 0-9) to make its key')
-    return {'label': label, 'domains': _domains(raw.get('domains'), what, 'domains')}
+    if key in RESERVED_BRAND_KEYS:
+        raise ValueError(f'{what} label "{label}" is reserved for the Radar "All brands" view: choose another label')
+    entry: dict[str, Any] = {'label': label, 'domains': _domains(raw.get('domains'), what, 'domains')}
+    # Stored only when set, so a list saved before 5.42 and one saved without them look alike.
+    if (language := brand_language(raw.get('language'), what)) is not None:
+        entry['language'] = language
+    if feeds := feed_urls(raw.get('feed_urls'), what):
+        entry['feed_urls'] = feeds
+    for field in (SEARCH_TERMS, EXCLUDE_TERMS):
+        if terms := brand_terms(raw.get(field), what, field):
+            entry[field] = terms
+    return entry
 
 
 def validate_brand_list(body: object) -> list[dict[str, Any]]:
-    """The normalised ``[{label, domains}]`` of a ``{brands: [...]}`` body, or ValueError (client-safe).
+    """The normalised ``[{label, domains, language?, feed_urls?, search_terms?, exclude_terms?}]`` of a ``{brands: [...]}`` body, or ValueError.
 
     At most ``MAX_LIST_BRANDS`` brands, each key once, at most ``MAX_BRAND_DOMAINS`` domains each.
     """
@@ -203,7 +245,10 @@ def effective_brands(listed: Iterable[Mapping[str, Any]],
     merged: dict[str, dict[str, Any]] = {}
     for entry in listed:
         merged[brand_key(entry['label'])] = {'label': entry['label'], 'domains': list(entry.get('domains') or []),
-                                             'sources': [], 'origin': ORIGIN_LIST}
+                                             'sources': [], 'origin': ORIGIN_LIST, 'language': entry.get('language'),
+                                             'feed_urls': tuple(entry.get('feed_urls') or ()),
+                                             SEARCH_TERMS: tuple(entry.get(SEARCH_TERMS) or ()),
+                                             EXCLUDE_TERMS: tuple(entry.get(EXCLUDE_TERMS) or ())}
     for brand in radar_brands(profiles):
         entry = merged.setdefault(brand.key, {'label': brand.label, 'domains': [], 'sources': [],
                                               'origin': ORIGIN_PROFILE})
@@ -211,7 +256,9 @@ def effective_brands(listed: Iterable[Mapping[str, Any]],
         entry['sources'].extend(brand.sources)
     return [
         RadarBrand(key=key, label=entry['label'], domains=tuple(entry['domains']),
-                   sources=tuple(entry['sources']), origin=entry['origin'])
+                   sources=tuple(entry['sources']), origin=entry['origin'], language=entry.get('language'),
+                   feed_urls=entry.get('feed_urls', ()), search_terms=entry.get(SEARCH_TERMS, ()),
+                   exclude_terms=entry.get(EXCLUDE_TERMS, ()))
         for key, entry in merged.items()
     ]
 

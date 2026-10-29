@@ -21,6 +21,10 @@
     "evidence": "このカードの根拠となるレビュー： {{count, number}} 件",
     "quotes": "お客様の声",
     "dismiss": "閉じる",
+    "dismissed": "非表示にしました: {{title}}",
+    "undo": "元に戻す",
+    "undoLabel": "{{title}} の非表示を元に戻す",
+    "closeNotice": "この通知を閉じる",
     "sources": "出典",
     "newTab": "新しいタブで開きます",
     "type": {

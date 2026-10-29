@@ -166,6 +166,7 @@ See [Getting Started with Plugins](docs/getting-started-plugins.md).
 | [EU Deployment](docs/eu-deployment.md) | `inferenceScope=eu`: EU inference profiles, model availability, web search and avatars, region choice |
 | [Autonomous Agents](docs/autonomous-agents.md) | Agents, triggers, workflows, runs, decisions and plans |
 | [Assistant Plan Mode](docs/assistant-plan-mode.md) | Multi-step requests the assistant proposes and runs after approval |
+| [Assistant Mentions](docs/assistant-mentions.md) | `@persona`, `@all` and `#document` in the project assistant: personas review tagged documents |
 | [Memory](docs/memory.md) | Company and personal memory: extraction, review, retention |
 | [Problem Analysis](docs/problem-analysis.md) | How /problems counts the whole window: `GET /feedback/problems`, grouping, partial and truncated answers |
 | [Account or Administration](docs/account-vs-admin.md) | Where a setting lives: the six Administration tabs, the Account page, and what moves between them |
@@ -186,9 +187,13 @@ See [Getting Started with Plugins](docs/getting-started-plugins.md).
 | [Mobile App Reviews](docs/mobile-app-reviews.md) | iOS & Android app store review plugins |
 | [Web Reviews](docs/web-reviews.md) | Reviews from public review pages with a managed browser; blocked sites reported |
 | [GitHub Issues](docs/github-issues.md) | Issues as feedback: sync, webhook, version and label metrics |
+| [Ways of working with AI](docs/ways-of-working.md) | Per-user Human-driven / AI-assisted / AI-driven for PR/FAQs and PRDs: what each allows, writing by hand, server enforcement |
+| [Document review](docs/document-review.md) | Margin comments on PR/FAQs and PRDs, "Ask personas to review", the share-for-review link and its email sign-in |
 | [Decisions and Release Watch](docs/decisions-and-release-watch.md) | Decision records on projects (Pursue seeds a PR/FAQ) and before/after feedback per release |
 | [Email Inbox](docs/email-intake.md) | Feedback by email (off by default): SES receiving, guards, threads and dedupe, attachments, custom domain setup |
 | [Radar](docs/radar.md) | Other brands: love/hate, releases from web search, comparison |
+| [Participants](docs/participants.md) | Lists of people to ask for feedback, asks by email (SES), unsubscribe, attribution, erasure |
+| [Feedback boards](docs/feature-requests.md) | Boards per team or audience (sales requests, service issues, beta feedback): templates, fields, audiences, +1s, the boards' own sign-in, promote to a project |
 | [Data Lake Structure](docs/data-lake-structure.md) | S3 and DynamoDB organization |
 | [Processing Pipeline](docs/processing-pipeline.md) | How feedback is processed |
 | [Lambda Sizing](docs/lambda-sizing.md) | Memory and timeout policy for every Lambda, and how it is measured |

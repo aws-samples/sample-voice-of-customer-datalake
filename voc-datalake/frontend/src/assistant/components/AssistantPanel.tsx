@@ -101,14 +101,15 @@ function isOwnLayer(root: HTMLElement | null, target: EventTarget): boolean {
 }
 
 /** Messages, the starters of an empty conversation, or a loading line while the last one comes back. */
-function ConversationBody({ thread, page, restoring, onDraft }: Readonly<{
+function ConversationBody({ thread, page, restoring, onDraft, onRegenerate }: Readonly<{
   thread: ThreadState
   page: PageContext
   restoring: boolean
   onDraft: (text: string) => void
+  onRegenerate: () => void
 }>) {
   const { t } = useTranslation('assistant')
-  if (thread.messages.length > 0) return <MessageList thread={thread} page={page} />
+  if (thread.messages.length > 0) return <MessageList thread={thread} page={page} onRegenerate={onRegenerate} />
   if (restoring) {
     return (
       <p role="status" className="flex items-center justify-center gap-2 py-8 text-[13px] text-muted">
@@ -127,7 +128,7 @@ function ConversationPane({ column, draft, onDraft }: Readonly<{
   onDraft: (text: string) => void
 }>) {
   const { t } = useTranslation('assistant')
-  const { thread, page, send, stop, resolve, webSearchAvailable } = useAssistant()
+  const { thread, page, send, stop, resolve, regenerate, webSearchAvailable } = useAssistant()
   const errorText = useErrorText(thread.error?.code, thread.error?.message)
   // The last conversation is still loading after a reload: typing now would start a throwaway one.
   const restoring = useThreadStore((s) => s.restore.status === 'pending')
@@ -136,7 +137,7 @@ function ConversationPane({ column, draft, onDraft }: Readonly<{
     <div className="flex min-w-0 flex-1 flex-col">
       <div className="relative flex-1 overflow-y-auto px-3 py-3">
         <div className={column}>
-          <ConversationBody thread={thread} page={page} restoring={restoring} onDraft={onDraft} />
+          <ConversationBody thread={thread} page={page} restoring={restoring} onDraft={onDraft} onRegenerate={regenerate} />
           <div className="mt-3">
             <ApprovalList thread={thread} page={page} onResolve={resolve} />
           </div>
@@ -148,8 +149,9 @@ function ConversationPane({ column, draft, onDraft }: Readonly<{
         streaming={thread.status === 'streaming'}
         blockedReason={blockedReason}
         webSearchAvailable={webSearchAvailable}
-        onSend={(content) => {
-          void send(content)
+        projectId={page.kind === 'project' ? page.projectId : undefined}
+        onSend={(content, mentions) => {
+          void send(content, mentions)
         }}
         onStop={stop}
         draft={draft}
@@ -178,6 +180,8 @@ export default function AssistantPanel({ variant, anchor, onResetPosition }: Rea
   const wide = fullscreen || variant === 'page'
   // The wide panels' conversation list; its own rail button collapses it (one control, not two).
   const sidebarId = useId()
+  // The dialog / region is named by its heading; a per-instance id, never one fixed id for both variants.
+  const titleId = useId()
   useFocusTrap(rootRef, fullscreen)
   // The floating panel is a non-modal dialog: opening it puts the caret in the
   // composer, where the user is going to type (design audit D-OVL — focus used
@@ -209,7 +213,7 @@ export default function AssistantPanel({ variant, anchor, onResetPosition }: Rea
       ref={rootRef}
       role={variant === 'floating' ? 'dialog' : 'region'}
       aria-modal={fullscreen || undefined}
-      aria-labelledby="assistant-panel-title"
+      aria-labelledby={titleId}
       style={variant === 'floating' && !fullscreen ? anchor : undefined}
       className={clsx(
         'flex flex-col overflow-hidden text-text motion-safe:transition-all',
@@ -226,6 +230,7 @@ export default function AssistantPanel({ variant, anchor, onResetPosition }: Rea
       }}
     >
       <PanelHeader
+        titleId={titleId}
         page={page}
         variant={variant}
         mode={mode}

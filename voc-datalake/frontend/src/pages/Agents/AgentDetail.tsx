@@ -111,7 +111,7 @@ function ConfigEditor({ agent, tab, isAdmin }: Readonly<{ agent: Agent; tab: Age
       {isAdmin && (
         <StickyActionBar>
           {'errors' in checked && dirty && (
-            <ul role="alert" className="mr-auto text-[12px] text-danger">{checked.errors.map((e) => <li key={e}>{e}</li>)}</ul>
+            <ul role="alert" className="mr-auto text-[12px] text-danger">{checked.errors.map((e) => <li key={e.key}>{t(e.key, e.values)}</li>)}</ul>
           )}
           {update.isError && <p role="alert" className="mr-auto text-[12px] text-danger">{t('detail.saveFailed')}</p>}
           {update.isSuccess && !dirty && <p role="status" className="mr-auto text-[12px] text-muted">{t('detail.saved')}</p>}

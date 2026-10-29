@@ -18,6 +18,7 @@ const TIME_RANGE_LABELS: Record<string, string> = {
   '24h': '24 Hours',
   '48h': '48 Hours',
   '7d': '7 Days',
+  '14d': '14 Days',
   '30d': '30 Days',
   '90d': '90 Days',
   all: 'All time',

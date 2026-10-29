@@ -26,6 +26,8 @@ const LOAD_TIMEOUT_MS = 1500;
 export interface SessionPersistence {
   store: SessionStore;
   nowMs: () => number;
+  /** How often a run polls its Stop marker (cancel.ts POLL_INTERVAL_MS when absent; tests shorten it). */
+  stopPollMs?: number;
 }
 
 export interface SessionEmitter extends Emitter {

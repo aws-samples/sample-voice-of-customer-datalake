@@ -34,18 +34,17 @@ from __future__ import annotations
 import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Final
 
 from botocore.exceptions import BotoCoreError, ClientError
 
-from shared.earliest_date import EARLIEST_DATE_KEY, earliest_date_from_item
+from shared.earliest_date import EARLIEST_DATE_KEY, METRIC_META_PK, earliest_date_from_item
 from shared.logging import logger
+from shared.timestamps import now_iso
 
-VERSION_PK: Final = 'METRIC#meta'
-DATA_VERSION_KEY: Final = {'pk': VERSION_PK, 'sk': 'data_version'}
-CONFIG_VERSION_KEY: Final = {'pk': VERSION_PK, 'sk': 'config_version'}
+DATA_VERSION_KEY: Final = {'pk': METRIC_META_PK, 'sk': 'data_version'}
+CONFIG_VERSION_KEY: Final = {'pk': METRIC_META_PK, 'sk': 'config_version'}
 RADAR_VERSION_KEY: Final = {'pk': 'SETTINGS#radar', 'sk': 'version'}
 VERSION_ATTRIBUTE: Final = 'v'
 
@@ -61,7 +60,7 @@ def _bump(table: Any, key: Mapping[str, str], name: str) -> bool:
             Key=dict(key),
             UpdateExpression='ADD #v :one SET updated_at = :now',
             ExpressionAttributeNames={'#v': VERSION_ATTRIBUTE},
-            ExpressionAttributeValues={':one': 1, ':now': datetime.now(UTC).isoformat()},
+            ExpressionAttributeValues={':one': 1, ':now': now_iso()},
         )
     except _AWS_ERRORS:
         logger.exception('Could not bump a cache version; cached reads expire by age instead',
@@ -175,7 +174,7 @@ def _parse(response: object, aggregates_table: Any, radar_table: Any) -> Version
     responses = response.get('Responses')
     if not isinstance(responses, Mapping) or not isinstance(responses.get(aggregates_table.name), list):
         return None
-    meta = _rows_by_sk(responses.get(aggregates_table.name), VERSION_PK)
+    meta = _rows_by_sk(responses.get(aggregates_table.name), METRIC_META_PK)
     data = _counter(meta.get(DATA_VERSION_KEY['sk']))
     config = _counter(meta.get(CONFIG_VERSION_KEY['sk']))
     radar: int | None = None

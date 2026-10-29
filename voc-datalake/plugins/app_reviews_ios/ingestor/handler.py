@@ -11,18 +11,17 @@ from countries import IOS_COUNTRIES
 from itunes_client import create_session, fetch_reviews_for_country
 from models import IOSAppConfig
 
-from _shared.app_reviews_utils import (
-    AppReviewsIngestor,
-    config_radar_brand,
+from _shared.app_reviews_config import (
+    app_entry_fields,
     load_app_configs,
     merge_reviews_by_composite_id,
     newest_first,
-    parse_int,
-    radar_stamp,
     review_created_at,
 )
+from _shared.app_reviews_utils import AppReviewsIngestor
 from _shared.base_ingestor import logger, metrics, tracer
 from shared.invocation_cost import measure_invocation_cost
+from shared.radar_brands import radar_stamp
 
 
 class IOSAppReviewsIngestor(AppReviewsIngestor[IOSAppConfig]):
@@ -46,11 +45,8 @@ class IOSAppReviewsIngestor(AppReviewsIngestor[IOSAppConfig]):
             platform_label="iOS",
             legacy_id_key="app_id",
             from_entry=lambda cfg: IOSAppConfig(
-                name=cfg.get("app_name", "").strip(),
+                **app_entry_fields(cfg),
                 app_id=str(cfg.get("app_id", "")).strip(),
-                enabled=cfg.get("enabled", True),
-                max_reviews_per_run=parse_int(str(cfg.get("max_reviews_per_run", 500)), 500),
-                radar_brand=config_radar_brand(cfg),
             ),
             from_legacy=lambda app_name, app_id, max_reviews: IOSAppConfig(
                 name=app_name,
@@ -70,27 +66,34 @@ class IOSAppReviewsIngestor(AppReviewsIngestor[IOSAppConfig]):
         Every storefront in the curated list is fetched: unlike Android, each
         iOS storefront serves its own reviews (500 cap each), so countries add
         unique coverage rather than duplicates.
+
+        Every storefront's outcome is tallied: a failed one (HTTP error, connection
+        failure) is logged per storefront and summarised per app, and reaches the
+        run row's ``errors``.
         """
         countries = list(IOS_COUNTRIES)
         random.shuffle(countries)
 
         all_reviews: dict[str, dict] = {}
+        tally = self.new_tally(app)
 
         for country in countries:
-            reviews = fetch_reviews_for_country(
+            fetch = fetch_reviews_for_country(
                 app_id=app.app_id,
                 country=country,
                 session=self.session,
                 limit=app.max_reviews_per_run,
-                sort_by=self.sort_by,
+                sort_by=self.sort_by_for(app),
             )
+            tally.record(country, fetch)
             merge_reviews_by_composite_id(
                 all_reviews,
-                reviews,
+                fetch.reviews,
                 country=country,
                 composite_id_for=lambda review: f"ios_{app.app_id}_{review['id']}",
             )
 
+        self.report_storefronts(tally)
         return newest_first(
             all_reviews.values(), date_field="date", cap=app.max_reviews_per_run
         )
@@ -127,5 +130,6 @@ class IOSAppReviewsIngestor(AppReviewsIngestor[IOSAppConfig]):
 @metrics.log_metrics(capture_cold_start_metric=True)
 @measure_invocation_cost
 def lambda_handler(event, context):
-    """Lambda entry point. Optionally filters to a single app via event['app_id']."""
-    return IOSAppReviewsIngestor.run_for_event(event)
+    """App Store entry point: one app when event['app_id'] names it, else all of them, in parts that each
+    stop with time to spare and start the next (_shared/app_reviews_parts.py)."""
+    return IOSAppReviewsIngestor.run_for_event(event, context)

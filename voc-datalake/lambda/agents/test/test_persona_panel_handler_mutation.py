@@ -93,7 +93,7 @@ class TestConstants:
         assert panel.PERSONA_MAX_TOKENS == 1200
         assert panel.AGREEMENT_MEAN == 4.0
         assert panel.MAX_OBJECTIONS == 5
-        assert panel.TARGETS == ('prfaq', 'prd', 'prototype')
+        assert panel.REVIEW_TARGETS == ('prfaq', 'prd', 'prototype')
 
 
 class TestPersonaSystemPrompt:

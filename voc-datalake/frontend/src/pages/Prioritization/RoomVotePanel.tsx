@@ -39,7 +39,7 @@ function SessionStatus({ session }: { readonly session: VotingSession }): ReactE
 function PanelFrame({ children }: { readonly children: ReactNode }): ReactElement {
   const { t } = useTranslation('prioritization')
   return (
-    <div className="rounded-lg border border-aim/30 bg-aim-subtle p-3 space-y-2">
+    <div className="rounded-lg border border-aim/30 bg-aim-subtle p-3 space-y-2" data-testid="room-vote-panel">
       <h4 className="font-medium text-text-strong flex items-center gap-1.5">
         <QrCode size={14} className="text-aim" aria-hidden="true" />
         {t('roomVote.title')}

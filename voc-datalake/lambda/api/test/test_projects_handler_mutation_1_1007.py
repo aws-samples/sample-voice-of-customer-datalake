@@ -128,7 +128,7 @@ THIN_ROUTES = [
     ('PUT', '/projects/p1/personas/x1', BODY, None, 'update_persona', ('p1', 'x1', BODY), {}),
     ('DELETE', '/projects/p1/personas/x1', None, None, 'delete_persona', ('p1', 'x1'), {}),
     ('POST', '/projects/p1/personas/x1/notes', BODY, None, 'add_persona_note', ('p1', 'x1', BODY), {}),
-    ('POST', '/projects/p1/documents', BODY, None, 'create_document', ('p1', BODY), {}),
+    ('POST', '/projects/p1/documents', BODY, None, 'create_document', ('p1', BODY), {'creator_sub': 'test-user-id'}),
     ('PUT', '/projects/p1/documents/d1', BODY, None, 'update_document', ('p1', 'd1', BODY), {}),
     ('GET', '/projects/p1/documents/d1/versions', None, None, 'get_document_versions', ('p1', 'd1'), {}),
     ('POST', '/projects/p1/documents/d1/versions/v1/restore', BODY, None, 'restore_document',
@@ -197,7 +197,7 @@ class TestThePersonaJobs:
         filters = {
             'sources': ['web'], 'date_basis': 'imported', 'persona_count': 3,
             'custom_instructions': '', 'response_language': None, 'generate_avatars': True,
-            SCOPE_CONFIG_KEY: SCOPE_CONFIG,
+            'keep_existing_personas': False, SCOPE_CONFIG_KEY: SCOPE_CONFIG,
         }
         assert (status, body) == (200, {'success': True, 'job_id': 'job-1', 'status': 'running',
                                         'message': 'Persona generation started.'})
@@ -226,6 +226,16 @@ class TestThePersonaJobs:
         status, body, _ = world.call('POST', '/projects/p1/personas/generate',
                                      body={'generate_avatars': 'false'})
         assert (status, body['error']) == (400, 'generate_avatars must be true or false, got str')
+        world.create_job.assert_not_called()
+
+    def test_an_agent_can_ask_to_keep_the_existing_personas(self, world):
+        world.call('POST', '/projects/p1/personas/generate', body={'keep_existing_personas': True})
+        assert world.create_job.call_args.args[3]['keep_existing_personas'] is True
+
+    def test_a_non_boolean_keep_flag_is_refused_by_name(self, world):
+        status, body, _ = world.call('POST', '/projects/p1/personas/generate',
+                                     body={'keep_existing_personas': 'yes'})
+        assert (status, body['error']) == (400, 'keep_existing_personas must be true or false, got str')
         world.create_job.assert_not_called()
 
     @pytest.mark.parametrize(('value', 'expected'), [(1, 1), (0, 1), (10, 10), (11, 10)])

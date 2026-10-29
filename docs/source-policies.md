@@ -44,7 +44,7 @@ explorer. This is `shared/source_policy.apply_source_policy`.
 - **`redact`**:
   - `text`, `title` and every string `metadata` value are redacted, and `author` is dropped.
   - Regex rules replace email addresses, phone numbers (E.164 and common EU/US formats),
-    IBANs, payment cards (Luhn-checked) and IPv4/IPv6 addresses with `[EMAIL]`, `[PHONE]`,
+    IBANs, payment cards (Luhn-checked, with an issuer prefix that issues that length — a 13-digit timestamp or order id is kept) and IPv4/IPv6 addresses with `[EMAIL]`, `[PHONE]`,
     `[IBAN]`, `[CARD]` and `[IP]`.
   - Amazon Comprehend `DetectPiiEntities` additionally replaces names and addresses with
     `[NAME]` / `[ADDRESS]`. This runs only when `PII_COMPREHEND=1` (set on every ingestion

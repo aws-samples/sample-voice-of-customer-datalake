@@ -70,7 +70,7 @@ npm run check        # lint + typecheck:all + test + check:mock + check:i18n + b
 | `npm run lint` | `lint:cdk` + `lint:frontend` + `lint:stream` + `lint:gates` (ESLint; `lint:gates` lints `eslint-rules/` itself) + `lint:python` (ruff over `lambda/`, `plugins/`, and `scripts/`) |
 | `npm run typecheck` | Frontend only — use `typecheck:all` for frontend + CDK + stream |
 | `npm run test` | Frontend Vitest only |
-| `npm run check:mock` | Every `fetchApi` call site is listed in `frontend/mock-coverage.json` and its probes reach a real mock route |
+| `npm run check:mock` | Every `fetchApi` call site (and every raw `fetch` of the API base, `` fetch(`${getBaseUrl()}…`) ``) is listed in `frontend/mock-coverage.json` and its probes reach a real mock route |
 | `npm run check:i18n` | The i18n audit (`frontend/scripts/i18n-check.mjs`, after its own regression tests): every key the source uses exists in English, and no locale has missing, extra or empty keys (untranslated values and unused keys only warn). It never writes files. The frontend's `i18n:validate` / `i18n:extract` run `i18next-parser`, which REWRITES the locale files (re-sorted, new keys empty), so they are an authoring tool, not a gate |
 | `npm run test:cdk` | CDK Vitest (`voc-datalake`) |
 | `npm run test:stream` | AI assistant stream Lambda Vitest |
@@ -224,6 +224,18 @@ creates the agreement for each allowlisted model at deploy time
 account whose Private Marketplace refuses an agreement logs it and carries on).
 It is redundant once someone with Marketplace permissions has invoked each model
 in the account, for example from the Bedrock console playground.
+
+**The persona-avatar image model's agreement is requested on every deployment**
+(5.45, no flag, no opt-out). `VocCoreStack` carries one more custom resource,
+`ImageModelAccess` (`lib/stacks/bedrock-access-stack.ts`), which runs the same steps
+for the Stability image model (`stability.stable-image-core-v1:1`) in its own region
+(us-west-2), whatever the app region and whether or not web search or
+`anthropicUseCase` is set. It is best effort: any failure (a Private Marketplace
+refusal, an organization policy, a model not offered) is logged in the
+`ModelAgreementLambda` log group and reported as `UNAVAILABLE`; it never fails the
+deploy. Like the Claude agreements, it runs on the resource's first create only, so
+a later deploy does not retry it. Administration → AI models → **Image generation**
+shows whether access is in place (below).
 
 How the switches combine today:
 
@@ -526,6 +538,64 @@ is the only role with a delete permission on customer data. Sources without a pr
 kept forever, so a deploy changes nothing until an admin configures one. See
 [source-policies.md](source-policies.md) and [dimensions.md](dimensions.md).
 
+### Participant email and the feature-request board (`-c emailFrom`)
+
+Participants (people, lists, project links) and the internal feature-request board always
+deploy: two tables in VocCoreStack (`voc-participants`, `voc-feature-requests`; KMS, PITR,
+`-c protectData` like every data table) and one API Lambda, `voc-engagement-api`
+(`/participants/*`, `/feature-requests/*`, the public `POST /unsubscribe`, with its own stage throttle in
+`voc-datalake/lib/stacks/api-gateway.ts`).
+Without the flag below nobody can be emailed (`POST /participants/asks` answers 409
+`email_not_configured`, `config.json` ships `features.email: false`).
+
+**The board pool exists on every deployment (5.45.00).** `voc-board-user-pool` (VocCoreStack) and
+its authorizer (VocApiStack, on `/feature-requests/*` and the document review links' `/review/*`)
+are created with or without the flag; `config.json` always carries
+`board: {userPoolId, clientId, signIn}` and the stack outputs `BoardUserPoolId`,
+`BoardUserPoolClientId` and `BoardSignInMode`. Without `-c emailFrom` the pool sends its codes with
+Cognito's own sender (`no-reply@verificationemail.com`, **50 emails a day per AWS account**, may
+land in spam): a new person confirms the sign-up with the emailed code, a returning one gets a
+password-reset code and the SPA sets a random password it never keeps (`signIn: code`, account
+recovery by email). With the flag it sends through SES with Email OTP (`signIn: email_otp`); an
+existing `-c emailFrom` pool is updated in place, never replaced. Sign-ups are never auto-confirmed
+any more: the emailed code proves the inbox (before 5.45.00 a sign-up could choose a password and
+use it for an address it did not own). See [document-review.md](document-review.md).
+With the flag, `config.json` carries `features.email: true`, written by the CDK deploy and, from the
+`EmailAvailable` (VocApiStack) output, by `npm run deploy:frontend` too.
+
+`-c emailFrom=noreply@voc.example.com` (or `"emailFrom"` in `cdk.context.json`) turns on both
+email features:
+
+- **Asks:** `voc-engagement-api` may `ses:SendEmail` only with that From address
+  (`ses:FromAddress` condition) on the SES identity of its domain (or of the address itself).
+  Each ask carries `List-Unsubscribe` / one-click headers.
+- **The board's own sign-in** (`/board`, for people without an app account): the board pool sends
+  its codes through SES and signs returning people in with an emailed one-time code and a link
+  (`EMAIL_OTP`, no password to remember, no account recovery). The pool and its authorizer exist
+  without the flag too (above); the authorizer accepts the app pool AND the board pool on
+  `/feature-requests/*` and `/review/*` only — a board token reaches no other route. The pool
+  allows self sign-up, but its PreSignUp trigger refuses any email that no board audience (see
+  **Participants → Settings → company domains**) and no active review link admits. The pool runs on
+  the Cognito **Essentials** feature plan, billed per monthly active user; the app's own pool is
+  unchanged.
+
+The address is validated at synth (a plain `local@domain`, no display name). Before deploying:
+
+1. **Verify the SES domain identity** of the address (`voc.example.com` above) in the
+   deployment's region, with its DKIM records published. CDK neither creates nor verifies it.
+2. **Leave the SES sandbox** (request production access) — in the sandbox SES delivers only to
+   verified recipients, so neither participants nor board users would get mail.
+3. Check the account's SES sending quota against your **daily send cap** (Participants →
+   Settings, default 500 per day).
+
+Bounces and complaints are handled by the SES **account-level suppression list**: turn it on
+for both reasons (SES console → Configuration → Suppression list). An address on it is not
+mailed again. A recipient's unsubscribe link marks the person `unsubscribed`, and every later
+ask skips them.
+
+Turning the flag off later removes the board pool and its users (with `-c protectData=true`
+the pool is retained, detached from the stack).
+
 ### Web Search (on by default)
 
 Public web search in AI Chat and Research deploys by default; individual
@@ -547,6 +617,82 @@ entirely (the deployment reports `WebSearchAvailable=false` and
 Cost model (per `bin/voc-datalake.ts`): the gateway has no standing cost;
 searches bill per query ($7/1k at the time of writing — check AgentCore
 pricing) and only run for requests where the user turned the toggle on.
+
+### System errors (Administration → System → Logs → System errors)
+
+The default tab of the Logs page is built so that someone **without access to the AWS
+account** (a developer reading the page, or its JSON download) can tell what failed and
+why. Nothing needs a deploy flag or a debug mode: every source below is on by default.
+
+It lists every ERROR / CRITICAL line (with "Errors and warnings", also WARNING) that this
+deployment wrote in the last 1, 7 or 30 days, grouped, newest first. An API Lambda logs a
+4xx it answers on purpose at INFO, not WARNING: a refused authorization ("Admin access
+required", "You do not have permission to …"), a 400 validation error, a 404, a 409 conflict,
+a 413 and a 429 quota (`_EXCEPTION_ANSWERS` in `lambda/shared/api.py`), so warnings mode shows
+faults and degraded paths only; a 5xx is ERROR. Each group carries `source`:
+
+| `source` | Log groups read | What becomes a group |
+|----------|-----------------|----------------------|
+| `lambda` | `/aws/lambda/[<prefix>-]voc-*-<account>-<region>` (env `SYSTEM_LOG_GROUP_PATTERN`), plus VocCoreStack's own Lambdas whose log group CloudFormation named (product-doc extractor, Cognito custom message, admin bootstrap, CDN signing keys, the two board-pool triggers; env `SYSTEM_EXTRA_LOG_GROUPS`, `<function>=<stack>-<construct id>` name prefixes) | Powertools / Node ERROR, CRITICAL, FATAL (+ WARNING / WARN); Lambda's own lines (`Task timed out`, `Runtime.*Error`, a `REPORT` with `Status: timeout` or `error`) as `PLATFORM` |
+| `workflow` | `/aws/stepfunctions/[<prefix>-]voc-*-<account>-<region>` (env `SYSTEM_WORKFLOW_LOG_GROUP_PATTERN`): agent runs, research, documents | `ExecutionFailed`, `ExecutionTimedOut`, `ExecutionAborted`, `TaskFailed`, `TaskTimedOut`, `LambdaFunctionFailed`, `LambdaFunctionTimedOut` as `ERROR`; function = the state machine (`agent-run`); message = type, error and cause (≤ 2,000); `request_id` = the execution name |
+| `api` | the stage access log `/aws/apigateway/[<prefix>-]voc-analytics-api-<account>-<region>` (env `SYSTEM_API_ACCESS_LOG_GROUP`) | every 5xx as `HTTP`; with warnings also every 4xx except 401 / 403 / 404 / 409 / 410 (a signed-out caller, a refusal, a missing record, a conflict, an expired or closed link; 400 and 429 stay) as `WARNING`; message `<METHOD> <path, ids as {id}> → <status> <gateway error or integration status>`; requests with a `voc-e2e/` User-Agent (the e2e suite) are left out; the caller IP is never read |
+
+**Not covered:** the CDK provider / custom-resource handlers (`*Provider*`, bucket
+notifications, auto-delete, BucketDeployment — framework code, not the app), and the
+Bedrock model-agreement Lambda of `VocWebSearchStack` (always us-east-1, so outside a
+regional Insights query of a deployment in another region).
+
+- **Routes** (all admin-only, 403 otherwise, `Cache-Control: no-store`, every returned
+  text through the regex PII redaction, results never logged):
+  - `GET /logs/system?days=1|7|30&level=error|warning[&query_id=…]` — the groups
+    (`lambda/shared/system_logs.py`; sources `system_log_sources.py`, rows
+    `system_log_rows.py`, grouping `system_log_groups.py`). One Logs Insights query per
+    ≤ 50 Lambda groups (at most 4), one for the state machines, one for the access log,
+    polled for up to 18 s; a slower search answers `running` with up to 6 comma-separated
+    `query_id`s and the page polls again. Each group: `source`, `function`, `level`,
+    `message` (≤ 300, ids / times / numbers / quoted values replaced), `sample` (the newest
+    full line with its stack trace, ≤ 6,000), `count`, `first_seen`, `last_seen`,
+    `request_id`. At most 200 groups; `truncated` = a query hit Insights' 10,000-row cap;
+    `log_groups_by_source` counts what was searched.
+  - `GET /logs/system/request?function=<short>&request_id=<id>&at=<iso>[&query_id=…]` —
+    every line of that one invocation, any level (INFO included), oldest first, ≤ 500
+    (`truncated` beyond), each `{timestamp, level, message ≤ 4,000}`
+    (`system_request_log.py`). The function's ONE log group, `at` ± 20 minutes, matched on
+    `@requestId`, Powertools `function_request_id` or the id in a Node line; a state
+    machine on its execution name. 404 for an unknown function and for `api` (an access
+    log line has no invocation lines). Same `running` / `query_id` contract.
+  - `GET /logs/system/queues` — every dead-letter / failure queue alerting watches
+    (`OPS_ALERTS_QUEUES`, the table below): `{name, messages, oldest_age_seconds?,
+    sample: [≤ 3 bodies, ≤ 2,000 each], sample_sent_at}` (`system_queues.py`). A queue
+    that cannot be read answers `messages: null` with `error`. The peek is
+    `ReceiveMessage` with `VisibilityTimeout=0`: nothing is deleted and the messages stay
+    visible, but each look raises their receive count by one (these queues have no
+    further redrive, so that moves nothing). The age is the larger of CloudWatch's
+    `ApproximateAgeOfOldestMessage` and the oldest sampled message's send time: once a
+    message has been received three times, CloudWatch's age points at the second-oldest
+    message, so on a peeked dead-letter queue it alone can read hours for a message days
+    old. Omitted when neither is known. The peek waits up to 1 s (a short poll often
+    answers nothing for a queue holding one message).
+  - `GET /logs/system/environment` — region, the account's last four digits, the
+    deployment prefix, enabled sources, web search on/off, inference scope, the avatar
+    image model `{id, region, avatars_enabled}`, the model in force per AI surface and the
+    admin overrides, alerting `{configured, enabled, alarms: [{name, state}], in_alarm}`,
+    the sources whose circuit breaker is open (`last_error` redacted) and `log_coverage`
+    (what the search can read) (`system_environment.py`). A section that cannot be read
+    answers `{"unavailable": true}`. The platform version is the SPA's build constant
+    (System → Version), not a Lambda variable (it would change every template each release).
+- **IAM** (`lib/stacks/api-logs-diagnostics.ts`): `logs:DescribeLogGroups` on
+  `log-group:*`; `logs:StartQuery` on the three name patterns above (+ `:*`) and the
+  VocCoreStack name prefixes only; `logs:GetQueryResults` / `logs:StopQuery` and
+  `cloudwatch:GetMetricData` on `*` (no resource type); `sqs:GetQueueUrl`,
+  `sqs:GetQueueAttributes`, `sqs:ReceiveMessage` on exactly the failure queues (no delete);
+  `kms:Decrypt` conditioned on `kms:ViaService` = SQS and the SQS encryption context of
+  exactly those queues (the schedule DLQ has its own key in VocIngestionStack; no key ARN
+  crosses a stack). No new resource and no cross-stack export.
+- **Cost:** Logs Insights bills per GB scanned (check CloudWatch pricing); each page load
+  or refresh runs one search over the chosen window (30 days on a busy deployment scans
+  the most), and each "Show the whole request" a 40-minute search of one group. Lines
+  older than a log group's retention (two weeks for most) are gone.
 
 ### Operational alerts (Administration → System → Logs → Alerts)
 
@@ -610,6 +756,15 @@ alerting on in Administration → System → Logs → Alerts and add the address
 invoke permission scoped to this RestApi (any stage, method and path of it), not
 CDK's default of two per method (`frugalIntegration` in `lib/stacks/api-routes.ts`).
 That took the all-plugins template from 479 to 388 resources.
+5.47.00 consolidated the routes (424 → 353): a CORS preflight only on resources that
+serve a browser method (the RestApi has no default preflight), and proxies for
+`/feedback/{id}/{proxy+}` (GET → metrics, PUT → feedback edit), `/scrapers/manual`,
+`/data-explorer` (GET and PUT only), `/integrations/{source}`, `/sources/{source}`,
+`/connect` and `/chat`. Paths do not change for any caller. Never put a `{proxy+}`
+beside an existing `{param}` (or the reverse): API Gateway allows one variable path part
+per level, and CloudFormation creates before it deletes, so the update fails;
+`lib/stacks/api-stack-cors-preflight.test.ts` pins both rules. The deploy must end with
+the stage refresh above, or the removed explicit methods stay on the stage.
 `lib/stacks/api-stack-snapstart.test.ts` keeps it at least 75 under the 500 limit,
 and `lib/stacks/api-stack-invoke-permissions.test.ts` fails if a per-method permission
 comes back. Each function can still be invoked only by API Gateway, only from this
@@ -649,8 +804,8 @@ deleting the stacks is the one way to remove everything:
   operational rows (processor logs, voting sessions, fixtures) still expire.
   Every window accepts `days` from 0 to 9999, and `days=0` means all time.
 - **No delete path.** `DELETE /data-explorer/s3` and `DELETE /data-explorer/feedback`
-  are gone (not wired at API Gateway, which has explicit routes and no
-  `{proxy+}` under `/data-explorer`). The data explorer role holds no
+  are gone (not wired at API Gateway: `/data-explorer/{proxy+}` carries GET and
+  PUT only, no ANY and no DELETE). The data explorer role holds no
   `s3:DeleteObject*` or `dynamodb:DeleteItem`, and `PUT /data-explorer/s3`
   refuses to overwrite an existing object under `raw/`. Category corrections and
   reprocessing update items in place.
@@ -701,8 +856,8 @@ enabled in the deployment region for memory dedup and recall. See
 Deleting the stacks (`npm run destroy`, `cdk destroy --all`, or deleting them in
 the CloudFormation console) is a **full cleanup**: no customer data is left behind
 in the account. With the Core stack go the customer-data tables
-(`voc-feedback`, `voc-aggregates`, `voc-projects`, `voc-memory`, `voc-agents`),
-the operational tables, the `voc/design-integrations` secret, every bucket and
+(`voc-feedback`, `voc-aggregates`, `voc-projects`, `voc-memory`, `voc-agents`,
+`voc-participants`, `voc-feature-requests`), the operational tables, the `voc/design-integrations` secret, every bucket and
 the KMS key:
 
 - **Buckets are emptied first.** The raw-data bucket (`voc-raw-data-…`) is
@@ -740,7 +895,7 @@ aws s3 sync "s3://voc-raw-data-${ACCOUNT}-${REGION}" "s3://${BACKUP_BUCKET}/voc-
 
 # Every customer-data table, exported from point-in-time recovery to S3. Exports run
 # asynchronously and read from PITR, so they do not consume table capacity.
-for table in voc-feedback voc-aggregates voc-projects voc-memory voc-agents; do
+for table in voc-feedback voc-aggregates voc-projects voc-memory voc-agents voc-participants voc-feature-requests; do
   aws dynamodb export-table-to-point-in-time \
     --table-arn "arn:aws:dynamodb:${REGION}:${ACCOUNT}:table/${table}-${ACCOUNT}-${REGION}" \
     --s3-bucket "${BACKUP_BUCKET}" --s3-prefix "voc-dynamodb/${table}" \
@@ -1049,13 +1204,60 @@ Service Quotas and calls no model).
 | Error | Anything else (only the error code is shown) | Check the settings Lambda log |
 
 The quota is matched by name in `servicequotas:ListServiceQuotas` (service code
-`bedrock`, cached 10 minutes per container): `Global cross-region model inference
-tokens per minute for Anthropic <model>` for `global.` profiles, `Cross-region model
-inference tokens per minute for Anthropic <model>` for `eu.` / `us.` profiles. When
-the lookup is denied or fails, the quota shows as unknown and the test still runs.
-Both routes are admin-only; the settings Lambda role holds the read-only
-`servicequotas:ListServiceQuotas` (on `*`, the API has no resource-level
-permission) and already holds `bedrock:InvokeModel` on every allowlisted profile.
+`bedrock`): `Global cross-region model inference tokens per minute for Anthropic
+<model>` for `global.` profiles, `Cross-region model inference tokens per minute for
+Anthropic <model>` for `eu.` / `us.` profiles. Listing all ~1,050 Bedrock quotas takes
+10-15 s, so it runs once: the Anthropic token quotas and their quota codes are kept in
+the aggregates table (`SETTINGS#model_quotas` / `current`, `shared/model_quota_store.py`)
+and in each container's memory for 10 minutes. The stored reading is used as-is for an
+hour. After that, or when a model was added to the allowlist since the reading, the request
+still answers at once with the stored values marked `"stale": true`, and async-invokes the
+settings worker twin (`voc-settings-assist`, event `{"action": "model_quota_refresh"}`; one
+per two minutes, a `refresh_requested_at` mark on the row), which re-reads each model's quota
+by its code with `GetServiceQuota`, at most three at a time, or runs the full listing when a
+model was added or a by-code read fails. Only a deployment's very first reading (nothing
+stored yet) is read while the screen waits. Service Quotas is rate limited per
+account: its client retries adaptively (botocore `adaptive` mode, 3 retries), and when a
+refresh or listing is still throttled (`TooManyRequestsException`) or fails while a reading
+is stored, that reading answers with `"stale": true` on the quota (the table marks it "Last
+stored reading") and is retried after two minutes. With nothing stored, a denied or failed
+lookup shows the quota as unknown and the test still runs. Both routes are admin-only; the
+settings Lambda role holds the read-only `servicequotas:ListServiceQuotas` (on `*`, the
+API has no resource-level permission) and `servicequotas:GetServiceQuota` on this
+account and region's `bedrock/*` quotas, and already holds `bedrock:InvokeModel` on every
+allowlisted profile.
+
+### Image Generation (Persona Avatars) in Administration → AI models
+
+Below the surface rows, a read-only **Image generation (persona avatars)** row shows the
+image model that `lambda/api/prompts/avatar-generation.json` names (not a picker
+choice), its region, the account's access, its requests-per-minute quota and a **Test**
+button (`lambda/shared/image_model_status.py`):
+
+- `GET /settings/model` carries `image_model: {id, label, region, avatars_enabled}`.
+- `GET /settings/model/capacity` carries `image: {id, label, region, avatars_enabled,
+  access, quota, quota_state}`. `access` comes from `bedrock:GetFoundationModelAvailability`
+  in the image region (cached 5 minutes) and maps to `available`, `no_access` (authorization
+  `NOT_AUTHORIZED`: IAM, SCP), `not_subscribed` (agreement or Marketplace entitlement
+  missing), `not_in_region` or `unknown` (unreadable). `quota` is
+  `{name, value, unit: 'requests_per_minute'}`, matched in ListServiceQuotas of the IMAGE
+  region by the name `On-demand model inference requests per minute for Stability.ai
+  <model>` (`shared/image_model_quota.py`). That listing takes 10-15 s, so it runs on the
+  settings worker twin: the reading is kept in the aggregates table
+  (`SETTINGS#image_model_quota` / `current`) for an hour and in memory for 10 minutes;
+  an older or missing reading answers at once (`quota_state` `stale` or `pending`) while
+  the twin re-reads it (at most once per two minutes).
+- `POST /settings/model/test {model_id: <image model id>}` (admin) generates ONE small
+  image from a fixed prompt, keeps nothing (no S3 write) and answers in the same shape and
+  status vocabulary as a text-model test; the error is classified like an avatar failure
+  (`shared/avatar_failure.py`). It costs a few US cents per click, so **Test all models**
+  does not include it.
+
+The settings role holds `bedrock:InvokeModel` on the image model ARN only,
+`bedrock:GetFoundationModelAvailability` (no resource-level permission) and the
+Marketplace subscription grant of `lib/stacks/api-marketplace.ts` (the first call of a
+Marketplace model subscribes as the caller). Under `-c inferenceScope=eu` avatars are off;
+the row says so and the model is not used.
 
 ### Model Capacity Fallback
 
@@ -1209,7 +1411,9 @@ jobs:
           python -m venv .venv
           .venv/bin/pip install -r requirements-dev.txt \
             -r lambda/layers/ingestion-deps/requirements.txt \
-            -r lambda/layers/processing-deps/requirements.txt
+            -r lambda/layers/processing-deps/requirements.txt \
+            -r lambda/layers/signing-deps/requirements.txt \
+            -r lambda/layers/email-intake-deps/requirements.txt
           
       - name: Build Lambda layers
         run: npm run build:layers

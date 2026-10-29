@@ -170,6 +170,9 @@ delegation the agent runtime and MCP tokens use.
   tools it re-checks membership of `admins` (as `run_agent` does for an MCP minter) and forwards `admins` in the
   synthetic claims only for that write.
 - Project writes go through the Projects API, which applies per-project access (`shared/project_access.py`).
+- A plan step that writes a PR/FAQ or PRD (generate, merge into one, edit one) is autonomous AI writing: the
+  Projects API refuses it unless the approver (and the project owner) work AI-driven, and the assistant does not
+  propose such a step for anyone else ([ways-of-working.md](ways-of-working.md)).
 - Category and source scope for every read is the approver's (`shared/category_access.py`).
 - A user who is demoted or disabled mid-run stops the plan at the next write.
 

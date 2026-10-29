@@ -90,6 +90,28 @@ function subcategoryNode(name, reviews, threshold) {
 
 const byTotal = (nodes) => nodes.sort((a, b) => b.total_items - a.total_items);
 
+/** metrics_handler `_window_days(params, default=30)` for `/feedback/problems`. */
+const DEFAULT_PROBLEM_DAYS = 30;
+
+/** `window` of the answer: the requested days on the requested basis (metrics_handler.get_problems). */
+function windowOf(searchParams) {
+  const raw = searchParams.get('days');
+  // `days=0` is all time, not "absent": only a missing value falls back to the route default.
+  const days = raw === null || raw === '' || !Number.isFinite(Number(raw)) ? DEFAULT_PROBLEM_DAYS : Number(raw);
+  return { kind: 'days', days, walk_days: days, date_basis: searchParams.get('date_basis') === 'review' ? 'review' : 'imported' };
+}
+
+/** Reviews per `feedback_type` (`untyped` = none yet), largest first, like metrics_handler. */
+function typeCounts(items) {
+  const counts = {};
+  for (const f of items) {
+    const type = (f.dimensions || {}).feedback_type;
+    const key = typeof type === 'string' && type ? type : 'untyped';
+    counts[key] = (counts[key] || 0) + 1;
+  }
+  return Object.fromEntries(Object.entries(counts).sort((a, b) => b[1] - a[1]));
+}
+
 /** The route's body for `items`, or a 400 envelope for a bad `similarity`. */
 export function problemTree(items, searchParams) {
   const query = parseQuery(searchParams);
@@ -114,6 +136,8 @@ export function problemTree(items, searchParams) {
   return {
     period_days: Number(searchParams.get('days')) || 30,
     is_partial: false,
+    window: windowOf(searchParams),
+    type_counts: typeCounts(items),
     feedback_count: categories.reduce((sum, c) => sum + c.total_items, 0),
     problem_count: categories.reduce((sum, c) => sum + c.subcategories.reduce((n, s) => n + s.problem_count, 0), 0),
     problems_truncated: false,

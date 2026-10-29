@@ -49,7 +49,9 @@
     "noFiles": "Aucun fichier trouvé",
     "view": "Afficher",
     "path": "Chemin du dossier",
-    "noFilesHint": "Ce dossier est vide. Créez un fichier ici ou ingérez des données depuis Sources de données."
+    "noFilesHint": "Ce dossier est vide. Créez un fichier ici ou ingérez des données depuis Sources de données.",
+    "personaFolder": "Persona {{n, number}} · {{date}}",
+    "personaFolderDated": "Persona · {{date}}"
   },
   "tabs": {
     "categories": "Catégories",

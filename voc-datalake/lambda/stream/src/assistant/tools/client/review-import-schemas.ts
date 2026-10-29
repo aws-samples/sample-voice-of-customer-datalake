@@ -20,6 +20,7 @@
  * this file and the Python constants and fails when they drift.
  */
 import { z } from 'zod';
+import { optionalNonEmpty } from './text-schemas.js';
 import { SOURCE_ID_PATTERN } from './user-schemas.js';
 
 /** The source profile json-upload files rows under when the body names none (`ingest_archive.DEFAULT_UPLOAD_SOURCE`). */
@@ -63,15 +64,14 @@ function isClockTime(value: string): boolean {
 }
 
 const L = REVIEW_IMPORT_LIMITS;
-const optionalText = (max: number) => z.string().trim().min(1).max(max).optional();
 
 const reviewItemSchema = z.object({
   text: z.string().trim().min(1).max(L.maxTextChars),
   rating: z.number().min(L.minRating).max(L.maxRating).optional(),
-  author: optionalText(L.maxAuthorChars),
+  author: optionalNonEmpty(L.maxAuthorChars),
   created_at: z.string().trim().refine(isReviewDate, 'must be an ISO 8601 date (YYYY-MM-DD) or date-time').optional(),
   url: z.url({ protocol: /^https?$/ }).max(L.maxUrlChars).optional(),
-  title: optionalText(L.maxTitleChars),
+  title: optionalNonEmpty(L.maxTitleChars),
 }).strict();
 
 export const importReviewsArgsSchema = z.object({

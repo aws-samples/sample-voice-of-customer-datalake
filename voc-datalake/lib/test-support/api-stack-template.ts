@@ -40,6 +40,11 @@ import { itemAt } from './guards';
  *  the session's ballot cap — enforced by a conditional atomic increment on the
  *  session record. Closing the session is the revocation.
  *
+ *  `POST /unsubscribe`: a participant who got an ask email (or their mail client's RFC 8058
+ *  one-click POST) has no account. The emailed token is the control: unguessable, stored only as
+ *  its SHA-256, able to do nothing but unsubscribe the one person it names, and the answer is the
+ *  same 200 whether or not it matched (no existence leak). Throttled 5 rps / 10.
+ *
  *  EXTENDING THIS LIST IS THE REVIEW GATE. It is not a description of the
  *  template; it is the decision. A new entry means somebody chose to publish a
  *  route, and the test below failing until the entry exists is the mechanism. */
@@ -48,6 +53,7 @@ export const INTENTIONALLY_PUBLIC_ROUTES = [
   'GET /feedback-forms/{form_id}/iframe',
   'GET /voting-sessions/{session_id}/config',
   'POST /feedback-forms/{form_id}/submit',
+  'POST /unsubscribe',
   'POST /voting-sessions/{session_id}/submit',
 ];
 

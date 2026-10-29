@@ -21,3 +21,8 @@ def list_field(source: Mapping[str, Any], key: str) -> list[Any]:
     """``source[key]`` when it is a list, else ``[]``."""
     value = source.get(key)
     return value if isinstance(value, list) else []
+
+
+def clipped_text(value: Any, limit: int) -> str:
+    """A stripped string cut to ``limit`` characters; '' for anything that is not a string."""
+    return value.strip()[:limit] if isinstance(value, str) else ''

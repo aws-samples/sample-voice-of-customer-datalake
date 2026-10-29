@@ -15,6 +15,8 @@ import { NagSuppressions } from 'cdk-nag';
 import { idempotencyTableSuppressions, cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions, s3BucketSuppressions, bedrockModelSuppressions, suppressAwsCustomResourceProvider } from '../utils/nag-suppressions';
 import { VocStack, VocStackProps } from '../utils/voc-stack';
 import { createCoreAuth } from './core-auth';
+import { createBoardAuth } from './core-board-auth';
+import { emailSenderOf } from '../utils/email-sender';
 import { createCoreCdn, type CoreBuildContext } from './core-cdn';
 import { createCoreBuckets } from './core-buckets';
 import { retainOnReplace } from '../utils/retain-on-replace';
@@ -66,6 +68,10 @@ export class VocCoreStack extends VocStack {
   public readonly agentsTable: dynamodb.Table;
   /** voc-radar — other brands' reviews, counters and releases, kept out of our numbers (docs/radar.md). */
   public readonly radarTable: dynamodb.Table;
+  /** voc-participants — people, lists, project links, asks and their tokens (docs/participants.md). */
+  public readonly participantsTable: dynamodb.Table;
+  /** voc-feature-requests — the internal feature-request board: requests and their supporters. */
+  public readonly featureRequestsTable: dynamodb.Table;
   /**
    * ARN of `voc/design-integrations` — `{figma_token?, github_token?}`, written
    * and read only by the settings API. A string for the same cycle reason as
@@ -103,6 +109,9 @@ export class VocCoreStack extends VocStack {
   public readonly userPool: cognito.UserPool;
   public readonly userPoolClient: cognito.UserPoolClient;
   public readonly identityPool: cognito.CfnIdentityPool;
+  /** The board pool (feedback boards and review links) and its client, on every deployment (core-board-auth.ts). */
+  public readonly boardUserPool: cognito.UserPool;
+  public readonly boardUserPoolClient: cognito.UserPoolClient;
   /** How customer data is removed with the stacks (`-c protectData`). */
   public readonly dataProtection: DataProtection;
 
@@ -292,6 +301,26 @@ export class VocCoreStack extends VocStack {
     // dashboards, metrics, agents or MCP. Layout: lambda/shared/radar_store.py.
     this.radarTable = this.createEncryptedTable('RadarTable', 'voc-radar');
 
+    // Participants Table — people the team emails for feedback, their lists, project links,
+    // asks (one email campaign) with their recipients, and the hashed response/unsubscribe
+    // tokens. Layout: lambda/shared/participants_store.py. TTL only on the daily send counter.
+    //   PERSON#{id} / META | LIST#{list_id}      person (gsi1pk PEOPLE) + membership mirror
+    //   LIST#{id} / META | MEMBER#{person_id}     list (gsi1pk LISTS) + members
+    //   ASK#{id} / META | RCPT#{person_id}        ask (gsi1pk ASKS) + recipients
+    this.participantsTable = this.createEncryptedTable('ParticipantsTable', 'voc-participants', {
+      timeToLiveAttribute: 'ttl',
+    });
+    this.addKeyPairIndex(this.participantsTable, { indexName: 'gsi1', keyPrefix: 'gsi1' });
+
+    // Feature Requests Table — feedback boards (BOARD#{id} / META, SLUG#{slug} / BOARD), their
+    // requests FR#{id} / META (gsi1pk FRS) + SUP#{id} supporters, and the `anyone` boards' daily
+    // rate-limit counters RATE#… — the only items with `ttl` (lambda/shared/feature_boards_limits.py).
+    // Adding TTL (5.36.00) is an in-place update of the same table: same id, name and keys.
+    this.featureRequestsTable = this.createEncryptedTable('FeatureRequestsTable', 'voc-feature-requests', {
+      timeToLiveAttribute: 'ttl',
+    });
+    this.addKeyPairIndex(this.featureRequestsTable, { indexName: 'gsi1', keyPrefix: 'gsi1' });
+
     // Idempotency Table
     this.idempotencyTable = new dynamodb.Table(this, 'IdempotencyTable', {
       tableName: this.uniqueName('voc-idempotency'),
@@ -424,11 +453,8 @@ export class VocCoreStack extends VocStack {
     NagSuppressions.addResourceSuppressions(
       productDocExtractor,
       [
-        ...lambdaBasicExecutionRoleSuppressions,
-        ...s3BucketSuppressions,
-        ...dynamoDbGsiSuppressions,
-        ...kmsEncryptionSuppressions,
-        ...bedrockModelSuppressions,
+        // First, so its reason (not the shared S3 list's broader bucket-wide one) is what suppresses the
+        // two prefix grants: cdk-nag uses the first entry that matches a finding.
         {
           id: 'AwsSolutions-IAM5',
           reason: 'Object-level S3 access is already narrowed to the two product-doc prefixes; the trailing wildcard is the object name, and the middle wildcard is the runtime project id.',
@@ -436,28 +462,23 @@ export class VocCoreStack extends VocStack {
             { regex: '/Resource::<.*RawDataBucket.*\\.Arn>/projects/\\*/product_docs/.*/' },
           ],
         },
+        ...lambdaBasicExecutionRoleSuppressions,
+        ...s3BucketSuppressions,
+        ...dynamoDbGsiSuppressions,
+        ...kmsEncryptionSuppressions,
+        ...bedrockModelSuppressions,
       ],
       true,
     );
     // addEventNotification synthesizes a CDK-managed custom-resource Lambda that
     // configures the bucket notification. Same treatment as the cr.Provider
-    // frameworks above: CDK owns its runtime and its PutBucketNotification
-    // grant, neither of which this repo can narrow.
+    // frameworks above: CDK owns its runtime and its basic-execution role.
+    // (Its PutBucketNotification grant no longer carries a wildcard, so it needs
+    // no IAM5 entry; lib/nag-suppressions.test.ts fails on one that matches nothing.)
     NagSuppressions.addResourceSuppressionsByPath(
       this,
       `${this.stackName}/BucketNotificationsHandler050a0587b7544547bf325f094a3db834`,
-      [
-        ...cdkCustomResourceSuppressions,
-        ...lambdaBasicExecutionRoleSuppressions,
-        {
-          id: 'AwsSolutions-IAM4',
-          reason: 'CDK-managed bucket-notifications handler attaches the AWS-managed Lambda basic execution policy; the construct is not configurable.',
-        },
-        {
-          id: 'AwsSolutions-IAM5',
-          reason: 'CDK-managed bucket-notifications handler needs s3:PutBucketNotification on the buckets it configures; the construct emits a wildcard resource and is not configurable.',
-        },
-      ],
+      [...cdkCustomResourceSuppressions, ...lambdaBasicExecutionRoleSuppressions],
       true,
     );
 
@@ -469,6 +490,17 @@ export class VocCoreStack extends VocStack {
     this.userPool = auth.userPool;
     this.userPoolClient = auth.userPoolClient;
     this.identityPool = auth.identityPool;
+    // The board pool: feedback boards and document review links (core-board-auth.ts), on every
+    // deployment; `-c emailFrom` only chooses how it emails its sign-in codes.
+    const board = createBoardAuth(buildContext, {
+      participantsTable: this.participantsTable, projectsTable: this.projectsTable, kmsKey: this.kmsKey,
+      frontendDomainName: this.frontendDomainName, sender: emailSenderOf(this.node),
+    });
+    this.boardUserPool = board.userPool;
+    this.boardUserPoolClient = board.userPoolClient;
+    new cdk.CfnOutput(this, 'BoardUserPoolId', { value: board.userPool.userPoolId, description: 'Board and review-link user pool ID' });
+    new cdk.CfnOutput(this, 'BoardUserPoolClientId', { value: board.userPoolClient.userPoolClientId, description: 'Board and review-link client ID' });
+    new cdk.CfnOutput(this, 'BoardSignInMode', { value: board.signIn, description: 'Board sign-in: email_otp (SES, -c emailFrom) or code (Cognito default email)' });
 
     
     // Suppress CDK custom resource Lambda runtime warnings
@@ -491,6 +523,8 @@ export class VocCoreStack extends VocStack {
     new cdk.CfnOutput(this, 'MemoryTableName', { value: this.memoryTable.tableName });
     new cdk.CfnOutput(this, 'AgentsTableName', { value: this.agentsTable.tableName });
     new cdk.CfnOutput(this, 'RadarTableName', { value: this.radarTable.tableName });
+    new cdk.CfnOutput(this, 'ParticipantsTableName', { value: this.participantsTable.tableName });
+    new cdk.CfnOutput(this, 'FeatureRequestsTableName', { value: this.featureRequestsTable.tableName });
     new cdk.CfnOutput(this, 'DesignIntegrationsSecretArn', { value: this.designIntegrationsSecretArn });
     new cdk.CfnOutput(this, 'KmsKeyArn', { value: this.kmsKey.keyArn });
     new cdk.CfnOutput(this, 'RawDataBucketName', { value: this.rawDataBucket.bucketName });

@@ -103,7 +103,7 @@ MAX_REDIRECT_HOPS = 5
 REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 # Dropped when a redirect leaves the original origin, as requests itself would.
 _CROSS_ORIGIN_SENSITIVE_HEADERS = frozenset({'authorization', 'cookie', 'proxy-authorization'})
-_DEFAULT_PORTS = {'http': 80, 'https': 443}
+DEFAULT_PORTS = {'http': 80, 'https': 443}
 
 
 class UnsafeURLError(ValueError):
@@ -222,7 +222,7 @@ def _fetch_policy_checked_hop(
 def _origin(url: str) -> tuple[str, str | None, int | None]:
     parsed = urlparse(url)
     scheme = parsed.scheme.lower()
-    return scheme, parsed.hostname, parsed.port or _DEFAULT_PORTS.get(scheme)
+    return scheme, parsed.hostname, parsed.port or DEFAULT_PORTS.get(scheme)
 
 
 def _headers_for_hop(headers: dict | None, previous_url: str, next_url: str) -> dict | None:

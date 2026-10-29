@@ -75,7 +75,7 @@ function TeamNumber({ value, notScoredLabel }: {
  *
  * Not the caller's own ballot, which used to be here and now lives behind the
  * expansion. A reader ranking a backlog is asking what the group thinks, and the
- * list sorts by exactly these numbers (`sortPRFAQs`), so the headline and the
+ * list sorts by exactly these numbers (`sortRows`), so the headline and the
  * order agree by construction.
  *
  * `'unscored'` means NOBODY HAS SCORED THIS — the aggregate omits a document

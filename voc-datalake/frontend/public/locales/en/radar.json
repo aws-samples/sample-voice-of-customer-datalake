@@ -34,14 +34,26 @@
     "sampled": "Read from the newest reviews of this window."
   },
   "releases": {
-    "title": "Releases",
-    "empty": "No release found yet. Releases come from the scheduled scan or Scan now.",
+    "title": "News and releases",
+    "empty": "No news found yet. News and releases come from the scheduled scan or Scan now.",
     "official": "Official",
     "thirdParty": "Press and reviews",
-    "approximate": "Date approximate",
+    "undated": "Date not published, first found",
     "mentions_one": "{{count, number}} mention",
     "mentions_other": "{{count, number}} mentions",
-    "sources": "Sources"
+    "sources": "Sources",
+    "kinds": {
+      "release": "Release",
+      "announcement": "Announcement",
+      "promotion": "Promotion",
+      "partnership": "Partnership",
+      "news": "Company news"
+    },
+    "filterLabel": "Filter by kind",
+    "kindAll": "All",
+    "kindEmpty": "Nothing of the kind “{{kind}}” in this list. Choose All to see every item.",
+    "viaExa": "via Exa",
+    "viaFeed": "via feed"
   },
   "compare": {
     "title": "Compared with us",
@@ -63,13 +75,12 @@
     "openOurs_other": "Open our {{count, number}} reviews in {{category}} in Categories"
   },
   "brands": {
-    "hint": "The brands Radar follows: the release scan searches the web for each one, and the sources you mark as a Radar source on the Data sources page bring in its reviews.",
+    "hint": "The brands Radar follows: the news scan searches the web for each one (in its language, and its news feeds if set), and the sources you mark as a Radar source on the Data sources page bring in its reviews.",
     "addTitle": "Add a brand",
     "nameLabel": "Brand name",
     "domainsLabel": "Website domains",
     "domainsHint": "Comma separated, at most {{max, number}} (for example its site and blog). Used to find its release notes.",
     "add": "Add brand",
-    "editDomains": "Edit domains",
     "editDomainsLabel": "Website domains of {{brand}}",
     "doneEditing": "Done",
     "remove": "Remove",
@@ -86,7 +97,31 @@
     "duplicate": "{{brand}} is already in the list.",
     "invalidName": "Use 1-64 letters, digits, spaces or . & ' + -",
     "tooMany": "At most {{max, number}} brands.",
-    "loadFailed": "The brand list could not be loaded."
+    "loadFailed": "The brand list could not be loaded.",
+    "edit": "Edit",
+    "editLabel": "Edit {{brand}}",
+    "languageLabel": "Search language",
+    "languageAuto": "Auto (from the domain: {{language}})",
+    "languageAutoNew": "Auto (from the domain)",
+    "languageSummary": "Language: {{language}}",
+    "feedsLabel": "News feeds",
+    "feedsHint": "Optional RSS or Atom feeds of the brand's news. Read at each scan. At most {{max, number}}, one per line or comma separated.",
+    "feedsTooMany": "At most {{max, number}} news feeds.",
+    "feedsHttps": "Each news feed must be an https:// link.",
+    "feedsSummary": "News feeds: {{list}}",
+    "noFeeds": "none",
+    "moreOptions": "More options",
+    "fixFeeds": "Fix the news feeds before saving.",
+    "searchTermsLabel": "Search terms",
+    "searchTermsHint": "Optional words or phrases added to the news searches, such as the legal name or product names. Useful when the brand name is also a common word. At most {{max, number}}, one per line, {{chars, number}} characters each.",
+    "excludeTermsLabel": "Exclude terms",
+    "excludeTermsHint": "Optional words or phrases: a search result whose title or snippet contains one is skipped. At most {{max, number}}, one per line, {{chars, number}} characters each.",
+    "termsTooMany": "At most {{max, number}} terms.",
+    "termsTooLong": "Each term can have at most {{chars, number}} characters.",
+    "termsInvalid": "A term cannot contain double quotes or start with -.",
+    "searchTermsSummary": "Search terms: {{list}}",
+    "excludeTermsSummary": "Exclude terms: {{list}}",
+    "fixTerms": "Fix the search or exclude terms before saving."
   },
   "setup": {
     "brandsTitle": "Brands tracked",
@@ -98,16 +133,16 @@
     "sources": "Fed by:",
     "howTitle": "How Radar works",
     "step1Title": "Add a brand",
-    "step1": "Add it below, with its own website domains to find its release notes.",
+    "step1": "Add it below, with its own website domains to find its news; optionally its search language and news feeds.",
     "step2Title": "Bring its reviews in",
     "step2": "On the Data sources page, tick \"Radar source\" on a scraper, a Web Reviews page, an app connector or a CSV/JSON import, and choose the brand. Its reviews go to Radar only, never to your dashboards.",
-    "step3Title": "Releases",
-    "step3": "A web search runs automatically on the cadence below (checked daily), or now with Scan now. The first scan looks back 90 days.",
+    "step3Title": "News and releases",
+    "step3": "A web search for each brand's news (launches, new features, promotions, partnerships, company news), in the brand's language and through its news feeds, runs automatically on the cadence below (checked daily), or now with Scan now. The first scan looks back 90 days.",
     "configure": "Configure"
   },
   "settings": {
     "title": "Radar",
-    "description": "The release scan searches the web for what each Radar brand ships. Nothing runs until a brand is added.",
+    "description": "The news scan searches the web for what each Radar brand ships and announces. Nothing runs until a brand is added.",
     "cadence": "Scan cadence",
     "cadences": {
       "daily": "Daily",
@@ -138,7 +173,8 @@
       "completed": "completed",
       "failed": "failed",
       "skipped": "skipped"
-    }
+    },
+    "scanNowHint": "Searches the web and each brand's own domains for its releases and news now, without waiting for the schedule. It takes a few minutes and uses web searches."
   },
   "nav": {
     "label": "Radar"
@@ -184,5 +220,39 @@
     "readTheirs_one": "Read their review in {{category}}",
     "readTheirs_other": "Read their {{count, number}} reviews in {{category}}",
     "noSubcategoryChip": "No subcategory"
+  },
+  "all": {
+    "option": "All brands",
+    "brandsTitle": "Brands",
+    "brandsCaption": "Every tracked brand in this window: its reviews, sentiment, releases and latest news",
+    "noBrands": "No brand is tracked yet.",
+    "colBrand": "Brand",
+    "colReviews": "Reviews",
+    "colSentiment": "Sentiment",
+    "colReleases": "Releases in window",
+    "colLatest": "Latest news",
+    "shares": "{{positive}} positive · {{negative}} negative",
+    "noRelease": "No news yet",
+    "openBrand": "Open {{brand}}",
+    "newsTitle": "Latest news across brands",
+    "capped": "Showing the newest {{shown, number}} of {{total, number}}"
+  },
+  "exa": {
+    "title": "Exa (second search index)",
+    "description": "When Radar's web search finds no dated news for a brand, Exa is searched too. Only brand names, search terms and domains are sent to Exa. About $5 per 1,000 searches, billed by Exa.",
+    "configured": "Configured",
+    "notConfigured": "Not configured",
+    "keyLabel": "Exa API key",
+    "placeholder": "Paste your Exa API key",
+    "replacePlaceholder": "A key is stored. Paste a new one to replace it",
+    "save": "Save key",
+    "remove": "Remove key",
+    "saved": "Exa key saved.",
+    "removed": "Exa key removed.",
+    "saveFailed": "The Exa key could not be saved.",
+    "removeFailed": "The Exa key could not be removed.",
+    "invalidKey": "Use 8-200 letters, digits, - or _.",
+    "removeTitle": "Remove the Exa key?",
+    "removeMessage": "Radar stops searching Exa. Its own web search keeps running, and the news already found is kept."
   }
 }

@@ -166,6 +166,8 @@ MODULE_FLOORS: dict[str, int] = {
     # test_mcp_handler_mutation_* slices; test_mcp_tokens shrank to the credential
     # format (46 -> 27) and test_projects_handler left the gate with the
     # per-project mint route. The global server's suites joined it.
+    # The /mcp/global token authorizer (the global function's `_authorize`).
+    'test_global_mcp_authorizer': 7,
     'test_global_mcp_e2e': 22,
     'test_global_mcp_protocol': 14,
     # 9 -> 5 (b6dbc8fc): the four memory-recall cases for a credential moved to

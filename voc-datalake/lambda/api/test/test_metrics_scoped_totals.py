@@ -55,7 +55,7 @@ def _seed_aggregates(table, access: dict) -> None:
 
 @pytest.fixture
 def world():
-    """A builder: seed moto tables for an access row, with the walk's soft cap lowered to 4 rows."""
+    """A builder: seed moto tables for an access row, with the aggregate walk's cap lowered to 4 rows."""
     with ExitStack() as stack:
         stack.enter_context(mock_aws())
         clear_categories_cache()
@@ -67,7 +67,7 @@ def world():
             _seed_aggregates(aggregates, access)
             stack.enter_context(patch('metrics_handler.feedback_table', feedback))
             stack.enter_context(patch('metrics_handler.aggregates_table', aggregates))
-            stack.enter_context(patch('metrics_handler.MAX_FEEDBACK_OFFSET', 4))
+            stack.enter_context(patch('metrics_handler.AGGREGATE_READ_ROWS', 4))
 
         yield build
     clear_categories_cache()
@@ -98,11 +98,13 @@ def test_category_restricted_sentiment_walk_is_complete(world, api_gateway_event
 
 def test_capped_source_restricted_walk_names_where_it_stopped(world, api_gateway_event, lambda_context):
     # A source rule cannot use the counters: the item walk serves both routes and
-    # hits the cap (6 visible web rows > 4), so both say partial AND where it stopped.
+    # hits the cap (3 visible web rows a day; the cap of 4 cuts yesterday after one), so both
+    # say partial, that a ROW cap stopped them, and that only today was read in full:
+    # yesterday was cut part-way and is not claimed (it once was, labelled 'time_budget').
     world({'categories': ['*'], 'sources': ['web']})
     summary = _get(api_gateway_event, lambda_context, '/metrics/summary')
     categories = _get(api_gateway_event, lambda_context, '/metrics/categories')
     assert summary['total_feedback'] == sum(categories['categories'].values()) == 4
     for body in (summary, categories):
-        assert (body['is_partial'], body['partial_reason']) == (True, 'time_budget')
-        assert body['scanned_through'] == _day(1)
+        assert (body['is_partial'], body['partial_reason']) == (True, 'row_cap')
+        assert body['scanned_through'] == _day(0)

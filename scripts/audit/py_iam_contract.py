@@ -2,7 +2,7 @@
 # audit-detector: run by scripts/audit/run-all.sh
 """py_iam_contract: IAM grants on a Python Lambda's role that no code path of the role's functions uses.
 
-PATTERN (deadpy.md section 3a, the 5.28 clean-up removed the ChatApi feedback/aggregates grants and the
+PATTERN (the 5.28 clean-up removed the ChatApi feedback/aggregates grants and the
 processor's projects-table grant): a role is granted actions on a DynamoDB table, S3 bucket, SQS queue,
 SNS topic, secret, Lambda function, state machine or user pool, yet none of the functions running as
 that role can name the resource: no env var whose value points at it is read by their live code, and

@@ -16,8 +16,7 @@
  *
  * @module components/UnsavedChangesGuard/rebaseDraft
  */
-
-const sameValue = (a: unknown, b: unknown): boolean => a === b || JSON.stringify(a) === JSON.stringify(b)
+import { sameJson } from '../../lib/sameJson'
 
 /**
  * The draft over `next`: each of `keys` keeps the draft's value when the user
@@ -31,7 +30,7 @@ export function rebaseDraft<T extends object>(
 ): T {
   const merged: T = { ...next }
   for (const key of keys) {
-    if (!sameValue(draft[key], previous[key])) merged[key] = draft[key]
+    if (!sameJson(draft[key], previous[key])) merged[key] = draft[key]
   }
   return merged
 }

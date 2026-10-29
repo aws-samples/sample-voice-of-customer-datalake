@@ -24,7 +24,7 @@ interface StoreCase {
   presetValue: unknown
   /** Change one persisted field, which writes the blob. */
   write: () => void
-  /** The version the store writes today (voc-config is at 2: `'all'` became all time). */
+  /** The version the store writes today (voc-config is at 3: `'all'` became all time, then the 14-day default). */
   version: number
 }
 
@@ -52,7 +52,7 @@ const CASES: StoreCase[] = [
     preset: () => useConfigStore.setState({ timeRange: '7d' }),
     presetValue: '7d',
     write: () => useConfigStore.getState().setTimeRange('48h'),
-    version: 2,
+    version: 3,
   },
   {
     key: 'voc-manual-import',
@@ -133,5 +133,46 @@ describe("voc-config: 'all' changed from the 90-day preset to all time (version 
     await useConfigStore.persist.rehydrate()
 
     expect(useConfigStore.getState().timeRange).toBe('30d')
+  })
+})
+
+describe('voc-config: the default moved from 7 days to 14 days by imported date (version 3)', () => {
+  /** Rehydrate `state` stored at `version` and return the range and basis it loads as. */
+  async function loaded(state: Record<string, unknown>, version: number) {
+    useConfigStore.setState({ timeRange: '24h', dateBasis: 'review' })
+    storeBlob('voc-config', { state, version })
+    await useConfigStore.persist.rehydrate()
+    const { timeRange, dateBasis } = useConfigStore.getState()
+    return { timeRange, dateBasis }
+  }
+
+  it.each([0, 1, 2])('moves a version-%i blob still on the old default (7d + imported) to 14d + imported', async (version) => {
+    await expect(loaded({ timeRange: '7d', customDays: null, dateBasis: 'imported' }, version))
+      .resolves.toStrictEqual({ timeRange: '14d', dateBasis: 'imported' })
+  })
+
+  it('treats a 7d blob from before the date-basis picker (no dateBasis) as the old default', async () => {
+    await expect(loaded({ timeRange: '7d', customDays: null }, 1))
+      .resolves.toMatchObject({ timeRange: '14d' })
+  })
+
+  it('keeps 7 days by review date: only the old default PAIR moves', async () => {
+    await expect(loaded({ timeRange: '7d', customDays: null, dateBasis: 'review' }, 2))
+      .resolves.toStrictEqual({ timeRange: '7d', dateBasis: 'review' })
+  })
+
+  it.each(['24h', '30d', '90d', 'custom'])('keeps a stored %s choice', async (timeRange) => {
+    await expect(loaded({ timeRange, customDays: 21, dateBasis: 'imported' }, 2))
+      .resolves.toStrictEqual({ timeRange, dateBasis: 'imported' })
+  })
+
+  it('migrates only once: a version-3 blob that picked 7d again keeps it', async () => {
+    await expect(loaded({ timeRange: '7d', customDays: null, dateBasis: 'imported' }, 3))
+      .resolves.toStrictEqual({ timeRange: '7d', dateBasis: 'imported' })
+  })
+
+  it("still keeps a pre-version-2 'all' (the 90 Days preset) on 90 days", async () => {
+    await expect(loaded({ timeRange: 'all', customDays: null, dateBasis: 'imported' }, 1))
+      .resolves.toStrictEqual({ timeRange: '90d', dateBasis: 'imported' })
   })
 })

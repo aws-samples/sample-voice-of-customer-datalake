@@ -1,0 +1,283 @@
+{
+  "page": {
+    "title": "Tableros de opiniones",
+    "subtitle": "Tableros que tus equipos y clientes usan para solicitudes, incidencias y opiniones.",
+    "boardSubtitle": "Solicitudes, con las personas detrás de cada una."
+  },
+  "loading": "Cargando…",
+  "actions": {
+    "cancel": "Cancelar",
+    "close": "Cerrar",
+    "delete": "Eliminar",
+    "save": "Guardar"
+  },
+  "status": {
+    "new": "Nueva",
+    "under_review": "En revisión",
+    "planned": "Planificada",
+    "declined": "Rechazada",
+    "shipped": "Publicada",
+    "confirmed": "Confirmado",
+    "fixed": "Corregido",
+    "wont_fix": "No se corregirá",
+    "seen": "Visto",
+    "done": "Hecho"
+  },
+  "impact": {
+    "committed": "Compromiso de pago",
+    "at_risk": "Acuerdo en riesgo",
+    "none": "Sin impacto en ingresos"
+  },
+  "totals": {
+    "supporters": "Apoyos",
+    "customers": "Clientes",
+    "committed": "Comprometido",
+    "atRisk": "En riesgo",
+    "peopleAffected": "Personas afectadas",
+    "avgRating": "Valoración media",
+    "rating": "{{value}} / 5",
+    "notRated": "Sin valorar aún",
+    "boardSummary": "Totales del tablero"
+  },
+  "list": {
+    "label": "Solicitudes",
+    "intro": "Añade una solicitud o da +1 a una que también te importe.",
+    "search": "Buscar",
+    "searchPlaceholder": "Título, descripción o autor",
+    "statusFilter": "Estado",
+    "allStatuses": "Todos los estados",
+    "sortBy": "Ordenar por",
+    "sort": {
+      "newest": "Más recientes",
+      "committed": "Ingresos comprometidos",
+      "at_risk": "Ingresos en riesgo",
+      "supporters": "Apoyos",
+      "people_affected": "Personas afectadas",
+      "rating": "Valoración"
+    },
+    "reportedBy": "Creada por {{name}}",
+    "empty": "Aún no hay solicitudes. Añade la primera.",
+    "noMatch": "Ninguna solicitud coincide con estos filtros.",
+    "loadFailed": "No se pudieron cargar las solicitudes.",
+    "notAccepted": "Este inicio de sesión no se acepta en el tablero. Inicia sesión con un correo verificado que el tablero acepte."
+  },
+  "new": {
+    "open": "Nueva solicitud",
+    "title": "Nueva solicitud",
+    "description": "Todos los que pueden usar {{board}} la ven, con tu nombre y correo.",
+    "impactHeading": "Tu cliente y el impacto en ingresos",
+    "submit": "Añadir solicitud"
+  },
+  "form": {
+    "title": "Título",
+    "description": "Descripción",
+    "amountHint": "Dólares estadounidenses enteros",
+    "noAmount": "Sin impacto en ingresos no hace falta un importe.",
+    "name": "Tu nombre",
+    "errors": {
+      "titleRequired": "Ponle un título a la solicitud.",
+      "descriptionRequired": "Describe lo que necesita el cliente.",
+      "customerRequired": "Indica el cliente.",
+      "nameRequired": "Añade tu nombre.",
+      "amountRequired": "Introduce el importe en dólares estadounidenses.",
+      "amountTooLarge": "Ese importe supera el máximo que admite el tablero.",
+      "contactEmail": "Introduce un correo válido o déjalo vacío.",
+      "descriptionRequiredService": "Describe qué pasó y qué vio el cliente."
+    },
+    "requiredLabel": "{{label}} (obligatorio)",
+    "optionalLabel": "{{label}} (opcional)",
+    "choose": "Elige...",
+    "notSet": "Sin indicar",
+    "fieldErrors": {
+      "required": "Este campo es obligatorio.",
+      "too_long": "Es más largo de lo que acepta el tablero.",
+      "invalid_choice": "Elige una de las opciones.",
+      "invalid_number": "Introduce un número entero.",
+      "out_of_range": "Ese número está fuera del rango permitido.",
+      "invalid_email": "Introduce un correo válido.",
+      "invalid_url": "Introduce un enlace https:// completo."
+    },
+    "descriptionHint": {
+      "sales": "Qué necesita el cliente y por qué.",
+      "service": "Qué pasó y qué vio el cliente.",
+      "beta": "Qué intentaste y qué pasó.",
+      "blank": "Cualquier cosa que ayude a otros a entenderlo."
+    }
+  },
+  "detail": {
+    "reported": "Creada por {{name}} ({{email}})",
+    "reporter": "Autor",
+    "copyLink": "Copiar enlace",
+    "copied": "Enlace copiado",
+    "edit": "Editar",
+    "supports": "Apoyos",
+    "plusOne": "+1 con mi cliente",
+    "addSupport": "Añadir mi +1",
+    "contact": "Contacto: {{email}}",
+    "editSupport": "Editar el apoyo de {{customer}}",
+    "deleteSupport": "Eliminar el apoyo de {{customer}}",
+    "deleteSupportTitle": "¿Eliminar este apoyo?",
+    "deleteSupportMessage": "El apoyo de {{customer}} y su importe dejarán de contar en los totales.",
+    "loadFailed": "No se pudo cargar esta solicitud.",
+    "supportsCount_one": "{{count, number}} apoyo",
+    "supportsCount_many": "{{count, number}} apoyos",
+    "supportsCount_other": "{{count, number}} apoyos",
+    "plusOneService": "También me afecta",
+    "plusOneOther": "+1",
+    "alreadySupporting": "Apoyas esta solicitud.",
+    "editMySupport": "Editar mi +1"
+  },
+  "admin": {
+    "title": "Administración",
+    "status": "Estado",
+    "delete": "Eliminar solicitud",
+    "deleteTitle": "¿Eliminar esta solicitud?",
+    "deleteMessage": "«{{title}}» y todos sus apoyos se eliminan para todas las personas."
+  },
+  "promote": {
+    "title": "Convertir en proyecto",
+    "hint": "Cada apoyo y contacto de cliente entra en una lista de participantes vinculada al proyecto, para pedirles opinión por correo.",
+    "project": "Proyecto",
+    "pickProject": "Elige un proyecto",
+    "loadingProjects": "Cargando proyectos…",
+    "newProject": "Nuevo proyecto…",
+    "newProjectName": "Nombre del nuevo proyecto",
+    "submit": "Convertir",
+    "skippedRow": "{{email}}: {{reason}}",
+    "reasons": {
+      "external_not_allowed": "fuera de los dominios de la empresa, y no se permiten personas externas",
+      "invalid_email": "no es un correo válido",
+      "unsubscribed": "se dio de baja de los correos a participantes"
+    },
+    "done_one": "{{count, number}} persona añadida a «{{list}}».",
+    "done_many": "{{count, number}} personas añadidas a «{{list}}».",
+    "done_other": "{{count, number}} personas añadidas a «{{list}}».",
+    "skipped_one": "Se omitió {{count, number}} correo:",
+    "skipped_many": "Se omitieron {{count, number}} correos:",
+    "skipped_other": "Se omitieron {{count, number}} correos:"
+  },
+  "errors": {
+    "generic": "No ha funcionado. Inténtalo de nuevo.",
+    "forbidden": "No tienes permiso para hacerlo.",
+    "notFound": "Esta solicitud ya no existe.",
+    "conflict": "Alguien lo cambió al mismo tiempo. Inténtalo de nuevo.",
+    "throttled": "Demasiadas peticiones ahora mismo. Espera un momento y vuelve a intentarlo.",
+    "rateLimited": "Has alcanzado el límite de publicaciones de hoy en este tablero. Vuelve a intentarlo mañana.",
+    "slugTaken": "Otro tablero ya usa este nombre de enlace.",
+    "boardNotEmpty": "Este tablero aún tiene solicitudes. Elimínalo junto con sus solicitudes o archívalo.",
+    "statusInUse": "Hay solicitudes con este estado. Muévelas antes a otro estado.",
+    "alreadySupported": "Ya apoyas esta solicitud. Edita tu +1."
+  },
+  "auth": {
+    "title": "Inicia sesión en el tablero de solicitudes",
+    "intro": "Escribe tu correo de trabajo. Te enviaremos un enlace y un código de un solo uso.",
+    "email": "Correo de trabajo",
+    "sendLink": "Enviarme un enlace de acceso",
+    "checkEmail": "Revisa {{email}}: abre el enlace o escribe aquí el código del correo.",
+    "secondCode": "Tu correo está confirmado. Enviamos otro código a {{email}} para iniciar tu sesión.",
+    "code": "Código del correo",
+    "signIn": "Iniciar sesión",
+    "useAnotherEmail": "Usar otro correo",
+    "otherBrowser": "Este enlace se abrió en un navegador distinto del que lo pidió. Escribe el código en ese navegador o envía un enlace nuevo desde aquí.",
+    "errors": {
+      "domain_not_allowed": "El dominio de este correo no está permitido en el tablero. Usa tu correo de empresa.",
+      "wrong_code": "El código no es correcto. Revisa el correo e inténtalo de nuevo.",
+      "expired": "Este acceso ha caducado. Envía un enlace nuevo.",
+      "tooManyAttempts": "Demasiados intentos. Espera unos minutos e inténtalo de nuevo.",
+      "no_session": "No hay ningún acceso pendiente en este navegador. Escribe el código donde lo pediste o envía un enlace nuevo.",
+      "invalid_email": "Introduce un correo válido.",
+      "unknown": "No se pudo iniciar sesión. Inténtalo de nuevo en un momento."
+    }
+  },
+  "board": {
+    "title": "Tableros de opiniones",
+    "titleWithBrand": "Tableros de opiniones de {{brand}}",
+    "signOut": "Cerrar sesión",
+    "notEnabledTitle": "Los tableros de opiniones no están activados",
+    "notEnabled": "Este despliegue no tiene inicio de sesión para tableros. Si usas la aplicación, inicia sesión allí y abre Tableros de opiniones.",
+    "notEnabledDev": "Desarrollo local sin pool de tableros: el mock no puede iniciar sesión en Cognito. Añade un bloque board a public/config.json para probar un pool real, o usa la página Tableros de opiniones de la aplicación con el mock."
+  },
+  "fields": {
+    "customer": "Cliente",
+    "deal": "Oportunidad",
+    "impact": "Impacto en ingresos",
+    "amount_usd": "Importe (USD)",
+    "contact_email": "Correo de contacto del cliente",
+    "kind": "Tipo",
+    "severity": "Gravedad",
+    "reference": "Referencia de reserva o pedido",
+    "steps": "Pasos para reproducirlo",
+    "affected_count": "Personas afectadas",
+    "area": "Área",
+    "outcome": "Qué pasó",
+    "rating": "Valoración (1-5)",
+    "link": "Enlace (https)",
+    "note": "Nota"
+  },
+  "choices": {
+    "kind": {
+      "bug": "Error",
+      "complaint": "Queja",
+      "missing_feature": "Función que falta",
+      "question": "Pregunta"
+    },
+    "severity": {
+      "low": "Baja",
+      "medium": "Media",
+      "high": "Alta",
+      "critical": "Crítica"
+    },
+    "outcome": {
+      "works": "Funciona",
+      "broken": "No funciona",
+      "confusing": "Es confuso"
+    }
+  },
+  "templates": {
+    "sales": "Solicitudes de funciones de ventas",
+    "service": "Incidencias de atención al cliente",
+    "beta": "Opiniones de la beta",
+    "blank": "En blanco"
+  },
+  "boards": {
+    "listLabel": "Tableros",
+    "audienceLabel": "Quién puede usarlo",
+    "requestsLabel": "Solicitudes",
+    "audience": {
+      "company": "Personas de tu empresa",
+      "list": "Dominios y personas invitados",
+      "listCounts": "{{domains}} dominios, {{people}} personas",
+      "anyone": "Cualquiera con un correo verificado"
+    },
+    "open": "Abrir",
+    "openBoard": "Abrir {{name}}",
+    "copyBoardLink": "Copiar enlace de {{name}}",
+    "linkCopied": "Enlace copiado",
+    "copyFailed": "No se pudo copiar el enlace.",
+    "edit": "Editar",
+    "editBoard": "Editar {{name}}",
+    "deleteBoard": "Eliminar {{name}}",
+    "deleteTitle": "¿Eliminar este tablero?",
+    "deleteMessage": "«{{name}}» se elimina para todos. No se puede deshacer.",
+    "deleteWithRequestsMessage_one": "«{{name}}», su {{count, number}} solicitud y cada +1 en ella se eliminan para siempre. No se puede deshacer. Los proyectos ya creados a partir de sus solicitudes se conservan.",
+    "deleteWithRequestsMessage_many": "«{{name}}», sus {{count, number}} solicitudes y cada +1 en ellas se eliminan para siempre. No se puede deshacer. Los proyectos ya creados a partir de sus solicitudes se conservan.",
+    "deleteWithRequestsMessage_other": "«{{name}}», sus {{count, number}} solicitudes y cada +1 en ellas se eliminan para siempre. No se puede deshacer. Los proyectos ya creados a partir de sus solicitudes se conservan.",
+    "deleteWithRequestsMessageStale": "«{{name}}» ya tiene solicitudes. El tablero, todas sus solicitudes y cada +1 en ellas se eliminan para siempre. No se puede deshacer. Los proyectos ya creados a partir de sus solicitudes se conservan.",
+    "deleteConfirmNameLabel": "Escribe el nombre del tablero para confirmar",
+    "deleteProgress_one": "Eliminada {{deleted, number}} de {{count, number}} solicitud…",
+    "deleteProgress_many": "Eliminadas {{deleted, number}} de {{count, number}} solicitudes…",
+    "deleteProgress_other": "Eliminadas {{deleted, number}} de {{count, number}} solicitudes…",
+    "deleteIncomplete": "El tablero aún no se ha eliminado por completo.",
+    "deleteResumeHint": "Pulsa Eliminar de nuevo para continuar donde se detuvo.",
+    "archived": "Archivado",
+    "configure": "Configurar tableros",
+    "emptyTitle": "Aún no hay tableros",
+    "empty": "Todavía no se ha compartido ningún tablero contigo.",
+    "emptyAdmin": "Crea un tablero en <admin>Administración, Privacidad y acceso, Tableros</admin>.",
+    "loadFailed": "No se pudieron cargar los tableros.",
+    "notFoundTitle": "Tablero no encontrado",
+    "notFound": "Este tablero no existe o no se ha compartido contigo.",
+    "backToBoards": "Volver a los tableros",
+    "standaloneIntro": "Los tableros que puedes usar. Abre uno para añadir una solicitud o dar +1."
+  }
+}

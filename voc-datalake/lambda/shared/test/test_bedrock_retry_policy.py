@@ -44,6 +44,9 @@ EXEMPT = {
     # The Settings model test reports a throttle as its RESULT (throttled / no_capacity):
     # a retry would wait out exactly what the admin asked to see, inside a 30 s API call.
     'shared/model_capacity.py': 'a throttle is the probe result, never retried',
+    # The image model's Settings test, same contract: ONE paid image call whose throttle
+    # is the answer the admin asked for (a retry would also bill a second image).
+    'shared/image_model_status.py': 'a throttle is the image probe result, never retried',
 }
 
 

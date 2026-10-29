@@ -19,7 +19,6 @@ import time
 import unicodedata
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import uuid4
@@ -40,8 +39,13 @@ from shared.project_writes import project_meta_key as _project_meta_key
 from shared.project_writes import (
     project_writable_condition as _project_writable_condition,
 )
+from shared.timestamps import now_iso
 
 VERSIONED_DOCUMENT_TYPES = frozenset({'prd', 'prfaq', 'prototype'})
+# What a merge may produce (`POST /projects/{id}/merge`, the merge job), and which of those are
+# versioned documents; a `custom` merge is a plain DOC# item.
+MERGE_OUTPUT_TYPES = ('prd', 'prfaq', 'custom')
+MERGE_VERSIONED_DOCUMENT_TYPES = frozenset({'prd', 'prfaq'})
 VERSION_COUNTER_PREFIX = 'DOCUMENT_VERSIONS#PROJECT#'
 LEGACY_ASSIGNMENT_PREFIX = 'LEGACY_ASSIGNMENT#'
 ALLOCATION_PREFIX = 'ALLOCATION#'
@@ -543,7 +547,7 @@ def _acquire_legacy_migration(
             counter = _get_item(table, counter_key)
             now_epoch = int(time.time())
             expires_at = now_epoch + LEGACY_MIGRATION_LEASE_SECONDS
-            now = datetime.now(UTC).isoformat()
+            now = now_iso()
             observed = _positive_int(counter.get('last_version')) if counter else None
             stored_normalized = counter.get('normalized_base_title') if counter else None
             if stored_normalized not in (None, normalized):
@@ -669,7 +673,7 @@ def _raise_locked_high_water(
                     ':observed': observed,
                     ':owner': owner,
                     ':now_epoch': now_epoch,
-                    ':now': datetime.now(UTC).isoformat(),
+                    ':now': now_iso(),
                 },
             )
         except ClientError as error:
@@ -704,7 +708,7 @@ def _renew_legacy_migration(
                     ':owner': owner,
                     ':now_epoch': now_epoch,
                     ':expires': now_epoch + LEGACY_MIGRATION_LEASE_SECONDS,
-                    ':now': datetime.now(UTC).isoformat(),
+                    ':now': now_iso(),
                 },
             )
         except ClientError as error:
@@ -921,7 +925,7 @@ def _release_legacy_migration(
             },
             ExpressionAttributeValues={
                 ':owner': owner,
-                ':now': datetime.now(UTC).isoformat(),
+                ':now': now_iso(),
             },
         )
     except ClientError as error:

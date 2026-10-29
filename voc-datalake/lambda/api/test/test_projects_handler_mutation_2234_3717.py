@@ -79,6 +79,7 @@ from shared.exceptions import (
     ServiceError,
     ValidationError,
 )
+from shared.test.clock import frozen_clock
 from shared.test.instrumentation_fixtures import assert_tracer_wrapped
 
 FIXED_NOW = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
@@ -341,7 +342,7 @@ class TestTheRecomposeRoute:
         aggregates = _seeded_row1()
         clock = MagicMock()
         clock.now.return_value = FIXED_NOW
-        with patch('projects_handler.datetime', clock):
+        with frozen_clock('projects_handler', clock):
             status, body = _recompose_row1(aggregates, api_gateway_event, lambda_context)
         assert status == 200
         assert body == {'success': True, 'row': body['row']}

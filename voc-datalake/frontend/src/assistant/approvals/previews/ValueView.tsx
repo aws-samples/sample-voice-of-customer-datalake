@@ -7,7 +7,8 @@
  */
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { humanizeKey, isRecord, LONG_TEXT_CHARS } from './format'
+import { isRecord } from '../../../lib/typeGuards'
+import { humanizeKey, LONG_TEXT_CHARS } from './format'
 import { DetailsDisclosure } from './FieldDiff'
 
 export function LongText({ text }: Readonly<{ text: string }>) {

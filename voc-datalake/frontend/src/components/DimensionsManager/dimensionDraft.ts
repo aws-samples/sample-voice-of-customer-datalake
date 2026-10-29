@@ -12,6 +12,7 @@ import {
   DIMENSION_KEY_RE, DIMENSION_VALUE_RE, MAX_DESCRIPTION_CHARS, MAX_DIMENSIONS, MAX_DIMENSION_VALUES,
   MAX_LABEL_CHARS, RESERVED_DIMENSION_KEYS,
 } from '../../api/dimensionsSchema'
+import { BUILTIN_DIMENSION_KEYS } from '../../api/feedbackTypes'
 import { newClientId } from '../../api/schemaList'
 import type { Dimension, DimensionValue } from '../../api/dimensionsSchema'
 
@@ -121,7 +122,7 @@ const PROBLEMS = {
 function keyProblem(dimension: DraftDimension): DraftProblem | null {
   const key = dimension.key.trim()
   if (!DIMENSION_KEY_RE.test(key)) return problem(PROBLEMS.keyFormat.messageKey, { key })
-  if (RESERVED_DIMENSION_KEYS.has(key)) return problem(PROBLEMS.keyReserved.messageKey, { key })
+  if (RESERVED_DIMENSION_KEYS.has(key) || BUILTIN_DIMENSION_KEYS.has(key)) return problem(PROBLEMS.keyReserved.messageKey, { key })
   if (dimension.label.length > MAX_LABEL_CHARS) return problem(PROBLEMS.labelLength.messageKey, { key, max: MAX_LABEL_CHARS })
   if ((dimension.description ?? '').length > MAX_DESCRIPTION_CHARS) return problem(PROBLEMS.descriptionLength.messageKey, { key, max: MAX_DESCRIPTION_CHARS })
   return null

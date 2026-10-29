@@ -3,7 +3,9 @@
  */
 import { z } from 'zod';
 import type { FeedbackSource } from '../../types.js';
-import { isRecord, pick } from '../format.js';
+import { isRecord } from '../../../lib/is-record.js';
+import { pick } from '../format.js';
+import { withPlainReviewText } from '../../../tools/review-text.js';
 
 /** Fields the model needs to reason about an item; storage keys never pass. */
 const FEEDBACK_SUMMARY_FIELDS = [
@@ -49,7 +51,7 @@ const MAX_SOURCES_PER_CALL = 10;
 const SOURCE_TEXT_MAX = 2000;
 
 export function summarizeFeedback(record: Record<string, unknown>, textMax = 600): Record<string, unknown> {
-  return pick(record, FEEDBACK_SUMMARY_FIELDS, textMax);
+  return pick(withPlainReviewText(record), FEEDBACK_SUMMARY_FIELDS, textMax);
 }
 
 /** A source card for the SPA, or undefined when the record has no id. */
@@ -57,7 +59,7 @@ export function toFeedbackSource(record: Record<string, unknown>): FeedbackSourc
   const feedbackId = record.feedback_id;
   if (typeof feedbackId !== 'string' || feedbackId.length === 0) return undefined;
   const card: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(record)) {
+  for (const [key, value] of Object.entries(withPlainReviewText(record))) {
     if (SOURCE_EXCLUDED_KEY_PATTERN.test(key) || value === null || value === undefined) continue;
     if (key === 'category_override') {
       const override = publicCategoryOverride(value);

@@ -4,7 +4,7 @@
  * @module pages/Settings/adminTabLabels
  */
 import {
-  Building2, Cpu, FileWarning, Info, KeyRound, Layers, Mail, Plug, Radar, Server, ShieldCheck, Tags, Users,
+  Building2, Cpu, FileWarning, Info, KeyRound, Layers, Lightbulb, Mail, Plug, Radar, Server, ShieldCheck, Tags, Users,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { visibleSections, visibleTabs } from './adminTabs'
@@ -18,7 +18,7 @@ const TAB_ICONS: Readonly<Record<AdminTabId, LucideIcon>> = {
 const SECTION_ICONS: Readonly<Record<AdminSectionId, LucideIcon>> = {
   plugins: Plug, integrations: KeyRound, inbox: Mail, radar: Radar,
   categories: Tags, dimensions: Layers,
-  policies: ShieldCheck, users: Users,
+  policies: ShieldCheck, users: Users, boards: Lightbulb,
   logs: FileWarning, version: Info,
 }
 

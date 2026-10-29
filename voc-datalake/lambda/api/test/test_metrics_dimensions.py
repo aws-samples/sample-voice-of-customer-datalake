@@ -142,7 +142,7 @@ class TestEntities:
         entities = body['entities']
         assert entities['channels'] == {'email': 2}
         assert entities['tags'] == {'vip': 1}
-        assert entities['dimensions'] == {'product': {'App': 1}, 'user_type': {}}
+        assert entities['dimensions'] == {'feedback_type': {}, 'product': {'App': 1}, 'user_type': {}}
 
     def test_the_aggregates_path_reads_the_aggregator_rows(self, tables, api_gateway_event, lambda_context):
         _, agg = tables
@@ -158,7 +158,7 @@ class TestEntities:
         _, body = _get(api_gateway_event, lambda_context, '/feedback/entities', days=1)
         assert body['entities']['channels'] == {'email': 3}
         assert body['entities']['tags'] == {'vip': 2}
-        assert body['entities']['dimensions'] == {'product': {'App': 3}, 'user_type': {}}
+        assert body['entities']['dimensions'] == {'feedback_type': {}, 'product': {'App': 3}, 'user_type': {}}
 
 
 def _metric_type_rows(rows: dict[str, list[dict]], total: int = 0):

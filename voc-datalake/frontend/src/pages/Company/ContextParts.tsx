@@ -14,7 +14,7 @@ import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import clsx from 'clsx'
-import { AlertCircle, Check, Eye, Loader2, RefreshCw, Save } from 'lucide-react'
+import { AlertCircle, Check, Eye, Loader2, RefreshCw, Save, Undo2 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import StickyActionBar from '../../components/StickyActionBar/StickyActionBar'
 import { formatCount } from '../../utils/numberFormat'
@@ -76,13 +76,17 @@ export function QueryState({ isLoading, isError, onRetry }: Readonly<{
 }
 
 /** The save button of a section, with its pending / saved / failed feedback. */
-export function SaveRow({ onSave, pending, saved, failed, disabled = false, label }: Readonly<{
+export function SaveRow({ onSave, onDiscard, pending, saved, failed, disabled = false, label, failedLabel }: Readonly<{
   onSave: () => void
+  /** Offered beside Save while there is a draft: drops it and shows the saved value again. */
+  onDiscard?: () => void
   pending: boolean
   saved: boolean
   failed: boolean
   disabled?: boolean
   label?: string
+  /** What failed, when the section knows better than "Could not save" (a field the server named). */
+  failedLabel?: string
 }>) {
   const { t } = useTranslation('settings')
   return (
@@ -90,11 +94,16 @@ export function SaveRow({ onSave, pending, saved, failed, disabled = false, labe
     <StickyActionBar variant="inline" className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2 py-3 mt-4 border-t border-border">
       {failed ? (
         <p role="alert" className="text-xs text-danger flex items-center gap-1 sm:mr-auto">
-          <AlertCircle size={12} /> {t('shared.saveFailed')}
+          <AlertCircle size={12} /> {failedLabel ?? t('shared.saveFailed')}
         </p>
       ) : null}
       {saved && !failed ? (
         <span role="status" className="text-xs text-ok flex items-center gap-1"><Check size={12} /> {t('saved')}</span>
+      ) : null}
+      {onDiscard ? (
+        <button type="button" onClick={onDiscard} disabled={pending} className="btn btn-secondary flex items-center justify-center gap-2 w-full sm:w-auto">
+          <Undo2 size={16} aria-hidden /> {t('shared.discardChanges')}
+        </button>
       ) : null}
       <button
         type="button"
@@ -120,13 +129,12 @@ export function MarkdownView({ source, empty }: Readonly<{ source: string; empty
 }
 
 /** A markdown textarea with Write / Preview tabs and a character counter. */
-export function MarkdownField({ label, value, onChange, maxChars, placeholder, rows = 8 }: Readonly<{
+export function MarkdownField({ label, value, onChange, maxChars, placeholder }: Readonly<{
   label: string
   value: string
   onChange: (value: string) => void
   maxChars: number
   placeholder?: string
-  rows?: number
 }>) {
   const { t, i18n } = useTranslation('settings')
   const id = useId()
@@ -153,7 +161,7 @@ export function MarkdownField({ label, value, onChange, maxChars, placeholder, r
         <textarea
           id={id}
           value={value}
-          rows={rows}
+          rows={8}
           placeholder={placeholder}
           onChange={(event) => onChange(event.target.value)}
           aria-invalid={over}

@@ -44,7 +44,6 @@ lambda/stream/src/context/language.ts
 lambda/stream/src/context/persona-fields.ts
 lambda/stream/src/context/persona-prompt.ts
 lambda/stream/src/context/query-errors.ts
-lambda/stream/src/feedback-by-date-query.ts
 lambda/stream/src/handler.ts
 lambda/stream/src/history-budget.ts
 lambda/stream/src/indexes.ts

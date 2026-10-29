@@ -9,6 +9,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import { NagSuppressions } from 'cdk-nag';
 import type { PluginManifest } from '../plugin-loader';
 import { apiGatewayRequestValidationSuppressions } from '../utils/nag-suppressions';
+import { apiAccessLogFormat } from './api-access-log';
 import type { ApiStackContext } from './api-context';
 import { GLOBAL_MCP_METHOD_THROTTLE } from './global-mcp';
 
@@ -86,7 +87,31 @@ const CORS_ALLOW_HEADERS_VALUE = `'${CORS_ALLOW_HEADERS.join(',')}'`;
 const CORS_EXPOSE_HEADERS = ['Content-Type', 'WWW-Authenticate', 'Vary', 'Allow', 'Retry-After', 'ETag'];
 
 /** The same list in the single-quoted form an API Gateway response header takes. */
-const CORS_EXPOSE_HEADERS_VALUE = `'${CORS_EXPOSE_HEADERS.join(',')}'`;
+export const CORS_EXPOSE_HEADERS_VALUE = `'${CORS_EXPOSE_HEADERS.join(',')}'`;
+
+/**
+ * The CORS preflight (a MOCK `OPTIONS`, no compute) of every resource that serves a browser method.
+ *
+ * Since 5.47.00 the RestApi has no `defaultCorsPreflightOptions`: that default put an `OPTIONS` on
+ * EVERY resource, including the path-only parents (`/`, `/chat`, `/metrics`, `/settings`, …) that serve
+ * no method, which cost two CloudFormation resources each in a stack near its ceiling. Each route now
+ * calls `addBrowserPreflight` on the resource that carries its method (api-routes.ts, global-mcp.ts);
+ * 'CORS preflight on exactly the method-bearing resources' in api-stack-cors-preflight.test.ts fails
+ * on a resource that serves a browser method without one, or on a preflight with no method beside it.
+ * The webhook receivers get none: a provider's server-to-server POST never preflights.
+ */
+export const BROWSER_PREFLIGHT: apigateway.CorsOptions = {
+  allowOrigins: apigateway.Cors.ALL_ORIGINS,
+  allowMethods: apigateway.Cors.ALL_METHODS,
+  allowHeaders: CORS_ALLOW_HEADERS,
+  exposeHeaders: CORS_EXPOSE_HEADERS,
+};
+
+/** `resource` with its CORS preflight added (see BROWSER_PREFLIGHT). Returns the resource for chaining. */
+export function addBrowserPreflight<T extends apigateway.IResource>(resource: T): T {
+  resource.addCorsPreflight(BROWSER_PREFLIGHT);
+  return resource;
+}
 
 /**
  * The CORS headers every gateway-GENERATED error carries (issue #267 item 10).
@@ -105,7 +130,7 @@ const CORS_EXPOSE_HEADERS_VALUE = `'${CORS_EXPOSE_HEADERS.join(',')}'`;
  * `Vary: Origin` whenever the value is a single origin, so a shared cache never
  * serves one origin's answer to another; `vary` adds response-specific names.
  */
-function gatewayErrorCorsHeaders(allowedOrigin: string, vary: string[] = []): Record<string, string> {
+export function gatewayErrorCorsHeaders(allowedOrigin: string, vary: string[] = []): Record<string, string> {
   const varyNames = allowedOrigin === '*' ? vary : ['Origin', ...vary];
   return {
     'Access-Control-Allow-Origin': `'${allowedOrigin}'`,
@@ -114,6 +139,36 @@ function gatewayErrorCorsHeaders(allowedOrigin: string, vary: string[] = []): Re
     ...(varyNames.length > 0 ? { Vary: `'${varyNames.join(', ')}'` } : {}),
   };
 }
+
+/** Where both Cognito authorizers read the ID token. */
+const COGNITO_IDENTITY_SOURCE = 'method.request.header.Authorization';
+
+/** The stage method-setting key of the public unsubscribe route (api-routes.ts). */
+const UNSUBSCRIBE_METHOD_KEY = '/unsubscribe/POST';
+
+/** 5 rps / burst 10: a person unsubscribes once; a flood only probes unguessable tokens. */
+const PUBLIC_UNSUBSCRIBE_THROTTLE: apigateway.MethodDeploymentOptions = {
+  throttlingRateLimit: 5,
+  throttlingBurstLimit: 10,
+};
+
+/**
+ * The methods the review-link routes serve (`/review/{proxy+}` ANY, api-routes.ts;
+ * lambda/shared/document_review_routes.py: GET a link, POST comments and replies). API Gateway
+ * accepts no `*` method for one resource path (only `*\/*` for the whole stage) and no `ANY` key,
+ * so an ANY method is throttled per HTTP method it serves.
+ */
+const REVIEW_METHOD_KEYS = ['/review/{proxy+}/GET', '/review/{proxy+}/POST'] as const;
+
+/**
+ * 10 rps / burst 20: a review link admits anyone who proves an inbox (the board pool), so the
+ * routes are throttled like the other outside-facing ones; a reviewer reads one page and writes a
+ * few comments (and is capped at 40 writes a day per link in shared/document_share.py).
+ */
+const REVIEW_THROTTLE: apigateway.MethodDeploymentOptions = {
+  throttlingRateLimit: 10,
+  throttlingBurstLimit: 20,
+};
 
 /** The one deployment stage, named once so a URL can be built from the RestApi id
  *  alone (a Lambda env var naming the Stage would depend on every Method). */
@@ -127,15 +182,17 @@ export function restApiBaseUrl(stack: cdk.Stack, api: apigateway.IRestApi): stri
 
 export interface ApiGateway {
   api: apigateway.RestApi;
-  /** Cognito options every signed-in route uses. */
+  /** Cognito options every signed-in route uses (the app pool only). */
   authMethodOptions: apigateway.MethodOptions;
+  /** The feature-request board's options: an authorizer listing the app pool AND the board pool. */
+  boardAuthMethodOptions: apigateway.MethodOptions;
   /** The one-shot `skipFeedbackFormItemRoutes` upgrade flag (see api-routes.ts). */
   skipFeedbackFormItemRoutes: boolean;
 }
 
 export function createApiGateway(ctx: ApiStackContext, webhookPlugins: PluginManifest[]): ApiGateway {
   const { stack, allowedOrigin } = ctx;
-  const { userPool } = ctx.props;
+  const { userPool, boardUserPool } = ctx.props;
 
   // One-shot flag for upgrading an environment that still has the old
   // /feedback-forms/{proxy+}. Read HERE, above the RestApi, because it decides
@@ -429,19 +486,20 @@ export function createApiGateway(ctx: ApiStackContext, webhookPlugins: PluginMan
         // attempts/day against a 2^256 space). The per-project `/mcp/POST` and
         // `/mcp/{proxy+}` keys went with that server in 3.00.00.
         ...GLOBAL_MCP_METHOD_THROTTLE,
+        // Public unsubscribe (api-routes.ts): a recipient clicks once, a mail client's RFC 8058
+        // one-click posts once. Each request is a token lookup and at most one write.
+        [UNSUBSCRIBE_METHOD_KEY]: PUBLIC_UNSUBSCRIBE_THROTTLE,
+        // Document review links (board authorizer): see REVIEW_THROTTLE.
+        ...Object.fromEntries(REVIEW_METHOD_KEYS.map((key) => [key, REVIEW_THROTTLE])),
       },
       metricsEnabled: true,
       loggingLevel: apigateway.MethodLoggingLevel.INFO,
       dataTraceEnabled: false,
       accessLogDestination: new apigateway.LogGroupLogDestination(apiLogGroup),
-      accessLogFormat: apigateway.AccessLogFormat.jsonWithStandardFields(),
+      // The standard JSON fields + path, userAgent, integrationStatus, errorMessage (api-access-log.ts).
+      accessLogFormat: apiAccessLogFormat(),
     },
-    defaultCorsPreflightOptions: {
-      allowOrigins: apigateway.Cors.ALL_ORIGINS,
-      allowMethods: apigateway.Cors.ALL_METHODS,
-      allowHeaders: CORS_ALLOW_HEADERS,
-      exposeHeaders: CORS_EXPOSE_HEADERS,
-    },
+    // No defaultCorsPreflightOptions: each method-bearing resource adds its own (BROWSER_PREFLIGHT).
     cloudWatchRoleRemovalPolicy: cdk.RemovalPolicy.DESTROY
   });
 
@@ -457,7 +515,7 @@ export function createApiGateway(ctx: ApiStackContext, webhookPlugins: PluginMan
     responseHeaders: gatewayErrorCorsHeaders(allowedOrigin),
   });
   // API-WIDE, deliberately: this fires on every gateway-GENERATED 401 —
-  // the MCP token authorizer refusing a malformed Bearer shape, AND the
+  // a request with no Authorization header on /mcp/global, AND the
   // Cognito authorizer rejecting any other route. The challenge is truthful
   // for both, because every credential this API accepts arrives as
   // `Authorization: Bearer …` (a Cognito ID token is a bearer token), so
@@ -465,8 +523,8 @@ export function createApiGateway(ctx: ApiStackContext, webhookPlugins: PluginMan
   // is also the ONLY place this header can be set on a REST API: 401s
   // produced INSIDE a Lambda proxy integration have it unconditionally
   // remapped to `x-amzn-remapped-www-authenticate` (documented, no opt-out
-  // — verified live 2026-08-18), so the MCP handler keeps sending it and
-  // clients on that path receive it under the remapped name.
+  // — verified live 2026-08-18), so a dead MCP token is refused by its
+  // authorizer instead (ACCESS_DENIED → 401 with the challenge, api-mcp.ts).
   // Pinned by 'unauthorized gateway response' in api-stack.test.ts.
   api.addGatewayResponse('Unauthorized', {
     type: apigateway.ResponseType.UNAUTHORIZED,
@@ -486,10 +544,23 @@ export function createApiGateway(ctx: ApiStackContext, webhookPlugins: PluginMan
   const cognitoAuthorizer = new apigateway.CognitoUserPoolsAuthorizer(stack, 'VocCognitoAuthorizer', {
     cognitoUserPools: [userPool],
     authorizerName: 'voc-cognito-authorizer',
-    identitySource: 'method.request.header.Authorization',
+    identitySource: COGNITO_IDENTITY_SOURCE,
   });
 
   const authMethodOptions: apigateway.MethodOptions = { authorizer: cognitoAuthorizer, authorizationType: apigateway.AuthorizationType.COGNITO };
 
-  return { api, authMethodOptions, skipFeedbackFormItemRoutes };
+  // The board authorizer (/feature-requests and /review): app users with their normal session AND
+  // board users from their own pool (core-board-auth.ts). Every other route keeps the app-only
+  // authorizer, so a board token reaches nothing else. The board pool exists on every deployment
+  // since 5.45.00 (before, only with -c emailFrom, and the board routes took the app authorizer).
+  const boardAuthMethodOptions: apigateway.MethodOptions = {
+    authorizer: new apigateway.CognitoUserPoolsAuthorizer(stack, 'VocBoardAuthorizer', {
+      cognitoUserPools: [userPool, boardUserPool],
+      authorizerName: 'voc-board-authorizer',
+      identitySource: COGNITO_IDENTITY_SOURCE,
+    }),
+    authorizationType: apigateway.AuthorizationType.COGNITO,
+  };
+
+  return { api, authMethodOptions, boardAuthMethodOptions, skipFeedbackFormItemRoutes };
 }

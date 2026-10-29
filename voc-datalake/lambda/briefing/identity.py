@@ -14,10 +14,10 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from briefing.todos import Reader
 from shared import user_flags
+from shared.briefing_store import USER_POOL_ENV
 from shared.logging import logger
 from shared.project_access import ADMIN_GROUP
 
-USER_POOL_ENV: Final = 'USER_POOL_ID'
 _GROUPS_PAGE: Final = 60
 
 _client: dict[str, Any] = {}

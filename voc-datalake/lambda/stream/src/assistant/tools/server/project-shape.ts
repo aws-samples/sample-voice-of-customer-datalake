@@ -3,7 +3,7 @@
  */
 import { z } from 'zod';
 import { AssistantToolError } from '../errors.js';
-import { pick } from '../format.js';
+import { pick, withinBudget } from '../format.js';
 import { parseProjectAccess, type ProjectAccessSummary } from '../project-access.js';
 import { recordsAt } from './feedback-shape.js';
 
@@ -43,6 +43,24 @@ const DOCUMENT_FIELDS = ['document_id', 'document_type', 'title', 'version', 'cr
 export function isPrototype(document: Record<string, unknown>): boolean {
   return document.document_type === 'prototype'
     || (typeof document.sk === 'string' && document.sk.startsWith('PROTOTYPE#'));
+}
+
+/** What renderDocument reads of a chat-context document. */
+interface RenderableDocument extends Record<string, unknown> {
+  document_id: string;
+  document_type?: string;
+  title?: string;
+  content?: string;
+}
+
+/** One document's text for the model (get_documents, the persona round), cut to `share` characters. */
+export function renderDocument(document: RenderableDocument, share: number): string {
+  const header = `## ${document.title ?? 'Untitled'} (${(document.document_type ?? 'doc').toUpperCase()}) [ID: ${document.document_id}]`;
+  if (isPrototype(document)) {
+    return `${header}\nPrototype HTML is not available as text.`;
+  }
+  if (document.content === undefined) return `${header}\n(No text content.)`;
+  return `${header}\n\n${withinBudget(document.content, share)}`;
 }
 
 function documentOverview(document: Record<string, unknown>): Record<string, unknown> {

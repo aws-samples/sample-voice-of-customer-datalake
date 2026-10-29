@@ -33,6 +33,16 @@
     "status": "상태 필터"
   },
   "forget": "잊기",
+  "edit": "편집",
+  "editLabel": "기억 편집: {{statement}}",
+  "editField": "기억 내용",
+  "save": "저장",
+  "editFailed": "기억을 저장하지 못했습니다. 다시 시도하세요.",
+  "confirmPersonal": "여전히 맞음",
+  "confirmPersonalHint": "여전히 맞다고 확인하면 90일 동안 사용하지 않아도 보관 처리되지 않습니다",
+  "confirmPersonalLabel": "여전히 맞음: {{statement}}",
+  "confirmLabel": "+1: {{statement}}",
+  "confirmedPersonal": "여전히 맞다고 확인했습니다.",
   "forgetMessage": "\"{{statement}}\"은(는) 보관되며 자동으로 다시 학습되지 않습니다. 나중에 복원할 수 있습니다.",
   "forgetTitle": "이 기억을 잊을까요?",
   "imports": {

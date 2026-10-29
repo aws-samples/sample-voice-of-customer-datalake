@@ -13,12 +13,10 @@ deleted.
 from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
-from unittest.mock import patch
 
-import boto3
 import pytest
 from moto import mock_aws
-from moto_helpers import pk_sk_table
+from moto_helpers import projects_module_world
 
 from shared.avatar import AVATAR_OWNER_METADATA_KEY
 
@@ -52,15 +50,8 @@ class World:
 
 @pytest.fixture
 def world() -> Iterator[World]:
-    with mock_aws():
-        s3 = boto3.client('s3', region_name='us-east-1')
-        s3.create_bucket(Bucket=BUCKET)
-        state = World(projects=pk_sk_table('projects'), jobs=pk_sk_table('jobs'), s3=s3)
-        with patch('projects.projects_table', state.projects), \
-                patch('projects.get_jobs_table', return_value=state.jobs), \
-                patch('projects.get_s3_client', return_value=s3), \
-                patch.dict('os.environ', {'RAW_DATA_BUCKET': BUCKET}):
-            yield state
+    with mock_aws(), projects_module_world(BUCKET) as (projects, jobs, s3):
+        yield World(projects=projects, jobs=jobs, s3=s3)
 
 
 def _delete(project_id: str) -> dict:

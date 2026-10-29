@@ -75,13 +75,17 @@ def _record_last_status(table: Any, agent_id: str, run_id: str, status: str) -> 
 
 
 def close_run(table: Any, agent_id: str, run_id: str, record: Mapping[str, Any]) -> dict | None:
-    """``stop``: needs_human → completed with the decision; None when no longer undecided."""
+    """``stop``: needs_human → completed with the decision; None when no longer undecided.
+
+    The pause reason (``error``) is removed: a completed run carries no error, as every
+    other completion leaves it. The journal keeps it (the ``decision`` event of the pause).
+    """
     try:
         updated = table.update_item(
             Key=store.run_key(agent_id, run_id),
-            UpdateExpression='SET #st = :completed, decision = :decision',
+            UpdateExpression='SET #st = :completed, decision = :decision REMOVE #err',
             ConditionExpression='attribute_exists(pk) AND #st = :needs_human AND attribute_not_exists(decision)',
-            ExpressionAttributeNames={'#st': 'status'},
+            ExpressionAttributeNames={'#st': 'status', '#err': 'error'},
             ExpressionAttributeValues={':completed': store.RUN_COMPLETED, ':needs_human': store.RUN_NEEDS_HUMAN,
                                        ':decision': dict(record)},
             ReturnValues='ALL_NEW',

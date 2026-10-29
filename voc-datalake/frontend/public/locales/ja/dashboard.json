@@ -133,5 +133,8 @@
   },
   "openInCategories": "カテゴリで {{name}} を開く",
   "seeAllUrgent_one": "緊急のレビュー {{count, number}} 件をすべて見る",
-  "seeAllUrgent_other": "緊急のレビュー {{count, number}} 件をすべて見る"
+  "seeAllUrgent_other": "緊急のレビュー {{count, number}} 件をすべて見る",
+  "partialNote": {
+    "reviewBasis": "レビュー日での集計はレビューを1件ずつ読み込むため、広い期間では途中で打ち切られます。完全な合計を見るには取り込み日に切り替えてください。"
+  }
 }

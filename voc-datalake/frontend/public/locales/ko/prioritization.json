@@ -22,6 +22,7 @@
       "capReached": "이 투표는 이미 받을 수 있는 표를 모두 모았습니다. 진행자에게 다른 세션을 열어 달라고 요청하세요.",
       "closed": "진행자가 이 투표를 마감했으므로 더 이상 표를 받지 않습니다.",
       "expired": "이 투표는 만료되었으므로 더 이상 표를 받지 않습니다.",
+      "gone": "이 투표의 대상인 제안이 삭제되어 투표가 종료되었습니다.",
       "invalid": "이 투표를 읽을 수 없어 아무것도 기록되지 않았습니다. 점수와 메모를 확인한 뒤 다시 제출하세요.",
       "notFound": "이 링크로는 투표를 열 수 없습니다. 지금 화면에 표시된 코드를 스캔했는지 확인하세요.",
       "title": "이 투표는 열려 있지 않습니다",
@@ -92,7 +93,8 @@
     "avgRating": "평균 평점",
     "noLinkedForm": "이 문서에 연결된 피드백 양식이 없습니다.",
     "noRatings": "수집된 평점 없음",
-    "submissions": "제출 수",
+    "submissions_one": "제출 수",
+    "submissions_other": "제출 수",
     "title": "수집된 피드백",
     "unavailable": "평점을 사용할 수 없음"
   },
@@ -204,7 +206,9 @@
     "title": "우선순위 지정 점수",
     "wholeRow": "이 행의 문서 {{documents, number}}건 전체에 대한 표 1장입니다.",
     "yoursOnly": "본인의 평가입니다. 저장하면 본인 점수만 기록됩니다.",
-    "valueOfMax": "{{max, number}} 중 {{value}}"
+    "valueOfMax": "{{max, number}} 중 {{value}}",
+    "clear": "지우기",
+    "clearAxis": "{{name}} 점수 지우기"
   },
   "scoresUnavailable": {
     "description": "저장된 점수를 현재 가져올 수 없으므로 아래 숫자는 입력된 값이 아닌 기본값입니다. 저장하기 전에 페이지를 다시 불러오세요.",
@@ -309,6 +313,7 @@
     "mediumPriority": "중간 우선순위",
     "notScored": "평가되지 않음",
     "totalRows": "전체 제안 수",
+    "loading": "제안을 집계하는 중...",
     "unreadable_one": "제안 {{count, number}}건의 팀 점수를 읽을 수 없어 전체 수에는 포함되지만 다른 집계에는 포함되지 않습니다. 페이지를 다시 불러오면 확인할 수 있습니다.",
     "unreadable_other": "제안 {{count, number}}건의 팀 점수를 읽을 수 없어 전체 수에는 포함되지만 다른 집계에는 포함되지 않습니다. 페이지를 다시 불러오면 확인할 수 있습니다."
   },

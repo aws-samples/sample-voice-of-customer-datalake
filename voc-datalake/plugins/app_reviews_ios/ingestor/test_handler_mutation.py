@@ -40,6 +40,7 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 from aws_lambda_powertools.metrics.provider.cold_start import reset_cold_start_flag
 
+from _shared.app_reviews_health import StorefrontFetch
 from _shared.base_ingestor import logger, metrics, tracer
 from _shared.test.ingestor_fixtures import (
     offline_ingestor_construction,
@@ -161,9 +162,23 @@ class TestLoadAppConfigs:
         with _ingestor(handler, {"app_name": "Legacy", "package_name": "777"}) as ingestor:
             assert ingestor.app_configs == []
 
+    @pytest.mark.parametrize(("raw", "expected"), [("0", 0), ("1440", 1440), (180, 180), ("", None), ("junk", None)])
+    def test_an_entry_carries_its_own_frequency(self, handler, raw, expected):
+        with _ingestor(handler, _configs({"app_id": "1", "frequency_minutes": raw})) as ingestor:
+            assert ingestor.app_configs[0].frequency_minutes == expected
+
+    def test_an_entry_frequency_wins_over_the_plugin_one_and_absent_falls_back(self, handler):
+        secret = {**_configs({"app_id": "1", "frequency_minutes": "0"}, {"app_id": "2"}), "frequency_minutes": "30"}
+        with _ingestor(handler, secret) as ingestor:
+            assert [ingestor.frequency_for(app) for app in ingestor.app_configs] == [0, 30]
+
+    def test_an_entry_carries_its_own_sort_order(self, handler):
+        with _ingestor(handler, _configs({"app_id": "1", "sort_by": " most_recent "})) as ingestor:
+            assert ingestor.app_configs[0].sort_by == "most_recent"
+
     def test_an_unparsable_configs_array_is_reported_as_the_ios_array(self, handler):
         with (
-            patch("_shared.app_reviews_utils.logger") as utils_logger,
+            patch("_shared.app_reviews_config.logger") as utils_logger,
             _ingestor(handler, {"configs": "{not json"}) as ingestor,
         ):
             pass
@@ -191,8 +206,10 @@ class TestCollectReviewsForApp:
             patch.object(handler, "fetch_reviews_for_country") as fetch,
             patch.object(handler.random, "shuffle") as shuffle,
         ):
-            def run(by_country: dict[str, list[dict]]):
-                fetch.side_effect = lambda **kw: list(by_country.get(kw["country"], []))
+            def run(by_country: dict[str, list[dict]], failures: dict[str, str] | None = None):
+                fetch.side_effect = lambda **kw: StorefrontFetch(
+                    list(by_country.get(kw["country"], [])), (failures or {}).get(kw["country"]),
+                )
                 return ingestor._collect_reviews_for_app(app)
 
             yield ingestor, fetch, shuffle, run
@@ -245,6 +262,31 @@ class TestCollectReviewsForApp:
         result = run({"us": [_review("undated", None), _review("dated", _dated(1))]})
         assert [r["id"] for r in result] == ["dated", "undated"]
 
+    def test_failed_storefronts_are_warned_and_reach_the_run_row(self, collect):
+        ingestor, _, _, run = collect
+        with patch("_shared.app_reviews_health.logger") as health_logger:
+            run({"us": [_review("r1", _dated(1))]}, failures={"gb": "HTTP 403", "kr": "HTTP 403", "jp": "MaxRetryError"})
+        (warning,), _ = health_logger.warning.call_args
+        assert warning == ("iOS MyApp (123): 3 of 40 storefronts failed - HTTP 403 x2 (gb, kr); MaxRetryError x1 (jp)")
+        (summary,), kwargs = health_logger.info.call_args
+        assert summary == "iOS MyApp (123): 1 storefronts with reviews, 36 empty, 3 failed, 1 reviews"
+        assert kwargs["extra"]["storefront_summary"]["storefronts_failed"] == 3
+        assert ingestor.run_warnings == ["MyApp: 3 storefronts failed (HTTP 403 x2; MaxRetryError x1)"]
+
+    def test_no_failed_storefront_logs_only_the_summary(self, collect):
+        ingestor, _, _, run = collect
+        with patch("_shared.app_reviews_health.logger") as health_logger:
+            run({"us": [_review("r1", _dated(1))]})
+        health_logger.warning.assert_not_called()
+        health_logger.info.assert_called_once()
+        assert ingestor.run_warnings == []
+
+    def test_the_app_connector_sort_order_wins_over_the_plugin_one(self, collect):
+        ingestor, fetch, _, run = collect
+        ingestor.app_configs[0].sort_by = "most_helpful"
+        run({})
+        assert fetch.call_args_list[0].kwargs["sort_by"] == "most_helpful"
+
 
 class TestWatermarkUsesTheReviewDate:
     """`DATE_FIELD` is what the shared pipeline reads to compare a review with the
@@ -262,7 +304,7 @@ class TestWatermarkUsesTheReviewDate:
             patch.object(handler, "fetch_reviews_for_country") as fetch,
             patch.object(handler.random, "shuffle"),
         ):
-            fetch.side_effect = lambda **kw: (
+            fetch.side_effect = lambda **kw: StorefrontFetch(
                 [_review("older", _dated(1)), _review("newer", _dated(3))]
                 if kw["country"] == "us" else []
             )
@@ -397,7 +439,7 @@ class TestLambdaHandler:
 
             get_sqs.return_value.send_message_batch.side_effect = echo_batch_success
             run.side_effect = real_run
-            fetch.side_effect = lambda **kw: (
+            fetch.side_effect = lambda **kw: StorefrontFetch(
                 [_review("r1", _dated(1), rating=4)] if kw["country"] == "us" else []
             )
             yield lambda event: handler.lambda_handler(event, lambda_context), fetch
@@ -425,6 +467,11 @@ class TestLambdaHandler:
         run({})
         names = emf_metric_names(capsys.readouterr().out)
         assert {"iOS_MyApp_Reviews", "ColdStart"} <= names
+
+    def test_the_lambda_context_reaches_run_for_event_as_the_time_budget(self, handler, lambda_context):
+        with patch.object(handler.IOSAppReviewsIngestor, "run_for_event", return_value={}) as run_for_event:
+            handler.lambda_handler({"execution_id": "e"}, lambda_context)
+        assert run_for_event.call_args.args == ({"execution_id": "e"}, lambda_context)
 
     def test_the_handler_is_registered_with_the_tracer(self):
         with patch.object(tracer, "capture_lambda_handler", side_effect=lambda f: f) as capture:

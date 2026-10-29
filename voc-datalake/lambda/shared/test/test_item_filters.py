@@ -120,3 +120,23 @@ def test_only_the_channel_becomes_a_row_condition():
 @pytest.mark.parametrize('params', [None, {}, {'tag': 'vip'}, {'dims': 'product:app'}, {'rating_min': '3'}])
 def test_no_channel_means_no_row_condition(params):
     assert parse_item_filters(params).row_condition() is None
+
+
+@pytest.mark.parametrize(('value', 'on'), [('1', True), ('true', True), (' TRUE ', True), ('0', False), ('', False), ('yes', False)])
+def test_urgent_only_is_switched_on_by_one_or_true(value, on):
+    assert parse_item_filters({'urgent': value}).urgent is on
+
+
+def test_urgent_only_admits_high_urgency_items_and_forces_the_item_path():
+    filters = parse_item_filters({'urgent': '1'})
+    assert filters.active
+    assert filters.filter([{'urgency': 'high'}, {'urgency': 'low'}, {}]) == [{'urgency': 'high'}]
+
+
+def test_urgent_only_is_pushed_down_beside_the_channel():
+    condition = parse_item_filters({'channel': 'email', 'urgent': '1'}).row_condition()
+    assert condition is not None
+    expression = condition.get_expression()
+    assert expression['operator'] == 'AND'
+    names = {value.get_expression()['values'][0].name for value in expression['values']}
+    assert names == {'source_channel', 'urgency'}

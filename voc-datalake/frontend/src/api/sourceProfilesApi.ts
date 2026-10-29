@@ -13,6 +13,7 @@
  *
  * @module api/sourceProfilesApi
  */
+import { post, put } from './requestKit'
 import { z } from 'zod'
 import { fetchApi } from './client'
 import { StringMapSchema, TagsSchema } from './dimensionsSchema'
@@ -139,18 +140,12 @@ export const sourceProfilesApi = {
     normalizeSourceProfiles(await fetchApi<unknown>('/settings/sources')),
 
   saveProfiles: async (sources: SourceProfile[]): Promise<SourceProfile[]> =>
-    normalizeSourceProfiles(await fetchApi<unknown>('/settings/sources', {
-      method: 'PUT',
-      body: JSON.stringify({ sources }),
-    })),
+    normalizeSourceProfiles(await fetchApi<unknown>('/settings/sources', put({ sources }))),
 
   startErasure: async (request: ErasureRequest): Promise<ErasureJob | null> =>
-    normalizeErasureJob(await fetchApi<unknown>('/settings/erasure', {
-      method: 'POST',
-      body: JSON.stringify(request.source === undefined || request.source === ''
+    normalizeErasureJob(await fetchApi<unknown>('/settings/erasure', post(request.source === undefined || request.source === ''
         ? { field: request.field, value: request.value }
-        : request),
-    })),
+        : request))),
 
   listErasureJobs: async (): Promise<ErasureJob[]> =>
     normalizeErasureJobs(await fetchApi<unknown>('/settings/erasure')),

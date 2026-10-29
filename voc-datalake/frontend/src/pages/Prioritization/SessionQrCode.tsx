@@ -23,18 +23,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import { useTranslation } from 'react-i18next'
 import { ballotPageUrl } from '../../api/ballotPageUrl'
 import type { ReactElement } from 'react'
-
-/** Intrinsic edge in CSS pixels, and the widest this is drawn. Sized for a phone
- *  a few metres from a projector; `w-full h-auto` lets a narrower container scale
- *  it down losslessly via the SVG's viewBox. */
-const QR_SIZE_PX = 384
-
-/** The specification's 4-module quiet zone, which the library defaults to 0.
- *  Without it a scanner cannot find the symbol's edges against a slide. */
-const QR_MARGIN_MODULES = 4
-
-/** ~15% recoverable. The realistic failure is glare and heads in the way. */
-const QR_ERROR_CORRECTION = 'M'
+import { QR_ERROR_CORRECTION, QR_MARGIN_MODULES, QR_SIZE_PX } from '../../components/FormQrCode/qrSymbol'
 
 /**
  * @param sessionId the session token the room scans. It is the whole of what the

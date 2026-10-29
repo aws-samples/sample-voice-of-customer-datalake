@@ -12,15 +12,14 @@ interface Props {
   /** The card's title, for the accessible name ("Close: <title>"). */
   cardTitle: string
   onClose: () => void
-  disabled?: boolean
 }
 
-export default function CloseCardButton({ cardTitle, onClose, disabled = false }: Readonly<Props>) {
+export default function CloseCardButton({ cardTitle, onClose }: Readonly<Props>) {
   const { t } = useTranslation('briefing')
   const label = t('closeCard', { title: cardTitle })
   return (
     <button type="button" className="icon-btn focus-ring absolute right-2 top-2 touch-manipulation"
-      aria-label={label} title={label} disabled={disabled} onClick={() => { onClose() }}>
+      aria-label={label} title={label} onClick={() => { onClose() }}>
       <X size={16} aria-hidden="true" />
     </button>
   )

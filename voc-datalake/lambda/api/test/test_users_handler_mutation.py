@@ -36,6 +36,7 @@ import users_handler
 from shared.category_access import access_key
 from shared.concurrency import ordered_map
 from shared.exceptions import ConflictError
+from shared.test.clock import frozen_clock
 from shared.test.instrumentation_fixtures import assert_handler_wrapped, assert_tracer_wrapped
 
 POOL = os.environ['USER_POOL_ID']
@@ -224,14 +225,15 @@ class TestListUsers:
 
         assert status == 200
         no_flags = {'fallback_owner': False, 'memory_reviewer': False}
+        default_mode = {'mode': 'ai_driven', 'ai_writing_prfaq': False, 'ai_writing_prd': False}
         assert body == {'success': True, 'users': [
             {'username': 'full', 'sub': 'v-sub', 'email': 'v-email', 'name': 'v-name',
              'given_name': 'v-given_name', 'family_name': 'v-family_name', 'status': 'CONFIRMED',
              'enabled': True, 'groups': ['admins', 'users'], 'created_at': '2025-01-01T00:00:00+00:00',
-             'last_modified': '2025-01-02T00:00:00+00:00', 'flags': no_flags},
+             'last_modified': '2025-01-02T00:00:00+00:00', 'flags': no_flags, 'ai_mode': default_mode},
             {'username': 'bare', 'sub': '', 'email': '', 'name': '', 'given_name': '', 'family_name': '',
              'status': 'FORCE_CHANGE_PASSWORD', 'enabled': False, 'groups': [], 'created_at': None,
-             'last_modified': None, 'flags': no_flags},
+             'last_modified': None, 'flags': no_flags, 'ai_mode': default_mode},
         ]}
 
     @pytest.mark.usefixtures('no_table')
@@ -276,12 +278,27 @@ class TestListUsers:
             self, cognito, log, error, api_gateway_event, lambda_context):
         cognito.list_users.side_effect = [{'Users': [_listed_user('a')]}]
         cognito.list_groups.side_effect = [{'Groups': []}]
-        with patch.object(users_handler.user_flags, 'flags_for_subs', side_effect=error):
+        with patch.object(users_handler.user_flags, 'flags_for_subs', side_effect=error), \
+                patch.object(users_handler.ai_mode, 'ai_modes_for_subs', return_value={}):
             status, body = _call(api_gateway_event, lambda_context, 'GET', '/users')
 
         assert status == 200
         assert body['users'][0]['flags'] == {'fallback_owner': False, 'memory_reviewer': False}
         log.warning.assert_called_once_with('User flags unavailable; listing users without them')
+
+    @pytest.mark.parametrize('error', [_client_error(), BotoCoreError()])
+    @pytest.mark.usefixtures('aggregates')
+    def test_unreadable_ways_of_working_list_everyone_ai_driven_with_a_warning(
+            self, cognito, log, error, api_gateway_event, lambda_context):
+        cognito.list_users.side_effect = [{'Users': [_listed_user('a')]}]
+        cognito.list_groups.side_effect = [{'Groups': []}]
+        with patch.object(users_handler.user_flags, 'flags_for_subs', return_value={}), \
+                patch.object(users_handler.ai_mode, 'ai_modes_for_subs', side_effect=error):
+            status, body = _call(api_gateway_event, lambda_context, 'GET', '/users')
+
+        assert status == 200
+        assert body['users'][0]['ai_mode'] == {'mode': 'ai_driven', 'ai_writing_prfaq': False, 'ai_writing_prd': False}
+        log.warning.assert_called_once_with('Ways of working unavailable; listing users with the default')
 
     @pytest.mark.usefixtures('no_table')
     def test_no_table_reads_no_flags(self, cognito, api_gateway_event, lambda_context):
@@ -615,14 +632,15 @@ class TestCategoryAccess:
     def test_put_stores_the_row_as_the_caller(self, aggregates, api_gateway_event, lambda_context):
         clock = MagicMock()
         clock.now.return_value = datetime(2026, 3, 4, tzinfo=UTC)
-        with patch.object(users_handler, 'datetime', clock):
+        with frozen_clock(users_handler, clock):
             status, decoded = _call(api_gateway_event, lambda_context, 'PUT', '/users/alice/category-access',
                                     {'categories': ['billing']})
 
         row = {**access_key('sub-alice'), 'categories': ['billing'], 'updated_by': CALLER_SUB,
                'updated_at': '2026-03-04T00:00:00+00:00'}
         assert status == 200
-        clock.now.assert_called_once_with(UTC)
+        # every read of the clock in the request (the cache-version bump stamps too) is a UTC one
+        assert {c.args for c in clock.now.call_args_list} == {(UTC,)}
         aggregates.put_item.assert_called_once_with(Item=row)
         assert decoded == {'success': True, 'username': 'alice', 'all': False, 'categories': ['billing'],
                            'sources': None,
@@ -716,7 +734,9 @@ class TestFlags:
     @pytest.mark.parametrize(('body', 'message'), [
         ({'zeta': 1, 'alpha': 2, 'memory_reviewer': True}, 'Unknown flag(s): alpha, zeta'),
         ({'memory_reviewer': 'yes'}, 'memory_reviewer must be true or false, got str'),
-        (None, 'Provide fallback_owner and/or memory_reviewer'),
+        (None, 'Provide at least one flag or way-of-working field'),
+        ({'ai_mode': 'robot'}, 'ai_mode must be one of: human_driven, ai_assisted, ai_driven'),
+        ({'ai_writing_prd': 'yes'}, 'ai_writing_prd must be true or false, got str'),
     ])
     @pytest.mark.usefixtures('aggregates')
     def test_refusals_come_before_cognito(

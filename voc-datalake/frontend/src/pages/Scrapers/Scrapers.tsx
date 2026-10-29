@@ -41,6 +41,7 @@ import type {
 } from '../../api/types'
 import type { PluginManifest } from '../../plugins/types'
 import { PageTitle } from '../../components/PageTitle/PageTitle'
+import { allAppConfigsKey, appConfigsKey, scrapersKey, sourceRunStatusKey } from '../../api/queryKeys'
 
 function getAppConfigPlugins(): PluginManifest[] {
   return getPluginManifests().filter((p) => supportsAppConfigs(p.id))
@@ -76,12 +77,12 @@ function useScraperMutations() {
 
   const saveMutation = useMutation({
     mutationFn: (scraper: ScraperConfig) => scrapersApi.saveScraper(scraper),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scrapers'] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: scrapersKey() }),
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => scrapersApi.deleteScraper(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scrapers'] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: scrapersKey() }),
   })
 
   const runMutation = useMutation({ mutationFn: (id: string) => scrapersApi.runScraper(id) })
@@ -213,7 +214,7 @@ export default function Scrapers() {
   const syntheticPlugins = getSyntheticPlugins()
 
   const scrapersQuery = useQuery({
-    queryKey: ['scrapers'],
+    queryKey: scrapersKey(),
     queryFn: scrapersApi.getScrapers,
     enabled: config.apiEndpoint.length > 0,
   })
@@ -237,8 +238,8 @@ export default function Scrapers() {
       appId: string
     }) => api.deleteAppConfig(pluginId, appId),
     onSuccess: (_data, variables) => {
-      void queryClient.invalidateQueries({ queryKey: ['app-configs', variables.pluginId] })
-      void queryClient.invalidateQueries({ queryKey: ['all-app-configs'] })
+      void queryClient.invalidateQueries({ queryKey: appConfigsKey(variables.pluginId) })
+      void queryClient.invalidateQueries({ queryKey: allAppConfigsKey() })
       setDeleteAppInfo(null)
     },
   })
@@ -339,7 +340,7 @@ export default function Scrapers() {
         onClose={() => {
           setSelectedGenerator(null)
           // Refresh synthetic cards so a just-finished run shows immediately.
-          void queryClient.invalidateQueries({ queryKey: ['source-run-status'] })
+          void queryClient.invalidateQueries({ queryKey: sourceRunStatusKey() })
         }}
       />}
 

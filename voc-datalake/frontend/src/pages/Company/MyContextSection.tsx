@@ -1,61 +1,107 @@
 /**
- * @fileoverview Company → My objectives & KPIs.
+ * @fileoverview Company → My objectives & KPIs (also Account → Objectives).
  *
  * Every user keeps their own objectives (each with KPIs: name, target, unit).
  * They feed that user's personal memory and the assistant, and never touch the
  * company objectives (`PUT /settings/my-context` is self-scoped server-side).
  *
+ * Save checks the draft first (`validateMyContext`, the server's own rules): a
+ * refused field is marked and explained in place, focus moves to the first one,
+ * and no request is sent. A 400 the server still answers with a field path
+ * (`objectives[0].kpis[0].target is required`) is shown on that field too, so
+ * "Could not save. Try again." never stands alone for something a retry cannot fix.
+ *
  * @module pages/Company/MyContextSection
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Plus, Target, Trash2, X } from 'lucide-react'
+import { Plus, Target } from 'lucide-react'
 import { companyContextApi, myContextBody, myContextKey } from '../../api/companyContextApi'
-import type { Kpi, MyContext, PersonalObjective } from '../../api/companyContextApi'
+import type { MyContext, PersonalObjective } from '../../api/companyContextApi'
 import { newClientId } from '../../api/schemaList'
 import { SectionHeader } from './ContextParts'
 import { DraftSaveRow, LoadedSection } from './SectionParts'
 import { useDraft, useDraftGuard } from './useDraft'
+import { PersonalObjectiveRow } from './MyContextRows'
+import { serverFieldError, validateMyContext } from './myContextValidation'
+import type { FieldErrors, ServerFieldProblem } from './myContextValidation'
 
 const EMPTY: MyContext = { objectives: [] }
 const MAX_PERSONAL_OBJECTIVES = 20
-const MAX_KPIS = 10
+const NO_ERRORS: FieldErrors = new Map()
 
-export default function MyContextSection() {
-  const { t } = useTranslation('settings')
+type ServerFieldError = ServerFieldProblem | null
+
+function shownErrors(client: FieldErrors, attempted: boolean, server: ServerFieldError): FieldErrors {
+  const shown = new Map(attempted ? client : NO_ERRORS)
+  if (server !== null && !shown.has(server.key)) shown.set(server.key, server.problem)
+  return shown
+}
+
+/** The draft, its save, and the field errors Save would raise or the server raised. */
+function useMyContextForm() {
   const queryClient = useQueryClient()
   const query = useQuery({ queryKey: myContextKey(), queryFn: companyContextApi.getMyContext })
   const draft = useDraft<MyContext>(query.data ?? EMPTY, myContextBody)
+  const [attempted, setAttempted] = useState(false)
+  const [serverError, setServerError] = useState<ServerFieldError>(null)
   const save = useMutation({
     mutationFn: companyContextApi.saveMyContext,
+    onMutate: () => setServerError(null),
+    onError: (error, sent) => setServerError(serverFieldError(error, sent)),
     onSuccess: (saved) => {
       queryClient.setQueryData(myContextKey(), saved)
       draft.reset()
+      setAttempted(false)
     },
   })
+  const clientErrors = validateMyContext(draft.value)
+  const update = (change: (current: MyContext) => MyContext) => { setServerError(null); draft.update(change) }
+  /** Cancel: the saved objectives again, with no marked field and no failed save left over. */
+  const discard = () => { draft.reset(); setAttempted(false); setServerError(null); save.reset() }
+  return { query, draft, save, update, discard, clientErrors, attempted, setAttempted, serverError,
+    errors: shownErrors(clientErrors, attempted, serverError) }
+}
+
+export default function MyContextSection() {
+  const { t } = useTranslation('settings')
+  const form = useMyContextForm()
+  const { draft, save, update, clientErrors } = form
+  const rowsRef = useRef<HTMLDivElement>(null)
 
   const objectives = draft.value.objectives
-  const guard = useDraftGuard({ dirty: draft.dirty, reset: draft.reset, save: () => save.mutateAsync(draft.value) })
+  const guard = useDraftGuard({
+    dirty: draft.dirty, reset: draft.reset, save: () => save.mutateAsync(draft.value), canSave: clientErrors.size === 0,
+  })
   const setObjective = (id: string, change: (o: PersonalObjective) => PersonalObjective) =>
-    draft.update((c) => ({ objectives: c.objectives.map((o) => (o.id === id ? change(o) : o)) }))
-  const addObjective = () => draft.update((c) => ({
+    update((c) => ({ objectives: c.objectives.map((o) => (o.id === id ? change(o) : o)) }))
+  const addObjective = () => update((c) => ({
     objectives: [...c.objectives, { id: newClientId('pobj'), title: '', description: '', due: undefined, kpis: [] }],
   }))
-  const removeObjective = (id: string) => draft.update((c) => ({ objectives: c.objectives.filter((o) => o.id !== id) }))
+  const removeObjective = (id: string) => update((c) => ({ objectives: c.objectives.filter((o) => o.id !== id) }))
+  const onSave = () => {
+    if (clientErrors.size === 0) { save.mutate(draft.value); return }
+    form.setAttempted(true)
+    // After the render that marks the fields: focus the first refused one.
+    requestAnimationFrame(() => rowsRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus())
+  }
+  const fieldsRefused = (form.attempted && clientErrors.size > 0) || form.serverError !== null
 
   return (
     <div className="card">
       <SectionHeader icon={Target} title={t('myContext.title')} description={t('myContext.description')} />
-      <LoadedSection query={query}>
+      <LoadedSection query={form.query}>
         {() => (
           <>
             {objectives.length === 0 ? <p className="text-sm text-muted italic mb-3">{t('myContext.empty')}</p> : null}
-            <div className="space-y-3">
+            <div className="space-y-3" ref={rowsRef}>
               {objectives.map((objective, index) => (
                 <PersonalObjectiveRow
                   key={objective.id}
                   index={index}
                   objective={objective}
+                  errors={form.errors}
                   onChange={(change) => setObjective(objective.id, change)}
                   onRemove={() => removeObjective(objective.id)}
                 />
@@ -69,91 +115,13 @@ export default function MyContextSection() {
             >
               <Plus size={14} /> {t('myContext.addObjective')}
             </button>
-            <DraftSaveRow save={save} dirty={draft.dirty} onSave={() => save.mutate(draft.value)} />
+            <DraftSaveRow save={save} dirty={draft.dirty} onSave={onSave}
+              onDiscard={form.discard}
+              failedLabel={fieldsRefused ? t('myContext.fixFields') : undefined} />
           </>
         )}
       </LoadedSection>
       {guard.dialog}
-    </div>
-  )
-}
-
-function PersonalObjectiveRow({ index, objective, onChange, onRemove }: Readonly<{
-  index: number
-  objective: PersonalObjective
-  onChange: (change: (o: PersonalObjective) => PersonalObjective) => void
-  onRemove: () => void
-}>) {
-  const { t } = useTranslation('settings')
-  const patch = (fields: Partial<PersonalObjective>) => onChange((o) => ({ ...o, ...fields }))
-  const setKpi = (i: number, fields: Partial<Kpi>) =>
-    onChange((o) => ({ ...o, kpis: o.kpis.map((k, j) => (j === i ? { ...k, ...fields } : k)) }))
-  const addKpi = () => onChange((o) => ({ ...o, kpis: [...o.kpis, { name: '', target: '', unit: undefined }] }))
-  const removeKpi = (i: number) => onChange((o) => ({ ...o, kpis: o.kpis.filter((_, j) => j !== i) }))
-
-  return (
-    <fieldset className="border border-border rounded-md p-3 space-y-2">
-      <legend className="sr-only">{t('myContext.objectiveLegend', { n: index + 1 })}</legend>
-      <div className="flex flex-col sm:flex-row gap-2">
-        <input
-          aria-label={t('myContext.objectiveTitle')}
-          placeholder={t('myContext.objectiveTitle')}
-          value={objective.title}
-          onChange={(e) => patch({ title: e.target.value })}
-          className="input flex-1"
-        />
-        <input
-          type="date"
-          aria-label={t('myContext.due')}
-          value={objective.due ?? ''}
-          onChange={(e) => patch({ due: e.target.value === '' ? undefined : e.target.value })}
-          className="input sm:w-44"
-        />
-        <button type="button" onClick={onRemove} className="icon-btn self-end sm:self-center" aria-label={t('myContext.removeObjective')} title={t('myContext.removeObjective')}>
-          <Trash2 size={16} />
-        </button>
-      </div>
-      <textarea
-        aria-label={t('myContext.objectiveDescription')}
-        placeholder={t('myContext.objectiveDescription')}
-        value={objective.description}
-        rows={2}
-        onChange={(e) => patch({ description: e.target.value })}
-        className="input"
-      />
-      <div className="space-y-2">
-        <p className="text-xs font-medium text-muted">{t('myContext.kpis')}</p>
-        {objective.kpis.map((kpi, i) => (
-          <KpiRow key={i} kpi={kpi} onChange={(fields) => setKpi(i, fields)} onRemove={() => removeKpi(i)} />
-        ))}
-        <button type="button" onClick={addKpi} disabled={objective.kpis.length >= MAX_KPIS} className="btn btn-ghost btn-sm flex items-center gap-1.5">
-          <Plus size={14} /> {t('myContext.addKpi')}
-        </button>
-      </div>
-    </fieldset>
-  )
-}
-
-function KpiRow({ kpi, onChange, onRemove }: Readonly<{
-  kpi: Kpi
-  onChange: (fields: Partial<Kpi>) => void
-  onRemove: () => void
-}>) {
-  const { t } = useTranslation('settings')
-  return (
-    <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-      <input aria-label={t('myContext.kpiName')} placeholder={t('myContext.kpiName')} value={kpi.name} onChange={(e) => onChange({ name: e.target.value })} className="input flex-1" />
-      <input aria-label={t('myContext.kpiTarget')} placeholder={t('myContext.kpiTarget')} value={kpi.target} onChange={(e) => onChange({ target: e.target.value })} className="input sm:w-32" />
-      <input
-        aria-label={t('myContext.kpiUnit')}
-        placeholder={t('myContext.kpiUnit')}
-        value={kpi.unit ?? ''}
-        onChange={(e) => onChange({ unit: e.target.value === '' ? undefined : e.target.value })}
-        className="input sm:w-28"
-      />
-      <button type="button" onClick={onRemove} className="icon-btn self-end sm:self-center" aria-label={t('myContext.removeKpi')} title={t('myContext.removeKpi')}>
-        <X size={16} />
-      </button>
     </div>
   )
 }

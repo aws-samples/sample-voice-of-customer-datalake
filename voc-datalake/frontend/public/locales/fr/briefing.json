@@ -21,6 +21,10 @@
     "evidence": "Avis derrière cette carte : {{count, number}}",
     "quotes": "Dans leurs mots",
     "dismiss": "Ignorer",
+    "dismissed": "Masquée : {{title}}",
+    "undo": "Annuler",
+    "undoLabel": "Annuler le masquage de {{title}}",
+    "closeNotice": "Fermer cet avis",
     "sources": "Sources",
     "newTab": "s’ouvre dans un nouvel onglet",
     "type": {

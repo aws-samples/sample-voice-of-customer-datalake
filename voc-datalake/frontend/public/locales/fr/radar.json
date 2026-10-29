@@ -34,14 +34,26 @@
     "sampled": "Lu à partir des avis les plus récents de cette période."
   },
   "releases": {
-    "title": "Lancements",
-    "empty": "Aucun lancement trouvé pour le moment. Les lancements viennent de l'analyse planifiée ou d'Analyser maintenant.",
+    "title": "Actualités et lancements",
+    "empty": "Aucune actualité trouvée pour l’instant. Les actualités et lancements viennent de l’analyse planifiée ou de « Analyser maintenant ».",
     "official": "Officiel",
     "thirdParty": "Presse et avis",
-    "approximate": "Date approximative",
+    "undated": "Date non publiée, trouvée pour la première fois le",
     "mentions_one": "{{count, number}} mention",
     "mentions_other": "{{count, number}} mentions",
-    "sources": "Sources"
+    "sources": "Sources",
+    "kinds": {
+      "release": "Lancement",
+      "announcement": "Annonce",
+      "promotion": "Promotion",
+      "partnership": "Partenariat",
+      "news": "Actualité de l’entreprise"
+    },
+    "filterLabel": "Filtrer par type",
+    "kindAll": "Tout",
+    "kindEmpty": "Rien du type « {{kind}} » dans cette liste. Choisissez « Tout » pour tout afficher.",
+    "viaExa": "via Exa",
+    "viaFeed": "via flux"
   },
   "compare": {
     "title": "Par rapport à nous",
@@ -64,13 +76,12 @@
     "openOurs_many": "Ouvrir nos {{count, number}} avis en {{category}} dans Catégories"
   },
   "brands": {
-    "hint": "Les marques suivies par Radar : l'analyse des lancements cherche chacune sur le web, et les sources que vous marquez comme source Radar sur la page Sources de données apportent ses avis.",
+    "hint": "Les marques que Radar suit : l’analyse des actualités cherche chacune sur le web (dans sa langue, et ses flux d’actualités s’il y en a), et les sources que vous marquez comme source Radar sur la page Sources de données apportent ses avis.",
     "addTitle": "Ajouter une marque",
     "nameLabel": "Nom de la marque",
     "domainsLabel": "Domaines du site",
     "domainsHint": "Séparés par des virgules, {{max, number}} au maximum (par exemple son site et son blog). Servent à trouver ses notes de version.",
     "add": "Ajouter la marque",
-    "editDomains": "Modifier les domaines",
     "editDomainsLabel": "Domaines du site de {{brand}}",
     "doneEditing": "Terminé",
     "remove": "Retirer",
@@ -87,7 +98,31 @@
     "duplicate": "{{brand}} est déjà dans la liste.",
     "invalidName": "Utilisez de 1 à 64 lettres, chiffres, espaces ou . & ' + -",
     "tooMany": "{{max, number}} marques au maximum.",
-    "loadFailed": "La liste des marques n'a pas pu être chargée."
+    "loadFailed": "La liste des marques n'a pas pu être chargée.",
+    "edit": "Modifier",
+    "editLabel": "Modifier {{brand}}",
+    "languageLabel": "Langue de recherche",
+    "languageAuto": "Automatique (d’après le domaine : {{language}})",
+    "languageAutoNew": "Automatique (d’après le domaine)",
+    "languageSummary": "Langue : {{language}}",
+    "feedsLabel": "Flux d’actualités",
+    "feedsHint": "Flux RSS ou Atom facultatifs des actualités de la marque. Lus à chaque analyse. Au plus {{max, number}}, un par ligne ou séparés par des virgules.",
+    "feedsTooMany": "Au plus {{max, number}} flux d’actualités.",
+    "feedsHttps": "Chaque flux d’actualités doit être un lien https://.",
+    "feedsSummary": "Flux d’actualités : {{list}}",
+    "noFeeds": "aucun",
+    "moreOptions": "Plus d’options",
+    "fixFeeds": "Corrigez les flux d’actualités avant d’enregistrer.",
+    "searchTermsLabel": "Termes de recherche",
+    "searchTermsHint": "Mots ou expressions facultatifs ajoutés aux recherches d’actualités, comme la raison sociale ou les noms de produits. Utile quand le nom de la marque est aussi un mot courant. Au plus {{max, number}}, un par ligne, de {{chars, number}} caractères chacun.",
+    "excludeTermsLabel": "Termes exclus",
+    "excludeTermsHint": "Mots ou expressions facultatifs : un résultat de recherche dont le titre ou l’extrait en contient un est ignoré. Au plus {{max, number}}, un par ligne, de {{chars, number}} caractères chacun.",
+    "termsTooMany": "Au plus {{max, number}} termes.",
+    "termsTooLong": "Chaque terme peut comporter au plus {{chars, number}} caractères.",
+    "termsInvalid": "Un terme ne peut pas contenir de guillemets doubles ni commencer par -.",
+    "searchTermsSummary": "Termes de recherche : {{list}}",
+    "excludeTermsSummary": "Termes exclus : {{list}}",
+    "fixTerms": "Corrigez les termes de recherche ou exclus avant d’enregistrer."
   },
   "setup": {
     "brandsTitle": "Marques suivies",
@@ -99,16 +134,16 @@
     "sources": "Alimentée par :",
     "howTitle": "Comment fonctionne Radar",
     "step1Title": "Ajouter une marque",
-    "step1": "Ajoutez-la ci-dessous, avec les domaines de son propre site pour trouver ses notes de version.",
+    "step1": "Ajoutez-la ci-dessous, avec les domaines de son propre site pour trouver ses actualités ; en option, sa langue de recherche et ses flux d’actualités.",
     "step2Title": "Faire entrer ses avis",
     "step2": "Sur la page Sources de données, cochez « Source Radar » sur un scraper, une page Web Reviews, un connecteur d'application ou un import CSV/JSON, puis choisissez la marque. Ses avis vont uniquement dans Radar, jamais dans vos tableaux de bord.",
-    "step3Title": "Lancements",
-    "step3": "Une recherche web s'exécute automatiquement selon la fréquence ci-dessous (vérifiée chaque jour), ou tout de suite avec Analyser maintenant. La première analyse remonte sur 90 jours.",
+    "step3Title": "Actualités et lancements",
+    "step3": "Une recherche web des actualités de chaque marque (lancements, nouvelles fonctionnalités, promotions, partenariats, actualité de l’entreprise), dans sa langue et via ses flux d’actualités, s’exécute automatiquement selon la fréquence ci-dessous (vérifiée chaque jour), ou maintenant avec « Analyser maintenant ». La première analyse remonte à 90 jours.",
     "configure": "Configurer"
   },
   "settings": {
     "title": "Radar",
-    "description": "L'analyse des lancements cherche sur le web ce que publie chaque marque Radar. Rien ne s'exécute tant qu'aucune marque n'est ajoutée.",
+    "description": "L’analyse des actualités cherche sur le web ce que chaque marque Radar lance et annonce. Rien ne s’exécute tant qu’aucune marque n’est ajoutée.",
     "cadence": "Fréquence d'analyse",
     "cadences": {
       "daily": "Quotidienne",
@@ -139,7 +174,8 @@
       "completed": "terminée",
       "failed": "échouée",
       "skipped": "ignorée"
-    }
+    },
+    "scanNowHint": "Recherche maintenant sur le web et sur les domaines propres à chaque marque ses lancements et actualités, sans attendre la planification. Cela prend quelques minutes et consomme des recherches web."
   },
   "nav": {
     "label": "Radar"
@@ -185,5 +221,39 @@
     "readTheirs_one": "Lire leur avis en {{category}}",
     "readTheirs_other": "Lire leurs {{count, number}} avis en {{category}}",
     "noSubcategoryChip": "Sans sous-catégorie"
+  },
+  "all": {
+    "option": "Toutes les marques",
+    "brandsTitle": "Marques",
+    "brandsCaption": "Chaque marque suivie sur cette période : ses avis, son sentiment, ses lancements et sa dernière actualité",
+    "noBrands": "Aucune marque n’est encore suivie.",
+    "colBrand": "Marque",
+    "colReviews": "Avis",
+    "colSentiment": "Sentiment",
+    "colReleases": "Lancements sur la période",
+    "colLatest": "Dernière actualité",
+    "shares": "{{positive}} positifs · {{negative}} négatifs",
+    "noRelease": "Pas encore d’actualité",
+    "openBrand": "Ouvrir {{brand}}",
+    "newsTitle": "Dernières actualités de toutes les marques",
+    "capped": "Affichage des {{shown, number}} plus récents sur {{total, number}}"
+  },
+  "exa": {
+    "title": "Exa (second index de recherche)",
+    "description": "Quand la recherche web de Radar ne trouve aucune actualité datée pour une marque, Exa est aussi interrogé. Seuls les noms de marque, les termes de recherche et les domaines sont envoyés à Exa. Environ 5 $ pour 1 000 recherches, facturés par Exa.",
+    "configured": "Configuré",
+    "notConfigured": "Non configuré",
+    "keyLabel": "Clé d’API Exa",
+    "placeholder": "Collez votre clé d’API Exa",
+    "replacePlaceholder": "Une clé est enregistrée. Collez-en une nouvelle pour la remplacer",
+    "save": "Enregistrer la clé",
+    "remove": "Supprimer la clé",
+    "saved": "Clé Exa enregistrée.",
+    "removed": "Clé Exa supprimée.",
+    "saveFailed": "La clé Exa n’a pas pu être enregistrée.",
+    "removeFailed": "La clé Exa n’a pas pu être supprimée.",
+    "invalidKey": "Utilisez 8 à 200 lettres, chiffres, - ou _.",
+    "removeTitle": "Supprimer la clé Exa ?",
+    "removeMessage": "Radar cesse d’interroger Exa. Sa propre recherche web continue, et les actualités déjà trouvées sont conservées."
   }
 }

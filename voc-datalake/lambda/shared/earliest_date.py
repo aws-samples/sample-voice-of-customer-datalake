@@ -13,9 +13,10 @@ Data-layer only (no API-resolver imports), so the aggregator can use it.
 from collections.abc import Mapping
 from datetime import date
 
-EARLIEST_DATE_PK = 'METRIC#meta'
+#: The meta partition of voc-aggregates (also the cache version counters, shared/data_version.py).
+METRIC_META_PK = 'METRIC#meta'
 EARLIEST_DATE_SK = 'earliest_date'
-EARLIEST_DATE_KEY = {'pk': EARLIEST_DATE_PK, 'sk': EARLIEST_DATE_SK}
+EARLIEST_DATE_KEY = {'pk': METRIC_META_PK, 'sk': EARLIEST_DATE_SK}
 EARLIEST_DATE_ATTRIBUTE = 'date'
 
 

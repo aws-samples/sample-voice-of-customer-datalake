@@ -89,7 +89,7 @@ describe('Memory page', () => {
     const confirm = vi.fn(() => ({ memory: memory('m1', 'A', { supporters: 3 }) }))
     route({ ...listRoutes([memory('m1', 'A')]), 'POST /memory/m1/confirm': confirm })
     renderMemory()
-    await userEvent.click(await screen.findByRole('button', { name: /count me as a supporter/ }))
+    await userEvent.click(await screen.findByRole('button', { name: '+1: A' }))
     await waitFor(() => expect(confirm).toHaveBeenCalledWith(undefined))
   })
 

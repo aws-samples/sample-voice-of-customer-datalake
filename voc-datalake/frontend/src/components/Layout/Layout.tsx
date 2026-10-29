@@ -15,6 +15,7 @@
 import { useState, useEffect, useRef, useCallback, type ReactNode, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Outlet, useLocation } from 'react-router-dom'
+import clsx from 'clsx'
 import {
   Home,
   LayoutDashboard,
@@ -33,6 +34,8 @@ import {
   Compass,
   Workflow,
   Plug,
+  Lightbulb,
+  Contact,
 } from 'lucide-react'
 import { getDateRangeParams } from '../../api/client'
 import { useBrandName } from '../../hooks/useBrandSettings'
@@ -45,6 +48,8 @@ import TimeRangeSelector from '../TimeRangeSelector/TimeRangeSelector'
 import ThemeToggle from '../ThemeToggle/ThemeToggle'
 import Breadcrumbs from '../Breadcrumbs/Breadcrumbs'
 import AssistantRoot from '../../assistant/components/AssistantRoot'
+import { isChatRoute } from '../../assistant/page/chatRoute'
+import { LAUNCHER_RESERVE_CLASS } from '../../assistant/bubble/geometry'
 import ReviewModalHost from '../ReviewModal/ReviewModalHost'
 import { isMenuItemEnabled } from '../../config/menuConfig'
 import { useOverlayFocus } from '../../hooks/useOverlayFocus'
@@ -69,6 +74,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/dashboard', icon: LayoutDashboard, labelKey: 'nav.dashboard', menuKey: 'dashboard' },
   { to: '/scrapers', icon: Globe, labelKey: 'nav.scrapers', menuKey: 'scrapers', section: 'nav.section.listen' },
   { to: '/data-explorer', icon: Database, labelKey: 'nav.dataExplorer', menuKey: 'data-explorer', adminOnly: true, section: 'nav.section.listen' },
+  { to: '/feature-requests', icon: Lightbulb, labelKey: 'nav.featureRequests', menuKey: 'feature-requests', section: 'nav.section.listen' },
   { to: '/categories', icon: FolderOpen, labelKey: 'nav.categories', menuKey: 'categories', section: 'nav.section.understand' },
   { to: '/problems', icon: SearchX, labelKey: 'nav.problemAnalysis', menuKey: 'problems', section: 'nav.section.understand' },
   { to: '/radar', icon: Radar, labelKey: 'radar:nav.label', menuKey: 'radar', section: 'nav.section.understand' },
@@ -77,6 +83,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/agents', icon: Workflow, labelKey: 'agents:nav.label', menuKey: 'agents', section: 'nav.section.build' },
   { to: '/feedback-forms', icon: FileText, labelKey: 'nav.feedbackForms', menuKey: 'feedback-forms', section: 'nav.section.validate' },
   { to: '/prioritization', icon: ListOrdered, labelKey: 'nav.prioritization', menuKey: 'prioritization', section: 'nav.section.validate' },
+  { to: '/participants', icon: Contact, labelKey: 'nav.participants', menuKey: 'participants', section: 'nav.section.validate' },
   { to: '/company', icon: Compass, labelKey: 'nav.company', menuKey: 'company', section: 'nav.section.knowledge' },
   { to: '/memory', icon: Brain, labelKey: 'nav.memory', menuKey: 'memory', section: 'nav.section.knowledge' },
   { to: '/connect', icon: Plug, labelKey: 'nav.connect', menuKey: 'connect', section: 'nav.section.connect' },
@@ -281,12 +288,19 @@ export default function Layout() {
         {/* `relative`: the page scroller is the containing block of every absolute element inside it
             (e.g. `.sr-only` spans). Without it they resolve against the initial containing block and
             their offset grows the document, so the window shows a second scrollbar (/radar, 5.12.00). */}
-        <div className="relative flex-1 overflow-auto p-4 sm:p-6" data-testid="page-scroller">
+        {/* The launcher floats over the page's bottom-right corner (not on /chat, which has no
+            launcher): reserve room below the content so the last control (e.g. the Categories
+            CSV export) can always scroll clear of it (5.35, E2E 5.34). */}
+        <div
+          className={clsx('relative flex-1 overflow-auto p-4 sm:p-6', !isChatRoute(location.pathname) && LAUNCHER_RESERVE_CLASS)}
+          data-testid="page-scroller"
+        >
           <Outlet />
         </div>
       </main>
 
-      <AssistantRoot />
+      {/* The open mobile drawer covers the page: the launcher hides instead of floating over it. */}
+      <AssistantRoot launcherHidden={mobileMenuOpen} />
       {/* After the assistant: the review modal opens over the full-screen assistant too. */}
       <ReviewModalHost />
     </div>

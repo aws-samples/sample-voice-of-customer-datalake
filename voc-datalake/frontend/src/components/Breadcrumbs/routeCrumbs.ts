@@ -54,6 +54,8 @@ export const SEGMENT_CRUMBS: Readonly<Partial<Record<string, RouteCrumb>>> = {
   'data-explorer': { labelKey: 'common:breadcrumbs.dataExplorer' },
   'scrapers': { labelKey: 'common:breadcrumbs.scrapers' },
   'feedback-forms': { labelKey: 'common:breadcrumbs.feedbackForms' },
+  'participants': { labelKey: 'common:breadcrumbs.participants' },
+  'feature-requests': { labelKey: 'common:breadcrumbs.featureRequests' },
   'memory': { labelKey: 'common:breadcrumbs.memory' },
   'company': { labelKey: 'common:breadcrumbs.company' },
   'agents': { labelKey: 'common:breadcrumbs.agents' },
@@ -87,6 +89,8 @@ export const RECORD_CRUMBS: Readonly<Partial<Record<string, CrumbLabel>>> = {
   'feedback': { labelKey: 'common:breadcrumbs.feedbackItem' },
   'agents': { labelKey: 'common:breadcrumbs.agent' },
   'workflows': { labelKey: 'common:breadcrumbs.workflow' },
+  // `/feature-requests/:slug` — one feedback board, named once its page loaded it.
+  'feature-requests': { labelKey: 'common:breadcrumbs.board' },
 }
 
 export interface Crumb {

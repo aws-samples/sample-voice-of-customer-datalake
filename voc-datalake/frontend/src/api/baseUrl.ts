@@ -32,6 +32,9 @@ export function getBaseUrl(): string {
  */
 export const WIDEST_PRESET_DAYS = 90
 
+/** Days of the app's default range (`DEFAULT_TIME_RANGE` = '14d' in store/timeRanges.ts; pinned by configStore.test.ts). */
+const DEFAULT_RANGE_DAYS = 14
+
 /** Custom lookback the user types to mean "all time" — sent to the API as-is. */
 export const ALL_TIME_CUSTOM_DAYS = 0
 
@@ -60,21 +63,22 @@ export function parseCustomDaysInput(value: string): number | null {
  * For the 'custom' range the caller supplies a rolling lookback in days
  * (`customDays`), sent as-is: 0 means all time (the backend resolves it to the
  * span since the earliest stored feedback). When absent or invalid we fall back
- * to the 7-day default.
+ * to the default window, DEFAULT_RANGE_DAYS.
  */
 export function getDaysFromRange(range: string, customDays?: number | null): number {
   if (range === 'custom') {
-    return isCustomDays(customDays) ? customDays : 7
+    return isCustomDays(customDays) ? customDays : DEFAULT_RANGE_DAYS
   }
 
   switch (range) {
     case '24h': return 1
     case '48h': return 2
     case '7d': return 7
+    case '14d': return 14
     case '30d': return 30
     case '90d': return WIDEST_PRESET_DAYS
     case 'all': return ALL_TIME_CUSTOM_DAYS
-    default: return 7
+    default: return DEFAULT_RANGE_DAYS
   }
 }
 

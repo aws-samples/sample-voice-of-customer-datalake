@@ -13,8 +13,10 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Copy, Download, Eraser, Loader2, RotateCcw, Save, Upload } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { workflowIssueText } from './workflowIssueText'
 import ConfirmModal from '../ConfirmModal/ConfirmModal'
 import { useUnsavedChangesGuard } from '../UnsavedChangesGuard/useUnsavedChangesGuard'
+import { pathOrQueryChanged } from '../UnsavedChangesGuard/pathOrQueryChanged'
 import { NodeConfigPanel } from './NodeConfigPanel'
 import { NodePalette } from './NodePalette'
 import { WorkflowCanvas } from './WorkflowCanvas'
@@ -28,7 +30,6 @@ import type { CanvasSelection } from './selection'
 import type { SaveOutcome } from './useWorkflowEditor'
 import type { RestoredRevision } from './WorkflowHistory'
 import type { WorkflowDefinition, WorkflowNodeType, WorkflowView } from '../../api/workflowsApi'
-import type { Location } from 'react-router-dom'
 import type { ReactNode } from 'react'
 
 interface WorkflowEditorProps {
@@ -91,9 +92,6 @@ function StatusLine({ outcome, dirty, issueCount, notice }: Readonly<{
 }
 
 type Editor = ReturnType<typeof useWorkflowEditor>
-
-const pathOrQueryChanged = (current: Location, next: Location): boolean =>
-  current.pathname !== next.pathname || current.search !== next.search
 
 export function WorkflowEditor({ workflowId, canEdit, onSavedAs, notice, renderTitle }: Readonly<WorkflowEditorProps>) {
   const { t } = useTranslation('agents')
@@ -254,7 +252,7 @@ function EditorBody({ editor, draft, workflow, canEdit, onSavedAs, notice, title
 
       {grouped.general.length > 0 && (
         <ul className="rounded-md border border-danger/30 bg-danger-subtle px-3 py-2 text-[12px] text-danger space-y-0.5" aria-label={t('editor.generalIssues')}>
-          {grouped.general.map((message) => <li key={message}>{message}</li>)}
+          {grouped.general.map((message) => <li key={message}>{workflowIssueText(t, message)}</li>)}
         </ul>
       )}
 

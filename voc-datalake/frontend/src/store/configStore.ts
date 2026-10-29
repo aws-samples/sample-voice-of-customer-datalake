@@ -4,8 +4,10 @@ import { z } from 'zod'
 import { getRuntimeConfig, isConfigLoaded } from '../runtimeConfig'
 import { getEnvString } from '../lib/env'
 import { isTrustedApiEndpoint } from '../lib/trustedOrigins'
+import { isRecord } from '../lib/typeGuards'
 import type { DateBasis } from '../api/types'
 import { versionedPersist } from './persistVersion'
+import { DEFAULT_DATE_BASIS, DEFAULT_TIME_RANGE, TIME_RANGES, type TimeRange } from './timeRanges'
 
 /**
  * Return true when `endpoint` is safe to persist as the API endpoint.
@@ -44,7 +46,7 @@ export interface Config {
 
 interface ConfigStore {
   config: Config
-  timeRange: typeof TIME_RANGES[number]
+  timeRange: TimeRange
   /** Rolling lookback (in days) used when timeRange is 'custom'. */
   customDays: number | null
   /**
@@ -53,7 +55,7 @@ interface ConfigStore {
    */
   dateBasis: DateBasis
   setConfig: (config: Partial<Config>) => void
-  setTimeRange: (range: typeof TIME_RANGES[number]) => void
+  setTimeRange: (range: TimeRange) => void
   setCustomDays: (days: number | null) => void
   setDateBasis: (basis: DateBasis) => void
   syncWithRuntimeConfig: () => void
@@ -65,28 +67,39 @@ const defaultSourceConfig: SourceConfig = {
   credentials: {}
 }
 
+/** The default before 5.47.00 (persisted version 3), moved once to the new default. */
+const OLD_DEFAULT_TIME_RANGE: TimeRange = '7d'
+
 /**
- * Time-range tokens. `'90d'` is the widest fixed preset; `'all'` is ALL TIME
- * (days=0). Before persisted version 2, `'all'` was the token of the "90 Days"
- * preset — {@link upgradeConfigBlob} keeps those users on 90 days.
+ * Persisted version of 'voc-config': 2 = `'all'` means all time (was the 90-day
+ * preset); 3 = the default moved from 7 days to 14 days (by imported date).
  */
-const TIME_RANGES = ['24h', '48h', '7d', '30d', '90d', 'custom', 'all'] as const
+const CONFIG_PERSIST_VERSION = 3
 
-/** Persisted version of 'voc-config': 2 = `'all'` means all time (was the 90-day preset). */
-const CONFIG_PERSIST_VERSION = 2
-
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
+/** Pre-v2: `'all'` meant the "90 Days" preset, so it becomes `'90d'` instead of widening to all time. */
+function upgradeAllToNinetyDays(persisted: Record<string, unknown>): Record<string, unknown> {
+  return persisted['timeRange'] === 'all' ? { ...persisted, timeRange: '90d' } : persisted
 }
 
 /**
- * Rewrite a pre-v2 'voc-config' blob: its `'all'` meant the "90 Days" preset,
- * so it becomes `'90d'` — the window the user actually picked — instead of
- * silently widening to all time. Total: anything else passes through unchanged.
+ * Pre-v3: a blob still holding the OLD default pair (7 days by imported date) moves to the new
+ * default, once. A blob without `dateBasis` predates the basis picker and so was on 'imported'.
+ * Any other stored choice (another range, or 7 days by review date) is kept.
+ */
+function upgradeOldDefault(persisted: Record<string, unknown>): Record<string, unknown> {
+  const basis = persisted['dateBasis'] ?? DEFAULT_DATE_BASIS
+  if (persisted['timeRange'] !== OLD_DEFAULT_TIME_RANGE || basis !== DEFAULT_DATE_BASIS) return persisted
+  return { ...persisted, timeRange: DEFAULT_TIME_RANGE }
+}
+
+/**
+ * Rewrite an older 'voc-config' blob into the current shape, one version step at a
+ * time. Total: anything that is not a record, or already current, passes through unchanged.
  */
 function upgradeConfigBlob(persisted: unknown, fromVersion: number): unknown {
-  if (fromVersion >= CONFIG_PERSIST_VERSION || !isPlainRecord(persisted)) return persisted
-  return persisted['timeRange'] === 'all' ? { ...persisted, timeRange: '90d' } : persisted
+  if (fromVersion >= CONFIG_PERSIST_VERSION || !isRecord(persisted)) return persisted
+  const v2 = fromVersion < 2 ? upgradeAllToNinetyDays(persisted) : persisted
+  return upgradeOldDefault(v2)
 }
 
 /** The persisted part of the store ('voc-config'), validated on rehydrate. */
@@ -132,9 +145,9 @@ export const useConfigStore = create<ConfigStore>()(
           webscraper: { ...defaultSourceConfig },
         }
       },
-      timeRange: '7d',
+      timeRange: DEFAULT_TIME_RANGE,
       customDays: null,
-      dateBasis: 'imported',
+      dateBasis: DEFAULT_DATE_BASIS,
       setConfig: (newConfig) => {
         // If an apiEndpoint is supplied, validate it at the store boundary.
         // An out-of-allowlist value is discarded so the store never holds a

@@ -26,7 +26,6 @@ from shared.retention import (
     item_raw_key,
     retention_cutoffs,
     retention_filter,
-    value_hash,
 )
 
 BUCKET = 'bkt'
@@ -44,11 +43,6 @@ def _s3(*pages: dict[str, Any], responses: list[dict[str, Any]] | None = None) -
 
 def _version(key: str, version_id: str | None) -> dict[str, Any]:
     return {'Key': key, 'VersionId': version_id}
-
-
-class TestValueHash:
-    def test_hashes_the_utf8_bytes(self) -> None:
-        assert value_hash('é') == '4a99557e4033c3539de2eb65472017cad5f9557f7a0625a09f1c3f6e2ba69c4c'
 
 
 class TestRetentionCutoffs:

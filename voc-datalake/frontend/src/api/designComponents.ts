@@ -15,7 +15,7 @@ import { lenientText as text, optionalText, parsedList } from './schemaList'
 
 export const COMPONENT_LIMITS = {
   components: 30,
-  variants: 6,
+  variants: 8,
   name: 60,
   description: 300,
   variantName: 40,
@@ -27,19 +27,21 @@ export const COMPONENT_LIMITS = {
 } as const
 
 export const COLOR_KEYS = ['background', 'color', 'border_color'] as const
-export const SHAPE_KEYS = ['border_width', 'radius', 'padding', 'gap', 'height'] as const
+export const SHAPE_KEYS = ['border_width', 'radius', 'padding', 'gap', 'height', 'width'] as const
 const TEXT_KEYS = ['font_family', 'font_size', 'font_weight', 'letter_spacing', 'text_transform'] as const
 export const STYLE_KEYS = [...COLOR_KEYS, ...SHAPE_KEYS, ...TEXT_KEYS, 'shadow'] as const
 export const HOVER_KEYS = ['background', 'color', 'border_color', 'shadow'] as const
-const FOCUS_KEYS = ['outline'] as const
+/** The focus ring: an outline, the ring's border colour and its glow (a box-shadow). */
+const FOCUS_KEYS = ['outline', 'border_color', 'shadow'] as const
 export const TEXT_TRANSFORMS = ['none', 'uppercase', 'capitalize'] as const
 
 export type ColorKey = typeof COLOR_KEYS[number]
 export type StyleKey = typeof STYLE_KEYS[number]
 export type HoverKey = typeof HOVER_KEYS[number]
+export type FocusKey = typeof FOCUS_KEYS[number]
 type VariantStyles = Partial<Record<StyleKey, string>>
 type HoverStyles = Partial<Record<HoverKey, string>>
-interface FocusStyles { outline?: string }
+type FocusStyles = Partial<Record<FocusKey, string>>
 
 export interface ComponentVariant {
   name: string
@@ -101,6 +103,7 @@ const STYLE_RULES: Readonly<Record<StyleKey, (value: string) => boolean>> = {
   padding: (value) => PADDING_RE.test(value.trim()),
   gap: isLength,
   height: isLength,
+  width: isLength,
   font_family: (value) => FONT_FAMILY_RE.test(value.trim()),
   font_size: isLength,
   font_weight: (value) => WEIGHT_RE.test(value.trim()),
@@ -190,6 +193,8 @@ function variantValid(variant: ComponentVariant): boolean {
     && STYLE_KEYS.every((key) => isValidStyleValue(key, variant.styles[key]))
     && HOVER_KEYS.every((key) => isValidStyleValue(key, variant.hover[key]))
     && isValidOutline(variant.focus.outline)
+    && isValidStyleValue('border_color', variant.focus.border_color)
+    && isValidStyleValue('shadow', variant.focus.shadow)
 }
 
 function componentValid(component: DesignComponent): boolean {

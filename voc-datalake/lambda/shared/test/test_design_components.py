@@ -76,7 +76,7 @@ class TestStrict:
         ([{'name': 'x' * 61}], r'components\[0\].name must be at most 60'),
         ([{'name': 'B', 'description': 'd' * 301}], r'description must be at most 300'),
         ([{'name': 'B', 'variants': [{'name': 'v' * 41}]}], r'variants\[0\].name must be at most 40'),
-        ([{'name': 'B', 'variants': [{'name': f'v{i}'} for i in range(7)]}], 'at most 6 entries'),
+        ([{'name': 'B', 'variants': [{'name': f'v{i}'} for i in range(9)]}], 'at most 8 entries'),
         ([{'name': 'B', 'variants': [{'name': 'a'}, {'name': 'A'}]}], r'variants\[1\].name must be unique'),
         ([{'name': f'c{i}'} for i in range(31)], 'at most 30 entries'),
         ([{'name': 'B', 'example_html': 'x' * 2_001}], 'example_html must be a string of at most 2000'),
@@ -90,7 +90,7 @@ class TestStrict:
 
     def test_caps_accept_exactly_the_bound(self):
         components = [{'name': 'x' * 60, 'description': 'd' * 300,
-                       'variants': [{'name': f'{i}' + 'v' * 39} for i in range(6)]}]
+                       'variants': [{'name': f'{i}' + 'v' * 39} for i in range(8)]}]
         components += [{'name': f'c{i}'} for i in range(29)]
         assert len(dc.validate_components(components)) == 30
 
@@ -118,8 +118,8 @@ class TestLenient:
 
     def test_caps(self):
         assert len(dc.clean_components([{'name': f'c{i}'} for i in range(45)])) == 30
-        many = dc.clean_components([{'name': 'B', 'variants': [{'name': f'v{i}'} for i in range(9)]}])
-        assert len(many[0]['variants']) == 6
+        many = dc.clean_components([{'name': 'B', 'variants': [{'name': f'v{i}'} for i in range(11)]}])
+        assert len(many[0]['variants']) == 8
 
     @pytest.mark.parametrize('raw', [None, 'x', [], [{'name': None}]])
     def test_nothing_valid_is_empty(self, raw):

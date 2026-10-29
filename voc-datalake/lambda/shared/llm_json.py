@@ -30,3 +30,15 @@ def first_json_object(text: str) -> Any:
     start = text.find('{')
     value, _end = _LENIENT_DECODER.raw_decode(text, max(start, 0))
     return value
+
+
+def json_object_or_none(text: object) -> dict | None:
+    """*text* decoded as a JSON object (strict ``json.loads``), or None when it is not a string,
+    not JSON, or JSON that is not an object. For untrusted stored or browser-returned values."""
+    if not isinstance(text, str):
+        return None
+    try:
+        value = json.loads(text)
+    except ValueError:
+        return None
+    return value if isinstance(value, dict) else None

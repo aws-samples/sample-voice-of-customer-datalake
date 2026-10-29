@@ -8,6 +8,7 @@
 import { useState, useId, type ReactNode } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
+import { usePluginCopy } from '../../plugins/pluginCopy'
 import {
   Loader2, CheckCircle2, ChevronDown,
 } from 'lucide-react'
@@ -96,10 +97,6 @@ export default function SourceCard({ manifest, apiEndpoint, isAdmin }: SourceCar
     },
   })
 
-  const testMutation = useMutation({
-    mutationFn: () => api.testIntegration(manifest.id),
-  })
-
   const webhookBaseUrl = apiEndpoint ? `${apiEndpoint}webhooks/` : ''
 
   return (
@@ -141,10 +138,8 @@ export default function SourceCard({ manifest, apiEndpoint, isAdmin }: SourceCar
                 fields={manifest.config}
                 credentials={credentials}
                 showSecrets={showSecrets}
-                sourceStatus={sourceStatus}
                 saveSuccess={saveSuccess}
                 isAdmin={isAdmin}
-                testMutation={testMutation}
                 updateCredentialsMutation={updateCredentialsMutation}
                 onCredentialsChange={setCredentials}
                 onToggleSecrets={() => setShowSecrets(!showSecrets)}
@@ -212,10 +207,11 @@ function ManifestIconTile({ icon, category }: Readonly<{ icon: string; category?
 
 function SourceCardHeader({ manifest, sourceStatus, serverStatus, apiEndpoint, isAdmin, isExpanded, onToggleExpand, onToggleEnabled }: SourceCardHeaderProps) {
   const { t } = useTranslation('settings')
+  const copy = usePluginCopy()(manifest)
   const nameId = useId()
   const statusId = useId()
   // The row is a plain container with two independent controls — the expand
-  // button and the enable switch — so neither is nested inside the other.
+  // button (name, description, chevron) and the enable switch — so neither is nested inside the other.
   return (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 hover:bg-bg-hover transition-colors gap-2 sm:gap-3">
       <button
@@ -226,9 +222,11 @@ function SourceCardHeader({ manifest, sourceStatus, serverStatus, apiEndpoint, i
       >
         <ManifestIconTile icon={manifest.icon} category={manifest.category} />
         <span className="min-w-0">
-          <span id={nameId} className="block font-medium text-sm text-text-strong break-words hyphens-auto">{manifest.name}</span>
-          {manifest.description && <span className="text-xs text-muted break-words [overflow-wrap:anywhere]">{manifest.description}</span>}
+          <span id={nameId} className="block font-medium text-sm text-text-strong break-words hyphens-auto">{copy.name}</span>
+          {copy.description && <span className="text-xs text-muted break-words [overflow-wrap:anywhere]">{copy.description}</span>}
         </span>
+        {/* The chevron sits INSIDE the named expand button: a second, icon-only button had no name (5.34.00). */}
+        <ChevronDown size={16} aria-hidden="true" className={clsx('ml-auto flex-shrink-0 text-muted transition-transform', isExpanded && 'rotate-180')} />
       </button>
       <div className="flex flex-wrap items-center justify-end gap-3 ml-auto sm:ml-0 flex-shrink-0 max-w-full">
         {sourceStatus?.configured && (
@@ -266,16 +264,6 @@ function SourceCardHeader({ manifest, sourceStatus, serverStatus, apiEndpoint, i
           )}
           <span id={statusId} className="text-xs sm:text-sm text-text w-16">{serverStatus.enabled ? t('sourceCard.enabled') : t('sourceCard.disabled')}</span>
         </label>
-        {/* Mouse convenience only: the labelled, focusable expand control is the button above. */}
-        <button
-          type="button"
-          onClick={onToggleExpand}
-          aria-hidden="true"
-          tabIndex={-1}
-          className="icon-btn"
-        >
-          <ChevronDown size={16} className={clsx('transition-transform', isExpanded && 'rotate-180')} />
-        </button>
       </div>
     </div>
   )

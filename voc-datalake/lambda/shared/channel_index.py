@@ -27,7 +27,7 @@ from boto3.dynamodb.conditions import ConditionBase, Key
 from botocore.exceptions import ClientError
 
 from shared.indexes import FEEDBACK_BY_CHANNEL_INDEX
-from shared.time_budget import WalkBudget
+from shared.time_budget import ROW_CAP_PARTIAL_REASON, TIME_BUDGET_PARTIAL_REASON, WalkBudget
 
 __all__ = ['CHANNEL_INDEX_FIELDS', 'ChannelIndexUnavailable', 'walk_channel']
 
@@ -85,7 +85,7 @@ def walk_channel(
     Returns ``(rows, is_partial)``. ``row_filter`` (source, scope, ...) is pushed down as the
     FilterExpression. Partial when ``cap`` rows were collected or the request's walk budget ran
     out with rows left; the budget then records the oldest day read in full, as the day walk
-    does. Raises :class:`ChannelIndexUnavailable` when the index is missing.
+    does, with the reason (``row_cap`` when the cap cut it, else ``time_budget``). Raises :class:`ChannelIndexUnavailable` when the index is missing.
     """
     kwargs: dict[str, Any] = {
         'IndexName': FEEDBACK_BY_CHANNEL_INDEX,
@@ -109,9 +109,10 @@ def walk_channel(
         if not last_key:
             return rows, False
         if len(rows) >= cap or budget.exhausted():
+            reason = ROW_CAP_PARTIAL_REASON if len(rows) >= cap else TIME_BUDGET_PARTIAL_REASON
             rows = rows[:cap]
             oldest = str(rows[-1].get('gsi1sk', ''))[:10] if rows else ''
             # The oldest day may be cut part-way: claim completeness only from the day after it.
-            budget.record_stop(_day_after(oldest) if oldest else cutoff_date)
+            budget.record_stop(_day_after(oldest) if oldest else cutoff_date, reason)
             return rows, True
         kwargs['ExclusiveStartKey'] = last_key

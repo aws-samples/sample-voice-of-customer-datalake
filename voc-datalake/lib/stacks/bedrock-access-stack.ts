@@ -16,7 +16,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { Construct } from 'constructs';
 import { z } from 'zod';
-import { ALLOWED_FOUNDATION_MODEL_IDS } from '../utils/model-allowlist';
+import { ALLOWED_FOUNDATION_MODEL_IDS, IMAGE_MODEL_ID, IMAGE_MODEL_REGION } from '../utils/model-allowlist';
 import { NagSuppressions } from 'cdk-nag';
 import { cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, pluginSystemSuppressions, bedrockAgreementSuppressions, marketplaceSuppressions, suppressAwsCustomResourceProvider } from '../utils/nag-suppressions';
 
@@ -226,15 +226,94 @@ export class BedrockModelAccess extends Construct {
     // ============================================
     // Step 2: Create Model Agreements (accepts EULA)
     // ============================================
+    // Created directly in this construct (not under a child), so the Claude provider keeps the
+    // construct paths, logical ids and service token it had before the image agreement existed:
+    // CloudFormation refuses to change a custom resource's ServiceToken.
+    const agreements = new ModelAgreementProvider(this);
+
+    // Create model agreements for each required model
+    REQUIRED_MODELS.forEach((modelId, index) => {
+      const agreement = agreements.agree(this, `ModelAgreement${index}`, modelId, modelRegion);
+      // Ensure use case is submitted before creating agreements (if not skipped)
+      if (submitUseCase) {
+        agreement.node.addDependency(submitUseCase);
+      }
+    });
+
+    // Outputs. Informational only — nothing imports these, which is precisely
+    // why this half could be folded into another stack without rewiring.
+    new cdk.CfnOutput(this, 'BedrockAccessStatus', {
+      value: 'SUBMITTED',
+      description: 'Status of Anthropic model access request',
+    });
+
+    new cdk.CfnOutput(this, 'CompanyName', {
+      value: validatedConfig.companyName,
+      description: 'Company name submitted for Anthropic access',
+    });
+
+    new cdk.CfnOutput(this, 'ModelsEnabled', {
+      value: REQUIRED_MODELS.join(', '),
+      description: 'Models with agreements created',
+    });
+
+    new cdk.CfnOutput(this, 'ModelRegion', {
+      value: modelRegion,
+      description: 'Region where model agreements were created',
+    });
+  }
+}
+
+/**
+ * Model agreement acceptance for the persona-avatar image model (Stability,
+ * IMAGE_MODEL_ID in IMAGE_MODEL_REGION), on EVERY deployment: no flag, no opt-out.
+ *
+ * Hosted by VocCoreStack (bin/voc-datalake.ts), not by VocWebSearchStack like the
+ * Claude agreements: that stack exists only when web search or `anthropicUseCase`
+ * is on, and the image agreement must not depend on either. Core always exists,
+ * deploys first (so the subscription is in place before any persona is generated)
+ * and is far from the 500-resource ceiling, so the 5-stack cap is untouched. The
+ * agreement is created in the image model's region whatever the app region is
+ * (the handler's `region` property), and it sends no customer data.
+ *
+ * Best effort: any failure (a Private Marketplace refusal, an org policy, a model
+ * not offered) is logged and reported as UNAVAILABLE instead of failing the deploy —
+ * Core is the first stack, and avatars degrade to none without the model.
+ * Administration → AI models → Image generation shows whether access is in place.
+ */
+export class ImageModelAccess extends Construct {
+  public static addTo(scope: Construct, id: string): ImageModelAccess {
+    return new ImageModelAccess(scope, id);
+  }
+
+  private constructor(scope: Construct, id: string) {
+    super(scope, id);
+    const agreements = new ModelAgreementProvider(this);
+    agreements.agree(this, 'ImageModelAgreement', IMAGE_MODEL_ID, IMAGE_MODEL_REGION, { bestEffort: true });
+  }
+}
+
+/**
+ * The custom-resource provider that accepts one Bedrock model's agreement (EULA +
+ * Marketplace subscription) per custom resource. Shared by BedrockModelAccess (the
+ * Claude allowlist) and ImageModelAccess (the image model). Deliberately not a
+ * Construct: its resources are created directly in the host construct, so moving
+ * the Claude path onto this helper changed none of its logical ids.
+ */
+class ModelAgreementProvider {
+  private readonly serviceToken: string;
+
+  constructor(host: Construct) {
+
     // Lambda function to fetch offer token and create agreement
-    const modelAgreementLambda = new lambda.Function(this, 'ModelAgreementLambda', {
+    const modelAgreementLambda = new lambda.Function(host, 'ModelAgreementLambda', {
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'index.handler',
       timeout: cdk.Duration.minutes(2),
       code: lambda.Code.fromInline(this.getModelAgreementLambdaCode()),
       description: 'Creates Bedrock model agreements by fetching offer tokens and accepting EULA',
-      logGroup: new logs.LogGroup(this, 'ModelAgreementLambdaLogs', {
+      logGroup: new logs.LogGroup(host, 'ModelAgreementLambdaLogs', {
         retention: logs.RetentionDays.ONE_WEEK,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
@@ -257,9 +336,9 @@ export class BedrockModelAccess extends Construct {
     }));
 
     // Create a custom resource provider
-    const modelAgreementProvider = new cr.Provider(this, 'ModelAgreementProvider', {
+    const modelAgreementProvider = new cr.Provider(host, 'ModelAgreementProvider', {
       onEventHandler: modelAgreementLambda,
-      logGroup: new logs.LogGroup(this, 'ModelAgreementProviderLogs', {
+      logGroup: new logs.LogGroup(host, 'ModelAgreementProviderLogs', {
         retention: logs.RetentionDays.ONE_WEEK,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
@@ -292,42 +371,25 @@ export class BedrockModelAccess extends Construct {
       true
     );
 
-    // Create model agreements for each required model
-    REQUIRED_MODELS.forEach((modelId, index) => {
-      const agreement = new cdk.CustomResource(this, `ModelAgreement${index}`, {
-        serviceToken: modelAgreementProvider.serviceToken,
-        properties: {
-          modelId,
-          region: modelRegion,
-        },
-      });
-      
-      // Ensure use case is submitted before creating agreements (if not skipped)
-      if (submitUseCase) {
-        agreement.node.addDependency(submitUseCase);
-      }
-    });
+    this.serviceToken = modelAgreementProvider.serviceToken;
+  }
 
-    // Outputs. Informational only — nothing imports these, which is precisely
-    // why this half could be folded into another stack without rewiring.
-    new cdk.CfnOutput(this, 'BedrockAccessStatus', {
-      value: 'SUBMITTED',
-      description: 'Status of Anthropic model access request',
-    });
-
-    new cdk.CfnOutput(this, 'CompanyName', {
-      value: validatedConfig.companyName,
-      description: 'Company name submitted for Anthropic access',
-    });
-
-    new cdk.CfnOutput(this, 'ModelsEnabled', {
-      value: REQUIRED_MODELS.join(', '),
-      description: 'Models with agreements created',
-    });
-
-    new cdk.CfnOutput(this, 'ModelRegion', {
-      value: modelRegion,
-      description: 'Region where model agreements were created',
+  /**
+   * One model's agreement, created in `region` (a property, not a placement: the
+   * handler builds its Bedrock client there). `bestEffort` turns every failure into
+   * an UNAVAILABLE result instead of a failed deploy.
+   */
+  public agree(
+    scope: Construct, id: string, modelId: string, region: string, options: { readonly bestEffort?: boolean } = {},
+  ): cdk.CustomResource {
+    return new cdk.CustomResource(scope, id, {
+      serviceToken: this.serviceToken,
+      properties: {
+        modelId,
+        region,
+        // Absent (not 'false') for the Claude agreements, so their templates are unchanged.
+        ...(options.bestEffort ? { bestEffort: 'true' } : {}),
+      },
     });
   }
 
@@ -367,9 +429,36 @@ def _unavailable(model_id, code):
         'Data': {'status': 'UNAVAILABLE', 'modelId': model_id, 'errorCode': code}
     }
 
+def _error_code(error):
+    """The AWS error code of a ClientError, else the exception's type name."""
+    response = getattr(error, 'response', None)
+    details = response.get('Error') if isinstance(response, dict) else None
+    code = details.get('Code') if isinstance(details, dict) else None
+    return code or type(error).__name__
+
 def handler(event, context):
     """
-    Custom resource handler to create Bedrock model agreements.
+    Custom resource entry point. A resource with bestEffort='true' (the image
+    model's, ImageModelAccess) never fails the deploy: every error is logged and
+    reported as UNAVAILABLE. Without it (the Claude agreements) the rules below hold.
+    """
+    properties = event.get('ResourceProperties', {})
+    if str(properties.get('bestEffort', '')).lower() != 'true':
+        return _handle(event)
+    try:
+        return _handle(event)
+    except Exception as e:
+        model_id = properties.get('modelId', '')
+        code = _error_code(e)
+        logger.warning(
+            f"Agreement step for {model_id} failed ({code}): {str(e)}. Continuing without it (best effort): "
+            "accept this model's agreement in the Bedrock console if the app needs it."
+        )
+        return _unavailable(model_id, code)
+
+def _handle(event):
+    """
+    Create one Bedrock model agreement.
     
     On Create: Fetches offer token and creates agreement (accepts EULA)
     On Update: No-op (agreements persist)

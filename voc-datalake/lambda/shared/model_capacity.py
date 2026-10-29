@@ -11,25 +11,31 @@ Two read-mostly helpers behind ``POST /settings/model/test`` and
   and no retry: testing model X must never be answered by model Y, and a
   throttle is a result to report, not something to wait out.
 - ``lookup_quota(model_id)`` finds the account's tokens-per-minute quota for the
-  model's inference profile in Service Quotas (cached per container). A
+  model's inference profile in Service Quotas (cached per container, stored in the
+  aggregates table: shared/model_quota_store.py). A stored reading that is out of date
+  answers at once, marked ``stale``, while the settings worker twin
+  (``ASSIST_WORKER_FUNCTION``) re-reads Service Quotas (``REFRESH_ACTION``). A
   subscribed model can still have a quota of 0; then the only action is to wait,
   which is why a throttle on a zero quota is reported as ``no_capacity``.
 
 Neither function ever logs the prompt or any credential, and neither returns
 raw AWS error text to the caller beyond the error code.
 """
+import os
 import re
 import time
-from datetime import UTC, datetime
-from typing import Any, Final, NamedTuple, TypedDict
+from typing import Any, Final, NamedTuple, NotRequired, TypedDict
 
 import boto3
 from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError, ConnectTimeoutError, ReadTimeoutError
 
+from shared import model_quota_store
+from shared.aws import invoke_lambda_async
 from shared.converse import build_single_turn_request
 from shared.logging import logger
 from shared.model_config import ALLOWED_MODELS, invocation_model_id, scope_bedrock_client
+from shared.timestamps import now_iso
 
 PROBE_PROMPT: Final = "Reply with OK"
 PROBE_MAX_TOKENS: Final = 16
@@ -39,9 +45,18 @@ QUOTA_CACHE_TTL_SECONDS: Final = 600
 # A failed listing is retried sooner, so a transient error does not hide quotas for 10 minutes.
 QUOTA_ERROR_CACHE_TTL_SECONDS: Final = 60
 SERVICE_QUOTAS_SERVICE_CODE: Final = "bedrock"
+# The async event the settings worker twin answers by re-reading Service Quotas into the stored row.
+REFRESH_ACTION: Final = "model_quota_refresh"
 
 _GLOBAL_QUOTA_PREFIX: Final = "Global cross-region model inference tokens per minute for Anthropic "
 _GEO_QUOTA_PREFIX: Final = "Cross-region model inference tokens per minute for Anthropic "
+
+# Service Quotas throttles per account (TooManyRequestsException under parallel load, 5.35
+# live): adaptive retries add client-side rate limiting shared by the refresh threads. Three
+# attempts keep a throttled listing well inside the settings Lambda's 30 s.
+_SERVICE_QUOTAS_CLIENT_CONFIG: Final = Config(
+    connect_timeout=5, read_timeout=10, retries={"max_attempts": 3, "mode": "adaptive"},
+)
 
 # The probe must answer well inside the settings Lambda's 30 s timeout, and a
 # botocore retry would turn a throttle into a slow "available".
@@ -78,6 +93,8 @@ _UNKNOWN_MODEL_RE: Final = re.compile(
 class Quota(TypedDict):
     name: str
     tokens_per_minute: int
+    # True when Service Quotas could not be read and this is the last stored reading.
+    stale: NotRequired[bool]
 
 
 class ProbeResult(TypedDict):
@@ -104,6 +121,7 @@ class _QuotaCache:
     fresh or cleared cache (``expires`` 0.0, always past) never reads it.
     """
     values: dict[str, float] | None
+    stale: bool = False
     expires: float = 0.0
 
 
@@ -129,7 +147,7 @@ def _bedrock_probe_client():
 def _service_quotas_client():
     client = _clients.get("service-quotas")
     if client is None:
-        client = boto3.client("service-quotas")
+        client = boto3.client("service-quotas", config=_SERVICE_QUOTAS_CLIENT_CONFIG)
         _clients["service-quotas"] = client
     return client
 
@@ -151,44 +169,147 @@ def quota_name(model_id: str) -> str | None:
     return prefix + label
 
 
-def _list_bedrock_quotas() -> dict[str, float]:
-    """Every Bedrock quota of this account and region, name -> applied value."""
+#: ListServiceQuotas answers at most this many per page (the default pages a handful at a time).
+LISTING_PAGE_SIZE: Final = 100
+
+
+def _list_bedrock_quotas() -> tuple[dict[str, float], dict[str, str]]:
+    """The Anthropic token quotas of this account and region: name -> applied value, name -> quota code."""
     values: dict[str, float] = {}
+    codes: dict[str, str] = {}
     paginator = _service_quotas_client().get_paginator("list_service_quotas")
-    for page in paginator.paginate(ServiceCode=SERVICE_QUOTAS_SERVICE_CODE):
+    pages = paginator.paginate(ServiceCode=SERVICE_QUOTAS_SERVICE_CODE, PaginationConfig={"PageSize": LISTING_PAGE_SIZE})
+    for page in pages:
         for quota in page.get("Quotas", []):
-            name, value = quota.get("QuotaName"), quota.get("Value")
-            if isinstance(name, str) and isinstance(value, int | float):
-                values[name] = float(value)
-    return values
+            name, value, code = quota.get("QuotaName"), quota.get("Value"), quota.get("QuotaCode")
+            if not isinstance(name, str) or not isinstance(value, int | float):
+                continue
+            if not name.startswith((_GLOBAL_QUOTA_PREFIX, _GEO_QUOTA_PREFIX)):
+                continue
+            values[name] = float(value)
+            if isinstance(code, str):
+                codes[name] = code
+    return values, codes
 
 
-def _cached_quotas() -> dict[str, float] | None:
-    """The cached listing (refreshed after the TTL), or None when it cannot be read."""
+def _expected_names() -> list[str]:
+    """The quota name of every allowlisted model under the scope in force."""
+    return [name for m in ALLOWED_MODELS if (name := quota_name(m["id"])) is not None]
+
+
+class _Reading(NamedTuple):
+    """Quota name -> applied value, and whether it is a stored reading served because Service Quotas failed."""
+    values: dict[str, float]
+    stale: bool = False
+
+
+def _stale(stored: model_quota_store.StoredQuotas, error: ClientError | BotoCoreError) -> _Reading:
+    logger.warning("Service Quotas unreadable; serving the stored quotas as stale",
+                   extra={"error_code": model_quota_store.error_code(error), "fetched_at": stored.fetched_at})
+    return _Reading(stored.values, stale=True)
+
+
+def _refresh(stored: model_quota_store.StoredQuotas | None, expected: list[str]) -> _Reading:
+    """Re-read Service Quotas into the row: by code when the row covers ``expected``, else the full listing.
+
+    When Service Quotas fails (a throttle above all) and a row is stored, that row answers, stale."""
+    if stored is not None and stored.answers(expected):
+        try:
+            refreshed = model_quota_store.refresh_by_code(_service_quotas_client(), stored.codes)
+        except (ClientError, BotoCoreError) as error:  # only a throttle is re-raised
+            return _stale(stored, error)
+        if refreshed is not None:
+            model_quota_store.save(model_quota_store.stored_now(refreshed, stored.codes, expected))
+            return _Reading(refreshed)
+    try:
+        values, codes = _list_bedrock_quotas()
+    except (ClientError, BotoCoreError) as error:
+        if stored is None:
+            raise
+        return _stale(stored, error)
+    model_quota_store.save(model_quota_store.stored_now(values, codes, expected))
+    return _Reading(values)
+
+
+def _refresh_in_background() -> bool:
+    """Hand the refresh to the settings worker twin; False when there is none (then the caller reads inline).
+
+    True also when another request started it moments ago, or the invoke failed: the request
+    answers with the stored row either way, and the next one after REFRESH_CLAIM_SECONDS tries again."""
+    worker = os.environ.get("ASSIST_WORKER_FUNCTION", "")
+    if not worker:
+        return False
+    if not model_quota_store.claim_refresh(time.time()):
+        return True
+    try:
+        invoke_lambda_async(worker, {"action": REFRESH_ACTION})
+    except (ClientError, BotoCoreError) as error:
+        logger.warning("Quota refresh not started; serving the stored quotas",
+                       extra={"error_code": model_quota_store.error_code(error)})
+    return True
+
+
+def _quotas_from_store_or_service() -> _Reading:
+    """The stored row: as is when fresh, else marked stale while a worker refreshes it.
+
+    Service Quotas is read on the request path only when nothing is stored (a deployment's
+    first reading) or no worker is configured (local runs)."""
+    expected = _expected_names()
+    stored = model_quota_store.load()
+    if stored is not None and stored.answers(expected) and stored.is_fresh(time.time()):
+        return _Reading(stored.values)
+    if stored is not None and _refresh_in_background():
+        return _Reading(stored.values, stale=True)
+    return _refresh(stored, expected)
+
+
+def run_refresh_event() -> dict[str, bool]:
+    """The worker side of ``REFRESH_ACTION``: re-read the quotas into the stored row (best effort)."""
+    try:
+        reading = _refresh(model_quota_store.load(), _expected_names())
+    except (ClientError, BotoCoreError) as error:
+        logger.warning("Quota refresh failed", extra={"error_code": model_quota_store.error_code(error)})
+        return {"refreshed": False}
+    return {"refreshed": not reading.stale}
+
+
+def _cached_quotas() -> _Reading | None:
+    """The cached quotas (refreshed after the TTL), or None when they cannot be read.
+
+    A stale reading is kept only for the short error TTL, so the next request tries again."""
     now = time.time()
     if now < _quota_cache.expires:
-        return _quota_cache.values
-    values: dict[str, float] | None
+        return None if _quota_cache.values is None else _Reading(_quota_cache.values, _quota_cache.stale)
+    reading: _Reading | None
     try:
-        values = _list_bedrock_quotas()
-        ttl = QUOTA_CACHE_TTL_SECONDS
+        reading = _quotas_from_store_or_service()
+        ttl = QUOTA_ERROR_CACHE_TTL_SECONDS if reading.stale else QUOTA_CACHE_TTL_SECONDS
     except (ClientError, BotoCoreError) as error:
-        code = error.response.get("Error", {}).get("Code") if isinstance(error, ClientError) else type(error).__name__
-        logger.warning("Service Quotas listing failed; quota unknown", extra={"error_code": code})
-        values = None
+        logger.warning("Service Quotas listing failed; quota unknown",
+                       extra={"error_code": model_quota_store.error_code(error)})
+        reading = None
         ttl = QUOTA_ERROR_CACHE_TTL_SECONDS
-    _quota_cache.values = values
+    _quota_cache.values = None if reading is None else reading.values
+    _quota_cache.stale = reading is not None and reading.stale
     _quota_cache.expires = now + ttl
-    return values
+    return reading
 
 
-def _match_quota(expected: str, quotas: dict[str, float]) -> Quota | None:
-    """The quota named ``expected`` (case-insensitive; an AWS version suffix such as ' V1' allowed)."""
+def _matching_name(expected: str, quotas: dict[str, Any]) -> str | None:
+    """The key of ``quotas`` named ``expected`` (case-insensitive; an AWS version suffix such as ' V1' allowed)."""
     pattern = re.compile(rf"^{re.escape(expected)}(?: v\d+(?:\.\d+)?)?\Z", re.IGNORECASE)
-    for name, value in quotas.items():
-        if pattern.match(name):
-            return {"name": name, "tokens_per_minute": int(value)}
-    return None
+    return next((name for name in quotas if pattern.match(name)), None)
+
+
+def _match_quota(expected: str, quotas: dict[str, float], *, stale: bool = False) -> Quota | None:
+    """The quota named ``expected`` (see ``_matching_name``), or None; ``stale`` is set only when True."""
+    name = _matching_name(expected, quotas)
+    if name is None:
+        return None
+    quota: Quota = {"name": name, "tokens_per_minute": int(quotas[name])}
+    if stale:
+        quota["stale"] = True
+    return quota
 
 
 def lookup_quota(model_id: str) -> Quota | None:
@@ -197,11 +318,11 @@ def lookup_quota(model_id: str) -> Quota | None:
     if expected is None:
         return None
     try:
-        quotas = _cached_quotas()
+        reading = _cached_quotas()
     except Exception:  # a quota lookup must never fail the model test
         logger.exception("Unexpected Service Quotas failure; quota unknown")
         return None
-    return _match_quota(expected, quotas) if quotas is not None else None
+    return _match_quota(expected, reading.values, stale=reading.stale) if reading is not None else None
 
 
 def capacity_overview() -> list[ModelCapacity]:
@@ -243,7 +364,7 @@ def _result(model_id: str, invoked_id: str, status: str, *, latency_ms: int | No
         "latency_ms": latency_ms,
         "message": f"{message} ({code})" if code else message,
         "quota": quota,
-        "checked_at": datetime.now(UTC).isoformat(),
+        "checked_at": now_iso(),
     }
 
 

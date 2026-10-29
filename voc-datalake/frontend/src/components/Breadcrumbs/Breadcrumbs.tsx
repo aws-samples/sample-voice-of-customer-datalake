@@ -14,13 +14,14 @@
 
 import { Link, useLocation } from 'react-router-dom'
 import { ChevronRight, Home } from 'lucide-react'
-import { skipToken, useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { z } from 'zod'
 import clsx from 'clsx'
 import { agentsKeys } from '../../api/agentsApi'
 import { workflowsKeys } from '../../api/workflowsApi'
 import { projectKey } from '../../api/projectQueryKeys'
+import { featureRequestKeys } from '../../api/featureRequestsApi'
+import { useCachedQueryData } from '../../hooks/useCachedQueryData'
 import { buildCrumbs } from './routeCrumbs'
 
 /**
@@ -39,10 +40,14 @@ const AgentNameSchema = z.object({ name: z.string().trim().min(1) })
 /** And for a library workflow (`/agents/workflows/:workflowId`, the editor's workflowsKeys.detail entry). */
 const WorkflowNameSchema = z.object({ workflow: z.object({ name: z.string().trim().min(1) }) })
 
-/** Which record the path addresses: a project, an agent, or a library workflow (`/agents/workflows/:id`). */
-function recordIds(pathSegments: readonly string[]): { projectId?: string; agentId?: string; workflowId?: string } {
+/** And a feedback board (`/feature-requests/:slug`, the board page's own list entry `{requests, board}`). */
+const BoardNameSchema = z.object({ board: z.object({ name: z.string().trim().min(1) }) })
+
+/** Which record the path addresses: a project, an agent, a library workflow (`/agents/workflows/:id`) or a board. */
+function recordIds(pathSegments: readonly string[]): { projectId?: string; agentId?: string; workflowId?: string; boardRef?: string } {
   const [first, second, third] = pathSegments
   if (first === 'projects') return { projectId: second }
+  if (first === 'feature-requests') return { boardRef: second }
   if (first !== 'agents') return {}
   return second === 'workflows' ? { workflowId: third } : { agentId: second }
 }
@@ -56,21 +61,24 @@ function recordIds(pathSegments: readonly string[]): { projectId?: string; agent
  * field (see FeedbackItem), so `/feedback/:id` keeps its generic label.
  *
  * The entry is ProjectDetail's, via useProjectData — hence the shared `projectKey`
- * — and it is observed with `skipToken`, i.e. read-only: the header must not issue
- * a request of its own, nor race that page for one. The subscription is live
- * either way, so the crumb fills in the moment the page's own query resolves.
+ * — and it is READ from the cache (`useCachedQueryData`), never observed: the header
+ * must not issue a request of its own, nor race that page for one, nor (as a
+ * fetch-less TanStack skip-token observer did) replace the page's `queryFn` so its invalidations stop
+ * refetching. The cache subscription is live, so the crumb fills in the moment the
+ * page's own query resolves.
  */
 function useRecordName(pathSegments: readonly string[]): string | undefined {
-  const { projectId, agentId, workflowId } = recordIds(pathSegments)
-  const { data } = useQuery({ queryKey: projectKey(projectId), queryFn: skipToken })
-  // AgentDetail's own entry (agentsKeys.detail), observed read-only like the project one.
-  const { data: agent } = useQuery({ queryKey: agentsKeys.detail(agentId ?? ''), queryFn: skipToken, enabled: agentId !== undefined })
-  const { data: workflow } = useQuery({
-    queryKey: workflowsKeys.detail(workflowId ?? ''), queryFn: skipToken, enabled: workflowId !== undefined,
-  })
+  const { projectId, agentId, workflowId, boardRef } = recordIds(pathSegments)
+  const data = useCachedQueryData(projectKey(projectId), projectId !== undefined)
+  // AgentDetail's own entry (agentsKeys.detail), read like the project one.
+  const agent = useCachedQueryData(agentsKeys.detail(agentId ?? ''), agentId !== undefined)
+  const workflow = useCachedQueryData(workflowsKeys.detail(workflowId ?? ''), workflowId !== undefined)
+  // Keyed like the page's list (its `useParams` slug); slugs and board ids need no URL encoding.
+  const board = useCachedQueryData(featureRequestKeys.list('app', boardRef ?? ''), boardRef !== undefined)
   return ProjectNameSchema.safeParse(data).data?.project.name
     ?? AgentNameSchema.safeParse(agent).data?.name
     ?? WorkflowNameSchema.safeParse(workflow).data?.workflow.name
+    ?? BoardNameSchema.safeParse(board).data?.board.name
 }
 
 export default function Breadcrumbs() {

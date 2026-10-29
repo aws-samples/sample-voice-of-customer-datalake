@@ -35,6 +35,11 @@ describe('collectCallSites', () => {
       "export const make = (b: unknown) => fetchApi('/things', { method: 'POST', body: JSON.stringify(b) })",
       'export const change = (id: string) => fetchApi(`/things/${id}`, put({ a: 1 }))',
       'export const odd = (o: RequestInit) => fetchApi(`/things/odd`, o)',
+      // Raw fetches of the API base are API calls too (public routes sent without the session header).
+      "export const pub = (t: string) => fetch(`${getBaseUrl()}/public/${t}`, { method: 'POST', body: '{}' })",
+      'export const viaBase = (base: string) => fetch(`${base}/via-base`)',
+      // Not the API: another origin, a presigned URL, a static asset.
+      "export const other = (u: string) => [fetch(u, { method: 'PUT' }), fetch(`https://x.example/${u}`), fetch('/skill.md')]",
     ].join('\n'),
     'api/things.test.ts': "fetchApi('/only-in-a-spec')",
     'pages/x-fixtures.tsx': "fetchApi('/only-in-a-fixture')",
@@ -54,6 +59,15 @@ describe('collectCallSites', () => {
 
   it('marks an options argument it cannot read as UNKNOWN so the gate fails loudly', () => {
     assert.match(sites.find((s) => s.call === '`/things/odd`')?.method ?? '', /^UNKNOWN/)
+  })
+
+  it('collects raw fetches of the API base with their method, and no other fetch', () => {
+    const raw = sites.filter((s) => s.call.startsWith('`${'))
+    assert.deepEqual(raw.map((s) => [s.method, s.call]), [
+      ['POST', '`${getBaseUrl()}/public/${t}`'],
+      ['GET', '`${base}/via-base`'],
+    ])
+    assert.equal(sites.some((s) => s.call.includes('example') || s.call === 'u' || s.call.includes('skill')), false)
   })
 
   it('skips specs and fixtures and keys files relative to src/', () => {

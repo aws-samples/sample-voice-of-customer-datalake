@@ -45,7 +45,7 @@ const CASES: readonly OverlayCase[] = [
   { step: 'create-project', path: '/projects', trigger: byName(/^(New Project|Create Project)$/) },
   { step: 'form-template-wizard', path: '/feedback-forms', trigger: byName(/^(Create Form|Create Your First Form)$/) },
   { step: 'form-submissions', path: '/feedback-forms', trigger: byName(/^(View )?Submissions$/) },
-  { step: 'source-template-selector', path: '/scrapers', trigger: byName('New Source') },
+  { step: 'source-template-selector', path: '/scrapers', trigger: byName('New source') },
   { step: 'create-agent', path: '/agents', adminOnly: true, trigger: byName('New agent') },
   { step: 'category-access', path: '/admin?tab=access&section=users', adminOnly: true, trigger: byName(/category access/i) },
   { step: 'data-source-wizard', path: '/admin?tab=sources&section=plugins', adminOnly: true, trigger: byName(/^(Add (data )?source|New Source|Add Data Source)$/i) },

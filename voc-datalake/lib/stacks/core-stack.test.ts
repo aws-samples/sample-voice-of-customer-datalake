@@ -206,14 +206,16 @@ describe('VocCoreStack UserPool UsernameConfiguration (issue #184)', () => {
   });
 
   /**
-   * The one pool of the template carries no UsernameConfiguration. The property
+   * The app pool (voc-user-pool-*) carries no UsernameConfiguration. The property
    * must be ABSENT — Cognito rejects any update that carries it against a pool
    * created without it — and the pool must exist, or the absence assertion
-   * would pass vacuously.
+   * would pass vacuously. The board pool (core-board-auth.ts, 5.45.00 on every
+   * deployment) is a separate, newer pool the flag does not concern.
    */
   function expectPoolWithoutUsernameConfiguration(template: Template): void {
-    const poolProps = Object.values(template.findResources('AWS::Cognito::UserPool'))
-      .map((p) => p.Properties ?? {});
+    const poolProps = Object.values(template.findResources('AWS::Cognito::UserPool', {
+      Properties: { UserPoolName: Match.objectLike({ 'Fn::Join': ['', Match.arrayWith(['voc-user-pool-'])] }) },
+    })).map((p) => p.Properties ?? {});
     expect(poolProps).toHaveLength(1);
     expect(poolProps[0]).not.toHaveProperty('UsernameConfiguration');
   }
@@ -1126,8 +1128,11 @@ describe('VocCoreStack Cognito OAuth flow set (issue #252)', () => {
   });
 
   function allowedOAuthFlows(): string[] {
-    const clients = Object.values(synthCoreTemplate().findResources('AWS::Cognito::UserPoolClient'));
-    expect(clients, 'expected exactly one UserPoolClient').toHaveLength(1);
+    // The app client (voc-web-client-*); the board client has no OAuth at all (core-engagement.test.ts).
+    const clients = Object.values(synthCoreTemplate().findResources('AWS::Cognito::UserPoolClient', {
+      Properties: { ClientName: Match.objectLike({ 'Fn::Join': ['', Match.arrayWith(['voc-web-client-'])] }) },
+    }));
+    expect(clients, 'expected exactly one app UserPoolClient').toHaveLength(1);
     return UserPoolClientSchema.parse(itemAt(clients, 0).Properties).AllowedOAuthFlows;
   }
 

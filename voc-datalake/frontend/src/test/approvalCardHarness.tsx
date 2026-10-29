@@ -25,7 +25,7 @@ import type { ApprovalCardProps, ApprovalResolution, AssistantToolCall } from '.
 type ResolveSpy = ReturnType<typeof vi.fn<(r: ApprovalResolution) => void>>
 type User = ReturnType<typeof userEvent.setup>
 
-export interface RenderedCard {
+interface RenderedCard {
   onResolve: ResolveSpy
   user: User
   /** Spy on the query client's `invalidateQueries` (read `mock.calls.map(([f]) => f?.queryKey)`). */

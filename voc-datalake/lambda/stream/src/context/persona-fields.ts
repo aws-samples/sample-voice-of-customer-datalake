@@ -15,6 +15,8 @@
  * Kept deliberately small and capped: these strings land in a system prompt that
  * competes with the conversation history budget (`src/history-budget.ts`).
  */
+import { isRecord } from '../lib/is-record.js';
+
 /**
  * The persona sections these readers touch. Structural on purpose: the
  * assistant's persona record from the chat-context route satisfies it without
@@ -36,12 +38,8 @@ const DEFAULT_PERSONA_ITEMS = 4;
  * (`assistant/tools/server/chat-context.ts`) declares them that way on purpose,
  * because naming their leaves would let one malformed row throw and take down
  * the whole read. So every read goes through a guard here rather than trusting
- * the declared type. Kept local (three lines) so this leaf module imports nothing.
+ * the declared type (`lib/is-record`, itself a leaf).
  */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 function readKey(value: unknown, key: string): unknown {
   return isRecord(value) ? value[key] : undefined;
 }

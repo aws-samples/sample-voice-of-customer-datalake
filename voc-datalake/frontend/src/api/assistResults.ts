@@ -11,8 +11,7 @@
 import { z } from 'zod'
 import { parsedList, lenientText, optionalText } from './schemaList'
 import { lenientList, nonBlankStringList } from './lenientFields'
-import { asRecord, displayString } from './wireRecord'
-import type { ProductContext, ProductInterviewTurnResponse } from './projectTypes'
+import { asRecord } from './wireRecord'
 
 const flag = z.boolean().catch(false)
 const anyText = z.string().catch('')
@@ -80,49 +79,4 @@ export function parseDocumentBrief(result: unknown): { title: string; feature_id
 export function parseRegeneratedAvatar(result: unknown): { avatar_url: string | null } {
   const url = asRecord(result)?.avatar_url
   return { avatar_url: typeof url === 'string' && url !== '' ? url : null }
-}
-
-// ── projects: POST /projects/{id}/product-context/interview ────────────────
-
-const lifecycleState = z.enum(['', 'idea', 'mvp', 'beta', 'ga', 'mature'])
-type TextField = Exclude<keyof ProductContext, 'current_state' | 'updated_at'>
-const TEXT_FIELDS: readonly TextField[] = [
-  'product_name', 'one_liner', 'target_users', 'problem_solved', 'key_features',
-  'differentiators', 'known_limitations', 'non_goals', 'success_metrics', 'free_form_notes',
-]
-
-function parseContext(value: unknown): ProductContext {
-  const record = asRecord(value) ?? {}
-  const text = (field: TextField) => displayString(record[field])
-  const updatedAt = displayString(record.updated_at)
-  return {
-    product_name: text('product_name'), one_liner: text('one_liner'), target_users: text('target_users'),
-    problem_solved: text('problem_solved'), current_state: lifecycleState.catch('').parse(record.current_state),
-    key_features: text('key_features'), differentiators: text('differentiators'),
-    known_limitations: text('known_limitations'), non_goals: text('non_goals'),
-    success_metrics: text('success_metrics'), free_form_notes: text('free_form_notes'),
-    ...(updatedAt === '' ? {} : { updated_at: updatedAt }),
-  }
-}
-
-/** Only the fields the patch really carries (an empty patch = nothing changed). */
-function parsePatch(value: unknown): Partial<ProductContext> {
-  const record = asRecord(value) ?? {}
-  const patch: Partial<ProductContext> = {}
-  for (const field of TEXT_FIELDS) {
-    const v = record[field]
-    if (typeof v === 'string') patch[field] = v
-  }
-  const state = lifecycleState.safeParse(record.current_state)
-  if (state.success) patch.current_state = state.data
-  return patch
-}
-
-export function parseInterviewTurn(result: unknown): ProductInterviewTurnResponse {
-  const record = asRecord(result) ?? {}
-  return {
-    assistant_message: displayString(record.assistant_message),
-    applied_patch: parsePatch(record.applied_patch),
-    context: parseContext(record.context),
-  }
 }

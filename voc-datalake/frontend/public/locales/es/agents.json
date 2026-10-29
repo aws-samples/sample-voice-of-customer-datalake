@@ -206,6 +206,7 @@
       "produced": "Qué produjo",
       "producedNothing": "Nada todavía.",
       "anArtifact": "Un documento nuevo",
+      "artifactTitled": "{{what}}: {{title}}",
       "inProject": "en {{name}}",
       "needsYou": "Qué necesita de ti",
       "needsDecision": "Decide qué pasa después en la tarjeta de arriba.",
@@ -332,10 +333,22 @@
       "arrowTargetNone": "Elige un paso…",
       "joinLoop": "Bucle"
     },
+    "issues": {
+      "instructionsRequired": "Este paso necesita instrucciones: indica qué debe hacer.",
+      "titleRequired": "Pon un título a este paso.",
+      "duplicateStep": "Dos pasos comparten el mismo identificador. Elimina uno y vuelve a añadirlo.",
+      "duplicateArrow": "Dos flechas comparten el mismo identificador. Elimina una y vuelve a dibujarla.",
+      "reviewTarget": "Elige qué revisa esta revisión.",
+      "endStatus": "Elige cómo termina aquí la ejecución."
+    },
     "params": {
       "target": "Objetivo",
       "targetAny": "Lo último que se haya producido",
       "maxNew": "Máximo de personas nuevas",
+      "generateAvatars": "Crear un retrato para cada persona",
+      "maxWords": "Extensión máxima (palabras)",
+      "maxWordsNone": "Sin límite",
+      "maxWordsHint": "Todo el documento se mantiene en torno a este número de palabras. Vacío: unas 1.200 si las instrucciones piden documentos breves; si no, sin límite.",
       "useWebSearch": "Usar búsqueda web",
       "useWebSearchHint": "Cuenta para el límite de {{limit, number}} búsquedas web por ejecución.",
       "endStatus": "La ejecución termina como"
@@ -498,6 +511,18 @@
   "workflowPage": {
     "title": "Flujo de trabajo",
     "subtitle": "Un flujo de trabajo de la biblioteca. Los agentes que lo ejecutan usan su revisión guardada más reciente."
+  },
+  "validation": {
+    "scope": "Elige al menos una categoría o subcategoría, o vigila todas las categorías.",
+    "name": "Ponle al agente un nombre de hasta {{max, number}} caracteres.",
+    "description": "La descripción puede tener hasta {{max, number}} caracteres.",
+    "instructions": "Las instrucciones pueden tener hasta {{max, number}} caracteres.",
+    "triggers": "Revisa los activadores: cada uno necesita números enteros dentro del rango, y una programación personalizada necesita su expresión cron.",
+    "personas": "Elige como máximo {{max, number}} personas fijas.",
+    "models": "Elige un modelo disponible para cada rol, o el predeterminado.",
+    "workflow": "Elige un flujo de trabajo.",
+    "budget": "Revisa el presupuesto: los límites deben ser números enteros dentro del rango.",
+    "other": "Algunos ajustes no son válidos. Revísalos e inténtalo de nuevo."
   },
   "decision": {
     "title": "Esta ejecución necesita tu decisión",

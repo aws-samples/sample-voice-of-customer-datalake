@@ -391,6 +391,15 @@ class TestRecordingAResult:
             call(AGENT_ID, RUN_ID, 'artifact', 'Document ready', node_id='a', ref={'document_id': 'd1'}),
         ]
 
+    @pytest.mark.parametrize('node_type', ['persona_review', 'final_review'])
+    def test_a_review_of_a_document_announces_no_artifact(self, seams, node_type):
+        # 5.34.00 live: every PR/FAQ was listed twice under "What it produced".
+        node = Node(id='a', type=node_type, title='Review', instructions='', role='persona', params={})
+        handler._record_result(AGENT_ID, RUN_ID, node, {
+            'summary': 'Agreed', 'artifacts': {'project_id': 'p1', 'document_id': 'd1', 'document_type': 'prfaq'}})
+
+        assert [c.args[2] for c in seams.append_event.call_args_list if c.args[2] == 'artifact'] == []
+
     def test_a_persona_review_journals_one_verdict_per_persona(self, seams):
         verdicts = [{'name': 'Ana', 'score': 2, 'blocking': True, 'would_use': False, 'persona_id': 'p1'},
                     {'name': 'Bo', 'score': 5, 'blocking': False, 'would_use': True, 'persona_id': 'p2'},

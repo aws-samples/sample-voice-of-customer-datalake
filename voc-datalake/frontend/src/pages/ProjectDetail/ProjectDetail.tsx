@@ -11,7 +11,6 @@ import { useTranslation } from 'react-i18next'
 import {
   useParams, useNavigate, useSearchParams,
 } from 'react-router-dom'
-import { projectsApi } from '../../api/projectsApi'
 import { useDocumentSave } from './useDocumentSave'
 import ProjectSharingModal from '../../components/ProjectSharingModal/ProjectSharingModal'
 import { useConfigStore } from '../../store/configStore'
@@ -29,17 +28,12 @@ import {
 } from './useModalState'
 import {
   useProjectData, useProjectMutations, usePersonaMutations, useDocumentMutations, projectJobsKey,
-  productContextKey,
 } from './useProjectData'
-import { useDocumentSelection } from './useDocumentSelection'
+import { projectDocumentPath, useDocumentSelection } from './useDocumentSelection'
 import { useProjectWizardState } from './useProjectWizardState'
 import WizardSection from './WizardSection'
 import { parseTab } from './types'
 import type { Tab } from './types'
-import type { ProductContext } from '../../api/projectTypes'
-
-/** The product-context query's data shape, taken from the call that produces it. */
-type ProductContextResponse = Awaited<ReturnType<typeof projectsApi.getProductContext>>
 
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>()
@@ -153,23 +147,6 @@ export default function ProjectDetail() {
   const handleJobStarted = useCallback(() => {
     setJobStartedAt(Date.now())
     void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
-  }, [queryClient, id])
-
-  /**
-   * The Product tab saved the context. It owns the record while editing, but the
-   * Overview card reads completeness from the shared query — and this page stays
-   * mounted across tab switches, so without this the card would keep reporting the
-   * count from page load.
-   *
-   * Seeding the cache rather than invalidating: the tab hands over the server's own
-   * response, so a refetch would ask for what we already have.
-   */
-  const handleContextSaved = useCallback((context: ProductContext) => {
-    // Typed from the API function itself rather than as a bare object literal:
-    // `setQueryData` cannot infer a plain key's data type, so an untyped write
-    // would silently truncate the cache entry if `getProductContext` ever returned
-    // more than `{ context }`. Deriving the type means the two cannot drift.
-    queryClient.setQueryData<ProductContextResponse>(productContextKey(id), { context })
   }, [queryClient, id])
 
   const handleConfirmDelete = useCallback(() => {
@@ -298,6 +275,7 @@ export default function ProjectDetail() {
         onSubmitMerge={() => {
           wizard.setGenerating('merge'); mergeMut.mutate()
         }}
+        onOpenDocument={(documentId) => void navigate(projectDocumentPath(project.project_id, documentId))}
       />
 
       <TabContent
@@ -327,7 +305,6 @@ export default function ProjectDetail() {
         onEditDoc={() => docSelection.selectedDoc && docModal.openEditModal(docSelection.selectedDoc)}
         onDeleteDoc={() => docSelection.selectedDoc && confirm.openDocumentConfirm(docSelection.selectedDoc.document_id)}
         onCreateDoc={docModal.openCreateModal}
-        onContextSaved={handleContextSaved}
         onJobStarted={handleJobStarted}
       />
 

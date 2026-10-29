@@ -239,7 +239,7 @@ set(GENERATED_DOC_TYPES)`, so widening the tuple without registering a builder a
 assembler fails CI rather than producing wrong content. The map's docstring is the
 widening recipe, including the frontend literal sites below.
 
-THE FOURTH EDIT: the picker. `frontend/src/pages/ProjectDetail/Wizards.tsx` names its
+THE FOURTH EDIT: the picker. `frontend/src/pages/ProjectDetail/DocWizard.tsx` names its
 members as LITERALS, so a widening leaves the new type accepted by this route but never
 OFFERED by the UI — dead capability rather than wrong content. Also symbol-anchored:
 
@@ -247,7 +247,7 @@ OFFERED by the UI — dead capability rather than wrong content. Also symbol-anc
     the two `toggleDocType('...')` buttons      — in `renderFinalStep`
     `bothSelected`, `singleTitle`,              — copy and layout, all written as
       `singleSubmitLabel`                         a PRD-or-PR-FAQ binary
-    `onSuggestBrief`'s `doc_type` ternary       — the same binary against a DIFFERENT
+    `useDocWizardDrafts`' `doc_type` ternary    — the same binary against a DIFFERENT
       (`...includes('prd') ? 'prd' : 'prfaq'`)    route: a third member selected alone
                                                   asks `suggest-brief` for a PR-FAQ
                                                   brief, so the AI-drafted title and
@@ -259,7 +259,7 @@ OFFERED by the UI — dead capability rather than wrong content. Also symbol-anc
 Measured the same way: the two blessed edits alone leave `tsc -p tsconfig.app.json
 --noEmit` at exit 0 and every test here green, with the picker still rendering exactly
 two buttons — `tsc` is fine with a NARROWER argument to `includes`/`filter`, so nothing
-in that file has to change for it to compile. `Wizards.tsx` documents this direction
+in that file has to change for it to compile. `DocWizard.tsx` documents this direction
 from its own side, beside the literals; the two statements should stay consistent.
 
 THE FIFTH EDIT: the wire type the generator writes. `ProjectDocument.document_type` in

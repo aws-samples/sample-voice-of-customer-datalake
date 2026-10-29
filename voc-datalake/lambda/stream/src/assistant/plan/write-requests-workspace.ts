@@ -5,7 +5,7 @@
  * merges the CURRENT stored state (update_scraper, company context, design
  * system) reads it from `env.current` (`write-preconditions.ts` fetches it).
  */
-import { isRecord } from '../tools/format.js';
+import { isRecord } from '../../lib/is-record.js';
 import { appConnectorRecord, appConnectorSource, createdScraperRecord, mergedScraperRecord, scraperRecordProblem } from './scraper-records.js';
 import { WriteRequestError, defined, optionalText, present, record, text, type Args } from './write-args.js';
 import { enc, exact, proxied, type RequestBuilder, type WriteEnv, type WriteRequest } from './write-routes.js';

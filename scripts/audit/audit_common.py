@@ -288,6 +288,17 @@ def parse_cli(doc: str | None, argv: list[str] | None,
     return args
 
 
+def parse_repo_cli(doc: str | None, argv: list[str] | None) -> argparse.Namespace:
+    """The flags of a detector that scans the whole repo (not one CDK dir): ``--root``, ``--json``, ``--no-allowlist``."""
+    parser = argparse.ArgumentParser(description=(doc or '').split('\n\n')[0])
+    parser.add_argument('--root', type=Path, default=REPO, help='repo root to scan')
+    add_json_flag(parser)
+    parser.add_argument('--no-allowlist', action='store_true', help='report everything')
+    args = parser.parse_args(argv)
+    args.root = args.root.resolve()
+    return args
+
+
 def run_main(main_fn: Callable[[], int]) -> None:
     """Run a detector's ``main``; an :class:`AuditError` becomes exit 2 with its message."""
     try:

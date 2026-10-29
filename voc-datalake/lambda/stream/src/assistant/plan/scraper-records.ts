@@ -7,7 +7,7 @@
 import {
   APP_CONNECTOR_DEFAULTS, APP_ID_FIELD, type AppConnectorSource, SCRAPER_LIMITS, WEB_REVIEW_PAGES, WEB_REVIEW_REVIEWS,
 } from '../tools/client/scraper-schemas.js';
-import { isRecord } from '../tools/format.js';
+import { isRecord } from '../../lib/is-record.js';
 import { defined, optionalText, record, text, type Args } from './write-args.js';
 
 type ScraperRecord = Record<string, unknown>;

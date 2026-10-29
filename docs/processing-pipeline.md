@@ -291,7 +291,21 @@ the same as one at a time: the combined write is kept only when its outcome is e
 record's (the row held all `n`, or there is no row at all); a row below `n`, or a
 failed request, falls back to one `-1` per record in record order. An `INSERT` or
 `MODIFY` ends the run, and each record still succeeds or fails on its own
-(`_RemovalRunProcessor`; pinned against moto by `aggregator/test/test_removal_run.py`).
+(`_RunCoalescingProcessor`; pinned against moto by `aggregator/test/test_removal_run.py`).
+
+A **run of consecutive `INSERT` records** (a bulk import) is applied in joint
+transactions (5.47.00): each carries every record's dedupe claim plus ONE increment per
+distinct counter, summed over the records (`+n`), and one average increment per day
+(the scores summed in DynamoDB's own decimal context, `count + n`), packed so a
+transaction stays within DynamoDB's 100 items. Exactly-once is unchanged, because each
+record's claim commits in the same transaction as the sums that include it. When a
+cancellation names refused claims (records an earlier delivery applied), those records
+are reported "already applied" and the rest is re-sent; contention backs off as the
+one-record path does; anything else (a validation error, contention past
+`TRANSACT_WRITE_ATTEMPTS`, a sum that would round) applies the group's records one at
+a time through the one-record path, so a poison record still fails alone. A record with
+no `eventID` or a non-numeric score goes through the one-record path up front. Joined
+only when `IDEMPOTENCY_TABLE` is set (`aggregator/test/test_arrival_run.py`).
 
 #### What a transaction costs, and where contention shows up
 
@@ -328,8 +342,24 @@ nothing couples the two); past that bound the stream redelivers the record; and 
 claim makes every one of those retries a no-op if an earlier attempt landed.
 
 `AggregateTransactionConflicted` in CloudWatch is the number to watch, since a retry
-that succeeds is otherwise invisible. If it climbs during an import, the levers are the
-event source's `batchSize` and `parallelizationFactor` in
+that succeeds is otherwise invisible.
+
+**Why a bulk import used to exhaust the retries** (968 "still cancelled for a transient
+reason after 3 attempts" warnings on 2026-10-23): an import writes many feedback
+partitions, so the stream has many shards and Lambda runs one invocation per shard at
+once. Each invocation sent one transaction per record, and every record of the import
+day touches the same rows (`METRIC#daily_total`, the day's sentiment average, its
+sentiment and category counters). Two transactions on one item at the same moment
+cancel with `TransactionConflict`, so the conflict rate grew with shards × records per
+second, and three attempts with at most ~150 ms of backoff were not enough. The joint
+arrival transactions above cut that: on a batch of 100 same-day arrivals, 100
+transactions became 2, 839 aggregate-row writes became 64, and the transactions
+touching `METRIC#daily_total` went from 100 to 2 (`test_arrival_run.py` pins the
+numbers). The write capacity per batch falls by the same factor. If the metric still
+climbs during an import, the levers are the event source's `batchSize` (larger batches
+join more records per transaction), `maxBatchingWindow` and `parallelizationFactor`
+(keep it at the default 1: a higher value runs more concurrent invocations per shard
+on the same rows) in
 `voc-datalake/lib/stacks/processing-stack-consolidated.ts` — not a wider transaction,
 which would put the conditional reversal writes inside it and disable the aged-out-day
 protections described above.
@@ -419,7 +449,7 @@ insert):
 
 View processing logs in:
 - CloudWatch Logs (Lambda function logs)
-- Administration → System → Logs (validation and processing errors)
+- Administration → System → Logs (System errors: every Lambda ERROR / timeout from CloudWatch, grouped — docs/deployment.md; plus validation and processing errors)
 
 ## Performance
 

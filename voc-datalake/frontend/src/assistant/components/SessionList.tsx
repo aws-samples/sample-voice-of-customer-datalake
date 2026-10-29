@@ -27,7 +27,7 @@ import type { SessionSummary } from '../sessions/schema'
 import { RenameFailureNotice } from './SessionRename'
 import { useSessionRename } from './useSessionRename'
 import { DeleteConfirm, HistoryRow, OpenRow } from './SessionRows'
-import { sessionTitle } from '../sessions/serialize'
+import { editableTitle, sessionTitle } from '../sessions/serialize'
 import type { DeleteRequest, RowActions } from './SessionRows'
 
 interface SessionListProps {
@@ -119,6 +119,8 @@ function useNow(): number {
 interface OpenEntry {
   slot: ThreadSlot
   title: string
+  /** What the rename field opens on (the whole first message, not the cut title). */
+  editTitle: string
 }
 
 function OpenGroup({ entries, activeId, level, actions }: Readonly<{
@@ -133,8 +135,8 @@ function OpenGroup({ entries, activeId, level, actions }: Readonly<{
     <>
       <GroupHeading level={level}>{t('sessions.openGroup')}</GroupHeading>
       <ul className="space-y-1" aria-label={t('sessions.openGroup')}>
-        {entries.map(({ slot, title }) => (
-          <OpenRow key={slot.thread.threadId} slot={slot} title={title} active={slot.thread.threadId === activeId} actions={actions} />
+        {entries.map(({ slot, title, editTitle }) => (
+          <OpenRow key={slot.thread.threadId} slot={slot} title={title} editTitle={editTitle} active={slot.thread.threadId === activeId} actions={actions} />
         ))}
       </ul>
     </>
@@ -186,7 +188,11 @@ export default function SessionList({ onPick, groupHeadingLevel = 4 }: Readonly<
   const [query, setQuery] = useState('')
   const customTitles = new Map((data ?? []).map((s) => [s.id, s.customTitle]))
   const openEntries = open.slots
-    .map((slot) => ({ slot, title: openRowTitle(slot, customTitles.get(slot.thread.threadId) ?? null, t('sessions.newConversation')) }))
+    .map((slot) => {
+      const customTitle = customTitles.get(slot.thread.threadId) ?? null
+      const title = openRowTitle(slot, customTitle, t('sessions.newConversation'))
+      return { slot, title, editTitle: editableTitle(title, customTitle, slot.thread.messages) }
+    })
     .filter((entry) => matchesTitle(entry.title, query))
   const openIds = new Set(open.slots.map((s) => s.thread.threadId))
   const saved = (data ?? []).filter((s) => !openIds.has(s.id))

@@ -34,14 +34,26 @@
     "sampled": "이 기간의 최신 리뷰에서 읽었습니다."
   },
   "releases": {
-    "title": "출시",
-    "empty": "아직 찾은 출시가 없습니다. 출시 정보는 예약된 스캔이나 지금 스캔으로 가져옵니다.",
+    "title": "뉴스 및 출시",
+    "empty": "아직 찾은 뉴스가 없습니다. 뉴스와 출시 정보는 예약된 스캔 또는 지금 스캔으로 가져옵니다.",
     "official": "공식",
     "thirdParty": "언론 및 리뷰",
-    "approximate": "날짜는 대략적임",
+    "undated": "게시일 미공개 · 처음 발견한 날짜",
     "mentions_one": "언급 {{count, number}}회",
     "mentions_other": "언급 {{count, number}}회",
-    "sources": "출처"
+    "sources": "출처",
+    "kinds": {
+      "release": "출시",
+      "announcement": "발표",
+      "promotion": "프로모션",
+      "partnership": "파트너십",
+      "news": "회사 소식"
+    },
+    "filterLabel": "유형별 필터",
+    "kindAll": "전체",
+    "kindEmpty": "이 목록에 “{{kind}}” 유형이 없습니다. 모든 항목을 보려면 전체를 선택하세요.",
+    "viaExa": "Exa 경유",
+    "viaFeed": "피드 경유"
   },
   "compare": {
     "title": "자사와 비교",
@@ -63,13 +75,12 @@
     "openOurs_other": "카테고리에서 {{category}}의 자사 리뷰 {{count, number}}개 열기"
   },
   "brands": {
-    "hint": "레이더가 추적하는 브랜드입니다. 릴리스 스캔이 각 브랜드를 웹에서 검색하고, 데이터 소스 페이지에서 레이더 소스로 표시한 소스가 그 리뷰를 가져옵니다.",
+    "hint": "Radar가 추적하는 브랜드입니다. 뉴스 스캔이 각 브랜드를 웹에서 검색하고(해당 언어로, 설정된 경우 뉴스 피드도), 데이터 소스 페이지에서 Radar 소스로 표시한 소스가 리뷰를 가져옵니다.",
     "addTitle": "브랜드 추가",
     "nameLabel": "브랜드 이름",
     "domainsLabel": "웹사이트 도메인",
     "domainsHint": "쉼표로 구분, 최대 {{max, number}}개(예: 공식 사이트와 블로그). 릴리스 노트를 찾는 데 사용됩니다.",
     "add": "브랜드 추가",
-    "editDomains": "도메인 편집",
     "editDomainsLabel": "{{brand}}의 웹사이트 도메인",
     "doneEditing": "완료",
     "remove": "제거",
@@ -86,7 +97,31 @@
     "duplicate": "{{brand}}은(는) 이미 목록에 있습니다.",
     "invalidName": "1-64자의 문자, 숫자, 공백 또는 . & ' + -를 사용하세요",
     "tooMany": "브랜드는 최대 {{max, number}}개입니다.",
-    "loadFailed": "브랜드 목록을 불러오지 못했습니다."
+    "loadFailed": "브랜드 목록을 불러오지 못했습니다.",
+    "edit": "편집",
+    "editLabel": "{{brand}} 편집",
+    "languageLabel": "검색 언어",
+    "languageAuto": "자동 (도메인 기준: {{language}})",
+    "languageAutoNew": "자동 (도메인 기준)",
+    "languageSummary": "언어: {{language}}",
+    "feedsLabel": "뉴스 피드",
+    "feedsHint": "브랜드 뉴스의 RSS 또는 Atom 피드(선택). 스캔할 때마다 읽습니다. 최대 {{max, number}}개, 한 줄에 하나 또는 쉼표로 구분.",
+    "feedsTooMany": "뉴스 피드는 최대 {{max, number}}개입니다.",
+    "feedsHttps": "모든 뉴스 피드는 https:// 링크여야 합니다.",
+    "feedsSummary": "뉴스 피드: {{list}}",
+    "noFeeds": "없음",
+    "moreOptions": "추가 옵션",
+    "fixFeeds": "저장하기 전에 뉴스 피드를 수정하세요.",
+    "searchTermsLabel": "검색어",
+    "searchTermsHint": "뉴스 검색에 추가할 선택적 단어나 구문(정식 회사명, 제품 이름 등). 브랜드 이름이 일반적인 단어이기도 할 때 유용합니다. 최대 {{max, number}}개, 한 줄에 하나, 각각 {{chars, number}}자까지.",
+    "excludeTermsLabel": "제외어",
+    "excludeTermsHint": "선택적 단어나 구문: 제목이나 요약에 하나라도 포함된 검색 결과는 건너뜁니다. 최대 {{max, number}}개, 한 줄에 하나, 각각 {{chars, number}}자까지.",
+    "termsTooMany": "최대 {{max, number}}개의 단어까지 가능합니다.",
+    "termsTooLong": "각 단어는 최대 {{chars, number}}자까지 가능합니다.",
+    "termsInvalid": "단어에는 큰따옴표를 넣을 수 없으며 -로 시작할 수 없습니다.",
+    "searchTermsSummary": "검색어: {{list}}",
+    "excludeTermsSummary": "제외어: {{list}}",
+    "fixTerms": "저장하기 전에 검색어 또는 제외어를 수정하세요."
   },
   "setup": {
     "brandsTitle": "추적 중인 브랜드",
@@ -98,16 +133,16 @@
     "sources": "데이터 출처:",
     "howTitle": "레이더 작동 방식",
     "step1Title": "브랜드 추가",
-    "step1": "아래에서 추가하세요. 릴리스 노트를 찾을 수 있도록 자체 웹사이트 도메인도 함께 입력합니다.",
+    "step1": "아래에서 추가하고, 뉴스를 찾을 수 있도록 브랜드 자체 웹사이트 도메인을 입력합니다. 필요하면 검색 언어와 뉴스 피드도 지정합니다.",
     "step2Title": "리뷰 가져오기",
     "step2": "데이터 소스 페이지에서 스크레이퍼, Web Reviews 페이지, 앱 커넥터 또는 CSV/JSON 가져오기의 \"레이더 소스\"를 선택하고 브랜드를 고르세요. 그 리뷰는 레이더로만 가며 자사 대시보드에는 들어가지 않습니다.",
-    "step3Title": "릴리스",
-    "step3": "웹 검색은 아래 주기에 따라 자동으로 실행되며(매일 확인), \"지금 스캔\"으로 바로 실행할 수도 있습니다. 첫 스캔은 지난 90일을 살펴봅니다.",
+    "step3Title": "뉴스 및 출시",
+    "step3": "각 브랜드의 뉴스(출시, 새 기능, 프로모션, 파트너십, 회사 소식)를 브랜드의 언어와 뉴스 피드로 찾는 웹 검색이 아래 주기에 따라 자동으로(매일 확인) 실행되며, 지금 스캔으로 바로 실행할 수도 있습니다. 첫 스캔은 지난 90일을 살펴봅니다.",
     "configure": "구성"
   },
   "settings": {
     "title": "레이더",
-    "description": "릴리스 스캔은 각 레이더 브랜드가 출시한 내용을 웹에서 검색합니다. 브랜드를 추가하기 전에는 아무것도 실행되지 않습니다.",
+    "description": "뉴스 스캔은 각 Radar 브랜드가 출시하고 발표하는 내용을 웹에서 검색합니다. 브랜드를 추가하기 전에는 아무것도 실행되지 않습니다.",
     "cadence": "스캔 주기",
     "cadences": {
       "daily": "매일",
@@ -138,7 +173,8 @@
       "completed": "완료",
       "failed": "실패",
       "skipped": "건너뜀"
-    }
+    },
+    "scanNowHint": "일정을 기다리지 않고 지금 웹과 각 브랜드의 자체 도메인에서 출시 소식과 뉴스를 검색합니다. 몇 분 정도 걸리며 웹 검색을 사용합니다."
   },
   "nav": {
     "label": "레이더"
@@ -184,5 +220,39 @@
     "readTheirs_one": "{{category}}의 리뷰 읽기",
     "readTheirs_other": "{{category}}의 리뷰 {{count, number}}개 읽기",
     "noSubcategoryChip": "하위 카테고리 없음"
+  },
+  "all": {
+    "option": "모든 브랜드",
+    "brandsTitle": "브랜드",
+    "brandsCaption": "이 기간에 추적 중인 모든 브랜드: 리뷰, 감성, 출시, 최신 뉴스",
+    "noBrands": "아직 추적 중인 브랜드가 없습니다.",
+    "colBrand": "브랜드",
+    "colReviews": "리뷰",
+    "colSentiment": "감성",
+    "colReleases": "기간 내 릴리스",
+    "colLatest": "최신 뉴스",
+    "shares": "긍정 {{positive}} · 부정 {{negative}}",
+    "noRelease": "아직 뉴스 없음",
+    "openBrand": "{{brand}} 열기",
+    "newsTitle": "모든 브랜드의 최신 소식",
+    "capped": "{{total, number}}개 중 최신 {{shown, number}}개 표시"
+  },
+  "exa": {
+    "title": "Exa (두 번째 검색 색인)",
+    "description": "Radar의 웹 검색에서 브랜드의 날짜가 있는 뉴스를 찾지 못하면 Exa도 검색합니다. Exa에는 브랜드 이름, 검색어, 도메인만 전송됩니다. 검색 1,000회당 약 5달러이며 Exa가 청구합니다.",
+    "configured": "구성됨",
+    "notConfigured": "구성 안 됨",
+    "keyLabel": "Exa API 키",
+    "placeholder": "Exa API 키 붙여넣기",
+    "replacePlaceholder": "키가 저장되어 있습니다. 바꾸려면 새 키를 붙여넣으세요",
+    "save": "키 저장",
+    "remove": "키 제거",
+    "saved": "Exa 키를 저장했습니다.",
+    "removed": "Exa 키를 제거했습니다.",
+    "saveFailed": "Exa 키를 저장하지 못했습니다.",
+    "removeFailed": "Exa 키를 제거하지 못했습니다.",
+    "invalidKey": "영문자, 숫자, - 또는 _ 8~200자를 사용하세요.",
+    "removeTitle": "Exa 키를 제거할까요?",
+    "removeMessage": "Radar가 Exa 검색을 중단합니다. 자체 웹 검색은 계속되며 이미 찾은 뉴스는 유지됩니다."
   }
 }

@@ -16,7 +16,8 @@ import {
   type ToolPack,
 } from '../../contract.js';
 import type { AssistantRunContext, ClientToolDefinition, ClientToolValidation } from '../../types.js';
-import { clip, isRecord } from '../format.js';
+import { isRecord } from '../../../lib/is-record.js';
+import { clip } from '../format.js';
 import { describeIssues, idSchema, toolSpec, type JsonSchemaProperties } from '../spec.js';
 
 const APPROVAL_NOTE = ' Requires the user\u2019s approval: the user sees exactly these arguments in an approval '
@@ -41,6 +42,8 @@ export interface ClientToolConfig<T extends Record<string, unknown>> {
   summarize(args: T): string;
   /** See `ClientToolDefinition.precheck`; receives the parsed args. */
   precheck?(args: T, ctx: AssistantRunContext): Promise<string | undefined>;
+  /** See `ClientToolDefinition.describe`; receives the parsed args. */
+  describe?(args: T, ctx: AssistantRunContext): Promise<string>;
 }
 
 /** Tool id argument → the page field that defaults it, per scoping flag. */
@@ -68,8 +71,11 @@ export function q(value: string, max = 80): string {
 
 export function defineClientTool<T extends Record<string, unknown>>(config: ClientToolConfig<T>): ClientToolDefinition {
   const adminOnly = ADMIN_ONLY_CLIENT_TOOLS.includes(config.name);
-  const { precheck } = config;
+  const { precheck, describe } = config;
   return {
+    ...(describe === undefined ? {} : {
+      describe: async (args: Record<string, unknown>, ctx: AssistantRunContext) => describe(config.schema.parse(args), ctx),
+    }),
     ...(precheck === undefined ? {} : {
       precheck: async (args: Record<string, unknown>, ctx: AssistantRunContext) => {
         const parsed = config.schema.safeParse(args);

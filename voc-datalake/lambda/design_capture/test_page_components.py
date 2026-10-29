@@ -21,10 +21,14 @@ def test_rule_kinds(selector, kind):
     assert pc._rule_kind(selector) == kind
 
 
-def test_a_class_rule_only_styles_samples_with_that_class():
-    assert pc._rule_applies('.btn-primary:hover', {'btn', 'btn-primary'})
-    assert not pc._rule_applies('.btn-primary:hover', {'btn'})
-    assert pc._rule_applies('button:hover', set())
+def test_a_rule_only_styles_samples_its_subject_matches():
+    assert pc._rule_applies('.btn-primary:hover', 'buttons', {'btn', 'btn-primary'})
+    assert not pc._rule_applies('.btn-primary:hover', 'buttons', {'btn'})
+    assert pc._rule_applies('button:hover', 'buttons', set(), 'button')
+    assert not pc._rule_applies('button:hover', 'buttons', {'copy'}, 'a')
+    assert pc._rule_applies('[role="tab"]:focus', 'tabs', set(), 'div')
+    assert not pc._rule_applies('.btn:hover::before, .btn:focus-visible::before', 'buttons', {'btn'}, 'a')
+    assert not pc._rule_applies('.site-nav a:hover', 'buttons', {'btn'}, 'button')
 
 
 def test_rules_are_capped_and_filtered():
@@ -34,12 +38,3 @@ def test_rules_are_capped_and_filtered():
     assert len(parsed) == 30
     assert parsed[0] == {'selector': 'a:hover', 'state': 'hover', 'styles': {'color': 'red'}}
     assert pc.parse_rules([{'selector': 'a:hover', 'state': 'hover', 'styles': {}}, 'x']) == []
-
-
-def test_examples_are_borrowed_only_when_missing():
-    design = {'components': [{'name': 'Button', 'variants': []}, {'name': 'Card', 'example_html': '<div>c</div>'}]}
-    measured = [{'name': 'button', 'example_html': '<button>b</button>'}, {'name': 'Card', 'example_html': '<p>x</p>'}]
-    result = pc.with_measured_examples(design, measured)
-    assert result is not None
-    assert [c.get('example_html') for c in result['components']] == ['<button>b</button>', '<div>c</div>']
-    assert pc.with_measured_examples(None, measured) is None

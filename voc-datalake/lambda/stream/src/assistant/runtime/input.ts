@@ -5,7 +5,7 @@
  *   - the user's NEW message (the last `user` message) REJECTS over
  *     LIMITS.maxUserMessageChars and over the attachment bounds — the user
  *     can fix it and the SPA mirrors the numbers;
- *   - replayed history and tool messages CLAMP (convert.ts / flatten.ts) —
+ *   - replayed history and tool messages CLAMP (flatten.ts) —
  *     they are service-authored, and rejecting would kill the thread;
  *   - the message COUNT rejects at LIMITS.maxMessages, a sanity bound the SPA
  *     never reaches because it windows its own replay.

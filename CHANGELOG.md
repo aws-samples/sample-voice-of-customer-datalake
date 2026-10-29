@@ -17,6 +17,1226 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.47.04] - 2026-10-29
+
+AWS Lambda Powertools is pinned, so every deploy and CI run uses the same version.
+
+### Changed
+- `aws-lambda-powertools` is pinned to `3.38.0` in the ingestion and processing layers and in
+  `requirements-dev.txt` (it was an open range). 3.38.0 adds `Vary: Origin` to API answers that echo an allowed
+  origin, CORS preflights included, so browsers and caches keep answers for different origins apart. Two tests now
+  expect that header.
+
+### Upgrade notes
+- Rebuild the Lambda layers (`./scripts/build-layers.sh`) before the next deploy so they carry the pinned version.
+
+## [5.47.03] - 2026-10-29
+
+The code-audit gate gives the same answer locally and in CI.
+
+### Fixed
+- `audit: py_doc_refs` failed in CI with a stale allowlist entry for `PYTHONOPTIMIZE`: whether that name counts as a
+  known token depends on the Python installation, so one comment in `lambda/api/projects_handler.py` now names the
+  environment variable in plain prose and the allowlist entry is gone. See [code audit](docs/code-audit.md).
+
+## [5.47.02] - 2026-10-29
+
+Docs and test data use fictional names only.
+
+### Fixed
+- [docs/mobile-app-reviews.md](docs/mobile-app-reviews.md): the Android collection and output examples use the
+  fictional `com.example.air` / `example_air` app instead of a real brand; the 5.11.00 Changed entry about
+  source labels names "Example Air (iOS)".
+- The bug report template's example URL uses the documentation placeholder `d111111abcdef8.cloudfront.net`
+  instead of a deployment's CloudFront domain.
+
+## [5.47.01] - 2026-10-29
+
+Dependency patch releases, matching the bumps already merged into `main`.
+
+### Changed
+- CDK app (`voc-datalake/`): zod 4.6.5 → 4.6.7 and fast-uri 3.1.8 → 3.1.9.
+- Frontend (`voc-datalake/frontend/`): vite 7.3.6 → 7.3.7, source-map-js 1.2.1 → 1.2.2 and brace-expansion
+  1.1.18 / 2.1.4 / 5.0.9 → 1.1.21 / 2.1.7 / 5.0.12 (build and dev tooling only).
+
+## [5.47.00] - 2026-10-29
+
+Pages open on the last 14 days by import date, Radar brands take search and exclude terms, and large imports
+no longer stall counts or the aggregator.
+
+### Added
+- **Radar search terms and exclude terms**: each Radar brand can list up to 8 search terms (a legal name, product
+  names) added to its general news queries, and up to 8 exclude terms that drop a result about something else
+  before any model call. Edit them in the Radar brand editor or with the assistant. See
+  [Search terms](docs/radar.md#search-terms).
+- `GET /scrapers/connectors` lists app connectors and Web Reviews pages with the Radar brand each one feeds, and the
+  assistant's `list_scrapers` now includes them. See [scrapers](docs/scrapers.md).
+- The header period selector has a **Last 14 days** choice.
+
+### Changed
+- **The default period is the last 14 days by imported date** (was 7 days). A browser still on the old default
+  (7 days, imported date) moves to the new one once; any other saved choice is kept.
+  See [account vs admin](docs/account-vs-admin.md).
+- A many-app App Store or Google Play run continues in parts: each part stops with time to spare and starts the
+  next, so "Run all" no longer stops at the 15-minute Lambda limit. See [mobile app reviews](docs/mobile-app-reviews.md).
+- Expected refusals are logged as information instead of warnings: a permission refusal (403) and an assist job
+  that ended with a user-facing refusal. Administration → System → Logs no longer lists 409 and 410 answers from
+  the API access log (401, 403 and 404 were already hidden).
+- API Gateway: related routes are folded into proxy resources (`/feedback`, `/scrapers/manual`, `/data-explorer`,
+  `/integrations`, `/sources`, `/connect`, `/chat`), and a CORS preflight exists only where a browser method
+  does. Every path keeps its method, Lambda and authorizer. The unused `/metrics/release-watch` resource is gone.
+
+### Fixed
+- Radar: a news listing page (a home page, a section, a category or date archive, or a page cited by two or more
+  records) no longer merges two different stories. See [radar](docs/radar.md).
+- Radar → All brands: the release total is exact; it stopped at 100.
+- Dashboard and Categories counts read up to 100,000 rows per request (was 5,000) with the review-date basis or a
+  source, channel, dimension or tag filter. When the cap still cuts a day, the answer says so
+  (`partial_reason: 'row_cap'`) and the UI names the last day read. See [categories](docs/categories.md).
+- Bulk imports: the aggregator writes a run of new reviews in a few joint transactions instead of one per review,
+  so a large import no longer retries on the contended daily counters.
+- Deleting a design reference also deletes its logo preview image.
+- Design references: a website's inline `<svg>` logo and a GitHub repository's SVG logo are sanitised and drawn as
+  the logo preview. See [company context](docs/company-context.md).
+
+### Upgrade notes
+- IAM changes: the App Store and Google Play ingestor roles may invoke their own function (to start the next part),
+  and the settings role may delete `company-context/design/logo_preview_*` objects in the raw bucket.
+- VocApiStack replaces many API resources (424 → 353). Deploy with `npm run deploy:infra` (or follow a bare
+  `cdk deploy` with `scripts/refresh-api-stage.sh`) so the stage stops serving the removed methods.
+
+## [5.46.01] - 2026-10-29
+
+System errors stops listing two designed outcomes as errors, and failure queues show a message's real age.
+
+### Fixed
+- Administration → System → Logs → System errors:
+  - a workflow run that a person cancelled (`ExecutionAborted`, e.g. "Cancelled by an admin") is a warning,
+    listed under "Errors and warnings" only;
+  - a refused board sign-up (`SignUpRefusedError: domain_not_allowed`, the sign-up trigger refusing an address it
+    must refuse) is a warning; any other error of that function stays an error.
+- Failure queues: a message's age is now the larger of CloudWatch's age and its own send time. Once a message has
+  been read three times, CloudWatch's age points at the second-oldest message, so a three-day-old dead letter read
+  "1 hour". The peek also waits up to 1 s, so a queue holding a single message shows it reliably.
+
+## [5.46.00] - 2026-10-29
+
+Problems follows the header like every other page, and the project assistant takes @persona, @all and #document.
+
+### Added
+- **@persona, @all and #document in the project assistant**: on a project page, type `@` to ask one of the
+  project's personas (or `@all`) and `#` to tag a document (title and version, newest first), e.g.
+  "@all please review #PR/FAQ (v2)". Each persona answers as its own card, grounded on the tagged documents and
+  its profile, review only; then the assistant adds a short synthesis. Up to 6 personas and 3 documents per
+  message; keyboard and screen-reader friendly, with `@` and `#` buttons on phones. Works in every way of
+  working. See [mentions](docs/assistant-mentions.md).
+- `consult_personas` (the assistant's persona tool) can read up to 3 documents.
+
+### Changed
+- **Problem Analysis follows the header's period and date basis**, like every other page. The "Latest 2,000
+  reviews" window of 5.45.00 is gone (an old link opens on the header's period). The review-type chips stay,
+  defaulting to Problems only.
+
+### Removed
+- `latest=N` on `GET /feedback/problems` (ignored if still sent).
+
+### Fixed
+- Persona answers in the assistant no longer disappear after a reload: a long answer used to be cut into invalid
+  JSON when the conversation was saved.
+- Problem Analysis reads a 30,000-review import day in full (measured, see
+  [capacity](docs/problem-analysis.md#capacity)); the docs now state the real cap of 1,000 listed problems
+  (counts are never capped).
+
+### Upgrade notes
+- Nothing to deploy differently; no infrastructure change.
+
+## [5.45.01] - 2026-10-29
+
+The 5.45.00 API stack deploys: the review links' rate limit is set per HTTP method.
+
+### Fixed
+- Deploying 5.45.00 failed on the API stage (`'~1review~1{proxy+}/*' is not a valid method path`) and VocApiStack
+  rolled back: API Gateway takes no "all methods" throttle for one path. The `/review` routes are now throttled per
+  method they serve (GET and POST), with the same limits.
+
+### Upgrade notes
+- Deploy 5.45.01 instead of 5.45.00. A stack that tried 5.45.00 rolled back cleanly; VocCoreStack's 5.45.00 changes
+  (the image-model agreement) are already in place and stay.
+
+## [5.45.00] - 2026-10-29
+
+Ways of working with AI per person, PR/FAQ and PRD review with margin comments and share links, review types and a
+"latest 2,000 reviews" Problems view, and the image model's access and quota in Administration → AI models.
+
+### Added
+- **Ways of working with AI** (Administration → Privacy & access → Users): each person is **Human-driven** (the AI
+  answers questions, explains the method and reviews, but never writes their PR/FAQ or PRD), **AI-assisted** (the
+  AI drafts, suggests and rewrites with them) or **AI-driven** (also autonomous agents and approved plans write
+  for them). Everyone starts AI-driven; an administrator moves people. Inside Human-driven, "PR/FAQ with AI" and
+  "PRD with AI" can be unlocked per person once they have learned. Enforced by the server on every AI write path
+  (editor buttons, assistant, plans, agents, MCP); a Human-driven person's assistant coaches instead of writing, and
+  the editor offers **Coach me** and **Review my draft**. See [ways of working](docs/ways-of-working.md).
+- **Write a PR/FAQ or PRD by hand**: **Start writing** opens a blank template, in every mode.
+- **Comments on PR/FAQs and PRDs**: select text and comment; threads sit in the margin (a list on phones) with
+  replies, resolve and reopen, kept across versions (shown as "not found in this version" when the text is gone).
+- **Ask personas to review**: up to 6 of the project's personas read the document and leave a verdict and comments
+  on the exact passages they quote; it never edits the document and works in every mode.
+- **Share for review**: a link per document with a Copy button, open to anyone with a verified email or to listed
+  domains and addresses, expiring after 7, 30 (default) or 90 days and revocable. Reviewers sign in with an emailed
+  code on `/review/<link>`, read the newest version and comment; they see only their own threads. See
+  [document review](docs/document-review.md).
+- **Review types**: every review gets one type — bug, service failure, feature request, usability, performance,
+  pricing and billing, support experience, praise, question or other — in the same model call that already
+  categorises it (the built-in `feedback_type` dimension, [dimensions](docs/dimensions.md)). Stored reviews are typed
+  by **Classify review types for existing reviews** in Administration → Taxonomy → Dimensions (one model call per
+  review; it never starts by itself).
+- **Problems**: opens on **Latest 2,000 reviews (by review date)**, the newest reviews customers wrote whatever
+  their import date, with the time range still one click away; review-type chips default to **Problems only**
+  (praise, questions, feature requests and other are hidden until turned on; untyped reviews stay in view). See
+  [problem analysis](docs/problem-analysis.md).
+- **Administration → AI models → Image generation (persona avatars)**: the image model, its region, whether this
+  account has access (with how to fix it), its requests-per-minute quota and a **Test** button (one small image,
+  a few cents; not part of "Test all").
+
+### Changed
+- Every deployment now requests access to the persona-avatar image model (the Stability agreement and Marketplace
+  subscription, in us-west-2), like the Claude models, with no flag. A refusal never fails the deploy; the AI models
+  row shows the state.
+- Feedback boards and review links share one sign-in pool, now on every deployment: with `-c emailFrom` codes come
+  from your address as before; without it Cognito sends them from `no-reply@verificationemail.com`.
+
+### Fixed
+- Problems, Dashboard and every review-date view no longer show 0 reviews when reviews were written before the
+  first import: the review-date cutoff is the period you chose (none for All time), not the days since the first
+  import.
+
+### Security
+- A new board or review sign-up must enter the emailed confirmation code before the account exists. Before, the
+  sign-up trigger confirmed any admitted address, so someone could register an address they did not own.
+
+### Upgrade notes
+- **VocCoreStack** gains the image-model agreement (custom resource + provider) and, on deployments without
+  `-c emailFrom`, the board user pool, its client and its two triggers. With `-c emailFrom` the existing pool is
+  updated in place (same logical ids), never replaced.
+- **VocApiStack** goes to 424 resources with every plugin (gate 425): the board authorizer is on every deployment
+  and `/review` routes are added (rate-limited like the other public routes, see `api-gateway.ts`).
+- Without `-c emailFrom`, Cognito's own sender allows 50 emails a day per account; set `-c emailFrom` to lift it.
+- Nothing to migrate. Everyone stays AI-driven until an administrator changes them. Reviews stored before this
+  release are untyped until an administrator runs the classification.
+
+## [5.44.01] - 2026-10-28
+
+System errors shows the HTTP status of failed API calls and leaves out the test suite's own errors.
+
+### Fixed
+- Administration → System → Logs → System errors: a failed API call row shows its status code
+  (`POST /scrapers/{proxy+} → 403 …`) instead of `→ <n>`, and a 403 and a 500 on the same route are separate rows.
+- Lines written while an end-to-end test run was being served (`test_run` set) are no longer listed, as test
+  traffic was already left out of the API rows.
+
+## [5.44.00] - 2026-10-28
+
+Administration → System → Logs now carries what a developer needs to diagnose a failure without AWS access:
+every failing API call and workflow, the whole log of a failing request, the failure queues and the deployment's
+setup — and source runs and persona avatars say why they failed.
+
+### Added
+- **System errors** also lists failed API calls (the API Gateway access log: 5xx as `HTTP`, other 4xx as warnings,
+  test traffic left out), failed, timed-out and aborted workflow runs (Step Functions: agent runs, research,
+  document workflows) and the Core stack's own functions (product-doc extractor, Cognito triggers, admin
+  bootstrap, CDN signing keys). Each row says where it came from; samples keep up to 6,000 characters, so full
+  stack traces fit.
+- **Show the whole request** (an expanded row): every log line of that one invocation, any level, oldest first —
+  usually what the function was doing before it failed (`GET /logs/system/request`).
+- **Failure queues** card: every dead-letter / failure queue holding work that failed every retry, with its
+  count, the age of its oldest message and up to three masked message bodies. Reading a sample removes nothing
+  (`GET /logs/system/queues`).
+- **Environment** block: version and commit, region, the account's last four digits, enabled sources, web search,
+  inference scope, the image model and its region, the model per AI surface, alarms and their state, sources
+  paused by their circuit breaker, and which logs the search covers (`GET /logs/system/environment`).
+- **Download** now carries all of it — the groups, every request opened, the queues, the environment, the
+  period's validation failures and processing errors — with a short guide to reading the file. See
+  [deployment](docs/deployment.md#system-errors-administration--system--logs--system-errors).
+
+### Changed
+- App Store / Google Play connectors: each app now runs on its own **Run frequency** and **sort order** (a
+  "Manual only" app is no longer scraped hourly by the schedule); a connector without its own value keeps the
+  plugin's. A storefront that answers an error now logs a warning naming the cause (for example `HTTP 403 x2
+  (gb, kr)`), an app that suddenly gets no reviews from any storefront logs a warning, and a manual run lists
+  these in its run's errors instead of completing silently with 0 reviews
+  ([mobile app reviews](docs/mobile-app-reviews.md)).
+- Persona avatars: a failure now says why — not enabled for this account (Marketplace/model access), model not
+  found, throttled, filtered, invalid request, region unreachable — with the image model id, its region and the
+  AWS error code, both in one System errors line and in the Regenerate avatar job's error
+  ([project workspace](docs/project-workspace.md)).
+
+### Upgrade notes
+- The logs API (`voc-logs-api`) gains read-only access to the deployment's Step Functions logs, the API access
+  log and the Core stack's function logs (Logs Insights), and may **peek** at the failure queues
+  (`sqs:ReceiveMessage` with a zero visibility timeout plus `kms:Decrypt` through SQS only — nothing is deleted;
+  each peek raises a message's receive count, which these queues never act on) and read
+  `ApproximateAgeOfOldestMessage`. Logs Insights bills each search per GB scanned (USD 0.005/GB), only when an
+  admin opens or refreshes the tab.
+- App Store / Google Play: apps whose connector says "Manual only" stop being scraped on the schedule after this
+  release. Set a frequency on the connector to keep them scheduled. A new per-app watermark
+  (`<app>_last_count`) starts empty, so the first run after the upgrade never warns about a drop.
+
+## [5.43.01] - 2026-10-28
+
+System errors also lists the AI assistant's warnings, and groups repeats of one failure into one row.
+
+### Fixed
+- Administration → System → Logs → System errors, "Errors and warnings": warnings and fatal errors from the AI
+  assistant's streaming function (`level` `WARN` / `FATAL`) are now listed too; only the Python functions'
+  `WARNING` / `CRITICAL` were before.
+- A failure that names an id joined with `_` (for example `job=job_80cbfb058cf7408f`) now counts into one row
+  instead of one row per job.
+
+## [5.43.00] - 2026-10-28
+
+Administration → System → Logs shows every error this deployment's functions log, so a failure can be
+diagnosed from the app without AWS account access.
+
+### Added
+- **System errors tab** (Administration → System → Logs, now the first tab): every ERROR / CRITICAL log line and
+  every platform crash (timeouts, runtime errors) of the deployment's Lambdas over the last 24 hours, 7 or 30 days,
+  optionally with warnings, grouped by function and message with a count, first and last seen, and the newest
+  occurrence's full text and request id. A persona avatar that fails, a source run that cannot reach a store, an
+  assist job that dies all show up here with the real exception. Personal data is masked before anything leaves
+  the server. **Download** saves the shown list as a JSON file to hand to whoever analyses it. Admin-only
+  (`GET /logs/system`, never cached) — see [deployment](docs/deployment.md#system-errors-administration--system--logs--system-errors).
+
+### Upgrade notes
+- The logs API (`voc-logs-api`) gains read-only CloudWatch Logs Insights permissions on the deployment's own
+  Lambda log groups (`logs:DescribeLogGroups`, `logs:StartQuery`, `logs:GetQueryResults`, `logs:StopQuery`). Each
+  search is billed by CloudWatch Logs Insights per GB scanned (USD 0.005/GB; a 7-day search of a busy test
+  deployment scans about 0.5 GB) — only when an admin opens or refreshes the tab. Nothing to migrate.
+## [5.42.01] - 2026-10-27
+
+Radar finds a brand's older news again, and stops filing the same story twice.
+
+### Fixed
+
+- A Radar brand scanned earlier the same day (or recently) searched only for news published since that scan, so its
+  feed items and older news were dropped and every item it filed was dated the scan day. Each search (query type and
+  language, the own-domain search, Exa) now looks back to the day THAT search last ran, never more than 90 days, and
+  feeds are always read over the last 90 days.
+- The same story from two sources (for example the brand's feed and Exa) worded differently was filed twice. A news
+  item citing a page another item already cites is now merged into it.
+
+### Upgrade notes
+
+- The next scan of each brand looks back the full 90 days once (items it finds again are merged, not duplicated).
+
+## [5.42.00] - 2026-10-27
+
+Radar tracks every competitor's news, not only its releases.
+
+### Added
+
+- **News for every Radar brand**: launches, new features, promotions, partnerships, announcements and company news,
+  also when they are published outside the brand's own site. The scan searches in each brand's own language and in
+  English, rotating through the kinds of query across scans within the same query cap.
+- **Search language per brand** (Administration → Sources → Radar → Edit): Auto takes it from the brand's first
+  domain (`.pl` → Polish, `.cz` → Czech, …), or pick one of 16 languages.
+- **News feeds per brand** (up to 3 RSS or Atom feeds): read at each scan through the outbound URL guard; their dated
+  items are filed with the item's own article as the citation.
+- **Exa as a second search index** (Administration → Sources → Radar → "Exa"): an admin stores an Exa API key; when
+  Radar's web search finds no dated news for a brand, Exa searches the brand's domains and the web too. The key is
+  kept in SSM Parameter Store (no monthly cost) and never shown again; only brand names, search terms and domains are
+  sent to Exa (about $5 per 1,000 searches, billed by Exa). API: `PUT` / `DELETE /radar/settings/exa-key`.
+- **News and releases** on the Radar page: each item shows its kind (Release, Announcement, Promotion, Partnership,
+  Company news), a filter by kind, and "via Exa" / "via feed" when only those found it. The All brands table shows
+  the latest news with its kind.
+- The AI assistant reads the news kinds, and `save_radar_brands` can set a brand's language and feeds.
+
+### Changed
+
+- The own-domain search no longer filters by publish date (the brand's undated pages are dated from the page, and
+  anything older than the window is not filed). The scan no longer runs the "<brand> vs <our brand>" query.
+- News items carry `kind` and `found_via` in every Radar API view; items found before this release read as
+  `release` / `web`. See [docs/radar.md](docs/radar.md).
+
+### Upgrade notes
+
+- No migration. The scan makes up to 5 model calls per brand (one per step that finds something). Exa stays off until
+  an admin stores a key.
+
+## [5.41.00] - 2026-10-27
+
+Radar can show every brand at once.
+
+### Added
+
+- **All brands** on the Radar page (`/radar`, brand selector, shown once two or more brands are tracked; shareable as
+  `?brand=all`): a table of every brand over the chosen window (reviews, sentiment in words with the positive / negative
+  share, releases in the window, the latest release) and one "Latest news across brands" feed, newest first, each item
+  naming its brand. A brand's name in the table, or its chip in the feed, opens that brand. The feed shows the newest
+  100 and says how many there were. API: `GET /radar/all?days=` (see [docs/radar.md](docs/radar.md)).
+
+### Changed
+
+- A Radar brand can no longer be named "All" (its key would clash with the All brands view): saving such a brand list
+  answers 400 with the reason.
+
+### Upgrade notes
+
+- No migration. A deployment that already tracks a brand whose key is `all` keeps it, but cannot save the list again
+  until that brand is renamed.
+
+## [5.40.00] - 2026-10-27
+
+Scan for a brand's news from the Radar page, and ask the assistant to do it.
+
+### Added
+
+- **Scan now on the Radar page** (admins, once a brand is tracked): under the page header, with the last scan's
+  result and a line saying what it does: it searches the web and each brand's own domains for its releases and news
+  now, without waiting for the schedule (a few minutes; it uses web searches). The same control stays in
+  Administration → Sources → Radar.
+
+### Changed
+
+- The AI assistant now starts the scan when asked to "scan now", "look for news", "refresh Radar" or "what did
+  <brand> ship" (one approval card, `run_radar_scan`), instead of saying it cannot. On pages other than Radar and Data
+  sources it offers to open the Radar page, where the scan is available. See [docs/radar.md](docs/radar.md).
+
+## [5.39.03] - 2026-10-27
+
+The assistant can confirm which Radar brand a scraper feeds.
+
+### Fixed
+
+- Asked whether Radar sources are linked, the AI assistant no longer reads the empty source list of the tracked brands
+  (Radar without a brand) as "not linked": that list gets the same `profile_sources` name and note as the brand list
+  (5.39.02 covered only the brand list).
+- The assistant's scraper list now includes each scraper's `radar_brand`, so it can confirm which Radar brand a scraper
+  feeds instead of guessing.
+
+## [5.39.02] - 2026-10-27
+
+The assistant checks a Radar import correctly.
+
+### Fixed
+
+- After setting up Radar sources, the AI assistant no longer tells you the new connectors are "not linked yet" because
+  a brand's sources list is empty. That list (`GET /radar/brands` → `sources`) only ever holds older source profiles;
+  scrapers, review pages and app connectors set to a Radar brand never appear in it. The assistant now reads it as
+  `profile_sources` with a note saying so, and checks an import through the run's status and each brand's review total
+  on Radar. See [docs/radar.md](docs/radar.md).
+
+## [5.39.01] - 2026-10-27
+
+The website capture picks the site's own logo, not a cookie banner's.
+
+### Fixed
+
+- A website reference whose cookie-consent banner sits before the header in the page's markup (common with consent
+  plugins) no longer gets the banner's vendor image as its logo. Logo images inside a cookie / consent banner and
+  hidden images are skipped, and an image inside the page's header or navigation is preferred over one further down.
+  Refresh the reference to read its logo again.
+
+## [5.39.00] - 2026-10-27
+
+SVG logos work: a website whose logo is an SVG gets its logo, and an SVG file can be uploaded as the company logo.
+
+### Added
+
+- Company → Design system → logo upload accepts an `.svg` file. The browser converts it to a PNG (longest side
+  1,024 px, transparent background) and only the PNG is uploaded. An SVG the browser cannot convert (for example
+  one with embedded HTML) says so and asks for a PNG export instead.
+- A website reference whose logo is an SVG (`<img src="….svg">` in the header) now gets that logo: the secure browser
+  that reads the site draws it in a separate blank tab and keeps only a PNG screenshot of it. Its preview says
+  "Rendered from the site's SVG logo", and "Use this logo" copies that PNG. A header PNG, JPEG or WebP is still
+  preferred when the site has one. See [docs/company-context.md](docs/company-context.md).
+
+### Fixed
+
+- A website whose header logo is an SVG no longer gets its favicon or touch icon proposed as its logo.
+
+### Security
+
+- SVG bytes are still never downloaded, stored or served by the API (an SVG is a document that can carry script):
+  both paths turn the SVG into a PNG in a browser, and the logo routes keep accepting only PNG, JPEG and WebP.
+
+### Upgrade notes
+
+- Refresh an existing website reference to read its SVG logo. Inline `<svg>` logos (drawn in the page's markup, not
+  an image file) and GitHub references' SVG logos are not read yet.
+
+## [5.38.01] - 2026-10-26
+
+Agent guidance for the test traffic tag.
+
+### Changed
+
+- The project's agent steering (`.kiro/steering/testing.md` → "Production E2E Traffic and Log Sweeps", and the
+  deployment checklist in `coding-standards.md`) now explains the `voc-e2e/<run tag>` tag: how the suite sends it,
+  the Logs Insights filters that leave test traffic out of an error sweep, tagging hand-made probes, and that a new
+  API Lambda entry point must apply the tag.
+
+## [5.38.00] - 2026-10-26
+
+Test traffic is tagged, so log checks can leave it out.
+
+### Added
+
+- Every request the end-to-end suite sends carries the User-Agent token `voc-e2e/<run tag>` (one tag per run;
+  `run-sharded.sh` shares it across shards, override with `E2E_TAG_RUN_ID`). API Lambda log lines of such a
+  request carry `test_run`, so a Logs Insights query drops them with `filter ispresent(test_run) = 0`. See
+  `frontend/e2e/README.md` → "Test traffic tag".
+
+### Changed
+
+- The API stage access log keeps every field it had and adds `path` (the real path, ids included), `userAgent`,
+  `integrationStatus` and `errorMessage`, so a 4xx or 5xx can be traced to the exact request and told apart from
+  test traffic.
+
+### Fixed
+
+- The end-to-end job follower no longer keeps polling a job whose project is gone (404 / 410): it stops at the first
+  such answer instead of logging a 404 every 5 seconds until its timeout.
+
+### Upgrade notes
+
+- Log lines written before this release have no `userAgent` / `test_run`, so they cannot be told apart from real
+  traffic; access and Lambda logs keep 14 days. Queries that parse the access log by key keep working.
+
+## [5.37.00] - 2026-10-26
+
+A feedback board can be deleted together with its requests.
+
+### Added
+
+- Delete a board that still has requests, from its card on Feedback boards or from Administration → Privacy &
+  access → Boards → the board editor. The confirm says the board, its requests and every +1 on them are deleted
+  for good, and Delete works only once the board's name is typed. Large boards are deleted in steps: the dialog
+  shows how many requests are gone, and if it stops, pressing Delete again continues. The board is archived as
+  soon as deletion starts, so nobody but admins can post to it meanwhile. Projects already created from its
+  requests are kept. API: `DELETE /feature-requests/boards/{id}?with_requests=true`, repeated until it answers
+  `done: true` (see [docs/feature-requests.md](docs/feature-requests.md)). An empty board is still deleted with
+  one plain confirm.
+
+### Fixed
+
+- Deleting the last remaining board no longer brings "Sales feature requests" straight back: that board is now
+  created only once, on a deployment's first use of boards.
+- A board whose requests are older than the newest 1,000 requests across all boards no longer looks empty: its
+  request list, the delete check and the status-in-use check now read that board's own requests.
+
+### Upgrade notes
+
+- No migration. With no board left, the board pages show their empty state and board-pool sign-up is closed
+  until an admin creates a board.
+
+## [5.36.04] - 2026-10-26
+
+The app loads again on the 5.36.x builds.
+
+### Fixed
+
+- The 5.36.01, 5.36.02 and 5.36.03 frontends showed a blank page for everyone ("Cannot access … before
+  initialization" in the console): two board modules imported each other, and the production bundle evaluated one
+  of them before the other was ready. The shared email check now lives in its own module. While the fix was
+  prepared, the live frontend ran the 5.36.00 build; the backend stayed on 5.36.03.
+- A frontend test now fails when production source under `frontend/src/` has a runtime import cycle (type-only
+  imports are ignored), so a bundle that cannot start is caught before it ships.
+
+### Upgrade notes
+
+- Frontend only; no backend change since 5.36.03. A deployment running 5.36.01–5.36.03 should deploy this release.
+
+## [5.36.03] - 2026-10-26
+
+A tab opened before a deploy recovers by itself.
+
+### Fixed
+
+- A browser tab still running the previous build no longer breaks when it opens a lazily loaded part of the app
+  after a deploy (for example Administration → System → Version showed no changelog, with "Failed to load module
+  script … MIME type text/html" in the console): each deploy replaces the hashed files in `/assets/`, and the
+  missing chunk was answered with the app's `index.html`. The app now reloads once when a chunk fails to load, which
+  fetches the current build; a second failure of the same build is left to the page's own error state, so a real
+  outage cannot loop.
+
+## [5.36.02] - 2026-10-26
+
+The website upload of a CDK deploy no longer runs out of memory.
+
+### Fixed
+
+- VocApiStack's SPA upload (`DeployWebsite`, CDK's BucketDeployment provider) now runs with 1024 MB instead of the
+  128 MB default. At 128 MB `aws s3 sync` of the ~7 MB SPA used all of its memory, crawled at ~35 KiB/s and timed out
+  after 15 minutes; CloudFormation's retry then finished it, so a deploy took about 35 minutes longer than it should.
+
+### Upgrade notes
+
+- The BucketDeployment provider function is replaced by one with 1024 MB (CDK names the singleton by its memory);
+  CloudFormation creates the new one and deletes the old in the same deploy. Pay-per-use only.
+
+## [5.36.01] - 2026-10-26
+
+Feedback boards fixes from the live check: sign-in returns to the shared board, one +1 per person, a description per template, and fresher admin lists.
+
+### Fixed
+
+- Feedback boards: a board share link (`/board/<slug>`) opened signed out now returns to that board when the
+  person signs in with the EMAILED link, not only with the typed code (the slug is remembered in the same browser
+  with the pending sign-in) — [docs/feature-requests.md](docs/feature-requests.md#sign-in-a-separate-user-pool).
+- Administration → Privacy & access → Boards: deleting a board from its editor goes back to the list without
+  asking for the deleted board again (it answered 404 and logged a console error).
+- Administration → Privacy & access → Boards: after a board is saved (its audience, name, template fields…), the
+  board list and the Feedback boards page show the saved board at once instead of the old one until the list
+  had refetched; a deleted board leaves the list at once too.
+- Feedback boards: one +1 per person per request. The reporter (whose +1 is filed with the request) and anyone
+  who already supports a request see "Edit my +1" instead of "+1", and `POST /feature-requests/{id}/supports`
+  answers 409 `already_supported` to a second +1 by the same email (it used to count twice as a support while
+  supporters stayed 1). Requests that already carry such a duplicate keep it until someone removes it.
+- Feedback boards: the request description follows the board's template. Its hint names what that board asks for
+  (a service board no longer says "Describe what the customer needs."), and it is required on Sales feature
+  requests and Customer service issues boards only; on Beta feedback and Blank boards it is optional ("Description
+  (optional)"). The API enforces the same rule on `POST`/`PUT /feature-requests…` (it used to accept an empty
+  description everywhere while the form required one everywhere) — [docs/feature-requests.md](docs/feature-requests.md).
+
+### Upgrade notes
+
+- API callers of the feedback boards: `POST /feature-requests` (and a `PUT` that sends `description`) on a
+  `sales` or `service` board now answers 400 `description is required` for an empty description.
+
+## [5.36.00] - 2026-10-26
+
+Feedback boards: several shareable boards (Sales feature requests, Customer service issues, Beta feedback, Blank), each with its own audience, fields, statuses and link, configured in Administration → Privacy & access → Boards.
+
+### Added
+
+- **Feedback boards**: several boards instead of one company-wide feature-request board, each for a team or an
+  audience. `/feature-requests` lists them as cards (template, audience, request count, Copy link to the share link,
+  Open; admins also Edit and Delete, and a gear to the admin section); `/feature-requests/{slug}` is one board, with
+  its own fields, statuses and totals (`?request=` deep links as before). The standalone `/board` lists the boards a
+  board-pool user may use (one board opens directly) and `/board/{slug}` is one board; an old `/board?request=<id>`
+  opens the request's board. See [docs/feature-requests.md](docs/feature-requests.md).
+- **Templates**: Sales feature requests (customer, deal, revenue impact and amount; totals customers, committed and
+  at-risk USD), Customer service issues (kind, severity, reference, steps, people affected; +1 = "also affected"),
+  Beta feedback (area, outcome, rating, https link; average rating) and Blank. Fields come from a fixed catalogue and
+  can be switched on, off or required per board; statuses (up to 8, the first is the initial one) can be renamed,
+  reordered, added and removed. Everything a template sets stays editable.
+- **Audiences** per board: `company` (the company domains), `list` (allowed domains and/or email addresses) or
+  `anyone` (any address that verifies itself). A board someone may not use answers 404 on every board and request
+  route. `anyone` boards are rate-limited: per poster per board 20 new requests and 100 +1s a UTC day, 500 new
+  requests per board a day (429 `rate_limited`). No moderation: a signed-in post shows at once.
+- **Administration → Privacy & access → Boards** (`/admin?tab=access&section=boards`, admin-only): the company
+  domains, the list of boards with New board (pick a template), and a board editor (`&board=<id>`) for name, link
+  name with share-link preview, description, audience, fields, statuses, Archive and Delete (only an empty board;
+  archive one with requests).
+- API: admin-only `POST/PUT/DELETE /feature-requests/boards[/{id}]`, `GET /feature-requests/boards[/{slug_or_id}]`
+  for every user of a board, `GET /feature-requests?board=` and `POST /feature-requests {board, fields}` (both
+  default to the seeded board, so older clients keep working); 409s `slug_taken`, `status_in_use`,
+  `board_not_empty`, `board_archived`, `board_limit`.
+
+### Changed
+
+- The nav item "Feature requests" is now **Feedback boards** (LISTEN), in all 9 languages, with the same route
+  `/feature-requests`; old links keep working.
+- The company domains moved from the participant email card to Administration → Privacy & access → Boards (same
+  setting). The participant email card keeps external people, the daily cap, the sender name and the
+  email-configured line.
+- Request status, fields and totals follow the request's board (a status is one of the board's keys). Promote moves
+  a request to `planned` only on a board with that status.
+- Board-pool users see only the boards whose audience admits their email, and the board pool's sign-up admits an
+  email that ANY non-archived board would admit (read from a derived row `SETTINGS` / `board_audience` in the
+  participants table that every board save rewrites).
+
+### Upgrade notes
+
+- The first board listing after the upgrade creates the board **Sales feature requests** (`brd_sales`, slug
+  `sales-feature-requests`, audience `company`). Every existing request has no board and reads as this board's,
+  with its statuses unchanged; no migration script runs.
+- An `anyone` board lets ANY email address sign up to the board pool and post on that board (rate-limited, no
+  moderation). Such an account still reaches only the board routes, and only the boards that admit it.
+- VocCoreStack enables TTL (`ttl`) on the `voc-feature-requests` table, so the `anyone` boards' daily rate-limit rows
+  expire. It is an in-place update of the same table (no replacement, no data change); the other items carry no
+  `ttl` and never expire.
+
+## [5.35.04] - 2026-10-26
+
+e2e suite only.
+
+### Fixed
+
+- e2e `network.spec.ts`: the "connection cut mid-answer" check also accepts a tab that has already recovered the
+  server's finished answer (a short answer replaces the "connection closed" alert before the check looked). Found in
+  the 5.35.03 sharded production run (1,040 passed, this 1 failed).
+- Frontend tests: the feature-request "closes a deleted request" case waits for the closed dialog instead of reading
+  it once, so it no longer fails under a loaded test run.
+
+## [5.35.03] - 2026-10-25
+
+Fixes from the 5.35.02 live verification: agent PR/FAQs use the review evidence, clearer run results, assistant page context and Stop, votes, translated plugin names, accessibility, model capacity without waiting, and more faithful design-system extraction.
+
+### Fixed
+
+- Autonomous agents, PR/FAQ and PRD writing: the press release, both FAQs and the PRD document now read the run's
+  evidence (the scope's review count and window, the problems with their counts, quotes from the cited reviews) and
+  a revision's brief. They used to reach only the first, analysis, step, so an Internal FAQ built on 108 reviews
+  said "I have no customer feedback from the last 30 days". The PR/FAQ templates ask for a neutral document voice
+  and evidence-backed numbers, which also applies to PR/FAQs written from the project page
+  ([docs/autonomous-agents.md](docs/autonomous-agents.md#what-the-steps-read-and-send)).
+- Autonomous agents: a research report's title is cut on a whole word with "…" ("…baggage and unpaid… — 2026-10-25
+  19:51 UTC"), not mid-word. The default research title from a question does the same.
+- Agent Runs tab, "What it produced": each document is listed by its title and version (v1, v2, v3) and linked to it,
+  and its project is named while the run is paused, even when the run created the project after the project list
+  was loaded.
+- Agent Runs tab: a run closed after it needed a human no longer shows "Needs a human: the workflow asks for a
+  human." as an error. Closing removes the run's `error`, and `GET /agents/{id}/runs/{run_id}` answers `error: null`
+  for runs closed before this release. The pause stays in the run's journal.
+- e2e (`s2-agents`, `s3-personas-documents`): the run-follow and run-history steps open "Show technical log" before
+  reading the event log and close a run that ends at needs_human through its decision card; the persona edit step
+  finds the Personas-tab card by the persona's name.
+- AI assistant: every message's page context now names the page it was sent from, so a conversation that moves from a filtered Categories page to Problem Analysis no longer reads the new page as contradicting, and retracting, an earlier answer.
+- AI assistant: after **Stop** the tab no longer sends a save the server refuses (409); it waits for the server's `stopped` copy and saves its own only when the server has none.
+- AI assistant: **Regenerate** shows on the last answer also when its turn ends on a tool call (an answer closing with a navigation suggestion had Copy but no Regenerate).
+- Room votes: `POST /voting-sessions/{id}/submit` on a closed or expired vote whose row or project was deleted answers **410** `gone`, as `/config` does, instead of 409 `closed` ([prioritization](docs/prioritization.md)).
+- Administration → Sources and Data sources: plugin names and descriptions are translated in all nine languages instead of the English manifest text ([plugin architecture](docs/plugin-architecture.md)).
+- Accessibility: a memory's **+1** / **Still true** button is announced with the memory it confirms (every card's button had the same name), and each pasted review's date field names its review ("Date of review 2 (required)").
+- Data Explorer: an avatar folder of an imported persona (or an older persona id) reads "Persona · <date>" instead of its raw `persona_…` id ([data lake structure](docs/data-lake-structure.md#data-explorer)).
+- API: the shared DynamoDB client pools 32 connections, enough for one request's whole read fan-out; `voc-metrics-api` logged "Connection pool is full, discarding connection" under load at botocore's default of 10.
+- Administration → AI models: `GET /settings/model/capacity` answers at once from the stored quotas (marked `stale` when older than an hour) and the `voc-settings-assist` worker re-reads Service Quotas in the background; a cold load took 5.2 s. Only a deployment's very first reading is read while the screen waits ([deployment](docs/deployment.md)).
+- Design references (GitHub and live websites): the components read from a repository's CSS or measured in the
+  page now win over the model's version of the same component (by name), so the stored design keeps what the
+  model dropped or guessed. A GitHub repository's Badge keeps every tone (`info`, `aim` …, up to 8 variants per
+  component), Input / Select keep their whole focus ring (outline, ring border colour, glow), a Switch keeps its
+  width and its knob, and `shadow-sm` / `shadow-2xl` resolve to the repository's own `--shadow-*` tokens (Tailwind's
+  default only when it defines none); `color-mix()` values are computed. Components gain an optional `width`
+  and `focus.border_color` / `focus.shadow` ([docs/company-context.md](docs/company-context.md)).
+- Design references from live websites: a page's filled buttons are kept one per background (a coloured
+  call-to-action and a white nav button are two Button variants, not one), and a hover or focus colour comes only
+  from a stylesheet rule whose selector matches that element; a model-guessed hover is dropped.
+- Company → Design system: the save row's **Discard changes** now drops a logo drafted with "Use this logo" and
+  the "Use as design system" banner too, like the banner's **Discard**; the saved logo shows again.
+- Company → Design system → Components: the editor now keeps a component's width and its whole focus ring
+  (border colour and glow, editable under "Hover and focus") and allows 8 variants like the server. Before, saving
+  after "Use as design system" silently dropped them, and a Badge with 7 tones could not be saved at all.
+
+## [5.35.02] - 2026-10-25
+
+Fixes from the sharded production e2e run and the logs: persona saves when a project is deleted mid-generation, fast and throttle-safe model capacity, design references read component classes and theme variants, assistant-added participants keep their origin, and the e2e suite runs safely in parallel.
+
+### Fixed
+
+- Persona generation (`voc-job-persona-generator`): a project deleted while its personas are being generated now
+  ends the job as "The project was deleted while its personas were being generated" (a terminal 404: no retry, no
+  async-failure DLQ message, no ERROR) instead of a generic "Please try again" after every avatar was billed. The
+  project is re-checked before the avatar batch, so no avatar is made for a deleted project, and avatars made just
+  before the delete are removed. Each refused persona write logs its DynamoDB `cancellation_reasons`; a persona row
+  that already exists (a redelivered job) is kept and the rest of the set is saved; a transient transaction conflict
+  is retried. The project's `persona_count` is recounted from its personas, so it is right when an agent appends.
+- Background jobs: a progress or status update for a job whose row no longer exists (its project was deleted, or
+  it expired) is logged at INFO with the reason, not as an ERROR with a traceback.
+- Administration → AI models: `GET /settings/model/capacity` answered in 14.5-15.9 s on first load (Service Quotas
+  pages ~1,050 Bedrock quotas). The Anthropic token quotas and their codes are now stored in the aggregates table
+  (`SETTINGS#model_quotas`), used for an hour, then re-read by quota code in parallel; the full listing (100 per
+  page) runs only on first use or when a model joins the allowlist. Same response shape
+  ([docs/deployment.md](docs/deployment.md)).
+- Administration → AI models: under load Service Quotas answered `TooManyRequestsException` and every quota showed
+  "Quota unknown". The Service Quotas client now retries adaptively, the by-code refresh runs at most three reads at
+  a time, and a throttled refresh or listing answers with the stored reading marked `"stale": true` (shown as "Last
+  stored reading"), retried after a minute.
+- Design references: an `ftp://` (or any other non-https) link said "plain http:// pages are refused". The add form
+  and the API's 400 now name the scheme that was typed ("ftp:// addresses are refused"), in all nine languages.
+- Design references from GitHub: plain CSS component classes are now read (`.btn-secondary` / `-ghost` / `-danger`,
+  `.input`, `.badge-*`, `.tab` / `.tab-active`, `.select`, `.switch`; `@apply` and plain declarations), the other
+  themes (`[data-theme=light]`, `:root[data-mode=light]`, `.dark`, `prefers-color-scheme`) are kept as a "Theme
+  variants" table in the reference's guidelines, Tailwind v4 `@theme inline` self-aliases no longer hide radii, and a
+  stylesheet is parsed whole instead of its first 20,000 characters. An SVG-only logo is named in the guidelines
+  with a request for a PNG / JPEG / WebP export; SVG stays refused
+  ([docs/company-context.md](docs/company-context.md)).
+- Participants added through the AI assistant (`add_participants` card) were stored with origin `manual`.
+  `POST /participants/lists/{list_id}/members` now takes an optional `origin: 'assistant'` (only `manual` or
+  `assistant`; anything else, `feature_request` included, is a 400) and the card sends it
+  ([docs/participants.md](docs/participants.md)).
+- e2e suite (sharded runs): a spec's own cleanup deletes only what that spec recorded. `s2-99` deleted the project
+  `s3` was generating personas for (same shard ledger), which failed s3 steps 02-11; `s2-04` now confirms the
+  "Start a run now?" dialog that Run now opens since 5.35.00.
+
+### Upgrade notes
+
+- The settings Lambda role gains the read-only `servicequotas:GetServiceQuota` on this account and region's
+  `bedrock/*` quotas. Deploy `VocApiStack` (with the API stage refresh, `npm run deploy:api`).
+
+## [5.35.01] - 2026-10-25
+
+Design-system references (404s, duplicates, URL messages, logo into the draft, no centring-margin tokens), the MCP Bearer challenge, and the e2e suite updated to the current app with a 30-minute sharded run.
+
+### Fixed
+
+- Company → Design system: a website reference whose page answers 404 / 410 now fails with "The page was not found
+  (HTTP 404); check the address", a 5xx with "The site answered with an error … try Fetch again later", and only a
+  bot challenge or HTTP 401 / 403 / 429 with "The site blocked the secure browser" (before, every HTTP error read
+  as a block). The `voc-design-capture` log now names the browser session id, the page host and a failure reason
+  code with the HTTP status ([docs/company-context.md](docs/company-context.md)).
+- Company → Design system: reading a live website no longer turns the page's centring margin into a spacing token
+  (example.com gave "page-padding 203.25px" at the 1440 px viewport). Equal auto side margins and fractional px
+  values the page never used are dropped from the extracted spacing.
+- Company → Design system: adding a reference whose address is already a (non-archived) reference is refused
+  with 409 naming it (`POST /settings/design-system/references`; case, default port, trailing slash and fragment
+  are ignored; websites, GitHub and Figma alike) instead of starting a second paid browser session and model call.
+  The add form says so while typing and offers **Fetch again** on the existing reference.
+- Company → Design system: an address that cannot be added now says why beside the field (not https, not a web
+  address, no site name, a user name or password, localhost) instead of only greying out **Add reference**.
+- Company → Design system: **Use this logo** puts the logo into the unsaved draft, like **Use as design system**;
+  it becomes the company logo only on **Save design system** (Discard keeps the old one). The route
+  `POST /settings/design-system/references/{id}/logo` now answers `{logo_id, logo_url}` without saving, and
+  `PUT /settings/design-system` takes `logo_id`. The "Replace the current logo?" dialog is gone.
+- Company → Design system: archiving a link reference no longer says "The file is kept"; it says the link and what
+  was read from it are kept.
+- Global MCP (`POST /mcp/global`): a revoked, expired, unknown or forged token, or one whose minter is disabled, now
+  gets `401` with `WWW-Authenticate: Bearer realm="voc-mcp-global", error="invalid_token"` and the JSON-RPC error
+  (code `-32001`), so MCP clients see the Bearer challenge. Before, API Gateway renamed the handler's header to
+  `x-amzn-Remapped-WWW-Authenticate`. The endpoint's token authorizer is now the global MCP function itself (the full
+  credential check, never cached), and an `ACCESS_DENIED` gateway response turns its Deny into that 401; the inline
+  Node shape-check authorizer `voc-mcp-token-authorizer` (function and log group) is removed, so VocApiStack has
+  2 fewer resources ([docs/mcp.md](docs/mcp.md)).
+- e2e suite: each run keeps its saved sessions under its own `$E2E_OUT/.auth` (`E2E_AUTH_DIR` overrides), so parallel
+  shards no longer overwrite each other's login and land on `/login`. New `npm run e2e:prod:sharded -- <n>`
+  (`e2e/scripts/run-sharded.sh`) runs the production suite in n parallel shards, each with its own output, run id,
+  ledger and cleanup, and merges the reports; 6 shards take about 30 minutes ([e2e/README.md](voc-datalake/frontend/e2e/README.md)).
+- e2e suite: specs follow the current screens again (project Edit / Delete in the card's actions menu, admin-only
+  source tiles for e2e-user, the non-admin empty dashboard and two-step checklist, the six project tabs, connector
+  runs in Admin logs, the "Generate personas now?" confirm, PR/FAQ wording, "Enable now" on a disabled form, the
+  workflow name field, sharing by display name or email, analyze-url as an assist job, a typed objective title).
+  The s3 avatar sweep reads the raw-data bucket from the VocCoreStack output when `E2E_RAW_BUCKET` is unset.
+
+### Upgrade notes
+
+- VocApiStack replaces the `/mcp/global` authorizer's function: CloudFormation deletes the
+  `voc-mcp-token-authorizer-<account>-<region>` Lambda and its `/aws/lambda/voc-mcp-authorizer-…` log group, and
+  adds an `ACCESS_DENIED` gateway response. Each `/mcp/global` request now invokes `voc-mcp-global-api` twice
+  (authorizer, then handler). Run the API stage refresh after the deploy as usual (`scripts/refresh-api-stage.sh`).
+
+## [5.35.00] - 2026-10-25
+
+Fixes from a full live end-to-end test: autonomous agents (prompt leaking into PR/FAQs, review scope, project reuse, persona portraits), the assistant (Stop really stops, Regenerate, page filters), prioritization scores, decisions, and many smaller issues; the e2e suite now covers every screen and the 5.x features.
+
+### Added
+
+- Projects → Decisions: decisions can be deleted from the tab (Delete, after a confirm dialog; owners and editors
+  only), through the existing `DELETE /projects/{id}/documents/{document_id}`
+  ([docs/decisions-and-release-watch.md](docs/decisions-and-release-watch.md)).
+- Workflow editor: a "Create a portrait for each persona" switch on Generate personas steps, and a "Length budget
+  (words)" on Write PR/FAQ, Write PRD and Revise steps (`max_words`, 200–8,000)
+  ([docs/autonomous-agents.md](docs/autonomous-agents.md#what-the-steps-read-and-send)).
+- `POST /projects/{id}/document` takes `writer_context` (prompt-only context), `writer_instructions` (reach every
+  writing step) and `length_budget_words`; `POST /projects/{id}/personas/generate` takes `keep_existing_personas`
+  (add beside the existing personas instead of replacing them).
+- AI assistant **Stop** now stops the answer on the server too (new route `POST /chat/conversations/{id}/cancel`,
+  stored run status `stopped`): the run stops generating (no further Bedrock calls) within about 2 seconds, keeps
+  the text so far, also the thinking when no text had appeared yet, and shows a **Stopped** marker, also after a
+  reload. Before, the run went on in the background and a reload showed the full answer.
+- e2e suite (`voc-datalake/frontend/e2e`): specs for the 5.00–5.34 features that had none — Participants (lists,
+  people, project link, ask composer; an ask is sent only on the dev mock), the public unsubscribe page, the
+  feature-request board and `/board` sign-in (a refused domain only; no code is ever requested), the Product tab's
+  "Fill with AI assistant", workflow revision History, Radar (Scan now never pressed), project Decisions (create,
+  edit, delete), every persona's avatar loading (project page and agent runs), and the Account / Administration /
+  Company tabs, Home brief, review window and German Participants / Feature requests. `e2e/COVERAGE.md` maps every
+  page, tab and flow to the spec that covers it, and names what is still missing and why. The existing specs follow
+  the 5.x screens again, and the app has stable selector hooks for them (accessible names first, a few
+  `data-testid`s; listed in `e2e/README.md`).
+
+### Changed
+
+- Autonomous agents reuse only projects they created themselves; any other project, however similar its name, gets
+  a new project instead. Agent runs never remove a project's personas.
+- Agent-generated personas get portraits by default, like the rest of the product (off with the step's switch, or
+  for the whole deployment with `AVATARS_ENABLED=false`).
+- The agents list polls while an agent's run is queued or running, so its status moves without a reload.
+- Prioritization: an axis your saved ballot leaves unscored now starts on its own **Not scored** stop
+  (shown as text and announced as "Not scored") instead of resting on 3, so choosing any value, 3
+  included, counts as a score; **Clear** takes an unsaved choice back to Not scored
+  ([docs/prioritization.md](docs/prioritization.md)).
+- Prioritization: a row's team composite is now the scoring formula over the team's per-metric means,
+  so every vote counts. Before, a partial ballot (for example the owner's, with one metric unscored)
+  was left out of the headline as soon as any fully scored ballot existed, and the row read
+  "2 reviewers" over the room ballot's number alone. Rows where every ballot is fully scored are
+  unchanged.
+- Room votes: `GET /voting-sessions/{id}/config` and `POST /voting-sessions/{id}/submit` answer
+  **410** `reason: gone` for a session whose row or project was deleted (the ballot page says the
+  proposal was deleted), and the facilitator `GET /voting-sessions/{id}` answers 404.
+- AI assistant: `search_feedback` takes the period you name ("last 90 days", "all time") instead of always using the
+  page's time range.
+- Conversation titles are stored up to 120 characters (was 60); the list still shows two lines.
+- Feature-request board: the list's search, status filter and sort are in the URL (`?q=`, `?status=`,
+  `?sort=`), so a filtered board is a shareable link; changes replace the history entry
+  ([docs/feature-requests.md](docs/feature-requests.md)).
+- Radar releases: a release with no published date is labelled "Date not published, first found <day>" (the
+  assistant says "first found <day>") instead of an approximate release day.
+- Radar reads a brand with one request, `GET /radar/brands/{brand}/page?days=` (`{detail, releases, compare}`,
+  [docs/radar.md](docs/radar.md#api-voc-radar-api)), instead of three parallel ones that made a cold
+  `voc-radar-api` start a second environment. A `?brand=` link and the label settings start loading beside
+  `GET /radar`. The detail, releases and compare routes stay for the AI assistant.
+- Faster first loads ([docs/caching.md → First load](docs/caching.md#first-load)). The app shell no longer
+  fetches the charts library (it rode in for a class-name helper) or the floating assistant panel and its
+  markdown renderer (now loaded when the panel first opens): 1,699 KB → 937 KB of JS before any page renders
+  (516 → 291 KB gzipped).
+- Persona and document export menus: the PDF item is now "Print or save as PDF". It always opened the browser's print
+  dialog (where "Save as PDF" writes the file, in every language's script and at vector quality), but was labelled
+  "Download as PDF".
+- Accessibility: the sidebar's navigation is a landmark named "Main" (in every language); a Personas-tab card is
+  named by its persona and described by its tagline (the initial and the tagline no longer repeat in its name);
+  Home's "<agent> needs your decision" cards and the empty assistant ("How can I help?") are named regions.
+
+### Fixed
+
+- Agent PR/FAQs no longer start with the writer's own prompt (reviews, memories, the conductor's message with run
+  and project ids): the heading is the document title, and the document generator never stores a prompt DATA block.
+- The agent's review analysis reads the last 30 days and every page of reviews (it read 7 days and one page, so a
+  category with 108 reviews was reported as "1 reviews").
+- Agent instructions such as "Keep documents short" reach every PR/FAQ / PRD writing step, with a length budget.
+- The built-in workflow's "Maximum new personas" (`max_new`) now sets how many personas a run generates.
+- The agents list shows Running (not Queued) for a run that has started; Runs → "What it produced" lists each
+  document once.
+- Agent pages show category labels, not ids (scope picker, "Watches: …", Run now); agent settings and workflow
+  editor validation are plain sentences in every language.
+- Pages stopped refreshing after their first change until a reload: on a project, the header's Public / Private
+  badge (the Share dialog's Public → Private left "Public") and the Decisions cards (an edited decision kept its old
+  values, and a second edit was refused as stale); on an agent, "This agent doesn't exist" after Run now or a
+  decision. The breadcrumbs and the AI assistant's page context observed the page's cache entry with a fetch-less
+  query, which replaced the page's own fetch; they now read the cache without observing it. A decision's save or
+  delete shows on its card at once.
+- Prioritization: the team score next to a room vote now updates when a ballot arrives and when the
+  vote ends, without a page reload; the stats cards show a loading state (`aria-busy`) while the documents are
+  read, instead of four zeros.
+- Deleting a prioritization row or a project now closes the row's open room vote; the session used
+  to stay open and readable.
+- Projects: PRDs and PR/FAQs no longer read the company design system (Knowledge → Design system). Its tokens and
+  reference summaries are prototype input only; in a written document the model took them for requirements (a PRD
+  described an unrelated dashboard from a design reference). Research and personas never read it; prototypes still
+  do ([docs/company-context.md](docs/company-context.md)).
+- Prototype Enlarge overlay: Escape pressed inside the prototype closes the overlay again (#386, broken since
+  prototypes were sandboxed to an opaque origin). The prototype's pin widget forwards an Escape it does not use
+  itself to the app, which accepts it only from a frame inside that dialog, and the widget keeps doing so after the
+  prototype rewrites its own page.
+- Share dialog and project cards: a person whose Cognito username is a machine id (a UUID, as email sign-in pools
+  assign) is named by their name, else their email, instead of the UUID.
+- Project page at phone width: the tab bar wraps onto a second row instead of scrolling sideways with a hidden
+  scrollbar, so Documents, Decisions and Participants are reachable with a mouse at 390 px.
+- AI assistant: the panel header's **More actions** items (Notify me, Export, Reset button position) take a mouse
+  click again; the conversation below used to catch it, so only the keyboard reached them.
+- AI assistant: an all-time or long question answered from the newest 90 days of feedback no longer comes back as
+  "nothing older is in the data"; the tool says the rest was not searched and points to exact counts.
+- Renaming a conversation opens the field on its full name, not on the list's cut title with "…".
+- The assistant launcher no longer floats over the open mobile navigation drawer, and every page keeps room at the
+  bottom so its last control (e.g. the Categories CSV export) can scroll clear of the launcher.
+- The floating assistant panel is named by its heading through a per-instance id.
+- Feature-request board: clearing the search and then picking a status, or picking a filter right after closing a
+  request, no longer brings back the old search or re-opens the request.
+- Dashboard: when the counts cover only part of the window (e.g. Review date + All time), a visible note under the
+  tiles says which range they cover and why, instead of only a hover title on "~297".
+- Web Reviews: new reviews are stored as plain text (no `\.` escapes or `**` markers; glued sentences split).
+  Older stored reviews display cleanly in the feed, review detail, Data Explorer, CSV/PDF exports and the
+  assistant's feedback tools; stored data is not rewritten. See [docs/web-reviews.md](docs/web-reviews.md).
+- Categories: the header and "Show all N categories" count the same rows; a review whose journey stage is
+  `unknown` no longer shows an "Unknown" chip; the category editor shows a stored subcategory the configuration
+  no longer lists instead of "None".
+- Chart tooltips name every series ("Reviews", not "value") and format numbers in the reader's language.
+- Accessibility: paste-review rows name their controls after the review ("Delete review 3"); the Administration
+  source rows have no unnamed icon button; the data source wizard's filter chips expose `aria-pressed`; each Connect
+  Revoke button names the token it revokes.
+- Raw ids: the `add_participants` card names the list while the lists load; feedback-form channels read as the
+  form's name; Data Explorer avatar folders read "Persona N · <date>"; built-in source names are translated in
+  every language; the wizard summary names sources and categories by label; a space separates a supporter's
+  email from the "Reporter" badge.
+- Radar release scan: an undated release now takes the date written in its cited URL path
+  (`/changelog/2026-07-30-…`) before falling back, the article-page date is read whichever order the meta
+  tag's attributes come in, and an undated mention of a feature merges into its dated record instead of filing
+  a copy under the scan day — the cause of every new release reading as the same "approximate" day
+  ([docs/radar.md](docs/radar.md)).
+- My objectives & KPIs: a KPI with a name but no target (or any other refused field) is marked next to the
+  field before anything is sent, and a field error the server returns is shown on that field, instead of
+  "Could not save. Try again.".
+- Feedback forms: the widget's (and iframe's) rating buttons have accessible names ("Good (4 of 5)",
+  "3 stars of 5: Good"), sit in a group named by the question and expose the chosen one as pressed; the cards
+  say "1 Submission" (plural forms in all nine languages); counts being read show busy placeholders, never a
+  stale or provisional 0.
+- Data sources: the S3 Bulk Import dialog no longer tells you to "paste the token" (it has none); it asks for
+  its settings in Administration.
+- Personal-data redaction: a card number must now pass Luhn AND start with an issuer prefix that issues that
+  length, so a Luhn-valid 13-digit timestamp or order id is no longer replaced with `[CARD]`
+  ([docs/source-policies.md](docs/source-policies.md)). Memories no longer redact a bare digit run (an id or a
+  timestamp) as a phone number; card numbers are still redacted, and the "Add memory" preview says the same.
+
+### Upgrade notes
+
+- Deploy every stack and the frontend (`npm run deploy:all`): the fixes span the API Lambdas (chat Stop, Radar
+  page read, projects, the document generator's pin widget), the agent runtime (VocProcessingStack) and the Web
+  Reviews plugin (VocIngestionStack). No IAM change: the stream Lambda reads the Stop marker with the `GetItem` it
+  already holds. Stop markers expire through the conversations table's `ttl`.
+- The Escape fix lives in the pin widget that a prototype carries from its build: prototypes built before this
+  release keep the old widget, so Escape inside them still does nothing (the overlay's Close button works).
+  Rebuild a prototype to give it the new widget.
+
+## [5.34.00] - 2026-10-25
+
+Dead and duplicated code removed, and fourteen new code-audit detectors that keep it out; a Bedrock-throttling retry that never fired is fixed.
+
+### Added
+
+- Code audit (`npm run audit:code`, [docs/code-audit.md](docs/code-audit.md)): fourteen new detectors, each its
+  own `scripts/validate.sh` step that fails on a finding.
+  - Python: `py_sfn_errors` (a Step Functions `Retry` / `Catch` error name no Lambda of the task can report),
+    `py_shared_constants` (one constant value kept in several modules that ship together), `py_dead_params`
+    (defaulted parameters no call passes, arguments every call spells the same, dead fallbacks for keys the
+    bundled JSON config always has), `py_doc_refs` (comments and docstrings naming code, paths or routes that do
+    not exist) and `clones_struct.py --kind function` (small whole-function copies that could share one home).
+  - TypeScript: `ts_prop_usage` (optional component props no production call site passes; props every call site
+    passes are listed as advice), `ts_css_tokens` (CSS custom properties, keyframes and classes nothing uses,
+    following Tailwind v4 `@theme` utilities), `ts_mock_routes` (dev-mock routes no SPA call reaches, mock
+    exports nothing imports), `ts_stale_refs` (comments naming a missing file, a test that does not exist, a
+    false "pinned by" claim, or a vanished identifier), `ts_name_twins` (one small helper declared under the
+    same name in two modules) and `ts_query_keys` (TanStack Query keys spelled inline in two files).
+  - Repository contracts: `stack_outputs` (a CloudFormation output a script or doc reads that no stack
+    declares), `repo_contracts` (undocumented or unread CDK context keys, `cdk.json` flags for modules the app
+    never imports, npm scripts nothing runs or that name a missing file, orphan script files) and
+    `doc_contract` (docs and steering files linking to missing files or anchors, citing paths or routes the code
+    no longer has, or listing the API handlers out of step with `lambda/api/`).
+- Code audit: new kinds on existing detectors. `py_route_callers` reports `called-no-route`, a request the SPA
+  (every call site in `frontend/mock-coverage.json`) or the assistant's internal-API calls make that no route
+  serves (a `{proxy+}` passes it to a Lambda that answers 404). `ts_reachability` reports `never-written`, an
+  optional option member the CDK app or a script reads but nothing ever sets, so it always takes its default.
+- Code audit: six new `patterns.py` rules, each pointing at the one shared helper: `utc-now-iso`,
+  `ts-inline-is-record`, `ts-local-request-init`, `locale-manual-plural`, `ts-manual-plural`, `ts-json-equality`.
+- CDK tests: every cdk-nag suppression (and every `appliesTo` item) must still suppress a finding in the default
+  or the all-features synth, and every suppression regex must be anchored and escaped so it matches only the
+  finding its reason names.
+- `npm run check:mock` now also gates the SPA's raw `fetch` calls to the API base (the public unsubscribe and
+  ballot config / submit routes), so they need a `mock-coverage.json` entry like every `fetchApi` call.
+- Lockstep tests pinning the agent form's and the workflow editor's limits to the backend constants that
+  enforce them.
+
+### Changed
+
+- Backend clean-up with no behaviour change. Timestamps, SHA-256 hashes, key prefixes shared by a writer and its
+  readers (daily metrics, prioritization ballots, erasure jobs, memory imports, the failure messages the Logs page
+  matches) and small helper copies now each have one home in `lambda/shared`. The data explorer, manual import and
+  S3 import APIs share one admin-only middleware. The avatar prompt is read only from its JSON template.
+- Docs: the steering files' route tables (logs, ballots), API handler lists and counts (20 handlers), page and
+  component counts and test-setup instructions match the code again; `docs/plugin-architecture.md` drops its
+  finished migration plan, and `docs/code-audit.md` no longer cites audit notes that were never in the repo.
+- `voc-datalake/scripts/test-api.sh` no longer looks up the `ChatStreamUrl` output, which no stack has
+  emitted since the assistant moved behind API Gateway; it streams from the API endpoint (the optional second
+  argument still overrides it).
+- One shared home for duplicated SPA and assistant helpers (plain-object guard, request options, list leniency,
+  debounced value, JSON equality, language names, query keys, QR symbol settings, user references); the
+  assistant's memory and company approval executors now go through the memory, company-context and design-system
+  API modules. No user-visible change.
+
+### Removed
+
+- Parameters no caller ever passed, Python fallback copies of the avatar prompt config, forwarding functions that
+  existed only for tests to patch, and the `BedrockThrottlingException` alias in the research step handler.
+- npm scripts that duplicated gate steps or skipped the API stage refresh: root `dead-code`, `dead-code:prod`,
+  `duplication`, `duplication:pairs`, `typecheck:python`, `test:acp-bridge` (the gate runs its own copies:
+  `npm run validate`), and `voc-datalake`'s bare `deploy:core`, `deploy:ingestion`, `deploy:processing` (use
+  `npm run deploy:infra`, or `cdk deploy <Stack>` followed by `bash scripts/refresh-api-stage.sh`).
+- Six cdk-nag suppressions that matched no finding (stale grants, a queue cdk-nag already knows is a DLQ, an entry
+  another always shadowed). Only template metadata changes; `cdk-nag` reports nothing new.
+- `voc-datalake/cdk.json`: six CDK feature flags for modules the app never uses (ECS, EC2 launch templates,
+  CodePipeline, SNS subscriptions). The synthesized templates are unchanged.
+- Administration → Sources: the credentials section's **Test** button. It called
+  `POST /integrations/{source}/test`, a route removed in #115, so it has answered 404 ever since and never
+  worked; the source card's "Connected" badge still shows whether credentials are saved.
+- Unused component options with their dead branches (a small tile size, a labelled ghost mark, an admin-route
+  redirect target, the card without actions, disabled tag and dimension fields, and similar), and the unused
+  "Delete" fallback label of the confirm dialog in all 9 languages.
+- Unused design tokens: `card-fg`, `muted-fg`, `info-fg`, `aim-fg`, `panel-strong` and the utility mappings of
+  `accent-glow`, `border-hover`, `chrome`, `chart-grid` and the sentiment aliases (the `--*` variables stay),
+  five unused animations with their keyframes, and the `scrollbar-hide` class. The design-system guide lists
+  only what exists ([docs/kiro-design-system.md](docs/kiro-design-system.md)).
+- Dev mock routes no screen calls (batch prototype-pin updates, persona metrics, the legacy chat route, a `PUT`
+  on prioritization, reading Radar settings, creating a participant directly).
+- 31 shadowed plural base strings and the unused `categories:issues` strings from all nine locales.
+
+### Fixed
+
+- Research and document-generation workflows: a step throttled by Bedrock is now retried. The state machines
+  retried on `BedrockThrottlingException`, but the Lambda reports `BedrockThrottlingError`, so the retry never
+  fired and a throttled step failed at once.
+- Stale comments and docstrings that pointed at moved files, renamed functions and tests that no longer exist.
+- `npm run deploy:frontend` (`frontend/scripts/deploy.sh`) writes the same `config.json` as a CDK deploy:
+  it now carries `features.email` and, on a deployment with `-c emailFrom`, the feature-request board's user
+  pool (`board`), so a frontend-only deploy no longer hides the board sign-in and the email capability. It no
+  longer writes `streamEndpoint` / `avatarsCdnUrl`, which the app never read. VocApiStack gains an
+  `EmailAvailable` output (only with `-c emailFrom`) for it; a lockstep test pins the script, the stack and
+  the app's config schema to one key set.
+- JSON upload: the "Import N items" button and the preview heading no longer append an English "s" in every
+  language (German showed "3 Elements importieren", Japanese "アイテムs"); the S3 upload status, and several French,
+  Spanish and German "more items / more errors" counters, now use real singular and plural forms.
+- Agents: the form accepts a cron expression up to 120 characters, the limit the API enforces (it stopped at 100).
+
+### Security
+
+- cdk-nag: the `AwsSolutions-IAM5` suppressions for DynamoDB index ARNs, bucket object ARNs, Lambda version
+  wildcards and the CDK assets bucket are now anchored regexes that match only the finding their reason
+  names. They had lost their backslashes, so the whole-bucket `/*` entry for the raw data bucket also silenced
+  every prefix-scoped grant on it. Those prefix grants now carry their own reviewed suppression, one item per
+  prefix, so a grant on a new prefix is reported. IAM policies are unchanged; only template `Metadata` changes.
+
+## [5.33.01] - 2026-10-25
+
+Fixes from the live check of the participants and feature-request board release.
+
+### Fixed
+
+- Feature-request board (`/board`): the emailed sign-in link no longer leaves its one-time code in the
+  address bar or browser history after sign-in, and signing out of a board opened from that link no longer
+  shows the false "opened in a different browser" warning. A shared `?request=` is kept.
+- Administration → Privacy & access → Users → "Company domains and participant email": "Saved." now appears
+  after a successful save (the form reloaded with the stored values and dropped the notice).
+- Board sign-up refusals: the `voc-board-pre-sign-up` function's one ERROR log line per refused domain is now
+  documented as expected (docs/feature-requests.md), carries only the code `domain_not_allowed`, and is pinned
+  out of every ops alarm.
+- Board sign-in email: the sign-in link is now also written out as text, so a mail client that shows only
+  plain text still offers an address to open.
+- Deleting a feature request or erasing a person (admin) no longer re-requests the deleted item right after
+  (a 404 and a console error); the dialog closes and the lists refresh.
+- AI assistant: the `add_participants` approval card's summary now names the participant list instead of
+  showing its raw id.
+
+## [5.33.00] - 2026-10-25
+
+Participants (lists of people to ask for feedback, emailed asks) and an internal feature-request board with
+revenue impact and its own email sign-in.
+
+### Added
+
+- **Participants** (VALIDATE → Participants, `/participants`): participant lists (employees, paid participants,
+  beta customers, sales, customers, feature requesters, custom) with member counts; people with company, title,
+  notes and tags; a person view with their lists and the asks they received; administrators can erase a person.
+  Tabs Lists / People / Asks deep-link with `?tab=`. Routes under `/participants/*`. See
+  [docs/participants.md](docs/participants.md).
+- **Asks**: email chosen lists and/or people a subject, a message and one link — one of your feedback forms (the
+  answer is then attributed to the person and the ask: `metadata.participant`) or any https page. Sent through
+  Amazon SES in the background (at most 10 per second, a configurable daily cap, 500 recipients per ask), with
+  Reply-To the asker and one-click unsubscribe (`List-Unsubscribe`). The Asks tab shows sent / failed / skipped /
+  responded per ask and each recipient's status.
+- **Project → Participants tab**: link lists and people to a project or invite new ones, see how many active people
+  that reaches, "Ask for feedback" prefilled with the project and everyone linked, and the project's asks.
+- **Unsubscribe page** (`/unsubscribe?t=…`, public) and the public `POST /unsubscribe` (always 200, with its own
+  stage throttle in `lib/stacks/api-gateway.ts`). Nothing happens on page load, so mail link scanners cannot unsubscribe anyone.
+- **Feature-request board** (LISTEN → Feature requests, `/feature-requests`): sales and field teams post a request
+  with a description, customer, deal and revenue impact in whole US dollars (committed to pay, deal at risk, or
+  none); others +1 it with their own customer. Totals per request (supporters, customers, committed and at-risk
+  USD), sort, filter and search, a detail dialog deep-linked as `?request=<id>` with "Copy link". Admins set the
+  status, delete, and **promote to project**: supporters and customer contacts become the request's participant
+  list, linked to the project. Routes under `/feature-requests/*`. See
+  [docs/feature-requests.md](docs/feature-requests.md).
+- **Standalone board at `/board`** for people who are not app users: `/board/login` emails a sign-in link and a
+  one-time code from the board's OWN Cognito user pool, and only addresses on the configured company domains can
+  join. A board session is accepted by the board routes alone; the app's own user pool is unchanged.
+- **Administration → Privacy & access → Users → "Company domains and participant email"**: the company domains
+  (who may join the board), whether people outside them may be added as participants, the daily send limit and the
+  sender name, plus whether email sending is configured and the board link to share.
+- **AI assistant on Participants**: `list_participant_lists`, `create_participant_list` and `add_participants`
+  (up to 200 people per approval card, every row shown, duplicates collapsed, invalid emails refused before the
+  card) — bulk entry goes through the assistant. `voc-chat-stream` may now invoke `voc-engagement-api`.
+
+### Upgrade notes
+
+- **Two new tables in VocCoreStack**, `voc-participants-<suffix>` (people's emails and names) and
+  `voc-feature-requests-<suffix>`, created empty; covered by `-c protectData` and by the teardown backup steps like
+  every customer-data table. VocApiStack gains one Lambda, `voc-engagement-api`, the routes `/participants/*`,
+  `/feature-requests/*` and `POST /unsubscribe`. Deploy VocCoreStack before VocApiStack (`cdk deploy --all` does)
+  and end with the API stage refresh as always. Nothing to migrate.
+- **Email is opt-in: `-c emailFrom=noreply@<your-domain>`.** Before setting it, verify the SES identity of that
+  domain in the deployment region, leave the SES sandbox, and turn on the SES account-level suppression list for
+  bounces and complaints. With it, VocCoreStack adds the board's Cognito user pool (`voc-board-user-pool`, Essentials
+  feature plan, billed per monthly active user) and `config.json` gains `board` and `features.email: true`. Without
+  it, asks answer `409 email_not_configured` and only app users can use the board. See
+  [docs/deployment.md](docs/deployment.md#participant-email-and-the-feature-request-board--c-emailfrom).
+- **Nobody can join the board until an admin lists the company domains** (Administration → Privacy & access →
+  Users); the list starts empty.
+
+## [5.32.00] - 2026-10-24
+
+The Product tab is redesigned and its embedded chat replaced by a guided interview in the AI assistant.
+
+### Changed
+
+- **Project → Product tab redesigned.** One header (what the tab is for, how many of the 11 fields are filled, when
+  the description was last saved), the company context strip, the description in five section cards (the product ·
+  customers and problem · offering · goals and boundaries · notes; long text wraps, every field still saves on its
+  own when you leave it), and internal documents and **Generate report** as side cards. The Chat / Upload / Both
+  switch is gone: everything is always shown. See [docs/project-workspace.md → Product tab](docs/project-workspace.md#product-tab).
+- **Fill with AI assistant** (Product tab header, editors only) opens the AI assistant on a new conversation with an
+  interview request drafted (nothing is sent until you press send). The assistant asks about the empty fields one
+  question at a time — product name, one-liner, target users, problem, current state, key features,
+  competitors/differentiators, goals and metrics, constraints, non-goals, anything else — and then proposes ONE
+  `update_product_context` approval card; the form shows the approved values at once.
+
+### Removed
+
+- The Product tab's embedded AI interview chat, and its route `POST /projects/{id}/product-context/interview` (the
+  `assist_interview_turn` assist job). The AI assistant's guided interview replaces it.
+
+### Upgrade notes
+
+- `POST /projects/{id}/product-context/interview` now answers **404**. Nothing in the app calls it any more; an
+  external script that did should use the AI assistant (or `PUT /projects/{id}/product-context`) instead. Deploy
+  with `npm run deploy:infra` (or follow a bare `cdk deploy` with `scripts/refresh-api-stage.sh`) — the projects
+  API sits behind `{proxy+}`, so no API Gateway method is removed, but the stage refresh is the standard step.
+
+## [5.31.01] - 2026-10-24
+
+A regression test for the Python test setup's layer-path filter.
+
+### Fixed
+
+- The test setup's layer-path filter is a small function with its own test, so a checkout whose path contains
+  `layers` can never again lose the virtualenv's packages.
+
+## [5.31.00] - 2026-10-24
+
+Slimmer Lambda layers: crypto and lxml only where they are used, no copies of the runtime's SDK libraries, and a layer audit in the gate.
+
+### Changed
+
+- The Python dependency layers ship only what their functions use
+  ([lambda-sizing.md → Dependency layers](docs/lambda-sizing.md#dependency-layers)). Unzipped size per cold start:
+  - `ApiDepsLayer` and `ProcessingDepsLayer`: 39.4 MB → 20.5 MB (zipped 13.7 → 7.3 MB);
+  - `IngestionDepsLayer`: 37.2 MB → 22.2 MB (zipped 14.1 → 7.9 MB).
+- The CloudFront URL-signing crypto (cryptography, cffi, pycparser) is in a new `SigningDepsLayer`
+  (VocApiStack, 16.8 MB). It is attached only to the five functions that sign avatar and prototype URLs: the
+  projects API, its assist worker, the persona generator, the persona importer and the document generator.
+- lxml is in a new `EmailIntakeDepsLayer` (VocIngestionStack, 12.4 MB). It exists only when the inbound-email
+  intake is enabled, and only that function carries it. The webscraper parses with `html.parser` as before.
+- Layers no longer carry their own urllib3, jmespath, python-dateutil, six or s3transfer, so the runtime's botocore
+  runs on the runtime's own copies. They also drop console scripts, type stubs and packaged test suites.
+  `scripts/build-layers.sh` now builds every layer directory, with the same recipe as the CDK bundling.
+- New gate detector `scripts/audit/py_layers.py`, in the `audit: … + py_layers` step. It reports:
+  - a layer library no attached function reaches, or one only a few reach;
+  - a package the runtime already ships;
+  - a function that imports a library none of its layers provides;
+  - a layer a function never uses;
+  - a venv that does not match the layer requirements.
+
+  See [code-audit.md](docs/code-audit.md).
+
+### Fixed
+
+- The Python test setup no longer drops the virtualenv's packages when the checkout path contains
+  `layers/` (it filtered `sys.path` by substring); only the repo's own `lambda/layers` build output is removed.
+
+### Upgrade notes
+
+- The next deploy publishes new versions of `ApiDepsLayer`, `ProcessingDepsLayer` and `IngestionDepsLayer`,
+  creates `SigningDepsLayer` (VocApiStack), and updates every function that uses those layers. It also creates
+  `EmailIntakeDepsLayer` if you deploy with `-c inboundEmailDomain`. Docker (or `CDK_DOCKER=finch`) must be able
+  to build two more layer assets. There are no data or route changes.
+- Local and CI Python environments install two more requirement files:
+  `lambda/layers/signing-deps/requirements.txt` and `lambda/layers/email-intake-deps/requirements.txt` (see
+  `voc-datalake/requirements-dev.txt`; the CI workflows already do). The `py_layers` gate step reports
+  `version-mismatch` until `voc-datalake/.venv` matches the layer requirement files. Today that means
+  `pydantic==2.14.1` and `websocket-client==1.9.2` for ingestion-deps.
+
 ## [5.30.01] - 2026-10-24
 
 The CDK-contract audit step no longer judges CDK's own Lambda handlers.
@@ -936,7 +2156,7 @@ Second pass from the live verification: readable charts on phones, linkable Admi
 - Project documents can be linked directly (`/projects/{id}?tab=documents&doc=<id>`); Decisions →
   "PR/FAQ ready" opens that PR/FAQ.
 - Source labels read web-review hostnames as domains ("trustpilot.com") and app names that already end in
-  their platform the same way as the rest ("Zara (iOS)").
+  their platform the same way as the rest ("Example Air (iOS)").
 
 ### Fixed
 

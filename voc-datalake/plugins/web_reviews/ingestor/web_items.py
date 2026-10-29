@@ -3,13 +3,14 @@
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Final
 from urllib.parse import urlparse
 
 from extract import ExtractedReview
+from review_text import plain_review_text
 
 from shared.radar_brands import radar_stamp
+from shared.timestamps import now_iso
 from shared.web_review_targets import MAX_PAGES, validated_target, web_review_source_id
 
 CHANNEL_MAX_CHARS: Final = 100
@@ -94,7 +95,7 @@ def created_at(review: ExtractedReview) -> str:
     """The review's own date (midnight UTC), else the ingest time."""
     if review.date:
         return f'{review.date}T00:00:00+00:00'
-    return datetime.now(UTC).isoformat()
+    return now_iso()
 
 
 def queue_item(target: WebTarget, review: ExtractedReview, *, page: int, page_url: str, brand_name: str) -> dict:
@@ -102,8 +103,10 @@ def queue_item(target: WebTarget, review: ExtractedReview, *, page: int, page_ur
     return {
         'id': review_id(target.host, review),
         'channel': target.name[:CHANNEL_MAX_CHARS],
-        'text': review.text,
-        'title': review.title,
+        # Plain text, cleaned HERE rather than at extraction: `review_id` hashes the extracted
+        # text, so a review stored before the cleaning keeps its id and is not stored twice.
+        'text': plain_review_text(review.text),
+        'title': plain_review_text(review.title) if review.title else review.title,
         'rating': review.rating,
         'created_at': created_at(review),
         'url': page_url,

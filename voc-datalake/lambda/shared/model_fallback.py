@@ -106,15 +106,15 @@ def is_cooling_down(model_id: str, now: float | None = None) -> bool:
     return until is not None and (time.time() if now is None else now) < until
 
 
-def order_for_attempt(chain: Iterable[str], now: float | None = None) -> list[str]:
+def order_for_attempt(chain: Iterable[str]) -> list[str]:
     """*chain* with cooling-down models moved to the end (order otherwise kept).
 
     Cooling models are tried last rather than dropped, so a request never fails
     without attempting every model — capacity may have come back.
     """
     models = list(chain)
-    ready = [m for m in models if not is_cooling_down(m, now)]
-    cooling = [m for m in models if is_cooling_down(m, now)]
+    ready = [m for m in models if not is_cooling_down(m)]
+    cooling = [m for m in models if is_cooling_down(m)]
     return ready + cooling
 
 

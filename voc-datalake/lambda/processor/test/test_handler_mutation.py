@@ -44,6 +44,7 @@ from moto import mock_aws
 from processor import handler
 from processor.test.sqs_fixtures import sqs_record
 from shared.converse import BedrockThrottlingError
+from shared.feedback_types import feedback_type_dimension
 
 FIXED_NOW = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
 FIXED_ISO = '2026-01-02T03:04:05+00:00'
@@ -543,7 +544,7 @@ class TestInvokeBedrockLlm:
         instruction.assert_called_once_with()
         enrich.assert_called_once_with(
             record, 'CATEGORIES', converse_fn=handler.converse, raise_on_throttle=raise_on_throttle,
-            dimensions_config=[],
+            dimensions_config=[feedback_type_dimension()],
         )
 
 

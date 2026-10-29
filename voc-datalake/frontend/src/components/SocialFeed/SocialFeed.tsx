@@ -24,6 +24,8 @@ import ReviewSentimentBadge from '../SentimentBadge/ReviewSentimentBadge'
 import RatingStars from '../RatingStars'
 import { SourceIcon } from '../SourceIcon/SourceIcon'
 import { formatDate } from '../../utils/dateUtils'
+import { cleanReviewText } from '../../utils/cleanReviewText'
+import { metricsKeys } from '../../api/queryKeys'
 
 const SOURCE_COLORS: Record<string, string> = {
   webscraper: 'border-l-chart-2', web_scrape: 'border-l-chart-2',
@@ -52,7 +54,7 @@ function FeedItem({ item }: Readonly<{ item: FeedbackItem }>) {
             <ReviewSentimentBadge sentiment={item.sentiment_label} score={item.sentiment_score} />
           </div>
 
-          <p className="text-sm text-text line-clamp-3">{item.original_text}</p>
+          <p className="text-sm text-text line-clamp-3">{cleanReviewText(item.original_text)}</p>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-muted">
             {/* One date per review across the dashboard, in the reader's language ("Oct 18, 2026" / "18 paź 2026"). */}
             <span className="font-mono">{formatDate(item.source_created_at, i18n.language)}</span>
@@ -100,13 +102,13 @@ export default function SocialFeed({ limit = 10, showFilters = true }: SocialFee
 
   // Fetch available sources dynamically
   const { data: sourcesData } = useQuery({
-    queryKey: ['sources', dateParams],
+    queryKey: metricsKeys.sources(dateParams),
     queryFn: () => api.getSources(dateParams),
     enabled: !!config.apiEndpoint,
   })
 
   const { data, isLoading } = useQuery({
-    queryKey: ['feedback', dateParams, activeSource],
+    queryKey: metricsKeys.feedback(dateParams, activeSource),
     queryFn: () => api.getFeedback({ ...dateParams, source: activeSource === null || activeSource === '' ? undefined : activeSource, limit }),
     enabled: !!config.apiEndpoint,
   })

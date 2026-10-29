@@ -21,6 +21,7 @@ from shared.http_utils import UnsafeURLError, fetch_public_url
 from shared.invocation_cost import measure_invocation_cost
 from shared.producer_labels import message_labels
 from shared.radar_brands import radar_stamp
+from shared.timestamps import now_iso
 
 # Inter-page delay jitter only needs a uniform draw; it is not security-relevant.
 _jitter = secrets.SystemRandom()
@@ -256,7 +257,7 @@ class WebScraperIngestor(BaseIngestor):
                 author = author_data
 
             date_published = item.get('datePublished', '')
-            created_at = _jsonld_created_at(date_published) if date_published else datetime.now(UTC).isoformat()
+            created_at = _jsonld_created_at(date_published) if date_published else now_iso()
 
             return self._scraped_item(
                 config, url,
@@ -303,7 +304,7 @@ class WebScraperIngestor(BaseIngestor):
 
     def _container_created_at(self, container, config: dict) -> str:
         """The container's date (``datetime`` attribute or text), else now."""
-        created_at = datetime.now(UTC).isoformat()
+        created_at = now_iso()
         date_selector = config.get('date_selector')
         if date_selector:
             date_elem = container.select_one(date_selector)
@@ -427,7 +428,7 @@ class WebScraperIngestor(BaseIngestor):
             if self.execution_id and self.target_scraper_id:
                 self._update_run_status(self.target_scraper_id, {
                     'status': 'error',
-                    'completed_at': datetime.now(UTC).isoformat(),
+                    'completed_at': now_iso(),
                     'errors': ['No scraper configuration found']
                 })
             return
@@ -470,11 +471,11 @@ class WebScraperIngestor(BaseIngestor):
                     logger.exception(error_msg)
                     errors.append(error_msg)
 
-            self.set_watermark(f'scraper_{scraper_id}_last_run', datetime.now(UTC).isoformat())
+            self.set_watermark(f'scraper_{scraper_id}_last_run', now_iso())
 
             self._update_run_status(scraper_id, {
                 'status': 'completed' if not errors else 'completed_with_errors',
-                'completed_at': datetime.now(UTC).isoformat(),
+                'completed_at': now_iso(),
                 'pages_scraped': pages_scraped,
                 'items_found': items_found,
                 'errors': errors

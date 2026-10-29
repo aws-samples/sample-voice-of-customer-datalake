@@ -83,8 +83,8 @@ describe('runAssistant with memory recall', () => {
     const { h, queries } = await runRecallingMemory();
     expect(queries).toStrictEqual(['How are customers feeling?']);
     const blocks = lastUserContent(firstCall(h)).map((block) => block.text ?? '');
-    expect(blocks[0]).toContain('<memory>');
-    expect(blocks[0]).toContain('Customers want SSO.');
+    expect(blocks[0]).toContain('<context>');
+    expect(blocks[1]).toMatch(/^<memory>[\s\S]*Customers want SSO\./u);
     expect(blocks.at(-1)).toBe('How are customers feeling?');
   });
 

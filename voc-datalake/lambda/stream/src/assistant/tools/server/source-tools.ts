@@ -33,7 +33,7 @@ function redactedErrors(errors: unknown): { error_count: number; errors: string[
   };
 }
 
-const text = (value: unknown) => (typeof value === 'string' ? value : undefined);
+const stringOrUndefined = (value: unknown) => (typeof value === 'string' ? value : undefined);
 const count = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
 
 /** The client-safe view of one run row. */
@@ -41,10 +41,10 @@ export function sourceRunView(source: string, row: Record<string, unknown> | und
   if (row === undefined) return { source, status: 'never_run' };
   return {
     source,
-    execution_id: text(row.sk),
-    status: text(row.status) ?? 'unknown',
-    started_at: text(row.started_at),
-    completed_at: text(row.completed_at),
+    execution_id: stringOrUndefined(row.sk),
+    status: stringOrUndefined(row.status) ?? 'unknown',
+    started_at: stringOrUndefined(row.started_at),
+    completed_at: stringOrUndefined(row.completed_at),
     items_found: count(row.items_found),
     ...redactedErrors(row.errors),
   };

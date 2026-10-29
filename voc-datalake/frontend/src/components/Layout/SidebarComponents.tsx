@@ -215,7 +215,7 @@ export function Sidebar({
         onToggleCollapse={onToggleCollapse}
       />
 
-      <nav className={clsx('flex-1 overflow-y-auto', sidebarCollapsed && !mobileMenuOpen ? 'lg:px-2 px-3' : 'px-3')}>
+      <nav aria-label={t('common:sidebar.mainNav')} className={clsx('flex-1 overflow-y-auto', sidebarCollapsed && !mobileMenuOpen ? 'lg:px-2 px-3' : 'px-3')}>
         {visibleNavItems.map((item, i) => {
           const showLabels = !sidebarCollapsed || mobileMenuOpen
           // Render a section header when this item starts a new section.

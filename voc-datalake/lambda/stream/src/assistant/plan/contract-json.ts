@@ -5,7 +5,7 @@
  * Regenerate after changing `plan/schema.ts` or the tool lists in `contract.ts`
  * (from `voc-datalake/lambda/stream`):
  *   npx jiti scripts/write-plan-contract.mjs > ../shared/plan_contract.json
- * `contract-json.test.ts` fails when the committed file differs from this output.
+ * `plan/schema.test.ts` fails when the committed file differs from this output.
  */
 import { ADMIN_ONLY_CLIENT_TOOLS, ADMIN_ONLY_PACKS, ADMIN_ONLY_SERVER_TOOLS, PLAN_TOOL_NAMES, SERVER_TOOLS, TOOL_PACKS } from '../contract.js';
 import {

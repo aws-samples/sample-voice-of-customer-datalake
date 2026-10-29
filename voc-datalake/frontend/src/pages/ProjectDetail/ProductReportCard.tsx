@@ -9,6 +9,7 @@ import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
 import { projectsApi } from '../../api/projectsApi'
+import ProductCard from './ProductCard'
 import { useTransientFlag } from './useTransientFlag'
 
 /**
@@ -70,30 +71,25 @@ export default function ProductReportCard({
   }, [projectId, language, hasNoFields, onJobStarted, started, t])
 
   return (
-    <div className="bg-card border rounded-xl p-4">
-      <div className="flex items-center gap-2 mb-2">
-        <FileOutput size={16} className="text-ok" />
-        <h3 className="text-sm font-semibold">{t('product.report.title')}</h3>
-      </div>
-      <p className="text-xs text-muted mb-3">{t('product.report.description')}</p>
+    <ProductCard icon={FileOutput} title={t('product.report.title')} description={t('product.report.description')}>
       <button
         type="button"
         onClick={() => setConfirming(true)}
         disabled={busy}
-        className="btn btn-primary w-full text-sm"
+        className="btn btn-secondary w-full"
       >
         {busy ? <Loader2 size={14} className="animate-spin" /> : <FileOutput size={14} />}
         {busy ? t('product.report.generating') : t('product.report.button')}
       </button>
       {started.isSet && (
-        <div className="mt-2 text-xs text-ok inline-flex items-center gap-1">
-          <CheckCircle2 size={12} />
+        <div role="status" className="flex items-start gap-1 text-[12px] text-ok">
+          <CheckCircle2 size={12} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
           <span><strong>{t('product.report.startedTitle')}.</strong> {t('product.report.startedMessage')}</span>
         </div>
       )}
       {error && (
-        <div className="mt-2 text-xs text-danger inline-flex items-center gap-1">
-          <AlertCircle size={12} /> {error}
+        <div role="alert" className="flex items-start gap-1 text-[12px] text-danger">
+          <AlertCircle size={12} className="mt-0.5 flex-shrink-0" aria-hidden="true" /> {error}
         </div>
       )}
       <ConfirmModal
@@ -105,6 +101,6 @@ export default function ProductReportCard({
         onConfirm={() => { setConfirming(false); void onGenerate() }}
         onCancel={() => setConfirming(false)}
       />
-    </div>
+    </ProductCard>
   )
 }

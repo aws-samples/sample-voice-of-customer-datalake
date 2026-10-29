@@ -26,6 +26,12 @@ export const KEY_STEP = 16
 export const KEY_STEP_LARGE = 64
 /** Gap between the launcher and the floating panel it opens. */
 const PANEL_GAP = 16
+/**
+ * Bottom padding the page scroller keeps free for the launcher in its default corner:
+ * 80 px = DEFAULT_OFFSET + LAUNCHER_SIZE + 16 px, so the page's last control scrolls clear
+ * of it. `sm:` too: the scroller's own `sm:p-6` would otherwise win from `sm` up.
+ */
+export const LAUNCHER_RESERVE_CLASS = 'pb-20 sm:pb-20'
 
 export interface BubblePosition {
   /** Px from the viewport's right edge to the launcher's right edge. */

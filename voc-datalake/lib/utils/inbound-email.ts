@@ -28,7 +28,8 @@ export interface InboundEmailConfig {
 export const INBOUND_EMAIL_RULE_BASE_NAME = 'voc-email-intake';
 
 // A DNS hostname: labels of 1-63 letters, digits or inner hyphens, at least two labels, <= 253.
-const HOSTNAME_RE = /^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+// Exported: lib/utils/email-sender.ts validates the `emailFrom` domain with the same shape.
+export const HOSTNAME_RE = /^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 const ZONE_ID_RE = /^Z[A-Z0-9]{1,31}$/;
 // SES rule set names: letters, digits, '.', '_' and '-', 1-64, starting and ending alphanumeric.
 const RULE_SET_RE = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,62}[A-Za-z0-9])?$/;

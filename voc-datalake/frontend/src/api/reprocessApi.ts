@@ -15,6 +15,7 @@
  *
  * @module api/reprocessApi
  */
+import { post } from './requestKit'
 import { z } from 'zod'
 import { fetchApi } from './client'
 
@@ -94,8 +95,8 @@ export const reprocessApi = {
   getLatest: async (): Promise<ReprocessJob | null> => normalizeJobEnvelope(await fetchApi<unknown>(BASE)),
 
   start: async (request: ReprocessRequest): Promise<ReprocessJob | null> =>
-    normalizeJobEnvelope(await fetchApi<unknown>(BASE, { method: 'POST', body: JSON.stringify(request) })),
+    normalizeJobEnvelope(await fetchApi<unknown>(BASE, post(request))),
 
   cancel: async (jobId: string): Promise<ReprocessJob | null> =>
-    normalizeJobEnvelope(await fetchApi<unknown>(`${BASE}/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' })),
+    normalizeJobEnvelope(await fetchApi<unknown>(`${BASE}/${encodeURIComponent(jobId)}/cancel`, post())),
 }

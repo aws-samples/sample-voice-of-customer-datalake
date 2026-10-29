@@ -186,6 +186,24 @@ const CASES: Record<ClientToolName, { good: unknown[]; bad: unknown[] }> = {
     good: [{ users: [{ email: 'alice@example.com', role: 'users' }, { email: 'bob@example.com', role: 'admins' }] }],
     bad: [{ users: [] }, { users: [{ email: 'a@example.com', role: 'users' }, { email: 'A@example.com', role: 'users' }] }, { users: [{ email: 'a@example.com' }] }],
   },
+  create_participant_list: {
+    good: [{ name: 'Beta customers', kind: 'beta' }, { name: 'Panel', kind: 'paid', description: 'Paid research panel' }],
+    bad: [{ name: 'Panel' }, { name: 'Panel', kind: 'vip' }, { name: '', kind: 'custom' }, { name: LONG(121), kind: 'custom' }, { name: 'P', kind: 'custom', owner: 'x' }],
+  },
+  add_participants: {
+    good: [
+      { list_id: 'lst_0123456789abcdef', people: [{ email: 'ana@example.com' }, { email: 'ANA@example.com', name: 'Ana' }] },
+      { list_id: 'lst_0123456789abcdef', people: [{ email: 'ben@acme.example', name: 'Ben', company: 'Acme', title: 'Buyer', tags: ['beta'] }] },
+    ],
+    bad: [
+      { list_id: 'lst_0123456789abcdef', people: [] },
+      { list_id: 'lst_0123456789abcdef', people: [{ email: 'not-an-address' }] },
+      { list_id: 'lst_0123456789abcdef', people: [{ email: 'a@localhost' }] },
+      { list_id: 'lst_0123456789abcdef', people: Array.from({ length: 201 }, (_, i) => ({ email: `p${String(i)}@example.com` })) },
+      { list_id: 'Beta customers', people: [{ email: 'ana@example.com' }] },
+      { list_id: 'lst_0123456789abcdef', people: [{ email: 'ana@example.com', phone: '1' }] },
+    ],
+  },
   update_user: {
     good: [{ username: 'c1d2e3f4-0000-4000-8000-000000000000', updates: { role: 'admins' } }, { username: 'alice@example.com', updates: { given_name: 'A', enabled: false } }],
     bad: [

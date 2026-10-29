@@ -14,6 +14,7 @@ import { pdfToneStyle, pdfZebraRow, type PdfTone } from '../../components/PdfPar
 import { signedAverage } from '../../components/SentimentWords/sentimentWords'
 import { formatDate } from '../../utils/dateUtils'
 import { formatCount } from '../../utils/numberFormat'
+import { cleanReviewText } from '../../utils/cleanReviewText'
 import { categoryLabel, sourceLabel } from '../../utils/displayLabels'
 
 /** The tone a sentiment label prints in; anything else (neutral, unknown) is muted. */
@@ -139,7 +140,7 @@ export function FeedbackTableSection({ items }: { readonly items: readonly Feedb
                   fontSize: '11px',
                   maxWidth: '250px',
                 }}>
-                  {truncateText(item.original_text, 150)}
+                  {truncateText(cleanReviewText(item.original_text), 150)}
                 </td>
                 <td style={{
                   padding: '6px',

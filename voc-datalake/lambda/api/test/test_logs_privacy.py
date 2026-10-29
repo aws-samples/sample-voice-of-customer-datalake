@@ -102,7 +102,7 @@ class TestReadsCarryNoPii:
         url = 'https://shop.example/reviews'
         policy = f'Error scraping {url}: URL blocked by policy (Access to localhost is not allowed)'
         mock_table.query.return_value = {'Items': [{
-            'sk': 'run-1', 'status': 'completed_with_errors', 'started_at': datetime.now(UTC).isoformat(),
+            'sk': 'run-1', 'status': 'completed_with_errors', 'started_at': datetime.now(UTC).replace(microsecond=0).isoformat(),
             'errors': [
                 f'Error scraping {url}: 500 Server Error for {EMAIL} boom-detail',
                 f'Error scraping {url}: KeyError',

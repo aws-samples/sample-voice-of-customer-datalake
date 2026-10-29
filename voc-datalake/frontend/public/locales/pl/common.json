@@ -14,6 +14,7 @@
     "prioritization": "Priorytetyzacja",
     "problems": "Analiza problemów",
     "project": "Projekt",
+    "board": "Tablica",
     "projects": "Projekty",
     "scrapers": "Źródła danych",
     "memory": "Pamięć",
@@ -25,7 +26,9 @@
     "account": "Konto",
     "workflows": "Przepływy pracy",
     "workflow": "Przepływ pracy",
-    "radar": "Radar"
+    "radar": "Radar",
+    "featureRequests": "Tablice opinii",
+    "participants": "Uczestnicy"
   },
   "filters": {
     "allCategories": "Wszystkie kategorie",
@@ -79,7 +82,9 @@
     "memory": "Pamięć",
     "company": "Firma",
     "admin": "Administracja",
-    "connect": "MCP i skille"
+    "connect": "MCP i skille",
+    "featureRequests": "Tablice opinii",
+    "participants": "Uczestnicy"
   },
   "problemAnalysisPage": {
     "emptyHint": "Spróbuj rozszerzyć zakres czasu lub zmienić filtry",
@@ -105,7 +110,8 @@
     "collapseSidebar": "Zwiń pasek boczny",
     "expandSidebar": "Rozwiń pasek boczny",
     "openMenu": "Otwórz menu",
-    "label": "Główny pasek boczny"
+    "label": "Główny pasek boczny",
+    "mainNav": "Główna"
   },
   "profileMenu": {
     "trigger": "Menu konta użytkownika {{name}}",
@@ -122,6 +128,8 @@
     "48hFull": "48 godzin",
     "7d": "7d",
     "7dFull": "7 dni",
+    "14d": "14d",
+    "14dFull": "14 dni",
     "apply": "Zastosuj",
     "cancel": "Anuluj",
     "clear": "Wyczyść",
@@ -306,6 +314,7 @@
     "revokedGroup": "Unieważnione ({{count, number}})",
     "revokeBody": "„{{name}}” przestanie natychmiast działać we wszystkich asystentach, które go używają. Tej operacji nie można cofnąć.",
     "revoke": "Unieważnij",
+    "revokeNamed": "Unieważnij token „{{name}}”",
     "toggleAudit": "Pokaż aktywność: {{name}}",
     "runsAgents": "Może uruchamiać agenty",
     "projectColumn": "Projekt",
@@ -342,5 +351,46 @@
   "loading": "Ładowanie...",
   "loadMore": "Załaduj więcej",
   "partialCountsHint": "Wartości przybliżone: nie udało się odczytać pełnego okresu, więc liczby są dolnym oszacowaniem",
-  "partialTimeBudgetHint": "Przybliżone: aby odpowiedzieć na czas, liczniki obejmują dane od {{date}} — zawęź okres, aby uzyskać pełną sumę"
+  "partialTimeBudgetHint": "Przybliżone: aby odpowiedzieć na czas, liczniki obejmują dane od {{date}} — zawęź okres, aby uzyskać pełną sumę",
+  "builtInSources": {
+    "webscraper": "Scraper WWW",
+    "manual_import": "Import ręczny",
+    "s3_import": "Import z S3",
+    "feedback_form": "Formularz opinii",
+    "prototype_feedback": "Opinie o prototypie",
+    "github_issues": "Zgłoszenia GitHub",
+    "app_reviews_ios": "Opinie o aplikacji iOS",
+    "app_reviews_android": "Opinie o aplikacji Android",
+    "synthetic_reviews": "Syntetyczne opinie",
+    "web_reviews": "Opinie z sieci",
+    "email_intake": "Skrzynka e-mail"
+  },
+  "feedbackDimension": {
+    "label": "Typ opinii",
+    "description": "Jakim rodzajem opinii jest recenzja: jeden główny typ, ustalany przez model dla każdego źródła."
+  },
+  "feedbackTypes": {
+    "bug": "Błąd",
+    "service_failure": "Awaria usługi",
+    "feature_request": "Prośba o funkcję",
+    "usability": "Użyteczność",
+    "performance": "Wydajność",
+    "pricing_billing": "Ceny i rozliczenia",
+    "support_experience": "Obsługa klienta",
+    "praise": "Pochwała",
+    "question": "Pytanie",
+    "other": "Inne"
+  },
+  "feedbackTypeDescriptions": {
+    "bug": "Coś jest zepsute lub błędne: błąd, awaria aplikacji, złe dane",
+    "service_failure": "Usługa nie została wykonana: przerwa, nieudana dostawa lub płatność, brak możliwości logowania",
+    "feature_request": "Prosi o coś nowego lub o zmianę",
+    "usability": "Działa, ale jest mylące lub trudne w użyciu",
+    "performance": "Działa, ale wolno (awaria aplikacji to błąd)",
+    "pricing_billing": "Ceny, opłaty, obciążenia, zwroty, faktury",
+    "support_experience": "Jak obsługa klienta lub personel potraktowali klienta",
+    "praise": "Pozytywna opinia bez problemu do naprawy",
+    "question": "Pyta, jak coś działa",
+    "other": "Żadne z powyższych"
+  }
 }

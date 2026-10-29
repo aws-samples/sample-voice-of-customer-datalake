@@ -50,6 +50,12 @@ const WorkflowPage = lazy(() => import('./pages/Agents/WorkflowPage'))
 const Account = lazy(() => import('./pages/Account/Account'))
 const Connect = lazy(() => import('./pages/Connect/Connect'))
 const Radar = lazy(() => import('./pages/Radar/Radar'))
+const Participants = lazy(() => import('./pages/Participants/Participants'))
+const FeatureRequests = lazy(() => import('./pages/FeatureRequests/FeatureRequests'))
+const FeatureBoardPage = lazy(() => import('./pages/FeatureRequests/BoardPage'))
+const Board = lazy(() => import('./pages/Board/Board'))
+const Unsubscribe = lazy(() => import('./pages/Unsubscribe/Unsubscribe'))
+const Review = lazy(() => import('./pages/Review/Review'))
 
 // Lazy pages share the same suspense fallback and, per issue #173, a
 // route-scoped error boundary: a render error in one page replaces only
@@ -91,6 +97,32 @@ export const routes: RouteObject[] = [
     ...page(<Vote />),
   },
   {
+    /**
+     * The feedback boards for people who are NOT app users (docs/feature-requests.md), OUTSIDE
+     * `ProtectedRoute` like `/vote`: `/board` (the boards this person may use), `/board/:slug` (one
+     * board) and `/board/login`, routed inside the page. It has its own sign-in (a one-time code or
+     * link emailed by the boards' own Cognito user pool, for the emails some board's audience admits)
+     * and its own minimal shell. A board session grants only the board routes — the API's main
+     * authorizer never accepts its tokens.
+     */
+    path: '/board/*',
+    ...page(<Board />),
+  },
+  {
+    /**
+     * A PR/FAQ or PRD shared for review (docs/document-review.md), OUTSIDE `ProtectedRoute` like
+     * `/board`: a reviewer signs in with the board pool's emailed code (an app user keeps their
+     * session) and reads the newest version and comments. The API checks the link and the email.
+     */
+    path: '/review/:shareId',
+    ...page(<Review />),
+  },
+  {
+    /** One-click unsubscribe from participant emails (docs/participants.md): the emailed token is the control. */
+    path: '/unsubscribe',
+    ...page(<Unsubscribe />),
+  },
+  {
     path: '/',
     element: (
       <ProtectedRoute>
@@ -115,6 +147,10 @@ export const routes: RouteObject[] = [
       { path: 'data-explorer', ...page(<AdminRoute><DataExplorer /></AdminRoute>) },
       { path: 'scrapers', ...page(<Scrapers />) },
       { path: 'feedback-forms', ...page(<FeedbackForms />) },
+      { path: 'participants', ...page(<Participants />) },
+      // Feedback boards: the list (an old `?request=` link opens its board), then one board by slug or id.
+      { path: 'feature-requests', ...page(<FeatureRequests />) },
+      { path: 'feature-requests/:slug', ...page(<FeatureBoardPage />) },
       { path: 'memory', ...page(<Memory />) },
       { path: 'company', ...page(<Company />) },
       { path: 'agents', ...page(<Agents />) },

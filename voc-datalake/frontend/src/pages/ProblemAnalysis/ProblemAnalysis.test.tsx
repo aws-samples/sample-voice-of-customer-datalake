@@ -22,6 +22,9 @@ import ProblemAnalysis from './ProblemAnalysis'
 
 const { getProblemTree, getEntities, getResolvedProblems, setProblemResolved } = problemAnalysisApiMocks
 
+/** What "Problems only" (the default) sends: the six problem types plus the untyped reviews. */
+const PROBLEMS_ONLY_DIMS = 'feedback_type:bug|service_failure|performance|usability|pricing_billing|support_experience|~unset'
+
 /** The two similar delivery reviews, merged by the server into one "Slow delivery times" problem. */
 const DELIVERY: CategoryGroup = {
   category: 'delivery',
@@ -52,6 +55,7 @@ function treeOf(categories: CategoryGroup[], extra: Partial<ProblemTreeResponse>
     problemsTruncated: false,
     isPartial: false,
     scannedThrough: null,
+    typeCounts: {},
     ...extra,
   }
 }
@@ -176,6 +180,7 @@ describe('ProblemAnalysis', () => {
 
       await waitFor(() => expect(getProblemTree).toHaveBeenLastCalledWith({
         days: 7, source: 'webscraper', category: 'delivery', subcategory: 'shipping_speed', urgentOnly: true, similarity: 'high',
+        dims: PROBLEMS_ONLY_DIMS,
       }))
     })
 
@@ -192,13 +197,8 @@ describe('source filtering', () => {
     it('renders source filter dropdown with available sources', async () => {
       await renderLoadedPage()
 
-      // The source filter dropdown should be present with "All Sources" option
-      const sourceSelects = document.querySelectorAll('select')
-      expect(sourceSelects.length).toBeGreaterThan(0)
-      
-      // First select should have "All Sources" option
-      const firstSelect = at(sourceSelects, 0)
-      expect(firstSelect.querySelector('option[value=""]')).toBeTruthy()
+      const sourceSelect = screen.getByRole('combobox', { name: 'Source' })
+      expect(sourceSelect.querySelector('option[value=""]')).toBeInTheDocument()
     })
   })
 })
@@ -282,5 +282,59 @@ describe('filters (in the URL; the subcategory list follows the category)', () =
     expect(await screen.findByRole('combobox', { name: 'Category' })).toHaveValue('product')
     expect(screen.getByRole('checkbox', { name: 'Urgent only' })).toBeChecked()
     expect(screen.getByRole('combobox', { name: /Similarity/ })).toHaveValue('off')
+  })
+})
+
+describe('ProblemAnalysis period and review types', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    serveTree([DELIVERY])
+    getEntities.mockResolvedValue(mockEntities)
+    getResolvedProblems.mockResolvedValue({ resolved: {} })
+  })
+
+  it('follows the header period: it sends the header days and offers no window select of its own', async () => {
+    await renderLoadedPage()
+
+    await waitFor(() => expect(getProblemTree).toHaveBeenLastCalledWith(expect.objectContaining({ days: 7, dims: PROBLEMS_ONLY_DIMS })))
+    expect(getProblemTree.mock.lastCall?.[0]).not.toHaveProperty('latest')
+    expect(screen.queryByRole('combobox', { name: 'Reviews analyzed' })).not.toBeInTheDocument()
+  })
+
+  it.each(['/problems?window=range', '/problems?window=latest'])('opens an old %s link on the header period', async (link) => {
+    render(<ProblemAnalysis />, { wrapper: createQueryWrapper([link]) })
+
+    await waitFor(() => expect(getProblemTree).toHaveBeenLastCalledWith(expect.objectContaining({ days: 7, dims: PROBLEMS_ONLY_DIMS })))
+    expect(getProblemTree.mock.lastCall?.[0]).not.toHaveProperty('latest')
+  })
+
+  it('sends no type filter under All types', async () => {
+    const user = userEvent.setup()
+    await renderLoadedPage()
+
+    await user.click(screen.getByRole('button', { name: 'All types' }))
+
+    await waitFor(() => expect(getProblemTree).toHaveBeenLastCalledWith(expect.objectContaining({ dims: undefined })))
+    expect(screen.getByRole('button', { name: 'All types' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('adds a type to the filter when its chip is turned on, keeping untyped reviews', async () => {
+    const user = userEvent.setup()
+    await renderLoadedPage()
+
+    await user.click(screen.getByRole('button', { name: /^Feature request/ }))
+
+    await waitFor(() => expect(getProblemTree).toHaveBeenLastCalledWith(expect.objectContaining({
+      dims: 'feedback_type:bug|service_failure|performance|usability|pricing_billing|support_experience|feature_request|~unset',
+    })))
+    expect(screen.getByRole('button', { name: 'Problems only' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('shows each type count and how many reviews are not typed yet', async () => {
+    getProblemTree.mockResolvedValue(treeOf([DELIVERY], { typeCounts: { bug: 1234, untyped: 56 } }))
+    renderPage()
+
+    expect(await screen.findByText('Reviews not typed yet: 56 (kept in view)')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Bug/ })).toHaveTextContent('1,234')
   })
 })

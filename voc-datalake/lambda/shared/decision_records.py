@@ -39,6 +39,7 @@ from shared.dynamo_paging import iter_query
 from shared.exceptions import ConflictError, NotFoundError, ValidationError
 from shared.project_access import Caller
 from shared.project_writes import create_counted_project_child, projects_table_name, transact_project_actions
+from shared.timestamps import now_iso
 
 DECISION_DOCUMENT_TYPE = 'decision'
 VERDICTS = ('pursue', 'park', 'reject')
@@ -218,7 +219,7 @@ def create_decision(table: Any, project_id: str, body: Mapping[str, Any], caller
             'created_at': now, 'updated_at': now,
         }
 
-    item = create_counted_project_child(table, project_id, 'doc', build, 'document_count', now=now_dt)
+    item = create_counted_project_child(table, project_id, 'doc', build, now=now_dt)
     return {'success': True, 'document': item}
 
 
@@ -266,7 +267,7 @@ def update_decision(table: Any, project_id: str, document_id: str, body: Mapping
     title = fields.pop('title', None) or str(stored.get('title') or '')
     if 'evidence' in fields:
         _require_documents_exist(table, project_id, fields['evidence']['document_ids'], own_id=document_id)
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
     decision = _next_decision(stored, fields, caller, now)
     changes = {'title': title, 'content': render_content(title, decision), 'decision': decision,
                'derivation': decision_derivation(decision), 'updated_at': now, 'revision': observed + 1}
@@ -322,5 +323,5 @@ def record_seeded_prfaq(table: Any, item: Mapping[str, Any], job_id: str) -> Non
         Key={'pk': item['pk'], 'sk': item['sk']},
         UpdateExpression='SET seeded_prfaq_job_id = :job, seeded_prfaq_at = :at',
         ConditionExpression='attribute_exists(pk)',
-        ExpressionAttributeValues={':job': job_id, ':at': datetime.now(UTC).isoformat()},
+        ExpressionAttributeValues={':job': job_id, ':at': now_iso()},
     )

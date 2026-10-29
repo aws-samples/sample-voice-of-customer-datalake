@@ -4,15 +4,17 @@
 Wire shape (``SETTINGS#design_system/config`` ``components``, ≤ 30; and ``extracted_design.components``)::
 
     {name: str ≤ 60 (unique, case-insensitive), description: str ≤ 300,
-     variants: [{name: str ≤ 40,                                    ≤ 6 per component
+     variants: [{name: str ≤ 40,                                    ≤ 8 per component
                  styles: {background?, color?, border_color?,        colour or "var:<token name>"
                           border_width?, radius?, gap?, height?,     a CSS length
+                          width?,
                           padding?,                                  1-4 CSS lengths
                           font_family?, font_size?, font_weight?,
                           letter_spacing?, text_transform?,          none | uppercase | capitalize
                           shadow?},                                  ≤ 200, a box-shadow, no url()/expression
                  hover?: {background?, color?, border_color?, shadow?},
-                 focus?: {outline?}}],                               ≤ 80, an outline shorthand
+                 focus?: {outline?,                                  ≤ 80, an outline shorthand
+                          border_color?, shadow?}}],                 the focus ring (a colour / a box-shadow)
      example_html?: str ≤ 2,000}                                     rebuilt by shared.html_sanitizer
 
 Two modes, ONE rule set:
@@ -37,13 +39,13 @@ from shared.css_values import (
     is_font_weight,
 )
 from shared.exceptions import ValidationError
-from shared.html_sanitizer import sanitize_html
+from shared.html_sanitizer import CSS_FUNCTION_RE, sanitize_html
 from shared.prompt_safety import injection_findings, neutralise_tags
 
 MAX_COMPONENTS: Final = 30
 MAX_COMPONENT_NAME_CHARS: Final = 60
 MAX_COMPONENT_DESCRIPTION_CHARS: Final = 300
-MAX_VARIANTS: Final = 6
+MAX_VARIANTS: Final = 8
 MAX_VARIANT_NAME_CHARS: Final = 40
 MAX_EXAMPLE_HTML_CHARS: Final = 2_000
 MAX_SHADOW_CHARS: Final = 200
@@ -55,7 +57,6 @@ _WS_RE: Final = re.compile(r'\s+')
 _TOKEN_REF_RE: Final = re.compile(r'^var:[\w .-]{1,60}\Z')
 _LETTER_SPACING_RE: Final = re.compile(r'^(normal|0|-?\d{1,3}(\.\d{1,3})?(px|rem|em))\Z')
 _EFFECT_RE: Final = re.compile(r'^[\w\s#%.,()/+-]{1,200}\Z')
-_FUNCTION_RE: Final = re.compile(r'([a-zA-Z-]+)\s*\(')
 _EFFECT_FUNCTIONS: Final = frozenset({'rgb', 'rgba', 'hsl', 'hsla', 'oklch', 'oklab', 'lab', 'lch'})
 
 
@@ -93,7 +94,7 @@ def _is_effect(value: object, limit: int) -> bool:
     text = value.strip()
     if not _EFFECT_RE.match(text):
         return False
-    return all(fn.lower() in _EFFECT_FUNCTIONS for fn in _FUNCTION_RE.findall(text))
+    return all(fn.lower() in _EFFECT_FUNCTIONS for fn in CSS_FUNCTION_RE.findall(text))
 
 
 def is_shadow(value: object) -> bool:
@@ -114,6 +115,7 @@ STYLE_RULES: Final[dict[str, tuple[Callable[[object], bool], str]]] = {
     'padding': (is_padding, '1 to 4 CSS lengths such as 8px 16px'),
     'gap': (is_css_length, 'a CSS length such as 8px'),
     'height': (is_css_length, 'a CSS length such as 40px'),
+    'width': (is_css_length, 'a CSS length such as 36px'),
     'font_family': (is_font_family, 'a font-family list'),
     'font_size': (is_css_length, 'a CSS length such as 14px'),
     'font_weight': (is_font_weight, '100-900 or normal/bold'),
@@ -124,7 +126,10 @@ STYLE_RULES: Final[dict[str, tuple[Callable[[object], bool], str]]] = {
 HOVER_KEYS: Final = ('background', 'color', 'border_color', 'shadow')
 FOCUS_RULES: Final[dict[str, tuple[Callable[[object], bool], str]]] = {
     'outline': (is_outline, 'a CSS outline of at most 80 characters such as 2px solid #7c3aed'),
+    'border_color': STYLE_RULES['border_color'],
+    'shadow': STYLE_RULES['shadow'],
 }
+FOCUS_KEYS: Final = tuple(FOCUS_RULES)
 
 
 # ── One rule set, two modes ─────────────────────────────────────────────────

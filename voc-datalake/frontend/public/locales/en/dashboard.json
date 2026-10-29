@@ -133,5 +133,8 @@
   },
   "openInCategories": "Open {{name}} in Categories",
   "seeAllUrgent_one": "See the {{count, number}} urgent review",
-  "seeAllUrgent_other": "See all {{count, number}} urgent reviews"
+  "seeAllUrgent_other": "See all {{count, number}} urgent reviews",
+  "partialNote": {
+    "reviewBasis": "Counting by review date reads reviews one by one, so a wide window is cut short; switch to Imported date for the complete total."
+  }
 }

@@ -1,0 +1,70 @@
+{
+  "entries": [
+    {
+      "files": [
+        "voc-datalake/lambda/api/*_handler.py",
+        "voc-datalake/plugins/**/handler.py",
+        "voc-datalake/lambda/jobs/*/handler.py"
+      ],
+      "name": "lambda_handler",
+      "reason": "the Lambda entry point every handler module must define (`return app.resolve(event, context)` / `handle_event`); it is the deployed handler string, not a helper"
+    },
+    {
+      "files": [
+        "voc-datalake/plugins/_shared/base_ingestor.py",
+        "voc-datalake/plugins/_shared/base_webhook.py"
+      ],
+      "name": "_load_secrets",
+      "reason": "the filtering is already one implementation (plugin_secrets.filter_plugin_secrets); the read-and-evict wrapper stays per base class because the secret-isolation tests patch each module's get_secret / clear_secret_cache / SECRETS_ARN"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/agents/context_blocks.py",
+        "voc-datalake/lambda/jobs/document_generator/handler.py"
+      ],
+      "name": "_aggregates_table",
+      "reason": "per-module optional-table getter that each module's tests patch (None when the Lambda has no AGGREGATES_TABLE)"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/api/agents_handler.py",
+        "voc-datalake/lambda/api/radar_handler.py",
+        "voc-datalake/lambda/api/ballots_handler.py",
+        "voc-datalake/lambda/api/projects_handler.py",
+        "voc-datalake/lambda/api/settings_handler.py",
+        "voc-datalake/lambda/api/users_handler.py",
+        "voc-datalake/lambda/shared/engagement_config.py"
+      ],
+      "reason": "per-handler required-table getters (ConfigurationError when the env is unset); each is the seam its handler's tests patch, so merging them is a test redesign, not a clean-up"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/api/scrapers_handler.py",
+        "voc-datalake/lambda/api/settings_handler.py"
+      ],
+      "reason": "two routes of two Lambdas (GET /scrapers/jobs/<id>, GET /settings/jobs/<id>) that each delegate in one line to shared.assist_jobs"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/agents/plan_identity.py",
+        "voc-datalake/lambda/api/mcp_global_handler.py",
+        "voc-datalake/lambda/api/projects.py"
+      ],
+      "reason": "lazy module-cached Cognito clients; the tests of each module patch its own cached client"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/jobs/category_reprocess/handler.py",
+        "voc-datalake/lambda/jobs/retention/handler.py"
+      ],
+      "reason": "same shape, different workers: each reads its own TIME_RESERVE_MS (3 min vs 1 min) and its own table env; the tests of each patch them"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/api/product_context.py",
+        "voc-datalake/lambda/shared/assist_jobs.py"
+      ],
+      "reason": "the projects-table document partition and the jobs-table assist partition happen to share the PROJECT# spelling; different tables"
+    }
+  ]
+}

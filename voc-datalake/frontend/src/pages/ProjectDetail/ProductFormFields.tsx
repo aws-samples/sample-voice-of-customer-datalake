@@ -1,60 +1,31 @@
 /**
- * Form-field building blocks for the ProductTab context form.
- * Extracted from ProductTab.tsx to keep that file under the max-lines budget.
- */
-import { Loader2 } from 'lucide-react'
-import { useState, type ChangeEvent } from 'react'
-
-/**
- * The DOM id for a context field's control.
+ * @fileoverview The Product tab's form controls: a text input, a wrapping textarea
+ * and the lifecycle select, each labelled by the shared `LabeledField` and saved
+ * on blur (text) or on change (select). "Saving…" shows under the field being saved.
  *
- * These labels used to be bare `<label>` elements with no `htmlFor` and inputs
- * with no `id`, so nothing tied the two together: a screen reader announced an
- * unlabelled text box, and clicking the label did not focus the field. The field
- * key is already unique within the form, so it makes a stable id without a hook.
+ * @module pages/ProjectDetail/ProductFormFields
  */
-const fieldInputId = (field: string) => `product-context-${field}`
+import { useState, type ChangeEvent } from 'react'
+import { LabeledField } from '../../components/LabeledField/LabeledField'
 
-function FieldShell({
-  label, field, inputId, savingField, highlight, children,
-}: {
+/** What every control shares: its label, the saved value and the "Saving…" hint while it saves. */
+interface FieldProps {
   readonly label: string
-  readonly field: string
-  /**
-   * The id of the control `children` renders, so the label points at it.
-   *
-   * Required rather than derived from `field`: the shell cannot see whether its
-   * children actually carry that id, and a `htmlFor` pointing at nothing is worse
-   * for a screen reader than the unlabelled input this replaced. Making it a
-   * parameter means any new caller has to supply the id it really rendered.
-   */
-  readonly inputId: string
-  readonly savingField: string | null
-  readonly highlight: boolean
-  readonly children: React.ReactNode
-}) {
-  return (
-    <div className={`transition-colors rounded-md ${highlight ? 'ring-2 ring-warn/30 ring-offset-2 ring-offset-white' : ''}`}>
-      <div className="flex items-center justify-between mb-1">
-        <label htmlFor={inputId} className="text-xs font-medium text-text">{label}</label>
-        {savingField === field && <Loader2 size={12} className="animate-spin text-muted" />}
-      </div>
-      {children}
-    </div>
-  )
-}
-
-/** The props TextField and TextAreaField share: a saved value, a draft of it, and a save callback. */
-interface DraftFieldProps {
-  readonly label: string; readonly field: string; readonly value: string; readonly max: number
-  readonly savingField: string | null; readonly highlight: boolean; readonly placeholder: string
+  readonly value: string
+  /** Shown under the field while its save is in flight. */
+  readonly savingHint?: string
   readonly onSave: (v: string) => void
 }
 
+interface DraftFieldProps extends FieldProps {
+  readonly max: number
+}
+
 /**
- * A local draft of `value` that re-seeds when the saved value changes (e.g. after
- * a successful save or external refresh). Adjusting state during render with a
- * guard is the React-recommended replacement for a setState-in-effect sync.
+ * A local draft of `value` that re-seeds when the saved value changes (a save, or
+ * the assistant's approved `update_product_context` refreshing the query). Adjusting
+ * state during render with a guard is the React-recommended replacement for a
+ * setState-in-effect sync.
  */
 function useSyncedDraft(value: string) {
   const [draft, setDraft] = useState(value)
@@ -67,60 +38,47 @@ function useSyncedDraft(value: string) {
 }
 
 /** The attributes the text input and the textarea share: controlled by the draft, saved on blur if changed. */
-function draftControlAttributes(
-  { field, value, max, placeholder, onSave }: DraftFieldProps,
-  draft: string,
-  setDraft: (next: string) => void,
-) {
+function draftControlAttributes(id: string, { value, max, onSave }: DraftFieldProps, draft: string, setDraft: (next: string) => void) {
   return {
-    id: fieldInputId(field),
+    id,
     value: draft,
     maxLength: max,
     onChange: (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setDraft(e.target.value),
     onBlur: () => { if (draft !== value) onSave(draft) },
-    className: 'input',
-    placeholder,
   }
 }
 
 export function TextField(props: DraftFieldProps) {
-  const { label, field, value, savingField, highlight } = props
-  const { draft, setDraft } = useSyncedDraft(value)
+  const { draft, setDraft } = useSyncedDraft(props.value)
   return (
-    <FieldShell label={label} field={field} inputId={fieldInputId(field)} savingField={savingField} highlight={highlight}>
-      <input type="text" {...draftControlAttributes(props, draft, setDraft)} />
-    </FieldShell>
+    <LabeledField label={props.label} hint={props.savingHint}>
+      {(id) => <input type="text" className="input w-full" {...draftControlAttributes(id, props, draft, setDraft)} />}
+    </LabeledField>
   )
 }
 
+/** Wraps long text instead of cutting it off, and can be resized vertically. */
 export function TextAreaField(props: DraftFieldProps & { readonly rows: number }) {
-  const { label, field, value, rows, savingField, highlight } = props
-  const { draft, setDraft } = useSyncedDraft(value)
+  const { draft, setDraft } = useSyncedDraft(props.value)
   return (
-    <FieldShell label={label} field={field} inputId={fieldInputId(field)} savingField={savingField} highlight={highlight}>
-      <textarea rows={rows} {...draftControlAttributes(props, draft, setDraft)} />
-    </FieldShell>
+    <LabeledField label={props.label} hint={props.savingHint}>
+      {(id) => (
+        <textarea rows={props.rows} className="input w-full resize-y" {...draftControlAttributes(id, props, draft, setDraft)} />
+      )}
+    </LabeledField>
   )
 }
 
 export function SelectField({
-  label, field, value, options, savingField, highlight, onSave,
-}: {
-  readonly label: string; readonly field: string; readonly value: string
-  readonly options: { value: string; label: string }[]
-  readonly savingField: string | null; readonly highlight: boolean
-  readonly onSave: (v: string) => void
-}) {
+  label, value, options, savingHint, onSave,
+}: FieldProps & { readonly options: readonly { value: string; label: string }[] }) {
   return (
-    <FieldShell label={label} field={field} inputId={fieldInputId(field)} savingField={savingField} highlight={highlight}>
-      <select
-        id={fieldInputId(field)}
-        value={value}
-        onChange={(e) => onSave(e.target.value)}
-        className="select"
-      >
-        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
-    </FieldShell>
+    <LabeledField label={label} hint={savingHint}>
+      {(id) => (
+        <select id={id} value={value} onChange={(e) => onSave(e.target.value)} className="select w-full">
+          {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      )}
+    </LabeledField>
   )
 }

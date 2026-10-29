@@ -66,8 +66,12 @@ describe('the workspace tool set', () => {
         + 'direction; each scored 1\u20135, 0 = not scored), each row (a project\u2019s set of documents), the signed-in '
         + 'user\u2019s own scores per metric id and the team aggregate (mean per metric id, composite on the 1\u20135 '
         + 'scale, reviewer count, spread). Use list_projects to name the projects.',
-      list_scrapers: 'Configured web scrapers (id, name, enabled, target URLs, schedule, last run; for administrators also '
-        + 'selectors, pagination and labels). Read it before proposing create_scraper or update_scraper.',
+      list_scrapers: 'Configured web scrapers (id, name, enabled, target URLs, schedule, last run, radar_brand = the Radar brand it '
+        + 'feeds; for administrators also selectors, pagination and labels), and `connectors`: the app-review connectors '
+        + 'and review pages (source app_reviews_ios | app_reviews_android | web_reviews, id, app_name, app_id / '
+        + 'package_name / url, enabled, frequency_minutes, source_id, radar_brand = the Radar brand it feeds; none = our '
+        + 'own feedback). Read it before proposing create_scraper, update_scraper or create_app_connector, and to see '
+        + 'which sources feed a Radar brand.',
       get_scraper_status: 'Status of a scraper\u2019s latest run (status, pages scraped, items found, errors).',
       analyze_scraper_url: 'Administrators: fetch a public https page and suggest CSS selectors for its reviews (container, text, rating, '
         + 'author, date) with a confidence. Saves nothing — use the suggestion in a create_scraper / update_scraper '
@@ -184,8 +188,12 @@ describe('prioritization, scrapers and settings tools', () => {
 
   it('list_scrapers GETs /scrapers and counts the configs', async () => {
     const { calls, result } = await runTool('list_scrapers', 'GET /scrapers', { scrapers: [{ id: 's1', urls: ['u'] }] });
-    expect(calls).toStrictEqual([{ fn: 'scrapers', path: '/scrapers', resource: '/scrapers', method: 'GET' }]);
-    expect(result).toStrictEqual({ content: '{"count":1,"scrapers":[{"id":"s1","urls":["u"]}]}' });
+    expect(calls).toStrictEqual([
+      { fn: 'scrapers', path: '/scrapers', resource: '/scrapers', method: 'GET' },
+      { fn: 'scrapers', path: '/scrapers/connectors', resource: '/scrapers/{proxy+}', pathParameters: { proxy: 'connectors' }, method: 'GET' },
+    ]);
+    // runTool routes only GET /scrapers, so the connectors read fails and is reported, not thrown.
+    expect(JSON.parse(result.content)).toMatchObject({ count: 1, scrapers: [{ id: 's1', urls: ['u'] }], connectors: [] });
   });
 
   it('get_scraper_status encodes the path segment but not the proxy parameter', async () => {

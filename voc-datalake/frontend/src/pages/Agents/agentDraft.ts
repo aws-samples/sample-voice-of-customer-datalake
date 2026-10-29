@@ -1,11 +1,12 @@
 /**
  * @fileoverview The agent form's draft: the editable fields of an {@link Agent}
  * as the API body takes them, the fields that differ from the stored agent
- * (PUT sends only those), and the Zod check of that body.
+ * (PUT sends only those), and the Zod check of that body, answered as plain
+ * translated messages.
  *
  * @module pages/Agents/agentDraft
  */
-import { agentFormSchema } from '../../api/agentsApi'
+import { agentFormSchema, API_AGENT_LIMITS } from '../../api/agentsApi'
 import type { Agent, AgentForm } from '../../api/agentsApi'
 
 export type AgentDraft = Omit<AgentForm, 'workflow_id'> & { workflow_id: string | null }
@@ -40,13 +41,34 @@ export function changedFields(agent: Agent, draft: AgentDraft): Partial<AgentDra
   return changed
 }
 
-/** The PUT body when valid, else the first problems (path: message). */
-export function checkUpdate(changes: Partial<AgentDraft>): { body: Partial<AgentForm> } | { errors: string[] } {
+/** One problem with the draft, as a translation key of the `agents` namespace and its values. */
+export interface DraftProblem {
+  readonly key: string
+  readonly values?: Readonly<Record<string, number>>
+}
+
+/** The plain message for each field (`validation.*` in agents.json), with the limit it names. */
+const FIELD_PROBLEMS: Readonly<Record<string, DraftProblem>> = {
+  scope: { key: 'validation.scope' },
+  name: { key: 'validation.name', values: { max: API_AGENT_LIMITS.maxNameChars } },
+  description: { key: 'validation.description', values: { max: API_AGENT_LIMITS.maxDescriptionChars } },
+  instructions: { key: 'validation.instructions', values: { max: API_AGENT_LIMITS.maxInstructionsChars } },
+  triggers: { key: 'validation.triggers' },
+  personas: { key: 'validation.personas', values: { max: API_AGENT_LIMITS.maxFixedPersonas } },
+  models: { key: 'validation.models' },
+  workflow_id: { key: 'validation.workflow' },
+  budget: { key: 'validation.budget' },
+}
+const OTHER_PROBLEM: DraftProblem = { key: 'validation.other' }
+
+/** The PUT body when valid, else what to fix — one plain message per field, never Zod's wording. */
+export function checkUpdate(changes: Partial<AgentDraft>): { body: Partial<AgentForm> } | { errors: DraftProblem[] } {
   const { workflow_id: workflowId, ...rest } = changes
   const candidate = workflowId === null || workflowId === undefined ? rest : { ...rest, workflow_id: workflowId }
   const parsed = agentFormSchema.partial().safeParse(candidate)
   if (parsed.success) return { body: parsed.data }
-  return { errors: parsed.error.issues.slice(0, 5).map((i) => `${i.path.join('.')}: ${i.message}`) }
+  const problems = parsed.error.issues.map((issue) => FIELD_PROBLEMS[String(issue.path[0])] ?? OTHER_PROBLEM)
+  return { errors: [...new Set(problems)] }
 }
 
 /** A whole number clamped to [min, max]; blank / NaN keeps the fallback. */

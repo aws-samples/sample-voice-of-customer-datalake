@@ -37,7 +37,11 @@
     "prfaqFailed": "Nie udało się wygenerować PR/FAQ z tej decyzji. Spróbuj przygotować go ponownie.",
     "revisit": "Wróć do tematu",
     "releaseWatch": "Monitoruj wydanie",
-    "hideReleaseWatch": "Ukryj monitoring wydania"
+    "hideReleaseWatch": "Ukryj monitoring wydania",
+    "delete": "Usuń",
+    "deleteConfirmTitle": "Usunąć tę decyzję?",
+    "deleteConfirmMessage": "„{{title}}” zostanie usunięta z projektu dla wszystkich. Dokumenty z niej utworzone pozostaną.",
+    "deleteConfirm": "Usuń decyzję"
   },
   "picker": {
     "label": "Wspierające opinie",
@@ -57,7 +61,8 @@
   "errors": {
     "save": "Nie udało się zapisać decyzji.",
     "conflict": "Ta decyzja zmieniła się od czasu jej otwarcia. Odśwież stronę i spróbuj ponownie.",
-    "pursue": "Nie udało się rozpocząć przygotowania PR/FAQ."
+    "pursue": "Nie udało się rozpocząć przygotowania PR/FAQ.",
+    "delete": "Nie udało się usunąć decyzji."
   },
   "releaseWatch": {
     "title": "Monitoring wydania",

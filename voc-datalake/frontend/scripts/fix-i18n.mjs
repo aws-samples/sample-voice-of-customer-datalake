@@ -25,8 +25,8 @@ const LOCALES_DIR = resolve(__dirname, '..', 'public', 'locales')
 // against the files on disk. `feedback` was listed here with no catalogue in any
 // locale, so every run tried to load a namespace that does not exist.
 const NAMESPACES = ['agents', 'assistant', 'assistantTools', 'briefing', 'categories', 'common', 'components', 'dashboard',
-  'dataExplorer', 'decisions', 'emailInbox', 'feedbackDetail', 'feedbackForms', 'login', 'memory',
-  'prioritization', 'problemAnalysis', 'projectDetail', 'projects', 'radar', 'scrapers', 'settings']
+  'dataExplorer', 'decisions', 'emailInbox', 'featureRequests', 'feedbackDetail', 'feedbackForms', 'login', 'memory',
+  'participants', 'prioritization', 'problemAnalysis', 'projectDetail', 'projects', 'radar', 'scrapers', 'settings']
 const ALL_LANGUAGES = ['es', 'fr', 'de', 'ko', 'pt', 'ja', 'zh', 'pl']
 const LANG_NAMES = {
   es: 'Spanish', fr: 'French', de: 'German',

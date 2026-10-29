@@ -45,10 +45,12 @@ from shared.exceptions import (
     ValidationError,
 )
 from shared.logging import logger, tracer
+from shared.plan_canonical import FINGERPRINT_RE
 from shared.plan_schema import ADMIN_ONLY_PACKS, PACKS, is_plan_id, validate_plan
 from shared.project_access import Caller
 from shared.project_gate import caller_from_event, require_admin_caller
 from shared.request_body import json_object_body
+from shared.row_ids import LONG_OPAQUE_ID_RE
 from shared.tables import get_aggregates_table
 from shared.warm_init import warm_at_init
 
@@ -58,9 +60,7 @@ RUN_ALREADY_DECIDED = 'This run is not waiting for a decision'
 WORKFLOW_NOT_FOUND = 'Workflow not found'
 PLAN_NOT_FOUND = 'Plan not found'
 STEP_NOT_FOUND = 'Step not found'
-CONVERSATION_ID_RE = re.compile(r'[A-Za-z0-9_-]{1,128}')
 # sha256 hex of a paused write (``canonical_write_fingerprint``), as the plan view shows it.
-FINGERPRINT_RE = re.compile(r'[0-9a-f]{64}')
 DEFAULT_RUNS_PAGE = 20
 MAX_RUNS_PAGE = 50
 MAX_EVENTS_PAGE = 200
@@ -629,7 +629,7 @@ def _packs_for(is_admin: bool) -> tuple[str, ...]:
 def _conversation_id(value: object) -> str | None:
     if value is None:
         return None
-    if not isinstance(value, str) or CONVERSATION_ID_RE.fullmatch(value) is None:
+    if not isinstance(value, str) or LONG_OPAQUE_ID_RE.fullmatch(value) is None:
         raise ValidationError('conversation_id must be a conversation id')
     return value
 

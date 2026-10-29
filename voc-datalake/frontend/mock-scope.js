@@ -108,7 +108,6 @@ const SCALERS = {
   'GET /metrics/summary': scaleSummary,
   'GET /metrics/sentiment': scaleSentiment,
   'GET /metrics/sources': (body, share) => ({ ...body, sources: scaleCounts(body.sources, share) }),
-  'GET /metrics/personas': (body, share) => ({ ...body, personas: scaleCounts(body.personas, share) }),
 };
 
 /**

@@ -17,7 +17,7 @@ import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
-from shared import category_access, draft_intent, project_access
+from shared import category_access, draft_intent, persona_save, project_access
 from shared.api import MAX_PERSONAS_PER_GENERATION, validate_days
 from shared.avatar import (
     avatar_key_from_uri,
@@ -29,6 +29,7 @@ from shared.avatar import (
 from shared.avatar import (
     generate_persona_avatar as _generate_persona_avatar,
 )
+from shared.avatar_failure import AvatarGenerationFailed
 from shared.aws import get_s3_client
 from shared.batch_get import batch_get_all
 from shared.converse import ConverseResult, converse_chain, converse_detailed
@@ -54,6 +55,7 @@ from shared.document_versions import (
 )
 from shared.dynamo_paging import iter_query
 from shared.exceptions import (
+    ApiError,
     AuthorizationError,
     ConfigurationError,
     ConflictError,
@@ -75,6 +77,7 @@ from shared.feedback import (
 )
 from shared.feedback_sampling import input_feedback_ids
 from shared.grounding import Grounding
+from shared.human_documents import HUMAN_DOC_TYPES, create_human_document
 from shared.ids import timestamped_id, write_with_fresh_id
 from shared.indexes import PROJECTS_BY_TYPE_INDEX
 
@@ -82,7 +85,7 @@ from shared.indexes import PROJECTS_BY_TYPE_INDEX
 from shared.logging import logger, metrics, tracer
 from shared.model_config import get_active_model_id, surface_context_window_tokens
 from shared.persona_context import personas_prompt_context
-from shared.persona_knowledge import persona_knowledge_fields, with_persona_knowledge
+from shared.persona_knowledge import PERSONA_KNOWLEDGE_STEP, persona_knowledge_fields, with_persona_knowledge
 from shared.project_access import Caller
 from shared.project_writes import (
     PROJECT_DELETION_ATTRIBUTE,
@@ -94,7 +97,6 @@ from shared.project_writes import (
     is_verification_fixture,
     project_meta_key,
     projects_table_name,
-    put_project_item,
     put_project_item_and_increment,
 )
 from shared.prompt_labels import LABEL_INSTRUCTION
@@ -110,7 +112,9 @@ from shared.prompts import (
 )
 from shared.prototypes import prototype_s3_key, prototype_signed_url
 from shared.research_title import research_document_title
+from shared.row_ids import LONG_OPAQUE_ID_RE
 from shared.tables import get_feedback_table, get_jobs_table, get_projects_table
+from shared.timestamps import now_iso
 
 # The instructions "Copy to Kiro" on a document pastes ahead of that document.
 # ONE definition only: the frontend reads it from the get_project response's
@@ -516,7 +520,7 @@ def _agent_created_sharing(caller: Caller) -> dict:
         owner = _new_owner_identity(owner_sub)
     except NotFoundError as exc:
         raise ValidationError('The project owner is not an active user') from exc
-    now = _now_iso()
+    now = now_iso()
     added_by = f'{project_access.AGENT_SUBJECT_PREFIX}{caller.agent_id}'
     members: dict[str, dict] = {}
     for sub in caller.agent_editor_subs:
@@ -903,7 +907,6 @@ def _with_signed_avatars(personas: list[dict]) -> list[dict]:
 # one request cannot fan out without limit: the ids are BatchGetItem'd (chunks of
 # 100) and then one partition is read per VIEWABLE project.
 MAX_PROJECT_DETAIL_BATCH = 200
-_PROJECT_ID_PATTERN = re.compile(r'^[A-Za-z0-9_-]{1,128}\Z')
 
 
 def parse_project_detail_ids(raw: str) -> list[str]:
@@ -911,7 +914,7 @@ def parse_project_detail_ids(raw: str) -> list[str]:
     ids = list(dict.fromkeys(part.strip() for part in raw.split(',') if part.strip()))
     if not ids or len(ids) > MAX_PROJECT_DETAIL_BATCH:
         raise ValidationError(f'ids must list between 1 and {MAX_PROJECT_DETAIL_BATCH} project ids')
-    if not all(_PROJECT_ID_PATTERN.fullmatch(project_id) for project_id in ids):
+    if not all(LONG_OPAQUE_ID_RE.fullmatch(project_id) for project_id in ids):
         raise ValidationError('ids contains an invalid project id')
     return ids
 
@@ -1116,7 +1119,7 @@ def update_project(project_id: str, body: dict) -> dict:
     ):
         raise ValidationError('Project status must be active or archived')
 
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
 
     update_expr = 'SET updated_at = :now'
     expr_values: dict[str, Any] = {
@@ -1390,7 +1393,7 @@ def delete_project(project_id: str) -> dict:
 
     project_key = f'PROJECT#{project_id}'
     meta_key = project_meta_key(project_id)
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
     _start_project_deletion(project_id, meta_key, now)
 
     # Keep tombstoned META forever. Guarded writers either committed before the
@@ -1724,7 +1727,6 @@ def _items_reaching_synthesis(chain_steps: list[dict], corpus: _PersonaCorpus) -
     return feedback_items_used, context_truncated
 
 
-PERSONA_ANALYSIS_STEP = 'research_analysis'
 PERSONA_PLAN_STEP = 'persona_plan'
 # Parallel persona-writing calls in one generation. Each call carries the whole
 # analysis plus the feedback sample, so four keeps a generation of up to eight
@@ -2079,7 +2081,7 @@ def _run_persona_calls(
 
     start = time.time()
     update_progress(20, 'analysing_feedback')
-    analysis = _run_persona_step(_chain_step(chain_steps, PERSONA_ANALYSIS_STEP))
+    analysis = _run_persona_step(_chain_step(chain_steps, PERSONA_KNOWLEDGE_STEP))
     update_progress(40, 'planning_personas')
     planned = _plan_personas(analysis.text, filters, persona_count, avoid_names)
     update_progress(PERSONA_WRITE_PROGRESS_START, 'writing_personas')
@@ -2449,30 +2451,17 @@ def _save_personas(project_id: str, persona_items: list[tuple[str, dict, dict]],
     """Write the personas and set the project's persona count; the saved items.
 
     Written in parsed order so the stored order and the response order match the
-    LLM's order regardless of avatar completion order.
+    LLM's order regardless of avatar completion order. A project deleted
+    meanwhile takes nothing: the unsaved personas' avatars are deleted (no row
+    points at them any more) and ``ProjectNotWritableError`` ends the job (404).
     """
-    saved_personas = []
-    for i, (_persona_id, persona, item) in enumerate(persona_items):
-        logger.info(f"[PERSONA] Saving persona {i+1}/{len(persona_items)}: {persona.get('name', 'unnamed')}")
-        put_project_item(projects_table, project_id, item)
-        saved_personas.append(item)
-        logger.info(f"[PERSONA] Saved persona: {persona.get('name')}")
-
-    # Set persona count to the new total (the old set was cleared first, so
-    # this is a replace, not an increment — keeps the count accurate).
-    projects_table.update_item(
-        Key=project_meta_key(project_id),
-        UpdateExpression='SET persona_count = :count, updated_at = :now',
-        ConditionExpression=PROJECT_WRITABLE_CONDITION,
-        ExpressionAttributeNames=dict(
-            PROJECT_WRITABLE_ATTRIBUTE_NAMES,
-        ),
-        ExpressionAttributeValues={
-            **PROJECT_WRITABLE_ATTRIBUTE_VALUES,
-            ':count': len(saved_personas),
-            ':now': now,
-        },
-    )
+    items = [item for _pid, _persona, item in persona_items]
+    try:
+        saved_personas = persona_save.save_persona_items(projects_table, project_id, items)
+        persona_save.store_persona_count(projects_table, project_id, now)
+    except persona_save.ProjectNotWritableError:
+        _sweep_removed_persona_avatars(project_id, [str(item['persona_id']) for item in items if item.get('avatar_url')])
+        raise
     return saved_personas
 
 
@@ -2538,7 +2527,10 @@ def generate_personas(
 
         logger.info("[PERSONA] Step 5/5: Saving personas to database...")
         update_progress(80, 'saving_personas')
-        _clear_existing_personas(project_id)
+        # An autonomous agent appends (``keep_existing_personas``): it never removes
+        # personas a person may have edited (5.34.00 live: a run replaced them).
+        if filters.get('keep_existing_personas') is not True:
+            _clear_existing_personas(project_id)
 
         source_breakdown = _source_breakdown(feedback_items)
 
@@ -2557,6 +2549,8 @@ def generate_personas(
             persona_item.update(persona_knowledge_fields(knowledge, feedback_items_used))
 
         if generate_avatars and persona_items:
+            # The avatars are the billed tail: none for a project deleted during the model calls.
+            persona_save.require_writable_project(projects_table, project_id)
             _attach_avatars(project_id, persona_items, update_progress)
 
         saved_personas = _save_personas(project_id, persona_items, now)
@@ -2564,6 +2558,8 @@ def generate_personas(
         logger.info("[PERSONA] ========== PERSONA GENERATION COMPLETE ==========")
         logger.info(f"[PERSONA] Total time: {overall_elapsed:.2f}s, Personas created: {len(saved_personas)}")
 
+    except persona_save.ProjectNotWritableError:
+        raise  # a terminal 404 for the job, not a fault to retry
     except Exception as e:
         raise _persona_generation_failure(e, corpus, time.time() - overall_start) from e
 
@@ -2897,8 +2893,12 @@ def suggest_research_questions(project_id: str, body: dict, *, category_scope: d
 
 
 @tracer.capture_method
-def create_document(project_id: str, body: dict) -> dict:
-    """Create a custom document in the project."""
+def create_document(project_id: str, body: dict, *, creator_sub: str = '') -> dict:
+    """Create a custom document, or a hand-written PR/FAQ / PRD from a blank template.
+
+    ``prfaq`` / ``prd`` join their series as a person's draft (shared/human_documents.py);
+    the route gates an autonomous caller first (shared/ai_writing.py).
+    """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
 
@@ -2906,10 +2906,13 @@ def create_document(project_id: str, body: dict) -> dict:
     content = body.get('content', '')
     document_type = body.get('document_type', 'custom')
 
+    if document_type in HUMAN_DOC_TYPES:
+        item = create_human_document(projects_table, project_id, document_type, body, creator_sub=creator_sub)
+        return {'success': True, 'document': item}
     if document_type != 'custom':
         raise ValidationError(
-            'Only custom documents can be created directly. Every managed or '
-            'workflow document type must use its dedicated route.'
+            'Only custom, prfaq and prd documents can be created directly. Every other '
+            'managed or workflow document type must use its dedicated route.'
         )
     if not content:
         raise ValidationError('Content is required')
@@ -2932,7 +2935,7 @@ def create_document(project_id: str, body: dict) -> dict:
         }
 
     item = create_counted_project_child(
-        projects_table, project_id, 'doc', build, 'document_count', now=now_dt,
+        projects_table, project_id, 'doc', build, now=now_dt,
     )
     return {'success': True, 'document': item}
 
@@ -2984,7 +2987,7 @@ def update_document(project_id: str, document_id: str, body: dict) -> dict:
             'Prototype content is stored in S3 and cannot be updated through '
             'generic document CRUD. Use the prototype revision workflow.'
         )
-    return edit_document(projects_table, project_id, document, body, now=datetime.now(UTC).isoformat(), title=title)
+    return edit_document(projects_table, project_id, document, body, now=now_iso(), title=title)
 
 
 @tracer.capture_method
@@ -2995,6 +2998,11 @@ def get_document_versions(project_id: str, document_id: str) -> dict:
     return {'success': True, **list_document_versions(projects_table, project_id, _source_document_item(project_id, document_id))}
 
 
+def stored_document_type(project_id: str, document_id: str) -> str | None:
+    """The managed type (prd / prfaq / prototype) of a stored document, else None (404 when absent)."""
+    return managed_document_type(_source_document_item(project_id, document_id))
+
+
 @tracer.capture_method
 def restore_document(project_id: str, document_id: str, version_id: str, body: dict) -> dict:
     """Restore = a new version with an earlier version's content."""
@@ -3003,7 +3011,7 @@ def restore_document(project_id: str, document_id: str, version_id: str, body: d
     document = _source_document_item(project_id, document_id)
     _refuse_decision_edit(document)
     return restore_document_version(projects_table, project_id, document, version_id, body,
-                                    now=datetime.now(UTC).isoformat())
+                                    now=now_iso())
 
 
 @tracer.capture_method
@@ -3062,7 +3070,7 @@ def delete_document(
     except ValueError as error:
         raise ConfigurationError('Projects table name not configured') from error
 
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
     count_condition = 'attribute_not_exists(document_count)'
     count_values = {
         **PROJECT_WRITABLE_ATTRIBUTE_VALUES,
@@ -3231,7 +3239,7 @@ def duplicate_document(project_id: str, document_id: str, target_project_id: str
     source = _source_document_item(project_id, document_id)
     sk = str(source['sk'])
     allocation_id = f'duplicate:{project_id}:{document_id}'
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
     fields = {key: value for key, value in source.items() if key not in _DUPLICATE_DROPPED_FIELDS}
     fields.update({
         'gsi1pk': f'PROJECT#{target_project_id}#DOCUMENTS',
@@ -3293,7 +3301,7 @@ def update_persona(project_id: str, persona_id: str, body: dict) -> dict:
     if body.get('name'):
         body['name'] = fix_persona_name(body['name'])
 
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
 
     update_expr = 'SET updated_at = :now'
     expr_values = {':now': now}
@@ -3392,11 +3400,11 @@ def regenerate_persona_avatar(project_id: str, persona_id: str) -> dict:
     avatar_result = generate_persona_avatar(item, project_id=project_id)
 
     if not avatar_result.get('avatar_url'):
-        raise ServiceError('Avatar generation failed')
+        raise _avatar_job_error(avatar_result.get('failure'))
 
     # Update persona with new avatar (a new key per image, so the CDN cannot
     # serve the previous one), then sweep the images it no longer names.
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
     projects_table.update_item(
         Key={'pk': f'PROJECT#{project_id}', 'sk': f'PERSONA#{persona_id}'},
         UpdateExpression='SET avatar_url = :url, avatar_prompt = :prompt, updated_at = :now',
@@ -3416,6 +3424,20 @@ def regenerate_persona_avatar(project_id: str, persona_id: str) -> dict:
         'avatar_url': get_avatar_cdn_url(avatar_result['avatar_url']),
         'avatar_prompt': avatar_result['avatar_prompt']
     }
+
+
+def _avatar_job_error(failure: object) -> ApiError:
+    """What the regenerate-avatar job reports: the classified reason in plain words.
+
+    ``AvatarGenerationFailed`` (424) makes the assist worker record this text as the
+    job's ``error``, e.g. "Avatar generation failed: the image model ... is not enabled
+    in us-west-2 for this account (AccessDeniedException)". An answer without a
+    failure record keeps the bare message.
+    """
+    message = failure.get('message') if isinstance(failure, dict) else None
+    if isinstance(message, str) and message:
+        return AvatarGenerationFailed(f'Avatar generation failed: {message}')
+    return ServiceError('Avatar generation failed')
 
 
 def _sweep_superseded_avatar(project_id: str, persona_id: str, previous_url: object, current_url: str) -> None:
@@ -3512,7 +3534,7 @@ def delete_persona(project_id: str, persona_id: str) -> dict:
         raise ConfigurationError('Projects table not configured')
 
     try:
-        now = datetime.now(UTC).isoformat()
+        now = now_iso()
         table_name = projects_table_name(projects_table)
         transact = projects_table.meta.client.transact_write_items
         try:
@@ -3651,7 +3673,7 @@ def run_research(project_id: str, body: dict, *, category_scope: dict | None) ->
 
         logger.info(f"Saving research document, content size: {len(full_report)} chars, feedback items: {len(feedback_items)}")
         item = create_counted_project_child(
-            projects_table, project_id, 'research', build, 'document_count', now=now_dt,
+            projects_table, project_id, 'research', build, now=now_dt,
         )
 
     except Exception as e:
@@ -3694,10 +3716,6 @@ def _user_pool_id() -> str:
     if not pool_id:
         raise ConfigurationError('User pool not configured')
     return pool_id
-
-
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
 
 
 def _error_code(error: ClientError) -> str:
@@ -3799,7 +3817,7 @@ def set_project_visibility(project_id: str, body: object) -> dict:
             project_id,
             'SET #visibility = :visibility, updated_at = :now',
             names={'#visibility': 'visibility'},
-            values={':visibility': visibility, ':now': _now_iso()},
+            values={':visibility': visibility, ':now': now_iso()},
         )
     except ClientError as error:
         if _is_conditional_failure(error):
@@ -3959,7 +3977,7 @@ def add_project_member(project_id: str, body: object, caller: Caller) -> dict:
         'username': user['username'],
         'email': user['email'],
         'added_by': caller.subject,
-        'added_at': _now_iso(),
+        'added_at': now_iso(),
     }
     _ensure_members_map(project_id, meta)
     try:
@@ -3998,7 +4016,7 @@ def update_project_member(project_id: str, member_sub: str, body: object) -> dic
             'SET #members.#sub.#role = :role, updated_at = :now',
             condition='attribute_exists(#members.#sub)',
             names={'#members': 'members', '#sub': member_sub, '#role': 'role'},
-            values={':role': role, ':now': _now_iso()},
+            values={':role': role, ':now': now_iso()},
             return_values='ALL_NEW',
         )
     except ClientError as error:
@@ -4037,7 +4055,7 @@ def remove_project_member(
             'REMOVE #members.#sub SET updated_at = :now',
             condition='attribute_exists(#members.#sub)',
             names={'#members': 'members', '#sub': member_sub},
-            values={':now': _now_iso()},
+            values={':now': now_iso()},
         )
     except ClientError as error:
         if _is_missing_member_failure(error):
@@ -4134,7 +4152,7 @@ def transfer_project_owner(project_id: str, body: object, caller: Caller) -> dic
         raise _member_limit_error()
     new_owner = _new_owner_identity(new_sub)
     update, condition, names, values = _owner_transfer_update(
-        previous, new_owner, caller, _now_iso(),
+        previous, new_owner, caller, now_iso(),
     )
 
     _ensure_members_map(project_id, meta)

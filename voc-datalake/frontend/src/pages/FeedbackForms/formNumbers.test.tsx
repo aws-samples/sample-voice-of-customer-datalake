@@ -37,7 +37,7 @@ const noop = () => undefined
 
 function renderCard() {
   return render(
-    <FormCard form={form} onEdit={noop} onDelete={noop} onToggle={noop} apiEndpoint="https://api.example.com" />,
+    <FormCard form={form} onEdit={noop} onDelete={noop} onToggle={noop} apiEndpoint="https://api.example.com" statsRefreshing={false} />,
     { wrapper: createQueryWrapper() },
   )
 }

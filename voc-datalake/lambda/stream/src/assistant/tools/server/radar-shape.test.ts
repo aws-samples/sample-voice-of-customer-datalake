@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { fakeContext, fakeDeps, serverTool } from '../test-fixtures.js';
-import { COMPARE_NOTE, httpsUrl, shapeCompare, shapeReleases, shortDate } from './radar-shape.js';
+import { BRANDS_NOTE, COMPARE_NOTE, httpsUrl, shapeBrands, shapeCompare, shapeReleases, shortDate } from './radar-shape.js';
 
 const NOW = Date.UTC(2026, 9, 20);
 /** A clear-text link as the Radar API may return it (the shaping upgrades it). */
@@ -26,10 +26,15 @@ describe('radar result shaping', () => {
     const shaped = shapeReleases(RELEASES, NOW);
     expect(shaped).toMatchObject({ releases: [
       { feature: 'Coding sessions', links: ['[Coding sessions · Jun 11](https://example-air.example/changelog/2026-06-11-coding-sessions)'] },
-      { links: ['[Agent updates · about Jun 18](https://www.example-air.example/changelog/2026-06-18-agent)', '[Example Air ships agent updates](https://news.example/example-air-agent)'] },
+      { links: ['[Agent updates · first found Jun 18](https://www.example-air.example/changelog/2026-06-18-agent)', '[Example Air ships agent updates](https://news.example/example-air-agent)'] },
       { links: [] },
     ] });
     expect(JSON.stringify(shaped)).not.toMatch(/"urls"|"titles"|http:\/\/|\(example-air\.app\)/u);
+  });
+
+  it('keeps each item\u2019s kind and found_via', () => {
+    const shaped = shapeReleases({ releases: [{ feature: 'Spring promo', kind: 'promotion', found_via: ['feed', 'exa'], urls: [], titles: [] }] }, NOW);
+    expect(shaped).toMatchObject({ releases: [{ kind: 'promotion', found_via: ['feed', 'exa'], links: [] }] });
   });
 
   it('upgrades http, refuses non-web schemes and dates another year in full', () => {
@@ -77,5 +82,53 @@ describe('get_radar overview', () => {
     const result = await serverTool(deps, 'get_radar').execute({ brand: 'example-air', view: 'releases' }, fakeContext());
     expect(deps.calls.filter(({ call }) => call.fn === 'radar')).toHaveLength(1);
     expect(result.content).toContain('[Coding sessions · Jun 11](https://example-air.example/');
+  });
+});
+
+/**
+ * A live run: after 18 create_app_connector calls with radar_brand, the assistant read view "brands", saw
+ * `sources: []` for every brand and told the user the connectors were "not linked yet" and imports were "still
+ * running". `sources` only ever lists source PROFILES; connectors never appear there.
+ */
+describe('shapeBrands', () => {
+  it('renames each brand\u2019s source-profile ids to profile_sources and adds the reading note', () => {
+    const body = { brands: [{ key: 'acme', label: 'Acme', domains: ['acme.example'], sources: [], origin: 'list' },
+      { key: 'beta', label: 'Beta', domains: [], sources: ['beta_profile'], origin: 'profile' }] };
+    expect(shapeBrands(body)).toStrictEqual({
+      brands: [{ key: 'acme', label: 'Acme', domains: ['acme.example'], profile_sources: [], origin: 'list' },
+        { key: 'beta', label: 'Beta', domains: [], profile_sources: ['beta_profile'], origin: 'profile' }],
+      note: BRANDS_NOTE,
+    });
+  });
+
+  it('says an empty profile_sources does not mean a brand has no source', () => {
+    expect(BRANDS_NOTE).toContain('never appear there, so an empty list does not mean a brand has no source');
+    expect(BRANDS_NOTE).toContain('list_scrapers lists every scraper, app connector and review page with the radar_brand it feeds');
+  });
+
+  it('leaves a list whose brands carry no sources, and a body without a brand list, unchanged', () => {
+    expect(shapeBrands({ brands: [{ key: 'acme' }] })).toStrictEqual({ brands: [{ key: 'acme' }] });
+    expect(shapeBrands({ error: 'nope' })).toStrictEqual({ error: 'nope' });
+    expect(shapeBrands(null)).toBeNull();
+  });
+
+  it('reaches the model through get_radar view brands', async () => {
+    const deps = fakeDeps({ 'GET /radar/brands': { brands: [{ key: 'acme', sources: [] }] } });
+    const result = await serverTool(deps, 'get_radar').execute({ view: 'brands' }, fakeContext());
+    expect(JSON.parse(result.content)).toStrictEqual({ brands: [{ key: 'acme', profile_sources: [] }], note: BRANDS_NOTE });
+  });
+
+  it('reaches the model through get_radar without a brand (the tracked brands carry sources too)', async () => {
+    const deps = fakeDeps({ 'GET /radar': { brands: [{ key: 'acme', sources: [], total: 0 }], last_scan: null } });
+    const result = await serverTool(deps, 'get_radar').execute({}, fakeContext());
+    expect(JSON.parse(result.content)).toStrictEqual({
+      brands: [{ key: 'acme', profile_sources: [], total: 0 }], last_scan: null, note: BRANDS_NOTE,
+    });
+  });
+
+  it('leaves a brand\u2019s own summary unchanged (it has no brand list)', async () => {
+    const deps = fakeDeps({ 'GET /radar/brands/acme': { brand: { key: 'acme' }, love: [] } });
+    const result = await serverTool(deps, 'get_radar').execute({ brand: 'acme', view: 'summary' }, fakeContext());
+    expect(JSON.parse(result.content)).toStrictEqual({ brand: { key: 'acme' }, love: [] });
   });
 });

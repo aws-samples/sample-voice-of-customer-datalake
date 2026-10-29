@@ -22,6 +22,7 @@
       "capReached": "This vote has already collected as many ballots as it accepts. Ask the facilitator to open another session.",
       "closed": "The facilitator has closed this vote, so no further ballots are accepted.",
       "expired": "This vote has expired, so no further ballots are accepted.",
+      "gone": "The proposal this vote was about has been deleted, so the vote is over.",
       "invalid": "This ballot could not be read, so nothing was recorded. Check the numbers and the note, then submit again.",
       "notFound": "This link does not open a vote. Check that you scanned the code that is on screen now.",
       "title": "This vote is not open",
@@ -92,7 +93,8 @@
     "avgRating": "Avg Rating",
     "noLinkedForm": "No feedback form is linked to this document.",
     "noRatings": "No ratings collected",
-    "submissions": "Submissions",
+    "submissions_one": "Submission",
+    "submissions_other": "Submissions",
     "title": "Collected Feedback",
     "unavailable": "Ratings unavailable"
   },
@@ -204,7 +206,9 @@
     "title": "Prioritization Scores",
     "wholeRow": "One ballot for all {{documents, number}} documents on this row.",
     "yoursOnly": "Your own ballot. Saving writes only your scores.",
-    "valueOfMax": "{{value}} of {{max, number}}"
+    "valueOfMax": "{{value}} of {{max, number}}",
+    "clear": "Clear",
+    "clearAxis": "Clear the {{name}} score"
   },
   "scoresUnavailable": {
     "description": "Your saved scores are unavailable right now, so the numbers below are defaults rather than what anyone entered. Reload the page before saving.",
@@ -309,6 +313,7 @@
     "mediumPriority": "Medium Priority",
     "notScored": "Not Scored",
     "totalRows": "Total Proposals",
+    "loading": "Counting proposals...",
     "unreadable_one": "The team score for {{count, number}} proposal could not be read, so it is counted in the total but in none of the other counts. Reload the page to see it.",
     "unreadable_other": "The team scores for {{count, number}} proposals could not be read, so they are counted in the total but in none of the other counts. Reload the page to see them."
   },

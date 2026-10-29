@@ -5,11 +5,15 @@
  *   E2E_MOCK=1 E2E_TRACK=ops npx playwright test -c playwright.ops-mock.config.ts
  */
 import { defineConfig } from '@playwright/test'
+import { browserUserAgent, pinRunTag } from './lib/trafficTag'
+
+// Mock only, so harmless; kept consistent with the other runners (lib/trafficTag.ts).
+pinRunTag()
 
 export default defineConfig({
   testDir: './tests',
   testMatch: /ops-visual-check\.spec\.ts/,
   timeout: 120_000,
   reporter: 'line',
-  use: { viewport: { width: 1440, height: 1000 } },
+  use: { viewport: { width: 1440, height: 1000 }, userAgent: browserUserAgent() },
 })

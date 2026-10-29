@@ -1,13 +1,17 @@
 /**
- * @fileoverview Save and Pursue for decision records. Both refresh the project
- * (a decision is a project document); Pursue also hands the new PR/FAQ job to the
+ * @fileoverview Save, Delete and Pursue for decision records. Save and Delete write their
+ * result into the project cache at once (`decisionCache.ts` says why), then refresh the
+ * project in the background; Pursue refreshes it and hands the new PR/FAQ job to the
  * page's Background Jobs panel.
  * @module pages/ProjectDetail/decisions/useDecisionMutations
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { decisionsApi } from '../../../api/decisionsApi'
 import { projectKey } from '../../../api/projectQueryKeys'
+import { projectsApi } from '../../../api/projectsApi'
 import type { DecisionInput } from '../../../api/decisionsApi'
+import type { ProjectDetail } from '../../../api/projectTypes'
+import { withSavedDocument, withoutDocument } from './decisionCache'
 
 interface SaveArgs {
   input: DecisionInput
@@ -17,13 +21,28 @@ interface SaveArgs {
 
 export function useDecisionMutations(projectId: string, onJobStarted?: () => void) {
   const queryClient = useQueryClient()
-  const refresh = () => queryClient.invalidateQueries({ queryKey: projectKey(projectId) })
+  const key = projectKey(projectId)
+  const refresh = () => queryClient.invalidateQueries({ queryKey: key })
+  const updateCache = (update: (detail: ProjectDetail | undefined) => ProjectDetail | undefined) => {
+    queryClient.setQueryData<ProjectDetail>(key, update)
+  }
 
   const save = useMutation({
     mutationFn: ({ input, editing }: SaveArgs) => (editing
       ? decisionsApi.updateDecision(projectId, editing.documentId, input, editing.revision)
       : decisionsApi.createDecision(projectId, input)),
-    onSuccess: refresh,
+    onSuccess: (saved) => {
+      if (saved !== null) updateCache((detail) => withSavedDocument(detail, saved))
+      void refresh()
+    },
+  })
+
+  const remove = useMutation({
+    mutationFn: (documentId: string) => projectsApi.deleteDocument(projectId, documentId),
+    onSuccess: (_answer, documentId) => {
+      updateCache((detail) => withoutDocument(detail, documentId))
+      void refresh()
+    },
   })
 
   const pursue = useMutation({
@@ -35,5 +54,5 @@ export function useDecisionMutations(projectId: string, onJobStarted?: () => voi
     },
   })
 
-  return { save, pursue }
+  return { save, remove, pursue }
 }

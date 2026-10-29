@@ -8,8 +8,9 @@ the ``requestContext.identity.sourceIp`` the public ballot routes read.
 from __future__ import annotations
 
 import json
-from contextlib import ExitStack
-from typing import TYPE_CHECKING
+from collections.abc import Iterator
+from contextlib import ExitStack, contextmanager
+from typing import TYPE_CHECKING, Any
 from unittest.mock import patch
 
 import boto3
@@ -91,6 +92,24 @@ def seeded_category_edit_tables(item: dict, categories_config: dict) -> tuple[Ta
     feedback.put_item(Item=item)
     aggregates.put_item(Item=categories_config)
     return feedback, aggregates
+
+
+@contextmanager
+def projects_module_world(bucket: str, *, also_shared_jobs: bool = False) -> Iterator[tuple[Table, Table, Any]]:
+    """``(projects, jobs, s3)`` moto resources with the ``projects`` module wired to them (its table, jobs
+    table, S3 client and ``RAW_DATA_BUCKET``); ``also_shared_jobs`` points ``shared.jobs`` at the jobs table too.
+    Call inside ``mock_aws()``."""
+    s3 = boto3.client('s3', region_name='us-east-1')
+    s3.create_bucket(Bucket=bucket)
+    projects, jobs = pk_sk_table('projects'), pk_sk_table('jobs')
+    with ExitStack() as stack:
+        stack.enter_context(patch('projects.projects_table', projects))
+        stack.enter_context(patch('projects.get_jobs_table', return_value=jobs))
+        stack.enter_context(patch('projects.get_s3_client', return_value=s3))
+        if also_shared_jobs:
+            stack.enter_context(patch('shared.jobs.get_jobs_table', return_value=jobs))
+        stack.enter_context(patch.dict('os.environ', {'RAW_DATA_BUCKET': bucket}))
+        yield projects, jobs, s3
 
 
 def rest_event(method, path, *, claims, body=None, path_params=None):

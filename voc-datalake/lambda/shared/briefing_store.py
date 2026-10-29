@@ -18,7 +18,6 @@ import json
 import re
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
 from typing import Any, Final
 
 from boto3.dynamodb.conditions import Key
@@ -26,15 +25,19 @@ from botocore.exceptions import ClientError
 
 from shared.aws import is_conditional_check_failure
 from shared.category_access import CategoryScope
-from shared.dynamo_values import plain
+from shared.dynamo_values import as_count, plain
 from shared.exceptions import NotFoundError, ValidationError
 from shared.memory_policy import parse_datetime
+from shared.metric_keys import DAILY_TOTAL_PK
+from shared.timestamps import ISO_DAY_RE
 
 BRIEF_PK_PREFIX: Final = 'BRIEF#'
 ORG_PK_PREFIX: Final = 'BRIEFORG#'
 SUBSCRIBERS_PK: Final = 'BRIEFSUB'
 SUBSCRIBER_SK_PREFIX: Final = 'USER#'
-DAILY_TOTAL_PK: Final = 'METRIC#daily_total'
+#: The brief's env contract, read by the settings API (subscriptions) and the worker (mail, recipients).
+TOPIC_ENV: Final = 'BRIEFING_TOPIC_ARN'
+USER_POOL_ENV: Final = 'USER_POOL_ID'
 
 STATUS_PENDING: Final = 'pending'
 STATUS_READY: Final = 'ready'
@@ -49,7 +52,6 @@ DEBOUNCE: Final = timedelta(minutes=15)
 PENDING_TIMEOUT: Final = timedelta(minutes=15)
 
 _CARD_ID_RE: Final = re.compile(r'^[a-z][a-z0-9_]{0,40}_[0-9a-f]{16}\Z')
-_DAY_RE: Final = re.compile(r'^\d{4}-\d{2}-\d{2}\Z')
 
 
 def brief_key(sub: str, day: str) -> dict[str, str]:
@@ -70,15 +72,11 @@ def scope_hash(scope: CategoryScope) -> str:
     return hashlib.sha256(canonical.encode('utf-8')).hexdigest()[:24]
 
 
-def _count(value: object) -> int:
-    return int(value) if isinstance(value, int | Decimal) and not isinstance(value, bool) else 0
-
-
 def feedback_marker(aggregates_table: Any, now: datetime) -> str:
     """``{UTC day}:{reviews processed that day}`` — changes whenever a review lands."""
     day = now.astimezone(UTC).strftime('%Y-%m-%d')
     item = aggregates_table.get_item(Key={'pk': DAILY_TOTAL_PK, 'sk': day}).get('Item') or {}
-    return f'{day}:{_count(item.get("count"))}'
+    return f'{day}:{as_count(item.get("count"))}'
 
 
 def latest_brief(aggregates_table: Any, sub: str) -> dict | None:
@@ -187,7 +185,7 @@ def validate_card_states(body: Mapping[str, Any]) -> tuple[str, dict[str, str]]:
     if unknown:
         raise ValidationError(f"Unknown field(s): {', '.join(sorted(unknown))}")
     day = body.get('day')
-    if not isinstance(day, str) or not _DAY_RE.match(day):
+    if not isinstance(day, str) or not ISO_DAY_RE.match(day):
         raise ValidationError('day must be YYYY-MM-DD')
     states = body.get('states')
     if not isinstance(states, Mapping) or not states:

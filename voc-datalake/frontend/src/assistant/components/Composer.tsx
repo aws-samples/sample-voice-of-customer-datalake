@@ -1,17 +1,26 @@
 /**
  * @fileoverview Message composer: textarea (Enter sends, Shift+Enter newline),
  * character counter against `LIMITS.maxUserMessageChars`, send / stop,
- * image and document attachments and the web-search toggle (only when the deployment
- * has the gateway). The unsent text is kept per conversation (store/composerDrafts):
+ * image and document attachments, the web-search toggle (only when the deployment
+ * has the gateway) and, on a project page, `@persona` / `@all` / `#document` mentions
+ * (assistant/mentions: a combobox menu, chips, the ids sent as `forwardedProps.mentions`). The unsent text is kept per conversation (store/composerDrafts):
  * it comes back when the user returns to that conversation and never shows in another.
  *
  * @module assistant/components/Composer
  */
 import { useId, useRef, useState } from 'react'
+import type { KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import clsx from 'clsx'
-import { Globe, Paperclip, Send, Square, X } from 'lucide-react'
+import { AtSign, Globe, Hash, Paperclip, Send, Square } from 'lucide-react'
 import { LIMITS } from '../contract'
+import MentionChips from '../mentions/MentionChips'
+import RemovableChips from './RemovableChips'
+import MentionMenu from '../mentions/MentionMenu'
+import { optionId } from '../mentions/mentionModel'
+import { useMentions } from '../mentions/useMentions'
+import type { MentionsController } from '../mentions/useMentions'
+import type { Mentions } from '../contract'
 import { useAssistantUiStore } from '../store/assistantStore'
 import { draftOf, useComposerDrafts } from '../store/composerDrafts'
 import {
@@ -27,7 +36,9 @@ interface ComposerProps {
   /** Why sending is blocked (e.g. approvals pending), or null. */
   blockedReason: string | null
   webSearchAvailable: boolean
-  onSend: (content: string | ContentPart[]) => void
+  /** The project on screen: `@` mentions its personas, `#` tags its documents. Absent = off. */
+  projectId?: string
+  onSend: (content: string | ContentPart[], mentions?: Mentions) => void
   onStop: () => void
   /** Text injected from outside (suggested prompts); consumed once. */
   draft?: string
@@ -92,20 +103,53 @@ function WebSearchToggle() {
 function AttachmentChips({ items, onRemove }: Readonly<{ items: readonly PendingAttachment[]; onRemove: (id: string) => void }>) {
   const { t } = useTranslation('assistant')
   if (items.length === 0) return null
+  const chips = items.map((a) => ({
+    key: a.id, icon: <Paperclip size={12} aria-hidden />, label: a.name, tooltip: a.name,
+    removeLabel: t('composer.removeAttachment', { name: a.name }),
+  }))
+  return <RemovableChips items={chips} tone="muted" className="mb-1" onRemove={onRemove} />
+}
+
+/** The `@` / `#` buttons: the same menus without typing the character (touch keyboards). */
+function MentionButtons({ mentions }: Readonly<{ mentions: MentionsController }>) {
+  const { t } = useTranslation('assistant')
+  if (!mentions.enabled) return null
   return (
-    <ul className="mb-1 flex flex-wrap gap-1">
-      {items.map((a) => (
-        <li key={a.id} className="badge badge-muted">
-          <Paperclip size={12} aria-hidden />
-          {/* A one-line chip: long file names end in an ellipsis, the full name is the tooltip. */}
-          <span className="max-w-[10rem] truncate" title={a.name}>{a.name}</span>
-          <button type="button" onClick={() => onRemove(a.id)} className="rounded-full transition-colors hover:text-text" aria-label={t('composer.removeAttachment', { name: a.name })} title={t('composer.removeAttachment', { name: a.name })}>
-            <X size={12} aria-hidden />
-          </button>
-        </li>
-      ))}
-    </ul>
+    <>
+      <button type="button" onClick={() => mentions.insertTrigger('@')} className="icon-btn" title={t('mentions.insertPersona')}>
+        <AtSign size={16} aria-hidden />
+        <span className="sr-only">{t('mentions.insertPersona')}</span>
+      </button>
+      <button type="button" onClick={() => mentions.insertTrigger('#')} className="icon-btn" title={t('mentions.insertDocument')}>
+        <Hash size={16} aria-hidden />
+        <span className="sr-only">{t('mentions.insertDocument')}</span>
+      </button>
+    </>
   )
+}
+
+/**
+ * List-autocomplete attributes of the textarea while mentions are on. It keeps the textbox role
+ * (a multi-line combobox is poorly supported by screen readers): the open list is named by
+ * `aria-controls`, its active option by `aria-activedescendant`, its size by the list's status.
+ */
+function autocompleteProps(mentions: MentionsController, listId: string) {
+  if (!mentions.enabled) return {}
+  const menu = mentions.menu
+  const listed = menu !== null && menu.options.length > 0
+  return {
+    'aria-autocomplete': 'list' as const,
+    ...(listed ? { 'aria-controls': listId, 'aria-activedescendant': optionId(listId, menu.active) } : {}),
+  }
+}
+
+/** The open mention list takes its keys first; otherwise Enter sends (Shift+Enter is a newline). */
+function handleComposerKey(event: KeyboardEvent<HTMLTextAreaElement>, mentions: MentionsController, submit: () => void): void {
+  if (mentions.onKeyDown(event)) return
+  if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+    event.preventDefault()
+    submit()
+  }
 }
 
 function SendOrStop({ streaming, canSend, onStop }: Readonly<{ streaming: boolean; canSend: boolean; onStop: () => void }>) {
@@ -127,11 +171,13 @@ function SendOrStop({ streaming, canSend, onStop }: Readonly<{ streaming: boolea
 }
 
 export default function Composer({
-  threadId, streaming, blockedReason, webSearchAvailable, onSend, onStop, draft, innerClassName,
+  threadId, streaming, blockedReason, webSearchAvailable, projectId, onSend, onStop, draft, innerClassName,
 }: Readonly<ComposerProps>) {
   const { t } = useTranslation('assistant')
   const inputId = useId()
+  const listId = useId()
   const fileRef = useRef<HTMLInputElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const saveDraft = useComposerDrafts((s) => s.setDraft)
   const [text, setTextState] = useState(() => draftOf(threadId))
   const setText = (next: string) => {
@@ -140,6 +186,7 @@ export default function Composer({
   }
   const [lastDraft, setLastDraft] = useState<string | undefined>(undefined)
   const attachments = useAttachments()
+  const mentions = useMentions({ projectId, text, setText, textareaRef })
 
   // Adopt a new suggested prompt (render-time sync, not an effect).
   if (draft !== undefined && draft !== lastDraft) {
@@ -154,7 +201,7 @@ export default function Composer({
 
   const submit = () => {
     if (!canSend) return
-    onSend(buildUserContent(text, attachments.items))
+    onSend(buildUserContent(text, attachments.items), mentions.takeMentions())
     setText('')
     attachments.clear()
   }
@@ -171,24 +218,27 @@ export default function Composer({
         {blockedReason !== null && <p className="mb-1 px-1 text-[12px] text-warn">{blockedReason}</p>}
         <AttachmentChips items={attachments.items} onRemove={attachments.remove} />
         {attachments.error !== null && <p className="mb-1 px-1 text-[12px] text-danger" role="alert">{t(`composer.attachmentError.${attachments.error}`, { max: LIMITS.maxAttachments, mb: MAX_ATTACHMENT_MB })}</p>}
+        <MentionMenu listId={listId} menu={mentions.menu} onChoose={mentions.choose} />
         <label htmlFor={inputId} className="sr-only">{t('composer.label')}</label>
         <textarea
           id={inputId}
+          ref={textareaRef}
           value={text}
           rows={2}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-              e.preventDefault()
-              submit()
-            }
+          {...autocompleteProps(mentions, listId)}
+          onChange={(e) => {
+            setText(e.target.value)
+            mentions.onCaretMove()
           }}
-          placeholder={t('composer.placeholder')}
+          onSelect={mentions.onCaretMove}
+          onKeyDown={(e) => handleComposerKey(e, mentions, submit)}
+          placeholder={t(mentions.placeholderKey)}
           className="input resize-none"
           // The browser must not refill it from another conversation (form restore / autofill).
           autoComplete="off"
           aria-describedby={`${inputId}-count`}
         />
+        <MentionChips picks={mentions.picks} personaNames={mentions.personaNames} onRemove={mentions.remove} />
         {/* Wraps at 200 % zoom / narrow sheets, so Send is never squeezed and cut (wave 4). */}
         <div className="mt-1 flex flex-wrap items-center gap-1">
           <input
@@ -207,6 +257,7 @@ export default function Composer({
             <Paperclip size={16} aria-hidden />
             <span className="sr-only">{t('composer.attach')}</span>
           </button>
+          <MentionButtons mentions={mentions} />
           {webSearchAvailable && <WebSearchToggle />}
           <span id={`${inputId}-count`} className={clsx('ml-auto font-mono text-[12px]', tooLong ? 'text-danger' : 'text-muted')}>
             {t('composer.counter', { length: text.length, max: LIMITS.maxUserMessageChars })}

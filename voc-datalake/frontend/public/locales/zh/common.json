@@ -16,6 +16,7 @@
     "prioritization": "优先级排序",
     "problems": "问题分析",
     "project": "项目",
+    "board": "看板",
     "projects": "项目",
     "scrapers": "数据源",
     "memory": "记忆",
@@ -27,7 +28,9 @@
     "account": "账户",
     "workflows": "工作流列表",
     "workflow": "工作流",
-    "radar": "雷达"
+    "radar": "雷达",
+    "featureRequests": "反馈看板",
+    "participants": "参与者"
   },
   "cancel": "取消",
   "configureBrand": "配置品牌",
@@ -85,7 +88,9 @@
     "memory": "记忆",
     "company": "公司",
     "admin": "管理",
-    "connect": "MCP 与技能"
+    "connect": "MCP 与技能",
+    "featureRequests": "反馈看板",
+    "participants": "参与者"
   },
   "partialCountsHint": "近似值：无法读取完整时间范围，计数为下限",
   "problemAnalysisPage": {
@@ -112,7 +117,8 @@
     "collapseSidebar": "折叠侧边栏",
     "expandSidebar": "展开侧边栏",
     "openMenu": "打开菜单",
-    "label": "主侧边栏"
+    "label": "主侧边栏",
+    "mainNav": "主导航"
   },
   "profileMenu": {
     "trigger": "{{name}} 的账户菜单",
@@ -129,6 +135,8 @@
     "48hFull": "48小时",
     "7d": "7天",
     "7dFull": "7天",
+    "14d": "14天",
+    "14dFull": "14天",
     "apply": "应用",
     "cancel": "取消",
     "clear": "清除",
@@ -301,6 +309,7 @@
     "revokedGroup": "已撤销 ({{count, number}})",
     "revokeBody": "“{{name}}”将立即对所有使用它的助手失效。此操作无法撤消。",
     "revoke": "撤销",
+    "revokeNamed": "撤销令牌“{{name}}”",
     "toggleAudit": "显示 {{name}} 的活动",
     "status": {
       "active": "有效",
@@ -332,5 +341,46 @@
   "header": {
     "title": "客户之声",
     "subtitle": "统一的客户反馈智能平台"
+  },
+  "builtInSources": {
+    "webscraper": "网页抓取器",
+    "manual_import": "手动导入",
+    "s3_import": "S3 导入",
+    "feedback_form": "反馈表单",
+    "prototype_feedback": "原型反馈",
+    "github_issues": "GitHub 议题",
+    "app_reviews_ios": "iOS 应用评论",
+    "app_reviews_android": "Android 应用评论",
+    "synthetic_reviews": "合成评论",
+    "web_reviews": "网页评论",
+    "email_intake": "电子邮件收件箱"
+  },
+  "feedbackDimension": {
+    "label": "反馈类型",
+    "description": "评论属于哪种反馈：一个主要类型，由模型为每个来源设置。"
+  },
+  "feedbackTypes": {
+    "bug": "缺陷",
+    "service_failure": "服务故障",
+    "feature_request": "功能请求",
+    "usability": "易用性",
+    "performance": "性能",
+    "pricing_billing": "价格与账单",
+    "support_experience": "支持体验",
+    "praise": "表扬",
+    "question": "问题",
+    "other": "其他"
+  },
+  "feedbackTypeDescriptions": {
+    "bug": "有东西坏了或出错：报错、崩溃、数据错误",
+    "service_failure": "服务没有兑现：中断、配送或付款失败、无法登录",
+    "feature_request": "要求新增功能或做出改变",
+    "usability": "能用，但令人困惑或难以使用",
+    "performance": "能用，但很慢（崩溃算缺陷）",
+    "pricing_billing": "价格、费用、扣款、退款、发票",
+    "support_experience": "客服或员工如何对待客户",
+    "praise": "正面反馈，没有需要修复的问题",
+    "question": "询问某样东西如何使用",
+    "other": "以上都不是"
   }
 }

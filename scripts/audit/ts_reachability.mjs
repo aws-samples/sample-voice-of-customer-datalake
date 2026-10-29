@@ -3,14 +3,18 @@
 /**
  * ts_reachability — TypeScript declarations and members nothing in production reads.
  *
- * Pattern (the 5.28 dead-TS audit, deadts.md "Method", made repeatable):
+ * Pattern (the 5.28 dead-TS audit's method, made repeatable):
  *   - `dead`: a runtime declaration (function, var, class, enum, class member, object-table member such
  *     as `api.getPersonas`) or a type (interface, type alias) no live code references;
  *   - `test-only`: the same, but specs reference it (a seam only tests keep alive);
  *   - `write-only`: a member that live production code writes (object-literal key, JSX attribute,
  *     `x.p = …`, a returned field) but nothing ever reads (`BriefResult.isLoading`, an unused prop);
  *   - `unread-type-member` (only with `--all-members`): a type member neither read nor written in
- *     production (wire envelopes; zero runtime lines, so not reported by default).
+ *     production (wire envelopes; zero runtime lines, so not reported by default);
+ *   - `never-written`: the reverse, a dead knob — an OPTIONAL member of an exported `*Options` / `*Props` /
+ *     `*Deps` / `*Config` shape under `lib/` or `scripts/` that live code reads but that nothing, production
+ *     or test, ever sets (no object-literal key, shorthand, assignment or JSX attribute writes it, and no
+ *     other type's member flows into it), so every read takes the default (`options.maxPolls ?? 90`, 5.34).
  * How: one LanguageService per program (frontend `tsconfig.test.json`, stream `tsconfig.json`, CDK
  * `tsconfig.json` + `tsconfig.tools.json` scripts). `ts_reach_graph.mjs` resolves every identifier with
  * the checker into read/write/dynamic/escape edges from its enclosing declaration and records structural
@@ -134,7 +138,26 @@ export function findingsOf(graph, { allMembers = false } = {}) {
     if (kind === 'unread-type-member' && !allMembers) continue
     out.push({ key: n.key, kind, detail: `${n.rel}:${n.line} (${n.kind}${n.member ? `/${n.member}` : ''}; refs prod ${refs.prod}, test ${refs.test}, writes ${refs.write})`, node: n })
   }
+  out.push(...neverWritten(graph, prod))
   return { findings: out, counts: { files: graph.sourceFiles.length, declarations: graph.nodes.length - graph.moduleId.size } }
+}
+
+const KNOB_SHAPE = /(Options|Props|Deps|Config)$/
+const KNOB_PATH = /^(?:\.\.\/)?(?:lib|scripts)\//
+
+/** `never-written` findings: live-read optional members of exported option shapes that nothing sets. */
+export function neverWritten(graph, prod) {
+  const ts = graph.ts
+  const written = new Set()
+  for (const targets of graph.write.values()) for (const t of targets) written.add(t)
+  // A member some other type's value flows into may be set through that type: not judged.
+  for (const list of graph.flows.values()) for (const [from] of list) for (const id of from) written.add(id)
+  const isExported = (decl) => Boolean(ts.getModifiers(decl)?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword))
+  return graph.nodes.filter((n) => {
+    if (n.kind !== 'member' || n.member !== 'type' || n.isTest || !prod[n.id] || written.has(n.id)) return false
+    const parent = graph.nodes[n.parent]
+    return Boolean(n.node.questionToken) && KNOB_PATH.test(n.rel) && KNOB_SHAPE.test(parent.name) && isExported(parent.node)
+  }).map((n) => ({ key: n.key, kind: 'never-written', detail: `${n.rel}:${n.line} (optional; read, but nothing sets it: inline the default)`, node: n }))
 }
 
 /** LanguageService.findReferences for one finding: prod/test reference counts (declaration excluded). */
@@ -173,7 +196,7 @@ export function analyzeProgram(def, options = {}) {
 }
 
 export const main = detectorMain(TOOL, {
-  usage: 'TypeScript declarations and members nothing live reads (dead, test-only, write-only, dead-type).',
+  usage: 'TypeScript declarations and members nothing live reads (dead, test-only, write-only, dead-type), and option members nothing sets (never-written).',
   spec: { program: 'string', root: 'string', evidence: 'boolean', 'all-members': 'boolean', 'no-allowlist': 'boolean' },
 }, (args) => {
   const { defs } = selectPrograms(args)

@@ -26,6 +26,7 @@ import type { ThreadSlot } from '../store/assistantStore'
 import type { SessionSummary } from '../sessions/schema'
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
 import { formatRelativeDate } from '../../utils/dateUtils'
+import { editableTitle } from '../sessions/serialize'
 import { TitleEditor } from './SessionRename'
 import { useRowRename } from './useSessionRename'
 import MoreMenu from './MoreMenu'
@@ -138,10 +139,12 @@ function RowMenu({ active, options, triggerRef }: Readonly<{
 
 type RowRename = ReturnType<typeof useRowRename>
 
-export function OpenRow({ slot, active, title, actions }: Readonly<{
+export function OpenRow({ slot, active, title, editTitle, actions }: Readonly<{
   slot: ThreadSlot
   active: boolean
   title: string
+  /** The rename field's starting text: the full name, never the list's cut title. */
+  editTitle: string
   actions: RowActions
 }>) {
   const { t } = useTranslation('assistant')
@@ -154,7 +157,7 @@ export function OpenRow({ slot, active, title, actions }: Readonly<{
   return (
     <RowShell active={active}>
       {row.editing
-        ? <TitleEditor initial={title} onSave={(next) => onRename(id, next)} onDone={row.stop} returnFocusTo={row.buttonRef} />
+        ? <TitleEditor initial={editTitle} onSave={(next) => onRename(id, next)} onDone={row.stop} returnFocusTo={row.buttonRef} />
         : (
           <button
             type="button"
@@ -196,7 +199,7 @@ export function HistoryRow({ session, nowMs, actions }: Readonly<{
   return (
     <RowShell active={false}>
       {row.editing
-        ? <TitleEditor initial={title} onSave={(next) => onRename(session.id, next)} onDone={row.stop} returnFocusTo={row.buttonRef} />
+        ? <TitleEditor initial={editableTitle(session.title, session.customTitle)} onSave={(next) => onRename(session.id, next)} onDone={row.stop} returnFocusTo={row.buttonRef} />
         : (
           <button type="button" onClick={() => onPick(session.id)} className="flex min-w-0 flex-1 items-start gap-2 px-2 py-1.5 text-left">
             <MessageSquare size={14} className="mt-0.5 flex-shrink-0 text-muted" aria-hidden />

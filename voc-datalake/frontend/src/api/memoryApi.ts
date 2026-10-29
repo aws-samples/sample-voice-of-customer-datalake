@@ -12,6 +12,7 @@
  *
  * @module api/memoryApi
  */
+import { post, put } from './requestKit'
 import { z } from 'zod'
 import { fetchApi } from './client'
 import { lenientText as text, optionalText, parsedList } from './schemaList'
@@ -229,39 +230,52 @@ export const memoryKeys = {
   import: (id: string) => ['memory', 'import', id] as const,
 }
 
-const post = (body?: unknown): RequestInit => ({
-  method: 'POST',
-  ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-})
 const item = (id: string, action = '') => `/memory/${encodeURIComponent(id)}${action}`
+
+/**
+ * The memory write routes with their raw answers, for a caller that reads what the
+ * normalisers do not keep (the assistant's memory executors report the stored
+ * `status`, e.g. `proposed`). `memoryApi` normalises the same calls.
+ */
+export const memoryRequests = {
+  add: (memory: unknown) => fetchApi<unknown>('/memory', post(memory)),
+  update: (id: string, statement: string) => fetchApi<unknown>(item(id), put({ statement })),
+  confirm: (id: string) => fetchApi<unknown>(item(id, '/confirm'), post()),
+  forget: (id: string) => fetchApi<unknown>(item(id, '/forget'), post()),
+  merge: (ids: readonly string[], statement: string) => fetchApi<unknown>('/memory/merge', post({ ids, statement })),
+  resolve: (id: string, request: unknown) => fetchApi<unknown>(`/memory/review/${encodeURIComponent(id)}/resolve`, post(request)),
+}
 
 export const memoryApi = {
   list: async (params: MemoryListParams): Promise<MemoryPage> =>
     normalizeMemoryPage(await fetchApi<unknown>(`/memory?${memoryListQuery(params)}`)),
 
   add: async (memory: NewMemory): Promise<MemoryItem | null> =>
-    normalizeMemoryItem(await fetchApi<unknown>('/memory', post(memory))),
+    normalizeMemoryItem(await memoryRequests.add(memory)),
 
   confirm: async (id: string): Promise<{ item: MemoryItem | null; counted: boolean }> => {
-    const raw = await fetchApi<unknown>(item(id, '/confirm'), post())
+    const raw = await memoryRequests.confirm(id)
     // `counted: false` = the caller already backs it (their own memory, or a second +1).
     const flag = z.looseObject({ counted: z.boolean().optional() }).safeParse(raw)
     return { item: normalizeMemoryItem(raw), counted: flag.data?.counted !== false }
   },
 
+  update: async ({ id, statement }: { id: string; statement: string }): Promise<MemoryItem | null> =>
+    normalizeMemoryItem(await memoryRequests.update(id, statement)),
+
   forget: async (id: string): Promise<MemoryItem | null> =>
-    normalizeMemoryItem(await fetchApi<unknown>(item(id, '/forget'), post())),
+    normalizeMemoryItem(await memoryRequests.forget(id)),
 
   restore: async (id: string): Promise<MemoryItem | null> =>
     normalizeMemoryItem(await fetchApi<unknown>(item(id, '/restore'), post())),
 
   merge: async (ids: readonly string[], statement: string): Promise<MemoryItem | null> =>
-    normalizeMemoryItem(await fetchApi<unknown>('/memory/merge', post({ ids, statement }))),
+    normalizeMemoryItem(await memoryRequests.merge(ids, statement)),
 
   review: async (): Promise<ReviewEntry[]> => normalizeReview(await fetchApi<unknown>('/memory/review')),
 
   resolve: async (id: string, request: ResolveRequest): Promise<void> => {
-    await fetchApi<unknown>(`/memory/review/${encodeURIComponent(id)}/resolve`, post(request))
+    await memoryRequests.resolve(id, request)
   },
 
   createImport: async (request: NewImport): Promise<ImportRecord | null> => {

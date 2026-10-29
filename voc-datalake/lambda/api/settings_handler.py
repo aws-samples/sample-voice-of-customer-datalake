@@ -3,7 +3,6 @@ Settings API Lambda - Handles /settings/*
 Manages brand configuration and categories.
 """
 
-import hashlib
 import json
 import os
 import re
@@ -31,8 +30,11 @@ from shared import (
     design_logo,
     design_references,
     extracted_design,
+    image_model_quota,
+    image_model_status,
     model_capacity,
     onboarding,
+    reference_urls,
     reprocess_jobs,
 )
 from shared import email_intake_settings as inbox
@@ -46,13 +48,34 @@ from shared.api import (
     require_admin,
     validate_bool,
 )
-from shared.aws import get_dynamodb_resource, get_s3_client, get_secrets_client, invoke_lambda_async, put_secret_json
+from shared.aws import (
+    get_dynamodb_resource,
+    get_s3_client,
+    get_secrets_client,
+    invoke_lambda_async,
+    is_action_event,
+    put_secret_json,
+)
 from shared.category_access import CategoryScope
 from shared.category_config import validate_categories
-from shared.category_gate import scope_for_caller
+from shared.category_gate import CATEGORIES_PK, CATEGORIES_SK, scope_for_caller
 from shared.data_version import bump_config_version
-from shared.dimension_config import DIMENSIONS_SETTINGS_KEY, load_dimensions_config, validate_dimensions
-from shared.exceptions import ConfigurationError, ConflictError, NotFoundError, ServiceError, ValidationError
+from shared.design_references import DESIGN_CAPTURE_ACTION
+from shared.digests import sha256_hex
+from shared.dimension_config import (
+    DIMENSIONS_SETTINGS_KEY,
+    load_dimensions_config,
+    validate_dimensions,
+    with_builtin_dimensions,
+)
+from shared.exceptions import (
+    ConfigurationError,
+    ConflictError,
+    NotFoundError,
+    ServiceError,
+    ServiceUnavailableError,
+    ValidationError,
+)
 from shared.logging import logger, tracer
 from shared.model_config import (
     ALLOWED_MODEL_IDS,
@@ -65,6 +88,7 @@ from shared.model_config import (
 )
 from shared.project_gate import caller_from_event
 from shared.request_body import json_body_value, json_object_body
+from shared.retention import ERASE_FIELDS, ERASURE_JOB_PK
 from shared.scope_names import (
     HiddenNames,
     component_names_hidden,
@@ -80,6 +104,7 @@ from shared.source_profiles import (
     profile_for,
     validate_source_profiles,
 )
+from shared.timestamps import now_iso
 from shared.url_policy import validate_url
 
 dynamodb = get_dynamodb_resource()
@@ -91,8 +116,6 @@ RETENTION_FUNCTION = os.environ.get("RETENTION_FUNCTION", "")
 
 SETTINGS_PK = "SETTINGS#brand"
 SETTINGS_SK = "config"
-CATEGORIES_PK = "SETTINGS#categories"
-CATEGORIES_SK = "config"
 RESOLVED_PROBLEMS_PK = "SETTINGS#resolved_problems"
 RESOLVED_PROBLEMS_SK = "config"
 
@@ -162,6 +185,8 @@ def get_model_settings():
             'available_models': ALLOWED_MODELS,
             'surfaces': surfaces,
             'model_id': legacy_global if legacy_global in ALLOWED_MODEL_IDS else None,
+            # The persona-avatar image model: fixed, not a picker choice (shared/image_model_status.py).
+            'image_model': image_model_status.image_model_info(),
         }
     except ConfigurationError:
         raise
@@ -226,21 +251,28 @@ def run_model_test():
 
     Admin-only (it spends a model call). No fallback and no retry: the answer is
     about the model named in the body, never a stand-in (shared/model_capacity.py).
+    The persona-avatar image model is accepted too: ONE minimal image call, nothing
+    stored (shared/image_model_status.py).
     """
     require_admin(app.current_event.raw_event)
     body = json_object_body(app)
     model_id = body.get('model_id')
+    image_model_id = image_model_status.image_model_info()['id']
+    if model_id == image_model_id:
+        return image_model_status.probe_image_model()
     if not isinstance(model_id, str) or model_id not in ALLOWED_MODEL_IDS:
-        raise ValidationError(f"model_id must be one of: {', '.join(sorted(ALLOWED_MODEL_IDS))}")
+        allowed = ', '.join([*sorted(ALLOWED_MODEL_IDS), image_model_id])
+        raise ValidationError(f"model_id must be one of: {allowed}")
     return model_capacity.probe_model(model_id)
 
 
 @app.get("/settings/model/capacity")
 @tracer.capture_method
 def get_model_capacity():
-    """Every allowlisted model with its tokens-per-minute quota (no model call). Admin-only."""
+    """Every allowlisted model with its tokens-per-minute quota, plus the image model's access
+    and requests-per-minute quota (no model call). Admin-only."""
     require_admin(app.current_event.raw_event)
-    return {'models': model_capacity.capacity_overview()}
+    return {'models': model_capacity.capacity_overview(), 'image': image_model_status.image_capacity()}
 
 
 def _load_model_item() -> dict:
@@ -262,7 +294,7 @@ def _load_model_item() -> dict:
 def _put_model_item(item: dict) -> None:
     item['pk'] = MODEL_SETTINGS_PK
     item['sk'] = MODEL_SETTINGS_SK
-    item['updated_at'] = datetime.now(UTC).isoformat()
+    item['updated_at'] = now_iso()
     # Keep the item tidy: drop an empty surfaces map and a null legacy global.
     if not item.get('surfaces'):
         item.pop('surfaces', None)
@@ -423,7 +455,7 @@ def _set_resolved_entry(key: str) -> None:
         ConditionExpression='attribute_exists(#r.#k) OR size(#r) < :max',
         ExpressionAttributeNames={'#r': 'resolved', '#k': key},
         ExpressionAttributeValues={
-            ':entry': {'resolved_at': datetime.now(UTC).isoformat()},
+            ':entry': {'resolved_at': now_iso()},
             ':max': MAX_RESOLVED_ENTRIES,
         },
     )
@@ -579,7 +611,7 @@ def save_brand_settings():
     try:
         item = {'pk': SETTINGS_PK, 'sk': SETTINGS_SK, 'brand_name': body.get('brand_name', ''),
                 'brand_handles': body.get('brand_handles', []), 'hashtags': body.get('hashtags', []),
-                'urls_to_track': body.get('urls_to_track', []), 'updated_at': datetime.now(UTC).isoformat()}
+                'urls_to_track': body.get('urls_to_track', []), 'updated_at': now_iso()}
         aggregates_table.put_item(Item=item)
         bump_config_version(aggregates_table)
     except Exception as e:
@@ -660,7 +692,7 @@ def save_categories_config():
     except ValueError as exc:
         raise ValidationError(str(exc)) from exc
     try:
-        item = {'pk': CATEGORIES_PK, 'sk': CATEGORIES_SK, 'categories': categories, 'updated_at': datetime.now(UTC).isoformat()}
+        item = {'pk': CATEGORIES_PK, 'sk': CATEGORIES_SK, 'categories': categories, 'updated_at': now_iso()}
         aggregates_table.put_item(Item=item)
         bump_config_version(aggregates_table)
     except Exception as e:
@@ -867,7 +899,6 @@ DESIGN_REFRESH_ACTION = 'design_reference_refresh'
 # Live-website references are read by `voc-design-capture` (VocIngestionStack, lambda/design_capture), which
 # runs the AgentCore managed browser; this Lambda only starts it (async invoke by name).
 DESIGN_CAPTURE_FUNCTION = os.environ.get('DESIGN_CAPTURE_FUNCTION', '')
-DESIGN_CAPTURE_ACTION = 'design_capture'
 UPLOAD_URL_TTL_SECONDS = 600
 INTEGRATION_FIELDS = {'figma_token': 'figma', 'github_token': 'github'}
 MAX_INTEGRATION_TOKEN_CHARS = 1_000
@@ -881,10 +912,6 @@ def _caller_username(event: dict) -> str | None:
         if isinstance(value, str) and value.strip():
             return value.strip()
     return None
-
-
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
 
 
 @app.get("/settings/company-context")
@@ -918,7 +945,7 @@ def put_company_context_route():
     clean = company_context.validate_company_context(json_object_body(app))
     table.put_item(Item={
         'pk': company_context.COMPANY_CONTEXT_PK, 'sk': company_context.CONFIG_SK,
-        **clean, 'updated_at': _now_iso(), 'updated_by_username': _caller_username(event),
+        **clean, 'updated_at': now_iso(), 'updated_by_username': _caller_username(event),
     })
     logger.info('Company context saved', extra={'objectives': len(clean['objectives'])})
     return company_context.get_company_context(table)
@@ -941,7 +968,7 @@ def put_my_context_route():
     clean = company_context.validate_my_context(json_object_body(app))
     table.put_item(Item={
         'pk': company_context.user_context_pk(sub), 'sk': company_context.CONFIG_SK,
-        **clean, 'updated_at': _now_iso(),
+        **clean, 'updated_at': now_iso(),
     })
     return company_context.get_my_context(table, sub)
 
@@ -1126,6 +1153,8 @@ LOGO_KEY_ATTR = 'logo_s3_key'
 LOGO_PENDING_KEY_ATTR = 'logo_pending_s3_key'
 # Every logo object key starts with this (company_context.new_id('logo') → logo_…).
 LOGO_KEY_PREFIX = design_references.UPLOAD_PREFIX + 'logo_'
+# The logo "Use this logo" stores for the draft: what a PUT may name as ``logo_id``.
+DRAFT_LOGO_ID_RE = re.compile(r'logo_[0-9a-f]{12}\.(png|jpg|webp)')
 
 
 def _design_system_key() -> dict:
@@ -1198,7 +1227,7 @@ def create_logo_upload_route():
         Key=_design_system_key(),
         UpdateExpression='SET #pk = :key, updated_at = :now',
         ExpressionAttributeNames={'#pk': LOGO_PENDING_KEY_ATTR},
-        ExpressionAttributeValues={':key': target['s3_key'], ':now': _now_iso()},
+        ExpressionAttributeValues={':key': target['s3_key'], ':now': now_iso()},
     )
     return Response(status_code=201, content_type=content_types.APPLICATION_JSON,
                     body=json.dumps({'upload': _upload_target(target, size_bytes)}))
@@ -1225,17 +1254,36 @@ def put_design_system_route():
     event = app.current_event.raw_event
     require_admin(event)
     table = _configured_table()
-    clean = company_context.validate_design_system(json_object_body(app))
+    body = json_object_body(app)
+    clean = company_context.validate_design_system(body)
+    drafted_logo = _drafted_logo_key(body.get('logo_id'))
     # The uploaded logo is not part of the PUT body: carry it over, so saving
-    # tokens never drops the company logo.
+    # tokens never drops the company logo — unless the draft carries a reference's logo.
     existing = table.get_item(Key=_design_system_key()).get('Item') or {}
     kept = {attr: existing[attr] for attr in (LOGO_KEY_ATTR, LOGO_PENDING_KEY_ATTR)
             if _logo_key_or_none(existing.get(attr))}
+    if drafted_logo:
+        kept = {LOGO_KEY_ATTR: drafted_logo}
     table.put_item(Item={
         'pk': company_context.DESIGN_SYSTEM_PK, 'sk': company_context.CONFIG_SK,
-        **clean, **kept, 'updated_at': _now_iso(), 'updated_by_username': _caller_username(event),
+        **clean, **kept, 'updated_at': now_iso(), 'updated_by_username': _caller_username(event),
     })
     return _design_view(table)
+
+
+def _drafted_logo_key(logo_id: object) -> str | None:
+    """The object key of a ``logo_id`` from "Use this logo" (``logo_<12 hex>.<png|jpg|webp>``), or None when absent.
+
+    400 when it is malformed or its object does not exist (only the logo route writes one).
+    """
+    if logo_id in (None, ''):
+        return None
+    if not isinstance(logo_id, str) or not DRAFT_LOGO_ID_RE.fullmatch(logo_id):
+        raise ValidationError('logo_id is not a logo from "Use this logo"')
+    key = f'{design_references.UPLOAD_PREFIX}{logo_id}'
+    if not RAW_DATA_BUCKET or not _uploaded(key):
+        raise ValidationError('logo_id: that logo file was not found; use the logo again')
+    return key
 
 
 def _reference_key(ref_id: str) -> dict:
@@ -1260,7 +1308,7 @@ def _start_reference_refresh(table, ref_id: str, kind: object = None) -> None:
     if kind == 'website':
         if not DESIGN_CAPTURE_FUNCTION:
             design_references.record_outcome(table, ref_id, {
-                'status': 'error', 'error': 'Reading live websites is not available in this deployment'}, _now_iso())
+                'status': 'error', 'error': 'Reading live websites is not available in this deployment'}, now_iso())
             return
         function_name, payload = DESIGN_CAPTURE_FUNCTION, {'action': DESIGN_CAPTURE_ACTION, 'ref_id': ref_id}
     else:
@@ -1279,7 +1327,7 @@ def _record_refresh_start_failure(table, ref_id: str, error_type: str) -> None:
     """Log the failure TYPE only (a message would never be read) and record it on the reference."""
     logger.warning(f'Could not start design reference refresh: {error_type}')
     design_references.record_outcome(
-        table, ref_id, {'status': 'error', 'error': 'Could not start the refresh; try again'}, _now_iso())
+        table, ref_id, {'status': 'error', 'error': 'Could not start the refresh; try again'}, now_iso())
 
 
 def _upload_target(item: dict, size_bytes: int) -> dict:
@@ -1331,10 +1379,14 @@ def create_design_reference_route():
     request = company_context.validate_reference_request(body)
     if request['kind'] == 'website':
         _require_public_url(request['url'])
-    if len(company_context.list_references(table)) >= company_context.MAX_REFERENCES:
+    active = company_context.list_references(table)
+    duplicate = reference_urls.duplicate_reference(active, request['url']) if request.get('url') else None
+    if duplicate is not None:
+        raise ConflictError(reference_urls.duplicate_message(duplicate))
+    if len(active) >= company_context.MAX_REFERENCES:
         raise ValidationError(f'At most {company_context.MAX_REFERENCES} active references; archive one first')
     ref_id = company_context.new_id('ref')
-    now = _now_iso()
+    now = now_iso()
     item = {**_reference_key(ref_id), 'id': ref_id, **request, 'status': 'pending',
             'created_at': now, 'updated_at': now}
     upload_bytes = _attach_upload(item, body) if request['kind'] in company_context.UPLOAD_KINDS else None
@@ -1362,7 +1414,7 @@ def refresh_design_reference_route(ref_id: str):
         Key=_reference_key(ref_id),
         UpdateExpression='SET #st = :pending, #u = :u REMOVE #e',
         ExpressionAttributeNames={'#st': 'status', '#u': 'updated_at', '#e': 'error'},
-        ExpressionAttributeValues={':pending': 'pending', ':u': _now_iso()},
+        ExpressionAttributeValues={':pending': 'pending', ':u': now_iso()},
     )
     _start_reference_refresh(table, ref_id, item.get('kind'))
     return Response(status_code=202, content_type=content_types.APPLICATION_JSON, body=json.dumps(
@@ -1372,17 +1424,36 @@ def refresh_design_reference_route(ref_id: str):
 @app.delete("/settings/design-system/references/<ref_id>")
 @tracer.capture_method
 def archive_design_reference_route(ref_id: str):
-    """Archive a reference (admin). The row and any uploaded object are kept (keep-all)."""
+    """Archive a reference (admin). The row and any uploaded object are kept (keep-all); the logo
+    PREVIEW (``logo_preview_<ref id>.*``, a copy made when the reference was read) is deleted and its key
+    dropped from the row. Repeating the call is safe: an already archived reference is archived again and
+    its (absent) previews deleted again, so a 503 from the S3 step is fixed by retrying."""
     require_admin(app.current_event.raw_event)
     table = _configured_table()
-    _reference_or_404(table, ref_id)
-    table.update_item(
-        Key=_reference_key(ref_id),
-        UpdateExpression='SET #st = :archived, #u = :u',
-        ExpressionAttributeNames={'#st': 'status', '#u': 'updated_at'},
-        ExpressionAttributeValues={':archived': 'archived', ':u': _now_iso()},
-    )
+    item = _reference_or_404(table, ref_id)
+    table.update_item(Key=_reference_key(ref_id), **_archive_update(item))
+    if RAW_DATA_BUCKET:
+        try:
+            design_logo.delete_previews(get_s3_client(), RAW_DATA_BUCKET, ref_id)
+        except design_logo.LogoPreviewDeleteError as e:
+            raise ServiceUnavailableError('The reference is archived, but its logo preview could not be '
+                                          'removed; try again') from e
     return {'reference': company_context.reference_view(_reference_or_404(table, ref_id))}
+
+
+def _archive_update(item: dict) -> dict:
+    """The archive ``update_item`` arguments: status + time, and REMOVE of ``extracted_design.logo.preview_key``
+    when the row has one (a REMOVE on a path whose parent is not a map would be refused, so it is only sent
+    when the logo is a map carrying the key)."""
+    names = {'#st': 'status', '#u': 'updated_at'}
+    expression = 'SET #st = :archived, #u = :u'
+    design = item.get('extracted_design')
+    logo = design.get('logo') if isinstance(design, dict) else None
+    if isinstance(logo, dict) and 'preview_key' in logo:
+        names.update({'#d': 'extracted_design', '#l': 'logo', '#p': 'preview_key'})
+        expression += ' REMOVE #d.#l.#p'
+    return {'UpdateExpression': expression, 'ExpressionAttributeNames': names,
+            'ExpressionAttributeValues': {':archived': 'archived', ':u': now_iso()}}
 
 
 def _extracted_design_or_409(item: dict) -> dict:
@@ -1415,11 +1486,15 @@ def apply_design_reference_route(ref_id: str):
 @app.post("/settings/design-system/references/<ref_id>/logo")
 @tracer.capture_method
 def use_reference_logo_route(ref_id: str):
-    """Make a reference's logo candidate the company logo (admin) → 200 ``{logo_url}``.
+    """Put a reference's logo candidate into the draft (admin) → 200 ``{logo_id, logo_url}``; NOTHING is saved.
 
     The candidate is downloaded server-side through the SSRF guard (``shared.design_logo``:
-    https, every hop re-validated, ≤ 2 MB, PNG/JPEG/WebP by its bytes) and stored like an
-    uploaded logo under ``company-context/design/logo_*``.
+    https, every hop re-validated, ≤ 2 MB, PNG/JPEG/WebP by its bytes) and stored as an object
+    under ``company-context/design/logo_*``. The design-system row is untouched: the editor shows
+    ``logo_url`` (a signed GET) and the admin's ``PUT /settings/design-system`` with ``logo_id``
+    makes it the company logo; a discarded draft leaves the object unused (kept, like uploads).
+    A RENDERED candidate (an SVG logo the capture worker drew as a PNG) is not downloaded: its stored
+    preview PNG is copied (checked again by its bytes, ≤ 2 MB); 409 when that preview is gone.
     """
     require_admin(app.current_event.raw_event)
     if not RAW_DATA_BUCKET:
@@ -1428,20 +1503,24 @@ def use_reference_logo_route(ref_id: str):
     candidate = extracted_design.clean_logo(_extracted_design_or_409(_reference_or_404(table, ref_id)).get('logo'))
     if candidate is None:
         raise ConflictError('This reference has no logo to use')
-    try:
-        data, content_type = design_logo.fetch_logo(candidate['source_url'])
-    except design_logo.LogoFetchError as e:
-        raise ValidationError(str(e)) from e
+    data, content_type = _reference_logo_bytes(candidate)
     key = design_references.upload_key(company_context.new_id('logo'), design_logo.LOGO_EXTENSIONS[content_type])
     get_s3_client().put_object(Bucket=RAW_DATA_BUCKET, Key=key, Body=data, ContentType=content_type)
-    table.update_item(
-        Key=_design_system_key(),
-        UpdateExpression='SET #k = :key, updated_at = :now REMOVE #pk',
-        ExpressionAttributeNames={'#k': LOGO_KEY_ATTR, '#pk': LOGO_PENDING_KEY_ATTR},
-        ExpressionAttributeValues={':key': key, ':now': _now_iso()},
-    )
-    logger.info('Design reference logo applied', extra={'content_type': content_type, 'bytes': len(data)})
-    return {'logo_url': _signed_logo_url(key)}
+    logger.info('Design reference logo drafted', extra={'content_type': content_type, 'bytes': len(data)})
+    return {'logo_id': key.removeprefix(design_references.UPLOAD_PREFIX), 'logo_url': _signed_logo_url(key)}
+
+
+def _reference_logo_bytes(candidate: dict) -> tuple[bytes, str]:
+    """A rendered SVG logo's stored PNG preview (never downloaded: its source is an SVG), else the download."""
+    try:
+        if candidate.get('rendered') is True:
+            png = design_logo.read_rendered_preview(get_s3_client(), RAW_DATA_BUCKET, candidate.get('preview_key'))
+            return png, design_logo.PNG_TYPE
+        return design_logo.fetch_logo(candidate['source_url'])
+    except design_logo.LogoPreviewMissing as e:
+        raise ConflictError('Refresh the reference to read its logo again') from e
+    except design_logo.LogoFetchError as e:
+        raise ValidationError(str(e)) from e
 
 
 def _process_reference_event(event: dict) -> dict:
@@ -1455,10 +1534,25 @@ def _process_reference_event(event: dict) -> dict:
     deps = design_references.ProcessDeps(
         s3=get_s3_client(), bucket=RAW_DATA_BUCKET, secrets=_read_integration_secret(),
         summarise=design_references.summarise_text, summarise_image=design_references.summarise_image,
+        start_logo_render=_start_logo_render if DESIGN_CAPTURE_FUNCTION else None,
     )
     outcome = design_references.process_reference(table, item, deps)
     logger.info('Design reference processed', extra={'kind': item.get('kind'), 'status': outcome['status']})
     return {'status': outcome['status']}
+
+
+def _start_logo_render(event: dict) -> bool:
+    """Hand a GitHub reference's sanitised SVG logo to ``voc-design-capture`` (async) → whether it started.
+
+    The settings role already may invoke that function (website references); a failure is logged by type
+    and the reference gets the "upload a PNG export" note instead (``design_references``).
+    """
+    try:
+        invoke_lambda_async(DESIGN_CAPTURE_FUNCTION, event)
+    except Exception as e:  # noqa: BLE001 - the reference stays usable; the caller records the note
+        logger.warning(f'Could not start the SVG logo render: {type(e).__name__}')
+        return False
+    return True
 
 
 # ============================================
@@ -1478,7 +1572,7 @@ def _put_settings_row(key: dict, field: str, value: list, event: dict) -> None:
     """Save a dimensions / source-profiles row, then bump config_version (cached reads depend on both)."""
     table = _configured_table()
     table.put_item(Item={
-        **key, field: value, 'updated_at': _now_iso(), 'updated_by': _caller_label(event),
+        **key, field: value, 'updated_at': now_iso(), 'updated_by': _caller_label(event),
     })
     bump_config_version(table)
 
@@ -1504,26 +1598,29 @@ def _stored_dimensions_or_500() -> list[dict]:
 @app.get("/settings/dimensions")
 @tracer.capture_method
 def get_dimensions_route():
-    """The configured dimensions — any signed-in user (filters and chips need them)."""
+    """The built-in plus the configured dimensions — any signed-in user (filters and chips need them)."""
     item = _settings_row(DIMENSIONS_SETTINGS_KEY)
     try:
         dimensions = validate_dimensions(item.get('dimensions'))
     except ValueError:
-        logger.warning('Stored dimensions config is invalid; answering with none')
+        logger.warning('Stored dimensions config is invalid; answering with the built-in ones only')
         dimensions = []
-    return {'dimensions': dimensions, 'updated_at': item.get('updated_at')}
+    return {'dimensions': with_builtin_dimensions(dimensions), 'updated_at': item.get('updated_at')}
 
 
 @app.put("/settings/dimensions")
 @tracer.capture_method
 def put_dimensions_route():
-    """Replace the dimensions (admin). Body ``{dimensions}``, validated by ``shared.dimension_config``."""
+    """Replace the dimensions (admin). Body ``{dimensions}``, validated by ``shared.dimension_config``.
+
+    Built-in dimensions in the body are ignored (never stored); the answer lists them first.
+    """
     event = app.current_event.raw_event
     require_admin(event)
     dimensions = _validated_list('dimensions', validate_dimensions)
     _put_settings_row(DIMENSIONS_SETTINGS_KEY, 'dimensions', dimensions, event)
     logger.info('Dimensions saved', extra={'dimensions': len(dimensions)})
-    return {'success': True, 'dimensions': dimensions}
+    return {'success': True, 'dimensions': with_builtin_dimensions(dimensions)}
 
 
 @app.get("/settings/sources")
@@ -1567,7 +1664,6 @@ def _inbox_view() -> dict:
     day = inbox.today()
     profiles = load_source_profiles(table)
     stored = next((p for p in profiles if p['id'] == inbox.EMAIL_INTAKE_SOURCE), None)
-    dimensions = _settings_row(DIMENSIONS_SETTINGS_KEY).get('dimensions') or []
     return {
         'enabled': bool(INBOUND_EMAIL_DOMAIN),
         'domain': INBOUND_EMAIL_DOMAIN or None,
@@ -1579,8 +1675,8 @@ def _inbox_view() -> dict:
         'today': inbox.stats_view(day, _settings_row(inbox.stats_key(day))),
         'pii': (stored or profile_for([], inbox.EMAIL_INTAKE_SOURCE))['pii'],
         'profile_configured': stored is not None,
-        'feedback_type_dimension': any(isinstance(d, dict) and d.get('key') == inbox.FEEDBACK_TYPE_KEY
-                                       for d in dimensions),
+        # Built in since 5.45 (shared.feedback_types): always present.
+        'feedback_type_dimension': True,
         'updated_at': caps_row.get('updated_at'),
     }
 
@@ -1604,7 +1700,7 @@ def put_email_inbox_route():
     except ValueError as exc:
         raise ValidationError(str(exc)) from exc
     _configured_table().put_item(Item={
-        **inbox.CONFIG_KEY, **caps, 'updated_at': _now_iso(), 'updated_by': _caller_label(event),
+        **inbox.CONFIG_KEY, **caps, 'updated_at': now_iso(), 'updated_by': _caller_label(event),
     })
     logger.info('Email inbox caps saved', extra=caps)
     return {'success': True, **_inbox_view()}
@@ -1613,23 +1709,12 @@ def put_email_inbox_route():
 @app.post("/settings/email-inbox/feedback-type-dimension")
 @tracer.capture_method
 def create_feedback_type_dimension_route():
-    """Add the ``feedback_type`` dimension the aliases fill, unless it exists (admin)."""
-    event = app.current_event.raw_event
-    require_admin(event)
-    dimensions = _stored_dimensions_or_500()
-    created = not any(d.get('key') == inbox.FEEDBACK_TYPE_KEY for d in dimensions)
-    if created:
-        try:
-            dimensions = validate_dimensions([*dimensions, inbox.feedback_type_dimension()])
-        except ValueError as exc:
-            raise ValidationError(str(exc)) from exc
-        _put_settings_row(DIMENSIONS_SETTINGS_KEY, 'dimensions', dimensions, event)
-    return {'success': True, 'created': created, 'dimensions': dimensions}
+    """Kept for older SPAs: ``feedback_type`` is built in since 5.45, so nothing is ever created (admin)."""
+    require_admin(app.current_event.raw_event)
+    return {'success': True, 'created': False, 'dimensions': _stored_dimensions_or_500()}
 
 
-ERASURE_JOB_PK = 'JOB#erasure'
 ERASURE_JOB_PREFIX = 'er_'
-ERASURE_FIELDS = ('author', 'source_id', 'csv_row_id', 'email')
 MAX_ERASURE_VALUE_CHARS = 1_000
 MAX_LISTED_ERASURE_JOBS = 20
 ERASURE_VIEW_FIELDS = (
@@ -1644,8 +1729,8 @@ SOURCE_SCOPED_ERASURE_FIELDS: Final = frozenset({'source_id', 'csv_row_id'})
 def _erasure_request(body: dict) -> tuple[str, str, str | None]:
     """``(field, value, source)`` from a POST body, or 400. The value is never echoed."""
     field = body.get('field')
-    if field not in ERASURE_FIELDS:
-        raise ValidationError(f"field must be one of: {', '.join(ERASURE_FIELDS)}")
+    if field not in ERASE_FIELDS:
+        raise ValidationError(f"field must be one of: {', '.join(ERASE_FIELDS)}")
     value = body.get('value')
     if not isinstance(value, str) or not value.strip() or len(value) > MAX_ERASURE_VALUE_CHARS:
         raise ValidationError(f'value must be a non-empty string of at most {MAX_ERASURE_VALUE_CHARS} characters')
@@ -1672,7 +1757,7 @@ def _new_erasure_job(field: str, value: str, source: str | None, event: dict) ->
     job_id = f'{ERASURE_JOB_PREFIX}{int(now.timestamp() * 1000):012x}'
     item = {
         'pk': ERASURE_JOB_PK, 'sk': job_id, 'job_id': job_id, 'status': 'queued', 'field': field,
-        'value_hash': hashlib.sha256(value.encode('utf-8')).hexdigest(), 'deleted_items': 0,
+        'value_hash': sha256_hex(value), 'deleted_items': 0,
         'deleted_objects': 0, 'started_by': _caller_label(event), 'created_at': now.isoformat(),
     }
     if source:
@@ -1709,7 +1794,7 @@ def start_erasure_route():
             Key={'pk': ERASURE_JOB_PK, 'sk': job['job_id']},
             UpdateExpression='SET #s = :failed, finished_at = :now, #e = :error',
             ExpressionAttributeNames={'#s': 'status', '#e': 'error'},
-            ExpressionAttributeValues={':failed': 'failed', ':now': _now_iso(),
+            ExpressionAttributeValues={':failed': 'failed', ':now': now_iso(),
                                        ':error': 'Could not start the erasure worker'},
         )
         raise ServiceError('Failed to start the erasure job') from e
@@ -1738,6 +1823,10 @@ def list_erasure_route():
 def lambda_handler(event: dict, context: Any) -> dict:
     if assist_jobs.is_assist_event(event):
         return assist_jobs.run(event, ASSIST_WORK)
-    if event.get('action') == DESIGN_REFRESH_ACTION and 'httpMethod' not in event:
+    if is_action_event(event, model_capacity.REFRESH_ACTION):
+        return model_capacity.run_refresh_event()
+    if is_action_event(event, image_model_quota.REFRESH_ACTION):
+        return image_model_quota.run_refresh_event(event)
+    if is_action_event(event, DESIGN_REFRESH_ACTION):
         return _process_reference_event(event)
     return app.resolve(event, context)

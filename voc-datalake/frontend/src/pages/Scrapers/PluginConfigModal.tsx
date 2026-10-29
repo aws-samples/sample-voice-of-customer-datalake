@@ -17,6 +17,7 @@ import {
   useId, useState, useEffect,
 } from 'react'
 import { useTranslation } from 'react-i18next'
+import { usePluginCopy } from '../../plugins/pluginCopy'
 import { Link } from 'react-router-dom'
 import { api } from '../../api/client'
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
@@ -33,6 +34,7 @@ import { appCopy } from './appCopy'
 import RadarSourcePicker from './RadarSourcePicker'
 import { RadarBadge } from './SourceCardParts'
 import { useRadarBrandLabel } from './useRadarBrands'
+import { allAppConfigsKey, appConfigsKey } from '../../api/queryKeys'
 
 interface PluginConfigModalProps {
   readonly plugin: PluginManifest
@@ -204,14 +206,18 @@ function AppListSection({
  * settings are entered in Administration, so say where in plain words, with
  * the link, instead of the manifest's setup steps — those are written for the
  * Administration card ("paste the token above") and pointed at a field this
- * dialog does not have (live finding).
+ * dialog does not have (live finding). Only a plugin with a secret field has a
+ * token to paste; S3 Bulk Import has a bucket and prefixes, so its copy says
+ * "enter its settings" (5.34.00 live finding).
  */
-function SettingsPointer({ pluginName }: Readonly<{ pluginName: string }>) {
+function SettingsPointer({ plugin }: Readonly<{ plugin: PluginManifest }>) {
   const { t } = useTranslation(['scrapers', 'settings'])
   const where = `${t('settings:title')} → ${t('settings:tabs.sources')} → ${t('settings:sections.plugins')}`
+  const { name } = usePluginCopy()(plugin)
+  const copy = plugin.config.some((field) => field.secret === true) ? 'pluginConfig.configuredInSettings' : 'pluginConfig.configuredInSettingsNoToken'
   return (
     <div className="p-3 rounded-lg border border-border bg-bg-accent space-y-2">
-      <p className="text-sm text-text">{t('pluginConfig.configuredInSettings', { name: pluginName, where })}</p>
+      <p className="text-sm text-text">{t(copy, { name, where })}</p>
       <Link to="/admin?tab=sources&section=plugins" className="btn btn-primary btn-sm">{t('pluginConfig.openDataSourceSettings')}</Link>
     </div>
   )
@@ -283,6 +289,7 @@ export default function PluginConfigModal({
   plugin, onClose, isAdmin, focusAppId,
 }: PluginConfigModalProps) {
   const { t } = useTranslation('scrapers')
+  const pluginCopy = usePluginCopy()(plugin)
   const titleId = useId()
   const queryClient = useQueryClient()
   const [scheduleEnabled, setScheduleEnabled] = useState(false)
@@ -296,7 +303,7 @@ export default function PluginConfigModal({
   const {
     data: appConfigsData, isLoading: appsLoading,
   } = useQuery({
-    queryKey: ['app-configs', plugin.id],
+    queryKey: appConfigsKey(plugin.id),
     queryFn: () => api.getAppConfigs(plugin.id),
     enabled: hasApps,
   })
@@ -320,8 +327,8 @@ export default function PluginConfigModal({
   const saveMutation = useMutation({
     mutationFn: (app: AppConfig) => api.saveAppConfig(plugin.id, app),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['app-configs', plugin.id] })
-      void queryClient.invalidateQueries({ queryKey: ['all-app-configs'] })
+      void queryClient.invalidateQueries({ queryKey: appConfigsKey(plugin.id) })
+      void queryClient.invalidateQueries({ queryKey: allAppConfigsKey() })
       setEditingApp(null)
       setIsAdding(false)
     },
@@ -329,8 +336,8 @@ export default function PluginConfigModal({
   const deleteMutation = useMutation({
     mutationFn: (appId: string) => api.deleteAppConfig(plugin.id, appId),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['app-configs', plugin.id] })
-      void queryClient.invalidateQueries({ queryKey: ['all-app-configs'] })
+      void queryClient.invalidateQueries({ queryKey: appConfigsKey(plugin.id) })
+      void queryClient.invalidateQueries({ queryKey: allAppConfigsKey() })
       setDeleteAppId(null)
     },
   })
@@ -348,13 +355,13 @@ export default function PluginConfigModal({
   }
 
   const showEditor = isAdding || editingApp !== null
-  const { focused, focusedApp, title } = focusState(apps, appsLoading, focusAppId, plugin.name)
+  const { focused, focusedApp, title } = focusState(apps, appsLoading, focusAppId, pluginCopy.name)
 
   return (
     // Escape / backdrop close only when no app form is open — a half-filled
     // app config would otherwise be lost to a stray key.
     <ModalShell isOpen onClose={onClose} ariaLabelledBy={titleId} dismissable={!showEditor && !focused} panelClassName="max-w-2xl max-h-[95vh] sm:max-h-[90vh]">
-        <SourceDialogHeader titleId={titleId} title={title} description={focused ? undefined : plugin.description} icon={manifestIcon(plugin.icon, plugin.category)} onClose={onClose} />
+        <SourceDialogHeader titleId={titleId} title={title} description={focused ? undefined : pluginCopy.description} icon={manifestIcon(plugin.icon, plugin.category)} onClose={onClose} />
         {focused ? (
           <div className="dialog-body">
             <FocusedAppEditor plugin={plugin} app={focusedApp} loading={appsLoading} isAdmin={isAdmin} isPending={saveMutation.isPending}
@@ -373,7 +380,7 @@ export default function PluginConfigModal({
               onDelete={(id) => setDeleteAppId(id)} onSaveApp={(v) => saveMutation.mutate(v)} onCancelEditor={() => {
                 setEditingApp(null); setIsAdding(false)
               }} />
-          ) : <SettingsPointer pluginName={plugin.name} />}
+          ) : <SettingsPointer plugin={plugin} />}
           {apps.length > 0 && <RunNowRow isAdmin={isAdmin} isPending={runMutation.isPending} result={runMutation.data} onRun={() => runMutation.mutate()} />}
           {hasApps ? <AppSetup plugin={plugin} /> : null}
         </div>

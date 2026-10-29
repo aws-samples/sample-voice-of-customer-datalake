@@ -36,11 +36,30 @@ import { getTeamView, priorityBand } from './teamScore'
  * survives, because that is counted off the project read, which is a different query
  * and may well have succeeded already.
  */
+/**
+ * A count that has not arrived yet: a skeleton bar, not a 0 (a zero is a claim), with
+ * the reason in text only a screen reader reads; the grid carries `aria-busy`.
+ */
+function PendingCount({ label }: { readonly label: string }): ReactElement {
+  return (
+    <>
+      <span aria-hidden="true" className="inline-block h-7 w-10 align-middle rounded-sm bg-bg-hover animate-pulse" />
+      <span className="sr-only">{label}</span>
+    </>
+  )
+}
+
 export function StatsCards({
-  rows, aggregates,
+  rows, aggregates, rowsLoading,
 }: {
   readonly rows: PrioritizationRowView[];
   readonly aggregates: TeamAggregates
+  /**
+   * The project reads the rows are composed from are still in flight. `rows` is then
+   * empty for want of data, not because the backlog is, so every card is pending —
+   * the page used to print "0 / 0 / 0 / 0" for the ~5 s these reads take.
+   */
+  readonly rowsLoading: boolean
 }) {
   const { t } = useTranslation('prioritization')
   const bands = rows.map((row) => priorityBand(getTeamView(aggregates, row.row_id)))
@@ -78,10 +97,12 @@ export function StatsCards({
    * The sentence is the one the rows are already showing for the same state, so this
    * adds no key to eight catalogues and cannot drift from what the page says.
    */
+  const teamPending = rowsLoading || uncountable === 'loading'
   const countOf = (band: 'high' | 'medium' | 'none'): ReactElement => {
     // Both arms return an element, not "a number or an element": `sonarjs`
     // (`function-return-type`) refuses a union return here, and a fragment adds no DOM
     // node, so the card still renders the bare count.
+    if (teamPending) return <PendingCount label={t(rowsLoading ? 'stats.loading' : READ_STATE_I18N_KEY.loading)} />
     if (uncountable === null) return <>{bands.filter((b) => b === band).length}</>
     return (
       <>
@@ -93,12 +114,12 @@ export function StatsCards({
 
   return (
     <div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4" aria-busy={teamPending}>
         {/* Counts ROWS, and says so: one row is one proposal scored once, which is
             the number a reader ranking a backlog is actually after. The old count was
             documents, so a project whose PRD and PR/FAQ describe one idea inflated
             every card by one. */}
-        <div className="card p-4"><div className="text-2xl font-bold font-mono text-text-strong">{rows.length}</div><div className="text-sm text-muted">{t('stats.totalRows')}</div></div>
+        <div className="card p-4"><div className="text-2xl font-bold font-mono text-text-strong">{rowsLoading ? <PendingCount label={t('stats.loading')} /> : rows.length}</div><div className="text-sm text-muted">{t('stats.totalRows')}</div></div>
         <div className="card p-4"><div className="text-2xl font-bold font-mono text-ok">{countOf('high')}</div><div className="text-sm text-muted">{t('stats.highPriority')}</div></div>
         <div className="card p-4"><div className="text-2xl font-bold font-mono text-info">{countOf('medium')}</div><div className="text-sm text-muted">{t('stats.mediumPriority')}</div></div>
         {/* `text-muted`, not the fainter `text-muted-strong`: the faintest grey failed AA

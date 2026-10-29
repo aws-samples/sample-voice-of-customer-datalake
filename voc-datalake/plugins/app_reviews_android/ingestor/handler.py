@@ -11,18 +11,17 @@ from countries import ANDROID_COUNTRIES
 from models import AndroidAppConfig
 from play_client import fetch_reviews_for_country
 
-from _shared.app_reviews_utils import (
-    AppReviewsIngestor,
-    config_radar_brand,
+from _shared.app_reviews_config import (
+    app_entry_fields,
     load_app_configs,
     merge_reviews_by_composite_id,
     newest_first,
-    parse_int,
-    radar_stamp,
     review_created_at,
 )
+from _shared.app_reviews_utils import AppReviewsIngestor
 from _shared.base_ingestor import logger, metrics, tracer
 from shared.invocation_cost import measure_invocation_cost
+from shared.radar_brands import radar_stamp
 
 
 class AndroidAppReviewsIngestor(AppReviewsIngestor[AndroidAppConfig]):
@@ -50,14 +49,10 @@ class AndroidAppReviewsIngestor(AppReviewsIngestor[AndroidAppConfig]):
             platform_label="Android",
             legacy_id_key="package_name",
             from_entry=lambda cfg: AndroidAppConfig(
-                name=cfg.get("app_name", "").strip(),
+                **app_entry_fields(cfg),
                 package_name=cfg.get("package_name", "").strip(),
-                enabled=cfg.get("enabled", True),
-                # An absent cap stringifies to "None", which parse_int rejects → 500.
-                max_reviews_per_run=parse_int(str(cfg.get("max_reviews_per_run")), 500),
                 lang=str(cfg.get("lang", "") or "").strip(),
                 country=str(cfg.get("country", "") or "").strip(),
-                radar_brand=config_radar_brand(cfg),
             ),
             from_legacy=lambda app_name, package_name, max_reviews: AndroidAppConfig(
                 name=app_name,
@@ -94,18 +89,21 @@ class AndroidAppReviewsIngestor(AppReviewsIngestor[AndroidAppConfig]):
                 return None
             return f"android_{app.package_name}_{review_id}"
 
+        tally = self.new_tally(app)
         for lang, country in locales:
-            reviews = fetch_reviews_for_country(
+            fetch = fetch_reviews_for_country(
                 package_name=app.package_name,
                 country=country,
                 count=app.max_reviews_per_run,
-                sort_by=self.sort_by,
+                sort_by=self.sort_by_for(app),
                 lang=lang,
             )
+            tally.record(f"{lang}-{country}", fetch)
             merge_reviews_by_composite_id(
-                all_reviews, reviews, country=country, composite_id_for=composite_id_for
+                all_reviews, fetch.reviews, country=country, composite_id_for=composite_id_for
             )
 
+        self.report_storefronts(tally)
         return newest_first(
             all_reviews.values(), date_field="at", cap=app.max_reviews_per_run
         )
@@ -147,5 +145,6 @@ class AndroidAppReviewsIngestor(AppReviewsIngestor[AndroidAppConfig]):
 @metrics.log_metrics(capture_cold_start_metric=True)
 @measure_invocation_cost
 def lambda_handler(event, context):
-    """Lambda entry point. Optionally filters to a single app via event['app_id']."""
-    return AndroidAppReviewsIngestor.run_for_event(event)
+    """Google Play entry point: every configured app, or only event['app_id'] when given. A run over many
+    apps hands off to a next part before the context's time runs out (_shared/app_reviews_parts.py)."""
+    return AndroidAppReviewsIngestor.run_for_event(event, context)

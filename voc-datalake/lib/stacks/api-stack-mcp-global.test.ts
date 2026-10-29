@@ -6,13 +6,14 @@
  * restated, so a partition key, a domain env key or a route renamed on one side
  * fails here instead of at the first tool call after a deploy.
  */
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import {
-  actionsWithPrefix, apiMethods, apiTemplate, functionIdForHandler, methodThrottles, policyStatementsOf,
-  readRepoFile, serviceEnvironment,
+  actionsWithPrefix, apiMethods, apiTemplate, functionIdForHandler, methodThrottles, nonOptions, policyStatementsOf,
+  readRepoFile, resolveMethod, serviceEnvironment,
 } from '../test-support/api-stack-template';
 import { itemAt } from '../test-support/guards';
+import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import { byCodeUnit } from '../utils/compare';
 import { MCP_ALLOWED_METHODS, METHOD_NOT_ALLOWED_VERBS } from './global-mcp';
 
@@ -53,6 +54,11 @@ const TOKENS_ROLE = 'TokensApiRole';
 const onTable = (statements: ReturnType<typeof policyStatementsOf>, table: string) =>
   statements.filter((s) => s.resource.includes(table) && s.actions.some((a) => a.startsWith('dynamodb:')));
 
+// Synthesize once, under the synth timeout, rather than inside the first 5 s case.
+beforeAll(() => {
+  apiTemplate();
+}, SYNTH_TIMEOUT_MS);
+
 describe('global MCP endpoint wiring', () => {
   it('serves POST /mcp/global from mcp_global_handler behind the MCP token authorizer', () => {
     const method = apiMethods(apiTemplate()).find((m) => m.path === '/mcp/global' && m.httpMethod === 'POST');
@@ -61,17 +67,19 @@ describe('global MCP endpoint wiring', () => {
     expect(method?.hasAuthorizerId).toBe(true);
   });
 
-  it('serves every /connect/tokens route from the tokens Lambda behind Cognito', () => {
-    const tokensFn = functionIdForHandler(apiTemplate(), 'mcp_tokens_handler.py');
-    const routes = apiMethods(apiTemplate())
-      .filter((m) => m.path.startsWith('/connect/tokens') && m.httpMethod !== 'OPTIONS');
-    expect(routes.map((m) => `${m.httpMethod} ${m.path}`).sort(byCodeUnit)).toStrictEqual([
-      'DELETE /connect/tokens/{token_id}', 'GET /connect/tokens', 'GET /connect/tokens/{token_id}', 'POST /connect/tokens',
-    ]);
-    for (const route of routes) {
-      expect(route.integrationFunctionId, route.path).toBe(tokensFn);
-      expect(route.authorizationType, route.path).toBe('COGNITO_USER_POOLS');
-    }
+  it.each([
+    ['GET', '/connect/tokens'], ['POST', '/connect/tokens'],
+    ['GET', '/connect/tokens/tok_1'], ['DELETE', '/connect/tokens/tok_1'],
+  ])('serves %s %s from the tokens Lambda behind Cognito', (verb, path) => {
+    const method = resolveMethod(apiMethods(apiTemplate()), verb, path);
+    expect(method?.integrationFunctionId, `${verb} ${path}`).toBe(functionIdForHandler(apiTemplate(), 'mcp_tokens_handler.py'));
+    expect(method?.authorizationType).toBe('COGNITO_USER_POOLS');
+    expect(method?.hasAuthorizerId).toBe(true);
+  });
+
+  it('wires /connect as ONE Cognito proxy (5.47.00), never a public method', () => {
+    const routes = nonOptions(apiTemplate()).filter((m) => m.path.startsWith('/connect'));
+    expect(routes.map((m) => `${m.route} [${m.authorizationType}]`)).toStrictEqual(['ANY /connect/{proxy+} [COGNITO_USER_POOLS]']);
   });
 
   it('throttles the endpoint at 20 rps / 40', () => {
@@ -114,15 +122,14 @@ describe('global MCP endpoint wiring', () => {
   });
 
   it('builds only routes that API Gateway wires (the browser reaches them the same way)', () => {
-    const shape = (path: string) => path.split('/').map((s) => (s.startsWith('{') ? '{}' : s)).join('/');
+    // Resolved the way API Gateway routes (most specific resource first): `GET /feedback/urgent` is
+    // served by `GET /feedback/{id}`, `PUT /feedback/{}/category` by the item proxy's PUT.
     const wired = apiMethods(apiTemplate());
-    const exact = new Set(wired.map((m) => `${m.httpMethod} ${shape(m.path)}`));
-    const proxies = wired.filter((m) => m.path.endsWith('/{proxy+}')).map((m) => m.path.slice(0, -'{proxy+}'.length));
     const routes = toolRoutes();
     expect(routes.length).toBeGreaterThan(10);
     const unwired = routes.filter((route) => {
       const [verb = '', path = ''] = route.split(' ');
-      return !exact.has(`${verb} ${shape(path)}`) && !proxies.some((prefix) => path.startsWith(prefix));
+      return resolveMethod(wired, verb, path.split('?')[0] ?? '') === undefined;
     });
     expect(unwired).toStrictEqual([]);
   });

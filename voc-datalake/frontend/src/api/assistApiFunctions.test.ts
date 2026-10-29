@@ -1,5 +1,5 @@
 /**
- * @fileoverview The seven API functions that became assist jobs: each POSTs its
+ * @fileoverview The six API functions that became assist jobs: each POSTs its
  * route, polls its job read with the started job id, and resolves the job's
  * `result` read into the type it always resolved.
  */
@@ -19,10 +19,6 @@ const STARTED = { success: true, job_id: 'job_9', status: 'pending' }
 const post = (body?: unknown) => ({ method: 'POST', ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
 const completed = (result: unknown) => ({ success: true, job_id: 'job_9', status: 'completed', result, error: null })
 
-const CONTEXT = {
-  product_name: 'Acme Go', one_liner: '', target_users: '', problem_solved: '', current_state: 'beta',
-  key_features: '', differentiators: '', known_limitations: '', non_goals: '', success_metrics: '', free_form_notes: '',
-}
 const SELECTORS = {
   container_selector: '.review', text_selector: '.text', confidence: 'high', detected_reviews_count: 12,
 }
@@ -79,14 +75,6 @@ const CASES: AssistCase[] = [
     expected: { suggestions: [{ title: 'Trust', question: 'Why?' }] },
   },
   {
-    name: 'productContextInterview',
-    call: () => projectsApi.productContextInterview('p1', { message: 'It is Acme Go' }),
-    startUrl: `${API}/projects/p1/product-context/interview`, startInit: post({ message: 'It is Acme Go' }),
-    pollUrl: `${API}/projects/p1/jobs/job_9`,
-    result: { assistant_message: 'Who uses it?', applied_patch: { product_name: 'Acme Go', bogus: 1 }, context: CONTEXT },
-    expected: { assistant_message: 'Who uses it?', applied_patch: { product_name: 'Acme Go' }, context: CONTEXT },
-  },
-  {
     name: 'regeneratePersonaAvatar',
     call: () => projectsApi.regeneratePersonaAvatar('p1', 'persona_1'),
     startUrl: `${API}/projects/p1/personas/persona_1/regenerate-avatar`, startInit: { method: 'POST' },
@@ -126,17 +114,6 @@ describe('result normalisation', () => {
     mockJsonOnce(completed({ success: true, avatar_url: '' }))
 
     await expect(projectsApi.regeneratePersonaAvatar('p1', 'persona_1')).resolves.toStrictEqual({ avatar_url: null })
-  })
-
-  it('productContextInterview reads a sparse turn as an empty patch and a blank context', async () => {
-    mockJsonOnce(STARTED)
-    mockJsonOnce(completed({ applied_patch: null, context: { current_state: 'unknown' } }))
-
-    const turn = await projectsApi.productContextInterview('p1', { message: 'hi' })
-
-    expect(turn.assistant_message).toBe('')
-    expect(turn.applied_patch).toStrictEqual({})
-    expect(turn.context).toStrictEqual({ ...CONTEXT, product_name: '', current_state: '' })
   })
 
   it('analyzeUrlForSelectors keeps a no-selectors answer and its error', async () => {

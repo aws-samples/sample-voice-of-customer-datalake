@@ -10,18 +10,14 @@ import { Plus, Loader2, ClipboardList } from 'lucide-react'
 import type { FeedbackForm } from '../../api/types'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import FormCard from './FormCard'
+import type { FormCardHandlers } from './FormCard'
 
 /** Forms made by the platform itself (a prototype's pin form), not by a person. */
 function isSystemForm(form: FeedbackForm): boolean {
   return form.form_type === 'prototype_pin'
 }
 
-interface CardHandlers {
-  readonly onEdit: (form: FeedbackForm) => void
-  readonly onDelete: (formId: string) => void
-  readonly onToggle: (formId: string, enabled: boolean) => void
-  readonly apiEndpoint: string
-}
+type CardHandlers = FormCardHandlers
 
 function FormCards({ forms, handlers }: Readonly<{ forms: readonly FeedbackForm[]; handlers: CardHandlers }>) {
   return (
@@ -34,6 +30,7 @@ function FormCards({ forms, handlers }: Readonly<{ forms: readonly FeedbackForm[
           onDelete={handlers.onDelete}
           onToggle={handlers.onToggle}
           apiEndpoint={handlers.apiEndpoint}
+          statsRefreshing={handlers.statsRefreshing}
         />
       ))}
     </div>

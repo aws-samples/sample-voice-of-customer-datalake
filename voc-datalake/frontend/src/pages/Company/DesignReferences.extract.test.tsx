@@ -1,14 +1,14 @@
 /**
  * @fileoverview /company → Design system, wave 12: the Live website kind (the
  * default), the preview of a read reference, "Use as design system" (a draft in
- * the editor + a change summary, nothing saved until Save), "Use this logo",
+ * the editor + a change summary, nothing saved until Save), "Use this logo" (into the same draft),
  * Reading… while pending, and the reasons when something fails.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { adminFlag, fetchApi } from '@test/fetchApiRoutes'
-import { registerDesignSectionHooks, renderDesignSection } from '@test/designSectionHarness'
+import { adminFlag } from '@test/fetchApiRoutes'
+import { designCalls, registerDesignSectionHooks, renderDesignSection } from '@test/designSectionHarness'
 import { ApiError } from '../../lib/errors'
 import type { RouteHandler } from '@test/fetchApiRoutes'
 
@@ -37,7 +37,7 @@ function renderSection(routes: Record<string, RouteHandler>) {
   renderDesignSection({ 'GET /settings/design-system': () => DESIGN, ...routes })
 }
 
-const calls = (key: string) => fetchApi.mock.calls.filter(([path, options]) => `${options?.method ?? 'GET'} ${path}` === key)
+const calls = designCalls
 
 // jsdom has no scrollIntoView; the harness stubs it for the banner.
 registerDesignSectionHooks()
@@ -113,6 +113,14 @@ describe('the preview of a read reference', () => {
     await waitFor(() => expect(within(preview).getByRole('img', { name: 'Logo found on this reference' })).toHaveAttribute('src', logo.preview_url))
   })
 
+  it('says when the logo was rendered from the site\'s SVG, and only then', async () => {
+    const rendered = { ...SITE, title: 'Rendered site', extracted_design: { ...SITE.extracted_design, logo: { ...LOGO, rendered: true } } }
+    renderSection({ 'GET /settings/design-system': () => ({ ...DESIGN, references: [rendered, { ...SITE, id: 'ref_plain', title: 'Plain site' }] }) })
+    const notes = await screen.findAllByText("Rendered from the site's SVG logo")
+    expect(notes).toHaveLength(1)
+    expect(notes[0]?.closest('li')).toHaveTextContent('Rendered site')
+  })
+
   it('falls back to the icon when the logo has no preview copy', async () => {
     renderSection({})
     const preview = await screen.findByTestId('reference-design-preview')
@@ -180,22 +188,82 @@ describe('Use as design system', () => {
 })
 
 describe('Use this logo', () => {
-  it('stores the candidate through the logo route and refreshes', async () => {
-    const adopt = vi.fn(() => ({ logo_url: 'https://cdn.example/logo.png' }))
-    renderSection({ 'POST /settings/design-system/references/ref_site/logo': adopt })
+  const DRAFTED = { logo_id: 'logo_0123456789ab.png', logo_url: '/design/logo-draft/logo_0123456789ab.png' }
+
+  it('puts the logo into the draft and saves nothing until Save design system', async () => {
+    const draftLogo = vi.fn(() => DRAFTED)
+    const save = vi.fn(() => ({ ...DESIGN, logo_url: DRAFTED.logo_url }))
+    renderSection({ 'POST /settings/design-system/references/ref_site/logo': draftLogo, 'PUT /settings/design-system': save })
     await userEvent.click(await screen.findByRole('button', { name: 'Use this logo' }))
-    await waitFor(() => expect(adopt).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(calls('GET /settings/design-system').length).toBeGreaterThan(1))
+    await screen.findByText(/it becomes the company logo when you save the design system/)
+    await waitFor(() => expect(screen.getByRole('img', { name: 'Company logo' })).toHaveAttribute('src', DRAFTED.logo_url))
+    // Nothing is saved, so nothing is replaced yet and there is nothing to confirm.
+    expect([calls('PUT /settings/design-system').length, screen.queryByRole('dialog')]).toStrictEqual([0, null])
+
+    await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ tokens: SAVED_TOKENS, guidelines: 'Be brief', components: [], logo_id: DRAFTED.logo_id }))
   })
 
-  it('asks before replacing a logo that is already set, and shows a failure', async () => {
+  it('Discard drops the drafted logo', async () => {
     renderSection({
-      'GET /settings/design-system': () => ({ ...DESIGN, logo_url: 'https://cdn.example/old.png' }),
-      'POST /settings/design-system/references/ref_site/logo': () => { throw new ApiError(400, 'The logo is larger than 2 MB') },
+      'GET /settings/design-system': () => ({ ...DESIGN, logo_url: '/design/logo/current.png' }),
+      'POST /settings/design-system/references/ref_site/logo': () => DRAFTED,
     })
     await userEvent.click(await screen.findByRole('button', { name: 'Use this logo' }))
-    const dialog = await screen.findByRole('dialog')
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Use this logo' }))
+    await waitFor(() => expect(screen.getByRole('img', { name: 'Company logo' })).toHaveAttribute('src', DRAFTED.logo_url))
+    await userEvent.click(screen.getByRole('button', { name: 'Discard changes' }))
+    await waitFor(() => expect(screen.getByRole('img', { name: 'Company logo' })).toHaveAttribute('src', '/design/logo/current.png'))
+    expect(calls('PUT /settings/design-system')).toHaveLength(0)
+  })
+
+  /** Use a reference, draft its logo, then press one of the two Discard buttons. */
+  async function draftLogoThenDiscard(label: string) {
+    renderSection({
+      'GET /settings/design-system': () => ({ ...DESIGN, logo_url: '/design/logo/current.png' }),
+      'POST /settings/design-system/references/ref_site/apply': () => ({ draft: DRAFT }),
+      'POST /settings/design-system/references/ref_site/logo': () => DRAFTED,
+    })
+    await userEvent.click(await screen.findByRole('button', { name: 'Use as design system' }))
+    await screen.findByRole('region', { name: /From kirocrew.dev/ })
+    await userEvent.click(screen.getByRole('button', { name: 'Use this logo' }))
+    await screen.findByText(/it becomes the company logo/)
+    await userEvent.click(screen.getByRole('button', { name: label }))
+  }
+
+  it.each(['Discard', 'Discard changes'])('%s drops the drafted logo and its note', async (label) => {
+    await draftLogoThenDiscard(label)
+    await waitFor(() => expect(screen.getByRole('img', { name: 'Company logo' })).toHaveAttribute('src', '/design/logo/current.png'))
+    expect(screen.queryByText(/it becomes the company logo/)).not.toBeInTheDocument()
+  })
+
+  it.each(['Discard', 'Discard changes'])('%s drops the applied draft and its banner without saving', async (label) => {
+    await draftLogoThenDiscard(label)
+    await waitFor(() => expect(screen.queryByRole('region', { name: /From kirocrew.dev/ })).not.toBeInTheDocument())
+    expect(screen.getByLabelText('Guidelines')).toHaveValue('Be brief')
+    expect(calls('PUT /settings/design-system')).toHaveLength(0)
+  })
+
+  it('keeps the drafted logo when the reference is then used as the design system', async () => {
+    const save = vi.fn(() => DESIGN)
+    renderSection({
+      'POST /settings/design-system/references/ref_site/logo': () => DRAFTED,
+      'POST /settings/design-system/references/ref_site/apply': () => ({ draft: DRAFT }),
+      'PUT /settings/design-system': save,
+    })
+    await userEvent.click(await screen.findByRole('button', { name: 'Use this logo' }))
+    await screen.findByText(/it becomes the company logo/)
+    await userEvent.click(screen.getByRole('button', { name: 'Use as design system' }))
+    // The drafted logo makes the draft unsaved, so replacing it is confirmed first.
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Use as design system' }))
+    const banner = await screen.findByRole('region', { name: /From kirocrew.dev/ })
+    await userEvent.click(within(banner).getByRole('button', { name: 'Save design system' }))
+    await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ logo_id: DRAFTED.logo_id })))
+  })
+
+  it('shows the server reason when the logo cannot be used', async () => {
+    renderSection({ 'POST /settings/design-system/references/ref_site/logo': () => { throw new ApiError(400, 'The logo is larger than 2 MB') } })
+    await userEvent.click(await screen.findByRole('button', { name: 'Use this logo' }))
     expect(await screen.findByText('The logo is larger than 2 MB')).toBeInTheDocument()
+    expect(calls('PUT /settings/design-system')).toHaveLength(0)
   })
 })

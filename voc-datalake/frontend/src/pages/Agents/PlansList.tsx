@@ -8,7 +8,7 @@
  *
  * @module pages/Agents/PlansList
  */
-import { useId, useState } from 'react'
+import { memo, useCallback, useId, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { ChevronDown, ChevronRight, ListChecks, Loader2, Trash2 } from 'lucide-react'
@@ -28,18 +28,24 @@ const LIST_POLL_MS = 15_000
 interface PlanRowProps {
   plan: PlanSummary
   open: boolean
-  onToggle: () => void
+  onToggle: (planId: string) => void
   removing: boolean
-  onRemove: () => void
+  onRemove: (plan: PlanSummary) => void
 }
 
-function PlanRow({ plan, open, onToggle, removing, onRemove }: Readonly<PlanRowProps>) {
+/**
+ * One plan. Memoised with stable callbacks: the list polls every 15 s while a plan runs, and
+ * an unchanged row (react-query keeps an unchanged plan's object) is not rendered again, so its
+ * Delete button stays the same, still node under a pointer (5.34.00 live: it "detached" while a
+ * plan ran).
+ */
+const PlanRow = memo(function PlanRow({ plan, open, onToggle, removing, onRemove }: Readonly<PlanRowProps>) {
   const { t, i18n } = useTranslation('agents')
   const Chevron = open ? ChevronDown : ChevronRight
   return (
     <li className="space-y-2" data-testid={`plan-row-${plan.plan_id}`}>
       <div className="flex items-stretch gap-2">
-        <button type="button" aria-expanded={open} onClick={onToggle}
+        <button type="button" aria-expanded={open} onClick={() => onToggle(plan.plan_id)}
           className="card focus-ring flex min-w-0 flex-1 flex-wrap items-center gap-3 p-4 text-left hover:border-border-strong transition-colors">
           <Chevron size={16} className="text-muted" aria-hidden="true" />
           <span className="min-w-0 flex-1 text-sm font-semibold text-text-strong">{plan.goal}</span>
@@ -48,16 +54,18 @@ function PlanRow({ plan, open, onToggle, removing, onRemove }: Readonly<PlanRowP
         </button>
         {/* Beside the toggle, not inside it: a button cannot hold a button. Only a finished plan can go. */}
         {isTerminalPlan(plan.status) && (
-          <button type="button" className="icon-btn self-center hover:text-danger" disabled={removing} onClick={onRemove}
+          <button type="button" className="icon-btn self-center hover:text-danger" disabled={removing} onClick={() => onRemove(plan)}
             aria-label={t('plans.removeNamed', { goal: plan.goal })} title={t('plans.remove')}>
             {removing ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Trash2 size={16} aria-hidden="true" />}
           </button>
         )}
       </div>
-      {open && <PlanProgress planId={plan.plan_id} onOpen={() => undefined} />}
+      {open && <PlanProgress planId={plan.plan_id} onOpen={ignoreOpen} />}
     </li>
   )
-}
+})
+
+const ignoreOpen = () => undefined
 
 export function PlansList() {
   const { t } = useTranslation('agents')
@@ -79,6 +87,9 @@ export function PlansList() {
       void queryClient.invalidateQueries({ queryKey: plansKeys.all() })
     },
   })
+  const toggle = useCallback((planId: string) => setOpenId((current) => (current === planId ? null : planId)), [])
+  const { reset } = remove
+  const askRemove = useCallback((plan: PlanSummary) => { reset(); setPending(plan) }, [reset])
   const confirmRemove = () => {
     if (pending !== null) remove.mutate(pending.plan_id)
     setPending(null)
@@ -103,10 +114,8 @@ export function PlansList() {
       {plans !== undefined && plans.length > 0 && (
         <ul className="space-y-2">
           {plans.map((plan) => (
-            <PlanRow key={plan.plan_id} plan={plan} open={openId === plan.plan_id}
-              onToggle={() => setOpenId((current) => (current === plan.plan_id ? null : plan.plan_id))}
-              removing={remove.isPending && remove.variables === plan.plan_id}
-              onRemove={() => { remove.reset(); setPending(plan) }} />
+            <PlanRow key={plan.plan_id} plan={plan} open={openId === plan.plan_id} onToggle={toggle}
+              removing={remove.isPending && remove.variables === plan.plan_id} onRemove={askRemove} />
           ))}
         </ul>
       )}

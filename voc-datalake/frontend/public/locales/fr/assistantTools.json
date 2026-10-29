@@ -1,5 +1,6 @@
 {
   "card": {
+    "openParticipants": "Ouvrir Participants",
     "kicker": "Approbation requise",
     "details": "Détails",
     "toolName": "Action : {{name}}",
@@ -41,6 +42,33 @@
     "openRadarSettings": "Ouvrir Administration → Sources → Radar"
   },
   "preview": {
+    "participants": {
+      "summaryLabel": "Personnes à ajouter",
+      "list": "Liste",
+      "count": "Personnes",
+      "countValue_one": "{{count, number}} personne",
+      "countValue_other": "{{count, number}} personnes",
+      "listNotFound": "Cette liste est introuvable : approuver n’ajoutera personne.",
+      "email": "E-mail",
+      "name": "Nom",
+      "company": "Entreprise",
+      "title": "Fonction",
+      "tags": "Étiquettes",
+      "notSet": "Non renseigné",
+      "tableLabel_one": "{{count, number}} personne à ajouter",
+      "tableLabel_other": "{{count, number}} personnes à ajouter",
+      "reviewAllNote": "Toutes les personnes sont listées ; faites défiler pour vérifier chaque ligne avant d’approuver.",
+      "duplicatesNote_one": "{{count, number}} adresse e-mail répétée a été regroupée sur sa première ligne.",
+      "duplicatesNote_other": "{{count, number}} adresses e-mail répétées ont été regroupées sur leur première ligne.",
+      "reuseNote": "Une personne déjà connue garde ses informations enregistrées ; celles déjà dans la liste restent inchangées. Aucun e-mail n’est envoyé.",
+      "listLabel": "Nouvelle liste",
+      "listName": "Nom",
+      "kind": "Type",
+      "description": "Description",
+      "emptyListNote": "La liste démarre vide ; ajoutez-y ensuite des personnes.",
+      "listLoading": "Lecture de la liste…",
+      "listReadFailed": "Les listes de participants n'ont pas pu être lues : la liste est affichée par son identifiant ; vérifiez-la dans Participants avant d'approuver."
+    },
     "showMore": "Tout afficher ({{n, number}} caractères)",
     "showLess": "Afficher moins",
     "empty": "(vide)",
@@ -131,7 +159,11 @@
       "everyBrand": "Toutes les marques suivies",
       "brand": "Marque",
       "scanFields": "Analyse",
-      "scanCost": "S’exécute en arrière-plan pendant quelques minutes et utilise des recherches web (au plus le plafond de requêtes des paramètres Radar)."
+      "scanCost": "S’exécute en arrière-plan pendant quelques minutes et utilise des recherches web (au plus le plafond de requêtes des paramètres Radar).",
+      "language": "Langue de recherche : {{language}}",
+      "feed": "Flux d'actualités : {{feed}}",
+      "searchTerms": "Termes de recherche : {{list}}",
+      "excludeTerms": "Termes exclus : {{list}}"
     },
     "scraper": {
       "nothingSaved": "Rien n’est enregistré tant que vous n’avez pas approuvé.",
@@ -296,6 +328,15 @@
     }
   },
   "tools": {
+    "create_participant_list": {
+      "title": "Créer une liste de participants",
+      "titleWith": "Créer la liste de participants {{name}}"
+    },
+    "add_participants": {
+      "title": "Ajouter des personnes à une liste de participants",
+      "titleWith_one": "Ajouter {{count, number}} personne à une liste de participants",
+      "titleWith_other": "Ajouter {{count, number}} personnes à une liste de participants"
+    },
     "save_radar_brands": {
       "title": "Enregistrer la liste des marques Radar",
       "titleWith_one": "Enregistrer la liste des marques Radar ({{count, number}} marque)",

@@ -243,22 +243,30 @@ describe('FeedbackFiltersStep', () => {
   describe('Sources', () => {
     it('displays all source buttons', () => {
       render(<FeedbackFiltersStep {...defaultProps} />)
-      expectAllVisible('Webscraper', 'Manual import', 'S3 import')
+      expectAllVisible('Web scraper', 'Manual import', 'S3 import')
     })
 
     it('formats source names correctly', () => {
       render(<FeedbackFiltersStep {...defaultProps} sources={['webscraper', 'manual_import', 'Acme Android_android']} />)
-      expectAllVisible('Webscraper', 'Manual import', 'Acme (Android)')
+      expectAllVisible('Web scraper', 'Manual import', 'Acme (Android)')
     })
 
     it('toggles source selection when clicked', async () => {
-      const onContextChange = await clickFilter('Webscraper')
+      const onContextChange = await clickFilter('Web scraper')
 
       expect(onContextChange).toHaveBeenCalledWith(expect.objectContaining({ sources: ['webscraper'] }))
     })
 
+    it('marks every filter chip as a toggle with its pressed state', () => {
+      render(<FeedbackFiltersStep {...defaultProps} contextConfig={contextConfig({ sources: ['webscraper'], sentiments: ['negative'] })} />)
+
+      expect(screen.getByRole('button', { name: 'Web scraper' })).toHaveAttribute('aria-pressed', 'true')
+      expect(screen.getByRole('button', { name: 'Negative' })).toHaveAttribute('aria-pressed', 'true')
+      expect(screen.getByRole('button', { name: 'Positive' })).toHaveAttribute('aria-pressed', 'false')
+    })
+
     it('removes source when already selected', async () => {
-      const onContextChange = await clickFilter('Webscraper', {
+      const onContextChange = await clickFilter('Web scraper', {
         contextConfig: contextConfig({ sources: ['webscraper'] }),
       })
 

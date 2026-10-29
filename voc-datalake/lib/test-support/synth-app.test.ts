@@ -193,9 +193,9 @@ describe('committedFeatureFlags', () => {
       deploymentPrefix: 'b',
     })).toStrictEqual({
       '@aws-cdk/aws-iam:minimizePolicies': true,
-      // `@aws-cdk`, not `@aws-cdk/`: the ecs-service-extensions flag cdk.json
-      // commits lives under `@aws-cdk-containers/`, so a trailing slash in the
-      // predicate would silently drop a flag a real deploy gets.
+      // `@aws-cdk`, not `@aws-cdk/`: CDK also registers flags under
+      // `@aws-cdk-containers/`, so a trailing slash in the predicate would
+      // silently drop such a flag were cdk.json to commit one.
       '@aws-cdk-containers/ecs-service-extensions:enableDefaultLogDriver': true,
     });
   });

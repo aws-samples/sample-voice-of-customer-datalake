@@ -21,7 +21,7 @@ import type { AppliedReference } from './ApplyBanner'
 import type { ApplyControls } from './DesignReferences'
 
 /** How the banner names a reference: its title, else the link's host. */
-function sourceLabel(reference: DesignReference): string {
+function referenceLabel(reference: DesignReference): string {
   return reference.title.trim() || urlHost(reference.url ?? '') || reference.kind
 }
 
@@ -40,7 +40,7 @@ export function useApplyReference({ saved, dirty, load }: Readonly<{
     onSuccess: (draft, reference) => {
       const next = { tokens: draft.tokens, guidelines: draft.guidelines, components: draft.components }
       load(next)
-      setApplied({ source: sourceLabel(reference), summary: summarizeDraft(saved ?? next, next) })
+      setApplied({ source: referenceLabel(reference), summary: summarizeDraft(saved ?? next, next) })
     },
     onSettled: () => setConfirming(null),
   })
@@ -59,7 +59,7 @@ export function useApplyReference({ saved, dirty, load }: Readonly<{
     <ConfirmModal
       isOpen={confirming !== null}
       title={t('designSystem.applied.replaceTitle')}
-      message={t('designSystem.applied.replaceMessage', { title: confirming ? sourceLabel(confirming) : '' })}
+      message={t('designSystem.applied.replaceMessage', { title: confirming ? referenceLabel(confirming) : '' })}
       confirmLabel={t('designSystem.preview.apply')}
       variant="warning"
       isLoading={apply.isPending}

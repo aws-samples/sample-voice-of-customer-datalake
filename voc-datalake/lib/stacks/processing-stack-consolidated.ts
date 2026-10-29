@@ -13,7 +13,7 @@ import { Construct } from 'constructs';
 import { NagSuppressions } from 'cdk-nag';
 import { pluginSystemSuppressions } from '../utils/nag-suppressions';
 import { stackModelArns } from '../utils/model-allowlist';
-import { pythonLayerCode } from '../utils/python-layer-bundling';
+import { dependencyLayer } from '../utils/dependency-layers';
 import { PY_LAMBDA_ASSET_EXCLUDES, WORKER_TREE_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
 import { pythonLambdaAsset } from '../utils/python-lambda-asset';
 import { VocStack, VocStackProps } from '../utils/voc-stack';
@@ -101,12 +101,8 @@ export class VocProcessingStack extends VocStack {
 
 
     // Shared Lambda Layer
-    const processingLayer = new lambda.LayerVersion(this, 'ProcessingDepsLayer', {
-      code: pythonLayerCode('lambda/layers/processing-deps'),
-      compatibleRuntimes: [lambda.Runtime.PYTHON_3_14],
-      compatibleArchitectures: [lambda.Architecture.ARM_64],
-      description: 'Dependencies for processing lambdas (ARM64/Graviton)',
-    });
+    const processingLayer = dependencyLayer(this, 'ProcessingDepsLayer', 'lambda/layers/processing-deps',
+      'Dependencies for processing lambdas (ARM64/Graviton)');
 
     // ============================================
     // PROCESSING ROLE (shared for processor + aggregator)
@@ -338,6 +334,7 @@ export class VocProcessingStack extends VocStack {
     });
     createRadarScanWorker(this, 'RadarScanWorker', {
       uniqueName, layer: processingLayer, kmsKey, radarTable: props.radarTable, aggregatesTable,
+      deploymentPrefix: this.deploymentPrefix,
       webSearch: props.webSearchGatewayUrl && props.webSearchGatewayArn && props.webSearchToolName
         ? { url: props.webSearchGatewayUrl, arn: props.webSearchGatewayArn, toolName: props.webSearchToolName }
         : undefined,

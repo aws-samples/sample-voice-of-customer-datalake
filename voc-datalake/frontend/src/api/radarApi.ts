@@ -5,20 +5,21 @@
  *
  * @module api/radarApi
  */
+import { del, post, put } from './requestKit'
 import { fetchApi } from './client'
 import {
+  normalizeExaKeyAnswer,
+  normalizeRadarAll,
   normalizeRadarBrands,
-  normalizeRadarCompare,
-  normalizeRadarDetail,
   normalizeRadarOverview,
-  normalizeRadarReleases,
+  normalizeRadarPage,
   normalizeRadarReviewDetail,
   normalizeRadarReviews,
   normalizeRadarSettings,
 } from './radarSchema'
 import type {
-  RadarBrandEntry, RadarBrandInput, RadarCompare, RadarDetail, RadarOverview, RadarRelease, RadarReviewDetail,
-  RadarReviewsPage, RadarSentiment, RadarSettings,
+  RadarAllBrands, RadarBrandEntry, RadarBrandInput, RadarBrandPage, RadarOverview, RadarReviewDetail,
+  RadarReviewsPage, RadarScanSettings, RadarSentiment, RadarSettings,
 } from './radarSchema'
 
 /**
@@ -45,9 +46,8 @@ export const radarKeys = {
   overview: () => ['radar', 'overview'] as const,
   brands: () => ['radar', 'brands'] as const,
   review: (brand: string, feedbackId: string) => ['radar', 'review', brand, feedbackId] as const,
-  detail: (brand: string, days: number) => ['radar', 'detail', brand, days] as const,
-  releases: (brand: string) => ['radar', 'releases', brand] as const,
-  compare: (brand: string, days: number) => ['radar', 'compare', brand, days] as const,
+  page: (brand: string, days: number) => ['radar', 'page', brand, days] as const,
+  all: (days: number) => ['radar', 'all', days] as const,
   reviews: (brand: string, days: number, filter: RadarReviewFilter) => ['radar', 'reviews', brand, days, filter] as const,
 }
 
@@ -56,14 +56,15 @@ const brandPath = (brand: string) => `/radar/brands/${encodeURIComponent(brand)}
 export const radarApi = {
   getOverview: async (): Promise<RadarOverview> => normalizeRadarOverview(await fetchApi<unknown>('/radar')),
 
-  getDetail: async (brand: string, days: number): Promise<RadarDetail | null> =>
-    normalizeRadarDetail(await fetchApi<unknown>(`${brandPath(brand)}?days=${days}`)),
+  /**
+   * A brand's detail, releases (their own year) and comparison in ONE request: three requests at
+   * once made a cold function start a second environment (docs/caching.md, "First load").
+   */
+  getPage: async (brand: string, days: number): Promise<RadarBrandPage> =>
+    normalizeRadarPage(await fetchApi<unknown>(`${brandPath(brand)}/page?days=${days}`)),
 
-  getReleases: async (brand: string): Promise<RadarRelease[]> =>
-    normalizeRadarReleases(await fetchApi<unknown>(`${brandPath(brand)}/releases`)),
-
-  getCompare: async (brand: string, days: number): Promise<RadarCompare> =>
-    normalizeRadarCompare(await fetchApi<unknown>(`${brandPath(brand)}/compare?days=${days}`)),
+  /** Every tracked brand side by side over the window, and their releases newest first (at most 100). */
+  getAll: async (days: number): Promise<RadarAllBrands> => normalizeRadarAll(await fetchApi<unknown>(`/radar/all?days=${days}`)),
 
   getReviews: async (brand: string, days: number, filter: RadarReviewFilter, cursor?: string): Promise<RadarReviewsPage> =>
     normalizeRadarReviews(await fetchApi<unknown>(`${brandPath(brand)}/reviews?${reviewsQuery(days, filter, cursor)}`)),
@@ -73,17 +74,24 @@ export const radarApi = {
 
   /** Replace the whole brand list (admin). Removing a brand keeps its stored reviews and releases. */
   saveBrands: async (brands: readonly RadarBrandInput[]): Promise<RadarBrandEntry[]> =>
-    normalizeRadarBrands(await fetchApi<unknown>('/radar/brands', { method: 'PUT', body: JSON.stringify({ brands }) })),
+    normalizeRadarBrands(await fetchApi<unknown>('/radar/brands', put({ brands }))),
 
   /** One Radar review with its enrichment, or null when the answer carries none (404 throws). */
   getReview: async (brand: string, feedbackId: string): Promise<RadarReviewDetail | null> =>
     normalizeRadarReviewDetail(await fetchApi<unknown>(`${brandPath(brand)}/reviews/${encodeURIComponent(feedbackId)}`)),
 
-  saveSettings: async (settings: RadarSettings): Promise<RadarSettings> =>
-    normalizeRadarSettings(await fetchApi<unknown>('/radar/settings', { method: 'PUT', body: JSON.stringify(settings) })),
+  /** The scan settings only: `exa_configured` is read-only (the key has its own route). */
+  saveSettings: async (settings: RadarScanSettings): Promise<RadarSettings> => normalizeRadarSettings(await fetchApi<unknown>(
+    '/radar/settings', put({ cadence: settings.cadence, max_brands: settings.max_brands, query_cap: settings.query_cap }),
+  )),
 
-  startScan: (brand?: string) => fetchApi<unknown>('/radar/scan', {
-    method: 'POST',
-    body: JSON.stringify(brand === undefined ? {} : { brand }),
-  }),
+  /** Store the Exa API key (admin); the answer says only whether one is stored, never the key. */
+  saveExaKey: async (apiKey: string): Promise<boolean> =>
+    normalizeExaKeyAnswer(await fetchApi<unknown>('/radar/settings/exa-key', put({ api_key: apiKey }))),
+
+  /** Remove the stored Exa key (admin): Radar stops searching Exa. */
+  removeExaKey: async (): Promise<boolean> =>
+    normalizeExaKeyAnswer(await fetchApi<unknown>('/radar/settings/exa-key', del())),
+
+  startScan: (brand?: string) => fetchApi<unknown>('/radar/scan', post(brand === undefined ? {} : { brand })),
 }

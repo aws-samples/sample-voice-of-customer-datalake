@@ -31,6 +31,7 @@ from botocore.exceptions import ClientError
 
 from shared.aws import is_conditional_check_failure
 from shared.email_intake_settings import CONFIG_KEY, caps_from_row, stats_key
+from shared.timestamps import now_iso
 
 __all__ = ['IntakeState']
 
@@ -141,7 +142,7 @@ class IntakeState:
     def mark_message(self, item_id: str) -> None:
         self._watermarks.put_item(Item={
             **_key('message', item_id), 'ttl': _epoch(MESSAGE_TTL),
-            'seen_at': datetime.now(UTC).isoformat(),
+            'seen_at': now_iso(),
         })
 
     def subject_thread(self, normalised_subject: str, domain: str) -> str | None:
@@ -165,7 +166,7 @@ class IntakeState:
             return
         self._watermarks.put_item(Item={
             **_subject_key(normalised_subject, domain),
-            'thread_id': thread_id, 'last_seen': datetime.now(UTC).isoformat(), 'ttl': _epoch(SUBJECT_WINDOW),
+            'thread_id': thread_id, 'last_seen': now_iso(), 'ttl': _epoch(SUBJECT_WINDOW),
         })
 
     def content_thread(self, sender: str, content_hash: str) -> str | None:
@@ -201,7 +202,7 @@ class IntakeState:
     def bump_thread(self, thread_id: str, counter: str, content_hash: str | None = None) -> None:
         """Count ``counter`` on the thread; with ``content_hash``, record it as seen too."""
         names = {'#c': counter, '#t': 'ttl', '#l': 'last_seen'}
-        values: dict[str, Any] = {':one': 1, ':ttl': _epoch(THREAD_TTL), ':now': datetime.now(UTC).isoformat()}
+        values: dict[str, Any] = {':one': 1, ':ttl': _epoch(THREAD_TTL), ':now': now_iso()}
         expression = 'ADD #c :one'
         if content_hash:
             expression += ', hashes :h'

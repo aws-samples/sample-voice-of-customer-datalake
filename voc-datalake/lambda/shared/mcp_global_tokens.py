@@ -36,11 +36,13 @@ TTL, and adding one would change a live retained table).
 
 from __future__ import annotations
 
-import re
 import secrets
 from collections.abc import Mapping
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any, Final
+
+from shared.row_ids import LONG_OPAQUE_ID_RE
+from shared.timestamps import parse_iso
 
 # ---------------------------------------------------------------------------
 # Storage keys
@@ -128,14 +130,13 @@ STATUS_EXPIRED: Final = 'expired'
 # A path segment a tool may interpolate into a domain route. Every id this app
 # mints (proj_…, doc_…, agent ids, tok_…, 32-hex feedback ids) fits; '/', '.',
 # '%' and whitespace never do, so a tool argument cannot traverse to another route.
-_PATH_ID: Final = re.compile(r'^[A-Za-z0-9_-]{1,128}\Z')
 # Fails `is_path_id`, so it can equal no real project id and no tool argument.
 UNMATCHABLE_PROJECT: Final = '\u0000unmatchable'
 
 
 def is_path_id(value: object) -> bool:
     """True when ``value`` is safe to place in a route path segment."""
-    return isinstance(value, str) and bool(_PATH_ID.fullmatch(value))
+    return isinstance(value, str) and bool(LONG_OPAQUE_ID_RE.fullmatch(value))
 
 
 def scope_allows_write(scope: object) -> bool:
@@ -161,16 +162,6 @@ def expiry_for(days: object, now: datetime) -> str:
     return (now + timedelta(days=days)).isoformat()
 
 
-def _parsed_time(value: object) -> datetime | None:
-    if not isinstance(value, str) or not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(value)
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
-
-
 def token_status(row: Mapping[str, Any], now: datetime) -> str:
     """``active`` | ``revoked`` | ``expired``, failing closed.
 
@@ -180,7 +171,7 @@ def token_status(row: Mapping[str, Any], now: datetime) -> str:
     """
     if row.get('revoked_at'):
         return STATUS_REVOKED
-    deadline = _parsed_time(row.get('expires_at'))
+    deadline = parse_iso(row.get('expires_at'))
     if deadline is None or deadline <= now:
         return STATUS_EXPIRED
     return STATUS_ACTIVE

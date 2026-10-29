@@ -21,11 +21,12 @@ import { InvokeCommand, LambdaClient, type InvocationResponse } from '@aws-sdk/c
 import { z } from 'zod';
 import type { CallerClaims } from '../types.js';
 import { AssistantToolError } from './errors.js';
-import { clip, firstString, isRecord } from './format.js';
+import { isRecord } from '../../lib/is-record.js';
+import { clip, firstString } from './format.js';
 
 const API_FUNCTIONS = [
   'metrics', 'projects', 'feedbackForms', 'settings', 'scrapers', 'memory', 'agents', 'users', 'integrations', 'feedbackEdit',
-  'radar',
+  'radar', 'engagement',
 ] as const;
 export type ApiFunction = (typeof API_FUNCTIONS)[number];
 
@@ -48,6 +49,9 @@ const API_FUNCTION_ENV: Record<ApiFunction, string> = {
   feedbackEdit: 'FEEDBACK_EDIT_FUNCTION',
   // Other brands (`get_radar`, docs/radar.md): GET only.
   radar: 'RADAR_FUNCTION',
+  // Participant lists (`list_participant_lists`, docs/participants.md): GET only; the
+  // list and member writes are client tools the SPA executes after approval.
+  engagement: 'ENGAGEMENT_FUNCTION',
 };
 
 const API_LABEL: Record<ApiFunction, string> = {
@@ -62,6 +66,7 @@ const API_LABEL: Record<ApiFunction, string> = {
   integrations: 'Integrations',
   feedbackEdit: 'Feedback edit',
   radar: 'Radar',
+  engagement: 'Participants',
 };
 
 /** A read despite the verb: the project chat context. */
@@ -246,8 +251,8 @@ function decodeResponse(fn: ApiFunction, response: InvocationResponse): unknown 
 /**
  * Invoke one route on its domain function as `claims`, with no method check:
  * the transport under the read-only invoker below, and under the plan-step
- * runner's write invoker (plan-step/write-invoker.ts), which is the ONLY other
- * caller. Resolves to the parsed 2xx JSON body.
+ * runner's write invoker (`invoke` in plan-step/handler.ts), which is the ONLY
+ * other caller. Resolves to the parsed 2xx JSON body.
  */
 export async function invokeDomainRoute(
   client: LambdaInvoker,

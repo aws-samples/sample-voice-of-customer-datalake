@@ -37,17 +37,20 @@ from boto3.dynamodb.conditions import Key
 from agents.failure_reason import reason_text
 from shared import agent_run_decisions
 from shared import agents_store as shared_store
+from shared.agents_store import (
+    RUN_CANCELLED,
+    RUN_COMPLETED,
+    RUN_FAILED,
+    RUN_NEEDS_HUMAN,
+    RUN_QUEUED,
+    RUN_RUNNING,
+    RUNS_ACTIVE_GSI_PK,
+)
 from shared.aws import get_dynamodb_resource, is_conditional_check_failure
 from shared.dynamo_values import plain
+from shared.timestamps import now_iso
 
-RUN_QUEUED = 'queued'
-RUN_RUNNING = 'running'
-RUN_NEEDS_HUMAN = 'needs_human'
-RUN_COMPLETED = 'completed'
-RUN_FAILED = 'failed'
-RUN_CANCELLED = 'cancelled'
 TERMINAL_STATUSES = frozenset({RUN_NEEDS_HUMAN, RUN_COMPLETED, RUN_FAILED, RUN_CANCELLED})
-RUNS_ACTIVE_GSI_PK = 'RUNS_ACTIVE'
 
 EVENT_KINDS = frozenset({
     'node_started', 'node_finished', 'node_failed', 'message', 'verdict', 'decision', 'artifact',
@@ -62,10 +65,6 @@ class RunNotRunning(Exception):
 
 class BudgetExhausted(Exception):
     """The run has spent its model-call budget."""
-
-
-def now_iso() -> str:
-    return datetime.now(UTC).isoformat()
 
 
 def dynamo_value(value: Any) -> Any:
@@ -88,17 +87,13 @@ def _table():
     return get_dynamodb_resource().Table(name)
 
 
-def _run_key(agent_id: str, run_id: str) -> dict[str, str]:
-    return {'pk': f'AGENT#{agent_id}', 'sk': f'RUN#{run_id}'}
-
-
 def get_agent(agent_id: str) -> dict | None:
     item = _table().get_item(Key={'pk': f'AGENT#{agent_id}', 'sk': 'META'}, ConsistentRead=True).get('Item')
     return plain(item) if isinstance(item, dict) else None
 
 
 def get_run(agent_id: str, run_id: str) -> dict | None:
-    item = _table().get_item(Key=_run_key(agent_id, run_id), ConsistentRead=True).get('Item')
+    item = _table().get_item(Key=shared_store.run_key(agent_id, run_id), ConsistentRead=True).get('Item')
     return plain(item) if isinstance(item, dict) else None
 
 
@@ -133,7 +128,7 @@ def start_run(agent_id: str, run_id: str, workflow_revision: int) -> dict:
     """queued → running (idempotent for a redriven execution)."""
     try:
         response = _table().update_item(
-            Key=_run_key(agent_id, run_id),
+            Key=shared_store.run_key(agent_id, run_id),
             UpdateExpression=(
                 'SET #status = :running, started_at = if_not_exists(started_at, :now), '
                 'gsi1pk = :active, gsi1sk = :now, workflow_revision = :rev, '
@@ -154,7 +149,28 @@ def start_run(agent_id: str, run_id: str, workflow_revision: int) -> dict:
         if is_conditional_check_failure(exc):
             raise RunNotRunning('run is not queued') from exc
         raise
+    _record_last_run_running(agent_id, run_id)
     return plain(response['Attributes'])
+
+
+def _record_last_run_running(agent_id: str, run_id: str) -> None:
+    """The agent's ``last_run_status`` follows its run from queued to running.
+
+    Without it the agents list (which reads only the agent row) said "Queued" for a
+    run that had been working for an hour. Conditional on this run still being the
+    agent's last one and still recorded as queued, so it never writes over a newer
+    run or a finish that landed first.
+    """
+    try:
+        _table().update_item(
+            Key={'pk': f'AGENT#{agent_id}', 'sk': 'META'},
+            UpdateExpression='SET last_run_status = :running',
+            ConditionExpression='last_run_id = :run AND last_run_status = :queued',
+            ExpressionAttributeValues={':run': run_id, ':running': RUN_RUNNING, ':queued': RUN_QUEUED},
+        )
+    except Exception as exc:
+        if not is_conditional_check_failure(exc):
+            raise
 
 
 def update_running(agent_id: str, run_id: str, sets: dict[str, Any], *, remove: tuple[str, ...] = ()) -> None:
@@ -175,7 +191,7 @@ def update_running(agent_id: str, run_id: str, sets: dict[str, Any], *, remove: 
         expression += (' ' if expression else '') + 'REMOVE ' + ', '.join(f'#r{i}' for i in range(len(remove)))
     try:
         _table().update_item(
-            Key=_run_key(agent_id, run_id),
+            Key=shared_store.run_key(agent_id, run_id),
             UpdateExpression=expression,
             ConditionExpression='#status = :running',
             ExpressionAttributeNames=names,
@@ -212,7 +228,7 @@ def finish_run(agent_id: str, run_id: str, status: str, error: str | None = None
         removes.append('decision')
     try:
         _table().update_item(
-            Key=_run_key(agent_id, run_id),
+            Key=shared_store.run_key(agent_id, run_id),
             UpdateExpression=f"SET {', '.join(sets)} REMOVE {', '.join(removes)}",
             ConditionExpression='#status = :running',
             ExpressionAttributeNames=names,
@@ -233,7 +249,7 @@ def mark_cancelled_finished(agent_id: str, run_id: str) -> None:
     """A cancelled run: stamp finished_at and leave the active index (status untouched)."""
     try:
         _table().update_item(
-            Key=_run_key(agent_id, run_id),
+            Key=shared_store.run_key(agent_id, run_id),
             UpdateExpression='SET finished_at = if_not_exists(finished_at, :now) REMOVE gsi1pk, gsi1sk',
             ConditionExpression='#status = :cancelled',
             ExpressionAttributeNames={'#status': 'status'},
@@ -266,7 +282,7 @@ def _counter_value(value: object) -> int:
 
 def _next_seq(agent_id: str, run_id: str, counter: str) -> int:
     response = _table().update_item(
-        Key=_run_key(agent_id, run_id),
+        Key=shared_store.run_key(agent_id, run_id),
         UpdateExpression='ADD #counter :one',
         ConditionExpression='attribute_exists(pk)',
         ExpressionAttributeNames={'#counter': counter},
@@ -338,7 +354,7 @@ def reserve_model_call(agent: dict, run_id: str, max_calls: int) -> int:
     table = _table()
     try:
         response = table.update_item(
-            Key=_run_key(agent['agent_id'], run_id),
+            Key=shared_store.run_key(agent['agent_id'], run_id),
             UpdateExpression='SET model_calls = if_not_exists(model_calls, :zero) + :one',
             ConditionExpression=(
                 '#status = :running AND (attribute_not_exists(model_calls) '
@@ -381,7 +397,7 @@ def reserve_web_queries(agent: dict, run_id: str, wanted: int) -> int:
         values[':used'] = used
     try:
         _table().update_item(
-            Key=_run_key(agent['agent_id'], run_id),
+            Key=shared_store.run_key(agent['agent_id'], run_id),
             UpdateExpression='SET web_queries = if_not_exists(web_queries, :zero) + :grant',
             ConditionExpression=f'#status = :running AND {unchanged}',
             ExpressionAttributeNames={'#status': 'status'},

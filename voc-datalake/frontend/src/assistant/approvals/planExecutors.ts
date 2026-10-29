@@ -18,9 +18,8 @@ import { projectsApi } from '../../api/projectsApi'
 import { startSourceRun } from '../../api/sourceRunsApi'
 import { packsAllowedFor } from '../plan/packsAllowed'
 import { validatePlan } from '../plan/validate'
-import { invalidateKeys, keysFor } from './invalidation'
+import { keysFor, refreshAfterWrite } from './invalidation'
 import { StaleApprovalError, currentJobEnvironment, shownOf } from './shown'
-import type { QueryKey } from '@tanstack/react-query'
 import type { WriteToolExecutionContext } from '../types'
 import type { BuildPrototypeArgs, CancelPlanArgs, ProposePlanArgs, RunSourceArgs, SetSourceEnabledArgs } from './planSchemas'
 
@@ -32,13 +31,9 @@ interface ExecutionResult {
 /** How many plan problems a refusal names (the rest are counted). */
 const MAX_REPORTED_PROBLEMS = 5
 
-function refresh(ctx: WriteToolExecutionContext, keys: readonly QueryKey[]): void {
-  void invalidateKeys(ctx.queryClient, keys)
-}
-
 export async function runSource(args: RunSourceArgs, ctx: WriteToolExecutionContext): Promise<ExecutionResult> {
   const res = await startSourceRun(args.source)
-  refresh(ctx, keysFor.sourceRuns())
+  refreshAfterWrite(ctx, keysFor.sourceRuns())
   const executionId = res.execution_id
   return {
     summary: `Started the ${args.source} import (execution ${executionId}); it runs in the background.`,
@@ -49,7 +44,7 @@ export async function runSource(args: RunSourceArgs, ctx: WriteToolExecutionCont
 /** `PUT /sources/{source}/enable|disable`; enabling also closes a tripped circuit breaker (server side). */
 export async function setSourceEnabled(args: SetSourceEnabledArgs, ctx: WriteToolExecutionContext): Promise<ExecutionResult> {
   await (args.enabled ? api.enableSource(args.source) : api.disableSource(args.source))
-  refresh(ctx, keysFor.sources())
+  refreshAfterWrite(ctx, keysFor.sources())
   return {
     summary: `${args.enabled ? 'Enabled' : 'Disabled'} the ${args.source} schedule; ${args.enabled ? 'scheduled imports run again' : 'no scheduled imports run until it is enabled'}. Nothing already imported changed.`,
     data: { source: args.source, enabled: args.enabled },
@@ -67,7 +62,7 @@ export async function buildPrototype(args: BuildPrototypeArgs, ctx: WriteToolExe
     response_language: env.responseLanguage,
     ...withoutProjectId(args),
   })
-  refresh(ctx, keysFor.projectJobs(args.project_id))
+  refreshAfterWrite(ctx, keysFor.projectJobs(args.project_id))
   return {
     summary: `Started prototype build job ${res.job_id}; it runs in the background and appears in the project's Jobs.`,
     data: { job_id: res.job_id },
@@ -76,7 +71,7 @@ export async function buildPrototype(args: BuildPrototypeArgs, ctx: WriteToolExe
 
 export async function cancelPlan(args: CancelPlanArgs, ctx: WriteToolExecutionContext): Promise<ExecutionResult> {
   const plan = await plansApi.cancel(args.plan_id)
-  refresh(ctx, keysFor.plans())
+  refreshAfterWrite(ctx, keysFor.plans())
   return { summary: `Cancelled plan ${plan.plan_id}; it is now ${plan.status}. A running step finishes first.`, data: { plan_id: plan.plan_id, status: plan.status } }
 }
 
@@ -100,7 +95,7 @@ export async function proposePlan(args: ProposePlanArgs, ctx: WriteToolExecution
   const checked = validatePlan(args, { isAdmin, packsAllowed: packsAllowedFor(isAdmin) })
   if (!checked.ok) throw new StaleApprovalError(problemsSentence(checked.errors))
   const created = await plansApi.create(checked.plan, ctx.conversationId)
-  refresh(ctx, keysFor.plans())
+  refreshAfterWrite(ctx, keysFor.plans())
   return {
     summary: `The user approved plan ${created.plan_id}; it now runs in the background, step by step, and the plan card shows each step's result as it finishes. Do not repeat its steps.`,
     data: { plan_id: created.plan_id },

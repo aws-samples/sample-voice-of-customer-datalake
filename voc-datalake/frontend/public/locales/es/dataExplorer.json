@@ -49,7 +49,9 @@
     "noFiles": "No se encontraron archivos",
     "view": "Ver",
     "path": "Ruta de la carpeta",
-    "noFilesHint": "Esta carpeta está vacía. Crea un archivo aquí o ingiere datos desde Fuentes de datos."
+    "noFilesHint": "Esta carpeta está vacía. Crea un archivo aquí o ingiere datos desde Fuentes de datos.",
+    "personaFolder": "Persona {{n, number}} · {{date}}",
+    "personaFolderDated": "Persona · {{date}}"
   },
   "tabs": {
     "categories": "Categorías",

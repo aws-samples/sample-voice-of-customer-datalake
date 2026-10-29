@@ -28,37 +28,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import { useTranslation } from 'react-i18next'
 import { feedbackFormPublicUrl } from '../../api/feedbackFormUrls'
 import type { ReactElement } from 'react'
-
-/**
- * Intrinsic edge, in CSS pixels — and the widest this is ever drawn.
- *
- * A phone camera a few metres from a projected screen needs as much symbol as it
- * can get, which is the entire point of the feature: a QR too small to scan from a
- * seat is decoration. So this is sized for the room, and the dialog around it is
- * widened to match rather than the symbol being trimmed to fit a narrow panel.
- *
- * It is an upper bound rather than a fixed size because `w-full h-auto` below lets
- * CSS scale the symbol down inside a container narrower than this — a phone held in
- * portrait, most obviously. That is lossless: `QRCodeSVG` emits a
- * `viewBox="0 0 modules modules"`, so the rendered edge is independent of the module
- * grid and CSS width wins over the SVG's own width attribute. Scaling a canvas
- * would have meant resampling, which is the reason this component renders SVG.
- */
-const QR_SIZE_PX = 384
-
-/**
- * Quiet zone, in modules. The QR specification requires 4, and the library
- * defaults to 0: without it a scanner cannot find the symbol's edges against a
- * busy card or slide.
- */
-const QR_MARGIN_MODULES = 4
-
-/**
- * Error correction level. `M` recovers ~15% of a damaged or partly obscured
- * symbol — the realistic failure mode here is glare and heads in the way, not a
- * pristine scan — and costs only a slightly denser grid at this URL length.
- */
-const QR_ERROR_CORRECTION = 'M'
+import { QR_ERROR_CORRECTION, QR_MARGIN_MODULES, QR_SIZE_PX } from './qrSymbol'
 
 /**
  * The QR for one feedback form's public page.

@@ -32,10 +32,10 @@ const VIEWPORTS = [
  */
 const ACTION_PAGES: Record<'admin' | 'user', readonly string[]> = {
   admin: [
-    '/feedback-forms', '/scrapers', '/projects', '/company', '/company?tab=design', '/account', '/account?section=objectives',
+    '/feedback-forms', '/scrapers', '/projects', '/company', '/company?tab=design', '/account', '/account?tab=objectives',
     '/connect', '/memory', '/admin', '/admin?tab=sources&section=plugins', '/admin?tab=taxonomy&section=categories',
   ],
-  user: ['/feedback-forms', '/projects', '/company', '/account', '/account?section=objectives', '/connect', '/memory'],
+  user: ['/feedback-forms', '/projects', '/company', '/account', '/account?tab=objectives', '/connect', '/memory'],
 }
 const PRIMARY = /Save|Create|Import|Run|Change Password|Remember|Start reprocess/
 /** The app's clamp margin and key steps (src/assistant/bubble/geometry.ts). */

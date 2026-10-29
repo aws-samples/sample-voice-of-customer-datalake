@@ -12,8 +12,10 @@ import { AGENT_MODEL_ROLES, AGENT_VISIBILITIES, API_AGENT_LIMITS } from '../../a
 import { workflowsApi, workflowsKeys } from '../../api/workflowsApi'
 import { LabeledField } from '../../components/LabeledField/LabeledField'
 import { useVisibleCategories } from '../../hooks/useCategories'
+import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import { clampInt } from './agentDraft'
 import type { AgentDraft } from './agentDraft'
+import { modelSettingsKey } from '../../api/queryKeys'
 
 export interface SectionProps {
   draft: AgentDraft
@@ -24,6 +26,7 @@ export interface SectionProps {
 function ScopePicker({ draft, readOnly, onChange }: Readonly<SectionProps>) {
   const { t } = useTranslation('agents')
   const { categories } = useVisibleCategories()
+  const labels = useDisplayLabels()
   const { scope } = draft
   const setScope = (next: AgentDraft['scope']) => onChange({ ...draft, scope: next })
   const toggleCategory = (name: string, on: boolean) => setScope({
@@ -51,7 +54,7 @@ function ScopePicker({ draft, readOnly, onChange }: Readonly<SectionProps>) {
               <label className="flex items-center gap-2 text-sm text-text">
                 <input type="checkbox" className="accent-accent" disabled={readOnly} checked={scope.categories.includes(category.name)}
                   onChange={(e) => toggleCategory(category.name, e.target.checked)} />
-                {category.name}
+                {labels.category(category.name)}
               </label>
               {!scope.categories.includes(category.name) && category.subcategories.length > 0 && (
                 <ul className="mt-1 ml-5 space-y-0.5">
@@ -61,7 +64,7 @@ function ScopePicker({ draft, readOnly, onChange }: Readonly<SectionProps>) {
                         <input type="checkbox" className="accent-accent" disabled={readOnly}
                           checked={scope.subcategories.some((s) => s.category === category.name && s.name === sub.name)}
                           onChange={(e) => toggleSub(category.name, sub.name, e.target.checked)} />
-                        {sub.name}
+                        {labels.subcategory(sub.name, category.name)}
                       </label>
                     </li>
                   ))}
@@ -128,7 +131,7 @@ export function InstructionsSection({ draft, readOnly, onChange }: Readonly<Sect
 
 export function ModelsSection({ draft, readOnly, onChange }: Readonly<SectionProps>) {
   const { t } = useTranslation('agents')
-  const { data } = useQuery({ queryKey: ['model-settings'], queryFn: () => api.getModelSettings(), retry: false })
+  const { data } = useQuery({ queryKey: modelSettingsKey(), queryFn: () => api.getModelSettings(), retry: false })
   const models = data?.available_models ?? []
   return (
     <div className="space-y-4">

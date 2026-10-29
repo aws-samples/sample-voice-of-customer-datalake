@@ -104,7 +104,7 @@ class TestNoStorePaths:
         '/settings/my-briefing', '/settings/my-briefing/brief', '/settings/categories/reprocess',
         '/settings/erasure', '/scrapers/manual/parse/j1',
         '/scrapers/s1/status', '/sources/status', '/connect/tokens',
-        '/memory/imports/imp_1',
+        '/memory/imports/imp_1', '/logs/system',
     ])
     def test_per_user_live_routes(self, path):
         assert is_no_store_path(path) is True
@@ -112,6 +112,7 @@ class TestNoStorePaths:
     @pytest.mark.parametrize('path', [
         '/metrics/summary', '/feedback', '/feedback/urgent', '/radar', '/radar/brands/acme/reviews',
         '/settings/categories', '/agents', '/projects/p1', '/voting-sessions/v1/config',
+        '/logs/processing',
     ])
     def test_shared_reads_are_revalidated(self, path):
         assert is_no_store_path(path) is False

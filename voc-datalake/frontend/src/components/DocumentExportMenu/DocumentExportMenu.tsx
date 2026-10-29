@@ -4,7 +4,7 @@
  * Export options for PRDs, PR/FAQs, and research documents:
  * - Copy as Markdown
  * - Copy as Kiro prompt (with project context)
- * - Download as PDF (via browser print)
+ * - Print or save as PDF (the browser print dialog; its "Save as PDF" writes the file)
  *
  * @module components/DocumentExportMenu
  */

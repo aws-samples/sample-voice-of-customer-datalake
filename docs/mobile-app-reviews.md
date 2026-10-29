@@ -78,10 +78,17 @@ The Android plugin card shows these config fields:
 
 ### Run Frequency Options
 
-Both plugins offer the same frequency options via a select dropdown:
+Both plugins offer the same frequency options via a select dropdown. **Each app connector's own
+Run Frequency is honoured**: the ingestor's EventBridge rule ticks every 30 minutes, and on each
+scheduled tick an app runs only when its own `frequency_minutes` has elapsed since its
+`{app_name}_last_run` (`0` = manual runs only). An app connector saved without one falls back to
+the plugin's top-level `frequency_minutes` (default 60). Before 5.44 every app ran on the top-level
+value and the per-app choice was ignored. The same holds for **Review Sort Order** (`sort_by`):
+the app connector's value wins over the top-level one. "Run now" always runs, whatever the frequency.
 
 | Value | Label |
 |-------|-------|
+| `0` | Manual only |
 | `15` | Every 15 minutes |
 | `30` | Every 30 minutes |
 | `60` | Every hour |
@@ -170,7 +177,7 @@ The Android plugin uses `google-play-scraper`:
 from google_play_scraper import Sort, reviews
 
 result, continuation_token = reviews(
-    "de.zalando.mobile",
+    "com.example.air",
     lang="en",
     country="ch",
     sort=Sort.NEWEST,
@@ -201,16 +208,50 @@ Each plugin uses the existing `BaseIngestor` watermark mechanism with keys scope
 |---------------|-------|---------|
 | `{app_name}_last_published_at` | ISO 8601 timestamp | Newest review timestamp from last successful run |
 | `{app_name}_last_run` | ISO 8601 timestamp | When the last collection ran |
+| `{app_name}_last_count` | integer (as text) | Reviews fetched from every storefront last run (before the watermark filter); a drop to 0 is warned |
 
 ### Incremental Logic
 
-1. On each run, check `{app_name}_last_run` against `frequency_minutes` — skip if not due yet
+1. On a scheduled run, check `{app_name}_last_run` against the app's `frequency_minutes` (the app
+   connector's own value, else the plugin's top-level one; `0` = manual runs only) — skip if not due yet
 2. Load the watermark `{app_name}_last_published_at`
-3. Collect and deduplicate reviews across countries
-4. Skip reviews with date ≤ watermark
-5. Yield remaining reviews to the pipeline
-6. Update watermark to the newest review date from this run
-7. Update `{app_name}_last_run` to current time
+3. Collect and deduplicate reviews across countries (each storefront's outcome is tallied — see Error Handling)
+4. Compare the candidate count with `{app_name}_last_count`, warn on a drop to 0, store the new count
+5. Skip reviews with date ≤ watermark
+6. Yield remaining reviews to the pipeline
+7. Update watermark to the newest review date from this run
+8. Update `{app_name}_last_run` to current time
+
+### Long runs continue in parts (5.47.00)
+
+One iOS app walks ~40 storefronts (90–110 s), so a run over ten apps (a "Run all" on the Data
+sources page, or a scheduled tick where many apps are due) used to pass the ingestor's 15-minute
+Lambda timeout (Android: 10 minutes) and leave the run row at `running`. A run now checks its
+remaining time before each app (`plugins/_shared/app_reviews_parts.py`). When less than the reserve
+is left (at least 240 s, or 1.5× the slowest app of this invocation), it stops, sends what it
+collected, and starts a new invocation of its **own** function asynchronously with the apps still to
+do and the totals so far. Every invocation (a "part") runs at least one app, so N apps take at most
+N parts; ten iOS apps take two.
+
+- **Run row** (`SOURCE_RUN#<plugin>`): unchanged contract. It stays `running` while parts follow
+  each other, `items_found` is the running total over every part, `started_at` is the first part's,
+  and only the last part writes `completed` with every part's warnings as `errors`. A part that
+  raises writes `error` (earlier parts' warnings kept); a part that cannot start the next one
+  writes `error` with `<n> apps not run: the next part could not start (<type>)`; a later part
+  skipped by an open circuit breaker or given a malformed continuation event writes `error`
+  (`RunPartRefused`).
+- **Sequential, not one invocation per app**: the stores see the same request rate as before and
+  only one invocation writes the run row at a time.
+- A **manual** run keeps its `execution_id` in every part (frequency and watermark filters stay
+  skipped); a **scheduled** run's parts carry none, so each remaining app still gets its due check.
+  A run of a single app (`app_id`) never needs a second part.
+- An app whose connector was removed or renamed while the run was going is dropped from later parts.
+- **IAM**: each app-review ingestor role may `lambda:InvokeFunction` exactly its own function ARN
+  (`SELF_CONTINUING_INGESTORS` in `lib/stacks/ingestion-stack.ts`); no other ingestor gets an invoke
+  grant.
+- A scheduled chain that runs longer than the 30-minute schedule tick (about 18 iOS apps due at
+  once) can overlap the next tick for an app it has not reached yet. That app is then fetched by both
+  chains, and the processor deduplicates by review id.
 
 ### Tradeoffs
 
@@ -235,8 +276,8 @@ Each yielded review follows the VoC pipeline's expected schema.
     "url": "https://apps.apple.com/app/id123456789",
     "author": "HappyUser123",
     "brand_handles_matched": ["VoC Analytics"],
-    "source_platform_override": "zalando_ios",  # {app_name}_ios
-    "app_name": "zalando",
+    "source_platform_override": "example_air_ios",  # {app_name}_ios
+    "app_name": "example_air",
     "app_identifier": "123456789",
     "country": "us",
     "developer_response": "Thanks for the feedback!",
@@ -247,18 +288,18 @@ Each yielded review follows the VoC pipeline's expected schema.
 
 ```python
 {
-    "id": "android_de.zalando.mobile_abc123",
+    "id": "android_com.example.air_abc123",
     "channel": "app_review_android",
     "text": "Love the new features",
     "title": "",
     "rating": 5,
     "created_at": "2026-03-06T14:30:00+00:00",
-    "url": "https://play.google.com/store/apps/details?id=de.zalando.mobile",
+    "url": "https://play.google.com/store/apps/details?id=com.example.air",
     "author": "HappyUser123",
     "brand_handles_matched": ["VoC Analytics"],
-    "source_platform_override": "zalando_android",  # {app_name}_android
-    "app_name": "zalando",
-    "app_identifier": "de.zalando.mobile",
+    "source_platform_override": "example_air_android",  # {app_name}_android
+    "app_name": "example_air",
+    "app_identifier": "com.example.air",
     "country": "us",
     "app_version": "24.3.1",
     "developer_response": "Thanks!",
@@ -287,6 +328,23 @@ Set `max_countries_per_run` in the plugin card on the Scrapers page to limit ite
 
 - One country failing does not stop other countries (warning logged, empty list returned)
 - All errors are logged with structured context (app name, country, error type)
+- **Every app's storefronts are summarised** after each collection, so a failure is visible in
+  Administration → System → Logs without AWS access:
+  - INFO `iOS <app> (<id>): <n> storefronts with reviews, <n> empty, <n> failed, <n> reviews`
+    (structured `storefront_summary`: `app`, `app_identifier`, `storefronts_with_reviews`,
+    `storefronts_empty`, `storefronts_failed`, `reviews`);
+  - WARNING `... <failed> of <total> storefronts failed - HTTP 403 x12 (gb, us, ...); MaxRetryError(ConnectTimeoutError) x1 (kr)`
+    when any storefront failed. A storefront has **failed** when it returned no reviews AND its first
+    page answered an error (iOS `AppStoreError`, i.e. an HTTP status) or a connection error ended it
+    (urllib3, after the session's retries); an empty storefront is not a failure. Android counts its one
+    locale (`<lang>-<country>`) the same way. Causes are an HTTP status or an exception type, never a URL;
+  - WARNING `<platform> <app>: no reviews from any storefront (the previous run fetched N)` when an app
+    that had reviews last run (watermark `{app_name}_last_count`) gets none now — typically the store is
+    blocking or failing requests, or the app id changed.
+- A manual run ("Run now") also records those problems in its run row's `errors` (shown on the Data
+  sources page), one short line per app: `<app>: 3 storefronts failed (HTTP 403 x3)`,
+  `<app>: no reviews from any storefront (previous run: 40)`, `<app>: collection failed (<ExceptionType>)`.
+  The run still completes. A scheduled run has no run row; the WARNING lines are its record.
 - The platform circuit breaker (`_shared/circuit_breaker.py`) auto-disables the plugin after repeated failures
 - Audit events are emitted at each lifecycle stage via `_shared/audit.py` (`plugin.invoked`, `plugin.completed`, `plugin.failed`, `message.ingested`)
 - Metrics are emitted per app: `iOS_{app_name}_Reviews`, `Android_{app_name}_Reviews`, and `*_Errors` on failure

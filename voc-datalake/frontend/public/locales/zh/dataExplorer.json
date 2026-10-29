@@ -49,7 +49,9 @@
     "noFiles": "未找到文件",
     "view": "查看",
     "path": "文件夹路径",
-    "noFilesHint": "此文件夹为空。可在此创建文件，或从数据源导入数据。"
+    "noFilesHint": "此文件夹为空。可在此创建文件，或从数据源导入数据。",
+    "personaFolder": "用户画像 {{n, number}} · {{date}}",
+    "personaFolderDated": "用户画像 · {{date}}"
   },
   "tabs": {
     "categories": "分类",

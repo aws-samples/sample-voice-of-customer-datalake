@@ -25,6 +25,7 @@ import uuid
 from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import patch
 
@@ -36,6 +37,7 @@ import mcp_global_handler
 import mcp_tokens_handler
 import projects
 import projects_handler
+from shared import mcp_global_tokens as gt
 from shared.indexes import PROJECTS_BY_TYPE_INDEX
 from shared.test.agents_fixtures import agent_body, agents_env
 
@@ -190,6 +192,14 @@ class World:
         status, minted = self.tokens_api(username, 'POST', '/connect/tokens', {'name': 'e2e', **body})
         assert status == 200, minted
         return minted
+
+    def expire(self, minted: dict) -> None:
+        """Moves the token's ``expires_at`` one second into the past."""
+        self.projects.update_item(
+            Key={'pk': gt.GLOBAL_TOKEN_PK, 'sk': gt.token_sk(minted['token_id'])},
+            UpdateExpression='SET expires_at = :past',
+            ExpressionAttributeValues={':past': (datetime.now(UTC) - timedelta(seconds=1)).isoformat()},
+        )
 
     def client(self, minted: dict | str | None) -> McpClient:
         token = minted['token'] if isinstance(minted, dict) else minted

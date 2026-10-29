@@ -20,7 +20,7 @@ import type { BubblePosition } from './geometry'
 const PositionSchema = z.object({ right: z.number(), bottom: z.number() })
 
 interface BubbleState {
-  /** Launcher position per user key (`userKey`). Absent = the default corner. */
+  /** Launcher position per user (the `user` argument of the setters). Absent = the default corner. */
   positions: Record<string, BubblePosition>
   setPosition: (user: string, position: BubblePosition) => void
   resetPosition: (user: string) => void

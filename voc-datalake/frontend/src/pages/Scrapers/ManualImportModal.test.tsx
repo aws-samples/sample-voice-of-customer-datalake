@@ -429,14 +429,14 @@ describe('ManualImportModal', () => {
       render(<ManualImportModal />)
       expect(screen.getByRole('button', { name: /import 2 reviews/i })).toBeDisabled()
       expect(screen.getByText('1 review needs a date before the import can run.')).toBeInTheDocument()
-      expect(at(screen.getAllByLabelText('Review date (required)'), 1)).toHaveAttribute('aria-invalid', 'true')
+      expect(screen.getByLabelText('Date of review 2 (required)')).toHaveAttribute('aria-invalid', 'true')
     })
 
     it('enables Import once every review has a date', async () => {
       withUndated()
       const user = userEvent.setup()
       render(<ManualImportModal />)
-      await user.type(at(screen.getAllByLabelText('Review date (required)'), 1), '2026-01-06')
+      await user.type(screen.getByLabelText('Date of review 2 (required)'), '2026-01-06')
       expect(screen.getByRole('button', { name: /import 2 reviews/i })).toBeEnabled()
       expect(screen.queryByText(/needs a date/)).not.toBeInTheDocument()
     })
@@ -461,7 +461,7 @@ describe('ManualImportModal', () => {
         expect(screen.getByText(
           "1 review had no date in the text, so it uses today's import date. You can change it below.",
         )).toBeInTheDocument()
-        const defaulted = at(screen.getAllByLabelText('Review date (required)'), 1)
+        const defaulted = screen.getByLabelText('Date of review 2 (required)')
         expect(defaulted).toHaveValue('2026-10-06')
         expect(defaulted).toHaveAccessibleDescription('No date found: set to the import date')
       })
@@ -470,7 +470,7 @@ describe('ManualImportModal', () => {
         withDefaulted()
         const user = userEvent.setup()
         render(<ManualImportModal />)
-        const defaulted = at(screen.getAllByLabelText('Review date (required)'), 1)
+        const defaulted = screen.getByLabelText('Date of review 2 (required)')
         await user.clear(defaulted)
         await user.type(defaulted, '2026-09-30')
 

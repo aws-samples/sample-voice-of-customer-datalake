@@ -1,5 +1,6 @@
 {
   "card": {
+    "openParticipants": "Open Participants",
     "kicker": "Approval needed",
     "details": "Details",
     "toolName": "Action: {{name}}",
@@ -41,6 +42,33 @@
     "openRadarSettings": "Open Administration → Sources → Radar"
   },
   "preview": {
+    "participants": {
+      "summaryLabel": "People to add",
+      "list": "List",
+      "count": "People",
+      "countValue_one": "{{count, number}} person",
+      "countValue_other": "{{count, number}} people",
+      "listNotFound": "This list was not found, so approving will add no one.",
+      "email": "Email",
+      "name": "Name",
+      "company": "Company",
+      "title": "Title",
+      "tags": "Tags",
+      "notSet": "Not set",
+      "tableLabel_one": "{{count, number}} person to add",
+      "tableLabel_other": "{{count, number}} people to add",
+      "reviewAllNote": "Every person is listed; scroll to check every row before approving.",
+      "duplicatesNote_one": "{{count, number}} repeated email address was collapsed to its first row.",
+      "duplicatesNote_other": "{{count, number}} repeated email addresses were collapsed to their first row.",
+      "reuseNote": "Someone already known keeps their stored details; people already on the list stay as they are. Nobody is emailed.",
+      "listLabel": "New list",
+      "listName": "Name",
+      "kind": "Kind",
+      "description": "Description",
+      "emptyListNote": "The list starts empty; add people to it next.",
+      "listLoading": "Reading the list…",
+      "listReadFailed": "The participant lists could not be read, so the list is shown by its id; check it in Participants before approving."
+    },
     "showMore": "Show all ({{n, number}} characters)",
     "showLess": "Show less",
     "empty": "(empty)",
@@ -131,7 +159,11 @@
       "everyBrand": "Every tracked brand",
       "brand": "Brand",
       "scanFields": "Scan",
-      "scanCost": "Runs in the background for a few minutes and uses web searches (at most the query cap in the Radar settings)."
+      "scanCost": "Runs in the background for a few minutes and uses web searches (at most the query cap in the Radar settings).",
+      "language": "Search language: {{language}}",
+      "feed": "News feed: {{feed}}",
+      "searchTerms": "Search terms: {{list}}",
+      "excludeTerms": "Exclude terms: {{list}}"
     },
     "scraper": {
       "nothingSaved": "Nothing is saved until you approve.",
@@ -296,6 +328,15 @@
     }
   },
   "tools": {
+    "create_participant_list": {
+      "title": "Create a participant list",
+      "titleWith": "Create the participant list {{name}}"
+    },
+    "add_participants": {
+      "title": "Add people to a participant list",
+      "titleWith_one": "Add {{count, number}} person to a participant list",
+      "titleWith_other": "Add {{count, number}} people to a participant list"
+    },
     "save_radar_brands": {
       "title": "Save the Radar brand list",
       "titleWith_one": "Save the Radar brand list ({{count, number}} brand)",

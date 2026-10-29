@@ -33,6 +33,16 @@
     "status": "ステータスで絞り込み"
   },
   "forget": "忘れる",
+  "edit": "編集",
+  "editLabel": "記憶を編集: {{statement}}",
+  "editField": "記憶の内容",
+  "save": "保存",
+  "editFailed": "記憶を保存できませんでした。もう一度お試しください。",
+  "confirmPersonal": "今も正しい",
+  "confirmPersonalHint": "今も正しいことを確認すると、90 日間使われなくてもアーカイブされません",
+  "confirmPersonalLabel": "今も正しい: {{statement}}",
+  "confirmLabel": "+1: {{statement}}",
+  "confirmedPersonal": "今も正しいと確認しました。",
   "forgetMessage": "「{{statement}}」はアーカイブされ、自動で再学習されることはありません。後で復元できます。",
   "forgetTitle": "この記憶を忘れますか？",
   "imports": {

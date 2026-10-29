@@ -8,6 +8,7 @@ import type { BaseEvent } from '@ag-ui/core';
 import type { z } from 'zod';
 import type { ClientToolName, ForwardedProps, PageContext, ServerToolName, ToolPack } from './contract.js';
 import type { ProjectAccessLedger } from './tools/project-access.js';
+import type { AiWritingPolicy } from './runtime/ai-writing.js';
 
 /**
  * Authorizer claims forwarded verbatim (only these keys) to internal API invokes.
@@ -46,6 +47,8 @@ export interface AssistantRunContext {
   emit: (event: BaseEvent) => void;
   /** What the project reads of this run reported about the caller's access (see tools/project-access.ts). */
   projectAccess: ProjectAccessLedger;
+  /** The caller's way of working with AI (runtime/ai-writing.ts); absent = AI-driven (plan steps, tests). */
+  aiWriting?: AiWritingPolicy;
   /**
    * Epoch ms at which the running Lambda invocation is cut off, when known.
    * A tool that waits on a background job stops waiting well before it.
@@ -99,6 +102,11 @@ export interface ClientToolDefinition {
   precheck?(args: Record<string, unknown>, ctx: AssistantRunContext): Promise<string | undefined>;
   /** One-line human summary for `Interrupt.message`, in English. */
   summarize(args: Record<string, unknown>): string;
+  /**
+   * Optional summary that reads current state (e.g. a list's stored NAME where `summarize`
+   * only has its id). Run after a passing precheck; when it throws, `summarize` is used.
+   */
+  describe?(args: Record<string, unknown>, ctx: AssistantRunContext): Promise<string>;
 }
 
 export type AssistantToolDefinition = ServerToolDefinition | ClientToolDefinition;

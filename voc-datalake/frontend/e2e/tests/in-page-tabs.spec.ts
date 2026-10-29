@@ -1,8 +1,8 @@
 /**
  * P3 — the 7 in-page tabs the URL tabs don't reach (E2E-COVERAGE-GAPS §1b).
  *
- * - FormEditor (feedback forms): Form Settings / Category Routing / Validates /
- *   Theme. The editor is opened from "Create Form" → a template → Continue, each
+ * - FormEditor (feedback forms): Form Settings / Category Routing / Linked
+ *   project / Theme. The editor is opened from "Create Form" → a template → Continue, each
  *   tab is clicked and its own content checked, then Cancel: NOTHING is saved
  *   (no POST/PUT /feedback-forms is sent), so it is safe in production.
  * - Admin → Logs: Validation Failures / Processing Errors / Scraper Runs (admin
@@ -25,7 +25,8 @@ interface FormTab {
 const FORM_TABS: readonly FormTab[] = [
   { name: 'Form Settings', shows: (d) => d.getByText('Form Name (Internal)') },
   { name: 'Category Routing', shows: (d) => d.getByRole('heading', { name: 'Category Routing' }) },
-  { name: 'Validates', shows: (d) => d.getByRole('heading', { name: 'What This Form Validates' }) },
+  // 5.x renamed the third tab "Validates" → "Linked project" (the tab and its heading).
+  { name: 'Linked project', shows: (d) => d.getByRole('heading', { name: 'Linked project or document' }) },
   { name: 'Theme', shows: (d) => d.getByText('Primary Color') },
 ]
 
@@ -48,7 +49,10 @@ const LOGS_TABS: readonly LogsTab[] = [
   { name: 'Processing Errors', path: /\/logs\/processing$/, shows: (m) => m.getByText(/\d+ errors?|No processing errors in this period/) },
   {
     name: 'Scraper Runs', path: /\/scrapers$/,
-    shows: (m, names) => rowButtons(m, names) ?? m.getByText(/No scrapers configured/),
+    // No scraper: the review-page and app connectors' region (ScraperRunsPanel.tsx), or the empty
+    // state when no connector is deployed either.
+    shows: (m, names) => rowButtons(m, names)
+      ?? m.getByRole('region', { name: 'Review pages and apps' }).or(m.getByText(/No data sources that run yet/)),
   },
 ]
 

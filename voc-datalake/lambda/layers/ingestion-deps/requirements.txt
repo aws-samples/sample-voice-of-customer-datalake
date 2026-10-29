@@ -1,7 +1,9 @@
 requests>=2.31.0
-aws-lambda-powertools[tracer]>=2.30.0
+# Exact pin: 3.38.0 started answering Vary: Origin on CORS; an open range let CI and local disagree.
+aws-lambda-powertools[tracer]==3.38.0
 beautifulsoup4>=4.12.0
-lxml>=5.0.0
+# lxml (the email intake's HTML parser) is NOT here: lambda/layers/email-intake-deps. bs4 imports it only
+# when installed (guarded), and the webscraper plugin asks for 'html.parser'.
 # Exact pin: an open range let CI resolve a newer LoggerProtocol than local (pyright drift).
 tenacity==9.2.1
 app-store-web-scraper>=0.2.0

@@ -38,3 +38,20 @@ def iter_query(table: Any, kwargs: Mapping[str, Any], *, max_items: int | None =
 def query_all(table: Any, kwargs: Mapping[str, Any], *, max_items: int | None = None) -> list[dict]:
     """``iter_query`` materialised: call it inside any ``try`` that guards the reads."""
     return list(iter_query(table, kwargs, max_items=max_items))
+
+
+def count_query(table: Any, kwargs: Mapping[str, Any]) -> int:
+    """How many items ``table.query(**kwargs)`` matches across every page (``Select='COUNT'``:
+    after any ``FilterExpression``, no item is read back)."""
+    request = {**kwargs, 'Select': 'COUNT'}
+    total = 0
+    while True:
+        response = table.query(**request)
+        if not isinstance(response, dict):
+            return total
+        count = response.get('Count')
+        total += count if isinstance(count, int) else 0
+        cursor = response.get('LastEvaluatedKey')
+        if not isinstance(cursor, dict) or not cursor:
+            return total
+        request['ExclusiveStartKey'] = cursor

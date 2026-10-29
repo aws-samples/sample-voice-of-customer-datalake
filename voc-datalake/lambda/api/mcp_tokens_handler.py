@@ -44,7 +44,6 @@ from shared.batch_get import batch_get_all
 from shared.dynamo_paging import query_all
 from shared.exceptions import (
     AuthorizationError,
-    ConfigurationError,
     ConflictError,
     NotFoundError,
     ServiceError,
@@ -54,7 +53,7 @@ from shared.logging import logger, tracer
 from shared.project_access import Caller
 from shared.request_body import json_object_body
 from shared.snapstart import api_route_warmer, register_snapshot_hooks
-from shared.tables import get_jobs_table, get_projects_table
+from shared.tables import configured_table, get_jobs_table, get_projects_table
 from shared.warm_init import warm_at_init
 
 TOKEN_NOT_FOUND = 'Token not found'
@@ -78,17 +77,11 @@ def _caller() -> Caller:
 
 
 def _projects_table() -> Any:
-    table = get_projects_table()
-    if table is None:
-        raise ConfigurationError('Projects table not configured')
-    return table
+    return configured_table(get_projects_table(), 'Projects')
 
 
 def _jobs_table() -> Any:
-    table = get_jobs_table()
-    if table is None:
-        raise ConfigurationError('Jobs table not configured')
-    return table
+    return configured_table(get_jobs_table(), 'Jobs')
 
 
 def _paged_query(**kwargs: Any) -> list[dict]:

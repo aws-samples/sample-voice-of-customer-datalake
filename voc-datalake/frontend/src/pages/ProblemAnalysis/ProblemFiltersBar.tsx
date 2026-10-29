@@ -1,8 +1,8 @@
 /**
- * @fileoverview The Problem Analysis filter card: source, category and subcategory
- * selects (the subcategory list narrows to the chosen category), the urgent-only and
- * show-resolved toggles, Clear, Similarity and Expand / Collapse all. State lives in
- * the URL (`useProblemFilters`).
+ * @fileoverview The Problem Analysis filter card: the review-type chips, source, category
+ * and subcategory selects (the subcategory list narrows to the chosen category), the
+ * urgent-only and show-resolved toggles, Clear, Similarity and Expand / Collapse all.
+ * The period is the header's. State lives in the URL (`useProblemFilters`).
  * @module pages/ProblemAnalysis/ProblemFiltersBar
  */
 import { Filter, X } from 'lucide-react'
@@ -11,6 +11,7 @@ import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import OptionSelect from '../../components/OptionSelect/OptionSelect'
 import { SimilaritySelect } from './SimilaritySelect'
 import type { ProblemFiltersApi } from './useProblemFilters'
+import { ProblemTypeChips } from './ProblemTypeChips'
 
 interface ProblemFiltersBarProps {
   readonly filters: ProblemFiltersApi
@@ -19,6 +20,8 @@ interface ProblemFiltersBarProps {
   /** Subcategories of the chosen category (every one when none is chosen). */
   readonly subcategories: readonly string[]
   readonly resolvedCount: number
+  /** Reviews per type in the window (`type_counts`). */
+  readonly typeCounts: Readonly<Record<string, number>>
   readonly onExpandAll: () => void
   readonly onCollapseAll: () => void
 }
@@ -34,12 +37,13 @@ function Toggle({ checked, onChange, children }: Readonly<{ checked: boolean; on
   )
 }
 
-export function ProblemFiltersBar({ filters, sources, categories, subcategories, resolvedCount, onExpandAll, onCollapseAll }: ProblemFiltersBarProps) {
+export function ProblemFiltersBar({ filters, sources, categories, subcategories, resolvedCount, typeCounts, onExpandAll, onCollapseAll }: ProblemFiltersBarProps) {
   const { t } = useTranslation(['problemAnalysis', 'common'])
   const labels = useDisplayLabels()
   return (
     <div className="card">
       <div className="flex flex-col gap-3 sm:gap-4">
+        <ProblemTypeChips value={filters.types} onChange={(types) => filters.update({ types })} counts={typeCounts} />
         <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-3">
           <Filter size={16} className="hidden sm:block text-muted flex-shrink-0" aria-hidden="true" />
           <OptionSelect className={SELECT} label={t('filters.source')} allLabel={t('filters.allSources')} value={filters.source}

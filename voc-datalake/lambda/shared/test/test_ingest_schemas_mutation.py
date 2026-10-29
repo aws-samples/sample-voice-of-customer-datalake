@@ -21,7 +21,6 @@ mutation run found three layers it never looked at:
   `IssueAttributes` counter defaults to exactly 0.
 """
 from datetime import UTC, datetime, timedelta
-from unittest.mock import patch
 
 import pytest
 from pydantic import ValidationError
@@ -34,6 +33,7 @@ from shared.ingest_schemas import (
     safe_validate_message,
     validate_message,
 )
+from shared.test.clock import frozen_clock
 
 _CREATED_AT = '2025-01-01T12:00:00Z'
 _INGESTED_AT = '2026-01-05T10:00:00+00:00'
@@ -374,7 +374,7 @@ class TestMetadata:
         assert kept.model_dump() == {
             'is_verified': None, 'location_id': None, 'reference_id': None, 'reply_count': None,
             'like_count': None, 'business_id': None, 'business_name': None, 'author_image': None,
-            'custom_fields': None, 'external_ticket': 'T-1',
+            'custom_fields': None, 'participant': None, 'external_ticket': 'T-1',
         }
 
 
@@ -517,7 +517,7 @@ class TestCreatedAt:
         assert result.created_at == datetime(2026, 1, 5, 10, 0, tzinfo=UTC)
 
     def test_an_unusable_value_without_an_ingested_at_takes_now(self):
-        with patch('shared.ingest_schemas.datetime', _FrozenDatetime):
+        with frozen_clock('shared.ingest_schemas', _FrozenDatetime):
             absent = validate_message(_raw(created_at=''))
             null = validate_message(_raw(created_at='', ingested_at=None))
         assert (absent.created_at, null.created_at) == (_FROZEN_NOW, _FROZEN_NOW)
@@ -544,7 +544,7 @@ class TestCreatedAt:
 
     def test_exactly_one_day_ahead_is_accepted_and_one_second_more_is_refused(self):
         edge = _FROZEN_NOW + timedelta(days=1)
-        with patch('shared.ingest_schemas.datetime', _FrozenDatetime):
+        with frozen_clock('shared.ingest_schemas', _FrozenDatetime):
             assert validate_message(_raw(created_at=edge.isoformat())).created_at == edge
             assert _errors(_raw(created_at=(edge + timedelta(seconds=1)).isoformat())) == [
                 ': Value error, created_at cannot be more than 1 day in the future',

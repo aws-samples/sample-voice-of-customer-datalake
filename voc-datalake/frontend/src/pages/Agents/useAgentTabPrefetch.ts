@@ -18,6 +18,7 @@ import { projectsApi } from '../../api/projectsApi'
 import { projectsKey } from '../../api/projectQueryKeys'
 import { DEFAULT_WORKFLOW_ID, workflowsApi, workflowsKeys } from '../../api/workflowsApi'
 import type { QueryClient } from '@tanstack/react-query'
+import { modelSettingsKey } from '../../api/queryKeys'
 
 /** How long after the agent loads the idle prefetch waits (lets the first paint settle). */
 const IDLE_PREFETCH_MS = 400
@@ -48,7 +49,7 @@ const PREFETCH: Readonly<Record<string, Prefetch>> = {
   settings: (client) => workflowList(client),
   personas: (client) => client.prefetchQuery({ queryKey: projectsKey(), queryFn: projectsApi.getProjects, staleTime: PREFETCH_FRESH_MS }),
   models: (client) => client.prefetchQuery({
-    queryKey: ['model-settings'], queryFn: () => api.getModelSettings(), retry: false, staleTime: PREFETCH_FRESH_MS,
+    queryKey: modelSettingsKey(), queryFn: () => api.getModelSettings(), retry: false, staleTime: PREFETCH_FRESH_MS,
   }),
 }
 

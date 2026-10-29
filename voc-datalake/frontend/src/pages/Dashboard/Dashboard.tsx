@@ -20,6 +20,7 @@ import SocialFeed from '../../components/SocialFeed/SocialFeed'
 import { generateDashboardPDF } from './dashboardPdfGenerator'
 import { activeSourceCount, buildPDFExportData } from './dashboardData'
 import { MetricsGrid, SentimentChart, UrgentFeedback, URGENT_PREVIEW_LIMIT } from './DashboardSections'
+import PartialCountsNote from './PartialCountsNote'
 import DashboardCard from './DashboardCard'
 import GitHubInsights from './GitHubInsights'
 import DimensionBreakdown from './DimensionBreakdown'
@@ -32,6 +33,7 @@ import ScopeNotice from '../../components/ScopeNotice/ScopeNotice'
 import { failedReads, type FailedReads } from '../../utils/failedReads'
 import { useSummaryQuery } from '../../hooks/useSummaryQuery'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
+import { metricsKeys } from '../../api/queryKeys'
 
 function NotConfiguredState() {
   const { t } = useTranslation(['dashboard', 'common'])
@@ -85,19 +87,19 @@ export default function Dashboard() {
   const summaryFailure = failedReads([summaryQuery])
 
   const { data: sentiment } = useQuery({
-    queryKey: ['sentiment', dateParams],
+    queryKey: metricsKeys.sentiment(dateParams),
     queryFn: () => api.getSentiment(dateParams),
     enabled: isConfigured,
   })
 
   const { data: categories } = useQuery({
-    queryKey: ['categories', dateParams],
+    queryKey: metricsKeys.categories(dateParams),
     queryFn: () => api.getCategories(dateParams),
     enabled: isConfigured,
   })
 
   const { data: sources } = useQuery({
-    queryKey: ['sources', dateParams],
+    queryKey: metricsKeys.sources(dateParams),
     queryFn: () => api.getSources(dateParams),
     enabled: isConfigured,
   })
@@ -173,6 +175,7 @@ export default function Dashboard() {
       </div>
 
       <MetricsGrid summary={summary} sentiment={sentiment} activeSources={sourcesCount} />
+      <PartialCountsNote summary={summary} dateBasis={dateBasis} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         <TrendChart summary={summary} />

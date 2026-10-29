@@ -51,6 +51,7 @@ from module_reload_fixtures import env_reloader
 import scrapers_handler as h
 from shared import scraper_run_errors
 from shared.exceptions import ServiceError, ValidationError
+from shared.test.clock import frozen_clock as freeze_clock
 from shared.test.instrumentation_fixtures import assert_tracer_wrapped
 
 NOW = datetime(2026, 3, 10, 12, 0, 0, tzinfo=UTC)
@@ -126,7 +127,7 @@ def table() -> Iterator[MagicMock]:
 
 @pytest.fixture
 def frozen_clock() -> Iterator[None]:
-    with patch.object(h, 'datetime') as clock:
+    with freeze_clock(h) as clock:
         clock.now.return_value = NOW
         yield
 
@@ -141,7 +142,7 @@ class TestTheColdStartModuleState:
         assert (h.MAX_URLS_PER_SCRAPER, h.MAX_URL_LENGTH, h.MAX_TEXT_FIELD_LENGTH) == (25, 2048, 500)
         assert (h.MAX_PAGINATION_PARAM_LENGTH, h.MAX_PAGINATION_PAGES, h.MAX_PAGINATION_START) == (64, 50, 10_000)
         assert h.MAX_FREQUENCY_MINUTES == 43_200
-        assert h.SCRAPER_ID_PATTERN.pattern == r'^[A-Za-z0-9_-]{1,64}\Z'
+        assert h.OPAQUE_ID_RE.pattern == r'^[A-Za-z0-9_-]{1,64}\Z'
 
     def test_the_field_lists_are_the_documented_ones(self):
         assert h.TEXT_FIELDS == (

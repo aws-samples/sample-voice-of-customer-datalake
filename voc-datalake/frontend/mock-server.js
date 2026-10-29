@@ -4,7 +4,9 @@
 import http from 'http';
 import { randomBytes } from 'node:crypto';
 import { handleConnectRoutes } from './mock-connect.js';
-import { GITHUB_REFERENCE, WEBSITE_REFERENCE, publicDesignSystem, routeDesignExtract, serveMockLogo } from './mock-design-extract.js';
+import {
+  GITHUB_REFERENCE, WEBSITE_REFERENCE, draftedLogoUrl, duplicateMockReference, publicDesignSystem, routeDesignExtract, serveMockLogo,
+} from './mock-design-extract.js';
 import { INITIAL_COMPONENTS, componentsProblem } from './mock-design-components.js';
 import {
   activeAxisIds, axesPayload, ballotComposite, handlePrioritizationConfigRoutes, publicAxes, unknownAxisField,
@@ -18,6 +20,8 @@ import { handleEmailInboxRoutes } from './mock-email-inbox.js';
 import { handlePlanRoutes } from './mock-plans.js';
 import { handleDecisionRoutes } from './mock-decisions.js';
 import { handleRadarRoutes } from './mock-radar.js';
+import { handleParticipantsRoutes } from './mock-participants.js';
+import { handleFeatureRequestRoutes } from './mock-feature-requests.js';
 import { radarBrandError } from './mock-radar-brands.js';
 import {
   attributeFilterOf, dimensionsConfig, entityExtras, handleDimensionRoutes, seedDimensionFixtures, sourceProfiles,
@@ -26,6 +30,7 @@ import { cursorPage } from './mock-feedback-cursor.js';
 import { problemTree } from './mock-problems.js';
 import { callerAccess, handleScopeRoutes, scopeAdmits, scopedCategoriesConfig, scopedMetric } from './mock-scope.js';
 import { handleProjectActionRoutes, startProjectAssistJob } from './mock-project-actions.js';
+import { handleDocumentReviewRoutes } from './mock-document-review.js';
 import { handleAssistJobRoutes, startOwnerAssistJob } from './mock-assist-jobs.js';
 
 // Helper: answer with a status and a JSON body (headers set earlier still apply).
@@ -233,6 +238,10 @@ const mockModelQuotaByKey = {
   opus5: 10_000_000, opus48: 0, haiku55: 10_000_000, haiku45: 8_000_000,
 };
 let mockModelTestRuns = 0;
+// The persona-avatar image model (shared/image_model_status.py image_model_info).
+const mockImageModel = {
+  id: 'stability.stable-image-core-v1:1', label: 'Stable Image Core 1.0', region: 'us-west-2', avatars_enabled: true,
+};
 function mockModelQuota(model) {
   return {
     name: `Global cross-region model inference tokens per minute for Anthropic ${model.label}`,
@@ -521,6 +530,7 @@ const handlers = {
       selected: mockModelSurfaces[key] ?? null,
     })),
     model_id: null,
+    image_model: mockImageModel,
   }),
   'PUT /settings/model': (body) => {
     const surface = body?.surface;
@@ -541,6 +551,15 @@ const handlers = {
   // Model test + capacity (shared/model_capacity.py). Opus 4.8 is the deliberate
   // zero-quota model so local dev always shows the "No capacity — wait" state.
   'POST /settings/model/test': (body) => {
+    if (body?.model_id === mockImageModel.id) {
+      // shared/image_model_status.py probe_image_model: one image call, no token quota.
+      mockModelTestRuns += 1;
+      return {
+        model_id: mockImageModel.id, invoked_id: mockImageModel.id, status: 'available', ok: true,
+        latency_ms: 2400 + (mockModelTestRuns % 5) * 200, message: 'The model answered.', quota: null,
+        checked_at: new Date().toISOString(),
+      };
+    }
     const model = mockAvailableModels.find((m) => m.id === body?.model_id);
     if (!model) {
       return { __status: 400, body: { success: false, message: 'model_id must be one of the allowlisted models' } };
@@ -563,6 +582,15 @@ const handlers = {
   },
   'GET /settings/model/capacity': () => ({
     models: mockAvailableModels.map((m) => ({ model_id: m.id, label: m.label, quota: mockModelQuota(m) })),
+    image: {
+      ...mockImageModel,
+      access: {
+        status: 'available', agreement: 'AVAILABLE', authorization: 'AUTHORIZED',
+        entitlement: 'AVAILABLE', region_availability: 'AVAILABLE', checked_at: new Date().toISOString(),
+      },
+      quota: { name: 'On-demand model inference requests per minute for Stability.ai Stable Image Core', value: 90, unit: 'requests_per_minute' },
+      quota_state: 'fresh',
+    },
   }),
 
   'GET /settings/resolved-problems': () => ({ resolved: mockResolvedProblems }),
@@ -714,7 +742,7 @@ const handlers = {
       github_issues: 64,
     },
   }),
-  // GitHub Issues per release / label (lambda/api/github_metrics.py). One row is
+  // GitHub Issues per release / label (lambda/shared/github_metrics.py). One row is
   // deliberately sparse (no sentiment, no lists) so the Zod normalizer in
   // api/githubMetricsSchema.ts stays exercised in dev.
   'GET /metrics/github': (_body, searchParams) => {
@@ -749,24 +777,6 @@ const handlers = {
       },
     }
   },
-  'GET /metrics/personas': () => ({
-    period_days: 7,
-    // The closed archetype enum the real route now returns
-    // (`existing_customer|prospect|churn_risk|advocate|unknown`), not free-text
-    // names — a stub returning names would have the dashboard developed against a
-    // value space production no longer produces.
-    personas: {
-      existing_customer: 234,
-      churn_risk: 198,
-      prospect: 167,
-      advocate: 145,
-      unknown: 123,
-    },
-  }),
-  'POST /chat': () => ({
-    response: `I analyzed your feedback data. Here's what I found:\n\n• Total feedback: 1,247 items\n• Average sentiment: 0.12 (slightly positive)\n• Top category: Delivery (25%)\n• Urgent items: 23 requiring attention\n\nWould you like me to dive deeper into any specific area?`,
-    sources: mockFeedback.slice(0, 2),
-  }),
   'GET /projects': (_body, params) => (params?.has('ids') ? mockProjectDetailBatch(params.get('ids')) : {
     // Derived from the detail fixtures — one source of truth, so list and
     // detail can't drift when someone edits a project. Filtered and decorated
@@ -805,11 +815,6 @@ const handlers = {
   // Prioritization (rows / caller's ballots / team aggregates) — stateful, see
   // the "Prioritization + voting sessions" block below for the fixtures.
   'GET /projects/prioritization': () => prioritizationRead(),
-  // The real handler refuses PUT since per-reviewer ballots (a whole-map write
-  // has no honest meaning); mirror that so a stray caller fails loudly in dev.
-  'PUT /projects/prioritization': () => ({
-    __status: 400, body: { success: false, error: 'Use PATCH to save your own ballot' },
-  }),
   'PATCH /projects/prioritization': (body) => patchCallerBallots(body),
   'POST /projects/prioritization/rows': (body) => ensureDefaultRows(body),
   'POST /projects/prioritization/rows/compose': (body) => composeRow(body),
@@ -1115,6 +1120,13 @@ function deleteRow(rowId) {
   delete mockPrioritizationRows[rowId];
   delete callerBallots[rowId];
   delete otherBallots[rowId];
+  // Its room votes end with it, as on the real API (shared/voting_session_close.py).
+  for (const session of Object.values(mockVotingSessions)) {
+    if (session.row_id === rowId && session.status === 'open') {
+      session.status = 'closed';
+      session.closed_at = new Date().toISOString();
+    }
+  }
   return { status: 200, payload: { success: true, ballots_deleted: ballotsDeleted } };
 }
 
@@ -1183,7 +1195,9 @@ function createVotingSession(body) {
   return { success: true, session: sessionPayload(session) };
 }
 
-const BALLOT_REFUSAL_STATUS = { not_found: 404, closed: 409, expired: 409, cap_reached: 429, invalid: 400 };
+const BALLOT_REFUSAL_STATUS = { not_found: 404, closed: 409, expired: 409, cap_reached: 429, invalid: 400, gone: 410 };
+// A session whose row was deleted: the ballot routes refuse it as `gone` (410).
+const sessionRowGone = (session) => !mockPrioritizationRows[session.row_id];
 const ballotRefusal = (reason, error) => ({
   status: BALLOT_REFUSAL_STATUS[reason],
   payload: { success: false, reason, error },
@@ -1193,6 +1207,7 @@ function submitAnonymousBallot(session, body) {
   if (!session) return ballotRefusal('not_found', 'This voting session does not exist');
   const state = sessionState(session);
   if (state !== 'open') return ballotRefusal(state, `This voting session is ${state}`);
+  if (sessionRowGone(session)) return ballotRefusal('gone', 'The proposal this vote was about has been deleted');
   const parsed = readBallotFields(body);
   if (parsed.error) return ballotRefusal('invalid', parsed.error);
   if (!isVote(parsed.fields)) return ballotRefusal('invalid', 'Score at least one axis');
@@ -1228,7 +1243,7 @@ function handleDomainModules(req, res, url) {
     collectJson, nextMockId, mockFeedback, mockSourcesStatus, mockSourceRunStatuses,
     mockScrapers, mockScraperRuns, mockCategoriesConfig,
     mockFeedbackForms, mockFormStats, mockProjectDetails, mockProductJobs,
-    attributeFilterOf, sourceProfiles, dimensionsConfig, startOwnerAssistJob,
+    attributeFilterOf, sourceProfiles, dimensionsConfig, startOwnerAssistJob, startProjectAssistJob,
   };
   return handlePrioritizationConfigRoutes(req, res, url, send, shared)
     || handleDimensionRoutes(req, res, url, send, shared)
@@ -1236,6 +1251,7 @@ function handleDomainModules(req, res, url) {
     || handleAssistJobRoutes(req, res, url, send)
     || handleSourceRoutes(req, res, url, send, shared)
     || handleFormRoutes(req, res, url, send, shared)
+    || handleDocumentReviewRoutes(req, res, url, send, shared)
     || handleProjectActionRoutes(req, res, url, send, shared)
     || handleOnboardingRoutes(req, res, url, send, shared)
     || handleBriefingRoutes(req, res, url, send, shared)
@@ -1243,7 +1259,9 @@ function handleDomainModules(req, res, url) {
     || handleEmailInboxRoutes(req, res, url, send, shared)
     || handlePlanRoutes(req, res, url, send, shared)
     || handleDecisionRoutes(req, res, url, send, shared)
-    || handleRadarRoutes(req, res, url, send, shared);
+    || handleRadarRoutes(req, res, url, send, shared)
+    || handleParticipantsRoutes(req, res, url, send, shared)
+    || handleFeatureRequestRoutes(req, res, url, send, shared);
 }
 
 function handleParameterizedExtras(req, res, url) {
@@ -1461,7 +1479,10 @@ function handleVotingSessionRoutes(req, res, url, send) {
   if (sessionMatch) {
     const session = mockVotingSessions[decodeURIComponent(sessionMatch[1])];
     const action = sessionMatch[2];
-    if (req.method === 'GET' && action === 'config') {
+    if (req.method === 'GET' && action === 'config' && session && sessionRowGone(session)) {
+      const refusal = ballotRefusal('gone', 'The proposal this vote was about has been deleted');
+      send(refusal.status, refusal.payload);
+    } else if (req.method === 'GET' && action === 'config') {
       // PUBLIC projection: no cap, no count, no creator. Unknown → open:false.
       send(200, {
         success: true,
@@ -1485,7 +1506,7 @@ function handleVotingSessionRoutes(req, res, url, send) {
         send(200, { success: true, session: sessionPayload(session) });
       }
     } else if (req.method === 'GET' && !action) {
-      if (session) send(200, { success: true, session: sessionPayload(session) });
+      if (session && !sessionRowGone(session)) send(200, { success: true, session: sessionPayload(session) });
       else send(404, { success: false, error: 'Voting session not found' });
     } else {
       send(405, { success: false, error: 'Method not allowed' });
@@ -1862,7 +1883,7 @@ function handleProjectSharing(method, projectId, rest, body, params) {
 
 // ── Product tab state (issue #179) ─────────────────────────────────────────
 // Stateful per-project product context, docs, and report jobs so the whole
-// Product tab (form persistence, interview, uploads, report generation) is
+// Product tab (form persistence, uploads, report generation) is
 // exercisable against the mock.
 
 const emptyProductContext = () => ({
@@ -1882,36 +1903,6 @@ function getProductContext(projectId) {
     mockProductContexts[projectId] = emptyProductContext();
   }
   return mockProductContexts[projectId];
-}
-
-// Scripted interview: each turn stores the user's answer into the first
-// unfilled field (in this order) and asks the next question — so the
-// "I'll fill the form on the left as you answer" behavior is demonstrable
-// locally. current_state is a select, so the script skips it.
-const INTERVIEW_SCRIPT = [
-  ['product_name', 'Got it. What would be a good one-liner for it?'],
-  ['one_liner', 'Who are the target users?'],
-  ['target_users', 'What problem does it solve for them?'],
-  ['problem_solved', 'What are its key features?'],
-  ['key_features', 'What differentiates it from alternatives?'],
-  ['differentiators', 'Thanks — the essentials are filled in. Anything else you add now lands in free-form notes.'],
-];
-
-function applyInterviewTurn(projectId, message) {
-  const context = getProductContext(projectId);
-  const nextEntry = INTERVIEW_SCRIPT.find(([field]) => context[field] === '');
-  if (nextEntry) {
-    const [field, question] = nextEntry;
-    context[field] = message;
-    return { assistant_message: question, applied_patch: { [field]: message }, context };
-  }
-  const notes = context.free_form_notes === '' ? message : `${context.free_form_notes}\n${message}`;
-  context.free_form_notes = notes;
-  return {
-    assistant_message: 'Noted — added to free-form notes.',
-    applied_patch: { free_form_notes: notes },
-    context,
-  };
 }
 
 function buildProductReportDocument(projectId) {
@@ -2149,6 +2140,32 @@ function writeSseEvents(res, events) {
   next();
 }
 
+// @persona / @all / #document (forwardedProps.mentions, project pages): like the stream Lambda's
+// persona round (runtime/persona-round.ts), one consult_personas call per persona on one assistant
+// message, ids prefixed `mention_`, each answered as `{responses:[one]}`; @all = the first 6.
+const MOCK_MENTION_MAX_PERSONAS = 6;
+function mentionRoundEvents(page, mentions, question) {
+  const detail = page.kind === 'project' ? mockProjectDetails[page.projectId] : undefined;
+  if (!detail || !mentions || mentions.personas === undefined) return [];
+  const wanted = mentions.personas === 'all'
+    ? detail.personas.slice(0, MOCK_MENTION_MAX_PERSONAS)
+    : detail.personas.filter((p) => Array.isArray(mentions.personas) && mentions.personas.includes(p.persona_id));
+  const docIds = Array.isArray(mentions.documents) ? mentions.documents.map((d) => d.document_id) : [];
+  const docTitles = detail.documents.filter((d) => docIds.includes(d.document_id)).map((d) => d.title);
+  const parent = nextMockId('msg');
+  const calls = wanted.map((p) => ({ persona: p, id: `mention_${nextMockId('call').replace(/[^\w-]/g, '')}` }));
+  const starts = calls.flatMap(({ persona, id }) => [
+    { type: 'TOOL_CALL_START', toolCallId: id, toolCallName: 'consult_personas', parentMessageId: parent },
+    { type: 'TOOL_CALL_ARGS', toolCallId: id, delta: JSON.stringify({ question, ...(docIds.length > 0 ? { document_ids: docIds } : {}), persona_ids: [persona.persona_id] }) },
+    { type: 'TOOL_CALL_END', toolCallId: id },
+  ]);
+  const results = calls.map(({ persona, id }) => ({
+    type: 'TOOL_CALL_RESULT', messageId: nextMockId('msg'), toolCallId: id, role: 'tool',
+    content: JSON.stringify({ responses: [{ persona_id: persona.persona_id, name: persona.name, answer: `As ${persona.name} (mock): ${docTitles.length > 0 ? `I read ${docTitles.join(', ')}. ` : ''}${persona.quote ?? 'This matters to me.'}` }] }),
+  }));
+  return [...starts, ...results];
+}
+
 function handleAssistantStream(body, res) {
   const input = body && typeof body === 'object' ? body : {};
   const threadId = typeof input.threadId === 'string' ? input.threadId : nextMockId('thread');
@@ -2173,8 +2190,9 @@ function handleAssistantStream(body, res) {
   const { events, outcome } = outcomes.length > 0
     ? resumeRunEvents(outcomes, ids)
     : firstRunEvents(page, lastUserText(messages), ids);
+  const round = outcomes.length > 0 ? [] : mentionRoundEvents(page, input.forwardedProps && input.forwardedProps.mentions, lastUserText(messages));
   const usage = [{ provider: 'anthropic', model: ASSISTANT_MODEL, inputTokens: 1200, outputTokens: 80, totalTokens: 1280, cachedInputTokens: 900, cacheWriteInputTokens: 0 }];
-  writeSseEvents(res, [...head, ...events, { type: 'RUN_FINISHED', threadId, runId, outcome, usage }]);
+  writeSseEvents(res, [...head, ...round, ...events, { type: 'RUN_FINISHED', threadId, runId, outcome, usage }]);
 }
 
 // Assistant sessions (`/chat/conversations/{_list|id}`), in memory, per the
@@ -2220,6 +2238,18 @@ function renameAssistantSession(id, body) {
   }
   Object.assign(record, { title, customTitle: title });
   return { status: 200, payload: { success: true, id, title } };
+}
+
+// POST /chat/conversations/{id}/cancel (chat_handler.cancel_run): the Stop marker; the mock never
+// streams server-side, so it is only validated and remembered.
+const MOCK_RUN_ID = /^[A-Za-z0-9_-]{1,128}$/;
+const mockRunCancels = {};
+function cancelAssistantRun(id, body) {
+  if (!MOCK_SESSION_ID.test(id)) return { status: 404, payload: { success: false, message: 'Conversation not found' } };
+  const runId = body && typeof body === 'object' ? body.runId : undefined;
+  if (typeof runId !== 'string' || !MOCK_RUN_ID.test(runId)) return { status: 400, payload: { success: false, message: 'runId must be a run id' } };
+  mockRunCancels[id] = runId;
+  return { status: 200, payload: { success: true, id, runId } };
 }
 
 function sessionDetail(record) {
@@ -2303,6 +2333,11 @@ const MOCK_MEMORY_CALLER = 'admin-demo';
 const MOCK_MEMORY_CURATOR = process.env.MOCK_MEMORY_NON_CURATOR !== '1';
 const mockUserFlags = new Map([['admin-demo', { fallback_owner: true, memory_reviewer: true }]]);
 const userFlagsOf = (username) => ({ fallback_owner: false, memory_reviewer: false, ...mockUserFlags.get(username) });
+// Ways of working with AI (users_handler / shared/ai_mode.py). No entry = AI-driven, the default.
+// viewer-demo starts Human-driven with PRD unlocked so the admin panel shows every control.
+const AI_MODE_NAMES = ['human_driven', 'ai_assisted', 'ai_driven'];
+const mockAiModes = new Map([['viewer-demo', { mode: 'human_driven', ai_writing_prfaq: false, ai_writing_prd: true }]]);
+const aiModeOf = (username) => ({ mode: 'ai_driven', ai_writing_prfaq: false, ai_writing_prd: false, ...mockAiModes.get(username) });
 
 let mockCompanyContext = {
   vision: '## Where we are going\n\nBe the **most trusted** place to buy everyday essentials — fast delivery, fair prices, zero surprises.',
@@ -2537,6 +2572,8 @@ function addDesignReference(req, body) {
   if (!['website', 'screenshot', 'html', 'figma', 'github'].includes(kind) || !body.title) return [400, { success: false, error: 'kind and title required' }];
   const isUpload = kind === 'screenshot' || kind === 'html';
   if (!isUpload && !/^https:\/\//.test(body.url || '')) return [400, { success: false, error: 'https url required' }];
+  const duplicate = isUpload ? null : duplicateMockReference(mockDesignSystem.references, body.url);
+  if (duplicate) return [409, { success: false, error: `This address is already a design reference: "${duplicate.title}". Use Fetch again on it instead of adding it twice` }];
   // The API writes 'pending' until the worker records ready / error (there is no 'processing').
   const reference = { id: nextMockId('ref'), kind, title: body.title, ...(isUpload ? { s3_key: `company-context/design/${kind}` } : { url: body.url }), status: 'pending' };
   mockDesignSystem.references.push(reference);
@@ -2568,6 +2605,9 @@ function routeDesignSystem(req, url, body) {
     if (body?.components) mockDesignSystem.components = body.components;
     if (body?.tokens) mockDesignSystem.tokens = body.tokens;
     if (typeof body?.guidelines === 'string') mockDesignSystem.guidelines = body.guidelines;
+    const logoUrl = draftedLogoUrl(body?.logo_id);
+    if (logoUrl === null) return [400, { success: false, error: 'logo_id: that logo file was not found; use the logo again' }];
+    if (logoUrl) mockDesignSystem.logo_url = logoUrl;
     mockDesignSystem.updated_at = new Date().toISOString();
     return [200, publicDesignSystem(mockDesignSystem, req.headers.host)];
   }
@@ -2596,17 +2636,43 @@ function routeContextAndFlags(req, url, body) {
   }
   if (key === 'GET /users') {
     const listed = handlers['GET /users']();
-    return [200, { ...listed, users: listed.users.map((u) => ({ ...u, flags: userFlagsOf(u.username) })) }];
+    return [200, { ...listed, users: listed.users.map((u) => ({ ...u, flags: userFlagsOf(u.username), ai_mode: aiModeOf(u.username) })) }];
   }
+  if (key === 'GET /users/me/ai-mode') return [200, { success: true, ai_mode: aiModeOf(MOCK_MEMORY_CALLER) }];
   const flagsMatch = url.pathname.match(/^\/users\/([^/]+)\/flags$/);
   if (flagsMatch && req.method === 'PUT') return setMockUserFlags(decodeURIComponent(flagsMatch[1]), body);
   if (url.pathname.startsWith('/settings/design-system')) return routeDesignSystem(req, url, body);
   return url.pathname.startsWith('/memory') ? routeMemory(req, url, body) : null;
 }
 
+/** The way-of-working half of PUT /users/{username}/flags: [error] or the new mode (null when untouched). */
+function setMockAiMode(username, body) {
+  const fields = ['ai_mode', 'ai_writing_prfaq', 'ai_writing_prd'].filter((f) => body && f in body);
+  if (fields.length === 0) return [null, null];
+  if ('ai_mode' in body && !AI_MODE_NAMES.includes(body.ai_mode)) {
+    return [[400, { success: false, error: `ai_mode must be one of: ${AI_MODE_NAMES.join(', ')}` }], null];
+  }
+  for (const f of ['ai_writing_prfaq', 'ai_writing_prd']) {
+    if (f in body && typeof body[f] !== 'boolean') return [[400, { success: false, error: `${f} must be a boolean` }], null];
+  }
+  const current = aiModeOf(username);
+  const next = {
+    mode: body.ai_mode ?? current.mode,
+    ai_writing_prfaq: body.ai_writing_prfaq ?? current.ai_writing_prfaq,
+    ai_writing_prd: body.ai_writing_prd ?? current.ai_writing_prd,
+  };
+  mockAiModes.set(username, next);
+  return [null, next];
+}
+
 function setMockUserFlags(username, body) {
   const user = mockUsers.find((u) => u.username === username);
   if (!user) return [404, { success: false, error: 'User not found' }];
+  const [modeError, aiMode] = setMockAiMode(username, body);
+  if (modeError) return modeError;
+  if (aiMode && typeof body?.memory_reviewer !== 'boolean' && typeof body?.fallback_owner !== 'boolean') {
+    return [200, { success: true, username, ai_mode: aiMode }];
+  }
   const next = userFlagsOf(username);
   if (typeof body?.memory_reviewer === 'boolean') next.memory_reviewer = body.memory_reviewer;
   if (typeof body?.fallback_owner === 'boolean') {
@@ -2616,10 +2682,10 @@ function setMockUserFlags(username, body) {
     next.fallback_owner = body.fallback_owner;
   }
   mockUserFlags.set(username, next);
-  return [200, { success: true, username, flags: next }];
+  return [200, { success: true, username, flags: next, ...(aiMode ? { ai_mode: aiMode } : {}) }];
 }
 
-const MEMORY_CONTEXT_ROUTE = /^\/(settings\/(company-context|my-context|design-system(\/.*)?)|memory(\/.*)?|users|users\/[^/]+\/flags)$/;
+const MEMORY_CONTEXT_ROUTE = /^\/(settings\/(company-context|my-context|design-system(\/.*)?)|memory(\/.*)?|users|users\/me\/ai-mode|users\/[^/]+\/flags)$/;
 
 function handleMemoryContextRoutes(req, res, url, send) {
   if (serveMockLogo(req, res, url)) return true;
@@ -3307,6 +3373,14 @@ const server = http.createServer((req, res) => {
     handleAssistantSessions(req, res, decodeURIComponent(sessionMatch[1]), url.searchParams);
     return;
   }
+  const cancelMatch = url.pathname.match(/^\/chat\/conversations\/([^/]+)\/cancel$/);
+  if (cancelMatch && req.method === 'POST') {
+    collectJson(req, res, (body) => {
+      const result = cancelAssistantRun(decodeURIComponent(cancelMatch[1]), body);
+      sendJson(res, result.status, result.payload);
+    });
+    return;
+  }
   const renameMatch = url.pathname.match(/^\/chat\/conversations\/([^/]+)\/title$/);
   if (renameMatch && req.method === 'PUT') {
     collectJson(req, res, (body) => {
@@ -3359,15 +3433,24 @@ const server = http.createServer((req, res) => {
     }
     sendJson(res, 200, onFound(detail, rawBody ?? {}));
   });
+  const MOCK_BLANK_TEMPLATES = {
+    prfaq: '# Press release\n\n## Headline\n\n_One sentence a customer would understand._\n\n# FAQ\n\n**Q:** \n\n**A:** \n',
+    prd: '# Overview\n\n_What we are building and why now._\n\n# Requirements\n\n| # | Requirement | Priority |\n|---|---|---|\n| 1 | | |\n',
+  };
   const projectDocumentsMatch = url.pathname.match(/^\/projects\/([^/]+)\/documents$/);
   if (req.method === 'POST' && projectDocumentsMatch && !(key in handlers)) {
     withEditableProject(projectDocumentsMatch[1], (detail, body) => {
+      // prfaq / prd = written by hand from the blank template (shared/human_documents.py).
+      const handWritten = body.document_type === 'prfaq' || body.document_type === 'prd';
       const document = {
         document_id: `doc_${Date.now()}`,
-        document_type: 'custom',
+        document_type: handWritten ? body.document_type : 'custom',
         title: typeof body.title === 'string' ? body.title : 'Untitled',
-        content: typeof body.content === 'string' ? body.content : '',
+        content: typeof body.content === 'string' && body.content !== ''
+          ? body.content
+          : (handWritten ? MOCK_BLANK_TEMPLATES[body.document_type] : ''),
         created_at: new Date().toISOString(),
+        ...(handWritten ? { origin: 'human', created_by_sub: MOCK_CALLER.sub, version: 1 } : {}),
       };
       detail.documents.push(document);
       detail.project.document_count = detail.documents.length;
@@ -3387,8 +3470,8 @@ const server = http.createServer((req, res) => {
   }
 
   // PUT/DELETE /projects/{id} and the sharing routes (visibility, members,
-  // owner). Same exact-key precedence: 'PUT /projects/prioritization' must
-  // never be read as an update of a project called "prioritization".
+  // owner). Same exact-key precedence: an exact route key (`handlers`) is never
+  // read as an update of a project called "prioritization".
   const sharingMatch = url.pathname.match(/^\/projects\/([^/]+)(?:\/((?:visibility|members|owner)(?:\/.*)?))?$/);
   const isProjectWrite = sharingMatch && !sharingMatch[2] && (req.method === 'PUT' || req.method === 'DELETE');
   if (sharingMatch && (isProjectWrite || sharingMatch[2]) && !(key in handlers)) {
@@ -3420,20 +3503,19 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Product context: load / per-field persist / interview (issue #179).
-  const productContextMatch = url.pathname.match(/^\/projects\/([^/]+)\/product-context(\/interview)?$/);
+  // Product context: load / per-field persist (issue #179).
+  const productContextMatch = url.pathname.match(/^\/projects\/([^/]+)\/product-context$/);
   if (productContextMatch) {
     const projectId = productContextMatch[1];
-    const isInterview = productContextMatch[2] === '/interview';
     if (!mockProjectDetails[projectId]) {
       sendJson(res, 404, { success: false, error: 'Project not found' });
       return;
     }
-    if (req.method === 'GET' && !isInterview) {
+    if (req.method === 'GET') {
       sendJson(res, 200, { context: getProductContext(projectId) });
       return;
     }
-    if (req.method === 'PUT' && !isInterview) {
+    if (req.method === 'PUT') {
       collectJson(req, res, (body) => {
         const context = getProductContext(projectId);
         // Allowlist assignment: only known context fields, string values —
@@ -3444,20 +3526,6 @@ const server = http.createServer((req, res) => {
           }
         }
         sendJson(res, 200, { context });
-      });
-      return;
-    }
-    if (req.method === 'POST' && isInterview) {
-      collectJson(req, res, (body) => {
-        if (!body || typeof body.message !== 'string' || body.message.trim() === '') {
-          sendJson(res, 400, { success: false, error: 'message is required' });
-          return;
-        }
-        // An assist job: 202 now, the turn is the job `result` (polled via /jobs/{id}).
-        const [status, payload] = startProjectAssistJob(
-          projectId, 'assist_interview_turn', [200, applyInterviewTurn(projectId, body.message.trim())],
-        );
-        sendJson(res, status, payload);
       });
       return;
     }

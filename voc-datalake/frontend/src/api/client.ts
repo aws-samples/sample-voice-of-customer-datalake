@@ -8,7 +8,7 @@ import { authService } from '../services/auth'
 import { endExpiredSession } from '../services/sessionExpiry'
 import { ApiError, AuthError } from '../lib/errors'
 import { getBaseUrl, getAuthHeaders, getDaysFromRange } from './baseUrl'
-import { buildSearchParams } from './requestKit'
+import { buildSearchParams, del, patch, post, put } from './requestKit'
 import { logsEndpoints, userAdminEndpoints } from './adminEndpoints'
 import { dataExplorerEndpoints, s3ImportEndpoints } from './dataEndpoints'
 import { isRecord } from '../lib/typeGuards'
@@ -16,6 +16,7 @@ import { runAssistJob } from './assistJobs'
 import { parseGeneratedCategories } from './assistResults'
 import type {
   AttributeFilters,
+  ItemFilterParams,
   CursorListParams,
   DateBasis,
   FeedbackItem,
@@ -69,6 +70,7 @@ import { cursorFieldsOf } from './feedbackPagination'
 import { normalizeGithubMetrics } from './githubMetricsSchema'
 import { normalizeFormStatsMap, parseFormStatsResponse, parseFormSubmissionsResponse } from './feedbackFormStatsSchema'
 import { normalizeModelCapacity, normalizeModelTestResult } from './modelTestSchema'
+import { normalizeImageModelCapacity, normalizeImageModelInfo } from './imageModelSchema'
 import { normalizeResetSource, normalizeSourcesStatus } from './sourcesStatusSchema'
 
 // API response parser using Zod for runtime validation
@@ -114,9 +116,11 @@ async function serverMessage(response: Response): Promise<string | undefined> {
 /**
  * The rejection for a non-OK response: an `ApiError` carrying the status as a
  * typed field (what `apiErrorStatus` reads first), whose message is the
- * server's own when it sent one and `API Error: {status}` otherwise.
+ * server's own when it sent one and `API Error: {status}` otherwise. Exported for the
+ * feature-request board's own transport (`featureRequestsApi.ts`), which cannot use
+ * `fetchApi` for a board session (its 401 path ends the APP session).
  */
-async function apiErrorFor(response: Response): Promise<ApiError> {
+export async function apiErrorFor(response: Response): Promise<ApiError> {
   const message = await serverMessage(response)
   return message === undefined ? new ApiError(response.status) : new ApiError(response.status, message)
 }
@@ -212,7 +216,7 @@ export const api = {
     const searchParams = buildSearchParams({ ...params, q: params.q.trim() })
     // `is_partial_window` declared, not merely surviving the spread below: the
     // route sets it when the candidate scan stops on its soft cap, and
-    // `extractTotals` already reads that key for the search branch, so the "N+"
+    // the list readers (`useFeedbackListData`, `useDataExplorerQueries`) already read that key, so the "N+"
     // display works either way. Declaring it is what tells the next reader the
     // field is real rather than incidental.
     const res = await fetchApi<{ count: number; items: FeedbackItem[]; entities: EntitiesResponse['entities']; query: string; is_partial_window?: boolean }>(`/feedback/search?${searchParams}`)
@@ -227,7 +231,7 @@ export const api = {
     return { ...res, items: normalizeFeedbackItems(res.items) }
   },
   
-  getEntities: (params: { days?: number; date_basis?: DateBasis; limit?: number; source?: string } & AttributeFilters) => {
+  getEntities: (params: { days?: number; date_basis?: DateBasis; limit?: number; source?: string } & ItemFilterParams) => {
     const searchParams = buildSearchParams(params)
     return fetchApi<EntitiesResponse>(`/feedback/entities?${searchParams}`)
   },
@@ -238,11 +242,11 @@ export const api = {
     return fetchApi<MetricsSummary>(`/metrics/summary?${searchParams}`)
   },
   /** `category` narrows the breakdown to one category (the Categories page's scoped gauge). */
-  getSentiment: (range: DateRangeParams, source?: string, filters?: AttributeFilters, category?: string) => {
+  getSentiment: (range: DateRangeParams, source?: string, filters?: ItemFilterParams, category?: string) => {
     const searchParams = buildSearchParams({ ...range, source, ...filters, category })
     return fetchApi<SentimentBreakdown>(`/metrics/sentiment?${searchParams}`)
   },
-  getCategories: (range: DateRangeParams, source?: string, filters?: AttributeFilters) => {
+  getCategories: (range: DateRangeParams, source?: string, filters?: ItemFilterParams) => {
     const searchParams = buildSearchParams({ ...range, source, ...filters })
     return fetchApi<CategoryBreakdown>(`/metrics/categories?${searchParams}`)
   },
@@ -263,13 +267,13 @@ export const api = {
   },
   
   /** Also closes the source's circuit breaker (the response carries `circuit`). */
-  enableSource: (source: string) => fetchApi<{ success: boolean; source: string; enabled: boolean; message?: string }>(`/sources/${source}/enable`, { method: 'PUT' }),
+  enableSource: (source: string) => fetchApi<{ success: boolean; source: string; enabled: boolean; message?: string }>(`/sources/${source}/enable`, put()),
   
-  disableSource: (source: string) => fetchApi<{ success: boolean; source: string; enabled: boolean; message?: string }>(`/sources/${source}/disable`, { method: 'PUT' }),
+  disableSource: (source: string) => fetchApi<{ success: boolean; source: string; enabled: boolean; message?: string }>(`/sources/${source}/disable`, put()),
 
   /** Admin: close a tripped circuit breaker without turning the schedule back on. */
   resetSource: async (source: string) =>
-    normalizeResetSource(await fetchApi<unknown>(`/sources/${encodeURIComponent(source)}/reset`, { method: 'POST' })),
+    normalizeResetSource(await fetchApi<unknown>(`/sources/${encodeURIComponent(source)}/reset`, post())),
 
   runSource: (source: string, appId?: string) => fetchApi<{
     success: boolean;
@@ -299,13 +303,10 @@ export const api = {
     fetchApi<{
       success: boolean;
       app: Record<string, string>
-    }>(`/integrations/${source}/apps`, {
-      method: 'POST',
-      body: JSON.stringify({ app }),
-    }),
+    }>(`/integrations/${source}/apps`, post({ app })),
 
   deleteAppConfig: (source: string, appId: string) =>
-    fetchApi<{ success: boolean }>(`/integrations/${source}/apps/${appId}`, { method: 'DELETE' }),
+    fetchApi<{ success: boolean }>(`/integrations/${source}/apps/${appId}`, del()),
 
   // Brand Settings (persisted to DynamoDB)
   getBrandSettings: () => fetchApi<{
@@ -321,41 +322,42 @@ export const api = {
     brand_handles: string[]
     hashtags: string[]
     urls_to_track: string[]
-  }) => fetchApi<{ success: boolean; message: string; settings: typeof settings }>('/settings/brand', {
-    method: 'PUT',
-    body: JSON.stringify(settings)
-  }),
+  }) => fetchApi<{ success: boolean; message: string; settings: typeof settings }>('/settings/brand', put(settings)),
 
   // AI model selection — per-surface, curated allowlist, admin-only UI (issue #96).
   // `surfaces` lists each pickable AI surface with its built-in default and the
   // admin-selected override (null = Automatic). `model_id` is a legacy global
   // override kept for backward compatibility.
-  getModelSettings: () => fetchApi<{
-    available_models: Array<{ key: string; id: string; label: string; description: string }>
-    surfaces: Array<{ key: string; default_id: string; selected: string | null }>
-    model_id: string | null
-  }>('/settings/model'),
+  // `image_model` is the fixed persona-avatar image model (null on an older API).
+  getModelSettings: async () => {
+    const raw = await fetchApi<{
+      available_models: Array<{ key: string; id: string; label: string; description: string }>
+      surfaces: Array<{ key: string; default_id: string; selected: string | null }>
+      model_id: string | null
+      image_model?: unknown
+    }>('/settings/model')
+    return { ...raw, image_model: normalizeImageModelInfo(raw.image_model) }
+  },
 
   // Set (modelId = allowlisted id) or clear (modelId = null) the model for one
   // surface. Backend is admin-gated; the UI only shows this to admins.
   saveModelSettings: (surface: string, modelId: string | null) =>
-    fetchApi<{ success: boolean; surface: string | null; model_id: string | null }>('/settings/model', {
-      method: 'PUT',
-      body: JSON.stringify({ surface, model_id: modelId }),
-    }),
+    fetchApi<{ success: boolean; surface: string | null; model_id: string | null }>('/settings/model', put({ surface, model_id: modelId })),
 
   // Send ONE minimal request to exactly this allowlisted model (admin-only; no
   // fallback) and classify the outcome — see lambda/shared/model_capacity.py.
   testModel: async (modelId: string) => normalizeModelTestResult(
-    await fetchApi<unknown>('/settings/model/test', {
-      method: 'POST',
-      body: JSON.stringify({ model_id: modelId }),
-    }),
+    await fetchApi<unknown>('/settings/model/test', post({ model_id: modelId })),
     modelId,
   ),
 
-  // Tokens-per-minute quota of every allowlisted model (admin-only; no model call).
-  getModelCapacity: async () => normalizeModelCapacity(await fetchApi<unknown>('/settings/model/capacity')),
+  // Tokens-per-minute quota of every allowlisted model, plus the image model's access and
+  // requests-per-minute quota (admin-only; no model call).
+  getModelCapacity: async () => {
+    const raw = await fetchApi<unknown>('/settings/model/capacity')
+    const image = typeof raw === 'object' && raw !== null && 'image' in raw ? raw.image : null
+    return { models: normalizeModelCapacity(raw), image: normalizeImageModelCapacity(image) }
+  },
 
   // Problem resolution (Problem Analysis page; shared across users)
   getResolvedProblems: () => fetchApi<{
@@ -363,10 +365,7 @@ export const api = {
   }>('/settings/resolved-problems'),
 
   setProblemResolved: (key: string, resolved: boolean) =>
-    fetchApi<{ success: boolean; key: string; resolved: boolean }>('/settings/resolved-problems', {
-      method: 'PUT',
-      body: JSON.stringify({ key, resolved })
-    }),
+    fetchApi<{ success: boolean; key: string; resolved: boolean }>('/settings/resolved-problems', put({ key, resolved })),
 
   // Categories Configuration
   // GET is open to every signed-in user; the rows are normalized by the
@@ -378,18 +377,12 @@ export const api = {
   
   saveCategoriesConfig: (config: { 
     categories: CategoryConfigEntry[]
-  }) => fetchApi<{ success: boolean; message: string }>('/settings/categories', {
-    method: 'PUT',
-    body: JSON.stringify(config)
-  }),
+  }) => fetchApi<{ success: boolean; message: string }>('/settings/categories', put(config)),
   
   // An assist job (api/assistJobs): 202 + poll GET /settings/jobs/{id}, whose
   // `result` is the `{success, categories}` body this route used to answer.
   generateCategories: (companyDescription: string) => runAssistJob(
-    () => fetchApi<unknown>('/settings/categories/generate', {
-      method: 'POST',
-      body: JSON.stringify({ company_description: companyDescription })
-    }),
+    () => fetchApi<unknown>('/settings/categories/generate', post({ company_description: companyDescription })),
     (jobId) => fetchApi<unknown>(`/settings/jobs/${encodeURIComponent(jobId)}`),
     parseGeneratedCategories,
   ),
@@ -398,18 +391,10 @@ export const api = {
   getIntegrationStatus: () => fetchApi<IntegrationStatus>('/integrations/status'),
   
   updateIntegrationCredentials: (source: string, credentials: Record<string, string>) => 
-    fetchApi<{ success: boolean; message: string }>(`/integrations/${source}/credentials`, {
-      method: 'PUT',
-      body: JSON.stringify(credentials)
-    }),
+    fetchApi<{ success: boolean; message: string }>(`/integrations/${source}/credentials`, put(credentials)),
   getIntegrationCredentials: (source: string, keys: string[]) =>
     fetchApi<Record<string, string>>(`/integrations/${source}/credentials?keys=${keys.join(',')}`),
   
-  testIntegration: (source: string) => 
-    fetchApi<{ success: boolean; message?: string; error?: string; details?: Record<string, unknown> }>(`/integrations/${source}/test`, {
-      method: 'POST'
-    }),
-
   // Scrapers (raw list, for the logs page's scraper picker)
   getScrapers: () => fetchApi<{ scrapers: ScraperConfig[] }>('/scrapers'),
 
@@ -476,10 +461,7 @@ export const api = {
   createPrioritizationRow: (projectId: string) =>
     fetchApi<{ success: boolean; created?: boolean; row?: PrioritizationRow }>(
       '/projects/prioritization/rows',
-      {
-        method: 'POST',
-        body: JSON.stringify({ project_id: projectId }),
-      },
+      post({ project_id: projectId }),
     ),
 
   /**
@@ -489,10 +471,7 @@ export const api = {
    * through `rowEnsureBatch`'s schema, never through a declared type.
    */
   ensurePrioritizationRows: (projectIds: readonly string[]) =>
-    fetchApi<unknown>('/projects/prioritization/rows', {
-      method: 'POST',
-      body: JSON.stringify({ project_ids: projectIds }),
-    }),
+    fetchApi<unknown>('/projects/prioritization/rows', post({ project_ids: projectIds })),
   
   /**
    * Save only the changed scores (incremental/diff update).
@@ -524,10 +503,7 @@ export const api = {
    * (`overLongNoteDocuments`).
    */
   patchPrioritizationScores: (changedScores: Record<string, WireBallotEdit>) =>
-    fetchApi<{ success: boolean; updated_count?: number }>('/projects/prioritization', {
-      method: 'PATCH',
-      body: JSON.stringify({ scores: changedScores })
-    }),
+    fetchApi<{ success: boolean; updated_count?: number }>('/projects/prioritization', patch({ scores: changedScores })),
 
   ...s3ImportEndpoints(fetchApi),
   ...dataExplorerEndpoints(fetchApi),
@@ -547,19 +523,13 @@ export const api = {
     })),
   
   createFeedbackForm: (form: Omit<FeedbackForm, 'form_id' | 'created_at' | 'updated_at'>) =>
-    fetchApi<{ success: boolean; form: FeedbackForm }>('/feedback-forms', {
-      method: 'POST',
-      body: JSON.stringify(form)
-    }),
+    fetchApi<{ success: boolean; form: FeedbackForm }>('/feedback-forms', post(form)),
   
   updateFeedbackForm: (formId: string, form: Partial<FeedbackForm>) =>
-    fetchApi<{ success: boolean; form: FeedbackForm }>(`/feedback-forms/${formId}`, {
-      method: 'PUT',
-      body: JSON.stringify(form)
-    }),
+    fetchApi<{ success: boolean; form: FeedbackForm }>(`/feedback-forms/${formId}`, put(form)),
   
   deleteFeedbackForm: (formId: string) =>
-    fetchApi<{ success: boolean }>(`/feedback-forms/${formId}`, { method: 'DELETE' }),
+    fetchApi<{ success: boolean }>(`/feedback-forms/${formId}`, del()),
 
   getFeedbackFormStats: (formId: string) =>
     fetchApi<unknown>(`/feedback-forms/${formId}/stats`).then(parseFormStatsResponse),
@@ -575,7 +545,7 @@ export const api = {
   // The PUBLIC widget submit, reused by the prototype pin bridge
   // (components/PrototypePins/usePinBridge.ts) to forward a tester's pin.
   submitPrototypePin: (formId: string, body: unknown) =>
-    fetchApi<unknown>(`/feedback-forms/${formId}/submit`, { method: 'POST', body: JSON.stringify(body) }),
+    fetchApi<unknown>(`/feedback-forms/${formId}/submit`, post(body)),
 
   ...logsEndpoints(fetchApi),
 }

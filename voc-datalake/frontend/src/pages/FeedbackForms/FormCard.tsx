@@ -19,12 +19,18 @@ import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
 import SubmissionsModal from './SubmissionsModal'
 
-interface FormCardProps {
-  readonly form: FeedbackForm
+/** What a card is told besides its form; FormsList passes it through to every card. */
+export interface FormCardHandlers {
   readonly onEdit: (form: FeedbackForm) => void
   readonly onDelete: (formId: string) => void
   readonly onToggle: (formId: string, enabled: boolean) => void
   readonly apiEndpoint: string
+  /** The page is re-reading the list and every card's stats. */
+  readonly statsRefreshing: boolean
+}
+
+interface FormCardProps extends FormCardHandlers {
+  readonly form: FeedbackForm
 }
 
 type Translate = (key: string) => string
@@ -44,10 +50,12 @@ function getCollectsLabel(collectName: boolean, collectEmail: boolean, t: Transl
 
 interface FormStatsProps {
   readonly stats: FormStats | null | undefined
+  /** The stats are being read (first load or a refresh): placeholders, never a stale count. */
+  readonly busy: boolean
   readonly onViewSubmissions: () => void
 }
 
-function FormStatsRow({ stats, onViewSubmissions }: FormStatsProps) {
+function FormStatsRow({ stats, busy, onViewSubmissions }: FormStatsProps) {
   const { t } = useTranslation('feedbackForms')
   const noSubmissions = !stats || stats.total_submissions === 0
   // A neutral panel (not accent-tinted): `text-muted` captions fail contrast on
@@ -58,7 +66,8 @@ function FormStatsRow({ stats, onViewSubmissions }: FormStatsProps) {
       <FormStatsFigures
         variant="compact"
         stats={stats}
-        labels={{ submissions: t('card.submissions'), avgRating: t('card.avgRating') }}
+        busy={busy}
+        labels={{ submissions: t('card.submissions', { count: stats?.total_submissions ?? 0 }), avgRating: t('card.avgRating') }}
       />
       <div className="col-span-2 sm:col-span-2 flex items-center justify-end">
         {/* A disabled button fires no hover events, so the reason sits on its wrapper. */}
@@ -180,7 +189,7 @@ function DisabledNotice({ enabled, onEnable }: Readonly<{ enabled: boolean; onEn
   )
 }
 
-export default function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint }: FormCardProps) {
+export default function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint, statsRefreshing }: FormCardProps) {
   const { t } = useTranslation('feedbackForms')
   const labels = useDisplayLabels()
   const { copy: copyToClipboard, copiedKey: copied } = useCopyToClipboard()
@@ -191,7 +200,7 @@ export default function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint
   // the theme field crashed the whole /feedback-forms route).
   const theme = normalizeFormTheme(form.theme)
 
-  const { data: statsData } = useQuery({
+  const { data: statsData, isFetching: statsFetching } = useQuery({
     queryKey: formStatsKey(form.form_id),
     queryFn: () => api.getFeedbackFormStats(form.form_id),
     staleTime: FORM_STATS_STALE_TIME_MS,
@@ -245,7 +254,7 @@ export default function FormCard({ form, onEdit, onDelete, onToggle, apiEndpoint
 
         <DisabledNotice enabled={form.enabled} onEnable={() => onToggle(form.form_id, true)} />
 
-        <FormStatsRow stats={statsData?.stats} onViewSubmissions={() => setShowSubmissions(true)} />
+        <FormStatsRow stats={statsData?.stats} busy={statsFetching || statsRefreshing} onViewSubmissions={() => setShowSubmissions(true)} />
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-4 p-3 bg-bg-accent border border-border rounded-lg">
           <div>

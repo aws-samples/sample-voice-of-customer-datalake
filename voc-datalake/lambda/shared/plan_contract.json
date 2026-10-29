@@ -71,7 +71,8 @@
     "settings",
     "memory",
     "agents",
-    "company"
+    "company",
+    "participants"
   ],
   "admin_only_packs": [
     "settings"
@@ -134,7 +135,8 @@
       "update_company_context",
       "update_my_context",
       "update_design_system"
-    ]
+    ],
+    "participants": []
   },
   "admin_only_write_tools": [
     "run_scraper",
@@ -180,7 +182,9 @@
     "set_user_access",
     "import_reviews",
     "save_radar_brands",
-    "run_radar_scan"
+    "run_radar_scan",
+    "create_participant_list",
+    "add_participants"
   ],
   "free_text_fields": {
     "create_project": [

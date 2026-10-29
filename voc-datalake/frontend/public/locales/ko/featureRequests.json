@@ -1,0 +1,278 @@
+{
+  "page": {
+    "title": "피드백 보드",
+    "subtitle": "팀과 고객이 요청, 문제, 피드백을 남기는 보드입니다.",
+    "boardSubtitle": "요청과 각 요청 뒤에 있는 사람들."
+  },
+  "loading": "불러오는 중…",
+  "actions": {
+    "cancel": "취소",
+    "close": "닫기",
+    "delete": "삭제",
+    "save": "저장"
+  },
+  "status": {
+    "new": "신규",
+    "under_review": "검토 중",
+    "planned": "계획됨",
+    "declined": "거절됨",
+    "shipped": "출시됨",
+    "confirmed": "확인됨",
+    "fixed": "수정됨",
+    "wont_fix": "수정 안 함",
+    "seen": "확인함",
+    "done": "완료"
+  },
+  "impact": {
+    "committed": "지불 확약",
+    "at_risk": "거래 위험",
+    "none": "매출 영향 없음"
+  },
+  "totals": {
+    "supporters": "지지자",
+    "customers": "고객",
+    "committed": "확약 금액",
+    "atRisk": "위험 금액",
+    "peopleAffected": "영향받은 인원",
+    "avgRating": "평균 평점",
+    "rating": "{{value}} / 5",
+    "notRated": "아직 평가 없음",
+    "boardSummary": "보드 합계"
+  },
+  "list": {
+    "label": "요청",
+    "intro": "요청을 추가하거나, 나에게도 중요한 요청에 +1 하세요.",
+    "search": "검색",
+    "searchPlaceholder": "제목, 설명 또는 작성자",
+    "statusFilter": "상태",
+    "allStatuses": "모든 상태",
+    "sortBy": "정렬 기준",
+    "sort": {
+      "newest": "최신순",
+      "committed": "확약 매출",
+      "at_risk": "위험한 매출",
+      "supporters": "지지자 수",
+      "people_affected": "영향받은 인원",
+      "rating": "평점"
+    },
+    "reportedBy": "작성자: {{name}}",
+    "empty": "아직 요청이 없습니다. 첫 요청을 추가하세요.",
+    "noMatch": "이 필터에 맞는 요청이 없습니다.",
+    "loadFailed": "요청을 불러오지 못했습니다.",
+    "notAccepted": "이 로그인은 보드에서 허용되지 않습니다. 보드가 허용하는 인증된 이메일로 로그인하세요."
+  },
+  "new": {
+    "open": "새 요청",
+    "title": "새 요청",
+    "description": "{{board}}을(를) 사용할 수 있는 모든 사람이 이름과 이메일과 함께 볼 수 있습니다.",
+    "impactHeading": "고객과 매출 영향",
+    "submit": "요청 추가"
+  },
+  "form": {
+    "title": "제목",
+    "description": "설명",
+    "amountHint": "미국 달러(정수)",
+    "noAmount": "매출 영향이 없으면 금액은 필요 없습니다.",
+    "name": "이름",
+    "errors": {
+      "titleRequired": "요청 제목을 입력하세요.",
+      "descriptionRequired": "고객에게 필요한 것을 설명하세요.",
+      "customerRequired": "고객을 입력하세요.",
+      "nameRequired": "이름을 입력하세요.",
+      "amountRequired": "금액을 미국 달러로 입력하세요.",
+      "amountTooLarge": "보드가 허용하는 금액보다 큽니다.",
+      "contactEmail": "올바른 이메일 주소를 입력하거나 비워 두세요.",
+      "descriptionRequiredService": "무슨 일이 있었고 고객이 무엇을 보았는지 설명하세요."
+    },
+    "requiredLabel": "{{label}}(필수)",
+    "optionalLabel": "{{label}}(선택)",
+    "choose": "선택...",
+    "notSet": "미설정",
+    "fieldErrors": {
+      "required": "필수 항목입니다.",
+      "too_long": "보드에서 허용하는 길이보다 깁니다.",
+      "invalid_choice": "옵션 중 하나를 선택하세요.",
+      "invalid_number": "정수를 입력하세요.",
+      "out_of_range": "허용 범위를 벗어난 숫자입니다.",
+      "invalid_email": "유효한 이메일 주소를 입력하세요.",
+      "invalid_url": "전체 https:// 링크를 입력하세요."
+    },
+    "descriptionHint": {
+      "sales": "고객에게 필요한 것과 그 이유.",
+      "service": "무슨 일이 있었고 고객이 무엇을 보았는지.",
+      "beta": "무엇을 시도했고 무슨 일이 있었는지.",
+      "blank": "다른 사람이 이해하는 데 도움이 되는 내용."
+    }
+  },
+  "detail": {
+    "reported": "작성자: {{name}} ({{email}})",
+    "reporter": "작성자",
+    "copyLink": "링크 복사",
+    "copied": "링크를 복사했습니다",
+    "edit": "편집",
+    "supports": "지지",
+    "plusOne": "내 고객으로 +1",
+    "addSupport": "내 +1 추가",
+    "contact": "담당자: {{email}}",
+    "editSupport": "{{customer}} 지지 편집",
+    "deleteSupport": "{{customer}} 지지 삭제",
+    "deleteSupportTitle": "이 지지를 삭제할까요?",
+    "deleteSupportMessage": "{{customer}} 지지와 금액이 요청 합계에서 빠집니다.",
+    "loadFailed": "이 요청을 불러오지 못했습니다.",
+    "supportsCount_other": "지지 {{count, number}}건",
+    "supportsCount_one": "지지 {{count, number}}건",
+    "plusOneService": "나도 영향받음",
+    "plusOneOther": "+1",
+    "alreadySupporting": "이 요청을 지지하고 있습니다.",
+    "editMySupport": "내 +1 수정"
+  },
+  "admin": {
+    "title": "관리",
+    "status": "상태",
+    "delete": "요청 삭제",
+    "deleteTitle": "이 요청을 삭제할까요?",
+    "deleteMessage": "“{{title}}”과 모든 지지가 모두에게서 삭제됩니다."
+  },
+  "promote": {
+    "title": "프로젝트로 전환",
+    "hint": "모든 지지자와 고객 담당자가 프로젝트에 연결된 참여자 목록에 추가되어, 이메일로 피드백을 요청할 수 있습니다.",
+    "project": "프로젝트",
+    "pickProject": "프로젝트 선택",
+    "loadingProjects": "프로젝트를 불러오는 중…",
+    "newProject": "새 프로젝트…",
+    "newProjectName": "새 프로젝트 이름",
+    "submit": "전환",
+    "skippedRow": "{{email}}: {{reason}}",
+    "reasons": {
+      "external_not_allowed": "회사 도메인 밖이며 외부 인원이 허용되지 않음",
+      "invalid_email": "유효하지 않은 이메일 주소",
+      "unsubscribed": "참여자 이메일 수신 거부함"
+    },
+    "done_other": "“{{list}}”에 {{count, number}}명을 추가했습니다.",
+    "done_one": "“{{list}}”에 {{count, number}}명을 추가했습니다.",
+    "skipped_other": "이메일 {{count, number}}개를 건너뛰었습니다:",
+    "skipped_one": "이메일 {{count, number}}개를 건너뛰었습니다:"
+  },
+  "errors": {
+    "generic": "실패했습니다. 다시 시도하세요.",
+    "forbidden": "이 작업을 할 권한이 없습니다.",
+    "notFound": "이 요청은 더 이상 존재하지 않습니다.",
+    "conflict": "다른 사람이 동시에 변경했습니다. 다시 시도하세요.",
+    "throttled": "지금 요청이 너무 많습니다. 잠시 후 다시 시도하세요.",
+    "rateLimited": "이 보드의 오늘 게시 한도에 도달했습니다. 내일 다시 시도하세요.",
+    "slugTaken": "다른 보드가 이미 이 링크 이름을 사용합니다.",
+    "boardNotEmpty": "이 보드에는 아직 요청이 있습니다. 요청과 함께 삭제하거나 보관하세요.",
+    "statusInUse": "이 상태를 쓰는 요청이 아직 있습니다. 먼저 다른 상태로 옮기세요.",
+    "alreadySupported": "이미 이 요청을 지지하고 있습니다. 대신 +1을 수정하세요."
+  },
+  "auth": {
+    "title": "기능 요청 보드에 로그인",
+    "intro": "업무용 이메일을 입력하세요. 링크와 일회용 코드를 보내 드립니다.",
+    "email": "업무용 이메일",
+    "sendLink": "로그인 링크 받기",
+    "checkEmail": "{{email}}을 확인하세요. 링크를 열거나 이메일의 코드를 여기에 입력하세요.",
+    "secondCode": "이메일이 확인되었습니다. 로그인을 위해 {{email}}(으)로 코드를 하나 더 보냈습니다.",
+    "code": "이메일의 코드",
+    "signIn": "로그인",
+    "useAnotherEmail": "다른 이메일 사용",
+    "otherBrowser": "이 링크는 요청한 브라우저와 다른 브라우저에서 열렸습니다. 원래 브라우저에서 코드를 입력하거나 여기서 새 링크를 보내세요.",
+    "errors": {
+      "domain_not_allowed": "이 이메일 도메인은 보드에서 허용되지 않습니다. 회사 이메일을 사용하세요.",
+      "wrong_code": "코드가 올바르지 않습니다. 이메일을 확인하고 다시 시도하세요.",
+      "expired": "이 로그인은 만료되었습니다. 새 링크를 보내세요.",
+      "tooManyAttempts": "시도 횟수가 너무 많습니다. 몇 분 후 다시 시도하세요.",
+      "no_session": "이 브라우저에는 대기 중인 로그인이 없습니다. 요청한 곳에서 코드를 입력하거나 새 링크를 보내세요.",
+      "invalid_email": "올바른 이메일 주소를 입력하세요.",
+      "unknown": "로그인하지 못했습니다. 잠시 후 다시 시도하세요."
+    }
+  },
+  "board": {
+    "title": "피드백 보드",
+    "titleWithBrand": "{{brand}} 피드백 보드",
+    "signOut": "로그아웃",
+    "notEnabledTitle": "피드백 보드가 활성화되지 않았습니다",
+    "notEnabled": "이 배포에는 보드 로그인이 없습니다. 앱을 사용한다면 앱에 로그인한 뒤 피드백 보드를 여세요.",
+    "notEnabledDev": "보드 풀이 없는 로컬 개발입니다. 모의 서버는 Cognito에 로그인할 수 없습니다. 실제 풀을 쓰려면 public/config.json에 board 블록을 추가하거나, 모의 서버로 앱의 피드백 보드 페이지를 사용하세요."
+  },
+  "fields": {
+    "customer": "고객",
+    "deal": "거래",
+    "impact": "매출 영향",
+    "amount_usd": "금액(USD)",
+    "contact_email": "고객 담당자 이메일",
+    "kind": "유형",
+    "severity": "심각도",
+    "reference": "예약 또는 주문 번호",
+    "steps": "재현 단계",
+    "affected_count": "영향받은 인원",
+    "area": "영역",
+    "outcome": "결과",
+    "rating": "평점(1-5)",
+    "link": "링크(https)",
+    "note": "메모"
+  },
+  "choices": {
+    "kind": {
+      "bug": "버그",
+      "complaint": "불만",
+      "missing_feature": "없는 기능",
+      "question": "질문"
+    },
+    "severity": {
+      "low": "낮음",
+      "medium": "보통",
+      "high": "높음",
+      "critical": "치명적"
+    },
+    "outcome": {
+      "works": "작동함",
+      "broken": "고장남",
+      "confusing": "헷갈림"
+    }
+  },
+  "templates": {
+    "sales": "영업 기능 요청",
+    "service": "고객 서비스 문제",
+    "beta": "베타 피드백",
+    "blank": "빈 보드"
+  },
+  "boards": {
+    "listLabel": "보드",
+    "audienceLabel": "사용 가능한 사람",
+    "requestsLabel": "요청",
+    "audience": {
+      "company": "회사 내 사람",
+      "list": "초대된 도메인과 사람",
+      "listCounts": "도메인 {{domains}}개, {{people}}명",
+      "anyone": "인증된 이메일이 있는 누구나"
+    },
+    "open": "열기",
+    "openBoard": "{{name}} 열기",
+    "copyBoardLink": "{{name}} 링크 복사",
+    "linkCopied": "링크를 복사했습니다",
+    "copyFailed": "링크를 복사하지 못했습니다.",
+    "edit": "편집",
+    "editBoard": "{{name}} 편집",
+    "deleteBoard": "{{name}} 삭제",
+    "deleteTitle": "이 보드를 삭제할까요?",
+    "deleteMessage": "“{{name}}”이(가) 모두에게서 삭제됩니다. 이 작업은 되돌릴 수 없습니다.",
+    "deleteWithRequestsMessage_one": "“{{name}}”과(와) 요청 {{count, number}}개, 그리고 요청에 남긴 모든 +1이 영구적으로 삭제됩니다. 이 작업은 되돌릴 수 없습니다. 요청에서 이미 만든 프로젝트는 유지됩니다.",
+    "deleteWithRequestsMessage_other": "“{{name}}”과(와) 요청 {{count, number}}개, 그리고 요청에 남긴 모든 +1이 영구적으로 삭제됩니다. 이 작업은 되돌릴 수 없습니다. 요청에서 이미 만든 프로젝트는 유지됩니다.",
+    "deleteWithRequestsMessageStale": "“{{name}}”에 이제 요청이 있습니다. 보드와 모든 요청, 요청에 남긴 모든 +1이 영구적으로 삭제됩니다. 이 작업은 되돌릴 수 없습니다. 요청에서 이미 만든 프로젝트는 유지됩니다.",
+    "deleteConfirmNameLabel": "확인하려면 보드 이름을 입력하세요",
+    "deleteProgress_one": "요청 {{count, number}}개 중 {{deleted, number}}개 삭제됨…",
+    "deleteProgress_other": "요청 {{count, number}}개 중 {{deleted, number}}개 삭제됨…",
+    "deleteIncomplete": "보드가 아직 완전히 삭제되지 않았습니다.",
+    "deleteResumeHint": "삭제를 다시 누르면 멈춘 곳부터 계속합니다.",
+    "archived": "보관됨",
+    "configure": "보드 설정",
+    "emptyTitle": "아직 보드가 없습니다",
+    "empty": "아직 공유된 보드가 없습니다.",
+    "emptyAdmin": "<admin>관리의 개인정보 및 액세스, 보드</admin>에서 보드를 만드세요.",
+    "loadFailed": "보드를 불러오지 못했습니다.",
+    "notFoundTitle": "보드를 찾을 수 없음",
+    "notFound": "이 보드가 없거나 공유되지 않았습니다.",
+    "backToBoards": "보드 목록으로 돌아가기",
+    "standaloneIntro": "사용할 수 있는 보드입니다. 하나를 열어 요청을 추가하거나 +1 하세요."
+  }
+}

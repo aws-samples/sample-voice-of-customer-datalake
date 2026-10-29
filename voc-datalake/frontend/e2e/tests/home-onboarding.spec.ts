@@ -1,7 +1,8 @@
 /**
  * F3 — the onboarding buddy on Home (`/`), both roles (E2E-COVERAGE-GAPS §3 F3).
  *
- * - The checklist shows five steps, each checked iff the real state says so
+ * - The checklist shows five steps to the admin (a regular user only the assistant and
+ *   project steps), each checked iff the real state says so
  *   (cross-checked here against `/settings/categories`, the onboarding GET's
  *   signals, `/scrapers`, `/chat/conversations/_list`, `/projects`).
  * - All done → "You're ready" + Hide for now + Don't show again; otherwise Skip.
@@ -67,7 +68,7 @@ async function putGuide(role: Role, guide: string): Promise<void> {
 const toggle = (page: Page, name: string) => page.getByRole('button', { name, exact: true }).and(page.locator('[aria-expanded]'))
 
 /** What each step must show, read straight from the APIs the app reads. */
-async function expectedSteps(role: Role, signals: Preference['signals']): Promise<Record<StepId, 'done' | 'todo'>> {
+async function expectedSteps(role: Role, signals: Preference['signals']): Promise<Partial<Record<StepId, 'done' | 'todo'>>> {
   const [categories, scrapers, sessions, projects] = await Promise.all([
     apiCall(role, 'GET', '/settings/categories'),
     apiCall(role, 'GET', '/scrapers'),
@@ -78,14 +79,15 @@ async function expectedSteps(role: Role, signals: Preference['signals']): Promis
   const categoriesReady = cats.length > 0 && cats.every((c) => typeof c['product'] === 'string' && c['product'].trim() !== '')
   const source = signals.feedback_present || signals.feedback_form_configured || listOf(scrapers.body, 'scrapers').length > 0
   const ownsProject = listOf(projects.body, 'projects').some((p) => isRecord(p['access']) && p['access']['role'] === 'owner')
-  const flag = (value: boolean) => (value ? 'done' : 'todo')
-  return {
-    categories: flag(categoriesReady),
-    source: flag(source),
-    feedback: flag(signals.feedback_present),
+  const flag = (value: boolean): 'done' | 'todo' => (value ? 'done' : 'todo')
+  const personal = {
     assistant: flag(listOf(sessions.body, 'conversations').some((s) => s['kind'] === 'assistant' || s['kind'] === undefined || s['kind'] === '')),
     project: flag(ownsProject),
   }
+  // Setting categories and sources up is an administrator's: a regular user's checklist holds
+  // only the steps they can take (onboardingSteps.ts deriveSteps, PERSONAL_STEPS).
+  if (role !== 'admin') return personal
+  return { categories: flag(categoriesReady), source: flag(source), feedback: flag(signals.feedback_present), ...personal }
 }
 
 async function openHome(page: Page): Promise<void> {
@@ -137,9 +139,10 @@ test.describe.serial('home onboarding buddy', () => {
     const expected = await expectedSteps(role, preference.signals)
     await openHome(page)
     expect(await statusesOn(page)).toStrictEqual(expected)
-    const done = Object.values(expected).filter((s) => s === 'done').length
+    const steps = Object.values(expected)
+    const done = steps.filter((s) => s === 'done').length
     await expect(page.getByRole('region', BUDDY).getByRole('progressbar', { name: 'Setup progress' }))
-      .toHaveAttribute('aria-valuetext', `${done} of ${STEP_IDS.length} done`)
+      .toHaveAttribute('aria-valuetext', `${done} of ${steps.length} done`)
   })
 
   test('Ready offers Hide and Don\'t show again; otherwise Skip is offered', async ({ page }, testInfo) => {
@@ -182,9 +185,10 @@ test.describe.serial('home onboarding buddy', () => {
       await openHome(other)
       await expect(other.getByRole('button', { name: 'Show setup checklist' })).toBeVisible()
       await expect(other.getByRole('region', BUDDY)).toHaveCount(0)
-      await expect(other.getByRole('link', { name: 'Open dashboard' })).toHaveAttribute('href', '/dashboard')
+      // Home no longer links the dashboard here (the start-page switch moved to Account).
+      await expect(other.getByRole('link', { name: 'Open dashboard' })).toHaveCount(0)
 
-      await other.goto(site('/account?section=preferences'), { waitUntil: 'domcontentloaded' })
+      await other.goto(site('/account?tab=preferences'), { waitUntil: 'domcontentloaded' })
       const section = other.getByRole('region', { name: 'Setup checklist' })
       await expect(section.getByText('Turned off')).toBeVisible()
       await section.getByRole('button', { name: 'Show on Home' }).click()

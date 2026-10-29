@@ -241,6 +241,12 @@ describe('the logs API is wired to run alerting', () => {
     expect(rendered(env().OPS_ALERTS_INGESTOR_FUNCTIONS).split(',').sort(byCodeUnit)).toStrictEqual(ingestors);
   }, SYNTH_TIMEOUT_MS);
 
+  it('never alarms on the board sign-up triggers, whose refusals count as Lambda Errors by design', () => {
+    // A refused board sign-up MUST raise (that is how Cognito refuses it), so its Errors metric is not a fault.
+    const watched = Object.values(env()).map(rendered).join(',');
+    expect(watched).not.toMatch(/voc-board-/);
+  });
+
   it('addresses the Core topic by its name and reserves a voc-alerts prefix for the alarms', () => {
     // formatArn writes partition/region/account literally when the stack has an env.
     expect(rendered(env().OPS_ALERTS_TOPIC_ARN))
@@ -252,7 +258,8 @@ describe('the logs API is wired to run alerting', () => {
 
   it('grants CloudWatch alarm writes only under the alert prefix, the read-only list on alarm:*, and SNS only on the topic', () => {
     const statements = policyStatementsOf(apiTemplateAllPlugins(), 'LogsLambdaRole');
-    const alarmGrants = statements.filter((s) => s.actions.some((action) => action.startsWith('cloudwatch:')));
+    // cloudwatch:GetMetricData (the failure-queue ages, api-logs-diagnostics.ts) is a metrics read, not an alarm grant.
+    const alarmGrants = statements.filter((s) => s.actions.some((action) => action.startsWith('cloudwatch:') && action !== 'cloudwatch:GetMetricData'));
     const byActions = alarmGrants.map((s) => [[...s.actions].sort(byCodeUnit).join(','), rendered(JSON.parse(s.resource))] as const);
     const arn = (name: string) => `^arn:(?:<AWS::Partition>|[^:<]+):cloudwatch:(?:<AWS::Region>|[^:<]+):(?:<AWS::AccountId>|[^:<]+):alarm:${name}$`;
     expect(byActions.map(([actions]) => actions).sort(byCodeUnit))

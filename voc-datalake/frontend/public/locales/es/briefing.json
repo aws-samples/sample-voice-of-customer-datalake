@@ -21,6 +21,10 @@
     "evidence": "Reseñas detrás de esta tarjeta: {{count, number}}",
     "quotes": "En sus palabras",
     "dismiss": "Descartar",
+    "dismissed": "Descartada: {{title}}",
+    "undo": "Deshacer",
+    "undoLabel": "Deshacer el descarte de {{title}}",
+    "closeNotice": "Cerrar este aviso",
     "sources": "Fuentes",
     "newTab": "se abre en una pestaña nueva",
     "type": {

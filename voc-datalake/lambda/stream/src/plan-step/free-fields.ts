@@ -8,7 +8,8 @@
  */
 import { z } from 'zod';
 import type { PlanStep } from '../assistant/plan/schema.js';
-import { answerText, converseCommand, type PlanStepDeps } from './deps.js';
+import { answerText } from '../bedrock/answer-text.js';
+import { converseCommand, type PlanStepDeps } from './deps.js';
 
 /** Upper bound per field; the tool's own schema applies its tighter limit afterwards. */
 export const MAX_FREE_FIELD_CHARS = 4000;

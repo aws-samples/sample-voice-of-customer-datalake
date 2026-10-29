@@ -181,7 +181,8 @@ describe('which runs write to a thread', () => {
     const { id } = await startRun('hi')
     stopRun(null, id)
     stopRun(null, id)
-    await vi.waitFor(() => expect(saveSession).toHaveBeenCalledWith(expect.objectContaining({ id })))
+    // The server holds nothing newer (getSession → null), so after the wait for it the tab saves its own copy.
+    await vi.waitFor(() => expect(saveSession).toHaveBeenCalledWith(expect.objectContaining({ id })), { timeout: 3000 })
     expect(saveSession).toHaveBeenCalledTimes(1)
   })
 
@@ -191,7 +192,7 @@ describe('which runs write to a thread', () => {
     run.finish()
     await done
     expect(announceRunEnd).not.toHaveBeenCalled()
-    expect(saveSession).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => expect(saveSession).toHaveBeenCalledTimes(1), { timeout: 3000 })
   })
 
   it('a resume whose thread closes while the previous run aborts sends no history', async () => {

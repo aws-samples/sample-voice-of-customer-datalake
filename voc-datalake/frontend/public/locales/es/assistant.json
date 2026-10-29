@@ -22,6 +22,7 @@
     "stillGenerating": "Aún generando…"
   },
   "pages": {
+    "participants": "Participantes",
     "home": "Inicio",
     "dashboard": "Panel",
     "feedback": "Comentarios",
@@ -59,6 +60,8 @@
     "externalLink": "{{host}}, se abre en una pestaña nueva",
     "copy": "Copiar",
     "copied": "Copiado",
+    "stopped": "Detenido",
+    "regenerate": "Regenerar",
     "savedDocumentTitle": "Respuesta del asistente – {{date}}",
     "saveAsDocument": {
       "idle": "Guardar como documento",
@@ -153,6 +156,7 @@
     "subtitle": "Puedo leer tus datos y proponer cambios; nada se modifica sin tu aprobación."
   },
   "suggestions": {
+    "participants": {"1": "¿Qué listas de participantes tenemos?", "2": "Crea una lista de clientes beta", "3": "Añade personas a una lista desde una tabla que pegue"},
     "dashboard": { "1": "¿Cómo cambió el sentimiento de los clientes esta semana?", "2": "¿Qué fuentes aportan más comentarios?", "3": "Resume este panel en tres frases" },
     "categories": { "1": "¿Qué categoría tiene más quejas?", "2": "¿Qué dicen los clientes sobre la categoría más grande?", "3": "¿Qué categorías están empeorando?" },
     "projects": { "1": "Crea un proyecto a partir de la queja principal de esta semana", "2": "¿Qué proyectos están en curso?", "3": "¿Cuál debería ser nuestro próximo proyecto de investigación?" },
@@ -273,5 +277,30 @@
       "cancelled": "Cancelado",
       "expired": "Caducado"
     }
+  },
+  "mentions": {
+    "placeholder": "Pregunta sobre este proyecto. Escribe @ para una persona, # para un documento…",
+    "allLabel": "Todas las personas",
+    "allHint": "responden todas las personas",
+    "heading": {
+      "persona": "Personas",
+      "document": "Documentos"
+    },
+    "limit": {
+      "persona": "Como máximo {{max, number}} personas por mensaje.",
+      "document": "Como máximo {{max, number}} documentos por mensaje."
+    },
+    "loading": "Cargando el proyecto…",
+    "empty": {
+      "persona": "Ninguna persona coincide.",
+      "document": "Ningún documento coincide."
+    },
+    "count_one": "{{count, number}} sugerencia",
+    "count_other": "{{count, number}} sugerencias",
+    "chips": "Mencionados en este mensaje",
+    "remove": "Quitar {{name}}",
+    "insertPersona": "Mencionar una persona",
+    "insertDocument": "Etiquetar un documento",
+    "allCapped": "@all pregunta a las primeras {{max, number}} de {{total, number}} personas: {{names}}."
   }
 }

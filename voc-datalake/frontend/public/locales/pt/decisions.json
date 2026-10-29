@@ -37,7 +37,11 @@
     "prfaqFailed": "Não foi possível gerar o PR/FAQ desta decisão. Rascunhe-o novamente para tentar de novo.",
     "revisit": "Reavaliar",
     "releaseWatch": "Acompanhamento de lançamento",
-    "hideReleaseWatch": "Ocultar acompanhamento de lançamento"
+    "hideReleaseWatch": "Ocultar acompanhamento de lançamento",
+    "delete": "Excluir",
+    "deleteConfirmTitle": "Excluir esta decisão?",
+    "deleteConfirmMessage": "\"{{title}}\" é removida do projeto para todos. Os documentos que ela gerou são mantidos.",
+    "deleteConfirm": "Excluir decisão"
   },
   "picker": {
     "label": "Avaliações de apoio",
@@ -57,7 +61,8 @@
   "errors": {
     "save": "Não foi possível salvar a decisão.",
     "conflict": "Esta decisão mudou desde que você a abriu. Recarregue a página e tente novamente.",
-    "pursue": "Não foi possível iniciar o PR/FAQ."
+    "pursue": "Não foi possível iniciar o PR/FAQ.",
+    "delete": "Não foi possível excluir a decisão."
   },
   "releaseWatch": {
     "title": "Acompanhamento de lançamento",

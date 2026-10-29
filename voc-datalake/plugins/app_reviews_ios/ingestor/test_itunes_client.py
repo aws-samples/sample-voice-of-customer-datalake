@@ -17,6 +17,11 @@ from _shared.test.offline_plugin_imports import import_plugin_client_offline
 itunes_client = import_plugin_client_offline(__file__, "itunes_client")
 
 
+def _reviews(*args, **kwargs) -> list[dict]:
+    """The reviews of one storefront fetch (its `failure` is pinned in test_itunes_client_mutation.py)."""
+    return itunes_client.fetch_reviews_for_country(*args, **kwargs).reviews
+
+
 def _entry(i):
     return {
         "id": {"label": str(i)},
@@ -47,7 +52,7 @@ class TestPagination:
             _page([_entry(i) for i in range(50, 100)]),# p3
             _page(None), _page(None), _page(None),     # p4,5,6 → 3 consecutive empty → stop
         ]
-        result = itunes_client.fetch_reviews_for_country("1", "kr", session, limit=500)
+        result = _reviews("1", "kr", session, limit=500)
         assert len(result) == 100  # NOT truncated at the empty page2
 
     def test_stops_after_consecutive_empties(self):
@@ -58,7 +63,7 @@ class TestPagination:
             _page(None), _page(None), _page(None),  # 3 in a row → stop
             _page([_entry(99)]),  # would-be more, but we already stopped
         ]
-        result = itunes_client.fetch_reviews_for_country("1", "kr", session, limit=500)
+        result = _reviews("1", "kr", session, limit=500)
         assert len(result) == 1
         # Should not have requested the 5th page.
         assert session._get.call_count == 4
@@ -66,7 +71,7 @@ class TestPagination:
     def test_respects_limit(self):
         session = MagicMock()
         session._get.side_effect = [_page([_entry(i) for i in range(50)]) for _ in range(10)]
-        result = itunes_client.fetch_reviews_for_country("1", "kr", session, limit=120)
+        result = _reviews("1", "kr", session, limit=120)
         assert len(result) == 120
 
     def test_transient_http_error_skips_page(self):
@@ -78,7 +83,7 @@ class TestPagination:
             _page([_entry(i) for i in range(50, 80)]),
             _page(None), _page(None), _page(None),
         ]
-        result = itunes_client.fetch_reviews_for_country("1", "kr", session, limit=500)
+        result = _reviews("1", "kr", session, limit=500)
         assert len(result) == 80  # both good pages collected despite the error
 
     def test_malformed_entry_skipped(self):
@@ -90,7 +95,7 @@ class TestPagination:
             _page([good, bad]),
             _page(None), _page(None), _page(None),
         ]
-        result = itunes_client.fetch_reviews_for_country("1", "kr", session, limit=500)
+        result = _reviews("1", "kr", session, limit=500)
         assert len(result) == 1
 
 
@@ -105,14 +110,14 @@ class TestFailures:
             ),
             _page([_entry(99)]),
         ]
-        result = itunes_client.fetch_reviews_for_country("1", "kr", session, limit=500)
+        result = _reviews("1", "kr", session, limit=500)
         assert len(result) == 50
         assert session._get.call_count == 2
 
     def test_undecodable_page_returns_what_was_collected(self):
         session = MagicMock()
         session._get.side_effect = [_page([_entry(0)]), ValueError("bad json"), _page([_entry(1)])]
-        result = itunes_client.fetch_reviews_for_country("1", "kr", session, limit=500)
+        result = _reviews("1", "kr", session, limit=500)
         assert [review["id"] for review in result] == ["0"]
 
     def test_non_list_entry_is_a_non_empty_page_without_reviews(self):
@@ -124,7 +129,7 @@ class TestFailures:
             _page(None), _page(None), _page([_entry(7)]),
             _page(None), _page(None), _page(None),
         ]
-        result = itunes_client.fetch_reviews_for_country("1", "kr", session, limit=500)
+        result = _reviews("1", "kr", session, limit=500)
         assert [review["id"] for review in result] == ["7"]
         assert session._get.call_count == 9
 

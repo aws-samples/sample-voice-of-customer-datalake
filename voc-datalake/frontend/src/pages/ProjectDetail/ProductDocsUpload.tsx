@@ -1,6 +1,5 @@
 /**
- * Document-upload pane for the ProductTab.
- * Extracted from ProductTab.tsx to keep that file under the max-lines budget.
+ * Document-upload card of the ProductTab (a secondary card beside the form).
  *
  * Handles drag-and-drop / click-to-pick / paste uploads via presigned S3 URLs,
  * lists uploaded docs with extraction status, and polls while extraction is in
@@ -28,6 +27,7 @@ import {
   withSyntheticName,
 } from '../../utils/imageInput'
 import { loadWhileMounted } from './loadWhileMounted'
+import ProductCard from './ProductCard'
 import { formatFileSize } from '../../utils/file'
 import { isImagePrepError, resizeImageForUpload } from './resizeImage'
 import type { ProductDoc } from '../../api/projectTypes'
@@ -224,13 +224,12 @@ export function DocsUpload({ projectId, canEdit }: { readonly projectId: string;
     // onPaste sits on the pane, not on window: a React paste handler only fires
     // for events originating inside this subtree, so pasting into an input
     // elsewhere on the page is untouched.
-    <div className="bg-card border rounded-xl p-4" onPaste={canEdit ? handlePaste : undefined}>
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold flex items-center gap-2">
-          <Upload size={16} className="text-accent" /> {t('product.upload.heading')}
-        </h3>
-        {canEdit ? <span className="text-xs text-muted">{t('product.upload.hint')}</span> : null}
-      </div>
+    <ProductCard
+      icon={Upload}
+      title={t('product.upload.heading')}
+      aside={canEdit ? <span className="text-[12px] text-muted">{t('product.upload.hint')}</span> : undefined}
+      onPaste={canEdit ? handlePaste : undefined}
+    >
 
       {/*
         Drag-and-drop zone. preventDefault on dragOver/dragEnter is required:
@@ -399,7 +398,7 @@ export function DocsUpload({ projectId, canEdit }: { readonly projectId: string;
           </li>
         ))}
       </ul>
-    </div>
+    </ProductCard>
   )
 }
 

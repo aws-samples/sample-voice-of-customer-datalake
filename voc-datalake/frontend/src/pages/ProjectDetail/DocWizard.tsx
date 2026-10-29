@@ -15,6 +15,10 @@ import ContextSummary from '../../components/DataSourceWizard/ContextSummary'
 import { WizardIconTile } from './Wizards'
 import { DocWizardQuestions } from './DocWizardQuestions'
 import { useDocWizardDrafts } from './useDocWizardDrafts'
+import { useStartWriting } from './useStartWriting'
+import HumanDrivenNotice from '../../components/AiCoach/HumanDrivenNotice'
+import { aiMayWrite } from '../../api/aiModeApi'
+import { useMyAiMode } from '../../hooks/useMyAiMode'
 import type { DocToolConfig } from './types'
 import type { DocType } from '../../api/types'
 import type { ProjectDocument } from '../../api/types'
@@ -39,6 +43,49 @@ function ReplaceDraftConfirm({ replacing, onConfirm, onCancel }: Readonly<{
   )
 }
 
+/**
+ * The Human-driven variant (docs/ways-of-working.md): when the person may not have the AI
+ * write a selected type, the wizard creates blank-template documents they write themselves
+ * ("Start writing") and the AI draft buttons give way to coaching. Any locked type in the
+ * selection switches the whole wizard, so one click never mixes the two.
+ */
+function useHumanDrivenMode(
+  projectId: string, docTypes: readonly DocType[], onClose: () => void, onOpenDocument?: (documentId: string) => void,
+) {
+  const aiMode = useMyAiMode()
+  const locked = docTypes.filter((type) => !aiMayWrite(aiMode, type))
+  const writing = useStartWriting(projectId, onClose, onOpenDocument)
+  return { lockedType: locked[0], writing }
+}
+
+/** The start-writing failure, said in the wizard (the typed fields stay, so a retry is one click). */
+function StartWritingError({ error }: Readonly<{ error: unknown }>) {
+  const { t } = useTranslation('projectDetail')
+  if (error === null || error === undefined) return null
+  return <p role="alert" className="text-sm text-danger">{t('wizards.startWritingFailed')}</p>
+}
+
+/** The wizard's title and submit label: "Start writing" by hand, else what it generates. */
+function useWizardLabels(hasPrd: boolean, bothSelected: boolean, humanDriven: boolean) {
+  const { t } = useTranslation('projectDetail')
+  const singleTitle = hasPrd
+    ? t('wizards.generatePrdTitle', { defaultValue: 'Generate PRD' })
+    : t('wizards.generatePrfaqTitle', { defaultValue: 'Generate PR/FAQ' })
+  const generateTitle = bothSelected
+    ? t('wizards.generateBothTitle', { defaultValue: 'Generate PRD + PR/FAQ' })
+    : singleTitle
+  const wizardTitle = humanDriven ? t('wizards.startWritingTitle') : generateTitle
+
+  const singleSubmitLabel = hasPrd
+    ? t('wizards.generatePrd', { defaultValue: 'Generate PRD' })
+    : t('wizards.generatePrfaq', { defaultValue: 'Generate PR/FAQ' })
+  const generateLabel = bothSelected
+    ? t('wizards.generateBoth', { defaultValue: 'Generate PRD + PR/FAQ' })
+    : singleSubmitLabel
+  const submitLabelText = humanDriven ? t('wizards.startWriting') : generateLabel
+  return { wizardTitle, submitLabelText }
+}
+
 interface DocWizardProps {
   readonly projectId: string
   readonly personas: ProjectPersona[]
@@ -50,10 +97,13 @@ interface DocWizardProps {
   readonly onDocConfigChange: (c: DocToolConfig) => void
   readonly onClose: () => void
   readonly onSubmit: () => void
+  /** Open a document the wizard created by hand ("Start writing", Human-driven). */
+  readonly onOpenDocument?: (documentId: string) => void
 }
 
 export function DocWizard({
   projectId, personas, documents, contextConfig, docConfig, generating, onContextChange, onDocConfigChange, onClose, onSubmit,
+  onOpenDocument,
 }: DocWizardProps) {
   const { t } = useTranslation('projectDetail')
   const titleId = useId()
@@ -63,6 +113,8 @@ export function DocWizard({
   const [replacing, setReplacing] = useState<'brief' | 'answers' | null>(null)
 
   const docTypes = docConfig.docTypes
+  const human = useHumanDrivenMode(projectId, docTypes, onClose, onOpenDocument)
+  const humanDriven = human.lockedType !== undefined
   const hasPrfaq = docTypes.includes('prfaq')
   const hasPrd = docTypes.includes('prd')
 
@@ -122,19 +174,7 @@ export function DocWizard({
     void (replacing === 'brief' ? drafts.brief.run() : drafts.answers.run())
   }
 
-  const singleTitle = hasPrd
-    ? t('wizards.generatePrdTitle', { defaultValue: 'Generate PRD' })
-    : t('wizards.generatePrfaqTitle', { defaultValue: 'Generate PR/FAQ' })
-  const wizardTitle = bothSelected
-    ? t('wizards.generateBothTitle', { defaultValue: 'Generate PRD + PR/FAQ' })
-    : singleTitle
-
-  const singleSubmitLabel = hasPrd
-    ? t('wizards.generatePrd', { defaultValue: 'Generate PRD' })
-    : t('wizards.generatePrfaq', { defaultValue: 'Generate PR/FAQ' })
-  const submitLabelText = bothSelected
-    ? t('wizards.generateBoth', { defaultValue: 'Generate PRD + PR/FAQ' })
-    : singleSubmitLabel
+  const { wizardTitle, submitLabelText } = useWizardLabels(hasPrd, bothSelected, humanDriven)
 
   return (
     <DataSourceWizard
@@ -146,6 +186,7 @@ export function DocWizard({
       onContextChange={onContextChange}
       renderFinalStep={() => (
         <div className="space-y-6">
+          {human.lockedType === undefined ? null : <HumanDrivenNotice docType={human.lockedType} title={docConfig.title} />}
           <div>
             <h3 className="font-medium mb-1">{t('wizards.documentType', { defaultValue: 'Document Type' })}</h3>
             <p className="text-xs text-muted mb-3">{t('wizards.documentTypeHint', { defaultValue: 'Select one or both — both are generated at once.' })}</p>
@@ -165,14 +206,16 @@ export function DocWizard({
           <div>
             <div className="flex items-start justify-between gap-2 mb-3 flex-wrap">
               <h3 id={titleId} className="font-medium">{t('wizards.featureTitle', { defaultValue: 'Feature/Product Title' })}</h3>
-              <AIDraftButton
-                subject={t('wizards.briefSubject')}
-                hasText={hasBriefText}
-                busy={drafts.brief.busy}
-                onClick={askBrief}
-                hint={t('wizards.briefTitle')}
-                error={drafts.brief.error}
-              />
+              {humanDriven ? null : (
+                <AIDraftButton
+                  subject={t('wizards.briefSubject')}
+                  hasText={hasBriefText}
+                  busy={drafts.brief.busy}
+                  onClick={askBrief}
+                  hint={t('wizards.briefTitle')}
+                  error={drafts.brief.error}
+                />
+              )}
             </div>
             <input type="text" aria-labelledby={titleId} value={docConfig.title} onChange={(e) => onDocConfigChange({
               ...docConfig,
@@ -193,16 +236,19 @@ export function DocWizard({
               draft={drafts.answers}
               briefReady={hasTitle && hasDescription}
               onDraft={askAnswers}
+              aiLocked={humanDriven}
             />
           ) : null}
           <ContextSummary config={contextConfig} personas={personas} documents={documents} />
           <ReplaceDraftConfirm replacing={replacing} onConfirm={confirmReplace} onCancel={() => setReplacing(null)} />
+          <StartWritingError error={human.writing.error} />
         </div>
       )}
-      finalStepValid={hasTitle && hasDescription && docCount > 0}
+      // Writing by hand needs only a title: the description is the AI writer's brief.
+      finalStepValid={hasTitle && docCount > 0 && (humanDriven || hasDescription)}
       onClose={onClose}
-      onSubmit={onSubmit}
-      isSubmitting={generating === 'doc'}
+      onSubmit={humanDriven ? () => human.writing.start(docTypes, docConfig.title) : onSubmit}
+      isSubmitting={humanDriven ? human.writing.isPending : generating === 'doc'}
       submitLabel={<><FileText size={16} />{submitLabelText}</>}
     />
   )

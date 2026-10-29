@@ -88,7 +88,8 @@ function TokenRow({ token, projectName, onRevoke }: Readonly<{
         {token.can_run_agents && <span className="badge badge-aim">{t('connect.runsAgents')}</span>}
         <span className="flex-1" />
         {token.status === 'active' && (
-          <button type="button" className="btn btn-secondary btn-sm" onClick={() => onRevoke(token)}>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => onRevoke(token)}
+            aria-label={t('connect.revokeNamed', { name: token.name || token.token_id })}>
             <ShieldOff size={14} aria-hidden="true" /> {t('connect.revoke')}
           </button>
         )}

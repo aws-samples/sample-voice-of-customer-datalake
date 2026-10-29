@@ -206,6 +206,7 @@
       "produced": "Ce qu'elle a produit",
       "producedNothing": "Rien pour l'instant.",
       "anArtifact": "Un nouveau document",
+      "artifactTitled": "{{what}} : {{title}}",
       "inProject": "dans {{name}}",
       "needsYou": "Ce qui vous attend",
       "needsDecision": "Décidez de la suite dans la carte ci-dessus.",
@@ -332,10 +333,22 @@
       "arrowTargetNone": "Choisissez une étape…",
       "joinLoop": "Boucle"
     },
+    "issues": {
+      "instructionsRequired": "Cette étape a besoin d'instructions : dites ce qu'elle doit faire.",
+      "titleRequired": "Donnez un titre à cette étape.",
+      "duplicateStep": "Deux étapes ont le même identifiant. Supprimez-en une et ajoutez-la à nouveau.",
+      "duplicateArrow": "Deux flèches ont le même identifiant. Supprimez-en une et tracez-la à nouveau.",
+      "reviewTarget": "Choisissez ce que cette revue examine.",
+      "endStatus": "Choisissez comment l'exécution se termine ici."
+    },
     "params": {
       "target": "Cible",
       "targetAny": "Le dernier élément produit",
       "maxNew": "Nombre maximal de nouveaux personas",
+      "generateAvatars": "Créer un portrait pour chaque persona",
+      "maxWords": "Longueur visée (mots)",
+      "maxWordsNone": "Aucune limite",
+      "maxWordsHint": "Le document entier reste autour de ce nombre de mots. Vide : environ 1 200 si les instructions demandent des documents courts, sinon aucune limite.",
       "useWebSearch": "Utiliser la recherche web",
       "useWebSearchHint": "Compte dans la limite de {{limit, number}} recherches web par exécution.",
       "endStatus": "Statut de fin de l'exécution"
@@ -498,6 +511,18 @@
   "workflowPage": {
     "title": "Workflow",
     "subtitle": "Un workflow de la bibliothèque. Les agents qui l’exécutent utilisent sa dernière révision enregistrée."
+  },
+  "validation": {
+    "scope": "Choisissez au moins une catégorie ou sous-catégorie, ou surveillez toutes les catégories.",
+    "name": "Donnez à l'agent un nom de {{max, number}} caractères au plus.",
+    "description": "La description peut compter jusqu'à {{max, number}} caractères.",
+    "instructions": "Les instructions peuvent compter jusqu'à {{max, number}} caractères.",
+    "triggers": "Vérifiez les déclencheurs : chacun demande des nombres entiers dans les limites, et une planification personnalisée demande son expression cron.",
+    "personas": "Choisissez au plus {{max, number}} personas fixes.",
+    "models": "Choisissez un modèle disponible pour chaque rôle, ou celui par défaut.",
+    "workflow": "Choisissez un workflow.",
+    "budget": "Vérifiez le budget : les limites doivent être des nombres entiers dans les bornes.",
+    "other": "Certains réglages ne sont pas valides. Vérifiez-les et réessayez."
   },
   "decision": {
     "title": "Cette exécution attend votre décision",

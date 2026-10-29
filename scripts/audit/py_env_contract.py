@@ -2,7 +2,7 @@
 # audit-detector: run by scripts/audit/run-all.sh
 """py_env_contract: CDK environment variables vs what each Python Lambda's LIVE code reads.
 
-PATTERN (deadpy.md section 3, the 5.28 clean-up removed 15 such keys):
+PATTERN (the 5.28 clean-up removed 15 such keys):
 
 * ``set-never-read``: the template sets ``X`` on a function and no string ``'X'`` occurs in the code that
   function can execute (its reachable defs and module bodies, docstrings excluded). A vestigial key,

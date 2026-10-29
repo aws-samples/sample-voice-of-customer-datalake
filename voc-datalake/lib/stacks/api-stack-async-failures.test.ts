@@ -29,6 +29,8 @@ const ASYNC_INVOKED = [
   'ManualImportProcessor',
   // The assist twins (api-assist-workers.ts), started by shared/assist_jobs.start.
   'ProjectsAssistWorker', 'SettingsAssistWorker', 'ScrapersAssistWorker',
+  // The engagement API's own send continuation (api-participants-lambda.ts).
+  'EngagementApi',
 ];
 
 /** How the Core queue's ARN appears in this template: `...:sqs:<region>:<account>:voc-api-async-failures-...`. */

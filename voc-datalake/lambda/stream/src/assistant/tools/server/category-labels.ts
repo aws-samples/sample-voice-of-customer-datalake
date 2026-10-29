@@ -12,7 +12,7 @@ import { z } from 'zod';
 import { categoryLabeller, type CategoryLabeller, type LabelSource } from '../../../tools/display-labels.js';
 import type { AssistantRunContext } from '../../types.js';
 import type { ToolDeps } from '../deps.js';
-import { isRecord } from '../format.js';
+import { isRecord } from '../../../lib/is-record.js';
 import { readCategoryConfig, type CategoryEntry } from './category-access.js';
 
 const subSchema = z.object({

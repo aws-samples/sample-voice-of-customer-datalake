@@ -55,6 +55,20 @@ class TestClean:
     def test_logo_candidate(self, logo, ok):
         assert (ed.clean_logo(logo) is not None) is ok
 
+    @pytest.mark.parametrize(('flag', 'kept'), [(True, True), ('true', False), (1, False), (False, False), (None, False)])
+    def test_a_rendered_svg_logo_keeps_rendered_only_as_a_bool(self, flag, kept):
+        key = 'company-context/design/logo_preview_ref_0123456789ab.png'
+        logo = ed.clean_logo({'source_url': 'https://cdn.example/l.svg', 'content_type': 'image/png',
+                              'rendered': flag, 'preview_key': key})
+        expected = {'source_url': 'https://cdn.example/l.svg', 'content_type': 'image/png', 'preview_key': key}
+        assert logo == ({**expected, 'rendered': True} if kept else expected)
+
+    def test_a_rendered_logo_still_needs_a_raster_type_and_https(self):
+        assert ed.clean_logo({'source_url': 'https://cdn.example/l.svg', 'content_type': 'image/svg+xml',
+                              'rendered': True}) is None
+        assert ed.clean_logo({'source_url': 'http://cdn.example/l.svg', 'content_type': 'image/png',
+                              'rendered': True}) is None
+
     def test_combine_prefers_the_model_per_group(self):
         assert ed.combine({'colors': [1], 'radius': []}, {'colors': [2], 'radius': [3], 'logo': {'a': 1}}) == {
             'colors': [1], 'typography': None, 'spacing': None, 'radius': [3], 'components': None,

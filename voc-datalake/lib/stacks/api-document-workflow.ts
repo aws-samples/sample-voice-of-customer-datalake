@@ -33,7 +33,7 @@ export function createDocumentStateMachine(ctx: ApiStackContext, documentStepLam
       // execution history recorded `"error": "Sandbox.Timedout"`, which this
       // list did not previously include, so the retry never engaged and the
       // whole job failed outright instead of getting a fresh 15-minute budget.
-      errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException', 'States.Timeout', 'Sandbox.Timedout', 'BedrockThrottlingException'],
+      errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException', 'States.Timeout', 'Sandbox.Timedout', 'BedrockThrottlingError'],
       interval: cdk.Duration.seconds(5), maxAttempts: 3, backoffRate: 2,
     });
     return t;

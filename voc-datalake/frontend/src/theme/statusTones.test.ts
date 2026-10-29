@@ -28,6 +28,8 @@ const KIROCREW: Record<Theme, Record<string, string>> = {
 /** Tones with a stored `-subtle` tint (info's is derived in the Tailwind bridge). */
 const TINTED: ReadonlySet<string> = new Set(['ok', 'warn', 'danger', 'aim'])
 const TONES = ['ok', 'warn', 'danger', 'info', 'aim'] as const
+/** Tones painted as a solid fill with text on it, so they carry an `-fg` (info and aim are only text and tints). */
+const SOLID_TONES = ['ok', 'warn', 'danger'] as const
 
 function surfaces(theme: Theme, tone: string): Record<string, string> {
   const card = themeHex(theme, 'card')
@@ -56,7 +58,7 @@ describe.each(THEMES)('status tones in %s', (theme) => {
     expect(failing).toStrictEqual([])
   })
 
-  it.each(TONES)(`--%s-fg is at least ${MIN_TEXT_CONTRAST}:1 on a solid --%s fill`, (tone) => {
+  it.each(SOLID_TONES)(`--%s-fg is at least ${MIN_TEXT_CONTRAST}:1 on a solid --%s fill`, (tone) => {
     expect(contrastRatio(themeHex(theme, `${tone}-fg`), themeHex(theme, tone))).toBeGreaterThanOrEqual(MIN_TEXT_CONTRAST)
   })
 })

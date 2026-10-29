@@ -12,6 +12,7 @@
  *
  * @module api/feedbackCategoryApi
  */
+import { put } from './requestKit'
 import { z } from 'zod'
 import { messageKeyForStatus, type StatusMessage } from './apiErrorStatus'
 import { fetchApi } from './client'
@@ -45,10 +46,7 @@ export async function setFeedbackCategory(
   const body = change.subcategory === undefined || change.subcategory === ''
     ? { category: change.category }
     : { category: change.category, subcategory: change.subcategory }
-  const raw = await fetchApi<unknown>(`/feedback/${encodeURIComponent(feedbackId)}/category`, {
-    method: 'PUT',
-    body: JSON.stringify(body),
-  })
+  const raw = await fetchApi<unknown>(`/feedback/${encodeURIComponent(feedbackId)}/category`, put(body))
   return ResponseSchema.parse(raw).feedback
 }
 

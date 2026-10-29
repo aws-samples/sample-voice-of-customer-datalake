@@ -13,6 +13,7 @@
  *
  * @module api/companyContextApi
  */
+import { put } from './requestKit'
 import { z } from 'zod'
 import { fetchApi } from './client'
 import { lenientText as text, optionalText, parsedList } from './schemaList'
@@ -101,22 +102,28 @@ export function myContextBody(context: MyContext) {
 export const companyContextKey = () => ['company-context'] as const
 export const myContextKey = () => ['my-context'] as const
 
+/**
+ * The two documents' routes with their raw answers, for a caller that fills a
+ * whole-document PUT from the stored fields as they are (the assistant's company
+ * executors). `companyContextApi` normalises the same calls.
+ */
+export const companyContextRequests = {
+  getCompany: () => fetchApi<unknown>('/settings/company-context'),
+  putCompany: (body: unknown) => fetchApi<unknown>('/settings/company-context', put(body)),
+  getMine: () => fetchApi<unknown>('/settings/my-context'),
+  putMine: (body: unknown) => fetchApi<unknown>('/settings/my-context', put(body)),
+}
+
 export const companyContextApi = {
   getCompanyContext: async (): Promise<CompanyContext> =>
-    normalizeCompanyContext(await fetchApi<unknown>('/settings/company-context')),
+    normalizeCompanyContext(await companyContextRequests.getCompany()),
 
   saveCompanyContext: async (context: Pick<CompanyContext, 'vision' | 'objectives'>): Promise<CompanyContext> =>
-    normalizeCompanyContext(await fetchApi<unknown>('/settings/company-context', {
-      method: 'PUT',
-      body: JSON.stringify(companyContextBody(context)),
-    })),
+    normalizeCompanyContext(await companyContextRequests.putCompany(companyContextBody(context))),
 
   getMyContext: async (): Promise<MyContext> =>
-    normalizeMyContext(await fetchApi<unknown>('/settings/my-context')),
+    normalizeMyContext(await companyContextRequests.getMine()),
 
   saveMyContext: async (context: MyContext): Promise<MyContext> =>
-    normalizeMyContext(await fetchApi<unknown>('/settings/my-context', {
-      method: 'PUT',
-      body: JSON.stringify(myContextBody(context)),
-    })),
+    normalizeMyContext(await companyContextRequests.putMine(myContextBody(context))),
 }

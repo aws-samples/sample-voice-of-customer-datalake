@@ -102,11 +102,22 @@ describe('editing', () => {
 
   // Render-only (no typing): six full variant editors re-rendering on every keystroke ran past
   // the 10 s test limit under the parallel validate.
-  it('stops adding variants at six', async () => {
-    const six = ['primary', 'outline', 'ghost', 'danger', 'link', 'subtle'].map((name) => ({ name, styles: {} }))
-    renderSection({ 'GET /settings/design-system': () => ({ ...DESIGN, components: [{ ...BUTTON, variants: six }] }) })
+  it('stops adding variants at eight, the server cap', async () => {
+    const eight = ['primary', 'outline', 'ghost', 'danger', 'link', 'subtle', 'inverse', 'neutral'].map((name) => ({ name, styles: {} }))
+    renderSection({ 'GET /settings/design-system': () => ({ ...DESIGN, components: [{ ...BUTTON, variants: eight }] }) })
     const section = await expand('Button')
     expect(within(section).getByRole('button', { name: 'Add variant' })).toBeDisabled()
+  })
+
+  it('edits the focus ring border colour and glow beside the outline', async () => {
+    renderSection()
+    const section = await expand('Button')
+    await userEvent.click(within(section).getByText('Hover and focus'))
+    const glow = within(section).getByRole('textbox', { name: 'Shadow on focus' })
+    await userEvent.type(glow, 'url(x)')
+    expect(glow).toHaveAttribute('aria-invalid', 'true')
+    expect(within(section).getByRole('textbox', { name: 'Border color on focus' })).toBeInTheDocument()
+    expect(within(section).getByRole('textbox', { name: 'Width' })).toBeInTheDocument()
   })
 
   it('flags an invalid value and keeps Save disabled until it is fixed', async () => {

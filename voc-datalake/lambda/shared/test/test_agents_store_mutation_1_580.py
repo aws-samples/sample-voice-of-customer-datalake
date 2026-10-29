@@ -141,19 +141,6 @@ class TestClockValues:
         moment = datetime(2026, 10, 4, 14, 0, 5, 999_999, tzinfo=timezone(timedelta(hours=2)))
         assert store.iso(moment) == '2026-10-04T12:00:05+00:00'
 
-    @pytest.mark.parametrize('value', [None, '', 5, 'yesterday'])
-    def test_parse_iso_refuses_what_is_not_a_timestamp(self, value: object) -> None:
-        assert store.parse_iso(value) is None
-
-    def test_parse_iso_assumes_utc_for_a_naive_value_and_keeps_an_offset(self) -> None:
-        naive = store.parse_iso('2026-10-04T12:00:00')
-        assert naive is not None
-        assert naive.tzinfo is UTC
-        assert naive == NOW
-        aware = store.parse_iso('2026-10-04T14:00:00+02:00')
-        assert aware is not None
-        assert aware.utcoffset() == timedelta(hours=2)
-        assert aware == NOW
 
 
 class TestPlainValues:

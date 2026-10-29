@@ -206,6 +206,7 @@
       "produced": "Was entstanden ist",
       "producedNothing": "Noch nichts.",
       "anArtifact": "Ein neues Dokument",
+      "artifactTitled": "{{what}}: {{title}}",
       "inProject": "in {{name}}",
       "needsYou": "Was Sie tun müssen",
       "needsDecision": "Entscheiden Sie in der Karte oben, wie es weitergeht.",
@@ -332,10 +333,22 @@
       "arrowTargetNone": "Schritt wählen…",
       "joinLoop": "Schleife"
     },
+    "issues": {
+      "instructionsRequired": "Dieser Schritt braucht Anweisungen: Beschreiben Sie, was er tun soll.",
+      "titleRequired": "Geben Sie diesem Schritt einen Titel.",
+      "duplicateStep": "Zwei Schritte haben dieselbe ID. Löschen Sie einen und fügen Sie ihn erneut hinzu.",
+      "duplicateArrow": "Zwei Pfeile haben dieselbe ID. Löschen Sie einen und zeichnen Sie ihn erneut.",
+      "reviewTarget": "Wählen Sie, was diese Prüfung prüft.",
+      "endStatus": "Wählen Sie, wie der Lauf hier endet."
+    },
     "params": {
       "target": "Ziel",
       "targetAny": "Zuletzt Erzeugtes",
       "maxNew": "Maximal neue Personas",
+      "generateAvatars": "Für jede Persona ein Porträt erstellen",
+      "maxWords": "Längenbudget (Wörter)",
+      "maxWordsNone": "Keine Grenze",
+      "maxWordsHint": "Das ganze Dokument bleibt bei etwa so vielen Wörtern. Leer: etwa 1.200, wenn die Anweisungen kurze Dokumente verlangen, sonst keine Grenze.",
       "useWebSearch": "Websuche verwenden",
       "useWebSearchHint": "Zählt zum Limit von {{limit, number}} Websuchen pro Lauf.",
       "endStatus": "Lauf endet als"
@@ -498,6 +511,18 @@
   "workflowPage": {
     "title": "Workflow",
     "subtitle": "Ein Workflow aus der Bibliothek. Agenten, die ihn ausführen, verwenden seine neueste gespeicherte Revision."
+  },
+  "validation": {
+    "scope": "Wählen Sie mindestens eine Kategorie oder Unterkategorie, oder beobachten Sie alle Kategorien.",
+    "name": "Geben Sie dem Agenten einen Namen mit höchstens {{max, number}} Zeichen.",
+    "description": "Die Beschreibung darf höchstens {{max, number}} Zeichen lang sein.",
+    "instructions": "Die Anweisungen dürfen höchstens {{max, number}} Zeichen lang sein.",
+    "triggers": "Prüfen Sie die Auslöser: Jeder braucht ganze Zahlen im erlaubten Bereich, und ein eigener Zeitplan braucht seinen Cron-Ausdruck.",
+    "personas": "Wählen Sie höchstens {{max, number}} feste Personas.",
+    "models": "Wählen Sie für jede Rolle ein verfügbares Modell oder die Voreinstellung.",
+    "workflow": "Wählen Sie einen Workflow.",
+    "budget": "Prüfen Sie das Budget: Die Grenzen müssen ganze Zahlen im erlaubten Bereich sein.",
+    "other": "Einige Einstellungen sind ungültig. Prüfen Sie sie und versuchen Sie es erneut."
   },
   "decision": {
     "title": "Dieser Lauf braucht Ihre Entscheidung",

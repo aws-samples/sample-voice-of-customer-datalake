@@ -2,8 +2,8 @@
  * Global MCP endpoint + personal token API (VocApiStack) — docs/mcp.md.
  *
  *   POST /mcp/global                       → voc-mcp-global-api (mcp_global_handler.py)
- *        bearer token; a shape-only token authorizer (api-mcp.ts), and the
- *        handler does the real check on every request
+ *        bearer token; the token authorizer is this same function (api-mcp.ts,
+ *        uncached), and the handler checks again on every request
  *   GET|DELETE /mcp/global                 → 405 from a MOCK integration (same authorizer)
  *   GET|POST /connect/tokens               → voc-mcp-tokens-api (mcp_tokens_handler.py), Cognito
  *   GET|DELETE /connect/tokens/{token_id}  (GET = the token + a page of its audit log)
@@ -68,10 +68,12 @@ export interface GlobalMcpProps {
   allowedOrigin: string;
   /** The existing `/mcp` resource; `global` is added beside its `{proxy+}`. */
   mcpResource: apigateway.IResource;
-  /** The `/mcp` token-authorizer options (shape check only). */
-  mcpMethodOptions: apigateway.MethodOptions;
+  /** The `/mcp/global` token-authorizer options, built around the endpoint's own function (api-mcp.ts). */
+  mcpMethodOptionsFor: (handler: lambda.IFunction) => apigateway.MethodOptions;
   /** Cognito options every signed-in route uses. */
   authMethodOptions: apigateway.MethodOptions;
+  /** The CORS preflight of a method-bearing resource (BROWSER_PREFLIGHT in api-gateway.ts). */
+  browserPreflight: apigateway.CorsOptions;
   apiRoot: apigateway.IResource;
   projectsTable: dynamodb.ITable;
   jobsTable: dynamodb.ITable;
@@ -174,7 +176,8 @@ export class GlobalMcp extends Construct {
   }
 
   private wireRoutes(): void {
-    const { mcpResource, mcpMethodOptions, authMethodOptions, apiRoot } = this.props;
+    const { mcpResource, authMethodOptions, apiRoot, browserPreflight } = this.props;
+    const mcpMethodOptions = this.props.mcpMethodOptionsFor(this.mcpFunction);
     // ONE API-scoped invoke permission per function instead of two per method
     // (scopePermissionToMethod defaults to true). VocApiStack sits near
     // CloudFormation's 500-resource ceiling and the stack count is capped at five,
@@ -184,22 +187,23 @@ export class GlobalMcp extends Construct {
     const integrationOptions = { proxy: true, scopePermissionToMethod: false };
     const mcpIntegration = new apigateway.LambdaIntegration(this.mcpFunction, integrationOptions);
     const globalResource = mcpResource.addResource('global');
+    // A browser-based MCP client preflights its POST (the 405's `Allow` names OPTIONS).
+    globalResource.addCorsPreflight(browserPreflight);
     const globalMethod = globalResource.addMethod('POST', mcpIntegration, mcpMethodOptions);
     NagSuppressions.addResourceSuppressions(globalMethod, [
-      { id: 'AwsSolutions-COG4', reason: 'The global MCP endpoint uses the MCP bearer-token authorizer — MCP clients cannot use the Cognito auth flow; the handler verifies the hashed token, its expiry/revocation and the minter on every request' },
+      { id: 'AwsSolutions-COG4', reason: 'The global MCP endpoint uses the MCP bearer-token authorizer — MCP clients cannot use the Cognito auth flow; the authorizer and the handler verify the hashed token, its expiry/revocation and the minter on every request' },
     ]);
     this.wireMethodNotAllowed(globalResource, mcpMethodOptions);
 
-    // Explicit routes, no {proxy+}: every token-management route is Cognito.
+    // /connect/* — one Cognito proxy (5.47.00; explicit /connect/tokens routes before): list / mint
+    // (GET/POST /connect/tokens), one token with its audit log (GET .../{token_id}), revoke (DELETE).
+    // The handler routes by path and answers 404 to anything else. `defaultMethodOptions` keeps the
+    // authorizer on the proxy (a proxy without it is AuthorizationType.NONE).
     // Through the published `live` alias: SnapStart never snapshots `$LATEST`.
     const tokensIntegration = new apigateway.LambdaIntegration(snapStartAlias(this.tokensFunction), integrationOptions);
-    const tokens = apiRoot.addResource('connect').addResource('tokens');
-    tokens.addMethod('GET', tokensIntegration, authMethodOptions);
-    tokens.addMethod('POST', tokensIntegration, authMethodOptions);
-    const token = tokens.addResource('{token_id}');
-    // GET = the token with a page of its audit log; DELETE = revoke.
-    token.addMethod('GET', tokensIntegration, authMethodOptions);
-    token.addMethod('DELETE', tokensIntegration, authMethodOptions);
+    apiRoot.addResource('connect')
+      .addProxy({ defaultIntegration: tokensIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions })
+      .addCorsPreflight(browserPreflight);
   }
 
   /**
@@ -209,7 +213,7 @@ export class GlobalMcp extends Construct {
    * itself refused a GET with a 403 (it parses `Authorization: Bearer …` as a
    * malformed SigV4 header), which a strict client reads as an auth failure.
    *
-   * A MOCK integration: no Lambda runs. It sits behind the same token-shape
+   * A MOCK integration: no handler runs. It sits behind the same token
    * authorizer as POST, so nothing becomes reachable without a token that POST
    * would not already see — an anonymous GET is the authorizer's 401.
    */

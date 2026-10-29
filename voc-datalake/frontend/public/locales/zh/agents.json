@@ -206,6 +206,7 @@
       "produced": "产出内容",
       "producedNothing": "暂无。",
       "anArtifact": "一份新文档",
+      "artifactTitled": "{{what}}：{{title}}",
       "inProject": "位于 {{name}}",
       "needsYou": "需要您做什么",
       "needsDecision": "请在上方卡片中决定下一步。",
@@ -332,10 +333,22 @@
       "arrowTargetNone": "选择一个步骤…",
       "joinLoop": "循环"
     },
+    "issues": {
+      "instructionsRequired": "此步骤需要说明：请写明它要做什么。",
+      "titleRequired": "请为此步骤填写标题。",
+      "duplicateStep": "两个步骤使用了相同的 ID。请删除其中一个后重新添加。",
+      "duplicateArrow": "两条箭头使用了相同的 ID。请删除其中一条后重新绘制。",
+      "reviewTarget": "请选择此评审要检查的内容。",
+      "endStatus": "请选择运行在此处如何结束。"
+    },
     "params": {
       "target": "目标",
       "targetAny": "最近一次产出的内容",
       "maxNew": "新用户画像上限",
+      "generateAvatars": "为每个用户画像生成头像",
+      "maxWords": "篇幅上限（词数）",
+      "maxWordsNone": "不限",
+      "maxWordsHint": "整篇文档控制在约这么多词以内。留空时：如果指令要求简短，约 1,200 词，否则不限。",
       "useWebSearch": "使用网络搜索",
       "useWebSearchHint": "计入每次运行 {{limit, number}} 次网络搜索的上限。",
       "endStatus": "运行结束状态"
@@ -498,6 +511,18 @@
   "workflowPage": {
     "title": "工作流",
     "subtitle": "来自工作流库的工作流。运行它的智能体使用其最新保存的修订版本。"
+  },
+  "validation": {
+    "scope": "请至少选择一个类别或子类别，或关注所有类别。",
+    "name": "请为智能体取一个不超过 {{max, number}} 个字符的名称。",
+    "description": "描述最多 {{max, number}} 个字符。",
+    "instructions": "说明最多 {{max, number}} 个字符。",
+    "triggers": "请检查触发器：每项都需要范围内的整数，自定义计划需要填写 cron 表达式。",
+    "personas": "最多选择 {{max, number}} 个固定用户画像。",
+    "models": "请为每个角色选择可用模型或默认模型。",
+    "workflow": "请选择一个工作流。",
+    "budget": "请检查预算：上限必须是范围内的整数。",
+    "other": "部分设置无效。请检查后重试。"
   },
   "decision": {
     "title": "此运行需要您的决定",

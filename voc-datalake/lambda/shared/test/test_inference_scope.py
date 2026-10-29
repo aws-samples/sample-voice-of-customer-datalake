@@ -97,7 +97,10 @@ class TestAvatarsFlag:
                 patch.object(avatar, 'get_image_model_client') as image_client:
             result = avatar.generate_persona_avatar({'persona_id': 'p1', 'name': 'Ada'}, project_id='proj')
 
-        assert result == {'avatar_url': None, 'avatar_prompt': None}
+        assert result['avatar_url'] is None
+        assert result['avatar_prompt'] is None
+        assert result['failure']['reason'] == 'disabled'
+        assert 'AVATARS_ENABLED=false' in result['failure']['message']
         prompt.assert_not_called()
         image_client.assert_not_called()
 

@@ -20,7 +20,7 @@ that a copy is idempotent and that every sharing route is gated, but a mutation 
   `ConsistentRead=True` of the META and source-document reads, the
   `TransactItems` of a persona delete, and the S3 `copy_object` arguments.
 * that one UTC reading stamps `created_at`, `updated_at`, `gsi1sk` AND the id of
-  a new persona, and that `_now_iso` asks for UTC.
+  a new persona.
 * the ACCEPTED side of each bound: a 50-character question titles a research
   document intact and the 51st character is cut; a 350 000-character report is
   saved whole and one more character truncates it; 3 quotes are all rendered
@@ -45,6 +45,7 @@ from projects_mutation_fixtures import PERSONA_SECTIONS
 
 import projects
 from shared import project_access, project_writes
+from shared.avatar_failure import AvatarGenerationFailed
 from shared.exceptions import (
     AuthorizationError,
     ConfigurationError,
@@ -60,6 +61,7 @@ from shared.project_writes import (
     PROJECT_WRITABLE_CONDITION,
 )
 from shared.prompt_labels import PromptLabels
+from shared.test.clock import frozen_clock
 
 FIXED = datetime(2026, 3, 4, 5, 6, 7, tzinfo=UTC)
 NOW = '2026-03-04T05:06:07+00:00'
@@ -79,7 +81,7 @@ CAP = project_access.MAX_PROJECT_MEMBERS
 @pytest.fixture(autouse=True)
 def clock() -> Iterator[MagicMock]:
     """Every test runs at FIXED: timestamps and ids become literals to compare against."""
-    with patch.object(projects, 'datetime') as fake:
+    with frozen_clock(projects) as fake:
         fake.now.return_value = FIXED
         yield fake
 
@@ -527,6 +529,19 @@ class TestRegeneratePersonaAvatar:
         assert str(exc.value) == 'Avatar generation failed'
         table.update_item.assert_not_called()
 
+    def test_a_classified_failure_names_its_reason_in_the_job_error(self, table):
+        table.get_item.return_value = {'Item': dict(PERSONA_KEY)}
+        failure = {'reason': 'no_access', 'message': 'the image model m is not enabled in r for this account (X)'}
+        with patch.object(projects, 'generate_persona_avatar',
+                          return_value={'avatar_url': None, 'failure': failure}), \
+                pytest.raises(AvatarGenerationFailed) as exc:
+            projects.regenerate_persona_avatar('p1', 'per_1')
+        assert str(exc.value) == ('Avatar generation failed: the image model m is not enabled in r '
+                                  'for this account (X)')
+        # 4xx, so the assist worker shows this text instead of its generic label.
+        assert 400 <= exc.value.status_code < 500
+        table.update_item.assert_not_called()
+
 
 class TestDeletePersona:
     @pytest.mark.usefixtures('no_table')
@@ -714,7 +729,8 @@ class TestRunResearch:
         )
 
     @pytest.mark.parametrize(('length', 'title'), [
-        (50, 'Research: ' + 'q' * 50 + ' — 2026-03-04 05:06 UTC'), (51, 'Research: ' + 'q' * 50 + ' — 2026-03-04 05:06 UTC'),
+        # 50 fits whole; 51 is clipped for reading (shared.text_clip): the ellipsis counts towards the 50.
+        (50, 'Research: ' + 'q' * 50 + ' — 2026-03-04 05:06 UTC'), (51, 'Research: ' + 'q' * 49 + '… — 2026-03-04 05:06 UTC'),
     ])
     def test_the_default_title_keeps_fifty_characters_of_the_question(self, research_env, length, title):
         projects.run_research('p1', {'question': 'q' * length}, category_scope=None)
@@ -792,10 +808,6 @@ class TestUserPoolId:
         assert projects._user_pool_id() == 'us-east-1_abc'
 
 
-class TestNowIso:
-    def test_one_utc_reading(self, clock):
-        assert projects._now_iso() == NOW
-        clock.now.assert_called_once_with(UTC)
 
 
 class TestErrorClassification:

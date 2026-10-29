@@ -178,8 +178,8 @@ class TestSourceAccessAcrossRoutes:
         assert body['values']['app']['count'] == app_count
 
     @pytest.mark.parametrize(('claims', 'expected'), [
-        (VIEWER, {'product': {'web': 1}, 'module': {}}),
-        (SUPPORT_LEAD, {'product': {'app': 1}, 'module': {'checkout': 1}}),
+        (VIEWER, {'feedback_type': {}, 'product': {'web': 1}, 'module': {}}),
+        (SUPPORT_LEAD, {'feedback_type': {}, 'product': {'app': 1}, 'module': {'checkout': 1}}),
     ])
     def test_entities(self, api_gateway_event, lambda_context, claims, expected):
         _, body = _get(api_gateway_event, lambda_context, '/feedback/entities', claims)

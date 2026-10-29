@@ -5,7 +5,7 @@ the writer builds for an ordinary run, the summaries and the finished result. A
 mutation run over them left nine mutants alive, all at the writer's limits and
 overrides, which no ordinary run reaches:
 
-* the ``feature_idea`` is cut at exactly 12,000 characters, and the memories are
+* the ``writer_context`` is cut at exactly 16,000 characters, and the memories are
   retrieved with the first 800 characters of the aggregate;
 * ``params.title`` wins over the aggregate's title, and a title is cut at 120;
 * ``params.days`` is sent when it is an int and replaced by 30 otherwise;
@@ -32,12 +32,12 @@ def _posted_body(ctx: NodeContext) -> dict:
 
 
 def _long_reviews_only(tag: str, _text: str, _limit: int) -> str:
-    """A `wrap` stub: a 13,000-character reviews block, every other block empty."""
-    return 'r' * 13000 if tag == 'reviews' else ''
+    """A `wrap` stub: a 17,000-character reviews block, every other block empty."""
+    return 'r' * 17000 if tag == 'reviews' else ''
 
 
-class TestTheFeatureIdeaIsBounded:
-    def test_it_is_cut_at_exactly_twelve_thousand_characters(self):
+class TestTheWriterContextIsBounded:
+    def test_it_is_cut_at_exactly_sixteen_thousand_characters(self):
         ctx = node_ctx('prd')
         with (
             patch.object(context_blocks, 'memories', return_value=''),
@@ -45,7 +45,7 @@ class TestTheFeatureIdeaIsBounded:
         ):
             documents.start_document(ctx, 'prd')
 
-        assert projects_fake(ctx).call_args.kwargs['body']['feature_idea'] == 'r' * 12000
+        assert projects_fake(ctx).call_args.kwargs['body']['writer_context'] == 'r' * 16000
 
     def test_the_memories_are_retrieved_with_the_first_800_characters_of_the_aggregate(self):
         ctx = node_ctx('prd')

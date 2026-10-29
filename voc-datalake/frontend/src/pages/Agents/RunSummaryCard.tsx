@@ -5,17 +5,20 @@
  *
  * Built from the run and its event journal only: the outcome from `status` /
  * `error`, the current step from `current_node_id` against the workflow, what it
- * produced from the `artifact` events (each linked into its project, named by the
- * project's name — never its id), and stored ids inside the text read as names.
+ * produced from the `artifact` events (each linked into its document, named by the
+ * document's title and version and the project's name — never an id: `useRunProjects`),
+ * and stored ids inside the text read as names.
  *
  * @module pages/Agents/RunSummaryCard
  */
 import { Link } from 'react-router-dom'
 import { CircleCheck, CircleAlert, FileText, Hand, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { useLabelKnownIds, useProjectName } from '../../hooks/useLabelKnownIds'
+import { useLabelKnownIds } from '../../hooks/useLabelKnownIds'
+import { useRunProjectName, useRunProjectsContext } from './useRunProjects'
 import { formatDateTime } from '../../utils/dateUtils'
 import { projectDocumentPath } from '../ProjectDetail/useDocumentSelection'
+import { producedArtifacts } from './producedArtifacts'
 import type { ReactNode } from 'react'
 import type { AgentRun, RunEvent } from '../../api/agentsApi'
 import type { WorkflowDefinition } from '../../api/workflowsApi'
@@ -57,15 +60,19 @@ function OutcomeLine({ run, stepTitle }: Readonly<{ run: AgentRun; stepTitle: st
 function Produced({ events }: Readonly<{ events: readonly RunEvent[] }>) {
   const { t } = useTranslation('agents')
   const labelIds = useLabelKnownIds()
-  const projectName = useProjectName()
-  const artifacts = events.filter((e) => e.kind === 'artifact')
+  const runProjects = useRunProjectsContext()
+  const projectName = useRunProjectName()
+  const artifacts = producedArtifacts(events)
   if (artifacts.length === 0) return <p className="text-sm text-muted">{t('run.summary.producedNothing')}</p>
   return (
     <ul className="space-y-1">
       {artifacts.map((event) => {
         const path = artifactPath(event.ref)
         const projectId = event.ref?.project_id
-        const text = labelIds(event.summary.trim() === '' ? t('run.summary.anArtifact') : event.summary)
+        const what = labelIds(event.summary.trim() === '' ? t('run.summary.anArtifact') : event.summary)
+        const documentId = event.ref?.document_id
+        const title = projectId === undefined || documentId === undefined ? null : runProjects?.documentTitle(projectId, documentId) ?? null
+        const text = title === null ? what : t('run.summary.artifactTitled', { what, title })
         return (
           <li key={event.seq} className="flex items-start gap-1.5 text-sm">
             <FileText size={14} className="mt-0.5 shrink-0 text-muted" aria-hidden />

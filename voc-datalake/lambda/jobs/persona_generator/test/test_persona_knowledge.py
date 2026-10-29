@@ -4,7 +4,6 @@ from unittest.mock import patch
 
 import pytest
 
-from api import projects
 from shared import persona_knowledge
 from shared.grounding import GROUNDING_GUIDANCE, Grounding
 from shared.job_knowledge import PERSONA_MEMORY_KINDS
@@ -19,7 +18,7 @@ STEPS = [
 
 
 def test_the_knowledge_step_is_the_persona_analysis_step():
-    assert persona_knowledge.PERSONA_KNOWLEDGE_STEP == projects.PERSONA_ANALYSIS_STEP
+    assert persona_knowledge.PERSONA_KNOWLEDGE_STEP == STEPS[0]['step_name'] == 'research_analysis'
 
 
 def test_only_the_analysis_step_carries_the_knowledge_and_the_guidance():

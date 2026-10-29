@@ -4,7 +4,8 @@
  * The browser's `Notification` is replaced (before the SPA boots) by a recorder
  * whose permission is granted, and in production the context is granted the
  * real `notifications` permission too. Then, on /chat:
- * - the bell ("Notify me when a conversation needs me") turns notifications on;
+ * - the bell ("More actions" → "Notify me when a conversation needs me", a
+ *   menu checkbox) turns notifications on;
  * - a reply that ends while the conversation is ON SCREEN (tab visible and
  *   focused) notifies nobody;
  * - a reply that ends while the tab is HIDDEN raises exactly one notification,
@@ -12,7 +13,7 @@
  *   reply." — never the answer itself), tagged per conversation.
  * Admin only; two assistant messages (ledger-recorded by lib/test.ts).
  */
-import { expect, type Page } from '@playwright/test'
+import { expect, type Locator, type Page } from '@playwright/test'
 import { test } from '../lib/test'
 import { MOCK } from '../lib/env'
 import { composer } from '../lib/assistant'
@@ -55,6 +56,18 @@ function isShown(value: unknown): value is Shown {
   return isRecord(value) && typeof value['title'] === 'string' && typeof value['body'] === 'string' && typeof value['tag'] === 'string'
 }
 
+/** The "Notify me" checkbox item, the "More actions" menu opened first when it is closed. */
+function notifyItem(page: Page): Locator {
+  return page.getByRole('menuitemcheckbox', { name: 'Notify me when a conversation needs me' })
+}
+
+async function openNotifyItem(page: Page): Promise<Locator> {
+  const item = notifyItem(page)
+  if (!(await item.isVisible())) await page.getByRole('button', { name: 'More actions', exact: true }).filter({ visible: true }).first().click()
+  await expect(item).toBeVisible()
+  return item
+}
+
 /** After a run the user watched: long enough for a (wrong) notification to have been raised. */
 const NO_NOTIFICATION_SETTLE_MS = 1_000
 
@@ -75,9 +88,11 @@ test('assistant: a reply notifies only when the tab is hidden, with generic word
   await page.goto(site('/chat'), { waitUntil: 'domcontentloaded' })
   await settle(page, 600)
 
-  const bell = page.getByRole('button', { name: 'Notify me when a conversation needs me' }).filter({ visible: true }).first()
-  await bell.click()
-  await expect(page.getByRole('button', { name: 'Turn off notifications' }).filter({ visible: true }).first()).toHaveAttribute('aria-pressed', 'true')
+  // 5.x: the bell is a checkbox item of the panel header's "More actions" menu.
+  // Activated from the keyboard here; the pointer click has its own test below.
+  await (await openNotifyItem(page)).press('Enter')
+  await expect(await openNotifyItem(page)).toHaveAttribute('aria-checked', 'true')
+  await page.keyboard.press('Escape')
 
   // On screen, visible and focused: nobody needs telling.
   await askAndWait(page, 'e2e notifications one: reply with the single word "ok".')
@@ -92,4 +107,17 @@ test('assistant: a reply notifies only when the tab is hidden, with generic word
   expect(notification?.title).toBe('The assistant replied')
   expect(notification?.body).toBe('A conversation has a new reply.')
   expect(notification?.tag ?? '').toMatch(/^voc-assistant:.+:reply$/)
+})
+
+test('assistant: the "More actions" menu items take a pointer click on /chat', async ({ page }, testInfo) => {
+  test.skip(roleOf(testInfo) !== 'admin', 'one role is enough')
+  // Before 5.35 the panel header's `chrome-glass` backdrop filter made it a stacking context,
+  // so the `fixed` menu painted inside it lost hit-testing to the conversation pane below and
+  // a mouse click never reached "Notify me". The menu now renders in a portal (MoreMenu.tsx).
+  await installNotificationRecorder(page)
+  await page.goto(site('/chat'), { waitUntil: 'domcontentloaded' })
+  await settle(page, 600)
+  const item = await openNotifyItem(page)
+  await item.click({ timeout: 5_000 })
+  await expect(await openNotifyItem(page)).toHaveAttribute('aria-checked', 'true')
 })

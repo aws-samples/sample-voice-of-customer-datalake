@@ -5,6 +5,7 @@
  */
 import { apiUrl } from './env'
 import { isRecord } from './guards'
+import { e2eFetch } from './trafficTag'
 
 export interface McpAnswer {
   status: number
@@ -31,7 +32,7 @@ export function readMcpAnswer(status: number, body: unknown, wwwAuthenticate: st
 
 /** `tools/list` with `token`. */
 export async function mcpToolsList(token: string): Promise<McpAnswer> {
-  const response = await fetch(`${apiUrl()}/mcp/global`, {
+  const response = await e2eFetch(`${apiUrl()}/mcp/global`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),

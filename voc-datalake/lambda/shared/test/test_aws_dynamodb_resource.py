@@ -13,7 +13,7 @@ import boto3
 import pytest
 from moto import mock_aws
 
-from shared import aws, dynamodb_fast_items
+from shared import aws, concurrency, dynamodb_fast_items
 
 
 @pytest.fixture
@@ -51,3 +51,15 @@ def test_the_resource_is_built_and_hooked_once_per_environment():
 
     assert first is second
     assert (build.call_count, install.call_count) == (1, 1)
+
+
+@pytest.mark.usefixtures('fresh_resource')
+def test_the_connection_pool_holds_every_read_a_request_fans_out_at_once():
+    """5.35.02 e2e: botocore's default pool (10) was below the metrics fan-out, which logged
+    "Connection pool is full, discarding connection" and re-handshook on the next request."""
+    pool = getattr(aws.get_dynamodb_resource().meta.client.meta.config, 'max_pool_connections', None)
+
+    nested_fan_out = concurrency.MAX_CONCURRENT_CALLS * concurrency.DEFAULT_MAX_WORKERS
+    assert pool == aws.DYNAMODB_MAX_POOL_CONNECTIONS == nested_fan_out
+    assert isinstance(pool, int)
+    assert pool > 10

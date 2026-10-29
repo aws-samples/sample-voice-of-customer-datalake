@@ -9,7 +9,7 @@
  *   "Reset local settings" moved to Account → This browser (docs/account-vs-admin.md)
  * - Sources: Data sources, Integrations, Email inbox, Radar
  * - Taxonomy: Categories, Dimensions
- * - Privacy & access: Source policies, Users
+ * - Privacy & access: Source policies, Users, Boards (feedback boards + company domains)
  * - AI models
  * - System: Logs, Version
  */

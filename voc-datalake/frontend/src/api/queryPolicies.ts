@@ -85,9 +85,11 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'inline-image': 'config', // a presigned image read as a data: URL (hooks/useInlineImage)
   'dimension-metrics': 'feedbackData',
   'dimensions-config': 'config',
+  'document-comments': 'live', // margin comment threads of a PR/FAQ / PRD series (reviewers comment meanwhile)
   'entities': 'feedbackData',
   'entities-all-sources': 'feedbackData',
   'erasure-jobs': 'live',
+  'feature-requests': 'standard', // feedback boards, their requests and a request's detail (api/featureRequestsApi)
   'feedback': 'feedbackData',
   'feedback-access': 'config', // the caller's category/source scope
   'feedback-forms': 'standard',
@@ -103,7 +105,9 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'memory': 'standard',
   'model-capacity': 'config',
   'model-settings': 'config',
+  'my-ai-mode': 'config', // the caller's way of working with AI (GET /users/me/ai-mode, admin-set)
   'my-context': 'config',
+  'participants': 'standard', // lists, people, asks (an ask's detail polls itself while sending)
   'prioritization-config': 'config', // the workspace scoring setup (metrics, weights)
   'prioritization-scores': 'standard',
   'processing-logs': 'live',
@@ -128,6 +132,10 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'sources': 'feedbackData', // /metrics/sources
   'sources-status': 'live',
   'summary': 'feedbackData',
+  'system-log-environment': 'standard', // GET /logs/system/environment: changes only with a deploy or a setting
+  'system-log-queues': 'live', // GET /logs/system/queues: failure-queue depth moves with every failed message
+  'system-log-request': 'polled', // GET /logs/system/request: one invocation's lines, polled while running
+  'system-logs': 'polled', // GET /logs/system: a CloudWatch search, polled while running
   'urgent': 'feedbackData',
   'user-category-access': 'standard',
   'users': 'standard',

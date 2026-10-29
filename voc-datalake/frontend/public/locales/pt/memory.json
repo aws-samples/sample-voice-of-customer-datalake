@@ -33,6 +33,16 @@
     "status": "Filtro de status"
   },
   "forget": "Esquecer",
+  "edit": "Editar",
+  "editLabel": "Editar memória: {{statement}}",
+  "editField": "Texto da memória",
+  "save": "Salvar",
+  "editFailed": "Não foi possível salvar a memória. Tente novamente.",
+  "confirmPersonal": "Ainda é verdade",
+  "confirmPersonalHint": "Confirme que ainda é verdade para que não seja arquivada após 90 dias sem uso",
+  "confirmPersonalLabel": "Ainda é verdade: {{statement}}",
+  "confirmLabel": "+1: {{statement}}",
+  "confirmedPersonal": "Confirmada como ainda verdadeira.",
   "forgetMessage": "\"{{statement}}\" será arquivado e nunca reaprendido automaticamente. Você pode restaurá-lo depois.",
   "forgetTitle": "Esquecer esta memória?",
   "imports": {

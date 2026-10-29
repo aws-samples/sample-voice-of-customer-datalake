@@ -23,26 +23,29 @@ echo "Project root: $PROJECT_ROOT"
 DOCKER_IMAGE="public.ecr.aws/sam/build-python3.14:latest"
 PLATFORM="linux/arm64"
 
-# Install layer deps, then strip the AWS SDK.
+# Install layer deps, then strip what the runtime ships and what never runs.
 #
 # KEPT IN LOCKSTEP with lib/utils/python-layer-bundling.ts — the CDK stacks
 # re-bundle these same layers at synth time with the identical recipe.
-# lib/utils/python-layer-bundling.test.ts fails if the two copies drift.
+# lib/utils/python-layer-bundling.test.ts fails if the two copies drift (the
+# strip line below must equal layerStripSteps('/var/task/python')).
 #
-# Lambda's Python runtime PROVIDES boto3/botocore as a matched pair, but
-# aws-lambda-powertools[tracer] -> aws-xray-sdk pulls botocore in
-# transitively. Shipping that botocore (without boto3) is harmful:
-# /opt/python precedes /var/runtime on sys.path, so the runtime's boto3
-# would be paired with the layer's mismatched botocore — the exact
-# incompatibility pip's resolver error warns about (issue #194). Stripping
-# it also cuts ~15MB per layer. pip runs from a THROWAWAY VENV inside the
-# container: the build image preinstalls boto3 in its system site-packages,
-# and pip's post-install consistency check compares it against the target
-# dir's botocore, printing a scary-but-irrelevant "dependency resolver"
-# error on every build — a clean venv has nothing installed, so there is
-# nothing to conflict with. The remaining flags silence build-image noise
-# (root-user warning, unwritable-cache warning, self-update notice) that
-# isn't actionable in a throwaway container.
+# Lambda's Python runtime PROVIDES the AWS SDK closure (boto3, botocore,
+# s3transfer, jmespath, python-dateutil, six, urllib3), but
+# aws-lambda-powertools[tracer] -> aws-xray-sdk pulls botocore and its
+# dependencies in transitively. Shipping them is harmful: /opt/python precedes
+# the runtime's site-packages on sys.path, so the runtime's boto3 would be
+# paired with the layer's mismatched botocore (issue #194), and botocore would
+# run on the layer's urllib3. bin/ (console scripts), *.pyi / *-stubs (type
+# stubs) and packaged tests/ never run in Lambda. LAYER_STRIP in the .ts
+# documents each entry. pip runs from a THROWAWAY VENV inside the container:
+# the build image preinstalls boto3 in its system site-packages, and pip's
+# post-install consistency check compares it against the target dir's
+# botocore, printing a scary-but-irrelevant "dependency resolver" error on
+# every build — a clean venv has nothing installed, so there is nothing to
+# conflict with. The remaining flags silence build-image noise (root-user
+# warning, unwritable-cache warning, self-update notice) that isn't actionable
+# in a throwaway container.
 install_layer_deps() {
   local layer_dir="$1"
   "$CONTAINER_CMD" run --rm --platform "$PLATFORM" \
@@ -52,38 +55,23 @@ install_layer_deps() {
            && python -m venv "$venv" \
            && "$venv"/bin/pip install -r /var/task/requirements.txt -t /var/task/python \
                 --upgrade --quiet --no-cache-dir --root-user-action=ignore --disable-pip-version-check \
-           && rm -rf /var/task/python/boto3 /var/task/python/botocore \
-                     /var/task/python/boto3-* /var/task/python/botocore-*'
+           && rm -rf /var/task/python/boto3 /var/task/python/boto3-* /var/task/python/botocore /var/task/python/botocore-* /var/task/python/s3transfer /var/task/python/s3transfer-* /var/task/python/jmespath /var/task/python/jmespath-* /var/task/python/dateutil /var/task/python/python_dateutil-* /var/task/python/six.py /var/task/python/six-* /var/task/python/urllib3 /var/task/python/urllib3-* /var/task/python/bin /var/task/python/*-stubs && find /var/task/python -name "*.pyi" -type f -delete && find /var/task/python -mindepth 2 -type d -name tests -prune -exec rm -rf {} +'
 }
 
-# Build processing-deps layer
-echo ""
-echo "=== Building processing-deps layer ==="
-PROCESSING_DEPS_DIR="$LAYERS_DIR/processing-deps"
-
-# Clean existing python directory
-rm -rf "$PROCESSING_DEPS_DIR/python"
-mkdir -p "$PROCESSING_DEPS_DIR/python"
-
-install_layer_deps "$PROCESSING_DEPS_DIR"
-
-echo "✓ processing-deps layer built successfully"
-echo "  Size: $(du -sh "$PROCESSING_DEPS_DIR/python" | cut -f1)"
-
-# Build ingestion-deps layer if it exists
-INGESTION_DEPS_DIR="$LAYERS_DIR/ingestion-deps"
-if [ -f "$INGESTION_DEPS_DIR/requirements.txt" ]; then
+# Every layer dir with a requirements.txt (processing-deps, ingestion-deps,
+# signing-deps, email-intake-deps: lib/utils/dependency-layers.ts).
+for layer_dir in "$LAYERS_DIR"/*/; do
+  layer_dir="${layer_dir%/}"
+  [ -f "$layer_dir/requirements.txt" ] || continue
+  name="$(basename "$layer_dir")"
   echo ""
-  echo "=== Building ingestion-deps layer ==="
-  
-  rm -rf "$INGESTION_DEPS_DIR/python"
-  mkdir -p "$INGESTION_DEPS_DIR/python"
-  
-  install_layer_deps "$INGESTION_DEPS_DIR"
-  
-  echo "✓ ingestion-deps layer built successfully"
-  echo "  Size: $(du -sh "$INGESTION_DEPS_DIR/python" | cut -f1)"
-fi
+  echo "=== Building $name layer ==="
+  rm -rf "$layer_dir/python"
+  mkdir -p "$layer_dir/python"
+  install_layer_deps "$layer_dir"
+  echo "✓ $name layer built successfully"
+  echo "  Size: $(du -sh "$layer_dir/python" | cut -f1)"
+done
 
 echo ""
 echo "=== All layers built successfully ==="

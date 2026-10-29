@@ -53,6 +53,7 @@ from shared.project_writes import (
     PROJECT_WRITABLE_CONDITION,
 )
 from shared.tables import get_feedback_table, get_projects_table
+from shared.test.clock import frozen_clock as freeze_clock
 
 OWNER = Caller(subject='owner-sub', username='owner', email='owner@example.com')
 ADMIN = Caller(subject='admin-sub', is_admin=True, username='admin', email='admin@example.com')
@@ -93,7 +94,7 @@ def log() -> Iterator[MagicMock]:
 
 @pytest.fixture
 def frozen_clock() -> Iterator[MagicMock]:
-    with patch.object(projects, 'datetime') as clock:
+    with freeze_clock(projects) as clock:
         clock.now.return_value = FIXED_NOW
         yield clock
 
@@ -562,7 +563,7 @@ class TestAgentCreatedSharing:
 
         with patch.object(projects, '_new_owner_identity', return_value={'username': 'tn', 'email': 't@x'}) as owner, \
                 patch.object(projects, '_resolve_user', side_effect=resolve) as users, \
-                patch.object(projects, '_now_iso', return_value='NOW'):
+                patch.object(projects, 'now_iso', return_value='NOW'):
             sharing = projects._agent_created_sharing(self.AGENT)
         owner.assert_called_once_with('target')
         assert users.call_args_list == [call('gone'), call('editor-1')]

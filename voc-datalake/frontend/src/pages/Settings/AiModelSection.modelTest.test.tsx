@@ -20,7 +20,7 @@ import type { ModelTestResult, ModelTestStatus } from '../../api/modelTestSchema
 const getSettings = vi.fn<() => Promise<unknown>>()
 const saveSettings = vi.fn<(surface: string, modelId: string | null) => Promise<unknown>>()
 const testModel = vi.fn<(modelId: string) => Promise<ModelTestResult>>()
-const getCapacity = vi.fn<() => Promise<unknown[]>>()
+const getCapacity = vi.fn<() => Promise<unknown>>()
 
 vi.mock('../../api/client', () => ({
   api: {
@@ -86,7 +86,7 @@ describe('AiModelSection — draft, test, save', () => {
     vi.clearAllMocks()
     getSettings.mockResolvedValue(settings)
     saveSettings.mockResolvedValue({ success: true })
-    getCapacity.mockResolvedValue([])
+    getCapacity.mockResolvedValue({ models: [], image: null })
     testModel.mockImplementation((modelId) => Promise.resolve(result(modelId, 'available', { latency_ms: 420 })))
   })
 
@@ -209,9 +209,10 @@ describe('AiModelSection — Test all models', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     getSettings.mockResolvedValue(settings)
-    getCapacity.mockResolvedValue([
-      { model_id: OPUS55, label: 'Claude Opus 5.5', quota: { name: 'q', tokens_per_minute: 0 } },
-    ])
+    getCapacity.mockResolvedValue({
+      models: [{ model_id: OPUS55, label: 'Claude Opus 5.5', quota: { name: 'q', tokens_per_minute: 0 } }],
+      image: null,
+    })
   })
 
   it('fills tokens/min from the capacity overview before any test', async () => {
@@ -220,6 +221,19 @@ describe('AiModelSection — Test all models', () => {
     const opusRow = await screen.findByRole('row', { name: /Claude Opus 5\.5/ })
     await waitFor(() => expect(opusRow).toHaveTextContent('0 tokens/min'))
     expect(within(opusRow).getByText('Not tested')).toBeInTheDocument()
+    expect(within(opusRow).queryByText('Last stored reading: a fresh one is being read from Service Quotas')).not.toBeInTheDocument()
+  })
+
+  it('marks a quota served from the stored reading while Service Quotas throttles', async () => {
+    getCapacity.mockResolvedValue({
+      models: [{ model_id: OPUS55, label: 'Claude Opus 5.5', quota: { name: 'q', tokens_per_minute: 400, stale: true } }],
+      image: null,
+    })
+    await renderLoaded()
+
+    const opusRow = await screen.findByRole('row', { name: /Claude Opus 5\.5/ })
+    await waitFor(() => expect(opusRow).toHaveTextContent('400 tokens/min'))
+    expect(within(opusRow).getByText('Last stored reading: a fresh one is being read from Service Quotas')).toBeInTheDocument()
   })
 
   it('tests every model one at a time, never in parallel', async () => {

@@ -11,7 +11,7 @@ body is serialized (so the tag is the hash of the exact bytes sent):
   user, and freshness belongs to the server's versions;
 * a GET of per-user live state (``NO_STORE_PATTERNS``: chat conversations, agent
   runs, plans, jobs and their polls, the brief, scan / run status, memory import
-  polls, tokens) and any
+  polls, tokens, the system log search and its polls) and any
   GET that is not a 200 JSON answer get ``Cache-Control: private, no-store`` and no
   tag: nothing to keep, nothing to revalidate.
 
@@ -47,6 +47,12 @@ NO_STORE_PATTERNS: Final = tuple(re.compile(pattern) for pattern in (
     r'^/connect/tokens(/|$)',
     r'^/memory/imports(/|$)',
     r'^/voting-sessions(/[^/]+)?$',
+    r'^/logs/system(/|$)',
+    # The caller's way of working with AI: an admin's change must show at the next read.
+    r'^/users/me/ai-mode$',
+    # Document comment threads and review links: a teammate's or reviewer's comment must show at once.
+    r'^/projects/[^/]+/documents/[^/]+/(comments|share)$',
+    r'^/review/[^/]+$',
 ))
 
 

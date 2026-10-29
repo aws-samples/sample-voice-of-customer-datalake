@@ -2,26 +2,38 @@
 
 Reviews are read through ``GET /feedback`` on the metrics Lambda as the agent
 principal, so the owner's category access bounds what the agent sees; the
-agent's own scope narrows it further (one query per scoped category). The
-worker summarises them into cited problems. No reviews → the run halts as
-completed (nothing to do).
+agent's own scope narrows it further (one query per scoped category, read page
+by page until the route's ``total``). The window is the run's review window,
+``DEFAULT_REVIEW_DAYS`` (30) unless the step sets ``days`` — the window the persona,
+research and document steps read too (it was 7 here, so a category with 102 reviews
+two weeks ago was reported as "1 reviews"). The worker summarises them into cited
+problems. No reviews → the run halts as completed (nothing to do).
+
+The aggregate keeps ``review_count`` / ``days`` and short ``quotes`` from the reviews
+each problem cites: the document writers ground their numbers and quotes in them
+(``NodeContext.evidence_text``).
 """
 from __future__ import annotations
 
 from typing import Any
 
 from agents import context_blocks, llm, principal
-from agents.nodes.base import NodeContext, NodeFailure, done, scope_categories
+from agents.nodes.base import DEFAULT_REVIEW_DAYS, NodeContext, NodeFailure, done, scope_categories
 from shared.display_labels import humanize_id
 from shared.prompt_labels import PromptLabels
 from shared.prompt_labels_store import load_prompt_labels
 from shared.tables import get_aggregates_table
+from shared.text_clip import clip_words
 
-PER_CATEGORY_LIMIT = 100
+PAGE_SIZE = 100  # GET /feedback's largest page
+MAX_PAGES_PER_CATEGORY = 20  # 2,000 reviews per category, far beyond what one prompt summarises
 MAX_REVIEWS_IN_PROMPT = 60
 MAX_REVIEW_CHARS = 280
-DEFAULT_DAYS = 7
+DEFAULT_DAYS = DEFAULT_REVIEW_DAYS
 MAX_PROBLEMS = 5
+#: Quotes kept per problem, and each quote's length (clipped on a word).
+MAX_QUOTES_PER_PROBLEM = 2
+MAX_QUOTE_CHARS = 220
 # Answer budget (``llm.invoke`` adds AGENT_THINKING_HEADROOM). The answer is strict JSON from
 # ONE call, and its size is driven by the cited ids: up to MAX_PROBLEMS problems may each cite
 # every one of the MAX_REVIEWS_IN_PROMPT reviews (``evidence_count`` counts them all), and a
@@ -44,17 +56,29 @@ SYSTEM = (
 )
 
 
-def _fetch(ctx: NodeContext, days: int) -> list[dict]:
-    categories = scope_categories(ctx.agent) or [None]
-    seen: dict[str, dict] = {}
-    for category in categories:
-        query: dict[str, Any] = {'days': days, 'limit': PER_CATEGORY_LIMIT}
+def _pages(ctx: NodeContext, days: int, category: str | None) -> list[dict]:
+    """Every review of one category (None = all) in the window, page by page up to ``total``."""
+    items: list[dict] = []
+    for page in range(MAX_PAGES_PER_CATEGORY):
+        query: dict[str, Any] = {'days': days, 'limit': PAGE_SIZE, 'offset': page * PAGE_SIZE}
         if category:
             query['category'] = category
         payload = principal.metrics('GET', '/feedback', ctx.claims, query=query)
-        items = payload.get('items') if isinstance(payload, dict) else None
-        for item in items if isinstance(items, list) else []:
-            feedback_id = item.get('feedback_id') if isinstance(item, dict) else None
+        payload = payload if isinstance(payload, dict) else {}
+        batch = payload.get('items')
+        batch = [i for i in batch if isinstance(i, dict)] if isinstance(batch, list) else []
+        items.extend(batch)
+        total = payload.get('total')
+        if len(batch) < PAGE_SIZE or (isinstance(total, int) and len(items) >= total):
+            break
+    return items
+
+
+def _fetch(ctx: NodeContext, days: int) -> list[dict]:
+    seen: dict[str, dict] = {}
+    for category in scope_categories(ctx.agent) or [None]:
+        for item in _pages(ctx, days, category):
+            feedback_id = item.get('feedback_id')
             if isinstance(feedback_id, str) and feedback_id not in seen:
                 seen[feedback_id] = item
     return list(seen.values())
@@ -71,8 +95,12 @@ def _named(label: str, value: object) -> str:
     return f'{label} [{value}]' if value else '-'
 
 
+def _review_text(item: dict) -> str:
+    return str(item.get('original_text') or item.get('text') or '')
+
+
 def _review_line(item: dict, labels: PromptLabels = _NO_CONFIG) -> str:
-    text = str(item.get('original_text') or item.get('text') or '').replace('\n', ' ')
+    text = _review_text(item).replace('\n', ' ')
     category, subcategory, source = item.get('category'), item.get('subcategory'), item.get('source_platform')
     source_part = f'{labels.source(source)}, ' if source else ''
     return (f"[{item.get('feedback_id')}] ({_named(labels.category(category), category)} / "
@@ -100,6 +128,17 @@ def _clean_problems(raw: Any, known_ids: set[str], labels: PromptLabels = _NO_CO
             'evidence_count': len(ids),
         })
     return problems[:MAX_PROBLEMS]
+
+
+def _quotes(problems: list[dict], reviews: list[dict]) -> list[dict]:
+    """Up to ``MAX_QUOTES_PER_PROBLEM`` short quotes per problem, from the reviews it cites."""
+    texts = {str(r.get('feedback_id')): _review_text(r) for r in reviews}
+    quotes = []
+    for problem in problems:
+        cited = [texts[i] for i in problem['review_ids'] if texts.get(i, '').strip()]
+        quotes.extend({'problem': problem['title'], 'text': clip_words(text, MAX_QUOTE_CHARS)}
+                      for text in cited[:MAX_QUOTES_PER_PROBLEM])
+    return quotes
 
 
 def start(ctx: NodeContext) -> dict:
@@ -134,6 +173,7 @@ def start(ctx: NodeContext) -> dict:
         'top_problems': problems,
         'review_count': len(reviews),
         'days': days,
+        'quotes': _quotes(problems, selected),
     }
     return done(
         ctx, f"{len(reviews)} reviews → {len(problems)} problems; top: {problems[0]['title']}",

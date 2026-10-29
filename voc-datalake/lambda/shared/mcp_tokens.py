@@ -18,11 +18,12 @@ PARSES (same format) but names no ``MCPGTOKEN`` row, so the global server answer
 
 from __future__ import annotations
 
-import hashlib
 import hmac
 import secrets
 from dataclasses import dataclass
 from typing import Final
+
+from shared.digests import sha256_hex
 
 # ---------------------------------------------------------------------------
 # Format
@@ -77,7 +78,7 @@ def hash_secret(secret: str) -> str:
     a bad credential. That is a real cost for a marginal gain against a
     256-bit random value. Revisit if the secret ever becomes user-chosen.
     """
-    return hashlib.sha256(secret.encode()).hexdigest()
+    return sha256_hex(secret)
 
 
 def secret_matches(*, presented_secret: str, stored_hash: str) -> bool:

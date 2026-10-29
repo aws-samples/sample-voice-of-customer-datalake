@@ -40,6 +40,7 @@ const PLAIN_PROPERTIES = {
   padding: 'padding',
   gap: 'gap',
   height: 'height',
+  width: 'width',
   font_family: 'fontFamily',
   font_size: 'fontSize',
   font_weight: 'fontWeight',
@@ -73,7 +74,7 @@ export type PreviewState = 'default' | 'hover' | 'focus'
 
 /**
  * The style for one state of a variant: its styles, with the hover values on top
- * for `hover` and the focus outline for `focus`. A border width or colour implies
+ * for `hover` and the focus ring (outline, border colour, glow) for `focus`. A border width or colour implies
  * a solid border, so an outlined button reads as one.
  */
 export function variantStyle(variant: ComponentVariant, colors: readonly NamedValue[], state: PreviewState = 'default'): CSSProperties {
@@ -81,8 +82,19 @@ export function variantStyle(variant: ComponentVariant, colors: readonly NamedVa
   const hasBorder = [values.border_width, values.border_color].some((value) => (value?.trim() ?? '') !== '')
   const base: CSSProperties = hasBorder ? { borderStyle: 'solid', borderWidth: '1px' } : { borderStyle: 'none' }
   const style = toStyle([...plainEntries(values), ...colorEntries(values, colors)], base)
+  return state === 'focus' ? { ...style, ...focusRing(variant, colors) } : style
+}
+
+/** The focus ring's own properties: its outline, its border colour and its glow — each only when valid. */
+function focusRing(variant: ComponentVariant, colors: readonly NamedValue[]): CSSProperties {
+  const ring: CSSProperties = {}
   const outline = variant.focus.outline?.trim()
-  return state === 'focus' && outline && isValidOutline(outline) ? { ...style, outline, outlineOffset: '2px' } : style
+  if (outline && isValidOutline(outline)) Object.assign(ring, { outline, outlineOffset: '2px' })
+  const border = resolveColor(variant.focus.border_color, colors)
+  if (border) ring.borderColor = border
+  const shadow = variant.focus.shadow?.trim()
+  if (shadow && isValidStyleValue('shadow', shadow)) ring.boxShadow = shadow
+  return ring
 }
 
 export type PreviewElement = 'button' | 'input' | 'badge' | 'tab' | 'box'

@@ -206,6 +206,7 @@
       "produced": "What it produced",
       "producedNothing": "Nothing yet.",
       "anArtifact": "A new document",
+      "artifactTitled": "{{what}}: {{title}}",
       "inProject": "in {{name}}",
       "needsYou": "What needs you",
       "needsDecision": "Decide what happens next in the card above.",
@@ -361,10 +362,22 @@
       "arrowTargetNone": "Choose a step…",
       "joinLoop": "Loop"
     },
+    "issues": {
+      "instructionsRequired": "This step needs instructions: say what it should do.",
+      "titleRequired": "Give this step a title.",
+      "duplicateStep": "Two steps share the same id. Delete one of them and add it again.",
+      "duplicateArrow": "Two arrows share the same id. Delete one of them and draw it again.",
+      "reviewTarget": "Choose what this review checks.",
+      "endStatus": "Choose how the run ends here."
+    },
     "params": {
       "target": "Target",
       "targetAny": "Whatever was produced last",
       "maxNew": "Maximum new personas",
+      "generateAvatars": "Create a portrait for each persona",
+      "maxWords": "Length budget (words)",
+      "maxWordsNone": "No limit",
+      "maxWordsHint": "The whole document stays within about this many words. Empty: about 1,200 when the instructions ask for short documents, otherwise no limit.",
       "useWebSearch": "Use web search",
       "useWebSearchHint": "Counts toward the run's limit of {{limit, number}} web searches.",
       "endStatus": "Run ends as"
@@ -444,6 +457,18 @@
     "removeTitle": "Delete this plan?",
     "removeMessage": "“{{goal}}” will be removed from your plans. Its results stay in your projects.",
     "removeFailed": "The plan couldn’t be deleted. A plan that is still running must be cancelled first."
+  },
+  "validation": {
+    "scope": "Choose at least one category or subcategory, or watch all categories.",
+    "name": "Give the agent a name of up to {{max, number}} characters.",
+    "description": "The description can be up to {{max, number}} characters.",
+    "instructions": "The instructions can be up to {{max, number}} characters.",
+    "triggers": "Check the triggers: each needs whole numbers in range, and a custom schedule needs its cron expression.",
+    "personas": "Choose at most {{max, number}} fixed personas.",
+    "models": "Choose an available model for each role, or the default.",
+    "workflow": "Choose a workflow.",
+    "budget": "Check the budget: the limits must be whole numbers in range.",
+    "other": "Some settings are not valid. Check them and try again."
   },
   "decision": {
     "title": "This run needs your decision",

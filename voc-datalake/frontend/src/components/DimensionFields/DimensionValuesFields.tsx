@@ -16,13 +16,12 @@ interface DimensionValuesFieldsProps {
   value: Readonly<Record<string, string>>
   onChange: (value: Record<string, string>) => void
   emptyLabel: string
-  disabled?: boolean
   selectClassName?: string
   className?: string
 }
 
 export default function DimensionValuesFields({
-  dimensions, value, onChange, emptyLabel, disabled, selectClassName,
+  dimensions, value, onChange, emptyLabel, selectClassName,
   className = 'grid gap-3 sm:grid-cols-2',
 }: Readonly<DimensionValuesFieldsProps>) {
   if (dimensions.length === 0) return null
@@ -36,7 +35,6 @@ export default function DimensionValuesFields({
           parentValue={dimension.parent === undefined ? undefined : value[dimension.parent]}
           onChange={(next) => onChange(withDimensionValue(dimensions, value, dimension.key, next))}
           emptyLabel={emptyLabel}
-          disabled={disabled}
           className={selectClassName}
         />
       ))}

@@ -102,6 +102,11 @@ class TestBrowserSession:
         client.stop_browser_session.assert_called_once_with(browserIdentifier=BROWSER_IDENTIFIER, sessionId='s-1')
         assert socket.closed
 
+    def test_the_connection_names_its_browser_session_for_the_logs(self):
+        socket = FakeSocket(lambda m: [reply(m, {})])
+        with browser_session(300, client=agentcore_client(), opener=lambda *_a: socket, credentials=CREDENTIALS) as cdp:
+            assert cdp.browser_session_id == 's-1'
+
     def test_the_session_is_stopped_when_the_work_fails(self):
         client = agentcore_client()
 

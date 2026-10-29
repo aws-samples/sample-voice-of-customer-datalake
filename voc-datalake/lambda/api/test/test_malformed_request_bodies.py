@@ -118,7 +118,6 @@ ROUTES = [
         ('POST', '/documents'),
         ('PUT', '/documents/doc-1'),
         ('PUT', '/product-context'),
-        ('POST', '/product-context/interview'),
         ('POST', '/product-docs/upload-url'),
         ('POST', '/prfaq-autofill'),
         ('POST', '/research/suggest-questions'),

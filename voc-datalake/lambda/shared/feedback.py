@@ -5,7 +5,6 @@ and job Lambdas (document generator, document merger).
 """
 
 import logging
-import re
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -29,6 +28,7 @@ from shared.item_filters import NO_ITEM_FILTERS, ItemFilters, parse_item_filters
 from shared.logging import logger as powertools_logger
 from shared.prompt_labels import PromptLabels
 from shared.time_budget import WalkBudget
+from shared.timestamps import ISO_DAY_RE
 
 logger = logging.getLogger(__name__)
 
@@ -290,7 +290,6 @@ def sample_walk_days(days: int) -> int:
 # Shape guard for basis dates: a malformed source_created_at (e.g.
 # "unavailable") would otherwise compare lexicographically above any
 # YYYY-MM-DD cutoff.
-_ISO_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}\Z')
 
 # --- LLM context budgeting (issue #231) --------------------------------------
 # Lives here, next to format_feedback_for_llm, because the producer of the
@@ -462,7 +461,7 @@ def basis_date(item: Mapping, date_basis: str) -> str:
     """
     if date_basis == DATE_BASIS_REVIEW:
         source_created = (item.get('source_created_at') or '')[:10]  # pragma: no mutate  any non-date default fails the ISO match below
-        if _ISO_DATE_RE.match(source_created):
+        if ISO_DAY_RE.match(source_created):
             return source_created
     return item.get('date', '')
 

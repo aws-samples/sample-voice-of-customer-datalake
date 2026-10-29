@@ -5,6 +5,7 @@
  * a pin without an id is dropped.
  * @module api/prototypePinsApi
  */
+import { post } from './requestKit'
 import { z } from 'zod'
 import { fetchApi } from './client'
 
@@ -74,12 +75,10 @@ export const prototypePinsApi = {
     normalizePins(await fetchApi<unknown>(pinsPath(projectId, documentId))),
 
   reply: async (projectId: string, documentId: string, pinId: string, text: string): Promise<PrototypePin> =>
-    pinMutationResult(await fetchApi<unknown>(`${pinPath(projectId, documentId, pinId)}/replies`, {
-      method: 'POST', body: JSON.stringify({ text }),
-    })),
+    pinMutationResult(await fetchApi<unknown>(`${pinPath(projectId, documentId, pinId)}/replies`, post({ text }))),
 
   setStatus: async (projectId: string, documentId: string, pinId: string, action: 'resolve' | 'reopen'): Promise<PrototypePin> =>
-    pinMutationResult(await fetchApi<unknown>(`${pinPath(projectId, documentId, pinId)}/${action}`, { method: 'POST' })),
+    pinMutationResult(await fetchApi<unknown>(`${pinPath(projectId, documentId, pinId)}/${action}`, post())),
 }
 
 export const prototypePinsQueryKey = (projectId: string, documentId: string) =>

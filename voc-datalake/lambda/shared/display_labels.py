@@ -57,22 +57,23 @@ def _usable(name: object) -> str | None:
     return None if not trimmed or len(trimmed) > MAX_CONFIGURED_LABEL or '\n' in trimmed else trimmed
 
 
-def _entries(raw: object) -> list[Mapping[str, Any]]:
+def mapping_entries(raw: object) -> list[Mapping[str, Any]]:
+    """The mapping members of a stored list (anything else, or a non-list, is dropped)."""
     return [entry for entry in raw if isinstance(entry, Mapping)] if isinstance(raw, list | tuple) else []
 
 
 def category_label(category_id: str, categories: Iterable[Mapping[str, Any]] = ()) -> str:
     """A category id's label: its configured name, else the humanised id."""
-    configured = next((c for c in _entries(list(categories)) if c.get('name') == category_id), None)
+    configured = next((c for c in mapping_entries(list(categories)) if c.get('name') == category_id), None)
     return _usable(configured.get('description') if configured else None) or humanize_id(category_id)
 
 
 def subcategory_label(sub_id: str, parent: str | None, categories: Iterable[Mapping[str, Any]] = ()) -> str:
     """A subcategory id's label: looked up under ``parent`` first, then anywhere; else humanised."""
-    rows = _entries(list(categories))
+    rows = mapping_entries(list(categories))
     in_parent = next((s for c in rows if c.get('name') == parent
-                      for s in _entries(c.get('subcategories')) if s.get('name') == sub_id), None)
-    anywhere = in_parent or next((s for c in rows for s in _entries(c.get('subcategories'))
+                      for s in mapping_entries(c.get('subcategories')) if s.get('name') == sub_id), None)
+    anywhere = in_parent or next((s for c in rows for s in mapping_entries(c.get('subcategories'))
                                   if s.get('name') == sub_id), None)
     return _usable(anywhere.get('description') if anywhere else None) or humanize_id(sub_id)
 
@@ -147,7 +148,7 @@ def _web_connector_label(source_id: str) -> str | None:
 
 def source_label(source_id: str, profiles: Iterable[Mapping[str, Any]] = ()) -> str:
     """A source id's label: its profile's label (when set and not just the id), else the connector-aware humanised id."""
-    profile = next((p for p in _entries(list(profiles)) if p.get('id') == source_id), None)
+    profile = next((p for p in mapping_entries(list(profiles)) if p.get('id') == source_id), None)
     raw = profile.get('label') if profile else None
     label = raw.strip() if isinstance(raw, str) else ''
     if label and label != source_id:

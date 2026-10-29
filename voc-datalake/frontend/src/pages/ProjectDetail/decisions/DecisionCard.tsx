@@ -1,10 +1,10 @@
 /**
  * @fileoverview One decision: verdict, rationale, measures, dates, evidence and its actions —
  * Edit, "Draft PR/FAQ" (Pursue only, then where that PR/FAQ stands), "Revisit" (a new
- * decision prefilled from this one) and, once launched, its release watch.
+ * decision prefilled from this one), Delete (asked first, by the tab) and, once launched, its release watch.
  * @module pages/ProjectDetail/decisions/DecisionCard
  */
-import { Activity, FilePlus2, FileText, Loader2, Newspaper, Pencil } from 'lucide-react'
+import { Activity, FilePlus2, FileText, Loader2, Newspaper, Pencil, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
@@ -27,6 +27,7 @@ interface DecisionCardProps {
   readonly prfaqJob?: SeededJob
   readonly onEdit: () => void
   readonly onPursue: () => void
+  readonly onDelete: () => void
 }
 
 function Measure({ label, value }: Readonly<{ label: string; value: string }>) {
@@ -99,7 +100,7 @@ function DecidedLine({ decision }: Readonly<{ decision: Decision }>) {
   )
 }
 
-export default function DecisionCard({ projectId, decision, documents, canEdit, isPursuing, prfaqJob, onEdit, onPursue }: DecisionCardProps) {
+export default function DecisionCard({ projectId, decision, documents, canEdit, isPursuing, prfaqJob, onEdit, onPursue, onDelete }: DecisionCardProps) {
   const { t } = useTranslation('decisions')
   const [showWatch, setShowWatch] = useState(false)
   const revisit = decisionDeepLink(projectId, { title: decision.title, feedbackIds: decision.feedbackIds })
@@ -127,6 +128,7 @@ export default function DecisionCard({ projectId, decision, documents, canEdit, 
             <button type="button" className="btn btn-secondary btn-sm" onClick={onEdit}><Pencil size={14} aria-hidden />{t('actions.edit')}</button>
             <PursueButton decision={decision} isPursuing={isPursuing} onPursue={onPursue} />
             <Link to={revisit} className="btn btn-ghost btn-sm"><FilePlus2 size={14} aria-hidden />{t('actions.revisit')}</Link>
+            <button type="button" className="btn btn-ghost btn-sm text-danger" onClick={onDelete}><Trash2 size={14} aria-hidden />{t('actions.delete')}</button>
           </>
         )}
         {decision.launchedAt !== null && (

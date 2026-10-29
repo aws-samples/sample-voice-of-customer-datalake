@@ -49,12 +49,12 @@ from shared.document_versions import (
 from shared.dynamo_paging import iter_query, query_all
 from shared.exceptions import ConflictError, NotFoundError, ValidationError
 from shared.project_writes import projects_table_name
+from shared.row_ids import OPAQUE_ID_RE
 
 REVISION_PREFIX = 'REVISION#'
 # The versions a list shows, newest first. A document edited more often keeps
 # every version; the list is the recent history, not an archive browser.
 VERSION_LIST_LIMIT = 25
-EDIT_ID_RE = re.compile(r'^[A-Za-z0-9_-]{1,64}\Z')
 UNMANAGED_VERSION_RE = re.compile(r'^r([1-9]\d{0,5})\Z')
 
 EDIT_KIND_EDIT = 'edit'
@@ -79,7 +79,7 @@ def validated_edit_id(raw: object, content: str) -> str:
     """
     if raw is None:
         return hashlib.sha256(content.encode()).hexdigest()[:32]
-    if not isinstance(raw, str) or not EDIT_ID_RE.fullmatch(raw):
+    if not isinstance(raw, str) or not OPAQUE_ID_RE.fullmatch(raw):
         raise ValidationError('edit_id must be 1-64 letters, digits, "-" or "_"')
     return raw
 
@@ -104,7 +104,8 @@ def _content_of(body: dict, document: dict) -> str:
 
 # ── Managed series ───────────────────────────────────────────────────────────
 
-def _series_base(document: dict) -> str:
+def series_base(document: dict) -> str:
+    """The base title of a managed document's series (its versioned title without the ``(vN)``)."""
     base, _ = split_versioned_title(document.get('base_title') or document.get('title') or 'Untitled')
     return base
 
@@ -114,7 +115,7 @@ def _new_managed_version(table: Any, project_id: str, document_type: str, source
                          expected_last_version: int | None = None) -> dict:
     fields = {key: value for key, value in source.items() if key not in _ROW_IDENTITY_FIELDS}
     fields.update({'content': content, 'created_at': now, 'updated_at': now, **provenance})
-    return persist_versioned_document(table, project_id, document_type, _series_base(source), allocation_id, fields,
+    return persist_versioned_document(table, project_id, document_type, series_base(source), allocation_id, fields,
                                       expected_last_version=expected_last_version)
 
 
@@ -124,7 +125,7 @@ def _series_documents(table: Any, project_id: str, document: dict, document_type
     ``normalize_document_versions`` gives every managed row a ``base_title`` and an
     int ``version`` and leaves every other row alone, which the type filter drops.
     """
-    series = normalized_base_title(_series_base(document), document_type)
+    series = normalized_base_title(series_base(document), document_type)
     rows = query_all(table, {'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}'), 'ConsistentRead': True})
     versions = [
         row for row in normalize_document_versions(rows)
@@ -133,6 +134,16 @@ def _series_documents(table: Any, project_id: str, document: dict, document_type
     ]
     versions.sort(key=lambda row: row['version'], reverse=True)
     return versions
+
+
+def series_versions(table: Any, project_id: str, document: dict) -> list[dict]:
+    """Every version of a managed ``document``'s series, newest first ([] for an unmanaged one).
+
+    ``document`` needs only ``document_type`` (or a typed ``sk``) and ``base_title`` / ``title``;
+    the document review routes (shared/document_review_routes.py) read a series by its link.
+    """
+    document_type = managed_document_type(document)
+    return [] if document_type is None else _series_documents(table, project_id, document, document_type)
 
 
 def _managed_version_view(row: dict, *, current: bool) -> dict:

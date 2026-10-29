@@ -217,7 +217,7 @@ def _storable(result: object) -> dict:
 def _failure_text(exc: Exception, job_type: object, work: Work) -> str:
     """The job's ``error``: a 4xx refusal's own message, else the kind's generic one (and a traceback in the log)."""
     if isinstance(exc, ApiError) and 400 <= exc.status_code < 500:
-        logger.warning('Assist ended with a user-facing refusal',
+        logger.info('Assist ended with a user-facing refusal',
                        extra={'job_type': job_type, 'status_code': exc.status_code})
         return str(exc)
     logger.exception('Assist failed', extra={'job_type': job_type})

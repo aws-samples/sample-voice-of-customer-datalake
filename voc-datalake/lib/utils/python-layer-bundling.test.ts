@@ -13,7 +13,7 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
-import { BUILD_VENV, BUILD_VENV_SETUP, pythonLayerCode } from './python-layer-bundling';
+import { BUILD_VENV, BUILD_VENV_SETUP, LAYER_STRIP, layerStripSteps, pythonLayerCode } from './python-layer-bundling';
 
 // AssetCode keeps its constructor args in TypeScript-private fields, which
 // still exist at runtime; parse them with Zod instead of reaching in with
@@ -67,6 +67,24 @@ describe('pythonLayerCode', () => {
     expect(command).toContain('/python/botocore-*');
   });
 
+  it('strips the whole runtime-provided SDK closure, so no layer copy shadows the runtime\'s', () => {
+    // The Lambda Python 3.14 runtime's own site-packages (scripts/audit/layer_dists.py RUNTIME_PROVIDED).
+    for (const entry of ['s3transfer', 'jmespath', 'dateutil', 'python_dateutil-*', 'six.py', 'six-*', 'urllib3', 'urllib3-*']) {
+      expect(command).toContain(`/asset-output/python/${entry} `);
+    }
+  });
+
+  it('drops what never runs in Lambda: console scripts, type stubs, packaged tests', () => {
+    expect(command).toContain(layerStripSteps('/asset-output/python'));
+    expect(command).toContain('-name "*.pyi" -type f -delete');
+    expect(command).toContain('-mindepth 2 -type d -name tests -prune');
+    expect(LAYER_STRIP.filter((entry) => entry === 'bin' || entry === '*-stubs')).toStrictEqual(['bin', '*-stubs']);
+  });
+
+  it('keeps bytecode and package metadata', () => {
+    expect(command).not.toMatch(/\.pyc|dist-info|__pycache__/);
+  });
+
   it('excludes local build output so deploys never ship a stale nested copy', () => {
     expect(parsed.options.exclude).toContain('python');
     expect(parsed.options.exclude).toContain('**/.DS_Store');
@@ -84,6 +102,14 @@ describe('lockstep with scripts/build-layers.sh', () => {
 
   it('manual builds never use a fixed path under /tmp either', () => {
     expect(script).not.toMatch(/\/tmp\//);
+  });
+
+  it('manual builds run the identical strip steps', () => {
+    expect(script).toContain(layerStripSteps('/var/task/python'));
+  });
+
+  it('manual builds build every layer dir, the split ones included', () => {
+    expect(script).toContain('for layer_dir in "$LAYERS_DIR"/*/; do');
   });
 
   it('manual builds strip boto3/botocore too', () => {

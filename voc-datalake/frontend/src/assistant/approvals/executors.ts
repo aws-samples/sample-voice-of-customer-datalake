@@ -18,10 +18,9 @@ import { setFeedbackCategory } from '../../api/feedbackCategoryApi'
 import { projectsApi } from '../../api/projectsApi'
 import { scrapersApi } from '../../api/scrapersApi'
 import { useAuthStore } from '../../store/authStore'
-import { invalidateKeys, keysFor } from './invalidation'
+import { keysFor, refreshAfterWrite } from './invalidation'
 import { StaleApprovalError, currentJobEnvironment, sameBrandSettings, shownOf } from './shown'
 import type { BrandSettings, JobEnvironment } from './shown'
-import type { QueryKey } from '@tanstack/react-query'
 import type { WriteToolExecutionContext } from '../types'
 import type {
   AddPersonaNoteArgs, CreateDocumentArgs, CreateProjectArgs, DeleteDocumentArgs,
@@ -36,11 +35,6 @@ interface ExecutionResult {
 }
 
 type Executor<A> = (args: A, ctx: WriteToolExecutionContext) => Promise<ExecutionResult>
-
-/** Fire-and-forget: the write already succeeded, a slow refetch must not hold the outcome. */
-function refresh(ctx: WriteToolExecutionContext, keys: readonly QueryKey[]): void {
-  void invalidateKeys(ctx.queryClient, keys)
-}
 
 /** The time window and language the card showed (captured at render), else the app's current ones. */
 function jobEnvironment(ctx: WriteToolExecutionContext): JobEnvironment {
@@ -73,7 +67,7 @@ export async function fetchBrandSettings(): Promise<BrandSettings> {
 
 const createProject: Executor<CreateProjectArgs> = async (args, ctx) => {
   const res = await projectsApi.createProject({ name: args.name, ...(args.description === undefined ? {} : { description: args.description }) })
-  refresh(ctx, keysFor.projectList())
+  refreshAfterWrite(ctx, keysFor.projectList())
   // The API may answer without a parseable project; report the create without inventing an id.
   const projectId = res.project?.project_id
   return projectId === undefined
@@ -83,7 +77,7 @@ const createProject: Executor<CreateProjectArgs> = async (args, ctx) => {
 
 const setProblemResolved: Executor<SetProblemResolvedArgs> = async (args, ctx) => {
   await api.setProblemResolved(args.problem_key, args.resolved)
-  refresh(ctx, keysFor.resolvedProblems())
+  refreshAfterWrite(ctx, keysFor.resolvedProblems())
   return { summary: `Marked problem "${args.problem_key}" as ${args.resolved ? 'resolved' : 'unresolved'}.` }
 }
 
@@ -92,7 +86,7 @@ const setFeedbackCategoryExecutor: Executor<SetFeedbackCategoryArgs> = async (ar
     category: args.category,
     ...(args.subcategory === undefined ? {} : { subcategory: args.subcategory }),
   })
-  refresh(ctx, keysFor.feedbackCategory())
+  refreshAfterWrite(ctx, keysFor.feedbackCategory())
   const category = result?.category ?? args.category
   const subcategory = result?.subcategory ?? args.subcategory
   const label = subcategory === undefined ? category : `${category} / ${subcategory}`
@@ -108,7 +102,7 @@ const updateDocument: Executor<UpdateDocumentArgs> = async (args, ctx) => {
     ...(args.title === undefined ? {} : { title: args.title }),
     edit_id: crypto.randomUUID(),
   })
-  refresh(ctx, keysFor.projectRecord(args.project_id))
+  refreshAfterWrite(ctx, keysFor.projectRecord(args.project_id))
   // Every edit is a new version; a PRD / PR-FAQ version has its own id, which is
   // the one any follow-up call must name. The edited version stays retrievable.
   const saved = res.document
@@ -122,19 +116,19 @@ const updateDocument: Executor<UpdateDocumentArgs> = async (args, ctx) => {
 
 const createDocument: Executor<CreateDocumentArgs> = async (args, ctx) => {
   const res = await projectsApi.createDocument(args.project_id, { title: args.title, content: args.content, document_type: 'custom' })
-  refresh(ctx, keysFor.projectRecord(args.project_id))
+  refreshAfterWrite(ctx, keysFor.projectRecord(args.project_id))
   return { summary: `Created document "${args.title}" (${res.document.document_id}).`, data: { document_id: res.document.document_id } }
 }
 
 const deleteDocument: Executor<DeleteDocumentArgs> = async (args, ctx) => {
   await projectsApi.deleteDocument(args.project_id, args.document_id)
-  refresh(ctx, keysFor.projectRecord(args.project_id))
+  refreshAfterWrite(ctx, keysFor.projectRecord(args.project_id))
   return { summary: `Deleted document ${args.document_id}.`, data: { document_id: args.document_id } }
 }
 
 const updatePersona: Executor<UpdatePersonaArgs> = async (args, ctx) => {
   await projectsApi.updatePersona(args.project_id, args.persona_id, args.updates)
-  refresh(ctx, keysFor.projectRecord(args.project_id))
+  refreshAfterWrite(ctx, keysFor.projectRecord(args.project_id))
   const fields = Object.keys(args.updates).join(', ')
   return { summary: `Updated persona ${args.persona_id} (${fields}).`, data: { persona_id: args.persona_id } }
 }
@@ -145,7 +139,7 @@ const addPersonaNote: Executor<AddPersonaNoteArgs> = async (args, ctx) => {
     text: args.text,
     ...(author === undefined || author === '' ? {} : { author }),
   })
-  refresh(ctx, keysFor.projectRecord(args.project_id))
+  refreshAfterWrite(ctx, keysFor.projectRecord(args.project_id))
   return { summary: `Added a research note to persona ${args.persona_id}.`, data: { note_id: res.note?.note_id } }
 }
 
@@ -154,18 +148,18 @@ const updateProject: Executor<UpdateProjectArgs> = async (args, ctx) => {
     ...(args.name === undefined ? {} : { name: args.name }),
     ...(args.description === undefined ? {} : { description: args.description }),
   })
-  refresh(ctx, keysFor.projectRecord(args.project_id))
+  refreshAfterWrite(ctx, keysFor.projectRecord(args.project_id))
   return { summary: `Updated project ${args.project_id}.` }
 }
 
 const updateProductContext: Executor<UpdateProductContextArgs> = async (args, ctx) => {
   await projectsApi.updateProductContext(args.project_id, args.updates)
-  refresh(ctx, keysFor.productContext(args.project_id))
+  refreshAfterWrite(ctx, keysFor.productContext(args.project_id))
   return { summary: `Updated the product context (${Object.keys(args.updates).join(', ')}).` }
 }
 
 function jobResult(kind: string, projectId: string, ctx: WriteToolExecutionContext, res: { job_id: string }): ExecutionResult {
-  refresh(ctx, keysFor.projectJobs(projectId))
+  refreshAfterWrite(ctx, keysFor.projectJobs(projectId))
   return { summary: `Started ${kind} job ${res.job_id}; it runs in the background and appears in the project's Jobs.`, data: { job_id: res.job_id } }
 }
 
@@ -246,13 +240,13 @@ const mergeDocuments: Executor<MergeDocumentsArgs> = async (args, ctx) => {
 
 const updateFeedbackForm: Executor<UpdateFeedbackFormArgs> = async (args, ctx) => {
   await api.updateFeedbackForm(args.form_id, args.updates)
-  refresh(ctx, keysFor.feedbackForms())
+  refreshAfterWrite(ctx, keysFor.feedbackForms())
   return { summary: `Updated feedback form ${args.form_id} (${Object.keys(args.updates).join(', ')}).` }
 }
 
 const runScraper: Executor<RunScraperArgs> = async (args, ctx) => {
   const res = await scrapersApi.runScraper(args.scraper_id)
-  refresh(ctx, keysFor.scrapers())
+  refreshAfterWrite(ctx, keysFor.scrapers())
   return { summary: `Started scraper ${args.scraper_id} (execution ${res.execution_id}).`, data: { execution_id: res.execution_id } }
 }
 
@@ -268,7 +262,7 @@ const saveBrandSettings: Executor<SaveBrandSettingsArgs> = async (args, ctx) => 
   if (shownBase === undefined || !sameBrandSettings(shownBase, current)) throw new StaleApprovalError(BRAND_CHANGED_MESSAGE)
   const merged = mergeBrandSettings(shownBase, args)
   await api.saveBrandSettings(merged)
-  refresh(ctx, keysFor.brandSettings())
+  refreshAfterWrite(ctx, keysFor.brandSettings())
   return { summary: 'Saved the brand settings.', data: merged }
 }
 

@@ -17,13 +17,11 @@ import { LoginRedirect, UnconfiguredAuthFallback } from '../ProtectedRoute/authR
 interface AdminRouteProps {
   /** Child components to render if user is admin */
   readonly children: React.ReactNode
-  /** Optional redirect path for non-admins (defaults to '/') */
-  readonly redirectTo?: string
 }
 
 /**
  * Wraps routes that require admin privileges.
- * Redirects non-admin users to the specified path (default: dashboard).
+ * Redirects non-admin users to the dashboard.
  * 
  * @example
  * ```tsx
@@ -34,7 +32,7 @@ interface AdminRouteProps {
  * } />
  * ```
  */
-export default function AdminRoute({ children, redirectTo = '/' }: AdminRouteProps) {
+export default function AdminRoute({ children }: AdminRouteProps) {
   const location = useLocation()
   const { isAuthenticated } = useAuthStore()
   const isAdmin = useIsAdmin()
@@ -51,7 +49,7 @@ export default function AdminRoute({ children, redirectTo = '/' }: AdminRoutePro
 
   // If authenticated but not admin, redirect to dashboard
   if (!isAdmin) {
-    return <Navigate to={redirectTo} state={{ accessDenied: true }} replace />
+    return <Navigate to="/" state={{ accessDenied: true }} replace />
   }
 
   return <>{children}</>

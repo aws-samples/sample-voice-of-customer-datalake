@@ -38,7 +38,7 @@ export const SCRAPER_LIMITS = {
   maxScraperBytes: 8192,
 } as const;
 
-/** scrapers_handler.SCRAPER_ID_PATTERN. */
+/** shared.row_ids.OPAQUE_ID_RE (scrapers_handler). */
 const SCRAPER_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 export const MAX_SCRAPER_ID_LENGTH = 64;
 

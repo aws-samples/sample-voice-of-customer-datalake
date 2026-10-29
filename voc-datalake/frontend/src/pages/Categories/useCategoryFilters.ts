@@ -18,7 +18,7 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { parseDims, serializeDims } from '../../api/dimensionsSchema'
-import type { AttributeFilters } from '../../api/types'
+import type { AttributeFilters, ItemFilterParams } from '../../api/types'
 import { withOwnedParams } from '../../utils/searchParams'
 import { ANY_RATING_FILTER } from './types'
 import type { RatingDirection, RatingFilter, SentimentFilter } from './types'
@@ -78,6 +78,27 @@ export function attributeFiltersOf(state: Pick<CategoryFiltersState, 'channel' |
     ...(state.channel === null ? {} : { channel: state.channel }),
     ...(dims === undefined ? {} : { dims }),
     ...(state.tag === null ? {} : { tag: state.tag }),
+  }
+}
+
+/** The server's `rating_min` / `rating_max` for the picker's threshold and direction. */
+export function ratingParamsOf(filter: RatingFilter): Pick<ItemFilterParams, 'rating_min' | 'rating_max'> {
+  if (filter.value === 0) return {}
+  return filter.direction === 'up' ? { rating_min: filter.value } : { rating_max: filter.value }
+}
+
+/**
+ * Every server-side item filter of the state: the attributes, the stars and "urgent only".
+ * The breakdown cards (distribution, gauge, keywords) read with these, so they count what
+ * the list shows (5.34.00: rating and urgent changed only the list).
+ */
+export function breakdownFiltersOf(
+  state: Pick<CategoryFiltersState, 'channel' | 'dimensionFilter' | 'tag' | 'ratingFilter' | 'showUrgentOnly'>,
+): ItemFilterParams {
+  return {
+    ...attributeFiltersOf(state),
+    ...ratingParamsOf(state.ratingFilter),
+    ...(state.showUrgentOnly ? { urgent: 1 } : {}),
   }
 }
 

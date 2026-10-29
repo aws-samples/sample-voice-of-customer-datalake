@@ -31,7 +31,7 @@ import type { ContentBlock, Message } from '@aws-sdk/client-bedrock-runtime';
 import { INTERRUPT_ID_PREFIX, LIMITS } from '../contract.js';
 import { partsToContentBlocks } from '../../attachments.js';
 import { ValidationError } from '../../lib/errors.js';
-import { parseToolInput } from '../../bedrock/stream-processor.js';
+import { parseStreamedToolInput } from '../../bedrock/stream-processor.js';
 import { partsOf, textOfParts } from './input.js';
 import { annotatePlanOutcome } from './plan-outcome.js';
 import { decodeReasoning } from './reasoning.js';
@@ -154,7 +154,7 @@ function structuredTurn(turn: ToolTurn, outcomeFor: OutcomeLookup): Message[] {
     ...reasoning,
     ...(text ? [{ text }] : []),
     ...calls.map((call) => ({
-      toolUse: { toolUseId: call.id, name: call.function.name, input: parseToolInput(call.function.arguments) },
+      toolUse: { toolUseId: call.id, name: call.function.name, input: parseStreamedToolInput(call.function.arguments) },
     })),
   ];
   if (calls.length === 0) return text ? [{ role: 'assistant', content }] : [];

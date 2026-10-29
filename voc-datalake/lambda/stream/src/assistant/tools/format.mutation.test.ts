@@ -5,7 +5,8 @@
  * and `firstString` refuse `null` and the empty string.
  */
 import { describe, expect, it } from 'vitest';
-import { clip, firstString, isRecord, jsonResult, pick, withinBudget } from './format.js';
+import { isRecord } from '../../lib/is-record.js';
+import { clip, firstString, jsonResult, pick, withinBudget } from './format.js';
 
 describe('isRecord', () => {
   it.each([

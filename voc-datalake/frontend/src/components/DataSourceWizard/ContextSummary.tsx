@@ -7,6 +7,7 @@ import type { ProjectDocument } from '../../api/types'
 import type { ProjectPersona } from '../../api/projectTypes'
 import type { ContextConfig } from './types'
 import { useSentimentLabels, toSentimentLabels } from './sentimentLabels'
+import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 
 interface ContextSummaryProps {
   readonly config: ContextConfig
@@ -33,17 +34,18 @@ function withSeparator(label: string, separator: string): string {
   return `${label}${separator}`
 }
 
-// Feedback section component
+// Feedback section component: sources and categories by their labels, never the stored ids (`web_trustpilot_…`).
 function FeedbackSection({ config }: Readonly<{ config: ContextConfig }>) {
   const { t } = useTranslation('components')
   const sentimentLabels = useSentimentLabels()
+  const labels = useDisplayLabels()
   if (!config.useFeedback) return null
   const all = t('components:dataSourceWizard.all')
   const sep = t('components:dataSourceWizard.labelSeparator')
   return (
     <div className="space-y-1">
-      <p><span className="text-muted">{withSeparator(t('components:dataSourceWizard.sources'), sep)}</span> {formatListOrFallback(config.sources, all)}</p>
-      <p><span className="text-muted">{withSeparator(t('components:dataSourceWizard.categories'), sep)}</span> {formatListOrFallback(config.categories, all)}</p>
+      <p><span className="text-muted">{withSeparator(t('components:dataSourceWizard.sources'), sep)}</span> {formatListOrFallback(config.sources.map(labels.source), all)}</p>
+      <p><span className="text-muted">{withSeparator(t('components:dataSourceWizard.categories'), sep)}</span> {formatListOrFallback(config.categories.map(labels.category), all)}</p>
       <p><span className="text-muted">{withSeparator(t('components:dataSourceWizard.sentiments'), sep)}</span> {
         formatListOrFallback(toSentimentLabels(config.sentiments, sentimentLabels), all)
       }</p>

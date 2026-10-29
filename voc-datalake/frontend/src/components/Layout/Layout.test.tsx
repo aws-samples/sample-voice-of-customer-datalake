@@ -66,7 +66,9 @@ vi.mock('../Breadcrumbs/Breadcrumbs', () => ({
 
 // The assistant has its own suites (src/assistant); here only its mount point matters.
 vi.mock('../../assistant/components/AssistantRoot', () => ({
-  default: () => <div data-testid="assistant-root" />,
+  default: ({ launcherHidden = false }: Readonly<{ launcherHidden?: boolean }>) => (
+    <div data-testid="assistant-root" data-launcher-hidden={String(launcherHidden)} />
+  ),
 }))
 
 vi.mock('../ReviewModal/ReviewModalHost', () => ({
@@ -291,6 +293,14 @@ describe('Layout', () => {
       expect(menuButton).toHaveFocus()
     })
 
+    // 5.35 (E2E 5.34): the launcher floated over the open drawer on a phone.
+    it('hides the assistant launcher while the drawer is open', async () => {
+      render(<Layout />, { wrapper: createWrapper() })
+      expect(await screen.findByTestId('assistant-root')).toHaveAttribute('data-launcher-hidden', 'false')
+      await userEvent.click(await screen.findByRole('button', { name: 'Open menu' }))
+      expect(screen.getByTestId('assistant-root')).toHaveAttribute('data-launcher-hidden', 'true')
+    })
+
     it('closes when Tab leaves the drawer (it covers the page)', async () => {
       render(<Layout />, { wrapper: createWrapper() })
       await userEvent.click(await screen.findByRole('button', { name: 'Open menu' }))
@@ -389,6 +399,15 @@ describe('Layout', () => {
     // Regression (double scrollbar on /radar): the page scroller must be a positioned containing
     // block. Otherwise absolute descendants (`.sr-only` spans) resolve against the initial
     // containing block, extend the document past the viewport and the window scrolls too.
+    // 5.35 (E2E 5.34): the launcher covered the Categories CSV button with no way to scroll it clear.
+    it('reserves room under the page for the assistant launcher, except on /chat', async () => {
+      const { unmount } = render(<Layout />, { wrapper: createWrapper(['/categories']) })
+      expect(await screen.findByTestId('page-scroller')).toHaveClass('pb-20', 'sm:pb-20')
+      unmount()
+      render(<Layout />, { wrapper: createWrapper(['/chat']) })
+      expect(await screen.findByTestId('page-scroller')).not.toHaveClass('pb-20')
+    })
+
     it('makes the page scroller the containing block of its absolute descendants', async () => {
       render(<Layout />, { wrapper: createWrapper(['/']) })
       const scroller = await screen.findByTestId('page-scroller')
@@ -489,10 +508,9 @@ describe('nav sections and gating (Listen → Understand → Build → Validate,
   })
 
   it('hides a section header when all of its items are disabled by menu config', async () => {
-    // Disable both items in the "Validate" section (feedback-forms + prioritization).
-    mockIsMenuItemEnabled.mockImplementation(
-      (key: string) => key !== 'feedback-forms' && key !== 'prioritization',
-    )
+    // Disable every item in the "Validate" section (feedback-forms, prioritization, participants).
+    const validateKeys = new Set(['feedback-forms', 'prioritization', 'participants'])
+    mockIsMenuItemEnabled.mockImplementation((key: string) => !validateKeys.has(key))
 
     await renderNavWithPhases()
     expect(screen.queryByText('Validate')).not.toBeInTheDocument()

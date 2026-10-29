@@ -7,7 +7,7 @@
  * We keep existing amazon-cognito-identity-js for user authentication.
  */
 import { Amplify } from 'aws-amplify'
-import { getConfig } from '../config'
+import { getRuntimeConfig } from '../runtimeConfig'
 
 /** Process-wide flag: Amplify is configured once per page load. */
 const amplifyState = { configured: false }
@@ -15,7 +15,7 @@ const amplifyState = { configured: false }
 export function configureAmplify(): void {
   if (amplifyState.configured) return
 
-  const cfg = getConfig()
+  const cfg = getRuntimeConfig()
   
   if (!cfg.cognito.userPoolId || !cfg.cognito.clientId || !cfg.cognito.identityPoolId) {
     console.warn('Amplify configuration incomplete - streaming API will not work')

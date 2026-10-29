@@ -28,6 +28,7 @@ from shared.plugin_identity import PLUGIN_IDENTIFIER_RULES, is_valid_plugin_iden
 from shared.radar_brands import radar_brand_setting
 from shared.request_body import json_body_value, json_object_body
 from shared.snapstart import api_route_warmer, botocore_model_warmer, register_snapshot_hooks
+from shared.timestamps import now_iso
 from shared.warm_init import warm_at_init
 from shared.web_review_targets import PLUGIN_ID as WEB_REVIEWS_PLUGIN
 from shared.web_review_targets import TargetError, target_source_id, validated_target
@@ -803,7 +804,7 @@ def run_source(source: str):
             table.put_item(Item={
                 'pk': f'SOURCE_RUN#{source}', 'sk': execution_id,
                 'status': 'running', 'items_found': 0,
-                'started_at': datetime.now(UTC).isoformat(),
+                'started_at': now_iso(),
             })
     except (ClientError, BotoCoreError) as e:
         logger.warning(f"Failed to create run status: {e}")

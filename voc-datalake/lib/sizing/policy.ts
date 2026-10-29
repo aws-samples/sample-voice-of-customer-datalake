@@ -90,7 +90,6 @@ export const VARIABLE_PAYLOAD: Readonly<Record<string, string>> = {
  * them as "CPU not measured (by design)" rather than as a measurement gap.
  */
 export const CPU_NOT_MEASURED: Readonly<Record<string, string>> = {
-  'voc-mcp-token-authorizer': 'inline Node authorizer (Code.fromInline): a string-shape check per request',
   'voc-cdn-signing-keys': 'deploy-time custom resource (Node), runs once per deploy',
   'voc-admin-bootstrap': 'deploy-time custom resource, runs once per deploy',
   'voc-fixture-provider': 'deploy-time verification-fixture custom resource (only with the fixture context flag)',
@@ -311,8 +310,6 @@ export function powerTuningPin(
  * (manual-import-api, 256 MB, raised to 512 MB for CPU in 2.17.00 → 29 %).
  */
 export const RAISED_FOR_PEAK_MEMORY: Readonly<Record<string, number>> = {
-  // 2026-10-18: 128 MB at 57.8 % peak memory (the inline Node authorizer; CPU not measured) → 256.
-  'voc-mcp-token-authorizer': 256,
 };
 
 export const UNCHANGED: Readonly<Record<string, number | null>> = {
@@ -330,7 +327,12 @@ export const UNCHANGED: Readonly<Record<string, number | null>> = {
   'voc-projects-assist': 1024,
   'voc-settings-assist': 512,
   'voc-scrapers-assist': 1024,
-  'VocApiStack/CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C81C01536': null,
+  // Engagement API (5.33.00): participants, asks and their self-invoked send slices, the board;
+  // DynamoDB and SES at ≤ 10/s, I/O-bound (unmeasured, new).
+  'voc-engagement-api': 512,
+  // The SPA upload (api-stack.ts WEBSITE_DEPLOYMENT_MEMORY_MB): at the 128 MB default `aws s3 sync` ran out of
+  // memory and timed out (5.36.01 deploy, 128 of 128 MB used).
+  'VocApiStack/CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C1024MiBB049752D': 1024,
   // VocCoreStack
   'voc-cdn-signing-keys': 256,
   'voc-product-doc-extractor': 512,
@@ -340,6 +342,14 @@ export const UNCHANGED: Readonly<Record<string, number | null>> = {
   'VocCoreStack/BucketNotificationsHandler050a0587b7544547bf325f094a3db8347ECC3691': null,
   'VocCoreStack/CustomMessageLambda448F9FBF': null,
   'VocCoreStack/AdminBootstrapProviderframeworkonEventF4719509': null,
+  // The board pool (core-board-auth.ts; every deployment since 5.45.00, before only with `-c emailFrom`):
+  // Cognito triggers, a few GetItems / one string render each (unmeasured, new in 5.33.00).
+  'voc-board-pre-sign-up': 128,
+  'voc-board-custom-message': 128,
+  // The image model's agreement (ImageModelAccess, bedrock-access-stack.ts; 5.45.00): deploy-time custom
+  // resource, the CDK default like the Claude agreement provider in VocWebSearchStack.
+  'VocCoreStack/ImageModelAccessModelAgreementLambda252AEB5F': null,
+  'VocCoreStack/ImageModelAccessModelAgreementProviderframeworkonEvent9F14CFC9': null,
   // VocIngestionStack (plugins enabled in cdk.context.json)
   'voc-ingestor-app_reviews_android': 1024,
   'voc-ingestor-app_reviews_ios': 1024,

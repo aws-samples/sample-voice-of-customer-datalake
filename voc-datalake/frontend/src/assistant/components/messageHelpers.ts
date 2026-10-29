@@ -4,7 +4,7 @@
  * @module assistant/components/messageHelpers
  */
 import { z } from 'zod'
-import { lenientList } from '../lenient'
+import { parseEach } from '../../api/lenientFields'
 import { ownEntry } from '../ownEntry'
 import type { Message } from '@ag-ui/core'
 import type { NavigationSuggestion } from '../thread/types'
@@ -29,7 +29,7 @@ export function parsePersonaResponses(content: string): PersonaResponse[] {
   try {
     const parsed: unknown = JSON.parse(content)
     const envelope = z.object({ responses: z.unknown() }).safeParse(parsed)
-    return envelope.success ? lenientList(personaResponseSchema, envelope.data.responses) : []
+    return envelope.success ? parseEach(personaResponseSchema, envelope.data.responses) : []
   } catch {
     return []
   }

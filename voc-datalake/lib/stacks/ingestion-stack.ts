@@ -25,7 +25,7 @@ import {
 } from '../plugin-loader';
 import { NagSuppressions } from 'cdk-nag';
 import { apiSecretsSuppressions } from '../utils/nag-suppressions';
-import { pythonLayerCode } from '../utils/python-layer-bundling';
+import { dependencyLayer } from '../utils/dependency-layers';
 import { rootPluginAssetExcludes } from '../utils/lambda-asset-excludes';
 import { pythonLambdaAsset } from '../utils/python-lambda-asset';
 import { PII_REDACTION_ENV } from '../utils/pii-redaction';
@@ -58,6 +58,13 @@ export const IMPORT_ABORT_MULTIPART_DAYS = 1;
  */
 export const SCHEDULE_TARGET_RETRY_ATTEMPTS = 2;
 export const SCHEDULE_TARGET_MAX_EVENT_AGE = cdk.Duration.hours(1);
+
+/**
+ * Ingestors whose many-app runs continue in a new invocation of their OWN function
+ * once the time budget is reached (plugins/_shared/app_reviews_parts.py): each gets
+ * `lambda:InvokeFunction` on exactly its own function ARN, on its dedicated role.
+ */
+export const SELF_CONTINUING_INGESTORS: ReadonlySet<string> = new Set(['app_reviews_ios', 'app_reviews_android']);
 
 /** Enforce SSL/TLS for queue access: deny every SQS action over plain HTTP. */
 function denyInsecureTransport(queue: sqs.Queue): void {
@@ -345,12 +352,8 @@ export class VocIngestionStack extends VocStack {
   }
 
   private createDependenciesLayer(): lambda.LayerVersion {
-    return new lambda.LayerVersion(this, 'IngestionDepsLayer', {
-      code: pythonLayerCode('lambda/layers/ingestion-deps'),
-      compatibleRuntimes: [lambda.Runtime.PYTHON_3_14],
-      compatibleArchitectures: [lambda.Architecture.ARM_64],
-      description: 'Common dependencies for ingestion lambdas (ARM64/Graviton)',
-    });
+    return dependencyLayer(this, 'IngestionDepsLayer', 'lambda/layers/ingestion-deps',
+      'Common dependencies for ingestion lambdas (ARM64/Graviton)');
   }
 
   private createIngestorLambda(
@@ -393,9 +396,27 @@ export class VocIngestionStack extends VocStack {
 
     // Bedrock-capable and scheduled plugins get a dedicated, scoped role; the rest share one.
     const role = this.ingestorRoles.roleFor(plugin.id, { bedrock: infra.bedrock, browser: infra.browser, scheduleRuleName });
+    const functionName = this.uniqueName(ingestorFunctionBaseName(plugin.id));
+
+    // A many-app run continues in a fresh invocation of its own function when it
+    // would not fit another app before the timeout (plugins/_shared/app_reviews_parts.py).
+    // Only on the plugin's DEDICATED role (scheduled plugins have one), and only on
+    // its own function, built from the NAME: a grant that GetAtts the function
+    // would be a cycle (the function depends on this role's policy).
+    if (SELF_CONTINUING_INGESTORS.has(plugin.id) && scheduleRuleName) {
+      role.addToPolicy(new iam.PolicyStatement({
+        actions: ['lambda:InvokeFunction'],
+        resources: [this.formatArn({
+          service: 'lambda',
+          resource: 'function',
+          resourceName: functionName,
+          arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
+        })],
+      }));
+    }
 
     const fn = new lambda.Function(this, `Ingestor${capitalize(plugin.id)}`, {
-      functionName: this.uniqueName(ingestorFunctionBaseName(plugin.id)),
+      functionName,
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',

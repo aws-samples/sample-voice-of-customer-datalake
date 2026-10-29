@@ -6,7 +6,7 @@ import DecisionsTab from './decisions/DecisionsTab'
 import OverviewTab, { type OverviewTabProps } from './OverviewTab'
 import PersonasTab from './PersonasTab'
 import ProductTab from './ProductTab'
-import CompanyContextStrip from './CompanyContextStrip'
+import ParticipantsTab from './ParticipantsTab'
 import type {
   Tab, NoteItem,
 } from './types'
@@ -15,7 +15,6 @@ import type {
 } from '../../api/types'
 import type {
   ProjectPersona,
-  ProductContext,
 } from '../../api/projectTypes'
 
 /** The fields the page hands straight through to the Overview tab. */
@@ -44,8 +43,6 @@ interface TabContentProps extends OverviewPassThrough {
   readonly onEditDoc: () => void
   readonly onDeleteDoc: () => void
   readonly onCreateDoc: () => void
-  /** The Product tab saved the context; the Overview card's copy needs the new one. */
-  readonly onContextSaved?: (context: ProductContext) => void
 }
 
 export default function TabContent({
@@ -75,7 +72,6 @@ export default function TabContent({
   onEditDoc,
   onDeleteDoc,
   onCreateDoc,
-  onContextSaved,
   onJobStarted,
 }: TabContentProps) {
   if (activeTab === 'overview') {
@@ -121,16 +117,12 @@ export default function TabContent({
 
   if (activeTab === 'product') {
     return (
-      <div className="space-y-4">
-        <CompanyContextStrip />
-        <ProductTab
-          projectId={project.project_id}
-          canEdit={canEdit}
-          onContextSaved={onContextSaved}
-          onJobStarted={onJobStarted}
-        />
-      </div>
+      <ProductTab projectId={project.project_id} canEdit={canEdit} onJobStarted={onJobStarted} />
     )
+  }
+
+  if (activeTab === 'participants') {
+    return <ParticipantsTab projectId={project.project_id} canEdit={canEdit} />
   }
 
   if (activeTab === 'decisions') {

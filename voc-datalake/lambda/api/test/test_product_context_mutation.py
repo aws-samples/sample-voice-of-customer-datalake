@@ -30,7 +30,6 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from types import ModuleType
-from typing import Any
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -42,6 +41,7 @@ from product_report_fixtures import s3_serving
 import product_context as pc
 from shared.derivation import build_derivation
 from shared.exceptions import ConfigurationError, NotFoundError, ServiceError, ValidationError
+from shared.test.clock import frozen_clock as freeze_clock
 from shared.test.instrumentation_fixtures import assert_tracer_wrapped
 
 MODULE_PATH = Path(__file__).resolve().parent.parent / 'product_context.py'
@@ -60,7 +60,7 @@ class _FrozenDatetime(datetime):
 
 @pytest.fixture
 def frozen_clock() -> Iterator[None]:
-    with patch.object(pc, 'datetime', _FrozenDatetime):
+    with freeze_clock(pc, _FrozenDatetime):
         yield
 
 
@@ -125,7 +125,7 @@ class TestModuleWiring:
         assert make.call_args.kwargs['config'].signature_version == 's3v4'
 
     @pytest.mark.parametrize('name', [
-        'get_context', 'update_context', 'interview_turn', 'list_docs',
+        'get_context', 'update_context', 'list_docs',
         'create_upload_url', 'delete_doc', 'generate_report',
     ])
     def test_every_entry_point_is_traced(self, name):
@@ -337,245 +337,6 @@ class TestUpdateContext:
             ExpressionAttributeValues={':now': FROZEN_ISO, ':v0': 'Acme', ':v1': 'ga'},
             ExpressionAttributeNames={'#k0': 'product_name', '#k1': 'current_state'},
         )
-
-
-# ── Interview ────────────────────────────────────────────────────────────────
-
-class TestInterviewTool:
-    def test_the_tool_schema_sent_to_the_model(self):
-        properties = {field: {'type': 'string', 'maxLength': cap} for field, cap in FIELD_CAPS}
-        properties['current_state'] = {
-            'type': 'string', 'enum': ['beta', 'ga', 'idea', 'mature', 'mvp'],
-        }
-        assert pc._build_interview_tool() == {'toolSpec': {
-            'name': 'update_product_context',
-            'description': ' '.join((
-                'Patch the structured product context with concrete information the user',
-                'just shared. Only include fields you have new information for. Each field',
-                'REPLACES the prior value — if the user is adding to an existing field,',
-                'include the merged combined text in the patch.',
-            )),
-            'inputSchema': {'json': {
-                'type': 'object', 'properties': properties, 'additionalProperties': False,
-            }},
-        }}
-
-
-class TestFormatContextForPrompt:
-    def test_an_empty_context_reads_empty(self):
-        assert pc._format_context_for_prompt(EMPTY_CONTEXT) == '(empty)'
-
-    def test_filled_fields_in_the_fixed_order(self):
-        ctx = {'free_form_notes': 'n', 'current_state': 'mvp', 'product_name': 'Acme',
-               'non_goals': '', 'stray': 'x'}
-        assert pc._format_context_for_prompt(ctx) == (
-            'product_name: Acme\ncurrent_state: mvp\nfree_form_notes: n'
-        )
-
-    def test_every_field_is_rendered(self):
-        ctx = {field: field.upper() for field in reversed(list(EMPTY_CONTEXT))}
-        assert pc._format_context_for_prompt(ctx) == '\n'.join((
-            'product_name: PRODUCT_NAME', 'one_liner: ONE_LINER', 'current_state: CURRENT_STATE',
-            'target_users: TARGET_USERS', 'problem_solved: PROBLEM_SOLVED',
-            'key_features: KEY_FEATURES', 'differentiators: DIFFERENTIATORS',
-            'known_limitations: KNOWN_LIMITATIONS', 'non_goals: NON_GOALS',
-            'success_metrics: SUCCESS_METRICS', 'free_form_notes: FREE_FORM_NOTES',
-        ))
-
-    def test_a_value_over_500_characters_is_cut_with_an_ellipsis(self):
-        assert pc._format_context_for_prompt({'one_liner': 'a' * 501}) == (
-            f"one_liner: {'a' * 500}..."
-        )
-
-    def test_exactly_500_characters_is_left_whole(self):
-        assert pc._format_context_for_prompt({'one_liner': 'a' * 500}) == f"one_liner: {'a' * 500}"
-
-    def test_a_non_string_value_is_rendered_as_is(self):
-        assert pc._format_context_for_prompt({'product_name': 7}) == 'product_name: 7'
-
-
-class TestInterviewMessages:
-    def test_only_the_last_twelve_usable_turns_are_kept_then_the_new_message(self):
-        history = [{'role': 'user', 'content': f'h{i}'} for i in range(13)]
-        messages = pc._interview_messages(history, 'now')
-        assert [m['content'][0].get('text') for m in messages] == [f'h{i}' for i in range(1, 13)] + ['now']
-
-    def test_unusable_turns_are_dropped(self):
-        history = [
-            {'role': 'system', 'content': 'x'},
-            {'role': 'assistant', 'content': '  '},
-            {'role': 'user', 'content': 5},
-            {'role': 'user'},
-            {'content': 'no role'},
-            {'role': 'assistant', 'content': 'kept'},
-        ]
-        assert pc._interview_messages(history, 'now') == [
-            {'role': 'assistant', 'content': [{'text': 'kept'}]},
-            {'role': 'user', 'content': [{'text': 'now'}]},
-        ]
-
-
-def _converse_response(*blocks: dict) -> dict:
-    return {'output': {'message': {'content': list(blocks)}}}
-
-
-def _reply(resp: Any) -> tuple[list[str], dict | None]:
-    """`_interview_reply` over a plain dict standing in for boto3's TypedDict."""
-    return pc._interview_reply(resp)
-
-
-class TestInterviewReply:
-    def test_text_parts_and_the_tool_input(self):
-        resp = _converse_response(
-            {'text': 'a'},
-            {'toolUse': {'name': 'update_product_context', 'input': {'one_liner': 'x'}}},
-            {'text': 'b'},
-        )
-        assert _reply(resp) == (['a', 'b'], {'one_liner': 'x'})
-
-    def test_another_tools_input_is_ignored(self):
-        resp = _converse_response({'toolUse': {'name': 'other', 'input': {'one_liner': 'x'}}})
-        assert _reply(resp) == ([], None)
-
-    def test_an_empty_tool_input_is_an_empty_patch(self):
-        resp = _converse_response({'toolUse': {'name': 'update_product_context'}})
-        assert _reply(resp) == ([], {})
-
-    @pytest.mark.parametrize('resp', [{}, {'output': {}}, {'output': {'message': {}}}])
-    def test_a_response_without_content_has_nothing(self, resp):
-        assert _reply(resp) == ([], None)
-
-
-INTERVIEW_PROMPT_LINES = (
-    'You are interviewing the user about their product/service to fill a structured context ',
-    'record that downstream PRD and PR/FAQ generators will consume. Ask ONE focused question ',
-    'at a time, prioritizing fields that are still empty. When the user gives concrete ',
-    'information, you MUST call the `update_product_context` tool with a patch of just the ',
-    "fields you learned BEFORE writing your reply text. Don't invent — only patch fields with ",
-    'information the user actually provided. Each field REPLACES the prior value, so if the ',
-    'user is adding to an existing field include the merged combined text in the patch. After ',
-    'the tool call, briefly confirm what was captured and ask the next most useful question.',
-    '\n\nCURRENT CONTEXT:\nproduct_name: Acme\n\n',
-    'Fields you can patch (all are free-text strings):\n',
-    '- product_name (≤200 chars)\n- one_liner (≤200 chars)\n',
-    '- target_users, problem_solved (free text)\n',
-    "- current_state (one of: ['beta', 'ga', 'idea', 'mature', 'mvp'])\n",
-    '- key_features, differentiators, known_limitations, non_goals, success_metrics ',
-    '(free text comments)\n',
-    "- free_form_notes (anything that doesn't fit above)\n",
-)
-INTERVIEW_PROMPT = ''.join(INTERVIEW_PROMPT_LINES)
-
-
-class _Interview:
-    """interview_turn with Bedrock, the model resolver and the context mocked."""
-
-    def __init__(self, resp: dict | Exception, *, omits_temperature: bool = False):
-        self.client = MagicMock()
-        if isinstance(resp, Exception):
-            self.client.converse.side_effect = resp
-        else:
-            self.client.converse.return_value = resp
-        self.omits_temperature = omits_temperature
-        self.retry = MagicMock(side_effect=lambda call, **_kwargs: call())
-        self.update = MagicMock()
-        self.get_context = MagicMock(side_effect=[
-            {'context': {**EMPTY_CONTEXT, 'product_name': 'Acme'}},
-            {'context': {'fresh': True}},
-        ])
-
-    def run(self, body: dict) -> dict:
-        with patch.object(pc, 'get_bedrock_client', return_value=self.client), \
-             patch('shared.converse.get_active_model_id', return_value='model-x') as model, \
-             patch('shared.converse.omits_temperature', return_value=self.omits_temperature), \
-             patch('shared.converse.bedrock_call_with_retry', self.retry), \
-             patch.object(pc, 'update_context', self.update), \
-             patch.object(pc, 'get_context', self.get_context):
-            result = pc.interview_turn('p1', body)
-        model.assert_called_once_with('chat')
-        return result
-
-
-class TestInterviewTurn:
-    @pytest.mark.parametrize('body', [{}, {'message': '   '}])
-    def test_a_blank_message_is_refused(self, body):
-        with pytest.raises(ValidationError) as exc:
-            _Interview(_converse_response()).run(body)
-        assert str(exc.value) == 'message is required'
-
-    def test_the_request_sent_to_bedrock(self):
-        interview = _Interview(_converse_response({'text': ' Hi '}))
-        result = interview.run({'message': ' what? ', 'history': 'not a list'})
-        interview.client.converse.assert_called_once_with(
-            modelId='model-x',
-            messages=[{'role': 'user', 'content': [{'text': 'what?'}]}],
-            system=[{'text': INTERVIEW_PROMPT}],
-            inferenceConfig={'maxTokens': 1024, 'temperature': 0.3},
-            toolConfig={'tools': [pc._build_interview_tool()]},
-        )
-        # The shared policy's defaults, passed explicitly by converse_blocks.
-        assert interview.retry.call_args.kwargs == {'step_name': 'interview_turn', 'max_retries': 5,
-                                                    'call_label': 'the Bedrock call'}
-        assert result == {'assistant_message': 'Hi', 'applied_patch': {}, 'context': {'fresh': True}}
-        interview.update.assert_not_called()
-
-    def test_history_reaches_the_model(self):
-        interview = _Interview(_converse_response({'text': 'ok'}))
-        interview.run({'message': 'now', 'history': [{'role': 'assistant', 'content': 'before'}]})
-        assert interview.client.converse.call_args.kwargs['messages'] == [
-            {'role': 'assistant', 'content': [{'text': 'before'}]},
-            {'role': 'user', 'content': [{'text': 'now'}]},
-        ]
-
-    def test_a_model_that_rejects_temperature_gets_none(self):
-        interview = _Interview(_converse_response({'text': 'ok'}), omits_temperature=True)
-        interview.run({'message': 'm'})
-        assert interview.client.converse.call_args.kwargs['inferenceConfig'] == {'maxTokens': 1024}
-
-    def test_a_response_language_is_appended_to_the_system_prompt(self):
-        interview = _Interview(_converse_response({'text': 'ok'}))
-        interview.run({'message': 'm', 'response_language': 'es'})
-        system = interview.client.converse.call_args.kwargs['system'][0]['text']
-        assert system == INTERVIEW_PROMPT + '\n\n' + (
-            'IMPORTANT: You MUST respond entirely in Spanish (es). All text, headings, '
-            'labels, and explanations must be in Spanish.'
-        )
-
-    def test_a_bedrock_failure_is_a_service_error(self):
-        interview = _Interview(RuntimeError('boom'))
-        with patch.object(pc, 'logger') as log, pytest.raises(ServiceError) as exc:
-            interview.run({'message': 'm'})
-        assert str(exc.value) == 'AI interview unavailable. Please try again.'
-        log.exception.assert_called_once_with('Interview Bedrock call failed: boom')
-
-    def test_a_tool_patch_is_validated_applied_and_returned(self):
-        interview = _Interview(_converse_response(
-            {'text': 'Got it.'}, {'text': ''}, {'text': 'Next?'},
-            {'toolUse': {'name': 'update_product_context',
-                         'input': {'one_liner': 'Fast', 'bogus': 1}}},
-        ))
-        result = interview.run({'message': 'm'})
-        interview.update.assert_called_once_with('p1', {'one_liner': 'Fast'})
-        assert result == {
-            'assistant_message': 'Got it.\nNext?',
-            'applied_patch': {'one_liner': 'Fast'},
-            'context': {'fresh': True},
-        }
-
-    def test_a_tool_only_turn_that_captured_something_says_captured(self):
-        interview = _Interview(_converse_response(
-            {'toolUse': {'name': 'update_product_context', 'input': {'one_liner': 'Fast'}}},
-        ))
-        assert interview.run({'message': 'm'})['assistant_message'] == '__captured__'
-
-    def test_a_patch_that_cleans_to_nothing_is_not_written(self):
-        interview = _Interview(_converse_response(
-            {'toolUse': {'name': 'update_product_context', 'input': {'bogus': 1}}},
-        ))
-        result = interview.run({'message': 'm'})
-        interview.update.assert_not_called()
-        assert result['assistant_message'] == '__elaborate__'
-        assert result['applied_patch'] == {}
 
 
 # ── Doc ids and sizes ────────────────────────────────────────────────────────

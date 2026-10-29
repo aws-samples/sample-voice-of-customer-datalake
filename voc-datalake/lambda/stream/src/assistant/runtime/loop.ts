@@ -51,6 +51,8 @@ export interface LoopInput {
   ctx: AssistantRunContext;
   emitter: Emitter;
   now: () => Date;
+  /** Aborted when the user stops the run (session/cancel.ts): no further turn or tool round starts. */
+  signal?: AbortSignal;
 }
 
 export interface LoopResult {
@@ -60,6 +62,8 @@ export interface LoopResult {
   webSources: WebSourceRef[];
   /** The model that answered the last turn (differs from LoopInput.modelId after a fallback). */
   modelId: string;
+  /** The user stopped the run: what streamed so far is the answer. */
+  stopped: boolean;
 }
 
 function isBedrockValidationError(err: unknown): boolean {
@@ -73,6 +77,7 @@ function projectIdOf(args: Record<string, unknown>): string | undefined {
 }
 
 function summarize(pending: PendingApproval): string {
+  if (pending.summary !== undefined) return pending.summary;
   try {
     return pending.tool.summarize(pending.args);
   } catch {
@@ -140,6 +145,7 @@ function startTurn({ input, messages, tools, messageId }: TurnRequest, modelId: 
     modelId,
     cache: true,
     cacheMessageIndex: input.cacheMessageIndex,
+    ...(input.signal === undefined ? {} : { abortSignal: input.signal }),
   });
   return streamTurn(stream, emitter, { messageId });
 }
@@ -263,13 +269,38 @@ async function runRound(input: LoopInput, messages: Message[], round: number, re
 
 const ROUNDS = Array.from({ length: MAX_TOOL_ROUNDS }, (_, i) => i);
 
+function isStopped(input: LoopInput): boolean {
+  return input.signal?.aborted === true;
+}
+
+/**
+ * One round, or null once the run is done. A round cut by Stop ends the run: the Bedrock call
+ * fails with the SDK's abort error, and nothing it left behind (a half tool call, an approval)
+ * is acted on — the text that streamed stays, with its message closed (turn.ts).
+ */
+async function roundOrStop(input: LoopInput, messages: Message[], round: number, result: LoopResult): Promise<Message[] | null> {
+  if (isStopped(input)) {
+    result.stopped = true;
+    return null;
+  }
+  try {
+    const next = await runRound(input, messages, round, result);
+    if (!isStopped(input)) return next;
+  } catch (err) {
+    if (!isStopped(input)) throw err;
+  }
+  result.stopped = true;
+  result.outcome = { type: 'success' };
+  return null;
+}
+
 export async function runAgentLoop(input: LoopInput): Promise<LoopResult> {
   const result: LoopResult = {
-    outcome: { type: 'success' }, usage: emptyUsage(), sources: [], webSources: [], modelId: input.modelId,
+    outcome: { type: 'success' }, usage: emptyUsage(), sources: [], webSources: [], modelId: input.modelId, stopped: false,
   };
   const conversation = { messages: input.messages, finished: false };
   for (const round of ROUNDS) {
-    const next = await runRound(input, conversation.messages, round, result);
+    const next = await roundOrStop(input, conversation.messages, round, result);
     if (next === null) {
       conversation.finished = true;
       break;

@@ -61,6 +61,7 @@ from shared.categorization import (
 from shared.converse import BedrockThrottlingError
 from shared.data_version import bump_data_version
 from shared.dimension_config import load_dimensions_config
+from shared.feedback_category import CATEGORY_SOURCE_MANUAL
 from shared.feedback_dimensions import category_product, reinfer_dimensions
 from shared.invocation_cost import instrumented_handler
 
@@ -68,6 +69,7 @@ from shared.invocation_cost import instrumented_handler
 # CategoryReprocess bundling in processing-stack-consolidated.ts), and tests
 # import it as `jobs.category_reprocess.handler` from the lambda/ root.
 from shared.logging import logger, metrics
+from shared.timestamps import now_iso
 
 FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
 AGGREGATES_TABLE = os.environ.get('AGGREGATES_TABLE', '')
@@ -83,7 +85,6 @@ TIME_RESERVE_MS = 3 * 60 * 1000
 # Consecutive hand-overs caused by Bedrock throttling before the job fails.
 MAX_THROTTLE_RESTARTS = 3
 
-CATEGORY_SOURCE_MANUAL = 'manual'
 CATEGORY_SOURCE_REPROCESS = 'reprocess'
 
 _comprehend = None
@@ -333,7 +334,7 @@ def reprocess_dimensions(
     )
     if dimensions == _stored_map(item, 'dimensions') and sources == _stored_map(item, 'dimension_sources'):
         return 'unchanged'
-    feedback_table.update_item(**build_dimensions_update(item, dimensions, sources, jobs.now_iso()))
+    feedback_table.update_item(**build_dimensions_update(item, dimensions, sources, now_iso()))
     return 'updated'
 
 
@@ -368,7 +369,7 @@ def reprocess_item(
         if attributes is None:
             _record(counters, 'failed')
             return
-        feedback_table.update_item(**build_update(item, attributes, include_manual, jobs.now_iso()))
+        feedback_table.update_item(**build_update(item, attributes, include_manual, now_iso()))
         _record(counters, 'updated')
     except BedrockThrottlingError:
         raise

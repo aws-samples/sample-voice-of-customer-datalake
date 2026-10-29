@@ -1,5 +1,30 @@
 {
   "aiModel": {
+    "image": {
+      "title": "Bildgenerierung (Persona-Avatare)",
+      "description": "Das Bildmodell, das Persona-Avatare zeichnet. Es wird vom Deployment festgelegt und ist hier nicht wählbar; das Deployment beantragt den Zugriff.",
+      "model": "Modell",
+      "region": "Region",
+      "access": "Zugriff",
+      "quota": "Kontingent",
+      "requestsPerMinute": "{{count, number}} Anfragen/Min.",
+      "quotaPending": "Wird aus Service Quotas gelesen, in einer Minute erneut prüfen",
+      "avatarsOff": "Avatare sind in diesem Deployment ausgeschaltet (EU-Inferenzbereich), daher wird dieses Modell nicht verwendet.",
+      "testTitle": "Ein kleines Testbild mit {{model}} erzeugen. Jeder Klick kostet einige US-Cent; das Bild wird nicht gespeichert.",
+      "status": {
+        "available": "Verfügbar",
+        "no_access": "Kein Zugriff",
+        "not_subscribed": "Nicht abonniert",
+        "not_in_region": "Nicht in dieser Region",
+        "unknown": "Unbekannt"
+      },
+      "hint": {
+        "no_access": "Dieses Konto oder seine Rollen dürfen das Modell nicht nutzen. Prüfen Sie die Richtlinien der Organisation (SCPs) für Bedrock und AWS Marketplace und deployen Sie erneut.",
+        "not_subscribed": "Die Vereinbarung oder das Marketplace-Abonnement des Modells fehlt. Erneut deployen (das Deployment beantragt es) oder in der Bedrock-Konsole unter Modellzugriff akzeptieren.",
+        "not_in_region": "Das Modell wird in dieser Region nicht angeboten. Wählen Sie in avatar-generation.json ein Bildmodell, das dort angeboten wird.",
+        "unknown": "Der Zugriff konnte nicht gelesen werden. Prüfen Sie das Modell direkt mit Testen."
+      }
+    },
     "automaticOption": "Automatisch — {{model}}",
     "groupOther": "Weitere Modelle",
     "groupRecommended": "Empfohlen",
@@ -62,6 +87,7 @@
       "latency": "{{ms}} ms",
       "tokensPerMinute": "{{count, number}} Tokens/Min.",
       "quotaUnknown": "Kontingent unbekannt",
+      "quotaStale": "Zuletzt gespeicherter Wert: ein aktueller Wert wird gerade aus Service Quotas gelesen",
       "all": "Alle Modelle testen",
       "allTitle": "Modellzugriff und Kapazität",
       "allIntro": "Sendet nacheinander eine kurze Anfrage an jedes Modell und zeigt sein Kontingent an Tokens pro Minute für dieses Konto und diese Region.",
@@ -146,7 +172,6 @@
   "logs": {
     "clear": "Löschen",
     "configureFirst": "Konfigurieren Sie den API-Endpunkt im Tab Allgemein, um Protokolle anzuzeigen.",
-    "daysAgo": "vor {{count, number}} T.",
     "daysAgo_one": "vor {{count, number}} T.",
     "daysAgo_other": "vor {{count, number}} T.",
     "errorLabel": "Fehler:",
@@ -155,10 +180,8 @@
     "errorsLabel": "Fehler:",
     "failures_one": "{{count, number}} Fehler",
     "failures_other": "{{count, number}} Fehler",
-    "hoursAgo": "vor {{count, number}} Std.",
     "hoursAgo_one": "vor {{count, number}} Std.",
     "hoursAgo_other": "vor {{count, number}} Std.",
-    "items": "{{count, number}} Elemente",
     "items_one": "{{count, number}} Element",
     "items_other": "{{count, number}} Elemente",
     "justNow": "gerade eben",
@@ -168,26 +191,21 @@
     "loadingRuns": "Läufe werden geladen...",
     "loadingSummary": "Zusammenfassung wird geladen...",
     "messageId": "Nachrichten-ID:",
-    "minutesAgo": "vor {{count, number}} Min.",
     "minutesAgo_one": "vor {{count, number}} Min.",
     "minutesAgo_other": "vor {{count, number}} Min.",
-    "moreEntries": "+{{count, number}} weitere Einträge",
     "moreEntries_one": "+{{count, number}} weiterer Eintrag",
     "moreEntries_other": "+{{count, number}} weitere Einträge",
     "noProcessingErrors": "Keine Verarbeitungsfehler in diesem Zeitraum",
     "noRunsInPeriod": "Keine Läufe in diesem Zeitraum",
     "noScrapersConfigured": "Noch keine Datenquellen, die laufen. Fügen Sie eine auf der Seite Datenquellen hinzu.",
     "noValidationFailures": "Keine Validierungsfehler in diesem Zeitraum",
-    "pages": "{{count, number}} Seiten",
     "pages_one": "{{count, number}} Seite",
     "pages_other": "{{count, number}} Seiten",
     "processingErrors": "Verarbeitungsfehler",
     "recordKeys": "Vorhandene Felder:",
-    "textLength": "Textlänge: {{count, number}} Zeichen",
     "textLength_one": "Textlänge: {{count, number}} Zeichen",
     "textLength_other": "Textlänge: {{count, number}} Zeichen",
     "refresh": "Aktualisieren",
-    "runErrors": "{{count, number}} Fehler",
     "runErrors_one": "{{count, number}} Fehler",
     "runErrors_other": "{{count, number}} Fehler",
     "scraperRuns": "Scraper-Läufe",
@@ -230,7 +248,81 @@
       "ios": "iPhone-Apps",
       "android": "Android-Apps"
     },
-    "noRunsYet": "Noch keine Läufe"
+    "noRunsYet": "Noch keine Läufe",
+    "system": {
+      "tab": "Systemfehler",
+      "levelLabel": "Protokollebene",
+      "levelError": "Fehler",
+      "levelWarning": "Fehler und Warnungen",
+      "searchingStart": "Protokolle werden durchsucht…",
+      "searching_one": "Protokolle von {{count, number}} Funktion werden durchsucht…",
+      "searching_other": "Protokolle von {{count, number}} Funktionen werden durchsucht…",
+      "searched_one": "Protokolle von {{count, number}} Funktion durchsucht",
+      "searched_other": "Protokolle von {{count, number}} Funktionen durchsucht",
+      "empty": "Keine Fehler in diesem Zeitraum",
+      "failed": "Die Protokollsuche ist fehlgeschlagen. Versuchen Sie es erneut.",
+      "loadFailed": "Die Systemprotokolle konnten nicht geladen werden.",
+      "truncated": "Es werden die neuesten {{rows, number}} Protokollzeilen angezeigt",
+      "download": "Herunterladen",
+      "downloadTitle": "Diese Fehler als JSON-Datei herunterladen, um sie zur Analyse weiterzugeben",
+      "adminOnly": "Systemfehler sind nur für Administratoren sichtbar.",
+      "times": "×{{n, number}}",
+      "occurrences_one": "{{count, number}} Vorkommen",
+      "occurrences_other": "{{count, number}} Vorkommen",
+      "firstSeen": "Zuerst gesehen",
+      "lastSeen": "Zuletzt gesehen",
+      "requestId": "Anfrage-ID",
+      "sourceTitle": "Herkunft dieser Zeilen",
+      "sourceApi": "API",
+      "sourceWorkflow": "Workflow",
+      "request": {
+        "show": "Ganze Anfrage anzeigen",
+        "loading": "Alle Zeilen dieser Anfrage werden gelesen…",
+        "loadFailed": "Die Zeilen der Anfrage konnten nicht geladen werden.",
+        "failed": "Die Suche nach dieser Anfrage ist fehlgeschlagen. Versuchen Sie es erneut.",
+        "retry": "Erneut versuchen",
+        "empty": "Für diese Anfrage wurden keine Zeilen gefunden (ihre Logs sind möglicherweise abgelaufen).",
+        "truncated": "Die ersten {{lines, number}} Zeilen werden angezeigt",
+        "linesLabel": "Logzeilen dieser Anfrage",
+        "title_one": "{{count, number}} Zeile dieser Anfrage",
+        "title_other": "{{count, number}} Zeilen dieser Anfrage"
+      },
+      "queues": {
+        "title": "Fehlerwarteschlangen",
+        "loading": "Fehlerwarteschlangen werden geprüft…",
+        "loadFailed": "Die Fehlerwarteschlangen konnten nicht gelesen werden.",
+        "oldest": "älteste {{age}}",
+        "noSample": "Für ein Beispiel konnte keine Nachricht gelesen werden.",
+        "unreadable": "Konnte nicht gelesen werden",
+        "peekNote": "Diese Nachrichten sind bei jedem Wiederholungsversuch fehlgeschlagen und werden nicht erneut versucht. Das Lesen eines Beispiels entfernt es nicht.",
+        "empty_one": "Die Fehlerwarteschlange ist leer",
+        "empty_other": "Alle {{count, number}} Fehlerwarteschlangen sind leer",
+        "messages_one": "{{count, number}} Nachricht",
+        "messages_other": "{{count, number}} Nachrichten"
+      },
+      "environment": {
+        "title": "Umgebung",
+        "loading": "Umgebung wird geladen…",
+        "loadFailed": "Die Umgebung konnte nicht geladen werden.",
+        "on": "An",
+        "off": "Aus",
+        "none": "Keine",
+        "fields": {
+          "version": "Version",
+          "region": "Region",
+          "account_suffix": "Konto (letzte 4 Ziffern)",
+          "deployment_prefix": "Bereitstellungspräfix",
+          "enabled_sources": "Aktivierte Quellen",
+          "web_search": "Websuche",
+          "inference_scope": "Inferenzbereich",
+          "image_model": "Bildmodell",
+          "model_overrides": "Modellauswahl",
+          "alerting": "Benachrichtigungen",
+        "open_circuits": "Pausierte Quellen (Schutzschalter)",
+        "log_coverage": "Durchsuchte Protokolle"
+        }
+      }
+    }
   },
   "saveChanges": "Änderungen speichern",
   "saved": "Gespeichert!",
@@ -251,8 +343,6 @@
     "saveToSecrets": "In Secrets Manager speichern",
     "selectOption": "Auswählen...",
     "show": "Anzeigen",
-    "test": "Testen",
-    "unknownResult": "Unbekanntes Ergebnis",
     "webhooks": "Webhook-URLs",
     "circuit": {
       "paused": "Nach wiederholten Fehlern pausiert",
@@ -287,7 +377,8 @@
     "policies": "Quellenrichtlinien",
     "users": "Benutzer",
     "logs": "Protokolle",
-    "version": "Version"
+    "version": "Version",
+    "boards": "Boards"
   },
   "title": "Einstellungen",
   "users": {
@@ -312,6 +403,7 @@
     "retry": "Erneut versuchen",
     "loading": "Wird geladen…",
     "saveFailed": "Speichern fehlgeschlagen. Bitte erneut versuchen.",
+    "discardChanges": "Änderungen verwerfen",
     "write": "Schreiben",
     "preview": "Vorschau",
     "nothingToPreview": "Noch nichts für die Vorschau.",
@@ -361,14 +453,26 @@
     "removeKpi": "Kennzahl entfernen",
     "kpiName": "Name der Kennzahl",
     "kpiTarget": "Zielwert",
-    "kpiUnit": "Einheit"
+    "kpiUnit": "Einheit",
+    "fieldRequired": "Pflichtfeld: ausfüllen oder die Zeile entfernen",
+    "fieldTooLong": "Höchstens {{max, number}} Zeichen",
+    "fixFields": "Nicht gespeichert: markierte Felder korrigieren."
   },
   "designSystem": {
     "title": "Designsystem",
     "description": "Ihre Marken-Tokens, Richtlinien und Referenzen. Prototypen und PR/FAQ-Visuals werden damit erstellt, damit sie zu Ihrem Erscheinungsbild passen.",
     "logo": "Firmenlogo",
     "logoAlt": "Unternehmenslogo",
+    "logoInDraft": "Neues Logo aus einer Referenz – es wird zum Firmenlogo, wenn Sie das Designsystem speichern.",
     "uploadLogo": "Logo hochladen",
+    "logoHint": "PNG, JPEG, WebP oder SVG (SVG wird in Ihrem Browser in PNG umgewandelt).",
+    "svg": {
+      "tooLarge": "{{name}} ist größer als 1 MB. Ein SVG-Logo darf höchstens 1 MB groß sein.",
+      "unreadable": "{{name}} konnte nicht als SVG-Bild gelesen werden. Exportieren Sie es als PNG und laden Sie dieses hoch.",
+      "timeout": "Die Umwandlung von {{name}} hat zu lange gedauert. Exportieren Sie es als PNG und laden Sie dieses hoch.",
+      "notConverted": "Dieses SVG konnte in Ihrem Browser nicht umgewandelt werden. Exportieren Sie es als PNG und laden Sie dieses hoch.",
+      "resultTooLarge": "Das umgewandelte PNG ist größer als 5 MB. Exportieren Sie ein kleineres PNG und laden Sie dieses hoch."
+    },
     "colors": "Farben",
     "typography": "Typografie",
     "spacing": "Abstände",
@@ -407,12 +511,22 @@
     "archive": "Archivieren",
     "archiveTitle": "Diese Referenz archivieren?",
     "archiveMessage": "„{{title}}“ wird für neue Prototypen nicht mehr verwendet. Die Datei bleibt erhalten.",
+    "archiveMessageLink": "„{{title}}“ wird für neue Prototypen nicht mehr verwendet. Der Link und das daraus Gelesene bleiben erhalten.",
     "referenceKind": "Art der Referenz",
     "referenceTitle": "Titel",
     "referenceUrl": "Verknüpfung (https://…)",
+    "urlProblems": {
+      "tooLong": "Die Adresse ist länger als 2.048 Zeichen.",
+      "notUrl": "Das ist keine Webadresse. Fügen Sie den vollständigen Link ein, beginnend mit https://",
+      "notHttps": "Nur https://-Adressen können gelesen werden; {{scheme}}://-Adressen werden abgelehnt.",
+      "noHost": "Nach https:// fehlt der Name der Website, zum Beispiel https://example.com",
+      "credentials": "Entfernen Sie Benutzername oder Passwort aus der Adresse.",
+      "localhost": "Adressen auf diesem Computer können nicht gelesen werden; verwenden Sie eine öffentliche Website."
+    },
     "referenceFile": "Datei",
     "addReference": "Referenz hinzufügen",
     "addReferenceFailed": "Die Referenz konnte nicht hinzugefügt werden. Bitte erneut versuchen.",
+    "duplicateReference": "Diese Adresse ist bereits eine Referenz: „{{title}}“.",
     "referenceTitleOptional": "Titel (optional)",
     "kindHints": {
       "website": "Wir öffnen die Seite in einem sicheren Browser und lesen ihre Farben, Schriften und ihr Logo.",
@@ -443,11 +557,10 @@
       "variantsCount_other": "{{count, number}} Varianten",
       "onlyGuidelines": "Nur Richtlinien",
       "logoCandidate": "In dieser Referenz gefundenes Logo",
+      "logoRendered": "Aus dem SVG-Logo der Website gerendert",
       "apply": "Als Designsystem verwenden",
       "useLogo": "Dieses Logo verwenden",
-      "logoFailed": "Dieses Logo konnte nicht verwendet werden. Bitte erneut versuchen.",
-      "replaceLogoTitle": "Aktuelles Logo ersetzen?",
-      "replaceLogoMessage": "Das Logo aus „{{title}}“ ersetzt Ihr aktuelles Logo."
+      "logoFailed": "Dieses Logo konnte nicht verwendet werden. Bitte erneut versuchen."
     },
     "applied": {
       "title": "Aus {{source}} – prüfen Sie die Änderungen und speichern Sie dann.",
@@ -519,6 +632,7 @@
         "padding": "Innenabstand",
         "gap": "Lücke",
         "height": "Höhe",
+        "width": "Breite",
         "font_family": "Schrift",
         "font_size": "Schriftgröße",
         "font_weight": "Schriftstärke",
@@ -528,6 +642,7 @@
         "outline": "Fokusrahmen"
       },
       "hoverField": "{{field}} bei Hover",
+      "focusField": "{{field}} bei Fokus",
       "hoverFocus": "Hover und Fokus",
       "useToken": "Token verwenden…",
       "useTokenFor": "Farb-Token für {{field}} verwenden",
@@ -545,6 +660,7 @@
         "padding": "Verwenden Sie ein bis vier Längen, z. B. 8px 16px.",
         "gap": "Verwenden Sie eine Länge wie 8px.",
         "height": "Verwenden Sie eine Länge wie 36px.",
+        "width": "Verwenden Sie eine Länge wie 36px.",
         "font_family": "Verwenden Sie durch Kommas getrennte Schriftnamen.",
         "font_size": "Verwenden Sie eine Länge wie 14px.",
         "font_weight": "Verwenden Sie 100–900, normal oder bold.",
@@ -652,5 +768,177 @@
     "changelogTitle": "Versionshinweise",
     "changelogDescription": "Änderungen je Release, neueste zuerst, aus CHANGELOG.md.",
     "showOlder": "Ältere Releases anzeigen ({{count, number}} weitere)"
+  },
+  "pluginCopy": {
+    "appReviewsAndroid": {
+      "name": "Android-App-Bewertungen",
+      "description": "Sammelt Kundenbewertungen aus dem Google Play Store"
+    },
+    "appReviewsIos": {
+      "name": "iOS-App-Bewertungen",
+      "description": "Sammelt Kundenbewertungen aus dem Apple App Store"
+    },
+    "githubIssues": {
+      "name": "GitHub-Issues",
+      "description": "Übernimmt Issues und Kommentare aus GitHub-Repositorys, mit Softwareversion, Labels und Fehlersignaturen"
+    },
+    "s3Import": {
+      "name": "S3-Massenimport",
+      "description": "Importiert Feedback aus einem S3-Bucket (CSV, JSON, JSONL)"
+    },
+    "syntheticReviews": {
+      "name": "Generator für synthetische Bewertungen",
+      "description": "Erzeugt realistische synthetische Kundenbewertungen mit KI (Amazon Bedrock) für Demos, Tests und Modellierung. Sie laufen durch die normale Pipeline und sind als synthetische Daten gekennzeichnet."
+    },
+    "webReviews": {
+      "name": "Web-Bewertungen",
+      "description": "Liest Kundenbewertungen von öffentlichen Bewertungsseiten (Trustpilot, TripAdvisor, Foren) mit einem verwalteten Browser. Jede hinzugefügte Seite ist eine eigene Quelle."
+    },
+    "webscraper": {
+      "name": "Web-Scraper",
+      "description": "Konfigurierbarer Scraper, der Feedback von Websites ausliest"
+    }
+  },
+  "boards": {
+    "loading": "Wird geladen…",
+    "saved": "Gespeichert.",
+    "cancel": "Abbrechen",
+    "domains": {
+      "title": "Firmendomains",
+      "description": "Die E-Mail-Domains, die zum Unternehmen gehören. Personen mit diesen Domains können sich bei jedem Board anmelden, das für das Unternehmen offen ist, und gelten beim Hinzufügen von Teilnehmenden als Kollegen.",
+      "label": "E-Mail-Domains des Unternehmens",
+      "hint": "Drücken Sie nach jeder Domain die Eingabetaste. Ohne Domain kann sich niemand bei einem Firmen-Board anmelden.",
+      "save": "Domains speichern",
+      "loadFailed": "Die Firmendomains konnten nicht geladen werden."
+    },
+    "participantCard": {
+      "domains": "Firmendomains: {{list}}.",
+      "noDomains": "Noch keine Firmendomains.",
+      "editInBoards": "Unter Boards bearbeiten"
+    },
+    "list": {
+      "title": "Feedback-Boards",
+      "description": "Jedes Board sammelt Anfragen eines Teams oder einer Zielgruppe und hat einen eigenen Link, eigene Felder und Status.",
+      "create": "Neues Board",
+      "empty": "Noch keine Boards. Erstellen Sie eines aus einer Vorlage.",
+      "loadFailed": "Die Boards konnten nicht geladen werden.",
+      "archived": "Archiviert",
+      "edit": "Bearbeiten",
+      "editLabel": "{{name}} bearbeiten",
+      "requests_one": "{{count, number}} Anfrage",
+      "requests_other": "{{count, number}} Anfragen"
+    },
+    "templates": {
+      "sales": "Feature-Anfragen aus dem Vertrieb",
+      "salesHint": "Kunde, Deal und Umsatzwirkung bei jeder Anfrage und jedem +1.",
+      "service": "Probleme im Kundenservice",
+      "serviceHint": "Problemart, Schweregrad, Referenz und Schritte; ein +1 heißt ebenfalls betroffen.",
+      "beta": "Beta-Feedback",
+      "betaHint": "Produktbereich, Ergebnis, Bewertung und ein Link für Testende.",
+      "blank": "Leer",
+      "blankHint": "Nur Titel und Beschreibung; Felder später hinzufügen."
+    },
+    "create": {
+      "title": "Neues Board",
+      "hint": "Wählen Sie eine Vorlage als Ausgangspunkt. Alle Felder und Status lassen sich danach ändern.",
+      "template": "Vorlage",
+      "slugPreview": "Link zum Teilen: /board/{{slug}}",
+      "slugLater": "Der Link zum Teilen wird beim Erstellen aus dem Namen gebildet.",
+      "submit": "Board erstellen"
+    },
+    "editor": {
+      "title": "Board",
+      "back": "Zurück zu den Boards",
+      "name": "Name",
+      "slug": "Linkname",
+      "slugHint": "Kleinbuchstaben, Ziffern und einzelne Bindestriche, höchstens 60 Zeichen.",
+      "shareLink": "Link zum Teilen:",
+      "shareAfterSave": "(nach dem Speichern)",
+      "copyLink": "Link kopieren",
+      "copied": "Kopiert.",
+      "description": "Beschreibung",
+      "save": "Board speichern",
+      "unsaved": "Ungespeicherte Änderungen."
+    },
+    "audience": {
+      "title": "Wer sich anmelden und posten darf",
+      "company": "Unternehmen",
+      "companyHint": "Personen mit den Firmendomains.",
+      "list": "Bestimmte Personen",
+      "listHint": "Erlaubte Domains und E-Mail-Adressen.",
+      "anyone": "Alle",
+      "anyoneHint": "Jede E-Mail-Adresse, die sich bestätigt.",
+      "companyDomains": "Verwendet die Firmendomains: {{list}}.",
+      "noCompanyDomains": "Es sind noch keine Firmendomains festgelegt, daher kann sich niemand bei diesem Board anmelden.",
+      "domains": "Erlaubte Domains",
+      "emails": "Erlaubte E-Mail-Adressen",
+      "emailsCount_one": "{{count, number}} Adresse (höchstens {{max, number}}).",
+      "emailsCount_other": "{{count, number}} Adressen (höchstens {{max, number}}).",
+      "emailsInvalid": "Keine gültigen E-Mail-Adressen: {{list}}",
+      "anyoneWarning": "Jede E-Mail-Adresse kann sich bei diesem Board anmelden und posten. Es gibt keine Moderation: Jede Person ist auf 20 Anfragen und 100 +1 pro Tag begrenzt."
+    },
+    "fieldsEditor": {
+      "title": "Felder",
+      "hint": "Titel und Beschreibung werden immer abgefragt. Schalten Sie die Felder ein, die dieses Board braucht.",
+      "requestGroup": "Bei einer neuen Anfrage",
+      "supportGroup": "Bei einem +1",
+      "required": "Pflichtfeld",
+      "requiredLabel": "{{field}} als Pflichtfeld"
+    },
+    "fields": {
+      "customer": "Kunde",
+      "deal": "Deal",
+      "impact": "Umsatzwirkung",
+      "amount_usd": "Betrag (USD)",
+      "contact_email": "Kontakt-E-Mail",
+      "kind": "Problemart",
+      "severity": "Schweregrad",
+      "reference": "Buchungs- oder Bestellnummer",
+      "steps": "Schritte zum Nachstellen",
+      "affected_count": "Betroffene Personen",
+      "area": "Produktbereich",
+      "outcome": "Ergebnis",
+      "rating": "Bewertung",
+      "link": "Link",
+      "note": "Notiz"
+    },
+    "statuses": {
+      "title": "Status",
+      "hint": "Neue Anfragen beginnen im ersten Status. Bis zu {{max, number}} Status.",
+      "initial": "Anfangsstatus",
+      "labelFor": "Name von Status {{position, number}}",
+      "moveUp": "{{status}} nach oben",
+      "moveDown": "{{status}} nach unten",
+      "remove": "{{status}} entfernen",
+      "newLabel": "Neuer Status",
+      "add": "Status hinzufügen",
+      "full": "Ein Board hat höchstens {{max, number}} Status."
+    },
+    "lifecycle": {
+      "title": "Archivieren oder löschen",
+      "hint_one": "Dieses Board hat {{count, number}} Anfrage. Archivieren blendet es für alle außer Admins aus und behält seine Anfragen; Löschen entfernt das Board und seine Anfragen.",
+      "hint_other": "Dieses Board hat {{count, number}} Anfragen. Archivieren blendet es für alle außer Admins aus und behält seine Anfragen; Löschen entfernt das Board und seine Anfragen.",
+      "saveFirst": "Speichern oder verwerfen Sie zuerst Ihre Änderungen.",
+      "archive": "Archivieren",
+      "restore": "Wiederherstellen",
+      "delete": "Board löschen"
+    },
+    "problems": {
+      "nameRequired": "Das Board braucht einen Namen.",
+      "slugInvalid": "Der Linkname darf nur Kleinbuchstaben, Ziffern und einzelne Bindestriche enthalten.",
+      "statusesEmpty": "Das Board braucht mindestens einen Status.",
+      "statusLabelRequired": "Jeder Status braucht einen Namen.",
+      "emailsInvalid": "Korrigieren oder entfernen Sie die ungültigen E-Mail-Adressen.",
+      "emailsTooMany": "Höchstens 500 E-Mail-Adressen.",
+      "listEmpty": "Fügen Sie mindestens eine erlaubte Domain oder E-Mail-Adresse hinzu."
+    },
+    "errors": {
+      "slugTaken": "Ein anderes Board verwendet diesen Linknamen bereits. Wählen Sie einen anderen.",
+      "statusInUse": "Ein entfernter Status wird noch von Anfragen auf diesem Board verwendet. Verschieben Sie diese Anfragen zuerst in einen anderen Status oder behalten Sie den Status.",
+      "forbidden": "Nur Administratoren können Boards ändern.",
+      "notFound": "Dieses Board existiert nicht mehr.",
+      "conflict": "Das Board wurde inzwischen geändert. Laden Sie es neu und versuchen Sie es erneut.",
+      "generic": "Etwas ist schiefgelaufen. Versuchen Sie es erneut."
+    }
   }
 }

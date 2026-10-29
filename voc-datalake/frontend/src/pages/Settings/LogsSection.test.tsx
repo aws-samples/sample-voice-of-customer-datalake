@@ -13,6 +13,8 @@ const auth = vi.hoisted(() => ({ isAdmin: true }))
 vi.mock('../../store/authStore', () => ({ useIsAdmin: () => auth.isAdmin }))
 // The Alerts card has its own suite (AlertsCard.test.tsx) and its own API module.
 vi.mock('./AlertsCard', () => ({ default: () => null }))
+// The System errors tab has its own suite (SystemLogsPanel.test.tsx).
+vi.mock('./SystemLogsPanel', () => ({ default: ({ days }: { days: number }) => <p>system-logs-panel {days}</p> }))
 
 // Mock API client
 const mockGetLogsSummary = vi.fn<(...args: unknown[]) => unknown>()
@@ -106,11 +108,14 @@ describe('LogsSection', () => {
       expect(screen.getByText('System Logs')).toBeInTheDocument()
     })
 
-    it('labels the period select and marks the active sub-tab', () => {
+    it('labels the period select and opens on the System errors sub-tab', () => {
       renderSection()
 
       expect(screen.getByRole('combobox', { name: 'Time period' })).toHaveValue('7')
-      expect(screen.getByRole('button', { name: /Validation Failures/i })).toHaveAttribute('aria-pressed', 'true')
+      expect([/System errors/i, /Validation Failures/i].map((name) => screen.getByRole('button', { name }).getAttribute('aria-pressed')))
+        .toStrictEqual(['true', 'false'])
+      expect(screen.getByText('system-logs-panel 7')).toBeInTheDocument()
+      expect(mockGetValidationLogs).not.toHaveBeenCalled()
     })
 
     it('displays summary card with zero counts when no logs exist', async () => {
@@ -184,11 +189,26 @@ describe('LogsSection', () => {
   })
 
   describe('tab navigation', () => {
-    it('displays validation tab as active by default', async () => {
+    it('displays the system errors tab as active by default', async () => {
       renderSection()
 
-      const validationTab = screen.getByRole('button', { name: /validation failures/i })
-      expect(validationTab).toHaveClass('tab-active')
+      expect(screen.getByRole('button', { name: /system errors/i })).toHaveClass('tab-active')
+    })
+
+    it('switches to validation tab when clicked', async () => {
+      const user = userEvent.setup()
+      await renderOnTab(user, /validation failures/i)
+
+      expect(screen.getByRole('button', { name: /validation failures/i })).toHaveClass('tab-active')
+    })
+
+    it('passes the period to the system errors panel', async () => {
+      const user = userEvent.setup()
+      renderSection()
+
+      await user.selectOptions(screen.getByRole('combobox'), '30')
+
+      expect(screen.getByText('system-logs-panel 30')).toBeInTheDocument()
     })
 
     it('switches to processing tab when clicked', async () => {
@@ -233,34 +253,26 @@ describe('LogsSection', () => {
 
   describe('validation logs panel', () => {
     it('displays empty state when no validation logs exist', async () => {
+      const user = userEvent.setup()
       mockGetValidationLogs.mockResolvedValue({ logs: [], count: 0, days: 7 })
 
-      renderSection()
+      await renderOnTab(user, /validation failures/i)
 
       await waitFor(() => {
         expect(screen.getByText(/no validation failures/i)).toBeInTheDocument()
       })
     })
 
-    it('displays validation logs grouped by source', async () => {
-      mockGetValidationLogs.mockResolvedValue(ONE_VALIDATION_FAILURE)
-
-      renderSection()
-
-      await waitFor(() => {
-        expect(screen.getByText('Webscraper')).toHaveAttribute('title', 'webscraper')
-        // Pluralised through i18n: one failure, not "1 failures"
-        expect(screen.getByText('1 failure')).toBeInTheDocument()
-      })
-    })
-
-    it('expands log entry to show error details when clicked', async () => {
+    it('groups validation logs by source and expands an entry to its error details', async () => {
       const user = userEvent.setup()
       mockGetValidationLogs.mockResolvedValue(ONE_VALIDATION_FAILURE)
 
-      renderSection()
+      await renderOnTab(user, /validation failures/i)
 
       await waitFor(() => {
+        expect(screen.getByText('Web scraper')).toHaveAttribute('title', 'webscraper')
+        // Pluralised through i18n: one failure, not "1 failures"
+        expect(screen.getByText('1 failure')).toBeInTheDocument()
         expect(screen.getByText('msg-123')).toBeInTheDocument()
       })
 
@@ -284,7 +296,7 @@ describe('LogsSection', () => {
         }],
       })
 
-      renderSection()
+      await renderOnTab(user, /validation failures/i)
       await user.click(await screen.findByText('msg-123'))
 
       expect(await screen.findByText('id, submitter_email, text')).toBeInTheDocument()
@@ -300,7 +312,7 @@ describe('LogsSection', () => {
       mockGetValidationLogs.mockResolvedValue(ONE_VALIDATION_FAILURE)
       mockClearValidationLogs.mockResolvedValue({ success: true, deleted: 1 })
 
-      renderSection()
+      await renderOnTab(user, /validation failures/i)
       const clear = await screen.findByRole('button', { name: /clear/i })
       expect(clear).toBeEnabled()
       expect(clear).not.toHaveAttribute('title', ADMIN_ONLY_TITLE)
@@ -314,7 +326,7 @@ describe('LogsSection', () => {
       auth.isAdmin = false
       mockGetValidationLogs.mockResolvedValue(ONE_VALIDATION_FAILURE)
 
-      renderSection()
+      await renderOnTab(user, /validation failures/i)
       const clear = await screen.findByRole('button', { name: /clear/i })
       expect(clear).toBeDisabled()
       expect(clear).toHaveAttribute('title', ADMIN_ONLY_TITLE)
@@ -355,7 +367,7 @@ describe('LogsSection', () => {
       await renderOnTab(user, /processing errors/i)
 
       await waitFor(() => {
-        expect(screen.getByText('Webscraper')).toBeInTheDocument()
+        expect(screen.getByText('Web scraper')).toBeInTheDocument()
         expect(screen.getByText('BedrockError')).toBeInTheDocument()
       })
     })

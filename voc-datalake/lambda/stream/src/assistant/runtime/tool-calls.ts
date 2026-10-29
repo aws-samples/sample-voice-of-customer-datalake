@@ -37,6 +37,7 @@ import type {
 } from '../types.js';
 import type { ToolUseBlock } from '../../bedrock/stream-processor.js';
 import { isApiError } from '../../lib/errors.js';
+import { aiWritingRefusal } from '../tools/ai-writing-guard.js';
 import { describeToolError, isAssistantToolError } from '../tools/errors.js';
 import { emitToolCall, events, type Emitter } from './emitter.js';
 
@@ -44,6 +45,8 @@ export interface PendingApproval {
   toolCallId: string;
   tool: ClientToolDefinition;
   args: Record<string, unknown>;
+  /** The tool's state-aware `describe`, when it has one and it resolved. */
+  summary?: string;
 }
 
 export interface ToolRoundResult {
@@ -196,6 +199,18 @@ async function precheckRefusal(
   }
 }
 
+/** The tool's state-aware summary; undefined (→ `summarize`) without one or when its read fails. */
+async function describedSummary(
+  tool: ClientToolDefinition, args: Record<string, unknown>, ctx: AssistantRunContext,
+): Promise<string | undefined> {
+  if (tool.describe === undefined) return undefined;
+  try {
+    return await tool.describe(args, ctx);
+  } catch {
+    return undefined;
+  }
+}
+
 async function runClientTool(call: ToolUseBlock, tool: ClientToolDefinition, c: CallContext): Promise<void> {
   if (isAdminOnlyClientTool(tool.name) && !c.ctx.isAdmin) {
     settle(call, c, 'Error: this action requires an administrator.');
@@ -214,14 +229,21 @@ async function runClientTool(call: ToolUseBlock, tool: ClientToolDefinition, c: 
       + 'changed. Do not propose changes to it; the project owner can grant edit access.');
     return;
   }
+  const writing = aiWritingRefusal(tool.name, validation.args, c.ctx.aiWriting);
+  if (writing !== undefined) {
+    console.warn(`Client tool ${call.name}: refused by the caller's way of working with AI`);
+    settle(call, c, `Error: ${writing}`);
+    return;
+  }
   const refusal = await precheckRefusal(tool, validation.args, c.ctx);
   if (refusal !== undefined) {
     console.warn(`Client tool ${call.name}: refused by its precheck`);
     settle(call, c, `Error: ${refusal}`);
     return;
   }
+  const summary = await describedSummary(tool, validation.args, c.ctx);
   emitCall(call, c, JSON.stringify(validation.args));
-  c.round.pending.push({ toolCallId: call.toolUseId, tool, args: validation.args });
+  c.round.pending.push({ toolCallId: call.toolUseId, tool, args: validation.args, ...(summary === undefined ? {} : { summary }) });
 }
 
 export async function runToolCalls(

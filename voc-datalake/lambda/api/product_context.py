@@ -1,7 +1,8 @@
 """
 Product/service description input — per-project context that feeds PRD/PR-FAQ generation.
 
-Three pieces:
+Two pieces (the AI assistant fills the context through its
+`update_product_context` approval card, which calls `update_context`):
   1. ProductContext  — single mutable record per project (structured fields + free-form notes).
   2. ProductDoc      — internal documents uploaded by the user, turned into text by the
                        S3-triggered extractor at lambda/product_doc_extractor/.
@@ -11,11 +12,6 @@ Three pieces:
                        accepting them only produced records stuck at status=pending
                        forever, with the UI badge reading "Extracting…" indefinitely.
                        See DEFERRED_CONTENT_TYPES.
-  3. interview_turn  — one round of AI interview chat. The model uses a `update_product_context`
-                       tool to patch the structured record; the assistant text is the user-facing
-                       reply. Returns {assistant_message, applied_patch, context}. Its route runs it
-                       as an assist job (projects_handler.ASSIST_WORK): the route checks the message
-                       (`interview_message`) and the worker runs the turn.
 
 `build_product_context_block(project_id) -> str` is consumed by
 lambda/jobs/document_generator/handler.py (PRD / PR-FAQ generation) and
@@ -25,7 +21,7 @@ from __future__ import annotations
 
 import os
 import secrets
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
@@ -33,8 +29,6 @@ from typing import TYPE_CHECKING, Any
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import BotoCoreError, ClientError
 
-from shared.aws import get_bedrock_client
-from shared.converse import converse_blocks
 from shared.derivation import DERIVATION_FIELD, build_derivation
 from shared.dynamo_paging import query_all
 from shared.exceptions import (
@@ -50,12 +44,9 @@ from shared.project_writes import (
     put_project_item,
 )
 from shared.tables import get_projects_table
+from shared.timestamps import now_iso
 
 if TYPE_CHECKING:
-    from mypy_boto3_bedrock_runtime.type_defs import (
-        MessageTypeDef,
-        ToolTypeDef,
-    )
     from mypy_boto3_dynamodb.type_defs import QueryInputTableQueryTypeDef
 
 projects_table = get_projects_table()
@@ -323,7 +314,7 @@ def update_context(project_id: str, body: object) -> dict:
         raise ConfigurationError('Projects table not configured')
 
     patch = _validate_patch(body or {})
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
 
     # Build UpdateExpression for whatever fields are present in the patch.
     # Always set updated_at; ensure base item exists with put_item if missing.
@@ -372,187 +363,6 @@ def update_context(project_id: str, body: object) -> dict:
         ExpressionAttributeNames=expr_names,
     )
     return get_context(project_id)
-
-
-# ── Interview chat (synchronous, single Bedrock turn with tool-use) ──────────
-
-INTERVIEW_TOOL_NAME = 'update_product_context'
-
-
-def _build_interview_tool() -> ToolTypeDef:
-    """JSON-schema for the update tool the LLM calls during the interview.
-
-    All fields are plain strings — comment-style, multi-line allowed. Each tool call
-    REPLACES the field; if the user adds to existing content the model should send
-    the merged value.
-    """
-    properties: dict[str, dict[str, Any]] = {k: {'type': 'string', 'maxLength': max_len}
-                        for k, max_len in STRING_FIELDS.items()}
-    properties['current_state'] = {
-        'type': 'string',
-        'enum': sorted(LIFECYCLE_STATES),
-    }
-    return {
-        'toolSpec': {
-            'name': INTERVIEW_TOOL_NAME,
-            'description': (
-                'Patch the structured product context with concrete information the '
-                'user just shared. Only include fields you have new information for. '
-                'Each field REPLACES the prior value — if the user is adding to an '
-                'existing field, include the merged combined text in the patch.'
-            ),
-            'inputSchema': {
-                'json': {
-                    'type': 'object',
-                    'properties': properties,
-                    'additionalProperties': False,
-                }
-            },
-        }
-    }
-
-
-def _format_context_for_prompt(ctx: dict) -> str:
-    """Render the current context for the system prompt — only filled fields."""
-    lines: list[str] = []
-    for k in ('product_name', 'one_liner', 'current_state',
-              'target_users', 'problem_solved',
-              'key_features', 'differentiators', 'known_limitations',
-              'non_goals', 'success_metrics', 'free_form_notes'):
-        v = ctx.get(k)
-        if not v:
-            continue
-        if isinstance(v, str) and len(v) > 500:
-            v = v[:500] + '...'
-        lines.append(f'{k}: {v}')
-    return '\n'.join(lines) if lines else '(empty)'
-
-
-# How many prior turns reach the model. The assist route stores only these in the
-# job's config, so a long chat cannot push the job row past DynamoDB's item limit.
-INTERVIEW_HISTORY_TURNS = 12
-_INTERVIEW_MAX_TOKENS = 1024
-# Sent only where the model accepts it (converse_blocks drops it for Sonnet 5 / Opus 5).
-_INTERVIEW_TEMPERATURE = 0.3
-
-
-def interview_message(body: dict | None) -> str:
-    """The turn's user message, or the 400 the route answers before any job exists."""
-    message = (body or {}).get('message', '')
-    message = message.strip() if isinstance(message, str) else ''
-    if not message:
-        raise ValidationError('message is required')
-    return message
-
-
-def _interview_messages(history: list, message: str) -> list[MessageTypeDef]:
-    """Converse messages for an interview turn: prior history + the new user turn."""
-    messages: list[MessageTypeDef] = []
-    for m in history[-INTERVIEW_HISTORY_TURNS:]:
-        role = m.get('role')
-        content = m.get('content', '')
-        if role in ('user', 'assistant') and isinstance(content, str) and content.strip():
-            messages.append({'role': role, 'content': [{'text': content}]})
-    messages.append({'role': 'user', 'content': [{'text': message}]})
-    return messages
-
-
-def _interview_reply(resp: Mapping[str, Any]) -> tuple[list[str], dict | None]:
-    """Split a Converse answer into its text parts and the interview tool's patch."""
-    assistant_text_parts: list[str] = []
-    raw_patch = None
-    for block in resp.get('output', {}).get('message', {}).get('content', []):
-        if 'text' in block:
-            assistant_text_parts.append(block['text'])
-        elif 'toolUse' in block:
-            tu = block['toolUse']
-            if tu.get('name') == INTERVIEW_TOOL_NAME:
-                raw_patch = tu.get('input') or {}
-    return assistant_text_parts, raw_patch
-
-
-@tracer.capture_method
-def interview_turn(project_id: str, body: dict) -> dict:
-    """
-    One round of interview. Body: {message: str, history?: [{role, content}], response_language?: str}
-    Returns: {assistant_message, applied_patch, context}
-    """
-    from shared.prompts import get_response_language_instruction
-
-    message = interview_message(body)
-
-    history = (body or {}).get('history') or []
-    if not isinstance(history, list):
-        history = []
-    response_language = (body or {}).get('response_language')
-
-    current_ctx = get_context(project_id)['context']
-
-    base_instructions = (
-        "You are interviewing the user about their product/service to fill a structured "
-        "context record that downstream PRD and PR/FAQ generators will consume. "
-        "Ask ONE focused question at a time, prioritizing fields that are still empty. "
-        "When the user gives concrete information, you MUST call the "
-        f"`{INTERVIEW_TOOL_NAME}` tool with a patch of just the fields you learned BEFORE "
-        "writing your reply text. Don't invent — only patch fields with information the "
-        "user actually provided. Each field REPLACES the prior value, so if the user is "
-        "adding to an existing field include the merged combined text in the patch. After "
-        "the tool call, briefly confirm what was captured and ask the next most useful question.\n\n"
-        f"CURRENT CONTEXT:\n{_format_context_for_prompt(current_ctx)}\n\n"
-        "Fields you can patch (all are free-text strings):\n"
-        f"- product_name (≤{STRING_FIELDS['product_name']} chars)\n"
-        f"- one_liner (≤{STRING_FIELDS['one_liner']} chars)\n"
-        "- target_users, problem_solved (free text)\n"
-        f"- current_state (one of: {sorted(LIFECYCLE_STATES)})\n"
-        "- key_features, differentiators, known_limitations, non_goals, success_metrics (free text comments)\n"
-        "- free_form_notes (anything that doesn't fit above)\n"
-    )
-    language_instruction = get_response_language_instruction(response_language)
-    system_prompt = (f"{base_instructions}\n\n{language_instruction}".strip()
-                     if language_instruction else base_instructions)
-
-    *prior_turns, user_turn = _interview_messages(history, message)
-
-    client = get_bedrock_client()
-    try:
-        # Product-interview chat surface, with the interview tool: converse_blocks
-        # resolves the model, omits temperature where the model rejects it and
-        # retries a throttle (without that the FIRST throttle would become a
-        # user-visible "AI interview unavailable" — the shared client makes one
-        # botocore attempt by design, see BEDROCK_READ_TIMEOUT_SECONDS).
-        resp = converse_blocks(
-            client, user_turn['content'], surface='chat', system_prompt=system_prompt,
-            max_tokens=_INTERVIEW_MAX_TOKENS, temperature=_INTERVIEW_TEMPERATURE,
-            tool_config={'tools': [_build_interview_tool()]}, prior_turns=prior_turns,
-            step_name='interview_turn',
-        )
-    except Exception as e:
-        # Covers sustained throttling too: with raise_on_throttle at its default,
-        # bedrock_call_with_retry raises rather than returning None (its overloads
-        # type the result as non-Optional), so no None branch follows.
-        logger.exception(f'Interview Bedrock call failed: {e}')
-        raise ServiceError('AI interview unavailable. Please try again.') from e
-
-    assistant_text_parts, raw_patch = _interview_reply(resp)
-
-    applied: dict = {}
-    if raw_patch is not None:
-        cleaned = _validate_patch(raw_patch)
-        if cleaned:
-            update_context(project_id, cleaned)
-            applied = cleaned
-
-    assistant_message = '\n'.join(p for p in assistant_text_parts if p).strip()
-    if not assistant_message:
-        # Tool-only turn — return a stable code; the frontend localizes it.
-        assistant_message = '__captured__' if applied else '__elaborate__'
-
-    fresh_ctx = get_context(project_id)['context']
-    return {
-        'assistant_message': assistant_message,
-        'applied_patch': applied,
-        'context': fresh_ctx,
-    }
 
 
 # ── ProductDoc — uploads, listing, deletion ──────────────────────────────────
@@ -678,7 +488,7 @@ def _age_seconds(created_at) -> float | None:
     """Seconds since an ISO-8601 `created_at`, or None if it cannot be read.
 
     Defensive on purpose: the value is written by
-    `datetime.now(timezone.utc).isoformat()`, but a missing or malformed one must
+    `now_iso()`, but a missing or malformed one must
     NOT be treated as old. Failing safe means leaving the record alone — marking a
     document failed because its timestamp was unparseable would be a new lie in
     place of the one this transition removes.
@@ -883,7 +693,7 @@ def create_upload_url(project_id: str, body: dict) -> dict:
     doc_id = _new_doc_id()
     ext = ALLOWED_CONTENT_TYPES[content_type]
     s3_raw_key = f'projects/{project_id}/product_docs/raw/{doc_id}.{ext}'
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
 
     item = {
         'pk': _doc_pk(project_id),
@@ -1094,7 +904,7 @@ def generate_report(project_id: str, body: dict) -> dict:
         }
 
     item = create_counted_project_child(
-        projects_table, project_id, 'product_report', build, 'document_count', now=now_dt,
+        projects_table, project_id, 'product_report', build, now=now_dt,
     )
     return {'success': True, 'document': item}
 

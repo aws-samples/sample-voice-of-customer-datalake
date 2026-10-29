@@ -3,7 +3,7 @@
 /**
  * ts_union_members — string-literal union members nothing ever produces.
  *
- * Pattern (deadts.md §1c: `OverviewStep 'remix'` as a next step, `Tone 'aim'`): a union such as
+ * Pattern (the 5.28 dead-TS audit: `OverviewStep 'remix'` as a next step, `Tone 'aim'`): a union such as
  * `type Tone = 'ok' | 'warn' | 'aim'` keeps a member alive in the type system long after the last code
  * path that could produce it is gone. The `switch` cases, `=== 'aim'` branches, `Record<Tone, …>`
  * table rows, CSS classes and locale strings for it are then dead too, and nothing complains.

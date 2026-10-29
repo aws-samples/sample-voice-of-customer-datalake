@@ -1,0 +1,5 @@
+{
+  "entries": [
+    { "key": "mock-server.js::POST /chat/stream", "kind": "mock-only", "reason": "The assistant's AG-UI SSE stream: the SPA posts to it from assistant/agui/client.ts with a URL built by a function (not a fetchApi or fetch(`${getBaseUrl()}…`) call site), so no mock-coverage.json probe can name it; check:mock cannot probe a stream either. The mock serves it for every assistant run in npm run dev." }
+  ]
+}

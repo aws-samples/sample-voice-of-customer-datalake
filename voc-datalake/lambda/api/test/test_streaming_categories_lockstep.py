@@ -8,8 +8,8 @@ Python writer ⇄ reader ⇄ processor ⇄ aggregator pins below remain. The his
 that follows explains why each pin exists.
 
 The aggregates item that holds the taxonomy is written in exactly one place —
-the PUT /settings/categories handler in lambda/api/settings_handler.py, which
-spells the key out as CATEGORIES_PK/CATEGORIES_SK. Python reads it back in
+the PUT /settings/categories handler in lambda/api/settings_handler.py, under
+CATEGORIES_PK/CATEGORIES_SK, declared once in lambda/shared/category_gate.py. Python reads it back in
 lambda/shared/api.py (`get_raw_categories_config`), maps each object to its
 `name`, and falls back to DEFAULT_CATEGORIES when the item is absent. Streaming
 chat needs the SAME names, because it uses them to build the daily counter
@@ -61,7 +61,8 @@ import re
 from pathlib import Path
 
 PYTHON_READER_SOURCE = 'lambda/shared/api.py'
-PYTHON_WRITER_SOURCE = 'lambda/api/settings_handler.py'
+# The writer (PUT /settings/categories in settings_handler.py) imports the key from here.
+PYTHON_WRITER_SOURCE = 'lambda/shared/category_gate.py'
 # The enrichment prompt and the enrichment item fields moved out of the
 # processor into the module it shares with the category-reprocess worker.
 PROCESSOR_SOURCE = 'lambda/shared/categorization.py'

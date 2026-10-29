@@ -25,7 +25,7 @@ import { readFileSync, readdirSync, statSync, existsSync, writeFileSync, mkdirSy
 import { join, dirname, basename, relative } from 'node:path';
 import { availableParallelism } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { buildTsPlan, DEFAULT_AGENTS, DEFAULT_JOB_WORK, doneGaps, printTsPlan, tsDoneSet, tsPrompts } from './mutation-plan-ts.mjs';
+import { balancedCuts, buildTsPlan, DEFAULT_AGENTS, DEFAULT_JOB_WORK, doneGaps, printTsPlan, tsDoneSet, tsPrompts } from './mutation-plan-ts.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PKG = join(ROOT, 'voc-datalake');
@@ -140,26 +140,14 @@ function openIntervals(file, lines, done) {
   return doneGaps(file, lines, done).filter((i) => i.to - i.from + 1 >= MIN_INTERVAL_LINES);
 }
 
-/** Cut one open interval into slices of at most SLICE_CAP weight at top-level statement boundaries. */
+/** Cut one open interval into slices of at most SLICE_CAP weight at top-level statement boundaries. A decorator
+ *  line is itself a start, so cutting at any start keeps decorators with their def; only boundaries strictly
+ *  inside the interval qualify. */
 function sliceInterval(inv, interval) {
   const { weightUpTo } = inv;
-  const openWeight = weightUpTo[interval.to] - weightUpTo[interval.from - 1];
-  const count = Math.max(1, Math.ceil(openWeight / SLICE_CAP));
-  const target = openWeight / count;
-  const slices = [];
-  let from = interval.from;
-  for (let k = 1; k < count; k += 1) {
-    const goal = weightUpTo[interval.from - 1] + target * k;
-    // A decorator line is itself a start, so cutting at any start keeps decorators with their def. Only
-    // boundaries strictly inside the interval qualify; none left → the rest is one slice.
-    const candidates = inv.starts.filter((s) => s > from + 1 && s < interval.to);
-    if (candidates.length === 0) break;
-    const cut = candidates.reduce((best, s) => (Math.abs(weightUpTo[s - 1] - goal) < Math.abs(weightUpTo[best - 1] - goal) ? s : best));
-    slices.push({ file: inv.file, from, to: cut - 1 });
-    from = cut;
-  }
-  slices.push({ file: inv.file, from, to: interval.to });
-  return slices;
+  const count = Math.max(1, Math.ceil((weightUpTo[interval.to] - weightUpTo[interval.from - 1]) / SLICE_CAP));
+  const inside = inv.starts.filter((s) => s < interval.to);
+  return balancedCuts(weightUpTo, interval, inside, count).map((piece) => ({ file: inv.file, ...piece }));
 }
 
 function slice(inv, done) {

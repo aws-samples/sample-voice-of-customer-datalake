@@ -9,7 +9,7 @@ plugin set (issue #256): `app_reviews_ios`, `app_reviews_android` and
 The plugin half now comes from the deployment itself. CDK renders the ids of the
 plugins enabled in `pluginStatus` (and present under `plugins/`) into the
 `ENABLED_SOURCES` env var at synth time — see `enabledSourcesEnv` in
-`lib/stacks/api-enabled-sources.ts`.
+`lib/stacks/api-data-lambdas.ts`.
 
 `manual_import` is appended because it is a real `source_platform` with no plugin
 manifest: `manual_import_handler` writes feedback under it, and the processor

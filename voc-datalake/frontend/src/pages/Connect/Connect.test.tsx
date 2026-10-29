@@ -112,6 +112,25 @@ describe('Connect', () => {
     expect(mintToken).toHaveBeenCalledWith({ name: 'Scoped', scope: 'write', expires_in_days: 7, project_id: 'proj_1' })
   })
 
+  it('mints a token that lives one day, the shortest lifetime the backend accepts', async () => {
+    const { user, create } = await renderMintForm()
+
+    await user.type(screen.getByLabelText('Name'), 'Demo')
+    await user.selectOptions(screen.getByLabelText('Expires after'), '1')
+    await user.click(create)
+
+    expect(screen.getByRole('option', { name: '1 day' })).toBeInTheDocument()
+    expect(mintToken).toHaveBeenCalledWith({ name: 'Demo', scope: 'read', expires_in_days: 1 })
+  })
+
+  it('names the token on its Revoke button for screen readers', async () => {
+    listTokens.mockResolvedValue(listing([ACTIVE, { ...ACTIVE, token_id: 'tok_1111111111111111', name: 'CI runner' }]))
+    renderConnect()
+
+    expect(await screen.findByRole('button', { name: 'Revoke token “Kiro laptop”' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Revoke token “CI runner”' })).toBeInTheDocument()
+  })
+
   it('offers agent runs in the write hint only to an admin', async () => {
     listTokens.mockResolvedValue(listing([], { can_mint_agent_runner: true }))
     renderConnect()

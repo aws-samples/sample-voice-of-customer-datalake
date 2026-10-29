@@ -10,6 +10,7 @@ import { IconGlyph } from '../../components/SourceIcon/SourceIcon'
 import { formatDate } from '../../utils/dateUtils'
 import { formatFileSize } from '../../utils/file'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
+import { folderLabel } from './folderLabels'
 import type { S3ObjectSummary } from './dataExplorerSchema'
 
 interface S3Object {
@@ -21,8 +22,6 @@ interface S3Object {
   summary?: S3ObjectSummary
 }
 
-/** Folders this shallow are buckets' top folders and source folders (`raw/<source id>`): shown by label. */
-const LABELLED_FOLDER_DEPTH = 1
 
 /** Row-level callbacks the browser receives and hands down to every object row. */
 interface S3ObjectActions {
@@ -88,8 +87,9 @@ function Breadcrumbs({ bucket, path, onNavigateToBreadcrumb }: Readonly<{
   path: string[]
   onNavigateToBreadcrumb: (index: number) => void
 }>) {
-  const { t } = useTranslation('dataExplorer')
+  const { t, i18n } = useTranslation('dataExplorer')
   const labels = useDisplayLabels()
+  const context = { sourceLabel: labels.source, language: i18n.language, t }
   return (
     <nav aria-label={t('s3Browser.path')} className="bg-bg-accent px-4 py-2.5 border-b border-border flex items-center gap-1.5 text-sm min-w-0 overflow-x-auto">
       <HardDrive size={16} className="text-muted flex-shrink-0" aria-hidden="true" />
@@ -98,7 +98,7 @@ function Breadcrumbs({ bucket, path, onNavigateToBreadcrumb }: Readonly<{
         // Segments can repeat ("2026/01/01"), so the path up to here is the identity.
         <span key={path.slice(0, i + 1).join('/')} className="flex items-center gap-1.5 flex-shrink-0">
           <ChevronRight size={14} className="text-muted" aria-hidden="true" />
-          <Crumb label={i <= LABELLED_FOLDER_DEPTH ? labels.source(segment) : segment} isCurrent={i === path.length - 1} onClick={() => onNavigateToBreadcrumb(i)} />
+          <Crumb label={folderLabel(path.slice(0, i), segment, context)} isCurrent={i === path.length - 1} onClick={() => onNavigateToBreadcrumb(i)} />
         </span>
       ))}
     </nav>
@@ -119,7 +119,7 @@ function EmptyFolder() {
 export default function S3Browser({
   path, data, loading, onNavigateToFolder, onNavigateUp, onNavigateToBreadcrumb, onView, onEdit, onDownload
 }: S3BrowserProps) {
-  const { t } = useTranslation('dataExplorer')
+  const { t, i18n } = useTranslation('dataExplorer')
   const labels = useDisplayLabels()
   if (loading) {
     return <div className="p-8 text-center"><Loader2 className="mx-auto animate-spin text-accent" size={24} /></div>
@@ -146,7 +146,7 @@ export default function S3Browser({
             <S3ObjectRow
               key={obj.fullKey ?? obj.key}
               obj={obj}
-              folderLabel={path.length <= LABELLED_FOLDER_DEPTH ? labels.source : asStored}
+              folderLabel={(key) => folderLabel(path, key, { sourceLabel: labels.source, language: i18n.language, t })}
               onNavigateToFolder={onNavigateToFolder}
               onView={onView}
               onEdit={onEdit}
@@ -164,8 +164,6 @@ interface S3ObjectRowProps extends S3ObjectActions {
   /** A folder's shown name: its label (`Acme (Android)`) at the shallow levels, else as stored; the stored name stays its tooltip. */
   readonly folderLabel: (key: string) => string
 }
-
-const asStored = (key: string) => key
 
 /** The row's two lines: what it is (review title / folder label / file name) and its details. */
 function RowText({ obj, folderLabel }: Readonly<{ obj: S3Object; folderLabel: (key: string) => string }>) {

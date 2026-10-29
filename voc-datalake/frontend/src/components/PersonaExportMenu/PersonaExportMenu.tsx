@@ -3,7 +3,7 @@
  *
  * Export options for customer personas:
  * - Copy as Markdown
- * - Download as PDF with formatted sections
+ * - Print or save as PDF with formatted sections (the browser print dialog, like every PDF export)
  *
  * @module components/PersonaExportMenu
  */

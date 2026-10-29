@@ -2,7 +2,7 @@
  * @fileoverview Logs section for Settings page.
  * @module pages/Settings/LogsSection
  * 
- * Displays validation failures, processing errors, and scraper logs.
+ * Displays system errors (CloudWatch), validation failures, processing errors, and scraper logs.
  */
 
 import { useState } from 'react'
@@ -11,7 +11,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import { 
   AlertTriangle, XCircle, RefreshCw, Trash2,
-  FileWarning, Loader2, AlertCircle,
+  FileWarning, Loader2, AlertCircle, ServerCrash,
 } from 'lucide-react'
 import { api } from '../../api/client'
 import type { ProcessingLogEntry } from '../../api/types'
@@ -24,20 +24,19 @@ import { SourceLogPanel } from './SourceLogList'
 import { TabsTrack } from './TabsTrack'
 import AlertsCard from './AlertsCard'
 import ScraperLogsPanel from './ScraperRunsPanel'
+import SystemLogsPanel from './SystemLogsPanel'
 import type { LogEntryView } from './SourceLogList'
+import { SECTION_TITLE } from './sectionTitle'
 
-type LogTab = 'validation' | 'processing' | 'scrapers'
+type LogTab = 'system' | 'validation' | 'processing' | 'scrapers'
 
 interface LogsSectionProps {
   readonly apiEndpoint: string
 }
 
-// min-w-0 + hyphens: a long one-word title (de "Quelleneinstellungen") wraps beside its icon at 200 % text.
-const SECTION_TITLE = 'min-w-0 break-words hyphens-auto text-lg font-semibold tracking-tight text-text-strong'
-
 export default function LogsSection({ apiEndpoint }: LogsSectionProps) {
   const { t } = useTranslation('settings')
-  const [activeTab, setActiveTab] = useState<LogTab>('validation')
+  const [activeTab, setActiveTab] = useState<LogTab>('system')
   const [days, setDays] = useState(7)
 
   if (!apiEndpoint) {
@@ -56,6 +55,7 @@ export default function LogsSection({ apiEndpoint }: LogsSectionProps) {
   }
 
   const tabs = [
+    { id: 'system' as const, label: t('logs.system.tab'), icon: ServerCrash },
     { id: 'validation' as const, label: t('logs.validationFailures'), icon: AlertTriangle },
     { id: 'processing' as const, label: t('logs.processingErrors'), icon: XCircle },
     { id: 'scrapers' as const, label: t('logs.scraperRuns'), icon: RefreshCw },
@@ -91,6 +91,7 @@ export default function LogsSection({ apiEndpoint }: LogsSectionProps) {
       <AlertsCard />
 
       {/* Tab Content */}
+      {activeTab === 'system' && <SystemLogsPanel days={days} />}
       {activeTab === 'validation' && <ValidationLogsPanel days={days} />}
       {activeTab === 'processing' && <ProcessingLogsPanel days={days} />}
       {activeTab === 'scrapers' && <ScraperLogsPanel days={days} />}

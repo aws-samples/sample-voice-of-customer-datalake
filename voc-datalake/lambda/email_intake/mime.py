@@ -105,7 +105,7 @@ class ParsedEmail:
 
 
 def _html_to_text(html: str) -> str:
-    from bs4 import BeautifulSoup  # the ingestion layer ships bs4 + lxml
+    from bs4 import BeautifulSoup  # bs4: the ingestion layer; lxml: the email-intake-deps layer
 
     soup = BeautifulSoup(html, 'lxml')
     for tag in soup(['script', 'style', 'head']):

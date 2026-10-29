@@ -20,12 +20,12 @@ from typing import Any, Final
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
+from shared.ai_writing import PLAN_PRINCIPAL_CLAIM as PRINCIPAL_CLAIM
+from shared.ai_writing import PLAN_PRINCIPAL_PREFIX
 from shared.logging import logger
 from shared.project_access import ACTING_SUBJECT_CLAIM, ADMIN_GROUP
 
 USERS_GROUP: Final = 'users'
-PRINCIPAL_CLAIM: Final = 'voc:principal'
-PLAN_PRINCIPAL_PREFIX: Final = 'plan:'
 _GROUPS_PAGE: Final = 60
 
 

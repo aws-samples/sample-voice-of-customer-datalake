@@ -542,7 +542,7 @@ describe('Prioritization', () => {
       // look identical and mean different things, so the text a screen reader gets is
       // the only place the difference survives.
       for (const label of ['Not Scored', 'High Priority', 'Medium Priority']) {
-        expect(cardValue(label), label).toBe('—Loading team score')
+        expect(cardValue(label), label).toBe('Loading team score')
       }
     })
 

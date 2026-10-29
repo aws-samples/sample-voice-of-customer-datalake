@@ -45,7 +45,9 @@
     "noFiles": "Nie znaleziono plików",
     "view": "Podgląd",
     "path": "Ścieżka folderu",
-    "noFilesHint": "Ten folder jest pusty. Utwórz tutaj plik lub zaimportuj dane ze Źródeł danych."
+    "noFilesHint": "Ten folder jest pusty. Utwórz tutaj plik lub zaimportuj dane ze Źródeł danych.",
+    "personaFolder": "Persona {{n, number}} · {{date}}",
+    "personaFolderDated": "Persona · {{date}}"
   },
   "tabs": {
     "categories": "Kategorie",

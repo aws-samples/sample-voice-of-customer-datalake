@@ -14,6 +14,27 @@ import { getEnvString } from './lib/env'
 // URL regex pattern for validation (replaces deprecated z.string().url())
 const urlPattern = /^https?:\/\/.+/
 
+const BoardConfigSchema = z.object({
+  userPoolId: z.string().min(1),
+  clientId: z.string().min(1),
+  /**
+   * How the pool emails its sign-in codes (lib/stacks/core-board-auth.ts): `email_otp` (SES, with
+   * `-c emailFrom`) or `code` (Cognito's own email: sign-up confirmation / password-reset codes).
+   * Absent (a config written before 5.45.00, always an SES deployment) = `email_otp`.
+   */
+  signIn: z.enum(['email_otp', 'code']).catch('email_otp').default('email_otp'),
+})
+
+type BoardSignInMode = 'email_otp' | 'code'
+
+/** The board pool's ids plus the region every pool of the deployment lives in. */
+export interface BoardPoolConfig {
+  readonly userPoolId: string
+  readonly clientId: string
+  readonly region: string
+  readonly signIn?: BoardSignInMode
+}
+
 // Schema for runtime configuration
 const RuntimeConfigSchema = z.object({
   apiEndpoint: z.string().regex(urlPattern, 'Invalid URL format'),
@@ -27,7 +48,15 @@ const RuntimeConfigSchema = z.object({
   // the flag (or the whole block) and the UI hides the feature.
   features: z.object({
     webSearch: z.boolean().optional(),
+    /** Participant email sending is configured (`-c emailFrom`); the UI explains it is off otherwise. */
+    email: z.boolean().optional(),
   }).optional(),
+  /**
+   * The feature-request board's own Cognito user pool (docs/feature-requests.md), present only when
+   * the deployment created it. Lenient: a malformed block reads as "no board" rather than throwing
+   * away the whole config (which would blank the app's own sign-in).
+   */
+  board: BoardConfigSchema.optional().catch(undefined),
 })
 
 export type RuntimeConfig = z.infer<typeof RuntimeConfigSchema>
@@ -84,6 +113,16 @@ export function isConfigLoaded(): boolean {
  */
 export function isWebSearchAvailable(): boolean {
   return configState.config?.features?.webSearch === true
+}
+
+/**
+ * The board user pool, or null when the deployment has none (or the config is
+ * not loaded yet). The region is the app pool's: both pools live in the stack's region.
+ */
+export function getBoardPoolConfig(): BoardPoolConfig | null {
+  const board = configState.config?.board
+  if (!board) return null
+  return { ...board, region: configState.config?.cognito.region ?? 'us-east-1' }
 }
 
 async function fetchConfig(): Promise<RuntimeConfig> {

@@ -16,6 +16,7 @@
  *
  * @module pages/Home/brief/AgentDecisionCards
  */
+import { useId } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
@@ -65,19 +66,23 @@ function DecisionCard({ agent, isAdmin, onClose }: Readonly<CardProps>) {
   const name = agent.name.trim() === '' ? agent.agent_id : agent.name
   const title = t('briefing:agentDecision.title', { name })
   const runId = agent.stats.last_run_id ?? ''
+  const headingId = useId()
   return (
-    <li className="relative space-y-2 rounded-xl border border-warn/30 bg-warn-subtle p-4" data-agent-id={agent.agent_id}>
-      {runId !== '' && <CloseCardButton cardTitle={title} onClose={() => { onClose(runId) }} />}
-      <h3 className="flex items-center gap-2 pr-8 font-semibold text-text-strong">
-        <Hand size={16} aria-hidden="true" className="shrink-0 text-warn" />
-        {title}
-      </h3>
-      <ReasonLine needsHuman={run?.needs_human ?? null} />
-      <RunFacts run={run} />
-      <Link to={`/agents/${encodeURIComponent(agent.agent_id)}?tab=runs`} className="btn btn-primary btn-sm">
-        {isAdmin ? t('agents:decision.form.submit') : t('agents:decision.reviewRun')}
-        <ArrowRight size={14} aria-hidden="true" />
-      </Link>
+    // An article named by its heading ("<agent> needs your decision"), so the card is findable by role.
+    <li className="relative" data-agent-id={agent.agent_id}>
+      <article aria-labelledby={headingId} className="space-y-2 rounded-xl border border-warn/30 bg-warn-subtle p-4">
+        {runId !== '' && <CloseCardButton cardTitle={title} onClose={() => { onClose(runId) }} />}
+        <h3 id={headingId} className="flex items-center gap-2 pr-8 font-semibold text-text-strong">
+          <Hand size={16} aria-hidden="true" className="shrink-0 text-warn" />
+          {title}
+        </h3>
+        <ReasonLine needsHuman={run?.needs_human ?? null} />
+        <RunFacts run={run} />
+        <Link to={`/agents/${encodeURIComponent(agent.agent_id)}?tab=runs`} className="btn btn-primary btn-sm">
+          {isAdmin ? t('agents:decision.form.submit') : t('agents:decision.reviewRun')}
+          <ArrowRight size={14} aria-hidden="true" />
+        </Link>
+      </article>
     </li>
   )
 }

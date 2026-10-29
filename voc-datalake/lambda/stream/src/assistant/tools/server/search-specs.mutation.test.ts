@@ -24,7 +24,9 @@ describe('searchFeedbackSpec', () => {
     expect(spec.toolSpec?.description).toBe(
       'Search and retrieve customer feedback/reviews. Use it when the user asks about customer feedback, reviews, '
       + 'complaints or opinions — not for greetings or general questions. A 32-character hex query looks up one '
-      + 'review by id. The window is the page time range.\n\n'
+      + 'review by id. The window defaults to the page time range; set `days` when the user names another '
+      + 'period ("last 90 days" → 90, "all time" → 0). It reads at most the newest 90 days that hold feedback: '
+      + 'for counts over a longer period use get_metrics with the same days.\n\n'
       + 'IMPORTANT for broad questions: to summarize, count, find trends or surface "the most urgent / top / biggest '
       + 'issues", set mode="aggregate" — it returns distribution stats over the ENTIRE match set in ONE call. To rank '
       + 'by urgency use urgency="high" and/or sort_by="urgency"; `query` is a literal substring match against the '
@@ -38,7 +40,7 @@ describe('searchFeedbackSpec', () => {
 
   it('lists the arguments in order, with the shared item filters after version', () => {
     expect(Object.keys(schema['properties'] ?? {})).toStrictEqual([
-      'query', 'source', 'category', 'sentiment', 'urgency', 'version', ...Object.keys(ITEM_FILTER_PROPERTIES), 'limit', 'mode', 'sort_by',
+      'query', 'source', 'category', 'sentiment', 'urgency', 'version', ...Object.keys(ITEM_FILTER_PROPERTIES), 'days', 'limit', 'mode', 'sort_by',
     ]);
     expect(schema['properties']).toMatchObject(ITEM_FILTER_PROPERTIES);
   });
@@ -58,6 +60,15 @@ describe('searchFeedbackSpec', () => {
   ])('%s is a %s with enum %j', (name, type, values, description) => {
     const expected = values === null ? { type, description } : { type, enum: values, description };
     expect(Reflect.get(Object(schema['properties']), name)).toStrictEqual(expected);
+  });
+});
+
+describe('searchFeedbackSpec days', () => {
+  // 5.35 (E2E 5.34): no `days`, so "the last 90 days" on a 7-day page was searched over 7 days.
+  it('lets the model name the period, 0 = all time', () => {
+    expect(Reflect.get(Object(inputSchema(searchFeedbackSpec())['properties']), 'days')).toStrictEqual({
+      type: 'integer', minimum: 0, maximum: 9999, description: 'Window in days (default: page time range). 0 = all time.',
+    });
   });
 });
 

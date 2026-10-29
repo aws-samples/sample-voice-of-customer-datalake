@@ -126,12 +126,12 @@ def tsc  bridge                             "node: kiro-acp-bridge tests"       
 
 # Tests that need the built SPA: the CDK stacks stage frontend/dist as an asset. Built once per run.
 def test frontend,frontend-static,cdk,cdk-tests,audit,audit-py-synth "vite build: frontend" 'cd "$FRONTEND" && npx vite build --logLevel warn'
-# Code audit (the detectors are described below): the three CDK-contract detectors share one offline synth,
+# Code audit (the detectors are described below): the CDK-contract and bundle-aware detectors share one offline synth,
 # cached in .cache/audit/ (py_assembly.py). They run in ONE step, one after another (every one runs; the
 # worst exit wins), so the cache is built once and no two synths ever write it at the same time. The synth
 # stages frontend/dist (VocApiStack's website asset), so the step follows the vite build, which carries its
 # group for that reason, and comes before the vitest suites so a failing suite cannot leave it unrun.
-def test audit,audit-py-synth               "audit: py_reachability + py_env_contract + py_iam_contract" 'cd "$ROOT" && rc=0 && for d in scripts/audit/py_reachability.py scripts/audit/py_env_contract.py scripts/audit/py_iam_contract.py; do "$PYTHON_BIN" "$d" || { r=$?; echo "audit: $d exited $r"; [ "$r" -gt "$rc" ] && rc=$r; }; done; exit "$rc"'
+def test audit,audit-py-synth               "audit: py_reachability + py_env_contract + py_iam_contract + py_layers + py_sfn_errors + py_shared_constants + py_doc_refs + clones_struct.py --kind function" 'cd "$ROOT" && rc=0 && for d in scripts/audit/py_reachability.py scripts/audit/py_env_contract.py scripts/audit/py_iam_contract.py scripts/audit/py_layers.py scripts/audit/py_sfn_errors.py scripts/audit/py_shared_constants.py scripts/audit/py_doc_refs.py "scripts/audit/clones_struct.py --kind function"; do "$PYTHON_BIN" $d || { r=$?; echo "audit: $d exited $r"; [ "$r" -gt "$rc" ] && rc=$r; }; done; exit "$rc"'
 def test cdk,cdk-tests                      "vitest: CDK app"                    'cd "$CDK" && npx vitest run --testTimeout "$VALIDATE_VITEST_TIMEOUT_MS"'
 def test stream,stream-tests                "vitest: stream Lambda"              'cd "$STREAM" && npx vitest run'
 def test frontend,frontend-tests            "vitest: frontend"                   'cd "$FRONTEND" && npx vitest run'
@@ -147,11 +147,21 @@ def tsc  audit,audit-callers                "audit: py_route_callers"           
 def tsc  audit,audit-callers                "audit: py_stored_attrs"             'cd "$ROOT" && "$PYTHON_BIN" scripts/audit/py_stored_attrs.py'
 def tsc  audit,audit-patterns               "audit: patterns"                    'cd "$ROOT" && "$PYTHON_BIN" scripts/audit/patterns.py'
 def tsc  audit,audit-clones-py              "audit: clones_struct.py"            'cd "$ROOT" && "$PYTHON_BIN" scripts/audit/clones_struct.py'
+def tsc  audit,audit-clones-py              "audit: py_dead_params"              'cd "$ROOT" && "$PYTHON_BIN" scripts/audit/py_dead_params.py'
 def lint audit,audit-ts                     "audit: ts_reachability"             'cd "$ROOT" && node scripts/audit/ts_reachability.mjs'
 def tsc  audit,audit-ts                     "audit: ts_api_callers"              'cd "$ROOT" && node scripts/audit/ts_api_callers.mjs'
 def tsc  audit,audit-unions                 "audit: ts_union_members"            'cd "$ROOT" && node scripts/audit/ts_union_members.mjs'
 def tsc  audit,audit-locale                 "audit: ts_locale_keys"              'cd "$ROOT" && node scripts/audit/ts_locale_keys.mjs'
 def tsc  audit,audit-clones-ts              "audit: clones_struct.mjs"           'cd "$ROOT" && node scripts/audit/clones_struct.mjs'
+def tsc  audit,repo                         "audit: stack_outputs"               'cd "$ROOT" && "$PYTHON_BIN" scripts/audit/stack_outputs.py'
+def tsc  audit,repo                         "audit: repo_contracts"              'cd "$ROOT" && node scripts/audit/repo_contracts.mjs'
+def tsc  audit,repo                         "audit: doc_contract"                'cd "$ROOT" && "$PYTHON_BIN" scripts/audit/doc_contract.py'
+def tsc  audit,audit-ts                     "audit: ts_prop_usage"               'cd "$ROOT" && node scripts/audit/ts_prop_usage.mjs'
+def tsc  audit,audit-ts                     "audit: ts_css_tokens"               'cd "$ROOT" && node scripts/audit/ts_css_tokens.mjs'
+def tsc  audit,audit-ts                     "audit: ts_mock_routes"              'cd "$ROOT" && node scripts/audit/ts_mock_routes.mjs'
+def tsc  audit,audit-ts                     "audit: ts_stale_refs"               'cd "$ROOT" && node scripts/audit/ts_stale_refs.mjs'
+def tsc  audit,audit-clones-ts              "audit: ts_name_twins"               'cd "$ROOT" && node scripts/audit/ts_name_twins.mjs'
+def tsc  audit,audit-ts                     "audit: ts_query_keys"               'cd "$ROOT" && node scripts/audit/ts_query_keys.mjs'
 # The detectors' own tests and lint (root package.json test:audit / lint:audit), and a check that every
 # detector run-all.sh discovers has a step above, so a new detector cannot land outside the gate.
 def tsc  audit,audit-tools                  "audit: detector tests"              'cd "$ROOT" && "$PYTHON_BIN" -m pytest -c scripts/audit/pytest.ini scripts/audit && node --test scripts/audit/*.test.mjs'

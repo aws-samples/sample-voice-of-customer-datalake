@@ -13,12 +13,9 @@ import type { ProjectVisibility } from '../../api/projectTypes'
 
 interface ProjectVisibilityBadgeProps {
   readonly visibility?: ProjectVisibility
-  readonly className?: string
 }
 
-export default function ProjectVisibilityBadge({
-  visibility, className,
-}: ProjectVisibilityBadgeProps) {
+export default function ProjectVisibilityBadge({ visibility }: ProjectVisibilityBadgeProps) {
   const { t } = useTranslation('projects')
   const isPrivate = visibility === 'private'
   const Icon = isPrivate ? Lock : Globe
@@ -33,7 +30,6 @@ export default function ProjectVisibilityBadge({
       className={clsx(
         'badge inline-flex items-center gap-1 flex-shrink-0',
         isPrivate ? 'badge-muted' : 'badge-info',
-        className,
       )}
     >
       <Icon size={12} aria-hidden="true" />

@@ -42,6 +42,7 @@ from _shared.base_ingestor import logger as real_logger
 from _shared.base_ingestor import metrics as real_metrics
 from _shared.base_ingestor import tracer
 from _shared.test.scoped_secret import scoped_secret
+from shared.test.clock import frozen_clock
 from shared.test.emf_fixtures import emf_metric_names
 
 if TYPE_CHECKING:
@@ -345,7 +346,7 @@ class TestExtractFromJsonldItem:
 
     def test_defaults_when_the_item_carries_only_a_body(self, ingestor):
         fixed = datetime(2024, 3, 1, 12, 0, tzinfo=UTC)
-        with patch(f'{HANDLER}.datetime') as dt:
+        with frozen_clock(HANDLER) as dt:
             dt.now.return_value = fixed
             item = ingestor._extract_from_jsonld_item(_review(), CONFIG, URL)
         dt.now.assert_called_once_with(UTC)
@@ -536,7 +537,7 @@ class TestContainerHelpers:
         no_match = _el('<div></div>')
         assert ingestor._container_created_at(with_attr, {'date_selector': '.d'}) == '2024-01-02'
         assert ingestor._container_created_at(text_only, {'date_selector': '.d'}) == 'Jan 2'
-        with patch(f'{HANDLER}.datetime') as dt:
+        with frozen_clock(HANDLER) as dt:
             dt.now.return_value = fixed
             assert ingestor._container_created_at(no_match, {'date_selector': '.d'}) == fixed.isoformat()
             assert ingestor._container_created_at(with_attr, {}) == fixed.isoformat()
@@ -572,7 +573,7 @@ class TestExtractCssItem:
         container = _el('<div><p class="review-text">Really quite good</p>'
                         '<span class="stars rating-4">4</span><b class="who">Dee</b></div>')
         fixed = datetime(2024, 3, 1, 12, 0, tzinfo=UTC)
-        with patch(f'{HANDLER}.datetime') as dt:
+        with frozen_clock(HANDLER) as dt:
             dt.now.return_value = fixed
             item = ingestor._extract_css_item(container, {'id': 'shop'}, URL)
         assert item['text'] == 'Really quite good'
@@ -692,7 +693,7 @@ class TestShouldRunScraper:
 
     @pytest.fixture(autouse=True)
     def clock(self):
-        with patch(f'{HANDLER}.datetime') as dt:
+        with frozen_clock(HANDLER) as dt:
             dt.now.return_value = self.NOW
             dt.fromisoformat.side_effect = datetime.fromisoformat
             yield dt
@@ -737,7 +738,7 @@ def quiet_run():
     with (
         patch(f'{HANDLER}.time') as time_mod,
         patch(f'{HANDLER}._jitter') as jitter,
-        patch(f'{HANDLER}.datetime') as dt,
+        frozen_clock(HANDLER) as dt,
         patch(f'{HANDLER}.metrics') as metrics,
     ):
         jitter.uniform.return_value = 3.3

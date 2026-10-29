@@ -22,6 +22,7 @@ import {
 import TagsSection from './FeedbackTags'
 import { SimilarFeedbackSection } from './FeedbackDetailSections'
 import { cleanFeedbackText } from '../../utils/cleanReviewText'
+import { metricsKeys } from '../../api/queryKeys'
 
 type FeedbackDetailVariant = 'page' | 'modal'
 
@@ -66,7 +67,6 @@ function showsQuote(feedback: FeedbackItem): boolean {
 
 interface ReviewDetailCardProps {
   readonly feedback: FeedbackItem
-  readonly titleId?: string
   readonly level: 'h1' | 'h2'
   /**
    * Our review: tag chips open Categories through this, and the edit controls show.
@@ -78,13 +78,13 @@ interface ReviewDetailCardProps {
   readonly writtenDay?: string
 }
 
-export function ReviewDetailCard({ feedback: stored, titleId, level, onOpenTag, radarBrand, writtenDay }: ReviewDetailCardProps) {
+export function ReviewDetailCard({ feedback: stored, level, onOpenTag, radarBrand, writtenDay }: ReviewDetailCardProps) {
   const ours = onOpenTag !== undefined
   // Scrape artefacts (`\.`, `\*`, stray `**`) are cleaned for display only; nothing is written back.
   const feedback = cleanFeedbackText(stored)
   return (
     <div className="card">
-      <FeedbackHeader feedback={feedback} titleId={titleId} level={level} radarBrand={radarBrand} />
+      <FeedbackHeader feedback={feedback} level={level} radarBrand={radarBrand} />
       <RatingDisplay rating={feedback.rating} />
       <OriginalTextSection feedback={feedback} />
       {showsQuote(feedback) && (
@@ -106,20 +106,18 @@ export function ReviewDetailCard({ feedback: stored, titleId, level, onOpenTag, 
 interface FeedbackDetailContentProps {
   readonly id: string
   readonly variant: FeedbackDetailVariant
-  /** The heading's id, for the modal's `aria-labelledby`. */
-  readonly titleId?: string
   /** The page's Back control: above the card, or as the not-found state's one action. */
   readonly back?: ReactNode
 }
 
-export default function FeedbackDetailContent({ id, variant, titleId, back }: FeedbackDetailContentProps) {
+export default function FeedbackDetailContent({ id, variant, back }: FeedbackDetailContentProps) {
   const { config } = useConfigStore()
   const openRoute = useRouteNavigate()
   const [showSimilar, setShowSimilar] = useState(false)
   const enabled = !!config.apiEndpoint && id !== ''
 
   const { data: feedback, isLoading } = useQuery({
-    queryKey: ['feedback', id],
+    queryKey: metricsKeys.feedback(id),
     queryFn: () => api.getFeedbackById(id),
     enabled,
     retry: retryUnlessNotFound,
@@ -136,7 +134,7 @@ export default function FeedbackDetailContent({ id, variant, titleId, back }: Fe
   return (
     <>
       {back}
-      <ReviewDetailCard feedback={feedback} titleId={titleId} level={variant === 'page' ? 'h1' : 'h2'} onOpenTag={openRoute} />
+      <ReviewDetailCard feedback={feedback} level={variant === 'page' ? 'h1' : 'h2'} onOpenTag={openRoute} />
       <SimilarFeedbackSection
         activeTab={showSimilar ? 'similar' : 'details'}
         onToggle={() => setShowSimilar((open) => !open)}

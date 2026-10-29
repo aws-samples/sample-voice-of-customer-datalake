@@ -29,11 +29,13 @@ import CreateUserModal from './CreateUserModal'
 import EditUserModal from './EditUserModal'
 import CategoryAccessModal from './CategoryAccessModal'
 import UserFlagsPanel from './UserFlagsPanel'
+import AiModePanel from './AiModePanel'
 import {
   UsersTable, UsersCards,
 } from './UserAdminComponents'
 import type { ActionType } from './UserAdminComponents'
 import type { CognitoUser } from '../../api/types'
+import { usersKey } from '../../api/queryKeys'
 
 type UserGroup = 'admins' | 'users'
 
@@ -81,7 +83,7 @@ export default function UserAdmin() {
   const {
     data, isLoading, error,
   } = useQuery({
-    queryKey: ['users'],
+    queryKey: usersKey(),
     queryFn: () => api.getUsers(),
   })
 
@@ -99,7 +101,7 @@ export default function UserAdmin() {
     }) =>
       api.updateUserGroup(username, group),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['users'] })
+      void queryClient.invalidateQueries({ queryKey: usersKey() })
       showSuccess(t('userAdmin.roleUpdated'))
     },
   })
@@ -107,7 +109,7 @@ export default function UserAdmin() {
   const resetPasswordMutation = useMutation({
     mutationFn: (username: string) => api.resetUserPassword(username),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['users'] })
+      void queryClient.invalidateQueries({ queryKey: usersKey() })
       showSuccess(t('userAdmin.passwordResetSent'))
       setConfirmAction(null)
     },
@@ -116,7 +118,7 @@ export default function UserAdmin() {
   const enableMutation = useMutation({
     mutationFn: (username: string) => api.enableUser(username),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['users'] })
+      void queryClient.invalidateQueries({ queryKey: usersKey() })
       showSuccess(t('userAdmin.userEnabled'))
       setConfirmAction(null)
     },
@@ -125,7 +127,7 @@ export default function UserAdmin() {
   const disableMutation = useMutation({
     mutationFn: (username: string) => api.disableUser(username),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['users'] })
+      void queryClient.invalidateQueries({ queryKey: usersKey() })
       showSuccess(t('userAdmin.userDisabled'))
       setConfirmAction(null)
     },
@@ -134,7 +136,7 @@ export default function UserAdmin() {
   const deleteMutation = useMutation({
     mutationFn: (username: string) => api.deleteUser(username),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['users'] })
+      void queryClient.invalidateQueries({ queryKey: usersKey() })
       showSuccess(t('userAdmin.userDeleted'))
       setConfirmAction(null)
     },
@@ -235,17 +237,19 @@ export default function UserAdmin() {
 
       <UserFlagsPanel users={users} />
 
+      <AiModePanel users={users} />
+
       <CreateUserModal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
-        onSuccess={() => void queryClient.invalidateQueries({ queryKey: ['users'] })}
+        onSuccess={() => void queryClient.invalidateQueries({ queryKey: usersKey() })}
       />
 
       <EditUserModal
         isOpen={editingUser !== null}
         user={editingUser}
         onClose={() => setEditingUser(null)}
-        onSuccess={() => void queryClient.invalidateQueries({ queryKey: ['users'] })}
+        onSuccess={() => void queryClient.invalidateQueries({ queryKey: usersKey() })}
       />
 
       <CategoryAccessModal

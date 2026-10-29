@@ -1,5 +1,6 @@
 {
   "card": {
+    "openParticipants": "参加者を開く",
     "kicker": "承認が必要です",
     "details": "詳細",
     "toolName": "操作: {{name}}",
@@ -41,6 +42,33 @@
     "openRadarSettings": "管理 → ソース → レーダー を開く"
   },
   "preview": {
+    "participants": {
+      "summaryLabel": "追加する人",
+      "list": "リスト",
+      "count": "人数",
+      "countValue_one": "{{count, number}} 人",
+      "countValue_other": "{{count, number}} 人",
+      "listNotFound": "このリストが見つからないため、承認しても誰も追加されません。",
+      "email": "メール",
+      "name": "名前",
+      "company": "会社",
+      "title": "役職",
+      "tags": "タグ",
+      "notSet": "未設定",
+      "tableLabel_one": "追加する {{count, number}} 人",
+      "tableLabel_other": "追加する {{count, number}} 人",
+      "reviewAllNote": "すべての人が表示されています。承認する前にスクロールしてすべての行を確認してください。",
+      "duplicatesNote_one": "重複したメールアドレス {{count, number}} 件を最初の行にまとめました。",
+      "duplicatesNote_other": "重複したメールアドレス {{count, number}} 件を最初の行にまとめました。",
+      "reuseNote": "既存の人は保存済みの情報のままで、すでにリストにいる人も変わりません。メールは送信されません。",
+      "listLabel": "新しいリスト",
+      "listName": "名前",
+      "kind": "種類",
+      "description": "説明",
+      "emptyListNote": "リストは空の状態で作成されます。続けて人を追加してください。",
+      "listLoading": "リストを読み込み中…",
+      "listReadFailed": "参加者リストを読み込めなかったため、リストを ID で表示しています。承認する前に「参加者」で確認してください。"
+    },
     "showMore": "すべて表示（{{n, number}} 文字）",
     "showLess": "折りたたむ",
     "empty": "（空）",
@@ -131,7 +159,11 @@
       "everyBrand": "追跡中のすべてのブランド",
       "brand": "ブランド",
       "scanFields": "スキャン",
-      "scanCost": "バックグラウンドで数分間実行され、Web 検索を使用します（Radar 設定のクエリ上限まで）。"
+      "scanCost": "バックグラウンドで数分間実行され、Web 検索を使用します（Radar 設定のクエリ上限まで）。",
+      "language": "検索言語: {{language}}",
+      "feed": "ニュースフィード: {{feed}}",
+      "searchTerms": "検索語: {{list}}",
+      "excludeTerms": "除外語: {{list}}"
     },
     "scraper": {
       "nothingSaved": "承認するまで何も保存されません。",
@@ -296,6 +328,15 @@
     }
   },
   "tools": {
+    "create_participant_list": {
+      "title": "参加者リストを作成",
+      "titleWith": "参加者リスト「{{name}}」を作成"
+    },
+    "add_participants": {
+      "title": "参加者リストに人を追加",
+      "titleWith_one": "{{count, number}} 人を参加者リストに追加",
+      "titleWith_other": "{{count, number}} 人を参加者リストに追加"
+    },
     "save_radar_brands": {
       "title": "Radar ブランド一覧を保存",
       "titleWith_one": "Radar ブランド一覧を保存（{{count, number}} ブランド）",

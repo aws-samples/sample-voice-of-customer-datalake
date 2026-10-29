@@ -113,9 +113,53 @@ On the agent list each row has, for admins, **Rename** (`PUT /agents/{id}` `{nam
 and then archives the agent (`DELETE /agents/{id}`): it is disabled and leaves the list, a run in progress finishes,
 and its runs, projects and documents are kept. Nothing about an agent is erased.
 
-Project rules: the agent may create a project, add to an existing one (matched on `description` + the agent-kept
-`purpose`) and duplicate documents into another project — never merge, move or delete. Handoff owner = the first
+Project rules: the agent may create a project, reuse one **it created itself** (the Projects API records
+`created_by_agent` on create; no update can set it), matched on `description` + the agent-kept `purpose`, and
+duplicate documents into another project — never merge, move or delete. A project the agent did not create (its
+owner's own, or a private one it was shared into) is never offered for reuse, however similar its name: the run
+creates a new project instead (5.35.00; a run once reused a tester's project). An agent run never removes
+personas: it sends `keep_existing_personas: true` to `POST /projects/{id}/personas/generate`, so new personas are
+added beside the existing ones (and any edit a person made to them is kept). Handoff owner = the first
 owner of the dominant category (other owners as editors); none → the admin flagged **fallback owner**.
+
+## What the steps read and send
+
+- **Review window.** Every step reads the reviews of the last 30 days (`DEFAULT_REVIEW_DAYS`,
+  `agents/nodes/base.py`) unless its `days` param says otherwise — the aggregate step too (it read 7 before
+  5.35.00, so a category with 108 reviews in 30 days was summarised from 1). The aggregate step reads
+  `GET /feedback` page by page (100 per page, up to 20 pages per scoped category) until the route's `total`, and
+  `review_count` counts them all; at most 60 of them reach the analysis prompt. The aggregate also keeps `quotes`:
+  up to two short quotes (220 characters, cut on a whole word) from the reviews each problem cites.
+- **Personas.** `generate_personas` creates portraits like the product does: on unless the step's
+  `generate_avatars` param is `false` (the editor's "Create a portrait for each persona"); a deployment with
+  `AVATARS_ENABLED=false` (EU) skips them in the persona generator. `max_new` (the editor's "Maximum new personas")
+  sets the count.
+- **PR/FAQ and PRD.** The writing steps send `feature_idea` (the aggregated problems, plain text, stored with the
+  document), `writer_context` (the `<reviews>`, `<memory>` and `<conductor_message>` DATA blocks, prompt only;
+  `<reviews>` opens with the scope's review count and window, "108 customer reviews in scope from the last 30 days",
+  then the problems with their counts and the quotes; each block has its own budget — 5,000, 4,000 and 6,000
+  characters — inside the 16,000 total, so a revision's brief is never cut off),
+  `writer_instructions` (the agent's and the step's instructions, which reach every writing step of the chain) and,
+  when set, `length_budget_words`: the step's `max_words` param (200–8,000, the editor's "Length budget"), or 1,200
+  when the instructions ask for short documents ("short", "brief", "concise" and their equivalents in the nine
+  languages). The budget is split over the steps that write the document (`shared/document_writer_brief.py`) and
+  overrides the templates' own length guidance. The writer context reaches the first (analysis) step AND every step
+  that writes the document (press release, both FAQs, the PRD document): until 5.35.02 those steps read only the
+  previous step's output, so an Internal FAQ grounded in 108 reviews said it had "no customer feedback". The PR/FAQ
+  templates ask for the document's own neutral voice (never "I") and for the evidence's counts and quotes, naming a
+  figure the evidence lacks as one to measure. The PR/FAQ heading is the document title; before 5.35.00 it was
+  the feature idea, so every agent PR/FAQ began with the writer's prompt. The document generator also strips any
+  DATA block from what it stores, whatever echoed it.
+- **Research title.** "Research: <run title>", the run title cut at 80 characters on a whole word with "…"
+  (`shared/text_clip.py`), then the creation stamp.
+- **What it produced.** Only writing steps announce an `artifact`; a review claims the document it read (to be
+  verified) without announcing it. The Runs tab lists each document once, by its title and version ("PR/FAQ ready:
+  Refunds take weeks (v2)", linked to the document) and its project by name: the run view reads its projects with
+  one `GET /projects?ids=…` (`pages/Agents/useRunProjects.ts`), so a project the run created after the project list
+  was cached is still named.
+- **Status on the list.** The agent row's `last_run_status` follows the run from `queued` to `running` when the
+  run starts (conditional on it still being the agent's last run), and the agents list polls every 15 s while a
+  card shows a live run.
 
 ## Identity
 
@@ -123,6 +167,10 @@ Node executors call the existing Projects and Memory APIs with synthetic API Gat
 `agent:{agent_id}`, acting as the agent's owner (claim `voc:acting_subject`), never admin, capped at editor — the
 same delegation model as MCP tokens. So every project permission check stays in the Projects API, and the agent
 runtime roles hold **no projects-table grant at all**.
+
+A PR/FAQ or PRD step (`write_prfaq`, `write_prd`, `revise_document`) is autonomous AI writing: the Projects API
+refuses it unless the agent's owner, and the project's owner when that is someone else, work **AI-driven**
+([ways-of-working.md](ways-of-working.md)). The step then fails with a plain sentence saying so.
 
 ## Runtime — `voc-agent-run` (Processing stack)
 
@@ -184,7 +232,8 @@ decided) or the agent already has another active run. The run view carries `need
 (`{decision, note, by_username, at}`) and `actions`.
 
 - **stop** — the run becomes `completed` (its `finished_at` kept, no execution started), journalled "Closed by
-  {username}: {note or 'no further action'}."
+  {username}: {note or 'no further action'}." Its pause reason (`error`) is removed — a completed run carries no
+  error, and the run view answers `error: null` for one closed in 5.35.02 or earlier — while the journal keeps the pause.
 - **accept** / **another_round** — one transaction takes the agent's run lock and moves the run back to `queued`
   (`resume = {decision, note}`, `resume_count + 1`), then a new execution `{run_id}-r{resume_count}` starts. The
   conductor continues from the stopped review instead of from start: `accept` takes the review's passing arrow

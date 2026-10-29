@@ -8,6 +8,7 @@ from moto import mock_aws
 
 import settings_handler
 from settings_handler import lambda_handler
+from shared.feedback_types import feedback_type_dimension
 from shared.test.moto_tables import create_pk_sk_table
 
 USER_CLAIMS = {'sub': 'user-1', 'cognito:username': 'casey', 'cognito:groups': 'users'}
@@ -47,12 +48,12 @@ class TestDimensions:
         assert body['success'] is True
         assert body['dimensions'][0]['infer'] is True
         _, body = route('GET', '/settings/dimensions', claims=USER_CLAIMS)
-        assert [d['key'] for d in body['dimensions']] == ['product']
+        assert [d['key'] for d in body['dimensions']] == ['feedback_type', 'product']
         assert body['updated_at']
 
-    def test_nothing_configured(self, route):
+    def test_nothing_configured_answers_only_the_built_in_feedback_type(self, route):
         _, body = route('GET', '/settings/dimensions')
-        assert body == {'dimensions': [], 'updated_at': None}
+        assert body == {'dimensions': [feedback_type_dimension()], 'updated_at': None}
 
     def test_invalid_is_400(self, route):
         response, body = route('PUT', '/settings/dimensions', body={'dimensions': [{'key': 'category'}]})
@@ -63,10 +64,10 @@ class TestDimensions:
         response, _ = route('PUT', '/settings/dimensions', body={'dimensions': []}, claims=USER_CLAIMS)
         assert response['statusCode'] == 403
 
-    def test_a_corrupt_row_reads_as_none(self, route, table):
+    def test_a_corrupt_row_reads_as_only_the_built_in_ones(self, route, table):
         table.put_item(Item={'pk': 'SETTINGS#dimensions', 'sk': 'config', 'dimensions': 'x'})
         _, body = route('GET', '/settings/dimensions')
-        assert body['dimensions'] == []
+        assert [d['key'] for d in body['dimensions']] == ['feedback_type']
 
 
 @pytest.mark.usefixtures('table')

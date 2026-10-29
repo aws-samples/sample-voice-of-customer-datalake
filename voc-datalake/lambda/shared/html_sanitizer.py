@@ -60,7 +60,7 @@ _SVG_VALUE_RE: Final = re.compile(r'^[\w\s.,#%()+-]{1,400}\Z')
 _CONTROL_RE: Final = re.compile(r'[\x00-\x20\x7f]+')
 _CSS_PROPERTY_RE: Final = re.compile(r'^-?[a-z][a-z-]{0,40}\Z')
 _CSS_VALUE_RE: Final = re.compile(r'^[\w\s#%.,()/+\-"\'!]{1,200}\Z')
-_FUNCTION_RE: Final = re.compile(r'([a-zA-Z-]+)\s*\(')
+CSS_FUNCTION_RE: Final = re.compile(r'([a-zA-Z-]+)\s*\(')
 CSS_FUNCTIONS: Final = frozenset({
     'rgb', 'rgba', 'hsl', 'hsla', 'oklch', 'oklab', 'lab', 'lch', 'var', 'calc', 'min', 'max', 'clamp',
     'linear-gradient', 'radial-gradient', 'translate', 'translatex', 'translatey', 'scale', 'rotate',
@@ -76,7 +76,7 @@ def _clean_css_declaration(declaration: str) -> str | None:
     lowered = val.lower()
     if any(word in lowered for word in _CSS_DENIED_WORDS) or any(word in prop for word in _CSS_DENIED_WORDS):
         return None
-    if any(fn.lower() not in CSS_FUNCTIONS for fn in _FUNCTION_RE.findall(val)):
+    if any(fn.lower() not in CSS_FUNCTIONS for fn in CSS_FUNCTION_RE.findall(val)):
         return None
     return f'{prop}: {val}'
 
@@ -97,7 +97,7 @@ def _clean_url(value: str, pattern: re.Pattern[str]) -> str | None:
 def _clean_svg_value(value: str) -> str | None:
     if not _SVG_VALUE_RE.match(value):
         return None
-    if any(fn.lower() not in CSS_FUNCTIONS for fn in _FUNCTION_RE.findall(value)):
+    if any(fn.lower() not in CSS_FUNCTIONS for fn in CSS_FUNCTION_RE.findall(value)):
         return None
     return value
 

@@ -13,7 +13,10 @@
  *     no Update, no Delete — the lock is released by expiring it);
  *   - aggregates: GetItem (source profiles, our brand name, the model picker);
  *   - Bedrock: the allowlisted text models ('utilities' surface) + the Titan embedder;
- *   - bedrock-agentcore:InvokeGateway on the web-search gateway, when deployed.
+ *   - bedrock-agentcore:InvokeGateway on the web-search gateway, when deployed;
+ *   - ssm:GetParameter on exactly the Exa key parameter (`lib/utils/radar-exa-parameter.ts`), read
+ *     decrypted when an admin stored a key (no KMS grant: the AWS-managed aws/ssm key).
+ * Its feeds are fetched through the SSRF-guarded opener; Exa is called at api.exa.ai.
  */
 import * as cdk from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
@@ -29,6 +32,7 @@ import { PY_LAMBDA_ASSET_EXCLUDES, WORKER_TREE_ASSET_EXCLUDES } from '../utils/l
 import { pythonLambdaAsset } from '../utils/python-lambda-asset';
 import { grantCacheVersionBump, RADAR_VERSION_PARTITION } from '../utils/cache-version-grants';
 import { embeddingModelArn, stackModelArns } from '../utils/model-allowlist';
+import { radarExaParameterName, radarExaParameterStatement } from '../utils/radar-exa-parameter';
 import { scheduleWorker, workerRole } from '../utils/worker-lambda';
 
 export interface RadarScanWorkerProps {
@@ -37,7 +41,9 @@ export interface RadarScanWorkerProps {
   kmsKey: kms.IKey;
   radarTable: dynamodb.ITable;
   aggregatesTable: dynamodb.ITable;
-  /** The AgentCore web-search gateway; without it a scan records `web_search_unavailable`. */
+  /** The deployment prefix (the Exa key parameter's name). */
+  deploymentPrefix: string | undefined;
+  /** The AgentCore web-search gateway; without it (and without Exa or feeds) a scan records `web_search_unavailable`. */
   webSearch?: { url: string; arn: string; toolName: string };
 }
 
@@ -74,10 +80,12 @@ export function createRadarScanWorker(scope: Construct, id: string, props: Radar
   grantCacheVersionBump(radarTable, role, RADAR_VERSION_PARTITION);
   aggregatesTable.grant(role, 'dynamodb:GetItem');
   kmsKey.grantEncryptDecrypt(role);
+  role.addToPolicy(radarExaParameterStatement(cdk.Stack.of(worker), props.deploymentPrefix, ['ssm:GetParameter']));
 
   const environment: Record<string, string> = {
     RADAR_TABLE: radarTable.tableName,
     AGGREGATES_TABLE: aggregatesTable.tableName,
+    RADAR_EXA_PARAMETER: radarExaParameterName(props.deploymentPrefix),
     POWERTOOLS_SERVICE_NAME: RADAR_SCAN_FUNCTION_BASE_NAME,
     LOG_LEVEL: 'INFO',
   };

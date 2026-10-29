@@ -92,13 +92,36 @@ function PursueConfirm({ decision, onConfirm, onCancel }: Readonly<{
   )
 }
 
+/** Deleting a decision removes the record for everyone on the project, so it is asked first. */
+function DeleteConfirm({ decision, isDeleting, failed, onConfirm, onCancel }: Readonly<{
+  decision: Decision | null; isDeleting: boolean; failed: boolean
+  onConfirm: (decision: Decision) => void; onCancel: () => void
+}>) {
+  const { t } = useTranslation('decisions')
+  const message = t('actions.deleteConfirmMessage', { title: decision?.title ?? '' })
+  return (
+    <ConfirmModal
+      isOpen={decision !== null}
+      variant="danger"
+      title={t('actions.deleteConfirmTitle')}
+      message={failed ? `${message} ${t('errors.delete')}` : message}
+      confirmLabel={t('actions.deleteConfirm')}
+      cancelLabel={t('actions.cancel')}
+      isLoading={isDeleting}
+      onConfirm={() => { if (decision !== null) onConfirm(decision) }}
+      onCancel={onCancel}
+    />
+  )
+}
+
 export default function DecisionsTab({ projectId, documents, canEdit, onJobStarted }: DecisionsTabProps) {
   const { t, i18n } = useTranslation('decisions')
   const [editor, setEditor] = useState<Editor>(null)
   const [confirmingPursue, setConfirmingPursue] = useState<Decision | null>(null)
+  const [confirmingDelete, setConfirmingDelete] = useState<Decision | null>(null)
   const decisions = useMemo(() => decisionsOf(documents), [documents])
   const citable = useMemo(() => documents.filter((d) => d.document_type !== 'decision'), [documents])
-  const { save, pursue } = useDecisionMutations(projectId, onJobStarted)
+  const { save, remove, pursue } = useDecisionMutations(projectId, onJobStarted)
   const seededJobs = useSeededPrfaqs(projectId, decisions)
   const resetSave = save.reset
   const openNew = useCallback((draft: DecisionDraft) => {
@@ -141,9 +164,23 @@ export default function DecisionsTab({ projectId, documents, canEdit, onJobStart
               setEditor({ kind: 'edit', decision })
             }}
             onPursue={() => setConfirmingPursue(decision)}
+            onDelete={() => {
+              remove.reset()
+              setConfirmingDelete(decision)
+            }}
           />
         ))}
       </div>
+      <DeleteConfirm
+        decision={confirmingDelete}
+        isDeleting={remove.isPending}
+        failed={remove.isError}
+        onCancel={() => setConfirmingDelete(null)}
+        onConfirm={(decision) => {
+          if (editing?.documentId === decision.documentId) close()
+          remove.mutate(decision.documentId, { onSuccess: () => setConfirmingDelete(null) })
+        }}
+      />
       <PursueConfirm
         decision={confirmingPursue}
         onCancel={() => setConfirmingPursue(null)}

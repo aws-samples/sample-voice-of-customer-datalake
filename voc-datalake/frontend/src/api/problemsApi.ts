@@ -60,6 +60,8 @@ export interface ProblemTreeResponse {
   isPartial: boolean
   /** The oldest day read in full when the walk stopped early. */
   scannedThrough: string | null
+  /** Reviews per `feedback_type` in the window (after the filters), `untyped` = no type yet. */
+  typeCounts: Record<string, number>
 }
 
 export interface ProblemTreeParams extends DateRangeParams {
@@ -69,6 +71,8 @@ export interface ProblemTreeParams extends DateRangeParams {
   urgentOnly?: boolean
   /** `low | med | high | off`; `med` is the server's default and is not sent. */
   similarity?: string
+  /** `key:value[|value…]` pairs (`shared/item_filters.py`), e.g. the review-type filter. */
+  dims?: string
 }
 
 const count = z.coerce.number().catch(0)
@@ -130,6 +134,7 @@ const ResponseSchema = z.object({
   problems_truncated: z.boolean().catch(false),
   is_partial: z.boolean().catch(false),
   scanned_through: z.string().nullable().optional().catch(null),
+  type_counts: z.record(z.string(), z.coerce.number()).catch({}),
 }).transform((r): ProblemTreeResponse => ({
   categories: r.categories,
   subcategories: r.subcategories,
@@ -138,6 +143,7 @@ const ResponseSchema = z.object({
   problemsTruncated: r.problems_truncated,
   isPartial: r.is_partial,
   scannedThrough: r.scanned_through ?? null,
+  typeCounts: r.type_counts,
 }))
 
 /** Lenient read of a `/feedback/problems` body; anything unreadable is an empty tree. */
@@ -156,6 +162,7 @@ export function problemTreeSearch(params: ProblemTreeParams): string {
     ['subcategory', params.subcategory ?? undefined],
     ['urgent', params.urgentOnly === true ? '1' : undefined],
     ['similarity', params.similarity === 'med' ? undefined : params.similarity],
+    ['dims', params.dims],
   ]
   return new URLSearchParams(
     entries.filter((entry): entry is [string, string] => entry[1] !== undefined && entry[1] !== ''),

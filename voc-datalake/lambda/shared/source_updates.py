@@ -40,6 +40,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from shared.categorization import Enrichment
+from shared.feedback_category import CATEGORY_SOURCE_MANUAL
 from shared.github_metrics import GITHUB_SOURCE
 from shared.source_profiles import PII_SUMMARY_ONLY
 
@@ -47,7 +48,6 @@ UPDATE_APPLY = 'apply'
 UPDATE_STALE = 'stale'
 UPDATE_UNCHANGED = 'unchanged'
 
-CATEGORY_SOURCE_MANUAL = 'manual'
 #: Hex characters of the content fingerprint appended to an update-capable
 #: record's idempotency key (Powertools hashes the whole key again before storing it).
 FINGERPRINT_LENGTH = 16

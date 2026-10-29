@@ -138,7 +138,8 @@ describe('all-time window (days = 0)', () => {
     const { client } = fakeTable([row('a')]);
     const result = await executeSearchFeedback(client, TABLE, {}, { scope: ALL_CATEGORIES, days: 0 });
     expect(result.formatted).toContain('the question named all time');
-    expect(result.formatted).toContain('say nothing about anything older');
+    expect(result.formatted).toContain('Older feedback was NOT searched: that is not evidence that there is none');
+    expect(result.formatted).toContain('call get_metrics with days=0');
     expect(result.formatted).not.toMatch(/-\d+ earlier days/);
   });
 });
@@ -157,5 +158,20 @@ describe('category labels (prod 5.14: the assistant wrote raw ids like "software
     const { client } = fakeTable(ROWS);
     const result = await executeSearchFeedback(client, TABLE, { mode: 'aggregate' }, { scope: ALL_CATEGORIES, days: 1, categoryLabel });
     expect(result.formatted).toContain('- Software & Firmware [software_firmware]: 1 (100%)');
+  });
+});
+
+describe('the period the question names (`days` argument)', () => {
+  // 5.35 (E2E 5.34): the tool took no `days`, so "the last 90 days" asked on a 7-day page read 7 days.
+  it('searches the named window instead of the page time range', async () => {
+    const { client, pks } = fakeTable([]);
+    await executeSearchFeedback(client, TABLE, { days: 30 }, { scope: ALL_CATEGORIES, days: 7 });
+    expect(pks).toHaveLength(30);
+  });
+
+  it('keeps the page time range when the question names none', async () => {
+    const { client, pks } = fakeTable([]);
+    await executeSearchFeedback(client, TABLE, {}, { scope: ALL_CATEGORIES, days: 7 });
+    expect(pks).toHaveLength(7);
   });
 });

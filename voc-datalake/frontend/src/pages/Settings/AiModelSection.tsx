@@ -32,11 +32,13 @@ import { Cpu, Loader2, AlertCircle } from 'lucide-react'
 import { api } from '../../api/client'
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
 import AiModelSurfaceRow from './AiModelSurfaceRow'
+import ImageModelRow from './ImageModelRow'
 import ModelTestAllPanel from './ModelTestAllPanel'
 import { useModelTestStatusLabel } from './modelTestStatus'
 import { useModelTests } from './useModelTests'
 import type { ModelTests } from './useModelTests'
 import type { ModelTestStatus } from '../../api/modelTestSchema'
+import { modelSettingsKey } from '../../api/queryKeys'
 
 interface AiModelSectionProps {
   readonly apiEndpoint: string
@@ -58,7 +60,7 @@ export default function AiModelSection({ apiEndpoint, isAdmin }: AiModelSectionP
   const enabled = isAdmin && apiEndpoint.length > 0
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['model-settings'],
+    queryKey: modelSettingsKey(),
     queryFn: () => api.getModelSettings(),
     enabled,
   })
@@ -138,7 +140,7 @@ function AiModelEditor({ data }: { readonly data: ModelSettings }) {
     mutationFn: ({ surface, modelId }: PendingSave) => api.saveModelSettings(surface, modelId),
     onSuccess: async (_result, { surface }) => {
       markSaved(surface)
-      await queryClient.invalidateQueries({ queryKey: ['model-settings'] })
+      await queryClient.invalidateQueries({ queryKey: modelSettingsKey() })
       dropDraft(surface)
     },
   })
@@ -204,6 +206,7 @@ function AiModelEditor({ data }: { readonly data: ModelSettings }) {
       {saveMutation.isError && (
         <p className="text-xs text-danger mt-2" role="alert">{t('aiModel.saveFailed')}</p>
       )}
+      {data.image_model && <ImageModelRow info={data.image_model} tests={tests} />}
       <ModelTestAllPanel models={data.available_models} tests={tests} />
       <SaveConfirm
         pending={pending}

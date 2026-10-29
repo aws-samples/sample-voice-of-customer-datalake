@@ -1,8 +1,16 @@
-"""generate_personas — new personas from the triggering reviews (existing job route)."""
+"""generate_personas — new personas from the triggering reviews (existing job route).
+
+Avatars follow the product default: on, unless the step's ``generate_avatars`` param is
+``false``; a deployment with ``AVATARS_ENABLED=false`` (EU) skips them in the persona
+generator itself. An agent run never removes personas: it sends
+``keep_existing_personas``, so a project's personas (and any edit a person made to
+them) are kept and the new ones are added beside them.
+"""
 from __future__ import annotations
 
 from agents.fields import dict_field, list_field
 from agents.nodes.base import (
+    DEFAULT_REVIEW_DAYS,
     NodeContext,
     NodeFailure,
     done,
@@ -11,7 +19,7 @@ from agents.nodes.base import (
 )
 
 DEFAULT_COUNT = 3
-DEFAULT_DAYS = 30
+DEFAULT_DAYS = DEFAULT_REVIEW_DAYS
 
 
 def _allowed(agent: dict) -> bool:
@@ -23,14 +31,16 @@ def start(ctx: NodeContext) -> dict:
     if not _allowed(ctx.agent):
         return done(ctx, 'Persona generation is off for this agent; skipped.')
     project_id = ctx.require_project()
-    count = ctx.param('count', DEFAULT_COUNT)
+    # ``max_new`` is what the built-in workflow sets; ``count`` the older spelling.
+    count = ctx.param('max_new', ctx.param('count', DEFAULT_COUNT))
     days = ctx.param('days', DEFAULT_DAYS)
     payload = ctx.projects('POST', f'/projects/{project_id}/personas/generate', body={
         'categories': scope_categories(ctx.agent),
         'days': days if isinstance(days, int) else DEFAULT_DAYS,
         'persona_count': count if isinstance(count, int) else DEFAULT_COUNT,
         'custom_instructions': ctx.envelope[:2000],
-        'generate_avatars': ctx.param('generate_avatars', False) is True,
+        'generate_avatars': ctx.param('generate_avatars', True) is not False,
+        'keep_existing_personas': True,
     }, path_parameters={'project_id': project_id})
     return started_job(ctx, payload, project_id, 'Persona generation started')
 

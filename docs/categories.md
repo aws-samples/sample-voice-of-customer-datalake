@@ -57,10 +57,16 @@ only restriction is categories (every source), `/metrics/categories` and the
 exactly for any window, all time included. Summary sentiment and urgency (which
 no per-category counter keeps) and every route under a source rule come from
 the item walk, which pushes the caller's scope into each day's query
-(`shared/category_scope_query.py`) so its 5,000-row cap counts only visible
-reviews. A walk that still stops early (the wall-clock budget, the cap, or a day
-it could not read in full) answers `is_partial: true` with
-`partial_reason: 'time_budget'` and `scanned_through` (the newest day read in full).
+(`shared/category_scope_query.py`) so its cap counts only visible reviews. The
+aggregate routes (summary, categories, sentiment, sources, personas, dimensions,
+`/feedback/entities`) read slim rows with a cap of 100,000 rows per request and per
+import day, the `/feedback/problems` capacity; the list routes (`/feedback`,
+`/feedback/search`) keep 5,000. A walk that still stops early answers
+`is_partial: true` with `partial_reason` and, when some day was read in full,
+`scanned_through` (the oldest day read in full). The reason is `'time_budget'`
+when the 20 s walk budget ran out and `'row_cap'` when a row cap cut a day; the
+cut day itself is never claimed, so `scanned_through` is the day walked just
+before it.
 
 **The "Other" row.** `/metrics/categories` lists `other` — every review no
 configured category claims: no category, the classifier's `other` fallback, or a

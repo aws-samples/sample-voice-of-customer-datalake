@@ -22,6 +22,7 @@
       "capReached": "Esta votação já coletou todos os votos que aceita. Peça ao facilitador para abrir outra sessão.",
       "closed": "O facilitador encerrou esta votação, portanto não são aceitos mais votos.",
       "expired": "Esta votação expirou, portanto não são aceitos mais votos.",
+      "gone": "A proposta desta votação foi excluída, por isso a votação terminou.",
       "invalid": "Não foi possível ler este voto, portanto nada foi registrado. Verifique os números e a nota e envie novamente.",
       "notFound": "Este link não abre nenhuma votação. Verifique se você escaneou o código que está na tela agora.",
       "title": "Esta votação não está aberta",
@@ -92,7 +93,9 @@
     "avgRating": "Avaliação Média",
     "noLinkedForm": "Nenhum formulário de feedback está vinculado a este documento.",
     "noRatings": "Nenhuma avaliação coletada",
-    "submissions": "Respostas",
+    "submissions_one": "Resposta",
+    "submissions_other": "Respostas",
+    "submissions_many": "Respostas",
     "title": "Feedback Coletado",
     "unavailable": "Avaliações indisponíveis"
   },
@@ -204,7 +207,9 @@
     "title": "Pontuações de Priorização",
     "wholeRow": "Uma única cédula para os {{documents, number}} documentos desta linha.",
     "yoursOnly": "Sua própria pontuação. Ao salvar, apenas os seus valores são gravados.",
-    "valueOfMax": "{{value}} de {{max, number}}"
+    "valueOfMax": "{{value}} de {{max, number}}",
+    "clear": "Limpar",
+    "clearAxis": "Limpar a pontuação de {{name}}"
   },
   "scoresUnavailable": {
     "description": "Suas pontuações salvas estão indisponíveis neste momento, portanto os números abaixo são valores padrão e não o que alguém inseriu. Recarregue a página antes de salvar.",
@@ -309,6 +314,7 @@
     "mediumPriority": "Média Prioridade",
     "notScored": "Não Pontuado",
     "totalRows": "Total de propostas",
+    "loading": "Contando propostas...",
     "unreadable_one": "A pontuação da equipe de {{count, number}} proposta não pôde ser lida, portanto ela conta apenas no total e em nenhuma das outras contagens. Recarregue a página para vê-la.",
     "unreadable_other": "As pontuações da equipe de {{count, number}} propostas não puderam ser lidas, portanto elas contam apenas no total e em nenhuma das outras contagens. Recarregue a página para vê-las."
   },

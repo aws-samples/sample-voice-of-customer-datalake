@@ -19,7 +19,7 @@ from botocore.exceptions import ClientError
 
 from jobs.retention import handler
 from jobs.retention.test.conftest import days_ago
-from shared.retention import value_hash
+from shared.digests import sha256_hex
 from shared.test.instrumentation_fixtures import INSTRUMENTED_HANDLER_LAYERS, handler_layers
 
 JOB_ID = 'er_0123456789ab'
@@ -90,7 +90,7 @@ class TestTheAuditRow:
         table = MagicMock()
         run = _run(mode='erase', scanned=7, deleted_items=2, deleted_objects=3, job_id=JOB_ID, field='author',
                    source='web', value_hash='h', cutoffs={'t': 'd'})
-        with patch.object(handler, '_now', return_value=NOW):
+        with patch.object(handler, 'now_iso', return_value=NOW):
             handler.write_audit(table, run, 'failed', 'boom')
         table.put_item.assert_called_once_with(Item={
             'pk': 'AUDIT#retention', 'sk': f'{NOW}#r1', 'run_id': 'r1', 'mode': 'erase', 'status': 'failed',
@@ -100,7 +100,7 @@ class TestTheAuditRow:
 
     def test_empty_optional_keys_and_no_error_are_left_out(self) -> None:
         table = MagicMock()
-        with patch.object(handler, '_now', return_value=NOW):
+        with patch.object(handler, 'now_iso', return_value=NOW):
             handler.write_audit(table, _run(source=None, cutoffs={}), 'completed')
         assert table.put_item.call_args.kwargs['Item'] == {
             'pk': 'AUDIT#retention', 'sk': f'{NOW}#r1', 'run_id': 'r1', 'mode': 'retention', 'status': 'completed',
@@ -108,12 +108,12 @@ class TestTheAuditRow:
 
     def test_an_erasure_audit_names_the_job_from_its_row(self, aws, worker_context) -> None:
         aws['aggregates'].put_item(Item={'pk': 'JOB#erasure', 'sk': JOB_ID, 'status': 'queued', 'field': 'author',
-                                         'source': 'web', 'value_hash': value_hash('Jane')})
+                                         'source': 'web', 'value_hash': sha256_hex('Jane')})
         handler.handle_event({'mode': 'erase', 'job_id': JOB_ID, 'value': 'Jane'}, worker_context)
         [audit] = aws['aggregates'].query(
             KeyConditionExpression='pk = :pk', ExpressionAttributeValues={':pk': 'AUDIT#retention'})['Items']
         assert (audit['job_id'], audit['field'], audit['source'], audit['value_hash']) == (
-            JOB_ID, 'author', 'web', value_hash('Jane'))
+            JOB_ID, 'author', 'web', sha256_hex('Jane'))
 
 
 class TestTheErasureJobRow:
@@ -124,7 +124,7 @@ class TestTheErasureJobRow:
 
     def test_a_queued_job_is_marked_running(self, aws) -> None:
         aws['aggregates'].put_item(Item={'pk': 'JOB#erasure', 'sk': JOB_ID, 'status': 'queued'})
-        with patch.object(handler, '_now', return_value=NOW):
+        with patch.object(handler, 'now_iso', return_value=NOW):
             job = handler.claim_erasure_job(aws['aggregates'], JOB_ID)
         assert job == {'pk': 'JOB#erasure', 'sk': JOB_ID, 'status': 'running', 'started_at': NOW}
 
@@ -136,7 +136,7 @@ class TestTheErasureJobRow:
 
     def test_a_failure_records_its_error(self) -> None:
         table = MagicMock()
-        with patch.object(handler, '_now', return_value=NOW):
+        with patch.object(handler, 'now_iso', return_value=NOW):
             handler.finish_erasure_job(table, _run(job_id=JOB_ID, deleted_items=1, deleted_objects=2), 'failed', 'e')
         table.update_item.assert_called_once_with(
             Key={'pk': 'JOB#erasure', 'sk': JOB_ID},
@@ -153,7 +153,7 @@ class TestTheRunState:
         assert handler._new_run({'run': carried}, 'erase') == {'mode': 'erase', **carried}
 
     def test_a_fresh_run_starts_at_zero_with_a_new_id(self) -> None:
-        with patch.object(handler, '_now', return_value=NOW), \
+        with patch.object(handler, 'now_iso', return_value=NOW), \
                 patch.object(handler.uuid, 'uuid4', return_value=MagicMock(hex='0123456789abcdef')):
             run = handler._new_run({'run': 'not a dict'}, 'retention')
         assert run == {'mode': 'retention', 'run_id': '0123456789ab', 'started_at': NOW, 'generation': 0,

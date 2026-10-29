@@ -178,6 +178,12 @@ class TestReferences:
 
     @pytest.mark.usefixtures('table', 'invoke')
     def test_refresh_archive_and_admin_gate(self, api_gateway_event, lambda_context):
+        s3 = MagicMock()
+        s3.delete_objects.return_value = {}
+        with patch.object(settings_handler, 'get_s3_client', return_value=s3):
+            self._refresh_archive_and_admin_gate(api_gateway_event, lambda_context, s3)
+
+    def _refresh_archive_and_admin_gate(self, api_gateway_event, lambda_context, s3):
         _, created = _call(api_gateway_event, lambda_context, 'POST', '/settings/design-system/references', {
             'kind': 'github', 'title': 'Repo', 'url': 'https://github.com/acme/ui'})
         ref_id = created['reference']['id']
@@ -192,6 +198,8 @@ class TestReferences:
         response, body = _call(api_gateway_event, lambda_context, 'DELETE', f'/settings/design-system/references/{ref_id}')
         assert response['statusCode'] == 200
         assert body['reference']['status'] == 'archived'
+        # 5.47.00: archiving also deletes the logo preview (test_settings_design_reference_archive.py).
+        s3.delete_objects.assert_called_once()
         _, view = _call(api_gateway_event, lambda_context, 'GET', '/settings/design-system')
         assert view['references'] == []
         _, view = _call(api_gateway_event, lambda_context, 'GET', '/settings/design-system',

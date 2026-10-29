@@ -22,6 +22,7 @@
       "capReached": "Diese Abstimmung hat bereits so viele Stimmen gesammelt, wie sie annimmt. Bitten Sie die Moderation, eine weitere Sitzung zu öffnen.",
       "closed": "Die Moderation hat diese Abstimmung geschlossen, weitere Stimmen werden nicht angenommen.",
       "expired": "Diese Abstimmung ist abgelaufen, weitere Stimmen werden nicht angenommen.",
+      "gone": "Der Vorschlag, um den es bei dieser Abstimmung ging, wurde gelöscht. Die Abstimmung ist beendet.",
       "invalid": "Diese Stimme konnte nicht gelesen werden, daher wurde nichts erfasst. Prüfen Sie die Zahlen und die Notiz und senden Sie sie erneut.",
       "notFound": "Dieser Link öffnet keine Abstimmung. Prüfen Sie, ob Sie den Code gescannt haben, der jetzt auf dem Bildschirm zu sehen ist.",
       "title": "Diese Abstimmung ist nicht offen",
@@ -92,7 +93,8 @@
     "avgRating": "Durchschnittliche Bewertung",
     "noLinkedForm": "Mit diesem Dokument ist kein Feedback-Formular verknüpft.",
     "noRatings": "Keine Bewertungen erfasst",
-    "submissions": "Einsendungen",
+    "submissions_one": "Einsendung",
+    "submissions_other": "Einsendungen",
     "title": "Erfasstes Feedback",
     "unavailable": "Bewertungen nicht verfügbar"
   },
@@ -204,7 +206,9 @@
     "title": "Priorisierungsbewertungen",
     "wholeRow": "Ein Stimmzettel für alle {{documents, number}} Dokumente dieser Zeile.",
     "yoursOnly": "Ihre eigene Bewertung. Beim Speichern werden nur Ihre Werte geschrieben.",
-    "valueOfMax": "{{value}} von {{max, number}}"
+    "valueOfMax": "{{value}} von {{max, number}}",
+    "clear": "Zurücksetzen",
+    "clearAxis": "Bewertung für {{name}} zurücksetzen"
   },
   "scoresUnavailable": {
     "description": "Ihre gespeicherten Bewertungen sind derzeit nicht verfügbar. Die unten angezeigten Zahlen sind daher Standardwerte und nicht die eingegebenen Werte. Laden Sie die Seite vor dem Speichern neu.",
@@ -309,6 +313,7 @@
     "mediumPriority": "Mittlere Priorität",
     "notScored": "Nicht bewertet",
     "totalRows": "Vorschläge insgesamt",
+    "loading": "Vorschläge werden gezählt...",
     "unreadable_one": "Die Teambewertung für {{count, number}} Vorschlag konnte nicht gelesen werden. Er zählt daher nur zur Gesamtzahl, nicht zu den übrigen Zählungen. Laden Sie die Seite neu, um sie zu sehen.",
     "unreadable_other": "Die Teambewertungen für {{count, number}} Vorschläge konnten nicht gelesen werden. Sie zählen daher nur zur Gesamtzahl, nicht zu den übrigen Zählungen. Laden Sie die Seite neu, um sie zu sehen."
   },

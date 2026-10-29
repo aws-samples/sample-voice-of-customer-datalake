@@ -52,19 +52,21 @@
  * from any depth would skip whatever followed a nested frame inside the prototype.
  *
  * A frame the parent cannot reach into — cross-origin, or sandboxed without
- * `allow-same-origin` — keeps the old behaviour in both directions, because there is
- * no way to observe its keys at all: its keys are invisible, and letting Tab descend
- * into it would strand a keyboard user with nothing to bring them back. A consumer
- * embedding one of those must render its own visible dismiss control; nothing here
- * can substitute for it.
+ * `allow-same-origin` — keeps the old behaviour for Tab, because there is no way to
+ * observe its keys: letting Tab descend into it would strand a keyboard user with
+ * nothing to bring them back. Escape from inside one closes the dialog only when the
+ * frame says so: the prototype pin widget forwards it as a message (`useFrameEscape`,
+ * #386). A consumer embedding such a frame must still render its own visible dismiss
+ * control, for a frame that sends nothing.
  *
  * @module components/ModalShell
  */
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, type ReactNode } from 'react'
 import clsx from 'clsx'
 import {
   bodyOf, focusable, holdsFrame, isFrameNode, nestedDocuments, tabAcrossFrame, tabWithinPanel,
 } from './frameFocus'
+import { useFrameEscape } from './useFrameEscape'
 
 interface ModalShellBaseProps {
   readonly isOpen: boolean
@@ -163,6 +165,12 @@ export default function ModalShell({
     onCloseRef.current = onClose
     dismissableRef.current = dismissable
   }, [onClose, dismissable])
+
+  // Escape forwarded by a frame inside the panel: the same top-most check as a key.
+  const closeFromFrame = useCallback(() => {
+    if (panelRef.current !== null && topMostShell() === panelRef.current && dismissableRef.current) onCloseRef.current()
+  }, [])
+  useFrameEscape(panelRef, isOpen, closeFromFrame)
 
   // Move focus into the dialog on open, and restore it to whatever opened the
   // dialog on close — otherwise keyboard users are dropped at the top of the page.

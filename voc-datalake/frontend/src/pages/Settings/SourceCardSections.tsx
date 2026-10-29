@@ -6,7 +6,7 @@
 import type React from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  Save, Check, AlertCircle, Loader2, Copy, ExternalLink, Eye, EyeOff, CheckCircle2, Webhook, Key, TestTube,
+  Save, Check, Loader2, Copy, ExternalLink, Eye, EyeOff, Webhook, Key,
 } from 'lucide-react'
 import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import clsx from 'clsx'
@@ -109,21 +109,19 @@ interface CredentialsSectionProps {
   readonly fields: ConfigField[]
   readonly credentials: Record<string, string>
   readonly showSecrets: boolean
-  readonly sourceStatus: { configured?: boolean } | undefined
   readonly saveSuccess: boolean
   /** `PUT /integrations/{source}/credentials` behind Save is admin-gated
    *  server-side, so Save is disabled for a non-admin rather than issuing a
    *  request that 403s. Only Save: the fields stay editable (a non-admin can
-   *  already read them) and `POST /integrations/{source}/test` is not gated. */
+   *  already read them). */
   readonly isAdmin: boolean
-  readonly testMutation: { isPending: boolean; data?: { success: boolean; message?: string; error?: string }; mutate: () => void }
   readonly updateCredentialsMutation: { isPending: boolean; mutate: (creds: Record<string, string>) => void }
   readonly onCredentialsChange: (creds: Record<string, string>) => void
   readonly onToggleSecrets: () => void
 }
 
 export function CredentialsSection({
-  fields, credentials, showSecrets, sourceStatus, saveSuccess, isAdmin, testMutation, updateCredentialsMutation,
+  fields, credentials, showSecrets, saveSuccess, isAdmin, updateCredentialsMutation,
   onCredentialsChange, onToggleSecrets
 }: CredentialsSectionProps) {
   const { t } = useTranslation('settings')
@@ -167,19 +165,7 @@ export function CredentialsSection({
             <span className="hidden xs:inline">{saveText.full}</span>
             <span className="xs:hidden">{saveText.short}</span>
           </button>
-          <button
-            onClick={() => testMutation.mutate()}
-            disabled={testMutation.isPending || !sourceStatus?.configured}
-            className="btn btn-secondary flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2"
-          >
-            {testMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <TestTube size={14} />}
-            {t('sourceCard.test')}
-          </button>
         </StickyActionBar>
-
-        {testMutation.data && (
-          <TestResultMessage success={testMutation.data.success} message={[testMutation.data.message, testMutation.data.error].find((m) => m !== undefined && m !== '') ?? t('sourceCard.unknownResult')} />
-        )}
       </div>
     </div>
   )
@@ -245,22 +231,6 @@ function CredentialField({ field, value, showSecrets, onChange }: CredentialFiel
         placeholder={placeholder}
         className="input text-xs sm:text-sm"
       />
-    </div>
-  )
-}
-
-interface TestResultMessageProps {
-  readonly success: boolean
-  readonly message: string
-}
-
-function TestResultMessage({ success, message }: TestResultMessageProps) {
-  const bgClass = success ? 'bg-ok-subtle text-ok' : 'bg-danger-subtle text-danger'
-  const Icon = success ? CheckCircle2 : AlertCircle
-  return (
-    <div className={clsx('p-2 sm:p-3 rounded-lg text-xs sm:text-sm', bgClass)}>
-      <Icon size={14} className="inline mr-1.5 sm:mr-2" />
-      {message}
     </div>
   )
 }

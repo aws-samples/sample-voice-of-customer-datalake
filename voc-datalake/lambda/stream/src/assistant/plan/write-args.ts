@@ -3,7 +3,7 @@
  * The arguments already passed the tool's own zod schema; these accessors
  * re-check the one field they read, so a wrong type is an error, never a cast.
  */
-import { isRecord } from '../tools/format.js';
+import { isRecord } from '../../lib/is-record.js';
 
 /** A write that cannot be built: unknown tool, wrong argument, missing current state. */
 export class WriteRequestError extends Error {

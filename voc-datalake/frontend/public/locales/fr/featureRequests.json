@@ -1,0 +1,283 @@
+{
+  "page": {
+    "title": "Tableaux de retours",
+    "subtitle": "Les tableaux où vos équipes et vos clients déposent demandes, problèmes et retours.",
+    "boardSubtitle": "Les demandes, avec les personnes derrière chacune."
+  },
+  "loading": "Chargement…",
+  "actions": {
+    "cancel": "Annuler",
+    "close": "Fermer",
+    "delete": "Supprimer",
+    "save": "Enregistrer"
+  },
+  "status": {
+    "new": "Nouvelle",
+    "under_review": "En cours d’examen",
+    "planned": "Planifiée",
+    "declined": "Refusée",
+    "shipped": "Livrée",
+    "confirmed": "Confirmé",
+    "fixed": "Corrigé",
+    "wont_fix": "Ne sera pas corrigé",
+    "seen": "Vu",
+    "done": "Terminé"
+  },
+  "impact": {
+    "committed": "Engagement d’achat",
+    "at_risk": "Affaire en danger",
+    "none": "Sans impact sur le chiffre d’affaires"
+  },
+  "totals": {
+    "supporters": "Soutiens",
+    "customers": "Clients",
+    "committed": "Engagé",
+    "atRisk": "En danger",
+    "peopleAffected": "Personnes concernées",
+    "avgRating": "Note moyenne",
+    "rating": "{{value}} / 5",
+    "notRated": "Pas encore noté",
+    "boardSummary": "Totaux du tableau"
+  },
+  "list": {
+    "label": "Demandes",
+    "intro": "Ajoutez une demande, ou faites +1 sur une qui compte aussi pour vous.",
+    "search": "Rechercher",
+    "searchPlaceholder": "Titre, description ou auteur",
+    "statusFilter": "Statut",
+    "allStatuses": "Tous les statuts",
+    "sortBy": "Trier par",
+    "sort": {
+      "newest": "Plus récentes",
+      "committed": "Chiffre d’affaires engagé",
+      "at_risk": "Chiffre d’affaires en danger",
+      "supporters": "Soutiens",
+      "people_affected": "Personnes concernées",
+      "rating": "Note"
+    },
+    "reportedBy": "Signalée par {{name}}",
+    "empty": "Aucune demande pour l’instant. Ajoutez la première.",
+    "noMatch": "Aucune demande ne correspond à ces filtres.",
+    "loadFailed": "Les demandes n’ont pas pu être chargées.",
+    "notAccepted": "Cette connexion n’est pas acceptée sur le tableau. Connectez-vous avec une adresse vérifiée que le tableau accepte."
+  },
+  "new": {
+    "open": "Nouvelle demande",
+    "title": "Nouvelle demande",
+    "description": "Toutes les personnes qui utilisent {{board}} la voient, avec votre nom et votre e-mail.",
+    "impactHeading": "Votre client et l’impact sur le chiffre d’affaires",
+    "submit": "Ajouter la demande"
+  },
+  "form": {
+    "title": "Titre",
+    "description": "Description",
+    "amountHint": "Dollars américains entiers",
+    "noAmount": "Aucun montant n’est nécessaire sans impact sur le chiffre d’affaires.",
+    "name": "Votre nom",
+    "errors": {
+      "titleRequired": "Donnez un titre à la demande.",
+      "descriptionRequired": "Décrivez le besoin du client.",
+      "customerRequired": "Indiquez le client.",
+      "nameRequired": "Ajoutez votre nom.",
+      "amountRequired": "Saisissez le montant en dollars américains.",
+      "amountTooLarge": "Ce montant dépasse ce que le tableau accepte.",
+      "contactEmail": "Saisissez une adresse e-mail valide, ou laissez vide.",
+      "descriptionRequiredService": "Décrivez ce qui s’est passé et ce que le client a vu."
+    },
+    "requiredLabel": "{{label}} (obligatoire)",
+    "optionalLabel": "{{label}} (facultatif)",
+    "choose": "Choisir...",
+    "notSet": "Non renseigné",
+    "fieldErrors": {
+      "required": "Ce champ est obligatoire.",
+      "too_long": "C’est plus long que ce que le tableau accepte.",
+      "invalid_choice": "Choisissez une des options.",
+      "invalid_number": "Saisissez un nombre entier.",
+      "out_of_range": "Ce nombre est hors de la plage autorisée.",
+      "invalid_email": "Saisissez une adresse e-mail valide.",
+      "invalid_url": "Saisissez un lien https:// complet."
+    },
+    "descriptionHint": {
+      "sales": "Ce dont le client a besoin, et pourquoi.",
+      "service": "Ce qui s’est passé, et ce que le client a vu.",
+      "beta": "Ce que vous avez essayé, et ce qui s’est passé.",
+      "blank": "Tout ce qui aide les autres à comprendre."
+    }
+  },
+  "detail": {
+    "reported": "Signalée par {{name}} ({{email}})",
+    "reporter": "Auteur",
+    "copyLink": "Copier le lien",
+    "copied": "Lien copié",
+    "edit": "Modifier",
+    "supports": "Soutiens",
+    "plusOne": "+1 avec mon client",
+    "addSupport": "Ajouter mon +1",
+    "contact": "Contact : {{email}}",
+    "editSupport": "Modifier le soutien pour {{customer}}",
+    "deleteSupport": "Supprimer le soutien pour {{customer}}",
+    "deleteSupportTitle": "Supprimer ce soutien ?",
+    "deleteSupportMessage": "Le soutien pour {{customer}} et son montant sortent des totaux de la demande.",
+    "loadFailed": "Impossible de charger cette demande.",
+    "supportsCount_one": "{{count, number}} soutien",
+    "supportsCount_many": "{{count, number}} soutiens",
+    "supportsCount_other": "{{count, number}} soutiens",
+    "plusOneService": "Je suis aussi concerné",
+    "plusOneOther": "+1",
+    "alreadySupporting": "Vous soutenez cette demande.",
+    "editMySupport": "Modifier mon +1"
+  },
+  "admin": {
+    "title": "Administration",
+    "status": "Statut",
+    "delete": "Supprimer la demande",
+    "deleteTitle": "Supprimer cette demande ?",
+    "deleteMessage": "« {{title}} » et tous ses soutiens sont supprimés pour tout le monde."
+  },
+  "promote": {
+    "title": "Promouvoir en projet",
+    "hint": "Chaque soutien et contact client rejoint une liste de participants liée au projet, pour leur demander un avis par e-mail.",
+    "project": "Projet",
+    "pickProject": "Choisissez un projet",
+    "loadingProjects": "Chargement des projets…",
+    "newProject": "Nouveau projet…",
+    "newProjectName": "Nom du nouveau projet",
+    "submit": "Promouvoir",
+    "skippedRow": "{{email}} : {{reason}}",
+    "reasons": {
+      "external_not_allowed": "hors des domaines de l’entreprise, et les personnes externes ne sont pas autorisées",
+      "invalid_email": "adresse e-mail non valide",
+      "unsubscribed": "désinscrit des e-mails aux participants"
+    },
+    "done_one": "{{count, number}} personne ajoutée à « {{list}} ».",
+    "done_many": "{{count, number}} personnes ajoutées à « {{list}} ».",
+    "done_other": "{{count, number}} personnes ajoutées à « {{list}} ».",
+    "skipped_one": "{{count, number}} e-mail ignoré :",
+    "skipped_many": "{{count, number}} e-mails ignorés :",
+    "skipped_other": "{{count, number}} e-mails ignorés :"
+  },
+  "errors": {
+    "generic": "Cela n’a pas fonctionné. Réessayez.",
+    "forbidden": "Vous n’êtes pas autorisé à faire cela.",
+    "notFound": "Cette demande n’existe plus.",
+    "conflict": "Quelqu’un l’a modifié en même temps. Réessayez.",
+    "throttled": "Trop de requêtes en ce moment. Patientez un instant et réessayez.",
+    "rateLimited": "Vous avez atteint la limite de publications du jour sur ce tableau. Réessayez demain.",
+    "slugTaken": "Un autre tableau utilise déjà ce nom de lien.",
+    "boardNotEmpty": "Ce tableau contient encore des demandes. Supprimez-le avec ses demandes, ou archivez-le.",
+    "statusInUse": "Des demandes utilisent encore ce statut. Passez-les d’abord à un autre statut.",
+    "alreadySupported": "Vous soutenez déjà cette demande. Modifiez plutôt votre +1."
+  },
+  "auth": {
+    "title": "Connectez-vous au tableau des demandes",
+    "intro": "Saisissez votre e-mail professionnel. Nous vous envoyons un lien et un code à usage unique.",
+    "email": "E-mail professionnel",
+    "sendLink": "M’envoyer un lien de connexion",
+    "checkEmail": "Consultez {{email}} : ouvrez le lien, ou saisissez ici le code reçu.",
+    "secondCode": "Votre adresse e-mail est confirmée. Nous avons envoyé un autre code à {{email}} pour vous connecter.",
+    "code": "Code reçu par e-mail",
+    "signIn": "Se connecter",
+    "useAnotherEmail": "Utiliser un autre e-mail",
+    "otherBrowser": "Ce lien a été ouvert dans un autre navigateur que celui qui l’a demandé. Saisissez le code dans ce navigateur, ou envoyez un nouveau lien d’ici.",
+    "errors": {
+      "domain_not_allowed": "Le domaine de cet e-mail n’est pas autorisé sur le tableau. Utilisez votre e-mail d’entreprise.",
+      "wrong_code": "Ce code est incorrect. Vérifiez l’e-mail et réessayez.",
+      "expired": "Cette connexion a expiré. Envoyez un nouveau lien.",
+      "tooManyAttempts": "Trop de tentatives. Patientez quelques minutes puis réessayez.",
+      "no_session": "Aucune connexion n’est en attente dans ce navigateur. Saisissez le code là où vous l’avez demandé, ou envoyez un nouveau lien.",
+      "invalid_email": "Saisissez une adresse e-mail valide.",
+      "unknown": "La connexion a échoué. Réessayez dans un instant."
+    }
+  },
+  "board": {
+    "title": "Tableaux de retours",
+    "titleWithBrand": "Tableaux de retours {{brand}}",
+    "signOut": "Se déconnecter",
+    "notEnabledTitle": "Les tableaux de retours ne sont pas activés",
+    "notEnabled": "Ce déploiement n’a pas de connexion aux tableaux. Si vous utilisez l’application, connectez-vous-y et ouvrez Tableaux de retours.",
+    "notEnabledDev": "Développement local sans pool de tableaux : le mock ne peut connecter personne à Cognito. Ajoutez un bloc board à public/config.json pour essayer un vrai pool, ou utilisez la page Tableaux de retours de l’application avec le mock."
+  },
+  "fields": {
+    "customer": "Client",
+    "deal": "Affaire",
+    "impact": "Impact sur le chiffre d'affaires",
+    "amount_usd": "Montant (USD)",
+    "contact_email": "E-mail du contact client",
+    "kind": "Type",
+    "severity": "Gravité",
+    "reference": "Référence de réservation ou de commande",
+    "steps": "Étapes pour reproduire",
+    "affected_count": "Personnes concernées",
+    "area": "Zone",
+    "outcome": "Ce qui s'est passé",
+    "rating": "Note (1-5)",
+    "link": "Lien (https)",
+    "note": "Note"
+  },
+  "choices": {
+    "kind": {
+      "bug": "Bogue",
+      "complaint": "Réclamation",
+      "missing_feature": "Fonction manquante",
+      "question": "Question"
+    },
+    "severity": {
+      "low": "Faible",
+      "medium": "Moyenne",
+      "high": "Élevée",
+      "critical": "Critique"
+    },
+    "outcome": {
+      "works": "Ça fonctionne",
+      "broken": "Ça ne fonctionne pas",
+      "confusing": "C'est déroutant"
+    }
+  },
+  "templates": {
+    "sales": "Demandes de fonctionnalités des ventes",
+    "service": "Problèmes du service client",
+    "beta": "Retours de la bêta",
+    "blank": "Vierge"
+  },
+  "boards": {
+    "listLabel": "Tableaux",
+    "audienceLabel": "Qui peut l’utiliser",
+    "requestsLabel": "Demandes",
+    "audience": {
+      "company": "Les personnes de votre entreprise",
+      "list": "Domaines et personnes invités",
+      "listCounts": "{{domains}} domaines, {{people}} personnes",
+      "anyone": "Toute personne avec un e-mail vérifié"
+    },
+    "open": "Ouvrir",
+    "openBoard": "Ouvrir {{name}}",
+    "copyBoardLink": "Copier le lien de {{name}}",
+    "linkCopied": "Lien copié",
+    "copyFailed": "Le lien n’a pas pu être copié.",
+    "edit": "Modifier",
+    "editBoard": "Modifier {{name}}",
+    "deleteBoard": "Supprimer {{name}}",
+    "deleteTitle": "Supprimer ce tableau ?",
+    "deleteMessage": "« {{name}} » est supprimé pour tout le monde. Cette action est irréversible.",
+    "deleteWithRequestsMessage_one": "« {{name}} », sa {{count, number}} demande et chaque +1 sur celle-ci sont supprimés définitivement. Cette action est irréversible. Les projets déjà créés à partir de ses demandes sont conservés.",
+    "deleteWithRequestsMessage_many": "« {{name}} », ses {{count, number}} demandes et chaque +1 sur celles-ci sont supprimés définitivement. Cette action est irréversible. Les projets déjà créés à partir de ses demandes sont conservés.",
+    "deleteWithRequestsMessage_other": "« {{name}} », ses {{count, number}} demandes et chaque +1 sur celles-ci sont supprimés définitivement. Cette action est irréversible. Les projets déjà créés à partir de ses demandes sont conservés.",
+    "deleteWithRequestsMessageStale": "« {{name}} » contient désormais des demandes. Le tableau, toutes ses demandes et chaque +1 sur celles-ci sont supprimés définitivement. Cette action est irréversible. Les projets déjà créés à partir de ses demandes sont conservés.",
+    "deleteConfirmNameLabel": "Saisissez le nom du tableau pour confirmer",
+    "deleteProgress_one": "{{deleted, number}} demande sur {{count, number}} supprimée…",
+    "deleteProgress_many": "{{deleted, number}} demandes sur {{count, number}} supprimées…",
+    "deleteProgress_other": "{{deleted, number}} demandes sur {{count, number}} supprimées…",
+    "deleteIncomplete": "Le tableau n’est pas encore entièrement supprimé.",
+    "deleteResumeHint": "Cliquez de nouveau sur Supprimer pour reprendre là où cela s’est arrêté.",
+    "archived": "Archivé",
+    "configure": "Configurer les tableaux",
+    "emptyTitle": "Aucun tableau pour l’instant",
+    "empty": "Aucun tableau ne vous est encore partagé.",
+    "emptyAdmin": "Créez un tableau dans <admin>Administration, Confidentialité et accès, Tableaux</admin>.",
+    "loadFailed": "Les tableaux n’ont pas pu être chargés.",
+    "notFoundTitle": "Tableau introuvable",
+    "notFound": "Ce tableau n’existe pas ou ne vous est pas partagé.",
+    "backToBoards": "Retour aux tableaux",
+    "standaloneIntro": "Les tableaux que vous pouvez utiliser. Ouvrez-en un pour ajouter une demande ou faire +1."
+  }
+}

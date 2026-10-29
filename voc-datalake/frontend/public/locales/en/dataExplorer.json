@@ -49,7 +49,9 @@
     "noFiles": "No files found",
     "view": "View",
     "path": "Folder path",
-    "noFilesHint": "This folder is empty. Create a file here, or ingest data from Data Sources."
+    "noFilesHint": "This folder is empty. Create a file here, or ingest data from Data Sources.",
+    "personaFolder": "Persona {{n, number}} · {{date}}",
+    "personaFolderDated": "Persona · {{date}}"
   },
   "tabs": {
     "categories": "Categories",

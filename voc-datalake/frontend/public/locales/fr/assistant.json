@@ -22,6 +22,7 @@
     "stillGenerating": "Génération en cours…"
   },
   "pages": {
+    "participants": "Participants",
     "home": "Accueil",
     "dashboard": "Tableau de bord",
     "feedback": "Retours",
@@ -59,6 +60,8 @@
     "externalLink": "{{host}}, s’ouvre dans un nouvel onglet",
     "copy": "Copier",
     "copied": "Copié",
+    "stopped": "Arrêté",
+    "regenerate": "Régénérer",
     "savedDocumentTitle": "Réponse de l'assistant – {{date}}",
     "saveAsDocument": {
       "idle": "Enregistrer comme document",
@@ -153,6 +156,7 @@
     "subtitle": "Je peux lire vos données et proposer des modifications — rien ne change sans votre validation."
   },
   "suggestions": {
+    "participants": {"1": "Quelles listes de participants avons-nous ?", "2": "Crée une liste de clients bêta", "3": "Ajoute des personnes à une liste depuis un tableau que je colle"},
     "dashboard": { "1": "Comment le ressenti des clients a-t-il évolué cette semaine ?", "2": "Quelles sources apportent le plus de retours ?", "3": "Résume ce tableau de bord en trois phrases" },
     "categories": { "1": "Quelle catégorie compte le plus de plaintes ?", "2": "Que disent les clients de la plus grande catégorie ?", "3": "Quelles catégories se dégradent ?" },
     "projects": { "1": "Crée un projet à partir de la principale plainte de la semaine", "2": "Quels projets sont en cours ?", "3": "Quel devrait être notre prochain projet de recherche ?" },
@@ -273,5 +277,30 @@
       "cancelled": "Annulé",
       "expired": "Expiré"
     }
+  },
+  "mentions": {
+    "placeholder": "Posez une question sur ce projet. Tapez @ pour un persona, # pour un document…",
+    "allLabel": "Tous les personas",
+    "allHint": "tous les personas répondent",
+    "heading": {
+      "persona": "Personas",
+      "document": "Documents"
+    },
+    "limit": {
+      "persona": "Au plus {{max, number}} personas par message.",
+      "document": "Au plus {{max, number}} documents par message."
+    },
+    "loading": "Chargement du projet…",
+    "empty": {
+      "persona": "Aucun persona ne correspond.",
+      "document": "Aucun document ne correspond."
+    },
+    "count_one": "{{count, number}} suggestion",
+    "count_other": "{{count, number}} suggestions",
+    "chips": "Mentionnés dans ce message",
+    "remove": "Retirer {{name}}",
+    "insertPersona": "Mentionner un persona",
+    "insertDocument": "Étiqueter un document",
+    "allCapped": "@all interroge les {{max, number}} premiers des {{total, number}} personas : {{names}}."
   }
 }

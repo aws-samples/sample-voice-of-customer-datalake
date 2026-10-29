@@ -16,6 +16,40 @@ export const BUILD_VENV_SETUP = 'venv="$(mktemp -d)"';
 export const BUILD_VENV = '"$venv"';
 
 /**
+ * What the bundling deletes from `python/` after pip, relative to it (globs).
+ *
+ * The first group is the AWS SDK closure the Lambda Python 3.14 runtime ships in
+ * `/var/lang/lib/python3.14/site-packages` (boto3, botocore, s3transfer, jmespath,
+ * python-dateutil, six, urllib3: `RUNTIME_PROVIDED` in scripts/audit/layer_dists.py,
+ * checked against the image by its test). A layer copy SHADOWS the runtime's
+ * (`/opt/python` precedes it on `sys.path`), so the runtime's botocore would run on
+ * the layer's urllib3 / dateutil / jmespath instead of the versions it was released
+ * with. Every layer distribution's range accepts the runtime's versions (requests and
+ * app-store-web-scraper: urllib3 <3, Powertools: jmespath <2; botocore itself caps
+ * urllib3 below 3); `py_layers` reports a `runtime-conflict` the day one does not.
+ *
+ * The second group never runs in Lambda: pip's console scripts (`bin/`, not on
+ * `sys.path`), type stubs (`*-stubs` packages; `*.pyi` files are deleted by a `find`
+ * below) and the test suites some wheels ship (`certifi/tests`, `websocket/tests`;
+ * no library module imports them). `.pyc` and `*.dist-info` stay: the bytecode is
+ * compiled for 3.14 by the same image (no compile at cold start), and the metadata
+ * is what `importlib.metadata` reads.
+ */
+export const LAYER_STRIP = [
+  'boto3', 'boto3-*', 'botocore', 'botocore-*', 's3transfer', 's3transfer-*',
+  'jmespath', 'jmespath-*', 'dateutil', 'python_dateutil-*', 'six.py', 'six-*', 'urllib3', 'urllib3-*',
+  'bin', '*-stubs',
+] as const;
+
+/** The strip steps, rooted at `pythonDir` (`/asset-output/python` here, `/var/task/python` in build-layers.sh). */
+export function layerStripSteps(pythonDir: string): string {
+  const targets = LAYER_STRIP.map((entry) => `${pythonDir}/${entry}`).join(' ');
+  return `rm -rf ${targets}`
+    + ` && find ${pythonDir} -name "*.pyi" -type f -delete`
+    + ` && find ${pythonDir} -mindepth 2 -type d -name tests -prune -exec rm -rf {} +`;
+}
+
+/**
  * Bundled asset for a Python dependency layer, kept in lockstep with
  * scripts/build-layers.sh (issue #194) — lib/utils/python-layer-bundling.test.ts
  * fails if the two recipes drift. Every LayerVersion in the app must use
@@ -27,10 +61,11 @@ export const BUILD_VENV = '"$venv"';
  *
  * Why not a plain `pip install -t /asset-output/python`:
  *
- * - Lambda's Python runtime PROVIDES boto3/botocore as a matched pair, but
+ * - Lambda's Python runtime PROVIDES boto3/botocore as a matched pair (and
+ *   the rest of the SDK closure: {@link LAYER_STRIP}), but
  *   aws-lambda-powertools[tracer] -> aws-xray-sdk pulls botocore in
  *   transitively. Shipping that botocore (without boto3) is harmful:
- *   /opt/python precedes /var/runtime on sys.path, so the runtime's boto3
+ *   /opt/python precedes the runtime site-packages on sys.path, so the runtime's boto3
  *   would be paired with the layer's mismatched botocore — the exact
  *   incompatibility pip's resolver error warns about. Stripping it also
  *   cuts ~15MB per layer.
@@ -70,8 +105,7 @@ export function pythonLayerCode(layerDir: string): lambda.Code {
         + ` && python -m venv ${BUILD_VENV}`
         + ` && ${BUILD_VENV}/bin/pip install -r requirements.txt -t /asset-output/python`
         + ' --upgrade --quiet --no-cache-dir --root-user-action=ignore --disable-pip-version-check'
-        + ' && rm -rf /asset-output/python/boto3 /asset-output/python/botocore'
-        + ' /asset-output/python/boto3-* /asset-output/python/botocore-*',
+        + ` && ${layerStripSteps('/asset-output/python')}`,
       ],
     },
   });

@@ -1,11 +1,11 @@
 """S3 import and manual import are admin-only, every route (owner decision 2026-10-08, #242 follow-up).
 
-Both modules gate through one resolver middleware (`_admins_only`), so the refusal
+Both modules gate through one resolver middleware (`shared.api.admins_only`), so the refusal
 must come BEFORE the route touches anything: a non-admin gets 403 and the S3, SQS,
 DynamoDB and Lambda-invoke clients (the parse job's invoke is what reaches Bedrock)
 see no call at all. An admin still reaches each route.
 
-Reverting either module's `app.use(middlewares=[_admins_only])` fails every
+Reverting either module's `app.use(middlewares=[admins_only])` fails every
 non-admin case here.
 """
 import json

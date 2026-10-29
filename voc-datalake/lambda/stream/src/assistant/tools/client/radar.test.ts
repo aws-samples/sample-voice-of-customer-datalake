@@ -46,6 +46,27 @@ describe('save_radar_brands argument bounds', () => {
     ['11 domains', { brands: [brand('A', Array.from({ length: 11 }, (_, i) => `d${i}.example`))] }, false],
     ['a domain that is no domain', { brands: [brand('A', ['localhost'])] }, false],
     ['an unknown brand key', { brands: [{ label: 'A', key: 'a' }] }, false],
+    ['an allowlisted language', { brands: [{ label: 'A', language: 'pl' }] }, true],
+    ['auto language (null)', { brands: [{ label: 'A', language: null }] }, true],
+    ['a language off the allowlist', { brands: [{ label: 'A', language: 'zh' }] }, false],
+    ['three https feeds', { brands: [{ label: 'A', feed_urls: ['https://a.example/feed', 'https://a.example/rss', 'https://b.example/atom.xml'] }] }, true],
+    ['four feeds', { brands: [{ label: 'A', feed_urls: ['1', '2', '3', '4'].map((n) => `https://a.example/${n}`) }] }, false],
+    ['four feeds, one twice', { brands: [{ label: 'A', feed_urls: ['1', '2', '3', '1'].map((n) => `https://a.example/${n}`) }] }, true],
+    ['an http feed', { brands: [{ label: 'A', feed_urls: ['http://a.example/feed'] }] }, false],
+    ['a feed with credentials', { brands: [{ label: 'A', feed_urls: ['https://u:p@a.example/feed'] }] }, false],
+    ['a feed with a fragment', { brands: [{ label: 'A', feed_urls: ['https://a.example/feed#x'] }] }, false],
+    ['a feed on an IP address', { brands: [{ label: 'A', feed_urls: ['https://10.0.0.1/feed'] }] }, false],
+    ['a feed on a bare host', { brands: [{ label: 'A', feed_urls: ['https://intranet/feed'] }] }, false],
+    ['a feed URL over 500 characters', { brands: [{ label: 'A', feed_urls: [`https://a.example/${'x'.repeat(500)}`] }] }, false],
+    ['search and exclude terms', { brands: [{ label: 'Example Air', search_terms: ['Example Air Ltd'], exclude_terms: ['air quality'] }] }, true],
+    ['eight search terms', { brands: [{ label: 'A', search_terms: Array.from({ length: 8 }, (_, i) => `t${i}`) }] }, true],
+    ['nine search terms', { brands: [{ label: 'A', search_terms: Array.from({ length: 9 }, (_, i) => `t${i}`) }] }, false],
+    ['nine terms, one twice in another case', { brands: [{ label: 'A', exclude_terms: [...Array.from({ length: 8 }, (_, i) => `t${i}`), 'T0'] }] }, true],
+    ['a 60-char term', { brands: [{ label: 'A', search_terms: ['x'.repeat(60)] }] }, true],
+    ['a 61-char term', { brands: [{ label: 'A', search_terms: ['x'.repeat(61)] }] }, false],
+    ['a term with a double quote', { brands: [{ label: 'A', search_terms: ['say "hi"'] }] }, false],
+    ['a term starting with "-"', { brands: [{ label: 'A', exclude_terms: ['-x'] }] }, false],
+    ['an empty term', { brands: [{ label: 'A', exclude_terms: ['  '] }] }, false],
   ])('%s → %s', (_label, args, expected) => {
     expect(validated('save_radar_brands', args).ok).toBe(expected);
   });
@@ -112,7 +133,15 @@ describe('run_radar_scan', () => {
     const tool = toolOf('run_radar_scan');
     expect(await tool.precheck?.({ brand: 'example-air' }, admin)).toBeUndefined();
     expect(await tool.precheck?.({}, admin)).toBeUndefined();
-    expect(tool.summarize({})).toBe('Scan every Radar brand for releases now.');
+    expect(tool.summarize({})).toBe('Scan every Radar brand for news now.');
+  });
+
+  /** A user asked the assistant to look for a brand's news on its domains and it did not know this tool did that. */
+  it('tells the model it files each brand\u2019s news from web search, Exa and feeds, and when to use it', () => {
+    const description = toolOf('run_radar_scan').spec.toolSpec?.description ?? '';
+    expect(description).toContain('files each brand\u2019s news (releases, announcements, promotions, partnerships, company news)');
+    expect(description).toContain('from web search, Exa and its feeds');
+    expect(description).toContain('scan, refresh or look for a brand\u2019s news, releases, launches or announcements');
   });
 });
 

@@ -72,6 +72,8 @@ export interface ThreadState {
   resolutions: Record<string, ApprovalResolution>
   sources: Record<string, MessageSources>
   navigation: Record<string, NavigationSuggestion[]>
+  /** Answers the user stopped (Stop), keyed by assistant message id: shown with a Stopped marker. */
+  stopped: Record<string, boolean>
   usage: TokenUsage[]
   status: ThreadStatus
   error: ThreadError | null

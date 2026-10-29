@@ -35,6 +35,20 @@ export interface CoreAuth {
   initialAdminPassword: string;
 }
 
+/** Email (required) and name: the attributes both user pools (app, board) carry. */
+export const USER_POOL_STANDARD_ATTRIBUTES: cognito.StandardAttributes = {
+  email: { required: true, mutable: true },
+  fullname: { required: false, mutable: true },
+};
+
+/** A trigger's or handler's own log group: two weeks, deleted with the stack. */
+export function twoWeekLogGroup(stack: cdk.Stack, id: string): logs.LogGroup {
+  return new logs.LogGroup(stack, id, {
+    retention: logs.RetentionDays.TWO_WEEKS,
+    removalPolicy: cdk.RemovalPolicy.DESTROY,
+  });
+}
+
 export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.Table, frontendDomainName: string): CoreAuth {
   const { stack } = ctx;
 
@@ -59,10 +73,7 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
     code: lambda.Code.fromInline(customMessageLambdaCode(signInUrl)),
     timeout: cdk.Duration.seconds(10),
     description: 'Customizes Cognito email messages for different scenarios',
-    logGroup: new logs.LogGroup(stack, 'CustomMessageLambdaLogs', {
-      retention: logs.RetentionDays.TWO_WEEKS,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-    }),
+    logGroup: twoWeekLogGroup(stack, 'CustomMessageLambdaLogs'),
   });
 
   // Cognito User Pool
@@ -81,10 +92,7 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
     signInAliases: { email: true, username: true },
     ...(omitUsernameConfig ? {} : { signInCaseSensitive: false }),
     autoVerify: { email: true },
-    standardAttributes: {
-      email: { required: true, mutable: true },
-      fullname: { required: false, mutable: true },
-    },
+    standardAttributes: USER_POOL_STANDARD_ATTRIBUTES,
     passwordPolicy: {
       minLength: 8,
       requireLowercase: true,
@@ -394,10 +402,7 @@ function createInlineCustomResourceHandler(
     ),
     timeout: cdk.Duration.minutes(1),
     description: handler.description,
-    logGroup: new logs.LogGroup(ctx.stack, `${id}Logs`, {
-      retention: logs.RetentionDays.TWO_WEEKS,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-    }),
+    logGroup: twoWeekLogGroup(ctx.stack, `${id}Logs`),
   });
 }
 

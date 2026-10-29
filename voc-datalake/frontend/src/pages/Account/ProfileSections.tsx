@@ -32,16 +32,15 @@ function initialOf(user: AccountUser): string {
 }
 
 /** A titled card; the heading labels the region for screen readers. */
-export function Section({ icon: Icon, title, description, children, className }: Readonly<{
+export function Section({ icon: Icon, title, description, children }: Readonly<{
   icon: LucideIcon
   title: string
   description?: string
   children: ReactNode
-  className?: string
 }>) {
   const titleId = useId()
   return (
-    <section className={clsx('card space-y-4', className)} aria-labelledby={titleId}>
+    <section className="card space-y-4" aria-labelledby={titleId}>
       <div>
         <h2 id={titleId} className="text-base font-semibold text-text-strong flex items-center gap-2">
           <Icon size={16} className="text-muted" aria-hidden="true" /> {title}

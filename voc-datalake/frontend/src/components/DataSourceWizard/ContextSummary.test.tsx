@@ -3,7 +3,8 @@
  * @module components/DataSourceWizard/ContextSummary.test
  */
 import { describe, it, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
+import { render } from '@test/test-utils'
 import ContextSummary from './ContextSummary'
 import { textsMissingFromScreen } from '../component-spec-fixtures'
 import { contextConfig } from './dataSourceWizard-fixtures'
@@ -77,8 +78,8 @@ describe('ContextSummary', () => {
     })
 
     it.each([
-      ['sources', { sources: ['webscraper', 'manual_import'] }, 'webscraper, manual_import'],
-      ['categories', { categories: ['delivery', 'pricing'] }, 'delivery, pricing'],
+      ['sources', { sources: ['webscraper', 'web_www_trustpilot_com_acme'] }, 'Web scraper, Acme (Trustpilot)'],
+      ['categories', { categories: ['delivery', 'pricing_licensing'] }, 'Delivery, Pricing licensing'],
       // Sentiments are translated via common:sentiment.*, the same lookup the
       // filter buttons use — they previously disagreed, buttons showing "Positiv"
       // while this line printed the raw slug "positive".

@@ -11,6 +11,7 @@
  */
 import { useQueries } from '@tanstack/react-query'
 import { api } from '../../api/client'
+import { appConfigsKey } from '../../api/queryKeys'
 
 /** Each app-review plugin, the config field holding its store id, and the platform word. */
 const APP_PLUGINS = [
@@ -50,7 +51,7 @@ export function appSourceName(sourceId: string, names: ReadonlyMap<string, strin
 export function useAppSourceLabel(fallback: (sourceId: string) => string): (sourceId: string) => string {
   const results = useQueries({
     queries: APP_PLUGINS.map(({ pluginId }) => ({
-      queryKey: ['app-configs', pluginId],
+      queryKey: appConfigsKey(pluginId),
       queryFn: () => api.getAppConfigs(pluginId),
       retry: false,
     })),

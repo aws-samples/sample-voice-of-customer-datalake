@@ -217,6 +217,7 @@ export default function ProblemAnalysis() {
         categories={allCategories}
         subcategories={problemTree.subcategories}
         resolvedCount={resolvedCount}
+        typeCounts={problemTree.typeCounts}
         onExpandAll={tree.expandAll}
         onCollapseAll={tree.collapseAll}
       />

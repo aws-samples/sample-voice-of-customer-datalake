@@ -134,5 +134,8 @@
   "openInCategories": "Abrir {{name}} em Categorias",
   "seeAllUrgent_one": "Ver a avaliação urgente",
   "seeAllUrgent_other": "Ver as {{count, number}} avaliações urgentes",
-  "seeAllUrgent_many": "Ver as {{count, number}} avaliações urgentes"
+  "seeAllUrgent_many": "Ver as {{count, number}} avaliações urgentes",
+  "partialNote": {
+    "reviewBasis": "Contar pela data da avaliação lê as avaliações uma a uma, por isso um período amplo fica incompleto; mude para Data de importação para ver o total completo."
+  }
 }

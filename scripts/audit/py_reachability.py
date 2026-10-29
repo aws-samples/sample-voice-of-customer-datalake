@@ -5,7 +5,7 @@
 PATTERN. A function, class, method or module constant under ``voc-datalake/lambda`` or ``plugins`` that
 no Lambda can execute: not reachable from its template handler string through imports, calls, attribute
 chains, route decorators or dynamic dispatch. Also whole modules no bundle ships or no entry imports.
-The 5.28 audit (deadpy.md section 1) found eleven (``fetch_with_retry``, ``resolve_window_days``,
+The 5.28 dead-Python audit found eleven (``fetch_with_retry``, ``resolve_window_days``,
 ``cached_source_profile``, ``theme_label``, ``TERMINAL_STATUSES`` ...) plus six symbols only tests use.
 
 HOW. ``py_assembly`` synthesizes the app (no Docker) and replays each function's bundling command, so

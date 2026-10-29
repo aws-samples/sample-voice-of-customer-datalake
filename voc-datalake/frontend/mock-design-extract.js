@@ -3,9 +3,11 @@
 // performs, and the reference-logo route. Wire shapes follow lambda/api/settings_handler.py:
 //   POST /settings/design-system/references/{id}/apply → 200 {draft: {tokens, guidelines, components, logo_candidate}, changes}
 //     (NOT saved; 404 unknown reference, 409 not read yet)
-//   POST /settings/design-system/references/{id}/logo  → 200 {logo_url} (stored as the logo; 404, 409 no candidate)
+//   POST /settings/design-system/references/{id}/logo  → 200 {logo_id, logo_url} (NOT saved: PUT … {logo_id} makes it
+//     the logo; 404, 409 no candidate)
 // mock-server.js owns the design-system state and passes it in; this module never imports from it.
 
+import { randomBytes } from 'node:crypto';
 import { deflateSync } from 'node:zlib';
 import { KIROCREW_REPO_COMPONENTS, KIROCREW_SITE_COMPONENTS, mergeComponents } from './mock-design-components.js';
 
@@ -43,7 +45,8 @@ export const WEBSITE_REFERENCE = {
     radius: [{ name: 'card', value: '12px' }, { name: 'button', value: '8px' }],
     guidelines_md: '- Purple is the one accent: primary buttons and links only.\n- Near-black surfaces, raised cards one step lighter.\n- Headings in Space Grotesk; code and ids in JetBrains Mono.',
     components: KIROCREW_SITE_COMPONENTS,
-    logo: LOGO,
+    // 5.39: the site's logo is an SVG, drawn to PNG by the capture browser (`rendered: true`).
+    logo: { ...LOGO, rendered: true },
     source: 'computed_styles',
   },
 };
@@ -118,7 +121,7 @@ function mergedGuidelines(current, reference) {
 }
 
 /** THE CONTRACT merge: same name / role replaced, new appended (≤ 40 per group, ≤ 30 components), guidelines appended. */
-export function mergeDesignDraft(designSystem, reference) {
+function mergeDesignDraft(designSystem, reference) {
   const { tokens } = designSystem;
   const design = reference.extracted_design;
   return {
@@ -149,12 +152,40 @@ function componentChanges(current, incoming) {
   return { added: incoming.length - replaced, replaced };
 }
 
-function adoptLogo(designSystem, reference, host) {
+/** Logos "Use this logo" stored for a draft, by logo_id; a PUT naming one makes it the logo. */
+const draftedLogos = new Map();
+
+function draftLogo(reference, host) {
   const logo = reference.extracted_design?.logo;
   if (!logo) return [409, { success: false, error: 'This reference has no logo to use.' }];
-  designSystem.logo_url = absolute(host, logo.source_url);
-  designSystem.updated_at = new Date().toISOString();
-  return [200, { logo_url: designSystem.logo_url }];
+  const logoId = `logo_${randomBytes(6).toString('hex')}.png`;
+  draftedLogos.set(logoId, absolute(host, logo.source_url));
+  return [200, { logo_id: logoId, logo_url: draftedLogos.get(logoId) }];
+}
+
+/** Comparison form of a reference link (shared/reference_urls.py): case, default port, trailing slash and fragment ignored. */
+function sameAddress(raw) {
+  try {
+    const url = new URL(String(raw).trim());
+    const port = url.port ? ':' + url.port : '';
+    let path = url.pathname;
+    while (path.endsWith('/')) path = path.slice(0, -1);
+    return `${url.protocol}//${url.hostname.replace(/\.$/, '')}${port}${path}${url.search}`;
+  } catch {
+    return String(raw).trim();
+  }
+}
+
+/** The non-archived reference already at `url` (the API's 409), or undefined. */
+export function duplicateMockReference(references, url) {
+  const wanted = sameAddress(url);
+  return references.find((r) => r.status !== 'archived' && r.url && sameAddress(r.url) === wanted);
+}
+
+/** The logo URL a PUT's `logo_id` names: undefined when absent, null when it was never drafted (→ 400). */
+export function draftedLogoUrl(logoId) {
+  if (logoId === undefined || logoId === null || logoId === '') return undefined;
+  return draftedLogos.get(logoId) ?? null;
 }
 
 const ACTION_ROUTE = /^\/settings\/design-system\/references\/([^/]+)\/(apply|logo)$/;
@@ -167,7 +198,7 @@ export function routeDesignExtract(req, url, designSystem) {
   const reference = designSystem.references.find((r) => r.id === decodeURIComponent(match[1]) && r.status !== 'archived');
   if (!reference) return [404, { success: false, error: 'Reference not found' }];
   const host = req.headers.host;
-  return match[2] === 'apply' ? applyReference(designSystem, reference, host) : adoptLogo(designSystem, reference, host);
+  return match[2] === 'apply' ? applyReference(designSystem, reference, host) : draftLogo(reference, host);
 }
 
 // ── A generated 64×64 PNG for the logo candidate (a purple tile with a light square). ──

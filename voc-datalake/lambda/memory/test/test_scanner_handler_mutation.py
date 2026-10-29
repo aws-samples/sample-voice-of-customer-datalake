@@ -67,7 +67,7 @@ class TestTheConstantsAreTheContract:
         assert scanner.SAFETY_MARGIN_MS == 20_000
         assert scanner.SQS_BATCH == 10
         assert scanner.USER_PK_PREFIX == 'USER#'
-        assert scanner.CONV_SK_PREFIX == 'CONV#'
+        assert scanner.CONVERSATION_SK_PREFIX == 'CONV#'
         assert scanner.DIRECT_KINDS == ('agent_run', 'project_chat')
         assert scanner.MAX_DIRECT_TEXT_CHARS == 60_000
         assert scanner.MAX_REF_CHARS == 128
@@ -272,15 +272,12 @@ class TestScanAndEnqueueRefusesToRunUnconfigured:
         if break_it == 'conversations':
             monkeypatch.setattr(scanner, 'get_conversations_table', lambda: None)
         elif break_it == 'memory':
-            monkeypatch.setattr(scanner, 'get_memory_table', lambda: None)
+            monkeypatch.setattr(store, 'get_memory_table', lambda: None)
         else:
             monkeypatch.setattr(scanner, 'MEMORY_QUEUE_URL', '')
         with pytest.raises(RuntimeError, match=r'^memory scanner is not configured$'):
             scanner.scan_and_enqueue(NOW, lambda: PLENTY)
 
-    @pytest.mark.usefixtures('world')
-    def test_the_memory_table_is_the_stores(self):
-        assert scanner.get_memory_table() is store.get_memory_table()
 
 
 class TestScanAndEnqueueWritesOneCursorPerAcceptedSession:

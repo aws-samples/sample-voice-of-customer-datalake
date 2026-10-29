@@ -1,8 +1,12 @@
 /**
  * @fileoverview Thread state ⇄ stored session.
  *
+ * A stopped answer carries `metadata.voc.stopped` (the stream Lambda writes the same marker,
+ * session/recorder.ts), so its Stopped marker survives a reload.
+ *
  * Saving keeps a record small and free of user uploads: every `tool` message
- * content is trimmed to {@link MAX_STORED_TOOL_CHARS} and attachment parts lose
+ * content is trimmed to {@link MAX_STORED_TOOL_CHARS} (a persona-cards result keeps
+ * valid JSON within its own cap, personaResult.ts) and attachment parts lose
  * their data (name and mimeType survive in `metadata`). Feedback/web sources and
  * navigation chips ride in the assistant message's `metadata.voc` so a restored
  * thread still shows them; the wire copy (`thread/wire.ts`) drops metadata.
@@ -24,6 +28,7 @@ import { expiredResolution, isExpired } from '../thread/resume'
 import { attachmentName, keepNewestTurns } from '../thread/wire'
 import { LIMITS, toolOutcomeSchema } from '../contract'
 import { SESSION_KIND, isLiveServerRun } from './schema'
+import { MAX_RETRY_PERSONA_CHARS, MAX_STORED_PERSONA_CHARS, storedPersonaResult } from './personaResult'
 import type { ContentPart, Message } from '@ag-ui/core'
 import type { PageContext } from '../contract'
 import type { ThreadState, ToolCallStatus } from '../thread/types'
@@ -32,7 +37,12 @@ import type { SessionRecord } from './schema'
 export const MAX_STORED_TOOL_CHARS = 4000
 /** Tool content cap for the 413 retry of a thread that is a single turn. */
 export const MAX_RETRY_TOOL_CHARS = 1000
-const MAX_TITLE_CHARS = 60
+/**
+ * The stored auto-title: chat_handler.MAX_TITLE_CHARS, the longest name a rename may set, so the
+ * rename field can open on the whole first message rather than a cut one (5.35, the field used to
+ * open on a 60-character title ending in an ellipsis). The list clamps it to two lines on screen.
+ */
+export const MAX_TITLE_CHARS = 120
 
 export interface SaveSessionBody {
   id: string
@@ -56,9 +66,14 @@ function stripPart(part: ContentPart): ContentPart {
   }
 }
 
+/** A tool content within its cap; a persona-cards result stays valid JSON (personaResult.ts). */
+function storedToolText(text: string, toolChars: number, personaChars: number): string {
+  return storedPersonaResult(text, personaChars) ?? text.slice(0, toolChars)
+}
+
 function storedMessage(message: Message, state: ThreadState): Message {
   if (message.role === 'tool') {
-    return { ...message, content: contentToText(message.content).slice(0, MAX_STORED_TOOL_CHARS) }
+    return { ...message, content: storedToolText(contentToText(message.content), MAX_STORED_TOOL_CHARS, MAX_STORED_PERSONA_CHARS) }
   }
   if (message.role === 'user' && typeof message.content !== 'string') {
     return { ...message, content: message.content.map(stripPart) }
@@ -66,21 +81,41 @@ function storedMessage(message: Message, state: ThreadState): Message {
   if (message.role === 'assistant') {
     const hasSources = Object.hasOwn(state.sources, message.id)
     const hasNavigation = Object.hasOwn(state.navigation, message.id)
-    if (!hasSources && !hasNavigation) return message
+    const stopped = state.stopped[message.id] === true
+    if (!hasSources && !hasNavigation && !stopped) return message
     const voc = {
       ...(hasSources ? { sources: state.sources[message.id] } : {}),
       ...(hasNavigation ? { navigation: state.navigation[message.id] } : {}),
+      ...(stopped ? { stopped: true } : {}),
     }
     return { ...message, metadata: { ...message.metadata, voc } }
   }
   return message
 }
 
-/** First user message as plain text, ≤ 60 chars. */
-export function sessionTitle(messages: readonly Message[]): string {
+const ELLIPSIS = '…'
+
+function firstUserText(messages: readonly Message[]): string {
   const first = messages.find((m) => m.role === 'user')
-  const text = first ? contentToText(first.content).replace(/\s+/g, ' ').trim() : ''
-  return text.length > MAX_TITLE_CHARS ? `${text.slice(0, MAX_TITLE_CHARS - 1)}…` : text
+  return first ? contentToText(first.content).replace(/\s+/g, ' ').trim() : ''
+}
+
+/** First user message as plain text, ≤ MAX_TITLE_CHARS (a longer one is cut and ends in an ellipsis). */
+export function sessionTitle(messages: readonly Message[]): string {
+  const text = firstUserText(messages)
+  return text.length > MAX_TITLE_CHARS ? `${text.slice(0, MAX_TITLE_CHARS - 1)}${ELLIPSIS}` : text
+}
+
+/**
+ * What the rename field opens on: the user's own name when there is one, else the auto-title
+ * without the ellipsis a cut adds (the field holds MAX_TITLE_CHARS, so that is the longest
+ * name it could save anyway). An open conversation passes its messages: the whole first message.
+ */
+export function editableTitle(title: string, customTitle: string | null, messages?: readonly Message[]): string {
+  if (customTitle !== null) return customTitle
+  const full = messages === undefined ? '' : firstUserText(messages).slice(0, MAX_TITLE_CHARS)
+  if (full !== '') return full
+  return title.endsWith(ELLIPSIS) ? title.slice(0, -ELLIPSIS.length).trimEnd() : title
 }
 
 export function toSaveBody(state: ThreadState, page: PageContext | null, createdAt: string, baseRevision = 0): SaveSessionBody {
@@ -99,7 +134,7 @@ export function toSaveBody(state: ThreadState, page: PageContext | null, created
 
 function shrinkToolContents(messages: readonly Message[], maxChars: number): Message[] {
   return messages.map((m) => (m.role === 'tool'
-    ? { ...m, content: contentToText(m.content).slice(0, maxChars) }
+    ? { ...m, content: storedToolText(contentToText(m.content), maxChars, MAX_RETRY_PERSONA_CHARS) }
     : m))
 }
 
@@ -119,7 +154,9 @@ export function dropOldestTurns(messages: readonly Message[]): Message[] {
 
 // ── restore ────────────────────────────────────────────────────────────────
 
-const vocMetadataSchema = z.object({ voc: z.object({ sources: z.unknown().optional(), navigation: z.unknown().optional() }) })
+const vocMetadataSchema = z.object({
+  voc: z.object({ sources: z.unknown().optional(), navigation: z.unknown().optional(), stopped: z.boolean().catch(false).optional() }),
+})
 
 function outcomeStatus(content: string): ToolCallStatus {
   try {
@@ -143,6 +180,7 @@ function restoreMetadata(state: ThreadState, message: Message): ThreadState {
     ...state,
     sources: meta.data.voc.sources === undefined ? state.sources : { ...state.sources, [message.id]: parseSources(meta.data.voc.sources) },
     navigation: navigation.length === 0 ? state.navigation : { ...state.navigation, [message.id]: navigation },
+    stopped: meta.data.voc.stopped === true ? { ...state.stopped, [message.id]: true } : state.stopped,
   }
 }
 

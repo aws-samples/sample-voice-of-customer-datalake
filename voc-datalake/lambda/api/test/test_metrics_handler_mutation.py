@@ -224,8 +224,14 @@ class TestOnePartitionPage:
         assert items == _rows(3)
         assert has_more is True
 
-    def test_the_rows_beyond_the_budget_are_cut_even_when_the_partition_is_exhausted(self, fb):
+    def test_rows_cut_off_the_last_page_mean_the_partition_was_not_read_in_full(self, fb):
+        """5 rows came back, 3 were kept: the 2 dropped were never counted, so there IS more."""
         items, has_more = self._query(fb, [_page(_rows(5))], max_matched=3)
+        assert items == _rows(3)
+        assert has_more is True
+
+    def test_a_last_page_that_exactly_fills_the_budget_is_complete(self, fb):
+        items, has_more = self._query(fb, [_page(_rows(3))], max_matched=3)
         assert items == _rows(3)
         assert has_more is False
 
@@ -627,11 +633,12 @@ class TestListFeedbackReadsItsPartitions:
 
     def test_a_later_day_only_gets_what_the_earlier_days_left_of_the_cap(self, fb, api_gateway_event,
                                                                          lambda_context):
-        """60 rows, then 100, under the 100-row cap: the second day is cut to 40."""
+        """60 rows, then 100, under the 100-row cap: the second day is cut to 40, and the 60
+        rows it lost make the window partial (`total` is a lower bound)."""
         fb.query.side_effect = [_page(_rows(60)), _page(_rows(100))]
         _, body = _get(api_gateway_event, lambda_context, '/feedback', days=2, limit=10)
         assert body['total'] == 100
-        assert body['is_partial_window'] is False
+        assert body['is_partial_window'] is True
 
     def test_the_imported_basis_trusts_the_date_partition(self, fb, api_gateway_event, lambda_context):
         """No cutoff post-filter without a category: a row the partition holds is listed whatever its `date`."""
@@ -761,7 +768,7 @@ class TestEntitiesFromTheScan:
             'is_partial': False,
             'has_legacy_persona_buckets': False,
             'entities': {'keywords': {}, 'categories': {}, 'issues': {}, 'personas': {}, 'sources': {},
-                         'channels': {}, 'tags': {}, 'dimensions': {}},
+                         'channels': {}, 'tags': {}, 'dimensions': {'feedback_type': {}}},
         }
 
     def test_an_item_without_the_fields_lands_in_other_unknown_and_unknown(self, fb, api_gateway_event,
@@ -795,7 +802,7 @@ class TestEntitiesFromTheAggregates:
         assert set(body) == {'period_days', 'feedback_count', 'is_partial', 'has_legacy_persona_buckets', 'entities'}
         assert {_query_key(c.kwargs) for c in aggregates.query.call_args_list} == (
             {'METRIC#daily_total', 'metric_type=source', 'metric_type=persona',
-             'metric_type=channel', 'metric_type=tag'}
+             'metric_type=channel', 'metric_type=tag', 'metric_type=dim_sentiment#feedback_type'}
             | {f'METRIC#daily_category#{name}' for name in DEFAULT_CATEGORIES}
         )
 

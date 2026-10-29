@@ -37,6 +37,45 @@ stored in `voc-aggregates` as `pk=SETTINGS#dimensions, sk=config`:
 
 Validation lives in `lambda/shared/dimension_config.py`.
 
+### Feedback type (built in)
+
+Every deployment has one dimension it did not configure: **`feedback_type`**, what kind of
+feedback a review is (`lambda/shared/feedback_types.py`). It needs no setup, has no deploy flag
+and cannot be edited or removed. It is not stored in `SETTINGS#dimensions`: every read of the
+config puts it first, `GET /settings/dimensions` lists it with `builtin: true`, and a `PUT` that
+sends it back (or a stored legacy `feedback_type` from the email inbox) is ignored. It does not
+count against the 10 dimensions, and an admin cannot create another dimension with its key.
+
+One primary type per review:
+
+| Value | Covers |
+|---|---|
+| `bug` | Something is broken or wrong: an error, a crash, wrong data |
+| `service_failure` | The service did not deliver: an outage, a failed delivery or payment, cannot log in |
+| `feature_request` | Asks for something new or for a change |
+| `usability` | Works, but is confusing or hard to use |
+| `performance` | Works, but is slow (a crash is a bug) |
+| `pricing_billing` | Prices, fees, charges, refunds, invoices |
+| `support_experience` | How customer support or staff handled the customer |
+| `praise` | Positive feedback with no problem to fix |
+| `question` | Asks how something works |
+| `other` | None of the above |
+
+- **New reviews, every source** (Radar reviews too): the enrichment model fills it in the SAME call
+  that categorises the review, so there is no extra model call (the answer grows by about 20
+  output tokens). It follows the normal order below, so a CSV column, a source profile default,
+  an email alias or a manual edit (`PUT /feedback/{id}/dimensions`) wins over the model.
+- **Reviews stored before 5.45**: they have no type until an admin runs **Administration →
+  Taxonomy → Dimensions → Classify review types** (the reprocess job, `mode: dimensions`, all
+  time, manual values kept). It shows how many reviews are not typed yet, costs one
+  enrichment-model call per stored review (typed ones are re-checked too, up to 50,000 per run)
+  and never starts by itself.
+- **Labels**: the SPA shows the values translated (`common.json` → `feedbackTypes.<value>`,
+  `feedbackTypeDescriptions.<value>`); the API stores and filters on the value names
+  (`dims=feedback_type:bug`).
+- The Problems page's default "Problems only" set is `bug`, `service_failure`, `performance`,
+  `usability`, `pricing_billing`, `support_experience` (`PROBLEM_TYPES`).
+
 ## Where a value comes from
 
 Each feedback item stores `dimensions: {key: value}` and records where every value came
@@ -75,7 +114,7 @@ filters, next to `source` (`/metrics/github` is GitHub Issues only and ignores `
 |---|---|
 | `channel=<source_channel>` | Exact match |
 | `tag=<tag>` | Item `tags` contains it, ignoring case |
-| `dims=<key>:<value>[,<key>:<value>…]` | Every pair must match (AND), ≤ 10 pairs. A malformed value answers 400 |
+| `dims=<key>:<value>[,<key>:<value>…]` | Every pair must match (AND), ≤ 10 pairs. A malformed value answers 400. `<key>:<a>\|<b>` accepts either value (OR within a key), and the choice `~unset` accepts an item with no value for the key (Problem Analysis' type filter: `feedback_type:bug\|service_failure\|~unset`) |
 
 These are post-query filters: like `sentiment`, they force the item-scan path.
 

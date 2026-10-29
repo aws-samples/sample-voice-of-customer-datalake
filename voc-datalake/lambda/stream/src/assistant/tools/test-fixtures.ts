@@ -2,6 +2,7 @@
  * Test fixtures for the tool catalogue (imported by *.test.ts only).
  */
 import type { BaseEvent } from '@ag-ui/core';
+import type { ConverseCommandOutput } from '@aws-sdk/client-bedrock-runtime';
 import type { PageContext, PageKind } from '../contract.js';
 import type { AssistantRunContext, ClientToolDefinition, ServerToolDefinition } from '../types.js';
 import { buildCatalogue } from './catalogue.js';
@@ -102,5 +103,21 @@ export function clientToolLookup(deps: ToolDeps = fakeDeps()): (name: string) =>
     const found = tools.get(name);
     if (!found) throw new TypeError(`no client tool ${name}`);
     return found;
+  };
+}
+
+/** A non-streaming Converse answer with this text (consult_personas, the persona round); optional thinking first. */
+export function converseAnswer(text: string, reasoning?: string): ConverseCommandOutput {
+  return {
+    output: {
+      message: {
+        role: 'assistant',
+        content: [...(reasoning === undefined ? [] : [{ reasoningContent: { reasoningText: { text: reasoning } } }]), { text }],
+      },
+    },
+    stopReason: 'end_turn',
+    usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+    metrics: { latencyMs: 1 },
+    $metadata: {},
   };
 }

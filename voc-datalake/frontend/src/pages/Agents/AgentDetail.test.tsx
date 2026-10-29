@@ -116,6 +116,19 @@ describe('AgentDetail — tabs', () => {
   })
 })
 
+describe('AgentDetail — category labels', () => {
+  it('the header and the scope picker show configured labels, never the ids', async () => {
+    route(baseRoutes({
+      'GET /agents/ag_1': () => ({ agent: { ...AGENT, scope: { all: false, categories: ['technical_support'], subcategories: [] } } }),
+      'GET /settings/categories': () => ({ categories: [{ name: 'technical_support', description: 'Technical support', subcategories: [] }] }),
+    }))
+    renderDetail()
+    expect(await screen.findByText('Watches: Technical support')).toBeInTheDocument()
+    expect(await screen.findByRole('checkbox', { name: 'Technical support' })).toBeChecked()
+    expect(screen.queryByText(/technical_support/)).not.toBeInTheDocument()
+  })
+})
+
 describe('AgentDetail — save', () => {
   it('sends only the changed fields', async () => {
     const update = vi.fn((body: unknown) => ({ agent: { ...AGENT, ...(typeof body === 'object' ? body : {}) } }))
@@ -143,8 +156,20 @@ describe('AgentDetail — save', () => {
     renderDetail()
     await findHeading()
     await userEvent.clear(screen.getByLabelText('Name'))
-    expect(screen.getByRole('alert')).toHaveTextContent(/^name: /)
+    expect(screen.getByRole('alert')).toHaveTextContent('Give the agent a name of up to 80 characters.')
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+  })
+
+  it('an empty scope reads as a plain sentence, not the schema message', async () => {
+    route(baseRoutes({
+      'GET /settings/categories': () => ({ categories: [{ name: 'billing', description: 'Billing', subcategories: [] }] }),
+    }))
+    renderDetail()
+    await findHeading()
+    await userEvent.click(screen.getByRole('checkbox', { name: 'All categories' }))
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent('Choose at least one category or subcategory, or watch all categories.')
+    expect(alert).not.toHaveTextContent(/scope|all=true/)
   })
 
   it('discards the draft', async () => {

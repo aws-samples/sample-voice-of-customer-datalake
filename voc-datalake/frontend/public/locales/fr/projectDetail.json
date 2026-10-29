@@ -44,7 +44,7 @@
         "prototypePrfaq": "PR/FAQ source du prototype",
         "reference": "Référence"
       },
-      "selectedUsed": "{{used, number}} document(s) utilisé(s) sur {{selected, number}} sélectionné(s)",
+      "selectedUsed": "Documents utilisés : {{used, number}} sur {{selected, number}} sélectionnés",
       "unavailable": "Plus disponible",
       "visualsUsed_one": "{{count, number}} maquette utilisée",
       "visualsUsed_other": "{{count, number}} maquettes utilisées"
@@ -363,21 +363,10 @@
       "knownLimitations": "Limitations connues",
       "nonGoals": "Hors périmètre",
       "oneLiner": "Description en une ligne",
-      "placeholderEmpty": "—",
       "problemSolved": "Problème résolu",
       "productName": "Nom du produit",
       "successMetrics": "Indicateurs de succès",
       "targetUsers": "Utilisateurs cibles"
-    },
-    "interview": {
-      "captured": "Compris — noté. Que pouvez-vous me dire d’autre sur le produit ?",
-      "elaborate": "Pouvez-vous m’en dire plus ?",
-      "greeting": "Bonjour — je vais vous aider à décrire votre produit ou service. Dites-moi ce que c’est en une ou deux phrases, et nous construirons le reste à partir de là.",
-      "heading": "Entretien",
-      "hint": "Je remplis le formulaire à gauche au fil de vos réponses.",
-      "placeholder": "Parlez-moi de votre produit…",
-      "send": "Envoyer",
-      "thinking": "Réflexion…"
     },
     "lifecycle": {
       "beta": "Bêta",
@@ -388,9 +377,6 @@
       "select": "— sélectionner —"
     },
     "loading": "Chargement du contexte produit…",
-    "modeBoth": "Les deux",
-    "modeChat": "Chat uniquement",
-    "modeUpload": "Envoi uniquement",
     "report": {
       "button": "Générer le rapport",
       "confirmTitle": "Générer le rapport produit ?",
@@ -425,6 +411,36 @@
       "statusReady": "Prêt",
       "statusUploading": "Envoi…",
       "extractedChars_many": "{{count, number}} caractères extraits"
+    },
+    "assistant": {
+      "button": "Remplir avec l'assistant IA",
+      "hint": "L'assistant pose une question à la fois sur chaque champ vide, puis présente toutes vos réponses sur une seule carte à approuver.",
+      "prompt": "Interroge-moi pour remplir la description du produit de ce projet."
+    },
+    "lastSaved": "Dernier enregistrement : {{at}}",
+    "neverSaved": "Pas encore enregistré",
+    "saving": "Enregistrement…",
+    "sections": {
+      "basics": {
+        "title": "Le produit",
+        "description": "Ce qu'il est et où il en est."
+      },
+      "customers": {
+        "title": "Clients et problème",
+        "description": "À qui il s'adresse et ce qu'il résout pour eux."
+      },
+      "offering": {
+        "title": "Offre",
+        "description": "Ce qu'il fait et en quoi il se distingue des alternatives."
+      },
+      "scope": {
+        "title": "Objectifs et limites",
+        "description": "Comment le succès est mesuré, ses limites et ce qui est hors périmètre."
+      },
+      "notes": {
+        "title": "Notes",
+        "description": "Tout ce que les rédacteurs du PRD et du PR/FAQ doivent encore savoir."
+      }
     }
   },
   "tabs": {
@@ -461,6 +477,9 @@
     "generatePrd": "Générer le PRD",
     "generatePrdTitle": "Générer le PRD",
     "generatePrfaq": "Générer le PR/FAQ",
+    "startWritingTitle": "L’écrire vous-même",
+    "startWriting": "Commencer à écrire",
+    "startWritingFailed": "Impossible de créer le document. Réessayez.",
     "generatePrfaqTitle": "Générer le PR/FAQ",
     "newDocTitle": "Titre du nouveau document",
     "newDocTitlePlaceholder": "ex. : Concierge virtuel PRD",

@@ -15,6 +15,7 @@ import { createScraperClientTools } from './client/scrapers.js';
 import { createRadarClientTools } from './client/radar.js';
 import { createUserClientTools } from './client/users.js';
 import { createReviewImportClientTools } from './client/review-import.js';
+import { createParticipantClientTools } from './client/participants.js';
 import { createWorkspaceClientTools } from './client/workspace.js';
 import { createPlanClientTools } from './client/plan.js';
 import { createPlanWriteClientTools } from './client/plan-writes.js';
@@ -23,6 +24,7 @@ import { ConfigurationError } from '../../lib/errors.js';
 import { createAgentsServerTools } from './server/agents.js';
 import { createCompanyServerTools } from './server/company.js';
 import { createRadarServerTools } from './server/radar.js';
+import { createParticipantServerTools } from './server/participants.js';
 import { createCoreServerTools } from './server/core.js';
 import { createInsightsServerTools } from './server/insights.js';
 import { createMemoryServerTools } from './server/memory.js';
@@ -49,12 +51,14 @@ export function buildCatalogue(deps: ToolDeps): AssistantToolDefinition[] {
     ...createAgentsServerTools(deps),
     ...createCompanyServerTools(deps),
     ...createRadarServerTools(deps),
-    ...createProjectClientTools(),
+    ...createParticipantServerTools(deps),
+    ...createProjectClientTools(deps),
     ...createWorkspaceClientTools(),
     ...createScraperClientTools(deps),
     ...createRadarClientTools(deps),
     ...createUserClientTools(deps),
     ...createReviewImportClientTools(deps),
+    ...createParticipantClientTools(deps),
     ...createCoreMemoryClientTools(),
     ...createMemoryClientTools(),
     ...createAgentsClientTools(),

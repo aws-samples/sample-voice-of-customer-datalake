@@ -45,6 +45,8 @@ from shared.exceptions import ApiError
 from shared.indexes import FEEDBACK_BY_DATE_INDEX
 from shared.invocation_cost import instrumented_handler
 from shared.logging import logger, metrics
+from shared.metric_keys import CATEGORY_PREFIX, SUBCATEGORY_PREFIX
+from shared.timestamps import parse_iso
 from shared.warm_init import warm_at_init
 
 FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
@@ -62,8 +64,6 @@ SCHEDULE_TOLERANCE: Final = timedelta(minutes=7, seconds=30)
 # A cron minute missed by a failed tick is still honoured this long afterwards.
 CRON_LOOKBACK: Final = timedelta(hours=3)
 EVERY_PERIODS: Final = {'12h': timedelta(hours=12), '24h': timedelta(hours=24)}
-SUBCATEGORY_METRIC_PREFIX: Final = 'METRIC#daily_subcategory#'
-CATEGORY_METRIC_PREFIX: Final = 'METRIC#daily_category#'
 
 
 @dataclass
@@ -80,15 +80,15 @@ class Decision:
 # --------------------------------------------------------------------------
 
 def cooldown_elapsed(trigger: Mapping[str, Any], agent: Mapping[str, Any], now: datetime) -> bool:
-    last = store.parse_iso(agent.get('last_run_at'))
+    last = parse_iso(agent.get('last_run_at'))
     hours = int(store.plain(trigger.get('cooldown_hours')) or 0)
     return last is None or now - last >= timedelta(hours=hours)
 
 
 def schedule_due(trigger: Mapping[str, Any], agent: Mapping[str, Any], now: datetime) -> bool:
     """True when a 12h/24h period has elapsed, or a cron minute passed since the last fire."""
-    last_fired = store.parse_iso(agent.get('last_schedule_fired_at'))
-    created = store.parse_iso(agent.get('created_at')) or now
+    last_fired = parse_iso(agent.get('last_schedule_fired_at'))
+    created = parse_iso(agent.get('created_at')) or now
     every = trigger.get('every')
     if every in EVERY_PERIODS:
         anchor = last_fired or created
@@ -126,7 +126,7 @@ def threshold_buckets(per: str, scope: Mapping[str, Any], categories_config: lis
 
 def bucket_pk(bucket: str) -> str:
     category, _, subcategory = bucket.partition('#')
-    return f'{SUBCATEGORY_METRIC_PREFIX}{category}#{subcategory}' if subcategory else f'{CATEGORY_METRIC_PREFIX}{category}'
+    return f'{SUBCATEGORY_PREFIX}{category}#{subcategory}' if subcategory else f'{CATEGORY_PREFIX}{category}'
 
 
 def count_since_baseline(daily: Mapping[str, int], since_day: str | None, baseline: int) -> int:
@@ -152,7 +152,7 @@ def _window_first_day(trigger: Mapping[str, Any], now: datetime) -> str:
 def count_new_reviews(feedback_table: Any, scope: Mapping[str, Any], cursor: object, now: datetime,
                       needed: int) -> int:
     """Reviews in scope processed after ``cursor`` (stops counting at ``needed``)."""
-    since = store.parse_iso(cursor) or now - timedelta(days=1)
+    since = parse_iso(cursor) or now - timedelta(days=1)
     since = max(since, now - timedelta(days=MAX_NEW_REVIEW_DAYS))
     cursor_key = store.iso(since)
     count = 0
@@ -208,7 +208,7 @@ def _threshold(trigger: Mapping[str, Any], agent: Mapping[str, Any], ctx: Contex
     # never the whole window of history it was created into.
     since_day = agent.get('threshold_since')
     if not isinstance(since_day, str):
-        created = store.parse_iso(agent.get('created_at'))
+        created = parse_iso(agent.get('created_at'))
         since_day = created.strftime('%Y-%m-%d') if created else None
     baselines = store.plain(agent.get('threshold_baseline') or {})
     needed = int(store.plain(trigger.get('count')) or 1)
@@ -269,7 +269,7 @@ def _heal_lock(table: Any, agent: Mapping[str, Any], now: datetime) -> bool:
         store.clear_lock(table, agent['agent_id'], run_id)
         return False
     # A resumed run is judged from its resume, not from when it first started.
-    started = store.parse_iso(run.get('resumed_at')) or store.parse_iso(run.get('started_at'))
+    started = parse_iso(run.get('resumed_at')) or parse_iso(run.get('started_at'))
     if started and now - started > timedelta(hours=STALE_RUN_HOURS):
         store.finish_run(table, agent['agent_id'], run_id, store.RUN_FAILED, now=now,
                          error=f'No progress for {STALE_RUN_HOURS} hours')

@@ -21,7 +21,7 @@ import { WordCloudCard } from './WordCloudCard'
 import { CategoryDistribution } from './CategoryDistribution'
 import { FeedbackResults } from './FeedbackResults'
 import { generateCategoriesPDF } from './categoriesPdfGenerator'
-import { attributeFiltersOf, useCategoryFilters } from './useCategoryFilters'
+import { breakdownFiltersOf, useCategoryFilters } from './useCategoryFilters'
 import { AttributeFilterControls } from './AttributeFilterControls'
 import { useDimensionsConfig } from '../../hooks/useDimensions'
 import type { CategoryFiltersApi } from './useCategoryFilters'
@@ -33,6 +33,7 @@ import { useTranslation } from 'react-i18next'
 import { CenteredSpinner, ExportPageHeader } from './ExportPageHeader'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import ScopeNotice from '../../components/ScopeNotice/ScopeNotice'
+import { cleanReviewText } from '../../utils/cleanReviewText'
 
 function exportFeedbackCsv(items: FeedbackItem[]): void {
   const csv = [
@@ -43,7 +44,7 @@ function exportFeedbackCsv(items: FeedbackItem[]): void {
       csvField(item.category),
       csvField(item.sentiment_label),
       csvField(item.rating ?? ''),
-      csvField(item.original_text),
+      csvField(cleanReviewText(item.original_text)),
       csvField(item.source_created_at),
     ].join(',')),
   ].join('\n')
@@ -119,7 +120,7 @@ export default function Categories() {
 
   const { data: dimensionsConfig } = useDimensionsConfig()
   const analytics = useCategoryAnalytics(
-    dateParams, filters.selectedSource, config.apiEndpoint, attributeFiltersOf(filters), filters.selectedCategories,
+    dateParams, filters.selectedSource, config.apiEndpoint, breakdownFiltersOf(filters), filters.selectedCategories,
   )
   const feedback = useFeedbackListData(dateParams, filters, config.apiEndpoint)
 

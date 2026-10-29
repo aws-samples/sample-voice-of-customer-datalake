@@ -34,6 +34,19 @@ describe('useCopyToClipboard', () => {
     unmount()
     expect(vi.getTimerCount()).toBe(0)
   })
+
+  it('tryCopy marks the item only once the write resolved, and answers whether it did', async () => {
+    const { result } = renderHook(() => useCopyToClipboard())
+    const ok = await act(() => result.current.tryCopy('https://example.test/board', 'link'))
+    expect([ok, result.current.copiedKey]).toStrictEqual([true, 'link'])
+  })
+
+  it('tryCopy shows nothing and answers false when the browser refuses the write', async () => {
+    vi.mocked(navigator.clipboard.writeText).mockRejectedValueOnce(new Error('denied'))
+    const { result } = renderHook(() => useCopyToClipboard())
+    const ok = await act(() => result.current.tryCopy('https://example.test/board', 'link'))
+    expect([ok, result.current.copiedKey]).toStrictEqual([false, null])
+  })
 })
 
 describe('useCopiedFlag', () => {

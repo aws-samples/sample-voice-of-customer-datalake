@@ -29,7 +29,7 @@ preference, so they never disagree.
 | General (`brand`) | Brand (names, handles, hashtags, URLs). Local dev only: API configuration | Edit admin; non-admins see it read-only |
 | Sources (`sources`) | Data sources (`plugins`), Integrations, Email inbox (`inbox`), Radar | Integrations, Email inbox, Radar |
 | Taxonomy (`taxonomy`) | Categories, Dimensions | Dimensions |
-| Privacy & access (`access`) | Source policies (`policies`: profiles, PII, retention, restriction, erasure), Users (roles, category and source access, flags) | All (tab hidden otherwise) |
+| Privacy & access (`access`) | Source policies (`policies`: profiles, PII, retention, restriction, erasure), Users (roles, category and source access, flags, participant email), Boards (`boards`: company domains and the [feedback boards](feature-requests.md)) | All (tab hidden otherwise) |
 | AI models (`ai`) | Per-surface model picker, model test, capacity | Edit admin |
 | System (`system`) | Logs (incl. Alerts), Version | Version |
 
@@ -83,7 +83,7 @@ bounce a non-admin).
 | API endpoint field | Administration → General (dev builds only) | Stays (developer tool, hidden in production); Account → Preferences → This browser shows it read-only | No change |
 | MCP tokens | Connect + Account pointer | Connect stays the full page (endpoint, snippets, audit); Account links to it | No change. Proposed: list my live tokens (count, expiry) in Account → Access & tokens → MCP tokens |
 | Assistant web search default | Assistant composer toggle (`voc-assistant-ui` `useWebSearch`) | Account → Preferences → Assistant could show the default; the composer toggle stays | Proposed (a per-conversation choice today; decide whether it is a preference first) |
-| Default time range and date basis | Header selector on data pages (`voc-config`, shared by everyone on this browser) | Stays in place as a view control; an optional default could live in Account → Preferences | Proposed (needs a per-user store: `voc-config` is not keyed by user) |
+| Default time range and date basis | Header selector on data pages (`voc-config`, shared by everyone on this browser). The app default is the last 14 days by imported date (5.47.00; was 7 days): a browser still on the old default (7 days, imported date) moves to it once, any other saved choice is kept | Stays in place as a view control; an optional default could live in Account → Preferences | Proposed (needs a per-user store: `voc-config` is not keyed by user) |
 | Personal memories | Memory page (scope filter) | Memory (a working tool); Account may link "My memories" | Proposed (link only) |
 | My conversations | Assistant sidebar | Content, not a setting | No change |
 | App version | Administration → System → Version | Admin; a read-only version line on Account → Profile would help bug reports | Proposed |

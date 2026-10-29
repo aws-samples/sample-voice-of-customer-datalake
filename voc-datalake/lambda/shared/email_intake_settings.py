@@ -27,9 +27,7 @@ __all__ = [
     'CONFIG_KEY',
     'DEFAULT_CAPS',
     'EMAIL_INTAKE_SOURCE',
-    'FEEDBACK_TYPE_KEY',
     'caps_from_row',
-    'feedback_type_dimension',
     'inbox_addresses',
     'stats_key',
     'stats_view',
@@ -48,12 +46,10 @@ STATS_PK: Final = 'EMAIL_INTAKE#stats'
 DEFAULT_CAPS: Final = {'daily_cap': 200, 'sender_daily_cap': 20, 'daily_model_calls': 400}
 CAP_BOUNDS: Final = {'daily_cap': (1, 5000), 'sender_daily_cap': (1, 500), 'daily_model_calls': (0, 10000)}
 
-#: The ``feedback_type`` dimension (Settings → Email inbox can create it): key and value names.
-FEEDBACK_TYPE_KEY: Final = 'feedback_type'
-FEEDBACK_TYPES: Final = ('review', 'feature_request', 'bug', 'question', 'praise')
-
-#: The addresses the inbox answers, local part -> ``feedback_type`` (None: the processor decides).
-ALIASES: Final = {'feedback': None, 'ideas': 'feature_request', 'bugs': 'bug', 'reviews': 'review'}
+#: The addresses the inbox answers, local part -> a value of the built-in ``feedback_type``
+#: dimension (``shared.feedback_types``); None: the enrichment model decides. ``reviews@`` used to
+#: force a ``review`` type, which the built-in list does not have, so the model types those mails.
+ALIASES: Final = {'feedback': None, 'ideas': 'feature_request', 'bugs': 'bug', 'reviews': None}
 
 DROP_REASONS: Final = (
     'spam', 'virus', 'auto_reply', 'bulk', 'loop_sender', 'sender_cap',
@@ -121,13 +117,3 @@ def inbox_addresses(domain: str) -> list[str]:
     """Every address the inbox answers at ``domain`` (empty when the inbox is off)."""
     return [f'{alias}@{domain}' for alias in ALIASES] if domain else []
 
-
-def feedback_type_dimension() -> dict[str, Any]:
-    """The ``feedback_type`` dimension the aliases and subject tags fill (``infer``: the processor
-    decides for ``feedback@``)."""
-    return {
-        'key': FEEDBACK_TYPE_KEY,
-        'label': 'Feedback type',
-        'infer': True,
-        'values': [{'name': value} for value in FEEDBACK_TYPES],
-    }

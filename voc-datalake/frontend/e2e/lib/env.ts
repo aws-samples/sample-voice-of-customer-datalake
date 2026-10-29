@@ -2,6 +2,7 @@
  * Environment for the production e2e suite. Every secret comes from env vars;
  * nothing here is ever logged.
  */
+import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -35,6 +36,9 @@ export const MOCK_SPEC_NAMES: readonly string[] = [
   'error-states', 'memory', 'connect', 'request-counts', 'prioritization-requests', 'modals', 'sharing',
   's2-workflow-rebuild', 'prioritization', 'account', 'in-page-tabs', 'i18n-smoke', 'network',
   'concurrency', 'auth-session', 'assistant-notifications', 'flows-matrix', 'prototype-enlarge',
+  // 5.35 coverage (COVERAGE.md): the 5.00–5.34 features.
+  'participants', 'unsubscribe', 'feature-requests', 'feedback-boards', 'board', 'product-interview', 'workflow-history', 'radar',
+  'decisions', 'persona-avatars', 'surfaces',
 ]
 
 /** Matches a path of one of `MOCK_SPEC_NAMES` (Playwright `testMatch`). */
@@ -65,8 +69,31 @@ export const OUT_DIR = process.env['E2E_OUT'] ?? path.resolve(HERE, '..', 'e2e-o
 /** Screenshots. */
 export const SCREENS_DIR = process.env['E2E_SCREENS'] ?? path.join(OUT_DIR, 'screens')
 
-/** Saved browser sessions (contain tokens; gitignored, never print). */
-export const AUTH_DIR = path.resolve(HERE, '..', '.auth')
+/**
+ * Where the saved sessions of a run live: `E2E_AUTH_DIR`, else `<E2E_OUT>/.auth`, else `e2e/.auth`.
+ * Following E2E_OUT keeps parallel runs (shards, tracks) from overwriting each other's sessions: each
+ * run's setup writes its own `<role>.json`, and a spec never reads a session another run's setup rotated.
+ */
+export function authDirFor(env: Readonly<Record<string, string | undefined>>): string {
+  const nonEmpty = (name: string): string | null => {
+    const value = env[name]?.trim()
+    return value === undefined || value === '' ? null : value
+  }
+  const explicit = nonEmpty('E2E_AUTH_DIR')
+  if (explicit !== null) return path.resolve(explicit)
+  const out = nonEmpty('E2E_OUT')
+  if (out !== null) return path.resolve(out, '.auth')
+  return path.resolve(HERE, '..', '.auth')
+}
+
+/** Saved browser sessions (contain tokens; mode 700 / 600, gitignored, never print). */
+export const AUTH_DIR = authDirFor(process.env)
+
+/** Creates AUTH_DIR readable by the owner only (session files inside are written with mode 600). */
+export function ensureAuthDir(): void {
+  fs.mkdirSync(AUTH_DIR, { recursive: true, mode: 0o700 })
+  fs.chmodSync(AUTH_DIR, 0o700)
+}
 
 export function storageStatePath(role: Role): string {
   return path.join(AUTH_DIR, `${role}.json`)

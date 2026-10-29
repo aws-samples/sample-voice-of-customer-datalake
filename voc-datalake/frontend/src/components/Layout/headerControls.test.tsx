@@ -4,8 +4,8 @@
  * with an 8 px radius and the avatar a 36 px circle centred at y=30: three
  * heights, two centre lines, two shapes. jsdom has no layout, so this pins the
  * classes that give every header control one height (`.header-control`, 2.25rem)
- * and the two round buttons one shape (`.header-icon-btn`). The live geometry is
- * measured with Playwright (logs/h1-shell/header_measure.mjs).
+ * and the two round buttons one shape (`.header-icon-btn`). The live geometry was
+ * measured with Playwright against the running app.
  */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'

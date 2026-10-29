@@ -15,11 +15,12 @@ items that carry every field. A mutation run found unseen:
   only when the item carries a non-empty value.
 """
 from datetime import UTC
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from _shared.normalized_item import normalized_item_fields
+from shared.test.clock import frozen_clock
 
 _NOW = '2026-01-05T10:00:00+00:00'
 
@@ -36,7 +37,7 @@ _FULL_ITEM = {
 
 def _fields(item: dict) -> tuple[dict, MagicMock]:
     """Build the fields with ``datetime`` replaced, so *now* is a literal."""
-    with patch('_shared.normalized_item.datetime') as clock:
+    with frozen_clock('_shared.normalized_item') as clock:
         clock.now.return_value.isoformat.return_value = _NOW
         fields = normalized_item_fields(
             item, source_platform='webscraper', default_channel='unknown', brand_name='Acme'

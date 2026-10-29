@@ -58,7 +58,9 @@ jobs:
           .venv/bin/pip install --disable-pip-version-check -q \
             -r requirements-dev.txt \
             -r lambda/layers/ingestion-deps/requirements.txt \
-            -r lambda/layers/processing-deps/requirements.txt
+            -r lambda/layers/processing-deps/requirements.txt \
+            -r lambda/layers/signing-deps/requirements.txt \
+            -r lambda/layers/email-intake-deps/requirements.txt
 
       - name: Install gitleaks (the working-tree secret scan, scripts/gitleaks-tree.sh)
         env:

@@ -6,7 +6,6 @@ from typing import Any
 import pytest
 
 from shared import project_access as pa
-from shared.mcp_delegate import SYNTHETIC_SUBJECT_PREFIX
 
 OWNER = 'sub-owner'
 EDITOR = 'sub-editor'
@@ -51,8 +50,8 @@ class TestPinnedConstants:
     def test_acting_subject_claim_name_is_the_wire_name(self):
         assert pa.ACTING_SUBJECT_CLAIM == 'voc:acting_subject'
 
-    def test_delegated_prefix_matches_mcp_delegate(self):
-        assert pa.DELEGATED_SUBJECT_PREFIX == SYNTHETIC_SUBJECT_PREFIX
+    def test_delegated_prefix_is_the_mcp_namespace(self):
+        assert pa.DELEGATED_SUBJECT_PREFIX == 'mcp:'
 
     def test_access_attributes_are_exactly_what_the_policy_reads(self):
         assert pa.ACCESS_ATTRIBUTES == (

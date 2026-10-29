@@ -4,7 +4,7 @@
  * agent), no create button for non-admins, the load failure, and an admin's
  * Rename / Delete on each row (Delete archives after a confirmation).
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Route, Routes } from 'react-router-dom'
@@ -21,6 +21,7 @@ vi.mock('../../store/authStore', async (importOriginal) => ({
 }))
 
 const { default: Agents } = await import('./Agents')
+const { LIST_POLL_MS } = await import('./useAgents')
 
 const agent = (id: string, name: string, extra: Record<string, unknown> = {}) => ({
   agent_id: id, name, description: '', enabled: false,
@@ -56,6 +57,31 @@ beforeEach(() => {
   adminFlag.isAdmin = true
 })
 
+afterEach(() => { vi.useRealTimers() })
+
+describe('Agents list — a live run', () => {
+  it('the card follows its run from Queued to Running without a reload', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const live = (status: string) => ({ items: [agent('ag_1', 'Scout', { stats: { last_run_status: status } })] })
+    route({ 'GET /agents': () => live('queued') })
+    renderList()
+    expect(await within(rowOf(await screen.findByText('Scout'))).findByText('Queued')).toBeInTheDocument()
+    route({ 'GET /agents': () => live('running') })
+    await vi.advanceTimersByTimeAsync(LIST_POLL_MS + 100)
+    expect(await within(rowOf(screen.getByText('Scout'))).findByText('Running')).toBeInTheDocument()
+  })
+
+  it('a finished run stops the polling', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    route({ 'GET /agents': () => ({ items: [agent('ag_1', 'Scout', { stats: { last_run_status: 'completed' } })] }) })
+    renderList()
+    await screen.findByText('Scout')
+    const calls = fetchApi.mock.calls.filter(([path]) => path === '/agents').length
+    await vi.advanceTimersByTimeAsync(LIST_POLL_MS * 2)
+    expect(fetchApi.mock.calls.filter(([path]) => path === '/agents')).toHaveLength(calls)
+  })
+})
+
 describe('Agents list', () => {
   it('renders each agent with its enabled / disabled badge', async () => {
     route({ 'GET /agents': () => ({ items: [agent('ag_1', 'Scout', { enabled: true }), agent('ag_2', 'Sleeper')] }) })
@@ -73,7 +99,8 @@ describe('Agents list', () => {
       agent('ag_3', 'Described', { description: 'Watches checkout' }),
     ] }) })
     renderList()
-    expect(await screen.findByText('Watches: delivery, app / login')).toBeInTheDocument()
+    // Display labels, never the snake_case ids (here humanised: no category config is served).
+    expect(await screen.findByText('Watches: Delivery, App / Login')).toBeInTheDocument()
     expect(screen.getByText('All categories')).toBeInTheDocument()
     expect(screen.getByText('Watches checkout')).toBeInTheDocument()
   })

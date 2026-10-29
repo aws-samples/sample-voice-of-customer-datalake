@@ -1,5 +1,6 @@
 {
   "card": {
+    "openParticipants": "打开参与者",
     "kicker": "需要批准",
     "details": "详细信息",
     "toolName": "操作：{{name}}",
@@ -41,6 +42,33 @@
     "openRadarSettings": "打开 管理 → 来源 → 雷达"
   },
   "preview": {
+    "participants": {
+      "summaryLabel": "要添加的人员",
+      "list": "名单",
+      "count": "人数",
+      "countValue_one": "{{count, number}} 人",
+      "countValue_other": "{{count, number}} 人",
+      "listNotFound": "未找到此名单，批准后不会添加任何人。",
+      "email": "邮箱",
+      "name": "姓名",
+      "company": "公司",
+      "title": "职位",
+      "tags": "标签",
+      "notSet": "未设置",
+      "tableLabel_one": "要添加的 {{count, number}} 人",
+      "tableLabel_other": "要添加的 {{count, number}} 人",
+      "reviewAllNote": "已列出所有人员；批准前请滚动检查每一行。",
+      "duplicatesNote_one": "{{count, number}} 个重复的邮箱地址已合并为其第一行。",
+      "duplicatesNote_other": "{{count, number}} 个重复的邮箱地址已合并为其第一行。",
+      "reuseNote": "已存在的人保留其已保存的信息；已在名单中的人保持不变。不会发送任何邮件。",
+      "listLabel": "新名单",
+      "listName": "名称",
+      "kind": "类型",
+      "description": "描述",
+      "emptyListNote": "名单创建时为空；接下来请添加人员。",
+      "listLoading": "正在读取列表…",
+      "listReadFailed": "无法读取参与者列表，因此以 ID 显示该列表；批准前请在“参与者”中核对。"
+    },
     "showMore": "显示全部（{{n, number}} 个字符）",
     "showLess": "收起",
     "empty": "（空）",
@@ -131,7 +159,11 @@
       "everyBrand": "所有跟踪的品牌",
       "brand": "品牌",
       "scanFields": "扫描",
-      "scanCost": "在后台运行几分钟并使用网络搜索（最多为 Radar 设置中的查询上限）。"
+      "scanCost": "在后台运行几分钟并使用网络搜索（最多为 Radar 设置中的查询上限）。",
+      "language": "搜索语言：{{language}}",
+      "feed": "新闻源：{{feed}}",
+      "searchTerms": "搜索词：{{list}}",
+      "excludeTerms": "排除词：{{list}}"
     },
     "scraper": {
       "nothingSaved": "在你批准之前不会保存任何内容。",
@@ -296,6 +328,15 @@
     }
   },
   "tools": {
+    "create_participant_list": {
+      "title": "创建参与者名单",
+      "titleWith": "创建参与者名单“{{name}}”"
+    },
+    "add_participants": {
+      "title": "向参与者名单添加人员",
+      "titleWith_one": "向参与者名单添加 {{count, number}} 人",
+      "titleWith_other": "向参与者名单添加 {{count, number}} 人"
+    },
     "save_radar_brands": {
       "title": "保存 Radar 品牌列表",
       "titleWith_one": "保存 Radar 品牌列表（{{count, number}} 个品牌）",

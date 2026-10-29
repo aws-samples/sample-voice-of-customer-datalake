@@ -18,7 +18,6 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from decimal import Decimal
 from typing import Any, Final
 
 from boto3.dynamodb.conditions import Attr, Key
@@ -26,7 +25,9 @@ from boto3.dynamodb.conditions import Attr, Key
 from shared import category_access
 from shared.api import get_raw_categories_config
 from shared.category_access import CategoryScope
+from shared.dynamo_values import as_count
 from shared.indexes import FEEDBACK_BY_DATE_INDEX, FEEDBACK_BY_URGENCY_INDEX
+from shared.metric_keys import CATEGORY_PREFIX
 from shared.pii_redaction import redact_text
 
 WINDOW_DAYS: Final = 7
@@ -36,7 +37,6 @@ MAX_QUOTE_CHARS: Final = 240
 QUOTES_PER_CATEGORY: Final = 3
 #: Reviews read per day when looking for a category's quotes (the filter runs after the read).
 QUOTE_PAGE: Final = 200
-CATEGORY_PREFIX: Final = 'METRIC#daily_category#'
 CATEGORY_SENTIMENT_PREFIX: Final = 'METRIC#category_sentiment#'
 _ITEM_FIELDS: Final = 'feedback_id, category, source_platform, sentiment_label, urgency, #date'
 _QUOTE_FIELDS: Final = ('direct_customer_quote', 'normalized_text', 'original_text')
@@ -77,14 +77,10 @@ def _days(now: datetime, count: int, offset: int = 0) -> list[str]:
     return [(now - timedelta(days=offset + i)).strftime('%Y-%m-%d') for i in reversed(range(count))]
 
 
-def _count(value: object) -> int:
-    return int(value) if isinstance(value, int | Decimal) and not isinstance(value, bool) else 0
-
-
 def _partition(table: Any, pk: str, first: str, last: str) -> dict[str, int]:
     page = table.query(KeyConditionExpression=Key('pk').eq(pk) & Key('sk').between(first, last),
                        FilterExpression=Attr('count').exists())
-    return {str(item['sk']): _count(item.get('count')) for item in page.get('Items', [])}
+    return {str(item['sk']): as_count(item.get('count')) for item in page.get('Items', [])}
 
 
 def visible_category_names(aggregates_table: Any, scope: CategoryScope) -> list[str]:
@@ -224,9 +220,8 @@ def _quote_text(item: Mapping[str, Any]) -> str | None:
     return None
 
 
-def recent_quotes(feedback_table: Any, scope: CategoryScope, category: str, now: datetime,
-                  limit: int = QUOTES_PER_CATEGORY) -> list[dict]:
-    """Up to ``limit`` PII-redacted quotes ``{feedback_id, text}`` from the newest reviews of
+def recent_quotes(feedback_table: Any, scope: CategoryScope, category: str, now: datetime) -> list[dict]:
+    """Up to ``QUOTES_PER_CATEGORY`` PII-redacted quotes ``{feedback_id, text}`` from the newest reviews of
     ``category`` the scope admits (today, then yesterday)."""
     if not category_access.admits(scope, category):
         return []
@@ -240,6 +235,6 @@ def recent_quotes(feedback_table: Any, scope: CategoryScope, category: str, now:
             text = _quote_text(item)
             if text and isinstance(item.get('feedback_id'), str):
                 quotes.append({'feedback_id': item['feedback_id'], 'text': text})
-            if len(quotes) >= limit:
+            if len(quotes) >= QUOTES_PER_CATEGORY:
                 return quotes
     return quotes

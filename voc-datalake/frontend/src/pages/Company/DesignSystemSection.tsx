@@ -5,7 +5,8 @@
  * The prototype and PR/FAQ generators (and the autonomous agents) build with
  * this, so a prototype matches the company's look. Everyone may view it; admins
  * edit (every write is admin-gated server-side). "Use as design system" on a
- * reference loads a merged draft here with a change banner; only Save stores it.
+ * reference loads a merged draft here with a change banner, "Use this logo" puts the
+ * reference's logo into the same draft; only Save stores either.
  *
  * @module pages/Company/DesignSystemSection
  */
@@ -20,7 +21,8 @@ import ApplyBanner from './ApplyBanner'
 import DesignComponentsEditor from './DesignComponentsEditor'
 import DesignTokensEditor from './DesignTokensEditor'
 import { useApplyReference } from './useApplyReference'
-import { LogoUpload, ReferencesPanel } from './DesignReferences'
+import { ReferencesPanel } from './DesignReferences'
+import { LogoUpload } from './LogoUpload'
 import { GroupLabel, MarkdownField, MarkdownView, SectionHeader, ViewOnlyBadge } from './ContextParts'
 import { DraftSaveRow, LoadedSection } from './SectionParts'
 import { useDraft, useDraftGuard } from './useDraft'
@@ -50,8 +52,11 @@ export default function DesignSystemSection({ isAdmin }: Readonly<{ isAdmin: boo
   const applying = useApplyReference({
     saved: editable(data),
     dirty: draft.dirty,
-    load: (value) => draft.update(() => value),
+    // A logo already put into the draft ("Use this logo") stays when a reference's design is loaded.
+    load: (value) => draft.update((current) => ({ ...value, logo: current.logo })),
   })
+  // THE one Discard: the banner's "Discard", the save row's "Discard changes" and the unsaved-changes
+  // guard all drop the whole draft (tokens, components, guidelines AND a drafted logo) and the banner.
   const discard = () => {
     draft.reset()
     applying.clear()
@@ -91,7 +96,7 @@ export default function DesignSystemSection({ isAdmin }: Readonly<{ isAdmin: boo
                   onDiscard={discard}
                 />
               ) : null}
-              <LogoUpload logoUrl={loaded.logo_url} canEdit={isAdmin} />
+              <LogoUpload logoUrl={loaded.logo_url} draftLogo={draft.value.logo} canEdit={isAdmin} />
               <DesignTokensEditor
                 tokens={draft.value.tokens}
                 readOnly={!isAdmin}
@@ -122,6 +127,7 @@ export default function DesignSystemSection({ isAdmin }: Readonly<{ isAdmin: boo
                   save={save}
                   dirty={draft.dirty}
                   onSave={() => save.mutate(draft.value)}
+                  onDiscard={discard}
                   invalid={invalid}
                 />
               ) : null}
@@ -131,7 +137,12 @@ export default function DesignSystemSection({ isAdmin }: Readonly<{ isAdmin: boo
       </div>
       {data ? (
         <div className="card space-y-6">
-          <ReferencesPanel references={data.references} canEdit={isAdmin} hasLogo={Boolean(data.logo_url)} apply={applying.controls} />
+          <ReferencesPanel
+            references={data.references}
+            canEdit={isAdmin}
+            apply={applying.controls}
+            onLogoDrafted={(logo) => draft.update((d) => ({ ...d, logo }))}
+          />
           {isAdmin ? (
             <p className="text-xs text-muted">
               {t('designSystem.integrationsMoved')}{' '}

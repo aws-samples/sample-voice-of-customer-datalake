@@ -175,3 +175,53 @@ def test_the_real_tree_is_a_plausible_scan():
     assert parsed >= cs.DEFAULT_MIN_FILES
     assert not broken
     assert isinstance(groups, list)
+
+
+# ---- --kind function: small whole-function copies that ship together ----------------------------------------
+
+NOW_A = "from datetime import UTC, datetime\n\ndef now_iso():\n    return datetime.now(UTC).isoformat()\n"
+NOW_B = "from datetime import UTC, datetime\n\ndef _now():\n    stamp = datetime.now(UTC)\n    return stamp.isoformat()\n"
+NOW_C = "from datetime import UTC, datetime\n\ndef _stamp():\n    moment = datetime.now(UTC)\n    return moment.isoformat()\n"
+#: Same shape, other globals and literals: two different tables, not one helper.
+TABLE_A = "def _orders():\n    return get_resource().Table(os.environ['ORDERS_TABLE'])\n"
+TABLE_B = "def _jobs():\n    return get_resource().Table(os.environ['JOBS_TABLE'])\n"
+
+
+class _Bundles:
+    """Stand-in for py_bundles.Bundles: lambda/ ships together, the extractor does not."""
+
+    @staticmethod
+    def ships_shared(rel: str) -> bool:
+        return 'product_doc_extractor' not in rel
+
+    @classmethod
+    def home(cls, files):
+        return 'lambda/shared' if all(cls.ships_shared(f) for f in files) else None
+
+
+def test_function_mode_reports_small_copies_that_share_a_home(tmp_path: Path) -> None:
+    for rel, text in {'lambda/a.py': NOW_A, 'lambda/b.py': NOW_B, 'lambda/c.py': NOW_C,
+                      'lambda/product_doc_extractor/handler.py': NOW_B,
+                      'lambda/t1.py': TABLE_A, 'lambda/t2.py': TABLE_B}.items():
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text(text, encoding='utf-8')
+    opts = cs.Options(min_nodes=8, functions_only=True)
+    groups, _, _ = cs.scan(tmp_path, ('lambda',), opts)
+    kept = cs.shared_home_groups(groups, _Bundles(), prefix='')
+    # b and c: locals renamed, free names kept; the extractor's copy has no shared home; a (one expression)
+    # has another shape; the two table getters differ in a literal.
+    assert [[c.path for c in g.copies] for g in kept] == [['lambda/b.py', 'lambda/c.py']]
+
+
+def test_function_mode_defaults_to_its_own_node_floor(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[int] = []
+
+    def fake_scan(_root, _paths, opts):
+        seen.append(opts.min_nodes)
+        raise cs.AuditError('stop')
+
+    monkeypatch.setattr(cs, 'scan', fake_scan)
+    assert cs.main(['--kind', 'function']) == EXIT_ERROR
+    assert cs.main([]) == EXIT_ERROR
+    assert cs.main(['--kind', 'function', '--min-nodes', '20']) == EXIT_ERROR
+    assert seen == [cs.FUNCTION_MIN_NODES, cs.DEFAULT_MIN_NODES, 20]

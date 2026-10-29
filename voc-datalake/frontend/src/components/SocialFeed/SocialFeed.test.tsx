@@ -1,6 +1,7 @@
 /**
  * @fileoverview Tests for SocialFeed component.
  */
+import { feedbackItem } from '../../pages/Categories/categories-fixtures'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { TestRouter } from '../../test/TestRouter'
@@ -130,7 +131,7 @@ describe('SocialFeed', () => {
       
       await waitFor(() => {
         // Once in the source filter tab, once on the feed item — each beside its icon.
-        expect(screen.getAllByText('Webscraper')).toHaveLength(2)
+        expect(screen.getAllByText('Web scraper')).toHaveLength(2)
       })
       expect(container.querySelector('svg.lucide-globe')).not.toBeNull()
       expect(container.textContent).not.toMatch(/\p{Extended_Pictographic}/u)
@@ -194,7 +195,7 @@ describe('SocialFeed', () => {
       await waitFor(() => {
         expect(screen.getByRole('button', { name: /all/i })).toBeInTheDocument()
       })
-      expect(screen.getByRole('button', { name: /webscraper/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /web scraper/i })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: /manual import/i })).toBeInTheDocument()
     })
 
@@ -231,16 +232,26 @@ describe('SocialFeed', () => {
       renderWithQueryClient(<SocialFeed showFilters={true} />)
       
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /webscraper/i })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /web scraper/i })).toBeInTheDocument()
       })
       
-      await user.click(screen.getByRole('button', { name: /webscraper/i }))
+      await user.click(screen.getByRole('button', { name: /web scraper/i }))
       
       await waitFor(() => {
         expect(api.getFeedback).toHaveBeenCalledWith(
           expect.objectContaining({ source: 'webscraper' })
         )
       })
+    })
+  })
+
+  describe('scraped markdown artefacts', () => {
+    it('shows a review stored with markdown escapes as plain text', async () => {
+      vi.mocked(api.getFeedback).mockResolvedValue(feedbackPage([feedbackItem({ feedback_id: 'fb-md', original_text: '**Kind** crew in a hard situation\\.On time next day' })]))
+
+      renderWithQueryClient(<SocialFeed />)
+
+      expect(await screen.findByText('Kind crew in a hard situation. On time next day')).toBeInTheDocument()
     })
   })
 

@@ -20,6 +20,8 @@ export type ModelTestStatus = (typeof MODEL_TEST_STATUSES)[number]
 const QuotaSchema = z.object({
   name: z.string(),
   tokens_per_minute: z.number().nonnegative(),
+  // true: Service Quotas was unreadable (throttled) and this is the last stored reading.
+  stale: z.boolean().optional().catch(undefined),
 })
 
 const LenientQuota = QuotaSchema.nullable().catch(null)

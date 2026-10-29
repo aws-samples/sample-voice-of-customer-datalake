@@ -17,7 +17,9 @@
  *
  * @module api/workflowsApi
  */
+import { del, post, put } from './requestKit'
 import { z } from 'zod'
+import { isRecord } from '../lib/typeGuards'
 import { fetchApi } from './client'
 import { lenientList } from './lenientFields'
 import type { QueryClient } from '@tanstack/react-query'
@@ -247,24 +249,21 @@ const ValidationResultSchema = z.object({
 })
 export type WorkflowValidation = z.output<typeof ValidationResultSchema>
 
-export const isObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value)
-
 /** `{workflow: {...}}` (or a bare view) → view; null when it does not parse. */
 function normalizeWorkflowView(raw: unknown): WorkflowView | null {
-  const body = isObject(raw) && isObject(raw.workflow) ? raw.workflow : raw
+  const body = isRecord(raw) && isRecord(raw.workflow) ? raw.workflow : raw
   const summary = WorkflowSummarySchema.safeParse(body)
-  if (!summary.success || !isObject(body)) return null
+  if (!summary.success || !isRecord(body)) return null
   return { ...summary.data, definition: normalizeDefinition(body.definition) }
 }
 
 function normalizeWorkflowList(raw: unknown): WorkflowSummary[] {
-  const items = isObject(raw) ? raw.items : undefined
+  const items = isRecord(raw) ? raw.items : undefined
   return lenientList(guard(WorkflowSummarySchema)).parse(items)
 }
 
 function normalizeRevisions(raw: unknown): WorkflowRevision[] {
-  const items = isObject(raw) ? raw.revisions : undefined
+  const items = isRecord(raw) ? raw.revisions : undefined
   // The guard keeps the readable rows; the parse keeps only the fields the history reads.
   return lenientList(guard(RevisionSchema)).parse(items).map((item) => RevisionSchema.parse(item))
 }
@@ -295,7 +294,6 @@ export function seedWorkflowDetail(queryClient: QueryClient, view: WorkflowView)
   if (view.definition === null) return
   queryClient.setQueryData(workflowsKeys.detail(view.workflow_id), { workflow: view, revisions: [] })
 }
-const post = (body: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(body) })
 
 function requireView(raw: unknown): WorkflowView {
   const view = normalizeWorkflowView(raw)
@@ -320,10 +318,7 @@ export const workflowsApi = {
 
   /** A new revision; the API answers 409 when `expectedRevision` is stale. */
   save: async (id: string, definition: WorkflowDefinition, expectedRevision: number): Promise<WorkflowView> =>
-    requireView(await fetchApi<unknown>(path(id), {
-      method: 'PUT',
-      body: JSON.stringify({ definition, expected_revision: expectedRevision }),
-    })),
+    requireView(await fetchApi<unknown>(path(id), put({ definition, expected_revision: expectedRevision }))),
 
   /** "Save as": a copy of the CURRENT stored revision, with lineage. */
   duplicate: async (id: string, name?: string): Promise<WorkflowView> =>
@@ -338,7 +333,7 @@ export const workflowsApi = {
    * 409 for the built-in template and while an active agent still runs it.
    */
   archive: async (id: string): Promise<WorkflowSummary> =>
-    requireView(await fetchApi<unknown>(path(id), { method: 'DELETE' })),
+    requireView(await fetchApi<unknown>(path(id), del())),
 
   /** The importable file: the definition plus `exported_from`. */
   exportDefinition: async (id: string): Promise<unknown> => fetchApi<unknown>(path(id, '/export')),

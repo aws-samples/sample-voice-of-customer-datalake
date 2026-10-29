@@ -32,7 +32,14 @@ def test_a_missing_or_blank_title_falls_back_to_the_question(title):
 
 def test_the_default_quotes_only_the_first_50_question_characters():
     assert research_document_title('', 'abcde' * 12, CREATED) == (
-        'Research: ' + 'abcde' * 10 + ' — 2026-10-17 14:05 UTC'
+        'Research: ' + ('abcde' * 10)[:49] + '… — 2026-10-17 14:05 UTC'
+    )
+
+
+def test_the_default_quotes_the_question_up_to_a_whole_word():
+    question = 'Why do customers who lose baggage contact support several times?'
+    assert research_document_title('', question, CREATED) == (
+        'Research: Why do customers who lose baggage contact support… — 2026-10-17 14:05 UTC'
     )
 
 

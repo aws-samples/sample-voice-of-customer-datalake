@@ -16,6 +16,7 @@
     "prioritization": "Priorisierung",
     "problems": "Problemanalyse",
     "project": "Projekt",
+    "board": "Board",
     "projects": "Projekte",
     "scrapers": "Datenquellen",
     "memory": "Gedächtnis",
@@ -27,7 +28,9 @@
     "account": "Konto",
     "workflows": "Workflows",
     "workflow": "Workflow",
-    "radar": "Radar"
+    "radar": "Radar",
+    "featureRequests": "Feedback-Boards",
+    "participants": "Teilnehmende"
   },
   "cancel": "Abbrechen",
   "configureBrand": "Marke konfigurieren",
@@ -85,7 +88,9 @@
     "memory": "Gedächtnis",
     "company": "Unternehmen",
     "admin": "Administration",
-    "connect": "MCP & Skills"
+    "connect": "MCP & Skills",
+    "featureRequests": "Feedback-Boards",
+    "participants": "Teilnehmende"
   },
   "partialCountsHint": "Näherungswert: Der gesamte Zeitraum konnte nicht gelesen werden, die Zahlen sind eine Untergrenze",
   "problemAnalysisPage": {
@@ -112,7 +117,8 @@
     "collapseSidebar": "Seitenleiste ausblenden",
     "expandSidebar": "Seitenleiste einblenden",
     "openMenu": "Menü öffnen",
-    "label": "Hauptseitenleiste"
+    "label": "Hauptseitenleiste",
+    "mainNav": "Hauptmenü"
   },
   "profileMenu": {
     "trigger": "Kontomenü für {{name}}",
@@ -129,6 +135,8 @@
     "48hFull": "48 Stunden",
     "7d": "7T",
     "7dFull": "7 Tage",
+    "14d": "14T",
+    "14dFull": "14 Tage",
     "apply": "Anwenden",
     "cancel": "Abbrechen",
     "clear": "Löschen",
@@ -301,6 +309,7 @@
     "revokedGroup": "Widerrufen ({{count, number}})",
     "revokeBody": "„{{name}}“ funktioniert sofort für keinen Assistenten mehr, der es verwendet. Dies kann nicht rückgängig gemacht werden.",
     "revoke": "Widerrufen",
+    "revokeNamed": "Token „{{name}}“ widerrufen",
     "toggleAudit": "Aktivität von {{name}} anzeigen",
     "status": {
       "active": "Aktiv",
@@ -332,5 +341,46 @@
   "header": {
     "title": "Stimme des Kunden",
     "subtitle": "Einheitliche Plattform für Kundenfeedback-Analysen"
+  },
+  "builtInSources": {
+    "webscraper": "Web-Scraper",
+    "manual_import": "Manueller Import",
+    "s3_import": "S3-Import",
+    "feedback_form": "Feedback-Formular",
+    "prototype_feedback": "Prototyp-Feedback",
+    "github_issues": "GitHub-Issues",
+    "app_reviews_ios": "iOS-App-Bewertungen",
+    "app_reviews_android": "Android-App-Bewertungen",
+    "synthetic_reviews": "Synthetische Bewertungen",
+    "web_reviews": "Web-Bewertungen",
+    "email_intake": "E-Mail-Posteingang"
+  },
+  "feedbackDimension": {
+    "label": "Feedback-Typ",
+    "description": "Welche Art von Feedback eine Bewertung ist: ein Haupttyp, vom Modell für jede Quelle gesetzt."
+  },
+  "feedbackTypes": {
+    "bug": "Fehler",
+    "service_failure": "Serviceausfall",
+    "feature_request": "Funktionswunsch",
+    "usability": "Bedienbarkeit",
+    "performance": "Leistung",
+    "pricing_billing": "Preise und Abrechnung",
+    "support_experience": "Support-Erfahrung",
+    "praise": "Lob",
+    "question": "Frage",
+    "other": "Sonstiges"
+  },
+  "feedbackTypeDescriptions": {
+    "bug": "Etwas ist kaputt oder falsch: ein Fehler, ein Absturz, falsche Daten",
+    "service_failure": "Der Service hat nicht geliefert: ein Ausfall, eine gescheiterte Lieferung oder Zahlung, keine Anmeldung möglich",
+    "feature_request": "Wünscht etwas Neues oder eine Änderung",
+    "usability": "Funktioniert, ist aber verwirrend oder schwer zu bedienen",
+    "performance": "Funktioniert, ist aber langsam (ein Absturz ist ein Fehler)",
+    "pricing_billing": "Preise, Gebühren, Belastungen, Erstattungen, Rechnungen",
+    "support_experience": "Wie der Kundensupport oder das Personal mit dem Kunden umgegangen ist",
+    "praise": "Positives Feedback ohne zu behebendes Problem",
+    "question": "Fragt, wie etwas funktioniert",
+    "other": "Nichts davon"
   }
 }

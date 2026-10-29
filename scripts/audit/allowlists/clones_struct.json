@@ -28,7 +28,7 @@
       "files": [
         "voc-datalake/scripts/**"
       ],
-      "reason": "one-off operator scripts (backfills, retention) each carry their own argparse and stack-output lookup on purpose, so a script runs alone from a checkout (dupes.md section 3)"
+      "reason": "one-off operator scripts (backfills, retention) each carry their own argparse and stack-output lookup on purpose, so a script runs alone from a checkout (the 5.28 duplicate audit kept them separate)"
     },
     {
       "files": [

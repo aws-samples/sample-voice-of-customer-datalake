@@ -5,49 +5,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, useLocation } from 'react-router-dom'
-import { renderWithQueryClient } from '@test/query-client'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 vi.mock('../../store/authStore', () => import('@test/fetchApiRoutes').then((m) => m.authStoreModule()))
 import { adminFlag, fetchApi, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
-import Radar from './Radar'
+import { COMPARE, DETAIL, RELEASES, brand, renderPage, route } from './radar-fixtures'
 
-const brand = (key: string, label: string) => ({ key, label, domains: [`${key}.example`], total: 3, avg_sentiment: 0.2 })
-const DETAIL = {
-  brand: { key: 'acme', label: 'Acme', domains: ['acme.example'] }, total: 3, avg_sentiment: 0.2,
-  trend: [{ date: '2026-10-01', count: 3, avg_sentiment: 0.2 }],
-  love: [{ category: 'ease_of_use', subcategory: 'installation_setup', count: 2, quotes: ['Arrived early'] }],
-  hate: [{ category: 'billing', subcategory: null, count: 1, quotes: [] }],
-}
-const RELEASES = { releases: [{
-  release_id: 'r1', feature: 'Dark mode', release_date: '2026-09-01', summary: 'Shipped dark mode.',
-  urls: ['https://acme.example/news'], titles: ['Dark mode is here'], source_kind: 'official', mentions: 2,
-}] }
-const COMPARE = { ours_available: true, categories: [{
-  category: 'ease_of_use', theirs: { volume: 2, positive_share: 0.8, negative_share: 0.1 },
-  ours: { volume: 9, positive_share: 0.5, negative_share: 0.3 }, verdict: 'they_are_better',
-}] }
-
-function route(brands: unknown[]): void {
+/** One brand, Acme, whose releases are `releases`. */
+function routeReleases(releases: unknown[]): void {
   routeFetchApi({
-    'GET /radar': () => ({ brands, last_scan: null, settings: {} }),
-    'GET /radar/brands/acme': () => DETAIL,
-    'GET /radar/brands/acme/releases': () => RELEASES,
-    'GET /radar/brands/acme/compare': () => COMPARE,
-    'GET /radar/brands/globex': () => ({ ...DETAIL, brand: { key: 'globex', label: 'Globex' }, love: [] }),
-    'GET /radar/brands/globex/releases': () => ({ releases: [] }),
-    'GET /radar/brands/globex/compare': () => ({ categories: [] }),
+    'GET /radar': () => ({ brands: [brand('acme', 'Acme')], last_scan: null, settings: {} }),
+    'GET /radar/brands/acme/page': () => ({ detail: DETAIL, releases: { releases }, compare: COMPARE }),
   }, { ignoreQuery: true })
 }
-
-function Search() {
-  return <output data-testid="search">{useLocation().search}</output>
-}
-
-const renderPage = (entry = '/radar') => renderWithQueryClient(
-  <MemoryRouter initialEntries={[entry]}><Radar /><Search /></MemoryRouter>,
-)
 
 beforeEach(() => {
   resetFetchApi()
@@ -77,6 +47,32 @@ describe('Radar page', () => {
     expect(await screen.findByRole('link', { name: 'Configure' })).toHaveAttribute('href', '/admin?tab=sources&section=radar')
   })
 
+  it('lets an admin start the release and news scan from the Radar page, and says what it does', async () => {
+    route([brand('acme', 'Acme')], { 'POST /radar/scan': () => ({ success: true, status: 'started' }) })
+    renderPage()
+    const scan = await screen.findByRole('button', { name: 'Scan now' })
+    expect(scan).toHaveAccessibleDescription(/each brand's own domains for its releases and news/)
+    expect(screen.getByText('No scan has run yet.')).toBeInTheDocument()
+    await userEvent.setup().click(scan)
+    expect(await screen.findByText(/The scan has started/)).toBeInTheDocument()
+    expect(fetchApi).toHaveBeenCalledWith('/radar/scan', expect.objectContaining({ method: 'POST', body: '{}' }))
+  })
+
+  it('offers no scan to a non-admin', async () => {
+    adminFlag.isAdmin = false
+    route([brand('acme', 'Acme')])
+    renderPage()
+    await screen.findByRole('heading', { name: 'What their customers love' })
+    expect(screen.queryByRole('button', { name: 'Scan now' })).not.toBeInTheDocument()
+  })
+
+  it('offers no scan to an admin before any brand is tracked (the setup guide comes first)', async () => {
+    route([])
+    renderPage()
+    await screen.findByRole('heading', { name: 'No brand on the Radar yet' })
+    expect(screen.queryByRole('button', { name: 'Scan now' })).not.toBeInTheDocument()
+  })
+
   it('shows the first brand: love and hate themes with their counts and quotes', async () => {
     route([brand('acme', 'Acme')])
     renderPage()
@@ -93,6 +89,18 @@ describe('Radar page', () => {
     expect(link).toHaveAttribute('href', 'https://acme.example/news')
     expect(link).toHaveAttribute('rel', 'noopener noreferrer')
     expect(screen.getByText('Official')).toBeInTheDocument()
+  })
+
+  it('labels an undated release with the day it was first found, not as an approximate release day', async () => {
+    routeReleases([
+      { ...RELEASES.releases[0], release_id: 'r2', feature: 'Inbox', release_date: '2026-10-25', date_approximate: true },
+      RELEASES.releases[0],
+    ])
+    renderPage()
+    const undated = (await screen.findByRole('heading', { name: 'Inbox' })).closest('li')
+    expect(undated).toHaveTextContent(/Date not published, first found Oct 25/)
+    const dated = screen.getByRole('heading', { name: 'Dark mode' }).closest('li')
+    expect(dated).not.toHaveTextContent(/Date not published/)
   })
 
   it('compares us with them per category', async () => {
@@ -120,15 +128,10 @@ describe('Radar page', () => {
   })
 
   it('cites each page once, over https, however often the scan found it', async () => {
-    routeFetchApi({
-      'GET /radar': () => ({ brands: [brand('acme', 'Acme')], last_scan: null, settings: {} }),
-      'GET /radar/brands/acme': () => DETAIL,
-      'GET /radar/brands/acme/releases': () => ({ releases: [{
-        ...RELEASES.releases[0],
-        urls: ['http://www.acme.example/news/', 'https://acme.example/news', 'https://press.example/a'], titles: ['Dark mode is here', 'Dup', 'Press'],
-      }] }),
-      'GET /radar/brands/acme/compare': () => COMPARE,
-    }, { ignoreQuery: true })
+    routeReleases([{
+      ...RELEASES.releases[0],
+      urls: ['http://www.acme.example/news/', 'https://acme.example/news', 'https://press.example/a'], titles: ['Dark mode is here', 'Dup', 'Press'],
+    }])
     renderPage()
     const sources = await screen.findByRole('list', { name: 'Sources' })
     const links = within(sources).getAllByRole('link')
@@ -150,14 +153,14 @@ describe('Radar page', () => {
     renderPage()
     await screen.findByRole('link', { name: /Dark mode is here/ })
     await userEvent.setup().selectOptions(screen.getByLabelText('Brand'), 'globex')
-    expect(await screen.findByText(/No release found yet/)).toBeInTheDocument()
-    expect(fetchApi).toHaveBeenCalledWith('/radar/brands/globex?days=90', undefined)
+    expect(await screen.findByText(/No news found yet/)).toBeInTheDocument()
+    expect(fetchApi).toHaveBeenCalledWith('/radar/brands/globex/page?days=90', undefined)
   })
 
   it('preselects the brand named by ?brand= (Home links there)', async () => {
     route([brand('acme', 'Acme'), brand('globex', 'Globex')])
     renderPage('/radar?brand=globex')
-    expect(await screen.findByText(/No release found yet/)).toBeInTheDocument()
+    expect(await screen.findByText(/No news found yet/)).toBeInTheDocument()
     expect(screen.getByLabelText('Brand')).toHaveValue('globex')
   })
 
@@ -176,7 +179,7 @@ describe('Radar page', () => {
     expect(select).toHaveValue('30')
     await userEvent.setup().selectOptions(select, '365')
     expect(screen.getByTestId('search')).toHaveTextContent('?days=365')
-    expect(fetchApi).toHaveBeenCalledWith('/radar/brands/acme?days=365', undefined)
+    expect(fetchApi).toHaveBeenCalledWith('/radar/brands/acme/page?days=365', undefined)
   })
 
   it('falls back to 90 days for a window it does not offer', async () => {

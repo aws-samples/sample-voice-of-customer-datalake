@@ -11,13 +11,11 @@ from botocore.exceptions import ClientError
 
 import projects
 from shared.exceptions import ServiceError
+from shared.test.document_versions_fixtures import client_error
 
 
 def _cancelled(*codes: str) -> ClientError:
-    return ClientError({
-        'Error': {'Code': 'TransactionCanceledException', 'Message': 'cancelled'},
-        'CancellationReasons': [{'Code': code} for code in codes],
-    }, 'TransactWriteItems')
+    return client_error('TransactionCanceledException', *codes)
 
 
 @pytest.fixture

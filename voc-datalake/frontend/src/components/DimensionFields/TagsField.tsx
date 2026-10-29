@@ -16,8 +16,6 @@ interface TagsFieldProps {
   onChange: (tags: string[]) => void
   /** Reports whether the current text can be saved. */
   onValidityChange?: (valid: boolean) => void
-  label?: string
-  disabled?: boolean
 }
 
 type TagProblem = { key: 'invalid' | 'tooMany'; value: string } | null
@@ -30,7 +28,7 @@ function readTags(text: string): { tags: string[]; problem: TagProblem } {
   return { tags, problem: null }
 }
 
-export default function TagsField({ tags, onChange, onValidityChange, label, disabled = false }: Readonly<TagsFieldProps>) {
+export default function TagsField({ tags, onChange, onValidityChange }: Readonly<TagsFieldProps>) {
   const { t } = useTranslation('components', { keyPrefix: 'dimensionFields' })
   const id = useId()
   const hintId = useId()
@@ -46,12 +44,11 @@ export default function TagsField({ tags, onChange, onValidityChange, label, dis
 
   return (
     <div>
-      <label htmlFor={id} className="block text-xs font-medium text-text mb-1">{label ?? t('tagsLabel')}</label>
+      <label htmlFor={id} className="block text-xs font-medium text-text mb-1">{t('tagsLabel')}</label>
       <input
         id={id}
         type="text"
         value={text}
-        disabled={disabled}
         onChange={(event) => update(event.target.value)}
         placeholder={t('tagsPlaceholder')}
         aria-invalid={problem !== null}

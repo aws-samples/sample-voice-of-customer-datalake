@@ -14,6 +14,8 @@ import { api } from '../../../api/client'
 import { useVisibleCategories } from '../../../hooks/useCategories'
 import { FieldChanges } from './FieldChangesPreview'
 import type { SetFeedbackCategoryArgs } from '../schemas'
+import { metricsKeys } from '../../../api/queryKeys'
+import { cleanReviewText } from '../../../utils/cleanReviewText'
 
 /** Characters of the review text shown on the card. */
 const EXCERPT_CHARS = 200
@@ -25,7 +27,7 @@ function excerpt(text: string): string {
 export function FeedbackCategoryPreview({ args }: Readonly<{ args: SetFeedbackCategoryArgs }>) {
   const { t } = useTranslation('assistantTools')
   const { data: feedback, isLoading } = useQuery({
-    queryKey: ['feedback', args.feedback_id],
+    queryKey: metricsKeys.feedback(args.feedback_id),
     queryFn: () => api.getFeedbackById(args.feedback_id),
     retry: false,
   })
@@ -37,7 +39,7 @@ export function FeedbackCategoryPreview({ args }: Readonly<{ args: SetFeedbackCa
   return (
     <div className="space-y-2">
       {feedback !== undefined && feedback.original_text !== '' && (
-        <blockquote className="border-l-2 border-border pl-2 text-sm text-text">{excerpt(feedback.original_text)}</blockquote>
+        <blockquote className="border-l-2 border-border pl-2 text-sm text-text">{excerpt(cleanReviewText(feedback.original_text))}</blockquote>
       )}
       <FieldChanges updates={updates} current={current} isLoading={isLoading} />
       {unknownTarget && <p className="text-[12px] text-warn">{t('preview.unknownCategory', { category: args.category })}</p>}

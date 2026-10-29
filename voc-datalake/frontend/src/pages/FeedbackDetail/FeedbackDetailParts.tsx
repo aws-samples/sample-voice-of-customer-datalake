@@ -16,6 +16,7 @@ import CategoryChangeControl, { ManualCategoryBadge } from '../../components/Cat
 import FeedbackDimensionChips, { PiiPolicyNote } from '../../components/FeedbackDimensions/FeedbackDimensionChips'
 import DimensionsEditControl from '../../components/FeedbackDimensions/DimensionsEditControl'
 import { SourceIcon } from '../../components/SourceIcon/SourceIcon'
+import { useChannelLabel } from '../../hooks/useChannelLabel'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import { humanizeId } from '../../utils/displayLabels'
 
@@ -24,8 +25,6 @@ export const SECTION_LABEL = 'text-sm font-medium text-muted mb-2 sm:mb-3'
 
 interface HeaderProps {
   readonly feedback: FeedbackItem
-  /** The title's element id (the modal's accessible name). */
-  readonly titleId?: string
   /** h1 on the page, h2 inside a dialog. */
   readonly level?: 'h1' | 'h2'
   /** A Radar review's brand: shown with a "Radar review" badge. */
@@ -48,13 +47,14 @@ function sourceTitle(source: string, channel: string | undefined): string {
   return a.includes(b) || b.includes(a) ? source : `${source} ${channel}`
 }
 
-export function FeedbackHeader({ feedback, titleId, level = 'h1', radarBrand }: HeaderProps) {
+export function FeedbackHeader({ feedback, level = 'h1', radarBrand }: HeaderProps) {
   const { t } = useTranslation('feedbackDetail')
   const labels = useDisplayLabels()
+  const channel = useChannelLabel(feedback.source_channel, feedback.source_platform)
   const Heading = level
   // A Radar review is named by its brand ("Example Air review"), never by the stored source id.
   const title = radarBrand === undefined
-    ? sourceTitle(labels.source(feedback.source_platform), labels.channel(feedback.source_channel, feedback.source_platform))
+    ? sourceTitle(labels.source(feedback.source_platform), channel)
     : t('brandReview', { brand: radarBrand })
   return (
     <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
@@ -63,7 +63,7 @@ export function FeedbackHeader({ feedback, titleId, level = 'h1', radarBrand }: 
           <SourceIcon platform={feedback.source_platform} channel={feedback.source_channel} size={20} />
         </span>
         <div className="min-w-0">
-          <Heading id={titleId} className="text-xl sm:text-2xl font-bold tracking-tight text-text-strong break-words">
+          <Heading className="text-xl sm:text-2xl font-bold tracking-tight text-text-strong break-words">
             {title}
           </Heading>
         </div>

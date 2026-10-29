@@ -71,6 +71,22 @@ def brand_totals(table: Any, brand: str, start: date, end: date) -> dict[str, An
     }
 
 
+def counted_totals(table: Any, brand: str, start: date, end: date, scope: CategoryScope, *,
+                   with_trend: bool) -> dict[str, Any]:
+    """``{total, avg_sentiment, sentiment}`` (+ ``trend``) from the distinct reviews the list shows.
+
+    The daily counters count every stored COPY (a file imported twice counted twice), so the
+    header said 12 while "Read all reviews" listed 6. Counted from the list's own walk and the
+    caller's scope instead; only a window too large to walk falls back to the counters.
+    """
+    counts = review_counts(table, brand, start, end, scope)
+    if counts.complete:
+        view = counts.totals()
+        return {**view, 'trend': counts.trend()} if with_trend else view
+    view = brand_totals(table, brand, start, end)
+    return {**view, 'trend': sentiment_trend(table, brand, start, end)} if with_trend else view
+
+
 def _quote(item: Mapping[str, Any]) -> str | None:
     raw = item.get('direct_customer_quote')
     if not isinstance(raw, str) or not raw.strip():

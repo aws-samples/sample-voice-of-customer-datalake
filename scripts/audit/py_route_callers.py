@@ -2,7 +2,7 @@
 # audit-detector: run by scripts/audit/run-all.sh
 """py_route_callers: API routes the Python handlers register that no product code calls.
 
-PATTERN (deadpy.md section 2; the 5.28 clean-up removed 8 such routes): ``@app.<verb>(path)`` in
+PATTERN (the 5.28 clean-up removed 8 such routes): ``@app.<verb>(path)`` in
 ``lambda/api/*_handler.py`` is registered and wired in API Gateway (both CDK route tests pass), but
 nothing in the product calls it: not the SPA (``fetchApi`` and its path builders), not the assistant
 stream (server tools, plan writes, ``READ_POSTS``), not the global MCP tools, the agent runtime, the
@@ -12,6 +12,11 @@ KINDS. ``no-caller``: no product string names the path at all (high confidence).
 only a caller with a wildcard where the route has a fixed word could produce it (``/memory/${id}`` for
 ``/memory/stats``; medium, read the caller). ``method-uncalled``: the path is named, but every caller
 whose method could be read uses another verb (medium: the method is inferred from the text near it).
+``called-no-route`` (the inverse question, high confidence): a request the product makes that no route serves.
+The requests are the probes of ``frontend/mock-coverage.json`` (one per SPA ``fetchApi`` call site) and the stream
+Lambda's internal-API calls; a route is a Powertools decorator (handlers and the routers they mount) or an explicit
+API Gateway method in ``lib/stacks`` (``route_targets.py``). A ``{proxy+}`` passes any path to its Lambda, which
+answers 404, so the call always fails (the Settings -> Sources "Test" button did, from #115 until 5.34).
 
 HOW. Route paths are normalised to segment templates (``<id>``, ``{id}``, ``${id}``, ``:id`` -> ``*``).
 Every string / template literal starting with ``/`` in the caller sources is a candidate (route
@@ -41,9 +46,19 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from audit_common import Finding, detector_main, guard, run_main
+from route_targets import (
+    Request,
+    Served,
+    gateway_methods,
+    python_routes,
+    route_decorator,
+    segments,
+    serves,
+    spa_requests,
+    stream_requests,
+)
 
 TOOL = 'py_route_callers'
-VERBS = ('get', 'post', 'put', 'delete', 'patch')
 CALLER_GLOBS = (
     'frontend/src/**/*.ts', 'frontend/src/**/*.tsx', 'frontend/public/**/*.js', 'frontend/public/**/*.html',
     'lambda/stream/src/**/*.ts', 'lambda/api/static/**/*', 'lambda/**/*.py', 'plugins/**/*.py',
@@ -53,7 +68,6 @@ NON_PRODUCT = re.compile(r'(\.test\.|\.spec\.|/test/|/tests/|/__tests__/|/test_|
                          r'\.stories\.|/layers/|node_modules|__pycache__|\.d\.ts$|/locales/)')
 _LITERAL = re.compile(r"""(?<![A-Za-z0-9_])(?:f?'(/[^'\n]*)'|f?"(/[^"\n]*)"|`(/[^`]*)`|`(\$\{[^}]*\}/[^`]*)`"""
                       r"""|f'(\{[^}']*\}/[^'\n]*)'|f"(\{[^}"]*\}/[^"\n]*)")""")
-_PARAM = re.compile(r'\$\{[^}]*\}|\{[^}]*\}|<[^>]*>|^:\w+$')
 _METHOD_AFTER = re.compile(r"""method:\s*['"](GET|POST|PUT|DELETE|PATCH)['"]|\b(post|put|patch|del|remove)\(""", re.IGNORECASE)
 _FETCH_DIRECT = re.compile(r'\bfetchApi(?:<[^()]*>)?\(\s*$')
 _METHOD_BEFORE = re.compile(r"""['"](GET|POST|PUT|DELETE|PATCH)['"]\s*,\s*f?$""")
@@ -81,22 +95,6 @@ class Caller:
     anchored: bool          # starts at the API root (not an interpolated base or a fragment)
 
 
-def segments(path: str) -> tuple[str, ...]:
-    parts = path.split('?')[0].split('#')[0].strip('/').split('/')
-    return tuple('*' if _PARAM.search(p) or p == '*' else p for p in parts if p)
-
-
-def route_of(deco: ast.expr) -> tuple[str, str] | None:
-    """``@app.<verb>('<literal path>')`` -> (VERB, path)."""
-    if not (isinstance(deco, ast.Call) and isinstance(deco.func, ast.Attribute) and deco.args):
-        return None
-    func, first = deco.func, deco.args[0]
-    if func.attr in VERBS and isinstance(func.value, ast.Name) and func.value.id == 'app' \
-            and isinstance(first, ast.Constant) and isinstance(first.value, str):
-        return func.attr.upper(), first.value
-    return None
-
-
 def routes_in(cdk_dir: Path) -> list[Route]:
     found: list[Route] = []
     for path in sorted((cdk_dir / 'lambda' / 'api').glob('*_handler.py')):
@@ -104,7 +102,7 @@ def routes_in(cdk_dir: Path) -> list[Route]:
         rel = path.relative_to(cdk_dir).as_posix()
         found.extend(Route(*route, rel, deco.lineno, node.name)
                      for node in ast.walk(tree) if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
-                     for deco in node.decorator_list if (route := route_of(deco)))
+                     for deco in node.decorator_list if (route := route_decorator(deco)))
     return found
 
 
@@ -204,12 +202,28 @@ def findings(routes: list[Route], callers: list[Caller]) -> Iterator[Finding]:
                           f'{where}: path named only with {"/".join(methods)} (e.g. {strong[0].file}:{strong[0].line})')
 
 
+def unrouted(requests: list[Request], served: list[Served]) -> Iterator[Finding]:
+    """``called-no-route``: a request no Powertools route and no explicit gateway method answers (one per key)."""
+    seen: set[str] = set()
+    for request in requests:
+        if request.key in seen or any(serves(target, request) for target in served):
+            continue
+        seen.add(request.key)
+        yield Finding('called-no-route', request.key,
+                      f'{request.where}: requests {request.path}, which no route serves (a {{proxy+}} answers 404)')
+
+
 def scan(args: argparse.Namespace) -> tuple[Iterable[Finding], str]:
     routes = routes_in(args.cdk_dir)
     callers, scanned = callers_in(args.cdk_dir)
     guard(len(routes) >= 150, f'only {len(routes)} routes found')
     guard(scanned >= 500 and len(callers) >= 500, f'only {scanned} caller files / {len(callers)} path literals')
-    return findings(routes, callers), f'{len(routes)} routes, {len(callers)} path literals in {scanned} files'
+    served = python_routes(args.cdk_dir) + gateway_methods(args.cdk_dir)
+    requests = spa_requests(args.cdk_dir) + stream_requests(args.cdk_dir)
+    guard(len(served) >= 200 and len(requests) >= 200, f'only {len(served)} served routes / {len(requests)} requests')
+    found = [*findings(routes, callers), *unrouted(requests, served)]
+    return found, (f'{len(routes)} routes, {len(callers)} path literals in {scanned} files; '
+                   f'{len(requests)} requests against {len(served)} served routes')
 
 
 main = detector_main(TOOL, __doc__, scan)

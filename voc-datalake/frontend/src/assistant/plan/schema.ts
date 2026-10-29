@@ -96,7 +96,7 @@ export const PLAN_CONTROL_TOOLS = ['propose_plan', 'cancel_plan'] as const
  */
 export const CARD_ONLY_WRITE_TOOLS = [
   'save_brand_settings', 'create_user', 'create_users', 'update_user', 'set_user_access', 'import_reviews',
-  'save_radar_brands', 'run_radar_scan',
+  'save_radar_brands', 'run_radar_scan', 'create_participant_list', 'add_participants',
 ] as const
 const NOT_A_PLAN_WRITE: ReadonlySet<string> = new Set([...PLAN_CONTROL_TOOLS, ...CARD_ONLY_WRITE_TOOLS])
 

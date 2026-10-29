@@ -15,6 +15,7 @@
  */
 import { z } from 'zod'
 import type { CategoryScope, SourceGrant, UserCategoryGrant } from '../../api/categoryAccessApi'
+import { SOURCE_ID_RE } from '../../api/sourceProfilesApi'
 
 export const SPA_USER_LIMITS = {
   maxEmailLength: 254,
@@ -31,7 +32,6 @@ export const USER_ROLES = ['admins', 'users'] as const
 export type UserRole = (typeof USER_ROLES)[number]
 /** Cognito usernames here are UUIDs; the email alias is accepted too. */
 export const USERNAME_PATTERN = /^[A-Za-z0-9@._+-]{1,128}$/
-export const SOURCE_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,47}$/
 export const CATEGORY_NAME_PATTERN = /^[^\s#]{1,64}$/
 export const ACCESS_WILDCARD = '*'
 
@@ -99,7 +99,7 @@ export const updateUserArgs = z.strictObject({
 export const setUserAccessArgs = z.strictObject({
   username: usernameArg,
   categories: grantList(SPA_USER_LIMITS.maxCategories, CATEGORY_NAME_PATTERN, 'category names').min(1),
-  sources: grantList(SPA_USER_LIMITS.maxSources, SOURCE_ID_PATTERN, 'source ids').nullish(),
+  sources: grantList(SPA_USER_LIMITS.maxSources, SOURCE_ID_RE, 'source ids').nullish(),
 })
 
 export type CreateUserArgs = z.infer<typeof createUserArgs>
@@ -130,7 +130,8 @@ export function roleOf(groups: readonly string[]): UserRole {
   return groups.includes('admins') ? 'admins' : 'users'
 }
 
-const sorted = (values: readonly string[]) => [...values].sort((a, b) => a.localeCompare(b))
+/** A copy of `values` in locale order (fingerprints and the card show groups in one order). */
+export const sortedStrings = (values: readonly string[]) => [...values].sort((a, b) => a.localeCompare(b))
 
 /** Key-sorted JSON of what the user tools show: equal fingerprints = the same stored user. */
 export function userFingerprint(user: UserRecord): string {
@@ -139,7 +140,7 @@ export function userFingerprint(user: UserRecord): string {
     enabled: user.enabled,
     family_name: user.family_name,
     given_name: user.given_name,
-    groups: sorted(user.groups),
+    groups: sortedStrings(user.groups),
     username: user.username,
   })
 }
@@ -148,9 +149,9 @@ export function userFingerprint(user: UserRecord): string {
 export function accessFingerprint(grant: UserCategoryGrant): string {
   return JSON.stringify({
     all: grant.all,
-    categories: sorted(grant.categories),
+    categories: sortedStrings(grant.categories),
     sourceMode: grant.sourceGrant.mode,
-    sources: sorted(grant.sourceGrant.sources),
+    sources: sortedStrings(grant.sourceGrant.sources),
   })
 }
 

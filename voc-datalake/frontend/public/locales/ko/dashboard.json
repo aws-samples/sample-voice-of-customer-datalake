@@ -133,5 +133,8 @@
   },
   "openInCategories": "카테고리에서 {{name}} 열기",
   "seeAllUrgent_one": "긴급 리뷰 {{count, number}}개 모두 보기",
-  "seeAllUrgent_other": "긴급 리뷰 {{count, number}}개 모두 보기"
+  "seeAllUrgent_other": "긴급 리뷰 {{count, number}}개 모두 보기",
+  "partialNote": {
+    "reviewBasis": "리뷰 날짜 기준 집계는 리뷰를 하나씩 읽기 때문에 넓은 기간은 중간에 잘립니다. 전체 합계를 보려면 가져온 날짜로 전환하세요."
+  }
 }

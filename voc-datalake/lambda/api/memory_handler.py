@@ -51,11 +51,13 @@ from shared.exceptions import (
 )
 from shared.logging import logger, tracer
 from shared.memory_categories import category_ids, classify_statement
+from shared.memory_store import IMPORT_PREFIX
 from shared.project_access import Caller
 from shared.project_gate import caller_from_event
 from shared.request_body import json_body_value
 from shared.scope_names import HiddenNames, hidden_names_for
 from shared.snapstart import api_route_warmer, register_snapshot_hooks
+from shared.timestamps import now_iso
 from shared.warm_init import warm_at_init
 
 AGGREGATES_TABLE = os.environ.get('AGGREGATES_TABLE', '')
@@ -71,7 +73,6 @@ MAX_URL_CHARS = 2_000
 DEFAULT_PAGE = 50
 MAX_PAGE = 100
 MAX_REVIEW_ITEMS = 200
-IMPORT_PREFIX = 'memory-imports/'
 _REFUSAL_MESSAGES = {
     'not_text': 'statement must be a string',
     'injection': 'statement reads like an instruction to the assistant and cannot be stored',
@@ -294,7 +295,7 @@ def add_memory():
     candidate = store.Candidate(
         statement=statement, kind=kind, scope=scope, confidence=1.0,
         source_kind=policy.SOURCE_USER_EXPLICIT,
-        source={'type': 'session', 'ref': 'manual', 'at': store.now_iso(now)},
+        source={'type': 'session', 'ref': 'manual', 'at': now_iso(now)},
         supporter=store.supporter_hash(caller.subject),
         owner_sub=caller.subject if scope == policy.SCOPE_PERSONAL else None,
         retention=retention, expires_at=expires_at, categories=_tags(statement, _categories(body.get('categories'))),
@@ -359,7 +360,7 @@ def forget_memory(memory_id: str):
     table = get_memory_table()
     now = _now()
     item = store.set_fields(table, item, {'status': policy.STATUS_ARCHIVED, 'tombstoned': True,
-                                          'archived_reason': 'forgotten', 'archived_at': store.now_iso(now)}, now=now)
+                                          'archived_reason': 'forgotten', 'archived_at': now_iso(now)}, now=now)
     store.append_event(table, memory_id, 'forgotten', actor=store.supporter_hash(caller.subject), now=now)
     return _view(item)
 
@@ -376,7 +377,7 @@ def restore_memory(memory_id: str):
     now = _now()
     item = store.set_fields(table, item, {
         'status': policy.STATUS_ACTIVE, 'tombstoned': False, 'archived_reason': None,
-        'last_reinforced_at': store.now_iso(now), 'gsi1sk': store.now_iso(now),
+        'last_reinforced_at': now_iso(now), 'gsi1sk': now_iso(now),
     }, now=now)
     store.append_event(table, memory_id, 'restored', actor=store.supporter_hash(caller.subject), now=now)
     return _view(item)
@@ -527,14 +528,14 @@ def create_import():
     get_s3_client().put_object(
         Bucket=RAW_DATA_BUCKET, Key=s3_key, ContentType='application/json',
         Body=json.dumps({'import_id': import_id, 'title': title, 'url': url, 'content': content,
-                         'created_at': store.now_iso(now)}, ensure_ascii=False).encode('utf-8'),
+                         'created_at': now_iso(now)}, ensure_ascii=False).encode('utf-8'),
     )
     record = {
         **store.import_key(import_id), 'import_id': import_id, 'title': title, 'status': 'queued',
         's3_key': s3_key, 'content_chars': len(content), 'chunks_total': len(policy.chunk_text(content)),
         'chunks_done': 0, 'created': 0, 'reinforced': 0, 'proposed': 0, 'conflicts': 0, 'dropped': 0,
         'created_by_hash': store.supporter_hash(caller.subject),
-        'created_at': store.now_iso(now), 'updated_at': store.now_iso(now),
+        'created_at': now_iso(now), 'updated_at': now_iso(now),
     }
     if caller.username:
         record['created_by_username'] = caller.username

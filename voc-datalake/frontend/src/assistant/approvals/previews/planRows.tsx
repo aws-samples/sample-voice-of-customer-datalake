@@ -7,20 +7,18 @@
  *
  * @module assistant/approvals/previews/planRows
  */
+import { isRecord } from '../../../lib/typeGuards'
 import { FREE_PLACEHOLDER, REFERENCE_RE } from '../../plan/schema'
 import { LiteralValue, PlaceholderValue } from './PlanValues'
 import type { FieldRow } from './FieldDiff'
 
 type Translate = (key: string, options?: Record<string, unknown>) => string
 
-const isPlainObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value)
-
 /** `[path, value]` for every leaf; objects flatten to dotted paths, arrays stay one leaf. */
 function leaves(value: Record<string, unknown>, prefix = ''): [string, unknown][] {
   return Object.entries(value).flatMap(([key, member]): [string, unknown][] => {
     const path = prefix === '' ? key : `${prefix}.${key}`
-    return isPlainObject(member) ? leaves(member, path) : [[path, member]]
+    return isRecord(member) ? leaves(member, path) : [[path, member]]
   })
 }
 

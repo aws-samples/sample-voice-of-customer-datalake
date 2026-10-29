@@ -80,6 +80,7 @@ def browser_session(
         signing_credentials = credentials if credentials is not None else boto3.Session().get_credentials()
         headers = signed_handshake_headers(stream_url, region, signing_credentials)
         connection = CdpConnection(opener(stream_url, headers, CONNECT_TIMEOUT_SECONDS))
+        connection.browser_session_id = session_id
         yield connection
     finally:
         if connection is not None:

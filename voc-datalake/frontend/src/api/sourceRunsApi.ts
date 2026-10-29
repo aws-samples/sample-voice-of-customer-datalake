@@ -8,6 +8,7 @@
  *
  * @module api/sourceRunsApi
  */
+import { post } from './requestKit'
 import { z } from 'zod'
 import { fetchApi } from './client'
 
@@ -17,6 +18,6 @@ const StartedSchema = z.object({
 })
 
 export async function startSourceRun(source: string): Promise<{ source: string; execution_id: string }> {
-  const raw = await fetchApi<unknown>(`/sources/${encodeURIComponent(source)}/run`, { method: 'POST' })
+  const raw = await fetchApi<unknown>(`/sources/${encodeURIComponent(source)}/run`, post())
   return StartedSchema.parse(raw ?? {})
 }

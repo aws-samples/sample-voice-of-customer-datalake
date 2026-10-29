@@ -1,5 +1,6 @@
 {
   "card": {
+    "openParticipants": "Otwórz Uczestników",
     "resolved": {
       "executed": "Gotowe",
       "failed": "Niepowodzenie",
@@ -41,6 +42,39 @@
     "openRadarSettings": "Otwórz Administracja → Źródła → Radar"
   },
   "preview": {
+    "participants": {
+      "summaryLabel": "Osoby do dodania",
+      "list": "Lista",
+      "count": "Osoby",
+      "countValue_one": "{{count, number}} osoba",
+      "countValue_few": "{{count, number}} osoby",
+      "countValue_many": "{{count, number}} osób",
+      "countValue_other": "{{count, number}} osoby",
+      "listNotFound": "Nie znaleziono tej listy, więc zatwierdzenie nikogo nie doda.",
+      "email": "E-mail",
+      "name": "Imię i nazwisko",
+      "company": "Firma",
+      "title": "Stanowisko",
+      "tags": "Tagi",
+      "notSet": "Nie ustawiono",
+      "tableLabel_one": "{{count, number}} osoba do dodania",
+      "tableLabel_few": "{{count, number}} osoby do dodania",
+      "tableLabel_many": "{{count, number}} osób do dodania",
+      "tableLabel_other": "{{count, number}} osoby do dodania",
+      "reviewAllNote": "Wszystkie osoby są na liście; przewiń i sprawdź każdy wiersz przed zatwierdzeniem.",
+      "duplicatesNote_one": "{{count, number}} powtórzony adres e-mail scalono do pierwszego wiersza.",
+      "duplicatesNote_few": "{{count, number}} powtórzone adresy e-mail scalono do pierwszego wiersza.",
+      "duplicatesNote_many": "{{count, number}} powtórzonych adresów e-mail scalono do pierwszego wiersza.",
+      "duplicatesNote_other": "{{count, number}} powtórzone adresy e-mail scalono do pierwszego wiersza.",
+      "reuseNote": "Znane już osoby zachowują zapisane dane; osoby, które są już na liście, pozostają bez zmian. Nie jest wysyłany żaden e-mail.",
+      "listLabel": "Nowa lista",
+      "listName": "Nazwa",
+      "kind": "Rodzaj",
+      "description": "Opis",
+      "emptyListNote": "Lista na początku jest pusta; potem dodaj do niej osoby.",
+      "listLoading": "Odczytywanie listy…",
+      "listReadFailed": "Nie udało się odczytać list uczestników, więc lista jest pokazana po identyfikatorze; sprawdź ją w Uczestnikach przed zatwierdzeniem."
+    },
     "diff": {
       "label": "Zmiany w dokumencie",
       "stats": "Dodano wierszy: {{added, number}}, usunięto wierszy: {{removed, number}}",
@@ -116,7 +150,11 @@
       "everyBrand": "Każda śledzona marka",
       "brand": "Marka",
       "scanFields": "Skanowanie",
-      "scanCost": "Działa w tle przez kilka minut i korzysta z wyszukiwania w sieci (maksymalnie do limitu zapytań w ustawieniach Radar)."
+      "scanCost": "Działa w tle przez kilka minut i korzysta z wyszukiwania w sieci (maksymalnie do limitu zapytań w ustawieniach Radar).",
+      "language": "Język wyszukiwania: {{language}}",
+      "feed": "Kanał aktualności: {{feed}}",
+      "searchTerms": "Wyszukiwane frazy: {{list}}",
+      "excludeTerms": "Wykluczone frazy: {{list}}"
     },
     "scraper": {
       "scheduleOff": "Wyłączony",
@@ -306,6 +344,17 @@
     "run": "Uruchomienie"
   },
   "tools": {
+    "create_participant_list": {
+      "title": "Utwórz listę uczestników",
+      "titleWith": "Utwórz listę uczestników {{name}}"
+    },
+    "add_participants": {
+      "title": "Dodaj osoby do listy uczestników",
+      "titleWith_one": "Dodaj {{count, number}} osobę do listy uczestników",
+      "titleWith_few": "Dodaj {{count, number}} osoby do listy uczestników",
+      "titleWith_many": "Dodaj {{count, number}} osób do listy uczestników",
+      "titleWith_other": "Dodaj {{count, number}} osoby do listy uczestników"
+    },
     "save_radar_brands": {
       "title": "Zapisz listę marek Radar",
       "titleWith_one": "Zapisz listę marek Radar ({{count, number}} marka)",

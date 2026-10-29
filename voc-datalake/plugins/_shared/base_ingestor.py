@@ -9,7 +9,6 @@ import os
 import sys
 from abc import ABC, abstractmethod
 from collections.abc import Generator
-from datetime import UTC, datetime
 
 from botocore.exceptions import BotoCoreError, ClientError
 
@@ -25,6 +24,7 @@ from shared.aws import (
 )
 from shared.exceptions import ConfigurationError, SecretUnreadableError
 from shared.logging import logger, metrics, tracer
+from shared.timestamps import now_iso
 
 from .audit import emit_audit_event
 from .circuit_breaker import CircuitBreaker
@@ -171,7 +171,7 @@ class BaseIngestor(ABC):
             self._update_source_run_status({
                 'status': 'error',
                 'items_found': 0,
-                'completed_at': datetime.now(UTC).isoformat(),
+                'completed_at': now_iso(),
                 'errors': [type(error).__name__],
             })
         except Exception as reporting_error:  # noqa: BLE001
@@ -242,7 +242,7 @@ class BaseIngestor(ABC):
                 Item={
                     "source": f"{self.source_platform}#{key}",
                     "value": value,
-                    "updated_at": datetime.now(UTC).isoformat(),
+                    "updated_at": now_iso(),
                 }
             )
         except (BotoCoreError, ClientError) as e:
@@ -332,7 +332,7 @@ class BaseIngestor(ABC):
         self._update_source_run_status({
             'status': 'running',
             'items_found': 0,
-            'started_at': datetime.now(UTC).isoformat(),
+            'started_at': now_iso(),
         })
 
         items = []
@@ -369,7 +369,7 @@ class BaseIngestor(ABC):
             self._update_source_run_status({
                 'status': 'completed',
                 'items_found': total_processed,
-                'completed_at': datetime.now(UTC).isoformat(),
+                'completed_at': now_iso(),
             })
 
             emit_audit_event("plugin.completed", self.source_platform, True, {
@@ -388,7 +388,7 @@ class BaseIngestor(ABC):
             self._update_source_run_status({
                 'status': 'error',
                 'items_found': total_processed,
-                'completed_at': datetime.now(UTC).isoformat(),
+                'completed_at': now_iso(),
                 'errors': [type(e).__name__],
             })
 

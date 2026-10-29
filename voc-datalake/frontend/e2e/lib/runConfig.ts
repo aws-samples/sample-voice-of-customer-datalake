@@ -6,8 +6,11 @@
 import path from 'node:path'
 import type { PlaywrightTestConfig } from '@playwright/test'
 import { OUT_DIR } from './env'
+import { browserUserAgent, pinRunTag } from './trafficTag'
 
 export function sharedConfig(options: { timeout: number; use: PlaywrightTestConfig['use'] }): PlaywrightTestConfig {
+  // One test traffic tag for the run (lib/trafficTag.ts): pinned here, inherited by every worker.
+  pinRunTag()
   return {
     testDir: './tests',
     fullyParallel: false,
@@ -17,6 +20,7 @@ export function sharedConfig(options: { timeout: number; use: PlaywrightTestConf
     expect: { timeout: 15_000 },
     outputDir: path.join(OUT_DIR, 'artifacts'),
     reporter: [['list'], ['json', { outputFile: path.join(OUT_DIR, 'playwright-results.json') }]],
-    use: { browserName: 'chromium', headless: true, navigationTimeout: 45_000, ...options.use },
+    // Every browser context sends Desktop Chrome's User-Agent + `voc-e2e/<run tag>`.
+    use: { browserName: 'chromium', headless: true, navigationTimeout: 45_000, userAgent: browserUserAgent(), ...options.use },
   }
 }

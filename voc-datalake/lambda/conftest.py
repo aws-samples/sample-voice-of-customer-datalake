@@ -11,9 +11,19 @@ from unittest.mock import patch
 
 import pytest
 
-# Remove any layers directories from sys.path to avoid importing
-# incomplete packages (missing compiled extensions like pydantic_core)
-sys.path = [p for p in sys.path if 'lambda/layers' not in p and 'layers/' not in p]
+# Remove the repo's layer build output (lambda/layers/*/python, from scripts/build-layers.sh) from sys.path:
+# it holds Linux/arm64 builds (pydantic_core etc.) that would shadow the venv. Only paths INSIDE this repo's
+# lambda/layers directory: a substring test also dropped the venv's site-packages whenever the checkout path
+# itself contained "layers/" (e.g. a worktree named "k1-layers").
+_LAYERS_DIR = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'layers'))
+
+
+def without_layer_builds(paths: list[str], layers_dir: str) -> list[str]:
+    """``paths`` minus the entries inside ``layers_dir`` (by real path, never by substring)."""
+    return [p for p in paths if os.path.commonpath([os.path.realpath(p or '.'), layers_dir]) != layers_dir]
+
+
+sys.path = without_layer_builds(sys.path, _LAYERS_DIR)
 
 # Set environment variables BEFORE any module imports
 # These are the common environment variables needed by all handlers

@@ -49,7 +49,9 @@
     "noFiles": "Nenhum arquivo encontrado",
     "view": "Visualizar",
     "path": "Caminho da pasta",
-    "noFilesHint": "Esta pasta está vazia. Crie um arquivo aqui ou ingira dados em Fontes de dados."
+    "noFilesHint": "Esta pasta está vazia. Crie um arquivo aqui ou ingira dados em Fontes de dados.",
+    "personaFolder": "Persona {{n, number}} · {{date}}",
+    "personaFolderDated": "Persona · {{date}}"
   },
   "tabs": {
     "categories": "Categorias",

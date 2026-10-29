@@ -43,7 +43,7 @@ from boto3.dynamodb.conditions import Key
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import agents_store
-from shared.agents_store import AGENTS_INDEX, iso, parse_iso
+from shared.agents_store import AGENTS_INDEX, META_SK, iso
 from shared.aws import is_conditional_check_failure
 from shared.dynamo_paging import iter_query
 from shared.dynamo_values import plain
@@ -51,8 +51,8 @@ from shared.exceptions import ServiceError
 from shared.logging import logger
 from shared.plan_canonical import canonical_json
 from shared.plan_schema import PLAN_LIMITS, PLAN_STATUSES, PLAN_STEP_STATUSES
+from shared.timestamps import parse_iso
 
-META_SK: Final = 'META'
 STEP_SK_PREFIX: Final = 'STEP#'
 EVENT_SK_PREFIX: Final = 'EVT#'
 CALLER_INDEX_PREFIX: Final = 'PLANS#'

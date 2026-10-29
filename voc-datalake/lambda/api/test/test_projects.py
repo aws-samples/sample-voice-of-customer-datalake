@@ -204,7 +204,7 @@ class TestDocumentVersionBoundaries:
         mock_table.meta.client.transact_write_items.assert_not_called()
 
     @pytest.mark.parametrize('document_type', [
-        'prd', 'prfaq', 'prototype', 'research', 'product_report', 'PRD', 'custom ',
+        'prototype', 'research', 'product_report', 'PRD', 'PRFAQ', 'custom ',
     ])
     @patch('projects.projects_table')
     def test_custom_document_route_refuses_every_non_custom_type_with_workflow_guidance(

@@ -17,5 +17,10 @@ class AndroidAppConfig:
     # get a tiny English subset. Empty/None = use the ingestor's country sweep.
     lang: str = ""
     country: str = ""
+    # The app connector's own schedule in minutes (0 = manual only); None = the
+    # plugin's top-level frequency_minutes.
+    frequency_minutes: int | None = None
+    # The app connector's own sort order; "" = the plugin's top-level sort_by.
+    sort_by: str = ""
     # The Radar brand key its reviews go to (docs/radar.md); empty for one of our own apps.
     radar_brand: str = ""

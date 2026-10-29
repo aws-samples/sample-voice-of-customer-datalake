@@ -35,7 +35,7 @@ python -m pytest --cov=lambda    # With coverage report
 | Location | Type | Environment |
 |----------|------|-------------|
 | `lambda/api/test/` | API Lambda unit tests | Python/pytest |
-| `lambda/ingestors/test/` | Ingestor unit tests | Python/pytest |
+| `plugins/*/ingestor/test_*.py`, `plugins/_shared/test/` | Plugin ingestor and shared plugin tests | Python/pytest |
 | `lambda/processor/test/` | Processor unit tests | Python/pytest |
 | `lambda/shared/test/` | Shared utilities tests | Python/pytest |
 | `frontend/src/components/*.test.tsx` | Component unit tests | node |
@@ -499,18 +499,8 @@ global.IntersectionObserver = vi.fn().mockImplementation(() => ({
 }))
 ```
 
-Create `frontend/src/test/setup-component.ts`:
-
-```typescript
-import './setup'
-import { cleanup } from '@testing-library/react'
-import { afterEach } from 'vitest'
-
-// Cleanup after each test
-afterEach(() => {
-  cleanup()
-})
-```
+`setup.ts` is vitest's only `setupFiles` entry; it also runs React Testing Library's `cleanup()` after each test
+(`afterEach`), so component tests need no setup file of their own.
 
 Create `frontend/src/test/test-utils.tsx`:
 
@@ -1135,6 +1125,42 @@ describe('API Client', () => {
 - [ ] User interactions: Clicks, form inputs, navigation
 - [ ] Edge cases: Empty data, missing optional props
 
+
+---
+
+## Production E2E Traffic and Log Sweeps
+
+Every request the production e2e suite (`voc-datalake/frontend/e2e`) sends is tagged, so a log or error sweep can
+tell test traffic from real users. A sharded run makes about 1,000 deliberate 4xx calls (negative auth tests,
+fake-id sweeps, GET-after-DELETE proofs); without the tag they drown real errors. CloudWatch cannot delete single
+log events, so never try to "clean" logs: filter by the tag.
+
+- **The tag:** User-Agent token `voc-e2e/<run tag>` (`frontend/e2e/lib/trafficTag.ts`). Browser contexts get it
+  through `use.userAgent`; every Node-side call MUST go through `e2eFetch` (a bare `fetch(` in `e2e/lib` or
+  `e2e/tests` fails `unit/trafficTag.spec.ts`). A User-Agent needs no CORS change; do not add a custom request header.
+  `run-sharded.sh` sets one `E2E_TAG_RUN_ID` for all shards.
+- **Where it shows:** the API Gateway access log has `userAgent` (plus `path`, `integrationStatus`,
+  `errorMessage`; `lib/stacks/api-access-log.ts`), and every log line of a tagged API Lambda invocation has
+  `test_run` (`lambda/shared/e2e_tag.py`, applied by `api_handler`). The TypeScript `voc-chat-stream` Lambda has no
+  `test_run`: filter its requests by the access log's `userAgent`.
+- **Sweep queries (Logs Insights):**
+
+```
+# API access log: real traffic only / one run only
+filter isblank(userAgent) or userAgent not like /voc-e2e\//
+filter userAgent like /voc-e2e\/<run tag>/
+# API Lambda logs
+filter ispresent(test_run) = 0
+```
+
+- **Hand-made probes** against production (curl, scratch scripts) should send the token too
+  (`curl -A "node voc-e2e/<label>"`), so they are excluded like the suite.
+- **A new API Lambda entry point** that does not use `api_handler` must apply `with_test_run_tag(logger)`
+  outermost, or its lines cannot be filtered.
+- Anyone can send the token, so it hides traffic only from the DEFAULT sweep; when investigating abuse, include it
+  (`filter userAgent like /voc-e2e\//` shows every tagged request by IP).
+
+Details: `voc-datalake/frontend/e2e/README.md` → "Test traffic tag".
 
 ---
 

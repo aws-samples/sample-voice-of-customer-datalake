@@ -65,7 +65,7 @@ import type {
  * and "High Priority" instead, from the data as sent.
  *
  * The same line the backend draws on the way IN, for the same stated reason:
- * `_is_clampable_number` is "CLAMP A NUMBER, REFUSE A NON-NUMBER", because `99` and
+ * `shared.row_ids.is_clampable_number` is "CLAMP A NUMBER, REFUSE A NON-NUMBER", because `99` and
  * `-4` plainly mean a value the slider range can hold while `'high'` has none to
  * bound — so a 0 substituted there is INVENTED and, once stored, "indistinguishable
  * from a deliberate lowest score". That is this defect exactly, on the read side.

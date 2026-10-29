@@ -12,7 +12,8 @@
 import { useContext } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ShownContext, currentJobEnvironment } from '../shown'
-import { isRecord } from './format'
+import { isRecord } from '../../../lib/typeGuards'
+import { languageName } from '../../../utils/languageName'
 import { useProjectDetail } from './useProjectDetail'
 import { KeyValueList } from './ValueView'
 
@@ -28,14 +29,6 @@ function displayValue(key: string, value: unknown, names: ReadonlyMap<string, st
   if (ID_LIST_FIELDS.has(key)) return stringList(value).map((id) => names.get(id) ?? id)
   if (ID_FIELDS.has(key) && typeof value === 'string') return names.get(value) ?? value
   return value
-}
-
-function languageName(code: string, displayIn: string): string {
-  try {
-    return new Intl.DisplayNames([displayIn], { type: 'language' }).of(code) ?? code
-  } catch {
-    return code
-  }
 }
 
 export function JobPreview({ args }: Readonly<{ args: unknown }>) {

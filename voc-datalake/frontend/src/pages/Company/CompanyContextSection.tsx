@@ -73,7 +73,8 @@ export default function CompanyContextSection({ isAdmin }: Readonly<{ isAdmin: b
             )}
             <UpdatedMeta context={data} />
             {isAdmin ? (
-              <DraftSaveRow save={save} dirty={draft.dirty} onSave={() => save.mutate(context)} invalid={tooLong} />
+              <DraftSaveRow save={save} dirty={draft.dirty} onSave={() => save.mutate(context)} invalid={tooLong}
+                onDiscard={() => { draft.reset(); setEditing(false) }} />
             ) : null}
           </>
         ))}

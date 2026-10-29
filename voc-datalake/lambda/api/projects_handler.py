@@ -11,7 +11,6 @@ import re
 import secrets
 import time
 from collections.abc import Callable, Iterable
-from datetime import UTC, datetime
 from typing import Any
 
 import boto3
@@ -19,7 +18,6 @@ from aws_lambda_powertools.event_handler import Response, content_types
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
-import product_context
 import projects
 from product_context import (
     # Imported rather than re-declared: the `sk` prefix a product doc is written
@@ -43,9 +41,6 @@ from product_context import (
 )
 from product_context import (
     get_context as pc_get_context,
-)
-from product_context import (
-    interview_message as pc_interview_message,
 )
 from product_context import (
     list_docs as pc_list_docs,
@@ -78,6 +73,7 @@ from projects import (
     run_research,
     search_member_candidates,
     set_project_visibility,
+    stored_document_type,
     transfer_project_owner,
     update_document,
     update_persona,
@@ -85,10 +81,14 @@ from projects import (
     update_project_member,
 )
 from shared import (
+    ai_writing,
     assist_jobs,
     category_access,
     category_gate,
     decision_records,
+    document_review,
+    document_review_routes,
+    document_series,
     draft_intent,
     project_access,
     project_gate,
@@ -110,7 +110,7 @@ from shared.api import (
 )
 from shared.aws import get_dynamodb_resource, invoke_lambda_async, is_conditional_check_failure
 from shared.data_version import bump_config_version
-from shared.document_versions import split_versioned_title
+from shared.document_versions import MERGE_OUTPUT_TYPES, MERGE_VERSIONED_DOCUMENT_TYPES, split_versioned_title
 from shared.exceptions import (
     ApiError,
     AuthorizationError,
@@ -123,12 +123,22 @@ from shared.exceptions import (
 from shared.jobs import create_job
 from shared.logging import logger, tracer
 from shared.persona_import import validate_import_config
+from shared.prioritization_keys import (
+    BALLOT_SK_PREFIX,
+    BALLOT_TRANSACT_ROW_INDEX,
+    PRIORITIZATION_PK,
+    ROW_BALLOT_WRITES_FIELD,
+    ROW_FROZEN_AT_FIELD,
+    ROW_SK_PREFIX,
+)
 from shared.prioritization_row_batch import batch_project_ids, ensure_rows_batch
 from shared.project_access import Caller, ProjectAccess
 from shared.project_writes import PROJECT_DELETION_ATTRIBUTE, is_project_tombstone, is_verification_fixture
 from shared.request_body import json_body_value, json_object_body
 from shared.row_ids import MAX_KEY_SEGMENT_ID_LEN, is_clampable_number, validated_row_id
 from shared.tables import get_aggregates_table, get_jobs_table, get_projects_table
+from shared.timestamps import now_iso
+from shared.voting_session_close import close_project_sessions, close_row_sessions
 from shared.warm_init import warm_at_init
 
 # API resolver with standard CORS
@@ -145,8 +155,8 @@ app = create_api_resolver()
 # in this file to pin that each one is classified. Levels come from
 # `project_access.required_level`; the decision from `resolve_access`.
 
-_CALLER_CONTEXT_KEY = 'project_caller'
-_ACCESS_CONTEXT_KEY = 'project_access'
+_CALLER_CONTEXT_KEY = document_review_routes.CALLER_CONTEXT_KEY
+_ACCESS_CONTEXT_KEY = document_review_routes.ACCESS_CONTEXT_KEY
 
 
 def _caller_from_event(event: dict) -> Caller:
@@ -215,6 +225,36 @@ def _request_caller() -> Caller:
         # Unreachable: the middleware sets it for every routed request.
         raise AuthorizationError('Caller identity could not be determined')
     return caller
+
+
+def _require_ai_writing(project_id: str, doc_type: object) -> None:
+    """403 with a coaching message unless the AI may write ``doc_type`` here (shared/ai_writing.py).
+
+    Only prfaq / prd are gated. An autonomous call (agent, plan step, MCP token) writes for
+    the person it acts as AND for the project's owner when that is someone else (an agent
+    hands its project to a category owner): both must work AI-driven.
+    """
+    if not ai_writing.is_gated(doc_type):
+        return
+    kind = ai_writing.writing_kind(app.current_event.raw_event)
+    subject = _request_caller().subject
+    table = get_aggregates_table()
+    ai_writing.require_ai_writing(table, subject, doc_type, kind)
+    if kind == ai_writing.KIND_AUTONOMOUS:
+        owner = (_gate_meta(project_id) or {}).get('owner_sub')
+        if isinstance(owner, str) and owner and owner != subject and not project_access.is_synthetic_subject(owner):
+            ai_writing.require_ai_writing(table, owner, doc_type, kind)
+
+
+def _require_autonomous_edit_allowed(project_id: str, document_id: str) -> None:
+    """An agent, plan step or MCP token editing a PR/FAQ / PRD is AI writing for its person.
+
+    A person's own PUT (the editor, or an assistant card they approved) is their text and
+    stays allowed in every mode, so the document is read only for an autonomous caller.
+    """
+    if ai_writing.writing_kind(app.current_event.raw_event) != ai_writing.KIND_AUTONOMOUS:
+        return
+    _require_ai_writing(project_id, stored_document_type(project_id, document_id))
 
 
 def _request_access() -> ProjectAccess:
@@ -462,7 +502,11 @@ def api_update_project(project_id: str):
 @app.delete("/projects/<project_id>")
 @tracer.capture_method
 def api_delete_project(project_id: str):
-    return delete_project(project_id)
+    result = delete_project(project_id)
+    # Its rows stay in the prioritization partition; their open room votes must not
+    # (best effort, `shared.voting_session_close`; the ballot routes also refuse them).
+    close_project_sessions(get_aggregates_table(), project_id)
+    return result
 
 
 # ============================================
@@ -605,6 +649,10 @@ def api_generate_personas(project_id: str):
         'generate_avatars': validate_bool(
             body.get('generate_avatars'), default=True, field='generate_avatars'
         ),
+        # Append instead of replace (autonomous agents send it); validated like the avatar flag.
+        'keep_existing_personas': validate_bool(
+            body.get('keep_existing_personas'), default=False, field='keep_existing_personas'
+        ),
         category_access.SCOPE_CONFIG_KEY: _caller_category_scope(),
     }
     # 400 before any job row or invoke when nothing matches (F1): the job
@@ -704,9 +752,9 @@ DEFAULT_GENERATED_DOC_TYPE = 'prd'
 #
 # THE PICKER is the other, and it is benign by comparison — dead capability rather than
 # wrong content, but still an edit the widening needs.
-# `frontend/src/pages/ProjectDetail/Wizards.tsx` names its members as LITERALS:
+# `frontend/src/pages/ProjectDetail/DocWizard.tsx` names its members as LITERALS:
 # `hasPrfaq`/`hasPrd`, the two `toggleDocType('...')` buttons in `renderFinalStep`, the
-# `bothSelected`/`singleTitle`/`singleSubmitLabel` copy, and `onSuggestBrief`'s
+# `bothSelected`/`singleTitle`/`singleSubmitLabel` copy, and `useDocWizardDrafts`' brief's
 # `doc_type` ternary — all written as a PRD-or-PR-FAQ binary, so a third member selected
 # alone falls into the PR-FAQ branch: labelled as one by the copy, and drafted as one by
 # `suggest-brief`. `tsc` accepts a narrower argument to `includes`/`filter`, so the
@@ -747,8 +795,6 @@ DEFAULT_GENERATED_DOC_TYPE = 'prd'
 # prompt rather than writing an unrecognised sort key — a different blast radius,
 # and a separate change if it is wanted.
 GENERATED_DOC_TYPES = ('prd', 'prfaq')
-MERGE_OUTPUT_TYPES = ('prd', 'prfaq', 'custom')
-MANAGED_MERGE_OUTPUT_TYPES = frozenset({'prd', 'prfaq'})
 
 
 def _validated_doc_type(raw: Any) -> str:
@@ -805,6 +851,7 @@ def api_generate_document(project_id: str):
     # Validated BEFORE create_job, so a rejected request leaves no job row
     # describing work nobody will do, and bills no Bedrock call.
     doc_type = _validated_doc_type(body.get('doc_type'))
+    _require_ai_writing(project_id, doc_type)
     title, _ = split_versioned_title(body.get('title', 'Untitled'))
     # A COPY, so the resolved values reach the stored config without rewriting
     # the request as received: `json_body` is a cached_property, and mutating it
@@ -877,6 +924,7 @@ def api_update_decision(project_id: str, document_id: str):
 def api_pursue_decision(project_id: str, document_id: str):
     """Seed the PR/FAQ chain from a Pursue decision: the ordinary PR/FAQ generation,
     with the decision as its first reference document. A user action, never automatic."""
+    _require_ai_writing(project_id, 'prfaq')
     table = get_projects_table()
     decision = decision_records.stored_decision(table, project_id, document_id)
     doc_config = {
@@ -895,7 +943,15 @@ def api_pursue_decision(project_id: str, document_id: str):
 @app.post("/projects/<project_id>/documents")
 @tracer.capture_method
 def api_create_document(project_id: str):
-    return create_document(project_id, json_object_body(app))
+    """A custom document, or a hand-written PR/FAQ / PRD (blank template, ``origin: human``).
+
+    Writing one by hand is allowed in every way of working; an autonomous caller that
+    files PR/FAQ / PRD text is AI writing and is gated like any other."""
+    body = json_object_body(app)
+    caller = _request_caller()
+    if ai_writing.writing_kind(app.current_event.raw_event) == ai_writing.KIND_AUTONOMOUS:
+        _require_ai_writing(project_id, body.get('document_type'))
+    return create_document(project_id, body, creator_sub=caller.subject)
 
 
 @app.post("/projects/<project_id>/documents/merge")
@@ -909,9 +965,10 @@ def api_merge_documents(project_id: str):
             f'output_type must be one of: {", ".join(MERGE_OUTPUT_TYPES)} '
             f'(got {type(output_type).__name__})'
         )
+    _require_ai_writing(project_id, output_type)
     # Always a copy carrying the starter's scope (never the request body itself).
     merge_config = {**body, category_access.SCOPE_CONFIG_KEY: _caller_category_scope()}
-    if output_type in MANAGED_MERGE_OUTPUT_TYPES:
+    if output_type in MERGE_VERSIONED_DOCUMENT_TYPES:
         title, _ = split_versioned_title(
             body.get('title', 'Merged Document'),
         )
@@ -940,7 +997,9 @@ def api_merge_documents(project_id: str):
 @app.put("/projects/<project_id>/documents/<document_id>")
 @tracer.capture_method
 def api_update_document(project_id: str, document_id: str):
-    return update_document(project_id, document_id, json_object_body(app))
+    body = json_object_body(app)
+    _require_autonomous_edit_allowed(project_id, document_id)
+    return update_document(project_id, document_id, body)
 
 
 @app.get("/projects/<project_id>/documents/<document_id>/versions")
@@ -954,6 +1013,7 @@ def api_document_versions(project_id: str, document_id: str):
 @tracer.capture_method
 def api_restore_document_version(project_id: str, document_id: str, version_id: str):
     """Restore = a NEW version carrying that version's content; nothing is rewritten."""
+    _require_autonomous_edit_allowed(project_id, document_id)
     return restore_document(project_id, document_id, version_id, json_object_body(app))
 
 
@@ -1073,7 +1133,8 @@ def api_delete_job(project_id: str, job_id: str):
 # and be scored twice, and a room voting from their phones scored whichever half
 # the QR happened to sit on.
 #
-# Storage lives in ONE partition, with the identity in the sort key:
+# Storage lives in ONE partition, with the identity in the sort key (the keys are declared
+# once in `shared.prioritization_keys`, which the anonymous ballots handler imports too):
 #
 #     pk is 'PRIORITIZATION'
 #     sk is 'ROW#{row_id}'                       — the row: which documents it holds
@@ -1109,26 +1170,13 @@ def api_delete_job(project_id: str, job_id: str):
 # bigger page size. Making a row a project rather than a document is itself a
 # reduction: the partition now grows with projects, not with every document of
 # every project.
-PRIORITIZATION_PK = 'PRIORITIZATION'
 
 # The pre-ballot item: one map of document_id -> score, written by every
 # reviewer. Read through (INVARIANT: nothing looks lost) and migrated away entry
 # by entry on first write, so there is no migration script to run.
 LEGACY_SCORES_SK = 'SCORES'
 
-BALLOT_SK_PREFIX = 'BALLOT#'
 REVIEWER_KIND_USER = 'user'
-
-# The row record: which project a row belongs to and which of that project's
-# documents it holds.
-#
-#     sk is 'ROW#{row_id}'  — one record per row
-#
-# In the SAME partition as the ballots on purpose. The page reads the partition
-# whole already, so the rows arrive with the ballots in one query and nothing has
-# to be fetched per row; and a row and the ballots keyed to it stay in one place,
-# which is what a later phase's "delete a row with its ballots" needs.
-ROW_SK_PREFIX = 'ROW#'
 
 # The DEFAULT row of a project: the one every project with scorable documents gets
 # without anybody performing a setup step.
@@ -1160,8 +1208,8 @@ DEFAULT_ROW_ID_SUFFIX = '_default'
 # only thing that composes that spelling.
 ROW_ID_BYTES = 16
 
-# The mark a row carries once a ballot has landed on it, and what the composition
-# change asserts about.
+# `ROW_FROZEN_AT_FIELD` (`first_ballot_at`): the mark a row carries once a ballot has
+# landed on it, and what the composition change asserts about.
 #
 # THIS ATTRIBUTE IS THE FREEZE'S RACE HALF. A composition change is one conditional
 # `update_item` carrying `attribute_not_exists(first_ballot_at)`, so the DATABASE is
@@ -1181,24 +1229,21 @@ ROW_ID_BYTES = 16
 #
 # `if_not_exists`, so it records the FIRST ballot and every later one leaves it
 # alone: it is the freeze instant, not a last-modified stamp.
-ROW_FROZEN_AT_FIELD = 'first_ballot_at'
-
-# How many ballot writes a row has taken. Not a reviewer count and not shown to
+#
+# `ROW_BALLOT_WRITES_FIELD` (`ballot_writes`): how many ballot writes a row has taken. Not a reviewer count and not shown to
 # anybody — it exists so a DELETE can be fenced on the row not having changed
 # between the read that enumerated its ballots and the write that removes them (see
 # `api_delete_prioritization_row`). Incremented with `ADD` in the ballot
 # transaction, so two concurrent ballots each move it.
-ROW_BALLOT_WRITES_FIELD = 'ballot_writes'
-
-# Where the ROW's write sits in the ballot transaction `_ballot_transact_items`
-# builds — the ballot's own write is first, the row's second.
+#
+# `BALLOT_TRANSACT_ROW_INDEX`: where the ROW's write sits in the ballot transaction
+# `_ballot_transact_items` builds — the ballot's own write is first, the row's second.
 #
 # Named because the save READS THE CANCELLATION REASON AT THIS INDEX. A
 # `TransactionCanceledException` does not mean a condition failed (see
 # `_cancelled_by_condition`), and the only condition in that transaction is on the
 # row, so "the row went away" is a claim about this position specifically rather
 # than about the exception.
-BALLOT_TRANSACT_ROW_INDEX = 1
 
 # What a `TransactItems[].Update` accepts, per the DynamoDB API — a NARROWER set than
 # `update_item` takes, which is why it is stated. `_ballot_transact_items` spreads the
@@ -1417,7 +1462,7 @@ def _row_record(
     """A new row record as stored: created and updated now, and WITHOUT a `ttl` —
     the aggregates table expires anything carrying one, and a row is as durable as
     the ballots keyed to it."""
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
     return {
         'pk': PRIORITIZATION_PK,
         'sk': _row_sk(row_id),
@@ -1943,20 +1988,30 @@ def _axis_means(votes: list[Any], axis_ids: Iterable[str]) -> tuple[dict[str, fl
     return means, counts
 
 
-def _team_composite(comparable: list[float], means: dict[str, float], counts: dict[str, int],
-                    axes: list[dict]) -> float | None:
-    """The row's team composite: the mean of fully-scored ballots' composites.
+def _team_composite(votes: list[Any], axes: list[dict]) -> float | None:
+    """The row's team composite: the setup's weighted formula over the TEAM's per-axis means.
 
-    With no fully-scored ballot yet, the same formula over the axis means the
-    team expressed (an axis nobody scored leaves both sums) — so one reviewer's
-    "impact 4" reads 4.0 instead of nothing, as the page showed before the setup
-    was configurable. None when no weighted axis was scored at all.
+    Every vote counts, partial ones included: each axis mean is over the
+    reviewers who put that axis on the 1-5 scale (a stored 0 is "not scored" to
+    the composite, as on one ballot), and an axis nobody scored leaves both sums.
+    It used to be the mean of fully-scored ballots' composites whenever one
+    existed, which silently dropped every partial ballot from the headline while
+    `reviewer_count` still counted it — an owner who left one axis unscored and a
+    room ballot that scored all four read "2 reviewers" over the room ballot's
+    number alone. For fully-scored ballots the two formulas agree (the composite
+    is linear in the axis values); `score_spread` still compares only those.
+    None when no weighted axis was scored at all.
     """
-    if comparable:
-        return round(sum(comparable) / len(comparable), 2)
-    expressed = {axis: (mean if counts.get(axis) else None) for axis, mean in means.items()}
+    expressed = {axis: _on_scale_mean(votes, axis) for axis in axes_mod.active_axis_ids(axes)}
     composite = axes_mod.composite(expressed, axes)
     return round(composite, 2) if composite is not None else None
+
+
+def _on_scale_mean(votes: list[Any], axis: str) -> float | None:
+    """The unrounded mean of one axis over the votes that put it on the 1-5 scale."""
+    values = [_axis_value(entry, axis) for entry in votes if _carries_axis(entry, axis)]
+    on_scale = [value for value in values if value >= axes_mod.SCALE_MIN]
+    return sum(on_scale) / len(on_scale) if on_scale else None
 
 
 def _row_aggregate(votes: list[Any], axes: list[dict]) -> dict:
@@ -1983,7 +2038,7 @@ def _row_aggregate(votes: list[Any], axes: list[dict]) -> dict:
             round(max(comparable) - min(comparable), 2) if len(comparable) > 1  # pragma: no mutate  one ballot's range is 0.0 either way
             else 0.0
         ),
-        'composite': _team_composite(comparable, means, counts, axes),
+        'composite': _team_composite(votes, axes),
     }
 
 
@@ -2852,7 +2907,7 @@ def api_recompose_prioritization_row(row_id: str):
             'composition'
         )
 
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
     try:
         response = table.update_item(
             Key={'pk': PRIORITIZATION_PK, 'sk': _row_sk(path_row_id)},
@@ -3378,6 +3433,8 @@ def api_delete_prioritization_row(row_id: str):
 
     ballot_sks = _row_ballot_sort_keys(table, path_row_id)
     _transact_delete_row(table, row, path_row_id, ballot_sks, sibling_sk)
+    # Its open room vote ends with it (best effort, `shared.voting_session_close`).
+    close_row_sessions(table, [path_row_id])
     # THE ONLY TRACE A COMPLETED DELETE LEAVES. `ballots_deleted` is evidence only in
     # the caller's own response body, and every ballot removed here is a durable
     # decision record — so an operator asked "where did the team's score go?" has
@@ -3885,7 +3942,7 @@ def _ballot_transact_items(table, update_kwargs: dict, row_id: str, now: str) ->
     # against a real implementation; the suite's fake accepts any `dict`.)
     #
     # RAISED RATHER THAN `assert`ed, though the reasoning above is why it is checked
-    # at all. A bare `assert` is stripped under `python -O`/`PYTHONOPTIMIZE`, which
+    # at all. A bare `assert` is stripped under `python -O` (the PYTHONOPTIMIZE environment variable), which
     # would leave the malformed key reaching DynamoDB — the exact outcome this exists
     # to name — and an `AssertionError` in a request path is an unhandled 500 with a
     # bare message, bypassing the logging every other failure in this module routes
@@ -3893,7 +3950,7 @@ def _ballot_transact_items(table, update_kwargs: dict, row_id: str, now: str) ->
     unsupported = set(update_kwargs) - TRANSACT_UPDATE_KEYS
     if unsupported:
         # The offending key is NAMED HERE AND ONLY HERE. A ServiceError's message
-        # goes to the client verbatim (`handle_service_error`), and a reviewer
+        # goes to the client verbatim (`_EXCEPTION_ANSWERS` in shared/api.py), and a reviewer
         # saving scores has no use for an internal function's kwargs — the log is
         # where the person who can act on the name will read it.
         logger.error(
@@ -4163,7 +4220,7 @@ def api_patch_prioritization_scores():
             'the current rows'
         )
 
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
 
     # Counted so a failure part way through a multi-row save is diagnosable.
     # Validation cannot half-persist a save, but a throttle or a timeout on
@@ -4278,7 +4335,7 @@ def api_put_prioritization_config():
     try:
         saved = axes_mod.write_config(
             table, axes, base_version,
-            now=datetime.now(UTC).isoformat(), updated_by=_setup_editor_label(event),
+            now=now_iso(), updated_by=_setup_editor_label(event),
         )
     except ApiError:
         raise
@@ -4306,21 +4363,6 @@ def api_get_product_context(project_id: str):
 @tracer.capture_method
 def api_update_product_context(project_id: str):
     return pc_update_context(project_id, json_body_value(app))
-
-
-@app.post("/projects/<project_id>/product-context/interview")
-@tracer.capture_method
-def api_product_context_interview(project_id: str):
-    """202 + an assist job; a missing message stays a synchronous 400."""
-    body = json_object_body(app)
-    pc_interview_message(body)
-    history = body.get('history')
-    if isinstance(history, list):
-        # Only the turns the model is ever shown, so a long chat cannot push the
-        # job row past DynamoDB's item limit.
-        body = {**body, 'history': history[-product_context.INTERVIEW_HISTORY_TURNS:]}
-    return _started_assist(project_id, ASSIST_INTERVIEW_TURN,
-                           {'project_id': project_id, 'body_json': json.dumps(body)})
 
 
 @app.get("/projects/<project_id>/product-docs")
@@ -4365,6 +4407,7 @@ def api_autofill_prfaq_questions(project_id: str):
     Body: ``{title?, feature_idea?, answers?: [≤5 texts], filters?, response_language?}``;
     typed text is kept as the author's intent (shared/draft_intent.py, caps → 400).
     """
+    _require_ai_writing(project_id, 'prfaq')
     return _started_feedback_assist(project_id, ASSIST_PRFAQ_AUTOFILL, draft_intent.validate_autofill_body)
 
 
@@ -4383,6 +4426,8 @@ def api_suggest_document_brief(project_id: str):
     Body: ``{doc_type?, title?, feature_idea?, filters?, response_language?}``; typed text is
     rewritten and expanded, never replaced (shared/draft_intent.py, caps → 400).
     """
+    # The worker drafts a PRD unless asked for a PR/FAQ (projects.suggest_document_brief).
+    _require_ai_writing(project_id, 'prfaq' if json_object_body(app).get('doc_type') == 'prfaq' else 'prd')
     return _started_feedback_assist(project_id, ASSIST_DOCUMENT_BRIEF, draft_intent.validate_brief_body)
 
 
@@ -4601,7 +4646,7 @@ def reply_to_prototype_pin(project_id: str, document_id: str, pin_id: str):
     form_id = _pin_form_for(project_id, document_id)
     text = prototype_pins.validate_reply(json_object_body(app))
     actor, name = _pin_actor()
-    reply = {'by': actor, 'name': name[:120], 'text': text, 'at': datetime.now(UTC).isoformat()}
+    reply = {'by': actor, 'name': name[:120], 'text': text, 'at': now_iso()}
     try:
         pin = prototype_pins.append_reply(_pins_table(), form_id, _checked_pin_id(pin_id), reply)
     except ClientError as e:
@@ -4813,7 +4858,6 @@ def _started_generator_job(project_id: str, job_type: str, doc_config: dict, mes
 ASSIST_PRFAQ_AUTOFILL = 'assist_prfaq_autofill'
 ASSIST_DOCUMENT_BRIEF = 'assist_document_brief'
 ASSIST_RESEARCH_QUESTIONS = 'assist_research_questions'
-ASSIST_INTERVIEW_TURN = 'assist_interview_turn'
 ASSIST_PERSONA_AVATAR = 'assist_persona_avatar'
 
 
@@ -4837,12 +4881,44 @@ def _feedback_assist_work(resolve: Callable[[], FeedbackAssist]) -> Callable[[di
     return work
 
 
-def _interview_assist_work(config: dict) -> dict:
-    return product_context.interview_turn(config['project_id'], _assist_body(config))
-
-
 def _avatar_assist_work(config: dict) -> dict:
     return projects.regenerate_persona_avatar(config['project_id'], config['persona_id'])
+
+
+# ---- Persona review of a PR/FAQ / PRD (shared/document_review.py, docs/document-review.md) ----
+#
+# Reviews, never writes: allowed in every way of working with AI (no _require_ai_writing).
+# EDIT on the project (the gate's default for a POST): it spends up to six model calls.
+
+ASSIST_PERSONA_REVIEW = 'assist_persona_review'
+
+
+@app.post("/projects/<project_id>/documents/<document_id>/persona-review")
+@tracer.capture_method
+def start_persona_review(project_id: str, document_id: str):
+    """202 + an assist job: ``{persona_ids?: [≤6]}``; ``result`` = ``{personas, filed, …}``."""
+    persona_ids = document_review.validate_persona_ids(json_object_body(app))
+    table = get_projects_table()
+    if not table:
+        raise ConfigurationError('Projects table not configured')
+    document_series.series_of(project_id, document_series.find_document(table, project_id, document_id))
+    if not document_review.pick_personas(document_review.project_personas(table, project_id), persona_ids):
+        raise ValidationError('This project has no personas to ask yet')
+    return _started_assist(project_id, ASSIST_PERSONA_REVIEW, {
+        'project_id': project_id, 'document_id': document_id, 'body_json': json.dumps({'persona_ids': persona_ids}),
+    })
+
+
+def _persona_review_work(config: dict) -> dict:
+    table = get_projects_table()
+    project_id = config['project_id']
+    document = document_series.find_document(table, project_id, config['document_id'])
+    series = document_series.series_of(project_id, document)
+    personas = document_review.pick_personas(
+        document_review.project_personas(table, project_id), _assist_body(config).get('persona_ids'))
+    return document_review.run_review(
+        table, project_id=project_id, series_id=series['series_id'], document=document,
+        document_type=series['document_type'], personas=personas)
 
 
 ASSIST_WORK = {
@@ -4855,10 +4931,14 @@ ASSIST_WORK = {
     ASSIST_RESEARCH_QUESTIONS: assist_jobs.Work(
         _feedback_assist_work(lambda: projects.suggest_research_questions),
         'Could not suggest research questions. Please try again.'),
-    # These two are the messages the routes already answered when the model call failed.
-    ASSIST_INTERVIEW_TURN: assist_jobs.Work(_interview_assist_work, 'AI interview unavailable. Please try again.'),
+    # The message the route already answered when the model call failed.
     ASSIST_PERSONA_AVATAR: assist_jobs.Work(_avatar_assist_work, 'Avatar generation failed'),
+    ASSIST_PERSONA_REVIEW: assist_jobs.Work(_persona_review_work, 'The persona review failed. Please try again.'),
 }
+
+# Document comments and review links (shared/document_review_routes.py, docs/document-review.md). Included
+# after every route above; the project-access middleware applies to its routes as to the handler's own.
+app.include_router(document_review_routes.app)
 
 
 # ============================================

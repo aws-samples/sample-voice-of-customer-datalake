@@ -2,7 +2,7 @@
  * F2 (E2E-COVERAGE-GAPS.md §3): Edit on the /projects list. Both roles.
  *
  * Admin (owner, so edit + manage):
- * - When Edit is clicked on its card and name/description/visibility are changed
+ * - When Edit is chosen from its card's "Actions for <name>" menu and name/description/visibility are changed
  *   and saved, Then `PUT /projects/{id}` (and `PUT …/visibility`) answer 2xx, the
  *   card shows the new name and badge, and `GET /projects/{id}` and the detail
  *   page agree.
@@ -24,7 +24,7 @@ import { apiCall } from '../lib/api'
 import { RUN_PREFIX } from '../lib/env'
 import { assertStep, isApi, roleOf, settle, site } from '../lib/fixtures'
 import { dialogNamed } from '../lib/dialogs'
-import { ensureE2eProject, inviteMember, projectCard, projectIdOrSkip, readProject } from '../lib/projects'
+import { chooseProjectAction, ensureE2eProject, inviteMember, projectCard, projectIdOrSkip, readProject } from '../lib/projects'
 
 const NAME = {
   edited: `${RUN_PREFIX}edit`,
@@ -71,13 +71,13 @@ test.describe('projects: Edit on the list', () => {
       await assertStep(page, 'admin', 'projects-edit-cancel', async (r) => {
         const puts = recordPuts(page)
         await openList(page)
-        const edit = card(page, NAME.edited).getByRole('button', { name: `Edit project ${NAME.edited}` })
-        await edit.click()
+        const edit = () => chooseProjectAction(page, NAME.edited, 'Edit')
+        await edit()
         const dialog = dialogNamed(page, 'Edit Project')
         await dialog.getByLabel('Project Name').fill(`${NAME.edited}-discarded`)
         await page.keyboard.press('Escape')
         await expect(dialog).toBeHidden()
-        await edit.click()
+        await edit()
         await dialog.getByRole('button', { name: 'Cancel' }).click()
         await expect(dialog).toBeHidden()
         expect(puts, 'no PUT on Escape / Cancel').toHaveLength(0)
@@ -90,7 +90,7 @@ test.describe('projects: Edit on the list', () => {
       const id = projectIdOrSkip(NAME.edited)
       await assertStep(page, 'admin', 'projects-edit-save', async (r) => {
         await openList(page)
-        await card(page, NAME.edited).getByRole('button', { name: `Edit project ${NAME.edited}` }).click()
+        await chooseProjectAction(page, NAME.edited, 'Edit')
         const dialog = dialogNamed(page, 'Edit Project')
         await dialog.getByLabel('Project Name').fill(RENAMED)
         await dialog.getByLabel('Description').fill(NEW_DESCRIPTION)
@@ -124,7 +124,7 @@ test.describe('projects: Edit on the list', () => {
       await assertStep(page, 'user', 'projects-edit-viewer-list', async (r) => {
         await openList(page)
         await expect(card(page, NAME.viewer)).toBeVisible()
-        await expect(card(page, NAME.viewer).getByRole('button', { name: /^Edit project/ })).toHaveCount(0)
+        await expect(card(page, NAME.viewer).getByRole('button', { name: /^Actions for / })).toHaveCount(0)
         await expect(card(page, NAME.hidden)).toHaveCount(0)
         r.note('viewer card has no Edit; the unshared private project is not listed')
       })

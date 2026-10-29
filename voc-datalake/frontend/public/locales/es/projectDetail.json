@@ -363,21 +363,10 @@
       "knownLimitations": "Limitaciones conocidas",
       "nonGoals": "No objetivos",
       "oneLiner": "Descripción en una línea",
-      "placeholderEmpty": "—",
       "problemSolved": "Problema resuelto",
       "productName": "Nombre del producto",
       "successMetrics": "Métricas de éxito",
       "targetUsers": "Usuarios objetivo"
-    },
-    "interview": {
-      "captured": "Entendido — registrado. ¿Qué más puedes contarme sobre el producto?",
-      "elaborate": "¿Podrías contarme más sobre eso?",
-      "greeting": "Hola — te ayudaré a describir tu producto o servicio. Cuéntame qué es en una o dos frases y construiremos el resto a partir de ahí.",
-      "heading": "Entrevista",
-      "hint": "Iré completando el formulario de la izquierda con tus respuestas.",
-      "placeholder": "Cuéntame sobre tu producto…",
-      "send": "Enviar",
-      "thinking": "Pensando…"
     },
     "lifecycle": {
       "beta": "Versión beta",
@@ -388,9 +377,6 @@
       "select": "— seleccionar —"
     },
     "loading": "Cargando contexto del producto…",
-    "modeBoth": "Ambos",
-    "modeChat": "Solo chat",
-    "modeUpload": "Solo carga",
     "report": {
       "button": "Generar informe",
       "confirmTitle": "¿Generar el informe del producto?",
@@ -425,6 +411,36 @@
       "statusReady": "Listo",
       "statusUploading": "Subiendo…",
       "extractedChars_many": "{{count, number}} caracteres extraídos"
+    },
+    "assistant": {
+      "button": "Rellenar con el asistente de IA",
+      "hint": "El asistente pregunta por cada campo vacío, de uno en uno, y luego muestra todas tus respuestas en una tarjeta para que las apruebes.",
+      "prompt": "Entrevístame para rellenar la descripción del producto de este proyecto."
+    },
+    "lastSaved": "Guardado por última vez: {{at}}",
+    "neverSaved": "Aún no se ha guardado",
+    "saving": "Guardando…",
+    "sections": {
+      "basics": {
+        "title": "El producto",
+        "description": "Qué es y en qué punto está."
+      },
+      "customers": {
+        "title": "Clientes y problema",
+        "description": "Para quién es y qué les resuelve."
+      },
+      "offering": {
+        "title": "Oferta",
+        "description": "Qué hace y en qué se diferencia de las alternativas."
+      },
+      "scope": {
+        "title": "Objetivos y límites",
+        "description": "Cómo se mide el éxito, sus limitaciones y qué queda fuera del alcance."
+      },
+      "notes": {
+        "title": "Notas",
+        "description": "Cualquier otra cosa que deban saber quienes redactan el PRD y el PR/FAQ."
+      }
     }
   },
   "tabs": {
@@ -461,6 +477,9 @@
     "generatePrd": "Generar PRD",
     "generatePrdTitle": "Generar PRD",
     "generatePrfaq": "Generar PR/FAQ",
+    "startWritingTitle": "Escríbelo tú",
+    "startWriting": "Empezar a escribir",
+    "startWritingFailed": "No se pudo crear el documento. Inténtalo de nuevo.",
     "generatePrfaqTitle": "Generar PR/FAQ",
     "newDocTitle": "Título del Nuevo Documento",
     "newDocTitlePlaceholder": "p. ej., Conserje Virtual PRD",

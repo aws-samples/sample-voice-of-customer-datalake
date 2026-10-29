@@ -24,11 +24,12 @@ export async function pinTheme(page: Page, theme: Theme): Promise<void> {
 }
 
 /** A `configStore` time range the suite pins (store/configStore.ts `TimeRange`). */
-export type PinnedRange = 'all' | '24h' | '48h' | '7d' | '30d' | '90d'
+export type PinnedRange = 'all' | '24h' | '48h' | '7d' | '14d' | '30d' | '90d'
 
 /**
  * Pins the time range before the SPA boots (configStore `voc-config`, persist
- * version 2, partial state): the saved session already carries a `voc-config`;
+ * version 3, partial state; an older version would migrate a pinned `7d` to the
+ * 14-day default): the saved session already carries a `voc-config`;
  * only the range changes.
  */
 export async function pinTimeRange(page: Page, range: PinnedRange): Promise<void> {
@@ -36,7 +37,7 @@ export async function pinTimeRange(page: Page, range: PinnedRange): Promise<void
     const raw = window.localStorage.getItem('voc-config')
     let blob: { state?: Record<string, unknown>; version?: number } = {}
     try { blob = raw === null ? {} : JSON.parse(raw) } catch { blob = {} }
-    window.localStorage.setItem('voc-config', JSON.stringify({ ...blob, state: { ...(blob.state ?? {}), timeRange }, version: 2 }))
+    window.localStorage.setItem('voc-config', JSON.stringify({ ...blob, state: { ...(blob.state ?? {}), timeRange }, version: 3 }))
   }, range)
 }
 

@@ -363,21 +363,10 @@
       "knownLimitations": "Limitações conhecidas",
       "nonGoals": "Não objetivos",
       "oneLiner": "Descrição em uma linha",
-      "placeholderEmpty": "—",
       "problemSolved": "Problema resolvido",
       "productName": "Nome do produto",
       "successMetrics": "Métricas de sucesso",
       "targetUsers": "Usuários-alvo"
-    },
-    "interview": {
-      "captured": "Entendi — registrado. O que mais você pode me contar sobre o produto?",
-      "elaborate": "Pode me contar mais sobre isso?",
-      "greeting": "Olá — vou ajudar você a descrever seu produto ou serviço. Diga em uma ou duas frases o que ele é, e construiremos o resto a partir daí.",
-      "heading": "Entrevista",
-      "hint": "Vou preenchendo o formulário à esquerda conforme você responde.",
-      "placeholder": "Fale sobre seu produto…",
-      "send": "Enviar",
-      "thinking": "Pensando…"
     },
     "lifecycle": {
       "beta": "Versão beta",
@@ -388,9 +377,6 @@
       "select": "— selecionar —"
     },
     "loading": "Carregando contexto do produto…",
-    "modeBoth": "Ambos",
-    "modeChat": "Somente chat",
-    "modeUpload": "Somente upload",
     "report": {
       "button": "Gerar relatório",
       "confirmTitle": "Gerar o relatório do produto?",
@@ -425,6 +411,36 @@
       "statusReady": "Pronto",
       "statusUploading": "Enviando…",
       "extractedChars_many": "{{count, number}} caracteres extraídos"
+    },
+    "assistant": {
+      "button": "Preencher com o assistente de IA",
+      "hint": "O assistente pergunta sobre cada campo vazio, uma pergunta de cada vez, e depois mostra todas as suas respostas num cartão para você aprovar.",
+      "prompt": "Entreviste-me para preencher a descrição do produto deste projeto."
+    },
+    "lastSaved": "Salvo pela última vez: {{at}}",
+    "neverSaved": "Ainda não salvo",
+    "saving": "Salvando…",
+    "sections": {
+      "basics": {
+        "title": "O produto",
+        "description": "O que é e em que estágio está."
+      },
+      "customers": {
+        "title": "Clientes e problema",
+        "description": "Para quem é e o que resolve para eles."
+      },
+      "offering": {
+        "title": "Oferta",
+        "description": "O que faz e como se diferencia das alternativas."
+      },
+      "scope": {
+        "title": "Metas e limites",
+        "description": "Como o sucesso é medido, suas limitações e o que está fora do escopo."
+      },
+      "notes": {
+        "title": "Notas",
+        "description": "Qualquer outra coisa que os redatores do PRD e do PR/FAQ devam saber."
+      }
     }
   },
   "tabs": {
@@ -461,6 +477,9 @@
     "generatePrd": "Gerar PRD",
     "generatePrdTitle": "Gerar PRD",
     "generatePrfaq": "Gerar PR/FAQ",
+    "startWritingTitle": "Escreva você mesmo",
+    "startWriting": "Começar a escrever",
+    "startWritingFailed": "Não foi possível criar o documento. Tente novamente.",
     "generatePrfaqTitle": "Gerar PR/FAQ",
     "newDocTitle": "Novo Título do Documento",
     "newDocTitlePlaceholder": "ex: Virtual Concierge PRD",

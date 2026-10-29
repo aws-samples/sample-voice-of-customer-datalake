@@ -42,15 +42,15 @@ The ingest contract (`IngestMessage`) is unchanged. An email item carries:
 | `feedback@` | none: the processor decides |
 | `ideas@`, `[idea]`, `[feature]`, `[request]` | `feature_request` |
 | `bugs@`, `[bug]` | `bug` |
-| `reviews@`, `[review]` | `review` |
+| `reviews@`, `[review]` | none: the processor decides (`review` is not a type) |
 | `[question]` | `question` |
 | `[praise]`, `[kudos]` | `praise` |
 
-A subject tag wins over the alias. The values only stick when the `feedback_type` dimension exists:
-**Administration → Sources → Email inbox → Create dimension** adds it (values `review`, `feature_request`,
-`bug`, `question`, `praise`, inferred by the model when nothing else sets it; see
-[dimensions.md](dimensions.md)). Mail to any other local part at the domain is accepted on the
-channel of that local part.
+A subject tag wins over the alias. `feedback_type` is a built-in dimension on every deployment
+(5.45.00, [dimensions.md → Feedback type](dimensions.md#feedback-type-built-in)); the model infers it
+when nothing else sets it, so the inbox no longer needs a "Create dimension" step (the old
+`POST /settings/email-inbox/feedback-type-dimension` answers `created: false`). Mail to any other
+local part at the domain is accepted on the channel of that local part.
 
 ## Guards
 

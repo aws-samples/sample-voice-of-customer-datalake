@@ -22,7 +22,7 @@ WARMED_HANDLERS = (
     'api/projects_handler.py', 'api/radar_handler.py', 'api/logs_handler.py',
     # SnapStart functions: their snapshot is primed by shared.snapstart; this covers `$LATEST` environments.
     'api/memory_handler.py', 'api/mcp_tokens_handler.py', 'api/integrations_handler.py',
-    'api/mcp_global_handler.py',
+    'api/mcp_global_handler.py', 'api/engagement_handler.py',
 )
 
 

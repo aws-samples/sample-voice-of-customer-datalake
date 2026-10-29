@@ -11,7 +11,8 @@
  * @module assistant/approvals/reviewImportSchemas
  */
 import { z } from 'zod'
-import { SOURCE_ID_PATTERN } from './userSchemas'
+import { optionalNonEmpty } from './schemas'
+import { SOURCE_ID_RE } from '../../api/sourceProfilesApi'
 
 export const SPA_REVIEW_IMPORT_LIMITS = {
   // per card
@@ -48,7 +49,6 @@ export function isReviewDate(value: string): boolean {
 }
 
 const L = SPA_REVIEW_IMPORT_LIMITS
-const optionalText = (max: number) => z.string().trim().min(1).max(max).optional()
 
 const ratingArg = z.number().min(L.minRating).max(L.maxRating)
 const dateArg = z.string().trim().refine(isReviewDate, 'must be an ISO 8601 date (YYYY-MM-DD) or date-time')
@@ -57,8 +57,8 @@ const urlArg = z.url({ protocol: /^https?$/ }).max(L.maxUrlChars)
 /** One review row; every field but `text` is optional (the source may not give it). */
 export const reviewItemArgs = z.strictObject({
   text: z.string().trim().min(1).max(L.maxTextChars),
-  title: optionalText(L.maxTitleChars),
-  author: optionalText(L.maxAuthorChars),
+  title: optionalNonEmpty(L.maxTitleChars),
+  author: optionalNonEmpty(L.maxAuthorChars),
   rating: ratingArg.optional(),
   created_at: dateArg.optional(),
   url: urlArg.optional(),
@@ -66,7 +66,7 @@ export const reviewItemArgs = z.strictObject({
 
 export const importReviewsArgs = z.strictObject({
   source_name: z.string().trim().min(1).max(L.maxSourceNameChars),
-  source_id: z.string().trim().regex(SOURCE_ID_PATTERN, 'must be a configured source profile id').optional(),
+  source_id: z.string().trim().regex(SOURCE_ID_RE, 'must be a configured source profile id').optional(),
   items: z.array(reviewItemArgs).min(1).max(L.maxItems).refine(
     (items) => items.reduce((sum, item) => sum + item.text.length, 0) <= L.maxTotalTextChars,
     `the reviews' text must total at most ${String(L.maxTotalTextChars)} characters`,

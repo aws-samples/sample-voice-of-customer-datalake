@@ -21,12 +21,11 @@ their uploaded files; give them a retention period or a non-allow policy so
 they archive per item).
 
 The erased value is never stored or logged: jobs and audit rows carry its
-SHA-256 (``value_hash``).
+SHA-256 (``value_hash``, ``shared.digests.sha256_hex``).
 """
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Mapping
 from datetime import date, timedelta
 from typing import Any, Final
@@ -42,20 +41,16 @@ __all__ = [
     'erase_filter',
     'retention_cutoffs',
     'retention_filter',
-    'value_hash',
 ]
 
 ERASE_FIELDS: Final = ('author', 'source_id', 'csv_row_id', 'email')
+# The partition of erasure job rows in voc-aggregates (Settings starts them, voc-retention runs them).
+ERASURE_JOB_PK: Final = 'JOB#erasure'
 _EMAIL_PATHS: Final = ('metadata.email', 'metadata.submitter_email')
 _FEEDBACK_SK_PREFIX: Final = 'FEEDBACK#'
-_RAW_PREFIX: Final = 'raw/'
+RAW_PREFIX: Final = 'raw/'
 _WHOLE_UPLOAD_PREFIXES: Final = ('raw/csv_upload/', 'raw/json_upload/')
 _MAX_VERSIONS_PER_DELETE: Final = 1000
-
-
-def value_hash(value: str) -> str:
-    """The SHA-256 hex digest an erasure job records instead of the value."""
-    return hashlib.sha256(value.encode('utf-8')).hexdigest()
 
 
 def retention_cutoffs(profiles: list[dict[str, Any]], today: date) -> dict[str, str]:
@@ -107,7 +102,7 @@ def item_raw_key(item: Mapping[str, Any], bucket: str) -> str | None:
         return None
     parsed = urlparse(uri)
     key = parsed.path.lstrip('/')
-    if parsed.scheme != 's3' or parsed.netloc != bucket or not key.startswith(_RAW_PREFIX):
+    if parsed.scheme != 's3' or parsed.netloc != bucket or not key.startswith(RAW_PREFIX):
         return None
     if key.startswith(_WHOLE_UPLOAD_PREFIXES) or '..' in key.split('/'):
         return None

@@ -1,6 +1,7 @@
 /**
  * @fileoverview `forwardedProps` for a run: the page the user is on, the global
- * time range / date basis, the UI language and the web-search opt-in.
+ * time range / date basis, the UI language, the web-search opt-in and the
+ * personas / documents the message mentions (`@`, `#`; project pages only).
  *
  * Validated against the contract schema before it leaves the SPA, so a page
  * context that would be rejected server-side (an over-long title, say) is
@@ -11,8 +12,8 @@
 import { ALL_TIME_CUSTOM_DAYS, MAX_CUSTOM_DAYS } from '../../api/baseUrl'
 import { getDateRangeParams } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
-import { forwardedPropsSchema, pageContextSchema } from '../contract'
-import type { ForwardedProps, PageContext } from '../contract'
+import { forwardedPropsSchema, mentionsSchema, pageContextSchema } from '../contract'
+import type { ForwardedProps, Mentions, PageContext } from '../contract'
 
 const MAX_TITLE = 120
 const MAX_PATH = 200
@@ -33,13 +34,25 @@ export interface ForwardedPropsInput {
   page: PageContext
   language: string | undefined
   useWebSearch: boolean
+  /** The personas / documents mentioned in this message (project pages only). */
+  mentions?: Mentions
 }
 
-export function buildForwardedProps({ page, language, useWebSearch }: ForwardedPropsInput): ForwardedProps {
+/** Mentions only travel from a project page, and only when they pass the contract. */
+function mentionsFor(page: PageContext, mentions: Mentions | undefined): { mentions?: Mentions } {
+  if (mentions === undefined || page.kind !== 'project' || page.projectId === undefined) return {}
+  const parsed = mentionsSchema.safeParse(mentions)
+  if (!parsed.success || (parsed.data.personas === undefined && parsed.data.documents === undefined)) return {}
+  return { mentions: parsed.data }
+}
+
+export function buildForwardedProps({ page, language, useWebSearch, mentions }: ForwardedPropsInput): ForwardedProps {
   const { timeRange, customDays, dateBasis } = useConfigStore.getState()
   const range = getDateRangeParams(timeRange, customDays, dateBasis)
+  const clampedPage = clampPageContext(page)
   const candidate: ForwardedProps = {
-    page: clampPageContext(page),
+    page: clampedPage,
+    ...mentionsFor(clampedPage, mentions),
     ...(range.days !== undefined ? { days: Math.min(MAX_CUSTOM_DAYS, Math.max(ALL_TIME_CUSTOM_DAYS, range.days)) } : {}),
     dateBasis: range.date_basis ?? 'imported',
     ...(language !== undefined && language !== '' ? { responseLanguage: language.slice(0, MAX_LANGUAGE) } : {}),

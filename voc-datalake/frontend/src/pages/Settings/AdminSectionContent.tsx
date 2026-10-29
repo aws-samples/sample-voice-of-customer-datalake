@@ -10,6 +10,8 @@ import IntegrationsSection from './IntegrationsSection'
 import VersionSection from './VersionSection'
 import RadarSection from './RadarSection'
 import EmailInboxCard from './EmailInboxCard'
+import ParticipantSettingsCard from './ParticipantSettingsCard'
+import BoardsSection from './boards/BoardsSection'
 import { DimensionsSection, SourcePoliciesSection } from './DataGovernanceSections'
 import { CategoriesSection, DataSourcesSection, UserAdminSection } from './SettingsSections'
 import type { AdminSectionId, AdminTabId } from './adminTabs'
@@ -27,7 +29,14 @@ function AdminOnlySection({ section, apiEndpoint }: Readonly<{ section: AdminSec
     case 'radar': return <RadarSection />
     case 'dimensions': return <DimensionsSection />
     case 'policies': return <SourcePoliciesSection />
-    case 'users': return <UserAdminSection apiEndpoint={apiEndpoint} />
+    // The engagement settings sit with the users: they decide who counts as a colleague.
+    case 'users': return (
+      <div className="space-y-6">
+        <UserAdminSection apiEndpoint={apiEndpoint} />
+        {apiEndpoint ? <ParticipantSettingsCard /> : null}
+      </div>
+    )
+    case 'boards': return apiEndpoint ? <BoardsSection /> : null
     case 'version': return <VersionSection />
     default: return null
   }

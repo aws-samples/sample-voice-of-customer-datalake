@@ -6,16 +6,12 @@
  * overview (GET /settings/model/capacity, no model call), so an admin sees a
  * zero quota without spending a request. The run is sequential (useModelTests).
  */
-import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { FlaskConical, Loader2 } from 'lucide-react'
-import { api } from '../../api/client'
+import { FlaskConical, History, Loader2 } from 'lucide-react'
 import ModelTestPill from './ModelTestPill'
 import { useModelTestFigures } from './modelTestStatus'
+import { useModelCapacity } from './useModelCapacity'
 import type { ModelTests } from './useModelTests'
-
-// The capacity overview reads Service Quotas, which the backend caches for 10 minutes too.
-const CAPACITY_STALE_MS = 10 * 60 * 1000
 
 interface ModelTestAllPanelProps {
   readonly models: ReadonlyArray<{ readonly id: string; readonly label: string }>
@@ -25,12 +21,8 @@ interface ModelTestAllPanelProps {
 export default function ModelTestAllPanel({ models, tests }: ModelTestAllPanelProps) {
   const { t } = useTranslation('settings')
   const figures = useModelTestFigures()
-  const { data: capacity } = useQuery({
-    queryKey: ['model-capacity'],
-    queryFn: () => api.getModelCapacity(),
-    staleTime: CAPACITY_STALE_MS,
-  })
-  const quotaFor = new Map((capacity ?? []).map((row) => [row.model_id, row.quota]))
+  const { data: capacity } = useModelCapacity()
+  const quotaFor = new Map((capacity?.models ?? []).map((row) => [row.model_id, row.quota]))
   const progress = tests.allProgress
 
   return (
@@ -75,7 +67,15 @@ export default function ModelTestAllPanel({ models, tests }: ModelTestAllPanelPr
                     <ModelTestPill result={result} testing={tests.testing.has(model.id)} compact />
                   </td>
                   <td className="py-1.5 pr-3 font-mono text-text">{result ? figures.latency(result.latency_ms) : ''}</td>
-                  <td className="py-1.5 font-mono text-text">{figures.tokensPerMinute(quota?.tokens_per_minute)}</td>
+                  <td className="py-1.5 font-mono text-text">
+                    {figures.tokensPerMinute(quota?.tokens_per_minute)}
+                    {quota?.stale === true && (
+                      <span className="ml-1.5 inline-flex align-middle text-muted" title={t('aiModel.test.quotaStale')}>
+                        <History size={12} aria-hidden="true" />
+                        <span className="sr-only">{t('aiModel.test.quotaStale')}</span>
+                      </span>
+                    )}
+                  </td>
                 </tr>
               )
             })}

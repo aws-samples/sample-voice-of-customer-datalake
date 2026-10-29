@@ -44,6 +44,7 @@ import projects
 from shared import project_writes
 from shared.exceptions import ConfigurationError, NotFoundError, ServiceError, ValidationError
 from shared.prompt_labels import PromptLabels
+from shared.test.clock import frozen_clock
 from shared.test.converse_fixtures import chain_results
 
 #: Every id minted in this module ends in the `fixed_id_suffix` tail (shared/ids.py).
@@ -832,31 +833,29 @@ class TestAttachingAvatarsConcurrently:
 
 
 class TestSavingPersonas:
-    def test_each_item_is_written_in_order_and_the_count_replaced(self, log):
+    def test_the_items_are_saved_in_order_then_the_count_is_stored(self):
         table = MagicMock()
         ada = {'persona_id': 'persona_0', 'name': 'Ada'}
         anon = {'persona_id': 'persona_1'}
         items = [('persona_0', {'name': 'Ada'}, ada), ('persona_1', {}, anon)]
         with patch.object(projects, 'projects_table', table), \
-                patch.object(projects, 'put_project_item') as put:
+                patch.object(projects.persona_save, 'save_persona_items', return_value=[ada, anon]) as save, \
+                patch.object(projects.persona_save, 'store_persona_count') as count:
             assert projects._save_personas('proj-1', items, '2026-03-04T05:06:07+00:00') == [ada, anon]
-        assert put.call_args_list == [call(table, 'proj-1', ada), call(table, 'proj-1', anon)]
-        assert log.info.call_args_list == [
-            call('[PERSONA] Saving persona 1/2: Ada'),
-            call('[PERSONA] Saved persona: Ada'),
-            call('[PERSONA] Saving persona 2/2: unnamed'),
-            call('[PERSONA] Saved persona: None'),
-        ]
-        table.update_item.assert_called_once_with(
-            Key={'pk': 'PROJECT#proj-1', 'sk': 'META'},
-            UpdateExpression='SET persona_count = :count, updated_at = :now',
-            ConditionExpression=projects.PROJECT_WRITABLE_CONDITION,
-            ExpressionAttributeNames={'#deleting': 'deletion_started_at', '#status': 'status'},
-            ExpressionAttributeValues={
-                ':deleting_status': 'deleting', ':deleted_status': 'deleted',
-                ':count': 2, ':now': '2026-03-04T05:06:07+00:00',
-            },
-        )
+        save.assert_called_once_with(table, 'proj-1', [ada, anon])
+        count.assert_called_once_with(table, 'proj-1', '2026-03-04T05:06:07+00:00')
+
+    def test_a_deleted_project_sweeps_the_avatars_it_made_and_re_raises(self):
+        with_avatar = {'persona_id': 'persona_0', 'avatar_url': 's3://b/avatars/persona_0/a.jpeg'}
+        without = {'persona_id': 'persona_1', 'avatar_url': None}
+        items = [('persona_0', {}, with_avatar), ('persona_1', {}, without)]
+        gone = projects.persona_save.ProjectNotWritableError('gone')
+        with patch.object(projects, 'projects_table', MagicMock()), \
+                patch.object(projects.persona_save, 'save_persona_items', side_effect=gone), \
+                patch.object(projects, '_sweep_removed_persona_avatars') as sweep, \
+                pytest.raises(projects.persona_save.ProjectNotWritableError):
+            projects._save_personas('proj-1', items, 'now')
+        sweep.assert_called_once_with('proj-1', ['persona_0'])
 
 
 # ---------------------------------------------------------------------------
@@ -917,7 +916,8 @@ class _Generation:
         stubs: dict[str, MagicMock] = {}
         progress = MagicMock()
         with patch.object(projects, 'projects_table', MagicMock()), patch('time.time', _scripted_clock(clock)), \
-                patch.object(projects, 'datetime') as dt:
+                patch.object(projects.persona_save, 'require_writable_project'), \
+                frozen_clock(projects) as dt:
             dt.now.return_value = NOW_DT
             stubs['datetime'] = dt
             for p in patches:
@@ -934,6 +934,12 @@ class _Generation:
 
 class TestGeneratePersonasOrchestration(_Generation):
     FILTERS: ClassVar[dict] = {'days': 7, 'persona_count': 4, 'date_basis': 'REVIEW'}
+
+    def test_kept_personas_are_never_cleared(self):
+        # 5.34.00 live: an agent run replaced a project's personas, a manual edit included.
+        _result, stubs, _ = self.run({**self.FILTERS, 'keep_existing_personas': True}, clock=[100.0, 107.0])
+        stubs['_clear_existing_personas'].assert_not_called()
+        stubs['_build_persona_items'].assert_called_once()
 
     def test_every_step_receives_what_the_previous_one_produced(self):
         result, stubs, progress = self.run(self.FILTERS, clock=[100.0, 107.0])
@@ -1367,7 +1373,7 @@ class TestCreateDocument:
         table = MagicMock()
         with patch.object(projects, 'projects_table', table), \
                 patch.object(project_writes, 'put_project_item_and_increment') as put, \
-                patch.object(projects, 'datetime') as dt:
+                frozen_clock(projects) as dt:
             dt.now.return_value = NOW_DT
             result = projects.create_document('proj-1', body)
         return result, put, table
@@ -1403,14 +1409,25 @@ class TestCreateDocument:
         assert str(exc.value) == 'Content is required'
         put.assert_not_called()
 
-    @pytest.mark.parametrize('document_type', ['prd', 'prfaq', 'prototype', 'research'])
+    @pytest.mark.parametrize('document_type', ['prototype', 'research', 'product_report'])
     def test_every_other_type_is_sent_to_its_own_route(self, document_type):
         with patch.object(projects, 'projects_table', MagicMock()), pytest.raises(ValidationError) as exc:
             projects.create_document('proj-1', {'content': 'x', 'document_type': document_type})
         assert str(exc.value) == (
-            'Only custom documents can be created directly. Every managed or '
-            'workflow document type must use its dedicated route.'
+            'Only custom, prfaq and prd documents can be created directly. Every other '
+            'managed or workflow document type must use its dedicated route.'
         )
+
+    @pytest.mark.parametrize('document_type', ['prd', 'prfaq'])
+    def test_a_hand_written_prfaq_or_prd_joins_its_series_as_the_creators_draft(self, document_type):
+        table = MagicMock()
+        with patch.object(projects, 'projects_table', table), \
+                patch.object(projects, 'create_human_document', return_value={'document_id': 'd1'}) as create:
+            result = projects.create_document('proj-1', {'title': 'T', 'document_type': document_type},
+                                              creator_sub='sub-1')
+        assert result == {'success': True, 'document': {'document_id': 'd1'}}
+        create.assert_called_once_with(table, 'proj-1', document_type, {'title': 'T', 'document_type': document_type},
+                                       creator_sub='sub-1')
 
     def test_without_a_table_the_refusal_names_it(self):
         with patch.object(projects, 'projects_table', None), pytest.raises(ConfigurationError) as exc:
@@ -1432,7 +1449,7 @@ class TestUpdateDocument:
         with patch.object(projects, 'projects_table', table), \
                 patch.object(projects, '_find_document', return_value=stored) as find, \
                 patch.object(projects, 'edit_document', return_value={'success': True}) as edit, \
-                patch.object(projects, 'datetime') as dt:
+                frozen_clock(projects) as dt:
             dt.now.return_value = NOW_DT
             result = projects.update_document('proj-1', 'd1', body)
         find.assert_called_once_with('proj-1', 'd1')
@@ -1521,7 +1538,7 @@ def _delete_document(
     with patch.object(projects, 'projects_table', table), \
             patch.object(projects, 'persist_legacy_document_versions') as persist, \
             patch.object(projects, 'preserve_versioned_document_allocation') as preserve, \
-            patch.object(projects, 'datetime') as dt:
+            frozen_clock(projects) as dt:
         dt.now.return_value = NOW_DT
         result = projects.delete_document('proj-1', document_id)
     return result, table, persist, preserve

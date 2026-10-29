@@ -131,8 +131,69 @@ describe('Memory status filter and +1 feedback', () => {
     route({ 'GET /memory': () => ({ items: [memory('m1', 'Mine')] }), 'POST /memory/m1/confirm': () => ({ ...memory('m1', 'Mine'), counted: false }) })
     const user = userEvent.setup()
     renderWithQueryClient(<MemoryList scope="company" canCurate />)
-    await user.click(await screen.findByRole('button', { name: 'I agree — count me as a supporter' }))
+    await user.click(await screen.findByRole('button', { name: '+1: Mine' }))
     expect(await screen.findByRole('status')).toHaveTextContent('You already back this memory')
     expect(screen.getByRole('button', { name: '+1' })).toBeDisabled()
+  })
+})
+
+/** 5.34.00 live finding: a personal memory offered only Forget / Restore — no way to correct it or keep it. */
+describe('Editing and confirming your own memory', () => {
+  const mine = memory('m1', 'I like short answers', { scope: 'personal', supporters: 1 })
+
+  it('edits a personal memory inline and shows the saved statement', async () => {
+    route({
+      'GET /memory': () => ({ items: [mine] }),
+      'PUT /memory/m1': () => ({ memory: { ...mine, statement: 'I like short answers with links' } }),
+    })
+    const user = userEvent.setup()
+    renderWithQueryClient(<MemoryList scope="personal" canCurate={false} />)
+    await user.click(await screen.findByRole('button', { name: 'Edit memory: I like short answers' }))
+    const field = screen.getByRole('textbox', { name: 'Memory statement' })
+    await user.clear(field)
+    await user.type(field, 'I like short answers with links')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText('I like short answers with links')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'Memory statement' })).not.toBeInTheDocument()
+    expect(fetchApi).toHaveBeenCalledWith('/memory/m1', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ statement: 'I like short answers with links' }) }))
+  })
+
+  it('Cancel discards the draft and keeps the saved statement', async () => {
+    route({ 'GET /memory': () => ({ items: [mine] }) })
+    const user = userEvent.setup()
+    renderWithQueryClient(<MemoryList scope="personal" canCurate={false} />)
+    await user.click(await screen.findByRole('button', { name: 'Edit memory: I like short answers' }))
+    await user.type(screen.getByRole('textbox', { name: 'Memory statement' }), ' draft')
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.getByText('I like short answers')).toBeInTheDocument()
+    expect(fetchApi.mock.calls.some(([, options]) => options?.method === 'PUT')).toBe(false)
+  })
+
+  it('says when the edit could not be saved, and keeps the draft', async () => {
+    route({ 'GET /memory': () => ({ items: [mine] }), 'PUT /memory/m1': () => Promise.reject(new Error('API Error: 400')) })
+    const user = userEvent.setup()
+    renderWithQueryClient(<MemoryList scope="personal" canCurate={false} />)
+    await user.click(await screen.findByRole('button', { name: 'Edit memory: I like short answers' }))
+    await user.type(screen.getByRole('textbox', { name: 'Memory statement' }), '!')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not save the memory')
+    expect(screen.getByRole('textbox', { name: 'Memory statement' })).toHaveValue('I like short answers!')
+  })
+
+  it('confirms a personal memory is still true, never as a +1 to yourself', async () => {
+    route({ 'GET /memory': () => ({ items: [mine] }), 'POST /memory/m1/confirm': () => ({ memory: mine, counted: false }) })
+    const user = userEvent.setup()
+    renderWithQueryClient(<MemoryList scope="personal" canCurate={false} />)
+    await user.click(await screen.findByRole('button', { name: 'Still true: I like short answers' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('Confirmed as still true.')
+    expect(screen.queryByRole('button', { name: '+1' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/You already back this memory/)).not.toBeInTheDocument()
+  })
+  // 5.35.03 (e2e 5.35.02): every card's button had the same name (the hint); now it names the memory like Edit.
+  it('names the memory on its Still true button, with the hint as its description', async () => {
+    route({ 'GET /memory': () => ({ items: [mine] }) })
+    renderWithQueryClient(<MemoryList scope="personal" canCurate={false} />)
+    const button = await screen.findByRole('button', { name: 'Still true: I like short answers' })
+    expect(button).toHaveAttribute('title', 'Confirm this is still true, so it is not archived after 90 unused days')
   })
 })

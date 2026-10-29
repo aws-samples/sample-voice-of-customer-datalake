@@ -37,7 +37,11 @@
     "prfaqFailed": "Le PR/FAQ de cette décision n’a pas pu être généré. Rédigez-le à nouveau pour réessayer.",
     "revisit": "Réexaminer",
     "releaseWatch": "Suivi de lancement",
-    "hideReleaseWatch": "Masquer le suivi de lancement"
+    "hideReleaseWatch": "Masquer le suivi de lancement",
+    "delete": "Supprimer",
+    "deleteConfirmTitle": "Supprimer cette décision ?",
+    "deleteConfirmMessage": "« {{title}} » est retirée du projet pour tout le monde. Les documents qu'elle a lancés sont conservés.",
+    "deleteConfirm": "Supprimer la décision"
   },
   "picker": {
     "label": "Avis à l'appui",
@@ -57,7 +61,8 @@
   "errors": {
     "save": "La décision n'a pas pu être enregistrée.",
     "conflict": "Cette décision a changé depuis que vous l'avez ouverte. Rechargez la page et réessayez.",
-    "pursue": "Le PR/FAQ n'a pas pu être lancé."
+    "pursue": "Le PR/FAQ n'a pas pu être lancé.",
+    "delete": "La décision n'a pas pu être supprimée."
   },
   "releaseWatch": {
     "title": "Suivi de lancement",

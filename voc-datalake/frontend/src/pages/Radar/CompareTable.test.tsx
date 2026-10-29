@@ -10,12 +10,12 @@ import { screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { renderWithQueryClient } from '@test/query-client'
 import CompareTable from './CompareTable'
-import { normalizeRadarCompare } from '../../api/radarSchema'
+import { normalizeRadarPage } from '../../api/radarSchema'
 
-const COMPARE = normalizeRadarCompare({ ours_available: true, categories: [{
+const { compare: COMPARE } = normalizeRadarPage({ compare: { ours_available: true, categories: [{
   category: 'delivery', theirs: { volume: 2, positive_share: 0.8, negative_share: 0.1 },
   ours: { volume: 9, positive_share: 0.5, negative_share: 0.3 }, verdict: 'they_are_better',
-}] })
+}] } })
 
 const renderTable = () => renderWithQueryClient(<MemoryRouter><CompareTable compare={COMPARE} onRead={vi.fn()} /></MemoryRouter>)
 

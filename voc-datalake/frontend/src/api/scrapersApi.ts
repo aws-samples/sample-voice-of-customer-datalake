@@ -1,4 +1,5 @@
 // Scrapers & Manual Import API - extracted from client.ts for code splitting
+import { del, post } from './requestKit'
 import { fetchApi } from './client'
 import { runAssistJob } from './assistJobs'
 import { parseSelectorAnalysis } from './assistResults'
@@ -23,21 +24,15 @@ export const scrapersApi = {
     fetchApi<{
       success: boolean;
       scraper: ScraperConfig
-    }>('/scrapers', {
-      method: 'POST',
-      body: JSON.stringify({ scraper }),
-    }),
+    }>('/scrapers', post({ scraper })),
 
   deleteScraper: (id: string) =>
-    fetchApi<{ success: boolean }>(`/scrapers/${id}`, { method: 'DELETE' }),
+    fetchApi<{ success: boolean }>(`/scrapers/${id}`, del()),
 
   // An assist job (api/assistJobs): 202 + poll GET /scrapers/jobs/{id}, whose
   // `result` is the body this route used to answer synchronously.
   analyzeUrlForSelectors: (url: string) => runAssistJob(
-    () => fetchApi<unknown>('/scrapers/analyze-url', {
-      method: 'POST',
-      body: JSON.stringify({ url }),
-    }),
+    () => fetchApi<unknown>('/scrapers/analyze-url', post({ url })),
     (jobId) => fetchApi<unknown>(`/scrapers/jobs/${encodeURIComponent(jobId)}`),
     parseSelectorAnalysis,
   ),
@@ -47,7 +42,7 @@ export const scrapersApi = {
       success: boolean;
       execution_id: string;
       status: string
-    }>(`/scrapers/${id}/run`, { method: 'POST' }),
+    }>(`/scrapers/${id}/run`, post()),
 
   // The status endpoint's runtime shape has drifted from the declared one
   // (issue #169: undefined counts rendered 'Last: pages, reviews' blank).
@@ -65,13 +60,10 @@ export const scrapersApi = {
       source_origin?: string;
       message?: string;
       error?: string
-    }>('/scrapers/manual/parse', {
-      method: 'POST',
-      body: JSON.stringify({
+    }>('/scrapers/manual/parse', post({
         source_url: sourceUrl,
         raw_text: rawText,
-      }),
-    }),
+      })),
 
   getManualImportStatus: (jobId: string) =>
     fetchApi<{
@@ -105,13 +97,10 @@ export const scrapersApi = {
       message?: string;
       error?: string;
       errors?: string[]
-    }>('/scrapers/manual/confirm', {
-      method: 'POST',
-      body: JSON.stringify({
+    }>('/scrapers/manual/confirm', post({
         job_id: jobId,
         reviews,
-      }),
-    }),
+      })),
 
   /** `radarBrand`: a Radar brand key; the items then go to Radar only (docs/radar.md). */
   uploadJsonFeedback: (items: Array<Record<string, unknown>>, sourceId?: string, radarBrand?: string) =>
@@ -121,14 +110,11 @@ export const scrapersApi = {
       total_items: number;
       s3_uri?: string;
       errors?: string[]
-    }>('/scrapers/manual/json-upload', {
-      method: 'POST',
-      body: JSON.stringify({
+    }>('/scrapers/manual/json-upload', post({
         items,
         ...(sourceId === undefined ? {} : { source_id: sourceId }),
         ...(radarBrand === undefined ? {} : { radar_brand: radarBrand }),
-      }),
-    }),
+      })),
   /**
    * `source_id`: the source profile the rows belong to (default `manual_import`);
    * `column_map`: `{<csv header>: <target>}` (see `CsvColumnTarget`). Headers not
@@ -149,8 +135,5 @@ export const scrapersApi = {
       s3_uri?: string;
       warnings?: string[];
       errors?: string[]
-    }>('/scrapers/manual/csv-upload', {
-      method: 'POST',
-      body: JSON.stringify(params),
-    }),
+    }>('/scrapers/manual/csv-upload', post(params)),
 }

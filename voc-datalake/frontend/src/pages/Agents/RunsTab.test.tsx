@@ -11,9 +11,8 @@ import { renderWithQueryClient } from '@test/query-client'
 import { TestRouter } from '@test/TestRouter'
 import { fetchApi, resetFetchApi, routeFetchApi as route, stubResizeObserverForSuite } from '@test/fetchApiRoutes'
 import { wfEdge, wfNode, workflowView } from '@test/workflowFixtures'
-import { normalizeAgent } from '../../api/agentsApi'
+import { scoutAgent } from '@test/agentFixtures'
 import { RUN_POLL_MS } from './useAgents'
-import type { Agent } from '../../api/agentsApi'
 import type { RouteHandler as Handler } from '@test/fetchApiRoutes'
 import { at } from '@test/defined'
 import enCommon from '../../../public/locales/en/common.json'
@@ -22,12 +21,6 @@ import enAgents from '../../../public/locales/en/agents.json'
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 
 const { RunsTab } = await import('./RunsTab')
-
-function makeAgent(): Agent {
-  const agent = normalizeAgent({ agent_id: 'ag_1', name: 'Scout', enabled: true, workflow_id: 'wf_1' })
-  if (agent === null) throw new Error('fixture agent does not parse')
-  return agent
-}
 
 const run = (id: string, status: string, extra: Record<string, unknown> = {}) => ({
   run_id: id, agent_id: 'ag_1', status, trigger: 'manual', started_at: '2026-10-04T09:00:00Z', finished_at: null,
@@ -73,7 +66,7 @@ const idleRoutes = (extra: Record<string, Handler> = {}): Record<string, Handler
 })
 
 function renderTab(isAdmin = true) {
-  return renderWithQueryClient(<TestRouter><RunsTab agent={makeAgent()} isAdmin={isAdmin} /></TestRouter>)
+  return renderWithQueryClient(<TestRouter><RunsTab agent={scoutAgent()} isAdmin={isAdmin} /></TestRouter>)
 }
 
 const eventLog = () => screen.getByRole('region', { name: 'Event log' })

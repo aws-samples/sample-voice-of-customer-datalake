@@ -1,12 +1,19 @@
-"""Turn one step's web search results into release candidates (docs/radar.md).
+"""Turn one step's search results (web search, Exa or a brand's feeds) into news candidates (docs/radar.md).
+
+A candidate is one piece of NEWS of the brand itself, with a ``kind``: ``release`` (a product
+release, new feature or version), ``announcement`` (a product announcement, launch, roadmap,
+beta), ``promotion`` (prices, discounts, campaigns), ``partnership`` (partners, integrations
+announced as a partnership, acquisitions) or ``news`` (other company news); an unknown kind is
+``news``. The results may be in any language; the summary is in English.
 
 One model call per step (``utilities`` surface, resolved by ``shared.model_config``):
 the results go to the model ONLY inside a ``web_results`` DATA block in the
 user prompt, and it answers JSON. The summary is the model's own words; the
 snippets themselves are never stored.
 
-A candidate without a date takes its first cited result's published date; when
-that is missing too, the cited article page is fetched ONCE through the
+A candidate without a date takes its first cited result's published date, then a
+date written in a cited URL's path (``/changelog/2026-07-30-…``); when that is
+missing too, the cited article page is fetched ONCE through the
 SSRF-guarded opener (``shared.http_utils.fetch_public_url``) and its own
 publication date is read from the page metadata (code, no model call).
 
@@ -18,10 +25,11 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any, Final
+from urllib.parse import urlparse
 
 import requests
 
@@ -30,7 +38,7 @@ from shared.http_utils import UnsafeURLError
 from shared.logging import logger
 from shared.prompt_safety import data_block
 from shared.radar_citations import clean_citations
-from shared.radar_releases import ReleaseCandidate, source_kind
+from shared.radar_releases import ReleaseCandidate, news_kind, source_kind
 from shared.web_search import format_web_results_for_llm
 
 MAX_FEATURE_CHARS: Final = 120
@@ -42,16 +50,27 @@ _ISO_DAY: Final = re.compile(r'(\d{4}-\d{2}-\d{2})')
 _PAGE_DATE_PATTERNS: Final = (
     re.compile(r'"datePublished"\s*:\s*"(\d{4}-\d{2}-\d{2})'),
     re.compile(r'article:published_time"\s+content="(\d{4}-\d{2}-\d{2})'),
+    # The same meta tag with its attributes the other way round.
+    re.compile(r'content="(\d{4}-\d{2}-\d{2})[^"]*"\s+(?:property|name)="article:published_time"'),
     re.compile(r'<time[^>]*\bdatetime="(\d{4}-\d{2}-\d{2})'),
 )
+# A dated article path: ``/changelog/2026-07-30-loops`` or ``/blog/2026/07/30/loops``.
+_URL_DATE: Final = re.compile(r'/(\d{4})[-/](\d{2})[-/](\d{2})(?=[-/._]|\Z)')
 
 SYSTEM_PROMPT: Final = (
-    'You extract product releases of ONE company from web search results. '
-    'A release is a feature, product or capability the company itself launched or announced. '
-    'Ignore rumours, opinion pieces without a launch, other companies and job posts. '
-    'Answer with JSON only: {"releases": [{"feature": "<short name>", '
+    'You extract the NEWS of ONE company from search results: its product releases and new features, '
+    'product announcements and launches, promotions, partnerships, and company news. '
+    'Only news of that company itself: ignore rumours, opinion pieces without news, other companies, job posts, '
+    'and generic articles about the topic its name or products are about (for a company called "Example Air", '
+    'an article about air quality in general is not its news). '
+    'The results may be in any language; write the feature and the summary in English. '
+    'Answer with JSON only: {"releases": [{"feature": "<short headline>", '
+    '"kind": "release" | "announcement" | "promotion" | "partnership" | "news", '
     '"release_date": "YYYY-MM-DD" or null, "summary": "<one or two sentences in your own words>", '
-    '"sources": [<result numbers>]}]}. Use a date only when a result states it. '
+    '"sources": [<result numbers>]}]}. kind: release = a product release, new feature or version; '
+    'announcement = a product announcement, launch, roadmap or beta; promotion = prices, discounts, campaigns; '
+    'partnership = partners, integrations announced as a partnership, acquisitions; news = other company news '
+    '(results, awards, people, events). Use a date only when a result states it. '
     'Never copy sentences from the results. Answer {"releases": []} when there is none.'
 )
 
@@ -59,7 +78,7 @@ SYSTEM_PROMPT: Final = (
 def _prompt(brand_label: str, results: list[dict[str, Any]]) -> str:
     return (
         f'Company: {brand_label}\n'
-        f'List the releases of {brand_label} found in these numbered results.\n\n'
+        f'List the news of {brand_label} found in these numbered results.\n\n'
         + data_block('web_results', format_web_results_for_llm(results))
     )
 
@@ -84,6 +103,20 @@ def _valid_day(value: object, today: date) -> str | None:
     except ValueError:
         return None
     return day.isoformat() if day <= today + timedelta(days=1) else None
+
+
+def url_date(urls: Iterable[str], today: date) -> str | None:
+    """The first publication date written in a cited article's URL path, or None.
+
+    Changelogs and blogs put the day in the path; it dates the release for free
+    (no page fetch) when neither the model nor the search result did.
+    """
+    for url in urls:
+        path = urlparse(url).path if '://' in url else ''
+        match = _URL_DATE.search(path)
+        if match and (day := _valid_day('-'.join(match.groups()), today)):
+            return day
+    return None
 
 
 def _cited(entry: dict[str, Any], results: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -136,7 +169,7 @@ class ExtractContext:
     fetch: Callable[..., Any]
 
 
-def _candidate(entry: object, ctx: ExtractContext, results: list[dict[str, Any]]) -> ReleaseCandidate | None:
+def _candidate(entry: object, ctx: ExtractContext, results: list[dict[str, Any]], via: str) -> ReleaseCandidate | None:
     if not isinstance(entry, dict):
         return None
     feature = ' '.join(str(entry.get('feature') or '').split())[:MAX_FEATURE_CHARS]
@@ -144,7 +177,8 @@ def _candidate(entry: object, ctx: ExtractContext, results: list[dict[str, Any]]
     if not feature or not cited:
         return None
     today = ctx.today
-    release_date = _valid_day(entry.get('release_date'), today) or _valid_day(cited[0].get('published_date'), today)
+    release_date = (_valid_day(entry.get('release_date'), today) or _valid_day(cited[0].get('published_date'), today)
+                    or url_date((result['url'] for result in cited), today))
     if release_date is None and ctx.pages.take():
         release_date = page_date(cited[0]['url'], today, ctx.fetch)
     # A feed (`/rss/changelog.json`) may date the release or make it official, but is never shown.
@@ -157,11 +191,12 @@ def _candidate(entry: object, ctx: ExtractContext, results: list[dict[str, Any]]
         summary=' '.join(str(entry.get('summary') or '').split())[:MAX_SUMMARY_CHARS],
         release_date=release_date, urls=tuple(urls), titles=tuple(titles),
         source_kind=source_kind((result['url'] for result in cited), ctx.domains),
+        kind=news_kind(entry.get('kind')), found_via=(via,),
     )
 
 
-def extract_candidates(results: list[dict[str, Any]], ctx: ExtractContext) -> list[ReleaseCandidate]:
-    """The releases one model call finds in ``results``."""
+def extract_candidates(results: list[dict[str, Any]], ctx: ExtractContext, via: str = 'web') -> list[ReleaseCandidate]:
+    """The news one model call finds in ``results`` (``via``: the source that found them, web / exa / feed)."""
     if not results:
         return []
     answer = converse(
@@ -171,5 +206,5 @@ def extract_candidates(results: list[dict[str, Any]], ctx: ExtractContext) -> li
     entries = _json_object(answer).get('releases')
     if not isinstance(entries, list):
         return []
-    found = (_candidate(entry, ctx, results) for entry in entries[:MAX_CANDIDATES])
+    found = (_candidate(entry, ctx, results, via) for entry in entries[:MAX_CANDIDATES])
     return [candidate for candidate in found if candidate is not None]

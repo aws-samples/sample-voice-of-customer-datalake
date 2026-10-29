@@ -14,7 +14,7 @@
  *
  * @module assistant/components/AssistantRoot
  */
-import { useEffect, useId, useRef } from 'react'
+import { lazy, Suspense, useEffect, useId, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import clsx from 'clsx'
@@ -23,11 +23,22 @@ import KiroGhost from '../../components/KiroGhost/KiroGhost'
 import { useAssistantUiStore } from '../store/assistantStore'
 import { useLauncherPosition } from '../bubble/useLauncherPosition'
 import { isChatRoute } from '../page/chatRoute'
-import AssistantPanel from './AssistantPanel'
 import { useRestoreLastSession } from '../runtime/restoreSession'
 import { useRunEnvironment } from '../runtime/useAssistant'
 
-export default function AssistantRoot() {
+/**
+ * Loaded when the panel first opens, not with the app shell: the panel (~144 KB) and the
+ * markdown renderer it pulled in (~157 KB) were part of the JS every first load fetched before
+ * any page could render (docs/caching.md, "First load").
+ */
+const AssistantPanel = lazy(() => import('./AssistantPanel'))
+
+interface AssistantRootProps {
+  /** The mobile navigation drawer is open over the page: the launcher hides rather than float over it. */
+  launcherHidden?: boolean
+}
+
+export default function AssistantRoot({ launcherHidden = false }: Readonly<AssistantRootProps>) {
   const { t } = useTranslation('assistant')
   const { pathname } = useLocation()
   const open = useAssistantUiStore((s) => s.open)
@@ -53,7 +64,11 @@ export default function AssistantRoot() {
   const { position, panelAnchor, moved, dragging, reset, handlers } = launcher
   return (
     <>
-      {open && <AssistantPanel variant="floating" anchor={panelAnchor} onResetPosition={moved ? reset : undefined} />}
+      {open && (
+        <Suspense fallback={null}>
+          <AssistantPanel variant="floating" anchor={panelAnchor} onResetPosition={moved ? reset : undefined} />
+        </Suspense>
+      )}
       <button
         ref={launcherRef}
         type="button"
@@ -74,6 +89,7 @@ export default function AssistantRoot() {
         className={clsx(
           // Below `sm` the open panel is a full-screen sheet with its own close button.
           open && 'max-sm:hidden',
+          launcherHidden && 'hidden',
           'fixed z-50 flex h-12 w-12 touch-none select-none items-center justify-center rounded-full bg-accent text-accent-fg shadow-lg shadow-accent/30 hover:bg-accent-hover hover:shadow-[0_0_16px_var(--accent-glow)]',
           // No transition while dragging: the pressed state's duration would make
           // right/bottom ease behind the pointer on every move.

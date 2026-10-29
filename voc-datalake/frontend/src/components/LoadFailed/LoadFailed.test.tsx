@@ -10,7 +10,7 @@ import LoadFailed from './LoadFailed'
 describe('LoadFailed', () => {
   it('is an alert naming the failure, and its button retries', async () => {
     const onRetry = vi.fn()
-    render(<LoadFailed onRetry={onRetry} />)
+    render(<LoadFailed onRetry={onRetry} retrying={false} />)
 
     expect(screen.getByRole('alert')).toHaveTextContent('This could not be loaded. Check your connection and try again.')
     await userEvent.setup().click(screen.getByRole('button', { name: 'Try again' }))
@@ -25,7 +25,7 @@ describe('LoadFailed', () => {
   })
 
   it('says what failed when the page names it', () => {
-    render(<LoadFailed onRetry={vi.fn()} message="Agents couldn't be loaded." />)
+    render(<LoadFailed onRetry={vi.fn()} retrying={false} message="Agents couldn't be loaded." />)
 
     expect(screen.getByRole('alert')).toHaveTextContent("Agents couldn't be loaded.")
     expect(screen.getByRole('alert')).not.toHaveTextContent('Check your connection')

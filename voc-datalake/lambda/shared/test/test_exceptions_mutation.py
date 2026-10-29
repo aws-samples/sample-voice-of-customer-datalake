@@ -34,6 +34,7 @@ from shared.exceptions import (
     SecretUnreadableError,
     ServiceError,
     ServiceUnavailableError,
+    TooManyRequestsError,
     ValidationError,
 )
 
@@ -49,6 +50,7 @@ STATUS_TABLE = [
     (ConflictError, 409),
     (PayloadTooLargeError, 413),
     (ServiceUnavailableError, 503),
+    (TooManyRequestsError, 429),
 ]
 ALL_CLASSES = [cls for cls, _ in STATUS_TABLE]
 
@@ -140,6 +142,7 @@ class TestEveryRowIsAnApiError:
             ConflictError: ApiError,
             PayloadTooLargeError: ApiError,
             ServiceUnavailableError: ApiError,
+            TooManyRequestsError: ApiError,
         }
 
     def test_siblings_do_not_catch_each_other(self):

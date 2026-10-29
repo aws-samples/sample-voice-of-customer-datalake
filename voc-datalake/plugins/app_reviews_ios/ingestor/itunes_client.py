@@ -16,6 +16,7 @@ from app_store_web_scraper import AppStoreSession
 from app_store_web_scraper._errors import AppStoreError
 from app_store_web_scraper._utils import fromisoformat_utc
 
+from _shared.app_reviews_health import StorefrontFetch, failure_cause
 from _shared.base_ingestor import logger
 
 # Apple's RSS customer-reviews feed exposes at most 10 pages (~50 each).
@@ -96,19 +97,25 @@ def _collect_pages(
     limit: int,
     sort_segment: str,
     reviews: list[dict],
-) -> None:
+) -> str | None:
     """Append parsed reviews to *reviews* page by page until *limit*, the last
-    page, or `_MAX_CONSECUTIVE_EMPTY` blank/failed pages in a row."""
+    page, or `_MAX_CONSECUTIVE_EMPTY` blank/failed pages in a row.
+
+    Returns the cause page 1 failed with (``HTTP 403`` ...), else None: a storefront
+    whose FIRST page errors is a failed storefront, not an empty one."""
     consecutive_empty = 0
+    first_page_failure = None
     for page in range(1, _MAX_PAGES + 1):
         if len(reviews) >= limit or consecutive_empty >= _MAX_CONSECUTIVE_EMPTY:
-            return
+            return first_page_failure
         try:
             entries = _page_entries(session._get(_rss_path(country, app_id, page, sort_segment)))
         except AppStoreError as e:
             # Transient HTTP error on one page — skip it, keep paging.
             logger.warning(f"iOS RSS page {page} failed for app {app_id} in {country}: {e}")
             entries = None
+            if page == 1:
+                first_page_failure = failure_cause(e)
         if entries is None:
             # Empty or failed page — could be the real end OR an intermittent
             # blank. Keep going until we've seen several in a row.
@@ -120,7 +127,8 @@ def _collect_pages(
             if parsed:
                 reviews.append(parsed)
             if len(reviews) >= limit:
-                return
+                return first_page_failure
+    return first_page_failure
 
 
 def fetch_reviews_for_country(
@@ -129,20 +137,29 @@ def fetch_reviews_for_country(
     session: AppStoreSession,
     limit: int = 50,
     sort_by: str = _DEFAULT_SORT_BY,
-) -> list[dict]:
+) -> StorefrontFetch:
     """
     Fetch reviews for a single app in a single country.
 
     Pages through the RSS feed directly, skipping intermittent empty pages
     (the library would stop at the first one). `sort_by` is the plugin's
     `sort_by` option and selects the feed's sort order (see `_RSS_SORT_BY`).
-    Returns list of dicts with keys: id, date, user_name, rating, title, review,
+    `reviews` holds dicts with keys: id, date, user_name, rating, title, review,
     developer_response. A connection failure (after the session's retries) or
     an undecodable page ends the country early with what was collected so far.
+
+    `failure` is the short cause (``HTTP 403``, ``MaxRetryError(...)``) when the
+    storefront failed: it collected no reviews AND its page 1 errored or a
+    connection failure ended it. A partial fetch is not a failure (its WARNING
+    line is still written).
     """
     reviews: list[dict] = []
+    failure = None
     try:
-        _collect_pages(app_id, country, session, limit, rss_sort_segment(sort_by), reviews)
+        failure = _collect_pages(app_id, country, session, limit, rss_sort_segment(sort_by), reviews)
     except (urllib3.exceptions.HTTPError, ValueError) as e:
         logger.warning(f"Failed to fetch iOS reviews for app {app_id} in {country}: {e}")
-    return reviews
+        if not reviews:
+            failure = failure_cause(e)
+    # A storefront whose later pages answered is not a failed one.
+    return StorefrontFetch(reviews=reviews, failure=None if reviews else failure)

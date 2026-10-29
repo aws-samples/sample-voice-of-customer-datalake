@@ -1,5 +1,6 @@
-"""The company context and design system reach PRD / PR-FAQ and prototype prompts
-as DATA blocks — and leave the prompts untouched when nothing is configured (the
+"""The company context reaches PRD / PR-FAQ and prototype prompts as DATA blocks; the
+design system reaches PROTOTYPE prompts only (a PRD once described an unrelated
+dashboard from the design references). Nothing configured leaves the prompts untouched (the
 byte-identical case is also pinned by the golden prototype prompt)."""
 from unittest.mock import MagicMock, patch
 
@@ -22,16 +23,30 @@ def _blocks(company='', design=''):
     return patch.object(handler, '_org_context_blocks', return_value=(company, design))
 
 
+def _readers(company='', design=''):
+    """Patch the two real block readers (not the composition under test)."""
+    return (patch.object(handler, 'company_context_block', return_value=company),
+            patch.object(handler, 'design_system_block', return_value=design),
+            patch.object(handler, 'get_dynamodb_resource'))
+
+
 class TestWithOrgContext:
     def test_unchanged_when_nothing_configured(self):
-        with _blocks():
+        company, design, resource = _readers()
+        with company, design, resource:
             assert handler._with_org_context('PRODUCT') == 'PRODUCT'
 
-    def test_appends_present_blocks_in_order(self):
-        with _blocks(COMPANY, DESIGN):
-            assert handler._with_org_context('PRODUCT') == f'PRODUCT\n\n{COMPANY}\n\n{DESIGN}'
-        with _blocks(design=DESIGN):
-            assert handler._with_org_context('PRODUCT') == f'PRODUCT\n\n{DESIGN}'
+    def test_a_written_document_gets_the_company_context_but_never_the_design_system(self):
+        company, design, resource = _readers(COMPANY, DESIGN)
+        with company, design as design_reader, resource:
+            assert handler._with_org_context('PRODUCT') == f'PRODUCT\n\n{COMPANY}'
+        # Not even read: the design system is prototype-only input.
+        design_reader.assert_not_called()
+
+    def test_a_configured_design_system_alone_leaves_a_written_document_untouched(self):
+        company, design, resource = _readers(design=DESIGN)
+        with company, design, resource:
+            assert handler._with_org_context('PRODUCT') == 'PRODUCT'
 
     def test_reads_the_aggregates_table(self, monkeypatch):
         monkeypatch.setenv('AGGREGATES_TABLE', 'agg')
@@ -48,26 +63,41 @@ class TestWithOrgContext:
         assert handler._org_context_blocks() == ('', '')
 
 
-class TestPrdChain:
-    def test_build_steps_carry_the_blocks(self, monkeypatch):
-        captured = {}
+def _capture_chain_steps(monkeypatch, builder_name: str, doc_type: str) -> dict:
+    """Run ``_build_steps`` for ``doc_type`` with a configured company context AND design
+    system; return the keyword arguments its step builder received."""
+    captured: dict = {}
 
-        def builder(**kwargs):
-            captured.update(kwargs)
-            return [{'system': '', 'user': 'u'}]
+    def builder(**kwargs):
+        captured.update(kwargs)
+        return [{'system': '', 'user': 'u'}]
 
-        monkeypatch.setattr(handler, 'get_prd_generation_steps', builder)
-        monkeypatch.setattr(handler, 'get_versioned_document_by_allocation', lambda *_a, **_k: None)
-        monkeypatch.setattr(handler, '_gather_context', lambda *_a, **_k: handler.GatheredContext('', '', {
-            'sources': [], 'selected_document_count': 0, 'feedback_count': 0, 'persona_ids': []},
-            handler.NO_FEEDBACK))
-        monkeypatch.setattr(handler, '_product_context', lambda _pid: (handler.NO_PRODUCT_CONTEXT, False))
-        monkeypatch.setattr(handler, '_put_text', lambda key, _text: key)
-        monkeypatch.setattr(handler, 'get_dynamodb_resource', MagicMock)
-        monkeypatch.setattr(handler.JobContext, 'update_progress', lambda *_a, **_k: None)
-        with _blocks(COMPANY, DESIGN):
-            handler._build_steps('p1', 'j1', {'doc_type': 'prd', 'feature_idea': 'x'})
-        assert captured['product_context'] == f'{handler.NO_PRODUCT_CONTEXT}\n\n{COMPANY}\n\n{DESIGN}'
+    monkeypatch.setattr(handler, builder_name, builder)
+    monkeypatch.setattr(handler, 'get_versioned_document_by_allocation', lambda *_a, **_k: None)
+    monkeypatch.setattr(handler, '_gather_context', lambda *_a, **_k: handler.GatheredContext('', '', {
+        'sources': [], 'selected_document_count': 0, 'feedback_count': 0, 'persona_ids': []},
+        handler.NO_FEEDBACK))
+    monkeypatch.setattr(handler, '_product_context', lambda _pid: (handler.NO_PRODUCT_CONTEXT, False))
+    monkeypatch.setattr(handler, '_document_grounding', lambda _cfg: handler.Grounding(text=COMPANY))
+    monkeypatch.setattr(handler, '_put_text', lambda key, _text: key)
+    monkeypatch.setattr(handler, 'get_dynamodb_resource', MagicMock)
+    monkeypatch.setattr(handler, 'design_system_block', lambda *_a, **_k: DESIGN)
+    monkeypatch.setattr(handler.JobContext, 'update_progress', lambda *_a, **_k: None)
+    handler._build_steps('p1', 'j1', {'doc_type': doc_type, 'feature_idea': 'x'})
+    return captured
+
+
+class TestWrittenDocumentChains:
+    @pytest.mark.parametrize(('builder_name', 'doc_type'), [
+        ('get_prd_generation_steps', 'prd'),
+        ('get_prfaq_generation_steps', 'prfaq'),
+    ])
+    def test_the_company_context_reaches_the_steps_and_the_design_system_does_not(
+        self, monkeypatch, builder_name, doc_type,
+    ):
+        captured = _capture_chain_steps(monkeypatch, builder_name, doc_type)
+        assert captured['product_context'] == f'{handler.NO_PRODUCT_CONTEXT}\n\n{COMPANY}'
+        assert '<design_system>' not in captured['product_context']
 
 
 class TestPrototypePrompt:

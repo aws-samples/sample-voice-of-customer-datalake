@@ -100,6 +100,7 @@ export default function ReferenceDesignPreview({ design, actions }: Readonly<{
             </ul>
           ) : null}
           <p className="text-xs text-muted">{countsLine(designCounts(design), t)}</p>
+          {design.logo?.rendered === true ? <p className="text-xs text-muted">{t('designSystem.preview.logoRendered')}</p> : null}
         </div>
       </div>
       {actions ? <PreviewButtons hasLogo={design.logo !== null} actions={actions} /> : null}

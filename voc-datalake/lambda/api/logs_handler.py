@@ -39,8 +39,15 @@ from shared.ops_alerts_service import (
     set_alerting,
     unconfigured_status,
 )
+from shared.processing_logs import PROCESSING_FAILED_MESSAGE, THROTTLED_MESSAGE
 from shared.request_body import json_object_body
 from shared.scraper_run_errors import ERROR_TYPE_SHAPE, MAX_RETURNED_ERRORS, redacted_scraper_errors
+from shared.system_environment import environment as system_environment
+from shared.system_logs import SearchRequest, parse_level, parse_query_ids
+from shared.system_logs import search as search_system_logs
+from shared.system_queues import failure_queues
+from shared.system_request_log import lookup as lookup_request_lines
+from shared.system_request_log import parse_lookup
 from shared.tables import get_aggregates_table
 from shared.warm_init import warm_at_init
 
@@ -354,8 +361,6 @@ MASKED_SEGMENT = '*'
 MAX_RETURNED_KEYS = 50
 VALIDATION_ERROR_WITHHELD = 'Validation failed (details withheld)'
 UNKNOWN_ERROR_TYPE = 'UnknownError'
-PROCESSING_FAILED_MESSAGE = 'Processing failed; details are in the processor CloudWatch logs'
-THROTTLED_MESSAGE = 'Bedrock throttled the request; SQS will retry the message'
 _THROTTLING_ERROR_TYPES = frozenset({'BedrockThrottlingError', 'bedrock_throttling'})
 # Scraper run errors: shared/scraper_run_errors.py (also used by scrapers_handler).
 
@@ -476,8 +481,67 @@ def remove_alert_recipient():
     return remove_recipient(table, _alert_clients()[1], targets, json_object_body(app))
 
 
+# ============================================
+# System errors (Administration → System → Logs): admin-only
+# ============================================
+# Every ERROR / CRITICAL (optionally WARNING) line of this deployment's Lambdas, read
+# with CloudWatch Logs Insights and grouped (shared/system_logs.py). Admin-only: the
+# lines are raw handler output (redacted on the way out, but still operational detail).
+SYSTEM_DAYS_DEFAULT, SYSTEM_DAYS_MAX = 1, 30
+
+
+@cache
+def _logs_client() -> Any:
+    return boto3.client('logs')
+
+
+@app.get("/logs/system")
+@tracer.capture_method
+def get_system_logs():
+    require_admin(app.current_event.raw_event)
+    params = app.current_event.query_string_parameters or {}
+    request = SearchRequest(
+        days=validate_days(params.get('days'), default=SYSTEM_DAYS_DEFAULT, min_val=1, max_val=SYSTEM_DAYS_MAX),
+        level=parse_level(params.get('level')),
+        query_ids=parse_query_ids(params.get('query_id')),
+    )
+    return search_system_logs(_logs_client(), request)
+
+
+@app.get("/logs/system/request")
+@tracer.capture_method
+def get_system_request_lines():
+    """Every line of one invocation of a System errors group (shared/system_request_log.py)."""
+    require_admin(app.current_event.raw_event)
+    lookup = parse_lookup(app.current_event.query_string_parameters or {})
+    return lookup_request_lines(_logs_client(), lookup)
+
+
+@cache
+def _queue_clients() -> tuple[Any, Any]:
+    return boto3.client('sqs'), boto3.client('cloudwatch')
+
+
+@app.get("/logs/system/queues")
+@tracer.capture_method
+def get_system_queues():
+    """The dead-letter / failure queues, with up to three redacted bodies each (shared/system_queues.py)."""
+    require_admin(app.current_event.raw_event)
+    sqs, cloudwatch = _queue_clients()
+    return failure_queues(sqs, cloudwatch)
+
+
+@app.get("/logs/system/environment")
+@tracer.capture_method
+def get_system_environment():
+    """Region, models, alerting, open circuits… nothing secret (shared/system_environment.py)."""
+    require_admin(app.current_event.raw_event)
+    function_arn = getattr(app.lambda_context, 'invoked_function_arn', '') or ''
+    return system_environment(aggregates_table, _alert_clients()[0], str(function_arn))
+
+
 # Build the AWS clients during INIT, not on the first request (shared/warm_init.py).
-warm_at_init(_alert_clients)
+warm_at_init(_alert_clients, _logs_client, _queue_clients)
 
 
 @api_handler

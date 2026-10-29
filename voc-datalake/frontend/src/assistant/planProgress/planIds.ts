@@ -13,21 +13,14 @@ import { toolOutcomeSchema } from '../contract'
 import { ownEntry } from '../ownEntry'
 import { PLAN_ID_RE } from '../plan/schema'
 import { PLAN_PROPOSAL_TOOL } from '../approvals/planSchemas'
+import { jsonOrUndefined } from '../parseJson'
 import type { PlanView } from '../../api/plansApi'
 import type { ThreadState } from '../thread/types'
 
 const planDataSchema = z.object({ plan_id: z.string().regex(PLAN_ID_RE) })
 
-function parseJson(text: string): unknown {
-  try {
-    return JSON.parse(text)
-  } catch {
-    return undefined
-  }
-}
-
 function planIdOf(result: string): string | undefined {
-  const outcome = toolOutcomeSchema.safeParse(parseJson(result))
+  const outcome = toolOutcomeSchema.safeParse(jsonOrUndefined(result))
   if (!outcome.success || outcome.data.status !== 'executed') return undefined
   const data = planDataSchema.safeParse(outcome.data.data)
   return data.success ? data.data.plan_id : undefined

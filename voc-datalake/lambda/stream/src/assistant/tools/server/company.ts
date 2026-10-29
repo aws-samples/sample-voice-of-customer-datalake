@@ -9,7 +9,8 @@
 import { z } from 'zod';
 import type { ServerToolDefinition } from '../../types.js';
 import type { ToolDeps } from '../deps.js';
-import { isRecord, jsonResult } from '../format.js';
+import { isRecord } from '../../../lib/is-record.js';
+import { jsonResult } from '../format.js';
 import { parseToolInput, toolSpec } from '../spec.js';
 import { getSettingsRoute, serverTool } from './common.js';
 

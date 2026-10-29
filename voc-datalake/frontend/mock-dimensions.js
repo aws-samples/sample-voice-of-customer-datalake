@@ -17,6 +17,7 @@
 // Wired into mock-server.js by handleDomainModules.
 
 import { createHash, randomBytes } from 'node:crypto';
+import { feedbackTypeDimension, isBuiltinDimension, stampFeedbackTypes } from './mock-feedback-types.js';
 
 const MAX_DIMENSIONS = 10;
 const MAX_VALUES = 200;
@@ -35,7 +36,9 @@ const CALLER = 'admin-demo';
 const now = () => new Date().toISOString();
 
 const state = {
+  // The built-in feedback_type first (mock-feedback-types.js), then the admin-defined ones.
   dimensions: [
+    feedbackTypeDimension(),
     {
       key: 'product', label: 'Product', description: 'Which product the feedback is about', infer: true,
       values: [
@@ -95,6 +98,7 @@ export function seedDimensionFixtures(feedback) {
     if (seed.author) item.author = seed.author;
     if (seed.pii_policy) item.pii_policy = seed.pii_policy;
   }
+  stampFeedbackTypes(feedback);
 }
 
 export const sourceProfiles = () => state.sources;
@@ -193,6 +197,15 @@ function ratingAdmits(item, min, max) {
  * The `channel` / `dims` / `tag` / `rating_min` / `rating_max` filter of a request
  * as a predicate, or `{error}` for a malformed `dims` or rating (the real routes answer 400).
  */
+// `key:a|b` accepts either value; the choice `~unset` accepts an item with no value for
+// the key (shared/item_filters.py: the Problems page keeps reviews not typed yet in view).
+const UNSET_CHOICE = '~unset';
+function dimensionAdmits(actual, wanted) {
+  const choices = [wanted, ...wanted.split('|').filter(Boolean)];
+  if (typeof actual !== 'string' || actual === '') return choices.includes(UNSET_CHOICE);
+  return choices.includes(actual);
+}
+
 export function attributeFilterOf(searchParams) {
   const channel = searchParams?.get('channel') || '';
   const tag = (searchParams?.get('tag') || '').toLowerCase();
@@ -208,7 +221,7 @@ export function attributeFilterOf(searchParams) {
   return {
     admits: (item) => (!channel || item.source_channel === channel)
       && (!tag || (item.tags || []).some((t) => t.toLowerCase() === tag))
-      && pairs.every(([key, value]) => (item.dimensions || {})[key] === value)
+      && pairs.every(([key, value]) => dimensionAdmits((item.dimensions || {})[key], value))
       && ratingAdmits(item, min.value, max.value),
   };
 }
@@ -229,9 +242,14 @@ export function entityExtras(items) {
 // ── Routes ──────────────────────────────────────────────────────────────────
 
 function putDimensions(body) {
-  const error = validateDimensions(body?.dimensions);
+  // Built-in entries in the body are ignored, never stored (shared/dimension_config.validate_dimensions).
+  const custom = Array.isArray(body?.dimensions) ? body.dimensions.filter((d) => !isBuiltinDimension(d)) : body?.dimensions;
+  const error = validateDimensions(custom);
   if (error) return [400, { success: false, error }];
-  state.dimensions = body.dimensions.map((d) => ({ ...d, infer: d.infer !== false, values: d.values.map((v) => ({ ...v })) }));
+  state.dimensions = [
+    feedbackTypeDimension(),
+    ...custom.map((d) => ({ ...d, infer: d.infer !== false, values: d.values.map((v) => ({ ...v })) })),
+  ];
   state.dimensionsUpdatedAt = now();
   return [200, { success: true, dimensions: state.dimensions }];
 }

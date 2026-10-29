@@ -20,6 +20,7 @@
  *
  * @module api/votingSessionsApi
  */
+import { post } from './requestKit'
 import { z } from 'zod'
 import { DEFAULT_AXES, activeAxes, normalizeAxes } from './prioritizationAxes'
 import { getBaseUrl } from './baseUrl'
@@ -32,6 +33,8 @@ import { fetchApi } from './client'
  */
 const BALLOT_REFUSAL_REASONS = [
   'not_found', 'closed', 'expired', 'cap_reached', 'invalid',
+  // The session's row or project was deleted (410): the vote existed and is over.
+  'gone',
 ] as const
 
 type BallotRefusalReason = typeof BALLOT_REFUSAL_REASONS[number]
@@ -45,6 +48,9 @@ const BALLOT_REFUSAL_UNKNOWN = 'unknown'
 export type BallotFailure = BallotRefusalReason | typeof BALLOT_REFUSAL_UNKNOWN
 
 const refusalReason = z.enum(BALLOT_REFUSAL_REASONS)
+
+/** What the ballot config route answers for a session whose row or project was deleted. */
+const GONE_STATUS = 410
 
 /**
  * The facilitator's view of a session.
@@ -175,10 +181,7 @@ export const votingSessionsApi = {
     row_id: string
     row_title?: string
   }): Promise<VotingSession> => {
-    const raw = await fetchApi<unknown>('/voting-sessions', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    })
+    const raw = await fetchApi<unknown>('/voting-sessions', post(input))
     return votingSessionResponseSchema.parse(raw).session
   },
 
@@ -202,7 +205,7 @@ export const votingSessionsApi = {
   /** Close the session. THIS IS THE REVOCATION — it is what stops the room (and
    *  anyone who kept the link) from submitting anything further. Idempotent. */
   closeVotingSession: async (sessionId: string): Promise<VotingSession> => {
-    const raw = await fetchApi<unknown>(`${sessionPath(sessionId)}/close`, { method: 'POST' })
+    const raw = await fetchApi<unknown>(`${sessionPath(sessionId)}/close`, post())
     return votingSessionResponseSchema.parse(raw).session
   },
 
@@ -223,6 +226,8 @@ export const votingSessionsApi = {
     // one that needs a preflight round trip first. On the first thing a phone does
     // after scanning a QR, that is a wasted request.
     const response = await fetch(`${getBaseUrl()}${sessionPath(sessionId)}/config`)
+    // 410: the proposal the vote was about was deleted — a refusal body, said in words.
+    if (response.status === GONE_STATUS) return { ...closed, reason: 'gone' }
     if (!response.ok) return closed
     const parsed = ballotConfigResponseSchema.safeParse(await response.json())
     return parsed.success ? parsed.data.session : closed

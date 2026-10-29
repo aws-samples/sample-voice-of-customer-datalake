@@ -34,14 +34,26 @@
     "sampled": "この期間の最新レビューから読み取りました。"
   },
   "releases": {
-    "title": "リリース",
-    "empty": "まだリリースは見つかっていません。リリースは定期スキャンまたは「今すぐスキャン」で取得されます。",
+    "title": "ニュースとリリース",
+    "empty": "まだニュースは見つかっていません。ニュースとリリースは定期スキャンまたは「今すぐスキャン」で取得されます。",
     "official": "公式",
     "thirdParty": "報道とレビュー",
-    "approximate": "日付はおおよそ",
+    "undated": "公開日不明・初回検出日",
     "mentions_one": "{{count, number}} 件の言及",
     "mentions_other": "{{count, number}} 件の言及",
-    "sources": "出典"
+    "sources": "出典",
+    "kinds": {
+      "release": "リリース",
+      "announcement": "発表",
+      "promotion": "プロモーション",
+      "partnership": "提携",
+      "news": "企業ニュース"
+    },
+    "filterLabel": "種類で絞り込む",
+    "kindAll": "すべて",
+    "kindEmpty": "この一覧に「{{kind}}」はありません。すべての項目を見るには「すべて」を選んでください。",
+    "viaExa": "Exa 経由",
+    "viaFeed": "フィード経由"
   },
   "compare": {
     "title": "自社との比較",
@@ -63,13 +75,12 @@
     "openOurs_other": "カテゴリで {{category}} の自社レビュー {{count, number}} 件を開く"
   },
   "brands": {
-    "hint": "レーダーが追跡するブランドです。リリーススキャンが各ブランドをウェブで検索し、データソースページでレーダーソースに指定したソースがそのレビューを取り込みます。",
+    "hint": "Radar が追跡するブランド：ニューススキャンが各ブランドを Web で検索し（そのブランドの言語で、設定されていればニュースフィードも）、データソースページで Radar ソースに指定したソースがそのレビューを取り込みます。",
     "addTitle": "ブランドを追加",
     "nameLabel": "ブランド名",
     "domainsLabel": "ウェブサイトのドメイン",
     "domainsHint": "カンマ区切りで最大 {{max, number}} 件(例: 公式サイトとブログ)。リリースノートの検索に使います。",
     "add": "ブランドを追加",
-    "editDomains": "ドメインを編集",
     "editDomainsLabel": "{{brand}} のウェブサイトのドメイン",
     "doneEditing": "完了",
     "remove": "削除",
@@ -86,7 +97,31 @@
     "duplicate": "{{brand}} はすでにリストにあります。",
     "invalidName": "1-64 文字の文字、数字、スペース、または . & ' + - を使用してください",
     "tooMany": "ブランドは最大 {{max, number}} 件です。",
-    "loadFailed": "ブランドリストを読み込めませんでした。"
+    "loadFailed": "ブランドリストを読み込めませんでした。",
+    "edit": "編集",
+    "editLabel": "{{brand}} を編集",
+    "languageLabel": "検索言語",
+    "languageAuto": "自動（ドメインから：{{language}}）",
+    "languageAutoNew": "自動（ドメインから）",
+    "languageSummary": "言語：{{language}}",
+    "feedsLabel": "ニュースフィード",
+    "feedsHint": "ブランドのニュースの RSS / Atom フィード（任意）。スキャンのたびに読み込まれます。最大 {{max, number}} 件、1 行に 1 件またはカンマ区切り。",
+    "feedsTooMany": "ニュースフィードは最大 {{max, number}} 件です。",
+    "feedsHttps": "ニュースフィードはすべて https:// のリンクにしてください。",
+    "feedsSummary": "ニュースフィード：{{list}}",
+    "noFeeds": "なし",
+    "moreOptions": "その他のオプション",
+    "fixFeeds": "保存する前にニュースフィードを修正してください。",
+    "searchTermsLabel": "検索語",
+    "searchTermsHint": "ニュース検索に追加する任意の語句（正式な社名や製品名など）。ブランド名が一般的な単語でもある場合に便利です。最大 {{max, number}} 件、1 行に 1 件、各 {{chars, number}} 文字まで。",
+    "excludeTermsLabel": "除外語",
+    "excludeTermsHint": "任意の語句：タイトルまたは抜粋にいずれかを含む検索結果はスキップされます。最大 {{max, number}} 件、1 行に 1 件、各 {{chars, number}} 文字まで。",
+    "termsTooMany": "語句は最大 {{max, number}} 件です。",
+    "termsTooLong": "各語句は最大 {{chars, number}} 文字です。",
+    "termsInvalid": "語句には二重引用符を含めることも、- で始めることもできません。",
+    "searchTermsSummary": "検索語: {{list}}",
+    "excludeTermsSummary": "除外語: {{list}}",
+    "fixTerms": "保存する前に検索語または除外語を修正してください。"
   },
   "setup": {
     "brandsTitle": "追跡中のブランド",
@@ -98,16 +133,16 @@
     "sources": "データ元：",
     "howTitle": "レーダーのしくみ",
     "step1Title": "ブランドを追加",
-    "step1": "下で追加します。リリースノートを見つけるため、公式サイトのドメインも指定します。",
+    "step1": "下で追加します。ニュースを見つけるためにブランド自身の Web サイトのドメインを、必要に応じて検索言語とニュースフィードも指定します。",
     "step2Title": "レビューを取り込む",
     "step2": "データソースページで、スクレイパー、Web Reviews のページ、アプリコネクタ、または CSV/JSON インポートの「レーダーソース」にチェックを入れ、ブランドを選びます。そのレビューはレーダーにのみ送られ、自社のダッシュボードには入りません。",
-    "step3Title": "リリース",
-    "step3": "Web 検索は下の頻度で自動実行されます（毎日確認）。「今すぐスキャン」ですぐに実行することもできます。初回スキャンは過去 90 日をさかのぼります。",
+    "step3Title": "ニュースとリリース",
+    "step3": "各ブランドのニュース（ローンチ、新機能、プロモーション、提携、企業ニュース）の Web 検索が、ブランドの言語とニュースフィードで、下の頻度（毎日確認）に従って自動的に、または「今すぐスキャン」ですぐに実行されます。最初のスキャンは過去 90 日を対象にします。",
     "configure": "設定"
   },
   "settings": {
     "title": "レーダー",
-    "description": "リリーススキャンは、各レーダーブランドが公開した内容をウェブで検索します。ブランドを追加するまで何も実行されません。",
+    "description": "ニューススキャンは、各 Radar ブランドが出したものや発表したことを Web で検索します。ブランドを追加するまで何も実行されません。",
     "cadence": "スキャン頻度",
     "cadences": {
       "daily": "毎日",
@@ -138,7 +173,8 @@
       "completed": "完了",
       "failed": "失敗",
       "skipped": "スキップ"
-    }
+    },
+    "scanNowHint": "スケジュールを待たずに、今すぐウェブと各ブランド自身のドメインからリリースやニュースを検索します。数分かかり、ウェブ検索を使用します。"
   },
   "nav": {
     "label": "レーダー"
@@ -184,5 +220,39 @@
     "readTheirs_one": "{{category}} のレビューを読む",
     "readTheirs_other": "{{category}} の {{count, number}} 件のレビューを読む",
     "noSubcategoryChip": "サブカテゴリなし"
+  },
+  "all": {
+    "option": "すべてのブランド",
+    "brandsTitle": "ブランド",
+    "brandsCaption": "この期間に追跡しているすべてのブランド：レビュー、感情、リリース、最新ニュース",
+    "noBrands": "まだ追跡中のブランドはありません。",
+    "colBrand": "ブランド",
+    "colReviews": "レビュー",
+    "colSentiment": "センチメント",
+    "colReleases": "期間内のリリース",
+    "colLatest": "最新ニュース",
+    "shares": "ポジティブ {{positive}} · ネガティブ {{negative}}",
+    "noRelease": "ニュースはまだありません",
+    "openBrand": "{{brand}} を開く",
+    "newsTitle": "全ブランドの最新ニュース",
+    "capped": "{{total, number}} 件中、最新の {{shown, number}} 件を表示"
+  },
+  "exa": {
+    "title": "Exa（2 つ目の検索インデックス）",
+    "description": "Radar の Web 検索でブランドの日付付きニュースが見つからない場合、Exa も検索します。Exa に送られるのはブランド名、検索語、ドメインだけです。1,000 検索あたり約 5 ドルで、Exa から請求されます。",
+    "configured": "設定済み",
+    "notConfigured": "未設定",
+    "keyLabel": "Exa API キー",
+    "placeholder": "Exa API キーを貼り付け",
+    "replacePlaceholder": "キーは保存済みです。置き換えるには新しいキーを貼り付けます",
+    "save": "キーを保存",
+    "remove": "キーを削除",
+    "saved": "Exa キーを保存しました。",
+    "removed": "Exa キーを削除しました。",
+    "saveFailed": "Exa キーを保存できませんでした。",
+    "removeFailed": "Exa キーを削除できませんでした。",
+    "invalidKey": "8〜200 文字の英字、数字、- または _ を使ってください。",
+    "removeTitle": "Exa キーを削除しますか？",
+    "removeMessage": "Radar は Exa の検索をやめます。Radar 自身の Web 検索は続き、見つかったニュースはそのまま残ります。"
   }
 }

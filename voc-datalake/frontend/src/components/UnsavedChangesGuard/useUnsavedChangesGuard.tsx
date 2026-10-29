@@ -27,6 +27,7 @@ import { UNSAFE_DataRouterContext } from 'react-router-dom'
 import RouterBlocker from './RouterBlocker'
 import UnsavedChangesDialog from './UnsavedChangesDialog'
 import { registerGuard } from './guardRegistry'
+import { pathOrQueryChanged } from './pathOrQueryChanged'
 import type { ReactNode } from 'react'
 import type { Location } from 'react-router-dom'
 import type { PendingLeave as Pending } from './RouterBlocker'
@@ -50,9 +51,6 @@ export interface UnsavedChangesGuard {
   /** Render once, anywhere in the editor. */
   readonly dialog: ReactNode
 }
-
-const pathOrQueryChanged = (current: Location, next: Location): boolean =>
-  current.pathname !== next.pathname || current.search !== next.search
 
 function useBeforeUnload(active: boolean): void {
   useEffect(() => {

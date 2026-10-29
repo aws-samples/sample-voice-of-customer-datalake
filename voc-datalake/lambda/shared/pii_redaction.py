@@ -5,7 +5,8 @@
     [EMAIL] [PHONE] [IBAN] [CARD] [IP] [NAME] [ADDRESS]
 
 Pattern detection always runs: e-mail addresses, IBANs (mod-97 checked),
-payment card numbers (13-19 digits, Luhn checked), IPv4 and IPv6 addresses
+payment card numbers (13-19 digits, Luhn checked, with an issuer prefix
+that issues that length, so a 13-digit timestamp or order id survives), IPv4 and IPv6 addresses
 (``ipaddress`` checked) and phone numbers in E.164 and the common national
 formats (DE, FR, ES, UK, US). The phone rule is deliberately conservative so
 dates, version numbers and bare order ids survive: a run of digits counts as a
@@ -34,6 +35,7 @@ import boto3
 from shared.logging import logger, metrics
 
 __all__ = [
+    'is_payment_card',
     'redact_text',
 ]
 
@@ -97,6 +99,39 @@ def _luhn_valid(candidate: str) -> bool:
     return sum(value - 9 if value > 9 else value for value in weighted) % 10 == 0
 
 
+# Issuer prefixes (IIN ranges, inclusive) and the lengths each network issues.
+# One in ten random digit runs passes Luhn, so a 13-digit millisecond timestamp
+# or an order id must also start like a real card of that length.
+_CARD_NETWORKS: Final[tuple[tuple[int, int, frozenset[int]], ...]] = (
+    (4, 4, frozenset({13, 16, 19})),                      # Visa
+    (34, 34, frozenset({15})), (37, 37, frozenset({15})),  # American Express
+    (51, 55, frozenset({16})), (2221, 2720, frozenset({16})),  # Mastercard
+    (300, 305, frozenset(range(14, 20))), (36, 36, frozenset(range(14, 20))),  # Diners Club
+    (38, 39, frozenset(range(14, 20))),
+    (3528, 3589, frozenset(range(16, 20))),               # JCB
+    # Maestro 50 and 56-69; the 56-69 row also covers Discover (6011, 644-649, 65)
+    # and UnionPay (62), whose 16-19 digit lengths fall inside its 13-19.
+    (50, 50, frozenset(range(13, 20))), (56, 69, frozenset(range(13, 20))),
+)
+
+
+def _issuer_plausible(digits: str) -> bool:
+    for low, high, lengths in _CARD_NETWORKS:
+        prefix = int(digits[:len(str(low))])
+        if low <= prefix <= high and len(digits) in lengths:
+            return True
+    return False
+
+
+def is_payment_card(candidate: str) -> bool:
+    """True when ``candidate`` (digits, spaces, dashes) reads as a real payment card number.
+
+    It must pass Luhn AND start with an issuer prefix that issues cards of its length.
+    """
+    digits = ''.join(ch for ch in candidate if ch.isdigit())
+    return _issuer_plausible(digits) and _luhn_valid(digits)
+
+
 def _ipv6_valid(candidate: str) -> bool:
     if sum(ch.isalnum() for ch in candidate) < _MIN_IPV6_HEX_DIGITS:
         return False
@@ -126,7 +161,7 @@ def _phone_valid(candidate: str) -> bool:
 _RULES: Final[tuple[tuple[str, re.Pattern[str], Callable[[str], bool]], ...]] = (
     ('EMAIL', _EMAIL_RE, lambda _candidate: True),
     ('IBAN', _IBAN_RE, _iban_valid),
-    ('CARD', _CARD_RE, _luhn_valid),
+    ('CARD', _CARD_RE, is_payment_card),
     ('IP', _IPV6_RE, _ipv6_valid),
     ('IP', _IPV4_RE, lambda _candidate: True),
     ('PHONE', _PHONE_CANDIDATE_RE, _phone_valid),

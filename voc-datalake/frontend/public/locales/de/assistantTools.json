@@ -1,5 +1,6 @@
 {
   "card": {
+    "openParticipants": "Teilnehmende öffnen",
     "kicker": "Freigabe erforderlich",
     "details": "Details",
     "toolName": "Aktion: {{name}}",
@@ -41,6 +42,33 @@
     "openRadarSettings": "Administration → Quellen → Radar öffnen"
   },
   "preview": {
+    "participants": {
+      "summaryLabel": "Hinzuzufügende Personen",
+      "list": "Liste",
+      "count": "Personen",
+      "countValue_one": "{{count, number}} Person",
+      "countValue_other": "{{count, number}} Personen",
+      "listNotFound": "Diese Liste wurde nicht gefunden; beim Genehmigen wird niemand hinzugefügt.",
+      "email": "E-Mail",
+      "name": "Name",
+      "company": "Unternehmen",
+      "title": "Position",
+      "tags": "Tags",
+      "notSet": "Nicht gesetzt",
+      "tableLabel_one": "{{count, number}} hinzuzufügende Person",
+      "tableLabel_other": "{{count, number}} hinzuzufügende Personen",
+      "reviewAllNote": "Alle Personen sind aufgeführt; scrollen Sie und prüfen Sie jede Zeile vor dem Genehmigen.",
+      "duplicatesNote_one": "{{count, number}} doppelte E-Mail-Adresse wurde auf ihre erste Zeile zusammengefasst.",
+      "duplicatesNote_other": "{{count, number}} doppelte E-Mail-Adressen wurden auf ihre erste Zeile zusammengefasst.",
+      "reuseNote": "Bereits bekannte Personen behalten ihre gespeicherten Angaben; wer schon auf der Liste steht, bleibt unverändert. Es wird keine E-Mail gesendet.",
+      "listLabel": "Neue Liste",
+      "listName": "Name",
+      "kind": "Art",
+      "description": "Beschreibung",
+      "emptyListNote": "Die Liste ist zunächst leer; fügen Sie danach Personen hinzu.",
+      "listLoading": "Liste wird gelesen…",
+      "listReadFailed": "Die Teilnehmerlisten konnten nicht gelesen werden, daher wird die Liste mit ihrer ID angezeigt; prüfen Sie sie vor der Freigabe unter Teilnehmer."
+    },
     "showMore": "Alles anzeigen ({{n, number}} Zeichen)",
     "showLess": "Weniger anzeigen",
     "empty": "(leer)",
@@ -131,7 +159,11 @@
       "everyBrand": "Alle verfolgten Marken",
       "brand": "Marke",
       "scanFields": "Scan",
-      "scanCost": "Läuft einige Minuten im Hintergrund und nutzt Websuchen (höchstens das Abfragelimit der Radar-Einstellungen)."
+      "scanCost": "Läuft einige Minuten im Hintergrund und nutzt Websuchen (höchstens das Abfragelimit der Radar-Einstellungen).",
+      "language": "Suchsprache: {{language}}",
+      "feed": "News-Feed: {{feed}}",
+      "searchTerms": "Suchbegriffe: {{list}}",
+      "excludeTerms": "Ausschlussbegriffe: {{list}}"
     },
     "scraper": {
       "nothingSaved": "Nichts wird gespeichert, bevor Sie zustimmen.",
@@ -296,6 +328,15 @@
     }
   },
   "tools": {
+    "create_participant_list": {
+      "title": "Teilnehmerliste erstellen",
+      "titleWith": "Teilnehmerliste {{name}} erstellen"
+    },
+    "add_participants": {
+      "title": "Personen zu einer Teilnehmerliste hinzufügen",
+      "titleWith_one": "{{count, number}} Person zu einer Teilnehmerliste hinzufügen",
+      "titleWith_other": "{{count, number}} Personen zu einer Teilnehmerliste hinzufügen"
+    },
     "save_radar_brands": {
       "title": "Radar-Markenliste speichern",
       "titleWith_one": "Radar-Markenliste speichern ({{count, number}} Marke)",
