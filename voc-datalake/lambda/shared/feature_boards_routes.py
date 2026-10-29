@@ -1,8 +1,8 @@
 """Feedback board routes (docs/feature-requests.md -> API), behind the BOARD authorizer.
 
 Every caller lists and reads the boards they may use (``shared.feature_boards_access``; an
-invisible board is a 404). Only an app-pool admin creates, configures, archives and deletes a
-board. Included by ``api/engagement_handler.py`` BEFORE ``feature_requests_routes`` so that
+invisible board is a 404). Only an app-pool admin creates, configures, pauses, archives and
+deletes a board. Included by ``api/engagement_handler.py`` BEFORE ``feature_requests_routes`` so that
 ``/feature-requests/boards/...`` is never read as a request id.
 """
 from __future__ import annotations
@@ -24,6 +24,7 @@ from shared.feature_boards_store import (
     update_board,
     validate_create,
     validate_update,
+    with_pause_stamp,
 )
 from shared.feature_requests_store import requests_of_board
 from shared.logging import logger, tracer
@@ -74,11 +75,12 @@ def get_board_route(board_ref: str):
 @app.put('/feature-requests/boards/<board_ref>')
 @tracer.capture_method
 def put_board(board_ref: str):
-    """Admin: any of name, slug, description, fields, statuses, audience, archived."""
+    """Admin: any of name, slug, description, fields, statuses, audience, archived, paused (pausing
+    stamps ``paused_at`` / ``paused_by``; resuming clears them)."""
     viewer = require_board_admin(app.current_event.raw_event)
     scope = scope_for(viewer)
     board = scope.board(board_ref)
-    changes = validate_update(json_object_body(app))
+    changes = with_pause_stamp(board, validate_update(json_object_body(app)), viewer.subject)
     if 'statuses' in changes:
         _refuse_removing_used_statuses(scope.table, board, changes['statuses'])
     updated = update_board(scope.table, engagement_config.participants_table(), board, changes)

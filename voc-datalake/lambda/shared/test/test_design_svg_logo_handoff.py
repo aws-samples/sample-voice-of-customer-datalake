@@ -134,12 +134,12 @@ class TestDeletePreviews:
                 'company-context/design/logo_abcdefabcdef.png']
         for key in [*design_logo.preview_keys(REF_ID)[:2], *keep]:
             s3.put_object(Bucket='raw', Key=key, Body=b'x')
-        assert design_logo.delete_previews(s3, 'raw', REF_ID) == 3
+        assert design_logo.delete_previews(s3, 'raw', REF_ID) == 4
         assert sorted(o['Key'] for o in s3.list_objects_v2(Bucket='raw')['Contents']) == sorted(keep)
 
     def test_deleting_again_is_not_an_error(self, s3):
-        assert design_logo.delete_previews(s3, 'raw', REF_ID) == 3
-        assert design_logo.delete_previews(s3, 'raw', REF_ID) == 3
+        assert design_logo.delete_previews(s3, 'raw', REF_ID) == 4
+        assert design_logo.delete_previews(s3, 'raw', REF_ID) == 4
 
     @pytest.mark.parametrize(('bucket', 'ref_id'), [('', REF_ID), ('raw', '../x'), ('raw', 'ref_1')])
     def test_no_bucket_or_a_malformed_id_deletes_nothing(self, bucket, ref_id):

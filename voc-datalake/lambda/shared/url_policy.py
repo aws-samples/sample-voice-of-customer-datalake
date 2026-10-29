@@ -24,6 +24,7 @@ and that address is what is judged.
 
 import ipaddress
 import socket
+import time
 from urllib.parse import urlparse
 
 from shared.logging import logger
@@ -118,14 +119,42 @@ def _unscoped_address(address: object) -> IPAddress:
     return ipaddress.ip_address(str(address).partition('%')[0])
 
 
+#: Resolver failures that say "try again" rather than "no such name": glibc's EAI_AGAIN, and the bare OSError
+#: (seen: ``[Errno 16] Device or resource busy`` on a Lambda cold start) it raises for EAI_SYSTEM. A name that
+#: does not exist (EAI_NONAME …) is never retried. Retrying the same lookup cannot weaken the policy: every
+#: answer of the attempt that succeeds is still judged. One wait per retry (two retries).
+RESOLVE_RETRY_WAITS_SECONDS = (0.1, 0.3)
+
+
+def _transient(error: OSError) -> bool:
+    if isinstance(error, socket.gaierror):
+        return error.errno == socket.EAI_AGAIN
+    return True
+
+
+def _resolve(hostname: str, port: int | None) -> list:
+    """``socket.getaddrinfo``, retrying a transient failure (``_transient``) after each wait; the last error propagates."""
+    retries = 0
+    while True:
+        try:
+            return socket.getaddrinfo(hostname, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+        except OSError as error:
+            if retries == len(RESOLVE_RETRY_WAITS_SECONDS) or not _transient(error):
+                raise
+            logger.info('DNS lookup retried', extra={'reason': type(error).__name__, 'errno': error.errno})
+            time.sleep(RESOLVE_RETRY_WAITS_SECONDS[retries])
+            retries += 1
+
+
 def public_addresses(hostname: str, port: int | None) -> list[IPAddress]:
-    """Resolve `hostname` ONCE; every address it answers, provided all are public.
+    """Resolve `hostname` ONCE (a transient resolver failure is retried, ``_resolve``); every address it
+    answers, provided all are public.
 
     Raises `BlockedDestinationError` when any answer is non-public (one bad
     record refuses the name — a client may fall back to it), and lets the
     resolver's own `OSError` / IDNA `ValueError` propagate.
     """
-    answers = socket.getaddrinfo(hostname, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+    answers = _resolve(hostname, port)
     addresses: list[IPAddress] = []
     for _family, _, _, _, sockaddr in answers:
         try:

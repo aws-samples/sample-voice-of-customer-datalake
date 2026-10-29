@@ -11,6 +11,8 @@ import page_styles as ps
 import pytest
 from page_spacing import grounded_spacing, px_value
 
+from shared.design_vision import PageShot
+
 EXAMPLE_COM = {
     'url': 'https://example.com/', 'title': 'Example Domain', 'status': 200,
     'text': 'This domain is for use in documentation examples. ' * 4, 'html': '<html></html>',
@@ -41,8 +43,8 @@ def test_the_centred_pages_margins_are_read_from_the_page():
 
 def test_example_com_keeps_only_the_spacing_the_page_really_uses():
     _, extracted = cw.design_from_page(
-        cw.CapturedPage(_page(), b'jpeg'),
-        cw.CaptureDeps(table=None, kit=MagicMock(), summarise_image=MagicMock(return_value=ANSWER)))
+        cw.CapturedPage(_page(), (PageShot('fold', b'png', 'png', 1320, 870),)),
+        cw.CaptureDeps(table=None, kit=MagicMock(), summarise_images=MagicMock(return_value=ANSWER)))
     assert extracted is not None
     assert extracted['spacing'] == [{'name': 'paragraph-gap', 'value': '16px'}, {'name': 'note-gap', 'value': '12.8px'},
                                     {'name': 'section', 'value': '2rem'}]

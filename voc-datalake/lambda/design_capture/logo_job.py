@@ -10,9 +10,10 @@ reference as ready WITHOUT a logo; this job, on ``voc-design-capture`` (the only
 3. opens one managed-browser session (``LOGO_SESSION_SECONDS``) and draws the SVG as an ``<img>`` from a
    ``data:`` URL in a fresh ``about:blank`` tab (``logo_render.render_svg_logo``, the same path as a website's
    SVG logo: one PNG screenshot, checked by its bytes);
-4. stores ONLY the PNG as the reference's preview (``design_logo.store_rendered``) and sets
-   ``extracted_design.logo`` to ``{source_url: <the raw GitHub URL>, content_type: image/png, rendered: true,
-   preview_key}``; when it could not be drawn or stored, appends ``render_failed_note`` to the guidelines
+4. stores the PNG as the reference's preview and the sanitised SVG beside it, download-only
+   (``design_logo.store_rendered``), and sets ``extracted_design.logo`` to ``{source_url: <the raw GitHub URL>,
+   content_type: image/png, rendered: true, preview_key, svg_preview_key?}``; when it could not be drawn or
+   stored, appends ``render_failed_note`` to the guidelines
    instead. Both writes are conditional on step 1's state (``ready`` and the same ``fetched_at``).
 
 Never raises for a render problem: the reference is already usable without a logo.
@@ -42,19 +43,20 @@ def _current(table: Any, request: RenderRequest) -> dict | None:
     return design if isinstance(design, dict) else None
 
 
-def _draw(kit: BrowserKit, svg: str) -> bytes | None:
-    """The PNG the browser drew from the (re-sanitised) SVG, or None (logged with a short reason)."""
+def _draw(kit: BrowserKit, svg: str) -> tuple[bytes, str] | None:
+    """``(png, sanitised svg)`` the browser drew from the (re-sanitised) SVG, or None (logged with a short reason)."""
     try:
-        data_url = design_svg.svg_data_url(design_svg.sanitize_svg(svg))
+        clean = design_svg.sanitize_svg(svg)
     except design_svg.SvgRefused as exc:
         logger.info('GitHub SVG logo not rendered', extra={'reason': str(exc)})
         return None
     try:
         with kit.open_session(LOGO_SESSION_SECONDS) as cdp:
-            return render_svg_logo(cdp, data_url)
+            png = render_svg_logo(cdp, design_svg.svg_data_url(clean))
     except kit.browser_errors as exc:
         logger.info('GitHub SVG logo not rendered', extra={'reason': f'browser_{type(exc).__name__}'})
         return None
+    return (png, clean) if png else None
 
 
 def _write(table: Any, request: RenderRequest, attribute: str, value: object) -> bool:
@@ -82,8 +84,9 @@ def run_logo_render(event: dict, table: Any, kit: BrowserKit, s3: Any, bucket: s
     if request is None or design is None:
         logger.info('SVG logo render skipped (malformed, archived, refreshed or not ready)')
         return {'status': 'skipped'}
-    png = _draw(kit, request.logo.svg)
-    stored = design_logo.store_rendered(request.logo.source_url, png, request.ref_id, s3, bucket) if png else None
+    drawn = _draw(kit, request.logo.svg)
+    stored = (design_logo.store_rendered(request.logo.source_url, drawn[0], request.ref_id, s3, bucket, drawn[1])
+              if drawn else None)
     if stored is not None:
         written = _write(table, request, 'logo', stored)
         status = 'rendered'

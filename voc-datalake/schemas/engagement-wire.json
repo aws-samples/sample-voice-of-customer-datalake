@@ -1,7 +1,7 @@
 {
   "ask_create": {
     "ask": {
-      "ask_id": "ask_6276474534a2a697",
+      "ask_id": "ask_8904d1ce97b9e263",
       "counts": {
         "failed": 0,
         "recipients": 2,
@@ -9,7 +9,7 @@
         "sent": 0,
         "skipped": 0
       },
-      "created_at": "2026-10-26T09:33:09.442781+00:00",
+      "created_at": "2026-10-29T12:59:36.424779+00:00",
       "created_by": "admin-sub",
       "link": {
         "form_id": "form-1",
@@ -20,12 +20,12 @@
       "project_id": "proj-public",
       "status": "queued",
       "subject": "Two minutes on seat choice",
-      "updated_at": "2026-10-26T09:33:09.442781+00:00"
+      "updated_at": "2026-10-29T12:59:36.424779+00:00"
     }
   },
   "ask_detail": {
     "ask": {
-      "ask_id": "ask_6276474534a2a697",
+      "ask_id": "ask_8904d1ce97b9e263",
       "counts": {
         "failed": 0,
         "recipients": 2,
@@ -33,7 +33,7 @@
         "sent": 2,
         "skipped": 0
       },
-      "created_at": "2026-10-26T09:33:09.442781+00:00",
+      "created_at": "2026-10-29T12:59:36.424779+00:00",
       "created_by": "admin-sub",
       "link": {
         "form_id": "form-1",
@@ -44,25 +44,25 @@
       "project_id": "proj-public",
       "status": "sent",
       "subject": "Two minutes on seat choice",
-      "updated_at": "2026-10-26T09:33:09.496883+00:00"
+      "updated_at": "2026-10-29T12:59:36.450153+00:00"
     },
     "recipients": [
-      {
-        "email": "pat@example.com",
-        "error": null,
-        "name": "Pat",
-        "person_id": "per_0c45590e2bc316fe",
-        "responded_at": null,
-        "sent_at": "2026-10-26T09:33:09.475142+00:00",
-        "status": "sent"
-      },
       {
         "email": "lee@acme.example",
         "error": null,
         "name": "Lee",
-        "person_id": "per_f279e41d33f7c17f",
+        "person_id": "per_0da8cbd4c7af52db",
         "responded_at": null,
-        "sent_at": "2026-10-26T09:33:09.489735+00:00",
+        "sent_at": "2026-10-29T12:59:36.440282+00:00",
+        "status": "sent"
+      },
+      {
+        "email": "pat@example.com",
+        "error": null,
+        "name": "Pat",
+        "person_id": "per_eb1801c628efbec5",
+        "responded_at": null,
+        "sent_at": "2026-10-29T12:59:36.446867+00:00",
         "status": "sent"
       }
     ]
@@ -70,7 +70,7 @@
   "asks": {
     "asks": [
       {
-        "ask_id": "ask_6276474534a2a697",
+        "ask_id": "ask_8904d1ce97b9e263",
         "counts": {
           "failed": 0,
           "recipients": 2,
@@ -78,7 +78,7 @@
           "sent": 2,
           "skipped": 0
         },
-        "created_at": "2026-10-26T09:33:09.442781+00:00",
+        "created_at": "2026-10-29T12:59:36.424779+00:00",
         "created_by": "admin-sub",
         "link": {
           "form_id": "form-1",
@@ -89,7 +89,7 @@
         "project_id": "proj-public",
         "status": "sent",
         "subject": "Two minutes on seat choice",
-        "updated_at": "2026-10-26T09:33:09.496883+00:00"
+        "updated_at": "2026-10-29T12:59:36.450153+00:00"
       }
     ]
   },
@@ -105,8 +105,8 @@
         ],
         "mode": "list"
       },
-      "board_id": "brd_467ee5cb",
-      "created_at": "2026-10-26T09:33:09.133833+00:00",
+      "board_id": "brd_78c5116f",
+      "created_at": "2026-10-29T12:59:36.275851+00:00",
       "created_by": "admin-sub",
       "description": "Early access builds",
       "fields": {
@@ -196,6 +196,7 @@
         }
       },
       "name": "Beta feedback",
+      "paused": false,
       "request_count": 0,
       "share_url": "https://voc.example.com/board/beta-feedback",
       "slug": "beta-feedback",
@@ -214,7 +215,7 @@
         }
       ],
       "template": "beta",
-      "updated_at": "2026-10-26T09:33:09.133833+00:00"
+      "updated_at": "2026-10-29T12:59:36.275851+00:00"
     }
   },
   "board_delete": {
@@ -229,8 +230,8 @@
       "audience": {
         "mode": "list"
       },
-      "board_id": "brd_467ee5cb",
-      "created_at": "2026-10-26T09:33:09.133833+00:00",
+      "board_id": "brd_78c5116f",
+      "created_at": "2026-10-29T12:59:36.275851+00:00",
       "description": "Early access builds",
       "fields": {
         "request": {
@@ -319,6 +320,7 @@
         }
       },
       "name": "Beta feedback",
+      "paused": false,
       "request_count": 0,
       "share_url": "https://voc.example.com/board/beta-feedback",
       "slug": "beta-feedback",
@@ -337,7 +339,7 @@
         }
       ],
       "template": "beta",
-      "updated_at": "2026-10-26T09:33:09.133833+00:00"
+      "updated_at": "2026-10-29T12:59:36.275851+00:00"
     }
   },
   "board_update": {
@@ -352,8 +354,8 @@
         ],
         "mode": "list"
       },
-      "board_id": "brd_467ee5cb",
-      "created_at": "2026-10-26T09:33:09.133833+00:00",
+      "board_id": "brd_78c5116f",
+      "created_at": "2026-10-29T12:59:36.275851+00:00",
       "created_by": "admin-sub",
       "description": "Early access builds",
       "fields": {
@@ -443,6 +445,7 @@
         }
       },
       "name": "Beta 2",
+      "paused": false,
       "request_count": 0,
       "share_url": "https://voc.example.com/board/beta-feedback",
       "slug": "beta-feedback",
@@ -461,7 +464,7 @@
         }
       ],
       "template": "beta",
-      "updated_at": "2026-10-26T09:33:09.178509+00:00"
+      "updated_at": "2026-10-29T12:59:36.298644+00:00"
     }
   },
   "boards_list": {
@@ -472,7 +475,7 @@
           "mode": "company"
         },
         "board_id": "brd_sales",
-        "created_at": "2026-10-26T09:33:08.823403+00:00",
+        "created_at": "2026-10-29T12:59:36.120996+00:00",
         "description": "",
         "fields": {
           "request": {
@@ -561,6 +564,7 @@
           }
         },
         "name": "Sales feature requests",
+        "paused": false,
         "request_count": 1,
         "share_url": "https://voc.example.com/board/sales-feature-requests",
         "slug": "sales-feature-requests",
@@ -587,7 +591,7 @@
           }
         ],
         "template": "sales",
-        "updated_at": "2026-10-26T09:33:08.823403+00:00"
+        "updated_at": "2026-10-29T12:59:36.120996+00:00"
       }
     ],
     "viewer": {
@@ -607,7 +611,7 @@
           "mode": "company"
         },
         "board_id": "brd_sales",
-        "created_at": "2026-10-26T09:33:08.823403+00:00",
+        "created_at": "2026-10-29T12:59:36.120996+00:00",
         "created_by": "system",
         "description": "",
         "fields": {
@@ -697,6 +701,7 @@
           }
         },
         "name": "Sales feature requests",
+        "paused": false,
         "request_count": 1,
         "share_url": "https://voc.example.com/board/sales-feature-requests",
         "slug": "sales-feature-requests",
@@ -723,7 +728,7 @@
           }
         ],
         "template": "sales",
-        "updated_at": "2026-10-26T09:33:08.823403+00:00"
+        "updated_at": "2026-10-29T12:59:36.120996+00:00"
       }
     ],
     "viewer": {
@@ -740,7 +745,7 @@
   "fr_create": {
     "request": {
       "board_id": "brd_sales",
-      "created_at": "2026-10-26T09:33:08.845443+00:00",
+      "created_at": "2026-10-29T12:59:36.132357+00:00",
       "description": "Needed for the enterprise tier",
       "fields": {
         "amount_usd": 120000,
@@ -751,7 +756,7 @@
       },
       "reporter_email": "sam@acme.example",
       "reporter_name": "Sam Seller",
-      "request_id": "fr_da19404187ab8e88",
+      "request_id": "fr_09dde6edea0f8982",
       "status": "new",
       "title": "SSO with SAML",
       "totals": {
@@ -760,13 +765,13 @@
         "customers": 1,
         "supporters": 1
       },
-      "updated_at": "2026-10-26T09:33:08.845443+00:00"
+      "updated_at": "2026-10-29T12:59:36.132357+00:00"
     },
     "supports": [
       {
         "amount_usd": 120000,
         "contact_email": "cio@acme.example",
-        "created_at": "2026-10-26T09:33:08.845459+00:00",
+        "created_at": "2026-10-29T12:59:36.132362+00:00",
         "customer": "Acme",
         "deal": "Acme renewal",
         "email": "sam@acme.example",
@@ -782,16 +787,16 @@
         "is_reporter": true,
         "name": "Sam Seller",
         "note": "Their IT asks every week",
-        "request_id": "fr_da19404187ab8e88",
-        "support_id": "sup_bb11d3991de2567e",
-        "updated_at": "2026-10-26T09:33:08.845459+00:00"
+        "request_id": "fr_09dde6edea0f8982",
+        "support_id": "sup_a93b6f465bb8f233",
+        "updated_at": "2026-10-29T12:59:36.132362+00:00"
       }
     ]
   },
   "fr_create_fields": {
     "request": {
-      "board_id": "brd_467ee5cb",
-      "created_at": "2026-10-26T09:33:09.197805+00:00",
+      "board_id": "brd_78c5116f",
+      "created_at": "2026-10-29T12:59:36.310166+00:00",
       "description": "",
       "fields": {
         "area": "Seat map",
@@ -801,32 +806,32 @@
       },
       "reporter_email": "kim@acme.example",
       "reporter_name": "",
-      "request_id": "fr_26934c48965dcfaf",
+      "request_id": "fr_2febd42fa1227fff",
       "status": "new",
       "title": "Seat map is slow",
       "totals": {
         "avg_rating": 2,
         "supporters": 1
       },
-      "updated_at": "2026-10-26T09:33:09.197805+00:00"
+      "updated_at": "2026-10-29T12:59:36.310166+00:00"
     },
     "supports": [
       {
-        "created_at": "2026-10-26T09:33:09.197816+00:00",
+        "created_at": "2026-10-29T12:59:36.310170+00:00",
         "email": "kim@acme.example",
         "fields": {},
         "is_reporter": true,
         "name": "",
-        "request_id": "fr_26934c48965dcfaf",
-        "support_id": "sup_83128ea62194e5f6",
-        "updated_at": "2026-10-26T09:33:09.197816+00:00"
+        "request_id": "fr_2febd42fa1227fff",
+        "support_id": "sup_f4ae650246444937",
+        "updated_at": "2026-10-29T12:59:36.310170+00:00"
       }
     ]
   },
   "fr_detail": {
     "request": {
       "board_id": "brd_sales",
-      "created_at": "2026-10-26T09:33:08.845443+00:00",
+      "created_at": "2026-10-29T12:59:36.132357+00:00",
       "description": "Needed for the enterprise tier",
       "fields": {
         "amount_usd": 120000,
@@ -835,11 +840,11 @@
         "deal": "Acme renewal",
         "impact": "at_risk"
       },
-      "list_id": "lst_c6d59f683f7f23fe",
+      "list_id": "lst_6c4492cf3de63461",
       "project_id": "proj-public",
       "reporter_email": "sam@acme.example",
       "reporter_name": "Sam Seller",
-      "request_id": "fr_da19404187ab8e88",
+      "request_id": "fr_09dde6edea0f8982",
       "status": "planned",
       "title": "SSO with SAML and OIDC",
       "totals": {
@@ -848,13 +853,13 @@
         "customers": 2,
         "supporters": 2
       },
-      "updated_at": "2026-10-26T09:33:09.027640+00:00"
+      "updated_at": "2026-10-29T12:59:36.223568+00:00"
     },
     "supports": [
       {
         "amount_usd": 120000,
         "contact_email": "cio@acme.example",
-        "created_at": "2026-10-26T09:33:08.845459+00:00",
+        "created_at": "2026-10-29T12:59:36.132362+00:00",
         "customer": "Acme",
         "deal": "Acme renewal",
         "email": "sam@acme.example",
@@ -870,14 +875,14 @@
         "is_reporter": true,
         "name": "Sam Seller",
         "note": "Their IT asks every week",
-        "request_id": "fr_da19404187ab8e88",
-        "support_id": "sup_bb11d3991de2567e",
-        "updated_at": "2026-10-26T09:33:08.845459+00:00"
+        "request_id": "fr_09dde6edea0f8982",
+        "support_id": "sup_a93b6f465bb8f233",
+        "updated_at": "2026-10-29T12:59:36.132362+00:00"
       },
       {
         "amount_usd": 60000,
         "contact_email": "ops@example.com",
-        "created_at": "2026-10-26T09:33:08.862716+00:00",
+        "created_at": "2026-10-29T12:59:36.144824+00:00",
         "customer": "Example Air",
         "deal": "Example Air fleet",
         "email": "kim@acme.example",
@@ -893,9 +898,9 @@
         "is_reporter": false,
         "name": "Kim",
         "note": "Blocks the renewal",
-        "request_id": "fr_da19404187ab8e88",
-        "support_id": "sup_dfa889df9fcb5480",
-        "updated_at": "2026-10-26T09:33:08.891682+00:00"
+        "request_id": "fr_09dde6edea0f8982",
+        "support_id": "sup_c3f4d8dc8705229b",
+        "updated_at": "2026-10-29T12:59:36.159393+00:00"
       }
     ]
   },
@@ -906,7 +911,7 @@
         "mode": "company"
       },
       "board_id": "brd_sales",
-      "created_at": "2026-10-26T09:33:08.823403+00:00",
+      "created_at": "2026-10-29T12:59:36.120996+00:00",
       "description": "",
       "fields": {
         "request": {
@@ -995,6 +1000,7 @@
         }
       },
       "name": "Sales feature requests",
+      "paused": false,
       "request_count": 1,
       "share_url": "https://voc.example.com/board/sales-feature-requests",
       "slug": "sales-feature-requests",
@@ -1021,12 +1027,12 @@
         }
       ],
       "template": "sales",
-      "updated_at": "2026-10-26T09:33:08.823403+00:00"
+      "updated_at": "2026-10-29T12:59:36.120996+00:00"
     },
     "requests": [
       {
         "board_id": "brd_sales",
-        "created_at": "2026-10-26T09:33:08.845443+00:00",
+        "created_at": "2026-10-29T12:59:36.132357+00:00",
         "description": "Needed for the enterprise tier",
         "fields": {
           "amount_usd": 120000,
@@ -1035,11 +1041,11 @@
           "deal": "Acme renewal",
           "impact": "at_risk"
         },
-        "list_id": "lst_c6d59f683f7f23fe",
+        "list_id": "lst_6c4492cf3de63461",
         "project_id": "proj-public",
         "reporter_email": "sam@acme.example",
         "reporter_name": "Sam Seller",
-        "request_id": "fr_da19404187ab8e88",
+        "request_id": "fr_09dde6edea0f8982",
         "status": "planned",
         "title": "SSO with SAML and OIDC",
         "totals": {
@@ -1048,7 +1054,7 @@
           "customers": 2,
           "supporters": 2
         },
-        "updated_at": "2026-10-26T09:33:09.027640+00:00"
+        "updated_at": "2026-10-29T12:59:36.223568+00:00"
       }
     ],
     "viewer": {
@@ -1064,8 +1070,8 @@
       "audience": {
         "mode": "list"
       },
-      "board_id": "brd_467ee5cb",
-      "created_at": "2026-10-26T09:33:09.133833+00:00",
+      "board_id": "brd_78c5116f",
+      "created_at": "2026-10-29T12:59:36.275851+00:00",
       "description": "Early access builds",
       "fields": {
         "request": {
@@ -1154,6 +1160,7 @@
         }
       },
       "name": "Beta 2",
+      "paused": false,
       "request_count": 1,
       "share_url": "https://voc.example.com/board/beta-feedback",
       "slug": "beta-feedback",
@@ -1172,12 +1179,12 @@
         }
       ],
       "template": "beta",
-      "updated_at": "2026-10-26T09:33:09.178509+00:00"
+      "updated_at": "2026-10-29T12:59:36.298644+00:00"
     },
     "requests": [
       {
-        "board_id": "brd_467ee5cb",
-        "created_at": "2026-10-26T09:33:09.197805+00:00",
+        "board_id": "brd_78c5116f",
+        "created_at": "2026-10-29T12:59:36.310166+00:00",
         "description": "",
         "fields": {
           "area": "Seat map",
@@ -1187,14 +1194,14 @@
         },
         "reporter_email": "kim@acme.example",
         "reporter_name": "",
-        "request_id": "fr_26934c48965dcfaf",
+        "request_id": "fr_2febd42fa1227fff",
         "status": "new",
         "title": "Seat map is slow",
         "totals": {
           "avg_rating": 2,
           "supporters": 1
         },
-        "updated_at": "2026-10-26T09:33:09.197805+00:00"
+        "updated_at": "2026-10-29T12:59:36.310166+00:00"
       }
     ],
     "viewer": {
@@ -1207,19 +1214,19 @@
   "fr_promote": {
     "added": 4,
     "list": {
-      "created_at": "2026-10-26T09:33:08.954576+00:00",
+      "created_at": "2026-10-29T12:59:36.191865+00:00",
       "created_by": "admin-sub",
       "description": "",
-      "feature_request_id": "fr_da19404187ab8e88",
+      "feature_request_id": "fr_09dde6edea0f8982",
       "kind": "requesters",
-      "list_id": "lst_c6d59f683f7f23fe",
+      "list_id": "lst_6c4492cf3de63461",
       "member_count": 4,
       "name": "Requests: SSO with SAML and OIDC",
-      "updated_at": "2026-10-26T09:33:08.954576+00:00"
+      "updated_at": "2026-10-29T12:59:36.191865+00:00"
     },
     "request": {
       "board_id": "brd_sales",
-      "created_at": "2026-10-26T09:33:08.845443+00:00",
+      "created_at": "2026-10-29T12:59:36.132357+00:00",
       "description": "Needed for the enterprise tier",
       "fields": {
         "amount_usd": 120000,
@@ -1228,11 +1235,11 @@
         "deal": "Acme renewal",
         "impact": "at_risk"
       },
-      "list_id": "lst_c6d59f683f7f23fe",
+      "list_id": "lst_6c4492cf3de63461",
       "project_id": "proj-public",
       "reporter_email": "sam@acme.example",
       "reporter_name": "Sam Seller",
-      "request_id": "fr_da19404187ab8e88",
+      "request_id": "fr_09dde6edea0f8982",
       "status": "planned",
       "title": "SSO with SAML and OIDC",
       "totals": {
@@ -1241,14 +1248,14 @@
         "customers": 2,
         "supporters": 2
       },
-      "updated_at": "2026-10-26T09:33:09.027640+00:00"
+      "updated_at": "2026-10-29T12:59:36.223568+00:00"
     },
     "skipped": []
   },
   "fr_status": {
     "request": {
       "board_id": "brd_sales",
-      "created_at": "2026-10-26T09:33:08.845443+00:00",
+      "created_at": "2026-10-29T12:59:36.132357+00:00",
       "description": "Needed for the enterprise tier",
       "fields": {
         "amount_usd": 120000,
@@ -1259,7 +1266,7 @@
       },
       "reporter_email": "sam@acme.example",
       "reporter_name": "Sam Seller",
-      "request_id": "fr_da19404187ab8e88",
+      "request_id": "fr_09dde6edea0f8982",
       "status": "under_review",
       "title": "SSO with SAML and OIDC",
       "totals": {
@@ -1268,13 +1275,13 @@
         "customers": 2,
         "supporters": 2
       },
-      "updated_at": "2026-10-26T09:33:08.931983+00:00"
+      "updated_at": "2026-10-29T12:59:36.181193+00:00"
     }
   },
   "fr_support_create": {
     "request": {
       "board_id": "brd_sales",
-      "created_at": "2026-10-26T09:33:08.845443+00:00",
+      "created_at": "2026-10-29T12:59:36.132357+00:00",
       "description": "Needed for the enterprise tier",
       "fields": {
         "amount_usd": 120000,
@@ -1285,7 +1292,7 @@
       },
       "reporter_email": "sam@acme.example",
       "reporter_name": "Sam Seller",
-      "request_id": "fr_da19404187ab8e88",
+      "request_id": "fr_09dde6edea0f8982",
       "status": "new",
       "title": "SSO with SAML",
       "totals": {
@@ -1294,12 +1301,12 @@
         "customers": 2,
         "supporters": 2
       },
-      "updated_at": "2026-10-26T09:33:08.870327+00:00"
+      "updated_at": "2026-10-29T12:59:36.148314+00:00"
     },
     "support": {
       "amount_usd": 50000,
       "contact_email": "ops@example.com",
-      "created_at": "2026-10-26T09:33:08.862716+00:00",
+      "created_at": "2026-10-29T12:59:36.144824+00:00",
       "customer": "Example Air",
       "deal": "Example Air fleet",
       "email": "kim@acme.example",
@@ -1315,15 +1322,15 @@
       "is_reporter": false,
       "name": "Kim",
       "note": "Blocks the renewal",
-      "request_id": "fr_da19404187ab8e88",
-      "support_id": "sup_dfa889df9fcb5480",
-      "updated_at": "2026-10-26T09:33:08.862716+00:00"
+      "request_id": "fr_09dde6edea0f8982",
+      "support_id": "sup_c3f4d8dc8705229b",
+      "updated_at": "2026-10-29T12:59:36.144824+00:00"
     }
   },
   "fr_support_delete": {
     "request": {
       "board_id": "brd_sales",
-      "created_at": "2026-10-26T09:33:08.845443+00:00",
+      "created_at": "2026-10-29T12:59:36.132357+00:00",
       "description": "Needed for the enterprise tier",
       "fields": {
         "amount_usd": 120000,
@@ -1332,11 +1339,11 @@
         "deal": "Acme renewal",
         "impact": "at_risk"
       },
-      "list_id": "lst_c6d59f683f7f23fe",
+      "list_id": "lst_6c4492cf3de63461",
       "project_id": "proj-public",
       "reporter_email": "sam@acme.example",
       "reporter_name": "Sam Seller",
-      "request_id": "fr_da19404187ab8e88",
+      "request_id": "fr_09dde6edea0f8982",
       "status": "planned",
       "title": "SSO with SAML and OIDC",
       "totals": {
@@ -1345,13 +1352,13 @@
         "customers": 1,
         "supporters": 1
       },
-      "updated_at": "2026-10-26T09:33:09.094571+00:00"
+      "updated_at": "2026-10-29T12:59:36.254459+00:00"
     }
   },
   "fr_support_update": {
     "request": {
       "board_id": "brd_sales",
-      "created_at": "2026-10-26T09:33:08.845443+00:00",
+      "created_at": "2026-10-29T12:59:36.132357+00:00",
       "description": "Needed for the enterprise tier",
       "fields": {
         "amount_usd": 120000,
@@ -1362,7 +1369,7 @@
       },
       "reporter_email": "sam@acme.example",
       "reporter_name": "Sam Seller",
-      "request_id": "fr_da19404187ab8e88",
+      "request_id": "fr_09dde6edea0f8982",
       "status": "new",
       "title": "SSO with SAML",
       "totals": {
@@ -1371,13 +1378,13 @@
         "customers": 2,
         "supporters": 2
       },
-      "updated_at": "2026-10-26T09:33:08.899108+00:00"
+      "updated_at": "2026-10-29T12:59:36.163556+00:00"
     }
   },
   "fr_update": {
     "request": {
       "board_id": "brd_sales",
-      "created_at": "2026-10-26T09:33:08.845443+00:00",
+      "created_at": "2026-10-29T12:59:36.132357+00:00",
       "description": "Needed for the enterprise tier",
       "fields": {
         "amount_usd": 120000,
@@ -1388,7 +1395,7 @@
       },
       "reporter_email": "sam@acme.example",
       "reporter_name": "Sam Seller",
-      "request_id": "fr_da19404187ab8e88",
+      "request_id": "fr_09dde6edea0f8982",
       "status": "new",
       "title": "SSO with SAML and OIDC",
       "totals": {
@@ -1397,69 +1404,69 @@
         "customers": 2,
         "supporters": 2
       },
-      "updated_at": "2026-10-26T09:33:08.916068+00:00"
+      "updated_at": "2026-10-29T12:59:36.172690+00:00"
     }
   },
   "list_create": {
     "list": {
-      "created_at": "2026-10-26T09:33:09.296710+00:00",
+      "created_at": "2026-10-29T12:59:36.358963+00:00",
       "created_by": "admin-sub",
       "description": "Early access",
       "kind": "beta",
-      "list_id": "lst_c8c6f301e35cadc6",
+      "list_id": "lst_4cd54fe431509e1f",
       "member_count": 0,
       "name": "Beta customers",
-      "updated_at": "2026-10-26T09:33:09.296710+00:00"
+      "updated_at": "2026-10-29T12:59:36.358963+00:00"
     }
   },
   "list_detail": {
     "list": {
-      "created_at": "2026-10-26T09:33:09.296710+00:00",
+      "created_at": "2026-10-29T12:59:36.358963+00:00",
       "created_by": "admin-sub",
       "description": "Early access 2027",
       "kind": "beta",
-      "list_id": "lst_c8c6f301e35cadc6",
+      "list_id": "lst_4cd54fe431509e1f",
       "member_count": 2,
       "name": "Beta customers",
-      "updated_at": "2026-10-26T09:33:09.299701+00:00"
+      "updated_at": "2026-10-29T12:59:36.360156+00:00"
     },
     "members": [
       {
         "company": "",
-        "created_at": "2026-10-26T09:33:09.340019+00:00",
+        "created_at": "2026-10-29T12:59:36.378146+00:00",
         "created_by": "admin-sub",
         "email": "lee@acme.example",
         "list_ids": [
-          "lst_c8c6f301e35cadc6"
+          "lst_4cd54fe431509e1f"
         ],
         "name": "Lee",
         "notes": "",
         "origin": "manual",
-        "person_id": "per_f279e41d33f7c17f",
+        "person_id": "per_0da8cbd4c7af52db",
         "status": "active",
         "tags": [],
         "title": "",
-        "updated_at": "2026-10-26T09:33:09.340019+00:00"
+        "updated_at": "2026-10-29T12:59:36.378146+00:00"
       },
       {
         "company": "Example Air",
-        "created_at": "2026-10-26T09:33:09.309846+00:00",
+        "created_at": "2026-10-29T12:59:36.365303+00:00",
         "created_by": "admin-sub",
         "email": "pat@example.com",
         "list_ids": [
-          "lst_c8c6f301e35cadc6"
+          "lst_4cd54fe431509e1f"
         ],
         "name": "Pat",
         "notes": "Met at a fair",
         "origin": "manual",
-        "person_id": "per_0c45590e2bc316fe",
+        "person_id": "per_eb1801c628efbec5",
         "status": "unsubscribed",
         "tags": [
           "pilot"
         ],
         "title": "Captain",
-        "unsubscribed_at": "2026-10-26T09:33:09.501444+00:00",
-        "updated_at": "2026-10-26T09:33:09.501444+00:00"
+        "unsubscribed_at": "2026-10-29T12:59:36.451993+00:00",
+        "updated_at": "2026-10-29T12:59:36.451993+00:00"
       }
     ]
   },
@@ -1476,38 +1483,38 @@
   },
   "list_update": {
     "list": {
-      "created_at": "2026-10-26T09:33:09.296710+00:00",
+      "created_at": "2026-10-29T12:59:36.358963+00:00",
       "created_by": "admin-sub",
       "description": "Early access 2027",
       "kind": "beta",
-      "list_id": "lst_c8c6f301e35cadc6",
+      "list_id": "lst_4cd54fe431509e1f",
       "member_count": 0,
       "name": "Beta customers",
-      "updated_at": "2026-10-26T09:33:09.299701+00:00"
+      "updated_at": "2026-10-29T12:59:36.360156+00:00"
     }
   },
   "lists": {
     "lists": [
       {
-        "created_at": "2026-10-26T09:33:09.296710+00:00",
+        "created_at": "2026-10-29T12:59:36.358963+00:00",
         "created_by": "admin-sub",
         "description": "Early access 2027",
         "kind": "beta",
-        "list_id": "lst_c8c6f301e35cadc6",
+        "list_id": "lst_4cd54fe431509e1f",
         "member_count": 2,
         "name": "Beta customers",
-        "updated_at": "2026-10-26T09:33:09.299701+00:00"
+        "updated_at": "2026-10-29T12:59:36.360156+00:00"
       },
       {
-        "created_at": "2026-10-26T09:33:08.954576+00:00",
+        "created_at": "2026-10-29T12:59:36.191865+00:00",
         "created_by": "admin-sub",
         "description": "",
-        "feature_request_id": "fr_da19404187ab8e88",
+        "feature_request_id": "fr_09dde6edea0f8982",
         "kind": "requesters",
-        "list_id": "lst_c6d59f683f7f23fe",
+        "list_id": "lst_6c4492cf3de63461",
         "member_count": 4,
         "name": "Requests: SSO with SAML and OIDC",
-        "updated_at": "2026-10-26T09:33:08.954576+00:00"
+        "updated_at": "2026-10-29T12:59:36.191865+00:00"
       }
     ]
   },
@@ -1515,250 +1522,250 @@
     "people": [
       {
         "company": "",
-        "created_at": "2026-10-26T09:33:09.366521+00:00",
+        "created_at": "2026-10-29T12:59:36.389905+00:00",
         "created_by": "admin-sub",
         "email": "ana@example.com",
         "list_ids": [],
         "name": "Ana",
         "notes": "",
         "origin": "manual",
-        "person_id": "per_b1dcd5a994483946",
+        "person_id": "per_b760d7b55f7051cd",
         "status": "active",
         "tags": [],
         "title": "",
-        "updated_at": "2026-10-26T09:33:09.366521+00:00"
+        "updated_at": "2026-10-29T12:59:36.389905+00:00"
       },
       {
         "company": "",
-        "created_at": "2026-10-26T09:33:08.977432+00:00",
+        "created_at": "2026-10-29T12:59:36.202097+00:00",
         "created_by": "admin-sub",
         "email": "cio@acme.example",
         "list_ids": [
-          "lst_c6d59f683f7f23fe"
+          "lst_6c4492cf3de63461"
         ],
         "name": "",
         "notes": "",
         "origin": "feature_request",
-        "person_id": "per_8f5ce1073100da46",
+        "person_id": "per_ccb45bb4fe47117c",
         "status": "active",
         "tags": [],
         "title": "",
-        "updated_at": "2026-10-26T09:33:08.977432+00:00"
+        "updated_at": "2026-10-29T12:59:36.202097+00:00"
       },
       {
         "company": "",
-        "created_at": "2026-10-26T09:33:08.992305+00:00",
+        "created_at": "2026-10-29T12:59:36.208665+00:00",
         "created_by": "admin-sub",
         "email": "kim@acme.example",
         "list_ids": [
-          "lst_c6d59f683f7f23fe"
+          "lst_6c4492cf3de63461"
         ],
         "name": "Kim",
         "notes": "",
         "origin": "feature_request",
-        "person_id": "per_614645b11986b9c5",
+        "person_id": "per_2f3713ebe68eef2d",
         "status": "active",
         "tags": [],
         "title": "",
-        "updated_at": "2026-10-26T09:33:08.992305+00:00"
+        "updated_at": "2026-10-29T12:59:36.208665+00:00"
       },
       {
         "company": "",
-        "created_at": "2026-10-26T09:33:09.340019+00:00",
+        "created_at": "2026-10-29T12:59:36.378146+00:00",
         "created_by": "admin-sub",
         "email": "lee@acme.example",
         "list_ids": [
-          "lst_c8c6f301e35cadc6"
+          "lst_4cd54fe431509e1f"
         ],
         "name": "Lee",
         "notes": "",
         "origin": "manual",
-        "person_id": "per_f279e41d33f7c17f",
+        "person_id": "per_0da8cbd4c7af52db",
         "status": "active",
         "tags": [],
         "title": "",
-        "updated_at": "2026-10-26T09:33:09.340019+00:00"
+        "updated_at": "2026-10-29T12:59:36.378146+00:00"
       },
       {
         "company": "",
-        "created_at": "2026-10-26T09:33:09.009732+00:00",
+        "created_at": "2026-10-29T12:59:36.215269+00:00",
         "created_by": "admin-sub",
         "email": "ops@example.com",
         "list_ids": [
-          "lst_c6d59f683f7f23fe"
+          "lst_6c4492cf3de63461"
         ],
         "name": "",
         "notes": "",
         "origin": "feature_request",
-        "person_id": "per_f7ea223881d5e39c",
+        "person_id": "per_ef4a54af22bc3809",
         "status": "active",
         "tags": [],
         "title": "",
-        "updated_at": "2026-10-26T09:33:09.009732+00:00"
+        "updated_at": "2026-10-29T12:59:36.215269+00:00"
       },
       {
         "company": "Example Air",
-        "created_at": "2026-10-26T09:33:09.309846+00:00",
+        "created_at": "2026-10-29T12:59:36.365303+00:00",
         "created_by": "admin-sub",
         "email": "pat@example.com",
         "list_ids": [
-          "lst_c8c6f301e35cadc6"
+          "lst_4cd54fe431509e1f"
         ],
         "name": "Pat",
         "notes": "Met at a fair",
         "origin": "manual",
-        "person_id": "per_0c45590e2bc316fe",
+        "person_id": "per_eb1801c628efbec5",
         "status": "unsubscribed",
         "tags": [
           "pilot"
         ],
         "title": "Captain",
-        "unsubscribed_at": "2026-10-26T09:33:09.501444+00:00",
-        "updated_at": "2026-10-26T09:33:09.501444+00:00"
+        "unsubscribed_at": "2026-10-29T12:59:36.451993+00:00",
+        "updated_at": "2026-10-29T12:59:36.451993+00:00"
       },
       {
         "company": "",
-        "created_at": "2026-10-26T09:33:08.962591+00:00",
+        "created_at": "2026-10-29T12:59:36.195041+00:00",
         "created_by": "admin-sub",
         "email": "sam@acme.example",
         "list_ids": [
-          "lst_c6d59f683f7f23fe"
+          "lst_6c4492cf3de63461"
         ],
         "name": "Sam Seller",
         "notes": "",
         "origin": "feature_request",
-        "person_id": "per_afe5df15ab53a71a",
+        "person_id": "per_6cac3823c9f78344",
         "status": "active",
         "tags": [],
         "title": "",
-        "updated_at": "2026-10-26T09:33:08.962591+00:00"
+        "updated_at": "2026-10-29T12:59:36.195041+00:00"
       }
     ]
   },
   "person_create": {
     "person": {
       "company": "Example Air",
-      "created_at": "2026-10-26T09:33:09.309846+00:00",
+      "created_at": "2026-10-29T12:59:36.365303+00:00",
       "created_by": "admin-sub",
       "email": "pat@example.com",
       "list_ids": [
-        "lst_c8c6f301e35cadc6"
+        "lst_4cd54fe431509e1f"
       ],
       "name": "Pat",
       "notes": "Met at a fair",
       "origin": "manual",
-      "person_id": "per_0c45590e2bc316fe",
+      "person_id": "per_eb1801c628efbec5",
       "status": "active",
       "tags": [
         "pilot"
       ],
       "title": "Pilot",
-      "updated_at": "2026-10-26T09:33:09.309846+00:00"
+      "updated_at": "2026-10-29T12:59:36.365303+00:00"
     }
   },
   "person_detail": {
     "asks": [
       {
-        "ask_id": "ask_6276474534a2a697",
+        "ask_id": "ask_8904d1ce97b9e263",
         "responded_at": null,
-        "sent_at": "2026-10-26T09:33:09.475142+00:00",
+        "sent_at": "2026-10-29T12:59:36.446867+00:00",
         "status": "sent",
         "subject": "Two minutes on seat choice"
       }
     ],
     "lists": [
       {
-        "created_at": "2026-10-26T09:33:09.296710+00:00",
+        "created_at": "2026-10-29T12:59:36.358963+00:00",
         "created_by": "admin-sub",
         "description": "Early access 2027",
         "kind": "beta",
-        "list_id": "lst_c8c6f301e35cadc6",
+        "list_id": "lst_4cd54fe431509e1f",
         "member_count": 2,
         "name": "Beta customers",
-        "updated_at": "2026-10-26T09:33:09.299701+00:00"
+        "updated_at": "2026-10-29T12:59:36.360156+00:00"
       }
     ],
     "person": {
       "company": "Example Air",
-      "created_at": "2026-10-26T09:33:09.309846+00:00",
+      "created_at": "2026-10-29T12:59:36.365303+00:00",
       "created_by": "admin-sub",
       "email": "pat@example.com",
       "list_ids": [
-        "lst_c8c6f301e35cadc6"
+        "lst_4cd54fe431509e1f"
       ],
       "name": "Pat",
       "notes": "Met at a fair",
       "origin": "manual",
-      "person_id": "per_0c45590e2bc316fe",
+      "person_id": "per_eb1801c628efbec5",
       "status": "unsubscribed",
       "tags": [
         "pilot"
       ],
       "title": "Captain",
-      "unsubscribed_at": "2026-10-26T09:33:09.501444+00:00",
-      "updated_at": "2026-10-26T09:33:09.501444+00:00"
+      "unsubscribed_at": "2026-10-29T12:59:36.451993+00:00",
+      "updated_at": "2026-10-29T12:59:36.451993+00:00"
     }
   },
   "person_update": {
     "person": {
       "company": "Example Air",
-      "created_at": "2026-10-26T09:33:09.309846+00:00",
+      "created_at": "2026-10-29T12:59:36.365303+00:00",
       "created_by": "admin-sub",
       "email": "pat@example.com",
       "list_ids": [
-        "lst_c8c6f301e35cadc6"
+        "lst_4cd54fe431509e1f"
       ],
       "name": "Pat",
       "notes": "Met at a fair",
       "origin": "manual",
-      "person_id": "per_0c45590e2bc316fe",
+      "person_id": "per_eb1801c628efbec5",
       "status": "active",
       "tags": [
         "pilot"
       ],
       "title": "Captain",
-      "updated_at": "2026-10-26T09:33:09.323758+00:00"
+      "updated_at": "2026-10-29T12:59:36.371282+00:00"
     }
   },
   "project_get": {
     "lists": [
       {
-        "created_at": "2026-10-26T09:33:09.296710+00:00",
+        "created_at": "2026-10-29T12:59:36.358963+00:00",
         "created_by": "admin-sub",
         "description": "Early access 2027",
         "kind": "beta",
-        "list_id": "lst_c8c6f301e35cadc6",
+        "list_id": "lst_4cd54fe431509e1f",
         "member_count": 2,
         "name": "Beta customers",
-        "updated_at": "2026-10-26T09:33:09.299701+00:00"
+        "updated_at": "2026-10-29T12:59:36.360156+00:00"
       },
       {
-        "created_at": "2026-10-26T09:33:08.954576+00:00",
+        "created_at": "2026-10-29T12:59:36.191865+00:00",
         "created_by": "admin-sub",
         "description": "",
-        "feature_request_id": "fr_da19404187ab8e88",
+        "feature_request_id": "fr_09dde6edea0f8982",
         "kind": "requesters",
-        "list_id": "lst_c6d59f683f7f23fe",
+        "list_id": "lst_6c4492cf3de63461",
         "member_count": 4,
         "name": "Requests: SSO with SAML and OIDC",
-        "updated_at": "2026-10-26T09:33:08.954576+00:00"
+        "updated_at": "2026-10-29T12:59:36.191865+00:00"
       }
     ],
     "people": [
       {
         "company": "",
-        "created_at": "2026-10-26T09:33:09.366521+00:00",
+        "created_at": "2026-10-29T12:59:36.389905+00:00",
         "created_by": "admin-sub",
         "email": "ana@example.com",
         "list_ids": [],
         "name": "Ana",
         "notes": "",
         "origin": "manual",
-        "person_id": "per_b1dcd5a994483946",
+        "person_id": "per_b760d7b55f7051cd",
         "status": "active",
         "tags": [],
         "title": "",
-        "updated_at": "2026-10-26T09:33:09.366521+00:00"
+        "updated_at": "2026-10-29T12:59:36.389905+00:00"
       }
     ],
     "reach": 7
@@ -1767,42 +1774,42 @@
     "created": 1,
     "lists": [
       {
-        "created_at": "2026-10-26T09:33:09.296710+00:00",
+        "created_at": "2026-10-29T12:59:36.358963+00:00",
         "created_by": "admin-sub",
         "description": "Early access 2027",
         "kind": "beta",
-        "list_id": "lst_c8c6f301e35cadc6",
+        "list_id": "lst_4cd54fe431509e1f",
         "member_count": 2,
         "name": "Beta customers",
-        "updated_at": "2026-10-26T09:33:09.299701+00:00"
+        "updated_at": "2026-10-29T12:59:36.360156+00:00"
       },
       {
-        "created_at": "2026-10-26T09:33:08.954576+00:00",
+        "created_at": "2026-10-29T12:59:36.191865+00:00",
         "created_by": "admin-sub",
         "description": "",
-        "feature_request_id": "fr_da19404187ab8e88",
+        "feature_request_id": "fr_09dde6edea0f8982",
         "kind": "requesters",
-        "list_id": "lst_c6d59f683f7f23fe",
+        "list_id": "lst_6c4492cf3de63461",
         "member_count": 4,
         "name": "Requests: SSO with SAML and OIDC",
-        "updated_at": "2026-10-26T09:33:08.954576+00:00"
+        "updated_at": "2026-10-29T12:59:36.191865+00:00"
       }
     ],
     "people": [
       {
         "company": "",
-        "created_at": "2026-10-26T09:33:09.366521+00:00",
+        "created_at": "2026-10-29T12:59:36.389905+00:00",
         "created_by": "admin-sub",
         "email": "ana@example.com",
         "list_ids": [],
         "name": "Ana",
         "notes": "",
         "origin": "manual",
-        "person_id": "per_b1dcd5a994483946",
+        "person_id": "per_b760d7b55f7051cd",
         "status": "active",
         "tags": [],
         "title": "",
-        "updated_at": "2026-10-26T09:33:09.366521+00:00"
+        "updated_at": "2026-10-29T12:59:36.389905+00:00"
       }
     ],
     "reach": 7,
@@ -1825,7 +1832,7 @@
       ],
       "daily_send_cap": 100,
       "sender_name": "Example Air research",
-      "updated_at": "2026-10-26T09:33:08.800588+00:00",
+      "updated_at": "2026-10-29T12:59:36.111939+00:00",
       "updated_by": "admin-sub"
     }
   },
@@ -1838,7 +1845,7 @@
       ],
       "daily_send_cap": 100,
       "sender_name": "Example Air research",
-      "updated_at": "2026-10-26T09:33:08.800588+00:00",
+      "updated_at": "2026-10-29T12:59:36.111939+00:00",
       "updated_by": "admin-sub"
     }
   },

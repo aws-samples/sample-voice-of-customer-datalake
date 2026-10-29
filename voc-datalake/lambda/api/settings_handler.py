@@ -27,6 +27,8 @@ from shared import (
     briefing_subscription,
     category_access,
     company_context,
+    design_assets,
+    design_icons,
     design_logo,
     design_references,
     extracted_design,
@@ -1115,20 +1117,22 @@ def _design_view(table, *, include_archived: bool = False) -> dict:
 
 
 def _with_logo_preview(reference: dict) -> dict:
-    """``extracted_design.logo.preview_key`` → ``logo.preview_url`` (a short-lived signed GET, like ``logo_url``).
+    """Every stored key of a reference's ``extracted_design`` → a short-lived signed GET, like ``logo_url``:
+    ``logo.preview_url``, ``logo.svg_preview_url`` (download-only: the URL pins ``image/svg+xml`` and
+    ``attachment``), ``icons[].url`` / ``icons[].svg_url`` (``shared.design_assets.with_asset_urls``).
 
-    The key never leaves the API; without a bucket, or for a key outside the preview prefix, there is
-    no preview_url.
+    The keys never leave the API; without a bucket, or for a key outside its prefix, there is no URL.
     """
-    design = reference.get('extracted_design')
-    logo = design.get('logo') if isinstance(design, dict) else None
-    if not isinstance(design, dict) or not isinstance(logo, dict) or 'preview_key' not in logo:
-        return reference
-    key = logo.get('preview_key')
-    shown = {k: v for k, v in logo.items() if k != 'preview_key'}
-    if RAW_DATA_BUCKET and isinstance(key, str) and key.startswith(extracted_design.LOGO_PREVIEW_PREFIX):
-        shown['preview_url'] = _signed_logo_url(key)
-    return {**reference, 'extracted_design': {**design, 'logo': shown}}
+    return design_assets.with_asset_urls(
+        reference, _signed_asset_url if RAW_DATA_BUCKET else None,
+        preview_prefix=extracted_design.LOGO_PREVIEW_PREFIX, icons_prefix=extracted_design.ICONS_PREFIX)
+
+
+def _signed_asset_url(key: str, as_svg_attachment: bool) -> str:
+    return get_s3_client().generate_presigned_url(
+        ClientMethod='get_object', Params=design_assets.signed_params(RAW_DATA_BUCKET, key, as_svg_attachment),
+        ExpiresIn=LOGO_URL_TTL_SECONDS,
+    )
 
 
 def _design_names_hidden(reference: dict, hidden: HiddenNames) -> bool:
@@ -1424,17 +1428,20 @@ def refresh_design_reference_route(ref_id: str):
 @app.delete("/settings/design-system/references/<ref_id>")
 @tracer.capture_method
 def archive_design_reference_route(ref_id: str):
-    """Archive a reference (admin). The row and any uploaded object are kept (keep-all); the logo
-    PREVIEW (``logo_preview_<ref id>.*``, a copy made when the reference was read) is deleted and its key
-    dropped from the row. Repeating the call is safe: an already archived reference is archived again and
-    its (absent) previews deleted again, so a 503 from the S3 step is fixed by retrying."""
+    """Archive a reference (admin). The row and any uploaded object are kept (keep-all); the copies made when
+    it was read — the logo PREVIEW (``logo_preview_<ref id>.*``, its sanitised SVG included) and the copied
+    icons (everything under ``icons_<ref id>/``) — are deleted and their keys dropped from the row. Repeating
+    the call is safe: an already archived reference is archived again and its (absent) copies deleted again,
+    so a 503 from the S3 step is fixed by retrying."""
     require_admin(app.current_event.raw_event)
     table = _configured_table()
     item = _reference_or_404(table, ref_id)
     table.update_item(Key=_reference_key(ref_id), **_archive_update(item))
     if RAW_DATA_BUCKET:
         try:
-            design_logo.delete_previews(get_s3_client(), RAW_DATA_BUCKET, ref_id)
+            s3 = get_s3_client()
+            design_logo.delete_previews(s3, RAW_DATA_BUCKET, ref_id,
+                                        design_icons.stored_icon_keys(s3, RAW_DATA_BUCKET, ref_id))
         except design_logo.LogoPreviewDeleteError as e:
             raise ServiceUnavailableError('The reference is archived, but its logo preview could not be '
                                           'removed; try again') from e
@@ -1443,15 +1450,20 @@ def archive_design_reference_route(ref_id: str):
 
 def _archive_update(item: dict) -> dict:
     """The archive ``update_item`` arguments: status + time, and REMOVE of ``extracted_design.logo.preview_key``
-    when the row has one (a REMOVE on a path whose parent is not a map would be refused, so it is only sent
-    when the logo is a map carrying the key)."""
+    / ``svg_preview_key`` and ``extracted_design.icons`` when the row has them (a REMOVE on a path whose parent
+    is not a map would be refused, so each is only sent when its parent is a map carrying the key)."""
     names = {'#st': 'status', '#u': 'updated_at'}
-    expression = 'SET #st = :archived, #u = :u'
+    removes: list[str] = []
     design = item.get('extracted_design')
     logo = design.get('logo') if isinstance(design, dict) else None
-    if isinstance(logo, dict) and 'preview_key' in logo:
-        names.update({'#d': 'extracted_design', '#l': 'logo', '#p': 'preview_key'})
-        expression += ' REMOVE #d.#l.#p'
+    for attr in ('preview_key', 'svg_preview_key'):
+        if isinstance(logo, dict) and attr in logo:
+            names.update({'#d': 'extracted_design', '#l': 'logo', f'#{attr}': attr})
+            removes.append(f'#d.#l.#{attr}')
+    if isinstance(design, dict) and 'icons' in design:
+        names.update({'#d': 'extracted_design', '#icons': 'icons'})
+        removes.append('#d.#icons')
+    expression = 'SET #st = :archived, #u = :u' + (' REMOVE ' + ', '.join(removes) if removes else '')
     return {'UpdateExpression': expression, 'ExpressionAttributeNames': names,
             'ExpressionAttributeValues': {':archived': 'archived', ':u': now_iso()}}
 

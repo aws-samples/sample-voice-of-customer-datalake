@@ -18,7 +18,15 @@ import page_inline_logo as pil
 import page_styles as ps
 import pytest
 from test_design_capture_worker import REF_ID, FakeCdp, _kit, _styles, table  # noqa: F401 - fixture
-from test_svg_logo_render import BOX, LOGO_PNG, PREVIEW_KEY, png_bytes, s3  # noqa: F401 - fixture
+from test_svg_logo_render import (  # noqa: F401 - fixture
+    BOX,
+    LOGO_PNG,
+    PREVIEW_KEY,
+    SVG_KEY,
+    logo_downloads,
+    png_bytes,
+    s3,
+)
 
 from shared.company_context import DESIGN_SYSTEM_PK, get_reference
 from shared.design_logo_render import SvgLogo, render_event
@@ -48,7 +56,7 @@ class InlineCdp(FakeCdp):
 
 def _capture(table, s3, cdp):  # noqa: F811
     raster = MagicMock(return_value=MagicMock(status_code=200, content=png_bytes(32, 32)))
-    deps = cw.CaptureDeps(table=table, kit=_kit(cdp, []), summarise_image=MagicMock(return_value='{"summary": "S"}'),
+    deps = cw.CaptureDeps(table=table, kit=_kit(cdp, []), summarise_images=MagicMock(return_value='{"summary": "S"}'),
                           sleep=lambda _s: None, clock=iter(range(1000)).__next__, now=lambda: FETCHED,
                           s3=s3, bucket='raw', logo_fetch=raster)
     with patch.object(cw, 'validate_url', return_value=(True, '')), patch.object(ps, 'validate_url', return_value=(True, '')):
@@ -76,12 +84,14 @@ class TestTheInlineSvgLogo:
         result, stored, raster = _capture(table, s3, cdp)
         assert result == {'status': 'ready'}
         assert stored['extracted_design']['logo'] == {
-            'source_url': PAGE, 'content_type': 'image/png', 'rendered': True, 'preview_key': PREVIEW_KEY}
+            'source_url': PAGE, 'content_type': 'image/png', 'rendered': True, 'preview_key': PREVIEW_KEY,
+            'svg_preview_key': SVG_KEY}
         assert s3.get_object(Bucket='raw', Key=PREVIEW_KEY)['Body'].read() == LOGO_PNG
-        raster.assert_not_called()
+        assert logo_downloads(raster) == []   # inline markup: nothing to download
         drawn = _draw_argument(cdp)
         assert drawn.startswith('data:image/svg+xml;base64,')
         markup = base64.b64decode(drawn.split(',', 1)[1]).decode()
+        assert s3.get_object(Bucket='raw', Key=SVG_KEY)['Body'].read().decode() == markup   # the drawn markup is kept
         assert 'script' not in markup
         assert 'onload' not in markup
         assert 'steal' not in markup
@@ -107,7 +117,7 @@ class TestTheInlineSvgLogo:
         assert cdp.inline_asked == 1
         assert stored['extracted_design']['logo']['source_url'] == TOUCH
         assert 'Runtime.callFunctionOn' not in cdp.methods()
-        raster.assert_called_once()
+        assert logo_downloads(raster) == [TOUCH]
 
     def test_a_failed_draw_of_the_inline_svg_keeps_the_capture(self, table, s3):  # noqa: F811
         cdp = InlineCdp(_styles(logos=[{'url': TOUCH, 'kind': 'touch-icon'}]),
@@ -159,10 +169,13 @@ class TestTheGithubSvgLogo:
         assert sessions == [logo_job.LOGO_SESSION_SECONDS]
         stored = _stored(table)
         assert stored['extracted_design']['logo'] == {
-            'source_url': RAW_SVG_URL, 'content_type': 'image/png', 'rendered': True, 'preview_key': PREVIEW_KEY}
+            'source_url': RAW_SVG_URL, 'content_type': 'image/png', 'rendered': True, 'preview_key': PREVIEW_KEY,
+            'svg_preview_key': SVG_KEY}
         assert stored['extracted_design']['guidelines_md'] == '## Voice'
         markup = base64.b64decode(_draw_argument(cdp).split(',', 1)[1]).decode()
         assert 'script' not in markup   # sanitised again on this side of the boundary
+        svg = s3.get_object(Bucket='raw', Key=SVG_KEY)
+        assert (svg['ContentDisposition'], svg['Body'].read().decode()) == ('attachment; filename="logo.svg"', markup)
         assert 'Page.navigate' not in cdp.methods()   # no page is opened, only the blank render tab
 
     def test_an_svg_that_cannot_be_drawn_leaves_the_upload_a_png_note(self, table, s3):  # noqa: F811

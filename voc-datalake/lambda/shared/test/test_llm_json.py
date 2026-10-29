@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from shared.categorization import invoke_enrichment_llm, parse_llm_json_response
-from shared.llm_json import first_json_object
+from shared.llm_json import first_json_object, json_object_or_none
 
 ENRICHED = {'category': 'delivery', 'urgency': 'high', 'problem_summary': 'Late\nparcel'}
 
@@ -68,3 +68,20 @@ class TestEnrichmentParsesRecordedShapes:
         invoke_enrichment_llm({'text': 'x'}, 'I', converse_fn=converse_fn)
         assert converse_fn.call_args.kwargs['step_name'] == 'feedback_enrichment'
 
+
+
+@pytest.mark.parametrize(('text', 'expected'), [
+    ('{"svg": "<svg/>", "width": 40}', {'svg': '<svg/>', 'width': 40}),
+    ('{}', {}),
+])
+def test_json_object_or_none_returns_the_decoded_object(text, expected):
+    assert json_object_or_none(text) == expected
+
+
+@pytest.mark.parametrize('text', [
+    None, 42, b'{"a": 1}', {'a': 1},   # not a string
+    '', 'not json', '{"a": 1} trailing', '{"a": "\n"}',  # not strict JSON
+    '[1, 2]', '"text"', '3', 'null',   # JSON, but not an object
+], ids=lambda value: repr(value)[:20])
+def test_json_object_or_none_returns_none_for_anything_but_a_strict_json_object(text):
+    assert json_object_or_none(text) is None
