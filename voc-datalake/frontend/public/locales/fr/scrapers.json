@@ -84,7 +84,52 @@
         "twice": "{{target}} est choisi pour plusieurs colonnes."
       }
     },
-    "defaultSourcePlaceholder": "ex. Enquête support"
+    "defaultSourcePlaceholder": "ex. Enquête support",
+    "dataset": {
+      "label": "Nom du jeu de données (facultatif)",
+      "placeholder": "p. ex. avis Example Air",
+      "hint": "Nommez les données de ce fichier pour pouvoir les corriger plus tard : un nouvel import sous le même nom met à jour les lignes qui ont un id au lieu de les ajouter à nouveau. Insensible à la casse.",
+      "radarNote": "Indisponible pour un import Radar : ses lignes ne peuvent pas être mises à jour ensuite.",
+      "problems": {
+        "tooLong": "Utilisez au plus {{max}} caractères.",
+        "invalidChars": "Utilisez uniquement des lettres, des chiffres, des espaces, « - », « _ » et « . »."
+      }
+    },
+    "preview": {
+      "check": "Voir les modifications",
+      "checking": "Vérification…",
+      "title": "Ce que fera cet import",
+      "back": "Retour",
+      "confirm": "Importer",
+      "confirmUpdates": "Importer et mettre à jour",
+      "changedHeader": "Lignes enregistrées qui changent",
+      "row": "Ligne {{row}}",
+      "rowWithId": "Ligne {{row}} (id {{id}})",
+      "before": "Avant :",
+      "after": "Après :",
+      "notUpdatableHint": "Les lignes sans id (ou importées sans nom de jeu de données) sont toujours ajoutées comme nouveaux enregistrements : un import ultérieur ne peut pas les mettre à jour.",
+      "countNew_one": "{{count, number}} nouvelle ligne sera ajoutée",
+      "countNew_many": "{{count, number}} nouvelles lignes seront ajoutées",
+      "countNew_other": "{{count, number}} nouvelles lignes seront ajoutées",
+      "countChanged_one": "{{count, number}} ligne enregistrée sera mise à jour",
+      "countChanged_many": "{{count, number}} lignes enregistrées seront mises à jour",
+      "countChanged_other": "{{count, number}} lignes enregistrées seront mises à jour",
+      "countUnchanged_one": "{{count, number}} ligne inchangée sera ignorée",
+      "countUnchanged_many": "{{count, number}} lignes inchangées seront ignorées",
+      "countUnchanged_other": "{{count, number}} lignes inchangées seront ignorées",
+      "countNotUpdatable_one": "{{count, number}} ligne ne pourra pas être mise à jour plus tard (sans id)",
+      "countNotUpdatable_many": "{{count, number}} lignes ne pourront pas être mises à jour plus tard (sans id)",
+      "countNotUpdatable_other": "{{count, number}} lignes ne pourront pas être mises à jour plus tard (sans id)",
+      "truncated_one": "Affichage des {{shown, number}} premières sur {{count, number}} ligne modifiée.",
+      "truncated_many": "Affichage des {{shown, number}} premières sur {{count, number}} lignes modifiées.",
+      "truncated_other": "Affichage des {{shown, number}} premières sur {{count, number}} lignes modifiées.",
+      "resultUpdated_one": "{{count, number}} ligne enregistrée mise à jour.",
+      "resultUpdated_many": "{{count, number}} lignes enregistrées mises à jour.",
+      "resultUpdated_other": "{{count, number}} lignes enregistrées mises à jour.",
+      "resultUnchanged_one": "{{count, number}} ligne inchangée ignorée.",
+      "resultUnchanged_many": "{{count, number}} lignes inchangées ignorées.",
+      "resultUnchanged_other": "{{count, number}} lignes inchangées ignorées."
+    }
   },
   "deleteConfirmLabel": "Supprimer",
   "deleteConfirmMessage": "Êtes-vous sûr de vouloir supprimer ce scraper ? Cette action est irréversible.",

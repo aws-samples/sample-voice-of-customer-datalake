@@ -83,7 +83,45 @@
         "twice": "{{target}} is chosen for more than one column."
       }
     },
-    "defaultSourcePlaceholder": "e.g. Support survey"
+    "defaultSourcePlaceholder": "e.g. Support survey",
+    "dataset": {
+      "label": "Dataset name (optional)",
+      "placeholder": "e.g. Example Air reviews",
+      "hint": "Name the data this file holds to correct it later: re-uploading under the same name updates the rows that have an id instead of adding them again. Not case-sensitive.",
+      "radarNote": "Not available for a Radar upload: its rows cannot be updated later.",
+      "problems": {
+        "tooLong": "Use at most {{max}} characters.",
+        "invalidChars": "Use only letters, digits, spaces, \"-\", \"_\" and \".\"."
+      }
+    },
+    "preview": {
+      "check": "Preview changes",
+      "checking": "Checking…",
+      "title": "What this upload will do",
+      "back": "Back",
+      "confirm": "Import",
+      "confirmUpdates": "Import and update",
+      "changedHeader": "Stored rows that change",
+      "row": "Row {{row}}",
+      "rowWithId": "Row {{row}} (id {{id}})",
+      "before": "Before:",
+      "after": "After:",
+      "notUpdatableHint": "Rows without an id (or uploaded without a dataset name) are always added as new records, so a later upload cannot update them.",
+      "countNew_one": "{{count, number}} new row will be added",
+      "countNew_other": "{{count, number}} new rows will be added",
+      "countChanged_one": "{{count, number}} stored row will be updated",
+      "countChanged_other": "{{count, number}} stored rows will be updated",
+      "countUnchanged_one": "{{count, number}} unchanged row will be skipped",
+      "countUnchanged_other": "{{count, number}} unchanged rows will be skipped",
+      "countNotUpdatable_one": "{{count, number}} row cannot be updated later (no id)",
+      "countNotUpdatable_other": "{{count, number}} rows cannot be updated later (no id)",
+      "truncated_one": "Showing the first {{shown, number}} of {{count, number}} changed row.",
+      "truncated_other": "Showing the first {{shown, number}} of {{count, number}} changed rows.",
+      "resultUpdated_one": "{{count, number}} stored row updated.",
+      "resultUpdated_other": "{{count, number}} stored rows updated.",
+      "resultUnchanged_one": "{{count, number}} unchanged row skipped.",
+      "resultUnchanged_other": "{{count, number}} unchanged rows skipped."
+    }
   },
   "deleteConfirmLabel": "Delete",
   "deleteConfirmMessage": "Are you sure you want to delete this scraper? This action cannot be undone.",

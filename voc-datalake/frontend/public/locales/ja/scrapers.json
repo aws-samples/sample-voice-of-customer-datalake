@@ -83,7 +83,45 @@
         "twice": "{{target}} が複数の列に割り当てられています。"
       }
     },
-    "defaultSourcePlaceholder": "例：サポートアンケート"
+    "defaultSourcePlaceholder": "例：サポートアンケート",
+    "dataset": {
+      "label": "データセット名（任意）",
+      "placeholder": "例: Example Air のレビュー",
+      "hint": "このファイルのデータに名前を付けておくと、後で修正できます。同じ名前で再アップロードすると、id のある行は追加ではなく更新されます。大文字と小文字は区別されません。",
+      "radarNote": "Radar へのアップロードでは使用できません。その行は後で更新できません。",
+      "problems": {
+        "tooLong": "{{max}} 文字以内で入力してください。",
+        "invalidChars": "英字、数字、スペース、「-」「_」「.」のみ使用できます。"
+      }
+    },
+    "preview": {
+      "check": "変更を確認",
+      "checking": "確認中…",
+      "title": "このアップロードで行われること",
+      "back": "戻る",
+      "confirm": "インポート",
+      "confirmUpdates": "インポートして更新",
+      "changedHeader": "変更される保存済みの行",
+      "row": "{{row}} 行目",
+      "rowWithId": "{{row}} 行目（id {{id}}）",
+      "before": "変更前:",
+      "after": "変更後:",
+      "notUpdatableHint": "id のない行（またはデータセット名なしでアップロードした行）は常に新しいレコードとして追加されるため、後のアップロードで更新できません。",
+      "countNew_one": "{{count, number}} 件の新しい行が追加されます",
+      "countNew_other": "{{count, number}} 件の新しい行が追加されます",
+      "countChanged_one": "{{count, number}} 件の保存済みの行が更新されます",
+      "countChanged_other": "{{count, number}} 件の保存済みの行が更新されます",
+      "countUnchanged_one": "変更のない {{count, number}} 件の行はスキップされます",
+      "countUnchanged_other": "変更のない {{count, number}} 件の行はスキップされます",
+      "countNotUpdatable_one": "{{count, number}} 件の行は後で更新できません（id なし）",
+      "countNotUpdatable_other": "{{count, number}} 件の行は後で更新できません（id なし）",
+      "truncated_one": "変更された {{count, number}} 件のうち最初の {{shown, number}} 件を表示しています。",
+      "truncated_other": "変更された {{count, number}} 件のうち最初の {{shown, number}} 件を表示しています。",
+      "resultUpdated_one": "{{count, number}} 件の保存済みの行を更新しました。",
+      "resultUpdated_other": "{{count, number}} 件の保存済みの行を更新しました。",
+      "resultUnchanged_one": "変更のない {{count, number}} 件の行をスキップしました。",
+      "resultUnchanged_other": "変更のない {{count, number}} 件の行をスキップしました。"
+    }
   },
   "deleteConfirmLabel": "削除",
   "deleteConfirmMessage": "このスクレイパーを削除してもよろしいですか？この操作は元に戻せません。",

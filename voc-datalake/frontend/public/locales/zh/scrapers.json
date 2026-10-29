@@ -83,7 +83,45 @@
         "twice": "{{target}} 被分配给了多个列。"
       }
     },
-    "defaultSourcePlaceholder": "例如：支持调查"
+    "defaultSourcePlaceholder": "例如：支持调查",
+    "dataset": {
+      "label": "数据集名称（可选）",
+      "placeholder": "例如：Example Air 评价",
+      "hint": "为此文件中的数据命名，以便日后更正：用相同名称重新上传时，带 id 的行会被更新，而不会再次添加。不区分大小写。",
+      "radarNote": "不适用于 Radar 上传：其行之后无法更新。",
+      "problems": {
+        "tooLong": "最多使用 {{max}} 个字符。",
+        "invalidChars": "只能使用字母、数字、空格、“-”、“_”和“.”。"
+      }
+    },
+    "preview": {
+      "check": "预览更改",
+      "checking": "正在检查…",
+      "title": "此次上传将执行的操作",
+      "back": "返回",
+      "confirm": "导入",
+      "confirmUpdates": "导入并更新",
+      "changedHeader": "将要更改的已存储行",
+      "row": "第 {{row}} 行",
+      "rowWithId": "第 {{row}} 行（id {{id}}）",
+      "before": "更改前：",
+      "after": "更改后：",
+      "notUpdatableHint": "没有 id 的行（或未填写数据集名称上传的行）始终作为新记录添加，因此之后的上传无法更新它们。",
+      "countNew_one": "将添加 {{count, number}} 个新行",
+      "countNew_other": "将添加 {{count, number}} 个新行",
+      "countChanged_one": "将更新 {{count, number}} 个已存储的行",
+      "countChanged_other": "将更新 {{count, number}} 个已存储的行",
+      "countUnchanged_one": "将跳过 {{count, number}} 个未更改的行",
+      "countUnchanged_other": "将跳过 {{count, number}} 个未更改的行",
+      "countNotUpdatable_one": "{{count, number}} 个行之后无法更新（没有 id）",
+      "countNotUpdatable_other": "{{count, number}} 个行之后无法更新（没有 id）",
+      "truncated_one": "显示 {{count, number}} 个已更改行中的前 {{shown, number}} 个。",
+      "truncated_other": "显示 {{count, number}} 个已更改行中的前 {{shown, number}} 个。",
+      "resultUpdated_one": "已更新 {{count, number}} 个已存储的行。",
+      "resultUpdated_other": "已更新 {{count, number}} 个已存储的行。",
+      "resultUnchanged_one": "已跳过 {{count, number}} 个未更改的行。",
+      "resultUnchanged_other": "已跳过 {{count, number}} 个未更改的行。"
+    }
   },
   "deleteConfirmLabel": "删除",
   "deleteConfirmMessage": "确定要删除此抓取器吗？此操作无法撤销。",
