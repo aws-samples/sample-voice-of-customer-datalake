@@ -93,6 +93,8 @@ cd e2e && E2E_MOCK=1 E2E_SITE=http://localhost:5417 E2E_API=http://localhost:341
 
 `sharing.spec.ts` skips there (it needs two real users), as does the `/mcp/global` call of `connect.spec.ts` (the mock does not serve it).
 
+`csv-dataset-update.spec.ts` (issue #411, [docs/csv-import.md](../../../docs/csv-import.md)) runs ONLY there: a CSV upload under a dataset name is previewed and imported, then the corrected file is previewed (one row to update, its before / after text) and confirmed with `apply_updates`; the API refuses an unconfirmed change (409) and `GET /feedback` holds the corrected text once. On a deployment it would write feedback, which has no delete route.
+
 ## QA track s1 (`E2E_TRACK=s1` only)
 
 `tests/s1-a-data.spec.ts` and `tests/s1-b-assistant.spec.ts` skip unless `E2E_TRACK=s1`, because they write feedback that cannot be deleted:

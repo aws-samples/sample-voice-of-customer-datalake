@@ -47,7 +47,7 @@ export type CsvChangedRow = z.infer<typeof ChangedRowSchema>
 const PreviewSchema = z.object({
   total_rows: count,
   counts: CountsSchema,
-  changed_rows: z.unknown().transform((value) => parseEach(ChangedRowSchema, value)),
+  changed_rows: z.unknown().optional().transform((value) => parseEach(ChangedRowSchema, value)),
   changed_rows_truncated: z.boolean().catch(false),
   warnings: z.array(z.string()).optional().catch(undefined),
 })
