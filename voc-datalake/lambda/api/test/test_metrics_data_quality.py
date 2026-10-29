@@ -80,9 +80,10 @@ def _get(event, context, aggregates, *, claims=ADMIN, feedback=None, **params):
     return response, body, feedback
 
 
-def _row(source, low=0, medium=0, high=0, unrated=0):
-    return {'source': source, 'low': low, 'medium': medium, 'high': high, 'unrated': unrated,
-            'total': low + medium + high + unrated}
+def _row(source: str, **bands: int) -> dict:
+    """The answer's row for ``source``: the named band counts, every other band 0, and their total."""
+    counts = {band: bands.get(band, 0) for band in ('low', 'medium', 'high', 'unrated')}
+    return {'source': source, **counts, 'total': sum(counts.values())}
 
 
 class TestCounters:
