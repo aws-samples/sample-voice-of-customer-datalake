@@ -309,7 +309,7 @@ function receiptRule(scope: Construct, props: EmailIntakeProps, bucket: s3.Bucke
   if (policy.policyDependable) rule.node.addDependency(policy.policyDependable);
   if (config.existingRuleSet === undefined) {
     const ruleSet = new ses.CfnReceiptRuleSet(scope, 'InboundEmailRuleSet', { ruleSetName });
-    rule.addDependency(ruleSet);
+    rule.addResourceDependency(ruleSet);
     new cdk.CfnOutput(scope, 'InboundEmailActivateRuleSet', {
       description: 'This rule set is NOT active. Only one rule set is active per region: activate it only if no other '
         + 'receiving rule set is needed, or rerun with -c inboundEmailRuleSet=<the active set>.',

@@ -67,6 +67,11 @@ function loadBaseline(): Baseline {
   return BaselineSchema.parse(raw);
 }
 
+/** The part of the cloud assembly's manifest.json the deploy-order case reads. */
+const ManifestSchema = z.object({
+  artifacts: z.record(z.string(), z.object({ dependencies: z.array(z.string()).optional() })),
+});
+
 /**
  * A name carrying a deployment prefix ahead of the `voc` stem.
  *
@@ -98,6 +103,24 @@ afterAll(cleanupAssemblyDirs);
 describe('the default (no deploymentPrefix) synth', () => {
   it('produces exactly the stacks the baseline recorded', () => {
     expect(synthed.stackNames).toStrictEqual(Object.keys(baseline.stacks).sort(byCodeUnit));
+  });
+
+  it('keeps the stack deploy order (bin/voc-datalake.ts addStackDependency + the web-search imports)', () => {
+    // The order lives in the assembly manifest, not in any template, so neither the
+    // inventory nor the hashes below would notice a dropped dependency (5.48.04 renamed
+    // addDependency to addStackDependency for aws-cdk-lib 2.275).
+    const manifest = ManifestSchema.parse(JSON.parse(readFileSync(join(synthed.outdir, 'manifest.json'), 'utf8')));
+    const stackDependencies = Object.fromEntries(synthed.stackNames.map((name) => [
+      name,
+      (manifest.artifacts[name]?.dependencies ?? []).filter((dep) => !dep.endsWith('.assets')).sort(byCodeUnit),
+    ]));
+    expect(stackDependencies).toStrictEqual({
+      VocApiStack: ['VocCoreStack', 'VocIngestionStack', 'VocProcessingStack', 'VocWebSearchStack'],
+      VocCoreStack: [],
+      VocIngestionStack: ['VocCoreStack'],
+      VocProcessingStack: ['VocCoreStack', 'VocIngestionStack', 'VocWebSearchStack'],
+      VocWebSearchStack: [],
+    });
   });
 
   it.each(Object.keys(baseline.stacks))(

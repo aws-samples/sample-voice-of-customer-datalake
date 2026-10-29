@@ -11,6 +11,19 @@ from shared.test.memory_fixtures import candidate
 NOW = datetime.now(UTC)
 
 
+class _FrozenAtNow(datetime):
+    """The scanner's clock pinned to this module's NOW: the fixtures are minutes before NOW, so a slow suite
+    (the module imported long before this test runs) must not age the 'active' session past the idle cut-off."""
+
+    @classmethod
+    def now(cls, tz=None):  # noqa: ARG003 - the signature of datetime.now
+        return NOW
+
+
+@pytest.fixture
+def frozen_scanner_clock(monkeypatch):
+    monkeypatch.setattr(scanner, 'datetime', _FrozenAtNow)
+
 def _conv(world, session_id, *, minutes_ago, count=4, kind: str | None = 'assistant', owner='sub-a'):
     item = {'pk': f'USER#{owner}', 'sk': f'CONV#{session_id}', 'conversation_id': session_id,
             'message_count': count, 'updated_at': (NOW - timedelta(minutes=minutes_ago)).isoformat()}
@@ -19,6 +32,7 @@ def _conv(world, session_id, *, minutes_ago, count=4, kind: str | None = 'assist
     world.conversations.put_item(Item=item)
 
 
+@pytest.mark.usefixtures('frozen_scanner_clock')
 def test_scanner_enqueues_only_ended_sessions_with_new_messages(world, worker_context):
     _conv(world, 'ended', minutes_ago=45)
     _conv(world, 'active', minutes_ago=5)

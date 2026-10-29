@@ -1,4 +1,4 @@
-# Modules (relative to voc-datalake/) already mutation-hardened and merged.
+# Modules (relative to voc-datalake/) already mutation-hardened and merged to `main`.
 # One per line: `path` for a whole module, `path:from-to` for a slice. Read by scripts/mutation-plan.mjs.
 # Round 1 (merged 2026-10-04)
 lambda/aggregator/handler.py:1-1050

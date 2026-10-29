@@ -188,7 +188,7 @@ const ingestionStack = new VocIngestionStack(app, stackId('VocIngestionStack'), 
   config,
   frontendDomain: coreStack.frontendDomainName,
 });
-ingestionStack.addDependency(coreStack);
+ingestionStack.addStackDependency(coreStack);
 tagStack(ingestionStack, 'Ingestion');
 
 // ============================================
@@ -218,8 +218,8 @@ const processingStack = new VocProcessingStack(app, stackId('VocProcessingStack'
   webSearchToolName: webSearchStack?.toolName,
   config,
 });
-processingStack.addDependency(coreStack);
-processingStack.addDependency(ingestionStack);
+processingStack.addStackDependency(coreStack);
+processingStack.addStackDependency(ingestionStack);
 tagStack(processingStack, 'Processing');
 
 // ============================================
@@ -270,9 +270,9 @@ const apiStack = new VocApiStack(app, stackId('VocApiStack'), {
   brandName: config.brandName,
   enabledSources,
 });
-apiStack.addDependency(coreStack);
-apiStack.addDependency(ingestionStack);
-apiStack.addDependency(processingStack);
+apiStack.addStackDependency(coreStack);
+apiStack.addStackDependency(ingestionStack);
+apiStack.addStackDependency(processingStack);
 tagStack(apiStack, 'Api');
 
 // Every Lambda (CDK's own provider functions included) logs to a group with a retention period.
