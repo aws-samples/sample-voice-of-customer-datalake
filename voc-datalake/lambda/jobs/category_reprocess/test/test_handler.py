@@ -82,11 +82,24 @@ class TestProcessedMode:
         assert start_job() is not None
 
     def test_unchanged_review_is_not_written(self, tables, start_job, worker_context):
-        tables['feedback'].put_item(Item=feedback_item('a', category='shipping', subcategory='late'))
+        # Already rated: nothing about it changes (no text points, so low).
+        tables['feedback'].put_item(Item=feedback_item('a', category='shipping', subcategory='late',
+                                                       usefulness='low'))
         job = start_job()
         run_job({'job_id': job['sk']}, worker_context)
         assert 'category_source' not in _all_items(tables['feedback'])['a']
         assert _job(tables, job['sk'])['unchanged'] == 1
+
+    def test_a_review_without_a_band_is_rated_even_when_its_category_stays(self, tables, start_job, worker_context):
+        tables['feedback'].put_item(Item=feedback_item(
+            'u', category='shipping', subcategory='late',
+            original_text='Order 5512 was delivered two weeks late and the tracking page showed an error every day'))
+        job = start_job()
+        run_job({'job_id': job['sk']}, worker_context)
+        stored = _all_items(tables['feedback'])['u']
+        assert stored['usefulness'] == 'high'
+        assert 'category_source' not in stored
+        assert _job(tables, job['sk'])['updated'] == 1
 
     def test_manual_corrections_are_respected(self, tables, start_job, worker_context):
         tables['feedback'].put_item(Item=feedback_item('m', category_source='manual'))
