@@ -20,7 +20,7 @@ import FeedbackCard from '../../components/FeedbackCard/FeedbackCard'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import ModalShell from '../../components/ModalShell/ModalShell'
 
-export const PAGE_SIZE = 10
+const PAGE_SIZE = 10
 
 const isNotFound = (error: unknown): boolean => apiErrorStatus(error) === 404
 
