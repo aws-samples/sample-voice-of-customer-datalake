@@ -948,10 +948,10 @@ class TestGeneratePersonasOrchestration(_Generation):
         assert stubs['_load_persona_corpus'].call_args.args[0] == self.FILTERS
         update_progress = stubs['_load_persona_corpus'].call_args.args[1]
         stubs['_existing_persona_names'].assert_called_once_with('proj-1')
-        stubs['_build_persona_chain'].assert_called_once_with(corpus, self.FILTERS, 4, ['Old Name'])
+        stubs['_build_persona_chain'].assert_called_once_with(corpus, self.FILTERS, 4, ['Old Name'], '')
         stubs['_items_reaching_synthesis'].assert_called_once_with(self.STEPS, corpus)
         stubs['_run_persona_calls'].assert_called_once_with(
-            self.STEPS, self.FILTERS, 4, ['Old Name'], update_progress,
+            self.STEPS, self.FILTERS, 4, ['Old Name'], update_progress, '',
         )
         stubs['_clear_existing_personas'].assert_called_once_with('proj-1')
         stubs['datetime'].now.assert_called_once_with(UTC)
@@ -978,6 +978,7 @@ class TestGeneratePersonasOrchestration(_Generation):
                 'parse_tiers': ['fenced'],
                 'personas_planned': 2,
                 'personas_dropped': 1,
+                'duplicate_names_dropped': 0,
                 'source_breakdown': {'unknown': 3},
                 'generation_time_ms': 2750,
             },

@@ -15,7 +15,7 @@ import pytest
 from botocore.exceptions import ClientError
 from moto import mock_aws
 from moto_helpers import projects_module_world
-from persona_fakes import FakePersonaModel
+from persona_fakes import FakePersonaModel, one_item_corpus
 
 import projects
 from shared import jobs as shared_jobs
@@ -57,13 +57,6 @@ def world() -> Iterator[World]:
         yield World(projects=projects_table, jobs=jobs, s3=s3)
 
 
-def _corpus() -> projects._PersonaCorpus:
-    return projects._PersonaCorpus(
-        items=[{'feedback_id': 'fb-1', 'source_platform': 'webscraper'}], context='CTX', stats='STATS',
-        context_budget=5000, fetch_limit=40, fetch_limit_reached=False, corpus_chars=10, char_cap_applied=False,
-    )
-
-
 def _avatar_maker(world: World, *, delete_project_on_call: int | None = None):
     """A stand-in avatar generator that stores a real owner-stamped object (and can delete the project)."""
     def make(project_id: str, persona_id: str, _persona: dict) -> dict:
@@ -77,7 +70,7 @@ def _avatar_maker(world: World, *, delete_project_on_call: int | None = None):
 
 
 def _generate(world: World, filters: dict, **avatar_kwargs) -> dict:
-    with patch.object(projects, '_load_persona_corpus', return_value=_corpus()), \
+    with patch.object(projects, '_load_persona_corpus', return_value=one_item_corpus()), \
             patch.object(projects, 'converse_detailed', FakePersonaModel(NAMES)), \
             patch.object(projects, '_avatar_for', _avatar_maker(world, **avatar_kwargs)), \
             patch.object(projects, 'AVATAR_MAX_CONCURRENCY', 1):
@@ -102,7 +95,7 @@ class TestAProjectDeletedDuringGeneration:
             if kwargs.get('step_name') == 'persona_plan':
                 projects.delete_project(PROJECT)
             return model(**kwargs)
-        with patch.object(projects, '_load_persona_corpus', return_value=_corpus()), \
+        with patch.object(projects, '_load_persona_corpus', return_value=one_item_corpus()), \
                 patch.object(projects, 'converse_detailed', delete_then_answer), \
                 patch.object(projects, '_avatar_for', _avatar_maker(world)), \
                 pytest.raises(persona_save.ProjectNotWritableError):

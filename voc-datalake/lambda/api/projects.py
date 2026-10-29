@@ -17,7 +17,7 @@ import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
-from shared import category_access, draft_intent, persona_save, project_access
+from shared import category_access, draft_intent, persona_overlap, persona_save, project_access
 from shared.api import MAX_PERSONAS_PER_GENERATION, validate_days
 from shared.avatar import (
     avatar_key_from_uri,
@@ -1620,11 +1620,14 @@ def _load_persona_corpus(filters: dict, update_progress: PersonaProgress) -> _Pe
 
 def _build_persona_chain(
     corpus: _PersonaCorpus, filters: dict, persona_count: int, avoid_names: list[str],
+    kept_section: str = '',
 ) -> list[dict]:
     """Step 3: the chain steps, built from the external prompt files.
 
     ``avoid_names`` (the project's current persona names) is appended to the
     synthesis step, so a regeneration does not hand back the same names (#240).
+    ``kept_section`` (additive mode only, ``shared.persona_overlap``) describes the
+    personas the project keeps, so the new ones are distinct archetypes (#353).
     """
     try:
         chain_steps = get_persona_generation_steps(
@@ -1639,7 +1642,7 @@ def _build_persona_chain(
         logger.exception("[PERSONA] Failed to build chain steps")
         raise
     logger.info(f"[PERSONA] Built {len(chain_steps)} chain steps")
-    section = _avoid_names_section(avoid_names)
+    section = _avoid_names_section(avoid_names) + kept_section
     return [
         {**step, 'user': step.get('user', '') + section}
         if section and step.get('step_name') == PERSONA_SYNTHESIS_STEP else step
@@ -1838,26 +1841,28 @@ def _custom_section(filters: dict) -> str:
 
 def _build_plan_step(
     analysis_text: str, filters: dict, persona_count: int, avoid_names: list[str],
+    kept_section: str = '',
 ) -> dict:
-    """The plan step from the prompt file, fed the analysis and the names to avoid."""
+    """The plan step from the prompt file, fed the analysis, the names to avoid and the kept personas."""
     step = build_chain_steps(PERSONA_GENERATION_PROMPTS, [PERSONA_PLAN_STEP], {
         'persona_count': persona_count,
         'previous': analysis_text,
         'custom_section': _custom_section(filters),
         'response_language': filters.get('response_language'),
     })[0]
-    return {**step, 'user': step.get('user', '') + _avoid_names_section(avoid_names)}
+    return {**step, 'user': step.get('user', '') + _avoid_names_section(avoid_names) + kept_section}
 
 
 def _plan_personas(
     analysis_text: str, filters: dict, persona_count: int, avoid_names: list[str],
+    kept_section: str = '',
 ) -> list[_PlannedPersona]:
     """One small call that names the N distinct personas; retried once when it does not parse.
 
     A call that raises on the last attempt propagates (the job then fails with
     its own message); a plan that never parses is a ServiceError.
     """
-    plan_step = _build_plan_step(analysis_text, filters, persona_count, avoid_names)
+    plan_step = _build_plan_step(analysis_text, filters, persona_count, avoid_names, kept_section)
     for attempt in range(1, PERSONA_CALL_ATTEMPTS + 1):
         try:
             result = _run_persona_step(plan_step)
@@ -2074,7 +2079,7 @@ class _PersonaRun:
 
 def _run_persona_calls(
     chain_steps: list[dict], filters: dict, persona_count: int, avoid_names: list[str],
-    update_progress: PersonaProgress,
+    update_progress: PersonaProgress, kept_section: str = '',
 ) -> _PersonaRun:
     """Step 4: analysis → plan → one call per persona (in parallel). Progress only moves forward."""
     import time
@@ -2083,7 +2088,7 @@ def _run_persona_calls(
     update_progress(20, 'analysing_feedback')
     analysis = _run_persona_step(_chain_step(chain_steps, PERSONA_KNOWLEDGE_STEP))
     update_progress(40, 'planning_personas')
-    planned = _plan_personas(analysis.text, filters, persona_count, avoid_names)
+    planned = _plan_personas(analysis.text, filters, persona_count, avoid_names, kept_section)
     update_progress(PERSONA_WRITE_PROGRESS_START, 'writing_personas')
     outcomes = _write_personas(
         _chain_step(chain_steps, PERSONA_SYNTHESIS_STEP), analysis.text, planned, update_progress,
@@ -2467,6 +2472,37 @@ def _save_personas(project_id: str, persona_items: list[tuple[str, dict, dict]],
     return saved_personas
 
 
+def _kept_personas(project_id: str, filters: dict) -> persona_overlap.ExistingPersonas:
+    """Additive mode: the personas the project keeps, described for the prompt (#353).
+
+    Replace mode, or a failed read, is no description: the read is best effort like
+    the names-to-avoid list, and the name post-check then has nothing to compare.
+    """
+    if filters.get('keep_existing_personas') is not True:
+        return persona_overlap.NO_EXISTING_PERSONAS
+    try:
+        return persona_overlap.read_existing_personas(projects_table, project_id)
+    except Exception:
+        logger.exception("[PERSONA] Could not read the kept personas (continuing)")
+        return persona_overlap.NO_EXISTING_PERSONAS
+
+
+def _personas_to_add(
+    project_id: str, filters: dict, personas: list[dict], kept: persona_overlap.ExistingPersonas,
+) -> tuple[list[dict], int]:
+    """``(the personas to save, name clashes dropped)``; replace mode clears the old set first."""
+    if filters.get('keep_existing_personas') is not True:
+        _clear_existing_personas(project_id)
+        return personas, 0
+    kept_personas, clashes = persona_overlap.drop_name_clashes(personas, kept.name_keys)
+    if clashes:
+        logger.warning(
+            f"[PERSONA] Dropped {clashes} new persona(s) whose name repeats a kept one",
+            extra={'project_id': project_id},
+        )
+    return kept_personas, clashes
+
+
 @tracer.capture_method
 def generate_personas(
     project_id: str, filters: dict, progress_callback: Callable[[int, str], object] | None = None,
@@ -2512,13 +2548,16 @@ def generate_personas(
         logger.info("[PERSONA] Step 3/5: Building LLM chain steps from prompts...")
         update_progress(15, 'building_prompts')
         avoid_names = _existing_persona_names(project_id)
+        kept = _kept_personas(project_id, filters)
         chain_steps = with_persona_knowledge(
-            _build_persona_chain(corpus, filters, persona_count, avoid_names), knowledge,
+            _build_persona_chain(corpus, filters, persona_count, avoid_names, kept.section), knowledge,
         )
         feedback_items_used, context_truncated = _items_reaching_synthesis(chain_steps, corpus)
 
         logger.info("[PERSONA] Step 4/5: Analysis, plan, then one call per persona...")
-        run = _run_persona_calls(chain_steps, filters, persona_count, avoid_names, update_progress)
+        run = _run_persona_calls(
+            chain_steps, filters, persona_count, avoid_names, update_progress, kept.section,
+        )
         llm_time = run.llm_time_ms
         model_id = run.batch.model_id
         logger.info(
@@ -2529,10 +2568,10 @@ def generate_personas(
 
         logger.info("[PERSONA] Step 5/5: Saving personas to database...")
         update_progress(80, 'saving_personas')
-        # An autonomous agent appends (``keep_existing_personas``): it never removes
-        # personas a person may have edited (5.34.00 live: a run replaced them).
-        if filters.get('keep_existing_personas') is not True:
-            _clear_existing_personas(project_id)
+        # Additive mode (``keep_existing_personas``: autonomous agents always, people by
+        # choice) never removes a persona someone may have edited (5.34.00 live: a run
+        # replaced them); replace mode (the default) clears them so nothing accumulates.
+        new_personas, name_clashes = _personas_to_add(project_id, filters, run.batch.personas, kept)
 
         source_breakdown = _source_breakdown(feedback_items)
 
@@ -2541,7 +2580,7 @@ def generate_personas(
         now_dt = datetime.now(UTC)
         now = now_dt.isoformat()
         persona_items = _build_persona_items(
-            project_id, run.batch.personas, feedback_items,
+            project_id, new_personas, feedback_items,
             persona_count=persona_count, source_breakdown=source_breakdown,
             llm_time=llm_time, now_dt=now_dt, model_id=model_id,
             date_basis=validate_date_basis(filters.get('date_basis')),
@@ -2598,6 +2637,9 @@ def generate_personas(
             'parse_tiers': run.batch.tiers,
             'personas_planned': len(run.planned),
             'personas_dropped': run.batch.dropped,
+            # Additive mode: new personas dropped because their name repeated a kept
+            # (or an earlier new) persona's (#353, shared/persona_overlap.py).
+            'duplicate_names_dropped': name_clashes,
             'source_breakdown': source_breakdown,
             'generation_time_ms': llm_time
         }
