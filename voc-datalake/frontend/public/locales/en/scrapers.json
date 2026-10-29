@@ -372,5 +372,67 @@
     "everyHours_other": "Every {{count, number}} hours",
     "everyDays_one": "Daily",
     "everyDays_other": "Every {{count, number}} days"
+  },
+  "importHistory": {
+    "title": "Import history",
+    "subtitle": "Every paste, file upload, assistant and S3 import of the last 90 days, newest first. Select a run to see its warnings.",
+    "empty": "No imports in the last 90 days.",
+    "loadMore": "Load more",
+    "actorS3": "S3 upload (uploader unknown)",
+    "openRun": "Open the {{method}} import from {{source}}",
+    "importedOf": "{{imported, number}} of {{received, number}} imported",
+    "columns": {
+      "method": "Method",
+      "source": "Source",
+      "actor": "By",
+      "started": "Started",
+      "counts": "Rows",
+      "status": "Status"
+    },
+    "methods": {
+      "paste": "Paste",
+      "csv": "CSV file",
+      "json": "JSON file",
+      "s3": "S3 bucket",
+      "assistant": "AI assistant",
+      "unknown": "Unknown"
+    },
+    "status": {
+      "completed": "Completed",
+      "partial": "Partial",
+      "failed": "Failed",
+      "unknown": "Unknown"
+    },
+    "counts": {
+      "received": "Received",
+      "imported": "Imported",
+      "skipped": "Skipped",
+      "duplicate": "Duplicates",
+      "failed": "Failed"
+    },
+    "countsShort": {
+      "skipped_one": "{{count, number}} skipped",
+      "skipped_other": "{{count, number}} skipped",
+      "duplicate_one": "{{count, number}} duplicate",
+      "duplicate_other": "{{count, number}} duplicates",
+      "failed_one": "{{count, number}} failed",
+      "failed_other": "{{count, number}} failed"
+    },
+    "detail": {
+      "title": "Import details",
+      "close": "Close import details",
+      "finished": "Finished",
+      "rawFile": "Raw file",
+      "noRawFile": "Not archived (the source policy keeps no raw file)",
+      "errors": "Errors",
+      "warnings": "Warnings",
+      "noMessages": "This import returned no warnings or errors.",
+      "truncated": "Some messages were shortened or left out. The raw file has the full input.",
+      "loadFailed": "Could not load this import.",
+      "moreNotShown_one": "{{count, number}} more not shown",
+      "moreNotShown_other": "{{count, number}} more not shown",
+      "loading": "Loading import details…"
+    },
+    "loading": "Loading import history…"
   }
 }

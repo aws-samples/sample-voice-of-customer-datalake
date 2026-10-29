@@ -408,5 +408,75 @@
     "everyDays_few": "Co {{count, number}} dni",
     "everyDays_many": "Co {{count, number}} dni",
     "everyDays_other": "Co {{count, number}} dnia"
+  },
+  "importHistory": {
+    "title": "Historia importów",
+    "subtitle": "Każdy import przez wklejenie, z pliku, przez asystenta AI lub z S3 z ostatnich 90 dni, od najnowszego. Wybierz import, aby zobaczyć jego ostrzeżenia.",
+    "empty": "Brak importów w ostatnich 90 dniach.",
+    "loadMore": "Wczytaj więcej",
+    "actorS3": "Przesłanie do S3 (przesyłający nieznany)",
+    "openRun": "Otwórz import {{method}} z {{source}}",
+    "importedOf": "Zaimportowano {{imported, number}} z {{received, number}}",
+    "columns": {
+      "method": "Metoda",
+      "source": "Źródło",
+      "actor": "Kto",
+      "started": "Rozpoczęto",
+      "counts": "Wiersze",
+      "status": "Status"
+    },
+    "methods": {
+      "paste": "Wklejenie",
+      "csv": "Plik CSV",
+      "json": "Plik JSON",
+      "s3": "Zasobnik S3",
+      "assistant": "Asystent AI",
+      "unknown": "Nieznana"
+    },
+    "status": {
+      "completed": "Zakończony",
+      "partial": "Częściowy",
+      "failed": "Nieudany",
+      "unknown": "Nieznany"
+    },
+    "counts": {
+      "received": "Odebrane",
+      "imported": "Zaimportowane",
+      "skipped": "Pominięte",
+      "duplicate": "Duplikaty",
+      "failed": "Nieudane"
+    },
+    "countsShort": {
+      "skipped_one": "{{count, number}} pominięty",
+      "skipped_few": "{{count, number}} pominięte",
+      "skipped_many": "{{count, number}} pominiętych",
+      "skipped_other": "{{count, number}} pominiętego",
+      "duplicate_one": "{{count, number}} duplikat",
+      "duplicate_few": "{{count, number}} duplikaty",
+      "duplicate_many": "{{count, number}} duplikatów",
+      "duplicate_other": "{{count, number}} duplikatu",
+      "failed_one": "{{count, number}} nieudany",
+      "failed_few": "{{count, number}} nieudane",
+      "failed_many": "{{count, number}} nieudanych",
+      "failed_other": "{{count, number}} nieudanego"
+    },
+    "detail": {
+      "title": "Szczegóły importu",
+      "close": "Zamknij szczegóły importu",
+      "finished": "Zakończono",
+      "rawFile": "Plik źródłowy",
+      "noRawFile": "Nie zarchiwizowano (zasady źródła nie przechowują pliku źródłowego)",
+      "errors": "Błędy",
+      "warnings": "Ostrzeżenia",
+      "noMessages": "Ten import nie zwrócił ostrzeżeń ani błędów.",
+      "truncated": "Niektóre komunikaty skrócono lub pominięto. Plik źródłowy zawiera pełne dane wejściowe.",
+      "loadFailed": "Nie udało się wczytać tego importu.",
+      "moreNotShown_one": "Jeszcze {{count, number}} niewyświetlony",
+      "moreNotShown_few": "Jeszcze {{count, number}} niewyświetlone",
+      "moreNotShown_many": "Jeszcze {{count, number}} niewyświetlonych",
+      "moreNotShown_other": "Jeszcze {{count, number}} niewyświetlonego",
+      "loading": "Wczytywanie szczegółów importu…"
+    },
+    "loading": "Wczytywanie historii importów…"
   }
 }

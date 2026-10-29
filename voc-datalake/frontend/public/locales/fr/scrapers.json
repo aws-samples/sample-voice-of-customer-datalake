@@ -385,5 +385,67 @@
     "everyHours_other": "Toutes les {{count, number}} heures",
     "everyDays_one": "Tous les jours",
     "everyDays_other": "Tous les {{count, number}} jours"
+  },
+  "importHistory": {
+    "title": "Historique des imports",
+    "subtitle": "Chaque import collé, par fichier, par l’assistant ou depuis S3 des 90 derniers jours, du plus récent au plus ancien. Sélectionnez-en un pour voir ses avertissements.",
+    "empty": "Aucun import au cours des 90 derniers jours.",
+    "loadMore": "Charger plus",
+    "actorS3": "Dépôt S3 (auteur inconnu)",
+    "openRun": "Ouvrir l’import {{method}} de {{source}}",
+    "importedOf": "{{imported, number}} sur {{received, number}} importées",
+    "columns": {
+      "method": "Méthode",
+      "source": "Source",
+      "actor": "Par",
+      "started": "Début",
+      "counts": "Lignes",
+      "status": "Statut"
+    },
+    "methods": {
+      "paste": "Collage",
+      "csv": "Fichier CSV",
+      "json": "Fichier JSON",
+      "s3": "Bucket S3",
+      "assistant": "Assistant IA",
+      "unknown": "Inconnue"
+    },
+    "status": {
+      "completed": "Terminé",
+      "partial": "Partiel",
+      "failed": "Échoué",
+      "unknown": "Inconnu"
+    },
+    "counts": {
+      "received": "Reçues",
+      "imported": "Importées",
+      "skipped": "Ignorées",
+      "duplicate": "Doublons",
+      "failed": "Échouées"
+    },
+    "countsShort": {
+      "skipped_one": "{{count, number}} ignorée",
+      "skipped_other": "{{count, number}} ignorées",
+      "duplicate_one": "{{count, number}} doublon",
+      "duplicate_other": "{{count, number}} doublons",
+      "failed_one": "{{count, number}} échouée",
+      "failed_other": "{{count, number}} échouées"
+    },
+    "detail": {
+      "title": "Détails de l’import",
+      "close": "Fermer les détails",
+      "finished": "Terminé le",
+      "rawFile": "Fichier brut",
+      "noRawFile": "Non archivé (la politique de la source ne conserve pas le fichier brut)",
+      "errors": "Erreurs",
+      "warnings": "Avertissements",
+      "noMessages": "Cet import n’a renvoyé ni avertissement ni erreur.",
+      "truncated": "Certains messages ont été raccourcis ou omis. Le fichier brut contient l’entrée complète.",
+      "loadFailed": "Impossible de charger cet import.",
+      "moreNotShown_one": "{{count, number}} autre non affiché",
+      "moreNotShown_other": "{{count, number}} autres non affichés",
+      "loading": "Chargement des détails de l’import…"
+    },
+    "loading": "Chargement de l’historique des imports…"
   }
 }

@@ -372,5 +372,67 @@
     "everyHours_other": "{{count, number}} 時間ごと",
     "everyDays_one": "毎日",
     "everyDays_other": "{{count, number}} 日ごと"
+  },
+  "importHistory": {
+    "title": "インポート履歴",
+    "subtitle": "過去 90 日間の貼り付け、ファイル、AI アシスタント、S3 からのインポートを新しい順に表示します。実行を選択すると警告を確認できます。",
+    "empty": "過去 90 日間にインポートはありません。",
+    "loadMore": "さらに読み込む",
+    "actorS3": "S3 アップロード(アップロードした人は不明)",
+    "openRun": "{{source}} からの {{method}} インポートを開く",
+    "importedOf": "{{received, number}} 件中 {{imported, number}} 件をインポート",
+    "columns": {
+      "method": "方法",
+      "source": "ソース",
+      "actor": "実行者",
+      "started": "開始",
+      "counts": "行",
+      "status": "ステータス"
+    },
+    "methods": {
+      "paste": "貼り付け",
+      "csv": "CSV ファイル",
+      "json": "JSON ファイル",
+      "s3": "S3 バケット",
+      "assistant": "AI アシスタント",
+      "unknown": "不明"
+    },
+    "status": {
+      "completed": "完了",
+      "partial": "一部完了",
+      "failed": "失敗",
+      "unknown": "不明"
+    },
+    "counts": {
+      "received": "受信",
+      "imported": "インポート済み",
+      "skipped": "スキップ",
+      "duplicate": "重複",
+      "failed": "失敗"
+    },
+    "countsShort": {
+      "skipped_one": "{{count, number}} 件スキップ",
+      "skipped_other": "{{count, number}} 件スキップ",
+      "duplicate_one": "{{count, number}} 件重複",
+      "duplicate_other": "{{count, number}} 件重複",
+      "failed_one": "{{count, number}} 件失敗",
+      "failed_other": "{{count, number}} 件失敗"
+    },
+    "detail": {
+      "title": "インポートの詳細",
+      "close": "インポートの詳細を閉じる",
+      "finished": "終了",
+      "rawFile": "元ファイル",
+      "noRawFile": "アーカイブされていません(ソースのポリシーで元ファイルを保持しません)",
+      "errors": "エラー",
+      "warnings": "警告",
+      "noMessages": "このインポートでは警告もエラーもありませんでした。",
+      "truncated": "一部のメッセージは短縮または省略されています。元ファイルに完全な入力があります。",
+      "loadFailed": "このインポートを読み込めませんでした。",
+      "moreNotShown_one": "ほか {{count, number}} 件は非表示",
+      "moreNotShown_other": "ほか {{count, number}} 件は非表示",
+      "loading": "インポートの詳細を読み込んでいます…"
+    },
+    "loading": "インポート履歴を読み込んでいます…"
   }
 }

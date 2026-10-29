@@ -12,6 +12,7 @@ import {
   activeAxisIds, axesPayload, ballotComposite, handlePrioritizationConfigRoutes, publicAxes, unknownAxisField,
 } from './mock-prioritization-axes.js';
 import { handleSourceRoutes } from './mock-sources.js';
+import { handleImportHistoryRoutes } from './mock-import-history.js';
 import { handleFormRoutes } from './mock-forms.js';
 import { handleOnboardingRoutes } from './mock-onboarding.js';
 import { handleBriefingRoutes } from './mock-briefing.js';
@@ -1290,6 +1291,7 @@ function handleDomainModules(req, res, url) {
     || handleDataQualityRoutes(req, res, url, send, shared)
     || handleScopeRoutes(req, res, url, send, shared)
     || handleAssistJobRoutes(req, res, url, send)
+    || handleImportHistoryRoutes(req, res, url, send)
     || handleSourceRoutes(req, res, url, send, shared)
     || handleFormRoutes(req, res, url, send, shared)
     || handleDocumentReviewRoutes(req, res, url, send, shared)

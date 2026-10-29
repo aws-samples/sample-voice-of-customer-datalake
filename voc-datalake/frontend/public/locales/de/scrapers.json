@@ -372,5 +372,67 @@
     "everyHours_other": "Alle {{count, number}} Stunden",
     "everyDays_one": "Täglich",
     "everyDays_other": "Alle {{count, number}} Tage"
+  },
+  "importHistory": {
+    "title": "Importverlauf",
+    "subtitle": "Jeder Import per Einfügen, Datei, KI-Assistent oder S3 der letzten 90 Tage, der neueste zuerst. Wählen Sie einen aus, um seine Warnungen zu sehen.",
+    "empty": "Keine Importe in den letzten 90 Tagen.",
+    "loadMore": "Mehr laden",
+    "actorS3": "S3-Upload (hochladende Person unbekannt)",
+    "openRun": "{{method}}-Import aus {{source}} öffnen",
+    "importedOf": "{{imported, number}} von {{received, number}} importiert",
+    "columns": {
+      "method": "Methode",
+      "source": "Quelle",
+      "actor": "Von",
+      "started": "Gestartet",
+      "counts": "Zeilen",
+      "status": "Status"
+    },
+    "methods": {
+      "paste": "Einfügen",
+      "csv": "CSV-Datei",
+      "json": "JSON-Datei",
+      "s3": "S3-Bucket",
+      "assistant": "KI-Assistent",
+      "unknown": "Unbekannt"
+    },
+    "status": {
+      "completed": "Abgeschlossen",
+      "partial": "Teilweise",
+      "failed": "Fehlgeschlagen",
+      "unknown": "Unbekannt"
+    },
+    "counts": {
+      "received": "Empfangen",
+      "imported": "Importiert",
+      "skipped": "Übersprungen",
+      "duplicate": "Duplikate",
+      "failed": "Fehlgeschlagen"
+    },
+    "countsShort": {
+      "skipped_one": "{{count, number}} übersprungen",
+      "skipped_other": "{{count, number}} übersprungen",
+      "duplicate_one": "{{count, number}} Duplikat",
+      "duplicate_other": "{{count, number}} Duplikate",
+      "failed_one": "{{count, number}} fehlgeschlagen",
+      "failed_other": "{{count, number}} fehlgeschlagen"
+    },
+    "detail": {
+      "title": "Importdetails",
+      "close": "Importdetails schließen",
+      "finished": "Beendet",
+      "rawFile": "Rohdatei",
+      "noRawFile": "Nicht archiviert (die Quellrichtlinie behält keine Rohdatei)",
+      "errors": "Fehler",
+      "warnings": "Warnungen",
+      "noMessages": "Dieser Import hat keine Warnungen oder Fehler gemeldet.",
+      "truncated": "Einige Meldungen wurden gekürzt oder ausgelassen. Die Rohdatei enthält die vollständige Eingabe.",
+      "loadFailed": "Dieser Import konnte nicht geladen werden.",
+      "moreNotShown_one": "{{count, number}} weitere nicht angezeigt",
+      "moreNotShown_other": "{{count, number}} weitere nicht angezeigt",
+      "loading": "Importdetails werden geladen…"
+    },
+    "loading": "Importverlauf wird geladen…"
   }
 }

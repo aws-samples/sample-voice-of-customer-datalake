@@ -4050,5 +4050,25 @@
         "path": "/s3-import/reprocess/run_s3_import_20260310120000_0a1b2c3d"
       }
     ]
+  },
+  {
+    "file": "api/importHistoryApi.ts",
+    "method": "GET",
+    "call": "`${PATH}?${params.toString()}`",
+    "probes": [
+      {
+        "path": "/scrapers/manual/history?limit=25"
+      }
+    ]
+  },
+  {
+    "file": "api/importHistoryApi.ts",
+    "method": "GET",
+    "call": "`${PATH}/${encodeURIComponent(runId)}`",
+    "probes": [
+      {
+        "path": "/scrapers/manual/history/7d3c2b1a-0f9e-4d8c-b7a6-5e4d3c2b1a09"
+      }
+    ]
   }
 ]
