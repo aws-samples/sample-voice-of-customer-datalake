@@ -206,7 +206,8 @@ class TestCorsContract:
     def test_preflight_is_answered_with_the_same_allowlist(self):
         result = _resolve(_app_with_route('/ok', lambda: {'ok': True}), '/ok', 'OPTIONS')
         assert result['statusCode'] == 204
-        assert dict(result['multiValueHeaders']) == {'Access-Control-Allow-Methods': ['GET,OPTIONS'], **CORS_HEADERS}
+        assert dict(result['multiValueHeaders']) == {
+            'Access-Control-Allow-Methods': ['GET,OPTIONS'], **CORS_HEADERS, 'Vary': ['Origin']}
 
 
 class _Teapot(ApiError):

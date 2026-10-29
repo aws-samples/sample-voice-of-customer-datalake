@@ -17,6 +17,19 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.47.04] - 2026-10-29
+
+AWS Lambda Powertools is pinned, so every deploy and CI run uses the same version.
+
+### Changed
+- `aws-lambda-powertools` is pinned to `3.38.0` in the ingestion and processing layers and in
+  `requirements-dev.txt` (it was an open range). 3.38.0 adds `Vary: Origin` to API answers that echo an allowed
+  origin, CORS preflights included, so browsers and caches keep answers for different origins apart. Two tests now
+  expect that header.
+
+### Upgrade notes
+- Rebuild the Lambda layers (`./scripts/build-layers.sh`) before the next deploy so they carry the pinned version.
+
 ## [5.47.03] - 2026-10-29
 
 The code-audit gate gives the same answer locally and in CI.
