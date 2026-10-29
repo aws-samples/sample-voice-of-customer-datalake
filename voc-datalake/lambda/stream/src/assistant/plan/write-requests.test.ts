@@ -58,13 +58,13 @@ describe('buildWriteRequest', () => {
     expect(buildWriteRequest('add_persona_note', { project_id: 'p', persona_id: 'q', text: 't' }, { days: 7, editId: 'e' }).body).toStrictEqual({ text: 't' });
   });
 
-  it('adds personas unless the approved plan explicitly replaces them (#353)', () => {
-    const keep = (extra: Record<string, unknown>) => buildWriteRequest(
-      'generate_personas', { project_id: 'p', persona_count: 3, ...extra }, { days: 7, editId: 'e' },
-    ).body?.keep_existing_personas;
-    expect(keep({})).toBe(true);
-    expect(keep({ keep_existing_personas: true })).toBe(true);
-    expect(keep({ keep_existing_personas: false })).toBe(false);
+  it.each<[Record<string, unknown>, boolean]>([
+    [{}, true],
+    [{ keep_existing_personas: true }, true],
+    [{ keep_existing_personas: false }, false],
+  ])('generate_personas %o adds unless the approved plan explicitly replaces (#353)', (extra, keep) => {
+    const request = buildWriteRequest('generate_personas', { project_id: 'p', persona_count: 3, ...extra }, { days: 7, editId: 'e' });
+    expect(request.body).toMatchObject({ keep_existing_personas: keep });
   });
 
   it('fills the omitted half of the company context from the stored document', () => {
