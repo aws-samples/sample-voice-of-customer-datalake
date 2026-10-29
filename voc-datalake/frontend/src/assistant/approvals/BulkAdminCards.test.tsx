@@ -93,6 +93,13 @@ describe('import_reviews card', () => {
     expect(outcomeOf(onResolve)).toMatchObject({ status: 'executed', data: { imported_count: 3, total_items: 3, source_id: 'survey_q3' } })
   })
 
+  it('tags the upload as the assistant\'s, with the source the user named, for the import history', async () => {
+    routeFetchApi({ 'POST /scrapers/manual/json-upload': () => ({ success: true, imported_count: 3, total_items: 3 }) })
+    const { user, onResolve } = card()
+    await approve(user, onResolve)
+    expect(writes()[0]?.[2]).toMatchObject({ import_origin: 'assistant', source_label: 'Support survey' })
+  })
+
   it('dates a row without a date at the approval time', async () => {
     routeFetchApi({ 'POST /scrapers/manual/json-upload': () => ({ success: true, imported_count: 3, total_items: 3 }) })
     const { user, onResolve } = card()

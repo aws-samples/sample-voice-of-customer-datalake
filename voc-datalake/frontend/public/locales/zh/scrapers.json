@@ -372,5 +372,67 @@
     "everyHours_other": "每 {{count, number}} 小时",
     "everyDays_one": "每天",
     "everyDays_other": "每 {{count, number}} 天"
+  },
+  "importHistory": {
+    "title": "导入历史",
+    "subtitle": "过去 90 天内的每次粘贴、文件、AI 助手和 S3 导入,按时间从新到旧排列。选择一次运行即可查看其警告。",
+    "empty": "过去 90 天内没有导入。",
+    "loadMore": "加载更多",
+    "actorS3": "S3 上传(上传者未知)",
+    "openRun": "打开来自 {{source}} 的{{method}}导入",
+    "importedOf": "已导入 {{imported, number}} / {{received, number}} 条",
+    "columns": {
+      "method": "方式",
+      "source": "来源",
+      "actor": "执行人",
+      "started": "开始时间",
+      "counts": "行数",
+      "status": "状态"
+    },
+    "methods": {
+      "paste": "粘贴",
+      "csv": "CSV 文件",
+      "json": "JSON 文件",
+      "s3": "S3 存储桶",
+      "assistant": "AI 助手",
+      "unknown": "未知"
+    },
+    "status": {
+      "completed": "已完成",
+      "partial": "部分完成",
+      "failed": "失败",
+      "unknown": "未知"
+    },
+    "counts": {
+      "received": "已接收",
+      "imported": "已导入",
+      "skipped": "已跳过",
+      "duplicate": "重复",
+      "failed": "失败"
+    },
+    "countsShort": {
+      "skipped_one": "跳过 {{count, number}} 条",
+      "skipped_other": "跳过 {{count, number}} 条",
+      "duplicate_one": "重复 {{count, number}} 条",
+      "duplicate_other": "重复 {{count, number}} 条",
+      "failed_one": "失败 {{count, number}} 条",
+      "failed_other": "失败 {{count, number}} 条"
+    },
+    "detail": {
+      "title": "导入详情",
+      "close": "关闭导入详情",
+      "finished": "完成时间",
+      "rawFile": "原始文件",
+      "noRawFile": "未归档(该来源的策略不保留原始文件)",
+      "errors": "错误",
+      "warnings": "警告",
+      "noMessages": "此次导入没有返回警告或错误。",
+      "truncated": "部分消息已被缩短或省略。原始文件包含完整输入。",
+      "loadFailed": "无法加载此次导入。",
+      "moreNotShown_one": "另有 {{count, number}} 条未显示",
+      "moreNotShown_other": "另有 {{count, number}} 条未显示",
+      "loading": "正在加载导入详情…"
+    },
+    "loading": "正在加载导入历史…"
   }
 }

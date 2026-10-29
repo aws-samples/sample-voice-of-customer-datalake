@@ -102,8 +102,13 @@ export const scrapersApi = {
         reviews,
       })),
 
-  /** `radarBrand`: a Radar brand key; the items then go to Radar only (docs/radar.md). */
-  uploadJsonFeedback: (items: Array<Record<string, unknown>>, sourceId?: string, radarBrand?: string) =>
+  /**
+   * `radarBrand`: a Radar brand key; the items then go to Radar only (docs/radar.md).
+   * `assistant`: set by the assistant's `import_reviews`, so the import history names the
+   * method and the source the user gave (docs/import-history.md).
+   */
+  uploadJsonFeedback: (items: Array<Record<string, unknown>>, sourceId?: string, radarBrand?: string,
+    assistant?: { sourceLabel: string }) =>
     fetchApi<{
       success: boolean;
       imported_count: number;
@@ -114,6 +119,7 @@ export const scrapersApi = {
         items,
         ...(sourceId === undefined ? {} : { source_id: sourceId }),
         ...(radarBrand === undefined ? {} : { radar_brand: radarBrand }),
+        ...(assistant === undefined ? {} : { import_origin: 'assistant', source_label: assistant.sourceLabel }),
       })),
   /**
    * `source_id`: the source profile the rows belong to (default `manual_import`);

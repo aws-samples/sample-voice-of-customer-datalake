@@ -25,6 +25,7 @@ import { serverReason } from '../../lib/errors'
 import GeneratorConfigModal from './GeneratorConfigModal'
 import JsonUploadModal from './JsonUploadModal'
 import CsvUploadModal from './CsvUploadModal'
+import ImportHistory from './ImportHistory'
 import AppConfigList from './AppConfigList'
 import ManualImportModal from './ManualImportModal'
 import PluginConfigModal from './PluginConfigModal'
@@ -42,6 +43,7 @@ import type {
 import type { PluginManifest } from '../../plugins/types'
 import { PageTitle } from '../../components/PageTitle/PageTitle'
 import { allAppConfigsKey, appConfigsKey, scrapersKey, sourceRunStatusKey } from '../../api/queryKeys'
+import { importHistoryKey } from '../../api/importHistoryApi'
 
 function getAppConfigPlugins(): PluginManifest[] {
   return getPluginManifests().filter((p) => supportsAppConfigs(p.id))
@@ -156,6 +158,8 @@ function ScrapersContent({
         </div>
       )}
       {!isLoading && !failure.loadFailed && scrapers.length === 0 && syntheticPlugins.length === 0 && <EmptyState isAdmin={isAdmin} onCreateClick={onShowTemplates} />}
+      {/* Importing is admin-only (/scrapers/manual/*), and so is its history. */}
+      {isAdmin && <ImportHistory />}
     </div>
   )
 }
@@ -230,6 +234,8 @@ export default function Scrapers() {
   const scrapers = data?.scrapers ?? []
 
   const queryClient = useQueryClient()
+  // A finished upload is the newest import run (docs/import-history.md).
+  const refreshImportHistory = () => void queryClient.invalidateQueries({ queryKey: importHistoryKey() })
   const deleteAppMutation = useMutation({
     mutationFn: ({
       pluginId, appId,
@@ -315,7 +321,11 @@ export default function Scrapers() {
       />
 
       <ImportModals isAdmin={isAdmin} showJsonUpload={showJsonUpload} showCsvUpload={showCsvUpload}
-        onCloseJson={() => setShowJsonUpload(false)} onCloseCsv={() => setShowCsvUpload(false)} />
+        onCloseJson={() => {
+          setShowJsonUpload(false); refreshImportHistory()
+        }} onCloseCsv={() => {
+          setShowCsvUpload(false); refreshImportHistory()
+        }} />
 
       {showTemplates ? <TemplateSelector isAdmin={isAdmin} onSelect={handleSelectTemplate} onSelectPlugin={handleSelectPlugin} onSelectGenerator={(plugin) => {
         setShowTemplates(false); setSelectedGenerator(plugin)

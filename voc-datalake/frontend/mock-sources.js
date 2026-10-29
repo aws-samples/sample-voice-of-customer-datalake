@@ -15,6 +15,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
 import { cursorPage } from './mock-feedback-cursor.js';
+import { csvUploadCounts, recordImportRun } from './mock-import-history.js';
 import { effectiveBrands, radarBrandError } from './mock-radar-brands.js';
 import { SYSTEM_LOG_ROUTES } from './mock-system-logs.js';
 
@@ -690,6 +691,10 @@ function confirmImport({ shared }, body) {
     });
   }
   job.status = 'imported';
+  recordImportRun({
+    method: 'paste', source: job.source_origin, counts: { received: finalReviews.length, imported: finalReviews.length },
+    raw_s3_key: `s3://${MOCK_RAW_BUCKET}/${key}`,
+  });
   return [200, { success: true, imported_count: finalReviews.length, s3_uri: `s3://${MOCK_RAW_BUCKET}/${key}` }];
 }
 
@@ -740,6 +745,11 @@ function jsonUpload({ shared }, body) {
       created_at: str(item.timestamp || item.created_at),
     });
   }
+  recordImportRun({
+    method: body.import_origin === 'assistant' ? 'assistant' : 'json',
+    source: str(body.source_label).trim() || sourceId, source_id: sourceId,
+    counts: { received: items.length, imported: clean.length }, raw_s3_key: `s3://${MOCK_RAW_BUCKET}/${key}`, radar_brand: radar.brand,
+  });
   return [200, { success: true, imported_count: clean.length, total_items: items.length, s3_uri: `s3://${MOCK_RAW_BUCKET}/${key}` }];
 }
 
@@ -908,6 +918,10 @@ function csvUpload({ shared }, body) {
   for (const item of radar.brand ? [] : items) processImported(shared, { ...item, source_platform: sourceId, source_channel: item.source });
   const result = { success: true, imported_count: items.length, total_rows: items.length, s3_uri: `s3://${MOCK_RAW_BUCKET}/${key}` };
   if (warnings.length) result.warnings = warnings.slice(0, 20);
+  recordImportRun({
+    method: 'csv', source: defaultSource, source_id: sourceId, warnings, raw_s3_key: result.s3_uri, radar_brand: radar.brand,
+    counts: csvUploadCounts(items.length, warnings),
+  });
   return [200, result];
 }
 
