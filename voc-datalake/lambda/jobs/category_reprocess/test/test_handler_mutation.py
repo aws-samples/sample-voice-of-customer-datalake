@@ -39,6 +39,7 @@ from jobs.category_reprocess import handler
 from jobs.category_reprocess.handler import (
     _time_left,
     build_update,
+    build_usefulness_update,
     processed_attributes,
     raw_attributes,
     raw_record_for,
@@ -472,6 +473,8 @@ class TestReprocessItemOutcomes:
 
     NOW = '2026-03-10T00:00:00+00:00'
     NEW: ClassVar[dict] = {'category': 'shipping', 'subcategory': 'late', 'gsi2pk': 'CATEGORY#shipping'}
+    # What is written: the classification plus the band of the stored text ('stored text': low).
+    WRITTEN: ClassVar[dict] = {**NEW, 'usefulness': 'low'}
 
     @pytest.fixture
     def doubles(self):
@@ -508,7 +511,7 @@ class TestReprocessItemOutcomes:
         item = _item(category_source='manual')
         counters = self._run(doubles, item, include_manual=True)
         assert counters == _counters(scanned=1, updated=1)
-        table.update_item.assert_called_once_with(**build_update(item, self.NEW, True, self.NOW))
+        table.update_item.assert_called_once_with(**build_update(item, self.WRITTEN, True, self.NOW))
         assert ':manual' not in table.update_item.call_args.kwargs['ExpressionAttributeValues']
 
     def test_processed_mode_classifies_and_updates_in_place(self, doubles):
@@ -518,7 +521,7 @@ class TestReprocessItemOutcomes:
         assert counters == _counters(scanned=1, updated=1)
         processed.assert_called_once_with(item, CATEGORIES)
         raw.assert_not_called()
-        table.update_item.assert_called_once_with(**build_update(item, self.NEW, False, self.NOW))
+        table.update_item.assert_called_once_with(**build_update(item, self.WRITTEN, False, self.NOW))
 
     def test_raw_mode_re_enriches(self, doubles):
         table, processed, raw = doubles
@@ -527,7 +530,7 @@ class TestReprocessItemOutcomes:
         assert counters == _counters(scanned=1, updated=1)
         raw.assert_called_once_with(item, CATEGORIES)
         processed.assert_not_called()
-        table.update_item.assert_called_once_with(**build_update(item, self.NEW, False, self.NOW))
+        table.update_item.assert_called_once_with(**build_update(item, self.WRITTEN, False, self.NOW))
 
     def test_raw_mode_never_short_circuits_on_an_unchanged_category(self, doubles):
         table, _processed, _raw = doubles
@@ -537,9 +540,23 @@ class TestReprocessItemOutcomes:
 
     def test_processed_mode_leaves_an_unchanged_review_alone(self, doubles):
         table, _processed, _raw = doubles
-        counters = self._run(doubles, _item(category='shipping', subcategory='late'))
+        counters = self._run(doubles, _item(category='shipping', subcategory='late', usefulness='low'))
         assert counters == _counters(scanned=1, unchanged=1)
         table.update_item.assert_not_called()
+
+    def test_processed_mode_rates_an_unrated_review_whose_category_stays(self, doubles):
+        table, _processed, _raw = doubles
+        item = _item(category='shipping', subcategory='late')
+        counters = self._run(doubles, item)
+        assert counters == _counters(scanned=1, updated=1)
+        table.update_item.assert_called_once_with(**build_usefulness_update(item, 'low'))
+
+    def test_the_classifier_answer_is_not_mutated(self, doubles):
+        _table, processed, _raw = doubles
+        answer = dict(self.NEW)
+        processed.return_value = answer
+        self._run(doubles, _item())
+        assert answer == self.NEW
 
     @pytest.mark.parametrize('item', [
         _item(category='shipping', subcategory='early'),

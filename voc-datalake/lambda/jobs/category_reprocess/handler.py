@@ -28,6 +28,11 @@ Invariants:
     duplicate delivery fails the claim or its next checkpoint and exits.
   * Cost ceiling: after ``MAX_REPROCESS_ITEMS`` scanned reviews the job ends as
     'completed' with ``stopped_at_ceiling``.
+  * Every mode also (re)computes the heuristic ``usefulness`` band
+    (``shared.usefulness``, no model call) from the stored text, so a reprocess
+    backfills reviews stored before the band existed. A review whose category
+    and dimensions come out unchanged but whose band is missing or different
+    gets a band-only update (counted as ``updated``). docs/data-quality.md.
 """
 import json
 import os
@@ -70,6 +75,7 @@ from shared.invocation_cost import instrumented_handler
 # import it as `jobs.category_reprocess.handler` from the lambda/ root.
 from shared.logging import logger, metrics
 from shared.timestamps import now_iso
+from shared.usefulness import USEFULNESS_FIELD, item_usefulness
 
 FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
 AGGREGATES_TABLE = os.environ.get('AGGREGATES_TABLE', '')
@@ -299,28 +305,56 @@ def _stored_map(item: dict, field: str) -> dict:
     return dict(value) if isinstance(value, dict) else {}
 
 
-def build_dimensions_update(item: dict, dimensions: dict, sources: dict, now: str) -> dict:
+def build_dimensions_update(
+    item: dict, dimensions: dict, sources: dict, now: str, band: str | None = None,
+) -> dict:
     """``update_item`` kwargs replacing ``dimensions`` / ``dimension_sources`` in place.
 
     Conditional on the item existing with exactly the dimensions that were read,
     so a manual edit (``PUT /feedback/{id}/dimensions``) landing mid-run wins.
-    Empty maps are REMOVEd (the processor never stores empty ones).
+    Empty maps are REMOVEd (the processor never stores empty ones). ``band``, when
+    given, is SET as the review's ``usefulness`` too (it reads ``feedback_type``).
     """
     names = {'#pk': 'pk', '#dims': 'dimensions'}
     values: dict = {}
-    expression = _set_and_remove({
+    attributes = {
         'dimensions_reprocessed_at': now,
         'dimensions': dimensions or None,
         'dimension_sources': sources or None,
-    }, names, values)
+    }
+    if band is not None:
+        attributes[USEFULNESS_FIELD] = band
+    expression = _set_and_remove(attributes, names, values)
     conditions = _unchanged_guard(item, 'dimensions', ('#dims', ':dims_before'), values)
     return _update_kwargs(item, expression, conditions, names, values)
+
+
+def build_usefulness_update(item: dict, band: str) -> dict:
+    """``update_item`` kwargs SETting only the review's ``usefulness`` band.
+
+    Conditional on the item existing with the band (or no band) that was read, so
+    a concurrent refresh of the review wins (the worker's conditional-failure path
+    records it as ``skipped_manual``, like any change made under it).
+    """
+    names = {'#pk': 'pk', '#use_now': USEFULNESS_FIELD}
+    values: dict = {}
+    expression = _set_and_remove({USEFULNESS_FIELD: band}, names, values)
+    conditions = _unchanged_guard(item, USEFULNESS_FIELD, ('#use_now', ':use_before'), values)
+    return _update_kwargs(item, expression, conditions, names, values)
+
+
+def rate_usefulness(feedback_table: Any, item: dict, band: str) -> str:
+    """Store ``band`` when the review's stored band differs; ``updated`` / ``unchanged``."""
+    if item.get(USEFULNESS_FIELD) == band:
+        return 'unchanged'
+    feedback_table.update_item(**build_usefulness_update(item, band))
+    return 'updated'
 
 
 def reprocess_dimensions(
     feedback_table: Any, item: dict, dimensions_config: list[dict], categories_config: list[dict],
 ) -> str:
-    """Re-infer one review's AI dimensions; the outcome counter to record.
+    """Re-infer one review's AI dimensions (and its usefulness band); the outcome counter to record.
 
     Locked values (source / profile / manual) are kept (``shared.feedback_dimensions``).
     """
@@ -332,9 +366,10 @@ def reprocess_dimensions(
         dimensions_config, item,
         product=category_product(categories_config, item.get('category')), ai=answer,
     )
+    band = item_usefulness({**item, 'dimensions': dimensions})
     if dimensions == _stored_map(item, 'dimensions') and sources == _stored_map(item, 'dimension_sources'):
-        return 'unchanged'
-    feedback_table.update_item(**build_dimensions_update(item, dimensions, sources, now_iso()))
+        return rate_usefulness(feedback_table, item, band)
+    feedback_table.update_item(**build_dimensions_update(item, dimensions, sources, now_iso(), band))
     return 'updated'
 
 
@@ -364,11 +399,13 @@ def reprocess_item(
             attributes = processed_attributes(item, categories_config)
             if attributes and attributes['category'] == item.get('category') \
                     and attributes['subcategory'] == item.get('subcategory'):
-                _record(counters, 'unchanged')
+                # The category stays; the band may still be missing (a pre-band review).
+                _record(counters, rate_usefulness(feedback_table, item, item_usefulness(item)))
                 return
         if attributes is None:
             _record(counters, 'failed')
             return
+        attributes = {**attributes, USEFULNESS_FIELD: item_usefulness({**item, **attributes})}
         feedback_table.update_item(**build_update(item, attributes, include_manual, now_iso()))
         _record(counters, 'updated')
     except BedrockThrottlingError:

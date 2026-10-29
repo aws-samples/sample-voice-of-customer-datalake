@@ -14,14 +14,16 @@ from jobs.category_reprocess.handler import reprocess_item
 from shared import reprocess_jobs as jobs
 from shared.dimension_config import DIMENSIONS_SETTINGS_KEY, load_dimensions_config
 from shared.feedback_types import feedback_type_dimension
+from shared.usefulness import item_usefulness
 
 JOB = {'mode': jobs.MODE_DIMENSIONS}
 KEY = {'pk': 'SOURCE#web', 'sk': 'FEEDBACK#1'}
 
 
 def _store(tables, **extra) -> None:
-    tables['feedback'].put_item(Item={**KEY, 'original_text': 'The app crashes at checkout',
-                                      'category': 'shipping', **extra})
+    """A stored review already carrying the usefulness band its stored fields give."""
+    item = {**KEY, 'original_text': 'The app crashes at checkout', 'category': 'shipping', **extra}
+    tables['feedback'].put_item(Item={'usefulness': item_usefulness(item), **item})
 
 
 def _reprocess(tables) -> dict:
@@ -106,6 +108,15 @@ class TestBackfill:
         _answer(converse_mock, 'bug')
         assert _reprocess(tables)['unchanged'] == 1
         assert 'dimensions_reprocessed_at' not in _stored(tables)
+
+    def test_a_new_type_also_moves_the_usefulness_band_it_gives(self, tables, converse_mock):
+        _store(tables, original_text='Please let me export my data')
+        assert _stored(tables)['usefulness'] == 'low'
+        _answer(converse_mock, 'feature_request')
+        assert _reprocess(tables)['updated'] == 1
+        item = _stored(tables)
+        assert item['dimensions'] == {'feedback_type': 'feature_request'}
+        assert item['usefulness'] == 'medium'
 
     def test_a_manual_category_does_not_stop_the_type_backfill(self, tables, converse_mock):
         _store(tables, category_source='manual')

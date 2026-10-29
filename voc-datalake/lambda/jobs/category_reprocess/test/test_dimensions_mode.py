@@ -44,10 +44,21 @@ def test_an_ai_value_is_replaced_and_a_locked_one_kept():
 
 
 def test_an_unchanged_answer_writes_nothing():
-    item = _item(dimensions={'product': 'App'}, dimension_sources={'product': 'reprocess'})
+    item = _item(dimensions={'product': 'App'}, dimension_sources={'product': 'reprocess'}, usefulness='medium')
     counters, table = _run(item, {'product': 'app'})
     assert counters['unchanged'] == 1
     table.update_item.assert_not_called()
+
+
+def test_unchanged_dimensions_still_backfill_a_missing_usefulness_band():
+    item = _item(dimensions={'product': 'App'}, dimension_sources={'product': 'reprocess'})
+    counters, table = _run(item, {'product': 'app'})
+    assert counters['updated'] == 1
+    kwargs = table.update_item.call_args.kwargs
+    assert kwargs['UpdateExpression'] == 'SET #a0 = :v0'
+    assert kwargs['ExpressionAttributeNames']['#a0'] == 'usefulness'
+    assert kwargs['ExpressionAttributeValues'][':v0'] == 'medium'
+    assert 'attribute_not_exists(#use_now)' in kwargs['ConditionExpression']
 
 
 def test_a_manual_category_does_not_skip_the_dimensions():
