@@ -15,6 +15,7 @@ import { useLabelKnownIds } from '../../hooks/useLabelKnownIds'
 import type { ProjectDocument } from '../../api/types'
 import type { Project, ProductDoc } from '../../api/projectTypes'
 import { DerivationFooter, RevisionFooter } from './DocumentLineageFooters'
+import FeedbackCorpus from './FeedbackCorpus'
 import { stillPresent, hasDroppedSource, inheritedExtraSources } from './documentLineage'
 import { PrototypeView } from './DocumentPrototypeView'
 import { DocumentCoachingNotice } from '../../components/AiCoach/HumanDrivenNotice'
@@ -153,6 +154,8 @@ export default function DocumentsTab({
                   pushing the preview down the page. */}
               <RevisionFooter doc={selectedDoc} documents={documents} onSelectDoc={onSelectDoc} />
               <DerivationFooter doc={selectedDoc} documents={documents} onSelectDoc={onSelectDoc} />
+              <FeedbackCorpus feedbackIds={selectedDoc.input_feedback_ids}
+                className="mt-2 flex flex-wrap items-center gap-x-2 text-xs text-muted" />
               {/* Prototypes keep their own revision lineage (the footer above). */}
               {NO_CONTENT_EDITOR.has(selectedDoc.document_type) ? null : (
                 <DocumentVersions key={selectedDoc.document_id} projectId={project.project_id}

@@ -555,5 +555,19 @@
     "resolve": "Résoudre",
     "reopen": "Rouvrir",
     "actionFailed": "Cela n’a pas fonctionné. Veuillez réessayer."
+  },
+  "corpus": {
+    "summary_one": "Rédigé à partir de {{count, number}} avis",
+    "summary_other": "Rédigé à partir de {{count, number}} avis",
+    "show": "Voir les avis",
+    "title": "Avis à partir desquels il a été rédigé",
+    "note": "Seuls les identifiants des avis sont conservés avec le résultat, jamais leur texte. Un avis effacé, supprimé ou que vous ne pouvez pas voir apparaît comme indisponible.",
+    "loading": "Chargement de l'avis…",
+    "unavailable": "Cet avis n'est plus disponible",
+    "loadFailed": "Impossible de charger cet avis",
+    "range": "{{from, number}}–{{to, number}} sur {{total, number}}",
+    "previous": "Précédent",
+    "next": "Suivant",
+    "close": "Fermer"
   }
 }

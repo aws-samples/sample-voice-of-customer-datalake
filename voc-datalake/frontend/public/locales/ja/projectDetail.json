@@ -551,5 +551,19 @@
     "resolve": "解決",
     "reopen": "再開",
     "actionFailed": "うまくいきませんでした。もう一度お試しください。"
+  },
+  "corpus": {
+    "summary_one": "{{count, number}}件のレビューから作成",
+    "summary_other": "{{count, number}}件のレビューから作成",
+    "show": "レビューを表示",
+    "title": "作成に使われたレビュー",
+    "note": "結果と一緒に保存されるのはレビューのIDだけで、本文は保存されません。消去・削除されたレビューや、閲覧権限のないレビューは「利用できません」と表示されます。",
+    "loading": "レビューを読み込んでいます…",
+    "unavailable": "このレビューは利用できなくなりました",
+    "loadFailed": "このレビューを読み込めませんでした",
+    "range": "{{total, number}}件中 {{from, number}}–{{to, number}}件",
+    "previous": "前へ",
+    "next": "次へ",
+    "close": "閉じる"
   }
 }

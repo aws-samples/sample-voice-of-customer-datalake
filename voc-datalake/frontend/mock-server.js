@@ -1586,6 +1586,8 @@ const mockProjectDetails = {
         created_at: new Date().toISOString(),
         confidence: 'high',
         feedback_count: 14,
+        // The corpus (#236): ids only. 'fb_erased' has no review, so the list shows it unavailable.
+        input_feedback_ids: ['1', '3', '2', 'fb_erased'],
         goals: ['Get orders delivered before the promised date', 'Track packages without contacting support'],
         frustrations: ['Late deliveries with no proactive updates', 'Support wait times'],
         quote: 'If the app just told me the truth about delivery dates, I would stop refreshing it every hour.',
@@ -1610,6 +1612,7 @@ const mockProjectDetails = {
         question: 'What are the main delivery-related pain points?',
         content: '# Research Report: Delivery Pain Points\n\n## Executive Summary\nCustomers consistently report late deliveries and poor tracking visibility as their top frustrations.\n\n## Key Findings\n1. **Late deliveries** dominate negative feedback (62% of delivery mentions).\n2. **Tracking opacity** amplifies frustration more than lateness itself.\n\n## Recommendations\n- Proactive delay notifications\n- Honest delivery estimates at checkout',
         feedback_count: 23,
+        input_feedback_ids: ['3', '1'],
         created_at: new Date().toISOString(),
       },
       {

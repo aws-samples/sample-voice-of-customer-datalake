@@ -536,6 +536,11 @@ export interface ProjectDocument {
   /** Feedback items analyzed, on a research report. */
   feedback_count?: number
   /**
+   * Ids of the reviews the generation's prompts held, in prompt order (at most 500,
+   * #236): research reports, PRDs, PR/FAQs and merged documents generated from feedback.
+   */
+  input_feedback_ids?: string[]
+  /**
    * The prototype this one revises, and the feedback that drove the revision.
    * "This replaces that" is a DIFFERENT relation from "this was built from
    * that", so these are deliberately not part of `derivation`.

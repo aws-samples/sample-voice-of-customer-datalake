@@ -551,5 +551,19 @@
     "resolve": "Resolve",
     "reopen": "Reopen",
     "actionFailed": "That did not work. Please try again."
+  },
+  "corpus": {
+    "summary_one": "Written from {{count, number}} review",
+    "summary_other": "Written from {{count, number}} reviews",
+    "show": "Show reviews",
+    "title": "Reviews it was written from",
+    "note": "Only the review ids are kept with the result, never their text. A review that was erased, deleted or that you cannot see shows as unavailable.",
+    "loading": "Loading review…",
+    "unavailable": "This review is no longer available",
+    "loadFailed": "Could not load this review",
+    "range": "{{from, number}}–{{to, number}} of {{total, number}}",
+    "previous": "Previous",
+    "next": "Next",
+    "close": "Close"
   }
 }

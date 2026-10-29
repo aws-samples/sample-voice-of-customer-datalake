@@ -579,5 +579,21 @@
     "resolve": "Rozwiąż",
     "reopen": "Otwórz ponownie",
     "actionFailed": "Nie udało się wykonać tej operacji. Spróbuj ponownie."
+  },
+  "corpus": {
+    "summary_one": "Napisano na podstawie {{count, number}} opinii",
+    "summary_few": "Napisano na podstawie {{count, number}} opinii",
+    "summary_many": "Napisano na podstawie {{count, number}} opinii",
+    "summary_other": "Napisano na podstawie {{count, number}} opinii",
+    "show": "Pokaż opinie",
+    "title": "Opinie, na podstawie których powstał",
+    "note": "Razem z wynikiem zapisywane są tylko identyfikatory opinii, nigdy ich treść. Opinia usunięta, wymazana lub niewidoczna dla Ciebie jest oznaczona jako niedostępna.",
+    "loading": "Wczytywanie opinii…",
+    "unavailable": "Ta opinia nie jest już dostępna",
+    "loadFailed": "Nie udało się wczytać tej opinii",
+    "range": "{{from, number}}–{{to, number}} z {{total, number}}",
+    "previous": "Poprzednie",
+    "next": "Następne",
+    "close": "Zamknij"
   }
 }
