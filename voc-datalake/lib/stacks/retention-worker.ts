@@ -7,7 +7,9 @@
  *   - `{"mode": "retention"}`, daily: items of sources whose profile sets
  *     `retention_days`, older than the cutoff;
  *   - `{"mode": "erase", "job_id", "value"}`, async invoke by the settings API
- *     (POST /settings/erasure): items matching one field value.
+ *     (POST /settings/erasure): items matching one field value; with the job's
+ *     `field: 'source'`, every item of one source and then everything left under
+ *     `raw/<source>/` (the grants below already cover it).
  *
  * Each deleted item's `s3_raw_uri` object goes with it, every version. Least
  * privilege, pinned exactly by processing-stack-retention.test.ts:
