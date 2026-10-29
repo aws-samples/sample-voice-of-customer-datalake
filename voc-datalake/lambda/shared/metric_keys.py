@@ -18,3 +18,7 @@ DIMENSION_SENTIMENT_PREFIX: Final = 'METRIC#daily_dim_sentiment#'
 DIMENSION_SENTIMENT_METRIC_TYPE: Final = 'dim_sentiment#'
 TAG_PREFIX: Final = 'METRIC#daily_tag#'
 CHANNEL_PREFIX: Final = 'METRIC#daily_channel#'
+# ``METRIC#daily_usefulness#<source_platform>#<band>`` (``shared.usefulness`` bands; unrated items
+# have no row: a reader takes them as the source's ``SOURCE_PREFIX`` total minus its banded rows).
+USEFULNESS_PREFIX: Final = 'METRIC#daily_usefulness#'
+USEFULNESS_METRIC_TYPE: Final = 'usefulness'
