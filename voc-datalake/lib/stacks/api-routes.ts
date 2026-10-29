@@ -90,7 +90,8 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
 
   // /metrics/* — proxy to metrics Lambda
   const metricsResource = api.root.addResource('metrics');
-  // Release watch (`GET /metrics/release-watch`) is served by this proxy since 5.47.00.
+  // Release watch (`GET /metrics/release-watch`) is served by this proxy since 5.47.00, and the
+  // per-source usefulness distribution (`GET /metrics/data-quality`, docs/data-quality.md) too.
   proxyOf(metricsResource, metricsIntegration);
 
   // /chat/* — the assistant streams at the static /chat/stream; every other path (the sessions

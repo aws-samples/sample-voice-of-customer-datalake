@@ -180,6 +180,8 @@ class TestEveryPublishingRouteIsWired:
             '/metrics/dimensions',
             # The Problem Analysis tree: a slim raw-item walk of the whole window.
             '/feedback/problems',
+            # The per-source usefulness distribution (docs/data-quality.md).
+            '/metrics/data-quality',
         }, PUBLISHING_ROUTES
 
     @pytest.mark.parametrize('path', sorted(PUBLISHING_ROUTES))

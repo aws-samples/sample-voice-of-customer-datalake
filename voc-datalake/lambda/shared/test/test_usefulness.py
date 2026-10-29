@@ -71,7 +71,7 @@ class TestBand:
     def test_every_problem_request_or_question_type_is_concrete(self):
         values = {value['name'] for value in feedback_type_dimension()['values']}
         assert values - CONCRETE_TYPES == {'praise', 'other'}
-        assert CONCRETE_TYPES <= values
+        assert values >= CONCRETE_TYPES
 
     def test_the_thresholds_are_ordered(self):
         assert MIN_WORDS < DETAILED_WORDS < LONG_WORDS
