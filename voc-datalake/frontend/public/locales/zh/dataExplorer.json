@@ -76,5 +76,28 @@
     "persona": "用户画像",
     "showRaw": "显示原始 JSON",
     "hideRaw": "隐藏原始 JSON"
+  },
+  "dataQuality": {
+    "title": "数据质量",
+    "description": "每个来源的反馈有多大用处：根据长度、具体信息（数字、产品术语）以及是否提出具体问题或需求，按规则划分等级。若某来源的反馈大多为低，通常意味着爬虫配置有误或表单字段被跳过。",
+    "loading": "正在加载数据质量…",
+    "empty": "此时间范围内没有反馈。",
+    "unratedShare": "此时间范围内有 {{share}} 的反馈尚未评级。",
+    "backfillHint": "在评级功能之前存储的反馈没有等级；运行类别重新处理（管理 → 分类体系）即可为其评级。",
+    "chartTop_one": "图表显示反馈最多的来源；表格列出所有来源。",
+    "chartTop_other": "图表显示反馈最多的 {{count, number}} 个来源；表格列出所有来源。",
+    "partial": "部分数据未能及时读取，因此这些数字可能低于实际值。",
+    "tableCaption": "各来源的反馈有用性",
+    "allSources": "所有来源",
+    "columns": {
+      "source": "来源",
+      "total": "总计"
+    },
+    "bands": {
+      "high": "高",
+      "medium": "中",
+      "low": "低",
+      "unrated": "未评级"
+    }
   }
 }

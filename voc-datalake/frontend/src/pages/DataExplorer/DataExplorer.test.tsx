@@ -63,6 +63,8 @@ vi.mock('./ProcessedFeedbackView', () => ({
   ),
 }))
 
+vi.mock('./DataQualitySection', () => ({ default: () => <div data-testid="data-quality-section" /> }))
+
 vi.mock('./EditModal', () => ({
   default: ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) =>
     isOpen ? <div data-testid="edit-modal"><button onClick={onClose}>Close</button></div> : null,
@@ -181,5 +183,14 @@ describe('DataExplorer - the tab is in the URL', () => {
     renderWithQueryClient(<MemoryRouter initialEntries={['/data-explorer?view=processed']}><DataExplorer /></MemoryRouter>)
 
     expect(screen.getByTestId('processed-feedback-view')).toBeInTheDocument()
+  })
+
+  it('shows the data-quality section on the processed tab only (it follows the time range)', async () => {
+    const user = userEvent.setup()
+    renderDataExplorer()
+    expect(screen.queryByTestId('data-quality-section')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: /processed feedback/i }))
+    expect(screen.getByTestId('data-quality-section')).toBeInTheDocument()
   })
 })

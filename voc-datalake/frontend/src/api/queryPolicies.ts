@@ -80,6 +80,7 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'data-explorer-buckets': 'standard',
   'data-explorer-feedback': 'feedbackData',
   'data-explorer-s3': 'standard',
+  'data-quality': 'feedbackData', // Data Explorer usefulness distribution (/metrics/data-quality)
   'decision-review-search': 'feedbackData', // ProjectDetail decision evidence picker (/feedback/search)
   'design-system': 'config',
   'inline-image': 'config', // a presigned image read as a data: URL (hooks/useInlineImage)

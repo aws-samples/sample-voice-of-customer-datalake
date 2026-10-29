@@ -76,5 +76,28 @@
     "persona": "Persona",
     "showRaw": "Show raw JSON",
     "hideRaw": "Hide raw JSON"
+  },
+  "dataQuality": {
+    "title": "Data quality",
+    "description": "How useful each source's feedback is: a rule-based band from its length, specifics (numbers, product terms) and whether it names a concrete issue or request. A source with mostly low feedback often means a misconfigured scraper or a skipped form field.",
+    "loading": "Loading data quality…",
+    "empty": "No feedback in this time range.",
+    "unratedShare": "{{share}} of the feedback in this range is not rated yet.",
+    "backfillHint": "Feedback stored before ratings existed has no band; a category reprocess (Administration → Taxonomy) rates it.",
+    "chartTop_one": "The chart shows the busiest source; the table lists every source.",
+    "chartTop_other": "The chart shows the {{count, number}} busiest sources; the table lists every source.",
+    "partial": "Some data could not be read in time, so these counts may be lower than the real numbers.",
+    "tableCaption": "Feedback usefulness per source",
+    "allSources": "All sources",
+    "columns": {
+      "source": "Source",
+      "total": "Total"
+    },
+    "bands": {
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low",
+      "unrated": "Not rated"
+    }
   }
 }

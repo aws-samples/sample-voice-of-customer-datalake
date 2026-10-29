@@ -13,6 +13,7 @@ import type { FeedbackItem } from '../../api/types'
 import clsx from 'clsx'
 import S3Browser from './S3Browser'
 import ProcessedFeedbackView from './ProcessedFeedbackView'
+import DataQualitySection from './DataQualitySection'
 import EditModal, { type EditModalState } from './EditModal'
 import { useDataExplorerQueries } from './useDataExplorerQueries'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
@@ -135,6 +136,8 @@ export default function DataExplorer() {
         onSearchChange={setSearchQuery}
         onRefresh={queries.refetch}
       />
+
+      {viewMode === 'dynamodb-processed' && <DataQualitySection />}
 
       <ContentPanel
         viewMode={viewMode}

@@ -76,5 +76,28 @@
     "persona": "Persona",
     "showRaw": "Mostrar JSON bruto",
     "hideRaw": "Ocultar JSON bruto"
+  },
+  "dataQuality": {
+    "title": "Qualidade dos dados",
+    "description": "O quanto o feedback de cada fonte é útil: uma faixa baseada em regras a partir do tamanho, dos detalhes (números, termos de produto) e de citar um problema ou pedido concreto. Uma fonte com feedback majoritariamente baixo costuma indicar um scraper mal configurado ou um campo de formulário ignorado.",
+    "loading": "Carregando a qualidade dos dados…",
+    "empty": "Nenhum feedback neste período.",
+    "unratedShare": "{{share}} do feedback deste período ainda não foi avaliado.",
+    "backfillHint": "O feedback salvo antes de existirem avaliações não tem faixa; um reprocessamento de categorias (Administração → Taxonomia) o avalia.",
+    "chartTop_one": "O gráfico mostra a fonte mais ativa; a tabela lista todas as fontes.",
+    "chartTop_other": "O gráfico mostra as {{count, number}} fontes mais ativas; a tabela lista todas as fontes.",
+    "partial": "Alguns dados não puderam ser lidos a tempo, então estes números podem ser menores que os reais.",
+    "tableCaption": "Utilidade do feedback por fonte",
+    "allSources": "Todas as fontes",
+    "columns": {
+      "source": "Fonte",
+      "total": "Total"
+    },
+    "bands": {
+      "high": "Alta",
+      "medium": "Média",
+      "low": "Baixa",
+      "unrated": "Não avaliado"
+    }
   }
 }
