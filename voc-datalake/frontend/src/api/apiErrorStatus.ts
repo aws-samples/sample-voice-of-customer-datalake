@@ -47,6 +47,15 @@ export function apiErrorStatus(reason: unknown): number | null {
 }
 
 /**
+ * TanStack Query `retry` for a read by id: one retry, none after a 404. A 404 is the
+ * server's answer (absent, erased, or not visible to the caller), so asking again only
+ * doubles the wait. Used by the feedback detail read and the project corpus list.
+ */
+export function retryOnceUnlessNotFound(failures: number, error: unknown): boolean {
+  return apiErrorStatus(error) !== 404 && failures < 1
+}
+
+/**
  * The two 4xx statuses that are NOT the server's settled answer about the request.
  *
  * Both are answered by the edge rather than by the route, so neither says anything

@@ -551,5 +551,19 @@
     "resolve": "해결",
     "reopen": "다시 열기",
     "actionFailed": "실패했습니다. 다시 시도해 주세요."
+  },
+  "corpus": {
+    "summary_one": "리뷰 {{count, number}}개를 바탕으로 작성됨",
+    "summary_other": "리뷰 {{count, number}}개를 바탕으로 작성됨",
+    "show": "리뷰 보기",
+    "title": "작성에 사용된 리뷰",
+    "note": "결과와 함께 리뷰 ID만 저장되며 본문은 저장되지 않습니다. 지워졌거나 삭제되었거나 볼 권한이 없는 리뷰는 사용할 수 없음으로 표시됩니다.",
+    "loading": "리뷰를 불러오는 중…",
+    "unavailable": "이 리뷰는 더 이상 사용할 수 없습니다",
+    "loadFailed": "이 리뷰를 불러오지 못했습니다",
+    "range": "{{total, number}}개 중 {{from, number}}–{{to, number}}",
+    "previous": "이전",
+    "next": "다음",
+    "close": "닫기"
   }
 }

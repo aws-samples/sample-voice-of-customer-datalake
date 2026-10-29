@@ -132,6 +132,7 @@ const ProjectPersonaSchema = z.looseObject({
   research_notes: optionalResearchNotesSchema,
   supporting_evidence: optionalStringArray,
   source_breakdown: z.record(z.string(), z.number()).optional().catch(undefined),
+  input_feedback_ids: optionalStringArray,
 })
 
 function withLegacyManagedDocumentType(raw: unknown): unknown {
@@ -167,6 +168,7 @@ const ProjectDocumentSchema = z.preprocess(withLegacyManagedDocumentType, z.loos
   source_documents: optionalStringArray,
   merge_instructions: optionalString,
   feedback_count: optionalNonnegativeInteger,
+  input_feedback_ids: optionalStringArray,
   revised_from_id: optionalNullableString,
   revision_feedback: optionalString,
   created_at: z.string().catch(''),

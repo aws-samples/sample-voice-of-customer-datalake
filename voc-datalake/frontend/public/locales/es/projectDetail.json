@@ -555,5 +555,19 @@
     "resolve": "Resolver",
     "reopen": "Reabrir",
     "actionFailed": "No funcionó. Inténtalo de nuevo."
+  },
+  "corpus": {
+    "summary_one": "Redactado a partir de {{count, number}} reseña",
+    "summary_other": "Redactado a partir de {{count, number}} reseñas",
+    "show": "Ver reseñas",
+    "title": "Reseñas a partir de las que se redactó",
+    "note": "Con el resultado solo se guardan los identificadores de las reseñas, nunca su texto. Una reseña borrada, eliminada o que no puedes ver aparece como no disponible.",
+    "loading": "Cargando reseña…",
+    "unavailable": "Esta reseña ya no está disponible",
+    "loadFailed": "No se pudo cargar esta reseña",
+    "range": "{{from, number}}–{{to, number}} de {{total, number}}",
+    "previous": "Anterior",
+    "next": "Siguiente",
+    "close": "Cerrar"
   }
 }

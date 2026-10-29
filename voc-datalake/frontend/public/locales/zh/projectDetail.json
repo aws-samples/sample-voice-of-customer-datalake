@@ -551,5 +551,19 @@
     "resolve": "解决",
     "reopen": "重新打开",
     "actionFailed": "操作失败，请重试。"
+  },
+  "corpus": {
+    "summary_one": "基于 {{count, number}} 条评论撰写",
+    "summary_other": "基于 {{count, number}} 条评论撰写",
+    "show": "查看评论",
+    "title": "撰写所依据的评论",
+    "note": "结果中只保存评论的 ID，从不保存评论文本。已被清除、删除或您无权查看的评论会显示为不可用。",
+    "loading": "正在加载评论…",
+    "unavailable": "此评论已不可用",
+    "loadFailed": "无法加载此评论",
+    "range": "第 {{from, number}}–{{to, number}} 条，共 {{total, number}} 条",
+    "previous": "上一页",
+    "next": "下一页",
+    "close": "关闭"
   }
 }

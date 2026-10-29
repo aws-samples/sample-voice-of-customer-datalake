@@ -21,6 +21,7 @@ import {
   QuotesSection,
   ScenarioSection,
 } from './PersonaSections'
+import FeedbackCorpus from './FeedbackCorpus'
 import ResearchNotes from './ResearchNotes'
 import { useRegenerateAvatar } from './useRegenerateAvatar'
 import type { NoteItem } from './types'
@@ -65,6 +66,8 @@ export default function PersonaDetailView({
                 {t('personas.confidence', { level: persona.confidence })}
                 {persona.feedback_count == null ? '' : <> · <span className="font-mono">{t('personas.reviews', { count: persona.feedback_count })}</span></>}
               </span>}
+              <FeedbackCorpus feedbackIds={persona.input_feedback_ids}
+                className="mt-1.5 flex flex-wrap items-center gap-x-2 text-xs text-muted" />
             </div>
           </div>
           <div className="flex items-center gap-1 self-end sm:self-start">

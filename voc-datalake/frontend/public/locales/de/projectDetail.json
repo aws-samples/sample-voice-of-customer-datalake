@@ -551,5 +551,19 @@
     "resolve": "Erledigen",
     "reopen": "Wieder öffnen",
     "actionFailed": "Das hat nicht geklappt. Bitte versuche es erneut."
+  },
+  "corpus": {
+    "summary_one": "Aus {{count, number}} Bewertung verfasst",
+    "summary_other": "Aus {{count, number}} Bewertungen verfasst",
+    "show": "Bewertungen anzeigen",
+    "title": "Bewertungen, aus denen es verfasst wurde",
+    "note": "Mit dem Ergebnis werden nur die IDs der Bewertungen gespeichert, nie ihr Text. Eine gelöschte, entfernte oder für Sie nicht sichtbare Bewertung wird als nicht verfügbar angezeigt.",
+    "loading": "Bewertung wird geladen…",
+    "unavailable": "Diese Bewertung ist nicht mehr verfügbar",
+    "loadFailed": "Diese Bewertung konnte nicht geladen werden",
+    "range": "{{from, number}}–{{to, number}} von {{total, number}}",
+    "previous": "Zurück",
+    "next": "Weiter",
+    "close": "Schließen"
   }
 }

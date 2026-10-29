@@ -555,5 +555,19 @@
     "resolve": "Resolver",
     "reopen": "Reabrir",
     "actionFailed": "Não funcionou. Tente novamente."
+  },
+  "corpus": {
+    "summary_one": "Escrito a partir de {{count, number}} avaliação",
+    "summary_other": "Escrito a partir de {{count, number}} avaliações",
+    "show": "Ver avaliações",
+    "title": "Avaliações a partir das quais foi escrito",
+    "note": "Com o resultado guardam-se apenas os identificadores das avaliações, nunca o texto. Uma avaliação apagada, removida ou que você não pode ver aparece como indisponível.",
+    "loading": "Carregando avaliação…",
+    "unavailable": "Esta avaliação não está mais disponível",
+    "loadFailed": "Não foi possível carregar esta avaliação",
+    "range": "{{from, number}}–{{to, number}} de {{total, number}}",
+    "previous": "Anterior",
+    "next": "Próxima",
+    "close": "Fechar"
   }
 }

@@ -244,7 +244,14 @@
     "source_feedback_ids": {
       "type": "array",
       "items": { "type": "string" },
-      "description": "IDs of feedback items this persona is based on"
+      "maxItems": 20,
+      "description": "DISPLAY ONLY: the first 20 feedback ids fetched for the generation. Not the corpus; read input_feedback_ids for the reviews the persona was written from"
+    },
+    "input_feedback_ids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "maxItems": 500,
+      "description": "The corpus: ids of every review the persona-writing step read, in prompt order (at most 500). Ids only, no review text, so source retention and erasure still apply; an erased review reads as unavailable. Absent on personas generated before 5.25.00 and on imported or hand-made personas"
     },
     "source_breakdown": {
       "type": "object",

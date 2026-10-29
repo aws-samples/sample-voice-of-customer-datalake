@@ -129,6 +129,13 @@ export interface ProjectPersona {
   // Metadata
   supporting_evidence?: string[]
   source_breakdown?: Record<string, number>
+  /**
+   * The corpus: ids of the reviews the persona-writing step read, in prompt order
+   * (at most 500, #236). Ids only; an erased review reads as unavailable. Absent on
+   * older, imported and hand-made personas. (`source_feedback_ids`, the first 20
+   * fetched, is display-only and deliberately not declared here.)
+   */
+  input_feedback_ids?: string[]
 }
 
 export type ProductLifecycleState = '' | 'idea' | 'mvp' | 'beta' | 'ga' | 'mature'

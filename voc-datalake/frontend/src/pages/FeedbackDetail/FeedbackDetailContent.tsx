@@ -9,7 +9,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Inbox } from 'lucide-react'
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { apiErrorStatus } from '../../api/apiErrorStatus'
+import { retryOnceUnlessNotFound } from '../../api/apiErrorStatus'
 import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
 import type { FeedbackItem } from '../../api/types'
@@ -46,11 +46,6 @@ export function FeedbackNotFound({ action }: Readonly<{ action?: ReactNode }>) {
       {action === undefined ? null : <div className="mt-2">{action}</div>}
     </div>
   )
-}
-
-/** A 404 is the answer (absent or not visible): asking again only doubles the wait. */
-function retryUnlessNotFound(failures: number, error: unknown): boolean {
-  return apiErrorStatus(error) !== 404 && failures < 1
 }
 
 /** Lower-case words only: quote marks, punctuation and spacing never make a quote "different". */
@@ -120,7 +115,7 @@ export default function FeedbackDetailContent({ id, variant, back }: FeedbackDet
     queryKey: metricsKeys.feedback(id),
     queryFn: () => api.getFeedbackById(id),
     enabled,
-    retry: retryUnlessNotFound,
+    retry: retryOnceUnlessNotFound,
   })
   const similar = useQuery({
     queryKey: ['feedback-similar', id],
