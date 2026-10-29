@@ -142,6 +142,35 @@ into the pipeline, and the listings expose the bucket name and every staged file
 | GET | `/s3-import/files` | Admin | List `.csv` / `.json` / `.jsonl` files (`?source=`, `?include_processed=true`) |
 | POST | `/s3-import/upload-url` | Admin | Presign a create-only PUT for `<source>/<file>`: 409 when the key holds a file, and the URL is signed with `If-None-Match: *` (S3 answers 412 to an overwrite). The PUT must send the returned `upload_headers`. To replace a file, delete it first |
 | DELETE | `/s3-import/file/{key}` | Admin | Delete one staged file. 400 unless the key is exactly `<source>/<file.csv\|.json\|.jsonl>`: no leading `/`, no `..`, never `processed/` |
+| POST | `/s3-import/reprocess` | Admin | Re-run one file through the `s3_import` ingestor, body `{key}` → **202** `{success, run}`. The key is `<source>/<file>` (validated as for delete) or `processed/<source>/<file>`; 400 for any other key, an empty file or one over the ingestor's 50 MB limit, 404 when the key holds nothing |
+| GET | `/s3-import/reprocess/{run_id}` | Admin | One reprocess run `{run: {run_id, key, status: running\|completed\|error, items_found, started_at, completed_at, errors}}`; 404 when unknown |
+
+### Reprocessing a file
+
+Ingested files stay where they were uploaded: the ingestor never moves or deletes them, so a file
+listed in the explorer can be run through the pipeline again (the **Reprocess** action on each file
+in Administration → Sources → S3 Bulk Import, issue #144). Use it to recover rows after a partial
+processing failure, or to restore rows after an accidental erasure.
+
+- **Same code path as an upload.** The API async-invokes the ingestor with the S3 trigger's own event
+  shape (one `ObjectCreated` record for the key) plus `execution_id` and `reprocess: true`.
+- **Duplicates are skipped.** The processor derives a feedback id from the source and the row (the
+  row's `id` column, else a hash of its text), not from the import time, and skips an id it already
+  holds before any Bedrock or Comprehend call. Only rows missing from the data lake are imported again.
+- **The source label must match.** That id includes the folder-derived source `S3 - <folder>`. A copy
+  archived by hand as `processed/<folder>/<file>` is reprocessed as `S3 - <folder>`, like its original
+  upload (an S3 upload event under `processed/` still gets `S3 - processed`). A file moved to ANOTHER
+  folder is a new source, and its rows are imported as new feedback.
+- **Stored rows are not re-enriched.** To re-categorize feedback that is already stored, use
+  *Reprocess existing feedback* in Administration → Taxonomy (`POST /settings/categories/reprocess`).
+- **The run is a source run.** `POST /s3-import/reprocess` writes `SOURCE_RUN#s3_import` / `<run id>`
+  (`running`) in the aggregates table, and the ingestor moves it to `completed` (with `items_found`,
+  the rows sent to the processing queue, duplicates included) or `error` (the exception type only).
+  `GET /sources/status?run_status=s3_import` and the assistant's `get_source_run` read the same rows.
+  The S3 import API role may write only that partition (`dynamodb:LeadingKeys`) and invoke only the
+  `s3_import` ingestor. Without the plugin enabled, the route answers "not configured".
+- **Raw archive.** A row is archived under a key derived from its id and its date, so a re-run
+  overwrites the same object; a row with no date is archived under the day of the re-run.
 
 ## Data Flow
 
