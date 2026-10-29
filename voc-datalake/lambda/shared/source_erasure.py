@@ -27,6 +27,7 @@ from typing import Any, Final
 
 from boto3.dynamodb.conditions import Attr, Key
 
+from shared.dynamo_paging import iter_query
 from shared.indexes import AGGREGATES_BY_METRIC_TYPE_INDEX
 from shared.metric_keys import SOURCE_PREFIX
 from shared.retention import ERASURE_JOB_PK
@@ -36,24 +37,10 @@ __all__ = ['blocking_job', 'known_sources']
 SOURCE_METRIC_TYPE: Final = 'source'
 LIVE_STATUSES: Final = ('queued', 'running')
 STALE_AFTER: Final = timedelta(hours=1)
-# Runaway guards on the two paged reads (a few thousand rows each in practice).
-_MAX_PAGES: Final = 200
-
-
-def _paged(query: Any, kwargs: dict[str, Any]) -> Iterable[dict[str, Any]]:
-    for _ in range(_MAX_PAGES):
-        response = query(**kwargs)
-        yield from response.get('Items', [])
-        cursor = response.get('LastEvaluatedKey')
-        if not cursor:
-            return
-        kwargs = {**kwargs, 'ExclusiveStartKey': cursor}
-
-
 def known_sources(table: Any, profile_ids: Iterable[str]) -> list[str]:
     """Sorted source ids a whole-source erasure may name: the profiles plus every counted source."""
     known = set(profile_ids)
-    rows = _paged(table.query, {
+    rows = iter_query(table, {
         'IndexName': AGGREGATES_BY_METRIC_TYPE_INDEX,
         'KeyConditionExpression': Key('metric_type').eq(SOURCE_METRIC_TYPE),
         'ProjectionExpression': 'pk',
@@ -80,7 +67,7 @@ def _last_moved(job: Mapping[str, Any]) -> datetime | None:
 
 def blocking_job(table: Any, source: str, now: datetime) -> str | None:
     """The id of a live erasure job of ``source`` that has moved within ``STALE_AFTER``, else None."""
-    jobs = _paged(table.query, {
+    jobs = iter_query(table, {
         'KeyConditionExpression': Key('pk').eq(ERASURE_JOB_PK),
         'FilterExpression': Attr('status').is_in(list(LIVE_STATUSES)) & Attr('source').eq(source),
     })
