@@ -97,6 +97,11 @@ vi.mock('./ManualImportModal', () => ({
   default: () => <div data-testid="manual-import-modal" />,
 }))
 
+// Its own suite is ImportHistory.test.tsx; here only whether the page mounts it.
+vi.mock('./ImportHistory', () => ({
+  default: () => <div data-testid="import-history" />,
+}))
+
 import Scrapers from './Scrapers'
 import { at } from '@test/defined'
 import { clickLoadFailedRetry } from '@test/loadFailed'
@@ -478,6 +483,13 @@ describe('Scrapers', () => {
       await renderLoaded()
 
       expect(screen.queryByTestId('manual-import-modal')).not.toBeInTheDocument()
+    })
+
+    it.each([true, false])('shows the import history to admins only (isAdmin=%s)', async (isAdmin) => {
+      role.isAdmin = isAdmin
+      await renderLoaded()
+
+      expect(screen.queryByTestId('import-history') !== null).toBe(isAdmin)
     })
 
     it('the control: an admin has the manual-import modal mounted', async () => {

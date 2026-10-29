@@ -23,7 +23,7 @@ const uploadResultSchema = z.object({
 
 export async function importReviews(args: ImportReviewsArgs, ctx: WriteToolExecutionContext) {
   const items = await jsonUploadItems(args, new Date().toISOString())
-  const res = uploadResultSchema.parse(await scrapersApi.uploadJsonFeedback(items, args.source_id))
+  const res = uploadResultSchema.parse(await scrapersApi.uploadJsonFeedback(items, args.source_id, undefined, { sourceLabel: args.source_name }))
   void invalidateKeys(ctx.queryClient, keysFor.feedbackCategory())
   const sourceId = args.source_id ?? DEFAULT_IMPORT_SOURCE_ID
   const failed = res.errors.length

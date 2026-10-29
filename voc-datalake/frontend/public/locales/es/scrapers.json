@@ -385,5 +385,67 @@
     "everyHours_other": "Cada {{count, number}} horas",
     "everyDays_one": "A diario",
     "everyDays_other": "Cada {{count, number}} días"
+  },
+  "importHistory": {
+    "title": "Historial de importaciones",
+    "subtitle": "Cada importación pegada, de archivo, del asistente o de S3 de los últimos 90 días, de la más reciente a la más antigua. Selecciona una para ver sus avisos.",
+    "empty": "No hay importaciones en los últimos 90 días.",
+    "loadMore": "Cargar más",
+    "actorS3": "Subida a S3 (autor desconocido)",
+    "openRun": "Abrir la importación {{method}} de {{source}}",
+    "importedOf": "{{imported, number}} de {{received, number}} importadas",
+    "columns": {
+      "method": "Método",
+      "source": "Origen",
+      "actor": "Por",
+      "started": "Inicio",
+      "counts": "Filas",
+      "status": "Estado"
+    },
+    "methods": {
+      "paste": "Pegado",
+      "csv": "Archivo CSV",
+      "json": "Archivo JSON",
+      "s3": "Bucket de S3",
+      "assistant": "Asistente de IA",
+      "unknown": "Desconocido"
+    },
+    "status": {
+      "completed": "Completada",
+      "partial": "Parcial",
+      "failed": "Fallida",
+      "unknown": "Desconocido"
+    },
+    "counts": {
+      "received": "Recibidas",
+      "imported": "Importadas",
+      "skipped": "Omitidas",
+      "duplicate": "Duplicadas",
+      "failed": "Fallidas"
+    },
+    "countsShort": {
+      "skipped_one": "{{count, number}} omitida",
+      "skipped_other": "{{count, number}} omitidas",
+      "duplicate_one": "{{count, number}} duplicada",
+      "duplicate_other": "{{count, number}} duplicadas",
+      "failed_one": "{{count, number}} fallida",
+      "failed_other": "{{count, number}} fallidas"
+    },
+    "detail": {
+      "title": "Detalles de la importación",
+      "close": "Cerrar los detalles",
+      "finished": "Finalizada",
+      "rawFile": "Archivo original",
+      "noRawFile": "No archivado (la política de la fuente no guarda el archivo original)",
+      "errors": "Errores",
+      "warnings": "Avisos",
+      "noMessages": "Esta importación no devolvió avisos ni errores.",
+      "truncated": "Algunos mensajes se acortaron u omitieron. El archivo original contiene la entrada completa.",
+      "loadFailed": "No se pudo cargar esta importación.",
+      "moreNotShown_one": "{{count, number}} más sin mostrar",
+      "moreNotShown_other": "{{count, number}} más sin mostrar",
+      "loading": "Cargando los detalles de la importación…"
+    },
+    "loading": "Cargando el historial de importaciones…"
   }
 }
