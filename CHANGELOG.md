@@ -17,59 +17,24 @@ the platform package version.
 
 ## [Unreleased]
 
-## [5.51.00] - 2026-10-30
-
-Persona generation can add to a project's existing personas instead of replacing them, from the wizard and the AI assistant (#353).
-
 ### Added
-- Persona generation can add personas without deleting the ones a project has
-  ([persona generation](docs/persona-generation.md)). On the project page, Generate Personas offers **Add to
-  existing personas** (the default) or **Replace existing personas** once a project has personas. Replace
-  confirms with a warning that counts the personas it deletes. The assistant's `generate_personas` tool takes
-  the same choice (`keep_existing_personas`, default add), and its approval card says which one runs.
+- **Reprocess an imported S3 file.** Each file in the S3 import explorer (Administration → Sources → S3 Bulk
+  Import) has a Reprocess action that runs it through the import pipeline again and shows the run until it
+  finishes. Rows already in the data lake are skipped as duplicates, so only missing rows are imported (for
+  example after a partial processing failure or an accidental erasure); stored rows are not re-enriched, which
+  stays the job of *Reprocess existing feedback*. A copy archived by hand as `processed/<folder>/<file>` keeps
+  its original source `S3 - <folder>`. New admin-only routes `POST /s3-import/reprocess` and
+  `GET /s3-import/reprocess/{run_id}`; the run is the ordinary `SOURCE_RUN#s3_import` source-run record
+  ([Data lake structure → Reprocessing a file](docs/data-lake-structure.md#reprocessing-a-file)).
 
-### Changed
-- An additive run (`keep_existing_personas: true`, which autonomous agents always send) now shows the model a
-  short, bounded description of the kept personas: at most 20, under 1,500 characters. It asks for clearly
-  different archetypes and drops a new persona whose name repeats a kept one (case-insensitive) before its
-  avatar is made. The job result reports how many were dropped as `metadata.duplicate_names_dropped`, and the
-  project's Jobs list shows that count with the reason, so a short add run does not look like a failed one.
-  Without the field, `POST /projects/{id}/personas/generate` still replaces the personas, as before.
-
-## [5.50.00] - 2026-10-30
-
-A Prioritization row that crosses generations on purpose can be marked Keep both versions (#399).
-
-### Added
-
-- Prioritization: a row labelled **Crosses generations** (for example PRD v1 and PRD v2 scored together on
-  purpose) can be marked **Keep both versions**. The row then shows a quiet **Kept on purpose** label, and
-  **Undo** restores the warning. The mark is stored on the row for its exact document set
-  (`PUT /projects/prioritization/rows/{row_id}/lineage-ack`, edit access on the project), so it lapses by
-  itself when the row's documents change. See [docs/prioritization.md](docs/prioritization.md#keep-both-versions-lineage-acknowledgement).
-  Recomposing a row back to exactly the marked set applies the mark again. A row holding a document the project
-  no longer has says it cannot be marked instead of offering a button that would always fail. The control is
-  shown only to people who can edit the row's project; a viewer sees the label without it.
-
-## [5.49.00] - 2026-10-30
-
-Every generated persona, research report, PRD and PR/FAQ stores the ids of the reviews it was written from, and the project shows them (#236).
-
-### Added
-- PRDs, PR/FAQs, merged documents and research reports from the synchronous fallback now store
-  `input_feedback_ids`, the ids of the reviews their prompts held (at most 500), as personas and Step Functions
-  research reports already did. A persona's header and a document's provenance footer show "Written from N
-  reviews" with **Show reviews**, a paged list of those reviews read by id that opens each in the review modal.
-  See [project workspace](docs/project-workspace.md#which-feedback-a-generation-reads).
-
-### Changed
-- `source_feedback_ids` on a persona (the first 20 reviews fetched) is documented as display-only in
-  `schemas/persona.schema.json`; `input_feedback_ids` is the corpus.
+### Fixed
+- `POST /sources/s3_import/run` no longer leaves its run record at `running` forever: the S3 import ingestor
+  now closes a run it is given, as completed with 0 rows when no file was named.
 
 ### Upgrade notes
-- Only review ids are stored on artefacts, never review text, so source retention and erasure still reach every
-  review ([source policies](docs/source-policies.md#what-erasure-does-not-reach)); an erased review shows as
-  unavailable in the list. Artefacts generated before this release have no ids and show no corpus line.
+- `VocApiStack` only: the S3 import API role gains `lambda:InvokeFunction` on the `s3_import` ingestor and
+  aggregates-table Put/Get/UpdateItem limited to the `SOURCE_RUN#s3_import` partition (only when the
+  `s3_import` plugin is enabled). No resource is renamed or replaced.
 
 ## [5.48.06] - 2026-10-30
 
