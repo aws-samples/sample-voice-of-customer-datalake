@@ -5,22 +5,20 @@
 //                                       unrated, total}], overall: {low, medium, high, unrated, total}}
 //
 // Counted from the shared fixture feedback. The first request stamps a usefulness band on the fixtures
-// (deterministic by position; every UNRATED_EVERY-th item stays unrated, as before a reprocess
-// backfill), so the stamp lives for the process like every other fixture field.
+// (deterministic by position, cycling STAMP_CYCLE; `null` leaves an item unrated, as before a
+// reprocess backfill), so the stamp lives for the process like every other fixture field.
 
 const BANDS = ['low', 'medium', 'high'];
-const UNRATED_EVERY = 4;
-// A rough stand-in for lambda/shared/usefulness.py: longer fixture text rates higher.
-const WORDS_PER_BAND = 8;
+// The fixture set is small, so the cycle puts an unrated item second: the "Not rated" share shows.
+const STAMP_CYCLE = ['high', null, 'low', 'medium'];
 let stamped = false;
 
 function stampBands(feedback) {
   if (stamped) return;
   stamped = true;
   feedback.forEach((item, index) => {
-    if (item.usefulness || index % UNRATED_EVERY === UNRATED_EVERY - 1) return;
-    const words = String(item.original_text || '').split(/\s+/).filter(Boolean).length;
-    item.usefulness = BANDS[Math.min(Math.floor(words / WORDS_PER_BAND), BANDS.length - 1)];
+    const band = STAMP_CYCLE[index % STAMP_CYCLE.length];
+    if (!item.usefulness && band) item.usefulness = band;
   });
 }
 
