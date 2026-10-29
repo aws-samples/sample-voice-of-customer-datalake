@@ -15,11 +15,14 @@ import boto3
 
 from _shared.base_ingestor import BaseIngestor, logger, metrics, tracer
 from shared.invocation_cost import measure_invocation_cost
+from shared.timestamps import now_iso
 
 s3_client = boto3.client("s3")
 
 MAX_FILE_SIZE_MB = 50
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+# Where an operator archives ingested files by hand (`processed/<folder>/<file>`).
+PROCESSED_FOLDER = "processed"
 
 # What normalizing one parsed row can raise: AttributeError for a JSON row that is
 # not an object (no `.get`), TypeError/ValueError for a value of an unexpected
@@ -61,9 +64,18 @@ def _parse_rating(value) -> float | None:
         return None
 
 
-def _get_source_from_key(key: str) -> str:
-    """Extract source name from S3 key. Folder name becomes source."""
+def _get_source_from_key(key: str, *, reprocess: bool = False) -> str:
+    """Extract source name from S3 key. Folder name becomes source.
+
+    On a reprocess (`POST /s3-import/reprocess`, issue #144) a file archived as
+    `processed/<folder>/<file>` keeps the source of its original upload,
+    `S3 - <folder>`: the processor's duplicate check keys on that label, so naming
+    it `S3 - processed` would import every row again as new data. An S3 trigger
+    event keeps the plain folder rule.
+    """
     parts = key.split("/")
+    if reprocess and len(parts) > 2 and parts[0] == PROCESSED_FOLDER:
+        parts = parts[1:]
     if len(parts) > 1:
         return f"S3 - {parts[0]}"
     return "S3 - Import"
@@ -160,16 +172,33 @@ def _get_parser(key: str):
 
 
 class S3ImportIngestor(BaseIngestor):
-    """Ingestor for importing feedback from S3 files."""
+    """Ingestor for importing feedback from S3 files.
 
-    def __init__(self):
-        super().__init__()
+    *execution_id* is set on a run started by the API (`POST /s3-import/reprocess`,
+    or `POST /sources/s3_import/run`); `record_run_started` / `record_run_finished`
+    then move that run's `SOURCE_RUN#s3_import` row. An S3 trigger event has none,
+    and no row is written.
+    """
+
+    def __init__(self, execution_id: str | None = None):
+        super().__init__(execution_id=execution_id)
 
     def fetch_new_items(self) -> Generator[dict, None, None]:
         """Not used — S3 import processes files directly via process_file."""
         yield from ()
 
-    def process_file(self, bucket: str, key: str) -> int:
+    def record_run_started(self) -> None:
+        """Mark this run's row `running` (a no-op without an execution id)."""
+        self._update_source_run_status({'status': 'running', 'items_found': 0, 'started_at': now_iso()})
+
+    def record_run_finished(self, items_found: int, error: Exception | None = None) -> None:
+        """Move this run's row to `completed`, or `error` with the exception TYPE only (#263, as `BaseIngestor.run`)."""
+        updates: dict = {'status': 'completed', 'items_found': items_found, 'completed_at': now_iso()}
+        if error is not None:
+            updates.update(status='error', errors=[type(error).__name__])
+        self._update_source_run_status(updates)
+
+    def process_file(self, bucket: str, key: str, *, reprocess: bool = False) -> int:
         """Process a single S3 file: validate, parse, normalize, and queue."""
         parser = _get_parser(key)
         if not parser:
@@ -189,7 +218,7 @@ class S3ImportIngestor(BaseIngestor):
             return 0
 
         # Stream, parse, normalize, and send in batches
-        source_name = _get_source_from_key(key)
+        source_name = _get_source_from_key(key, reprocess=reprocess)
         response = s3_client.get_object(Bucket=bucket, Key=key)
         stream = response["Body"]
 
@@ -220,28 +249,45 @@ class S3ImportIngestor(BaseIngestor):
         return total
 
 
+def _process_records(ingestor: S3ImportIngestor, records: list, *, reprocess: bool) -> list[dict]:
+    """Process every S3 record of an event; the run's row ends `completed`, or `error` and the error is re-raised."""
+    ingestor.record_run_started()
+    results: list[dict] = []
+    try:
+        for record in records:
+            if record.get("eventSource") != "aws:s3":
+                continue
+            bucket = record["s3"]["bucket"]["name"]
+            key = urllib.parse.unquote_plus(record["s3"]["object"]["key"])
+            logger.info(f"Processing s3://{bucket}/{key}")
+            count = ingestor.process_file(bucket, key, reprocess=reprocess)
+            results.append({"file": key, "items_processed": count})
+    except Exception as e:
+        ingestor.record_run_finished(sum(r["items_processed"] for r in results), e)
+        raise
+    ingestor.record_run_finished(sum(r["items_processed"] for r in results))
+    return results
+
+
 @logger.inject_lambda_context
 @tracer.capture_lambda_handler
 @metrics.log_metrics(capture_cold_start_metric=True)
 @measure_invocation_cost
 def lambda_handler(event, context):
-    """Handle S3 event notifications."""
-    if "Records" not in event or not event["Records"]:
+    """Handle S3 event notifications, and the API's reprocess input (an S3-shaped event).
+
+    `execution_id` (a run the API recorded) and `reprocess: True` (a re-run of one
+    file, issue #144) are the only additions to the trigger's event shape.
+    """
+    execution_id = event.get("execution_id") if isinstance(event.get("execution_id"), str) else None
+    records = event.get("Records") or []
+    if not records and not execution_id:
         logger.info("No S3 records in event, nothing to do")
         return {"status": "skipped", "reason": "no records"}
 
-    ingestor = S3ImportIngestor()
-    results = []
-
-    for record in event["Records"]:
-        if record.get("eventSource") != "aws:s3":
-            continue
-        bucket = record["s3"]["bucket"]["name"]
-        key = urllib.parse.unquote_plus(record["s3"]["object"]["key"])
-        logger.info(f"Processing s3://{bucket}/{key}")
-
-        count = ingestor.process_file(bucket, key)
-        results.append({"file": key, "items_processed": count})
+    ingestor = S3ImportIngestor(execution_id=execution_id)
+    # A run with no file (`POST /sources/s3_import/run`) still closes its row, as completed with 0 items.
+    results = _process_records(ingestor, records, reprocess=event.get("reprocess") is True)
 
     total = sum(r["items_processed"] for r in results)
     return {

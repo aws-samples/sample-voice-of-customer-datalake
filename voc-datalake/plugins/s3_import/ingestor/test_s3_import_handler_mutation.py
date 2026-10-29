@@ -420,7 +420,7 @@ class TestLambdaHandlerResponses:
 
         result = lambda_handler(event, _context())
 
-        MockIngestor.return_value.process_file.assert_called_once_with("b", "kept.csv")
+        MockIngestor.return_value.process_file.assert_called_once_with("b", "kept.csv", reprocess=False)
         assert result["files_processed"] == 1
         assert result["results"] == [{"file": "kept.csv", "items_processed": 4}]
 
