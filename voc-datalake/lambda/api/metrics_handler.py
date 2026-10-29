@@ -7,7 +7,7 @@ Split from main handler to reduce Lambda resource policy size.
 import os
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -15,7 +15,7 @@ from aws_lambda_powertools.event_handler.exceptions import NotFoundError
 from boto3.dynamodb.conditions import Attr, ConditionBase, Key
 from botocore.exceptions import BotoCoreError, ClientError
 
-from shared import category_access, other_category, release_watch
+from shared import category_access, data_quality, other_category, release_watch
 from shared import category_scope_query as scope_query
 from shared.api import (
     DATE_BASIS_IMPORTED,
@@ -70,11 +70,14 @@ from shared.metric_keys import (
     SENTIMENT_PREFIX,
     SOURCE_PREFIX,
     TAG_PREFIX,
+    USEFULNESS_METRIC_TYPE,
+    USEFULNESS_PREFIX,
 )
 from shared.problem_aggregation import PROBLEM_READ, SlimRead, aggregate_problems, parse_problem_query
 from shared.response_cache import memoized_route, request_versions
 from shared.time_budget import ROW_CAP_PARTIAL_REASON, WalkBudget, budgeted_days
 from shared.urgent_pages import URGENCY_KEY_FIELDS, UrgentPage, read_urgent_page
+from shared.usefulness import USEFULNESS_FIELD
 
 if TYPE_CHECKING:
     from mypy_boto3_dynamodb.service_resource import Table
@@ -1961,6 +1964,47 @@ def get_dimension_metrics():
         **_walk_partial_fields(),
         'values': values,
         'unassigned': unassigned,
+    }
+
+
+def _quality_row_read() -> SlimRead:
+    """The aggregate routes' slim read plus the stored ``usefulness`` band."""
+    read = _aggregate_row_read()
+    return replace(read, fields=(*read.fields, USEFULNESS_FIELD))
+
+
+def _quality_from_counters(days: int) -> tuple[dict[str, Any], bool]:
+    """The distribution from the per-source and per-source-band daily counters (two index reads)."""
+    current_date = datetime.now(UTC)
+    (sources, sources_partial), (bands, bands_partial) = concurrently(
+        lambda: _metric_type_totals('source', SOURCE_PREFIX, days, current_date),
+        lambda: _metric_type_totals(USEFULNESS_METRIC_TYPE, USEFULNESS_PREFIX, days, current_date),
+    )
+    return data_quality.from_counters(sources, bands), sources_partial or bands_partial
+
+
+@app.get("/metrics/data-quality")
+@tracer.capture_method
+@_memoized
+def get_data_quality_metrics():
+    """Per-source usefulness distribution ``{source, low, medium, high, unrated, total}`` (docs/data-quality.md).
+
+    The counters answer an unrestricted caller on the import-date basis; a restricted
+    caller (category or source rule) or the review basis is counted from the visible
+    items, like the sibling routes. Reviews without a band are ``unrated``.
+    """
+    _params, days, date_basis = _metrics_window()
+    scope = _caller_scope()
+    if date_basis == DATE_BASIS_REVIEW or not scope.all:
+        items, is_partial = _scoped_window_items(days, date_basis, scope, read=_quality_row_read())
+        result = data_quality.from_items(items)
+    else:
+        result, is_partial = _quality_from_counters(days)
+    return {
+        'period_days': days,
+        'is_partial': is_partial,
+        **_walk_partial_fields(),
+        **result,
     }
 
 
