@@ -176,6 +176,7 @@ See [Getting Started with Plugins](docs/getting-started-plugins.md).
 | [Categories](docs/categories.md) | Categories, products, owners and per-user category access |
 | [Company Context](docs/company-context.md) | Company vision, personal objectives and the design system |
 | [Dimensions](docs/dimensions.md) | Dimensions, tags and channels: model, value sources, filters, API |
+| [Data quality](docs/data-quality.md) | The usefulness band: the heuristic, the backfill, per-source counters, `GET /metrics/data-quality`, the LLM-context tiebreak |
 | [Source Policies](docs/source-policies.md) | Source profiles, PII redaction, restricted sources, retention and erasure |
 | [Kiro Design System](docs/kiro-design-system.md) | Frontend themes, colours, typography, components, motion and UI rules (ported from KiroCrew) |
 | [Project Workspace](docs/project-workspace.md) | Managed artifacts, prioritization, room voting, and MCP access |
