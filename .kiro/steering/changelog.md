@@ -1,8 +1,21 @@
 # Versioning and CHANGELOG — required for every change
 
-Every change that lands (a commit or merge into the integration branch `kiro-voc`, or `main`) bumps the
-version and records itself in `CHANGELOG.md`, in the SAME commit as the change (or the merge that brings
-it in). `scripts/check-version.mjs` (a `scripts/validate.sh` step) fails when they disagree.
+Every change that lands on `main` bumps the version and records itself in `CHANGELOG.md`, in the SAME commit
+as the change (or the release branch's final commit before its PR merges). `scripts/check-version.mjs` (a
+`scripts/validate.sh` step) fails when they disagree.
+
+## Branches and PRs
+
+`main` is the only long-lived branch and the repository is public, so every pushed branch is public.
+
+1. Start each release from the current `main`: `git fetch origin && git switch -c release/<x.yy.zz> origin/main`
+   (or a topic name such as `fix/<what>`). Never base work on a local branch whose history is not on `origin`.
+2. Commit there (it is fine to make several commits), bump once for the release (below), run the full
+   `bash scripts/validate.sh` once, then push the branch and open a PR against `main`.
+3. Before the first push, check that you publish only new work: `git rev-list --count <branch> --not --remotes`
+   must equal the number of commits you made.
+4. The PR is squash-merged once CI (`scripts/validate.sh`) is green. `main` takes no direct pushes; a repository
+   admin may merge with `gh pr merge --squash --admin`.
 
 ## Pick the bump
 
@@ -33,8 +46,10 @@ Several changes merged together take ONE bump: the highest kind among them.
 
 ## Parallel work
 
-- Feature/track branches do NOT bump: they add their bullets under `## [Unreleased]` only. The agent
-  that merges them into `kiro-voc` turns `[Unreleased]` into the new release section and bumps once.
-- On a CHANGELOG conflict, keep both sides' bullets (union, de-duplicated) under the newer version; on a
-  `package.json` version conflict, take the higher version and re-run the check.
+- Topic branches that feed one release branch do NOT bump: they add their bullets under `## [Unreleased]`
+  only. Whoever merges them into the release branch turns `[Unreleased]` into the new release section and
+  bumps once.
+- When `main` moves while your PR is open, rebase or merge `origin/main` into your branch; on a CHANGELOG
+  conflict, keep both sides' sections in version order (yours on top, renumbered past `main`'s), and on a
+  `package.json` version conflict take the higher version and re-run the check.
 - Never rewrite or renumber a released section; correct it with a new entry instead.

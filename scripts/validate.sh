@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Every gate; a green run here is a green CI run. Run it ONCE, on the integration branch, just before
-# the release commit. Track/agent branches use scripts/validate-affected.sh instead (CONTRIBUTING.md).
+# Every gate; a green run here is a green CI run. Run it ONCE, on the release branch, just before it is
+# pushed for its PR. Topic/agent branches use scripts/validate-affected.sh instead (CONTRIBUTING.md).
 #
 # Each step is a hard stop with zero findings allowed. Gates whose pre-existing findings are not
 # fixed yet are NOT here: scripts/quality-baseline.sh counts them, and a gate moves from there to

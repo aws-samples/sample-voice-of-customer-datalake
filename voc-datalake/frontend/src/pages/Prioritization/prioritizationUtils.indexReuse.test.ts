@@ -90,7 +90,7 @@ vi.mock('../../api/derivation', async (importOriginal) => {
   }
 })
 
-// `collectRows` lives in `rowCollection.ts` on kiro-voc (split out of
+// `collectRows` lives in `rowCollection.ts` (split out of
 // `prioritizationUtils.ts` after #404 was written upstream).
 const { collectRows } = await import('./rowCollection')
 

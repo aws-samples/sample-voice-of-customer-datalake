@@ -47,7 +47,8 @@ npm run deploy:all   # Deploys all CDK stacks + frontend
 > fix things WITHOUT the full gate: they run the single tool they need while iterating and
 > `bash scripts/validate-affected.sh [<base>]` (only the `validate.sh` steps for the paths they changed;
 > `--explain` shows the mapping) before handing over. The full `bash scripts/validate.sh` runs ONCE, on the
-> integration branch (`kiro-voc`), just before the release commit — never skipped. It runs its steps in five
+> release branch (cut from `main`, see changelog.md → Branches and PRs), just before it is pushed for its PR —
+> never skipped; CI runs it again on the PR. It runs its steps in five
 > parallel lanes, stops at the first failure (printing that step's log tail; full logs in
 > `.cache/validate/logs/<run>/`) and ends with a per-step timing table. It needs gitleaks 8.30+ installed
 > (`brew install gitleaks`). Details: CONTRIBUTING.md → Quality gates.

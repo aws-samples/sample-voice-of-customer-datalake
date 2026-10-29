@@ -47,8 +47,8 @@ npm run deploy:all
 The release gate is `npm run validate` (`scripts/validate.sh`): every check below plus ruff, vulture, pyright,
 knip, jscpd, the i18n audit, the mock-coverage check, a gitleaks scan of the working tree and the code-audit
 detectors ([Code audit → In the gate](code-audit.md#in-the-gate)), run in parallel
-lanes with a per-step timing table at the end. Run it **once on the integration branch, just before the release
-commit and the deploy**; track and agent branches run only `bash scripts/validate-affected.sh` (the steps for the
+lanes with a per-step timing table at the end. Run it **once on the release branch, just before it is pushed for
+its PR and before the deploy**; topic and agent branches run only `bash scripts/validate-affected.sh` (the steps for the
 paths they changed). The process and the options are in [CONTRIBUTING.md](../CONTRIBUTING.md#quality-gates).
 
 The narrower npm scripts are for iterating on one area:
