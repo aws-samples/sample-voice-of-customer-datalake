@@ -356,7 +356,7 @@ class TestTheRowPayload:
     def test_a_bare_record_reads_as_empty_fields(self):
         assert _row_payload({}) == {
             'row_id': '', 'project_id': '', 'document_ids': [], 'prototype_id': '',
-            'is_default': False, 'created_at': '', 'is_frozen': False,
+            'is_default': False, 'created_at': '', 'is_frozen': False, 'lineage_ack': None,
         }
 
     def test_the_stored_instant_is_published(self):
