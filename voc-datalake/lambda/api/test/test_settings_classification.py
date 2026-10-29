@@ -1,7 +1,9 @@
 """/settings/dimensions, /settings/sources and /settings/erasure (settings_handler), against moto."""
 import hashlib
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
+import boto3
 import pytest
 from handler_events_fixtures import call_route
 from moto import mock_aws
@@ -9,7 +11,6 @@ from moto import mock_aws
 import settings_handler
 from settings_handler import lambda_handler
 from shared.feedback_types import feedback_type_dimension
-from shared.test.moto_tables import create_pk_sk_table
 
 USER_CLAIMS = {'sub': 'user-1', 'cognito:username': 'casey', 'cognito:groups': 'users'}
 DIMENSIONS = [{'key': 'product', 'label': 'Product', 'values': [{'name': 'App'}, {'name': 'Web'}]}]
@@ -17,10 +18,23 @@ PROFILE = {'id': 'support_tickets', 'label': 'Support', 'pii': 'redact', 'retent
            'restricted': True, 'dimension_defaults': {'product': 'App'}, 'tags': ['support']}
 
 
+def _aggregates_table():
+    """pk/sk plus the `gsi1-by-metric-type` index (metric_type, pk), as in core-stack.ts."""
+    return boto3.resource('dynamodb', region_name='us-east-1').create_table(
+        TableName='test-aggregates-settings-classification', BillingMode='PAY_PER_REQUEST',
+        KeySchema=[{'AttributeName': 'pk', 'KeyType': 'HASH'}, {'AttributeName': 'sk', 'KeyType': 'RANGE'}],
+        AttributeDefinitions=[{'AttributeName': a, 'AttributeType': 'S'} for a in ('metric_type', 'pk', 'sk')],
+        GlobalSecondaryIndexes=[{
+            'IndexName': 'gsi1-by-metric-type', 'Projection': {'ProjectionType': 'ALL'},
+            'KeySchema': [{'AttributeName': 'metric_type', 'KeyType': 'HASH'},
+                          {'AttributeName': 'pk', 'KeyType': 'RANGE'}]}],
+    )
+
+
 @pytest.fixture
 def table():
     with mock_aws():
-        moto_table = create_pk_sk_table('test-aggregates-settings-classification')
+        moto_table = _aggregates_table()
         with patch.object(settings_handler, 'aggregates_table', moto_table), \
              patch.object(settings_handler, 'RETENTION_FUNCTION', 'voc-retention'):
             yield moto_table
@@ -161,3 +175,85 @@ class TestErasure:
         with patch.object(settings_handler, 'RETENTION_FUNCTION', ''):
             response, _ = route('POST', '/settings/erasure', body={'field': 'author', 'value': 'x'})
         assert response['statusCode'] == 500
+
+
+def _counted(table, source: str) -> None:
+    """A source the aggregator has counted (one METRIC#daily_source# row)."""
+    table.put_item(Item={'pk': f'METRIC#daily_source#{source}', 'sk': '2026-01-01', 'metric_type': 'source',
+                         'count': 3})
+
+
+def _whole(source_id: str, **extra) -> dict:
+    return {'field': 'source', 'value': source_id, 'confirm': source_id, **extra}
+
+
+@pytest.mark.usefixtures('table')
+class TestWholeSourceErasure:
+    def test_a_confirmed_known_source_starts_a_source_job(self, route, invoke, table):
+        _counted(table, 'web_trustpilot_example_air')
+        response, body = route('POST', '/settings/erasure', body=_whole('web_trustpilot_example_air'))
+        assert response['statusCode'] == 202
+        job = body['job']
+        assert (job['field'], job['source']) == ('source', 'web_trustpilot_example_air')
+        assert job['value_hash'] == hashlib.sha256(b'web_trustpilot_example_air').hexdigest()
+        invoke.assert_called_once_with('voc-retention', {
+            'mode': 'erase', 'job_id': job['job_id'], 'value': 'web_trustpilot_example_air'})
+
+    @pytest.mark.usefixtures('invoke')
+    def test_a_configured_profile_is_known_without_counted_data(self, route, table):
+        table.put_item(Item={'pk': 'SETTINGS#sources', 'sk': 'config', 'sources': [{'id': 'support_tickets'}]})
+        response, _ = route('POST', '/settings/erasure', body=_whole('support_tickets'))
+        assert response['statusCode'] == 202
+
+    @pytest.mark.usefixtures('invoke')
+    @pytest.mark.parametrize(('body', 'error'), [
+        ({'field': 'source', 'value': 'tickets'}, 'confirm must repeat the source id'),
+        (_whole('tickets', confirm='ticket'), 'confirm must repeat the source id'),
+        (_whole('tickets', confirm='TICKETS'), 'confirm must repeat the source id'),
+        (_whole('tickets', source='web'), 'source must equal value when field is source'),
+        (_whole('Bad Id'), 'value must be a source id when field is source'),
+        (_whole('nobody'), 'Unknown source'),
+    ])
+    def test_an_unconfirmed_or_unknown_source_is_400(self, route, invoke, table, body, error):
+        _counted(table, 'tickets')
+        response, answer = route('POST', '/settings/erasure', body=body)
+        assert (response['statusCode'], answer['error']) == (400, error)
+        invoke.assert_not_called()
+
+    @pytest.mark.usefixtures('invoke')
+    @pytest.mark.parametrize('status', ['queued', 'running'])
+    def test_a_live_erasure_of_the_source_is_409(self, route, table, status):
+        _counted(table, 'tickets')
+        table.put_item(Item={'pk': 'JOB#erasure', 'sk': 'er_000000000001', 'job_id': 'er_000000000001',
+                             'status': status, 'field': 'author', 'source': 'tickets',
+                             'created_at': datetime.now(UTC).isoformat()})
+        response, _ = route('POST', '/settings/erasure', body=_whole('tickets'))
+        assert response['statusCode'] == 409
+
+    @pytest.mark.usefixtures('invoke')
+    def test_a_finished_other_source_or_stalled_job_does_not_block(self, route, table):
+        _counted(table, 'tickets')
+        stalled = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
+        for n, (status, source, moved) in enumerate([
+            ('completed', 'tickets', datetime.now(UTC).isoformat()),
+            ('running', 'web', datetime.now(UTC).isoformat()),
+            ('running', 'tickets', stalled),
+        ]):
+            table.put_item(Item={'pk': 'JOB#erasure', 'sk': f'er_00000000000{n}', 'job_id': f'er_00000000000{n}',
+                                 'status': status, 'field': 'source', 'source': source,
+                                 'created_at': stalled, 'progress_at': moved})
+        response, _ = route('POST', '/settings/erasure', body=_whole('tickets'))
+        assert response['statusCode'] == 202
+
+    @pytest.mark.usefixtures('invoke')
+    def test_the_list_names_the_erasable_sources(self, route, table):
+        _counted(table, 'web_trustpilot_example_air')
+        table.put_item(Item={'pk': 'SETTINGS#sources', 'sk': 'config', 'sources': [{'id': 'support_tickets'}]})
+        _, body = route('GET', '/settings/erasure')
+        assert body['sources'] == ['support_tickets', 'web_trustpilot_example_air']
+
+    @pytest.mark.usefixtures('invoke')
+    def test_a_whole_source_erasure_is_admin_only(self, route, table):
+        _counted(table, 'tickets')
+        response, _ = route('POST', '/settings/erasure', body=_whole('tickets'), claims=USER_CLAIMS)
+        assert response['statusCode'] == 403

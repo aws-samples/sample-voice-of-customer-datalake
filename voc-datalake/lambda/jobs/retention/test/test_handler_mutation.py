@@ -167,7 +167,7 @@ class TestTheScanWalk:
         table.scan.side_effect = pages
         with patch.object(handler, 'get_s3_client'), patch.object(handler, 'invoke_lambda_async', invoke), \
                 patch.object(handler.retention, 'delete_item', return_value=(1, 1)):
-            return handler._walk(table, context, event, run, CONDITION), table
+            return handler._walk((table, MagicMock()), context, event, run, CONDITION), table
 
     def test_pages_follow_the_cursor_and_add_up(self) -> None:
         run = _run(scanned=3)
