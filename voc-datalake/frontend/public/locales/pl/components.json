@@ -636,7 +636,8 @@
       "author": "Autor",
       "source_id": "Identyfikator źródła",
       "csv_row_id": "Identyfikator wiersza CSV",
-      "email": "E-mail"
+      "email": "E-mail",
+      "source": "Całe źródło"
     },
     "valueLabel": "Wartość",
     "sourceLabel": "W obrębie źródła",
@@ -655,6 +656,24 @@
     },
     "confirmTitle": "Usunąć opinie tej osoby?",
     "confirmMessage": "Każda opinia, której pole {{field}} odpowiada wartości ({{source}}), wraz z jej surowym archiwum zostanie trwale usunięta."
+  },
+  "sourceErasure": {
+    "title": "Usuń wszystkie dane źródła",
+    "description": "Usuwa wszystkie opinie z jednego źródła i wszystkie surowe pliki z jego folderu raw. Liczby na pulpicie maleją w miarę usuwania opinii. Źródło zachowuje ustawienia, harmonogram i pozycję synchronizacji, więc nowe opinie napływają, dopóki go nie wyłączysz. Przesłane pliki CSV i JSON zostają. Tej operacji nie można cofnąć.",
+    "sourceLabel": "Źródło",
+    "chooseSource": "Wybierz źródło",
+    "noSources": "Żadne źródło nie ma jeszcze danych.",
+    "start": "Usuń wszystkie dane tego źródła",
+    "startError": "Usuwanie nie zostało rozpoczęte: {{reason}}",
+    "confirmTitle": "Usunąć wszystkie dane źródła {{source}}?",
+    "confirmMessage": "Wszystkie opinie ze źródła {{source}} i wszystkie surowe pliki z jego folderu zostaną trwale usunięte.",
+    "typeLabel": "Wpisz {{source}}, aby potwierdzić",
+    "confirm": "Usuń wszystkie dane",
+    "progress": {
+      "items": "Usuwanie opinii. Usunięte opinie: {{items, number}}. Usunięte surowe pliki: {{objects, number}}.",
+      "raw": "Usuwanie surowych plików. Usunięte opinie: {{items, number}}. Usunięte surowe pliki: {{objects, number}}.",
+      "done": "Usunięte opinie: {{items, number}}. Usunięte surowe pliki: {{objects, number}}."
+    }
   },
   "dimensionsEdit": {
     "errors": {

@@ -612,7 +612,8 @@
       "author": "Auteur",
       "source_id": "Id d'origine",
       "csv_row_id": "Id de ligne CSV",
-      "email": "E-mail"
+      "email": "E-mail",
+      "source": "Source entière"
     },
     "valueLabel": "Valeur",
     "sourceLabel": "Dans la source",
@@ -631,6 +632,24 @@
     },
     "confirmTitle": "Effacer les avis de cette personne ?",
     "confirmMessage": "Chaque avis dont le champ {{field}} correspond à la valeur ({{source}}) ainsi que son archive brute seront supprimés définitivement."
+  },
+  "sourceErasure": {
+    "title": "Supprimer toutes les données d’une source",
+    "description": "Supprime tous les avis d’une source et tous les fichiers bruts de son dossier raw. Les compteurs du tableau de bord baissent à mesure que les avis sont supprimés. La source garde ses paramètres, sa planification et sa position de synchronisation : de nouveaux avis continuent d’arriver tant que vous ne la désactivez pas. Les fichiers CSV et JSON importés sont conservés. Cette action est irréversible.",
+    "sourceLabel": "Source",
+    "chooseSource": "Choisir une source",
+    "noSources": "Aucune source n’a encore de données.",
+    "start": "Supprimer toutes les données de cette source",
+    "startError": "La suppression n’a pas démarré : {{reason}}",
+    "confirmTitle": "Supprimer toutes les données de {{source}} ?",
+    "confirmMessage": "Tous les avis de {{source}} et tous les fichiers bruts de son dossier seront supprimés définitivement.",
+    "typeLabel": "Saisissez {{source}} pour confirmer",
+    "confirm": "Supprimer toutes les données",
+    "progress": {
+      "items": "Suppression des avis. Avis supprimés : {{items, number}}. Fichiers bruts supprimés : {{objects, number}}.",
+      "raw": "Suppression des fichiers bruts. Avis supprimés : {{items, number}}. Fichiers bruts supprimés : {{objects, number}}.",
+      "done": "Avis supprimés : {{items, number}}. Fichiers bruts supprimés : {{objects, number}}."
+    }
   },
   "dimensionsEdit": {
     "errors": {

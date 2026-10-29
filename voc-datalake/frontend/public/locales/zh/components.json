@@ -602,7 +602,8 @@
       "author": "作者",
       "source_id": "来源 ID",
       "csv_row_id": "CSV 行 ID",
-      "email": "电子邮件"
+      "email": "电子邮件",
+      "source": "整个来源"
     },
     "valueLabel": "值",
     "sourceLabel": "限定来源",
@@ -621,6 +622,24 @@
     },
     "confirmTitle": "要删除此人的反馈吗?",
     "confirmMessage": "{{field}} 与该值匹配的所有评价({{source}})及其原始存档将被永久删除。"
+  },
+  "sourceErasure": {
+    "title": "删除某个来源的全部数据",
+    "description": "删除一个来源的所有评论以及其 raw 文件夹中的所有原始文件。随着评论被删除，仪表板中的计数会下降。该来源的设置、计划和同步位置会保留，因此在关闭该来源之前，新评论会继续进入。已上传的 CSV 和 JSON 文件会保留。此操作无法撤销。",
+    "sourceLabel": "来源",
+    "chooseSource": "选择来源",
+    "noSources": "还没有来源有数据。",
+    "start": "删除此来源的全部数据",
+    "startError": "未能开始删除：{{reason}}",
+    "confirmTitle": "删除 {{source}} 的全部数据？",
+    "confirmMessage": "{{source}} 的所有评论及其文件夹中的所有原始文件将被永久删除。",
+    "typeLabel": "输入 {{source}} 以确认",
+    "confirm": "删除全部数据",
+    "progress": {
+      "items": "正在删除评论。已删除评论：{{items, number}}。已删除原始文件：{{objects, number}}。",
+      "raw": "正在删除原始文件。已删除评论：{{items, number}}。已删除原始文件：{{objects, number}}。",
+      "done": "已删除评论：{{items, number}}。已删除原始文件：{{objects, number}}。"
+    }
   },
   "dimensionsEdit": {
     "errors": {
