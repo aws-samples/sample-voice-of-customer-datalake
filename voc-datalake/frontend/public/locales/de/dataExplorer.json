@@ -76,5 +76,28 @@
     "persona": "Persona",
     "showRaw": "Roh-JSON anzeigen",
     "hideRaw": "Roh-JSON ausblenden"
+  },
+  "dataQuality": {
+    "title": "Datenqualität",
+    "description": "Wie nützlich das Feedback jeder Quelle ist: eine regelbasierte Stufe aus Länge, Details (Zahlen, Produktbegriffe) und ob ein konkretes Problem oder ein konkreter Wunsch genannt wird. Eine Quelle mit überwiegend niedrigem Feedback deutet oft auf einen falsch konfigurierten Scraper oder ein übersprungenes Formularfeld hin.",
+    "loading": "Datenqualität wird geladen…",
+    "empty": "Kein Feedback in diesem Zeitraum.",
+    "unratedShare": "{{share}} des Feedbacks in diesem Zeitraum ist noch nicht bewertet.",
+    "backfillHint": "Feedback, das vor der Bewertung gespeichert wurde, hat keine Stufe; eine Neuverarbeitung der Kategorien (Administration → Taxonomie) bewertet es.",
+    "chartTop_one": "Das Diagramm zeigt die aktivste Quelle; die Tabelle listet alle Quellen.",
+    "chartTop_other": "Das Diagramm zeigt die {{count, number}} aktivsten Quellen; die Tabelle listet alle Quellen.",
+    "partial": "Einige Daten konnten nicht rechtzeitig gelesen werden, daher können diese Zahlen niedriger als die tatsächlichen sein.",
+    "tableCaption": "Nützlichkeit des Feedbacks pro Quelle",
+    "allSources": "Alle Quellen",
+    "columns": {
+      "source": "Quelle",
+      "total": "Gesamt"
+    },
+    "bands": {
+      "high": "Hoch",
+      "medium": "Mittel",
+      "low": "Niedrig",
+      "unrated": "Nicht bewertet"
+    }
   }
 }

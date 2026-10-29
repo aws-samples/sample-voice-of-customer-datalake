@@ -76,5 +76,28 @@
     "persona": "Persona",
     "showRaw": "Mostrar JSON original",
     "hideRaw": "Ocultar JSON original"
+  },
+  "dataQuality": {
+    "title": "Calidad de los datos",
+    "description": "Lo útiles que son los comentarios de cada fuente: una banda basada en reglas según su longitud, sus detalles (números, términos de producto) y si nombran un problema o una petición concretos. Una fuente con comentarios mayoritariamente bajos suele indicar un scraper mal configurado o un campo de formulario que se omite.",
+    "loading": "Cargando la calidad de los datos…",
+    "empty": "No hay comentarios en este periodo.",
+    "unratedShare": "El {{share}} de los comentarios de este periodo aún no está valorado.",
+    "backfillHint": "Los comentarios guardados antes de que existieran las valoraciones no tienen banda; un reprocesado de categorías (Administración → Taxonomía) los valora.",
+    "chartTop_one": "El gráfico muestra la fuente con más actividad; la tabla incluye todas las fuentes.",
+    "chartTop_other": "El gráfico muestra las {{count, number}} fuentes con más actividad; la tabla incluye todas las fuentes.",
+    "partial": "Algunos datos no se pudieron leer a tiempo, así que estas cifras pueden ser menores que las reales.",
+    "tableCaption": "Utilidad de los comentarios por fuente",
+    "allSources": "Todas las fuentes",
+    "columns": {
+      "source": "Fuente",
+      "total": "Total"
+    },
+    "bands": {
+      "high": "Alta",
+      "medium": "Media",
+      "low": "Baja",
+      "unrated": "Sin valorar"
+    }
   }
 }
