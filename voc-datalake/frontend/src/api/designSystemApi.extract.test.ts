@@ -77,6 +77,17 @@ describe('apply and reference logo', () => {
     expect([draft.logo_candidate?.source_url, draft.logo_candidate?.preview_url]).toStrictEqual(['https://x.example/l.png', undefined])
   })
 
+  it.each(['data:image/svg+xml,<svg/>', 'javascript:alert(1)', '//evil.example/x.svg', 'http://evil.example/x.svg'])(
+    'drops an unsafe SVG download link %s on the logo and on an icon (both are <a href> sinks)', (href) => {
+      const logo = { source_url: 'https://x.example/l.svg', preview_url: '/design/logo/preview.png', svg_preview_url: href }
+      const icon = { url: 'https://cdn.example/i.png', svg_url: href }
+      const ds = normalizeDesignSystem({ references: [{ id: 'r', kind: 'website', title: 'Site', status: 'ready',
+        extracted_design: { logo, icons: [icon] } }] })
+      const design = ds.references[0]?.extracted_design
+      expect([design?.logo?.svg_preview_url, design?.icons[0]?.url, design?.icons[0]?.svg_url])
+        .toStrictEqual([undefined, 'https://cdn.example/i.png', undefined])
+    })
+
   it.each([
     [true, true],
     [false, false],

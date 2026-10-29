@@ -166,7 +166,9 @@
     "slugTaken": "Un autre tableau utilise déjà ce nom de lien.",
     "boardNotEmpty": "Ce tableau contient encore des demandes. Supprimez-le avec ses demandes, ou archivez-le.",
     "statusInUse": "Des demandes utilisent encore ce statut. Passez-les d’abord à un autre statut.",
-    "alreadySupported": "Vous soutenez déjà cette demande. Modifiez plutôt votre +1."
+    "alreadySupported": "Vous soutenez déjà cette demande. Modifiez plutôt votre +1.",
+    "boardPaused": "Ce tableau est en pause : les nouvelles demandes et les votes sont fermés pour le moment.",
+    "boardArchived": "Ce tableau est archivé et n’accepte plus de nouvelles demandes."
   },
   "auth": {
     "title": "Connectez-vous au tableau des demandes",
@@ -270,6 +272,22 @@
     "deleteIncomplete": "Le tableau n’est pas encore entièrement supprimé.",
     "deleteResumeHint": "Cliquez de nouveau sur Supprimer pour reprendre là où cela s’est arrêté.",
     "archived": "Archivé",
+    "paused": "En pause",
+    "pausedNotice": "En pause : les nouvelles demandes et les votes sont fermés pour le moment.",
+    "lifecycle": {
+      "pause": "Mettre en pause",
+      "resume": "Reprendre",
+      "pauseBoard": "Mettre {{name}} en pause",
+      "resumeBoard": "Reprendre {{name}}",
+      "pauseTitle": "Mettre ce tableau en pause ?",
+      "pauseMessage": "« {{name}} » reste visible pour les personnes avec qui il est partagé, qui peuvent toujours se connecter et le lire. Personne ne peut publier une demande, ajouter un +1 ni modifier quoi que ce soit tant que vous ne l’avez pas repris.",
+      "archive": "Archiver",
+      "archiveBoard": "Archiver {{name}}",
+      "archiveTitle": "Archiver ce tableau ?",
+      "archiveMessage": "L’archivage est l’étape avant la suppression. « {{name}} » disparaît de la vue des personnes avec qui il est partagé ; seuls les administrateurs le voient encore. Ses demandes sont conservées. Vous pourrez ensuite le restaurer ou le supprimer.",
+      "restore": "Restaurer",
+      "restoreBoard": "Restaurer {{name}}"
+    },
     "configure": "Configurer les tableaux",
     "emptyTitle": "Aucun tableau pour l’instant",
     "empty": "Aucun tableau ne vous est encore partagé.",

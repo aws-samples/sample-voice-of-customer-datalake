@@ -9,7 +9,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
-import { AUTH_DIR, OUT_DIR, authDirFor, ensureAuthDir, storageStatePath } from '../lib/env'
+import { AUTH_DIR, OUT_DIR, authDirFor, ensureAuthDir, removesAuthAfterRun, storageStatePath } from '../lib/env'
 
 const E2E_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -31,6 +31,18 @@ test('this run saves its sessions under its own E2E_OUT, owner-only', () => {
   expect(storageStatePath('admin')).toBe(path.join(OUT_DIR, '.auth', 'admin.json'))
   ensureAuthDir()
   expect(fs.statSync(AUTH_DIR).mode & 0o777).toBe(0o700)
+})
+
+test('a run deletes the sessions it saved in its own folder once its cleanup ends', () => {
+  expect(removesAuthAfterRun({})).toBe(true)
+  expect(removesAuthAfterRun({ E2E_OUT: '/tmp/e2e-run/shard1' })).toBe(true)
+  expect(removesAuthAfterRun({ E2E_AUTH_DIR: '  ' })).toBe(true)
+})
+
+test('sessions in a folder the caller named, or with E2E_KEEP_AUTH=1, are kept', () => {
+  expect(removesAuthAfterRun({ E2E_AUTH_DIR: '/tmp/sessions' })).toBe(false)
+  expect(removesAuthAfterRun({ E2E_KEEP_AUTH: '1' })).toBe(false)
+  expect(removesAuthAfterRun({ E2E_KEEP_AUTH: '0' })).toBe(true)
 })
 
 test('a session saved under an in-repo output directory is gitignored', () => {

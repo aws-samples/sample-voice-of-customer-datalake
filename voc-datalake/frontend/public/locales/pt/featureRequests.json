@@ -166,7 +166,9 @@
     "slugTaken": "Outro quadro já usa este nome de link.",
     "boardNotEmpty": "Este quadro ainda tem pedidos. Exclua-o junto com os pedidos ou arquive-o.",
     "statusInUse": "Ainda há pedidos com este status. Mova-os antes para outro status.",
-    "alreadySupported": "Você já apoia esta solicitação. Edite o seu +1."
+    "alreadySupported": "Você já apoia esta solicitação. Edite o seu +1.",
+    "boardPaused": "Este quadro está pausado: novas solicitações e votos estão fechados por enquanto.",
+    "boardArchived": "Este quadro está arquivado e não aceita novas solicitações."
   },
   "auth": {
     "title": "Entre no quadro de pedidos",
@@ -270,6 +272,22 @@
     "deleteIncomplete": "O quadro ainda não foi totalmente excluído.",
     "deleteResumeHint": "Clique em Excluir novamente para continuar de onde parou.",
     "archived": "Arquivado",
+    "paused": "Pausado",
+    "pausedNotice": "Pausado: novas solicitações e votos estão fechados por enquanto.",
+    "lifecycle": {
+      "pause": "Pausar",
+      "resume": "Retomar",
+      "pauseBoard": "Pausar {{name}}",
+      "resumeBoard": "Retomar {{name}}",
+      "pauseTitle": "Pausar este quadro?",
+      "pauseMessage": "“{{name}}” continua visível para as pessoas com quem é compartilhado, que ainda podem entrar e lê-lo. Ninguém pode publicar uma solicitação, adicionar um +1 ou editar até você retomá-lo.",
+      "archive": "Arquivar",
+      "archiveBoard": "Arquivar {{name}}",
+      "archiveTitle": "Arquivar este quadro?",
+      "archiveMessage": "Arquivar é a etapa antes de excluir. “{{name}}” sai da visão das pessoas com quem é compartilhado; apenas administradores ainda o veem. Suas solicitações são mantidas. Depois, você pode restaurá-lo ou excluí-lo.",
+      "restore": "Restaurar",
+      "restoreBoard": "Restaurar {{name}}"
+    },
     "configure": "Configurar quadros",
     "emptyTitle": "Ainda não há quadros",
     "empty": "Nenhum quadro foi compartilhado com você ainda.",

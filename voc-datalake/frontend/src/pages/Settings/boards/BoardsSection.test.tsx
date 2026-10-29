@@ -132,7 +132,7 @@ describe('deleting a board from its editor', () => {
     const BETA = '/feature-requests/boards/brd_00000001'
     routeFetchApi(boardRoutes({ [`DELETE ${BETA}`]: () => ({ success: true }) }))
     renderSection('/admin?tab=access&section=boards&board=brd_00000001')
-    await user.click(await screen.findByRole('button', { name: 'Delete board' }))
+    await user.click(await screen.findByRole('button', { name: 'Delete Beta feedback' }))
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete' }))
     await waitFor(() => expect(screen.getByTestId('search')).toHaveTextContent(/^\?tab=access&section=boards$/))
     expect(await screen.findByRole('button', { name: 'Edit Sales feature requests' })).toBeInTheDocument()

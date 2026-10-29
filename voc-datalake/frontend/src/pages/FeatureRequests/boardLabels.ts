@@ -166,4 +166,6 @@ export const CONFLICT_CODE_ERRORS: Readonly<Record<string, { messageKey: string 
   board_not_empty: { messageKey: 'featureRequests:errors.boardNotEmpty' },
   status_in_use: { messageKey: 'featureRequests:errors.statusInUse' },
   already_supported: { messageKey: 'featureRequests:errors.alreadySupported' },
+  board_paused: { messageKey: 'featureRequests:errors.boardPaused' },
+  board_archived: { messageKey: 'featureRequests:errors.boardArchived' },
 }

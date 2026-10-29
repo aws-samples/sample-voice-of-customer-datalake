@@ -574,6 +574,9 @@
       "onlyGuidelines": "Solo pautas",
       "logoCandidate": "Logotipo encontrado en esta referencia",
       "logoRendered": "Generado a partir del logotipo SVG del sitio",
+      "downloadSvg": "Descargar SVG",
+      "icons": "Iconos del sitio",
+      "iconAlt": "Icono del sitio",
       "apply": "Usar como sistema de diseño",
       "useLogo": "Usar este logotipo",
       "logoFailed": "No se pudo usar este logotipo. Inténtalo de nuevo."
@@ -839,6 +842,7 @@
       "empty": "Todavía no hay tableros. Crea uno a partir de una plantilla.",
       "loadFailed": "No se pudieron cargar los tableros.",
       "archived": "Archivado",
+      "paused": "En pausa",
       "edit": "Editar",
       "editLabel": "Editar {{name}}",
       "requests_one": "{{count, number}} solicitud",
@@ -933,14 +937,11 @@
       "full": "Un tablero tiene como máximo {{max, number}} estados."
     },
     "lifecycle": {
-      "title": "Archivar o eliminar",
-      "hint_one": "Este tablero tiene {{count, number}} solicitud. Archivarlo lo oculta a todos salvo a los administradores y conserva sus solicitudes; eliminarlo borra el tablero y sus solicitudes.",
-      "hint_many": "Este tablero tiene {{count, number}} solicitudes. Archivarlo lo oculta a todos salvo a los administradores y conserva sus solicitudes; eliminarlo borra el tablero y sus solicitudes.",
-      "hint_other": "Este tablero tiene {{count, number}} solicitudes. Archivarlo lo oculta a todos salvo a los administradores y conserva sus solicitudes; eliminarlo borra el tablero y sus solicitudes.",
-      "saveFirst": "Guarda o descarta antes tus cambios.",
-      "archive": "Archivar",
-      "restore": "Restaurar",
-      "delete": "Eliminar tablero"
+      "title": "Pausar, archivar o eliminar",
+      "hint_one": "Este tablero tiene {{count, number}} solicitud. Pausarlo es temporal: el tablero sigue legible, pero nadie puede publicar, añadir un +1 ni editar hasta que lo reanudes. Archivarlo es el paso previo a eliminarlo: lo oculta a todos salvo a los administradores y conserva sus solicitudes. Podrás eliminarlo una vez archivado.",
+      "hint_many": "Este tablero tiene {{count, number}} solicitudes. Pausarlo es temporal: el tablero sigue legible, pero nadie puede publicar, añadir un +1 ni editar hasta que lo reanudes. Archivarlo es el paso previo a eliminarlo: lo oculta a todos salvo a los administradores y conserva sus solicitudes. Podrás eliminarlo una vez archivado.",
+      "hint_other": "Este tablero tiene {{count, number}} solicitudes. Pausarlo es temporal: el tablero sigue legible, pero nadie puede publicar, añadir un +1 ni editar hasta que lo reanudes. Archivarlo es el paso previo a eliminarlo: lo oculta a todos salvo a los administradores y conserva sus solicitudes. Podrás eliminarlo una vez archivado.",
+      "saveFirst": "Guarda o descarta antes tus cambios."
     },
     "problems": {
       "nameRequired": "El tablero necesita un nombre.",

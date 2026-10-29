@@ -1,6 +1,6 @@
 /**
  * `/feature-requests`: the feedback boards as cards (name, template, audience, request count, Copy
- * link with its toast, Open), the admin-only Edit / Delete / gear, and a pre-boards
+ * link with its toast, Open), the admin-only Edit / Pause / Archive (Restore / Delete once archived) / gear, and a pre-boards
  * `?request=<id>` link opening that request on its board.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -45,6 +45,13 @@ function renderPage(viewer: BoardViewer, entry = '/feature-requests', arrange?: 
 }
 
 const card = async (name: string) => within(await screen.findByTestId(`board-card-${name}`))
+
+/** The boards listing answers every board archived (Delete is offered only then). */
+function archivedBoards(api: FeatureRequestsApi): void {
+  vi.mocked(api.listBoards).mockResolvedValue({
+    boards: [SALES, SERVICE, BETA].map((entry) => ({ ...entry, archived: true })), viewer: ADMIN,
+  })
+}
 
 beforeEach(() => {
   app.api = null
@@ -91,13 +98,29 @@ describe('the board cards', () => {
 })
 
 describe('admin-only controls', () => {
-  it('give an admin Edit (the board editor), Delete and the gear to Boards', async () => {
+  it('give an admin Edit (the board editor) and the gear to Boards', async () => {
     renderPage(ADMIN)
     const service = await card('brd_service')
     expect(service.getByRole('link', { name: 'Edit Customer service issues' }))
       .toHaveAttribute('href', '/admin?tab=access&section=boards&board=brd_service')
-    expect(service.getByRole('button', { name: 'Delete Customer service issues' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Configure boards' })).toHaveAttribute('href', '/admin?tab=access&section=boards')
+  })
+
+  it('give an admin Pause and Archive on a board in use, but no Delete', async () => {
+    renderPage(ADMIN)
+    const service = await card('brd_service')
+    expect(service.getByRole('button', { name: 'Pause Customer service issues' })).toBeInTheDocument()
+    expect(service.getByRole('button', { name: 'Archive Customer service issues' })).toBeInTheDocument()
+    expect(service.queryByRole('button', { name: /^Delete/ })).not.toBeInTheDocument()
+  })
+
+  it('offers Restore and Delete only once a board is archived', async () => {
+    renderPage(ADMIN, '/feature-requests', archivedBoards)
+    const sales = await card('brd_sales')
+    expect(sales.getByText('Archived')).toBeInTheDocument()
+    expect(sales.getByRole('button', { name: 'Delete Sales feature requests' })).toBeInTheDocument()
+    expect(sales.getByRole('button', { name: 'Restore Sales feature requests' })).toBeInTheDocument()
+    expect(sales.queryByRole('button', { name: /^(Pause|Archive)/ })).not.toBeInTheDocument()
   })
 
   it.each([
@@ -108,13 +131,13 @@ describe('admin-only controls', () => {
     renderPage(viewer)
     const service = await card('brd_service')
     expect(service.queryByRole('link', { name: /^Edit/ })).not.toBeInTheDocument()
-    expect(service.queryByRole('button', { name: /^Delete/ })).not.toBeInTheDocument()
+    expect(service.queryByRole('button', { name: /^(Delete|Pause|Archive)/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Configure boards' })).not.toBeInTheDocument()
   })
 
   it('deletes a board with requests from its card after the name is typed, then refetches the boards', async () => {
     const user = userEvent.setup()
-    const board = renderPage(ADMIN)
+    const board = renderPage(ADMIN, '/feature-requests', archivedBoards)
     vi.mocked(board.api.deleteBoard)
       .mockResolvedValueOnce({ done: false, deleted: 2, remaining: 1 })
       .mockResolvedValueOnce({ done: true, deleted: 1, remaining: 0 })
@@ -130,7 +153,7 @@ describe('admin-only controls', () => {
 
   it('switches the card dialog to type-the-name when an empty-looking board has requests (409)', async () => {
     const user = userEvent.setup()
-    const board = renderPage(ADMIN)
+    const board = renderPage(ADMIN, '/feature-requests', archivedBoards)
     vi.mocked(board.api.deleteBoard).mockRejectedValueOnce(new ApiError(409, 'board_not_empty'))
     await user.click((await card('brd_beta')).getByRole('button', { name: 'Delete Beta feedback' }))
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete' }))

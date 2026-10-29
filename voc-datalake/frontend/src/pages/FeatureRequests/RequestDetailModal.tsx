@@ -83,6 +83,7 @@ function SupportsSection({ requestId, supports, viewer, initialName }: Readonly<
   const { t } = useTranslation('featureRequests')
   const [editingId, setEditingId] = useState<string | null>(null)
   const mine = ownSupport(supports, viewer)
+  const paused = useCurrentBoard().paused
   return (
     <section className="space-y-2" aria-label={t('detail.supports')}>
       <h3 className="text-sm font-medium text-text">{t('detail.supportsCount', { count: supports.length })}</h3>
@@ -93,17 +94,28 @@ function SupportsSection({ requestId, supports, viewer, initialName }: Readonly<
             onEditingChange={(editing) => setEditingId(editing ? support.support_id : null)} />
         ))}
       </ul>
-      {mine === undefined ? <AddSupportForm requestId={requestId} initialName={initialName} /> : (
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="text-sm text-muted">{t('detail.alreadySupporting')}</p>
-          {editingId === mine.support_id ? null : (
-            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEditingId(mine.support_id)}>
-              <Pencil size={14} aria-hidden="true" />{t('detail.editMySupport')}
-            </button>
-          )}
-        </div>
-      )}
+      {paused ? <p className="text-sm text-muted">{t('boards.pausedNotice')}</p> : null}
+      {paused ? null : <SupportAction requestId={requestId} mine={mine} initialName={initialName}
+        editingId={editingId} onEdit={setEditingId} />}
     </section>
+  )
+}
+
+/** "+1", or "Edit my +1" for someone who already supports the request (an open board only). */
+function SupportAction({ requestId, mine, initialName, editingId, onEdit }: Readonly<{
+  requestId: string; mine: FeatureSupport | undefined; initialName: string; editingId: string | null; onEdit: (supportId: string) => void
+}>) {
+  const { t } = useTranslation('featureRequests')
+  if (mine === undefined) return <AddSupportForm requestId={requestId} initialName={initialName} />
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <p className="text-sm text-muted">{t('detail.alreadySupporting')}</p>
+      {editingId === mine.support_id ? null : (
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => onEdit(mine.support_id)}>
+          <Pencil size={14} aria-hidden="true" />{t('detail.editMySupport')}
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -112,6 +124,7 @@ function DetailBody({ requestId, viewer, initialName, onClose }: Readonly<{
 }>) {
   const { t } = useTranslation('featureRequests')
   const detail = useRequestDetail(requestId)
+  const board = useCurrentBoard()
   const [editing, setEditing] = useState(false)
   if (detail.isLoading) return <p className="dialog-body text-sm text-muted">{t('loading')}</p>
   if (!detail.data) {
@@ -122,7 +135,7 @@ function DetailBody({ requestId, viewer, initialName, onClose }: Readonly<{
     )
   }
   const { request, supports } = detail.data
-  const canEdit = viewer.is_admin || (viewer.email !== '' && request.reporter_email === viewer.email)
+  const canEdit = !board.paused && (viewer.is_admin || (viewer.email !== '' && request.reporter_email === viewer.email))
   return (
     <div className="dialog-body space-y-4">
       {editing ? <EditRequest request={request} onDone={() => setEditing(false)} /> : (

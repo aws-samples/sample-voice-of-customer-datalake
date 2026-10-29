@@ -163,7 +163,9 @@
     "slugTaken": "Ein anderes Board nutzt diesen Linknamen bereits.",
     "boardNotEmpty": "Dieses Board hat noch Einträge. Löschen Sie es zusammen mit seinen Einträgen oder archivieren Sie es.",
     "statusInUse": "Einträge nutzen diesen Status noch. Verschieben Sie sie zuerst in einen anderen Status.",
-    "alreadySupported": "Sie unterstützen das bereits. Bearbeiten Sie stattdessen Ihr +1."
+    "alreadySupported": "Sie unterstützen das bereits. Bearbeiten Sie stattdessen Ihr +1.",
+    "boardPaused": "Dieses Board ist pausiert: Neue Anfragen und Stimmen sind vorerst geschlossen.",
+    "boardArchived": "Dieses Board ist archiviert und nimmt keine neuen Anfragen an."
   },
   "auth": {
     "title": "Beim Feature-Wunsch-Board anmelden",
@@ -265,6 +267,22 @@
     "deleteIncomplete": "Das Board ist noch nicht vollständig gelöscht.",
     "deleteResumeHint": "Klicken Sie erneut auf Löschen, um dort weiterzumachen, wo es aufgehört hat.",
     "archived": "Archiviert",
+    "paused": "Pausiert",
+    "pausedNotice": "Pausiert: Neue Anfragen und Stimmen sind vorerst geschlossen.",
+    "lifecycle": {
+      "pause": "Pausieren",
+      "resume": "Fortsetzen",
+      "pauseBoard": "{{name}} pausieren",
+      "resumeBoard": "{{name}} fortsetzen",
+      "pauseTitle": "Dieses Board pausieren?",
+      "pauseMessage": "„{{name}}“ bleibt für die Personen sichtbar, mit denen es geteilt ist; sie können sich weiterhin anmelden und es lesen. Niemand kann eine Anfrage stellen, ein +1 hinzufügen oder etwas bearbeiten, bis Sie es fortsetzen.",
+      "archive": "Archivieren",
+      "archiveBoard": "{{name}} archivieren",
+      "archiveTitle": "Dieses Board archivieren?",
+      "archiveMessage": "Archivieren ist der Schritt vor dem Löschen. „{{name}}“ verschwindet aus der Ansicht der Personen, mit denen es geteilt ist; nur Admins sehen es noch. Seine Anfragen bleiben erhalten. Sie können es wiederherstellen oder danach löschen.",
+      "restore": "Wiederherstellen",
+      "restoreBoard": "{{name}} wiederherstellen"
+    },
     "configure": "Boards konfigurieren",
     "emptyTitle": "Noch keine Boards",
     "empty": "Mit Ihnen wurde noch kein Board geteilt.",

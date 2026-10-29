@@ -163,7 +163,9 @@
     "slugTaken": "Another board already uses this link name.",
     "boardNotEmpty": "This board still has requests. Delete it together with its requests, or archive it.",
     "statusInUse": "Requests still use this status. Move them to another status first.",
-    "alreadySupported": "You already support this. Edit your +1 instead."
+    "alreadySupported": "You already support this. Edit your +1 instead.",
+    "boardPaused": "This board is paused: new requests and votes are closed for now.",
+    "boardArchived": "This board is archived and takes no new requests."
   },
   "auth": {
     "title": "Sign in to the feature-request board",
@@ -265,6 +267,22 @@
     "deleteIncomplete": "The board is not fully deleted yet.",
     "deleteResumeHint": "Press Delete again to continue where it stopped.",
     "archived": "Archived",
+    "paused": "Paused",
+    "pausedNotice": "Paused: new requests and votes are closed for now.",
+    "lifecycle": {
+      "pause": "Pause",
+      "resume": "Resume",
+      "pauseBoard": "Pause {{name}}",
+      "resumeBoard": "Resume {{name}}",
+      "pauseTitle": "Pause this board?",
+      "pauseMessage": "“{{name}}” stays visible to the people it is shared with, and they can still sign in and read it. Nobody can post a request, add a +1 or edit until you resume it.",
+      "archive": "Archive",
+      "archiveBoard": "Archive {{name}}",
+      "archiveTitle": "Archive this board?",
+      "archiveMessage": "Archiving is the step before deleting. “{{name}}” leaves the view of the people it is shared with, and only admins still see it. Its requests are kept. You can restore it, or delete it afterwards.",
+      "restore": "Restore",
+      "restoreBoard": "Restore {{name}}"
+    },
     "configure": "Configure boards",
     "emptyTitle": "No boards yet",
     "empty": "No board is shared with you yet.",

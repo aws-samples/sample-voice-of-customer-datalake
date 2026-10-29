@@ -17,6 +17,12 @@ const LOGO_PATH = '/mock-design-logo/kirocrew.png';
 // The copy the server downloads at read time (wave 13 `logo.preview_url`), served same-origin.
 const LOGO_PREVIEW_PATH = '/mock-design-logo/preview/kirocrew.png';
 const LOGO = { source_url: LOGO_PATH, content_type: 'image/png', preview_url: LOGO_PREVIEW_PATH };
+// 5.48: the sanitised SVG kept beside a rendered logo (download-only) and the site's copied icons.
+const LOGO_SVG_PATH = '/mock-design-logo/preview/kirocrew.svg';
+const LOGO_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#8e48ff"/></svg>';
+const SITE_ICONS = [
+  { kind: 'icon', sizes: '32x32', content_type: 'image/png', url: LOGO_PREVIEW_PATH, source_url: 'https://kirocrew.dev/favicon-32.png' },
+];
 
 const KIROCREW_COLORS = [
   { name: 'primary', value: '#8e48ff' }, { name: 'primary-hover', value: '#a46cff' },
@@ -46,7 +52,8 @@ export const WEBSITE_REFERENCE = {
     guidelines_md: '- Purple is the one accent: primary buttons and links only.\n- Near-black surfaces, raised cards one step lighter.\n- Headings in Space Grotesk; code and ids in JetBrains Mono.',
     components: KIROCREW_SITE_COMPONENTS,
     // 5.39: the site's logo is an SVG, drawn to PNG by the capture browser (`rendered: true`).
-    logo: { ...LOGO, rendered: true },
+    logo: { ...LOGO, rendered: true, svg_preview_url: LOGO_SVG_PATH },
+    icons: SITE_ICONS,
     source: 'computed_styles',
   },
 };
@@ -77,13 +84,15 @@ const absolute = (host, path) => (path.startsWith('/') ? `http://${host}${path}`
 function publicLogo(logo, host) {
   if (!logo) return null;
   const preview = logo.preview_url ? { preview_url: absolute(host, logo.preview_url) } : {};
-  return { ...logo, source_url: absolute(host, logo.source_url), ...preview };
+  const svg = logo.svg_preview_url ? { svg_preview_url: absolute(host, logo.svg_preview_url) } : {};
+  return { ...logo, source_url: absolute(host, logo.source_url), ...preview, ...svg };
 }
 
 function publicReference(reference, host) {
-  const logo = reference.extracted_design?.logo;
-  if (!logo) return reference;
-  return { ...reference, extracted_design: { ...reference.extracted_design, logo: publicLogo(logo, host) } };
+  const design = reference.extracted_design;
+  if (!design?.logo && !design?.icons) return reference;
+  const icons = design.icons ? { icons: design.icons.map((icon) => ({ ...icon, url: absolute(host, icon.url) })) } : {};
+  return { ...reference, extracted_design: { ...design, logo: publicLogo(design.logo, host), ...icons } };
 }
 
 /** Moves a just-added link reference along: pending → ready after a few GETs, like the worker. */
@@ -236,8 +245,14 @@ function logoPng() {
 
 const logoCache = {};
 
-/** Serves the candidate image (built once); true when it handled the request. */
+/** Serves the candidate image (built once) and the download-only SVG copy; true when it handled the request. */
 export function serveMockLogo(req, res, url) {
+  if (req.method === 'GET' && url.pathname === LOGO_SVG_PATH) {
+    res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Content-Disposition': 'attachment; filename="logo.svg"',
+      'Cache-Control': 'no-store' });
+    res.end(LOGO_SVG);
+    return true;
+  }
   if (req.method !== 'GET' || (url.pathname !== LOGO_PATH && url.pathname !== LOGO_PREVIEW_PATH)) return false;
   res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
   logoCache.png ??= logoPng();

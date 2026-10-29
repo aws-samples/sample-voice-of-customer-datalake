@@ -574,6 +574,9 @@
       "onlyGuidelines": "Somente diretrizes",
       "logoCandidate": "Logotipo encontrado nesta referência",
       "logoRendered": "Renderizado a partir do logotipo SVG do site",
+      "downloadSvg": "Baixar SVG",
+      "icons": "Ícones do site",
+      "iconAlt": "Ícone do site",
       "apply": "Usar como design system",
       "useLogo": "Usar este logotipo",
       "logoFailed": "Não foi possível usar este logotipo. Tente novamente."
@@ -839,6 +842,7 @@
       "empty": "Ainda não há quadros. Crie um a partir de um modelo.",
       "loadFailed": "Não foi possível carregar os quadros.",
       "archived": "Arquivado",
+      "paused": "Pausado",
       "edit": "Editar",
       "editLabel": "Editar {{name}}",
       "requests_one": "{{count, number}} solicitação",
@@ -933,14 +937,11 @@
       "full": "Um quadro tem no máximo {{max, number}} status."
     },
     "lifecycle": {
-      "title": "Arquivar ou excluir",
-      "hint_one": "Este quadro tem {{count, number}} solicitação. Arquivar o oculta de todos, exceto administradores, e mantém as solicitações; excluir remove o quadro e suas solicitações.",
-      "hint_many": "Este quadro tem {{count, number}} solicitações. Arquivar o oculta de todos, exceto administradores, e mantém as solicitações; excluir remove o quadro e suas solicitações.",
-      "hint_other": "Este quadro tem {{count, number}} solicitações. Arquivar o oculta de todos, exceto administradores, e mantém as solicitações; excluir remove o quadro e suas solicitações.",
-      "saveFirst": "Salve ou descarte suas alterações primeiro.",
-      "archive": "Arquivar",
-      "restore": "Restaurar",
-      "delete": "Excluir quadro"
+      "title": "Pausar, arquivar ou excluir",
+      "hint_one": "Este quadro tem {{count, number}} solicitação. Pausar é temporário: o quadro continua legível, mas ninguém pode publicar, adicionar um +1 ou editar até você retomá-lo. Arquivar é a etapa antes de excluir: oculta o quadro de todos, exceto administradores, e mantém as solicitações. A exclusão fica disponível depois que o quadro é arquivado.",
+      "hint_many": "Este quadro tem {{count, number}} solicitações. Pausar é temporário: o quadro continua legível, mas ninguém pode publicar, adicionar um +1 ou editar até você retomá-lo. Arquivar é a etapa antes de excluir: oculta o quadro de todos, exceto administradores, e mantém as solicitações. A exclusão fica disponível depois que o quadro é arquivado.",
+      "hint_other": "Este quadro tem {{count, number}} solicitações. Pausar é temporário: o quadro continua legível, mas ninguém pode publicar, adicionar um +1 ou editar até você retomá-lo. Arquivar é a etapa antes de excluir: oculta o quadro de todos, exceto administradores, e mantém as solicitações. A exclusão fica disponível depois que o quadro é arquivado.",
+      "saveFirst": "Salve ou descarte suas alterações primeiro."
     },
     "problems": {
       "nameRequired": "O quadro precisa de um nome.",

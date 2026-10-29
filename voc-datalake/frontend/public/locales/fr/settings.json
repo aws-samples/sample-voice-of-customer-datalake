@@ -574,6 +574,9 @@
       "onlyGuidelines": "Consignes uniquement",
       "logoCandidate": "Logo trouvé sur cette référence",
       "logoRendered": "Rendu à partir du logo SVG du site",
+      "downloadSvg": "Télécharger le SVG",
+      "icons": "Icônes du site",
+      "iconAlt": "Icône du site",
       "apply": "Utiliser comme système de design",
       "useLogo": "Utiliser ce logo",
       "logoFailed": "Impossible d’utiliser ce logo. Réessayez."
@@ -839,6 +842,7 @@
       "empty": "Aucun tableau pour l’instant. Créez-en un à partir d’un modèle.",
       "loadFailed": "Les tableaux n’ont pas pu être chargés.",
       "archived": "Archivé",
+      "paused": "En pause",
       "edit": "Modifier",
       "editLabel": "Modifier {{name}}",
       "requests_one": "{{count, number}} demande",
@@ -933,14 +937,11 @@
       "full": "Un tableau a au maximum {{max, number}} statuts."
     },
     "lifecycle": {
-      "title": "Archiver ou supprimer",
-      "hint_one": "Ce tableau contient {{count, number}} demande. L’archiver le masque à tous sauf aux administrateurs et conserve ses demandes ; le supprimer efface le tableau et ses demandes.",
-      "hint_many": "Ce tableau contient {{count, number}} demandes. L’archiver le masque à tous sauf aux administrateurs et conserve ses demandes ; le supprimer efface le tableau et ses demandes.",
-      "hint_other": "Ce tableau contient {{count, number}} demandes. L’archiver le masque à tous sauf aux administrateurs et conserve ses demandes ; le supprimer efface le tableau et ses demandes.",
-      "saveFirst": "Enregistrez ou annulez d’abord vos modifications.",
-      "archive": "Archiver",
-      "restore": "Restaurer",
-      "delete": "Supprimer le tableau"
+      "title": "Mettre en pause, archiver ou supprimer",
+      "hint_one": "Ce tableau contient {{count, number}} demande. La pause est temporaire : le tableau reste lisible, mais personne ne peut publier, ajouter un +1 ni modifier tant que vous ne l’avez pas repris. L’archivage est l’étape avant la suppression : il masque le tableau à tous sauf aux administrateurs et conserve ses demandes. La suppression est proposée une fois le tableau archivé.",
+      "hint_many": "Ce tableau contient {{count, number}} demandes. La pause est temporaire : le tableau reste lisible, mais personne ne peut publier, ajouter un +1 ni modifier tant que vous ne l’avez pas repris. L’archivage est l’étape avant la suppression : il masque le tableau à tous sauf aux administrateurs et conserve ses demandes. La suppression est proposée une fois le tableau archivé.",
+      "hint_other": "Ce tableau contient {{count, number}} demandes. La pause est temporaire : le tableau reste lisible, mais personne ne peut publier, ajouter un +1 ni modifier tant que vous ne l’avez pas repris. L’archivage est l’étape avant la suppression : il masque le tableau à tous sauf aux administrateurs et conserve ses demandes. La suppression est proposée une fois le tableau archivé.",
+      "saveFirst": "Enregistrez ou annulez d’abord vos modifications."
     },
     "problems": {
       "nameRequired": "Le tableau a besoin d’un nom.",

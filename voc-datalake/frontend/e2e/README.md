@@ -27,13 +27,14 @@ A serial run of the whole suite takes hours. `npm run e2e:prod:sharded -- 6` (or
 | `E2E_USER_USER` / `E2E_USER_PASSWORD` | A user in the `users` group |
 | `E2E_OUT` (optional) | Evidence directory (default `e2e/e2e-output`) |
 | `E2E_AUTH_DIR` (optional) | Saved sessions (default `$E2E_OUT/.auth`, or `e2e/.auth` without `E2E_OUT`) |
+| `E2E_KEEP_AUTH=1` (optional) | Keep the saved sessions after the run (default: the cleanup deletes the run's own `.auth` folder) |
 | `E2E_SCREENS` (optional) | Screenshot directory (default `$E2E_OUT/screens`) |
 | `E2E_TRACK` (optional) | QA track tag (`s1`…). Run ids become `<track>-<epoch ms>`; the opt-in leftover sweep then reaches only `e2e-<track>-…` names |
 | `E2E_RAW_BUCKET` (optional) | The raw-data bucket for the s3 avatar sweep proof; default: the `RawDataBucketName` output of `E2E_CORE_STACK` (default `VocCoreStack`), read with a read-only `describe-stacks`. Without either, s3 step 12 still deletes the project but skips the S3 proof and says why |
 | `E2E_CORE_STACK` (optional) | The core stack name for that lookup (`<prefix>-VocCoreStack` for a prefixed deployment) |
 | `E2E_SWEEP_LEFTOVERS` (optional) | `1`: cleanup also deletes leftovers of earlier aborted runs (default: only this run's ledger entries) |
 
-Credentials are read from the environment only. Sessions are saved to `$E2E_OUT/.auth/` (`e2e/.auth/` without `E2E_OUT`; `E2E_AUTH_DIR` overrides) in a mode-700 directory, each file mode 600, and are gitignored, because they hold tokens. Following `E2E_OUT` keeps parallel runs from overwriting each other's sessions. Nothing prints a password or a token.
+Credentials are read from the environment only. Sessions are saved to `$E2E_OUT/.auth/` (`e2e/.auth/` without `E2E_OUT`; `E2E_AUTH_DIR` overrides) in a mode-700 directory, each file mode 600, and are gitignored, because they hold tokens. Following `E2E_OUT` keeps parallel runs from overwriting each other's sessions. When the run's cleanup ends (pass or fail) it deletes that `.auth` folder, unless `E2E_AUTH_DIR` named it or `E2E_KEEP_AUTH=1` is set, so no token stays on disk after a run; the working-tree secret scan (`scripts/gitleaks-tree.sh`) skips `.auth/` like the other gitignored folders. Nothing prints a password or a token.
 
 ### Test traffic tag (5.38)
 

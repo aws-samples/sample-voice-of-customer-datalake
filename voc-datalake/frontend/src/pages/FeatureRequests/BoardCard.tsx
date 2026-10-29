@@ -1,18 +1,18 @@
 /**
  * @fileoverview One feedback board as a card: its name, template, who may use it, how many
  * requests it holds, Copy link (the board's share link) and Open; for an app admin also Edit (the
- * board editor in Administration) and Delete (DeleteBoardDialog: a board with requests goes with them).
+ * board editor in Administration) and BoardLifecycleButtons (Pause / Resume, Archive / Restore, and
+ * Delete once archived).
  *
  * @module pages/FeatureRequests/BoardCard
  */
-import { ArrowRight, Copy, Pencil, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { ArrowRight, Copy, Pencil } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { featureRequestKeys } from '../../api/featureRequestsApi'
 import { formatCount } from '../../utils/numberFormat'
-import DeleteBoardDialog from './DeleteBoardDialog'
+import BoardLifecycleButtons from './BoardLifecycleButtons'
 import { boardEditorPath, boardPagePath, useBoardHost } from './boardContext'
 import type { FeatureBoard } from '../../api/featureBoardsSchema'
 import { AUDIENCE_LABELS, TEMPLATE_LABELS } from './boardLabels'
@@ -32,9 +32,7 @@ function AdminActions({ board }: Readonly<{ board: FeatureBoard }>) {
   const { t } = useTranslation('featureRequests')
   const { api, session } = useBoardHost()
   const queryClient = useQueryClient()
-  const [confirming, setConfirming] = useState(false)
-  const onDeleted = async () => {
-    setConfirming(false)
+  const refresh = async () => {
     await queryClient.invalidateQueries({ queryKey: featureRequestKeys.root(session) })
   }
   return (
@@ -42,11 +40,7 @@ function AdminActions({ board }: Readonly<{ board: FeatureBoard }>) {
       <Link className="btn btn-ghost btn-sm" to={boardEditorPath(board.board_id)} aria-label={t('boards.editBoard', { name: board.name })}>
         <Pencil size={14} aria-hidden="true" />{t('boards.edit')}
       </Link>
-      <button type="button" className="btn btn-ghost btn-sm text-danger" onClick={() => setConfirming(true)}
-        aria-label={t('boards.deleteBoard', { name: board.name })}>
-        <Trash2 size={14} aria-hidden="true" />{t('actions.delete')}
-      </button>
-      {confirming ? <DeleteBoardDialog board={board} api={api} onCancel={() => setConfirming(false)} onDeleted={onDeleted} /> : null}
+      <BoardLifecycleButtons board={board} api={api} onSaved={refresh} onDeleted={refresh} />
     </>
   )
 }
@@ -70,6 +64,7 @@ export default function BoardCard({ board, isAdmin, onCopy }: Readonly<{
         <div className="flex flex-wrap gap-1">
           <span className="badge badge-accent">{t(TEMPLATE_LABELS[board.template].labelKey)}</span>
           {board.archived ? <span className="badge badge-muted">{t('boards.archived')}</span> : null}
+          {board.paused && !board.archived ? <span className="badge badge-warn">{t('boards.paused')}</span> : null}
         </div>
       </div>
       <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
