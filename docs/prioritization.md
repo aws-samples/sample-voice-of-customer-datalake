@@ -81,6 +81,8 @@ voc-aggregates, partition `PRIORITIZATION`:
   admin's name or username, never the email).
 - Ballots unchanged: `sk=BALLOT#{row}#user:{sub}` or `BALLOT#{row}#anon:{id}`, each metric a
   top-level number named by its id. An archived metric's values stay on the ballot.
+- A row (`sk=ROW#{row}`) may carry `lineage_ack = {document_ids (sorted), acknowledged_at,
+  acknowledged_by}`: "Keep both versions", below. `acknowledged_by` is never published.
 
 ## Routes
 
@@ -92,6 +94,27 @@ voc-aggregates, partition `PRIORITIZATION`:
 | PATCH | `/projects/prioritization` | signed-in | scores active metric ids only (1–5, clamped as before; 0/null = leave unchanged); an archived or unknown metric id → 400 |
 | GET | `/voting-sessions/{id}/config` | public | adds `axes: [{id, label, description, low_label, high_label, direction, builtin}]` — active metrics, no weights (`[]` for a closed or unknown room) |
 | POST | `/voting-sessions/{id}/submit` | public | scores active metric ids only; an archived or unknown id → 400 `reason: invalid` |
+
+## Keep both versions (lineage acknowledgement)
+
+A row holding two versions of one document type (PRD v1 + PRD v2), or a document built from another
+version of a type the row also holds, is labelled **Crosses generations**. The label is advisory and the
+row stays scorable. When the row is composed that way on purpose, anyone who may edit its project can open
+the row and press **Keep both versions**: the row then shows a neutral **Kept on purpose** label instead of
+the warning, and **Undo** brings the warning back. Balloted (locked) rows can be marked too, because the
+mark changes no document and no ballot.
+
+`PUT /projects/prioritization/rows/{row_id}/lineage-ack` with `{project_id, acknowledged, document_ids}`
+(edit access on the project). `document_ids` is the set the reviewer was looking at: a mark is refused
+with **409** unless it equals the row's stored set (also when a recompose races the request), so a mark
+always describes documents somebody saw. `acknowledged: false` removes the mark. 400 for a malformed body,
+404 for a row that does not exist or belongs to another project. The row payload (`GET
+/projects/prioritization`, every row write) carries `lineage_ack: {document_ids, acknowledged_at} | null`.
+
+**The mark lapses on its own.** It names the document set it was given for, and the page applies it only
+while the row holds exactly that set (`frontend/src/pages/Prioritization/lineageAck.ts`). Recompose the
+row and the warning comes back, without anything clearing the stored record. Server half:
+`lambda/shared/row_lineage_ack.py`.
 
 **A room vote ends with its row or project.** Deleting a row (`DELETE /projects/prioritization/rows/{id}`)
 or a project (`DELETE /projects/{id}`) closes the row's open session (`shared/voting_session_close.py`,

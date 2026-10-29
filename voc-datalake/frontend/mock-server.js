@@ -930,7 +930,8 @@ function rowBallots(rowId) {
 }
 
 function rowPayload(row) {
-  return { ...row, is_frozen: rowBallots(row.row_id).some(isVote) };
+  const ack = row.lineage_ack ? { document_ids: row.lineage_ack.document_ids, acknowledged_at: row.lineage_ack.acknowledged_at } : null;
+  return { ...row, is_frozen: rowBallots(row.row_id).some(isVote), lineage_ack: ack };
 }
 
 function aggregateFor(rowId) {
@@ -1110,6 +1111,33 @@ function recomposeRow(rowId, body) {
   }
   row.document_ids = parsed.documentIds;
   return { status: 200, payload: { success: true, created: false, row: rowPayload(row) } };
+}
+
+/**
+ * `PUT /projects/prioritization/rows/{id}/lineage-ack` (#399, shared/row_lineage_ack.py):
+ * `{project_id, acknowledged, document_ids}`. A mark needs the row's own document set
+ * (409 otherwise) and is stored sorted; frozen rows may be marked.
+ */
+function setRowLineageAck(rowId, body) {
+  const refuse = (status, error) => ({ status, payload: { success: false, error } });
+  const ids = body?.document_ids;
+  if (typeof body?.acknowledged !== 'boolean') return refuse(400, 'acknowledged must be true or false');
+  if (!Array.isArray(ids) || ids.length === 0 || ids.length > 25
+      || ids.some((id) => typeof id !== 'string' || id.trim() === '') || new Set(ids).size !== ids.length) {
+    return refuse(400, 'document_ids must be a non-empty list of distinct document id strings');
+  }
+  const row = mockPrioritizationRows[rowId];
+  if (!row || row.project_id !== body.project_id) return refuse(404, 'Prioritization row not found');
+  if (body.acknowledged) {
+    const held = new Set(row.document_ids);
+    if (held.size !== ids.length || ids.some((id) => !held.has(id))) {
+      return refuse(409, "This row's documents changed since the page was loaded; reload the page and try again");
+    }
+    row.lineage_ack = { document_ids: [...ids].sort(), acknowledged_at: new Date().toISOString() };
+  } else {
+    delete row.lineage_ack;
+  }
+  return { status: 200, payload: { success: true, row: rowPayload(row) } };
 }
 
 function deleteRow(rowId) {
@@ -1457,6 +1485,14 @@ function handleCategoryRoutes(req, res, url, send) {
 }
 
 function handleRowRoutes(req, res, url, send) {
+  const ackMatch = url.pathname.match(/^\/projects\/prioritization\/rows\/([^/]+)\/lineage-ack$/);
+  if (ackMatch && req.method === 'PUT') {
+    collectJson(req, res, (body) => {
+      const result = setRowLineageAck(decodeURIComponent(ackMatch[1]), body);
+      send(result.status, result.payload);
+    });
+    return true;
+  }
   const rowMatch = url.pathname.match(/^\/projects\/prioritization\/rows\/([^/]+)$/);
   if (rowMatch && rowMatch[1] !== 'compose' && (req.method === 'PATCH' || req.method === 'DELETE')) {
     const rowId = decodeURIComponent(rowMatch[1]);

@@ -25,11 +25,34 @@
  */
 
 import clsx from 'clsx'
-import { GitBranch, History } from 'lucide-react'
+import { BadgeCheck, GitBranch, History } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { LINEAGE_REASON_KEY, LINEAGE_STYLE } from './rowLineage'
 import type { RowLineage } from './rowLineage'
 import type { ReactElement } from 'react'
+import type { TFunction } from 'i18next'
+
+/**
+ * The words and tint a row's lineage renders with — the ACKNOWLEDGED crossing ("Keep
+ * both versions", #399) included, which is a quiet neutral label rather than the amber
+ * warning. The acknowledged keys are read verbatim here so `scripts/i18n-check.mjs`
+ * collects them.
+ */
+function lineageText(lineage: RowLineage, t: TFunction): {
+  readonly label: string
+  readonly reason: string
+  readonly color: string
+} {
+  if (lineage.acknowledged === true) {
+    return {
+      label: t('lineage.acknowledged'),
+      reason: t('lineage.acknowledgedReason'),
+      color: 'bg-bg-hover text-text',
+    }
+  }
+  const style = LINEAGE_STYLE[lineage.state]
+  return { label: t(style.labelKey), reason: t(LINEAGE_REASON_KEY[lineage.reason].sentenceKey), color: style.color }
+}
 
 /**
  * Which lineage state this row is in, on the resting row beside the priority band.
@@ -61,22 +84,23 @@ import type { ReactElement } from 'react'
  */
 export function RowLineageBadge({ lineage }: { readonly lineage: RowLineage }): ReactElement {
   const { t } = useTranslation('prioritization')
-  const style = LINEAGE_STYLE[lineage.state]
-  // Both keys are looked up OUTSIDE `t(...)` — from the two tables in
-  // `rowLineage`, whose entries are namespace-qualified literals — because
-  // `scripts/i18n-check.mjs` only collects a key it reads verbatim. A key
+  // Every key is looked up OUTSIDE `t(...)` — from the two tables in `rowLineage`,
+  // whose entries are namespace-qualified literals, or verbatim in `lineageText` —
+  // because `scripts/i18n-check.mjs` only collects a key it reads verbatim. A key
   // assembled inside the call is reported unused and becomes a deletion
   // candidate, which lands a raw key path on every row.
-  const reason = t(LINEAGE_REASON_KEY[lineage.reason].sentenceKey)
+  const { label, reason, color } = lineageText(lineage, t)
+  const acknowledged = lineage.acknowledged === true
+  const Icon = acknowledged ? BadgeCheck : GitBranch
   return (
     <span
       data-testid="row-lineage"
-      data-lineage={lineage.state}
+      data-lineage={acknowledged ? 'acknowledged' : lineage.state}
       title={reason}
-      className={clsx('inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full whitespace-nowrap', style.color)}
+      className={clsx('inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full whitespace-nowrap', color)}
     >
-      <GitBranch size={12} aria-hidden="true" />
-      {t(style.labelKey)}
+      <Icon size={12} aria-hidden="true" />
+      {label}
       {/* Announced, not only hovered — see the module docstring. */}
       <span className="sr-only"> {reason}</span>
     </span>
@@ -150,13 +174,14 @@ export function RowStaleBadge({ lineage }: { readonly lineage: RowLineage }): Re
  */
 export function RowLineageNote({ lineage }: { readonly lineage: RowLineage }): ReactElement {
   const { t } = useTranslation('prioritization')
+  const { label, reason } = lineageText(lineage, t)
   // The label only: what it means is explained ONCE, in "How this is scored" above
   // the list, instead of a paragraph inside every expanded row.
   return (
     <div data-testid="row-lineage-note" className="mt-1 space-y-1">
-      <p className="flex items-start gap-1.5 text-xs text-text" title={t(LINEAGE_REASON_KEY[lineage.reason].sentenceKey)}>
+      <p className="flex items-start gap-1.5 text-xs text-text" title={reason}>
         <GitBranch size={14} className="mt-0.5 flex-shrink-0 text-muted" aria-hidden="true" />
-        {t('explainer.rowNote', { label: t(LINEAGE_STYLE[lineage.state].labelKey) })}
+        {t('explainer.rowNote', { label })}
       </p>
       {/* The stale sentence NAMES "Add row" — the button below it — rather than
           leaving a reader to infer that a locked row with superseded documents has
