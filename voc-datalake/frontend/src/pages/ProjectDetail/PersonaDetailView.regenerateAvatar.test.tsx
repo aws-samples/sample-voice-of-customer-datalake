@@ -6,8 +6,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { renderWithQueryClient } from '../../test/query-client'
-import PersonaDetailView from './PersonaDetailView'
+import { renderPersonaDetail } from './persona-detail-fixtures'
 import type { ProjectPersona } from '../../api/projectTypes'
 
 const regeneratePersonaAvatar = vi.hoisted(() => vi.fn<(projectId: string, personaId: string) => Promise<{ avatar_url: string | null }>>())
@@ -19,10 +18,7 @@ const persona: ProjectPersona = {
 }
 
 function renderDetail(canEdit = true) {
-  return renderWithQueryClient(
-    <PersonaDetailView projectId="proj_1" persona={persona} canEdit={canEdit}
-      onEdit={vi.fn()} onDelete={vi.fn()} onSaveNotes={vi.fn()} isDeleting={false} isSavingNotes={false} />,
-  )
+  return renderPersonaDetail(persona, { canEdit })
 }
 
 /** The header button only asks; the dialog's button starts the image generation. */

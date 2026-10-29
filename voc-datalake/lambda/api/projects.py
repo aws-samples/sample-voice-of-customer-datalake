@@ -3657,6 +3657,10 @@ def run_research(project_id: str, body: dict, *, category_scope: dict | None) ->
             full_report = full_report[:max_content_size] + "\n\n---\n\n*[Report truncated due to size limits]*"
             logger.warning(f"Research report truncated from {len(full_report)} to {max_content_size} chars")
 
+        # Every fetched review reaches this fallback's prompt untrimmed, so all are the corpus (#236).
+        feedback_fields = {'feedback_count': len(feedback_items),
+                           **input_feedback_fields(input_feedback_ids(feedback_items))}
+
         def build(research_id: str) -> dict:
             return {
                 'pk': f'PROJECT#{project_id}',
@@ -3668,9 +3672,7 @@ def run_research(project_id: str, body: dict, *, category_scope: dict | None) ->
                 'title': research_document_title(body.get('title'), research_question, now_dt),
                 'question': research_question,
                 'content': full_report,
-                'feedback_count': len(feedback_items),
-                # Every fetched review reaches this fallback's prompt untrimmed (#236).
-                **input_feedback_fields(input_feedback_ids(feedback_items)),
+                **feedback_fields,
                 'date_basis': date_basis,
                 'created_at': now,
             }
