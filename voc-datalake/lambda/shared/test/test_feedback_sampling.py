@@ -205,6 +205,53 @@ class TestSampleEvenly:
         assert sample_evenly(rows, small) == sample_evenly(rows, large)[:small]
 
 
+def _banded(day: str, bands: list[str | None]) -> list[dict]:
+    """One day's rows in read order; ``None`` = stored before the band existed."""
+    return [{'n': f'{day}-{i}', 'date': day, **({'usefulness': band} if band else {})}
+            for i, band in enumerate(bands)]
+
+
+class TestUsefulnessTiebreak:
+    """The band only orders equal candidates (rows of one day); it never filters (docs/data-quality.md)."""
+
+    def test_a_day_gives_its_share_to_its_most_useful_rows(self):
+        rows = _banded('d1', ['low', 'low', None, 'medium', 'high', 'low', 'low', 'high'])
+        assert [row['usefulness'] for row in sample_evenly(rows, 3)] == ['high', 'high', 'medium']
+
+    def test_low_rows_are_still_picked_when_they_are_all_a_day_has(self):
+        rows = _banded('d1', ['high'] * 4) + _banded('d2', ['low'] * 4)
+        picked = sample_evenly(rows, 4)
+        assert Counter(row['date'] for row in picked) == {'d1': 2, 'd2': 2}
+        assert {row['usefulness'] for row in picked if row['date'] == 'd2'} == {'low'}
+
+    def test_every_day_keeps_exactly_its_even_share(self):
+        rows = _banded('d1', ['low'] * 6 + ['high'] * 2) + _banded('d2', ['high'] * 8)
+        plain = sample_evenly([{'date': row['date']} for row in rows], 6)
+        tiebroken = sample_evenly(rows, 6)
+        assert Counter(row['date'] for row in tiebroken) == Counter(row['date'] for row in plain)
+
+    def test_unrated_comes_after_every_band_but_is_not_dropped(self):
+        rows = _banded('d1', [None, None, 'low', None])
+        picked = sample_evenly(rows, 4)
+        assert picked[0]['usefulness'] == 'low'
+        assert len(picked) == 4
+
+    def test_one_band_throughout_is_the_plain_even_sample(self):
+        rows = _banded('d1', ['medium'] * 10)
+        assert [row['n'] for row in sample_evenly(rows, 5)] == [row['n'] for row in sample_evenly(
+            [{'n': row['n']} for row in rows], 5)]
+
+    @pytest.mark.parametrize(('small', 'large'), [(1, 5), (3, 8), (7, 16)])
+    def test_the_tiebroken_sample_stays_nested(self, small, large):
+        bands = ['low', 'high', None, 'medium']
+        rows = _banded('d1', [bands[i % 4] for i in range(9)]) + _banded('d2', [bands[(i * 3) % 4] for i in range(7)])
+        assert sample_evenly(rows, small) == sample_evenly(rows, large)[:small]
+
+    def test_a_full_sample_is_every_row_once(self):
+        rows = _banded('d1', ['low', 'high', None]) + _banded('d2', ['medium', 'low'])
+        assert sorted(row['n'] for row in sample_evenly(rows, 10)) == sorted(row['n'] for row in rows)
+
+
 class TestPagesTileOneSample:
     """query_feedback_by_date(offset, limit): pages are disjoint slices of ONE even sample."""
 
