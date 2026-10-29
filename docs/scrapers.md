@@ -190,6 +190,12 @@ The same URL prefix also serves the import routes, from a second Lambda
 | POST | `/scrapers/manual/confirm` | Admin | Import the parsed reviews |
 | POST | `/scrapers/manual/csv-upload` | Admin | Import CSV rows (column mapping, source profile) |
 | POST | `/scrapers/manual/json-upload` | Admin | Import JSON items |
+| GET | `/scrapers/manual/history` | Admin | Import runs of the last 90 days, newest first (`?limit=`, `?cursor=`); see [import-history.md](import-history.md) |
+| GET | `/scrapers/manual/history/{run_id}` | Admin | One import run with its warnings and errors |
+
+Every paste confirm, CSV upload, JSON upload (including the AI assistant's `import_reviews`) and S3
+import file writes one run record; the **Import history** section of the Data sources page lists them
+([import-history.md](import-history.md)).
 
 S3 bulk import (`/s3-import/*`, `s3_import_handler.py`) is admin-only on every
 route for the same reason — see `docs/data-lake-structure.md`.

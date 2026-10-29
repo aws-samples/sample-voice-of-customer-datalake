@@ -196,7 +196,7 @@ voice-of-customer-datalake/       # Root repository
 | Table | PK | SK | Purpose |
 |-------|----|----|---------|
 | `voc-feedback` | `SOURCE#{platform}` | `FEEDBACK#{id}` | Processed feedback with GSIs for date, category, urgency; optional `author`, `title`, `metadata`, `dimensions`, `dimension_sources`, `tags`, `pii_policy`, `usefulness` (`low\|medium\|high` heuristic band, absent = unrated, docs/data-quality.md) — kept while the platform runs (no TTL), deleted with the stack; only `voc-retention` deletes at runtime (opt-in per source profile) |
-| `voc-aggregates` | `METRIC#{type}` | `{date}` | Pre-computed metrics (no TTL), brand config, category config, `CATEGORY_ACCESS`/`USER#{sub}` (+ `sources`), `SETTINGS#dimensions`/`SETTINGS#sources` `config`, `METRIC#daily_dim…`/`METRIC#daily_tag#…`/`METRIC#daily_usefulness#<source>#<band>` (docs/data-quality.md), `JOB#erasure`/`er_…` (+ `SRCLOCK#{source}`, the whole-source erasure lock), `AUDIT#retention`, `JOB#category_reprocess`/`rp_…`, `METRIC#meta`/`earliest_date`, `data_version`, `config_version` (cache version counters, docs/caching.md), form configs — METRIC# rows kept while the platform runs (no TTL), deleted with the stack |
+| `voc-aggregates` | `METRIC#{type}` | `{date}` | Pre-computed metrics (no TTL), brand config, category config, `CATEGORY_ACCESS`/`USER#{sub}` (+ `sources`), `SETTINGS#dimensions`/`SETTINGS#sources` `config`, `METRIC#daily_dim…`/`METRIC#daily_tag#…`/`METRIC#daily_usefulness#<source>#<band>` (docs/data-quality.md), `JOB#erasure`/`er_…` (+ `SRCLOCK#{source}`, the whole-source erasure lock), `AUDIT#retention`, `JOB#category_reprocess`/`rp_…`, `METRIC#meta`/`earliest_date`, `data_version`, `config_version` (cache version counters, docs/caching.md), `IMPORT_RUN`/`{started_at}#{run_id}` + `IMPORT_RUN#{run_id}`/`RUN` (import history, `ttl` 90 days, docs/import-history.md), form configs — METRIC# rows kept while the platform runs (no TTL), deleted with the stack |
 | `voc-watermarks` | `{source}` | - | Ingestion state tracking |
 | `voc-projects` | `PROJECT#{id}` | `META\|PERSONA#{id}\|PRD#{id}\|PRFAQ#{id}` | Projects with personas, PRDs, PR/FAQs — kept while the platform runs (no TTL), deleted with the stack |
 | `voc-jobs` | `PROJECT#{id}` | `JOB#{id}` | Long-running async jobs (research, persona generation) |
@@ -596,6 +596,12 @@ the app pool). Assistant tools on `/participants` (pack `participants`, card-onl
 | POST | `/scrapers/manual/confirm` | Import the parsed reviews (admin) |
 | POST | `/scrapers/manual/csv-upload` | Import CSV rows (admin) |
 | POST | `/scrapers/manual/json-upload` | Import JSON items (admin) |
+| GET | `/scrapers/manual/history` | Import runs, newest first, `?limit=` (1-100) `&cursor=` (admin; docs/import-history.md) |
+| GET | `/scrapers/manual/history/{run_id}` | One import run with its warnings and errors (admin; 404 unknown/expired) |
+
+Paste confirm, CSV and JSON upload (incl. the assistant's `import_reviews`, tagged `import_origin: 'assistant'`) and the
+S3 import ingestor (one per file) write a run record through `lambda/shared/import_runs.py`; a failed write never
+fails the import.
 
 ### S3 Import (s3_import_handler.py) — ADMIN ONLY, every route (module middleware; owner decision 2026-10-08, #242)
 | Method | Path | Description |
