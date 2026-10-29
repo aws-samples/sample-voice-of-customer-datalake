@@ -1,5 +1,5 @@
 /**
- * @fileoverview Reprocess one imported S3 file (issue #144, docs/s3-import.md).
+ * @fileoverview Reprocess one imported S3 file (issue #144, docs/data-lake-structure.md → Reprocessing a file).
  *
  * `POST /s3-import/reprocess {key}` re-runs the file through the s3_import ingestor
  * and answers 202 with the run; `GET /s3-import/reprocess/{run_id}` polls it. The run
