@@ -27,12 +27,12 @@ from typing import Any, Final
 
 from boto3.dynamodb.conditions import Attr, Key
 
+from shared.indexes import AGGREGATES_BY_METRIC_TYPE_INDEX
 from shared.metric_keys import SOURCE_PREFIX
 from shared.retention import ERASURE_JOB_PK
 
-__all__ = ['STALE_AFTER', 'blocking_job', 'known_sources']
+__all__ = ['blocking_job', 'known_sources']
 
-METRIC_TYPE_INDEX: Final = 'gsi1-by-metric-type'
 SOURCE_METRIC_TYPE: Final = 'source'
 LIVE_STATUSES: Final = ('queued', 'running')
 STALE_AFTER: Final = timedelta(hours=1)
@@ -54,7 +54,7 @@ def known_sources(table: Any, profile_ids: Iterable[str]) -> list[str]:
     """Sorted source ids a whole-source erasure may name: the profiles plus every counted source."""
     known = set(profile_ids)
     rows = _paged(table.query, {
-        'IndexName': METRIC_TYPE_INDEX,
+        'IndexName': AGGREGATES_BY_METRIC_TYPE_INDEX,
         'KeyConditionExpression': Key('metric_type').eq(SOURCE_METRIC_TYPE),
         'ProjectionExpression': 'pk',
     })

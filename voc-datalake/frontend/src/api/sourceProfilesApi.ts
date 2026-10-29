@@ -91,7 +91,7 @@ export function defaultSourceProfile(id: string, label = id): SourceProfile {
 export const ERASURE_FIELDS = ['author', 'source_id', 'csv_row_id', 'email'] as const
 export type ErasureField = typeof ERASURE_FIELDS[number]
 /** A job's field: a person field, or `source` for a whole-source erasure. */
-export const SOURCE_ERASURE_FIELD = 'source'
+const SOURCE_ERASURE_FIELD = 'source'
 const JOB_FIELDS = [...ERASURE_FIELDS, SOURCE_ERASURE_FIELD] as const
 export type ErasureJobField = typeof JOB_FIELDS[number]
 const ERASURE_PHASES = ['items', 'raw'] as const
