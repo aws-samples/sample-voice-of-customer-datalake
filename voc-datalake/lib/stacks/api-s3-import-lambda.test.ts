@@ -1,5 +1,5 @@
 /**
- * The S3 import API's reprocess grants (issue #144, api-s3-import-lambda.ts, docs/s3-import.md).
+ * The S3 import API's reprocess grants (issue #144, api-s3-import-lambda.ts, docs/data-lake-structure.md).
  *
  * `POST /s3-import/reprocess` invokes exactly the s3_import ingestor, by name, and
  * writes only its `SOURCE_RUN#s3_import` run rows. The partition is read from the

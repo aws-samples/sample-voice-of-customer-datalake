@@ -1,5 +1,5 @@
 """
-Reprocess runs of the S3 import ingestor (issue #144, docs/s3-import.md).
+Reprocess runs of the S3 import ingestor (issue #144, docs/data-lake-structure.md → Reprocessing a file).
 
 `POST /s3-import/reprocess` (s3_import_handler.py) re-runs one imported file through
 the `s3_import` ingestor. The run is recorded in the SAME place as every manual

@@ -1,5 +1,5 @@
 /**
- * @fileoverview Reprocess one imported file (issue #144, docs/s3-import.md).
+ * @fileoverview Reprocess one imported file (issue #144, docs/data-lake-structure.md → Reprocessing a file).
  *
  * A confirmation that explains what a reprocess does (missing rows are imported
  * again, duplicates are skipped, stored rows are NOT re-enriched: that is
