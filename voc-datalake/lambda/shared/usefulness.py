@@ -39,7 +39,6 @@ __all__ = [
     'USEFULNESS_UNRATED',
     'item_usefulness',
     'stored_band',
-    'usefulness_band',
 ]
 
 USEFULNESS_FIELD: Final = 'usefulness'
