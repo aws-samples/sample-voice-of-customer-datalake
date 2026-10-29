@@ -314,7 +314,19 @@
     "uploadingTo": "업로드 대상: {{source}}",
     "alreadyExists": "같은 이름의 파일이 이미 있습니다. 다시 업로드하려면 먼저 삭제하세요.",
     "uploadStatus": "업로드가 거부되었습니다 (HTTP {{status}})",
-    "adminOnly": "S3 가져오기 버킷에서 파일을 가져올 수 있는 사람은 관리자뿐입니다."
+    "adminOnly": "S3 가져오기 버킷에서 파일을 가져올 수 있는 사람은 관리자뿐입니다.",
+    "reprocess": {
+      "action": "파일 재처리",
+      "confirmTitle": "{{filename}} 파일을 재처리할까요?",
+      "confirmMessage": "이 파일을 소스 {{source}}(으)로 가져오기 파이프라인에 다시 보냅니다. 데이터 레이크에 이미 있는 행은 중복으로 건너뛰므로 누락된 행만 가져옵니다. 저장된 행은 다시 보강되지 않습니다. 다시 분류하려면 관리 → 분류 체계의 \"기존 피드백 재처리\"를 사용하세요.",
+      "confirm": "재처리",
+      "running": "{{filename}} 재처리 중...",
+      "failed": "{{filename}} 재처리에 실패했습니다. 자세한 내용은 시스템 로그를 확인하세요.",
+      "startFailed": "재처리를 시작할 수 없습니다: {{error}}",
+      "dismiss": "닫기",
+      "completed_one": "{{filename}} 재처리 완료: {{count, number}}개 행을 파이프라인에 보냈습니다(중복은 그곳에서 건너뜁니다).",
+      "completed_other": "{{filename}} 재처리 완료: {{count, number}}개 행을 파이프라인에 보냈습니다(중복은 그곳에서 건너뜁니다)."
+    }
   },
   "socialFeed": {
     "all": "모두",

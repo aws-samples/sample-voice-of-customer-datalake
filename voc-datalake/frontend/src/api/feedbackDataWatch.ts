@@ -1,6 +1,7 @@
 /**
  * @fileoverview Refresh the feedback family when a background job that rewrites
- * feedback finishes: a category reprocess, an erasure, an S3 import file.
+ * feedback finishes: a category reprocess, an erasure, an S3 import file, an S3
+ * import reprocess run.
  *
  * Those jobs run server-side for minutes and their panels already poll them, so
  * the moment a polled job leaves its running state is the moment the stored
@@ -45,11 +46,20 @@ const filesOf = (raw: unknown): Tracked[] => FilesEnvelopeSchema.parse(raw).file
   return parsed.success ? [{ id: parsed.data.key, status: parsed.data.status }] : []
 })
 
+const RunSchema = z.object({ run_id: z.string().min(1), status: z.string() })
+
+/** An S3 import reprocess run (api/s3ImportReprocessApi.ts): imported rows land when it completes. */
+const runOf = (raw: unknown): Tracked[] => {
+  const parsed = RunSchema.safeParse(raw)
+  return parsed.success ? [{ id: parsed.data.run_id, status: parsed.data.status }] : []
+}
+
 /** Query-key root → how to read its jobs. Roots from reprocessApi, sourceProfilesApi, S3ImportExplorer. */
 const WATCHED_JOB_ROOTS: Readonly<Record<string, JobReader | undefined>> = {
   'category-reprocess-job': jobOf,
   'erasure-jobs': jobsOf,
   's3-import-files': filesOf,
+  's3-import-reprocess': runOf,
 }
 
 /** Did any job that was seen live now report a finished status? Records every status seen. */

@@ -323,7 +323,19 @@
     "uploadingTo": "Enviando para: {{source}}",
     "alreadyExists": "Já existe um arquivo com este nome. Exclua-o primeiro para enviá-lo novamente.",
     "uploadStatus": "o envio foi recusado (HTTP {{status}})",
-    "adminOnly": "Somente administradores podem importar arquivos do bucket de importação do S3."
+    "adminOnly": "Somente administradores podem importar arquivos do bucket de importação do S3.",
+    "reprocess": {
+      "action": "Reprocessar arquivo",
+      "confirmTitle": "Reprocessar {{filename}}?",
+      "confirmMessage": "O arquivo passa de novo pelo pipeline de importação, com a origem {{source}}. As linhas que já estão no data lake são ignoradas como duplicadas, então só as linhas que faltam são importadas. As linhas armazenadas não são enriquecidas de novo: para recategorizá-las, use \"Reprocessar o feedback existente\" em Administração → Taxonomia.",
+      "confirm": "Reprocessar",
+      "running": "Reprocessando {{filename}}...",
+      "failed": "Falha ao reprocessar {{filename}}. Os logs do sistema têm os detalhes.",
+      "startFailed": "Não foi possível iniciar o reprocessamento: {{error}}",
+      "dismiss": "Fechar",
+      "completed_one": "{{filename}} reprocessado: {{count, number}} linha enviada ao pipeline (lá as duplicadas são ignoradas).",
+      "completed_other": "{{filename}} reprocessado: {{count, number}} linhas enviadas ao pipeline (lá as duplicadas são ignoradas)."
+    }
   },
   "socialFeed": {
     "all": "Todos",

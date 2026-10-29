@@ -314,7 +314,19 @@
     "uploadingTo": "Wird hochgeladen zu: {{source}}",
     "alreadyExists": "Eine Datei mit diesem Namen existiert bereits. Löschen Sie sie zuerst, um sie erneut hochzuladen.",
     "uploadStatus": "der Upload wurde abgelehnt (HTTP {{status}})",
-    "adminOnly": "Nur Administratoren können Dateien aus dem S3-Import-Bucket importieren."
+    "adminOnly": "Nur Administratoren können Dateien aus dem S3-Import-Bucket importieren.",
+    "reprocess": {
+      "action": "Datei neu verarbeiten",
+      "confirmTitle": "{{filename}} neu verarbeiten?",
+      "confirmMessage": "Die Datei durchläuft die Import-Pipeline erneut, unter ihrer Quelle {{source}}. Zeilen, die schon im Data Lake sind, werden als Duplikate übersprungen, also werden nur fehlende Zeilen importiert. Gespeicherte Zeilen werden nicht neu angereichert: Um sie neu zu kategorisieren, nutzen Sie „Vorhandenes Feedback neu verarbeiten“ unter Administration → Taxonomie.",
+      "confirm": "Neu verarbeiten",
+      "running": "{{filename}} wird neu verarbeitet...",
+      "failed": "Die Neuverarbeitung von {{filename}} ist fehlgeschlagen. Details stehen in den Systemprotokollen.",
+      "startFailed": "Die Neuverarbeitung konnte nicht gestartet werden: {{error}}",
+      "dismiss": "Schließen",
+      "completed_one": "{{filename}} neu verarbeitet: {{count, number}} Zeile an die Pipeline gesendet (Duplikate werden dort übersprungen).",
+      "completed_other": "{{filename}} neu verarbeitet: {{count, number}} Zeilen an die Pipeline gesendet (Duplikate werden dort übersprungen)."
+    }
   },
   "socialFeed": {
     "all": "Alle",
