@@ -34,6 +34,7 @@ from shared.batch_get import batch_get_all
 from shared.channel_index import ChannelIndexUnavailable, walk_channel
 from shared.logging import logger
 from shared.time_budget import WalkBudget
+from shared.usefulness import BAND_RANK, USEFULNESS_FIELD, stored_band
 
 __all__ = [
     'INPUT_FEEDBACK_IDS_FIELD',
@@ -57,9 +58,12 @@ POOL_MAX_ROWS: Final = 50_000
 # What a pool row carries: the table keys the sample is fetched by, the ids and
 # dates, and every field a filter or the category scope reads (sources, channel,
 # category, sentiment, dims, tags, rating). `gsi5-by-channel` projects all of them.
+# Plus the `usefulness` band, the sample's tiebreaker (`sample_evenly`): the channel
+# index does not project it, so a channel-filtered sample has no tiebreak (every row
+# reads as unrated, the plain even sample).
 POOL_FIELDS: Final = (
     'pk', 'sk', 'feedback_id', 'date', 'source_created_at', 'source_platform', 'source_channel',
-    'category', 'sentiment_label', 'dimensions', 'tags', 'rating',
+    'category', 'sentiment_label', 'dimensions', 'tags', 'rating', USEFULNESS_FIELD,
 )
 
 
@@ -191,10 +195,59 @@ def sample_evenly(rows: Sequence[dict], size: int) -> list[dict]:
     same items and a regenerated set is comparable with the last one. NESTED: the
     sample of ``n`` is the first ``n`` of every larger sample, so pages sliced by
     offset/limit never overlap or skip, and a trimmed tail still leaves an even sample.
+
+    USEFULNESS IS A TIEBREAKER, NEVER A FILTER (docs/data-quality.md). Rows of one day
+    (a contiguous run of equal ``date``) are equal candidates for that day's share of the
+    sample, so a pick that lands on a day takes that day's next-best row by ``usefulness``
+    (high, medium, low, unrated; the stride order within a band). Every day keeps exactly
+    its share and every row stays eligible: a day of only low rows is still sampled, a pool
+    with one band throughout is the plain even sample, and the sample stays nested (see
+    ``_tiebroken``).
     """
     if size <= 0:
         return []
-    return [rows[i] for i in spread_order(len(rows))[:size]]
+    full = spread_order(len(rows))
+    order = full[:size]
+    if all(stored_band(row) == stored_band(rows[0]) for row in rows):
+        return [rows[i] for i in order]  # nothing to break a tie with: the plain even sample
+    return [rows[i] for i in _tiebroken(rows, full, order)]
+
+
+def _tiebroken(rows: Sequence[Mapping[str, Any]], full: list[int], order: list[int]) -> list[int]:
+    """``order`` with each pick swapped for its day's next-best position by usefulness.
+
+    A day's VISIT order is the order ``full`` reaches its positions; stably sorted by band,
+    it is the day's pick order (equal bands keep the stride). The k-th pick that lands on a
+    day takes the k-th entry, so the result depends only on ``full`` and stays nested.
+    """
+    runs = _day_runs(rows)
+    run_of = [index for index, (start, end) in enumerate(runs) for _ in range(start, end)]
+    visits: list[list[int]] = [[] for _ in runs]
+    for position in full:
+        visits[run_of[position]].append(position)
+    ranked = [sorted(visit, key=lambda i: _band_rank(rows[i])) for visit in visits]
+    taken = [0] * len(runs)
+    picked: list[int] = []
+    for position in order:
+        run = run_of[position]
+        picked.append(ranked[run][taken[run]])
+        taken[run] += 1
+    return picked
+
+
+def _band_rank(row: Mapping[str, Any]) -> int:
+    return BAND_RANK[stored_band(row)]
+
+
+def _day_runs(rows: Sequence[Mapping[str, Any]]) -> list[tuple[int, int]]:
+    """``[start, end)`` of each run of consecutive rows with the same ``date``."""
+    runs: list[tuple[int, int]] = []
+    start = 0
+    for i in range(1, len(rows) + 1):
+        if i == len(rows) or rows[i].get('date') != rows[start].get('date'):
+            runs.append((start, i))
+            start = i
+    return runs
 
 
 def _bit_reversed(value: int, bits: int) -> int:
