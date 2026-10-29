@@ -14,12 +14,16 @@
  *   nothing is dropped) or `ignore`;
  * - the default channel for rows without a channel column;
  * - "Radar source" (`radar_brand`, a key of the Radar brand list): the rows are another
- *   brand's reviews and go to Radar only (docs/radar.md).
+ *   brand's reviews and go to Radar only (docs/radar.md);
+ * - an optional dataset name (`dataset_name`, issue #411): a corrected re-upload under the
+ *   same name updates the stored rows that carry an id. The upload is then previewed first
+ *   (`CsvUpdatePreview`) and stored only once the person confirms (docs/csv-import.md).
  */
-import { Upload, Download, FileText, AlertCircle, CheckCircle, Loader2 } from 'lucide-react'
+import { Upload, Download, FileText, AlertCircle, CheckCircle, Loader2, Eye } from 'lucide-react'
 import { useCallback, useId, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { scrapersApi } from '../../api/scrapersApi'
+import { datasetNameProblem } from '../../api/csvDatasetSchema'
 import { useInvalidateFeedbackData } from '../../api/invalidateFeedbackData'
 import { MANUAL_IMPORT_SOURCE } from '../../api/sourceProfilesApi'
 import ModalShell from '../../components/ModalShell/ModalShell'
@@ -31,8 +35,13 @@ import SourceDialogHeader from './SourceDialogHeader'
 import { downloadFile, formatFileSize } from '../../utils/file'
 import { useCsvSelection } from './useCsvSelection'
 import RadarSourcePicker from './RadarSourcePicker'
+import CsvDatasetField from './CsvDatasetField'
+import CsvUpdatePreview from './CsvUpdatePreview'
+import { useCsvUploadFlow } from './useCsvUploadFlow'
+import type { CsvUploadFlow } from './useCsvUploadFlow'
+import type { CsvDatasetPreview, CsvUploadResult } from '../../api/csvDatasetSchema'
 import { useRadarBrandLabel } from './useRadarBrands'
-import type { CsvPickError } from './useCsvSelection'
+import type { CsvPickError, CsvSelection } from './useCsvSelection'
 import type { Dimension } from '../../api/dimensionsSchema'
 import type { CsvColumnTarget } from '../../api/types'
 
@@ -51,13 +60,6 @@ const PICK_ERRORS: Record<CsvPickError, { messageKey: string }> = {
 interface CsvUploadModalProps {
   readonly isOpen: boolean
   readonly onClose: () => void
-}
-
-interface UploadResult {
-  imported_count: number
-  total_rows: number
-  warnings?: string[]
-  errors?: string[]
 }
 
 const downloadCsvTemplate = () => downloadFile(TEMPLATE, 'feedback-template.csv', 'text/csv;charset=utf-8')
@@ -83,43 +85,38 @@ export default function CsvUploadModal({ isOpen, onClose }: CsvUploadModalProps)
   const radarBrand = useRadarBrand(sourceId, radarKey)
   // Empty = the server's own default channel ("CSV upload"); never shown as the raw id `csv_upload`.
   const [defaultSource, setDefaultSource] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [result, setResult] = useState<UploadResult | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [datasetName, setDatasetName] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const invalidateFeedbackData = useInvalidateFeedbackData()
-  const blocked = selection === null || mappingProblem(selection.mapping) !== null
+  const onImported = useCallback((r: CsvUploadResult) => {
+    if (r.imported_count > 0) invalidateFeedbackData({ afterIngest: true })
+  }, [invalidateFeedbackData])
+  const flow = useCsvUploadFlow(onImported)
+  const { busy, result, preview } = flow
+  const { dataset, blocked } = readiness(selection, datasetName, radarKey)
 
   const close = useCallback(() => {
     if (busy) return
-    reset(); setResult(null); setError(null); setBusy(false); setRadarKey('')
+    reset(); flow.reset(); setRadarKey(''); setDatasetName('')
     onClose()
-  }, [busy, onClose, reset])
+  }, [busy, onClose, reset, flow])
 
   const onPickFile = useCallback((f: File | null) => {
-    setError(null); setResult(null)
+    flow.reset()
     void pick(f)
-  }, [pick])
+  }, [pick, flow])
 
   const onSubmit = useCallback(async () => {
     if (!selection) return
-    setBusy(true); setError(null); setResult(null)
-    try {
-      const r = await scrapersApi.uploadCsvFeedback({
-        csv_text: selection.text,
-        default_source: defaultSource.trim() || undefined,
-        source_id: sourceId,
-        column_map: selection.mapping,
-        ...(radarKey === '' ? {} : { radar_brand: radarKey }),
-      })
-      setResult({ imported_count: r.imported_count, total_rows: r.total_rows, warnings: r.warnings, errors: r.errors })
-      if (r.imported_count > 0) invalidateFeedbackData({ afterIngest: true })
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : t('csvUpload.uploadFailed'))
-    } finally {
-      setBusy(false)
-    }
-  }, [selection, defaultSource, sourceId, radarKey, t, invalidateFeedbackData])
+    await flow.submit({
+      csv_text: selection.text,
+      default_source: defaultSource.trim() || undefined,
+      source_id: sourceId,
+      column_map: selection.mapping,
+      ...(radarKey === '' ? {} : { radar_brand: radarKey }),
+      ...(dataset === '' ? {} : { dataset_name: dataset }),
+    }, t('csvUpload.uploadFailed'))
+  }, [selection, defaultSource, sourceId, radarKey, dataset, t, flow])
 
   if (!isOpen) return null
 
@@ -129,7 +126,7 @@ export default function CsvUploadModal({ isOpen, onClose }: CsvUploadModalProps)
         <SourceDialogHeader titleId={titleId} title={t('csvUpload.title')} icon={FileText} onClose={close} closeDisabled={busy} />
 
         <div className="dialog-body space-y-4 overflow-y-auto">
-          {result ? <SuccessView result={result} radarBrand={radarBrand} onClose={close} /> : (
+          <FlowView flow={flow} radarBrand={radarBrand} onClose={close} form={(
             <UploadForm
               sourceId={sourceId}
               onSourceIdChange={setSourceId}
@@ -137,6 +134,8 @@ export default function CsvUploadModal({ isOpen, onClose }: CsvUploadModalProps)
               onRadarKeyChange={setRadarKey}
               defaultSource={defaultSource}
               onDefaultSourceChange={setDefaultSource}
+              datasetName={datasetName}
+              onDatasetNameChange={setDatasetName}
               busy={busy}
               file={selection?.file ?? null}
               onPick={onPickFile}
@@ -144,16 +143,48 @@ export default function CsvUploadModal({ isOpen, onClose }: CsvUploadModalProps)
               mapping={selection?.mapping}
               dimensions={dimensions}
               onMappingChange={setMapping}
-              error={error ?? (pickError === null ? null : tAll(PICK_ERRORS[pickError].messageKey))}
+              error={flow.error ?? pickMessage(pickError, tAll)}
             />
-          )}
+          )} />
         </div>
-        {result ? null : <UploadFooter busy={busy} blocked={blocked} onCancel={close} onSubmit={() => void onSubmit()} />}
+        {result ? null : (
+          <UploadFooter
+            busy={busy} blocked={blocked} step={footerStep(dataset, preview)}
+            onCancel={preview === null ? close : flow.back} onSubmit={() => void onSubmit()}
+          />
+        )}
     </ModalShell>
   )
 }
 
+/** The dataset name to send ('' = none) and whether the form cannot be submitted yet. */
+function readiness(selection: CsvSelection | null, datasetName: string, radarKey: string) {
+  // A Radar upload has no update path: its dataset name is never sent (the API refuses it).
+  const dataset = radarKey === '' ? datasetName.trim() : ''
+  const blocked = selection === null || mappingProblem(selection.mapping) !== null
+    || (radarKey === '' && datasetNameProblem(datasetName) !== null)
+  return { dataset, blocked }
+}
+
+const pickMessage = (error: CsvPickError | null, t: (key: string) => string): string | null =>
+  error === null ? null : t(PICK_ERRORS[error].messageKey)
+
 // ── Sub-components ─────────────────────────────────────────────────────────
+
+/** The dialog body for the flow's step: the result, the dataset preview, or the form. */
+function FlowView({ flow, radarBrand, onClose, form }: {
+  readonly flow: CsvUploadFlow; readonly radarBrand: string | undefined
+  readonly onClose: () => void; readonly form: ReactNode
+}) {
+  if (flow.result !== null) return <SuccessView result={flow.result} radarBrand={radarBrand} onClose={onClose} />
+  if (flow.preview === null) return <>{form}</>
+  return (
+    <>
+      <CsvUpdatePreview preview={flow.preview} />
+      {flow.error === null ? null : <ErrorLine error={flow.error} />}
+    </>
+  )
+}
 
 interface UploadFormProps {
   readonly sourceId: string
@@ -162,6 +193,8 @@ interface UploadFormProps {
   readonly onRadarKeyChange: (key: string) => void
   readonly defaultSource: string
   readonly onDefaultSourceChange: (value: string) => void
+  readonly datasetName: string
+  readonly onDatasetNameChange: (value: string) => void
   readonly busy: boolean
   readonly file: File | null
   readonly onPick: (f: File | null) => void
@@ -185,27 +218,59 @@ function UploadForm(props: UploadFormProps) {
         <input id={channelId} type="text" value={props.defaultSource} onChange={(e) => props.onDefaultSourceChange(e.target.value)} className="input" placeholder={t('csvUpload.defaultSourcePlaceholder')} />
         <p className="text-xs text-muted mt-1">{t('csvUpload.defaultSourceHint')}</p>
       </div>
+      <CsvDatasetField value={props.datasetName} onChange={props.onDatasetNameChange} disabled={props.busy} radar={props.radarKey !== ''} />
       <DropZone file={props.file} onPick={props.onPick} fileInputRef={props.fileInputRef} t={t} />
       {props.mapping && <CsvColumnMapping mapping={props.mapping} dimensions={props.dimensions} onChange={props.onMappingChange} />}
-      {props.error === null ? null : (
-        <div role="alert" className="text-sm text-danger inline-flex items-start gap-2">
-          <AlertCircle size={14} className="mt-0.5 flex-shrink-0" /> <span>{props.error}</span>
-        </div>
-      )}
+      {props.error === null ? null : <ErrorLine error={props.error} />}
     </>
   )
 }
 
-function UploadFooter({ busy, blocked, onCancel, onSubmit }: {
-  readonly busy: boolean; readonly blocked: boolean; readonly onCancel: () => void; readonly onSubmit: () => void
+function ErrorLine({ error }: { readonly error: string }) {
+  return (
+    <div role="alert" className="text-sm text-danger inline-flex items-start gap-2">
+      <AlertCircle size={14} className="mt-0.5 flex-shrink-0" /> <span>{error}</span>
+    </div>
+  )
+}
+
+/** Which step the footer drives: a plain upload, a dataset preview, or confirming one. */
+type FooterStep = 'upload' | 'preview' | 'confirm' | 'confirmUpdates'
+
+function footerStep(dataset: string, preview: CsvDatasetPreview | null): FooterStep {
+  if (dataset === '') return 'upload'
+  if (preview === null) return 'preview'
+  return preview.counts.changed > 0 ? 'confirmUpdates' : 'confirm'
+}
+
+// Held as `…Key:` data so scripts/i18n-check.mjs sees each message.
+const STEP_LABELS: Record<FooterStep, { labelKey: string; busyKey: string }> = {
+  upload: { labelKey: 'scrapers:csvUpload.upload', busyKey: 'scrapers:csvUpload.uploading' },
+  preview: { labelKey: 'scrapers:csvUpload.preview.check', busyKey: 'scrapers:csvUpload.preview.checking' },
+  confirm: { labelKey: 'scrapers:csvUpload.preview.confirm', busyKey: 'scrapers:csvUpload.uploading' },
+  confirmUpdates: { labelKey: 'scrapers:csvUpload.preview.confirmUpdates', busyKey: 'scrapers:csvUpload.uploading' },
+}
+
+function StepIcon({ busy, step }: { readonly busy: boolean; readonly step: FooterStep }) {
+  if (busy) return <Loader2 size={14} className="animate-spin" />
+  return step === 'preview' ? <Eye size={14} /> : <Upload size={14} />
+}
+
+function UploadFooter({ busy, blocked, step, onCancel, onSubmit }: {
+  readonly busy: boolean; readonly blocked: boolean; readonly step: FooterStep
+  readonly onCancel: () => void; readonly onSubmit: () => void
 }) {
-  const { t } = useTranslation('scrapers')
+  const { t } = useTranslation()
+  const confirming = step === 'confirm' || step === 'confirmUpdates'
+  const label = STEP_LABELS[step]
   return (
     <div className="dialog-footer">
-      <button onClick={onCancel} disabled={busy} className="btn btn-secondary">{t('csvUpload.cancel')}</button>
-      <button onClick={onSubmit} disabled={busy || blocked} className="btn btn-primary">
-        {busy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-        {busy ? t('csvUpload.uploading') : t('csvUpload.upload')}
+      <button onClick={onCancel} disabled={busy} className="btn btn-secondary">
+        {t(confirming ? 'scrapers:csvUpload.preview.back' : 'scrapers:csvUpload.cancel')}
+      </button>
+      <button onClick={onSubmit} disabled={busy || (blocked && !confirming)} className="btn btn-primary">
+        <StepIcon busy={busy} step={step} />
+        {t(busy ? label.busyKey : label.labelKey)}
       </button>
     </div>
   )
@@ -287,7 +352,7 @@ function DropZone({
 function SuccessView({
   result, radarBrand, onClose,
 }: {
-  readonly result: { imported_count: number; total_rows: number; warnings?: string[]; errors?: string[] }
+  readonly result: CsvUploadResult
   /** The chosen profile's Radar brand: its rows go to the Radar page, not the Feedback page. */
   readonly radarBrand: string | undefined
   readonly onClose: () => void
@@ -304,6 +369,12 @@ function SuccessView({
           ? t('csvUpload.pipelineNote', { defaultValue: 'Rows will appear on the Feedback page once Bedrock enrichment completes (usually within a minute).' })
           : t('csvUpload.pipelineNoteRadar', { brand: radarBrand })}
       </p>
+      {result.counts !== undefined && (result.counts.changed > 0 || result.counts.unchanged > 0) ? (
+        <p className="text-sm text-muted mb-4">
+          {t('csvUpload.preview.resultUpdated', { count: result.counts.changed })}{' '}
+          {t('csvUpload.preview.resultUnchanged', { count: result.counts.unchanged })}
+        </p>
+      ) : null}
       {result.warnings && result.warnings.length > 0 ? (
         <div className="text-left text-xs bg-warn-subtle border border-warn/30 rounded-sm p-3 mb-3 max-h-40 overflow-y-auto">
           <div className="font-medium text-warn mb-1">

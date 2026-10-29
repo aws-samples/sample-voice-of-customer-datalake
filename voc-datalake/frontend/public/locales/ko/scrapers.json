@@ -83,7 +83,45 @@
         "twice": "{{target}}이(가) 여러 열에 지정되었습니다."
       }
     },
-    "defaultSourcePlaceholder": "예: 지원 설문"
+    "defaultSourcePlaceholder": "예: 지원 설문",
+    "dataset": {
+      "label": "데이터 세트 이름(선택 사항)",
+      "placeholder": "예: Example Air 리뷰",
+      "hint": "이 파일의 데이터에 이름을 붙이면 나중에 수정할 수 있습니다. 같은 이름으로 다시 업로드하면 id가 있는 행은 다시 추가되지 않고 업데이트됩니다. 대소문자를 구분하지 않습니다.",
+      "radarNote": "Radar 업로드에는 사용할 수 없습니다. 해당 행은 나중에 업데이트할 수 없습니다.",
+      "problems": {
+        "tooLong": "최대 {{max}}자까지 사용하세요.",
+        "invalidChars": "문자, 숫자, 공백, \"-\", \"_\", \".\"만 사용하세요."
+      }
+    },
+    "preview": {
+      "check": "변경 사항 미리 보기",
+      "checking": "확인 중…",
+      "title": "이 업로드로 수행되는 작업",
+      "back": "뒤로",
+      "confirm": "가져오기",
+      "confirmUpdates": "가져오기 및 업데이트",
+      "changedHeader": "변경되는 저장된 행",
+      "row": "{{row}}행",
+      "rowWithId": "{{row}}행(id {{id}})",
+      "before": "변경 전:",
+      "after": "변경 후:",
+      "notUpdatableHint": "id가 없는 행(또는 데이터 세트 이름 없이 업로드한 행)은 항상 새 레코드로 추가되므로 나중에 업로드해도 업데이트할 수 없습니다.",
+      "countNew_one": "새 행 {{count, number}}개가 추가됩니다",
+      "countNew_other": "새 행 {{count, number}}개가 추가됩니다",
+      "countChanged_one": "저장된 행 {{count, number}}개가 업데이트됩니다",
+      "countChanged_other": "저장된 행 {{count, number}}개가 업데이트됩니다",
+      "countUnchanged_one": "변경되지 않은 행 {{count, number}}개는 건너뜁니다",
+      "countUnchanged_other": "변경되지 않은 행 {{count, number}}개는 건너뜁니다",
+      "countNotUpdatable_one": "행 {{count, number}}개는 나중에 업데이트할 수 없습니다(id 없음)",
+      "countNotUpdatable_other": "행 {{count, number}}개는 나중에 업데이트할 수 없습니다(id 없음)",
+      "truncated_one": "변경된 행 {{count, number}}개 중 처음 {{shown, number}}개를 표시합니다.",
+      "truncated_other": "변경된 행 {{count, number}}개 중 처음 {{shown, number}}개를 표시합니다.",
+      "resultUpdated_one": "저장된 행 {{count, number}}개를 업데이트했습니다.",
+      "resultUpdated_other": "저장된 행 {{count, number}}개를 업데이트했습니다.",
+      "resultUnchanged_one": "변경되지 않은 행 {{count, number}}개를 건너뛰었습니다.",
+      "resultUnchanged_other": "변경되지 않은 행 {{count, number}}개를 건너뛰었습니다."
+    }
   },
   "deleteConfirmLabel": "삭제",
   "deleteConfirmMessage": "이 스크레이퍼를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",

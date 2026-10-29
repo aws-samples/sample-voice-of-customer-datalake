@@ -3,6 +3,8 @@ import { del, post } from './requestKit'
 import { fetchApi } from './client'
 import { runAssistJob } from './assistJobs'
 import { parseSelectorAnalysis } from './assistResults'
+import { parseCsvDatasetPreview, parseCsvUploadResult } from './csvDatasetSchema'
+import type { CsvDatasetPreview, CsvUploadResult } from './csvDatasetSchema'
 import { normalizeScrapers, normalizeScraperRunStatus } from './scrapersSchema'
 import type { ScraperRunStatus } from './scrapersSchema'
 import type {
@@ -126,20 +128,25 @@ export const scrapersApi = {
    * `column_map`: `{<csv header>: <target>}` (see `CsvColumnTarget`). Headers not
    * mapped and not auto-detected server-side land in `metadata`.
    */
-  uploadCsvFeedback: (params: {
-    csv_text: string
-    default_source?: string
-    source_id?: string
-    column_map?: Record<string, CsvColumnTarget>
-    /** A Radar brand key: the rows go to Radar only (docs/radar.md). */
-    radar_brand?: string
-  }) =>
-    fetchApi<{
-      success: boolean;
-      imported_count: number;
-      total_rows: number;
-      s3_uri?: string;
-      warnings?: string[];
-      errors?: string[]
-    }>('/scrapers/manual/csv-upload', post(params)),
+  uploadCsvFeedback: async (params: CsvUploadParams & {
+    /** Confirms the updates a dataset preview listed (409 without it when stored rows change). */
+    apply_updates?: boolean
+  }): Promise<CsvUploadResult> =>
+    parseCsvUploadResult(await fetchApi<unknown>('/scrapers/manual/csv-upload', post(params))),
+
+  /** What a CSV upload would do (`dry_run`): new / changed / unchanged / not-updatable rows. Nothing is stored. */
+  previewCsvUpload: async (params: CsvUploadParams): Promise<CsvDatasetPreview> =>
+    parseCsvDatasetPreview(await fetchApi<unknown>('/scrapers/manual/csv-upload', post({ ...params, dry_run: true }))),
+}
+
+/** The body of a CSV upload (and of its preview). */
+export interface CsvUploadParams {
+  csv_text: string
+  default_source?: string
+  source_id?: string
+  column_map?: Record<string, CsvColumnTarget>
+  /** A Radar brand key: the rows go to Radar only (docs/radar.md). Not with `dataset_name`. */
+  radar_brand?: string
+  /** The dataset a corrected re-upload updates (rows with an `id` only; docs/csv-import.md). */
+  dataset_name?: string
 }
