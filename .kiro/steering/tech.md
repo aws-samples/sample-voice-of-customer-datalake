@@ -123,7 +123,9 @@ Not behind API Gateway (Processing stack): `voc-retention` —
 invoke from `POST /settings/erasure` (mode `erase`, env `RETENTION_FUNCTION` on
 the settings Lambda). The ONLY role with a customer-data delete; does nothing
 unless a source profile sets `retention_days` or an erasure is requested; never
-touches `raw/csv_upload/*`. Permissions: feedback Get/Query/Scan/DeleteItem,
+touches `raw/csv_upload/*`. A whole-source erasure (`field: 'source'`) scans by
+`source_platform`, then sweeps `raw/{source}/` (every version), writing progress
+to the job row; no new grant. Permissions: feedback Get/Query/Scan/DeleteItem,
 aggregates Get/Put/Update/Query (jobs, `AUDIT#retention`), raw bucket
 `s3:DeleteObject`/`DeleteObjectVersion` on `raw/*` + `ListBucketVersions`, KMS,
 invoke itself. Ingestion-side Lambdas (plugins, webhooks, manual import,
