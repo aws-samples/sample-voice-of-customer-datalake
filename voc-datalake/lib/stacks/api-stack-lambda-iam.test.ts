@@ -180,6 +180,14 @@ describe('category access wiring', () => {
     expect(lambdaEnv(apiTemplate(), 'users_handler.lambda_handler')).toHaveProperty('AGGREGATES_TABLE');
   });
 
+  it('gives the manual import Lambda only BatchGetItem on the feedback table, and its name', () => {
+    // A CSV dataset upload (issue #411, docs/csv-import.md) reads the stored rows it names to
+    // tell new / changed / unchanged apart. Keyed reads only: no Scan, no Query, no write.
+    expect(allowedActions(apiTemplate(), 'ManualImportLambdaRole', 'dynamodb:', 'Feedback'))
+      .toStrictEqual(['dynamodb:BatchGetItem']);
+    expect(lambdaEnv(apiTemplate(), 'manual_import_handler.lambda_handler')).toHaveProperty('FEEDBACK_TABLE');
+  });
+
   it('lets the users Lambda list group memberships per group for GET /users (E2E F10)', () => {
     // users_handler._groups_by_username: ListGroups + ListUsersInGroup instead of
     // one AdminListGroupsForUser per user. Without them GET /users is a 500.

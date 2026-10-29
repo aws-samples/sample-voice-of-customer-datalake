@@ -808,7 +808,8 @@ def csv_upload():
     queued = _rows_to_queue(plan)
 
     messages, mode = prepare_messages(s3, RAW_DATA_BUCKET,
-                                      [_csv_message(item, profile['id'], radar) for item in queued], profile, now)
+                                      [_csv_message(item, profile['id'], radar) for item in queued], profile, now,
+                                      plan.archive_rewrites())
     s3_uri = stamp_file_archive(
         messages, mode, lambda: _archive_csv_file(csv_text, job_id, user_id, default_source, profile['id'], now))
     imported_count, send_errors = _send_items_to_sqs(messages)

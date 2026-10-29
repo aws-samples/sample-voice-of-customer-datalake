@@ -248,6 +248,9 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   const manualImportRole = ctx.role('ManualImportLambdaRole');
   aggregatesTable.grantReadWriteData(manualImportRole);
   kmsKey.grantEncryptDecrypt(manualImportRole);
+  // A CSV dataset upload (issue #411, docs/csv-import.md) reads the rows it names to tell new,
+  // changed and unchanged apart. Keyed reads only: no Scan/Query, no feedback write.
+  feedbackTable.grant(manualImportRole, 'dynamodb:BatchGetItem');
   manualImportRole.addToPolicy(new iam.PolicyStatement({ actions: ['sqs:SendMessage'], resources: [processingQueueArn] }));
   // The async processor is invoked by its exact name (MANUAL_IMPORT_PROCESSOR_FUNCTION).
   const manualImportProcessorName = ctx.uniqueName('voc-manual-import-processor');
@@ -267,6 +270,7 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
     memorySize: 1024, // CPU-bound: memory buys vCPU; keep CPU <= 60% of the share
     environment: {
       AGGREGATES_TABLE: aggregatesTable.tableName,
+      FEEDBACK_TABLE: feedbackTable.tableName,
       PROCESSING_QUEUE_URL: processingQueueUrl,
       RAW_DATA_BUCKET: rawDataBucket.bucketName,
       MANUAL_IMPORT_PROCESSOR_FUNCTION: manualImportProcessorName,
