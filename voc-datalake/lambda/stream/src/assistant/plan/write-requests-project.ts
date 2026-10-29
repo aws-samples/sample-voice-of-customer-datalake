@@ -77,6 +77,8 @@ export const PROJECT_WRITE_REQUESTS: Readonly<Record<string, RequestBuilder>> = 
     sentiments: [],
     persona_count: args.persona_count,
     custom_instructions: optionalText(args, 'custom_instructions') ?? '',
+    // Adding is the default; only an explicit false (on the approved plan) replaces (#353).
+    keep_existing_personas: args.keep_existing_personas !== false,
   })),
   merge_documents: (args, env) => projects('POST', `${projectId(args)}/documents/merge`, jobBody(env, {
     output_type: text(args, 'output_type'),

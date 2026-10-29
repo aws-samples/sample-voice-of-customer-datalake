@@ -16,12 +16,12 @@
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AlertCircle, Loader2, RefreshCw, Square } from 'lucide-react'
-import clsx from 'clsx'
 import type { TFunction } from 'i18next'
 import { apiErrorStatus } from '../../api/apiErrorStatus'
 import { ALL_TIME_CUSTOM_DAYS, MAX_CUSTOM_DAYS, parseCustomDaysInput } from '../../api/baseUrl'
 import { MAX_REPROCESS_ITEMS, isTerminalJob } from '../../api/reprocessApi'
 import ConfirmModal from '../ConfirmModal/ConfirmModal'
+import RadioCard from '../RadioCard/RadioCard'
 import type { ReprocessJob, ReprocessJobStatus, ReprocessMode } from '../../api/reprocessApi'
 import { useLatestJob, useReprocessMutations } from './useReprocessJob'
 import type { Tone } from '../../theme/tones'
@@ -81,27 +81,16 @@ function ModeChoice({ mode, onChange }: Readonly<{ mode: ReprocessMode; onChange
     <fieldset className="space-y-2">
       <legend className="text-xs font-medium text-text-strong mb-1">{t('categoriesManager.reprocess.modeLabel')}</legend>
       {MODES.map((m) => (
-        <label
+        <RadioCard
           key={m.value}
-          className={clsx(
-            'flex items-start gap-2 rounded-md border px-3 py-2 cursor-pointer',
-            mode === m.value ? 'border-accent bg-accent-subtle' : 'border-border hover:bg-bg-hover',
-          )}
-        >
-          <input
-            type="radio"
-            name="reprocess-mode"
-            value={m.value}
-            checked={mode === m.value}
-            onChange={() => onChange(m.value)}
-            className="mt-0.5 accent-accent"
-          />
-          {/* min-w-0 + break-word: de "Verarbeitete Bewertungen neu kategorisieren" wraps at 390 px / 200 %. */}
-          <span data-testid="reprocess-mode-text" className="min-w-0 hyphens-auto [overflow-wrap:break-word]">
-            <span className="block text-sm font-medium text-text-strong">{t(m.titleKey)}</span>
-            <span className="block text-xs text-text">{t(m.descriptionKey)}</span>
-          </span>
-        </label>
+          name="reprocess-mode"
+          value={m.value}
+          checked={mode === m.value}
+          onSelect={onChange}
+          title={t(m.titleKey)}
+          hint={t(m.descriptionKey)}
+          textTestId="reprocess-mode-text"
+        />
       ))}
     </fieldset>
   )

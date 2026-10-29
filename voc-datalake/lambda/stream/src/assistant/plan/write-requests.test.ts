@@ -52,8 +52,19 @@ describe('buildWriteRequest', () => {
 
   it('omits the date basis, language and author the env does not have', () => {
     const body = buildWriteRequest('generate_personas', { project_id: 'p', persona_count: 3 }, { days: 7, editId: 'e' }).body;
-    expect(body).toStrictEqual({ sources: [], categories: [], sentiments: [], persona_count: 3, custom_instructions: '', days: 7 });
+    expect(body).toStrictEqual({
+      sources: [], categories: [], sentiments: [], persona_count: 3, custom_instructions: '', keep_existing_personas: true, days: 7,
+    });
     expect(buildWriteRequest('add_persona_note', { project_id: 'p', persona_id: 'q', text: 't' }, { days: 7, editId: 'e' }).body).toStrictEqual({ text: 't' });
+  });
+
+  it('adds personas unless the approved plan explicitly replaces them (#353)', () => {
+    const keep = (extra: Record<string, unknown>) => buildWriteRequest(
+      'generate_personas', { project_id: 'p', persona_count: 3, ...extra }, { days: 7, editId: 'e' },
+    ).body?.keep_existing_personas;
+    expect(keep({})).toBe(true);
+    expect(keep({ keep_existing_personas: true })).toBe(true);
+    expect(keep({ keep_existing_personas: false })).toBe(false);
   });
 
   it('fills the omitted half of the company context from the stored document', () => {

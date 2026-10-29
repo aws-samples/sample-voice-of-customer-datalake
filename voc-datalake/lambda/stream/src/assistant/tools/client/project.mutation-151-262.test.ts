@@ -69,12 +69,18 @@ describe('the background-job tools advertise their exact schema', () => {
 
   it('generate_personas', () => {
     expectSpec(tool('generate_personas'), {
-      description: 'Start a background job that derives new personas from the feedback in the page time window.',
+      description: 'Start a background job that derives new personas from the feedback in the page time window. '
+        + 'By default the new personas are ADDED next to the project\u2019s existing ones, written to be clearly different.',
       properties: {
         project_id: PROJECT_ID_PROP,
         persona_count: { type: 'integer', minimum: 1, maximum: 8, description: 'How many personas (1-8).' },
         custom_instructions: textProp('Extra guidance for the generator, e.g. whose customers the personas describe.', 2000),
         sources: SOURCES_PROP,
+        keep_existing_personas: {
+          type: 'boolean',
+          description: 'Omit or true (default): keep the existing personas and add new ones. false: DELETE the existing '
+            + 'personas first. Send false only when the user explicitly asked to replace them.',
+        },
       },
       required: ['project_id', 'persona_count'],
     });
@@ -148,6 +154,13 @@ describe('the summaries name the job and both branches of their conditionals', (
     [2, 'Generate 2 personas in project proj_1.'],
   ])('generate_personas %i', (count, expected) => {
     expect(summary('generate_personas', { persona_count: count })).toBe(expected);
+  });
+
+  it.each<[boolean, string]>([
+    [true, 'Generate 2 personas in project proj_1.'],
+    [false, 'Generate 2 personas in project proj_1, replacing the existing personas.'],
+  ])('generate_personas keep_existing_personas %s', (keep, expected) => {
+    expect(summary('generate_personas', { persona_count: 2, keep_existing_personas: keep })).toBe(expected);
   });
 
   it('merge_documents', () => {

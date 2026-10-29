@@ -217,6 +217,8 @@ const generatePersonas: Executor<GeneratePersonasArgs> = async (args, ctx) => {
     custom_instructions: args.custom_instructions ?? '',
     days: env.days,
     response_language: env.responseLanguage,
+    // Adding is the default; only an explicit false (shown on the card) replaces (#353).
+    keep_existing_personas: args.keep_existing_personas !== false,
   })
   return jobResult('persona generation', args.project_id, ctx, res)
 }

@@ -517,6 +517,7 @@
             "sentiments": [],
             "persona_count": 4,
             "custom_instructions": "Example Air customers, from the ExampleAir iOS app reviews only",
+            "keep_existing_personas": true,
             "days": 30
           }
         }

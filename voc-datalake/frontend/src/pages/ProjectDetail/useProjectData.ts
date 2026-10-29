@@ -297,6 +297,7 @@ export function useProjectMutations({
       custom_instructions: personaConfig.customInstructions,
       days: contextConfig.days,
       response_language: i18n.language,
+      keep_existing_personas: personaConfig.mode === 'add',
     }),
     ...jobRequestCallbacks,
   })

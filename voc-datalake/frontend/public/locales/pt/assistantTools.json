@@ -100,6 +100,14 @@
       "language": "Escreve o resultado em {{language}}.",
       "background": "Isto é executado em segundo plano e aparece nos trabalhos do projeto. Você pode continuar trabalhando enquanto isso."
     },
+    "personas": {
+      "add_one": "Adiciona à {{count, number}} persona do projeto, que é mantida.",
+      "add_other": "Adiciona às {{count, number}} personas do projeto, que são mantidas.",
+      "addUnknown": "Adiciona às personas existentes do projeto, que são mantidas.",
+      "replace_one": "Exclui a {{count, number}} persona existente do projeto, com as edições e o avatar, antes de escrever o novo conjunto.",
+      "replace_other": "Exclui as {{count, number}} personas existentes do projeto, com as edições e os avatares, antes de escrever o novo conjunto.",
+      "replaceUnknown": "Exclui as personas existentes do projeto, com as edições e os avatares, antes de escrever o novo conjunto."
+    },
     "agent": "Agente",
     "run": "Execução",
     "memory": {

@@ -139,6 +139,8 @@ export const projectsApi = {
     custom_instructions?: string
     days?: number
     response_language?: string
+    /** true adds next to the project's personas; false/absent replaces them (#353). */
+    keep_existing_personas?: boolean
   }) =>
     // Async since the work moved to the persona-generator Lambda: the route answers
     // with a job id and the UI polls the jobs list. It has not returned `personas`

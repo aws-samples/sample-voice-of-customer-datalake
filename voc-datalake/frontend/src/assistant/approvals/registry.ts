@@ -36,6 +36,7 @@ import { AddParticipantsPreview, CreateParticipantListPreview } from './previews
 import { RadarBrandsPreview, RadarScanPreview } from './previews/RadarPreviews'
 import { CreateUsersPreview, ImportReviewsPreview, SourceEnabledPreview } from './previews/BulkAdminPreviews'
 import { PlanCard } from './previews/PlanCard'
+import { PersonaJobPreview } from './previews/PersonaJobPreview'
 import { AppConnectorPreview, ScraperCreatePreview, ScraperUpdatePreview } from './previews/ScraperPreviews'
 import { CreateUserPreview, UpdateUserPreview, UserAccessPreview } from './previews/UserPreviews'
 import { scraperAnchorId } from '../../pages/Scrapers/scraperAnchor'
@@ -163,7 +164,7 @@ const DEFINITIONS: readonly WriteToolDefinition[] = [
   }),
   defineWriteTool({
     name: 'generate_personas', argsSchema: s.generatePersonasArgs, execute: executors.generatePersonas,
-    title: (a, t) => t('assistantTools:tools.generate_personas.titleWith', { n: a.persona_count }), Preview: JobPreview,
+    title: (a, t) => t('assistantTools:tools.generate_personas.titleWith', { n: a.persona_count }), Preview: PersonaJobPreview,
   }),
   defineWriteTool({
     name: 'merge_documents', argsSchema: s.mergeDocumentsArgs, execute: executors.mergeDocuments,

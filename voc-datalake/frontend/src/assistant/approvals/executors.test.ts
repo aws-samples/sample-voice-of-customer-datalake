@@ -222,7 +222,14 @@ describe('write-tool executors', () => {
     await run('generate_personas', { project_id: P, persona_count: 4 })
     expect(m.projectsApi.generatePersonas).toHaveBeenCalledWith(P, expect.objectContaining({
       persona_count: 4, custom_instructions: '', days: 45, sources: [], categories: [], sentiments: [],
+      keep_existing_personas: true,
     }))
+  })
+
+  it('generate_personas replaces only when the card said keep_existing_personas: false', async () => {
+    const { run } = setup()
+    await run('generate_personas', { project_id: P, persona_count: 2, keep_existing_personas: false })
+    expect(m.projectsApi.generatePersonas).toHaveBeenCalledWith(P, expect.objectContaining({ keep_existing_personas: false }))
   })
 
   it('merge_documents maps document_ids onto selected_document_ids', async () => {

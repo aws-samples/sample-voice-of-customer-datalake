@@ -100,6 +100,14 @@
       "language": "Rédige le résultat en {{language}}.",
       "background": "Cette tâche s'exécute en arrière-plan et apparaît dans les tâches du projet. Vous pouvez continuer à travailler."
     },
+    "personas": {
+      "add_one": "S'ajoute au {{count, number}} persona du projet, qui est conservé.",
+      "add_other": "S'ajoute aux {{count, number}} personas du projet, qui sont conservés.",
+      "addUnknown": "S'ajoute aux personas existants du projet, qui sont conservés.",
+      "replace_one": "Supprime le {{count, number}} persona existant du projet, avec ses modifications et son avatar, avant d'écrire le nouvel ensemble.",
+      "replace_other": "Supprime les {{count, number}} personas existants du projet, avec leurs modifications et leurs avatars, avant d'écrire le nouvel ensemble.",
+      "replaceUnknown": "Supprime les personas existants du projet, avec leurs modifications et leurs avatars, avant d'écrire le nouvel ensemble."
+    },
     "agent": "Agent",
     "run": "Exécution",
     "memory": {

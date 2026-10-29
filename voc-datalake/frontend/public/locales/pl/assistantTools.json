@@ -91,6 +91,18 @@
       "language": "Zapisuje wynik w języku: {{language}}.",
       "background": "Zadanie działa w tle i pojawia się w sekcji Zadania projektu. W międzyczasie możesz dalej pracować."
     },
+    "personas": {
+      "add_one": "Dodaje do {{count, number}} persony projektu; zostaje ona zachowana.",
+      "add_few": "Dodaje do {{count, number}} person projektu; zostają one zachowane.",
+      "add_many": "Dodaje do {{count, number}} person projektu; zostają one zachowane.",
+      "add_other": "Dodaje do {{count, number}} persony projektu; zostają one zachowane.",
+      "addUnknown": "Dodaje do istniejących person projektu; zostają one zachowane.",
+      "replace_one": "Usuwa {{count, number}} istniejącą personę projektu, razem ze zmianami i awatarem, zanim powstanie nowy zestaw.",
+      "replace_few": "Usuwa {{count, number}} istniejące persony projektu, razem ze zmianami i awatarami, zanim powstanie nowy zestaw.",
+      "replace_many": "Usuwa {{count, number}} istniejących person projektu, razem ze zmianami i awatarami, zanim powstanie nowy zestaw.",
+      "replace_other": "Usuwa {{count, number}} istniejącej persony projektu, razem ze zmianami i awatarami, zanim powstanie nowy zestaw.",
+      "replaceUnknown": "Usuwa istniejące persony projektu, razem ze zmianami i awatarami, zanim powstanie nowy zestaw."
+    },
     "memory": {
       "scope": {
         "company": "Firma — wszyscy",

@@ -49,7 +49,7 @@ const PROJECT_CASES: WriteRequestCase[] = [
   },
   {
     tool: 'generate_personas', args: { project_id: P, persona_count: 4, custom_instructions: 'Example Air customers only', sources: ['ExampleAir_iOS'] },
-    request: projects('POST', `${P}/personas/generate`, { date_basis: 'review', sources: ['ExampleAir_iOS'], categories: [], sentiments: [], persona_count: 4, custom_instructions: 'Example Air customers only', ...JOB }),
+    request: projects('POST', `${P}/personas/generate`, { date_basis: 'review', sources: ['ExampleAir_iOS'], categories: [], sentiments: [], persona_count: 4, custom_instructions: 'Example Air customers only', keep_existing_personas: true, ...JOB }),
   },
   {
     tool: 'merge_documents', args: { project_id: P, output_type: 'prd', title: 'Merged', instructions: 'Combine', document_ids: ['d1', 'd2'] },
