@@ -43,6 +43,7 @@ from shared.categorization import Enrichment
 from shared.feedback_category import CATEGORY_SOURCE_MANUAL
 from shared.github_metrics import GITHUB_SOURCE
 from shared.source_profiles import PII_SUMMARY_ONLY
+from shared.usefulness import USEFULNESS_FIELD, item_usefulness
 
 UPDATE_APPLY = 'apply'
 UPDATE_STALE = 'stale'
@@ -224,6 +225,11 @@ def reenriched_fields(
     }
     if not keep_category:
         fields['gsi2pk'] = f"CATEGORY#{enriched['category']}"
+    # The text changed, so its usefulness band may have (the aggregator re-buckets the MODIFY).
+    fields[USEFULNESS_FIELD] = item_usefulness({
+        'original_text': fields['original_text'], 'normalized_text': enriched.get('normalized_text'),
+        'problem_summary': enriched.get('problem_summary'), 'dimensions': resolved,
+    })
     return fields
 
 

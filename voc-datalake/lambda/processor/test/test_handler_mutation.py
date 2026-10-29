@@ -665,6 +665,8 @@ class TestProcessFeedbackItem:
             'persona_type': 'existing_customer',
             'persona_attributes': PERSONA_ATTRIBUTES,
             'llm_metadata': {'model_name': 'haiku', 'prompt_version': 'v9', 'latency_ms': 12},
+            # Nine words naming a concrete term (shipping): one signal (shared/usefulness.py).
+            'usefulness': 'medium',
         }
 
         enrichment_steps['dup'].assert_called_once_with('TestBrand', ID_SAMPLE_RECORD)
@@ -704,6 +706,7 @@ class TestProcessFeedbackItem:
             'urgency': 'low',
             'impact_area': 'other',
             'llm_metadata': {'error': 'boom'},
+            'usefulness': 'low',
         }
 
         enrichment_steps['dup'].assert_called_once_with('unknown', ID_ALL_EMPTY)
