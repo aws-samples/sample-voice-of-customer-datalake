@@ -10,6 +10,7 @@ caller's category scope still applied.
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -205,7 +206,7 @@ class TestSampleEvenly:
         assert sample_evenly(rows, small) == sample_evenly(rows, large)[:small]
 
 
-def _banded(day: str, bands: list[str | None]) -> list[dict]:
+def _banded(day: str, bands: Sequence[str | None]) -> list[dict]:
     """One day's rows in read order; ``None`` = stored before the band existed."""
     return [{'n': f'{day}-{i}', 'date': day, **({'usefulness': band} if band else {})}
             for i, band in enumerate(bands)]
