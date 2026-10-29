@@ -4,9 +4,19 @@ from decimal import Decimal
 from unittest.mock import MagicMock
 
 import pytest
+from botocore.exceptions import ClientError
 
 from shared import import_runs
-from shared.import_runs import ImportCounts, ImportRun, actor_from_event, get_import_run, list_import_runs, parse_limit, record_import_run, run_status
+from shared.import_runs import (
+    ImportCounts,
+    ImportRun,
+    actor_from_event,
+    get_import_run,
+    list_import_runs,
+    parse_limit,
+    record_import_run,
+    run_status,
+)
 
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
 RUN_ID = '0b1f3c4e-7a2d-4f6b-9c8e-1d2a3b4c5d6e'
@@ -47,11 +57,12 @@ class TestRecord:
         summary, detail = _written(_run(errors=['send failed']))
         assert {k: summary[k] for k in ('received', 'imported', 'skipped', 'duplicate', 'failed')} == {
             'received': 5, 'imported': 3, 'skipped': 1, 'duplicate': 1, 'failed': 0}
-        assert 'warnings' not in summary and 'errors' not in summary
+        assert 'warnings' not in summary
+        assert 'errors' not in summary
         assert detail['warnings'] == ['row 2: empty text — skipped']
         assert detail['errors'] == ['send failed']
         assert (summary['warning_count'], summary['error_count']) == (1, 1)
-        assert summary['actor'] == 'sub-1' and summary['actor_email'] == 'admin@example.com'
+        assert (summary['actor'], summary['actor_email']) == ('sub-1', 'admin@example.com')
         assert summary['finished_at'] == NOW.isoformat()
 
     def test_at_most_200_messages_are_kept_and_the_record_says_so(self):
@@ -73,7 +84,7 @@ class TestRecord:
 
     def test_a_failed_write_is_logged_not_raised(self):
         table = MagicMock()
-        table.put_item.side_effect = RuntimeError('throttled')
+        table.put_item.side_effect = ClientError({'Error': {'Code': 'ProvisionedThroughputExceededException'}}, 'PutItem')
         assert record_import_run(table, _run(), now=NOW) is None
 
     def test_no_table_writes_nothing(self):
@@ -132,7 +143,7 @@ class TestList:
 
     def test_a_cursor_from_another_listing_is_refused(self):
         from shared.feedback_cursor import encode_key_cursor
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match='not valid'):
             list_import_runs(MagicMock(), limit=10, cursor=encode_key_cursor({'pk': 'OTHER', 'sk': 'x'}))
 
     @pytest.mark.parametrize(('raw', 'limit'), [(None, 25), ('', 25), ('5', 5), ('0', 1), ('500', 100)])
@@ -140,7 +151,7 @@ class TestList:
         assert parse_limit(raw) == limit
 
     def test_a_non_numeric_limit_is_refused(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match='invalid literal'):
             parse_limit('ten')
 
 

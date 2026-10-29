@@ -10,6 +10,7 @@ from collections.abc import Iterator
 from unittest.mock import MagicMock, patch
 
 import pytest
+from botocore.exceptions import ClientError
 from handler_events_fixtures import call_route
 from moto import mock_aws
 from moto_helpers import pk_sk_table
@@ -59,7 +60,8 @@ CSV = 'id,text\n1,Great\n2,\n1,Great\n3,Slow login\n'
 
 
 class TestEveryImportWritesOneRecord:
-    def test_csv_upload_records_skipped_and_duplicate_rows(self, wired, import_run_rows, api_gateway_event, lambda_context):
+    @pytest.mark.usefixtures("wired")
+    def test_csv_upload_records_skipped_and_duplicate_rows(self, import_run_rows, api_gateway_event, lambda_context):
         _, body = call_route(h.lambda_handler, api_gateway_event, lambda_context, method='POST',
                              path='/scrapers/manual/csv-upload', body={'csv_text': CSV, 'default_source': 'Example Air survey'})
         assert body['imported_count'] == 2
@@ -72,8 +74,9 @@ class TestEveryImportWritesOneRecord:
         assert summary['raw_s3_key'] == body['s3_uri']
         assert detail['warnings'] == body['warnings']
 
+    @pytest.mark.usefixtures("wired")
     def test_csv_upload_records_every_warning_not_only_the_twenty_the_response_shows(
-            self, wired, import_run_rows, api_gateway_event, lambda_context):
+            self, import_run_rows, api_gateway_event, lambda_context):
         csv_text = 'text,rating\n' + ''.join(f'Row {i},bad\n' for i in range(30))
         _, body = call_route(h.lambda_handler, api_gateway_event, lambda_context, method='POST',
                              path='/scrapers/manual/csv-upload', body={'csv_text': csv_text})
@@ -92,8 +95,9 @@ class TestEveryImportWritesOneRecord:
         assert summary['status'] == 'partial'
         assert detail['errors'] == ['item 1: throttled']
 
+    @pytest.mark.usefixtures("wired")
     def test_the_assistant_import_is_tagged_with_the_source_the_user_named(
-            self, wired, import_run_rows, api_gateway_event, lambda_context):
+            self, import_run_rows, api_gateway_event, lambda_context):
         items = [{'id': 'a', 'text': 'ok', 'source': 'chat', 'timestamp': '2026-10-01T00:00:00Z'}]
         call_route(h.lambda_handler, api_gateway_event, lambda_context, method='POST', path='/scrapers/manual/json-upload',
                    body={'items': items, 'import_origin': 'assistant', 'source_label': 'Example Air forum'})
@@ -112,14 +116,16 @@ class TestEveryImportWritesOneRecord:
         assert (summary['method'], summary['source']) == ('paste', 'g2')
         assert _counts(summary) == {'received': 2, 'imported': 2, 'skipped': 0, 'duplicate': 0, 'failed': 0}
 
-    def test_a_refused_upload_writes_no_record(self, wired, import_run_rows, api_gateway_event, lambda_context):
+    @pytest.mark.usefixtures("wired")
+    def test_a_refused_upload_writes_no_record(self, import_run_rows, api_gateway_event, lambda_context):
         response, _ = call_route(h.lambda_handler, api_gateway_event, lambda_context, method='POST',
                                  path='/scrapers/manual/json-upload', body={'items': [{'text': 'no id'}]})
         assert response['statusCode'] == 400
         assert import_run_rows == []
 
-    def test_a_failed_history_write_does_not_fail_the_import(self, wired, api_gateway_event, lambda_context):
-        with patch.object(import_runs, '_put_rows', side_effect=RuntimeError('throttled')):
+    @pytest.mark.usefixtures("wired")
+    def test_a_failed_history_write_does_not_fail_the_import(self, api_gateway_event, lambda_context):
+        with patch.object(import_runs, '_put_rows', side_effect=ClientError({'Error': {'Code': 'Throttling'}}, 'PutItem')):
             response, body = call_route(h.lambda_handler, api_gateway_event, lambda_context, method='POST',
                                         path='/scrapers/manual/csv-upload', body={'csv_text': CSV})
         assert response['statusCode'] == 200
