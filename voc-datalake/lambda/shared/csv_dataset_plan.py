@@ -42,7 +42,7 @@ _BATCH_GET_MAX_KEYS: Final = 100
 _BATCH_GET_ATTEMPTS: Final = 4
 _BATCH_GET_BACKOFF_SECONDS: Final = 0.05
 _READ_WORKERS: Final = 8
-_PLAN_FIELDS: Final = ('pk', 'sk', 'csv_content_hash', 'source_created_at')
+_PLAN_FIELDS: Final = ('pk', 'sk', 'csv_content_hash', 'source_created_at', 's3_raw_uri')
 _SNIPPET_FIELDS: Final = ('pk', 'sk', 'original_text')
 
 
@@ -58,6 +58,10 @@ class CsvDatasetPlan:
     changed: list[tuple[dict[str, Any], dict[str, Any]]] = field(default_factory=list)
     unchanged: list[dict[str, Any]] = field(default_factory=list)
     v1_rows: list[dict[str, Any]] = field(default_factory=list)
+
+    def archive_rewrites(self) -> dict[str, str]:
+        """Changed row id -> its stored item's raw archive (``shared.ingest_archive`` rewrites it in place)."""
+        return {item['id']: stored['s3_raw_uri'] for item, stored in self.changed if stored.get('s3_raw_uri')}
 
     def counts(self) -> dict[str, int]:
         return {'new': len(self.new), 'changed': len(self.changed),

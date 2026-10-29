@@ -132,7 +132,8 @@ class TestEveryStringBoundIsExact:
         assert validate_message(_raw()).model_dump() == {
             'id': 'item-1', 'source_platform': 'webscraper', 'text': 'Fine',
             'created_at': datetime(2025, 1, 1, 12, 0, tzinfo=UTC),
-            'csv_row_id': None, 'rating': None, 'url': None, 'source_url': None, 'source_channel': None,
+            'csv_row_id': None, 'csv_dataset': None, 'csv_content_hash': None, 'csv_replace': None,
+            'rating': None, 'url': None, 'source_url': None, 'source_channel': None,
             'channel': None, 'ingestion_method': None, 'source_origin': None, 'manual_import_job_id': None,
             'preset_category': None, 'preset_subcategory': None, 'author': None, 'title': None,
             'language': None, 'brand_name': None, 'brand_handles_matched': None, 'metadata': None,

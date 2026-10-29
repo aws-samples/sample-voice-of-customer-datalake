@@ -42,6 +42,8 @@ from shared.categorization import (
     translate_text as shared_translate_text,
 )
 from shared.converse import BedrockThrottlingError, converse
+from shared.csv_datasets import is_csv_replace
+from shared.csv_updates import csv_update, csv_update_decision, needs_reenrichment
 from shared.data_version import BatchBump, bump_radar_version
 from shared.dimension_config import load_dimensions_config, with_builtin_dimensions
 from shared.feedback_dimensions import category_product, merged_tags, reinfer_dimensions, resolve_item_dimensions
@@ -78,6 +80,7 @@ from shared.source_updates import (
     idempotency_key_for,
     is_update_capable,
     keeps_stored_category,
+    reenriched_fields,
     reenrichment_update,
     text_changed,
     update_decision,
@@ -458,8 +461,8 @@ def load_stored_item(pk: str, sk: str) -> dict | None:
     return item if isinstance(item, dict) else None
 
 
-def _reenrichment_update(stored: dict, raw_record: dict, now_iso: str) -> dict:
-    """Re-run the processor's enrichment for an edited issue; attributes-only when the model failed."""
+def _enrich_again(raw_record: dict) -> tuple[Enrichment, list]:
+    """The processor's enrichment of an updated copy, and the categories config it ran with."""
     categories_config = get_categories_config()
     enrichment = run_enrichment(
         raw_record,
@@ -467,16 +470,27 @@ def _reenrichment_update(stored: dict, raw_record: dict, now_iso: str) -> dict:
         PRIMARY_LANGUAGE,
         categories_config,
     )
+    return enrichment, categories_config
+
+
+def _reinferred_dimensions(stored: dict, enrichment: Enrichment, categories_config: list) -> tuple[dict, dict]:
+    """The stored item's dimensions after the re-enrichment (locked values kept)."""
+    category = stored.get('category') if keeps_stored_category(stored, enrichment) else enrichment.attributes['category']
+    return reinfer_dimensions(
+        get_dimensions_config(), stored,
+        product=category_product(categories_config, category), ai=enrichment.ai_dimensions,
+    )
+
+
+def _reenrichment_update(stored: dict, raw_record: dict, now_iso: str) -> dict:
+    """Re-run the processor's enrichment for an edited issue; attributes-only when the model failed."""
+    enrichment, categories_config = _enrich_again(raw_record)
     if enrichment.llm_failed:
         # Never overwrite a good enrichment with the fallback defaults; the text is
         # left as stored too, so the next copy of the issue tries again.
         count_metric("SourceUpdateEnrichmentFailed")
         return attributes_update(stored, raw_record, now_iso)
-    category = stored.get('category') if keeps_stored_category(stored, enrichment) else enrichment.attributes['category']
-    dimensions = reinfer_dimensions(
-        get_dimensions_config(), stored,
-        product=category_product(categories_config, category), ai=enrichment.ai_dimensions,
-    )
+    dimensions = _reinferred_dimensions(stored, enrichment, categories_config)
     count_metric("SourceUpdatesReenriched")
     return reenrichment_update(stored, raw_record, enrichment, dimensions, now_iso)
 
@@ -511,13 +525,63 @@ def refresh_stored_item(stored: dict, raw_record: dict) -> str:
     return decision
 
 
+def _csv_reenriched(stored: dict, raw_record: dict, pii_policy: str) -> tuple[dict, bool]:
+    """The text + enrichment fields of a corrected CSV row, and whether its category moves.
+
+    Enriched exactly like a new row (a failed model call keeps the fallback, as on import);
+    under summary-only the text is the model's summary and the customer's words are dropped.
+    """
+    enrichment, categories_config = _enrich_again(raw_record)
+    dimensions = _reinferred_dimensions(stored, enrichment, categories_config)
+    fields = reenriched_fields(stored, raw_record, enrichment, dimensions)
+    if pii_policy == PII_SUMMARY_ONLY:
+        fields.update(dict.fromkeys(SUMMARY_ONLY_DROPPED_FIELDS))
+        fields['original_text'] = fields.get('problem_summary') or WITHHELD_TEXT
+    return fields, not keeps_stored_category(stored, enrichment)
+
+
+@tracer.capture_method
+def refresh_csv_item(stored: dict, raw_record: dict) -> str:
+    """Apply a confirmed CSV correction to its stored row (shared/csv_updates.py); the decision.
+
+    Raises ``ConcurrentSourceUpdateError`` when the item changed under us (SQS retries).
+    """
+    decision = csv_update_decision(stored, raw_record)
+    if decision != UPDATE_APPLY:
+        logger.info(f"CSV update {decision}: {stored.get('feedback_id')}")
+        count_metric("CsvUpdatesUnchanged")
+        return decision
+    pii_policy = pii_policy_for(raw_record)
+    reenriched, moves_category = (
+        _csv_reenriched(stored, raw_record, pii_policy)
+        if needs_reenrichment(stored, raw_record, pii_policy) else (None, False))
+    try:
+        feedback_table.update_item(**csv_update(stored, raw_record, pii_policy, now_iso(), reenriched, moves_category))
+    except ClientError as e:
+        if is_conditional_check_failure(e):
+            raise ConcurrentSourceUpdateError(f"Feedback {stored.get('feedback_id')} changed during a CSV update") from e
+        raise
+    logger.info(f"Updated stored feedback {stored.get('feedback_id')} from a corrected CSV row")
+    count_metric("CsvUpdatesApplied" if reenriched is None else "CsvUpdatesReenriched")
+    return decision
+
+
+def _refreshable(raw_record: dict) -> bool:
+    """A record that may update the item it names: a GitHub issue, or a confirmed CSV correction."""
+    return is_update_capable(raw_record) or is_csv_replace(raw_record)
+
+
+def _refresh(stored: dict, raw_record: dict) -> str:
+    return refresh_csv_item(stored, raw_record) if is_csv_replace(raw_record) else refresh_stored_item(stored, raw_record)
+
+
 def _handled_as_existing(raw_record: dict, source_display: str, feedback_id: str) -> bool:
-    """True when the record names an item already stored: refreshed (issues) or skipped."""
-    if is_update_capable(raw_record):
+    """True when the record names an item already stored: refreshed (issues, CSV corrections) or skipped."""
+    if _refreshable(raw_record):
         stored = load_stored_item(f"SOURCE#{source_display}", f"FEEDBACK#{feedback_id}")
         if stored is None:
             return False
-        refresh_stored_item(stored, raw_record)
+        _refresh(stored, raw_record)
         return True
     if check_duplicate(source_display, feedback_id):
         logger.info(f"Skipping duplicate feedback: {source_display}/{raw_record.get('id', '')}")
@@ -608,6 +672,10 @@ def build_feedback_item(raw_record: dict, feedback_id: str, now: datetime) -> di
         # function — keep that step if this block is refactored, or sources that
         # send no identifier start writing null attributes.
         'csv_row_id': raw_record.get('csv_row_id'),
+        # A `csv-row-v2` row's dataset and content digest (shared/csv_datasets.py), compared
+        # by the next upload of that dataset. Absent (None-stripped) for every other row.
+        'csv_dataset': raw_record.get('csv_dataset'),
+        'csv_content_hash': raw_record.get('csv_content_hash'),
         'source_platform': source_platform,
         'source_channel': raw_record.get('source_channel', 'unknown'),
         # Ingestion-path provenance (e.g. 'manual', 'csv_upload', 'json_upload').
@@ -783,11 +851,11 @@ def process_radar_record(raw_record: dict, brand_label: str) -> dict:
 
 def _after_lost_put(raw_record: dict, processed_item: dict) -> dict:
     """The item appeared between the existence check and the put: refresh it or skip."""
-    stored = load_stored_item(processed_item['pk'], processed_item['sk']) if is_update_capable(raw_record) else None
+    stored = load_stored_item(processed_item['pk'], processed_item['sk']) if _refreshable(raw_record) else None
     if stored is None:
         count_metric("DuplicatesSkipped")
         return {"status": "skipped", "reason": "duplicate"}
-    return {"status": f"source_update_{refresh_stored_item(stored, raw_record)}",
+    return {"status": f"source_update_{_refresh(stored, raw_record)}",
             "feedback_id": processed_item['feedback_id']}
 
 
