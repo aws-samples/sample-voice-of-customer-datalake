@@ -26,6 +26,7 @@ from shared.document_versions import (
     persist_versioned_document,
 )
 from shared.feedback import query_feedback_by_date
+from shared.feedback_sampling import input_feedback_fields, input_feedback_ids
 from shared.invocation_cost import instrumented_handler
 from shared.jobs import JobContext, job_handler
 from shared.logging import logger
@@ -41,6 +42,8 @@ PROJECTS_TABLE = os.environ.get('PROJECTS_TABLE', '')
 FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
 
 SOURCE_DOCUMENT_PREFIXES = ('RESEARCH#', 'PRD#', 'PRFAQ#', 'DOC#')
+# Reviews a merge prompt quotes (the first of a newest-first fetch of 100).
+MERGE_FEEDBACK_REVIEWS = 20
 SYSTEM_PROMPTS = {
     'prd': "You are a senior product manager creating a revised PRD. Merge and revise the provided source documents according to the user's instructions.",
     'prfaq': "You are creating a revised Amazon-style PR-FAQ. Merge and revise the provided source documents. Include PRESS RELEASE, CUSTOMER FAQ (10 questions), and INTERNAL FAQ (10 questions).",
@@ -103,8 +106,8 @@ def _personas_context(
     return persona_text or None, used_persona_ids
 
 
-def _feedback_context(feedback_table: Any, merge_config: dict) -> tuple[str | None, int]:
-    """The customer-feedback prompt block (None when no feedback) and its review count."""
+def _feedback_context(feedback_table: Any, merge_config: dict) -> tuple[str | None, list[dict]]:
+    """The customer-feedback prompt block (None when no feedback) and the reviews in it, in prompt order."""
     feedback_items = query_feedback_by_date(
         feedback_table,
         days=merge_config.get('days', 30),
@@ -116,12 +119,12 @@ def _feedback_context(feedback_table: Any, merge_config: dict) -> tuple[str | No
             merge_config.get(category_access.SCOPE_CONFIG_KEY)),
     )
     if not feedback_items:
-        return None, 0
-    reviews = feedback_items[:20]
+        return None, []
+    reviews = feedback_items[:MERGE_FEEDBACK_REVIEWS]
     feedback_text = "## ADDITIONAL CUSTOMER FEEDBACK\n\n"
     for i, item in enumerate(reviews, 1):
         feedback_text += f"**Review {i}** ({item.get('source_platform', 'unknown')}, {item.get('sentiment_label', 'unknown')}): {item.get('original_text', '')[:250]}\n\n"
-    return feedback_text, len(reviews)
+    return feedback_text, reviews
 
 
 def _save_merged_document(
@@ -209,12 +212,12 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, merge_config: dict
         if persona_text:
             context_parts.append(persona_text)
 
-    # One pair, so "no feedback asked for" is the same (None, 0) the helper
+    # One pair, so "no feedback asked for" is the same (None, []) the helper
     # answers when the window holds no feedback.
-    feedback_text, used_feedback_count = None, 0
+    feedback_text, used_reviews = None, []
     if merge_config.get('use_feedback', False):
         ctx.update_progress(40, 'fetching_feedback')
-        feedback_text, used_feedback_count = _feedback_context(feedback_table, merge_config)
+        feedback_text, used_reviews = _feedback_context(feedback_table, merge_config)
     if feedback_text:
         context_parts.append(feedback_text)
 
@@ -245,10 +248,12 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, merge_config: dict
         DERIVATION_FIELD: build_derivation(
             sources=used_sources,
             selected_document_count=len(selected_doc_ids),
-            feedback_count=used_feedback_count,
+            feedback_count=len(used_reviews),
             persona_ids=used_persona_ids,
         ),
         'created_at': now,
+        # The reviews the merge prompt held (#236); ids only, no review text.
+        **input_feedback_fields(input_feedback_ids(used_reviews)),
     }
     item = _save_merged_document(projects_table, project_id, document_type, title, job_id, item_fields)
     return {'document_id': item['document_id'], 'title': item['title']}

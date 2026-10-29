@@ -188,3 +188,61 @@ class TestDateBasisIsRecorded:
             handler._build_steps('p1', 'j1', doc_config)
         stashed = {c.args[0]: c.args[1] for c in put.call_args_list}
         assert json.loads(stashed[handler._scratch_key('j1', 'date_basis')]) == {'date_basis': 'review'}
+
+
+def _identified_reviews(count: int) -> list[dict]:
+    return [{**review, 'feedback_id': f'fb{i}'} for i, review in enumerate(_reviews(count))]
+
+
+class TestFeedbackCorpusIsRecorded:
+    """#236: a PRD / PR-FAQ stores the ids of the reviews its prompts held, not just their count."""
+
+    def test_the_sample_carries_the_ids_of_the_records_that_reached_the_prompt(self):
+        reviews = _identified_reviews(10)
+        with patch.object(handler, 'feedback_char_budget', return_value=600), \
+                patch.object(handler, 'query_feedback_by_date', return_value=reviews):
+            sample = handler._feedback_context(MagicMock(), {})
+        assert sample.input_ids == tuple(f'fb{i}' for i in range(sample.items_used))
+
+    @pytest.mark.usefixtures('mock_dynamodb', 'mock_jobs_table', 'mock_converse_chain', 'mock_prompt_steps')
+    def test_single_shot_stores_the_ids_on_the_document_and_keeps_them_off_the_job_result(
+        self, mock_dynamodb, prd_generation_event, lambda_context,
+    ):
+        mock_dynamodb['table'].query.return_value = {'Items': []}
+        with patch.object(handler, 'query_feedback_by_date', return_value=_identified_reviews(4)):
+            result = handler.lambda_handler(prd_generation_event, lambda_context)
+        item = mock_dynamodb['table'].put_item.call_args.kwargs['Item']
+        assert item['input_feedback_ids'] == ['fb0', 'fb1', 'fb2', 'fb3']
+        assert 'input_feedback_ids' not in result
+
+    @pytest.mark.usefixtures('mock_dynamodb', 'mock_jobs_table', 'mock_s3')
+    def test_gather_stashes_the_ids_beside_the_usage(self, prd_generation_event):
+        with patch.object(handler, 'query_feedback_by_date', return_value=_identified_reviews(2)), \
+                patch.object(handler, '_put_text') as put:
+            handler._build_steps('p1', 'j1', prd_generation_event['doc_config'])
+        stashed = {c.args[0]: c.args[1] for c in put.call_args_list}
+        usage = json.loads(stashed[handler._scratch_key('j1', 'feedback_usage')])
+        assert usage['input_feedback_ids'] == ['fb0', 'fb1']
+
+    @pytest.mark.usefixtures('mock_dynamodb', 'mock_jobs_table', 'mock_s3')
+    def test_step_functions_save_stores_the_stashed_ids_on_the_document_only(self):
+        usage = {'feedback_items_used': 2, 'context_truncated': False, 'input_feedback_ids': ['fb1', 'fb0']}
+        texts = {handler._scratch_key('j1', 'feedback_usage'): json.dumps(usage)}
+        persist, status = _save_with_scratch(_scratch_reader(texts))
+        assert persist.call_args.args[5]['input_feedback_ids'] == ['fb1', 'fb0']
+        assert 'input_feedback_ids' not in status.call_args.kwargs['result']
+
+    @pytest.mark.usefixtures('mock_dynamodb', 'mock_jobs_table', 'mock_s3')
+    @pytest.mark.parametrize('stashed_ids', [['fb0', 7], 'fb0', [], ['']])
+    def test_a_malformed_or_empty_stashed_list_saves_without_the_field(self, stashed_ids):
+        usage = {'feedback_items_used': 2, 'context_truncated': False, 'input_feedback_ids': stashed_ids}
+        texts = {handler._scratch_key('j1', 'feedback_usage'): json.dumps(usage)}
+        persist, _ = _save_with_scratch(_scratch_reader(texts))
+        fields = persist.call_args.args[5]
+        assert 'input_feedback_ids' not in fields
+        assert fields['feedback_items_used'] == 2
+
+    def test_a_document_that_read_no_feedback_stores_no_ids(self):
+        assert handler._stashed_feedback_fields(handler.NO_FEEDBACK) == {
+            'feedback_items_used': 0, 'context_truncated': False,
+        }

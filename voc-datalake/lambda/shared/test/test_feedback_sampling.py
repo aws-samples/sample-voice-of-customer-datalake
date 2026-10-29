@@ -26,7 +26,9 @@ from shared.feedback_sampling import (
     MAX_INPUT_FEEDBACK_IDS,
     SampleFetchFailed,
     fetch_full,
+    input_feedback_fields,
     input_feedback_ids,
+    received_input_feedback_ids,
     sample_evenly,
     spread_order,
 )
@@ -295,3 +297,22 @@ class TestTheSampleIsRecheckedOnTheFullItems:
         assert items
         assert {i['category'] for i in items} == {'delivery'}
         assert len(items) == 19
+
+
+class TestInputFeedbackFields:
+    def test_the_field_holds_the_ids_capped(self):
+        assert input_feedback_fields(['a', 'b']) == {'input_feedback_ids': ['a', 'b']}
+        assert len(input_feedback_fields([f'f{n}' for n in range(600)])['input_feedback_ids']) == 500
+
+    def test_no_ids_is_no_field(self):
+        assert input_feedback_fields([]) == {}
+
+
+class TestReceivedInputFeedbackIds:
+    def test_a_list_of_ids_is_kept_capped(self):
+        assert received_input_feedback_ids(['b', 'a']) == ['b', 'a']
+        assert len(received_input_feedback_ids([f'f{n}' for n in range(600)]) or []) == 500
+
+    @pytest.mark.parametrize('value', [None, 'a', ['a', 3], ['a', ''], {'a': 1}])
+    def test_anything_else_reads_as_not_reported(self, value):
+        assert received_input_feedback_ids(value) is None

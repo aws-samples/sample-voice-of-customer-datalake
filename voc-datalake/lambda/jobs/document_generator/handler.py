@@ -76,6 +76,12 @@ from shared.feedback import (
     query_feedback_by_date,
     truncate_feedback_context,
 )
+from shared.feedback_sampling import (
+    INPUT_FEEDBACK_IDS_FIELD,
+    input_feedback_fields,
+    input_feedback_ids,
+    received_input_feedback_ids,
+)
 from shared.grounding import Grounding
 from shared.invocation_cost import instrumented_handler
 from shared.job_knowledge import derivation_knowledge, shared_grounding, with_guidance
@@ -120,10 +126,12 @@ class FeedbackSample(NamedTuple):
     query returned. ``truncated`` is True when the model saw less than the
     filters match: either the character budget trimmed records, or the fetch hit
     its derived limit (so more matching feedback may exist than was read).
+    ``input_ids`` are the ``feedback_id`` of those records, in prompt order (#236).
     """
     context: str
     items_used: int
     truncated: bool
+    input_ids: tuple[str, ...] = ()
 
 
 class GatheredContext(NamedTuple):
@@ -238,7 +246,7 @@ def _feedback_context(feedback_table, doc_config: dict) -> FeedbackSample:
                 'char_cap_applied': char_cap_applied,
             },
         )
-    return FeedbackSample(context, items_used, truncated)
+    return FeedbackSample(context, items_used, truncated, tuple(input_feedback_ids(feedback_items, items_used)))
 
 
 def _persona_context(project_items: list, doc_config: dict) -> tuple[str, list[str]]:
@@ -655,6 +663,24 @@ def _feedback_usage_fields(feedback: FeedbackSample) -> dict:
     }
 
 
+def _feedback_corpus_fields(feedback: FeedbackSample) -> dict:
+    """The ids of the reviews the document's prompts held (#236), or ``{}`` when it read none.
+
+    Stored on the document only: the job result keeps the counts (``_job_usage``).
+    """
+    return input_feedback_fields(feedback.input_ids)
+
+
+def _stashed_feedback_fields(feedback: FeedbackSample) -> dict:
+    """What the gather step stashes for the save step: the usage counts and the corpus ids."""
+    return {**_feedback_usage_fields(feedback), **_feedback_corpus_fields(feedback)}
+
+
+def _job_usage(feedback_fields: dict) -> dict:
+    """The job result's share of the document's feedback fields: the counts, not the id list."""
+    return {key: value for key, value in feedback_fields.items() if key != INPUT_FEEDBACK_IDS_FIELD}
+
+
 def _date_basis_fields(doc_config: dict) -> dict:
     """Which dates the feedback window applied to, stored on the document (#258).
 
@@ -670,7 +696,7 @@ def _document_item_fields(project_id: str, job_id: str, feature_idea: str,
                           feedback_usage: dict, date_basis_fields: dict) -> dict:
     """The versioned-document item fields shared by the sync and step-function paths.
 
-    ``feedback_usage`` is ``_feedback_usage_fields``' output and
+    ``feedback_usage`` is ``_stashed_feedback_fields``' output (counts + corpus ids) and
     ``date_basis_fields`` is ``_date_basis_fields``' output; either is ``{}``
     when unknown (a Step Functions execution gathered before it was recorded).
     """
@@ -1562,13 +1588,13 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, doc_config: dict) 
     )
 
     ctx.update_progress(90, 'saving_document')
-    feedback_usage = _feedback_usage_fields(gathered.feedback)
+    feedback_fields = _stashed_feedback_fields(gathered.feedback)
     item_fields = _document_item_fields(
         project_id, job_id, feature_idea, content,
         build_derivation(**gathered.derivation_inputs, product_context_included=product_context_included,
                          **derivation_knowledge(grounding)),
         analysis,
-        feedback_usage,
+        feedback_fields,
         _date_basis_fields(doc_config),
     )
 
@@ -1580,7 +1606,7 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, doc_config: dict) 
         job_id,
         item_fields,
     )
-    return {'document_id': item['document_id'], 'title': item['title'], **feedback_usage}
+    return {'document_id': item['document_id'], 'title': item['title'], **_job_usage(feedback_fields)}
 
 
 # ── Step Functions step handlers ─────────────────────────────────────────────
@@ -1651,8 +1677,16 @@ def _read_derivation(job_id: str) -> dict:
 
 
 def _read_feedback_usage(job_id: str) -> dict:
-    """The feedback usage the gather step stashed, or ``{}`` (unknown — omitted)."""
-    return _read_scratch_json(job_id, 'feedback_usage', {}, 'feedback usage')
+    """The feedback usage the gather step stashed, or ``{}`` (unknown — omitted).
+
+    A malformed id list is dropped (the document saves without it); an execution
+    gathered before #236 stashed none, and its document simply has no corpus ids.
+    """
+    stashed = _read_scratch_json(job_id, 'feedback_usage', {}, 'feedback usage')
+    if INPUT_FEEDBACK_IDS_FIELD not in stashed:
+        return stashed
+    ids = received_input_feedback_ids(stashed[INPUT_FEEDBACK_IDS_FIELD])
+    return {**_job_usage(stashed), **input_feedback_fields(ids or [])}
 
 
 def _read_date_basis(job_id: str) -> dict:
@@ -1723,10 +1757,11 @@ def _build_steps(project_id: str, job_id: str, doc_config: dict) -> dict:
             **derivation_knowledge(grounding),
         )),
     )
-    # Same claim-check, same reason, for the feedback-budget outcome (#231).
+    # Same claim-check, same reason, for the feedback-budget outcome (#231) and
+    # the ids of the reviews the prompts held (#236).
     _put_text(
         _scratch_key(job_id, 'feedback_usage'),
-        _json.dumps(_feedback_usage_fields(gathered.feedback)),
+        _json.dumps(_stashed_feedback_fields(gathered.feedback)),
     )
     # And for the date basis the feedback was read with (#258).
     _put_text(_scratch_key(job_id, 'date_basis'), _json.dumps(_date_basis_fields(doc_config)))
@@ -1794,10 +1829,10 @@ def _assemble_and_save(project_id: str, job_id: str, doc_type: str, title: str,
 
     content, analysis = spec.assemble(ChainOutput(title, results))
 
-    feedback_usage = _read_feedback_usage(job_id)
+    feedback_fields = _read_feedback_usage(job_id)
     item_fields = _document_item_fields(
         project_id, job_id, feature_idea, content, _read_derivation(job_id), analysis,
-        feedback_usage, _read_date_basis(job_id),
+        feedback_fields, _read_date_basis(job_id),
     )
 
     item = persist_versioned_document(
@@ -1822,7 +1857,7 @@ def _assemble_and_save(project_id: str, job_id: str, doc_type: str, title: str,
     except Exception:
         logger.exception("Scratch cleanup failed (non-fatal)")
 
-    result = {'document_id': item['document_id'], 'title': item['title'], **feedback_usage}
+    result = {'document_id': item['document_id'], 'title': item['title'], **_job_usage(feedback_fields)}
     update_job_status(
         project_id, job_id, 'completed', 100, 'complete', result=result,
     )

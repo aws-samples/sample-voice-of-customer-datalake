@@ -61,3 +61,10 @@ def test_the_saved_title_carries_its_utc_creation_time(research):
 
     stamp = item['created_at'][:16].replace('T', ' ') + ' UTC'
     assert item['title'] == f'Churn drivers — {stamp}'
+
+
+def test_the_report_stores_the_ids_of_the_reviews_it_read(research):
+    """#236: the fallback's prompt holds every fetched review, so all their ids are the corpus."""
+    _, item = research({'sources': ['web']})
+
+    assert item['input_feedback_ids'] == ['f1']

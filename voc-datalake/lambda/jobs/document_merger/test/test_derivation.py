@@ -6,6 +6,8 @@ requested document that no longer exists is silently skipped. The shared
 derivation records the ones that reached the model, and the selected count keeps
 the missing one visible.
 """
+import re
+
 import pytest
 
 from jobs.test.project_tables_fixtures import feedback_table_beside, negative_webscraper_reviews
@@ -95,3 +97,34 @@ class TestMergeProvenance:
         derivation = _saved_item(mock_dynamodb)['derivation']
         assert derivation['feedback_count'] == 3
         assert derivation['product_context_included'] is False
+
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table")
+    def test_stores_the_ids_of_the_reviews_its_prompt_held_in_prompt_order(
+        self, mock_dynamodb, mock_converse, event, lambda_context,
+    ):
+        """#236: the corpus behind a merged document, capped at the 20 reviews the prompt quotes."""
+        event['merge_config']['use_feedback'] = True
+        event['merge_config']['days'] = 1
+        reviews = [{**review, 'feedback_id': f'fb{i}'} for i, review in enumerate(negative_webscraper_reviews(25))]
+        feedback_table_beside(mock_dynamodb, reviews)
+
+        from jobs.document_merger.handler import lambda_handler
+
+        lambda_handler(event, lambda_context)
+
+        prompt = mock_converse.call_args.kwargs['prompt']
+        quoted = [f'fb{n}' for n in re.findall(r'\): review (\d+)', prompt)]
+        item = _saved_item(mock_dynamodb)
+        assert len(quoted) == 20
+        assert item['input_feedback_ids'] == quoted
+        assert item['derivation']['feedback_count'] == 20
+
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse")
+    def test_a_merge_without_feedback_stores_no_corpus_ids(
+        self, mock_dynamodb, event, lambda_context,
+    ):
+        from jobs.document_merger.handler import lambda_handler
+
+        lambda_handler(event, lambda_context)
+
+        assert 'input_feedback_ids' not in _saved_item(mock_dynamodb)
