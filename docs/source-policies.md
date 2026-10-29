@@ -175,8 +175,8 @@ What the worker does:
    brand name keeps every plugin's items in one brand partition, and feedback forms use their own
    brand's. Only the attribute tells sources apart.
 2. **Raw files.** It then deletes every object version and delete marker under `raw/<source>/`,
-   1,000 at a time, including archives no item points at any more. The trailing `/` keeps
-   `raw/web/` from reaching `raw/web_reviews/`.
+   1,000 at a time, including archives no item points at any more. The prefix ends in `/`, so
+   erasing source `web` never reaches the folder of a source named `web_shop`.
 3. **Progress.** While it runs, the job row carries `deleted_items`, `deleted_objects`, `phase`
    (`items`, then `raw`) and `progress_at`, refreshed when the counts move and at least every
    minute. It hands over to a fresh invocation before its timeout, in either phase.
