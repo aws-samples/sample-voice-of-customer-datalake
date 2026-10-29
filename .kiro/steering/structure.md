@@ -602,6 +602,8 @@ the app pool). Assistant tools on `/participants` (pack `participants`, card-onl
 | GET | `/s3-import/files` | Staged files (admin) |
 | POST | `/s3-import/upload-url` | Create-only presigned PUT (409 existing key; `If-None-Match: *` signed) (admin) |
 | DELETE | `/s3-import/file/{key}` | Delete `<source>/<file>` only — 400 for `..`, leading `/`, `processed/` (admin) |
+| POST | `/s3-import/reprocess` | Re-run one file `{key}` (`<source>/<file>` or `processed/<source>/<file>`) through the `s3_import` ingestor → 202 `{success, run}`; 404 missing file (admin; docs/data-lake-structure.md → Reprocessing a file) |
+| GET | `/s3-import/reprocess/{run_id}` | One run: the `SOURCE_RUN#s3_import` / `<run id>` row the ingestor moves to completed / error (admin) |
 
 ### Memory (memory_handler.py, `voc-memory-api`) — all Cognito, see docs/memory.md
 | Method | Path | Description |

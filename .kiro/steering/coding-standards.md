@@ -183,7 +183,7 @@ lambda/jobs/category_reprocess/handler.py  # voc-category-reprocess worker (asyn
 | Integrations | `integrations_handler.py` | Secrets Manager, EventBridge |
 | Scrapers | `scrapers_handler.py` | Secrets Manager, Lambda invoke, Bedrock |
 | Manual Import | `manual_import_handler.py` | DynamoDB, SQS, S3 |
-| S3 Import | `s3_import_handler.py` | S3 import bucket RW, KMS |
+| S3 Import | `s3_import_handler.py` | S3 import bucket RW, KMS; reprocess: invoke the `s3_import` ingestor, aggregates `SOURCE_RUN#s3_import` rows only |
 | Settings | `settings_handler.py` | DynamoDB (aggregates), Bedrock |
 | Projects | `projects_handler.py` | DynamoDB (projects, jobs), Step Functions, Bedrock, S3 |
 | Users | `users_handler.py` | Cognito admin |
