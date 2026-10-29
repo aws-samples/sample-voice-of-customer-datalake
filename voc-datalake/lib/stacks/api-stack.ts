@@ -31,6 +31,7 @@ import { stringOr } from '../utils/context';
 import { VocStack, VocStackProps } from '../utils/voc-stack';
 import type { ApiStackContext } from './api-context';
 import { createAssistantLambdas } from './api-assistant-lambdas';
+import { s3ImportIngestorDeployed } from './api-s3-import-lambda';
 import { createDataLambdas } from './api-data-lambdas';
 import { createEngagementLambdas } from './api-engagement-lambdas';
 import { createVerificationFixtureProvider } from './api-fixture-provider';
@@ -269,6 +270,8 @@ export class VocApiStack extends VocStack {
       usersLambda: engagement.usersLambda,
       radarLambda,
       engagementLambda,
+    }, {
+      s3ImportIngestorDeployed: s3ImportIngestorDeployed(getEnabledPlugins(data.allPlugins, props.enabledSources)),
     });
     // cryptography only where live code can sign CloudFront URLs (py_layers derives the set).
     attachSigningLayer(this);
