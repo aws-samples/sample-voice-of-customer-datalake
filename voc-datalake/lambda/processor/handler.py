@@ -45,6 +45,7 @@ from shared.converse import BedrockThrottlingError, converse
 from shared.data_version import BatchBump, bump_radar_version
 from shared.dimension_config import load_dimensions_config, with_builtin_dimensions
 from shared.feedback_dimensions import category_product, merged_tags, reinfer_dimensions, resolve_item_dimensions
+from shared.feedback_keys import FEEDBACK_ID_LENGTH, feedback_item_id
 from shared.idempotency import (
     IdempotencyAlreadyInProgressError,
     get_idempotency_config,
@@ -416,19 +417,19 @@ def generate_deterministic_id(source_platform: str, source_id: str, text: str = 
     import hashlib
 
     if source_id:
-        # Primary: use source-provided ID (most reliable)
-        content = f"{source_platform}:{source_id}"
-    else:
-        # Fallback: generate ID from content signature
-        # Use text hash (first 500 chars to handle minor variations); the hash is a
-        # content fingerprint, not a security control.
-        text_hash = hashlib.sha256(text[:500].encode()).hexdigest()[:16] if text else ''
-        # Include created_at (review date) to differentiate reviews with similar text
-        # Include URL for additional uniqueness
-        content = f"{source_platform}:{created_at}:{text_hash}:{url}"
-        logger.info(f"Generated fallback ID for {source_platform} (no source_id): text_hash={text_hash}")
+        # Primary: use source-provided ID (most reliable). Shared with the CSV
+        # dataset preview, which reads the item back by this key.
+        return feedback_item_id(source_platform, source_id)
+    # Fallback: generate ID from content signature
+    # Use text hash (first 500 chars to handle minor variations); the hash is a
+    # content fingerprint, not a security control.
+    text_hash = hashlib.sha256(text[:500].encode()).hexdigest()[:16] if text else ''
+    # Include created_at (review date) to differentiate reviews with similar text
+    # Include URL for additional uniqueness
+    content = f"{source_platform}:{created_at}:{text_hash}:{url}"
+    logger.info(f"Generated fallback ID for {source_platform} (no source_id): text_hash={text_hash}")
 
-    return hashlib.sha256(content.encode()).hexdigest()[:32]
+    return hashlib.sha256(content.encode()).hexdigest()[:FEEDBACK_ID_LENGTH]
 
 
 @tracer.capture_method

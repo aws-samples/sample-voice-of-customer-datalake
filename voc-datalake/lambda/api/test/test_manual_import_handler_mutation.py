@@ -786,6 +786,7 @@ class TestCsvColumns:
         assert warnings == []
         assert items == [{
             'id': items[0]['id'],
+            'row': 1,
             'csv_row_id': '9',
             'text': 'Solid',
             'rating': 4,
