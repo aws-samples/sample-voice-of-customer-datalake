@@ -184,10 +184,11 @@ class TestCsvParsing:
 
     def test_edited_row_gets_a_new_id_rather_than_updating_in_place(self):
         """
-        Documented trade-off of content-addressed identity: re-uploading a file
-        with a corrected row imports that row as an ADDITIONAL record, because
-        the processor keys DynamoDB off the id emitted here. Correcting a file
-        in place is not an update path; delete the prior import first.
+        `csv-row-v1` (no dataset name): identity is a fingerprint of the content,
+        so re-uploading a file with a corrected row imports that row as an
+        ADDITIONAL record. Still true without a dataset name, and for rows with
+        no id. The update path is a dataset upload (`csv-row-v2`, issue #411,
+        test_manual_import_csv_dataset.py).
         """
         from manual_import_handler import _parse_csv_to_items
         before, _ = _parse_csv_to_items('id,text\n1,teh app crashes\n', 'w')
