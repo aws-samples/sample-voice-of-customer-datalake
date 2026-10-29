@@ -3,7 +3,7 @@
  * the admin-only explorer over VocIngestionStack's import bucket. Resources are
  * created on the stack itself (logical ids unchanged) — see api-context.ts.
  *
- * `POST /s3-import/reprocess` (issue #144, docs/s3-import.md) re-runs one file
+ * `POST /s3-import/reprocess` (issue #144, docs/data-lake-structure.md) re-runs one file
  * through the `s3_import` ingestor, reached BY NAME like every ingestor the API
  * invokes (`POST /sources/{source}/run`, api-data-lambdas.ts): VocIngestionStack
  * deploys first, and a construct reference would add a cross-stack export.
