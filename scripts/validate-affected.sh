@@ -4,11 +4,11 @@
 #   bash scripts/validate-affected.sh [<base>] [validate.sh options…]   e.g. --keep-going
 #   bash scripts/validate-affected.sh --explain [<base>]                 print the mapping, run nothing
 #
-# <base> defaults to the integration branch, kiro-voc. "Changed" is everything in
+# <base> defaults to origin/main (every release branch starts there). "Changed" is everything in
 # `git diff --name-only <base>...HEAD`, plus uncommitted and untracked (not ignored) files.
 #
 # This is NOT the release gate. The full `bash scripts/validate.sh` still runs ONCE on the
-# integration branch before each release commit (CONTRIBUTING.md); that run is the backstop for
+# release branch before it is pushed for its PR (CONTRIBUTING.md); that run is the backstop for
 # anything the mapping below misses.
 #
 # The mapping, path → validate.sh groups (see `validate.sh --list`):
@@ -29,7 +29,7 @@ ROOT="$PWD"
 
 EXPLAIN=0
 if [[ "${1:-}" == "--explain" ]]; then EXPLAIN=1; shift; fi
-BASE="kiro-voc"
+BASE="origin/main"
 if [[ $# -gt 0 && "$1" != -* ]]; then BASE="$1"; shift; fi
 if ! git rev-parse --verify --quiet "$BASE^{commit}" >/dev/null; then
   printf 'validate-affected: base %s is not a commit (pass one: validate-affected.sh <base>)\n' "$BASE" >&2
@@ -131,7 +131,7 @@ ONLY="$(printf '%s' "$AFFECTED" | xargs | tr ' ' ',')"
 printf 'validate-affected: base %s, %s changed file(s)\n' "$BASE" "$(printf '%s' "$CHANGED" | awk 'NF' | wc -l | tr -d ' ')"
 printf '%s' "$REASONS" | awk '!seen[$0]++'
 printf 'groups: %s\n' "$ONLY"
-printf 'reminder: the FULL scripts/validate.sh runs once on the integration branch before the release commit.\n\n'
+printf 'reminder: the FULL scripts/validate.sh runs once on the release branch before it is pushed for its PR.\n\n'
 if [[ "$EXPLAIN" -eq 1 ]]; then
   bash "$ROOT/scripts/validate.sh" --only "$ONLY" --list
   exit 0

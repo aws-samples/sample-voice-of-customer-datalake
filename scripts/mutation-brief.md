@@ -97,8 +97,8 @@ silent tests if yours is among them: `lambda/aggregator/test/test_handler.py:102
 `plugins/_shared/test/test_circuit_breaker.py:95,168`.
 
 ## Gates before every commit (from `voc-datalake/`) — targeted, never the full validate
-Agents do NOT run `scripts/validate.sh`: the integrator runs it ONCE on the integration branch, after
-the round is merged and before the release commit. Yours are the gates for your own files:
+Agents do NOT run `scripts/validate.sh`: the integrator runs it ONCE on the release branch, after
+the round is merged and before it is pushed for its PR. Yours are the gates for your own files:
 ```
 ruff check <your module and test files>                       # every rule is enforced; no PENDING block remains
 npx --prefix .. pyright --pythonpath .venv/bin/python <your module and test files>   # zero errors
@@ -118,7 +118,7 @@ spec.loader`, and annotate module-level fixtures' return types; never `# type: i
 Once, before the final commit, the affected gates of your branch (from the worktree root; the prompt
 gives the base and your share of the CPUs — eight agents run at once, so never more workers than that):
 ```
-VALIDATE_PYTEST_WORKERS=2 bash scripts/validate-affected.sh kiro-voc
+VALIDATE_PYTEST_WORKERS=2 bash scripts/validate-affected.sh origin/main
 ```
 For a tests-only branch that is the Python group: ruff, vulture, pyright, check_tests_assert and the
 WHOLE pytest suite in parallel (pytest-xdist, ≈ 4–6 min at 2 workers while the round runs), plus the
@@ -234,7 +234,7 @@ npx jscpd --fail-on-empty --reporters console --silent      # threshold 0: no ou
 The frontend `tsc` reads the stream Lambda's contract: never run it while a stream Stryker run is
 active in the same worktree (you have one job, so this only matters if you started one by hand).
 A frontend spec that adds a `fetchApi` call site needs its mock route (tech.md, `npm run check:mock`).
-Once, before the final commit: `bash scripts/validate-affected.sh kiro-voc` from the worktree root.
+Once, before the final commit: `bash scripts/validate-affected.sh origin/main` from the worktree root.
 
 ## Report (final message, UNDER 3,000 characters)
 ```

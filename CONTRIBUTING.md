@@ -64,11 +64,13 @@ CI (`.github/workflows/quality-gates.yml`) runs that script and nothing else. Ea
 
 ### When to run what
 - **Track, agent and mutation branches: the affected gates only.** `bash scripts/validate-affected.sh [<base>]`
-  (base defaults to `kiro-voc`) maps the changed paths — committed, uncommitted and untracked — to the steps that
+  (base defaults to `origin/main`) maps the changed paths — committed, uncommitted and untracked — to the steps that
   matter for them, and `--explain` prints that mapping without running anything. While iterating, run the single
   tool you need (`ruff check <files>`, `pytest <test files>`, `npx vitest run <spec>`).
-- **The integration branch: the full `scripts/validate.sh`, ONCE, just before the release commit** (after the
-  tracks are merged). It is the backstop for anything the affected mapping misses, so it is never skipped.
+- **The release branch: the full `scripts/validate.sh`, ONCE, just before it is pushed for its PR** (after any
+  topic branches are merged into it). It is the backstop for anything the affected mapping misses, so it is never
+  skipped; CI runs it again on the PR. Release branches start from `main` and reach it only through a squash-merged
+  PR (`.kiro/steering/changelog.md` → Branches and PRs).
 
 ### How validate.sh runs
 The steps run in five parallel lanes — `py` (ruff, vulture, pyright, pytest with pytest-xdist), `tsc` (type checks,

@@ -17,6 +17,18 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.48.03] - 2026-10-29
+
+Contributing starts from `main`: one branch per release, merged by pull request.
+
+### Changed
+- [CONTRIBUTING.md](CONTRIBUTING.md#quality-gates), the steering files and [deployment](docs/deployment.md) describe the
+  flow without an integration branch: cut a release (or topic) branch from `origin/main`, bump once, run the full
+  `scripts/validate.sh` once, push and open a PR, squash-merge when CI is green. Before the first push, check that the
+  branch holds only your new commits.
+- `scripts/validate-affected.sh` compares against `origin/main` by default (it named a branch that no longer exists);
+  the mutation tooling's default base (`MUT_BASE`) is `origin/main` too.
+
 ## [5.48.02] - 2026-10-29
 
 Follow-ups from the 5.48 review: the design-reference archive's list permission is pinned, SVG download links have

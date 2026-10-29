@@ -223,7 +223,7 @@ function prompts(round, plan) {
         `Module: voc-datalake/${m.file}${slice}. Weight ${m.weight}.`,
         `Existing tests: ${m.tests.map((t) => `voc-datalake/${t}`).join(', ') || 'none'}. New test file: voc-datalake/${m.new_test_file}.`,
         prune,
-        `Gates: targeted only (the brief's "Gates" section); never the full scripts/validate.sh. Final check: \`VALIDATE_PYTEST_WORKERS=${PYTEST_WORKERS_PER_AGENT} bash scripts/validate-affected.sh ${process.env.MUT_BASE || 'kiro-voc'}\`.`,
+        `Gates: targeted only (the brief's "Gates" section); never the full scripts/validate.sh. Final check: \`VALIDATE_PYTEST_WORKERS=${PYTEST_WORKERS_PER_AGENT} bash scripts/validate-affected.sh ${process.env.MUT_BASE || 'origin/main'}\`.`,
         'Report in the brief\'s format, under 3,000 characters.',
       ].join('\n'),
     };
@@ -265,7 +265,7 @@ if (cmd === 'plan' && args.includes('--ts')) {
   const planPath = args[1] ?? DEFAULT_PLAN;
   if (!round) { console.error('prompts <round> [plan.json]'); process.exit(2); }
   const plan = JSON.parse(readFileSync(planPath, 'utf8'));
-  const stages = plan.lang === 'ts' ? tsPrompts(round, plan, BRIEF, process.env.MUT_BASE || 'kiro-voc') : prompts(round, plan);
+  const stages = plan.lang === 'ts' ? tsPrompts(round, plan, BRIEF, process.env.MUT_BASE || 'origin/main') : prompts(round, plan);
   console.log(JSON.stringify(stages, null, 2));
 } else {
   console.error('usage: mutation-plan.mjs plan [--ts] [out.json] [--only list] [--frozen-tests list] [--baseline r.json,…] [--agents n] [--job-work n] | prompts <round> [plan.json]');
