@@ -10,14 +10,12 @@ import { renderWithQueryClient } from '../../test/query-client'
 import type { S3ImportFile } from '../../api/types'
 import type { S3ImportRun } from '../../api/s3ImportReprocessApi'
 
+// The explorer's own list and upload calls; only the two below are asserted on.
 vi.mock('../../api/client', () => ({
-  api: {
-    getS3ImportSources: vi.fn(),
-    getS3ImportFiles: vi.fn(),
-    createS3ImportSource: vi.fn(),
-    deleteS3ImportFile: vi.fn(),
-    getS3UploadUrl: vi.fn(),
-  },
+  api: Object.fromEntries(
+    ['getS3ImportSources', 'getS3ImportFiles', 'createS3ImportSource', 'deleteS3ImportFile', 'getS3UploadUrl']
+      .map((name) => [name, vi.fn()]),
+  ),
 }))
 
 vi.mock('../../api/s3ImportReprocessApi', async (importOriginal) => ({
