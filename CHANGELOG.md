@@ -17,6 +17,22 @@ the platform package version.
 
 ## [Unreleased]
 
+### Added
+- PRDs, PR/FAQs, merged documents and research reports from the synchronous fallback now store
+  `input_feedback_ids`, the ids of the reviews their prompts held (at most 500), as personas and Step Functions
+  research reports already did. A persona's header and a document's provenance footer show "Written from N
+  reviews" with **Show reviews**, a paged list of those reviews read by id that opens each in the review modal.
+  See [project workspace](docs/project-workspace.md#which-feedback-a-generation-reads).
+
+### Changed
+- `source_feedback_ids` on a persona (the first 20 reviews fetched) is documented as display-only in
+  `schemas/persona.schema.json`; `input_feedback_ids` is the corpus.
+
+### Upgrade notes
+- Only review ids are stored on artefacts, never review text, so source retention and erasure still reach every
+  review ([source policies](docs/source-policies.md#what-erasure-does-not-reach)); an erased review shows as
+  unavailable in the list. Artefacts generated before this release have no ids and show no corpus line.
+
 ## [5.48.06] - 2026-10-30
 
 The rest of the npm packages move to their newest release within their current major, and the fixes a full

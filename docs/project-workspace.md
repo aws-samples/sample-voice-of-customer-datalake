@@ -42,7 +42,22 @@ A persona, research or document job can put only a few hundred reviews in front 
 
 Limits: the window read covers at most 90 days that hold feedback (within 400 calendar days for "All time"), at most 50,000 matching reviews and about 20 seconds of reading. Past either of the last two the sample covers the newest part of the window only, and the job's log line `[FEEDBACK] Sampled N of M matching reviews (at least; the read was capped)` says so. A channel filter reads the channel index (`gsi5-by-channel`), so a small channel inside a big import is found in full.
 
-**The corpus is stored with the result** (issue #236): every generated persona carries `input_feedback_ids`, the ids of the reviews its persona-writing step read, in prompt order (at most 500), and a research report's document carries the same field. `source_feedback_ids` (the first 20) is unchanged. Personas and reports generated before this change have no `input_feedback_ids`.
+**The corpus is stored with the result** (issue #236). Every artefact generated from feedback carries `input_feedback_ids`: the ids of the reviews its prompts held, in prompt order, at most 500 (`MAX_INPUT_FEEDBACK_IDS`, `lambda/shared/feedback_sampling.py`). That covers:
+
+| Artefact | Written by | Ids stored |
+|---|---|---|
+| Persona | persona job (`api/projects.py`) | the reviews the persona-writing step read |
+| Research report | research workflow (`research/research_step_handler.py`); the synchronous fallback (`run_research`) | the reviews the research prompt held (the fallback: every review it fetched) |
+| PRD, PR/FAQ | document generator, single-shot and Step Functions paths (`jobs/document_generator`), so also "Pursue" on a decision and the agents' write-PRD / write-PR/FAQ nodes | the reviews the chain's feedback block held, after the character budget |
+| Merged document | document merger (`jobs/document_merger`), when "use feedback" is on | the 20 reviews the merge prompt quotes |
+
+Not covered, because no review reaches their prompt: prototypes (built from a PRD / PR/FAQ and tester pins), avatar regeneration, persona import, the product report. The suggestion routes (PR/FAQ autofill, suggest-brief, suggest-questions) read feedback but store no artefact. The job result keeps only the counts (`feedback_items_used`, `context_truncated`); the id list lives on the artefact. An edit of a PRD / PR/FAQ is a new version that keeps its predecessor's ids.
+
+**Ids only, never review text** (a design decision): copying customer text into project rows would put it out of reach of source retention and erasure ([source policies](source-policies.md#what-erasure-does-not-reach)). A review erased or deleted since simply shows as unavailable.
+
+**In the UI**, a persona's header and a document's provenance footer show "Written from N reviews" with **Show reviews**, which opens the list ten at a time. Each review is read by id (`GET /feedback/{id}`, so the caller's category and source access applies) and opens in the review modal; one that is gone or outside the caller's access shows as unavailable.
+
+`source_feedback_ids` on a persona (the first 20 reviews fetched) is **display-only** and kept for older readers: it is not the corpus, and nothing in the app reads it. Personas and documents generated before this change, and imported or hand-made ones, have no `input_feedback_ids` and show no corpus line.
 
 ## Managed Document Versions
 
