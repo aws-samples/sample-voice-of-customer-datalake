@@ -10,6 +10,7 @@ import re
 import threading
 from collections.abc import Callable
 
+import projects
 from shared.converse import ConverseResult
 from shared.test.converse_fixtures import CHAIN_MODEL_ID
 
@@ -100,3 +101,11 @@ class FakePersonaModel:
     def attempts(self, name: str) -> int:
         """How many persona calls were made for the planned *name*."""
         return self._attempts.get(name, 0)
+
+
+def one_item_corpus() -> projects._PersonaCorpus:
+    """A one-review corpus, enough for generate_personas to run its real chain against the fake."""
+    return projects._PersonaCorpus(
+        items=[{'feedback_id': 'fb-1', 'source_platform': 'webscraper'}], context='CTX', stats='STATS',
+        context_budget=5000, fetch_limit=40, fetch_limit_reached=False, corpus_chars=10, char_cap_applied=False,
+    )
