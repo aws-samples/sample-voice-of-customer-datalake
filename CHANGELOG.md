@@ -17,157 +17,24 @@ the platform package version.
 
 ## [Unreleased]
 
-## [5.54.00] - 2026-10-30
+## [5.56.00] - 2026-10-30
 
-Every review gets a usefulness band, and the Data Explorer shows each source's data quality (#238).
-
-### Added
-- Every review now carries a `usefulness` band (`low`, `medium`, `high`): a rule-based rating from its
-  length, specifics (numbers, product terms) and whether it names a concrete issue or request, computed by
-  the processor with no extra model call ([data quality](docs/data-quality.md)). Length is script-aware,
-  so an untranslated Chinese, Japanese or Thai review is not rated `low` for having no spaces.
-- `GET /metrics/data-quality?days=` on the metrics API: per source, how many reviews are `low`, `medium`,
-  `high` or not rated yet. It reads daily per-source counters (`METRIC#daily_usefulness#<source>#<band>` in
-  `voc-aggregates`); a caller with a category or source rule, or the review-date basis, is counted from the
-  visible reviews like the other `/metrics/*` routes.
-- A **Data quality** section on the Data Explorer's Processed Feedback tab: a stacked bar per source and a
-  table with each band's count and share, including the "Not rated" share.
-
-### Changed
-- The category reprocess (every mode) also computes the usefulness band of each review it reads. A review
-  whose category or dimensions do not change but whose band is missing gets a band-only update, counted as
-  `updated`. A review from a `summary_only` source keeps the band it got at ingestion from its full text.
-- Persona, research and document generation use the band as a tiebreaker when they sample feedback: within
-  one day, more useful reviews are picked first. Each day keeps its share and no review is excluded.
-
-### Upgrade notes
-- The per-source band counters start counting at deploy time, and reviews stored before this release have
-  no band: they show as "Not rated". Run a category reprocess (Administration → Taxonomy → Categories →
-  "Reprocess existing feedback") over the window you care about to rate them; the `dimensions` mode also
-  rates reviews with a manual category. The reprocess makes its usual model call per review, but none for
-  the band.
-
-## [5.53.00] - 2026-10-30
-
-Administrators can delete all data from one source in a single erasure job (#143).
+Import history: every import writes a run record that administrators can browse (#237).
 
 ### Added
 
-- **Delete all data from a source** (Administration → Privacy & access → Sources): one erasure job removes
-  every review of a source and every raw file under its `raw/<source>/` folder, behind a dialog where you
-  type the source id. The panel shows the job's progress (reviews, then raw files). Dashboard counts fall
-  as the reviews go, through the aggregator's delete path, and the app's feedback views refresh when the
-  job ends. The source keeps its settings, schedule and
-  sync position, and uploaded CSV / JSON files are kept.
-  See [docs/source-policies.md → Delete all data from a source](docs/source-policies.md#delete-all-data-from-a-source).
-- `POST /settings/erasure` accepts `{field: 'source', value: <source id>, confirm: <source id>}` (admin).
-  It answers 400 when `confirm` differs or the source is unknown (no profile and no counted data), and
-  409 while another erasure of that source is queued or running; a lock row in `voc-aggregates`
-  (`JOB#erasure` / `SRCLOCK#<source>`) makes two starts in the same instant answer 202 once and 409
-  once. `GET /settings/erasure` now also returns `sources`, the ids a whole-source erasure may name
-  (cached for 60 seconds per warm Lambda).
-- The delete dialog says that the source keeps running (turn it off first if it should stay empty) and
-  that uploaded CSV / JSON files are kept, and warns when the source's own schedule is on.
-
-### Changed
-
-- Erasure jobs now report their counts while they run (`deleted_items`, `deleted_objects`, `progress_at`,
-  and `phase` for a whole-source job), not only when they finish.
+- Import history: every paste confirm, CSV upload, JSON upload (including the AI assistant's `import_reviews`) and
+  S3 import file now writes one run record (method, source, who, when, received / imported / skipped / duplicate /
+  failed counts, up to 200 warnings and errors, the raw file, status). Administrators see them in the new
+  **Import history** section of the Data sources page (`/scrapers`), where a row opens its warnings and errors, and
+  through the admin-only `GET /scrapers/manual/history` and `GET /scrapers/manual/history/{run_id}`.
+  See [docs/import-history.md](docs/import-history.md).
 
 ### Upgrade notes
 
-- No new IAM grant, table or stack: `voc-retention` already holds feedback `Scan` / `DeleteItem` and
-  raw `DeleteObject*` / `ListBucketVersions` under `raw/`. Deploy VocProcessingStack (worker) and
-  VocApiStack (settings route) together, then the frontend.
-- A whole-source erasure scans the feedback table (items are matched on `source_platform`, because a
-  brand name puts several sources in one partition), so on a large table it runs for several
-  15-minute hand-overs and costs one full table read.
-
-## [5.52.00] - 2026-10-30
-
-An imported S3 file can be reprocessed through the pipeline from the S3 import explorer (#144).
-
-### Added
-- **Reprocess an imported S3 file.** Each file in the S3 import explorer (Administration → Sources → S3 Bulk
-  Import) has a Reprocess action that runs it through the import pipeline again and shows the run until it
-  finishes. Rows already in the data lake are skipped as duplicates, so only missing rows are imported (for
-  example after a partial processing failure or an accidental erasure); stored rows are not re-enriched, which
-  stays the job of *Reprocess existing feedback*. A copy archived by hand as `processed/<folder>/<file>` keeps
-  its original source `S3 - <folder>`. New admin-only routes `POST /s3-import/reprocess` and
-  `GET /s3-import/reprocess/{run_id}`; the run is the ordinary `SOURCE_RUN#s3_import` source-run record
-  ([Data lake structure → Reprocessing a file](docs/data-lake-structure.md#reprocessing-a-file)). A failed
-  reprocess ends `error` and is not retried by Lambda (press Reprocess again); an upload's S3 event keeps its
-  retries. A second
-  reprocess of a file answers 409 while its earlier run is still running (younger than the ingestor's 300 s
-  timeout).
-
-### Fixed
-- `POST /sources/s3_import/run` no longer leaves its run record at `running` forever: the S3 import ingestor
-  now closes a run it is given, as completed with 0 rows when no file was named.
-
-### Security
-- The S3 import ingestor reads only records that name its own import bucket (new `S3_IMPORT_BUCKET`
-  environment variable); a record for any other bucket is skipped with a warning, unread.
-
-### Upgrade notes
-- `VocApiStack`: the S3 import API role gains `lambda:InvokeFunction` on the `s3_import` ingestor and
-  aggregates-table Put/Get/UpdateItem/Query limited to the `SOURCE_RUN#s3_import` partition (only when the
-  `s3_import` plugin is enabled). `VocIngestionStack`: the `s3_import` ingestor gains the `S3_IMPORT_BUCKET`
-  environment variable. Deploy both stacks together. No resource is renamed or replaced.
-
-## [5.51.00] - 2026-10-30
-
-Persona generation can add to a project's existing personas instead of replacing them, from the wizard and the AI assistant (#353).
-
-### Added
-- Persona generation can add personas without deleting the ones a project has
-  ([persona generation](docs/persona-generation.md)). On the project page, Generate Personas offers **Add to
-  existing personas** (the default) or **Replace existing personas** once a project has personas. Replace
-  confirms with a warning that counts the personas it deletes. The assistant's `generate_personas` tool takes
-  the same choice (`keep_existing_personas`, default add), and its approval card says which one runs.
-
-### Changed
-- An additive run (`keep_existing_personas: true`, which autonomous agents always send) now shows the model a
-  short, bounded description of the kept personas: at most 20, under 1,500 characters. It asks for clearly
-  different archetypes and drops a new persona whose name repeats a kept one (case-insensitive) before its
-  avatar is made. The job result reports how many were dropped as `metadata.duplicate_names_dropped`, and the
-  project's Jobs list shows that count with the reason, so a short add run does not look like a failed one.
-  Without the field, `POST /projects/{id}/personas/generate` still replaces the personas, as before.
-
-## [5.50.00] - 2026-10-30
-
-A Prioritization row that crosses generations on purpose can be marked Keep both versions (#399).
-
-### Added
-
-- Prioritization: a row labelled **Crosses generations** (for example PRD v1 and PRD v2 scored together on
-  purpose) can be marked **Keep both versions**. The row then shows a quiet **Kept on purpose** label, and
-  **Undo** restores the warning. The mark is stored on the row for its exact document set
-  (`PUT /projects/prioritization/rows/{row_id}/lineage-ack`, edit access on the project), so it lapses by
-  itself when the row's documents change. See [docs/prioritization.md](docs/prioritization.md#keep-both-versions-lineage-acknowledgement).
-  Recomposing a row back to exactly the marked set applies the mark again. A row holding a document the project
-  no longer has says it cannot be marked instead of offering a button that would always fail. The control is
-  shown only to people who can edit the row's project; a viewer sees the label without it.
-
-## [5.49.00] - 2026-10-30
-
-Every generated persona, research report, PRD and PR/FAQ stores the ids of the reviews it was written from, and the project shows them (#236).
-
-### Added
-- PRDs, PR/FAQs, merged documents and research reports from the synchronous fallback now store
-  `input_feedback_ids`, the ids of the reviews their prompts held (at most 500), as personas and Step Functions
-  research reports already did. A persona's header and a document's provenance footer show "Written from N
-  reviews" with **Show reviews**, a paged list of those reviews read by id that opens each in the review modal.
-  See [project workspace](docs/project-workspace.md#which-feedback-a-generation-reads).
-
-### Changed
-- `source_feedback_ids` on a persona (the first 20 reviews fetched) is documented as display-only in
-  `schemas/persona.schema.json`; `input_feedback_ids` is the corpus.
-
-### Upgrade notes
-- Only review ids are stored on artefacts, never review text, so source retention and erasure still reach every
-  review ([source policies](docs/source-policies.md#what-erasure-does-not-reach)); an erased review shows as
-  unavailable in the list. Artefacts generated before this release have no ids and show no corpus line.
+- Import run records live in `voc-aggregates` (`IMPORT_RUN` partition) and expire after 90 days; no new table,
+  stack or IAM permission. Imports made before this release have no record. Feedback-form submissions and scheduled
+  plugin / scraper runs are not import runs and are not recorded (see the doc).
 
 ## [5.48.06] - 2026-10-30
 
