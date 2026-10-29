@@ -12,8 +12,8 @@ import { z } from 'zod'
 import { fetchApi } from './client'
 import { lenientText, optionalText, parsedList } from './schemaList'
 
-export const IMPORT_METHODS = ['paste', 'csv', 'json', 's3', 'assistant'] as const
-export const IMPORT_STATUSES = ['completed', 'partial', 'failed'] as const
+const IMPORT_METHODS = ['paste', 'csv', 'json', 's3', 'assistant'] as const
+const IMPORT_STATUSES = ['completed', 'partial', 'failed'] as const
 
 const count = z.number().int().nonnegative().catch(0)
 
@@ -39,7 +39,6 @@ const ImportRunSummarySchema = z.object({
   radar_brand: optionalText,
 })
 export type ImportRunSummary = z.output<typeof ImportRunSummarySchema>
-export type ImportCounts = ImportRunSummary['counts']
 
 const ImportRunDetailSchema = ImportRunSummarySchema.extend({
   warnings: z.array(z.string()).catch([]),
@@ -68,7 +67,7 @@ export const importHistoryKey = () => ['import-history'] as const
 export const importRunKey = (runId: string) => ['import-history', 'run', runId] as const
 
 const PATH = '/scrapers/manual/history'
-export const IMPORT_HISTORY_PAGE_SIZE = 25
+const IMPORT_HISTORY_PAGE_SIZE = 25
 
 export const importHistoryApi = {
   list: async (cursor?: string): Promise<ImportHistoryPage> => {

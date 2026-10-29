@@ -30,7 +30,7 @@ from typing import Any, Final
 
 from botocore.exceptions import BotoCoreError, ClientError
 
-from shared.dynamo_values import plain
+from shared.dynamo_values import as_count
 from shared.feedback_cursor import decode_key_cursor, encode_key_cursor
 from shared.logging import logger
 
@@ -42,8 +42,6 @@ __all__ = [
     'list_import_runs',
     'parse_limit',
     'record_import_run',
-    'run_status',
-    'run_view',
 ]
 
 LIST_PK: Final = 'IMPORT_RUN'
@@ -54,9 +52,9 @@ MAX_MESSAGE_CHARS: Final = 300
 MAX_LIST_LIMIT: Final = 100
 DEFAULT_LIST_LIMIT: Final = 25
 METHODS: Final = frozenset({'paste', 'csv', 'json', 's3', 'assistant'})
-COMPLETED: Final = 'completed'
-PARTIAL: Final = 'partial'
-FAILED: Final = 'failed'
+RUN_COMPLETED: Final = 'completed'
+RUN_PARTIAL: Final = 'partial'
+RUN_FAILED: Final = 'failed'
 # The actor of a file dropped into the import bucket: the uploader is not known there.
 S3_UPLOAD_ACTOR: Final = 's3-upload'
 _COUNT_FIELDS: Final = ('received', 'imported', 'skipped', 'duplicate', 'failed')
@@ -99,10 +97,10 @@ def run_status(counts: ImportCounts) -> str:
     Skipped and duplicate rows are expected outcomes (they carry a warning), not failures.
     """
     if counts.imported <= 0:
-        return FAILED
+        return RUN_FAILED
     if counts.failed > 0:
-        return PARTIAL
-    return COMPLETED
+        return RUN_PARTIAL
+    return RUN_COMPLETED
 
 
 def _bounded(messages: Iterable[object]) -> tuple[list[str], int, bool]:
@@ -123,6 +121,14 @@ def _bounded(messages: Iterable[object]) -> tuple[list[str], int, bool]:
     return kept, total, cut
 
 
+def _count_fields(counts: ImportCounts) -> dict[str, int]:
+    """The stored count attributes (never negative)."""
+    return {
+        'received': max(0, counts.received), 'imported': max(0, counts.imported), 'skipped': max(0, counts.skipped),
+        'duplicate': max(0, counts.duplicate), 'failed': max(0, counts.failed),
+    }
+
+
 def _rows(run: ImportRun, now: datetime) -> tuple[dict[str, Any], dict[str, Any]]:
     """The ``(summary, detail)`` rows of ``run`` finished at ``now``."""
     warnings, warning_count, warnings_cut = _bounded(run.warnings)
@@ -138,7 +144,7 @@ def _rows(run: ImportRun, now: datetime) -> tuple[dict[str, Any], dict[str, Any]
         'actor_email': run.actor_email,
         'started_at': run.started_at,
         'finished_at': now.isoformat(),
-        **{name: max(0, int(getattr(run.counts, name))) for name in _COUNT_FIELDS},
+        **_count_fields(run.counts),
         'status': run_status(run.counts),
         'warning_count': warning_count,
         'error_count': error_count,
@@ -192,37 +198,29 @@ def actor_from_event(raw_event: object) -> tuple[str, str]:
 # ── Reads ────────────────────────────────────────────────────────────────────
 
 
-def _int(value: object) -> int:
-    value = plain(value)
-    return value if isinstance(value, int) and not isinstance(value, bool) else 0
-
-
-def _str(value: object) -> str:
-    return value if isinstance(value, str) else ''
+_TEXT_FIELDS: Final = ('run_id', 'method', 'source', 'source_id', 'actor', 'actor_email', 'started_at', 'finished_at', 'status')
 
 
 def _messages(value: object) -> list[str]:
     return [m for m in value if isinstance(m, str)] if isinstance(value, list) else []
 
 
+def _texts(item: Mapping[str, Any], names: Iterable[str]) -> dict[str, str]:
+    """Each named string attribute of ``item`` ('' when absent or not a string)."""
+    return {name: value if isinstance(value := item.get(name), str) else '' for name in names}
+
+
 def run_view(item: Mapping[str, Any], *, detail: bool = False) -> dict[str, Any]:
     """What the history routes answer for a stored row (``detail`` adds the warning and error lists)."""
+    optional = _texts(item, ('raw_s3_key', 'radar_brand'))
     view: dict[str, Any] = {
-        'run_id': _str(item.get('run_id')),
-        'method': _str(item.get('method')),
-        'source': _str(item.get('source')),
-        'source_id': _str(item.get('source_id')),
-        'actor': _str(item.get('actor')),
-        'actor_email': _str(item.get('actor_email')),
-        'started_at': _str(item.get('started_at')),
-        'finished_at': _str(item.get('finished_at')),
-        'counts': {name: _int(item.get(name)) for name in _COUNT_FIELDS},
-        'status': _str(item.get('status')),
-        'warning_count': _int(item.get('warning_count')),
-        'error_count': _int(item.get('error_count')),
+        **_texts(item, _TEXT_FIELDS),
+        'counts': {name: as_count(item.get(name)) for name in _COUNT_FIELDS},
+        'warning_count': as_count(item.get('warning_count')),
+        'error_count': as_count(item.get('error_count')),
         'truncated': item.get('truncated') is True,
-        'raw_s3_key': _str(item.get('raw_s3_key')) or None,
-        'radar_brand': _str(item.get('radar_brand')) or None,
+        'raw_s3_key': optional['raw_s3_key'] or None,
+        'radar_brand': optional['radar_brand'] or None,
     }
     if detail:
         view['warnings'] = _messages(item.get('warnings'))
@@ -232,7 +230,7 @@ def run_view(item: Mapping[str, Any], *, detail: bool = False) -> dict[str, Any]
 
 def _live(item: Mapping[str, Any], now_epoch: int) -> bool:
     """False for a row past its TTL that DynamoDB has not deleted yet (that can take days)."""
-    ttl = _int(item.get('ttl'))
+    ttl = as_count(item.get('ttl'))
     return ttl == 0 or ttl > now_epoch
 
 
