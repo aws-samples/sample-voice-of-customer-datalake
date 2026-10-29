@@ -14,6 +14,9 @@
 
 import { createHash, randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
+import {
+  applyDatasetUpdate, datasetIdentity, datasetKey, planCounts, planDataset, previewAnswer, rememberDatasetRow,
+} from './mock-csv-datasets.js';
 import { cursorPage } from './mock-feedback-cursor.js';
 import { csvUploadCounts, recordImportRun } from './mock-import-history.js';
 import { effectiveBrands, radarBrandError } from './mock-radar-brands.js';
@@ -865,7 +868,7 @@ function rowFields(row, header, targets, warnings, idx) {
 }
 
 /** _parse_csv_to_items: `{items, warnings, drops: {skipped, duplicate}}`, or `{error}` for a 400. */
-function csvItems(csvText, defaultSource, columnMap) {
+function csvItems(csvText, defaultSource, columnMap, dataset = null) {
   const [header, ...rows] = parseCsvRows(csvText);
   if (!header) return { error: 'CSV is empty or has no header row' };
   const targets = headerTargets(header, columnMap);
@@ -884,23 +887,25 @@ function csvItems(csvText, defaultSource, columnMap) {
       drops.skipped += 1;
       return;
     }
-    const id = createHash('sha256').update(JSON.stringify(['csv-row-v1', fields.id ?? '', fields.id ? '' : String(idx), fields.text, fields.rating, fields.date, fields.author, fields.title, fields.url, fields.channel])).digest('hex').slice(0, 32);
-    if (seen.has(id)) {
-      warnings.push(`row ${idx}: duplicate row — skipped`);
-      drops.duplicate += 1;
-      return;
-    }
-    seen.add(id);
     let rating = null;
     if (fields.rating) {
       const n = Number(fields.rating);
       if (Number.isFinite(n)) rating = Math.trunc(n);
-      else warnings.push(`row ${idx}: rating is not a number — left blank`);
     }
+    const source = fields.channel || defaultSource;
+    const v2 = dataset && fields.id ? datasetIdentity(dataset, fields, rating, source, metadata) : null;
+    const id = v2?.id ?? createHash('sha256').update(JSON.stringify(['csv-row-v1', fields.id ?? '', fields.id ? '' : String(idx), fields.text, fields.rating, fields.date, fields.author, fields.title, fields.url, fields.channel])).digest('hex').slice(0, 32);
+    if (seen.has(id)) {
+      warnings.push(v2 ? `row ${idx}: its id appears again in this dataset — skipped` : `row ${idx}: duplicate row — skipped`);
+      drops.duplicate += 1;
+      return;
+    }
+    seen.add(id);
+    if (fields.rating && rating === null) warnings.push(`row ${idx}: rating is not a number — left blank`);
     items.push({
-      id, text: fields.text, rating, title: fields.title, url: fields.url, author: fields.author,
-      created_at: fields.date || new Date().toISOString(), source: fields.channel || defaultSource,
-      dimensions, tags: [...new Set(tags)].slice(0, 20), metadata,
+      id, row: idx, csv_row_id: fields.id ?? '', text: fields.text, rating, title: fields.title, url: fields.url, author: fields.author,
+      created_at: fields.date || new Date().toISOString(), dated: Boolean(fields.date), source,
+      dimensions, tags: [...new Set(tags)].slice(0, 20), metadata, ...(v2 ?? {}),
     });
   });
   return { items, warnings, drops };
@@ -913,26 +918,47 @@ function csvUpload({ shared }, body) {
   if (typeof csvText !== 'string' || !csvText.trim()) return fail(400, 'csv_text is required');
   const radar = uploadRadarBrand(body, shared);
   if (radar.error) return fail(400, radar.error);
+  const dataset = datasetKey(body.dataset_name);
+  if (dataset.error) return fail(400, dataset.error);
+  if (dataset.key && radar.brand) return fail(400, 'dataset_name cannot be combined with radar_brand');
   if (sourceId !== 'manual_import' && !shared.sourceProfiles().some((p) => p.id === sourceId)) {
     return fail(400, 'source_id must be a configured source profile or manual_import');
   }
   const mapError = badColumnMap(body.column_map, shared);
   if (mapError) return fail(400, mapError);
   if (Buffer.byteLength(csvText) > MAX_CSV_BYTES) return fail(400, `CSV exceeds ${MAX_CSV_BYTES / (1024 * 1024)} MB limit`);
-  const { items, warnings, drops, error } = csvItems(csvText, defaultSource, body.column_map ?? {});
+  const { items, warnings, drops, error } = csvItems(csvText, defaultSource, body.column_map ?? {}, dataset.key);
   if (error) return fail(400, error);
   if (items.length === 0) return fail(400, `CSV produced no valid rows. ${warnings.slice(0, 5).join('; ')}`);
   if (items.length > MAX_UPLOAD_ITEMS) return fail(400, `Maximum ${MAX_UPLOAD_ITEMS} rows per upload (got ${items.length}). Split the file and try again.`);
+  const plan = planDataset(sourceId, items);
+  if (body.dry_run === true) return [200, previewAnswer(plan, items.length, warnings)];
+  if (plan.changed.length && body.apply_updates !== true) {
+    return fail(409, `This upload changes ${plan.changed.length} stored row(s): preview it (dry_run) and confirm the updates (apply_updates) to apply them`);
+  }
+  return [200, importCsvPlan(shared, { csvText, sourceId, defaultSource, radar, plan, items, warnings, drops, dataset: dataset.key })];
+}
+
+/** Archive the file, store new rows, apply confirmed updates; unchanged rows are left out. */
+function importCsvPlan(shared, { csvText, sourceId, defaultSource, radar, plan, items, warnings, drops, dataset }) {
   const key = rawKey('csv_upload', `${shared.nextMockId('job')}.csv`);
   putRawObject(shared, key, csvText, 'text/csv; charset=utf-8');
-  for (const item of radar.brand ? [] : items) processImported(shared, { ...item, source_platform: sourceId, source_channel: item.source });
-  const result = { success: true, imported_count: items.length, total_rows: items.length, s3_uri: `s3://${MOCK_RAW_BUCKET}/${key}` };
+  const fresh = [...plan.v1_rows, ...plan.new];
+  if (!radar.brand) {
+    for (const item of fresh) {
+      rememberDatasetRow(sourceId, item, processImported(shared, { ...item, source_platform: sourceId, source_channel: item.source }));
+    }
+    plan.changed.forEach(applyDatasetUpdate);
+  }
+  const queued = fresh.length + plan.changed.length;
+  const result = { success: true, imported_count: queued, total_rows: items.length, s3_uri: `s3://${MOCK_RAW_BUCKET}/${key}` };
+  if (dataset) result.counts = planCounts(plan);
   if (warnings.length) result.warnings = warnings.slice(0, 20);
   recordImportRun({
     method: 'csv', source: defaultSource, source_id: sourceId, warnings, raw_s3_key: result.s3_uri, radar_brand: radar.brand,
     counts: csvUploadCounts(items.length, drops),
   });
-  return [200, result];
+  return result;
 }
 
 // ── /s3-import/* (s3_import_handler.py) + the mock presigned PUT ─────────────

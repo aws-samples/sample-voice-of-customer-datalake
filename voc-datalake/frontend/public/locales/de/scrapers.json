@@ -83,7 +83,45 @@
         "twice": "{{target}} ist mehr als einer Spalte zugeordnet."
       }
     },
-    "defaultSourcePlaceholder": "z. B. Support-Umfrage"
+    "defaultSourcePlaceholder": "z. B. Support-Umfrage",
+    "dataset": {
+      "label": "Name des Datensatzes (optional)",
+      "placeholder": "z. B. Example Air Bewertungen",
+      "hint": "Benennen Sie die Daten dieser Datei, um sie später zu korrigieren: Ein erneuter Upload unter demselben Namen aktualisiert Zeilen mit einer ID, statt sie noch einmal hinzuzufügen. Groß- und Kleinschreibung spielt keine Rolle.",
+      "radarNote": "Für einen Radar-Upload nicht verfügbar: Seine Zeilen können später nicht aktualisiert werden.",
+      "problems": {
+        "tooLong": "Höchstens {{max}} Zeichen verwenden.",
+        "invalidChars": "Nur Buchstaben, Ziffern, Leerzeichen, „-“, „_“ und „.“ verwenden."
+      }
+    },
+    "preview": {
+      "check": "Änderungen prüfen",
+      "checking": "Wird geprüft…",
+      "title": "Was dieser Upload bewirkt",
+      "back": "Zurück",
+      "confirm": "Importieren",
+      "confirmUpdates": "Importieren und aktualisieren",
+      "changedHeader": "Gespeicherte Zeilen, die sich ändern",
+      "row": "Zeile {{row}}",
+      "rowWithId": "Zeile {{row}} (ID {{id}})",
+      "before": "Vorher:",
+      "after": "Nachher:",
+      "notUpdatableHint": "Zeilen ohne ID (oder ohne Datensatznamen hochgeladen) werden immer als neue Einträge hinzugefügt, deshalb kann ein späterer Upload sie nicht aktualisieren.",
+      "countNew_one": "{{count, number}} neue Zeile wird hinzugefügt",
+      "countNew_other": "{{count, number}} neue Zeilen werden hinzugefügt",
+      "countChanged_one": "{{count, number}} gespeicherte Zeile wird aktualisiert",
+      "countChanged_other": "{{count, number}} gespeicherte Zeilen werden aktualisiert",
+      "countUnchanged_one": "{{count, number}} unveränderte Zeile wird übersprungen",
+      "countUnchanged_other": "{{count, number}} unveränderte Zeilen werden übersprungen",
+      "countNotUpdatable_one": "{{count, number}} Zeile kann später nicht aktualisiert werden (keine ID)",
+      "countNotUpdatable_other": "{{count, number}} Zeilen können später nicht aktualisiert werden (keine ID)",
+      "truncated_one": "Die ersten {{shown, number}} von {{count, number}} geänderten Zeile werden angezeigt.",
+      "truncated_other": "Die ersten {{shown, number}} von {{count, number}} geänderten Zeilen werden angezeigt.",
+      "resultUpdated_one": "{{count, number}} gespeicherte Zeile aktualisiert.",
+      "resultUpdated_other": "{{count, number}} gespeicherte Zeilen aktualisiert.",
+      "resultUnchanged_one": "{{count, number}} unveränderte Zeile übersprungen.",
+      "resultUnchanged_other": "{{count, number}} unveränderte Zeilen übersprungen."
+    }
   },
   "deleteConfirmLabel": "Löschen",
   "deleteConfirmMessage": "Möchten Sie diesen Scraper wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.",

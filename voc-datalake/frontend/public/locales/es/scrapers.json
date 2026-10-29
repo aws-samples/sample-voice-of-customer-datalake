@@ -84,7 +84,52 @@
         "twice": "{{target}} está asignado a más de una columna."
       }
     },
-    "defaultSourcePlaceholder": "p. ej. Encuesta de soporte"
+    "defaultSourcePlaceholder": "p. ej. Encuesta de soporte",
+    "dataset": {
+      "label": "Nombre del conjunto de datos (opcional)",
+      "placeholder": "p. ej., reseñas de Example Air",
+      "hint": "Ponle nombre a los datos de este archivo para poder corregirlos más tarde: al volver a subirlo con el mismo nombre, las filas que tienen id se actualizan en lugar de añadirse otra vez. No distingue mayúsculas de minúsculas.",
+      "radarNote": "No disponible para una subida a Radar: sus filas no se pueden actualizar después.",
+      "problems": {
+        "tooLong": "Usa como máximo {{max}} caracteres.",
+        "invalidChars": "Usa solo letras, dígitos, espacios, \"-\", \"_\" y \".\"."
+      }
+    },
+    "preview": {
+      "check": "Ver los cambios",
+      "checking": "Comprobando…",
+      "title": "Lo que hará esta subida",
+      "back": "Atrás",
+      "confirm": "Importar",
+      "confirmUpdates": "Importar y actualizar",
+      "changedHeader": "Filas guardadas que cambian",
+      "row": "Fila {{row}}",
+      "rowWithId": "Fila {{row}} (id {{id}})",
+      "before": "Antes:",
+      "after": "Después:",
+      "notUpdatableHint": "Las filas sin id (o subidas sin nombre de conjunto de datos) siempre se añaden como registros nuevos, así que una subida posterior no puede actualizarlas.",
+      "countNew_one": "Se añadirá {{count, number}} fila nueva",
+      "countNew_many": "Se añadirán {{count, number}} filas nuevas",
+      "countNew_other": "Se añadirán {{count, number}} filas nuevas",
+      "countChanged_one": "Se actualizará {{count, number}} fila guardada",
+      "countChanged_many": "Se actualizarán {{count, number}} filas guardadas",
+      "countChanged_other": "Se actualizarán {{count, number}} filas guardadas",
+      "countUnchanged_one": "Se omitirá {{count, number}} fila sin cambios",
+      "countUnchanged_many": "Se omitirán {{count, number}} filas sin cambios",
+      "countUnchanged_other": "Se omitirán {{count, number}} filas sin cambios",
+      "countNotUpdatable_one": "{{count, number}} fila no se podrá actualizar después (sin id)",
+      "countNotUpdatable_many": "{{count, number}} filas no se podrán actualizar después (sin id)",
+      "countNotUpdatable_other": "{{count, number}} filas no se podrán actualizar después (sin id)",
+      "truncated_one": "Se muestran las primeras {{shown, number}} de {{count, number}} fila modificada.",
+      "truncated_many": "Se muestran las primeras {{shown, number}} de {{count, number}} filas modificadas.",
+      "truncated_other": "Se muestran las primeras {{shown, number}} de {{count, number}} filas modificadas.",
+      "resultUpdated_one": "{{count, number}} fila guardada actualizada.",
+      "resultUpdated_many": "{{count, number}} filas guardadas actualizadas.",
+      "resultUpdated_other": "{{count, number}} filas guardadas actualizadas.",
+      "resultUnchanged_one": "{{count, number}} fila sin cambios omitida.",
+      "resultUnchanged_many": "{{count, number}} filas sin cambios omitidas.",
+      "resultUnchanged_other": "{{count, number}} filas sin cambios omitidas."
+    }
   },
   "deleteConfirmLabel": "Eliminar",
   "deleteConfirmMessage": "¿Está seguro de que desea eliminar este scraper? Esta acción no se puede deshacer.",
