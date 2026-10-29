@@ -49,7 +49,9 @@ export interface AssistantLambdas {
   webSearch: { gatewayUrl: string; gatewayArn: string; toolName: string } | undefined;
 }
 
-export function createAssistantLambdas(ctx: ApiStackContext, delegates: AssistantDelegates): AssistantLambdas {
+export function createAssistantLambdas(
+  ctx: ApiStackContext, delegates: AssistantDelegates, options: Readonly<{ s3ImportIngestorDeployed: boolean }>,
+): AssistantLambdas {
   const { stack, allowedOrigin, apiLayer, apiCode: createApiLambdaCode } = ctx;
   const {
     projectsLambda, metricsLambda, feedbackFormLambda, settingsLambda, scrapersLambda, usersLambda, radarLambda, engagementLambda,
@@ -310,7 +312,7 @@ export function createAssistantLambdas(ctx: ApiStackContext, delegates: Assistan
   ], true);
 
   // S3 Import API (api-s3-import-lambda.ts)
-  const s3ImportLambda = createS3ImportLambda(ctx);
+  const s3ImportLambda = createS3ImportLambda(ctx, options.s3ImportIngestorDeployed);
 
   // Data Explorer API
   // Raw data is immutable and customer data is never deleted: read + put

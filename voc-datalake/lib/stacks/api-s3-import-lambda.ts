@@ -11,8 +11,7 @@
 import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
-import * as path from 'path';
-import { getEnabledPlugins, getPluginsWithIngestor, loadPlugins } from '../plugin-loader';
+import { getPluginsWithIngestor, type PluginManifest } from '../plugin-loader';
 import { ingestorFunctionBaseName } from './dlq-alarms';
 import { functionArnByName } from './api-assist-workers';
 import type { ApiStackContext } from './api-context';
@@ -22,9 +21,8 @@ export const S3_IMPORT_PLUGIN_ID = 's3_import';
 export const S3_IMPORT_RUN_PARTITION = `SOURCE_RUN#${S3_IMPORT_PLUGIN_ID}`;
 
 /** Whether VocIngestionStack creates the s3_import ingestor in this deployment (plugin enabled, ingestor on). */
-function s3ImportIngestorDeployed(enabledSources: string[]): boolean {
-  const plugins = getEnabledPlugins(loadPlugins(path.join(__dirname, '../../plugins')), enabledSources);
-  return getPluginsWithIngestor(plugins).some((plugin) => plugin.id === S3_IMPORT_PLUGIN_ID);
+export function s3ImportIngestorDeployed(enabledPlugins: readonly PluginManifest[]): boolean {
+  return getPluginsWithIngestor([...enabledPlugins]).some((plugin) => plugin.id === S3_IMPORT_PLUGIN_ID);
 }
 
 /**
@@ -34,8 +32,8 @@ function s3ImportIngestorDeployed(enabledSources: string[]): boolean {
  * the handler reads, empty when the ingestor is not deployed (the route then
  * answers "not configured").
  */
-function grantReprocess(ctx: ApiStackContext, role: iam.Role): Record<string, string> {
-  if (!s3ImportIngestorDeployed(ctx.props.enabledSources)) return {};
+function grantReprocess(ctx: ApiStackContext, role: iam.Role, ingestorDeployed: boolean): Record<string, string> {
+  if (!ingestorDeployed) return {};
   const ingestorName = ctx.uniqueName(ingestorFunctionBaseName(S3_IMPORT_PLUGIN_ID));
   role.addToPolicy(new iam.PolicyStatement({
     actions: ['lambda:InvokeFunction'],
@@ -50,7 +48,8 @@ function grantReprocess(ctx: ApiStackContext, role: iam.Role): Record<string, st
   return { S3_IMPORT_INGESTOR_FUNCTION: ingestorName, AGGREGATES_TABLE: aggregatesTable.tableName };
 }
 
-export function createS3ImportLambda(ctx: ApiStackContext): lambda.Function {
+/** *ingestorDeployed*: `s3ImportIngestorDeployed` of the stack's enabled plugins (loaded once, in api-data-lambdas.ts). */
+export function createS3ImportLambda(ctx: ApiStackContext, ingestorDeployed: boolean): lambda.Function {
   const { stack, allowedOrigin, apiLayer, apiCode: createApiLambdaCode } = ctx;
   const { kmsKey, s3ImportBucket } = ctx.props;
 
@@ -58,7 +57,7 @@ export function createS3ImportLambda(ctx: ApiStackContext): lambda.Function {
   s3ImportBucket.grantReadWrite(s3ImportRole);
   // Also the aggregates table's CMK for the run rows.
   kmsKey.grantEncryptDecrypt(s3ImportRole);
-  const reprocessEnv = grantReprocess(ctx, s3ImportRole);
+  const reprocessEnv = grantReprocess(ctx, s3ImportRole, ingestorDeployed);
 
   return new lambda.Function(stack, 'S3ImportApi', {
     functionName: ctx.uniqueName('voc-s3-import-api'),
