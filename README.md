@@ -187,6 +187,7 @@ See [Getting Started with Plugins](docs/getting-started-plugins.md).
 | [Feedback Forms](docs/feedback-forms.md) | Embeddable feedback forms |
 | [Scrapers](docs/scrapers.md) | Web scraper configuration |
 | [Import History](docs/import-history.md) | One record per paste, CSV, JSON, assistant and S3 import: who, what, counts, warnings (90 days) |
+| [CSV import](docs/csv-import.md) | CSV row identity, dataset names, previewing and confirming a corrected re-upload |
 | [Mobile App Reviews](docs/mobile-app-reviews.md) | iOS & Android app store review plugins |
 | [Web Reviews](docs/web-reviews.md) | Reviews from public review pages with a managed browser; blocked sites reported |
 | [GitHub Issues](docs/github-issues.md) | Issues as feedback: sync, webhook, version and label metrics |

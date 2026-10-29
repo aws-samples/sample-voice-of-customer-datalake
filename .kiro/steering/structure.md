@@ -195,7 +195,7 @@ voice-of-customer-datalake/       # Root repository
 
 | Table | PK | SK | Purpose |
 |-------|----|----|---------|
-| `voc-feedback` | `SOURCE#{platform}` | `FEEDBACK#{id}` | Processed feedback with GSIs for date, category, urgency; optional `author`, `title`, `metadata`, `dimensions`, `dimension_sources`, `tags`, `pii_policy`, `usefulness` (`low\|medium\|high` heuristic band, absent = unrated, docs/data-quality.md) — kept while the platform runs (no TTL), deleted with the stack; only `voc-retention` deletes at runtime (opt-in per source profile) |
+| `voc-feedback` | `SOURCE#{platform}` | `FEEDBACK#{id}` | Processed feedback with GSIs for date, category, urgency; optional `author`, `title`, `metadata`, `dimensions`, `dimension_sources`, `tags`, `pii_policy`, `usefulness` (`low\|medium\|high` heuristic band, absent = unrated, docs/data-quality.md), `csv_dataset` + `csv_content_hash` (a CSV dataset row, docs/csv-import.md) — kept while the platform runs (no TTL), deleted with the stack; only `voc-retention` deletes at runtime (opt-in per source profile) |
 | `voc-aggregates` | `METRIC#{type}` | `{date}` | Pre-computed metrics (no TTL), brand config, category config, `CATEGORY_ACCESS`/`USER#{sub}` (+ `sources`), `SETTINGS#dimensions`/`SETTINGS#sources` `config`, `METRIC#daily_dim…`/`METRIC#daily_tag#…`/`METRIC#daily_usefulness#<source>#<band>` (docs/data-quality.md), `JOB#erasure`/`er_…` (+ `SRCLOCK#{source}`, the whole-source erasure lock), `AUDIT#retention`, `JOB#category_reprocess`/`rp_…`, `METRIC#meta`/`earliest_date`, `data_version`, `config_version` (cache version counters, docs/caching.md), `IMPORT_RUN`/`{started_at}#{run_id}` + `IMPORT_RUN#{run_id}`/`RUN` (import history, `ttl` 90 days, docs/import-history.md), form configs — METRIC# rows kept while the platform runs (no TTL), deleted with the stack |
 | `voc-watermarks` | `{source}` | - | Ingestion state tracking |
 | `voc-projects` | `PROJECT#{id}` | `META\|PERSONA#{id}\|PRD#{id}\|PRFAQ#{id}` | Projects with personas, PRDs, PR/FAQs — kept while the platform runs (no TTL), deleted with the stack |
@@ -594,7 +594,7 @@ the app pool). Assistant tools on `/participants` (pack `participants`, card-onl
 | POST | `/scrapers/manual/parse` | Start an LLM parse of pasted review text (admin) |
 | GET | `/scrapers/manual/parse/{job_id}` | Poll a parse job (admin) |
 | POST | `/scrapers/manual/confirm` | Import the parsed reviews (admin) |
-| POST | `/scrapers/manual/csv-upload` | Import CSV rows (admin) |
+| POST | `/scrapers/manual/csv-upload` | Import CSV rows (admin); optional `dataset_name` keys rows with an id as `csv-row-v2` (dataset + id): `dry_run` answers `{counts: {new, changed, unchanged, v1_rows}, changed_rows (≤ 50), changed_rows_truncated}`, a real upload that changes stored rows is 409 without `apply_updates`; confirmed rows are queued with `csv_replace` and updated in place by the processor (`shared/csv_updates.py`, docs/csv-import.md) |
 | POST | `/scrapers/manual/json-upload` | Import JSON items (admin) |
 | GET | `/scrapers/manual/history` | Import runs, newest first, `?limit=` (1-100) `&cursor=` (admin; docs/import-history.md) |
 | GET | `/scrapers/manual/history/{run_id}` | One import run with its warnings and errors (admin; 404 unknown/expired) |
