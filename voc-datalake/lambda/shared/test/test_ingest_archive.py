@@ -91,3 +91,30 @@ def test_without_a_bucket_nothing_is_archived():
     messages = _messages()
     archive_per_item(MagicMock(), '', 'src', messages, NOW)
     assert {m['s3_raw_uri'] for m in messages} == {'old'}
+
+
+def _keys(s3) -> list[str]:
+    return sorted(c.kwargs['Key'] for c in s3.put_object.call_args_list)
+
+
+def test_an_update_rewrites_the_stored_items_own_archive():
+    """A confirmed CSV correction (issue #411) keeps ONE archive, which retention deletes with the item."""
+    s3 = MagicMock()
+    stored = 's3://bkt/raw/sales_csv/2025/12/01/b.json'
+    out, _ = prepare_messages(s3, 'bkt', _messages(), profile_for(_PROFILES, 'sales_csv'), NOW, {'b': stored})
+    assert 'raw/sales_csv/2025/12/01/b.json' in _keys(s3)
+    assert 'raw/sales_csv/2026/01/15/b.json' not in _keys(s3)
+    assert out[1]['s3_raw_uri'] == stored
+    assert out[0]['s3_raw_uri'].startswith('s3://bkt/raw/sales_csv/2026/01/15/')
+
+
+@pytest.mark.parametrize('stored', [
+    's3://other-bucket/raw/sales_csv/2025/12/01/b.json',   # another bucket
+    's3://bkt/raw/support_tickets/2025/12/01/b.json',      # another source's archive
+    's3://bkt/raw/csv_upload/2025/12/01/upload.csv',       # a whole-file archive
+    'not-a-uri',
+])
+def test_an_archive_that_is_not_the_items_own_is_never_rewritten(stored):
+    s3 = MagicMock()
+    prepare_messages(s3, 'bkt', _messages(), profile_for(_PROFILES, 'sales_csv'), NOW, {'b': stored})
+    assert 'raw/sales_csv/2026/01/15/b.json' in _keys(s3)
