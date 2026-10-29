@@ -11,10 +11,13 @@ import json
 import os
 import urllib.parse
 from collections.abc import Generator
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 import boto3
 
 from _shared.base_ingestor import BaseIngestor, logger, metrics, tracer
+from shared.import_runs import S3_UPLOAD_ACTOR, ImportCounts, ImportRun, record_import_run
 from shared.invocation_cost import measure_invocation_cost
 from shared.timestamps import now_iso
 
@@ -46,6 +49,19 @@ FIELD_ALIASES: dict[str, list[str]] = {
     "url": ["url", "link", "href"],
     "id": ["id", "review_id", "feedback_id", "item_id"],
 }
+
+
+@dataclass
+class FileReport:
+    """What parsing one file dropped, for its import-history record (docs/import-history.md)."""
+
+    skipped: int = 0
+    warnings: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+
+    def skip(self, note: str) -> None:
+        self.skipped += 1
+        self.warnings.append(note)
 
 
 def _resolve_field(row: dict, canonical: str, default: str | None = "") -> str | None:
@@ -105,19 +121,22 @@ def _normalize_row(row: dict, source_name: str, default_channel: str) -> dict | 
     }
 
 
-def _parse_csv(stream, source_name: str) -> Generator[dict, None, None]:
-    """Parse CSV content, yielding normalized items."""
+def _parse_csv(stream, source_name: str, report: FileReport | None = None) -> Generator[dict, None, None]:
+    """Parse CSV content, yielding normalized items (dropped rows are noted on ``report``)."""
+    report = report if report is not None else FileReport()
     text_wrapper = io.TextIOWrapper(stream, encoding="utf-8", errors="replace")
     reader = csv.DictReader(text_wrapper)
 
     if not reader.fieldnames:
         logger.error("CSV file has no headers")
+        report.errors.append("CSV file has no headers")
         return
 
     headers = {h.strip().lower() for h in reader.fieldnames}
     text_aliases = {a.lower() for a in FIELD_ALIASES["text"]}
     if not headers.intersection(text_aliases):
         logger.error(f"CSV missing text column. Expected one of: {sorted(text_aliases)}. Found: {sorted(headers)}")
+        report.errors.append(f"CSV missing text column. Expected one of: {', '.join(sorted(text_aliases))}")
         return
 
     for row_num, row in enumerate(reader, start=2):
@@ -127,12 +146,15 @@ def _parse_csv(stream, source_name: str) -> Generator[dict, None, None]:
                 yield item
             else:
                 logger.debug(f"Row {row_num}: empty text, skipping")
+                report.skip(f"row {row_num}: empty text — skipped")
         except _ROW_ERRORS as e:
             logger.warning(f"Row {row_num}: parse error: {e}")
+            report.skip(f"row {row_num}: parse error — skipped: {e}")
 
 
-def _parse_jsonl(stream, source_name: str) -> Generator[dict, None, None]:
+def _parse_jsonl(stream, source_name: str, report: FileReport | None = None) -> Generator[dict, None, None]:
     """Parse JSONL (one JSON object per line)."""
+    report = report if report is not None else FileReport()
     text_wrapper = io.TextIOWrapper(stream, encoding="utf-8", errors="replace")
     for line_num, raw_line in enumerate(text_wrapper, start=1):
         line = raw_line.strip()
@@ -143,18 +165,23 @@ def _parse_jsonl(stream, source_name: str) -> Generator[dict, None, None]:
             item = _normalize_row(row, source_name, "json_import")
             if item:
                 yield item
+            else:
+                report.skip(f"line {line_num}: empty text — skipped")
         except (*_ROW_ERRORS, RecursionError) as e:
             # ValueError covers json.JSONDecodeError; RecursionError is what
             # json.loads raises for a pathologically nested line.
             logger.warning(f"JSONL line {line_num}: {e}")
+            report.skip(f"line {line_num}: not valid JSON — skipped: {e}")
 
 
-def _parse_json(stream, source_name: str) -> Generator[dict, None, None]:
+def _parse_json(stream, source_name: str, report: FileReport | None = None) -> Generator[dict, None, None]:
     """Parse a JSON array or single object."""
+    report = report if report is not None else FileReport()
     try:
         data = json.loads(stream.read())
     except json.JSONDecodeError as e:
         logger.exception(f"Invalid JSON: {e}")
+        report.errors.append(f"Invalid JSON: {e}")
         return
 
     items = data if isinstance(data, list) else [data]
@@ -163,8 +190,11 @@ def _parse_json(stream, source_name: str) -> Generator[dict, None, None]:
             item = _normalize_row(row, source_name, "json_import")
             if item:
                 yield item
+            else:
+                report.skip(f"item {idx}: empty text — skipped")
         except _ROW_ERRORS as e:
             logger.warning(f"JSON item {idx}: {e}")
+            report.skip(f"item {idx}: not an object — skipped: {e}")
 
 
 def _get_parser(key: str):
@@ -205,12 +235,26 @@ class S3ImportIngestor(BaseIngestor):
             updates.update(status='error', errors=[type(error).__name__])
         self._update_source_run_status(updates)
 
+    def _record_file_run(self, bucket: str, key: str, started_at: str, counts: ImportCounts, report: FileReport) -> None:
+        """One import-history record for this file (docs/import-history.md); never raises."""
+        record_import_run(self.aggregates_table, ImportRun(
+            method="s3", source=_get_source_from_key(key), actor=S3_UPLOAD_ACTOR, started_at=started_at,
+            counts=counts, source_id=self.source_platform, warnings=report.warnings, errors=report.errors,
+            raw_s3_key=f"s3://{bucket}/{key}",
+        ))
+
+    def _refuse_file(self, bucket: str, key: str, started_at: str, reason: str) -> int:
+        """Record a file that was not read at all (empty or over the size limit) as a failed run; 0 imported."""
+        self._record_file_run(bucket, key, started_at, ImportCounts(received=0, imported=0), FileReport(errors=[reason]))
+        return 0
+
     def process_file(self, bucket: str, key: str, *, reprocess: bool = False) -> int:
         """Process a single S3 file: validate, parse, normalize, and queue."""
         parser = _get_parser(key)
         if not parser:
             logger.warning(f"Unsupported file type: {key}")
             return 0
+        started_at = datetime.now(UTC).isoformat()
 
         # Validate file size
         head = s3_client.head_object(Bucket=bucket, Key=key)
@@ -218,22 +262,26 @@ class S3ImportIngestor(BaseIngestor):
 
         if file_size == 0:
             logger.warning(f"{key}: empty file, skipping")
-            return 0
+            return self._refuse_file(bucket, key, started_at, "empty file")
 
         if file_size > MAX_FILE_SIZE_BYTES:
             logger.error(f"{key}: {file_size / 1024 / 1024:.1f} MB exceeds {MAX_FILE_SIZE_MB} MB limit")
-            return 0
+            return self._refuse_file(bucket, key, started_at, f"{file_size / 1024 / 1024:.1f} MB exceeds the {MAX_FILE_SIZE_MB} MB limit")
 
         # Stream, parse, normalize, and send in batches
         source_name = _get_source_from_key(key, reprocess=reprocess)
         response = s3_client.get_object(Bucket=bucket, Key=key)
         stream = response["Body"]
 
+        report = FileReport()
         batch: list[dict] = []
         total = 0
+        parsed = 0
+        sent_all = False
 
         try:
-            for item in parser(stream, source_name):
+            for item in parser(stream, source_name, report):
+                parsed += 1
                 normalized = self.normalize_item(item)
                 batch.append(normalized)
                 if len(batch) >= 100:
@@ -245,6 +293,10 @@ class S3ImportIngestor(BaseIngestor):
 
             if batch:
                 total += self.send_to_queue(batch)
+            sent_all = True
+        except Exception as e:
+            report.errors.append(f"stopped after {total} items: {e}")
+            raise
         finally:
             # Emit in a finally for the same reason the shared helper does: when
             # send_to_queue raises, the batches already accepted must still be
@@ -252,6 +304,7 @@ class S3ImportIngestor(BaseIngestor):
             # metrics.  The exception is not swallowed.
             logger.info(f"Processed {key}: {total} items")
             metrics.add_metric(name="ItemsImported", unit="Count", value=total)
+            self._record_file_run(bucket, key, started_at, _file_counts(parsed, total, report, sent_all=sent_all), report)
 
         return total
 
@@ -303,6 +356,17 @@ def _failed_reprocess(error: Exception) -> dict:
     logger.exception(f"Reprocess failed: {type(error).__name__}")
     metrics.add_metric(name="ReprocessFailed", unit="Count", value=1)
     return {"status": "error", "error": type(error).__name__}
+
+
+def _file_counts(parsed: int, imported: int, report: FileReport, *, sent_all: bool) -> ImportCounts:
+    """A file's counts. After a complete send, parsed rows the queue did not take were dropped by the
+    source policy (skipped); after a send that raised they failed."""
+    not_imported = max(0, parsed - imported)
+    return ImportCounts(
+        received=parsed + report.skipped, imported=imported,
+        skipped=report.skipped + (not_imported if sent_all else 0),
+        failed=0 if sent_all else not_imported,
+    )
 
 
 @logger.inject_lambda_context
