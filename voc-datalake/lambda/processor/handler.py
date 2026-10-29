@@ -82,6 +82,7 @@ from shared.source_updates import (
     update_decision,
 )
 from shared.timestamps import now_iso
+from shared.usefulness import USEFULNESS_FIELD, item_usefulness
 
 # AWS Clients (using shared module for connection reuse)
 dynamodb = get_dynamodb_resource()
@@ -644,7 +645,11 @@ def build_feedback_item(raw_record: dict, feedback_id: str, now: datetime) -> di
     }
 
     # Remove None values
-    return apply_storage_policy({k: v for k, v in item.items() if v is not None}, pii_policy_for(raw_record))
+    built = {k: v for k, v in item.items() if v is not None}
+    # The heuristic band (shared/usefulness.py): read off the customer's own text and
+    # the enrichment, BEFORE the storage policy may reduce the text to its summary.
+    built[USEFULNESS_FIELD] = item_usefulness(built)
+    return apply_storage_policy(built, pii_policy_for(raw_record))
 
 
 # A summary-only source keeps derived fields only: these hold (or may quote) the

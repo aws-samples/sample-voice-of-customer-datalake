@@ -227,6 +227,8 @@ class TestTheReenrichedFields:
             'dimensions': {'product': 'IDE'}, 'dimension_sources': {'product': 'ai'},
             'gsi2sk': '-0.9#2026-01-02T00:00:00Z', 'gsi3pk': 'URGENCY#high',
             'gsi2pk': 'CATEGORY#performance',
+            # One word: low (shared/usefulness.py); the aggregator re-buckets the change.
+            'usefulness': 'low',
         }
 
     def test_a_kept_category_leaves_category_subcategory_and_its_index_alone(self):
@@ -239,6 +241,7 @@ class TestTheReenrichedFields:
             'llm_metadata': {'model_name': 'haiku'},
             'dimensions': None, 'dimension_sources': None,
             'gsi2sk': '-0.9#T', 'gsi3pk': 'URGENCY#high',
+            'usefulness': 'low',
         }
 
     def test_a_kept_category_tolerates_an_enrichment_without_one(self):
@@ -273,21 +276,22 @@ class TestTheReenrichmentUpdate:
         assert kwargs == {
             'Key': {'pk': 'SOURCE#github_issues', 'sk': 'FEEDBACK#7'},
             'UpdateExpression': ('SET #f1 = :f0, #f2 = :f1, #f3 = :f2, #f4 = :f3, #f5 = :f4, #f6 = :f5, '
-                                 '#f7 = :f6, #f9 = :f7, #f12 = :f8, #f13 = :f9, #f14 = :f10 '
+                                 '#f7 = :f6, #f9 = :f7, #f12 = :f8, #f13 = :f9, #f14 = :f10, #f15 = :f11 '
                                  'REMOVE #f8, #f10, #f11'),
-            'ConditionExpression': ('attribute_exists(#pk) AND #g15 = :g11 AND #g16 = :g12 AND '
+            'ConditionExpression': ('attribute_exists(#pk) AND #g16 = :g12 AND #g17 = :g13 AND '
                                     '(attribute_not_exists(#category_source) OR #category_source <> :manual)'),
             'ExpressionAttributeNames': {
                 '#pk': 'pk', '#f1': 'issue_attributes', '#f2': 'source_refreshed_at', '#f3': 'original_text',
                 '#f4': 'title', '#f5': 'category', '#f6': 'sentiment_score', '#f7': 'urgency',
                 '#f8': 'subcategory', '#f9': 'llm_metadata', '#f10': 'dimensions', '#f11': 'dimension_sources',
-                '#f12': 'gsi2sk', '#f13': 'gsi3pk', '#f14': 'gsi2pk',
-                '#g15': 'issue_attributes', '#g16': 'dimensions', '#category_source': 'category_source',
+                '#f12': 'gsi2sk', '#f13': 'gsi3pk', '#f14': 'gsi2pk', '#f15': 'usefulness',
+                '#g16': 'issue_attributes', '#g17': 'dimensions', '#category_source': 'category_source',
             },
             'ExpressionAttributeValues': {
                 ':f0': {'updated_at': NEW}, ':f1': NOW, ':f2': 'edited', ':f3': 'Title', ':f4': 'performance',
                 ':f5': -0.9, ':f6': 'high', ':f7': {'m': 1}, ':f8': '-0.9#T', ':f9': 'URGENCY#high',
-                ':f10': 'CATEGORY#performance', ':g11': {'updated_at': OLD}, ':g12': {'product': 'IDE'},
+                ':f10': 'CATEGORY#performance', ':f11': 'low',
+                ':g12': {'updated_at': OLD}, ':g13': {'product': 'IDE'},
                 ':manual': 'manual',
             },
         }
@@ -298,9 +302,9 @@ class TestTheReenrichmentUpdate:
         kwargs = reenrichment_update(stored, _incoming(NEW, text='e'), enrichment, ({'a': 'b'}, {'a': 'ai'}), NOW)
 
         assert kwargs['ConditionExpression'] == \
-            'attribute_exists(#pk) AND attribute_not_exists(#g12) AND attribute_not_exists(#g13)'
+            'attribute_exists(#pk) AND attribute_not_exists(#g13) AND attribute_not_exists(#g14)'
         assert kwargs['UpdateExpression'] == (
             'SET #f1 = :f0, #f2 = :f1, #f3 = :f2, #f4 = :f3, #f5 = :f4, #f6 = :f5, #f7 = :f6, '
-            '#f8 = :f7, #f9 = :f8, #f10 = :f9, #f11 = :f10')
+            '#f8 = :f7, #f9 = :f8, #f10 = :f9, #f11 = :f10, #f12 = :f11')
         assert '#category_source' not in kwargs['ExpressionAttributeNames']
         assert ':manual' not in kwargs['ExpressionAttributeValues']

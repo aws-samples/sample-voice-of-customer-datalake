@@ -149,3 +149,19 @@ class TestSettingsCache:
         _seed(sources=[PROFILE])
         assert handler.source_profile('webscraper')['pii'] == 'allow'
         assert handler.source_profile('support_tickets')['tags'] == ['support', 'VIP']
+
+
+DETAILED_TEXT = ('I was charged twice for order 4471 on 2 October and the refund page shows an error '
+                 'every time I try to open it from the app')
+
+
+class TestUsefulness:
+    def test_every_new_review_carries_a_band(self, process):
+        assert process(_record())['usefulness'] == 'medium'
+        assert process(_record(text=DETAILED_TEXT))['usefulness'] == 'high'
+        assert process(_record(text='Great!'), insights={'category': 'other'})['usefulness'] == 'low'
+
+    def test_a_summary_only_source_is_rated_on_the_full_text_it_does_not_keep(self, process):
+        item = process(_record(text=DETAILED_TEXT, pii_policy_applied='summary_only'))
+        assert item['original_text'] == 'Charged twice for [EMAIL]'
+        assert item['usefulness'] == 'high'
