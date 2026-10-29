@@ -119,7 +119,7 @@ duplicate documents into another project — never merge, move or delete. A proj
 owner's own, or a private one it was shared into) is never offered for reuse, however similar its name: the run
 creates a new project instead (5.35.00; a run once reused a tester's project). An agent run never removes
 personas: it sends `keep_existing_personas: true` to `POST /projects/{id}/personas/generate`, so new personas are
-added beside the existing ones (and any edit a person made to them is kept). Handoff owner = the first
+added beside the existing ones (and any edit a person made to them is kept; [persona generation](persona-generation.md)). Handoff owner = the first
 owner of the dominant category (other owners as editors); none → the admin flagged **fallback owner**.
 
 ## What the steps read and send
