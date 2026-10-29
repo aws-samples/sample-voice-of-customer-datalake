@@ -17,11 +17,12 @@ const ROW_HEIGHT_PX = 36
 const CHART_PADDING_PX = 56
 const SOURCE_AXIS_WIDTH = 140
 
+// Four clearly different hues in both themes (green, blue, orange, grey): two purples read as one.
 const BAND_COLORS: Readonly<Record<QualityBand, string>> = {
-  high: 'var(--chart-1)',
-  medium: 'var(--chart-3)',
-  low: 'var(--chart-5)',
-  unrated: 'var(--border)',
+  high: 'var(--chart-7)',
+  medium: 'var(--chart-2)',
+  low: 'var(--chart-4)',
+  unrated: 'var(--chart-6)',
 }
 
 /** Static keys, so the i18n audit sees every label the section uses. */
@@ -54,7 +55,8 @@ export function QualityChart({ sources, sourceName }: ViewProps) {
             tickFormatter={(value: unknown) => (typeof value === 'number' ? formatCount(value, i18n.language) : '')} />
           <YAxis type="category" dataKey="name" width={SOURCE_AXIS_WIDTH} tick={AXIS_TICK} axisLine={AXIS_LINE} tickLine={AXIS_LINE} />
           <Tooltip {...TOOLTIP_PROPS} />
-          <Legend />
+          {/* In band order (best first), not Recharts' default alphabetical order. */}
+          <Legend itemSorter={null} />
           {QUALITY_BANDS.map((band) => (
             <Bar key={band} dataKey={t(BAND_LABEL_KEYS[band])} stackId="quality" fill={BAND_COLORS[band]} />
           ))}

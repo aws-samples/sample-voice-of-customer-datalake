@@ -13,7 +13,7 @@ from typing import Any, Final
 
 from shared.usefulness import USEFULNESS_BANDS, USEFULNESS_UNRATED, stored_band
 
-__all__ = ['QUALITY_FIELDS', 'distribution', 'from_counters', 'from_items']
+__all__ = ['from_counters', 'from_items']
 
 #: Every count a source (and the overall row) carries, in display order.
 QUALITY_FIELDS: Final = (*USEFULNESS_BANDS, USEFULNESS_UNRATED, 'total')
